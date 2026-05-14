@@ -1,0 +1,23 @@
+# Environment
+.env
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# OS
+.DS_Store
+
+# IDE
+.vscode/
+.idea/
+
+# Bridge prompts (don't need in repo)
+data/bridge/*.json
+!data/bridge/respond.py
+
+# Logs
+*.log
+/tmp/
