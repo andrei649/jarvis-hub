@@ -1,0 +1,137 @@
+agents:
+  - id: jarvis
+    name: Jarvis
+    model: deepseek-r1:32b
+    channel: voice
+    heartbeat_interval_minutes: 60
+    dependencies: []
+
+  - id: friday
+    name: Friday
+    model: qwen2.5:7b
+    channel: voice
+    heartbeat_interval_minutes: 30
+    dependencies: [stark, hercules, frigga]
+
+  - id: pepper
+    name: Pepper
+    model: qwen2.5:14b
+    channel: voice
+    heartbeat_interval_minutes: 120
+    dependencies: []
+
+  - id: jerome
+    name: Jerome
+    model: qwen2.5:7b
+    channel: voice
+    heartbeat_interval_minutes: 240
+    dependencies: []
+
+  - id: athena
+    name: Athena
+    model: deepseek-r1:32b
+    channel: web
+    heartbeat_interval_minutes: 1440
+    dependencies: []
+
+  - id: stark
+    name: Stark
+    model: deepseek-r1:32b
+    channel: telegram
+    heartbeat_interval_minutes: 60
+    dependencies: []
+
+  - id: steve
+    name: Steve
+    model: qwen2.5:7b
+    channel: telegram
+    heartbeat_interval_minutes: 5
+    dependencies: []
+
+  - id: vision
+    name: The Vision
+    model: deepseek-r1:32b
+    channel: web
+    heartbeat_interval_minutes: 360
+    dependencies: []
+
+  - id: ultron
+    name: Ultron
+    model: qwen2.5:7b
+    channel: telegram
+    heartbeat_interval_minutes: 15
+    dependencies: []
+
+  - id: oracle
+    name: Oracle
+    model: qwen2.5:7b
+    channel: web
+    heartbeat_interval_minutes: null
+    dependencies: []
+
+  - id: veronica
+    name: Veronica
+    model: qwen2.5:14b
+    channel: web
+    heartbeat_interval_minutes: null
+    dependencies: [pepper, athena]
+
+  - id: gecko
+    name: Gecko
+    model: qwen2.5:14b
+    channel: telegram
+    heartbeat_interval_minutes: 1440
+    dependencies: []
+
+  - id: hercules
+    name: Hercules
+    model: qwen2.5:7b
+    channel: voice
+    heartbeat_interval_minutes: 1440
+    dependencies: []
+
+  - id: hephaestus
+    name: Hephaestus
+    model: qwen2.5:14b
+    channel: telegram
+    heartbeat_interval_minutes: 1440
+    dependencies: []
+
+  - id: frigga
+    name: Frigga
+    model: qwen2.5:14b
+    channel: whatsapp
+    heartbeat_interval_minutes: 60
+    dependencies: []
+
+bench:
+  - name: Howard
+    trigger: archival_project_active
+    description: Arhiva — istoric, 15 ani de date personale
+  - name: Bruce
+    trigger: heavy_data_science
+    description: Data science heavy
+  - name: Wanda
+    trigger: prompt_experiments
+    description: R&D experimental
+  - name: Shuri
+    trigger: hardware_integration
+    description: Hardware integrations
+  - name: Natasha
+    trigger: legal_documents
+    description: Security audit, contracte
+  - name: Thor
+    trigger: escalation_needed
+    description: Big-call escalation
+  - name: Loki
+    trigger: competitive_review
+    description: Devil's advocate, competitive intel
+  - name: Heimdall
+    trigger: multi_channel_monitoring
+    description: Cross-channel alerting
+  - name: Apollo
+    trigger: music_dj_growth
+    description: DJ support
+  - name: Hermes
+    trigger: cross_channel_routing
+    description: Cross-channel routing
