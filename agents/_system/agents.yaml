@@ -1,0 +1,267 @@
+# Jarvis v0.1.0 — Agent Registry
+# Pure Python orchestration (NOT OpenClaw)
+# Each agent maps to a SOUL.md in agents/<id>/
+
+jarvis:
+  name: "Andrei's Jarvis"
+  version: "0.2.1"
+  architecture: "pure-python-plugin"
+  cardinality_cap: 18
+  created: 2026-05-11
+  updated: 2026-05-27
+
+general:
+  timezone: Europe/Bucharest
+  wake_words: ["jarvis", "hub"]
+  default_tts: kokoro-en-british-male-1
+  addressing: sir
+  llm_backend: auto  # "auto" = try LM Studio first, fallback Ollama
+  llm_endpoints:
+    lm_studio: http://localhost:1234
+    ollama: http://localhost:11434
+  cloud_llm_plugin: on-demand
+  cloud_llm_agents: [jarvis, athena, stark, vision, veronica]
+  frigga_whatsapp_bridge: local
+
+agents:
+  jarvis:
+    name: Jarvis
+    archetype: Prime Orchestrator
+    status: active
+    tier: command
+    channel: voice
+    heartbeat: true
+    plugins: [cloud-llm, telegram]
+
+  friday:
+    name: Friday
+    archetype: Daily Intel
+    status: active
+    tier: command
+    channel: voice
+    heartbeat: true
+    plugins: [telegram]
+
+  pepper:
+    name: Pepper
+    archetype: Chief of Staff
+    status: active
+    tier: command
+    channel: voice
+    heartbeat: true
+    plugins: [google-calendar, gmail, telegram]
+
+  jerome:
+    name: Jerome
+    archetype: Leisure & Soundtrack
+    status: active
+    tier: command
+    channel: voice
+    heartbeat: false
+    plugins: [spotify]
+
+  athena:
+    name: Athena
+    archetype: External Strategist
+    status: active
+    tier: business
+    channel: web-dashboard
+    heartbeat: true
+    plugins: [cloud-llm]
+
+  stark:
+    name: Stark
+    archetype: Biz Intel
+    status: active
+    tier: business
+    channel: telegram
+    heartbeat: true
+    plugins: [gmail]
+
+  veronica:
+    name: Veronica
+    archetype: Content Plus Comms
+    status: active
+    tier: business
+    channel: telegram
+    heartbeat: false
+    plugins: [cloud-llm]
+
+  vision:
+    name: Vision
+    archetype: Deep Research + OSINT
+    status: active
+    tier: business
+    channel: web-dashboard
+    heartbeat: true
+    plugins: [cloud-llm]
+
+  steve:
+    name: Steve
+    archetype: CTO Plus Builds
+    status: active
+    tier: tech
+    channel: telegram
+    heartbeat: true
+    plugins: []
+
+  oracle:
+    name: Oracle
+    archetype: N8N Workflows
+    status: active
+    tier: tech
+    channel: web-dashboard
+    heartbeat: false
+    plugins: []
+
+  ultron:
+    name: Ultron
+    archetype: Security Plus Automation
+    status: active
+    tier: tech
+    channel: log-only
+    heartbeat: true
+    plugins: []
+
+  gecko:
+    name: Gecko
+    archetype: Markets Plus Capital
+    status: active
+    tier: foundation
+    channel: telegram
+    heartbeat: true
+    plugins: []
+
+  hercules:
+    name: Hercules
+    archetype: Fitness Plus Nutrition
+    status: active
+    tier: foundation
+    channel: telegram
+    heartbeat: true
+    plugins: [apple-health]
+
+  hephaestus:
+    name: Hephaestus
+    archetype: Builder And Mechanic
+    status: active
+    tier: foundation
+    channel: telegram
+    heartbeat: true
+    plugins: []
+
+  frigga:
+    name: Frigga
+    archetype: Family Matriarch
+    status: active
+    tier: foundation
+    channel: local-only
+    heartbeat: true
+    plugins: [whatsapp-bridge]
+    cloud_fallback: false
+
+# Bench — reserved names, not yet active
+bench:
+  howard:
+    name: Howard
+    archetype: Archive
+    trigger: "15 years of personal data ingested"
+
+  bruce:
+    name: Bruce
+    archetype: Data Science
+    trigger: "Heavy data analysis >20 queries/week"
+
+  wanda:
+    name: Wanda
+    archetype: R&D Experimental
+    trigger: "New prompt engineering pattern to test"
+
+  shuri:
+    name: Shuri
+    archetype: Hardware Integrations
+    trigger: "iPod remote or Polaroid printer built"
+
+  natasha:
+    name: Natasha
+    archetype: Security Audit
+    trigger: ">14 contracts reviewed in a month"
+
+  thor:
+    name: Thor
+    archetype: Escalation
+    trigger: "Pepper flags need for big-call decision"
+
+  loki:
+    name: Loki
+    archetype: Devil's Advocate
+    trigger: "Athena requests counter-position"
+
+  heimdall:
+    name: Heimdall
+    archetype: All-Seeing Monitor
+    trigger: "Cross-channel anomaly detection needed"
+
+  happy:
+    name: Happy
+    archetype: Driver / Logistics
+    trigger: "Pepper overflow"
+
+  bucky:
+    name: Bucky
+    archetype: Operations
+    trigger: "Steve needs backup"
+
+  apollo:
+    name: Apollo
+    archetype: Music (Jerome overflow)
+    trigger: "Jerome >20 music requests/week"
+
+  hermes:
+    name: Hermes
+    archetype: Cross-Channel Router
+    trigger: "Multi-channel conflicts >5/week"
+
+  atlas:
+    name: Atlas
+    archetype: Batch Processing
+    trigger: "Nightly heavy jobs need dedicated agent"
+
+  prometheus:
+    name: Prometheus
+    archetype: Innovation Tracker
+    trigger: "AI/MarTech landscape monitoring"
+
+  artemis:
+    name: Artemis
+    archetype: Lead Generation
+    trigger: "Digitaholic needs client pipeline"
+
+  demeter:
+    name: Demeter
+    archetype: Nutrition
+    trigger: "Hercules overflow on meal tracking"
+
+  aria:
+    name: Aria
+    archetype: Music Curation
+    trigger: "Jerome split — music separate from leisure"
+
+  hera:
+    name: Hera
+    archetype: Family (Frigga overflow)
+    trigger: "Frigga >50% capacity on family logistics"
+
+# Extensibility rules
+rules:
+  universe: "Marvel + Greek/Norse mythology + occasional pop ref"
+  single_responsibility: true
+  promotion_criteria:
+    min_monthly_uses: 20
+    distinct_tone_required: true
+    dedicated_channel_required: true
+  demotion_criteria:
+    max_monthly_uses: 5
+    consecutive_months_below: 2
+  cardinality_cap: 18
+  exceeding_behaviour: "requires architecture review before exceeding 18"

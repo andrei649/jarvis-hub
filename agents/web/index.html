@@ -1,0 +1,397 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>J.A.R.V.I.S</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { width: 100%; height: 100%; overflow: hidden; background: #050508; font-family: 'Segoe UI', system-ui, -apple-system, sans-serif; color: #c8d6e5; }
+  #bg-canvas { position: fixed; top: 0; left: 0; width: 100%; height: 100%; z-index: 0; }
+  #scanlines {
+    position: fixed; top: 0; left: 0; width: 100%; height: 100%; z-index: 1; pointer-events: none;
+    background: repeating-linear-gradient(0deg, transparent, transparent 2px, rgba(0,212,255,0.012) 2px, rgba(0,212,255,0.012) 4px);
+  }
+  #vignette {
+    position: fixed; top: 0; left: 0; width: 100%; height: 100%; z-index: 1; pointer-events: none;
+    background: radial-gradient(ellipse at center, transparent 40%, rgba(0,0,0,0.8) 100%);
+  }
+  #ui { position: relative; z-index: 2; width: 100%; height: 100%; display: flex; flex-direction: column; }
+
+  /* Header */
+  header {
+    padding: 12px 32px; display: flex; justify-content: space-between; align-items: center;
+    border-bottom: 1px solid rgba(0,212,255,0.1); background: rgba(5,5,8,0.7); backdrop-filter: blur(12px); flex-shrink: 0;
+  }
+  header h1 { font-size: 13px; font-weight: 300; letter-spacing: 5px; text-transform: uppercase; color: rgba(0,212,255,0.5); }
+  header h1 strong { font-weight: 600; color: #00d4ff; }
+  .hdr-right { display: flex; align-items: center; gap: 16px; font-size: 10px; letter-spacing: 1.5px; color: rgba(0,212,255,0.35); text-transform: uppercase; }
+  .hdr-right .dot { width: 5px; height: 5px; border-radius: 50%; display: inline-block; margin-right: 5px; box-shadow: 0 0 6px currentColor; }
+  .dot.online { background: #00ff88; color: #00ff88; }
+  .dot.offline { background: #ff3355; color: #ff3355; }
+
+  /* Main 3-column */
+  #main { flex: 1; display: flex; overflow: hidden; }
+
+  /* Left sidebar — agents */
+  #sidebar {
+    width: 170px; border-right: 1px solid rgba(0,212,255,0.06); padding: 12px 0; flex-shrink: 0;
+    background: rgba(5,5,8,0.2); overflow-y: auto;
+  }
+  #sidebar h3 { padding: 6px 16px 10px; font-size: 8px; letter-spacing: 3px; text-transform: uppercase; color: rgba(0,212,255,0.2); font-weight: 400; }
+  .agent-g { margin-bottom: 2px; }
+  .agent-g .g-label { padding: 3px 16px; font-size: 7px; letter-spacing: 2px; color: rgba(0,212,255,0.15); text-transform: uppercase; }
+  .agent-item { padding: 4px 16px; display: flex; align-items: center; gap: 8px; font-size: 11px; color: rgba(200,214,229,0.4); transition: all 0.3s; cursor: default; }
+  .agent-item:hover { color: rgba(200,214,229,0.7); background: rgba(0,212,255,0.03); }
+  .a-dot { width: 4px; height: 4px; border-radius: 50%; flex-shrink: 0; }
+  .a-dot.on { background: #00ff88; box-shadow: 0 0 5px #00ff88; }
+  .a-dot.standby { background: rgba(0,212,255,0.15); }
+
+  /* Center — chat column */
+  #chat-col { flex: 1; display: flex; flex-direction: column; align-items: center; min-width: 0; max-width: 900px; margin: 0 auto; width: 100%; }
+  #chat {
+    flex: 1; width: 100%; max-width: 720px; overflow-y: auto; padding: 28px 20px 12px;
+    display: flex; flex-direction: column; gap: 10px; scroll-behavior: smooth;
+  }
+  #chat::-webkit-scrollbar { width: 2px; }
+  #chat::-webkit-scrollbar-track { background: transparent; }
+  #chat::-webkit-scrollbar-thumb { background: rgba(0,212,255,0.12); border-radius: 2px; }
+  .msg { max-width: 88%; padding: 12px 18px; line-height: 1.7; font-size: 13px; white-space: pre-wrap; word-wrap: break-word; animation: msgIn 0.3s ease-out; }
+  @keyframes msgIn { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
+  .msg.user {
+    align-self: flex-end;
+    background: rgba(0,212,255,0.06); border: 1px solid rgba(0,212,255,0.12);
+    border-radius: 10px 10px 3px 10px; color: #e0edf5;
+  }
+  .msg.agent {
+    align-self: flex-start;
+    background: rgba(255,255,255,0.02); border: 1px solid rgba(0,212,255,0.05);
+    border-radius: 10px 10px 10px 3px;
+  }
+  .msg.agent .label { font-size: 8px; letter-spacing: 2px; color: rgba(0,212,255,0.3); margin-bottom: 4px; text-transform: uppercase; display: flex; align-items: center; gap: 6px; }
+  .msg.agent .label .tag { font-size: 7px; padding: 1px 5px; border-radius: 6px; border: 1px solid rgba(0,212,255,0.1); color: rgba(0,212,255,0.25); }
+  .msg.thinking { opacity: 0.35; font-style: italic; border-style: dashed !important; }
+  .cursor { display: inline-block; width: 2px; height: 14px; background: #00d4ff; animation: blink 0.6s step-end infinite; vertical-align: text-bottom; margin-left: 2px; box-shadow: 0 0 5px #00d4ff; }
+  @keyframes blink { 50% { opacity: 0; } }
+  .error { border-color: rgba(255,51,85,0.3) !important; color: #ff6b8a !important; }
+
+  #input-row {
+    width: 100%; max-width: 720px; padding: 10px 0 18px;
+    display: flex; gap: 8px; align-items: center;
+  }
+  #input-row input {
+    flex: 1; padding: 10px 16px; border-radius: 6px;
+    border: 1px solid rgba(0,212,255,0.1); background: rgba(0,0,0,0.35);
+    color: #c8d6e5; font-size: 12px; outline: none; letter-spacing: 0.3px;
+    transition: border-color 0.3s;
+  }
+  #input-row input:focus { border-color: rgba(0,212,255,0.25); }
+  #input-row input::placeholder { color: rgba(200,214,229,0.15); }
+  #input-row button {
+    padding: 10px 20px; border-radius: 6px; border: 1px solid rgba(0,212,255,0.15);
+    background: rgba(0,212,255,0.06); color: rgba(0,212,255,0.6); font-size: 11px;
+    cursor: pointer; letter-spacing: 1px; text-transform: uppercase;
+    transition: all 0.3s;
+  }
+  #input-row button:hover { background: rgba(0,212,255,0.12); border-color: rgba(0,212,255,0.3); }
+  #input-row button:disabled { opacity: 0.15; cursor: not-allowed; }
+
+  /* Right — dashboard widgets */
+  #dashboard {
+    width: 280px; border-left: 1px solid rgba(0,212,255,0.06); padding: 16px; flex-shrink: 0;
+    background: rgba(5,5,8,0.2); overflow-y: auto; display: flex; flex-direction: column; gap: 12px;
+  }
+  .widget {
+    background: rgba(0,212,255,0.02); border: 1px solid rgba(0,212,255,0.06);
+    border-radius: 8px; padding: 14px;
+  }
+  .widget h4 { font-size: 8px; letter-spacing: 2.5px; text-transform: uppercase; color: rgba(0,212,255,0.25); font-weight: 400; margin-bottom: 10px; }
+  .w-weather .temp { font-size: 28px; font-weight: 200; color: #e0edf5; letter-spacing: 1px; }
+  .w-weather .temp span { font-size: 16px; color: rgba(0,212,255,0.4); }
+  .w-weather .desc { font-size: 11px; color: rgba(200,214,229,0.5); margin-top: 4px; }
+  .w-weather .loc { font-size: 9px; color: rgba(0,212,255,0.25); letter-spacing: 1px; text-transform: uppercase; margin-bottom: 4px; }
+  .w-news .hl { padding: 5px 0; border-bottom: 1px solid rgba(0,212,255,0.04); font-size: 11px; color: rgba(200,214,229,0.55); line-height: 1.4; }
+  .w-news .hl:last-child { border-bottom: none; }
+  .w-news .hl::before { content: '› '; color: rgba(0,212,255,0.2); }
+  .w-sys .row { display: flex; justify-content: space-between; padding: 3px 0; font-size: 10px; border-bottom: 1px solid rgba(0,212,255,0.03); }
+  .w-sys .row .val { color: rgba(200,214,229,0.5); }
+  .w-sys .row .key { color: rgba(0,212,255,0.25); letter-spacing: 0.5px; }
+  .w-conv .turn { padding: 4px 0; font-size: 10px; border-bottom: 1px solid rgba(0,212,255,0.03); color: rgba(200,214,229,0.35); }
+  .w-conv .turn .r { color: rgba(0,212,255,0.2); letter-spacing: 0.5px; }
+  .w-conv .turn .p { color: rgba(200,214,229,0.35); }
+
+  @media (max-width: 1024px) {
+    #dashboard { width: 220px; padding: 12px; }
+    #sidebar { width: 130px; }
+  }
+  @media (max-width: 768px) {
+    #sidebar, #dashboard { display: none; }
+    #chat-col { max-width: 100%; }
+    #chat { max-width: 100%; padding: 16px; }
+  }
+</style>
+</head>
+<body>
+<canvas id="bg-canvas"></canvas>
+<div id="scanlines"></div>
+<div id="vignette"></div>
+
+<div id="ui">
+  <header>
+    <h1>&#x25c6; <strong>J.A.R.V.I.S</strong> &nbsp;<span style="font-weight:200;font-size:10px;letter-spacing:2px;color:rgba(0,212,255,0.2)">BETA</span></h1>
+    <div class="hdr-right">
+      <span id="hdr-status"><span class="dot offline"></span>connecting</span>
+      <span id="hdr-model">—</span>
+    </div>
+  </header>
+  <div id="main">
+    <!-- Left: Agents -->
+    <div id="sidebar">
+      <h3>Network</h3>
+      <div id="agent-list"></div>
+    </div>
+
+    <!-- Center: Chat -->
+    <div id="chat-col">
+      <div id="chat"></div>
+      <div id="input-row">
+        <input type="text" id="input" placeholder="Awaiting input, sir..." autofocus>
+        <button id="send">Send</button>
+      </div>
+    </div>
+
+    <!-- Right: Dashboard -->
+    <div id="dashboard">
+      <div class="widget w-weather" id="w-weather">
+        <h4>&#x2601; Weather</h4>
+        <div class="loc" id="w-loc">—</div>
+        <div class="temp" id="w-temp">— <span>&nbsp;</span></div>
+        <div class="desc" id="w-desc">—</div>
+      </div>
+      <div class="widget w-news" id="w-news">
+        <h4>&#x25cf; Headlines</h4>
+        <div id="w-news-list"><div class="hl" style="color:rgba(200,214,229,0.2)">Loading...</div></div>
+      </div>
+      <div class="widget w-sys" id="w-sys">
+        <h4>&#x2699; System</h4>
+        <div id="w-sys-rows"></div>
+      </div>
+      <div class="widget w-conv" id="w-conv">
+        <h4>&#x25b6; Recent</h4>
+        <div id="w-conv-list"><div class="turn" style="color:rgba(200,214,229,0.15)">—</div></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+const canvas = document.getElementById('bg-canvas');
+const ctx = canvas.getContext('2d');
+let W, H;
+
+function resize() { W = canvas.width = window.innerWidth; H = canvas.height = window.innerHeight; }
+resize(); window.addEventListener('resize', resize);
+
+class Ring {
+  constructor(radius, speed, tiltX, tiltY, phase, color) {
+    this.radius = radius; this.speed = speed; this.tiltX = tiltX; this.tiltY = tiltY;
+    this.phase = phase; this.color = color; this.angle = 0; this.points = 80;
+  }
+  draw(t) {
+    this.angle += this.speed * 0.006;
+    const cx = W / 2, cy = H / 2;
+    ctx.save(); ctx.translate(cx, cy);
+    ctx.strokeStyle = this.color; ctx.lineWidth = 0.5;
+    ctx.globalAlpha = 0.12 + 0.04 * Math.sin(t * 0.0003 + this.phase);
+    ctx.beginPath();
+    for (let i = 0; i <= this.points; i++) {
+      const a = (i / this.points) * Math.PI * 2 + this.angle;
+      const x = this.radius * Math.cos(a);
+      const y = this.radius * Math.sin(a) * Math.cos(this.tiltX);
+      const z = this.radius * Math.sin(a) * Math.sin(this.tiltX);
+      const px = x * Math.cos(this.tiltY) + z * Math.sin(this.tiltY);
+      const py = y;
+      i === 0 ? ctx.moveTo(px, py) : ctx.lineTo(px, py);
+    }
+    ctx.stroke();
+    ctx.globalAlpha = 0.02; ctx.lineWidth = 6; ctx.stroke();
+    ctx.restore();
+  }
+}
+
+class Particle {
+  constructor() { this.reset(); }
+  reset() {
+    this.x = Math.random() * W; this.y = Math.random() * H;
+    this.vx = (Math.random() - 0.5) * 0.12; this.vy = (Math.random() - 0.5) * 0.12;
+    this.r = Math.random() * 1 + 0.3; this.a = Math.random() * 0.3 + 0.05;
+  }
+  draw() {
+    this.x += this.vx; this.y += this.vy;
+    if (this.x < 0 || this.x > W || this.y < 0 || this.y > H) this.reset();
+    ctx.beginPath(); ctx.arc(this.x, this.y, this.r, 0, Math.PI * 2);
+    ctx.fillStyle = `rgba(0,212,255,${this.a})`; ctx.fill();
+  }
+}
+
+const rings = [
+  new Ring(70, 0.5, 0.3, 0.2, 0, 'rgba(0,212,255,0.5)'),
+  new Ring(120, -0.35, 0.5, 0.7, 1.0, 'rgba(0,180,255,0.3)'),
+  new Ring(170, 0.25, 1.0, 0.3, 2.2, 'rgba(0,212,255,0.2)'),
+  new Ring(220, -0.18, 0.7, 1.1, 0.5, 'rgba(0,150,255,0.12)'),
+  new Ring(55, 0.7, 0.1, 0.1, 2.8, 'rgba(0,255,200,0.3)'),
+];
+const particles = Array.from({length: 60}, () => new Particle());
+
+function animate(t) { ctx.clearRect(0, 0, W, H); particles.forEach(p => p.draw()); rings.forEach(r => r.draw(t)); requestAnimationFrame(animate); }
+animate(0);
+
+// === UI ===
+const chat = document.getElementById('chat');
+const input = document.getElementById('input');
+const sendBtn = document.getElementById('send');
+const agentList = document.getElementById('agent-list');
+const hdrStatus = document.getElementById('hdr-status');
+const hdrModel = document.getElementById('hdr-model');
+
+function addMessage(text, role) {
+  const div = document.createElement('div'); div.className = 'msg ' + role;
+  if (role === 'agent') {
+    const l = document.createElement('div'); l.className = 'label';
+    l.innerHTML = '&#x25c6; J.A.R.V.I.S <span class="tag">jarvis</span>';
+    div.appendChild(l);
+  }
+  const c = document.createElement('div'); c.textContent = text; div.appendChild(c);
+  chat.appendChild(div); chat.scrollTop = chat.scrollHeight;
+  return div;
+}
+
+function addStreamMsg() {
+  const div = document.createElement('div'); div.className = 'msg agent';
+  const l = document.createElement('div'); l.className = 'label';
+  l.innerHTML = '&#x25c6; J.A.R.V.I.S <span class="tag">processing</span>'; div.appendChild(l);
+  const c = document.createElement('div'); c.id = 'stream-content';
+  const cur = document.createElement('span'); cur.className = 'cursor'; c.appendChild(cur);
+  div.appendChild(c); chat.appendChild(div); chat.scrollTop = chat.scrollHeight;
+  return { div, content: c };
+}
+
+function setLoad(on) { sendBtn.disabled = on; input.disabled = on; }
+
+async function checkStatus() {
+  try {
+    const r = await fetch('/status'); const d = await r.json();
+    hdrStatus.innerHTML = '<span class="dot online"></span>online';
+    hdrModel.textContent = (d.llm_backend || '?').toUpperCase() + ' // ' + (d.agents || []).length + ' AGENTS';
+    renderAgents(d.agents || []);
+    return d;
+  } catch {
+    hdrStatus.innerHTML = '<span class="dot offline"></span>offline';
+    hdrModel.textContent = '—';
+    return null;
+  }
+}
+
+function renderAgents(names) {
+  agentList.innerHTML = '';
+  const tiers = [
+    { label: 'CMD', names: ['jarvis','friday','pepper','jerome'] },
+    { label: 'BIZ', names: ['athena','stark','veronica','vision'] },
+    { label: 'TECH', names: ['steve','oracle','ultron'] },
+    { label: 'FOUND', names: ['gecko','hercules','hephaestus','frigga'] },
+  ];
+  tiers.forEach(t => {
+    const avail = t.names.filter(n => names.includes(n));
+    if (!avail.length) return;
+    const g = document.createElement('div'); g.className = 'agent-g';
+    const gl = document.createElement('div'); gl.className = 'g-label'; gl.textContent = t.label; g.appendChild(gl);
+    avail.forEach(name => {
+      const item = document.createElement('div'); item.className = 'agent-item';
+      item.innerHTML = `<span class="a-dot on"></span>${name.charAt(0).toUpperCase() + name.slice(1)}`;
+      g.appendChild(item);
+    });
+    agentList.appendChild(g);
+  });
+}
+
+async function send() {
+  const text = input.value.trim(); if (!text) return;
+  input.value = ''; addMessage(text, 'user'); setLoad(true);
+  const { content } = addStreamMsg();
+  const cursor = content.querySelector('.cursor');
+  let full = '';
+  try {
+    const r = await fetch('/chat/stream', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ message: text }),
+    });
+    const reader = r.body.getReader(); const dec = new TextDecoder(); let buf = '';
+    while (true) {
+      const { done, value } = await reader.read(); if (done) break;
+      buf += dec.decode(value, { stream: true });
+      const lines = buf.split('\n'); buf = lines.pop() || '';
+      for (const line of lines) {
+        if (!line.startsWith('data: ')) continue;
+        try { const d = JSON.parse(line.slice(6));
+          if (d.token) { full += d.token; if (cursor) cursor.remove(); content.textContent = full; chat.scrollTop = chat.scrollHeight; }
+          if (d.done) { if (cursor) cursor.remove(); content.textContent = full; }
+        } catch {}
+      }
+    }
+    const tag = content.closest('.msg')?.querySelector('.tag');
+    if (tag) tag.textContent = 'jarvis';
+  } catch (e) {
+    content.textContent = 'Error: ' + e.message; const m = content.closest('.msg'); if (m) m.classList.add('error');
+  }
+  setLoad(false);
+}
+
+// Dashboard
+function parseWeather(s) {
+  if (!s || s === '—') return { loc: '—', temp: '—', desc: '—', unit: '' };
+  const m = s.match(/^([^:]+):\s*(.*)/);
+  if (!m) return { loc: '—', temp: s.slice(0,20), desc: '', unit: '' };
+  const loc = m[1]; const rest = m[2];
+  const t = rest.match(/([+-]?\d+[°]?[CF])/);
+  return { loc, temp: t ? t[1] : rest.slice(0,10), desc: rest.replace(/[+-]?\d+[°]?[CF]\s*,\s*/, '').replace(/,?\s*\d+% humidity.*/, '').trim(), unit: '' };
+}
+
+async function refreshDashboard() {
+  try {
+    const r = await fetch('/dashboard'); const d = await r.json();
+    // Weather
+    const w = parseWeather(d.weather);
+    document.getElementById('w-loc').textContent = w.loc.toUpperCase();
+    document.getElementById('w-temp').innerHTML = w.temp + ' <span style="font-size:14px;color:rgba(0,212,255,0.3)">' + w.desc.slice(0,18) + '</span>';
+    document.getElementById('w-desc').textContent = w.desc;
+    // News
+    const nl = document.getElementById('w-news-list');
+    nl.innerHTML = (d.news || []).map(h => `<div class="hl">${h}</div>`).join('') || '<div class="hl" style="color:rgba(200,214,229,0.15)">No data</div>';
+    // System
+    const sys = d.system || {};
+    document.getElementById('w-sys-rows').innerHTML = `
+      <div class="row"><span class="key">Engine</span><span class="val">${sys.backend || '—'}</span></div>
+      <div class="row"><span class="key">Agents</span><span class="val">${sys.agents || 0}</span></div>
+      <div class="row"><span class="key">Turns</span><span class="val">${sys.turns || 0}</span></div>
+      <div class="row"><span class="key">Vectors</span><span class="val">${sys.vectors || 0}</span></div>
+      <div class="row"><span class="key">Session</span><span class="val" style="font-size:8px">${sys.session || '—'}</span></div>
+    `;
+    // Recent
+    const cl = document.getElementById('w-conv-list');
+    const turns = (d.conversation?.last_turns || []).slice(-3);
+    cl.innerHTML = turns.length
+      ? turns.map(t => `<div class="turn"><span class="r">${(t.role||'?').toUpperCase()}</span> <span class="p">${(t.preview||'').slice(0,45)}</span></div>`).join('')
+      : '<div class="turn" style="color:rgba(200,214,229,0.1)">No conversation yet</div>';
+  } catch {}
+}
+
+sendBtn.addEventListener('click', send);
+input.addEventListener('keydown', e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); } });
+input.focus();
+
+checkStatus().then(d => { if (!d) addMessage('System offline. Start with: python serve.py', 'agent'); });
+refreshDashboard();
+setInterval(refreshDashboard, 30000);
+</script>
+</body>
+</html>

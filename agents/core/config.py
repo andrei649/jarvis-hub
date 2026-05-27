@@ -1,0 +1,59 @@
+"""
+config.py — Jarvis configuration loader.
+
+Loads agents.yaml and provides typed access to all config values.
+"""
+
+import yaml
+from pathlib import Path
+from typing import Optional
+
+
+class AgentConfig:
+    def __init__(self, data: dict):
+        self.id: str = data.get("id", "")
+        self.name: str = data.get("name", self.id)
+        self.status: str = data.get("status", "active")
+        self.model: str = data.get("model", "google/gemma-4-26b-a4b")
+
+        channels_data = data.get("channels", "")
+        if isinstance(channels_data, str):
+            self.channel_primary = channels_data
+            self.channel_fallback = ""
+        else:
+            self.channel_primary = channels_data.get("primary", "voice")
+            self.channel_fallback = channels_data.get("fallback", "")
+        self.has_heartbeat: bool = data.get("heartbeat", False)
+        self.tier: str = data.get("tier", "foundation")
+
+        # Plugin permissions this agent needs
+        self.plugins: list[str] = data.get("plugins", [])
+
+
+class JarvisConfig:
+    def __init__(self, path: str = "agents/_system/agents.yaml"):
+        self.path = Path(path)
+        self.agents: dict[str, AgentConfig] = {}
+        self.general: dict = {}
+        self.plugins: dict = {}
+        self._load()
+
+    def _load(self):
+        if not self.path.exists():
+            raise FileNotFoundError(f"Config not found: {self.path}")
+
+        with open(self.path, "r", encoding="utf-8") as f:
+            data = yaml.safe_load(f)
+
+        for agent_id, agent_data in data.get("agents", {}).items():
+            agent_data["id"] = agent_id
+            self.agents[agent_id] = AgentConfig(agent_data)
+
+        self.general = data.get("general", {})
+        self.plugins = data.get("plugins", {})
+
+    def get_active_agents(self) -> list[AgentConfig]:
+        return [a for a in self.agents.values() if a.status == "active"]
+
+    def get_agent(self, agent_id: str) -> Optional[AgentConfig]:
+        return self.agents.get(agent_id)

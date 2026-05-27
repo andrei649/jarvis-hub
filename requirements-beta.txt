@@ -1,0 +1,37 @@
+# Cabinet Beta — dependency groups
+# Install all: pip install -r requirements-beta.txt
+
+# === Core (always required) ===
+pyyaml>=6.0
+apscheduler>=3.10
+httpx>=0.27
+
+# === Web UI ===
+fastapi>=0.110
+uvicorn>=0.29
+
+# === Memory (optional — improves with numpy) ===
+numpy>=1.26
+
+# === Voice Pipeline (optional groups) ===
+
+# Wake word detection
+# pip install openwakeword pyaudio
+
+# Speech-to-text (GPU-accelerated)
+# pip install faster-whisper torch
+
+# Text-to-speech (online, high quality)
+# pip install edge-tts
+# OR offline:
+# pip install kokoro
+
+# Audio playback
+# pip install pygame
+
+# === Plugins (no extra deps — use httpx) ===
+# Weather: uses wttr.in (free, no API key)
+# News: uses BBC RSS feeds
+
+# === Development ===
+# pip install pytest
