@@ -12,6 +12,9 @@ ollama>=0.1
 fastapi>=0.110
 uvicorn>=0.29
 
+# Security
+cryptography>=43.0
+
 # Voice (optional — install manually or use requirements-beta.txt)
 # openwakeword
 # faster-whisper

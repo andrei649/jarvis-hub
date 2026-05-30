@@ -698,6 +698,7 @@ ADMIN_HTML_TEMPLATE = r"""<!DOCTYPE html>
 </head>
 <body>
 <div id="root"></div>
+<script>var _t=function(k){return k;};</script>
 <script src="/static/react.production.min.js"></script>
 <script src="/static/react-dom.production.min.js"></script>
 <script src="/static/data.js"></script>

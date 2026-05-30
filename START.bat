@@ -31,8 +31,8 @@ echo.
 echo (Lasa aceasta fereastra deschisa. Inchide-o ca sa opresti serverul.)
 echo.
 
-REM Open the browser after a short delay, then run the server (blocking).
-start "" /b cmd /c "timeout /t 4 >nul & start http://127.0.0.1:8000/"
+REM Open the browser once the server is listening (poll port 8000).
+start "" /b powershell -NoProfile -Command "Write-Host 'Astept pornirea serverului...'; while ($true) { try { $r = Invoke-WebRequest -Uri 'http://127.0.0.1:8000/' -UseBasicParsing -TimeoutSec 2; if ($r.StatusCode -eq 200) { Start-Process 'http://127.0.0.1:8000/'; break } } catch { Start-Sleep 3 } }"
 
 "%VPY%" serve.py
 
