@@ -3,16 +3,27 @@
 import pytest
 from httpx import AsyncClient, ASGITransport
 
+from fastapi import Body
+
 from .conftest import make_app
+
+
+async def _health_metrics(payload: dict = Body(...)):
+    vals = payload.get("values", [])
+    return {
+        "status": "processed",
+        "analysis": {
+            "mean": sum(vals) / len(vals) if vals else 0,
+            "max": max(vals) if vals else 0,
+            "min": min(vals) if vals else 0,
+        },
+    }
 
 
 @pytest.fixture
 def app():
     return make_app("agents.core.skills.health", "health", prefix="/api/skills/health", fallback_routes={
-        "POST /metrics": lambda p: {
-            "status": "processed",
-            "analysis": {"mean": 81.0, "max": 110.0, "min": 68.0},
-        },
+        "POST /metrics": _health_metrics,
     })
 
 

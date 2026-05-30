@@ -5,7 +5,13 @@ import sqlite3
 import pytest
 from httpx import AsyncClient, ASGITransport
 
+from fastapi import Body
+
 from .conftest import make_app
+
+
+async def _pm_create(payload: dict = Body(...)):
+    return {"status": "success", "id": 2}
 
 
 @pytest.fixture
@@ -18,7 +24,7 @@ def app(tmp_path):
 
     return make_app("agents.core.skills.pm", "pm", prefix="/api/skills/pm", fallback_routes={
         "GET /tasks": lambda: [{"id": 1, "title": "Test Task", "status": "todo"}],
-        "POST /tasks": lambda p: {"status": "success", "id": 2},
+        "POST /tasks": (_pm_create, 201),
     })
 
 

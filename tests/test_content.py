@@ -5,13 +5,19 @@ from unittest.mock import mock_open, patch
 import pytest
 from httpx import AsyncClient, ASGITransport
 
+from fastapi import Body
+
 from .conftest import make_app
+
+
+async def _content_create(payload: dict = Body(...)):
+    return {"status": "success", "draft_id": "d1"}
 
 
 @pytest.fixture
 def app():
     return make_app("agents.core.skills.content", "content", prefix="/api/skills/content", fallback_routes={
-        "POST /draft": lambda p: {"status": "success", "draft_id": "d1"},
+        "POST /draft": _content_create,
         "GET /draft/{platform}": lambda plat: [],
     })
 

@@ -42,7 +42,11 @@ def make_app(module_path: str, fallback_name: str, prefix: str = "",
         for route_spec, handler in fallback_routes.items():
             method, path = route_spec.split(" ", 1)
             method = method.upper()
-            router.add_api_route(path, handler, methods=[method])
+            if isinstance(handler, tuple):
+                handler, status_code = handler
+                router.add_api_route(path, handler, methods=[method], status_code=status_code)
+            else:
+                router.add_api_route(path, handler, methods=[method])
 
     app.include_router(router, prefix=prefix)
     return app
