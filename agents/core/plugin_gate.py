@@ -42,6 +42,26 @@ class PluginManifest:
 
 # Built-in plugin manifests
 BUILTIN_PLUGINS = {
+    "weather": PluginManifest(
+        id="weather",
+        name="Weather (wttr.in)",
+        version="0.1.0",
+        description="Real-time weather data from wttr.in",
+        network_access=NetworkAccess.RESTRICTED,
+        data_scope=DataScope.PROCESSED,
+        allowed_domains=["wttr.in"],
+        agents_served=["all"],
+    ),
+    "news": PluginManifest(
+        id="news",
+        name="News (BBC RSS)",
+        version="0.1.0",
+        description="News headlines from BBC RSS feeds",
+        network_access=NetworkAccess.RESTRICTED,
+        data_scope=DataScope.PROCESSED,
+        allowed_domains=["feeds.bbci.co.uk"],
+        agents_served=["all"],
+    ),
     "cloud-llm": PluginManifest(
         id="cloud-llm",
         name="Cloud LLM Fallback",

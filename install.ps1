@@ -46,19 +46,12 @@ if (-not (Test-Path $pip)) {
 # ---- Core dependencies ----
 Write-Host "[...] Installing core dependencies..." -ForegroundColor Yellow
 & $pip install --upgrade pip
-& $pip install pyyaml apscheduler httpx numpy
+& $pip install pyyaml apscheduler httpx python-dotenv ollama fastapi uvicorn
 if ($LASTEXITCODE -ne 0) {
     Write-Host "[FAIL] Core dependency install failed" -ForegroundColor Red
     exit 1
 }
 Write-Host "[OK] Core dependencies installed" -ForegroundColor Green
-
-# ---- Web UI ----
-if ($WithWeb -or $All) {
-    Write-Host "[...] Installing web dependencies..." -ForegroundColor Yellow
-    & $pip install fastapi uvicorn
-    Write-Host "[OK] Web dependencies installed" -ForegroundColor Green
-}
 
 # ---- Voice pipeline ----
 if ($WithVoice -or $All) {
@@ -71,7 +64,7 @@ if ($WithVoice -or $All) {
 
 # ---- Verify ----
 Write-Host "[...] Verifying installation..." -ForegroundColor Yellow
-& $pip list --format=columns | Select-String -Pattern "pyyaml|apscheduler|httpx|fastapi|uvicorn|numpy|edge-tts" | ForEach-Object {
+& $pip list --format=columns | Select-String -Pattern "pyyaml|apscheduler|httpx|fastapi|uvicorn|python-dotenv|ollama" | ForEach-Object {
     Write-Host "  $_" -ForegroundColor Gray
 }
 

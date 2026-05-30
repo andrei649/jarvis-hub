@@ -14,15 +14,13 @@ class AgentConfig:
         self.id: str = data.get("id", "")
         self.name: str = data.get("name", self.id)
         self.status: str = data.get("status", "active")
-        self.model: str = data.get("model", "google/gemma-4-26b-a4b")
+        self.model: str = data.get("model", "google/gemma-4-31b-a4b")
 
-        channels_data = data.get("channels", "")
-        if isinstance(channels_data, str):
-            self.channel_primary = channels_data
-            self.channel_fallback = ""
+        channel_val = data.get("channel", "")
+        if isinstance(channel_val, str):
+            self.channel = channel_val
         else:
-            self.channel_primary = channels_data.get("primary", "voice")
-            self.channel_fallback = channels_data.get("fallback", "")
+            self.channel = channel_val.get("primary", "voice")
         self.has_heartbeat: bool = data.get("heartbeat", False)
         self.tier: str = data.get("tier", "foundation")
 

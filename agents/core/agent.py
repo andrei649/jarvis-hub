@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Optional
 
 from .llm.router import LLMRouter
+from .security.guardrails import GuardrailsEngine
 
 logger = logging.getLogger("jarvis.agent")
 
@@ -22,14 +23,16 @@ DEMOTION_TIERS = {
 
 
 class Agent:
-    def __init__(self, agent_id: str, config: dict, llm_router: LLMRouter = None):
+    def __init__(self, agent_id: str, config: dict, llm_router: LLMRouter = None, permission_gate=None):
         self.id = agent_id
         self.name = config.get("name", agent_id)
         self.config = config
         self.soul: dict = {}
         self.has_heartbeat = config.get("heartbeat", False)
         self.llm_router = llm_router
+        self.permission_gate = permission_gate
         self._failures = 0
+        self._last_latency = 0.0
         self._checkpoint_manager = None
         self._load_soul()
 
@@ -42,17 +45,21 @@ class Agent:
         else:
             logger.warning(f"SOUL.md not found for {self.id}")
 
+    @property
+    def last_latency(self) -> float:
+        return self._last_latency
+
     def set_checkpoint_manager(self, mgr):
         self._checkpoint_manager = mgr
 
     async def process(self, text: str, context: dict) -> str:
         system_prompt = self.soul.get("content", "")
-        model = self.config.get("model", "google/gemma-4-26b-a4b")
+        model = self.config.get("model", "google/gemma-4-31b-a4b")
 
         if not self.llm_router:
             return f"[{self.name} no LLM backend]"
 
-        backend = self.llm_router.backend
+        backend = self.guardrails if self.guardrails else self.llm_router.backend
 
         agent_context = context.get("agent_context", {})
         agent_block = ""
@@ -86,6 +93,7 @@ class Agent:
                 system=system_prompt,
             )
             latency = time.monotonic() - start
+            self._last_latency = latency
 
             if self._checkpoint_manager:
                 self._checkpoint_manager.record_call(self.id, success=True, latency=latency)
@@ -95,6 +103,7 @@ class Agent:
             return response
         except Exception as e:
             latency = time.monotonic() - start
+            self._last_latency = latency
             self._record_failure(str(e))
             if self._checkpoint_manager:
                 self._checkpoint_manager.record_call(self.id, success=False, latency=latency, error=str(e))
@@ -131,7 +140,7 @@ class Agent:
                     parts.append(f"[{agent_id}]: {self._strip_control_tokens(resp)}")
             return " | ".join(parts) if parts else "Done, sir."
 
-        model = self.config.get("model", "google/gemma-4-26b-a4b")
+        model = self.config.get("model", "google/gemma-4-31b-a4b")
         system_prompt = self.soul.get("content", "")
 
         prompt = (
@@ -141,7 +150,7 @@ class Agent:
         )
 
         try:
-            backend = self.llm_router.backend
+            backend = self.guardrails if self.guardrails else self.llm_router.backend
             response = await backend.generate(
                 model=model,
                 prompt=prompt,

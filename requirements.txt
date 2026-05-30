@@ -3,20 +3,22 @@
 pyyaml>=6.0
 apscheduler>=3.10
 httpx>=0.27
+python-dotenv>=1.0
 
 # LLM
 ollama>=0.1
 
-# Voice (week 2+)
-# openwakeword  # custom wake word
-# faster-whisper  # STT
-# kokoro-onnx  # TTS
+# Web
+fastapi>=0.110
+uvicorn>=0.29
 
-# Memory (week 3+)
-# qdrant-client  # vector DB
-# neo4j  # graph DB
-# letta  # memory tiers
+# Voice (optional — install manually or use requirements-beta.txt)
+# openwakeword
+# faster-whisper
+# kokoro-onnx
 
-# Web (week 4+)
-# fastapi
-# uvicorn
+# Memory (optional — install manually or use requirements-beta.txt)
+# numpy>=1.26
+# qdrant-client
+# neo4j
+# letta

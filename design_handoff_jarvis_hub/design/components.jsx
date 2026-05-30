@@ -115,8 +115,13 @@ function AgentList({ agents, tiers, activeAgent, onSelect, sys }) {
                   onClick={() => onSelect(a.id)}
                 >
                   <StatusDot status={a.status} />
-                  <div className="agent-name">{a.name}</div>
-                  <div className="agent-role">{a.role}</div>
+                  {a.glyph && (
+                    <svg viewBox="-12 -12 24 24" width="14" height="14" className="agent-glyph" style={{ position: 'absolute', marginLeft: 22, marginTop: -2 }}>
+                      <path d={a.glyph} fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinejoin="round" />
+                    </svg>
+                  )}
+                  <div className="agent-name" style={{ paddingLeft: a.glyph ? 20 : 0 }}>{a.name}</div>
+                  <div className="agent-role" style={{ paddingLeft: a.glyph ? 20 : 0 }}>{a.role}</div>
                   <div className="agent-model">{a.model.split('-').slice(0,2).join('-')}</div>
                 </button>
               ))}

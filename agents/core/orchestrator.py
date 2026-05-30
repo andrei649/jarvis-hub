@@ -7,6 +7,7 @@ skills system, checkpointing, agent handoff, promotion/demotion.
 import asyncio
 import logging
 import os
+import time
 from pathlib import Path
 from typing import Callable, Optional
 
@@ -25,14 +26,19 @@ from .plugins.telegram_bot import TelegramBotPlugin
 from .plugins.gmail_plugin import GmailPlugin
 from .plugins.whatsapp_bridge import WhatsAppBridgePlugin
 from .plugins.spotify_plugin import SpotifyPlugin
+from .plugins.google_calendar import GoogleCalendarPlugin
+from .plugins.apple_health import AppleHealthPlugin
+from .plugins.homebridge import HomebridgePlugin
 from .skills.loader import SkillLoader
 from .skills.importer import SkillImporter
 from .mcp.client import MCPManager
 from .learning.loop import LearningLoop
 from .sandbox import Sandbox
 from .bench import LatencyBenchmark
+from .plugin_gate import PermissionGate
 from .security.guardrails import GuardrailsEngine
-from .security.types import RedactionMode
+from .security.audit import AuditLogger
+from .security.types import RedactionMode, SecurityEvent, SecurityEventType, ThreatLevel
 from .channels.base import ChannelAdapter
 from .channels.web import WebChannel
 from .channels.voice import VoiceChannel
@@ -64,6 +70,8 @@ class Orchestrator:
         self.bench = LatencyBenchmark()
         self.sandbox = Sandbox()
         self.security: Optional[GuardrailsEngine] = None
+        self.permission_gate = PermissionGate()
+        self.audit = AuditLogger()
         self.session_id: Optional[str] = None
         self.on_token: Optional[Callable] = None
 
@@ -71,27 +79,32 @@ class Orchestrator:
         await self.llm_router.detect()
         logger.info(f"LLM backend: {self.llm_router.name}")
 
-        if self.llm_router._backend is not None:
+        try:
+            backend = self.llm_router.backend
             self.security = GuardrailsEngine(
-                backend=self.llm_router._backend,
+                backend=backend,
                 mode=RedactionMode.WARN,
                 scan_input=True,
                 scan_output=True,
             )
             logger.info("Security guardrails enabled")
+        except RuntimeError:
+            logger.warning("No LLM backend detected — guardrails disabled")
 
         for agent_id, agent_config in self.config.agents.items():
             if agent_config.status == "active":
-                model = "google/gemma-4-26b-a4b"
                 agent_dict = {
                     "name": agent_config.name,
-                    "model": model,
+                    "model": agent_config.model,
                     "heartbeat": agent_config.has_heartbeat,
-                    "channels": agent_config.channel_primary,
+                    "channel": agent_config.channel,
                     "plugins": agent_config.plugins,
                     "tier": agent_config.tier,
                 }
-                self.agents[agent_id] = Agent(agent_id, agent_dict, self.llm_router)
+                agent = Agent(agent_id, agent_dict, self.llm_router, permission_gate=self.permission_gate)
+                if self.security:
+                    agent.guardrails = self.security
+                self.agents[agent_id] = agent
                 logger.info(f"Loaded: {agent_id}")
 
         self.plugins["weather"] = WeatherPlugin()
@@ -102,10 +115,31 @@ class Orchestrator:
             anthropic_key=os.environ.get("ANTHROPIC_API_KEY", ""),
             openai_key=os.environ.get("OPENAI_API_KEY", ""),
         )
-        self.plugins["telegram"] = TelegramBotPlugin()
-        self.plugins["gmail"] = GmailPlugin()
-        self.plugins["whatsapp"] = WhatsAppBridgePlugin()
-        self.plugins["spotify"] = SpotifyPlugin()
+        self.plugins["telegram"] = TelegramBotPlugin(
+            token=os.environ.get("TELEGRAM_BOT_TOKEN", ""),
+        )
+        self.plugins["gmail"] = GmailPlugin(
+            access_token=os.environ.get("GMAIL_ACCESS_TOKEN", ""),
+        )
+        self.plugins["whatsapp"] = WhatsAppBridgePlugin(
+            bridge_url=os.environ.get("WHATSAPP_BRIDGE_URL", "http://192.168.1.100:3000"),
+        )
+        self.plugins["spotify"] = SpotifyPlugin(
+            client_id=os.environ.get("SPOTIFY_CLIENT_ID", ""),
+            client_secret=os.environ.get("SPOTIFY_CLIENT_SECRET", ""),
+            access_token=os.environ.get("SPOTIFY_ACCESS_TOKEN", ""),
+            refresh_token=os.environ.get("SPOTIFY_REFRESH_TOKEN", ""),
+        )
+        self.plugins["google-calendar"] = GoogleCalendarPlugin(
+            access_token=os.environ.get("GOOGLE_CALENDAR_TOKEN", ""),
+        )
+        self.plugins["apple-health"] = AppleHealthPlugin(
+            bridge_url=os.environ.get("APPLE_HEALTH_BRIDGE_URL", "http://192.168.1.100:8081"),
+        )
+        self.plugins["homebridge"] = HomebridgePlugin(
+            bridge_url=os.environ.get("HOMEBRIDGE_URL", "http://192.168.1.100:8581"),
+            api_token=os.environ.get("HOMEBRIDGE_TOKEN", ""),
+        )
 
         self.skills.discover()
         logger.info(f"Skills loaded: {list(self.skills.skills.keys())}")
@@ -145,7 +179,7 @@ class Orchestrator:
                 await ch.send(response)
         return response
 
-    async def handle_input(self, text: str, channel: str = "voice") -> str:
+    async def handle_input(self, text: str, channel: str = "voice", agent_override: str = None) -> str:
         self.memory.add_turn(self.session_id, "user", text)
 
         skill_cmd = self.skills.parse_command(text)
@@ -157,6 +191,26 @@ class Orchestrator:
                 if result:
                     self.memory.add_turn(self.session_id, "assistant", result, agent_id=skill_name)
                     return result
+
+        if agent_override and agent_override in self.agents:
+            intent = await self.router.classify(text, self.agents)
+            plugin_data = await self._gather_plugin_data(text, intent)
+            responses = await self._call_agents_parallel(
+                [agent_override], text, intent.context, plugin_data
+            )
+            synthesized = list(responses.values())[0] if responses else ""
+            self.memory.add_turn(self.session_id, "assistant", synthesized, agent_id=agent_override)
+            self.checkpoints.save(self)
+            self._log_session(text, intent, responses, synthesized)
+            self._record_interactions(text, responses, synthesized)
+            self.audit.log(SecurityEvent(
+                event_type=SecurityEventType.LLM_CALL,
+                timestamp=time.time(),
+                findings=[],
+                content_preview=synthesized[:100],
+                action_taken=f"handle_input(agent_override={agent_override}) via {channel}",
+            ))
+            return synthesized
 
         intent = await self.router.classify(text, self.agents)
         plugin_data = await self._gather_plugin_data(text, intent)
@@ -199,9 +253,17 @@ class Orchestrator:
 
         self._record_interactions(text, responses, synthesized)
 
+        self.audit.log(SecurityEvent(
+            event_type=SecurityEventType.LLM_CALL,
+            timestamp=time.time(),
+            findings=[],
+            content_preview=synthesized[:100],
+            action_taken=f"handle_input via {channel}",
+        ))
+
         return synthesized
 
-    async def handle_input_stream(self, text: str, channel: str = "voice") -> str:
+    async def handle_input_stream(self, text: str, channel: str = "voice", on_token: Callable = None, agent_override: str = None) -> str:
         self.memory.add_turn(self.session_id, "user", text)
 
         skill_cmd = self.skills.parse_command(text)
@@ -212,60 +274,73 @@ class Orchestrator:
                 result = await skill.execute(command, args, {"channel": channel})
                 if result:
                     self.memory.add_turn(self.session_id, "assistant", result, agent_id=skill_name)
-                    if self.on_token:
-                        self.on_token(result)
+                    if on_token:
+                        on_token(result)
                     return result
 
         intent = await self.router.classify(text, self.agents)
         plugin_data = await self._gather_plugin_data(text, intent)
-        target = intent.target_agents if intent.target_agents else ["jarvis"]
+        if agent_override and agent_override in self.agents:
+            target = [agent_override]
+        else:
+            target = intent.target_agents if intent.target_agents else ["jarvis"]
 
-        if self.on_token:
-            try:
-                backend = self.llm_router.backend
-            except RuntimeError:
-                msg = "I'm sorry, sir — my language backend is not available. Please start Ollama or LM Studio and try again."
-                self.on_token(msg)
-                return msg
+        try:
+            _ = self.llm_router.backend
+        except RuntimeError:
+            msg = "I'm sorry, sir — my language backend is not available. Please start Ollama or LM Studio and try again."
+            if on_token:
+                on_token(msg)
+            return msg
 
-            for agent_id in target:
-                if agent_id in self.agents:
-                    agent = self.agents[agent_id]
-                    history = self.memory.get_context(self.session_id, last_n=6)
-                    system_prompt = agent.soul.get("content", "")
-                    plugin_block = self._format_plugin_data(plugin_data)
-                    agent_context = self.memory.get_agent_context(agent_id)
-                    context_block = ""
-                    if agent_context:
-                        context_block = f"Agent context: {agent_context}\n"
-                    prompt = (
-                        f"Conversation history:\n{history}\n\n"
-                        f"{plugin_block}{context_block}"
-                        f"User: {text}\n"
-                        f"Respond as {agent.name}."
+        backend = self.security if self.security else self.llm_router.backend
+        synthesized = ""
+        for agent_id in target:
+            if agent_id in self.agents:
+                agent = self.agents[agent_id]
+                history = self.memory.get_context(self.session_id, last_n=6)
+                system_prompt = agent.soul.get("content", "")
+                plugin_block = self._format_plugin_data(plugin_data)
+                agent_context = self.memory.get_agent_context(agent_id)
+                context_block = ""
+                if agent_context:
+                    context_block = f"Agent context: {agent_context}\n"
+                prompt = (
+                    f"Conversation history:\n{history}\n\n"
+                    f"{plugin_block}{context_block}"
+                    f"User: {text}\n"
+                    f"Respond as {agent.name}."
+                )
+                model = agent.config.get("model", "qwen/qwen3.5-9b")
+
+                checkpoint = self.checkpoints.load(agent_id, self.session_id)
+                if checkpoint:
+                    prompt = f"[RESUMED FROM CHECKPOINT]\n{checkpoint['prompt']}\n---\n{prompt}"
+
+                if on_token and hasattr(backend, "generate_stream"):
+                    response = await backend.generate_stream(
+                        model=model, prompt=prompt,
+                        system=system_prompt,
+                        on_token=on_token,
                     )
-                    model = agent.config.get("model", "qwen/qwen3.5-9b")
+                else:
+                    response = await backend.generate(
+                        model=model, prompt=prompt, system=system_prompt,
+                    )
+                    if on_token:
+                        on_token(response)
+                synthesized = response
+                break
 
-                    checkpoint = self.checkpoints.load(agent_id, self.session_id)
-                    if checkpoint:
-                        prompt = f"[RESUMED FROM CHECKPOINT]\n{checkpoint['prompt']}\n---\n{prompt}"
-
-                    if hasattr(backend, "generate_stream"):
-                        response = await backend.generate_stream(
-                            model=model, prompt=prompt,
-                            system=system_prompt,
-                            on_token=self.on_token,
-                        )
-                    else:
-                        response = await backend.generate(
-                            model=model, prompt=prompt, system=system_prompt,
-                        )
-                        self.on_token(response)
-                    synthesized = response
-                    break
-
-        self.memory.add_turn(self.session_id, "assistant", synthesized, agent_id="jarvis")
+        self.memory.add_turn(self.session_id, "assistant", synthesized, agent_id=agent_id)
         self.checkpoints.save(self)
+        self.audit.log(SecurityEvent(
+            event_type=SecurityEventType.LLM_CALL,
+            timestamp=time.time(),
+            findings=[],
+            content_preview=synthesized[:100],
+            action_taken=f"handle_input_stream({agent_id}) via {channel}",
+        ))
         return synthesized
 
     def _detect_handoff(self, responses: dict[str, str]) -> Optional[str]:
@@ -304,18 +379,35 @@ class Orchestrator:
         data = {}
         keywords = intent.context.get("keywords_found", [])
         text_lower = text.lower()
+        agent_id = intent.target_agents[0] if intent.target_agents else "jarvis"
 
         if "weather" in keywords or any(w in text_lower for w in ["weather", "vremea", "temperature", "ploaie", "temperatura"]):
-            location = self._extract_location(text)
-            data["weather"] = await self.plugins["weather"].get_weather(location)
+            if self.permission_gate.check_call("weather", agent_id):
+                wp = self.plugins.get("weather")
+                if wp:
+                    location = self._extract_location(text)
+                    data["weather"] = await wp.get_weather(location)
+            else:
+                logger.warning(f"Permission denied: agent {agent_id} cannot use weather plugin")
 
         if "news" in keywords or any(w in text_lower for w in ["news", "stiri", "headlines", "noutati"]):
-            category = "general"
-            if any(w in text_lower for w in ["tech", "technology", "tehnologie"]):
-                category = "technology"
-            elif any(w in text_lower for w in ["business", "afaceri"]):
-                category = "business"
-            data["news"] = await self.plugins["news"].summarize(category)
+            if self.permission_gate.check_call("news", agent_id):
+                np = self.plugins.get("news")
+                if np:
+                    category = "general"
+                    if any(w in text_lower for w in ["tech", "technology", "tehnologie"]):
+                        category = "technology"
+                    elif any(w in text_lower for w in ["business", "afaceri"]):
+                        category = "business"
+                    data["news"] = await np.summarize(category)
+            else:
+                logger.warning(f"Permission denied: agent {agent_id} cannot use news plugin")
+
+        if "calendar" in keywords or any(w in text_lower for w in ["calendar", "agenda", "program", "sedin", "meeting", "eveniment"]):
+            if self.permission_gate.check_call("google-calendar", agent_id):
+                gp = self.plugins.get("google-calendar")
+                if gp and gp.access_token:
+                    data["calendar"] = await gp.get_today_events()
 
         return data
 
@@ -344,37 +436,41 @@ class Orchestrator:
         history = self.memory.get_context(self.session_id, last_n=6)
         plugin_block = self._format_plugin_data(plugin_data or {})
 
-        tasks = {}
-        for agent_id in agent_ids:
-            if agent_id in self.agents:
-                enriched_text = text
-                if history:
-                    enriched_text = f"Context:\n{history}\n\nUser: {text}"
-                if plugin_block:
-                    enriched_text = f"{plugin_block}{enriched_text}"
+        async def _run_agent(agent_id: str) -> tuple[str, str, float]:
+            enriched_text = text
+            if history:
+                enriched_text = f"Context:\n{history}\n\nUser: {text}"
+            if plugin_block:
+                enriched_text = f"{plugin_block}{enriched_text}"
+            agent_context = self.memory.get_agent_context(agent_id)
+            if agent_context:
+                enriched_text = f"Agent context: {agent_context}\n\n{enriched_text}"
+            try:
+                resp = await asyncio.wait_for(
+                    self.agents[agent_id].process(enriched_text, context),
+                    timeout=120.0,
+                )
+                return agent_id, resp, self.agents[agent_id].last_latency
+            except asyncio.TimeoutError:
+                self.agents[agent_id]._record_failure("timeout")
+                return agent_id, f"[{agent_id} timeout]", 0.0
+            except Exception as e:
+                self.agents[agent_id]._record_failure(str(e))
+                return agent_id, f"[{agent_id} error: {e}]", 0.0
 
-                agent_context = self.memory.get_agent_context(agent_id)
-                if agent_context:
-                    enriched_text = f"Agent context: {agent_context}\n\n{enriched_text}"
+        valid_ids = [aid for aid in agent_ids if aid in self.agents]
+        for aid in agent_ids:
+            if aid not in self.agents:
+                logger.warning(f"Agent {aid} not loaded")
 
-                tasks[agent_id] = self.agents[agent_id].process(enriched_text, context)
-            else:
-                logger.warning(f"Agent {agent_id} not loaded")
+        coros = [_run_agent(aid) for aid in valid_ids]
+        results_list = await asyncio.gather(*coros)
 
         results = {}
-        for agent_id, task in tasks.items():
-            try:
-                model = self.agents[agent_id].config.get("model", "")
-                timeout = 120.0
-                results[agent_id] = await asyncio.wait_for(task, timeout=timeout)
-            except asyncio.TimeoutError:
-                results[agent_id] = f"[{agent_id} timeout]"
-                logger.warning(f"Agent {agent_id} timed out")
-                self.agents[agent_id]._record_failure("timeout")
-            except Exception as e:
-                results[agent_id] = f"[{agent_id} error: {e}]"
-                logger.warning(f"Agent {agent_id} error: {e}")
-                self.agents[agent_id]._record_failure(str(e))
+        self._last_latencies = {}
+        for agent_id, resp, latency in results_list:
+            results[agent_id] = resp
+            self._last_latencies[agent_id] = latency
         return results
 
     async def _synthesize(self, responses: dict[str, str], intent) -> str:
@@ -399,25 +495,26 @@ class Orchestrator:
                 is_timeout = resp.endswith("timeout]")
                 is_error = resp.endswith("error:") or "error:" in resp
                 success = not (is_timeout or is_error)
+                latency = getattr(self, "_last_latencies", {}).get(agent_id, 0.0)
                 self.learning.record(
                     agent_id=agent_id,
                     task=text[:200],
                     response=resp[:500],
                     success=success,
-                    latency=0.0,
+                    latency=latency,
                     error=resp if not success else None,
                     metadata={"channel": "web"},
                 )
                 self.bench.record(
                     agent_id=agent_id,
-                    latency=0.0,
+                    latency=latency,
                     success=success,
                     output_length=len(resp),
                     model=self.agents[agent_id].config.get("model", ""),
                 )
 
     def _log_session(self, text, intent, responses, synthesized):
-        logger.info(f"[{self.session_id[:20]}]: {text[:40]}... -> {synthesized[:40]}...")
+        logger.info(f"[{(self.session_id or 'none')[:20]}]: {text[:40]}... -> {synthesized[:40]}...")
 
     async def get_status(self) -> dict:
         return {

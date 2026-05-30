@@ -3,7 +3,7 @@ guardrails.py — Security-aware LLM call wrapper with scan/redact/block.
 """
 
 import logging
-from typing import Optional
+from typing import Callable, Optional
 
 from .scanner import PIIScanner, SecretScanner
 from .types import RedactionMode, ScanResult
@@ -79,6 +79,34 @@ class GuardrailsEngine:
                 system = self._handle_findings(system, result, "input")
 
         response = await self._backend.generate(model=model, prompt=prompt, system=system)
+
+        if self._scan_output and response:
+            result = self._scan_text(response)
+            if not result.clean:
+                response = self._handle_findings(response, result, "output")
+
+        return response
+
+    async def generate_stream(
+        self, model: str, prompt: str, system: str = "",
+        max_tokens: int = 1024, temperature: float = 0.7,
+        on_token: Callable[[str], None] = None,
+    ) -> str:
+        if self._scan_input:
+            result = self._scan_text(prompt)
+            if not result.clean:
+                prompt = self._handle_findings(prompt, result, "input")
+
+        if self._scan_input and system:
+            result = self._scan_text(system)
+            if not result.clean:
+                system = self._handle_findings(system, result, "input")
+
+        response = await self._backend.generate_stream(
+            model=model, prompt=prompt, system=system,
+            max_tokens=max_tokens, temperature=temperature,
+            on_token=on_token,
+        )
 
         if self._scan_output and response:
             result = self._scan_text(response)

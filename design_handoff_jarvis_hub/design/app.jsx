@@ -26,6 +26,18 @@ function App() {
   const [mic, setMic] = useState(false);
   const [thinking, setThinking] = useState(null);
   const [routedAgents, setRoutedAgents] = useState([]);
+  const [focusAgent, setFocusAgent] = useState(null);
+  const [paletteOpen, setPaletteOpen] = useState(false);
+
+  // Live sys metrics (breathing)
+  const liveSys = useLiveSys(data.SYS);
+
+  // Memo agent map for quick lookups
+  const agentMap = useMemo(() => Object.fromEntries(data.AGENTS.map((a) => [a.id, a])), [data.AGENTS]);
+
+  // ⌘K toggle
+  useHotkey('cmdk', () => setPaletteOpen((o) => !o));
+  useHotkey('esc',  () => { setPaletteOpen(false); setFocusAgent(null); });
 
   const accentPrimary = t.accent;
   const accentLight = ACCENT_LIGHT[t.accent] || '#7FDBFF';
@@ -88,17 +100,29 @@ function App() {
 
       <TopBar activeAgent={activeAgent} voiceState={voiceState} agentCount={15} sysOnline />
 
+      <SituationTicker items={data.TICKER} agentMap={agentMap} voiceState={voiceState} />
+
       <main className="hud-main">
         <AgentList
           agents={data.AGENTS}
           tiers={data.TIERS}
           activeAgent={activeAgent}
           onSelect={setActiveAgent}
-          sys={data.SYS}
+          sys={liveSys}
         />
 
         <section className="panel panel-center">
-          <VoiceVisualizer state={voiceState} activeAgent={activeAgent} onCycle={cycleVoice} />
+          <NetworkBrain
+            agents={data.AGENTS}
+            tasks={data.TASKS}
+            collab={data.COLLAB}
+            activeAgent={activeAgent}
+            onSelect={setActiveAgent}
+            focusAgent={focusAgent}
+            onFocusAgent={setFocusAgent}
+            routedAgents={routedAgents.length ? routedAgents : (thinking ? ['jarvis', activeAgent] : [])}
+            voiceState={voiceState}
+          />
           <ConversationView
             messages={messages}
             agents={data.AGENTS}
@@ -125,6 +149,19 @@ function App() {
           />
         </aside>
       </main>
+
+      <CommandPalette
+        open={paletteOpen}
+        onClose={() => setPaletteOpen(false)}
+        agents={data.AGENTS}
+        tasks={data.TASKS}
+        projects={data.PROJECTS}
+        onAction={(act) => {
+          if (act.type === 'focus_agent') setActiveAgent(act.agent);
+          if (act.type === 'voice_state') setTweak('voiceState', act.value);
+          if (act.type === 'clear_focus') setFocusAgent(null);
+        }}
+      />
 
       <TweaksPanel>
         <TweakSection label="HUD palette" />

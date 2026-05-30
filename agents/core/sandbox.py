@@ -48,12 +48,14 @@ class Sandbox:
         timeout: int = 30,
         max_memory_mb: int = 256,
         work_dir: str = "",
+        allow_subprocess: bool = False,
     ):
         self.docker_image = docker_image
         self.timeout = timeout
         self.max_memory_mb = max_memory_mb
         self.work_dir = Path(work_dir) if work_dir else Path(tempfile.mkdtemp())
         self._has_docker = self._check_docker()
+        self.allow_subprocess = allow_subprocess
 
     def _check_docker(self) -> bool:
         try:
@@ -69,11 +71,21 @@ class Sandbox:
     async def execute_python(self, code: str, filename: str = "script.py") -> SandboxResult:
         if self._has_docker:
             return await self._execute_docker_python(code, filename)
+        if not self.allow_subprocess:
+            return SandboxResult(
+                stderr="Subprocess execution disabled — set DEV_MODE=1 or configure allow_subprocess=True",
+                exit_code=-1,
+            )
         return await self._execute_subprocess_python(code, filename)
 
     async def execute_shell(self, command: str) -> SandboxResult:
         if self._has_docker:
             return await self._execute_docker_shell(command)
+        if not self.allow_subprocess:
+            return SandboxResult(
+                stderr="Subprocess execution disabled — set DEV_MODE=1 or configure allow_subprocess=True",
+                exit_code=-1,
+            )
         return await self._execute_subprocess_shell(command)
 
     async def _execute_docker_python(self, code: str, filename: str) -> SandboxResult:
@@ -140,10 +152,15 @@ class Sandbox:
                     duration=duration,
                 )
         except FileNotFoundError:
-            logger.warning("Docker not found, falling back to subprocess")
+            logger.warning("Docker not found")
             self._has_docker = False
-            return await self._execute_subprocess_python(
-                files.get("script.py", ""), "script.py"
+            if self.allow_subprocess:
+                return await self._execute_subprocess_python(
+                    files.get("script.py", ""), "script.py"
+                )
+            return SandboxResult(
+                stderr="Docker not available and subprocess execution disabled — set DEV_MODE=1",
+                exit_code=-1,
             )
         except Exception as e:
             duration = time.monotonic() - start
