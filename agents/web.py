@@ -564,6 +564,22 @@ async def get_sessions():
     return {"sessions": sessions}
 
 
+@app.post("/sessions/resume")
+async def resume_session(req: Request):
+    if not orch:
+        return JSONResponse({"error": "not initialized"}, status_code=503)
+    body = await req.json()
+    sid = body.get("session_id")
+    if not sid:
+        return JSONResponse({"error": "session_id required"}, status_code=400)
+    ok = await orch.memory.resume_session(sid)
+    if not ok:
+        return JSONResponse({"error": f"session '{sid}' not found"}, status_code=404)
+    orch.session_id = sid
+    history = await orch.memory.get_history(sid, last_n=20)
+    return JSONResponse({"ok": True, "session": sid, "turns": history})
+
+
 @app.get("/security")
 async def get_security():
     if not orch:

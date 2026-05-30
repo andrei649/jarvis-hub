@@ -152,9 +152,12 @@ Conversații indexate semantic, căutare similaritate.
 Entități, relații, fapte persistate. Scrie pe confirmare explicită.
 **AC:** „Unde lucrează Andrei?" → răspunde din graph
 
-### H3.3 — Session Persistence (S:5, Dep: H3.1)
+### H3.3 — Session Persistence (S:5, Dep: H3.1) 🟡 parțial
 Salvează/restaurează sesiuni cross-channel.
 **AC:** mesaj pe web → întrerup → întreb pe Telegram → același context
+- ✅ Persistență peste restart (`ConversationMemory` snapshot JSON + jsonl, restaurare la pornire) — **acum cu teste** (`tests/test_session_persistence.py`, 3 teste).
+- ✅ Resume explicit de sesiune anume: `ConversationMemory.resume_session()` + `MemoryManager.resume_session()` + endpoint `POST /sessions/resume`.
+- 🔴 **Decizie de design necesară:** „același context pe web + telegram" **contrazice** H1.2 (Telegram session isolation per `chat_id`). De stabilit: continuitate cross-channel opt-in (flag) vs. păstrare izolare. NU implementat unilateral.
 
 ### H3.4 — Learning Loop live (S:8, Dep: H3.1, H3.3)
 Analizează interacțiuni (succes/eșec), ajustează routing, promovează/demovează agenți.
