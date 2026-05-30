@@ -13,19 +13,19 @@ Legenda: ⬜ todo · 🔄 în lucru · ✅ done · ❌ invalid (verificat, nu e 
 
 | ID | Fișier | Problemă | Status |
 |----|--------|----------|--------|
-| B-9 | `web/static/app.js` ~127-150 | SSE: handler-ul de `end` din bucla principală **nu face `break`**, iar fragmentul rămas în `buf` e reprocesat după buclă → **mesaj agent dublat** dacă `end` ajunge într-un chunk parțial. VERIFICAT 30 mai. | 🔄 |
-| W-9 | `web/static/app.js` ~27-37 | Fără indicator de loading; fallback mock persistă tăcut dacă API e down. VERIFICAT (0 `loading` în app.js; doar admin.js are). | ⬜ |
-| W-8 | `web/static/admin.js:262` | `Channel` select are doar `['voice','web','telegram']` — lipsesc `discord`, `email`, `slack` (deși există adaptere în backend). VERIFICAT. | ⬜ |
+| B-9 | `web/static/app.js` | SSE: `end` nu făcea `break`, buf reprocesat → mesaj dublat. **Fix: guard `finished` + break.** | ✅ |
+| W-9 | `web/static/app.js` | Fără loading; mock persistă tăcut dacă API e down. **Fix: overlay `loading` + banner `apiDown`, reset pe poll.** | ✅ |
+| W-8 | `web/static/admin.js` | `Channel` select fără discord/email/slack. **Fix: adăugate.** | ✅ |
 
 ## P2 — Curățenie / minore (verificate)
 
 | ID | Fișier | Problemă | Status |
 |----|--------|----------|--------|
-| W-3 | `admin.js:94` | `AGENT_GLYPHS` duplică `JARVIS_GLYPHS` din `data.js:5`. VERIFICAT. | ⬜ |
-| W-2 | `admin.js:217` | `SettingsPage` definit dar **niciodată randat** (cod mort). VERIFICAT (0 `h(SettingsPage`). | ⬜ |
-| B-8 | `admin.js:238` | `kind:"button"` → `onAction`; niciun setting nu e `button` (no-op până se adaugă unul). | ⬜ |
-| IMP-5 | `admin.js:272` | `key:Date.now()` în Toast (anti-pattern React key). VERIFICAT. | ⬜ |
-| 2.2 | `app.js:39,58` | Race: poll 30s (data) vs 10s (status) suprascriu reciproc `sys`. | ⬜ |
+| W-3 | `admin.js` | `AGENT_GLYPHS` duplica `JARVIS_GLYPHS`. **Fix: ref la `window.JARVIS_GLYPHS`.** | ✅ |
+| W-2 | `admin.js` | `SettingsPage` cod mort. **Fix: eliminat, `renderRow` păstrat.** | ✅ |
+| B-8 | `admin.js:226` | `kind:"button"` → `onAction`; niciun setting nu e `button` (no-op până se adaugă unul). | ⬜ |
+| IMP-5 | `admin.js` Toast | `key:Date.now()` (anti-pattern React key). | ⬜ |
+| 2.2 | `app.js` | Race: poll 30s (data) vs 10s (status) suprascriu reciproc `sys`. | ⬜ |
 | 5.4 | `orchestrator.py` ~382 | `intent.target_agents[0]` în `_gather_plugin_data` — gardat, dar fragil. | ⬜ |
 | W-6 | `web/templates/index.html` | `data-density`/`data-scanline` nesetate deși CSS le suportă. | ⬜ |
 | IMP-2 | `web.py` | Polling fără `Cache-Control`/`ETag`. | ⬜ |
@@ -41,7 +41,15 @@ Legenda: ⬜ todo · 🔄 în lucru · ✅ done · ❌ invalid (verificat, nu e 
 
 ## ✅ Rezolvate
 
-**Sesiunea 3a (commit e00d9dc):**
+**Sesiunea 3b (commit d38d822) — frontend QA:**
+- B-9: SSE dedup (guard `finished` + break)
+- W-9: loading overlay + banner „backend indisponibil" + CSS
+- W-8: canale complete în admin (discord/email/slack)
+- W-3: glyph map unic (referință la `window.JARVIS_GLYPHS`)
+- W-2: eliminat `SettingsPage` mort
+- Smoke test: `/`, `/admin`, `/status`, `/api/agents`, toate `/static/*` → 200
+
+**Sesiunea 3a (commit e00d9dc) — backend QA:**
 - CI: `pytest.ini` (asyncio auto)
 - `settings_db`: thread-safe init, WAL o dată/proces, log chei necunoscute
 - `network.js`: RING_ORDER dinamic
@@ -50,9 +58,11 @@ Legenda: ⬜ todo · 🔄 în lucru · ✅ done · ❌ invalid (verificat, nu e 
 
 ---
 
-## Ordinea de execuție (PM)
-1. **B-9** — corectitudine chat (mesaje duble) ← *în lucru*
-2. **W-9** — UX loading/stale
-3. **W-8** — canale complete în admin
-4. **W-2 + W-3** — curățenie cod mort + glyph duplicat (quick wins)
-5. Restul P2
+## Ordinea de execuție (PM) — următorii pași
+1. ~~B-9, W-9, W-8, W-2, W-3~~ ✅ (sesiunea 3)
+2. **2.2** — race condition la polling (corectitudine date sys)
+3. **IMP-10** — pauză `<animate>` în tab ascuns (perf/baterie)
+4. **IMP-5** — React key stabil în Toast
+5. **W-6** — aplică `data-density`/`data-scanline` din settings
+6. **B-8** — wire `kind:"button"` când apare primul buton
+7. **W-7** — i18n (efort mare, ultimul)
