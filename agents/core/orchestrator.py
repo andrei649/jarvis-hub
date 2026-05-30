@@ -16,9 +16,35 @@ from dotenv import load_dotenv
 from .agent import Agent
 from .router import IntentRouter
 from .config import JarvisConfig
-from .llm.router import LLMRouter
+from .llm.hybrid_router import HybridRouter
+from .llm.tokenizer import estimate_tokens
 from .memory.manager import MemoryManager
 from .checkpoint import CheckpointManager
+from .heartbeat import HeartbeatScheduler
+from .learning.loop import LearningLoop
+from .skills.loader import SkillLoader
+from .skills.importer import SkillImporter
+from .mcp.client import MCPManager
+from .sandbox import Sandbox
+from .bench import LatencyBenchmark
+from .plugin_gate import PermissionGate
+from .security.guardrails import GuardrailsEngine
+from .security.audit import AuditLogger
+from .security.types import RedactionMode, SecurityEvent, SecurityEventType, ThreatLevel
+from .log import log_error
+from .errors import (
+    E_CONFIG_MISSING_ENV, E_PLUGIN_BLOCKED, E_LLM_BACKEND_MISSING, E_LLM_TIMEOUT,
+    E_INTERNAL_UNEXPECTED, E_CHANNEL_START_FAIL,
+)
+from .channels.base import ChannelAdapter
+from .channels.web import WebChannel
+from .channels.voice import VoiceChannel
+from .channels.telegram import TelegramChannel
+from .channels.discord import DiscordChannel
+from .channels.email import EmailChannel
+from .channels.slack import SlackChannel
+from .settings_db import get_all as _get_settings, get_category as _get_settings_category
+from .plugins.oauth import init_from_env as _oauth_init, load_token as _load_token
 from .plugins.weather import WeatherPlugin
 from .plugins.news import NewsPlugin
 from .plugins.cloud_llm import CloudLLMPlugin
@@ -28,24 +54,8 @@ from .plugins.whatsapp_bridge import WhatsAppBridgePlugin
 from .plugins.spotify_plugin import SpotifyPlugin
 from .plugins.google_calendar import GoogleCalendarPlugin
 from .plugins.apple_health import AppleHealthPlugin
+from .plugins.websearch import WebSearchPlugin
 from .plugins.homebridge import HomebridgePlugin
-from .skills.loader import SkillLoader
-from .skills.importer import SkillImporter
-from .mcp.client import MCPManager
-from .learning.loop import LearningLoop
-from .sandbox import Sandbox
-from .bench import LatencyBenchmark
-from .plugin_gate import PermissionGate
-from .security.guardrails import GuardrailsEngine
-from .security.audit import AuditLogger
-from .security.types import RedactionMode, SecurityEvent, SecurityEventType, ThreatLevel
-from .channels.base import ChannelAdapter
-from .channels.web import WebChannel
-from .channels.voice import VoiceChannel
-from .channels.telegram import TelegramChannel
-from .channels.discord import DiscordChannel
-from .channels.email import EmailChannel
-from .channels.slack import SlackChannel
 
 logger = logging.getLogger("jarvis.orchestrator")
 
@@ -58,7 +68,8 @@ class Orchestrator:
         self.config = config
         self.agents: dict[str, Agent] = {}
         self.router = IntentRouter(config)
-        self.llm_router = LLMRouter()
+        gemini_key = os.environ.get("GEMINI_API_KEY", "")
+        self.llm_router = HybridRouter(gemini_api_key=gemini_key)
         self.memory = MemoryManager()
         self.plugins: dict = {}
         self.skills = SkillLoader()
@@ -69,11 +80,15 @@ class Orchestrator:
         self.learning = LearningLoop()
         self.bench = LatencyBenchmark()
         self.sandbox = Sandbox()
+        self.heartbeat_scheduler = HeartbeatScheduler(agents_dir=str(Path(__file__).resolve().parent.parent.parent / "agents"))
         self.security: Optional[GuardrailsEngine] = None
         self.permission_gate = PermissionGate()
         self.audit = AuditLogger()
         self.session_id: Optional[str] = None
         self.on_token: Optional[Callable] = None
+        self._runtime_settings: dict = {}
+        self._channel_sessions: dict[str, str] = {}
+        self._settings_watcher_task: Optional[asyncio.Task] = None
 
     async def load_agents(self):
         await self.llm_router.detect()
@@ -89,7 +104,8 @@ class Orchestrator:
             )
             logger.info("Security guardrails enabled")
         except RuntimeError:
-            logger.warning("No LLM backend detected — guardrails disabled")
+            log_error(logger, E_LLM_BACKEND_MISSING, backend="guardrails")
+            self.security = None
 
         for agent_id, agent_config in self.config.agents.items():
             if agent_config.status == "active":
@@ -114,24 +130,30 @@ class Orchestrator:
         self.plugins["cloud-llm"] = CloudLLMPlugin(
             anthropic_key=os.environ.get("ANTHROPIC_API_KEY", ""),
             openai_key=os.environ.get("OPENAI_API_KEY", ""),
+            gemini_key=os.environ.get("GEMINI_API_KEY", ""),
         )
         self.plugins["telegram"] = TelegramBotPlugin(
             token=os.environ.get("TELEGRAM_BOT_TOKEN", ""),
         )
+        _oauth_init()
+        _gmail_token = os.environ.get("GMAIL_ACCESS_TOKEN", "") or (_load_token("google") or {}).get("access_token", "")
         self.plugins["gmail"] = GmailPlugin(
-            access_token=os.environ.get("GMAIL_ACCESS_TOKEN", ""),
+            access_token=_gmail_token,
         )
         self.plugins["whatsapp"] = WhatsAppBridgePlugin(
             bridge_url=os.environ.get("WHATSAPP_BRIDGE_URL", "http://192.168.1.100:3000"),
         )
+        _spotify_token = os.environ.get("SPOTIFY_ACCESS_TOKEN", "") or (_load_token("spotify") or {}).get("access_token", "")
+        _spotify_refresh = os.environ.get("SPOTIFY_REFRESH_TOKEN", "") or (_load_token("spotify") or {}).get("refresh_token", "")
         self.plugins["spotify"] = SpotifyPlugin(
             client_id=os.environ.get("SPOTIFY_CLIENT_ID", ""),
             client_secret=os.environ.get("SPOTIFY_CLIENT_SECRET", ""),
-            access_token=os.environ.get("SPOTIFY_ACCESS_TOKEN", ""),
-            refresh_token=os.environ.get("SPOTIFY_REFRESH_TOKEN", ""),
+            access_token=_spotify_token,
+            refresh_token=_spotify_refresh,
         )
+        _cal_token = os.environ.get("GOOGLE_CALENDAR_TOKEN", "") or (_load_token("google") or {}).get("access_token", "")
         self.plugins["google-calendar"] = GoogleCalendarPlugin(
-            access_token=os.environ.get("GOOGLE_CALENDAR_TOKEN", ""),
+            access_token=_cal_token,
         )
         self.plugins["apple-health"] = AppleHealthPlugin(
             bridge_url=os.environ.get("APPLE_HEALTH_BRIDGE_URL", "http://192.168.1.100:8081"),
@@ -139,6 +161,10 @@ class Orchestrator:
         self.plugins["homebridge"] = HomebridgePlugin(
             bridge_url=os.environ.get("HOMEBRIDGE_URL", "http://192.168.1.100:8581"),
             api_token=os.environ.get("HOMEBRIDGE_TOKEN", ""),
+        )
+        self.plugins["websearch"] = WebSearchPlugin(
+            tavily_api_key=os.environ.get("TAVILY_API_KEY", ""),
+            searxng_url=os.environ.get("SEARXNG_URL", ""),
         )
 
         self.skills.discover()
@@ -153,22 +179,66 @@ class Orchestrator:
             self.session_id = self.memory.conversation.current_session_id or self.memory.new_session()
             logger.info(f"Session: {self.session_id}")
 
+        self.load_runtime_settings()
+        self.heartbeat_scheduler.load_all()
+
+    def load_runtime_settings(self):
+        try:
+            all_s = _get_settings()
+            flat = {}
+            for cat, items in all_s.items():
+                for item in items:
+                    flat[f"{cat}.{item['key']}"] = item["value"]
+            self._runtime_settings = flat
+            logger.debug(f"Runtime settings loaded: {len(flat)} keys")
+        except Exception as e:
+            log_error(logger, E_INTERNAL_UNEXPECTED, component="settings_db", detail=str(e))
+
+    def get_setting(self, key: str, default=None):
+        return self._runtime_settings.get(key, default)
+
+    async def _settings_watcher_loop(self):
+        while True:
+            await asyncio.sleep(30)
+            self.load_runtime_settings()
+
     async def register_channel(self, channel: ChannelAdapter):
         self.channels[channel.channel_id] = channel
         logger.info(f"Channel registered: {channel.channel_id}")
 
     async def start_channels(self):
         for cid, ch in self.channels.items():
-            await ch.start()
+            try:
+                await ch.start()
+            except Exception as e:
+                log_error(logger, E_CHANNEL_START_FAIL, name=cid, detail=str(e))
+        self.heartbeat_scheduler.start(self)
+        self._settings_watcher_task = asyncio.create_task(self._settings_watcher_loop())
         logger.info(f"Channels started: {list(self.channels.keys())}")
 
     async def stop_channels(self):
         for cid, ch in self.channels.items():
             await ch.stop()
+        self.heartbeat_scheduler.stop()
+        if self._settings_watcher_task:
+            self._settings_watcher_task.cancel()
         logger.info("Channels stopped")
 
     async def channel_handler(self, text: str, channel: str = "voice", **kwargs) -> Optional[str]:
-        response = await self.handle_input(text, channel)
+        chat_id = kwargs.get("chat_id")
+        if channel == "telegram" and chat_id:
+            ck = f"tg:{chat_id}"
+            if ck not in self._channel_sessions:
+                self._channel_sessions[ck] = self.memory.new_session()
+            saved_session = self.session_id
+            self.session_id = self._channel_sessions[ck]
+            try:
+                response = await self.handle_input(text, channel)
+            finally:
+                self.session_id = saved_session
+        else:
+            response = await self.handle_input(text, channel)
+
         ch = self.channels.get(channel)
         if ch:
             if channel == "telegram":
@@ -246,10 +316,10 @@ class Orchestrator:
                 synthesized = responses[responder_id]
         except RuntimeError:
             synthesized = "I'm sorry, sir — my language backend is not available. Please start Ollama or LM Studio and try again."
-            logger.warning("Returning friendly message: no LLM backend available during synthesize")
+            log_error(logger, E_LLM_BACKEND_MISSING, backend="synthesize")
         except Exception as e:
             synthesized = f"I hit an issue processing that: {e}"
-            logger.warning(f"Synthesize exception: {e}")
+            log_error(logger, E_INTERNAL_UNEXPECTED, component="synthesize", detail=str(e))
 
         skill_name = self._detect_skill_learning(responses, synthesized, intent)
         if skill_name:
@@ -293,20 +363,14 @@ class Orchestrator:
         else:
             target = intent.target_agents if intent.target_agents else ["jarvis"]
 
-        try:
-            _ = self.llm_router.backend
-        except RuntimeError:
-            msg = "I'm sorry, sir — my language backend is not available. Please start Ollama or LM Studio and try again."
-            if on_token:
-                on_token(msg)
-            return msg
-
-        backend = self.security if self.security else self.llm_router.backend
+        temperature = self.get_setting("llm.temperature", 0.7)
+        max_tokens = self.get_setting("llm.max_tokens", 1024)
+        context_window = self.get_setting("memory.context_window", 6)
         synthesized = ""
         for agent_id in target:
             if agent_id in self.agents:
                 agent = self.agents[agent_id]
-                history = self.memory.get_context(self.session_id, last_n=6)
+                history = self.memory.get_context(self.session_id, last_n=context_window)
                 system_prompt = agent.soul.get("content", "")
                 plugin_block = self._format_plugin_data(plugin_data)
                 agent_context = self.memory.get_agent_context(agent_id)
@@ -319,21 +383,35 @@ class Orchestrator:
                     f"User: {text}\n"
                     f"Respond as {agent.name}."
                 )
-                model = agent.config.get("model", "qwen/qwen3.5-9b")
+                model = self.get_setting("llm.default_model") or agent.config.get("model", "qwen/qwen3.5-9b")
 
                 checkpoint = self.checkpoints.load(agent_id, self.session_id)
                 if checkpoint:
                     prompt = f"[RESUMED FROM CHECKPOINT]\n{checkpoint['prompt']}\n---\n{prompt}"
 
+                try:
+                    backend, route_name = self.llm_router.select_backend(agent_id, prompt)
+                    if self.security:
+                        backend = self.security
+                    logger.info(f"Routing {agent_id} via {route_name} ({estimate_tokens(prompt)} tokens)")
+                except RuntimeError:
+                    msg = "I'm sorry, sir — my language backend is not available. Please start Ollama or LM Studio and try again."
+                    log_error(logger, E_LLM_BACKEND_MISSING, backend="stream")
+                    if on_token:
+                        on_token(msg)
+                    return msg
+
                 if on_token and hasattr(backend, "generate_stream"):
                     response = await backend.generate_stream(
                         model=model, prompt=prompt,
                         system=system_prompt,
+                        max_tokens=max_tokens, temperature=temperature,
                         on_token=on_token,
                     )
                 else:
                     response = await backend.generate(
                         model=model, prompt=prompt, system=system_prompt,
+                        max_tokens=max_tokens, temperature=temperature,
                     )
                     if on_token:
                         on_token(response)
@@ -383,23 +461,29 @@ class Orchestrator:
                     continue
         return None
 
+    def _first_target_agent(self, intent) -> str:
+        return intent.target_agents[0] if intent.target_agents and len(intent.target_agents) > 0 else "jarvis"
+
+    def _any_agent_can(self, plugin: str, intent) -> bool:
+        agents = intent.target_agents if intent.target_agents else ["jarvis"]
+        return any(self.permission_gate.check_call(plugin, a) for a in agents)
+
     async def _gather_plugin_data(self, text: str, intent) -> dict:
         data = {}
         keywords = intent.context.get("keywords_found", [])
         text_lower = text.lower()
-        agent_id = intent.target_agents[0] if intent.target_agents else "jarvis"
 
         if "weather" in keywords or any(w in text_lower for w in ["weather", "vremea", "temperature", "ploaie", "temperatura"]):
-            if self.permission_gate.check_call("weather", agent_id):
+            if self._any_agent_can("weather", intent):
                 wp = self.plugins.get("weather")
                 if wp:
                     location = self._extract_location(text)
                     data["weather"] = await wp.get_weather(location)
             else:
-                logger.warning(f"Permission denied: agent {agent_id} cannot use weather plugin")
+                log_error(logger, E_PLUGIN_BLOCKED, name="weather")
 
         if "news" in keywords or any(w in text_lower for w in ["news", "stiri", "headlines", "noutati"]):
-            if self.permission_gate.check_call("news", agent_id):
+            if self._any_agent_can("news", intent):
                 np = self.plugins.get("news")
                 if np:
                     category = "general"
@@ -409,13 +493,25 @@ class Orchestrator:
                         category = "business"
                     data["news"] = await np.summarize(category)
             else:
-                logger.warning(f"Permission denied: agent {agent_id} cannot use news plugin")
+                log_error(logger, E_PLUGIN_BLOCKED, name="news")
 
         if "calendar" in keywords or any(w in text_lower for w in ["calendar", "agenda", "program", "sedin", "meeting", "eveniment"]):
-            if self.permission_gate.check_call("google-calendar", agent_id):
+            if self._any_agent_can("google-calendar", intent):
                 gp = self.plugins.get("google-calendar")
                 if gp and gp.access_token:
                     data["calendar"] = await gp.get_today_events()
+
+        if "email" in keywords or any(w in text_lower for w in ["email", "mail", "inbox", "mesaj", "hangup", "prim"]):
+            if self._any_agent_can("gmail", intent):
+                gp = self.plugins.get("gmail")
+                if gp and gp.access_token:
+                    data["email"] = await gp.list_messages(max_results=5)
+
+        if "research" in keywords or "search" in keywords or any(w in text_lower for w in ["research", "caut", "search", "find", "gaseste", "investigheaza"]):
+            if self._any_agent_can("websearch", intent):
+                wp = self.plugins.get("websearch")
+                if wp:
+                    data["websearch"] = await wp.search(text, max_results=5)
 
         return data
 
@@ -461,9 +557,11 @@ class Orchestrator:
                 return agent_id, resp, self.agents[agent_id].last_latency
             except asyncio.TimeoutError:
                 self.agents[agent_id]._record_failure("timeout")
+                log_error(logger, E_LLM_TIMEOUT, timeout=120)
                 return agent_id, f"[{agent_id} timeout]", 0.0
             except Exception as e:
                 self.agents[agent_id]._record_failure(str(e))
+                log_error(logger, E_INTERNAL_UNEXPECTED, component=f"agent:{agent_id}", detail=str(e))
                 return agent_id, f"[{agent_id} error: {e}]", 0.0
 
         valid_ids = [aid for aid in agent_ids if aid in self.agents]
@@ -520,6 +618,14 @@ class Orchestrator:
                     output_length=len(resp),
                     model=self.agents[agent_id].config.get("model", ""),
                 )
+                if not success and agent_id in self.agents:
+                    agent = self.agents[agent_id]
+                    if agent.should_demote:
+                        target = agent.get_demotion_target()
+                        logger.warning(f"Demoting {agent_id} to {target} — {agent._failures} consecutive failures")
+                        old_cfg = dict(agent.config)
+                        old_cfg["tier"] = target
+                        agent.config = old_cfg
 
     def _log_session(self, text, intent, responses, synthesized):
         logger.info(f"[{(self.session_id or 'none')[:20]}]: {text[:40]}... -> {synthesized[:40]}...")

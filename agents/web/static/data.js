@@ -20,22 +20,22 @@ const JARVIS_GLYPHS = {
   frigga:     'M0,-7 Q-7,0 0,7 Q7,0 0,-7 Z M0,-3 V3 M-3,0 H3',
 };
 const JARVIS_TIERS = [
-  { id: 'CNS', label: 'Command — Nervous System', detail: 'Orchestration · Daily ops' },
-  { id: 'BIZ', label: 'Business Intelligence',    detail: 'Strategy · Research · Comms' },
-  { id: 'SEC', label: 'Security & Infrastructure',detail: 'Code · Workflows · Audit' },
-  { id: 'FND', label: 'Foundation',               detail: 'Markets · Fitness · Family' },
+  { id: 'CNS', label: _t('tier.cns'), detail: _t('tier.cns_det') },
+  { id: 'BIZ', label: _t('tier.biz'), detail: _t('tier.biz_det') },
+  { id: 'SEC', label: _t('tier.sec'), detail: _t('tier.sec_det') },
+  { id: 'FND', label: _t('tier.fnd'), detail: _t('tier.fnd_det') },
 ];
 /* JARVIS_SAMPLE_CONVERSATION, JARVIS_PROJECTS, JARVIS_COLLAB, JARVIS_TICKER, JARVIS_DEMO — removed, live data only */
 
 const JARVIS_FALLBACK_SYS = {
-  host: 'BONOBO-WS', cpu: 'Intel Core Ultra 9 · 32c',
-  ram_used: 42, ram_total: 192, gpu: 'RTX 5090 · 24GB',
+  host: _t('env.fallback_host'), cpu: _t('env.fallback_cpu'),
+  ram_used: 42, ram_total: 192, gpu: _t('env.fallback_gpu'),
   vram_used: 10, vram_total: 24, gpu_load: 30,
-  backend: 'LM Studio · 1234', model: 'google/gemma-4-31b-a4b',
+  backend: _t('env.fallback_backend'), model: _t('env.fallback_model'),
   latency: 2.1, uptime: '—', sessions: 0,
 };
 const JARVIS_FALLBACK_WEATHER = {
-  city: 'București', temp: '—', desc: 'Se încarcă…',
+  city: _t('data.city'), temp: '—', desc: _t('data.loading'),
   wind: '—', humidity: '—', feels: '—', updated: '—', forecast: [],
 };
 const JARVIS_FALLBACK_CALENDAR = [];
@@ -78,15 +78,17 @@ async function loadJarvisData() {
     });
   } catch { /* fallback below */ }
 
+  // Always fetch /status for live sys data (replaces static fallback)
+  try {
+    const r = await fetch('/status');
+    const d = await r.json();
+    if (d.sys) sys = { ...sys, ...d.sys };
+    if (d.lm_online !== undefined) lmOnline = d.lm_online;
+    if (agents.length === 0 && d.agents) statusAgents = d.agents;
+  } catch {}
+
   // If agents failed, build from /status
   if (agents.length === 0) {
-    try {
-      const r = await fetch('/status');
-      const d = await r.json();
-      if (d.agents) statusAgents = d.agents;
-      if (d.sys) sys = { ...sys, ...d.sys };
-      if (d.lm_online !== undefined) lmOnline = d.lm_online;
-    } catch {}
     agents = Object.entries(JARVIS_AGENT_META).map(([id, meta]) => {
       const sa = statusAgents.find((x) => x.id === id);
       return {

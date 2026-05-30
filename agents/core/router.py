@@ -44,7 +44,7 @@ class IntentRouter:
         "calendar": ["pepper"],
         "meeting": ["pepper"],
         "schedule": ["pepper"],
-        "email": ["veronica", "stark"],
+        "email": ["pepper", "veronica", "stark"],
         "write": ["veronica"],
         "draft": ["veronica"],
         "linkedin": ["veronica"],

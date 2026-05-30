@@ -67,6 +67,7 @@ agents:
     tier: business
     channel: web-dashboard
     heartbeat: true
+    llm_policy: cloud
     plugins: [cloud-llm]
 
   stark:
@@ -94,7 +95,8 @@ agents:
     tier: business
     channel: web-dashboard
     heartbeat: true
-    plugins: [cloud-llm]
+    llm_policy: cloud
+    plugins: [cloud-llm, websearch]
 
   steve:
     name: Steve
@@ -158,7 +160,7 @@ agents:
     channel: local-only
     heartbeat: true
     plugins: [whatsapp-bridge]
-    cloud_fallback: false
+    llm_policy: local
 
 # Bench — reserved names, not yet active
 bench:

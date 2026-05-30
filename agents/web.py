@@ -18,13 +18,29 @@ from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse, Fil
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
+
+def _nocache_json(content: dict, status_code: int = 200) -> JSONResponse:
+    return JSONResponse(
+        content=content,
+        status_code=status_code,
+        headers={"Cache-Control": "no-cache, no-store, must-revalidate"},
+    )
+
 from core.config import JarvisConfig
 from core.orchestrator import Orchestrator
 from core.channels.web import WebChannel
 from core.channels.gateway import Gateway
 from core.checkpoint import CheckpointManager
-from core.settings_db import get_all, get_category, put_category
+from core.settings_db import get_all, get_category, put_category, init_db
 from core.settings_db import DB_PATH as _SDB
+from core.channels.voice import VoiceChannel
+from core.channels.telegram import TelegramChannel
+from core.channels.discord import DiscordChannel
+from core.channels.email import EmailChannel
+from core.channels.slack import SlackChannel
+from core.log import setup_logging, log_error
+from core.errors import JarvisError, E_INTERNAL_UNEXPECTED, E_SECURITY_BLOCKED
+from core.security.guardrails import SecurityBlockError
 
 logger = logging.getLogger("jarvis.web")
 
@@ -37,7 +53,7 @@ gateway: Gateway = None
 @asynccontextmanager
 async def lifespan(application: FastAPI):
     global orch, gateway
-    logging.basicConfig(level=logging.INFO, format="%(levelname)s  %(name)s  %(message)s")
+    setup_logging()
     config = JarvisConfig()
     orch = Orchestrator(config)
 
@@ -56,6 +72,43 @@ async def lifespan(application: FastAPI):
 
     web_ch = WebChannel(handler=gateway.route)
     await orch.register_channel(web_ch)
+
+    voice_ch = VoiceChannel(handler=gateway.route, wake_words=orch.get_setting("general.wake_words", ["jarvis", "hub"]))
+    await orch.register_channel(voice_ch)
+
+    tg_token = os.environ.get("TELEGRAM_BOT_TOKEN", "")
+    if tg_token:
+        telegram_ch = TelegramChannel(token=tg_token, handler=gateway.route)
+        await orch.register_channel(telegram_ch)
+        logger.info("Telegram channel wired with bot token")
+    else:
+        logger.warning("TELEGRAM_BOT_TOKEN not set — telegram channel disabled")
+
+    discord_token = os.environ.get("DISCORD_BOT_TOKEN", "")
+    if discord_token:
+        discord_ch = DiscordChannel(token=discord_token, handler=gateway.route)
+        await orch.register_channel(discord_ch)
+        logger.info("Discord channel wired")
+
+    smtp_host = os.environ.get("SMTP_HOST", "")
+    imap_host = os.environ.get("IMAP_HOST", "")
+    if smtp_host and imap_host:
+        email_ch = EmailChannel(
+            smtp_host=smtp_host, smtp_port=int(os.environ.get("SMTP_PORT", "587")),
+            smtp_user=os.environ.get("SMTP_USER", ""), smtp_pass=os.environ.get("SMTP_PASS", ""),
+            imap_host=imap_host, imap_port=int(os.environ.get("IMAP_PORT", "993")),
+            imap_user=os.environ.get("IMAP_USER", ""), imap_pass=os.environ.get("IMAP_PASS", ""),
+            handler=gateway.route,
+        )
+        await orch.register_channel(email_ch)
+        logger.info("Email channel wired")
+
+    slack_token = os.environ.get("SLACK_BOT_TOKEN", "")
+    if slack_token:
+        slack_ch = SlackChannel(token=slack_token, handler=gateway.route)
+        await orch.register_channel(slack_ch)
+        logger.info("Slack channel wired")
+
     await orch.start_channels()
     logger.info(
         f"Jarvis Beta ready — {orch.llm_router.name}, "
@@ -67,6 +120,31 @@ async def lifespan(application: FastAPI):
 
 
 app = FastAPI(title="Jarvis", version="0.2.0-beta", lifespan=lifespan)
+
+
+@app.exception_handler(JarvisError)
+async def jarvis_error_handler(request: Request, exc: JarvisError):
+    log_error(logger, exc.code, **exc.meta)
+    return _nocache_json(exc.to_dict(), status_code=400)
+
+
+@app.exception_handler(SecurityBlockError)
+async def security_block_handler(request: Request, exc: SecurityBlockError):
+    log_error(logger, E_SECURITY_BLOCKED, reason=str(exc))
+    return _nocache_json(
+        {"code": "JARVIS-SECURITY-001", "category": "security", "severity": "warning", "message": str(exc)},
+        status_code=403,
+    )
+
+
+@app.exception_handler(Exception)
+async def generic_error_handler(request: Request, exc: Exception):
+    log_error(logger, E_INTERNAL_UNEXPECTED, component="web", detail=str(exc), exc=exc)
+    return _nocache_json(
+        {"code": "JARVIS-INTERNAL-001", "category": "internal", "severity": "error", "message": "Internal server error"},
+        status_code=500,
+    )
+
 
 HERE = Path(__file__).parent / "web"
 _start_time = time.time()
@@ -268,23 +346,23 @@ async def chat_stream(req: ChatRequest):
 @app.get("/status")
 async def status():
     if not orch:
-        return JSONResponse({"status": "starting"})
+        return _nocache_json({"status": "starting"})
     enriched = _enrich_agents()
     voice_state = "idle"
     lm_online = orch.llm_router.name != "none"
-    return {
+    return _nocache_json({
         "sys": _sys_info(),
         "voice_state": voice_state,
         "lm_online": lm_online,
         "agents": [{"id": a["id"], "status": a["status"]} for a in enriched],
         "agents_online": sum(1 for a in enriched if a["status"] != "idle"),
         "agents_total": len(enriched),
-    }
+    })
 
 
 @app.get("/api/agents")
 async def api_agents():
-    return {"agents": _enrich_agents()}
+    return _nocache_json({"agents": _enrich_agents()})
 
 
 # ── Dashboard (HUD-compatible) ───────────────────────────────────
@@ -348,11 +426,11 @@ async def dashboard():
 
     notifications = []
 
-    return {
+    return _nocache_json({
         "weather": weather_data,
         "calendar": calendar_data,
         "notifications": notifications,
-    }
+    })
 
 
 @app.get("/tasks")
@@ -360,14 +438,13 @@ async def get_tasks():
     if not orch:
         return JSONResponse({"error": "not initialized"}, status_code=503)
     # Placeholder: return empty task list until real data is wired
-    return {"tasks": []}
+    return _nocache_json({"tasks": []})
 
 
 @app.get("/ticker")
 async def get_ticker():
     if not orch:
-        return JSONResponse({"error": "not initialized"}, status_code=503)
-    # Return live activity items from agent states
+        return _nocache_json({"error": "not initialized"}, status_code=503)
     enriched = _enrich_agents()
     items = []
     for a in enriched:
@@ -378,7 +455,7 @@ async def get_ticker():
             "pct": 50,
             "pri": "mid",
         })
-    return {"ticker": items}
+    return _nocache_json({"ticker": items})
 
 
 # ── Existing endpoints (unchanged) ───────────────────────────────
@@ -388,7 +465,7 @@ async def memory():
     if not orch:
         return JSONResponse({"error": "not initialized"}, status_code=503)
     history = orch.memory.get_history(orch.session_id, last_n=20)
-    return {"session": orch.session_id, "turns": history}
+    return _nocache_json({"session": orch.session_id, "turns": history})
 
 
 @app.post("/memory/clear")
@@ -603,6 +680,12 @@ async def admin_put_category(category: str, body: AdminPutBody):
     return {"updated": updated, "category": category}
 
 
+@app.post("/api/admin/settings/reseed")
+async def admin_reseed():
+    init_db(force=True)
+    return {"ok": True, "message": "Settings reseeded from defaults"}
+
+
 @app.get("/api/admin/env")
 async def admin_get_env():
     return {
@@ -620,13 +703,16 @@ async def admin_get_audit(page: int = 1, limit: int = 50):
         return {"page": page, "limit": limit, "total": 0, "rows": []}
     conn = sqlite3.connect(str(db))
     conn.row_factory = sqlite3.Row
-    table = "audit_events" if conn.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='audit_events'").fetchone() else "security_events"
-    total = conn.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0]
+    has_audit = conn.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='audit_events'").fetchone()
+    table = "audit_events" if has_audit else "security_events"
+    _QUERIES = {
+        "audit_events": ("SELECT COUNT(*) FROM audit_events", "SELECT timestamp, event_type, content_preview AS summary, findings_json AS details FROM audit_events ORDER BY rowid DESC LIMIT ? OFFSET ?"),
+        "security_events": ("SELECT COUNT(*) FROM security_events", "SELECT timestamp, event_type, content_preview AS summary, findings_json AS details FROM security_events ORDER BY rowid DESC LIMIT ? OFFSET ?"),
+    }
+    count_q, select_q = _QUERIES[table]
+    total = conn.execute(count_q).fetchone()[0]
     offset = (page - 1) * limit
-    rows = conn.execute(
-        f"SELECT timestamp, event_type, content_preview AS summary, findings_json AS details FROM {table} ORDER BY rowid DESC LIMIT ? OFFSET ?",
-        (limit, offset),
-    ).fetchall()
+    rows = conn.execute(select_q, (limit, offset)).fetchall()
     conn.close()
     return {
         "page": page,
@@ -689,3 +775,74 @@ async def admin_llm_test():
         except Exception as e:
             results.append({"name": name, "url": url, "ok": False, "error": str(e)})
     return {"results": results}
+
+
+# ── OAuth endpoints ──────────────────────────────────────────────
+
+from core.plugins.oauth import (
+    init_from_env, get_google_auth_url, get_spotify_auth_url,
+    exchange_google_code, exchange_spotify_code,
+    refresh_google_token, refresh_spotify_token, load_token,
+)
+
+init_from_env()
+
+OAUTH_SERVICES = {
+    "gmail": {"label": "Gmail", "url": lambda: get_google_auth_url("gmail")},
+    "calendar": {"label": "Google Calendar", "url": lambda: get_google_auth_url("calendar")},
+    "spotify": {"label": "Spotify", "url": get_spotify_auth_url},
+}
+
+
+@app.get("/api/oauth/status")
+async def oauth_status():
+    result = {}
+    for sid, info in OAUTH_SERVICES.items():
+        token = load_token(sid if sid != "spotify" else "spotify")
+        result[sid] = {
+            "connected": token is not None and bool(token.get("access_token")),
+            "label": info["label"],
+            "auth_url": info["url"]() if not (token and token.get("access_token")) else None,
+        }
+    return result
+
+
+class OAuthCodeBody(BaseModel):
+    code: str
+    state: str = ""
+
+
+@app.post("/api/oauth/callback")
+async def oauth_callback(body: OAuthCodeBody):
+    state = body.state
+    if state.startswith("google:"):
+        service = state.split(":")[1]
+        result = await exchange_google_code(body.code)
+    elif state == "spotify":
+        result = await exchange_spotify_code(body.code)
+        service = "spotify"
+    else:
+        return JSONResponse({"ok": False, "error": f"Unknown state: {state}"}, status_code=400)
+
+    if result:
+        return {"ok": True, "service": service, "has_refresh": "refresh_token" in result}
+    return JSONResponse({"ok": False, "error": "Token exchange failed"}, status_code=400)
+
+
+@app.get("/api/oauth/auth-url")
+async def oauth_auth_url(service: str = ""):
+    info = OAUTH_SERVICES.get(service)
+    if not info:
+        return JSONResponse({"error": f"Unknown service: {service}"}, status_code=404)
+    return {"url": info["url"]()}
+
+
+@app.post("/api/oauth/refresh")
+async def oauth_refresh(service: str = ""):
+    if service == "spotify":
+        token = await refresh_spotify_token()
+    elif service in ("gmail", "calendar"):
+        token = await refresh_google_token()
+    else:
+        return JSONResponse({"error": f"Unknown service: {service}"}, status_code=404)
+    return {"ok": token is not None, "service": service}

@@ -10,7 +10,7 @@ sys.path.insert(0, str(repo_root))
 sys.path.insert(0, str(repo_root / "agents"))
 
 from agents.core.config import JarvisConfig
-from agents.core.router import IntentRouter
+from agents.core.router import IntentRouter, Intent
 from agents.core.orchestrator import Orchestrator
 
 
@@ -44,17 +44,41 @@ def test_intent_router_weather():
     asyncio.run(_test())
 
 
-def test_intent_router_general():
+def test_first_target_agent_normal():
     cfg = JarvisConfig()
-    router = IntentRouter(cfg)
+    orch = Orchestrator(cfg)
+    intent = Intent(target_agents=["friday"], is_general=False, context={})
+    assert orch._first_target_agent(intent) == "friday"
 
-    async def _test():
-        intent = await router.classify("what is the meaning of life?", {})
-        assert intent.target_agents == ["jarvis"]
-        assert intent.is_general
 
-    import asyncio
-    asyncio.run(_test())
+def test_first_target_agent_empty_list():
+    cfg = JarvisConfig()
+    orch = Orchestrator(cfg)
+    intent = Intent(target_agents=[], is_general=False, context={})
+    assert orch._first_target_agent(intent) == "jarvis"
+
+
+def test_first_target_agent_no_target():
+    cfg = JarvisConfig()
+    orch = Orchestrator(cfg)
+    intent = Intent(target_agents=None, is_general=True, context={})
+    assert orch._first_target_agent(intent) == "jarvis"
+
+
+def test_any_agent_can_allows_when_first_has_permission():
+    cfg = JarvisConfig()
+    orch = Orchestrator(cfg)
+    intent = Intent(target_agents=["jarvis", "friday"], is_general=False, context={})
+    assert orch._any_agent_can("weather", intent)
+
+
+def test_any_agent_can_denies_when_none_have_permission():
+    cfg = JarvisConfig()
+    orch = Orchestrator(cfg)
+    intent = Intent(target_agents=["vision"], is_general=False, context={})
+    # Vision does not have spotify permission (only jerome does)
+    assert not orch._any_agent_can("spotify", intent)
+
 
 
 def test_intent_router_music():

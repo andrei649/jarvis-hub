@@ -1,5 +1,5 @@
 """
-gmail_plugin.py — Gmail API plugin.
+gmail_plugin.py — Gmail API plugin with OAuth refresh support.
 
 Reads and composes emails via Gmail API.
 Agents served: stark (corporate), pepper (calendar/meetings), veronica (comms).
@@ -13,6 +13,8 @@ from typing import Optional
 
 import httpx
 
+from .oauth import refresh_google_token, load_token
+
 logger = logging.getLogger("jarvis.plugins.gmail")
 
 
@@ -21,24 +23,43 @@ class GmailPlugin:
         self.access_token = access_token
         self.api_base = "https://gmail.googleapis.com/gmail/v1/users/me"
         self.client = httpx.AsyncClient(timeout=15.0)
+        self._refresh_attempted = False
 
     def _headers(self) -> dict:
         return {"Authorization": f"Bearer {self.access_token}"}
 
+    async def _ensure_token(self):
+        if self.access_token:
+            return
+        token_data = load_token("google")
+        if token_data and token_data.get("access_token"):
+            self.access_token = token_data["access_token"]
+            logger.info("Gmail: token restored from persistent store")
+
+    async def _request(self, method: str, path: str, **kwargs):
+        await self._ensure_token()
+        url = f"{self.api_base}{path}"
+        headers = kwargs.pop("headers", {})
+        headers.update(self._headers())
+        for attempt in range(2):
+            resp = await self.client.request(method, url, headers=headers, **kwargs)
+            if resp.status_code == 401 and attempt == 0:
+                new_token = await refresh_google_token()
+                if new_token:
+                    self.access_token = new_token
+                    headers.update(self._headers())
+                    continue
+            resp.raise_for_status()
+            return resp
+        return resp
+
     async def list_messages(self, max_results: int = 10,
                             query: str = "") -> list[dict]:
-        if not self.access_token:
-            return [{"error": "Gmail not authenticated"}]
         try:
             params = {"maxResults": max_results}
             if query:
                 params["q"] = query
-            resp = await self.client.get(
-                f"{self.api_base}/messages",
-                headers=self._headers(),
-                params=params,
-            )
-            resp.raise_for_status()
+            resp = await self._request("GET", "/messages", params=params)
             data = resp.json()
             messages = data.get("messages", [])
             result = []
@@ -53,12 +74,10 @@ class GmailPlugin:
 
     async def get_message(self, message_id: str) -> Optional[dict]:
         try:
-            resp = await self.client.get(
-                f"{self.api_base}/messages/{message_id}",
-                headers=self._headers(),
+            resp = await self._request(
+                "GET", f"/messages/{message_id}",
                 params={"format": "metadata", "metadataHeaders": ["From", "Subject", "Date"]},
             )
-            resp.raise_for_status()
             data = resp.json()
             headers = {h["name"]: h["value"] for h in data.get("payload", {}).get("headers", [])}
             return {
@@ -74,8 +93,6 @@ class GmailPlugin:
 
     async def send_email(self, to: str, subject: str,
                          body: str, cc: str = "") -> bool:
-        if not self.access_token:
-            return False
         try:
             msg = MIMEText(body)
             msg["To"] = to
@@ -83,13 +100,7 @@ class GmailPlugin:
             if cc:
                 msg["Cc"] = cc
             raw = base64.urlsafe_b64encode(msg.as_bytes()).decode()
-
-            resp = await self.client.post(
-                f"{self.api_base}/messages/send",
-                headers=self._headers(),
-                json={"raw": raw},
-            )
-            resp.raise_for_status()
+            await self._request("POST", "/messages/send", json={"raw": raw})
             logger.info(f"Email sent to {to}: {subject}")
             return True
         except Exception as e:

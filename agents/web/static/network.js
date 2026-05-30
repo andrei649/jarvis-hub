@@ -111,6 +111,7 @@ function NetworkBrain({ agents, tasks, collab = [], activeAgent, onSelect, route
   const hoveredTasks = hovered ? positionedTasks.filter(t => t.owner === hovered) : [];
   const hoveredAgent = hovered ? ringAgents.find(a => a.id === hovered) : null;
 
+  const svgRef = useRef(null);
   const [ambient, setAmbient] = useState([]);
   useEffect(() => {
     if (!ringAgents.length) return;
@@ -141,10 +142,10 @@ function NetworkBrain({ agents, tasks, collab = [], activeAgent, onSelect, route
   }, []);
 
   return h(Bracket, {
-    label: focused ? `NEURAL NETWORK · FOCUS · ${focused.name.toUpperCase()}` : 'NEURAL NETWORK · LIVE TOPOLOGY',
+    label: focused ? `${_t('net.title_focus')}${focused.name.toUpperCase()}` : _t('net.title'),
     status: focused
-      ? `${focusedTasks.length} TASKS · ${focusedTasks.filter(t => t.state === 'running').length} RUNNING · esc to exit`
-      : `${ringAgents.filter(a => a.status !== 'idle').length} ACTIVE NODES · ${positionedTasks.length} TASKS · dbl-click to focus`,
+      ? `${focusedTasks.length}${_t('net.status_focus')}${focusedTasks.filter(t => t.state === 'running').length}${_t('task.running')} · ${_t('task.exit')}`
+      : `${ringAgents.filter(a => a.status !== 'idle').length}${_t('net.status')}${positionedTasks.length} TASKS · dbl-click to focus`,
     className: `net-bracket ${focused ? 'is-focused' : ''}`,
   },
     h('div', { className: 'net-frame' },
@@ -323,7 +324,7 @@ function NetworkBrain({ agents, tasks, collab = [], activeAgent, onSelect, route
           h('circle', { cx, cy, r: '42', className: 'core-ring-2' }),
           h('circle', { cx, cy, r: '26', fill: 'url(#core-grad)', filter: 'url(#glow-strong)', className: 'core-orb' }),
           h('circle', { cx, cy, r: '14', className: 'core-pupil' }),
-          h('text', { x: cx, y: cy + 4, className: 'core-text', 'text-anchor': 'middle' }, 'JARVIS'),
+          h('text', { x: cx, y: cy + 4, className: 'core-text', 'text-anchor': 'middle' }, _t('net.core')),
           h('g', { className: 'core-ticks' },
             [0, 90, 180, 270].map(deg => h('line', {
               key: deg, x1: cx, y1: cy - 60, x2: cx, y2: cy - 64,
@@ -353,18 +354,18 @@ function NetworkBrain({ agents, tasks, collab = [], activeAgent, onSelect, route
         h('div', { className: 'net-readout-left' },
           h('span', { className: 'net-readout-eye' }),
           h('span', { className: 'net-readout-label' },
-            voiceState === 'idle'       && 'STANDBY · awaiting wake word',
-            voiceState === 'listening'  && 'LISTENING · wake word detected',
-            voiceState === 'processing' && 'PROCESSING · routing to specialists',
-            voiceState === 'speaking'   && 'SPEAKING · response in flight',
+            voiceState === 'idle'       && _t('app.voice.idle'),
+            voiceState === 'listening'  && _t('app.voice.listening'),
+            voiceState === 'processing' && _t('app.voice.processing'),
+            voiceState === 'speaking'   && _t('app.voice.speaking'),
           ),
         ),
         h('div', { className: 'net-readout-right' },
-          h('span', null, 'STT · WHISPER-LARGE-V3'),
+          h('span', null, _t('app.stt_label')),
           h('span', { className: 'sep' }, '·'),
-          h('span', null, 'TTS · KOKORO-EN-GB-M1'),
+          h('span', null, _t('app.tts_label')),
           h('span', { className: 'sep' }, '·'),
-          h('span', null, 'BACKEND · LM-STUDIO:1234'),
+          h('span', null, _t('app.backend_label')),
         ),
       ),
     ),

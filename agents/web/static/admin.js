@@ -64,29 +64,29 @@ const ICONS = {
 /* ── category metadata ──────────────────────────────────────── */
 
 const CATEGORIES = [
-  { id:'general',  label:'General',      icon:'general' },
-  { id:'llm',      label:'LLM',          icon:'llm' },
-  { id:'agents',   label:'Agenți',       icon:'agents' },
-  { id:'plugins',  label:'Pluginuri',    icon:'plugins' },
-  { id:'voice',    label:'Voice',        icon:'voice' },
-  { id:'channels', label:'Canale',       icon:'channels' },
-  { id:'security', label:'Securitate',   icon:'security' },
-  { id:'memory',   label:'Memorie',      icon:'memory' },
-  { id:'skills',   label:'Skills',       icon:'skills' },
-  { id:'system',   label:'Sistem',       icon:'system' },
+  { id:'general',  label:_t('cat.general'),  icon:'general' },
+  { id:'llm',      label:_t('cat.llm'),      icon:'llm' },
+  { id:'agents',   label:_t('cat.agents'),   icon:'agents' },
+  { id:'plugins',  label:_t('cat.plugins'),  icon:'plugins' },
+  { id:'voice',    label:_t('cat.voice'),    icon:'voice' },
+  { id:'channels', label:_t('cat.channels'), icon:'channels' },
+  { id:'security', label:_t('cat.security'), icon:'security' },
+  { id:'memory',   label:_t('cat.memory'),   icon:'memory' },
+  { id:'skills',   label:_t('cat.skills'),   icon:'skills' },
+  { id:'system',   label:_t('cat.system'),   icon:'system' },
 ];
 
 const CATEGORY_DESC = {
-  general:   'Timezone, wake words, UI density și alte setări generale.',
-  llm:       'Backend language model, endpointuri, temperatură și parametri.',
-  agents:    'Activează/dezactivează agenți, asignă modele și canale.',
-  plugins:   'Activează pluginuri (weather, telegram, gmail etc).',
-  voice:     'STT (Whisper), TTS (Edge), wake word și parametri audio.',
-  channels:  'Configurare canale: Telegram, Discord, Email, Slack.',
-  security:  'Guardrails, sandbox, audit log și protecție date.',
-  memory:    'Memorie conversațională, checkpoint și vector store.',
-  skills:    'Skills instalate și import.',
-  system:    'Environment variables, metrics și informații sistem.',
+  general:   _t('desc.general'),
+  llm:       _t('desc.llm'),
+  agents:    _t('desc.agents'),
+  plugins:   _t('desc.plugins'),
+  voice:     _t('desc.voice'),
+  channels:  _t('desc.channels'),
+  security:  _t('desc.security'),
+  memory:    _t('desc.memory'),
+  skills:    _t('desc.skills'),
+  system:    _t('desc.system'),
 };
 
 /* ── agent glyph map — single source of truth in data.js ───── */
@@ -161,7 +161,7 @@ function TagInputRow({ label, value, onChange }) {
           h('span',{className:'admin-tag-remove', onClick:()=>onChange(tags.filter((_,j)=>j!==i))},'×'),
         )),
         h('input',{className:'admin-tag-input', value:draft,
-          placeholder:'adăugă...',
+          placeholder:_t('admin.tag_placeholder'),
           onChange:e=>setDraft(e.target.value),
           onKeyDown:e=>{if(e.key==='Enter'){e.preventDefault();addTag();}if(e.key==='Backspace'&&!draft&&tags.length){onChange(tags.slice(0,-1));}},
           onBlur:addTag,
@@ -242,7 +242,7 @@ function AgentCard({ agent, onUpdate }) {
 
 function Toast({ message }) {
   if (!message) return null;
-  return h('div',{className:'admin-toast'}, message);
+  return h('div',{className:'admin-toast', key:message}, message);
 }
 
 /* ── System page ─────────────────────────────────────────────── */
@@ -250,12 +250,12 @@ function Toast({ message }) {
 function SystemPage({ envData, onRefresh }) {
   const entries = envData ? Object.entries(envData) : [];
   return h('div',null,
-    h(Group,{title:'ENVIRONMENT VARIABLES'},
-      entries.length === 0 && h('div',{style:{padding:12,fontSize:12,color:'var(--text-dim)'}}, 'Se încarcă...'),
+    h(Group,{title:_t('admin.env_title')},
+      entries.length === 0 && h('div',{style:{padding:12,fontSize:12,color:'var(--text-dim)'}}, _t('admin.loading')),
       entries.map(([k,v],i)=>h(InfoRow,{key:i,label:k,value:v})),
     ),
     h('div',{style:{marginTop:16}},
-      h('button',{className:'admin-btn', onClick:onRefresh}, '🔄 Reîncarcă'),
+      h('button',{className:'admin-btn', onClick:onRefresh}, _t('admin.reload')),
     ),
   );
 }
@@ -271,7 +271,7 @@ function AgentsPage({ onUpdate }) {
       setLoading(false);
     }).catch(()=>setLoading(false));
   },[]);
-  if (loading) return h('div',{style:{padding:20,fontSize:12,color:'var(--text-dim)'}}, 'Se încarcă...');
+  if (loading) return h('div',{style:{padding:20,fontSize:12,color:'var(--text-dim)'}}, _t('admin.loading'));
   return h('div',null,
     list.map((a,i)=>h(AgentCard,{key:i,agent:a,onUpdate})),
   );
@@ -285,8 +285,8 @@ function AuditLog() {
   useEffect(()=>{
     fetch('/api/admin/audit?limit=30').then(r=>r.json()).then(d=>{setRows(d.rows||[]);setLoading(false)}).catch(()=>setLoading(false));
   },[]);
-  if (loading) return h('div',{style:{padding:8,fontSize:11,color:'var(--text-dim)'}}, 'Se încarcă...');
-  if (!rows.length) return h('div',{style:{padding:8,fontSize:11,color:'var(--text-dim)'}}, 'Nicio intrare în audit log.');
+  if (loading) return h('div',{style:{padding:8,fontSize:11,color:'var(--text-dim)'}}, _t('admin.loading'));
+  if (!rows.length) return h('div',{style:{padding:8,fontSize:11,color:'var(--text-dim)'}}, _t('admin.no_audit'));
   return h('div',{style:{marginTop:8}},
     rows.slice(0,20).map((r,i)=>h('div',{key:i,style:{
       display:'flex',gap:12,padding:'4px 0',fontFamily:'var(--font-mono)',fontSize:10,
@@ -310,7 +310,7 @@ function LLMTest() {
     fetch('/api/admin/llm/test',{method:'POST'}).then(r=>r.json()).then(d=>{setResults(d.results);setBusy(false)}).catch(()=>setBusy(false));
   };
   return h('div',null,
-    h('button',{className:'admin-btn is-primary', onClick:test, disabled:busy}, busy ? 'Testează...' : '🔍 Testează conexiunea'),
+    h('button',{className:'admin-btn is-primary', onClick:test, disabled:busy}, busy ? _t('admin.test_busy') : _t('admin.test_btn')),
     results && h('div',{style:{marginTop:10,display:'flex',flexDirection:'column',gap:4}},
       results.map((r,i)=>h('div',{key:i,style:{display:'flex',gap:12,fontFamily:'var(--font-mono)',fontSize:11,alignItems:'center'}},
         h('span',{style:{width:100}}, r.name),
@@ -327,10 +327,10 @@ function LLMTest() {
 
 function MemoryClear({ onToast }) {
   const clear = () => {
-    if (!confirm('Ștergi memoria sesiunii curente?')) return;
-    fetch('/api/admin/memory/clear',{method:'POST'}).then(r=>r.json()).then(d=>{onToast(d.message||'Cleared')}).catch(()=>onToast('Eroare'));
+    if (!confirm(_t('admin.confirm_clear'))) return;
+    fetch('/api/admin/memory/clear',{method:'POST'}).then(r=>r.json()).then(d=>{onToast(d.message||_t('admin.btn_clear'))}).catch(()=>onToast(_t('admin.error_unknown')));
   };
-  return h('button',{className:'admin-btn is-danger', onClick:clear}, '🗑️ Șterge memoria sesiunii');
+  return h('button',{className:'admin-btn is-danger', onClick:clear}, _t('admin.btn_clear'));
 }
 
 /* ── Main Admin App ──────────────────────────────────────────── */
@@ -342,11 +342,12 @@ function AdminApp() {
   const [dirty, setDirty] = useState({});
   const [toast, setToast] = useState('');
   const [envData, setEnvData] = useState(null);
+  const [refreshKey, setRefreshKey] = useState(0);
 
   useEffect(()=>{
     fetch('/api/admin/settings').then(r=>r.json()).then(d=>setSettings(d));
     fetch('/api/admin/env').then(r=>r.json()).then(d=>setEnvData(d)).catch(()=>{});
-  },[]);
+  },[refreshKey]);
 
   const showToast = (msg) => { setToast(msg); setTimeout(()=>setToast(''), 2500); };
 
@@ -361,8 +362,8 @@ function AdminApp() {
       body:JSON.stringify({updates:{[key]:value}}),
     }).then(r=>r.json()).then(d=>{
       if (d.saved) showToast(`${agentId}.${key} → ${JSON.stringify(value)}`);
-      else showToast(`Eroare: ${d.error||'necunoscută'}`);
-    }).catch(e=>showToast(`Eroare rețea: ${e.message}`));
+      else showToast(`${_t('admin.error_prefix')}${d.error||_t('admin.error_unknown')}`);
+    }).catch(e=>showToast(`${_t('admin.error_network')}${e.message}`));
   };
 
   const saveCategory = () => {
@@ -376,10 +377,10 @@ function AdminApp() {
       body:JSON.stringify({values:body}),
     }).then(r=>r.json()).then(d=>{
       setDirty({});
-      showToast(`Salvat: ${d.updated} setări actualizate`);
+      showToast(`${_t('admin.saved')}${d.updated}${_t('admin.saved_suffix')}`);
       // Refresh settings
       fetch('/api/admin/settings').then(r=>r.json()).then(s=>setSettings(s));
-    }).catch(()=>showToast('Eroare la salvare'));
+    }).catch(()=>showToast(_t('admin.save_error')));
   };
 
   const catSettings = settings[active] || [];
@@ -407,9 +408,9 @@ function AdminApp() {
     h('div',{className:'admin-sidebar'},
       h('div',{className:'admin-sidebar-head'},
         ICONS.system,
-        'Jarvis Hub · Admin',
+        _t('admin.brand'),
       ),
-      h('input',{className:'admin-sidebar-search', type:'text', placeholder:'🔍 Caută setări...',
+      h('input',{className:'admin-sidebar-search', type:'text', placeholder:_t('admin.search'),
         value:search, onChange:e=>setSearch(e.target.value)}),
       h('nav',{className:'admin-nav'},
         CATEGORIES.map(c=>h('button',{
@@ -431,7 +432,7 @@ function AdminApp() {
           ? h(SystemPage,{envData, onRefresh:()=>fetch('/api/admin/env').then(r=>r.json()).then(d=>setEnvData(d))})
 
           : h('div',null,
-              filtered.map(s => renderRow(s, s.key, onUpdate, ()=>{} )),
+              filtered.map(s => renderRow(s, s.key, onUpdate, (key)=>showToast(`${_t('admin.action')}${key}`) )),
               isSecurity && h(AuditLog),
             ),
 
@@ -441,9 +442,23 @@ function AdminApp() {
       // Memory clear button on Memory page
       active === 'memory' && h('div',{style:{marginTop:20}}, h(MemoryClear,{onToast:showToast})),
 
+      // Reseed settings button on System page
+      active === 'system' && h('div',{style:{marginTop:20}},
+        h('button',{className:'admin-btn is-warning',
+          onClick:()=>{
+            if (!confirm('Reseed all settings to defaults? Custom values will be lost.')) return;
+            fetch('/api/admin/settings/reseed',{method:'POST'}).then(r=>r.json()).then(d=>{
+              showToast(d.message||'Reseeded');
+              setDirty({});
+              setRefreshKey(k=>k+1);
+            }).catch(()=>showToast('Reseed failed'));
+          }
+        }, '🔄 Reseed defaults'),
+      ),
+
       // Save button
       hasChanges && h('div',{style:{position:'sticky',bottom:0,padding:'12px 0',background:'var(--bg-void)'}},
-        h('button',{className:'admin-btn is-primary', onClick:saveCategory}, '💾 Salvează modificările'),
+        h('button',{className:'admin-btn is-primary', onClick:saveCategory}, _t('admin.save')),
       ),
     ),
 

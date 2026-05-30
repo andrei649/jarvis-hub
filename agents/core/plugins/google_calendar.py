@@ -1,5 +1,5 @@
 """
-google_calendar.py — Google Calendar API v3 plugin.
+google_calendar.py — Google Calendar API v3 plugin with OAuth refresh.
 
 Reads and manages calendar events via Google Calendar API.
 Agents served: pepper (agenda, meetings, scheduling).
@@ -11,6 +11,8 @@ from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 import httpx
+
+from .oauth import refresh_google_token, load_token
 
 logger = logging.getLogger("jarvis.plugins.google_calendar")
 
@@ -25,14 +27,37 @@ class GoogleCalendarPlugin:
     def _headers(self) -> dict:
         return {"Authorization": f"Bearer {self.access_token}"}
 
+    async def _ensure_token(self):
+        if self.access_token:
+            return
+        token_data = load_token("google")
+        if token_data and token_data.get("access_token"):
+            self.access_token = token_data["access_token"]
+            logger.info("Calendar: token restored from persistent store")
+
+    async def _request(self, method: str, path: str, **kwargs):
+        await self._ensure_token()
+        url = f"{self.api_base}{path}"
+        headers = kwargs.pop("headers", {})
+        headers.update(self._headers())
+        for attempt in range(2):
+            resp = await self.client.request(method, url, headers=headers, **kwargs)
+            if resp.status_code == 401 and attempt == 0:
+                new_token = await refresh_google_token()
+                if new_token:
+                    self.access_token = new_token
+                    headers.update(self._headers())
+                    continue
+            resp.raise_for_status()
+            return resp
+        return resp
+
     async def list_events(
         self,
         max_results: int = 10,
         days_ahead: int = 1,
         include_today: bool = True,
     ) -> list[dict]:
-        if not self.access_token:
-            return [{"error": "Google Calendar not authenticated"}]
         try:
             now = datetime.now(timezone.utc)
             time_min = now.isoformat()
@@ -46,12 +71,10 @@ class GoogleCalendarPlugin:
                 "singleEvents": True,
                 "orderBy": "startTime",
             }
-            resp = await self.client.get(
-                f"{self.api_base}/calendars/{self.calendar_id}/events",
-                headers=self._headers(),
+            resp = await self._request(
+                "GET", f"/calendars/{self.calendar_id}/events",
                 params=params,
             )
-            resp.raise_for_status()
             data = resp.json()
             items = data.get("items", [])
 
@@ -102,8 +125,6 @@ class GoogleCalendarPlugin:
         location: str = "",
         timezone_str: str = "Europe/Bucharest",
     ) -> Optional[dict]:
-        if not self.access_token:
-            return None
         try:
             body = {
                 "summary": summary,
@@ -115,12 +136,10 @@ class GoogleCalendarPlugin:
             if location:
                 body["location"] = location
 
-            resp = await self.client.post(
-                f"{self.api_base}/calendars/{self.calendar_id}/events",
-                headers=self._headers(),
+            resp = await self._request(
+                "POST", f"/calendars/{self.calendar_id}/events",
                 json=body,
             )
-            resp.raise_for_status()
             ev = resp.json()
             logger.info(f"Event created: {summary} at {start_dt}")
             return {"id": ev.get("id"), "htmlLink": ev.get("htmlLink")}
@@ -135,8 +154,6 @@ class GoogleCalendarPlugin:
         start_dt: Optional[str] = None,
         end_dt: Optional[str] = None,
     ) -> bool:
-        if not self.access_token:
-            return False
         try:
             body = {}
             if summary:
@@ -146,12 +163,10 @@ class GoogleCalendarPlugin:
             if end_dt:
                 body["end"] = {"dateTime": end_dt, "timeZone": "Europe/Bucharest"}
 
-            resp = await self.client.patch(
-                f"{self.api_base}/calendars/{self.calendar_id}/events/{event_id}",
-                headers=self._headers(),
+            resp = await self._request(
+                "PATCH", f"/calendars/{self.calendar_id}/events/{event_id}",
                 json=body,
             )
-            resp.raise_for_status()
             logger.info(f"Event updated: {event_id}")
             return True
         except Exception as e:
@@ -159,14 +174,8 @@ class GoogleCalendarPlugin:
             return False
 
     async def delete_event(self, event_id: str) -> bool:
-        if not self.access_token:
-            return False
         try:
-            resp = await self.client.delete(
-                f"{self.api_base}/calendars/{self.calendar_id}/events/{event_id}",
-                headers=self._headers(),
-            )
-            resp.raise_for_status()
+            await self._request("DELETE", f"/calendars/{self.calendar_id}/events/{event_id}")
             logger.info(f"Event deleted: {event_id}")
             return True
         except Exception as e:

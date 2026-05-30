@@ -1,5 +1,5 @@
 """
-spotify_plugin.py — Spotify control plugin.
+spotify_plugin.py — Spotify control plugin with OAuth refresh.
 
 Playback control and playlist management for Jerome.
 Uses the Spotify Web API with OAuth token.
@@ -9,6 +9,8 @@ import logging
 from typing import Optional
 
 import httpx
+
+from .oauth import refresh_spotify_token, load_token
 
 logger = logging.getLogger("jarvis.plugins.spotify")
 
@@ -26,15 +28,37 @@ class SpotifyPlugin:
     def _headers(self) -> dict:
         return {"Authorization": f"Bearer {self.access_token}"}
 
+    async def _ensure_token(self):
+        if self.access_token:
+            return
+        token_data = load_token("spotify")
+        if token_data and token_data.get("access_token"):
+            self.access_token = token_data["access_token"]
+            self.refresh_token = token_data.get("refresh_token", self.refresh_token)
+            logger.info("Spotify: token restored from persistent store")
+
+    async def _request(self, method: str, path: str, **kwargs):
+        await self._ensure_token()
+        url = f"{self.api_base}{path}"
+        headers = kwargs.pop("headers", {})
+        headers.update(self._headers())
+        for attempt in range(2):
+            resp = await self.client.request(method, url, headers=headers, **kwargs)
+            if resp.status_code == 401 and attempt == 0:
+                new_token = await refresh_spotify_token()
+                if new_token:
+                    self.access_token = new_token
+                    headers.update(self._headers())
+                    continue
+            resp.raise_for_status()
+            return resp
+        return resp
+
     async def get_playback(self) -> Optional[dict]:
         try:
-            resp = await self.client.get(
-                f"{self.api_base}/me/player",
-                headers=self._headers(),
-            )
+            resp = await self._request("GET", "/me/player")
             if resp.status_code == 204:
                 return {"is_playing": False, "device": None}
-            resp.raise_for_status()
             data = resp.json()
             item = data.get("item", {})
             return {
@@ -51,16 +75,13 @@ class SpotifyPlugin:
 
     async def play(self, device_id: str = "", context_uri: str = "") -> bool:
         try:
-            url = f"{self.api_base}/me/player/play"
             params = {}
             if device_id:
                 params["device_id"] = device_id
             body = {}
             if context_uri:
                 body["context_uri"] = context_uri
-            resp = await self.client.put(url, headers=self._headers(),
-                                         params=params, json=body)
-            resp.raise_for_status()
+            await self._request("PUT", "/me/player/play", params=params, json=body)
             return True
         except Exception as e:
             logger.error(f"Spotify play error: {e}")
@@ -68,11 +89,7 @@ class SpotifyPlugin:
 
     async def pause(self) -> bool:
         try:
-            resp = await self.client.put(
-                f"{self.api_base}/me/player/pause",
-                headers=self._headers(),
-            )
-            resp.raise_for_status()
+            await self._request("PUT", "/me/player/pause")
             return True
         except Exception as e:
             logger.error(f"Spotify pause error: {e}")
@@ -80,11 +97,7 @@ class SpotifyPlugin:
 
     async def next_track(self) -> bool:
         try:
-            resp = await self.client.post(
-                f"{self.api_base}/me/player/next",
-                headers=self._headers(),
-            )
-            resp.raise_for_status()
+            await self._request("POST", "/me/player/next")
             return True
         except Exception as e:
             logger.error(f"Spotify next error: {e}")
@@ -92,12 +105,10 @@ class SpotifyPlugin:
 
     async def search(self, query: str, limit: int = 5) -> list[dict]:
         try:
-            resp = await self.client.get(
-                f"{self.api_base}/search",
-                headers=self._headers(),
+            resp = await self._request(
+                "GET", "/search",
                 params={"q": query, "type": "track,playlist", "limit": limit},
             )
-            resp.raise_for_status()
             data = resp.json()
             tracks = data.get("tracks", {}).get("items", [])
             return [
@@ -115,11 +126,7 @@ class SpotifyPlugin:
 
     async def get_devices(self) -> list[dict]:
         try:
-            resp = await self.client.get(
-                f"{self.api_base}/me/player/devices",
-                headers=self._headers(),
-            )
-            resp.raise_for_status()
+            resp = await self._request("GET", "/me/player/devices")
             return resp.json().get("devices", [])
         except Exception as e:
             logger.warning(f"Spotify devices error: {e}")

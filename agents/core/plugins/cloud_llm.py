@@ -17,11 +17,12 @@ APPROVED_AGENTS = ["jarvis", "athena", "stark", "vision", "veronica"]
 
 
 class CloudLLMPlugin:
-    def __init__(self, anthropic_key: str = "", openai_key: str = ""):
+    def __init__(self, anthropic_key: str = "", openai_key: str = "", gemini_key: str = ""):
         self.anthropic_key = anthropic_key
         self.openai_key = openai_key
+        self.gemini_key = gemini_key
         self.client = httpx.AsyncClient(timeout=120.0)
-        self._prefer = "anthropic" if anthropic_key else "openai" if openai_key else None
+        self._prefer = "anthropic" if anthropic_key else "gemini" if gemini_key else "openai" if openai_key else None
 
     async def generate(self, prompt: str, system: str = "",
                        model: str = "", agent_id: str = "",
@@ -34,6 +35,8 @@ class CloudLLMPlugin:
             return await self._call_anthropic(prompt, system, model or "claude-sonnet-4-20250514", max_tokens)
         elif self._prefer == "openai":
             return await self._call_openai(prompt, system, model or "gpt-4o", max_tokens)
+        elif self._prefer == "gemini":
+            return await self._call_gemini(prompt, system, model or "gemini-2.5-flash", max_tokens)
         else:
             return "[Cloud LLM unavailable: no API key configured]"
 
@@ -60,6 +63,29 @@ class CloudLLMPlugin:
         except Exception as e:
             logger.error(f"Anthropic error: {e}")
             return f"[Anthropic error: {e}]"
+
+    async def _call_gemini(self, prompt: str, system: str,
+                            model: str, max_tokens: int) -> str:
+        try:
+            url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={self.gemini_key}"
+            payload = {
+                "contents": [{"role": "user", "parts": [{"text": prompt}]}],
+                "systemInstruction": {"parts": [{"text": system}]} if system else None,
+                "generationConfig": {"maxOutputTokens": max_tokens},
+            }
+            if not payload["systemInstruction"]:
+                del payload["systemInstruction"]
+            resp = await self.client.post(url, json=payload)
+            resp.raise_for_status()
+            data = resp.json()
+            candidates = data.get("candidates", [])
+            if candidates:
+                parts = candidates[0].get("content", {}).get("parts", [])
+                return "".join(p.get("text", "") for p in parts)
+            return ""
+        except Exception as e:
+            logger.error(f"Gemini error: {e}")
+            return f"[Gemini error: {e}]"
 
     async def _call_openai(self, prompt: str, system: str,
                            model: str, max_tokens: int) -> str:
@@ -88,7 +114,7 @@ class CloudLLMPlugin:
 
     @property
     def available(self) -> bool:
-        return bool(self.anthropic_key or self.openai_key)
+        return bool(self.anthropic_key or self.openai_key or self.gemini_key)
 
     async def close(self):
         await self.client.aclose()

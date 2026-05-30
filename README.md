@@ -56,17 +56,17 @@ A personal AI mesh that handles the cross-section of Andrei's life: work at Raif
 
 ```bash
 pip install -r requirements-beta.txt
-python serve.py              # FastAPI server at http://127.0.0.1:8000
-python -m pytest             # 26 tests
+python -m uvicorn agents.web:app --host 127.0.0.1 --port 8080
+python -m pytest             # 39 tests
 ```
 
-- **HUD:** http://127.0.0.1:8000/
-- **Admin panel:** http://127.0.0.1:8000/admin (10 categories, 52 settings)
+- **HUD:** http://127.0.0.1:8080/
+- **Admin panel:** http://127.0.0.1:8080/admin (10 categories, 52 settings)
 - **CLI REPL:** `python agents/run.py`
 
 ## Status
 
 **v0.2.1** — 15 agents across 4 tiers, fully-offline HUD, admin panel, SQLite settings,
-10 plugins, 6 channels, skills + sandbox + learning loop. 26 tests passing.
+10 plugins, 6 channels, skills + sandbox + learning loop. 39 tests passing.
 
 See `STATUS.md` and `.opencode/plans/qa-bugs.md` for details.

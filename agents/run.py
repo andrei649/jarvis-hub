@@ -13,11 +13,9 @@ sys.path.insert(0, str(Path(__file__).parent))
 
 from core.config import JarvisConfig
 from core.orchestrator import Orchestrator
+from core.log import setup_logging
 
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(levelname)s  %(name)s  %(message)s",
-)
+setup_logging()
 
 
 async def main():

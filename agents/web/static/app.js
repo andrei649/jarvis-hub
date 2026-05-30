@@ -21,7 +21,7 @@ function App() {
   var _q = useState(true), lmOnline = _q[0], setLmOnline = _q[1];
   var _r = useState(false), sending = _r[0], setSending = _r[1];
   var _s = useState(true), loading = _s[0], setLoading = _s[1];
-  var _t = useState(false), apiDown = _t[0], setApiDown = _t[1];
+  var _u = useState(false), apiDown = _u[0], setApiDown = _u[1];
   var recRef = useRef(null);
 
   var agentMap = useMemo(function () { return Object.fromEntries(agents.map(function (a) { return [a.id, a]; })); }, [agents]);
@@ -129,40 +129,40 @@ function App() {
         setSending(false);
       };
 
-      while (true) {
-        var _ref = await reader.read(), done = _ref.done, value = _ref.value;
-        if (done) break;
-        buf += dec.decode(value, { stream: true });
-        var lines = buf.split('\n');
-        buf = lines.pop();
-        for (var _i2 = 0; _i2 < lines.length; _i2++) {
-          var line = lines[_i2];
-          if (!line.startsWith('data: ')) continue;
+      var processLines = function (parts) {
+        if (!parts || !parts.length) return false;
+        for (var _i3 = 0; _i3 < parts.length; _i3++) {
+          var line2 = parts[_i3];
+          if (!line2.startsWith('data: ')) continue;
           try {
-            var evt = JSON.parse(line.slice(6));
-            if (evt.type === 'start') {
-              responderId = evt.agent || activeAgent;
+            var evt2 = JSON.parse(line2.slice(6));
+            if (evt2.type === 'start') {
+              responderId = evt2.agent || activeAgent;
               setVoiceState('speaking');
               setThinking(responderId);
-            } else if (evt.type === 'token') {
-              responseText += evt.text || '';
-            } else if (evt.type === 'end') {
-              finalize(evt);
-              break;
+            } else if (evt2.type === 'token') {
+              responseText += evt2.text || '';
+            } else if (evt2.type === 'end') {
+              finalize(evt2);
+              return true;
             }
           } catch (e) {}
         }
-        if (finished) break;
+        return false;
+      };
+
+      while (true) {
+        var _ref = await reader.read(), done = _ref.done, value = _ref.value;
+        if (value) buf += dec.decode(value, { stream: true });
+        if (done || finished) break;
+        var parts = buf.split('\n');
+        buf = parts.pop();
+        if (processLines(parts)) break;
       }
-      if (!finished && buf.startsWith('data: ')) {
-        try {
-          var evt2 = JSON.parse(buf.slice(6));
-          if (evt2.type === 'end') finalize(evt2);
-        } catch (e) {}
-      }
+      if (!finished && buf) processLines([buf]);
     } catch (err) {
       console.error('stream error', err);
-      setMessages(function (m) { return [].concat(m, [{ role: 'agent', agent: 'jarvis', ts: nowTs(), text: 'Eroare de conexiune. Încearcă din nou.' }]); });
+      setMessages(function (m) { return [].concat(m, [{ role: 'agent', agent: 'jarvis', ts: nowTs(), text: _t('app.connection_error') }]); });
       setThinking(null);
       setRoutedAgents([]);
       setVoiceState('idle');
@@ -206,11 +206,11 @@ function App() {
 
     loading && h('div', { className: 'hud-loading' },
       h('div', { className: 'hud-loading-ring' }),
-      h('div', { className: 'hud-loading-label' }, 'INITIALIZING JARVIS HUB…'),
+      h('div', { className: 'hud-loading-label' }, _t('app.loading')),
     ),
 
     !loading && apiDown && h('div', { className: 'hud-apidown', role: 'status' },
-      '⚠ Backend indisponibil — se afișează ultimele date cunoscute. Reîncerc automat.'),
+      _t('app.apidown')),
 
     h(TopBar, {
       activeAgent: activeAgent,

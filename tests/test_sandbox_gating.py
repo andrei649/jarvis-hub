@@ -12,8 +12,14 @@ sys.path.insert(0, str(repo_root / "agents"))
 from agents.core.sandbox import Sandbox
 
 
+def _docker_available():
+    return Sandbox()._has_docker
+
+
 @pytest.mark.asyncio
 async def test_subprocess_disabled_by_default():
+    if _docker_available():
+        pytest.skip("Docker available — subprocess gate only applies without Docker")
     sandbox = Sandbox(allow_subprocess=False)
     result = await sandbox.execute_python("print('hello')")
     assert not result.success
@@ -22,6 +28,8 @@ async def test_subprocess_disabled_by_default():
 
 @pytest.mark.asyncio
 async def test_shell_disabled_by_default():
+    if _docker_available():
+        pytest.skip("Docker available — subprocess gate only applies without Docker")
     sandbox = Sandbox(allow_subprocess=False)
     result = await sandbox.execute_shell("echo hello")
     assert not result.success

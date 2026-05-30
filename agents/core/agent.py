@@ -8,7 +8,7 @@ import time
 from pathlib import Path
 from typing import Optional
 
-from .llm.router import LLMRouter
+from .llm.hybrid_router import HybridRouter
 from .security.guardrails import GuardrailsEngine
 
 logger = logging.getLogger("jarvis.agent")
@@ -23,7 +23,7 @@ DEMOTION_TIERS = {
 
 
 class Agent:
-    def __init__(self, agent_id: str, config: dict, llm_router: LLMRouter = None, permission_gate=None):
+    def __init__(self, agent_id: str, config: dict, llm_router: HybridRouter = None, permission_gate=None):
         self.id = agent_id
         self.name = config.get("name", agent_id)
         self.config = config
@@ -59,8 +59,6 @@ class Agent:
         if not self.llm_router:
             return f"[{self.name} no LLM backend]"
 
-        backend = self.guardrails if self.guardrails else self.llm_router.backend
-
         agent_context = context.get("agent_context", {})
         agent_block = ""
         if agent_context:
@@ -81,6 +79,10 @@ class Agent:
             f"to save it as a reusable skill. "
             f"You can also hand off to another agent with '[handoff:agent_id]'."
         )
+
+        backend, _ = self.llm_router.select_backend(self.id, prompt)
+        if self.guardrails:
+            backend = self.guardrails
 
         if self._checkpoint_manager:
             self._checkpoint_manager.save_agent_execution(self.id, context.get("session_id", "unknown"), prompt)
@@ -150,7 +152,9 @@ class Agent:
         )
 
         try:
-            backend = self.guardrails if self.guardrails else self.llm_router.backend
+            backend, _ = self.llm_router.select_backend("jarvis", prompt)
+            if self.guardrails:
+                backend = self.guardrails
             response = await backend.generate(
                 model=model,
                 prompt=prompt,

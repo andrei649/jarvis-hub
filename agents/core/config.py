@@ -23,6 +23,7 @@ class AgentConfig:
             self.channel = channel_val.get("primary", "voice")
         self.has_heartbeat: bool = data.get("heartbeat", False)
         self.tier: str = data.get("tier", "foundation")
+        self.llm_policy: str = data.get("llm_policy", "auto")
 
         # Plugin permissions this agent needs
         self.plugins: list[str] = data.get("plugins", [])

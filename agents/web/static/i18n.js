@@ -1,0 +1,122 @@
+'use strict';
+/* i18n — lightweight string dictionary for Jarvis Hub UI */
+/* Default locale: ro. Add new locales by extending LOCALE_MAP. */
+
+const LOCALE = document.documentElement.lang || 'ro';
+
+const STRINGS = {
+  'app.loading':           'INITIALIZING JARVIS HUB…',
+  'app.apidown':           '⚠ Backend indisponibil — se afișează ultimele date cunoscute. Reîncerc automat.',
+  'app.connection_error':  'Eroare de conexiune. Încearcă din nou.',
+  'app.voice.idle':        'STANDBY · awaiting wake word',
+  'app.voice.listening':   'LISTENING · wake word detected',
+  'app.voice.processing':  'PROCESSING · routing to specialists',
+  'app.voice.speaking':    'SPEAKING · response in flight',
+  'app.backend_label':     'BACKEND · LM-STUDIO:1234',
+  'app.stt_label':         'STT · WHISPER-LARGE-V3',
+  'app.tts_label':         'TTS · KOKORO-EN-GB-M1',
+
+  'net.title':             'NEURAL NETWORK · LIVE TOPOLOGY',
+  'net.title_focus':       'NEURAL NETWORK · FOCUS · ',
+  'net.status':            'ACTIVE NODES · ',
+  'net.status_focus':      'TASKS · ',
+  'net.core':              'JARVIS',
+
+  'admin.brand':           'Jarvis Hub · Admin',
+  'admin.search':          '🔍 Caută setări...',
+  'admin.save':            '💾 Salvează modificările',
+  'admin.saved':           'Salvat: ',
+  'admin.saved_suffix':    ' setări actualizate',
+  'admin.save_error':      'Eroare la salvare',
+  'admin.action':          'Acțiune: ',
+  'admin.error_prefix':    'Eroare: ',
+  'admin.error_unknown':   'necunoscută',
+  'admin.error_network':   'Eroare rețea: ',
+  'admin.reload':          '🔄 Reîncarcă',
+  'admin.loading':         'Se încarcă...',
+  'admin.no_audit':        'Nicio intrare în audit log.',
+  'admin.test_btn':        '🔍 Testează conexiunea',
+  'admin.test_busy':       'Testează...',
+  'admin.confirm_clear':   'Ștergi memoria sesiunii curente?',
+  'admin.btn_clear':       '🗑️ Șterge memoria sesiunii',
+  'admin.env_title':       'ENVIRONMENT VARIABLES',
+  'admin.tag_placeholder': 'adăugă...',
+
+  'cat.general':     'General',
+  'cat.llm':         'LLM',
+  'cat.agents':      'Agenți',
+  'cat.plugins':     'Pluginuri',
+  'cat.voice':       'Voice',
+  'cat.channels':    'Canale',
+  'cat.security':    'Securitate',
+  'cat.memory':      'Memorie',
+  'cat.skills':      'Skills',
+  'cat.system':      'Sistem',
+
+  'desc.general':   'Timezone, wake words, UI density și alte setări generale.',
+  'desc.llm':       'Backend language model, endpointuri, temperatură și parametri.',
+  'desc.agents':    'Activează/dezactivează agenți, asignă modele și canale.',
+  'desc.plugins':   'Activează pluginuri (weather, telegram, gmail etc).',
+  'desc.voice':     'STT (Whisper), TTS (Edge), wake word și parametri audio.',
+  'desc.channels':  'Configurare canale: Telegram, Discord, Email, Slack.',
+  'desc.security':  'Guardrails, sandbox, audit log și protecție date.',
+  'desc.memory':    'Memorie conversațională, checkpoint și vector store.',
+  'desc.skills':    'Skills instalate și import.',
+  'desc.system':    'Environment variables, metrics și informații sistem.',
+
+  'comp.brand':           'JARVIS·HUB',
+  'comp.memory':          'Memory',
+  'comp.online':          'ONLINE',
+  'comp.offline':         'OFFLINE',
+  'comp.lmstudio':        'LM Studio',
+  'comp.agent_network':   'AGENT NETWORK',
+  'comp.system':          'SYSTEM',
+  'comp.nominal':         'NOMINAL',
+  'comp.gpu_load':        'GPU LOAD',
+  'comp.backend':         'BACKEND',
+  'comp.model':           'MODEL',
+  'comp.latency':         'LATENCY',
+  'comp.uptime':          'UPTIME',
+  'comp.voice_hud':       'VOICE HUD',
+  'comp.andrei':          'ANDREI',
+  'comp.transmit':        'TRANSMIT',
+  'comp.conversation':    'CONVERSATION · SESSION ',
+  'comp.turns':           ' TURNS',
+  'comp.weather':         'AMBIENT · WEATHER',
+  'comp.calendar':        'CALENDAR · ASTĂZI',
+  'comp.next':            'NEXT ',
+  'comp.agent_grid':      'AGENT GRID',
+  'comp.online_suffix':   ' ONLINE',
+  'comp.heartbeat':       'HEARTBEAT · ALERTS',
+  'comp.active':          ' ACTIVE',
+  'comp.simte':           'SIMTE',
+  'comp.input_placeholder': 'Comandă... (text sau wake word „jarvis”)',
+  'comp.microphone':      'Microphone',
+
+  'data.city':            'București',
+  'data.loading':         'Se încarcă…',
+
+  'env.fallback_host':    'BONOBO-WS',
+  'env.fallback_cpu':     'Intel Core Ultra 9 · 32c',
+  'env.fallback_gpu':     'RTX 5090 · 24GB',
+  'env.fallback_backend': 'LM Studio · 1234',
+  'env.fallback_model':   'google/gemma-4-31b-a4b',
+
+  'tier.cns':     'Command — Nervous System',
+  'tier.cns_det': 'Orchestration · Daily ops',
+  'tier.biz':     'Business Intelligence',
+  'tier.biz_det': 'Strategy · Research · Comms',
+  'tier.sec':     'Security & Infrastructure',
+  'tier.sec_det': 'Code · Workflows · Audit',
+  'tier.fnd':     'Foundation',
+  'tier.fnd_det': 'Markets · Fitness · Family',
+
+  'task.running': ' RUNNING',
+  'task.exit':    'esc to exit',
+};
+
+function _t(key) {
+  return STRINGS[key] || key;
+}
+
+window._t = _t;

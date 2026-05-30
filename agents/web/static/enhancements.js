@@ -187,7 +187,7 @@ function CommandPalette({ open, onClose, agents, tasks, projects, onAction }) {
       ),
 
       h('div', { className: 'palette-foot' },
-        h('span', null, 'JARVIS HUB'),
+        h('span', null, _t('comp.brand')),
         h('span', { className: 'palette-foot-spacer' }),
         h('span', null, `${results.length} matches`),
         h('span', { className: 'palette-foot-spacer' }),

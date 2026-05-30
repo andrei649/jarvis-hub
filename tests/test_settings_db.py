@@ -56,3 +56,20 @@ def test_put_category_ignores_unknown_key(temp_db):
 
 def test_get_unknown_category_empty(temp_db):
     assert temp_db.get_category("nonexistent") == []
+
+
+def test_init_db_force_reseeds(temp_db):
+    temp_db.put_category("llm", {"max_tokens": 9999})
+    temp_db.init_db(force=True)
+    llm = {r["key"]: r for r in temp_db.get_category("llm")}
+    assert llm["max_tokens"]["value"] == 1024
+
+
+def test_init_db_force_restores_all_categories(temp_db):
+    temp_db.put_category("general", {"timezone": "Custom/Time"})
+    temp_db.init_db(force=True)
+    groups = temp_db.get_all()
+    assert len(groups) == 10  # all categories restored
+    gen = {r["key"]: r for r in groups["general"]}
+    # Custom values gone, defaults back
+    assert gen["timezone"]["value"] != "Custom/Time"

@@ -71,7 +71,7 @@ function TopBar({ activeAgent, voiceState, agentsOnline, agentsTotal, lmOnline }
           h('line', { x1: '26', y1: '16', x2: '31', y2: '16', stroke: 'currentColor', strokeWidth: '1' }),
         ),
         h('div', { className: 'logo-text' },
-          h('div', { className: 'logo-name' }, 'JARVIS', h('span', { className: 'logo-dot' }, '·'), 'HUB'),
+          h('div', { className: 'logo-name' }, _t('comp.brand').split('·')[0], h('span', { className: 'logo-dot' }, '·'), _t('comp.brand').split('·')[1]),
           h('div', { className: 'logo-ver' }, 'v0.2.1 · BONOBO-WS'),
         ),
       ),
@@ -80,8 +80,8 @@ function TopBar({ activeAgent, voiceState, agentsOnline, agentsTotal, lmOnline }
     h('div', { className: 'topbar-right' },
       h(Badge, { label: 'Voice', value: voiceState.toUpperCase(), kind: voiceState === 'idle' ? 'dim' : 'active' }),
       h(Badge, { label: 'Agents', value: `${agentsOnline}/${agentsTotal}`, kind: 'active' }),
-      h(Badge, { label: 'Memory', value: 'ONLINE', kind: 'ok' }),
-      h(Badge, { label: 'LM Studio', value: lmOnline ? '1234' : 'OFFLINE', kind: lmOnline ? 'active' : 'alert' }),
+      h(Badge, { label: _t('comp.memory'), value: _t('comp.online'), kind: 'ok' }),
+      h(Badge, { label: _t('comp.lmstudio'), value: lmOnline ? '1234' : _t('comp.offline'), kind: lmOnline ? 'active' : 'alert' }),
     ),
   );
 }
@@ -117,7 +117,7 @@ function AgentList({ agents, tiers, activeAgent, onSelect, sys }) {
     [agents, tiers],
   );
   return h('aside', { className: 'panel panel-left' },
-    h(Bracket, { label: 'AGENT NETWORK', status: `${agents.filter(a => a.status !== 'idle').length}/${agents.length}` },
+    h(Bracket, { label: _t('comp.agent_network'), status: `${agents.filter(a => a.status !== 'idle').length}/${agents.length}` },
       h('div', { className: 'agent-list' },
         grouped.map((g) =>
           h('div', { key: g.id, className: 'agent-group' },
@@ -144,17 +144,17 @@ function AgentList({ agents, tiers, activeAgent, onSelect, sys }) {
         ),
       ),
     ),
-    h(Bracket, { label: 'SYSTEM', status: 'NOMINAL', className: 'sys-bracket' },
+    h(Bracket, { label: _t('comp.system'), status: _t('comp.nominal'), className: 'sys-bracket' },
       h('div', { className: 'sys-rows' },
         h(SysRow, { label: 'HOST', value: sys.host }),
         h(SysRow, { label: 'CPU', value: sys.cpu }),
         h(SysMeter, { label: 'RAM', used: sys.ram_used, total: sys.ram_total, unit: 'GB' }),
         h(SysMeter, { label: 'VRAM', used: sys.vram_used, total: sys.vram_total, unit: 'GB' }),
-        h(SysMeter, { label: 'GPU LOAD', used: sys.gpu_load, total: 100, unit: '%', raw: true }),
-        h(SysRow, { label: 'BACKEND', value: sys.backend }),
-        h(SysRow, { label: 'MODEL', value: sys.model, mono: true }),
-        h(SysRow, { label: 'LATENCY', value: `${(sys.latency || 0).toFixed(1)}s avg` }),
-        h(SysRow, { label: 'UPTIME', value: sys.uptime }),
+        h(SysMeter, { label: _t('comp.gpu_load'), used: sys.gpu_load, total: 100, unit: '%', raw: true }),
+        h(SysRow, { label: _t('comp.backend'), value: sys.backend }),
+        h(SysRow, { label: _t('comp.model'), value: sys.model, mono: true }),
+        h(SysRow, { label: _t('comp.latency'), value: `${(sys.latency || 0).toFixed(1)}s avg` }),
+        h(SysRow, { label: _t('comp.uptime'), value: sys.uptime }),
       ),
     ),
   );
@@ -162,46 +162,6 @@ function AgentList({ agents, tiers, activeAgent, onSelect, sys }) {
 
 /* ───────────────────────────── Voice Visualizer ───────────────────────────── */
 
-function VoiceVisualizer({ state, activeAgent, onCycle }) {
-  const bars = Array.from({ length: 11 });
-  const labels = {
-    idle:       '— STANDBY —',
-    listening:  '[ LISTENING · WAKE WORD DETECTED ]',
-    processing: '[ PROCESSING · ROUTING TO SPECIALISTS ]',
-    speaking:   `[ ${activeAgent.toUpperCase()} RESPONDING ]`,
-  };
-  return h(Bracket, { label: 'VOICE HUD', status: state.toUpperCase(), className: 'viz-bracket' },
-    h('div', { className: `viz viz-${state}`, onClick: onCycle },
-      h('div', { className: 'viz-ring viz-ring-1' }),
-      h('div', { className: 'viz-ring viz-ring-2' }),
-      h('div', { className: 'viz-ring viz-ring-3' }),
-      h('div', { className: 'viz-core' },
-        state === 'processing'
-          ? h('svg', { viewBox: '-30 -30 60 60', className: 'hex', width: '84', height: '84' },
-              h('polygon', { points: '0,-24 20.78,-12 20.78,12 0,24 -20.78,12 -20.78,-12', fill: 'none', stroke: 'currentColor', strokeWidth: '1.2' }),
-              h('polygon', { points: '0,-14 12.12,-7 12.12,7 0,14 -12.12,7 -12.12,-7', fill: 'none', stroke: 'currentColor', strokeWidth: '0.8', opacity: '0.6', className: 'hex-inner' }),
-              h('circle', { cx: '0', cy: '0', r: '2', fill: 'currentColor' }),
-              h('circle', { cx: '0', cy: '-24', r: '1.5', fill: 'currentColor' }),
-              h('circle', { cx: '20.78', cy: '0', r: '1.5', fill: 'currentColor' }),
-              h('circle', { cx: '-20.78', cy: '0', r: '1.5', fill: 'currentColor' }),
-            )
-          : h('div', { className: 'viz-bars' },
-              bars.map((_, i) => h('span', { key: i, className: 'viz-bar', style: { '--i': i, '--n': bars.length } })),
-            ),
-      ),
-      h('div', { className: 'viz-readout' },
-        h('div', { className: 'viz-label' }, labels[state]),
-        h('div', { className: 'viz-meta' },
-          h('span', null, 'CH · VOICE'),
-          h('span', { className: 'viz-dot' }, '·'),
-          h('span', null, 'STT · WHISPER-LARGE-V3'),
-          h('span', { className: 'viz-dot' }, '·'),
-          h('span', null, 'TTS · KOKORO-EN-GB-M1'),
-        ),
-      ),
-    ),
-  );
-}
 
 /* ───────────────────────────── Conversation ───────────────────────────── */
 
@@ -209,7 +169,7 @@ function Message({ m, agentMap }) {
   if (m.role === 'user') {
     return h('div', { className: 'msg msg-user' },
       h('div', { className: 'msg-meta' },
-        h('span', { className: 'msg-tag' }, 'ANDREI'),
+        h('span', { className: 'msg-tag' }, _t('comp.andrei')),
         h('span', { className: 'msg-ts' }, m.ts),
       ),
       h('div', { className: 'msg-body' }, m.text),
@@ -264,7 +224,7 @@ function ConversationView({ messages, agentMap, thinking, routedAgents }) {
     const el = ref.current;
     if (el) el.scrollTop = el.scrollHeight;
   }, [messages.length, thinking]);
-  return h(Bracket, { label: 'CONVERSATION · SESSION 20260527-0723', status: `${messages.length} TURNS`, className: 'convo-bracket' },
+  return h(Bracket, { label: `${_t('comp.conversation')}20260527-0723`, status: `${messages.length}${_t('comp.turns')}`, className: 'convo-bracket' },
     h('div', { className: 'convo', ref },
       messages.map((m, i) => h(Message, { key: i, m, agentMap })),
       thinking && h(ThinkingBubble, { agent: agentMap[thinking] || { name: thinking }, routedAgents, agentMap }),
@@ -284,13 +244,13 @@ function InputBar({ value, onChange, onSubmit, mic, onMicToggle, activeAgent, di
       className: 'input-field',
       type: 'text',
       value,
-      placeholder: 'Comandă... (text sau wake word „jarvis”)',
+      placeholder: _t('comp.input_placeholder'),
       onChange: (e) => onChange(e.target.value),
       onKeyDown: (e) => { if (e.key === 'Enter') onSubmit(); },
       autoFocus: true,
       disabled,
     }),
-    h('button', { className: `input-mic ${mic ? 'is-on' : ''}`, onClick: onMicToggle, title: 'Microphone', disabled },
+    h('button', { className: `input-mic ${mic ? 'is-on' : ''}`, onClick: onMicToggle, title: _t('comp.microphone'), disabled },
       h('svg', { viewBox: '0 0 24 24', width: '16', height: '16' },
         h('rect', { x: '9', y: '3', width: '6', height: '12', rx: '3', fill: 'none', stroke: 'currentColor', strokeWidth: '1.5' }),
         h('path', { d: 'M5 11a7 7 0 0 0 14 0', fill: 'none', stroke: 'currentColor', strokeWidth: '1.5' }),
@@ -298,7 +258,7 @@ function InputBar({ value, onChange, onSubmit, mic, onMicToggle, activeAgent, di
       ),
     ),
     h('button', { className: 'input-send', onClick: onSubmit, disabled },
-      h('span', null, 'TRANSMIT'),
+      h('span', null, _t('comp.transmit')),
       h('svg', { viewBox: '0 0 16 16', width: '12', height: '12' },
         h('path', { d: 'M2 8h10M8 4l4 4-4 4', stroke: 'currentColor', strokeWidth: '1.5', fill: 'none' }),
       ),
@@ -325,7 +285,7 @@ const WeatherIcon = {
 function WeatherCard({ data }) {
   const fc0 = data.forecast && data.forecast[0];
   const Icon = (fc0 && WeatherIcon[fc0.code]) || WeatherIcon.cloud;
-  return h(Bracket, { label: 'AMBIENT · WEATHER', status: data.city.toUpperCase() },
+  return h(Bracket, { label: _t('comp.weather'), status: data.city.toUpperCase() },
     h('div', { className: 'weather' },
       h('div', { className: 'weather-main' },
         h('div', { className: 'weather-temp' },
@@ -338,7 +298,7 @@ function WeatherCard({ data }) {
       h('div', { className: 'weather-grid' },
         h('div', null, h('span', { className: 'k' }, 'VÂNT'), h('span', { className: 'v' }, data.wind)),
         h('div', null, h('span', { className: 'k' }, 'UMID.'), h('span', { className: 'v' }, data.humidity)),
-        h('div', null, h('span', { className: 'k' }, 'SIMTE'), h('span', { className: 'v' }, `${data.feels}°C`)),
+        h('div', null, h('span', { className: 'k' }, _t('comp.simte')), h('span', { className: 'v' }, `${data.feels}°C`)),
         h('div', null, h('span', { className: 'k' }, 'UPD'), h('span', { className: 'v' }, data.updated)),
       ),
       h('div', { className: 'weather-forecast' },
@@ -359,7 +319,7 @@ function WeatherCard({ data }) {
 
 function CalendarCard({ items }) {
   const next = items.find((i) => i.state === 'next');
-  return h(Bracket, { label: 'CALENDAR · ASTĂZI', status: next ? `NEXT ${next.ts}` : '—' },
+  return h(Bracket, { label: _t('comp.calendar'), status: next ? `${_t('comp.next')}${next.ts}` : '—' },
     h('div', { className: 'calendar' },
       items.map((it, i) =>
         h('div', { key: i, className: `cal-row cal-${it.state}` },
@@ -377,7 +337,7 @@ function CalendarCard({ items }) {
 
 function AgentsGrid({ agents, activeAgent, onSelect }) {
   const online = agents.filter((a) => a.status !== 'idle').length;
-  return h(Bracket, { label: 'AGENT GRID', status: `${online}/${agents.length} ONLINE` },
+  return h(Bracket, { label: _t('comp.agent_grid'), status: `${online}/${agents.length}${_t('comp.online_suffix')}` },
     h('div', { className: 'agrid' },
       agents.map((a) =>
         h('button', {
@@ -400,7 +360,7 @@ function AgentsGrid({ agents, activeAgent, onSelect }) {
 }
 
 function HeartbeatFeed({ items, agentMap }) {
-  return h(Bracket, { label: 'HEARTBEAT · ALERTS', status: `${items.length} ACTIVE` },
+  return h(Bracket, { label: _t('comp.heartbeat'), status: `${items.length}${_t('comp.active')}` },
     h('div', { className: 'hbfeed' },
       items.map((n) =>
         h('div', { key: n.id, className: `hb hb-${n.level}` },
@@ -421,7 +381,7 @@ function HeartbeatFeed({ items, agentMap }) {
 /* ───────────────────────────── exports ───────────────────────────── */
 
 Object.assign(window, {
-  TopBar, AgentList, VoiceVisualizer, ConversationView, InputBar,
+  TopBar, AgentList, ConversationView, InputBar,
   WeatherCard, CalendarCard, AgentsGrid, HeartbeatFeed,
   Bracket, StatusDot,
 });
