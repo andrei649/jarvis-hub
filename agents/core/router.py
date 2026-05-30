@@ -36,6 +36,7 @@ class IntentRouter:
         "hercules": ["hercules"],
         "hephaestus": ["hephaestus"],
         "frigga": ["frigga"],
+        "howard": ["howard"],
     }
 
     INTENT_KEYWORDS = {
@@ -70,6 +71,18 @@ class IntentRouter:
         "family": ["frigga"],
         "alexandra": ["frigga"],
         "beads": ["frigga", "veronica"],
+        "howard": ["howard"],
+        "archive": ["howard"],
+        "digital twin": ["howard"],
+        "what would i": ["howard"],
+        "what did i": ["howard"],
+        "what have i": ["howard"],
+        "what do i": ["howard"],
+        "remember": ["howard"],
+        "who is": ["howard", "jarvis"],
+        "what do you know about": ["howard"],
+        "how would i": ["howard"],
+        "voice": ["howard"],
         "music": ["jerome"],
         "playlist": ["jerome"],
         "game": ["jerome"],

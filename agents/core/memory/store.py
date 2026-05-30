@@ -81,6 +81,22 @@ class VectorStore:
             for score, rec in scored[:k]
         ]
 
+    def search_by_sender(self, sender: str, k: int = 10) -> list[dict]:
+        results = [rec for rec in self.records if rec.metadata.get("sender") == sender]
+        results.sort(key=lambda r: r.timestamp, reverse=True)
+        return [
+            {"id": r.id, "metadata": r.metadata, "timestamp": r.timestamp}
+            for r in results[:k]
+        ]
+
+    def search_by_text_subset(self, query: list[float], sender: str = None, k: int = 5) -> list[dict[str, Any]]:
+        if not self.records:
+            return []
+        results = self._search_numpy(query, k * 3) if HAS_NUMPY else self._search_naive(query, k * 3)
+        if sender:
+            results = [r for r in results if r.get("metadata", {}).get("sender") == sender]
+        return results[:k]
+
     def get(self, record_id: str) -> VectorRecord:
         idx = self._id_index.get(record_id)
         if idx is not None:

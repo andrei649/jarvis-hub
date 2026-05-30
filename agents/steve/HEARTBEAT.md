@@ -1,6 +1,6 @@
 ---
 agent: steve
-cadence: cron:* * * * *
+cadence: cron:0 */2 * * *
 silent_by_default: true
 channel: log-only
 enabled: true
@@ -10,7 +10,7 @@ enabled: true
 
 ## Trigger
 
-Every 5 minutes.
+Every 2 hours (S0.2 — was every minute, now every 2h to eliminate thrashing).
 
 ## Checklist
 

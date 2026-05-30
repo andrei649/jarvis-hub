@@ -1,0 +1,210 @@
+"""
+pipeline.py — Orchestrates the full data ingestion for Howard.
+
+Phases:
+  1. Parse Facebook Messenger exports (JSON)
+  2. Parse WhatsApp exports (TXT)
+  3. Normalize into common format
+  4. Run stylometric analysis (VoiceProfile)
+  5. Run knowledge extraction (entities, relationships, decisions)
+  6. Generate embeddings and store in VectorStore
+  7. Save everything to disk (SQLite + JSON + VectorStore)
+"""
+
+import json
+import logging
+import math
+import sqlite3
+from dataclasses import asdict
+from pathlib import Path
+from typing import Optional
+
+from .normalizer import NormalizedMessage
+from .parser_facebook import FacebookParser
+from .parser_whatsapp import WhatsAppParser
+from .stylometry import StylometryAnalyzer
+from .knowledge import KnowledgeExtractor
+from .embedder import Embedder
+
+logger = logging.getLogger("jarvis.ingestion.pipeline")
+
+EMBEDDING_DIM = 768
+
+
+class IngestionPipeline:
+    def __init__(
+        self,
+        data_root: str = "data",
+        output_root: str = "memory_logs/archive",
+        my_name: str = "Andrei Tarcomnicu",
+        my_short_name: str = "Andrei",
+    ):
+        self.data_root = Path(data_root)
+        self.output_root = Path(output_root)
+        self.output_root.mkdir(parents=True, exist_ok=True)
+
+        self.fb_parser = FacebookParser(my_name=my_name)
+        self.wa_parser = WhatsAppParser(my_name=my_short_name)
+        self.stylometry = StylometryAnalyzer(profile_path=self.output_root / "voice_profile.json")
+        self.knowledge = KnowledgeExtractor(output_dir=self.output_root)
+        self.embedder = Embedder()
+
+        self.messages: list[NormalizedMessage] = []
+        self.my_messages: list[NormalizedMessage] = []
+
+    def run(self, fb_dir: Optional[str] = None, wa_dir: Optional[str] = None) -> dict:
+        logger.info("=" * 50)
+        logger.info("Ingestion pipeline started")
+        logger.info("=" * 50)
+
+        phases = []
+
+        # Phase 1: Parse Facebook
+        fb_path = Path(fb_dir) if fb_dir else self.data_root / "facebook" / "messages" / "inbox"
+        fb_messages = list(self.fb_parser.parse_directory(fb_path))
+        self.messages.extend(fb_messages)
+        phases.append({"phase": "facebook", "messages": len(fb_messages)})
+        logger.info(f"Phase 1 complete: {len(fb_messages)} Facebook messages")
+
+        # Phase 2: Parse WhatsApp
+        wa_path = Path(wa_dir) if wa_dir else self.data_root / "whatsapp"
+        wa_messages = list(self.wa_parser.parse_directory(wa_path))
+        self.messages.extend(wa_messages)
+        phases.append({"phase": "whatsapp", "messages": len(wa_messages)})
+        logger.info(f"Phase 2 complete: {len(wa_messages)} WhatsApp messages")
+
+        # Phase 3: Filter my messages
+        self.my_messages = [m for m in self.messages if m.is_me]
+        logger.info(f"Phase 3: {len(self.my_messages)} messages from me out of {len(self.messages)} total")
+
+        # Phase 4: Stylometry
+        voice_profile = self.stylometry.analyze(self.messages)
+        self.stylometry.save()
+        if self.my_messages:
+            voice_profile.avg_message_length = sum(len(m.text) for m in self.my_messages) / len(self.my_messages)
+        phases.append({"phase": "stylometry", "top_words": voice_profile.top_words[:10]})
+
+        # Phase 5: Knowledge extraction
+        self.knowledge.extract(self.messages)
+        self.knowledge.save()
+        phases.append({
+            "phase": "knowledge",
+            "entities": len(self.knowledge.entities),
+            "decisions": len(self.knowledge.decisions),
+            "relationships": len(self.knowledge.relationships),
+        })
+
+        # Phase 6: Generate embeddings
+        logger.info("Phase 6: Generating embeddings...")
+        self.embedder.embed_many(self.messages)
+        phases.append({"phase": "embeddings", "total": len(self.messages)})
+
+        # Phase 7: Save to SQLite
+        db_path = self.output_root / "archive.db"
+        self._save_sqlite(db_path)
+        phases.append({"phase": "sqlite", "path": str(db_path)})
+
+        # Phase 8: Save raw messages JSON
+        json_path = self.output_root / "messages.jsonl"
+        self._save_jsonl(json_path)
+        phases.append({"phase": "jsonl", "path": str(json_path)})
+
+        summary = {
+            "total_messages": len(self.messages),
+            "my_messages": len(self.my_messages),
+            "facebook_messages": len(fb_messages),
+            "whatsapp_messages": len(wa_messages),
+            "phases": phases,
+            "voice_profile": voice_profile.to_dict(),
+            "output_dir": str(self.output_root),
+        }
+
+        summary_path = self.output_root / "ingestion_summary.json"
+        summary_path.write_text(json.dumps(summary, ensure_ascii=False, indent=2), encoding="utf-8")
+        logger.info(f"Ingestion summary saved to {summary_path}")
+
+        return summary
+
+    def _save_sqlite(self, db_path: Path):
+        conn = sqlite3.connect(str(db_path))
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS messages (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                source TEXT,
+                conversation_id TEXT,
+                sender TEXT,
+                is_me INTEGER,
+                text TEXT,
+                timestamp REAL,
+                metadata TEXT
+            )
+        """)
+        conn.execute("""
+            CREATE INDEX IF NOT EXISTS idx_sender ON messages(sender)
+        """)
+        conn.execute("""
+            CREATE INDEX IF NOT EXISTS idx_conversation ON messages(conversation_id)
+        """)
+        conn.execute("""
+            CREATE INDEX IF NOT EXISTS idx_timestamp ON messages(timestamp)
+        """)
+        conn.execute("""
+            CREATE INDEX IF NOT EXISTS idx_is_me ON messages(is_me)
+        """)
+
+        conn.executemany(
+            "INSERT INTO messages (source, conversation_id, sender, is_me, text, timestamp, metadata) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?)",
+            [
+                (
+                    m.source,
+                    m.conversation_id,
+                    m.sender,
+                    1 if m.is_me else 0,
+                    m.text,
+                    m.timestamp,
+                    json.dumps(m.metadata, ensure_ascii=False),
+                )
+                for m in self.messages
+            ],
+        )
+        conn.commit()
+        row_count = conn.execute("SELECT COUNT(*) FROM messages").fetchone()[0]
+        conn.close()
+        logger.info(f"SQLite: {row_count} messages saved to {db_path}")
+
+    def _save_jsonl(self, jsonl_path: Path):
+        with open(jsonl_path, "w", encoding="utf-8") as f:
+            for m in self.messages:
+                f.write(json.dumps(asdict(m), ensure_ascii=False) + "\n")
+        logger.info(f"JSONL: {len(self.messages)} messages saved to {jsonl_path}")
+
+    def search_similar(self, query: str, k: int = 5, only_me: bool = False) -> list[NormalizedMessage]:
+        query_vec = self.embedder.embed(query)
+        scored = []
+        for m in self.messages:
+            if only_me and not m.is_me:
+                continue
+            if not m.embedding:
+                continue
+            sim = sum(a * b for a, b in zip(query_vec, m.embedding))
+            norm_q = math.sqrt(sum(v * v for v in query_vec))
+            norm_m = math.sqrt(sum(v * v for v in m.embedding))
+            if norm_q * norm_m > 0:
+                sim /= (norm_q * norm_m)
+            scored.append((sim, m))
+        scored.sort(key=lambda x: x[0], reverse=True)
+        return [m for _, m in scored[:k]]
+
+    def get_stats(self) -> dict:
+        """Return current ingestion stats without re-running."""
+        return {
+            "total_messages": len(self.messages),
+            "my_messages": len(self.my_messages),
+            "conversations": len(set(m.conversation_id for m in self.messages)),
+            "senders": len(set(m.sender for m in self.messages)),
+            "source_breakdown": {
+                "facebook": sum(1 for m in self.messages if m.source == "facebook"),
+                "whatsapp": sum(1 for m in self.messages if m.source == "whatsapp"),
+            },
+        }

@@ -5,12 +5,16 @@ Decides per-request which backend to use based on:
 1. Token budget (context length)
 2. Agent policy (local-only / cloud-only / auto)
 3. Backend availability (graceful degradation)
+4. Howard special case: uses Ollama with fine-tuned model
+
+Howard's fine-tuned model runs on Ollama alongside LM Studio.
+All other agents use LM Studio (Gemma 4).
 """
 
 import logging
 from typing import Callable, Optional
 
-from .base import LLMBackend
+from .base import LLMBackend, LMStudioBackend, OllamaBackend
 from .router import LLMRouter
 from .tokenizer import estimate_tokens
 
@@ -26,8 +30,15 @@ POLICY_CLOUD = "cloud"
 POLICY_AUTO = "auto"
 
 # Which agents are local-only / cloud-only
-LOCAL_ONLY_AGENTS = {"frigga", "ultron"}
+LOCAL_ONLY_AGENTS = {"frigga", "ultron", "howard"}
 CLOUD_ONLY_AGENTS = {"vision", "athena"}
+
+# Howard's dedicated Ollama model
+HOWARD_OLLAMA_MODEL = "howard-lora-qwen-14b"
+HOWARD_OLLAMA_URL = "http://localhost:11434"
+
+# Agents that should use Ollama instead of LM Studio
+OLLAMA_PREFERRED_AGENTS = {"howard"}
 
 
 class HybridRouter(LLMRouter):
@@ -37,6 +48,8 @@ class HybridRouter(LLMRouter):
         self._gemini_backend: Optional[LLMBackend] = None
         self._local_available = False
         self._cloud_available = False
+        self._ollama_backend: Optional[OllamaBackend] = None
+        self._ollama_available = False
 
     async def detect(self):
         await super().detect()
@@ -46,6 +59,13 @@ class HybridRouter(LLMRouter):
             from .gemini import GeminiBackend
             self._gemini_backend = GeminiBackend(api_key=self.gemini_api_key)
 
+        self._ollama_backend = OllamaBackend(base_url=HOWARD_OLLAMA_URL)
+        self._ollama_available = await self._check(f"{HOWARD_OLLAMA_URL}/api/tags")
+        if self._ollama_available:
+            logger.info(f"Ollama available for Howard ({HOWARD_OLLAMA_MODEL})")
+        else:
+            logger.warning("Ollama not available — Howard will fall back to default backend")
+
     def get_agent_policy(self, agent_id: str) -> str:
         if agent_id in LOCAL_ONLY_AGENTS:
             return POLICY_LOCAL
@@ -54,6 +74,10 @@ class HybridRouter(LLMRouter):
         return POLICY_AUTO
 
     def select_backend(self, agent_id: str, prompt: str) -> tuple[LLMBackend, str]:
+        # Howard special case: use Ollama with fine-tuned model
+        if agent_id == "howard":
+            return self._select_howard_backend()
+
         policy = self.get_agent_policy(agent_id)
         token_count = estimate_tokens(prompt)
 
@@ -87,6 +111,22 @@ class HybridRouter(LLMRouter):
 
         raise RuntimeError("No LLM backend available")
 
+    def _select_howard_backend(self) -> tuple[LLMBackend, str]:
+        """Select backend for Howard: prefer Ollama with fine-tuned model,
+        fall back to main LM Studio backend."""
+        if self._ollama_available:
+            return self._ollama_backend, "ollama-howard"
+        if self._local_available:
+            logger.warning("Ollama unavailable for Howard, falling back to LM Studio")
+            return self._backend, "local-fallback"
+        if self._cloud_available:
+            logger.warning("All local backends unavailable for Howard, falling back to cloud")
+            return self._gemini_backend, "cloud-fallback"
+        raise RuntimeError(f"No LLM backend available for howard")
+
+    def get_howard_model(self) -> str:
+        return HOWARD_OLLAMA_MODEL if self._ollama_available else "google/gemma-4-26b-a4b"
+
     @property
     def backend(self) -> LLMBackend:
         if not self._local_available and not self._cloud_available:
@@ -98,6 +138,8 @@ class HybridRouter(LLMRouter):
         parts = []
         if self._local_available:
             parts.append(self._backend_name)
+        if self._ollama_available:
+            parts.append("ollama-howard")
         if self._cloud_available:
             parts.append("gemini")
         return "+".join(parts) if parts else "none"

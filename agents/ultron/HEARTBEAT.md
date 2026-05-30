@@ -1,16 +1,16 @@
 ---
 agent: ultron
-cadence: cron:0 * * * *
+cadence: cron:0 6,18 * * *
 silent_by_default: true
 channel: log-only
 enabled: true
 ---
 
-# Ultron — Hourly Security Scan
+# Ultron — Daily Security Scan (2x)
 
 ## Trigger
 
-Every hour, on the hour.
+06:00 and 18:00 Europe/Bucharest, daily (S0.2 — was hourly, now 2x/day to eliminate thrashing).
 
 ## Checklist
 
