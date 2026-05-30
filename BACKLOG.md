@@ -94,6 +94,17 @@ daily-driver-ul e solid.
 - Email drafting real (Veronica), calendar conflict resolution real
 - Multi-user, observability, rate limiting
 
+### 💡 Idei de împrumutat din research extern (tutorial Nate Herk — Lovable/ElevenLabs/n8n)
+Notă: ~majoritatea le avem deja local; păstrăm doar delta-ul real ca idei, nu ca scope activ.
+- **DEJA AVEM:** voice layer (Kokoro TTS + faster-whisper STT, `voice/`), personalitate per-agent
+  (`SOUL.md` → secțiunea VOICE), n8n local (Oracle), smart home (homebridge plugin).
+- **Delta nou de luat în considerare (Icebox):**
+  - UI „thinking state" cu animație pulsing în `web/templates/index.html` (efect Iron Man) — mic, frontend-only.
+  - Voice clone dedicat (timbru JARVIS) ca voce Kokoro/alternativă — opțional, decizie de produs.
+  - Ton mai sarcastic/uscat-britanic în SOUL-ul lui Jarvis — **contrazice** identitatea actuală
+    („calm, măsurat, niciodată agitat"); de decis explicit înainte de schimbare.
+
+
 ---
 
 ## ✅ Done
