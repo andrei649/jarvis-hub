@@ -101,3 +101,6 @@ daily-driver-ul e solid.
 - [x] 2026-05-30 Backlog & strategie de operațiuni inițiale create
 - [x] 2026-05-30 Sprint 0 (parțial): gating strict-local per-agent — Frigga nu mai atinge cloud-ul
       (privacy fix real + 4 teste unittest verzi, prima plasă de teste din repo)
+- [x] 2026-05-30 Deblocare infra (Qdrant): `VectorStorePort` + `InMemoryVectorStoreAdapter`
+      (Ports & Adapters, cosine în Python pur, zero deps). Skill-urile H3.x pot fi scrise/testate
+      acum; la deblocare se adaugă doar `adapters/qdrant_vector_store.py`. 4 teste verzi.
