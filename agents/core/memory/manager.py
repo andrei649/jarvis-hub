@@ -1,24 +1,42 @@
 """
 memory/manager.py — Memory manager integrating conversation memory,
-vector store, agent contexts, and structured session persistence.
+vector store, agent contexts, structured session persistence, and
+knowledge graph.
 """
 
 import asyncio
 import logging
+import os
 from typing import Optional
 
 from .conversation import ConversationMemory
-from .store import VectorStore
+from .graph import KnowledgeGraph, create_graph
+from .seed_graph import seed_graph
+from .store import InMemoryVectorStore, VectorStore
 
 logger = logging.getLogger("jarvis.memory")
 
 
 class MemoryManager:
-    def __init__(self):
+    def __init__(self, graph_backend: str = None, vector_backend: str = None):
+        if vector_backend is None:
+            vector_backend = os.getenv("VECTOR_BACKEND", "memory")
         self.conversation = ConversationMemory(max_turns=100, persist=True)
-        self.vectors = VectorStore(dimension=768)
+        if vector_backend == "qdrant":
+            self.vectors = self._init_qdrant()
+        else:
+            self.vectors = InMemoryVectorStore(dimension=768)
         self.agent_contexts: dict[str, dict] = {}
+        self.graph: KnowledgeGraph = create_graph(graph_backend)
         self._lock = asyncio.Lock()
+        seed_graph(self.graph)
+
+    def _init_qdrant(self) -> VectorStore:
+        from .qdrant_store import QdrantVectorStore
+
+        url = os.getenv("QDRANT_URL", "http://localhost:6333")
+        dimension = int(os.getenv("VECTOR_DIMENSION", "768"))
+        return QdrantVectorStore(url=url, dimension=dimension)
 
     def set_checkpoint_manager(self, mgr):
         self._checkpoint_mgr = mgr
@@ -80,3 +98,27 @@ class MemoryManager:
                 "vectors": len(self.vectors),
                 "agent_contexts": list(self.agent_contexts.keys()),
             }
+
+    async def add_fact(self, name: str, entity_type: str = None, properties: dict = None, source: str = None, relation: str = None, target: str = None) -> bool:
+        """Add a fact to the knowledge graph. Supports entity or relation creation."""
+        async with self._lock:
+            if source and relation and target:
+                ok = self.graph.add_relation(source, relation, target, properties)
+            elif name and entity_type:
+                ok = self.graph.add_entity(name, entity_type, properties)
+            else:
+                return False
+            return ok
+
+    async def query_facts(self, cypher: str, params: dict = None) -> list[dict]:
+        """Run a Cypher query against the knowledge graph."""
+        async with self._lock:
+            return self.graph.query(cypher, params)
+
+    async def get_entity_info(self, name: str) -> Optional[dict]:
+        """Get entity info from the knowledge graph."""
+        async with self._lock:
+            entity = self.graph.get_entity(name)
+            if entity:
+                entity["relations"] = self.graph.get_relations(name)
+            return entity

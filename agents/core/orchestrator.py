@@ -190,6 +190,10 @@ class Orchestrator:
         self.heartbeat_scheduler.load_all()
         self.heartbeat_scheduler.load_from_config(self.config)
 
+        for agent_id, hb_config in self.heartbeat_scheduler._heartbeat_configs.items():
+            if agent_id in self.agents:
+                self.agents[agent_id]._heartbeat_config = hb_config
+
     def load_runtime_settings(self):
         try:
             all_s = _get_settings()
@@ -604,7 +608,9 @@ class Orchestrator:
     async def run_heartbeat(self, agent_id: str) -> Optional[str]:
         agent = self.agents.get(agent_id)
         if agent and agent.has_heartbeat:
-            return await agent.run_heartbeat()
+            if agent._heartbeat_config is None:
+                agent._heartbeat_config = self.heartbeat_scheduler._heartbeat_configs.get(agent_id, {})
+            return await agent.run_heartbeat(orchestrator=self)
         return None
 
     def _record_interactions(self, text: str, responses: dict, synthesized: str):

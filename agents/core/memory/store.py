@@ -1,5 +1,6 @@
 import logging
 import math
+from abc import ABC, abstractmethod
 from typing import Any
 
 logger = logging.getLogger("jarvis.memory.store")
@@ -22,12 +23,42 @@ class VectorRecord:
         self.timestamp = __import__("time").time()
 
 
-class VectorStore:
+class VectorStore(ABC):
+    @abstractmethod
+    def add(self, record_id: str, vector: list[float], metadata: dict = None):
+        ...
+
+    @abstractmethod
+    def search(self, query: list[float], k: int = 5) -> list[dict[str, Any]]:
+        ...
+
+    @abstractmethod
+    def get(self, record_id: str):
+        ...
+
+    @abstractmethod
+    def remove(self, record_id: str):
+        ...
+
+    @abstractmethod
+    def search_by_sender(self, sender: str, k: int = 10) -> list[dict]:
+        ...
+
+    @abstractmethod
+    def search_by_text_subset(self, query: list[float], sender: str = None, k: int = 5) -> list[dict[str, Any]]:
+        ...
+
+    @abstractmethod
+    def __len__(self):
+        ...
+
+
+class InMemoryVectorStore(VectorStore):
     def __init__(self, dimension: int = 768):
         self.dimension = dimension
         self.records: list[VectorRecord] = []
         self._id_index: dict[str, int] = {}
-        logger.info(f"VectorStore initialized (dim={dimension}, numpy={HAS_NUMPY})")
+        logger.info(f"InMemoryVectorStore initialized (dim={dimension}, numpy={HAS_NUMPY})")
 
     def add(self, record_id: str, vector: list[float], metadata: dict = None):
         if len(vector) != self.dimension:

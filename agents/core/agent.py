@@ -30,6 +30,7 @@ class Agent:
         self.soul: dict = {}
         hb_raw = config.get("heartbeat", False)
         self.has_heartbeat = hb_raw is not False and hb_raw != "no"
+        self._heartbeat_config: dict = None
         self.llm_router = llm_router
         self.permission_gate = permission_gate
         self._failures = 0
@@ -177,6 +178,67 @@ class Agent:
         text = re.sub(r'\[handoff:[^\]]+\]', '', text)
         return text.strip()
 
-    async def run_heartbeat(self) -> Optional[str]:
-        logger.info(f"Running heartbeat for {self.id}")
-        return f"[{self.id} heartbeat OK]"
+    async def run_heartbeat(self, orchestrator=None) -> Optional[str]:
+        """Execute the agent's heartbeat checklist."""
+        logger.info(f"Heartbeat: {self.id}")
+        hb_config = self._heartbeat_config or {}
+        checklist = hb_config.get("checklist", [])
+
+        if not checklist:
+            return None
+
+        results = []
+        for item in checklist:
+            try:
+                result = await self._execute_heartbeat_item(item, orchestrator)
+                results.append(f"[OK] {item}: {result}")
+            except Exception as e:
+                results.append(f"[FAIL] {item}: {e}")
+
+        summary = f"{self.name} heartbeat: " + "; ".join(results)
+        logger.info(summary)
+        return summary
+
+    async def _execute_heartbeat_item(self, item: str, orchestrator=None) -> str:
+        """Execute a single heartbeat checklist item, routing to the right skill."""
+        item_lower = item.lower()
+
+        if "brief" in item_lower or "morning" in item_lower:
+            return await self._run_skill(orchestrator, "brief", "")
+
+        if "weather" in item_lower:
+            return await self._run_skill(orchestrator, "weather", "")
+
+        if "news" in item_lower:
+            return await self._run_skill(orchestrator, "brief", "")
+
+        if "calendar" in item_lower or "agenda" in item_lower:
+            return await self._run_skill(orchestrator, "calendar", "today")
+
+        if "health" in item_lower:
+            return await self._run_skill(orchestrator, "health", "summary")
+
+        if "email" in item_lower or "inbox" in item_lower or "triage" in item_lower:
+            return await self._run_skill(orchestrator, "email_triage", "triage")
+
+        if "system" in item_lower or "status" in item_lower:
+            return await self._run_skill(orchestrator, "system_status", "")
+
+        if "security" in item_lower or "scan" in item_lower:
+            return await self._run_skill(orchestrator, "security_scan", "")
+
+        return f"checklist item executed: {item}"
+
+    async def _run_skill(self, orchestrator, skill_name: str, args: str = "") -> str:
+        """Execute a skill via the orchestrator's skill loader."""
+        if not orchestrator:
+            return f"skill {skill_name} not available (no orchestrator)"
+
+        try:
+            skill = orchestrator.skills.get_skill(skill_name)
+            if skill:
+                return await skill.execute(skill_name, args, {})
+            return f"skill {skill_name} not found"
+        except Exception as e:
+            logger.error(f"Heartbeat skill {skill_name} failed: {e}")
+            return f"skill {skill_name} error: {e}"

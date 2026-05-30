@@ -4,6 +4,10 @@ cadence: cron:30 6 * * *
 silent_by_default: true
 channel: log-only
 enabled: true
+checklist:
+  - Fetch weather for Bucharest
+  - Fetch top 5 news headlines
+  - Synthesize morning brief
 ---
 
 # Friday — Pre-Dawn Collection

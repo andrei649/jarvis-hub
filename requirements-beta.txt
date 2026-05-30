@@ -14,6 +14,10 @@ uvicorn>=0.29
 # === Memory (optional — improves with numpy) ===
 numpy>=1.26
 
+# === Memory — Qdrant Vector DB (optional) ===
+# Docker: docker run -p 6333:6333 qdrant/qdrant
+# Then set VECTOR_BACKEND=qdrant in .env
+
 # === Voice Pipeline (optional groups) ===
 
 # Wake word detection
@@ -29,6 +33,10 @@ numpy>=1.26
 
 # Audio playback
 # pip install pygame
+
+# === Knowledge Graph — Neo4j (optional) ===
+# Docker: docker run -p 7474:7474 -p 7687:7687 -e NEO4J_AUTH=neo4j/password neo4j
+# Then set KNOWLEDGE_GRAPH_BACKEND=neo4j in .env
 
 # === Plugins (no extra deps — use httpx) ===
 # Weather: uses wttr.in (free, no API key)

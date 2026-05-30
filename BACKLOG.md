@@ -144,11 +144,11 @@ Conectare GA4 API și Firebase Analytics. Raportează KPIs.
 
 ## ORIZONT 3: Intelligence & Memory (P2)
 
-### H3.1 — Memory: Qdrant Vector DB (S:5, Dep: Qdrant pornit)
+### H3.1 — Memory: Qdrant Vector DB (S:5, Dep: Qdrant pornit) ✅
 Conversații indexate semantic, căutare similaritate.
 **AC:** „Ce am discutat despre Cosmina luna trecută?" → găsește și rezumă
 
-### H3.2 — Memory: Neo4j Knowledge Graph (S:8, Dep: Neo4j pornit)
+### H3.2 — Memory: Neo4j Knowledge Graph (S:8, Dep: Neo4j pornit) ✅
 Entități, relații, fapte persistate. Scrie pe confirmare explicită.
 **AC:** „Unde lucrează Andrei?" → răspunde din graph
 
@@ -160,7 +160,7 @@ Salvează/restaurează sesiuni cross-channel.
 Analizează interacțiuni (succes/eșec), ajustează routing, promovează/demovează agenți.
 **AC:** după 100 interacțiuni, sugerează promovare agent bench
 
-### H3.5 — Heartbeat System (S:5, Dep: —)
+### H3.5 — Heartbeat System (S:5, Dep: —) ✅
 Cron scheduler (APScheduler) pentru jarvis 07:00, friday 06:30, pepper 20:00 Sunday.
 **AC:** la 07:00 Jarvis face morning brief fără trigger manual
 
@@ -273,13 +273,13 @@ Optimizare costuri și vizibilitate pentru Hybrid Router.
 |---------|------------|----------|---------|----------|-----------|----------|---------------|
 | **H1 Foundation** (P0) | 5 | **5** | 26 | **26** | **100%** | 0 | — |
 | **H2 Core Agent** (P1) | 12 | **10** | 76 | **63** | **83%** | 13 | ~1 săpt. |
-| **H3 Intelligence** (P2) | 6 | **0** | 39 | **0** | **0%** | 39 | ~2.5 săpt. (paralel 2) |
+| **H3 Intelligence** (P2) | 6 | **3** | 39 | **18** | **46%** | 21 | ~1.5 săpt. |
 | **H4 Platform** (P3) | 11 | **0** | 63 | **0** | **0%** | 63 | ~4 săpt. (paralel 3) |
 | **Cross-cutting** | 6 | **3** | 44 | **9** | **21%** | 35 | ~2 săpt. |
 | **Securitate audit** | 5 | **5** | — | — | **100%** | 0 | — |
 | **Bugfixes** | 17 | **17** | — | — | **100%** | 0 | — |
 | **Sprint 0** (P0) | 3 | **3** | 7 | **7** | **100%** | 0 | — |
-| **Total general** | **65** | **43** | **255** | **105** | **41%** | **150** | **~9 săpt.** |
+| **Total general** | **65** | **46** | **255** | **123** | **48%** | **132** | **~8 săpt.** |
 
 **Echipă 3-4 agenți paralel:** H2+H3 ≈ 2-3 luni · Totul ≈ 3 luni (estimat)
 

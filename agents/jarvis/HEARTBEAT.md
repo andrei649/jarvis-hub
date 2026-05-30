@@ -8,6 +8,12 @@ do_not_disturb:
   - timezone: Europe/Bucharest
   - vacation_periods: managed_by_pepper
   - max_sleeping: managed_by_frigga
+checklist:
+  - Fetch weather for Bucharest
+  - Fetch top 5 news headlines
+  - Fetch today calendar agenda
+  - Perform email triage
+  - Synthesize morning brief report
 ---
 
 # Jarvis — Morning Brief

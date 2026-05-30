@@ -4,6 +4,10 @@ cadence: cron:0 20 * * 0
 silent_by_default: false
 channel: voice
 enabled: true
+checklist:
+  - Review week agenda and priorities
+  - Check quarterly objective drift
+  - Flag recurring meeting inefficiencies
 ---
 
 # Pepper — Sunday Review
