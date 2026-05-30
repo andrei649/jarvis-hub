@@ -30,7 +30,7 @@ agents:
     status: active
     tier: command
     channel: voice
-    heartbeat: true
+    heartbeat: "12h"
     plugins: [cloud-llm, telegram]
 
   friday:
@@ -39,7 +39,7 @@ agents:
     status: active
     tier: command
     channel: voice
-    heartbeat: true
+    heartbeat: "6h"
     plugins: [telegram]
 
   pepper:
@@ -48,7 +48,7 @@ agents:
     status: active
     tier: command
     channel: voice
-    heartbeat: true
+    heartbeat: "2h"
     plugins: [google-calendar, gmail, telegram]
 
   jerome:
@@ -57,7 +57,7 @@ agents:
     status: active
     tier: command
     channel: voice
-    heartbeat: false
+    heartbeat: "no"
     plugins: [spotify]
 
   athena:
@@ -66,7 +66,7 @@ agents:
     status: active
     tier: business
     channel: web-dashboard
-    heartbeat: true
+    heartbeat: "6h"
     llm_policy: cloud
     plugins: [cloud-llm]
 
@@ -76,7 +76,7 @@ agents:
     status: active
     tier: business
     channel: telegram
-    heartbeat: true
+    heartbeat: "4h"
     plugins: [gmail]
 
   veronica:
@@ -85,7 +85,7 @@ agents:
     status: active
     tier: business
     channel: telegram
-    heartbeat: false
+    heartbeat: "no"
     plugins: [cloud-llm]
 
   vision:
@@ -94,7 +94,7 @@ agents:
     status: active
     tier: business
     channel: web-dashboard
-    heartbeat: true
+    heartbeat: "6h"
     llm_policy: cloud
     plugins: [cloud-llm, websearch]
 
@@ -104,7 +104,7 @@ agents:
     status: active
     tier: tech
     channel: telegram
-    heartbeat: true
+    heartbeat: "1h"
     plugins: []
 
   oracle:
@@ -113,7 +113,7 @@ agents:
     status: active
     tier: tech
     channel: web-dashboard
-    heartbeat: false
+    heartbeat: "no"
     plugins: []
 
   ultron:
@@ -122,7 +122,7 @@ agents:
     status: active
     tier: tech
     channel: log-only
-    heartbeat: true
+    heartbeat: "2h"
     plugins: []
 
   gecko:
@@ -131,7 +131,7 @@ agents:
     status: active
     tier: foundation
     channel: telegram
-    heartbeat: true
+    heartbeat: "2h"
     plugins: []
 
   hercules:
@@ -140,7 +140,7 @@ agents:
     status: active
     tier: foundation
     channel: telegram
-    heartbeat: true
+    heartbeat: "2h"
     plugins: [apple-health]
 
   hephaestus:
@@ -149,7 +149,7 @@ agents:
     status: active
     tier: foundation
     channel: telegram
-    heartbeat: true
+    heartbeat: "2h"
     plugins: []
 
   frigga:
@@ -158,8 +158,18 @@ agents:
     status: active
     tier: foundation
     channel: local-only
-    heartbeat: true
+    heartbeat: "4h"
     plugins: [whatsapp-bridge]
+    llm_policy: local
+
+  howard:
+    name: Howard
+    archetype: Digital Twin
+    status: active
+    tier: foundation
+    channel: telegram
+    heartbeat: "no"
+    plugins: []
     llm_policy: local
 
 # Bench — reserved names, not yet active
@@ -167,7 +177,7 @@ bench:
   howard:
     name: Howard
     archetype: Archive
-    trigger: "15 years of personal data ingested"
+    trigger: "15 years of personal data ingested"  # activated 2026-05-30
 
   bruce:
     name: Bruce

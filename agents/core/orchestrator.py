@@ -187,6 +187,7 @@ class Orchestrator:
 
         self.load_runtime_settings()
         self.heartbeat_scheduler.load_all()
+        self.heartbeat_scheduler.load_from_config(self.config)
 
     def load_runtime_settings(self):
         try:

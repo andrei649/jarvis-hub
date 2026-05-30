@@ -28,7 +28,8 @@ class Agent:
         self.name = config.get("name", agent_id)
         self.config = config
         self.soul: dict = {}
-        self.has_heartbeat = config.get("heartbeat", False)
+        hb_raw = config.get("heartbeat", False)
+        self.has_heartbeat = hb_raw is not False and hb_raw != "no"
         self.llm_router = llm_router
         self.permission_gate = permission_gate
         self._failures = 0
@@ -55,6 +56,8 @@ class Agent:
     async def process(self, text: str, context: dict) -> str:
         system_prompt = self.soul.get("content", "")
         model = self.config.get("model", "google/gemma-4-31b-a4b")
+        if self.id == "howard" and hasattr(self.llm_router, 'get_howard_model'):
+            model = self.llm_router.get_howard_model()
 
         if not self.llm_router:
             return f"[{self.name} no LLM backend]"

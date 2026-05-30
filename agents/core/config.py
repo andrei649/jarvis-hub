@@ -21,7 +21,9 @@ class AgentConfig:
             self.channel = channel_val
         else:
             self.channel = channel_val.get("primary", "voice")
-        self.has_heartbeat: bool = data.get("heartbeat", False)
+        hb_raw = data.get("heartbeat", False)
+        self.heartbeat = hb_raw
+        self.has_heartbeat: bool = hb_raw is not False and hb_raw != "no"
         self.tier: str = data.get("tier", "foundation")
         self.llm_policy: str = data.get("llm_policy", "auto")
 
