@@ -1,8 +1,6 @@
 import logging
 from typing import Optional
 
-import numpy as np
-
 logger = logging.getLogger("voice.tts")
 
 # Kokoro voice mappings: (lang_code, voice) per language
@@ -18,6 +16,12 @@ VOICE_MAP: dict[str, tuple[str, str]] = {
 DEFAULT_LANG = "ro"
 DEFAULT_VOICE = "af_heart"
 
+# Per-agent signature voices (local Kokoro presets — no cloud cloning).
+# Maps agent_id -> (lang, voice). Lets JARVIS carry a distinct timbre.
+AGENT_VOICE_MAP: dict[str, tuple[str, str]] = {
+    "jarvis": ("en-gb", "bm_george"),   # British male — signature JARVIS timbre
+}
+
 
 class TextToSpeech:
     def __init__(self, lang: str = "ro", voice: Optional[str] = None, speed: float = 1.0):
@@ -25,6 +29,15 @@ class TextToSpeech:
         self.voice = voice
         self.speed = speed
         self._pipeline = None
+
+    @classmethod
+    def for_agent(cls, agent_id: str, speed: float = 1.0) -> "TextToSpeech":
+        """Build a TTS instance using an agent's signature voice if defined."""
+        if agent_id in AGENT_VOICE_MAP:
+            lang, voice = AGENT_VOICE_MAP[agent_id]
+            return cls(lang=lang, voice=voice, speed=speed)
+        return cls(speed=speed)
+
 
     def load(self):
         lang_code, default_voice = VOICE_MAP.get(self.lang, ("a", "af_heart"))
@@ -47,6 +60,7 @@ class TextToSpeech:
                 if audio is not None:
                     audio_parts.append(audio)
             if audio_parts:
+                import numpy as np
                 import soundfile as sf
                 import io
                 combined = np.concatenate(audio_parts)

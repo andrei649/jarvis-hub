@@ -98,11 +98,10 @@ daily-driver-ul e solid.
 Notă: ~majoritatea le avem deja local; păstrăm doar delta-ul real ca idei, nu ca scope activ.
 - **DEJA AVEM:** voice layer (Kokoro TTS + faster-whisper STT, `voice/`), personalitate per-agent
   (`SOUL.md` → secțiunea VOICE), n8n local (Oracle), smart home (homebridge plugin).
-- **Delta nou de luat în considerare (Icebox):**
-  - UI „thinking state" cu animație pulsing în `web/templates/index.html` (efect Iron Man) — mic, frontend-only.
-  - Voice clone dedicat (timbru JARVIS) ca voce Kokoro/alternativă — opțional, decizie de produs.
-  - Ton mai sarcastic/uscat-britanic în SOUL-ul lui Jarvis — **contrazice** identitatea actuală
-    („calm, măsurat, niciodată agitat"); de decis explicit înainte de schimbare.
+- **Delta livrat (toate 3, local-first, aprobat 2026-05-30):**
+  - [x] UI „thinking state" pulsing în `web/templates/index.html` (3 dots + glow pe header).
+  - [x] Voce dedicată JARVIS prin Kokoro local (`bm_george`, britanic) — `AGENT_VOICE_MAP` + `for_agent()`.
+  - [x] Ton sec-britanic în SOUL-ul lui Jarvis (păstrat „calm/măsurat"; reparată linia coruptă `Dare你用`).
 
 
 ---
