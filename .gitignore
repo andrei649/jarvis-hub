@@ -21,3 +21,6 @@ data/bridge/*.json
 # Logs
 *.log
 /tmp/
+
+# Repo export output
+repo_export.txt
