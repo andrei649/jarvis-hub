@@ -11,8 +11,8 @@ sys.path.insert(0, str(repo_root / "agents"))
 
 from core.llm.tokenizer import estimate_tokens, estimate_messages
 from core.llm.hybrid_router import (
-    HybridRouter, POLICY_LOCAL, POLICY_CLOUD, POLICY_AUTO,
-    LOCAL_ONLY_AGENTS, CLOUD_ONLY_AGENTS, LOCAL_MAX_TOKENS,
+    HybridRouter, POLICY_LOCAL, POLICY_CLOUD, POLICY_CLAUDE, POLICY_AUTO,
+    LOCAL_ONLY_AGENTS, CLOUD_ONLY_AGENTS, CLAUDE_AGENTS, LOCAL_MAX_TOKENS,
 )
 from core.llm.base import LLMBackend
 
@@ -87,6 +87,12 @@ def test_get_agent_policy_local():
         assert router.get_agent_policy(aid) == POLICY_LOCAL
 
 
+def test_get_agent_policy_claude():
+    router = HybridRouter()
+    for aid in CLAUDE_AGENTS:
+        assert router.get_agent_policy(aid) == POLICY_CLAUDE
+
+
 def test_get_agent_policy_cloud():
     router = HybridRouter()
     for aid in CLOUD_ONLY_AGENTS:
@@ -137,7 +143,7 @@ def test_select_backend_local_only_short_prompt(monkeypatch):
     router._local_available = True
     router._backend = FakeBackend()
     router._backend_name = "lm-studio"
-    backend, route = router.select_backend("jarvis", "short prompt")
+    backend, model, route = router.select_backend("jarvis", "short prompt")
     assert route == "local"
 
 
@@ -147,7 +153,7 @@ def test_select_backend_local_only_long_prompt_truncated(monkeypatch):
     router._backend = FakeBackend()
     router._backend_name = "lm-studio"
     long_prompt = "word " * (LOCAL_MAX_TOKENS * 4)
-    backend, route = router.select_backend("jarvis", long_prompt)
+    backend, model, route = router.select_backend("jarvis", long_prompt)
     assert route == "local-fallback"
 
 
@@ -155,7 +161,7 @@ def test_select_backend_local_only_policy_local(monkeypatch):
     router = HybridRouter()
     router._local_available = True
     router._backend = FakeBackend()
-    backend, route = router.select_backend("frigga", "hello")
+    backend, model, route = router.select_backend("frigga", "hello")
     assert route == "local"
 
 
@@ -163,7 +169,7 @@ def test_select_backend_local_only_policy_cloud_fallback(monkeypatch):
     router = HybridRouter()
     router._local_available = True
     router._backend = FakeBackend()
-    backend, route = router.select_backend("vision", "hello")
+    backend, model, route = router.select_backend("vision", "hello")
     assert route == "local-fallback"
 
 
@@ -173,7 +179,7 @@ def test_select_backend_cloud_only_short_prompt(monkeypatch):
     router = HybridRouter(gemini_api_key="test")
     router._cloud_available = True
     router._gemini_backend = FakeBackend()
-    backend, route = router.select_backend("jarvis", "short")
+    backend, model, route = router.select_backend("jarvis", "short")
     assert route == "cloud-flash"
 
 
@@ -182,7 +188,7 @@ def test_select_backend_cloud_only_long_prompt(monkeypatch):
     router._cloud_available = True
     router._gemini_backend = FakeBackend()
     long_prompt = "word " * (LOCAL_MAX_TOKENS * 4)
-    backend, route = router.select_backend("jarvis", long_prompt)
+    backend, model, route = router.select_backend("jarvis", long_prompt)
     assert route == "cloud-flash"
 
 
@@ -190,7 +196,7 @@ def test_select_backend_cloud_only_policy_cloud(monkeypatch):
     router = HybridRouter(gemini_api_key="test")
     router._cloud_available = True
     router._gemini_backend = FakeBackend()
-    backend, route = router.select_backend("vision", "hello")
+    backend, model, route = router.select_backend("athena", "hello")
     assert route == "cloud"
 
 
@@ -198,7 +204,7 @@ def test_select_backend_cloud_only_policy_local_fallback(monkeypatch):
     router = HybridRouter(gemini_api_key="test")
     router._cloud_available = True
     router._gemini_backend = FakeBackend()
-    backend, route = router.select_backend("frigga", "hello")
+    backend, model, route = router.select_backend("frigga", "hello")
     assert route == "cloud-fallback"
 
 
@@ -210,7 +216,7 @@ def test_select_backend_both_short_prompt_uses_local(monkeypatch):
     router._backend = FakeBackend()
     router._cloud_available = True
     router._gemini_backend = FakeBackend()
-    backend, route = router.select_backend("jarvis", "short")
+    backend, model, route = router.select_backend("jarvis", "short")
     assert route == "local"
 
 
@@ -221,7 +227,7 @@ def test_select_backend_both_long_prompt_uses_cloud(monkeypatch):
     router._cloud_available = True
     router._gemini_backend = FakeBackend()
     long_prompt = "word " * (LOCAL_MAX_TOKENS * 4)
-    backend, route = router.select_backend("jarvis", long_prompt)
+    backend, model, route = router.select_backend("jarvis", long_prompt)
     assert route == "cloud-flash"
 
 
@@ -367,3 +373,149 @@ async def test_cloud_llm_gemini_network_error(monkeypatch):
 def test_cloud_llm_available_with_gemini():
     plugin = CloudLLMPlugin(gemini_key="test")
     assert plugin.available
+
+
+# ── S0.1 Model Tiering: Claude API for heavy agents ────────────────────
+
+def test_claude_init():
+    router = HybridRouter(anthropic_api_key="sk-ant-test")
+    assert router.anthropic_api_key == "sk-ant-test"
+    assert not router._claude_available
+
+
+def test_claude_available_after_detect(monkeypatch):
+    router = HybridRouter(anthropic_api_key="sk-ant-test")
+    router._local_available = True
+    router._backend = FakeBackend()
+    router._backend_name = "lm-studio"
+    router._claude_available = True
+    router._claude_backend = FakeBackend()
+    assert router._claude_available
+
+
+def test_claude_agent_policy():
+    router = HybridRouter()
+    assert router.get_agent_policy("vision") == POLICY_CLAUDE
+    assert router.get_agent_policy("steve") == POLICY_CLAUDE
+
+
+def test_claude_select_backend_for_vision(monkeypatch):
+    router = HybridRouter(anthropic_api_key="sk-ant-test")
+    router._local_available = True
+    router._backend = FakeBackend()
+    router._backend_name = "lm-studio"
+    router._cloud_available = True
+    router._gemini_backend = FakeBackend()
+    router._claude_available = True
+    router._claude_backend = FakeBackend()
+    backend, model, route = router.select_backend("vision", "research task")
+    assert route == "claude"
+    assert model == "claude-sonnet-4-20250514"
+
+
+def test_claude_select_backend_for_steve(monkeypatch):
+    router = HybridRouter(anthropic_api_key="sk-ant-test")
+    router._local_available = True
+    router._backend = FakeBackend()
+    router._claude_available = True
+    router._claude_backend = FakeBackend()
+    backend, model, route = router.select_backend("steve", "system check")
+    assert route == "claude"
+
+
+def test_claude_unavailable_falls_back_to_cloud(monkeypatch):
+    router = HybridRouter(gemini_api_key="test")
+    router._cloud_available = True
+    router._gemini_backend = FakeBackend()
+    router._claude_available = False
+    backend, model, route = router.select_backend("vision", "research")
+    assert route == "cloud-fallback"
+    assert model == "gemini-2.5-flash"
+
+
+def test_claude_unavailable_falls_back_to_local(monkeypatch):
+    router = HybridRouter()
+    router._local_available = True
+    router._backend = FakeBackend()
+    router._backend_name = "lm-studio"
+    router._claude_available = False
+    router._cloud_available = False
+    backend, model, route = router.select_backend("steve", "system check")
+    assert route == "local-fallback"
+
+
+def test_get_model_claude_agent():
+    router = HybridRouter(anthropic_api_key="sk-ant-test")
+    router._claude_available = True
+    router._local_available = True
+    assert router.get_model("vision") == "claude-sonnet-4-20250514"
+    assert router.get_model("steve") == "claude-sonnet-4-20250514"
+
+
+def test_get_model_light_agent():
+    router = HybridRouter()
+    router._local_available = True
+    assert router.get_model("jarvis") == "qwen3:7b"
+    assert router.get_model("friday") == "qwen3:7b"
+
+
+def test_get_model_claude_unavailable():
+    router = HybridRouter()
+    router._claude_available = False
+    router._local_available = True
+    assert router.get_model("vision") == "qwen3:7b"
+
+
+def test_name_includes_claude():
+    router = HybridRouter(anthropic_api_key="sk-ant-test")
+    router._backend_name = "lm-studio"
+    router._local_available = True
+    router._cloud_available = True
+    router._gemini_backend = FakeBackend()
+    router._claude_available = True
+    router._claude_backend = FakeBackend()
+    assert "lm-studio" in router.name
+    assert "claude" in router.name
+    assert "gemini" in router.name
+
+
+# ── Anthropic backend unit tests (no network) ──────────────────────────
+
+from core.llm.anthropic import ClaudeBackend
+
+
+def test_claude_backend_headers():
+    cb = ClaudeBackend(api_key="sk-ant-test")
+    headers = cb._headers()
+    assert headers["x-api-key"] == "sk-ant-test"
+    assert "anthropic-version" in headers
+
+
+def test_claude_backend_build_messages():
+    cb = ClaudeBackend(api_key="sk-ant-test")
+    msgs = cb._build_messages("hello", system="be helpful")
+    assert msgs[0]["role"] == "user"
+    assert msgs[0]["content"] == "hello"
+
+
+@pytest.mark.asyncio
+async def test_claude_generate_network_error(monkeypatch):
+    async def mock_post(*a, **kw):
+        raise Exception("connection refused")
+    monkeypatch.setattr("httpx.AsyncClient.post", mock_post)
+    cb = ClaudeBackend(api_key="sk-ant-test")
+    result = await cb.generate("claude-sonnet-4-20250514", "hello")
+    assert "Claude API error" in result
+
+
+@pytest.mark.asyncio
+async def test_claude_generate_stream_network_error(monkeypatch):
+    class MockACM:
+        async def __aenter__(self):
+            raise Exception("stream failed")
+        async def __aexit__(self, *a):
+            pass
+    monkeypatch.setattr("httpx.AsyncClient.stream", lambda *a, **kw: MockACM())
+    cb = ClaudeBackend(api_key="sk-ant-test")
+    result = await cb.generate_stream("claude-sonnet-4-20250514", "hello")
+    assert "Claude API stream error" in result

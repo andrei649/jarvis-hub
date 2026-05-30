@@ -95,7 +95,7 @@ agents:
     tier: business
     channel: web-dashboard
     heartbeat: "6h"
-    llm_policy: cloud
+    llm_policy: claude
     plugins: [cloud-llm, websearch]
 
   steve:
@@ -105,6 +105,7 @@ agents:
     tier: tech
     channel: telegram
     heartbeat: "1h"
+    llm_policy: claude
     plugins: []
 
   oracle:

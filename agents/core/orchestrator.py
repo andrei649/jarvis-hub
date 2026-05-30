@@ -70,7 +70,8 @@ class Orchestrator:
         self.agents: dict[str, Agent] = {}
         self.router = IntentRouter(config)
         gemini_key = os.environ.get("GEMINI_API_KEY", "")
-        self.llm_router = HybridRouter(gemini_api_key=gemini_key)
+        anthropic_key = os.environ.get("ANTHROPIC_API_KEY", "")
+        self.llm_router = HybridRouter(gemini_api_key=gemini_key, anthropic_api_key=anthropic_key)
         self.memory = MemoryManager()
         self.plugins: dict = {}
         self.skills = SkillLoader()
@@ -392,14 +393,16 @@ class Orchestrator:
                     f"User: {text}\n"
                     f"Respond as {agent.name}."
                 )
-                model = self.get_setting("llm.default_model") or agent.config.get("model", "qwen/qwen3.5-9b")
+                model = self.llm_router.get_model(agent_id) or self.get_setting("llm.default_model") or "qwen3:7b"
 
                 checkpoint = self.checkpoints.load(agent_id, self.session_id)
                 if checkpoint:
                     prompt = f"[RESUMED FROM CHECKPOINT]\n{checkpoint['prompt']}\n---\n{prompt}"
 
                 try:
-                    backend, route_name = self.llm_router.select_backend(agent_id, prompt)
+                    backend, router_model, route_name = self.llm_router.select_backend(agent_id, prompt)
+                    if router_model:
+                        model = router_model
                     if self.security:
                         backend = self.security
                     logger.info(f"Routing {agent_id} via {route_name} ({estimate_tokens(prompt)} tokens)")

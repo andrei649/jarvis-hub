@@ -62,12 +62,14 @@ Setări din admin aplicate activ în orchestrator.
 
 > Scop: eliminare thrashing, heartbeat sanity, CI de bază. ROI maxim pe timp minim.
 
-### S0.1 — Model Tiering: Claude API pentru agenți grei, local 7b pentru ușori (S:3)
+### S0.1 — Model Tiering: Claude API pentru agenți grei, local 7b pentru ușori (S:3) ✅
 15 agenți pe același `qwen3:32b` într-un laptop de 24GB VRAM → **thrashing** (un singur model 32b odată).
 - Agenți grei (Vision, Steve) → **Claude API** (extern, 0 VRAM)
-- Agenți uzuali (Jarvis, Pepper, Friday) → local 7b (Qwen 7B, cap în VRAM)
+- Agenți uzuali (Jarvis, Pepper, Friday) → local `qwen3:7b` (cap în VRAM)
 - Frigga → strict local (fără network)
-- Config în `agents.yaml` per agent + `.env` pentru API keys
+- Config în `agents.yaml` per agent + `ANTHROPIC_API_KEY` în `.env`
+- Backend: `agents/core/llm/anthropic.py` — ClaudeBackend cu streaming + generate
+- Router: `CLAUDE_AGENTS = {"vision", "steve"}`, fallback la Gemini → local
 
 ### S0.2 — Heartbeat Sanity: intervale ≥60 min (S:2)
 Heartbeat-uri curente la 5-15 min forțează reload constant.
@@ -76,9 +78,9 @@ Heartbeat-uri curente la 5-15 min forțează reload constant.
 - Restul (majoritar `0 6 * * *`) OK, păstrat
 - Verificare că schedulerul nu crapă la shutdown (bug APScheduler existent)
 
-### S0.3 — Smoke Test + CI pe push (S:2)
-- Script `smoke.sh`/`smoke.ps1`: pytest tests/ -q, verificare server pornește
-- GitHub Actions workflow minim: `python -m pytest tests/ -q --no-header`
+### S0.3 — Smoke Test + CI pe push (S:2) ✅
+- Script `smoke.ps1`: pytest tests/ -q, verificare server pornește
+- GitHub Actions workflow (`.github/workflows/smoke.yml`): pytest + server smoke
 - Rulează la fiecare push pe master
 
 ---
@@ -276,7 +278,8 @@ Optimizare costuri și vizibilitate pentru Hybrid Router.
 | **Cross-cutting** | 6 | **2** | 44 | **6** | **14%** | 38 | ~2.5 săpt. |
 | **Securitate audit** | 5 | **3** | — | — | **60%** | 2 | ~1 zi |
 | **Bugfixes** | 17 | **17** | — | — | **100%** | 0 | — |
-| **Total general** | **62** | **35** | **248** | **85** | **34%** | **163** | **~10 săpt.** |
+| **Sprint 0** (P0) | 3 | **3** | 7 | **7** | **100%** | 0 | — |
+| **Total general** | **65** | **38** | **255** | **92** | **36%** | **163** | **~10 săpt.** |
 
 **Echipă 3-4 agenți paralel:** H2+H3 ≈ 2-3 luni · Totul ≈ 3 luni (estimat)
 
