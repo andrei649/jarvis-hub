@@ -111,7 +111,6 @@ function NetworkBrain({ agents, tasks, collab = [], activeAgent, onSelect, route
   const hoveredTasks = hovered ? positionedTasks.filter(t => t.owner === hovered) : [];
   const hoveredAgent = hovered ? ringAgents.find(a => a.id === hovered) : null;
 
-  const svgRef = useRef(null);
   const [ambient, setAmbient] = useState([]);
   useEffect(() => {
     if (!ringAgents.length) return;
