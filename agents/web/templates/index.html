@@ -7,6 +7,18 @@
 <link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
 <link rel="stylesheet" href="/static/fonts.css">
 <link rel="stylesheet" href="/static/style.css">
+<script>
+/* Apply persisted UI prefs before paint so the CSS data-attr hooks
+   (data-density / data-scanline / data-dotgrid) take effect (W-6). */
+(function(){
+  try {
+    var r = document.documentElement;
+    r.setAttribute('data-density',  localStorage.getItem('hud.density')  || 'normal');
+    r.setAttribute('data-scanline', localStorage.getItem('hud.scanline') || 'on');
+    r.setAttribute('data-dotgrid',  localStorage.getItem('hud.dotgrid')  || 'on');
+  } catch (e) {}
+})();
+</script>
 </head>
 <body>
 <div id="root"></div>

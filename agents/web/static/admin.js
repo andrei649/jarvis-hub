@@ -242,7 +242,7 @@ function AgentCard({ agent, onUpdate }) {
 
 function Toast({ message }) {
   if (!message) return null;
-  return h('div',{className:'admin-toast', key:Date.now()}, message);
+  return h('div',{className:'admin-toast'}, message);
 }
 
 /* ── System page ─────────────────────────────────────────────── */

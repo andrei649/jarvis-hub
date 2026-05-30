@@ -46,7 +46,8 @@ function App() {
     var id = setInterval(function () {
       loadJarvisData().then(function (data) {
         if (data.agents.length) setAgents(data.agents);
-        setSys(function (prev) { var o = {}; for (var k in prev) o[k] = prev[k]; for (var k in data.sys) o[k] = data.sys[k]; return o; });
+        // sys is owned by the dedicated 10s /status poll below; the 30s data
+        // poll must not overwrite it (would clobber fresher values \u2014 bug 2.2).
         if (data.weather.temp !== '\u2014') setWeather(data.weather);
         if (data.calendar.length) setCalendar(data.calendar);
         if (data.notifications.length) setNotifications(data.notifications);
