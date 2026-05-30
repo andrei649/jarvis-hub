@@ -56,9 +56,12 @@ A personal AI mesh that handles the cross-section of Andrei's life: work at Raif
 
 ### Windows 11 — one-click (no terminal needed)
 
-1. **`UPDATE.bat`** — double-click to pull the latest from GitHub, install
+1. **`INSTALL.bat`** — first time on a clean PC. Checks/installs Python + Git
+   (via winget), gets the code, builds the environment, installs everything,
+   runs the tests. Double-click and follow the prompts.
+2. **`UPDATE.bat`** — double-click to pull the latest from GitHub, install
    dependencies, and run the tests. Run this whenever you want the newest version.
-2. **`START.bat`** — double-click to launch the server and open the HUD in your
+3. **`START.bat`** — double-click to launch the server and open the HUD in your
    browser. Keep its window open; close it to stop the server.
 
 ### Manual (any OS)
