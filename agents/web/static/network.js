@@ -115,6 +115,7 @@ function NetworkBrain({ agents, tasks, collab = [], activeAgent, onSelect, route
   useEffect(() => {
     if (!ringAgents.length) return;
     const id = setInterval(() => {
+      if (document.hidden) return;   // don't spawn packets while tab is hidden
       const pool = ringAgents.filter(a => !activeSet.has(a.id) && a.status !== 'idle');
       if (!pool.length) return;
       const picked = pool[Math.floor(Math.random() * pool.length)];
@@ -125,6 +126,20 @@ function NetworkBrain({ agents, tasks, collab = [], activeAgent, onSelect, route
     return () => clearInterval(id);
   }, [ringAgents, activeSet]);
 
+  // Pause SVG (SMIL) animations while the tab is hidden — saves CPU/battery (IMP-10).
+  const svgRef = useRef(null);
+  useEffect(() => {
+    const apply = () => {
+      const svg = svgRef.current;
+      if (!svg || typeof svg.pauseAnimations !== 'function') return;
+      if (document.hidden) svg.pauseAnimations();
+      else svg.unpauseAnimations();
+    };
+    apply();
+    document.addEventListener('visibilitychange', apply);
+    return () => document.removeEventListener('visibilitychange', apply);
+  }, []);
+
   return h(Bracket, {
     label: focused ? `NEURAL NETWORK · FOCUS · ${focused.name.toUpperCase()}` : 'NEURAL NETWORK · LIVE TOPOLOGY',
     status: focused
@@ -133,7 +148,7 @@ function NetworkBrain({ agents, tasks, collab = [], activeAgent, onSelect, route
     className: `net-bracket ${focused ? 'is-focused' : ''}`,
   },
     h('div', { className: 'net-frame' },
-      h('svg', { viewBox: `0 0 ${W} ${H}`, className: 'net-svg', preserveAspectRatio: 'xMidYMid meet' },
+      h('svg', { ref: svgRef, viewBox: `0 0 ${W} ${H}`, className: 'net-svg', preserveAspectRatio: 'xMidYMid meet' },
         h('defs', null,
           h('radialGradient', { id: 'core-grad', cx: '50%', cy: '50%', r: '50%' },
             h('stop', { offset: '0%', stopColor: 'var(--accent-light)', stopOpacity: '1' }),
