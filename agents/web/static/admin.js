@@ -89,25 +89,10 @@ const CATEGORY_DESC = {
   system:    'Environment variables, metrics și informații sistem.',
 };
 
-/* ── agent glyph map (inline from JARVIS_GLYPHS) ───────────── */
+/* ── agent glyph map — single source of truth in data.js ───── */
+/* data.js loads before admin.js, so window.JARVIS_GLYPHS exists. */
 
-const AGENT_GLYPHS = {
-  jarvis:'M0,-8 L7,-2 L4,7 L-4,7 L-7,-2 Z M0,-3 L0,3 M-3,0 L3,0',
-  friday:'M-7,0 L7,0 M-4,-4 L4,-4 M-5,4 L5,4 M-2,-7 L2,-7',
-  pepper:'M-6,-6 H6 V6 H-6 Z M-6,-2 H6 M-2,-6 V6',
-  jerome:'M-6,5 Q-6,-5 0,-5 Q6,-5 6,5 M-3,2 V-2 M3,2 V-2',
-  athena:'M0,-7 L6,3 L-6,3 Z M0,-1 V3',
-  stark:'M0,-7 L4,-1 L7,-1 L3,3 L5,7 L0,4 L-5,7 L-3,3 L-7,-1 L-4,-1 Z',
-  veronica:'M-7,-5 L7,-5 L4,5 L-4,5 Z M-4,-1 H4',
-  vision:'M-7,0 Q0,-6 7,0 Q0,6 -7,0 Z M0,-2 V2',
-  steve:'M-7,5 L-2,-5 L2,-5 L7,5 M-4,1 H4',
-  oracle:'M-6,-6 L0,0 L-6,6 M6,-6 L0,0 L6,6',
-  ultron:'M-7,-2 L0,-7 L7,-2 L7,3 L0,7 L-7,3 Z M0,-2 V2',
-  gecko:'M-7,3 L-3,-3 L0,2 L3,-5 L7,1',
-  hercules:'M-5,-7 L-5,7 M5,-7 L5,7 M-5,0 H5',
-  hephaestus:'M-7,7 L0,-7 L7,7 M-3,1 H3',
-  frigga:'M0,-7 Q-7,0 0,7 Q7,0 0,-7 Z M0,-3 V3 M-3,0 H3',
-};
+const AGENT_GLYPHS = window.JARVIS_GLYPHS || {};
 
 /* ── Row components ─────────────────────────────────────────── */
 
@@ -212,19 +197,7 @@ function Group({ title, children }) {
   );
 }
 
-/* ── Settings page — renders rows for a category ────────────── */
-
-function SettingsPage({ category, settings, onUpdate, onAction }) {
-  if (!settings || settings.length === 0) return null;
-  const groups = {};
-  let currentGroup = 'General';
-  const rows = [];
-  settings.forEach((s,i)=>{
-    const row = renderRow(s, i, onUpdate, onAction);
-    if (row) rows.push(row);
-  });
-  return h('div',null, rows);
-}
+/* ── Settings row renderer ──────────────────────────────────── */
 
 function renderRow(s, i, onUpdate, onAction) {
   const update = (val) => onUpdate(s.key, val);
@@ -259,7 +232,7 @@ function AgentCard({ agent, onUpdate }) {
     open && h('div',{className:'admin-agent-body'},
       h(ToggleRow,{label:'Status (active)',value:agent.status==='active',onChange:v=>onUpdate(agent.id,'status',v?'active':'paused')}),
       h(InputRow,{label:'Model',value:agent.model||'',onChange:v=>onUpdate(agent.id,'model',v)}),
-      h(SelectRow,{label:'Channel',value:agent.channel||'voice',onChange:v=>onUpdate(agent.id,'channel',v),opts:['voice','web','telegram']}),
+      h(SelectRow,{label:'Channel',value:agent.channel||'voice',onChange:v=>onUpdate(agent.id,'channel',v),opts:['voice','web','telegram','discord','email','slack']}),
       h(SelectRow,{label:'Tier',value:agent.tier||'FND',onChange:v=>onUpdate(agent.id,'tier',v),opts:['CNS','BIZ','SEC','FND']}),
     ),
   );

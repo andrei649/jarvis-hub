@@ -46,6 +46,13 @@
   button { font-family: inherit; color: inherit; }
   ::selection { background: var(--accent-glow); color: var(--text-primary); }
 
+  /* ── loading overlay + api-down banner ──────────────────── */
+  .hud-loading{position:fixed;inset:0;z-index:100;display:flex;flex-direction:column;gap:18px;align-items:center;justify-content:center;background:var(--bg-void)}
+  .hud-loading-ring{width:54px;height:54px;border-radius:50%;border:2px solid var(--accent-faint);border-top-color:var(--accent);animation:hud-spin .8s linear infinite}
+  .hud-loading-label{font-family:var(--font-mono);font-size:12px;letter-spacing:.15em;color:var(--accent-light)}
+  @keyframes hud-spin{to{transform:rotate(360deg)}}
+  .hud-apidown{position:fixed;top:0;left:0;right:0;z-index:50;display:flex;align-items:center;justify-content:center;padding:6px 12px;background:linear-gradient(90deg,rgba(255,178,63,.16),rgba(255,178,63,.04));border-bottom:1px solid rgba(255,178,63,.4);font-family:var(--font-mono);font-size:11px;color:#ffe2b0}
+
   /* ── full background layers ─────────────────────────────── */
   .hud { position: relative; width: 100%; height: 100%; display: flex; flex-direction: column; }
   .hud-bg-grid {

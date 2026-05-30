@@ -20,6 +20,8 @@ function App() {
   var _p = useState([]), ticker = _p[0], setTicker = _p[1];
   var _q = useState(true), lmOnline = _q[0], setLmOnline = _q[1];
   var _r = useState(false), sending = _r[0], setSending = _r[1];
+  var _s = useState(true), loading = _s[0], setLoading = _s[1];
+  var _t = useState(false), apiDown = _t[0], setApiDown = _t[1];
   var recRef = useRef(null);
 
   var agentMap = useMemo(function () { return Object.fromEntries(agents.map(function (a) { return [a.id, a]; })); }, [agents]);
@@ -33,7 +35,11 @@ function App() {
       setNotifications(data.notifications);
       setTasks(data.tasks);
       setLmOnline(data.lmOnline);
-    }).catch(function (err) { console.error('initial data load failed:', err); });
+      setApiDown(data.agents.length === 0);
+    }).catch(function (err) {
+      console.error('initial data load failed:', err);
+      setApiDown(true);
+    }).finally(function () { setLoading(false); });
   }, []);
 
   useEffect(function () {
@@ -46,7 +52,8 @@ function App() {
         if (data.notifications.length) setNotifications(data.notifications);
         if (data.tasks.length) setTasks(data.tasks);
         setLmOnline(data.lmOnline);
-      }).catch(function (err) { console.error('poll data load failed:', err); });
+        setApiDown(data.agents.length === 0);
+      }).catch(function (err) { console.error('poll data load failed:', err); setApiDown(true); });
     }, 30000);
     return function () { clearInterval(id); };
   }, []);
@@ -69,7 +76,8 @@ function App() {
         if (d.sys) setSys(function (prev) { var o = {}; for (var k in prev) o[k] = prev[k]; for (var k in d.sys) o[k] = d.sys[k]; return o; });
         if (d.lm_online !== undefined) setLmOnline(d.lm_online);
         if (d.voice_state) setVoiceState(d.voice_state);
-      } catch (e) {}
+        setApiDown(false);
+      } catch (e) { setApiDown(true); }
     }, 10000);
     return function () { clearInterval(id); };
   }, []);
@@ -106,6 +114,19 @@ function App() {
       var reader = resp.body.getReader();
       var dec = new TextDecoder();
       var buf = '';
+      var finished = false;
+
+      var finalize = function (evt) {
+        if (finished) return;        // guard: end may arrive both in-loop and in trailing buf
+        finished = true;
+        var finalText = evt.text || responseText;
+        var finalAgent = evt.agent || responderId;
+        setMessages(function (m) { return [].concat(m, [{ role: 'agent', agent: finalAgent, ts: nowTs(), text: finalText }]); });
+        setThinking(null);
+        setRoutedAgents([]);
+        setTimeout(function () { setVoiceState('idle'); }, 1400);
+        setSending(false);
+      };
 
       while (true) {
         var _ref = await reader.read(), done = _ref.done, value = _ref.value;
@@ -125,27 +146,17 @@ function App() {
             } else if (evt.type === 'token') {
               responseText += evt.text || '';
             } else if (evt.type === 'end') {
-              var finalText = evt.text || responseText;
-              var finalAgent = evt.agent || responderId;
-              setMessages(function (m) { return [].concat(m, [{ role: 'agent', agent: finalAgent, ts: nowTs(), text: finalText }]); });
-              setThinking(null);
-              setRoutedAgents([]);
-              setTimeout(function () { setVoiceState('idle'); }, 1400);
-              setSending(false);
+              finalize(evt);
+              break;
             }
           } catch (e) {}
         }
+        if (finished) break;
       }
-      if (buf.startsWith('data: ')) {
+      if (!finished && buf.startsWith('data: ')) {
         try {
           var evt2 = JSON.parse(buf.slice(6));
-          if (evt2.type === 'end') {
-            setMessages(function (m) { return [].concat(m, [{ role: 'agent', agent: evt2.agent || responderId, ts: nowTs(), text: evt2.text || responseText }]); });
-            setThinking(null);
-            setRoutedAgents([]);
-            setTimeout(function () { setVoiceState('idle'); }, 1400);
-            setSending(false);
-          }
+          if (evt2.type === 'end') finalize(evt2);
         } catch (e) {}
       }
     } catch (err) {
@@ -191,6 +202,14 @@ function App() {
     h('div', { className: 'hud-bg-grid', 'aria-hidden': true }),
     h('div', { className: 'hud-bg-vignette', 'aria-hidden': true }),
     h('div', { className: 'hud-scanline', 'aria-hidden': true }),
+
+    loading && h('div', { className: 'hud-loading' },
+      h('div', { className: 'hud-loading-ring' }),
+      h('div', { className: 'hud-loading-label' }, 'INITIALIZING JARVIS HUB…'),
+    ),
+
+    !loading && apiDown && h('div', { className: 'hud-apidown', role: 'status' },
+      '⚠ Backend indisponibil — se afișează ultimele date cunoscute. Reîncerc automat.'),
 
     h(TopBar, {
       activeAgent: activeAgent,
