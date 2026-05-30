@@ -45,20 +45,28 @@ memory_logs/oracle/locks/
 3. **La pornire**: scrieți lock-ul vostru (`claude.active` sau `opencode.active`) cu conținut = ce intenționați să faceți.
 4. **La terminare**: ștergeți lock-ul.
 
-### Comenzi
+### Comenzi (folosește `lock.py`)
 
 ```bash
-# Lock (opencode)
-echo "working on oracle bridge, admin panel" > memory_logs/oracle/locks/opencode.active
+# Agent-level lock (întreaga sesiune)
+python lock.py acquire opencode "building Oracle Bridge, admin panel"
+python lock.py acquire claude   "implementing H2.x skills"
 
-# Lock (claude)
-echo "implementing H2 skills, tests" > memory_logs/oracle/locks/claude.active
+# Component-level lock (fișier sau director specific)
+python lock.py acquire-component opencode agents/web.py "adding oracle endpoints"
+python lock.py acquire-component claude   agents/core/llm/ "refactoring hybrid router"
 
-# Check
-ls memory_logs/oracle/locks/
+# Verifică dacă o componentă e blocată
+python lock.py check agents/web.py
+python lock.py check agents/core/llm/
 
-# Unlock
-rm memory_logs/oracle/locks/opencode.active
+# Status complet (agent locks + component locks)
+python lock.py status
+
+# Release
+python lock.py release opencode
+python lock.py release-component claude agents/core/llm/
+python lock.py release-component opencode agents/web.py --force
 ```
 
 ## 3. Commit Protocol
