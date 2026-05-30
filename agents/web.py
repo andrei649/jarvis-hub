@@ -891,3 +891,43 @@ async def oauth_refresh(service: str = ""):
     else:
         return JSONResponse({"error": f"Unknown service: {service}"}, status_code=404)
     return {"ok": token is not None, "service": service}
+
+
+# ── Oracle Bridge endpoints ──────────────────────────────────────
+# These expose Claude session tracking, conflict detection, and
+# OpenCode integration via the Oracle agent.
+
+
+@app.get("/api/oracle/status")
+async def oracle_status():
+    bridge = getattr(orch, "oracle_bridge", None)
+    if not bridge:
+        return JSONResponse({"ok": False, "error": "Oracle bridge not available"}, status_code=503)
+    return _nocache_json(bridge.status())
+
+
+@app.post("/api/oracle/sync")
+async def oracle_sync():
+    bridge = getattr(orch, "oracle_bridge", None)
+    if not bridge:
+        return JSONResponse({"ok": False, "error": "Oracle bridge not available"}, status_code=503)
+    result = await bridge.sync_now()
+    return _nocache_json(result)
+
+
+@app.get("/api/oracle/conflicts")
+async def oracle_conflicts():
+    bridge = getattr(orch, "oracle_bridge", None)
+    if not bridge:
+        return JSONResponse({"ok": False, "error": "Oracle bridge not available"}, status_code=503)
+    conflicts = await bridge.check_conflicts()
+    return _nocache_json({"conflicts": conflicts})
+
+
+@app.post("/api/oracle/conflicts/resolve")
+async def oracle_resolve_conflicts():
+    bridge = getattr(orch, "oracle_bridge", None)
+    if not bridge:
+        return JSONResponse({"ok": False, "error": "Oracle bridge not available"}, status_code=503)
+    bridge.conflicts = [c for c in bridge.conflicts if c.resolved]
+    return _nocache_json({"ok": True})

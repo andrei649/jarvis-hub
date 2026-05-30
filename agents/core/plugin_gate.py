@@ -142,6 +142,16 @@ BUILTIN_PLUGINS = {
         allowed_domains=[],
         agents_served=["jarvis", "ultron"],
     ),
+    "oracle-bridge": PluginManifest(
+        id="oracle-bridge",
+        name="Oracle Pipeline Weaver",
+        version="0.1.0",
+        description="Monitors GitHub for Claude commits, auto-pulls, runs tests, detects conflicts",
+        network_access=NetworkAccess.RESTRICTED,
+        data_scope=DataScope.PROCESSED,
+        allowed_domains=["api.github.com"],
+        agents_served=["oracle"],
+    ),
 }
 
 

@@ -56,6 +56,7 @@ from .plugins.google_calendar import GoogleCalendarPlugin
 from .plugins.apple_health import AppleHealthPlugin
 from .plugins.websearch import WebSearchPlugin
 from .plugins.homebridge import HomebridgePlugin
+from .plugins.oracle_bridge import OracleBridgePlugin
 
 logger = logging.getLogger("jarvis.orchestrator")
 
@@ -167,6 +168,11 @@ class Orchestrator:
             searxng_url=os.environ.get("SEARXNG_URL", ""),
         )
 
+        self.plugins["oracle-bridge"] = OracleBridgePlugin(
+            github_token=os.environ.get("GITHUB_TOKEN", ""),
+        )
+        self.oracle_bridge = self.plugins["oracle-bridge"]
+
         self.skills.discover()
         logger.info(f"Skills loaded: {list(self.skills.skills.keys())}")
 
@@ -214,6 +220,8 @@ class Orchestrator:
                 log_error(logger, E_CHANNEL_START_FAIL, name=cid, detail=str(e))
         self.heartbeat_scheduler.start(self)
         self._settings_watcher_task = asyncio.create_task(self._settings_watcher_loop())
+        if hasattr(self, 'oracle_bridge'):
+            self.oracle_bridge.start_watcher()
         logger.info(f"Channels started: {list(self.channels.keys())}")
 
     async def stop_channels(self):

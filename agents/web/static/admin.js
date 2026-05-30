@@ -59,6 +59,13 @@ const ICONS = {
     h('circle',{cx:10,cy:8,r:5}),
     h('path',{d:'M3 17c1-3 4-5 7-5s6 2 7 5'}),
   ),
+  oracle: h('svg',{viewBox:'0 0 20 20',width:18,height:18,fill:'none',stroke:'currentColor',strokeWidth:1.3},
+    h('circle',{cx:5,cy:5,r:2}),
+    h('circle',{cx:15,cy:5,r:2}),
+    h('circle',{cx:5,cy:15,r:2}),
+    h('circle',{cx:15,cy:15,r:2}),
+    h('path',{d:'M7 7l6 6M13 7l-6 6'}),
+  ),
 };
 
 /* ── category metadata ──────────────────────────────────────── */
@@ -74,6 +81,7 @@ const CATEGORIES = [
   { id:'memory',   label:_t('cat.memory'),   icon:'memory' },
   { id:'skills',   label:_t('cat.skills'),   icon:'skills' },
   { id:'system',   label:_t('cat.system'),   icon:'system' },
+  { id:'oracle',   label:_t('cat.oracle'),   icon:'oracle' },
 ];
 
 const CATEGORY_DESC = {
@@ -87,6 +95,7 @@ const CATEGORY_DESC = {
   memory:    _t('desc.memory'),
   skills:    _t('desc.skills'),
   system:    _t('desc.system'),
+  oracle:    _t('desc.oracle'),
 };
 
 /* ── agent glyph map — single source of truth in data.js ───── */
@@ -333,7 +342,91 @@ function MemoryClear({ onToast }) {
   return h('button',{className:'admin-btn is-danger', onClick:clear}, _t('admin.btn_clear'));
 }
 
-/* ── Main Admin App ──────────────────────────────────────────── */
+/* ── Oracle Pipeline Weaver panel ───────────────────────────── */
+
+function OraclePage() {
+  const [data, setData] = useState(null);
+  const [conflicts, setConflicts] = useState([]);
+  const [syncing, setSyncing] = useState(false);
+  const [tab, setTab] = useState('status');
+
+  const fetchData = () => {
+    fetch('/api/oracle/status').then(r=>r.json()).then(d=>setData(d)).catch(()=>{});
+    fetch('/api/oracle/conflicts').then(r=>r.json()).then(d=>setConflicts(d.conflicts||[])).catch(()=>{});
+  };
+
+  useEffect(() => { fetchData(); const id = setInterval(fetchData, 15000); return ()=>clearInterval(id); }, []);
+
+  const doSync = () => {
+    setSyncing(true);
+    fetch('/api/oracle/sync', {method:'POST'}).then(r=>r.json()).then(()=>{ fetchData(); setSyncing(false); }).catch(()=>setSyncing(false));
+  };
+
+  const resolveConflicts = () => {
+    fetch('/api/oracle/conflicts/resolve', {method:'POST'}).then(r=>r.json()).then(()=>fetchData()).catch(()=>{});
+  };
+
+  if (!data) return h('div',{className:'oracle-loading'}, _t('admin.loading'));
+
+  return h('div',{className:'oracle-wrap'},
+    h('div',{className:'oracle-tabs'},
+      h('button',{className:`oracle-tab ${tab==='status'?'is-active':''}`, onClick:()=>setTab('status')}, _t('oracle.tab.status')),
+      h('button',{className:`oracle-tab ${tab==='sessions'?'is-active':''}`, onClick:()=>setTab('sessions')}, _t('oracle.tab.sessions')),
+      h('button',{className:`oracle-tab ${tab==='conflicts'?'is-active':''}`, onClick:()=>setTab('conflicts')}, _t('oracle.tab.conflicts'), conflicts.length ? ` (${conflicts.length})` : ''),
+    ),
+
+    tab === 'status' && h('div',{className:'oracle-status'},
+      h('div',{className:'oracle-watcher'}, data.watcher_running ? _t('oracle.watcher_on') : _t('oracle.watcher_off')),
+      h('div',{className:'oracle-meta'}, `Last checked: ${data.last_checked || '—'} · Total sessions: ${data.total_sessions}`),
+
+      data.current_session
+        ? h('div',{className:'oracle-session-card'},
+            h('div',{className:'oracle-session-header'}, `Session: ${data.current_session.session_id}`),
+            h('div',{className:'oracle-session-status'}, `Status: ${data.current_session.status} · Commit: ${data.current_session.commit_sha||'—'}`),
+            data.current_session.commit_msg && h('div',{className:'oracle-commit-msg'}, data.current_session.commit_msg),
+            data.current_session.tasks_completed?.length
+              ? h('div',{className:'oracle-tasks'}, `Tasks: ${data.current_session.tasks_completed.join(', ')}`)
+              : null,
+            data.current_session.tests_total > 0
+              ? h('div',{className:`oracle-tests ${data.current_session.tests_failed > 0 ? 'is-fail' : 'is-pass'}`},
+                  `Tests: ${data.current_session.tests_passed}/${data.current_session.tests_total} passed` +
+                  (data.current_session.tests_failed ? ` · ${data.current_session.tests_failed} failed` : ''))
+              : null,
+            data.current_session.error && h('div',{className:'oracle-error'}, data.current_session.error),
+          )
+        : h('div',{className:'oracle-empty'}, _t('oracle.no_session')),
+
+      h('button',{className:'admin-btn is-primary', onClick:doSync, disabled:syncing},
+        syncing ? _t('oracle.syncing') : _t('oracle.sync_btn')),
+    ),
+
+    tab === 'sessions' && h('div',{className:'oracle-sessions'},
+      (data.sessions || []).length === 0
+        ? h('div',{className:'oracle-empty'}, _t('oracle.no_session'))
+        : (data.sessions || []).slice().reverse().map(s => h('div',{key:s.session_id, className:'oracle-session-row'},
+            h('span',{className:'oracle-ses-id'}, s.session_id),
+            h('span',{className:`oracle-ses-status oracle-ses-${s.status}`}, s.status),
+            h('span',{className:'oracle-ses-commit'}, s.commit_sha ? s.commit_sha.slice(0,8) : '—'),
+            h('span',{className:'oracle-ses-tasks'}, (s.tasks_completed||[]).join(', ')),
+            h('span',{className:`oracle-ses-tests ${s.tests_failed > 0 ? 'is-fail' : 'is-pass'}`},
+              s.tests_total ? `${s.tests_passed}/${s.tests_total}` : '—'),
+          ))
+    ),
+
+    tab === 'conflicts' && h('div',{className:'oracle-conflicts'},
+      conflicts.length === 0
+        ? h('div',{className:'oracle-empty'}, _t('oracle.conflict_none'))
+        : h('div',null,
+            h('p',{className:'oracle-warn'}, _t('oracle.conflict_found')),
+            conflicts.map(c => h('div',{key:c.file_path, className:'oracle-conflict-row'},
+              h('span',{className:'oracle-conflict-file'}, c.file_path),
+              h('span',{className:'oracle-conflict-hash'}, `local:${c.local_hash.slice(0,6)} remote:${c.remote_hash.slice(0,6)}`),
+            )),
+            h('button',{className:'admin-btn is-success', onClick:resolveConflicts}, _t('oracle.resolve_btn')),
+          ),
+    ),
+  );
+}
 
 function AdminApp() {
   const [active, setActive] = useState('general');
@@ -403,6 +496,7 @@ function AdminApp() {
   const isAgents = active === 'agents';
   const isSystem = active === 'system';
   const isSecurity = active === 'security';
+  const isOracle = active === 'oracle';
 
   return h('div',{className:'admin-wrap'},
     h('div',{className:'admin-sidebar'},
@@ -431,10 +525,13 @@ function AdminApp() {
         : isSystem
           ? h(SystemPage,{envData, onRefresh:()=>fetch('/api/admin/env').then(r=>r.json()).then(d=>setEnvData(d))})
 
-          : h('div',null,
-              filtered.map(s => renderRow(s, s.key, onUpdate, (key)=>showToast(`${_t('admin.action')}${key}`) )),
-              isSecurity && h(AuditLog),
-            ),
+          : isOracle
+            ? h(OraclePage)
+
+            : h('div',null,
+                filtered.map(s => renderRow(s, s.key, onUpdate, (key)=>showToast(`${_t('admin.action')}${key}`) )),
+                isSecurity && h(AuditLog),
+              ),
 
       // LLM test button on LLM page
       active === 'llm' && h('div',{style:{marginTop:20}}, h(LLMTest)),
