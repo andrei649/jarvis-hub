@@ -11,6 +11,7 @@ class AgentConfig(BaseModel):
     model: str = "qwen2.5:7b"
     channel: str = "voice"
     enabled: bool = True
+    local_only: bool = False
     heartbeat_interval_minutes: Optional[int] = None
     soul_path: Path
     heartbeat_path: Optional[Path] = None
@@ -18,7 +19,7 @@ class AgentConfig(BaseModel):
     tools: list[str] = []
     plugins: list[str] = []
 
-    @field_validator("enabled", mode="before")
+    @field_validator("enabled", "local_only", mode="before")
     @classmethod
     def coerce_enabled(cls, v: Any) -> bool:
         if isinstance(v, bool):
@@ -65,6 +66,7 @@ class AgentLoader:
                 model=frontmatter.get("model", "qwen2.5:7b"),
                 channel=frontmatter.get("channel", "voice"),
                 enabled=frontmatter.get("enabled", True),
+                local_only=frontmatter.get("local_only", False),
                 heartbeat_interval_minutes=frontmatter.get("heartbeat_interval_minutes"),
                 soul_path=soul_file,
                 heartbeat_path=path / "HEARTBEAT.md" if (path / "HEARTBEAT.md").exists() else None,

@@ -99,3 +99,5 @@ daily-driver-ul e solid.
 ## ✅ Done
 <!-- Mută aici itemii bifați, cu data. Ex: - [x] 2026-05-30 Backlog inițial creat -->
 - [x] 2026-05-30 Backlog & strategie de operațiuni inițiale create
+- [x] 2026-05-30 Sprint 0 (parțial): gating strict-local per-agent — Frigga nu mai atinge cloud-ul
+      (privacy fix real + 4 teste unittest verzi, prima plasă de teste din repo)

@@ -2,6 +2,7 @@
 name: Frigga
 model: qwen2.5:14b
 channel: whatsapp
+local_only: true
 heartbeat_interval_minutes: 60
 dependencies: []
 tools: [track_baby, log_food, check_milestones]

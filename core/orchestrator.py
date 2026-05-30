@@ -86,7 +86,9 @@ class Orchestrator:
         system_prompt = self.agent_loader.get_system_prompt(agent_id)
         memory_context = await self.memory.get_relevant(agent_id, message)
         full_prompt = self._build_prompt(system_prompt, memory_context, message, context)
-        response = await self._call_llm(agent.model, full_prompt, agent_id)
+        response = await self._call_llm(
+            agent.model, full_prompt, agent_id, local_only=agent.local_only
+        )
 
         await self.memory.store(agent_id, message, response)
         logger.info(f"[{agent_id}] → {response[:80]}...")
@@ -137,8 +139,11 @@ class Orchestrator:
         parts.append("\n[You]:")
         return "\n".join(parts)
 
-    async def _call_llm(self, model: str, prompt: str, agent_id: str = "unknown") -> str:
-        if self.claude.is_available():
+    async def _call_llm(
+        self, model: str, prompt: str, agent_id: str = "unknown", local_only: bool = False
+    ) -> str:
+        # Strict-local agents (e.g. Frigga/family) must never leave the machine.
+        if not local_only and self.claude.is_available():
             result = await self.claude.ask(model, prompt, agent_id)
             if result:
                 return result
