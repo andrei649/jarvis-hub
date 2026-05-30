@@ -3,35 +3,98 @@ oauth.py — OAuth2 helper for token lifecycle management.
 Supports Google (Gmail, Calendar) and Spotify token refresh.
 """
 
+import base64
+import hashlib
 import json
 import logging
+import os
+import secrets
 import time
 from pathlib import Path
 from typing import Optional
 
 import httpx
+from cryptography.fernet import Fernet
 
 logger = logging.getLogger("jarvis.oauth")
 
+_pending_verifiers: dict[str, str] = {}
+_expected_states: set[str] = set()
+
 TOKEN_DIR = Path(__file__).resolve().parent.parent.parent.parent / "memory_logs" / "tokens"
 TOKEN_DIR.mkdir(parents=True, exist_ok=True)
+
+
+def _generate_pkce() -> tuple[str, str]:
+    verifier = secrets.token_urlsafe(32)
+    digest = hashlib.sha256(verifier.encode()).digest()
+    challenge = base64.urlsafe_b64encode(digest).rstrip(b"=").decode()
+    return verifier, challenge
+
+
+def _make_state(service: str) -> str:
+    return f"{service}:{secrets.token_urlsafe(16)}"
+
+
+def verify_state(state: str) -> Optional[str]:
+    if state in _expected_states:
+        _expected_states.discard(state)
+        parts = state.rsplit(":", 1)
+        if len(parts) == 2:
+            return parts[0]
+        return state
+    return None
 
 
 def _token_path(service: str) -> Path:
     return TOKEN_DIR / f"{service}_token.json"
 
 
+_fernet: Optional[Fernet] = None
+
+
+def _get_fernet() -> Fernet:
+    global _fernet
+    if _fernet is None:
+        key_file = TOKEN_DIR / ".encryption_key"
+        if key_file.exists():
+            key = key_file.read_bytes()
+        else:
+            key = Fernet.generate_key()
+            key_file.write_bytes(key)
+        _fernet = Fernet(key)
+    return _fernet
+
+
 def save_token(service: str, data: dict):
+    if "access_token" in data:
+        data["access_token"] = _get_fernet().encrypt(data["access_token"].encode()).decode()
+    if "refresh_token" in data:
+        data["refresh_token"] = _get_fernet().encrypt(data["refresh_token"].encode()).decode()
     data["_saved_at"] = time.time()
+    data["_encrypted"] = True
     _token_path(service).write_text(json.dumps(data, indent=2), encoding="utf-8")
     logger.info(f"Token saved for {service}")
 
 
 def load_token(service: str) -> Optional[dict]:
     path = _token_path(service)
-    if path.exists():
-        return json.loads(path.read_text(encoding="utf-8"))
-    return None
+    if not path.exists():
+        return None
+    data = json.loads(path.read_text(encoding="utf-8"))
+    if data.get("_encrypted"):
+        f = _get_fernet()
+        if "access_token" in data:
+            try:
+                data["access_token"] = f.decrypt(data["access_token"].encode()).decode()
+            except Exception:
+                pass
+        if "refresh_token" in data:
+            try:
+                data["refresh_token"] = f.decrypt(data["refresh_token"].encode()).decode()
+            except Exception:
+                pass
+    return data
 
 
 GOOGLE_CLIENT_ID = ""
@@ -57,6 +120,10 @@ def get_google_auth_url(service: str = "gmail") -> str:
         "calendar": "https://www.googleapis.com/auth/calendar",
     }
     scope = scope_map.get(service, scope_map["gmail"])
+    verifier, challenge = _generate_pkce()
+    state = _make_state(f"google:{service}")
+    _pending_verifiers[state] = verifier
+    _expected_states.add(state)
     return (
         f"https://accounts.google.com/o/oauth2/v2/auth"
         f"?client_id={GOOGLE_CLIENT_ID}"
@@ -65,23 +132,32 @@ def get_google_auth_url(service: str = "gmail") -> str:
         f"&scope={scope}"
         f"&access_type=offline"
         f"&prompt=consent"
-        f"&state=google:{service}"
+        f"&state={state}"
+        f"&code_challenge={challenge}"
+        f"&code_challenge_method=S256"
     )
 
 
 def get_spotify_auth_url() -> str:
     scope = "user-read-playback-state user-modify-playback-state playlist-read-private"
+    verifier, challenge = _generate_pkce()
+    state = _make_state("spotify")
+    _pending_verifiers[state] = verifier
+    _expected_states.add(state)
     return (
         f"https://accounts.spotify.com/authorize"
         f"?client_id={SPOTIFY_CLIENT_ID}"
         f"&redirect_uri={REDIRECT_URI}"
         f"&response_type=code"
         f"&scope={scope}"
-        f"&state=spotify"
+        f"&state={state}"
+        f"&code_challenge={challenge}"
+        f"&code_challenge_method=S256"
     )
 
 
-async def exchange_google_code(code: str) -> Optional[dict]:
+async def exchange_google_code(code: str, state: str = "") -> Optional[dict]:
+    code_verifier = _pending_verifiers.pop(state, "")
     async with httpx.AsyncClient(timeout=15.0) as client:
         resp = await client.post(
             "https://oauth2.googleapis.com/token",
@@ -91,6 +167,7 @@ async def exchange_google_code(code: str) -> Optional[dict]:
                 "client_secret": GOOGLE_CLIENT_SECRET,
                 "redirect_uri": REDIRECT_URI,
                 "grant_type": "authorization_code",
+                "code_verifier": code_verifier,
             },
         )
         if resp.is_success:
@@ -101,7 +178,8 @@ async def exchange_google_code(code: str) -> Optional[dict]:
         return None
 
 
-async def exchange_spotify_code(code: str) -> Optional[dict]:
+async def exchange_spotify_code(code: str, state: str = "") -> Optional[dict]:
+    code_verifier = _pending_verifiers.pop(state, "")
     auth = httpx.BasicAuth(SPOTIFY_CLIENT_ID, SPOTIFY_CLIENT_SECRET)
     async with httpx.AsyncClient(timeout=15.0) as client:
         resp = await client.post(
@@ -110,6 +188,7 @@ async def exchange_spotify_code(code: str) -> Optional[dict]:
                 "code": code,
                 "redirect_uri": REDIRECT_URI,
                 "grant_type": "authorization_code",
+                "code_verifier": code_verifier,
             },
             auth=auth,
         )

@@ -119,3 +119,23 @@ def test_hybrid_router_imports():
     assert POLICY_LOCAL == "local"
     assert GeminiBackend is not None
     assert estimate_tokens("hello") > 0
+
+
+@pytest.mark.asyncio
+async def test_concurrent_session_access():
+    """Cross-cutting: session manager handles concurrent access safely."""
+    import asyncio
+    from datetime import datetime, timezone
+    from core.memory.manager import MemoryManager
+
+    mm = MemoryManager()
+    sid = await mm.new_session(f"test-concurrent-{datetime.now(timezone.utc).timestamp()}")
+
+    async def add_message(i):
+        await mm.add_turn(sid, "user", f"message {i}")
+
+    await asyncio.gather(*(add_message(i) for i in range(20)))
+
+    history = await mm.get_history(sid)
+    assert len(history) == 20, f"Expected 20 turns, got {len(history)}"
+    assert all(t["role"] == "user" for t in history)

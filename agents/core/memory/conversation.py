@@ -1,3 +1,4 @@
+import asyncio
 import json
 import logging
 from datetime import datetime, timezone
@@ -38,6 +39,7 @@ class ConversationMemory:
         self.persist = persist
         self.current_session_id: Optional[str] = None
         self._dirty = set()
+        self._lock = asyncio.Lock()
 
         if persist:
             self._load_latest_session()
@@ -55,25 +57,27 @@ class ConversationMemory:
                 self.current_session_id = sid
                 logger.info(f"Restored session {sid} ({len(turns_data)} turns)")
 
-    def new_session(self, session_id: str = None) -> str:
-        sid = session_id or datetime.now(timezone.utc).strftime("session_%Y%m%d_%H%M%S")
-        if sid not in self.sessions:
-            self.sessions[sid] = []
-            logger.info(f"New session: {sid}")
-        self.current_session_id = sid
-        return sid
+    async def new_session(self, session_id: str = None) -> str:
+        async with self._lock:
+            sid = session_id or datetime.now(timezone.utc).strftime("session_%Y%m%d_%H%M%S")
+            if sid not in self.sessions:
+                self.sessions[sid] = []
+                logger.info(f"New session: {sid}")
+            self.current_session_id = sid
+            return sid
 
-    def add_turn(self, session_id: str, role: str, content: str, agent_id: str = None):
-        if session_id not in self.sessions:
-            self.sessions[session_id] = []
-        turn = Turn(role, content, agent_id, token_count=len(content) // 4)
-        self.sessions[session_id].append(turn)
-        if len(self.sessions[session_id]) > self.max_turns:
-            self.sessions[session_id].pop(0)
-        self._dirty.add(session_id)
-        if self.persist:
-            self._append_log(session_id, turn)
-            self._save_snapshot(session_id)
+    async def add_turn(self, session_id: str, role: str, content: str, agent_id: str = None):
+        async with self._lock:
+            if session_id not in self.sessions:
+                self.sessions[session_id] = []
+            turn = Turn(role, content, agent_id, token_count=len(content) // 4)
+            self.sessions[session_id].append(turn)
+            if len(self.sessions[session_id]) > self.max_turns:
+                self.sessions[session_id].pop(0)
+            self._dirty.add(session_id)
+            if self.persist:
+                self._append_log(session_id, turn)
+                self._save_snapshot(session_id)
 
     def _save_snapshot(self, session_id: str):
         """Full JSON save of the session."""
@@ -83,14 +87,15 @@ class ConversationMemory:
         except Exception as e:
             logger.warning(f"Snapshot save failed: {e}")
 
-    def get_history(self, session_id: str, last_n: int = None) -> list[dict]:
-        turns = self.sessions.get(session_id, [])
-        if last_n is not None:
-            turns = turns[-last_n:] if last_n > 0 else []
-        return [t.to_dict() for t in turns]
+    async def get_history(self, session_id: str, last_n: int = None) -> list[dict]:
+        async with self._lock:
+            turns = self.sessions.get(session_id, [])
+            if last_n is not None:
+                turns = turns[-last_n:] if last_n > 0 else []
+            return [t.to_dict() for t in turns]
 
-    def get_context(self, session_id: str, last_n: int = 10) -> str:
-        turns = self.get_history(session_id, last_n)
+    async def get_context(self, session_id: str, last_n: int = 10) -> str:
+        turns = await self.get_history(session_id, last_n)
         if not turns:
             return ""
         lines = []
@@ -99,11 +104,12 @@ class ConversationMemory:
             lines.append(f"[{speaker}]: {t['content']}")
         return "\n".join(lines)
 
-    def clear(self, session_id: str = None):
-        if session_id:
-            self.sessions.pop(session_id, None)
-        else:
-            self.sessions.clear()
+    async def clear(self, session_id: str = None):
+        async with self._lock:
+            if session_id:
+                self.sessions.pop(session_id, None)
+            else:
+                self.sessions.clear()
 
     def _append_log(self, session_id: str, turn: Turn):
         try:

@@ -124,7 +124,7 @@ SQLite local pentru Max (somn/HRV/mâncare/vaccinuri), Alexandra (B&B), pisici.
 Drafturi LinkedIn, Digitaholic blog, email în ton specificat, salvate local JSON.
 **AC:** „Veronica, scrie un post LinkedIn despre AI în banking" → draft complet
 
-### H2.2 — Pepper: Email Triage Gmail (S:5, Dep: H1.4) 🔜
+### H2.2 — Pepper: Email Triage Gmail (S:5, Dep: H1.4) ✅
 Citește etichete Gmail, prioritizează, sugerează acțiuni.
 **AC:** „Pepper, ce e nou în inbox?" → listă scurtă priorizată
 
@@ -132,7 +132,7 @@ Citește etichete Gmail, prioritizează, sugerează acțiuni.
 Solduri ING + Libră (API sau spreadsheet sync), burn rate, runway.
 **AC:** „Gecko, câți bani am în cont?" → sumă exactă cu valută
 
-### H2.9 — Vision: Web Research (S:5) 🔜
+### H2.9 — Vision: Web Research (S:5) ✅
 Căutări web, extrage conținut, sumarizează cu citări (Tavily/SearXNG/DDG fallback + SSRF guard — deja existent).
 **AC:** „Vision, cercetează piața MarTech CEE" → raport structurat cu surse
 
@@ -226,7 +226,7 @@ Optimizare costuri și vizibilitate pentru Hybrid Router.
 
 | Item | S | Dep | P | AC |
 |------|---|-----|---|----|
-| Session Manager thread-safe | 3 | — | P1 | 2 sesiuni simultane nu se corup |
+| Session Manager thread-safe | 3 | — | P1 | ✅ | 2 sesiuni simultane nu se corup |
 | Error taxonomy + logging structurat | 5 | — | P1 | ✅ |
 | CHANGELOG.md | 1 | — | P1 | ✅ |
 | Integration tests per agent | 15 (1/agent) | H2.x | P2 | fiecare agent are test end-to-end |
@@ -242,8 +242,8 @@ Optimizare costuri și vizibilitate pentru Hybrid Router.
 | S1 | `web.py` `/api/admin/env` | Expunea tot `os.environ` (chei API, token-uri OAuth) | ✅ guard + mascare secrete |
 | S2 | `web.py` toate `/api/admin/*` | Zero autentificare pe panoul admin | ✅ `_admin_guard`: token sau localhost-only |
 | S3 | `websearch.py:90` | SSRF — `fetch_page` fără validare URL (IP-uri private, metadata cloud) | ✅ `check_ssrf` pre-fetch + re-check după redirect, `max_redirects=5` |
-| S4 | `gemini.py` stream | (rămâne) stream fără `raise_for_status` | ⬜ P1 hardening |
-| S-PKCE | `oauth.py` | OAuth fără PKCE, state needuat, token necriptat | ⬜ P1 hardening |
+| S4 | `gemini.py` stream | (rămâne) stream fără `raise_for_status` | ✅ `raise_for_status` adăugat la stream |
+| S-PKCE | `oauth.py` | OAuth fără PKCE, state needuat, token necriptat | ✅ PKCE + state verification + Fernet encryption |
 
 ## Bugs existente (din sesiunile anterioare)
 
@@ -272,14 +272,14 @@ Optimizare costuri și vizibilitate pentru Hybrid Router.
 | Horizon | Total items | ✅ Făcute | S total | S făcute | % complet | S rămase | Efort estimat |
 |---------|------------|----------|---------|----------|-----------|----------|---------------|
 | **H1 Foundation** (P0) | 5 | **5** | 26 | **26** | **100%** | 0 | — |
-| **H2 Core Agent** (P1) | 12 | **8** | 76 | **53** | **70%** | 23 | ~1.5 săpt. (paralel 2) |
+| **H2 Core Agent** (P1) | 12 | **10** | 76 | **63** | **83%** | 13 | ~1 săpt. |
 | **H3 Intelligence** (P2) | 6 | **0** | 39 | **0** | **0%** | 39 | ~2.5 săpt. (paralel 2) |
 | **H4 Platform** (P3) | 11 | **0** | 63 | **0** | **0%** | 63 | ~4 săpt. (paralel 3) |
-| **Cross-cutting** | 6 | **2** | 44 | **6** | **14%** | 38 | ~2.5 săpt. |
-| **Securitate audit** | 5 | **3** | — | — | **60%** | 2 | ~1 zi |
+| **Cross-cutting** | 6 | **3** | 44 | **9** | **21%** | 35 | ~2 săpt. |
+| **Securitate audit** | 5 | **5** | — | — | **100%** | 0 | — |
 | **Bugfixes** | 17 | **17** | — | — | **100%** | 0 | — |
 | **Sprint 0** (P0) | 3 | **3** | 7 | **7** | **100%** | 0 | — |
-| **Total general** | **65** | **38** | **255** | **92** | **36%** | **163** | **~10 săpt.** |
+| **Total general** | **65** | **43** | **255** | **105** | **41%** | **150** | **~9 săpt.** |
 
 **Echipă 3-4 agenți paralel:** H2+H3 ≈ 2-3 luni · Totul ≈ 3 luni (estimat)
 

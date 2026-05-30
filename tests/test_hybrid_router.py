@@ -341,6 +341,33 @@ async def test_gemini_generate_stream_network_error(monkeypatch):
     assert "Gemini stream error" in result
 
 
+@pytest.mark.asyncio
+async def test_gemini_generate_stream_http_error(monkeypatch):
+    """S4: stream should handle HTTP errors without crashing."""
+    class MockResponse:
+        status_code = 403
+        async def aiter_lines(self):
+            yield 'data: {"error": "forbidden"}'
+            if False: yield
+        def raise_for_status(self):
+            raise Exception("HTTP 403 Forbidden")
+
+    def mock_stream(*a, **kw):
+        class MockACM:
+            async def __aenter__(self):
+                return MockResponse()
+            async def __aexit__(self, *a):
+                pass
+            async def aclose(self):
+                pass
+        return MockACM()
+
+    monkeypatch.setattr("httpx.AsyncClient.stream", mock_stream)
+    gb = GeminiBackend(api_key="test")
+    result = await gb.generate_stream("gemini-2.5-flash", "hello")
+    assert "error" in result.lower() or "gemini stream error" in result.lower()
+
+
 # ── CloudLLMPlugin Gemini support ─────────────────────────────────────
 
 from core.plugins.cloud_llm import CloudLLMPlugin

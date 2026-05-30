@@ -69,6 +69,7 @@ class GeminiBackend(LLMBackend):
         full = ""
         try:
             async with self.client.stream("POST", url, json=payload) as resp:
+                resp.raise_for_status()
                 async for line in resp.aiter_lines():
                     if line.startswith("data: "):
                         chunk = line[6:].strip()

@@ -183,7 +183,7 @@ class Orchestrator:
             logger.info(f"Restored from checkpoint — session: {self.session_id}")
 
         if not self.session_id:
-            self.session_id = self.memory.conversation.current_session_id or self.memory.new_session()
+            self.session_id = self.memory.conversation.current_session_id or await self.memory.new_session()
             logger.info(f"Session: {self.session_id}")
 
         self.load_runtime_settings()
@@ -239,7 +239,7 @@ class Orchestrator:
         if channel == "telegram" and chat_id:
             ck = f"tg:{chat_id}"
             if ck not in self._channel_sessions:
-                self._channel_sessions[ck] = self.memory.new_session()
+                self._channel_sessions[ck] = await self.memory.new_session()
             saved_session = self.session_id
             self.session_id = self._channel_sessions[ck]
             try:
@@ -260,7 +260,7 @@ class Orchestrator:
         return response
 
     async def handle_input(self, text: str, channel: str = "voice", agent_override: str = None) -> str:
-        self.memory.add_turn(self.session_id, "user", text)
+        await self.memory.add_turn(self.session_id, "user", text)
 
         skill_cmd = self.skills.parse_command(text)
         if skill_cmd:
@@ -269,7 +269,7 @@ class Orchestrator:
             if skill:
                 result = await skill.execute(command, args, {"channel": channel})
                 if result:
-                    self.memory.add_turn(self.session_id, "assistant", result, agent_id=skill_name)
+                    await self.memory.add_turn(self.session_id, "assistant", result, agent_id=skill_name)
                     return result
 
         if agent_override and agent_override in self.agents:
@@ -279,7 +279,7 @@ class Orchestrator:
                 [agent_override], text, intent.context, plugin_data
             )
             synthesized = list(responses.values())[0] if responses else ""
-            self.memory.add_turn(self.session_id, "assistant", synthesized, agent_id=agent_override)
+            await self.memory.add_turn(self.session_id, "assistant", synthesized, agent_id=agent_override)
             self.checkpoints.save(self)
             self._log_session(text, intent, responses, synthesized)
             self._record_interactions(text, responses, synthesized)
@@ -335,7 +335,7 @@ class Orchestrator:
         if skill_name:
             logger.info(f"Learned new skill: {skill_name}")
 
-        self.memory.add_turn(self.session_id, "assistant", synthesized, agent_id=responder_id)
+        await self.memory.add_turn(self.session_id, "assistant", synthesized, agent_id=responder_id)
         self.checkpoints.save(self)
         self._log_session(text, intent, responses, synthesized)
 
@@ -352,7 +352,7 @@ class Orchestrator:
         return synthesized
 
     async def handle_input_stream(self, text: str, channel: str = "voice", on_token: Callable = None, agent_override: str = None) -> str:
-        self.memory.add_turn(self.session_id, "user", text)
+        await self.memory.add_turn(self.session_id, "user", text)
 
         skill_cmd = self.skills.parse_command(text)
         if skill_cmd:
@@ -361,7 +361,7 @@ class Orchestrator:
             if skill:
                 result = await skill.execute(command, args, {"channel": channel})
                 if result:
-                    self.memory.add_turn(self.session_id, "assistant", result, agent_id=skill_name)
+                    await self.memory.add_turn(self.session_id, "assistant", result, agent_id=skill_name)
                     if on_token:
                         on_token(result)
                     return result
@@ -380,10 +380,10 @@ class Orchestrator:
         for agent_id in target:
             if agent_id in self.agents:
                 agent = self.agents[agent_id]
-                history = self.memory.get_context(self.session_id, last_n=context_window)
+                history = await self.memory.get_context(self.session_id, last_n=context_window)
                 system_prompt = agent.soul.get("content", "")
                 plugin_block = self._format_plugin_data(plugin_data)
-                agent_context = self.memory.get_agent_context(agent_id)
+                agent_context = await self.memory.get_agent_context(agent_id)
                 context_block = ""
                 if agent_context:
                     context_block = f"Agent context: {agent_context}\n"
@@ -430,7 +430,7 @@ class Orchestrator:
                 synthesized = response
                 break
 
-        self.memory.add_turn(self.session_id, "assistant", synthesized, agent_id=agent_id)
+        await self.memory.add_turn(self.session_id, "assistant", synthesized, agent_id=agent_id)
         self.checkpoints.save(self)
         self.audit.log(SecurityEvent(
             event_type=SecurityEventType.LLM_CALL,
@@ -549,7 +549,7 @@ class Orchestrator:
     async def _call_agents_parallel(
         self, agent_ids: list[str], text: str, context: dict, plugin_data: dict = None
     ) -> dict[str, str]:
-        history = self.memory.get_context(self.session_id, last_n=6)
+        history = await self.memory.get_context(self.session_id, last_n=6)
         plugin_block = self._format_plugin_data(plugin_data or {})
 
         async def _run_agent(agent_id: str) -> tuple[str, str, float]:
@@ -558,7 +558,7 @@ class Orchestrator:
                 enriched_text = f"Context:\n{history}\n\nUser: {text}"
             if plugin_block:
                 enriched_text = f"{plugin_block}{enriched_text}"
-            agent_context = self.memory.get_agent_context(agent_id)
+            agent_context = await self.memory.get_agent_context(agent_id)
             if agent_context:
                 enriched_text = f"Agent context: {agent_context}\n\n{enriched_text}"
             try:
@@ -647,7 +647,7 @@ class Orchestrator:
             "llm_backend": self.llm_router.name,
             "agents": list(self.agents.keys()),
             "session": self.session_id,
-            "memory": self.memory.get_session_stats(),
+            "memory": await self.memory.get_session_stats(),
             "skills": list(self.skills.skills.keys()),
             "checkpoint": self.checkpoints.info(),
             "learning": self.learning.get_stats(),

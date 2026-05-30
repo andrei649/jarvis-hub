@@ -503,7 +503,7 @@ async def get_ticker():
 async def memory():
     if not orch:
         return JSONResponse({"error": "not initialized"}, status_code=503)
-    history = orch.memory.get_history(orch.session_id, last_n=20)
+    history = await orch.memory.get_history(orch.session_id, last_n=20)
     return _nocache_json({"session": orch.session_id, "turns": history})
 
 
@@ -515,8 +515,8 @@ async def clear_memory(req: Request):
         confirm = req.headers.get("x-confirm", "").lower()
         if confirm != "true":
             return JSONResponse({"error": "memory clear requires confirmation — send X-Confirm: true header or set DEV_MODE=1"}, status_code=400)
-    orch.memory.clear(session_id=orch.session_id)
-    orch.session_id = orch.memory.new_session()
+    await orch.memory.clear(session_id=orch.session_id)
+    orch.session_id = await orch.memory.new_session()
     orch.checkpoints.create_session_record(orch.session_id)
     return JSONResponse({"ok": True, "new_session": orch.session_id})
 
@@ -771,7 +771,7 @@ async def admin_get_audit(page: int = 1, limit: int = 50):
 async def admin_memory_clear():
     if not orch:
         return JSONResponse({"error": "not initialized"}, status_code=503)
-    orch.memory.clear()
+    await orch.memory.clear()
     return {"ok": True, "message": "Session memory cleared"}
 
 
@@ -828,6 +828,7 @@ from core.plugins.oauth import (
     init_from_env, get_google_auth_url, get_spotify_auth_url,
     exchange_google_code, exchange_spotify_code,
     refresh_google_token, refresh_spotify_token, load_token,
+    verify_state,
 )
 
 init_from_env()
@@ -860,14 +861,18 @@ class OAuthCodeBody(BaseModel):
 @app.post("/api/oauth/callback")
 async def oauth_callback(body: OAuthCodeBody):
     state = body.state
-    if state.startswith("google:"):
-        service = state.split(":")[1]
-        result = await exchange_google_code(body.code)
-    elif state == "spotify":
-        result = await exchange_spotify_code(body.code)
+    service_id = verify_state(state)
+    if service_id is None:
+        return JSONResponse({"ok": False, "error": "Invalid or expired state"}, status_code=400)
+
+    if service_id.startswith("google:"):
+        service = service_id.split(":")[1]
+        result = await exchange_google_code(body.code, state)
+    elif service_id == "spotify":
         service = "spotify"
+        result = await exchange_spotify_code(body.code, state)
     else:
-        return JSONResponse({"ok": False, "error": f"Unknown state: {state}"}, status_code=400)
+        return JSONResponse({"ok": False, "error": f"Unknown service: {service_id}"}, status_code=400)
 
     if result:
         return {"ok": True, "service": service, "has_refresh": "refresh_token" in result}
