@@ -1,9 +1,21 @@
 # Jarvis HUB — QA Bug & Improvement List
 
-> Ultimul update: 2026-05-29 (sesiunea 2 — 11 bug-uri fixate)
+> Ultimul update: 2026-05-30 (sesiunea 3 — config teste + 5 bug-uri fixate)
 > Server: `uvicorn agents.web:app --host 127.0.0.1 --port 8080`
-> Teste: `python -m pytest tests/ -v`
-> 21 tests passing, 10/10 admin categories, 52 settings seeded
+> Teste: `python -m pytest` (config în `pytest.ini`, asyncio auto)
+> 26 tests passing, 10/10 admin categories, 52 settings seeded
+
+## Fixate în sesiunea 3 (30 mai)
+
+| ID | Fișier | Ce s-a reparat |
+|---|---|---|
+| CI | `pytest.ini` (nou) | `asyncio_mode=auto` — cele 4 teste async nu mai pică fără flag manual; `python -m pytest` merge din prima |
+| new-6.1 | `settings_db.py` | `_ensure_init()` thread-safe — `threading.Lock` cu double-checked locking |
+| new-6.2 | `settings_db.py` | `put_category` loghează cheile necunoscute ignorate (nu mai e silențios) |
+| new-6.3 | `settings_db.py` | `PRAGMA journal_mode=WAL` o singură dată per proces (flag `_wal_set`), nu la fiecare conexiune |
+| WARN-5 | `network.js` | `RING_ORDER` dinamic — agenții noi din API apar automat în graf (nu mai e hardcodat la 14) |
+| new-5.1 | `orchestrator.py` | Non-stream path atribuie memoria agentului real (`responder_id`) când nu e sinteză Jarvis, nu hardcodat `"jarvis"` |
+| test | `tests/test_settings_db.py` (nou) | 5 teste pentru seeding/get/put/unknown-key |
 
 ## Fixate în sesiunea 1 (29 mai)
 
@@ -45,9 +57,7 @@
 ### 🟡 Medii
 | ID | Fișier | Linie | Problemă |
 |---|---|---|---|
-| new-5.1 | `orchestrator.py` | 226 | Memory logging non-stream path încă scrie `agent_id="jarvis"` (responses e merged, complex de reparat) |
 | BUG-9 | `app.js` | 110-150 | SSE stream produce mesaje duplicate dacă `\n\n` e divizat în 2 chunk-uri TCP |
-| WARN-5 | `network.js` | 13-18 | `RING_ORDER` hardcodat (14 agenți), agenții noi nu apar |
 | WARN-9 | `app.js` | 27-37 | Fără indicator de loading; mock data persistă fără avertisment dacă API e down |
 
 ### 🟢 Minore
@@ -57,9 +67,6 @@
 | new-2.2 | `app.js` | 40-52 vs 58-75 | Race condition: 30s data poll suprascrie 10s status poll |
 | new-4.6 | `web.py` | 608 | Table name interpolat în SQL (validat dar anti-pattern) |
 | new-5.4 | `orchestrator.py` | 358 | `intent.target_agents[0]` — IndexError dacă listă goală (deși gardat) |
-| new-6.1 | `settings_db.py` | 99-105 | `_ensure_init()` nu e thread-safe (race condition la primul request) |
-| new-6.2 | `settings_db.py` | 172-175 | `put_category` ignoră silențios chei necunoscute |
-| new-6.3 | `settings_db.py` | 113 | `PRAGMA journal_mode=WAL` apelat la fiecare conexiune |
 | WARN-1 | `components.js` | 165-204 | `VoiceVisualizer` mort (~120 linii + CSS) |
 | WARN-2 | `admin.js` | 217-227 | `SettingsPage` mort (gruparea neterminată) |
 | WARN-3 | `admin.js` / `data.js` | 94-110 | `AGENT_GLYPHS` duplicat |

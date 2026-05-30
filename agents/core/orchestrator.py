@@ -234,8 +234,16 @@ class Orchestrator:
             )
             responses.update(handoff_responses)
 
+        was_synthesized = len(responses) > 1 or "jarvis" not in responses
+        # Attribute the turn to the agent that actually produced it: Jarvis when
+        # it synthesized a multi-agent answer, otherwise the single responder.
+        responder_id = "jarvis"
         try:
-            synthesized = await self._synthesize(responses, intent) if len(responses) > 1 or "jarvis" not in responses else list(responses.values())[0]
+            if was_synthesized:
+                synthesized = await self._synthesize(responses, intent)
+            else:
+                responder_id = next(iter(responses))
+                synthesized = responses[responder_id]
         except RuntimeError:
             synthesized = "I'm sorry, sir — my language backend is not available. Please start Ollama or LM Studio and try again."
             logger.warning("Returning friendly message: no LLM backend available during synthesize")
@@ -247,7 +255,7 @@ class Orchestrator:
         if skill_name:
             logger.info(f"Learned new skill: {skill_name}")
 
-        self.memory.add_turn(self.session_id, "assistant", synthesized, agent_id="jarvis")
+        self.memory.add_turn(self.session_id, "assistant", synthesized, agent_id=responder_id)
         self.checkpoints.save(self)
         self._log_session(text, intent, responses, synthesized)
 

@@ -1,0 +1,58 @@
+"""Tests for the admin settings store (seeding, get/put, unknown-key handling)."""
+
+import sys
+from pathlib import Path
+
+import pytest
+
+repo_root = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(repo_root))
+sys.path.insert(0, str(repo_root / "agents"))
+
+from agents.core import settings_db
+
+
+@pytest.fixture
+def temp_db(tmp_path, monkeypatch):
+    """Point the settings store at a throwaway DB and reset module init state."""
+    monkeypatch.setattr(settings_db, "DB_PATH", tmp_path / "settings.db")
+    monkeypatch.setattr(settings_db, "_initialized", False)
+    monkeypatch.setattr(settings_db, "_wal_set", False)
+    return settings_db
+
+
+def test_seeds_all_categories(temp_db):
+    groups = temp_db.get_all()
+    # 10 categories are defined in DEFAULTS
+    assert len(groups) == 10
+    for cat in ("general", "llm", "voice", "security", "memory",
+                "channels", "plugins", "agents", "skills", "system"):
+        assert cat in groups, f"missing category: {cat}"
+
+
+def test_get_category_returns_typed_values(temp_db):
+    llm = temp_db.get_category("llm")
+    by_key = {row["key"]: row for row in llm}
+    assert by_key["max_tokens"]["value"] == 1024          # int preserved
+    assert by_key["temperature"]["value"] == 0.7          # float preserved
+    assert isinstance(by_key["backend_type"]["opts"], list)
+
+
+def test_put_category_updates_known_key(temp_db):
+    updated = temp_db.put_category("llm", {"max_tokens": 2048})
+    assert updated == 1
+    by_key = {r["key"]: r for r in temp_db.get_category("llm")}
+    assert by_key["max_tokens"]["value"] == 2048
+
+
+def test_put_category_ignores_unknown_key(temp_db):
+    # Unknown keys must not be written and must not raise.
+    updated = temp_db.put_category("llm", {"does_not_exist": "x", "max_tokens": 512})
+    assert updated == 1
+    by_key = {r["key"]: r for r in temp_db.get_category("llm")}
+    assert "does_not_exist" not in by_key
+    assert by_key["max_tokens"]["value"] == 512
+
+
+def test_get_unknown_category_empty(temp_db):
+    assert temp_db.get_category("nonexistent") == []

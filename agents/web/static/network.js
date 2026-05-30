@@ -10,7 +10,10 @@ function NetworkBrain({ agents, tasks, collab = [], activeAgent, onSelect, route
   const R_AGENT = 138;
   const R_TASK  = 178;
 
-  const RING_ORDER = [
+  // Preferred display order for known agents. Any agent returned by the API
+  // that is not in this list (e.g. newly promoted bench agents) is appended
+  // automatically so the ring always reflects the live roster.
+  const RING_PREFERRED = [
     'friday','pepper','jerome',
     'athena','stark','veronica','vision',
     'steve','oracle','ultron',
@@ -18,6 +21,14 @@ function NetworkBrain({ agents, tasks, collab = [], activeAgent, onSelect, route
   ];
 
   const agentMap = useMemo(() => Object.fromEntries(agents.map(a => [a.id, a])), [agents]);
+
+  const RING_ORDER = useMemo(() => {
+    const known = RING_PREFERRED.filter(id => agentMap[id]);
+    const extra = agents
+      .map(a => a.id)
+      .filter(id => id && id !== 'jarvis' && !RING_PREFERRED.includes(id));
+    return known.concat(extra);
+  }, [agentMap, agents]);
 
   const ringAgents = useMemo(() => {
     return RING_ORDER.map((id, i, arr) => {
@@ -29,7 +40,7 @@ function NetworkBrain({ agents, tasks, collab = [], activeAgent, onSelect, route
         y: cy + Math.sin(angle) * R_AGENT,
       };
     }).filter(a => a.id);
-  }, [agentMap]);
+  }, [agentMap, RING_ORDER]);
 
   const positionedTasks = useMemo(() => {
     const byOwner = {};

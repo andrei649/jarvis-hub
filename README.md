@@ -44,15 +44,29 @@ A personal AI mesh that handles the cross-section of Andrei's life: work at Raif
 
 ## Stack
 
-- **Orchestration:** Python 3 + asyncio + APScheduler
-- **LLM inference:** Ollama (local), optional Claude Sonnet plugin
-- **Models:** DeepSeek-R1 32B (heavy), Qwen 2.5 14B + 7B (specialist)
-- **Voice:** openWakeWord + faster-whisper large-v3 + Kokoro 82M ONNX
-- **Memory:** Qdrant (episodic) + Neo4j (semantic) + Letta (working/archival)
-- **Channel routing:** Telegram plugin, WhatsApp bridge (Frigga only, local), voice, web
+- **Orchestration:** Python 3.12 + asyncio + FastAPI
+- **LLM inference:** LM Studio (OpenAI-compatible, primary) → Ollama (fallback) → optional cloud (Anthropic/OpenAI) for approved agents
+- **Model:** `google/gemma-4-31b-a4b` (MoE, ~4B active params) on RTX 5090
+- **Voice:** openWakeWord + faster-whisper + edge-tts / Kokoro
+- **Memory:** conversation history (JSONL) + numpy vector store + SQLite checkpoints
+- **Channels:** web (SSE), voice, telegram, discord, email, slack
+- **Security:** PII/secret scanner, SSRF protection, audit log (Merkle chain), guardrails (WARN/REDACT/BLOCK)
+
+## Run
+
+```bash
+pip install -r requirements-beta.txt
+python serve.py              # FastAPI server at http://127.0.0.1:8000
+python -m pytest             # 26 tests
+```
+
+- **HUD:** http://127.0.0.1:8000/
+- **Admin panel:** http://127.0.0.1:8000/admin (10 categories, 52 settings)
+- **CLI REPL:** `python agents/run.py`
 
 ## Status
 
-**v0.1.0** — All 15 SOUL.md + 11 HEARTBEAT.md are written. Core Python orchestrator is partially built. Next session: finish core modules, plugin layer, new install.sh.
+**v0.2.1** — 15 agents across 4 tiers, fully-offline HUD, admin panel, SQLite settings,
+10 plugins, 6 channels, skills + sandbox + learning loop. 26 tests passing.
 
-See `STATUS.md` for details.
+See `STATUS.md` and `.opencode/plans/qa-bugs.md` for details.

@@ -6,6 +6,7 @@ Seeds defaults from agents.yaml on first init.
 import json
 import logging
 import sqlite3
+import threading
 from pathlib import Path
 from typing import Any
 
@@ -97,20 +98,30 @@ DEFAULTS: list[dict[str, Any]] = [
 # ── lazy init — called on first use, not at import time ───────────
 
 _initialized = False
+_init_lock = threading.Lock()
+_wal_set = False
 
 def _ensure_init():
     global _initialized
-    if not _initialized:
-        init_db()
-        _initialized = True
+    if _initialized:
+        return
+    with _init_lock:
+        if not _initialized:
+            init_db()
+            _initialized = True
 
 # ── helpers ───────────────────────────────────────────────────────
 
 def get_conn() -> sqlite3.Connection:
+    global _wal_set
     DB_PATH.parent.mkdir(parents=True, exist_ok=True)
     conn = sqlite3.connect(str(DB_PATH))
     conn.row_factory = sqlite3.Row
-    conn.execute("PRAGMA journal_mode=WAL")
+    # WAL is a persistent database property — setting it once per process
+    # is enough; re-issuing the PRAGMA on every connection is wasted work.
+    if not _wal_set:
+        conn.execute("PRAGMA journal_mode=WAL")
+        _wal_set = True
     return conn
 
 def init_db(force: bool = False):
@@ -168,13 +179,18 @@ def put_category(cat: str, data: dict[str, Any]) -> int:
     _ensure_init()
     conn = get_conn()
     updated = 0
+    skipped = []
     for key, value in data.items():
         cur = conn.execute("SELECT key FROM settings WHERE category=? AND key=?", (cat, key))
         if cur.fetchone():
             conn.execute("UPDATE settings SET value=? WHERE category=? AND key=?", (json.dumps(value), cat, key))
             updated += 1
+        else:
+            skipped.append(key)
     conn.commit()
     conn.close()
+    if skipped:
+        logger.warning(f"put_category({cat}): ignored unknown keys: {skipped}")
     return updated
 
 # ── init on first use (via _ensure_init) — NOT at import ─────────
