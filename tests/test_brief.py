@@ -1,39 +1,87 @@
-"""Tests for the Brief skill (H2.3) — Friday Morning consolidated dashboard."""
+"""Tests for the Brief skill (H2.3) — Friday morning consolidated dashboard.
+
+Converted from the HTTP-router stub to the loader pattern (skills/brief/).
+"""
+
+import importlib.util
+import sys
+from pathlib import Path
 
 import pytest
-from httpx import AsyncClient, ASGITransport
 
-from .conftest import make_app
+repo_root = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(repo_root))
+sys.path.insert(0, str(repo_root / "agents"))
+
+
+def _load():
+    path = repo_root / "skills" / "brief" / "main.py"
+    spec = importlib.util.spec_from_file_location("brief_skill_test", path)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
 
 
 @pytest.fixture
-def app():
-    def _handler():
-        return {
-            "weather": {"temp": 20.0, "condition": "Clear"},
-            "news": [],
-            "market": {},
-            "degraded_mode": False,
-        }
-    return make_app("agents.core.skills.brief", "brief", prefix="/api/skills/brief", fallback_routes={
-        "GET /generate": _handler,
-    })
+def skill():
+    return _load()
 
 
-async def test_generate_brief_success(app):
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
-        r = await ac.get("/api/skills/brief/generate")
-    assert r.status_code == 200
-    data = r.json()
-    assert "weather" in data
-    assert "news" in data
-    assert "market" in data
+class _OkWeather:
+    async def get_weather(self, location=""):
+        return "București: +20°C, Clear"
 
 
-async def test_generate_brief_degraded_flag(app):
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
-        r = await ac.get("/api/skills/brief/generate")
-    assert r.status_code == 200
-    data = r.json()
-    # degraded_mode is a boolean present in the response
-    assert isinstance(data.get("degraded_mode"), bool)
+class _OkNews:
+    async def get_headlines(self, category="general", limit=5):
+        return [{"title": "Headline one"}, {"title": "Headline two"}]
+
+
+async def test_generate_brief_success(skill, monkeypatch):
+    monkeypatch.setattr(skill, "_weather", _OkWeather())
+    monkeypatch.setattr(skill, "_news", _OkNews())
+    data = await skill.generate_brief()
+    assert "weather" in data and "news" in data and "market" in data
+    assert data["degraded_mode"] is False
+    assert len(data["news"]) == 2
+
+
+async def test_degraded_flag_is_bool(skill, monkeypatch):
+    monkeypatch.setattr(skill, "_weather", _OkWeather())
+    monkeypatch.setattr(skill, "_news", _OkNews())
+    data = await skill.generate_brief()
+    assert isinstance(data["degraded_mode"], bool)
+
+
+async def test_degraded_when_source_fails(skill, monkeypatch):
+    class _BadNews:
+        async def get_headlines(self, category="general", limit=5):
+            raise ConnectionError("rss down")
+    monkeypatch.setattr(skill, "_weather", _OkWeather())
+    monkeypatch.setattr(skill, "_news", _BadNews())
+    data = await skill.generate_brief()
+    assert data["degraded_mode"] is True
+
+
+async def test_brief_command_text(skill, monkeypatch):
+    monkeypatch.setattr(skill, "_weather", _OkWeather())
+    monkeypatch.setattr(skill, "_news", _OkNews())
+    out = await skill.brief("")
+    assert "Headline one" in out and "Vreme" in out
+
+
+async def test_handle_dispatch(skill, monkeypatch):
+    monkeypatch.setattr(skill, "_weather", _OkWeather())
+    monkeypatch.setattr(skill, "_news", _OkNews())
+    assert "necunoscută" in await skill.handle("bogus", "")
+    assert "Brief" in await skill.handle("brief", "")
+
+
+def test_manifest_parses_via_loader(skill):
+    from agents.core.skills.loader import SkillLoader
+    sl = SkillLoader()
+    manifest = sl._parse_manifest(repo_root / "skills" / "brief" / "SKILL.md")
+    assert manifest["name"] == "Brief"
+    assert "friday" in manifest["agents"]
+    cmds = {c["command"] for c in manifest["commands"]}
+    assert "brief" in cmds
