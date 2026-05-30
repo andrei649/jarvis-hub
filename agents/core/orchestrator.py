@@ -240,7 +240,11 @@ class Orchestrator:
 
     async def channel_handler(self, text: str, channel: str = "voice", **kwargs) -> Optional[str]:
         chat_id = kwargs.get("chat_id")
-        if channel == "telegram" and chat_id:
+        # H3.3: cross-channel context is opt-in. When enabled, every channel
+        # shares self.session_id (web<->telegram continuity). When off (default),
+        # telegram keeps per-chat_id isolation (H1.2).
+        cross_channel = self.get_setting("memory.cross_channel_sessions", False)
+        if not cross_channel and channel == "telegram" and chat_id:
             ck = f"tg:{chat_id}"
             if ck not in self._channel_sessions:
                 self._channel_sessions[ck] = await self.memory.new_session()

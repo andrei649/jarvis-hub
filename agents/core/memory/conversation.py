@@ -66,6 +66,25 @@ class ConversationMemory:
             self.current_session_id = sid
             return sid
 
+    async def resume_session(self, session_id: str) -> bool:
+        """Make a specific past session current, loading it from disk if needed.
+
+        Unlike `_load_latest_session` (init-only, newest), this resumes any
+        chosen session by id. Returns False if it has no in-memory or on-disk turns.
+        """
+        async with self._lock:
+            if session_id not in self.sessions:
+                turns_data = load_memory(session_id)
+                if not turns_data:
+                    return False
+                self.sessions[session_id] = [
+                    Turn(t["role"], t["content"], t.get("agent_id"), t.get("token_count", 0))
+                    for t in turns_data
+                ]
+                logger.info(f"Resumed session {session_id} ({len(turns_data)} turns)")
+            self.current_session_id = session_id
+            return True
+
     async def add_turn(self, session_id: str, role: str, content: str, agent_id: str = None):
         async with self._lock:
             if session_id not in self.sessions:

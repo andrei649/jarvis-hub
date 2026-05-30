@@ -48,6 +48,10 @@ class MemoryManager:
                 self._checkpoint_mgr.create_session_record(sid)
             return sid
 
+    async def resume_session(self, session_id: str) -> bool:
+        async with self._lock:
+            return await self.conversation.resume_session(session_id)
+
     async def add_turn(self, session_id: str, role: str, content: str, agent_id: str = None):
         async with self._lock:
             await self.conversation.add_turn(session_id, role, content, agent_id)
