@@ -6,6 +6,7 @@ import asyncio
 import json
 import logging
 import os
+import secrets
 import time
 import sys
 from contextlib import asynccontextmanager
@@ -13,7 +14,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent))
 
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, Request, Depends, HTTPException
 from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse, FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
@@ -45,6 +46,44 @@ from core.security.guardrails import SecurityBlockError
 logger = logging.getLogger("jarvis.web")
 
 DEV_MODE = os.environ.get("DEV_MODE", "").lower() in ("1", "true", "yes")
+
+# ── Admin authentication ──────────────────────────────────────────
+# The /api/admin/* routes can read settings, clear memory and expose env.
+# Guard them so they are never reachable from the network unprotected:
+#   - If JARVIS_ADMIN_TOKEN is set, require a matching X-Admin-Token header.
+#   - If it is NOT set, allow only requests originating from localhost, so
+#     local development keeps working but a Pi/LAN deployment is locked down.
+ADMIN_TOKEN = os.environ.get("JARVIS_ADMIN_TOKEN", "").strip()
+_LOCALHOSTS = {"127.0.0.1", "::1", "localhost"}
+
+# Substrings that mark an env var as sensitive — its value is masked in
+# /api/admin/env so keys/tokens/secrets are never returned in clear text.
+_SECRET_HINTS = ("key", "token", "secret", "password", "passwd", "pass", "client_id")
+
+
+def _mask_secret(value: str) -> str:
+    if not value:
+        return ""
+    if len(value) <= 8:
+        return "****"
+    return f"{value[:4]}…{value[-2:]}"
+
+
+async def _admin_guard(request: Request):
+    """Authorize an /api/admin/* request or raise 401/403."""
+    if ADMIN_TOKEN:
+        supplied = request.headers.get("x-admin-token", "")
+        if not supplied or not secrets.compare_digest(supplied, ADMIN_TOKEN):
+            raise HTTPException(status_code=401, detail="admin token required")
+        return
+    # No token configured → only localhost may reach admin endpoints.
+    client_host = request.client.host if request.client else ""
+    if client_host not in _LOCALHOSTS:
+        raise HTTPException(
+            status_code=403,
+            detail="admin disabled from network — set JARVIS_ADMIN_TOKEN to enable remote access",
+        )
+
 
 orch: Orchestrator = None
 gateway: Gateway = None
@@ -657,12 +696,12 @@ async def admin_page():
     return HTMLResponse(ADMIN_HTML_TEMPLATE)
 
 
-@app.get("/api/admin/settings")
+@app.get("/api/admin/settings", dependencies=[Depends(_admin_guard)])
 async def admin_get_all():
     return get_all()
 
 
-@app.get("/api/admin/settings/{category}")
+@app.get("/api/admin/settings/{category}", dependencies=[Depends(_admin_guard)])
 async def admin_get_category(category: str):
     items = get_category(category)
     if not items:
@@ -674,28 +713,34 @@ class AdminPutBody(BaseModel):
     values: dict
 
 
-@app.put("/api/admin/settings/{category}")
+@app.put("/api/admin/settings/{category}", dependencies=[Depends(_admin_guard)])
 async def admin_put_category(category: str, body: AdminPutBody):
     updated = put_category(category, body.values)
     return {"updated": updated, "category": category}
 
 
-@app.post("/api/admin/settings/reseed")
+@app.post("/api/admin/settings/reseed", dependencies=[Depends(_admin_guard)])
 async def admin_reseed():
     init_db(force=True)
     return {"ok": True, "message": "Settings reseeded from defaults"}
 
 
-@app.get("/api/admin/env")
+@app.get("/api/admin/env", dependencies=[Depends(_admin_guard)])
 async def admin_get_env():
-    return {
-        key: val
-        for key, val in sorted(os.environ.items())
-        if not key.startswith("_")
-    }
+    # Mask anything that looks like a credential so secrets are never
+    # returned in clear text, even to an authorized admin.
+    out = {}
+    for key, val in sorted(os.environ.items()):
+        if key.startswith("_"):
+            continue
+        if any(h in key.lower() for h in _SECRET_HINTS):
+            out[key] = _mask_secret(val)
+        else:
+            out[key] = val
+    return out
 
 
-@app.get("/api/admin/audit")
+@app.get("/api/admin/audit", dependencies=[Depends(_admin_guard)])
 async def admin_get_audit(page: int = 1, limit: int = 50):
     import sqlite3
     db = Path("memory_logs/security/audit.db")
@@ -722,7 +767,7 @@ async def admin_get_audit(page: int = 1, limit: int = 50):
     }
 
 
-@app.post("/api/admin/memory/clear")
+@app.post("/api/admin/memory/clear", dependencies=[Depends(_admin_guard)])
 async def admin_memory_clear():
     if not orch:
         return JSONResponse({"error": "not initialized"}, status_code=503)
@@ -730,7 +775,7 @@ async def admin_memory_clear():
     return {"ok": True, "message": "Session memory cleared"}
 
 
-@app.get("/api/admin/agents/stats")
+@app.get("/api/admin/agents/stats", dependencies=[Depends(_admin_guard)])
 async def admin_agents_stats():
     if not orch:
         return JSONResponse({"error": "not initialized"}, status_code=503)
@@ -749,7 +794,7 @@ class AgentUpdateRequest(BaseModel):
     updates: dict[str, str | bool | int]
 
 
-@app.put("/api/admin/agents/{agent_id}")
+@app.put("/api/admin/agents/{agent_id}", dependencies=[Depends(_admin_guard)])
 async def admin_agents_put(agent_id: str, req: AgentUpdateRequest):
     if not orch:
         return JSONResponse({"error": "not initialized"}, status_code=503)
@@ -759,7 +804,7 @@ async def admin_agents_put(agent_id: str, req: AgentUpdateRequest):
     return {"saved": True, "agent": agent_id, "applied": list(req.updates.keys())}
 
 
-@app.post("/api/admin/llm/test")
+@app.post("/api/admin/llm/test", dependencies=[Depends(_admin_guard)])
 async def admin_llm_test():
     import httpx
     configs = [

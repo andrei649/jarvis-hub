@@ -62,9 +62,33 @@ def test_api_agents(client):
     assert len(data["agents"]) > 0
 
 
-def test_api_admin_settings(client):
+def test_api_admin_requires_auth_from_network(client):
+    # TestClient presents as host 'testclient' (non-localhost) and sends no
+    # token, so admin endpoints must be refused (403) — not served openly.
     resp = client.get("/api/admin/settings")
-    assert resp.status_code == 200
-    data = resp.json()
-    assert isinstance(data, dict)
-    assert len(data) > 0
+    assert resp.status_code == 403
+
+
+def test_api_admin_settings_with_token(monkeypatch):
+    # With JARVIS_ADMIN_TOKEN set, a matching X-Admin-Token unlocks admin.
+    import agents.web as web
+    monkeypatch.setattr(web, "ADMIN_TOKEN", "test-secret")
+    with TestClient(web.app) as c:
+        denied = c.get("/api/admin/settings")
+        assert denied.status_code == 401
+        ok = c.get("/api/admin/settings", headers={"X-Admin-Token": "test-secret"})
+        assert ok.status_code == 200
+        data = ok.json()
+        assert isinstance(data, dict) and len(data) > 0
+
+
+def test_api_admin_env_masks_secrets(monkeypatch):
+    import agents.web as web
+    monkeypatch.setattr(web, "ADMIN_TOKEN", "test-secret")
+    monkeypatch.setenv("GEMINI_API_KEY", "supersecretvalue12345")
+    with TestClient(web.app) as c:
+        resp = c.get("/api/admin/env", headers={"X-Admin-Token": "test-secret"})
+        assert resp.status_code == 200
+        val = resp.json().get("GEMINI_API_KEY", "")
+        assert "supersecretvalue" not in val  # masked
+        assert "…" in val or val == "****"

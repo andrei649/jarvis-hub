@@ -219,6 +219,16 @@ Optimizare costuri și vizibilitate pentru Hybrid Router.
 
 ---
 
+## Securitate (audit b703fc0 — sesiunea 4)
+
+| ID | Fișier | Problemă | Status |
+|----|--------|----------|--------|
+| S1 | `web.py` `/api/admin/env` | Expunea tot `os.environ` (chei API, token-uri OAuth) | ✅ guard + mascare secrete |
+| S2 | `web.py` toate `/api/admin/*` | Zero autentificare pe panoul admin | ✅ `_admin_guard`: token sau localhost-only |
+| S3 | `websearch.py:90` | SSRF — `fetch_page` fără validare URL (IP-uri private, metadata cloud) | ✅ `check_ssrf` pre-fetch + re-check după redirect, `max_redirects=5` |
+| S4 | `gemini.py` stream | (rămâne) stream fără `raise_for_status` | ⬜ P1 hardening |
+| S-PKCE | `oauth.py` | OAuth fără PKCE, state needuat, token necriptat | ⬜ P1 hardening |
+
 ## Bugs existente (din sesiunile anterioare)
 
 | ID | Fișier | Problemă | Status |

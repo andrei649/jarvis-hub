@@ -9,6 +9,8 @@ from typing import Optional
 
 import httpx
 
+from ..security.ssrf import check_ssrf
+
 logger = logging.getLogger("jarvis.plugins.websearch")
 
 
@@ -88,9 +90,20 @@ class WebSearchPlugin:
             return []
 
     async def fetch_page(self, url: str) -> Optional[str]:
+        # Block SSRF: refuse private IPs / cloud metadata before fetching.
+        blocked = check_ssrf(url)
+        if blocked:
+            logger.warning(f"Blocked page fetch (SSRF): {blocked}")
+            return None
         try:
-            async with httpx.AsyncClient(timeout=30.0, follow_redirects=True) as client:
+            # max_redirects caps redirect chains; each hop is re-checked below.
+            async with httpx.AsyncClient(timeout=30.0, follow_redirects=True, max_redirects=5) as client:
                 resp = await client.get(url, headers={"User-Agent": "Mozilla/5.0"})
+                # A redirect could land on an internal host — re-validate final URL.
+                final_block = check_ssrf(str(resp.url))
+                if final_block:
+                    logger.warning(f"Blocked page fetch after redirect (SSRF): {final_block}")
+                    return None
                 resp.raise_for_status()
                 from bs4 import BeautifulSoup
                 soup = BeautifulSoup(resp.text, "html.parser")
