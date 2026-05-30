@@ -27,9 +27,8 @@ Legenda: ⬜ todo · 🔄 în lucru · ✅ done · ❌ invalid (verificat, nu e 
 | IMP-5 | `admin.js` Toast | `key:Date.now()` forța remount la fiecare render. **Fix: eliminat.** | ✅ |
 | W-6 | `web/templates/index.html` | `data-density`/`data-scanline`/`data-dotgrid` nesetate. **Fix: bootstrap pre-paint din localStorage.** | ✅ |
 | IMP-10 | `network.js` | SVG SMIL (`<animate>`/`<animateMotion>`, L194-202/369-371) rula și în tab ascuns. **Fix: `pauseAnimations()` pe `visibilitychange` + skip spawn packets.** | ✅ |
+| IMP-2 | `web.py` | Polling fără `Cache-Control`. **Fix: middleware `no-store` pe /status, /dashboard, /api/agents, /tasks, /ticker.** | ✅ |
 | B-8 | `admin.js:226` | `kind:"button"` → `onAction`; niciun setting nu e `button` (no-op până se adaugă unul). | ⬜ |
-| 5.4 | `orchestrator.py` ~382 | `intent.target_agents[0]` în `_gather_plugin_data` — gardat, dar fragil. | ⬜ |
-| IMP-2 | `web.py` | Polling fără `Cache-Control`/`ETag`. | ⬜ |
 | W-7 | multiple | Stringuri RO hardcodate, fără i18n. | ⬜ |
 
 ## ❌ Invalidate la verificare (NU sunt buguri)
@@ -38,6 +37,7 @@ Legenda: ⬜ todo · 🔄 în lucru · ✅ done · ❌ invalid (verificat, nu e 
 |----|-------|
 | C-1 (data.js dublat) | FALS — data.js are 129 linii, `JARVIS_GLYPHS` declarat o singură dată. |
 | W-1 (`VoiceVisualizer` mort) | FALS — randat/exportat la `components.js:424`. |
+| 5.4 (`target_agents[0]` IndexError) | FALS — deja gardat (`if intent.target_agents else "jarvis"`), iar lista vine mereu populată din ROUTING_TABLE. |
 
 > Notă: IMP-10 fusese marcat eronat „fals" la o verificare grăbită (grep `<animate ` cu spațiu). La re-verificare s-au găsit `animateMotion`/`animate` reale → reparat.
 
@@ -71,7 +71,8 @@ Legenda: ⬜ todo · 🔄 în lucru · ✅ done · ❌ invalid (verificat, nu e 
 ## Ordinea de execuție (PM) — următorii pași
 1. ~~B-9, W-9, W-8, W-2, W-3~~ ✅ (sesiunea 3b)
 2. ~~2.2, IMP-5, W-6, IMP-10~~ ✅ (sesiunea 3c)
-3. **5.4** — guard `target_agents[0]` în `_gather_plugin_data` (robustețe)
-4. **IMP-2** — `Cache-Control`/`ETag` pe endpointuri de polling (perf rețea)
-5. **B-8** — wire `kind:"button"` când apare primul buton
-6. **W-7** — i18n (efort mare, ultimul)
+3. ~~IMP-2~~ ✅ (sesiunea 3d) · 5.4 invalidat
+4. **B-8** — wire `kind:"button"` când apare primul buton (efort mic, dar fără caz de folosire încă)
+5. **W-7** — i18n (efort mare, ultimul)
+
+> Rămase: doar B-8 (fără use-case activ) și W-7 (i18n, proiect separat). Toate bugurile reale verificate din qa-bugs.md sunt rezolvate.

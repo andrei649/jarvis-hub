@@ -71,6 +71,18 @@ app = FastAPI(title="Jarvis", version="0.2.0-beta", lifespan=lifespan)
 HERE = Path(__file__).parent / "web"
 _start_time = time.time()
 
+# Live polling endpoints return per-request data (system stats, agent status);
+# tell the browser and any intermediary not to cache stale snapshots (IMP-2).
+_NO_STORE_PATHS = {"/status", "/dashboard", "/api/agents", "/tasks", "/ticker"}
+
+
+@app.middleware("http")
+async def _no_store_for_polling(request: Request, call_next):
+    response = await call_next(request)
+    if request.url.path in _NO_STORE_PATHS:
+        response.headers["Cache-Control"] = "no-store"
+    return response
+
 
 def _uptime_str() -> str:
     s = int(time.time() - _start_time)
