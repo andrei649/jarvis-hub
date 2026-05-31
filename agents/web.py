@@ -751,6 +751,30 @@ async def autonomy_status():
     })
 
 
+@app.get("/autonomy/observer", dependencies=[Depends(_admin_guard)])
+async def autonomy_observer_status():
+    """Proactive OS Observer state: tracked signals + currently unhealthy ones."""
+    if not orch:
+        return JSONResponse({"error": "not initialized"}, status_code=503)
+    if not orch.observer:
+        return _nocache_json({"enabled": False, "reason": "observer not initialized"})
+    return _nocache_json({
+        "enabled": bool(orch.get_setting("system.observer_enabled", True)),
+        **orch.observer.status(),
+    })
+
+
+@app.post("/autonomy/observer/run", dependencies=[Depends(_admin_guard)])
+async def autonomy_observer_run():
+    """Trigger one observer sample now (sample → debounce → gate → queue)."""
+    if not orch:
+        return JSONResponse({"error": "not initialized"}, status_code=503)
+    if not orch.observer:
+        return JSONResponse({"error": "observer not initialized"}, status_code=503)
+    summary = await orch.observer.observe()
+    return _nocache_json({"ok": True, "summary": summary})
+
+
 @app.post("/autonomy/tasks", dependencies=[Depends(_admin_guard)])
 async def autonomy_submit(body: AutonomyTaskBody):
     """Submit a task to the autonomy worker (gated through the risk policy)."""
