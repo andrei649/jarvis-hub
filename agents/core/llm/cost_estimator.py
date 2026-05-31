@@ -4,20 +4,27 @@ Supports Gemini, Claude, and local models. All prices per 1M tokens in USD.
 """
 
 MODELS = {
-    "gemini-2.5-flash":    {"input": 0.15,  "cached_input": 0.015, "output": 0.60},
-    "gemini-2.5-pro":      {"input": 2.00,  "cached_input": 0.20,  "output": 10.00},
-    "gemini-3.1-pro":      {"input": 2.00,  "cached_input": 0.20,  "output": 12.00},
-    "gemini-3.5-flash":    {"input": 1.50,  "cached_input": 0.15,  "output": 9.00},
-    "gemini-3-flash":      {"input": 0.50,  "cached_input": 0.05,  "output": 3.00},
-    "gemini-3.1-flash-lite": {"input": 0.25, "cached_input": 0.025, "output": 1.50},
-    "claude-sonnet-4-20250514": {"input": 3.00, "cached_input": 0.30, "output": 15.00},
-    "local":               {"input": 0,     "cached_input": 0,     "output": 0},
-    "qwen3:7b":            {"input": 0,     "cached_input": 0,     "output": 0},
-    "google/gemma-4-31b-a4b": {"input": 0, "cached_input": 0,     "output": 0},
+    "gemini-2.5-flash":    {"input": 0.15,  "output": 0.60},
+    "gemini-2.5-pro":      {"input": 2.00,  "output": 10.00},
+    "gemini-3.1-pro":      {"input": 2.00,  "output": 12.00},
+    "gemini-3.5-flash":    {"input": 1.50,  "output": 9.00},
+    "gemini-3-flash":      {"input": 0.50,  "output": 3.00},
+    "gemini-3.1-flash-lite": {"input": 0.25, "output": 1.50},
+    "claude-sonnet-4-20250514": {"input": 3.00, "output": 15.00},
+    "local":               {"input": 0,     "output": 0},
+    "qwen3:7b":            {"input": 0,     "output": 0},
+    "google/gemma-4-31b-a4b": {"input": 0, "output": 0},
 }
 
 
 def estimate_cost(model: str, input_tokens: int, output_tokens: int, cached_tokens: int = 0) -> dict:
+    """Estimate cost for a single LLM call.
+
+    Returns dict with input_cost, output_cost, total, cached_input, savings.
+    Raises ValueError on negative token counts. Unknown models return zero cost.
+    """
+    if input_tokens < 0 or output_tokens < 0:
+        raise ValueError(f"Negative token counts not allowed: input={input_tokens}, output={output_tokens}")
     pricing = MODELS.get(model) or MODELS.get("local")
     if pricing is None or pricing["input"] == 0:
         return {"input_cost": 0.0, "output_cost": 0.0, "total": 0.0,
@@ -36,6 +43,11 @@ def estimate_cost(model: str, input_tokens: int, output_tokens: int, cached_toke
 
 
 def estimate_monthly(records: list[dict]) -> dict:
+    """Aggregate cost across multiple interaction records.
+
+    Each record has: model, input_tokens, output_tokens, cached_tokens.
+    Returns per-model breakdown and totals.
+    """
     total = 0.0
     total_savings = 0.0
     per_model = {}

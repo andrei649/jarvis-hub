@@ -63,6 +63,29 @@ def test_estimate_monthly_with_records():
     assert result["per_model"]["local"]["total"] == 0.0
 
 
+def test_estimate_cost_negative_tokens_raises():
+    with pytest.raises(ValueError, match="Negative token"):
+        estimate_cost("gemini-2.5-flash", -100, 50)
+    with pytest.raises(ValueError, match="Negative token"):
+        estimate_cost("gemini-2.5-flash", 100, -50)
+
+
+def test_estimate_cost_over_cached():
+    """cached_tokens > input_tokens doesn't produce negative cost."""
+    cost = estimate_cost("gemini-2.5-flash", 100, 50, cached_tokens=200)
+    assert cost["input_cost"] >= 0
+    assert cost["total"] >= 0
+    assert cost["cached_input"] == 200
+
+
+def test_estimate_monthly_missing_fields():
+    """Records missing optional fields default to zero."""
+    records = [{"model": "gemini-2.5-flash"}]  # no input/output/cached keys
+    result = estimate_monthly(records)
+    assert result["total"] == 0.0
+    assert result["total_interactions"] == 1
+
+
 def test_MODELS_has_entries():
     assert len(MODELS) >= 5
     assert "local" in MODELS
