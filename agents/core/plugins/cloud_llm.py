@@ -11,6 +11,8 @@ from typing import Optional
 
 import httpx
 
+from ..resilience import resilient_call
+
 logger = logging.getLogger("jarvis.plugins.cloud_llm")
 
 APPROVED_AGENTS = ["jarvis", "athena", "stark", "vision", "veronica"]
@@ -31,86 +33,108 @@ class CloudLLMPlugin:
             logger.warning(f"Agent {agent_id} not approved for cloud LLM")
             return "[Cloud LLM denied: agent not approved]"
 
-        if self._prefer == "anthropic":
-            return await self._call_anthropic(prompt, system, model or "claude-sonnet-4-20250514", max_tokens)
-        elif self._prefer == "openai":
-            return await self._call_openai(prompt, system, model or "gpt-4o", max_tokens)
-        elif self._prefer == "gemini":
-            return await self._call_gemini(prompt, system, model or "gemini-2.5-flash", max_tokens)
-        else:
-            return "[Cloud LLM unavailable: no API key configured]"
+        try:
+            if self._prefer == "anthropic":
+                return await self._call_anthropic(prompt, system, model or "claude-sonnet-4-20250514", max_tokens)
+            elif self._prefer == "openai":
+                return await self._call_openai(prompt, system, model or "gpt-4o", max_tokens)
+            elif self._prefer == "gemini":
+                return await self._call_gemini(prompt, system, model or "gemini-2.5-flash", max_tokens)
+            else:
+                return "[Cloud LLM unavailable: no API key configured]"
+        except Exception as e:
+            logger.error(f"Cloud LLM error after retries: {e}")
+            return f"[Cloud LLM error: {e}]"
 
+    @resilient_call(
+        max_retries=2,
+        timeout=30.0,
+        backoff_base=1.0,
+        backoff_max=5.0,
+        circuit_breaker_key="plugin:anthropic",
+        circuit_breaker_threshold=3,
+        metrics_agent_id="cloud-llm",
+        metrics_backend="anthropic",
+    )
     async def _call_anthropic(self, prompt: str, system: str,
                               model: str, max_tokens: int) -> str:
-        try:
-            resp = await self.client.post(
-                "https://api.anthropic.com/v1/messages",
-                headers={
-                    "x-api-key": self.anthropic_key,
-                    "anthropic-version": "2023-06-01",
-                    "content-type": "application/json",
-                },
-                json={
-                    "model": model,
-                    "max_tokens": max_tokens,
-                    "system": system,
-                    "messages": [{"role": "user", "content": prompt}],
-                },
-            )
-            resp.raise_for_status()
-            data = resp.json()
-            return data["content"][0]["text"]
-        except Exception as e:
-            logger.error(f"Anthropic error: {e}")
-            return f"[Anthropic error: {e}]"
+        resp = await self.client.post(
+            "https://api.anthropic.com/v1/messages",
+            headers={
+                "x-api-key": self.anthropic_key,
+                "anthropic-version": "2023-06-01",
+                "content-type": "application/json",
+            },
+            json={
+                "model": model,
+                "max_tokens": max_tokens,
+                "system": system,
+                "messages": [{"role": "user", "content": prompt}],
+            },
+        )
+        resp.raise_for_status()
+        data = resp.json()
+        return data["content"][0]["text"]
 
+    @resilient_call(
+        max_retries=2,
+        timeout=30.0,
+        backoff_base=1.0,
+        backoff_max=5.0,
+        circuit_breaker_key="plugin:gemini",
+        circuit_breaker_threshold=3,
+        metrics_agent_id="cloud-llm",
+        metrics_backend="gemini",
+    )
     async def _call_gemini(self, prompt: str, system: str,
                             model: str, max_tokens: int) -> str:
-        try:
-            url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={self.gemini_key}"
-            payload = {
-                "contents": [{"role": "user", "parts": [{"text": prompt}]}],
-                "systemInstruction": {"parts": [{"text": system}]} if system else None,
-                "generationConfig": {"maxOutputTokens": max_tokens},
-            }
-            if not payload["systemInstruction"]:
-                del payload["systemInstruction"]
-            resp = await self.client.post(url, json=payload)
-            resp.raise_for_status()
-            data = resp.json()
-            candidates = data.get("candidates", [])
-            if candidates:
-                parts = candidates[0].get("content", {}).get("parts", [])
-                return "".join(p.get("text", "") for p in parts)
-            return ""
-        except Exception as e:
-            logger.error(f"Gemini error: {e}")
-            return f"[Gemini error: {e}]"
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={self.gemini_key}"
+        payload = {
+            "contents": [{"role": "user", "parts": [{"text": prompt}]}],
+            "systemInstruction": {"parts": [{"text": system}]} if system else None,
+            "generationConfig": {"maxOutputTokens": max_tokens},
+        }
+        if not payload["systemInstruction"]:
+            del payload["systemInstruction"]
+        resp = await self.client.post(url, json=payload)
+        resp.raise_for_status()
+        data = resp.json()
+        candidates = data.get("candidates", [])
+        if candidates:
+            parts = candidates[0].get("content", {}).get("parts", [])
+            return "".join(p.get("text", "") for p in parts)
+        return ""
 
+    @resilient_call(
+        max_retries=2,
+        timeout=30.0,
+        backoff_base=1.0,
+        backoff_max=5.0,
+        circuit_breaker_key="plugin:openai",
+        circuit_breaker_threshold=3,
+        metrics_agent_id="cloud-llm",
+        metrics_backend="openai",
+    )
     async def _call_openai(self, prompt: str, system: str,
                            model: str, max_tokens: int) -> str:
-        try:
-            resp = await self.client.post(
-                "https://api.openai.com/v1/chat/completions",
-                headers={
-                    "Authorization": f"Bearer {self.openai_key}",
-                    "content-type": "application/json",
-                },
-                json={
-                    "model": model,
-                    "messages": [
-                        {"role": "system", "content": system},
-                        {"role": "user", "content": prompt},
-                    ],
-                    "max_tokens": max_tokens,
-                },
-            )
-            resp.raise_for_status()
-            data = resp.json()
-            return data["choices"][0]["message"]["content"]
-        except Exception as e:
-            logger.error(f"OpenAI error: {e}")
-            return f"[OpenAI error: {e}]"
+        resp = await self.client.post(
+            "https://api.openai.com/v1/chat/completions",
+            headers={
+                "Authorization": f"Bearer {self.openai_key}",
+                "content-type": "application/json",
+            },
+            json={
+                "model": model,
+                "messages": [
+                    {"role": "system", "content": system},
+                    {"role": "user", "content": prompt},
+                ],
+                "max_tokens": max_tokens,
+            },
+        )
+        resp.raise_for_status()
+        data = resp.json()
+        return data["choices"][0]["message"]["content"]
 
     @property
     def available(self) -> bool:

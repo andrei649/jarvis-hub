@@ -46,7 +46,7 @@ async def test_resilient_call_exponential_backoff():
 
 
 @pytest.mark.asyncio
-async def test_resilient_call_fails_immediately_on_non_retryable():
+async def test_resilient_call_retries_on_all_exceptions():
     call_count = 0
     
     async def raises_value_error():
@@ -59,7 +59,7 @@ async def test_resilient_call_fails_immediately_on_non_retryable():
     with pytest.raises(ValueError):
         await wrapped()
     
-    assert call_count == 1  # Failed immediately, no retries
+    assert call_count == 4  # Retried 3 times after initial failure
 
 
 from agents.core.resilience import CircuitBreaker, ResilienceMetrics, get_metrics

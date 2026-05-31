@@ -411,8 +411,8 @@ async def test_cloud_llm_gemini_network_error(monkeypatch):
         raise Exception("api error")
     monkeypatch.setattr("httpx.AsyncClient.post", mock_post)
     plugin = CloudLLMPlugin(gemini_key="test")
-    result = await plugin._call_gemini("hello", "", "gemini-2.5-flash", 1024)
-    assert "Gemini error" in result
+    result = await plugin.generate("hello", "", agent_id="jarvis")
+    assert "Cloud LLM error" in result
 
 
 def test_cloud_llm_available_with_gemini():

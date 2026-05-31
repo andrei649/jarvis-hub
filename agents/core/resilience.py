@@ -77,13 +77,24 @@ def resilient_call(
                         logger.error(f"All {max_retries + 1} attempts timed out")
                         
                 except Exception as e:
+                    last_exception = e
+                    error_type = type(e).__name__
                     if cb:
                         cb.record_failure()
                     if metrics:
-                        error_type = type(e).__name__
                         metrics.record_failure(metrics_agent_id, metrics_backend, error_type)
-                    logger.error(f"Non-retryable error: {e}")
-                    raise
+                        
+                    if attempt < max_retries:
+                        delay = min(backoff_base * (2 ** attempt), backoff_max)
+                        logger.warning(
+                            f"Attempt {attempt + 1}/{max_retries + 1} failed ({error_type}), "
+                            f"retrying in {delay:.1f}s"
+                        )
+                        await asyncio.sleep(delay)
+                    else:
+                        logger.error(
+                            f"All {max_retries + 1} attempts failed, last error: {e}"
+                        )
                     
             raise last_exception
             
