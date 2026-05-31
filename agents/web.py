@@ -485,25 +485,85 @@ async def dashboard():
 async def get_tasks():
     if not orch:
         return JSONResponse({"error": "not initialized"}, status_code=503)
-    # Placeholder: return empty task list until real data is wired
-    return _nocache_json({"tasks": []})
+    # Return actual autonomy queue tasks (gated / running / completed)
+    tasks = orch.autonomy_queue.list(limit=30)
+    return _nocache_json({"tasks": [t.to_dict() for t in tasks]})
 
 
 @app.get("/ticker")
 async def get_ticker():
     if not orch:
         return _nocache_json({"error": "not initialized"}, status_code=503)
-    enriched = _enrich_agents()
     items = []
-    for a in enriched:
-        items.append({
-            "agent": a["id"],
-            "verb": "monitoring" if a["status"] == "ready" else "standby",
-            "obj": a["role"],
-            "pct": 50,
-            "pri": "mid",
-        })
+    
+    # 1. Add active unhealthy signals from observer
+    if orch.observer:
+        try:
+            obs_status = orch.observer.status()
+            for key, state in obs_status.get("signals", {}).items():
+                if not state.get("healthy", True):
+                    items.append({
+                        "agent": state.get("agent", "steve"),
+                        "verb": "WARNING",
+                        "obj": state.get("detail", key),
+                        "pct": 100,
+                        "pri": "high" if state.get("severity") == "CRITICAL" else "mid",
+                    })
+        except Exception:
+            pass
+
+    # 2. Add active unhealthy signals from event watcher
+    if getattr(orch, "event_watcher", None):
+        try:
+            watcher_state = orch.event_watcher._state
+            for key, healthy in watcher_state.items():
+                if not healthy:
+                    agent = "gecko" if "finance" in key else ("pepper" if "calendar" in key else ("stark" if "email" in key else "hercules"))
+                    items.append({
+                        "agent": agent,
+                        "verb": "ALERT",
+                        "obj": f"Unhealthy event signal: {key}",
+                        "pct": 100,
+                        "pri": "mid",
+                    })
+        except Exception:
+            pass
+
+    # 3. Fallback to active agent standby messages so it's never empty
+    if not items:
+        enriched = _enrich_agents()
+        for a in enriched:
+            items.append({
+                "agent": a["id"],
+                "verb": "monitoring" if a["status"] == "ready" else "standby",
+                "obj": a["role"],
+                "pct": 50,
+                "pri": "mid",
+            })
+            
     return _nocache_json({"ticker": items})
+
+
+@app.get("/api/agents/{agent_id}/soul")
+async def get_agent_soul(agent_id: str):
+    """Read and return the live SOUL.md content for an agent."""
+    agent_id = agent_id.strip().lower()
+    
+    # Allow reading SOUL.md if the file physically exists, even if orch is not initialized (e.g. in tests)
+    base_dir = Path(__file__).parent.resolve()
+    soul_path = base_dir / agent_id / "SOUL.md"
+    
+    if orch and agent_id not in orch.agents:
+        raise HTTPException(status_code=404, detail=f"Agent '{agent_id}' not found")
+    
+    if not soul_path.exists():
+        raise HTTPException(status_code=404, detail=f"SOUL.md not found for agent '{agent_id}'")
+        
+    try:
+        content = soul_path.read_text(encoding="utf-8")
+        return {"agent_id": agent_id, "soul": content}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to read SOUL.md: {e}")
 
 
 # ── Existing endpoints (unchanged) ───────────────────────────────

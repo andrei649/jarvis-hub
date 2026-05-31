@@ -115,6 +115,9 @@ DEFAULTS: list[dict[str, Any]] = [
     dict(category="autonomy", key="night_start",     value=23,     label="Night window start (h)", kind="number"),
     dict(category="autonomy", key="night_end",       value=6,      label="Night window end (h)", kind="number"),
     dict(category="system",  key="autonomy_tick",    value=60,     label="Autonomy tick (s)",    kind="number"),
+    dict(category="system",  key="observer_enabled", value=True,   label="Resource Observer enabled", kind="toggle"),
+    dict(category="system",  key="watchers_enabled", value=True,   label="Event Watchers enabled", kind="toggle"),
+    dict(category="system",  key="error_backlog_sync_enabled", value=True, label="Error backlog sync enabled", kind="toggle"),
 ]
 
 # ── lazy init — called on first use, not at import time ───────────

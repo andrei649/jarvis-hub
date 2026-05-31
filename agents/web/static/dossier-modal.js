@@ -126,6 +126,10 @@ function DossierMemory({ agent, dossier, memoryContext }) {
 }
 
 function DossierModal({ agent, dossier, memoryContext, onClose, onChat, onViewSoul }) {
+  const [soulContent, setSoulContent] = useState(null);
+  const [loadingSoul, setLoadingSoul] = useState(false);
+  const [showSoul, setShowSoul] = useState(false);
+
   useEffect(() => {
     const handleKey = (e) => {
       if (e.key === 'Escape') onClose();
@@ -137,6 +141,30 @@ function DossierModal({ agent, dossier, memoryContext, onClose, onChat, onViewSo
   const handleBackdropClick = useCallback((e) => {
     if (e.target === e.currentTarget) onClose();
   }, [onClose]);
+
+  const handleViewSoul = () => {
+    if (showSoul) {
+      setShowSoul(false);
+      return;
+    }
+    if (soulContent) {
+      setShowSoul(true);
+      return;
+    }
+    setLoadingSoul(true);
+    fetch(`/api/agents/${agent.id}/soul`)
+      .then(r => r.json())
+      .then(d => {
+        setSoulContent(d.soul);
+        setLoadingSoul(false);
+        setShowSoul(true);
+        if (onViewSoul) onViewSoul(agent.id);
+      })
+      .catch(err => {
+        console.error(err);
+        setLoadingSoul(false);
+      });
+  };
 
   if (!agent || !dossier) return null;
 
@@ -166,8 +194,18 @@ function DossierModal({ agent, dossier, memoryContext, onClose, onChat, onViewSo
         )
       ),
       h('div', { className: 'dossier-body' },
-        h(DossierIdentity, { agent, dossier }),
-        h(DossierMemory, { agent, dossier, memoryContext })
+        showSoul
+          ? h('div', { className: 'dossier-soul-full-view', style: { width: '100%', padding: '16px', maxHeight: '420px', overflowY: 'auto', background: 'var(--bg-glass)', borderRadius: '8px', border: '1px solid var(--border-glass)' } },
+              h('div', { style: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px', borderBottom: '1px solid var(--border-glass)', paddingBottom: '8px' } },
+                h('span', { style: { fontWeight: 600, fontSize: '13px', color: 'var(--accent)', fontFamily: 'var(--font-heading)' } }, '📖 DETALII LIVE SOUL.MD'),
+                h('button', { className: 'sys-btn', style: { fontSize: '10px', padding: '2px 8px' }, onClick: () => setShowSoul(false) }, '← Înapoi la Dosar')
+              ),
+              h('pre', { style: { whiteSpace: 'pre-wrap', fontFamily: 'var(--font-mono)', fontSize: '11px', color: 'var(--text-secondary)', lineHeight: '1.4' } }, soulContent)
+            )
+          : [
+              h(DossierIdentity, { key: 'ident', agent, dossier }),
+              h(DossierMemory, { key: 'mem', agent, dossier, memoryContext })
+            ]
       ),
       h('div', { className: 'dossier-foot' },
         h('button', { className: 'dossier-btn primary', onClick: () => onChat && onChat(agent.id) },
@@ -179,8 +217,8 @@ function DossierModal({ agent, dossier, memoryContext, onClose, onChat, onViewSo
           ),
           'Chat with ' + agent.name
         ),
-        h('button', { className: 'dossier-btn', onClick: () => onViewSoul && onViewSoul(agent.id) },
-          'View full SOUL.md'
+        h('button', { className: 'dossier-btn', onClick: handleViewSoul, disabled: loadingSoul },
+          loadingSoul ? 'Loading SOUL.md...' : (showSoul ? 'Înapoi la Dosar' : 'Vezi SOUL.md Complet')
         ),
         h('button', { className: 'dossier-btn ghost', onClick: onClose }, 'Close')
       )

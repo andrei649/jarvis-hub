@@ -292,7 +292,15 @@ function App() {
         showSystems && h(SystemsPanel, {
           agents: agents,
           onRefresh: function (tab) { console.log('refresh systems tab:', tab); },
-          onPluginToggle: function (id) { console.log('toggle plugin:', id); },
+          onPluginToggle: function (id) {
+            fetch('/plugins/' + id + '/toggle', { method: 'PUT' })
+              .then(function (r) { return r.json(); })
+              .then(function (d) {
+                console.log('plugin toggled:', d);
+                window.dispatchEvent(new CustomEvent('jarvis:plugins_updated'));
+              })
+              .catch(function (err) { console.error('plugin toggle failed:', err); });
+          },
         }),
       ),
     ),

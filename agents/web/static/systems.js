@@ -599,7 +599,12 @@ function SystemsPanel({ agents, onRefresh, onPluginToggle }) {
   }, [fetchResilience]);
 
   useEffect(() => { fetchMemory(); }, [fetchMemory]);
-  useEffect(() => { fetchPlugins(); }, [fetchPlugins]);
+  useEffect(() => {
+    fetchPlugins();
+    const handler = () => fetchPlugins();
+    window.addEventListener('jarvis:plugins_updated', handler);
+    return () => window.removeEventListener('jarvis:plugins_updated', handler);
+  }, [fetchPlugins]);
   useEffect(() => { fetchLearning(); }, [fetchLearning]);
   useEffect(() => { fetchSecurity(); }, [fetchSecurity]);
   useEffect(() => { fetchBench(); }, [fetchBench]);
