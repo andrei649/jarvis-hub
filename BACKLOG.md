@@ -10,7 +10,7 @@
 ```bash
 pip install -r requirements-beta.txt
 python -m uvicorn agents.web:app --host 127.0.0.1 --port 8080
-python -m pytest tests/ -v          # 538 passed, 8 skipped
+python -m pytest tests/ -v          # 540 passed, 8 skipped
 ```
 
 > Cele 8 skipped sunt din `tests/test_spotify.py` (pattern HTTP-router, opencode) care
@@ -243,17 +243,17 @@ Grafice (latency, usage, success rate), audit log search, test LLM.
 - ✅ 5 teste endpoint (structură, agenți, ordonare zilnică, canale, erori)
 **AC:** admin arată ultimele 100 interacțiuni, latență, succes rate ✅
 
-### H4.11 — Context Caching + Hybrid Routing Metrics (S:5, Dep: H2.12) 🟡
+### H4.11 — Context Caching + Hybrid Routing Metrics (S:5, Dep: H2.12) ✅
 Optimizare costuri și vizibilitate pentru Hybrid Router.
 - ✅ **Task 1: Cost estimator module** — MODELS pricing table + estimate_cost/estimate_monthly (8 teste)
 - ✅ **Task 2: Route tracking** — route_name pe InteractionRecord + orchestrator wiring (4 teste)
 - ✅ **Task 3: Admin stats** — route_usage + cost_estimates în `/api/admin/stats` (2 teste)
 - ✅ **Task 4: Gemini context cache** — ContextCache cu REST API + SQLite persistence (12 teste)
-- 🔳 **Task 5: Wire caching** — cachedContent în GeminiBackend + orchestrator handle_input_stream
-- 🔳 **Task 6: Token tracking** — token estimates + cache metadata în interaction records
-- 🔳 **Task 7: Dashboard UI** — route distribution + cost cards în ChartsPage
-- 🔳 **Task 8: Final verification** — full tests + BACKLOG update
-- **Commits:** 6 (cost → fix cost → route tracking → admin stats → fix admin → cache module)
+- ✅ **Task 5: Wire caching** — cachedContent în GeminiBackend + orchestrator handle_input_stream
+- ✅ **Task 6: Token tracking** — token estimates + cache metadata în interaction records
+- ✅ **Task 7: Dashboard UI** — route distribution + cost cards în ChartsPage
+- ✅ **Task 8: Final verification** — full tests (540 passed) + BACKLOG update
+- **Commits:** 9 (cost → fix cost → route tracking → admin stats → fix admin → cache module → cache wire + token tracking → dashboard UI → final)
 - **Branch:** `feat/context-cache`
 - AC: sesiune de 50 mesaje → 80% tokeni citiți din cache. Admin arată grafic rute utilizate.
 
@@ -311,12 +311,12 @@ Optimizare costuri și vizibilitate pentru Hybrid Router.
 | **H1 Foundation** (P0) | 5 | **5** | 26 | **26** | **100%** | 0 | — |
 | **H2 Core Agent** (P1) | 12 | **10** | 76 | **63** | **83%** | 13 | ~1 săpt. |
 | **H3 Intelligence** (P2) | 6 | **6** | 39 | **39** | **100%** | 0 | — |
-| **H4 Platform** (P3) | 11 | **11** 🟡 | 63 | **58** | **92%** (H4.11 🟡 ~60%) | 5 | ~0.5 săpt. |
+| **H4 Platform** (P3) | 11 | **11** ✅ | 63 | **63** | **100%** | 0 | — |
 | **Cross-cutting** | 6 | **4** | 44 | **24** | **55%** | 20 | ~1 săpt. |
 | **Securitate audit** | 5 | **5** | — | — | **100%** | 0 | — |
 | **Bugfixes** | 17 | **17** | — | — | **100%** | 0 | — |
 | **Sprint 0** (P0) | 3 | **3** | 7 | **7** | **100%** | 0 | — |
-| **Total general** | **65** | **60** | **255** | **217** | **85%** | **38** | **~2.5 săpt.** |
+| **Total general** | **65** | **61** | **255** | **222** | **87%** | **33** | **~2 săpt.** |
 
 **Echipă 3-4 agenți paralel:** H2+H3 ≈ 2-3 luni · Totul ≈ 3 luni (estimat)
 
@@ -351,7 +351,7 @@ Optimizare costuri și vizibilitate pentru Hybrid Router.
 | **H3.5** Heartbeat System | 5 | — | Zero resurse suplimentare. APScheduler deja instalat. | ~2.5 zile | ✅ |
 | **H3.6** Bench Activation | 8 | H3.4 | Zero resurse suplimentare. Cod-only. | ~4 zile | ✅ |
 
-### H4 — Platform & Security (P3) — 1/11 rămase (H4.11)
+### H4 — Platform & Security (P3) — 0/11 rămase ✅
 
 | Item | S | Dep | Resurse externe | Efort | Status |
 |------|---|-----|-----------------|-------|--------|
@@ -365,7 +365,7 @@ Optimizare costuri și vizibilitate pentru Hybrid Router.
 | **H4.8** Sandbox Docker | 5 | Docker | Docker instalat. | ~2.5 zile | ✅ |
 | **H4.9** Guardrails | 5 | — | Zero resurse suplimentare. Cod-only. | ~2.5 zile | ✅ |
 | **H4.10** Admin Charts | 8 | H3.1, H3.4 | Zero resurse suplimentare. Cod-only. | ~4 zile | ✅ |
-| **H4.11** Cache + Metrics | 5 | H2.12 | Gemini API (deja activ). Zero resurse suplimentare. | ~1 zi rămasă | 🟡 Tasks 1-4 ✅, 5-8 pending |
+| **H4.11** Cache + Metrics | 5 | H2.12 | Gemini API (deja activ). Zero resurse suplimentare. | — | ✅ Tasks 1-8 complete |
 
 ### Cross-cutting — 2/6 rămase
 
