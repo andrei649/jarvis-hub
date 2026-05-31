@@ -11,6 +11,7 @@ import time
 import sys
 from contextlib import asynccontextmanager
 from pathlib import Path
+from typing import Optional
 
 sys.path.insert(0, str(Path(__file__).parent))
 
@@ -102,6 +103,9 @@ async def lifespan(application: FastAPI):
     gateway.register_channel("telegram")
 
     await orch.load_agents()
+
+    # Load MCP servers from settings DB
+    _load_mcp_config()
 
     orch.checkpoints.create_session_record(
         orch.session_id,
@@ -859,6 +863,114 @@ async def admin_llm_test():
         except Exception as e:
             results.append({"name": name, "url": url, "ok": False, "error": str(e)})
     return {"results": results}
+
+
+# ── MCP (Model Context Protocol) admin endpoints ─────────────────
+
+@app.get("/api/admin/mcp", dependencies=[Depends(_admin_guard)])
+async def admin_mcp_list():
+    """List all configured MCP servers with their status."""
+    servers = []
+    for name, srv in orch.mcp.servers.items():
+        servers.append({
+            "name": name,
+            "transport": srv.transport,
+            "command": srv.command,
+            "url": srv.url,
+            "connected": srv._proc is not None and srv._proc.returncode is None,
+            "tools_count": len(srv.tools),
+            "tools": [{"name": t.name, "description": t.description} for t in srv.tools],
+        })
+    return {"servers": servers, "total": len(servers)}
+
+
+class MCPServerConfig(BaseModel):
+    name: str
+    transport: str = "stdio"
+    command: Optional[str] = None
+    url: Optional[str] = None
+
+
+@app.post("/api/admin/mcp", dependencies=[Depends(_admin_guard)])
+async def admin_mcp_add(req: MCPServerConfig):
+    """Add a new MCP server configuration."""
+    from core.mcp.client import MCPServer
+    if req.name in orch.mcp.servers:
+        return JSONResponse({"error": f"MCP server '{req.name}' already exists"}, status_code=409)
+    srv = MCPServer(
+        name=req.name,
+        transport=req.transport,
+        command=req.command,
+        url=req.url,
+    )
+    orch.mcp.servers[srv.name] = srv
+    # Persist to settings DB
+    _save_mcp_config()
+    return {"ok": True, "server": req.name, "message": f"MCP server '{req.name}' added"}
+
+
+@app.delete("/api/admin/mcp/{name}", dependencies=[Depends(_admin_guard)])
+async def admin_mcp_remove(name: str):
+    """Remove an MCP server configuration."""
+    if name not in orch.mcp.servers:
+        return JSONResponse({"error": f"MCP server '{name}' not found"}, status_code=404)
+    srv = orch.mcp.servers[name]
+    if srv._proc:
+        await srv.close()
+    del orch.mcp.servers[name]
+    # Persist to settings DB
+    _save_mcp_config()
+    return {"ok": True, "server": name, "message": f"MCP server '{name}' removed"}
+
+
+@app.post("/api/admin/mcp/{name}/connect", dependencies=[Depends(_admin_guard)])
+async def admin_mcp_connect(name: str):
+    """Connect to an MCP server and discover tools."""
+    if name not in orch.mcp.servers:
+        return JSONResponse({"error": f"MCP server '{name}' not found"}, status_code=404)
+    srv = orch.mcp.servers[name]
+    try:
+        await srv.connect()
+        return {
+            "ok": True,
+            "server": name,
+            "connected": True,
+            "tools_count": len(srv.tools),
+            "tools": [{"name": t.name, "description": t.description} for t in srv.tools],
+        }
+    except Exception as e:
+        return JSONResponse({"error": str(e), "server": name}, status_code=500)
+
+
+@app.post("/api/admin/mcp/{name}/disconnect", dependencies=[Depends(_admin_guard)])
+async def admin_mcp_disconnect(name: str):
+    """Disconnect from an MCP server."""
+    if name not in orch.mcp.servers:
+        return JSONResponse({"error": f"MCP server '{name}' not found"}, status_code=404)
+    srv = orch.mcp.servers[name]
+    if srv._proc:
+        await srv.close()
+        return {"ok": True, "server": name, "message": f"MCP server '{name}' disconnected"}
+    return {"ok": True, "server": name, "message": f"MCP server '{name}' was not connected"}
+
+
+def _save_mcp_config():
+    """Persist MCP servers configuration to settings DB."""
+    from core.settings_db import put_category
+    config = orch.mcp.to_config()
+    put_category("mcp", {"servers": config})
+
+
+def _load_mcp_config():
+    """Load MCP servers configuration from settings DB."""
+    from core.settings_db import get_category
+    items = get_category("mcp")
+    for item in items:
+        if item["key"] == "servers":
+            orch.mcp.load_from_config(item["value"])
+            logger.info(f"Loaded {len(item['value'])} MCP servers from settings")
+            return
+    logger.info("No MCP servers configured in settings")
 
 
 # ── OAuth endpoints ──────────────────────────────────────────────

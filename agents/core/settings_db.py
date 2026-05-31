@@ -96,6 +96,8 @@ DEFAULTS: list[dict[str, Any]] = [
     dict(category="system",  key="heartbeat_interval",value=60,                   label="Heartbeat interval (s)", kind="number"),
     dict(category="system",  key="poll_interval",    value=10,                    label="Poll interval (s)",  kind="number"),
     dict(category="system",  key="theme",            value="dark",                label="Theme",              kind="select", opts=["dark","light"]),
+    # mcp
+    dict(category="mcp",     key="servers",          value=[],                    label="MCP servers",        kind="json"),
 ]
 
 # ── lazy init — called on first use, not at import time ───────────

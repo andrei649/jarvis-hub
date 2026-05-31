@@ -66,6 +66,11 @@ const ICONS = {
     h('circle',{cx:15,cy:15,r:2}),
     h('path',{d:'M7 7l6 6M13 7l-6 6'}),
   ),
+  mcp: h('svg',{viewBox:'0 0 20 20',width:18,height:18,fill:'none',stroke:'currentColor',strokeWidth:1.3},
+    h('rect',{x:2,y:5,width:6,height:10,rx:1}),
+    h('rect',{x:12,y:5,width:6,height:10,rx:1}),
+    h('path',{d:'M8 10h4'}),
+  ),
 };
 
 /* ── category metadata ──────────────────────────────────────── */
@@ -77,6 +82,7 @@ const CATEGORIES = [
   { id:'plugins',  label:_t('cat.plugins'),  icon:'plugins' },
   { id:'voice',    label:_t('cat.voice'),    icon:'voice' },
   { id:'channels', label:_t('cat.channels'), icon:'channels' },
+  { id:'mcp',      label:_t('cat.mcp'),      icon:'mcp' },
   { id:'security', label:_t('cat.security'), icon:'security' },
   { id:'memory',   label:_t('cat.memory'),   icon:'memory' },
   { id:'skills',   label:_t('cat.skills'),   icon:'skills' },
@@ -91,6 +97,7 @@ const CATEGORY_DESC = {
   plugins:   _t('desc.plugins'),
   voice:     _t('desc.voice'),
   channels:  _t('desc.channels'),
+  mcp:       _t('desc.mcp'),
   security:  _t('desc.security'),
   memory:    _t('desc.memory'),
   skills:    _t('desc.skills'),
@@ -428,6 +435,102 @@ function OraclePage() {
   );
 }
 
+/* ── MCP Server Management panel ────────────────────────────── */
+
+function MCPPage({ onToast }) {
+  const [servers, setServers] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [showForm, setShowForm] = useState(false);
+  const [form, setForm] = useState({ name:'', transport:'stdio', command:'', url:'' });
+
+  const fetchServers = () => {
+    setLoading(true);
+    fetch('/api/admin/mcp').then(r=>r.json()).then(d=>{setServers(d.servers||[]);setLoading(false)}).catch(()=>setLoading(false));
+  };
+  useEffect(()=>{fetchServers();},[]);
+
+  const addServer = (e) => {
+    e.preventDefault();
+    if (!form.name) return;
+    const body = { name:form.name, transport:form.transport };
+    if (form.transport === 'stdio') body.command = form.command;
+    else body.url = form.url;
+    fetch('/api/admin/mcp', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body)})
+      .then(r=>{if (!r.ok) return r.json().then(d=>{throw new Error(d.error)}); return r.json()})
+      .then(()=>{ onToast(_t('mcp.add_success')); setShowForm(false); setForm({name:'',transport:'stdio',command:'',url:''}); fetchServers(); })
+      .catch(e=>onToast(_t('admin.error_prefix')+e.message));
+  };
+
+  const removeServer = (name) => {
+    if (!confirm(_t('mcp.remove_confirm')+name+'?')) return;
+    fetch(`/api/admin/mcp/${encodeURIComponent(name)}`, {method:'DELETE'})
+      .then(r=>r.json()).then(()=>{ onToast(_t('mcp.remove_success')); fetchServers(); })
+      .catch(e=>onToast(_t('admin.error_prefix')+e.message));
+  };
+
+  const toggleConnect = (srv) => {
+    const action = srv.connected ? 'disconnect' : 'connect';
+    fetch(`/api/admin/mcp/${encodeURIComponent(srv.name)}/${action}`, {method:'POST'})
+      .then(r=>r.json()).then(d=>{
+        if (action === 'connect') onToast(d.ok ? _t('mcp.connect_success') : (d.error||'Connect failed'));
+        else onToast(_t('mcp.disconnect_success'));
+        fetchServers();
+      }).catch(e=>onToast(_t('admin.error_prefix')+e.message));
+  };
+
+  if (loading) return h('div',{style:{padding:20,fontSize:12,color:'var(--text-dim)'}}, _t('admin.loading'));
+
+  return h('div',null,
+    servers.length === 0
+      ? h('p',{style:{padding:12,fontSize:12,color:'var(--text-dim)'}}, _t('mcp.no_servers'))
+      : h('div',{style:{display:'flex',flexDirection:'column',gap:8,marginBottom:16}},
+          h('div',{style:{fontSize:11,color:'var(--text-dim)',marginBottom:4}}, _t('mcp.total')+servers.length),
+          servers.map(srv => h('div',{key:srv.name,style:{
+            display:'flex',alignItems:'center',gap:10,padding:'8px 12px',
+            background:'var(--bg-glass)',borderRadius:8,border:'1px solid var(--border-glass)',
+          }},
+            h('div',{style:{
+              width:8,height:8,borderRadius:'50%',flexShrink:0,
+              background: srv.connected ? 'var(--green-active)' : 'var(--text-dim)',
+            }}),
+            h('div',{style:{flex:1,minWidth:0}},
+              h('div',{style:{fontSize:13,fontWeight:600}}, srv.name),
+              h('div',{style:{fontSize:10,color:'var(--text-dim)'}},
+                srv.transport === 'stdio' ? srv.command : srv.url,
+                ' · ', srv.tools_count, _t('mcp.tools'),
+              ),
+            ),
+            srv.tools_count > 0 && h('div',{style:{fontSize:10,color:'var(--text-secondary)',maxWidth:200,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}},
+              srv.tools.map(t=>t.name).join(', ')
+            ),
+            h('button',{className:'admin-btn', style:{fontSize:11,padding:'3px 8px'},
+              onClick:()=>toggleConnect(srv)},
+              srv.connected ? _t('mcp.disconnect') : _t('mcp.connect')
+            ),
+            h('button',{className:'admin-btn is-danger', style:{fontSize:11,padding:'3px 8px'},
+              onClick:()=>removeServer(srv.name)},
+              _t('mcp.remove')
+            ),
+          )),
+        ),
+
+    showForm
+      ? h('form',{onSubmit:addServer, style:{background:'var(--bg-glass)',borderRadius:8,border:'1px solid var(--border-glass)',padding:12}},
+          h('div',{style:{fontSize:12,fontWeight:600,marginBottom:8}}, _t('mcp.add_title')),
+          h(InputRow,{label:_t('mcp.name'), value:form.name, onChange:v=>setForm({...form,name:v})}),
+          h(SelectRow,{label:_t('mcp.transport'), value:form.transport, onChange:v=>setForm({...form,transport:v}), opts:['stdio','sse']}),
+          form.transport === 'stdio'
+            ? h(InputRow,{label:_t('mcp.command'), value:form.command, onChange:v=>setForm({...form,command:v})})
+            : h(InputRow,{label:_t('mcp.url'), value:form.url, onChange:v=>setForm({...form,url:v})}),
+          h('div',{style:{display:'flex',gap:8,marginTop:8}},
+            h('button',{type:'submit',className:'admin-btn is-primary'}, _t('mcp.add_submit')),
+            h('button',{type:'button',className:'admin-btn', onClick:()=>setShowForm(false)}, _t('oracle.sync_btn') ? 'Anulează' : 'Anulează'),
+          ),
+        )
+      : h('button',{className:'admin-btn is-primary', onClick:()=>setShowForm(true)}, _t('mcp.add_btn')),
+  );
+}
+
 function AdminApp() {
   const [active, setActive] = useState('general');
   const [settings, setSettings] = useState({});
@@ -497,6 +600,7 @@ function AdminApp() {
   const isSystem = active === 'system';
   const isSecurity = active === 'security';
   const isOracle = active === 'oracle';
+  const isMCP = active === 'mcp';
 
   return h('div',{className:'admin-wrap'},
     h('div',{className:'admin-sidebar'},
@@ -528,7 +632,10 @@ function AdminApp() {
           : isOracle
             ? h(OraclePage)
 
-            : h('div',null,
+            : isMCP
+              ? h(MCPPage,{onToast:showToast})
+
+              : h('div',null,
                 filtered.map(s => renderRow(s, s.key, onUpdate, (key)=>showToast(`${_t('admin.action')}${key}`) )),
                 isSecurity && h(AuditLog),
               ),

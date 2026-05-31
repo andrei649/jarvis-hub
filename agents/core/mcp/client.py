@@ -126,3 +126,27 @@ class MCPManager:
     async def close_all(self):
         for srv in self.servers.values():
             await srv.close()
+
+    def to_config(self) -> list[dict]:
+        """Export all servers to config format for persistence."""
+        return [
+            {
+                "name": srv.name,
+                "transport": srv.transport,
+                "command": srv.command,
+                "url": srv.url,
+            }
+            for srv in self.servers.values()
+        ]
+
+    def load_from_config(self, configs: list[dict]):
+        """Load servers from config list."""
+        self.servers.clear()
+        for cfg in configs:
+            srv = MCPServer(
+                name=cfg["name"],
+                transport=cfg.get("transport", "stdio"),
+                command=cfg.get("command"),
+                url=cfg.get("url"),
+            )
+            self.servers[srv.name] = srv

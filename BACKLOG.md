@@ -10,7 +10,7 @@
 ```bash
 pip install -r requirements-beta.txt
 python -m uvicorn agents.web:app --host 127.0.0.1 --port 8080
-python -m pytest tests/ -v          # 357 passed, 8 skipped
+python -m pytest tests/ -v          # 504 passed, 8 skipped
 ```
 
 > Cele 8 skipped sunt din `tests/test_spotify.py` (pattern HTTP-router, opencode) care
@@ -217,11 +217,11 @@ Conectare n8n API — creează/monitorizează workflow-uri.
 - `core/plugins/n8n.py` — client async REST API v1 (list/create/activate workflows + `create_daily_weather_workflow`); `N8N_BASE_URL`/`N8N_API_KEY`; rezultat „not configured" curat când lipsesc. Înregistrat în orchestrator. (17 teste)
 **AC:** „Oracle, creează workflow vreme zilnic" → workflow creat ✅
 
-### H4.7 — MCP Client real (S:8, Dep: —) 🟡 parțial
+### H4.7 — MCP Client real (S:8, Dep: —) ✅
 MCPManager conectat la MCP servers externe.
 - ✅ Core client real: `core/mcp/client.py` — transport stdio/SSE, JSON-RPC (`initialize`/`list_tools`/`call_tool`), `MCPManager.connect_all`
-- 🔴 Rămas: wiring admin „adaugă server MCP din admin → expus ca plugin" (UI + persistență config)
-**AC:** MCP server adăugat din admin → disponibil ca plugin
+- ✅ Admin wiring: REST CRUD endpoints + persistență settings DB + UI panel admin.js
+- AC: MCP server adăugat din admin → disponibil ca plugin ✅
 
 ### H4.8 — Sandbox containerized (S:5, Dep: Docker) ✅
 Sandbox cu Docker pentru execuție sigură de cod.
@@ -302,12 +302,12 @@ Optimizare costuri și vizibilitate pentru Hybrid Router.
 | **H1 Foundation** (P0) | 5 | **5** | 26 | **26** | **100%** | 0 | — |
 | **H2 Core Agent** (P1) | 12 | **10** | 76 | **63** | **83%** | 13 | ~1 săpt. |
 | **H3 Intelligence** (P2) | 6 | **6** | 39 | **39** | **100%** | 0 | — |
-| **H4 Platform** (P3) | 11 | **8** | 63 | **42** | **67%** | 21 | ~1.5 săpt. (paralel 3) |
+| **H4 Platform** (P3) | 11 | **9** | 63 | **50** | **79%** | 13 | ~1 săpt. (paralel 3) |
 | **Cross-cutting** | 6 | **4** | 44 | **24** | **55%** | 20 | ~1 săpt. |
 | **Securitate audit** | 5 | **5** | — | — | **100%** | 0 | — |
 | **Bugfixes** | 17 | **17** | — | — | **100%** | 0 | — |
 | **Sprint 0** (P0) | 3 | **3** | 7 | **7** | **100%** | 0 | — |
-| **Total general** | **65** | **58** | **255** | **201** | **79%** | **54** | **~4 săpt.** |
+| **Total general** | **65** | **59** | **255** | **209** | **80%** | **46** | **~3 săpt.** |
 
 **Echipă 3-4 agenți paralel:** H2+H3 ≈ 2-3 luni · Totul ≈ 3 luni (estimat)
 
@@ -352,7 +352,7 @@ Optimizare costuri și vizibilitate pentru Hybrid Router.
 | **H4.4** Ultron Security | 8 | Pi-hole + firewall | Zero API keys (citire log-uri locale). | ~4 zile | ✅ |
 | **H4.5** Steve Monitor | 8 | — | Zero API keys (psutil local). | ~4 zile | ✅ |
 | **H4.6** Oracle n8n | 5 | n8n pornit | n8n running (Docker sau local). API key din n8n settings. | ~2.5 zile | ✅ |
-| **H4.7** MCP Client | 8 | — | Zero resurse externe (conectare MCP servers). | ~4 zile | 🟡 core gata, admin-wiring rămas |
+| **H4.7** MCP Client | 8 | — | Zero resurse externe (conectare MCP servers). | ~4 zile | ✅ |
 | **H4.8** Sandbox Docker | 5 | Docker | Docker instalat. | ~2.5 zile | ✅ |
 | **H4.9** Guardrails | 5 | — | Zero resurse suplimentare. Cod-only. | ~2.5 zile | ✅ |
 | **H4.10** Admin Charts | 8 | H3.1, H3.4 | Zero resurse suplimentare. Cod-only. | ~4 zile | 🔴 |
