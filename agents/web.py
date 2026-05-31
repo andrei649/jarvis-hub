@@ -46,6 +46,7 @@ from core.channels.slack import SlackChannel
 from core.log import setup_logging, log_error
 from core.errors import JarvisError, E_INTERNAL_UNEXPECTED, E_SECURITY_BLOCKED
 from core.security.guardrails import SecurityBlockError
+from core.llm.cost_estimator import estimate_monthly
 
 logger = logging.getLogger("jarvis.web")
 
@@ -1066,7 +1067,6 @@ async def admin_stats():
             "output_tokens": (r.metadata or {}).get("output_tokens", 0),
             "cached_tokens": (r.metadata or {}).get("cached_tokens", 0),
         })
-    from core.llm.cost_estimator import estimate_monthly
     cost_estimates = estimate_monthly(cost_records)
 
     return _nocache_json({

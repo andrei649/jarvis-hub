@@ -93,3 +93,6 @@ def test_stats_cost_estimates_present(token_client):
     assert "total_savings" in ce
     assert "total_interactions" in ce
     assert "per_model" in ce
+    assert isinstance(ce["total"], (int, float))
+    assert isinstance(ce["total_interactions"], int)
+    assert ce["total_interactions"] >= 0
