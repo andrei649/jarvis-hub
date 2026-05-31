@@ -968,20 +968,23 @@ ADMIN_HTML_TEMPLATE = r"""<!DOCTYPE html>
 </head>
 <body>
 <div id="root"></div>
-<script src="/static/i18n.js"></script>
+<script src="/static/i18n.js?v=2"></script>
 <script>var _t = window._t || function(k){return k;};</script>
 <script src="/static/react.production.min.js"></script>
 <script src="/static/react-dom.production.min.js"></script>
-<script src="/static/data.js"></script>
-<script src="/static/components.js"></script>
-<script src="/static/admin.js"></script>
+<script src="/static/data.js?v=2"></script>
+<script src="/static/components.js?v=2"></script>
+<script src="/static/admin.js?v=2"></script>
 </body>
 </html>"""
 
 
 @app.get("/admin", response_class=HTMLResponse)
 async def admin_page():
-    return HTMLResponse(ADMIN_HTML_TEMPLATE)
+    return HTMLResponse(
+        content=ADMIN_HTML_TEMPLATE,
+        headers={"Cache-Control": "no-cache, no-store, must-revalidate"},
+    )
 
 
 @app.get("/api/admin/settings", dependencies=[Depends(_admin_guard)])
