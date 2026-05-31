@@ -78,3 +78,38 @@ async def test_sequential_baseline():
         await agent.process("hello", {})
     elapsed = time.time() - start
     assert elapsed < 80, f"Sequential took {elapsed:.2f}s"
+
+
+@pytest.mark.asyncio
+async def test_load_with_failures():
+    """Test system handles 50 parallel requests with simulated failure rate."""
+    import random
+    from agents.core.resilience import resilient_call, get_metrics
+
+    metrics = get_metrics()
+    metrics.reset()
+
+    async def flaky_operation():
+        if random.random() < 0.1:
+            raise asyncio.TimeoutError("Simulated failure")
+        await asyncio.sleep(0.1)
+        return "success"
+
+    wrapped = resilient_call(
+        max_retries=2,
+        timeout=5.0,
+        metrics_agent_id="load-test",
+        metrics_backend="test",
+    )(flaky_operation)
+
+    tasks = [wrapped() for _ in range(50)]
+    results = await asyncio.gather(*tasks, return_exceptions=True)
+
+    successes = sum(1 for r in results if r == "success")
+    failures = sum(1 for r in results if isinstance(r, Exception))
+
+    assert successes >= 45, f"Expected at least 45 successes, got {successes}"
+
+    stats = metrics.get_stats()
+    assert "load-test:test" in stats
+    assert stats["load-test:test"]["total"] >= 50
