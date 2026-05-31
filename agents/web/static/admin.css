@@ -421,3 +421,39 @@
   font-size: 12px;
   color: var(--text-dim);
 }
+
+/* ── resilience metrics ─────────────────────────────────────────── */
+
+.resilience-card {
+  padding: 8px;
+  margin: 4px 0;
+  background: var(--bg-glass);
+  border-radius: 6px;
+  font-size: 11px;
+}
+
+.resilience-card .label {
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+
+.resilience-card .row {
+  display: flex;
+  gap: 12px;
+}
+
+.resilience-card .success { color: #4ade80; }
+.resilience-card .failure { color: #f87171; }
+.resilience-card .latency { color: #60a5fa; }
+
+.cb-row {
+  display: flex;
+  gap: 12px;
+  padding: 6px 8px;
+  margin: 4px 0;
+  border-radius: 4px;
+}
+
+.cb-row.open { background: var(--error-bg); }
+.cb-row.half-open { background: var(--warning-bg); }
+.cb-row.closed { background: var(--bg-glass); }

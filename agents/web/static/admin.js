@@ -680,6 +680,39 @@ function ChartsPage() {
       h(StatsCard,{label:_t('charts.cache_active'),
         value:data.cost_estimates.total_interactions,color:'#60a5fa'}),
     ),
+
+    // Resilience metrics
+    data.resilience && Object.keys(data.resilience).length > 0 && h('div',{className:'admin-group',style:{marginTop:16}},
+      h('div',{className:'admin-group-header'},'Resilience Metrics'),
+      Object.entries(data.resilience).map(([key, stats])=>
+        h('div',{key,style:{padding:'8px',margin:'4px 0',background:'var(--bg-glass)',borderRadius:6,fontSize:11}},
+          h('div',{style:{fontWeight:600,color:'var(--text-secondary)',marginBottom:4}},key),
+          h('div',{style:{display:'flex',gap:12}},
+            h('span',{style:{color:'#4ade80'}},'S: '+stats.success),
+            h('span',{style:{color:'#f87171'}},'F: '+stats.failure),
+            h('span',{style:{color:'#60a5fa'}},'Avg: '+stats.avg_latency.toFixed(2)+'s'),
+          ),
+          stats.error_types && Object.keys(stats.error_types).length > 0 &&
+            h('div',{style:{marginTop:4,color:'var(--text-dim)'}},
+              'Errors: '+Object.entries(stats.error_types).map(([t,c])=>t+':'+c).join(', '),
+            ),
+        )
+      ),
+    ),
+
+    // Circuit breakers
+    data.circuit_breakers && Object.keys(data.circuit_breakers).length > 0 && h('div',{className:'admin-group',style:{marginTop:16}},
+      h('div',{className:'admin-group-header'},'Circuit Breakers'),
+      Object.entries(data.circuit_breakers).map(([key, cb])=>
+        h('div',{key,style:{display:'flex',gap:12,padding:'6px 8px',margin:'4px 0',borderRadius:4,
+          background:cb.state==='open'?'var(--error-bg)':cb.state==='half-open'?'var(--warning-bg)':'var(--bg-glass)'}},
+          h('span',{style:{fontWeight:600,flex:1}},key),
+          h('span',{style:{fontWeight:600,textTransform:'uppercase',fontSize:10,
+            color:cb.state==='open'?'#f87171':cb.state==='half-open'?'#facc15':'#4ade80'}},cb.state),
+          h('span',{style:{color:'var(--text-dim)',fontSize:10}},'Failures: '+cb.failure_count),
+        )
+      ),
+    ),
   );
 }
 
