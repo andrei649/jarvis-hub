@@ -309,7 +309,8 @@ Optimizare costuri și vizibilitate pentru Hybrid Router.
 | **Securitate audit** | 5 | **5** | — | — | **100%** | 0 | — |
 | **Bugfixes** | 17 | **17** | — | — | **100%** | 0 | — |
 | **Sprint 0** (P0) | 3 | **3** | 7 | **7** | **100%** | 0 | — |
-| **Total general** | **67** | **65** | **268** | **248** | **93%** | **0** | **✅** |
+| **H5 Next Wave** (P2–P3) | 4 | **0** | 42 | **0** | **0%** | 42 | ~3 săpt. |
+| **Total general** | **71** | **67** | **310** | **248** | **80%** | **42** | **~3 săpt.** |
 
 **Echipă 3-4 agenți paralel:** H2+H3 ≈ 2-3 luni · Totul ≈ 3 luni (estimat)
 
@@ -388,4 +389,26 @@ S4 (`gemini.py` stream `raise_for_status`) ✅ și S-PKCE (`oauth.py` PKCE + sta
 | Slack App Token | H4.3 Slack | Gratuit |
 | Docker (Qdrant, Neo4j, n8n) | H3.1, H3.2, H4.6 | Gratuit (deja instalat pe Pi 5) |
 | n8n API Key | H4.6 Oracle | Gratuit |
+## ORIZONT 5: Next Wave (P2–P3) — 0/4
+
+> Scop: extindere capabilități după foundation stabil. Fiecare item are spec + plan propriu.
+
+### H5.1 — Howard: Fine-Tuning Pipeline (S:13, Dep: —)
+Pipeline complet: Ollama backend (`ollama_howard.py`), embedder, continuous ingestion, voice cloning (XTTS).
+**AC:** Howard răspunde în vocea lui Andrei, cu RAG din arhivă, via Ollama.
+
+### H5.2 — Mobile HUD / PWA (S:8, Dep: —)
+Dashboard responsive, mobile-first, offline support (Service Worker), push notifications.
+**AC:** HUD-ul funcționează pe telefon fără pierderi de funcționalitate.
+
+### H5.3 — Performance & Robustness (S:8, Dep: —)
+Rate limiting per agent/channel, retry + circuit breaker pe LLM calls, caching agresiv, metrici sistem.
+**AC:** Sistemul nu crapă la overload și se recuperează automat.
+
+### H5.4 — Multi-Agent Workflows (S:13, Dep: H5.3)
+Agent handoff avansat, execuție paralelă, pipeline-uri compuse între agenți, rezultate intermediate partajate.
+**AC:** Un query complex (ex: "analizează finanțele și trimite raport") se execută în <15s.
+
+---
+
 **Total cost lunar:** $0 (toate serviciile au tier gratis sufficient pentru uz personal)
