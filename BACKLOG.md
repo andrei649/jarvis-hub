@@ -10,7 +10,7 @@
 ```bash
 pip install -r requirements-beta.txt
 python -m uvicorn agents.web:app --host 127.0.0.1 --port 8080
-python -m pytest tests/ -v          # 504 passed, 8 skipped
+python -m pytest tests/ -v          # 509 passed, 8 skipped
 ```
 
 > Cele 8 skipped sunt din `tests/test_spotify.py` (pattern HTTP-router, opencode) care
