@@ -106,6 +106,15 @@ DEFAULTS: list[dict[str, Any]] = [
     dict(category="system",  key="theme",            value="dark",                label="Theme",              kind="select", opts=["dark","light"]),
     # mcp
     dict(category="mcp",     key="servers",          value=[],                    label="MCP servers",        kind="json"),
+    # autonomy — Proactive Cortex (ORIZONT 6)
+    dict(category="autonomy", key="owner_chat_id",   value="",     label="Owner Telegram chat ID", kind="text"),
+    dict(category="autonomy", key="cap_per_action",  value=50,     label="Money cap per action", kind="number"),
+    dict(category="autonomy", key="daily_ceiling",   value=200,    label="Money daily ceiling",  kind="number"),
+    dict(category="autonomy", key="interrupt_budget",value=4,      label="Urgent pushes per day", kind="number"),
+    dict(category="autonomy", key="night_shift",     value=False,  label="Night shift enabled",  kind="toggle"),
+    dict(category="autonomy", key="night_start",     value=23,     label="Night window start (h)", kind="number"),
+    dict(category="autonomy", key="night_end",       value=6,      label="Night window end (h)", kind="number"),
+    dict(category="system",  key="autonomy_tick",    value=60,     label="Autonomy tick (s)",    kind="number"),
 ]
 
 # ── lazy init — called on first use, not at import time ───────────

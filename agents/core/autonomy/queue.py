@@ -207,12 +207,20 @@ class TaskQueue:
         ).fetchall()
         return [_row_to_task(r) for r in rows]
 
-    def runnable(self, limit: int = 10) -> list[Task]:
-        """Approved tasks that have not exhausted their retry budget."""
+    def runnable(self, limit: int = 10, max_tier: Optional[int] = None) -> list[Task]:
+        """Approved tasks that have not exhausted their retry budget.
+
+        `max_tier` (optional) caps the risk tier — the night shift passes 1 to
+        batch only reversible/read-only work.
+        """
+        clause = "status='approved' AND attempts < ?"
+        params: list = [MAX_ATTEMPTS]
+        if max_tier is not None:
+            clause += " AND risk_tier <= ?"
+            params.append(int(max_tier))
+        params.append(limit)
         rows = self._conn.execute(
-            "SELECT * FROM tasks WHERE status='approved' AND attempts < ? "
-            "ORDER BY id ASC LIMIT ?",
-            (MAX_ATTEMPTS, limit),
+            f"SELECT * FROM tasks WHERE {clause} ORDER BY id ASC LIMIT ?", params
         ).fetchall()
         return [_row_to_task(r) for r in rows]
 

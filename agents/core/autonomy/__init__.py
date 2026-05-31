@@ -8,12 +8,18 @@ inbox → execute. NOT an open-ended auto-prompt loop (anti-AutoGPT).
 
 from .policy import AutonomyPolicy, Decision, RiskTier, Outcome
 from .queue import Task, TaskQueue, TaskStatus, TaskQueueError
-from .worker import AutonomyWorker, InterruptBudget
+from .worker import AutonomyWorker, InterruptBudget, is_night_window
 from .inbox import build_decision_card, parse_callback_data, DECISION_ACTIONS
+from .executor import TaskExecutor
+from .digest import build_morning_brief, build_evening_retro
+from .preferences import PreferenceStore
 
 __all__ = [
     "AutonomyPolicy", "Decision", "RiskTier", "Outcome",
     "Task", "TaskQueue", "TaskStatus", "TaskQueueError",
-    "AutonomyWorker", "InterruptBudget",
+    "AutonomyWorker", "InterruptBudget", "is_night_window",
     "build_decision_card", "parse_callback_data", "DECISION_ACTIONS",
+    "TaskExecutor",
+    "build_morning_brief", "build_evening_retro",
+    "PreferenceStore",
 ]

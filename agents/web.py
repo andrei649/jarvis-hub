@@ -777,6 +777,24 @@ async def autonomy_decide(task_id: int, body: AutonomyDecisionBody):
     return _nocache_json({"ok": True, "task": task.to_dict()})
 
 
+@app.get("/autonomy/brief", dependencies=[Depends(_admin_guard)])
+async def autonomy_brief(kind: str = "morning"):
+    """Render the morning brief or evening retro (H6.4)."""
+    if not orch:
+        return JSONResponse({"error": "not initialized"}, status_code=503)
+    from core.autonomy.digest import build_morning_brief, build_evening_retro
+    text = (build_evening_retro if kind == "evening" else build_morning_brief)(orch.autonomy_queue)
+    return _nocache_json({"kind": kind, "text": text})
+
+
+@app.get("/autonomy/preferences/suggestions", dependencies=[Depends(_admin_guard)])
+async def autonomy_pref_suggestions():
+    """Classes consistently approved → autonomy-raise suggestions (H6.5)."""
+    if not orch:
+        return JSONResponse({"error": "not initialized"}, status_code=503)
+    return _nocache_json({"suggestions": orch.autonomy_prefs.suggest_autonomy_raise()})
+
+
 # ── Admin panel ──────────────────────────────────────────────────
 
 

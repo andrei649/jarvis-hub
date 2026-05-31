@@ -1,0 +1,88 @@
+"""
+digest.py — Daily Review Ritual (H6.4).
+
+Pure builders for the morning brief and evening retro, rendered from the task
+queue. Network-free so they're unit-testable; the orchestrator schedules them
+(cron 07:00 / 20:00) and ships the text via Telegram, and the HUD reads the
+same text via GET /autonomy/brief.
+"""
+
+from __future__ import annotations
+
+from typing import List
+
+from .queue import Task, TaskQueue
+
+_TIER = {0: "read-only", 1: "reversibil", 2: "extern", 3: "ireversibil/bani"}
+
+
+def _titles(tasks: List[Task], limit: int = 8) -> str:
+    if not tasks:
+        return "  _(niciuna)_"
+    lines = [f"  • {t.title} `#{t.id}`" for t in tasks[:limit]]
+    if len(tasks) > limit:
+        lines.append(f"  • …și încă {len(tasks) - limit}")
+    return "\n".join(lines)
+
+
+def build_morning_brief(queue: TaskQueue) -> str:
+    """What Jarvis did overnight, what it proposes today, and open decisions."""
+    done = queue.list(status="done", limit=50)
+    approved = queue.list(status="approved", limit=50)
+    proposed = queue.list(status="proposed", limit=50)
+    pending = queue.pending_decisions(limit=50)
+
+    parts = [
+        "☀️ *Morning brief*",
+        "",
+        f"✅ *Făcute peste noapte* ({len(done)}):",
+        _titles(done),
+        "",
+        f"⏳ *În lucru azi* ({len(approved)}):",
+        _titles(approved),
+    ]
+    if proposed:
+        parts += ["", f"💡 *Propuneri noi* ({len(proposed)}):", _titles(proposed)]
+    if pending:
+        parts += [
+            "",
+            f"🔔 *Așteaptă decizia ta* ({len(pending)}):",
+            _decisions(pending),
+        ]
+    return "\n".join(parts)
+
+
+def build_evening_retro(queue: TaskQueue) -> str:
+    """Delivered / failed / blocked, plus a batch-approve list for tomorrow."""
+    done = queue.list(status="done", limit=50)
+    failed = queue.list(status="failed", limit=50)
+    pending = queue.pending_decisions(limit=50)
+
+    parts = [
+        "🌙 *Evening retro*",
+        "",
+        f"✅ *Livrate azi* ({len(done)}):",
+        _titles(done),
+    ]
+    if failed:
+        parts += ["", f"❌ *Eșuate* ({len(failed)}):", _titles(failed)]
+    if pending:
+        parts += [
+            "",
+            f"📋 *Batch approve pentru mâine* ({len(pending)}):",
+            _decisions(pending),
+            "",
+            "_Aprobă din inbox sau spune-mi ce să rulez._",
+        ]
+    else:
+        parts += ["", "_Nicio decizie în așteptare. 🎉_"]
+    return "\n".join(parts)
+
+
+def _decisions(tasks: List[Task], limit: int = 12) -> str:
+    lines = []
+    for t in tasks[:limit]:
+        lines.append(f"  • `#{t.id}` {t.title} — *{_TIER.get(t.risk_tier, t.risk_tier)}*")
+    if len(tasks) > limit:
+        lines.append(f"  • …și încă {len(tasks) - limit}")
+    return "\n".join(lines)

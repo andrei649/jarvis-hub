@@ -26,8 +26,10 @@ from .learning.loop import LearningLoop
 from .skills.loader import SkillLoader
 from .skills.importer import SkillImporter
 from .mcp.client import MCPManager
-from .autonomy import AutonomyWorker, TaskQueue, AutonomyPolicy
+from .autonomy import AutonomyWorker, TaskQueue, AutonomyPolicy, PreferenceStore, TaskExecutor
 from .autonomy.inbox import build_decision_card
+from .autonomy.digest import build_morning_brief, build_evening_retro
+from .autonomy.worker import is_night_window
 from .sandbox import Sandbox
 from .bench import LatencyBenchmark
 from .plugin_gate import PermissionGate
@@ -101,9 +103,12 @@ class Orchestrator:
         self._runtime_settings: dict = {}
         self._channel_sessions: dict[str, str] = {}
         self._settings_watcher_task: Optional[asyncio.Task] = None
-        # ── Autonomy / Proactive Cortex (H6.1–H6.3) ──
+        # ── Autonomy / Proactive Cortex (H6.1–H6.6) ──
         self.autonomy_queue = TaskQueue()
-        self.autonomy = AutonomyWorker(self.autonomy_queue, policy=AutonomyPolicy())
+        self.autonomy_prefs = PreferenceStore()
+        self.autonomy = AutonomyWorker(
+            self.autonomy_queue, policy=AutonomyPolicy(), prefs=self.autonomy_prefs,
+        )
         self._autonomy_task: Optional[asyncio.Task] = None
 
     async def load_agents(self):
@@ -206,9 +211,11 @@ class Orchestrator:
         # Autonomy queue — durable self-tasking store (H6.1)
         try:
             self.autonomy_queue.initialize()
-            logger.info("Autonomy queue initialized")
+            self.autonomy_prefs.initialize()
+            self.autonomy.executor = self._build_autonomy_executor().execute
+            logger.info("Autonomy queue + executor initialized")
         except Exception as e:
-            logger.warning(f"Autonomy queue init failed: {e}")
+            logger.warning(f"Autonomy init failed: {e}")
 
         self.skills.discover()
         logger.info(f"Skills loaded: {list(self.skills.skills.keys())}")
@@ -273,15 +280,82 @@ class Orchestrator:
             logger.warning(f"Autonomy decision callback failed: {e}")
             return None
 
+    def _schedule_daily_digests(self):
+        """Cron the morning brief (07:00) and evening retro (20:00) — H6.4."""
+        sched = getattr(self.heartbeat_scheduler, "scheduler", None)
+        if sched is None:
+            return
+        try:
+            sched.add_job(self._run_daily_digest, "cron", hour=7, minute=0,
+                          args=["morning"], id="autonomy-morning-brief", replace_existing=True)
+            sched.add_job(self._run_daily_digest, "cron", hour=20, minute=0,
+                          args=["evening"], id="autonomy-evening-retro", replace_existing=True)
+            logger.info("Scheduled daily digests: morning 07:00, evening 20:00")
+        except Exception as e:
+            logger.warning(f"Failed to schedule daily digests: {e}")
+
     async def _autonomy_loop(self):
-        """Periodically run approved autonomy tasks (the self-tasking worker)."""
+        """Periodically run approved autonomy tasks (the self-tasking worker).
+
+        During the night window (H6.6) only reversible/read-only work runs, so
+        external/irreversible tasks always wait for a waking human.
+        """
+        from datetime import datetime
         while True:
             interval = int(self.get_setting("system.autonomy_tick", 60) or 60)
             await asyncio.sleep(max(15, interval))
             try:
-                await self.autonomy.tick()
+                max_tier = None
+                if self.get_setting("autonomy.night_shift", False):
+                    start = int(self.get_setting("autonomy.night_start", 23) or 23)
+                    end = int(self.get_setting("autonomy.night_end", 6) or 6)
+                    if is_night_window(datetime.now().hour, start, end):
+                        max_tier = 1  # reversible/read-only only
+                await self.autonomy.tick(max_tier=max_tier)
             except Exception as e:
                 logger.warning(f"Autonomy tick failed: {e}")
+
+    def _build_autonomy_executor(self) -> TaskExecutor:
+        """Wire task kinds to real capabilities, degrading gracefully."""
+        async def _research(task):
+            query = (task.payload or {}).get("query") or task.title
+            ws = self.plugins.get("websearch")
+            if ws and hasattr(ws, "handle"):
+                return {"status": "ok", "kind": "research", "output": await ws.handle(query)}
+            return {"status": "noop", "note": "websearch unavailable"}
+
+        async def _llm(task):
+            prompt = (task.payload or {}).get("prompt") or task.title
+            out = await self.process(prompt, channel="autonomy")
+            return {"status": "ok", "kind": task.kind, "output": out}
+
+        executor = TaskExecutor(fallback=_llm)
+        for kw in ("research", "search", "monitor", "scan", "lookup", "check"):
+            executor.register(kw, _research)
+        for kw in ("summarize", "analyze", "review", "draft", "plan", "prepare"):
+            executor.register(kw, _llm)
+        return executor
+
+    async def _run_daily_digest(self, kind: str):
+        """Build and ship the morning brief / evening retro to the owner."""
+        try:
+            if kind == "morning":
+                text = build_morning_brief(self.autonomy_queue)
+            else:
+                text = build_evening_retro(self.autonomy_queue)
+        except Exception as e:
+            logger.warning(f"Digest build failed ({kind}): {e}")
+            return
+        owner = os.environ.get("AUTONOMY_OWNER_CHAT_ID", "") or str(
+            self.get_setting("autonomy.owner_chat_id", "") or ""
+        )
+        tg = self.channels.get("telegram")
+        if tg and owner:
+            try:
+                await tg.send(text, chat_id=int(owner))
+            except Exception as e:
+                logger.warning(f"Digest send failed ({kind}): {e}")
+        logger.info(f"Daily digest ready: {kind}")
 
     async def register_channel(self, channel: ChannelAdapter):
         self.channels[channel.channel_id] = channel
@@ -296,6 +370,7 @@ class Orchestrator:
         self.heartbeat_scheduler.start(self)
         self._settings_watcher_task = asyncio.create_task(self._settings_watcher_loop())
         self._wire_autonomy()
+        self._schedule_daily_digests()
         self._autonomy_task = asyncio.create_task(self._autonomy_loop())
         if hasattr(self, 'oracle_bridge'):
             self.oracle_bridge.start_watcher()

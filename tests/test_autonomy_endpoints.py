@@ -89,3 +89,19 @@ def test_list_filter_by_status(token_client):
 
 def test_admin_guard_blocks_without_token(token_client):
     assert token_client.get("/autonomy/tasks").status_code in (401, 403)
+
+
+def test_brief_endpoint(token_client):
+    r = token_client.get("/autonomy/brief", params={"kind": "morning"}, headers=HEADERS)
+    assert r.status_code == 200
+    assert "text" in r.json()
+    assert r.json()["kind"] == "morning"
+    r2 = token_client.get("/autonomy/brief", params={"kind": "evening"}, headers=HEADERS)
+    assert r2.status_code == 200
+    assert "Evening retro" in r2.json()["text"]
+
+
+def test_preference_suggestions_endpoint(token_client):
+    r = token_client.get("/autonomy/preferences/suggestions", headers=HEADERS)
+    assert r.status_code == 200
+    assert isinstance(r.json()["suggestions"], list)

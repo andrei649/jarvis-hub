@@ -31,6 +31,15 @@ Executor = Callable[[Task], Awaitable[dict]]
 Notifier = Callable[[Task], Awaitable[bool]]
 
 
+def is_night_window(hour: int, start: int = 23, end: int = 6) -> bool:
+    """True if `hour` falls in the night window (handles wrap past midnight)."""
+    if start == end:
+        return False
+    if start < end:
+        return start <= hour < end
+    return hour >= start or hour < end  # wraps midnight, e.g. 23→6
+
+
 class InterruptBudget:
     """Caps urgent push notifications per day to protect the user's attention."""
 
@@ -60,13 +69,14 @@ class InterruptBudget:
 class AutonomyWorker:
     def __init__(self, queue: TaskQueue, policy: Optional[AutonomyPolicy] = None,
                  executor: Optional[Executor] = None, notifier: Optional[Notifier] = None,
-                 budget: Optional[InterruptBudget] = None, audit=None):
+                 budget: Optional[InterruptBudget] = None, audit=None, prefs=None):
         self.queue = queue
         self.policy = policy or AutonomyPolicy()
         self.executor = executor
         self.notifier = notifier
         self.budget = budget or InterruptBudget()
         self.audit = audit
+        self.prefs = prefs
 
     # ── intake ────────────────────────────────────────────────────
     async def submit(self, agent: str, kind: str, title: str,
@@ -112,10 +122,14 @@ class AutonomyWorker:
         return ok
 
     # ── execution ─────────────────────────────────────────────────
-    async def tick(self, limit: int = 10) -> dict:
-        """Run approved tasks. Returns a small summary dict."""
+    async def tick(self, limit: int = 10, max_tier: Optional[int] = None) -> dict:
+        """Run approved tasks. Returns a small summary dict.
+
+        `max_tier` caps which risk tiers run this pass — used by the night shift
+        to batch only reversible/read-only work (max_tier=1).
+        """
         ran = done = failed = 0
-        for task in self.queue.runnable(limit=limit):
+        for task in self.queue.runnable(limit=limit, max_tier=max_tier):
             ran += 1
             self.queue.transition(task.id, TaskStatus.RUNNING)
             attempts = self.queue.increment_attempts(task.id)
@@ -173,6 +187,11 @@ class AutonomyWorker:
             from .queue import TaskQueueError
             raise TaskQueueError(f"unknown decision action: {action}")
         self._audit(f"autonomy.decision.{action}", task, f"by {decided_by}")
+        if self.prefs:
+            try:
+                self.prefs.record(task, action, decided_by=decided_by)
+            except Exception as e:
+                logger.warning(f"Preference record failed for #{task_id}: {e}")
         return task
 
     # ── audit ─────────────────────────────────────────────────────
