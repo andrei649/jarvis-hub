@@ -108,6 +108,13 @@ const STRINGS = {
   'charts.channel':      'Canale',
   'charts.errors':       'Erori frecvente',
   'charts.daily_vol':    'Volum zilnic',
+  'charts.route_usage':  'Rute utilizate',
+  'charts.cost':         'Cost estimat',
+  'charts.cost_total':   'Cost total',
+  'charts.cost_savings': 'Economii cache',
+  'charts.cost_month':   'Lunar',
+  'charts.cache_active': 'Cache-uri active',
+  'charts.cache_tokens': 'Tokeni din cache',
 
   'desc.oracle':    'Pipeline Weaver — monitorizează Claude, detectează conflicte, sincronizează GitHub.',
 

@@ -665,6 +665,21 @@ function ChartsPage() {
         h('span',{style:{color:'#f87171',fontWeight:600}}, count),
       )),
     ),
+
+    data.route_usage && Object.keys(data.route_usage).length > 0 && h('div',{className:'admin-group',style:{marginTop:16}},
+      h('div',{className:'admin-group-header'}, _t('charts.route_usage')),
+      h(BarChart,{data:Object.entries(data.route_usage).map(([k,v])=>({label:k,value:v})).sort((a,b)=>b.value-a.value),
+        valueKey:'value',labelKey:'label',colorFn:()=>'#a78bfa'}),
+    ),
+
+    data.cost_estimates && h('div',{style:{display:'flex',gap:12,marginTop:20,flexWrap:'wrap'}},
+      h(StatsCard,{label:_t('charts.cost_total'),
+        value:'$'+data.cost_estimates.total.toFixed(4),color:'#f59e0b'}),
+      data.cost_estimates.total_savings > 0 && h(StatsCard,{label:_t('charts.cost_savings'),
+        value:'$'+data.cost_estimates.total_savings.toFixed(4),color:'#4ade80'}),
+      h(StatsCard,{label:_t('charts.cache_active'),
+        value:data.cost_estimates.total_interactions,color:'#60a5fa'}),
+    ),
   );
 }
 
