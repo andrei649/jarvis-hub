@@ -25,6 +25,7 @@ class SecurityEventType(str, Enum):
     PII_DETECTED = "pii_detected"
     SSRF_BLOCKED = "ssrf_blocked"
     AUDIT_LOG = "audit_log"
+    LLM_CALL = "llm_call"
 
 
 @dataclass
