@@ -42,11 +42,11 @@ python -m pytest tests/ -v          # 568 passed, 8 skipped
 | Horizon | Total | ✅ Done | S total | S done | % |
 |---------|-------|---------|---------|--------|---|
 | **H1–H4 + Sprint 0 + Cross-cutting + Sec + Bugs** | 67 | **67** | 248 | **248** | **100%** |
-| **H5 Next Wave** (P2–P3) | 8 | **0** | 76 | **0** | **0%** |
+| **H5 Next Wave** (P2–P3) | 8 | **1** | 76 | **8** | **10.5%** |
 | **H6 Jarvis Autonom** (P1) | 6 | **6** | 55 | **55** | **100%** |
-| **Total general** | **81** | **73** | **379** | **303** | **80%** |
+| **Total general** | **81** | **74** | **379** | **311** | **82%** |
 
-**Test count:** 651 passed, 8 skipped (ORIZONT 6 complet: H6.1–H6.6)
+**Test count:** 660 passed, 8 skipped (H5.5 complet: resilience patterns)
 
 ---
 
@@ -76,7 +76,7 @@ python -m pytest tests/ -v          # 568 passed, 8 skipped
 
 ---
 
-## ORIZONT 5 — Next Wave (P2–P3) — 0/8
+## ORIZONT 5 — Next Wave (P2–P3) — 1/8
 
 > Fiecare item are spec + plan propriu în `docs/superpowers/`. Timeline: 0.6 → 0.9 → 1.0.
 
@@ -86,7 +86,7 @@ python -m pytest tests/ -v          # 568 passed, 8 skipped
 | H5.2 | Mobile HUD / PWA (responsive, offline, push) | 8 | — | 0.7 |
 | H5.3 | Multi-Language / i18n (RO/EN switch) | 5 | — | 0.7 |
 | H5.4 | UI Overhaul (teme, layout, accesibilitate) | 8 | H5.2 | 0.7 |
-| H5.5 | Performance & Robustness (rate limit, retry, circuit breaker) | 8 | — | 0.8 |
+| H5.5 ✅ | **Performance & Robustness** (retry, circuit breaker, rate limit, caching, resilience metrics) | 8 | — | 0.8 ✅ |
 | H5.6 | Multi-Agent Workflows (handoff, paralel, pipeline) | 13 | H5.5 | 0.8 |
 | H5.7 | New Integrations / Plugins (SMS, CRM, IoT, social) | 8 | — | 0.9 |
 | H5.8 | Agent Marketplace / Skill Sharing (registry, publish) | 13 | H5.6 | 0.9 |
@@ -228,8 +228,8 @@ Extrage stringuri RO hardcodate în fișiere de traducere, suport EN/RO, detecta
 Teme, layout îmbunătățit, componente reutilizabile, animații, accesibilitate.
 **AC:** HUD-ul arată modern și e utilizabil și pe ecrane mici.
 
-### H5.5 — Performance & Robustness (S:8, Dep: —)
-Rate limiting per agent/channel, retry + circuit breaker pe LLM calls, caching agresiv, metrici sistem.
+### H5.5 ✅ — Performance & Robustness (S:8, Dep: —)
+Resilience patterns: `@resilient_call` decorator with retry + exponential backoff, CircuitBreaker with tri-state (closed/open/half-open), ResilienceMetrics per agent+backend. Integrated into CloudLLMPlugin (Anthropic, Gemini, OpenAI) and HTTP plugins (weather, gmail, calendar, spotify). Exposed in `/api/admin/stats` endpoint + admin UI charts. Load test verifies 50 parallel calls with 10% failure rate.
 **AC:** Sistemul nu crapă la overload și se recuperează automat.
 
 ### H5.6 — Multi-Agent Workflows (S:13, Dep: H5.5)
