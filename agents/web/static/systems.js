@@ -524,11 +524,16 @@ function ResilienceTab({ data, onRefresh }) {
   );
 }
 
-function SystemsPanel({ memory, plugins, learning, security, bench, agents, onRefresh, onPluginToggle }) {
+function SystemsPanel({ agents, onRefresh, onPluginToggle }) {
   const [activeTab, setActiveTab] = useState('memory');
   const [collapsed, setCollapsed] = useState(false);
   const [heartbeatStatus, setHeartbeatStatus] = useState(null);
   const [resilience, setResilience] = useState(null);
+  const [memoryData, setMemoryData] = useState(null);
+  const [pluginsData, setPluginsData] = useState(null);
+  const [learningData, setLearningData] = useState(null);
+  const [securityData, setSecurityData] = useState(null);
+  const [benchData, setBenchData] = useState(null);
 
   const fetchHeartbeatStatus = useCallback(async () => {
     try {
@@ -550,6 +555,41 @@ function SystemsPanel({ memory, plugins, learning, security, bench, agents, onRe
     }
   }, []);
 
+  const fetchMemory = useCallback(async () => {
+    try {
+      const res = await fetch('/memory/stats');
+      setMemoryData(await res.json());
+    } catch (err) { console.error('Failed to fetch memory:', err); }
+  }, []);
+
+  const fetchPlugins = useCallback(async () => {
+    try {
+      const res = await fetch('/api/plugins');
+      setPluginsData(await res.json());
+    } catch (err) { console.error('Failed to fetch plugins:', err); }
+  }, []);
+
+  const fetchLearning = useCallback(async () => {
+    try {
+      const res = await fetch('/learning/stats');
+      setLearningData(await res.json());
+    } catch (err) { console.error('Failed to fetch learning:', err); }
+  }, []);
+
+  const fetchSecurity = useCallback(async () => {
+    try {
+      const res = await fetch('/security/status');
+      setSecurityData(await res.json());
+    } catch (err) { console.error('Failed to fetch security:', err); }
+  }, []);
+
+  const fetchBench = useCallback(async () => {
+    try {
+      const res = await fetch('/bench/stats');
+      setBenchData(await res.json());
+    } catch (err) { console.error('Failed to fetch bench:', err); }
+  }, []);
+
   useEffect(() => {
     fetchHeartbeatStatus();
   }, [fetchHeartbeatStatus]);
@@ -558,11 +598,21 @@ function SystemsPanel({ memory, plugins, learning, security, bench, agents, onRe
     fetchResilience();
   }, [fetchResilience]);
 
+  useEffect(() => { fetchMemory(); }, [fetchMemory]);
+  useEffect(() => { fetchPlugins(); }, [fetchPlugins]);
+  useEffect(() => { fetchLearning(); }, [fetchLearning]);
+  useEffect(() => { fetchSecurity(); }, [fetchSecurity]);
+  useEffect(() => { fetchBench(); }, [fetchBench]);
+
   const handleRefresh = useCallback(() => {
     if (onRefresh) onRefresh(activeTab);
     if (activeTab === 'heartbeats') fetchHeartbeatStatus();
     if (activeTab === 'resilience') fetchResilience();
-  }, [activeTab, onRefresh, fetchHeartbeatStatus, fetchResilience]);
+    if (activeTab === 'memory') fetchMemory();
+    if (activeTab === 'plugins') fetchPlugins();
+    if (activeTab === 'learning') fetchLearning();
+    if (activeTab === 'security') { fetchSecurity(); fetchBench(); }
+  }, [activeTab, onRefresh, fetchHeartbeatStatus, fetchResilience, fetchMemory, fetchPlugins, fetchLearning, fetchSecurity, fetchBench]);
 
   const handleHeartbeatStart = async (agentId) => {
     try {
@@ -622,8 +672,8 @@ function SystemsPanel({ memory, plugins, learning, security, bench, agents, onRe
     ),
     !collapsed && h('div', { className: 'systems-body' },
       h(SystemsTabBar, { active: activeTab, onChange: setActiveTab }),
-      activeTab === 'memory' && h(MemoryTab, { data: memory, onRefresh: handleRefresh }),
-      activeTab === 'plugins' && h(PluginsTab, { data: plugins, onToggle: onPluginToggle, onRefresh: handleRefresh }),
+      activeTab === 'memory' && h(MemoryTab, { data: memoryData, onRefresh: handleRefresh }),
+      activeTab === 'plugins' && h(PluginsTab, { data: pluginsData, onToggle: onPluginToggle, onRefresh: handleRefresh }),
       activeTab === 'heartbeats' && h(HeartbeatsTab, {
         agents: agents || [],
         heartbeatStatus,
@@ -632,9 +682,9 @@ function SystemsPanel({ memory, plugins, learning, security, bench, agents, onRe
         onRunNow: handleHeartbeatRunNow,
         onRefresh: fetchHeartbeatStatus,
       }),
-      activeTab === 'learning' && h(LearningTab, { data: learning, onRefresh: handleRefresh }),
+      activeTab === 'learning' && h(LearningTab, { data: learningData, onRefresh: handleRefresh }),
       activeTab === 'resilience' && h(ResilienceTab, { data: resilience, onRefresh: handleRefresh }),
-      activeTab === 'security' && h(SecurityBenchTab, { security, bench, onRefresh: handleRefresh })
+      activeTab === 'security' && h(SecurityBenchTab, { security: securityData, bench: benchData, onRefresh: handleRefresh })
     )
   );
 }
