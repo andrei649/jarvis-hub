@@ -8,6 +8,7 @@ const TABS = [
   { id: 'plugins',  label: 'Plugins' },
   { id: 'heartbeats', label: 'Heartbeats' },
   { id: 'learning', label: 'Learning' },
+  { id: 'resilience', label: 'Resilience' },
   { id: 'security', label: 'Security & Bench' },
 ];
 
@@ -525,6 +526,7 @@ function SystemsPanel({ memory, plugins, learning, security, bench, agents, onRe
   const [activeTab, setActiveTab] = useState('memory');
   const [collapsed, setCollapsed] = useState(false);
   const [heartbeatStatus, setHeartbeatStatus] = useState(null);
+  const [resilience, setResilience] = useState(null);
 
   const fetchHeartbeatStatus = useCallback(async () => {
     try {
@@ -536,14 +538,29 @@ function SystemsPanel({ memory, plugins, learning, security, bench, agents, onRe
     }
   }, []);
 
+  const fetchResilience = useCallback(async () => {
+    try {
+      const res = await fetch('/api/resilience');
+      const data = await res.json();
+      setResilience(data);
+    } catch (err) {
+      console.error('Failed to fetch resilience:', err);
+    }
+  }, []);
+
   useEffect(() => {
     fetchHeartbeatStatus();
   }, [fetchHeartbeatStatus]);
 
+  useEffect(() => {
+    fetchResilience();
+  }, [fetchResilience]);
+
   const handleRefresh = useCallback(() => {
     if (onRefresh) onRefresh(activeTab);
     if (activeTab === 'heartbeats') fetchHeartbeatStatus();
-  }, [activeTab, onRefresh, fetchHeartbeatStatus]);
+    if (activeTab === 'resilience') fetchResilience();
+  }, [activeTab, onRefresh, fetchHeartbeatStatus, fetchResilience]);
 
   const handleHeartbeatStart = async (agentId) => {
     try {
@@ -614,6 +631,7 @@ function SystemsPanel({ memory, plugins, learning, security, bench, agents, onRe
         onRefresh: fetchHeartbeatStatus,
       }),
       activeTab === 'learning' && h(LearningTab, { data: learning, onRefresh: handleRefresh }),
+      activeTab === 'resilience' && h(ResilienceTab, { data: resilience }),
       activeTab === 'security' && h(SecurityBenchTab, { security, bench, onRefresh: handleRefresh })
     )
   );
