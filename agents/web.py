@@ -7,8 +7,11 @@ import json
 import logging
 import os
 import secrets
+import statistics
 import time
 import sys
+from collections import defaultdict
+from datetime import date, datetime
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Optional
@@ -971,6 +974,98 @@ def _load_mcp_config():
             logger.info(f"Loaded {len(item['value'])} MCP servers from settings")
             return
     logger.info("No MCP servers configured in settings")
+
+
+# ── Admin Charts endpoint ──────────────────────────────────────
+
+@app.get("/api/admin/stats", dependencies=[Depends(_admin_guard)])
+async def admin_stats():
+    """Aggregated stats for admin charts: latency, usage, success rate."""
+    interactions = getattr(orch.learning, 'interactions', [])
+    samples = getattr(orch.bench, 'samples', [])
+
+    total = len(interactions)
+    successes = sum(1 for r in interactions if r.success)
+    success_rate = successes / total if total else 0.0
+    latencies = [r.latency for r in interactions if r.success and r.latency > 0]
+    avg_latency = statistics.mean(latencies) if latencies else 0.0
+
+    unique_agents = set(s.agent_id for s in samples) | set(r.agent_id for r in interactions)
+
+    agents_list = []
+    for aid in sorted(unique_agents):
+        results = orch.bench.get_results(aid, last_n=100) if hasattr(orch.bench, 'get_results') else []
+        if results:
+            r = results[0]
+            agents_list.append({
+                "agent_id": aid,
+                "samples": r.samples,
+                "success_rate": round(r.success_rate, 3),
+                "p50_latency": round(r.median_latency, 2),
+                "p95_latency": round(r.p95_latency, 2),
+                "avg_latency": round(r.mean_latency, 2),
+                "model": r.model,
+            })
+        else:
+            agent_records = [x for x in interactions if x.agent_id == aid]
+            if agent_records:
+                agent_lat = [x.latency for x in agent_records if x.success and x.latency > 0]
+                agents_list.append({
+                    "agent_id": aid,
+                    "samples": len(agent_records),
+                    "success_rate": round(sum(1 for x in agent_records if x.success) / len(agent_records), 3),
+                    "p50_latency": round(statistics.median(agent_lat), 2) if len(agent_lat) > 1 else round(agent_lat[0], 2) if agent_lat else 0,
+                    "p95_latency": 0,
+                    "avg_latency": round(statistics.mean(agent_lat), 2) if agent_lat else 0,
+                    "model": "",
+                })
+
+    daily_map = defaultdict(lambda: {"total": 0, "successful": 0, "failed": 0, "latencies": []})
+    for r in interactions:
+        d = date.fromtimestamp(r.timestamp).isoformat()
+        daily_map[d]["total"] += 1
+        if r.success:
+            daily_map[d]["successful"] += 1
+            if r.latency > 0:
+                daily_map[d]["latencies"].append(r.latency)
+        else:
+            daily_map[d]["failed"] += 1
+    daily = []
+    for d in sorted(daily_map.keys()):
+        entry = daily_map[d]
+        daily.append({
+            "date": d,
+            "total": entry["total"],
+            "successful": entry["successful"],
+            "failed": entry["failed"],
+            "avg_latency": round(statistics.mean(entry["latencies"]), 2) if entry["latencies"] else 0,
+        })
+
+    channels = defaultdict(int)
+    for r in interactions:
+        ch = (r.metadata or {}).get("channel", "unknown")
+        channels[ch] += 1
+
+    error_types = {}
+    if hasattr(orch.learning, 'get_failure_patterns'):
+        for aid in unique_agents:
+            patterns = orch.learning.get_failure_patterns(aid)
+            for err, count in patterns:
+                error_types[err] = error_types.get(err, 0) + count
+    error_types_list = sorted(error_types.items(), key=lambda x: -x[1])[:10]
+
+    return _nocache_json({
+        "overview": {
+            "total_interactions": total,
+            "success_rate": round(success_rate, 3),
+            "avg_latency": round(avg_latency, 2),
+            "agents_tracked": len(unique_agents),
+        },
+        "agents": agents_list,
+        "daily": daily[-30:],
+        "channels": dict(channels),
+        "error_types": [[k, v] for k, v in error_types_list],
+    })
 
 
 # ── OAuth endpoints ──────────────────────────────────────────────
