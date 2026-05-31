@@ -42,9 +42,9 @@ python -m pytest tests/ -v          # 568 passed, 8 skipped
 | Horizon | Total | ✅ Done | S total | S done | % |
 |---------|-------|---------|---------|--------|---|
 | **H1–H4 + Sprint 0 + Cross-cutting + Sec + Bugs** | 67 | **67** | 248 | **248** | **100%** |
-| **H5 Next Wave** (P2–P3) | 11 | **3** | 89 | **16** | **18%** |
+| **H5 Next Wave** (P2–P3) | 17 | **3** | 128 | **16** | **12.5%** |
 | **H6 Jarvis Autonom** (P1) | 7 | **7** | 60 | **60** | **100%** |
-| **Total general** | **82** | **76** | **384** | **321** | **84%** |
+| **Total general** | **88** | **76** | **423** | **321** | **75.8%** |
 
 **Test count:** 715 passed, 8 skipped (+ MCU audit: router rewrite + OS observer)
 
@@ -95,6 +95,12 @@ python -m pytest tests/ -v          # 568 passed, 8 skipped
 | H5.9 ✅ | **Resilience Tab in Main HUD** — tab live în SystemsPanel cu retry metrics + circuit breaker states, endpoint public `/api/resilience` | 3 | H5.5 | 0.8 ✅ |
 | H5.10 ✅ | **Live Data Wiring** — Memory, Plugins, Learning, Security tabs trec de la mock static la endpoint-uri live (`/memory/stats`, `/api/plugins`, `/learning/stats`, `/security/status`, `/bench/stats`) | 5 | H5.9 | 0.8 ✅ |
 | H5.11 | **Missing Widgets** — Ticker feed live, OAuth status tab, Oracle tab, Tasks widget; CognitionPanel live | 5 | H5.10 | 0.8 |
+| H5.12 | **Secured Shell Task Executor** — real shell execution pentru `restart_service` în sandbox/`plugin_gate` după aprobare | 5 | H6.7 | 0.8 |
+| H5.13 | **Proactive Event Watchers** — watcheri autonomi email, calendar, finanțe, health (trigger layer) | 8 | H6.7 | 0.8 |
+| H5.14 | **Retrieval Fusion Engine** — Reciprocal Rank Fusion / weighted scoring îmbinând Qdrant + Neo4j | 5 | H3.1, H3.2 | 0.8 |
+| H5.15 | **Daily Reflection & Graph Consolidation** — auto-reflecție nocturnă, lessons learned store promovat în Neo4j | 8 | H6.6, H3.2 | 0.8 |
+| H5.16 | **Sentence-level TTS & Audio Barge-in** — redare TTS segmentată + oprire instantă la wake word (latență <1.5s) | 8 | H1.1, H5.5 | 0.8 |
+| H5.17 | **Batch & Cache Embeddings Pipeline** — pipeline ingestie optimizat cu paralelizare, rate limit și local cache | 5 | H5.5 | 0.8 |
 
 ---
 
@@ -248,6 +254,42 @@ More plugins: notificări SMS, CRM sync, social media posting, IoT control.
 ### H5.8 — Agent Marketplace / Skill Sharing (S:13, Dep: H5.6)
 Catalog de skills partajabile, import dintr-un registry, versionare skills, publish workflow.
 **AC:** Un skill scris de altcineva se instalează cu o comandă.
+
+### H5.9 ✅ — Resilience Tab in Main HUD (S:3, Dep: H5.5)
+Adăugare tab în SystemsPanel din HUD cu starea circuit breakerelor și retry metrics (endpoint `/api/resilience`).
+**AC:** Interfața arată live degradarea grațioasă a conexiunilor.
+
+### H5.10 ✅ — Live Data Wiring (S:5, Dep: H5.9)
+Conectare taburi Memory, Plugins, Learning, Security la endpoint-uri reale din backend în loc de mock.
+**AC:** Toate graficele și listele de securitate din HUD prezintă datele reale din DB/Logs.
+
+### H5.11 — Missing Widgets (S:5, Dep: H5.10)
+Ticker feed în HUD, status OAuth integrat, widget de task-uri curente și CognitionPanel funcțional.
+**AC:** Toate widgeturile din interfață sunt active și interactive.
+
+### H5.12 — Secured Shell Task Executor (S:5, Dep: H6.7)
+Implementare handler real și securizat pentru `restart_service` în executor, rulând sub Docker sandbox sau sub permisiuni stricte `plugin_gate`.
+**AC:** Aprobarea unui restart din Telegram execută comanda shell reală în siguranță, în loc de fallback LLM.
+
+### H5.13 — Proactive Event Watchers (S:8, Dep: H6.7)
+Event-watchers autonomi în background pentru emailuri marcate/importante, calendar updates, modificări solduri (Gecko) și indicatori de sănătate (Hercules).
+**AC:** Evenimentele externe sunt observate, injectând alerte/taskuri automate în coada de autonomie.
+
+### H5.14 — Retrieval Fusion Engine (S:5, Dep: H3.1, H3.2)
+Logică de fuziune (RRF / weighted scoring) care combină căutările semantice (Qdrant) cu Knowledge Graph-ul (Neo4j).
+**AC:** Răspunsurile îmbină instant contextul conversațional cu relațiile factuale din graf.
+
+### H5.15 — Daily Reflection & Graph Consolidation (S:8, Dep: H6.6, H3.2)
+Buclă nocturnă autonomă de consolidare care reflectă asupra chat-urilor zilei, extrage highlights și lecții noi, stocându-le ca noduri/relații în Neo4j.
+**AC:** Knowledge Graph-ul se extinde organic după fiecare noapte prin auto-reflecție.
+
+### H5.16 — Sentence-level TTS & Audio Barge-in (S:8, Dep: H1.1, H5.5)
+Pipeline de voce optimizat: streaming audio fragmentat la nivel de propoziție și barge-in instant la wake word în timpul redării.
+**AC:** Latența de prim sunet scade sub 1.5s, iar redarea se oprește la detectarea vocii utilizatorului.
+
+### H5.17 — Batch & Cache Embeddings Pipeline (S:5, Dep: H5.5)
+Sistem de procesare batch pentru embedder (`ingestion/embedder.py`) cu caching pe disc, rezistent la API rate-limits.
+**AC:** Ingestia masivă pentru digital twin-ul Howard decurge fluid și stabil.
 
 ---
 

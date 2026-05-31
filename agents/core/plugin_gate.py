@@ -152,6 +152,16 @@ BUILTIN_PLUGINS = {
         allowed_domains=["api.github.com"],
         agents_served=["oracle"],
     ),
+    "system-control": PluginManifest(
+        id="system-control",
+        name="System Control",
+        version="0.1.0",
+        description="Restart/recover local host services (allowlisted argv, local-only, no network)",
+        network_access=NetworkAccess.NONE,
+        data_scope=DataScope.LOCAL_ONLY,
+        allowed_domains=[],
+        agents_served=["steve", "ultron", "jarvis"],
+    ),
 }
 
 

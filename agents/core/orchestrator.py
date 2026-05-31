@@ -112,6 +112,8 @@ class Orchestrator:
         )
         # Proactive OS Observer — the trigger layer that feeds the queue.
         self.observer: Optional[ProactiveObserver] = None
+        # Proactive Event Watcher — personal event trigger layer.
+        self.event_watcher = None
         self._autonomy_task: Optional[asyncio.Task] = None
 
     async def load_agents(self):
@@ -217,7 +219,23 @@ class Orchestrator:
             self.autonomy_prefs.initialize()
             self.autonomy.executor = self._build_autonomy_executor().execute
             self.observer = ProactiveObserver(self.autonomy, probes=default_probes())
-            logger.info("Autonomy queue + executor + observer initialized")
+
+            # Setup personal event probes using active plugins (Antigravity watchers)
+            from .autonomy.watchers import EventWatcher, EmailProbe, CalendarProbe, FinanceProbe, HealthProbe
+            gmail = self.plugins.get("gmail")
+            calendar = self.plugins.get("google-calendar")
+            balance = self.plugins.get("balance")
+            health = self.plugins.get("apple-health")
+
+            event_probes = [
+                EmailProbe(gmail_plugin=gmail, priority_senders=["andrei"]),
+                CalendarProbe(calendar_plugin=calendar),
+                FinanceProbe(balance_plugin=balance),
+                HealthProbe(health_plugin=health),
+            ]
+            self.event_watcher = EventWatcher(self.autonomy, event_probes)
+
+            logger.info("Autonomy queue + executor + observer + event_watcher initialized")
         except Exception as e:
             logger.warning(f"Autonomy init failed: {e}")
 
@@ -319,6 +337,13 @@ class Orchestrator:
                 # Sample the host and turn state changes into gated tasks.
                 if self.observer and self.get_setting("system.observer_enabled", True):
                     await self.observer.observe()
+                # Sample personal events (Antigravity watchers)
+                if self.event_watcher and self.get_setting("system.watchers_enabled", True):
+                    await self.event_watcher.observe()
+                # Sync error/problem log to BACKLOG.md (Antigravity error backlog logger)
+                if self.get_setting("system.error_backlog_sync_enabled", True):
+                    from .autonomy.error_logger import sync_problems_to_backlog
+                    sync_problems_to_backlog()
             except Exception as e:
                 logger.warning(f"Autonomy tick failed: {e}")
 
@@ -341,6 +366,18 @@ class Orchestrator:
             executor.register(kw, _research)
         for kw in ("summarize", "analyze", "review", "draft", "plan", "prepare"):
             executor.register(kw, _llm)
+
+        # Safe system recovery remediation handler (H6 / Antigravity recovery)
+        from .autonomy.remediation import RemediationRunner
+        runner = RemediationRunner(permission_gate=self.permission_gate, audit=self.audit)
+
+        async def _restart_service(task):
+            service = (task.payload or {}).get("service")
+            agent = getattr(task, "agent", "steve")
+            return await runner.restart(service, agent=agent)
+
+        executor.register("restart_service", _restart_service)
+
         return executor
 
     async def _run_daily_digest(self, kind: str):

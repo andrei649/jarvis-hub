@@ -31,7 +31,7 @@ Dacă trebuie să atingi un fișier din lane-ul meu, scrie un rând în tabla de
 | Agent | Lucrez la | Fișiere atinse | De la |
 |---|---|---|---|
 | Claude | autonomy/observer + routing (livrat) | `core/router.py`, `core/autonomy/observer.py` | 2026-05-31 |
-| Antigravity | _(scrie aici ce începi)_ | | |
+| Antigravity | recovery + event-watchers + error-logger | `core/plugin_gate.py`, `core/autonomy/remediation.py`, `core/autonomy/watchers.py`, `core/autonomy/error_logger.py` | 2026-05-31 |
 
 ## Cum lucrezi tu (Antigravity, doar local)
 1. **Sync întâi** (cere-i lui Andrei un Sync în GitHub Desktop) ca să pornești de pe ultimul `main`.
