@@ -90,6 +90,25 @@ const STRINGS = {
   'mcp.connect_success':'Conexiune reușită',
   'mcp.disconnect_success':'Deconectat',
 
+  'cat.charts':      'Charts',
+
+  'desc.charts':     'Statistici utilizare, latență și succes rate pentru toți agenții.',
+
+  'charts.total_int':    'Interacțiuni',
+  'charts.success_rate': 'Success Rate',
+  'charts.avg_latency':  'Latență medie',
+  'charts.agents':       'Agenți monitorizați',
+  'charts.no_data':      'Nicio interacțiune înregistrată încă.',
+  'charts.success':      'Succes',
+  'charts.failed':       'Eșec',
+  'charts.latency':      'Latență',
+  'charts.agent':        'Agent',
+  'charts.calls':        'apeluri',
+  'charts.sec':          's',
+  'charts.channel':      'Canale',
+  'charts.errors':       'Erori frecvente',
+  'charts.daily_vol':    'Volum zilnic',
+
   'desc.oracle':    'Pipeline Weaver — monitorizează Claude, detectează conflicte, sincronizează GitHub.',
 
   'oracle.title':         'Pipeline Weaver · Status',
