@@ -1366,6 +1366,8 @@ async def get_agent_memory(agent_id: str):
 @app.get("/plugins")
 async def list_plugins():
     """Return all registered plugins with status."""
+    if orch is None or orch.permission_gate is None:
+        return _nocache_json({"plugins": [], "total": 0})
     plugins = []
     for pid, manifest in orch.permission_gate.plugins.items():
         plugins.append({
@@ -1451,7 +1453,11 @@ async def security_status():
 @app.get("/bench/stats")
 async def bench_stats():
     """Return benchmark statistics."""
-    stats = orch.bench.get_summary() if hasattr(orch.bench, 'get_summary') else {}
+    try:
+        summary = orch.bench.get_summary()
+        stats = {k: summary[k] for k in summary} if isinstance(summary, dict) else {}
+    except Exception:
+        stats = {}
     return _nocache_json({
         "latency": {
             "p50": stats.get("p50", 4.2),

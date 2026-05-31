@@ -564,7 +564,7 @@ function SystemsPanel({ agents, onRefresh, onPluginToggle }) {
 
   const fetchPlugins = useCallback(async () => {
     try {
-      const res = await fetch('/api/plugins');
+      const res = await fetch('/plugins');
       setPluginsData(await res.json());
     } catch (err) { console.error('Failed to fetch plugins:', err); }
   }, []);

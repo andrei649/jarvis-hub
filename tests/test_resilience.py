@@ -184,8 +184,7 @@ async def test_resilient_call_records_metrics():
     assert stats[key]["avg_latency"] > 0
 
 
-@pytest.mark.asyncio
-async def test_resilience_public_endpoint():
+def test_resilience_public_endpoint():
     """Test that /api/resilience returns expected structure without auth."""
     from fastapi.testclient import TestClient
     from agents import web
@@ -193,5 +192,8 @@ async def test_resilience_public_endpoint():
     resp = client.get("/api/resilience")
     assert resp.status_code == 200
     data = resp.json()
+    assert isinstance(data, dict)
     assert "metrics" in data
+    assert isinstance(data["metrics"], dict)
     assert "circuit_breakers" in data
+    assert isinstance(data["circuit_breakers"], dict)
