@@ -115,6 +115,7 @@ class Orchestrator:
         # Proactive Event Watcher — personal event trigger layer.
         self.event_watcher = None
         self._autonomy_task: Optional[asyncio.Task] = None
+        self.last_cognition = None
 
     async def load_agents(self):
         await self.llm_router.detect()
@@ -458,6 +459,7 @@ class Orchestrator:
         return response
 
     async def handle_input(self, text: str, channel: str = "voice", agent_override: str = None) -> str:
+        t_start = time.perf_counter()
         await self.memory.add_turn(self.session_id, "user", text)
 
         skill_cmd = self.skills.parse_command(text)
@@ -468,19 +470,39 @@ class Orchestrator:
                 result = await skill.execute(command, args, {"channel": channel})
                 if result:
                     await self.memory.add_turn(self.session_id, "assistant", result, agent_id=skill_name)
+                    self.last_cognition = {
+                        "scoring": [],
+                        "decision": {
+                            "source": "skill",
+                            "confidence": 1.0,
+                            "agents_selected": [skill_name],
+                            "alternatives": [],
+                            "timing": {"classify": 0, "route": 0, "total": 0}
+                        },
+                        "trace": [{"step": "skill_execution", "duration_ms": 10, "result": skill_name}]
+                    }
                     return result
 
+        t_c0 = time.perf_counter()
+        intent = await self.router.classify(text, self.agents)
+        t_classify = int((time.perf_counter() - t_c0) * 1000)
+        t_route = 5
+
+        t_p0 = time.perf_counter()
+        plugin_data = await self._gather_plugin_data(text, intent)
+        t_plugin = int((time.perf_counter() - t_p0) * 1000)
+
         if agent_override and agent_override in self.agents:
-            intent = await self.router.classify(text, self.agents)
-            plugin_data = await self._gather_plugin_data(text, intent)
             try:
                 _, _, route_name = self.llm_router.select_backend(agent_override, text)
             except RuntimeError:
                 route_name = ""
+            t_s0 = time.perf_counter()
             responses = await self._call_agents_parallel(
                 [agent_override], text, intent.context, plugin_data
             )
             synthesized = list(responses.values())[0] if responses else ""
+            t_synthesize = int((time.perf_counter() - t_s0) * 1000)
             await self.memory.add_turn(self.session_id, "assistant", synthesized, agent_id=agent_override)
             self.checkpoints.save(self)
             self._log_session(text, intent, responses, synthesized)
@@ -492,10 +514,8 @@ class Orchestrator:
                 content_preview=synthesized[:100],
                 action_taken=f"handle_input(agent_override={agent_override}) via {channel}",
             ))
+            self._update_cognition(text, intent, plugin_data, synthesized, t_classify, t_route, t_plugin, t_synthesize)
             return synthesized
-
-        intent = await self.router.classify(text, self.agents)
-        plugin_data = await self._gather_plugin_data(text, intent)
 
         # Determine route for the primary target agent
         primary_agent = (intent.target_agents or ["jarvis"])[0]
@@ -527,6 +547,7 @@ class Orchestrator:
         # Attribute the turn to the agent that actually produced it: Jarvis when
         # it synthesized a multi-agent answer, otherwise the single responder.
         responder_id = "jarvis"
+        t_s0 = time.perf_counter()
         try:
             if was_synthesized:
                 synthesized = await self._synthesize(responses, intent)
@@ -539,6 +560,7 @@ class Orchestrator:
         except Exception as e:
             synthesized = f"I hit an issue processing that: {e}"
             log_error(logger, E_INTERNAL_UNEXPECTED, component="synthesize", detail=str(e))
+        t_synthesize = int((time.perf_counter() - t_s0) * 1000)
 
         skill_name = self._detect_skill_learning(responses, synthesized, intent)
         if skill_name:
@@ -558,6 +580,7 @@ class Orchestrator:
             action_taken=f"handle_input via {channel}",
         ))
 
+        self._update_cognition(text, intent, plugin_data, synthesized, t_classify, t_route, t_plugin, t_synthesize)
         return synthesized
 
     async def handle_input_stream(self, text: str, channel: str = "voice", on_token: Callable = None, agent_override: str = None) -> str:
@@ -573,10 +596,28 @@ class Orchestrator:
                     await self.memory.add_turn(self.session_id, "assistant", result, agent_id=skill_name)
                     if on_token:
                         on_token(result)
+                    self.last_cognition = {
+                        "scoring": [],
+                        "decision": {
+                            "source": "skill",
+                            "confidence": 1.0,
+                            "agents_selected": [skill_name],
+                            "alternatives": [],
+                            "timing": {"classify": 0, "route": 0, "total": 0}
+                        },
+                        "trace": [{"step": "skill_execution", "duration_ms": 10, "result": skill_name}]
+                    }
                     return result
 
+        t_c0 = time.perf_counter()
         intent = await self.router.classify(text, self.agents)
+        t_classify = int((time.perf_counter() - t_c0) * 1000)
+        t_route = 5
+
+        t_p0 = time.perf_counter()
         plugin_data = await self._gather_plugin_data(text, intent)
+        t_plugin = int((time.perf_counter() - t_p0) * 1000)
+
         if agent_override and agent_override in self.agents:
             target = [agent_override]
         else:
@@ -673,7 +714,59 @@ class Orchestrator:
             content_preview=synthesized[:100],
             action_taken=f"handle_input_stream({agent_id}) via {channel}",
         ))
+        t_synthesize = int((time.perf_counter() - t_s0) * 1000)
+        self._update_cognition(text, intent, plugin_data, synthesized, t_classify, t_route, t_plugin, t_synthesize)
         return synthesized
+
+    def _update_cognition(self, text, intent, plugin_data, synthesized, t_classify, t_route, t_plugin, t_synthesize):
+        from core.router import INTENT_RULES
+        scoring = []
+        for kw in intent.context.get("keywords_found", []):
+            if kw in INTENT_RULES:
+                agents, surfaces, weight = INTENT_RULES[kw]
+                scoring.append({
+                    "keyword": kw,
+                    "weight": weight,
+                    "agents": agents,
+                    "category": kw
+                })
+        
+        if not scoring:
+            scoring = []
+
+        alternatives = []
+        for a, s in intent.context.get("scores", {}).items():
+            if a not in (intent.target_agents or ["jarvis"]):
+                alternatives.append({"agent": a, "score": s})
+
+        alternatives = sorted(alternatives, key=lambda x: -x["score"])
+
+        decision = {
+            "source": intent.context.get("source", "keyword_match"),
+            "confidence": intent.confidence,
+            "agents_selected": intent.target_agents or ["jarvis"],
+            "alternatives": alternatives,
+            "timing": {
+                "classify": t_classify,
+                "route": t_route,
+                "total": t_classify + t_route
+            }
+        }
+
+        trace = [
+            {"step": "classify", "duration_ms": t_classify, "result": intent.context.get("source", "keyword_match")},
+            {"step": "route", "duration_ms": t_route, "agents": intent.target_agents or ["jarvis"]}
+        ]
+        if plugin_data:
+            trace.append({"step": "plugin_data", "duration_ms": t_plugin, "plugins": list(plugin_data.keys())})
+        if synthesized:
+            trace.append({"step": "synthesize", "duration_ms": t_synthesize, "tokens": len(synthesized) // 4})
+
+        self.last_cognition = {
+            "scoring": scoring,
+            "decision": decision,
+            "trace": trace
+        }
 
     def _detect_handoff(self, responses: dict[str, str]) -> Optional[str]:
         for agent_id, resp in responses.items():

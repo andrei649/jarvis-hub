@@ -118,7 +118,15 @@ model: 'google/gemma-4-31b-a4b',
     tasks = d.tasks || [];
   } catch {}
 
-  return { agents, sys, weather, calendar, notifications, tasks, lmOnline };
+  // Fetch /ticker
+  let ticker = [];
+  try {
+    const r = await fetch('/ticker');
+    const d = await r.json();
+    ticker = d.ticker || [];
+  } catch {}
+
+  return { agents, sys, weather, calendar, notifications, tasks, lmOnline, ticker };
 }
 
 // ─── v0.3 Cognition Data ─────────────────────────────────────────────────

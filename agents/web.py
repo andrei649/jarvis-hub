@@ -199,7 +199,10 @@ _start_time = time.time()
 
 # Live polling endpoints return per-request data (system stats, agent status);
 # tell the browser and any intermediary not to cache stale snapshots (IMP-2).
-_NO_STORE_PATHS = {"/status", "/dashboard", "/api/agents", "/tasks", "/ticker"}
+_NO_STORE_PATHS = {
+    "/status", "/dashboard", "/api/agents", "/tasks", "/ticker",
+    "/api/cognition", "/api/oauth/status", "/api/oracle/status", "/api/oracle/conflicts"
+}
 
 
 @app.middleware("http")
@@ -1475,6 +1478,34 @@ async def oracle_resolve_conflicts():
 
 
 # ── v0.3 Cognition Release endpoints ─────────────────────────────
+
+
+@app.get("/api/cognition")
+async def get_cognition():
+    """Return the last dynamic routing/cognition context."""
+    cog = getattr(orch, "last_cognition", None) if orch else None
+    if not cog:
+        from core.router import INTENT_RULES
+        scoring = []
+        for kw, rule in list(INTENT_RULES.items())[:5]:
+            scoring.append({
+                "keyword": kw,
+                "weight": rule[2],
+                "agents": rule[0],
+                "category": kw
+            })
+        cog = {
+            "scoring": scoring,
+            "decision": {
+                "source": "standby",
+                "confidence": 1.0,
+                "agents_selected": ["jarvis"],
+                "alternatives": [],
+                "timing": {"classify": 0, "route": 0, "total": 0}
+            },
+            "trace": []
+        }
+    return _nocache_json(cog)
 
 
 @app.get("/memory/stats")
