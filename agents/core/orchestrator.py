@@ -26,6 +26,8 @@ from .learning.loop import LearningLoop
 from .skills.loader import SkillLoader
 from .skills.importer import SkillImporter
 from .mcp.client import MCPManager
+from .autonomy import AutonomyWorker, TaskQueue, AutonomyPolicy
+from .autonomy.inbox import build_decision_card
 from .sandbox import Sandbox
 from .bench import LatencyBenchmark
 from .plugin_gate import PermissionGate
@@ -99,6 +101,10 @@ class Orchestrator:
         self._runtime_settings: dict = {}
         self._channel_sessions: dict[str, str] = {}
         self._settings_watcher_task: Optional[asyncio.Task] = None
+        # ── Autonomy / Proactive Cortex (H6.1–H6.3) ──
+        self.autonomy_queue = TaskQueue()
+        self.autonomy = AutonomyWorker(self.autonomy_queue, policy=AutonomyPolicy())
+        self._autonomy_task: Optional[asyncio.Task] = None
 
     async def load_agents(self):
         await self.llm_router.detect()
@@ -197,6 +203,13 @@ class Orchestrator:
             api_key=os.environ.get("N8N_API_KEY", ""),
         )
 
+        # Autonomy queue — durable self-tasking store (H6.1)
+        try:
+            self.autonomy_queue.initialize()
+            logger.info("Autonomy queue initialized")
+        except Exception as e:
+            logger.warning(f"Autonomy queue init failed: {e}")
+
         self.skills.discover()
         logger.info(f"Skills loaded: {list(self.skills.skills.keys())}")
 
@@ -237,6 +250,39 @@ class Orchestrator:
             await asyncio.sleep(30)
             self.load_runtime_settings()
 
+    # ── Autonomy / Proactive Cortex (H6.1–H6.3) ────────────────────
+    def _wire_autonomy(self):
+        """Wire the decision inbox to Telegram if a bot + owner chat are set."""
+        owner = os.environ.get("AUTONOMY_OWNER_CHAT_ID", "") or str(
+            self.get_setting("autonomy.owner_chat_id", "") or ""
+        )
+        tg = self.channels.get("telegram")
+        if tg and owner and hasattr(tg, "send_card"):
+            async def notifier(task):
+                return await tg.send_card(int(owner), build_decision_card(task))
+            self.autonomy.notifier = notifier
+            tg.on_callback = self._on_autonomy_callback
+            logger.info("Autonomy decision inbox wired to Telegram")
+
+    async def _on_autonomy_callback(self, task_id: int, action: str, **kwargs):
+        """Handle a decision-inbox button tap from Telegram."""
+        try:
+            await self.autonomy.apply_decision(task_id, action, decided_by="telegram")
+            return f"Task #{task_id}: {action}"
+        except Exception as e:
+            logger.warning(f"Autonomy decision callback failed: {e}")
+            return None
+
+    async def _autonomy_loop(self):
+        """Periodically run approved autonomy tasks (the self-tasking worker)."""
+        while True:
+            interval = int(self.get_setting("system.autonomy_tick", 60) or 60)
+            await asyncio.sleep(max(15, interval))
+            try:
+                await self.autonomy.tick()
+            except Exception as e:
+                logger.warning(f"Autonomy tick failed: {e}")
+
     async def register_channel(self, channel: ChannelAdapter):
         self.channels[channel.channel_id] = channel
         logger.info(f"Channel registered: {channel.channel_id}")
@@ -249,6 +295,8 @@ class Orchestrator:
                 log_error(logger, E_CHANNEL_START_FAIL, name=cid, detail=str(e))
         self.heartbeat_scheduler.start(self)
         self._settings_watcher_task = asyncio.create_task(self._settings_watcher_loop())
+        self._wire_autonomy()
+        self._autonomy_task = asyncio.create_task(self._autonomy_loop())
         if hasattr(self, 'oracle_bridge'):
             self.oracle_bridge.start_watcher()
         logger.info(f"Channels started: {list(self.channels.keys())}")

@@ -1,0 +1,19 @@
+"""
+autonomy — Proactive Cortex (ORIZONT 6).
+
+MVP "Continuous Jarvis": self-tasking queue (H6.1) + risk gate / autonomy dial
+(H6.3) + decision inbox (H6.2). Ambient-agent model: trigger → queue → gating →
+inbox → execute. NOT an open-ended auto-prompt loop (anti-AutoGPT).
+"""
+
+from .policy import AutonomyPolicy, Decision, RiskTier, Outcome
+from .queue import Task, TaskQueue, TaskStatus, TaskQueueError
+from .worker import AutonomyWorker, InterruptBudget
+from .inbox import build_decision_card, parse_callback_data, DECISION_ACTIONS
+
+__all__ = [
+    "AutonomyPolicy", "Decision", "RiskTier", "Outcome",
+    "Task", "TaskQueue", "TaskStatus", "TaskQueueError",
+    "AutonomyWorker", "InterruptBudget",
+    "build_decision_card", "parse_callback_data", "DECISION_ACTIONS",
+]

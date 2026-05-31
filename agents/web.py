@@ -712,6 +712,71 @@ async def learning_promote(body: PromoteRequest):
     })
 
 
+# ── Autonomy / Proactive Cortex (H6.1–H6.3) ─────────────────────
+
+
+class AutonomyTaskBody(BaseModel):
+    agent: str
+    kind: str
+    title: str
+    payload: Optional[dict] = None
+    origin: str = "generated"
+
+
+class AutonomyDecisionBody(BaseModel):
+    action: str            # accept / edit / reject / defer
+    payload: Optional[dict] = None
+
+
+@app.get("/autonomy/tasks", dependencies=[Depends(_admin_guard)])
+async def autonomy_list(status: str = None, origin: str = None, limit: int = 100):
+    """List autonomy tasks, optionally filtered by status/origin."""
+    if not orch:
+        return JSONResponse({"error": "not initialized"}, status_code=503)
+    tasks = orch.autonomy_queue.list(status=status, origin=origin, limit=limit)
+    return _nocache_json({"tasks": [t.to_dict() for t in tasks], "total": len(tasks)})
+
+
+@app.get("/autonomy/status", dependencies=[Depends(_admin_guard)])
+async def autonomy_status():
+    """Queue stats + remaining interruption budget."""
+    if not orch:
+        return JSONResponse({"error": "not initialized"}, status_code=503)
+    return _nocache_json({
+        "stats": orch.autonomy_queue.stats(),
+        "interrupt_budget_remaining": orch.autonomy.budget.remaining(),
+        "interrupt_budget_per_day": orch.autonomy.budget.per_day,
+        "pending_decisions": [t.to_dict() for t in orch.autonomy_queue.pending_decisions()],
+    })
+
+
+@app.post("/autonomy/tasks", dependencies=[Depends(_admin_guard)])
+async def autonomy_submit(body: AutonomyTaskBody):
+    """Submit a task to the autonomy worker (gated through the risk policy)."""
+    if not orch:
+        return JSONResponse({"error": "not initialized"}, status_code=503)
+    task = await orch.autonomy.submit(
+        agent=body.agent.strip().lower(), kind=body.kind.strip(),
+        title=body.title, payload=body.payload, origin=body.origin,
+    )
+    return _nocache_json({"ok": True, "task": task.to_dict()})
+
+
+@app.post("/autonomy/tasks/{task_id}/decision", dependencies=[Depends(_admin_guard)])
+async def autonomy_decide(task_id: int, body: AutonomyDecisionBody):
+    """Resolve a blocked task (accept/edit/reject/defer)."""
+    if not orch:
+        return JSONResponse({"error": "not initialized"}, status_code=503)
+    from core.autonomy.queue import TaskQueueError
+    try:
+        task = await orch.autonomy.apply_decision(
+            task_id, body.action.strip().lower(), decided_by="admin", payload=body.payload,
+        )
+    except TaskQueueError as e:
+        return JSONResponse({"error": str(e)}, status_code=409)
+    return _nocache_json({"ok": True, "task": task.to_dict()})
+
+
 # ── Admin panel ──────────────────────────────────────────────────
 
 
