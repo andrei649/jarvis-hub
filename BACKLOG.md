@@ -43,10 +43,10 @@ python -m pytest tests/ -v          # 568 passed, 8 skipped
 |---------|-------|---------|---------|--------|---|
 | **H1–H4 + Sprint 0 + Cross-cutting + Sec + Bugs** | 67 | **67** | 248 | **248** | **100%** |
 | **H5 Next Wave** (P2–P3) | 8 | **0** | 76 | **0** | **0%** |
-| **H6 Jarvis Autonom** (P1) | 6 | **3** | 55 | **29** | **53%** |
-| **Total general** | **81** | **70** | **379** | **277** | **73%** |
+| **H6 Jarvis Autonom** (P1) | 6 | **6** | 55 | **55** | **100%** |
+| **Total general** | **81** | **73** | **379** | **303** | **80%** |
 
-**Test count:** 624 passed, 8 skipped (MVP „Continuous Jarvis" = H6.1+H6.3+H6.2 livrat)
+**Test count:** 651 passed, 8 skipped (ORIZONT 6 complet: H6.1–H6.6)
 
 ---
 
@@ -67,12 +67,12 @@ python -m pytest tests/ -v          # 568 passed, 8 skipped
 | H6.1 ✅ | **Autonomy Loop & Self-Tasking Queue** — coadă SQLite cu state-machine (`proposed→approved→running→done\|failed\|blocked`), worker pe loop, retry cap 3, 2 cozi manual/generated. `core/autonomy/queue.py` + `worker.py`, endpoints `/autonomy/*` | 13 | H3.5 | ✅ task trece prin tot ciclul; eșec ×3 → `failed`, nu reintră |
 | H6.2 ✅ | **Decision Inbox pe Telegram** — card cu butoane inline Aprob/Editez/Resping/Amân pe task-uri blocate; buget ≤4 push/zi; rest în batch. `core/autonomy/inbox.py` + callback în `channels/telegram.py` | 8 | H6.1, H1.2 | ✅ task money/ireversibil → push cu 4 butoane → „Aprob" → running |
 | H6.3 ✅ | **Risk Gate & Autonomy Dial** — `policy.py`: 4 tiers (read_only/reversible/external/irreversible_or_money) + scoring (reversibility, blast_radius, signal_quality, time_sensitivity); cap/ceiling bani | 8 | H6.1, H4.9 | ✅ reversibil → act fără întrebare; money peste cap → ask |
-| H6.4 | **Daily Review Ritual** — morning brief 07:00 (ce a făcut + ce propune + decizii), evening retro 20:00 (batch approve); HUD view `/autonomy` | 8 | H6.1, H3.5 | la 07:00 sosește briefing fără trigger; seara batch-approve |
-| H6.5 | **Preference Learning & Decision Journal** — scor preferințe din approve/reject + semnale implicite → sugerează ridicarea autonomiei; jurnal decizii în Neo4j | 13 | H6.1, H3.4, H3.2 | după N aprobări pe o clasă reversibilă → sugerează autonomie mai mare |
-| H6.6 | **Night Shift** — fereastră de timp în care worker-ul rulează batch doar pe task-uri reversibile în sandbox; rezultate în morning brief | 5 | H6.1, H6.3, H4.8 | peste noapte → muncă reversibilă gata dimineața |
+| H6.4 ✅ | **Daily Review Ritual** — morning brief 07:00 + evening retro 20:00 (cron), batch list; endpoint `/autonomy/brief`. `core/autonomy/digest.py` | 8 | H6.1, H3.5 | ✅ digest construit din coadă, trimis pe Telegram, expus în HUD |
+| H6.5 ✅ | **Preference Learning & Decision Journal** — scor approve/reject per (agent,kind,tier), `suggest_autonomy_raise` (doar tier 1–2), jurnal JSONL append-only. `core/autonomy/preferences.py` + endpoint `/autonomy/preferences/suggestions` | 13 | H6.1, H3.4 | ✅ după N aprobări reversibile → sugerează ridicarea autonomiei |
+| H6.6 ✅ | **Night Shift** — fereastră wrap-midnight; `tick(max_tier=1)` rulează batch doar reversibil/read-only. `worker.is_night_window` + filtru `queue.runnable(max_tier)` | 5 | H6.1, H6.3 | ✅ noaptea rulează doar muncă reversibilă; extern/ireversibil așteaptă |
 
-> **MVP „Continuous Jarvis" ✅ LIVRAT** = H6.1 + H6.3 + H6.2 → bucla completă: propune → gating → întreabă pe Telegram → execută. 56 teste noi.
-> **Rămas în H6:** H6.4 (ritual zilnic), H6.5 (preference learning), H6.6 (night shift), + executor real per task-kind (acum no-op safe).
+> **ORIZONT 6 COMPLET ✅** — bucla autonomă end-to-end + executor real per task-kind (research→websearch, restul→LLM pipeline), ritual zilnic, preference learning, night shift. 82 teste autonomy, suită 651 passed.
+> **Setări noi** (categoria `autonomy` în admin): owner_chat_id, cap_per_action, daily_ceiling, interrupt_budget, night_shift/start/end + `system.autonomy_tick`.
 
 ---
 
