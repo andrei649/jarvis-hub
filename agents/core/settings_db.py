@@ -114,6 +114,12 @@ DEFAULTS: list[dict[str, Any]] = [
     dict(category="autonomy", key="night_shift",     value=False,  label="Night shift enabled",  kind="toggle"),
     dict(category="autonomy", key="night_start",     value=23,     label="Night window start (h)", kind="number"),
     dict(category="autonomy", key="night_end",       value=6,      label="Night window end (h)", kind="number"),
+    dict(category="autonomy", key="priority_senders", value=["andrei"], label="Priority email senders", kind="tags"),
+    dict(category="autonomy", key="finance_min_ron",  value=2000.0,   label="Minimum balance threshold (RON)", kind="number"),
+    dict(category="autonomy", key="finance_min_eur",  value=400.0,    label="Minimum balance threshold (EUR)", kind="number"),
+    dict(category="autonomy", key="health_min_sleep", value=5.0,     label="Minimum sleep hours", kind="number"),
+    dict(category="autonomy", key="health_min_hrv",   value=30.0,    label="Minimum HRV threshold (ms)", kind="number"),
+    dict(category="autonomy", key="calendar_lead_time", value=30,     label="Calendar event lead time (min)", kind="number"),
     dict(category="system",  key="autonomy_tick",    value=60,     label="Autonomy tick (s)",    kind="number"),
     dict(category="system",  key="observer_enabled", value=True,   label="Resource Observer enabled", kind="toggle"),
     dict(category="system",  key="watchers_enabled", value=True,   label="Event Watchers enabled", kind="toggle"),
@@ -154,14 +160,20 @@ def init_db(force: bool = False):
     conn.executescript(SCHEMA)
     if force:
         conn.execute("DELETE FROM settings")
-    existing = conn.execute("SELECT COUNT(*) FROM settings").fetchone()[0]
-    if existing == 0:
-        for row in DEFAULTS:
-            conn.execute(
-                "INSERT OR IGNORE INTO settings (category, key, value, label, kind, opts) VALUES (?,?,?,?,?,?)",
-                (row["category"], row["key"], json.dumps(row["value"]), row["label"], row["kind"], json.dumps(row.get("opts", []))),
-            )
-        logger.info(f"Seeded {len(DEFAULTS)} default settings")
+    
+    # Run INSERT OR IGNORE for all default settings to guarantee new updates are seeded dynamically
+    inserted = 0
+    for row in DEFAULTS:
+        cursor = conn.execute(
+            "INSERT OR IGNORE INTO settings (category, key, value, label, kind, opts) VALUES (?,?,?,?,?,?)",
+            (row["category"], row["key"], json.dumps(row["value"]), row["label"], row["kind"], json.dumps(row.get("opts", []))),
+        )
+        if cursor.rowcount > 0:
+            inserted += 1
+            
+    if inserted > 0:
+        logger.info(f"Seeded {inserted} new default settings (total {len(DEFAULTS)})")
+        
     conn.commit()
     conn.close()
 

@@ -34,9 +34,21 @@ class EmailProbe:
     or important senders, debounced by message ID.
     """
 
-    def __init__(self, gmail_plugin=None, priority_senders: list[str] = None):
+    def __init__(self, gmail_plugin=None, priority_senders: list[str] = None, get_setting=None):
         self.plugin = gmail_plugin
-        self.priority_senders = priority_senders or []
+        self._default_priority_senders = priority_senders or []
+        self.get_setting = get_setting
+
+    @property
+    def priority_senders(self) -> list[str]:
+        if self.get_setting:
+            try:
+                val = self.get_setting("autonomy.priority_senders", self._default_priority_senders)
+                if isinstance(val, list):
+                    return val
+            except Exception:
+                pass
+        return self._default_priority_senders
 
     async def __call__(self) -> list[Signal]:
         if self.plugin is None or not hasattr(self.plugin, "list_messages"):
@@ -87,9 +99,19 @@ class EmailProbe:
 class CalendarProbe:
     """Monitors Google Calendar for upcoming meetings starting in less than 30 minutes."""
 
-    def __init__(self, calendar_plugin=None, lead_time_min: int = 30):
+    def __init__(self, calendar_plugin=None, lead_time_min: int = 30, get_setting=None):
         self.plugin = calendar_plugin
-        self.lead_time_min = lead_time_min
+        self._default_lead_time_min = lead_time_min
+        self.get_setting = get_setting
+
+    @property
+    def lead_time_min(self) -> int:
+        if self.get_setting:
+            try:
+                return int(self.get_setting("autonomy.calendar_lead_time", self._default_lead_time_min))
+            except Exception:
+                pass
+        return self._default_lead_time_min
 
     async def __call__(self) -> list[Signal]:
         if self.plugin is None or not hasattr(self.plugin, "get_today_events"):
@@ -155,10 +177,29 @@ class CalendarProbe:
 class FinanceProbe:
     """Monitors financial accounts for low balances or runway issues."""
 
-    def __init__(self, balance_plugin=None, min_ron: float = 2000.0, min_eur: float = 400.0):
+    def __init__(self, balance_plugin=None, min_ron: float = 2000.0, min_eur: float = 400.0, get_setting=None):
         self.plugin = balance_plugin
-        self.min_ron = min_ron
-        self.min_eur = min_eur
+        self._default_min_ron = min_ron
+        self._default_min_eur = min_eur
+        self.get_setting = get_setting
+
+    @property
+    def min_ron(self) -> float:
+        if self.get_setting:
+            try:
+                return float(self.get_setting("autonomy.finance_min_ron", self._default_min_ron))
+            except Exception:
+                pass
+        return self._default_min_ron
+
+    @property
+    def min_eur(self) -> float:
+        if self.get_setting:
+            try:
+                return float(self.get_setting("autonomy.finance_min_eur", self._default_min_eur))
+            except Exception:
+                pass
+        return self._default_min_eur
 
     async def __call__(self) -> list[Signal]:
         if self.plugin is None or not hasattr(self.plugin, "get_balances"):
@@ -225,10 +266,29 @@ class FinanceProbe:
 class HealthProbe:
     """Monitors Apple Health summary data for sleep duration or HRV strain."""
 
-    def __init__(self, health_plugin=None, min_sleep_hrs: float = 5.0, min_hrv_ms: float = 30.0):
+    def __init__(self, health_plugin=None, min_sleep_hrs: float = 5.0, min_hrv_ms: float = 30.0, get_setting=None):
         self.plugin = health_plugin
-        self.min_sleep_hrs = min_sleep_hrs
-        self.min_hrv_ms = min_hrv_ms
+        self._default_min_sleep_hrs = min_sleep_hrs
+        self._default_min_hrv_ms = min_hrv_ms
+        self.get_setting = get_setting
+
+    @property
+    def min_sleep_hrs(self) -> float:
+        if self.get_setting:
+            try:
+                return float(self.get_setting("autonomy.health_min_sleep", self._default_min_sleep_hrs))
+            except Exception:
+                pass
+        return self._default_min_sleep_hrs
+
+    @property
+    def min_hrv_ms(self) -> float:
+        if self.get_setting:
+            try:
+                return float(self.get_setting("autonomy.health_min_hrv", self._default_min_hrv_ms))
+            except Exception:
+                pass
+        return self._default_min_hrv_ms
 
     async def __call__(self) -> list[Signal]:
         if self.plugin is None or not hasattr(self.plugin, "get_summary"):

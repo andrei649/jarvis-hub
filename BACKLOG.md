@@ -78,6 +78,13 @@ python -m pytest tests/ -v          # 568 passed, 8 skipped
 
 ---
 
+## 🔴 Auto-Generated Diagnostic Tasks
+
+> [!NOTE]
+> These tasks are auto-generated from active runtime failures in `problems.jsonl`.
+> Sync runs automatically during the autonomy observer check.
+
+✓ No active runtime failures detected in the last 48 hours.
 ## ORIZONT 5 — Next Wave (P2–P3) — 1/8
 
 > Fiecare item are spec + plan propriu în `docs/superpowers/`. Timeline: 0.6 → 0.9 → 1.0.
@@ -219,6 +226,13 @@ Smoke                 powershell smoke.ps1                  Server start + pytes
 | Slack App Token | Slack channel | Gratuit |
 | Docker (Qdrant, Neo4j, n8n) | H3.1, H3.2, H4.6 | Gratuit |
 | n8n API Key | Oracle | Gratuit |
+## 🔴 Auto-Generated Diagnostic Tasks
+
+> [!NOTE]
+> These tasks are auto-generated from active runtime failures in `problems.jsonl`.
+> Sync runs automatically during the autonomy observer check.
+
+✓ No active runtime failures detected in the last 48 hours.
 ## ORIZONT 5: Next Wave (P2–P3) — 0/8
 
 > Scop: extindere capabilități după foundation stabil. Fiecare item are spec + plan propriu.

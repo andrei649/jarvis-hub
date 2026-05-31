@@ -295,6 +295,12 @@ const FRIENDLY_NAMES = {
   night_shift: "Regim de noapte activ (Autonomie redusă)",
   night_start: "Oră start regim noapte (Ex: 23)",
   night_end: "Oră sfârșit regim noapte (Ex: 6)",
+  priority_senders: "Expeditori email prioritari",
+  finance_min_ron: "Prag minim cont RON (Gecko)",
+  finance_min_eur: "Prag minim cont EUR (Gecko)",
+  health_min_sleep: "Durată minimă somn (ore - Hercules)",
+  health_min_hrv: "Prag minim HRV (ms - Hercules)",
+  calendar_lead_time: "Avertizare în avans întâlniri (minute - Pepper)",
 };
 
 const FRIENDLY_DESCS = {
@@ -312,6 +318,12 @@ const FRIENDLY_DESCS = {
   watchers_enabled: "Verifică automat emailurile importante, programul din calendar, soldurile bancare și indicii de somn/sănătate.",
   error_backlog_sync_enabled: "Scrie live runtime crash-urile direct sub formă de TODO checklist în BACKLOG.md.",
   night_shift: "Când este activ, limitează executarea sarcinilor active/financiare în intervalul orar nocturn.",
+  priority_senders: "Expeditorii Gmail de la care noile mesaje necitite vor fi marcate instant ca fiind alerte prioritare.",
+  finance_min_ron: "Suma minimă sub care un cont de RON (ING, Libra etc.) va declanșa o alertă de sold scăzut.",
+  finance_min_eur: "Suma minimă sub care un cont de EUR va declanșa o alertă de sold scăzut.",
+  health_min_sleep: "Dacă durata totală a somnului de azi-noapte este mai mică decât acest prag, asistentul te va alerta.",
+  health_min_hrv: "Prag minim pentru indicatorul HRV (Heart Rate Variability) — sub acest nivel se va raporta stare de oboseală/stres.",
+  calendar_lead_time: "Intervalul orar (în minute) înainte de începerea unei întâlniri în care asistentul te va avertiza de eveniment.",
 };
 
 function GlobalConfigPage({ settings, dirty, onUpdate, onSave }) {
@@ -346,7 +358,7 @@ function GlobalConfigPage({ settings, dirty, onUpdate, onSave }) {
     {
       title: "🎯 Cortex Autonom & Buget Inteligent",
       desc: "Setări de securitate financiară, plafoane zilnice pentru acțiuni autonome și regim de noapte protectiv.",
-      keys: ["autonomy.owner_chat_id", "autonomy.cap_per_action", "autonomy.daily_ceiling", "autonomy.interrupt_budget", "autonomy.night_shift", "autonomy.night_start", "autonomy.night_end", "system.autonomy_tick", "system.observer_enabled", "system.watchers_enabled", "system.error_backlog_sync_enabled"]
+      keys: ["autonomy.owner_chat_id", "autonomy.cap_per_action", "autonomy.daily_ceiling", "autonomy.interrupt_budget", "autonomy.night_shift", "autonomy.night_start", "autonomy.night_end", "system.autonomy_tick", "system.observer_enabled", "system.watchers_enabled", "system.error_backlog_sync_enabled", "autonomy.priority_senders", "autonomy.finance_min_ron", "autonomy.finance_min_eur", "autonomy.health_min_sleep", "autonomy.health_min_hrv", "autonomy.calendar_lead_time"]
     },
     {
       title: "📞 Canale de Comunicare",

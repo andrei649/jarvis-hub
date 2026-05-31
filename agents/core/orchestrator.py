@@ -228,10 +228,10 @@ class Orchestrator:
             health = self.plugins.get("apple-health")
 
             event_probes = [
-                EmailProbe(gmail_plugin=gmail, priority_senders=["andrei"]),
-                CalendarProbe(calendar_plugin=calendar),
-                FinanceProbe(balance_plugin=balance),
-                HealthProbe(health_plugin=health),
+                EmailProbe(gmail_plugin=gmail, priority_senders=self.get_setting("autonomy.priority_senders", ["andrei"]), get_setting=self.get_setting),
+                CalendarProbe(calendar_plugin=calendar, lead_time_min=int(self.get_setting("autonomy.calendar_lead_time", 30)), get_setting=self.get_setting),
+                FinanceProbe(balance_plugin=balance, min_ron=float(self.get_setting("autonomy.finance_min_ron", 2000.0)), min_eur=float(self.get_setting("autonomy.finance_min_eur", 400.0)), get_setting=self.get_setting),
+                HealthProbe(health_plugin=health, min_sleep_hrs=float(self.get_setting("autonomy.health_min_sleep", 5.0)), min_hrv_ms=float(self.get_setting("autonomy.health_min_hrv", 30.0)), get_setting=self.get_setting),
             ]
             self.event_watcher = EventWatcher(self.autonomy, event_probes)
 
