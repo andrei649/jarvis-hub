@@ -57,6 +57,7 @@ from .plugins.apple_health import AppleHealthPlugin
 from .plugins.websearch import WebSearchPlugin
 from .plugins.homebridge import HomebridgePlugin
 from .plugins.oracle_bridge import OracleBridgePlugin
+from .plugins.n8n import N8NPlugin
 
 logger = logging.getLogger("jarvis.orchestrator")
 
@@ -176,6 +177,10 @@ class Orchestrator:
             github_token=os.environ.get("GITHUB_TOKEN", ""),
         )
         self.oracle_bridge = self.plugins["oracle-bridge"]
+        self.plugins["n8n"] = N8NPlugin(
+            base_url=os.environ.get("N8N_BASE_URL", ""),
+            api_key=os.environ.get("N8N_API_KEY", ""),
+        )
 
         self.skills.discover()
         logger.info(f"Skills loaded: {list(self.skills.skills.keys())}")
