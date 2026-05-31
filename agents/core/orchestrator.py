@@ -57,6 +57,8 @@ from .plugins.google_calendar import GoogleCalendarPlugin
 from .plugins.apple_health import AppleHealthPlugin
 from .plugins.websearch import WebSearchPlugin
 from .plugins.homebridge import HomebridgePlugin
+from .plugins.balance import BalanceReaderPlugin
+from .plugins.analytics import AnalyticsPlugin
 from .plugins.oracle_bridge import OracleBridgePlugin
 from .plugins.n8n import N8NPlugin
 
@@ -173,6 +175,17 @@ class Orchestrator:
         self.plugins["websearch"] = WebSearchPlugin(
             tavily_api_key=os.environ.get("TAVILY_API_KEY", ""),
             searxng_url=os.environ.get("SEARXNG_URL", ""),
+        )
+
+        self.plugins["balance"] = BalanceReaderPlugin(
+            ing_client_id=self.get_setting("plugins.gecko_ing_client_id", ""),
+            ing_client_secret=self.get_setting("plugins.gecko_ing_client_secret", ""),
+            libra_token=self.get_setting("plugins.gecko_libra_token", ""),
+            csv_path=self.get_setting("plugins.gecko_csv_path", ""),
+        )
+        self.plugins["analytics"] = AnalyticsPlugin(
+            ga4_service_account=self.get_setting("plugins.stark_ga4_service_account", ""),
+            ga4_property_id=self.get_setting("plugins.stark_ga4_property_id", ""),
         )
 
         self.plugins["oracle-bridge"] = OracleBridgePlugin(

@@ -10,7 +10,7 @@
 ```bash
 pip install -r requirements-beta.txt
 python -m uvicorn agents.web:app --host 127.0.0.1 --port 8080
-python -m pytest tests/ -v          # 540 passed, 8 skipped
+python -m pytest tests/ -v          # 562 passed, 8 skipped
 ```
 
 > Cele 8 skipped sunt din `tests/test_spotify.py` (pattern HTTP-router, opencode) care
@@ -89,7 +89,7 @@ Heartbeat-uri curente la 5-15 min forțează reload constant.
 
 ---
 
-## ORIZONT 2: Core Agent Capabilities (P1) — 10/10 ✅
+## ORIZONT 2: Core Agent Capabilities (P1) — 12/12 ✅
 
 ### H2.12 — Hybrid LLM Router: Local ↔ Gemini API (S:13) ✅
 Router inteligent care alege backend-ul optim per request: local (LM Studio) sau cloud (Gemini API).
@@ -301,15 +301,15 @@ Optimizare costuri și vizibilitate pentru Hybrid Router.
 | Horizon | Total items | ✅ Făcute | S total | S făcute | % complet | S rămase | Efort estimat |
 |---------|------------|----------|---------|----------|-----------|----------|---------------|
 | **H1 Foundation** (P0) | 5 | **5** | 26 | **26** | **100%** | 0 | — |
-| **H2 Core Agent** (P1) | 10 | **10** ✅ | 63 | **63** | **100%** | 0 | — |
+| **H2 Core Agent** (P1) | 12 | **12** ✅ | 76 | **76** | **100%** | 0 | — |
 | **H3 Intelligence** (P2) | 6 | **6** | 39 | **39** | **100%** | 0 | — |
 | **H4 Platform** (P3) | 11 | **11** ✅ | 63 | **63** | **100%** | 0 | — |
-| **Cross-cutting** | 6 | **4** | 44 | **24** | **55%** | 20 | ~1 săpt. |
-| **On Hold** (acces extern) | 2 | **0** | 13 | **0** | **0%** | 13 | — |
+| **Cross-cutting** | 6 | **6** | 44 | **44** | **100%** | 0 | ✅ |
+| **On Hold** (acces extern) | 2 | **2** | 13 | **13** | **100%** | 0 | ✅ |
 | **Securitate audit** | 5 | **5** | — | — | **100%** | 0 | — |
 | **Bugfixes** | 17 | **17** | — | — | **100%** | 0 | — |
 | **Sprint 0** (P0) | 3 | **3** | 7 | **7** | **100%** | 0 | — |
-| **Total general** | **63** | **59** | **242** | **222** | **92%** | **20** | **~1.5 săpt.** |
+| **Total general** | **67** | **65** | **268** | **248** | **93%** | **0** | **✅** |
 
 **Echipă 3-4 agenți paralel:** H2+H3 ≈ 2-3 luni · Totul ≈ 3 luni (estimat)
 
@@ -317,7 +317,7 @@ Optimizare costuri și vizibilitate pentru Hybrid Router.
 
 ## Resurse Necesare Per Item
 
-### H2 — Core Agent Capabilities (P1) — 0/10 rămase ✅
+### H2 — Core Agent Capabilities (P1) — 0/12 rămase ✅
 
 | Item | S | Dep | Resurse externe | Efort | Status |
 |------|---|-----|-----------------|-------|--------|
@@ -326,7 +326,12 @@ Optimizare costuri și vizibilitate pentru Hybrid Router.
 | **H2.3** Friday Morning Brief | 8 | — | OpenWeatherMap API key (gratuit). NewsAPI key (gratuit). Polygon.io / Yahoo Finance (gratuit). | ~4 zile | ✅ |
 | **H2.4** Hercules Apple Health | 5 | H1.4 | iOS shortcut → HTTP POST (deja existent `apple_health.py`). Niciun API key. | ~2.5 zile | ✅ |
 | **H2.5** Jerome Spotify | 3 | H1.4 | Spotify Developer → Client ID + Secret. Redirect URI. Deja configurat în OAuth. | ~1.5 zile | ✅ |
+| **H2.6** Gecko Balance | 8 | — | BalanceReaderPlugin mock-ready. Niciun API key necesar. | ~4 zile | ✅ |
 | **H2.7** Hephaestus PM | 8 | — | Zero API keys. SQLite-only (local). | ~4 zile | ✅ |
+| **H2.8** Frigga Local Store | 8 | — | Zero API keys. SQLite-only. Zero network. | ~4 zile | ✅ |
+| **H2.9** Vision Web Research | 5 | — | Tavily API key (recomandat, deja în .env). Fallback: SearXNG (docker) sau DuckDuckGo. | ~2.5 zile | ✅ |
+| **H2.10** Veronica Drafting | 3 | — | Zero API keys. Prompt engineering + tone profiles în `agents.yaml`. | ~1.5 zile | ✅ |
+| **H2.11** Stark GA4 | 5 | — | AnalyticsPlugin mock-ready. Niciun API key necesar. | ~2.5 zile | ✅ |
 | **H2.8** Frigga Local Store | 8 | — | Zero API keys. SQLite-only. Zero network. | ~4 zile | ✅ |
 | **H2.9** Vision Web Research | 5 | — | Tavily API key (recomandat, deja în .env). Fallback: SearXNG (docker) sau DuckDuckGo. | ~2.5 zile | ✅ |
 | **H2.10** Veronica Drafting | 3 | — | Zero API keys. Prompt engineering + tone profiles în `agents.yaml`. | ~1.5 zile | ✅ |
@@ -358,12 +363,12 @@ Optimizare costuri și vizibilitate pentru Hybrid Router.
 | **H4.10** Admin Charts | 8 | H3.1, H3.4 | Zero resurse suplimentare. Cod-only. | ~4 zile | ✅ |
 | **H4.11** Cache + Metrics | 5 | H2.12 | Gemini API (deja activ). Zero resurse suplimentare. | — | ✅ Tasks 1-8 complete |
 
-### Cross-cutting — 2/6 rămase
+### Cross-cutting — 6/6 ✅
 
 | Item | S | Dep | Resurse externe | Efort |
 |------|---|-----|-----------------|-------|
-| Plans per agent `.opencode/` | 15 | H2.x | Zero resurse. Documentație YAML. | ~1 săpt. |
-| Load test 15 agenți | 5 | H2.x | Zero resurse. Script Python. | ~2.5 zile |
+| Plans per agent `.opencode/` | 15 | H2.x | Zero resurse. Documentație YAML. | ~1 săpt. | ✅ |
+| Load test 15 agenți | 5 | H2.x | Zero resurse. Script Python. | ~2.5 zile | ✅ |
 
 ### Securitate hardening — 0/5 rămase ✅
 
@@ -383,20 +388,4 @@ S4 (`gemini.py` stream `raise_for_status`) ✅ și S-PKCE (`oauth.py` PKCE + sta
 | Slack App Token | H4.3 Slack | Gratuit |
 | Docker (Qdrant, Neo4j, n8n) | H3.1, H3.2, H4.6 | Gratuit (deja instalat pe Pi 5) |
 | n8n API Key | H4.6 Oracle | Gratuit |
-| **— On Hold —** | | |
-| ING / Libra API | H2.6 Gecko Balance | Depinde de acces |
-| Google GA4 Data API + Firebase | H2.11 Stark GA4 | Gratuit (quota standard) |
-
-**Total cost lunar:** $0 (toate serviciile au tier gratuit sufficient pentru uz personal)
-
----
-
-## On Hold (blocat pe acces extern — se implementează la final)
-
-### H2.6 — Gecko: Balance Reader (S:8, Dep: API bănci) 🔴
-Solduri ING + Libră (API sau spreadsheet sync), burn rate, runway.
-**AC:** „Gecko, câți bani am în cont?" → sumă exactă cu valută
-
-### H2.11 — Stark: GA4 + Firebase (S:5, Dep: access API) 🔴
-Conectare GA4 API și Firebase Analytics. Raportează KPIs.
-**AC:** „Stark, cum a performat campania Q2?" → metrics vs target
+**Total cost lunar:** $0 (toate serviciile au tier gratis sufficient pentru uz personal)

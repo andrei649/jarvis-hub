@@ -81,6 +81,14 @@ DEFAULTS: list[dict[str, Any]] = [
     dict(category="plugins", key="spotify",          value=True,                  label="Spotify",            kind="toggle"),
     dict(category="plugins", key="apple-health",     value=True,                  label="Apple Health",       kind="toggle"),
     dict(category="plugins", key="homebridge",       value=True,                  label="Homebridge",         kind="toggle"),
+    # gecko — balance reader
+    dict(category="plugins", key="gecko_ing_client_id",    value="",    label="Gecko – ING Client ID",            kind="text"),
+    dict(category="plugins", key="gecko_ing_client_secret", value="",   label="Gecko – ING Client Secret",        kind="text"),
+    dict(category="plugins", key="gecko_libra_token",       value="",   label="Gecko – Libra API Token",          kind="text"),
+    dict(category="plugins", key="gecko_csv_path",          value="",   label="Gecko – CSV export path",          kind="text"),
+    # stark — analytics
+    dict(category="plugins", key="stark_ga4_service_account", value="", label="Stark – GA4 Service Account JSON", kind="text"),
+    dict(category="plugins", key="stark_ga4_property_id",     value="", label="Stark – GA4 Property ID",          kind="text"),
     # agents
     dict(category="agents",  key="auto_scale",       value=False,                 label="Auto-scale agents",  kind="toggle"),
     dict(category="agents",  key="cardinality_cap",  value=18,                    label="Max agents",         kind="number"),
