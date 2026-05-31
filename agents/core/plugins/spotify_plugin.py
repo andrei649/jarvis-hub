@@ -11,6 +11,7 @@ from typing import Optional
 import httpx
 
 from .oauth import refresh_spotify_token, load_token
+from ..resilience import resilient_call
 
 logger = logging.getLogger("jarvis.plugins.spotify")
 
@@ -37,6 +38,16 @@ class SpotifyPlugin:
             self.refresh_token = token_data.get("refresh_token", self.refresh_token)
             logger.info("Spotify: token restored from persistent store")
 
+    @resilient_call(
+        max_retries=2,
+        timeout=15.0,
+        backoff_base=1.0,
+        backoff_max=3.0,
+        circuit_breaker_key="plugin:spotify",
+        circuit_breaker_threshold=3,
+        metrics_agent_id="spotify",
+        metrics_backend="spotify-api",
+    )
     async def _request(self, method: str, path: str, **kwargs):
         await self._ensure_token()
         url = f"{self.api_base}{path}"

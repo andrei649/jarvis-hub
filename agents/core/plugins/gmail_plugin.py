@@ -14,6 +14,7 @@ from typing import Optional
 import httpx
 
 from .oauth import refresh_google_token, load_token
+from ..resilience import resilient_call
 
 logger = logging.getLogger("jarvis.plugins.gmail")
 
@@ -36,6 +37,16 @@ class GmailPlugin:
             self.access_token = token_data["access_token"]
             logger.info("Gmail: token restored from persistent store")
 
+    @resilient_call(
+        max_retries=2,
+        timeout=15.0,
+        backoff_base=1.0,
+        backoff_max=3.0,
+        circuit_breaker_key="plugin:gmail",
+        circuit_breaker_threshold=3,
+        metrics_agent_id="gmail",
+        metrics_backend="google-api",
+    )
     async def _request(self, method: str, path: str, **kwargs):
         await self._ensure_token()
         url = f"{self.api_base}{path}"
