@@ -27,6 +27,7 @@ from .skills.loader import SkillLoader
 from .skills.importer import SkillImporter
 from .mcp.client import MCPManager
 from .autonomy import AutonomyWorker, TaskQueue, AutonomyPolicy, PreferenceStore, TaskExecutor
+from .autonomy import ProactiveObserver, default_probes
 from .autonomy.inbox import build_decision_card
 from .autonomy.digest import build_morning_brief, build_evening_retro
 from .autonomy.worker import is_night_window
@@ -109,6 +110,8 @@ class Orchestrator:
         self.autonomy = AutonomyWorker(
             self.autonomy_queue, policy=AutonomyPolicy(), prefs=self.autonomy_prefs,
         )
+        # Proactive OS Observer — the trigger layer that feeds the queue.
+        self.observer: Optional[ProactiveObserver] = None
         self._autonomy_task: Optional[asyncio.Task] = None
 
     async def load_agents(self):
@@ -213,7 +216,8 @@ class Orchestrator:
             self.autonomy_queue.initialize()
             self.autonomy_prefs.initialize()
             self.autonomy.executor = self._build_autonomy_executor().execute
-            logger.info("Autonomy queue + executor initialized")
+            self.observer = ProactiveObserver(self.autonomy, probes=default_probes())
+            logger.info("Autonomy queue + executor + observer initialized")
         except Exception as e:
             logger.warning(f"Autonomy init failed: {e}")
 
@@ -312,6 +316,9 @@ class Orchestrator:
                     if is_night_window(datetime.now().hour, start, end):
                         max_tier = 1  # reversible/read-only only
                 await self.autonomy.tick(max_tier=max_tier)
+                # Sample the host and turn state changes into gated tasks.
+                if self.observer and self.get_setting("system.observer_enabled", True):
+                    await self.observer.observe()
             except Exception as e:
                 logger.warning(f"Autonomy tick failed: {e}")
 

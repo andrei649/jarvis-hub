@@ -13,6 +13,10 @@ from .inbox import build_decision_card, parse_callback_data, DECISION_ACTIONS
 from .executor import TaskExecutor
 from .digest import build_morning_brief, build_evening_retro
 from .preferences import PreferenceStore
+from .observer import (
+    ProactiveObserver, Signal, Severity, Remediation, Finding,
+    ResourceProbe, ServiceProbe, ServiceSpec, default_probes,
+)
 
 __all__ = [
     "AutonomyPolicy", "Decision", "RiskTier", "Outcome",
@@ -22,4 +26,6 @@ __all__ = [
     "TaskExecutor",
     "build_morning_brief", "build_evening_retro",
     "PreferenceStore",
+    "ProactiveObserver", "Signal", "Severity", "Remediation", "Finding",
+    "ResourceProbe", "ServiceProbe", "ServiceSpec", "default_probes",
 ]

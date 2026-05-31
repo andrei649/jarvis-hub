@@ -105,3 +105,36 @@ def test_preference_suggestions_endpoint(token_client):
     r = token_client.get("/autonomy/preferences/suggestions", headers=HEADERS)
     assert r.status_code == 200
     assert isinstance(r.json()["suggestions"], list)
+
+
+# ── Proactive OS Observer endpoints ─────────────────────────────────────────
+def test_observer_status_endpoint(token_client):
+    r = token_client.get("/autonomy/observer", headers=HEADERS)
+    assert r.status_code == 200
+    data = r.json()
+    assert "probes" in data and "tracked" in data
+    assert isinstance(data["unhealthy"], list)
+
+
+def test_observer_run_proposes_remediation_task(token_client):
+    import agents.web as web
+    from agents.core.autonomy.observer import Remediation, Severity, Signal
+
+    down = Signal("service.endpoint_test", healthy=False, severity=Severity.CRITICAL,
+                  detail="endpoint_test not responding",
+                  remediation=Remediation(kind="restart_service",
+                                           title="Restart endpoint_test?",
+                                           payload={"service": "endpoint_test"}))
+    web.orch.observer.probes = [lambda: [down]]
+
+    run = token_client.post("/autonomy/observer/run", headers=HEADERS)
+    assert run.status_code == 200
+    assert run.json()["summary"]["submitted"] >= 1
+
+    blocked = token_client.get("/autonomy/tasks", params={"status": "blocked"},
+                               headers=HEADERS).json()["tasks"]
+    assert any(t["kind"] == "restart_service" and t["risk_tier"] == 3 for t in blocked)
+
+
+def test_observer_endpoint_guarded(token_client):
+    assert token_client.get("/autonomy/observer").status_code in (401, 403)

@@ -43,10 +43,10 @@ python -m pytest tests/ -v          # 568 passed, 8 skipped
 |---------|-------|---------|---------|--------|---|
 | **H1–H4 + Sprint 0 + Cross-cutting + Sec + Bugs** | 67 | **67** | 248 | **248** | **100%** |
 | **H5 Next Wave** (P2–P3) | 11 | **3** | 89 | **16** | **18%** |
-| **H6 Jarvis Autonom** (P1) | 6 | **6** | 55 | **55** | **100%** |
-| **Total general** | **81** | **74** | **379** | **311** | **82%** |
+| **H6 Jarvis Autonom** (P1) | 7 | **7** | 60 | **60** | **100%** |
+| **Total general** | **82** | **76** | **384** | **321** | **84%** |
 
-**Test count:** 660 passed, 8 skipped (H5.5 complet: resilience patterns)
+**Test count:** 715 passed, 8 skipped (+ MCU audit: router rewrite + OS observer)
 
 ---
 
@@ -70,8 +70,10 @@ python -m pytest tests/ -v          # 568 passed, 8 skipped
 | H6.4 ✅ | **Daily Review Ritual** — morning brief 07:00 + evening retro 20:00 (cron), batch list; endpoint `/autonomy/brief`. `core/autonomy/digest.py` | 8 | H6.1, H3.5 | ✅ digest construit din coadă, trimis pe Telegram, expus în HUD |
 | H6.5 ✅ | **Preference Learning & Decision Journal** — scor approve/reject per (agent,kind,tier), `suggest_autonomy_raise` (doar tier 1–2), jurnal JSONL append-only. `core/autonomy/preferences.py` + endpoint `/autonomy/preferences/suggestions` | 13 | H6.1, H3.4 | ✅ după N aprobări reversibile → sugerează ridicarea autonomiei |
 | H6.6 ✅ | **Night Shift** — fereastră wrap-midnight; `tick(max_tier=1)` rulează batch doar reversibil/read-only. `worker.is_night_window` + filtru `queue.runnable(max_tier)` | 5 | H6.1, H6.3 | ✅ noaptea rulează doar muncă reversibilă; extern/ireversibil așteaptă |
+| H6.7 ✅ | **Proactive OS Observer** (trigger layer) — `core/autonomy/observer.py`: eșantionează resurse (CPU/RAM/disk via psutil) + liveness servicii (TCP), **debounce pe schimbare de stare**, injectează în coada existentă (alertă→READ_ONLY auto-act, vizibilă în HUD/brief; remediere→tier-3 ASK→decision inbox). Probe injectabile (offline-testable). Endpoints `/autonomy/observer[/run]`. | 5 | H6.1, H6.3 | ✅ serviciu căzut → card „restart?" în inbox **o singură dată**; resursă în prag → alertă în brief |
 
-> **ORIZONT 6 COMPLET ✅** — bucla autonomă end-to-end + executor real per task-kind (research→websearch, restul→LLM pipeline), ritual zilnic, preference learning, night shift. 82 teste autonomy, suită 651 passed.
+> **ORIZONT 6 COMPLET ✅** — bucla autonomă end-to-end + executor real per task-kind (research→websearch, restul→LLM pipeline), ritual zilnic, preference learning, night shift, **+ Proactive OS Observer (H6.7)**. Suită 715 passed.
+> **Audit MCU (2026-05-31):** intent router rescris (determinist, scored, **bilingv RO/EN**, fără substring-bug, fallback LLM opțional) — vezi `docs/gap-analysis-mcu-jarvis.md`. **Rămas:** handler real `restart_service` în executor (acum cade pe fallback LLM — execuția shell e ireversibilă, de wired explicit prin sandbox/`plugin_gate`); event-watchers email/calendar/finanțe/health (același pattern ca observer-ul).
 > **Setări noi** (categoria `autonomy` în admin): owner_chat_id, cap_per_action, daily_ceiling, interrupt_budget, night_shift/start/end + `system.autonomy_tick`.
 
 ---

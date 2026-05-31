@@ -1,6 +1,24 @@
 # Changelog
 
 ## [Unreleased]
+### MCU Gap Analysis audit (2026-05-31)
+- **FAZA 2 — Intent router rewrite** (`core/router.py`): replaced the v0.1
+  keyword stub with a deterministic, offline-first, **scored bilingual (RO/EN)**
+  classifier. Fixes substring misroutes ("car"⊄"scared"), routes Romanian
+  queries ("câți bani am?"→Gecko, "cum am dormit?"→Hercules), exact-token wake
+  words, confidence + score breakdown on `Intent.context`, canonical
+  language-independent `keywords_found` tags, and an optional injected LLM
+  fallback used only for unmatched/low-confidence input (zero hot-path latency).
+  Drop-in: unchanged `classify()`/`Intent`/`ROUTING_TABLE` contract. +47 tests.
+- **FAZA 3 — Proactive OS Observer** (`core/autonomy/observer.py`): the missing
+  trigger layer. Samples host resources + service liveness, **debounces on state
+  change**, and feeds the existing autonomy queue — plain alerts auto-approve
+  (HUD/brief), remediation proposals (e.g. "restart Docker?") become tier-3 ASK
+  cards in the decision inbox. Injectable probes (offline-testable). Wired into
+  `_autonomy_loop` (gated by `system.observer_enabled`) + `/autonomy/observer`
+  endpoints. +15 tests. Full suite: **715 passed, 8 skipped** (after reb: H5.9/H5.10).
+- `docs/gap-analysis-mcu-jarvis.md` — full audit on 4 axes + OSS benchmark.
+
 ### H4 Platform
 - **H4.5 Steve System Monitor** — `skills/system_monitor/` skill with 8 commands:
   - `status`, `cpu`, `ram`, `gpu`, `disk`, `temps`, `services`, `check`
