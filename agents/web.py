@@ -1398,20 +1398,31 @@ async def toggle_plugin(plugin_id: str):
 
 @app.get("/learning/stats")
 async def learning_stats():
-    """Return learning loop statistics."""
-    ll = getattr(orch, 'learning_loop', None)
-    records = ll.get_records() if ll and hasattr(ll, 'get_records') else []
-    optimizations = ll.get_optimizations() if ll and hasattr(ll, 'get_optimizations') else []
-    total = len(records)
-    successes = sum(1 for r in records if r.get('success', False))
-    success_rate = successes / total if total > 0 else 0.0
-    return _nocache_json({
-        "interactions_total": total,
-        "success_rate": success_rate,
-        "prompt_optimizations": optimizations[-10:],
-        "promotion_candidates": [],
-        "demotion_warnings": [],
-    })
+    """Live learning stats for SystemsPanel."""
+    if not orch or not hasattr(orch, 'learning') or not orch.learning:
+        return _nocache_json({"interactions_total": 0, "success_rate": 0, "prompt_optimizations": [], "promotion_candidates": [], "demotion_warnings": []})
+    try:
+        stats = orch.learning.get_stats()
+        active_ids = list(stats.get("agents_tracked", stats.get("active_ids", [])))
+        optimizations = []
+        for aid in active_ids:
+            opt = orch.learning.optimize_prompt(aid) if hasattr(orch.learning, 'optimize_prompt') else None
+            if opt:
+                optimizations.append({"agent": aid, "before": "", "after": opt, "improvement": ""})
+        promotions = orch.learning.suggest_promotions(active_ids) if hasattr(orch.learning, 'suggest_promotions') else []
+        promos = [{"agent": p.get("bench_agent", p.get("agent", "")), "triggers": p.get("count", 0), "threshold": p.get("threshold", 0)} for p in promotions]
+        total = stats.get("total_interactions", 0)
+        successful = stats.get("successful", 0)
+        rate = successful / total if total > 0 else 0
+        return _nocache_json({
+            "interactions_total": total,
+            "success_rate": round(rate, 3),
+            "prompt_optimizations": optimizations,
+            "promotion_candidates": promos,
+            "demotion_warnings": [],
+        })
+    except Exception:
+        return _nocache_json({"interactions_total": 0, "success_rate": 0, "prompt_optimizations": [], "promotion_candidates": [], "demotion_warnings": []})
 
 
 @app.get("/security/status")
