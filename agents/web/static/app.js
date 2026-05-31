@@ -290,11 +290,6 @@ function App() {
           onRefresh: function () { console.log('refresh cognition'); },
         }),
         showSystems && h(SystemsPanel, {
-          memory: MEMORY_STATS,
-          plugins: PLUGINS,
-          learning: LEARNING,
-          security: SECURITY,
-          bench: BENCH,
           agents: agents,
           onRefresh: function (tab) { console.log('refresh systems tab:', tab); },
           onPluginToggle: function (id) { console.log('toggle plugin:', id); },
