@@ -1,4 +1,6 @@
-# Jarvis Hub — Implementation Handoff for opencode (big-pickle)
+# Jarvis Hub — Implementation Handoff for OpenCode + Qwen 3.7 Max
+
+> **v0.3 Cognition Release** — This handoff includes new panels (Cognition, Systems, Dossier) + backend endpoints. Read §17 before implementing.
 
 > **Read this whole file first.** Then open `design/index.html` in a browser to see the working prototype before touching code. Every visual / interaction in the prototype is the target — match it.
 
@@ -452,13 +454,19 @@ Work in this order. Verify each step in a browser before moving on.
 
 ```
 design/
-├── index.html         — full prototype (all CSS in one <style> block)
-├── app.jsx            — root component, state, submit flow, hotkeys
-├── components.jsx     — TopBar, AgentList, Conversation, ambient cards
-├── network.jsx        — neural-network SVG visualizer
-├── enhancements.jsx   — SituationTicker, CommandPalette, useLiveSys, useHotkey
-├── data.js            — agents, tasks, projects, collab edges, ticker items, glyphs
-└── tweaks-panel.jsx   — dev tweaks shell (drop or gate behind ?dev=1)
+├── index.html            — full prototype v0.2 (all CSS in one <style> block)
+├── app.jsx               — root component, state, submit flow, hotkeys
+├── components.jsx        — TopBar, AgentList, Conversation, ambient cards
+├── network.jsx           — neural-network SVG visualizer
+├── enhancements.jsx      — SituationTicker, CommandPalette, useLiveSys, useHotkey
+├── data.js               — agents, tasks, projects, collab, ticker, glyphs + v0.3 cognition/plugins/memory
+├── tweaks-panel.jsx      — dev tweaks shell (drop or gate behind ?dev=1)
+├── cognition.jsx         — NEW v0.3: intent classification, routing decision, orchestration trace
+├── systems.jsx           — NEW v0.3: memory, plugins, learning, security & bench (4 tabs)
+└── dossier-modal.jsx     — NEW v0.3: agent dossier fullscreen modal
+
+backend_snippets/
+└── endpoints_v03.py      — NEW v0.3: Python code for /memory/<agent>, /plugins, /cognition/stream
 ```
 
 Open `design/index.html` directly in a browser — it works offline once Google Fonts + React CDN load. Click around, press Cmd+K, double-click an agent. That's the target.
@@ -467,8 +475,8 @@ Open `design/index.html` directly in a browser — it works offline once Google 
 
 ## 16 · Acceptance criteria
 
-Done = a freshly-cloned Jarvis project, after starting the aiohttp server, shows:
-- The new HUD at `http://localhost:8000/` (or whatever port `web.py` uses)
+Done = a freshly-cloned Jarvis project, after starting the FastAPI server, shows:
+- The new HUD at `http://localhost:8080/` (or whatever port `web.py` uses)
 - All 15 agents in the left panel with correct tier grouping + glyphs
 - Live network with at least one running pulse on the active agents + collab edges visible
 - Working chat → real LM Studio responses → routed through the orchestration trace
@@ -478,3 +486,201 @@ Done = a freshly-cloned Jarvis project, after starting the aiohttp server, shows
 - Live clock + (lightly) oscillating sys metrics
 - Zero console errors
 - Matches the prototype within ~5% on color/spacing/typography
+
+---
+
+## 17 · v0.3 Cognition Release (2026-05-31)
+
+This version adds full visibility into Jarvis's "brain": how it classifies intent, routes to agents, which plugins it uses, and what it learns from interactions.
+
+### 17.1 · Routing Logic (from router.py)
+
+The current router is **keyword-based** (v0.1), with no real scoring. Classification has 3 stages:
+
+1. **Wake-word prefix** (line 106-141): if the message starts with "jarvis" or "hey pepper", route directly to that agent
+2. **Keyword matching** (line 42-101): ~60 keywords mapped to agents (e.g., "calendar" → pepper, "email" → stark)
+3. **Fallback** (line 137-141): if nothing matches, route to jarvis with `is_general=True`
+
+**For v0.3:** the Cognition panel visualizes this logic with **simulated scoring** (confidence bars 0-1, weights per keyword). The backend doesn't return real scoring yet — it's mocked in `data.js COGNITION_SCORING`. Stretch goal: `/cognition/stream` endpoint that emits decisions in real-time.
+
+**Routing is deterministic:**
+- If a keyword matches, those agents are selected
+- If multiple keywords match, all their agents are unioned into a set
+- Wake-word takes priority over keyword matching
+- Multi-agent responses are possible: "check my email and calendar" matches both pepper and stark
+
+### 17.2 · Memory Manager (from memory/manager.py)
+
+`MemoryManager` orchestrates 4 types of memory:
+
+- **ConversationMemory** (line 21-32): conversation history (max 100 turns, JSONL persistence)
+- **Vector store** (line 81-87): 768-dim embeddings (in-memory or Qdrant)
+- **Agent contexts** (line 71-79): key-value storage per agent (e.g., pepper remembers "Andrei prefers morning meetings")
+- **Knowledge graph** (line 106-128): entities + relations in Neo4j (Cypher queries)
+
+**All operations are async and lock-protected** (`asyncio.Lock`) — safe for concurrent access.
+
+**Knowledge graph is seeded on startup** (line 32: `seed_graph(self.graph)`) — pre-populated with base facts. Howard (the digital twin agent) uses it heavily.
+
+**New endpoint:** `GET /memory/{agent_id}` returns an agent's context (keys + values).
+
+### 17.3 · Plugin Gate (from plugin_gate.py)
+
+`PermissionGate` authorizes plugin access with 3 checks (line 176-212):
+
+1. Plugin exists and is enabled
+2. Agent is in the `agents_served` list
+3. Network access respects the policy (NONE/LAN/RESTRICTED/FULL)
+
+**11 built-in plugins** (line 44-155):
+
+| Plugin ID | Network | Data Scope | Agents Served |
+|-----------|---------|------------|---------------|
+| `weather` | RESTRICTED (wttr.in) | PROCESSED | all |
+| `news` | RESTRICTED (BBC RSS) | PROCESSED | all |
+| `cloud-llm` | RESTRICTED (Anthropic/OpenAI) | TRANSMITTED | jarvis, athena, stark, vision, veronica |
+| `telegram` | RESTRICTED (api.telegram.org) | TRANSMITTED | all |
+| `gmail` | RESTRICTED (googleapis) | PROCESSED | stark, pepper, veronica |
+| `google-calendar` | RESTRICTED (googleapis) | PROCESSED | pepper |
+| `whatsapp-bridge` | LAN | LOCAL_ONLY | frigga |
+| `spotify` | RESTRICTED (spotify API) | PROCESSED | jerome |
+| `apple-health` | LAN | LOCAL_ONLY | hercules |
+| `homebridge` | LAN | LOCAL_ONLY | jarvis, ultron |
+| `oracle-bridge` | RESTRICTED (github API) | PROCESSED | oracle |
+
+**Strict local-first policy:** Frigga (family data) has `LOCAL_ONLY` data scope and `LAN` network access — data never leaves the LAN.
+
+**New endpoint:** `GET /plugins` returns the full list with enable/disable status.
+
+### 17.4 · New Endpoints
+
+| Method | Path | Returns |
+|--------|------|---------|
+| GET | `/memory/{agent_id}` | `{agent_id, context_keys, context, last_updated}` |
+| GET | `/plugins` | `{plugins: [{id, name, network_access, data_scope, agents_served, enabled}], total}` |
+| PUT | `/plugins/{plugin_id}/toggle` | `{id, enabled, action}` |
+| GET | `/cognition/stream?message=...` | SSE: `classify` → `route` → `plugin_data` → `done` (stretch) |
+| GET | `/memory/stats` | `{sessions, vectors, knowledge_graph, agent_contexts}` |
+| GET | `/learning/stats` | `{interactions_total, success_rate, prompt_optimizations, promotion_candidates, demotion_warnings}` |
+| GET | `/security/status` | `{guardrails, scanners, ssrf}` |
+| GET | `/bench/stats` | `{latency, throughput, by_agent}` |
+
+Complete Python code in `backend_snippets/endpoints_v03.py`.
+
+### 17.5 · React Hooks Pitfall in Multi-Script Architecture
+
+**PROBLEM:** React hooks (useState, useEffect) must be called in the same order, without conditions. When you have components in separate files (cognition.jsx, systems.jsx) and integrate them in app.js, **do not define custom hooks in the component files**. Define them in app.js or export them as pure functions.
+
+**WRONG:**
+```js
+// In cognition.jsx (separate file)
+function CognitionPanel() {
+  const [data, setData] = useState(null);  // ❌ Hook in separate script
+  return ...;
+}
+```
+
+**CORRECT:**
+```js
+// In cognition.jsx
+function CognitionPanel({ data, onRefresh }) {  // ✅ Props, not hooks
+  return ...;
+}
+
+// In app.js
+const [cognitionData, setCognitionData] = useState(null);  // ✅ Hook in app.js
+<CognitionPanel data={cognitionData} onRefresh={refreshCognition} />
+```
+
+**Why this matters:** React tracks hook call order per component instance. If you define hooks in separate script files and call them from different components, React loses track and throws "Rendered more hooks than during the previous render" or "Invalid hook call" errors.
+
+### 17.6 · v0.3 Implementation Checklist
+
+- [ ] `data.js`: add COGNITION_SCORING, ROUTING_DECISION, ORCHESTRATION_TRACE, PLUGINS, MEMORY_STATS, LEARNING, SECURITY, BENCH, DOSSIER
+- [ ] `cognition.jsx` → `cognition.js`: Intent Classification (keywords + weight bars), Routing Decision (confidence bars + alternatives), Orchestration Trace (timeline)
+- [ ] `systems.jsx` → `systems.js`: 4 tabs (Memory, Plugins, Learning, Security & Bench), each with fetch from dedicated endpoint
+- [ ] `dossier-modal.jsx` → `dossier-modal.js`: fullscreen modal on double-click, SOUL.md excerpt, plugins, memory, skills
+- [ ] `app.js`: integrate CognitionPanel (toggle from TopBar), SystemsPanel (tab in right panel), DossierModal (on double-click agent)
+- [ ] Backend: add `GET /memory/{agent_id}`, `GET /plugins`, and other endpoints from `endpoints_v03.py`
+- [ ] Test: open Cognition → send "adaugă meeting mâine" → see keyword "meeting" with weight 0.78, agent pepper selected
+- [ ] Test: open Systems → Memory tab → see 47 sessions, 1284 vectors, 89 entities in graph
+- [ ] Test: Systems → Plugins tab → see 11 plugins, gmail has agents_served: [stark, pepper, veronica]
+- [ ] Test: double-click Pepper → dossier modal with archetype "Chief of Staff", model "gemma-4-26b-a4b", plugins [google-calendar, gmail]
+- [ ] Check console: zero React hooks errors (order of hook calls is consistent)
+- [ ] Responsive: at 1024px, Cognition panel becomes tab in right panel (not separate panel)
+
+### 17.7 · Model Discrepancy (to verify)
+
+**Issue:** Sources are inconsistent:
+
+- `agents.yaml` (line 13-174): all agents use default model (not specified per agent)
+- `config.py` (line 17): default = `google/gemma-4-31b-a4b`
+- `JARVIS.md` (line 9): says `google/gemma-4-26b-a4b` (26b, not 31b)
+- SOUL.md per agent: some mention `deepseek-r1:32b` or `qwen2.5` (probably outdated)
+
+**Action:** Run `lms ps` to see what model is currently loaded, then update `data.js DOSSIER` with the real model per agent. If all use the same model, put it in `DOSSIER.jarvis.model` and leave others empty (they inherit default).
+
+### 17.8 · Component Architecture (v0.3)
+
+```
+app.js (root)
+├── TopBar (existing)
+├── SituationTicker (existing)
+├── Main Grid (3 columns)
+│   ├── Left: AgentList (existing)
+│   ├── Center: NetworkBrain (existing) + ConversationView (existing) + InputBar (existing)
+│   └── Right: WeatherCard + CalendarCard + AgentsGrid + HeartbeatFeed (existing)
+│              + CognitionPanel (NEW v0.3, toggle from TopBar)
+│              + SystemsPanel (NEW v0.3, tab in right panel)
+├── CommandPalette (existing)
+└── DossierModal (NEW v0.3, on double-click agent)
+```
+
+**State management:**
+- All state lives in `app.js` (activeAgent, messages, cognitionData, systemsData, dossierAgent, etc.)
+- Components receive data via props, not hooks
+- Hooks (useState, useEffect, useCallback) are defined in `app.js` and passed down
+
+**Data flow:**
+1. `loadJarvisData()` fetches from `/api/agents`, `/status`, `/dashboard`, `/tasks`
+2. `loadCognitionData()` fetches from `/cognition/stream` or uses mock from `data.js`
+3. `loadSystemsData(tab)` fetches from `/memory/stats`, `/plugins`, `/learning/stats`, `/security/status`, `/bench/stats`
+4. `loadDossier(agentId)` fetches from `/memory/{agent_id}` + reads `DOSSIER[agentId]` from `data.js`
+
+### 17.9 · CSS Additions (v0.3)
+
+Add these sections to `style.css`:
+
+**Cognition Panel:**
+- `.cognition-panel` — container with glass border, collapsible
+- `.cog-section` — subsection with head + body
+- `.cog-keyword-row` — keyword + weight bar + agent pills
+- `.cog-weight-bar` / `.cog-weight-fill` — horizontal bar (0-100%)
+- `.cog-confidence-bar` / `.cog-confidence-fill` — large confidence indicator
+- `.cog-timeline` — vertical timeline with dots + lines
+- `.cog-timeline-row` — single step with marker + content
+
+**Systems Panel:**
+- `.systems-panel` — container with tab bar
+- `.sys-tab-bar` / `.sys-tab` — segmented control for 4 tabs
+- `.sys-card` — card with head + body (used in all tabs)
+- `.sys-grid-2` / `.sys-grid-3` — 2 or 3 column grids
+- `.sys-plugin-card` — plugin card with toggle + badges
+- `.sys-plugin-toggle` — iOS-style toggle switch
+- `.sys-badge` — small badge (network access, data scope)
+- `.sys-bench-bar` — latency benchmark bar (p50/p95/p99)
+
+**Dossier Modal:**
+- `.dossier-backdrop` — fullscreen overlay with blur
+- `.dossier-modal` — centered modal with head + body + foot
+- `.dossier-head` — agent glyph + name + status + tier badge
+- `.dossier-body` — 2-column layout (identity | memory)
+- `.dossier-glyph` — large SVG glyph (48px)
+- `.dossier-tier-badge` — colored badge (CNS/BIZ/SEC/FND)
+- `.dossier-btn` — footer buttons (primary, ghost variants)
+
+**Animations:**
+- `.dossier-backdrop` — fade-in (0.2s)
+- `.dossier-modal` — pop-in (scale 0.95 → 1, 0.3s)
+- `.cog-weight-fill` — width transition (0.4s)
+- `.sys-plugin-toggle` — knob slide (0.2s)

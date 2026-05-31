@@ -219,3 +219,82 @@ class HeartbeatScheduler:
                 self.scheduler.shutdown()
             except SchedulerNotRunningError:
                 pass
+
+    def get_status(self):
+        """Return status of all scheduled heartbeats."""
+        if not self.scheduler:
+            return {"scheduler_running": False, "heartbeats": []}
+        
+        heartbeats = []
+        for job in self.scheduler.get_jobs():
+            if job.id.startswith("heartbeat-"):
+                agent_id = job.id.replace("heartbeat-", "")
+                heartbeats.append({
+                    "agent_id": agent_id,
+                    "next_run": job.next_run_time.isoformat() if job.next_run_time else None,
+                    "trigger": str(job.trigger),
+                })
+        
+        return {
+            "scheduler_running": self.scheduler.running,
+            "heartbeats": heartbeats,
+        }
+
+    def start_heartbeat(self, agent_id: str, orchestrator):
+        """Start a single heartbeat job."""
+        if not self.scheduler or not self.scheduler.running:
+            return False
+        
+        config = self._heartbeat_configs.get(agent_id)
+        if not config:
+            return False
+        
+        cadence = config.get("cadence", "")
+        if cadence.startswith("interval:"):
+            seconds = int(cadence.split(":")[1])
+            jitter = random.randint(JITTER_MIN, JITTER_MAX)
+            self.scheduler.add_job(
+                self._run_heartbeat,
+                "interval",
+                seconds=seconds,
+                args=[agent_id, orchestrator],
+                id=f"heartbeat-{agent_id}",
+                replace_existing=True,
+                jitter=jitter,
+            )
+            return True
+        elif cadence.startswith("cron:"):
+            cron_expr = cadence[5:]
+            parts = cron_expr.strip().split()
+            if len(parts) == 5:
+                jitter = random.randint(JITTER_MIN, JITTER_MAX)
+                self.scheduler.add_job(
+                    self._run_heartbeat,
+                    "cron",
+                    minute=parts[0],
+                    hour=parts[1],
+                    day=parts[2],
+                    month=parts[3],
+                    day_of_week=parts[4],
+                    args=[agent_id, orchestrator],
+                    id=f"heartbeat-{agent_id}",
+                    replace_existing=True,
+                    jitter=jitter,
+                )
+                return True
+        return False
+
+    def stop_heartbeat(self, agent_id: str):
+        """Stop a single heartbeat job."""
+        if not self.scheduler:
+            return False
+        try:
+            self.scheduler.remove_job(f"heartbeat-{agent_id}")
+            return True
+        except Exception:
+            return False
+
+    async def run_now(self, agent_id: str, orchestrator):
+        """Run a heartbeat immediately."""
+        await self._run_heartbeat(agent_id, orchestrator)
+        return True

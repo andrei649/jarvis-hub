@@ -191,7 +191,7 @@ Pentru Raiffeisen context (stark monitor).
 Firewall, Pi-hole logs, CVE-uri, traffic anomalies, audit trails.
 **AC:** „Ultron, status securitate?" → devices, open ports, threats
 
-### H4.5 — Steve: System Monitor (S:8, Dep: —)
+### H4.5 — Steve: System Monitor (S:8, Dep: —) ✅
 CPU/GPU/RAM/disk/temp Bonobo WS + Pi 5. Auto-recovery.
 **AC:** „Steve, cum e sistemul?" → metrics + alerts
 
@@ -277,12 +277,12 @@ Optimizare costuri și vizibilitate pentru Hybrid Router.
 | **H1 Foundation** (P0) | 5 | **5** | 26 | **26** | **100%** | 0 | — |
 | **H2 Core Agent** (P1) | 12 | **10** | 76 | **63** | **83%** | 13 | ~1 săpt. |
 | **H3 Intelligence** (P2) | 6 | **3** | 39 | **18** | **46%** | 21 | ~1.5 săpt. |
-| **H4 Platform** (P3) | 11 | **0** | 63 | **0** | **0%** | 63 | ~4 săpt. (paralel 3) |
+| **H4 Platform** (P3) | 11 | **1** | 63 | **8** | **13%** | 55 | ~3.5 săpt. (paralel 3) |
 | **Cross-cutting** | 6 | **3** | 44 | **9** | **21%** | 35 | ~2 săpt. |
 | **Securitate audit** | 5 | **5** | — | — | **100%** | 0 | — |
 | **Bugfixes** | 17 | **17** | — | — | **100%** | 0 | — |
 | **Sprint 0** (P0) | 3 | **3** | 7 | **7** | **100%** | 0 | — |
-| **Total general** | **65** | **46** | **255** | **123** | **48%** | **132** | **~8 săpt.** |
+| **Total general** | **65** | **47** | **255** | **131** | **51%** | **124** | **~7.5 săpt.** |
 
 **Echipă 3-4 agenți paralel:** H2+H3 ≈ 2-3 luni · Totul ≈ 3 luni (estimat)
 
@@ -325,7 +325,7 @@ Optimizare costuri și vizibilitate pentru Hybrid Router.
 | **H4.2** Email Channel | 3 | — | SMTP/IMAP credentials (gratuit). | ~1.5 zile |
 | **H4.3** Slack Channel | 3 | Slack App | Slack API → App + Bot Token + Scopes. | ~1.5 zile |
 | **H4.4** Ultron Security | 8 | Pi-hole + firewall | Zero API keys (citire log-uri locale). | ~4 zile |
-| **H4.5** Steve Monitor | 8 | — | Zero API keys (psutil local). | ~4 zile |
+| **H4.5** Steve Monitor | 8 | — | Zero API keys (psutil local). | ~4 zile | ✅ |
 | **H4.6** Oracle n8n | 5 | n8n pornit | n8n running (Docker sau local). API key din n8n settings. | ~2.5 zile |
 | **H4.7** MCP Client | 8 | — | Zero resurse externe (conectare MCP servers). | ~4 zile |
 | **H4.8** Sandbox Docker | 5 | Docker | Docker instalat. | ~2.5 zile |

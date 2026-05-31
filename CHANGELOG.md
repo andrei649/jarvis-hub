@@ -1,6 +1,15 @@
 # Changelog
 
 ## [Unreleased]
+### H4 Platform
+- **H4.5 Steve System Monitor** — `skills/system_monitor/` skill with 8 commands:
+  - `status`, `cpu`, `ram`, `gpu`, `disk`, `temps`, `services`, `check`
+  - Auto-recovery for configured services (ollama auto-restart)
+  - Alert thresholds: CPU >80%, RAM >85/95%, GPU temp >85°C, disk >80/90/95%
+  - Graceful degradation when psutil or nvidia-smi unavailable
+  - 24 tests passing
+- **H4.9 Guardrails** — already implemented and integrated (WARN/REDACT/BLOCK modes)
+- **S0.2 Heartbeat Sanity** — already completed (Steve 2h, Ultron 2x/day)
 ### H1 Foundation (completed)
 - Voice channel with wake word → STT → orchestrator → TTS pipeline
 - Telegram channel with session isolation per `chat_id`

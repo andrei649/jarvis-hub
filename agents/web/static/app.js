@@ -22,6 +22,9 @@ function App() {
   var _r = useState(false), sending = _r[0], setSending = _r[1];
   var _s = useState(true), loading = _s[0], setLoading = _s[1];
   var _u = useState(false), apiDown = _u[0], setApiDown = _u[1];
+  var _v = useState(false), showCognition = _v[0], setShowCognition = _v[1];
+  var _w = useState(false), showSystems = _w[0], setShowSystems = _w[1];
+  var _x = useState(null), dossierAgent = _x[0], setDossierAgent = _x[1];
   var recRef = useRef(null);
 
   var agentMap = useMemo(function () { return Object.fromEntries(agents.map(function (a) { return [a.id, a]; })); }, [agents]);
@@ -218,6 +221,8 @@ function App() {
       agentsOnline: agents.filter(function (a) { return a.status !== 'idle'; }).length,
       agentsTotal: agents.length || 15,
       lmOnline: lmOnline,
+      onToggleCognition: function () { setShowCognition(function (v) { return !v; }); },
+      onToggleSystems: function () { setShowSystems(function (v) { return !v; }); },
     }),
 
     h(SituationTicker, {
@@ -232,6 +237,7 @@ function App() {
         tiers: JARVIS_TIERS,
         activeAgent: activeAgent,
         onSelect: setActiveAgent,
+        onDoubleClick: setDossierAgent,
         sys: liveSys,
       }),
 
@@ -276,6 +282,23 @@ function App() {
           items: notifications,
           agentMap: agentMap,
         }),
+        showCognition && h(CognitionPanel, {
+          scoring: COGNITION_SCORING.slice(0, 5),
+          decision: ROUTING_DECISION,
+          trace: ORCHESTRATION_TRACE,
+          message: '',
+          onRefresh: function () { console.log('refresh cognition'); },
+        }),
+        showSystems && h(SystemsPanel, {
+          memory: MEMORY_STATS,
+          plugins: PLUGINS,
+          learning: LEARNING,
+          security: SECURITY,
+          bench: BENCH,
+          agents: agents,
+          onRefresh: function (tab) { console.log('refresh systems tab:', tab); },
+          onPluginToggle: function (id) { console.log('toggle plugin:', id); },
+        }),
       ),
     ),
 
@@ -291,6 +314,15 @@ function App() {
         if (act.type === 'clear_focus') setFocusAgent(null);
         if (act.type === 'filter_project') console.log('filter project:', act.project);
       },
+    }),
+
+    dossierAgent && h(DossierModal, {
+      agent: agentMap[dossierAgent],
+      dossier: DOSSIER[dossierAgent],
+      memoryContext: null,
+      onClose: function () { setDossierAgent(null); },
+      onChat: function (id) { setActiveAgent(id); setDossierAgent(null); },
+      onViewSoul: function (id) { console.log('view soul:', id); },
     })
   );
 }

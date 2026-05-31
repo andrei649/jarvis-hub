@@ -57,7 +57,7 @@ function Badge({ label, value, kind }) {
   );
 }
 
-function TopBar({ activeAgent, voiceState, agentsOnline, agentsTotal, lmOnline }) {
+function TopBar({ activeAgent, voiceState, agentsOnline, agentsTotal, lmOnline, onToggleCognition, onToggleSystems }) {
   return h('header', { className: 'topbar' },
     h('div', { className: 'topbar-left' },
       h('div', { className: 'logo' },
@@ -72,7 +72,7 @@ function TopBar({ activeAgent, voiceState, agentsOnline, agentsTotal, lmOnline }
         ),
         h('div', { className: 'logo-text' },
           h('div', { className: 'logo-name' }, _t('comp.brand').split('·')[0], h('span', { className: 'logo-dot' }, '·'), _t('comp.brand').split('·')[1]),
-          h('div', { className: 'logo-ver' }, 'v0.2.1 · BONOBO-WS'),
+          h('div', { className: 'logo-ver' }, 'v0.3.0 · BONOBO-WS'),
         ),
       ),
     ),
@@ -82,6 +82,8 @@ function TopBar({ activeAgent, voiceState, agentsOnline, agentsTotal, lmOnline }
       h(Badge, { label: 'Agents', value: `${agentsOnline}/${agentsTotal}`, kind: 'active' }),
       h(Badge, { label: _t('comp.memory'), value: _t('comp.online'), kind: 'ok' }),
       h(Badge, { label: _t('comp.lmstudio'), value: lmOnline ? '1234' : _t('comp.offline'), kind: lmOnline ? 'active' : 'alert' }),
+      onToggleCognition && h('button', { className: 'topbar-btn', onClick: onToggleCognition, title: 'Toggle Cognition Panel' }, '🧠'),
+      onToggleSystems && h('button', { className: 'topbar-btn', onClick: onToggleSystems, title: 'Toggle Systems Panel' }, '⚙️'),
     ),
   );
 }
@@ -111,7 +113,7 @@ function SysMeter({ label, used, total, unit, raw }) {
   );
 }
 
-function AgentList({ agents, tiers, activeAgent, onSelect, sys }) {
+function AgentList({ agents, tiers, activeAgent, onSelect, onDoubleClick, sys }) {
   const grouped = useMemo(() =>
     tiers.map((t) => ({ ...t, agents: agents.filter((a) => a.tier === t.id) })),
     [agents, tiers],
@@ -130,6 +132,7 @@ function AgentList({ agents, tiers, activeAgent, onSelect, sys }) {
                 key: a.id,
                 className: `agent-item ${activeAgent === a.id ? 'is-active' : ''} agent-${a.status}`,
                 onClick: () => onSelect(a.id),
+                onDoubleClick: () => onDoubleClick && onDoubleClick(a.id),
               },
                 h(StatusDot, { status: a.status }),
                 a.glyph && h('svg', { viewBox: '-12 -12 24 24', width: '14', height: '14', className: 'agent-glyph', style: { position: 'absolute', marginLeft: 22, marginTop: -2 } },
