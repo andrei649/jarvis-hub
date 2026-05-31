@@ -10,8 +10,12 @@
 ```bash
 pip install -r requirements-beta.txt
 python -m uvicorn agents.web:app --host 127.0.0.1 --port 8080
-python -m pytest tests/ -v          # 181 tests (all passing)
+python -m pytest tests/ -v          # 357 passed, 8 skipped
 ```
+
+> Cele 8 skipped sunt din `tests/test_spotify.py` (pattern HTTP-router, opencode) care
+> așteaptă `agents/core/skills/spotify.py` — neimplementat. Spotify (H2.5) **funcționează**
+> via `skills/spotify/main.py` (pattern loader, acoperit de `tests/test_spotify_skill.py`).
 
 **După modificări JS/CSS:** Ctrl+F5 în browser (cache bust).
 **După modificări Python:** repornire server (Ctrl+C, re-execută comanda uvicorn).
@@ -71,10 +75,10 @@ Setări din admin aplicate activ în orchestrator.
 - Backend: `agents/core/llm/anthropic.py` — ClaudeBackend cu streaming + generate
 - Router: `CLAUDE_AGENTS = {"vision", "steve"}`, fallback la Gemini → local
 
-### S0.2 — Heartbeat Sanity: intervale ≥60 min (S:2)
+### S0.2 — Heartbeat Sanity: intervale ≥60 min (S:2) ✅
 Heartbeat-uri curente la 5-15 min forțează reload constant.
-- Steve (`* * * * *` → fiecare minut) → `0 */2 * * *` (la 2 ore)
-- Ultron (`0 * * * *` → la oră) → `0 6,18 * * *` (de 2x/zi)
+- Steve (`* * * * *` → fiecare minut) → `0 */2 * * *` (la 2 ore) ✅ aplicat în `agents/steve/HEARTBEAT.md`
+- Ultron (`0 * * * *` → la oră) → `0 6,18 * * *` (de 2x/zi) ✅ aplicat în `agents/ultron/HEARTBEAT.md`
 - Restul (majoritar `0 6 * * *`) OK, păstrat
 - Verificare că schedulerul nu crapă la shutdown (bug APScheduler existent)
 
@@ -175,16 +179,19 @@ Mecanism promovare when trigger îndeplinit (howard, bruce, wanda, etc.).
 
 ## ORIZONT 4: Platform & Security (P3)
 
-### H4.1 — Discord Channel (S:5, Dep: —)
+### H4.1 — Discord Channel (S:5, Dep: —) ✅
 Bot Discord cu slash commands.
+- `core/channels/discord.py` instanțiat + înregistrat în `web.py` când `DISCORD_BOT_TOKEN` e setat
 **AC:** agent trimite mesaj pe channel Discord
 
-### H4.2 — Email Channel (S:3, Dep: —)
+### H4.2 — Email Channel (S:3, Dep: —) ✅
 SMTP/IMAP — agent primește și trimite emailuri.
+- `core/channels/email.py` instanțiat + înregistrat în `web.py` (gated pe credențiale SMTP/IMAP din env)
 **AC:** „Trimite-mi raportul pe email" → trimis
 
-### H4.3 — Slack Channel (S:3, Dep: Slack App)
+### H4.3 — Slack Channel (S:3, Dep: Slack App) ✅
 Pentru Raiffeisen context (stark monitor).
+- `core/channels/slack.py` instanțiat + înregistrat în `web.py` când `SLACK_BOT_TOKEN` e setat
 **AC:** Stark vede mențiuni Slack și raportează
 
 ### H4.4 — Ultron: Security Monitoring (S:8, Dep: Pi-hole + firewall)
@@ -199,16 +206,23 @@ CPU/GPU/RAM/disk/temp Bonobo WS + Pi 5. Auto-recovery.
 Conectare n8n API — creează/monitorizează workflow-uri.
 **AC:** „Oracle, creează workflow vreme zilnic" → workflow creat
 
-### H4.7 — MCP Client real (S:8, Dep: —)
+### H4.7 — MCP Client real (S:8, Dep: —) 🟡 parțial
 MCPManager conectat la MCP servers externe.
+- ✅ Core client real: `core/mcp/client.py` — transport stdio/SSE, JSON-RPC (`initialize`/`list_tools`/`call_tool`), `MCPManager.connect_all`
+- 🔴 Rămas: wiring admin „adaugă server MCP din admin → expus ca plugin" (UI + persistență config)
 **AC:** MCP server adăugat din admin → disponibil ca plugin
 
-### H4.8 — Sandbox containerized (S:5, Dep: Docker)
+### H4.8 — Sandbox containerized (S:5, Dep: Docker) ✅
 Sandbox cu Docker pentru execuție sigură de cod.
+- `core/sandbox.py` + endpointuri `/sandbox/status` și `/sandbox/execute` (Python + shell), gated pe `DEV_MODE`
+- Teste: `tests/test_sandbox_gating.py`
 **AC:** „Steve, rulează acest Python" → container, output returnat
 
-### H4.9 — Guardrails production (S:5, Dep: —)
+### H4.9 — Guardrails production (S:5, Dep: —) ✅
 Mod `REDACT`, PII detection, prompt injection, output sanitization.
+- `core/security/guardrails.py` — moduri `WARN`/`REDACT`/`BLOCK`, scannere `SecretScanner` + `PIIScanner`
+- Wired în orchestrator + per-agent (`agent.guardrails`); `SecurityBlockError` pe BLOCK
+- Notă: blocarea injection se face prin modul BLOCK pe input; nu există încă un scanner dedicat de prompt-injection (pattern-based)
 **AC:** prompt injection → blocat; PII în output → redactat
 
 ### H4.10 — Admin: Charts & Audit (S:8, Dep: H3.1, H3.4)
@@ -276,13 +290,13 @@ Optimizare costuri și vizibilitate pentru Hybrid Router.
 |---------|------------|----------|---------|----------|-----------|----------|---------------|
 | **H1 Foundation** (P0) | 5 | **5** | 26 | **26** | **100%** | 0 | — |
 | **H2 Core Agent** (P1) | 12 | **10** | 76 | **63** | **83%** | 13 | ~1 săpt. |
-| **H3 Intelligence** (P2) | 6 | **3** | 39 | **18** | **46%** | 21 | ~1.5 săpt. |
-| **H4 Platform** (P3) | 11 | **1** | 63 | **8** | **13%** | 55 | ~3.5 săpt. (paralel 3) |
+| **H3 Intelligence** (P2) | 6 | **4** | 39 | **23** | **59%** | 16 | ~1 săpt. |
+| **H4 Platform** (P3) | 11 | **6** | 63 | **29** | **46%** | 34 | ~2 săpt. (paralel 3) |
 | **Cross-cutting** | 6 | **3** | 44 | **9** | **21%** | 35 | ~2 săpt. |
 | **Securitate audit** | 5 | **5** | — | — | **100%** | 0 | — |
 | **Bugfixes** | 17 | **17** | — | — | **100%** | 0 | — |
 | **Sprint 0** (P0) | 3 | **3** | 7 | **7** | **100%** | 0 | — |
-| **Total general** | **65** | **47** | **255** | **131** | **51%** | **124** | **~7.5 săpt.** |
+| **Total general** | **65** | **53** | **255** | **157** | **62%** | **98** | **~6 săpt.** |
 
 **Echipă 3-4 agenți paralel:** H2+H3 ≈ 2-3 luni · Totul ≈ 3 luni (estimat)
 
@@ -290,64 +304,61 @@ Optimizare costuri și vizibilitate pentru Hybrid Router.
 
 ## Resurse Necesare Per Item
 
-### H2 — Core Agent Capabilities (P1) — 4/12 rămase
+### H2 — Core Agent Capabilities (P1) — 2/12 rămase (H2.6, H2.11 — blocate de API externe)
 
 | Item | S | Dep | Resurse externe | Efort | Status |
 |------|---|-----|-----------------|-------|--------|
 | **H2.1** Pepper Calendar | 5 | H1.4 | Google Cloud Console → enable Calendar API, OAuth 2.0 Client ID. Gmail API deja activ. | ~2.5 zile | ✅ |
-| **H2.2** Pepper Email Triage | 5 | H1.4 | Gmail API deja activ (H1.4). Token deja existent. | ~2.5 zile | 🔜 |
+| **H2.2** Pepper Email Triage | 5 | H1.4 | Gmail API deja activ (H1.4). Token deja existent. | ~2.5 zile | ✅ |
 | **H2.3** Friday Morning Brief | 8 | — | OpenWeatherMap API key (gratuit). NewsAPI key (gratuit). Polygon.io / Yahoo Finance (gratuit). | ~4 zile | ✅ |
 | **H2.4** Hercules Apple Health | 5 | H1.4 | iOS shortcut → HTTP POST (deja existent `apple_health.py`). Niciun API key. | ~2.5 zile | ✅ |
 | **H2.5** Jerome Spotify | 3 | H1.4 | Spotify Developer → Client ID + Secret. Redirect URI. Deja configurat în OAuth. | ~1.5 zile | ✅ |
 | **H2.6** Gecko Balance | 8 | API bănci | ING API (sandbox/production). Libra API. Alternativă: spreadsheet export + CSV parser. | ~4 zile | 🔴 |
 | **H2.7** Hephaestus PM | 8 | — | Zero API keys. SQLite-only (local). | ~4 zile | ✅ |
 | **H2.8** Frigga Local Store | 8 | — | Zero API keys. SQLite-only. Zero network. | ~4 zile | ✅ |
-| **H2.9** Vision Web Research | 5 | — | Tavily API key (recomandat, deja în .env). Fallback: SearXNG (docker) sau DuckDuckGo. | ~2.5 zile | 🔜 |
+| **H2.9** Vision Web Research | 5 | — | Tavily API key (recomandat, deja în .env). Fallback: SearXNG (docker) sau DuckDuckGo. | ~2.5 zile | ✅ |
 | **H2.10** Veronica Drafting | 3 | — | Zero API keys. Prompt engineering + tone profiles în `agents.yaml`. | ~1.5 zile | ✅ |
 | **H2.11** Stark GA4 | 5 | access API | Google Cloud → enable GA4 Data API + Firebase Analytics API. Service Account JSON. | ~2.5 zile | 🔴 |
 
-### H3 — Intelligence & Memory (P2) — 6/6 rămase
+### H3 — Intelligence & Memory (P2) — 2/6 rămase (H3.4 Learning Loop, H3.6 Bench Activation)
 
 | Item | S | Dep | Resurse externe | Efort |
 |------|---|-----|-----------------|-------|
-| **H3.1** Qdrant Vector DB | 5 | Qdrant pornit | Docker: `docker run -p 6333:6333 qdrant/qdrant`. Zero API key. | ~2.5 zile |
-| **H3.2** Neo4j Knowledge Graph | 8 | Neo4j pornit | Docker: `docker run -p 7474:7474 -p 7687:7687 neo4j`. Zero API key (local). | ~4 zile |
-| **H3.3** Session Persistence | 5 | H3.1 | Zero resurse suplimentare. Cod-only. | ~2.5 zile |
-| **H3.4** Learning Loop live | 8 | H3.1, H3.3 | Zero resurse suplimentare. Cod-only. | ~4 zile |
-| **H3.5** Heartbeat System | 5 | — | Zero resurse suplimentare. APScheduler deja instalat. | ~2.5 zile |
-| **H3.6** Bench Activation | 8 | H3.4 | Zero resurse suplimentare. Cod-only. | ~4 zile |
+| **H3.1** Qdrant Vector DB | 5 | Qdrant pornit | Docker: `docker run -p 6333:6333 qdrant/qdrant`. Zero API key. | ~2.5 zile | ✅ |
+| **H3.2** Neo4j Knowledge Graph | 8 | Neo4j pornit | Docker: `docker run -p 7474:7474 -p 7687:7687 neo4j`. Zero API key (local). | ~4 zile | ✅ |
+| **H3.3** Session Persistence | 5 | H3.1 | Zero resurse suplimentare. Cod-only. | ~2.5 zile | ✅ |
+| **H3.4** Learning Loop live | 8 | H3.1, H3.3 | Zero resurse suplimentare. Cod-only. | ~4 zile | 🔴 |
+| **H3.5** Heartbeat System | 5 | — | Zero resurse suplimentare. APScheduler deja instalat. | ~2.5 zile | ✅ |
+| **H3.6** Bench Activation | 8 | H3.4 | Zero resurse suplimentare. Cod-only. | ~4 zile | 🔴 |
 
-### H4 — Platform & Security (P3) — 11/11 rămase
+### H4 — Platform & Security (P3) — 5/11 rămase (H4.4, H4.6, H4.7*, H4.10, H4.11)
 
-| Item | S | Dep | Resurse externe | Efort |
-|------|---|-----|-----------------|-------|
-| **H4.1** Discord Channel | 5 | — | Discord Developer → Bot Token + Intents. | ~2.5 zile |
-| **H4.2** Email Channel | 3 | — | SMTP/IMAP credentials (gratuit). | ~1.5 zile |
-| **H4.3** Slack Channel | 3 | Slack App | Slack API → App + Bot Token + Scopes. | ~1.5 zile |
-| **H4.4** Ultron Security | 8 | Pi-hole + firewall | Zero API keys (citire log-uri locale). | ~4 zile |
+| Item | S | Dep | Resurse externe | Efort | Status |
+|------|---|-----|-----------------|-------|--------|
+| **H4.1** Discord Channel | 5 | — | Discord Developer → Bot Token + Intents. | ~2.5 zile | ✅ |
+| **H4.2** Email Channel | 3 | — | SMTP/IMAP credentials (gratuit). | ~1.5 zile | ✅ |
+| **H4.3** Slack Channel | 3 | Slack App | Slack API → App + Bot Token + Scopes. | ~1.5 zile | ✅ |
+| **H4.4** Ultron Security | 8 | Pi-hole + firewall | Zero API keys (citire log-uri locale). | ~4 zile | 🔴 |
 | **H4.5** Steve Monitor | 8 | — | Zero API keys (psutil local). | ~4 zile | ✅ |
-| **H4.6** Oracle n8n | 5 | n8n pornit | n8n running (Docker sau local). API key din n8n settings. | ~2.5 zile |
-| **H4.7** MCP Client | 8 | — | Zero resurse externe (conectare MCP servers). | ~4 zile |
-| **H4.8** Sandbox Docker | 5 | Docker | Docker instalat. | ~2.5 zile |
-| **H4.9** Guardrails | 5 | — | Zero resurse suplimentare. Cod-only. | ~2.5 zile |
-| **H4.10** Admin Charts | 8 | H3.1, H3.4 | Zero resurse suplimentare. Cod-only. | ~4 zile |
-| **H4.11** Cache + Metrics | 5 | H2.12 | Gemini API (deja activ). Zero resurse suplimentare. | ~2.5 zile |
+| **H4.6** Oracle n8n | 5 | n8n pornit | n8n running (Docker sau local). API key din n8n settings. | ~2.5 zile | 🔴 |
+| **H4.7** MCP Client | 8 | — | Zero resurse externe (conectare MCP servers). | ~4 zile | 🟡 core gata, admin-wiring rămas |
+| **H4.8** Sandbox Docker | 5 | Docker | Docker instalat. | ~2.5 zile | ✅ |
+| **H4.9** Guardrails | 5 | — | Zero resurse suplimentare. Cod-only. | ~2.5 zile | ✅ |
+| **H4.10** Admin Charts | 8 | H3.1, H3.4 | Zero resurse suplimentare. Cod-only. | ~4 zile | 🔴 |
+| **H4.11** Cache + Metrics | 5 | H2.12 | Gemini API (deja activ). Zero resurse suplimentare. | ~2.5 zile | 🔴 |
 
-### Cross-cutting — 4/6 rămase
+### Cross-cutting — 3/6 rămase
 
 | Item | S | Dep | Resurse externe | Efort |
 |------|---|-----|-----------------|-------|
-| Session Manager thread-safe | 3 | — | Cod-only. | ~1.5 zile |
 | Integration tests per agent | 15 | H2.x | Zero resurse. Teste Python. | ~1 săpt. |
 | Plans per agent `.opencode/` | 15 | H2.x | Zero resurse. Documentație YAML. | ~1 săpt. |
 | Load test 15 agenți | 5 | H2.x | Zero resurse. Script Python. | ~2.5 zile |
 
-### Securitate hardening — 2/5 rămase
+### Securitate hardening — 0/5 rămase ✅
 
-| ID | Fișier | S | Resurse | Efort |
-|----|--------|---|---------|-------|
-| **S4** | `gemini.py` stream | ~1 | Cod-only (`raise_for_status` pe stream) | ~0.5 zi |
-| **S-PKCE** | `oauth.py` | ~3 | pkce library sau manual SHA256. Token encryption: `cryptography` sau `fernet`. | ~1.5 zile |
+Toate cele 5 (S1–S4 + S-PKCE) rezolvate — vezi tabelul „Securitate (audit b703fc0)" de mai sus.
+S4 (`gemini.py` stream `raise_for_status`) ✅ și S-PKCE (`oauth.py` PKCE + state + Fernet) ✅.
 
 ---
 
