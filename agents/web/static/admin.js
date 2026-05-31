@@ -748,11 +748,11 @@ function BarChart({ data, valueKey, labelKey, maxValue, colorFn, unit }) {
   const max = maxValue || Math.max(...data.map(d => d[valueKey]), 0.01);
   const barH = 18;
   const gap = 4;
-  const h = data.length * (barH + gap);
+  const svgHeight = data.length * (barH + gap);
   const lw = 80;
   const cw = 260;
   const tw = lw + cw + 70;
-  return h('svg',{viewBox:`0 0 ${tw} ${h}`,width:'100%',style:{maxWidth:tw,maxHeight:h}},
+  return h('svg',{viewBox:`0 0 ${tw} ${svgHeight}`,width:'100%',style:{maxWidth:tw,maxHeight:svgHeight}},
     data.map((d,i)=>{
       const y = i * (barH + gap);
       const ratio = Math.min(d[valueKey] / max, 1);
@@ -771,14 +771,14 @@ function Sparkline({ data, width, height, color }) {
   if (!data || data.length < 2) return h('div',{style:{padding:12,fontSize:11,color:'var(--text-dim)'}},'—');
   const pad = {top:8,right:8,bottom:18,left:8};
   const w = width - pad.left - pad.right;
-  const h = height - pad.top - pad.bottom;
+  const sparkHeight = height - pad.top - pad.bottom;
   const vals = data.map(d=>d.value);
   const mx = Math.max(...vals,1);
   const mn = Math.min(...vals,0);
   const rng = mx - mn || 1;
   const pts = data.map((d,i)=>{
     const x = pad.left + (i/(data.length-1))*w;
-    const y = pad.top + h - ((d.value-mn)/rng)*h;
+    const y = pad.top + sparkHeight - ((d.value-mn)/rng)*sparkHeight;
     return `${x},${y}`;
   }).join(' ');
   const xLabels = data.map((d,i)=>{
