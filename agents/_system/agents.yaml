@@ -4,7 +4,7 @@
 
 jarvis:
   name: "Andrei's Jarvis"
-  version: "0.2.1"
+  version: "0.5.0-beta"
   architecture: "pure-python-plugin"
   cardinality_cap: 18
   created: 2026-05-11

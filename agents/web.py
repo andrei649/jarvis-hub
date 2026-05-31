@@ -166,7 +166,7 @@ async def lifespan(application: FastAPI):
     await orch.stop_channels()
 
 
-app = FastAPI(title="Jarvis", version="0.2.0-beta", lifespan=lifespan)
+app = FastAPI(title="Jarvis", version="0.5.0-beta", lifespan=lifespan)
 
 
 @app.exception_handler(JarvisError)
