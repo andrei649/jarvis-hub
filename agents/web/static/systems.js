@@ -440,6 +440,87 @@ function SecurityBenchTab({ security, bench, onRefresh }) {
   );
 }
 
+function ResilienceTab({ data }) {
+  if (!data) return h('div', { className: 'sys-loading' }, 'Loading resilience data...');
+
+  const metrics = data.metrics || {};
+  const breakers = data.circuit_breakers || {};
+  const metricKeys = Object.keys(metrics);
+  const breakerKeys = Object.keys(breakers);
+
+  return h('div', { className: 'sys-tab-content' },
+    metricKeys.length === 0 && breakerKeys.length === 0
+      ? h('div', { className: 'sys-empty' }, 'No resilience data recorded yet. Data appears after API calls are made.')
+      : null,
+
+    metricKeys.length > 0 && h('div', { className: 'sys-card wide', style: { marginTop: 0 } },
+      h('div', { className: 'sys-card-head' },
+        h('span', { className: 'sys-card-label' }, 'RETRY METRICS')
+      ),
+      h('div', { className: 'sys-resilience-grid' },
+        metricKeys.map(key =>
+          h('div', { key, className: 'sys-resilience-card' },
+            h('div', { className: 'sys-resilience-key' }, key),
+            h('div', { className: 'sys-resilience-stats' },
+              h('div', { className: 'sys-stat-row' },
+                h('span', { className: 'sys-stat-key' }, 'Success'),
+                h('span', { className: 'sys-stat-val accent' }, metrics[key].success)
+              ),
+              h('div', { className: 'sys-stat-row' },
+                h('span', { className: 'sys-stat-key' }, 'Failure'),
+                h('span', { className: 'sys-stat-val warn' }, metrics[key].failure)
+              ),
+              h('div', { className: 'sys-stat-row' },
+                h('span', { className: 'sys-stat-key' }, 'Avg latency'),
+                h('span', { className: 'sys-stat-val mono' }, metrics[key].avg_latency.toFixed(2) + 's')
+              ),
+              metrics[key].error_types && Object.keys(metrics[key].error_types).length > 0
+                ? h('div', { className: 'sys-resilience-errors' },
+                    Object.entries(metrics[key].error_types).map(([err, count]) =>
+                      h('div', { key: err, className: 'sys-error-row' },
+                        h('span', { className: 'sys-error-name' }, err),
+                        h('span', { className: 'sys-error-count' }, count)
+                      )
+                    )
+                  )
+                : null
+            )
+          )
+        )
+      )
+    ),
+
+    breakerKeys.length > 0 && h('div', { className: 'sys-card wide', style: { marginTop: 12 } },
+      h('div', { className: 'sys-card-head' },
+        h('span', { className: 'sys-card-label' }, 'CIRCUIT BREAKERS')
+      ),
+      h('div', { className: 'sys-cb-grid' },
+        breakerKeys.map(key =>
+          h('div', {
+            key,
+            className: 'sys-cb-row ' + breakers[key].state,
+          },
+            h('div', { className: 'sys-cb-head' },
+              h('span', { className: 'sys-cb-key' }, key),
+              h('span', { className: 'sys-cb-state ' + breakers[key].state },
+                breakers[key].state.toUpperCase()
+              )
+            ),
+            h('div', { className: 'sys-cb-detail' },
+              h('span', {}, 'Failures: ' + breakers[key].failure_count),
+              breakers[key].last_failure_time
+                ? h('span', { className: 'sys-cb-time' },
+                    'Last: ' + new Date(breakers[key].last_failure_time * 1000).toLocaleString()
+                  )
+                : null
+            )
+          )
+        )
+      )
+    )
+  );
+}
+
 function SystemsPanel({ memory, plugins, learning, security, bench, agents, onRefresh, onPluginToggle }) {
   const [activeTab, setActiveTab] = useState('memory');
   const [collapsed, setCollapsed] = useState(false);
@@ -538,4 +619,4 @@ function SystemsPanel({ memory, plugins, learning, security, bench, agents, onRe
   );
 }
 
-Object.assign(window, { SystemsPanel, SystemsTabBar, MemoryTab, PluginsTab, HeartbeatsTab, LearningTab, SecurityBenchTab });
+Object.assign(window, { SystemsPanel, SystemsTabBar, MemoryTab, PluginsTab, HeartbeatsTab, LearningTab, SecurityBenchTab, ResilienceTab });
