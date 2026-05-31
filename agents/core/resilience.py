@@ -19,9 +19,11 @@ def resilient_call(
     circuit_breaker_key: Optional[str] = None,
     circuit_breaker_threshold: int = 5,
     circuit_breaker_recovery: float = 60.0,
+    metrics_agent_id: Optional[str] = None,
+    metrics_backend: Optional[str] = None,
 ):
     """
-    Decorator that adds retry logic with exponential backoff and circuit breaker.
+    Decorator that adds retry logic with exponential backoff, circuit breaker, and metrics.
     """
     def decorator(func: Callable) -> Callable:
         @functools.wraps(func)
@@ -38,7 +40,11 @@ def resilient_call(
                     logger.warning(f"Circuit breaker open for {circuit_breaker_key}")
                     raise RuntimeError(f"Circuit breaker open: {circuit_breaker_key}")
             
+            # Track metrics if agent/backend provided
+            metrics = get_metrics() if metrics_agent_id and metrics_backend else None
+            
             last_exception = None
+            start_time = time.time()
             
             for attempt in range(max_retries + 1):
                 try:
@@ -48,12 +54,17 @@ def resilient_call(
                     )
                     if cb:
                         cb.record_success()
+                    if metrics:
+                        latency = time.time() - start_time
+                        metrics.record_success(metrics_agent_id, metrics_backend, latency)
                     return result
                     
                 except asyncio.TimeoutError as e:
                     last_exception = e
                     if cb:
                         cb.record_failure()
+                    if metrics:
+                        metrics.record_failure(metrics_agent_id, metrics_backend, "timeout")
                         
                     if attempt < max_retries:
                         delay = min(backoff_base * (2 ** attempt), backoff_max)
@@ -68,6 +79,9 @@ def resilient_call(
                 except Exception as e:
                     if cb:
                         cb.record_failure()
+                    if metrics:
+                        error_type = type(e).__name__
+                        metrics.record_failure(metrics_agent_id, metrics_backend, error_type)
                     logger.error(f"Non-retryable error: {e}")
                     raise
                     
@@ -148,3 +162,71 @@ def get_circuit_breaker(
             recovery_timeout=recovery_timeout,
         )
     return _circuit_breakers[key]
+
+
+@dataclass
+class ResilienceMetrics:
+    """Track success/failure/latency metrics per agent+backend combination."""
+    _stats: dict = field(default_factory=dict, init=False)
+    
+    def record_success(self, agent_id: str, backend: str, latency: float):
+        """Record a successful call."""
+        key = f"{agent_id}:{backend}"
+        if key not in self._stats:
+            self._stats[key] = {
+                "success": 0,
+                "failure": 0,
+                "total_latency": 0.0,
+                "error_types": {},
+            }
+        
+        self._stats[key]["success"] += 1
+        self._stats[key]["total_latency"] += latency
+    
+    def record_failure(self, agent_id: str, backend: str, error_type: str):
+        """Record a failed call."""
+        key = f"{agent_id}:{backend}"
+        if key not in self._stats:
+            self._stats[key] = {
+                "success": 0,
+                "failure": 0,
+                "total_latency": 0.0,
+                "error_types": {},
+            }
+        
+        self._stats[key]["failure"] += 1
+        self._stats[key]["error_types"][error_type] = (
+            self._stats[key]["error_types"].get(error_type, 0) + 1
+        )
+    
+    def get_stats(self) -> dict:
+        """Get aggregated stats for all agent+backend combinations."""
+        result = {}
+        for key, data in self._stats.items():
+            total_calls = data["success"] + data["failure"]
+            avg_latency = (
+                data["total_latency"] / data["success"]
+                if data["success"] > 0
+                else 0.0
+            )
+            result[key] = {
+                "success": data["success"],
+                "failure": data["failure"],
+                "total": total_calls,
+                "avg_latency": avg_latency,
+                "error_types": data["error_types"],
+            }
+        return result
+    
+    def reset(self):
+        """Reset all metrics."""
+        self._stats.clear()
+
+
+# Global metrics instance
+_metrics = ResilienceMetrics()
+
+
+def get_metrics() -> ResilienceMetrics:
+    """Get the global metrics instance."""
+    return _metrics

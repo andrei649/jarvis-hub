@@ -62,7 +62,7 @@ async def test_resilient_call_fails_immediately_on_non_retryable():
     assert call_count == 1  # Failed immediately, no retries
 
 
-from agents.core.resilience import CircuitBreaker
+from agents.core.resilience import CircuitBreaker, ResilienceMetrics, get_metrics
 
 @pytest.mark.asyncio
 async def test_circuit_breaker_opens_after_threshold():
@@ -126,3 +126,59 @@ async def test_resilient_call_with_circuit_breaker():
         await wrapped()
     
     assert call_count == 2  # Only 2 actual calls, third was blocked
+
+
+from agents.core.resilience import ResilienceMetrics
+
+def test_metrics_tracking():
+    metrics = ResilienceMetrics()
+    
+    metrics.record_success("agent:jarvis", "backend:gemini", 1.5)
+    metrics.record_success("agent:jarvis", "backend:gemini", 2.0)
+    metrics.record_failure("agent:jarvis", "backend:gemini", "timeout")
+    metrics.record_failure("agent:friday", "backend:local", "connection_error")
+    
+    stats = metrics.get_stats()
+    
+    assert stats["agent:jarvis:backend:gemini"]["success"] == 2
+    assert stats["agent:jarvis:backend:gemini"]["failure"] == 1
+    assert stats["agent:friday:backend:local"]["failure"] == 1
+    assert stats["agent:jarvis:backend:gemini"]["avg_latency"] == 1.75
+
+def test_metrics_reset():
+    metrics = ResilienceMetrics()
+    
+    metrics.record_success("test", "backend", 1.0)
+    metrics.reset()
+    
+    stats = metrics.get_stats()
+    assert len(stats) == 0
+
+
+@pytest.mark.asyncio
+async def test_resilient_call_records_metrics():
+    call_count = 0
+    
+    async def succeeds_on_second_try():
+        nonlocal call_count
+        call_count += 1
+        if call_count < 2:
+            raise asyncio.TimeoutError("First attempt fails")
+        return "success"
+    
+    wrapped = resilient_call(
+        max_retries=1,
+        metrics_agent_id="test-agent",
+        metrics_backend="test-backend",
+    )(succeeds_on_second_try)
+    
+    result = await wrapped()
+    assert result == "success"
+    
+    stats = get_metrics().get_stats()
+    key = "test-agent:test-backend"
+    
+    assert key in stats
+    assert stats[key]["success"] == 1
+    assert stats[key]["failure"] == 1
+    assert stats[key]["avg_latency"] > 0
