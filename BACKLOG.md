@@ -42,7 +42,7 @@ python -m pytest tests/ -v          # 568 passed, 8 skipped
 | Horizon | Total | ✅ Done | S total | S done | % |
 |---------|-------|---------|---------|--------|---|
 | **H1–H4 + Sprint 0 + Cross-cutting + Sec + Bugs** | 67 | **67** | 248 | **248** | **100%** |
-| **H5 Next Wave** (P2–P3) | 8 | **1** | 76 | **8** | **10.5%** |
+| **H5 Next Wave** (P2–P3) | 11 | **2** | 89 | **11** | **12%** |
 | **H6 Jarvis Autonom** (P1) | 6 | **6** | 55 | **55** | **100%** |
 | **Total general** | **81** | **74** | **379** | **311** | **82%** |
 
@@ -90,6 +90,9 @@ python -m pytest tests/ -v          # 568 passed, 8 skipped
 | H5.6 | Multi-Agent Workflows (handoff, paralel, pipeline) | 13 | H5.5 | 0.8 |
 | H5.7 | New Integrations / Plugins (SMS, CRM, IoT, social) | 8 | — | 0.9 |
 | H5.8 | Agent Marketplace / Skill Sharing (registry, publish) | 13 | H5.6 | 0.9 |
+| H5.9 ✅ | **Resilience Tab in Main HUD** — tab live în SystemsPanel cu retry metrics + circuit breaker states, endpoint public `/api/resilience` | 3 | H5.5 | 0.8 ✅ |
+| H5.10 | **Live Data Wiring** — Memory, Plugins, Learning, Security tabs trec de la mock static la endpoint-uri live (`/api/memory/stats`, `/api/plugins`, `/api/learning/stats`, `/security/status`) | 5 | H5.9 | 0.8 |
+| H5.11 | **Missing Widgets** — Ticker feed live, OAuth status tab, Oracle tab, Tasks widget; CognitionPanel live | 5 | H5.10 | 0.8 |
 
 ---
 
