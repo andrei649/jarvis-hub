@@ -10,7 +10,7 @@
 ```bash
 pip install -r requirements-beta.txt
 python -m uvicorn agents.web:app --host 127.0.0.1 --port 8080
-python -m pytest tests/ -v          # 509 passed, 8 skipped
+python -m pytest tests/ -v          # 538 passed, 8 skipped
 ```
 
 > Cele 8 skipped sunt din `tests/test_spotify.py` (pattern HTTP-router, opencode) care
@@ -243,12 +243,18 @@ Grafice (latency, usage, success rate), audit log search, test LLM.
 - ✅ 5 teste endpoint (structură, agenți, ordonare zilnică, canale, erori)
 **AC:** admin arată ultimele 100 interacțiuni, latență, succes rate ✅
 
-### H4.11 — Context Caching + Hybrid Routing Metrics (S:5, Dep: H2.12)
+### H4.11 — Context Caching + Hybrid Routing Metrics (S:5, Dep: H2.12) 🟡
 Optimizare costuri și vizibilitate pentru Hybrid Router.
-- Context Caching API Gemini — reține istoricul sesiunii pe serverele Google (discount 75-90%)
-- Auto-extindere cache pe măsură ce conversația crește
-- Dashboard metrics: route folosit per request (local vs cloud flash vs cloud pro)
-- Cost tracking: tokeni consumați per sesiune/lună
+- ✅ **Task 1: Cost estimator module** — MODELS pricing table + estimate_cost/estimate_monthly (8 teste)
+- ✅ **Task 2: Route tracking** — route_name pe InteractionRecord + orchestrator wiring (4 teste)
+- ✅ **Task 3: Admin stats** — route_usage + cost_estimates în `/api/admin/stats` (2 teste)
+- ✅ **Task 4: Gemini context cache** — ContextCache cu REST API + SQLite persistence (12 teste)
+- 🔳 **Task 5: Wire caching** — cachedContent în GeminiBackend + orchestrator handle_input_stream
+- 🔳 **Task 6: Token tracking** — token estimates + cache metadata în interaction records
+- 🔳 **Task 7: Dashboard UI** — route distribution + cost cards în ChartsPage
+- 🔳 **Task 8: Final verification** — full tests + BACKLOG update
+- **Commits:** 6 (cost → fix cost → route tracking → admin stats → fix admin → cache module)
+- **Branch:** `feat/context-cache`
 - AC: sesiune de 50 mesaje → 80% tokeni citiți din cache. Admin arată grafic rute utilizate.
 
 ---
@@ -305,7 +311,7 @@ Optimizare costuri și vizibilitate pentru Hybrid Router.
 | **H1 Foundation** (P0) | 5 | **5** | 26 | **26** | **100%** | 0 | — |
 | **H2 Core Agent** (P1) | 12 | **10** | 76 | **63** | **83%** | 13 | ~1 săpt. |
 | **H3 Intelligence** (P2) | 6 | **6** | 39 | **39** | **100%** | 0 | — |
-| **H4 Platform** (P3) | 11 | **10** | 63 | **58** | **92%** | 5 | ~0.5 săpt. |
+| **H4 Platform** (P3) | 11 | **11** 🟡 | 63 | **58** | **92%** (H4.11 🟡 ~60%) | 5 | ~0.5 săpt. |
 | **Cross-cutting** | 6 | **4** | 44 | **24** | **55%** | 20 | ~1 săpt. |
 | **Securitate audit** | 5 | **5** | — | — | **100%** | 0 | — |
 | **Bugfixes** | 17 | **17** | — | — | **100%** | 0 | — |
@@ -359,7 +365,7 @@ Optimizare costuri și vizibilitate pentru Hybrid Router.
 | **H4.8** Sandbox Docker | 5 | Docker | Docker instalat. | ~2.5 zile | ✅ |
 | **H4.9** Guardrails | 5 | — | Zero resurse suplimentare. Cod-only. | ~2.5 zile | ✅ |
 | **H4.10** Admin Charts | 8 | H3.1, H3.4 | Zero resurse suplimentare. Cod-only. | ~4 zile | ✅ |
-| **H4.11** Cache + Metrics | 5 | H2.12 | Gemini API (deja activ). Zero resurse suplimentare. | ~2.5 zile | 🔴 |
+| **H4.11** Cache + Metrics | 5 | H2.12 | Gemini API (deja activ). Zero resurse suplimentare. | ~1 zi rămasă | 🟡 Tasks 1-4 ✅, 5-8 pending |
 
 ### Cross-cutting — 2/6 rămase
 

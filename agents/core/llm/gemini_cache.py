@@ -1,16 +1,18 @@
 """
 gemini_cache.py — Gemini Context Caching via REST cachedContents API.
 Manages creation, extension, and deletion of cached content for session history.
-Cache mappings are persisted in the SQLite settings DB (category "cache").
+Cache mappings are persisted in the SQLite settings DB (category "cache")
+via direct INSERT OR REPLACE to bypass put_category's update-only constraint.
 """
 
 import hashlib
+import json
 import logging
 from typing import Optional
 
 import httpx
 
-from core.settings_db import get_category, put_category
+from core.settings_db import DB_PATH, get_conn
 
 logger = logging.getLogger("jarvis.gemini.cache")
 
@@ -27,21 +29,31 @@ class ContextCache:
 
     def _load_persisted(self):
         try:
-            items = get_category("cache")
-            for item in items:
-                if item["key"] == "entries":
-                    self._cache_map = item["value"]
-                    logger.info(f"Loaded {len(self._cache_map)} cache entries from DB")
+            conn = get_conn()
+            row = conn.execute(
+                "SELECT value FROM settings WHERE category='cache' AND key='entries'"
+            ).fetchone()
+            conn.close()
+            if row:
+                self._cache_map = json.loads(row["value"])
+                logger.info(f"Loaded {len(self._cache_map)} cache entries from DB")
         except Exception:
             self._cache_map = {}
 
     def _save_persisted(self):
         try:
-            put_category("cache", {"entries": self._cache_map})
+            conn = get_conn()
+            conn.execute(
+                "INSERT OR REPLACE INTO settings (category, key, value, label, kind, opts) VALUES (?,?,?,?,?,?)",
+                ("cache", "entries", json.dumps(self._cache_map), "Cache entries", "json", "[]"),
+            )
+            conn.commit()
+            conn.close()
         except Exception as e:
             logger.warning(f"Failed to persist cache map: {e}")
 
-    def cache_key(self, system_instruction: str, model: str) -> str:
+    @staticmethod
+    def cache_key(system_instruction: str, model: str) -> str:
         raw = f"{system_instruction}|{model}"
         return hashlib.sha256(raw.encode()).hexdigest()[:16]
 
@@ -55,7 +67,12 @@ class ContextCache:
     ) -> Optional[str]:
         existing = self._cache_map.get(session_id)
         if existing:
-            return await self._extend(existing["cache_name"], ttl_seconds)
+            result = await self._extend(existing["cache_name"], ttl_seconds)
+            if result is None:
+                del self._cache_map[session_id]
+                self._save_persisted()
+                return await self._create(session_id, system_instruction, history, model, ttl_seconds)
+            return result
         return await self._create(session_id, system_instruction, history, model, ttl_seconds)
 
     async def _create(
@@ -116,7 +133,7 @@ class ContextCache:
     def get_cache_info(self, session_id: str) -> Optional[dict]:
         return self._cache_map.get(session_id)
 
-    def count_active(self) -> int:
+    def count_entries(self) -> int:
         return len(self._cache_map)
 
     async def close(self):
