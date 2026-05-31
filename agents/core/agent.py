@@ -33,6 +33,9 @@ class Agent:
         self._heartbeat_config: dict = None
         self.llm_router = llm_router
         self.permission_gate = permission_gate
+        # Optional guardrails wrapper; set by Orchestrator.load_agents when
+        # security is enabled. Default None so process() works without it.
+        self.guardrails = None
         self._failures = 0
         self._last_latency = 0.0
         self._checkpoint_manager = None

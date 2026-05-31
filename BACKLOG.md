@@ -176,9 +176,13 @@ Analizează interacțiuni (succes/eșec), ajustează routing, promovează/demove
 Cron scheduler (APScheduler) pentru jarvis 07:00, friday 06:30, pepper 20:00 Sunday.
 **AC:** la 07:00 Jarvis face morning brief fără trigger manual
 
-### H3.6 — Bench Agent Activation (S:8, Dep: H3.4)
+### H3.6 — Bench Agent Activation (S:8, Dep: H3.4) ✅
 Mecanism promovare when trigger îndeplinit (howard, bruce, wanda, etc.).
-**AC:** 20 query-uri/lună către Vision → Bruce devine active
+- `Orchestrator.promote_bench_agent(bench_id)` — scrie SOUL stub din arhetip dacă lipsește, instanțiază `Agent`, îl adaugă în `self.agents` + router (idempotent)
+- Hook auto-promovare în `_record_interactions`: rulează `suggest_promotions` și promovează doar dacă `learning.auto_promote` e on (default off → rămâne doar sugestie)
+- Endpoint `POST /learning/promote` (cu `_admin_guard`)
+- Teste: `tests/test_bench_activation.py` (11)
+**AC:** 20 query-uri/lună către Vision → Bruce devine active ✅
 
 ---
 
@@ -199,17 +203,19 @@ Pentru Raiffeisen context (stark monitor).
 - `core/channels/slack.py` instanțiat + înregistrat în `web.py` când `SLACK_BOT_TOKEN` e setat
 **AC:** Stark vede mențiuni Slack și raportează
 
-### H4.4 — Ultron: Security Monitoring (S:8, Dep: Pi-hole + firewall)
+### H4.4 — Ultron: Security Monitoring (S:8, Dep: Pi-hole + firewall) ✅
 Firewall, Pi-hole logs, CVE-uri, traffic anomalies, audit trails.
-**AC:** „Ultron, status securitate?" → devices, open ports, threats
+- `skills/security_monitor/` — snapshot local-first: porturi LISTEN (psutil), device-uri ARP, Pi-hole, ufw/iptables, euristici threat. Toate sursele opționale, degradare grațioasă, zero network. (51 teste)
+**AC:** „Ultron, status securitate?" → devices, open ports, threats ✅
 
 ### H4.5 — Steve: System Monitor (S:8, Dep: —) ✅
 CPU/GPU/RAM/disk/temp Bonobo WS + Pi 5. Auto-recovery.
 **AC:** „Steve, cum e sistemul?" → metrics + alerts
 
-### H4.6 — Oracle: n8n Workflow Designer (S:5, Dep: n8n pornit)
+### H4.6 — Oracle: n8n Workflow Designer (S:5, Dep: n8n pornit) ✅
 Conectare n8n API — creează/monitorizează workflow-uri.
-**AC:** „Oracle, creează workflow vreme zilnic" → workflow creat
+- `core/plugins/n8n.py` — client async REST API v1 (list/create/activate workflows + `create_daily_weather_workflow`); `N8N_BASE_URL`/`N8N_API_KEY`; rezultat „not configured" curat când lipsesc. Înregistrat în orchestrator. (17 teste)
+**AC:** „Oracle, creează workflow vreme zilnic" → workflow creat ✅
 
 ### H4.7 — MCP Client real (S:8, Dep: —) 🟡 parțial
 MCPManager conectat la MCP servers externe.
@@ -251,7 +257,7 @@ Optimizare costuri și vizibilitate pentru Hybrid Router.
 | Session Manager thread-safe | 3 | — | P1 | ✅ | 2 sesiuni simultane nu se corup |
 | Error taxonomy + logging structurat | 5 | — | P1 | ✅ |
 | CHANGELOG.md | 1 | — | P1 | ✅ |
-| Integration tests per agent | 15 (1/agent) | H2.x | P2 | fiecare agent are test end-to-end |
+| Integration tests per agent | 15 (1/agent) | H2.x | P2 | ✅ `tests/test_agents_integration.py` — load SOUL + routabil + process cu LLM mock, parametrizat pe toți agenții activi |
 | Plan per agent în `.opencode/plans/` | 15 | H2.x | P2 | skills, tools, memory definite per agent |
 | Load test — 15 agenți simultan | 5 | H2.x | P3 | 15 requests paralele <30s total |
 
@@ -295,13 +301,13 @@ Optimizare costuri și vizibilitate pentru Hybrid Router.
 |---------|------------|----------|---------|----------|-----------|----------|---------------|
 | **H1 Foundation** (P0) | 5 | **5** | 26 | **26** | **100%** | 0 | — |
 | **H2 Core Agent** (P1) | 12 | **10** | 76 | **63** | **83%** | 13 | ~1 săpt. |
-| **H3 Intelligence** (P2) | 6 | **5** | 39 | **31** | **79%** | 8 | ~0.5 săpt. |
-| **H4 Platform** (P3) | 11 | **6** | 63 | **29** | **46%** | 34 | ~2 săpt. (paralel 3) |
-| **Cross-cutting** | 6 | **3** | 44 | **9** | **21%** | 35 | ~2 săpt. |
+| **H3 Intelligence** (P2) | 6 | **6** | 39 | **39** | **100%** | 0 | — |
+| **H4 Platform** (P3) | 11 | **8** | 63 | **42** | **67%** | 21 | ~1.5 săpt. (paralel 3) |
+| **Cross-cutting** | 6 | **4** | 44 | **24** | **55%** | 20 | ~1 săpt. |
 | **Securitate audit** | 5 | **5** | — | — | **100%** | 0 | — |
 | **Bugfixes** | 17 | **17** | — | — | **100%** | 0 | — |
 | **Sprint 0** (P0) | 3 | **3** | 7 | **7** | **100%** | 0 | — |
-| **Total general** | **65** | **54** | **255** | **165** | **65%** | **90** | **~5.5 săpt.** |
+| **Total general** | **65** | **58** | **255** | **201** | **79%** | **54** | **~4 săpt.** |
 
 **Echipă 3-4 agenți paralel:** H2+H3 ≈ 2-3 luni · Totul ≈ 3 luni (estimat)
 
@@ -325,7 +331,7 @@ Optimizare costuri și vizibilitate pentru Hybrid Router.
 | **H2.10** Veronica Drafting | 3 | — | Zero API keys. Prompt engineering + tone profiles în `agents.yaml`. | ~1.5 zile | ✅ |
 | **H2.11** Stark GA4 | 5 | access API | Google Cloud → enable GA4 Data API + Firebase Analytics API. Service Account JSON. | ~2.5 zile | 🔴 |
 
-### H3 — Intelligence & Memory (P2) — 1/6 rămase (H3.6 Bench Activation)
+### H3 — Intelligence & Memory (P2) — 0/6 rămase ✅
 
 | Item | S | Dep | Resurse externe | Efort |
 |------|---|-----|-----------------|-------|
@@ -334,29 +340,28 @@ Optimizare costuri și vizibilitate pentru Hybrid Router.
 | **H3.3** Session Persistence | 5 | H3.1 | Zero resurse suplimentare. Cod-only. | ~2.5 zile | ✅ |
 | **H3.4** Learning Loop live | 8 | H3.1, H3.3 | Zero resurse suplimentare. Cod-only. | ~4 zile | ✅ |
 | **H3.5** Heartbeat System | 5 | — | Zero resurse suplimentare. APScheduler deja instalat. | ~2.5 zile | ✅ |
-| **H3.6** Bench Activation | 8 | H3.4 | Zero resurse suplimentare. Cod-only. | ~4 zile | 🔴 |
+| **H3.6** Bench Activation | 8 | H3.4 | Zero resurse suplimentare. Cod-only. | ~4 zile | ✅ |
 
-### H4 — Platform & Security (P3) — 5/11 rămase (H4.4, H4.6, H4.7*, H4.10, H4.11)
+### H4 — Platform & Security (P3) — 3/11 rămase (H4.7*, H4.10, H4.11)
 
 | Item | S | Dep | Resurse externe | Efort | Status |
 |------|---|-----|-----------------|-------|--------|
 | **H4.1** Discord Channel | 5 | — | Discord Developer → Bot Token + Intents. | ~2.5 zile | ✅ |
 | **H4.2** Email Channel | 3 | — | SMTP/IMAP credentials (gratuit). | ~1.5 zile | ✅ |
 | **H4.3** Slack Channel | 3 | Slack App | Slack API → App + Bot Token + Scopes. | ~1.5 zile | ✅ |
-| **H4.4** Ultron Security | 8 | Pi-hole + firewall | Zero API keys (citire log-uri locale). | ~4 zile | 🔴 |
+| **H4.4** Ultron Security | 8 | Pi-hole + firewall | Zero API keys (citire log-uri locale). | ~4 zile | ✅ |
 | **H4.5** Steve Monitor | 8 | — | Zero API keys (psutil local). | ~4 zile | ✅ |
-| **H4.6** Oracle n8n | 5 | n8n pornit | n8n running (Docker sau local). API key din n8n settings. | ~2.5 zile | 🔴 |
+| **H4.6** Oracle n8n | 5 | n8n pornit | n8n running (Docker sau local). API key din n8n settings. | ~2.5 zile | ✅ |
 | **H4.7** MCP Client | 8 | — | Zero resurse externe (conectare MCP servers). | ~4 zile | 🟡 core gata, admin-wiring rămas |
 | **H4.8** Sandbox Docker | 5 | Docker | Docker instalat. | ~2.5 zile | ✅ |
 | **H4.9** Guardrails | 5 | — | Zero resurse suplimentare. Cod-only. | ~2.5 zile | ✅ |
 | **H4.10** Admin Charts | 8 | H3.1, H3.4 | Zero resurse suplimentare. Cod-only. | ~4 zile | 🔴 |
 | **H4.11** Cache + Metrics | 5 | H2.12 | Gemini API (deja activ). Zero resurse suplimentare. | ~2.5 zile | 🔴 |
 
-### Cross-cutting — 3/6 rămase
+### Cross-cutting — 2/6 rămase
 
 | Item | S | Dep | Resurse externe | Efort |
 |------|---|-----|-----------------|-------|
-| Integration tests per agent | 15 | H2.x | Zero resurse. Teste Python. | ~1 săpt. |
 | Plans per agent `.opencode/` | 15 | H2.x | Zero resurse. Documentație YAML. | ~1 săpt. |
 | Load test 15 agenți | 5 | H2.x | Zero resurse. Script Python. | ~2.5 zile |
 
