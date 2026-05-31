@@ -366,11 +366,15 @@ function GlobalConfigPage({ settings, dirty, onUpdate, onSave }) {
   ];
 
   const flatSettings = {};
-  Object.entries(settings).forEach(([cat, list]) => {
-    list.forEach(s => {
-      flatSettings[`${cat}.${s.key}`] = s;
+  if (settings && typeof settings === 'object') {
+    Object.entries(settings).forEach(([cat, list]) => {
+      if (Array.isArray(list)) {
+        list.forEach(s => {
+          flatSettings[`${cat}.${s.key}`] = s;
+        });
+      }
     });
-  });
+  }
 
   const getMergedSetting = (fullKey) => {
     const s = flatSettings[fullKey];
@@ -945,9 +949,12 @@ function AdminApp() {
     keys.forEach(k => {
       let foundCat = 'general';
       for (const catId of Object.keys(settings)) {
-        if (settings[catId].some(s => s.key === k)) {
-          foundCat = catId;
-          break;
+        const list = settings[catId];
+        if (list && Array.isArray(list)) {
+          if (list.some(s => s.key === k)) {
+            foundCat = catId;
+            break;
+          }
         }
       }
       if (!byCategory[foundCat]) byCategory[foundCat] = {};

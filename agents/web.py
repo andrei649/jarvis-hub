@@ -497,9 +497,11 @@ async def get_tasks():
             d = t.to_dict()
         else:
             d = dict(t)
-        # Ensure owner and state are present for React component compatibility (e.g. NetworkBrain)
+        # Ensure owner, state, label, and project are present for React component compatibility (e.g. NetworkBrain)
         d["owner"] = d.get("owner") or d.get("agent_id") or "jarvis"
         d["state"] = d.get("state") or d.get("status") or "done"
+        d["label"] = d.get("label") or d.get("title") or "Task"
+        d["project"] = d.get("project") or d.get("kind") or "Autonomy"
         return d
 
     # 1. Check for running tasks first
@@ -519,6 +521,8 @@ async def get_tasks():
                 "owner": "steve",
                 "kind": "system_check",
                 "title": "Optimizare bază de date memorii (Memory DB Optimization)",
+                "label": "Optimizare bază de date memorii (Memory DB Optimization)",
+                "project": "System",
                 "status": "done",
                 "state": "done",
                 "tier": 1,
@@ -531,6 +535,8 @@ async def get_tasks():
                 "owner": "jarvis",
                 "kind": "analysis",
                 "title": "Review zilnic: Raport activitate ore de noapte (Daily Night-Shift Brief)",
+                "label": "Review zilnic: Raport activitate ore de noapte (Daily Night-Shift Brief)",
+                "project": "Autonomy",
                 "status": "done",
                 "state": "done",
                 "tier": 1,
@@ -543,6 +549,8 @@ async def get_tasks():
                 "owner": "friday",
                 "kind": "report",
                 "title": "Monitorizare update-uri sistem de securitate (Security Scan Loop)",
+                "label": "Monitorizare update-uri sistem de securitate (Security Scan Loop)",
+                "project": "Security",
                 "status": "done",
                 "state": "done",
                 "tier": 1,
