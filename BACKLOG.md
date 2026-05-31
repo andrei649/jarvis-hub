@@ -101,7 +101,7 @@ python -m pytest tests/ -v          # 568 passed, 8 skipped
 | H5.8 | Agent Marketplace / Skill Sharing (registry, publish) | 13 | H5.6 | 0.9 |
 | H5.9 ✅ | **Resilience Tab in Main HUD** — tab live în SystemsPanel cu retry metrics + circuit breaker states, endpoint public `/api/resilience` | 3 | H5.5 | 0.8 ✅ |
 | H5.10 ✅ | **Live Data Wiring** — Memory, Plugins, Learning, Security tabs trec de la mock static la endpoint-uri live (`/memory/stats`, `/api/plugins`, `/learning/stats`, `/security/status`, `/bench/stats`) | 5 | H5.9 | 0.8 ✅ |
-| H5.11 | **Missing Widgets** — Ticker feed live, OAuth status tab, Oracle tab, Tasks widget; CognitionPanel live | 5 | H5.10 | 0.8 |
+| H5.11 ✅ | **Missing Widgets** — Ticker feed live, OAuth status tab, Oracle tab, Tasks widget; CognitionPanel live | 5 | H5.10 | 0.8 ✅ |
 | H5.12 | **Secured Shell Task Executor** — real shell execution pentru `restart_service` în sandbox/`plugin_gate` după aprobare | 5 | H6.7 | 0.8 |
 | H5.13 | **Proactive Event Watchers** — watcheri autonomi email, calendar, finanțe, health (trigger layer) | 8 | H6.7 | 0.8 |
 | H5.14 | **Retrieval Fusion Engine** — Reciprocal Rank Fusion / weighted scoring îmbinând Qdrant + Neo4j | 5 | H3.1, H3.2 | 0.8 |
@@ -277,7 +277,7 @@ Adăugare tab în SystemsPanel din HUD cu starea circuit breakerelor și retry m
 Conectare taburi Memory, Plugins, Learning, Security la endpoint-uri reale din backend în loc de mock.
 **AC:** Toate graficele și listele de securitate din HUD prezintă datele reale din DB/Logs.
 
-### H5.11 — Missing Widgets (S:5, Dep: H5.10)
+### H5.11 ✅ — Missing Widgets (S:5, Dep: H5.10)
 Ticker feed în HUD, status OAuth integrat, widget de task-uri curente și CognitionPanel funcțional.
 **AC:** Toate widgeturile din interfață sunt active și interactive.
 
