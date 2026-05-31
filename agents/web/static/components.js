@@ -82,8 +82,8 @@ function TopBar({ activeAgent, voiceState, agentsOnline, agentsTotal, lmOnline, 
       h(Badge, { label: 'Agents', value: `${agentsOnline}/${agentsTotal}`, kind: 'active' }),
       h(Badge, { label: _t('comp.memory'), value: _t('comp.online'), kind: 'ok' }),
       h(Badge, { label: _t('comp.lmstudio'), value: lmOnline ? '1234' : _t('comp.offline'), kind: lmOnline ? 'active' : 'alert' }),
-      onToggleCognition && h('button', { className: 'topbar-btn', onClick: onToggleCognition, title: 'Toggle Cognition Panel' }, '🧠'),
-      onToggleSystems && h('button', { className: 'topbar-btn', onClick: onToggleSystems, title: 'Toggle Systems Panel' }, '⚙️'),
+      h('button', { className: 'topbar-btn', onClick: onToggleCognition, title: 'Toggle Cognition Panel' }, 'COG'),
+      h('button', { className: 'topbar-btn', onClick: onToggleSystems, title: 'Toggle Systems Panel' }, 'SYS'),
     ),
   );
 }

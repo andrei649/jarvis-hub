@@ -1,8 +1,7 @@
 'use strict';
 /* systems.js — v0.3 Systems panel: memory, plugins, learning, security & bench */
 
-const { useState, useEffect, useMemo, useCallback } = React;
-const h = React.createElement;
+// useState, useEffect, useMemo, useCallback, h sunt deja definite global în components.js
 
 const TABS = [
   { id: 'memory',   label: 'Memory' },

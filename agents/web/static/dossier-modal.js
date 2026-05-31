@@ -1,8 +1,7 @@
 'use strict';
 /* dossier-modal.js — v0.3 Agent Dossier: fullscreen modal on double-click */
 
-const { useState, useEffect, useCallback } = React;
-const h = React.createElement;
+// useState, useEffect, useCallback, h sunt deja definite global în components.js
 
 function DossierGlyph({ path, size = 48 }) {
   return h('svg', { viewBox: '-12 -12 24 24', width: size, height: size, className: 'dossier-glyph' },

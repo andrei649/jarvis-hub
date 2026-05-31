@@ -1,8 +1,7 @@
 'use strict';
 /* cognition.js — v0.3 Cognition panel: intent classification, routing decision, orchestration trace */
 
-const { useState, useEffect, useMemo } = React;
-const h = React.createElement;
+// useState, useEffect, useMemo, h sunt deja definite global în components.js
 
 function IntentClassification({ scoring, message }) {
   if (!scoring || scoring.length === 0) {

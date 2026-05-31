@@ -2036,20 +2036,28 @@
 
 /* ─── v0.3 TopBar Buttons ──────────────────────────────────────────────── */
 .topbar-btn {
-  background: transparent;
-  border: 1px solid var(--border-glass);
-  color: var(--text-secondary);
-  padding: 6px 10px;
+  background: rgba(0, 174, 239, 0.1);
+  border: 2px solid var(--accent);
+  color: var(--accent-light);
+  padding: 8px 12px;
   border-radius: 4px;
   cursor: pointer;
-  font-size: 16px;
+  font-size: 12px;
+  font-weight: 600;
+  font-family: var(--font-mono);
   margin-left: 8px;
   transition: all 0.2s;
+  letter-spacing: 0.05em;
 }
 .topbar-btn:hover {
-  border-color: var(--accent);
-  color: var(--accent-light);
-  background: var(--accent-faint);
+  background: rgba(0, 174, 239, 0.2);
+  border-color: var(--accent-light);
+  color: var(--text-primary);
+  transform: translateY(-1px);
+  box-shadow: 0 2px 8px rgba(0, 174, 239, 0.3);
+}
+.topbar-btn:active {
+  transform: translateY(0);
 }
 
 /* ─── v0.3 Heartbeats Tab ─────────────────────────────────────────────── */
