@@ -47,6 +47,7 @@ from core.log import setup_logging, log_error
 from core.errors import JarvisError, E_INTERNAL_UNEXPECTED, E_SECURITY_BLOCKED
 from core.security.guardrails import SecurityBlockError
 from core.llm.cost_estimator import estimate_monthly
+from core.resilience import get_metrics, _circuit_breakers
 
 logger = logging.getLogger("jarvis.web")
 
@@ -1152,6 +1153,17 @@ async def admin_stats():
         })
     cost_estimates = estimate_monthly(cost_records)
 
+    # Resilience metrics
+    resilience_metrics = get_metrics().get_stats()
+    circuit_breaker_states = {
+        key: {
+            "state": cb.state,
+            "failure_count": cb.failure_count,
+            "last_failure_time": cb.last_failure_time,
+        }
+        for key, cb in _circuit_breakers.items()
+    }
+
     return _nocache_json({
         "overview": {
             "total_interactions": total,
@@ -1165,6 +1177,8 @@ async def admin_stats():
         "error_types": [[k, v] for k, v in error_types_list],
         "route_usage": route_usage,
         "cost_estimates": cost_estimates,
+        "resilience": resilience_metrics,
+        "circuit_breakers": circuit_breaker_states,
     })
 
 
