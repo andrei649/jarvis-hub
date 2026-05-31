@@ -80,6 +80,9 @@ class Orchestrator:
         self.channels: dict[str, ChannelAdapter] = {}
         self.checkpoints = CheckpointManager()
         self.learning = LearningLoop()
+        rules = config.get_promotion_rules() if hasattr(config, "get_promotion_rules") else None
+        if rules:
+            self.learning.set_promotion_rules(rules)
         self.bench = LatencyBenchmark()
         self.sandbox = Sandbox()
         self.heartbeat_scheduler = HeartbeatScheduler(agents_dir=str(Path(__file__).resolve().parent.parent.parent / "agents"))
@@ -305,7 +308,7 @@ class Orchestrator:
 
         if intent.target_agents:
             responses = await self._call_agents_parallel(
-                intent.target_agents, text, intent.context, plugin_data
+                self._route_candidates(intent), text, intent.context, plugin_data
             )
         elif intent.is_general:
             responses = await self._call_agents_parallel(
@@ -379,7 +382,7 @@ class Orchestrator:
         if agent_override and agent_override in self.agents:
             target = [agent_override]
         else:
-            target = intent.target_agents if intent.target_agents else ["jarvis"]
+            target = self._route_candidates(intent) if intent.target_agents else ["jarvis"]
 
         temperature = self.get_setting("llm.temperature", 0.7)
         max_tokens = self.get_setting("llm.max_tokens", 1024)
@@ -480,6 +483,20 @@ class Orchestrator:
                 except (ValueError, IndexError):
                     continue
         return None
+
+    def _route_candidates(self, intent) -> list[str]:
+        """Apply the live learning loop to routing: reorder candidate agents by
+        recent health and drop chronically-failing ones when an alternative
+        exists. Explicit wake-word calls are never rerouted."""
+        agents = list(intent.target_agents or [])
+        if len(agents) <= 1 or intent.context.get("source") == "wake_word":
+            return agents
+        ranked = self.learning.rank_candidates(agents)
+        healthy = [a for a in ranked if not self.learning.is_unhealthy(a)]
+        chosen = healthy if healthy else ranked[:1]
+        if chosen != agents:
+            logger.info(f"Routing adjusted by learning: {agents} -> {chosen}")
+        return chosen
 
     def _first_target_agent(self, intent) -> str:
         return intent.target_agents[0] if intent.target_agents and len(intent.target_agents) > 0 else "jarvis"
@@ -660,7 +677,7 @@ class Orchestrator:
             "memory": await self.memory.get_session_stats(),
             "skills": list(self.skills.skills.keys()),
             "checkpoint": self.checkpoints.info(),
-            "learning": self.learning.get_stats(),
+            "learning": self.learning.get_stats(active_ids=set(self.agents.keys())),
             "bench": self.bench.get_summary(),
             "security": self.security is not None,
             "sandbox_available": self.sandbox._has_docker,

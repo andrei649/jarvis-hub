@@ -674,11 +674,12 @@ async def get_learning():
     if not orch:
         return JSONResponse({"error": "not initialized"}, status_code=503)
     return {
-        "stats": orch.learning.get_stats(),
+        "stats": orch.learning.get_stats(active_ids=set(orch.agents.keys())),
         "optimizations": {
             aid: orch.learning.optimize_prompt(aid)
             for aid in orch.agents
         },
+        "promotion_suggestions": orch.learning.suggest_promotions(active_ids=set(orch.agents.keys())),
     }
 
 

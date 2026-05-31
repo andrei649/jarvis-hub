@@ -184,6 +184,9 @@ bench:
     name: Bruce
     archetype: Data Science
     trigger: "Heavy data analysis >20 queries/week"
+    triggers_on: vision        # promotion suggested when Vision query volume crosses threshold
+    threshold: 20
+    window_days: 30
 
   wanda:
     name: Wanda

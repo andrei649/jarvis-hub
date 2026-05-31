@@ -32,11 +32,29 @@ class LearningLoop:
     MIN_FAILURES_FOR_OPTIMIZATION = 3
     ANALYSIS_WINDOW = 100
 
-    def __init__(self, db_path: str = "memory_logs/learning/"):
+    # Routing health thresholds.
+    HEALTH_WINDOW = 20          # recent interactions used to score an agent
+    UNHEALTHY_WINDOW = 10       # recent interactions used to flag an agent
+    UNHEALTHY_MIN_SAMPLE = 4    # need at least this many records before flagging
+    UNHEALTHY_FAILURE_RATE = 0.5
+
+    # Default bench-promotion rules: bench_agent -> when to suggest activation.
+    # `source` is the active agent whose query volume triggers the bench agent.
+    DEFAULT_PROMOTION_RULES = {
+        "bruce": {"source": "vision", "threshold": 20, "window_days": 30},
+    }
+
+    def __init__(self, db_path: str = "memory_logs/learning/", promotion_rules: dict = None):
         self.db_path = Path(db_path)
         self.db_path.mkdir(parents=True, exist_ok=True)
         self.interactions: list[InteractionRecord] = []
+        self.promotion_rules: dict = promotion_rules or dict(self.DEFAULT_PROMOTION_RULES)
         self._load()
+
+    def set_promotion_rules(self, rules: dict):
+        """Replace promotion rules (e.g. derived from agents.yaml `bench:`)."""
+        if rules:
+            self.promotion_rules = dict(rules)
 
     def record(
         self,
@@ -73,6 +91,71 @@ class LearningLoop:
         if not records:
             return 0.0
         return sum(1 for r in records if not r.success) / len(records)
+
+    def get_success_rate(self, agent_id: str, last_n: int = HEALTH_WINDOW) -> float:
+        records = self.get_agent_records(agent_id, last_n)
+        if not records:
+            return 1.0  # untracked agents are assumed healthy (don't penalize)
+        return sum(1 for r in records if r.success) / len(records)
+
+    def interaction_count(self, agent_id: str, window_seconds: float = None, now: float = None) -> int:
+        """Count interactions for an agent, optionally within a recent time window."""
+        now = now if now is not None else time.time()
+        count = 0
+        for r in self.interactions:
+            if r.agent_id != agent_id:
+                continue
+            if window_seconds is not None and (now - r.timestamp) > window_seconds:
+                continue
+            count += 1
+        return count
+
+    # ── Routing health (live loop → routing) ──────────────────────────────
+    def health_score(self, agent_id: str, last_n: int = HEALTH_WINDOW) -> float:
+        """0..1 score used to rank candidate agents for routing."""
+        return self.get_success_rate(agent_id, last_n)
+
+    def is_unhealthy(self, agent_id: str) -> bool:
+        """True if an agent is failing often enough to be bypassed when an
+        alternative exists. Requires a minimum sample so new agents aren't flagged."""
+        records = self.get_agent_records(agent_id, self.UNHEALTHY_WINDOW)
+        if len(records) < self.UNHEALTHY_MIN_SAMPLE:
+            return False
+        failure_rate = sum(1 for r in records if not r.success) / len(records)
+        return failure_rate >= self.UNHEALTHY_FAILURE_RATE
+
+    def rank_candidates(self, agent_ids: list[str], last_n: int = HEALTH_WINDOW) -> list[str]:
+        """Stable-sort candidates by health (best first). Ties keep input order."""
+        indexed = list(enumerate(agent_ids))
+        indexed.sort(key=lambda pair: (-self.health_score(pair[1], last_n), pair[0]))
+        return [aid for _, aid in indexed]
+
+    # ── Bench-agent promotion suggestions ─────────────────────────────────
+    def suggest_promotions(self, active_ids=None, now: float = None) -> list[dict]:
+        """Suggest activating bench agents whose source agent crossed its volume
+        threshold. Skips bench agents that are already active."""
+        active = set(active_ids or [])
+        now = now if now is not None else time.time()
+        suggestions = []
+        for bench_id, rule in self.promotion_rules.items():
+            if bench_id in active:
+                continue
+            source = rule.get("source")
+            if not source:
+                continue
+            threshold = int(rule.get("threshold", 20))
+            window_days = int(rule.get("window_days", 30))
+            count = self.interaction_count(source, window_seconds=window_days * 86400, now=now)
+            if count >= threshold:
+                suggestions.append({
+                    "bench_agent": bench_id,
+                    "source_agent": source,
+                    "count": count,
+                    "threshold": threshold,
+                    "window_days": window_days,
+                    "reason": f"{count} interactions to {source} in {window_days}d ≥ {threshold}",
+                })
+        return suggestions
 
     def get_failure_patterns(self, agent_id: str) -> list[tuple[str, int]]:
         failures = [r for r in self.interactions if r.agent_id == agent_id and not r.success]
@@ -134,7 +217,7 @@ class LearningLoop:
                 logger.warning(f"Failed to load {path}: {e}")
         logger.info(f"Loaded {len(self.interactions)} interaction records from {self.db_path}")
 
-    def get_stats(self) -> dict:
+    def get_stats(self, active_ids=None) -> dict:
         total = len(self.interactions)
         successes = sum(1 for r in self.interactions if r.success)
         agents = set(r.agent_id for r in self.interactions)
@@ -150,4 +233,5 @@ class LearningLoop:
             "failed": total - successes,
             "agents_tracked": len(agents),
             "optimizations_available": optimizable,
+            "promotion_suggestions": self.suggest_promotions(active_ids),
         }

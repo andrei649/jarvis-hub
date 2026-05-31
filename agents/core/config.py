@@ -37,6 +37,7 @@ class JarvisConfig:
         self.agents: dict[str, AgentConfig] = {}
         self.general: dict = {}
         self.plugins: dict = {}
+        self.bench: dict = {}
         self._load()
 
     def _load(self):
@@ -52,6 +53,24 @@ class JarvisConfig:
 
         self.general = data.get("general", {})
         self.plugins = data.get("plugins", {})
+        self.bench = data.get("bench", {}) or {}
+
+    def get_promotion_rules(self) -> dict:
+        """Derive bench-promotion rules from agents.yaml `bench:` entries that
+        declare a machine-readable `triggers_on` source + `threshold`."""
+        rules = {}
+        for bench_id, entry in self.bench.items():
+            if not isinstance(entry, dict):
+                continue
+            source = entry.get("triggers_on")
+            if not source:
+                continue
+            rules[bench_id] = {
+                "source": source,
+                "threshold": int(entry.get("threshold", 20)),
+                "window_days": int(entry.get("window_days", 30)),
+            }
+        return rules
 
     def get_active_agents(self) -> list[AgentConfig]:
         return [a for a in self.agents.values() if a.status == "active"]

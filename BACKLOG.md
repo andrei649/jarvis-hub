@@ -163,9 +163,14 @@ Salvează/restaurează sesiuni cross-channel.
 - ✅ Resume explicit de sesiune anume: `ConversationMemory.resume_session()` + `MemoryManager.resume_session()` + endpoint `POST /sessions/resume`.
 - ✅ Continuitate cross-channel **opt-in** prin flag `memory.cross_channel_sessions` (default off → izolarea Telegram din H1.2 e păstrată; on → web↔telegram împart `session_id`). Teste: `tests/test_cross_channel_sessions.py`.
 
-### H3.4 — Learning Loop live (S:8, Dep: H3.1, H3.3)
+### H3.4 — Learning Loop live (S:8, Dep: H3.1, H3.3) ✅
 Analizează interacțiuni (succes/eșec), ajustează routing, promovează/demovează agenți.
-**AC:** după 100 interacțiuni, sugerează promovare agent bench
+- **Routing live:** `LearningLoop.rank_candidates` + `is_unhealthy` → orchestrator `_route_candidates` reordonează candidații după health-score și scoate agenții cronic-eșuați când există alternativă (wake-word explicit nu se rerutează; nu rămâne niciodată lista goală)
+- **Promovare bench:** `suggest_promotions` — regulă data-driven din `agents.yaml` (`bench.<id>.triggers_on`/`threshold`/`window_days`); default `bruce ← vision @ 20/30d`. Skip pentru agenți deja activi
+- Expus în `get_stats` + endpoint `/learning` (`promotion_suggestions`)
+- Demovarea pe eșecuri consecutive exista deja (`agent.should_demote`)
+- Teste: `tests/test_learning_live.py` (13) + routing în `tests/test_routing.py` (5)
+**AC:** după 100 interacțiuni, sugerează promovare agent bench ✅ (verificat: 21 query-uri Vision → sugerează Bruce)
 
 ### H3.5 — Heartbeat System (S:5, Dep: —) ✅
 Cron scheduler (APScheduler) pentru jarvis 07:00, friday 06:30, pepper 20:00 Sunday.
@@ -290,13 +295,13 @@ Optimizare costuri și vizibilitate pentru Hybrid Router.
 |---------|------------|----------|---------|----------|-----------|----------|---------------|
 | **H1 Foundation** (P0) | 5 | **5** | 26 | **26** | **100%** | 0 | — |
 | **H2 Core Agent** (P1) | 12 | **10** | 76 | **63** | **83%** | 13 | ~1 săpt. |
-| **H3 Intelligence** (P2) | 6 | **4** | 39 | **23** | **59%** | 16 | ~1 săpt. |
+| **H3 Intelligence** (P2) | 6 | **5** | 39 | **31** | **79%** | 8 | ~0.5 săpt. |
 | **H4 Platform** (P3) | 11 | **6** | 63 | **29** | **46%** | 34 | ~2 săpt. (paralel 3) |
 | **Cross-cutting** | 6 | **3** | 44 | **9** | **21%** | 35 | ~2 săpt. |
 | **Securitate audit** | 5 | **5** | — | — | **100%** | 0 | — |
 | **Bugfixes** | 17 | **17** | — | — | **100%** | 0 | — |
 | **Sprint 0** (P0) | 3 | **3** | 7 | **7** | **100%** | 0 | — |
-| **Total general** | **65** | **53** | **255** | **157** | **62%** | **98** | **~6 săpt.** |
+| **Total general** | **65** | **54** | **255** | **165** | **65%** | **90** | **~5.5 săpt.** |
 
 **Echipă 3-4 agenți paralel:** H2+H3 ≈ 2-3 luni · Totul ≈ 3 luni (estimat)
 
@@ -320,14 +325,14 @@ Optimizare costuri și vizibilitate pentru Hybrid Router.
 | **H2.10** Veronica Drafting | 3 | — | Zero API keys. Prompt engineering + tone profiles în `agents.yaml`. | ~1.5 zile | ✅ |
 | **H2.11** Stark GA4 | 5 | access API | Google Cloud → enable GA4 Data API + Firebase Analytics API. Service Account JSON. | ~2.5 zile | 🔴 |
 
-### H3 — Intelligence & Memory (P2) — 2/6 rămase (H3.4 Learning Loop, H3.6 Bench Activation)
+### H3 — Intelligence & Memory (P2) — 1/6 rămase (H3.6 Bench Activation)
 
 | Item | S | Dep | Resurse externe | Efort |
 |------|---|-----|-----------------|-------|
 | **H3.1** Qdrant Vector DB | 5 | Qdrant pornit | Docker: `docker run -p 6333:6333 qdrant/qdrant`. Zero API key. | ~2.5 zile | ✅ |
 | **H3.2** Neo4j Knowledge Graph | 8 | Neo4j pornit | Docker: `docker run -p 7474:7474 -p 7687:7687 neo4j`. Zero API key (local). | ~4 zile | ✅ |
 | **H3.3** Session Persistence | 5 | H3.1 | Zero resurse suplimentare. Cod-only. | ~2.5 zile | ✅ |
-| **H3.4** Learning Loop live | 8 | H3.1, H3.3 | Zero resurse suplimentare. Cod-only. | ~4 zile | 🔴 |
+| **H3.4** Learning Loop live | 8 | H3.1, H3.3 | Zero resurse suplimentare. Cod-only. | ~4 zile | ✅ |
 | **H3.5** Heartbeat System | 5 | — | Zero resurse suplimentare. APScheduler deja instalat. | ~2.5 zile | ✅ |
 | **H3.6** Bench Activation | 8 | H3.4 | Zero resurse suplimentare. Cod-only. | ~4 zile | 🔴 |
 
