@@ -683,6 +683,27 @@ async def get_learning():
     }
 
 
+class PromoteRequest(BaseModel):
+    bench_agent: str
+
+
+@app.post("/learning/promote", dependencies=[Depends(_admin_guard)])
+async def learning_promote(body: PromoteRequest):
+    """Manually promote a bench agent to active status."""
+    if not orch:
+        return JSONResponse({"error": "not initialized"}, status_code=503)
+    bench_id = body.bench_agent.strip().lower()
+    if not bench_id:
+        return JSONResponse({"error": "bench_agent is required"}, status_code=400)
+    promoted = orch.promote_bench_agent(bench_id)
+    return _nocache_json({
+        "ok": True,
+        "bench_agent": bench_id,
+        "promoted": promoted,
+        "active_agents": list(orch.agents.keys()),
+    })
+
+
 # ── Admin panel ──────────────────────────────────────────────────
 
 

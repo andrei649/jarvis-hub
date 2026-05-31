@@ -102,6 +102,10 @@ class IntentRouter:
 
     def __init__(self, config):
         self.config = config
+        # Copy the class-level routing table to an instance dict so dynamic
+        # entries (bench-agent promotions) are scoped to this router instance
+        # and don't pollute other instances or leak across tests.
+        self.ROUTING_TABLE = dict(self.__class__.ROUTING_TABLE)
 
     async def classify(self, text: str, agents: dict) -> Intent:
         """

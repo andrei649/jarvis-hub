@@ -634,6 +634,66 @@ class Orchestrator:
             return await agent.run_heartbeat(orchestrator=self)
         return None
 
+    def promote_bench_agent(self, bench_id: str) -> bool:
+        """Instantiate and register a bench agent as active + routable.
+
+        Returns True if promotion happened, False if already active (idempotent).
+        If the agent has no SOUL.md a minimal stub is written so Agent loads cleanly.
+        """
+        if bench_id in self.agents:
+            logger.debug(f"promote_bench_agent: {bench_id} already active — no-op")
+            return False
+
+        bench_entry = self.config.bench.get(bench_id)
+        if not bench_entry or not isinstance(bench_entry, dict):
+            logger.warning(f"promote_bench_agent: {bench_id} not found in bench config")
+            return False
+
+        archetype = bench_entry.get("archetype", "Specialist")
+        name = bench_entry.get("name", bench_id.capitalize())
+
+        # Ensure SOUL.md exists so Agent._load_soul() doesn't just warn.
+        soul_dir = Path(f"agents/{bench_id}")
+        soul_path = soul_dir / "SOUL.md"
+        if not soul_path.exists():
+            soul_dir.mkdir(parents=True, exist_ok=True)
+            stub = (
+                f"# {name}\n"
+                f"> {archetype} — auto-promoted bench agent.\n\n"
+                f"## Identity\n"
+                f"{name} is a specialist agent promoted from the bench because "
+                f"demand crossed its activation threshold.\n\n"
+                f"## Mission\n"
+                f"Serve as the dedicated {archetype} for Andrei.\n\n"
+                f"## Voice & Tone\n"
+                f"**Register:** formal-conversational\n"
+                f"**Language:** English / Romanian as appropriate\n"
+            )
+            soul_path.write_text(stub, encoding="utf-8")
+            logger.info(f"promote_bench_agent: wrote stub SOUL.md for {bench_id}")
+
+        agent_dict = {
+            "name": name,
+            "model": "google/gemma-4-31b-a4b",
+            "heartbeat": False,
+            "channel": "web-dashboard",
+            "plugins": [],
+            "tier": "foundation",
+        }
+        agent = Agent(bench_id, agent_dict, self.llm_router, permission_gate=self.permission_gate)
+        # Propagate guardrails if available (same pattern as load_agents).
+        agent.guardrails = self.security  # may be None — Agent checks truthiness
+
+        self.agents[bench_id] = agent
+
+        # Register in router so the agent is wake-word routable.
+        if bench_id not in self.router.ROUTING_TABLE:
+            self.router.ROUTING_TABLE[bench_id] = [bench_id]
+            logger.info(f"promote_bench_agent: added {bench_id} to ROUTING_TABLE")
+
+        logger.info(f"promote_bench_agent: {bench_id} ({name}) is now active")
+        return True
+
     def _record_interactions(self, text: str, responses: dict, synthesized: str):
         for agent_id, resp in responses.items():
             if agent_id in self.agents and resp:
@@ -665,6 +725,17 @@ class Orchestrator:
                         old_cfg = dict(agent.config)
                         old_cfg["tier"] = target
                         agent.config = old_cfg
+
+        # Auto-promotion: only when learning.auto_promote is ON (default OFF).
+        if self.get_setting("learning.auto_promote", False):
+            suggestions = self.learning.suggest_promotions(active_ids=set(self.agents.keys()))
+            for suggestion in suggestions:
+                bench_id = suggestion["bench_agent"]
+                promoted = self.promote_bench_agent(bench_id)
+                if promoted:
+                    logger.info(
+                        f"Auto-promoted {bench_id}: {suggestion['reason']}"
+                    )
 
     def _log_session(self, text, intent, responses, synthesized):
         logger.info(f"[{(self.session_id or 'none')[:20]}]: {text[:40]}... -> {synthesized[:40]}...")
