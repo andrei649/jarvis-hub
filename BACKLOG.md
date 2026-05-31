@@ -309,8 +309,8 @@ Optimizare costuri și vizibilitate pentru Hybrid Router.
 | **Securitate audit** | 5 | **5** | — | — | **100%** | 0 | — |
 | **Bugfixes** | 17 | **17** | — | — | **100%** | 0 | — |
 | **Sprint 0** (P0) | 3 | **3** | 7 | **7** | **100%** | 0 | — |
-| **H5 Next Wave** (P2–P3) | 4 | **0** | 42 | **0** | **0%** | 42 | ~3 săpt. |
-| **Total general** | **71** | **67** | **310** | **248** | **80%** | **42** | **~3 săpt.** |
+| **H5 Next Wave** (P2–P3) | 8 | **0** | 76 | **0** | **0%** | 76 | ~5 săpt. |
+| **Total general** | **75** | **67** | **324** | **248** | **77%** | **76** | **~5 săpt.** |
 
 **Echipă 3-4 agenți paralel:** H2+H3 ≈ 2-3 luni · Totul ≈ 3 luni (estimat)
 
@@ -389,25 +389,41 @@ S4 (`gemini.py` stream `raise_for_status`) ✅ și S-PKCE (`oauth.py` PKCE + sta
 | Slack App Token | H4.3 Slack | Gratuit |
 | Docker (Qdrant, Neo4j, n8n) | H3.1, H3.2, H4.6 | Gratuit (deja instalat pe Pi 5) |
 | n8n API Key | H4.6 Oracle | Gratuit |
-## ORIZONT 5: Next Wave (P2–P3) — 0/4
+## ORIZONT 5: Next Wave (P2–P3) — 0/8
 
 > Scop: extindere capabilități după foundation stabil. Fiecare item are spec + plan propriu.
 
-### H5.1 — Howard: Fine-Tuning Pipeline (S:13, Dep: —)
-Pipeline complet: Ollama backend (`ollama_howard.py`), embedder, continuous ingestion, voice cloning (XTTS).
+### H5.1 — Howard: Fine-Tuning + Voice Clone + Continuous Ingestion (S:13, Dep: —)
+Ollama backend (`ollama_howard.py`), embedder RAG, voice cloning XTTS, watch `data/` for new exports.
 **AC:** Howard răspunde în vocea lui Andrei, cu RAG din arhivă, via Ollama.
 
 ### H5.2 — Mobile HUD / PWA (S:8, Dep: —)
 Dashboard responsive, mobile-first, offline support (Service Worker), push notifications.
 **AC:** HUD-ul funcționează pe telefon fără pierderi de funcționalitate.
 
-### H5.3 — Performance & Robustness (S:8, Dep: —)
+### H5.3 — Multi-Language / i18n (S:5, Dep: —)
+Extrage stringuri RO hardcodate în fișiere de traducere, suport EN/RO, detectare automată limbă.
+**AC:** UI-ul comută între RO și EN după preferință.
+
+### H5.4 — UI Overhaul (S:8, Dep: H5.2)
+Teme, layout îmbunătățit, componente reutilizabile, animații, accesibilitate.
+**AC:** HUD-ul arată modern și e utilizabil și pe ecrane mici.
+
+### H5.5 — Performance & Robustness (S:8, Dep: —)
 Rate limiting per agent/channel, retry + circuit breaker pe LLM calls, caching agresiv, metrici sistem.
 **AC:** Sistemul nu crapă la overload și se recuperează automat.
 
-### H5.4 — Multi-Agent Workflows (S:13, Dep: H5.3)
-Agent handoff avansat, execuție paralelă, pipeline-uri compuse între agenți, rezultate intermediate partajate.
+### H5.6 — Multi-Agent Workflows (S:13, Dep: H5.5)
+Agent handoff avansat, execuție paralelă, pipeline-uri compuse, rezultate intermediate partajate.
 **AC:** Un query complex (ex: "analizează finanțele și trimite raport") se execută în <15s.
+
+### H5.7 — New Integrations / Plugins (S:8, Dep: —)
+More plugins: notificări SMS, CRM sync, social media posting, IoT control.
+**AC:** 3+ pluginuri noi funcționale, testate, cu admin configurator.
+
+### H5.8 — Agent Marketplace / Skill Sharing (S:13, Dep: H5.6)
+Catalog de skills partajabile, import dintr-un registry, versionare skills, publish workflow.
+**AC:** Un skill scris de altcineva se instalează cu o comandă.
 
 ---
 
