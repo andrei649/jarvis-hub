@@ -1,6 +1,12 @@
 # Parallel Development Protocol
 
-> Reguli pentru lucrul simultan: **Big Pickle / Opus 4.8** (opencode) ↔ **Claude Code**
+> Reguli pentru lucrul simultan: **Big Pickle / Opus 4.8** (opencode) ↔ **Claude Code** ↔ **Antigravity**
+>
+> **Topologie (citește `docs/handoff-antigravity.md`):** Antigravity lucrează DOAR local (fără
+> acces GitHub); Andrei sincronizează prin **GitHub Desktop** pe singurul branch, `main`. Claude
+> împinge commit-uri mici direct pe `main`. Coordonarea reală = **lane-uri separate de fișiere** +
+> **tabla de coordonare urmărită în git** din handoff. ⚠️ Lock-urile (`memory_logs/oracle/locks/`)
+> sunt **gitignored → NU se sincronizează între mașini**; `lock.py` rămâne util doar local.
 
 ## 1. File Ownership
 
