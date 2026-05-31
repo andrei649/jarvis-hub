@@ -1054,6 +1054,21 @@ async def admin_stats():
                 error_types[err] = error_types.get(err, 0) + count
     error_types_list = sorted(error_types.items(), key=lambda x: -x[1])[:10]
 
+    # Route usage
+    route_usage = orch.learning.get_route_counts() if hasattr(orch.learning, 'get_route_counts') else {}
+
+    # Cost estimates
+    cost_records = []
+    for r in interactions:
+        cost_records.append({
+            "model": r.route_name or "unknown",
+            "input_tokens": (r.metadata or {}).get("input_tokens", 0),
+            "output_tokens": (r.metadata or {}).get("output_tokens", 0),
+            "cached_tokens": (r.metadata or {}).get("cached_tokens", 0),
+        })
+    from core.llm.cost_estimator import estimate_monthly
+    cost_estimates = estimate_monthly(cost_records)
+
     return _nocache_json({
         "overview": {
             "total_interactions": total,
@@ -1065,6 +1080,8 @@ async def admin_stats():
         "daily": daily[-30:],
         "channels": dict(channels),
         "error_types": [[k, v] for k, v in error_types_list],
+        "route_usage": route_usage,
+        "cost_estimates": cost_estimates,
     })
 
 

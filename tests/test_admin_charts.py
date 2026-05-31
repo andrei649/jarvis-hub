@@ -71,3 +71,25 @@ def test_stats_error_types_is_list(token_client):
     assert isinstance(errors, list)
     for item in errors:
         assert isinstance(item, list) and len(item) == 2
+
+
+def test_stats_route_usage_is_dict(token_client):
+    """Route usage field is present and is a dict."""
+    resp = token_client.get("/api/admin/stats", headers={"X-Admin-Token": "test-secret"})
+    assert resp.status_code == 200
+    data = resp.json()
+    assert "route_usage" in data
+    assert isinstance(data["route_usage"], dict)
+
+
+def test_stats_cost_estimates_present(token_client):
+    """Cost estimates field has expected structure."""
+    resp = token_client.get("/api/admin/stats", headers={"X-Admin-Token": "test-secret"})
+    assert resp.status_code == 200
+    data = resp.json()
+    assert "cost_estimates" in data
+    ce = data["cost_estimates"]
+    assert "total" in ce
+    assert "total_savings" in ce
+    assert "total_interactions" in ce
+    assert "per_model" in ce
