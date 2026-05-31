@@ -89,7 +89,7 @@ Heartbeat-uri curente la 5-15 min forțează reload constant.
 
 ---
 
-## ORIZONT 2: Core Agent Capabilities (P1)
+## ORIZONT 2: Core Agent Capabilities (P1) — 10/10 ✅
 
 ### H2.12 — Hybrid LLM Router: Local ↔ Gemini API (S:13) ✅
 Router inteligent care alege backend-ul optim per request: local (LM Studio) sau cloud (Gemini API).
@@ -132,17 +132,9 @@ Drafturi LinkedIn, Digitaholic blog, email în ton specificat, salvate local JSO
 Citește etichete Gmail, prioritizează, sugerează acțiuni.
 **AC:** „Pepper, ce e nou în inbox?" → listă scurtă priorizată
 
-### H2.6 — Gecko: Balance Reader (S:8, Dep: API bănci) 🔴
-Solduri ING + Libră (API sau spreadsheet sync), burn rate, runway.
-**AC:** „Gecko, câți bani am în cont?" → sumă exactă cu valută
-
 ### H2.9 — Vision: Web Research (S:5) ✅
 Căutări web, extrage conținut, sumarizează cu citări (Tavily/SearXNG/DDG fallback + SSRF guard — deja existent).
 **AC:** „Vision, cercetează piața MarTech CEE" → raport structurat cu surse
-
-### H2.11 — Stark: GA4 + Firebase (S:5, Dep: access API) 🔴
-Conectare GA4 API și Firebase Analytics. Raportează KPIs.
-**AC:** „Stark, cum a performat campania Q2?" → metrics vs target
 
 ---
 
@@ -309,14 +301,15 @@ Optimizare costuri și vizibilitate pentru Hybrid Router.
 | Horizon | Total items | ✅ Făcute | S total | S făcute | % complet | S rămase | Efort estimat |
 |---------|------------|----------|---------|----------|-----------|----------|---------------|
 | **H1 Foundation** (P0) | 5 | **5** | 26 | **26** | **100%** | 0 | — |
-| **H2 Core Agent** (P1) | 12 | **10** | 76 | **63** | **83%** | 13 | ~1 săpt. |
+| **H2 Core Agent** (P1) | 10 | **10** ✅ | 63 | **63** | **100%** | 0 | — |
 | **H3 Intelligence** (P2) | 6 | **6** | 39 | **39** | **100%** | 0 | — |
 | **H4 Platform** (P3) | 11 | **11** ✅ | 63 | **63** | **100%** | 0 | — |
 | **Cross-cutting** | 6 | **4** | 44 | **24** | **55%** | 20 | ~1 săpt. |
+| **On Hold** (acces extern) | 2 | **0** | 13 | **0** | **0%** | 13 | — |
 | **Securitate audit** | 5 | **5** | — | — | **100%** | 0 | — |
 | **Bugfixes** | 17 | **17** | — | — | **100%** | 0 | — |
 | **Sprint 0** (P0) | 3 | **3** | 7 | **7** | **100%** | 0 | — |
-| **Total general** | **65** | **61** | **255** | **222** | **87%** | **33** | **~2 săpt.** |
+| **Total general** | **63** | **59** | **242** | **222** | **92%** | **20** | **~1.5 săpt.** |
 
 **Echipă 3-4 agenți paralel:** H2+H3 ≈ 2-3 luni · Totul ≈ 3 luni (estimat)
 
@@ -324,7 +317,7 @@ Optimizare costuri și vizibilitate pentru Hybrid Router.
 
 ## Resurse Necesare Per Item
 
-### H2 — Core Agent Capabilities (P1) — 2/12 rămase (H2.6, H2.11 — blocate de API externe)
+### H2 — Core Agent Capabilities (P1) — 0/10 rămase ✅
 
 | Item | S | Dep | Resurse externe | Efort | Status |
 |------|---|-----|-----------------|-------|--------|
@@ -333,12 +326,10 @@ Optimizare costuri și vizibilitate pentru Hybrid Router.
 | **H2.3** Friday Morning Brief | 8 | — | OpenWeatherMap API key (gratuit). NewsAPI key (gratuit). Polygon.io / Yahoo Finance (gratuit). | ~4 zile | ✅ |
 | **H2.4** Hercules Apple Health | 5 | H1.4 | iOS shortcut → HTTP POST (deja existent `apple_health.py`). Niciun API key. | ~2.5 zile | ✅ |
 | **H2.5** Jerome Spotify | 3 | H1.4 | Spotify Developer → Client ID + Secret. Redirect URI. Deja configurat în OAuth. | ~1.5 zile | ✅ |
-| **H2.6** Gecko Balance | 8 | API bănci | ING API (sandbox/production). Libra API. Alternativă: spreadsheet export + CSV parser. | ~4 zile | 🔴 |
 | **H2.7** Hephaestus PM | 8 | — | Zero API keys. SQLite-only (local). | ~4 zile | ✅ |
 | **H2.8** Frigga Local Store | 8 | — | Zero API keys. SQLite-only. Zero network. | ~4 zile | ✅ |
 | **H2.9** Vision Web Research | 5 | — | Tavily API key (recomandat, deja în .env). Fallback: SearXNG (docker) sau DuckDuckGo. | ~2.5 zile | ✅ |
 | **H2.10** Veronica Drafting | 3 | — | Zero API keys. Prompt engineering + tone profiles în `agents.yaml`. | ~1.5 zile | ✅ |
-| **H2.11** Stark GA4 | 5 | access API | Google Cloud → enable GA4 Data API + Firebase Analytics API. Service Account JSON. | ~2.5 zile | 🔴 |
 
 ### H3 — Intelligence & Memory (P2) — 0/6 rămase ✅
 
@@ -386,13 +377,26 @@ S4 (`gemini.py` stream `raise_for_status`) ✅ și S-PKCE (`oauth.py` PKCE + sta
 | Resursă | Pentru | Cost |
 |---------|--------|------|
 | Google Cloud OAuth 2.0 | H2.2 Pepper Gmail | Gratuit (quota standard) |
-| Google GA4 Data API + Firebase | H2.11 Stark GA4 | Gratuit (quota standard) |
 | Spotify Developer App | H2.5 Jerome Spotify ✅ | Gratuit |
 | Tavily API | H2.9 Vision Research | Gratuit (1000 calls/lună) |
-| ING / Libra API | H2.6 Gecko Balance | Depinde de acces |
 | Discord Bot Token | H4.1 Discord | Gratuit |
 | Slack App Token | H4.3 Slack | Gratuit |
 | Docker (Qdrant, Neo4j, n8n) | H3.1, H3.2, H4.6 | Gratuit (deja instalat pe Pi 5) |
 | n8n API Key | H4.6 Oracle | Gratuit |
+| **— On Hold —** | | |
+| ING / Libra API | H2.6 Gecko Balance | Depinde de acces |
+| Google GA4 Data API + Firebase | H2.11 Stark GA4 | Gratuit (quota standard) |
 
 **Total cost lunar:** $0 (toate serviciile au tier gratuit sufficient pentru uz personal)
+
+---
+
+## On Hold (blocat pe acces extern — se implementează la final)
+
+### H2.6 — Gecko: Balance Reader (S:8, Dep: API bănci) 🔴
+Solduri ING + Libră (API sau spreadsheet sync), burn rate, runway.
+**AC:** „Gecko, câți bani am în cont?" → sumă exactă cu valută
+
+### H2.11 — Stark: GA4 + Firebase (S:5, Dep: access API) 🔴
+Conectare GA4 API și Firebase Analytics. Raportează KPIs.
+**AC:** „Stark, cum a performat campania Q2?" → metrics vs target
