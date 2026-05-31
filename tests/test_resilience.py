@@ -60,3 +60,69 @@ async def test_resilient_call_fails_immediately_on_non_retryable():
         await wrapped()
     
     assert call_count == 1  # Failed immediately, no retries
+
+
+from agents.core.resilience import CircuitBreaker
+
+@pytest.mark.asyncio
+async def test_circuit_breaker_opens_after_threshold():
+    cb = CircuitBreaker(failure_threshold=3, recovery_timeout=60.0)
+    
+    # Simulate 3 failures
+    for _ in range(3):
+        cb.record_failure()
+    
+    assert cb.is_open() is True
+    assert cb.state == "open"
+
+@pytest.mark.asyncio
+async def test_circuit_breaker_closes_on_success():
+    cb = CircuitBreaker(failure_threshold=3, recovery_timeout=60.0)
+    
+    cb.record_failure()
+    cb.record_failure()
+    cb.record_success()
+    
+    assert cb.is_open() is False
+    assert cb.state == "closed"
+
+@pytest.mark.asyncio
+async def test_circuit_breaker_half_open_after_timeout():
+    cb = CircuitBreaker(failure_threshold=2, recovery_timeout=0.1)
+    
+    cb.record_failure()
+    cb.record_failure()
+    assert cb.is_open() is True
+    
+    await asyncio.sleep(0.15)  # Wait for recovery timeout
+    
+    # Calling is_open() triggers the state transition
+    assert cb.is_open() is False
+    assert cb.state == "half-open"
+
+
+@pytest.mark.asyncio
+async def test_resilient_call_with_circuit_breaker():
+    call_count = 0
+    
+    async def always_fails():
+        nonlocal call_count
+        call_count += 1
+        raise asyncio.TimeoutError("Always fails")
+    
+    wrapped = resilient_call(
+        max_retries=0,  # No retries for clarity
+        circuit_breaker_key="test-key",
+        circuit_breaker_threshold=2,
+    )(always_fails)
+    
+    # First two calls should fail and open circuit
+    for _ in range(2):
+        with pytest.raises(asyncio.TimeoutError):
+            await wrapped()
+    
+    # Third call should fail fast (circuit open)
+    with pytest.raises(RuntimeError, match="Circuit breaker open"):
+        await wrapped()
+    
+    assert call_count == 2  # Only 2 actual calls, third was blocked
