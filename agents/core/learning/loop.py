@@ -26,6 +26,7 @@ class InteractionRecord:
     timestamp: float
     error: Optional[str] = None
     metadata: dict = field(default_factory=dict)
+    route_name: str = ""
 
 
 class LearningLoop:
@@ -65,6 +66,7 @@ class LearningLoop:
         latency: float,
         error: str = None,
         metadata: dict = None,
+        route_name: str = "",
     ):
         record = InteractionRecord(
             agent_id=agent_id,
@@ -75,6 +77,7 @@ class LearningLoop:
             timestamp=time.time(),
             error=error,
             metadata=metadata or {},
+            route_name=route_name,
         )
         self.interactions.append(record)
         self._append(record)
@@ -216,6 +219,14 @@ class LearningLoop:
             except Exception as e:
                 logger.warning(f"Failed to load {path}: {e}")
         logger.info(f"Loaded {len(self.interactions)} interaction records from {self.db_path}")
+
+    def get_route_counts(self) -> dict[str, int]:
+        """Return count of interactions per route_name."""
+        counts: dict[str, int] = {}
+        for r in self.interactions:
+            if r.route_name:
+                counts[r.route_name] = counts.get(r.route_name, 0) + 1
+        return counts
 
     def get_stats(self, active_ids=None) -> dict:
         total = len(self.interactions)

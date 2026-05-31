@@ -96,3 +96,32 @@ def test_get_stats_includes_suggestions(loop):
     assert stats["promotion_suggestions"][0]["bench_agent"] == "bruce"
     # active filter removes the suggestion
     assert loop.get_stats(active_ids={"bruce"})["promotion_suggestions"] == []
+
+
+# ── Route tracking ──────────────────────────────────────────
+
+def test_record_route_name_default(loop):
+    """route_name defaults to empty string."""
+    loop.record(agent_id="jarvis", task="t", response="r", success=True, latency=0.1)
+    assert loop.interactions[0].route_name == ""
+
+
+def test_record_route_name_custom(loop):
+    """route_name is stored on InteractionRecord."""
+    loop.record(agent_id="jarvis", task="t", response="r", success=True, latency=0.1, route_name="cloud-flash")
+    assert loop.interactions[0].route_name == "cloud-flash"
+
+
+def test_get_route_counts_empty(loop):
+    """No interactions returns empty dict."""
+    assert loop.get_route_counts() == {}
+
+
+def test_get_route_counts_mixed(loop):
+    """Route counts are aggregated correctly."""
+    for route in ["local", "cloud-flash", "local", "cloud-pro", "local"]:
+        loop.record(agent_id="jarvis", task="t", response="r", success=True, latency=0.1, route_name=route)
+    counts = loop.get_route_counts()
+    assert counts["local"] == 3
+    assert counts["cloud-flash"] == 1
+    assert counts["cloud-pro"] == 1

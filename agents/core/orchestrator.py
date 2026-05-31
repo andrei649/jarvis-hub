@@ -291,6 +291,10 @@ class Orchestrator:
         if agent_override and agent_override in self.agents:
             intent = await self.router.classify(text, self.agents)
             plugin_data = await self._gather_plugin_data(text, intent)
+            try:
+                _, _, route_name = self.llm_router.select_backend(agent_override, text)
+            except RuntimeError:
+                route_name = ""
             responses = await self._call_agents_parallel(
                 [agent_override], text, intent.context, plugin_data
             )
@@ -298,7 +302,7 @@ class Orchestrator:
             await self.memory.add_turn(self.session_id, "assistant", synthesized, agent_id=agent_override)
             self.checkpoints.save(self)
             self._log_session(text, intent, responses, synthesized)
-            self._record_interactions(text, responses, synthesized)
+            self._record_interactions(text, responses, synthesized, route_name=route_name)
             self.audit.log(SecurityEvent(
                 event_type=SecurityEventType.LLM_CALL,
                 timestamp=time.time(),
@@ -310,6 +314,13 @@ class Orchestrator:
 
         intent = await self.router.classify(text, self.agents)
         plugin_data = await self._gather_plugin_data(text, intent)
+
+        # Determine route for the primary target agent
+        primary_agent = (intent.target_agents or ["jarvis"])[0]
+        try:
+            _, _, route_name = self.llm_router.select_backend(primary_agent, text)
+        except RuntimeError:
+            route_name = ""
 
         if intent.target_agents:
             responses = await self._call_agents_parallel(
@@ -355,7 +366,7 @@ class Orchestrator:
         self.checkpoints.save(self)
         self._log_session(text, intent, responses, synthesized)
 
-        self._record_interactions(text, responses, synthesized)
+        self._record_interactions(text, responses, synthesized, route_name=route_name)
 
         self.audit.log(SecurityEvent(
             event_type=SecurityEventType.LLM_CALL,
@@ -699,7 +710,7 @@ class Orchestrator:
         logger.info(f"promote_bench_agent: {bench_id} ({name}) is now active")
         return True
 
-    def _record_interactions(self, text: str, responses: dict, synthesized: str):
+    def _record_interactions(self, text: str, responses: dict, synthesized: str, route_name: str = ""):
         for agent_id, resp in responses.items():
             if agent_id in self.agents and resp:
                 is_timeout = resp.endswith("timeout]")
@@ -714,6 +725,7 @@ class Orchestrator:
                     latency=latency,
                     error=resp if not success else None,
                     metadata={"channel": "web"},
+                    route_name=route_name,
                 )
                 self.bench.record(
                     agent_id=agent_id,
