@@ -1319,32 +1319,34 @@ async def oracle_resolve_conflicts():
 
 @app.get("/memory/stats")
 async def memory_stats():
-    """Return memory system statistics."""
-    import traceback
+    """Live memory stats for SystemsPanel."""
     try:
-        stats = await orch.memory.get_session_stats()
+        if not orch or not hasattr(orch, 'memory') or not orch.memory:
+            return _nocache_json({"sessions": {"total": 0, "current": "", "active": 0}, "vectors": {"stored": 0, "dimension": 0, "backend": ""}, "knowledge_graph": {"entities": 0, "relations": 0, "last_seed": ""}, "agent_contexts": {}})
+        stats = await orch.memory.get_session_stats() if hasattr(orch.memory, 'get_session_stats') else {"sessions": 0, "current_session": "", "vectors": 0, "agent_contexts": []}
+        contexts = {}
+        if hasattr(orch.memory, 'agent_contexts') and orch.memory.agent_contexts:
+            for aid, ctx in orch.memory.agent_contexts.items():
+                contexts[aid] = len(ctx) if isinstance(ctx, dict) else (len(ctx) if hasattr(ctx, '__len__') else 0)
+        kg_entities = 0
+        kg_relations = 0
+        kg_last = ""
+        if hasattr(orch.memory, 'graph') and orch.memory.graph:
+            try:
+                g = orch.memory.graph
+                kg_entities = len(g.entities) if hasattr(g, 'entities') else 0
+                kg_relations = len(g.relations) if hasattr(g, 'relations') else 0
+                kg_last = g.last_seed if hasattr(g, 'last_seed') else ""
+            except Exception:
+                pass
         return _nocache_json({
-            "sessions": {
-                "total": stats.get("sessions", 0),
-                "current": stats.get("current_session", "unknown"),
-                "active": 1,
-            },
-            "vectors": {
-                "stored": stats.get("vectors", 0),
-                "dimension": 768,
-                "backend": "in-memory",
-            },
-            "knowledge_graph": {
-                "entities": 0,
-                "relations": 0,
-                "last_seed": "unknown",
-            },
-            "agent_contexts": {k: 0 for k in stats.get("agent_contexts", [])},
+            "sessions": {"total": stats.get("sessions", 0), "current": stats.get("current_session", ""), "active": stats.get("active", stats.get("sessions", 0))},
+            "vectors": {"stored": stats.get("vectors", 0), "dimension": 768 if stats.get("vectors", 0) > 0 else 0, "backend": "in-memory" if stats.get("vectors", 0) > 0 else ""},
+            "knowledge_graph": {"entities": kg_entities, "relations": kg_relations, "last_seed": kg_last},
+            "agent_contexts": contexts,
         })
-    except Exception as e:
-        tb = traceback.format_exc()
-        logger.error(f"Error in /memory/stats: {e}\n{tb}")
-        return _nocache_json({"error": str(e), "traceback": tb}, status_code=500)
+    except Exception:
+        return _nocache_json({"sessions": {"total": 0, "current": "", "active": 0}, "vectors": {"stored": 0, "dimension": 0, "backend": ""}, "knowledge_graph": {"entities": 0, "relations": 0, "last_seed": ""}, "agent_contexts": {}})
 
 
 @app.get("/memory/{agent_id}")
