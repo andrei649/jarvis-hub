@@ -36,3 +36,29 @@ def test_memory_stats_endpoint():
     assert isinstance(data["agent_contexts"], dict)
     assert isinstance(data["sessions"]["total"], int)
     assert isinstance(data["vectors"]["stored"], int)
+
+
+def test_plugins_endpoint():
+    resp = client.get("/plugins")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert "plugins" in data
+    assert isinstance(data["plugins"], list)
+
+
+def test_bench_stats_endpoint():
+    resp = client.get("/bench/stats")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert "latency" in data
+    assert "throughput" in data
+    assert "by_agent" in data
+
+
+def test_security_status_endpoint():
+    resp = client.get("/security/status")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert "guardrails" in data
+    assert "scanners" in data
+    assert "ssrf" in data
