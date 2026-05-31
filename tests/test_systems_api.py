@@ -20,3 +20,19 @@ def test_learning_stats_endpoint():
     assert isinstance(data["prompt_optimizations"], list)
     assert isinstance(data["promotion_candidates"], list)
     assert isinstance(data["demotion_warnings"], list)
+
+
+def test_memory_stats_endpoint():
+    from fastapi.testclient import TestClient
+    from agents import web
+    client = TestClient(web.app)
+    resp = client.get("/memory/stats")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert "sessions" in data
+    assert "vectors" in data
+    assert "knowledge_graph" in data
+    assert "agent_contexts" in data
+    assert isinstance(data["agent_contexts"], dict)
+    assert isinstance(data["sessions"]["total"], int)
+    assert isinstance(data["vectors"]["stored"], int)
