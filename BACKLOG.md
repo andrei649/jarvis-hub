@@ -10,7 +10,7 @@
 ```bash
 pip install -r requirements-beta.txt
 python -m uvicorn agents.web:app --host 127.0.0.1 --port 8080
-python -m pytest tests/ -v          # 562 passed, 8 skipped
+python -m pytest tests/ -v          # 568 passed, 8 skipped
 ```
 
 > Cele 8 skipped sunt din `tests/test_spotify.py` (pattern HTTP-router, opencode) care
@@ -45,7 +45,7 @@ python -m pytest tests/ -v          # 562 passed, 8 skipped
 | **H5 Next Wave** (P2–P3) | 8 | **0** | 76 | **0** | **0%** |
 | **Total general** | **75** | **67** | **324** | **248** | **77%** |
 
-**Test count:** 562 passed, 8 skipped
+**Test count:** 568 passed, 8 skipped
 
 ---
 
@@ -121,7 +121,7 @@ python -m pytest tests/ -v          # 562 passed, 8 skipped
 | **H4.4** Ultron Security Monitoring | 8 | „status securitate?" → devices, ports, threats |
 | **H4.5** Steve System Monitor | 8 | „cum e sistemul?" → metrics + alerts |
 | **H4.6** Oracle n8n Workflow Designer | 5 | „creează workflow vreme" → creat |
-| **H4.7** MCP Client real (stdio/SSE) | 8 | Server adăugat din admin → disponibil ca plugin |
+| **H4.7** MCP Client real (stdio/SSE) + admin-wiring | 8 | Server adăugat din admin → disponibil ca plugin (endpoints testate `tests/test_mcp_admin.py`) |
 | **H4.8** Sandbox Docker | 5 | „rulează Python" → container, output |
 | **H4.9** Guardrails (REDACT/BLOCK) | 5 | Prompt injection → blocat; PII → redactat |
 | **H4.10** Admin Charts & Audit | 8 | Admin arată ultimele 100 interacțiuni, latență |
