@@ -43,13 +43,39 @@ python -m pytest tests/ -v          # 568 passed, 8 skipped
 |---------|-------|---------|---------|--------|---|
 | **H1–H4 + Sprint 0 + Cross-cutting + Sec + Bugs** | 67 | **67** | 248 | **248** | **100%** |
 | **H5 Next Wave** (P2–P3) | 8 | **0** | 76 | **0** | **0%** |
-| **Total general** | **75** | **67** | **324** | **248** | **77%** |
+| **H6 Jarvis Autonom** (P1) | 6 | **0** | 55 | **0** | **0%** |
+| **Total general** | **81** | **67** | **379** | **248** | **65%** |
 
 **Test count:** 568 passed, 8 skipped
 
 ---
 
-## Active: ORIZONT 5 — Next Wave (P2–P3) — 0/8
+## Active: ORIZONT 6 — Jarvis Autonom / Proactive Cortex (P1) — 0/6
+
+> Viziune: Jarvis își găsește singur de lucru, lucrează continuu, îmi scrie pe telefon (Telegram)
+> doar când are nevoie de o decizie, și susține un review zilnic de 10–30 min (morning brief + evening retro).
+> Autonomia crește în timp pe măsură ce învață ce aprob.
+>
+> **Design:** `docs/superpowers/specs/2026-05-31-horizon6-autonomous-jarvis-design.md`
+> **Research (cu surse):** `docs/research/2026-05-31-autonomous-proactive-agents.md`
+> **Politică implicită:** ECHILIBRAT — act autonom pe reversibil/sigur (research, drafturi, organizare);
+> aprobare pe ireversibil sau bani. **Buget întreruperi: ≤4 push-uri urgente/zi**, restul în review.
+> **Principiu:** ambient agent (trigger → coadă → gating → inbox), NU auto-prompt loop (anti-AutoGPT).
+
+| # | Item | S | Dep | AC |
+|---|------|---|-----|----|
+| H6.1 | **Autonomy Loop & Self-Tasking Queue** — coadă SQLite cu state-machine (`proposed→approved→running→done\|failed\|blocked`), worker pe heartbeat, plafoane dure (retry 3, timeout, PID lock), 2 cozi manual/generated | 13 | H3.5 | task trece prin tot ciclul; eșec ×3 → `failed`, nu reintră |
+| H6.2 | **Decision Inbox pe Telegram** — card cu butoane inline Aprob/Editez/Resping/Amân pe task-uri blocate; buget ≤4 push/zi; rest în batch | 8 | H6.1, H1.2 | task money/ireversibil → push cu 4 butoane → „Aprob" → running |
+| H6.3 | **Risk Gate & Autonomy Dial** — `policy.py`: 4 tiers (read_only/reversible/external/irreversible_or_money) + scoring (reversibility, blast_radius, signal_quality, time_sensitivity); cap/ceiling bani; înfipt în guardrails + plugin_gate | 8 | H6.1, H4.9 | reversibil → act fără întrebare; money peste cap → ask |
+| H6.4 | **Daily Review Ritual** — morning brief 07:00 (ce a făcut + ce propune + decizii), evening retro 20:00 (batch approve); HUD view `/autonomy` | 8 | H6.1, H3.5 | la 07:00 sosește briefing fără trigger; seara batch-approve |
+| H6.5 | **Preference Learning & Decision Journal** — scor preferințe din approve/reject + semnale implicite → sugerează ridicarea autonomiei; jurnal decizii în Neo4j | 13 | H6.1, H3.4, H3.2 | după N aprobări pe o clasă reversibilă → sugerează autonomie mai mare |
+| H6.6 | **Night Shift** — fereastră de timp în care worker-ul rulează batch doar pe task-uri reversibile în sandbox; rezultate în morning brief | 5 | H6.1, H6.3, H4.8 | peste noapte → muncă reversibilă gata dimineața |
+
+> **MVP „Continuous Jarvis"** = H6.1 + H6.3 + H6.2 minimal → bucla completă: propune → gating → întreabă pe Telegram → execută.
+
+---
+
+## ORIZONT 5 — Next Wave (P2–P3) — 0/8
 
 > Fiecare item are spec + plan propriu în `docs/superpowers/`. Timeline: 0.6 → 0.9 → 1.0.
 
