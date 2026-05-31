@@ -1,6 +1,9 @@
-# AGENTS.md — instrucțiuni partajate pentru asistenți AI (opencode, Claude, Gemini)
+# AGENTS.md — instrucțiuni partajate pentru asistenți AI (opencode, Claude, Gemini, Antigravity)
 
 Sursă unică de convenții, citită de toți asistenții care lucrează la Jarvis Hub.
+
+> **Lucru în paralel / coordonare între agenți:** `PARALLEL_WORKFLOW.md` + `lock.py`
+> (cunoaște `opencode`, `claude`, `antigravity`). Onboarding Antigravity: `docs/handoff-antigravity.md`.
 
 ## Backlog = sursă unică de adevăr pentru priorități
 Când utilizatorul menționează **"backlog"**, **"ce urmează"**, **"next"**, **"priorități"** sau

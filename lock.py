@@ -32,7 +32,7 @@ LOCK_DIR.mkdir(parents=True, exist_ok=True)
 STATE_FILE = LOCK_DIR / "lock_state.json"
 STALE_TIMEOUT = 1800  # 30 minutes in seconds
 
-AGENTS = {"opencode", "claude"}
+AGENTS = {"opencode", "claude", "antigravity"}
 
 
 # ── State file helpers ──────────────────────────────────────────────
