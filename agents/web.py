@@ -1182,6 +1182,22 @@ async def admin_stats():
     })
 
 
+@app.get("/api/resilience")
+async def resilience_public():
+    """Public resilience metrics and circuit breaker states (no admin auth)."""
+    from core.resilience import get_metrics, _circuit_breakers
+    metrics = get_metrics().get_stats()
+    breakers = {
+        key: {
+            "state": cb.state,
+            "failure_count": cb.failure_count,
+            "last_failure_time": cb.last_failure_time,
+        }
+        for key, cb in _circuit_breakers.items()
+    }
+    return _nocache_json({"metrics": metrics, "circuit_breakers": breakers})
+
+
 # ── OAuth endpoints ──────────────────────────────────────────────
 
 from core.plugins.oauth import (
