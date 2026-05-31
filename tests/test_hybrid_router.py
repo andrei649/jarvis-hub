@@ -249,6 +249,24 @@ def test_name_with_backends(monkeypatch):
     assert "gemini" in router.name
 
 
+# ── Gemini caching integration ────────────────────────────────────────
+
+def test_gemini_build_payload_with_cache():
+    gb = GeminiBackend(api_key="test")
+    gb._use_cache = "cachedContents/abc123"
+    payload = gb._build_payload("hello", system="be helpful")
+    assert "cachedContent" in payload
+    assert payload["cachedContent"] == "cachedContents/abc123"
+    assert "systemInstruction" not in payload
+
+
+def test_gemini_build_payload_without_cache():
+    gb = GeminiBackend(api_key="test")
+    payload = gb._build_payload("hello", system="be helpful")
+    assert "cachedContent" not in payload
+    assert "systemInstruction" in payload
+
+
 # ── Gemini backend unit tests (no network) ────────────────────────────
 
 from core.llm.gemini import GeminiBackend

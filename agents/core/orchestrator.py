@@ -17,6 +17,7 @@ from .agent import Agent
 from .router import IntentRouter
 from .config import JarvisConfig
 from .llm.hybrid_router import HybridRouter
+from .llm.gemini_cache import ContextCache
 from .llm.tokenizer import estimate_tokens
 from .memory.manager import MemoryManager
 from .checkpoint import CheckpointManager
@@ -73,6 +74,7 @@ class Orchestrator:
         gemini_key = os.environ.get("GEMINI_API_KEY", "")
         anthropic_key = os.environ.get("ANTHROPIC_API_KEY", "")
         self.llm_router = HybridRouter(gemini_api_key=gemini_key, anthropic_api_key=anthropic_key)
+        self.context_cache = ContextCache(api_key=gemini_key) if gemini_key else None
         self.memory = MemoryManager()
         self.plugins: dict = {}
         self.skills = SkillLoader()
@@ -440,6 +442,31 @@ class Orchestrator:
                         on_token(msg)
                     return msg
 
+                # Context caching for Gemini cloud routes
+                use_cache_name = None
+                is_gemini_route = route_name in ("cloud", "cloud-flash", "cloud-pro", "cloud-fallback", "gemini")
+                if is_gemini_route and self.context_cache and history:
+                    cache_entry = self.context_cache.get_cache_info(self.session_id)
+                    if cache_entry:
+                        use_cache_name = cache_entry["cache_name"]
+                        prompt = (
+                            f"{plugin_block}{context_block}"
+                            f"User: {text}\n"
+                            f"Respond as {agent.name}."
+                        )
+                    else:
+                        history_parts = [t.strip() for t in history.split("\n---\n") if t.strip()]
+                        asyncio.ensure_future(self._async_create_cache(
+                            session_id=self.session_id,
+                            system_instruction=system_prompt,
+                            history_texts=history_parts,
+                            model=model,
+                        ))
+                if use_cache_name:
+                    backend._use_cache = use_cache_name
+                else:
+                    backend._use_cache = ""
+
                 if on_token and hasattr(backend, "generate_stream"):
                     response = await backend.generate_stream(
                         model=model, prompt=prompt,
@@ -717,6 +744,13 @@ class Orchestrator:
                 is_error = resp.endswith("error:") or "error:" in resp
                 success = not (is_timeout or is_error)
                 latency = getattr(self, "_last_latencies", {}).get(agent_id, 0.0)
+                metadata = {
+                    "channel": "web",
+                    "input_tokens": estimate_tokens(text),
+                    "output_tokens": estimate_tokens(resp),
+                    "cached_tokens": 0,
+                    "cache_hit": False,
+                }
                 self.learning.record(
                     agent_id=agent_id,
                     task=text[:200],
@@ -724,7 +758,7 @@ class Orchestrator:
                     success=success,
                     latency=latency,
                     error=resp if not success else None,
-                    metadata={"channel": "web"},
+                    metadata=metadata,
                     route_name=route_name,
                 )
                 self.bench.record(
@@ -753,6 +787,18 @@ class Orchestrator:
                     logger.info(
                         f"Auto-promoted {bench_id}: {suggestion['reason']}"
                     )
+
+    async def _async_create_cache(self, session_id: str, system_instruction: str,
+                                    history_texts: list[str], model: str):
+        if not self.context_cache or not history_texts:
+            return
+        history = [{"role": "user", "parts": [{"text": t}]} for t in history_texts]
+        await self.context_cache.create_or_extend(
+            session_id=session_id,
+            system_instruction=system_instruction,
+            history=history,
+            model=model,
+        )
 
     def _log_session(self, text, intent, responses, synthesized):
         logger.info(f"[{(self.session_id or 'none')[:20]}]: {text[:40]}... -> {synthesized[:40]}...")

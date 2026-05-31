@@ -20,6 +20,7 @@ class GeminiBackend(LLMBackend):
         self.api_key = api_key
         self.model = model
         self.client = httpx.AsyncClient(timeout=120.0)
+        self._use_cache = ""
 
     def _build_url(self, streaming: bool = False) -> str:
         action = "streamGenerateContent" if streaming else "generateContent"
@@ -35,7 +36,10 @@ class GeminiBackend(LLMBackend):
                 "temperature": temperature,
             },
         }
-        if system:
+        use_cache = getattr(self, '_use_cache', '')
+        if use_cache:
+            payload["cachedContent"] = use_cache
+        elif system:
             payload["systemInstruction"] = {"parts": [{"text": system}]}
         return payload
 
