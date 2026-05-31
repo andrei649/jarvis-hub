@@ -71,6 +71,11 @@ const ICONS = {
     h('rect',{x:12,y:5,width:6,height:10,rx:1}),
     h('path',{d:'M8 10h4'}),
   ),
+  charts: h('svg',{viewBox:'0 0 20 20',width:18,height:18,fill:'none',stroke:'currentColor',strokeWidth:1.3},
+    h('rect',{x:2,y:12,width:4,height:6,rx:1}),
+    h('rect',{x:8,y:7,width:4,height:11,rx:1}),
+    h('rect',{x:14,y:2,width:4,height:16,rx:1}),
+  ),
 };
 
 /* ── category metadata ──────────────────────────────────────── */
@@ -88,6 +93,7 @@ const CATEGORIES = [
   { id:'skills',   label:_t('cat.skills'),   icon:'skills' },
   { id:'system',   label:_t('cat.system'),   icon:'system' },
   { id:'oracle',   label:_t('cat.oracle'),   icon:'oracle' },
+  { id:'charts',   label:_t('cat.charts'),   icon:'charts' },
 ];
 
 const CATEGORY_DESC = {
@@ -103,6 +109,7 @@ const CATEGORY_DESC = {
   skills:    _t('desc.skills'),
   system:    _t('desc.system'),
   oracle:    _t('desc.oracle'),
+  charts:    _t('desc.charts'),
 };
 
 /* ── agent glyph map — single source of truth in data.js ───── */
@@ -531,6 +538,136 @@ function MCPPage({ onToast }) {
   );
 }
 
+/* ── SVG Chart components ───────────────────────────────────── */
+
+function StatsCard({ label, value, color }) {
+  return h('div', {style:{
+    background:'var(--bg-glass)',borderRadius:8,border:'1px solid var(--border-glass)',
+    padding:'16px',flex:1,textAlign:'center',minWidth:120,
+  }},
+    h('div',{style:{fontSize:28,fontWeight:700,color:color||'var(--accent)'}}, value),
+    h('div',{style:{fontSize:11,color:'var(--text-dim)',marginTop:4}}, label),
+  );
+}
+
+function BarChart({ data, valueKey, labelKey, maxValue, colorFn, unit }) {
+  if (!data || !data.length) return null;
+  const max = maxValue || Math.max(...data.map(d => d[valueKey]), 0.01);
+  const barH = 18;
+  const gap = 4;
+  const h = data.length * (barH + gap);
+  const lw = 80;
+  const cw = 260;
+  const tw = lw + cw + 70;
+  return h('svg',{viewBox:`0 0 ${tw} ${h}`,width:'100%',style:{maxWidth:tw,maxHeight:h}},
+    data.map((d,i)=>{
+      const y = i * (barH + gap);
+      const ratio = Math.min(d[valueKey] / max, 1);
+      const bw = Math.max(ratio * cw, 2);
+      const c = typeof colorFn === 'function' ? colorFn(ratio) : 'var(--accent)';
+      return [
+        h('text',{key:`l${i}`,x:0,y:y+barH-4,fontSize:10,fill:'var(--text-secondary)'}, d[labelKey]||''),
+        h('rect',{key:`b${i}`,x:lw,y:y,width:bw,height:barH-2,rx:2,fill:c,opacity:0.85}),
+        h('text',{key:`v${i}`,x:lw+bw+4,y:y+barH-4,fontSize:9,fill:'var(--text-dim)'}, `${d[valueKey]}${unit||''}`),
+      ];
+    })
+  );
+}
+
+function Sparkline({ data, width, height, color }) {
+  if (!data || data.length < 2) return h('div',{style:{padding:12,fontSize:11,color:'var(--text-dim)'}},'—');
+  const pad = {top:8,right:8,bottom:18,left:8};
+  const w = width - pad.left - pad.right;
+  const h = height - pad.top - pad.bottom;
+  const vals = data.map(d=>d.value);
+  const mx = Math.max(...vals,1);
+  const mn = Math.min(...vals,0);
+  const rng = mx - mn || 1;
+  const pts = data.map((d,i)=>{
+    const x = pad.left + (i/(data.length-1))*w;
+    const y = pad.top + h - ((d.value-mn)/rng)*h;
+    return `${x},${y}`;
+  }).join(' ');
+  const xLabels = data.map((d,i)=>{
+    if (data.length>8 && i%Math.ceil(data.length/8)!==0 && i!==data.length-1) return null;
+    return h('text',{key:`x${i}`,x:pad.left+(i/(data.length-1))*w,y:height-2,fontSize:8,fill:'var(--text-dim)',textAnchor:'middle'},d.label);
+  });
+  return h('svg',{viewBox:`0 0 ${width} ${height}`,width:'100%',style:{maxWidth:width,maxHeight:height}},
+    h('text',{key:'ymx',x:0,y:pad.top+8,fontSize:9,fill:'var(--text-dim)'}, mx),
+    ...xLabels,
+    h('polyline',{key:'pl',points:pts,fill:'none',stroke:color||'var(--accent)',strokeWidth:1.5,strokeLinejoin:'round'}),
+    h('polygon',{key:'pg',points:pts+` ${pad.left+w},${height-pad.bottom} ${pad.left},${height-pad.bottom}`,fill:color||'var(--accent)',opacity:0.06}),
+  );
+}
+
+/* ── Charts page ────────────────────────────────────────────── */
+
+function ChartsPage() {
+  const [data, setData] = useState(null);
+  const [loading, setLoading] = useState(true);
+  useEffect(()=>{
+    fetch('/api/admin/stats').then(r=>r.json()).then(d=>{setData(d);setLoading(false)}).catch(()=>setLoading(false));
+  },[]);
+  if (loading) return h('div',{style:{padding:20,fontSize:12,color:'var(--text-dim)'}},_t('admin.loading'));
+  if (!data || !data.overview) return h('div',{style:{padding:20,fontSize:12,color:'var(--text-dim)'}},_t('charts.no_data'));
+
+  const ov = data.overview;
+  const agents = (data.agents||[]).sort((a,b)=>b.success_rate - a.success_rate);
+  const latencyAgents = (data.agents||[]).sort((a,b)=>b.p95_latency - a.p95_latency);
+  const daily = (data.daily||[]).slice(-14).map(d=>({label:d.date.slice(5),value:d.total}));
+  const channels = Object.entries(data.channels||{});
+  const chMax = Math.max(...channels.map(c=>c[1]),1);
+  const errors = data.error_types||[];
+
+  const greenYellow = (r) => r > 0.8 ? '#4ade80' : r > 0.5 ? '#facc15' : '#f87171';
+
+  return h('div',null,
+    h('div',{style:{display:'flex',gap:12,marginBottom:20,flexWrap:'wrap'}},
+      h(StatsCard,{label:_t('charts.total_int'),value:ov.total_interactions,color:'var(--accent)'}),
+      h(StatsCard,{label:_t('charts.success_rate'),value:(ov.success_rate*100).toFixed(0)+'%',color:greenYellow(ov.success_rate)}),
+      h(StatsCard,{label:_t('charts.avg_latency'),value:ov.avg_latency.toFixed(1)+'s',color:'#60a5fa'}),
+      h(StatsCard,{label:_t('charts.agents'),value:ov.agents_tracked,color:'#a78bfa'}),
+    ),
+
+    agents.length > 0 && h('div',{className:'admin-group'},
+      h('div',{className:'admin-group-header'}, _t('charts.success')),
+      h(BarChart,{data:agents.map(a=>({label:a.agent_id,value:a.success_rate*100})),
+        valueKey:'value',labelKey:'label',maxValue:100,unit:'%',
+        colorFn:(r)=>r>0.8?'#4ade80':r>0.5?'#facc15':'#f87171'}),
+    ),
+
+    latencyAgents.length > 0 && h('div',{className:'admin-group',style:{marginTop:16}},
+      h('div',{className:'admin-group-header'}, _t('charts.latency')),
+      h(BarChart,{data:latencyAgents.map(a=>({label:a.agent_id,value:a.p95_latency||a.avg_latency})),
+        valueKey:'value',labelKey:'label',unit:'s',colorFn:()=>'#60a5fa'}),
+    ),
+
+    daily.length > 0 && h('div',{className:'admin-group',style:{marginTop:16}},
+      h('div',{className:'admin-group-header'}, _t('charts.daily_vol')),
+      h(Sparkline,{data:daily,width:500,height:80,color:'var(--accent)'}),
+    ),
+
+    channels.length > 0 && h('div',{className:'admin-group',style:{marginTop:16}},
+      h('div',{className:'admin-group-header'}, _t('charts.channel')),
+      channels.map(([ch,count],i)=>h('div',{key:i,style:{display:'flex',alignItems:'center',gap:8,padding:'4px 0'}},
+        h('span',{style:{width:80,fontSize:11,color:'var(--text-secondary)'}}, ch),
+        h('div',{style:{flex:1,height:14,background:'var(--bg-glass)',borderRadius:7,overflow:'hidden'}},
+          h('div',{style:{width:`${(count/chMax)*100}%`,height:'100%',background:'var(--accent)',opacity:0.7,borderRadius:7}}),
+        ),
+        h('span',{style:{fontSize:10,color:'var(--text-dim)',width:40,textAlign:'right'}}, count),
+      )),
+    ),
+
+    errors.length > 0 && h('div',{className:'admin-group',style:{marginTop:16}},
+      h('div',{className:'admin-group-header'}, _t('charts.errors')),
+      errors.map(([err,count],i)=>h('div',{key:i,style:{display:'flex',gap:8,padding:'3px 0',fontSize:11}},
+        h('span',{style:{color:'var(--text-secondary)'}}, err),
+        h('span',{style:{color:'#f87171',fontWeight:600}}, count),
+      )),
+    ),
+  );
+}
+
 function AdminApp() {
   const [active, setActive] = useState('general');
   const [settings, setSettings] = useState({});
@@ -601,6 +738,7 @@ function AdminApp() {
   const isSecurity = active === 'security';
   const isOracle = active === 'oracle';
   const isMCP = active === 'mcp';
+  const isCharts = active === 'charts';
 
   return h('div',{className:'admin-wrap'},
     h('div',{className:'admin-sidebar'},
@@ -635,7 +773,10 @@ function AdminApp() {
             : isMCP
               ? h(MCPPage,{onToast:showToast})
 
-              : h('div',null,
+              : isCharts
+                ? h(ChartsPage)
+
+                : h('div',null,
                 filtered.map(s => renderRow(s, s.key, onUpdate, (key)=>showToast(`${_t('admin.action')}${key}`) )),
                 isSecurity && h(AuditLog),
               ),
