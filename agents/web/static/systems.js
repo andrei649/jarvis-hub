@@ -441,7 +441,7 @@ function SecurityBenchTab({ security, bench, onRefresh }) {
   );
 }
 
-function ResilienceTab({ data }) {
+function ResilienceTab({ data, onRefresh }) {
   if (!data) return h('div', { className: 'sys-loading' }, 'Loading resilience data...');
 
   const metrics = data.metrics || {};
@@ -456,7 +456,8 @@ function ResilienceTab({ data }) {
 
     metricKeys.length > 0 && h('div', { className: 'sys-card wide', style: { marginTop: 0 } },
       h('div', { className: 'sys-card-head' },
-        h('span', { className: 'sys-card-label' }, 'RETRY METRICS')
+        h('span', { className: 'sys-card-label' }, 'RETRY METRICS'),
+        h('button', { className: 'sys-refresh', onClick: onRefresh }, '\u21BB')
       ),
       h('div', { className: 'sys-resilience-grid' },
         metricKeys.map(key =>
@@ -493,7 +494,8 @@ function ResilienceTab({ data }) {
 
     breakerKeys.length > 0 && h('div', { className: 'sys-card wide', style: { marginTop: 12 } },
       h('div', { className: 'sys-card-head' },
-        h('span', { className: 'sys-card-label' }, 'CIRCUIT BREAKERS')
+        h('span', { className: 'sys-card-label' }, 'CIRCUIT BREAKERS'),
+        h('button', { className: 'sys-refresh', onClick: onRefresh }, '\u21BB')
       ),
       h('div', { className: 'sys-cb-grid' },
         breakerKeys.map(key =>
@@ -631,7 +633,7 @@ function SystemsPanel({ memory, plugins, learning, security, bench, agents, onRe
         onRefresh: fetchHeartbeatStatus,
       }),
       activeTab === 'learning' && h(LearningTab, { data: learning, onRefresh: handleRefresh }),
-      activeTab === 'resilience' && h(ResilienceTab, { data: resilience }),
+      activeTab === 'resilience' && h(ResilienceTab, { data: resilience, onRefresh: handleRefresh }),
       activeTab === 'security' && h(SecurityBenchTab, { security, bench, onRefresh: handleRefresh })
     )
   );
