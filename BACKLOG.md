@@ -42,11 +42,11 @@ python -m pytest tests/ -v          # 740 passed, 9 skipped
 | Horizon | Total | ✅ Done | S total | S done | % |
 |---------|-------|---------|---------|--------|---|
 | **H1–H4 + Sprint 0 + Cross-cutting + Sec + Bugs** | 67 | **67** | 248 | **248** | **100%** |
-| **H5 Next Wave** (P2–P3) | 17 | **8** | 128 | **47** | **36.7%** |
+| **H5 Next Wave** (P2–P3) | 17 | **9** | 128 | **52** | **40.6%** |
 | **H6 Jarvis Autonom** (P1) | 7 | **7** | 60 | **60** | **100%** |
-| **Total general** | **88** | **82** | **423** | **355** | **83.9%** |
+| **Total general** | **88** | **83** | **423** | **360** | **85.1%** |
 
-**Test count:** 749 passed, 9 skipped (QA 2026-06-01: +H5.12/H5.13 confirmate livrate, fix izolare teste, +H5.14 Retrieval Fusion)
+**Test count:** 758 passed, 9 skipped (QA 2026-06-01: +H5.12/H5.13 confirmate, fix izolare teste, +H5.14 Retrieval Fusion, +H5.17 Batch/Cache Embeddings)
 
 ---
 
@@ -98,11 +98,11 @@ python -m pytest tests/ -v          # 740 passed, 9 skipped
 > Sync runs automatically during the autonomy observer check.
 
 ✓ No active runtime failures detected in the last 48 hours.
-## ORIZONT 5 — Next Wave (P2–P3) — 8/17
+## ORIZONT 5 — Next Wave (P2–P3) — 9/17
 
 > Fiecare item are spec + plan propriu în `docs/superpowers/`. Timeline: 0.6 → 0.9 → 1.0.
 >
-> **Următoarele (0.8, deps satisfăcute):** **H5.17** Batch & Cache Embeddings → **H5.15** Daily Reflection & Graph Consolidation (poate folosi `hybrid_search` din H5.14). Apoi headline 0.8: **H5.6** Multi-Agent Workflows. Opțional: Task 4 din H5.14 (endpoint `/api/memory/search` + HUD).
+> **Următoarele (0.8, deps satisfăcute):** **H5.15** Daily Reflection & Graph Consolidation (poate folosi `hybrid_search` din H5.14). Apoi headline 0.8: **H5.6** Multi-Agent Workflows. Opțional: Task 4 din H5.14 (endpoint `/api/memory/search` + HUD).
 
 | # | Item | S | Dep | Target version |
 |---|------|---|-----|---------------|
@@ -122,7 +122,7 @@ python -m pytest tests/ -v          # 740 passed, 9 skipped
 | H5.14 ✅ | **Retrieval Fusion Engine** — `reciprocal_rank_fusion()` + `HybridRetriever` (vector⊕graph RRF, weight-tunable, injectabil) + `MemoryManager.hybrid_search()`. `core/memory/fusion.py`, 9 teste offline. *(Task 4 — endpoint `/api/memory/search` + HUD — opțional, rămas.)* | 5 | H3.1, H3.2 | 0.8 ✅ |
 | H5.15 | **Daily Reflection & Graph Consolidation** — auto-reflecție nocturnă, lessons learned store promovat în Neo4j | 8 | H6.6, H3.2 | 0.8 |
 | H5.16 ✅ | **Sentence-level TTS & Audio Barge-in** — integration edge-tts, play/stop barge-in sync, auto-speak, unit tested | 8 | H1.1, H5.5 | 0.8 ✅ |
-| H5.17 | **Batch & Cache Embeddings Pipeline** — pipeline ingestie optimizat cu paralelizare, rate limit și local cache | 5 | H5.5 | 0.8 |
+| H5.17 ✅ | **Batch & Cache Embeddings Pipeline** — `EmbeddingCache` (content-addressed, sharded, crash-safe) + `Embedder.embed_batch` (dedup + paralel) + retry/backoff (degradare la hash) + cache stats în pipeline. `core/ingestion/embedder.py` | 5 | H5.5 | 0.8 ✅ |
 
 ---
 
@@ -317,9 +317,9 @@ Buclă nocturnă autonomă de consolidare care reflectă asupra chat-urilor zile
 Pipeline de voce optimizat: streaming audio fragmentat la nivel de propoziție și barge-in instant la wake word în timpul redării.
 **AC:** Latența de prim sunet scade sub 1.5s, iar redarea se oprește la detectarea vocii utilizatorului. S-a implementat edge-tts backend, dynamic speech button (🔊), global audio window manager și hands-free live voice interaction (auto-transmitere și auto-speak).
 
-### H5.17 — Batch & Cache Embeddings Pipeline (S:5, Dep: H5.5)
-Sistem de procesare batch pentru embedder (`ingestion/embedder.py`) cu caching pe disc, rezistent la API rate-limits.
-**AC:** Ingestia masivă pentru digital twin-ul Howard decurge fluid și stabil.
+### H5.17 ✅ — Batch & Cache Embeddings Pipeline (S:5, Dep: H5.5)
+`core/ingestion/embedder.py`: `EmbeddingCache` (cheie `sha256(namespace\x00text)`, sharding pe 2 hex, scriere atomică temp→rename, stats hit/miss); `Embedder.embed_batch(texts, batch_size)` rezolvă hit-urile întâi, deduplică misses și le calculează (opțional pe `ThreadPoolExecutor`); fiecare apel de backend e reîncercat cu backoff exponențial și degradează la hash-embedding la epuizare (un apel flaky nu mai oprește ingestul). `embed_many` folosește batch-ul; pipeline-ul logează `cache_stats` în Phase 6. Namespace pe `backend:model` → nu amestecă ollama cu hash. 9 teste offline (`tests/test_embedding_pipeline.py`).
+**AC ✅:** Ingestia masivă pentru digital twin-ul Howard decurge fluid și stabil — re-rulările servesc din cache, rate-limit-urile sunt absorbite de retry, iar eșecurile izolate degradează grațios.
 
 ---
 

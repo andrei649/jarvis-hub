@@ -47,7 +47,7 @@ class IngestionPipeline:
         self.wa_parser = WhatsAppParser(my_name=my_short_name)
         self.stylometry = StylometryAnalyzer(profile_path=self.output_root / "voice_profile.json")
         self.knowledge = KnowledgeExtractor(output_dir=self.output_root)
-        self.embedder = Embedder()
+        self.embedder = Embedder(cache_dir=self.output_root / "embedding_cache")
 
         self.messages: list[NormalizedMessage] = []
         self.my_messages: list[NormalizedMessage] = []
@@ -97,7 +97,11 @@ class IngestionPipeline:
         # Phase 6: Generate embeddings
         logger.info("Phase 6: Generating embeddings...")
         self.embedder.embed_many(self.messages)
-        phases.append({"phase": "embeddings", "total": len(self.messages)})
+        phases.append({
+            "phase": "embeddings",
+            "total": len(self.messages),
+            "cache": self.embedder.cache_stats,
+        })
 
         # Phase 7: Save to SQLite
         db_path = self.output_root / "archive.db"

@@ -1,6 +1,16 @@
 # Changelog
 
 ## [Unreleased]
+### H5.17 Batch & Cache Embeddings (2026-06-01)
+- **H5.17 Batch & Cache Embeddings Pipeline** (`core/ingestion/embedder.py`):
+  `EmbeddingCache` — content-addressed (`sha256(namespace\x00text)`), sharded,
+  crash-safe (atomic temp→rename), with hit/miss stats. `Embedder.embed_batch`
+  resolves cache hits first, de-duplicates, and computes only misses (optionally
+  across a thread pool). Each backend call is retried with exponential backoff
+  and **degrades to the hash embedding** when the budget is exhausted, so a flaky
+  rate-limited call never aborts a massive Howard ingest. Cache namespaced by
+  `backend:model`; pipeline logs `cache_stats` in Phase 6. +9 offline tests.
+
 ### QA pass + Retrieval Fusion (2026-06-01)
 - **H5.14 Retrieval Fusion Engine** (`core/memory/fusion.py`): `reciprocal_rank_fusion()`
   (rank-based RRF, no cross-scale normalization, with source provenance + payload
