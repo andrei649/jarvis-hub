@@ -455,7 +455,7 @@ Sistemul acoperă 4 domenii majore:
 | Component | Scop |
 |-----------|------|
 | **SecretScanner** | 10 patterns (API keys, tokens, passwords) |
-| **PIIScanner** | 6 patterns (email, phone, CNP, address) |
+| **PIIScanner** | 9 patterns (email, US SSN/phone, cards, RO CNP/IBAN/phone — CNP & IBAN checksum-validated) |
 | **SSRF Protection** | Private IP blocking, redirect limits (max 5) |
 | **AuditLogger** | SQLite + Merkle hash chain |
 | **GuardrailsEngine** | WARN/REDACT/BLOCK modes |
@@ -929,8 +929,9 @@ GuardrailsEngine(
 - Regex-based detection
 
 **PIIScanner:**
-- 6 patterns (email, phone, CNP, address, credit card)
-- Romania-specific (CNP format)
+- 9 patterns (email, US SSN/phone, Visa/Mastercard/Amex, RO CNP, RO IBAN, RO phone)
+- Romania-specific: CNP (control-digit checksum) + IBAN (ISO 7064 mod-97),
+  validated so arbitrary 13-digit numbers / IBAN-shaped strings are not flagged
 
 **SSRF Protection (`ssrf.py`):**
 - Blochează IP-uri private (10.x.x.x, 192.168.x.x, 127.x.x.x)
