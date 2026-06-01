@@ -33,7 +33,7 @@ python -m pytest tests/ -v          # 784 passed, 9 skipped
 | **0.7-beta** | Next | Mobile PWA + i18n + UI Overhaul | H5.2, H5.3, H5.4 |
 | **0.8-beta** | Next | Performance & robustness + multi-agent workflows | H5.5, H5.6 |
 | **0.9-beta** | Next | New integrations + agent marketplace | H5.7, H5.8 |
-| **1.0.0** | 🎯 Stable | All H5 done, documented, CI/CD, onboarding docs | All above + polishing |
+| **1.0.0** | 🎯 Stable | Hardening, hermetic tests + real CI/CD, doc truth-up, onboarding, observability | **Orizont 7 (Track A–D)** |
 
 ---
 
@@ -47,6 +47,57 @@ python -m pytest tests/ -v          # 784 passed, 9 skipped
 | **Total general** | **91** | **91** | **436** | **436** | **100%** |
 
 **Test count:** 789 passed, 9 skipped (QA 2026-06-01: +H5.8 Agent Marketplace 5 teste, +H5.15 Daily Reflection 10 teste, +H5.14 Task4 /api/memory/search + HUD Fused Recall, +H5.6 Multi-Agent Workflows 16 teste)
+
+> **Orizont 7 (PROPUS) — Drumul spre 1.0.0:** 11 stories, ~51 SP, **0%**. Vezi secțiunea de mai jos.
+
+---
+
+## 📋 PROPUS: ORIZONT 7 — Drumul spre 1.0.0 (Hardening, Release Readiness & Observability) — 0/11
+
+> Backlog-ul de features e la 100% (H1–H6). Faza spre **1.0.0 stable** nu adaugă scope orizontal —
+> face produsul **de încredere, testabil, documentat și măsurabil**. Bazat pe auditul multi-agent
+> 2026-06-01 (docs/release, CI/hermeticitate, calitate cod, scoping features) + `docs/gap-analysis-1.0.md`.
+>
+> **Design complet:** `docs/superpowers/specs/2026-06-01-horizon7-road-to-1.0-design.md`
+> **Constatări-cheie:** `pytest tests/` atârnă >18 min offline (Oracle GitHub watcher la lifespan);
+> CI rulează doar pe push/Windows (nu pe PR-uri); ~44 `except: pass` în security/autonomy;
+> docs se contrazic (README „181" vs „39" teste; port 8000↔8080; model 26b↔31b; „15" vs 16 agenți;
+> fără LICENSE/CONTRIBUTING).
+
+### Track A — Test Hermeticity & CI/CD (P0, blochează restul)
+
+| # | Item | S | P | Dep | AC |
+|---|------|---|---|-----|----|
+| H7.1 | **Suită de teste hermetică** — gate watchers/canale externe pe `JARVIS_TESTING`; `conftest` autouse (env + socket guard); `pytest-timeout` în pytest.ini; TestClient module-level → fixtures function-scoped (`test_cognition_api/test_tts/test_systems_api/test_resilience_integration`) | 5 | P0 | — | `pytest tests/` rulează offline, verde, <90s, fără hang; apel real de rețea → eșec imediat |
+| H7.2 | **CI/CD pentru 1.0** — trigger `pull_request`; matrix `ubuntu+windows`; `ruff` + `mypy` (non-blocking) + `pytest-cov`; healthcheck robust (poll, nu sleep) | 5 | P0 | H7.1 | fiecare PR rulează CI pe Linux+Windows cu lint+teste+coverage |
+
+### Track B — Code Hardening (P1)
+
+| # | Item | S | P | Dep | AC |
+|---|------|---|---|-----|----|
+| H7.3 | **Client HTTP centralizat + retry/circuit-breaker** — `PluginHTTPClient` (timeouts coerente, `@resilient_call` H5.5, pooling); migrează 14+ pluginuri | 8 | P1 | H5.5 | un singur client/policy; metrici reziliență per plugin |
+| H7.4 | **SQLite thread-safety & igienă conexiuni** — `check_same_thread=False` + lock pe checkpoint/settings_db/queue/preferences; WAL consistent | 5 | P1 | — | acces concurent sigur; `test_load.py` fără erori de thread/corupere |
+| H7.5 | **Validare input pe endpoint-uri** — limite Pydantic: message len, `limit` bounds, `task_id` numeric, sandbox code size | 3 | P1 | — | input invalid/oversize → 422, fără OOM/DoS |
+| H7.6 | **Curățare excepții înghițite silențios** — `except: pass`/`return None` orbe din log/channels/autonomy/security → logging structurat + fallback explicit | 5 | P1 | — | nicio cădere silențioasă în security/autonomy; fiecare logată cu context |
+| H7.7 | **Elimină date mock/dummy înșelătoare** — `/tasks` dummy tasks (web.py); flag transparent pe iot_control mock | 2 | P1 | — | UI nu primește date false ne-marcate |
+
+### Track C — Docs & Release Hygiene (P1)
+
+| # | Item | S | P | Dep | AC |
+|---|------|---|---|-----|----|
+| H7.8 | **Adevăr în documentație** — single source of truth versiune (`agents/__init__.py` + `/status`); reparat test counts, versiune, port, model, agent count, endpoint count | 3 | P1 | — | zero contradicții cross-doc; CI verifică versiunea unică |
+| H7.9 | **Onboarding & release** — `LICENSE`, `CONTRIBUTING.md`, quickstart Linux/Mac, `docker-compose.yml` (server+Qdrant+Neo4j+n8n), README badges+screenshot, release workflow (tag→Release) | 5 | P1 | H7.2 | dev nou rulează în <10 min pe Linux/Mac; tag → GitHub Release |
+
+### Track D — Observability & Product Polish (P2, câștiguri rapide high-ROI)
+
+| # | Item | S | P | Dep | AC |
+|---|------|---|---|-----|----|
+| H7.10 | **Cost & Usage Analytics** — preț per model + agregare tokens/cost per agent (local vs cloud) + burn lunar; `GET /api/analytics/cost` + tab HUD | 5 | P2 | H5.5 | dashboard arată cost/agent + proiecție lunară din date reale |
+| H7.11 | **Activare Learning-Loop (auto promote/demote)** — job săptămânal care propune evoluția agenților prin decision inbox (reversibil, gated) | 5 | P2 | H3.4, H6.5 | după N interacțiuni → propunere în inbox; aprobarea activează agentul |
+
+> **Total Orizont 7:** ~51 SP. **Secvențiere:** H7.1 → H7.2 → (Track B ∥ Track C) → Track D.
+> **Stretch → Orizont 8 (post-1.0):** voice clone (XTTS), Howard fine-tuning, multi-user/family,
+> mobile offline voice, n8n NLU→workflow, desktop Tauri, advanced guardrails DSL, eval/regression harness.
 
 ---
 
