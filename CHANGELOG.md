@@ -1,6 +1,22 @@
 # Changelog
 
 ## [Unreleased]
+### QA pass + Retrieval Fusion (2026-06-01)
+- **H5.14 Retrieval Fusion Engine** (`core/memory/fusion.py`): `reciprocal_rank_fusion()`
+  (rank-based RRF, no cross-scale normalization, with source provenance + payload
+  merge) and `HybridRetriever` blending the vector store (Qdrant/in-memory) with
+  the knowledge graph (Neo4j/in-memory); injected + duck-typed, so it is tested
+  offline. Exposed as `MemoryManager.hybrid_search(embedding, keyword, top_k)`.
+  +9 tests. Plan: `docs/superpowers/plans/2026-06-01-h5.14-retrieval-fusion.md`.
+- **Test isolation fix** (CI red → green): `web.orch` leaked across test files,
+  causing 2 order-dependent failures (`test_oracle_endpoints`, `test_agent_soul_endpoint`).
+  Made the FastAPI `lifespan` teardown symmetric (guarded reset of `orch`/`gateway`
+  on shutdown, so a closed `TestClient` context stops leaking a live orchestrator)
+  and restored the global in `test_resilience_integration._admin_response`.
+- **Backlog sync**: confirmed **H5.12** (Secured Shell Task Executor — `RemediationRunner`)
+  and **H5.13** (Proactive Event Watchers — `EventWatcher`) were already delivered,
+  wired and tested; marked done. Full suite: **749 passed, 9 skipped**.
+
 ### MCU Gap Analysis audit (2026-05-31)
 - **FAZA 2 — Intent router rewrite** (`core/router.py`): replaced the v0.1
   keyword stub with a deterministic, offline-first, **scored bilingual (RO/EN)**

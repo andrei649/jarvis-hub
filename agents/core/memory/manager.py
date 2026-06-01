@@ -86,6 +86,20 @@ class MemoryManager:
         async with self._lock:
             return self.vectors.search(query, k)
 
+    async def hybrid_search(self, embedding: list[float] = None, keyword: str = None,
+                            top_k: int = 10) -> list:
+        """Fuse vector similarity + knowledge-graph hits via Reciprocal Rank
+        Fusion (H5.14). Returns a ranked list of `fusion.FusedHit`."""
+        from .fusion import HybridRetriever
+        async with self._lock:
+            retriever = HybridRetriever(
+                self.vectors, self.graph,
+                k=getattr(self, "fusion_k", 60),
+                vector_weight=getattr(self, "fusion_vector_weight", 1.0),
+                graph_weight=getattr(self, "fusion_graph_weight", 1.0),
+            )
+            return retriever.retrieve(embedding=embedding, keyword=keyword, top_k=top_k)
+
     async def clear(self, session_id: str = None):
         async with self._lock:
             if session_id:
