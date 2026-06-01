@@ -705,9 +705,10 @@ class Orchestrator:
                     except Exception as e:
                         logger.warning(f"Howard RAG stream lookup failed: {e}")
 
+                recall_block = await self._recall_block(text)
                 prompt = (
                     f"Conversation history:\n{history}\n\n"
-                    f"{plugin_block}{context_block}{rag_block}"
+                    f"{plugin_block}{context_block}{rag_block}{recall_block}"
                     f"User: {text}\n"
                     f"Respond as {agent.name}."
                 )
@@ -956,11 +957,39 @@ class Orchestrator:
                 blocks.append(f"[REAL-TIME DATA — {key.upper()}]:\n{value}")
         return "\n\n".join(blocks) + "\n\n" if blocks else ""
 
+    async def _recall_block(self, text: str) -> str:
+        """Long-term memory recall injected into the prompt (RAG, all agents).
+
+        Off by default — enable with the `memory.recall_enabled` setting. Pairs
+        with `MEMORY_EMBED_TURNS=true` or explicit `/api/memory/remember` so there
+        is something to recall. Embeds the query and runs fused recall (vector ⊕
+        graph); any failure degrades to an empty block (never breaks a turn)."""
+        if not self.get_setting("memory.recall_enabled", False):
+            return ""
+        try:
+            k = self.get_setting("memory.recall_top_k", 5)
+            hits = await self.memory.recall(text, top_k=k)
+        except Exception as e:
+            logger.warning(f"recall failed: {e}")
+            return ""
+        lines = []
+        for h in hits or []:
+            payload = getattr(h, "payload", {}) or {}
+            md = payload.get("metadata") or {}
+            # vector hits carry text under metadata; graph hits expose a name
+            snippet = payload.get("text") or md.get("text") or payload.get("name")
+            if snippet:
+                lines.append(f"- {snippet}")
+        if not lines:
+            return ""
+        return "Relevant long-term memory (recall):\n" + "\n".join(lines) + "\n\n"
+
     async def _call_agents_parallel(
         self, agent_ids: list[str], text: str, context: dict, plugin_data: dict = None
     ) -> dict[str, str]:
         history = await self.memory.get_context(self.session_id, last_n=6)
         plugin_block = self._format_plugin_data(plugin_data or {})
+        recall_block = await self._recall_block(text)
 
         async def _run_agent(agent_id: str) -> tuple[str, str, float]:
             enriched_text = text
@@ -968,6 +997,8 @@ class Orchestrator:
                 enriched_text = f"Context:\n{history}\n\nUser: {text}"
             if plugin_block:
                 enriched_text = f"{plugin_block}{enriched_text}"
+            if recall_block:
+                enriched_text = f"{recall_block}{enriched_text}"
             agent_context = await self.memory.get_agent_context(agent_id)
             if agent_context:
                 enriched_text = f"Agent context: {agent_context}\n\n{enriched_text}"

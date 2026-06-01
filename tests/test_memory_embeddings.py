@@ -155,3 +155,41 @@ async def test_add_turn_no_embed_by_default():
     sid = await mm.new_session()
     await mm.add_turn(sid, "user", "this should not be embedded")
     assert len(mm.vectors) == 0
+
+
+# ── Orchestrator recall injection (RAG block) ─────────────────────────────────
+
+def _orch_with(settings: dict, memory) -> "object":
+    from agents.core.orchestrator import Orchestrator
+    o = Orchestrator.__new__(Orchestrator)  # bypass heavy __init__
+    o._runtime_settings = settings
+    o.memory = memory
+    return o
+
+
+@pytest.mark.asyncio
+async def test_recall_block_disabled_by_default():
+    mm = _hash_manager()
+    await mm.remember("the vault code is 1234")
+    o = _orch_with({}, mm)  # memory.recall_enabled defaults to False
+    assert await o._recall_block("what is the vault code?") == ""
+
+
+@pytest.mark.asyncio
+async def test_recall_block_injects_when_enabled():
+    mm = _hash_manager()
+    await mm.remember("deadline for project X is June 15")
+    o = _orch_with({"memory.recall_enabled": True, "memory.recall_top_k": 5}, mm)
+    block = await o._recall_block("deadline for project X is June 15")
+    assert "long-term memory" in block.lower()
+    assert "project X is June 15" in block
+
+
+@pytest.mark.asyncio
+async def test_recall_block_degrades_on_failure():
+    class BoomMemory:
+        async def recall(self, *a, **k):
+            raise RuntimeError("backend down")
+
+    o = _orch_with({"memory.recall_enabled": True}, BoomMemory())
+    assert await o._recall_block("anything") == ""
