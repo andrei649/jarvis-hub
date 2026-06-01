@@ -106,15 +106,18 @@ class EmbeddingCache:
 
 class Embedder:
     def __init__(self, backend: str = "ollama", model: str = "nomic-embed-text",
-                 cache_dir=None, *, max_retries: int = 3, backoff_base: float = 0.5,
+                 cache_dir=None, *, base_url: str = None, http_client=None,
+                 max_retries: int = 3, backoff_base: float = 0.5,
                  backoff_max: float = 8.0, max_workers: int = 1):
         self.backend = backend
         self.model = model
+        self.base_url = base_url
         self.max_retries = max_retries
         self.backoff_base = backoff_base
         self.backoff_max = backoff_max
         self.max_workers = max(1, max_workers)
-        self._client = None
+        self._client = None          # ollama module
+        self._http_client = http_client  # injectable httpx-like client (lmstudio)
         self._setup()
         # Namespace the cache by the backend that actually produces vectors, so
         # ollama and hash embeddings are never mixed under one key.
@@ -132,8 +135,37 @@ class Embedder:
             except ImportError:
                 logger.warning("Ollama not installed, falling back to hash embeddings")
                 self.backend = "hash"
+        elif self.backend == "lmstudio":
+            self.base_url = self.base_url or "http://localhost:1234"
+            if self._http_client is None:
+                try:
+                    import httpx
+                    self._http_client = httpx.Client(base_url=self.base_url, timeout=30.0)
+                except ImportError:
+                    logger.warning("httpx not installed, falling back to hash embeddings")
+                    self.backend = "hash"
+            logger.info(f"Embedder: LM Studio/{self.model} @ {self.base_url}")
         else:
             logger.info(f"Embedder: {self.backend}")
+
+    @classmethod
+    def from_env(cls, cache_dir=None):
+        """Build an Embedder from EMBED_* env vars.
+
+        Defaults to LM Studio's OpenAI-compatible ``/v1/embeddings`` endpoint
+        (on-theme with the local-first stack); set EMBED_BACKEND=ollama to use a
+        dedicated Ollama embedding model instead. Either degrades to the
+        deterministic hash embedding if the backend is unreachable, so recall
+        never hard-fails. Retries are kept short here because this runs on the
+        interactive query path (unlike the bulk ingestion embedder)."""
+        backend = os.getenv("EMBED_BACKEND", "lmstudio")
+        model = os.getenv(
+            "EMBED_MODEL",
+            "text-embedding-nomic-embed-text-v1.5" if backend == "lmstudio" else "nomic-embed-text",
+        )
+        base_url = os.getenv("EMBED_BASE_URL", "http://localhost:1234")
+        return cls(backend=backend, model=model, cache_dir=cache_dir,
+                   base_url=base_url, max_retries=1, backoff_base=0.2, backoff_max=1.0)
 
     # ── public API ────────────────────────────────────────────────────────────
 
@@ -230,6 +262,17 @@ class Embedder:
             vec = response.get("embedding")
             if not vec:
                 raise ValueError("empty embedding from ollama")
+            return vec
+        if self.backend == "lmstudio" and self._http_client:
+            resp = self._http_client.post(
+                "/v1/embeddings",
+                json={"model": self.model, "input": text[:2048]},
+            )
+            resp.raise_for_status()
+            data = resp.json()
+            vec = (data.get("data") or [{}])[0].get("embedding")
+            if not vec:
+                raise ValueError("empty embedding from lm studio")
             return vec
         return self._embed_hash(text)
 

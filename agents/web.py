@@ -1664,8 +1664,11 @@ async def memory_search(q: str = "", top_k: int = 10):
     if not orch or not orch.memory:
         return _nocache_json({"results": [], "query": q, "total": 0})
     try:
+        # Real semantic recall: embed the query so the vector arm of fused recall
+        # actually contributes (degrades to keyword/graph-only if embedding fails).
+        embedding = await orch.memory.embed(q) if q and hasattr(orch.memory, "embed") else None
         hits = await orch.memory.hybrid_search(
-            embedding=None, keyword=q or None, top_k=top_k
+            embedding=embedding, keyword=q or None, top_k=top_k
         )
         return _nocache_json({
             "results": [
@@ -1683,6 +1686,25 @@ async def memory_search(q: str = "", top_k: int = 10):
     except Exception as e:
         logger.warning(f"memory/search error: {e}")
         return _nocache_json({"results": [], "query": q, "total": 0, "error": str(e)})
+
+
+@app.post("/api/memory/remember")
+async def memory_remember(req: Request):
+    """Store a fact in long-term memory with a real embedding, for later recall."""
+    if not orch or not orch.memory:
+        return JSONResponse({"error": "not initialized"}, status_code=503)
+    try:
+        body = await req.json()
+    except Exception:
+        body = {}
+    text = (body or {}).get("text", "")
+    text = text.strip() if isinstance(text, str) else ""
+    if not text:
+        return JSONResponse({"error": "text required"}, status_code=400)
+    metadata = (body or {}).get("metadata")
+    metadata = metadata if isinstance(metadata, dict) else {}
+    rid = await orch.memory.remember(text, metadata=metadata)
+    return _nocache_json({"ok": rid is not None, "id": rid})
 
 
 @app.get("/api/reflection/status")

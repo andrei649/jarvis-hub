@@ -105,6 +105,8 @@ python -m pytest tests/ -v          # 784 passed, 9 skipped
 > **Livrat sesiunea Claude 2026-06-01:** H5.15 ✅ Daily Reflection + H5.6 ✅ Multi-Agent Workflows + H5.14 Task4 ✅ `/api/memory/search` + HUD Fused Recall. Merged în `main` (PR #13, commit `6eaac77`).
 >
 > **Livrat Antigravity 2026-06-01:** H5.1 ✅ Howard Stark Digital Twin + H5.2 ✅ Mobile HUD / PWA + H5.3 ✅ i18n RO/EN + H5.4 ✅ Premium UI Overhaul + H5.7 ✅ New Plugins + H5.8 ✅ Agent Marketplace.
+>
+> **Livrat sesiunea Claude 2026-06-01 (LM Studio recall):** brațul vectorial al fused recall era mort — `/api/memory/search` trimitea `embedding=None` și nimic nu popula `MemoryManager.vectors`. Acum embeddings reale end-to-end: `Embedder` capătă backend **LM Studio** (`/v1/embeddings`, default) lângă Ollama, cu fallback hash determinist (recall nu pică niciodată). `MemoryManager.embed/remember/recall`, query embedat în `/api/memory/search`, endpoint nou `POST /api/memory/remember`, opțiune `MEMORY_EMBED_TURNS`. Config în `.env.example` (`EMBED_BACKEND/MODEL/BASE_URL`). +9 teste offline (809 passed, 9 skipped).
 
 | # | Item | S | Dep | Target version |
 |---|------|---|-----|---------------|
