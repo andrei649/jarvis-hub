@@ -42,9 +42,9 @@ python -m pytest tests/ -v          # 568 passed, 8 skipped
 | Horizon | Total | ✅ Done | S total | S done | % |
 |---------|-------|---------|---------|--------|---|
 | **H1–H4 + Sprint 0 + Cross-cutting + Sec + Bugs** | 67 | **67** | 248 | **248** | **100%** |
-| **H5 Next Wave** (P2–P3) | 17 | **3** | 128 | **16** | **12.5%** |
+| **H5 Next Wave** (P2–P3) | 17 | **5** | 128 | **29** | **22.6%** |
 | **H6 Jarvis Autonom** (P1) | 7 | **7** | 60 | **60** | **100%** |
-| **Total general** | **88** | **76** | **423** | **321** | **75.8%** |
+| **Total general** | **88** | **79** | **423** | **337** | **79.6%** |
 
 **Test count:** 715 passed, 8 skipped (+ MCU audit: router rewrite + OS observer)
 
@@ -75,6 +75,13 @@ python -m pytest tests/ -v          # 568 passed, 8 skipped
 > **ORIZONT 6 COMPLET ✅** — bucla autonomă end-to-end + executor real per task-kind (research→websearch, restul→LLM pipeline), ritual zilnic, preference learning, night shift, **+ Proactive OS Observer (H6.7)**. Suită 715 passed.
 > **Audit MCU (2026-05-31):** intent router rescris (determinist, scored, **bilingv RO/EN**, fără substring-bug, fallback LLM opțional) — vezi `docs/gap-analysis-mcu-jarvis.md`. **Rămas:** handler real `restart_service` în executor (acum cade pe fallback LLM — execuția shell e ireversibilă, de wired explicit prin sandbox/`plugin_gate`); event-watchers email/calendar/finanțe/health (același pattern ca observer-ul).
 > **Setări noi** (categoria `autonomy` în admin): owner_chat_id, cap_per_action, daily_ceiling, interrupt_budget, night_shift/start/end + `system.autonomy_tick`.
+>
+> **UPDATE CHAT ANTIGRAVITY (2026-06-01) ✅**: Core TTS & Hands-Free Live Voice Interaction implementat complet + unit teste adăugate și 100% verzi.
+> **Bug-uri rezolvate:** 
+> 1. Eroare runtime stale pycache (`SecurityEventType.LLM_CALL` missing) rezolvată prin curățare pycache + repornire.
+> 2. `t_s0 is not defined` în `handle_input_stream` rezolvată prin inițializare explicită de cronometru.
+> 3. Scurgeri de thinking/reasoning blocks streamuite (rezolvat cu `ThinkingStreamFilter` + `strip_thinking()`).
+> 4. Crash de tip `TypeError` în event handlerul `submit` al UI-ului atunci când se dădea click pe Transmit (rezolvat prin securizarea `textOverride` tip string).
 
 ---
 
@@ -106,7 +113,7 @@ python -m pytest tests/ -v          # 568 passed, 8 skipped
 | H5.13 | **Proactive Event Watchers** — watcheri autonomi email, calendar, finanțe, health (trigger layer) | 8 | H6.7 | 0.8 |
 | H5.14 | **Retrieval Fusion Engine** — Reciprocal Rank Fusion / weighted scoring îmbinând Qdrant + Neo4j | 5 | H3.1, H3.2 | 0.8 |
 | H5.15 | **Daily Reflection & Graph Consolidation** — auto-reflecție nocturnă, lessons learned store promovat în Neo4j | 8 | H6.6, H3.2 | 0.8 |
-| H5.16 | **Sentence-level TTS & Audio Barge-in** — redare TTS segmentată + oprire instantă la wake word (latență <1.5s) | 8 | H1.1, H5.5 | 0.8 |
+| H5.16 ✅ | **Sentence-level TTS & Audio Barge-in** — integration edge-tts, play/stop barge-in sync, auto-speak, unit tested | 8 | H1.1, H5.5 | 0.8 ✅ |
 | H5.17 | **Batch & Cache Embeddings Pipeline** — pipeline ingestie optimizat cu paralelizare, rate limit și local cache | 5 | H5.5 | 0.8 |
 
 ---
@@ -297,9 +304,9 @@ Logică de fuziune (RRF / weighted scoring) care combină căutările semantice 
 Buclă nocturnă autonomă de consolidare care reflectă asupra chat-urilor zilei, extrage highlights și lecții noi, stocându-le ca noduri/relații în Neo4j.
 **AC:** Knowledge Graph-ul se extinde organic după fiecare noapte prin auto-reflecție.
 
-### H5.16 — Sentence-level TTS & Audio Barge-in (S:8, Dep: H1.1, H5.5)
+### H5.16 ✅ — Sentence-level TTS & Audio Barge-in (S:8, Dep: H1.1, H5.5)
 Pipeline de voce optimizat: streaming audio fragmentat la nivel de propoziție și barge-in instant la wake word în timpul redării.
-**AC:** Latența de prim sunet scade sub 1.5s, iar redarea se oprește la detectarea vocii utilizatorului.
+**AC:** Latența de prim sunet scade sub 1.5s, iar redarea se oprește la detectarea vocii utilizatorului. S-a implementat edge-tts backend, dynamic speech button (🔊), global audio window manager și hands-free live voice interaction (auto-transmitere și auto-speak).
 
 ### H5.17 — Batch & Cache Embeddings Pipeline (S:5, Dep: H5.5)
 Sistem de procesare batch pentru embedder (`ingestion/embedder.py`) cu caching pe disc, rezistent la API rate-limits.
