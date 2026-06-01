@@ -7,11 +7,14 @@ Decides per-request which backend and model to use based on:
 3. Backend availability (graceful degradation)
 4. Howard special case: uses Ollama with fine-tuned model
 5. Heavy agents (Vision, Steve) → Claude API via Anthropic
+6. Deep-think agents → second LM Studio model slot (DDR5, async-only)
 
-Howard's fine-tuned model runs on Ollama alongside LM Studio.
-Light agents use local LM Studio (lightweight model).
-Heavy agents use Claude API (external, 0 VRAM).
-Frigga/Ultron stay local-only.
+Tier layout (LM Studio multi-model):
+  Slot 1 (VRAM, fast):  DEFAULT_LOCAL_MODEL  — interactive agents, voice
+  Slot 2 (DDR5, deep):  DEFAULT_DEEP_MODEL   — frigga, hephaestus, hercules
+  Ollama (VRAM/RAM):    HOWARD_OLLAMA_MODEL  — Howard fine-tuned
+
+Set JARVIS_DEEP_MODEL env var to override the deep-slot model name.
 """
 
 import logging
@@ -39,6 +42,10 @@ LOCAL_ONLY_AGENTS = {"frigga", "ultron", "howard"}
 CLOUD_ONLY_AGENTS = {"athena"}
 CLAUDE_AGENTS = {"vision", "steve"}
 
+# Agents routed to the deep-think model slot (LM Studio slot 2, DDR5).
+# These accept high latency in exchange for deeper reasoning.
+DEEP_THINK_AGENTS = {"frigga", "hephaestus", "hercules"}
+
 # Howard's dedicated Ollama model
 HOWARD_OLLAMA_MODEL = "howard-lora-qwen-14b"
 HOWARD_OLLAMA_URL = "http://localhost:11434"
@@ -49,6 +56,11 @@ OLLAMA_PREFERRED_AGENTS = {"howard"}
 # Default model names per tier
 DEFAULT_LOCAL_MODEL = "qwen3:7b"
 DEFAULT_CLAUDE_MODEL = "claude-sonnet-4-20250514"
+# Deep-slot model: loaded by LM Studio in slot 2, runs on DDR5.
+# Override via JARVIS_DEEP_MODEL env var.
+DEFAULT_DEEP_MODEL = os.environ.get(
+    "JARVIS_DEEP_MODEL", "deepseek-r1-distill-qwen-32b"
+)
 
 
 class HybridRouter(LLMRouter):
@@ -107,6 +119,11 @@ class HybridRouter(LLMRouter):
             backend, route = self._select_howard_backend()
             model = HOWARD_OLLAMA_MODEL if self._ollama_available else self._local_model
             return backend, model, route
+
+        # Deep-think agents: same LM Studio backend, different model slot (DDR5).
+        # Only when local is available; falls through to normal routing otherwise.
+        if agent_id in DEEP_THINK_AGENTS and self._local_available:
+            return self._backend, DEFAULT_DEEP_MODEL, "local-deep"
 
         policy = self.get_agent_policy(agent_id)
         token_count = estimate_tokens(prompt)
@@ -180,6 +197,8 @@ class HybridRouter(LLMRouter):
             return HOWARD_OLLAMA_MODEL if self._ollama_available else self._local_model
         if agent_id in CLAUDE_AGENTS and self._claude_available:
             return DEFAULT_CLAUDE_MODEL
+        if agent_id in DEEP_THINK_AGENTS and self._local_available:
+            return DEFAULT_DEEP_MODEL
         return self._local_model
 
     @property

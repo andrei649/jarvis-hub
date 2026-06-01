@@ -102,7 +102,9 @@ class Agent:
 
         res = self.llm_router.select_backend(self.id, prompt)
         if isinstance(res, tuple) and len(res) == 3:
-            backend, _, _ = res
+            backend, routed_model, _ = res
+            if routed_model:
+                model = routed_model
         else:
             backend, _ = res
         if self.guardrails:
