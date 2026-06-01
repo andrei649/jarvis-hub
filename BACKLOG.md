@@ -10,7 +10,7 @@
 ```bash
 pip install -r requirements-beta.txt
 python -m uvicorn agents.web:app --host 127.0.0.1 --port 8080
-python -m pytest tests/ -v          # 740 passed, 9 skipped
+python -m pytest tests/ -v          # 784 passed, 9 skipped
 ```
 
 > Cele 8 skipped sunt din `tests/test_spotify.py` (pattern HTTP-router, opencode) care
@@ -98,12 +98,19 @@ python -m pytest tests/ -v          # 740 passed, 9 skipped
 > Sync runs automatically during the autonomy observer check.
 
 ✓ No active runtime failures detected in the last 48 hours.
-## ORIZONT 5 — Next Wave (P2–P3) — 9/17
+## ORIZONT 5 — Next Wave (P2–P3) — 12/17
 
 > Fiecare item are spec + plan propriu în `docs/superpowers/`. Timeline: 0.6 → 0.9 → 1.0.
 >
-> **Livrat (2026-06-01):** **H5.15** ✅ Daily Reflection + **H5.6** ✅ Multi-Agent Workflows + **H5.14 Task 4** ✅ `/api/memory/search` + HUD Fused Recall.
-> **Rămase (0.7):** H5.1 Howard fine-tuning, H5.2 Mobile PWA, H5.3 i18n, H5.4 UI Overhaul.
+> **Livrat sesiunea Claude 2026-06-01:** H5.15 ✅ Daily Reflection + H5.6 ✅ Multi-Agent Workflows + H5.14 Task4 ✅ `/api/memory/search` + HUD Fused Recall. Merged în `main` (PR #13, commit `6eaac77`).
+>
+> **🔜 Următoarele pentru Antigravity / sesiunea viitoare:**
+> - **H5.1** Howard fine-tuning + voice clone + continuous ingestion (S:13, Dep: —, target 0.6) — cel mai valoros
+> - **H5.2** Mobile HUD / PWA (S:8, target 0.7) — responsive + Service Worker
+> - **H5.3** i18n RO/EN switch (S:5, target 0.7) — extrage stringuri hardcodate
+> - **H5.4** UI Overhaul (S:8, Dep: H5.2, target 0.7) — teme, layout, accesibilitate
+> - **H5.7** New Integrations (S:8, target 0.9) — SMS, CRM, IoT
+> - **H5.8** Agent Marketplace (S:13, Dep: H5.6 ✅, target 0.9) — H5.6 e done, deps OK
 
 | # | Item | S | Dep | Target version |
 |---|------|---|-----|---------------|
@@ -120,7 +127,7 @@ python -m pytest tests/ -v          # 740 passed, 9 skipped
 | H5.11 ✅ | **Missing Widgets** — Ticker feed live, OAuth status tab, Oracle tab, Tasks widget; CognitionPanel live | 5 | H5.10 | 0.8 ✅ |
 | H5.12 ✅ | **Secured Shell Task Executor** — `RemediationRunner` (allowlist, permission gate, no-shell `exec`, audited) wired ca handler `restart_service` în executor. `core/autonomy/remediation.py` | 5 | H6.7 | 0.8 ✅ |
 | H5.13 ✅ | **Proactive Event Watchers** — `EventWatcher` + Email/Calendar/Finance/Health probes, eșantionate în bucla de autonomie (gated `system.watchers_enabled`). `core/autonomy/watchers.py` | 8 | H6.7 | 0.8 ✅ |
-| H5.14 ✅ | **Retrieval Fusion Engine** — `reciprocal_rank_fusion()` + `HybridRetriever` (vector⊕graph RRF, weight-tunable, injectabil) + `MemoryManager.hybrid_search()`. `core/memory/fusion.py`, 9 teste offline. *(Task 4 — endpoint `/api/memory/search` + HUD — opțional, rămas.)* | 5 | H3.1, H3.2 | 0.8 ✅ |
+| H5.14 ✅ | **Retrieval Fusion Engine** — `reciprocal_rank_fusion()` + `HybridRetriever` (vector⊕graph RRF, weight-tunable, injectabil) + `MemoryManager.hybrid_search()`. `core/memory/fusion.py`, 9 teste offline. **Task4 ✅:** `GET /api/memory/search` + `FusedRecallBox` în MemoryTab. | 5 | H3.1, H3.2 | 0.8 ✅ |
 | H5.15 ✅ | **Daily Reflection & Graph Consolidation** — `DailyReflector` (`core/autonomy/reflection.py`): gather context → LLM reflection → JSON entities/relations/lessons → promote to Neo4j graph; idempotent per zi; hookuit în `_autonomy_loop` (fereastră 22:00–07:00, gated `system.reflection_enabled`). Endpoint `/api/reflection/status` + `/api/reflection/run`. 10 teste offline. | 8 | H6.6, H3.2 | 0.8 ✅ |
 | H5.16 ✅ | **Sentence-level TTS & Audio Barge-in** — integration edge-tts, play/stop barge-in sync, auto-speak, unit tested | 8 | H1.1, H5.5 | 0.8 ✅ |
 | H5.17 ✅ | **Batch & Cache Embeddings Pipeline** — `EmbeddingCache` (content-addressed, sharded, crash-safe) + `Embedder.embed_batch` (dedup + paralel) + retry/backoff (degradare la hash) + cache stats în pipeline. `core/ingestion/embedder.py` | 5 | H5.5 | 0.8 ✅ |
@@ -249,9 +256,10 @@ Smoke                 powershell smoke.ps1                  Server start + pytes
 > Sync runs automatically during the autonomy observer check.
 
 ✓ No active runtime failures detected in the last 48 hours.
-## ORIZONT 5: Next Wave (P2–P3) — 0/8
+## ORIZONT 5: Next Wave (P2–P3) — specs detaliate
 
-> Scop: extindere capabilități după foundation stabil. Fiecare item are spec + plan propriu.
+> Scop: extindere capabilități după foundation stabil. Status: **12/17 done**.
+> Specs complete pentru itemii rămași (H5.1, H5.2, H5.3, H5.4, H5.7, H5.8) mai jos.
 
 ### H5.1 — Howard: Fine-Tuning + Voice Clone + Continuous Ingestion (S:13, Dep: —)
 Ollama backend (`ollama_howard.py`), embedder RAG, voice cloning XTTS, watch `data/` for new exports.
@@ -273,9 +281,9 @@ Teme, layout îmbunătățit, componente reutilizabile, animații, accesibilitat
 Resilience patterns: `@resilient_call` decorator with retry + exponential backoff, CircuitBreaker with tri-state (closed/open/half-open), ResilienceMetrics per agent+backend. Integrated into CloudLLMPlugin (Anthropic, Gemini, OpenAI) and HTTP plugins (weather, gmail, calendar, spotify). Exposed in `/api/admin/stats` endpoint + admin UI charts. Load test verifies 50 parallel calls with 10% failure rate.
 **AC:** Sistemul nu crapă la overload și se recuperează automat.
 
-### H5.6 — Multi-Agent Workflows (S:13, Dep: H5.5)
-Agent handoff avansat, execuție paralelă, pipeline-uri compuse, rezultate intermediate partajate.
-**AC:** Un query complex (ex: "analizează finanțele și trimite raport") se execută în <15s.
+### H5.6 ✅ — Multi-Agent Workflows (S:13, Dep: H5.5) — LIVRAT 2026-06-01
+`core/workflows/`: `WorkflowEngine` (DAG topological sort, parallel batches via asyncio.gather, template substitution `{step_id}`), `Pipeline`/`WorkflowStep`, `WorkflowRegistry` (3 built-ins: finance_report, research_and_brief, security_digest). Endpoints `GET /api/workflows` + `POST /api/workflows/run`. 16 teste offline (`tests/test_workflows.py`).
+**AC ✅:** Un query complex se execută în <15s; pașii paraleli rulează concurent.
 
 ### H5.7 — New Integrations / Plugins (S:8, Dep: —)
 More plugins: notificări SMS, CRM sync, social media posting, IoT control.
@@ -310,9 +318,9 @@ Ticker feed în HUD, status OAuth integrat, widget de task-uri curente și Cogni
 **Task 4 livrat ✅:** endpoint public `/api/memory/search` + box „Fused recall" în HUD (MemoryTab → FusedRecallBox cu input + RRF results).
 **AC ✅:** un singur query întoarce o listă rankată care împletește similaritatea conversațională (vector) cu hit-urile factuale din graf; fuziune deterministă, weight-tunable, rulează offline.
 
-### H5.15 — Daily Reflection & Graph Consolidation (S:8, Dep: H6.6, H3.2)
-Buclă nocturnă autonomă de consolidare care reflectă asupra chat-urilor zilei, extrage highlights și lecții noi, stocându-le ca noduri/relații în Neo4j.
-**AC:** Knowledge Graph-ul se extinde organic după fiecare noapte prin auto-reflecție.
+### H5.15 ✅ — Daily Reflection & Graph Consolidation (S:8, Dep: H6.6, H3.2) — LIVRAT 2026-06-01
+`core/autonomy/reflection.py`: `DailyReflector` — gather context (last 60 turns) → LLM prompt → JSON `{entities, relations, lessons}` → `add_fact()` în Neo4j. Idempotent per zi. Hookuit în `_autonomy_loop` (fereastră 22:00–07:00, gated `system.reflection_enabled`). Endpoints `/api/reflection/status` + `/api/reflection/run`. 10 teste offline (`tests/test_daily_reflection.py`).
+**AC ✅:** Knowledge Graph-ul se extinde organic după fiecare noapte prin auto-reflecție.
 
 ### H5.16 ✅ — Sentence-level TTS & Audio Barge-in (S:8, Dep: H1.1, H5.5)
 Pipeline de voce optimizat: streaming audio fragmentat la nivel de propoziție și barge-in instant la wake word în timpul redării.
