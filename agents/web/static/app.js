@@ -111,11 +111,40 @@ function App() {
   useHotkey('cmdk', function () { setPaletteOpen(function (o) { return !o; }); });
   useHotkey('esc', function () { setPaletteOpen(false); setFocusAgent(null); });
 
-  var submit = async function () {
+  var speakText = async function (text, lang) {
+    if (window.activeJarvisAudio) {
+      try { window.activeJarvisAudio.pause(); } catch(e){}
+      window.activeJarvisAudio = null;
+    }
+    try {
+      var resp = await fetch('/tts', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text: text, lang: lang || 'ro' }),
+      });
+      if (!resp.ok) return;
+      var blob = await resp.blob();
+      var url = URL.createObjectURL(blob);
+      var audio = new Audio(url);
+      window.activeJarvisAudio = audio;
+      audio.onended = function () {
+        URL.revokeObjectURL(url);
+        if (window.activeJarvisAudio === audio) window.activeJarvisAudio = null;
+      };
+      audio.onerror = function () {
+        if (window.activeJarvisAudio === audio) window.activeJarvisAudio = null;
+      };
+      await audio.play();
+    } catch (e) {
+      console.error('Auto TTS failed:', e);
+    }
+  };
+
+  var submit = async function (textOverride, isVoice) {
     if (sending) return;
-    var text = draft.trim();
+    var text = (textOverride !== undefined ? textOverride : draft).trim();
     if (!text) return;
-    setDraft('');
+    if (textOverride === undefined) setDraft('');
     setSending(true);
 
     var ts = nowTs();
@@ -150,6 +179,9 @@ function App() {
         setRoutedAgents([]);
         setTimeout(function () { setVoiceState('idle'); }, 1400);
         setSending(false);
+        if (isVoice) {
+          speakText(finalText, 'ro');
+        }
       };
 
       var processLines = function (parts) {
@@ -214,8 +246,9 @@ function App() {
     rec.onresult = function (e) {
       var t = e.results[0][0].transcript;
       console.log('recognition result:', t);
-      setDraft(t);
+      setDraft('');
       setMic(false);
+      submit(t, true);
     };
     rec.onerror = function (ev) { console.warn('recognition error:', ev.error); setMic(false); recRef.current = null; };
     rec.onend = function () { recRef.current = null; };

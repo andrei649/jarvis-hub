@@ -173,6 +173,10 @@ function useTTS() {
   const audioRef = useRef(null);
 
   const speak = async (text, lang) => {
+    if (window.activeJarvisAudio) {
+      try { window.activeJarvisAudio.pause(); } catch(e){}
+      window.activeJarvisAudio = null;
+    }
     // Stop any ongoing playback
     if (audioRef.current) {
       audioRef.current.pause();
@@ -191,8 +195,18 @@ function useTTS() {
       const url = URL.createObjectURL(blob);
       const audio = new Audio(url);
       audioRef.current = audio;
-      audio.onended = () => { setPlaying(false); URL.revokeObjectURL(url); audioRef.current = null; };
-      audio.onerror = () => { setPlaying(false); audioRef.current = null; };
+      window.activeJarvisAudio = audio;
+      audio.onended = () => {
+        setPlaying(false);
+        URL.revokeObjectURL(url);
+        audioRef.current = null;
+        if (window.activeJarvisAudio === audio) window.activeJarvisAudio = null;
+      };
+      audio.onerror = () => {
+        setPlaying(false);
+        audioRef.current = null;
+        if (window.activeJarvisAudio === audio) window.activeJarvisAudio = null;
+      };
       await audio.play();
     } catch (e) {
       console.error('TTS failed:', e);
