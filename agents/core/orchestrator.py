@@ -264,7 +264,10 @@ class Orchestrator:
             ]
             self.event_watcher = EventWatcher(self.autonomy, event_probes)
 
-            self.reflector = DailyReflector(self.memory, _llm_for_reflection)
+            async def _reflect_llm(prompt: str) -> str:
+                return await self.process(prompt, agent="jarvis", channel="reflection")
+
+            self.reflector = DailyReflector(self.memory, _reflect_llm)
 
             # Continuous Ingestion Watcher (H5.1)
             from .ingestion.watcher import IngestionWatcher
