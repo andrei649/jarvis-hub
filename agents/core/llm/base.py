@@ -196,9 +196,11 @@ class LMStudioBackend(LLMBackend):
             "stream": True,
         }
         full = ""
+        reasoning_full = ""
         sf = ThinkingStreamFilter()
         try:
             async with self.client.stream("POST", "/v1/chat/completions", json=payload) as resp:
+                resp.raise_for_status()
                 async for line in resp.aiter_lines():
                     if line.startswith("data: "):
                         chunk = line[6:]
@@ -207,14 +209,15 @@ class LMStudioBackend(LLMBackend):
                         try:
                             data = json.loads(chunk)
                             delta = data.get("choices", [{}])[0].get("delta", {})
-                            # Only stream `content`; `reasoning_content` is the
-                            # hidden thinking chain — we skip it entirely here.
                             content = delta.get("content", "")
+                            reasoning = delta.get("reasoning_content", "")
                             if content:
                                 safe = sf.feed(content)
                                 full += content
                                 if on_token and safe:
                                     await _emit(on_token, safe)
+                            if reasoning:
+                                reasoning_full += reasoning
                         except json.JSONDecodeError:
                             continue
         except Exception as e:
@@ -229,7 +232,10 @@ class LMStudioBackend(LLMBackend):
         if on_token and remainder:
             await _emit(on_token, remainder)
 
-        return strip_thinking(full)
+        # Fall back to reasoning_full if content was completely empty (for models
+        # that put all thinking and final answers in reasoning_content)
+        text_to_clean = full if full else reasoning_full
+        return strip_thinking(text_to_clean)
 
 
 # ── Ollama ────────────────────────────────────────────────────────────────────
@@ -279,19 +285,24 @@ class OllamaBackend(LLMBackend):
             },
         }
         full = ""
+        reasoning_full = ""
         sf = ThinkingStreamFilter()
         try:
             async with self.client.stream("POST", "/api/generate", json=payload) as resp:
+                resp.raise_for_status()
                 async for line in resp.aiter_lines():
                     if line.strip():
                         try:
                             data = json.loads(line)
                             content = data.get("response", "")
+                            reasoning = data.get("reasoning_content", "")
                             if content:
                                 safe = sf.feed(content)
                                 full += content
                                 if on_token and safe:
                                     await _emit(on_token, safe)
+                            if reasoning:
+                                reasoning_full += reasoning
                             if data.get("done", False):
                                 break
                         except json.JSONDecodeError:
@@ -307,4 +318,5 @@ class OllamaBackend(LLMBackend):
         if on_token and remainder:
             await _emit(on_token, remainder)
 
-        return strip_thinking(full)
+        text_to_clean = full if full else reasoning_full
+        return strip_thinking(text_to_clean)
