@@ -2,12 +2,17 @@
 <html lang="ro" data-density="comfy" data-scanline="on">
 <head>
 <meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width,initial-scale=1.0" />
-<title>JARVIS HUB · v0.2.1</title>
-<link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
-<link rel="stylesheet" href="/static/fonts.css">
-<link rel="stylesheet" href="/static/style.css">
-<link rel="stylesheet" href="/static/systems.css?v=0.3.0">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="theme-color" content="#030810" />
+  <title>JARVIS HUB · v0.2.1</title>
+  <link rel="manifest" href="/static/manifest.json" />
+  <link rel="apple-touch-icon" href="/static/favicon.svg" />
+  <link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
+  <link rel="stylesheet" href="/static/fonts.css">
+  <link rel="stylesheet" href="/static/style.css">
+  <link rel="stylesheet" href="/static/systems.css?v=0.3.0">
 <script>
 /* Apply persisted UI prefs before paint so the CSS data-attr hooks
    (data-density / data-scanline / data-dotgrid) take effect (W-6). */
@@ -17,6 +22,7 @@
     r.setAttribute('data-density',  localStorage.getItem('hud.density')  || 'normal');
     r.setAttribute('data-scanline', localStorage.getItem('hud.scanline') || 'on');
     r.setAttribute('data-dotgrid',  localStorage.getItem('hud.dotgrid')  || 'on');
+    r.setAttribute('data-theme',    localStorage.getItem('hud.theme')    || 'default');
   } catch (e) {}
 })();
 </script>
@@ -34,5 +40,18 @@
 <script src="/static/systems.js?v=0.3.0"></script>
 <script src="/static/dossier-modal.js?v=0.3.0"></script>
 <script src="/static/app.js?v=0.3.0"></script>
+<script>
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', function() {
+    navigator.serviceWorker.register('/sw.js')
+      .then(function(reg) {
+        console.log('[Service Worker] Registered successfully with scope:', reg.scope);
+      })
+      .catch(function(err) {
+        console.error('[Service Worker] Registration failed:', err);
+      });
+  });
+}
+</script>
 </body>
 </html>

@@ -81,6 +81,20 @@ DEFAULTS: list[dict[str, Any]] = [
     dict(category="plugins", key="spotify",          value=True,                  label="Spotify",            kind="toggle"),
     dict(category="plugins", key="apple-health",     value=True,                  label="Apple Health",       kind="toggle"),
     dict(category="plugins", key="homebridge",       value=True,                  label="Homebridge",         kind="toggle"),
+    dict(category="plugins", key="sms-alerts",       value=True,                  label="SMS Alerts & Notifications", kind="toggle"),
+    dict(category="plugins", key="crm-sync",         value=True,                  label="Notion CRM Sync", kind="toggle"),
+    dict(category="plugins", key="iot-control",       value=True,                  label="Tuya SmartHome IoT", kind="toggle"),
+    # twilio — sms alerts
+    dict(category="plugins", key="twilio_account_sid",  value="",    label="Twilio Account SID",                kind="text"),
+    dict(category="plugins", key="twilio_auth_token",   value="",    label="Twilio Auth Token",                 kind="text"),
+    dict(category="plugins", key="twilio_from_number",  value="",    label="Twilio From Number",                kind="text"),
+    # notion — crm sync
+    dict(category="plugins", key="notion_integration_token", value="", label="Notion Integration Token",          kind="text"),
+    dict(category="plugins", key="notion_database_id",       value="", label="Notion CRM Database ID",          kind="text"),
+    # tuya — iot control
+    dict(category="plugins", key="tuya_client_id",      value="",    label="Tuya Client ID",                    kind="text"),
+    dict(category="plugins", key="tuya_secret",         value="",    label="Tuya Client Secret",                kind="text"),
+    dict(category="plugins", key="tuya_device_id",      value="",    label="Tuya Target Device ID",             kind="text"),
     # gecko — balance reader
     dict(category="plugins", key="gecko_ing_client_id",    value="",    label="Gecko – ING Client ID",            kind="text"),
     dict(category="plugins", key="gecko_ing_client_secret", value="",   label="Gecko – ING Client Secret",        kind="text"),

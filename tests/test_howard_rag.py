@@ -179,8 +179,7 @@ def test_howard_agent_prompt_injection(tmp_path, monkeypatch):
 
     # Process prompt
     import asyncio
-    loop = asyncio.get_event_loop()
-    loop.run_until_complete(agent.process("ce ai ales?", {}))
+    asyncio.run(agent.process("ce ai ales?", {}))
 
     # Verify that mock message was searched and injected into prompt
     assert "am ales varianta simpla" in backend.last_prompt

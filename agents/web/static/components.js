@@ -82,6 +82,31 @@ function TopBar({ activeAgent, voiceState, agentsOnline, agentsTotal, lmOnline, 
       h(Badge, { label: 'Agents', value: `${agentsOnline}/${agentsTotal}`, kind: 'active' }),
       h(Badge, { label: _t('comp.memory'), value: _t('comp.online'), kind: 'ok' }),
       h(Badge, { label: _t('comp.lmstudio'), value: lmOnline ? '1234' : _t('comp.offline'), kind: lmOnline ? 'active' : 'alert' }),
+      h('button', {
+        className: 'topbar-btn lang-toggle-btn',
+        onClick: function () {
+          var next = window.currentLocale === 'ro' ? 'en' : 'ro';
+          window.setLocale(next);
+        },
+        title: window.currentLocale === 'ro' ? 'Switch to English' : 'Comută în Română'
+      }, window.currentLocale.toUpperCase()),
+      h('button', {
+        className: 'topbar-btn theme-toggle-btn',
+        onClick: function () {
+          var themes = ['default', 'obsidian', 'aeroglass', 'cyberpunk'];
+          var current = localStorage.getItem('hud.theme') || 'default';
+          var next = themes[(themes.indexOf(current) + 1) % themes.length];
+          localStorage.setItem('hud.theme', next);
+          document.documentElement.setAttribute('data-theme', next);
+          window.dispatchEvent(new CustomEvent('jarvis:theme_changed', { detail: next }));
+        },
+        title: window.currentLocale === 'ro' ? 'Schimbă tema HUD' : 'Cycle HUD theme'
+      }, '🎨 ' + {
+        'default': 'DFT',
+        'obsidian': 'OBS',
+        'aeroglass': 'ARO',
+        'cyberpunk': 'CYB'
+      }[localStorage.getItem('hud.theme') || 'default']),
       h('button', { className: 'topbar-btn', onClick: onToggleCognition, title: 'Toggle Cognition Panel' }, 'COG'),
       h('button', { className: 'topbar-btn', onClick: onToggleSystems, title: 'Toggle Systems Panel' }, 'SYS'),
     ),

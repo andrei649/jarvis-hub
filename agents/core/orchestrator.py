@@ -25,6 +25,7 @@ from .heartbeat import HeartbeatScheduler
 from .learning.loop import LearningLoop
 from .skills.loader import SkillLoader
 from .skills.importer import SkillImporter
+from .skills.marketplace import SkillMarketplace
 from .mcp.client import MCPManager
 from .autonomy import AutonomyWorker, TaskQueue, AutonomyPolicy, PreferenceStore, TaskExecutor
 from .autonomy import ProactiveObserver, default_probes
@@ -68,6 +69,9 @@ from .plugins.balance import BalanceReaderPlugin
 from .plugins.analytics import AnalyticsPlugin
 from .plugins.oracle_bridge import OracleBridgePlugin
 from .plugins.n8n import N8NPlugin
+from .plugins.sms_alerts import SMSAlertsPlugin
+from .plugins.crm_sync import CRMSyncPlugin
+from .plugins.iot_control import IoTControlPlugin
 
 logger = logging.getLogger("jarvis.orchestrator")
 
@@ -88,6 +92,7 @@ class Orchestrator:
         self.plugins: dict = {}
         self.skills = SkillLoader()
         self.skill_importer = SkillImporter()
+        self.marketplace = SkillMarketplace()
         self.mcp = MCPManager()
         self.channels: dict[str, ChannelAdapter] = {}
         self.checkpoints = CheckpointManager()
@@ -221,6 +226,20 @@ class Orchestrator:
         self.plugins["n8n"] = N8NPlugin(
             base_url=os.environ.get("N8N_BASE_URL", ""),
             api_key=os.environ.get("N8N_API_KEY", ""),
+        )
+        self.plugins["sms-alerts"] = SMSAlertsPlugin(
+            account_sid=self.get_setting("plugins.twilio_account_sid", ""),
+            auth_token=self.get_setting("plugins.twilio_auth_token", ""),
+            from_number=self.get_setting("plugins.twilio_from_number", ""),
+        )
+        self.plugins["crm-sync"] = CRMSyncPlugin(
+            integration_token=self.get_setting("plugins.notion_integration_token", ""),
+            database_id=self.get_setting("plugins.notion_database_id", ""),
+        )
+        self.plugins["iot-control"] = IoTControlPlugin(
+            client_id=self.get_setting("plugins.tuya_client_id", ""),
+            secret=self.get_setting("plugins.tuya_secret", ""),
+            device_id=self.get_setting("plugins.tuya_device_id", ""),
         )
 
         # Autonomy queue — durable self-tasking store (H6.1)
@@ -452,6 +471,13 @@ class Orchestrator:
         self.heartbeat_scheduler.stop()
         if self._settings_watcher_task:
             self._settings_watcher_task.cancel()
+        # Close all active plugins gracefully
+        for pid, plugin in self.plugins.items():
+            if hasattr(plugin, "close"):
+                try:
+                    await plugin.close()
+                except Exception as e:
+                    logger.warning(f"Error closing plugin {pid}: {e}")
         logger.info("Channels stopped")
 
     async def channel_handler(self, text: str, channel: str = "voice", **kwargs) -> Optional[str]:

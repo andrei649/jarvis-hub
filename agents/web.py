@@ -330,10 +330,15 @@ if static_dir.is_dir():
 async def favicon():
     return FileResponse(str(HERE / "static" / "favicon.svg"), media_type="image/svg+xml")
 
+@app.get("/sw.js", response_class=FileResponse)
+async def service_worker():
+    return FileResponse(str(HERE / "static" / "sw.js"), media_type="application/javascript")
+
 @app.get("/", response_class=HTMLResponse)
 async def index():
     html = HERE / "templates" / "index.html"
     return HTMLResponse(html.read_text(encoding="utf-8"))
+
 
 
 # ── Chat ─────────────────────────────────────────────────────────
@@ -848,6 +853,81 @@ async def skills_imported():
     if not orch:
         return JSONResponse({"error": "not initialized"}, status_code=503)
     return {"imported": orch.skill_importer.list_imported()}
+
+
+# ── Agent Marketplace Endpoints (H5.8) ───────────────────────────
+
+class PublishSkillBody(BaseModel):
+    name: str
+
+
+class InstallSkillBody(BaseModel):
+    name: str
+
+
+class InstallZipBody(BaseModel):
+    zip_base64: str
+
+
+@app.get("/api/skills/marketplace", dependencies=[Depends(_admin_guard)])
+async def marketplace_list():
+    if not orch:
+        return JSONResponse({"error": "not initialized"}, status_code=503)
+    try:
+        skills = orch.marketplace.list_skills()
+        return {"skills": skills}
+    except Exception as e:
+        logger.exception("Failed to list marketplace skills")
+        return JSONResponse({"error": str(e)}, status_code=500)
+
+
+@app.post("/api/skills/marketplace/publish", dependencies=[Depends(_admin_guard)])
+async def marketplace_publish(body: PublishSkillBody):
+    if not orch:
+        return JSONResponse({"error": "not initialized"}, status_code=503)
+    try:
+        res = orch.marketplace.publish_skill(body.name)
+        return {"ok": True, "published": res}
+    except FileNotFoundError as e:
+        return JSONResponse({"error": str(e)}, status_code=404)
+    except Exception as e:
+        logger.exception("Failed to publish skill")
+        return JSONResponse({"error": str(e)}, status_code=500)
+
+
+@app.post("/api/skills/marketplace/install", dependencies=[Depends(_admin_guard)])
+async def marketplace_install(body: InstallSkillBody):
+    if not orch:
+        return JSONResponse({"error": "not initialized"}, status_code=503)
+    try:
+        ok = orch.marketplace.install_skill(body.name)
+        if ok:
+            orch.skills.discover()
+            return {"ok": True, "installed": body.name}
+        return JSONResponse({"error": f"Failed to install skill '{body.name}'"}, status_code=500)
+    except ValueError as e:
+        return JSONResponse({"error": str(e)}, status_code=404)
+    except Exception as e:
+        logger.exception("Failed to install skill")
+        return JSONResponse({"error": str(e)}, status_code=500)
+
+
+@app.post("/api/skills/marketplace/install-zip", dependencies=[Depends(_admin_guard)])
+async def marketplace_install_zip(body: InstallZipBody):
+    if not orch:
+        return JSONResponse({"error": "not initialized"}, status_code=503)
+    try:
+        import base64
+        zip_bytes = base64.b64decode(body.zip_base64)
+        ok = orch.marketplace.install_from_zip(zip_bytes)
+        if ok:
+            orch.skills.discover()
+            return {"ok": True}
+        return JSONResponse({"error": "Failed to install skill from zip"}, status_code=500)
+    except Exception as e:
+        logger.exception("Failed to install skill from zip")
+        return JSONResponse({"error": str(e)}, status_code=500)
+
 
 
 @app.get("/learning")

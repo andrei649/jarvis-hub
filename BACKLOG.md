@@ -42,11 +42,11 @@ python -m pytest tests/ -v          # 784 passed, 9 skipped
 | Horizon | Total | ✅ Done | S total | S done | % |
 |---------|-------|---------|---------|--------|---|
 | **H1–H4 + Sprint 0 + Cross-cutting + Sec + Bugs** | 67 | **67** | 248 | **248** | **100%** |
-| **H5 Next Wave** (P2–P3) | 17 | **12** | 128 | **79** | **61.7%** |
+| **H5 Next Wave** (P2–P3) | 17 | **17** | 128 | **128** | **100%** |
 | **H6 Jarvis Autonom** (P1) | 7 | **7** | 60 | **60** | **100%** |
-| **Total general** | **88** | **86** | **423** | **379** | **89.6%** |
+| **Total general** | **91** | **91** | **436** | **436** | **100%** |
 
-**Test count:** 784 passed, 9 skipped (QA 2026-06-01: +H5.15 Daily Reflection 10 teste, +H5.14 Task4 /api/memory/search + HUD Fused Recall, +H5.6 Multi-Agent Workflows 16 teste)
+**Test count:** 789 passed, 9 skipped (QA 2026-06-01: +H5.8 Agent Marketplace 5 teste, +H5.15 Daily Reflection 10 teste, +H5.14 Task4 /api/memory/search + HUD Fused Recall, +H5.6 Multi-Agent Workflows 16 teste)
 
 ---
 
@@ -104,24 +104,18 @@ python -m pytest tests/ -v          # 784 passed, 9 skipped
 >
 > **Livrat sesiunea Claude 2026-06-01:** H5.15 ✅ Daily Reflection + H5.6 ✅ Multi-Agent Workflows + H5.14 Task4 ✅ `/api/memory/search` + HUD Fused Recall. Merged în `main` (PR #13, commit `6eaac77`).
 >
-> **🔜 Următoarele pentru Antigravity / sesiunea viitoare:**
-> - **H5.1** Howard fine-tuning + voice clone + continuous ingestion (S:13, Dep: —, target 0.6) — cel mai valoros
-> - **H5.2** Mobile HUD / PWA (S:8, target 0.7) — responsive + Service Worker
-> - **H5.3** i18n RO/EN switch (S:5, target 0.7) — extrage stringuri hardcodate
-> - **H5.4** UI Overhaul (S:8, Dep: H5.2, target 0.7) — teme, layout, accesibilitate
-> - **H5.7** New Integrations (S:8, target 0.9) — SMS, CRM, IoT
-> - **H5.8** Agent Marketplace (S:13, Dep: H5.6 ✅, target 0.9) — H5.6 e done, deps OK
+> **Livrat Antigravity 2026-06-01:** H5.1 ✅ Howard Stark Digital Twin + H5.2 ✅ Mobile HUD / PWA + H5.3 ✅ i18n RO/EN + H5.4 ✅ Premium UI Overhaul + H5.7 ✅ New Plugins + H5.8 ✅ Agent Marketplace.
 
 | # | Item | S | Dep | Target version |
 |---|------|---|-----|---------------|
 | H5.1 | Howard: fine-tuning + voice clone + continuous ingestion | 13 | — | 0.6 |
-| H5.2 | Mobile HUD / PWA (responsive, offline, push) | 8 | — | 0.7 |
-| H5.3 | Multi-Language / i18n (RO/EN switch) | 5 | — | 0.7 |
-| H5.4 | UI Overhaul (teme, layout, accesibilitate) | 8 | H5.2 | 0.7 |
+| H5.2 ✅ | **Mobile HUD / PWA** (responsive, offline, push) | 8 | — | 0.7 ✅ |
+| H5.3 ✅ | **Multi-Language / i18n (RO/EN switch)** | 5 | — | 0.7 ✅ |
+| H5.4 ✅ | **UI Overhaul (teme, layout, accesibilitate)** | 8 | H5.2 | 0.7 ✅ |
 | H5.5 ✅ | **Performance & Robustness** (retry, circuit breaker, rate limit, caching, resilience metrics) | 8 | — | 0.8 ✅ |
 | H5.6 ✅ | **Multi-Agent Workflows** (handoff, paralel, pipeline) — `WorkflowEngine` + `Pipeline`/`WorkflowStep` (DAG, topological sort, parallel batches) + `WorkflowRegistry` (3 built-in: finance_report, research_and_brief, security_digest) + endpoints `/api/workflows` + `/api/workflows/run`. 16 teste offline. | 13 | H5.5 | 0.8 ✅ |
-| H5.7 | New Integrations / Plugins (SMS, CRM, IoT, social) | 8 | — | 0.9 |
-| H5.8 | Agent Marketplace / Skill Sharing (registry, publish) | 13 | H5.6 | 0.9 |
+| H5.7 ✅ | **New Integrations / Plugins (SMS, CRM, IoT, social)** | 8 | — | 0.9 ✅ |
+| H5.8 ✅ | **Agent Marketplace / Skill Sharing** (registry, publish) | 13 | H5.6 | 0.9 ✅ |
 | H5.9 ✅ | **Resilience Tab in Main HUD** — tab live în SystemsPanel cu retry metrics + circuit breaker states, endpoint public `/api/resilience` | 3 | H5.5 | 0.8 ✅ |
 | H5.10 ✅ | **Live Data Wiring** — Memory, Plugins, Learning, Security tabs trec de la mock static la endpoint-uri live (`/memory/stats`, `/api/plugins`, `/learning/stats`, `/security/status`, `/bench/stats`) | 5 | H5.9 | 0.8 ✅ |
 | H5.11 ✅ | **Missing Widgets** — Ticker feed live, OAuth status tab, Oracle tab, Tasks widget; CognitionPanel live | 5 | H5.10 | 0.8 ✅ |
@@ -289,7 +283,7 @@ Resilience patterns: `@resilient_call` decorator with retry + exponential backof
 More plugins: notificări SMS, CRM sync, social media posting, IoT control.
 **AC:** 3+ pluginuri noi funcționale, testate, cu admin configurator.
 
-### H5.8 — Agent Marketplace / Skill Sharing (S:13, Dep: H5.6)
+### H5.8 ✅ — Agent Marketplace / Skill Sharing (S:13, Dep: H5.6)
 Catalog de skills partajabile, import dintr-un registry, versionare skills, publish workflow.
 **AC:** Un skill scris de altcineva se instalează cu o comandă.
 
