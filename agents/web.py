@@ -164,7 +164,14 @@ async def lifespan(application: FastAPI):
         f"{list(orch.skills.skills.keys())} skills"
     )
     yield
-    await orch.stop_channels()
+    # Symmetric lifecycle: stop channels and release the globals so a closed app
+    # context (e.g. a TestClient context manager in tests) does not leak a live
+    # orchestrator into the next caller. Guarded because multiple app contexts
+    # share these module globals and a prior teardown may have cleared them.
+    if orch is not None:
+        await orch.stop_channels()
+    orch = None
+    gateway = None
 
 
 app = FastAPI(title="Jarvis", version="0.5.0-beta", lifespan=lifespan)
