@@ -688,6 +688,7 @@ class Orchestrator:
                 else:
                     backend._use_cache = ""
 
+                t_s0 = time.perf_counter()
                 if on_token and hasattr(backend, "generate_stream"):
                     response = await backend.generate_stream(
                         model=model, prompt=prompt,
