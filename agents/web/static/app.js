@@ -142,9 +142,9 @@ function App() {
 
   var submit = async function (textOverride, isVoice) {
     if (sending) return;
-    var text = (textOverride !== undefined ? textOverride : draft).trim();
+    var text = (typeof textOverride === 'string' ? textOverride : draft).trim();
     if (!text) return;
-    if (textOverride === undefined) setDraft('');
+    if (typeof textOverride !== 'string') setDraft('');
     setSending(true);
 
     var ts = nowTs();
