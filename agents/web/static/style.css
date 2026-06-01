@@ -341,6 +341,26 @@
   }
   .msg-thinking .msg-body { display: none; }
 
+  .msg-tts-btn {
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 22px; height: 22px; border: none;
+    background: transparent; color: var(--text-dim);
+    cursor: pointer; border-radius: 3px;
+    opacity: 0; transition: opacity 160ms, color 160ms, background 160ms;
+    margin-left: 2px;
+  }
+  .msg-agent:hover .msg-tts-btn,
+  .msg-tts-btn.is-playing { opacity: 1; }
+  .msg-tts-btn:hover { color: var(--accent); background: var(--accent-dim); }
+  .msg-tts-btn.is-playing {
+    color: var(--accent);
+    animation: tts-pulse 1.2s ease-in-out infinite;
+  }
+  @keyframes tts-pulse {
+    0%, 100% { box-shadow: 0 0 0 0 var(--accent-dim); }
+    50% { box-shadow: 0 0 6px 2px var(--accent-dim); }
+  }
+
   .thinking-trace {
     padding: 10px 16px;
     border: 1px dashed var(--accent-dim);

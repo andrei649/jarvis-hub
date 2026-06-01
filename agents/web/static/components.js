@@ -168,6 +168,55 @@ function AgentList({ agents, tiers, activeAgent, onSelect, onDoubleClick, sys })
 
 /* ───────────────────────────── Conversation ───────────────────────────── */
 
+function useTTS() {
+  const [playing, setPlaying] = useState(false);
+  const audioRef = useRef(null);
+
+  const speak = async (text, lang) => {
+    if (window.activeJarvisAudio) {
+      try { window.activeJarvisAudio.pause(); } catch(e){}
+      window.activeJarvisAudio = null;
+    }
+    // Stop any ongoing playback
+    if (audioRef.current) {
+      audioRef.current.pause();
+      audioRef.current = null;
+      if (playing) { setPlaying(false); return; }
+    }
+    setPlaying(true);
+    try {
+      const resp = await fetch('/tts', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text, lang: lang || 'ro' }),
+      });
+      if (!resp.ok) { console.error('TTS error:', await resp.json()); setPlaying(false); return; }
+      const blob = await resp.blob();
+      const url = URL.createObjectURL(blob);
+      const audio = new Audio(url);
+      audioRef.current = audio;
+      window.activeJarvisAudio = audio;
+      audio.onended = () => {
+        setPlaying(false);
+        URL.revokeObjectURL(url);
+        audioRef.current = null;
+        if (window.activeJarvisAudio === audio) window.activeJarvisAudio = null;
+      };
+      audio.onerror = () => {
+        setPlaying(false);
+        audioRef.current = null;
+        if (window.activeJarvisAudio === audio) window.activeJarvisAudio = null;
+      };
+      await audio.play();
+    } catch (e) {
+      console.error('TTS failed:', e);
+      setPlaying(false);
+    }
+  };
+
+  return { speak, playing };
+}
+
 function Message({ m, agentMap }) {
   if (m.role === 'user') {
     return h('div', { className: 'msg msg-user' },
@@ -179,15 +228,30 @@ function Message({ m, agentMap }) {
     );
   }
   const a = agentMap[m.agent];
+  const { speak, playing } = useTTS();
   return h('div', { className: 'msg msg-agent' },
     h('div', { className: 'msg-meta' },
       h('span', { className: 'msg-tag msg-tag-agent' }, `[${(a?.name || m.agent || 'unknown').toUpperCase()}]`),
       h('span', { className: 'msg-role' }, a?.role),
       h('span', { className: 'msg-ts' }, m.ts),
+      h('button', {
+        className: `msg-tts-btn ${playing ? 'is-playing' : ''}`,
+        title: playing ? 'Stop' : 'Ascultă',
+        onClick: () => speak(m.text, 'ro'),
+      },
+        h('svg', { viewBox: '0 0 20 20', width: '13', height: '13', fill: 'currentColor' },
+          playing
+            ? h('rect', { x: '4', y: '4', width: '4', height: '12', rx: '1' },
+                h('animate', { attributeName: 'height', values: '12;6;12', dur: '0.8s', repeatCount: 'indefinite' })
+              )
+            : h('path', { d: 'M3 6.5v7a.5.5 0 0 0 .8.4l5-3.5a.5.5 0 0 0 0-.8l-5-3.5A.5.5 0 0 0 3 6.5zM13 5a1 1 0 0 1 0 1.5A5 5 0 0 1 13 15a1 1 0 0 1 0-1.5 3 3 0 0 0 0-5 1 1 0 0 1 0-1.5zM16 3a1 1 0 0 1 0 1.5A8 8 0 0 1 16 17a1 1 0 0 1 0-1.5 6 6 0 0 0 0-11A1 1 0 0 1 16 3z' })
+        ),
+      ),
     ),
     h('div', { className: 'msg-body' }, m.text),
   );
 }
+
 
 function ThinkingBubble({ agent, routedAgents, agentMap }) {
   return h('div', { className: 'msg msg-agent msg-thinking' },

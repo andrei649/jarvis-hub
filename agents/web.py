@@ -392,6 +392,36 @@ async def chat_stream(req: ChatRequest):
     )
 
 
+# ── TTS endpoint ─────────────────────────────────────────────────
+
+class TTSRequest(BaseModel):
+    text: str
+    lang: str = "ro"
+
+@app.post("/tts")
+async def tts_endpoint(req: TTSRequest):
+    """Synthesize text to speech and return MP3 audio."""
+    try:
+        from core.voice.tts import TTSEngine, HAS_EDGE
+        if not HAS_EDGE:
+            return JSONResponse(
+                {"error": "edge-tts not installed. Run: pip install edge-tts"},
+                status_code=503,
+            )
+        engine = TTSEngine()
+        audio_path = await engine.speak(req.text, lang=req.lang)
+        if not audio_path:
+            return JSONResponse({"error": "TTS synthesis failed"}, status_code=500)
+        return FileResponse(
+            audio_path,
+            media_type="audio/mpeg",
+            headers={"Cache-Control": "no-cache"},
+        )
+    except Exception as e:
+        logger.exception("TTS error")
+        return JSONResponse({"error": str(e)}, status_code=500)
+
+
 # ── Status (HUD-compatible) ──────────────────────────────────────
 
 @app.get("/status")
