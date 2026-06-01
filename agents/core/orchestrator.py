@@ -31,6 +31,8 @@ from .autonomy import ProactiveObserver, default_probes
 from .autonomy.inbox import build_decision_card
 from .autonomy.digest import build_morning_brief, build_evening_retro
 from .autonomy.worker import is_night_window
+from .autonomy.reflection import DailyReflector
+from .workflows import WorkflowEngine, WorkflowRegistry
 from .sandbox import Sandbox
 from .bench import LatencyBenchmark
 from .plugin_gate import PermissionGate
@@ -116,6 +118,11 @@ class Orchestrator:
         self.event_watcher = None
         self._autonomy_task: Optional[asyncio.Task] = None
         self.last_cognition = None
+        # Daily Reflection & Graph Consolidation (H5.15)
+        self.reflector: Optional[DailyReflector] = None
+        # Multi-Agent Workflows (H5.6)
+        self.workflow_registry = WorkflowRegistry()
+        self.workflow_engine: Optional[WorkflowEngine] = None
 
     async def load_agents(self):
         await self.llm_router.detect()
@@ -236,7 +243,16 @@ class Orchestrator:
             ]
             self.event_watcher = EventWatcher(self.autonomy, event_probes)
 
-            logger.info("Autonomy queue + executor + observer + event_watcher initialized")
+            # Daily reflection + graph consolidation (H5.15)
+            async def _llm_for_reflection(prompt: str) -> str:
+                return await self.handle_input(prompt, channel="autonomy")
+
+            self.reflector = DailyReflector(self.memory, _llm_for_reflection)
+
+            # Multi-agent workflow engine (H5.6)
+            self.workflow_engine = WorkflowEngine(self)
+
+            logger.info("Autonomy queue + executor + observer + event_watcher + reflection + workflows initialized")
         except Exception as e:
             logger.warning(f"Autonomy init failed: {e}")
 
@@ -341,6 +357,10 @@ class Orchestrator:
                 # Sample personal events (Antigravity watchers)
                 if self.event_watcher and self.get_setting("system.watchers_enabled", True):
                     await self.event_watcher.observe()
+                # Nightly reflection & graph consolidation (H5.15)
+                if self.reflector and self.get_setting("system.reflection_enabled", True):
+                    if is_night_window(datetime.now().hour, start=22, end=7):
+                        await self.reflector.run(enabled=True)
                 # Sync error/problem log to BACKLOG.md (Antigravity error backlog logger)
                 if self.get_setting("system.error_backlog_sync_enabled", True):
                     from .autonomy.error_logger import sync_problems_to_backlog

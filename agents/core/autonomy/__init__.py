@@ -14,6 +14,7 @@ from .executor import TaskExecutor
 from .digest import build_morning_brief, build_evening_retro
 from .preferences import PreferenceStore
 from .remediation import RemediationRunner, ServiceCommand, ExecResult
+from .reflection import DailyReflector
 from .watchers import EventWatcher, EmailProbe, CalendarProbe, FinanceProbe, HealthProbe
 from .error_logger import persist_problem, sync_problems_to_backlog
 from .observer import (
@@ -30,6 +31,7 @@ __all__ = [
     "build_morning_brief", "build_evening_retro",
     "PreferenceStore",
     "RemediationRunner", "ServiceCommand", "ExecResult",
+    "DailyReflector",
     "EventWatcher", "EmailProbe", "CalendarProbe", "FinanceProbe", "HealthProbe",
     "persist_problem", "sync_problems_to_backlog",
     "ProactiveObserver", "Signal", "Severity", "Remediation", "Finding",

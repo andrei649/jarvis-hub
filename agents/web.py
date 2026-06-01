@@ -1577,6 +1577,91 @@ async def memory_stats():
         return _nocache_json({"sessions": {"total": 0, "current": "", "active": 0}, "vectors": {"stored": 0, "dimension": 0, "backend": ""}, "knowledge_graph": {"entities": 0, "relations": 0, "last_seed": ""}, "agent_contexts": {}})
 
 
+@app.get("/api/memory/search")
+async def memory_search(q: str = "", top_k: int = 10):
+    """Fused recall via RRF: vector similarity + knowledge-graph (H5.14 Task 4)."""
+    top_k = max(1, min(top_k, 50))
+    if not orch or not orch.memory:
+        return _nocache_json({"results": [], "query": q, "total": 0})
+    try:
+        hits = await orch.memory.hybrid_search(
+            embedding=None, keyword=q or None, top_k=top_k
+        )
+        return _nocache_json({
+            "results": [
+                {
+                    "id": h.id,
+                    "score": round(h.score, 4),
+                    "sources": h.sources,
+                    "payload": h.payload,
+                }
+                for h in hits
+            ],
+            "query": q,
+            "total": len(hits),
+        })
+    except Exception as e:
+        logger.warning(f"memory/search error: {e}")
+        return _nocache_json({"results": [], "query": q, "total": 0, "error": str(e)})
+
+
+@app.get("/api/reflection/status")
+async def reflection_status():
+    """Daily reflection status (H5.15)."""
+    if not orch or not hasattr(orch, "reflector") or not orch.reflector:
+        return _nocache_json({"enabled": False, "last_run": None, "last_result": None})
+    return _nocache_json(orch.reflector.status())
+
+
+@app.post("/api/reflection/run")
+async def reflection_run():
+    """Trigger nightly reflection manually (H5.15)."""
+    if not orch or not hasattr(orch, "reflector") or not orch.reflector:
+        return _nocache_json({"ok": False, "error": "reflector not initialized"})
+    try:
+        # Force re-run by temporarily clearing last_run
+        orch.reflector._last_run = None
+        result = await orch.reflector.run(
+            enabled=orch.get_setting("system.reflection_enabled", True)
+        )
+        return _nocache_json({"ok": True, "result": result})
+    except Exception as e:
+        logger.warning(f"reflection/run error: {e}")
+        return _nocache_json({"ok": False, "error": str(e)})
+
+
+@app.get("/api/workflows")
+async def list_workflows():
+    """List all registered workflow pipelines (H5.6)."""
+    if not orch or not hasattr(orch, "workflow_registry"):
+        return _nocache_json({"workflows": [], "total": 0})
+    return _nocache_json({
+        "workflows": orch.workflow_registry.list(),
+        "total": len(orch.workflow_registry.ids()),
+    })
+
+
+class WorkflowRunBody(BaseModel):
+    pipeline_id: str
+    input: str = ""
+
+
+@app.post("/api/workflows/run")
+async def run_workflow(body: WorkflowRunBody):
+    """Execute a named workflow pipeline (H5.6)."""
+    if not orch or not hasattr(orch, "workflow_engine") or not orch.workflow_engine:
+        return _nocache_json({"ok": False, "error": "workflow engine not initialized"})
+    pipeline = orch.workflow_registry.get(body.pipeline_id)
+    if not pipeline:
+        raise HTTPException(status_code=404, detail=f"Pipeline '{body.pipeline_id}' not found")
+    try:
+        result = await orch.workflow_engine.run(pipeline, initial_input=body.input)
+        return _nocache_json({"ok": result.get("_ok", True), "result": result})
+    except Exception as e:
+        logger.warning(f"workflow/run error: {e}")
+        return _nocache_json({"ok": False, "error": str(e)})
+
+
 @app.get("/memory/{agent_id}")
 async def get_agent_memory(agent_id: str):
     """Return per-agent memory context."""

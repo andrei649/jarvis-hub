@@ -1499,6 +1499,66 @@
   font-size: 10px;
   color: var(--text-dim);
 }
+.sys-card-sublabel {
+  font-size: 10px;
+  color: var(--text-dim);
+  margin-left: 6px;
+  font-style: italic;
+}
+.sys-recall-row {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+.sys-recall-input {
+  flex: 1;
+  background: var(--surface-2);
+  border: 1px solid var(--border-dim);
+  border-radius: 4px;
+  padding: 5px 8px;
+  color: var(--text-primary);
+  font-size: 12px;
+  font-family: var(--font-mono);
+  outline: none;
+}
+.sys-recall-input:focus { border-color: var(--accent); }
+.sys-recall-btn {
+  background: var(--accent-faint);
+  border: 1px solid var(--accent);
+  border-radius: 4px;
+  color: var(--accent-light);
+  padding: 5px 10px;
+  font-size: 14px;
+  cursor: pointer;
+}
+.sys-recall-btn:disabled { opacity: 0.5; cursor: default; }
+.sys-recall-results { display: flex; flex-direction: column; gap: 4px; }
+.sys-recall-empty { font-size: 11px; color: var(--text-dim); padding: 4px 0; }
+.sys-recall-hit {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  padding: 4px 6px;
+  background: var(--surface-2);
+  border-radius: 3px;
+  font-size: 11px;
+}
+.sys-recall-score {
+  font-family: var(--font-mono);
+  color: var(--accent-light);
+  min-width: 42px;
+}
+.sys-recall-sources {
+  color: var(--green-active);
+  min-width: 80px;
+  font-size: 10px;
+}
+.sys-recall-id {
+  color: var(--text-dim);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .sys-plugins-head {
   display: flex;
   justify-content: space-between;

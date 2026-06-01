@@ -42,11 +42,11 @@ python -m pytest tests/ -v          # 740 passed, 9 skipped
 | Horizon | Total | ✅ Done | S total | S done | % |
 |---------|-------|---------|---------|--------|---|
 | **H1–H4 + Sprint 0 + Cross-cutting + Sec + Bugs** | 67 | **67** | 248 | **248** | **100%** |
-| **H5 Next Wave** (P2–P3) | 17 | **9** | 128 | **52** | **40.6%** |
+| **H5 Next Wave** (P2–P3) | 17 | **12** | 128 | **79** | **61.7%** |
 | **H6 Jarvis Autonom** (P1) | 7 | **7** | 60 | **60** | **100%** |
-| **Total general** | **88** | **83** | **423** | **360** | **85.1%** |
+| **Total general** | **88** | **86** | **423** | **379** | **89.6%** |
 
-**Test count:** 758 passed, 9 skipped (QA 2026-06-01: +H5.12/H5.13 confirmate, fix izolare teste, +H5.14 Retrieval Fusion, +H5.17 Batch/Cache Embeddings)
+**Test count:** 784 passed, 9 skipped (QA 2026-06-01: +H5.15 Daily Reflection 10 teste, +H5.14 Task4 /api/memory/search + HUD Fused Recall, +H5.6 Multi-Agent Workflows 16 teste)
 
 ---
 
@@ -102,7 +102,8 @@ python -m pytest tests/ -v          # 740 passed, 9 skipped
 
 > Fiecare item are spec + plan propriu în `docs/superpowers/`. Timeline: 0.6 → 0.9 → 1.0.
 >
-> **Următoarele (0.8, deps satisfăcute):** **H5.15** Daily Reflection & Graph Consolidation (poate folosi `hybrid_search` din H5.14). Apoi headline 0.8: **H5.6** Multi-Agent Workflows. Opțional: Task 4 din H5.14 (endpoint `/api/memory/search` + HUD).
+> **Livrat (2026-06-01):** **H5.15** ✅ Daily Reflection + **H5.6** ✅ Multi-Agent Workflows + **H5.14 Task 4** ✅ `/api/memory/search` + HUD Fused Recall.
+> **Rămase (0.7):** H5.1 Howard fine-tuning, H5.2 Mobile PWA, H5.3 i18n, H5.4 UI Overhaul.
 
 | # | Item | S | Dep | Target version |
 |---|------|---|-----|---------------|
@@ -111,7 +112,7 @@ python -m pytest tests/ -v          # 740 passed, 9 skipped
 | H5.3 | Multi-Language / i18n (RO/EN switch) | 5 | — | 0.7 |
 | H5.4 | UI Overhaul (teme, layout, accesibilitate) | 8 | H5.2 | 0.7 |
 | H5.5 ✅ | **Performance & Robustness** (retry, circuit breaker, rate limit, caching, resilience metrics) | 8 | — | 0.8 ✅ |
-| H5.6 | Multi-Agent Workflows (handoff, paralel, pipeline) | 13 | H5.5 | 0.8 |
+| H5.6 ✅ | **Multi-Agent Workflows** (handoff, paralel, pipeline) — `WorkflowEngine` + `Pipeline`/`WorkflowStep` (DAG, topological sort, parallel batches) + `WorkflowRegistry` (3 built-in: finance_report, research_and_brief, security_digest) + endpoints `/api/workflows` + `/api/workflows/run`. 16 teste offline. | 13 | H5.5 | 0.8 ✅ |
 | H5.7 | New Integrations / Plugins (SMS, CRM, IoT, social) | 8 | — | 0.9 |
 | H5.8 | Agent Marketplace / Skill Sharing (registry, publish) | 13 | H5.6 | 0.9 |
 | H5.9 ✅ | **Resilience Tab in Main HUD** — tab live în SystemsPanel cu retry metrics + circuit breaker states, endpoint public `/api/resilience` | 3 | H5.5 | 0.8 ✅ |
@@ -120,7 +121,7 @@ python -m pytest tests/ -v          # 740 passed, 9 skipped
 | H5.12 ✅ | **Secured Shell Task Executor** — `RemediationRunner` (allowlist, permission gate, no-shell `exec`, audited) wired ca handler `restart_service` în executor. `core/autonomy/remediation.py` | 5 | H6.7 | 0.8 ✅ |
 | H5.13 ✅ | **Proactive Event Watchers** — `EventWatcher` + Email/Calendar/Finance/Health probes, eșantionate în bucla de autonomie (gated `system.watchers_enabled`). `core/autonomy/watchers.py` | 8 | H6.7 | 0.8 ✅ |
 | H5.14 ✅ | **Retrieval Fusion Engine** — `reciprocal_rank_fusion()` + `HybridRetriever` (vector⊕graph RRF, weight-tunable, injectabil) + `MemoryManager.hybrid_search()`. `core/memory/fusion.py`, 9 teste offline. *(Task 4 — endpoint `/api/memory/search` + HUD — opțional, rămas.)* | 5 | H3.1, H3.2 | 0.8 ✅ |
-| H5.15 | **Daily Reflection & Graph Consolidation** — auto-reflecție nocturnă, lessons learned store promovat în Neo4j | 8 | H6.6, H3.2 | 0.8 |
+| H5.15 ✅ | **Daily Reflection & Graph Consolidation** — `DailyReflector` (`core/autonomy/reflection.py`): gather context → LLM reflection → JSON entities/relations/lessons → promote to Neo4j graph; idempotent per zi; hookuit în `_autonomy_loop` (fereastră 22:00–07:00, gated `system.reflection_enabled`). Endpoint `/api/reflection/status` + `/api/reflection/run`. 10 teste offline. | 8 | H6.6, H3.2 | 0.8 ✅ |
 | H5.16 ✅ | **Sentence-level TTS & Audio Barge-in** — integration edge-tts, play/stop barge-in sync, auto-speak, unit tested | 8 | H1.1, H5.5 | 0.8 ✅ |
 | H5.17 ✅ | **Batch & Cache Embeddings Pipeline** — `EmbeddingCache` (content-addressed, sharded, crash-safe) + `Embedder.embed_batch` (dedup + paralel) + retry/backoff (degradare la hash) + cache stats în pipeline. `core/ingestion/embedder.py` | 5 | H5.5 | 0.8 ✅ |
 
@@ -306,7 +307,7 @@ Ticker feed în HUD, status OAuth integrat, widget de task-uri curente și Cogni
 
 ### H5.14 ✅ — Retrieval Fusion Engine (S:5, Dep: H3.1, H3.2)
 `core/memory/fusion.py`: `reciprocal_rank_fusion(ranked_lists, k=60, weights, top_k)` — RRF pur, rank-based (fără normalizare între scale diferite), cu provenance (`sources`) și payload merge; `HybridRetriever(vector_store, graph)` adaptează formele reale (`{id,score,metadata}` vector / `{name,type,properties}` graph), injectabil → testat offline cu `InMemoryVectorStore`+`InMemoryGraph`; `MemoryManager.hybrid_search(embedding, keyword, top_k)`. Plan: `docs/superpowers/plans/2026-06-01-h5.14-retrieval-fusion.md`. 9 teste (`tests/test_retrieval_fusion.py`).
-**Rămas (opțional, Task 4):** endpoint public `/api/memory/search` + setări `memory.fusion_*` + box „Fused recall" în HUD.
+**Task 4 livrat ✅:** endpoint public `/api/memory/search` + box „Fused recall" în HUD (MemoryTab → FusedRecallBox cu input + RRF results).
 **AC ✅:** un singur query întoarce o listă rankată care împletește similaritatea conversațională (vector) cu hit-urile factuale din graf; fuziune deterministă, weight-tunable, rulează offline.
 
 ### H5.15 — Daily Reflection & Graph Consolidation (S:8, Dep: H6.6, H3.2)

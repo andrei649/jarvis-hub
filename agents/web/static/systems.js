@@ -24,6 +24,53 @@ function SystemsTabBar({ active, onChange }) {
   );
 }
 
+function FusedRecallBox() {
+  const [query, setQuery] = useState('');
+  const [results, setResults] = useState(null);
+  const [loading, setLoading] = useState(false);
+
+  const search = async () => {
+    if (!query.trim()) return;
+    setLoading(true);
+    try {
+      const res = await fetch('/api/memory/search?q=' + encodeURIComponent(query) + '&top_k=8');
+      setResults(await res.json());
+    } catch (err) { console.error('Fused recall error:', err); }
+    setLoading(false);
+  };
+
+  return h('div', { className: 'sys-card wide' },
+    h('div', { className: 'sys-card-head' },
+      h('span', { className: 'sys-card-label' }, 'FUSED RECALL'),
+      h('span', { className: 'sys-card-sublabel' }, 'vector ⊕ graph RRF')
+    ),
+    h('div', { className: 'sys-recall-row' },
+      h('input', {
+        className: 'sys-recall-input',
+        type: 'text',
+        placeholder: 'Search memory…',
+        value: query,
+        onChange: e => setQuery(e.target.value),
+        onKeyDown: e => e.key === 'Enter' && search()
+      }),
+      h('button', { className: 'sys-recall-btn', onClick: search, disabled: loading },
+        loading ? '…' : '⌕'
+      )
+    ),
+    results && h('div', { className: 'sys-recall-results' },
+      results.total === 0
+        ? h('div', { className: 'sys-recall-empty' }, 'No results')
+        : results.results.map((hit, i) =>
+            h('div', { key: hit.id + i, className: 'sys-recall-hit' },
+              h('span', { className: 'sys-recall-score' }, hit.score.toFixed(3)),
+              h('span', { className: 'sys-recall-sources' }, hit.sources.join('+')),
+              h('span', { className: 'sys-recall-id mono' }, hit.id)
+            )
+          )
+    )
+  );
+}
+
 function MemoryTab({ data, onRefresh }) {
   const [selectedAgent, setSelectedAgent] = useState(null);
 
@@ -108,7 +155,8 @@ function MemoryTab({ data, onRefresh }) {
           )
         )
       )
-    )
+    ),
+    h(FusedRecallBox)
   );
 }
 
@@ -855,4 +903,4 @@ function SystemsPanel({ agents, onRefresh, onPluginToggle }) {
   );
 }
 
-Object.assign(window, { SystemsPanel, SystemsTabBar, MemoryTab, PluginsTab, HeartbeatsTab, LearningTab, SecurityBenchTab, ResilienceTab, OAuthTab, OracleTab });
+Object.assign(window, { SystemsPanel, SystemsTabBar, MemoryTab, FusedRecallBox, PluginsTab, HeartbeatsTab, LearningTab, SecurityBenchTab, ResilienceTab, OAuthTab, OracleTab });
