@@ -31,7 +31,7 @@ Dacă trebuie să atingi un fișier din lane-ul meu, scrie un rând în tabla de
 | Agent | Lucrez la | Fișiere atinse | De la |
 |---|---|---|---|
 | Claude | autonomy/observer + routing (livrat) | `core/router.py`, `core/autonomy/observer.py` | 2026-05-31 |
-| Antigravity | core tts + live voice interaction + reasoning stream fixes (livrat) | `agents/web/static/*`, `core/llm/base.py`, `web.py`, `orchestrator.py` | 2026-06-01 |
+| Antigravity | H5.1 Howard dynamic RAG + continuous ingestion + cloned voice (livrat) | `agents/core/agent.py`, `agents/core/ingestion/*`, `agents/core/orchestrator.py`, `agents/core/voice/tts.py`, `tests/*` | 2026-06-01 |
 
 ## Cum lucrezi tu (Antigravity, doar local)
 1. **Sync întâi** (cere-i lui Andrei un Sync în GitHub Desktop) ca să pornești de pe ultimul `main`.

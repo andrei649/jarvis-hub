@@ -123,6 +123,8 @@ class Orchestrator:
         # Multi-Agent Workflows (H5.6)
         self.workflow_registry = WorkflowRegistry()
         self.workflow_engine: Optional[WorkflowEngine] = None
+        # Continuous Ingestion Watcher (H5.1)
+        self.ingestion_watcher = None
 
     async def load_agents(self):
         await self.llm_router.detect()
@@ -243,11 +245,11 @@ class Orchestrator:
             ]
             self.event_watcher = EventWatcher(self.autonomy, event_probes)
 
-            # Daily reflection + graph consolidation (H5.15)
-            async def _llm_for_reflection(prompt: str) -> str:
-                return await self.handle_input(prompt, channel="autonomy")
-
             self.reflector = DailyReflector(self.memory, _llm_for_reflection)
+
+            # Continuous Ingestion Watcher (H5.1)
+            from .ingestion.watcher import IngestionWatcher
+            self.ingestion_watcher = IngestionWatcher()
 
             # Multi-agent workflow engine (H5.6)
             self.workflow_engine = WorkflowEngine(self)
@@ -361,6 +363,9 @@ class Orchestrator:
                 if self.reflector and self.get_setting("system.reflection_enabled", True):
                     if is_night_window(datetime.now().hour, start=22, end=7):
                         await self.reflector.run(enabled=True)
+                # Continuous Ingestion Watcher (H5.1)
+                if self.ingestion_watcher and self.get_setting("system.ingestion_watcher_enabled", True):
+                    await asyncio.to_thread(self.ingestion_watcher.check_and_run)
                 # Sync error/problem log to BACKLOG.md (Antigravity error backlog logger)
                 if self.get_setting("system.error_backlog_sync_enabled", True):
                     from .autonomy.error_logger import sync_problems_to_backlog
@@ -657,9 +662,23 @@ class Orchestrator:
                 context_block = ""
                 if agent_context:
                     context_block = f"Agent context: {agent_context}\n"
+
+                rag_block = ""
+                if agent_id == "howard":
+                    try:
+                        from .ingestion.pipeline import IngestionPipeline
+                        pipeline = IngestionPipeline()
+                        similar = pipeline.search_similar(text, k=5, only_me=True)
+                        if similar:
+                            shot_lines = [f"- Andrei: \"{m.text}\"" for m in similar]
+                            rag_block = "Here are some of your past matching responses from the archive (RAG), mirroring your stylometry, tone, and opinions:\n" + "\n".join(shot_lines) + "\n\n"
+                            logger.info(f"Howard RAG: injected {len(similar)} few-shot messages into stream prompt")
+                    except Exception as e:
+                        logger.warning(f"Howard RAG stream lookup failed: {e}")
+
                 prompt = (
                     f"Conversation history:\n{history}\n\n"
-                    f"{plugin_block}{context_block}"
+                    f"{plugin_block}{context_block}{rag_block}"
                     f"User: {text}\n"
                     f"Respond as {agent.name}."
                 )

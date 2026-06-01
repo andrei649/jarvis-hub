@@ -77,8 +77,21 @@ class Agent:
             skill_descs = "\n".join(f"  - {s['command']}: {s['description']}" for s in skills)
             skills_block = f"Available skills:\n{skill_descs}\n\n"
 
+        rag_block = ""
+        if self.id == "howard":
+            try:
+                from .ingestion.pipeline import IngestionPipeline
+                pipeline = IngestionPipeline()
+                similar = pipeline.search_similar(text, k=5, only_me=True)
+                if similar:
+                    shot_lines = [f"- Andrei: \"{m.text}\"" for m in similar]
+                    rag_block = "Here are some of your past matching responses from the archive (RAG), mirroring your stylometry, tone, and opinions:\n" + "\n".join(shot_lines) + "\n\n"
+                    logger.info(f"Howard RAG: injected {len(similar)} few-shot messages")
+            except Exception as e:
+                logger.warning(f"Howard RAG lookup failed: {e}")
+
         prompt = (
-            f"{skills_block}{agent_block}"
+            f"{skills_block}{agent_block}{rag_block}"
             f"User said: {text}\n"
             f"Respond as {self.name}.\n\n"
             f"IMPORTANT: If this is a complex multi-step task you solved elegantly, "
@@ -87,7 +100,11 @@ class Agent:
             f"You can also hand off to another agent with '[handoff:agent_id]'."
         )
 
-        backend, _ = self.llm_router.select_backend(self.id, prompt)
+        res = self.llm_router.select_backend(self.id, prompt)
+        if isinstance(res, tuple) and len(res) == 3:
+            backend, _, _ = res
+        else:
+            backend, _ = res
         if self.guardrails:
             backend = self.guardrails
 
