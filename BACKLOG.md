@@ -178,6 +178,12 @@ python -m pytest tests/ -v          # 784 passed, 9 skipped
 | H8.7 | **AI-Navigable Docs upkeep** — `docs/ARCHITECTURE.md` ca sursă unică de navigare pentru asistenți AI; checklist „docs la zi" în template-ul de PR. | 2 | P3 | — | doc-ul reflectă codul curent; PR-urile mari ating și ARCHITECTURE.md |
 
 > **Tech-debt notat (2026-06-02):** `README.md` rămăsese în urmă (test count 181/39, v0.2.1, linia Memory fără embeddings/graph) — actualizat în această sesiune. De ținut sincron pe viitor.
+>
+> **Inconsistențe găsite la scrierea `docs/ARCHITECTURE.md` (de triajat):**
+> 1. **Model ID divergent:** `JARVIS.md` zice `google/gemma-4-26b-a4b`, dar `web.py:_sys_info` + `settings_db.py` default zic `google/gemma-4-31b-a4b`. De aliniat la cel real.
+> 2. **`agents.yaml`:** `howard` apare și în `agents:` (active) și în `bench:` — intrare duplicată.
+> 3. **`hybrid_router.DEFAULT_CLAUDE_MODEL`** = `claude-sonnet-4-20250514` — posibil ID vechi; cu cheie reală poate da 400. De actualizat la modelul curent.
+> 4. **`orchestrator.handle_input_stream`:** posibil `UnboundLocalError` pe `agent_id` dacă nu există agenți țintă (`valid_ids` gol). Fix defensiv mic.
 
 ---
 
