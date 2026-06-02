@@ -266,5 +266,56 @@ the model closes, but only because infra is cheap (local-first MoE) and self-hos
 
 ---
 
+## 9. Blended Base — the Realistic Mix (80% self-host / 20% hosted)
+
+The §8 numbers are worst-case (100% hosted). In reality a local-first product converts most users to
+self-host. Modeling **80% Community (free, self-host) / 20% Pro (€19, hosted)**:
+
+- **Community 80%** → **$0 infra, $0 revenue** (their GPU, their power).
+- **Pro 20%** → bears all GPU cost, pays €19/mo.
+
+**GPUs are sized only for the hosted 20%**, so the whole infra bill shrinks ~5× vs §8.
+
+| Total users | Hosted (20%) | GPUs needed | **Blended infra/mo** | Revenue/mo (20%×€19) | Net (infra only) |
+|-------------|--------------|-------------|----------------------|----------------------|------------------|
+| 100 | 20 | 1 (min) | ~$725 | ~$410 | **−$315** (cold-start loss) |
+| 1,000 | 200 | 2 | ~$1,150 | ~$4,100 | **+$2,950** (~72% margin) |
+| 1,000,000 | 200,000 | ~200 owned | ~$76k | ~$4.1M | **+$4.0M** (~98% gross margin) |
+
+| Metric | 100 | 1,000 | 1,000,000 |
+|--------|-----|-------|-----------|
+| Infra **per total user** | ~$7.25 | ~$1.15 | **~$0.08** |
+| Revenue **per total user** | ~$4.10 | ~$4.10 | ~$4.10 |
+| Gross margin | negative | ~72% | ~98% |
+
+### 9.1 Reading the blend
+
+- **Revenue/total-user is flat (~€3.80)** — it's just `20% × €19`. **Infra/total-user collapses**
+  from $7.25 → $0.08 as the hosted cohort fills GPUs and you switch to owned hardware.
+- **Cross-over is ~150–200 hosted users** (≈750–1,000 total). Below that, one underutilized GPU
+  makes the hosted line lose money — fund the cold-start phase from B2B/savings, or use **serverless
+  GPU** (per-second billing) until the cohort fills a dedicated GPU.
+- **At 1M the infra bill is ~$76k/mo** — trivially covered by ~$4.1M/mo of Pro revenue. The binding
+  constraint becomes **people (~$1–2M/mo)**, not servers (see §8.5).
+
+### 9.2 A richer 3-tier funnel (adds Personal payers)
+
+If some self-hosters pay **€9 Personal** (their GPU, we supply cloud-LLM credits + mobile/voice):
+e.g. **72% Community / 8% Personal / 20% Pro** →
+
+- Revenue/total-user rises to **~€4.52** (`8%×€9 + 20%×€19`).
+- Added cost is only **~$0.12/total-user** of cloud credits (no GPU) — funded by the €9 fee.
+- Net effect: **+€0.72/user revenue at ~98% margin** on the Personal cohort. B2B Team/Business
+  (§5) stacks on top as additional high-margin revenue on the *same* hosted GPU fleet.
+
+### 9.3 Bottom line
+
+> The blended model is the real business: **free self-host drives adoption at $0 COGS, a ~20% hosted
+> minority funds everything at 70–98% gross margin once past ~1k users.** The only money-losing zone
+> is cold-start (<~750 users on a single underutilized GPU) — bridge it with serverless GPU and B2B
+> design-partner revenue.
+
+---
+
 *See also: [GO_LIVE_PLAN.md](../GO_LIVE_PLAN.md) (features + marketing brief),
 [BACKLOG.md](../BACKLOG.md) (roadmap), [docs/ARCHITECTURE.md](ARCHITECTURE.md) (technical map).*
