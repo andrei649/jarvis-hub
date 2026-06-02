@@ -1,0 +1,251 @@
+# Jarvis Hub — Delivery History
+
+> Narrative record of what was built, when, by whom, and notable events.
+> Active backlog: [BACKLOG.md](../BACKLOG.md) · Go-live plan: [GO_LIVE_PLAN.md](../GO_LIVE_PLAN.md)
+
+---
+
+## Foundation — Sprint 0 + H1–H4 (v0.5-beta, Live ✅)
+
+### H1 — Voice, Channels & OAuth
+
+| Item | SP | Acceptance Criteria |
+|------|----|---------------------|
+| H1.1 Voice Channel (STT → orchestrator → TTS) | 8 | Pipeline complet funcțional |
+| H1.2 Telegram Channel (webhook + polling) | 5 | Bot răspunde direct, session per chat_id |
+| H1.3 Web Channel robust (SSE streaming) | 3 | Text → LLM → tokens streamuite în HUD |
+| H1.4 OAuth wiring (Google Calendar, Gmail, Spotify) | 5 | Token refresh + OAuth lifecycle complet |
+| H1.5 Admin DB → Runtime (settings watcher 30s) | 5 | Schimb temp din admin → efect imediat |
+| S0.1 Model Tiering (Claude API for heavy, local for light) | 3 | Vision/Steve → Claude; rest → local; Frigga → strict local |
+| S0.2 Heartbeat Sanity (intervals ≥60 min) | 2 | Steve la 2h, Ultron de 2x/zi, rest OK |
+| S0.3 Smoke Test + CI pe push | 2 | GitHub Actions pytest + server smoke |
+
+### H2 — Core Agent Capabilities (12 items)
+
+| Item | SP | Acceptance Criteria |
+|------|----|---------------------|
+| H2.1 Pepper Calendar | 5 | „adaugă meeting" → eveniment creat |
+| H2.2 Pepper Gmail Triage | 5 | „ce e nou în inbox?" → listă priorizată |
+| H2.3 Friday Brief Pipeline | 8 | Briefing complet structurat la cerere |
+| H2.4 Hercules Health Data | 5 | „cum am dormit?" → durată, calitate, trend |
+| H2.5 Jerome Spotify | 3 | „pune ceva focus" → track din library |
+| H2.6 Gecko Balance Reader | 8 | „câți bani am?" → sumă + mock când neconfigurat |
+| H2.7 Hephaestus PM | 8 | „status Cosmina?" → fază, milestone, blockeri |
+| H2.8 Frigga Local Store | 8 | „cât a dormit Max?" → ore, calitate. Zero network |
+| H2.9 Vision Web Research | 5 | „cercetează piața X" → raport cu surse |
+| H2.10 Veronica Drafting | 3 | „scrie post LinkedIn" → draft complet |
+| H2.11 Stark GA4 Analytics | 5 | KPI summary + mock când neconfigurat |
+| H2.12 Hybrid LLM Router (local ↔ Gemini) | 13 | Rutează per request după token count + agent policy |
+
+### H3 — Intelligence & Memory (6 items)
+
+| Item | SP | Acceptance Criteria |
+|------|----|---------------------|
+| H3.1 Qdrant Vector DB | 5 | Căutare similaritate pe conversații |
+| H3.2 Neo4j Knowledge Graph | 8 | „unde lucrează Andrei?" → răspunde din graph |
+| H3.3 Session Persistence cross-channel | 5 | Mesaj web → întrerup → Telegram → același context |
+| H3.4 Learning Loop live | 8 | După 100 interacțiuni → sugerează promovare bench |
+| H3.5 Heartbeat System (APScheduler) | 5 | 07:00 Jarvis face morning brief fără trigger |
+| H3.6 Bench Agent Activation | 8 | 20 query-uri Vision → Bruce devine activ |
+
+### H4 — Platform & Security (11 items)
+
+| Item | SP | Acceptance Criteria |
+|------|----|---------------------|
+| H4.1 Discord Channel | 5 | Agent trimite mesaj pe Discord |
+| H4.2 Email Channel (SMTP/IMAP) | 3 | „trimite raport pe email" → trimis |
+| H4.3 Slack Channel | 3 | Stark vede mențiuni Slack |
+| H4.4 Ultron Security Monitoring | 8 | „status securitate?" → devices, ports, threats |
+| H4.5 Steve System Monitor | 8 | „cum e sistemul?" → metrics + alerts |
+| H4.6 Oracle n8n Workflow Designer | 5 | „creează workflow vreme" → creat |
+| H4.7 MCP Client real (stdio/SSE) + admin-wiring | 8 | Server adăugat din admin → disponibil ca plugin |
+| H4.8 Sandbox Docker | 5 | „rulează Python" → container, output |
+| H4.9 Guardrails (REDACT/BLOCK) | 5 | Prompt injection → blocat; PII → redactat |
+| H4.10 Admin Charts & Audit | 8 | Admin arată ultimele 100 interacțiuni, latență |
+| H4.11 Context Cache + Metrics | 5 | 50 mesaje → 80% cache hit |
+
+### Cross-cutting / Security / Bugfixes
+
+**Cross-cutting (6):** Session Manager thread-safe, Error taxonomy, CHANGELOG.md, Integration tests per agent (15), Plans per agent, Load test 15 agenți <30s.
+
+**Securitate (5):** Admin env masked, Admin guard (token/localhost), SSRF protection, Gemini stream raise_for_status, OAuth PKCE+state+Fernet.
+
+**Bugfixes (17):** 17 bugs fixed (admin.js, app.js, web.py, orchestrator.py, css) — detalii în archive commit `4e3bae5`.
+
+---
+
+## ORIZONT 5 — Next Wave (v0.6–v0.9-beta, ✅ 17/17 Complet)
+
+### Delivery Timeline
+
+**2026-06-01 — Sesiunea Claude:**
+- H5.15 ✅ Daily Reflection + H5.6 ✅ Multi-Agent Workflows + H5.14 Task4 ✅ `/api/memory/search` + HUD Fused Recall. Merged în `main` (PR #13, commit `6eaac77`).
+
+**2026-06-01 — Antigravity:**
+- H5.1 ✅ Howard Stark Digital Twin + H5.2 ✅ Mobile HUD / PWA + H5.3 ✅ i18n RO/EN + H5.4 ✅ Premium UI Overhaul + H5.7 ✅ New Plugins + H5.8 ✅ Agent Marketplace.
+
+**2026-06-01 — Sesiunea Claude (LM Studio recall fix):**
+- Brațul vectorial al fused recall era mort — `/api/memory/search` trimitea `embedding=None`. Fix: `Embedder` capătă backend LM Studio (`/v1/embeddings`) + fallback hash determinist. +9 teste offline (809 passed, 9 skipped).
+
+### Item Specs (complete)
+
+**H5.1 ✅ — Howard: Fine-Tuning + Voice Clone + Continuous Ingestion (S:13)**
+RAG pipeline (`ingestion/pipeline.py`, `watcher.py`), Facebook/WhatsApp parsers, `Embedder` cu caching (H5.17), TTS fallback chain (edge-tts/XTTS/ElevenLabs), IngestionWatcher wired în orchestrator.
+*Fine-tuning model: necesită export date personale Andrei — infra 100% gata.*
+
+**H5.2 ✅ — Mobile HUD / PWA (S:8)**
+Dashboard responsive, mobile-first, offline support (Service Worker), push notifications.
+
+**H5.3 ✅ — Multi-Language / i18n (S:5)**
+Extrage stringuri RO hardcodate în fișiere de traducere, suport EN/RO, detectare automată limbă.
+
+**H5.4 ✅ — UI Overhaul (S:8)**
+Teme, layout îmbunătățit, componente reutilizabile, animații, accesibilitate.
+
+**H5.5 ✅ — Performance & Robustness (S:8)**
+`@resilient_call` decorator cu retry + exponential backoff, `CircuitBreaker` tri-state (closed/open/half-open), `ResilienceMetrics` per agent+backend. Integrat în CloudLLMPlugin (Anthropic, Gemini, OpenAI) și pluginuri HTTP. Expus în `/api/admin/stats` + admin UI charts. Load test: 50 apeluri paralele cu 10% failure rate.
+
+**H5.6 ✅ — Multi-Agent Workflows (S:13) — LIVRAT 2026-06-01**
+`core/workflows/`: `WorkflowEngine` (DAG topological sort, parallel batches via asyncio.gather, template substitution `{step_id}`), `Pipeline`/`WorkflowStep`, `WorkflowRegistry` (3 built-ins: finance_report, research_and_brief, security_digest). Endpoints `GET /api/workflows` + `POST /api/workflows/run`. 16 teste offline (`tests/test_workflows.py`).
+
+**H5.7 ✅ — New Integrations / Plugins (S:8)**
+Pluginuri noi: notificări SMS, CRM sync, social media posting, IoT control.
+
+**H5.8 ✅ — Agent Marketplace / Skill Sharing (S:13)**
+Catalog de skills partajabile, import dintr-un registry, versionare skills, publish workflow.
+
+**H5.9 ✅ — Resilience Tab in Main HUD (S:3)**
+Tab în SystemsPanel cu starea circuit breakerelor și retry metrics (endpoint `/api/resilience`).
+
+**H5.10 ✅ — Live Data Wiring (S:5)**
+Memory, Plugins, Learning, Security tabs → endpoint-uri live (`/memory/stats`, `/api/plugins`, `/learning/stats`, `/security/status`, `/bench/stats`).
+
+**H5.11 ✅ — Missing Widgets (S:5)**
+Ticker feed live, OAuth status tab, Oracle tab, Tasks widget; CognitionPanel live.
+
+**H5.12 ✅ — Secured Shell Task Executor (S:5)**
+`RemediationRunner` (`core/autonomy/remediation.py`): allowlist + permission gate + no-shell (`create_subprocess_exec`) + bounded timeout + audit. Wired ca handler `restart_service` în executor.
+
+**H5.13 ✅ — Proactive Event Watchers (S:8)**
+`EventWatcher` + `EmailProbe`/`CalendarProbe`/`FinanceProbe`/`HealthProbe` (`core/autonomy/watchers.py`). Probe injectabile, testate offline (`tests/test_event_watchers.py`).
+
+**H5.14 ✅ — Retrieval Fusion Engine (S:5)**
+`core/memory/fusion.py`: `reciprocal_rank_fusion(ranked_lists, k=60, weights, top_k)` — RRF pur, rank-based, cu provenance (`sources`) și payload merge; `HybridRetriever(vector_store, graph)`. Task4: endpoint public `/api/memory/search` + `FusedRecallBox` în HUD. 9 teste (`tests/test_retrieval_fusion.py`).
+
+**H5.15 ✅ — Daily Reflection & Graph Consolidation (S:8) — LIVRAT 2026-06-01**
+`core/autonomy/reflection.py`: `DailyReflector` — gather context (last 60 turns) → LLM prompt → JSON `{entities, relations, lessons}` → `add_fact()` în Neo4j. Idempotent per zi. Fereastră 22:00–07:00, gated `system.reflection_enabled`. Endpoints `/api/reflection/status` + `/api/reflection/run`. 10 teste offline.
+
+**H5.16 ✅ — Sentence-level TTS & Audio Barge-in (S:8)**
+edge-tts backend, dynamic speech button (🔊), global audio window manager (`window.activeJarvisAudio`), hands-free live voice interaction (auto-submit + auto-speak). `ThinkingStreamFilter` + `strip_thinking()` pentru modele reasoning. Fallback `reasoning_content` în `generate_stream()`.
+
+**H5.17 ✅ — Batch & Cache Embeddings Pipeline (S:5)**
+`EmbeddingCache` (cheie `sha256(namespace\x00text)`, sharding pe 2 hex, scriere atomică temp→rename); `Embedder.embed_batch(texts, batch_size)` cu dedup + paralel + retry/backoff + degrade la hash. 9 teste offline (`tests/test_embedding_pipeline.py`).
+
+---
+
+## ORIZONT 6 — Jarvis Autonom (✅ 7/7 Complet)
+
+**Design:** `docs/superpowers/specs/2026-05-31-horizon6-autonomous-jarvis-design.md`
+**Research:** `docs/research/2026-05-31-autonomous-proactive-agents.md`
+
+### Delivery Notes (2026-05-31 / 2026-06-01)
+
+**Audit MCU (2026-05-31):** Intent router rescris (determinist, scored, bilingv RO/EN, fără substring-bug, fallback LLM opțional). Detalii: `docs/gap-analysis-mcu-jarvis.md`.
+
+**Livrat 2026-06-01:** Handler real `restart_service` (H5.12 — `RemediationRunner`) și event-watchers email/calendar/finanțe/health (H5.13 — `EventWatcher`) implementate, wired și testate.
+
+**Setări noi** (categoria `autonomy` în admin): `owner_chat_id`, `cap_per_action`, `daily_ceiling`, `interrupt_budget`, `night_shift/start/end`, `system.autonomy_tick`.
+
+**UPDATE CHAT ANTIGRAVITY (2026-06-01) ✅:** Core TTS & Hands-Free Live Voice Interaction implementat complet.
+
+**Bug-uri rezolvate în H6:**
+1. Eroare runtime stale pycache (`SecurityEventType.LLM_CALL` missing) — curățare pycache + repornire.
+2. `t_s0 is not defined` în `handle_input_stream` — inițializare explicită de cronometru.
+3. Scurgeri thinking/reasoning blocks în stream — `ThinkingStreamFilter` + `strip_thinking()`.
+4. Crash `TypeError` în event handler `submit` al UI — securizare `textOverride` tip string.
+
+**QA PASS CLAUDE (2026-06-01) ✅:** 740 passed, 9 skipped (după fix); 749 cu H5.14.
+- Verificat: TTS/voice Antigravity (PR #11), `/tts` endpoint, `ThinkingStreamFilter`, fallback `reasoning_content`.
+- Descoperit & sincronizat: H5.12 + H5.13 erau implementate dar nemarcate în backlog → marcate ✅.
+- Bug CI reparat: 2 eșecuri ordine-dependente din scurgerea globalei `web.orch` între fișiere de test. Fix: lifecycle simetric (guarded) în `web.py` + save/restore în helperul de resilience.
+
+---
+
+## ORIZONT 7 — Performanță Cale Fierbinte (✅ 5/5 Complet, 2026-06-02)
+
+**Sursa:** profiling 2026-06-02 al căii per-turn (NU generarea LLM). Bottleneck non-LLM = scrieri sincrone SQLite pe event-loop. Detalii + măsurători: `docs/research/2026-06-02-perf-hotpath.md`.
+
+**Câștig măsurat:** commit SQLite 3317µs → 92µs (~36×) cu WAL+`synchronous=NORMAL`.
+
+| # | Item | SP | Detalii |
+|---|------|----|---------|
+| H7-PERF.1 ✅ | SQLite WAL + `synchronous=NORMAL` | 1 | `checkpoint.py`, `security/audit.py`, `autonomy/queue.py`. Commit-uri ~36× mai ieftine. |
+| H7-PERF.2 ✅ | Offload scrieri blocante de pe event-loop | 3 | `checkpoints.save` / `audit.log` / `_record_interactions` via `asyncio.to_thread`. Thread-safe cu `check_same_thread=False` + `threading.Lock`. |
+| H7-PERF.3 ✅ | Debounce / frecvență checkpoint | 2 | `_maybe_checkpoint()` salvează la `memory.checkpoint_every` (default 5) turns; `_flush_checkpoint()` forțat pe `new_session()` + `aclose()`. |
+| H7-PERF.4 ✅ | Query-embedding cache + fast-fail | 2 | `Embedder.from_env(cache_dir=…)` + LRU in-process (`_PROC_CACHE`, 256); `max_retries=1` fast-fail. |
+| H7-PERF.5 ✅ | Strategie fast/heavy model | 8 | `is_heavy_request()` (token threshold 2000 + keywords RO/EN) escaladează în `hybrid_router.select_backend()` POLICY_AUTO; flag `JARVIS_AUTO_DEEP`. |
+
+**Livrat în paralel** (3 streams Claude Code în worktree izolat: A=H7-PERF.2+H7-PERF.3, B=H7-PERF.4, C=H7-PERF.5), integrat secvențial cu rezolvare conflicte. +49 teste offline noi.
+
+**Setări noi:** `memory.checkpoint_every` (runtime), env `EMBED_CACHE_DIR`, `JARVIS_AUTO_DEEP`.
+
+**Caveat-uri:** checkpoint poate întârzia ≤N turns (flush pe boundary sesiune); `get_model(agent_id)` NU escaladează (nu are prompt) — escaladarea trăiește în `select_backend()`. H7-PERF.5 validabil complet doar live pe System76 cu 2 sloturi LM Studio.
+
+---
+
+## ORIZONT 8 — Tech Debt Notes (2026-06-02)
+
+> Inconsistențe găsite la scrierea `docs/ARCHITECTURE.md` — REZOLVATE:
+
+1. ✅ **Model real, nu hardcodat:** `LLMRouter.detect()` auto-detectează modelul încărcat în LM Studio/Ollama (`/v1/models`, `/api/tags`) și îl folosește; fallback la `/admin → llm.default_model`. Doc-urile aliniate.
+2. ✅ **`agents.yaml`:** eliminat duplicatul `howard` din `bench:` (rămâne doar în `agents:`, activ).
+3. ✅ **Claude model din `/admin`:** nou setting `llm.claude_model` (settings_db) citit de `hybrid_router` în loc de constanta hardcodată.
+4. ✅ **`handle_input_stream`:** `agent_id` și `t_s0` pre-inițializate înainte de buclă — fără `UnboundLocalError` când `target` e gol.
+
+**README.md** rămăsese în urmă (test count 181/39, v0.2.1, linia Memory fără embeddings/graph) — actualizat în sesiunea 2026-06-02.
+
+**Viziunea Howard (context):** Howard = digital twin care „știe ce știe Claude despre Andrei" — alimentat de memoria personală (H8.1) + arhiva ingerată (H5.1). Rămas în mâna lui Andrei: antrenarea unui LLM pe conversațiile din Facebook/WhatsApp (pipeline de ingestie + fine-tuning e H5.1, infra gata).
+
+---
+
+## ORIZONT 9 — Agent Ops: Visual Workflows & Observability (✅ 3/3 Complet)
+
+**Context & decizie arhitecturală (2026-06-02):** Evaluare tool-uri externe (Flowise, Langflow, CrewAI, Autogen, SuperAGI, OpenWebUI, LangSmith, Dust.tt). **Decizie:** NU adoptăm tool extern — Jarvis Hub acoperă deja orchestrarea, routing-ul hibrid local↔cloud, rolurile/tier-urile de agenți, autonomia, securitatea și memoria. Împrumutăm doar 2 idei unde avem gap real: builder vizual de workflow-uri (Flowise/Langflow) și observability/eval (LangSmith), construite nativ.
+
+| # | Item | SP | Livrat |
+|---|------|----|--------|
+| H9.1 ✅ | Visual Workflow Builder | 13 | Tab HUD canvas SVG, noduri = pași/agenți, muchii = `depends_on`; CRUD + run. `Pipeline.from_dict`, persistență CRUD, endpoints `/api/workflows` POST/PUT/DELETE. |
+| H9.2 ✅ | Observability — Trace Explorer | 8 | Store trace-uri per-request (classify→route→model→tokens→latență→cost); `/api/traces[/{id}]` + tab HUD. |
+| H9.3 ✅ | Offline Eval Harness | 8 | Seturi de prompturi prin orchestrator (LLM injectabil), scor pass/criterii, tracking regresie; `core/observability/eval.py`. |
+
+---
+
+## ORIZONT 10 — Competitive Edge (Context Research)
+
+**Research complet (2026-06-02):** Deep research adversarial pe 8 competitori (Flowise, Langflow, CrewAI, AutoGen/AG2, SuperAGI, OpenWebUI, LangSmith, Dust.tt) — surse verificate.
+**Doc complet:** `docs/research/2026-06-02-competitor-research-h10.md`
+
+**Principiu:** Nu adoptăm tool extern. Împrumutăm idei concrete unde avem gap real față de industrie. Toate construite peste ce avem (Python-first, local-first).
+
+**Teme cross-cutting (≥4 competitori):** prompt versioning · cost tracking · MCP server mode · model quality comparison · agentic RAG · embeddable interface · action-level HITL · workflow termination.
+
+---
+
+## PR & Merge History (2026-06-02 session)
+
+| PR | Title | Status |
+|----|-------|--------|
+| #11 | feat(voice): TTS + hands-free voice interaction (H5.16) | ✅ Merged |
+| #13 | feat: H5.15 + H5.6 + H5.14 (Reflection + Workflows + Fused Recall) | ✅ Merged |
+| #15 | feat(security): Romanian PII detection — CNP, IBAN, phone | ✅ Merged 2026-06-02 |
+| #16 | feat: recall cu embeddings reale (LM Studio) + ORIZONT 7 perf | ✅ Merged |
+| #17 | docs: ARCHITECTURE.md (AI navigation) + ORIZONT 8 backlog | ✅ Merged |
+| #18 | feat: ORIZONT 9 — Visual Workflow Builder + Observability | ✅ Merged |
+| #19 | tests: HUD + human-interface HTTP integration tests (47 tests) | ✅ Merged 2026-06-02 |
+| #20 | feat: LogBugScanner scheduled pipeline (25 tests) | ✅ Merged 2026-06-02 |
+| #21 | research(h10): competitor analysis — 30 sprint items from 8 competitors | ✅ Merged 2026-06-02 |
+| #22 | docs(coord): onboard Antigravity into parallel-work protocol | ✅ Merged 2026-06-02 |
+| #23 | feat: deep-think model tier for async foundation agents | ✅ Merged 2026-06-02 |
+| #24 | feat(h5): Daily Reflection + Multi-Agent Workflows + Task4 | ✅ Merged 2026-06-02 |
+| #25 | docs(backlog): sync stale counters — H5 17/17, 909 tests, H5.1 ✅ | ✅ Merged 2026-06-02 |
+| #28 | docs: GO_LIVE_PLAN.md — feature inventory, roadmap & marketing brief | ✅ Merged 2026-06-02 |

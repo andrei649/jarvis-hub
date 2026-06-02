@@ -131,7 +131,7 @@
 
 ## 2. Future Features
 
-### H8 — Personal Memory (0/7, 43 SP) — Next Milestone
+### H8 — Personal Memory (0/8, 48 SP) — Next Milestone
 
 | # | Feature | SP | Priority |
 |---|---------|-----|---------|
@@ -141,12 +141,15 @@
 | H8.3 | **Recall ON by default + Memory HUD** — activate `memory.recall_enabled`, tab with facts (search/edit/delete), sources & scores | 5 | P2 |
 | H8.3b | **Agentic RAG Tool** — `search_memory` as LLM tool call; model decides when/how to search, can retry with different query | 8 | P2 |
 | H8.4 | **Quality Embeddings** — dedicated model (`mxbai-embed-large` or TEI container), benchmark vs hash fallback | 5 | P2 |
+| H8.5 | **Live fast/heavy validation + Model Tier HUD** — confirm on System76 with 2 LM Studio slots loaded; expose tiering decisions (fast↔deep) in `/bench` + HUD | 5 | P2 |
 | H8.6 | **Proactive Personal Briefs** — morning/evening briefs personalized from profile + recall | 5 | P2 |
 | H8.7 | **AI-Navigable Docs upkeep** — `docs/ARCHITECTURE.md` as single source; PR checklist for docs sync | 2 | P3 |
 
 ---
 
 ### H7 — Hardening & Release Readiness (0/11, 51 SP) — v1.0 Gate
+
+> **Naming note:** The completed perf-hotpath work (SQLite WAL, async offload, checkpoint debounce, embedding LRU, fast/heavy tiering) was also labeled "H7" internally but is fully delivered — see "Performance (H7)" in Existing Features above. This section is the separate **PROPUS hardening track** (H7.1–H7.11), a required gate for v1.0 stable. Full delivery history: [docs/HISTORY.md](docs/HISTORY.md).
 
 | # | Feature | SP | Priority |
 |---|---------|-----|---------|
@@ -184,6 +187,7 @@
 
 #### H10.C — Memory & RAG
 - Write-back integrations — agents write to Notion, GitHub Issues, Google Calendar natively
+- **H10.21 Conversation Notes** (3 SP, P3) — rich text editor in HUD attached to current session; content injected as persistent context for any agent; "Rewrite with AI" inline action
 
 #### H10.D — Workflow Engine
 - Termination conditions (LLM judge, keyword match, max-iterations)
