@@ -43,3 +43,34 @@ python -m pytest tests/ -v
 ## Stil de lucru
 Verde devreme peste perfecțiune · teste peste documentație · livrare peste analiză.
 Branch de feature per task → PR draft în `master`. Nu împinge direct în `master`.
+
+## Coordonare multi-agent (reguli non-negociabile)
+
+### Rebase-first — obligatoriu la start
+La începutul oricărui task, primul lucru pe care îl faci:
+```bash
+git fetch origin
+git rebase origin/main
+```
+Nu sări peste acest pas. Un agent care pornește din main vechi generează conflicte garantate.
+
+### Draft PR = blocat pentru alți agenți
+Un PR în stare **draft** (indiferent dacă e al tău sau al altui agent) este **read-only** pentru oricine altcineva.
+- Nu modifica fișiere atinse de un PR draft deschis fără confirmare explicită din partea utilizatorului.
+- Dacă ai nevoie de un fișier blocat, așteaptă merge-ul sau discută cu lead agent-ul sesiunii.
+- **Un singur lead agent per sesiune.** Lead agent-ul coordonează wave-urile și face merge-urile.
+
+### BACKLOG sync — în același commit cu merge-ul
+Agentul care face merge (sau imediat după) actualizează `BACKLOG.md`:
+- bifează `✅` itemii din PR-ul mergjuit,
+- actualizează contorul de teste dacă s-au adăugat,
+- nu deschide un PR separat doar pentru BACKLOG — include actualizarea în PR-ul de feature sau într-un commit direct pe main după squash merge.
+
+### Pattern conductor agent
+Pentru sesiuni cu 3+ wave-uri paralele, desemnează un **conductor agent** dedicat care:
+1. Monitorizează CI-ul pe toate PR-urile deschise,
+2. Face merge în ordine (respectă dependențele din `docs/plan-*.md`),
+3. Actualizează `docs/SPRINT.md` după fiecare wave,
+4. Nu scrie cod — doar coordonează și merge-uiește.
+
+Conductor-ul nu se lansează dacă există un singur agent activ.

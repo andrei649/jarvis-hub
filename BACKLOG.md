@@ -39,7 +39,7 @@ python -m pytest tests/ -v          # 1100+ passed, 8 skipped
 | **0.9-beta** | 🟢 Live | New integrations + agent marketplace | H5.7, H5.8 |
 | **0.9.1-beta** | 🟢 Live | Recall cu embeddings reale + perf cale fierbinte | H7.1–H7.5 (perf) |
 | **0.9.2-beta** | 🟢 Live | Hardening complet, CI/CD, memorie personală, cost analytics, onboarding | H7 (11 iteme) + H8 (7 iteme) + BUG-1 |
-| **1.0.0** | 🎯 Stable | Tot backlogul terminat: H10 + H11 (BUG-2 ✅ deja livrat) | H10 (30 iteme) + H11 (4 iteme) |
+| **1.0.0** | 🎯 Stable | Tot backlogul terminat: H10 + H11 + **H12** (BUG-2 ✅ deja livrat; H12.1 P0 securitate ✅ = wedge anti-OpenClaw). Plan: [docs/plan-v1-dispatch.md](docs/plan-v1-dispatch.md) | H10 (30) + H11 (4) + H12 (14) |
 
 ---
 
@@ -56,13 +56,13 @@ python -m pytest tests/ -v          # 1100+ passed, 8 skipped
 | **H9 Agent Ops: Workflows & Observability** (P2) | 3 | **3** | 29 | **29** | **100%** |
 | **H10 Competitive Edge** (P1–P3) | 30 | **0** | 188 | **0** | **0%** |
 | **H11 Platform Parity** (Known Gaps, P3) | 4 | **0** | 55 | **0** | **0%** |
-| **Total „drum spre 1.0.0" (H1–H11)** | **151** | **117** | **823** | **580** | **71%** (SP) |
+| **Total H1–H11** | **151** | **117** | **823** | **580** | **71%** (SP) |
 
-> `%` = procent pe **story points** (580/823 = 70.5% ≈ 71%); pe iteme ar fi 117/151 = 77.5%.
+> `%` = procent pe **story points** (580/823 = 70.5% ≈ 71%); pe iteme ar fi 117/151 = 77.5%. Totalul de mai sus acoperă **H1–H11**.
 
-**Post-1.0 / strategic (trackuit separat, NU în totalul de mai sus):** ORIZONT 12 — 0/14 (~89 SP) · **Bugs & Hot Fixes** — 2 done (BUG-1, BUG-2) + 7 deschise (HF-1/2, BUG-2b, TASK-1, CLN-1, NTH-1, BUG-3).
+**În afara totalului H1–H11:** ORIZONT 12 (acum în scope-ul v1.0 per [#52]) — **2/14 livrate** (H12.1 ✅ P0 securitate, H12.10 ✅); restul deschis. **Bugs & Hot Fixes** — 3 done (BUG-1, BUG-2, BUG-4) + deschise (BUG-3, HF-1/2, BUG-2b, TASK-1, CLN-1, NTH-1).
 
-**Test count (backend pytest):** 1100+ passed, 8 skipped — cele 8 din `tests/test_spotify.py` (vezi nota „Run"). *(2026-06-02: +192 teste H7+H8, cu cele ~16 de memorie H8 deja incluse în 192.)*
+**Test count (backend pytest):** 1170+ passed, 8 skipped — cele 8 din `tests/test_spotify.py` (vezi nota „Run"). *(2026-06-02: +192 H7+H8 — H8 incluse; +31 H12.1 securitate.)*
 **Frontend (BUG-2):** 156 teste JS / 20 fișiere · ~66% line coverage — separat de suita pytest.
 
 > **Orizont 7 Hardening — Drumul spre 1.0.0:** 11/11 COMPLET ✅ (livrat 2026-06-02)
@@ -341,7 +341,7 @@ python -m pytest tests/ -v          # 1100+ passed, 8 skipped
 
 ---
 
-## ORIZONT 12 — Categoria Reală: Asistent Personal Privat & Proactiv (P0–P3) — 0/14
+## ORIZONT 12 — Categoria Reală: Asistent Personal Privat & Proactiv (P0–P3) — 2/14
 
 > Bazat pe research-ul din [docs/research/2026-06-02-personal-ai-competitors.md](docs/research/2026-06-02-personal-ai-competitors.md):
 > H10 a comparat Jarvis cu 8 **framework-uri de developeri**; categoria reală a moonshot-ului (asistent
@@ -356,7 +356,7 @@ python -m pytest tests/ -v          # 1100+ passed, 8 skipped
 
 | # | Item | S | P | Dep | Sursă |
 |---|------|---|---|-----|-------|
-| H12.1 | **Securitate ca feature de prim rang** — criptează secretele at-rest (fără `SOUL`/memory în plaintext), skills semnate + sandboxed, expune coada de aprobare reversibil/ireversibil ca "povestea anti-OpenClaw". Pachetizează guardrails + PII scanner + sandbox existente. | 8 | **P0** | H6.2, Sec | OpenClaw (eșecuri) |
+| H12.1 ✅ | **Securitate ca feature de prim rang** — criptează secretele at-rest (fără `SOUL`/memory în plaintext), skills semnate + sandboxed, expune coada de aprobare reversibil/ireversibil ca "povestea anti-OpenClaw". Pachetizează guardrails + PII scanner + sandbox existente. **Done 2026-06-02:** `core/secrets.py` `SecretStore` (Fernet + key-derivation PBKDF2/keyfile 0600, fallback HMAC-XOR pur-Python, get/set/delete + `migrate_plaintext`); `core/skills/signing.py` + loader extins (verificare `SKILL.sig`, advisory by-default, `JARVIS_REQUIRE_SIGNED_SKILLS=1` → modul untrusted nu se exec in-process; skills auto-generate auto-semnate); 2 endpoints noi `GET /autonomy/approvals` (bucket reversibil/ireversibil pe risk tier) + `GET /api/security/posture` (pachetizează secrets+signing+sandbox+guardrails). +31 teste offline. | 8 | **P0** | H6.2, Sec | OpenClaw (eșecuri) |
 
 ### Track B — Memorie & Onboarding (P1)
 
@@ -375,7 +375,7 @@ python -m pytest tests/ -v          # 1100+ passed, 8 skipped
 | H12.7 | **Captură pasivă multi-suprafață (opt-in, local)** — browser/clipboard/fișiere → KG, doar local. ⚠️ STRICT opt-in + inspectabil; nimic nu pleacă de pe mașină. | 8 | P2 | H8.1 | Pieces nanomodels, Omi |
 | H12.8 | **Split sateliți-mic → server-inferență pe GPU-ul de acasă** — mai multe endpoint-uri ieftine de microfon partajează un singur GPU Jarvis. | 8 | P2 | H12.4 | Willow (WIS) |
 | H12.9 | **UX management modele locale** — răsfoiește/descarcă/comută modele dintr-un click în HUD. | 5 | P2 | — | Jan.ai |
-| H12.10 | **Indicator mute hardware / strict-local** — semnal vizibil, auditabil "mic off / strict-local" în HUD + voce. Semnal de încredere ieftin. | 2 | P2 | — | Voice PE (mute fizic) |
+| H12.10 ✅ | **Indicator mute hardware / strict-local** — semnal vizibil, auditabil "mic off / strict-local" în HUD + voce. Semnal de încredere ieftin. | 2 | P2 | — | Voice PE (mute fizic) |
 | H12.11 | **Canale de escaladare extinse** (dincolo de Telegram: WhatsApp/Signal/Slack/Discord) — *guvernate*, spre deosebire de OpenClaw. Adaptoarele de canal există deja. | 3 | P2 | H1.3 | OpenClaw (multi-channel) |
 
 ### Track D — Platformă & Ecosistem (P3)

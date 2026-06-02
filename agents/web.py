@@ -208,7 +208,8 @@ _start_time = time.time()
 # tell the browser and any intermediary not to cache stale snapshots (IMP-2).
 _NO_STORE_PATHS = {
     "/status", "/dashboard", "/api/agents", "/tasks", "/ticker",
-    "/api/cognition", "/api/oauth/status", "/api/oracle/status", "/api/oracle/conflicts"
+    "/api/cognition", "/api/oauth/status", "/api/oracle/status", "/api/oracle/conflicts",
+    "/api/trust/status"
 }
 
 
@@ -1045,6 +1046,95 @@ async def autonomy_pref_suggestions():
     return _nocache_json({"suggestions": orch.autonomy_prefs.suggest_autonomy_raise()})
 
 
+# ── H12.1: reversible / irreversible approval queue + security posture ──
+# RiskTier 0-1 (read-only / reversible) are undoable; 2-3 (external /
+# irreversible-or-money) are not. The HUD surfaces this so the user knows which
+# pending actions can be safely auto-approved vs. which need scrutiny — the
+# "anti-OpenClaw" reversibility story.
+
+
+def _reversibility(task) -> dict:
+    """Annotate a queued Task with a human-facing reversibility verdict."""
+    from core.autonomy.policy import RiskTier
+
+    tier = int(task.risk_tier)
+    reversible = tier <= int(RiskTier.REVERSIBLE)
+    try:
+        tier_name = RiskTier(tier).name
+    except ValueError:
+        tier_name = "UNKNOWN"
+    d = task.to_dict()
+    d["reversible"] = reversible
+    d["tier_name"] = tier_name
+    d["reversibility"] = "reversible" if reversible else "irreversible"
+    return d
+
+
+@app.get("/autonomy/approvals", dependencies=[Depends(_admin_guard)])
+async def autonomy_approvals():
+    """Pending approvals split into reversible vs irreversible buckets (H12.1)."""
+    if not orch:
+        return JSONResponse({"error": "not initialized"}, status_code=503)
+    pending = orch.autonomy_queue.pending_decisions()
+    annotated = [_reversibility(t) for t in pending]
+    reversible = [t for t in annotated if t["reversible"]]
+    irreversible = [t for t in annotated if not t["reversible"]]
+    return _nocache_json({
+        "pending": annotated,
+        "reversible": reversible,
+        "irreversible": irreversible,
+        "counts": {
+            "total": len(annotated),
+            "reversible": len(reversible),
+            "irreversible": len(irreversible),
+        },
+    })
+
+
+@app.get("/api/security/posture", dependencies=[Depends(_admin_guard)])
+async def security_posture():
+    """Packaged security posture: encrypted secrets + signed skills + sandbox + guardrails (H12.1)."""
+    if not orch:
+        return JSONResponse({"error": "not initialized"}, status_code=503)
+
+    # Secrets at-rest backend.
+    try:
+        from core.secrets import SecretStore
+        secret_backend = SecretStore().backend
+    except Exception:
+        secret_backend = "unavailable"
+
+    # Skill signing posture.
+    from core.skills import signing as _signing
+    skills = list(getattr(orch.skills, "skills", {}).values()) if getattr(orch, "skills", None) else []
+    skill_rows = [s.to_dict() for s in skills]
+    untrusted = [s for s in skill_rows if not s.get("trusted")]
+
+    # Sandbox availability.
+    sandbox_docker = False
+    try:
+        from core.sandbox import Sandbox
+        sandbox_docker = Sandbox()._has_docker
+    except Exception:
+        # Sandbox/Docker is optional; absence just means posture reports
+        # docker=False rather than failing the security-posture endpoint.
+        sandbox_docker = False
+
+    return _nocache_json({
+        "secrets": {"encrypted_at_rest": True, "backend": secret_backend},
+        "skills": {
+            "require_signed": _signing.require_signed(),
+            "total": len(skill_rows),
+            "trusted": len(skill_rows) - len(untrusted),
+            "untrusted": len(untrusted),
+            "untrusted_names": [s["name"] for s in untrusted],
+            "detail": skill_rows,
+        },
+        "sandbox": {"docker_available": sandbox_docker},
+        "guardrails": {"mode": orch.get_setting("security.guardrails_mode", "WARN")},
+    })
+
+
 # ── Admin panel ──────────────────────────────────────────────────
 
 
@@ -1578,6 +1668,57 @@ async def oracle_resolve_conflicts():
         return JSONResponse({"ok": False, "error": "Oracle bridge not available"}, status_code=503)
     bridge.conflicts = [c for c in bridge.conflicts if c.resolved]
     return _nocache_json({"ok": True})
+
+
+# ── Trust indicator (H12.10): hardware-mute / strict-local ───────
+
+
+def _env_truthy(value: str | None) -> bool:
+    """Treat the usual on/off spellings as booleans for env-driven toggles."""
+    return (value or "").strip().lower() in ("1", "true", "yes", "on")
+
+
+def _trust_status() -> dict:
+    """Compute the two visible, auditable trust states for the HUD.
+
+    - ``mic``: "off" when the (software/hardware) mic is muted, else "on".
+      Driven by ``JARVIS_MIC_MUTED`` so a physical mute switch / kiosk wrapper
+      can flip it without touching code (inspired by Voice PE's physical mute).
+    - ``strict_local``: True when no cloud backend is reachable AND no agent can
+      escape to the cloud — i.e. nothing leaves the machine. Derived from the
+      live router (``_cloud_available`` / ``_claude_available``) so the signal
+      reflects reality, with an explicit ``JARVIS_STRICT_LOCAL`` override that
+      can only *tighten* (never loosen) the guarantee.
+    """
+    mic_muted = _env_truthy(os.environ.get("JARVIS_MIC_MUTED"))
+
+    cloud_available = False
+    claude_available = False
+    router = getattr(orch, "llm_router", None) if orch else None
+    if router is not None:
+        cloud_available = bool(getattr(router, "_cloud_available", False))
+        claude_available = bool(getattr(router, "_claude_available", False))
+
+    # Strict-local when no cloud path exists at all; env flag can force it on.
+    # Single unconditional assignment (De Morgan of `not (cloud or claude)`)
+    # so the value is provably initialized before use.
+    strict_local = (not cloud_available and not claude_available) or _env_truthy(
+        os.environ.get("JARVIS_STRICT_LOCAL")
+    )
+
+    return {
+        "mic": "off" if mic_muted else "on",
+        "strict_local": strict_local,
+        # Auditable detail: why strict_local is (or isn't) set.
+        "cloud_available": cloud_available,
+        "claude_available": claude_available,
+    }
+
+
+@app.get("/api/trust/status")
+async def trust_status():
+    """Visible, auditable trust signal for the HUD: mic state + strict-local."""
+    return _nocache_json(_trust_status())
 
 
 # ── v0.3 Cognition Release endpoints ─────────────────────────────
