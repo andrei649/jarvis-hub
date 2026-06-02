@@ -58,7 +58,7 @@ agents/
 │   │   └── loop.py          # Learning loop (interaction records, prompt optimization)
 │   ├── security/
 │   │   ├── types.py         # ScanFinding, ThreatLevel enums
-│   │   ├── scanner.py       # SecretScanner (10 patterns) + PIIScanner (6 patterns)
+│   │   ├── scanner.py       # SecretScanner (10 patterns) + PIIScanner (9 patterns, incl. RO CNP/IBAN, checksum-validated)
 │   │   ├── ssrf.py          # SSRF protection (private IP blocking)
 │   │   ├── audit.py         # AuditLogger (SQLite + Merkle hash chain)
 │   │   └── guardrails.py    # GuardrailsEngine (WARN/REDACT/BLOCK)
