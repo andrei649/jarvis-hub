@@ -40,6 +40,8 @@ async def test_shell_disabled_by_default():
 async def test_subprocess_allowed_when_enabled():
     sandbox = Sandbox(allow_subprocess=True)
     result = await sandbox.execute_python("print('hello')")
+    if result.exit_code == 125:
+        pytest.skip("Docker image not available on this runner")
     assert result.exit_code == 0
 
 
@@ -47,6 +49,8 @@ async def test_subprocess_allowed_when_enabled():
 async def test_shell_allowed_when_enabled():
     sandbox = Sandbox(allow_subprocess=True)
     result = await sandbox.execute_shell("echo hello")
+    if result.exit_code == 125:
+        pytest.skip("Docker image not available on this runner")
     assert result.exit_code == 0
 
 

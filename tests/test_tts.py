@@ -7,7 +7,11 @@ from fastapi.testclient import TestClient
 from agents import web
 from agents.web import TTSRequest
 
-client = TestClient(web.app)
+
+@pytest.fixture
+def client():
+    with TestClient(web.app) as c:
+        yield c
 
 
 def test_tts_request_model():
@@ -18,7 +22,7 @@ def test_tts_request_model():
 
 @patch("core.voice.tts.HAS_EDGE", True)
 @patch("core.voice.tts.TTSEngine.speak")
-def test_tts_endpoint_success(mock_speak):
+def test_tts_endpoint_success(mock_speak, client):
     # We use a real temporary file so FileResponse works perfectly without mocking stats or file system
     with tempfile.NamedTemporaryFile(suffix=".mp3", delete=False) as tmp:
         tmp.write(b"dummy audio data")
@@ -37,7 +41,7 @@ def test_tts_endpoint_success(mock_speak):
 
 
 @patch("core.voice.tts.HAS_EDGE", False)
-def test_tts_endpoint_no_edge():
+def test_tts_endpoint_no_edge(client):
     resp = client.post("/tts", json={"text": "Salut", "lang": "ro"})
     assert resp.status_code == 503
     data = resp.json()

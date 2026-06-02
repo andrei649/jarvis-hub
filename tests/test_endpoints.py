@@ -34,7 +34,8 @@ def test_admin_serves_html(client):
 def test_static_i18n_js(client):
     resp = client.get("/static/i18n.js")
     assert resp.status_code == 200
-    assert resp.headers["content-type"].startswith("text/javascript")
+    # Accept both text/javascript (Linux) and application/javascript (Windows)
+    assert "javascript" in resp.headers["content-type"]
     # New i18n.js uses LOCALES dict + window._t helper (replaced old STRINGS API)
     assert "LOCALES" in resp.text or "window._t" in resp.text
 
@@ -42,7 +43,8 @@ def test_static_i18n_js(client):
 def test_static_app_js(client):
     resp = client.get("/static/app.js")
     assert resp.status_code == 200
-    assert resp.headers["content-type"].startswith("text/javascript")
+    # Accept both text/javascript (Linux) and application/javascript (Windows)
+    assert "javascript" in resp.headers["content-type"]
 
 
 def test_status_endpoint(client):

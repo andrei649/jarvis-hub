@@ -1,14 +1,29 @@
 """Shared test fixtures and helpers."""
 
 import importlib.util
+import os
 import sys
 from pathlib import Path
 
+import pytest
 from fastapi import APIRouter, FastAPI
 
 repo_root = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(repo_root))
 sys.path.insert(0, str(repo_root / "agents"))
+
+
+@pytest.fixture(scope="session", autouse=True)
+def _set_jarvis_testing_env():
+    """Ensure JARVIS_TESTING=1 for the entire test session.
+
+    This gates network-touching startup code (oracle watcher, external
+    event watchers, etc.) so the suite runs fully offline and never hangs
+    waiting for GitHub or other external services.
+    """
+    os.environ["JARVIS_TESTING"] = "1"
+    yield
+    # Leave the variable set — the process exits after tests anyway.
 
 
 def make_app(module_path: str, fallback_name: str, prefix: str = "",

@@ -3,10 +3,14 @@ import pytest
 from fastapi.testclient import TestClient
 from agents import web
 
-client = TestClient(web.app)
+
+@pytest.fixture
+def client():
+    with TestClient(web.app) as c:
+        yield c
 
 
-def test_learning_stats_endpoint():
+def test_learning_stats_endpoint(client):
     resp = client.get("/learning/stats")
     assert resp.status_code == 200
     data = resp.json()
@@ -22,10 +26,7 @@ def test_learning_stats_endpoint():
     assert isinstance(data["demotion_warnings"], list)
 
 
-def test_memory_stats_endpoint():
-    from fastapi.testclient import TestClient
-    from agents import web
-    client = TestClient(web.app)
+def test_memory_stats_endpoint(client):
     resp = client.get("/memory/stats")
     assert resp.status_code == 200
     data = resp.json()
@@ -38,7 +39,7 @@ def test_memory_stats_endpoint():
     assert isinstance(data["vectors"]["stored"], int)
 
 
-def test_plugins_endpoint():
+def test_plugins_endpoint(client):
     resp = client.get("/plugins")
     assert resp.status_code == 200
     data = resp.json()
@@ -46,7 +47,7 @@ def test_plugins_endpoint():
     assert isinstance(data["plugins"], list)
 
 
-def test_bench_stats_endpoint():
+def test_bench_stats_endpoint(client):
     resp = client.get("/bench/stats")
     assert resp.status_code == 200
     data = resp.json()
@@ -55,7 +56,7 @@ def test_bench_stats_endpoint():
     assert "by_agent" in data
 
 
-def test_security_status_endpoint():
+def test_security_status_endpoint(client):
     resp = client.get("/security/status")
     assert resp.status_code == 200
     data = resp.json()
@@ -64,7 +65,7 @@ def test_security_status_endpoint():
     assert "ssrf" in data
 
 
-def test_agent_soul_endpoint():
+def test_agent_soul_endpoint(client):
     resp = client.get("/api/agents/jarvis/soul")
     assert resp.status_code == 200
     data = resp.json()
@@ -73,31 +74,30 @@ def test_agent_soul_endpoint():
     assert "Prime Orchestrator" in data["soul"]
 
 
-def test_plugin_toggle_endpoint():
+def test_plugin_toggle_endpoint(client):
     get_resp = client.get("/plugins")
     assert get_resp.status_code == 200
     plugins = get_resp.json()["plugins"]
     if plugins:
         plugin_id = plugins[0]["id"]
         initial_enabled = plugins[0]["enabled"]
-        
+
         # Toggle once
         toggle_resp = client.put(f"/plugins/{plugin_id}/toggle")
         assert toggle_resp.status_code == 200
         assert toggle_resp.json()["id"] == plugin_id
         assert toggle_resp.json()["enabled"] == (not initial_enabled)
-        
+
         # Toggle back
         toggle_back = client.put(f"/plugins/{plugin_id}/toggle")
         assert toggle_back.status_code == 200
         assert toggle_back.json()["enabled"] == initial_enabled
 
 
-def test_service_worker_endpoint():
+def test_service_worker_endpoint(client):
     resp = client.get("/sw.js")
     assert resp.status_code == 200
     assert "application/javascript" in resp.headers.get("content-type", "")
     content = resp.text
     assert "jarvis-hud-v1" in content
     assert "STATIC_ASSETS" in content
-

@@ -587,7 +587,7 @@ class Orchestrator:
         self._schedule_daily_digests()
         self._schedule_log_scans()
         self._autonomy_task = asyncio.create_task(self._autonomy_loop())
-        if hasattr(self, 'oracle_bridge'):
+        if hasattr(self, 'oracle_bridge') and os.getenv("JARVIS_TESTING") != "1":
             self.oracle_bridge.start_watcher()
         logger.info(f"Channels started: {list(self.channels.keys())}")
 

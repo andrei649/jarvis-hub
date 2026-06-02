@@ -39,16 +39,18 @@ def test_get_category_returns_typed_values(temp_db):
 
 
 def test_put_category_updates_known_key(temp_db):
-    updated = temp_db.put_category("llm", {"max_tokens": 2048})
-    assert updated == 1
+    count, skipped = temp_db.put_category("llm", {"max_tokens": 2048})
+    assert count == 1
+    assert skipped == []
     by_key = {r["key"]: r for r in temp_db.get_category("llm")}
     assert by_key["max_tokens"]["value"] == 2048
 
 
 def test_put_category_ignores_unknown_key(temp_db):
     # Unknown keys must not be written and must not raise.
-    updated = temp_db.put_category("llm", {"does_not_exist": "x", "max_tokens": 512})
-    assert updated == 1
+    count, skipped = temp_db.put_category("llm", {"does_not_exist": "x", "max_tokens": 512})
+    assert count == 1
+    assert skipped == ["does_not_exist"]
     by_key = {r["key"]: r for r in temp_db.get_category("llm")}
     assert "does_not_exist" not in by_key
     assert by_key["max_tokens"]["value"] == 512
