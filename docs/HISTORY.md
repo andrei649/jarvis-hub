@@ -61,7 +61,7 @@
 | Teste noi | +192 (1100+ total) |
 | CI verde | ubuntu ✅ windows ✅ CodeQL ✅ |
 | BUG-1 (`_dashboard_cache` lock) | ✅ rezolvat (PR #36, wave externă) |
-| Versiune lansată | 0.9.1 → **1.0.0** |
+| Versiune lansată | 0.9.1 → **0.9.2** |
 
 ---
 

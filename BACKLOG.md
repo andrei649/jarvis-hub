@@ -38,9 +38,8 @@ python -m pytest tests/ -v          # 1100+ passed, 9 skipped
 | **0.8-beta** | 🟢 Live | Performance & robustness + multi-agent workflows | H5.5, H5.6 |
 | **0.9-beta** | 🟢 Live | New integrations + agent marketplace | H5.7, H5.8 |
 | **0.9.1-beta** | 🟢 Live | Recall cu embeddings reale + perf cale fierbinte | H7.1–H7.5 (perf) |
-| **1.0.0** | 🟢 **Live** | Hardening complet, CI/CD, memorie personală, cost analytics, onboarding | H7 (11 iteme) + H8 (7 iteme) + BUG-1 |
-| **1.1.0** | 🎯 Next | Frontend test coverage + Competitive Edge | BUG-2, H10 (parțial) |
-| **2.0.0** | Later | Platform parity — desktop app, Rust hot-path, WASM sandbox, training | ORIZONT 11 (H11.x) |
+| **0.9.2-beta** | 🟢 Live | Hardening complet, CI/CD, memorie personală, cost analytics, onboarding | H7 (11 iteme) + H8 (7 iteme) + BUG-1 |
+| **1.0.0** | 🎯 Stable | Tot backlogul terminat: H10 + H11 + BUG-2 (frontend tests) | H10 (30 iteme) + H11 (4 iteme) + BUG-2 |
 
 ---
 
