@@ -9,6 +9,8 @@ from .errors import ErrorCategory, ErrorSeverity, JarvisError, ErrorLog
 _LOG_FORMAT = "%(asctime)s  %(levelname)s  %(name)s  %(message)s"
 _LOG_DATE_FORMAT = "%Y-%m-%d %H:%M:%S"
 
+logger = logging.getLogger(__name__)
+
 
 def setup_logging(level: int = logging.INFO) -> None:
     logging.basicConfig(
@@ -60,6 +62,6 @@ def log_error(
         from .autonomy.error_logger import persist_problem
         persist_problem(err_log)
     except Exception:
-        pass
+        logger.warning("Failed to persist error log entry to backlog", exc_info=True)
 
     return err_log

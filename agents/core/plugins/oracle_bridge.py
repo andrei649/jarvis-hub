@@ -258,7 +258,7 @@ class OracleBridgePlugin:
                         ))
                         logger.warning(f"Conflict detected: {rel} changed")
                 except Exception:
-                    pass
+                    logger.warning("Failed to hash file for conflict detection: %s", rel, exc_info=True)
         self.file_hashes = new_hashes
 
     # ── Task parsing from commit message ──────────────────────────

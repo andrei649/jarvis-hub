@@ -15,6 +15,7 @@ from __future__ import annotations
 import json
 import logging
 import sqlite3
+import threading
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
@@ -39,9 +40,10 @@ class PreferenceStore:
         self.db_path = db_path
         self.journal_path = Path(journal_path) if journal_path else JOURNAL
         self._conn: Optional[sqlite3.Connection] = None
+        self._lock = threading.Lock()
 
     def initialize(self) -> "PreferenceStore":
-        self._conn = sqlite3.connect(self.db_path)
+        self._conn = sqlite3.connect(self.db_path, check_same_thread=False)
         self._conn.row_factory = sqlite3.Row
         self._conn.execute("""
             CREATE TABLE IF NOT EXISTS preferences (
@@ -74,12 +76,13 @@ class PreferenceStore:
         tier = int(getattr(task, "risk_tier", 3))
         now = datetime.now(timezone.utc).isoformat()
         if self._conn:
-            self._conn.execute(
-                "INSERT INTO preferences (agent, kind, risk_tier, action, approved, decided_by, created_at)"
-                " VALUES (?, ?, ?, ?, ?, ?, ?)",
-                (agent, kind, tier, action, approved, decided_by, now),
-            )
-            self._conn.commit()
+            with self._lock:
+                self._conn.execute(
+                    "INSERT INTO preferences (agent, kind, risk_tier, action, approved, decided_by, created_at)"
+                    " VALUES (?, ?, ?, ?, ?, ?, ?)",
+                    (agent, kind, tier, action, approved, decided_by, now),
+                )
+                self._conn.commit()
         self._journal({
             "ts": now, "task_id": getattr(task, "id", None), "agent": agent,
             "kind": kind, "risk_tier": tier, "action": action,
@@ -99,11 +102,12 @@ class PreferenceStore:
     def approval_rate(self, agent: str, kind: str, risk_tier: int) -> Optional[float]:
         if not self._conn:
             return None
-        row = self._conn.execute(
-            "SELECT AVG(approved) AS rate, COUNT(*) AS n FROM preferences "
-            "WHERE agent=? AND kind=? AND risk_tier=?",
-            (agent, kind, int(risk_tier)),
-        ).fetchone()
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT AVG(approved) AS rate, COUNT(*) AS n FROM preferences "
+                "WHERE agent=? AND kind=? AND risk_tier=?",
+                (agent, kind, int(risk_tier)),
+            ).fetchone()
         if not row or not row["n"]:
             return None
         return float(row["rate"])
@@ -117,13 +121,14 @@ class PreferenceStore:
         """
         if not self._conn:
             return []
-        rows = self._conn.execute(
-            "SELECT agent, kind, risk_tier, AVG(approved) AS rate, COUNT(*) AS n "
-            "FROM preferences WHERE risk_tier IN (1, 2) "
-            "GROUP BY agent, kind, risk_tier "
-            "HAVING n >= ? AND rate >= ? ORDER BY rate DESC, n DESC",
-            (min_samples, threshold),
-        ).fetchall()
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT agent, kind, risk_tier, AVG(approved) AS rate, COUNT(*) AS n "
+                "FROM preferences WHERE risk_tier IN (1, 2) "
+                "GROUP BY agent, kind, risk_tier "
+                "HAVING n >= ? AND rate >= ? ORDER BY rate DESC, n DESC",
+                (min_samples, threshold),
+            ).fetchall()
         return [{
             "agent": r["agent"], "kind": r["kind"], "risk_tier": r["risk_tier"],
             "approval_rate": round(float(r["rate"]), 3), "samples": r["n"],

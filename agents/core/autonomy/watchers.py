@@ -47,7 +47,7 @@ class EmailProbe:
                 if isinstance(val, list):
                     return val
             except Exception:
-                pass
+                logger.warning("Failed to read autonomy.priority_senders setting", exc_info=True)
         return self._default_priority_senders
 
     async def __call__(self) -> list[Signal]:
@@ -110,7 +110,7 @@ class CalendarProbe:
             try:
                 return int(self.get_setting("autonomy.calendar_lead_time", self._default_lead_time_min))
             except Exception:
-                pass
+                logger.warning("Failed to read autonomy.calendar_lead_time setting", exc_info=True)
         return self._default_lead_time_min
 
     async def __call__(self) -> list[Signal]:
@@ -189,7 +189,7 @@ class FinanceProbe:
             try:
                 return float(self.get_setting("autonomy.finance_min_ron", self._default_min_ron))
             except Exception:
-                pass
+                logger.warning("Failed to read autonomy.finance_min_ron setting", exc_info=True)
         return self._default_min_ron
 
     @property
@@ -198,7 +198,7 @@ class FinanceProbe:
             try:
                 return float(self.get_setting("autonomy.finance_min_eur", self._default_min_eur))
             except Exception:
-                pass
+                logger.warning("Failed to read autonomy.finance_min_eur setting", exc_info=True)
         return self._default_min_eur
 
     async def __call__(self) -> list[Signal]:
@@ -278,7 +278,7 @@ class HealthProbe:
             try:
                 return float(self.get_setting("autonomy.health_min_sleep", self._default_min_sleep_hrs))
             except Exception:
-                pass
+                logger.warning("Failed to read autonomy.health_min_sleep setting", exc_info=True)
         return self._default_min_sleep_hrs
 
     @property
@@ -287,7 +287,7 @@ class HealthProbe:
             try:
                 return float(self.get_setting("autonomy.health_min_hrv", self._default_min_hrv_ms))
             except Exception:
-                pass
+                logger.warning("Failed to read autonomy.health_min_hrv setting", exc_info=True)
         return self._default_min_hrv_ms
 
     async def __call__(self) -> list[Signal]:

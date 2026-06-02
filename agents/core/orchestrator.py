@@ -141,6 +141,7 @@ class Orchestrator:
             from .observability.tracer import Tracer
             self.tracer = Tracer(maxlen=500)
         except Exception:
+            logger.warning("Tracer initialisation failed — tracing disabled", exc_info=True)
             self.tracer = None
 
     async def load_agents(self):
@@ -589,6 +590,9 @@ class Orchestrator:
         self._autonomy_task = asyncio.create_task(self._autonomy_loop())
         if hasattr(self, 'oracle_bridge') and os.getenv("JARVIS_TESTING") != "1":
             self.oracle_bridge.start_watcher()
+        if os.getenv("JARVIS_TESTING") != "1":
+            from agents.core.learning_loop import run_learning_loop
+            asyncio.create_task(run_learning_loop(self))
         logger.info(f"Channels started: {list(self.channels.keys())}")
 
     async def stop_channels(self):

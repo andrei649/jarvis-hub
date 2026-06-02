@@ -202,4 +202,4 @@ class AutonomyWorker:
             self.audit.log(event, {"task_id": task.id, "agent": task.agent,
                                    "kind": task.kind, "detail": detail})
         except Exception:
-            pass
+            logger.warning("Autonomy audit log failed for event '%s' task #%s", event, task.id, exc_info=True)

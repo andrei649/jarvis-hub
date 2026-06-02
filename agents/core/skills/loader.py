@@ -66,6 +66,7 @@ class Skill:
             try:
                 return await self.module.handle(command, args, context or {})
             except Exception as e:
+                logger.warning("Skill '%s' handle() raised for command '%s'", self.name, command, exc_info=True)
                 return f"[skill:{self.name}] error: {e}"
 
         return ""

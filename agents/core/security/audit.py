@@ -6,18 +6,25 @@ Port of OpenJarvis's Rust-backed audit logger to pure Python.
 
 import hashlib
 import json
+import logging
 import sqlite3
+import threading
 import time
 from pathlib import Path
 from typing import Optional
 
 from .types import ScanFinding, SecurityEvent, SecurityEventType, ThreatLevel
 
+logger = logging.getLogger(__name__)
+
 
 class AuditLogger:
     def __init__(self, db_path: str = "memory_logs/security/audit.db"):
         self._db_path = Path(db_path)
         self._db_path.parent.mkdir(parents=True, exist_ok=True)
+        # threading.Lock serialises all writes; check_same_thread=False allows
+        # the connection to be used from asyncio thread-pool workers (H7.4).
+        self._lock = threading.Lock()
         self._conn = sqlite3.connect(str(self._db_path), check_same_thread=False)
         # WAL + synchronous=NORMAL: every turn appends one hash-chained audit row
         # on the async hot path; this keeps the commit cheap (~36x in-bench) while
@@ -60,15 +67,16 @@ class AuditLogger:
             for f in event.findings
         ])
 
-        prev_hash = self.tail_hash()
-        hash_input = f"{prev_hash}|{event.timestamp}|{event.event_type.value}|{findings_json}|{event.content_preview}|{event.action_taken}"
-        row_hash = hashlib.sha256(hash_input.encode()).hexdigest()
+        with self._lock:
+            prev_hash = self._tail_hash_unlocked()
+            hash_input = f"{prev_hash}|{event.timestamp}|{event.event_type.value}|{findings_json}|{event.content_preview}|{event.action_taken}"
+            row_hash = hashlib.sha256(hash_input.encode()).hexdigest()
 
-        self._conn.execute(
-            "INSERT INTO security_events (timestamp, event_type, findings_json, content_preview, action_taken, row_hash, prev_hash) VALUES (?, ?, ?, ?, ?, ?, ?)",
-            (event.timestamp, event.event_type.value, findings_json, event.content_preview, event.action_taken, row_hash, prev_hash),
-        )
-        self._conn.commit()
+            self._conn.execute(
+                "INSERT INTO security_events (timestamp, event_type, findings_json, content_preview, action_taken, row_hash, prev_hash) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                (event.timestamp, event.event_type.value, findings_json, event.content_preview, event.action_taken, row_hash, prev_hash),
+            )
+            self._conn.commit()
 
     def query(self, event_type: Optional[str] = None, since: Optional[float] = None, limit: int = 100) -> list[SecurityEvent]:
         sql = "SELECT timestamp, event_type, findings_json, content_preview, action_taken FROM security_events WHERE 1=1"
@@ -82,8 +90,10 @@ class AuditLogger:
         sql += " ORDER BY timestamp DESC LIMIT ?"
         params.append(limit)
 
+        with self._lock:
+            raw_rows = self._conn.execute(sql, params).fetchall()
         events = []
-        for row in self._conn.execute(sql, params).fetchall():
+        for row in raw_rows:
             ts, etype, findings_json, preview, action = row
             findings_raw = json.loads(findings_json) if findings_json else []
             findings = [
@@ -106,14 +116,20 @@ class AuditLogger:
             ))
         return events
 
-    def tail_hash(self) -> str:
+    def _tail_hash_unlocked(self) -> str:
+        """Return the latest row_hash; caller must hold self._lock."""
         row = self._conn.execute("SELECT row_hash FROM security_events ORDER BY id DESC LIMIT 1").fetchone()
         return row[0] if row and row[0] else ""
 
+    def tail_hash(self) -> str:
+        with self._lock:
+            return self._tail_hash_unlocked()
+
     def verify_chain(self) -> tuple[bool, Optional[int]]:
-        rows = self._conn.execute(
-            "SELECT id, timestamp, event_type, findings_json, content_preview, action_taken, row_hash, prev_hash FROM security_events ORDER BY id"
-        ).fetchall()
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT id, timestamp, event_type, findings_json, content_preview, action_taken, row_hash, prev_hash FROM security_events ORDER BY id"
+            ).fetchall()
         expected_prev = ""
         for row in rows:
             rid, ts, etype, fj, preview, action, stored_hash, stored_prev = row
@@ -129,7 +145,8 @@ class AuditLogger:
         return True, None
 
     def count(self) -> int:
-        row = self._conn.execute("SELECT COUNT(*) FROM security_events").fetchone()
+        with self._lock:
+            row = self._conn.execute("SELECT COUNT(*) FROM security_events").fetchone()
         return row[0] if row else 0
 
     def close(self):
