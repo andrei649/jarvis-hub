@@ -57,7 +57,46 @@ function Badge({ label, value, kind }) {
   );
 }
 
-function TopBar({ activeAgent, voiceState, agentsOnline, agentsTotal, lmOnline, onToggleCognition, onToggleSystems, onToggleWorkflows, onToggleObservability }) {
+/* ─────────────────────── TrustIndicator (H12.10) ───────────────────────
+ * Visible, auditable HUD signal for two trust states:
+ *   - mic off/on (hardware/software mute, inspired by Voice PE's physical mute)
+ *   - strict-local (no cloud calls; everything stays on the machine)
+ * Reads /api/trust/status. Clear, not hidden — lives in the topbar chrome.
+ */
+function TrustIndicator({ trust }) {
+  var micOff = trust && trust.mic === 'off';
+  var strictLocal = !trust || trust.strict_local;
+  var micLabel = _t('comp.trust_mic', 'Mic');
+  var localLabel = _t('comp.trust_local', 'Local');
+  var micTitle = micOff
+    ? _t('comp.trust_mic_off_hint', 'Microphone muted — no audio is captured')
+    : _t('comp.trust_mic_on_hint', 'Microphone live — audio can be captured');
+  var localTitle = strictLocal
+    ? _t('comp.trust_local_on_hint', 'Strict-local: no cloud calls, nothing leaves this machine')
+    : _t('comp.trust_local_off_hint', 'Cloud routing available — some requests may leave this machine');
+  return h('div', { className: 'trust-indicator', role: 'status', 'aria-label': 'Trust state' },
+    h('div', {
+      className: 'trust-chip trust-mic ' + (micOff ? 'is-off' : 'is-on'),
+      title: micTitle,
+      'aria-label': micLabel + ': ' + (micOff ? 'off' : 'on'),
+    },
+      h('span', { className: 'trust-chip-icon', 'aria-hidden': true }, micOff ? '🔇' : '🎙'),
+      h('span', { className: 'trust-chip-label' }, micLabel),
+      h('span', { className: 'trust-chip-val' }, micOff ? 'OFF' : 'ON'),
+    ),
+    h('div', {
+      className: 'trust-chip trust-local ' + (strictLocal ? 'is-on' : 'is-off'),
+      title: localTitle,
+      'aria-label': localLabel + ': ' + (strictLocal ? 'strict' : 'cloud'),
+    },
+      h('span', { className: 'trust-chip-icon', 'aria-hidden': true }, strictLocal ? '🔒' : '☁'),
+      h('span', { className: 'trust-chip-label' }, localLabel),
+      h('span', { className: 'trust-chip-val' }, strictLocal ? 'STRICT' : 'CLOUD'),
+    ),
+  );
+}
+
+function TopBar({ activeAgent, voiceState, agentsOnline, agentsTotal, lmOnline, trust, onToggleCognition, onToggleSystems, onToggleWorkflows, onToggleObservability }) {
   return h('header', { className: 'topbar' },
     h('div', { className: 'topbar-left' },
       h('div', { className: 'logo' },
@@ -78,6 +117,7 @@ function TopBar({ activeAgent, voiceState, agentsOnline, agentsTotal, lmOnline, 
     ),
     h(Clock),
     h('div', { className: 'topbar-right' },
+      h(TrustIndicator, { trust: trust }),
       h(Badge, { label: 'Voice', value: voiceState.toUpperCase(), kind: voiceState === 'idle' ? 'dim' : 'active' }),
       h(Badge, { label: 'Agents', value: `${agentsOnline}/${agentsTotal}`, kind: 'active' }),
       h(Badge, { label: _t('comp.memory'), value: _t('comp.online'), kind: 'ok' }),
