@@ -5,7 +5,7 @@
 
 ---
 
-## H7 Hardening + H8 Personal Memory — Sprint 2026-06-02 (v1.0.0, Live ✅)
+## H7 Hardening + H8 Personal Memory — Sprint 2026-06-02 (v0.9.2, Live ✅)
 
 > Echipă: 5 agenți Claude în paralel (wave dispatch cu git worktrees). Durata: 1 sesiune.
 

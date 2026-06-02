@@ -430,8 +430,8 @@ class Orchestrator:
             base = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
             problems_path = os.path.join(base, "..", "memory_logs", "problems.jsonl")
             result = self.log_scanner.hourly_scan(problems_path)
-            from .autonomy.error_logger import sync_problems_to_backlog
-            sync_problems_to_backlog()
+            from .autonomy.error_logger import sync_problems_to_diagnostics
+            sync_problems_to_diagnostics()
             if result.healthy:
                 return
             parts = []
@@ -511,10 +511,11 @@ class Orchestrator:
                 # Continuous Ingestion Watcher (H5.1)
                 if self.ingestion_watcher and self.get_setting("system.ingestion_watcher_enabled", True):
                     await asyncio.to_thread(self.ingestion_watcher.check_and_run)
-                # Sync error/problem log to BACKLOG.md (Antigravity error backlog logger)
+                # Sync error/problem log to the git-ignored memory_logs/diagnostics.md
+                # (never the tracked BACKLOG.md — that caused git conflicts).
                 if self.get_setting("system.error_backlog_sync_enabled", True):
-                    from .autonomy.error_logger import sync_problems_to_backlog
-                    sync_problems_to_backlog()
+                    from .autonomy.error_logger import sync_problems_to_diagnostics
+                    sync_problems_to_diagnostics()
             except Exception as e:
                 logger.warning(f"Autonomy tick failed: {e}")
 

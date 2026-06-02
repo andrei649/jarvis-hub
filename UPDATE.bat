@@ -27,7 +27,7 @@ if %errorlevel% neq 0 (
 
 REM --- 2. Pull latest from GitHub -----------------------------
 echo [1/4] Aduc ultimele modificari de pe GitHub...
-git pull --rebase origin master
+git pull --rebase origin main
 if %errorlevel% neq 0 (
   echo.
   echo [ATENTIE] git pull a esuat. Poate ai modificari locale nesalvate.

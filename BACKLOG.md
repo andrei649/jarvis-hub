@@ -14,7 +14,7 @@
 ```bash
 pip install -r requirements-beta.txt
 python -m uvicorn agents.web:app --host 127.0.0.1 --port 8080
-python -m pytest tests/ -v          # 1100+ passed, 9 skipped
+python -m pytest tests/ -v          # 1100+ passed, 8 skipped
 ```
 
 > Cele 8 skipped sunt din `tests/test_spotify.py` (pattern HTTP-router, opencode) care
@@ -39,7 +39,7 @@ python -m pytest tests/ -v          # 1100+ passed, 9 skipped
 | **0.9-beta** | 🟢 Live | New integrations + agent marketplace | H5.7, H5.8 |
 | **0.9.1-beta** | 🟢 Live | Recall cu embeddings reale + perf cale fierbinte | H7.1–H7.5 (perf) |
 | **0.9.2-beta** | 🟢 Live | Hardening complet, CI/CD, memorie personală, cost analytics, onboarding | H7 (11 iteme) + H8 (7 iteme) + BUG-1 |
-| **1.0.0** | 🎯 Stable | Tot backlogul terminat: H10 + H11 + **H12** + BUG-2 (frontend tests). H12.1 (P0 securitate) = wedge anti-OpenClaw. Plan: [docs/plan-v1-dispatch.md](docs/plan-v1-dispatch.md) | H10 (30) + H11 (4) + H12 (14) + BUG-2 |
+| **1.0.0** | 🎯 Stable | Tot backlogul terminat: H10 + H11 + **H12** (BUG-2 ✅ deja livrat; H12.1 P0 securitate ✅ = wedge anti-OpenClaw). Plan: [docs/plan-v1-dispatch.md](docs/plan-v1-dispatch.md) | H10 (30) + H11 (4) + H12 (14) |
 
 ---
 
@@ -56,9 +56,14 @@ python -m pytest tests/ -v          # 1100+ passed, 9 skipped
 | **H9 Agent Ops: Workflows & Observability** (P2) | 3 | **3** | 29 | **29** | **100%** |
 | **H10 Competitive Edge** (P1–P3) | 30 | **0** | 188 | **0** | **0%** |
 | **H11 Platform Parity** (Known Gaps, P3) | 4 | **0** | 55 | **0** | **0%** |
-| **Total general** | **151** | **117** | **823** | **580** | **71%** |
+| **Total H1–H11** | **151** | **117** | **823** | **580** | **71%** (SP) |
 
-**Test count:** 1170+ passed, 9 skipped (2026-06-02: +H7 hardening 192 teste noi; +H8 memorie 16 teste noi; +H12.1 securitate 31 teste noi)
+> `%` = procent pe **story points** (580/823 = 70.5% ≈ 71%); pe iteme ar fi 117/151 = 77.5%. Totalul de mai sus acoperă **H1–H11**.
+
+**În afara totalului H1–H11:** ORIZONT 12 (acum în scope-ul v1.0 per [#52]) — **2/14 livrate** (H12.1 ✅ P0 securitate, H12.10 ✅); restul deschis. **Bugs & Hot Fixes** — 3 done (BUG-1, BUG-2, BUG-4) + deschise (BUG-3, HF-1/2, BUG-2b, TASK-1, CLN-1, NTH-1).
+
+**Test count (backend pytest):** 1170+ passed, 8 skipped — cele 8 din `tests/test_spotify.py` (vezi nota „Run"). *(2026-06-02: +192 H7+H8 — H8 incluse; +31 H12.1 securitate.)*
+**Frontend (BUG-2):** 156 teste JS / 20 fișiere · ~66% line coverage — separat de suita pytest.
 
 > **Orizont 7 Hardening — Drumul spre 1.0.0:** 11/11 COMPLET ✅ (livrat 2026-06-02)
 
@@ -139,20 +144,37 @@ python -m pytest tests/ -v          # 1100+ passed, 9 skipped
 
 ---
 
-## 🔴 Auto-Generated Diagnostic Tasks
+> **Runtime diagnostics** (auto-generated from `problems.jsonl`) now live in the
+> git-ignored `memory_logs/diagnostics.md` — they are **no longer written into this
+> tracked file** (that caused recurring `git pull` conflicts; see BUG-4).
 
-> [!NOTE]
-> These tasks are auto-generated from active runtime failures in `problems.jsonl`.
-> Sync runs automatically during the autonomy observer check.
+## 🐛 Bugs & Hot Fixes
 
-✓ No active runtime failures detected in the last 48 hours.
+> Buguri cunoscute + taskuri „orfane" (amânate/abandonate prin alte docs/note, fără item trackuit).
+> Audit 2026-06-02: am promovat aici follow-up-urile care altfel cădeau de pe radar.
 
-## 🐛 Known Bugs (non-critical, not yet scheduled)
+### Buguri
 
 | # | Bug | Severity | Notes |
 |---|-----|----------|-------|
 | ~~BUG-1~~ ✅ | `_dashboard_cache` module-level dict has no `asyncio.Lock` — concurrent `/dashboard` requests can race on the weather/calendar cache update, producing a double-fetch or partial write under high load. **Fixed 2026-06-02:** `_dashboard_lock = asyncio.Lock()` guards both refresh blocks with double-checked locking; weather block now also sets `cached_at` (was refetching every request). +1 regression test (`test_dashboard_concurrent_refresh_fetches_weather_once`). | ~~LOW~~ | Found during HUD test sprint 2026-06-02 |
 | BUG-2 ✅ | ~~Frontend test infrastructure missing — 0% coverage on React HUD (~5 000 LOC).~~ **Done 2026-06-02:** Vitest + JSDOM harness (`tests/frontend/`) that loads the real shipped global scripts (vendored React 18 UMD + static files) — no bundler/build step. **156 tests / 20 spec files · ~66% measured line coverage (target 60% met)**, gated in CI (`frontend` job runs `npm run test:coverage`, fails under 60%). Coverage of the in-JSDOM scripts is measured via istanbul pre-instrumentation + nyc (see `coverage.mjs`) with a badge (`coverage-badge.svg`). Covers all of `components.js`, `i18n.js`, `data.js`, `cognition.js`, `dossier-modal.js`, `network.js`, `enhancements.js`, `observability.js`; `admin.js` (full `AdminApp` mount + nav sweep + save flow); `systems.js`/`workflows.js`/`observability.js` panels (mount + tab sweep); and `app.js` incl. the **P1 chat flow** (send→SSE stream→render) and **P2 polling** intervals. Plan alignment per `docs/plan-bug2-frontend-tests.md`: runner = Vitest (chosen over Jest), measured coverage ✅, P1 Chat ✅, P2 polling ✅. **Caught a real shipped bug on first run:** `systems.js` `ResilienceTab` missing closing brace → the entire Systems panel failed to parse/load in the browser (present on `main`); fixed + regression-guarded (`resilience.test.js`). **Deferred (P3 follow-up):** voice/`useTTS`, Workflow drag-drop pointer events, and browser E2E (Playwright). See `tests/frontend/README.md`. | ~~MEDIUM~~ | Identified in test coverage audit 2026-06-02; backend gap closed (121 tests added on branch `claude/hud-human-interface-testing-r8IQS`) |
+| BUG-3 | `/api/analytics/cost` e definit de **două ori** în `agents/web.py` (liniile ~1716 și ~2081) — a doua definiție o umbrește pe prima (atinge deliverable-ul H7.10 cost analytics). Endpoint-ul servit e al doilea handler; primul e cod mort + risc de divergență dacă unul e modificat. | MEDIUM | Găsit la auditul de doc-truth 2026-06-02 |
+| ~~BUG-4~~ ✅ | Aplicația scria în `BACKLOG.md` la fiecare autonomy tick (`sync_problems_to_backlog`, setare `error_backlog_sync_enabled` default ON) → modifica fișierul **trackuit** pe disc (pe Windows flip-uia și LF→CRLF pe tot fișierul) → orice `git pull` ulterior **conflicta pe BACKLOG.md**. Cauza reală a conflictelor recurente. **Fixed 2026-06-02:** redirectat către `memory_logs/diagnostics.md` (gitignored) cu scriere idempotentă + LF pinned; scos blocul auto din BACKLOG; `.gitattributes` `eol=lf`; reparat `UPDATE.bat` (`origin master` → `origin main`). | ~~HIGH~~ | Diagnosticat din simptomul „conflict pe backlog la pornirea pe laptop" |
+
+### Hot fixes & taskuri orfane (promovate 2026-06-02)
+
+> Coloana **Dep / secvențiere** spune *când* să fie rezolvat eficient — multe au sens doar
+> împreună cu un feature viitor (ca să nu se scrie de două ori).
+
+| # | Item | Tip · P | S | Dep / secvențiere | Sursă |
+|---|------|---------|---|-------------------|-------|
+| **HF-1** | **Auth pe rutele user-facing `/api/`** — `/chat`, `/chat/stream`, `/dashboard`, `/api/memory/*` (inclusiv POST `/api/memory/remember`) **nu au autentificare**; doar rutele admin sunt gate-uite (`x-admin-token`, `_admin_guard`). Acceptabil pe LAN single-user, **risc real înainte de orice expunere non-LAN** (memorie personală citibilă/scriibilă neautentificat). | 🔒 Hotfix · **P1** | 5 | Înainte de orice expunere în afara LAN; **prereq pentru H10.E Multi-user** (login/sesiuni se construiește peste asta) | `docs/gap-analysis-1.0.md` (must-have, nepromovat) + `agents/web.py` |
+| **HF-2** | **Security review pre-go-live** — pen-test pe endpointuri, **CORS** config, review rate-limit. Checklist din gap-analysis niciodată promovat în backlog. | 🔒 Task · **P1** | 5 | După **HF-1**; se cuplează cu H7.9 (release hygiene) | `docs/gap-analysis-1.0.md` |
+| **BUG-2b** | **Frontend test gaps rămase din BUG-2** (trăiau doar în rândul BUG-2 ✅ + `tests/frontend/README.md`): **2b.1** browser E2E (Playwright: server+Chromium, fluxuri chat/tab-uri/command palette/admin); **2b.2** drag-drop canvas workflow (pointer events SVG, layout, edges); **2b.3** voce/`useTTS` (mock `getUserMedia`/`AudioContext`, toggle mic, tranziții stare). | 🧪 Task · P3 | ~14 (8+3+3) | **2b.1** standalone (H7.2 CI ✅) — cel mai bine după ce fluxurile mari H10 se stabilizează, se cuplează cu H9.3/H10.23; **2b.2** ride cu **H10.2** (trace overlay) / **H10.7** (AI builder); **2b.3** ride cu **H12.4** (Wyoming rescrie STT/TTS) / **H12.10** (mute) | BUG-2 deferred + `tests/frontend/README.md` |
+| **TASK-1** | **Howard: backend LLM dedicat + prima rulare reală** — `agents/core/llm/ollama_howard.py` (backend dedicat) + ingestion run efectiv + execuție pipeline fine-tuning. H5.1 marchează infra „✅ 100% gata" dar *modelul* și fișierul de backend rămân TODO. | ⚙️ Task · P2 | 8 | **H5.1** (infra ✅, necesită export date Andrei), **H11.3** (SFT/GRPO, GPU) | `gemini_architecture_prompt.md` (TODO-uri) |
+| **CLN-1** | **Șterge `tests/test_spotify.py`** — 9 skip-uri permanente care așteaptă `agents/core/skills/spotify.py` (cale ce nu va exista; pattern opencode). Spotify livrează prin `skills/spotify/main.py`, acoperit de `test_spotify_skill.py`. Elimină și zgomotul „8 skipped". | 🧹 Cleanup · P3 | 1 | Niciuna | `tests/test_spotify.py:19`, `BACKLOG.md` (nota „Run") |
+| **NTH-1** | **`/cognition/stream` (scoring live)** — `/api/cognition` întoarce deja `last_cognition` real; mock-ul static `COGNITION_SCORING` din `data.js` rămâne ca fallback ne-configurat. Varianta streaming e netrackuită. *(parțial superseded — low)* | 💡 Nice-to-have · P3 | 3 | H9.2 | `design_handoff_jarvis_hub/README.md`, `data.js` |
 
 ## ✅ ORIZONT 5 — Next Wave (P2–P3) — 17/17 COMPLET
 
@@ -201,7 +223,7 @@ python -m pytest tests/ -v          # 1100+ passed, 9 skipped
 
 ---
 
-## Active: ORIZONT 8 — Memorie Personală & Personalizare („Jarvis te cunoaște") (P1) — 0/7
+## ✅ ORIZONT 8 — Memorie Personală & Personalizare („Jarvis te cunoaște") (P1) — 7/7 COMPLET
 
 > **Viziune:** Jarvis își construiește în timp o **memorie despre Andrei** — fapte, preferințe,
 > decizii, oameni, proiecte — extrasă din conversații, consolidată periodic (ca reflection-ul H5.15),
@@ -215,17 +237,19 @@ python -m pytest tests/ -v          # 1100+ passed, 9 skipped
 
 | # | Item | S | P | Dep | AC |
 |---|------|---|---|-----|----|
-| H8.1 | **Memorie despre Andrei (User Profile Memory)** — store structurat persistent (facts / preferences / decisions / people / projects) construit din conversații (extragere LLM + consolidare idempotentă, pattern H5.15), versionat, injectat în prompt la toți agenții. `core/memory/profile.py` + `/api/profile`. | 13 | P1 | H5.14, H5.15, H7.4 | după câteva conversații, Jarvis cunoaște preferințe/fapte despre Andrei și le folosește; profilul e inspectabil în HUD |
-| H8.2 | **Privacy & Forget Controls** — pentru memoria personală: export JSON, forget/redact selectiv per fapt, retention policy, scope strict-local. | 5 | P1 | H8.1 | pot șterge un fapt anume; export complet; nimic personal nu pleacă în cloud fără opt-in explicit |
-| H8.3 | **Recall ON by default + Memory HUD** — activează `memory.recall_enabled` cu cache-ul H7.4; tab HUD cu faptele memorate (search/edit/delete), surse și scoruri (extinde Fused Recall). | 8 | P2 | H7.4, H8.1 | recall activ în chat din oficiu; HUD afișează și editează memoria personală |
-| H8.4 | **Embeddings de calitate (model dedicat)** — `mxbai-embed-large` sau container TEI; benchmark calitate retrieval vs hash/nomic; degradare grațioasă păstrată. | 5 | P2 | H7.4 | retrieval măsurabil mai bun pe un set de probe; fallback intact |
-| H8.5 | **Validare live fast/heavy (H7.5) + Model Tier HUD** — confirmă pe System76 cu 2 sloturi LM Studio încărcate; expune deciziile de tiering (fast↔deep) în `/bench` + HUD. | 5 | P2 | H7.5 | comutare fast↔deep vizibilă; latențe per tier măsurate |
-| H8.6 | **Proactive Personal Briefs** — morning/evening brief (H6.4) personalizate din profil + recall: ce contează pentru Andrei azi (proiecte, oameni, deadline-uri). | 5 | P3 | H8.1, H6.4 | briefurile referă proiectele/oamenii din profilul personal |
-| H8.7 | **AI-Navigable Docs upkeep** — `docs/ARCHITECTURE.md` ca sursă unică de navigare pentru asistenți AI; checklist „docs la zi" în template-ul de PR. | 2 | P3 | — | doc-ul reflectă codul curent; PR-urile mari ating și ARCHITECTURE.md |
+| H8.1 ✅ | **Memorie despre Andrei (User Profile Memory)** — store structurat persistent (facts / preferences / decisions / people / projects) construit din conversații (extragere LLM + consolidare idempotentă, pattern H5.15), versionat, injectat în prompt la toți agenții. `core/memory/store.py` + `core/memory/profile_extractor.py` + `/api/memory/profile`. *(PR #37)* | 13 | P1 | H5.14, H5.15, H7.4 | după câteva conversații, Jarvis cunoaște preferințe/fapte despre Andrei și le folosește; profilul e inspectabil în HUD |
+| H8.2 ✅ | **Privacy & Forget Controls** — pentru memoria personală: export JSON, forget/redact selectiv per fapt, retention policy, scope strict-local. | 5 | P1 | H8.1 | pot șterge un fapt anume; export complet; nimic personal nu pleacă în cloud fără opt-in explicit |
+| H8.3 ✅ | **Recall ON by default + Memory HUD** — activează `memory.recall_enabled` cu cache-ul H7.4; tab HUD cu faptele memorate (search/edit/delete), surse și scoruri (extinde Fused Recall). | 8 | P2 | H7.4, H8.1 | recall activ în chat din oficiu; HUD afișează și editează memoria personală |
+| H8.4 ✅ | **Embeddings de calitate (model dedicat)** — `mxbai-embed-large` sau container TEI; benchmark calitate retrieval vs hash/nomic; degradare grațioasă păstrată. | 5 | P2 | H7.4 | retrieval măsurabil mai bun pe un set de probe; fallback intact |
+| H8.5 ✅ | **Validare live fast/heavy (H7.5) + Model Tier HUD** — confirmă pe System76 cu 2 sloturi LM Studio încărcate; expune deciziile de tiering (fast↔deep) în `/bench` + HUD. | 5 | P2 | H7.5 | comutare fast↔deep vizibilă; latențe per tier măsurate |
+| H8.6 ✅ | **Proactive Personal Briefs** — morning/evening brief (H6.4) personalizate din profil + recall: ce contează pentru Andrei azi (proiecte, oameni, deadline-uri). | 5 | P3 | H8.1, H6.4 | briefurile referă proiectele/oamenii din profilul personal |
+| H8.7 ✅ | **AI-Navigable Docs upkeep** — `docs/ARCHITECTURE.md` ca sursă unică de navigare pentru asistenți AI; checklist „docs la zi" în template-ul de PR. | 2 | P3 | — | doc-ul reflectă codul curent; PR-urile mari ating și ARCHITECTURE.md |
+
+> **ORIZONT 8 COMPLET ✅** (2026-06-02) — H8.1–H8.7 livrate (PR-uri #33, #37, #43). Cod: `core/memory/{store,profile_extractor,digest}.py`, endpoints `/api/memory/profile`, `/api/memory/recall`, `/api/analytics/model-tiers`. Detalii: [docs/HISTORY.md](docs/HISTORY.md).
 
 ---
 
-## Active: ORIZONT 9 — Agent Ops: Visual Workflows & Observability (P2)
+## ✅ ORIZONT 9 — Agent Ops: Visual Workflows & Observability (P2) — 3/3 COMPLET
 
 | # | Item | S | P | Dep | AC |
 |---|------|---|---|-----|----|
@@ -317,7 +341,7 @@ python -m pytest tests/ -v          # 1100+ passed, 9 skipped
 
 ---
 
-## ORIZONT 12 — Categoria Reală: Asistent Personal Privat & Proactiv (P0–P3) — 0/14
+## ORIZONT 12 — Categoria Reală: Asistent Personal Privat & Proactiv (P0–P3) — 2/14
 
 > Bazat pe research-ul din [docs/research/2026-06-02-personal-ai-competitors.md](docs/research/2026-06-02-personal-ai-competitors.md):
 > H10 a comparat Jarvis cu 8 **framework-uri de developeri**; categoria reală a moonshot-ului (asistent
