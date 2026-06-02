@@ -133,20 +133,41 @@ class HybridRouter(LLMRouter):
         self._ollama_backend: Optional[OllamaBackend] = None
         self._ollama_available = False
         self._local_model = DEFAULT_LOCAL_MODEL
+        # Resolved in detect(): Claude model from /admin config (settings_db);
+        # local model prefers the real model loaded in the live backend.
+        self._claude_model = DEFAULT_CLAUDE_MODEL
+
+    @staticmethod
+    def _admin_setting(key: str, default):
+        """Read an `llm` setting from /admin config (settings_db), safely."""
+        try:
+            from ..settings_db import get_value
+            val = get_value("llm", key, default)
+            return val if val else default
+        except Exception:
+            return default
 
     async def detect(self):
         await super().detect()
         self._local_available = self._backend is not None
+        # Use the real model loaded in the live backend; fall back to the /admin
+        # default, then the hard-coded default. ("live with the real LLM loaded".)
+        self._local_model = (
+            self._detected_model
+            or self._admin_setting("default_model", DEFAULT_LOCAL_MODEL)
+        )
         self._cloud_available = bool(self.gemini_api_key)
         if self._cloud_available:
             from .gemini import GeminiBackend
             self._gemini_backend = GeminiBackend(api_key=self.gemini_api_key)
 
+        # Claude model is admin-configurable (/admin → llm.claude_model).
+        self._claude_model = self._admin_setting("claude_model", DEFAULT_CLAUDE_MODEL)
         self._claude_available = bool(self.anthropic_api_key)
         if self._claude_available:
             from .anthropic import ClaudeBackend
-            self._claude_backend = ClaudeBackend(api_key=self.anthropic_api_key, model=DEFAULT_CLAUDE_MODEL)
-            logger.info(f"Claude API available ({DEFAULT_CLAUDE_MODEL})")
+            self._claude_backend = ClaudeBackend(api_key=self.anthropic_api_key, model=self._claude_model)
+            logger.info(f"Claude API available ({self._claude_model})")
         else:
             logger.warning("ANTHROPIC_API_KEY not set — Claude tiering disabled, heavy agents will fall back")
 
@@ -195,7 +216,7 @@ class HybridRouter(LLMRouter):
 
         if policy == POLICY_CLAUDE:
             if self._claude_available:
-                return self._claude_backend, DEFAULT_CLAUDE_MODEL, "claude"
+                return self._claude_backend, self._claude_model, "claude"
             logger.warning(f"Claude unavailable for {agent_id}, falling back to cloud")
             if self._cloud_available:
                 return self._gemini_backend, "gemini-2.5-flash", "cloud-fallback"
@@ -215,7 +236,7 @@ class HybridRouter(LLMRouter):
         # POLICY_AUTO: prefer Claude for heavy agents, local for light
         if agent_id in CLAUDE_AGENTS and self._claude_available:
             if token_count > LOCAL_MAX_TOKENS:
-                return self._claude_backend, DEFAULT_CLAUDE_MODEL, "claude"
+                return self._claude_backend, self._claude_model, "claude"
             return self._claude_backend, DEFAULT_CLAUDE_MODEL, "claude"
 
         # Default: local first, cloud if context too big.
@@ -262,7 +283,7 @@ class HybridRouter(LLMRouter):
         if agent_id == "howard":
             return HOWARD_OLLAMA_MODEL if self._ollama_available else self._local_model
         if agent_id in CLAUDE_AGENTS and self._claude_available:
-            return DEFAULT_CLAUDE_MODEL
+            return self._claude_model
         if agent_id in DEEP_THINK_AGENTS and self._local_available:
             return DEFAULT_DEEP_MODEL
         return self._local_model
