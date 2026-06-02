@@ -5,6 +5,66 @@
 
 ---
 
+## H7 Hardening + H8 Personal Memory — Sprint 2026-06-02 (v1.0.0, Live ✅)
+
+> Echipă: 5 agenți Claude în paralel (wave dispatch cu git worktrees). Durata: 1 sesiune.
+
+### Wave A — CI/CD, HTTP Client, Docs (PR #29–33)
+
+| Item | PR | Status |
+|------|----|--------|
+| H7.1 Hermetic test suite (`JARVIS_TESTING` gate, conftest, pytest-timeout) | #31 | ✅ |
+| H7.2 CI/CD pipeline (ubuntu+windows matrix, ruff, CodeQL) | #31 | ✅ |
+| H7.3 PluginHTTPClient + circuit breaker (14+ pluginuri migrate) | #32 | ✅ |
+| H7.8 + H7.9 Docs truth + Onboarding (LICENSE, CONTRIBUTING, docker-compose, release.yml) | #30 | ✅ |
+| H8.4 Embedding model upgrade (mxbai-embed-large) | #33 | ✅ |
+| H8.7 ARCHITECTURE.md actualizat (port, agent count, embed model) | #33 | ✅ |
+| docs HISTORY.md creat, BACKLOG trim, GO_LIVE_PLAN gaps (H8.5, H10.21) | #29 | ✅ |
+
+### Wave B — SQLite Hardening, Exception Logging, Learning Loop (PR #34)
+
+| Item | PR | Status |
+|------|----|--------|
+| H7.4 SQLite thread-safety (`check_same_thread=False`, WAL, asyncio.Lock — 6 fișiere) | #34 | ✅ |
+| H7.6 Excepții silențioase curățate (20+ `except: pass` → `logger.warning`) | #34 | ✅ |
+| H7.11 Learning Loop (`agents/core/learning_loop.py`, job săptămânal, gated) | #34 | ✅ |
+
+### Wave C — Input Validation, Mock Removal, Cost Analytics (PR #38)
+
+| Item | PR | Status |
+|------|----|--------|
+| H7.5 Input validation Pydantic (message 4096, code 32KB, limit 1–200 → 422) | #38 | ✅ |
+| H7.7 Elimină mock data (`/tasks` empty, iot_control `_mock: true`) | #38 | ✅ |
+| H7.10 Cost & Usage Analytics (`cost_tracker.py`, `GET /api/analytics/cost`) | #38 | ✅ |
+
+### Wave D — Personal Memory Store (PR #37)
+
+| Item | PR | Status |
+|------|----|--------|
+| H8.1 Profile extractor (regex rules, `ProfileFact`, `process_conversation`) | #37 | ✅ |
+| H8.2 MemoryStore SQLite (`agents/core/memory/store.py`, upsert/get/search/delete) | #37 | ✅ |
+| H8.6 Weekly digest (`agents/core/memory/digest.py`, `generate_digest`) | #37 | ✅ |
+
+### Wave E — Recall HUD + Model Tier HUD (PR #43)
+
+| Item | PR | Status |
+|------|----|--------|
+| H8.3 Recall HUD (`GET /api/memory/profile`, `/api/memory/recall`, admin Memory tab) | #43 | ✅ |
+| H8.5 Model Tier HUD (`GET /api/analytics/model-tiers`, admin Cost tab) | #43 | ✅ |
+
+### Metrici sesiune
+
+| Metric | Valoare |
+|--------|---------|
+| PRs deschise | 15 (5 waves × 3 agenți paraleli max) |
+| PRs merged | 15 / 15 ✅ |
+| Teste noi | +192 (1100+ total) |
+| CI verde | ubuntu ✅ windows ✅ CodeQL ✅ |
+| BUG-1 (`_dashboard_cache` lock) | ✅ rezolvat (PR #36, wave externă) |
+| Versiune lansată | 0.9.1 → **1.0.0** |
+
+---
+
 ## Foundation — Sprint 0 + H1–H4 (v0.5-beta, Live ✅)
 
 ### H1 — Voice, Channels & OAuth

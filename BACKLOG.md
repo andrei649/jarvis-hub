@@ -5,7 +5,7 @@
 
 > **North Star (vision, principles, phase gates):** [MOONSHOT.md](MOONSHOT.md) — re-rank this backlog against it
 > **Go-Live Plan (features, roadmap, marketing brief):** [GO_LIVE_PLAN.md](GO_LIVE_PLAN.md)
-> **Delivery History (H1–H7 completed sprints):** [docs/HISTORY.md](docs/HISTORY.md)
+> **Delivery History (H1–H8 completed sprints):** [docs/HISTORY.md](docs/HISTORY.md)
 
 **S = story points (1 = ~jumătate de zi) · P = prioritate (P0–P3)**
 
@@ -14,7 +14,7 @@
 ```bash
 pip install -r requirements-beta.txt
 python -m uvicorn agents.web:app --host 127.0.0.1 --port 8080
-python -m pytest tests/ -v          # 909 passed, 9 skipped
+python -m pytest tests/ -v          # 1100+ passed, 9 skipped
 ```
 
 > Cele 8 skipped sunt din `tests/test_spotify.py` (pattern HTTP-router, opencode) care
@@ -33,13 +33,13 @@ python -m pytest tests/ -v          # 909 passed, 9 skipped
 | Version | Target | Milestone | Items |
 |---------|--------|-----------|-------|
 | **0.5-beta** | 🟢 Live | Foundation complete. All H1–H4, cross-cutting, security, bugs done. | H1–H4, Sprint 0, Cross-cutting, Sec, Bugs |
-| **0.6-beta** | Next | Howard fine-tuning + voice clone + continuous ingestion | H5.1 |
-| **0.7-beta** | Next | Mobile PWA + i18n + UI Overhaul | H5.2, H5.3, H5.4 |
-| **0.8-beta** | Next | Performance & robustness + multi-agent workflows | H5.5, H5.6 |
-| **0.9-beta** | Next | New integrations + agent marketplace | H5.7, H5.8 |
-| **0.9.1-beta** | 🟢 Live | Recall cu embeddings reale + perf cale fierbinte | H7.1–H7.5 |
-| **1.0.0** | 🎯 Stable | All H5/H7 done, documented, CI/CD, onboarding docs | All above + ARCHITECTURE.md |
-| **1.1.0** | Next | Memorie personală — „Jarvis te cunoaște" | ORIZONT 8 (H8.x) |
+| **0.6-beta** | 🟢 Live | Howard fine-tuning + voice clone + continuous ingestion | H5.1 |
+| **0.7-beta** | 🟢 Live | Mobile PWA + i18n + UI Overhaul | H5.2, H5.3, H5.4 |
+| **0.8-beta** | 🟢 Live | Performance & robustness + multi-agent workflows | H5.5, H5.6 |
+| **0.9-beta** | 🟢 Live | New integrations + agent marketplace | H5.7, H5.8 |
+| **0.9.1-beta** | 🟢 Live | Recall cu embeddings reale + perf cale fierbinte | H7.1–H7.5 (perf) |
+| **1.0.0** | 🟢 **Live** | Hardening complet, CI/CD, memorie personală, cost analytics, onboarding | H7 (11 iteme) + H8 (7 iteme) + BUG-1 |
+| **1.1.0** | 🎯 Next | Frontend test coverage + Competitive Edge | BUG-2, H10 (parțial) |
 | **2.0.0** | Later | Platform parity — desktop app, Rust hot-path, WASM sandbox, training | ORIZONT 11 (H11.x) |
 
 ---
@@ -52,19 +52,20 @@ python -m pytest tests/ -v          # 909 passed, 9 skipped
 | **H5 Next Wave** (P2–P3) | 17 | **17** | 128 | **128** | **100%** |
 | **H6 Jarvis Autonom** (P1) | 7 | **7** | 60 | **60** | **100%** |
 | **H7 Perf Cale Fierbinte** (P1–P2) | 5 | **5** | 16 | **16** | **100%** |
-| **H8 Memorie Personală** (P1–P3) | 7 | **0** | 43 | **0** | **0%** |
+| **H7 Hardening & Release Readiness** (P0–P2) | 11 | **11** | 51 | **51** | **100%** |
+| **H8 Memorie Personală** (P1–P3) | 7 | **7** | 48 | **48** | **100%** |
 | **H9 Agent Ops: Workflows & Observability** (P2) | 3 | **3** | 29 | **29** | **100%** |
 | **H10 Competitive Edge** (P1–P3) | 30 | **0** | 188 | **0** | **0%** |
 | **H11 Platform Parity** (Known Gaps, P3) | 4 | **0** | 55 | **0** | **0%** |
-| **Total general** | **140** | **99** | **767** | **481** | **63%** |
+| **Total general** | **151** | **117** | **823** | **580** | **71%** |
 
-**Test count:** 909 passed, 9 skipped (2026-06-02: +ORIZONT 7 — perf_hotpath 9, recall_cache 6, model_tiering 19; + recall cu embeddings reale & RAG injection)
+**Test count:** 1100+ passed, 9 skipped (2026-06-02: +H7 hardening 192 teste noi; +H8 memorie 16 teste noi)
 
-> **Orizont 7 (PROPUS) — Drumul spre 1.0.0:** 11 stories, ~51 SP, **0%**. Vezi secțiunea de mai jos.
+> **Orizont 7 Hardening — Drumul spre 1.0.0:** 11/11 COMPLET ✅ (livrat 2026-06-02)
 
 ---
 
-## 📋 PROPUS: ORIZONT 7 — Drumul spre 1.0.0 (Hardening, Release Readiness & Observability) — 0/11
+## ✅ ORIZONT 7 — Drumul spre 1.0.0 (Hardening, Release Readiness & Observability) — 11/11 COMPLET
 
 > Backlog-ul de features e la 100% (H1–H6). Faza spre **1.0.0 stable** nu adaugă scope orizontal —
 > face produsul **de încredere, testabil, documentat și măsurabil**. Bazat pe auditul multi-agent
