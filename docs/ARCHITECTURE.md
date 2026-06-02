@@ -7,8 +7,8 @@
 ## 1. TL;DR / Orientation
 
 - Local-first multi-agent AI orchestration. Python 3.12 + FastAPI + LM Studio (port 1234).
-- 15 active agents (4 tiers), 15 bench agents (dormant, promotable at runtime).
-- Single entry point for web: `serve.py` → `agents/web.py` (FastAPI `app`).
+- 16 active agents (4 tiers), 17 bench agents (dormant, promotable at runtime).
+- Single entry point for web: `serve.py` → `agents/web.py` (FastAPI `app`); uvicorn binds on port 8000.
 - CLI REPL entry point: `agents/run.py` → `Orchestrator.handle_input`.
 - Everything routes through `agents/core/orchestrator.py:Orchestrator`.
 - Memory is the heart: `agents/core/memory/` — conversation + vector + graph + RRF fusion.
@@ -66,7 +66,7 @@ When on: embeds the query, runs fused recall (vector ⊕ graph), injects top-k a
 |------|---------|-------------|
 | `agents/serve.py` | Uvicorn launcher | `app` import from `agents/web.py` |
 | `agents/run.py` | CLI REPL | `main()` |
-| `agents/web.py` | FastAPI app, lifespan, all HTTP endpoints | `app`, `lifespan`, `orch` global |
+| `agents/web.py` | FastAPI app, lifespan, all HTTP endpoints (88 routes) | `app`, `lifespan`, `orch` global |
 | `agents/core/orchestrator.py` | Main loop | `Orchestrator`, `handle_input`, `handle_input_stream`, `_maybe_checkpoint` |
 | `agents/core/agent.py` | Single agent runtime | `Agent`, `Agent.process`, `Agent.synthesize`, `Agent._load_soul` |
 | `agents/core/router.py` | Intent classifier | `IntentRouter.classify`, `Intent`, `INTENT_RULES` |
@@ -211,7 +211,9 @@ Built-in skills: `brief`, `calendar`, `content`, `email_triage`, `family_store`,
 | `agents/core/plugin_gate.py` | Per-agent plugin permission | `PermissionGate.check_call` |
 | `agents/core/learning/loop.py` | Agent health + promotion loop | `LearningLoop.record`, `rank_candidates`, `suggest_promotions`, `is_unhealthy` |
 | `agents/core/mcp/client.py` | MCP client (stdio/SSE) | `MCPManager`, `MCPServer.connect`, `MCPTool` |
-| `agents/core/workflows/` | Multi-agent workflow engine | `WorkflowEngine`, `WorkflowRegistry`, `Pipeline`, `WorkflowStep` |
+| `agents/core/workflows/` | Multi-agent workflow engine | `WorkflowEngine` (engine.py), `WorkflowRegistry` (registry.py), `Pipeline`, `WorkflowStep` (pipeline.py), storage (storage.py) |
+| `agents/core/observability/tracer.py` | Request tracing | `Tracer`, trace context |
+| `agents/core/observability/eval.py` | LLM evaluation harness | `EvalRunner` |
 
 ### Agent Registry
 
@@ -229,7 +231,7 @@ Built-in skills: `brief`, `calendar`, `content`, `email_triage`, `family_store`,
 ConversationMemory  — session-scoped turns in RAM + disk (JSONL)
 InMemoryVectorStore — 768-dim numpy cosine similarity (or QdrantVectorStore if VECTOR_BACKEND=qdrant)
 InMemoryGraph       — entity/relation store (or Neo4jGraph if NEO4J_URL set)
-Embedder            — LMStudio /v1/embeddings (default) or Ollama; hash fallback if unreachable
+Embedder            — LMStudio /v1/embeddings (default, recommended: mxbai-embed-large) or Ollama; hash fallback if unreachable
 ```
 
 ### Data flow
@@ -259,7 +261,7 @@ recall(query_text, top_k)
 |-------------|---------|--------|
 | `MEMORY_EMBED_TURNS` env | `false` | Auto-embed every turn into vector store |
 | `EMBED_BACKEND` env | `lmstudio` | `lmstudio` or `ollama` |
-| `EMBED_MODEL` env | `text-embedding-nomic-embed-text-v1.5` | Embedding model |
+| `EMBED_MODEL` env | `mxbai-embed-large` | Embedding model (H8.4: recommended quality model for LM Studio) |
 | `VECTOR_BACKEND` env | `memory` | `memory` or `qdrant` |
 | `memory.recall_enabled` | `false` | Inject recalled memories into every prompt |
 | `memory.recall_top_k` | `5` | Number of recall hits to inject |
@@ -356,6 +358,7 @@ Key env vars loaded at startup:
 ### Testing
 
 - **Framework:** pytest with `asyncio_mode = auto` (see `pytest.ini`) — all `async def test_*` run without decorators.
+- **Test count:** ~1082+ passing tests (3 pre-existing infrastructure failures unrelated to features: `test_settings_db` × 2, `test_system_monitor` temps — require psutil/real DB).
 - **sys.path pattern:** Every test file inserts `repo_root` and `repo_root/agents` at the top. Always use this, not relative imports.
 - **Offline by default:** Tests inject fake backends (e.g. `FakeBackend(LLMBackend)`, `FakeLMStudioClient`). No real network/LLM required.
 - **Orchestrator instantiation trick:** Avoid `Orchestrator(config)` in unit tests (heavy init). Use `Orchestrator.__new__(Orchestrator)` + manual attribute assignment, or mock the heavy dependencies.
@@ -468,7 +471,8 @@ Key env vars loaded at startup:
 serve.py                          Uvicorn launcher
 agents/
   run.py                          CLI REPL
-  web.py                          FastAPI app (40+ endpoints)
+  web.py                          FastAPI app (88 routes; uvicorn on port 8000)
+  web/                            Static assets for web dashboard (HTML/CSS/JS)
   _system/agents.yaml             Agent registry (canonical source of truth)
   core/
     orchestrator.py               Main loop
@@ -495,6 +499,7 @@ agents/
     mcp/                          MCP client (stdio/SSE)
     learning/                     Agent health tracking + promotions
     workflows/                    Multi-agent workflow engine
+    observability/                Request tracing + LLM eval harness
   jarvis/SOUL.md                  Agent identity prompt (repeat for each agent)
 skills/                           Skill packs (SKILL.md + main.py)
 memory_logs/                      All persistent state (SQLite, JSONL, cache)
