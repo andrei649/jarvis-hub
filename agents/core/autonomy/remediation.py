@@ -135,6 +135,7 @@ class RemediationRunner:
         try:
             return bool(self._probe_fn(cmd.verify_host, cmd.verify_port))
         except Exception:
+            logger.warning("Service probe failed for %s:%s", cmd.verify_host, cmd.verify_port, exc_info=True)
             return None
 
     async def _verify(self, cmd: ServiceCommand) -> Optional[bool]:
@@ -152,7 +153,7 @@ class RemediationRunner:
             try:
                 self.audit.log("autonomy.remediation", result)
             except Exception:
-                pass
+                logger.warning("Remediation audit log failed for service '%s'", service, exc_info=True)
         log = logger.info if status == "ok" else logger.warning
         log(f"restart_service {service}: {status} ({extra.get('reason', '')})".rstrip())
         return result

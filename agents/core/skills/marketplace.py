@@ -7,6 +7,7 @@ import io
 import json
 import logging
 import sqlite3
+import threading
 import zipfile
 from datetime import datetime, timezone
 from pathlib import Path
@@ -26,11 +27,16 @@ class SkillMarketplace:
         self.skills_dir.mkdir(parents=True, exist_ok=True)
         self.db_path = DB_PATH
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
+        # Guard concurrent publish/install from async task runners (H7.4).
+        self._lock = threading.Lock()
         self._init_db()
 
     def _init_db(self):
-        conn = sqlite3.connect(str(self.db_path))
+        # check_same_thread=False: marketplace methods may be called from
+        # asyncio.to_thread; the threading.Lock serialises all access (H7.4).
+        conn = sqlite3.connect(str(self.db_path), check_same_thread=False)
         try:
+            conn.execute("PRAGMA journal_mode=WAL")
             conn.execute("""
                 CREATE TABLE IF NOT EXISTS marketplace_skills (
                     name TEXT PRIMARY KEY,
@@ -73,26 +79,27 @@ class SkillMarketplace:
 
         zip_data = zip_buffer.getvalue()
 
-        conn = sqlite3.connect(str(self.db_path))
+        conn = sqlite3.connect(str(self.db_path), check_same_thread=False)
         try:
-            conn.execute(
-                """
-                INSERT OR REPLACE INTO marketplace_skills 
-                (name, version, description, author, agents, requires, package_zip, published_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-                """,
-                (
-                    manifest.get("name", skill_name),
-                    manifest.get("version", "0.1.0"),
-                    manifest.get("description", ""),
-                    manifest.get("author", "unknown"),
-                    ",".join(manifest.get("agents", [])),
-                    ",".join(manifest.get("requires", [])),
-                    zip_data,
-                    datetime.now(timezone.utc).isoformat()
+            with self._lock:
+                conn.execute(
+                    """
+                    INSERT OR REPLACE INTO marketplace_skills
+                    (name, version, description, author, agents, requires, package_zip, published_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        manifest.get("name", skill_name),
+                        manifest.get("version", "0.1.0"),
+                        manifest.get("description", ""),
+                        manifest.get("author", "unknown"),
+                        ",".join(manifest.get("agents", [])),
+                        ",".join(manifest.get("requires", [])),
+                        zip_data,
+                        datetime.now(timezone.utc).isoformat()
+                    )
                 )
-            )
-            conn.commit()
+                conn.commit()
         finally:
             conn.close()
 
@@ -108,12 +115,13 @@ class SkillMarketplace:
         """
         List all skills available in the marketplace registry.
         """
-        conn = sqlite3.connect(str(self.db_path))
+        conn = sqlite3.connect(str(self.db_path), check_same_thread=False)
         try:
             conn.row_factory = sqlite3.Row
-            rows = conn.execute(
-                "SELECT name, version, description, author, agents, requires, published_at FROM marketplace_skills"
-            ).fetchall()
+            with self._lock:
+                rows = conn.execute(
+                    "SELECT name, version, description, author, agents, requires, published_at FROM marketplace_skills"
+                ).fetchall()
             return [
                 {
                     "name": r["name"],
@@ -133,12 +141,13 @@ class SkillMarketplace:
         """
         Fetch dynamic skill package from database and extract it.
         """
-        conn = sqlite3.connect(str(self.db_path))
+        conn = sqlite3.connect(str(self.db_path), check_same_thread=False)
         try:
             conn.row_factory = sqlite3.Row
-            row = conn.execute(
-                "SELECT package_zip FROM marketplace_skills WHERE name = ?", (skill_name,)
-            ).fetchone()
+            with self._lock:
+                row = conn.execute(
+                    "SELECT package_zip FROM marketplace_skills WHERE name = ?", (skill_name,)
+                ).fetchone()
             if not row:
                 raise ValueError(f"Skill '{skill_name}' not found in registry database.")
             zip_data = row["package_zip"]

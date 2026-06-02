@@ -161,7 +161,10 @@ def _ensure_init():
 def get_conn() -> sqlite3.Connection:
     global _wal_set
     DB_PATH.parent.mkdir(parents=True, exist_ok=True)
-    conn = sqlite3.connect(str(DB_PATH))
+    # check_same_thread=False: settings reads/writes may be dispatched via
+    # asyncio.to_thread from the async hot path; a threading.Lock (_init_lock)
+    # serialises schema init. Individual callers close the connection promptly.
+    conn = sqlite3.connect(str(DB_PATH), check_same_thread=False)
     conn.row_factory = sqlite3.Row
     # WAL is a persistent database property — setting it once per process
     # is enough; re-issuing the PRAGMA on every connection is wasted work.

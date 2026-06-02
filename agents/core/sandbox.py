@@ -66,6 +66,7 @@ class Sandbox:
             )
             return result.returncode == 0
         except Exception:
+            logger.warning("Docker availability check failed — falling back to subprocess sandbox", exc_info=True)
             return False
 
     async def execute_python(self, code: str, filename: str = "script.py") -> SandboxResult:

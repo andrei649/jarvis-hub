@@ -130,7 +130,9 @@ class IngestionPipeline:
         return summary
 
     def _save_sqlite(self, db_path: Path):
-        conn = sqlite3.connect(str(db_path))
+        # check_same_thread=False: pipeline may run from asyncio.to_thread (H7.4).
+        conn = sqlite3.connect(str(db_path), check_same_thread=False)
+        conn.execute("PRAGMA journal_mode=WAL")
         conn.execute("""
             CREATE TABLE IF NOT EXISTS messages (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -189,7 +191,8 @@ class IngestionPipeline:
             logger.warning(f"SQLite database {db_path} does not exist. Cannot load messages.")
             return
         try:
-            conn = sqlite3.connect(str(db_path))
+            conn = sqlite3.connect(str(db_path), check_same_thread=False)
+            conn.execute("PRAGMA journal_mode=WAL")
             cursor = conn.execute("SELECT source, conversation_id, sender, is_me, text, timestamp, metadata FROM messages")
             self.messages = []
             for row in cursor:
