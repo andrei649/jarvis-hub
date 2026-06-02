@@ -1,4 +1,7 @@
 .venv/
+node_modules/
+.nyc_output/
+coverage/
 __pycache__/
 *.pyc
 .env

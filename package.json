@@ -1,0 +1,16 @@
+{
+  "name": "jarvis-hub-hud-tests",
+  "private": true,
+  "description": "Frontend (HUD) test tooling for Jarvis Hub. Dev-only: the HUD ships as vendored global scripts loaded via <script> tags (no bundler / no build step), so these tests exercise the real shipped artifacts inside JSDOM.",
+  "scripts": {
+    "test": "vitest run tests/frontend",
+    "test:watch": "vitest tests/frontend",
+    "test:coverage": "node tests/frontend/coverage.mjs"
+  },
+  "devDependencies": {
+    "istanbul-lib-instrument": "^6.0.3",
+    "jsdom": "^25.0.1",
+    "nyc": "^18.0.0",
+    "vitest": "^2.1.8"
+  }
+}

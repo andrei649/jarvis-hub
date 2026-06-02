@@ -41,3 +41,18 @@ jobs:
         run: python -m pytest tests/ --timeout=90 -q --tb=short
         env:
           JARVIS_TESTING: "1"
+
+  frontend:
+    # HUD (React-via-globals) unit tests. Runs the real shipped static
+    # artifacts inside JSDOM — see tests/frontend/README.md.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+      - run: npm ci
+      # Runs the suite instrumented, reports coverage, and fails if line
+      # coverage regresses below the BUG-2 target (60%).
+      - run: npm run test:coverage
