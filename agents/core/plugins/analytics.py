@@ -7,7 +7,7 @@ import json
 import logging
 from typing import Optional
 
-import httpx
+from ..http_client import PluginHTTPClient
 
 logger = logging.getLogger("jarvis.stark.analytics")
 
@@ -37,7 +37,7 @@ MOCK_CAMPAIGNS = {
 
 class AnalyticsPlugin:
     def __init__(self, ga4_service_account: str = "", ga4_property_id: str = ""):
-        self.client = httpx.AsyncClient(timeout=30.0)
+        self.client = PluginHTTPClient.for_plugin("analytics")
         self._sa = self._parse_service_account(ga4_service_account) if ga4_service_account else None
         self.property_id = ga4_property_id
 
@@ -125,4 +125,4 @@ class AnalyticsPlugin:
         return resp.json().get("access_token", "")
 
     async def close(self):
-        await self.client.aclose()
+        await self.client.close()

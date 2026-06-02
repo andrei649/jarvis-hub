@@ -8,8 +8,7 @@ Uses the Spotify Web API with OAuth token.
 import logging
 from typing import Optional
 
-import httpx
-
+from ..http_client import PluginHTTPClient
 from .oauth import refresh_spotify_token, load_token
 from ..resilience import resilient_call
 
@@ -24,7 +23,7 @@ class SpotifyPlugin:
         self.client_id = client_id
         self.client_secret = client_secret
         self.api_base = "https://api.spotify.com/v1"
-        self.client = httpx.AsyncClient(timeout=15.0)
+        self.client = PluginHTTPClient.for_plugin("spotify")
 
     def _headers(self) -> dict:
         return {"Authorization": f"Bearer {self.access_token}"}
@@ -144,4 +143,4 @@ class SpotifyPlugin:
             return []
 
     async def close(self):
-        await self.client.aclose()
+        await self.client.close()

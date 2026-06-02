@@ -11,6 +11,8 @@ from typing import Optional
 
 import httpx
 
+from ..http_client import PluginHTTPClient
+
 logger = logging.getLogger("jarvis.plugins.homebridge")
 
 
@@ -19,7 +21,7 @@ class HomebridgePlugin:
         self.bridge_url = bridge_url.rstrip("/")
         self.api_token = api_token
         self.api_base = f"{self.bridge_url}/api"
-        self.client = httpx.AsyncClient(timeout=10.0)
+        self.client = PluginHTTPClient.for_plugin("homebridge")
 
     def _headers(self) -> dict:
         headers = {"Content-Type": "application/json"}
@@ -108,4 +110,4 @@ class HomebridgePlugin:
             return {"error": str(e), "reachable": False}
 
     async def close(self):
-        await self.client.aclose()
+        await self.client.close()

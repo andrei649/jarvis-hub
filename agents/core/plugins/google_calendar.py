@@ -10,8 +10,7 @@ import logging
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 
-import httpx
-
+from ..http_client import PluginHTTPClient
 from .oauth import refresh_google_token, load_token
 from ..resilience import resilient_call
 
@@ -23,7 +22,7 @@ class GoogleCalendarPlugin:
         self.access_token = access_token
         self.calendar_id = calendar_id
         self.api_base = "https://www.googleapis.com/calendar/v3"
-        self.client = httpx.AsyncClient(timeout=15.0)
+        self.client = PluginHTTPClient.for_plugin("google_calendar")
 
     def _headers(self) -> dict:
         return {"Authorization": f"Bearer {self.access_token}"}
@@ -197,7 +196,7 @@ class GoogleCalendarPlugin:
         return await self.list_events(days_ahead=1)
 
     async def close(self):
-        await self.client.aclose()
+        await self.client.close()
 
     @staticmethod
     def _parse_ts(ts_str: str) -> Optional[float]:

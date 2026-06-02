@@ -9,6 +9,7 @@ from typing import Optional
 
 import httpx
 
+from ..http_client import PluginHTTPClient
 from ..security.ssrf import check_ssrf
 
 logger = logging.getLogger("jarvis.plugins.websearch")
@@ -18,6 +19,7 @@ class WebSearchPlugin:
     def __init__(self, tavily_api_key: str = "", searxng_url: str = ""):
         self.tavily_api_key = tavily_api_key
         self.searxng_url = searxng_url
+        self._client = PluginHTTPClient.for_plugin("websearch")
 
     async def search(self, query: str, max_results: int = 5) -> list[dict]:
         if self.tavily_api_key:
@@ -28,60 +30,57 @@ class WebSearchPlugin:
 
     async def _search_tavily(self, query: str, max_results: int) -> list[dict]:
         try:
-            async with httpx.AsyncClient(timeout=15.0) as client:
-                resp = await client.post(
-                    "https://api.tavily.com/search",
-                    json={"api_key": self.tavily_api_key, "query": query, "max_results": max_results},
-                )
-                resp.raise_for_status()
-                data = resp.json()
-                return [
-                    {"title": r.get("title", ""), "url": r.get("url", ""), "snippet": r.get("content", "")}
-                    for r in data.get("results", [])
-                ]
+            resp = await self._client.post(
+                "https://api.tavily.com/search",
+                json={"api_key": self.tavily_api_key, "query": query, "max_results": max_results},
+            )
+            resp.raise_for_status()
+            data = resp.json()
+            return [
+                {"title": r.get("title", ""), "url": r.get("url", ""), "snippet": r.get("content", "")}
+                for r in data.get("results", [])
+            ]
         except Exception as e:
             logger.error(f"Tavily search error: {e}")
             return []
 
     async def _search_searxng(self, query: str, max_results: int) -> list[dict]:
         try:
-            async with httpx.AsyncClient(timeout=15.0) as client:
-                resp = await client.get(
-                    f"{self.searxng_url}/search",
-                    params={"q": query, "format": "json", "number_of_results": max_results},
-                )
-                resp.raise_for_status()
-                data = resp.json()
-                return [
-                    {"title": r.get("title", ""), "url": r.get("url", ""), "snippet": r.get("content", "")}
-                    for r in data.get("results", [])[:max_results]
-                ]
+            resp = await self._client.get(
+                f"{self.searxng_url}/search",
+                params={"q": query, "format": "json", "number_of_results": max_results},
+            )
+            resp.raise_for_status()
+            data = resp.json()
+            return [
+                {"title": r.get("title", ""), "url": r.get("url", ""), "snippet": r.get("content", "")}
+                for r in data.get("results", [])[:max_results]
+            ]
         except Exception as e:
             logger.error(f"SearXNG search error: {e}")
             return []
 
     async def _search_duckduckgo(self, query: str, max_results: int) -> list[dict]:
         try:
-            async with httpx.AsyncClient(timeout=15.0) as client:
-                resp = await client.get(
-                    "https://html.duckduckgo.com/html/",
-                    params={"q": query},
-                    headers={"User-Agent": "Mozilla/5.0"},
-                )
-                resp.raise_for_status()
-                from bs4 import BeautifulSoup
-                soup = BeautifulSoup(resp.text, "html.parser")
-                results = []
-                for r in soup.select(".result")[:max_results]:
-                    title_el = r.select_one(".result__title a")
-                    snippet_el = r.select_one(".result__snippet")
-                    if title_el:
-                        results.append({
-                            "title": title_el.get_text(strip=True),
-                            "url": title_el.get("href", ""),
-                            "snippet": snippet_el.get_text(strip=True) if snippet_el else "",
-                        })
-                return results
+            resp = await self._client.get(
+                "https://html.duckduckgo.com/html/",
+                params={"q": query},
+                headers={"User-Agent": "Mozilla/5.0"},
+            )
+            resp.raise_for_status()
+            from bs4 import BeautifulSoup
+            soup = BeautifulSoup(resp.text, "html.parser")
+            results = []
+            for r in soup.select(".result")[:max_results]:
+                title_el = r.select_one(".result__title a")
+                snippet_el = r.select_one(".result__snippet")
+                if title_el:
+                    results.append({
+                        "title": title_el.get_text(strip=True),
+                        "url": title_el.get("href", ""),
+                        "snippet": snippet_el.get_text(strip=True) if snippet_el else "",
+                    })
+            return results
         except ImportError:
             logger.warning("BeautifulSoup not installed — DuckDuckGo search unavailable")
             return []
@@ -96,7 +95,8 @@ class WebSearchPlugin:
             logger.warning(f"Blocked page fetch (SSRF): {blocked}")
             return None
         try:
-            # max_redirects caps redirect chains; each hop is re-checked below.
+            # fetch_page needs follow_redirects + max_redirects — use a one-off client
+            # so we can pass those options without affecting the shared client.
             async with httpx.AsyncClient(timeout=30.0, follow_redirects=True, max_redirects=5) as client:
                 resp = await client.get(url, headers={"User-Agent": "Mozilla/5.0"})
                 # A redirect could land on an internal host — re-validate final URL.
@@ -119,4 +119,4 @@ class WebSearchPlugin:
             return None
 
     async def close(self):
-        pass
+        await self._client.close()

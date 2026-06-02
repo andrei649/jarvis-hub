@@ -1,6 +1,8 @@
 """Tests for N8NPlugin (H4.6 — Oracle n8n Workflow Designer).
 
 All HTTP calls are mocked — no real n8n instance required.
+Updated for H7.3: mocking is now via PluginHTTPClient instead of httpx.AsyncClient
+context manager (the plugin no longer creates per-call context managers).
 """
 
 import sys
@@ -14,6 +16,7 @@ sys.path.insert(0, str(repo_root))
 sys.path.insert(0, str(repo_root / "agents"))
 
 from core.plugins.n8n import N8NPlugin, _NOT_CONFIGURED
+from agents.core.http_client import _clients as _http_registry
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -21,6 +24,14 @@ from core.plugins.n8n import N8NPlugin, _NOT_CONFIGURED
 
 BASE_URL = "http://localhost:5678"
 API_KEY = "test-api-key-abc123"
+
+
+@pytest.fixture(autouse=True)
+def clear_http_registry():
+    """Ensure a fresh PluginHTTPClient for every test."""
+    _http_registry.pop("n8n", None)
+    yield
+    _http_registry.pop("n8n", None)
 
 
 @pytest.fixture
@@ -44,14 +55,22 @@ def _mock_response(status_code: int = 200, json_data: dict = None) -> MagicMock:
     return resp
 
 
-def _mock_client(method: str, response: MagicMock) -> AsyncMock:
-    """Return an async context manager mock whose given HTTP method returns response."""
-    client = AsyncMock()
-    getattr(client, method).return_value = response
-    cm = MagicMock()
-    cm.__aenter__ = AsyncMock(return_value=client)
-    cm.__aexit__ = AsyncMock(return_value=False)
-    return cm
+def _inject_mock_client(plugin: N8NPlugin, method: str, response: MagicMock):
+    """Inject an AsyncMock into the plugin's PluginHTTPClient._client for *method*."""
+    mock_httpx = MagicMock()
+    mock_httpx.is_closed = False
+    setattr(mock_httpx, method, AsyncMock(return_value=response))
+    plugin._client._client = mock_httpx
+    return mock_httpx
+
+
+def _inject_error_client(plugin: N8NPlugin, method: str, exc):
+    """Inject an AsyncMock that raises *exc* for *method*."""
+    mock_httpx = MagicMock()
+    mock_httpx.is_closed = False
+    setattr(mock_httpx, method, AsyncMock(side_effect=exc))
+    plugin._client._client = mock_httpx
+    return mock_httpx
 
 
 # ---------------------------------------------------------------------------
@@ -88,15 +107,14 @@ async def test_daily_weather_not_configured(unconfigured_plugin):
 async def test_list_workflows_hits_correct_url(plugin):
     workflows_data = {"data": [{"id": "wf-1", "name": "Test WF"}]}
     resp = _mock_response(200, workflows_data)
-    cm = _mock_client("get", resp)
+    mock_httpx = _inject_mock_client(plugin, "get", resp)
 
-    with patch("httpx.AsyncClient", return_value=cm):
-        result = await plugin.list_workflows()
+    result = await plugin.list_workflows()
 
     assert result["ok"] is True
     assert result["data"] == workflows_data
-    cm.__aenter__.return_value.get.assert_called_once()
-    call_args = cm.__aenter__.return_value.get.call_args
+    mock_httpx.get.assert_called_once()
+    call_args = mock_httpx.get.call_args
     assert call_args[0][0] == f"{BASE_URL}/api/v1/workflows"
     headers = call_args[1]["headers"]
     assert headers["X-N8N-API-KEY"] == API_KEY
@@ -109,13 +127,12 @@ async def test_list_workflows_hits_correct_url(plugin):
 async def test_get_workflow_hits_correct_url(plugin):
     wf_data = {"id": "wf-42", "name": "My Workflow"}
     resp = _mock_response(200, wf_data)
-    cm = _mock_client("get", resp)
+    mock_httpx = _inject_mock_client(plugin, "get", resp)
 
-    with patch("httpx.AsyncClient", return_value=cm):
-        result = await plugin.get_workflow("wf-42")
+    result = await plugin.get_workflow("wf-42")
 
     assert result["ok"] is True
-    url = cm.__aenter__.return_value.get.call_args[0][0]
+    url = mock_httpx.get.call_args[0][0]
     assert url == f"{BASE_URL}/api/v1/workflows/wf-42"
 
 
@@ -126,15 +143,14 @@ async def test_get_workflow_hits_correct_url(plugin):
 async def test_get_executions_passes_workflow_id(plugin):
     exec_data = {"data": [{"id": "exec-1", "status": "success"}]}
     resp = _mock_response(200, exec_data)
-    cm = _mock_client("get", resp)
+    mock_httpx = _inject_mock_client(plugin, "get", resp)
 
-    with patch("httpx.AsyncClient", return_value=cm):
-        result = await plugin.get_executions("wf-99", limit=5)
+    result = await plugin.get_executions("wf-99", limit=5)
 
     assert result["ok"] is True
-    url = cm.__aenter__.return_value.get.call_args[0][0]
+    url = mock_httpx.get.call_args[0][0]
     assert url == f"{BASE_URL}/api/v1/executions"
-    params = cm.__aenter__.return_value.get.call_args[1]["params"]
+    params = mock_httpx.get.call_args[1]["params"]
     assert params["workflowId"] == "wf-99"
     assert params["limit"] == 5
 
@@ -146,23 +162,21 @@ async def test_get_executions_passes_workflow_id(plugin):
 async def test_create_workflow_posts_to_correct_url(plugin):
     created = {"id": "new-wf", "name": "Test Create"}
     resp = _mock_response(200, created)
-    cm = _mock_client("post", resp)
+    mock_httpx = _inject_mock_client(plugin, "post", resp)
 
     nodes = [{"id": "n1", "name": "Node1", "type": "n8n-nodes-base.scheduleTrigger"}]
     connections = {"Node1": {"main": []}}
 
-    with patch("httpx.AsyncClient", return_value=cm):
-        result = await plugin.create_workflow("Test Create", nodes, connections)
+    result = await plugin.create_workflow("Test Create", nodes, connections)
 
     assert result["ok"] is True
     assert result["data"] == created
-    post_mock = cm.__aenter__.return_value.post
-    post_mock.assert_called_once()
-    url = post_mock.call_args[0][0]
+    mock_httpx.post.assert_called_once()
+    url = mock_httpx.post.call_args[0][0]
     assert url == f"{BASE_URL}/api/v1/workflows"
-    headers = post_mock.call_args[1]["headers"]
+    headers = mock_httpx.post.call_args[1]["headers"]
     assert headers["X-N8N-API-KEY"] == API_KEY
-    body = post_mock.call_args[1]["json"]
+    body = mock_httpx.post.call_args[1]["json"]
     assert body["name"] == "Test Create"
     assert body["nodes"] == nodes
     assert body["connections"] == connections
@@ -174,28 +188,25 @@ async def test_create_workflow_posts_to_correct_url(plugin):
 
 async def test_activate_workflow_patches_correct_url(plugin):
     resp = _mock_response(200, {"id": "wf-7", "active": True})
-    cm = _mock_client("patch", resp)
+    mock_httpx = _inject_mock_client(plugin, "patch", resp)
 
-    with patch("httpx.AsyncClient", return_value=cm):
-        result = await plugin.activate_workflow("wf-7")
+    result = await plugin.activate_workflow("wf-7")
 
     assert result["ok"] is True
-    patch_mock = cm.__aenter__.return_value.patch
-    url = patch_mock.call_args[0][0]
+    url = mock_httpx.patch.call_args[0][0]
     assert url == f"{BASE_URL}/api/v1/workflows/wf-7"
-    body = patch_mock.call_args[1]["json"]
+    body = mock_httpx.patch.call_args[1]["json"]
     assert body == {"active": True}
 
 
 async def test_deactivate_workflow_sends_active_false(plugin):
     resp = _mock_response(200, {"id": "wf-7", "active": False})
-    cm = _mock_client("patch", resp)
+    mock_httpx = _inject_mock_client(plugin, "patch", resp)
 
-    with patch("httpx.AsyncClient", return_value=cm):
-        result = await plugin.deactivate_workflow("wf-7")
+    result = await plugin.deactivate_workflow("wf-7")
 
     assert result["ok"] is True
-    body = cm.__aenter__.return_value.patch.call_args[1]["json"]
+    body = mock_httpx.patch.call_args[1]["json"]
     assert body == {"active": False}
 
 
@@ -240,15 +251,13 @@ def test_build_daily_weather_workflow_custom_city(plugin):
 async def test_create_daily_weather_workflow_calls_post(plugin):
     created = {"id": "wf-weather-1", "name": "Daily Weather — Bucharest", "active": False}
     resp = _mock_response(200, created)
-    cm = _mock_client("post", resp)
+    mock_httpx = _inject_mock_client(plugin, "post", resp)
 
-    with patch("httpx.AsyncClient", return_value=cm):
-        result = await plugin.create_daily_weather_workflow("Bucharest")
+    result = await plugin.create_daily_weather_workflow("Bucharest")
 
     assert result["ok"] is True
     assert result["data"]["id"] == "wf-weather-1"
-    post_mock = cm.__aenter__.return_value.post
-    body = post_mock.call_args[1]["json"]
+    body = mock_httpx.post.call_args[1]["json"]
     assert "Daily Weather" in body["name"]
     assert "Bucharest" in body["name"]
     # Must have exactly 2 nodes
@@ -261,25 +270,18 @@ async def test_create_daily_weather_workflow_calls_post(plugin):
 
 async def test_list_workflows_n8n_down(plugin):
     import httpx as httpx_mod
+    _inject_error_client(plugin, "get", httpx_mod.ConnectError("Connection refused"))
 
-    cm = MagicMock()
-    cm.__aenter__ = AsyncMock(side_effect=httpx_mod.ConnectError("Connection refused"))
-    cm.__aexit__ = AsyncMock(return_value=False)
-
-    with patch("httpx.AsyncClient", return_value=cm):
-        result = await plugin.list_workflows()
+    result = await plugin.list_workflows()
 
     assert result["ok"] is False
     assert "unreachable" in result["error"] or "Connection refused" in result["error"]
 
 
 async def test_create_workflow_generic_exception(plugin):
-    cm = MagicMock()
-    cm.__aenter__ = AsyncMock(side_effect=Exception("unexpected"))
-    cm.__aexit__ = AsyncMock(return_value=False)
+    _inject_error_client(plugin, "post", Exception("unexpected"))
 
-    with patch("httpx.AsyncClient", return_value=cm):
-        result = await plugin.create_workflow("WF", [], {})
+    result = await plugin.create_workflow("WF", [], {})
 
     assert result["ok"] is False
     assert "unexpected" in result["error"]

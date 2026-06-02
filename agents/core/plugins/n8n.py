@@ -12,7 +12,7 @@ import logging
 import os
 from typing import Any
 
-import httpx
+from ..http_client import PluginHTTPClient
 
 logger = logging.getLogger("jarvis.plugins.n8n")
 
@@ -21,12 +21,16 @@ _NOT_CONFIGURED = (
 )
 
 
+import httpx
+
+
 class N8NPlugin:
     """Async client for the n8n public REST API v1."""
 
     def __init__(self, base_url: str = "", api_key: str = ""):
         self.base_url = (base_url or os.getenv("N8N_BASE_URL", "")).rstrip("/")
         self.api_key = api_key or os.getenv("N8N_API_KEY", "")
+        self._client = PluginHTTPClient.for_plugin("n8n")
 
     # ── helpers ────────────────────────────────────────────────────
 
@@ -41,10 +45,9 @@ class N8NPlugin:
             return {"ok": False, "error": _NOT_CONFIGURED}
         url = f"{self.base_url}/api/v1{path}"
         try:
-            async with httpx.AsyncClient(timeout=15.0) as client:
-                resp = await client.get(url, headers=self._headers(), params=params or {})
-                resp.raise_for_status()
-                return {"ok": True, "data": resp.json()}
+            resp = await self._client.get(url, headers=self._headers(), params=params or {})
+            resp.raise_for_status()
+            return {"ok": True, "data": resp.json()}
         except httpx.ConnectError as e:
             logger.warning("n8n connection error: %s", e)
             return {"ok": False, "error": f"n8n unreachable: {e}"}
@@ -60,10 +63,9 @@ class N8NPlugin:
             return {"ok": False, "error": _NOT_CONFIGURED}
         url = f"{self.base_url}/api/v1{path}"
         try:
-            async with httpx.AsyncClient(timeout=15.0) as client:
-                resp = await client.post(url, headers=self._headers(), json=body)
-                resp.raise_for_status()
-                return {"ok": True, "data": resp.json()}
+            resp = await self._client.post(url, headers=self._headers(), json=body)
+            resp.raise_for_status()
+            return {"ok": True, "data": resp.json()}
         except httpx.ConnectError as e:
             logger.warning("n8n connection error: %s", e)
             return {"ok": False, "error": f"n8n unreachable: {e}"}
@@ -79,10 +81,9 @@ class N8NPlugin:
             return {"ok": False, "error": _NOT_CONFIGURED}
         url = f"{self.base_url}/api/v1{path}"
         try:
-            async with httpx.AsyncClient(timeout=15.0) as client:
-                resp = await client.patch(url, headers=self._headers(), json=body)
-                resp.raise_for_status()
-                return {"ok": True, "data": resp.json()}
+            resp = await self._client.patch(url, headers=self._headers(), json=body)
+            resp.raise_for_status()
+            return {"ok": True, "data": resp.json()}
         except httpx.ConnectError as e:
             logger.warning("n8n connection error: %s", e)
             return {"ok": False, "error": f"n8n unreachable: {e}"}

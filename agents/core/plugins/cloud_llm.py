@@ -9,8 +9,7 @@ Only enabled for approved agents: jarvis, athena, stark, vision, veronica.
 import logging
 from typing import Optional
 
-import httpx
-
+from ..http_client import PluginHTTPClient, PluginTimeouts
 from ..resilience import resilient_call
 
 logger = logging.getLogger("jarvis.plugins.cloud_llm")
@@ -23,7 +22,11 @@ class CloudLLMPlugin:
         self.anthropic_key = anthropic_key
         self.openai_key = openai_key
         self.gemini_key = gemini_key
-        self.client = httpx.AsyncClient(timeout=120.0)
+        # Cloud LLM calls can be slow — use extended read timeout
+        self.client = PluginHTTPClient.for_plugin(
+            "cloud_llm",
+            timeouts=PluginTimeouts(connect=5.0, read=120.0, total=120.0),
+        )
         self._prefer = "anthropic" if anthropic_key else "gemini" if gemini_key else "openai" if openai_key else None
 
     async def generate(self, prompt: str, system: str = "",
@@ -141,4 +144,4 @@ class CloudLLMPlugin:
         return bool(self.anthropic_key or self.openai_key or self.gemini_key)
 
     async def close(self):
-        await self.client.aclose()
+        await self.client.close()

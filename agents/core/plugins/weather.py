@@ -1,7 +1,6 @@
 import logging
 
-import httpx
-
+from ..http_client import PluginHTTPClient
 from ..resilience import resilient_call
 
 logger = logging.getLogger("jarvis.plugins.weather")
@@ -9,7 +8,7 @@ logger = logging.getLogger("jarvis.plugins.weather")
 
 class WeatherPlugin:
     def __init__(self):
-        self.client = httpx.AsyncClient(timeout=10.0)
+        self.client = PluginHTTPClient.for_plugin("weather")
 
     @resilient_call(
         max_retries=2,
@@ -46,4 +45,4 @@ class WeatherPlugin:
         return text if text else f"Forecast unavailable for '{location or 'current location'}'."
 
     async def close(self):
-        await self.client.aclose()
+        await self.client.close()
