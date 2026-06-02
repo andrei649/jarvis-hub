@@ -3,6 +3,8 @@
 > Owner: Andrei · Planificat: 2026-05-30 · Echipă: agenți Claude + opencode
 > HUD: http://127.0.0.1:8080/ · Admin: /admin
 
+> **Go-Live Plan (features, roadmap, marketing brief):** [GO_LIVE_PLAN.md](GO_LIVE_PLAN.md)
+
 **S = story points (1 = ~jumătate de zi) · P = prioritate (P0–P3)**
 
 ## Run
