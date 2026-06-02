@@ -684,6 +684,10 @@ class Orchestrator:
         max_tokens = self.get_setting("llm.max_tokens", 1024)
         context_window = self.get_setting("memory.context_window", 6)
         synthesized = ""
+        # Pre-bind so the post-loop persist/audit never hit UnboundLocalError when
+        # `target` is empty (e.g. _route_candidates returns nothing).
+        agent_id = None
+        t_s0 = time.perf_counter()
         for agent_id in target:
             if agent_id in self.agents:
                 agent = self.agents[agent_id]

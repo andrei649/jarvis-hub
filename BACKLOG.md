@@ -114,7 +114,7 @@ python -m pytest tests/ -v          # 784 passed, 9 skipped
 
 | # | Item | S | Dep | Target version |
 |---|------|---|-----|---------------|
-| H5.1 | Howard: fine-tuning + voice clone + continuous ingestion | 13 | — | 0.6 |
+| H5.1 | Howard: fine-tuning + voice clone + continuous ingestion (arhivă personală: Facebook + WhatsApp → LLM antrenat pe conversațiile lui Andrei) | 13 | — | 0.6 |
 | H5.2 ✅ | **Mobile HUD / PWA** (responsive, offline, push) | 8 | — | 0.7 ✅ |
 | H5.3 ✅ | **Multi-Language / i18n (RO/EN switch)** | 5 | — | 0.7 ✅ |
 | H5.4 ✅ | **UI Overhaul (teme, layout, accesibilitate)** | 8 | H5.2 | 0.7 ✅ |
@@ -179,11 +179,13 @@ python -m pytest tests/ -v          # 784 passed, 9 skipped
 
 > **Tech-debt notat (2026-06-02):** `README.md` rămăsese în urmă (test count 181/39, v0.2.1, linia Memory fără embeddings/graph) — actualizat în această sesiune. De ținut sincron pe viitor.
 >
-> **Inconsistențe găsite la scrierea `docs/ARCHITECTURE.md` (de triajat):**
-> 1. **Model ID divergent:** `JARVIS.md` zice `google/gemma-4-26b-a4b`, dar `web.py:_sys_info` + `settings_db.py` default zic `google/gemma-4-31b-a4b`. De aliniat la cel real.
-> 2. **`agents.yaml`:** `howard` apare și în `agents:` (active) și în `bench:` — intrare duplicată.
-> 3. **`hybrid_router.DEFAULT_CLAUDE_MODEL`** = `claude-sonnet-4-20250514` — posibil ID vechi; cu cheie reală poate da 400. De actualizat la modelul curent.
-> 4. **`orchestrator.handle_input_stream`:** posibil `UnboundLocalError` pe `agent_id` dacă nu există agenți țintă (`valid_ids` gol). Fix defensiv mic.
+> **Inconsistențe găsite la scrierea `docs/ARCHITECTURE.md` — REZOLVATE (2026-06-02):**
+> 1. ✅ **Model real, nu hardcodat:** `LLMRouter.detect()` auto-detectează modelul încărcat în LM Studio/Ollama (`/v1/models`, `/api/tags`) și îl folosește; fallback la `/admin → llm.default_model`. Doc-urile aliniate.
+> 2. ✅ **`agents.yaml`:** eliminat duplicatul `howard` din `bench:` (rămâne doar în `agents:`, activ).
+> 3. ✅ **Claude model din `/admin`:** nou setting `llm.claude_model` (settings_db) citit de `hybrid_router` în loc de constanta hardcodată.
+> 4. ✅ **`handle_input_stream`:** `agent_id` și `t_s0` pre-inițializate înainte de buclă — fără `UnboundLocalError` când `target` e gol.
+>
+> **Vizinea Howard (context utilizator):** Howard = digital twin care „știe ce știe Claude despre Andrei" — alimentat de memoria personală (H8.1) + arhiva ingerată (H5.1). **Rămas în mâna lui Andrei:** antrenarea unui LLM pe toate conversațiile din Facebook/WhatsApp (date pe care le furnizează el); pipeline-ul de ingestie + fine-tuning e H5.1.
 
 ---
 

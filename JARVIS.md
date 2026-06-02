@@ -6,7 +6,8 @@ Jarvis is a local-first multi-agent AI orchestration system. 15 agents across 4 
 
 **Stack:** Python 3.12 + FastAPI + LM Studio (OpenAI-compatible API)  
 **Server:** http://127.0.0.1:8000  
-**Model:** `google/gemma-4-26b-a4b` (MoE, ~4B active params, 16.76 GB VRAM)  
+**Model:** auto-detected from the model actually loaded in LM Studio/Ollama at startup (`LLMRouter.detect`); falls back to `/admin → llm.default_model` (default `google/gemma-4-31b-a4b`)  
+**Claude model:** `/admin → llm.claude_model` (admin-configurable)  
 **LLM Backend:** LM Studio on port 1234 (TdrDelay=8 to prevent GPU driver timeout)
 
 > 🧭 **AI navigation:** `docs/ARCHITECTURE.md` is the AI-navigable map (entry points, request
