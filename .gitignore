@@ -10,4 +10,5 @@ _server_err*.txt
 _server_out*.txt
 *.zip
 .claude/worktrees/
+agents/data/
 
