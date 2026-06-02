@@ -1,4 +1,4 @@
-const CACHE_NAME = 'jarvis-hud-v1';
+const CACHE_NAME = 'jarvis-hud-v2';
 const STATIC_ASSETS = [
   '/',
   '/static/manifest.json',
@@ -64,8 +64,10 @@ self.addEventListener('fetch', (event) => {
   const isExcluded = EXCLUDE_PATTERNS.some(pattern => url.pathname.includes(pattern));
 
   if (isExcluded || event.request.method !== 'GET') {
-    // Network-Only Strategy
-    event.respondWith(fetch(event.request));
+    // Network-Only Strategy. Resolve failures to a network-error Response so the
+    // page still sees a failed fetch (its own error handling kicks in) without the
+    // service worker emitting an uncaught "Failed to fetch" promise rejection.
+    event.respondWith(fetch(event.request).catch(() => Response.error()));
     return;
   }
 
@@ -97,10 +99,13 @@ self.addEventListener('fetch', (event) => {
 
         return networkResponse;
       }).catch(() => {
-        // Return cached root shell if navigate requests fail offline
+        // Return cached root shell if navigate requests fail offline; otherwise
+        // resolve to a network-error Response. respondWith() requires a Response,
+        // so we must never resolve to undefined ("Failed to convert value to 'Response'").
         if (event.request.mode === 'navigate') {
-          return caches.match('/');
+          return caches.match('/').then((cached) => cached || Response.error());
         }
+        return Response.error();
       });
     })
   );

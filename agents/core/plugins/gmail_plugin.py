@@ -36,6 +36,14 @@ class GmailPlugin:
             self.access_token = token_data["access_token"]
             logger.info("Gmail: token restored from persistent store")
 
+    async def _request(self, method: str, path: str, **kwargs):
+        await self._ensure_token()
+        if not self.access_token:
+            raise RuntimeError(
+                "Gmail not authenticated — connect your Google account in Settings"
+            )
+        return await self._do_request(method, path, **kwargs)
+
     @resilient_call(
         max_retries=2,
         timeout=15.0,
@@ -46,8 +54,7 @@ class GmailPlugin:
         metrics_agent_id="gmail",
         metrics_backend="google-api",
     )
-    async def _request(self, method: str, path: str, **kwargs):
-        await self._ensure_token()
+    async def _do_request(self, method: str, path: str, **kwargs):
         url = f"{self.api_base}{path}"
         headers = kwargs.pop("headers", {})
         headers.update(self._headers())

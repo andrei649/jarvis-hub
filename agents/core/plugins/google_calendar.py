@@ -10,6 +10,8 @@ import logging
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 
+import httpx
+
 from ..http_client import PluginHTTPClient
 from .oauth import refresh_google_token, load_token
 from ..resilience import resilient_call
@@ -35,6 +37,14 @@ class GoogleCalendarPlugin:
             self.access_token = token_data["access_token"]
             logger.info("Calendar: token restored from persistent store")
 
+    async def _request(self, method: str, path: str, **kwargs):
+        await self._ensure_token()
+        if not self.access_token:
+            raise RuntimeError(
+                "Google Calendar not authenticated — connect your Google account in Settings"
+            )
+        return await self._do_request(method, path, **kwargs)
+
     @resilient_call(
         max_retries=2,
         timeout=15.0,
@@ -45,8 +55,7 @@ class GoogleCalendarPlugin:
         metrics_agent_id="calendar",
         metrics_backend="google-api",
     )
-    async def _request(self, method: str, path: str, **kwargs):
-        await self._ensure_token()
+    async def _do_request(self, method: str, path: str, **kwargs):
         url = f"{self.api_base}{path}"
         headers = kwargs.pop("headers", {})
         headers.update(self._headers())

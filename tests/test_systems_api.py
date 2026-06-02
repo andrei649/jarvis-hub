@@ -99,5 +99,7 @@ def test_service_worker_endpoint(client):
     assert resp.status_code == 200
     assert "application/javascript" in resp.headers.get("content-type", "")
     content = resp.text
-    assert "jarvis-hud-v1" in content
+    # Match the versioned cache prefix so intentional cache-version bumps
+    # (which invalidate stale/corrupted cached assets) don't break this test.
+    assert "jarvis-hud-v" in content
     assert "STATIC_ASSETS" in content
