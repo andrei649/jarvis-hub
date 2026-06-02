@@ -49,7 +49,8 @@ python -m pytest tests/ -v          # 784 passed, 9 skipped
 | **H7 Perf Cale Fierbinte** (P1–P2) | 5 | **5** | 16 | **16** | **100%** |
 | **H8 Memorie Personală** (P1–P3) | 7 | **0** | 43 | **0** | **0%** |
 | **H9 Agent Ops: Workflows & Observability** (P2) | 3 | **3** | 29 | **29** | **100%** |
-| **Total general** | **106** | **99** | **524** | **481** | **92%** |
+| **H10 Competitive Edge** (P1–P3) | 30 | **0** | 188 | **0** | **0%** |
+| **Total general** | **136** | **99** | **712** | **481** | **68%** |
 
 **Test count:** 909 passed, 9 skipped (2026-06-02: +ORIZONT 7 — perf_hotpath 9, recall_cache 6, model_tiering 19; + recall cu embeddings reale & RAG injection)
 
@@ -264,6 +265,84 @@ python -m pytest tests/ -v          # 784 passed, 9 skipped
 | H9.1 ✅ | **Visual Workflow Builder** — tab HUD (canvas SVG, vanilla React) PESTE `WorkflowEngine` (H5.6): noduri = pași/agenți, muchii = `depends_on`; creează/editează/salvează workflow-uri user-defined + rulare. Backend: `Pipeline.from_dict`, persistență (CRUD) + endpoints `/api/workflows` POST/PUT/DELETE, register în registry. | 13 | P2 | H5.6 | pot compune vizual un workflow, îl salvez, îl rulez din HUD; DAG invalid → eroare clară |
 | H9.2 ✅ | **Observability — Trace Explorer** — store de trace-uri per-request (classify→route→model→tokens→latență→cost), nu doar `last_cognition`; endpoint `/api/traces[/{id}]` + tab HUD de inspecție. Extinde `bench.py` + CognitionPanel. | 8 | P2 | — | fiecare request lasă un trace inspectabil; pot vedea unde se duce timpul/tokenii pe pași |
 | H9.3 ✅ | **Offline Eval Harness** — rulează seturi de prompturi prin orchestrator (LLM injectabil), scor pass/criterii, tracking de regresie; `core/observability/eval.py` + CLI/endpoint. | 8 | P2 | H9.2 | un set de probe produce scor reproductibil offline; regresii vizibile între rulări |
+
+---
+
+## ORIZONT 10 — Jarvis Competitive Edge (P1–P3) — 0/30
+
+> **Research complet (2026-06-02):** deep research pe 8 competitori (Flowise, Langflow, CrewAI,
+> AutoGen/AG2, SuperAGI, OpenWebUI, LangSmith, Dust.tt) — surse verificate adversarial.
+> Doc complet: `docs/research/2026-06-02-competitor-research-h10.md`
+>
+> **Principiu:** nu adoptăm tool extern (decizie H9 menținută). Împrumutăm **idei concrete** unde
+> avem gap real față de industrie. Toate construite peste ce avem (Python-first, local-first).
+>
+> **Teme cross-cutting (≥4 competitori):** prompt versioning · cost tracking · MCP server mode ·
+> model quality comparison · agentic RAG · embeddable interface · action-level HITL · workflow termination.
+
+### H10 — Status General
+
+| Horizon | Total | ✅ Done | S total | S done | % |
+|---------|-------|---------|---------|--------|---|
+| **H10 Competitive Edge** | 30 | **0** | 188 | **0** | **0%** |
+
+### H10.A — Observability & Eval (P1 — fundație)
+
+| # | Item | S | P | Dep | Sursă |
+|---|------|---|---|-----|-------|
+| H10.16 | **APM Dashboard** — metrici org în Admin HUD: tokens totali consumați (cu cost $ estimat), runs totale, breakdown per agent și per model. Extinde `/admin` + `bench.py`. | 5 | P1 | H9.2 | SuperAGI |
+| H10.24 | **Cost Tracking per Agent** — calcul $ per request (tokens × preț per provider/model), stocat în trace, vizibil per agent/zi în HUD. `PRICE_TABLE` configurabil în `agents.yaml`. | 5 | P1 | H9.2 | LangSmith |
+| H10.19 | **Model Arena / Blind Comparison** — tab HUD: același query trimis la 2 modele, răspunsuri side-by-side anonimizate, buton vot, leaderboard quality score agregat. `/api/arena/run` + `/api/arena/vote`. | 8 | P1 | H7.5 | OpenWebUI |
+| H9.3b | **Dataset Regression Tracking** (ext. H9.3) — datasets de eval persistente cu versiuni (JSONL), track scor per dataset-version, comparare rulări în HUD; integrabil în CI. | 5 | P1 | H9.3 | LangSmith |
+| H10.22 | **Agent Prompt Version Control** — SOUL.md versionat cu history (git-tags sau DB), UI de comparare 2 versiuni, A/B eval pe un dataset, rollback. | 13 | P1 | H9.3b | LangSmith |
+| H10.23 | **Live Quality Monitor** — evaluatori (LLM-as-judge + heuristic) care rulează pe trace-urile live după fiecare request; scor per request în trace; alertă când avg_score scade sub threshold. | 13 | P2 | H9.2, H10.24 | LangSmith |
+| H10.17 | **Per-Agent Run History** — în HUD per agent: timeline run-uri, acțiuni din fiecare run, durată, tokens, status (success/fail/partial). `/api/agents/{id}/runs`. | 8 | P2 | H9.2 | SuperAGI |
+| H10.25 | **Human Review Queue** — UI sistematic: trace-urile flagate (scor mic sau manual) apar într-o coadă de review cu rubric, vot thumbs up/down, adăugare la dataset eval. | 5 | P3 | H9.3b | LangSmith |
+
+### H10.B — MCP & Integrare (P1–P2)
+
+| # | Item | S | P | Dep | Sursă |
+|---|------|---|---|-----|-------|
+| H10.5 | **MCP Server Mode** — Jarvis expune agenți + workflow-uri ca tool-uri MCP (stdio/SSE); orice client MCP (Claude Desktop, Cursor, alt Jarvis) poate apela agenți Jarvis ca tool-uri. `core/mcp/server.py`. | 8 | P1 | H4.7 | Langflow |
+| H10.8 | **Inbound Webhook Triggers** — endpoint `/api/webhooks/{id}` (POST) activează un agent sau workflow pre-configurat cu payload-ul ca input; autentificat cu token. Interfacă în Admin pentru creare/gestionare webhook-uri. | 3 | P2 | H5.6 | Langflow + Dust |
+| H10.27 | **NL Scheduling** — în locul cron manual în APScheduler, câmp de text "every weekday at 7am" / "în fiecare luni la 9" → parse → cron expression. `core/autonomy/nl_schedule.py`. | 3 | P2 | H3.5 | Dust |
+| H10.1 | **Embeddable Chat Widget** — endpoint `/api/widget/{token}` returnează snippet JS + CSS care embed-uiește chat-ul Jarvis pe orice website; theming configurabil din Admin. | 3 | P2 | H1.3 | Flowise |
+| H10.30_writebacks | **Write-Back Integrations** — agenții pot scrie înapoi în sisteme externe (Notion, GitHub Issues, Google Calendar) ca tool-uri native; Pepper/Hephaestus primii candidați. | 8 | P3 | H2.1, H2.7 | Dust |
+
+### H10.C — Memory & RAG (P1–P2)
+
+| # | Item | S | P | Dep | Sursă |
+|---|------|---|---|-----|-------|
+| H8.1b | **Entity Memory Store** (ext. H8.1) — extragere LLM automată de entități (persoane, proiecte, locuri, concepte) din conversații într-un store structurat separat, searchable, afișat în HUD Memory tab. `core/memory/entity.py`. | 5 | P1 | H8.1, H5.14 | CrewAI |
+| H8.3b | **Agentic RAG Tool** (ext. H8.3) — recall nu mai e injectat fix (top_k); devine tool call LLM-callable (`search_memory(query)`); modelul decide când/cum să caute și poate retry cu query diferit. | 8 | P2 | H8.3, H7.4 | OpenWebUI |
+| H10.21 | **Conversation Notes** — rich text editor (textarea + markdown preview) în HUD atașat la sesiunea curentă; conținut injectat ca context persistent la orice agent; acțiune „Rescrie cu AI" inline. | 3 | P3 | H1.3 | OpenWebUI |
+
+### H10.D — Workflow Engine (P2–P3)
+
+| # | Item | S | P | Dep | Sursă |
+|---|------|---|---|-----|-------|
+| H10.12 | **Workflow Termination Conditions** — WorkflowStep poate defini o condiție de stop (LLM judge: "task rezolvat?", keyword match, max-iterations), nu doar completare normală. `WorkflowStep.stop_condition`. | 3 | P2 | H5.6 | AutoGen |
+| H10.10 | **Structured Agent Outputs (Pydantic)** — SOUL.md sau config poate specifica un JSON schema; orchestratorul validează output-ul agentului și returnează eroare structurată la caller dacă nu e conform. | 5 | P2 | H5.6 | CrewAI |
+| H10.15 | **Critic Agent Pattern** — built-in workflow node tip `critic`: primește output-ul pasului anterior, îl evaluează pe criterii configurabile, decide `accept`/`retry`(max N)/`escalate`. | 5 | P2 | H5.6, H10.12 | AutoGen |
+| H10.13 | **Dynamic Agent Router** — WorkflowStep de tip `router_llm`: un agent coordinator decide la runtime care agent urmează, pe baza output-ului precedent (nu DAG fix). | 8 | P2 | H5.6 | AutoGen |
+| H10.2 | **Visual Workflow Trace Overlay** — la fiecare rulare de workflow în HUD, nodurile pe canvas se colorează (verde=success, roșu=error, galben=running) și afișează output-ul per pas inline. | 5 | P2 | H9.1, H9.2 | Flowise |
+| H10.28 | **Agent Config Preview** — în HUD Admin, înainte de save la SOUL.md sau config agent, un modal interactiv permite testarea comportamentului cu un query sandbox (fără a afecta producția). | 5 | P2 | H1.5 | Dust |
+| H10.4 | **Guardrails Node în Visual Builder** — GuardrailsEngine expus ca nod plug-in în WorkflowBuilder; configurabil per workflow, nu doar global. | 2 | P3 | H4.9, H9.1 | Flowise |
+| H10.6 | **Cyclic Workflow Support** — loop-back edges în WorkflowEngine cu contor de iterații și condiție de exit; util pentru retry loops și iterative refinement. | 8 | P3 | H5.6, H10.12 | Langflow |
+| H10.7 | **AI-Assisted Workflow Builder** — în Visual Builder, câmp "Descrie ce vrei să facă acest pas" → LLM generează WorkflowStep config (agent, tool, prompt template). | 5 | P3 | H9.1 | Langflow |
+| H10.9 | **Python Flow Decorator API** — `@jarvis_flow`, `@listen(step_id)`, `@router` pentru definire workflow-uri în cod Python (nu doar YAML/JSON); complement al Visual Builder. | 5 | P3 | H5.6 | CrewAI |
+| H10.11 | **Hierarchical Workflow Manager** — workflow de tip `hierarchical`: auto-creează un manager agent care coordonează crew-ul, validează rezultate și redistribuie dacă un pas eșuează. | 8 | P3 | H5.6, H10.15 | CrewAI |
+| H10.14 | **Nested Workflow Steps** — un WorkflowStep poate conține el însuși un sub-workflow; util pentru task decomposition recursivă. | 8 | P3 | H5.6 | AutoGen |
+| H10.3 | **Workflow Transform Nodes** — noduri native în Visual Builder: Formatter, Validator, JSONExtractor, Summarizer — transformă output-ul unui pas înainte de a-l transmite mai departe. | 5 | P3 | H9.1 | Flowise |
+
+### H10.E — UX & Multi-user (P2–P3)
+
+| # | Item | S | P | Dep | Sursă |
+|---|------|---|---|-----|-------|
+| H10.29 | **Agent Templates Library** — librărie de configurații pre-built pentru agenți comuni (research assistant, email triage, code reviewer, daily brief); importabile și clonabile din Admin. | 3 | P3 | — | Dust |
+| H10.18 | **Action-Level Approval UI** — în HUD, tab live cu tool call-urile pending approval (granularitate sub-task); buton Aprob/Resping per acțiune individuală. Extinde H6.2. | 5 | P3 | H6.2 | SuperAGI |
+| H10.20 | **Chat Channels / Rooms** — canale de chat tematice în HUD (per proiect/context); în fiecare canal poți @mention agenți specifici; pipeline complet (tools, RAG, filters). | 8 | P3 | H1.3 | OpenWebUI |
+| H10.26 | **Data Spaces / Agent Data Scope** — organizează sursele de date (memory segments, plugin outputs, knowledge) în "spații" cu permisiuni per agent; complement la `LOCAL_ONLY_AGENTS`. | 13 | P3 | H8.1, H4.7 | Dust |
 
 ---
 
