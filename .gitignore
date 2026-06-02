@@ -11,3 +11,9 @@ _server_out*.txt
 *.zip
 .claude/worktrees/
 
+# Runtime SQLite databases (created by the app/tests, e.g. H8 MemoryStore)
+agents/data/
+*.db
+*.db-wal
+*.db-shm
+
