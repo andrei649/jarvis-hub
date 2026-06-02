@@ -48,7 +48,7 @@ A personal AI mesh that handles the cross-section of Andrei's life: work at Raif
 - **LLM inference:** LM Studio (OpenAI-compatible, primary) → Ollama (fallback) → optional cloud (Anthropic/OpenAI) for approved agents
 - **Model:** `google/gemma-4-31b-a4b` (MoE, ~4B active params) on RTX 5090
 - **Voice:** openWakeWord + faster-whisper + edge-tts / Kokoro
-- **Memory:** conversation history (JSONL) + numpy vector store + SQLite checkpoints
+- **Memory:** conversation history (JSONL) + vector store (real embeddings via LM Studio/Ollama, hash fallback) + knowledge graph + fused recall (RRF, vector ⊕ graph) + SQLite checkpoints (WAL)
 - **Channels:** web (SSE), voice, telegram, discord, email, slack
 - **Security:** PII/secret scanner, SSRF protection, audit log (Merkle chain), guardrails (WARN/REDACT/BLOCK)
 
@@ -70,16 +70,22 @@ A personal AI mesh that handles the cross-section of Andrei's life: work at Raif
 pip install -r requirements-beta.txt
 pip install tiktoken beautifulsoup4 psutil pytest-asyncio   # extras used by newer code
 python serve.py              # http://127.0.0.1:8000
-python -m pytest             # 181 passed, 8 skipped
+python -m pytest             # 846 passed, 9 skipped
 ```
 
 - **HUD:** http://127.0.0.1:8000/
 - **Admin panel:** http://127.0.0.1:8000/admin
 - **CLI REPL:** `python agents/run.py`
 
+## Docs
+
+- **`docs/ARCHITECTURE.md`** — AI-navigable map of the codebase (entry points, request lifecycle, module index, how-to recipes). Start here to find where things live.
+- **`JARVIS.md`** — architecture & directory structure · **`AGENTS.md`** — assistant conventions · **`BACKLOG.md`** — priorities & tasks.
+
 ## Status
 
-**v0.2.1** — 15 agents across 4 tiers, fully-offline HUD, admin panel, SQLite settings,
-10 plugins, 6 channels, skills + sandbox + learning loop. 39 tests passing.
+**v0.9.1-beta** — 15 agents across 4 tiers; real-embeddings recall (LM Studio) + fused recall +
+RAG injection; hot-path perf (SQLite WAL, event-loop offload, checkpoint debounce, query-embedding
+cache, complexity-based model tiering); autonomous proactive cortex (ORIZONT 6). **846 tests passing.**
 
-See `STATUS.md` and `.opencode/plans/qa-bugs.md` for details.
+See `STATUS.md`, `BACKLOG.md`, and `docs/ARCHITECTURE.md` for details.

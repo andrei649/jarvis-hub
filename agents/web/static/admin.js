@@ -81,35 +81,21 @@ const ICONS = {
 /* ── category metadata ──────────────────────────────────────── */
 
 const CATEGORIES = [
-  { id:'general',  label:_t('cat.general'),  icon:'general' },
-  { id:'llm',      label:_t('cat.llm'),      icon:'llm' },
-  { id:'agents',   label:_t('cat.agents'),   icon:'agents' },
-  { id:'plugins',  label:_t('cat.plugins'),  icon:'plugins' },
-  { id:'voice',    label:_t('cat.voice'),    icon:'voice' },
-  { id:'channels', label:_t('cat.channels'), icon:'channels' },
-  { id:'mcp',      label:_t('cat.mcp'),      icon:'mcp' },
-  { id:'security', label:_t('cat.security'), icon:'security' },
-  { id:'memory',   label:_t('cat.memory'),   icon:'memory' },
-  { id:'skills',   label:_t('cat.skills'),   icon:'skills' },
-  { id:'system',   label:_t('cat.system'),   icon:'system' },
-  { id:'oracle',   label:_t('cat.oracle'),   icon:'oracle' },
-  { id:'charts',   label:_t('cat.charts'),   icon:'charts' },
+  { id:'charts',   label:'Statistici & Analize',  icon:'charts' },
+  { id:'config',   label:'Configurări Globale',   icon:'general' },
+  { id:'agents',   label:'Management Agenți',    icon:'agents' },
+  { id:'mcp',      label:'Servere MCP',          icon:'mcp' },
+  { id:'oracle',   label:'Integrare Claude',     icon:'oracle' },
+  { id:'system',   label:'Sistem & Depanare',    icon:'system' },
 ];
 
 const CATEGORY_DESC = {
-  general:   _t('desc.general'),
-  llm:       _t('desc.llm'),
-  agents:    _t('desc.agents'),
-  plugins:   _t('desc.plugins'),
-  voice:     _t('desc.voice'),
-  channels:  _t('desc.channels'),
-  mcp:       _t('desc.mcp'),
-  security:  _t('desc.security'),
-  memory:    _t('desc.memory'),
-  skills:    _t('desc.skills'),
-  system:    _t('desc.system'),
-  oracle:    _t('desc.oracle'),
-  charts:    _t('desc.charts'),
+  charts:    'Date analitice, latențe, rate de succes ale agenților și circuit breakere active.',
+  config:    'Toate setările sistemului grupate logic într-o singură listă simplă, cu denumiri intuitive.',
+  agents:    'Activarea, dezactivarea și selectarea modelelor LLM utilizate de fiecare agent din rețea.',
+  mcp:       'Configurarea clienților externi Model Context Protocol (stdio / sse) cu descoperire de unelte.',
+  oracle:    'Statusul curent de sincronizare, conflicte de cod detectate și integrarea cu asistentul de push.',
+  system:    'Variabile de mediu live, depanare rapidă și reinițializarea bazei de date.',
 };
 
 /* ── agent glyph map — single source of truth in data.js ───── */
@@ -234,6 +220,225 @@ function renderRow(s, i, onUpdate, onAction) {
     case 'button': return h(ButtonRow,{key:i,label:s.label,buttonLabel:s.opts[0]||'Action',onClick:()=>onAction&&onAction(s.key),variant:s.opts[1]});
     default:       return h(InputRow,{key:i,label:s.label,value:s.value,onChange:update});
   }
+}
+
+const FRIENDLY_NAMES = {
+  timezone: "Fus orar local",
+  wake_words: "Cuvinte de trezire vocală",
+  addressing: "Mod de adresare",
+  default_tts: "Voce implicită pentru sinteză",
+  ui_density: "Densitate interfață HUD",
+  dev_mode: "Mod Dezvoltator activat",
+  backend_type: "Tip motor inteligență artificială (LLM)",
+  lm_studio_url: "Adresă URL server LM Studio",
+  ollama_url: "Adresă URL server Ollama local",
+  default_model: "Model lingvistic implicit",
+  temperature: "Creativitate model (Temperatură)",
+  max_tokens: "Număr maxim de cuvinte per răspuns",
+  cloud_fallback: "Regim backup în Cloud",
+  gemini_model: "Model Google Gemini din Cloud",
+  hybrid_local_max: "Limită maximă tokeni locali",
+  hybrid_flash_max: "Limită maximă tokeni în Cloud",
+  stt_model_size: "Mărime model recunoaștere vocală (STT)",
+  stt_language: "Limbă recunoaștere vocală",
+  tts_voice: "Voce sinteză Microsoft (TTS)",
+  wake_threshold: "Sensibilitate detectare cuvânt trezire",
+  silence_sec: "Toleranță liniște înainte de răspuns (secunde)",
+  max_recording: "Durată maximă înregistrare vocală (secunde)",
+  volume_threshold: "Prag volum de fundal microfon",
+  guardrails_mode: "Mod protecție date sensibile",
+  scan_input: "Scanează datele introduse de utilizator",
+  scan_output: "Scanează răspunsurile generate de AI",
+  sandbox_timeout: "Toleranță timeout execuție sandbox (secunde)",
+  sandbox_memory: "Limită memorie RAM sandbox (MB)",
+  max_turns: "Număr maxim de replici memorate per sesiune",
+  context_window: "Fereastră de context activ (număr de replici)",
+  persist: "Salvează memoria pe disc automat",
+  rate_limit: "Limită Gateway de securitate (mesaje/minut)",
+  web_enabled: "Canal Web direct activ",
+  weather: "Activare plugin Vreme (wttr.in)",
+  news: "Activare plugin Știri (BBC RSS)",
+  "cloud-llm": "Activare plugin Cloud LLM (OpenAI/Anthropic)",
+  telegram: "Activare plugin Telegram Bot",
+  gmail: "Activare plugin Gmail API",
+  "google-calendar": "Activare plugin Google Calendar",
+  "whatsapp-bridge": "Activare punte locală WhatsApp",
+  spotify: "Activare plugin Control Spotify",
+  "apple-health": "Activare sincronizare Apple Health",
+  homebridge: "Activare integrare Smart Home (Homebridge)",
+  gecko_ing_client_id: "Identificator Client ING Bank (Gecko)",
+  gecko_ing_client_secret: "Secret Client ING Bank (Gecko)",
+  gecko_libra_token: "Token API Libra Bank (Gecko)",
+  gecko_csv_path: "Cale fișiere export extras bancar CSV",
+  stark_ga4_service_account: "Cale fișier credențiale GA4 (Stark)",
+  stark_ga4_property_id: "Identificator Proprietate Google Analytics 4",
+  auto_scale: "Scalare automată a resurselor agenților",
+  cardinality_cap: "Capacitate maximă de agenți încărcați",
+  promote_on_use: "Număr utilizări necesare promovării în HUD",
+  demote_on_inactive: "Număr luni de inactivitate până la demovare",
+  auto_generate: "Autogenerare automată de noi abilități",
+  sandbox_enabled: "Execuție în sandbox protejat",
+  max_skills: "Număr maxim de abilități memorate",
+  import_source: "Sursă implicită de import abilități",
+  log_level: "Nivel detaliere loguri sistem",
+  heartbeat_interval: "Interval heartbeat (secunde)",
+  poll_interval: "Interval verificare status (secunde)",
+  theme: "Temă interfață vizuală",
+  autonomy_tick: "Frecvență verificare autonomie (secunde)",
+  observer_enabled: "Monitorizare resurse gazdă (Observer)",
+  watchers_enabled: "Monitorizare evenimente personale (Watchers)",
+  error_backlog_sync_enabled: "Sincronizare automată erori în BACKLOG.md",
+  owner_chat_id: "Identificator Chat Telegram Proprietar",
+  cap_per_action: "Sumă limită per acțiune financiară (RON)",
+  daily_ceiling: "Plafon maxim zilnic acțiuni financiare (RON)",
+  interrupt_budget: "Plafon mesaje push urgente pe zi",
+  night_shift: "Regim de noapte activ (Autonomie redusă)",
+  night_start: "Oră start regim noapte (Ex: 23)",
+  night_end: "Oră sfârșit regim noapte (Ex: 6)",
+  priority_senders: "Expeditori email prioritari",
+  finance_min_ron: "Prag minim cont RON (Gecko)",
+  finance_min_eur: "Prag minim cont EUR (Gecko)",
+  health_min_sleep: "Durată minimă somn (ore - Hercules)",
+  health_min_hrv: "Prag minim HRV (ms - Hercules)",
+  calendar_lead_time: "Avertizare în avans întâlniri (minute - Pepper)",
+};
+
+const FRIENDLY_DESCS = {
+  timezone: "Zona orară utilizată pentru planificarea alertelor și a sarcinilor în fundal.",
+  wake_words: "Cuvintele la care asistentul vocal local va răspunde automat la rostire.",
+  addressing: "Modul în care asistentul se adresează utilizatorului (ex: 'sir' sau 'boss').",
+  ui_density: "Compactitatea vizuală a elementelor afișate în interfața grafică HUD.",
+  dev_mode: "Activează instrumentele suplimentare pentru depanare și execuție sandbox.",
+  backend_type: "Alege între detecție automată, LM Studio local sau Ollama local.",
+  temperature: "Valori mai mari oferă răspunsuri creative; valori mai mici oferă răspunsuri precise.",
+  cloud_fallback: "Fallback automat pe cloud (Anthropic/Gemini) dacă motorul local este offline sau suprasolicitat.",
+  guardrails_mode: "Modul în care datele confidențiale sau PII sunt filtrate (Avertizare, Redactare sau Blocare completă).",
+  sandbox_timeout: "Timpul maxim acordat execuției de cod nesigur înainte de a fi oprită forțat.",
+  observer_enabled: "Rulează bucla de fundal ce monitorizează starea Docker, procesele gazdei și memoria liberă.",
+  watchers_enabled: "Verifică automat emailurile importante, programul din calendar, soldurile bancare și indicii de somn/sănătate.",
+  error_backlog_sync_enabled: "Scrie live runtime crash-urile direct sub formă de TODO checklist în BACKLOG.md.",
+  night_shift: "Când este activ, limitează executarea sarcinilor active/financiare în intervalul orar nocturn.",
+  priority_senders: "Expeditorii Gmail de la care noile mesaje necitite vor fi marcate instant ca fiind alerte prioritare.",
+  finance_min_ron: "Suma minimă sub care un cont de RON (ING, Libra etc.) va declanșa o alertă de sold scăzut.",
+  finance_min_eur: "Suma minimă sub care un cont de EUR va declanșa o alertă de sold scăzut.",
+  health_min_sleep: "Dacă durata totală a somnului de azi-noapte este mai mică decât acest prag, asistentul te va alerta.",
+  health_min_hrv: "Prag minim pentru indicatorul HRV (Heart Rate Variability) — sub acest nivel se va raporta stare de oboseală/stres.",
+  calendar_lead_time: "Intervalul orar (în minute) înainte de începerea unei întâlniri în care asistentul te va avertiza de eveniment.",
+};
+
+function GlobalConfigPage({ settings, dirty, onUpdate, onSave }) {
+  const [search, setSearch] = useState('');
+  
+  const SECTIONS = [
+    {
+      title: "⚙️ Preferințe Asistent Globale",
+      desc: "Setări generale referitoare la fusul orar, cuvinte de trezire și adresare.",
+      keys: ["general.timezone", "general.wake_words", "general.addressing", "general.default_tts", "general.ui_density", "general.dev_mode"]
+    },
+    {
+      title: "🎙️ Configurare Voce & Sunet (STT / TTS)",
+      desc: "Parametrii microfonului local, ai algoritmilor de recunoaștere vocală și ai sintezei de voce.",
+      keys: ["voice.stt_model_size", "voice.stt_language", "voice.tts_voice", "voice.wake_threshold", "voice.silence_sec", "voice.max_recording", "voice.volume_threshold"]
+    },
+    {
+      title: "🤖 Modele Lingvistice & AI (LLM)",
+      desc: "Configurarea motoarelor LLM locale (LM Studio / Ollama) și a fallback-urilor inteligente în Cloud.",
+      keys: ["llm.backend_type", "llm.lm_studio_url", "llm.ollama_url", "llm.default_model", "llm.temperature", "llm.max_tokens", "llm.cloud_fallback", "llm.gemini_model", "llm.hybrid_local_max", "llm.hybrid_flash_max"]
+    },
+    {
+      title: "🔒 Securitate & Sandbox Protejat",
+      desc: "Reguli stricte pentru filtrarea datelor sensibile, scanere de secrete și timpi limită sandbox.",
+      keys: ["security.guardrails_mode", "security.scan_input", "security.scan_output", "security.sandbox_timeout", "security.sandbox_memory", "skills.sandbox_enabled"]
+    },
+    {
+      title: "🧠 Memorie & Context Conversațional",
+      desc: "Administrarea istoricului de dialog stocat pe disc și a ferestrei de context a agenților.",
+      keys: ["memory.max_turns", "memory.context_window", "memory.persist"]
+    },
+    {
+      title: "🎯 Cortex Autonom & Buget Inteligent",
+      desc: "Setări de securitate financiară, plafoane zilnice pentru acțiuni autonome și regim de noapte protectiv.",
+      keys: ["autonomy.owner_chat_id", "autonomy.cap_per_action", "autonomy.daily_ceiling", "autonomy.interrupt_budget", "autonomy.night_shift", "autonomy.night_start", "autonomy.night_end", "system.autonomy_tick", "system.observer_enabled", "system.watchers_enabled", "system.error_backlog_sync_enabled", "autonomy.priority_senders", "autonomy.finance_min_ron", "autonomy.finance_min_eur", "autonomy.health_min_sleep", "autonomy.health_min_hrv", "autonomy.calendar_lead_time"]
+    },
+    {
+      title: "📞 Canale de Comunicare",
+      desc: "Activarea/dezactivarea integrărilor Gateway și a limitelor de apeluri pe secundă.",
+      keys: ["channels.rate_limit", "channels.web_enabled", "plugins.telegram"]
+    },
+    {
+      title: "🔌 Extensii & Module Active (Plugins)",
+      desc: "Activarea live a modulelor suplimentare integrate în platformă.",
+      keys: ["plugins.weather", "plugins.news", "plugins.cloud-llm", "plugins.gmail", "plugins.google-calendar", "plugins.whatsapp-bridge", "plugins.spotify", "plugins.apple-health", "plugins.homebridge"]
+    },
+    {
+      title: "🔑 Chei API & Conexiuni Bancare",
+      desc: "Parametrii de autentificare pentru servicii externe, solduri Gecko (ING / Libra) și Stark Analytics.",
+      keys: ["plugins.gecko_ing_client_id", "plugins.gecko_ing_client_secret", "plugins.gecko_libra_token", "plugins.gecko_csv_path", "plugins.stark_ga4_service_account", "plugins.stark_ga4_property_id"]
+    }
+  ];
+
+  const flatSettings = {};
+  if (settings && typeof settings === 'object') {
+    Object.entries(settings).forEach(([cat, list]) => {
+      if (Array.isArray(list)) {
+        list.forEach(s => {
+          flatSettings[`${cat}.${s.key}`] = s;
+        });
+      }
+    });
+  }
+
+  const getMergedSetting = (fullKey) => {
+    const s = flatSettings[fullKey];
+    if (!s) return null;
+    return {
+      ...s,
+      value: dirty.hasOwnProperty(s.key) ? dirty[s.key] : s.value,
+      friendlyLabel: FRIENDLY_NAMES[s.key] || s.label,
+      friendlyDesc: FRIENDLY_DESCS[s.key] || ""
+    };
+  };
+
+  const hasChanges = Object.keys(dirty).length > 0;
+
+  return h('div', null,
+    h('input', {
+      className: 'admin-sidebar-search',
+      type: 'text',
+      placeholder: 'Căutare setare după denumire...',
+      value: search,
+      onChange: e => setSearch(e.target.value),
+      style: { marginBottom: 20, width: '100%' }
+    }),
+
+    SECTIONS.map((section, idx) => {
+      const sectionSettings = section.keys
+        .map(k => getMergedSetting(k))
+        .filter(s => s !== null)
+        .filter(s => !search || s.friendlyLabel.toLowerCase().includes(search.toLowerCase()) || s.key.toLowerCase().includes(search.toLowerCase()));
+
+      if (sectionSettings.length === 0) return null;
+
+      return h(Group, { key: idx, title: section.title },
+        section.desc && h('p', { style: { padding: '0 12px 10px 12px', fontSize: 11, color: 'var(--text-dim)', fontStyle: 'italic' } }, section.desc),
+        sectionSettings.map((s, i) => {
+          return h('div', { key: i, className: 'flat-setting-wrapper', style: { borderBottom: '1px solid var(--border-glass)', paddingBottom: 8, marginBottom: 8 } },
+            renderRow(
+              { ...s, label: s.friendlyLabel },
+              s.key,
+              onUpdate,
+              (key) => onUpdate(key, true)
+            ),
+            s.friendlyDesc && h('div', { style: { padding: '4px 12px 0 12px', fontSize: 10, color: 'var(--text-dim)', lineHeight: 1.3 } }, s.friendlyDesc)
+          );
+        })
+      );
+    }),
+
+    hasChanges && h('div', { style: { position: 'sticky', bottom: 0, padding: '12px 0', background: 'var(--bg-void)', zIndex: 10 } },
+      h('button', { className: 'admin-btn is-primary', onClick: onSave }, '💾 Salvează Configurări Globale')
+    )
+  );
 }
 
 /* ── Agent card for Agents page ─────────────────────────────── */
@@ -555,11 +760,11 @@ function BarChart({ data, valueKey, labelKey, maxValue, colorFn, unit }) {
   const max = maxValue || Math.max(...data.map(d => d[valueKey]), 0.01);
   const barH = 18;
   const gap = 4;
-  const h = data.length * (barH + gap);
+  const svgHeight = data.length * (barH + gap);
   const lw = 80;
   const cw = 260;
   const tw = lw + cw + 70;
-  return h('svg',{viewBox:`0 0 ${tw} ${h}`,width:'100%',style:{maxWidth:tw,maxHeight:h}},
+  return h('svg',{viewBox:`0 0 ${tw} ${svgHeight}`,width:'100%',style:{maxWidth:tw,maxHeight:svgHeight}},
     data.map((d,i)=>{
       const y = i * (barH + gap);
       const ratio = Math.min(d[valueKey] / max, 1);
@@ -578,14 +783,14 @@ function Sparkline({ data, width, height, color }) {
   if (!data || data.length < 2) return h('div',{style:{padding:12,fontSize:11,color:'var(--text-dim)'}},'—');
   const pad = {top:8,right:8,bottom:18,left:8};
   const w = width - pad.left - pad.right;
-  const h = height - pad.top - pad.bottom;
+  const sparkHeight = height - pad.top - pad.bottom;
   const vals = data.map(d=>d.value);
   const mx = Math.max(...vals,1);
   const mn = Math.min(...vals,0);
   const rng = mx - mn || 1;
   const pts = data.map((d,i)=>{
     const x = pad.left + (i/(data.length-1))*w;
-    const y = pad.top + h - ((d.value-mn)/rng)*h;
+    const y = pad.top + sparkHeight - ((d.value-mn)/rng)*sparkHeight;
     return `${x},${y}`;
   }).join(' ');
   const xLabels = data.map((d,i)=>{
@@ -717,7 +922,7 @@ function ChartsPage() {
 }
 
 function AdminApp() {
-  const [active, setActive] = useState('general');
+  const [active, setActive] = useState('charts');
   const [settings, setSettings] = useState({});
   const [search, setSearch] = useState('');
   const [dirty, setDirty] = useState({});
@@ -747,46 +952,54 @@ function AdminApp() {
     }).catch(e=>showToast(`${_t('admin.error_network')}${e.message}`));
   };
 
-  const saveCategory = () => {
+  const saveAllSettings = () => {
     const keys = Object.keys(dirty);
     if (!keys.length) return;
-    const body = {};
-    keys.forEach(k => { body[k] = dirty[k]; });
-    fetch(`/api/admin/settings/${active}`, {
-      method:'PUT',
-      headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({values:body}),
-    }).then(r=>r.json()).then(d=>{
-      setDirty({});
-      showToast(`${_t('admin.saved')}${d.updated}${_t('admin.saved_suffix')}`);
-      // Refresh settings
-      fetch('/api/admin/settings').then(r=>r.json()).then(s=>setSettings(s));
-    }).catch(()=>showToast(_t('admin.save_error')));
+    
+    // Group dirty settings by their actual category in the database
+    const byCategory = {};
+    keys.forEach(k => {
+      let foundCat = 'general';
+      for (const catId of Object.keys(settings)) {
+        const list = settings[catId];
+        if (list && Array.isArray(list)) {
+          if (list.some(s => s.key === k)) {
+            foundCat = catId;
+            break;
+          }
+        }
+      }
+      if (!byCategory[foundCat]) byCategory[foundCat] = {};
+      byCategory[foundCat][k] = dirty[k];
+    });
+
+    // Make PUT requests for each category in parallel
+    const promises = Object.entries(byCategory).map(([cat, values]) => {
+      return fetch(`/api/admin/settings/${cat}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ values }),
+      }).then(r => r.json());
+    });
+
+    Promise.all(promises)
+      .then(results => {
+        const totalUpdated = results.reduce((sum, r) => sum + (r.updated || 0), 0);
+        setDirty({});
+        showToast(`Parametri salvați cu succes! Am actualizat ${totalUpdated} setări.`);
+        fetch('/api/admin/settings').then(r=>r.json()).then(s=>setSettings(s));
+      })
+      .catch(() => showToast('Eroare la salvarea setărilor globale.'));
   };
-
-  const catSettings = settings[active] || [];
-  const mergedSettings = catSettings.map(s => ({
-    ...s,
-    value: dirty.hasOwnProperty(s.key) ? dirty[s.key] : s.value,
-  }));
-
-  // Filter by search
-  const filtered = mergedSettings.filter(s =>
-    !search || s.label.toLowerCase().includes(search.toLowerCase()) || s.key.toLowerCase().includes(search.toLowerCase())
-  );
 
   const cat = CATEGORIES.find(c=>c.id===active);
 
-  // Check if any change in current category
-  const hasChanges = catSettings.some(s => dirty.hasOwnProperty(s.key) && dirty[s.key] !== s.value);
-
-  // Special page for agents
   const isAgents = active === 'agents';
   const isSystem = active === 'system';
-  const isSecurity = active === 'security';
   const isOracle = active === 'oracle';
   const isMCP = active === 'mcp';
   const isCharts = active === 'charts';
+  const isConfig = active === 'config';
 
   return h('div',{className:'admin-wrap'},
     h('div',{className:'admin-sidebar'},
@@ -794,14 +1007,12 @@ function AdminApp() {
         ICONS.system,
         _t('admin.brand'),
       ),
-      h('input',{className:'admin-sidebar-search', type:'text', placeholder:_t('admin.search'),
-        value:search, onChange:e=>setSearch(e.target.value)}),
-      h('nav',{className:'admin-nav'},
+      h('nav',{className:'admin-nav', style:{marginTop:20}},
         CATEGORIES.map(c=>h('button',{
           key:c.id,
           className:`admin-nav-item ${active===c.id?'is-active':''}`,
           onClick:()=>{setActive(c.id);setSearch('');},
-        }, ICONS[c.icon], c.label)),
+        }, ICONS[c.icon] || ICONS.general, c.label)),
       ),
     ),
 
@@ -824,34 +1035,23 @@ function AdminApp() {
               : isCharts
                 ? h(ChartsPage)
 
-                : h('div',null,
-                filtered.map(s => renderRow(s, s.key, onUpdate, (key)=>showToast(`${_t('admin.action')}${key}`) )),
-                isSecurity && h(AuditLog),
-              ),
-
-      // LLM test button on LLM page
-      active === 'llm' && h('div',{style:{marginTop:20}}, h(LLMTest)),
-
-      // Memory clear button on Memory page
-      active === 'memory' && h('div',{style:{marginTop:20}}, h(MemoryClear,{onToast:showToast})),
+                : isConfig
+                  ? h(GlobalConfigPage,{settings, dirty, onUpdate, onSave:saveAllSettings})
+                  
+                  : null,
 
       // Reseed settings button on System page
       active === 'system' && h('div',{style:{marginTop:20}},
         h('button',{className:'admin-btn is-warning',
           onClick:()=>{
-            if (!confirm('Reseed all settings to defaults? Custom values will be lost.')) return;
+            if (!confirm('Reinițializați toate setările la valorile implicite? Modificările custom vor fi pierdute.')) return;
             fetch('/api/admin/settings/reseed',{method:'POST'}).then(r=>r.json()).then(d=>{
               showToast(d.message||'Reseeded');
               setDirty({});
               setRefreshKey(k=>k+1);
             }).catch(()=>showToast('Reseed failed'));
           }
-        }, '🔄 Reseed defaults'),
-      ),
-
-      // Save button
-      hasChanges && h('div',{style:{position:'sticky',bottom:0,padding:'12px 0',background:'var(--bg-void)'}},
-        h('button',{className:'admin-btn is-primary', onClick:saveCategory}, _t('admin.save')),
+        }, '🔄 Resetează setări implicite'),
       ),
     ),
 

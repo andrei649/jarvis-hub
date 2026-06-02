@@ -82,8 +82,9 @@ def _admin_response(path):
     mock_orch.bench.get_results.return_value = []
     mock_orch.learning.get_failure_patterns.return_value = []
     mock_orch.learning.get_route_counts.return_value = {}
+    old_orch = web.orch
     web.orch = mock_orch
-    
+
     old_token = web.ADMIN_TOKEN
     web.ADMIN_TOKEN = "test-secret"
     try:
@@ -92,6 +93,7 @@ def _admin_response(path):
         return client.get(path, headers=ADMIN_HEADERS)
     finally:
         web.ADMIN_TOKEN = old_token
+        web.orch = old_orch
 
 
 def test_admin_stats_includes_resilience():

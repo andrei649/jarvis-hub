@@ -25,12 +25,15 @@ from .heartbeat import HeartbeatScheduler
 from .learning.loop import LearningLoop
 from .skills.loader import SkillLoader
 from .skills.importer import SkillImporter
+from .skills.marketplace import SkillMarketplace
 from .mcp.client import MCPManager
 from .autonomy import AutonomyWorker, TaskQueue, AutonomyPolicy, PreferenceStore, TaskExecutor
 from .autonomy import ProactiveObserver, default_probes
 from .autonomy.inbox import build_decision_card
 from .autonomy.digest import build_morning_brief, build_evening_retro
 from .autonomy.worker import is_night_window
+from .autonomy.reflection import DailyReflector
+from .workflows import WorkflowEngine, WorkflowRegistry
 from .sandbox import Sandbox
 from .bench import LatencyBenchmark
 from .plugin_gate import PermissionGate
@@ -66,6 +69,9 @@ from .plugins.balance import BalanceReaderPlugin
 from .plugins.analytics import AnalyticsPlugin
 from .plugins.oracle_bridge import OracleBridgePlugin
 from .plugins.n8n import N8NPlugin
+from .plugins.sms_alerts import SMSAlertsPlugin
+from .plugins.crm_sync import CRMSyncPlugin
+from .plugins.iot_control import IoTControlPlugin
 
 logger = logging.getLogger("jarvis.orchestrator")
 
@@ -86,6 +92,7 @@ class Orchestrator:
         self.plugins: dict = {}
         self.skills = SkillLoader()
         self.skill_importer = SkillImporter()
+        self.marketplace = SkillMarketplace()
         self.mcp = MCPManager()
         self.channels: dict[str, ChannelAdapter] = {}
         self.checkpoints = CheckpointManager()
@@ -103,6 +110,7 @@ class Orchestrator:
         self.on_token: Optional[Callable] = None
         self._runtime_settings: dict = {}
         self._channel_sessions: dict[str, str] = {}
+        self._last_channel: str = "unknown"
         self._settings_watcher_task: Optional[asyncio.Task] = None
         # ── Autonomy / Proactive Cortex (H6.1–H6.6) ──
         self.autonomy_queue = TaskQueue()
@@ -112,7 +120,25 @@ class Orchestrator:
         )
         # Proactive OS Observer — the trigger layer that feeds the queue.
         self.observer: Optional[ProactiveObserver] = None
+        # Proactive Event Watcher — personal event trigger layer.
+        self.event_watcher = None
         self._autonomy_task: Optional[asyncio.Task] = None
+        self.last_cognition = None
+        # Daily Reflection & Graph Consolidation (H5.15)
+        self.reflector: Optional[DailyReflector] = None
+        # Multi-Agent Workflows (H5.6)
+        self.workflow_registry = WorkflowRegistry()
+        self.workflow_engine: Optional[WorkflowEngine] = None
+        # Continuous Ingestion Watcher (H5.1)
+        self.ingestion_watcher = None
+        # H7.3: debounce checkpoint — counts turns since last full save
+        self._turns_since_checkpoint: int = 0
+        # H9.2: trace explorer — in-memory ring buffer
+        try:
+            from .observability.tracer import Tracer
+            self.tracer = Tracer(maxlen=500)
+        except Exception:
+            self.tracer = None
 
     async def load_agents(self):
         await self.llm_router.detect()
@@ -210,6 +236,20 @@ class Orchestrator:
             base_url=os.environ.get("N8N_BASE_URL", ""),
             api_key=os.environ.get("N8N_API_KEY", ""),
         )
+        self.plugins["sms-alerts"] = SMSAlertsPlugin(
+            account_sid=self.get_setting("plugins.twilio_account_sid", ""),
+            auth_token=self.get_setting("plugins.twilio_auth_token", ""),
+            from_number=self.get_setting("plugins.twilio_from_number", ""),
+        )
+        self.plugins["crm-sync"] = CRMSyncPlugin(
+            integration_token=self.get_setting("plugins.notion_integration_token", ""),
+            database_id=self.get_setting("plugins.notion_database_id", ""),
+        )
+        self.plugins["iot-control"] = IoTControlPlugin(
+            client_id=self.get_setting("plugins.tuya_client_id", ""),
+            secret=self.get_setting("plugins.tuya_secret", ""),
+            device_id=self.get_setting("plugins.tuya_device_id", ""),
+        )
 
         # Autonomy queue — durable self-tasking store (H6.1)
         try:
@@ -217,7 +257,35 @@ class Orchestrator:
             self.autonomy_prefs.initialize()
             self.autonomy.executor = self._build_autonomy_executor().execute
             self.observer = ProactiveObserver(self.autonomy, probes=default_probes())
-            logger.info("Autonomy queue + executor + observer initialized")
+
+            # Setup personal event probes using active plugins (Antigravity watchers)
+            from .autonomy.watchers import EventWatcher, EmailProbe, CalendarProbe, FinanceProbe, HealthProbe
+            gmail = self.plugins.get("gmail")
+            calendar = self.plugins.get("google-calendar")
+            balance = self.plugins.get("balance")
+            health = self.plugins.get("apple-health")
+
+            event_probes = [
+                EmailProbe(gmail_plugin=gmail, priority_senders=self.get_setting("autonomy.priority_senders", ["andrei"]), get_setting=self.get_setting),
+                CalendarProbe(calendar_plugin=calendar, lead_time_min=int(self.get_setting("autonomy.calendar_lead_time", 30)), get_setting=self.get_setting),
+                FinanceProbe(balance_plugin=balance, min_ron=float(self.get_setting("autonomy.finance_min_ron", 2000.0)), min_eur=float(self.get_setting("autonomy.finance_min_eur", 400.0)), get_setting=self.get_setting),
+                HealthProbe(health_plugin=health, min_sleep_hrs=float(self.get_setting("autonomy.health_min_sleep", 5.0)), min_hrv_ms=float(self.get_setting("autonomy.health_min_hrv", 30.0)), get_setting=self.get_setting),
+            ]
+            self.event_watcher = EventWatcher(self.autonomy, event_probes)
+
+            async def _reflect_llm(prompt: str) -> str:
+                return await self.process(prompt, agent="jarvis", channel="reflection")
+
+            self.reflector = DailyReflector(self.memory, _reflect_llm)
+
+            # Continuous Ingestion Watcher (H5.1)
+            from .ingestion.watcher import IngestionWatcher
+            self.ingestion_watcher = IngestionWatcher()
+
+            # Multi-agent workflow engine (H5.6)
+            self.workflow_engine = WorkflowEngine(self)
+
+            logger.info("Autonomy queue + executor + observer + event_watcher + reflection + workflows initialized")
         except Exception as e:
             logger.warning(f"Autonomy init failed: {e}")
 
@@ -319,6 +387,20 @@ class Orchestrator:
                 # Sample the host and turn state changes into gated tasks.
                 if self.observer and self.get_setting("system.observer_enabled", True):
                     await self.observer.observe()
+                # Sample personal events (Antigravity watchers)
+                if self.event_watcher and self.get_setting("system.watchers_enabled", True):
+                    await self.event_watcher.observe()
+                # Nightly reflection & graph consolidation (H5.15)
+                if self.reflector and self.get_setting("system.reflection_enabled", True):
+                    if is_night_window(datetime.now().hour, start=22, end=7):
+                        await self.reflector.run(enabled=True)
+                # Continuous Ingestion Watcher (H5.1)
+                if self.ingestion_watcher and self.get_setting("system.ingestion_watcher_enabled", True):
+                    await asyncio.to_thread(self.ingestion_watcher.check_and_run)
+                # Sync error/problem log to BACKLOG.md (Antigravity error backlog logger)
+                if self.get_setting("system.error_backlog_sync_enabled", True):
+                    from .autonomy.error_logger import sync_problems_to_backlog
+                    sync_problems_to_backlog()
             except Exception as e:
                 logger.warning(f"Autonomy tick failed: {e}")
 
@@ -341,6 +423,18 @@ class Orchestrator:
             executor.register(kw, _research)
         for kw in ("summarize", "analyze", "review", "draft", "plan", "prepare"):
             executor.register(kw, _llm)
+
+        # Safe system recovery remediation handler (H6 / Antigravity recovery)
+        from .autonomy.remediation import RemediationRunner
+        runner = RemediationRunner(permission_gate=self.permission_gate, audit=self.audit)
+
+        async def _restart_service(task):
+            service = (task.payload or {}).get("service")
+            agent = getattr(task, "agent", "steve")
+            return await runner.restart(service, agent=agent)
+
+        executor.register("restart_service", _restart_service)
+
         return executor
 
     async def _run_daily_digest(self, kind: str):
@@ -389,6 +483,13 @@ class Orchestrator:
         self.heartbeat_scheduler.stop()
         if self._settings_watcher_task:
             self._settings_watcher_task.cancel()
+        # Close all active plugins gracefully
+        for pid, plugin in self.plugins.items():
+            if hasattr(plugin, "close"):
+                try:
+                    await plugin.close()
+                except Exception as e:
+                    logger.warning(f"Error closing plugin {pid}: {e}")
         logger.info("Channels stopped")
 
     async def channel_handler(self, text: str, channel: str = "voice", **kwargs) -> Optional[str]:
@@ -421,6 +522,8 @@ class Orchestrator:
         return response
 
     async def handle_input(self, text: str, channel: str = "voice", agent_override: str = None) -> str:
+        self._last_channel = channel  # captured for H9.2 tracer
+        t_start = time.perf_counter()
         await self.memory.add_turn(self.session_id, "user", text)
 
         skill_cmd = self.skills.parse_command(text)
@@ -431,34 +534,53 @@ class Orchestrator:
                 result = await skill.execute(command, args, {"channel": channel})
                 if result:
                     await self.memory.add_turn(self.session_id, "assistant", result, agent_id=skill_name)
+                    self.last_cognition = {
+                        "scoring": [],
+                        "decision": {
+                            "source": "skill",
+                            "confidence": 1.0,
+                            "agents_selected": [skill_name],
+                            "alternatives": [],
+                            "timing": {"classify": 0, "route": 0, "total": 0}
+                        },
+                        "trace": [{"step": "skill_execution", "duration_ms": 10, "result": skill_name}]
+                    }
                     return result
 
+        t_c0 = time.perf_counter()
+        intent = await self.router.classify(text, self.agents)
+        t_classify = int((time.perf_counter() - t_c0) * 1000)
+        t_route = 5
+
+        t_p0 = time.perf_counter()
+        plugin_data = await self._gather_plugin_data(text, intent)
+        t_plugin = int((time.perf_counter() - t_p0) * 1000)
+
         if agent_override and agent_override in self.agents:
-            intent = await self.router.classify(text, self.agents)
-            plugin_data = await self._gather_plugin_data(text, intent)
             try:
                 _, _, route_name = self.llm_router.select_backend(agent_override, text)
             except RuntimeError:
                 route_name = ""
+            t_s0 = time.perf_counter()
             responses = await self._call_agents_parallel(
                 [agent_override], text, intent.context, plugin_data
             )
             synthesized = list(responses.values())[0] if responses else ""
+            t_synthesize = int((time.perf_counter() - t_s0) * 1000)
             await self.memory.add_turn(self.session_id, "assistant", synthesized, agent_id=agent_override)
-            self.checkpoints.save(self)
-            self._log_session(text, intent, responses, synthesized)
-            self._record_interactions(text, responses, synthesized, route_name=route_name)
-            self.audit.log(SecurityEvent(
+            await self._maybe_checkpoint()
+            await asyncio.to_thread(self._log_session, text, intent, responses, synthesized)
+            await asyncio.to_thread(self._record_interactions, text, responses, synthesized, route_name)
+            _event_override = SecurityEvent(
                 event_type=SecurityEventType.LLM_CALL,
                 timestamp=time.time(),
                 findings=[],
                 content_preview=synthesized[:100],
                 action_taken=f"handle_input(agent_override={agent_override}) via {channel}",
-            ))
+            )
+            await asyncio.to_thread(self.audit.log, _event_override)
+            self._update_cognition(text, intent, plugin_data, synthesized, t_classify, t_route, t_plugin, t_synthesize)
             return synthesized
-
-        intent = await self.router.classify(text, self.agents)
-        plugin_data = await self._gather_plugin_data(text, intent)
 
         # Determine route for the primary target agent
         primary_agent = (intent.target_agents or ["jarvis"])[0]
@@ -490,6 +612,7 @@ class Orchestrator:
         # Attribute the turn to the agent that actually produced it: Jarvis when
         # it synthesized a multi-agent answer, otherwise the single responder.
         responder_id = "jarvis"
+        t_s0 = time.perf_counter()
         try:
             if was_synthesized:
                 synthesized = await self._synthesize(responses, intent)
@@ -502,28 +625,31 @@ class Orchestrator:
         except Exception as e:
             synthesized = f"I hit an issue processing that: {e}"
             log_error(logger, E_INTERNAL_UNEXPECTED, component="synthesize", detail=str(e))
+        t_synthesize = int((time.perf_counter() - t_s0) * 1000)
 
         skill_name = self._detect_skill_learning(responses, synthesized, intent)
         if skill_name:
             logger.info(f"Learned new skill: {skill_name}")
 
         await self.memory.add_turn(self.session_id, "assistant", synthesized, agent_id=responder_id)
-        self.checkpoints.save(self)
-        self._log_session(text, intent, responses, synthesized)
+        await self._maybe_checkpoint()
+        await asyncio.to_thread(self._log_session, text, intent, responses, synthesized)
+        await asyncio.to_thread(self._record_interactions, text, responses, synthesized, route_name)
 
-        self._record_interactions(text, responses, synthesized, route_name=route_name)
-
-        self.audit.log(SecurityEvent(
+        _event_main = SecurityEvent(
             event_type=SecurityEventType.LLM_CALL,
             timestamp=time.time(),
             findings=[],
             content_preview=synthesized[:100],
             action_taken=f"handle_input via {channel}",
-        ))
+        )
+        await asyncio.to_thread(self.audit.log, _event_main)
 
+        self._update_cognition(text, intent, plugin_data, synthesized, t_classify, t_route, t_plugin, t_synthesize)
         return synthesized
 
     async def handle_input_stream(self, text: str, channel: str = "voice", on_token: Callable = None, agent_override: str = None) -> str:
+        self._last_channel = channel  # captured for H9.2 tracer
         await self.memory.add_turn(self.session_id, "user", text)
 
         skill_cmd = self.skills.parse_command(text)
@@ -536,10 +662,28 @@ class Orchestrator:
                     await self.memory.add_turn(self.session_id, "assistant", result, agent_id=skill_name)
                     if on_token:
                         on_token(result)
+                    self.last_cognition = {
+                        "scoring": [],
+                        "decision": {
+                            "source": "skill",
+                            "confidence": 1.0,
+                            "agents_selected": [skill_name],
+                            "alternatives": [],
+                            "timing": {"classify": 0, "route": 0, "total": 0}
+                        },
+                        "trace": [{"step": "skill_execution", "duration_ms": 10, "result": skill_name}]
+                    }
                     return result
 
+        t_c0 = time.perf_counter()
         intent = await self.router.classify(text, self.agents)
+        t_classify = int((time.perf_counter() - t_c0) * 1000)
+        t_route = 5
+
+        t_p0 = time.perf_counter()
         plugin_data = await self._gather_plugin_data(text, intent)
+        t_plugin = int((time.perf_counter() - t_p0) * 1000)
+
         if agent_override and agent_override in self.agents:
             target = [agent_override]
         else:
@@ -549,6 +693,10 @@ class Orchestrator:
         max_tokens = self.get_setting("llm.max_tokens", 1024)
         context_window = self.get_setting("memory.context_window", 6)
         synthesized = ""
+        # Pre-bind so the post-loop persist/audit never hit UnboundLocalError when
+        # `target` is empty (e.g. _route_candidates returns nothing).
+        agent_id = None
+        t_s0 = time.perf_counter()
         for agent_id in target:
             if agent_id in self.agents:
                 agent = self.agents[agent_id]
@@ -559,9 +707,24 @@ class Orchestrator:
                 context_block = ""
                 if agent_context:
                     context_block = f"Agent context: {agent_context}\n"
+
+                rag_block = ""
+                if agent_id == "howard":
+                    try:
+                        from .ingestion.pipeline import IngestionPipeline
+                        pipeline = IngestionPipeline()
+                        similar = pipeline.search_similar(text, k=5, only_me=True)
+                        if similar:
+                            shot_lines = [f"- Andrei: \"{m.text}\"" for m in similar]
+                            rag_block = "Here are some of your past matching responses from the archive (RAG), mirroring your stylometry, tone, and opinions:\n" + "\n".join(shot_lines) + "\n\n"
+                            logger.info(f"Howard RAG: injected {len(similar)} few-shot messages into stream prompt")
+                    except Exception as e:
+                        logger.warning(f"Howard RAG stream lookup failed: {e}")
+
+                recall_block = await self._recall_block(text)
                 prompt = (
                     f"Conversation history:\n{history}\n\n"
-                    f"{plugin_block}{context_block}"
+                    f"{plugin_block}{context_block}{rag_block}{recall_block}"
                     f"User: {text}\n"
                     f"Respond as {agent.name}."
                 )
@@ -610,6 +773,7 @@ class Orchestrator:
                 else:
                     backend._use_cache = ""
 
+                t_s0 = time.perf_counter()
                 if on_token and hasattr(backend, "generate_stream"):
                     response = await backend.generate_stream(
                         model=model, prompt=prompt,
@@ -628,15 +792,104 @@ class Orchestrator:
                 break
 
         await self.memory.add_turn(self.session_id, "assistant", synthesized, agent_id=agent_id)
-        self.checkpoints.save(self)
-        self.audit.log(SecurityEvent(
+        await self._maybe_checkpoint()
+        _event_stream = SecurityEvent(
             event_type=SecurityEventType.LLM_CALL,
             timestamp=time.time(),
             findings=[],
             content_preview=synthesized[:100],
             action_taken=f"handle_input_stream({agent_id}) via {channel}",
-        ))
+        )
+        await asyncio.to_thread(self.audit.log, _event_stream)
+        t_synthesize = int((time.perf_counter() - t_s0) * 1000)
+        self._update_cognition(text, intent, plugin_data, synthesized, t_classify, t_route, t_plugin, t_synthesize)
         return synthesized
+
+    def _update_cognition(self, text, intent, plugin_data, synthesized, t_classify, t_route, t_plugin, t_synthesize):
+        from core.router import INTENT_RULES
+        scoring = []
+        for kw in intent.context.get("keywords_found", []):
+            if kw in INTENT_RULES:
+                agents, surfaces, weight = INTENT_RULES[kw]
+                scoring.append({
+                    "keyword": kw,
+                    "weight": weight,
+                    "agents": agents,
+                    "category": kw
+                })
+        
+        if not scoring:
+            scoring = []
+
+        alternatives = []
+        for a, s in intent.context.get("scores", {}).items():
+            if a not in (intent.target_agents or ["jarvis"]):
+                alternatives.append({"agent": a, "score": s})
+
+        alternatives = sorted(alternatives, key=lambda x: -x["score"])
+
+        decision = {
+            "source": intent.context.get("source", "keyword_match"),
+            "confidence": intent.confidence,
+            "agents_selected": intent.target_agents or ["jarvis"],
+            "alternatives": alternatives,
+            "timing": {
+                "classify": t_classify,
+                "route": t_route,
+                "total": t_classify + t_route
+            }
+        }
+
+        trace = [
+            {"step": "classify", "duration_ms": t_classify, "result": intent.context.get("source", "keyword_match")},
+            {"step": "route", "duration_ms": t_route, "agents": intent.target_agents or ["jarvis"]}
+        ]
+        if plugin_data:
+            trace.append({"step": "plugin_data", "duration_ms": t_plugin, "plugins": list(plugin_data.keys())})
+        if synthesized:
+            trace.append({"step": "synthesize", "duration_ms": t_synthesize, "tokens": len(synthesized) // 4})
+
+        self.last_cognition = {
+            "scoring": scoring,
+            "decision": decision,
+            "trace": trace
+        }
+
+        # H9.2: persist to tracer ring buffer (defensive — never breaks a request)
+        try:
+            if self.tracer is not None:
+                from .observability.tracer import Tracer
+                model = ""
+                agents_selected = decision.get("agents_selected", [])
+                if agents_selected:
+                    first_agent = agents_selected[0]
+                    agent_obj = self.agents.get(first_agent)
+                    if agent_obj:
+                        model = agent_obj.config.get("model", "")
+                from .llm.tokenizer import estimate_tokens as _et
+                trace_dict = {
+                    "channel": getattr(self, "_last_channel", "unknown"),
+                    "text_preview": (text or "")[:120],
+                    "intent": decision.get("source", ""),
+                    "route": agents_selected[0] if agents_selected else "",
+                    "agents": agents_selected,
+                    "model": model,
+                    "tokens_in": _et(text or ""),
+                    "tokens_out": _et(synthesized or ""),
+                    "timings": {
+                        "classify": t_classify,
+                        "route": t_route,
+                        "plugin": t_plugin,
+                        "synthesize": t_synthesize,
+                        "total_ms": t_classify + t_route + t_plugin + t_synthesize,
+                    },
+                    "ok": True,
+                    "scoring": scoring,
+                    "full_trace": trace,
+                }
+                self.tracer.record(trace_dict)
+        except Exception as _te:
+            logger.debug(f"tracer.record skipped: {_te}")
 
     def _detect_handoff(self, responses: dict[str, str]) -> Optional[str]:
         for agent_id, resp in responses.items():
@@ -757,11 +1010,39 @@ class Orchestrator:
                 blocks.append(f"[REAL-TIME DATA — {key.upper()}]:\n{value}")
         return "\n\n".join(blocks) + "\n\n" if blocks else ""
 
+    async def _recall_block(self, text: str) -> str:
+        """Long-term memory recall injected into the prompt (RAG, all agents).
+
+        Off by default — enable with the `memory.recall_enabled` setting. Pairs
+        with `MEMORY_EMBED_TURNS=true` or explicit `/api/memory/remember` so there
+        is something to recall. Embeds the query and runs fused recall (vector ⊕
+        graph); any failure degrades to an empty block (never breaks a turn)."""
+        if not self.get_setting("memory.recall_enabled", False):
+            return ""
+        try:
+            k = self.get_setting("memory.recall_top_k", 5)
+            hits = await self.memory.recall(text, top_k=k)
+        except Exception as e:
+            logger.warning(f"recall failed: {e}")
+            return ""
+        lines = []
+        for h in hits or []:
+            payload = getattr(h, "payload", {}) or {}
+            md = payload.get("metadata") or {}
+            # vector hits carry text under metadata; graph hits expose a name
+            snippet = payload.get("text") or md.get("text") or payload.get("name")
+            if snippet:
+                lines.append(f"- {snippet}")
+        if not lines:
+            return ""
+        return "Relevant long-term memory (recall):\n" + "\n".join(lines) + "\n\n"
+
     async def _call_agents_parallel(
         self, agent_ids: list[str], text: str, context: dict, plugin_data: dict = None
     ) -> dict[str, str]:
         history = await self.memory.get_context(self.session_id, last_n=6)
         plugin_block = self._format_plugin_data(plugin_data or {})
+        recall_block = await self._recall_block(text)
 
         async def _run_agent(agent_id: str) -> tuple[str, str, float]:
             enriched_text = text
@@ -769,6 +1050,8 @@ class Orchestrator:
                 enriched_text = f"Context:\n{history}\n\nUser: {text}"
             if plugin_block:
                 enriched_text = f"{plugin_block}{enriched_text}"
+            if recall_block:
+                enriched_text = f"{recall_block}{enriched_text}"
             agent_context = await self.memory.get_agent_context(agent_id)
             if agent_context:
                 enriched_text = f"Agent context: {agent_context}\n\n{enriched_text}"
@@ -945,6 +1228,42 @@ class Orchestrator:
 
     def _log_session(self, text, intent, responses, synthesized):
         logger.info(f"[{(self.session_id or 'none')[:20]}]: {text[:40]}... -> {synthesized[:40]}...")
+
+    # ── H7.2 / H7.3: checkpoint debounce helpers ────────────────────────────
+
+    async def _maybe_checkpoint(self):
+        """H7.3: increment turn counter; only persist every N turns.
+
+        The N threshold is read from the runtime settings (default 5) so it
+        can be tuned live without a restart.  Runs the actual SQLite write
+        off the event loop via asyncio.to_thread (H7.2).
+        """
+        self._turns_since_checkpoint += 1
+        every = int(self.get_setting("memory.checkpoint_every", 5) or 5)
+        if self._turns_since_checkpoint >= every:
+            await asyncio.to_thread(self.checkpoints.save, self)
+            self._turns_since_checkpoint = 0
+
+    async def _flush_checkpoint(self):
+        """Force an immediate checkpoint save and reset the turn counter.
+
+        Called on session boundaries so no active session state is lost.
+        """
+        await asyncio.to_thread(self.checkpoints.save, self)
+        self._turns_since_checkpoint = 0
+
+    async def new_session(self) -> str:
+        """Wrapper around memory.new_session() that flushes the checkpoint first
+        so the outgoing session is not lost before we switch context.
+        """
+        await self._flush_checkpoint()
+        sid = await self.memory.new_session()
+        self.session_id = sid
+        return sid
+
+    async def aclose(self):
+        """Graceful shutdown: flush pending checkpoint before process exit."""
+        await self._flush_checkpoint()
 
     async def get_status(self) -> dict:
         return {

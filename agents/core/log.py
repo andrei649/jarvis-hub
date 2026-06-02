@@ -46,7 +46,7 @@ def log_error(
     else:
         logger.info("[%s] %s", code, formatted)
 
-    return ErrorLog(
+    err_log = ErrorLog(
         code=code,
         message=formatted,
         category=entry.category,
@@ -55,3 +55,11 @@ def log_error(
         timestamp=datetime.now(timezone.utc).timestamp(),
         meta=kwargs,
     )
+
+    try:
+        from .autonomy.error_logger import persist_problem
+        persist_problem(err_log)
+    except Exception:
+        pass
+
+    return err_log

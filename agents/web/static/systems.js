@@ -9,6 +9,8 @@ const TABS = [
   { id: 'heartbeats', label: 'Heartbeats' },
   { id: 'learning', label: 'Learning' },
   { id: 'resilience', label: 'Resilience' },
+  { id: 'oauth',    label: 'OAuth Status' },
+  { id: 'oracle',   label: 'Oracle Tab' },
   { id: 'security', label: 'Security & Bench' },
 ];
 
@@ -19,6 +21,53 @@ function SystemsTabBar({ active, onChange }) {
       className: 'sys-tab' + (active === t.id ? ' active' : ''),
       onClick: () => onChange(t.id)
     }, t.label))
+  );
+}
+
+function FusedRecallBox() {
+  const [query, setQuery] = useState('');
+  const [results, setResults] = useState(null);
+  const [loading, setLoading] = useState(false);
+
+  const search = async () => {
+    if (!query.trim()) return;
+    setLoading(true);
+    try {
+      const res = await fetch('/api/memory/search?q=' + encodeURIComponent(query) + '&top_k=8');
+      setResults(await res.json());
+    } catch (err) { console.error('Fused recall error:', err); }
+    setLoading(false);
+  };
+
+  return h('div', { className: 'sys-card wide' },
+    h('div', { className: 'sys-card-head' },
+      h('span', { className: 'sys-card-label' }, 'FUSED RECALL'),
+      h('span', { className: 'sys-card-sublabel' }, 'vector ⊕ graph RRF')
+    ),
+    h('div', { className: 'sys-recall-row' },
+      h('input', {
+        className: 'sys-recall-input',
+        type: 'text',
+        placeholder: 'Search memory…',
+        value: query,
+        onChange: e => setQuery(e.target.value),
+        onKeyDown: e => e.key === 'Enter' && search()
+      }),
+      h('button', { className: 'sys-recall-btn', onClick: search, disabled: loading },
+        loading ? '…' : '⌕'
+      )
+    ),
+    results && h('div', { className: 'sys-recall-results' },
+      results.total === 0
+        ? h('div', { className: 'sys-recall-empty' }, 'No results')
+        : results.results.map((hit, i) =>
+            h('div', { key: hit.id + i, className: 'sys-recall-hit' },
+              h('span', { className: 'sys-recall-score' }, hit.score.toFixed(3)),
+              h('span', { className: 'sys-recall-sources' }, hit.sources.join('+')),
+              h('span', { className: 'sys-recall-id mono' }, hit.id)
+            )
+          )
+    )
   );
 }
 
@@ -106,7 +155,8 @@ function MemoryTab({ data, onRefresh }) {
           )
         )
       )
-    )
+    ),
+    h(FusedRecallBox)
   );
 }
 
@@ -522,6 +572,101 @@ function ResilienceTab({ data, onRefresh }) {
       )
     )
   );
+function OAuthTab({ data, onRefresh, onConnect, onRefreshService }) {
+  if (!data) return h('div', { className: 'sys-loading' }, 'Loading OAuth status...');
+
+  return h('div', { className: 'sys-tab-content' },
+    h('div', { className: 'sys-card wide', style: { marginTop: 0 } },
+      h('div', { className: 'sys-card-head' },
+        h('span', { className: 'sys-card-label' }, 'OAUTH EXTERNAL SERVICES'),
+        h('button', { className: 'sys-refresh', onClick: onRefresh }, '\u21BB')
+      ),
+      h('div', { className: 'sys-cb-grid' },
+        Object.entries(data).map(([key, svc]) =>
+          h('div', {
+            key,
+            className: 'sys-cb-row ' + (svc.connected ? 'closed' : 'open'),
+          },
+            h('div', { className: 'sys-cb-head' },
+              h('span', { className: 'sys-cb-key' }, svc.label),
+              h('span', { className: 'sys-cb-state ' + (svc.connected ? 'closed' : 'open') },
+                svc.connected ? 'CONNECTED' : 'DISCONNECTED'
+              )
+            ),
+            h('div', { className: 'sys-heartbeat-actions', style: { marginTop: '8px', display: 'flex', gap: '8px' } },
+              svc.connected
+                ? h('button', {
+                    className: 'sys-btn sys-btn-primary',
+                    onClick: () => onRefreshService(key),
+                  }, 'Force Refresh')
+                : h('button', {
+                    className: 'sys-btn sys-btn-success',
+                    onClick: () => onConnect(svc.auth_url),
+                  }, 'Connect')
+            )
+          )
+        )
+      )
+    )
+  );
+}
+
+function OracleTab({ data, conflicts, onRefresh, onSync, onResolve }) {
+  if (!data) return h('div', { className: 'sys-loading' }, 'Loading Oracle status...');
+
+  return h('div', { className: 'sys-tab-content' },
+    h('div', { className: 'sys-card wide', style: { marginTop: 0 } },
+      h('div', { className: 'sys-card-head' },
+        h('span', { className: 'sys-card-label' }, 'ORACLE GITHUB INTEGRATION'),
+        h('div', { className: 'sys-card-actions', style: { display: 'flex', gap: '10px', alignItems: 'center' } },
+          h('span', { className: 'sys-status-badge ' + (data.sync_active ? 'active' : 'inactive') },
+            data.sync_active ? 'SYNC ACTIVE' : 'IDLE'
+          ),
+          h('button', { className: 'sys-refresh', onClick: onRefresh }, '\u21BB')
+        )
+      ),
+      h('div', { className: 'sys-stat-row' },
+        h('span', { className: 'sys-stat-key' }, 'Last Succeeded Sync'),
+        h('span', { className: 'sys-stat-val' }, data.last_sync ? new Date(data.last_sync * 1000).toLocaleString() : 'Never')
+      ),
+      h('div', { className: 'sys-stat-row' },
+        h('span', { className: 'sys-stat-key' }, 'Active Branch'),
+        h('span', { className: 'sys-stat-val mono' }, data.branch || 'main')
+      ),
+      h('div', { className: 'sys-stat-row' },
+        h('span', { className: 'sys-stat-key' }, 'Local Commit'),
+        h('span', { className: 'sys-stat-val mono' }, (data.commit || 'N/A').slice(0, 7))
+      ),
+      h('div', { className: 'sys-heartbeat-actions', style: { marginTop: '12px' } },
+        h('button', {
+          className: 'sys-btn sys-btn-primary',
+          onClick: onSync,
+          disabled: data.sync_active
+        }, data.sync_active ? 'Syncing...' : 'Sync Now')
+      )
+    ),
+    h('div', { className: 'sys-card wide', style: { marginTop: 12 } },
+      h('div', { className: 'sys-card-head' },
+        h('span', { className: 'sys-card-label' }, 'LIVE CODE CONFLICTS')
+      ),
+      !conflicts || conflicts.length === 0
+        ? h('div', { className: 'sys-empty' }, 'No unresolved code conflicts detected. Local workspace is fully in sync.')
+        : h('div', { className: 'sys-candidate-list' },
+            conflicts.map((c, i) =>
+              h('div', { key: i, className: 'sys-candidate-row demote' },
+                h('div', { style: { display: 'flex', flexDirection: 'column', gap: '4px' } },
+                  h('span', { className: 'sys-candidate-name', style: { textTransform: 'none' } }, c.file),
+                  h('span', { style: { fontSize: '10px', color: 'var(--text-dim)' } }, 'Reason: ' + c.reason)
+                ),
+                h('button', {
+                  className: 'sys-btn sys-btn-danger',
+                  onClick: () => onResolve(c.id)
+                }, 'Resolve')
+              )
+            )
+          )
+    )
+  );
 }
 
 function SystemsPanel({ agents, onRefresh, onPluginToggle }) {
@@ -534,6 +679,9 @@ function SystemsPanel({ agents, onRefresh, onPluginToggle }) {
   const [learningData, setLearningData] = useState(null);
   const [securityData, setSecurityData] = useState(null);
   const [benchData, setBenchData] = useState(null);
+  const [oauthData, setOauthData] = useState(null);
+  const [oracleData, setOracleData] = useState(null);
+  const [oracleConflicts, setOracleConflicts] = useState([]);
 
   const fetchHeartbeatStatus = useCallback(async () => {
     try {
@@ -590,6 +738,28 @@ function SystemsPanel({ agents, onRefresh, onPluginToggle }) {
     } catch (err) { console.error('Failed to fetch bench:', err); }
   }, []);
 
+  const fetchOauth = useCallback(async () => {
+    try {
+      const res = await fetch('/api/oauth/status');
+      setOauthData(await res.json());
+    } catch (err) { console.error('Failed to fetch OAuth status:', err); }
+  }, []);
+
+  const fetchOracle = useCallback(async () => {
+    try {
+      const res = await fetch('/api/oracle/status');
+      setOracleData(await res.json());
+    } catch (err) { console.error('Failed to fetch Oracle status:', err); }
+  }, []);
+
+  const fetchOracleConflicts = useCallback(async () => {
+    try {
+      const res = await fetch('/api/oracle/conflicts');
+      const d = await res.json();
+      setOracleConflicts(d.conflicts || []);
+    } catch (err) { console.error('Failed to fetch Oracle conflicts:', err); }
+  }, []);
+
   useEffect(() => {
     fetchHeartbeatStatus();
   }, [fetchHeartbeatStatus]);
@@ -599,8 +769,15 @@ function SystemsPanel({ agents, onRefresh, onPluginToggle }) {
   }, [fetchResilience]);
 
   useEffect(() => { fetchMemory(); }, [fetchMemory]);
-  useEffect(() => { fetchPlugins(); }, [fetchPlugins]);
+  useEffect(() => {
+    fetchPlugins();
+    const handler = () => fetchPlugins();
+    window.addEventListener('jarvis:plugins_updated', handler);
+    return () => window.removeEventListener('jarvis:plugins_updated', handler);
+  }, [fetchPlugins]);
   useEffect(() => { fetchLearning(); }, [fetchLearning]);
+  useEffect(() => { fetchOauth(); }, [fetchOauth]);
+  useEffect(() => { fetchOracle(); fetchOracleConflicts(); }, [fetchOracle, fetchOracleConflicts]);
   useEffect(() => { fetchSecurity(); }, [fetchSecurity]);
   useEffect(() => { fetchBench(); }, [fetchBench]);
 
@@ -611,8 +788,32 @@ function SystemsPanel({ agents, onRefresh, onPluginToggle }) {
     if (activeTab === 'memory') fetchMemory();
     if (activeTab === 'plugins') fetchPlugins();
     if (activeTab === 'learning') fetchLearning();
+    if (activeTab === 'oauth') fetchOauth();
+    if (activeTab === 'oracle') { fetchOracle(); fetchOracleConflicts(); }
     if (activeTab === 'security') { fetchSecurity(); fetchBench(); }
-  }, [activeTab, onRefresh, fetchHeartbeatStatus, fetchResilience, fetchMemory, fetchPlugins, fetchLearning, fetchSecurity, fetchBench]);
+  }, [activeTab, onRefresh, fetchHeartbeatStatus, fetchResilience, fetchMemory, fetchPlugins, fetchLearning, fetchSecurity, fetchBench, fetchOauth, fetchOracle, fetchOracleConflicts]);
+
+  const handleOAuthRefreshService = async (service) => {
+    try {
+      await fetch(`/api/oauth/refresh?service=${service}`, { method: 'POST' });
+      await fetchOauth();
+    } catch (err) { console.error('Failed to refresh service token:', err); }
+  };
+
+  const handleOracleSync = async () => {
+    try {
+      setOracleData(prev => prev ? { ...prev, sync_active: true } : null);
+      await fetch('/api/oracle/sync', { method: 'POST' });
+      await fetchOracle();
+    } catch (err) { console.error('Failed to sync Oracle:', err); }
+  };
+
+  const handleOracleResolve = async () => {
+    try {
+      await fetch('/api/oracle/conflicts/resolve', { method: 'POST' });
+      await fetchOracleConflicts();
+    } catch (err) { console.error('Failed to resolve conflicts:', err); }
+  };
 
   const handleHeartbeatStart = async (agentId) => {
     try {
@@ -684,9 +885,22 @@ function SystemsPanel({ agents, onRefresh, onPluginToggle }) {
       }),
       activeTab === 'learning' && h(LearningTab, { data: learningData, onRefresh: handleRefresh }),
       activeTab === 'resilience' && h(ResilienceTab, { data: resilience, onRefresh: handleRefresh }),
+      activeTab === 'oauth' && h(OAuthTab, {
+        data: oauthData,
+        onRefresh: fetchOauth,
+        onConnect: (url) => window.open(url, '_blank'),
+        onRefreshService: handleOAuthRefreshService,
+      }),
+      activeTab === 'oracle' && h(OracleTab, {
+        data: oracleData,
+        conflicts: oracleConflicts,
+        onRefresh: () => { fetchOracle(); fetchOracleConflicts(); },
+        onSync: handleOracleSync,
+        onResolve: handleOracleResolve,
+      }),
       activeTab === 'security' && h(SecurityBenchTab, { security: securityData, bench: benchData, onRefresh: handleRefresh })
     )
   );
 }
 
-Object.assign(window, { SystemsPanel, SystemsTabBar, MemoryTab, PluginsTab, HeartbeatsTab, LearningTab, SecurityBenchTab, ResilienceTab });
+Object.assign(window, { SystemsPanel, SystemsTabBar, MemoryTab, FusedRecallBox, PluginsTab, HeartbeatsTab, LearningTab, SecurityBenchTab, ResilienceTab, OAuthTab, OracleTab });

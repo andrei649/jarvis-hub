@@ -47,7 +47,7 @@ class IngestionPipeline:
         self.wa_parser = WhatsAppParser(my_name=my_short_name)
         self.stylometry = StylometryAnalyzer(profile_path=self.output_root / "voice_profile.json")
         self.knowledge = KnowledgeExtractor(output_dir=self.output_root)
-        self.embedder = Embedder()
+        self.embedder = Embedder(cache_dir=self.output_root / "embedding_cache")
 
         self.messages: list[NormalizedMessage] = []
         self.my_messages: list[NormalizedMessage] = []
@@ -97,7 +97,11 @@ class IngestionPipeline:
         # Phase 6: Generate embeddings
         logger.info("Phase 6: Generating embeddings...")
         self.embedder.embed_many(self.messages)
-        phases.append({"phase": "embeddings", "total": len(self.messages)})
+        phases.append({
+            "phase": "embeddings",
+            "total": len(self.messages),
+            "cache": self.embedder.cache_stats,
+        })
 
         # Phase 7: Save to SQLite
         db_path = self.output_root / "archive.db"
@@ -179,7 +183,44 @@ class IngestionPipeline:
                 f.write(json.dumps(asdict(m), ensure_ascii=False) + "\n")
         logger.info(f"JSONL: {len(self.messages)} messages saved to {jsonl_path}")
 
+    def load_from_sqlite(self, db_path: Path):
+        """Load messages from SQLite to memory for querying."""
+        if not db_path.exists():
+            logger.warning(f"SQLite database {db_path} does not exist. Cannot load messages.")
+            return
+        try:
+            conn = sqlite3.connect(str(db_path))
+            cursor = conn.execute("SELECT source, conversation_id, sender, is_me, text, timestamp, metadata FROM messages")
+            self.messages = []
+            for row in cursor:
+                metadata = json.loads(row[6]) if row[6] else {}
+                m = NormalizedMessage(
+                    source=row[0],
+                    conversation_id=row[1],
+                    sender=row[2],
+                    is_me=row[3] == 1,
+                    text=row[4],
+                    timestamp=row[5],
+                    metadata=metadata
+                )
+                # Retrieve cached embedding from disk
+                if self.embedder.cache is not None:
+                    m.embedding = self.embedder.cache.get(m.text)
+                # If cache miss, dynamically compute embedding
+                if not m.embedding:
+                    m.embedding = self.embedder.embed(m.text)
+                self.messages.append(m)
+            self.my_messages = [m for m in self.messages if m.is_me]
+            conn.close()
+            logger.info(f"Loaded {len(self.messages)} messages from SQLite for search")
+        except Exception as e:
+            logger.error(f"Error loading messages from SQLite: {e}")
+
     def search_similar(self, query: str, k: int = 5, only_me: bool = False) -> list[NormalizedMessage]:
+        if not self.messages:
+            db_path = self.output_root / "archive.db"
+            self.load_from_sqlite(db_path)
+
         query_vec = self.embedder.embed(query)
         scored = []
         for m in self.messages:

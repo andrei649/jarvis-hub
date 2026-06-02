@@ -7,6 +7,7 @@ knowledge graph.
 import asyncio
 import logging
 import os
+import uuid
 from typing import Optional
 
 from .conversation import ConversationMemory
@@ -29,6 +30,9 @@ class MemoryManager:
         self.agent_contexts: dict[str, dict] = {}
         self.graph: KnowledgeGraph = create_graph(graph_backend)
         self._lock = asyncio.Lock()
+        # Real-embeddings recall (lazy: no network/import until first use).
+        self._embedder = None
+        self.embed_turns = os.getenv("MEMORY_EMBED_TURNS", "false").lower() in ("1", "true", "yes")
         seed_graph(self.graph)
 
     def _init_qdrant(self) -> VectorStore:
@@ -60,6 +64,14 @@ class MemoryManager:
                 turn_count = len(self.conversation.sessions.get(session_id, []))
                 self._checkpoint_mgr.update_session(session_id, turn_count=turn_count)
 
+        # Long-term recall: embed the turn into the vector store so it can be
+        # retrieved later via fused recall. Opt-in (MEMORY_EMBED_TURNS) and never
+        # allowed to break the turn — remember() degrades to a no-op on failure.
+        if self.embed_turns and content and content.strip():
+            await self.remember(content, metadata={
+                "role": role, "agent": agent_id, "session": session_id,
+            })
+
     async def get_context(self, session_id: str, last_n: int = 10) -> str:
         async with self._lock:
             return await self.conversation.get_context(session_id, last_n)
@@ -78,6 +90,55 @@ class MemoryManager:
         async with self._lock:
             return self.agent_contexts.get(agent_id, {})
 
+    def _get_embedder(self):
+        """Lazily build the recall embedder (LM Studio by default; see
+        Embedder.from_env). Built on first use so plain MemoryManager()
+        construction stays import-light and offline.
+
+        H7.4: Embedder.from_env() now provides a non-None cache_dir by default,
+        so the embedder always has an active disk cache for recall queries."""
+        if self._embedder is None:
+            from ..ingestion.embedder import Embedder
+            self._embedder = Embedder.from_env()
+        return self._embedder
+
+    async def embed(self, text: str) -> Optional[list[float]]:
+        """Embed text for recall. Returns None for empty input or on failure
+        (caller degrades to keyword/graph-only retrieval)."""
+        if not text or not text.strip():
+            return None
+        try:
+            return await asyncio.to_thread(self._get_embedder().embed, text)
+        except Exception as e:  # never let embedding break a request
+            logger.warning(f"embed failed: {e}")
+            return None
+
+    async def remember(self, text: str, record_id: str = None, metadata: dict = None) -> Optional[str]:
+        """Embed `text` and store it in the vector store for later recall.
+        Returns the record id, or None if it could not be embedded/stored."""
+        vec = await self.embed(text)
+        if vec is None:
+            return None
+        expected = getattr(self.vectors, "dimension", len(vec))
+        if len(vec) != expected:
+            logger.warning(f"embedding dim {len(vec)} != store dim {expected}; skipping store")
+            return None
+        rid = record_id or f"mem-{uuid.uuid4().hex[:12]}"
+        meta = dict(metadata or {})
+        meta.setdefault("text", text)
+        await self.store_embedding(rid, vec, meta)
+        return rid
+
+    async def recall(self, query_text: str, top_k: int = 10, keyword: str = None) -> list:
+        """Fused recall (vector ⊕ graph) for a natural-language query. Embeds the
+        query, then runs RRF fusion; falls back to keyword/graph if embedding fails."""
+        embedding = await self.embed(query_text)
+        return await self.hybrid_search(
+            embedding=embedding,
+            keyword=keyword if keyword is not None else query_text,
+            top_k=top_k,
+        )
+
     async def store_embedding(self, record_id: str, vector: list[float], metadata: dict = None):
         async with self._lock:
             self.vectors.add(record_id, vector, metadata)
@@ -85,6 +146,20 @@ class MemoryManager:
     async def search_similar(self, query: list[float], k: int = 5) -> list[dict]:
         async with self._lock:
             return self.vectors.search(query, k)
+
+    async def hybrid_search(self, embedding: list[float] = None, keyword: str = None,
+                            top_k: int = 10) -> list:
+        """Fuse vector similarity + knowledge-graph hits via Reciprocal Rank
+        Fusion (H5.14). Returns a ranked list of `fusion.FusedHit`."""
+        from .fusion import HybridRetriever
+        async with self._lock:
+            retriever = HybridRetriever(
+                self.vectors, self.graph,
+                k=getattr(self, "fusion_k", 60),
+                vector_weight=getattr(self, "fusion_vector_weight", 1.0),
+                graph_weight=getattr(self, "fusion_graph_weight", 1.0),
+            )
+            return retriever.retrieve(embedding=embedding, keyword=keyword, top_k=top_k)
 
     async def clear(self, session_id: str = None):
         async with self._lock:

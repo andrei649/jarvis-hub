@@ -24,8 +24,38 @@ function App() {
   var _u = useState(false), apiDown = _u[0], setApiDown = _u[1];
   var _v = useState(false), showCognition = _v[0], setShowCognition = _v[1];
   var _w = useState(false), showSystems = _w[0], setShowSystems = _w[1];
+  var _wf = useState(false), showWorkflows = _wf[0], setShowWorkflows = _wf[1];
+  var _ob = useState(false), showObservability = _ob[0], setShowObservability = _ob[1];
   var _x = useState(null), dossierAgent = _x[0], setDossierAgent = _x[1];
+  var _y = useState(null), cognitionData = _y[0], setCognitionData = _y[1];
+  var _tab = useState('chat'), activeMobileTab = _tab[0], setActiveMobileTab = _tab[1];
+  var _lang = useState(window.currentLocale || 'ro'), locale = _lang[0], setLocaleState = _lang[1];
+  var _theme = useState(localStorage.getItem('hud.theme') || 'default'), currentTheme = _theme[0], setThemeState = _theme[1];
   var recRef = useRef(null);
+
+  useEffect(function () {
+    var handler = function (e) { setLocaleState(e.detail); };
+    window.addEventListener('jarvis:locale_changed', handler);
+    return function () { window.removeEventListener('jarvis:locale_changed', handler); };
+  }, []);
+
+  useEffect(function () {
+    var handler = function (e) { setThemeState(e.detail); };
+    window.addEventListener('jarvis:theme_changed', handler);
+    return function () { window.removeEventListener('jarvis:theme_changed', handler); };
+  }, []);
+
+  var fetchCognition = useCallback(async function () {
+    try {
+      var r = await fetch('/api/cognition');
+      var d = await r.json();
+      setCognitionData(d);
+    } catch (e) { console.error('Failed to fetch cognition:', e); }
+  }, []);
+
+  useEffect(function () {
+    if (showCognition) fetchCognition();
+  }, [showCognition, fetchCognition]);
 
   var agentMap = useMemo(function () { return Object.fromEntries(agents.map(function (a) { return [a.id, a]; })); }, [agents]);
 
@@ -37,6 +67,7 @@ function App() {
       setCalendar(data.calendar);
       setNotifications(data.notifications);
       setTasks(data.tasks);
+      if (data.ticker) setTicker(data.ticker);
       setLmOnline(data.lmOnline);
       setApiDown(data.agents.length === 0);
     }).catch(function (err) {
@@ -50,11 +81,12 @@ function App() {
       loadJarvisData().then(function (data) {
         if (data.agents.length) setAgents(data.agents);
         // sys is owned by the dedicated 10s /status poll below; the 30s data
-        // poll must not overwrite it (would clobber fresher values \u2014 bug 2.2).
+        // poll must not overwrite it (would clobber fresher values — bug 2.2).
         if (data.weather.temp !== '\u2014') setWeather(data.weather);
         if (data.calendar.length) setCalendar(data.calendar);
         if (data.notifications.length) setNotifications(data.notifications);
         if (data.tasks.length) setTasks(data.tasks);
+        if (data.ticker && data.ticker.length) setTicker(data.ticker);
         setLmOnline(data.lmOnline);
         setApiDown(data.agents.length === 0);
       }).catch(function (err) { console.error('poll data load failed:', err); setApiDown(true); });
@@ -81,7 +113,12 @@ function App() {
         if (d.lm_online !== undefined) setLmOnline(d.lm_online);
         if (d.voice_state) setVoiceState(d.voice_state);
         setApiDown(false);
-      } catch (e) { setApiDown(true); }
+        try {
+          var tRes = await fetch('/ticker');
+          var tData = await tRes.json();
+          if (tData.ticker) setTicker(tData.ticker);
+        } catch (_) {}
+      } catch (e) { setApiDown(e); }
     }, 10000);
     return function () { clearInterval(id); };
   }, []);
@@ -91,11 +128,40 @@ function App() {
   useHotkey('cmdk', function () { setPaletteOpen(function (o) { return !o; }); });
   useHotkey('esc', function () { setPaletteOpen(false); setFocusAgent(null); });
 
-  var submit = async function () {
+  var speakText = async function (text, lang) {
+    if (window.activeJarvisAudio) {
+      try { window.activeJarvisAudio.pause(); } catch(e){}
+      window.activeJarvisAudio = null;
+    }
+    try {
+      var resp = await fetch('/tts', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text: text, lang: lang || 'ro' }),
+      });
+      if (!resp.ok) return;
+      var blob = await resp.blob();
+      var url = URL.createObjectURL(blob);
+      var audio = new Audio(url);
+      window.activeJarvisAudio = audio;
+      audio.onended = function () {
+        URL.revokeObjectURL(url);
+        if (window.activeJarvisAudio === audio) window.activeJarvisAudio = null;
+      };
+      audio.onerror = function () {
+        if (window.activeJarvisAudio === audio) window.activeJarvisAudio = null;
+      };
+      await audio.play();
+    } catch (e) {
+      console.error('Auto TTS failed:', e);
+    }
+  };
+
+  var submit = async function (textOverride, isVoice) {
     if (sending) return;
-    var text = draft.trim();
+    var text = (typeof textOverride === 'string' ? textOverride : draft).trim();
     if (!text) return;
-    setDraft('');
+    if (typeof textOverride !== 'string') setDraft('');
     setSending(true);
 
     var ts = nowTs();
@@ -130,6 +196,9 @@ function App() {
         setRoutedAgents([]);
         setTimeout(function () { setVoiceState('idle'); }, 1400);
         setSending(false);
+        if (isVoice) {
+          speakText(finalText, locale);
+        }
       };
 
       var processLines = function (parts) {
@@ -163,6 +232,7 @@ function App() {
         if (processLines(parts)) break;
       }
       if (!finished && buf) processLines([buf]);
+      fetchCognition();
     } catch (err) {
       console.error('stream error', err);
       setMessages(function (m) { return [].concat(m, [{ role: 'agent', agent: 'jarvis', ts: nowTs(), text: _t('app.connection_error') }]); });
@@ -170,6 +240,7 @@ function App() {
       setRoutedAgents([]);
       setVoiceState('idle');
       setSending(false);
+      fetchCognition();
     }
   };
 
@@ -192,8 +263,9 @@ function App() {
     rec.onresult = function (e) {
       var t = e.results[0][0].transcript;
       console.log('recognition result:', t);
-      setDraft(t);
+      setDraft('');
       setMic(false);
+      submit(t, true);
     };
     rec.onerror = function (ev) { console.warn('recognition error:', ev.error); setMic(false); recRef.current = null; };
     rec.onend = function () { recRef.current = null; };
@@ -223,6 +295,8 @@ function App() {
       lmOnline: lmOnline,
       onToggleCognition: function () { setShowCognition(function (v) { return !v; }); },
       onToggleSystems: function () { setShowSystems(function (v) { return !v; }); },
+      onToggleWorkflows: function () { setShowWorkflows(function (v) { return !v; }); },
+      onToggleObservability: function () { setShowObservability(function (v) { return !v; }); },
     }),
 
     h(SituationTicker, {
@@ -231,7 +305,13 @@ function App() {
       voiceState: voiceState,
     }),
 
-    h('main', { className: 'hud-main' },
+    h('div', { className: 'hud-mobile-tabs' },
+      h('button', { className: 'mobile-tab-btn ' + (activeMobileTab === 'agents' ? 'is-active' : ''), onClick: function () { setActiveMobileTab('agents'); } }, '👥 ' + _t('app.tab_agents', 'Agents')),
+      h('button', { className: 'mobile-tab-btn ' + (activeMobileTab === 'chat' ? 'is-active' : ''), onClick: function () { setActiveMobileTab('chat'); } }, '💬 ' + _t('app.tab_chat', 'Chat')),
+      h('button', { className: 'mobile-tab-btn ' + (activeMobileTab === 'systems' ? 'is-active' : ''), onClick: function () { setActiveMobileTab('systems'); } }, '📊 ' + _t('app.tab_systems', 'Systems'))
+    ),
+
+    h('main', { className: 'hud-main mobile-tab-' + activeMobileTab },
       h(AgentList, {
         agents: agents,
         tiers: JARVIS_TIERS,
@@ -283,17 +363,27 @@ function App() {
           agentMap: agentMap,
         }),
         showCognition && h(CognitionPanel, {
-          scoring: COGNITION_SCORING.slice(0, 5),
-          decision: ROUTING_DECISION,
-          trace: ORCHESTRATION_TRACE,
+          scoring: cognitionData ? cognitionData.scoring : [],
+          decision: cognitionData ? cognitionData.decision : null,
+          trace: cognitionData ? cognitionData.trace : [],
           message: '',
-          onRefresh: function () { console.log('refresh cognition'); },
+          onRefresh: fetchCognition,
         }),
         showSystems && h(SystemsPanel, {
           agents: agents,
           onRefresh: function (tab) { console.log('refresh systems tab:', tab); },
-          onPluginToggle: function (id) { console.log('toggle plugin:', id); },
+          onPluginToggle: function (id) {
+            fetch('/plugins/' + id + '/toggle', { method: 'PUT' })
+              .then(function (r) { return r.json(); })
+              .then(function (d) {
+                console.log('plugin toggled:', d);
+                window.dispatchEvent(new CustomEvent('jarvis:plugins_updated'));
+              })
+              .catch(function (err) { console.error('plugin toggle failed:', err); });
+          },
         }),
+        showWorkflows && h(WorkflowsPanel, { agents: agents }),
+        showObservability && h(ObservabilityPanel, {}),
       ),
     ),
 

@@ -162,7 +162,8 @@ def test_select_backend_local_only_policy_local(monkeypatch):
     router._local_available = True
     router._backend = FakeBackend()
     backend, model, route = router.select_backend("frigga", "hello")
-    assert route == "local"
+    # frigga is a deep-think agent — routes to local-deep slot
+    assert route == "local-deep"
 
 
 def test_select_backend_local_only_policy_cloud_fallback(monkeypatch):
