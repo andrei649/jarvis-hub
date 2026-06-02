@@ -1,7 +1,20 @@
+"""
+store.py — Memory stores for Jarvis.
+
+Contains:
+  - VectorStore / InMemoryVectorStore: vector similarity search (legacy / embeddings)
+  - MemoryStore: structured, persistent key/value memory for user facts and preferences.
+    Backed by SQLite with WAL mode. Semantic search is stubbed (H8.3 wires Qdrant).
+"""
+import asyncio
+import json
 import logging
 import math
+import sqlite3
+import threading
 from abc import ABC, abstractmethod
-from typing import Any
+from pathlib import Path
+from typing import Any, Optional
 
 logger = logging.getLogger("jarvis.memory.store")
 
@@ -144,3 +157,135 @@ class InMemoryVectorStore(VectorStore):
 
     def __len__(self):
         return len(self.records)
+
+
+# ---------------------------------------------------------------------------
+# H8.2 — Structured memory store (SQLite-backed key/value)
+# ---------------------------------------------------------------------------
+
+DEFAULT_DB_PATH = Path(__file__).parent.parent.parent / "data" / "memory.db"
+
+
+class MemoryStore:
+    """Structured, persistent memory for user facts and preferences.
+
+    Backed by SQLite with WAL mode.  Semantic search is stubbed
+    (H8.3 wires Qdrant).
+    """
+
+    def __init__(self, db_path: Optional[Path] = None):
+        self._path = Path(db_path or DEFAULT_DB_PATH)
+        self._path.parent.mkdir(parents=True, exist_ok=True)
+        self._lock = threading.Lock()
+        self._init_db()
+
+    def _conn(self) -> sqlite3.Connection:
+        conn = sqlite3.connect(str(self._path), check_same_thread=False)
+        conn.row_factory = sqlite3.Row
+        conn.execute("PRAGMA journal_mode=WAL")
+        return conn
+
+    def _init_db(self):
+        with self._lock:
+            with self._conn() as conn:
+                conn.execute("""
+                    CREATE TABLE IF NOT EXISTS memory (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        category TEXT NOT NULL,
+                        key TEXT NOT NULL,
+                        value TEXT NOT NULL,
+                        metadata TEXT DEFAULT '{}',
+                        created_at TEXT DEFAULT (datetime('now')),
+                        updated_at TEXT DEFAULT (datetime('now')),
+                        UNIQUE(category, key)
+                    )
+                """)
+                conn.execute(
+                    "CREATE INDEX IF NOT EXISTS idx_memory_category ON memory(category)"
+                )
+
+    async def upsert(self, category: str, key: str, value: str, metadata: dict = None):
+        meta_json = json.dumps(metadata or {})
+        loop = asyncio.get_event_loop()
+        await loop.run_in_executor(None, self._upsert_sync, category, key, value, meta_json)
+
+    def _upsert_sync(self, category: str, key: str, value: str, meta_json: str):
+        with self._lock:
+            with self._conn() as conn:
+                conn.execute("""
+                    INSERT INTO memory (category, key, value, metadata)
+                    VALUES (?, ?, ?, ?)
+                    ON CONFLICT(category, key) DO UPDATE SET
+                        value=excluded.value,
+                        metadata=excluded.metadata,
+                        updated_at=datetime('now')
+                """, (category, key, value, meta_json))
+
+    async def get(self, category: str, key: str) -> Optional[dict]:
+        loop = asyncio.get_event_loop()
+        return await loop.run_in_executor(None, self._get_sync, category, key)
+
+    def _get_sync(self, category: str, key: str) -> Optional[dict]:
+        with self._lock:
+            with self._conn() as conn:
+                row = conn.execute(
+                    "SELECT * FROM memory WHERE category=? AND key=?", (category, key)
+                ).fetchone()
+                return dict(row) if row else None
+
+    async def get_category(self, category: str) -> list[dict]:
+        loop = asyncio.get_event_loop()
+        return await loop.run_in_executor(None, self._get_category_sync, category)
+
+    def _get_category_sync(self, category: str) -> list[dict]:
+        with self._lock:
+            with self._conn() as conn:
+                rows = conn.execute(
+                    "SELECT * FROM memory WHERE category=? ORDER BY updated_at DESC",
+                    (category,),
+                ).fetchall()
+                return [dict(r) for r in rows]
+
+    async def get_all(self) -> dict[str, list[dict]]:
+        loop = asyncio.get_event_loop()
+        return await loop.run_in_executor(None, self._get_all_sync)
+
+    def _get_all_sync(self) -> dict[str, list[dict]]:
+        with self._lock:
+            with self._conn() as conn:
+                rows = conn.execute(
+                    "SELECT * FROM memory ORDER BY category, updated_at DESC"
+                ).fetchall()
+                result: dict[str, list] = {}
+                for r in rows:
+                    d = dict(r)
+                    result.setdefault(d["category"], []).append(d)
+                return result
+
+    async def delete(self, category: str, key: str) -> bool:
+        loop = asyncio.get_event_loop()
+        return await loop.run_in_executor(None, self._delete_sync, category, key)
+
+    def _delete_sync(self, category: str, key: str) -> bool:
+        with self._lock:
+            with self._conn() as conn:
+                cur = conn.execute(
+                    "DELETE FROM memory WHERE category=? AND key=?", (category, key)
+                )
+                return cur.rowcount > 0
+
+    async def search(self, query: str, limit: int = 10) -> list[dict]:
+        """Basic text search — semantic search stubbed for H8.3."""
+        loop = asyncio.get_event_loop()
+        return await loop.run_in_executor(None, self._search_sync, query, limit)
+
+    def _search_sync(self, query: str, limit: int) -> list[dict]:
+        with self._lock:
+            with self._conn() as conn:
+                pattern = f"%{query}%"
+                rows = conn.execute(
+                    "SELECT * FROM memory WHERE value LIKE ? OR key LIKE ?"
+                    " ORDER BY updated_at DESC LIMIT ?",
+                    (pattern, pattern, limit),
+                ).fetchall()
+                return [dict(r) for r in rows]
