@@ -1,5 +1,5 @@
 import logging
-import httpx
+from ..http_client import PluginHTTPClient
 from ..resilience import resilient_call
 
 logger = logging.getLogger("jarvis.plugins.crm")
@@ -9,7 +9,7 @@ class CRMSyncPlugin:
     def __init__(self, integration_token: str = "", database_id: str = ""):
         self.integration_token = integration_token.strip()
         self.database_id = database_id.strip()
-        self.client = httpx.AsyncClient(timeout=12.0)
+        self.client = PluginHTTPClient.for_plugin("crm")
 
     @resilient_call(
         max_retries=2,
@@ -48,4 +48,4 @@ class CRMSyncPlugin:
         return {"status": "synced", "id": res.get("id"), "url": res.get("url")}
 
     async def close(self):
-        await self.client.aclose()
+        await self.client.close()

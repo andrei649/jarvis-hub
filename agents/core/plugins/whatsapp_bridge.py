@@ -9,7 +9,7 @@ Bridge connects to a local WhatsApp Web instance running on the Pi 5.
 import logging
 from typing import Optional
 
-import httpx
+from ..http_client import PluginHTTPClient
 
 logger = logging.getLogger("jarvis.plugins.whatsapp")
 
@@ -17,7 +17,7 @@ logger = logging.getLogger("jarvis.plugins.whatsapp")
 class WhatsAppBridgePlugin:
     def __init__(self, bridge_url: str = "http://192.168.1.100:3000"):
         self.bridge_url = bridge_url
-        self.client = httpx.AsyncClient(timeout=15.0)
+        self.client = PluginHTTPClient.for_plugin("whatsapp")
 
     async def send_message(self, to: str, message: str) -> bool:
         try:
@@ -60,4 +60,4 @@ class WhatsAppBridgePlugin:
         return log_line
 
     async def close(self):
-        await self.client.aclose()
+        await self.client.close()

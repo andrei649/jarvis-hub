@@ -1,7 +1,7 @@
 import logging
 import xml.etree.ElementTree as ET
 
-import httpx
+from ..http_client import PluginHTTPClient
 
 logger = logging.getLogger("jarvis.plugins.news")
 
@@ -18,7 +18,7 @@ FEEDS = {
 
 class NewsPlugin:
     def __init__(self):
-        self.client = httpx.AsyncClient(timeout=15.0)
+        self.client = PluginHTTPClient.for_plugin("news")
 
     async def get_headlines(self, category: str = "general", limit: int = 5) -> list[dict]:
         feed_url = FEEDS.get(category, FEEDS["general"])
@@ -62,4 +62,4 @@ class NewsPlugin:
         return "\n".join(lines) if lines else "No news found."
 
     async def close(self):
-        await self.client.aclose()
+        await self.client.close()

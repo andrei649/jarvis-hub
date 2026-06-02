@@ -1,5 +1,5 @@
 import logging
-import httpx
+from ..http_client import PluginHTTPClient
 from ..resilience import resilient_call
 
 logger = logging.getLogger("jarvis.plugins.sms")
@@ -10,7 +10,7 @@ class SMSAlertsPlugin:
         self.account_sid = account_sid.strip()
         self.auth_token = auth_token.strip()
         self.from_number = from_number.strip()
-        self.client = httpx.AsyncClient(timeout=10.0)
+        self.client = PluginHTTPClient.for_plugin("sms")
 
     @resilient_call(
         max_retries=2,
@@ -42,4 +42,4 @@ class SMSAlertsPlugin:
         return {"status": "sent", "to": to_number, "sid": res.get("sid")}
 
     async def close(self):
-        await self.client.aclose()
+        await self.client.close()

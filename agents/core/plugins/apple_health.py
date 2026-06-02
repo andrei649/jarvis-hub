@@ -13,13 +13,15 @@ from typing import Optional
 
 import httpx
 
+from ..http_client import PluginHTTPClient
+
 logger = logging.getLogger("jarvis.plugins.apple_health")
 
 
 class AppleHealthPlugin:
     def __init__(self, bridge_url: str = "http://192.168.1.100:8081"):
         self.bridge_url = bridge_url.rstrip("/")
-        self.client = httpx.AsyncClient(timeout=10.0)
+        self.client = PluginHTTPClient.for_plugin("apple_health")
 
     async def get_sleep(self, days: int = 1) -> list[dict]:
         try:
@@ -120,4 +122,4 @@ class AppleHealthPlugin:
         }
 
     async def close(self):
-        await self.client.aclose()
+        await self.client.close()

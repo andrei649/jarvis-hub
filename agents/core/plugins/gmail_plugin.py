@@ -11,8 +11,7 @@ import base64
 from email.mime.text import MIMEText
 from typing import Optional
 
-import httpx
-
+from ..http_client import PluginHTTPClient
 from .oauth import refresh_google_token, load_token
 from ..resilience import resilient_call
 
@@ -23,7 +22,7 @@ class GmailPlugin:
     def __init__(self, access_token: str = ""):
         self.access_token = access_token
         self.api_base = "https://gmail.googleapis.com/gmail/v1/users/me"
-        self.client = httpx.AsyncClient(timeout=15.0)
+        self.client = PluginHTTPClient.for_plugin("gmail")
         self._refresh_attempted = False
 
     def _headers(self) -> dict:
@@ -119,4 +118,4 @@ class GmailPlugin:
             return False
 
     async def close(self):
-        await self.client.aclose()
+        await self.client.close()

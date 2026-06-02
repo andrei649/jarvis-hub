@@ -19,6 +19,8 @@ from typing import Optional
 
 import httpx
 
+from ..http_client import PluginHTTPClient
+
 logger = logging.getLogger("jarvis.oracle")
 
 REPO_DIR = Path(__file__).resolve().parent.parent.parent.parent
@@ -64,6 +66,7 @@ class OracleBridgePlugin:
         self.conflicts: list[Conflict] = []
         self._watcher_task: Optional[asyncio.Task] = None
         self._running = False
+        self._client = PluginHTTPClient.for_plugin("oracle")
         self._load_state()
 
     # ── Public API ────────────────────────────────────────────────
@@ -116,13 +119,12 @@ class OracleBridgePlugin:
             headers["Authorization"] = f"token {self.github_token}"
 
         try:
-            async with httpx.AsyncClient(timeout=10) as client:
-                resp = await client.get(f"{GITHUB_API}/commits?per_page=1", headers=headers)
-                if resp.status_code != 200:
-                    return {"ok": False, "error": f"GitHub API: {resp.status_code}"}
-                data = resp.json()
-                if not data:
-                    return {"ok": False, "error": "no commits"}
+            resp = await self._client.get(f"{GITHUB_API}/commits?per_page=1", headers=headers)
+            if resp.status_code != 200:
+                return {"ok": False, "error": f"GitHub API: {resp.status_code}"}
+            data = resp.json()
+            if not data:
+                return {"ok": False, "error": "no commits"}
         except Exception as e:
             return {"ok": False, "error": str(e)}
 

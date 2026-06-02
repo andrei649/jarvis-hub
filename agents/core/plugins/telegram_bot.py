@@ -9,7 +9,7 @@ Uses the PermissionGate to enforce domain restrictions.
 import logging
 from typing import Optional
 
-import httpx
+from ..http_client import PluginHTTPClient
 
 logger = logging.getLogger("jarvis.plugins.telegram_bot")
 
@@ -18,7 +18,7 @@ class TelegramBotPlugin:
     def __init__(self, token: str = ""):
         self.token = token
         self.api_base = f"https://api.telegram.org/bot{token}" if token else ""
-        self.client = httpx.AsyncClient(timeout=15.0)
+        self.client = PluginHTTPClient.for_plugin("telegram_bot")
 
     async def send_message(self, chat_id: int, text: str,
                            parse_mode: str = "Markdown",
@@ -81,4 +81,4 @@ class TelegramBotPlugin:
             return False
 
     async def close(self):
-        await self.client.aclose()
+        await self.client.close()

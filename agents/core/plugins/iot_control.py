@@ -1,5 +1,5 @@
 import logging
-import httpx
+from ..http_client import PluginHTTPClient
 from ..resilience import resilient_call
 
 logger = logging.getLogger("jarvis.plugins.iot")
@@ -10,7 +10,7 @@ class IoTControlPlugin:
         self.client_id = client_id.strip()
         self.secret = secret.strip()
         self.device_id = device_id.strip()
-        self.client = httpx.AsyncClient(timeout=10.0)
+        self.client = PluginHTTPClient.for_plugin("iot")
 
     @resilient_call(
         max_retries=2,
@@ -44,4 +44,4 @@ class IoTControlPlugin:
         return {"status": "toggled", "device": self.device_id, "state": "ON" if state else "OFF"}
 
     async def close(self):
-        await self.client.aclose()
+        await self.client.close()

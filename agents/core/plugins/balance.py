@@ -9,7 +9,7 @@ import logging
 from pathlib import Path
 from typing import Optional
 
-import httpx
+from ..http_client import PluginHTTPClient
 
 logger = logging.getLogger("jarvis.gecko.balance")
 
@@ -36,7 +36,7 @@ MOCK_BURN_RATE = {
 class BalanceReaderPlugin:
     def __init__(self, ing_client_id: str = "", ing_client_secret: str = "",
                  libra_token: str = "", csv_path: str = ""):
-        self.client = httpx.AsyncClient(timeout=15.0)
+        self.client = PluginHTTPClient.for_plugin("balance")
         self.ing_client_id = ing_client_id
         self.ing_client_secret = ing_client_secret
         self.libra_token = libra_token
@@ -133,4 +133,4 @@ class BalanceReaderPlugin:
         return dict(MOCK_BURN_RATE)
 
     async def close(self):
-        await self.client.aclose()
+        await self.client.close()
