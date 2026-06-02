@@ -177,5 +177,94 @@ The fastest path from "~€50k of IP" to "fundable/sellable asset" is **commerci
 
 ---
 
+## 8. Hosting Cost Simulation — 100 / 1,000 / 1,000,000 Users
+
+> **Key framing:** Jarvis is **local-first**. A self-hosted (Community) user costs us **$0** —
+> their GPU, their electricity. The costs below apply only to the **hosted/managed (Pro)** subset
+> where *we* run the inference. This is a worst-case "100% hosted" model.
+
+### 8.1 Assumptions (stated so they can be challenged)
+
+| Assumption | Value | Rationale |
+|------------|-------|-----------|
+| Engaged hosted user demand | ~20 interactive queries/day × ~1,500 output tokens + 1 nightly reflection (~2k) ≈ **32k output tok/day** (~960k/mo) | Proactive system; autonomy probes are cheap (no LLM), reflection is 1 call/night |
+| GPU model | ~26B MoE (4B active), batched on a 24–48GB GPU (L40S / 4090 / 5090-class) | Current stack (LM Studio dual-slot) |
+| GPU throughput | **~50M output tok/day sustained** per GPU (conservative; batched vLLM-class can exceed this) | Leaves headroom for prefill + latency |
+| Peak concurrency | ~2% of users in-flight at peak; **~25 concurrent streams/GPU** at good UX | Daytime peak sizing |
+| GPU unit cost | Rented community **$0.80/hr (~$585/mo)** · reserved **$0.50/hr (~$365/mo)** · **owned + colocated amortized ~$95/mo** (HW over 3yr + power + colo) | Rent at small scale, own at hyperscale |
+| Cloud-LLM fallback | ~10% of heavy queries → Claude/Gemini ≈ **$0.10/user/mo** (own deep-tier GPUs cut this at scale) | Athena / heavy-reasoning escalation (H7.5 tiering) |
+
+### 8.2 GPU sizing (two independent methods agree)
+
+| Scale | Tokens/day | By throughput (÷50M) | Peak concurrent (2%) | By concurrency (÷25) | **GPUs provisioned** (peak + redundancy) |
+|-------|-----------|----------------------|----------------------|----------------------|------------------------------------------|
+| 100 | 3.2M | 0.06 | 2 | 0.1 | **1** (heavily underutilized) |
+| 1,000 | 32M | 0.64 | 20 | 0.8 | **2** |
+| 1,000,000 | 32B | 640 | 20,000 | 800 | **~1,000** |
+
+### 8.3 Monthly cost stack
+
+| Component | 100 users | 1,000 users | 1,000,000 users |
+|-----------|-----------|-------------|-----------------|
+| GPU inference | $585 (1 rented) | $730 (2 reserved) | **$95k** (1,000 owned+colo) |
+| App / orchestration / channels / autonomy | $40 | $100 | $30k |
+| Databases (Postgres + Qdrant + Neo4j) | $60 | $350 | $50k |
+| Object storage (logs, embeddings, checkpoints) | $1 | $30 | $6k |
+| Bandwidth / egress | $15 | $50 | $15k |
+| Cloud-LLM fallback (Claude/Gemini) | $10 | $100 | $30k–100k* |
+| Monitoring / backups / SRE tooling | $15 | $120 | $20k |
+| **Total infra / month** | **~$725** | **~$1,500** | **~$250k–320k** |
+| **Cost per user / month** | **~$7.30** | **~$1.50** | **~$0.25–0.32** |
+
+\* Swing factor: serving the heavy tier on your *own* larger GPUs (vs paying Claude/Gemini per token)
+is the difference between ~$30k and ~$100k/mo at 1M scale.
+
+**Why per-user cost collapses with scale:** at 100 users one GPU sits ~6% utilized (you pay for a
+whole GPU to serve almost nobody). At 1,000 users the GPUs fill up. At 1M you **own** the hardware
+(amortized ~$95/mo/GPU vs ~$365 rented), batch at high utilization, and fill nightly valleys with
+reflection jobs — so marginal cost per user drops ~25× from the 100-user case.
+
+### 8.4 Break-even fee and recommended price
+
+| Scale | Infra cost/user | Break-even fee | At **€19 Pro** price | Gross margin |
+|-------|-----------------|----------------|----------------------|--------------|
+| 100 | ~$7.30 | **~$8/mo** | €19 (~$20) | ~60% |
+| 1,000 | ~$1.50 | **~$2/mo** | €19 | ~92% |
+| 1,000,000 | ~$0.30 | **~$0.40/mo** | €19 | ~98% |
+
+- **Minimum sustainable hosted price ≈ $8–10/user/mo** (set by the 100-user / cold-start case,
+  not steady state). The €9 **Personal** tier only works if those users **self-host the GPU** and
+  we just supply hosting glue + cloud credits; fully-managed users need the **€19 Pro** price.
+- Above ~1,000 hosted users, €19 Pro is **highly profitable on infra** (>90% gross margin) — which
+  is exactly why the open-core + hosted model works: free self-host drives adoption at $0 to us,
+  and the hosted minority funds the company at fat margins.
+
+### 8.5 The caveat that dominates at scale: **people, not servers**
+
+Infra is the *easy* cost. The real monthly burn at scale is **payroll + support + G&A**:
+
+| Scale | Infra/mo | Realistic team / opex /mo | True cost to "run all that" /mo |
+|-------|----------|---------------------------|---------------------------------|
+| 100 | ~$0.7k | Founder(s), ~$0–15k | **~$1k–16k** |
+| 1,000 | ~$1.5k | Small team (3–5), ~$40–70k | **~$42k–72k** |
+| 1,000,000 | ~$0.3M | SRE + support + eng + G&A (50–150 staff), **~$0.7M–2M** | **~$1M–2.3M** |
+
+At 1M users the **$250–320k of servers is dwarfed by ~$1–2M of humans.** A 1M-user hosted base at
+€19 Pro (even at 5–10% paid conversion = 50k–100k payers) generates **~€1M–1.9M/mo revenue** — i.e.,
+the model closes, but only because infra is cheap (local-first MoE) and self-host carries the free tier.
+
+### 8.6 One-line answers
+
+- **100 users:** ~**$725/mo** to run (~$7.30/user). Price floor ~$8 → charge €19 Pro.
+- **1,000 users:** ~**$1,500/mo** (~$1.50/user). €19 Pro ≈ 92% margin.
+- **1,000,000 users:** ~**$250k–320k/mo** infra (~$0.30/user), but ~**$1M–2M/mo** all-in with staff.
+  €19 Pro fully funds it at modest paid conversion.
+
+> All figures assume the *hosted* path. Push users to **self-host (Community, $0 to us)** and the
+> infra line for that cohort disappears entirely — the strategic reason local-first is also a
+> cost-of-goods advantage.
+
+---
+
 *See also: [GO_LIVE_PLAN.md](../GO_LIVE_PLAN.md) (features + marketing brief),
 [BACKLOG.md](../BACKLOG.md) (roadmap), [docs/ARCHITECTURE.md](ARCHITECTURE.md) (technical map).*
