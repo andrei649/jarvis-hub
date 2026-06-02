@@ -1611,9 +1611,11 @@ def _trust_status() -> dict:
         claude_available = bool(getattr(router, "_claude_available", False))
 
     # Strict-local when no cloud path exists at all; env flag can force it on.
-    strict_local = not (cloud_available or claude_available)
-    if _env_truthy(os.environ.get("JARVIS_STRICT_LOCAL")):
-        strict_local = True
+    # Single unconditional assignment (De Morgan of `not (cloud or claude)`)
+    # so the value is provably initialized before use.
+    strict_local = (not cloud_available and not claude_available) or _env_truthy(
+        os.environ.get("JARVIS_STRICT_LOCAL")
+    )
 
     return {
         "mic": "off" if mic_muted else "on",
