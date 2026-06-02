@@ -31,9 +31,16 @@ private life to a hyperscaler.
   is good enough for 99% of daily tasks at **$0 marginal cost** (see [VALUATION_AND_PRICING.md](docs/VALUATION_AND_PRICING.md) §8).
 - **Privacy is becoming a buying criterion**, not a footnote — regulated orgs and privacy-conscious
   individuals can't or won't send their data to someone else's model.
-- **Agent orchestration is fragmenting** into reactive chatbots vs rigid workflow builders. Nobody
-  combines *autonomy + memory + observability + preference learning* in one local-first system
-  (see the differentiation table in [GO_LIVE_PLAN.md](GO_LIVE_PLAN.md) §3).
+- **Agent orchestration is fragmenting** into reactive chatbots vs rigid workflow builders. No
+  *shipping consumer product* combines *autonomy + memory + observability + preference learning* in
+  one **local-first** system: the closest combined product (Amazon's Bee) is cloud; the closest
+  local-first one (open-source Omi) is passive capture, not an autonomous actor (verified 2026-06-02 —
+  [docs/research/2026-06-02-personal-ai-competitors.md](docs/research/2026-06-02-personal-ai-competitors.md)).
+- **The cautionary tale validates the bet.** The viral 2026 rival **OpenClaw** relaxed exactly the
+  constraints this project holds non-negotiable (production-grade security, governed autonomy) — and
+  within ~8 weeks became the #1 infostealer target, with malware harvesting users' agent-memory files.
+  The "knows-you device" graveyard (Humane, Dot, Rewind/Limitless, Pi) was uniformly cloud-dependent.
+  **Local-first + governed is the durable position, not the slow one** — this *confirms* thesis #3 below.
 
 ---
 

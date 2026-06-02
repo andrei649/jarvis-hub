@@ -231,6 +231,28 @@ edge-tts backend, dynamic speech button (🔊), global audio window manager (`wi
 
 ---
 
+## ORIZONT 12 — Personal-AI Category Research (Context Research)
+
+**Research complet (2026-06-02):** Deep research (5 agenți paraleli + verificare adversarială independentă) pe categoria *reală* a moonshot-ului — **asistenți personali proactivi & privați** — pe care H10 (8 framework-uri de developeri) NU o acoperise.
+**Doc complet:** `docs/research/2026-06-02-personal-ai-competitors.md` · **Backlog:** ORIZONT 12 (14 items, ~89 SP)
+
+**Constatări-cheie:**
+- **Rival direct ratat anterior:** **OpenClaw** (viral nov-2025, ~180k★, self-hosted, local-capable, proactiv) — aceeași teză ca Jarvis. Eșecul lui (secrete în plaintext, fără guvernanță acțiuni, marketplace nemoderat → ținta #1 a infostealerelor în feb-2026) = exact wedge-ul Jarvis (alternativa guvernată).
+- **Cimitirul device-urilor „knows-you"** (Humane mort feb-2025; Dot închis oct-2025; Rewind/Limitless → Meta dec-2025; Pi/Inflection → B2B) — toate cloud-dependente → validează local-first + software-first.
+- **Claim de diferențiere îngustat dar apărabil:** Amazon Bee combină proactivitate+memorie (cloud); Omi e local dar pasiv. Corectat în `GO_LIVE_PLAN.md` §3 + `MOONSHOT.md` §2.
+
+---
+
+## Decision Log (MOONSHOT §7.4)
+
+> Decizii strategice semnificative, cu dată + rațiune, ca moonshot-ul să aibă audit trail.
+
+| Date | Decision | Rationale |
+|------|----------|-----------|
+| 2026-06-02 | **Păstrăm toate cele 6 principii non-negociabile; adoptăm funcționalitățile de tip OpenClaw (multi-channel, marketplace de skills, autonomie low-friction) DOAR sub guvernanță.** | Evaluat dacă rivalul viral OpenClaw justifică relaxarea principiilor. Concluzie: niciuna dintre funcționalitățile lui interesante nu cere renunțarea la un non-negociabil — fiecare e livrabilă în interiorul principiilor (ORIZONT 12), iar varianta guvernată e strict mai bună. Criza de securitate OpenClaw *validează* „production-grade + governance" (teza #3), nu o contestă. |
+
+---
+
 ## PR & Merge History (2026-06-02 session)
 
 | PR | Title | Status |
@@ -249,3 +271,4 @@ edge-tts backend, dynamic speech button (🔊), global audio window manager (`wi
 | #24 | feat(h5): Daily Reflection + Multi-Agent Workflows + Task4 | ✅ Merged 2026-06-02 |
 | #25 | docs(backlog): sync stale counters — H5 17/17, 909 tests, H5.1 ✅ | ✅ Merged 2026-06-02 |
 | #28 | docs: GO_LIVE_PLAN.md — feature inventory, roadmap & marketing brief | ✅ Merged 2026-06-02 |
+| #49 | research(competitors): personal-AI category analysis + ORIZONT 12 + doc enrichment | 🚧 Draft |

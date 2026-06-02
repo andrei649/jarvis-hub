@@ -14,7 +14,7 @@ A personal AI mesh that handles the cross-section of Andrei's life: work at Raif
 
 ## Architecture
 
-**Pure local Python + opt-in plugin layer.** No OpenClaw. No cloud dependency by default. Every third-party service is an explicit, scope-limited, audit-able, disable-able plugin.
+**Pure local Python + opt-in plugin layer.** *Not* OpenClaw — deliberately: where the viral 2026 rival stores secrets in plaintext and runs ungoverned community skills (which made it the #1 infostealer target of 2026), here every action is gated by a reversible/irreversible approval queue, guardrails, and an audit log. No cloud dependency by default. Every third-party service is an explicit, scope-limited, audit-able, disable-able plugin.
 
 ## The cabinet
 
