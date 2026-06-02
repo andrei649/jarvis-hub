@@ -1,0 +1,25 @@
+name: CI
+on:
+  pull_request:
+  push:
+    branches: [main]
+jobs:
+  test:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -r requirements-beta.txt
+      - run: pip install ruff pytest-timeout
+      - name: Lint (non-blocking)
+        run: ruff check . --exit-zero
+        continue-on-error: true
+      - name: Test
+        run: python -m pytest tests/ --timeout=90 -q --tb=short
+        env:
+          JARVIS_TESTING: "1"
