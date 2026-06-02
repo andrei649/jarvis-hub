@@ -144,13 +144,9 @@ python -m pytest tests/ -v          # 1100+ passed, 8 skipped
 
 ---
 
-## 🔴 Auto-Generated Diagnostic Tasks
-
-> [!NOTE]
-> These tasks are auto-generated from active runtime failures in `problems.jsonl`.
-> Sync runs automatically during the autonomy observer check.
-
-✓ No active runtime failures detected in the last 48 hours.
+> **Runtime diagnostics** (auto-generated from `problems.jsonl`) now live in the
+> git-ignored `memory_logs/diagnostics.md` — they are **no longer written into this
+> tracked file** (that caused recurring `git pull` conflicts; see BUG-4).
 
 ## 🐛 Bugs & Hot Fixes
 
@@ -164,6 +160,7 @@ python -m pytest tests/ -v          # 1100+ passed, 8 skipped
 | ~~BUG-1~~ ✅ | `_dashboard_cache` module-level dict has no `asyncio.Lock` — concurrent `/dashboard` requests can race on the weather/calendar cache update, producing a double-fetch or partial write under high load. **Fixed 2026-06-02:** `_dashboard_lock = asyncio.Lock()` guards both refresh blocks with double-checked locking; weather block now also sets `cached_at` (was refetching every request). +1 regression test (`test_dashboard_concurrent_refresh_fetches_weather_once`). | ~~LOW~~ | Found during HUD test sprint 2026-06-02 |
 | BUG-2 ✅ | ~~Frontend test infrastructure missing — 0% coverage on React HUD (~5 000 LOC).~~ **Done 2026-06-02:** Vitest + JSDOM harness (`tests/frontend/`) that loads the real shipped global scripts (vendored React 18 UMD + static files) — no bundler/build step. **156 tests / 20 spec files · ~66% measured line coverage (target 60% met)**, gated in CI (`frontend` job runs `npm run test:coverage`, fails under 60%). Coverage of the in-JSDOM scripts is measured via istanbul pre-instrumentation + nyc (see `coverage.mjs`) with a badge (`coverage-badge.svg`). Covers all of `components.js`, `i18n.js`, `data.js`, `cognition.js`, `dossier-modal.js`, `network.js`, `enhancements.js`, `observability.js`; `admin.js` (full `AdminApp` mount + nav sweep + save flow); `systems.js`/`workflows.js`/`observability.js` panels (mount + tab sweep); and `app.js` incl. the **P1 chat flow** (send→SSE stream→render) and **P2 polling** intervals. Plan alignment per `docs/plan-bug2-frontend-tests.md`: runner = Vitest (chosen over Jest), measured coverage ✅, P1 Chat ✅, P2 polling ✅. **Caught a real shipped bug on first run:** `systems.js` `ResilienceTab` missing closing brace → the entire Systems panel failed to parse/load in the browser (present on `main`); fixed + regression-guarded (`resilience.test.js`). **Deferred (P3 follow-up):** voice/`useTTS`, Workflow drag-drop pointer events, and browser E2E (Playwright). See `tests/frontend/README.md`. | ~~MEDIUM~~ | Identified in test coverage audit 2026-06-02; backend gap closed (121 tests added on branch `claude/hud-human-interface-testing-r8IQS`) |
 | BUG-3 | `/api/analytics/cost` e definit de **două ori** în `agents/web.py` (liniile ~1716 și ~2081) — a doua definiție o umbrește pe prima (atinge deliverable-ul H7.10 cost analytics). Endpoint-ul servit e al doilea handler; primul e cod mort + risc de divergență dacă unul e modificat. | MEDIUM | Găsit la auditul de doc-truth 2026-06-02 |
+| ~~BUG-4~~ ✅ | Aplicația scria în `BACKLOG.md` la fiecare autonomy tick (`sync_problems_to_backlog`, setare `error_backlog_sync_enabled` default ON) → modifica fișierul **trackuit** pe disc (pe Windows flip-uia și LF→CRLF pe tot fișierul) → orice `git pull` ulterior **conflicta pe BACKLOG.md**. Cauza reală a conflictelor recurente. **Fixed 2026-06-02:** redirectat către `memory_logs/diagnostics.md` (gitignored) cu scriere idempotentă + LF pinned; scos blocul auto din BACKLOG; `.gitattributes` `eol=lf`; reparat `UPDATE.bat` (`origin master` → `origin main`). | ~~HIGH~~ | Diagnosticat din simptomul „conflict pe backlog la pornirea pe laptop" |
 
 ### Hot fixes & taskuri orfane (promovate 2026-06-02)
 

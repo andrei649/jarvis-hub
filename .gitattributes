@@ -1,0 +1,10 @@
+# Pin Markdown to LF so tools/apps that rewrite docs on Windows don't flip
+# every line to CRLF and trigger whole-file diffs / git conflicts (see BUG-4).
+*.md text eol=lf
+
+# Normalize common text types; let git auto-detect the rest.
+*.py text eol=lf
+*.js text eol=lf
+*.json text eol=lf
+*.yml text eol=lf
+*.yaml text eol=lf
