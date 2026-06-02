@@ -9,6 +9,10 @@ Jarvis is a local-first multi-agent AI orchestration system. 15 agents across 4 
 **Model:** `google/gemma-4-26b-a4b` (MoE, ~4B active params, 16.76 GB VRAM)  
 **LLM Backend:** LM Studio on port 1234 (TdrDelay=8 to prevent GPU driver timeout)
 
+> 🧭 **AI navigation:** `docs/ARCHITECTURE.md` is the AI-navigable map (entry points, request
+> lifecycle, full module index, how-to recipes). This file is the architecture overview; that one
+> is the "where does X live / how do I change it" guide.
+
 ---
 
 ## Directory Structure
@@ -34,10 +38,21 @@ agents/
 │   │   ├── loader.py        # Skill discovery + execution
 │   │   └── importer.py      # Import skills from Hermes/OpenClaw/GitHub
 │   ├── memory/
-│   │   ├── manager.py       # Memory orchestration
+│   │   ├── manager.py       # Memory orchestration + embed/remember/recall
 │   │   ├── conversation.py  # Conversation history (JSONL)
 │   │   ├── persistence.py   # JSON session persistence
-│   │   └── store.py         # Vector store (768-dim numpy, degrades without numpy)
+│   │   ├── store.py         # Vector store (768-dim numpy, degrades without numpy)
+│   │   ├── graph.py         # Knowledge graph (InMemory / Neo4j)
+│   │   ├── seed_graph.py    # Seeds the graph with base entities/relations
+│   │   ├── fusion.py        # Fused recall — Reciprocal Rank Fusion (vector ⊕ graph, H5.14)
+│   │   └── qdrant_store.py  # Qdrant vector backend (optional)
+│   ├── ingestion/
+│   │   ├── embedder.py      # Embeddings (LM Studio /v1/embeddings, Ollama, hash fallback; disk+LRU cache)
+│   │   ├── pipeline.py      # Howard ingestion pipeline + RAG search
+│   │   └── normalizer.py    # Message normalization
+│   ├── autonomy/           # Proactive cortex (ORIZONT 6): queue, worker, policy, inbox,
+│   │   │                    #   digest, observer, watchers, remediation, preferences, reflection
+│   │   └── ...
 │   ├── learning/
 │   │   └── loop.py          # Learning loop (interaction records, prompt optimization)
 │   ├── security/
@@ -149,11 +164,13 @@ memory_logs/                 # Sessions, checkpoints, learning records
 
 ## Key Design Decisions
 
-1. **One model for all agents** — LM Studio loads one model at a time; multi-model not practical with 24GB VRAM
+1. **Fast/heavy model tiering** (H7.5) — slot 1 (fast, 100% VRAM) for light requests; slot 2 (deep, DDR5 spillover) for heavy reasoning. `hybrid_router.is_heavy_request()` escalates by complexity (token count + RO/EN keywords); toggle with `JARVIS_AUTO_DEEP`. Supersedes the old "one model for all agents" rule.
 2. **MoE over dense** — Gemma 4 26B-A4B (MoE) is 6x faster than dense 31B with comparable quality
 3. **Extended thinking** — Both Gemma 4 and Qwen 3.5 produce reasoning_content; backend merges it
 4. **Pure Python** — No Rust, no cloud dependency for core functionality
 5. **TdrDelay=8** — Required to prevent DPC_WATCHDOG_VIOLATION on GPU driver during model load
+6. **Hot-path stays off the event loop** (H7.1–H7.3) — per-turn SQLite writes use WAL + `synchronous=NORMAL`, run via `asyncio.to_thread`, and the full checkpoint is debounced (`memory.checkpoint_every`), so commits never stall concurrent requests
+7. **Recall never hard-fails** — embeddings degrade to a deterministic hash; recall query is cached (disk + in-process LRU, H7.4)
 
 ---
 
@@ -181,10 +198,12 @@ curl.exe http://127.0.0.1:8000/status
 
 - 15 active agents, 15 bench (reserved)
 - 34 models downloaded (1.24 TB total)
-- 17 API endpoints
+- 19+ API endpoints (incl. `/api/memory/search`, `/api/memory/remember`)
 - 7 ported features from OpenJarvis (security, skills, sandbox, multi-channel, bench, learning, streaming)
 - VRAM: ~17 GB used by primary model, ~7 GB free
-- Response time: ~4-5s per query
+- Response time: ~4-5s per query (fast slot); deep slot trades latency for reasoning depth
+- **Tests: 846 passed, 9 skipped** (offline suite)
+- Horizons done: H1–H7 (foundation → autonomy → perf hot-path); **active: ORIZONT 8 (personal memory)**
 
 ---
 
