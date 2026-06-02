@@ -26,6 +26,11 @@ python -m pytest tests/ -v
 ```
 - După modificări JS/CSS: Ctrl+F5 (cache bust). După Python: repornește serverul uvicorn.
 - CI rulează `tests/` la fiecare push pe `master` (`.github/workflows/`).
+- **Code health (caută îmbunătățiri):** `pip install -r requirements-dev.txt` apoi
+  `python scripts/code_health.py` — lint + format + dead-code + complexitate, dintr-o
+  singură comandă. Config în `pyproject.toml`. **Advisory, nu blochează** (rulează și în
+  CI: `.github/workflows/code-health.yml`). Rezolvă findings **în fișierele pe care deja
+  le atingi**, nu în sweep-uri pe tot repo-ul. `--fix` aplică autofix-urile sigure.
 
 ## Convenții (non-negociabile)
 - **Local-first.** Stack pur Python 3.12 + FastAPI + LM Studio/Ollama. Cloud-ul e opt-in, per-agent.

@@ -15,8 +15,9 @@ jobs:
         with:
           python-version: "3.12"
       - run: pip install -r requirements-beta.txt
-      - run: pip install ruff pytest-timeout
+      - run: pip install -r requirements-dev.txt
       - name: Lint (non-blocking)
+        # Rules/config come from pyproject.toml; see scripts/code_health.py.
         run: ruff check . --exit-zero
         continue-on-error: true
       - name: Test

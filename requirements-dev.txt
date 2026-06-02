@@ -1,0 +1,9 @@
+# Development & code-health tooling for Jarvis Hub.
+# Install:  pip install -r requirements-dev.txt
+# Run the full analysis:  python scripts/code_health.py
+#
+# Runtime + test deps live in requirements-beta.txt; this file is only the
+# static-analysis toolchain so CI and contributors share identical versions.
+
+ruff>=0.15
+vulture>=2.14

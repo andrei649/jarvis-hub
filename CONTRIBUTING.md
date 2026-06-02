@@ -55,6 +55,29 @@ Tests are fully offline — no real LLM or network access required. All external
 
 ---
 
+## Code health (find improvements)
+
+A single command runs the project's static-analysis toolchain — lint, formatting,
+dead-code, and complexity hotspots — and prints a digest of improvement candidates:
+
+```bash
+pip install -r requirements-dev.txt    # one-time: installs ruff + vulture
+python scripts/code_health.py          # full digest (never fails your shell)
+python scripts/code_health.py --fix    # apply ruff's safe autofixes
+python scripts/code_health.py --only lint     # run a single step
+python scripts/code_health.py --strict        # exit 1 if any finding (gating)
+```
+
+- **Config is centralized** in `pyproject.toml` (`[tool.ruff]`, `[tool.vulture]`) so
+  your editor, this script, and CI all agree on the rules.
+- **It is advisory, not a gate** — consistent with "verde devreme peste perfecțiune".
+  CI runs the same pass in `.github/workflows/code-health.yml` on every PR and weekly,
+  publishing the digest to the run's job summary, but it never blocks a merge.
+- Prefer fixing findings **in the files you already touch** rather than repo-wide sweeps
+  (keeps diffs reviewable). Use `--fix` for the safe, mechanical ones.
+
+---
+
 ## Branch and PR workflow
 
 1. **Create a feature branch** from `main`:

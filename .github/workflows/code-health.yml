@@ -1,0 +1,55 @@
+name: Code Health
+
+# Advisory static-analysis pass (lint, format, dead-code, complexity).
+# Non-blocking by design — Jarvis ships "verde devreme peste perfecțiune".
+# It surfaces improvement candidates without gating merges.
+on:
+  pull_request:
+    paths:
+      - "**.py"
+      - "pyproject.toml"
+      - "requirements-dev.txt"
+      - ".github/workflows/code-health.yml"
+  workflow_dispatch:
+  schedule:
+    # Mondays 06:00 UTC — a weekly health digest on the default branch.
+    - cron: "0 6 * * 1"
+
+jobs:
+  analyze:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install code-health toolchain
+        run: pip install -r requirements-dev.txt
+
+      - name: Run code-health pass
+        run: |
+          python scripts/code_health.py | tee code_health.txt
+          python scripts/code_health.py --json > code_health.json
+
+      - name: Publish digest to job summary
+        if: always()
+        run: |
+          {
+            echo '## 🩺 Code health digest'
+            echo '```'
+            cat code_health.txt
+            echo '```'
+            echo '_Advisory only — does not block this PR. Run locally with `python scripts/code_health.py`._'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload report artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: code-health-report
+          path: |
+            code_health.txt
+            code_health.json
+          retention-days: 30
