@@ -42,10 +42,12 @@ function injectScript(doc, code) {
  * @param {string[]} [opts.expose] identifier names to surface on window.__hud
  *                                 (use this for `const` helpers/components).
  * @param {string}   [opts.lang]   value pre-seeded into localStorage hud.lang.
+ * @param {Function} [opts.fetch]  a fetch stub installed before the app files
+ *                                 run (needed for app.js, which mounts on load).
  * @returns {{ window, document, React, ReactDOM, hud, render, cleanup }}
  */
 export function loadHud(opts = {}) {
-  const { files = ['i18n', 'data', 'components'], expose = [], lang } = opts;
+  const { files = ['i18n', 'data', 'components'], expose = [], lang, fetch } = opts;
 
   const dom = new JSDOM('<!doctype html><html><head></head><body><div id="root"></div></body></html>', {
     runScripts: 'dangerously',
@@ -55,6 +57,8 @@ export function loadHud(opts = {}) {
   const { window } = dom;
 
   if (lang) window.localStorage.setItem('hud.lang', lang);
+  // Install before any app file runs — app.js mounts (and fetches) at load.
+  if (fetch) window.fetch = fetch;
 
   for (const name of [...VENDOR, ...files]) {
     injectScript(window.document, readStatic(name));
