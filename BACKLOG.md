@@ -47,8 +47,9 @@ python -m pytest tests/ -v          # 784 passed, 9 skipped
 | **H5 Next Wave** (P2–P3) | 17 | **17** | 128 | **128** | **100%** |
 | **H6 Jarvis Autonom** (P1) | 7 | **7** | 60 | **60** | **100%** |
 | **H7 Perf Cale Fierbinte** (P1–P2) | 5 | **5** | 16 | **16** | **100%** |
-| **H8 Memorie Personală** (P1–P3) — Active | 7 | **0** | 43 | **0** | **0%** |
-| **Total general** | **103** | **96** | **495** | **452** | **93%** |
+| **H8 Memorie Personală** (P1–P3) | 7 | **0** | 43 | **0** | **0%** |
+| **H9 Agent Ops: Workflows & Observability** (P2) — Active | 3 | **0** | 29 | **0** | **0%** |
+| **Total general** | **106** | **96** | **524** | **452** | **86%** |
 
 **Test count:** 846 passed, 9 skipped (2026-06-02: +ORIZONT 7 — perf_hotpath 9, recall_cache 6, model_tiering 19; + recall cu embeddings reale & RAG injection)
 
@@ -186,6 +187,24 @@ python -m pytest tests/ -v          # 784 passed, 9 skipped
 > 4. ✅ **`handle_input_stream`:** `agent_id` și `t_s0` pre-inițializate înainte de buclă — fără `UnboundLocalError` când `target` e gol.
 >
 > **Vizinea Howard (context utilizator):** Howard = digital twin care „știe ce știe Claude despre Andrei" — alimentat de memoria personală (H8.1) + arhiva ingerată (H5.1). **Rămas în mâna lui Andrei:** antrenarea unui LLM pe toate conversațiile din Facebook/WhatsApp (date pe care le furnizează el); pipeline-ul de ingestie + fine-tuning e H5.1.
+
+---
+
+## Active: ORIZONT 9 — Agent Ops: Visual Workflows & Observability (P2)
+
+> **Context (research utilizator, 2026-06-02):** evaluare a tool-urilor externe de management
+> echipe AI (Flowise, Langflow, CrewAI, Autogen, SuperAGI, OpenWebUI, LangSmith, Dust.tt).
+> **Decizie de arhitectură:** NU adoptăm un tool extern — Jarvis Hub acoperă deja orchestrarea,
+> routing-ul hibrid local↔cloud, rolurile/tier-urile de agenți, autonomia, securitatea și memoria,
+> lucruri pe care acele tool-uri nu le au la un loc (și sunt Node/TS, contra „pure Python"). Împrumutăm
+> doar **2 idei** unde avem gap real: builder vizual de workflow-uri (Flowise/Langflow) și
+> observability/eval (LangSmith), construite nativ peste ce avem.
+
+| # | Item | S | P | Dep | AC |
+|---|------|---|---|-----|----|
+| H9.1 | **Visual Workflow Builder** — tab HUD (canvas SVG, vanilla React) PESTE `WorkflowEngine` (H5.6): noduri = pași/agenți, muchii = `depends_on`; creează/editează/salvează workflow-uri user-defined + rulare. Backend: `Pipeline.from_dict`, persistență (CRUD) + endpoints `/api/workflows` POST/PUT/DELETE, register în registry. | 13 | P2 | H5.6 | pot compune vizual un workflow, îl salvez, îl rulez din HUD; DAG invalid → eroare clară |
+| H9.2 | **Observability — Trace Explorer** — store de trace-uri per-request (classify→route→model→tokens→latență→cost), nu doar `last_cognition`; endpoint `/api/traces[/{id}]` + tab HUD de inspecție. Extinde `bench.py` + CognitionPanel. | 8 | P2 | — | fiecare request lasă un trace inspectabil; pot vedea unde se duce timpul/tokenii pe pași |
+| H9.3 | **Offline Eval Harness** — rulează seturi de prompturi prin orchestrator (LLM injectabil), scor pass/criterii, tracking de regresie; `core/observability/eval.py` + CLI/endpoint. | 8 | P2 | H9.2 | un set de probe produce scor reproductibil offline; regresii vizibile între rulări |
 
 ---
 
