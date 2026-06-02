@@ -40,6 +40,6 @@ except ImportError:
 from agents.web import app
 
 if __name__ == "__main__":
-    print("Cabinet v0.2.0 starting at http://127.0.0.1:8000")
-    print("Features: 15 agents, skills system, checkpointing, structured sessions, gateway")
-    uvicorn.run(app, host="127.0.0.1", port=8000, log_level="info")
+    print("Jarvis Hub v0.9.1 starting at http://127.0.0.1:8080")
+    print("Features: 16 agents, skills system, checkpointing, structured sessions, gateway")
+    uvicorn.run(app, host="127.0.0.1", port=8080, log_level="info")

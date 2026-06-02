@@ -4,7 +4,7 @@
 ![License: MIT](https://img.shields.io/badge/license-MIT-green)
 ![Tests](https://img.shields.io/badge/tests-909%20passed-brightgreen?logo=pytest)
 
-> 15 specialized AI agents orchestrated through Jarvis, running on Bonobo WS + Pi 5, controlled by voice and web.
+> 16 specialized AI agents orchestrated through Jarvis, running on Bonobo WS + Pi 5, controlled by voice and web.
 
 ---
 
@@ -88,7 +88,7 @@ python -m pytest             # 909 passed
 
 ## Status
 
-**v0.9.1-beta** — 15 specialist agents (+ 15 bench) across 4 tiers; real-embeddings recall (LM Studio) + fused recall +
+**v0.9.1-beta** — 16 specialist agents (+ 17 bench) across 4 tiers; real-embeddings recall (LM Studio) + fused recall +
 RAG injection; hot-path perf (SQLite WAL, event-loop offload, checkpoint debounce, query-embedding
 cache, complexity-based model tiering); autonomous proactive cortex (ORIZONT 6). **909 tests passing.**
 
