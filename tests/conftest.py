@@ -1,10 +1,16 @@
 """Shared test fixtures and helpers."""
 
 import importlib.util
+import os
 import sys
 from pathlib import Path
 
 from fastapi import APIRouter, FastAPI
+
+# Mark the process as a test run *before* anything imports agents.web, so the
+# app lifespan skips background pollers that would otherwise hit the network
+# (the Oracle GitHub watcher's 30s loop used to hang the suite for >18 min).
+os.environ.setdefault("JARVIS_TESTING", "1")
 
 repo_root = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(repo_root))

@@ -587,7 +587,10 @@ class Orchestrator:
         self._schedule_daily_digests()
         self._schedule_log_scans()
         self._autonomy_task = asyncio.create_task(self._autonomy_loop())
-        if hasattr(self, 'oracle_bridge'):
+        # The Oracle watcher opens a 30s polling loop against the GitHub API.
+        # Skip it under tests (JARVIS_TESTING=1) so the suite stays hermetic and
+        # never hangs on a real network call; `sync_now()` still works on demand.
+        if hasattr(self, 'oracle_bridge') and os.environ.get("JARVIS_TESTING") != "1":
             self.oracle_bridge.start_watcher()
         logger.info(f"Channels started: {list(self.channels.keys())}")
 
