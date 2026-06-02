@@ -38,10 +38,12 @@ describe('App (full mount)', () => {
     // createRoot().render() is async; let it mount and loadJarvisData() resolve.
     await env.flush();
 
-    // The app booted and the top bar / live agent data are present.
+    // The app booted and actually hydrated the roster: "Gecko" only appears if
+    // the stubbed /api/agents response was rendered (it is not part of the
+    // static chrome, unlike the JARVIS title).
     expect(root.childElementCount).toBeGreaterThan(0);
-    expect(root.textContent).toContain('JARVIS');
     expect(env.window.fetch).toHaveBeenCalledWith('/api/agents');
+    expect(root.textContent).toContain('Gecko');
   });
 
   it('does not crash when the backend is unreachable (apiDown fallback)', async () => {
@@ -52,7 +54,9 @@ describe('App (full mount)', () => {
     });
     await env.flush();
     const root = env.document.getElementById('root');
-    // Falls back to agent metadata rather than rendering an empty root.
+    // Falls back to building the roster from agent metadata, so known agents
+    // still render (e.g. Pepper) rather than an empty root.
     expect(root.childElementCount).toBeGreaterThan(0);
+    expect(root.textContent).toContain('Pepper');
   });
 });

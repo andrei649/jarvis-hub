@@ -46,11 +46,14 @@ describe('chat flow (P1)', () => {
 
   it('sends a message and renders the streamed agent reply', async () => {
     const fetch = bootStub({
+      // `end` deliberately carries NO text, so the rendered reply must come
+      // from accumulated token events — proving streaming actually works
+      // (finalize falls back to responseText when evt.text is absent).
       '/chat/stream': () => sseResponse([
         { type: 'start', agent: 'jarvis' },
         { type: 'token', text: 'Salut' },
         { type: 'token', text: ' lume' },
-        { type: 'end', text: 'Salut lume', agent: 'jarvis' },
+        { type: 'end', agent: 'jarvis' },
       ]),
     });
     env = loadHud({ files: ALL_FILES, fetch, lang: 'ro' });

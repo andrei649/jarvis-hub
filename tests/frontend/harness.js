@@ -15,7 +15,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import { fileURLToPath } from 'node:url';
-import { JSDOM } from 'jsdom';
+import { JSDOM, VirtualConsole } from 'jsdom';
 import { createInstrumenter } from 'istanbul-lib-instrument';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
@@ -67,10 +67,19 @@ function injectScript(doc, code) {
 export function loadHud(opts = {}) {
   const { files = ['i18n', 'data', 'components'], expose = [], lang, fetch } = opts;
 
+  // Capture uncaught script errors. JSDOM otherwise swallows a SyntaxError or
+  // throw inside an injected file (reports to stderr and keeps going), which
+  // would let a broken shipped artifact pass with a green suite. We surface
+  // them and fail loadHud at load time.
+  const jsdomErrors = [];
+  const virtualConsole = new VirtualConsole();
+  virtualConsole.on('jsdomError', (err) => jsdomErrors.push(err));
+
   const dom = new JSDOM('<!doctype html><html><head></head><body><div id="root"></div></body></html>', {
     runScripts: 'dangerously',
     pretendToBeVisual: true,
     url: 'http://127.0.0.1:8080/',
+    virtualConsole,
   });
   const { window } = dom;
 
@@ -83,6 +92,15 @@ export function loadHud(opts = {}) {
   }
   for (const name of files) {
     injectScript(window.document, readStatic(name, { instrument: true }));
+  }
+
+  // Scripts run synchronously under runScripts:'dangerously', so any load-time
+  // error (syntax error, throw at module top-level) is already captured here.
+  if (jsdomErrors.length) {
+    const detail = jsdomErrors
+      .map((e) => (e.detail && (e.detail.stack || e.detail.message)) || e.message || String(e))
+      .join('\n');
+    throw new Error(`HUD static script failed to load:\n${detail}`);
   }
 
   if (expose.length) {

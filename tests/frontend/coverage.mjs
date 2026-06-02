@@ -33,7 +33,7 @@ const testStatus = run('npx', ['vitest', 'run', 'tests/frontend'], { HUD_COVERAG
 if (testStatus !== 0) process.exit(testStatus);
 
 // 2) Aggregate the .nyc_output dumps into reports.
-run('npx', [
+const reportStatus = run('npx', [
   'nyc', 'report',
   '--reporter=text-summary',
   '--reporter=text',
@@ -42,11 +42,30 @@ run('npx', [
   '--report-dir=coverage',
   '--temp-dir=.nyc_output',
 ]);
+if (reportStatus !== 0) {
+  console.error('\nnyc report failed — aborting (coverage cannot be trusted).');
+  process.exit(reportStatus);
+}
+
+// 2b) Guard against a vacuous pass: if instrumentation silently produced no
+// data (.nyc_output empty, HUD_COVERAGE not reaching workers, instrumenter API
+// drift), the summary is missing or reports zero lines. Fail loudly rather than
+// let the 60% gate pass against nothing.
+const summaryPath = path.join(ROOT, 'coverage', 'coverage-summary.json');
+if (!fs.existsSync(summaryPath)) {
+  console.error('\nNo coverage-summary.json produced — instrumentation likely broke. Failing.');
+  process.exit(1);
+}
+const summary = JSON.parse(fs.readFileSync(summaryPath, 'utf8'));
+const totalLines = summary.total?.lines?.total ?? 0;
+if (totalLines === 0) {
+  console.error('\nCoverage measured 0 lines — instrumentation produced no data. Failing.');
+  process.exit(1);
+}
 
 // 3) Emit a coverage badge SVG from the summary.
-const summaryPath = path.join(ROOT, 'coverage', 'coverage-summary.json');
-if (fs.existsSync(summaryPath)) {
-  const pct = JSON.parse(fs.readFileSync(summaryPath, 'utf8')).total.lines.pct;
+{
+  const pct = summary.total.lines.pct;
   const color = pct >= 80 ? '#4c1' : pct >= 60 ? '#97ca00' : pct >= 40 ? '#dfb317' : '#e05d44';
   const label = 'HUD coverage';
   const value = `${pct}%`;
