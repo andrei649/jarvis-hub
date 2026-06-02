@@ -223,11 +223,16 @@ def wf_client(tmp_path):
     old_store = web._wf_store_instance
     web._wf_store_instance = WFStore(path=tmp_path / "ep_wf")
 
-    with TestClient(web.app) as c:
+    # NOTE: do NOT use `with TestClient(...)` here — the context-manager form runs
+    # the app lifespan, whose shutdown joins background threads and can hang under
+    # full-suite ordering (global orch leak). These endpoints only need the
+    # injected mock orch + store, so a plain client (no lifespan) is correct.
+    c = TestClient(web.app)
+    try:
         yield c
-
-    web.orch = old_orch
-    web._wf_store_instance = old_store
+    finally:
+        web.orch = old_orch
+        web._wf_store_instance = old_store
 
 
 _EP_PIPE = {
