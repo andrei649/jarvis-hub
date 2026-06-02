@@ -1693,6 +1693,66 @@ async def memory_remember(req: Request):
     return _nocache_json({"ok": rid is not None, "id": rid})
 
 
+@app.get("/api/memory/profile")
+async def get_memory_profile():
+    """Return all stored user facts/preferences grouped by category."""
+    from agents.core.memory.store import MemoryStore
+    store = MemoryStore()
+    return await store.get_all()
+
+
+@app.get("/api/memory/recall")
+async def recall_memory(q: str = ""):
+    """Search memory store by query string."""
+    from fastapi import Query as _Query
+    from agents.core.memory.store import MemoryStore
+    store = MemoryStore()
+    if not q:
+        return {"results": []}
+    results = await store.search(q, limit=20)
+    return {"results": results, "query": q}
+
+
+@app.get("/api/analytics/cost")
+async def get_analytics_cost():
+    """Return per-agent LLM usage and cost summary."""
+    from agents.core.cost_tracker import get_summary
+    return get_summary()
+
+
+@app.get("/api/analytics/model-tiers")
+async def get_model_tiers():
+    """Return per-agent model tier classification and usage summary."""
+    from agents.core.cost_tracker import get_summary, MODEL_PRICES
+    summary = get_summary()
+
+    def classify_tier(model: str) -> str:
+        m = model.lower()
+        if "local" in m or m == "default":
+            return "local"
+        if "haiku" in m or "mini" in m or "flash" in m:
+            return "fast"
+        if "opus" in m:
+            return "heavy"
+        return "standard"
+
+    tiers: dict[str, list] = {"local": [], "fast": [], "standard": [], "heavy": []}
+    for agent_name, data in summary.get("agents", {}).items():
+        tier = classify_tier(data.get("model", "default"))
+        tiers[tier].append({
+            "agent": agent_name,
+            "model": data.get("model", "unknown"),
+            "calls": data.get("calls", 0),
+            "cost_usd": data.get("cost_usd", 0),
+        })
+
+    return {
+        "tiers": tiers,
+        "total_cost_usd": summary.get("total_cost_usd", 0),
+        "tier_counts": {k: len(v) for k, v in tiers.items()},
+    }
+
+
 @app.get("/api/reflection/status")
 async def reflection_status():
     """Daily reflection status (H5.15)."""

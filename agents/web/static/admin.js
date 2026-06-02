@@ -76,6 +76,15 @@ const ICONS = {
     h('rect',{x:8,y:7,width:4,height:11,rx:1}),
     h('rect',{x:14,y:2,width:4,height:16,rx:1}),
   ),
+  recall: h('svg',{viewBox:'0 0 20 20',width:18,height:18,fill:'none',stroke:'currentColor',strokeWidth:1.3},
+    h('path',{d:'M10 2a8 8 0 1 0 0 16A8 8 0 0 0 10 2z'}),
+    h('path',{d:'M10 6v4l3 2'}),
+  ),
+  cost: h('svg',{viewBox:'0 0 20 20',width:18,height:18,fill:'none',stroke:'currentColor',strokeWidth:1.3},
+    h('circle',{cx:10,cy:10,r:8}),
+    h('path',{d:'M10 6v1m0 6v1'}),
+    h('path',{d:'M8 8h3a1 1 0 1 1 0 2H9a1 1 0 1 0 0 2h3'}),
+  ),
 };
 
 /* ── category metadata ──────────────────────────────────────── */
@@ -84,6 +93,8 @@ const CATEGORIES = [
   { id:'charts',   label:'Statistici & Analize',  icon:'charts' },
   { id:'config',   label:'Configurări Globale',   icon:'general' },
   { id:'agents',   label:'Management Agenți',    icon:'agents' },
+  { id:'recall',   label:'Memorie Utilizator',   icon:'recall' },
+  { id:'costview', label:'Cost & Modele',        icon:'cost' },
   { id:'mcp',      label:'Servere MCP',          icon:'mcp' },
   { id:'oracle',   label:'Integrare Claude',     icon:'oracle' },
   { id:'system',   label:'Sistem & Depanare',    icon:'system' },
@@ -96,6 +107,8 @@ const CATEGORY_DESC = {
   mcp:       'Configurarea clienților externi Model Context Protocol (stdio / sse) cu descoperire de unelte.',
   oracle:    'Statusul curent de sincronizare, conflicte de cod detectate și integrarea cu asistentul de push.',
   system:    'Variabile de mediu live, depanare rapidă și reinițializarea bazei de date.',
+  recall:    'Fapte și preferințe stocate despre utilizator, grupate pe categorii, cu căutare rapidă.',
+  costview:  'Clasificarea agenților pe tier de model (local / fast / standard / heavy) și costurile LLM acumulate.',
 };
 
 /* ── agent glyph map — single source of truth in data.js ───── */
@@ -805,6 +818,199 @@ function Sparkline({ data, width, height, color }) {
   );
 }
 
+/* ── Recall (Memory) page ───────────────────────────────────── */
+
+function RecallPage() {
+  const [profile, setProfile] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [query, setQuery] = useState('');
+  const [results, setResults] = useState(null);
+  const [searching, setSearching] = useState(false);
+  const [openCats, setOpenCats] = useState({});
+
+  useEffect(() => {
+    fetch('/api/memory/profile').then(r => r.json()).then(d => {
+      setProfile(d);
+      setLoading(false);
+    }).catch(() => setLoading(false));
+  }, []);
+
+  const doSearch = (e) => {
+    e.preventDefault();
+    const q = query.trim();
+    if (!q) return;
+    setSearching(true);
+    fetch(`/api/memory/recall?q=${encodeURIComponent(q)}`).then(r => r.json()).then(d => {
+      setResults(d.results || []);
+      setSearching(false);
+    }).catch(() => setSearching(false));
+  };
+
+  const toggleCat = (cat) => setOpenCats(prev => ({ ...prev, [cat]: !prev[cat] }));
+
+  const isEmpty = !profile || Object.keys(profile).length === 0;
+
+  return h('div', null,
+    h('form', { onSubmit: doSearch, style: { display: 'flex', gap: 8, marginBottom: 20 } },
+      h('input', {
+        className: 'admin-input',
+        type: 'text',
+        placeholder: 'Caută în memorie...',
+        value: query,
+        onChange: e => setQuery(e.target.value),
+        style: { flex: 1 },
+      }),
+      h('button', { type: 'submit', className: 'admin-btn is-primary', disabled: searching },
+        searching ? 'Se caută...' : 'Caută'
+      ),
+    ),
+
+    results !== null && h('div', { className: 'admin-group', style: { marginBottom: 20 } },
+      h('div', { className: 'admin-group-header' }, `Rezultate căutare (${results.length})`),
+      results.length === 0
+        ? h('div', { style: { padding: 12, fontSize: 12, color: 'var(--text-dim)' } }, 'Niciun rezultat găsit.')
+        : results.map((r, i) => h('div', {
+            key: i,
+            style: {
+              display: 'flex', gap: 12, padding: '6px 12px',
+              borderBottom: '1px solid var(--border-glass)',
+              fontFamily: 'var(--font-mono)', fontSize: 11,
+            },
+          },
+          h('span', { style: { color: 'var(--accent)', width: 100, flexShrink: 0 } }, r.category || '—'),
+          h('span', { style: { width: 120, flexShrink: 0, color: 'var(--text-secondary)' } }, r.key || '—'),
+          h('span', { style: { flex: 1, color: 'var(--text-primary)' } }, String(r.value || '')),
+        ))
+    ),
+
+    loading
+      ? h('div', { style: { padding: 20, fontSize: 12, color: 'var(--text-dim)' } }, _t('admin.loading'))
+      : isEmpty
+        ? h('div', { style: { padding: 20, fontSize: 12, color: 'var(--text-dim)' } }, 'No memory entries yet.')
+        : Object.entries(profile).map(([cat, facts]) =>
+            h('div', { key: cat, className: 'admin-group', style: { marginBottom: 8 } },
+              h('button', {
+                className: 'admin-group-header',
+                style: {
+                  display: 'flex', alignItems: 'center', gap: 8, width: '100%',
+                  background: 'none', border: 'none', cursor: 'pointer',
+                  color: 'var(--text-primary)', textAlign: 'left',
+                },
+                onClick: () => toggleCat(cat),
+              },
+                ICONS.memory,
+                h('span', { style: { flex: 1 } }, cat),
+                h('span', { style: { fontSize: 11, color: 'var(--text-dim)' } }, `${facts.length} fapte`),
+                h('span', { style: { color: 'var(--text-dim)', fontSize: 12 } }, openCats[cat] ? '▲' : '▼'),
+              ),
+              openCats[cat] && facts.map((f, i) => h('div', {
+                key: i,
+                style: {
+                  display: 'flex', gap: 12, padding: '5px 12px',
+                  borderBottom: '1px solid var(--border-glass)',
+                  fontFamily: 'var(--font-mono)', fontSize: 11,
+                },
+              },
+                h('span', { style: { width: 160, flexShrink: 0, color: 'var(--text-secondary)' } }, f.key),
+                h('span', { style: { flex: 1, color: 'var(--text-primary)' } }, String(f.value)),
+              ))
+            )
+          )
+  );
+}
+
+/* ── Cost & Model Tiers page ────────────────────────────────── */
+
+function CostPage() {
+  const [tiers, setTiers] = useState(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    Promise.all([
+      fetch('/api/analytics/cost').then(r => r.json()),
+      fetch('/api/analytics/model-tiers').then(r => r.json()),
+    ]).then(([_cost, tierData]) => {
+      setTiers(tierData);
+      setLoading(false);
+    }).catch(() => setLoading(false));
+  }, []);
+
+  if (loading) return h('div', { style: { padding: 20, fontSize: 12, color: 'var(--text-dim)' } }, _t('admin.loading'));
+  if (!tiers) return h('div', { style: { padding: 20, fontSize: 12, color: 'var(--text-dim)' } }, 'Eroare la încărcarea datelor.');
+
+  const allEmpty = tiers.total_cost_usd === 0 && Object.values(tiers.tier_counts || {}).every(c => c === 0);
+
+  if (allEmpty) {
+    return h('div', { style: { padding: 20, fontSize: 12, color: 'var(--text-dim)' } }, 'No usage recorded yet.');
+  }
+
+  const tierDefs = [
+    { key: 'local',    label: 'Local',    color: '#4ade80' },
+    { key: 'fast',     label: 'Fast',     color: '#60a5fa' },
+    { key: 'standard', label: 'Standard', color: '#a78bfa' },
+    { key: 'heavy',    label: 'Heavy',    color: '#f87171' },
+  ];
+
+  return h('div', null,
+    h('div', { style: { display: 'flex', gap: 12, marginBottom: 20, flexWrap: 'wrap' } },
+      h(StatsCard, { label: 'Cost Total (USD)', value: '$' + (tiers.total_cost_usd || 0).toFixed(4), color: '#f59e0b' }),
+      ...tierDefs.map(td =>
+        h(StatsCard, { key: td.key, label: td.label + ' Agents', value: (tiers.tier_counts || {})[td.key] || 0, color: td.color })
+      ),
+    ),
+
+    h('div', { className: 'admin-group' },
+      h('div', { className: 'admin-group-header' }, 'Distribuție pe Tier de Model'),
+      h('table', { style: { width: '100%', borderCollapse: 'collapse', fontSize: 12 } },
+        h('thead', null,
+          h('tr', { style: { borderBottom: '1px solid var(--border-glass)', color: 'var(--text-dim)', fontSize: 11 } },
+            h('th', { style: { textAlign: 'left', padding: '4px 8px' } }, 'Tier'),
+            h('th', { style: { textAlign: 'right', padding: '4px 8px' } }, 'Agenți'),
+            h('th', { style: { textAlign: 'right', padding: '4px 8px' } }, 'Total Apeluri'),
+            h('th', { style: { textAlign: 'right', padding: '4px 8px' } }, 'Cost (USD)'),
+          ),
+        ),
+        h('tbody', null,
+          tierDefs.map(td => {
+            const agentList = (tiers.tiers || {})[td.key] || [];
+            const totalCalls = agentList.reduce((s, a) => s + (a.calls || 0), 0);
+            const totalCost = agentList.reduce((s, a) => s + (a.cost_usd || 0), 0);
+            return h('tr', {
+              key: td.key,
+              style: { borderBottom: '1px solid var(--border-glass)' },
+            },
+              h('td', { style: { padding: '6px 8px', color: td.color, fontWeight: 600 } }, td.label),
+              h('td', { style: { padding: '6px 8px', textAlign: 'right' } }, agentList.length),
+              h('td', { style: { padding: '6px 8px', textAlign: 'right' } }, totalCalls),
+              h('td', { style: { padding: '6px 8px', textAlign: 'right', fontFamily: 'var(--font-mono)' } }, '$' + totalCost.toFixed(4)),
+            );
+          })
+        ),
+      ),
+    ),
+
+    tierDefs.map(td => {
+      const agentList = (tiers.tiers || {})[td.key] || [];
+      if (agentList.length === 0) return null;
+      return h('div', { key: td.key, className: 'admin-group', style: { marginTop: 12 } },
+        h('div', { className: 'admin-group-header', style: { color: td.color } }, td.label + ' — Detalii Agenți'),
+        agentList.map((a, i) => h('div', {
+          key: i,
+          style: {
+            display: 'flex', gap: 12, padding: '5px 12px',
+            borderBottom: '1px solid var(--border-glass)', fontSize: 11,
+          },
+        },
+          h('span', { style: { width: 100, flexShrink: 0, fontWeight: 600 } }, a.agent),
+          h('span', { style: { flex: 1, color: 'var(--text-dim)', fontFamily: 'var(--font-mono)' } }, a.model),
+          h('span', { style: { width: 60, textAlign: 'right', color: 'var(--text-secondary)' } }, a.calls + ' calls'),
+          h('span', { style: { width: 80, textAlign: 'right', fontFamily: 'var(--font-mono)', color: td.color } }, '$' + (a.cost_usd || 0).toFixed(4)),
+        ))
+      );
+    }),
+  );
+}
+
 /* ── Charts page ────────────────────────────────────────────── */
 
 function ChartsPage() {
@@ -1000,6 +1206,8 @@ function AdminApp() {
   const isMCP = active === 'mcp';
   const isCharts = active === 'charts';
   const isConfig = active === 'config';
+  const isRecall = active === 'recall';
+  const isCostView = active === 'costview';
 
   return h('div',{className:'admin-wrap'},
     h('div',{className:'admin-sidebar'},
@@ -1037,8 +1245,14 @@ function AdminApp() {
 
                 : isConfig
                   ? h(GlobalConfigPage,{settings, dirty, onUpdate, onSave:saveAllSettings})
-                  
-                  : null,
+
+                  : isRecall
+                    ? h(RecallPage)
+
+                    : isCostView
+                      ? h(CostPage)
+
+                      : null,
 
       // Reseed settings button on System page
       active === 'system' && h('div',{style:{marginTop:20}},
