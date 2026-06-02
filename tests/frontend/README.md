@@ -74,4 +74,10 @@ follow-up.
 | `components.js` (helpers: `esc`, `pad2`, `fmtTime`, `fmtDate`, `nowTs`) | ✅ `helpers.test.js` |
 | `components.js` (`Bracket`, `StatusDot`) | ✅ `components.test.js` |
 | `i18n.js` (`_t`, `detectLocale`, `setLocale`) | ✅ `i18n.test.js` |
-| `data.js`, `network.js`, `cognition.js`, `systems.js`, `workflows.js`, `observability.js`, `admin.js`, `app.js` | ⬜ todo |
+| `admin.js` (form rows: `ToggleRow`, `InputRow`, `SelectRow`, `SliderRow`, `TagInputRow`, `ButtonRow`, `InfoRow`, `Group`) | ✅ `admin-rows.test.js` |
+| `systems.js` (`SystemsTabBar`, `FusedRecallBox`) | ✅ `systems.test.js` |
+| `network.js`, `cognition.js`, `data.js`, `workflows.js`, `observability.js`, rest of `systems.js`/`admin.js`, `app.js` | ⬜ todo |
+
+> **First catch:** these tests immediately surfaced a shipped syntax error in
+> `systems.js` (`ResilienceTab` was missing its closing brace), which broke the
+> *entire* Systems panel at load — present on `main`. Fixed in the same PR.

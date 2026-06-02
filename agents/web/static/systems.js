@@ -572,6 +572,8 @@ function ResilienceTab({ data, onRefresh }) {
       )
     )
   );
+}
+
 function OAuthTab({ data, onRefresh, onConnect, onRefreshService }) {
   if (!data) return h('div', { className: 'sys-loading' }, 'Loading OAuth status...');
 

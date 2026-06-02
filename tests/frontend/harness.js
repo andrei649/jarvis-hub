@@ -75,10 +75,55 @@ export function loadHud(opts = {}) {
   function render(element) {
     const container = window.document.createElement('div');
     window.document.body.appendChild(container);
-    window.IS_REACT_ACT_ENVIRONMENT = true;
     const root = ReactDOM.createRoot(container);
     ReactDOM.flushSync(() => root.render(element));
     return { container, root, html: container.innerHTML };
+  }
+
+  // React 18 attaches its synthetic listeners at the root container, so a
+  // bubbling native event drives onClick/onChange. flushSync forces the
+  // resulting state update to land in the DOM before we assert.
+  function fire(el, type, init = {}) {
+    ReactDOM.flushSync(() => {
+      el.dispatchEvent(new window.Event(type, { bubbles: true, ...init }));
+    });
+  }
+  const click = (el) => fire(el, 'click');
+
+  // React tracks input values, so we must set via the native setter before
+  // dispatching, otherwise the change is swallowed as a no-op.
+  function setNativeValue(el, value, proto) {
+    const setter = Object.getOwnPropertyDescriptor(proto.prototype, 'value').set;
+    setter.call(el, value);
+  }
+  function type(el, value) {
+    setNativeValue(el, value, window.HTMLInputElement);
+    fire(el, 'input');
+  }
+  function selectOption(el, value) {
+    setNativeValue(el, value, window.HTMLSelectElement);
+    fire(el, 'change');
+  }
+  function toggle(el) {
+    // Checkboxes: React maps onChange to the click event. The native .click()
+    // method runs the activation behaviour (flipping `checked`) that a bare
+    // dispatchEvent does not, so React sees a real change.
+    ReactDOM.flushSync(() => el.click());
+  }
+  function keyDown(el, key) {
+    ReactDOM.flushSync(() => {
+      el.dispatchEvent(new window.KeyboardEvent('keydown', { key, bubbles: true }));
+    });
+  }
+
+  // Settle async work (awaited fetches → setState) then force a synchronous
+  // flush. React's scheduler runs on a macrotask that can land after a single
+  // setTimeout(0), so we pump a few turns before flushing.
+  async function flush(turns = 3) {
+    for (let i = 0; i < turns; i++) {
+      await new Promise((r) => setTimeout(r, 0));
+    }
+    ReactDOM.flushSync(() => {});
   }
 
   return {
@@ -88,6 +133,13 @@ export function loadHud(opts = {}) {
     ReactDOM,
     hud: window.__hud || {},
     render,
+    fire,
+    click,
+    type,
+    selectOption,
+    toggle,
+    keyDown,
+    flush,
     cleanup: () => window.close(),
   };
 }
