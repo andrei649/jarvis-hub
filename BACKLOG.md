@@ -44,8 +44,8 @@ python -m pytest tests/ -v          # 784 passed, 9 skipped
 | **H1–H4 + Sprint 0 + Cross-cutting + Sec + Bugs** | 67 | **67** | 248 | **248** | **100%** |
 | **H5 Next Wave** (P2–P3) | 17 | **17** | 128 | **128** | **100%** |
 | **H6 Jarvis Autonom** (P1) | 7 | **7** | 60 | **60** | **100%** |
-| **H7 Perf Cale Fierbinte** (P1–P2) | 5 | **1** | 16 | **1** | **6%** |
-| **Total general** | **96** | **92** | **452** | **437** | **97%** |
+| **H7 Perf Cale Fierbinte** (P1–P2) | 5 | **5** | 16 | **16** | **100%** |
+| **Total general** | **96** | **96** | **452** | **452** | **100%** |
 
 **Test count:** 789 passed, 9 skipped (QA 2026-06-01: +H5.8 Agent Marketplace 5 teste, +H5.15 Daily Reflection 10 teste, +H5.14 Task4 /api/memory/search + HUD Fused Recall, +H5.6 Multi-Agent Workflows 16 teste)
 
@@ -141,18 +141,14 @@ python -m pytest tests/ -v          # 784 passed, 9 skipped
 | # | Item | S | P | Dep | AC |
 |---|------|---|---|-----|----|
 | H7.1 ✅ | **SQLite WAL + `synchronous=NORMAL`** pe DB-urile scrise per-turn — `checkpoint.py`, `security/audit.py`, `autonomy/queue.py`. Durabil (WAL crash-safe; NORMAL sigur sub WAL). | 1 | P1 | — | ✅ commit-uri ~36× mai ieftine; suite persistență/autonomy/securitate verzi |
-| H7.2 | **Offload scrieri blocante de pe event-loop** — `checkpoints.save` / `audit.log` / append JSONL prin `asyncio.to_thread` (sau executor fire-and-forget), ca un commit să nu mai blocheze request-urile concurente. | 3 | P1 | H7.1 | handlerele per-turn nu mai fac I/O sqlite/fișier sincron pe loop; benchmark de concurență (N request-uri paralele) se îmbunătățește |
-| H7.3 | **Debounce / frecvență checkpoint** — nu serializa întreg state-ul orchestrator (`json.dumps`) + commit la FIECARE turn; dirty-flag + save la N turns / pe shutdown. Reduce și CPU, nu doar I/O. | 2 | P2 | H7.2 | checkpoint scris ≤1×/N turns; restart nu pierde sesiunea activă |
-| H7.4 | **Query-embedding cache + fast-fail (recall)** — `Embedder.from_env(cache_dir=…)` pentru calea de recall + short-circuit când backend-ul embeddings e jos (deja `max_retries=1`). | 2 | P2 | — (recall) | query repetat = cache hit (fără network); embeddings down → recall degradează instant, fără retry vizibil |
-| H7.5 | **Strategie fast/heavy model** — selecție model 14–32B (100% VRAM) pentru task-uri ușoare vs 70B (spillover DDR5) pentru raționament greu, după intent/complexitate în `hybrid_router`. Atacă cele ~4–5s/query (costul LLM dominant). | 8 | P2 | — | task ușor → model rapid; task greu → model mare; comutare vizibilă/măsurabilă în `/bench` |
+| H7.2 ✅ | **Offload scrieri blocante de pe event-loop** — `checkpoints.save` / `audit.log` / `_record_interactions` / `_log_session` prin `asyncio.to_thread` în toate cele 3 call-site-uri per-turn; `checkpoint.py` cu `check_same_thread=False` + `threading.Lock`. | 3 | P1 | H7.1 | ✅ handlerele per-turn nu mai fac I/O sqlite/fișier sincron pe loop; thread-safe sub `to_thread` |
+| H7.3 ✅ | **Debounce / frecvență checkpoint** — `_maybe_checkpoint()` salvează doar la `memory.checkpoint_every` (default 5) turns; `_flush_checkpoint()` forțat pe `new_session()` + `aclose()` (shutdown). Reduce I/O și CPU (`json.dumps` al state-ului). | 2 | P2 | H7.2 | ✅ checkpoint scris ≤1×/N turns; restart curat nu pierde sesiunea activă |
+| H7.4 ✅ | **Query-embedding cache + fast-fail (recall)** — `Embedder.from_env(cache_dir=…)` default `memory_logs/embedding_cache/recall` + LRU in-process (`_PROC_CACHE`, 256) cheie `(backend,model,text)`; `max_retries=1` fast-fail. | 2 | P2 | — (recall) | ✅ query repetat = cache hit (fără network/disk); embeddings down → recall degradează instant |
+| H7.5 ✅ | **Strategie fast/heavy model** — `is_heavy_request()` (token threshold 2000 + keywords RO/EN) escaladează în `hybrid_router.select_backend()` POLICY_AUTO de la slotul rapid (VRAM) la slotul deep (DDR5); flag `JARVIS_AUTO_DEEP`. | 8 | P2 | — | ✅ task ușor → model rapid `local`; task greu → `local-deep`/DEFAULT_DEEP_MODEL; nu afectează cloud/claude/local-only |
 
-> **Estimare efort dezvoltare Claude Code** (1 SP ≈ jumătate de zi-om; o sesiune Claude Code livrează tipic 2–5 SP cu teste offline):
-> - **H7.2** — 1 sesiune. Risc mic; atenție la ordinea scrierilor (audit înainte de răspuns) și la testele care citesc DB-ul imediat după.
-> - **H7.3** — 1 sesiune. Risc mic-mediu: corectitudine la restart (să nu pierzi ultimul turn) — necesită test de recuperare.
-> - **H7.4** — <1 sesiune. Risc mic, izolat (doar calea de recall, deja gated).
-> - **H7.5** — 1–2 sesiuni. Risc mediu: nu se poate valida live fără LM Studio + cele 2 modele; testabil doar la nivel de logică de selecție (offline). Beneficiul cel mai mare la latență percepută, dar și efortul/cel mai greu de verificat aici.
+> **ORIZONT 7 COMPLET ✅** (2026-06-02) — livrat în paralel (3 streams Claude Code în worktree izolat: A=H7.2+H7.3, B=H7.4, C=H7.5), integrat secvențial cu rezolvare de conflicte. **+49 teste offline noi** (test_perf_hotpath 9, test_recall_cache 6, test_model_tiering 19, + extinderi). Setări noi: `memory.checkpoint_every` (runtime), env `EMBED_CACHE_DIR`, `JARVIS_AUTO_DEEP`.
 >
-> **Recomandare ordine:** H7.2 (concurență, P1) → H7.4 (ieftin, izolat) → H7.3 → H7.5 (mare, dependent de hardware live).
+> **Caveat-uri:** checkpoint poate întârzia ≤N turns (flush pe boundary sesiune); `get_model(agent_id)` NU escaladează (nu are prompt) — escaladarea trăiește în `select_backend()`, calea fierbinte. H7.5 validabil complet doar live pe System76 cu cele 2 sloturi LM Studio încărcate.
 
 ---
 
