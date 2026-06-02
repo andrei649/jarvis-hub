@@ -85,6 +85,10 @@ const ICONS = {
     h('path',{d:'M10 6v1m0 6v1'}),
     h('path',{d:'M8 8h3a1 1 0 1 1 0 2H9a1 1 0 1 0 0 2h3'}),
   ),
+  models: h('svg',{viewBox:'0 0 20 20',width:18,height:18,fill:'none',stroke:'currentColor',strokeWidth:1.3},
+    h('path',{d:'M10 2l7 4v8l-7 4-7-4V6z'}),
+    h('path',{d:'M3 6l7 4 7-4M10 10v8'}),
+  ),
 };
 
 /* ── category metadata ──────────────────────────────────────── */
@@ -93,6 +97,7 @@ const CATEGORIES = [
   { id:'charts',   label:'Statistici & Analize',  icon:'charts' },
   { id:'config',   label:'Configurări Globale',   icon:'general' },
   { id:'agents',   label:'Management Agenți',    icon:'agents' },
+  { id:'models',   label:'Modele Locale',        icon:'models' },
   { id:'recall',   label:'Memorie Utilizator',   icon:'recall' },
   { id:'costview', label:'Cost & Modele',        icon:'cost' },
   { id:'mcp',      label:'Servere MCP',          icon:'mcp' },
@@ -109,6 +114,7 @@ const CATEGORY_DESC = {
   system:    'Variabile de mediu live, depanare rapidă și reinițializarea bazei de date.',
   recall:    'Fapte și preferințe stocate despre utilizator, grupate pe categorii, cu căutare rapidă.',
   costview:  'Clasificarea agenților pe tier de model (local / fast / standard / heavy) și costurile LLM acumulate.',
+  models:    'Răsfoiește modelele locale din LM Studio / Ollama, vezi care e activ și comută dintr-un click.',
 };
 
 /* ── agent glyph map — single source of truth in data.js ───── */
@@ -660,6 +666,73 @@ function OraclePage() {
   );
 }
 
+/* ── Local model management panel (H12.9) ──────────────────── */
+
+function LocalModelsPage({ onToast }) {
+  const [data, setData] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [switching, setSwitching] = useState('');
+
+  const fetchModels = () => {
+    setLoading(true);
+    fetch('/api/models/local').then(r=>r.json()).then(d=>{setData(d);setLoading(false);})
+      .catch(()=>{setData({models:[],providers:[]});setLoading(false);});
+  };
+  useEffect(()=>{fetchModels();},[]);
+
+  const switchModel = (id) => {
+    if (id === data.active) return;
+    setSwitching(id);
+    fetch('/api/models/local/switch',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({model:id})})
+      .then(r=>{if(!r.ok) return r.json().then(d=>{throw new Error(d.error||'switch failed')}); return r.json();})
+      .then(d=>{ onToast('Model activ: '+d.active); setSwitching(''); fetchModels(); })
+      .catch(e=>{ onToast('Eroare: '+e.message); setSwitching(''); });
+  };
+
+  if (loading) return h('div',{style:{padding:20,fontSize:12,color:'var(--text-dim)'}}, 'Se încarcă modelele locale…');
+
+  const providers = data.providers || [];
+  const models = data.models || [];
+
+  return h('div',null,
+    // Provider availability strip
+    h('div',{style:{display:'flex',gap:10,marginBottom:16,flexWrap:'wrap'}},
+      providers.map(p => h('div',{key:p.name,style:{
+        display:'flex',alignItems:'center',gap:6,padding:'4px 10px',
+        background:'var(--bg-glass)',borderRadius:20,border:'1px solid var(--border-glass)',fontSize:11,
+      }},
+        h('div',{style:{width:8,height:8,borderRadius:'50%',background: p.online ? 'var(--green-active)' : 'var(--text-dim)'}}),
+        p.name,
+        h('span',{style:{color:'var(--text-dim)'}}, p.online ? 'disponibil' : 'offline'),
+      )),
+      h('button',{className:'admin-btn',style:{fontSize:11,padding:'3px 10px',marginLeft:'auto'},onClick:fetchModels}, 'Reîmprospătează'),
+    ),
+
+    models.length === 0
+      ? h('p',{style:{padding:12,fontSize:12,color:'var(--text-dim)'}},
+          'Niciun model local găsit. Pornește LM Studio (port 1234) sau Ollama (port 11434) și descarcă un model.')
+      : h('div',{style:{display:'flex',flexDirection:'column',gap:8}},
+          h('div',{style:{fontSize:11,color:'var(--text-dim)',marginBottom:4}}, 'Modele instalate: '+models.length),
+          models.map(m => h('div',{key:m.provider+'/'+m.id,style:{
+            display:'flex',alignItems:'center',gap:10,padding:'8px 12px',
+            background:'var(--bg-glass)',borderRadius:8,
+            border:'1px solid '+(m.active?'var(--accent)':'var(--border-glass)'),
+          }},
+            h('div',{style:{width:8,height:8,borderRadius:'50%',flexShrink:0,background: m.active ? 'var(--accent)' : 'var(--text-dim)'}}),
+            h('div',{style:{flex:1,minWidth:0}},
+              h('div',{style:{fontSize:13,fontWeight:600,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}, m.id),
+              h('div',{style:{fontSize:10,color:'var(--text-dim)'}}, m.provider),
+            ),
+            m.active
+              ? h('span',{style:{fontSize:11,color:'var(--accent)',fontWeight:600,padding:'3px 8px'}}, 'Activ')
+              : h('button',{className:'admin-btn is-primary',style:{fontSize:11,padding:'3px 10px'},
+                  disabled: !!switching, onClick:()=>switchModel(m.id)},
+                  switching === m.id ? '…' : 'Activează'),
+          )),
+        ),
+  );
+}
+
 /* ── MCP Server Management panel ────────────────────────────── */
 
 function MCPPage({ onToast }) {
@@ -1208,6 +1281,7 @@ function AdminApp() {
   const isConfig = active === 'config';
   const isRecall = active === 'recall';
   const isCostView = active === 'costview';
+  const isModels = active === 'models';
 
   return h('div',{className:'admin-wrap'},
     h('div',{className:'admin-sidebar'},
@@ -1252,7 +1326,10 @@ function AdminApp() {
                     : isCostView
                       ? h(CostPage)
 
-                      : null,
+                      : isModels
+                        ? h(LocalModelsPage,{onToast:showToast})
+
+                        : null,
 
       // Reseed settings button on System page
       active === 'system' && h('div',{style:{marginTop:20}},
