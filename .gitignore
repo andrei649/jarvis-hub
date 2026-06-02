@@ -1,4 +1,6 @@
 .venv/
+node_modules/
+tests/frontend/.coverage/
 __pycache__/
 *.pyc
 .env
