@@ -25,6 +25,7 @@ from .heartbeat import HeartbeatScheduler
 from .learning.loop import LearningLoop
 from .skills.loader import SkillLoader
 from .skills.importer import SkillImporter
+from .skills.marketplace import SkillMarketplace
 from .mcp.client import MCPManager
 from .autonomy import AutonomyWorker, TaskQueue, AutonomyPolicy, PreferenceStore, TaskExecutor
 from .autonomy import ProactiveObserver, default_probes
@@ -32,6 +33,7 @@ from .autonomy.inbox import build_decision_card
 from .autonomy.digest import build_morning_brief, build_evening_retro
 from .autonomy.worker import is_night_window
 from .autonomy.reflection import DailyReflector
+from .autonomy.log_scanner import LogBugScanner
 from .workflows import WorkflowEngine, WorkflowRegistry
 from .sandbox import Sandbox
 from .bench import LatencyBenchmark
@@ -68,6 +70,9 @@ from .plugins.balance import BalanceReaderPlugin
 from .plugins.analytics import AnalyticsPlugin
 from .plugins.oracle_bridge import OracleBridgePlugin
 from .plugins.n8n import N8NPlugin
+from .plugins.sms_alerts import SMSAlertsPlugin
+from .plugins.crm_sync import CRMSyncPlugin
+from .plugins.iot_control import IoTControlPlugin
 
 logger = logging.getLogger("jarvis.orchestrator")
 
@@ -88,6 +93,7 @@ class Orchestrator:
         self.plugins: dict = {}
         self.skills = SkillLoader()
         self.skill_importer = SkillImporter()
+        self.marketplace = SkillMarketplace()
         self.mcp = MCPManager()
         self.channels: dict[str, ChannelAdapter] = {}
         self.checkpoints = CheckpointManager()
@@ -105,6 +111,7 @@ class Orchestrator:
         self.on_token: Optional[Callable] = None
         self._runtime_settings: dict = {}
         self._channel_sessions: dict[str, str] = {}
+        self._last_channel: str = "unknown"
         self._settings_watcher_task: Optional[asyncio.Task] = None
         # ── Autonomy / Proactive Cortex (H6.1–H6.6) ──
         self.autonomy_queue = TaskQueue()
@@ -120,9 +127,21 @@ class Orchestrator:
         self.last_cognition = None
         # Daily Reflection & Graph Consolidation (H5.15)
         self.reflector: Optional[DailyReflector] = None
+        # Log-bug-finding scanner (multi-cadence scheduled pipeline)
+        self.log_scanner = LogBugScanner()
         # Multi-Agent Workflows (H5.6)
         self.workflow_registry = WorkflowRegistry()
         self.workflow_engine: Optional[WorkflowEngine] = None
+        # Continuous Ingestion Watcher (H5.1)
+        self.ingestion_watcher = None
+        # H7.3: debounce checkpoint — counts turns since last full save
+        self._turns_since_checkpoint: int = 0
+        # H9.2: trace explorer — in-memory ring buffer
+        try:
+            from .observability.tracer import Tracer
+            self.tracer = Tracer(maxlen=500)
+        except Exception:
+            self.tracer = None
 
     async def load_agents(self):
         await self.llm_router.detect()
@@ -220,6 +239,20 @@ class Orchestrator:
             base_url=os.environ.get("N8N_BASE_URL", ""),
             api_key=os.environ.get("N8N_API_KEY", ""),
         )
+        self.plugins["sms-alerts"] = SMSAlertsPlugin(
+            account_sid=self.get_setting("plugins.twilio_account_sid", ""),
+            auth_token=self.get_setting("plugins.twilio_auth_token", ""),
+            from_number=self.get_setting("plugins.twilio_from_number", ""),
+        )
+        self.plugins["crm-sync"] = CRMSyncPlugin(
+            integration_token=self.get_setting("plugins.notion_integration_token", ""),
+            database_id=self.get_setting("plugins.notion_database_id", ""),
+        )
+        self.plugins["iot-control"] = IoTControlPlugin(
+            client_id=self.get_setting("plugins.tuya_client_id", ""),
+            secret=self.get_setting("plugins.tuya_secret", ""),
+            device_id=self.get_setting("plugins.tuya_device_id", ""),
+        )
 
         # Autonomy queue — durable self-tasking store (H6.1)
         try:
@@ -243,11 +276,14 @@ class Orchestrator:
             ]
             self.event_watcher = EventWatcher(self.autonomy, event_probes)
 
-            # Daily reflection + graph consolidation (H5.15)
-            async def _llm_for_reflection(prompt: str) -> str:
-                return await self.handle_input(prompt, channel="autonomy")
+            async def _reflect_llm(prompt: str) -> str:
+                return await self.process(prompt, agent="jarvis", channel="reflection")
 
-            self.reflector = DailyReflector(self.memory, _llm_for_reflection)
+            self.reflector = DailyReflector(self.memory, _reflect_llm)
+
+            # Continuous Ingestion Watcher (H5.1)
+            from .ingestion.watcher import IngestionWatcher
+            self.ingestion_watcher = IngestionWatcher()
 
             # Multi-agent workflow engine (H5.6)
             self.workflow_engine = WorkflowEngine(self)
@@ -333,6 +369,116 @@ class Orchestrator:
         except Exception as e:
             logger.warning(f"Failed to schedule daily digests: {e}")
 
+    def _schedule_log_scans(self):
+        """Register the three log-bug-finding cadences on the APScheduler.
+
+        quick  — every 15 min: spike + new-code detection
+        hourly — every hour:   trend analysis + backlog sync
+        daily  — 07:05 daily:  full 24-h digest → memory_logs/reports/
+        """
+        sched = getattr(self.heartbeat_scheduler, "scheduler", None)
+        if sched is None:
+            return
+        try:
+            sched.add_job(self._run_log_quick_scan, "interval", seconds=900,
+                          id="log-scan-quick", replace_existing=True)
+            sched.add_job(self._run_log_hourly_scan, "interval", seconds=3600,
+                          id="log-scan-hourly", replace_existing=True)
+            sched.add_job(self._run_log_daily_scan, "cron", hour=7, minute=5,
+                          id="log-scan-daily", replace_existing=True)
+            logger.info("Scheduled log-bug scans: quick/15min, hourly, daily/07:05")
+        except Exception as e:
+            logger.warning(f"Failed to schedule log scans: {e}")
+
+    async def _run_log_quick_scan(self):
+        """15-min scan: submit autonomy alert on spike or new error code."""
+        if not self.get_setting("system.log_scan_enabled", True):
+            return
+        try:
+            base = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+            problems_path = os.path.join(base, "..", "memory_logs", "problems.jsonl")
+            result = self.log_scanner.quick_scan(problems_path)
+            if result.healthy:
+                return
+            issues = ", ".join(
+                f"{i['code']}×{i['count']}" for i in result.top_issues[:3]
+            )
+            parts = []
+            if result.spike_detected:
+                parts.append(f"spike: {result.total_errors} errors in 15 min")
+            if result.new_codes:
+                parts.append(f"new codes: {', '.join(result.new_codes[:3])}")
+            title = "Log spike detected — " + "; ".join(parts)
+            if issues:
+                title += f" [{issues}]"
+            await self.autonomy.submit(
+                agent="steve", kind="monitor.log_spike", title=title,
+                payload={"risk_tier": 0, "spike": result.spike_detected,
+                         "new_codes": result.new_codes,
+                         "total_errors": result.total_errors},
+                origin="log_scanner",
+            )
+        except Exception as e:
+            logger.warning(f"Log quick scan failed: {e}")
+
+    async def _run_log_hourly_scan(self):
+        """Hourly scan: trend analysis and backlog sync."""
+        if not self.get_setting("system.log_scan_enabled", True):
+            return
+        try:
+            base = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+            problems_path = os.path.join(base, "..", "memory_logs", "problems.jsonl")
+            result = self.log_scanner.hourly_scan(problems_path)
+            from .autonomy.error_logger import sync_problems_to_backlog
+            sync_problems_to_backlog()
+            if result.healthy:
+                return
+            parts = []
+            if result.spike_detected:
+                parts.append(f"spike: {result.total_errors} errors this hour")
+            if result.new_codes:
+                parts.append(f"new codes: {', '.join(result.new_codes[:3])}")
+            if parts:
+                await self.autonomy.submit(
+                    agent="steve", kind="monitor.log_trend", title="Hourly log trend — " + "; ".join(parts),
+                    payload={"risk_tier": 0, "spike": result.spike_detected,
+                             "new_codes": result.new_codes,
+                             "total_errors": result.total_errors},
+                    origin="log_scanner",
+                )
+        except Exception as e:
+            logger.warning(f"Log hourly scan failed: {e}")
+
+    async def _run_log_daily_scan(self):
+        """07:05 daily scan: write 24-h bug-report digest."""
+        if not self.get_setting("system.log_scan_enabled", True):
+            return
+        try:
+            base = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+            problems_path = os.path.join(base, "..", "memory_logs", "problems.jsonl")
+            result = self.log_scanner.daily_scan(problems_path)
+            logger.info(
+                f"Daily log scan: {result.total_errors} errors, "
+                f"{len(result.new_codes)} new codes, report={result.report_path}"
+            )
+            if result.healthy:
+                return
+            issues_summary = ", ".join(
+                f"{i['code']}×{i['count']}" for i in result.top_issues[:5]
+            )
+            title = f"Daily bug digest: {result.total_errors} errors"
+            if result.new_codes:
+                title += f", {len(result.new_codes)} new codes"
+            await self.autonomy.submit(
+                agent="steve", kind="monitor.log_daily", title=title,
+                payload={"risk_tier": 0, "total_errors": result.total_errors,
+                         "new_codes": result.new_codes, "top_issues": issues_summary,
+                         "report_path": result.report_path},
+                origin="log_scanner",
+            )
+        except Exception as e:
+            logger.warning(f"Log daily scan failed: {e}")
+
     async def _autonomy_loop(self):
         """Periodically run approved autonomy tasks (the self-tasking worker).
 
@@ -361,6 +507,9 @@ class Orchestrator:
                 if self.reflector and self.get_setting("system.reflection_enabled", True):
                     if is_night_window(datetime.now().hour, start=22, end=7):
                         await self.reflector.run(enabled=True)
+                # Continuous Ingestion Watcher (H5.1)
+                if self.ingestion_watcher and self.get_setting("system.ingestion_watcher_enabled", True):
+                    await asyncio.to_thread(self.ingestion_watcher.check_and_run)
                 # Sync error/problem log to BACKLOG.md (Antigravity error backlog logger)
                 if self.get_setting("system.error_backlog_sync_enabled", True):
                     from .autonomy.error_logger import sync_problems_to_backlog
@@ -436,6 +585,7 @@ class Orchestrator:
         self._settings_watcher_task = asyncio.create_task(self._settings_watcher_loop())
         self._wire_autonomy()
         self._schedule_daily_digests()
+        self._schedule_log_scans()
         self._autonomy_task = asyncio.create_task(self._autonomy_loop())
         if hasattr(self, 'oracle_bridge'):
             self.oracle_bridge.start_watcher()
@@ -447,6 +597,13 @@ class Orchestrator:
         self.heartbeat_scheduler.stop()
         if self._settings_watcher_task:
             self._settings_watcher_task.cancel()
+        # Close all active plugins gracefully
+        for pid, plugin in self.plugins.items():
+            if hasattr(plugin, "close"):
+                try:
+                    await plugin.close()
+                except Exception as e:
+                    logger.warning(f"Error closing plugin {pid}: {e}")
         logger.info("Channels stopped")
 
     async def channel_handler(self, text: str, channel: str = "voice", **kwargs) -> Optional[str]:
@@ -479,6 +636,7 @@ class Orchestrator:
         return response
 
     async def handle_input(self, text: str, channel: str = "voice", agent_override: str = None) -> str:
+        self._last_channel = channel  # captured for H9.2 tracer
         t_start = time.perf_counter()
         await self.memory.add_turn(self.session_id, "user", text)
 
@@ -524,16 +682,17 @@ class Orchestrator:
             synthesized = list(responses.values())[0] if responses else ""
             t_synthesize = int((time.perf_counter() - t_s0) * 1000)
             await self.memory.add_turn(self.session_id, "assistant", synthesized, agent_id=agent_override)
-            self.checkpoints.save(self)
-            self._log_session(text, intent, responses, synthesized)
-            self._record_interactions(text, responses, synthesized, route_name=route_name)
-            self.audit.log(SecurityEvent(
+            await self._maybe_checkpoint()
+            await asyncio.to_thread(self._log_session, text, intent, responses, synthesized)
+            await asyncio.to_thread(self._record_interactions, text, responses, synthesized, route_name)
+            _event_override = SecurityEvent(
                 event_type=SecurityEventType.LLM_CALL,
                 timestamp=time.time(),
                 findings=[],
                 content_preview=synthesized[:100],
                 action_taken=f"handle_input(agent_override={agent_override}) via {channel}",
-            ))
+            )
+            await asyncio.to_thread(self.audit.log, _event_override)
             self._update_cognition(text, intent, plugin_data, synthesized, t_classify, t_route, t_plugin, t_synthesize)
             return synthesized
 
@@ -587,23 +746,24 @@ class Orchestrator:
             logger.info(f"Learned new skill: {skill_name}")
 
         await self.memory.add_turn(self.session_id, "assistant", synthesized, agent_id=responder_id)
-        self.checkpoints.save(self)
-        self._log_session(text, intent, responses, synthesized)
+        await self._maybe_checkpoint()
+        await asyncio.to_thread(self._log_session, text, intent, responses, synthesized)
+        await asyncio.to_thread(self._record_interactions, text, responses, synthesized, route_name)
 
-        self._record_interactions(text, responses, synthesized, route_name=route_name)
-
-        self.audit.log(SecurityEvent(
+        _event_main = SecurityEvent(
             event_type=SecurityEventType.LLM_CALL,
             timestamp=time.time(),
             findings=[],
             content_preview=synthesized[:100],
             action_taken=f"handle_input via {channel}",
-        ))
+        )
+        await asyncio.to_thread(self.audit.log, _event_main)
 
         self._update_cognition(text, intent, plugin_data, synthesized, t_classify, t_route, t_plugin, t_synthesize)
         return synthesized
 
     async def handle_input_stream(self, text: str, channel: str = "voice", on_token: Callable = None, agent_override: str = None) -> str:
+        self._last_channel = channel  # captured for H9.2 tracer
         await self.memory.add_turn(self.session_id, "user", text)
 
         skill_cmd = self.skills.parse_command(text)
@@ -647,6 +807,10 @@ class Orchestrator:
         max_tokens = self.get_setting("llm.max_tokens", 1024)
         context_window = self.get_setting("memory.context_window", 6)
         synthesized = ""
+        # Pre-bind so the post-loop persist/audit never hit UnboundLocalError when
+        # `target` is empty (e.g. _route_candidates returns nothing).
+        agent_id = None
+        t_s0 = time.perf_counter()
         for agent_id in target:
             if agent_id in self.agents:
                 agent = self.agents[agent_id]
@@ -657,9 +821,24 @@ class Orchestrator:
                 context_block = ""
                 if agent_context:
                     context_block = f"Agent context: {agent_context}\n"
+
+                rag_block = ""
+                if agent_id == "howard":
+                    try:
+                        from .ingestion.pipeline import IngestionPipeline
+                        pipeline = IngestionPipeline()
+                        similar = pipeline.search_similar(text, k=5, only_me=True)
+                        if similar:
+                            shot_lines = [f"- Andrei: \"{m.text}\"" for m in similar]
+                            rag_block = "Here are some of your past matching responses from the archive (RAG), mirroring your stylometry, tone, and opinions:\n" + "\n".join(shot_lines) + "\n\n"
+                            logger.info(f"Howard RAG: injected {len(similar)} few-shot messages into stream prompt")
+                    except Exception as e:
+                        logger.warning(f"Howard RAG stream lookup failed: {e}")
+
+                recall_block = await self._recall_block(text)
                 prompt = (
                     f"Conversation history:\n{history}\n\n"
-                    f"{plugin_block}{context_block}"
+                    f"{plugin_block}{context_block}{rag_block}{recall_block}"
                     f"User: {text}\n"
                     f"Respond as {agent.name}."
                 )
@@ -727,14 +906,15 @@ class Orchestrator:
                 break
 
         await self.memory.add_turn(self.session_id, "assistant", synthesized, agent_id=agent_id)
-        self.checkpoints.save(self)
-        self.audit.log(SecurityEvent(
+        await self._maybe_checkpoint()
+        _event_stream = SecurityEvent(
             event_type=SecurityEventType.LLM_CALL,
             timestamp=time.time(),
             findings=[],
             content_preview=synthesized[:100],
             action_taken=f"handle_input_stream({agent_id}) via {channel}",
-        ))
+        )
+        await asyncio.to_thread(self.audit.log, _event_stream)
         t_synthesize = int((time.perf_counter() - t_s0) * 1000)
         self._update_cognition(text, intent, plugin_data, synthesized, t_classify, t_route, t_plugin, t_synthesize)
         return synthesized
@@ -788,6 +968,42 @@ class Orchestrator:
             "decision": decision,
             "trace": trace
         }
+
+        # H9.2: persist to tracer ring buffer (defensive — never breaks a request)
+        try:
+            if self.tracer is not None:
+                from .observability.tracer import Tracer
+                model = ""
+                agents_selected = decision.get("agents_selected", [])
+                if agents_selected:
+                    first_agent = agents_selected[0]
+                    agent_obj = self.agents.get(first_agent)
+                    if agent_obj:
+                        model = agent_obj.config.get("model", "")
+                from .llm.tokenizer import estimate_tokens as _et
+                trace_dict = {
+                    "channel": getattr(self, "_last_channel", "unknown"),
+                    "text_preview": (text or "")[:120],
+                    "intent": decision.get("source", ""),
+                    "route": agents_selected[0] if agents_selected else "",
+                    "agents": agents_selected,
+                    "model": model,
+                    "tokens_in": _et(text or ""),
+                    "tokens_out": _et(synthesized or ""),
+                    "timings": {
+                        "classify": t_classify,
+                        "route": t_route,
+                        "plugin": t_plugin,
+                        "synthesize": t_synthesize,
+                        "total_ms": t_classify + t_route + t_plugin + t_synthesize,
+                    },
+                    "ok": True,
+                    "scoring": scoring,
+                    "full_trace": trace,
+                }
+                self.tracer.record(trace_dict)
+        except Exception as _te:
+            logger.debug(f"tracer.record skipped: {_te}")
 
     def _detect_handoff(self, responses: dict[str, str]) -> Optional[str]:
         for agent_id, resp in responses.items():
@@ -908,11 +1124,39 @@ class Orchestrator:
                 blocks.append(f"[REAL-TIME DATA — {key.upper()}]:\n{value}")
         return "\n\n".join(blocks) + "\n\n" if blocks else ""
 
+    async def _recall_block(self, text: str) -> str:
+        """Long-term memory recall injected into the prompt (RAG, all agents).
+
+        Off by default — enable with the `memory.recall_enabled` setting. Pairs
+        with `MEMORY_EMBED_TURNS=true` or explicit `/api/memory/remember` so there
+        is something to recall. Embeds the query and runs fused recall (vector ⊕
+        graph); any failure degrades to an empty block (never breaks a turn)."""
+        if not self.get_setting("memory.recall_enabled", False):
+            return ""
+        try:
+            k = self.get_setting("memory.recall_top_k", 5)
+            hits = await self.memory.recall(text, top_k=k)
+        except Exception as e:
+            logger.warning(f"recall failed: {e}")
+            return ""
+        lines = []
+        for h in hits or []:
+            payload = getattr(h, "payload", {}) or {}
+            md = payload.get("metadata") or {}
+            # vector hits carry text under metadata; graph hits expose a name
+            snippet = payload.get("text") or md.get("text") or payload.get("name")
+            if snippet:
+                lines.append(f"- {snippet}")
+        if not lines:
+            return ""
+        return "Relevant long-term memory (recall):\n" + "\n".join(lines) + "\n\n"
+
     async def _call_agents_parallel(
         self, agent_ids: list[str], text: str, context: dict, plugin_data: dict = None
     ) -> dict[str, str]:
         history = await self.memory.get_context(self.session_id, last_n=6)
         plugin_block = self._format_plugin_data(plugin_data or {})
+        recall_block = await self._recall_block(text)
 
         async def _run_agent(agent_id: str) -> tuple[str, str, float]:
             enriched_text = text
@@ -920,6 +1164,8 @@ class Orchestrator:
                 enriched_text = f"Context:\n{history}\n\nUser: {text}"
             if plugin_block:
                 enriched_text = f"{plugin_block}{enriched_text}"
+            if recall_block:
+                enriched_text = f"{recall_block}{enriched_text}"
             agent_context = await self.memory.get_agent_context(agent_id)
             if agent_context:
                 enriched_text = f"Agent context: {agent_context}\n\n{enriched_text}"
@@ -1096,6 +1342,42 @@ class Orchestrator:
 
     def _log_session(self, text, intent, responses, synthesized):
         logger.info(f"[{(self.session_id or 'none')[:20]}]: {text[:40]}... -> {synthesized[:40]}...")
+
+    # ── H7.2 / H7.3: checkpoint debounce helpers ────────────────────────────
+
+    async def _maybe_checkpoint(self):
+        """H7.3: increment turn counter; only persist every N turns.
+
+        The N threshold is read from the runtime settings (default 5) so it
+        can be tuned live without a restart.  Runs the actual SQLite write
+        off the event loop via asyncio.to_thread (H7.2).
+        """
+        self._turns_since_checkpoint += 1
+        every = int(self.get_setting("memory.checkpoint_every", 5) or 5)
+        if self._turns_since_checkpoint >= every:
+            await asyncio.to_thread(self.checkpoints.save, self)
+            self._turns_since_checkpoint = 0
+
+    async def _flush_checkpoint(self):
+        """Force an immediate checkpoint save and reset the turn counter.
+
+        Called on session boundaries so no active session state is lost.
+        """
+        await asyncio.to_thread(self.checkpoints.save, self)
+        self._turns_since_checkpoint = 0
+
+    async def new_session(self) -> str:
+        """Wrapper around memory.new_session() that flushes the checkpoint first
+        so the outgoing session is not lost before we switch context.
+        """
+        await self._flush_checkpoint()
+        sid = await self.memory.new_session()
+        self.session_id = sid
+        return sid
+
+    async def aclose(self):
+        """Graceful shutdown: flush pending checkpoint before process exit."""
+        await self._flush_checkpoint()
 
     async def get_status(self) -> dict:
         return {

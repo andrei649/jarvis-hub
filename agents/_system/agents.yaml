@@ -175,11 +175,8 @@ agents:
 
 # Bench — reserved names, not yet active
 bench:
-  howard:
-    name: Howard
-    archetype: Archive
-    trigger: "15 years of personal data ingested"  # activated 2026-05-30
-
+  # howard promoted to active 2026-05-30 (Howard Stark Digital Twin, H5.1) —
+  # the active entry lives in the `agents:` block above; no bench duplicate.
   bruce:
     name: Bruce
     archetype: Data Science

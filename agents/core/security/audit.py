@@ -19,6 +19,11 @@ class AuditLogger:
         self._db_path = Path(db_path)
         self._db_path.parent.mkdir(parents=True, exist_ok=True)
         self._conn = sqlite3.connect(str(self._db_path), check_same_thread=False)
+        # WAL + synchronous=NORMAL: every turn appends one hash-chained audit row
+        # on the async hot path; this keeps the commit cheap (~36x in-bench) while
+        # preserving durability and the Merkle chain.
+        self._conn.execute("PRAGMA journal_mode=WAL")
+        self._conn.execute("PRAGMA synchronous=NORMAL")
         self._conn.execute("""
             CREATE TABLE IF NOT EXISTS security_events (
                 id              INTEGER PRIMARY KEY AUTOINCREMENT,

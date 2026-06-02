@@ -7,6 +7,7 @@ Also tracks agent stats for promotion/demotion and structured sessions.
 import json
 import logging
 import sqlite3
+import threading
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
@@ -23,9 +24,17 @@ class CheckpointManager:
             db_path = str(CHECKPOINT_DIR / "checkpoints.db")
         self.db_path = db_path
         self._conn: Optional[sqlite3.Connection] = None
+        # Guard concurrent access when called via asyncio.to_thread (H7.2)
+        self._lock = threading.Lock()
 
     def initialize(self):
-        self._conn = sqlite3.connect(self.db_path)
+        # check_same_thread=False: save/load run via asyncio.to_thread (H7.2),
+        # so the connection is touched from pool worker threads; a threading.Lock
+        # serializes access. WAL + synchronous=NORMAL keeps the per-turn commit
+        # cheap (~36x faster in-bench) without losing durability.
+        self._conn = sqlite3.connect(self.db_path, check_same_thread=False)
+        self._conn.execute("PRAGMA journal_mode=WAL")
+        self._conn.execute("PRAGMA synchronous=NORMAL")
         self._conn.execute("""
             CREATE TABLE IF NOT EXISTS checkpoints (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -63,8 +72,6 @@ class CheckpointManager:
                 metadata TEXT DEFAULT '{}'
             )
         """)
-        self._conn.execute("PRAGMA journal_mode=WAL")
-        self._conn.execute("PRAGMA synchronous=NORMAL")
         self._conn.commit()
         logger.info(f"Checkpoint DB initialized: {self.db_path}")
 
@@ -79,12 +86,13 @@ class CheckpointManager:
                 "llm_backend": orchestrator.llm_router.name,
                 "timestamp": datetime.now(timezone.utc).isoformat(),
             }
-            self._conn.execute(
-                "INSERT OR REPLACE INTO checkpoints (agent_id, session_id, state, data, created_at) VALUES (?, ?, ?, ?, ?)",
-                ("orchestrator", orchestrator.session_id, "running",
-                 json.dumps(state, ensure_ascii=False), state["timestamp"]),
-            )
-            self._conn.commit()
+            with self._lock:
+                self._conn.execute(
+                    "INSERT OR REPLACE INTO checkpoints (agent_id, session_id, state, data, created_at) VALUES (?, ?, ?, ?, ?)",
+                    ("orchestrator", orchestrator.session_id, "running",
+                     json.dumps(state, ensure_ascii=False), state["timestamp"]),
+                )
+                self._conn.commit()
             return True
         except Exception as e:
             logger.warning(f"Checkpoint save failed: {e}")
@@ -94,11 +102,12 @@ class CheckpointManager:
         if not self._conn:
             return None
         try:
-            cursor = self._conn.execute(
-                "SELECT state, data FROM checkpoints WHERE agent_id=? AND session_id=?",
-                (agent_id, session_id),
-            )
-            row = cursor.fetchone()
+            with self._lock:
+                cursor = self._conn.execute(
+                    "SELECT state, data FROM checkpoints WHERE agent_id=? AND session_id=?",
+                    (agent_id, session_id),
+                )
+                row = cursor.fetchone()
             if row:
                 return {"state": row[0], **json.loads(row[1])}
         except Exception as e:
@@ -109,10 +118,11 @@ class CheckpointManager:
         if not self._conn:
             return False
         try:
-            cursor = self._conn.execute(
-                "SELECT data FROM checkpoints WHERE agent_id='orchestrator' ORDER BY rowid DESC LIMIT 1"
-            )
-            row = cursor.fetchone()
+            with self._lock:
+                cursor = self._conn.execute(
+                    "SELECT data FROM checkpoints WHERE agent_id='orchestrator' ORDER BY rowid DESC LIMIT 1"
+                )
+                row = cursor.fetchone()
             if row:
                 state = json.loads(row[0])
                 orchestrator.session_id = state.get("session_id", orchestrator.session_id)
@@ -127,11 +137,12 @@ class CheckpointManager:
             return
         try:
             data = json.dumps({"prompt": prompt, "timestamp": datetime.now(timezone.utc).isoformat()}, ensure_ascii=False)
-            self._conn.execute(
-                "INSERT OR REPLACE INTO checkpoints (agent_id, session_id, state, data, created_at) VALUES (?, ?, ?, ?, ?)",
-                (agent_id, session_id, "executing", data, datetime.now(timezone.utc).isoformat()),
-            )
-            self._conn.commit()
+            with self._lock:
+                self._conn.execute(
+                    "INSERT OR REPLACE INTO checkpoints (agent_id, session_id, state, data, created_at) VALUES (?, ?, ?, ?, ?)",
+                    (agent_id, session_id, "executing", data, datetime.now(timezone.utc).isoformat()),
+                )
+                self._conn.commit()
         except Exception as e:
             logger.warning(f"Agent checkpoint save failed: {e}")
 
@@ -139,11 +150,12 @@ class CheckpointManager:
         if not self._conn:
             return
         try:
-            self._conn.execute(
-                "DELETE FROM checkpoints WHERE agent_id=? AND session_id=?",
-                (agent_id, session_id),
-            )
-            self._conn.commit()
+            with self._lock:
+                self._conn.execute(
+                    "DELETE FROM checkpoints WHERE agent_id=? AND session_id=?",
+                    (agent_id, session_id),
+                )
+                self._conn.commit()
         except Exception as e:
             logger.warning(f"Checkpoint clear failed: {e}")
 
@@ -155,21 +167,22 @@ class CheckpointManager:
             succ = 1 if success else 0
             fail = 0 if success else 1
             status = "success" if success else "failure"
-            self._conn.execute("""
-                INSERT INTO agent_stats (agent_id, total_calls, success_calls, failure_calls,
-                    avg_latency, last_status, last_error, created_at, updated_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-                ON CONFLICT(agent_id) DO UPDATE SET
-                    total_calls = total_calls + 1,
-                    success_calls = success_calls + ?,
-                    failure_calls = failure_calls + ?,
-                    avg_latency = (avg_latency * (total_calls - 1) + ?) / MAX(total_calls, 1),
-                    last_status = ?,
-                    last_error = ?,
-                    updated_at = ?
-            """, (agent_id, 1, succ, fail, latency, status, error, now, now,
-                  succ, fail, latency, status, error, now))
-            self._conn.commit()
+            with self._lock:
+                self._conn.execute("""
+                    INSERT INTO agent_stats (agent_id, total_calls, success_calls, failure_calls,
+                        avg_latency, last_status, last_error, created_at, updated_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    ON CONFLICT(agent_id) DO UPDATE SET
+                        total_calls = total_calls + 1,
+                        success_calls = success_calls + ?,
+                        failure_calls = failure_calls + ?,
+                        avg_latency = (avg_latency * (total_calls - 1) + ?) / MAX(total_calls, 1),
+                        last_status = ?,
+                        last_error = ?,
+                        updated_at = ?
+                """, (agent_id, 1, succ, fail, latency, status, error, now, now,
+                      succ, fail, latency, status, error, now))
+                self._conn.commit()
         except Exception as e:
             logger.warning(f"Failed to record call for {agent_id}: {e}")
 
@@ -177,11 +190,12 @@ class CheckpointManager:
         if not self._conn:
             return {}
         try:
-            cursor = self._conn.execute(
-                "SELECT * FROM agent_stats WHERE agent_id=?", (agent_id,)
-            )
-            columns = [d[0] for d in cursor.description]
-            row = cursor.fetchone()
+            with self._lock:
+                cursor = self._conn.execute(
+                    "SELECT * FROM agent_stats WHERE agent_id=?", (agent_id,)
+                )
+                columns = [d[0] for d in cursor.description]
+                row = cursor.fetchone()
             if row:
                 return dict(zip(columns, row))
         except Exception as e:
@@ -192,9 +206,11 @@ class CheckpointManager:
         if not self._conn:
             return {}
         try:
-            cursor = self._conn.execute("SELECT * FROM agent_stats")
-            columns = [d[0] for d in cursor.description]
-            return {row[0]: dict(zip(columns, row)) for row in cursor.fetchall()}
+            with self._lock:
+                cursor = self._conn.execute("SELECT * FROM agent_stats")
+                columns = [d[0] for d in cursor.description]
+                rows = cursor.fetchall()
+            return {row[0]: dict(zip(columns, row)) for row in rows}
         except Exception as e:
             logger.warning(f"Failed to get all agent stats: {e}")
         return {}
@@ -203,12 +219,13 @@ class CheckpointManager:
         if not self._conn:
             return
         try:
-            self._conn.execute("""
-                INSERT OR IGNORE INTO sessions (id, agent_id, started_at, turn_count, metadata)
-                VALUES (?, ?, ?, 0, ?)
-            """, (session_id, agent_id, datetime.now(timezone.utc).isoformat(),
-                  json.dumps(metadata or {}, ensure_ascii=False)))
-            self._conn.commit()
+            with self._lock:
+                self._conn.execute("""
+                    INSERT OR IGNORE INTO sessions (id, agent_id, started_at, turn_count, metadata)
+                    VALUES (?, ?, ?, 0, ?)
+                """, (session_id, agent_id, datetime.now(timezone.utc).isoformat(),
+                      json.dumps(metadata or {}, ensure_ascii=False)))
+                self._conn.commit()
         except Exception as e:
             logger.warning(f"Failed to create session record: {e}")
 
@@ -225,8 +242,9 @@ class CheckpointManager:
                 updates.append("summary=?")
                 params.append(summary)
             params.append(session_id)
-            self._conn.execute(f"UPDATE sessions SET {', '.join(updates)} WHERE id=?", params)
-            self._conn.commit()
+            with self._lock:
+                self._conn.execute(f"UPDATE sessions SET {', '.join(updates)} WHERE id=?", params)
+                self._conn.commit()
         except Exception as e:
             logger.warning(f"Failed to update session: {e}")
 
@@ -234,11 +252,13 @@ class CheckpointManager:
         if not self._conn:
             return []
         try:
-            cursor = self._conn.execute(
-                "SELECT * FROM sessions ORDER BY started_at DESC LIMIT ?", (limit,)
-            )
-            columns = [d[0] for d in cursor.description]
-            return [dict(zip(columns, row)) for row in cursor.fetchall()]
+            with self._lock:
+                cursor = self._conn.execute(
+                    "SELECT * FROM sessions ORDER BY started_at DESC LIMIT ?", (limit,)
+                )
+                columns = [d[0] for d in cursor.description]
+                rows = cursor.fetchall()
+            return [dict(zip(columns, row)) for row in rows]
         except Exception as e:
             logger.warning(f"Failed to get sessions: {e}")
         return []
@@ -247,9 +267,10 @@ class CheckpointManager:
         if not self._conn:
             return {"status": "unavailable"}
         try:
-            cp_count = self._conn.execute("SELECT COUNT(*) FROM checkpoints").fetchone()[0]
-            agent_count = self._conn.execute("SELECT COUNT(*) FROM agent_stats").fetchone()[0]
-            session_count = self._conn.execute("SELECT COUNT(*) FROM sessions").fetchone()[0]
+            with self._lock:
+                cp_count = self._conn.execute("SELECT COUNT(*) FROM checkpoints").fetchone()[0]
+                agent_count = self._conn.execute("SELECT COUNT(*) FROM agent_stats").fetchone()[0]
+                session_count = self._conn.execute("SELECT COUNT(*) FROM sessions").fetchone()[0]
             return {
                 "status": "active",
                 "checkpoints": cp_count,

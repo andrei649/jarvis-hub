@@ -7,11 +7,18 @@ Decides per-request which backend and model to use based on:
 3. Backend availability (graceful degradation)
 4. Howard special case: uses Ollama with fine-tuned model
 5. Heavy agents (Vision, Steve) → Claude API via Anthropic
+6. Deep-think agents → second LM Studio model slot (DDR5, async-only)
+7. Complexity-based escalation → auto agents with heavy/complex prompts
+   routed to deep slot (controlled by JARVIS_AUTO_DEEP env flag)
 
-Howard's fine-tuned model runs on Ollama alongside LM Studio.
-Light agents use local LM Studio (lightweight model).
-Heavy agents use Claude API (external, 0 VRAM).
-Frigga/Ultron stay local-only.
+Tier layout (LM Studio multi-model):
+  Slot 1 (VRAM, fast):  DEFAULT_LOCAL_MODEL  — interactive agents, voice
+  Slot 2 (DDR5, deep):  DEFAULT_DEEP_MODEL   — frigga, hephaestus, hercules
+                                                + auto agents w/ heavy prompts
+  Ollama (VRAM/RAM):    HOWARD_OLLAMA_MODEL  — Howard fine-tuned
+
+Set JARVIS_DEEP_MODEL env var to override the deep-slot model name.
+Set JARVIS_AUTO_DEEP=0 to disable complexity-based escalation.
 """
 
 import logging
@@ -28,6 +35,42 @@ logger = logging.getLogger("jarvis.llm.hybrid")
 LOCAL_MAX_TOKENS = 8_000
 FLASH_MAX_TOKENS = 128_000
 
+# H7.5 — Complexity-based escalation thresholds and keywords.
+# Prompts exceeding HEAVY_TOKEN_THRESHOLD tokens OR containing any keyword
+# from HEAVY_KEYWORDS are considered "heavy" and routed to the deep local slot
+# for auto-policy agents (when JARVIS_AUTO_DEEP is enabled).
+HEAVY_TOKEN_THRESHOLD = 2_000
+
+# Bilingual RO/EN keyword set — matched case-insensitively as substrings.
+HEAVY_KEYWORDS: frozenset[str] = frozenset({
+    # Romanian
+    "analiz",       # analiză / analizare / analizez
+    "raionament",   # raționament (diacritic-free variant)
+    "raționament",  # raționament (with diacritic)
+    "strategi",     # strategie / strategică / strategic
+    "corelare",     # corelare
+    "planific",     # planificare / planific
+    "sintez",       # sinteză / sintetizare
+    "demonstr",     # demonstrare / demonstrez
+    "deduc",        # deducție / deduc
+    # English
+    "analys",       # analysis / analyse / analyzes
+    "analyz",       # analyze / analyzed
+    "rationament",  # alias without diacritic
+    "reasoning",
+    "strategy",
+    "strateg",      # strategic / strategize
+    "correlat",     # correlate / correlation
+    "planning",
+    "synthes",      # synthesis / synthesize
+    "demonstrat",   # demonstrate / demonstration
+    "deduct",       # deduction / deduct
+})
+
+# Feature flag: set JARVIS_AUTO_DEEP=0 or JARVIS_AUTO_DEEP=false to disable.
+# Default is ON (complexity-based escalation active).
+AUTO_DEEP_ENABLED: bool = os.environ.get("JARVIS_AUTO_DEEP", "1") not in ("0", "false", "False")
+
 # Agent policy constants
 POLICY_LOCAL = "local"
 POLICY_CLOUD = "cloud"
@@ -39,6 +82,27 @@ LOCAL_ONLY_AGENTS = {"frigga", "ultron", "howard"}
 CLOUD_ONLY_AGENTS = {"athena"}
 CLAUDE_AGENTS = {"vision", "steve"}
 
+# Agents routed to the deep-think model slot (LM Studio slot 2, DDR5).
+# These accept high latency in exchange for deeper reasoning.
+DEEP_THINK_AGENTS = {"frigga", "hephaestus", "hercules"}
+
+
+def is_heavy_request(prompt: str, *, token_threshold: int = HEAVY_TOKEN_THRESHOLD) -> bool:
+    """Return True if a prompt is considered heavy/complex.
+
+    A prompt is heavy when:
+    - Its estimated token count exceeds *token_threshold* (default HEAVY_TOKEN_THRESHOLD), OR
+    - It contains at least one keyword from HEAVY_KEYWORDS (case-insensitive substring match).
+
+    This drives complexity-based escalation in select_backend() for POLICY_AUTO agents.
+    Note: get_model() is NOT escalated because it has no prompt argument.
+    """
+    if estimate_tokens(prompt) > token_threshold:
+        return True
+    lower = prompt.lower()
+    return any(kw in lower for kw in HEAVY_KEYWORDS)
+
+
 # Howard's dedicated Ollama model
 HOWARD_OLLAMA_MODEL = "howard-lora-qwen-14b"
 HOWARD_OLLAMA_URL = "http://localhost:11434"
@@ -49,6 +113,11 @@ OLLAMA_PREFERRED_AGENTS = {"howard"}
 # Default model names per tier
 DEFAULT_LOCAL_MODEL = "qwen3:7b"
 DEFAULT_CLAUDE_MODEL = "claude-sonnet-4-20250514"
+# Deep-slot model: loaded by LM Studio in slot 2, runs on DDR5.
+# Override via JARVIS_DEEP_MODEL env var.
+DEFAULT_DEEP_MODEL = os.environ.get(
+    "JARVIS_DEEP_MODEL", "deepseek-r1-distill-qwen-32b"
+)
 
 
 class HybridRouter(LLMRouter):
@@ -64,20 +133,41 @@ class HybridRouter(LLMRouter):
         self._ollama_backend: Optional[OllamaBackend] = None
         self._ollama_available = False
         self._local_model = DEFAULT_LOCAL_MODEL
+        # Resolved in detect(): Claude model from /admin config (settings_db);
+        # local model prefers the real model loaded in the live backend.
+        self._claude_model = DEFAULT_CLAUDE_MODEL
+
+    @staticmethod
+    def _admin_setting(key: str, default):
+        """Read an `llm` setting from /admin config (settings_db), safely."""
+        try:
+            from ..settings_db import get_value
+            val = get_value("llm", key, default)
+            return val if val else default
+        except Exception:
+            return default
 
     async def detect(self):
         await super().detect()
         self._local_available = self._backend is not None
+        # Use the real model loaded in the live backend; fall back to the /admin
+        # default, then the hard-coded default. ("live with the real LLM loaded".)
+        self._local_model = (
+            self._detected_model
+            or self._admin_setting("default_model", DEFAULT_LOCAL_MODEL)
+        )
         self._cloud_available = bool(self.gemini_api_key)
         if self._cloud_available:
             from .gemini import GeminiBackend
             self._gemini_backend = GeminiBackend(api_key=self.gemini_api_key)
 
+        # Claude model is admin-configurable (/admin → llm.claude_model).
+        self._claude_model = self._admin_setting("claude_model", DEFAULT_CLAUDE_MODEL)
         self._claude_available = bool(self.anthropic_api_key)
         if self._claude_available:
             from .anthropic import ClaudeBackend
-            self._claude_backend = ClaudeBackend(api_key=self.anthropic_api_key, model=DEFAULT_CLAUDE_MODEL)
-            logger.info(f"Claude API available ({DEFAULT_CLAUDE_MODEL})")
+            self._claude_backend = ClaudeBackend(api_key=self.anthropic_api_key, model=self._claude_model)
+            logger.info(f"Claude API available ({self._claude_model})")
         else:
             logger.warning("ANTHROPIC_API_KEY not set — Claude tiering disabled, heavy agents will fall back")
 
@@ -108,6 +198,11 @@ class HybridRouter(LLMRouter):
             model = HOWARD_OLLAMA_MODEL if self._ollama_available else self._local_model
             return backend, model, route
 
+        # Deep-think agents: same LM Studio backend, different model slot (DDR5).
+        # Only when local is available; falls through to normal routing otherwise.
+        if agent_id in DEEP_THINK_AGENTS and self._local_available:
+            return self._backend, DEFAULT_DEEP_MODEL, "local-deep"
+
         policy = self.get_agent_policy(agent_id)
         token_count = estimate_tokens(prompt)
 
@@ -121,7 +216,7 @@ class HybridRouter(LLMRouter):
 
         if policy == POLICY_CLAUDE:
             if self._claude_available:
-                return self._claude_backend, DEFAULT_CLAUDE_MODEL, "claude"
+                return self._claude_backend, self._claude_model, "claude"
             logger.warning(f"Claude unavailable for {agent_id}, falling back to cloud")
             if self._cloud_available:
                 return self._gemini_backend, "gemini-2.5-flash", "cloud-fallback"
@@ -141,11 +236,20 @@ class HybridRouter(LLMRouter):
         # POLICY_AUTO: prefer Claude for heavy agents, local for light
         if agent_id in CLAUDE_AGENTS and self._claude_available:
             if token_count > LOCAL_MAX_TOKENS:
-                return self._claude_backend, DEFAULT_CLAUDE_MODEL, "claude"
+                return self._claude_backend, self._claude_model, "claude"
             return self._claude_backend, DEFAULT_CLAUDE_MODEL, "claude"
 
-        # Default: local first, cloud if context too big
+        # Default: local first, cloud if context too big.
+        # H7.5 — Complexity escalation: heavy prompts for auto-policy agents
+        # are routed to the deep local slot (DDR5) when AUTO_DEEP_ENABLED.
+        # This only applies here (token_count <= LOCAL_MAX_TOKENS path) because
+        # oversized prompts already spill to cloud via the branches below.
         if token_count <= LOCAL_MAX_TOKENS and self._local_available:
+            if AUTO_DEEP_ENABLED and is_heavy_request(prompt):
+                logger.debug(
+                    "Complexity escalation: routing %s to deep slot (local-deep)", agent_id
+                )
+                return self._backend, DEFAULT_DEEP_MODEL, "local-deep"
             return self._backend, self._local_model, "local"
         if token_count <= FLASH_MAX_TOKENS and self._cloud_available:
             return self._gemini_backend, "gemini-2.5-flash", "cloud-flash"
@@ -179,7 +283,9 @@ class HybridRouter(LLMRouter):
         if agent_id == "howard":
             return HOWARD_OLLAMA_MODEL if self._ollama_available else self._local_model
         if agent_id in CLAUDE_AGENTS and self._claude_available:
-            return DEFAULT_CLAUDE_MODEL
+            return self._claude_model
+        if agent_id in DEEP_THINK_AGENTS and self._local_available:
+            return DEFAULT_DEEP_MODEL
         return self._local_model
 
     @property

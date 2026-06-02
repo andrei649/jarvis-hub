@@ -1,6 +1,24 @@
 # Changelog
 
 ## [Unreleased]
+### Security — Romanian PII detection (2026-06-01)
+- **`PIIScanner` now detects Romanian identifiers** (`core/security/scanner.py`),
+  closing the long-standing gap between the docs ("Romania-specific, CNP format")
+  and the US-only implementation:
+  - `ro_cnp` — national ID (CNP), **CRITICAL**, confirmed by the official
+    control-digit checksum + birth month/day plausibility, so arbitrary
+    13-digit numbers are not flagged.
+  - `ro_iban` — Romanian IBAN, **HIGH**, confirmed by the ISO 7064 mod-97
+    checksum (case-insensitive, space-tolerant).
+  - `ro_phone` — Romanian mobile (`07…`, `+407…`, `0040…`), **MEDIUM**.
+  Matches for the checksum-bearing patterns must pass their validator before
+  being reported or redacted (a non-CNP 13-digit run is left untouched).
+  Exposed `is_valid_cnp` / `is_valid_iban` helpers.
+- **First direct test coverage for the scanners** — `tests/test_security_scanner.py`
+  (+27 offline tests) covering `SecretScanner`, the existing generic PII patterns,
+  the new RO detectors (valid vs. invalid checksum), and `GuardrailsEngine`
+  REDACT/BLOCK/WARN behaviour.
+
 ### H5.17 Batch & Cache Embeddings (2026-06-01)
 - **H5.17 Batch & Cache Embeddings Pipeline** (`core/ingestion/embedder.py`):
   `EmbeddingCache` — content-addressed (`sha256(namespace\x00text)`), sharded,

@@ -9,3 +9,4 @@ from .normalizer import NormalizedMessage
 from .stylometry import VoiceProfile, StylometryAnalyzer
 from .knowledge import KnowledgeExtractor
 from .embedder import Embedder
+from .watcher import IngestionWatcher

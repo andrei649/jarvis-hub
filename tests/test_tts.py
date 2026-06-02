@@ -43,3 +43,38 @@ def test_tts_endpoint_no_edge():
     data = resp.json()
     assert "error" in data
     assert "edge-tts not installed" in data["error"]
+
+
+@pytest.mark.asyncio
+async def test_tts_engine_cloning_fallbacks():
+    import agents.core.voice.tts as tts_module
+    from agents.core.voice.tts import TTSEngine
+
+    engine = TTSEngine()
+
+    # HAS_EDGE must be True so speak() reaches _speak_edge after xtts returns None
+    with patch.object(tts_module, "HAS_EDGE", True), \
+         patch.object(engine, "_speak_edge", return_value="mock_edge_path") as mock_edge, \
+         patch.object(engine, "_speak_xtts", return_value=None) as mock_xtts:
+
+        res = await engine.speak("salut", voice="xtts", lang="ro")
+        assert res == "mock_edge_path"
+        mock_xtts.assert_called_once()
+        mock_edge.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_tts_engine_elevenlabs_no_key_fallback():
+    import agents.core.voice.tts as tts_module
+    from agents.core.voice.tts import TTSEngine
+
+    engine = TTSEngine()
+
+    # HAS_EDGE must be True so speak() reaches _speak_edge after elevenlabs returns None
+    with patch.dict(os.environ, {}, clear=True), \
+         patch.object(tts_module, "HAS_EDGE", True), \
+         patch.object(engine, "_speak_edge", return_value="mock_edge_path") as mock_edge:
+
+        res = await engine.speak("hello", voice="elevenlabs", lang="en")
+        assert res == "mock_edge_path"
+        mock_edge.assert_called_once()

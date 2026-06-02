@@ -162,6 +162,36 @@ BUILTIN_PLUGINS = {
         allowed_domains=[],
         agents_served=["steve", "ultron", "jarvis"],
     ),
+    "sms-alerts": PluginManifest(
+        id="sms-alerts",
+        name="SMS Alerts & Notifications",
+        version="0.1.0",
+        description="Twilio-powered urgent offline SMS alerts and notifications",
+        network_access=NetworkAccess.RESTRICTED,
+        data_scope=DataScope.PROCESSED,
+        allowed_domains=["api.twilio.com"],
+        agents_served=["steve", "ultron", "jarvis"],
+    ),
+    "crm-sync": PluginManifest(
+        id="crm-sync",
+        name="Notion CRM Sync",
+        version="0.1.0",
+        description="Notion CRM pipeline leads database ingestion synchronizer",
+        network_access=NetworkAccess.RESTRICTED,
+        data_scope=DataScope.PROCESSED,
+        allowed_domains=["api.notion.com"],
+        agents_served=["stark", "veronica", "hephaestus"],
+    ),
+    "iot-control": PluginManifest(
+        id="iot-control",
+        name="Tuya SmartHome IoT Controller",
+        version="0.1.0",
+        description="Smart switch and local LAN loop Tuya socket command toggles",
+        network_access=NetworkAccess.RESTRICTED,
+        data_scope=DataScope.LOCAL_ONLY,
+        allowed_domains=["openapi.tuya.com"],
+        agents_served=["jarvis", "ultron"],
+    ),
 }
 
 

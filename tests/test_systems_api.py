@@ -91,3 +91,13 @@ def test_plugin_toggle_endpoint():
         toggle_back = client.put(f"/plugins/{plugin_id}/toggle")
         assert toggle_back.status_code == 200
         assert toggle_back.json()["enabled"] == initial_enabled
+
+
+def test_service_worker_endpoint():
+    resp = client.get("/sw.js")
+    assert resp.status_code == 200
+    assert "application/javascript" in resp.headers.get("content-type", "")
+    content = resp.text
+    assert "jarvis-hud-v1" in content
+    assert "STATIC_ASSETS" in content
+
