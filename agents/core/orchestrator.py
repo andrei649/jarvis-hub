@@ -110,6 +110,7 @@ class Orchestrator:
         self.on_token: Optional[Callable] = None
         self._runtime_settings: dict = {}
         self._channel_sessions: dict[str, str] = {}
+        self._last_channel: str = "unknown"
         self._settings_watcher_task: Optional[asyncio.Task] = None
         # ── Autonomy / Proactive Cortex (H6.1–H6.6) ──
         self.autonomy_queue = TaskQueue()
@@ -132,6 +133,12 @@ class Orchestrator:
         self.ingestion_watcher = None
         # H7.3: debounce checkpoint — counts turns since last full save
         self._turns_since_checkpoint: int = 0
+        # H9.2: trace explorer — in-memory ring buffer
+        try:
+            from .observability.tracer import Tracer
+            self.tracer = Tracer(maxlen=500)
+        except Exception:
+            self.tracer = None
 
     async def load_agents(self):
         await self.llm_router.detect()
@@ -515,6 +522,7 @@ class Orchestrator:
         return response
 
     async def handle_input(self, text: str, channel: str = "voice", agent_override: str = None) -> str:
+        self._last_channel = channel  # captured for H9.2 tracer
         t_start = time.perf_counter()
         await self.memory.add_turn(self.session_id, "user", text)
 
@@ -641,6 +649,7 @@ class Orchestrator:
         return synthesized
 
     async def handle_input_stream(self, text: str, channel: str = "voice", on_token: Callable = None, agent_override: str = None) -> str:
+        self._last_channel = channel  # captured for H9.2 tracer
         await self.memory.add_turn(self.session_id, "user", text)
 
         skill_cmd = self.skills.parse_command(text)
@@ -845,6 +854,42 @@ class Orchestrator:
             "decision": decision,
             "trace": trace
         }
+
+        # H9.2: persist to tracer ring buffer (defensive — never breaks a request)
+        try:
+            if self.tracer is not None:
+                from .observability.tracer import Tracer
+                model = ""
+                agents_selected = decision.get("agents_selected", [])
+                if agents_selected:
+                    first_agent = agents_selected[0]
+                    agent_obj = self.agents.get(first_agent)
+                    if agent_obj:
+                        model = agent_obj.config.get("model", "")
+                from .llm.tokenizer import estimate_tokens as _et
+                trace_dict = {
+                    "channel": getattr(self, "_last_channel", "unknown"),
+                    "text_preview": (text or "")[:120],
+                    "intent": decision.get("source", ""),
+                    "route": agents_selected[0] if agents_selected else "",
+                    "agents": agents_selected,
+                    "model": model,
+                    "tokens_in": _et(text or ""),
+                    "tokens_out": _et(synthesized or ""),
+                    "timings": {
+                        "classify": t_classify,
+                        "route": t_route,
+                        "plugin": t_plugin,
+                        "synthesize": t_synthesize,
+                        "total_ms": t_classify + t_route + t_plugin + t_synthesize,
+                    },
+                    "ok": True,
+                    "scoring": scoring,
+                    "full_trace": trace,
+                }
+                self.tracer.record(trace_dict)
+        except Exception as _te:
+            logger.debug(f"tracer.record skipped: {_te}")
 
     def _detect_handoff(self, responses: dict[str, str]) -> Optional[str]:
         for agent_id, resp in responses.items():
