@@ -93,7 +93,10 @@ class MemoryManager:
     def _get_embedder(self):
         """Lazily build the recall embedder (LM Studio by default; see
         Embedder.from_env). Built on first use so plain MemoryManager()
-        construction stays import-light and offline."""
+        construction stays import-light and offline.
+
+        H7.4: Embedder.from_env() now provides a non-None cache_dir by default,
+        so the embedder always has an active disk cache for recall queries."""
         if self._embedder is None:
             from ..ingestion.embedder import Embedder
             self._embedder = Embedder.from_env()

@@ -16,6 +16,14 @@ H5.17 — Batch & Cache Embeddings Pipeline:
     so a single flaky call never aborts the whole ingest.
   * **Parallelism**: misses can be computed across a small thread pool.
 
+H7.4 — Query-embedding cache + fast-fail for recall:
+  * **In-process LRU** (`_PROC_CACHE`): bounded dict keyed by
+    ``(backend, model, text)``; skips even the disk read for hot queries
+    within a single process.
+  * **from_env default cache_dir**: when no ``cache_dir`` is supplied,
+    defaults to ``memory_logs/embedding_cache/recall`` (overridable via
+    ``EMBED_CACHE_DIR``) so recall always benefits from the disk cache.
+
 All I/O is injectable / offline-capable, so the pipeline is unit-tested without
 Ollama or the network.
 """
@@ -26,6 +34,7 @@ import logging
 import math
 import os
 import time
+from collections import OrderedDict
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Callable, Optional
@@ -35,6 +44,26 @@ from .normalizer import NormalizedMessage
 logger = logging.getLogger("jarvis.ingestion.embedder")
 
 EMBEDDING_DIM = 768
+
+# ── In-process LRU cache (H7.4) ──────────────────────────────────────────────
+# Keyed by (backend, model, text) so vectors from different backends/models
+# never collide even when the text is identical.
+_PROC_CACHE_MAX = 256
+_PROC_CACHE: "OrderedDict[tuple, list[float]]" = OrderedDict()
+
+
+def _proc_cache_get(key: tuple) -> Optional[list[float]]:
+    if key in _PROC_CACHE:
+        _PROC_CACHE.move_to_end(key)  # LRU: mark as recently used
+        return _PROC_CACHE[key]
+    return None
+
+
+def _proc_cache_put(key: tuple, vec: list[float]) -> None:
+    _PROC_CACHE[key] = vec
+    _PROC_CACHE.move_to_end(key)
+    while len(_PROC_CACHE) > _PROC_CACHE_MAX:
+        _PROC_CACHE.popitem(last=False)  # evict LRU entry
 
 
 class EmbeddingCache:
@@ -125,6 +154,10 @@ class Embedder:
             EmbeddingCache(cache_dir, namespace=f"{self.backend}:{self.model}")
             if cache_dir is not None else None
         )
+        # Per-instance hit counter that includes both proc-cache and disk-cache
+        # hits so that cache_stats["hits"] remains meaningful even when the
+        # in-process LRU absorbs calls before they reach the disk layer.
+        self._proc_hits = 0
 
     def _setup(self):
         if self.backend == "ollama":
@@ -157,27 +190,46 @@ class Embedder:
         dedicated Ollama embedding model instead. Either degrades to the
         deterministic hash embedding if the backend is unreachable, so recall
         never hard-fails. Retries are kept short here because this runs on the
-        interactive query path (unlike the bulk ingestion embedder)."""
+        interactive query path (unlike the bulk ingestion embedder).
+
+        H7.4: when ``cache_dir`` is None, defaults to
+        ``memory_logs/embedding_cache/recall`` (relative to the repo root).
+        Override with the ``EMBED_CACHE_DIR`` env var."""
         backend = os.getenv("EMBED_BACKEND", "lmstudio")
         model = os.getenv(
             "EMBED_MODEL",
             "text-embedding-nomic-embed-text-v1.5" if backend == "lmstudio" else "nomic-embed-text",
         )
         base_url = os.getenv("EMBED_BASE_URL", "http://localhost:1234")
+        if cache_dir is None:
+            _repo_root = Path(__file__).resolve().parent.parent.parent.parent
+            _default_cache = _repo_root / "memory_logs" / "embedding_cache" / "recall"
+            cache_dir = os.getenv("EMBED_CACHE_DIR") or str(_default_cache)
         return cls(backend=backend, model=model, cache_dir=cache_dir,
                    base_url=base_url, max_retries=1, backoff_base=0.2, backoff_max=1.0)
 
     # ── public API ────────────────────────────────────────────────────────────
 
     def embed(self, text: str) -> list[float]:
-        """Embed one text (cache-aware)."""
+        """Embed one text (in-process cache → disk cache → backend).
+
+        H7.4: checks the bounded in-process LRU first (keyed by backend+model+text)
+        before touching disk or the network backend.
+        """
         if not text or not text.strip():
             return [0.0] * EMBEDDING_DIM
+        proc_key = (self.backend, self.model, text)
+        cached_proc = _proc_cache_get(proc_key)
+        if cached_proc is not None:
+            self._proc_hits += 1
+            return cached_proc
         if self.cache is not None:
-            cached = self.cache.get(text)
-            if cached is not None:
-                return cached
+            cached_disk = self.cache.get(text)
+            if cached_disk is not None:
+                _proc_cache_put(proc_key, cached_disk)
+                return cached_disk
         vec = self._embed_resilient(text)
+        _proc_cache_put(proc_key, vec)
         if self.cache is not None:
             self.cache.put(text, vec)
         return vec
@@ -224,7 +276,22 @@ class Embedder:
 
     @property
     def cache_stats(self) -> Optional[dict]:
-        return self.cache.stats if self.cache is not None else None
+        """Return cache statistics.
+
+        ``hits`` combines both proc-cache hits (in-process LRU) and disk-cache
+        hits so that callers see the full picture regardless of which layer
+        served the request.
+        """
+        if self.cache is None:
+            return None
+        stats = dict(self.cache.stats)
+        total_hits = stats["hits"] + self._proc_hits
+        total = total_hits + stats["misses"]
+        stats["hits"] = total_hits
+        stats["proc_hits"] = self._proc_hits
+        stats["disk_hits"] = stats["hits"] - self._proc_hits
+        stats["hit_rate"] = (total_hits / total) if total else 0.0
+        return stats
 
     # ── internals ─────────────────────────────────────────────────────────────
 
