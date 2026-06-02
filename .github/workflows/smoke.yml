@@ -1,11 +1,16 @@
 name: Smoke Test
 
+# Boots the real server on Windows. The pytest suite is covered by ci.yml,
+# so this workflow only verifies the app actually starts and serves a request.
 on:
   push:
-    branches: [master, main]
+    branches: [main]
+
+permissions:
+  contents: read
 
 jobs:
-  test:
+  server-boot:
     runs-on: windows-latest
     timeout-minutes: 10
 
@@ -16,14 +21,11 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+          cache: pip
+          cache-dependency-path: requirements-beta.txt
 
       - name: Install dependencies
-        run: |
-          pip install -r requirements-beta.txt
-
-      - name: Run tests
-        run: |
-          python -m pytest tests/ -q --no-header
+        run: pip install -r requirements-beta.txt
 
       - name: Verify server starts
         run: |
