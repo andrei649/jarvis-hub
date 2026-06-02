@@ -130,6 +130,8 @@ class Orchestrator:
         self.workflow_engine: Optional[WorkflowEngine] = None
         # Continuous Ingestion Watcher (H5.1)
         self.ingestion_watcher = None
+        # H7.3: debounce checkpoint — counts turns since last full save
+        self._turns_since_checkpoint: int = 0
 
     async def load_agents(self):
         await self.llm_router.detect()
@@ -558,16 +560,17 @@ class Orchestrator:
             synthesized = list(responses.values())[0] if responses else ""
             t_synthesize = int((time.perf_counter() - t_s0) * 1000)
             await self.memory.add_turn(self.session_id, "assistant", synthesized, agent_id=agent_override)
-            self.checkpoints.save(self)
-            self._log_session(text, intent, responses, synthesized)
-            self._record_interactions(text, responses, synthesized, route_name=route_name)
-            self.audit.log(SecurityEvent(
+            await self._maybe_checkpoint()
+            await asyncio.to_thread(self._log_session, text, intent, responses, synthesized)
+            await asyncio.to_thread(self._record_interactions, text, responses, synthesized, route_name)
+            _event_override = SecurityEvent(
                 event_type=SecurityEventType.LLM_CALL,
                 timestamp=time.time(),
                 findings=[],
                 content_preview=synthesized[:100],
                 action_taken=f"handle_input(agent_override={agent_override}) via {channel}",
-            ))
+            )
+            await asyncio.to_thread(self.audit.log, _event_override)
             self._update_cognition(text, intent, plugin_data, synthesized, t_classify, t_route, t_plugin, t_synthesize)
             return synthesized
 
@@ -621,18 +624,18 @@ class Orchestrator:
             logger.info(f"Learned new skill: {skill_name}")
 
         await self.memory.add_turn(self.session_id, "assistant", synthesized, agent_id=responder_id)
-        self.checkpoints.save(self)
-        self._log_session(text, intent, responses, synthesized)
+        await self._maybe_checkpoint()
+        await asyncio.to_thread(self._log_session, text, intent, responses, synthesized)
+        await asyncio.to_thread(self._record_interactions, text, responses, synthesized, route_name)
 
-        self._record_interactions(text, responses, synthesized, route_name=route_name)
-
-        self.audit.log(SecurityEvent(
+        _event_main = SecurityEvent(
             event_type=SecurityEventType.LLM_CALL,
             timestamp=time.time(),
             findings=[],
             content_preview=synthesized[:100],
             action_taken=f"handle_input via {channel}",
-        ))
+        )
+        await asyncio.to_thread(self.audit.log, _event_main)
 
         self._update_cognition(text, intent, plugin_data, synthesized, t_classify, t_route, t_plugin, t_synthesize)
         return synthesized
@@ -775,14 +778,15 @@ class Orchestrator:
                 break
 
         await self.memory.add_turn(self.session_id, "assistant", synthesized, agent_id=agent_id)
-        self.checkpoints.save(self)
-        self.audit.log(SecurityEvent(
+        await self._maybe_checkpoint()
+        _event_stream = SecurityEvent(
             event_type=SecurityEventType.LLM_CALL,
             timestamp=time.time(),
             findings=[],
             content_preview=synthesized[:100],
             action_taken=f"handle_input_stream({agent_id}) via {channel}",
-        ))
+        )
+        await asyncio.to_thread(self.audit.log, _event_stream)
         t_synthesize = int((time.perf_counter() - t_s0) * 1000)
         self._update_cognition(text, intent, plugin_data, synthesized, t_classify, t_route, t_plugin, t_synthesize)
         return synthesized
@@ -1144,6 +1148,42 @@ class Orchestrator:
 
     def _log_session(self, text, intent, responses, synthesized):
         logger.info(f"[{(self.session_id or 'none')[:20]}]: {text[:40]}... -> {synthesized[:40]}...")
+
+    # ── H7.2 / H7.3: checkpoint debounce helpers ────────────────────────────
+
+    async def _maybe_checkpoint(self):
+        """H7.3: increment turn counter; only persist every N turns.
+
+        The N threshold is read from the runtime settings (default 5) so it
+        can be tuned live without a restart.  Runs the actual SQLite write
+        off the event loop via asyncio.to_thread (H7.2).
+        """
+        self._turns_since_checkpoint += 1
+        every = int(self.get_setting("memory.checkpoint_every", 5) or 5)
+        if self._turns_since_checkpoint >= every:
+            await asyncio.to_thread(self.checkpoints.save, self)
+            self._turns_since_checkpoint = 0
+
+    async def _flush_checkpoint(self):
+        """Force an immediate checkpoint save and reset the turn counter.
+
+        Called on session boundaries so no active session state is lost.
+        """
+        await asyncio.to_thread(self.checkpoints.save, self)
+        self._turns_since_checkpoint = 0
+
+    async def new_session(self) -> str:
+        """Wrapper around memory.new_session() that flushes the checkpoint first
+        so the outgoing session is not lost before we switch context.
+        """
+        await self._flush_checkpoint()
+        sid = await self.memory.new_session()
+        self.session_id = sid
+        return sid
+
+    async def aclose(self):
+        """Graceful shutdown: flush pending checkpoint before process exit."""
+        await self._flush_checkpoint()
 
     async def get_status(self) -> dict:
         return {
