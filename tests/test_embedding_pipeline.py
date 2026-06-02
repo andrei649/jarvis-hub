@@ -113,3 +113,69 @@ def test_exhausted_retries_degrade_to_hash(tmp_path):
     vec = e.embed("never works")
     # degrades to the deterministic hash embedding instead of crashing the ingest
     assert vec == e._embed_hash("never works")
+
+
+# ── H8.4 — EMBED_MODEL env var + mxbai-embed-large ───────────────────────────
+
+def test_from_env_picks_up_embed_model(monkeypatch, tmp_path):
+    """EMBED_MODEL env var must be forwarded to the Embedder instance."""
+    monkeypatch.setenv("EMBED_BACKEND", "lmstudio")
+    monkeypatch.setenv("EMBED_MODEL", "mxbai-embed-large")
+    monkeypatch.setenv("EMBED_BASE_URL", "http://localhost:1234")
+    monkeypatch.setenv("EMBED_CACHE_DIR", str(tmp_path))
+    e = Embedder.from_env(cache_dir=str(tmp_path))
+    assert e.model == "mxbai-embed-large"
+
+
+def test_mxbai_embed_large_via_mocked_lmstudio(tmp_path):
+    """mxbai-embed-large uses the same /v1/embeddings interface as any other LM Studio model."""
+    fake_vec = [0.1] * EMBEDDING_DIM
+
+    class _FakeResp:
+        def raise_for_status(self):
+            pass
+        def json(self):
+            return {"data": [{"embedding": fake_vec}]}
+
+    class _FakeHTTP:
+        def __init__(self):
+            self.last_payload = None
+        def post(self, path, *, json=None):
+            self.last_payload = json
+            return _FakeResp()
+
+    client = _FakeHTTP()
+    e = Embedder(
+        backend="lmstudio",
+        model="mxbai-embed-large",
+        cache_dir=tmp_path,
+        http_client=client,
+        max_retries=0,
+        backoff_base=0.0,
+    )
+    vec = e.embed("test query for mxbai")
+    assert vec == fake_vec
+    assert client.last_payload["model"] == "mxbai-embed-large"
+    assert client.last_payload["input"] == "test query for mxbai"
+
+
+def test_graceful_fallback_to_hash_when_lmstudio_unavailable(tmp_path):
+    """When LM Studio returns an error, Embedder degrades to hash (never raises)."""
+
+    class _BrokenHTTP:
+        def post(self, path, *, json=None):
+            raise ConnectionError("LM Studio not running")
+
+    e = Embedder(
+        backend="lmstudio",
+        model="mxbai-embed-large",
+        cache_dir=tmp_path,
+        http_client=_BrokenHTTP(),
+        max_retries=0,
+        backoff_base=0.0,
+    )
+    vec = e.embed("connection refused")
+    # Must not raise — must return a valid vector via hash fallback.
+    assert len(vec) == EMBEDDING_DIM
+    # Hash fallback is deterministic.
+    assert vec == e._embed_hash("connection refused")
