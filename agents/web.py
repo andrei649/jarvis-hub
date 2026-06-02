@@ -1732,6 +1732,51 @@ async def reflection_run():
         return _nocache_json({"ok": False, "error": str(e)})
 
 
+# ── H9.2 Trace Explorer endpoints ────────────────────────────────
+# Placed immediately before the workflows block; do NOT move the
+# workflows handlers below.
+
+@app.get("/api/traces")
+async def list_traces(limit: int = 50):
+    """Return recent per-request traces (most-recent first, summarized)."""
+    if not orch:
+        return _nocache_json({"traces": [], "error": "not initialized"}, status_code=503)
+    tracer = getattr(orch, "tracer", None)
+    if tracer is None:
+        return _nocache_json({"traces": [], "error": "tracer not available"})
+    limit = max(1, min(limit, 500))
+    return _nocache_json({"traces": tracer.list(limit)})
+
+
+@app.get("/api/traces/{trace_id}")
+async def get_trace(trace_id: str):
+    """Return the full trace dict for a specific trace id."""
+    if not orch:
+        return _nocache_json({"error": "not initialized"}, status_code=503)
+    tracer = getattr(orch, "tracer", None)
+    if tracer is None:
+        return _nocache_json({"error": "tracer not available"}, status_code=503)
+    item = tracer.get(trace_id)
+    if item is None:
+        return _nocache_json({"error": f"trace '{trace_id}' not found"}, status_code=404)
+    return _nocache_json(item)
+
+
+@app.post("/api/traces/clear")
+async def clear_traces():
+    """Flush all traces from the in-memory ring buffer."""
+    if not orch:
+        return _nocache_json({"error": "not initialized"}, status_code=503)
+    tracer = getattr(orch, "tracer", None)
+    if tracer is None:
+        return _nocache_json({"error": "tracer not available"}, status_code=503)
+    tracer.clear()
+    return _nocache_json({"ok": True})
+
+
+# ── END H9.2 Trace Explorer endpoints ─────────────────────────────
+
+
 @app.get("/api/workflows")
 async def list_workflows():
     """List all registered workflow pipelines (H5.6 + H9.1 user-defined)."""
