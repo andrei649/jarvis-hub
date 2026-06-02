@@ -19,6 +19,7 @@ function App() {
   var _o = useState([]), tasks = _o[0], setTasks = _o[1];
   var _p = useState([]), ticker = _p[0], setTicker = _p[1];
   var _q = useState(true), lmOnline = _q[0], setLmOnline = _q[1];
+  var _trust = useState({ mic: 'on', strict_local: true }), trust = _trust[0], setTrust = _trust[1];
   var _r = useState(false), sending = _r[0], setSending = _r[1];
   var _s = useState(true), loading = _s[0], setLoading = _s[1];
   var _u = useState(false), apiDown = _u[0], setApiDown = _u[1];
@@ -96,6 +97,20 @@ function App() {
 
   useEffect(function () {
     return function () { if (recRef.current) { recRef.current.stop(); recRef.current = null; } };
+  }, []);
+
+  // Trust signal (H12.10): poll mic + strict-local state for the HUD chrome.
+  useEffect(function () {
+    var alive = true;
+    var fetchTrust = function () {
+      fetch('/api/trust/status')
+        .then(function (r) { return r.json(); })
+        .then(function (d) { if (alive && d && d.mic) setTrust(d); })
+        .catch(function (e) { console.warn('trust status fetch failed:', e); });
+    };
+    fetchTrust();
+    var id = setInterval(fetchTrust, 15000);
+    return function () { alive = false; clearInterval(id); };
   }, []);
 
   useEffect(function () {
@@ -293,6 +308,7 @@ function App() {
       agentsOnline: agents.filter(function (a) { return a.status !== 'idle'; }).length,
       agentsTotal: agents.length || 15,
       lmOnline: lmOnline,
+      trust: trust,
       onToggleCognition: function () { setShowCognition(function (v) { return !v; }); },
       onToggleSystems: function () { setShowSystems(function (v) { return !v; }); },
       onToggleWorkflows: function () { setShowWorkflows(function (v) { return !v; }); },

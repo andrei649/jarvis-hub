@@ -351,7 +351,7 @@ python -m pytest tests/ -v          # 1100+ passed, 9 skipped
 | H12.7 | **Captură pasivă multi-suprafață (opt-in, local)** — browser/clipboard/fișiere → KG, doar local. ⚠️ STRICT opt-in + inspectabil; nimic nu pleacă de pe mașină. | 8 | P2 | H8.1 | Pieces nanomodels, Omi |
 | H12.8 | **Split sateliți-mic → server-inferență pe GPU-ul de acasă** — mai multe endpoint-uri ieftine de microfon partajează un singur GPU Jarvis. | 8 | P2 | H12.4 | Willow (WIS) |
 | H12.9 | **UX management modele locale** — răsfoiește/descarcă/comută modele dintr-un click în HUD. | 5 | P2 | — | Jan.ai |
-| H12.10 | **Indicator mute hardware / strict-local** — semnal vizibil, auditabil "mic off / strict-local" în HUD + voce. Semnal de încredere ieftin. | 2 | P2 | — | Voice PE (mute fizic) |
+| H12.10 ✅ | **Indicator mute hardware / strict-local** — semnal vizibil, auditabil "mic off / strict-local" în HUD + voce. Semnal de încredere ieftin. | 2 | P2 | — | Voice PE (mute fizic) |
 | H12.11 | **Canale de escaladare extinse** (dincolo de Telegram: WhatsApp/Signal/Slack/Discord) — *guvernate*, spre deosebire de OpenClaw. Adaptoarele de canal există deja. | 3 | P2 | H1.3 | OpenClaw (multi-channel) |
 
 ### Track D — Platformă & Ecosistem (P3)

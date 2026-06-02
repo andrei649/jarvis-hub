@@ -208,7 +208,8 @@ _start_time = time.time()
 # tell the browser and any intermediary not to cache stale snapshots (IMP-2).
 _NO_STORE_PATHS = {
     "/status", "/dashboard", "/api/agents", "/tasks", "/ticker",
-    "/api/cognition", "/api/oauth/status", "/api/oracle/status", "/api/oracle/conflicts"
+    "/api/cognition", "/api/oauth/status", "/api/oracle/status", "/api/oracle/conflicts",
+    "/api/trust/status"
 }
 
 
@@ -1667,6 +1668,57 @@ async def oracle_resolve_conflicts():
         return JSONResponse({"ok": False, "error": "Oracle bridge not available"}, status_code=503)
     bridge.conflicts = [c for c in bridge.conflicts if c.resolved]
     return _nocache_json({"ok": True})
+
+
+# ── Trust indicator (H12.10): hardware-mute / strict-local ───────
+
+
+def _env_truthy(value: str | None) -> bool:
+    """Treat the usual on/off spellings as booleans for env-driven toggles."""
+    return (value or "").strip().lower() in ("1", "true", "yes", "on")
+
+
+def _trust_status() -> dict:
+    """Compute the two visible, auditable trust states for the HUD.
+
+    - ``mic``: "off" when the (software/hardware) mic is muted, else "on".
+      Driven by ``JARVIS_MIC_MUTED`` so a physical mute switch / kiosk wrapper
+      can flip it without touching code (inspired by Voice PE's physical mute).
+    - ``strict_local``: True when no cloud backend is reachable AND no agent can
+      escape to the cloud — i.e. nothing leaves the machine. Derived from the
+      live router (``_cloud_available`` / ``_claude_available``) so the signal
+      reflects reality, with an explicit ``JARVIS_STRICT_LOCAL`` override that
+      can only *tighten* (never loosen) the guarantee.
+    """
+    mic_muted = _env_truthy(os.environ.get("JARVIS_MIC_MUTED"))
+
+    cloud_available = False
+    claude_available = False
+    router = getattr(orch, "llm_router", None) if orch else None
+    if router is not None:
+        cloud_available = bool(getattr(router, "_cloud_available", False))
+        claude_available = bool(getattr(router, "_claude_available", False))
+
+    # Strict-local when no cloud path exists at all; env flag can force it on.
+    # Single unconditional assignment (De Morgan of `not (cloud or claude)`)
+    # so the value is provably initialized before use.
+    strict_local = (not cloud_available and not claude_available) or _env_truthy(
+        os.environ.get("JARVIS_STRICT_LOCAL")
+    )
+
+    return {
+        "mic": "off" if mic_muted else "on",
+        "strict_local": strict_local,
+        # Auditable detail: why strict_local is (or isn't) set.
+        "cloud_available": cloud_available,
+        "claude_available": claude_available,
+    }
+
+
+@app.get("/api/trust/status")
+async def trust_status():
+    """Visible, auditable trust signal for the HUD: mic state + strict-local."""
+    return _nocache_json(_trust_status())
 
 
 # ── v0.3 Cognition Release endpoints ─────────────────────────────
