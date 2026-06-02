@@ -2082,7 +2082,14 @@ async def heartbeat_run(agent_id: str):
     """Run a heartbeat immediately."""
     if agent_id not in orch.agents:
         raise HTTPException(status_code=404, detail=f"Agent '{agent_id}' not found")
-    
+
     await orch.heartbeat_scheduler.run_now(agent_id, orch)
     return _nocache_json({"agent_id": agent_id, "status": "executed"})
+
+
+@app.get("/api/status")
+async def status():
+    """Return service version, agent count, and health status."""
+    from agents import __version__, AGENT_COUNT
+    return {"version": __version__, "agents": AGENT_COUNT, "status": "ok"}
 

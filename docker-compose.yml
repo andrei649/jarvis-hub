@@ -1,0 +1,54 @@
+services:
+
+  jarvis:
+    build:
+      context: .
+      dockerfile_inline: |
+        FROM python:3.12-slim
+        WORKDIR /app
+        COPY requirements-beta.txt .
+        RUN pip install --no-cache-dir -r requirements-beta.txt
+        COPY . .
+        EXPOSE 8080
+        CMD ["python", "-m", "uvicorn", "agents.web:app", "--host", "0.0.0.0", "--port", "8080"]
+    ports:
+      - "8080:8080"
+    env_file:
+      - .env
+    depends_on:
+      - qdrant
+      - neo4j
+      - n8n
+    restart: unless-stopped
+
+  qdrant:
+    image: qdrant/qdrant:latest
+    ports:
+      - "6333:6333"
+    volumes:
+      - qdrant_data:/qdrant/storage
+    restart: unless-stopped
+
+  neo4j:
+    image: neo4j:5
+    ports:
+      - "7687:7687"
+      - "7474:7474"
+    environment:
+      NEO4J_AUTH: none
+    volumes:
+      - neo4j_data:/data
+    restart: unless-stopped
+
+  n8n:
+    image: n8nio/n8n
+    ports:
+      - "5678:5678"
+    volumes:
+      - n8n_data:/home/node/.n8n
+    restart: unless-stopped
+
+volumes:
+  qdrant_data:
+  neo4j_data:
+  n8n_data:

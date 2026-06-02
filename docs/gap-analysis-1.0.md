@@ -34,7 +34,7 @@
 ```yaml
 # Run `gh repo edit` pentru a seta:
 gh repo edit andrei649/jarvis-hub \
-  --description "Jarvis Hub — Local-first multi-agent AI orchestration system. 16 agents, Python 3.12 + FastAPI + LM Studio. HUD, voice, Telegram, OAuth, RAG, security sandbox, and more." \
+  --description "Jarvis Hub — Local-first multi-agent AI orchestration system. 15 specialist agents (+ 15 bench), Python 3.12 + FastAPI + LM Studio. HUD, voice, Telegram, OAuth, RAG, security sandbox, and more." \
   --homepage "https://github.com/andrei649/jarvis-hub" \
   --add-topic "ai-agent" \
   --add-topic "multi-agent" \
