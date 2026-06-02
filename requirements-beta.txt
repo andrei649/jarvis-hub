@@ -2,18 +2,18 @@
 # Install all: pip install -r requirements-beta.txt
 
 # === Core (always required) ===
-pyyaml>=6.0
-apscheduler>=3.10
-httpx>=0.27
-cryptography>=43.0
-python-dotenv>=1.0
-ollama>=0.1
-fastapi>=0.110
-uvicorn>=0.29
-psutil>=5.9
+pyyaml>=6.0.3
+apscheduler>=3.11.2
+httpx>=0.28.1
+cryptography>=48.0.0
+python-dotenv>=1.2.2
+ollama>=0.6.2
+fastapi>=0.136.3
+uvicorn>=0.48.0
+psutil>=7.2.2
 
 # === Memory (optional — improves with numpy) ===
-numpy>=1.26
+numpy>=2.4.6
 
 # === Memory — Qdrant Vector DB (optional) ===
 # Docker: docker run -p 6333:6333 qdrant/qdrant
@@ -44,6 +44,6 @@ numpy>=1.26
 # News: uses BBC RSS feeds
 
 # === Development ===
-pytest>=8.0
-pytest-asyncio>=0.23
-pytest-timeout>=2.3
+pytest>=9.0.3
+pytest-asyncio>=1.4.0
+pytest-timeout>=2.4.0

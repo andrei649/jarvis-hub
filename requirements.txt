@@ -1,19 +1,19 @@
 # Cabinet v0.1.0 — Python Dependencies
 # Core
-pyyaml>=6.0
-apscheduler>=3.10
-httpx>=0.27
-python-dotenv>=1.0
+pyyaml>=6.0.3
+apscheduler>=3.11.2
+httpx>=0.28.1
+python-dotenv>=1.2.2
 
 # LLM
-ollama>=0.1
+ollama>=0.6.2
 
 # Web
-fastapi>=0.110
-uvicorn>=0.29
+fastapi>=0.136.3
+uvicorn>=0.48.0
 
 # Security
-cryptography>=43.0
+cryptography>=48.0.0
 
 # Voice (optional — install manually or use requirements-beta.txt)
 # openwakeword
