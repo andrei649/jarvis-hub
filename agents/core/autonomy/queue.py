@@ -97,6 +97,10 @@ class TaskQueue:
     def initialize(self) -> "TaskQueue":
         self._conn = sqlite3.connect(self.db_path)
         self._conn.row_factory = sqlite3.Row
+        # WAL + synchronous=NORMAL: the autonomy worker commits on every task
+        # state transition in a continuous loop — keep those commits cheap.
+        self._conn.execute("PRAGMA journal_mode=WAL")
+        self._conn.execute("PRAGMA synchronous=NORMAL")
         self._conn.execute("""
             CREATE TABLE IF NOT EXISTS tasks (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
