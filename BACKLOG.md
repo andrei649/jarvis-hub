@@ -39,6 +39,7 @@ python -m pytest tests/ -v          # 909 passed, 9 skipped
 | **0.9.1-beta** | 🟢 Live | Recall cu embeddings reale + perf cale fierbinte | H7.1–H7.5 |
 | **1.0.0** | 🎯 Stable | All H5/H7 done, documented, CI/CD, onboarding docs | All above + ARCHITECTURE.md |
 | **1.1.0** | Next | Memorie personală — „Jarvis te cunoaște" | ORIZONT 8 (H8.x) |
+| **2.0.0** | Later | Platform parity — desktop app, Rust hot-path, WASM sandbox, training | ORIZONT 11 (H11.x) |
 
 ---
 
@@ -53,7 +54,8 @@ python -m pytest tests/ -v          # 909 passed, 9 skipped
 | **H8 Memorie Personală** (P1–P3) | 7 | **0** | 43 | **0** | **0%** |
 | **H9 Agent Ops: Workflows & Observability** (P2) | 3 | **3** | 29 | **29** | **100%** |
 | **H10 Competitive Edge** (P1–P3) | 30 | **0** | 188 | **0** | **0%** |
-| **Total general** | **136** | **99** | **712** | **481** | **68%** |
+| **H11 Platform Parity** (Known Gaps, P3) | 4 | **0** | 55 | **0** | **0%** |
+| **Total general** | **140** | **99** | **767** | **481** | **63%** |
 
 **Test count:** 909 passed, 9 skipped (2026-06-02: +ORIZONT 7 — perf_hotpath 9, recall_cache 6, model_tiering 19; + recall cu embeddings reale & RAG injection)
 
@@ -297,6 +299,20 @@ python -m pytest tests/ -v          # 909 passed, 9 skipped
 | H10.18 | **Action-Level Approval UI** — în HUD, tab live cu tool call-urile pending approval (granularitate sub-task); buton Aprob/Resping per acțiune individuală. Extinde H6.2. | 5 | P3 | H6.2 | SuperAGI |
 | H10.20 | **Chat Channels / Rooms** — canale de chat tematice în HUD (per proiect/context); în fiecare canal poți @mention agenți specifici; pipeline complet (tools, RAG, filters). | 8 | P3 | H1.3 | OpenWebUI |
 | H10.26 | **Data Spaces / Agent Data Scope** — organizează sursele de date (memory segments, plugin outputs, knowledge) în "spații" cu permisiuni per agent; complement la `LOCAL_ONLY_AGENTS`. | 13 | P3 | H8.1, H4.7 | Dust |
+
+---
+
+## ORIZONT 11 — Platform Parity (Known Gaps vs OpenJarvis) (P3) — 0/4
+
+> Capabilități prezente în OpenJarvis dar absente în Jarvis Hub (vezi `STATUS.md` → Known Gaps).
+> Toate P3 — nice-to-have, niciuna nu blochează 1.0.0. Mai multe au cost mare (GPU, Rust, build nativ).
+
+| # | Item | S | P | Dep | Sursă |
+|---|------|---|---|-----|-------|
+| H11.1 | **Desktop App (Tauri)** — UI nativ desktop (Windows/macOS/Linux) care împachetează HUD-ul existent; tray icon, wake-word listener local, auto-start. Alternativă la rularea în browser. | 13 | P3 | — | OpenJarvis (Tauri) |
+| H11.2 | **Rust Extension / Hot-Path Crates** — port în Rust al căilor fierbinți (embeddings, vector search, parsing) ca extensii native (PyO3); pure-Python rămâne fallback. OpenJarvis are 14 crates. | 21 | P3 | H7 | OpenJarvis (14 crates) |
+| H11.3 | **SFT/GRPO Training Pipeline** — fine-tuning local pe modele (SFT + GRPO) din trace-urile colectate; necesită GPU. Closing the loop pe Learning Loop (H7.11). | 13 | P3 | H7.11 | OpenJarvis |
+| H11.4 | **WASM Sandbox (wasmtime)** — backend de execuție WASM pentru sandbox, complementar Docker; izolare mai bună și portabilă, fără daemon Docker. `core/sandbox.py` (backend nou). | 8 | P3 | — | OpenJarvis (wasmtime) |
 
 ---
 
