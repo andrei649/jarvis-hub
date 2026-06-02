@@ -47,6 +47,7 @@ DEFAULTS: list[dict[str, Any]] = [
     dict(category="llm",     key="max_tokens",       value=1024,                  label="Max tokens",         kind="number"),
     dict(category="llm",     key="cloud_fallback",   value="on-demand",           label="Cloud LLM fallback", kind="select",  opts=["never","on-demand","always"]),
     dict(category="llm",     key="gemini_model",     value="gemini-2.5-flash",     label="Gemini model",       kind="select",  opts=["gemini-2.5-flash","gemini-2.5-pro","gemini-3.1-pro"]),
+    dict(category="llm",     key="claude_model",     value="claude-sonnet-4-20250514", label="Claude model",   kind="text"),
     dict(category="llm",     key="hybrid_local_max", value=8000,                   label="Local max tokens",   kind="number"),
     dict(category="llm",     key="hybrid_flash_max", value=128000,                 label="Flash max tokens",   kind="number"),
     # voice
@@ -210,6 +211,26 @@ def get_all() -> dict[str, list[dict]]:
         })
     return groups
 
+def get_value(category: str, key: str, default=None):
+    """Return a single setting value, or `default` if missing / DB unavailable.
+
+    Safe to call before init or without a DB (returns default) so callers like the
+    LLM router can read admin config without a hard dependency."""
+    try:
+        _ensure_init()
+        conn = get_conn()
+        row = conn.execute(
+            "SELECT value FROM settings WHERE category=? AND key=?",
+            (category, key),
+        ).fetchone()
+        conn.close()
+        if row is None:
+            return default
+        return json.loads(row["value"])
+    except Exception:
+        return default
+
+
 def get_category(cat: str) -> list[dict]:
     _ensure_init()
     conn = get_conn()
@@ -226,7 +247,7 @@ def get_category(cat: str) -> list[dict]:
         "opts": json.loads(r["opts"]),
     } for r in rows]
 
-def put_category(cat: str, data: dict[str, Any]) -> int:
+def put_category(cat: str, data: dict[str, Any]) -> tuple[int, list[str]]:
     _ensure_init()
     conn = get_conn()
     updated = 0
@@ -242,6 +263,6 @@ def put_category(cat: str, data: dict[str, Any]) -> int:
     conn.close()
     if skipped:
         logger.warning(f"put_category({cat}): ignored unknown keys: {skipped}")
-    return updated
+    return updated, skipped
 
 # ── init on first use (via _ensure_init) — NOT at import ─────────

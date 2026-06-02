@@ -13,6 +13,7 @@ Când utilizatorul menționează **"backlog"**, **"ce urmează"**, **"next"**, *
 - nu adăuga scope la sprintul activ fără acordul explicit al utilizatorului.
 
 ## Hărți de orientare
+- **Navigare pentru AI (începe aici):** `docs/ARCHITECTURE.md` — entry points, request lifecycle, index de module, rețete „cum adaug X". Optimizat să găsești rapid unde trăiește codul, fără a citi tot.
 - **Arhitectură & structură:** `JARVIS.md` (stack, directoare, fluxul orchestrator → router → skills).
 - **Specs & planuri (opencode):** `.opencode/plans/*.md` — un spec per skill/modul, scris înainte de implementare (TDD).
 - **Workflow paralel:** `PARALLEL_WORKFLOW.md` + `lock.py` (locks la nivel de componentă, evită coliziuni între agenți).

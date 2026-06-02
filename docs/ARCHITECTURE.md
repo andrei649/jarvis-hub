@@ -1,0 +1,528 @@
+# Jarvis Hub — Architecture Reference
+
+> For assistant conventions see **AGENTS.md** | architecture overview: **JARVIS.md** | tasks: **BACKLOG.md**
+
+---
+
+## 1. TL;DR / Orientation
+
+- Local-first multi-agent AI orchestration. Python 3.12 + FastAPI + LM Studio (port 1234).
+- 15 active agents (4 tiers), 15 bench agents (dormant, promotable at runtime).
+- Single entry point for web: `serve.py` → `agents/web.py` (FastAPI `app`).
+- CLI REPL entry point: `agents/run.py` → `Orchestrator.handle_input`.
+- Everything routes through `agents/core/orchestrator.py:Orchestrator`.
+- Memory is the heart: `agents/core/memory/` — conversation + vector + graph + RRF fusion.
+
+---
+
+## 2. Request Lifecycle
+
+### `Orchestrator.handle_input` (non-streaming)
+
+```
+1. memory.add_turn(session_id, "user", text)          [manager.py:add_turn]
+2. skills.parse_command(text)                          [skills/loader.py]
+   → if skill match: execute + persist + return early
+3. router.classify(text, agents) → Intent              [router.py:IntentRouter.classify]
+   → deterministic keyword/phrase matching, bilingual RO/EN
+4. _gather_plugin_data(text, intent)                   [orchestrator.py:_gather_plugin_data]
+   → weather / news / calendar / email / websearch (parallel)
+5. _route_candidates(intent)                           [orchestrator.py:_route_candidates]
+   → learning loop reranks + filters unhealthy agents
+6. llm_router.select_backend(agent_id, prompt)         [llm/hybrid_router.py:HybridRouter.select_backend]
+   → (backend, model, route_name)
+7. _call_agents_parallel(agent_ids, ...)               [orchestrator.py:_call_agents_parallel]
+   → builds prompt: history + plugin_block + recall_block + rag_block
+   → each agent: agent.process(enriched_text, context)  [agent.py:Agent.process]
+   → 120s asyncio.wait_for timeout per agent
+8. if multi-agent: _synthesize(responses, intent)      [orchestrator.py:_synthesize → agent.py:Agent.synthesize]
+9. memory.add_turn(session_id, "assistant", synthesized)
+10. _maybe_checkpoint()                                 [H7.3: every N turns, default 5]
+    → asyncio.to_thread(checkpoints.save, self)        [H7.2: off event loop]
+11. asyncio.to_thread(_log_session, ...)               [H7.2]
+12. asyncio.to_thread(_record_interactions, ...)       [learning.record + bench.record]
+13. asyncio.to_thread(audit.log, SecurityEvent)        [H7.2: SQLite WAL]
+```
+
+### `Orchestrator.handle_input_stream`
+
+Same flow but step 7 calls `backend.generate_stream(..., on_token=on_token)`.
+- Gemini route: context cache checked/created async via `_async_create_cache`.
+- `ThinkingStreamFilter` strips `<think>...</think>` blocks live during streaming.
+- `_recall_block(text)` → `memory.recall(text, top_k=k)` injected into prompt (opt-in).
+
+### Recall injection
+
+`_recall_block` is called in both paths. Controlled by `memory.recall_enabled` (default `False`).
+When on: embeds the query, runs fused recall (vector ⊕ graph), injects top-k as a prompt prefix.
+
+---
+
+## 3. Module Index
+
+### Orchestration
+
+| Path | Purpose | Key symbols |
+|------|---------|-------------|
+| `agents/serve.py` | Uvicorn launcher | `app` import from `agents/web.py` |
+| `agents/run.py` | CLI REPL | `main()` |
+| `agents/web.py` | FastAPI app, lifespan, all HTTP endpoints | `app`, `lifespan`, `orch` global |
+| `agents/core/orchestrator.py` | Main loop | `Orchestrator`, `handle_input`, `handle_input_stream`, `_maybe_checkpoint` |
+| `agents/core/agent.py` | Single agent runtime | `Agent`, `Agent.process`, `Agent.synthesize`, `Agent._load_soul` |
+| `agents/core/router.py` | Intent classifier | `IntentRouter.classify`, `Intent`, `INTENT_RULES` |
+| `agents/core/config.py` | YAML config loader | `JarvisConfig` |
+| `agents/core/heartbeat.py` | Scheduled agent heartbeats | `HeartbeatScheduler` |
+| `agents/core/errors.py` | Typed error codes | `JarvisError`, `E_*` constants |
+| `agents/core/log.py` | Logging setup | `setup_logging`, `log_error` |
+| `agents/core/resilience.py` | Circuit breakers + retry | `resilient_call`, `get_metrics`, `_circuit_breakers` |
+
+### LLM
+
+| Path | Purpose | Key symbols |
+|------|---------|-------------|
+| `agents/core/llm/base.py` | Abstract backend + LMStudio + Ollama | `LLMBackend`, `LMStudioBackend`, `OllamaBackend`, `strip_thinking`, `ThinkingStreamFilter` |
+| `agents/core/llm/router.py` | Auto-detect LMStudio → Ollama | `LLMRouter.detect` |
+| `agents/core/llm/hybrid_router.py` | Multi-tier routing engine | `HybridRouter.select_backend`, `is_heavy_request`, `LOCAL_ONLY_AGENTS`, `CLAUDE_AGENTS`, `DEEP_THINK_AGENTS` |
+| `agents/core/llm/anthropic.py` | Claude API backend | `ClaudeBackend` |
+| `agents/core/llm/gemini.py` | Gemini API backend | `GeminiBackend` |
+| `agents/core/llm/gemini_cache.py` | Gemini context cache | `ContextCache`, `create_or_extend` |
+| `agents/core/llm/tokenizer.py` | Token estimation | `estimate_tokens`, `estimate_messages` |
+| `agents/core/llm/cost_estimator.py` | Monthly cost estimation | `estimate_monthly` |
+
+### Memory & Recall
+
+| Path | Purpose | Key symbols |
+|------|---------|-------------|
+| `agents/core/memory/manager.py` | Memory orchestration | `MemoryManager`, `embed`, `remember`, `recall`, `hybrid_search`, `add_turn` |
+| `agents/core/memory/conversation.py` | Session history (JSONL, disk) | `ConversationMemory`, `Turn`, `add_turn`, `get_context` |
+| `agents/core/memory/store.py` | In-memory vector store | `InMemoryVectorStore`, `VectorStore`, `VectorRecord` |
+| `agents/core/memory/qdrant_store.py` | Qdrant vector store | `QdrantVectorStore` |
+| `agents/core/memory/graph.py` | Knowledge graph | `KnowledgeGraph`, `InMemoryGraph`, `Neo4jGraph` |
+| `agents/core/memory/fusion.py` | RRF retrieval fusion | `HybridRetriever.retrieve`, `reciprocal_rank_fusion`, `FusedHit` |
+| `agents/core/memory/persistence.py` | JSON session persistence | `save_memory`, `load_memory`, `list_sessions` |
+| `agents/core/memory/seed_graph.py` | Bootstrap knowledge graph | `seed_graph` |
+
+### Autonomy / Proactive
+
+| Path | Purpose | Key symbols |
+|------|---------|-------------|
+| `agents/core/autonomy/queue.py` | SQLite task queue + state machine | `TaskQueue`, `Task`, `TaskStatus`, `TaskQueueError` |
+| `agents/core/autonomy/worker.py` | Queue + policy glue | `AutonomyWorker.submit`, `AutonomyWorker.tick`, `AutonomyWorker.apply_decision`, `InterruptBudget`, `is_night_window` |
+| `agents/core/autonomy/policy.py` | Risk gate | `AutonomyPolicy`, `RiskTier`, `ACT/NOTIFY/ASK` |
+| `agents/core/autonomy/inbox.py` | Decision card builder | `build_decision_card` |
+| `agents/core/autonomy/digest.py` | Morning brief / evening retro | `build_morning_brief`, `build_evening_retro` |
+| `agents/core/autonomy/observer.py` | Host resource probes | `ProactiveObserver`, `default_probes` |
+| `agents/core/autonomy/watchers.py` | Personal event probes | `EventWatcher`, `EmailProbe`, `CalendarProbe`, `FinanceProbe`, `HealthProbe` |
+| `agents/core/autonomy/remediation.py` | Safe service restart | `RemediationRunner.restart` |
+| `agents/core/autonomy/preferences.py` | Approved-action learning | `PreferenceStore`, `suggest_autonomy_raise` |
+| `agents/core/autonomy/reflection.py` | Nightly LLM reflection | `DailyReflector.run` |
+| `agents/core/autonomy/executor.py` | Task kind → handler dispatch | `TaskExecutor`, `executor.register` |
+| `agents/core/autonomy/error_logger.py` | Sync errors to BACKLOG.md | `sync_problems_to_backlog` |
+
+### Security
+
+| Path | Purpose | Key symbols |
+|------|---------|-------------|
+| `agents/core/security/guardrails.py` | Scan/redact/block wrapper around LLM | `GuardrailsEngine`, `SecurityBlockError` |
+| `agents/core/security/scanner.py` | Secret + PII scanners | `SecretScanner`, `PIIScanner` |
+| `agents/core/security/audit.py` | SQLite audit + Merkle chain | `AuditLogger.log` |
+| `agents/core/security/ssrf.py` | Private-IP SSRF protection | `SSRFProtector` |
+| `agents/core/security/types.py` | Enums + data classes | `ScanFinding`, `ThreatLevel`, `RedactionMode`, `SecurityEvent` |
+
+### Channels
+
+| Path | Purpose | Key symbols |
+|------|---------|-------------|
+| `agents/core/channels/base.py` | Abstract channel | `ChannelAdapter.start/stop/send/receive` |
+| `agents/core/channels/web.py` | SSE streaming channel | `WebChannel` |
+| `agents/core/channels/voice.py` | Silero TTS channel | `VoiceChannel` |
+| `agents/core/channels/telegram.py` | Telegram bot | `TelegramChannel`, `send_card`, `on_callback` |
+| `agents/core/channels/discord.py` | Discord bot | `DiscordChannel` |
+| `agents/core/channels/email.py` | SMTP + IMAP | `EmailChannel` |
+| `agents/core/channels/slack.py` | Slack bot | `SlackChannel` |
+| `agents/core/channels/gateway.py` | Message routing gateway | `Gateway.route` |
+
+### Plugins
+
+| Path | Purpose | Notes |
+|------|---------|-------|
+| `agents/core/plugins/weather.py` | wttr.in weather | `WeatherPlugin.get_weather` |
+| `agents/core/plugins/news.py` | BBC RSS news | `NewsPlugin.summarize` |
+| `agents/core/plugins/cloud_llm.py` | Anthropic/OpenAI/Gemini fallback | `CloudLLMPlugin` |
+| `agents/core/plugins/websearch.py` | Tavily + SearXNG | `WebSearchPlugin.search` |
+| `agents/core/plugins/gmail_plugin.py` | Gmail API | `GmailPlugin` |
+| `agents/core/plugins/google_calendar.py` | Google Calendar | `GoogleCalendarPlugin.get_today_events` |
+| `agents/core/plugins/spotify_plugin.py` | Spotify | `SpotifyPlugin` |
+| `agents/core/plugins/balance.py` | ING/Libra bank balance | `BalanceReaderPlugin` (gecko) |
+| `agents/core/plugins/analytics.py` | GA4 | `AnalyticsPlugin` (stark) |
+| `agents/core/plugins/oracle_bridge.py` | GitHub watcher | `OracleBridgePlugin` |
+| `agents/core/plugins/n8n.py` | n8n workflows | `N8NPlugin` |
+| `agents/core/plugins/homebridge.py` | HomeKit / Homebridge | `HomebridgePlugin` |
+| `agents/core/plugins/apple_health.py` | Apple Health bridge | `AppleHealthPlugin` |
+| `agents/core/plugins/sms_alerts.py` | Twilio SMS | `SMSAlertsPlugin` |
+| `agents/core/plugins/crm_sync.py` | Notion CRM | `CRMSyncPlugin` |
+| `agents/core/plugins/iot_control.py` | Tuya smart home | `IoTControlPlugin` |
+| `agents/core/plugins/whatsapp_bridge.py` | WhatsApp bridge | `WhatsAppBridgePlugin` (frigga) |
+| `agents/core/plugins/telegram_bot.py` | Telegram bot plugin | `TelegramBotPlugin` |
+| `agents/core/plugins/oauth.py` | OAuth token store | `init_from_env`, `load_token` |
+
+### Skills
+
+| Path | Purpose | Key symbols |
+|------|---------|-------------|
+| `agents/core/skills/loader.py` | Skill discovery + execution | `SkillLoader.discover`, `Skill.execute`, `parse_command`, `generate_skill` |
+| `agents/core/skills/importer.py` | Import from Hermes/OpenClaw/GitHub | `SkillImporter.import_from_hermes` |
+| `agents/core/skills/marketplace.py` | Local marketplace (install/publish/zip) | `SkillMarketplace` |
+| `skills/<name>/SKILL.md` | Skill manifest (version, agents, commands) | — |
+| `skills/<name>/main.py` | Skill logic; must expose `handle(cmd, args, ctx)` or `get_commands()` | — |
+
+Built-in skills: `brief`, `calendar`, `content`, `email_triage`, `family_store`, `health`, `pm`, `security_monitor`, `spotify`, `system_monitor`, `weather`, `web_research`.
+
+### Voice
+
+| Path | Purpose | Key symbols |
+|------|---------|-------------|
+| `agents/core/voice/pipeline.py` | Wake → STT → TTS coordinator | `VoicePipeline` |
+| `agents/core/voice/stt.py` | faster-whisper STT | `STTEngine` |
+| `agents/core/voice/tts.py` | edge-tts TTS | `TTSEngine.speak` |
+| `agents/core/voice/wake_word.py` | openWakeWord detection | `WakeWordDetector` |
+
+### Ingestion (Howard Digital Twin)
+
+| Path | Purpose | Key symbols |
+|------|---------|-------------|
+| `agents/core/ingestion/embedder.py` | Text embedding + cache layers | `Embedder.embed`, `Embedder.from_env`, `EmbeddingCache`, `_PROC_CACHE` (LRU) |
+| `agents/core/ingestion/pipeline.py` | Facebook/WhatsApp → vectors | `IngestionPipeline.run`, `search_similar` |
+| `agents/core/ingestion/normalizer.py` | Message normalization | `NormalizedMessage` |
+| `agents/core/ingestion/parser_facebook.py` | Facebook JSON parser | `FacebookParser` |
+| `agents/core/ingestion/parser_whatsapp.py` | WhatsApp TXT parser | `WhatsAppParser` |
+| `agents/core/ingestion/stylometry.py` | Stylometric voice profiling | `StylometryAnalyzer` |
+| `agents/core/ingestion/knowledge.py` | Entity/relation extraction | `KnowledgeExtractor` |
+| `agents/core/ingestion/watcher.py` | Continuous ingestion daemon | `IngestionWatcher.check_and_run` |
+
+### Persistence / Infra
+
+| Path | Purpose | Key symbols |
+|------|---------|-------------|
+| `agents/core/checkpoint.py` | SQLite checkpoints + session records | `CheckpointManager.save/restore/initialize` |
+| `agents/core/settings_db.py` | SQLite runtime settings | `get_all`, `get_category`, `put_category`, `init_db`, `DEFAULTS` |
+| `agents/core/bench.py` | Latency/throughput benchmarks | `LatencyBenchmark.record`, `get_summary` |
+| `agents/core/sandbox.py` | Docker + subprocess code execution | `Sandbox.execute_python`, `execute_shell` |
+| `agents/core/plugin_gate.py` | Per-agent plugin permission | `PermissionGate.check_call` |
+| `agents/core/learning/loop.py` | Agent health + promotion loop | `LearningLoop.record`, `rank_candidates`, `suggest_promotions`, `is_unhealthy` |
+| `agents/core/mcp/client.py` | MCP client (stdio/SSE) | `MCPManager`, `MCPServer.connect`, `MCPTool` |
+| `agents/core/workflows/` | Multi-agent workflow engine | `WorkflowEngine`, `WorkflowRegistry`, `Pipeline`, `WorkflowStep` |
+
+### Agent Registry
+
+| File | Purpose |
+|------|---------|
+| `agents/_system/agents.yaml` | Canonical agent registry: id, name, tier, status, heartbeat, plugins, llm_policy |
+
+---
+
+## 4. Memory & Recall Subsystem
+
+### Components
+
+```
+ConversationMemory  — session-scoped turns in RAM + disk (JSONL)
+InMemoryVectorStore — 768-dim numpy cosine similarity (or QdrantVectorStore if VECTOR_BACKEND=qdrant)
+InMemoryGraph       — entity/relation store (or Neo4jGraph if NEO4J_URL set)
+Embedder            — LMStudio /v1/embeddings (default) or Ollama; hash fallback if unreachable
+```
+
+### Data flow
+
+```
+add_turn(text)
+  ├─ ConversationMemory.add_turn           [in-memory + disk persist]
+  └─ if MEMORY_EMBED_TURNS: remember(text) → embed(text) → vectors.add(rid, vec, meta)
+
+recall(query_text, top_k)
+  ├─ embed(query_text)          → asyncio.to_thread(embedder.embed, text)
+  └─ hybrid_search(vec, keyword) → HybridRetriever.retrieve
+       ├─ vectors.search(vec, k) → [(id, payload), ...]
+       ├─ graph.search(keyword)  → [(name, entity), ...]
+       └─ reciprocal_rank_fusion({vector: ..., graph: ...}) → [FusedHit, ...]
+```
+
+### Embedding cache layers (H7.4)
+
+1. **In-process LRU** (`_PROC_CACHE`, max 256 entries, key = `(backend, model, text)`)
+2. **Disk cache** (`EmbeddingCache`, SHA-256 content-addressed, sharded by first 2 hex chars, atomic rename writes)
+3. **Backend** (LMStudio or Ollama, retried with exponential backoff, degrades to deterministic hash)
+
+### Key settings
+
+| Setting key | Default | Effect |
+|-------------|---------|--------|
+| `MEMORY_EMBED_TURNS` env | `false` | Auto-embed every turn into vector store |
+| `EMBED_BACKEND` env | `lmstudio` | `lmstudio` or `ollama` |
+| `EMBED_MODEL` env | `text-embedding-nomic-embed-text-v1.5` | Embedding model |
+| `VECTOR_BACKEND` env | `memory` | `memory` or `qdrant` |
+| `memory.recall_enabled` | `false` | Inject recalled memories into every prompt |
+| `memory.recall_top_k` | `5` | Number of recall hits to inject |
+| `memory.context_window` | `6` | Conversation turns in prompt |
+| `memory.checkpoint_every` | `5` | Turns between checkpoint saves |
+| `memory.cross_channel_sessions` | `false` | Share session across channels |
+
+### API endpoints
+
+- `GET /api/memory/search?q=<text>` — run fused recall
+- `POST /api/memory/remember` body `{"text": "..."}` — store a fact
+
+---
+
+## 5. LLM Routing & Model Tiering
+
+### Policy per agent (`hybrid_router.py:get_agent_policy`)
+
+| Policy | Agents |
+|--------|--------|
+| `local` | `frigga`, `ultron`, `howard` — never leave the machine |
+| `claude` | `vision`, `steve` — Claude Sonnet via Anthropic API |
+| `cloud` | `athena` — Gemini flash via Gemini API |
+| `auto` | All others — local first, escalate on size/complexity |
+
+### Backend selection (`HybridRouter.select_backend`)
+
+```
+howard  → Ollama (howard-lora-qwen-14b) or LMStudio fallback
+DEEP_THINK_AGENTS (frigga, hephaestus, hercules) → LMStudio slot 2, DEFAULT_DEEP_MODEL (DDR5)
+CLAUDE_AGENTS → ClaudeBackend (DEFAULT_CLAUDE_MODEL)
+CLOUD_ONLY → GeminiBackend (gemini-2.5-flash)
+AUTO (≤ LOCAL_MAX_TOKENS=8000): local slot 1
+  if is_heavy_request(prompt) AND JARVIS_AUTO_DEEP: → local slot 2 (H7.5 escalation)
+AUTO (≤ FLASH_MAX_TOKENS=128000): gemini-2.5-flash
+AUTO (> FLASH_MAX_TOKENS): gemini-2.5-pro
+```
+
+### `is_heavy_request(prompt)` — complexity escalation (H7.5)
+
+Returns `True` if:
+- `estimate_tokens(prompt) > 2000`, OR
+- prompt contains any keyword from `HEAVY_KEYWORDS` (bilingual RO/EN subset: `analiz`, `strategi`, `reasoning`, `synthes`, etc.)
+
+### Key env vars
+
+| Var | Default | Effect |
+|-----|---------|--------|
+| `JARVIS_AUTO_DEEP` | `1` | `0` disables complexity escalation |
+| `JARVIS_DEEP_MODEL` | `deepseek-r1-distill-qwen-32b` | Overrides deep-slot model |
+| `ANTHROPIC_API_KEY` | — | Enables Claude tiering |
+| `GEMINI_API_KEY` | — | Enables cloud (Gemini) fallback |
+
+---
+
+## 6. Configuration & Settings
+
+### Two-layer config
+
+1. **Startup YAML** — `agents/_system/agents.yaml` → parsed by `agents/core/config.py:JarvisConfig`. Agent registry + static settings. Read-only at runtime.
+2. **Runtime SQLite** — `memory_logs/settings.db` → `agents/core/settings_db.py`. Editable via `/api/admin/settings`. Loaded every 30s by `_settings_watcher_loop`. Read via `Orchestrator.get_setting(key, default)`.
+
+### Most-used runtime setting keys
+
+| Key | Default | Description |
+|-----|---------|-------------|
+| `general.timezone` | `Europe/Bucharest` | |
+| `general.wake_words` | `["jarvis","hub"]` | |
+| `llm.temperature` | `0.7` | |
+| `llm.max_tokens` | `1024` | |
+| `llm.default_model` | `google/gemma-4-31b-a4b` | |
+| `memory.context_window` | `6` | Turns in each prompt |
+| `memory.checkpoint_every` | `5` | Checkpoint debounce |
+| `memory.recall_enabled` | `false` | RAG injection |
+| `memory.recall_top_k` | `5` | |
+| `security.guardrails_mode` | `WARN` | `WARN`/`REDACT`/`BLOCK` |
+| `system.autonomy_tick` | `60` | Autonomy loop interval (s) |
+| `system.observer_enabled` | `true` | Host resource probes |
+| `system.watchers_enabled` | `true` | Personal event probes |
+| `autonomy.night_shift` | `false` | Restrict to reversible tasks overnight |
+| `autonomy.interrupt_budget` | `4` | Urgent Telegram pushes/day |
+| `learning.auto_promote` | `false` | Auto-promote bench agents |
+| `plugins.<name>` | `true` | Toggle any plugin |
+
+### .env variables (not in settings_db)
+
+Key env vars loaded at startup:
+`ANTHROPIC_API_KEY`, `GEMINI_API_KEY`, `OPENAI_API_KEY`, `TELEGRAM_BOT_TOKEN`, `DISCORD_BOT_TOKEN`, `GMAIL_ACCESS_TOKEN`, `SPOTIFY_CLIENT_ID/SECRET/ACCESS_TOKEN/REFRESH_TOKEN`, `GOOGLE_CALENDAR_TOKEN`, `WHATSAPP_BRIDGE_URL`, `APPLE_HEALTH_BRIDGE_URL`, `HOMEBRIDGE_URL/TOKEN`, `TAVILY_API_KEY`, `SEARXNG_URL`, `SMTP_HOST/PORT/USER/PASS`, `IMAP_HOST/PORT/USER/PASS`, `SLACK_BOT_TOKEN`, `N8N_BASE_URL/API_KEY`, `GITHUB_TOKEN`, `JARVIS_ADMIN_TOKEN`, `DEV_MODE`.
+
+---
+
+## 7. Conventions
+
+### Testing
+
+- **Framework:** pytest with `asyncio_mode = auto` (see `pytest.ini`) — all `async def test_*` run without decorators.
+- **sys.path pattern:** Every test file inserts `repo_root` and `repo_root/agents` at the top. Always use this, not relative imports.
+- **Offline by default:** Tests inject fake backends (e.g. `FakeBackend(LLMBackend)`, `FakeLMStudioClient`). No real network/LLM required.
+- **Orchestrator instantiation trick:** Avoid `Orchestrator(config)` in unit tests (heavy init). Use `Orchestrator.__new__(Orchestrator)` + manual attribute assignment, or mock the heavy dependencies.
+- **Where new tests go:** `tests/test_<module_name>.py`. Use `conftest.py:make_app` for lightweight FastAPI apps with fallback routes.
+- **Run tests:** `pytest -q` from repo root.
+
+### Branch / PR workflow
+
+- Work on feature branches. PRs merge to main.
+- Do not push directly — see `AGENTS.md` for full conventions.
+
+### Local-first rules
+
+- `frigga`, `ultron`, `howard` are `LOCAL_ONLY_AGENTS` in `hybrid_router.py` — never routed to cloud.
+- `frigga` has `cloud_fallback: false` in `agents.yaml` — hard rule.
+
+### Skill/plugin loader patterns
+
+- Skills are auto-discovered on startup via `SkillLoader.discover()` scanning `skills/*/SKILL.md`.
+- Plugins are instantiated in `Orchestrator.load_agents()` by name and stored in `self.plugins` dict.
+- Plugin access in skills: lazy import at call time (see `skills/brief/main.py` pattern).
+- Channels are registered via `orch.register_channel(adapter)` + started by `orch.start_channels()`.
+
+---
+
+## 8. How-to Recipes
+
+### Add a new agent (active)
+
+1. Create `agents/<agent_id>/SOUL.md` — see any existing soul for format (Identity / Mission / Voice sections).
+2. Add entry under `agents:` in `agents/_system/agents.yaml`:
+   ```yaml
+   myagent:
+     name: MyAgent
+     archetype: "What it does"
+     status: active
+     tier: business          # command / business / tech / foundation
+     channel: telegram        # voice / web-dashboard / telegram / log-only / local-only
+     heartbeat: "4h"          # interval or "no"
+     plugins: [gmail]
+   ```
+3. Add router triggers in `agents/core/router.py:INTENT_RULES` if you want keyword routing.
+4. No code changes needed — `Agent._load_soul()` picks it up on next boot.
+
+### Add a bench agent
+
+1. Add under `bench:` in `agents.yaml` with `trigger` and optional `triggers_on`/`threshold`.
+2. Activate at runtime via `POST /learning/promote` (admin) or set `learning.auto_promote=true`.
+3. `Orchestrator.promote_bench_agent` writes a stub `SOUL.md` automatically if missing.
+
+### Add a skill
+
+1. `mkdir skills/<name>` + create `SKILL.md`:
+   ```markdown
+   # SkillName
+   **Version:** 0.1.0
+   **Author:** you
+   **Agents:** jarvis  ← comma-sep agent IDs
+   ## Commands
+   - `myskill <args>` — description
+   ```
+2. Create `skills/<name>/main.py` with either:
+   - `async def handle(command, args, context) -> str` (catch-all), OR
+   - `get_commands() -> list[str]` + one `async def <cmd>(args, context) -> str` per command.
+3. Call `orch.skills.discover()` or restart; no registration needed.
+
+### Add a plugin
+
+1. Create `agents/core/plugins/<myplugin>.py` with a class `MyPlugin`.
+2. Add instantiation in `Orchestrator.load_agents()` (`orchestrator.py` ~line 169+):
+   ```python
+   self.plugins["myplugin"] = MyPlugin(key=os.environ.get("MYPLUGIN_KEY", ""))
+   ```
+3. Add trigger logic in `Orchestrator._gather_plugin_data` (keyword detection → `await plugin.handle(...)`).
+4. Optionally add a toggle in `settings_db.py:DEFAULTS` under `plugins`.
+
+### Add a web endpoint
+
+1. Open `agents/web.py`.
+2. Add your route function after existing endpoints, e.g.:
+   ```python
+   @app.get("/api/myroute")
+   async def my_route():
+       if not orch:
+           return JSONResponse({"error": "not initialized"}, status_code=503)
+       return _nocache_json({"result": ...})
+   ```
+3. If admin-only, add `dependencies=[Depends(_admin_guard)]`.
+4. Polling endpoints that return live data: add path to `_NO_STORE_PATHS` dict.
+
+### Add a runtime setting
+
+1. Open `agents/core/settings_db.py`.
+2. Add a `dict(...)` entry to `DEFAULTS` list with `category`, `key`, `value`, `label`, `kind`.
+3. Read it anywhere via `orch.get_setting("category.key", default)` (reloaded every 30s).
+4. For per-plugin credentials, use category `"plugins"`.
+
+### Add a channel
+
+1. Create `agents/core/channels/<name>.py` subclassing `ChannelAdapter`.
+2. Implement `start()`, `stop()`, `send(message, **kwargs)`.
+3. In `agents/web.py:lifespan`, instantiate and `await orch.register_channel(my_channel)`.
+4. Call `orch.start_channels()` already handles starting all registered channels.
+
+---
+
+## 9. Filesystem Map
+
+```
+serve.py                          Uvicorn launcher
+agents/
+  run.py                          CLI REPL
+  web.py                          FastAPI app (40+ endpoints)
+  _system/agents.yaml             Agent registry (canonical source of truth)
+  core/
+    orchestrator.py               Main loop
+    agent.py                      Single agent runtime (SOUL.md loader)
+    router.py                     Intent classifier
+    config.py                     JarvisConfig (YAML loader)
+    settings_db.py                Runtime settings (SQLite WAL)
+    checkpoint.py                 Checkpoint manager (SQLite WAL)
+    plugin_gate.py                Plugin permission gate
+    bench.py                      Latency benchmarks
+    sandbox.py                    Docker/subprocess execution
+    heartbeat.py                  Agent heartbeat scheduler
+    resilience.py                 Circuit breakers
+    errors.py                     Typed error codes
+    llm/                          LLM backends + routing
+    memory/                       Conversation + vector + graph + fusion
+    ingestion/                    Howard pipeline (embedder, parsers, watcher)
+    autonomy/                     Self-tasking queue + worker + policy
+    security/                     Guardrails + scanner + audit
+    channels/                     Web/Voice/Telegram/Discord/Email/Slack
+    plugins/                      All third-party integrations
+    skills/                       Skill loader + importer + marketplace
+    voice/                        Wake word + STT + TTS pipeline
+    mcp/                          MCP client (stdio/SSE)
+    learning/                     Agent health tracking + promotions
+    workflows/                    Multi-agent workflow engine
+  jarvis/SOUL.md                  Agent identity prompt (repeat for each agent)
+skills/                           Skill packs (SKILL.md + main.py)
+memory_logs/                      All persistent state (SQLite, JSONL, cache)
+  checkpoints/checkpoints.db
+  settings.db
+  security/audit.db
+  autonomy.db
+  embedding_cache/recall/
+  learning/
+tests/                            pytest suite (asyncio_mode=auto, offline)
+docs/
+  ARCHITECTURE.md                 ← this file
+  JARVIS.md                       → high-level architecture overview
+  AGENTS.md                       → assistant conventions + workflow
+  BACKLOG.md                      → priorities + open tasks
+  research/                       Research notes
+  superpowers/                    Feature specs (Horizons 5–7)
+```
+
+---
+
+## 10. Doc Map
+
+| File | What it covers |
+|------|---------------|
+| `JARVIS.md` | High-level architecture, agent tiers, stack, LLM setup, quick commands |
+| `AGENTS.md` | Assistant workflow conventions, rules, task protocol |
+| `BACKLOG.md` | Prioritized task list — read/update when discussing "what's next" |
+| `docs/research/` | Deep research notes on design decisions |
+| `docs/superpowers/` | Feature specs for Horizons 5, 6, 7 (memory, autonomy, performance) |
+| `docs/ARCHITECTURE.md` | Module index, request lifecycle, recipes (this file) |

@@ -21,6 +21,15 @@ class WorkflowStep:
             "depends_on": self.depends_on,
         }
 
+    @classmethod
+    def from_dict(cls, d: dict) -> "WorkflowStep":
+        return cls(
+            id=d["id"],
+            agent_id=d["agent_id"],
+            prompt_template=d["prompt_template"],
+            depends_on=list(d.get("depends_on") or []),
+        )
+
 
 @dataclass
 class Pipeline:
@@ -55,3 +64,16 @@ class Pipeline:
             "description": self.description,
             "steps": [s.to_dict() for s in self.steps],
         }
+
+    @classmethod
+    def from_dict(cls, d: dict) -> "Pipeline":
+        steps = [WorkflowStep.from_dict(s) for s in d.get("steps", [])]
+        pipeline = cls(
+            id=d["id"],
+            name=d.get("name", d["id"]),
+            description=d.get("description", ""),
+            steps=steps,
+        )
+        # Validate DAG — raises ValueError on cycles or unresolved deps.
+        pipeline.execution_batches()
+        return pipeline
