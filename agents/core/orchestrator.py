@@ -33,6 +33,7 @@ from .autonomy.inbox import build_decision_card
 from .autonomy.digest import build_morning_brief, build_evening_retro
 from .autonomy.worker import is_night_window
 from .autonomy.reflection import DailyReflector
+from .autonomy.log_scanner import LogBugScanner
 from .workflows import WorkflowEngine, WorkflowRegistry
 from .sandbox import Sandbox
 from .bench import LatencyBenchmark
@@ -126,6 +127,8 @@ class Orchestrator:
         self.last_cognition = None
         # Daily Reflection & Graph Consolidation (H5.15)
         self.reflector: Optional[DailyReflector] = None
+        # Log-bug-finding scanner (multi-cadence scheduled pipeline)
+        self.log_scanner = LogBugScanner()
         # Multi-Agent Workflows (H5.6)
         self.workflow_registry = WorkflowRegistry()
         self.workflow_engine: Optional[WorkflowEngine] = None
@@ -366,6 +369,116 @@ class Orchestrator:
         except Exception as e:
             logger.warning(f"Failed to schedule daily digests: {e}")
 
+    def _schedule_log_scans(self):
+        """Register the three log-bug-finding cadences on the APScheduler.
+
+        quick  — every 15 min: spike + new-code detection
+        hourly — every hour:   trend analysis + backlog sync
+        daily  — 07:05 daily:  full 24-h digest → memory_logs/reports/
+        """
+        sched = getattr(self.heartbeat_scheduler, "scheduler", None)
+        if sched is None:
+            return
+        try:
+            sched.add_job(self._run_log_quick_scan, "interval", seconds=900,
+                          id="log-scan-quick", replace_existing=True)
+            sched.add_job(self._run_log_hourly_scan, "interval", seconds=3600,
+                          id="log-scan-hourly", replace_existing=True)
+            sched.add_job(self._run_log_daily_scan, "cron", hour=7, minute=5,
+                          id="log-scan-daily", replace_existing=True)
+            logger.info("Scheduled log-bug scans: quick/15min, hourly, daily/07:05")
+        except Exception as e:
+            logger.warning(f"Failed to schedule log scans: {e}")
+
+    async def _run_log_quick_scan(self):
+        """15-min scan: submit autonomy alert on spike or new error code."""
+        if not self.get_setting("system.log_scan_enabled", True):
+            return
+        try:
+            base = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+            problems_path = os.path.join(base, "..", "memory_logs", "problems.jsonl")
+            result = self.log_scanner.quick_scan(problems_path)
+            if result.healthy:
+                return
+            issues = ", ".join(
+                f"{i['code']}×{i['count']}" for i in result.top_issues[:3]
+            )
+            parts = []
+            if result.spike_detected:
+                parts.append(f"spike: {result.total_errors} errors in 15 min")
+            if result.new_codes:
+                parts.append(f"new codes: {', '.join(result.new_codes[:3])}")
+            title = "Log spike detected — " + "; ".join(parts)
+            if issues:
+                title += f" [{issues}]"
+            await self.autonomy.submit(
+                agent="steve", kind="monitor.log_spike", title=title,
+                payload={"risk_tier": 0, "spike": result.spike_detected,
+                         "new_codes": result.new_codes,
+                         "total_errors": result.total_errors},
+                origin="log_scanner",
+            )
+        except Exception as e:
+            logger.warning(f"Log quick scan failed: {e}")
+
+    async def _run_log_hourly_scan(self):
+        """Hourly scan: trend analysis and backlog sync."""
+        if not self.get_setting("system.log_scan_enabled", True):
+            return
+        try:
+            base = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+            problems_path = os.path.join(base, "..", "memory_logs", "problems.jsonl")
+            result = self.log_scanner.hourly_scan(problems_path)
+            from .autonomy.error_logger import sync_problems_to_backlog
+            sync_problems_to_backlog()
+            if result.healthy:
+                return
+            parts = []
+            if result.spike_detected:
+                parts.append(f"spike: {result.total_errors} errors this hour")
+            if result.new_codes:
+                parts.append(f"new codes: {', '.join(result.new_codes[:3])}")
+            if parts:
+                await self.autonomy.submit(
+                    agent="steve", kind="monitor.log_trend", title="Hourly log trend — " + "; ".join(parts),
+                    payload={"risk_tier": 0, "spike": result.spike_detected,
+                             "new_codes": result.new_codes,
+                             "total_errors": result.total_errors},
+                    origin="log_scanner",
+                )
+        except Exception as e:
+            logger.warning(f"Log hourly scan failed: {e}")
+
+    async def _run_log_daily_scan(self):
+        """07:05 daily scan: write 24-h bug-report digest."""
+        if not self.get_setting("system.log_scan_enabled", True):
+            return
+        try:
+            base = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+            problems_path = os.path.join(base, "..", "memory_logs", "problems.jsonl")
+            result = self.log_scanner.daily_scan(problems_path)
+            logger.info(
+                f"Daily log scan: {result.total_errors} errors, "
+                f"{len(result.new_codes)} new codes, report={result.report_path}"
+            )
+            if result.healthy:
+                return
+            issues_summary = ", ".join(
+                f"{i['code']}×{i['count']}" for i in result.top_issues[:5]
+            )
+            title = f"Daily bug digest: {result.total_errors} errors"
+            if result.new_codes:
+                title += f", {len(result.new_codes)} new codes"
+            await self.autonomy.submit(
+                agent="steve", kind="monitor.log_daily", title=title,
+                payload={"risk_tier": 0, "total_errors": result.total_errors,
+                         "new_codes": result.new_codes, "top_issues": issues_summary,
+                         "report_path": result.report_path},
+                origin="log_scanner",
+            )
+        except Exception as e:
+            logger.warning(f"Log daily scan failed: {e}")
+
     async def _autonomy_loop(self):
         """Periodically run approved autonomy tasks (the self-tasking worker).
 
@@ -472,6 +585,7 @@ class Orchestrator:
         self._settings_watcher_task = asyncio.create_task(self._settings_watcher_loop())
         self._wire_autonomy()
         self._schedule_daily_digests()
+        self._schedule_log_scans()
         self._autonomy_task = asyncio.create_task(self._autonomy_loop())
         if hasattr(self, 'oracle_bridge'):
             self.oracle_bridge.start_watcher()
