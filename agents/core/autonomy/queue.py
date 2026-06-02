@@ -18,6 +18,7 @@ from __future__ import annotations
 import json
 import logging
 import sqlite3
+import threading
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from enum import Enum
@@ -92,10 +93,15 @@ class TaskQueue:
             db_path = str(DEFAULT_DB)
         self.db_path = db_path
         self._conn: Optional[sqlite3.Connection] = None
+        # Guard concurrent access; the autonomy worker calls queue methods
+        # from an asyncio task running on a thread-pool thread (H7.4).
+        self._lock = threading.Lock()
 
     # ── lifecycle ─────────────────────────────────────────────────
     def initialize(self) -> "TaskQueue":
-        self._conn = sqlite3.connect(self.db_path)
+        # check_same_thread=False: queue is accessed from asyncio.to_thread
+        # helpers; the threading.Lock above serialises every operation.
+        self._conn = sqlite3.connect(self.db_path, check_same_thread=False)
         self._conn.row_factory = sqlite3.Row
         # WAL + synchronous=NORMAL: the autonomy worker commits on every task
         # state transition in a continuous loop — keep those commits cheap.
@@ -136,20 +142,23 @@ class TaskQueue:
                 risk_tier: int = 3, autonomy_level: str = "ask",
                 origin: str = "generated") -> int:
         now = _now()
-        cur = self._conn.execute(
-            """INSERT INTO tasks (agent, kind, title, payload, risk_tier, status,
-                   autonomy_level, origin, attempts, pushed, created_at, updated_at)
-               VALUES (?, ?, ?, ?, ?, 'proposed', ?, ?, 0, 0, ?, ?)""",
-            (agent, kind, title, json.dumps(payload or {}, ensure_ascii=False),
-             int(risk_tier), autonomy_level, origin, now, now),
-        )
-        self._conn.commit()
-        return cur.lastrowid
+        with self._lock:
+            cur = self._conn.execute(
+                """INSERT INTO tasks (agent, kind, title, payload, risk_tier, status,
+                       autonomy_level, origin, attempts, pushed, created_at, updated_at)
+                   VALUES (?, ?, ?, ?, ?, 'proposed', ?, ?, 0, 0, ?, ?)""",
+                (agent, kind, title, json.dumps(payload or {}, ensure_ascii=False),
+                 int(risk_tier), autonomy_level, origin, now, now),
+            )
+            self._conn.commit()
+            return cur.lastrowid
 
     def transition(self, task_id: int, new_status: TaskStatus, *,
                    decided_by: str = None, decision: str = None,
                    result: dict = None) -> Task:
-        task = self.get(task_id)
+        with self._lock:
+            row = self._conn.execute("SELECT * FROM tasks WHERE id=?", (task_id,)).fetchone()
+            task = _row_to_task(row) if row else None
         if task is None:
             raise TaskQueueError(f"task {task_id} not found")
         cur_status = TaskStatus(task.status)
@@ -167,34 +176,39 @@ class TaskQueue:
         if result is not None:
             sets.append("result=?"); params.append(json.dumps(result, ensure_ascii=False))
         params.append(task_id)
-        self._conn.execute(f"UPDATE tasks SET {', '.join(sets)} WHERE id=?", params)
-        self._conn.commit()
+        with self._lock:
+            self._conn.execute(f"UPDATE tasks SET {', '.join(sets)} WHERE id=?", params)
+            self._conn.commit()
         return self.get(task_id)
 
     def update_payload(self, task_id: int, payload: dict) -> None:
-        self._conn.execute(
-            "UPDATE tasks SET payload=?, updated_at=? WHERE id=?",
-            (json.dumps(payload, ensure_ascii=False), _now(), task_id),
-        )
-        self._conn.commit()
+        with self._lock:
+            self._conn.execute(
+                "UPDATE tasks SET payload=?, updated_at=? WHERE id=?",
+                (json.dumps(payload, ensure_ascii=False), _now(), task_id),
+            )
+            self._conn.commit()
 
     def increment_attempts(self, task_id: int) -> int:
-        self._conn.execute(
-            "UPDATE tasks SET attempts = attempts + 1, updated_at=? WHERE id=?",
-            (_now(), task_id),
-        )
-        self._conn.commit()
+        with self._lock:
+            self._conn.execute(
+                "UPDATE tasks SET attempts = attempts + 1, updated_at=? WHERE id=?",
+                (_now(), task_id),
+            )
+            self._conn.commit()
         return self.get(task_id).attempts
 
     def mark_pushed(self, task_id: int) -> None:
-        self._conn.execute(
-            "UPDATE tasks SET pushed=1, updated_at=? WHERE id=?", (_now(), task_id)
-        )
-        self._conn.commit()
+        with self._lock:
+            self._conn.execute(
+                "UPDATE tasks SET pushed=1, updated_at=? WHERE id=?", (_now(), task_id)
+            )
+            self._conn.commit()
 
     # ── reads ─────────────────────────────────────────────────────
     def get(self, task_id: int) -> Optional[Task]:
-        row = self._conn.execute("SELECT * FROM tasks WHERE id=?", (task_id,)).fetchone()
+        with self._lock:
+            row = self._conn.execute("SELECT * FROM tasks WHERE id=?", (task_id,)).fetchone()
         return _row_to_task(row) if row else None
 
     def list(self, status: Optional[str] = None, origin: Optional[str] = None,
@@ -206,9 +220,10 @@ class TaskQueue:
             clauses.append("origin=?"); params.append(origin)
         where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
         params.append(limit)
-        rows = self._conn.execute(
-            f"SELECT * FROM tasks {where} ORDER BY id DESC LIMIT ?", params
-        ).fetchall()
+        with self._lock:
+            rows = self._conn.execute(
+                f"SELECT * FROM tasks {where} ORDER BY id DESC LIMIT ?", params
+            ).fetchall()
         return [_row_to_task(r) for r in rows]
 
     def runnable(self, limit: int = 10, max_tier: Optional[int] = None) -> list[Task]:
@@ -223,24 +238,27 @@ class TaskQueue:
             clause += " AND risk_tier <= ?"
             params.append(int(max_tier))
         params.append(limit)
-        rows = self._conn.execute(
-            f"SELECT * FROM tasks WHERE {clause} ORDER BY id ASC LIMIT ?", params
-        ).fetchall()
+        with self._lock:
+            rows = self._conn.execute(
+                f"SELECT * FROM tasks WHERE {clause} ORDER BY id ASC LIMIT ?", params
+            ).fetchall()
         return [_row_to_task(r) for r in rows]
 
     def pending_decisions(self, only_unpushed: bool = False, limit: int = 100) -> list[Task]:
         clause = "status='blocked'"
         if only_unpushed:
             clause += " AND pushed=0"
-        rows = self._conn.execute(
-            f"SELECT * FROM tasks WHERE {clause} ORDER BY id ASC LIMIT ?", (limit,)
-        ).fetchall()
+        with self._lock:
+            rows = self._conn.execute(
+                f"SELECT * FROM tasks WHERE {clause} ORDER BY id ASC LIMIT ?", (limit,)
+            ).fetchall()
         return [_row_to_task(r) for r in rows]
 
     def stats(self) -> dict:
-        rows = self._conn.execute(
-            "SELECT status, COUNT(*) AS n FROM tasks GROUP BY status"
-        ).fetchall()
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT status, COUNT(*) AS n FROM tasks GROUP BY status"
+            ).fetchall()
         return {r["status"]: r["n"] for r in rows}
 
 

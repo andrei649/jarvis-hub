@@ -81,7 +81,7 @@ class BalanceReaderPlugin:
             try:
                 return await self._compute_burn_rate(days)
             except Exception:
-                pass
+                logger.warning("Burn rate computation failed — returning mock data", exc_info=True)
         return dict(MOCK_BURN_RATE)
 
     async def _fetch_ing(self) -> dict:

@@ -3,6 +3,7 @@
 > Owner: Andrei · Planificat: 2026-05-30 · Echipă: agenți Claude + opencode
 > HUD: http://127.0.0.1:8080/ · Admin: /admin
 
+> **North Star (vision, principles, phase gates):** [MOONSHOT.md](MOONSHOT.md) — re-rank this backlog against it
 > **Go-Live Plan (features, roadmap, marketing brief):** [GO_LIVE_PLAN.md](GO_LIVE_PLAN.md)
 > **Delivery History (H1–H7 completed sprints):** [docs/HISTORY.md](docs/HISTORY.md)
 
@@ -39,6 +40,7 @@ python -m pytest tests/ -v          # 909 passed, 9 skipped
 | **0.9.1-beta** | 🟢 Live | Recall cu embeddings reale + perf cale fierbinte | H7.1–H7.5 |
 | **1.0.0** | 🎯 Stable | All H5/H7 done, documented, CI/CD, onboarding docs | All above + ARCHITECTURE.md |
 | **1.1.0** | Next | Memorie personală — „Jarvis te cunoaște" | ORIZONT 8 (H8.x) |
+| **2.0.0** | Later | Platform parity — desktop app, Rust hot-path, WASM sandbox, training | ORIZONT 11 (H11.x) |
 
 ---
 
@@ -53,7 +55,8 @@ python -m pytest tests/ -v          # 909 passed, 9 skipped
 | **H8 Memorie Personală** (P1–P3) | 7 | **0** | 43 | **0** | **0%** |
 | **H9 Agent Ops: Workflows & Observability** (P2) | 3 | **3** | 29 | **29** | **100%** |
 | **H10 Competitive Edge** (P1–P3) | 30 | **0** | 188 | **0** | **0%** |
-| **Total general** | **136** | **99** | **712** | **481** | **68%** |
+| **H11 Platform Parity** (Known Gaps, P3) | 4 | **0** | 55 | **0** | **0%** |
+| **Total general** | **140** | **99** | **767** | **481** | **63%** |
 
 **Test count:** 909 passed, 9 skipped (2026-06-02: +ORIZONT 7 — perf_hotpath 9, recall_cache 6, model_tiering 19; + recall cu embeddings reale & RAG injection)
 
@@ -148,7 +151,7 @@ python -m pytest tests/ -v          # 909 passed, 9 skipped
 
 | # | Bug | Severity | Notes |
 |---|-----|----------|-------|
-| BUG-1 | `_dashboard_cache` module-level dict has no `asyncio.Lock` — concurrent `/dashboard` requests can race on the weather/calendar cache update, producing a double-fetch or partial write under high load. **Fix:** wrap the refresh block in `asyncio.Lock()`. | LOW | Found during HUD test sprint 2026-06-02 |
+| ~~BUG-1~~ ✅ | `_dashboard_cache` module-level dict has no `asyncio.Lock` — concurrent `/dashboard` requests can race on the weather/calendar cache update, producing a double-fetch or partial write under high load. **Fixed 2026-06-02:** `_dashboard_lock = asyncio.Lock()` guards both refresh blocks with double-checked locking; weather block now also sets `cached_at` (was refetching every request). +1 regression test (`test_dashboard_concurrent_refresh_fetches_weather_once`). | ~~LOW~~ | Found during HUD test sprint 2026-06-02 |
 | BUG-2 | Frontend test infrastructure missing — 0% coverage on React HUD (~6 000 LOC: `app.js`, `admin.js`, `systems.js`, `workflows.js`, etc). No test runner (jest/vitest), no React Testing Library, no E2E (Playwright/Cypress). | MEDIUM | Identified in test coverage audit 2026-06-02; backend gap closed (121 tests added on branch `claude/hud-human-interface-testing-r8IQS`) |
 
 ## ✅ ORIZONT 5 — Next Wave (P2–P3) — 17/17 COMPLET
@@ -297,6 +300,20 @@ python -m pytest tests/ -v          # 909 passed, 9 skipped
 | H10.18 | **Action-Level Approval UI** — în HUD, tab live cu tool call-urile pending approval (granularitate sub-task); buton Aprob/Resping per acțiune individuală. Extinde H6.2. | 5 | P3 | H6.2 | SuperAGI |
 | H10.20 | **Chat Channels / Rooms** — canale de chat tematice în HUD (per proiect/context); în fiecare canal poți @mention agenți specifici; pipeline complet (tools, RAG, filters). | 8 | P3 | H1.3 | OpenWebUI |
 | H10.26 | **Data Spaces / Agent Data Scope** — organizează sursele de date (memory segments, plugin outputs, knowledge) în "spații" cu permisiuni per agent; complement la `LOCAL_ONLY_AGENTS`. | 13 | P3 | H8.1, H4.7 | Dust |
+
+---
+
+## ORIZONT 11 — Platform Parity (Known Gaps vs OpenJarvis) (P3) — 0/4
+
+> Capabilități prezente în OpenJarvis dar absente în Jarvis Hub (vezi `STATUS.md` → Known Gaps).
+> Toate P3 — nice-to-have, niciuna nu blochează 1.0.0. Mai multe au cost mare (GPU, Rust, build nativ).
+
+| # | Item | S | P | Dep | Sursă |
+|---|------|---|---|-----|-------|
+| H11.1 | **Desktop App (Tauri)** — UI nativ desktop (Windows/macOS/Linux) care împachetează HUD-ul existent; tray icon, wake-word listener local, auto-start. Alternativă la rularea în browser. | 13 | P3 | — | OpenJarvis (Tauri) |
+| H11.2 | **Rust Extension / Hot-Path Crates** — port în Rust al căilor fierbinți (embeddings, vector search, parsing) ca extensii native (PyO3); pure-Python rămâne fallback. OpenJarvis are 14 crates. | 21 | P3 | H7 | OpenJarvis (14 crates) |
+| H11.3 | **SFT/GRPO Training Pipeline** — fine-tuning local pe modele (SFT + GRPO) din trace-urile colectate; necesită GPU. Closing the loop pe Learning Loop (H7.11). | 13 | P3 | H7.11 | OpenJarvis |
+| H11.4 | **WASM Sandbox (wasmtime)** — backend de execuție WASM pentru sandbox, complementar Docker; izolare mai bună și portabilă, fără daemon Docker. `core/sandbox.py` (backend nou). | 8 | P3 | — | OpenJarvis (wasmtime) |
 
 ---
 

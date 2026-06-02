@@ -1,23 +1,40 @@
 name: CI
+
 on:
   pull_request:
   push:
     branches: [main]
+
+# Cancel superseded runs for the same ref (e.g. rapid pushes to a PR).
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
 jobs:
   test:
     runs-on: ${{ matrix.os }}
     strategy:
+      fail-fast: false
       matrix:
-        os: [ubuntu-latest, windows-latest]
+        # Full matrix on pushes to main; PRs run the cheaper ubuntu-only leg.
+        os: ${{ github.event_name == 'pull_request' && fromJSON('["ubuntu-latest"]') || fromJSON('["ubuntu-latest", "windows-latest"]') }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+          cache: pip
+          cache-dependency-path: requirements-beta.txt
       - run: pip install -r requirements-beta.txt
       - run: pip install -r requirements-dev.txt
       - name: Lint (non-blocking)
-        # Rules/config come from pyproject.toml; see scripts/code_health.py.
+        # Rules/config come from pyproject.toml. Kept quiet here (--exit-zero):
+        # the full lint/dead-code/complexity digest is published by
+        # code-health.yml so this step doesn't double-report. Drop --exit-zero
+        # (and continue-on-error) later to make linting a required gate.
         run: ruff check . --exit-zero
         continue-on-error: true
       - name: Test
