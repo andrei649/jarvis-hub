@@ -147,12 +147,31 @@ python -m pytest tests/ -v          # 1100+ passed, 9 skipped
 
 ✓ No active runtime failures detected in the last 48 hours.
 
-## 🐛 Known Bugs (non-critical, not yet scheduled)
+## 🐛 Bugs & Hot Fixes
+
+> Buguri cunoscute + taskuri „orfane" (amânate/abandonate prin alte docs/note, fără item trackuit).
+> Audit 2026-06-02: am promovat aici follow-up-urile care altfel cădeau de pe radar.
+
+### Buguri
 
 | # | Bug | Severity | Notes |
 |---|-----|----------|-------|
 | ~~BUG-1~~ ✅ | `_dashboard_cache` module-level dict has no `asyncio.Lock` — concurrent `/dashboard` requests can race on the weather/calendar cache update, producing a double-fetch or partial write under high load. **Fixed 2026-06-02:** `_dashboard_lock = asyncio.Lock()` guards both refresh blocks with double-checked locking; weather block now also sets `cached_at` (was refetching every request). +1 regression test (`test_dashboard_concurrent_refresh_fetches_weather_once`). | ~~LOW~~ | Found during HUD test sprint 2026-06-02 |
 | BUG-2 ✅ | ~~Frontend test infrastructure missing — 0% coverage on React HUD (~5 000 LOC).~~ **Done 2026-06-02:** Vitest + JSDOM harness (`tests/frontend/`) that loads the real shipped global scripts (vendored React 18 UMD + static files) — no bundler/build step. **156 tests / 20 spec files · ~66% measured line coverage (target 60% met)**, gated in CI (`frontend` job runs `npm run test:coverage`, fails under 60%). Coverage of the in-JSDOM scripts is measured via istanbul pre-instrumentation + nyc (see `coverage.mjs`) with a badge (`coverage-badge.svg`). Covers all of `components.js`, `i18n.js`, `data.js`, `cognition.js`, `dossier-modal.js`, `network.js`, `enhancements.js`, `observability.js`; `admin.js` (full `AdminApp` mount + nav sweep + save flow); `systems.js`/`workflows.js`/`observability.js` panels (mount + tab sweep); and `app.js` incl. the **P1 chat flow** (send→SSE stream→render) and **P2 polling** intervals. Plan alignment per `docs/plan-bug2-frontend-tests.md`: runner = Vitest (chosen over Jest), measured coverage ✅, P1 Chat ✅, P2 polling ✅. **Caught a real shipped bug on first run:** `systems.js` `ResilienceTab` missing closing brace → the entire Systems panel failed to parse/load in the browser (present on `main`); fixed + regression-guarded (`resilience.test.js`). **Deferred (P3 follow-up):** voice/`useTTS`, Workflow drag-drop pointer events, and browser E2E (Playwright). See `tests/frontend/README.md`. | ~~MEDIUM~~ | Identified in test coverage audit 2026-06-02; backend gap closed (121 tests added on branch `claude/hud-human-interface-testing-r8IQS`) |
+
+### Hot fixes & taskuri orfane (promovate 2026-06-02)
+
+> Coloana **Dep / secvențiere** spune *când* să fie rezolvat eficient — multe au sens doar
+> împreună cu un feature viitor (ca să nu se scrie de două ori).
+
+| # | Item | Tip · P | S | Dep / secvențiere | Sursă |
+|---|------|---------|---|-------------------|-------|
+| **HF-1** | **Auth pe rutele user-facing `/api/`** — `/chat`, `/chat/stream`, `/dashboard`, `/api/memory/*` (inclusiv POST `/api/memory/remember`) **nu au autentificare**; doar rutele admin sunt gate-uite (`x-admin-token`, `_admin_guard`). Acceptabil pe LAN single-user, **risc real înainte de orice expunere non-LAN** (memorie personală citibilă/scriibilă neautentificat). | 🔒 Hotfix · **P1** | 5 | Înainte de orice expunere în afara LAN; **prereq pentru H10.E Multi-user** (login/sesiuni se construiește peste asta) | `docs/gap-analysis-1.0.md` (must-have, nepromovat) + `agents/web.py` |
+| **HF-2** | **Security review pre-go-live** — pen-test pe endpointuri, **CORS** config, review rate-limit. Checklist din gap-analysis niciodată promovat în backlog. | 🔒 Task · **P1** | 5 | După **HF-1**; se cuplează cu H7.9 (release hygiene) | `docs/gap-analysis-1.0.md` |
+| **BUG-2b** | **Frontend test gaps rămase din BUG-2** (trăiau doar în rândul BUG-2 ✅ + `tests/frontend/README.md`): **2b.1** browser E2E (Playwright: server+Chromium, fluxuri chat/tab-uri/command palette/admin); **2b.2** drag-drop canvas workflow (pointer events SVG, layout, edges); **2b.3** voce/`useTTS` (mock `getUserMedia`/`AudioContext`, toggle mic, tranziții stare). | 🧪 Task · P3 | ~14 (8+3+3) | **2b.1** standalone (H7.2 CI ✅) — cel mai bine după ce fluxurile mari H10 se stabilizează, se cuplează cu H9.3/H10.23; **2b.2** ride cu **H10.2** (trace overlay) / **H10.7** (AI builder); **2b.3** ride cu **H12.4** (Wyoming rescrie STT/TTS) / **H12.10** (mute) | BUG-2 deferred + `tests/frontend/README.md` |
+| **TASK-1** | **Howard: backend LLM dedicat + prima rulare reală** — `agents/core/llm/ollama_howard.py` (backend dedicat) + ingestion run efectiv + execuție pipeline fine-tuning. H5.1 marchează infra „✅ 100% gata" dar *modelul* și fișierul de backend rămân TODO. | ⚙️ Task · P2 | 8 | **H5.1** (infra ✅, necesită export date Andrei), **H11.3** (SFT/GRPO, GPU) | `gemini_architecture_prompt.md` (TODO-uri) |
+| **CLN-1** | **Șterge `tests/test_spotify.py`** — 9 skip-uri permanente care așteaptă `agents/core/skills/spotify.py` (cale ce nu va exista; pattern opencode). Spotify livrează prin `skills/spotify/main.py`, acoperit de `test_spotify_skill.py`. Elimină și zgomotul „9 skipped". | 🧹 Cleanup · P3 | 1 | Niciuna | `tests/test_spotify.py:19`, `BACKLOG.md` (nota „Run") |
+| **NTH-1** | **`/cognition/stream` (scoring live)** — `/api/cognition` întoarce deja `last_cognition` real; mock-ul static `COGNITION_SCORING` din `data.js` rămâne ca fallback ne-configurat. Varianta streaming e netrackuită. *(parțial superseded — low)* | 💡 Nice-to-have · P3 | 3 | H9.2 | `design_handoff_jarvis_hub/README.md`, `data.js` |
 
 ## ✅ ORIZONT 5 — Next Wave (P2–P3) — 17/17 COMPLET
 
