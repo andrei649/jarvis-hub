@@ -461,6 +461,9 @@ async def api_agents():
 # ── Dashboard (HUD-compatible) ───────────────────────────────────
 
 _dashboard_cache = {"weather": "", "news": [], "cached_at": 0}
+# Serialize cache refreshes so concurrent /dashboard requests don't race on the
+# weather/calendar update (double-fetch or partial write under load). BUG-1.
+_dashboard_lock = asyncio.Lock()
 
 
 @app.get("/dashboard")
@@ -469,12 +472,16 @@ async def dashboard():
         return JSONResponse({"error": "not initialized"}, status_code=503)
     now = time.time()
     if now - _dashboard_cache.get("cached_at", 0) > 120:
-        try:
-            weather_plugin = orch.plugins.get("weather")
-            w = await weather_plugin.get_weather("") if weather_plugin else ""
-            _dashboard_cache["weather"] = w.strip()
-        except Exception:
-            _dashboard_cache["weather"] = _dashboard_cache.get("weather", "")
+        async with _dashboard_lock:
+            # Re-check inside the lock: a concurrent request may have just refreshed.
+            if now - _dashboard_cache.get("cached_at", 0) > 120:
+                try:
+                    weather_plugin = orch.plugins.get("weather")
+                    w = await weather_plugin.get_weather("") if weather_plugin else ""
+                    _dashboard_cache["weather"] = w.strip()
+                except Exception:
+                    _dashboard_cache["weather"] = _dashboard_cache.get("weather", "")
+                _dashboard_cache["cached_at"] = now
 
     raw = _dashboard_cache["weather"]
     w_temp = "—"; w_desc = "Indisponibil"; w_wind = "—"; w_humidity = "—"
@@ -506,16 +513,21 @@ async def dashboard():
 
     calendar_data = _dashboard_cache.get("calendar", [])
     if now - _dashboard_cache.get("calendar_cached_at", 0) > 120 and orch:
-        try:
-            cal_plugin = orch.plugins.get("google-calendar")
-            if cal_plugin and cal_plugin.access_token:
-                events = await cal_plugin.get_today_events()
-                if events and not (len(events) == 1 and "error" in events[0]):
-                    calendar_data = events
-                    _dashboard_cache["calendar"] = events
-                    _dashboard_cache["calendar_cached_at"] = now
-        except Exception:
-            pass
+        async with _dashboard_lock:
+            # Re-check inside the lock to avoid a redundant concurrent fetch.
+            if now - _dashboard_cache.get("calendar_cached_at", 0) > 120:
+                try:
+                    cal_plugin = orch.plugins.get("google-calendar")
+                    if cal_plugin and cal_plugin.access_token:
+                        events = await cal_plugin.get_today_events()
+                        if events and not (len(events) == 1 and "error" in events[0]):
+                            calendar_data = events
+                            _dashboard_cache["calendar"] = events
+                            _dashboard_cache["calendar_cached_at"] = now
+                except Exception:
+                    pass
+            else:
+                calendar_data = _dashboard_cache.get("calendar", [])
 
     notifications = []
 

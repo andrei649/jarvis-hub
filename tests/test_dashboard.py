@@ -103,6 +103,38 @@ def test_dashboard_calendar_is_list(monkeypatch):
     assert isinstance(cal, list)
 
 
+def test_dashboard_concurrent_refresh_fetches_weather_once(monkeypatch):
+    """BUG-1: concurrent /dashboard refreshes must not double-fetch the weather.
+
+    With a stale cache, several requests racing through the refresh block should
+    trigger exactly one upstream weather fetch thanks to the lock + re-check.
+    """
+    import asyncio
+
+    calls = {"n": 0}
+
+    async def _get_weather(_q):
+        calls["n"] += 1
+        await asyncio.sleep(0.01)  # widen the race window
+        return "Sunny, +20°C"
+
+    weather_plugin = MagicMock()
+    weather_plugin.get_weather = _get_weather
+
+    mock = _simple_orch()
+    mock.plugins.get.side_effect = lambda name: weather_plugin if name == "weather" else None
+    monkeypatch.setattr(web, "orch", mock)
+    # Stale cache so the refresh branch is entered.
+    monkeypatch.setattr(web, "_dashboard_cache", {"weather": "", "news": [], "cached_at": 0})
+    monkeypatch.setattr(web, "_dashboard_lock", asyncio.Lock())
+
+    async def _run():
+        await asyncio.gather(*(web.dashboard() for _ in range(8)))
+
+    asyncio.run(_run())
+    assert calls["n"] == 1
+
+
 # ---------------------------------------------------------------------------
 # GET /tasks
 # ---------------------------------------------------------------------------
