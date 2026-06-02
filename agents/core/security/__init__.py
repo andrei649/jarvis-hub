@@ -1,4 +1,4 @@
-from .scanner import PIIScanner, SecretScanner
+from .scanner import PIIScanner, SecretScanner, is_valid_cnp, is_valid_iban
 from .ssrf import check_ssrf, is_private_ip
 from .audit import AuditLogger
 from .guardrails import GuardrailsEngine, SecurityBlockError
@@ -18,4 +18,6 @@ __all__ = [
     "ThreatLevel",
     "check_ssrf",
     "is_private_ip",
+    "is_valid_cnp",
+    "is_valid_iban",
 ]

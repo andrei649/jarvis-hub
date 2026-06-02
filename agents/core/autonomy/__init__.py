@@ -17,6 +17,7 @@ from .remediation import RemediationRunner, ServiceCommand, ExecResult
 from .reflection import DailyReflector
 from .watchers import EventWatcher, EmailProbe, CalendarProbe, FinanceProbe, HealthProbe
 from .error_logger import persist_problem, sync_problems_to_backlog
+from .log_scanner import LogBugScanner, ScanResult
 from .observer import (
     ProactiveObserver, Signal, Severity, Remediation, Finding,
     ResourceProbe, ServiceProbe, ServiceSpec, default_probes,
@@ -34,6 +35,7 @@ __all__ = [
     "DailyReflector",
     "EventWatcher", "EmailProbe", "CalendarProbe", "FinanceProbe", "HealthProbe",
     "persist_problem", "sync_problems_to_backlog",
+    "LogBugScanner", "ScanResult",
     "ProactiveObserver", "Signal", "Severity", "Remediation", "Finding",
     "ResourceProbe", "ServiceProbe", "ServiceSpec", "default_probes",
 ]
