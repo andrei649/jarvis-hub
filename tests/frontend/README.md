@@ -69,15 +69,31 @@ follow-up.
 
 ## Coverage status (BUG-2)
 
+141 tests across 17 spec files. Coverage by source file:
+
 | File | Tests |
 |------|-------|
-| `components.js` (helpers: `esc`, `pad2`, `fmtTime`, `fmtDate`, `nowTs`) | ✅ `helpers.test.js` |
+| `components.js` helpers (`esc`, `pad2`, `fmtTime`, `fmtDate`, `nowTs`) | ✅ `helpers.test.js` |
 | `components.js` (`Bracket`, `StatusDot`) | ✅ `components.test.js` |
+| `components.js` (`Badge`, `SysRow`, `SysMeter`, `InputBar`, `WeatherCard`, `CalendarCard`, `Message`, `ThinkingBubble`, `TopBar`) | ✅ `components-more.test.js` |
+| `components.js` (`AgentList`, `AgentsGrid`, `HeartbeatFeed`) + `admin.renderRow` | ✅ `components-extra.test.js` |
 | `i18n.js` (`_t`, `detectLocale`, `setLocale`) | ✅ `i18n.test.js` |
-| `admin.js` (form rows: `ToggleRow`, `InputRow`, `SelectRow`, `SliderRow`, `TagInputRow`, `ButtonRow`, `InfoRow`, `Group`) | ✅ `admin-rows.test.js` |
+| `data.js` (constants + `loadJarvisData` resilience) | ✅ `data.test.js` |
+| `admin.js` form rows (`ToggleRow`, `InputRow`, `SelectRow`, `SliderRow`, `TagInputRow`, `ButtonRow`, `InfoRow`, `Group`) | ✅ `admin-rows.test.js` |
 | `systems.js` (`SystemsTabBar`, `FusedRecallBox`) | ✅ `systems.test.js` |
-| `network.js`, `cognition.js`, `data.js`, `workflows.js`, `observability.js`, rest of `systems.js`/`admin.js`, `app.js` | ⬜ todo |
+| `systems.js` (`MemoryTab`, `PluginsTab`, `LearningTab` guard) | ✅ `systems-tabs.test.js` |
+| `systems.js` (`ResilienceTab` — regression guard) | ✅ `resilience.test.js` |
+| `cognition.js` (all components) | ✅ `cognition.test.js` |
+| `observability.js` (`_fmtMs`/`_agentList`, `TraceRow`, `TimingBar`, `TraceDetail`) | ✅ `observability.test.js` |
+| `workflows.js` (`WorkflowCanvas`, `StepForm`, `ResultPanel`) | ✅ `workflows.test.js` |
+| `enhancements.js` (`SituationTicker`, `CommandPalette`, `clamp`/`round`) | ✅ `enhancements.test.js` |
+| `dossier-modal.js` (all components) | ✅ `dossier.test.js` |
+| `network.js` (`textAnchorFor`, `tooltipStyle`, `NetworkBrain`) | ✅ `network.test.js` |
+| `app.js` (full mount smoke + apiDown fallback) | ✅ `app.test.js` |
+| Self-fetching panels (`HeartbeatsTab`, `SecurityBenchTab`, `OAuthTab`, `OracleTab`, full `AdminPanel`/`WorkflowsPanel`/`ObservabilityPanel`) | ◐ integration-covered by `app.test.js` |
+| Browser E2E (Playwright) | ⬜ follow-up (needs a running server + real browser) |
 
 > **First catch:** these tests immediately surfaced a shipped syntax error in
 > `systems.js` (`ResilienceTab` was missing its closing brace), which broke the
-> *entire* Systems panel at load — present on `main`. Fixed in the same PR.
+> *entire* Systems panel at load — present on `main`. Fixed in the same PR;
+> `resilience.test.js` now guards against regressions.
