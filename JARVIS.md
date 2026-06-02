@@ -110,6 +110,8 @@ memory_logs/                 # Sessions, checkpoints, learning records
 | `/sessions` | GET | Session list |
 | `/memory` | GET | Memory state |
 | `/memory/clear` | POST | Clear current session |
+| `/api/memory/search` | GET | Fused recall (embedded query: vector ⊕ graph) |
+| `/api/memory/remember` | POST | Store a fact in long-term memory (embedded) |
 | `/learning` | GET | Learning records |
 | `/security` | GET | Security audit status |
 | `/bench` | GET | Benchmark stats |
@@ -128,6 +130,13 @@ memory_logs/                 # Sessions, checkpoints, learning records
 - Auto-detection checks LM Studio first, then Ollama
 - Model has extended thinking (produces `reasoning_content` + `content`)
 - Backend handles both fields, defaults to 1024 token limit
+
+**Recall embeddings (long-term memory):**
+- `MemoryManager.embed/remember/recall` turn text into vectors for fused recall (vector ⊕ graph, RRF — H5.14)
+- Engine via `EMBED_BACKEND`: `lmstudio` (default, OpenAI-compatible `/v1/embeddings` on :1234) or `ollama` (e.g. `mxbai-embed-large`)
+- Degrades to a deterministic hash embedding if the backend is unreachable, so recall never hard-fails
+- `/api/memory/search` embeds the query; `POST /api/memory/remember` stores a fact; `MEMORY_EMBED_TURNS=true` auto-embeds every turn
+- **RAG injection:** setting `memory.recall_enabled` (default off) injects recalled memories into the prompt for all agents (`memory.recall_top_k`, default 5); pair with `MEMORY_EMBED_TURNS` or `/api/memory/remember` to have content to recall
 
 **To add Claude API as cloud fallback:**
 - Get API key from https://console.anthropic.com

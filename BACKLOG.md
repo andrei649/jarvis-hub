@@ -44,7 +44,8 @@ python -m pytest tests/ -v          # 784 passed, 9 skipped
 | **H1–H4 + Sprint 0 + Cross-cutting + Sec + Bugs** | 67 | **67** | 248 | **248** | **100%** |
 | **H5 Next Wave** (P2–P3) | 17 | **17** | 128 | **128** | **100%** |
 | **H6 Jarvis Autonom** (P1) | 7 | **7** | 60 | **60** | **100%** |
-| **Total general** | **91** | **91** | **436** | **436** | **100%** |
+| **H7 Perf Cale Fierbinte** (P1–P2) | 5 | **5** | 16 | **16** | **100%** |
+| **Total general** | **96** | **96** | **452** | **452** | **100%** |
 
 **Test count:** 789 passed, 9 skipped (QA 2026-06-01: +H5.8 Agent Marketplace 5 teste, +H5.15 Daily Reflection 10 teste, +H5.14 Task4 /api/memory/search + HUD Fused Recall, +H5.6 Multi-Agent Workflows 16 teste)
 
@@ -105,6 +106,8 @@ python -m pytest tests/ -v          # 784 passed, 9 skipped
 > **Livrat sesiunea Claude 2026-06-01:** H5.15 ✅ Daily Reflection + H5.6 ✅ Multi-Agent Workflows + H5.14 Task4 ✅ `/api/memory/search` + HUD Fused Recall. Merged în `main` (PR #13, commit `6eaac77`).
 >
 > **Livrat Antigravity 2026-06-01:** H5.1 ✅ Howard Stark Digital Twin + H5.2 ✅ Mobile HUD / PWA + H5.3 ✅ i18n RO/EN + H5.4 ✅ Premium UI Overhaul + H5.7 ✅ New Plugins + H5.8 ✅ Agent Marketplace.
+>
+> **Livrat sesiunea Claude 2026-06-01 (LM Studio recall):** brațul vectorial al fused recall era mort — `/api/memory/search` trimitea `embedding=None` și nimic nu popula `MemoryManager.vectors`. Acum embeddings reale end-to-end: `Embedder` capătă backend **LM Studio** (`/v1/embeddings`, default) lângă Ollama, cu fallback hash determinist (recall nu pică niciodată). `MemoryManager.embed/remember/recall`, query embedat în `/api/memory/search`, endpoint nou `POST /api/memory/remember`, opțiune `MEMORY_EMBED_TURNS`. Config în `.env.example` (`EMBED_BACKEND/MODEL/BASE_URL`). +9 teste offline (809 passed, 9 skipped).
 
 | # | Item | S | Dep | Target version |
 |---|------|---|-----|---------------|
@@ -125,6 +128,27 @@ python -m pytest tests/ -v          # 784 passed, 9 skipped
 | H5.15 ✅ | **Daily Reflection & Graph Consolidation** — `DailyReflector` (`core/autonomy/reflection.py`): gather context → LLM reflection → JSON entities/relations/lessons → promote to Neo4j graph; idempotent per zi; hookuit în `_autonomy_loop` (fereastră 22:00–07:00, gated `system.reflection_enabled`). Endpoint `/api/reflection/status` + `/api/reflection/run`. 10 teste offline. | 8 | H6.6, H3.2 | 0.8 ✅ |
 | H5.16 ✅ | **Sentence-level TTS & Audio Barge-in** — integration edge-tts, play/stop barge-in sync, auto-speak, unit tested | 8 | H1.1, H5.5 | 0.8 ✅ |
 | H5.17 ✅ | **Batch & Cache Embeddings Pipeline** — `EmbeddingCache` (content-addressed, sharded, crash-safe) + `Embedder.embed_batch` (dedup + paralel) + retry/backoff (degradare la hash) + cache stats în pipeline. `core/ingestion/embedder.py` | 5 | H5.5 | 0.8 ✅ |
+
+---
+
+## ORIZONT 7 — Performanță Cale Fierbinte (P1–P2)
+
+> Sursă: profiling 2026-06-02 al căii per-turn (NU generarea LLM). Bottleneck
+> non-LLM = scrieri sincrone SQLite pe event-loop-ul async (checkpoint + audit +
+> worker autonomie). Detalii + măsurători: `docs/research/2026-06-02-perf-hotpath.md`.
+> **Câștig măsurat:** commit SQLite `3317 µs → 92 µs` (~36×) cu WAL+`synchronous=NORMAL`.
+
+| # | Item | S | P | Dep | AC |
+|---|------|---|---|-----|----|
+| H7.1 ✅ | **SQLite WAL + `synchronous=NORMAL`** pe DB-urile scrise per-turn — `checkpoint.py`, `security/audit.py`, `autonomy/queue.py`. Durabil (WAL crash-safe; NORMAL sigur sub WAL). | 1 | P1 | — | ✅ commit-uri ~36× mai ieftine; suite persistență/autonomy/securitate verzi |
+| H7.2 ✅ | **Offload scrieri blocante de pe event-loop** — `checkpoints.save` / `audit.log` / `_record_interactions` / `_log_session` prin `asyncio.to_thread` în toate cele 3 call-site-uri per-turn; `checkpoint.py` cu `check_same_thread=False` + `threading.Lock`. | 3 | P1 | H7.1 | ✅ handlerele per-turn nu mai fac I/O sqlite/fișier sincron pe loop; thread-safe sub `to_thread` |
+| H7.3 ✅ | **Debounce / frecvență checkpoint** — `_maybe_checkpoint()` salvează doar la `memory.checkpoint_every` (default 5) turns; `_flush_checkpoint()` forțat pe `new_session()` + `aclose()` (shutdown). Reduce I/O și CPU (`json.dumps` al state-ului). | 2 | P2 | H7.2 | ✅ checkpoint scris ≤1×/N turns; restart curat nu pierde sesiunea activă |
+| H7.4 ✅ | **Query-embedding cache + fast-fail (recall)** — `Embedder.from_env(cache_dir=…)` default `memory_logs/embedding_cache/recall` + LRU in-process (`_PROC_CACHE`, 256) cheie `(backend,model,text)`; `max_retries=1` fast-fail. | 2 | P2 | — (recall) | ✅ query repetat = cache hit (fără network/disk); embeddings down → recall degradează instant |
+| H7.5 ✅ | **Strategie fast/heavy model** — `is_heavy_request()` (token threshold 2000 + keywords RO/EN) escaladează în `hybrid_router.select_backend()` POLICY_AUTO de la slotul rapid (VRAM) la slotul deep (DDR5); flag `JARVIS_AUTO_DEEP`. | 8 | P2 | — | ✅ task ușor → model rapid `local`; task greu → `local-deep`/DEFAULT_DEEP_MODEL; nu afectează cloud/claude/local-only |
+
+> **ORIZONT 7 COMPLET ✅** (2026-06-02) — livrat în paralel (3 streams Claude Code în worktree izolat: A=H7.2+H7.3, B=H7.4, C=H7.5), integrat secvențial cu rezolvare de conflicte. **+49 teste offline noi** (test_perf_hotpath 9, test_recall_cache 6, test_model_tiering 19, + extinderi). Setări noi: `memory.checkpoint_every` (runtime), env `EMBED_CACHE_DIR`, `JARVIS_AUTO_DEEP`.
+>
+> **Caveat-uri:** checkpoint poate întârzia ≤N turns (flush pe boundary sesiune); `get_model(agent_id)` NU escaladează (nu are prompt) — escaladarea trăiește în `select_backend()`, calea fierbinte. H7.5 validabil complet doar live pe System76 cu cele 2 sloturi LM Studio încărcate.
 
 ---
 
