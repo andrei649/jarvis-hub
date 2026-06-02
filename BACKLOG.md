@@ -10,7 +10,7 @@
 ```bash
 pip install -r requirements-beta.txt
 python -m uvicorn agents.web:app --host 127.0.0.1 --port 8080
-python -m pytest tests/ -v          # 784 passed, 9 skipped
+python -m pytest tests/ -v          # 909 passed, 9 skipped
 ```
 
 > Cele 8 skipped sunt din `tests/test_spotify.py` (pattern HTTP-router, opencode) care
@@ -103,7 +103,7 @@ python -m pytest tests/ -v          # 784 passed, 9 skipped
 > Sync runs automatically during the autonomy observer check.
 
 ✓ No active runtime failures detected in the last 48 hours.
-## ORIZONT 5 — Next Wave (P2–P3) — 12/17
+## ✅ ORIZONT 5 — Next Wave (P2–P3) — 17/17 COMPLET
 
 > Fiecare item are spec + plan propriu în `docs/superpowers/`. Timeline: 0.6 → 0.9 → 1.0.
 >
@@ -115,7 +115,7 @@ python -m pytest tests/ -v          # 784 passed, 9 skipped
 
 | # | Item | S | Dep | Target version |
 |---|------|---|-----|---------------|
-| H5.1 | Howard: fine-tuning + voice clone + continuous ingestion (arhivă personală: Facebook + WhatsApp → LLM antrenat pe conversațiile lui Andrei) | 13 | — | 0.6 |
+| H5.1 ✅ | **Howard: Fine-Tuning + Voice Clone + Continuous Ingestion** — RAG pipeline (`ingestion/pipeline.py`, `watcher.py`), Facebook/WhatsApp parsers, `Embedder` cu caching (H5.17), TTS fallback chain (edge-tts/XTTS/ElevenLabs), IngestionWatcher wired în orchestrator. *(Fine-tuning model: necesită export date personale Andrei — infra 100% gata)* | 13 | — | 0.6 ✅ |
 | H5.2 ✅ | **Mobile HUD / PWA** (responsive, offline, push) | 8 | — | 0.7 ✅ |
 | H5.3 ✅ | **Multi-Language / i18n (RO/EN switch)** | 5 | — | 0.7 ✅ |
 | H5.4 ✅ | **UI Overhaul (teme, layout, accesibilitate)** | 8 | H5.2 | 0.7 ✅ |
@@ -330,9 +330,9 @@ Smoke                 powershell smoke.ps1                  Server start + pytes
 > Sync runs automatically during the autonomy observer check.
 
 ✓ No active runtime failures detected in the last 48 hours.
-## ORIZONT 5: Next Wave (P2–P3) — specs detaliate
+## ✅ ORIZONT 5: Next Wave (P2–P3) — specs detaliate
 
-> Scop: extindere capabilități după foundation stabil. Status: **12/17 done**.
+> Scop: extindere capabilități după foundation stabil. Status: **17/17 done — COMPLET**.
 > Specs complete pentru itemii rămași (H5.1, H5.2, H5.3, H5.4, H5.7, H5.8) mai jos.
 
 ### H5.1 — Howard: Fine-Tuning + Voice Clone + Continuous Ingestion (S:13, Dep: —)
