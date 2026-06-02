@@ -8,13 +8,17 @@ Decides per-request which backend and model to use based on:
 4. Howard special case: uses Ollama with fine-tuned model
 5. Heavy agents (Vision, Steve) → Claude API via Anthropic
 6. Deep-think agents → second LM Studio model slot (DDR5, async-only)
+7. Complexity-based escalation → auto agents with heavy/complex prompts
+   routed to deep slot (controlled by JARVIS_AUTO_DEEP env flag)
 
 Tier layout (LM Studio multi-model):
   Slot 1 (VRAM, fast):  DEFAULT_LOCAL_MODEL  — interactive agents, voice
   Slot 2 (DDR5, deep):  DEFAULT_DEEP_MODEL   — frigga, hephaestus, hercules
+                                                + auto agents w/ heavy prompts
   Ollama (VRAM/RAM):    HOWARD_OLLAMA_MODEL  — Howard fine-tuned
 
 Set JARVIS_DEEP_MODEL env var to override the deep-slot model name.
+Set JARVIS_AUTO_DEEP=0 to disable complexity-based escalation.
 """
 
 import logging
@@ -31,6 +35,42 @@ logger = logging.getLogger("jarvis.llm.hybrid")
 LOCAL_MAX_TOKENS = 8_000
 FLASH_MAX_TOKENS = 128_000
 
+# H7.5 — Complexity-based escalation thresholds and keywords.
+# Prompts exceeding HEAVY_TOKEN_THRESHOLD tokens OR containing any keyword
+# from HEAVY_KEYWORDS are considered "heavy" and routed to the deep local slot
+# for auto-policy agents (when JARVIS_AUTO_DEEP is enabled).
+HEAVY_TOKEN_THRESHOLD = 2_000
+
+# Bilingual RO/EN keyword set — matched case-insensitively as substrings.
+HEAVY_KEYWORDS: frozenset[str] = frozenset({
+    # Romanian
+    "analiz",       # analiză / analizare / analizez
+    "raionament",   # raționament (diacritic-free variant)
+    "raționament",  # raționament (with diacritic)
+    "strategi",     # strategie / strategică / strategic
+    "corelare",     # corelare
+    "planific",     # planificare / planific
+    "sintez",       # sinteză / sintetizare
+    "demonstr",     # demonstrare / demonstrez
+    "deduc",        # deducție / deduc
+    # English
+    "analys",       # analysis / analyse / analyzes
+    "analyz",       # analyze / analyzed
+    "rationament",  # alias without diacritic
+    "reasoning",
+    "strategy",
+    "strateg",      # strategic / strategize
+    "correlat",     # correlate / correlation
+    "planning",
+    "synthes",      # synthesis / synthesize
+    "demonstrat",   # demonstrate / demonstration
+    "deduct",       # deduction / deduct
+})
+
+# Feature flag: set JARVIS_AUTO_DEEP=0 or JARVIS_AUTO_DEEP=false to disable.
+# Default is ON (complexity-based escalation active).
+AUTO_DEEP_ENABLED: bool = os.environ.get("JARVIS_AUTO_DEEP", "1") not in ("0", "false", "False")
+
 # Agent policy constants
 POLICY_LOCAL = "local"
 POLICY_CLOUD = "cloud"
@@ -45,6 +85,23 @@ CLAUDE_AGENTS = {"vision", "steve"}
 # Agents routed to the deep-think model slot (LM Studio slot 2, DDR5).
 # These accept high latency in exchange for deeper reasoning.
 DEEP_THINK_AGENTS = {"frigga", "hephaestus", "hercules"}
+
+
+def is_heavy_request(prompt: str, *, token_threshold: int = HEAVY_TOKEN_THRESHOLD) -> bool:
+    """Return True if a prompt is considered heavy/complex.
+
+    A prompt is heavy when:
+    - Its estimated token count exceeds *token_threshold* (default HEAVY_TOKEN_THRESHOLD), OR
+    - It contains at least one keyword from HEAVY_KEYWORDS (case-insensitive substring match).
+
+    This drives complexity-based escalation in select_backend() for POLICY_AUTO agents.
+    Note: get_model() is NOT escalated because it has no prompt argument.
+    """
+    if estimate_tokens(prompt) > token_threshold:
+        return True
+    lower = prompt.lower()
+    return any(kw in lower for kw in HEAVY_KEYWORDS)
+
 
 # Howard's dedicated Ollama model
 HOWARD_OLLAMA_MODEL = "howard-lora-qwen-14b"
@@ -161,8 +218,17 @@ class HybridRouter(LLMRouter):
                 return self._claude_backend, DEFAULT_CLAUDE_MODEL, "claude"
             return self._claude_backend, DEFAULT_CLAUDE_MODEL, "claude"
 
-        # Default: local first, cloud if context too big
+        # Default: local first, cloud if context too big.
+        # H7.5 — Complexity escalation: heavy prompts for auto-policy agents
+        # are routed to the deep local slot (DDR5) when AUTO_DEEP_ENABLED.
+        # This only applies here (token_count <= LOCAL_MAX_TOKENS path) because
+        # oversized prompts already spill to cloud via the branches below.
         if token_count <= LOCAL_MAX_TOKENS and self._local_available:
+            if AUTO_DEEP_ENABLED and is_heavy_request(prompt):
+                logger.debug(
+                    "Complexity escalation: routing %s to deep slot (local-deep)", agent_id
+                )
+                return self._backend, DEFAULT_DEEP_MODEL, "local-deep"
             return self._backend, self._local_model, "local"
         if token_count <= FLASH_MAX_TOKENS and self._cloud_available:
             return self._gemini_backend, "gemini-2.5-flash", "cloud-flash"
