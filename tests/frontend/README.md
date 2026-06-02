@@ -1,6 +1,9 @@
 # HUD Frontend Tests
 
+![HUD coverage](./coverage-badge.svg)
+
 Unit tests for the Jarvis HUD (the React UI in `agents/web/static/`).
+**156 tests / 20 spec files · ~66% line coverage** (target: 60%).
 
 ## Why this setup
 
@@ -23,12 +26,13 @@ can reach them.
 
 ```bash
 npm install          # first time
-npm test             # run once
+npm test             # run once (fast, no instrumentation)
 npm run test:watch   # watch mode
-npm run test:coverage
+npm run test:coverage   # instrumented run → coverage report + badge + 60% gate
 ```
 
-CI runs `npm ci && npm test` in the `frontend` job (`.github/workflows/ci.yml`).
+CI runs `npm ci && npm run test:coverage` in the `frontend` job
+(`.github/workflows/ci.yml`), which also fails if line coverage drops below 60%.
 
 ## Writing a test
 
@@ -56,14 +60,31 @@ it('renders a status dot', () => {
   helpers/components).
 - `lang` — pre-seed `localStorage['hud.lang']`.
 
-Returns `{ window, document, React, ReactDOM, hud, render, cleanup }`.
+`loadHud` also accepts `fetch` (a stub installed before the app files run —
+needed for `app.js`/panels that fetch on mount).
+
+Returns `{ window, document, React, ReactDOM, hud, render, cleanup, ... }` plus
+interaction helpers: `fire`, `click`, `type`, `selectOption`, `toggle`,
+`keyDown`, and an async `flush()`.
 `render(element)` mounts via `createRoot` + `flushSync` (synchronous DOM) and
 returns `{ container, root, html }`.
 
-## Known limitation
+## Coverage
 
-Scripts run inside JSDOM's own realm, so v8 line-coverage reflects the
-harness/specs, not the in-page static files. Fidelity (running the shipped
+`npm run test:coverage` (driver: `coverage.mjs`) measures real coverage of the
+shipped static files. Because they run inside JSDOM — out of reach of vitest's
+v8/istanbul providers — the harness instruments each file with `istanbul-lib-
+instrument` before injecting it (`HUD_COVERAGE=1`), dumps each window's
+`__coverage__` into `.nyc_output`, then `nyc` aggregates the report, writes
+`coverage-badge.svg`, and gates the run at 60% lines.
+
+> Earlier note (now resolved): the dangerous-realm approach used to preclude
+> coverage instrumentation. The istanbul pre-instrumentation above closes that
+> gap while keeping the high-fidelity loading.
+
+## Fidelity note
+
+Fidelity (running the shipped
 artifacts) is the priority here; instrumented coverage of the static files is a
 follow-up.
 
@@ -89,9 +110,11 @@ follow-up.
 | `enhancements.js` (`SituationTicker`, `CommandPalette`, `clamp`/`round`) | ✅ `enhancements.test.js` |
 | `dossier-modal.js` (all components) | ✅ `dossier.test.js` |
 | `network.js` (`textAnchorFor`, `tooltipStyle`, `NetworkBrain`) | ✅ `network.test.js` |
-| `app.js` (full mount smoke + apiDown fallback) | ✅ `app.test.js` |
-| Self-fetching panels (`HeartbeatsTab`, `SecurityBenchTab`, `OAuthTab`, `OracleTab`, full `AdminPanel`/`WorkflowsPanel`/`ObservabilityPanel`) | ◐ integration-covered by `app.test.js` |
-| Browser E2E (Playwright) | ⬜ follow-up (needs a running server + real browser) |
+| `app.js` (mount smoke + apiDown fallback) | ✅ `app.test.js` |
+| `app.js` chat flow (send → SSE stream → render) + polling intervals | ✅ `app-flows.test.js` |
+| `admin.js` (full `AdminApp` mount + nav sweep, save flow, chart/card components) | ✅ `admin-app.test.js` |
+| `systems.js` `SystemsPanel` (mount + full tab sweep), `workflows.js` `WorkflowsPanel`, `observability.js` `ObservabilityPanel` | ✅ `panels.test.js` |
+| Browser E2E (Playwright) | ⬜ deferred follow-up (needs a running server + real browser) |
 
 > **First catch:** these tests immediately surfaced a shipped syntax error in
 > `systems.js` (`ResilienceTab` was missing its closing brace), which broke the

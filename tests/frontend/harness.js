@@ -13,18 +13,36 @@
 
 import fs from 'node:fs';
 import path from 'node:path';
+import crypto from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { JSDOM } from 'jsdom';
+import { createInstrumenter } from 'istanbul-lib-instrument';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const STATIC_DIR = path.resolve(HERE, '../../agents/web/static');
+const ROOT = path.resolve(HERE, '../..');
 
 // Vendored React always loads first; everything else mirrors index.html order.
 const VENDOR = ['react.production.min.js', 'react-dom.production.min.js'];
 
-function readStatic(name) {
+// Coverage: when HUD_COVERAGE=1, instrument the app's own static files with
+// istanbul before injecting them, then dump the per-window __coverage__ at
+// cleanup. `nyc report` aggregates the .nyc_output dumps (see coverage.mjs).
+// We never instrument the vendored React UMD.
+const COVERAGE = process.env.HUD_COVERAGE === '1';
+const instrumenter = COVERAGE
+  ? createInstrumenter({ esModules: false, compact: true, coverageVariable: '__coverage__' })
+  : null;
+const NYC_OUTPUT = path.join(ROOT, '.nyc_output');
+
+function readStatic(name, { instrument = false } = {}) {
   const file = name.endsWith('.js') ? name : `${name}.js`;
-  return fs.readFileSync(path.join(STATIC_DIR, file), 'utf8');
+  const abs = path.join(STATIC_DIR, file);
+  const code = fs.readFileSync(abs, 'utf8');
+  if (instrument && instrumenter) {
+    return instrumenter.instrumentSync(code, abs);
+  }
+  return code;
 }
 
 function injectScript(doc, code) {
@@ -60,8 +78,11 @@ export function loadHud(opts = {}) {
   // Install before any app file runs — app.js mounts (and fetches) at load.
   if (fetch) window.fetch = fetch;
 
-  for (const name of [...VENDOR, ...files]) {
+  for (const name of VENDOR) {
     injectScript(window.document, readStatic(name));
+  }
+  for (const name of files) {
+    injectScript(window.document, readStatic(name, { instrument: true }));
   }
 
   if (expose.length) {
@@ -144,6 +165,15 @@ export function loadHud(opts = {}) {
     toggle,
     keyDown,
     flush,
-    cleanup: () => window.close(),
+    cleanup: () => {
+      if (COVERAGE && window.__coverage__) {
+        fs.mkdirSync(NYC_OUTPUT, { recursive: true });
+        fs.writeFileSync(
+          path.join(NYC_OUTPUT, `${crypto.randomUUID()}.json`),
+          JSON.stringify(window.__coverage__),
+        );
+      }
+      window.close();
+    },
   };
 }

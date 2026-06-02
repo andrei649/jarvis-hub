@@ -5,11 +5,12 @@
   "scripts": {
     "test": "vitest run tests/frontend",
     "test:watch": "vitest tests/frontend",
-    "test:coverage": "vitest run tests/frontend --coverage"
+    "test:coverage": "node tests/frontend/coverage.mjs"
   },
   "devDependencies": {
-    "@vitest/coverage-v8": "^2.1.8",
+    "istanbul-lib-instrument": "^6.0.3",
     "jsdom": "^25.0.1",
+    "nyc": "^18.0.0",
     "vitest": "^2.1.8"
   }
 }

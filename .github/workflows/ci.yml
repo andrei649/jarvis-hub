@@ -53,4 +53,6 @@ jobs:
           node-version: "22"
           cache: npm
       - run: npm ci
-      - run: npm test
+      # Runs the suite instrumented, reports coverage, and fails if line
+      # coverage regresses below the BUG-2 target (60%).
+      - run: npm run test:coverage

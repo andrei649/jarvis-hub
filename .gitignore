@@ -1,6 +1,7 @@
 .venv/
 node_modules/
-tests/frontend/.coverage/
+.nyc_output/
+coverage/
 __pycache__/
 *.pyc
 .env

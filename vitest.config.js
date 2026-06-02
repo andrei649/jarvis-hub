@@ -9,14 +9,10 @@ export default defineConfig({
     environment: 'node',
     include: ['tests/frontend/**/*.test.js'],
     globals: false,
-    coverage: {
-      provider: 'v8',
-      reportsDirectory: 'tests/frontend/.coverage',
-      reporter: ['text-summary', 'html'],
-      // Note: scripts executed inside JSDOM run in a separate realm, so v8
-      // coverage reflects the harness/specs rather than the in-page scripts.
-      // Fidelity (running the shipped artifacts) is the priority for now;
-      // instrumented coverage of the static files is a follow-up.
-    },
+    // Coverage is NOT handled by vitest here: the HUD scripts run inside JSDOM,
+    // out of reach of vitest's v8/istanbul providers. Instead the harness
+    // instruments the static files with istanbul (HUD_COVERAGE=1) and
+    // `npm run test:coverage` (tests/frontend/coverage.mjs) aggregates the
+    // dumps with nyc. See tests/frontend/README.md.
   },
 });
