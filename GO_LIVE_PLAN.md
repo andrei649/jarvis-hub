@@ -1,6 +1,7 @@
 # Jarvis Hub — Go-Live Plan
 
 > Generated: 2026-06-02 · Version target: v1.0.0 · Owner: Andrei
+> North star (vision & phase gates): [MOONSHOT.md](MOONSHOT.md)
 > Source of truth for backlog: [BACKLOG.md](BACKLOG.md)
 
 ---

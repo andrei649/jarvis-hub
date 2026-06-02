@@ -1,7 +1,7 @@
 # Jarvis Hub — Project Valuation & Subscription Pricing
 
 > Generated: 2026-06-02 · Stage: v0.9.1-beta (pre-1.0, pre-revenue) · Owner: Andrei
-> Companion to [GO_LIVE_PLAN.md](../GO_LIVE_PLAN.md) and [BACKLOG.md](../BACKLOG.md)
+> North star: [MOONSHOT.md](../MOONSHOT.md) · Companion to [GO_LIVE_PLAN.md](../GO_LIVE_PLAN.md) and [BACKLOG.md](../BACKLOG.md)
 >
 > **Disclaimer:** These are estimates for internal planning, not a formal appraisal or
 > investment advice. Numbers are scenario ranges based on the codebase as it stands today

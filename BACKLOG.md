@@ -3,6 +3,7 @@
 > Owner: Andrei · Planificat: 2026-05-30 · Echipă: agenți Claude + opencode
 > HUD: http://127.0.0.1:8080/ · Admin: /admin
 
+> **North Star (vision, principles, phase gates):** [MOONSHOT.md](MOONSHOT.md) — re-rank this backlog against it
 > **Go-Live Plan (features, roadmap, marketing brief):** [GO_LIVE_PLAN.md](GO_LIVE_PLAN.md)
 > **Delivery History (H1–H7 completed sprints):** [docs/HISTORY.md](docs/HISTORY.md)
 
