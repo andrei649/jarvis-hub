@@ -24,6 +24,8 @@ function App() {
   var _u = useState(false), apiDown = _u[0], setApiDown = _u[1];
   var _v = useState(false), showCognition = _v[0], setShowCognition = _v[1];
   var _w = useState(false), showSystems = _w[0], setShowSystems = _w[1];
+  var _wf = useState(false), showWorkflows = _wf[0], setShowWorkflows = _wf[1];
+  var _ob = useState(false), showObservability = _ob[0], setShowObservability = _ob[1];
   var _x = useState(null), dossierAgent = _x[0], setDossierAgent = _x[1];
   var _y = useState(null), cognitionData = _y[0], setCognitionData = _y[1];
   var _tab = useState('chat'), activeMobileTab = _tab[0], setActiveMobileTab = _tab[1];
@@ -293,6 +295,8 @@ function App() {
       lmOnline: lmOnline,
       onToggleCognition: function () { setShowCognition(function (v) { return !v; }); },
       onToggleSystems: function () { setShowSystems(function (v) { return !v; }); },
+      onToggleWorkflows: function () { setShowWorkflows(function (v) { return !v; }); },
+      onToggleObservability: function () { setShowObservability(function (v) { return !v; }); },
     }),
 
     h(SituationTicker, {
@@ -378,6 +382,8 @@ function App() {
               .catch(function (err) { console.error('plugin toggle failed:', err); });
           },
         }),
+        showWorkflows && h(WorkflowsPanel, { agents: agents }),
+        showObservability && h(ObservabilityPanel, {}),
       ),
     ),
 

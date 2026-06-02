@@ -1732,15 +1732,66 @@ async def reflection_run():
         return _nocache_json({"ok": False, "error": str(e)})
 
 
+# ── H9.2 Trace Explorer endpoints ────────────────────────────────
+# Placed immediately before the workflows block; do NOT move the
+# workflows handlers below.
+
+@app.get("/api/traces")
+async def list_traces(limit: int = 50):
+    """Return recent per-request traces (most-recent first, summarized)."""
+    if not orch:
+        return _nocache_json({"traces": [], "error": "not initialized"}, status_code=503)
+    tracer = getattr(orch, "tracer", None)
+    if tracer is None:
+        return _nocache_json({"traces": [], "error": "tracer not available"})
+    limit = max(1, min(limit, 500))
+    return _nocache_json({"traces": tracer.list(limit)})
+
+
+@app.get("/api/traces/{trace_id}")
+async def get_trace(trace_id: str):
+    """Return the full trace dict for a specific trace id."""
+    if not orch:
+        return _nocache_json({"error": "not initialized"}, status_code=503)
+    tracer = getattr(orch, "tracer", None)
+    if tracer is None:
+        return _nocache_json({"error": "tracer not available"}, status_code=503)
+    item = tracer.get(trace_id)
+    if item is None:
+        return _nocache_json({"error": f"trace '{trace_id}' not found"}, status_code=404)
+    return _nocache_json(item)
+
+
+@app.post("/api/traces/clear")
+async def clear_traces():
+    """Flush all traces from the in-memory ring buffer."""
+    if not orch:
+        return _nocache_json({"error": "not initialized"}, status_code=503)
+    tracer = getattr(orch, "tracer", None)
+    if tracer is None:
+        return _nocache_json({"error": "tracer not available"}, status_code=503)
+    tracer.clear()
+    return _nocache_json({"ok": True})
+
+
+# ── END H9.2 Trace Explorer endpoints ─────────────────────────────
+
+
 @app.get("/api/workflows")
 async def list_workflows():
-    """List all registered workflow pipelines (H5.6)."""
-    if not orch or not hasattr(orch, "workflow_registry"):
-        return _nocache_json({"workflows": [], "total": 0})
-    return _nocache_json({
-        "workflows": orch.workflow_registry.list(),
-        "total": len(orch.workflow_registry.ids()),
-    })
+    """List all registered workflow pipelines (H5.6 + H9.1 user-defined)."""
+    builtin: list[dict] = []
+    if orch and hasattr(orch, "workflow_registry"):
+        builtin = orch.workflow_registry.list()
+
+    # Merge user-defined pipelines from the store.
+    user_dicts = _wf_store().list()
+    # Build merged list: built-ins first, user-defined after (user overrides builtin by id).
+    merged: dict[str, dict] = {w["id"]: w for w in builtin}
+    for u in user_dicts:
+        merged[u["id"]] = u
+    workflows = list(merged.values())
+    return _nocache_json({"workflows": workflows, "total": len(workflows)})
 
 
 class WorkflowRunBody(BaseModel):
@@ -1753,7 +1804,16 @@ async def run_workflow(body: WorkflowRunBody):
     """Execute a named workflow pipeline (H5.6)."""
     if not orch or not hasattr(orch, "workflow_engine") or not orch.workflow_engine:
         return _nocache_json({"ok": False, "error": "workflow engine not initialized"})
+    # Look in registry first, then in the user store.
     pipeline = orch.workflow_registry.get(body.pipeline_id)
+    if pipeline is None:
+        stored = _wf_store().get(body.pipeline_id)
+        if stored:
+            try:
+                from core.workflows.pipeline import Pipeline as _Pipeline
+                pipeline = _Pipeline.from_dict(stored)
+            except Exception as e:
+                return _nocache_json({"ok": False, "error": f"Invalid stored pipeline: {e}"})
     if not pipeline:
         raise HTTPException(status_code=404, detail=f"Pipeline '{body.pipeline_id}' not found")
     try:
@@ -1762,6 +1822,90 @@ async def run_workflow(body: WorkflowRunBody):
     except Exception as e:
         logger.warning(f"workflow/run error: {e}")
         return _nocache_json({"ok": False, "error": str(e)})
+
+
+# ── H9.1 Visual Workflow Builder endpoints ───────────────────────
+# Lazy singleton WorkflowStore — created on first request so tests can
+# inject a custom path before the module is fully imported.
+
+_wf_store_instance: Optional["_WorkflowStoreType"] = None  # type: ignore[name-defined]
+
+
+def _wf_store():
+    """Return (and lazily create) the module-level WorkflowStore instance."""
+    global _wf_store_instance
+    if _wf_store_instance is None:
+        from core.workflows.storage import WorkflowStore
+        _wf_store_instance = WorkflowStore()
+    return _wf_store_instance
+
+
+class WorkflowSaveBody(BaseModel):
+    """Body for creating or updating a user-defined workflow."""
+    id: str
+    name: str = ""
+    description: str = ""
+    steps: list[dict] = []
+
+
+@app.post("/api/workflows")
+async def create_workflow(body: WorkflowSaveBody):
+    """Create or update a user-defined workflow pipeline (H9.1)."""
+    if not orch:
+        return _nocache_json({"ok": False, "error": "not initialized"}, status_code=503)
+    raw = body.model_dump()
+    try:
+        saved = _wf_store().save(raw)
+    except (ValueError, KeyError) as e:
+        raise HTTPException(status_code=422, detail=str(e))
+    except Exception as e:
+        logger.warning(f"workflow/save error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+    # Register into live registry so it is immediately runnable.
+    try:
+        from core.workflows.pipeline import Pipeline as _Pipeline
+        orch.workflow_registry.register(_Pipeline.from_dict(saved))
+    except Exception:
+        pass
+    return _nocache_json(saved)
+
+
+@app.put("/api/workflows/{pipeline_id}")
+async def update_workflow(pipeline_id: str, body: WorkflowSaveBody):
+    """Update an existing user-defined workflow pipeline (H9.1)."""
+    if not orch:
+        return _nocache_json({"ok": False, "error": "not initialized"}, status_code=503)
+    raw = body.model_dump()
+    raw["id"] = pipeline_id  # id in URL takes precedence
+    try:
+        saved = _wf_store().save(raw)
+    except (ValueError, KeyError) as e:
+        raise HTTPException(status_code=422, detail=str(e))
+    except Exception as e:
+        logger.warning(f"workflow/update error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+    try:
+        from core.workflows.pipeline import Pipeline as _Pipeline
+        orch.workflow_registry.register(_Pipeline.from_dict(saved))
+    except Exception:
+        pass
+    return _nocache_json(saved)
+
+
+@app.delete("/api/workflows/{pipeline_id}")
+async def delete_workflow(pipeline_id: str):
+    """Delete a user-defined workflow pipeline (H9.1)."""
+    if not orch:
+        return _nocache_json({"ok": False, "error": "not initialized"}, status_code=503)
+    deleted = _wf_store().delete(pipeline_id)
+    if not deleted:
+        raise HTTPException(status_code=404, detail=f"Workflow '{pipeline_id}' not found in store")
+    # Best-effort removal from live registry (built-ins are intentionally kept).
+    try:
+        orch.workflow_registry._pipelines.pop(pipeline_id, None)
+    except Exception:
+        pass
+    return _nocache_json({"ok": True, "deleted": pipeline_id})
 
 
 @app.get("/memory/{agent_id}")
