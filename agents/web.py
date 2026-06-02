@@ -18,10 +18,10 @@ from typing import Optional
 
 sys.path.insert(0, str(Path(__file__).parent))
 
-from fastapi import FastAPI, Request, Depends, HTTPException
+from fastapi import FastAPI, Request, Depends, HTTPException, Query
 from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse, FileResponse
 from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 def _nocache_json(content: dict, status_code: int = 200) -> JSONResponse:
@@ -309,7 +309,7 @@ def _enrich_agents() -> list[dict]:
 
 
 class ChatRequest(BaseModel):
-    message: str
+    message: str = Field(..., max_length=4096)
     agent: str = "jarvis"
 
 
@@ -407,7 +407,7 @@ async def chat_stream(req: ChatRequest):
 # ── TTS endpoint ─────────────────────────────────────────────────
 
 class TTSRequest(BaseModel):
-    text: str
+    text: str = Field(..., max_length=4096)
     lang: str = "ro"
 
 @app.post("/tts")
@@ -570,51 +570,8 @@ async def get_tasks():
         # 2. If no running tasks, return recent history
         result_tasks = [format_task(t) for t in all_tasks]
     else:
-        # 3. If no history or tasks exist at all, return 3 bilingual intuitive dummy/placeholder tasks
-        result_tasks = [
-            {
-                "id": "dummy-task-1",
-                "agent_id": "steve",
-                "owner": "steve",
-                "kind": "system_check",
-                "title": "Optimizare bază de date memorii (Memory DB Optimization)",
-                "label": "Optimizare bază de date memorii (Memory DB Optimization)",
-                "project": "System",
-                "status": "done",
-                "state": "done",
-                "tier": 1,
-                "created_at": time.time() - 3600,
-                "completed_at": time.time() - 3550,
-            },
-            {
-                "id": "dummy-task-2",
-                "agent_id": "jarvis",
-                "owner": "jarvis",
-                "kind": "analysis",
-                "title": "Review zilnic: Raport activitate ore de noapte (Daily Night-Shift Brief)",
-                "label": "Review zilnic: Raport activitate ore de noapte (Daily Night-Shift Brief)",
-                "project": "Autonomy",
-                "status": "done",
-                "state": "done",
-                "tier": 1,
-                "created_at": time.time() - 7200,
-                "completed_at": time.time() - 7100,
-            },
-            {
-                "id": "dummy-task-3",
-                "agent_id": "friday",
-                "owner": "friday",
-                "kind": "report",
-                "title": "Monitorizare update-uri sistem de securitate (Security Scan Loop)",
-                "label": "Monitorizare update-uri sistem de securitate (Security Scan Loop)",
-                "project": "Security",
-                "status": "done",
-                "state": "done",
-                "tier": 1,
-                "created_at": time.time() - 10800,
-                "completed_at": time.time() - 10750,
-            }
-        ]
+        # H7.7: No active tasks — return empty list instead of misleading dummy data
+        result_tasks = []
         
     return _nocache_json({"tasks": result_tasks})
 
@@ -815,15 +772,19 @@ async def sandbox_status():
     }
 
 
+class SandboxExecuteBody(BaseModel):
+    code: str = Field("", max_length=32768)
+    language: str = "python"
+
+
 @app.post("/sandbox/execute")
-async def sandbox_execute(req: Request):
+async def sandbox_execute(body: SandboxExecuteBody):
     if not orch:
         return JSONResponse({"error": "not initialized"}, status_code=503)
     if not DEV_MODE:
         return JSONResponse({"error": "sandbox disabled — set DEV_MODE=1 to enable"}, status_code=403)
-    body = await req.json()
-    code = body.get("code", "")
-    language = body.get("language", "python")
+    code = body.code
+    language = body.language
     if language == "python":
         result = await orch.sandbox.execute_python(code)
     else:
@@ -994,7 +955,7 @@ class AutonomyDecisionBody(BaseModel):
 
 
 @app.get("/autonomy/tasks", dependencies=[Depends(_admin_guard)])
-async def autonomy_list(status: str = None, origin: str = None, limit: int = 100):
+async def autonomy_list(status: str = None, origin: str = None, limit: int = Query(100, ge=1, le=200)):
     """List autonomy tasks, optionally filtered by status/origin."""
     if not orch:
         return JSONResponse({"error": "not initialized"}, status_code=503)
@@ -1167,7 +1128,7 @@ async def admin_get_env():
 
 
 @app.get("/api/admin/audit", dependencies=[Depends(_admin_guard)])
-async def admin_get_audit(page: int = 1, limit: int = 50):
+async def admin_get_audit(page: int = Query(1, ge=1), limit: int = Query(50, ge=1, le=200)):
     import sqlite3
     db = Path("memory_logs/security/audit.db")
     if not db.exists():
@@ -1762,7 +1723,7 @@ async def reflection_run():
 # workflows handlers below.
 
 @app.get("/api/traces")
-async def list_traces(limit: int = 50):
+async def list_traces(limit: int = Query(50, ge=1, le=200)):
     """Return recent per-request traces (most-recent first, summarized)."""
     if not orch:
         return _nocache_json({"traces": [], "error": "not initialized"}, status_code=503)
@@ -2055,6 +2016,13 @@ async def bench_stats():
         },
         "by_agent": stats.get("by_agent", {}),
     })
+
+
+@app.get("/api/analytics/cost")
+async def get_cost_analytics():
+    """Per-agent token usage and estimated USD cost (H7.10)."""
+    from core.cost_tracker import get_summary
+    return get_summary()
 
 
 @app.get("/heartbeat/status")
