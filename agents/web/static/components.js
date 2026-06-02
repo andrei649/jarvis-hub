@@ -57,7 +57,7 @@ function Badge({ label, value, kind }) {
   );
 }
 
-function TopBar({ activeAgent, voiceState, agentsOnline, agentsTotal, lmOnline, onToggleCognition, onToggleSystems }) {
+function TopBar({ activeAgent, voiceState, agentsOnline, agentsTotal, lmOnline, onToggleCognition, onToggleSystems, onToggleWorkflows, onToggleObservability }) {
   return h('header', { className: 'topbar' },
     h('div', { className: 'topbar-left' },
       h('div', { className: 'logo' },
@@ -109,6 +109,8 @@ function TopBar({ activeAgent, voiceState, agentsOnline, agentsTotal, lmOnline, 
       }[localStorage.getItem('hud.theme') || 'default']),
       h('button', { className: 'topbar-btn', onClick: onToggleCognition, title: 'Toggle Cognition Panel' }, 'COG'),
       h('button', { className: 'topbar-btn', onClick: onToggleSystems, title: 'Toggle Systems Panel' }, 'SYS'),
+      onToggleWorkflows && h('button', { className: 'topbar-btn', onClick: onToggleWorkflows, title: 'Toggle Workflow Builder' }, 'FLOW'),
+      onToggleObservability && h('button', { className: 'topbar-btn', onClick: onToggleObservability, title: 'Toggle Trace Explorer' }, 'TRACE'),
     ),
   );
 }
