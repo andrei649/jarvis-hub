@@ -247,7 +247,7 @@ def get_category(cat: str) -> list[dict]:
         "opts": json.loads(r["opts"]),
     } for r in rows]
 
-def put_category(cat: str, data: dict[str, Any]) -> int:
+def put_category(cat: str, data: dict[str, Any]) -> tuple[int, list[str]]:
     _ensure_init()
     conn = get_conn()
     updated = 0
@@ -263,6 +263,6 @@ def put_category(cat: str, data: dict[str, Any]) -> int:
     conn.close()
     if skipped:
         logger.warning(f"put_category({cat}): ignored unknown keys: {skipped}")
-    return updated
+    return updated, skipped
 
 # ── init on first use (via _ensure_init) — NOT at import ─────────

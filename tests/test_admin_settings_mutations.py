@@ -133,6 +133,29 @@ def test_reseed_without_token_denied(monkeypatch):
     assert resp.status_code == 401
 
 
+def test_put_unknown_keys_returns_skipped_list(admin_client):
+    resp = admin_client.put(
+        "/api/admin/settings/general",
+        json={"values": {"totally_unknown_key_xyz": "value"}},
+        headers=_HDR,
+    )
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["updated"] == 0
+    assert "skipped" in data
+    assert "totally_unknown_key_xyz" in data["skipped"]
+
+
+def test_put_no_unknown_keys_omits_skipped_field(admin_client):
+    resp = admin_client.put(
+        "/api/admin/settings/general",
+        json={"values": {"wake_words": ["jarvis"]}},
+        headers=_HDR,
+    )
+    assert resp.status_code == 200
+    assert "skipped" not in resp.json()
+
+
 def test_settings_round_trip(admin_client):
     """Write a known key then read it back from the same category."""
     admin_client.put(

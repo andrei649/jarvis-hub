@@ -93,6 +93,30 @@ def test_mcp_list_requires_auth(monkeypatch):
     assert resp.status_code == 401
 
 
+def test_mcp_list_no_orch_returns_503(monkeypatch):
+    monkeypatch.setattr(web, "ADMIN_TOKEN", _TOKEN)
+    monkeypatch.setattr(web, "orch", None)
+    client = TestClient(web.app)
+    resp = client.get("/api/admin/mcp", headers=_HDR)
+    assert resp.status_code == 503
+
+
+def test_mcp_add_no_orch_returns_503(monkeypatch):
+    monkeypatch.setattr(web, "ADMIN_TOKEN", _TOKEN)
+    monkeypatch.setattr(web, "orch", None)
+    client = TestClient(web.app)
+    resp = client.post("/api/admin/mcp", json={"name": "x"}, headers=_HDR)
+    assert resp.status_code == 503
+
+
+def test_mcp_delete_no_orch_returns_503(monkeypatch):
+    monkeypatch.setattr(web, "ADMIN_TOKEN", _TOKEN)
+    monkeypatch.setattr(web, "orch", None)
+    client = TestClient(web.app)
+    resp = client.delete("/api/admin/mcp/x", headers=_HDR)
+    assert resp.status_code == 503
+
+
 # ---------------------------------------------------------------------------
 # POST /api/admin/mcp
 # ---------------------------------------------------------------------------

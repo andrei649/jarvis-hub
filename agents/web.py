@@ -1126,8 +1126,11 @@ class AdminPutBody(BaseModel):
 
 @app.put("/api/admin/settings/{category}", dependencies=[Depends(_admin_guard)])
 async def admin_put_category(category: str, body: AdminPutBody):
-    updated = put_category(category, body.values)
-    return {"updated": updated, "category": category}
+    updated, skipped = put_category(category, body.values)
+    resp = {"updated": updated, "category": category}
+    if skipped:
+        resp["skipped"] = skipped
+    return resp
 
 
 @app.post("/api/admin/settings/reseed", dependencies=[Depends(_admin_guard)])
@@ -1238,6 +1241,8 @@ async def admin_llm_test():
 @app.get("/api/admin/mcp", dependencies=[Depends(_admin_guard)])
 async def admin_mcp_list():
     """List all configured MCP servers with their status."""
+    if not orch:
+        return JSONResponse({"error": "not initialized"}, status_code=503)
     servers = []
     for name, srv in orch.mcp.servers.items():
         servers.append({
@@ -1262,6 +1267,8 @@ class MCPServerConfig(BaseModel):
 @app.post("/api/admin/mcp", dependencies=[Depends(_admin_guard)])
 async def admin_mcp_add(req: MCPServerConfig):
     """Add a new MCP server configuration."""
+    if not orch:
+        return JSONResponse({"error": "not initialized"}, status_code=503)
     from core.mcp.client import MCPServer
     if req.name in orch.mcp.servers:
         return JSONResponse({"error": f"MCP server '{req.name}' already exists"}, status_code=409)
@@ -1280,6 +1287,8 @@ async def admin_mcp_add(req: MCPServerConfig):
 @app.delete("/api/admin/mcp/{name}", dependencies=[Depends(_admin_guard)])
 async def admin_mcp_remove(name: str):
     """Remove an MCP server configuration."""
+    if not orch:
+        return JSONResponse({"error": "not initialized"}, status_code=503)
     if name not in orch.mcp.servers:
         return JSONResponse({"error": f"MCP server '{name}' not found"}, status_code=404)
     srv = orch.mcp.servers[name]
@@ -1294,6 +1303,8 @@ async def admin_mcp_remove(name: str):
 @app.post("/api/admin/mcp/{name}/connect", dependencies=[Depends(_admin_guard)])
 async def admin_mcp_connect(name: str):
     """Connect to an MCP server and discover tools."""
+    if not orch:
+        return JSONResponse({"error": "not initialized"}, status_code=503)
     if name not in orch.mcp.servers:
         return JSONResponse({"error": f"MCP server '{name}' not found"}, status_code=404)
     srv = orch.mcp.servers[name]
@@ -1313,6 +1324,8 @@ async def admin_mcp_connect(name: str):
 @app.post("/api/admin/mcp/{name}/disconnect", dependencies=[Depends(_admin_guard)])
 async def admin_mcp_disconnect(name: str):
     """Disconnect from an MCP server."""
+    if not orch:
+        return JSONResponse({"error": "not initialized"}, status_code=503)
     if name not in orch.mcp.servers:
         return JSONResponse({"error": f"MCP server '{name}' not found"}, status_code=404)
     srv = orch.mcp.servers[name]
@@ -1326,7 +1339,7 @@ def _save_mcp_config():
     """Persist MCP servers configuration to settings DB."""
     from core.settings_db import put_category
     config = orch.mcp.to_config()
-    put_category("mcp", {"servers": config})
+    put_category("mcp", {"servers": config})  # return value intentionally unused
 
 
 def _load_mcp_config():

@@ -103,6 +103,14 @@ python -m pytest tests/ -v          # 784 passed, 9 skipped
 > Sync runs automatically during the autonomy observer check.
 
 ✓ No active runtime failures detected in the last 48 hours.
+
+## 🐛 Known Bugs (non-critical, not yet scheduled)
+
+| # | Bug | Severity | Notes |
+|---|-----|----------|-------|
+| BUG-1 | `_dashboard_cache` module-level dict has no `asyncio.Lock` — concurrent `/dashboard` requests can race on the weather/calendar cache update, producing a double-fetch or partial write under high load. **Fix:** wrap the refresh block in `asyncio.Lock()`. | LOW | Found during HUD test sprint 2026-06-02 |
+| BUG-2 | Frontend test infrastructure missing — 0% coverage on React HUD (~6 000 LOC: `app.js`, `admin.js`, `systems.js`, `workflows.js`, etc). No test runner (jest/vitest), no React Testing Library, no E2E (Playwright/Cypress). | MEDIUM | Identified in test coverage audit 2026-06-02; backend gap closed (121 tests added on branch `claude/hud-human-interface-testing-r8IQS`) |
+
 ## ORIZONT 5 — Next Wave (P2–P3) — 12/17
 
 > Fiecare item are spec + plan propriu în `docs/superpowers/`. Timeline: 0.6 → 0.9 → 1.0.
