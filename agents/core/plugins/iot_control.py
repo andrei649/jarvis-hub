@@ -26,7 +26,7 @@ class IoTControlPlugin:
         """Toggles smart IoT sockets. Fallbacks to mock LAN sync if unconfigured."""
         if not self.client_id or not self.device_id:
             logger.warning("Tuya Client ID or Device ID missing — running in local mock LAN loop")
-            return {"status": "mock_toggled", "device": self.device_id, "state": "ON" if state else "OFF"}
+            return {"status": "mock_toggled", "device": self.device_id, "state": "ON" if state else "OFF", "_mock": True}
 
         # Simulate Tuya API post request (restricted domain access verification)
         url = f"https://openapi.tuya.com/v1.0/devices/{self.device_id}/commands"

@@ -120,23 +120,43 @@ def test_tasks_returns_tasks_key(monkeypatch):
     assert isinstance(data["tasks"], list)
 
 
-def test_tasks_empty_queue_returns_dummy_tasks(monkeypatch):
+def test_tasks_empty_queue_returns_empty_list(monkeypatch):
+    # H7.7: empty queue returns [] instead of misleading dummy tasks
     monkeypatch.setattr(web, "orch", _simple_orch())
     client = TestClient(web.app)
     tasks = client.get("/tasks").json()["tasks"]
-    assert len(tasks) == 3
+    assert isinstance(tasks, list)
+    assert len(tasks) == 0
 
 
 def test_tasks_have_required_react_fields(monkeypatch):
-    monkeypatch.setattr(web, "orch", _simple_orch())
+    """When real tasks exist, they must include the required React HUD fields."""
+    m = _simple_orch()
+    real_task = MagicMock()
+    real_task.to_dict.return_value = {
+        "id": "t-1", "agent_id": "jarvis", "kind": "analysis",
+        "title": "Test task", "status": "done", "state": "done",
+        "owner": "jarvis", "label": "Test task", "project": "Autonomy",
+    }
+    m.autonomy_queue.list.return_value = [real_task]
+    monkeypatch.setattr(web, "orch", m)
     client = TestClient(web.app)
     tasks = client.get("/tasks").json()["tasks"]
     for task in tasks:
         assert _TASK_REQUIRED_FIELDS <= set(task.keys()), f"Missing fields in task: {task}"
 
 
-def test_tasks_dummy_have_valid_state(monkeypatch):
-    monkeypatch.setattr(web, "orch", _simple_orch())
+def test_tasks_real_tasks_have_valid_state(monkeypatch):
+    """When real tasks exist, their state field must be a valid state value."""
+    m = _simple_orch()
+    real_task = MagicMock()
+    real_task.to_dict.return_value = {
+        "id": "t-2", "agent_id": "friday", "kind": "report",
+        "title": "Security scan", "status": "running", "state": "running",
+        "owner": "friday", "label": "Security scan", "project": "Security",
+    }
+    m.autonomy_queue.list.return_value = [real_task]
+    monkeypatch.setattr(web, "orch", m)
     client = TestClient(web.app)
     tasks = client.get("/tasks").json()["tasks"]
     for task in tasks:
