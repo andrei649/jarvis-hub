@@ -1,6 +1,10 @@
 # Andrei's Cabinet
 
-> 15 specialized AI agents orchestrated through Jarvis, running on Bonobo WS + Pi 5, controlled by voice and web.
+![Python 3.12](https://img.shields.io/badge/python-3.12-blue?logo=python&logoColor=white)
+![License: MIT](https://img.shields.io/badge/license-MIT-green)
+![Tests](https://img.shields.io/badge/tests-909%20passed-brightgreen?logo=pytest)
+
+> 16 specialized AI agents orchestrated through Jarvis, running on Bonobo WS + Pi 5, controlled by voice and web.
 
 ---
 
@@ -69,12 +73,12 @@ A personal AI mesh that handles the cross-section of Andrei's life: work at Raif
 ```bash
 pip install -r requirements-beta.txt
 pip install tiktoken beautifulsoup4 psutil pytest-asyncio   # extras used by newer code
-python serve.py              # http://127.0.0.1:8000
-python -m pytest             # 846 passed, 9 skipped
+python serve.py              # http://127.0.0.1:8080
+python -m pytest             # 909 passed
 ```
 
-- **HUD:** http://127.0.0.1:8000/
-- **Admin panel:** http://127.0.0.1:8000/admin
+- **HUD:** http://127.0.0.1:8080/
+- **Admin panel:** http://127.0.0.1:8080/admin
 - **CLI REPL:** `python agents/run.py`
 
 ## Docs
@@ -84,8 +88,8 @@ python -m pytest             # 846 passed, 9 skipped
 
 ## Status
 
-**v0.9.1-beta** — 15 agents across 4 tiers; real-embeddings recall (LM Studio) + fused recall +
+**v0.9.1-beta** — 16 specialist agents (+ 17 bench) across 4 tiers; real-embeddings recall (LM Studio) + fused recall +
 RAG injection; hot-path perf (SQLite WAL, event-loop offload, checkpoint debounce, query-embedding
-cache, complexity-based model tiering); autonomous proactive cortex (ORIZONT 6). **846 tests passing.**
+cache, complexity-based model tiering); autonomous proactive cortex (ORIZONT 6). **909 tests passing.**
 
 See `STATUS.md`, `BACKLOG.md`, and `docs/ARCHITECTURE.md` for details.

@@ -302,7 +302,7 @@ git commit -m "feat: wire ResilienceTab into SystemsPanel"
 
 - [ ] **Step 1: Start server and verify resilience endpoint**
 
-Run: `python -c "import requests; r=requests.get('http://127.0.0.1:8000/api/resilience'); print(r.status_code, r.json())"`
+Run: `python -c "import requests; r=requests.get('http://127.0.0.1:8080/api/resilience'); print(r.status_code, r.json())"`
 
 Expected: 200 + `{"metrics":{},"circuit_breakers":{}}`
 
