@@ -1115,7 +1115,9 @@ async def security_posture():
         from core.sandbox import Sandbox
         sandbox_docker = Sandbox()._has_docker
     except Exception:
-        pass
+        # Sandbox/Docker is optional; absence just means posture reports
+        # docker=False rather than failing the security-posture endpoint.
+        sandbox_docker = False
 
     return _nocache_json({
         "secrets": {"encrypted_at_rest": True, "backend": secret_backend},

@@ -34,9 +34,13 @@ def test_get_missing_returns_default(tmp_path):
 def test_delete(tmp_path):
     store = SecretStore(tmp_path / "s.enc", key="k")
     store.set("a", "1")
-    assert store.delete("a") is True
+    # Keep the mutating delete() out of the assert expression so it isn't
+    # stripped under `python -O` (CodeQL py/side-effect-in-assert).
+    deleted = store.delete("a")
+    assert deleted is True
     assert store.get("a") is None
-    assert store.delete("a") is False
+    deleted_again = store.delete("a")
+    assert deleted_again is False
 
 
 def test_contains_and_names(tmp_path):
