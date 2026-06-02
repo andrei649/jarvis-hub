@@ -11,6 +11,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable, Optional
 
+from . import signing
+
 logger = logging.getLogger("jarvis.skills")
 
 SKILLS_DIR = Path("skills")
@@ -23,6 +25,23 @@ class Skill:
         self.manifest = manifest
         self.module = None
         self.commands: dict[str, Callable] = {}
+        # H12.1 — signature/trust metadata (advisory by default).
+        self.trusted: bool = False
+        self.signature_reason: str = "unsigned"
+        # Sandboxed = untrusted code whose Python module was NOT exec'd in-process.
+        self.sandboxed: bool = False
+
+    def to_dict(self) -> dict:
+        return {
+            "name": self.name,
+            "version": self.version,
+            "author": self.author,
+            "agents": self.agents,
+            "trusted": self.trusted,
+            "signature_reason": self.signature_reason,
+            "sandboxed": self.sandboxed,
+            "has_module": self.module is not None,
+        }
 
     @property
     def description(self) -> str:
@@ -100,8 +119,27 @@ class SkillLoader:
         name = manifest.get("name", path.name)
         skill = Skill(name, path, manifest)
 
+        # H12.1 — verify signature (advisory). Unsigned/invalid skills load but
+        # are flagged untrusted; when JARVIS_REQUIRE_SIGNED_SKILLS=1 their Python
+        # module is not exec'd in-process (sandboxed/flagged instead).
+        skill.trusted, skill.signature_reason = signing.verify_skill(path)
+        require_signed = signing.require_signed()
+
         py_file = path / "main.py"
-        if py_file.exists():
+        if py_file.exists() and require_signed and not skill.trusted:
+            # Strict mode: refuse to exec untrusted code in-process. The skill is
+            # flagged sandboxed; the HUD/executor can run it via the Sandbox.
+            skill.sandboxed = True
+            logger.warning(
+                "Skill '%s' is %s and JARVIS_REQUIRE_SIGNED_SKILLS=1 — module NOT loaded "
+                "in-process (flagged sandboxed)", name, skill.signature_reason,
+            )
+        elif py_file.exists():
+            if not skill.trusted:
+                logger.info(
+                    "Skill '%s' is %s — loaded in advisory mode (flagged untrusted)",
+                    name, skill.signature_reason,
+                )
             try:
                 spec = importlib.util.spec_from_file_location(f"skill_{name}", py_file)
                 if spec and spec.loader:
@@ -266,9 +304,21 @@ def register(skill):
         )
         (skill_dir / "main.py").write_text(main_py, encoding="utf-8")
 
+        # H12.1 — self-sign locally generated skills so they load as trusted.
+        signing.sign_skill(skill_dir)
+
         self._load_skill(skill_dir)
         logger.info(f"Generated new skill: {skill_name} from {agent_id}")
         return skill_name
+
+    def sign_skill(self, name: str) -> Optional[str]:
+        """Sign an already-discovered skill in place; re-verify it. (H12.1)"""
+        skill = self.skills.get(name)
+        if skill is None:
+            return None
+        line = signing.sign_skill(skill.path)
+        skill.trusted, skill.signature_reason = signing.verify_skill(skill.path)
+        return line
 
     def _name_from_task(self, task: str) -> str:
         words = re.sub(r"[^a-zA-Z0-9\s]", "", task).lower().split()

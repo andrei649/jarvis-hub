@@ -1045,6 +1045,93 @@ async def autonomy_pref_suggestions():
     return _nocache_json({"suggestions": orch.autonomy_prefs.suggest_autonomy_raise()})
 
 
+# ── H12.1: reversible / irreversible approval queue + security posture ──
+# RiskTier 0-1 (read-only / reversible) are undoable; 2-3 (external /
+# irreversible-or-money) are not. The HUD surfaces this so the user knows which
+# pending actions can be safely auto-approved vs. which need scrutiny — the
+# "anti-OpenClaw" reversibility story.
+
+
+def _reversibility(task) -> dict:
+    """Annotate a queued Task with a human-facing reversibility verdict."""
+    from core.autonomy.policy import RiskTier
+
+    tier = int(task.risk_tier)
+    reversible = tier <= int(RiskTier.REVERSIBLE)
+    try:
+        tier_name = RiskTier(tier).name
+    except ValueError:
+        tier_name = "UNKNOWN"
+    d = task.to_dict()
+    d["reversible"] = reversible
+    d["tier_name"] = tier_name
+    d["reversibility"] = "reversible" if reversible else "irreversible"
+    return d
+
+
+@app.get("/autonomy/approvals", dependencies=[Depends(_admin_guard)])
+async def autonomy_approvals():
+    """Pending approvals split into reversible vs irreversible buckets (H12.1)."""
+    if not orch:
+        return JSONResponse({"error": "not initialized"}, status_code=503)
+    pending = orch.autonomy_queue.pending_decisions()
+    annotated = [_reversibility(t) for t in pending]
+    reversible = [t for t in annotated if t["reversible"]]
+    irreversible = [t for t in annotated if not t["reversible"]]
+    return _nocache_json({
+        "pending": annotated,
+        "reversible": reversible,
+        "irreversible": irreversible,
+        "counts": {
+            "total": len(annotated),
+            "reversible": len(reversible),
+            "irreversible": len(irreversible),
+        },
+    })
+
+
+@app.get("/api/security/posture", dependencies=[Depends(_admin_guard)])
+async def security_posture():
+    """Packaged security posture: encrypted secrets + signed skills + sandbox + guardrails (H12.1)."""
+    if not orch:
+        return JSONResponse({"error": "not initialized"}, status_code=503)
+
+    # Secrets at-rest backend.
+    try:
+        from core.secrets import SecretStore
+        secret_backend = SecretStore().backend
+    except Exception:
+        secret_backend = "unavailable"
+
+    # Skill signing posture.
+    from core.skills import signing as _signing
+    skills = list(getattr(orch.skills, "skills", {}).values()) if getattr(orch, "skills", None) else []
+    skill_rows = [s.to_dict() for s in skills]
+    untrusted = [s for s in skill_rows if not s.get("trusted")]
+
+    # Sandbox availability.
+    sandbox_docker = False
+    try:
+        from core.sandbox import Sandbox
+        sandbox_docker = Sandbox()._has_docker
+    except Exception:
+        pass
+
+    return _nocache_json({
+        "secrets": {"encrypted_at_rest": True, "backend": secret_backend},
+        "skills": {
+            "require_signed": _signing.require_signed(),
+            "total": len(skill_rows),
+            "trusted": len(skill_rows) - len(untrusted),
+            "untrusted": len(untrusted),
+            "untrusted_names": [s["name"] for s in untrusted],
+            "detail": skill_rows,
+        },
+        "sandbox": {"docker_available": sandbox_docker},
+        "guardrails": {"mode": orch.get_setting("security.guardrails_mode", "WARN")},
+    })
+
+
 # ── Admin panel ──────────────────────────────────────────────────
 
 

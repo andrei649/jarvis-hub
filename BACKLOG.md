@@ -58,7 +58,7 @@ python -m pytest tests/ -v          # 1100+ passed, 9 skipped
 | **H11 Platform Parity** (Known Gaps, P3) | 4 | **0** | 55 | **0** | **0%** |
 | **Total general** | **151** | **117** | **823** | **580** | **71%** |
 
-**Test count:** 1100+ passed, 9 skipped (2026-06-02: +H7 hardening 192 teste noi; +H8 memorie 16 teste noi)
+**Test count:** 1170+ passed, 9 skipped (2026-06-02: +H7 hardening 192 teste noi; +H8 memorie 16 teste noi; +H12.1 securitate 31 teste noi)
 
 > **Orizont 7 Hardening — Drumul spre 1.0.0:** 11/11 COMPLET ✅ (livrat 2026-06-02)
 
@@ -332,7 +332,7 @@ python -m pytest tests/ -v          # 1100+ passed, 9 skipped
 
 | # | Item | S | P | Dep | Sursă |
 |---|------|---|---|-----|-------|
-| H12.1 | **Securitate ca feature de prim rang** — criptează secretele at-rest (fără `SOUL`/memory în plaintext), skills semnate + sandboxed, expune coada de aprobare reversibil/ireversibil ca "povestea anti-OpenClaw". Pachetizează guardrails + PII scanner + sandbox existente. | 8 | **P0** | H6.2, Sec | OpenClaw (eșecuri) |
+| H12.1 ✅ | **Securitate ca feature de prim rang** — criptează secretele at-rest (fără `SOUL`/memory în plaintext), skills semnate + sandboxed, expune coada de aprobare reversibil/ireversibil ca "povestea anti-OpenClaw". Pachetizează guardrails + PII scanner + sandbox existente. **Done 2026-06-02:** `core/secrets.py` `SecretStore` (Fernet + key-derivation PBKDF2/keyfile 0600, fallback HMAC-XOR pur-Python, get/set/delete + `migrate_plaintext`); `core/skills/signing.py` + loader extins (verificare `SKILL.sig`, advisory by-default, `JARVIS_REQUIRE_SIGNED_SKILLS=1` → modul untrusted nu se exec in-process; skills auto-generate auto-semnate); 2 endpoints noi `GET /autonomy/approvals` (bucket reversibil/ireversibil pe risk tier) + `GET /api/security/posture` (pachetizează secrets+signing+sandbox+guardrails). +31 teste offline. | 8 | **P0** | H6.2, Sec | OpenClaw (eșecuri) |
 
 ### Track B — Memorie & Onboarding (P1)
 
