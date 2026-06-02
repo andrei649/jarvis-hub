@@ -150,6 +150,16 @@
 | ❌ SFT/GRPO Training | OpenJarvis | No model fine-tuning (needs GPU) |
 | ❌ WASM Sandbox | OpenJarvis (wasmtime) | Docker-only sandbox |
 
+> **Real-category parity (2026-06-02 — vs personal/proactive/private AI competitors, not just the OpenJarvis ancestor; full analysis: `docs/research/2026-06-02-personal-ai-competitors.md`):**
+
+| Gap | vs | Impact |
+|-----|----|--------|
+| ⚠️ Direct rival — governance wedge | **OpenClaw** | Same thesis (self-hosted, proactive, local-capable); we are the *governed/secure* alternative (H12.1) |
+| ❌ Multi-surface passive capture | **Pieces.app** | Only text conversations ingested; no opt-in browser/clipboard/files → KG (H12.7) |
+| ❌ Frictionless folder → doc-chat onboarding | **GPT4All / Khoj** | Config-heavy first run (H12.2) |
+| ❌ Polished local-model management UX | **Jan.ai** | No one-click model browse/download/switch (H12.9) |
+| ❌ Local voice hardware + Wyoming interop | **Home Assistant** | No satellite-mic / Wyoming support (H12.4, H12.8) |
+
 ---
 
 ## Decisions — resolved 2026-05-11

@@ -265,7 +265,9 @@ LM Studio + Ollama on local GPU. Zero API cost for 99% of tasks. Athena escalate
 | Trace explorer + offline eval | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ❌ |
 | Pure Python + open source | ✅ | ❌ | ✅ | ✅ | ✅ | ✅ | ❌ | ❌ |
 
-No competitor combines **autonomy + memory + observability + preference learning** in a single local-first system.
+> ⚠️ **Note (2026-06-02):** the 8 above are **developer frameworks**, not Jarvis's real category. The personal/proactive/private *assistant* category — Khoj, OpenClaw, Omi, Amazon Bee, Apple/Google/Amazon assistants — is analyzed separately in [docs/research/2026-06-02-personal-ai-competitors.md](docs/research/2026-06-02-personal-ai-competitors.md). Re-anchor buyer-facing comparisons there.
+
+**Honest differentiation (verified 2026-06-02):** No **shipping consumer** product combines autonomy, persistent memory, observability, and preference-learning in a **local-first** system. The closest combined product — Amazon's **Bee** — is cloud-based; the closest local-first option — open-source **Omi** — is a passive capture tool with no preference-learning loop; the viral local-capable rival — **OpenClaw** — has no action-governance, no observability, and a broken security model (plaintext secrets; the #1 infostealer target as of Feb 2026). Jarvis's wedge is the **intersection + governed autonomy + observability**, not any single axis.
 
 ---
 

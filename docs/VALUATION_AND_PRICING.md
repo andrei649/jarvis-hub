@@ -26,7 +26,10 @@
 
 This is a **substantial, coherent technical MVP** — well beyond a prototype. The differentiators
 (local-first + 24/7 autonomy + fused memory + preference learning + observability in one system)
-are genuinely uncommon. The gaps that cap value today are **commercial, not technical**: zero users,
+are genuinely uncommon — a 2026-06-02 scan of the *real* category confirms the intersection is
+unoccupied: the closest combined rival (Amazon's Bee) is cloud, and the viral local rival (OpenClaw)
+has no governance and a broken security model ([category analysis](research/2026-06-02-personal-ai-competitors.md)).
+The gaps that cap value today are **commercial, not technical**: zero users,
 no revenue, single-person/key-person risk, no CI/CD or license, frontend untested, single-user validation only.
 
 ---
@@ -105,7 +108,9 @@ multi-user, support, and advanced/enterprise features.**
 ## 4. B2C — Consumer / Prosumer Plans
 
 Target: privacy-conscious individuals, self-hosters, prosumers, families. Anchors: ChatGPT Plus /
-Claude Pro at ~$20/mo; but Jarvis's edge is *ownership + autonomy*, not raw model quality.
+Claude Pro at ~$20/mo; real-category anchors (2026): Khoj ~$30/mo (hosted), Amazon Alexa+ $19.99/mo
+(free for Prime), Pieces free + ~$14/mo. Jarvis's €19 Pro sits mid-market while owning the
+*local-first + governed-autonomy* position none of them hold — its edge is *ownership + autonomy*, not raw model quality.
 
 | Plan | Price | Who | Includes |
 |------|-------|-----|----------|
