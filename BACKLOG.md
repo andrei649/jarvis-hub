@@ -317,6 +317,56 @@ python -m pytest tests/ -v          # 909 passed, 9 skipped
 
 ---
 
+## ORIZONT 12 — Categoria Reală: Asistent Personal Privat & Proactiv (P0–P3) — 0/14
+
+> Bazat pe research-ul din [docs/research/2026-06-02-personal-ai-competitors.md](docs/research/2026-06-02-personal-ai-competitors.md):
+> H10 a comparat Jarvis cu 8 **framework-uri de developeri**; categoria reală a moonshot-ului (asistent
+> personal, proactiv, privat) nu fusese niciodată analizată. Idei derivate din competitorii **reali**
+> (OpenClaw, Khoj, Leon, Omi, Bee, Pieces, Home Assistant, Jan, Tana) — fiecare verificată față de
+> [principiile non-negociabile](MOONSHOT.md#5-non-negotiable-principles-the-guardrails).
+>
+> **Wedge-ul defensiv:** OpenClaw (rivalul direct viral) a eșuat exact unde Jarvis e puternic — secrete în
+> plaintext, fără guvernanță acțiuni, marketplace nemoderat → ținta #1 a infostealerelor. Jarvis = alternativa guvernată.
+
+### Track A — Securitate ca Diferențiator (P0, anti-OpenClaw)
+
+| # | Item | S | P | Dep | Sursă |
+|---|------|---|---|-----|-------|
+| H12.1 | **Securitate ca feature de prim rang** — criptează secretele at-rest (fără `SOUL`/memory în plaintext), skills semnate + sandboxed, expune coada de aprobare reversibil/ireversibil ca "povestea anti-OpenClaw". Pachetizează guardrails + PII scanner + sandbox existente. | 8 | **P0** | H6.2, Sec | OpenClaw (eșecuri) |
+
+### Track B — Memorie & Onboarding (P1)
+
+| # | Item | S | P | Dep | Sursă |
+|---|------|---|---|-----|-------|
+| H12.2 | **Onboarding "drop folder → chat privat cu documentele"** — un singur pas: alegi un folder, Jarvis îl indexează local (PDF/MD/docx) și poți discuta cu el offline. Reduce frecarea primului contact. | 3 | P1 | H8.3 | GPT4All LocalDocs, Khoj |
+| H12.3 | **KG interogabil & editabil (UX)** — graful de cunoștințe ca suprafață de prim rang: vizualizează, caută, editează, șterge entități/relații. Implementează direct "inspectable & forgettable" (H8.2). | 8 | P1 | H8.2 | Tana supertags |
+| H12.4 | **Suport protocol Wyoming** — Jarvis vorbește Wyoming → interoperează cu sateliți Voice PE ($59) și ecosistemul vocal local Home Assistant; decuplează STT/TTS/wake. | 5 | P1 | — | Home Assistant, Rhasspy |
+
+### Track C — Proactivitate & Observabilitate (P2)
+
+| # | Item | S | P | Dep | Sursă |
+|---|------|---|---|-----|-------|
+| H12.5 | **Preview / dry-run pentru autonomie** — arată ce *ar* face o acțiune înainte să aprobi pattern-ul; închide și gap-ul de observabilitate (nicio acțiune oarbă). Extinde H6.2. | 5 | P2 | H6.2 | Dust config preview |
+| H12.6 | **Update-uri KG incrementale (nu doar nocturne)** — extracție ușoară de entități per-tură ca memoria să apară în aceeași sesiune, nu doar după consolidarea de noapte. | 5 | P2 | H5.15, H8.1 | Mem, Tana |
+| H12.7 | **Captură pasivă multi-suprafață (opt-in, local)** — browser/clipboard/fișiere → KG, doar local. ⚠️ STRICT opt-in + inspectabil; nimic nu pleacă de pe mașină. | 8 | P2 | H8.1 | Pieces nanomodels, Omi |
+| H12.8 | **Split sateliți-mic → server-inferență pe GPU-ul de acasă** — mai multe endpoint-uri ieftine de microfon partajează un singur GPU Jarvis. | 8 | P2 | H12.4 | Willow (WIS) |
+| H12.9 | **UX management modele locale** — răsfoiește/descarcă/comută modele dintr-un click în HUD. | 5 | P2 | — | Jan.ai |
+| H12.10 | **Indicator mute hardware / strict-local** — semnal vizibil, auditabil "mic off / strict-local" în HUD + voce. Semnal de încredere ieftin. | 2 | P2 | — | Voice PE (mute fizic) |
+| H12.11 | **Canale de escaladare extinse** (dincolo de Telegram: WhatsApp/Signal/Slack/Discord) — *guvernate*, spre deosebire de OpenClaw. Adaptoarele de canal există deja. | 3 | P2 | H1.3 | OpenClaw (multi-channel) |
+
+### Track D — Platformă & Ecosistem (P3)
+
+| # | Item | S | P | Dep | Sursă |
+|---|------|---|---|-----|-------|
+| H12.12 | **Marketplace de skills curat & semnat** (anti-ClawHub moderat) — extinde skills importer cu semnături + review. ⚠️ moderat/semnat obligatoriu. | 8 | P3 | Skills | OpenClaw ClawHub (sigur) |
+| H12.13 | **Sync E2E opt-in între device-uri** (GPU acasă ↔ telefon) — ⚠️ obligatoriu E2E + opt-in; nu sparge local-first. | 13 | P3 | — | Reflect / Limitless |
+| H12.14 | **Model agentic mic, fine-tuned** (task-uri router/tool) — overlap cu H11.3 (pipeline SFT/GRPO); $0 COGS. | 8 | P3 | H11.3 | Jan-nano |
+
+> **Total ORIZONT 12:** 14 items, ~89 SP. **Acțiune imediată recomandată:** H12.1 (P0) — e simultan hardening real
+> ȘI wedge-ul de marketing (alternativa securizată la OpenClaw). Restul Track B (P1) ridică cel mai mult valoarea per efort.
+
+---
+
 ## ✅ Arhivă — H1–H4 + Sprint 0 (livrat în 0.5-beta)
 
 > Toate itemurile H1–H4 sunt complet implementate. Detalii complete (67 items, 248 SP): [docs/HISTORY.md](docs/HISTORY.md).
