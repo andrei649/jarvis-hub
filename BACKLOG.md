@@ -39,7 +39,7 @@ python -m pytest tests/ -v          # 1100+ passed, 9 skipped
 | **0.9-beta** | 🟢 Live | New integrations + agent marketplace | H5.7, H5.8 |
 | **0.9.1-beta** | 🟢 Live | Recall cu embeddings reale + perf cale fierbinte | H7.1–H7.5 (perf) |
 | **0.9.2-beta** | 🟢 Live | Hardening complet, CI/CD, memorie personală, cost analytics, onboarding | H7 (11 iteme) + H8 (7 iteme) + BUG-1 |
-| **1.0.0** | 🎯 Stable | Tot backlogul terminat: H10 + H11 + BUG-2 (frontend tests) | H10 (30 iteme) + H11 (4 iteme) + BUG-2 |
+| **1.0.0** | 🎯 Stable | Tot backlogul terminat: H10 + H11 + **H12** + BUG-2 (frontend tests). H12.1 (P0 securitate) = wedge anti-OpenClaw. Plan: [docs/plan-v1-dispatch.md](docs/plan-v1-dispatch.md) | H10 (30) + H11 (4) + H12 (14) + BUG-2 |
 
 ---
 
