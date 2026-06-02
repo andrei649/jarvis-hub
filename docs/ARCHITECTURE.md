@@ -8,7 +8,7 @@
 
 - Local-first multi-agent AI orchestration. Python 3.12 + FastAPI + LM Studio (port 1234).
 - 16 active agents (4 tiers), 17 bench agents (dormant, promotable at runtime).
-- Single entry point for web: `serve.py` → `agents/web.py` (FastAPI `app`); uvicorn binds on port 8000.
+- Single entry point for web: `serve.py` → `agents/web.py` (FastAPI `app`); uvicorn binds on port 8080.
 - CLI REPL entry point: `agents/run.py` → `Orchestrator.handle_input`.
 - Everything routes through `agents/core/orchestrator.py:Orchestrator`.
 - Memory is the heart: `agents/core/memory/` — conversation + vector + graph + RRF fusion.
