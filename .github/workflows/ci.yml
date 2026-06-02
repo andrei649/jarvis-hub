@@ -29,11 +29,13 @@ jobs:
           cache: pip
           cache-dependency-path: requirements-beta.txt
       - run: pip install -r requirements-beta.txt
-      - run: pip install ruff pytest-timeout
+      - run: pip install -r requirements-dev.txt
       - name: Lint (non-blocking)
-        # Reports issues with a red X but does not block the run.
-        # Drop `continue-on-error` to make linting required.
-        run: ruff check .
+        # Rules/config come from pyproject.toml. Kept quiet here (--exit-zero):
+        # the full lint/dead-code/complexity digest is published by
+        # code-health.yml so this step doesn't double-report. Drop --exit-zero
+        # (and continue-on-error) later to make linting a required gate.
+        run: ruff check . --exit-zero
         continue-on-error: true
       - name: Test
         run: python -m pytest tests/ --timeout=90 -q --tb=short
