@@ -1,6 +1,10 @@
 # Plan Dispatch H10 + H11 — Drum spre v1.0.0
 
-> Generat: 2026-06-02 · Read-only până la aprobare · Status: **DRAFT**
+> ⚠️ **SUPERSEDED (2026-06-02)** — acest plan acoperea doar H10+H11 și **sărea peste ORIZONT 12**,
+> inclusiv **H12.1 (singurul P0 din backlog)**. Planul autoritar pentru v1.0 este acum
+> **[`plan-v1-dispatch.md`](plan-v1-dispatch.md)** (H10 + H11 + H12). Păstrat ca referință istorică.
+
+> Generat: 2026-06-02 · Read-only până la aprobare · Status: **DRAFT (superseded)**
 > Analiză completă a swim lanes, dependențe și wave dispatch multi-agent.
 
 ---
