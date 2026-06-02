@@ -33,7 +33,9 @@ python -m pytest tests/ -v          # 784 passed, 9 skipped
 | **0.7-beta** | Next | Mobile PWA + i18n + UI Overhaul | H5.2, H5.3, H5.4 |
 | **0.8-beta** | Next | Performance & robustness + multi-agent workflows | H5.5, H5.6 |
 | **0.9-beta** | Next | New integrations + agent marketplace | H5.7, H5.8 |
-| **1.0.0** | 🎯 Stable | Hardening, hermetic tests + real CI/CD, doc truth-up, onboarding, observability | **Orizont 7 (Track A–D)** |
+| **0.9.1-beta** | 🟢 Live | Recall cu embeddings reale + perf cale fierbinte | H7.1–H7.5 |
+| **1.0.0** | 🎯 Stable | All H5/H7 done, documented, CI/CD, onboarding docs | All above + ARCHITECTURE.md |
+| **1.1.0** | Next | Memorie personală — „Jarvis te cunoaște" | ORIZONT 8 (H8.x) |
 
 ---
 
@@ -44,9 +46,12 @@ python -m pytest tests/ -v          # 784 passed, 9 skipped
 | **H1–H4 + Sprint 0 + Cross-cutting + Sec + Bugs** | 67 | **67** | 248 | **248** | **100%** |
 | **H5 Next Wave** (P2–P3) | 17 | **17** | 128 | **128** | **100%** |
 | **H6 Jarvis Autonom** (P1) | 7 | **7** | 60 | **60** | **100%** |
-| **Total general** | **91** | **91** | **436** | **436** | **100%** |
+| **H7 Perf Cale Fierbinte** (P1–P2) | 5 | **5** | 16 | **16** | **100%** |
+| **H8 Memorie Personală** (P1–P3) | 7 | **0** | 43 | **0** | **0%** |
+| **H9 Agent Ops: Workflows & Observability** (P2) | 3 | **3** | 29 | **29** | **100%** |
+| **Total general** | **106** | **99** | **524** | **481** | **92%** |
 
-**Test count:** 789 passed, 9 skipped (QA 2026-06-01: +H5.8 Agent Marketplace 5 teste, +H5.15 Daily Reflection 10 teste, +H5.14 Task4 /api/memory/search + HUD Fused Recall, +H5.6 Multi-Agent Workflows 16 teste)
+**Test count:** 909 passed, 9 skipped (2026-06-02: +ORIZONT 7 — perf_hotpath 9, recall_cache 6, model_tiering 19; + recall cu embeddings reale & RAG injection)
 
 > **Orizont 7 (PROPUS) — Drumul spre 1.0.0:** 11 stories, ~51 SP, **0%**. Vezi secțiunea de mai jos.
 
@@ -101,7 +106,7 @@ python -m pytest tests/ -v          # 784 passed, 9 skipped
 
 ---
 
-## Active: ORIZONT 6 — Jarvis Autonom / Proactive Cortex (P1) — 0/6
+## ✅ ORIZONT 6 — Jarvis Autonom / Proactive Cortex (P1) — 7/7 COMPLET
 
 > Viziune: Jarvis își găsește singur de lucru, lucrează continuu, îmi scrie pe telefon (Telegram)
 > doar când are nevoie de o decizie, și susține un review zilnic de 10–30 min (morning brief + evening retro).
@@ -156,10 +161,12 @@ python -m pytest tests/ -v          # 784 passed, 9 skipped
 > **Livrat sesiunea Claude 2026-06-01:** H5.15 ✅ Daily Reflection + H5.6 ✅ Multi-Agent Workflows + H5.14 Task4 ✅ `/api/memory/search` + HUD Fused Recall. Merged în `main` (PR #13, commit `6eaac77`).
 >
 > **Livrat Antigravity 2026-06-01:** H5.1 ✅ Howard Stark Digital Twin + H5.2 ✅ Mobile HUD / PWA + H5.3 ✅ i18n RO/EN + H5.4 ✅ Premium UI Overhaul + H5.7 ✅ New Plugins + H5.8 ✅ Agent Marketplace.
+>
+> **Livrat sesiunea Claude 2026-06-01 (LM Studio recall):** brațul vectorial al fused recall era mort — `/api/memory/search` trimitea `embedding=None` și nimic nu popula `MemoryManager.vectors`. Acum embeddings reale end-to-end: `Embedder` capătă backend **LM Studio** (`/v1/embeddings`, default) lângă Ollama, cu fallback hash determinist (recall nu pică niciodată). `MemoryManager.embed/remember/recall`, query embedat în `/api/memory/search`, endpoint nou `POST /api/memory/remember`, opțiune `MEMORY_EMBED_TURNS`. Config în `.env.example` (`EMBED_BACKEND/MODEL/BASE_URL`). +9 teste offline (809 passed, 9 skipped).
 
 | # | Item | S | Dep | Target version |
 |---|------|---|-----|---------------|
-| H5.1 | Howard: fine-tuning + voice clone + continuous ingestion | 13 | — | 0.6 |
+| H5.1 | Howard: fine-tuning + voice clone + continuous ingestion (arhivă personală: Facebook + WhatsApp → LLM antrenat pe conversațiile lui Andrei) | 13 | — | 0.6 |
 | H5.2 ✅ | **Mobile HUD / PWA** (responsive, offline, push) | 8 | — | 0.7 ✅ |
 | H5.3 ✅ | **Multi-Language / i18n (RO/EN switch)** | 5 | — | 0.7 ✅ |
 | H5.4 ✅ | **UI Overhaul (teme, layout, accesibilitate)** | 8 | H5.2 | 0.7 ✅ |
@@ -176,6 +183,79 @@ python -m pytest tests/ -v          # 784 passed, 9 skipped
 | H5.15 ✅ | **Daily Reflection & Graph Consolidation** — `DailyReflector` (`core/autonomy/reflection.py`): gather context → LLM reflection → JSON entities/relations/lessons → promote to Neo4j graph; idempotent per zi; hookuit în `_autonomy_loop` (fereastră 22:00–07:00, gated `system.reflection_enabled`). Endpoint `/api/reflection/status` + `/api/reflection/run`. 10 teste offline. | 8 | H6.6, H3.2 | 0.8 ✅ |
 | H5.16 ✅ | **Sentence-level TTS & Audio Barge-in** — integration edge-tts, play/stop barge-in sync, auto-speak, unit tested | 8 | H1.1, H5.5 | 0.8 ✅ |
 | H5.17 ✅ | **Batch & Cache Embeddings Pipeline** — `EmbeddingCache` (content-addressed, sharded, crash-safe) + `Embedder.embed_batch` (dedup + paralel) + retry/backoff (degradare la hash) + cache stats în pipeline. `core/ingestion/embedder.py` | 5 | H5.5 | 0.8 ✅ |
+
+---
+
+## ORIZONT 7 — Performanță Cale Fierbinte (P1–P2)
+
+> Sursă: profiling 2026-06-02 al căii per-turn (NU generarea LLM). Bottleneck
+> non-LLM = scrieri sincrone SQLite pe event-loop-ul async (checkpoint + audit +
+> worker autonomie). Detalii + măsurători: `docs/research/2026-06-02-perf-hotpath.md`.
+> **Câștig măsurat:** commit SQLite `3317 µs → 92 µs` (~36×) cu WAL+`synchronous=NORMAL`.
+
+| # | Item | S | P | Dep | AC |
+|---|------|---|---|-----|----|
+| H7.1 ✅ | **SQLite WAL + `synchronous=NORMAL`** pe DB-urile scrise per-turn — `checkpoint.py`, `security/audit.py`, `autonomy/queue.py`. Durabil (WAL crash-safe; NORMAL sigur sub WAL). | 1 | P1 | — | ✅ commit-uri ~36× mai ieftine; suite persistență/autonomy/securitate verzi |
+| H7.2 ✅ | **Offload scrieri blocante de pe event-loop** — `checkpoints.save` / `audit.log` / `_record_interactions` / `_log_session` prin `asyncio.to_thread` în toate cele 3 call-site-uri per-turn; `checkpoint.py` cu `check_same_thread=False` + `threading.Lock`. | 3 | P1 | H7.1 | ✅ handlerele per-turn nu mai fac I/O sqlite/fișier sincron pe loop; thread-safe sub `to_thread` |
+| H7.3 ✅ | **Debounce / frecvență checkpoint** — `_maybe_checkpoint()` salvează doar la `memory.checkpoint_every` (default 5) turns; `_flush_checkpoint()` forțat pe `new_session()` + `aclose()` (shutdown). Reduce I/O și CPU (`json.dumps` al state-ului). | 2 | P2 | H7.2 | ✅ checkpoint scris ≤1×/N turns; restart curat nu pierde sesiunea activă |
+| H7.4 ✅ | **Query-embedding cache + fast-fail (recall)** — `Embedder.from_env(cache_dir=…)` default `memory_logs/embedding_cache/recall` + LRU in-process (`_PROC_CACHE`, 256) cheie `(backend,model,text)`; `max_retries=1` fast-fail. | 2 | P2 | — (recall) | ✅ query repetat = cache hit (fără network/disk); embeddings down → recall degradează instant |
+| H7.5 ✅ | **Strategie fast/heavy model** — `is_heavy_request()` (token threshold 2000 + keywords RO/EN) escaladează în `hybrid_router.select_backend()` POLICY_AUTO de la slotul rapid (VRAM) la slotul deep (DDR5); flag `JARVIS_AUTO_DEEP`. | 8 | P2 | — | ✅ task ușor → model rapid `local`; task greu → `local-deep`/DEFAULT_DEEP_MODEL; nu afectează cloud/claude/local-only |
+
+> **ORIZONT 7 COMPLET ✅** (2026-06-02) — livrat în paralel (3 streams Claude Code în worktree izolat: A=H7.2+H7.3, B=H7.4, C=H7.5), integrat secvențial cu rezolvare de conflicte. **+49 teste offline noi** (test_perf_hotpath 9, test_recall_cache 6, test_model_tiering 19, + extinderi). Setări noi: `memory.checkpoint_every` (runtime), env `EMBED_CACHE_DIR`, `JARVIS_AUTO_DEEP`.
+>
+> **Caveat-uri:** checkpoint poate întârzia ≤N turns (flush pe boundary sesiune); `get_model(agent_id)` NU escaladează (nu are prompt) — escaladarea trăiește în `select_backend()`, calea fierbinte. H7.5 validabil complet doar live pe System76 cu cele 2 sloturi LM Studio încărcate.
+
+---
+
+## Active: ORIZONT 8 — Memorie Personală & Personalizare („Jarvis te cunoaște") (P1) — 0/7
+
+> **Viziune:** Jarvis își construiește în timp o **memorie despre Andrei** — fapte, preferințe,
+> decizii, oameni, proiecte — extrasă din conversații, consolidată periodic (ca reflection-ul H5.15),
+> versionată și injectată în context la fiecare agent, ca răspunsurile să fie personalizate fără
+> să repet de fiecare dată cine sunt și ce vreau. Construit pe infrastructura livrată: fused recall
+> (H5.14), embeddings reale + cache (H7.4), daily reflection (H5.15).
+>
+> **Principii:** local-first (ethos Frigga — datele personale rămân pe LAN), **inspectabil & editabil**
+> (pot vedea/șterge orice fapt), opt-in pentru orice plecare spre cloud. Personalizarea crește în timp,
+> dar controlul rămâne la mine.
+
+| # | Item | S | P | Dep | AC |
+|---|------|---|---|-----|----|
+| H8.1 | **Memorie despre Andrei (User Profile Memory)** — store structurat persistent (facts / preferences / decisions / people / projects) construit din conversații (extragere LLM + consolidare idempotentă, pattern H5.15), versionat, injectat în prompt la toți agenții. `core/memory/profile.py` + `/api/profile`. | 13 | P1 | H5.14, H5.15, H7.4 | după câteva conversații, Jarvis cunoaște preferințe/fapte despre Andrei și le folosește; profilul e inspectabil în HUD |
+| H8.2 | **Privacy & Forget Controls** — pentru memoria personală: export JSON, forget/redact selectiv per fapt, retention policy, scope strict-local. | 5 | P1 | H8.1 | pot șterge un fapt anume; export complet; nimic personal nu pleacă în cloud fără opt-in explicit |
+| H8.3 | **Recall ON by default + Memory HUD** — activează `memory.recall_enabled` cu cache-ul H7.4; tab HUD cu faptele memorate (search/edit/delete), surse și scoruri (extinde Fused Recall). | 8 | P2 | H7.4, H8.1 | recall activ în chat din oficiu; HUD afișează și editează memoria personală |
+| H8.4 | **Embeddings de calitate (model dedicat)** — `mxbai-embed-large` sau container TEI; benchmark calitate retrieval vs hash/nomic; degradare grațioasă păstrată. | 5 | P2 | H7.4 | retrieval măsurabil mai bun pe un set de probe; fallback intact |
+| H8.5 | **Validare live fast/heavy (H7.5) + Model Tier HUD** — confirmă pe System76 cu 2 sloturi LM Studio încărcate; expune deciziile de tiering (fast↔deep) în `/bench` + HUD. | 5 | P2 | H7.5 | comutare fast↔deep vizibilă; latențe per tier măsurate |
+| H8.6 | **Proactive Personal Briefs** — morning/evening brief (H6.4) personalizate din profil + recall: ce contează pentru Andrei azi (proiecte, oameni, deadline-uri). | 5 | P3 | H8.1, H6.4 | briefurile referă proiectele/oamenii din profilul personal |
+| H8.7 | **AI-Navigable Docs upkeep** — `docs/ARCHITECTURE.md` ca sursă unică de navigare pentru asistenți AI; checklist „docs la zi" în template-ul de PR. | 2 | P3 | — | doc-ul reflectă codul curent; PR-urile mari ating și ARCHITECTURE.md |
+
+> **Tech-debt notat (2026-06-02):** `README.md` rămăsese în urmă (test count 181/39, v0.2.1, linia Memory fără embeddings/graph) — actualizat în această sesiune. De ținut sincron pe viitor.
+>
+> **Inconsistențe găsite la scrierea `docs/ARCHITECTURE.md` — REZOLVATE (2026-06-02):**
+> 1. ✅ **Model real, nu hardcodat:** `LLMRouter.detect()` auto-detectează modelul încărcat în LM Studio/Ollama (`/v1/models`, `/api/tags`) și îl folosește; fallback la `/admin → llm.default_model`. Doc-urile aliniate.
+> 2. ✅ **`agents.yaml`:** eliminat duplicatul `howard` din `bench:` (rămâne doar în `agents:`, activ).
+> 3. ✅ **Claude model din `/admin`:** nou setting `llm.claude_model` (settings_db) citit de `hybrid_router` în loc de constanta hardcodată.
+> 4. ✅ **`handle_input_stream`:** `agent_id` și `t_s0` pre-inițializate înainte de buclă — fără `UnboundLocalError` când `target` e gol.
+>
+> **Vizinea Howard (context utilizator):** Howard = digital twin care „știe ce știe Claude despre Andrei" — alimentat de memoria personală (H8.1) + arhiva ingerată (H5.1). **Rămas în mâna lui Andrei:** antrenarea unui LLM pe toate conversațiile din Facebook/WhatsApp (date pe care le furnizează el); pipeline-ul de ingestie + fine-tuning e H5.1.
+
+---
+
+## Active: ORIZONT 9 — Agent Ops: Visual Workflows & Observability (P2)
+
+> **Context (research utilizator, 2026-06-02):** evaluare a tool-urilor externe de management
+> echipe AI (Flowise, Langflow, CrewAI, Autogen, SuperAGI, OpenWebUI, LangSmith, Dust.tt).
+> **Decizie de arhitectură:** NU adoptăm un tool extern — Jarvis Hub acoperă deja orchestrarea,
+> routing-ul hibrid local↔cloud, rolurile/tier-urile de agenți, autonomia, securitatea și memoria,
+> lucruri pe care acele tool-uri nu le au la un loc (și sunt Node/TS, contra „pure Python"). Împrumutăm
+> doar **2 idei** unde avem gap real: builder vizual de workflow-uri (Flowise/Langflow) și
+> observability/eval (LangSmith), construite nativ peste ce avem.
+
+| # | Item | S | P | Dep | AC |
+|---|------|---|---|-----|----|
+| H9.1 ✅ | **Visual Workflow Builder** — tab HUD (canvas SVG, vanilla React) PESTE `WorkflowEngine` (H5.6): noduri = pași/agenți, muchii = `depends_on`; creează/editează/salvează workflow-uri user-defined + rulare. Backend: `Pipeline.from_dict`, persistență (CRUD) + endpoints `/api/workflows` POST/PUT/DELETE, register în registry. | 13 | P2 | H5.6 | pot compune vizual un workflow, îl salvez, îl rulez din HUD; DAG invalid → eroare clară |
+| H9.2 ✅ | **Observability — Trace Explorer** — store de trace-uri per-request (classify→route→model→tokens→latență→cost), nu doar `last_cognition`; endpoint `/api/traces[/{id}]` + tab HUD de inspecție. Extinde `bench.py` + CognitionPanel. | 8 | P2 | — | fiecare request lasă un trace inspectabil; pot vedea unde se duce timpul/tokenii pe pași |
+| H9.3 ✅ | **Offline Eval Harness** — rulează seturi de prompturi prin orchestrator (LLM injectabil), scor pass/criterii, tracking de regresie; `core/observability/eval.py` + CLI/endpoint. | 8 | P2 | H9.2 | un set de probe produce scor reproductibil offline; regresii vizibile între rulări |
 
 ---
 
