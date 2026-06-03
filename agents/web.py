@@ -1142,6 +1142,32 @@ async def autonomy_approvals():
     })
 
 
+@app.post("/api/security/spotlight")
+async def security_spotlight(req: Request):
+    """H17.1 — datamark untrusted content + flag prompt-injection attempts."""
+    from agents.core.security.quarantine import spotlight
+    try:
+        body = await req.json()
+    except Exception:
+        body = {}
+    text = (body or {}).get("text", "")
+    if not text:
+        return JSONResponse({"error": "text required"}, status_code=400)
+    return _nocache_json(spotlight(text, (body or {}).get("source", "untrusted")))
+
+
+@app.post("/api/security/scan-injection")
+async def security_scan_injection(req: Request):
+    """H17.1 — return prompt-injection patterns found in text (empty = clean)."""
+    from agents.core.security.quarantine import detect_injection
+    try:
+        body = await req.json()
+    except Exception:
+        body = {}
+    flags = detect_injection((body or {}).get("text", ""))
+    return _nocache_json({"flags": flags, "suspicious": bool(flags)})
+
+
 @app.get("/api/security/posture", dependencies=[Depends(_admin_guard)])
 async def security_posture():
     """Packaged security posture: encrypted secrets + signed skills + sandbox + guardrails (H12.1)."""
