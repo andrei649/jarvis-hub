@@ -80,7 +80,41 @@ class WorkflowEngine:
         """Dispatch a step by kind: critic loop (H10.15) or normal agent run."""
         if step.kind == "critic":
             return await self._run_critic(step, ctx, step_map)
+        if step.kind == "router":
+            return await self._run_router(step, ctx)
         return await self._run_step(step, ctx)
+
+    async def _run_router(self, step: WorkflowStep, ctx: dict) -> str:
+        """H10.13 — an agent picks a route label; dispatch to the mapped agent.
+
+        The router agent (step.agent_id) replies with a label — either bare text
+        containing a route name or JSON {"route": "<label>"}. The engine maps the
+        label to an agent and runs it; falls back to ``default``. With no match
+        and no default, the router's own reply is returned (no dispatch).
+        """
+        cfg = step.router or {}
+        routes = cfg.get("routes", {}) or {}
+        default = cfg.get("default", "")
+
+        decision = await self._run_step(step, ctx)
+        label = _match_route(decision, routes) or (default and "_default")
+        chosen_agent = routes.get(label) if label and label != "_default" else default
+        chosen_label = label if (label and label != "_default") else ("default" if default else "")
+
+        ctx[f"{step.id}.route"] = chosen_label
+        ctx[f"{step.id}.agent"] = chosen_agent or ""
+        ctx.setdefault("_routes", {})[step.id] = {
+            "route": chosen_label, "agent": chosen_agent or "", "decision": decision,
+        }
+
+        if not chosen_agent:
+            return decision
+        routed = WorkflowStep(
+            id=f"{step.id}__routed",
+            agent_id=chosen_agent,
+            prompt_template=cfg.get("dispatch_template", "{_input}"),
+        )
+        return await self._run_step(routed, ctx)
 
     async def _run_critic(self, step: WorkflowStep, ctx: dict, step_map: dict) -> str:
         """H10.15 — evaluate a target step's output; re-run it on low scores.
@@ -161,6 +195,21 @@ class WorkflowEngine:
         except Exception as e:
             logger.warning("Step %r failed: %s", step.id, e)
             return f"[error:{e}]"
+
+
+def _match_route(decision: str, routes: dict) -> str:
+    """Resolve a route label from a router agent's reply (JSON or bare text)."""
+    if not decision or not routes:
+        return ""
+    parsed = extract_json(decision)
+    if isinstance(parsed, dict) and parsed.get("route") in routes:
+        return str(parsed["route"])
+    low = decision.lower()
+    # Prefer an exact token-ish match; longest label first to avoid substrings.
+    for label in sorted(routes, key=len, reverse=True):
+        if label.lower() in low:
+            return label
+    return ""
 
 
 def evaluate_condition(cond: dict, text: str) -> bool:

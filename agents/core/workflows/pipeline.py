@@ -23,6 +23,10 @@ class WorkflowStep:
     kind: str = "agent"
     # Critic config: {"target": <step_id>, "pass_threshold": 0.7, "max_retries": 1}.
     critic: Optional[dict] = None
+    # H10.13: router config for kind=="router" — an agent picks a route label,
+    # and the engine dispatches to the mapped agent.
+    # {"routes": {"billing": "gecko", ...}, "default": "jarvis", "dispatch_template": "{_input}"}
+    router: Optional[dict] = None
 
     def to_dict(self) -> dict:
         d = {
@@ -39,6 +43,8 @@ class WorkflowStep:
             d["kind"] = self.kind
         if self.critic:
             d["critic"] = self.critic
+        if self.router:
+            d["router"] = self.router
         return d
 
     @classmethod
@@ -52,6 +58,7 @@ class WorkflowStep:
             output_schema=d.get("output_schema"),
             kind=d.get("kind", "agent"),
             critic=d.get("critic"),
+            router=d.get("router"),
         )
 
 
