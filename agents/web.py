@@ -2085,6 +2085,85 @@ async def clear_traces():
 # ── END H9.2 Trace Explorer endpoints ─────────────────────────────
 
 
+# ── H10.8 Inbound Webhook Triggers ────────────────────────────────
+
+_webhook_store = None
+
+
+def _get_webhook_store():
+    global _webhook_store
+    if _webhook_store is None:
+        from agents.core.webhooks import WebhookStore
+        _webhook_store = WebhookStore()
+    return _webhook_store
+
+
+class WebhookCreateBody(BaseModel):
+    target: str = Field(..., max_length=128)
+    target_type: str = Field("agent", pattern="^(agent|workflow)$")
+    name: str = Field("", max_length=128)
+
+
+@app.get("/api/webhooks")
+async def list_webhooks():
+    """List configured inbound webhooks (tokens masked)."""
+    return _nocache_json({"webhooks": _get_webhook_store().list()})
+
+
+@app.post("/api/webhooks")
+async def create_webhook(body: WebhookCreateBody):
+    """Create an inbound webhook; the token is returned ONCE."""
+    try:
+        rec = _get_webhook_store().create(body.target, body.target_type, body.name)
+    except ValueError as exc:
+        return _nocache_json({"error": str(exc)}, status_code=400)
+    return _nocache_json(rec)
+
+
+@app.delete("/api/webhooks/{hook_id}")
+async def delete_webhook(hook_id: str):
+    ok = _get_webhook_store().delete(hook_id)
+    return _nocache_json({"ok": ok}, status_code=200 if ok else 404)
+
+
+@app.post("/api/webhooks/{hook_id}")
+async def trigger_webhook(hook_id: str, request: Request):
+    """Token-authenticated trigger → runs the configured agent/workflow."""
+    if not orch:
+        return _nocache_json({"error": "not initialized"}, status_code=503)
+    store = _get_webhook_store()
+    hook = store.get(hook_id)
+    if hook is None:
+        return _nocache_json({"error": "webhook not found"}, status_code=404)
+
+    token = request.headers.get("x-webhook-token") or request.query_params.get("token", "")
+    if not store.verify(hook_id, token):
+        return _nocache_json({"error": "invalid or missing token"}, status_code=401)
+
+    try:
+        payload = await request.json()
+    except Exception:
+        payload = (await request.body()).decode("utf-8", "replace")
+
+    from agents.core.webhooks import extract_input
+    text = extract_input(payload)
+    store.mark_called(hook_id)
+
+    if hook["target_type"] == "agent":
+        reply = await orch.handle_input(text, channel="webhook", agent_override=hook["target"])
+        return _nocache_json({"ok": True, "target": hook["target"], "response": reply})
+
+    # workflow target (best-effort — requires the workflow engine)
+    engine = getattr(orch, "workflow_engine", None)
+    if engine is None or not hasattr(engine, "run"):
+        return _nocache_json({"error": "workflow execution not available"}, status_code=501)
+    result = await engine.run(hook["target"], {"input": text})
+    return _nocache_json({"ok": True, "target": hook["target"], "result": result})
+
+
+# ── END H10.8 Inbound Webhook endpoints ───────────────────────────
+
+
 # ── H10.5 MCP Server Mode (expose Jarvis agents as governed MCP tools) ─
 
 def _build_mcp_server():
