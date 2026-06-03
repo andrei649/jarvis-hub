@@ -13,6 +13,7 @@ import time
 from typing import TYPE_CHECKING
 
 from .pipeline import Pipeline, WorkflowStep
+from .structured import validate_output
 
 if TYPE_CHECKING:
     from agents.core.orchestrator import Orchestrator
@@ -32,6 +33,7 @@ class WorkflowEngine:
         """Execute *pipeline* and return {step_id: response, ..., _elapsed, _ok}."""
         t0 = time.monotonic()
         ctx: dict[str, str] = {"_input": initial_input}
+        ctx["_structured"] = {}
         errors: list[str] = []
 
         terminated_by: str = ""
@@ -53,6 +55,11 @@ class WorkflowEngine:
                     else:
                         ctx[step.id] = out
 
+            # H10.10: validate + expose structured fields for any schema'd step.
+            for step in batch:
+                if step.output_schema:
+                    self._apply_structured(step, ctx, errors)
+
             # H10.12: stop early if any step in this batch tripped its guard.
             for step in batch:
                 if step.terminate_when and evaluate_condition(step.terminate_when, ctx.get(step.id, "")):
@@ -67,6 +74,23 @@ class WorkflowEngine:
         ctx["_terminated"] = bool(terminated_by)
         ctx["_terminated_by"] = terminated_by
         return ctx
+
+    def _apply_structured(self, step: WorkflowStep, ctx: dict, errors: list) -> None:
+        """H10.10 — validate a step's output against its schema and expose fields.
+
+        Stores the result under ctx["_structured"][step.id] and, on success,
+        flattens each field to ctx["{step.id}.{field}"] for template references.
+        A validation failure marks the step as an error but does not raise.
+        """
+        result = validate_output(ctx.get(step.id, ""), step.output_schema)
+        ctx["_structured"][step.id] = result
+        if result["ok"]:
+            for field, value in result["data"].items():
+                ctx[f"{step.id}.{field}"] = "" if value is None else str(value)
+        else:
+            if step.id not in errors:
+                errors.append(step.id)
+            logger.warning("Step %r structured-output invalid: %s", step.id, result["error"])
 
     async def _run_step(self, step: WorkflowStep, ctx: dict) -> str:
         prompt = _render(step.prompt_template, ctx)

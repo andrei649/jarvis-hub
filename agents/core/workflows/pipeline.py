@@ -15,6 +15,9 @@ class WorkflowStep:
     # H10.12: optional early-termination guard evaluated against this step's output.
     # e.g. {"type": "contains", "value": "APPROVED"} → halt the pipeline if matched.
     terminate_when: Optional[dict] = None
+    # H10.10: optional structured-output schema; engine validates the step's reply
+    # and exposes typed fields as {step_id.field} to downstream steps.
+    output_schema: Optional[dict] = None
 
     def to_dict(self) -> dict:
         d = {
@@ -25,6 +28,8 @@ class WorkflowStep:
         }
         if self.terminate_when:
             d["terminate_when"] = self.terminate_when
+        if self.output_schema:
+            d["output_schema"] = self.output_schema
         return d
 
     @classmethod
@@ -35,6 +40,7 @@ class WorkflowStep:
             prompt_template=d["prompt_template"],
             depends_on=list(d.get("depends_on") or []),
             terminate_when=d.get("terminate_when"),
+            output_schema=d.get("output_schema"),
         )
 
 
