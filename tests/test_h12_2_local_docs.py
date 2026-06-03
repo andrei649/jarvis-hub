@@ -84,4 +84,5 @@ def test_local_docs_endpoint(tmp_path):
         status = c.get("/api/local-docs").json()
         assert status["files_indexed"] == 1
         # bad path → 400
-        assert c.post("/api/local-docs/index", json={"path": str(tmp_path / "ghost")}).status_code == 400
+        bad = c.post("/api/local-docs/index", json={"path": str(tmp_path / "ghost")})
+        assert bad.status_code == 400
