@@ -444,6 +444,16 @@ async def tts_endpoint(req: TTSRequest):
 
 # ── Status (HUD-compatible) ──────────────────────────────────────
 
+@app.get("/api/health/components")
+async def component_health():
+    """A8: which optional components initialized (vs failed silently)."""
+    reg = getattr(orch, "components", None) if orch else None
+    if reg is None:
+        return _nocache_json({"components": {}, "summary": "registry unavailable"})
+    return _nocache_json({"components": reg.health(), "failed": reg.failed(),
+                          "summary": reg.summary()})
+
+
 @app.get("/status")
 async def status():
     if not orch:
