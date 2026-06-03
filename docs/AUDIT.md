@@ -128,7 +128,10 @@ and the `9.9.9` snapshot stays a clean, behavior-frozen baseline for human testi
 
 Applied (each its own PR, behavior-preserving, full-suite green):
 - **B1/B2/B6** micro-bug hardening (#113).
-- **A3/Q1** `JsonStore` base + 6 stores migrated (#114).
+- **A3/Q1** `JsonStore` base + **all 13 stores migrated** (#114 + follow-up: Widget,
+  Room, Notes, Review, Webhook, Arena, ActionApprovalQueue, BiTemporalKG, EntityStore,
+  SoulVersionStore, DecayMemory, KillSwitch, RunHistory, IntentLog, TransparencyAnchor).
+  The duplicated `_load`/`_save`/lock boilerplate now exists once, in the base.
 - **A7** `ActionApprovalQueue` persistence (opt-in) + `JsonStore` in-memory mode.
 - **Q3** `str(e)`-on-500 leaks hardened to generic messages (detail still logged).
 

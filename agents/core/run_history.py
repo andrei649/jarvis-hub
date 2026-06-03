@@ -11,41 +11,28 @@ ring kept on disk.
 from __future__ import annotations
 
 import json
-import threading
 import time
 from collections import deque
 from pathlib import Path
+from .persistence import JsonStore
 from typing import Optional
 
 DEFAULT_PATH = Path("memory_logs/run_history.json")
 MAX_PER_AGENT = 100
 
 
-class RunHistory:
+class RunHistory(JsonStore):
     def __init__(self, path: str | Path = DEFAULT_PATH, max_per_agent: int = MAX_PER_AGENT) -> None:
-        self.path = Path(path)
         self.max_per_agent = max_per_agent
-        self._lock = threading.Lock()
-        self._runs: dict[str, deque] = {}
-        self._load()
+        super().__init__(path)
 
-    # ── persistence ──────────────────────────────────────────────────────────
+    def _serialize(self):
+        return {a: list(d) for a, d in self._runs.items()}
 
-    def _load(self) -> None:
-        if self.path.exists():
-            try:
-                raw = json.loads(self.path.read_text(encoding="utf-8"))
-                for agent_id, runs in raw.items():
-                    self._runs[agent_id] = deque(runs, maxlen=self.max_per_agent)
-            except Exception:
-                self._runs = {}
+    def _deserialize(self, raw) -> None:
+        raw = raw if isinstance(raw, dict) else {}
+        self._runs = {aid: deque(runs, maxlen=self.max_per_agent) for aid, runs in raw.items()}
 
-    def _save(self) -> None:
-        self.path.parent.mkdir(parents=True, exist_ok=True)
-        tmp = self.path.with_suffix(".tmp")
-        snapshot = {a: list(d) for a, d in self._runs.items()}
-        tmp.write_text(json.dumps(snapshot, ensure_ascii=False, indent=2), encoding="utf-8")
-        tmp.replace(self.path)
 
     # ── write ──────────────────────────────────────────────────────────────
 

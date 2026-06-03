@@ -16,9 +16,9 @@ import difflib
 import hashlib
 import json
 import random
-import threading
 import time
 from pathlib import Path
+from .persistence import JsonStore
 from typing import Optional
 
 DEFAULT_PATH = Path("memory_logs/soul_versions.json")
@@ -28,28 +28,12 @@ def _hash(content: str) -> str:
     return hashlib.sha256(content.encode("utf-8")).hexdigest()[:12]
 
 
-class SoulVersionStore:
+class SoulVersionStore(JsonStore):
+    # base default _serialize/_deserialize operate on self._data:
+    # {agent_id: {"versions": [..], "ab": {...}}}
     def __init__(self, path: str | Path = DEFAULT_PATH) -> None:
-        self.path = Path(path)
-        self._lock = threading.Lock()
-        # {agent_id: {"versions": [..], "ab": {...}}}
-        self._data: dict[str, dict] = {}
-        self._load()
+        super().__init__(path)
 
-    # ── persistence ──────────────────────────────────────────────────────────
-
-    def _load(self) -> None:
-        if self.path.exists():
-            try:
-                self._data = json.loads(self.path.read_text(encoding="utf-8"))
-            except Exception:
-                self._data = {}
-
-    def _save(self) -> None:
-        self.path.parent.mkdir(parents=True, exist_ok=True)
-        tmp = self.path.with_suffix(".tmp")
-        tmp.write_text(json.dumps(self._data, ensure_ascii=False, indent=2), encoding="utf-8")
-        tmp.replace(self.path)
 
     def _agent(self, agent_id: str) -> dict:
         return self._data.setdefault(agent_id, {"versions": [], "ab": None})

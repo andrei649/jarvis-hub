@@ -22,6 +22,7 @@ import secrets
 import threading
 import time
 from pathlib import Path
+from ..persistence import JsonStore
 from typing import Optional
 
 DEFAULT_KILL_PATH = Path("memory_logs/kill_switch.json")
@@ -74,27 +75,18 @@ class CapabilityBroker:
             return [dict(t) for t in self._tokens.values()]
 
 
-class KillSwitch:
+class KillSwitch(JsonStore):
     """Out-of-band halt; persisted so a restart preserves an engaged halt."""
 
     def __init__(self, path: str | Path = DEFAULT_KILL_PATH) -> None:
-        self.path = Path(path)
-        self._lock = threading.Lock()
-        self._halted: dict[str, dict] = {}
-        self._load()
+        super().__init__(path)
 
-    def _load(self) -> None:
-        if self.path.exists():
-            try:
-                self._halted = json.loads(self.path.read_text(encoding="utf-8"))
-            except Exception:
-                self._halted = {}
+    def _serialize(self):
+        return self._halted
 
-    def _save(self) -> None:
-        self.path.parent.mkdir(parents=True, exist_ok=True)
-        tmp = self.path.with_suffix(".tmp")
-        tmp.write_text(json.dumps(self._halted, ensure_ascii=False, indent=2), encoding="utf-8")
-        tmp.replace(self.path)
+    def _deserialize(self, raw) -> None:
+        self._halted = raw if isinstance(raw, dict) else {}
+
 
     def engage(self, scope: str = GLOBAL, reason: str = "") -> dict:
         with self._lock:
