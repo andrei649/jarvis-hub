@@ -2068,6 +2068,53 @@ async def clear_traces():
 # ── END H9.2 Trace Explorer endpoints ─────────────────────────────
 
 
+# ── H10.5 MCP Server Mode (expose Jarvis agents as governed MCP tools) ─
+
+def _build_mcp_server():
+    """Build a JarvisMCPServer over the live orchestrator's agents."""
+    from agents.core.mcp.server import JarvisMCPServer
+
+    agents = {
+        aid: f"{a.config.get('name', aid)} — {a.config.get('tier', '')} tier agent"
+        for aid, a in orch.agents.items()
+    }
+
+    async def _runner(agent_id: str, text: str) -> str:
+        return await orch.handle_input(text, channel="mcp", agent_override=agent_id)
+
+    allowed = orch.get_setting("mcp.exposed_agents", None)
+    return JarvisMCPServer(_runner, agents, allowed_agents=allowed, lan_only=True)
+
+
+@app.get("/api/mcp/server")
+async def mcp_server_status():
+    """Status + governed tool list for Jarvis's MCP server mode (H10.5)."""
+    if not orch:
+        return _nocache_json({"error": "not initialized"}, status_code=503)
+    enabled = bool(orch.get_setting("mcp.server_enabled", False))
+    status = _build_mcp_server().status()
+    status["enabled"] = enabled
+    return _nocache_json(status)
+
+
+@app.post("/api/mcp/server/rpc")
+async def mcp_server_rpc(message: dict):
+    """JSON-RPC 2.0 entry point (HTTP transport). Disabled by default; LAN-only."""
+    if not orch:
+        return _nocache_json({"error": "not initialized"}, status_code=503)
+    if not bool(orch.get_setting("mcp.server_enabled", False)):
+        return _nocache_json(
+            {"error": "MCP server mode disabled (set mcp.server_enabled)"},
+            status_code=403,
+        )
+    response = await _build_mcp_server().handle(message)
+    # JSON-RPC notifications produce no response body.
+    return _nocache_json(response if response is not None else {"ok": True})
+
+
+# ── END H10.5 MCP Server endpoints ────────────────────────────────
+
+
 @app.get("/api/workflows")
 async def list_workflows():
     """List all registered workflow pipelines (H5.6 + H9.1 user-defined)."""
