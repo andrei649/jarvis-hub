@@ -1134,6 +1134,23 @@ async def widget_message(token: str, req: Request):
         return _nocache_json({"reply": "", "error": str(e)})
 
 
+# ── H13.2 Constrained decoding (GBNF grammar) ─────────────────────────────────
+
+@app.post("/api/llm/grammar")
+async def llm_grammar(req: Request):
+    """Generate a GBNF grammar from a JSON schema or tool spec (constrained decoding)."""
+    from agents.core.llm.grammar import json_schema_to_gbnf, tool_to_gbnf
+    try:
+        body = await req.json()
+    except Exception:
+        body = {}
+    if (body or {}).get("tool"):
+        return _nocache_json({"gbnf": tool_to_gbnf(body["tool"])})
+    if (body or {}).get("schema"):
+        return _nocache_json({"gbnf": json_schema_to_gbnf(body["schema"])})
+    return JSONResponse({"error": "schema or tool required"}, status_code=400)
+
+
 # ── H14.3 Sleep-time memory consolidation ─────────────────────────────────────
 
 @app.post("/api/memory/consolidate")

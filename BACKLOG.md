@@ -416,7 +416,7 @@ python -m pytest tests/ -v          # 1100+ passed, 8 skipped
 | # | Item | S | P | Dep | Sursă |
 |---|------|---|---|-----|-------|
 | H13.1 | **Tier VLM strict-local** (Qwen3-VL-8B) — înțelegere ecran/documente/bonuri/PDF → alimentează pipeline-ul Howard; cea mai mare capabilitate *nouă*, fără cloud. ⚠️ verifică build GGUF + buget KV-cache pe 24GB. | 8 | P1 | H5.1 | Qwen3-VL (Oct 2025) |
-| H13.2 | **Decodare constrânsă (GBNF/XGrammar) default** pentru toți agenții cu tool-calling — garantează tool-args valide, elimină retry-urile de validare. Câștig mare la fiabilitate, $0. | 5 | P1 | — | XGrammar / llama.cpp |
+| H13.2 ✅ | **Decodare constrânsă (GBNF) pentru tool-calling** — garantează tool-args valide. **Done 2026-06-03:** `core/llm/grammar.py` — `json_schema_to_gbnf`/`tool_to_gbnf` generează gramatică GBNF llama.cpp din JSON schema (object cu chei ordonate, string/integer/number/boolean/array/enum/nested object; cluster permisiv value/object/array pentru tipuri nedeclarate) + `validate_args` fallback (tipuri/required/enum, pentru backend-uri fără gramatică); endpoint `POST /api/llm/grammar`. *Generarea gramaticii + validarea sunt complete; enforcement-ul rămâne hook-ul backend-ului (param `grammar=` llama.cpp/XGrammar).* +10 teste offline. | 5 | P1 | — | XGrammar / llama.cpp |
 | H13.3 | **Speculative decoding** (draft Qwen3-4B → target 32B/gpt-oss) — 1.5-2.5× throughput interactiv, output identic, $0. | 5 | P2 | — | vLLM / llama.cpp |
 | H13.4 | **Refresh model default → MoE cu reasoning hibrid** (gpt-oss-20b / Qwen3-30B-A3B) — mod thinking/non-thinking poate colapsa tier-urile fast/deep într-un model. Apache-2.0. | 5 | P2 | — | gpt-oss, Qwen3 |
 
