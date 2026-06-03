@@ -1231,6 +1231,62 @@ async def kill_switch_set(req: Request):
     return _nocache_json({"ok": True, "disengaged": kill.disengage(scope)})
 
 
+# ── H17.4 Externally-anchored audit + intent attribution ──────────────────────
+
+@app.post("/api/security/audit/action")
+async def audit_record_action(req: Request):
+    """Record a signed action with causal intent attribution (why it happened)."""
+    log = getattr(orch, "intent_log", None) if orch else None
+    if log is None:
+        return JSONResponse({"error": "intent log not available"}, status_code=503)
+    try:
+        body = await req.json()
+    except Exception:
+        body = {}
+    for k in ("actor", "action", "why"):
+        if not (body or {}).get(k):
+            return JSONResponse({"error": "actor, action, why required"}, status_code=400)
+    entry = log.record(body["actor"], body["action"], body["why"],
+                       cause=body.get("cause", ""), metadata=body.get("metadata"))
+    return _nocache_json({"ok": True, "entry": entry})
+
+
+@app.get("/api/security/audit/intent")
+async def audit_intent(limit: int = Query(100, ge=1, le=1000)):
+    """List signed intent records + chain/signature verification."""
+    log = getattr(orch, "intent_log", None) if orch else None
+    if log is None:
+        return JSONResponse({"error": "intent log not available"}, status_code=503)
+    return _nocache_json({"verify": log.verify(), "entries": log.list(limit)})
+
+
+@app.post("/api/security/audit/anchor", dependencies=[Depends(_admin_guard)])
+async def audit_anchor():
+    """Anchor the audit / intent chain head into the external transparency log."""
+    anchor = getattr(orch, "transparency", None) if orch else None
+    if anchor is None:
+        return JSONResponse({"error": "transparency anchor not available"}, status_code=503)
+    root = ""
+    if getattr(orch, "audit", None) is not None:
+        try:
+            root = orch.audit.tail_hash()
+        except Exception:
+            root = ""
+    if not root and getattr(orch, "intent_log", None) is not None:
+        root = orch.intent_log.head()
+    receipt = anchor.anchor(root or "empty", source="audit")
+    return _nocache_json({"ok": True, "receipt": receipt})
+
+
+@app.get("/api/security/audit/anchors")
+async def audit_anchors(limit: int = Query(100, ge=1, le=1000)):
+    """List external anchor receipts + verify the anchor chain."""
+    anchor = getattr(orch, "transparency", None) if orch else None
+    if anchor is None:
+        return JSONResponse({"error": "transparency anchor not available"}, status_code=503)
+    return _nocache_json({"verify": anchor.verify(), "anchors": anchor.list(limit)})
+
+
 @app.get("/api/security/posture", dependencies=[Depends(_admin_guard)])
 async def security_posture():
     """Packaged security posture: encrypted secrets + signed skills + sandbox + guardrails (H12.1)."""

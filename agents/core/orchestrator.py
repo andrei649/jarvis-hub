@@ -113,6 +113,15 @@ class Orchestrator:
             logger.warning("Capability/kill-switch init failed", exc_info=True)
             self.capabilities = None
             self.kill_switch = None
+        # H17.4: signed intent log + external transparency anchor for the audit chain.
+        try:
+            from .security.anchor import IntentLog, TransparencyAnchor
+            self.intent_log = IntentLog()
+            self.transparency = TransparencyAnchor()
+        except Exception:
+            logger.warning("Intent log / transparency anchor init failed", exc_info=True)
+            self.intent_log = None
+            self.transparency = None
         # H14.4: decay-based forgetting (ACT-R activation ranking + dep-aware delete).
         try:
             from .memory.decay import DecayMemory
