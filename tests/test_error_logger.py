@@ -1,154 +1,95 @@
 """
-Tests for structured error logging and backlog syncer (core/autonomy/error_logger.py).
+Tests for structured error logging and the runtime diagnostics syncer
+(core/autonomy/error_logger.py).
 
-Verifies serialization, capped log rotation, and BACKLOG.md synchronization offline.
+Verifies grouping/aggregation, the 48-hour window, and that diagnostics are
+written to a standalone (git-ignored) file — never injected into a tracked doc
+like BACKLOG.md (BUG-4).
 """
 
 from __future__ import annotations
 
 import json
-import os
-import tempfile
 import time
-import pytest
 
-from agents.core.errors import ErrorLog, ErrorCategory, ErrorSeverity
-from agents.core.autonomy.error_logger import persist_problem, sync_problems_to_backlog
+from agents.core.autonomy.error_logger import sync_problems_to_diagnostics
 
 
-def test_persist_problem_writes_to_file(tmp_path):
-    log_file = tmp_path / "problems.jsonl"
-    
-    # Mock base_dir path resolution in persist_problem by monkeypatching
-    import agents.core.autonomy.error_logger as el
-    original_path = el.persist_problem
-    
-    # Let's create a custom function to test persist_problem logic directly
-    err = ErrorLog(
-        code="JARVIS-TEST-123",
-        message="A test failure",
-        category=ErrorCategory.PLUGIN,
-        severity=ErrorSeverity.ERROR,
-        component="test.comp",
-        timestamp=time.time(),
-        meta={"key": "val"}
-    )
-    
-    # Direct test of persistence logic:
-    # Instead of monkeypatching internal module paths, we can write a wrapper
-    # that tests the file append and capping functionality directly.
-    # To keep things pure and simple, we'll verify sync_problems_to_backlog directly
-    # and verify that log_error writes successfully.
-    
-    # Let's write a targeted test for sync_problems_to_backlog
-    backlog_file = tmp_path / "BACKLOG.md"
-    problems_file = tmp_path / "problems.jsonl"
-    
-    # Create mock problems
-    now = time.time()
-    probs = [
-        {
-            "code": "JARVIS-PLUGIN-003",
-            "message": "Gmail auth expired",
-            "category": "plugin",
-            "severity": "error",
-            "component": "gmail",
-            "timestamp": now - 3600,
-            "meta": {}
-        },
-        {
-            "code": "JARVIS-PLUGIN-003",
-            "message": "Gmail auth expired",
-            "category": "plugin",
-            "severity": "error",
-            "component": "gmail",
-            "timestamp": now - 600,
-            "meta": {}
-        },
-        {
-            "code": "JARVIS-LLM-010",
-            "message": "heavy thinking timed out",
-            "category": "llm",
-            "severity": "warning",
-            "component": "cloud-llm",
-            "timestamp": now - 1800,
-            "meta": {}
-        },
-        # Old error - should be filtered out (>48 hours)
-        {
-            "code": "JARVIS-NETWORK-005",
-            "message": "Disconnected",
-            "category": "network",
-            "severity": "critical",
-            "component": "net",
-            "timestamp": now - (50 * 3600),
-            "meta": {}
-        }
-    ]
-    
-    with open(problems_file, "w", encoding="utf-8") as f:
+def _write_problems(path, probs):
+    with open(path, "w", encoding="utf-8") as f:
         for p in probs:
             f.write(json.dumps(p) + "\n")
-            
-    # Create mock BACKLOG.md
-    backlog_content = """# Jarvis Hub Backlog
-
-## Status General
-- Done: 100%
-
-## Active: ORIZONT 6 — Jarvis Autonom / Proactive Cortex (P1) — 0/6
-- [x] Orizont 6 core
-
-## ORIZONT 5 — Next Wave (P2–P3) — 1/8
-- [ ] Orizont 5 items
-"""
-    with open(backlog_file, "w", encoding="utf-8") as f:
-        f.write(backlog_content)
-        
-    # Run syncer
-    sync_problems_to_backlog(backlog_path=str(backlog_file), problems_path=str(problems_file))
-    
-    # Read modified BACKLOG.md
-    with open(backlog_file, "r", encoding="utf-8") as f:
-        result = f.read()
-        
-    assert "## 🔴 Auto-Generated Diagnostic Tasks" in result
-    # Gmail error should have frequency 2
-    assert "Gmail auth expired (Occurred 2 times)" in result
-    # Cloud thinking error should be aggregated
-    assert "heavy thinking timed out (Occurred 1 times)" in result
-    # Old network error should NOT be in backlog
-    assert "JARVIS-NETWORK-005" not in result
-    assert "## ORIZONT 5" in result  # verified structural integrity
 
 
-def test_sync_clears_diagnostic_tasks_when_healthy(tmp_path):
-    backlog_file = tmp_path / "BACKLOG.md"
+def test_sync_writes_grouped_diagnostics_to_standalone_file(tmp_path):
+    diag_file = tmp_path / "diagnostics.md"
     problems_file = tmp_path / "problems.jsonl"
-    
-    # Create empty problems file
-    with open(problems_file, "w", encoding="utf-8") as f:
-        pass
-        
-    backlog_content = """# Backlog
-## Active: ORIZONT 6
-- [ ] Do stuff
 
-## 🔴 Auto-Generated Diagnostic Tasks
-- [ ] old task
+    now = time.time()
+    _write_problems(problems_file, [
+        {"code": "JARVIS-PLUGIN-003", "message": "Gmail auth expired", "category": "plugin",
+         "severity": "error", "component": "gmail", "timestamp": now - 3600, "meta": {}},
+        {"code": "JARVIS-PLUGIN-003", "message": "Gmail auth expired", "category": "plugin",
+         "severity": "error", "component": "gmail", "timestamp": now - 600, "meta": {}},
+        {"code": "JARVIS-LLM-010", "message": "heavy thinking timed out", "category": "llm",
+         "severity": "warning", "component": "cloud-llm", "timestamp": now - 1800, "meta": {}},
+        # Old error — must be filtered out (>48h)
+        {"code": "JARVIS-NETWORK-005", "message": "Disconnected", "category": "network",
+         "severity": "critical", "component": "net", "timestamp": now - (50 * 3600), "meta": {}},
+    ])
 
-## ORIZONT 5
-- [ ] Next wave
-"""
-    with open(backlog_file, "w", encoding="utf-8") as f:
-        f.write(backlog_content)
-        
-    # Run sync - should show clean health status
-    sync_problems_to_backlog(backlog_path=str(backlog_file), problems_path=str(problems_file))
-    
-    with open(backlog_file, "r", encoding="utf-8") as f:
-        result = f.read()
-        
-    assert "## 🔴 Auto-Generated Diagnostic Tasks" in result
+    sync_problems_to_diagnostics(output_path=str(diag_file), problems_path=str(problems_file))
+
+    result = diag_file.read_text(encoding="utf-8")
+    assert "Runtime Diagnostics" in result
+    assert "Gmail auth expired (Occurred 2 times)" in result        # aggregated
+    assert "heavy thinking timed out (Occurred 1 times)" in result
+    assert "JARVIS-NETWORK-005" not in result                       # >48h filtered out
+
+
+def test_sync_does_not_touch_a_tracked_backlog(tmp_path):
+    """Regression guard for BUG-4: the syncer must never modify BACKLOG.md."""
+    diag_file = tmp_path / "diagnostics.md"
+    problems_file = tmp_path / "problems.jsonl"
+    backlog_file = tmp_path / "BACKLOG.md"
+
+    _write_problems(problems_file, [
+        {"code": "JARVIS-PLUGIN-003", "message": "Gmail auth expired", "category": "plugin",
+         "severity": "error", "component": "gmail", "timestamp": time.time() - 600, "meta": {}},
+    ])
+    original_backlog = "# Jarvis Hub Backlog\n\n## Status General\n- Done: 100%\n"
+    backlog_file.write_text(original_backlog, encoding="utf-8")
+
+    sync_problems_to_diagnostics(output_path=str(diag_file), problems_path=str(problems_file))
+
+    # Diagnostics went to the standalone file; the backlog is byte-identical.
+    assert diag_file.exists()
+    assert backlog_file.read_text(encoding="utf-8") == original_backlog
+
+
+def test_sync_reports_healthy_when_no_recent_failures(tmp_path):
+    diag_file = tmp_path / "diagnostics.md"
+    problems_file = tmp_path / "problems.jsonl"
+
+    problems_file.write_text("", encoding="utf-8")          # no problems
+    diag_file.write_text("- [ ] old task\n", encoding="utf-8")  # stale content
+
+    sync_problems_to_diagnostics(output_path=str(diag_file), problems_path=str(problems_file))
+
+    result = diag_file.read_text(encoding="utf-8")
     assert "No active runtime failures detected in the last 48 hours" in result
-    assert "old task" not in result
+    assert "old task" not in result                          # stale content replaced
+
+
+def test_sync_is_idempotent(tmp_path):
+    """A second run with unchanged inputs must not rewrite the file (no churn)."""
+    diag_file = tmp_path / "diagnostics.md"
+    problems_file = tmp_path / "problems.jsonl"
+    problems_file.write_text("", encoding="utf-8")
+
+    sync_problems_to_diagnostics(output_path=str(diag_file), problems_path=str(problems_file))
+    mtime1 = diag_file.stat().st_mtime_ns
+    time.sleep(0.01)
+    sync_problems_to_diagnostics(output_path=str(diag_file), problems_path=str(problems_file))
+    mtime2 = diag_file.stat().st_mtime_ns
+    assert mtime1 == mtime2
