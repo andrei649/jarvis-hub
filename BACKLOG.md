@@ -60,7 +60,7 @@ python -m pytest tests/ -v          # 1100+ passed, 8 skipped
 
 > `%` = procent pe **story points** (580/823 = 70.5% ≈ 71%); pe iteme ar fi 117/151 = 77.5%. Totalul de mai sus acoperă **H1–H11**.
 
-**În afara totalului H1–H11:** ORIZONT 12 (acum în scope-ul v1.0 per [#52]) — **2/15 livrate** (H12.1 ✅ P0 securitate, H12.10 ✅); restul deschis. **Bugs & Hot Fixes** — 3 done (BUG-1, BUG-2, BUG-4) + deschise (BUG-3, HF-1/2, BUG-2b, TASK-1, CLN-1, NTH-1).
+**În afara totalului H1–H11:** ORIZONT 12 (acum în scope-ul v1.0 per [#52]) — **3/15 livrate** (H12.1 ✅ P0 securitate, H12.10 ✅, H12.15 ✅ backup); restul deschis. **Bugs & Hot Fixes** — 3 done (BUG-1, BUG-2, BUG-4) + deschise (BUG-3, HF-1/2, BUG-2b, TASK-1, CLN-1, NTH-1).
 
 **Test count (backend pytest):** 1170+ passed, 8 skipped — cele 8 din `tests/test_spotify.py` (vezi nota „Run"). *(2026-06-02: +192 H7+H8 — H8 incluse; +31 H12.1 securitate.)*
 **Frontend (BUG-2):** 156 teste JS / 20 fișiere · ~66% line coverage — separat de suita pytest.
@@ -341,7 +341,7 @@ python -m pytest tests/ -v          # 1100+ passed, 8 skipped
 
 ---
 
-## ORIZONT 12 — Categoria Reală: Asistent Personal Privat & Proactiv (P0–P3) — 2/15
+## ORIZONT 12 — Categoria Reală: Asistent Personal Privat & Proactiv (P0–P3) — 3/15
 
 > Bazat pe research-ul din [docs/research/2026-06-02-personal-ai-competitors.md](docs/research/2026-06-02-personal-ai-competitors.md):
 > H10 a comparat Jarvis cu 8 **framework-uri de developeri**; categoria reală a moonshot-ului (asistent
@@ -385,7 +385,7 @@ python -m pytest tests/ -v          # 1100+ passed, 8 skipped
 | H12.12 | **Marketplace de skills curat & semnat** (anti-ClawHub moderat) — extinde skills importer cu semnături + review. ⚠️ moderat/semnat obligatoriu. | 8 | P3 | Skills | OpenClaw ClawHub (sigur) |
 | H12.13 | **Sync E2E opt-in între device-uri** (GPU acasă ↔ telefon) — ⚠️ obligatoriu E2E + opt-in; nu sparge local-first. | 13 | P3 | — | Reflect / Limitless |
 | H12.14 | **Model agentic mic, fine-tuned** (task-uri router/tool) — overlap cu H11.3 (pipeline SFT/GRPO); $0 COGS. | 8 | P3 | H11.3 | Jan-nano |
-| H12.15 | **Backup & restore date personale** — script (`scripts/backup-data.sh` + `.ps1`) care arhivează `agents/data/` + `memory_logs/` (memoria H8, sesiuni, workflow-uri create, corpus ingerat) și restaurează din arhivă; opțional schedule. Păstrează local-first: backup local/extern, opt-in cloud. Aceste foldere sunt **singura stare cu date reale și sunt git-ignored** → fără asta, pierdere totală la orice `clean`/reinstalare (vezi incidentul 2026-06-02). | 3 | P2 | H8.2 | durabilitate local-first |
+| H12.15 ✅ | **Backup & restore date personale** — `agents/data/` + `memory_logs/` (memoria H8, sesiuni, workflow-uri create, corpus ingerat) sunt **singura stare cu date reale și sunt git-ignored** → fără asta, pierdere totală la orice `clean`/reinstalare (incidentul 2026-06-02). **Done 2026-06-02:** `scripts/backup-data.sh` + `scripts/backup-data.ps1` — arhivă timestamped (tar.gz / zip), restore cu confirmare, retenție ultimele 14, override `BACKUP_DIR` (drive extern/cloud); `backups/` gitignored; păstrează local-first (opt-in cloud). *(Schedule automat = opțional, neimplementat.)* | 3 | P2 | H8.2 | durabilitate local-first |
 
 > **Total ORIZONT 12:** 15 items, ~92 SP. **Acțiune imediată recomandată:** H12.1 (P0) — e simultan hardening real
 > ȘI wedge-ul de marketing (alternativa securizată la OpenClaw). Restul Track B (P1) ridică cel mai mult valoarea per efort.

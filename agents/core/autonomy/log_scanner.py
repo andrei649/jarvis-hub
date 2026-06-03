@@ -9,8 +9,8 @@ Three scan cadences, all feeding the existing autonomy worker:
                                or if a new error code appears for the first time.
 
   hourly_scan (every hour)    Compares current-hour vs previous-hour error
-                               rates, detects first-seen codes, and syncs
-                               BACKLOG.md via the existing sync_problems_to_backlog().
+                               rates, detects first-seen codes, and refreshes
+                               memory_logs/diagnostics.md via sync_problems_to_diagnostics().
 
   daily_scan  (07:05 daily)   Full 24-hour digest: frequency table per code,
                                per-component health, first occurrences. Writes

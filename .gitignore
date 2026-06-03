@@ -21,3 +21,6 @@ agents/data/
 *.db-wal
 *.db-shm
 
+# Personal-data backups (scripts/backup-data.* — contain real data, never commit)
+backups/
+
