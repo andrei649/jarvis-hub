@@ -10,17 +10,31 @@ carries a dry-run preview (H12.5) so the reviewer sees what the call would do.
 from __future__ import annotations
 
 import asyncio
-import threading
 import time
 import uuid
+from pathlib import Path
 from typing import Optional
 
+from ..persistence import JsonStore
 
-class ActionApprovalQueue:
-    def __init__(self) -> None:
-        self._lock = threading.Lock()
-        self._items: dict[str, dict] = {}
-        self._events: dict[str, asyncio.Event] = {}
+
+class ActionApprovalQueue(JsonStore):
+    """Pending tool-call approvals. Persists items when given a *path* (A7);
+    in-memory (path=None) otherwise. asyncio.Events are runtime-only and are
+    re-created lazily for items reloaded from disk."""
+
+    _items: dict[str, dict]
+    _events: dict[str, asyncio.Event]
+
+    def __init__(self, path: "str | Path | None" = None) -> None:
+        super().__init__(path)
+
+    def _serialize(self):
+        return self._items
+
+    def _deserialize(self, raw) -> None:
+        self._items = raw if isinstance(raw, dict) else {}
+        self._events = {}                 # events are not persisted
 
     # ── request ──────────────────────────────────────────────────────────────
 
@@ -52,6 +66,7 @@ class ActionApprovalQueue:
         with self._lock:
             self._items[action_id] = item
             self._events[action_id] = asyncio.Event()
+            self._save()
         return dict(item)
 
     # ── decide ───────────────────────────────────────────────────────────────
@@ -65,6 +80,7 @@ class ActionApprovalQueue:
                 item["status"] = "approved" if approved else "rejected"
                 item["decided_by"] = by
                 item["decided_at"] = time.time()
+                self._save()
             event = self._events.get(action_id)
         if event is not None:
             event.set()
@@ -75,11 +91,14 @@ class ActionApprovalQueue:
         'rejected'), or 'timeout' if it isn't decided in time."""
         with self._lock:
             item = self._items.get(action_id)
+            if item is None:
+                return "unknown"
+            if item["status"] != "pending":
+                return item["status"]
+            # re-create the event lazily (e.g. for an item reloaded from disk).
             event = self._events.get(action_id)
-        if item is None:
-            return "unknown"
-        if item["status"] != "pending":
-            return item["status"]
+            if event is None:
+                event = self._events[action_id] = asyncio.Event()
         try:
             await asyncio.wait_for(event.wait(), timeout=timeout)
         except asyncio.TimeoutError:
@@ -117,3 +136,4 @@ class ActionApprovalQueue:
         with self._lock:
             self._items.clear()
             self._events.clear()
+            self._save()

@@ -172,7 +172,7 @@ class Orchestrator:
         # H10.18: action-level approval queue (pending tool-calls, sub-task grain).
         try:
             from .autonomy.action_approvals import ActionApprovalQueue
-            self.action_approvals = ActionApprovalQueue()
+            self.action_approvals = ActionApprovalQueue(path="memory_logs/action_approvals.json")
         except Exception:
             logger.warning("ActionApprovalQueue init failed", exc_info=True)
             self.action_approvals = None
