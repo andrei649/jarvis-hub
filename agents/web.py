@@ -1175,6 +1175,62 @@ async def security_governance():
     return _nocache_json(governance_gate())
 
 
+# ── H17.3 Capability tokens + out-of-band kill-switch ─────────────────────────
+
+@app.post("/api/security/capabilities/issue", dependencies=[Depends(_admin_guard)])
+async def capabilities_issue(req: Request):
+    """Mint a scoped, expiring capability token (out-of-band; admin only)."""
+    broker = getattr(orch, "capabilities", None) if orch else None
+    if broker is None:
+        return JSONResponse({"error": "capability broker not available"}, status_code=503)
+    try:
+        body = await req.json()
+    except Exception:
+        body = {}
+    caps = (body or {}).get("capabilities") or []
+    if not caps:
+        return JSONResponse({"error": "capabilities required"}, status_code=400)
+    token = broker.issue(caps, source=body.get("source", ""),
+                         task_id=body.get("task_id", ""), ttl=float(body.get("ttl", 3600)))
+    return _nocache_json({"ok": True, "token": token})
+
+
+@app.get("/api/security/capabilities/check")
+async def capabilities_check(token: str, capability: str):
+    """Check whether a token currently grants a capability (read-only)."""
+    broker = getattr(orch, "capabilities", None) if orch else None
+    kill = getattr(orch, "kill_switch", None) if orch else None
+    if broker is None or kill is None:
+        return JSONResponse({"error": "capability broker not available"}, status_code=503)
+    from agents.core.security.capability import authorize
+    return _nocache_json(authorize(broker, kill, token, capability))
+
+
+@app.get("/api/security/kill-switch")
+async def kill_switch_status():
+    """Out-of-band kill-switch status."""
+    kill = getattr(orch, "kill_switch", None) if orch else None
+    if kill is None:
+        return JSONResponse({"error": "kill-switch not available"}, status_code=503)
+    return _nocache_json(kill.status())
+
+
+@app.post("/api/security/kill-switch", dependencies=[Depends(_admin_guard)])
+async def kill_switch_set(req: Request):
+    """Engage/disengage the kill-switch (operator action; agent can't reach this)."""
+    kill = getattr(orch, "kill_switch", None) if orch else None
+    if kill is None:
+        return JSONResponse({"error": "kill-switch not available"}, status_code=503)
+    try:
+        body = await req.json()
+    except Exception:
+        body = {}
+    scope = (body or {}).get("scope", "global")
+    if (body or {}).get("engage", True):
+        return _nocache_json({"ok": True, "engaged": kill.engage(scope, body.get("reason", ""))})
+    return _nocache_json({"ok": True, "disengaged": kill.disengage(scope)})
+
+
 @app.get("/api/security/posture", dependencies=[Depends(_admin_guard)])
 async def security_posture():
     """Packaged security posture: encrypted secrets + signed skills + sandbox + guardrails (H12.1)."""
