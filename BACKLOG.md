@@ -319,7 +319,7 @@ python -m pytest tests/ -v          # 1100+ passed, 8 skipped
 | H10.9 | **Python Flow Decorator API** — `@jarvis_flow`, `@listen(step_id)`, `@router` pentru definire workflow-uri în cod Python (nu doar YAML/JSON); complement al Visual Builder. | 5 | P3 | H5.6 | CrewAI |
 | H10.11 | **Hierarchical Workflow Manager** — workflow de tip `hierarchical`: auto-creează un manager agent care coordonează crew-ul, validează rezultate și redistribuie dacă un pas eșuează. | 8 | P3 | H5.6, H10.15 | CrewAI |
 | H10.14 | **Nested Workflow Steps** — un WorkflowStep poate conține el însuși un sub-workflow; util pentru task decomposition recursivă. | 8 | P3 | H5.6 | AutoGen |
-| H10.3 | **Workflow Transform Nodes** — noduri native în Visual Builder: Formatter, Validator, JSONExtractor, Summarizer — transformă output-ul unui pas înainte de a-l transmite mai departe. | 5 | P3 | H9.1 | Flowise |
+| H10.3 ✅ | **Workflow Transform Nodes** — Formatter, Validator, JSONExtractor, Summarizer. **Done 2026-06-03:** `core/workflows/transforms.py` `apply_transform` (op-uri deterministe, fără LLM: formatter upper/lower/title/strip/json_pretty, validator non_empty/json/regex/min/max_length/contains→`[error:…]` la fail, json_extract dot-path+default, summarize N propoziții/max_chars); `WorkflowStep.transform` + dispatch `kind="transform"` în engine (no-LLM). +8 teste (unit per-op + serializare + 2 integrate prin engine). | 5 | P3 | H9.1 | Flowise |
 
 ### H10.E — UX & Multi-user (P2–P3)
 

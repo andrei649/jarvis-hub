@@ -27,6 +27,9 @@ class WorkflowStep:
     # and the engine dispatches to the mapped agent.
     # {"routes": {"billing": "gecko", ...}, "default": "jarvis", "dispatch_template": "{_input}"}
     router: Optional[dict] = None
+    # H10.3: transform config for kind=="transform" — deterministic, no-LLM
+    # reshaping of the step's input. {"op": "formatter"|"validator"|"json_extract"|"summarize", ...}
+    transform: Optional[dict] = None
 
     def to_dict(self) -> dict:
         d = {
@@ -45,6 +48,8 @@ class WorkflowStep:
             d["critic"] = self.critic
         if self.router:
             d["router"] = self.router
+        if self.transform:
+            d["transform"] = self.transform
         return d
 
     @classmethod
@@ -59,6 +64,7 @@ class WorkflowStep:
             kind=d.get("kind", "agent"),
             critic=d.get("critic"),
             router=d.get("router"),
+            transform=d.get("transform"),
         )
 
 

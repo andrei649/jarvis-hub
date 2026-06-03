@@ -120,7 +120,14 @@ class WorkflowEngine:
             return await self._run_critic(step, ctx, step_map)
         if step.kind == "router":
             return await self._run_router(step, ctx)
+        if step.kind == "transform":
+            return self._run_transform(step, ctx)
         return await self._run_step(step, ctx)
+
+    def _run_transform(self, step: WorkflowStep, ctx: dict) -> str:
+        """H10.3 — deterministic, no-LLM transform of the rendered input."""
+        from .transforms import apply_transform
+        return apply_transform(step.transform or {}, _render(step.prompt_template, ctx))
 
     async def _run_router(self, step: WorkflowStep, ctx: dict) -> str:
         """H10.13 — an agent picks a route label; dispatch to the mapped agent.
