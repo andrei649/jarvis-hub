@@ -7,10 +7,16 @@
 
 ## Sesiune curentă
 
-**Data:** 2026-06-03
-**Lead agent / Conductor:** claude (claude-sonnet-4-6)
-**Obiectiv sesiune:** Wave 0 H12 — Securitate P0 + trust indicator + local model UX
-**Branch de bază:** `main` @ `050f88a`
+**Data:** 2026-06-03 (sesiune docs/roadmap)
+**Lead agent / Conductor:** claude
+**Obiectiv sesiune:** formalizare ORIZONT 13–17 + reconciliere docs roadmap (PR #60)
+**Branch:** `claude/project-status-report-rosXA` (PR #60, ready for review, CI verde)
+
+**Decizie de scope (2026-06-03):** **v1.0.0 = tot backlogul terminat** — H10 + H11 + H12 + H13–H17.
+Frontierele H13–17 sunt formalizate în BACKLOG + MOONSHOT §4; docs reconciliate (README, GO_LIVE_PLAN, STATUS,
+gap-analysis). Fără grabă pe tag, dar nimic nu se sare din gate.
+
+**Sesiune anterioară:** Wave 0 H12 — Securitate P0 + trust indicator + local model UX (`main` @ `050f88a`).
 
 ---
 
@@ -49,6 +55,29 @@ Wave 1 (6 agenți, ~27 SP):
 Dependențe Wave 1: toate independente față de Wave 0 (pot rula în paralel).
 Merge order recomandat: H12.2 → H12.4 → H10.24 → H9.3b → H10.8 → H10.5
 
+> Wave 1 e încă valid (P1/P2, independent), dar vezi recomandarea de mai jos: dacă deschidem un thread nou
+> de valoare mai mare, **H17 + H14** întrec ca prioritate items-ele de observabilitate din Wave 1.
+
+---
+
+## Recomandare — următorul thread (drum spre 1.0)
+
+> Cântărit față de north-star (MOONSHOT §1/§3/§5) și ce s-a livrat în Wave 0 (securitatea H12.1).
+> Acum că **1.0 = tot backlogul**, secvențierea contează: alegem ce ridică cel mai mult valoarea pe-misiune.
+
+**Prioritate 1 — H17 Provable Trust (continuă Wave 0).** AgentDojo + AgentHarm ca poartă CI (H17.2, 5 SP) +
+dual-LLM / Plan-Then-Execute quarantine pentru conținut tool/web/email (H17.1, 13 SP). Convertește „alternativa
+guvernată la OpenClaw" dintr-un *claim* într-un *badge CI verde*; rupe „lethal trifecta" pe agenții email/calendar.
+Construiește direct pe SecretStore + skill signing din H12.1.
+
+**Prioritate 2 — H14 Living Memory (cea mai on-mission).** Întâi harness-ul de eval memorie (H14.2, 5 SP, măsoară),
+apoi KG bi-temporal (H14.1, 8 SP) + agent de consolidare „sleep-time" cu operații explicite (H14.3, 8 SP).
+Generalizează reflecția nocturnă din *rezumă-ziua* în *pre-raționează-pentru-mâine* — chiar sloganul moonshot.
+
+**Apoi:** H13 (plafon capabilitate locală, $0) → H10 competitive edge / H16 (MCP server mode) → H15 computer-use guvernat.
+
+**Temă-flagship transversală:** *sleep-time compute* (H13/H14) + *guvernanță măsurabilă* (H17).
+
 ---
 
 ## Checklist post-merge (conductor)
@@ -83,6 +112,12 @@ Merge order recomandat: H12.2 → H12.4 → H10.24 → H9.3b → H10.8 → H10.5
 [Wave 0] PR #54 merged @ 050f88a — Wave 0 COMPLET
 [Wave 0] PR #54 title/body actualizat cu toate detaliile pentru PM
 [Wave 1] ⏳ Așteptând confirmare user pentru dispatch
+[Docs]   2026-06-03 — formalizat ORIZONT 13–17 în BACKLOG (PR #60)
+[Docs]   Decizie: v1.0 = tot backlogul (H10+H11+H12+H13–17); MOONSHOT §4 aliniat
+[Docs]   Reconciliate README + GO_LIVE_PLAN + STATUS + gap-analysis-1.0
+[Docs]   PR #60 ready for review, CI verde (CI #94 ✅ + CodeQL #72 ✅)
+[Docs]   Audit branches: 2 fully-merged (lm-studio-setup, v1.0-release-prep) — ștergere blocată de proxy git
+[Next]   Recomandare thread: H17 (trust scorecard) + H14 (living memory) — vezi secțiunea de mai sus
 ```
 
 ---
@@ -100,4 +135,4 @@ Merge order recomandat: H12.2 → H12.4 → H10.24 → H9.3b → H10.8 → H10.5
 
 ---
 
-> Template creat: 2026-06-02. Ultima actualizare: 2026-06-03 (Wave 0 complete).
+> Template creat: 2026-06-02. Ultima actualizare: 2026-06-03 (docs/roadmap: v1.0 = tot backlogul; next thread = H17 + H14).
