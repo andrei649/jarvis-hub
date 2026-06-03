@@ -2113,6 +2113,45 @@ async def memory_entities(q: str = "", type: str = "", limit: int = Query(50, ge
     })
 
 
+# ── H14.4 Decay-based forgetting (ACT-R activation + dependency-aware delete) ──
+
+@app.get("/api/memory/decay/ranking")
+async def memory_decay_ranking(limit: int = Query(100, ge=1, le=1000)):
+    """Memory items ranked by ACT-R activation (recency + frequency)."""
+    d = getattr(orch, "decay", None) if orch else None
+    if d is None:
+        return _nocache_json({"ranking": []})
+    return _nocache_json({"ranking": d.ranking(limit=limit)})
+
+
+@app.get("/api/memory/decay/candidates")
+async def memory_decay_candidates(threshold: float = 0.0):
+    """Items whose activation has decayed below *threshold* (forget candidates)."""
+    d = getattr(orch, "decay", None) if orch else None
+    if d is None:
+        return _nocache_json({"candidates": []})
+    return _nocache_json({"threshold": threshold, "candidates": d.forget_candidates(threshold)})
+
+
+@app.post("/api/memory/decay/forget")
+async def memory_decay_forget(req: Request):
+    """Forget an item + its transitive dependents (anti-recontamination)."""
+    d = getattr(orch, "decay", None) if orch else None
+    if d is None:
+        return JSONResponse({"error": "decay memory not available"}, status_code=503)
+    try:
+        body = await req.json()
+    except Exception:
+        body = {}
+    item_id = (body or {}).get("id", "")
+    if not item_id:
+        return JSONResponse({"error": "id required"}, status_code=400)
+    removed = d.forget(item_id)
+    if not removed:
+        return JSONResponse({"error": "not found"}, status_code=404)
+    return _nocache_json({"ok": True, "removed": removed})
+
+
 # ── H12.3 Knowledge-graph editor (query / edit / delete entities + relations) ─
 
 def _kg():
