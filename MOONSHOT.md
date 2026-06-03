@@ -66,12 +66,15 @@ a clear "done" gate; we do not skip gates.
 | Phase | Horizon → Version | The leap | Gate (done when…) |
 |-------|-------------------|----------|-------------------|
 | **0 — Foundation** ✅ | H1–H4, H5, H6, H7-perf, H9 → v0.9.1-beta | 15 agents, memory, autonomy, workflows, observability all work | Live; 909 tests green |
-| **1 — Trustworthy** 🎯 | H7 hardening + H8 personal memory → **v1.0.0** | From "works for Andrei" to "works for anyone, reliably" | CI/CD on PRs, hermetic tests, LICENSE, one-command self-host, personal memory live (see [v1.0 launch checklist](GO_LIVE_PLAN.md#v10-launch-checklist)) |
-| **2 — Sellable** | Hosted Pro + open-core license → v1.x | First non-Andrei users; hosted tier; first revenue | 3–5 design partners, hosted Pro live, paid conversion measured |
-| **3 — Platform** | H10 Competitive Edge → v1.x–2.0 | MCP server mode, marketplace, multi-user, write-backs | Third parties build on Jarvis (agents-as-tools, embedded widget, webhooks) |
+| **1 — Complete & Trustworthy** 🎯 | H7 hardening + H8 + **H10 + H11 + H12 + H13–H17** → **v1.0.0** | From "works for Andrei" to a complete, trustworthy, local-first AI OS — *every backlog horizon shipped* | Foundation gate (CI/CD on PRs, hermetic tests, LICENSE, one-command self-host, personal memory) **plus the full backlog done**: competitive edge, governed computer-use, living memory, agentic-web interop, and a green provable-trust CI badge (see [v1.0 launch checklist](GO_LIVE_PLAN.md#v10-launch-checklist)) |
+| **2 — Sellable** | Hosted Pro + open-core license → post-1.0 (v1.x) | First non-Andrei users; hosted tier; first revenue | 3–5 design partners, hosted Pro live, paid conversion measured |
+| **3 — Ecosystem at scale** | Multi-user + moderated marketplace + 3rd-party adoption → v2.0 | Others build *on* Jarvis; it runs households/teams, not just Andrei | Third parties ship via agents-as-tools / A2A / embedded widget; multi-user + signed marketplace live |
 
-> Phase boundaries are **release gates**, not suggestions. The current gate is **Phase 1 → v1.0**;
-> its blocking items are tracked in [BACKLOG.md](BACKLOG.md) (Orizont 7 propus + Orizont 8).
+> Phase boundaries are **release gates**, not suggestions. The current gate is **Phase 1 → v1.0**, and per
+> the [version roadmap](BACKLOG.md#version-roadmap) **v1.0 = the entire backlog done** (H10 + H11 + H12 +
+> H13–H17, on top of the shipped hardening + personal memory). Capability leaps once filed under "Phase 3"
+> (MCP server mode, governed computer-use, agentic-web interop) are now *inside* the 1.0 gate; Phases 2–3
+> above are the **business** leaps beyond it (hosting, revenue, scale), not new product scope.
 
 ---
 
