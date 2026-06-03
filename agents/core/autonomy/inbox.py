@@ -49,6 +49,12 @@ def build_decision_card(task) -> dict:
         lines.append(f"_Rezultat așteptat:_ {_md(str(payload['expected']))}")
     if payload.get("amount"):
         lines.append(f"_Sumă:_ {payload['amount']}")
+    # H12.5: dry-run preview — show what the action would do before approval.
+    try:
+        from .dry_run import preview_task
+        lines.append(f"_Preview:_ {_md(preview_task(t)['summary'])}")
+    except Exception:
+        pass
 
     keyboard = [[
         {"text": label, "callback_data": f"{CALLBACK_PREFIX}:{t['id']}:{action}"}
