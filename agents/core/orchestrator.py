@@ -104,6 +104,15 @@ class Orchestrator:
         except Exception:
             logger.warning("BiTemporalKG init failed — bi-temporal KG disabled", exc_info=True)
             self.bitemporal = None
+        # H17.3: capability tokens + out-of-band kill-switch (non-escalatable).
+        try:
+            from .security.capability import CapabilityBroker, KillSwitch
+            self.capabilities = CapabilityBroker()
+            self.kill_switch = KillSwitch()
+        except Exception:
+            logger.warning("Capability/kill-switch init failed", exc_info=True)
+            self.capabilities = None
+            self.kill_switch = None
         # H14.4: decay-based forgetting (ACT-R activation ranking + dep-aware delete).
         try:
             from .memory.decay import DecayMemory
