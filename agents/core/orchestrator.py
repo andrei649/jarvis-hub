@@ -143,6 +143,13 @@ class Orchestrator:
         except Exception:
             logger.warning("WidgetStore init failed — chat widget disabled", exc_info=True)
             self.widgets = None
+        # H10.18: action-level approval queue (pending tool-calls, sub-task grain).
+        try:
+            from .autonomy.action_approvals import ActionApprovalQueue
+            self.action_approvals = ActionApprovalQueue()
+        except Exception:
+            logger.warning("ActionApprovalQueue init failed", exc_info=True)
+            self.action_approvals = None
         # H10.21: conversation notes (persistent per-session context scratchpad).
         try:
             from .notes import NotesStore
