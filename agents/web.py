@@ -2202,6 +2202,23 @@ async def kg_delete_relation(source: str, relation: str, target: str):
     return _nocache_json({"ok": True})
 
 
+@app.get("/api/memory/eval/corpus")
+async def memory_eval_corpus():
+    """H14.2 — the owned memory-eval corpus (cases across 5 abilities)."""
+    from agents.core.memory.eval import DEFAULT_CORPUS, ABILITIES
+    return _nocache_json({
+        "abilities": ABILITIES,
+        "cases": [c.to_dict() for c in DEFAULT_CORPUS],
+    })
+
+
+@app.post("/api/memory/eval/run")
+async def memory_eval_run():
+    """H14.2 — run the harness with the offline keyword baseline answerer."""
+    from agents.core.memory.eval import run_eval, keyword_answer
+    return _nocache_json(run_eval(keyword_answer))
+
+
 @app.post("/api/memory/remember")
 async def memory_remember(req: Request):
     """Store a fact in long-term memory with a real embedding, for later recall."""
