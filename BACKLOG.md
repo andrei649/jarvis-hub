@@ -392,6 +392,77 @@ python -m pytest tests/ -v          # 1100+ passed, 8 skipped
 
 ---
 
+## 📋 PROPUS: ORIZONT 13–17 — Frontiere Noi (post-paritate) — 0/20
+
+> Bazat pe research-ul frontieră 2025-2026: [docs/research/2026-06-03-frontier-horizons.md](docs/research/2026-06-03-frontier-horizons.md)
+> (5 agenți paraleli + verificare independentă). Backlogul de features e terminat (H1–H9); H10–H12 sunt paritate
+> competitivă. **Acestea sunt direcțiile de DUPĂ paritate** — unde țintește un OS personal local-first/proactiv/privat.
+> Fiecare item verificat față de [principiile non-negociabile](MOONSHOT.md#5-non-negotiable-principles-the-guardrails).
+>
+> **Două teme-flagship (apar transversal):** (1) **„sleep-time compute"** — chiar sloganul moonshot (*„lucrează cât dormi"*),
+> acum rezultat de cercetare (arXiv:2504.13171): generalizează reflecția nocturnă din *rezumă-ziua* în *pre-raționează-pentru-mâine*
+> pe GPU-ul idle. (2) **Guvernanță măsurabilă** — convertește „suntem alternativa guvernată la OpenClaw" dintr-un *claim* într-un
+> *badge CI verde* (AgentDojo). OpenClaw a devenit prima țintă infostealer (13-feb-2026) — anti-teza dovedită.
+
+### ORIZONT 13 — Plafonul de Capabilitate Locală (modele & inferență) — 0/4
+
+| # | Item | S | P | Dep | Sursă |
+|---|------|---|---|-----|-------|
+| H13.1 | **Tier VLM strict-local** (Qwen3-VL-8B) — înțelegere ecran/documente/bonuri/PDF → alimentează pipeline-ul Howard; cea mai mare capabilitate *nouă*, fără cloud. ⚠️ verifică build GGUF + buget KV-cache pe 24GB. | 8 | P1 | H5.1 | Qwen3-VL (Oct 2025) |
+| H13.2 | **Decodare constrânsă (GBNF/XGrammar) default** pentru toți agenții cu tool-calling — garantează tool-args valide, elimină retry-urile de validare. Câștig mare la fiabilitate, $0. | 5 | P1 | — | XGrammar / llama.cpp |
+| H13.3 | **Speculative decoding** (draft Qwen3-4B → target 32B/gpt-oss) — 1.5-2.5× throughput interactiv, output identic, $0. | 5 | P2 | — | vLLM / llama.cpp |
+| H13.4 | **Refresh model default → MoE cu reasoning hibrid** (gpt-oss-20b / Qwen3-30B-A3B) — mod thinking/non-thinking poate colapsa tier-urile fast/deep într-un model. Apache-2.0. | 5 | P2 | — | gpt-oss, Qwen3 |
+
+### ORIZONT 14 — Memorie Vie (memorie temporală & auto-întreținută) — 0/4
+
+> Extinde H8 (memorie personală, livrat). Rulează pe Neo4j + Ollama existente; majoritatea Apache-2.0.
+
+| # | Item | S | P | Dep | Sursă |
+|---|------|---|---|-----|-------|
+| H14.1 | **KG bi-temporal** (Graphiti-style: valid-time + ingested-at; contradicție → *invalidează*, nu șterge; recall „as-of") pe Neo4j existent. Cel mai mare leverage, risc mic. | 8 | P1 | H3.2, H8.2 | Graphiti/Zep |
+| H14.2 | **Harness de eval pentru memorie** (LongMemEval/LoCoMo-style pe corpusul propriu; 5 abilități: extracție, multi-sesiune, temporal, update, abținere). *Fă-l devreme* — e stratul de măsurare. Scorurile publice LoCoMo sunt disputate → corpus propriu. | 5 | P1 | H8.2 | LongMemEval |
+| H14.3 | **Agent de consolidare „sleep-time" cu operații explicite** (Mem0-style ADD/UPDATE/DELETE/NOOP) — reframe reflecția nocturnă în consolidare incrementală, auto-curățată. | 8 | P2 | H5.15 | Mem0, Letta |
+| H14.4 | **Uitare cu decay + dependency-aware** (scor activare ACT-R în ranking + ștergere pe graf de dependențe care previne „recontaminarea") — implementarea riguroasă a „inspectable & forgettable". | 5 | P2 | H8.2 | ACT-R, arXiv:2602.17692 |
+
+### ORIZONT 15 — Computer-Use Guvernat (operează mașina) — 0/4
+
+> Inversul *guvernat* al shell-ului neguvernat OpenClaw. Maturitate onestă: ~1-din-6 task fail → asistă în spatele approval-queue, NU nesupravegheat.
+
+| # | Item | S | P | Dep | Sursă |
+|---|------|---|---|-----|-------|
+| H15.1 | **Agent browser-use local** în spatele approval-queue + sandbox + egress allowlist (browser-use/Playwright-MCP + LLM local). Punct de intrare cu cel mai mic risc. | 8 | P2 | H4.8, H6.2 | browser-use (MIT) |
+| H15.2 | **Modul de înțelegere a ecranului local** (grounding UI-TARS-1.5-7B, opțional fuzionat cu accessibility tree). ⚠️ OmniParser are componentă AGPL — preferă UI-TARS (Apache). | 8 | P2 | H13.1 | UI-TARS, Agent S3 |
+| H15.3 | **Operator în desktop virtual izolat (PiP)** — OS curat, fără credențiale ambientale; acțiuni ireversibile gated; clasificator de injection pe screenshots. Claude computer-use = opt-in cloud. | 13 | P3 | H15.1 | UFO², Anthropic |
+| H15.4 | **Secret broker** — injectează credențiale la momentul acțiunii, în spatele aprobării; niciodată plaintext în contextul agentului. Anti-OpenClaw direct (overlap H12.1). | 5 | P2 | H12.1 | OpenClaw (anti-teză) |
+
+### ORIZONT 16 — Cetățean al Web-ului Agentic (interop & standarde) — 0/4
+
+> Standardele s-au așezat: **MCP** (agent→tool) + **A2A** (agent→agent, la Linux Foundation). Plățile agentice au sosit (AP2/ACP/x402).
+
+| # | Item | S | P | Dep | Sursă |
+|---|------|---|---|-----|-------|
+| H16.1 | **MCP server mode** — expune agenții Jarvis ca tool-uri *guvernate*, LAN-only by default (spec 2025-11: OAuth2.1 RS, RFC 8707, CIMD, `.well-known`). = **H10.5** upgradat la specul nou. | 8 | P1 | H4.7 | MCP 2025-11-25 |
+| H16.2 | **Endpoint A2A** cu Agent Card semnat — opt-in, allowlist de peers, task-uri inbound → approval queue. ⚠️ suprafață de rețea: dezactivat by default. | 8 | P3 | H16.1 | A2A (Linux Foundation) |
+| H16.3 | **Plăți agentice opt-in** prin abstracția mandate/cap/approval (agnostic de rail: AP2/ACP/x402); plafoane *hard*; aprobare Cart-Mandate via Telegram; audit local non-repudiabil. ⚠️ nimic nu se decontează peste plafon fără aprobare. | 8 | P3 | H6.2 | Google AP2, Stripe ACP |
+| H16.4 | **Triggere ambientale inbound** (webhooks/cron/change-streams → inbox de escaladare; surse semnate). Extinde **H10.8**. | 5 | P2 | H10.8 | LangChain ambient agents |
+
+### ORIZONT 17 — Încredere Demonstrabilă (siguranță pentru agenți always-on) — 0/4
+
+> Cea mai on-mission pentru teza de încredere + wedge-ul anti-OpenClaw. Injection = nerezolvabil la nivel de model → **containment by-design + măsurare**.
+
+| # | Item | S | P | Dep | Sursă |
+|---|------|---|---|-----|-------|
+| H17.1 | **Quarantine Dual-LLM / Plan-Then-Execute** pentru conținut tool/web/email — planner privilegiat (nu vede bytes netrusted) îngheață planul; LLM în carantină returnează doar variabile tipizate; date „tainted" nu ating tool ireversibil fără aprobare. + spotlighting/datamarking ca primul strat. Rupe „lethal trifecta" prin construcție. | 13 | P1 | H4.9, H6.2 | CaMeL, arXiv:2506.08837 |
+| H17.2 | **Eval-uri AgentDojo + AgentHarm ca poartă CI** („governance gate") + self-assessment OWASP Agentic Top 10 + „trust scorecard" public. Convertește claim-ul în badge verde. | 5 | P1 | H7.2 | AgentDojo, OWASP |
+| H17.3 | **Capability gating + kill-switch out-of-band** pe care agentul NU îl poate escalada (tokeni de capabilitate per-task/per-sursă; halt în afara buclei agentului). Aliniat EU AI Act Art.14 + NIST Agentic Profile. | 8 | P2 | H6.2 | EU AI Act, NIST |
+| H17.4 | **Audit ancorat extern, cu atribuire de intenție** — extinde lanțul Merkle: ancorare în transparency-log extern + identitate semnată per-acțiune + atribuire cauzală („de ce a făcut X"). | 8 | P2 | H4.10 | Apple PCC, AttriGuard |
+
+> **Total PROPUS ORIZONT 13–17:** 20 items, ~146 SP. **Secvențiere recomandată după moonshot phase-gates:**
+> **H17 (Provable Trust)** + **H14 (Living Memory)** sunt cele mai on-mission acum (teza de încredere + „te cunoaște");
+> **H13** ridică plafonul la $0; **H15/H16** sunt teritoriu Phase 3 (Platform). Flagship transversal: **sleep-time compute** (H13/H14).
+
+---
+
 ## ✅ Arhivă — H1–H4 + Sprint 0 (livrat în 0.5-beta)
 
 > Toate itemurile H1–H4 sunt complet implementate. Detalii complete (67 items, 248 SP): [docs/HISTORY.md](docs/HISTORY.md).
