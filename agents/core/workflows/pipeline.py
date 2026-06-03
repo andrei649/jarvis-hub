@@ -30,6 +30,9 @@ class WorkflowStep:
     # H10.3: transform config for kind=="transform" — deterministic, no-LLM
     # reshaping of the step's input. {"op": "formatter"|"validator"|"json_extract"|"summarize", ...}
     transform: Optional[dict] = None
+    # H10.4: guardrail config for kind=="guardrail" — per-workflow secret/PII
+    # scanning. {"mode": "warn"|"redact"|"block", "scanners": ["secret", "pii"]}
+    guardrail: Optional[dict] = None
 
     def to_dict(self) -> dict:
         d = {
@@ -50,6 +53,8 @@ class WorkflowStep:
             d["router"] = self.router
         if self.transform:
             d["transform"] = self.transform
+        if self.guardrail:
+            d["guardrail"] = self.guardrail
         return d
 
     @classmethod
@@ -65,6 +70,7 @@ class WorkflowStep:
             critic=d.get("critic"),
             router=d.get("router"),
             transform=d.get("transform"),
+            guardrail=d.get("guardrail"),
         )
 
 

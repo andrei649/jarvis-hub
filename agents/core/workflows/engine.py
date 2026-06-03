@@ -122,12 +122,21 @@ class WorkflowEngine:
             return await self._run_router(step, ctx)
         if step.kind == "transform":
             return self._run_transform(step, ctx)
+        if step.kind == "guardrail":
+            return self._run_guardrail(step, ctx)
         return await self._run_step(step, ctx)
 
     def _run_transform(self, step: WorkflowStep, ctx: dict) -> str:
         """H10.3 — deterministic, no-LLM transform of the rendered input."""
         from .transforms import apply_transform
         return apply_transform(step.transform or {}, _render(step.prompt_template, ctx))
+
+    def _run_guardrail(self, step: WorkflowStep, ctx: dict) -> str:
+        """H10.4 — per-workflow secret/PII guardrail (warn/redact/block)."""
+        from .guardrail_node import apply_guardrail
+        out, info = apply_guardrail(step.guardrail or {}, _render(step.prompt_template, ctx))
+        ctx.setdefault("_guardrails", {})[step.id] = info
+        return out
 
     async def _run_router(self, step: WorkflowStep, ctx: dict) -> str:
         """H10.13 — an agent picks a route label; dispatch to the mapped agent.
