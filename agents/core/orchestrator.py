@@ -129,6 +129,13 @@ class Orchestrator:
         except Exception:
             logger.warning("Arena init failed — model arena disabled", exc_info=True)
             self.arena = None
+        # H10.23: live quality monitor (per-request score + threshold alert).
+        try:
+            from .observability.quality import QualityMonitor
+            self.quality = QualityMonitor()
+        except Exception:
+            logger.warning("QualityMonitor init failed — quality monitor disabled", exc_info=True)
+            self.quality = None
         # H14.4: decay-based forgetting (ACT-R activation ranking + dep-aware delete).
         try:
             from .memory.decay import DecayMemory
@@ -1084,7 +1091,16 @@ class Orchestrator:
                     "scoring": scoring,
                     "full_trace": trace,
                 }
-                self.tracer.record(trace_dict)
+                # H10.23: score the request live and attach it to the trace.
+                if getattr(self, "quality", None) is not None:
+                    try:
+                        trace_id = self.tracer.record(trace_dict)
+                        trace_dict["id"] = trace_id
+                        trace_dict["quality"] = self.quality.record(trace_dict)
+                    except Exception:
+                        logger.debug("quality scoring skipped", exc_info=True)
+                else:
+                    self.tracer.record(trace_dict)
         except Exception as _te:
             logger.debug(f"tracer.record skipped: {_te}")
 
