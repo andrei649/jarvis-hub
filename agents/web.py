@@ -2074,30 +2074,46 @@ _local_docs_last = {"status": "never run"}
 
 
 class LocalDocsIndexBody(BaseModel):
-    path: str = Field(..., max_length=4096)
+    # Select a pre-configured folder by key — NOT a raw path. The actual folder
+    # path comes from owner configuration (`local_docs.folders`), so no
+    # request-supplied value ever reaches a filesystem path expression.
+    key: str = Field(..., max_length=128)
+
+
+def _configured_doc_folders() -> dict:
+    """Owner-configured ``{key: folder_path}`` map of indexable folders."""
+    folders = orch.get_setting("local_docs.folders", {}) if orch else {}
+    return folders if isinstance(folders, dict) else {}
 
 
 @app.get("/api/local-docs")
 async def local_docs_status():
-    """Return the last local-docs indexing summary (H12.2)."""
-    return _nocache_json(_local_docs_last)
+    """Last indexing summary + the configured folder keys (H12.2)."""
+    return _nocache_json({**_local_docs_last, "available": sorted(_configured_doc_folders())})
 
 
 @app.post("/api/local-docs/index")
 async def local_docs_index(body: LocalDocsIndexBody):
-    """Index a local folder into memory (offline, no cloud hop)."""
+    """Index a pre-configured local folder (by key) into memory (offline)."""
     global _local_docs_last
     if not orch:
         return _nocache_json({"error": "not initialized"}, status_code=503)
+
+    folders = _configured_doc_folders()
+    folder = folders.get(body.key)
+    if not folder:
+        return _nocache_json(
+            {"error": f"unknown folder key '{body.key}'",
+             "available": sorted(folders)},
+            status_code=404,
+        )
+
     from agents.core.local_docs import LocalDocsIndexer
 
     async def _remember(text: str, metadata: dict):
         return await orch.memory.remember(text, metadata=metadata)
 
-    # Confine indexing to an allowed root (default: home) so an inbound request
-    # can't point the indexer at arbitrary system paths.
-    allowed_root = orch.get_setting("local_docs.allowed_root", str(Path.home()))
-    summary = await LocalDocsIndexer(_remember).index(body.path, allowed_root=allowed_root)
+    summary = await LocalDocsIndexer(_remember).index(folder)
     status = 400 if summary.get("error") else 200
     if not summary.get("error"):
         _local_docs_last = summary

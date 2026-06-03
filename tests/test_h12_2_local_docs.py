@@ -71,40 +71,24 @@ async def test_index_missing_folder(tmp_path):
     assert "error" in out
 
 
-@pytest.mark.asyncio
-async def test_allowed_root_confinement(tmp_path):
-    """Indexing a folder outside the allowed root is refused."""
-    allowed = tmp_path / "docs"
-    allowed.mkdir()
-    (allowed / "ok.md").write_text("inside", encoding="utf-8")
-    outside = tmp_path / "secret"
-    outside.mkdir()
-    (outside / "leak.md").write_text("outside", encoding="utf-8")
-
-    async def remember(text, metadata):
-        return "id"
-
-    indexer = LocalDocsIndexer(remember)
-    blocked = await indexer.index(outside, allowed_root=allowed)
-    assert "error" in blocked and "allowed root" in blocked["error"]
-    ok = await indexer.index(allowed, allowed_root=allowed)
-    assert ok["files_indexed"] == 1
-
-
-# ── endpoint ────────────────────────────────────────────────────────────────
+# ── endpoint (select a pre-configured folder by key) ────────────────────────
 
 def test_local_docs_endpoint(tmp_path):
     (tmp_path / "doc.md").write_text("hello from a local document", encoding="utf-8")
     from agents import web
     with TestClient(web.app) as c:
-        # allow the temp dir (default allowed root is the home directory)
-        web.orch._runtime_settings["local_docs.allowed_root"] = str(tmp_path)
-        resp = c.post("/api/local-docs/index", json={"path": str(tmp_path)})
+        # owner-configured folder map (trusted) — the request only sends a key
+        web.orch._runtime_settings["local_docs.folders"] = {"mydocs": str(tmp_path)}
+
+        resp = c.post("/api/local-docs/index", json={"key": "mydocs"})
         assert resp.status_code == 200
         assert resp.json()["files_indexed"] == 1
-        # status reflects the last run
+
+        # status reflects the last run + advertises the configured keys
         status = c.get("/api/local-docs").json()
         assert status["files_indexed"] == 1
-        # bad path → 400
-        bad = c.post("/api/local-docs/index", json={"path": str(tmp_path / "ghost")})
-        assert bad.status_code == 400
+        assert "mydocs" in status["available"]
+
+        # unknown key → 404 (never touches the filesystem)
+        bad = c.post("/api/local-docs/index", json={"key": "ghost"})
+        assert bad.status_code == 404

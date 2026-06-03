@@ -14,7 +14,6 @@ never fatal). The ``remember`` callable is injected so this is offline-testable.
 from __future__ import annotations
 
 import logging
-import os
 from pathlib import Path
 from typing import Awaitable, Callable, Optional
 
@@ -76,22 +75,14 @@ class LocalDocsIndexer:
         self.remember = remember
         self.chunk_words = chunk_words
 
-    async def index(self, folder: str | Path, allowed_root: str | Path | None = None) -> dict:
+    async def index(self, folder: str | Path) -> dict:
         """Index every supported document under *folder* (recursively).
 
-        When *allowed_root* is given, the (resolved) folder must live inside it —
-        a containment barrier so an inbound request can't point the indexer at an
-        arbitrary location like ``/etc`` or ``~/.ssh``.
+        *folder* is a **trusted** path: it comes from owner configuration, not
+        from a request (the endpoint selects a pre-configured folder by key), so
+        there is no request-controlled path expression here.
         """
-        # Normalize the (untrusted) folder to a real path, then require it to be
-        # contained in allowed_root. realpath + startswith is the canonical
-        # path-traversal barrier (resolves '..' and symlinks before the check).
-        root_real = os.path.realpath(os.path.expanduser(str(folder)))
-        if allowed_root is not None:
-            base_real = os.path.realpath(os.path.expanduser(str(allowed_root)))
-            if root_real != base_real and not root_real.startswith(base_real + os.sep):
-                return {"error": "path is outside the allowed root"}
-        root = Path(root_real)
+        root = Path(folder).expanduser()
         if not root.exists() or not root.is_dir():
             return {"error": f"not a folder: {folder}"}
 
