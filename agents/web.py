@@ -1267,6 +1267,20 @@ async def admin_agents_stats():
     }
 
 
+@app.get("/api/admin/apm", dependencies=[Depends(_admin_guard)])
+async def admin_apm():
+    """H10.16 — org APM: total tokens + $ cost + runs, per agent and per model."""
+    from agents.core.cost_tracker import apm_summary
+    apm = apm_summary()
+    # Fold in live latency/throughput from the bench system when available.
+    if orch and getattr(orch, "bench", None) is not None:
+        try:
+            apm["latency"] = orch.bench.get_summary()
+        except Exception:
+            apm["latency"] = {}
+    return _nocache_json(apm)
+
+
 class AgentUpdateRequest(BaseModel):
     updates: dict[str, str | bool | int]
 
