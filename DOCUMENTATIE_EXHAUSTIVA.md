@@ -1122,7 +1122,7 @@ def _mask_secret(value: str) -> str:
 - **Guest VLAN:** Oaspeți (fără access la Jarvis)
 
 **Porturi:**
-- **8000:** Jarvis web server (http://127.0.0.1:8000)
+- **8080:** Jarvis web server (http://127.0.0.1:8080)
 - **1234:** LM Studio API
 - **11434:** Ollama API (fallback)
 
@@ -1168,7 +1168,7 @@ pip install -r requirements-beta.txt
 pip install tiktoken beautifulsoup4 psutil pytest-asyncio
 
 # Start server
-python serve.py  # http://127.0.0.1:8000
+python serve.py  # http://127.0.0.1:8080
 
 # Run tests
 python -m pytest  # 181 passed, 8 skipped
@@ -1189,8 +1189,8 @@ python -m pytest  # 181 passed, 8 skipped
 ### 13.4 Utilizare Web
 
 **URL-uri:**
-- **HUD:** http://127.0.0.1:8000/
-- **Admin:** http://127.0.0.1:8000/admin
+- **HUD:** http://127.0.0.1:8080/
+- **Admin:** http://127.0.0.1:8080/admin
 
 **HUD Features:**
 - System status (CPU, GPU, RAM, VRAM)
@@ -1580,7 +1580,7 @@ lms unload gemma4
 lms ps
 
 # Test status
-curl http://127.0.0.1:8000/status
+curl http://127.0.0.1:8080/status
 
 # Run tests
 python -m pytest tests/ -v
