@@ -19,7 +19,7 @@ from typing import Optional
 sys.path.insert(0, str(Path(__file__).parent))
 
 from fastapi import FastAPI, Request, Depends, HTTPException, Query
-from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse, FileResponse
+from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse, FileResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
@@ -921,6 +921,79 @@ async def quality_set_threshold(req: Request):
         return JSONResponse({"error": "threshold required"}, status_code=400)
     q.set_threshold(float(body["threshold"]))
     return _nocache_json({"ok": True, "threshold": q.threshold})
+
+
+# ── H10.1 Embeddable Chat Widget ──────────────────────────────────────────────
+
+@app.post("/api/admin/widgets", dependencies=[Depends(_admin_guard)])
+async def widgets_issue(req: Request):
+    """Issue a widget token with theming config (admin)."""
+    store = getattr(orch, "widgets", None) if orch else None
+    if store is None:
+        return JSONResponse({"error": "widget store not available"}, status_code=503)
+    try:
+        body = await req.json()
+    except Exception:
+        body = {}
+    return _nocache_json({"ok": True, "widget": store.issue(body or {})})
+
+
+@app.get("/api/admin/widgets", dependencies=[Depends(_admin_guard)])
+async def widgets_list():
+    store = getattr(orch, "widgets", None) if orch else None
+    if store is None:
+        return _nocache_json({"widgets": []})
+    return _nocache_json({"widgets": store.list()})
+
+
+@app.delete("/api/admin/widgets/{token}", dependencies=[Depends(_admin_guard)])
+async def widgets_revoke(token: str):
+    store = getattr(orch, "widgets", None) if orch else None
+    if store is None or not store.revoke(token):
+        return JSONResponse({"error": "not found"}, status_code=404)
+    return _nocache_json({"ok": True, "revoked": token})
+
+
+@app.get("/api/widget/{token}")
+async def widget_snippet(token: str, request: Request):
+    """Public: return the embeddable JS snippet for a widget token."""
+    store = getattr(orch, "widgets", None) if orch else None
+    cfg = store.get(token) if store else None
+    if cfg is None:
+        return JSONResponse({"error": "not found"}, status_code=404)
+    from agents.core.widget import render_snippet
+    base = str(request.base_url).rstrip("/")
+    js = render_snippet(cfg, base_url=base)
+    return Response(content=js, media_type="application/javascript")
+
+
+@app.get("/api/widget/{token}/config")
+async def widget_config(token: str):
+    store = getattr(orch, "widgets", None) if orch else None
+    cfg = store.get(token) if store else None
+    if cfg is None:
+        return JSONResponse({"error": "not found"}, status_code=404)
+    return _nocache_json(cfg)
+
+
+@app.post("/api/widget/{token}/message")
+async def widget_message(token: str, req: Request):
+    """Public, token-scoped: route a widget message through the orchestrator."""
+    store = getattr(orch, "widgets", None) if orch else None
+    if store is None or store.get(token) is None:
+        return JSONResponse({"error": "not found"}, status_code=404)
+    try:
+        body = await req.json()
+    except Exception:
+        body = {}
+    message = (body or {}).get("message", "")
+    if not message:
+        return JSONResponse({"error": "message required"}, status_code=400)
+    try:
+        reply = await orch.handle_input(message, channel="widget")
+        return _nocache_json({"reply": reply})
+    except Exception as e:
+        return _nocache_json({"reply": "", "error": str(e)})
 
 
 @app.post("/api/schedule/parse")
