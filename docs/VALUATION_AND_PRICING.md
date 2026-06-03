@@ -1,6 +1,6 @@
 # Jarvis Hub — Project Valuation & Subscription Pricing
 
-> Generated: 2026-06-02 · Stage: v0.9.1-beta (pre-1.0, pre-revenue) · Owner: Andrei
+> Generated: 2026-06-02 (refreshed 2026-06-03) · Stage: v9.9.9 (pre-1.0, pre-revenue) · Owner: Andrei
 > North star: [MOONSHOT.md](../MOONSHOT.md) · Companion to [GO_LIVE_PLAN.md](../GO_LIVE_PLAN.md) and [BACKLOG.md](../BACKLOG.md)
 >
 > **Disclaimer:** These are estimates for internal planning, not a formal appraisal or
@@ -17,7 +17,7 @@
 | Python source | ~35,200 LOC across 216 files |
 | Frontend (vanilla React + CSS) | ~9,850 LOC |
 | Tests | 909 passing, 81 test files (backend); frontend 0% |
-| Agents | 15 active + 15 bench, 4 tiers |
+| Agents | 16 active + 17 bench, 4 tiers |
 | Channels | 7 (web, voice, Telegram, Discord, Slack, email, sandbox) |
 | Plugins / integrations | 20 |
 | Skills | 13 |
@@ -43,7 +43,7 @@ conservative (what it's worth as code today) to most optimistic (what it could r
 
 What would it cost to rebuild this from scratch with a competent team?
 
-- ~45K LOC of non-trivial code (orchestration, ML/RAG, async infra, 20 integrations, 909 tests).
+- ~45K LOC of non-trivial code (orchestration, ML/RAG, async infra, 20 integrations, 1,480+ tests).
 - Realistic effort: **9–15 senior person-months** for a strong full-stack + ML engineer (AI-assisted).
 - Loaded monthly cost: €6–10k (RO/EU senior) to $10–15k (US contractor).
 
@@ -114,7 +114,7 @@ Claude Pro at ~$20/mo; real-category anchors (2026): Khoj ~$30/mo (hosted), Amaz
 
 | Plan | Price | Who | Includes |
 |------|-------|-----|----------|
-| **Community** (self-host) | **€0** | Tinkerers, privacy maximalists | Full open-core: all 15 agents, 7 channels, memory, autonomy, workflows. Bring your own GPU + API keys. Community support. |
+| **Community** (self-host) | **€0** | Tinkerers, privacy maximalists | Full open-core: all 16 agents, 7 channels, memory, autonomy, workflows. Bring your own GPU + API keys. Community support. |
 | **Personal** | **€9 / mo** (€90/yr) | Prosumer who self-hosts but wants more | Mobile PWA + push, premium voice (XTTS/ElevenLabs bridge), priority updates, small monthly cloud-LLM credit pool, email support. |
 | **Pro** | **€19 / mo** (€190/yr) | Power user, no local GPU | Managed/hosted instance (we run the GPU), larger cloud-LLM credits, all integrations, autonomy cortex + daily briefs, 1 workspace. |
 | **Family** | **€29 / mo** (€290/yr) | Households | Up to 5 members, Frigga strict-local family memory, shared household views, per-member profiles, parental scope controls. |

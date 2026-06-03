@@ -2,7 +2,7 @@
 
 ## Overview
 
-Jarvis is a local-first multi-agent AI orchestration system. 15 agents across 4 tiers, coordinated by Jarvis (prime orchestrator). Pure Python, runs on Windows via LM Studio with GPU acceleration (RTX 5090 24GB VRAM, 192GB DDR5).
+Jarvis is a local-first multi-agent AI orchestration system. 16 agents across 4 tiers, coordinated by Jarvis (prime orchestrator). Pure Python, runs on Windows via LM Studio with GPU acceleration (RTX 5090 24GB VRAM, 192GB DDR5).
 
 **Stack:** Python 3.12 + FastAPI + LM Studio (OpenAI-compatible API)  
 **Server:** http://127.0.0.1:8080  
@@ -21,7 +21,7 @@ Jarvis is a local-first multi-agent AI orchestration system. 15 agents across 4 
 ```
 agents/
 ├── _system/
-│   ├── agents.yaml          # Agent registry (15 agents, 15 bench)
+│   ├── agents.yaml          # Agent registry (16 agents, 17 bench)
 │   └── agents.yaml.latest   # Auto-generated backup
 ├── core/
 │   ├── agent.py             # Single agent runtime (SOUL.md + model call)
@@ -86,7 +86,7 @@ agents/
 │   │   └── wake_word.py     # Wake word detection (openWakeWord)
 │   └── mcp/
 │       └── client.py        # MCP client
-├── web.py                   # FastAPI web app (17 endpoints)
+├── web.py                   # FastAPI web app (~203 HTTP routes — see docs/ARCHITECTURE.md)
 ├── run.py                   # CLI REPL entry point
 ├── jarvis/
 │   └── SOUL.md              # Jarvis agent soul (identity prompt)
@@ -94,7 +94,7 @@ agents/
 │   └── SOUL.md
 ├── pepper/
 │   └── SOUL.md
-├── ... (15 agent dirs total)
+├── ... (16 agent dirs total)
 └── .venv/                   # Python virtual environment
 serve.py                     # Uvicorn launcher
 memory_logs/                 # Sessions, checkpoints, learning records
@@ -142,7 +142,7 @@ memory_logs/                 # Sessions, checkpoints, learning records
 ## LLM Integration
 
 **Current setup:**
-- LM Studio on port 1234 with `google/gemma-4-26b-a4b` (MoE, 16.76 GB VRAM)
+- LM Studio on port 1234 with `google/gemma-4-31b-a4b` (MoE) — see §default model
 - Auto-detection checks LM Studio first, then Ollama
 - Model has extended thinking (produces `reasoning_content` + `content`)
 - Backend handles both fields, defaults to 1024 token limit
@@ -199,11 +199,11 @@ curl.exe http://127.0.0.1:8080/status
 
 - 15 active agents, 15 bench (reserved)
 - 34 models downloaded (1.24 TB total)
-- 19+ API endpoints (incl. `/api/memory/search`, `/api/memory/remember`)
+- ~203 HTTP routes (full index in docs/ARCHITECTURE.md)
 - 7 ported features from OpenJarvis (security, skills, sandbox, multi-channel, bench, learning, streaming)
 - VRAM: ~17 GB used by primary model, ~7 GB free
 - Response time: ~4-5s per query (fast slot); deep slot trades latency for reasoning depth
-- **Tests: 846 passed, 9 skipped** (offline suite)
+- **Tests: 1,480+ passed, 9 skipped** (offline suite)
 - Horizons done: H1–H7 (foundation → autonomy → perf hot-path); **active: ORIZONT 8 (personal memory)**
 
 ---

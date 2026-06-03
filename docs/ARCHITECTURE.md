@@ -66,7 +66,7 @@ When on: embeds the query, runs fused recall (vector ⊕ graph), injects top-k a
 |------|---------|-------------|
 | `agents/serve.py` | Uvicorn launcher | `app` import from `agents/web.py` |
 | `agents/run.py` | CLI REPL | `main()` |
-| `agents/web.py` | FastAPI app, lifespan, all HTTP endpoints (88 routes) | `app`, `lifespan`, `orch` global |
+| `agents/web.py` | FastAPI app, lifespan, all HTTP endpoints (~203 routes) | `app`, `lifespan`, `orch` global |
 | `agents/core/orchestrator.py` | Main loop | `Orchestrator`, `handle_input`, `handle_input_stream`, `_maybe_checkpoint` |
 | `agents/core/agent.py` | Single agent runtime | `Agent`, `Agent.process`, `Agent.synthesize`, `Agent._load_soul` |
 | `agents/core/router.py` | Intent classifier | `IntentRouter.classify`, `Intent`, `INTENT_RULES` |
@@ -214,6 +214,9 @@ Built-in skills: `brief`, `calendar`, `content`, `email_triage`, `family_store`,
 | `agents/core/workflows/` | Multi-agent workflow engine | `WorkflowEngine` (engine.py), `WorkflowRegistry` (registry.py), `Pipeline`, `WorkflowStep` (pipeline.py), storage (storage.py) |
 | `agents/core/observability/tracer.py` | Request tracing | `Tracer`, trace context |
 | `agents/core/observability/eval.py` | LLM evaluation harness | `EvalRunner` |
+| `agents/core/observability/quality.py` | Live quality monitor (per-request score + alert) | `QualityMonitor` |
+| `agents/core/observability/review_queue.py` | Human review queue (flag → rubric → eval dataset) | `ReviewQueue` |
+| `agents/core/observability/datasets.py` | Eval dataset store + regression runs | `DatasetStore` |
 
 ### Agent Registry
 
@@ -471,7 +474,7 @@ Key env vars loaded at startup:
 serve.py                          Uvicorn launcher
 agents/
   run.py                          CLI REPL
-  web.py                          FastAPI app (88 routes; uvicorn on port 8000)
+  web.py                          FastAPI app (~203 routes; uvicorn on port 8080)
   web/                            Static assets for web dashboard (HTML/CSS/JS)
   _system/agents.yaml             Agent registry (canonical source of truth)
   core/
