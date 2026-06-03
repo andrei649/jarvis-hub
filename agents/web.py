@@ -2094,7 +2094,10 @@ async def local_docs_index(body: LocalDocsIndexBody):
     async def _remember(text: str, metadata: dict):
         return await orch.memory.remember(text, metadata=metadata)
 
-    summary = await LocalDocsIndexer(_remember).index(body.path)
+    # Confine indexing to an allowed root (default: home) so an inbound request
+    # can't point the indexer at arbitrary system paths.
+    allowed_root = orch.get_setting("local_docs.allowed_root", str(Path.home()))
+    summary = await LocalDocsIndexer(_remember).index(body.path, allowed_root=allowed_root)
     status = 400 if summary.get("error") else 200
     if not summary.get("error"):
         _local_docs_last = summary

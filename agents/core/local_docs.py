@@ -75,9 +75,18 @@ class LocalDocsIndexer:
         self.remember = remember
         self.chunk_words = chunk_words
 
-    async def index(self, folder: str | Path) -> dict:
-        """Index every supported document under *folder* (recursively)."""
-        root = Path(folder).expanduser()
+    async def index(self, folder: str | Path, allowed_root: str | Path | None = None) -> dict:
+        """Index every supported document under *folder* (recursively).
+
+        When *allowed_root* is given, the (resolved) folder must live inside it —
+        a containment barrier so an inbound request can't point the indexer at an
+        arbitrary location like ``/etc`` or ``~/.ssh``.
+        """
+        root = Path(folder).expanduser().resolve()
+        if allowed_root is not None:
+            base = Path(allowed_root).expanduser().resolve()
+            if root != base and not root.is_relative_to(base):
+                return {"error": "path is outside the allowed root"}
         if not root.exists() or not root.is_dir():
             return {"error": f"not a folder: {folder}"}
 
