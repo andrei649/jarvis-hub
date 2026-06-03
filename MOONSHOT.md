@@ -1,7 +1,7 @@
 # Jarvis Hub — Moonshot
 
 > The north-star document. Everything else (roadmap, architecture, pricing) serves this.
-> Generated: 2026-06-02 · Stage: v0.9.1-beta → v1.0.0 · Owner: Andrei
+> Generated: 2026-06-02 (audit 2026-06-03) · Stage: v9.9.9 (pre-1.0 audit gate) → v1.0.0 · Owner: Andrei
 >
 > **How to use this doc:** read §1–§4 to know *where we're going*, §7 to know *how we stay on
 > track*. When a decision feels off-mission, check it against §5 (principles) and §1 (the bet).
@@ -65,7 +65,7 @@ a clear "done" gate; we do not skip gates.
 
 | Phase | Horizon → Version | The leap | Gate (done when…) |
 |-------|-------------------|----------|-------------------|
-| **0 — Foundation** ✅ | H1–H4, H5, H6, H7-perf, H9 → v0.9.1-beta | 15 agents, memory, autonomy, workflows, observability all work | Live; 909 tests green |
+| **0 — Foundation** ✅ | H1–H4, H5, H6, H7-perf, H9 → v0.9.1-beta | 16 agents, memory, autonomy, workflows, observability all work | Live; 1,480+ tests green |
 | **1 — Complete & Trustworthy** 🎯 | H7 hardening + H8 + **H10 + H11 + H12 + H13–H17** → **v1.0.0** | From "works for Andrei" to a complete, trustworthy, local-first AI OS — *every backlog horizon shipped* | Foundation gate (CI/CD on PRs, hermetic tests, LICENSE, one-command self-host, personal memory) **plus the full backlog done**: competitive edge, governed computer-use, living memory, agentic-web interop, and a green provable-trust CI badge (see [v1.0 launch checklist](GO_LIVE_PLAN.md#v10-launch-checklist)) |
 | **2 — Sellable** | Hosted Pro + open-core license → post-1.0 (v1.x) | First non-Andrei users; hosted tier; first revenue | 3–5 design partners, hosted Pro live, paid conversion measured |
 | **3 — Ecosystem at scale** | Multi-user + moderated marketplace + 3rd-party adoption → v2.0 | Others build *on* Jarvis; it runs households/teams, not just Andrei | Third parties ship via agents-as-tools / A2A / embedded widget; multi-user + signed marketplace live |

@@ -1,7 +1,7 @@
 # Jarvis Hub — Status Snapshot
 
-> **Current version:** v0.9.x-beta · **Tests:** 1,184+ passed (8 skipped) · **Agents:** 16 (15 cabinet + Howard emerging, + 17 bench)
-> **Road to v1.0:** v1.0.0 = the *entire backlog* done — H10 + H11 + H12 + H13–H17. See [BACKLOG.md](BACKLOG.md#version-roadmap) + [MOONSHOT.md](MOONSHOT.md) §4.
+> **Current version:** v9.9.9 (pre-1.0 audit gate) · **Tests:** 1,480+ passed (9 skipped) · **Agents:** 16 (15 cabinet + Howard, + 17 bench) · **HTTP routes:** ~203
+> **Road to v1.0:** software backlog shipped; `9.9.9` is the last pre-1.0 version, pending full code audit ([docs/AUDIT.md](docs/AUDIT.md)), human manual testing ([docs/MANUAL_TESTING.md](docs/MANUAL_TESTING.md)), and fixes. Remaining backlog needs hardware/models or external network surfaces. See [BACKLOG.md](BACKLOG.md#version-roadmap) + [MOONSHOT.md](MOONSHOT.md) §4.
 >
 > The version labels in the feature tables below (`v0.2.0`, `v0.2.1`) record *when* each capability first
 > landed (provenance), not the current release. For live priorities and the v1.0 gate, BACKLOG.md is the source of truth.

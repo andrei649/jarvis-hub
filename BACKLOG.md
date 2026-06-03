@@ -39,6 +39,7 @@ python -m pytest tests/ -v          # 1100+ passed, 8 skipped
 | **0.9-beta** | 🟢 Live | New integrations + agent marketplace | H5.7, H5.8 |
 | **0.9.1-beta** | 🟢 Live | Recall cu embeddings reale + perf cale fierbinte | H7.1–H7.5 (perf) |
 | **0.9.2-beta** | 🟢 Live | Hardening complet, CI/CD, memorie personală, cost analytics, onboarding | H7 (11 iteme) + H8 (7 iteme) + BUG-1 |
+| **9.9.9** | 🟢 Live | **Pre-1.0 audit gate** — tot backlogul *software* livrat (Waves 6–10: arena, quality monitor, review queue, action approvals, chat rooms, notes, workflow transform/guardrail/loop/subflow/hierarchical/flow-API; + H13.2 GBNF, H14.3 consolidare, H16.1 MCP OAuth, H16.4 surse semnate). Urmează: audit ([docs/AUDIT.md](docs/AUDIT.md)) → testare manuală ([docs/MANUAL_TESTING.md](docs/MANUAL_TESTING.md)) → fixuri → 1.0. | H10.x + H7.11 + H13.2 + H14.3 + H16.1 + H16.4 |
 | **1.0.0** | 🎯 Stable | **Tot backlogul terminat** — H10 + H11 + **H12** + **H13–H17** (BUG-2 ✅ deja livrat; H12.1 P0 securitate ✅ = wedge anti-OpenClaw). Frontierele H13–H17 (plafon capabilitate locală, memorie vie, computer-use guvernat, web agentic, încredere demonstrabilă; teme-flagship *sleep-time compute* + *guvernanță măsurabilă*) sunt **în scope-ul 1.0**. Planuri: [docs/plan-v1-dispatch.md](docs/plan-v1-dispatch.md) · [docs/research/2026-06-03-frontier-horizons.md](docs/research/2026-06-03-frontier-horizons.md) | H10 (30) + H11 (4) + H12 (15) + H13–H17 (20) |
 
 ---
@@ -65,7 +66,7 @@ python -m pytest tests/ -v          # 1100+ passed, 8 skipped
 
 **În afara totalului:** **Bugs & Hot Fixes** — 3 done (BUG-1, BUG-2, BUG-4) + deschise (BUG-3, HF-1/2, BUG-2b, TASK-1, CLN-1, NTH-1).
 
-**Test count (backend pytest):** 1184+ passed, 8 skipped — cele 8 din `tests/test_spotify.py` (vezi nota „Run"). *(2026-06-02: +192 H7+H8; +31 H12.1 securitate; +8 H12.10 trust; +6 H12.9 modele locale.)*
+**Test count (backend pytest):** 1,480+ passed, 9 skipped — cele 9 din `tests/test_spotify.py`/heartbeat opțional (vezi nota „Run"). *(2026-06-03 v9.9.9: backlog software complet — Waves 6–10 + H13.2/H14.3/H16.1/H16.4; vezi `docs/AUDIT.md`.)*
 **Frontend (BUG-2):** 156 teste JS / 20 fișiere · ~66% line coverage — separat de suita pytest.
 
 > **Orizont 7 Hardening — Drumul spre 1.0.0:** 11/11 COMPLET ✅ (livrat 2026-06-02)

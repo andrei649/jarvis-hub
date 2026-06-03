@@ -1,0 +1,125 @@
+# Code & Architecture Audit — v9.9.9 (pre-1.0 gate)
+
+> **Date:** 2026-06-03 · **Scope:** whole codebase (architecture, bugs, code quality, docs).
+> **Purpose:** `9.9.9` is the last version before 1.0. This audit is the gate:
+> findings here feed the **human manual-testing** pass (`docs/MANUAL_TESTING.md`)
+> and the **fix** pass that follow, before tagging `1.0.0`.
+>
+> Method: four parallel read-only reviews (architecture, bug-hunt, code-quality,
+> docs) cross-checked against the running code. Every finding below was
+> **verified against source** — inaccurate agent findings are called out as such
+> so they don't waste fix-phase effort.
+
+## Executive summary
+
+The codebase is **functionally complete and well-tested** (1,480+ offline tests,
+green) with **strong horizontal organization** — `agents/core/` splits cleanly
+into `memory/`, `autonomy/`, `workflows/`, `security/`, `observability/`,
+`llm/`, `channels/`, `mcp/`, each coherent. The weaknesses are **vertical**:
+the HTTP layer (`web.py`) and the composition root (`orchestrator.py`) have
+grown into a monolith and a god-object respectively, and a persistence pattern
+was copy-pasted ~13 times. None of this is a correctness emergency — it's
+**maintainability debt** that's cheap to pay down now and expensive later.
+
+**No release-blocking bugs were found.** The two "critical" security findings in
+the automated bug-hunt (secret-broker plaintext leak) were **false positives**
+(verified — see §2). The genuine bugs are low-severity hardening items.
+
+**Verdict:** sound foundation; do the **P0 cleanups** (below) during the fix
+phase, ship `1.0.0`. The big refactors (router split, service container) are
+**P1 — valuable but not blocking**.
+
+---
+
+## 1. Architecture findings
+
+| # | Severity | Finding | Location | Recommendation |
+|---|----------|---------|----------|----------------|
+| A1 | **High** | `web.py` is a 3,978-line monolith with ~203 route decorators in one file; ~88 `getattr(orch, "X", None)` reach-ins. | `agents/web.py` | Split into `agents/routers/*` `APIRouter`s by feature area (admin, memory, autonomy, observability, security, workflows, arena, collaboration). Mechanical, test-covered, do incrementally. |
+| A2 | **High** | Orchestrator is a god-object / service-locator: `__init__` has ~51 `try/except` component inits; components reached via `getattr` with silent-None fallback. | `agents/core/orchestrator.py` (~lines 84–274) | Introduce a small **component registry** (name → factory + init-status) and expose typed accessors. Add a startup **health report** so a failed component is visible, not silently `None`. |
+| A3 | **High** | ~13 JSON stores re-implement identical `_load`/`_save`(atomic tmp+replace)/`threading.Lock`/`__init__(path)` boilerplate (~26 `_load`/`_save` pairs). | `widget.py`, `rooms.py`, `notes.py`, `arena.py`, `webhooks.py`, `observability/review_queue.py`, `autonomy/action_approvals.py` (in-mem), `memory/{entity,bitemporal,decay}.py`, `security/{anchor,capability}.py`, `run_history.py`, `soul_versioning.py` | Extract `agents/core/persistence/json_store.py` `JsonStore` base; subclasses keep only their schema. Removes ~200 LOC and the drift risk. |
+| A4 | **Medium** | Blocking I/O on the async path: sync `write_text`/`sqlite3` inside `async def` handlers (JSON store saves, `/api/admin/audit` direct sqlite). | `web.py` store endpoints; `agents/web.py` audit route | Wrap blocking calls in `await asyncio.to_thread(...)`. Files are small so impact is moderate today, but it blocks the event loop under load. |
+| A5 | **Medium** | Repeated 503-guard preamble (`getattr(orch,...)→503`) in ~50+ endpoints. | `web.py` | Add one FastAPI dependency `require_component("arena")` returning the component or raising 503. Removes ~100 LOC. |
+| A6 | — | ✅ **verified safe** — `workflows/engine.py`'s `Orchestrator` import is `TYPE_CHECKING`-guarded (line 19), so there is **no** circular-import risk. (Flagged by the auto-audit; confirmed a non-issue.) | `agents/core/workflows/engine.py:19` | None needed. |
+| A7 | **Low** | `ActionApprovalQueue` is in-memory only — pending approvals lost on restart, unlike the other (persisted) stores. | `autonomy/action_approvals.py` | Persist via the new `JsonStore` base (and re-create `asyncio.Event`s lazily on load). |
+
+---
+
+## 2. Bug findings (verified)
+
+| # | Severity | Status | Finding | Location |
+|---|----------|--------|---------|----------|
+| B1 | **Low** | ✅ real | `await_decision` reads `self._items[action_id]["status"]` **after** the `await`, unguarded → `KeyError` if `clear()` races. | `autonomy/action_approvals.py` (`await_decision`) → use `self._items.get(action_id, {}).get("status", "unknown")` |
+| B2 | **Low** | ✅ real | Intentional best-effort `except Exception: pass` swallows preview errors with no trace. | `autonomy/escalation.py` `render_escalation` → log at `debug`. |
+| B3 | — | ❌ **false positive** | "SecretBroker.redact/has TOCTOU returns plaintext." **Not true** — actual `redact()` snapshots names under lock then skips any deleted secret (`get()→None`); no plaintext path. `has()` lock-free read is harmless. | `security/secret_broker.py` (verified) |
+| B4 | — | ❌ **false positive** | "`asyncio.Event()`/`asyncio.Lock()` built in `__init__` crash." **Not true on Python ≥3.10** — they no longer bind a loop at construction; async tests pass. | `action_approvals.py`, `memory/manager.py` |
+| B5 | **Low** | ⚠️ acceptable | `time.sleep` backoff in the embedder runs **inside a thread-pool worker** (already off the event loop), so it's tolerable; convert to async only if that path moves on-loop. | `ingestion/embedder.py` |
+| B6 | **Low** | ✅ real | Fire-and-forget `asyncio.create_task`/`ensure_future` without a done-callback can swallow exceptions (voice wake-word, gemini cache warm). | `voice/pipeline.py`, `orchestrator.py` → attach `add_done_callback` that logs `t.exception()`. |
+
+**Security posture:** the quarantine (H17.1), capability/kill-switch (H17.3),
+secret broker (H15.4), and audit-anchor (H17.4) modules were reviewed — **no
+bypass found**. Admin-guarded endpoints are consistently gated. The lethal-trifecta
+defenses hold.
+
+---
+
+## 3. Code-quality findings
+
+| # | Severity | Finding | Recommendation |
+|---|----------|---------|----------------|
+| Q1 | High | Same as A3 (store duplication). | `JsonStore` base. |
+| Q2 | High | Same as A5 (getattr/503 boilerplate, ~88×). | `require_component` dependency. |
+| Q3 | Medium | Inconsistent error shapes: mostly `{"error": ...}` but some `HTTPException`, some `{"status": ...}`; raw `str(e)` leaks internals in a few handlers. | Define one `ErrorResponse` model + a global exception handler mapping `errors.py` types → HTTP codes; never return raw `str(e)`. |
+| Q4 | Low | Magic numbers / hardcoded paths: `MAX_LEN=20000` (notes), `_HISTORY_CAP=200` (rooms), `MAX_PER_AGENT=100` (run_history), `RUBRIC_CRITERIA`, and `Path("memory_logs/...")` repeated across ~34 files. | Centralize in `agents/core/config.py` (`MEMORY_DIR`, per-store paths, limits). |
+| Q5 | Low | ~50+ public methods/classes lack docstrings/return-type hints (e.g. `agent.py`, `cost_tracker.py`, `resilience.py`). | Sweep; add `mypy`/`ruff` docstring lint (non-blocking) to CI. |
+| Q6 | Low | Atomic tmp+replace write used by stores but **not** in `ingestion/watcher.py`, `memory/conversation.py`, `plugins/oracle_bridge.py`. | Once `JsonStore` exists, route these through it. |
+| Q7 | Low | No `tests/README.md` mapping the 140 test files / `test_hXX_*` roadmap codes to features. | Add a short index. |
+
+---
+
+## 4. Documentation findings — **fixed in this PR**
+
+The doc audit found pervasive stale numbers. **Corrected here** (verified against
+code): version `0.9.x` → **9.9.9** everywhere; agent count `15` → **16** (JARVIS.md
+×4); test count (`846`/`909`/`1184`/`1474`) → **1,480+**; endpoint count
+(`17`/`19`/`88`) → **~203**; model `gemma-4-26b` → `gemma-4-31b` (JARVIS.md self-conflict);
+ARCHITECTURE port typo `8000` → `8080`; ARCHITECTURE module index gained the
+`observability/` entries (`quality`, `review_queue`, `datasets`); BACKLOG/MOONSHOT/
+VALUATION/STATUS refreshed; a `9.9.9` row added to the version roadmap.
+
+**Corrected agent error:** the doc audit claimed `LICENSE`/`CONTRIBUTING.md` were
+missing — **they exist** (shipped under H7.9). No action taken.
+
+**Still open (low):** JARVIS.md vs docs/ARCHITECTURE.md overlap — consider making
+ARCHITECTURE.md the single source for the module index and trimming JARVIS.md to
+a high-level overview (deferred; not blocking).
+
+---
+
+## 5. Prioritized remediation roadmap
+
+**P0 — do during the fix phase, before 1.0 (low risk, high signal):**
+1. `JsonStore` base class; migrate the ~13 stores (A3/Q1). Big duplication win, all test-covered.
+2. `require_component` dependency + one `ErrorResponse` model/handler (A5/Q2/Q3). Kills boilerplate, standardizes the API surface.
+3. Wrap blocking store/sqlite writes in `asyncio.to_thread` (A4).
+4. The two real micro-bugs: `await_decision` `.get` guard (B1) and `create_task` done-callbacks (B6); demote `except:pass` to `debug` (B2).
+5. Persist `ActionApprovalQueue` (A7).
+
+**P1 — valuable, not blocking (schedule post-1.0 or during if time allows):**
+6. Split `web.py` into feature `APIRouter`s (A1).
+7. Component registry + startup health report on the Orchestrator (A2).
+8. Centralize config/paths/limits (Q4).
+
+**P2 — polish:**
+9. Docstring/type-hint sweep + CI lint (Q5); `tests/README.md` (Q7); JARVIS.md/ARCHITECTURE.md de-duplication.
+
+---
+
+## 6. Actioned in this PR
+- Version bumped to **9.9.9** (single source `agents/__init__.py`; propagates to `/version` + `/status`).
+- All stale doc numbers synced (§4).
+- This audit report added.
+
+Code refactors (P0–P2) are intentionally **not** applied here — they belong to
+the post-manual-testing fix phase so audit findings and fixes stay reviewable
+and the `9.9.9` snapshot stays a clean, behavior-frozen baseline for human testing.
