@@ -97,6 +97,13 @@ class Orchestrator:
         except Exception:
             logger.warning("EntityStore init failed — entity memory disabled", exc_info=True)
             self.entities = None
+        # H14.1: bi-temporal KG (valid-time + ingested-at; contradictions invalidate).
+        try:
+            from .memory.bitemporal import BiTemporalKG
+            self.bitemporal = BiTemporalKG()
+        except Exception:
+            logger.warning("BiTemporalKG init failed — bi-temporal KG disabled", exc_info=True)
+            self.bitemporal = None
         # H10.17: per-agent run history timeline.
         try:
             from .run_history import RunHistory

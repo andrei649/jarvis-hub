@@ -2202,6 +2202,49 @@ async def kg_delete_relation(source: str, relation: str, target: str):
     return _nocache_json({"ok": True})
 
 
+# ── H14.1 Bi-temporal KG (valid-time + ingested-at; as-of recall) ─────────────
+
+@app.post("/api/kg/facts")
+async def kg_add_fact(req: Request):
+    """Add a bi-temporal fact. Body: {subject, predicate, object, valid_from?,
+    ingested_at?, multi?}. Single-valued predicates invalidate (not delete) a
+    contradicting prior fact."""
+    bt = getattr(orch, "bitemporal", None) if orch else None
+    if bt is None:
+        return JSONResponse({"error": "bi-temporal KG not available"}, status_code=503)
+    try:
+        body = await req.json()
+    except Exception:
+        body = {}
+    for k in ("subject", "predicate", "object"):
+        if not (body or {}).get(k):
+            return JSONResponse({"error": "subject, predicate, object required"}, status_code=400)
+    fact = bt.add_fact(
+        body["subject"], body["predicate"], body["object"],
+        valid_from=body.get("valid_from"), ingested_at=body.get("ingested_at"),
+        multi=bool(body.get("multi", False)),
+    )
+    return _nocache_json({"ok": True, "fact": fact})
+
+
+@app.get("/api/kg/facts/as-of")
+async def kg_facts_as_of(at: Optional[float] = None, subject: str = "", predicate: str = ""):
+    """Valid-time recall: facts true in the world at time `at` (default now)."""
+    bt = getattr(orch, "bitemporal", None) if orch else None
+    if bt is None:
+        return JSONResponse({"error": "bi-temporal KG not available"}, status_code=503)
+    return _nocache_json({"at": at, "facts": bt.as_of(at, subject, predicate)})
+
+
+@app.get("/api/kg/facts/history")
+async def kg_facts_history(subject: str, predicate: str = ""):
+    """All versions (incl. invalidated) for a subject, oldest first."""
+    bt = getattr(orch, "bitemporal", None) if orch else None
+    if bt is None:
+        return JSONResponse({"error": "bi-temporal KG not available"}, status_code=503)
+    return _nocache_json({"subject": subject, "history": bt.history(subject, predicate)})
+
+
 @app.get("/api/memory/eval/corpus")
 async def memory_eval_corpus():
     """H14.2 — the owned memory-eval corpus (cases across 5 abilities)."""
