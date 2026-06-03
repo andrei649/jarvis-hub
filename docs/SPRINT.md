@@ -59,7 +59,7 @@ Merge order recomandat: H12.2 → H12.4 → H10.24 → H9.3b → H10.8 → H10.5
 - [x] Test count actualizat în BACKLOG (1184+ passed)
 - [x] `docs/SPRINT.md` marcat wave ca ✅ merged
 - [x] PR #54 cu toate detaliile pentru PM (deploy instructions, env vars, metrici)
-- [ ] Branches stale șterse (claude/h12.1-security, claude/h12.10-mute-indicator, claude/h12.9-local-model-ux)
+- [x] Branches stale șterse (claude/h12.1-security, claude/h12.10-mute-indicator, claude/h12.9-local-model-ux) — confirmate absente pe origin 2026-06-03
 
 ### Wave 1 — PENDING ⏳
 
