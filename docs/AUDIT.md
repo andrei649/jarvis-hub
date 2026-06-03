@@ -49,12 +49,12 @@ phase, ship `1.0.0`. The big refactors (router split, service container) are
 
 | # | Severity | Status | Finding | Location |
 |---|----------|--------|---------|----------|
-| B1 | **Low** | ✅ real | `await_decision` reads `self._items[action_id]["status"]` **after** the `await`, unguarded → `KeyError` if `clear()` races. | `autonomy/action_approvals.py` (`await_decision`) → use `self._items.get(action_id, {}).get("status", "unknown")` |
-| B2 | **Low** | ✅ real | Intentional best-effort `except Exception: pass` swallows preview errors with no trace. | `autonomy/escalation.py` `render_escalation` → log at `debug`. |
+| B1 | **Low** | ✅ **fixed** | `await_decision` reads `self._items[action_id]["status"]` **after** the `await`, unguarded → `KeyError` if `clear()` races. | `autonomy/action_approvals.py` (`await_decision`) → use `self._items.get(action_id, {}).get("status", "unknown")` |
+| B2 | **Low** | ✅ **fixed** | Intentional best-effort `except Exception: pass` swallows preview errors with no trace. | `autonomy/escalation.py` `render_escalation` → log at `debug`. |
 | B3 | — | ❌ **false positive** | "SecretBroker.redact/has TOCTOU returns plaintext." **Not true** — actual `redact()` snapshots names under lock then skips any deleted secret (`get()→None`); no plaintext path. `has()` lock-free read is harmless. | `security/secret_broker.py` (verified) |
 | B4 | — | ❌ **false positive** | "`asyncio.Event()`/`asyncio.Lock()` built in `__init__` crash." **Not true on Python ≥3.10** — they no longer bind a loop at construction; async tests pass. | `action_approvals.py`, `memory/manager.py` |
 | B5 | **Low** | ⚠️ acceptable | `time.sleep` backoff in the embedder runs **inside a thread-pool worker** (already off the event loop), so it's tolerable; convert to async only if that path moves on-loop. | `ingestion/embedder.py` |
-| B6 | **Low** | ✅ real | Fire-and-forget `asyncio.create_task`/`ensure_future` without a done-callback can swallow exceptions (voice wake-word, gemini cache warm). | `voice/pipeline.py`, `orchestrator.py` → attach `add_done_callback` that logs `t.exception()`. |
+| B6 | **Low** | ✅ **fixed** | Fire-and-forget `asyncio.create_task`/`ensure_future` without a done-callback can swallow exceptions (voice wake-word, gemini cache warm). | `voice/pipeline.py`, `orchestrator.py` → attach `add_done_callback` that logs `t.exception()`. |
 
 **Security posture:** the quarantine (H17.1), capability/kill-switch (H17.3),
 secret broker (H15.4), and audit-anchor (H17.4) modules were reviewed — **no

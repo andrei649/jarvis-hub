@@ -35,7 +35,11 @@ class VoicePipeline:
 
     def _on_wake_word(self, word: str):
         logger.info(f"Wake: {word}")
-        asyncio.create_task(self._capture_and_process(word))
+        task = asyncio.create_task(self._capture_and_process(word))
+        # B6: surface exceptions from the fire-and-forget capture task.
+        task.add_done_callback(
+            lambda t: logger.error("wake-word processing failed: %s", t.exception(), exc_info=t.exception())
+            if not t.cancelled() and t.exception() else None)
 
     async def _capture_and_process(self, wake_word: str):
         audio_path = await self._record_audio()

@@ -76,6 +76,18 @@ from .plugins.iot_control import IoTControlPlugin
 
 logger = logging.getLogger("jarvis.orchestrator")
 
+
+def _log_task_result(task: "asyncio.Task") -> None:
+    """B6: done-callback so a fire-and-forget task's exception isn't swallowed."""
+    try:
+        exc = task.exception()
+    except asyncio.CancelledError:
+        return
+    if exc is not None:
+        logger.error("background task %r failed: %s",
+                     task.get_name(), exc, exc_info=exc)
+
+
 HANDOFF_PREFIX = "[handoff:"
 SKILL_PREFIX = "[learn:"
 
@@ -742,16 +754,19 @@ class Orchestrator:
                 log_error(logger, E_CHANNEL_START_FAIL, name=cid, detail=str(e))
         self.heartbeat_scheduler.start(self)
         self._settings_watcher_task = asyncio.create_task(self._settings_watcher_loop())
+        self._settings_watcher_task.add_done_callback(_log_task_result)
         self._wire_autonomy()
         self._schedule_daily_digests()
         self._schedule_log_scans()
         self._schedule_learning_loop()
         self._autonomy_task = asyncio.create_task(self._autonomy_loop())
+        self._autonomy_task.add_done_callback(_log_task_result)
         if hasattr(self, 'oracle_bridge') and os.getenv("JARVIS_TESTING") != "1":
             self.oracle_bridge.start_watcher()
         if os.getenv("JARVIS_TESTING") != "1":
             from agents.core.learning_loop import run_learning_loop
-            asyncio.create_task(run_learning_loop(self))
+            _ll = asyncio.create_task(run_learning_loop(self))
+            _ll.add_done_callback(_log_task_result)
         logger.info(f"Channels started: {list(self.channels.keys())}")
 
     async def stop_channels(self):
@@ -1039,12 +1054,13 @@ class Orchestrator:
                         )
                     else:
                         history_parts = [t.strip() for t in history.split("\n---\n") if t.strip()]
-                        asyncio.ensure_future(self._async_create_cache(
+                        _cache_task = asyncio.ensure_future(self._async_create_cache(
                             session_id=self.session_id,
                             system_instruction=system_prompt,
                             history_texts=history_parts,
                             model=model,
                         ))
+                        _cache_task.add_done_callback(_log_task_result)
                 if use_cache_name:
                     backend._use_cache = use_cache_name
                 else:
