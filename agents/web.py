@@ -2039,6 +2039,23 @@ async def list_traces(limit: int = Query(50, ge=1, le=200)):
     return _nocache_json({"traces": tracer.list(limit)})
 
 
+@app.get("/api/cost")
+async def cost_breakdown():
+    """H10.24 — estimated $ cost per agent and per day (local models = $0)."""
+    if not orch:
+        return _nocache_json({"error": "not initialized"}, status_code=503)
+    tracer = getattr(orch, "tracer", None)
+    if tracer is None:
+        return _nocache_json(
+            {"by_agent": [], "by_day": [], "summary": {}, "error": "tracer not available"}
+        )
+    return _nocache_json({
+        "by_agent": tracer.cost_by_agent(),
+        "by_day": tracer.cost_by_day(),
+        "summary": tracer.cost_summary(),
+    })
+
+
 @app.get("/api/traces/{trace_id}")
 async def get_trace(trace_id: str):
     """Return the full trace dict for a specific trace id."""
@@ -2121,6 +2138,185 @@ async def local_docs_index(body: LocalDocsIndexBody):
 
 
 # ── END H12.2 Onboarding endpoints ────────────────────────────────
+
+
+# ── H10.8 Inbound Webhook Triggers ────────────────────────────────
+
+_webhook_store = None
+
+
+def _get_webhook_store():
+    global _webhook_store
+    if _webhook_store is None:
+        from agents.core.webhooks import WebhookStore
+        _webhook_store = WebhookStore()
+    return _webhook_store
+
+
+class WebhookCreateBody(BaseModel):
+    target: str = Field(..., max_length=128)
+    target_type: str = Field("agent", pattern="^(agent|workflow)$")
+    name: str = Field("", max_length=128)
+
+
+@app.get("/api/webhooks")
+async def list_webhooks():
+    """List configured inbound webhooks (tokens masked)."""
+    return _nocache_json({"webhooks": _get_webhook_store().list()})
+
+
+@app.post("/api/webhooks")
+async def create_webhook(body: WebhookCreateBody):
+    """Create an inbound webhook; the token is returned ONCE."""
+    try:
+        rec = _get_webhook_store().create(body.target, body.target_type, body.name)
+    except ValueError as exc:
+        return _nocache_json({"error": str(exc)}, status_code=400)
+    return _nocache_json(rec)
+
+
+@app.delete("/api/webhooks/{hook_id}")
+async def delete_webhook(hook_id: str):
+    ok = _get_webhook_store().delete(hook_id)
+    return _nocache_json({"ok": ok}, status_code=200 if ok else 404)
+
+
+@app.post("/api/webhooks/{hook_id}")
+async def trigger_webhook(hook_id: str, request: Request):
+    """Token-authenticated trigger → runs the configured agent/workflow."""
+    if not orch:
+        return _nocache_json({"error": "not initialized"}, status_code=503)
+    store = _get_webhook_store()
+    hook = store.get(hook_id)
+    if hook is None:
+        return _nocache_json({"error": "webhook not found"}, status_code=404)
+
+    token = request.headers.get("x-webhook-token") or request.query_params.get("token", "")
+    if not store.verify(hook_id, token):
+        return _nocache_json({"error": "invalid or missing token"}, status_code=401)
+
+    try:
+        payload = await request.json()
+    except Exception:
+        payload = (await request.body()).decode("utf-8", "replace")
+
+    from agents.core.webhooks import extract_input
+    text = extract_input(payload)
+    store.mark_called(hook_id)
+
+    if hook["target_type"] == "agent":
+        reply = await orch.handle_input(text, channel="webhook", agent_override=hook["target"])
+        return _nocache_json({"ok": True, "target": hook["target"], "response": reply})
+
+    # workflow target (best-effort — requires the workflow engine)
+    engine = getattr(orch, "workflow_engine", None)
+    if engine is None or not hasattr(engine, "run"):
+        return _nocache_json({"error": "workflow execution not available"}, status_code=501)
+    result = await engine.run(hook["target"], {"input": text})
+    return _nocache_json({"ok": True, "target": hook["target"], "result": result})
+
+
+# ── END H10.8 Inbound Webhook endpoints ───────────────────────────
+
+
+# ── H10.5 MCP Server Mode (expose Jarvis agents as governed MCP tools) ─
+
+def _build_mcp_server():
+    """Build a JarvisMCPServer over the live orchestrator's agents."""
+    from agents.core.mcp.server import JarvisMCPServer
+
+    agents = {
+        aid: f"{a.config.get('name', aid)} — {a.config.get('tier', '')} tier agent"
+        for aid, a in orch.agents.items()
+    }
+
+    async def _runner(agent_id: str, text: str) -> str:
+        return await orch.handle_input(text, channel="mcp", agent_override=agent_id)
+
+    allowed = orch.get_setting("mcp.exposed_agents", None)
+    return JarvisMCPServer(_runner, agents, allowed_agents=allowed, lan_only=True)
+
+
+@app.get("/api/mcp/server")
+async def mcp_server_status():
+    """Status + governed tool list for Jarvis's MCP server mode (H10.5)."""
+    if not orch:
+        return _nocache_json({"error": "not initialized"}, status_code=503)
+    enabled = bool(orch.get_setting("mcp.server_enabled", False))
+    status = _build_mcp_server().status()
+    status["enabled"] = enabled
+    return _nocache_json(status)
+
+
+@app.post("/api/mcp/server/rpc")
+async def mcp_server_rpc(message: dict):
+    """JSON-RPC 2.0 entry point (HTTP transport). Disabled by default; LAN-only."""
+    if not orch:
+        return _nocache_json({"error": "not initialized"}, status_code=503)
+    if not bool(orch.get_setting("mcp.server_enabled", False)):
+        return _nocache_json(
+            {"error": "MCP server mode disabled (set mcp.server_enabled)"},
+            status_code=403,
+        )
+    response = await _build_mcp_server().handle(message)
+    # JSON-RPC notifications produce no response body.
+    return _nocache_json(response if response is not None else {"ok": True})
+
+
+# ── END H10.5 MCP Server endpoints ────────────────────────────────
+
+
+# ── H9.3b Dataset Regression Tracking ─────────────────────────────
+
+_dataset_store = None
+
+
+def _get_dataset_store():
+    global _dataset_store
+    if _dataset_store is None:
+        from agents.core.observability.datasets import DatasetStore
+        _dataset_store = DatasetStore()
+    return _dataset_store
+
+
+class DatasetRunBody(BaseModel):
+    name: str = Field(..., max_length=128)
+    version: Optional[int] = None
+
+
+@app.get("/api/eval/datasets")
+async def list_eval_datasets():
+    """List versioned eval datasets with their latest score (H9.3b)."""
+    return _nocache_json({"datasets": _get_dataset_store().list_datasets()})
+
+
+@app.get("/api/eval/datasets/{name}/runs")
+async def list_dataset_runs(name: str, limit: int = Query(20, ge=1, le=200)):
+    """Recent run summaries for a dataset (most-recent first)."""
+    return _nocache_json({"name": name, "runs": _get_dataset_store().runs(name, limit)})
+
+
+@app.get("/api/eval/datasets/{name}/compare")
+async def compare_dataset_runs(name: str, a: str = Query(...), b: str = Query(...)):
+    """Diff two runs (a=baseline, b=candidate): regressions + score delta."""
+    return _nocache_json(_get_dataset_store().compare(name, a, b))
+
+
+@app.post("/api/eval/datasets/run")
+async def run_eval_dataset(body: DatasetRunBody):
+    """Run a dataset version through the live orchestrator and record the run."""
+    if not orch:
+        return _nocache_json({"error": "not initialized"}, status_code=503)
+
+    async def _runner(prompt: str) -> str:
+        return await orch.handle_input(prompt, channel="eval")
+
+    result = await _get_dataset_store().run_dataset(body.name, _runner, body.version)
+    status = 404 if result.get("error") else 200
+    return _nocache_json(result, status_code=status)
+
+
+# ── END H9.3b Dataset Regression endpoints ────────────────────────
 
 
 @app.get("/api/workflows")
