@@ -92,7 +92,8 @@ def test_webhook_endpoints_flow():
         assert any(w["id"] == hook_id and "token" not in w for w in listed)
 
         # trigger without token → 401
-        assert c.post(f"/api/webhooks/{hook_id}", json={"text": "hi"}).status_code == 401
+        no_token = c.post(f"/api/webhooks/{hook_id}", json={"text": "hi"})
+        assert no_token.status_code == 401
 
         # trigger with token (header) → 200, runs the agent
         ok = c.post(
@@ -105,7 +106,9 @@ def test_webhook_endpoints_flow():
         assert ok.json()["target"] == "jarvis"
 
         # unknown webhook → 404
-        assert c.post("/api/webhooks/nope", json={}, headers={"X-Webhook-Token": "x"}).status_code == 404
+        unknown = c.post("/api/webhooks/nope", json={}, headers={"X-Webhook-Token": "x"})
+        assert unknown.status_code == 404
 
         # delete
-        assert c.delete(f"/api/webhooks/{hook_id}").status_code == 200
+        deleted = c.delete(f"/api/webhooks/{hook_id}")
+        assert deleted.status_code == 200
