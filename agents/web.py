@@ -781,6 +781,38 @@ async def agent_history(agent_id: str, limit: int = Query(50, ge=1, le=200)):
     })
 
 
+@app.get("/api/agent-templates")
+async def agent_templates_list():
+    """H10.29 — list the pre-configured agent template catalog."""
+    from agents.core.agent_templates import list_templates
+    return _nocache_json({"templates": list_templates()})
+
+
+@app.post("/api/agent-templates/instantiate")
+async def agent_templates_instantiate(req: Request):
+    """H10.29 — render a ready-to-save agent config from a template.
+
+    Body: {"template": "researcher", "name": "Vega", "overrides": {...}}.
+    Returns the agents.yaml-shaped config + a SOUL.md skeleton (preview); the
+    caller persists it via the normal agent-creation flow.
+    """
+    from agents.core.agent_templates import build_agent_config
+    try:
+        body = await req.json()
+    except Exception:
+        body = {}
+    template = (body or {}).get("template", "")
+    try:
+        config = build_agent_config(
+            template,
+            name=(body or {}).get("name"),
+            overrides=(body or {}).get("overrides") or {},
+        )
+    except KeyError:
+        return JSONResponse({"error": f"unknown template: {template}"}, status_code=404)
+    return _nocache_json({"ok": True, "config": config})
+
+
 @app.get("/sandbox/status")
 async def sandbox_status():
     if not orch:
