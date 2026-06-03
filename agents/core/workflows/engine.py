@@ -34,6 +34,8 @@ class WorkflowEngine:
         ctx: dict[str, str] = {"_input": initial_input}
         errors: list[str] = []
 
+        terminated_by: str = ""
+
         for batch in pipeline.execution_batches():
             if len(batch) == 1:
                 step = batch[0]
@@ -51,9 +53,19 @@ class WorkflowEngine:
                     else:
                         ctx[step.id] = out
 
+            # H10.12: stop early if any step in this batch tripped its guard.
+            for step in batch:
+                if step.terminate_when and evaluate_condition(step.terminate_when, ctx.get(step.id, "")):
+                    terminated_by = step.id
+                    break
+            if terminated_by:
+                break
+
         ctx["_elapsed"] = round(time.monotonic() - t0, 2)
         ctx["_ok"] = len(errors) == 0
         ctx["_errors"] = errors
+        ctx["_terminated"] = bool(terminated_by)
+        ctx["_terminated_by"] = terminated_by
         return ctx
 
     async def _run_step(self, step: WorkflowStep, ctx: dict) -> str:
@@ -71,6 +83,34 @@ class WorkflowEngine:
         except Exception as e:
             logger.warning("Step %r failed: %s", step.id, e)
             return f"[error:{e}]"
+
+
+def evaluate_condition(cond: dict, text: str) -> bool:
+    """H10.12 — evaluate a termination guard against a step's output text.
+
+    Supported ``type`` values: ``contains`` / ``not_contains`` (case-insensitive),
+    ``equals`` (exact, trimmed), ``regex`` (search), ``not_empty``. Unknown or
+    malformed conditions evaluate to False (fail-open: don't terminate).
+    """
+    if not isinstance(cond, dict):
+        return False
+    ctype = cond.get("type", "")
+    value = cond.get("value", "")
+    text = text or ""
+    try:
+        if ctype == "contains":
+            return str(value).lower() in text.lower()
+        if ctype == "not_contains":
+            return str(value).lower() not in text.lower()
+        if ctype == "equals":
+            return text.strip() == str(value).strip()
+        if ctype == "regex":
+            return re.search(str(value), text) is not None
+        if ctype == "not_empty":
+            return bool(text.strip())
+    except re.error:
+        return False
+    return False
 
 
 def _render(template: str, ctx: dict) -> str:

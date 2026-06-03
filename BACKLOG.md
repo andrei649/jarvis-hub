@@ -307,7 +307,7 @@ python -m pytest tests/ -v          # 1100+ passed, 8 skipped
 
 | # | Item | S | P | Dep | Sursă |
 |---|------|---|---|-----|-------|
-| H10.12 | **Workflow Termination Conditions** — WorkflowStep poate defini o condiție de stop (LLM judge: "task rezolvat?", keyword match, max-iterations), nu doar completare normală. `WorkflowStep.stop_condition`. | 3 | P2 | H5.6 | AutoGen |
+| H10.12 ✅ | **Workflow Termination Conditions** — WorkflowStep poate defini o condiție de stop (keyword/regex/equals/not_empty match), nu doar completare normală. **Done 2026-06-03:** `WorkflowStep.terminate_when` (dict opțional, round-trip to/from_dict fără poluare); `engine.evaluate_condition` (contains/not_contains/equals/regex/not_empty, fail-open pe condiții malformate); engine oprește pipeline-ul după batch-ul în care un guard se declanșează, setând `_terminated`/`_terminated_by`. +6 teste offline. | 3 | P2 | H5.6 | AutoGen |
 | H10.10 | **Structured Agent Outputs (Pydantic)** — SOUL.md sau config poate specifica un JSON schema; orchestratorul validează output-ul agentului și returnează eroare structurată la caller dacă nu e conform. | 5 | P2 | H5.6 | CrewAI |
 | H10.15 | **Critic Agent Pattern** — built-in workflow node tip `critic`: primește output-ul pasului anterior, îl evaluează pe criterii configurabile, decide `accept`/`retry`(max N)/`escalate`. | 5 | P2 | H5.6, H10.12 | AutoGen |
 | H10.13 | **Dynamic Agent Router** — WorkflowStep de tip `router_llm`: un agent coordinator decide la runtime care agent urmează, pe baza output-ului precedent (nu DAG fix). | 8 | P2 | H5.6 | AutoGen |
