@@ -47,6 +47,50 @@ def get_summary() -> dict:
         return {"agents": result, "total_cost_usd": round(total_cost, 6)}
 
 
+def apm_summary() -> dict:
+    """H10.16 — org-wide APM rollup: totals + per-agent + per-model breakdown.
+
+    Built on get_summary() (per-agent tokens + $). Adds organization totals and
+    a per-model aggregation for the Admin APM dashboard.
+    """
+    summary = get_summary()
+    agents = summary["agents"]
+
+    totals = {"runs": 0, "input_tokens": 0, "output_tokens": 0, "cost_usd": 0.0}
+    by_model: dict[str, dict] = {}
+    by_agent = []
+
+    for agent, data in agents.items():
+        runs = data.get("calls", 0)
+        in_tok = data.get("input_tokens", 0)
+        out_tok = data.get("output_tokens", 0)
+        cost = data.get("cost_usd", 0.0)
+        model = data.get("model", "default")
+
+        totals["runs"] += runs
+        totals["input_tokens"] += in_tok
+        totals["output_tokens"] += out_tok
+        totals["cost_usd"] = round(totals["cost_usd"] + cost, 6)
+
+        by_agent.append({
+            "agent": agent, "model": model, "runs": runs,
+            "input_tokens": in_tok, "output_tokens": out_tok, "cost_usd": cost,
+        })
+
+        m = by_model.setdefault(
+            model, {"model": model, "runs": 0, "input_tokens": 0,
+                    "output_tokens": 0, "cost_usd": 0.0},
+        )
+        m["runs"] += runs
+        m["input_tokens"] += in_tok
+        m["output_tokens"] += out_tok
+        m["cost_usd"] = round(m["cost_usd"] + cost, 6)
+
+    by_agent.sort(key=lambda r: r["cost_usd"], reverse=True)
+    by_model_list = sorted(by_model.values(), key=lambda r: r["cost_usd"], reverse=True)
+    return {"totals": totals, "by_agent": by_agent, "by_model": by_model_list}
+
+
 def reset():
     """Reset all counters (for testing)."""
     with _lock:
