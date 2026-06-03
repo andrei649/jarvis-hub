@@ -24,7 +24,7 @@ import json
 import time
 import uuid
 from pathlib import Path
-from typing import Any, Awaitable, Callable, Optional
+from typing import Awaitable, Callable, Optional
 
 from .eval import EvalCase, EvalHarness
 
