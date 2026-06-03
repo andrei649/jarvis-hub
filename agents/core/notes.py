@@ -9,34 +9,23 @@ session id.
 
 from __future__ import annotations
 
-import json
-import threading
 import time
 from pathlib import Path
+from .persistence import JsonStore
 
 DEFAULT_PATH = Path("memory_logs/notes.json")
 MAX_LEN = 20000
 
 
-class NotesStore:
+class NotesStore(JsonStore):
     def __init__(self, path: str | Path = DEFAULT_PATH) -> None:
-        self.path = Path(path)
-        self._lock = threading.Lock()
-        self._notes: dict[str, dict] = {}
-        self._load()
+        super().__init__(path)
 
-    def _load(self) -> None:
-        if self.path.exists():
-            try:
-                self._notes = json.loads(self.path.read_text(encoding="utf-8"))
-            except Exception:
-                self._notes = {}
+    def _serialize(self):
+        return self._notes
 
-    def _save(self) -> None:
-        self.path.parent.mkdir(parents=True, exist_ok=True)
-        tmp = self.path.with_suffix(".tmp")
-        tmp.write_text(json.dumps(self._notes, ensure_ascii=False, indent=2), encoding="utf-8")
-        tmp.replace(self.path)
+    def _deserialize(self, raw) -> None:
+        self._notes = raw if isinstance(raw, dict) else {}
 
     def get(self, session_id: str) -> str:
         with self._lock:

@@ -26,6 +26,8 @@ import time
 from pathlib import Path
 from typing import Optional, Union
 
+from .persistence import JsonStore
+
 DEFAULT_PATH = Path("memory_logs/webhooks.json")
 
 
@@ -50,26 +52,15 @@ def extract_input(payload) -> str:
     return str(payload)
 
 
-class WebhookStore:
+class WebhookStore(JsonStore):
     def __init__(self, path: str | Path = DEFAULT_PATH) -> None:
-        self.path = Path(path)
-        self._hooks: dict[str, dict] = {}
-        self._load()
+        super().__init__(path)
 
-    # ── persistence ──────────────────────────────────────────────────────────
+    def _serialize(self):
+        return self._hooks
 
-    def _load(self) -> None:
-        if self.path.exists():
-            try:
-                self._hooks = json.loads(self.path.read_text(encoding="utf-8"))
-            except Exception:
-                self._hooks = {}
-
-    def _save(self) -> None:
-        self.path.parent.mkdir(parents=True, exist_ok=True)
-        tmp = self.path.with_suffix(".tmp")
-        tmp.write_text(json.dumps(self._hooks, ensure_ascii=False, indent=2), encoding="utf-8")
-        tmp.replace(self.path)  # atomic
+    def _deserialize(self, raw) -> None:
+        self._hooks = raw if isinstance(raw, dict) else {}
 
     # ── CRUD ─────────────────────────────────────────────────────────────────
 
