@@ -1134,6 +1134,84 @@ async def widget_message(token: str, req: Request):
         return _nocache_json({"reply": "", "error": str(e)})
 
 
+# ── H10.20 Chat Channels / Rooms ──────────────────────────────────────────────
+
+@app.get("/api/rooms")
+async def rooms_list():
+    store = getattr(orch, "rooms", None) if orch else None
+    return _nocache_json({"rooms": store.list() if store else []})
+
+
+@app.post("/api/rooms")
+async def rooms_create(req: Request):
+    store = getattr(orch, "rooms", None) if orch else None
+    if store is None:
+        return JSONResponse({"error": "rooms not available"}, status_code=503)
+    try:
+        body = await req.json()
+    except Exception:
+        body = {}
+    if not (body or {}).get("name"):
+        return JSONResponse({"error": "name required"}, status_code=400)
+    room = store.create(body["name"], (body or {}).get("description", ""),
+                        (body or {}).get("agents"), (body or {}).get("default_agent", "jarvis"))
+    return _nocache_json({"ok": True, "room": room})
+
+
+@app.get("/api/rooms/{room_id}")
+async def rooms_get(room_id: str):
+    store = getattr(orch, "rooms", None) if orch else None
+    room = store.get(room_id) if store else None
+    if room is None:
+        return JSONResponse({"error": "not found"}, status_code=404)
+    return _nocache_json(room)
+
+
+@app.delete("/api/rooms/{room_id}")
+async def rooms_delete(room_id: str):
+    store = getattr(orch, "rooms", None) if orch else None
+    if store is None or not store.delete(room_id):
+        return JSONResponse({"error": "not found"}, status_code=404)
+    return _nocache_json({"ok": True, "deleted": room_id})
+
+
+@app.get("/api/rooms/{room_id}/history")
+async def rooms_history(room_id: str, limit: int = Query(50, ge=1, le=200)):
+    store = getattr(orch, "rooms", None) if orch else None
+    if store is None or store.get(room_id) is None:
+        return JSONResponse({"error": "not found"}, status_code=404)
+    return _nocache_json({"history": store.history(room_id, limit)})
+
+
+@app.post("/api/rooms/{room_id}/message")
+async def rooms_message(room_id: str, req: Request):
+    """Post a message to a room; @mention routes to a specific agent."""
+    store = getattr(orch, "rooms", None) if orch else None
+    if store is None or not orch:
+        return JSONResponse({"error": "rooms not available"}, status_code=503)
+    room = store.get(room_id)
+    if room is None:
+        return JSONResponse({"error": "not found"}, status_code=404)
+    try:
+        body = await req.json()
+    except Exception:
+        body = {}
+    text = (body or {}).get("message", "")
+    if not text:
+        return JSONResponse({"error": "message required"}, status_code=400)
+    target = store.route(room_id, text)
+    store.add_message(room_id, "user", text)
+    prompt = store.context_for(room_id) + text
+    try:
+        reply = await orch.handle_input(prompt, channel="room",
+                                        agent_override=target if target != "jarvis" else None)
+    except Exception as e:
+        reply = f"[error:{e}]"
+    store.add_message(room_id, "assistant", reply, agent=target)
+    return _nocache_json({"reply": reply, "agent": target,
+                          "mentioned": store.parse_mentions(text)})
+
+
 # ── H10.18 Action-Level Approval ──────────────────────────────────────────────
 
 @app.get("/api/actions")

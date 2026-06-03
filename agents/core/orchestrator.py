@@ -143,6 +143,13 @@ class Orchestrator:
         except Exception:
             logger.warning("WidgetStore init failed — chat widget disabled", exc_info=True)
             self.widgets = None
+        # H10.20: themed chat rooms (per project/context, @mention routing).
+        try:
+            from .rooms import RoomStore
+            self.rooms = RoomStore()
+        except Exception:
+            logger.warning("RoomStore init failed — chat rooms disabled", exc_info=True)
+            self.rooms = None
         # H10.18: action-level approval queue (pending tool-calls, sub-task grain).
         try:
             from .autonomy.action_approvals import ActionApprovalQueue
