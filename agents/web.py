@@ -1332,6 +1332,101 @@ async def admin_apm():
     return _nocache_json(apm)
 
 
+# ── H10.22 Prompt Version Control (SOUL.md history / diff / rollback / A/B) ──
+
+def _svs():
+    """Return the SOUL version store, or None."""
+    return getattr(orch, "soul_versions", None) if orch else None
+
+
+@app.get("/api/admin/prompts/{agent_id}/history", dependencies=[Depends(_admin_guard)])
+async def admin_prompt_history(agent_id: str):
+    svs = _svs()
+    if svs is None:
+        return JSONResponse({"error": "prompt VC not available"}, status_code=503)
+    return _nocache_json({"agent_id": agent_id, "history": svs.history(agent_id)})
+
+
+@app.get("/api/admin/prompts/{agent_id}/version/{version}", dependencies=[Depends(_admin_guard)])
+async def admin_prompt_version(agent_id: str, version: int):
+    svs = _svs()
+    if svs is None:
+        return JSONResponse({"error": "prompt VC not available"}, status_code=503)
+    v = svs.get(agent_id, version)
+    if v is None:
+        return JSONResponse({"error": "not found"}, status_code=404)
+    return _nocache_json(v)
+
+
+@app.post("/api/admin/prompts/{agent_id}/commit", dependencies=[Depends(_admin_guard)])
+async def admin_prompt_commit(agent_id: str, req: Request):
+    svs = _svs()
+    if svs is None:
+        return JSONResponse({"error": "prompt VC not available"}, status_code=503)
+    try:
+        body = await req.json()
+    except Exception:
+        body = {}
+    content = (body or {}).get("content")
+    if content is None:
+        return JSONResponse({"error": "content required"}, status_code=400)
+    entry = svs.commit(agent_id, content, message=body.get("message", ""), author=body.get("author", ""))
+    return _nocache_json({"ok": True, "version": entry})
+
+
+@app.get("/api/admin/prompts/{agent_id}/diff", dependencies=[Depends(_admin_guard)])
+async def admin_prompt_diff(agent_id: str, a: int, b: int):
+    svs = _svs()
+    if svs is None:
+        return JSONResponse({"error": "prompt VC not available"}, status_code=503)
+    d = svs.diff(agent_id, a, b)
+    if d is None:
+        return JSONResponse({"error": "version not found"}, status_code=404)
+    return _nocache_json({"agent_id": agent_id, "a": a, "b": b, "diff": d})
+
+
+@app.post("/api/admin/prompts/{agent_id}/rollback", dependencies=[Depends(_admin_guard)])
+async def admin_prompt_rollback(agent_id: str, req: Request):
+    svs = _svs()
+    if svs is None:
+        return JSONResponse({"error": "prompt VC not available"}, status_code=503)
+    try:
+        body = await req.json()
+    except Exception:
+        body = {}
+    version = (body or {}).get("version")
+    if version is None:
+        return JSONResponse({"error": "version required"}, status_code=400)
+    entry = svs.rollback(agent_id, int(version), author=body.get("author", ""))
+    if entry is None:
+        return JSONResponse({"error": "version not found"}, status_code=404)
+    return _nocache_json({"ok": True, "version": entry})
+
+
+@app.post("/api/admin/prompts/{agent_id}/ab", dependencies=[Depends(_admin_guard)])
+async def admin_prompt_ab_set(agent_id: str, req: Request):
+    svs = _svs()
+    if svs is None:
+        return JSONResponse({"error": "prompt VC not available"}, status_code=503)
+    try:
+        body = await req.json()
+    except Exception:
+        body = {}
+    try:
+        ab = svs.set_experiment(agent_id, int(body["a"]), int(body["b"]), float(body.get("split", 0.5)))
+    except KeyError:
+        return JSONResponse({"error": "a and b must be existing versions"}, status_code=400)
+    return _nocache_json({"ok": True, "experiment": ab})
+
+
+@app.get("/api/admin/prompts/{agent_id}/ab", dependencies=[Depends(_admin_guard)])
+async def admin_prompt_ab_summary(agent_id: str):
+    svs = _svs()
+    if svs is None:
+        return JSONResponse({"error": "prompt VC not available"}, status_code=503)
+    return _nocache_json({"agent_id": agent_id, "ab": svs.ab_summary(agent_id)})
+
+
 class AgentUpdateRequest(BaseModel):
     updates: dict[str, str | bool | int]
 

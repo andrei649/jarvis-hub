@@ -104,6 +104,13 @@ class Orchestrator:
         except Exception:
             logger.warning("RunHistory init failed — run history disabled", exc_info=True)
             self.run_history = None
+        # H10.22: SOUL.md / system-prompt version control (history, diff, A/B).
+        try:
+            from .soul_versioning import SoulVersionStore
+            self.soul_versions = SoulVersionStore()
+        except Exception:
+            logger.warning("SoulVersionStore init failed — prompt VC disabled", exc_info=True)
+            self.soul_versions = None
         self.plugins: dict = {}
         self.skills = SkillLoader()
         self.skill_importer = SkillImporter()
