@@ -268,14 +268,16 @@ python -m pytest tests/ -v          # 1100+ passed, 8 skipped
 
 | Horizon | Total | ✅ Done | S total | S done | % |
 |---------|-------|---------|---------|--------|---|
-| **H10 Competitive Edge** | 30 | **0** | 188 | **0** | **0%** |
+| **H10 Competitive Edge** | 30 | **1** | 188 | **5** | **3%** |
+
+> H10.24 Cost per Trace ✅ (2026-06-03) — Wave 1.
 
 ### H10.A — Observability & Eval (P1 — fundație)
 
 | # | Item | S | P | Dep | Sursă |
 |---|------|---|---|-----|-------|
 | H10.16 | **APM Dashboard** — metrici org în Admin HUD: tokens totali consumați (cu cost $ estimat), runs totale, breakdown per agent și per model. Extinde `/admin` + `bench.py`. | 5 | P1 | H9.2 | SuperAGI |
-| H10.24 | **Cost Tracking per Agent** — calcul $ per request (tokens × preț per provider/model), stocat în trace, vizibil per agent/zi în HUD. `PRICE_TABLE` configurabil în `agents.yaml`. | 5 | P1 | H9.2 | LangSmith |
+| H10.24 ✅ | **Cost Tracking per Agent** — calcul $ per request (tokens × preț per provider/model), stocat în trace, vizibil per agent/zi în HUD. **Done 2026-06-03:** cost per-trace via `core/llm/cost_estimator.py` (reutilizat din H7.10, local = $0); `Tracer.cost_by_agent/cost_by_day/cost_summary` peste ring-buffer; endpoint `GET /api/cost` (by_agent + by_day + summary). +8 teste. *(Override `PRICE_TABLE` din config = follow-up.)* | 5 | P1 | H9.2 | LangSmith |
 | H10.19 | **Model Arena / Blind Comparison** — tab HUD: același query trimis la 2 modele, răspunsuri side-by-side anonimizate, buton vot, leaderboard quality score agregat. `/api/arena/run` + `/api/arena/vote`. | 8 | P1 | H7.5 | OpenWebUI |
 | H9.3b | **Dataset Regression Tracking** (ext. H9.3) — datasets de eval persistente cu versiuni (JSONL), track scor per dataset-version, comparare rulări în HUD; integrabil în CI. | 5 | P1 | H9.3 | LangSmith |
 | H10.22 | **Agent Prompt Version Control** — SOUL.md versionat cu history (git-tags sau DB), UI de comparare 2 versiuni, A/B eval pe un dataset, rollback. | 13 | P1 | H9.3b | LangSmith |

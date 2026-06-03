@@ -2039,6 +2039,23 @@ async def list_traces(limit: int = Query(50, ge=1, le=200)):
     return _nocache_json({"traces": tracer.list(limit)})
 
 
+@app.get("/api/cost")
+async def cost_breakdown():
+    """H10.24 — estimated $ cost per agent and per day (local models = $0)."""
+    if not orch:
+        return _nocache_json({"error": "not initialized"}, status_code=503)
+    tracer = getattr(orch, "tracer", None)
+    if tracer is None:
+        return _nocache_json(
+            {"by_agent": [], "by_day": [], "summary": {}, "error": "tracer not available"}
+        )
+    return _nocache_json({
+        "by_agent": tracer.cost_by_agent(),
+        "by_day": tracer.cost_by_day(),
+        "summary": tracer.cost_summary(),
+    })
+
+
 @app.get("/api/traces/{trace_id}")
 async def get_trace(trace_id: str):
     """Return the full trace dict for a specific trace id."""
