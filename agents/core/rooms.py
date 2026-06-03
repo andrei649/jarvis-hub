@@ -17,8 +17,9 @@ from pathlib import Path
 from .persistence import JsonStore
 from typing import Optional
 
+from .config import ROOM_HISTORY_CAP as _HISTORY_CAP  # Q4: centralized limit
+
 DEFAULT_PATH = Path("memory_logs/rooms.json")
-_HISTORY_CAP = 200
 _MENTION = re.compile(r"@([A-Za-z0-9_\-]+)")
 
 

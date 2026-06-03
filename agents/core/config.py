@@ -2,11 +2,27 @@
 config.py — Jarvis configuration loader.
 
 Loads agents.yaml and provides typed access to all config values.
+Also the single home for storage location + tunable limits (audit Q4).
 """
 
+import os
 import yaml
 from pathlib import Path
 from typing import Optional
+
+# ── storage location + tunable limits (Q4) ───────────────────────────────────
+# Root directory for on-disk state (JSON stores, SQLite DBs, logs). Override
+# with the JARVIS_MEMORY_DIR env var.
+MEMORY_DIR = Path(os.environ.get("JARVIS_MEMORY_DIR", "memory_logs"))
+
+NOTES_MAX_LEN = 20_000             # max chars of a session note (H10.21)
+ROOM_HISTORY_CAP = 200             # max messages kept per chat room (H10.20)
+RUN_HISTORY_MAX_PER_AGENT = 100    # workflow run-history ring per agent (H10.17)
+
+
+def data_path(*parts: str) -> Path:
+    """Build a path under the memory dir, e.g. ``data_path('widgets.json')``."""
+    return MEMORY_DIR.joinpath(*parts)
 
 
 class AgentConfig:

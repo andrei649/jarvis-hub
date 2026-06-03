@@ -13,8 +13,9 @@ import time
 from pathlib import Path
 from .persistence import JsonStore
 
+from .config import NOTES_MAX_LEN as MAX_LEN  # Q4: centralized limit
+
 DEFAULT_PATH = Path("memory_logs/notes.json")
-MAX_LEN = 20000
 
 
 class NotesStore(JsonStore):
