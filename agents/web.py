@@ -1995,6 +1995,95 @@ async def memory_entities(q: str = "", type: str = "", limit: int = Query(50, ge
     })
 
 
+# ── H12.3 Knowledge-graph editor (query / edit / delete entities + relations) ─
+
+def _kg():
+    """Return the live knowledge graph, or None."""
+    if not orch or not getattr(orch, "memory", None):
+        return None
+    return getattr(orch.memory, "graph", None)
+
+
+@app.get("/api/kg/entities")
+async def kg_entities(q: str = "", limit: int = Query(100, ge=1, le=500)):
+    """List (or search with ?q=) knowledge-graph entities."""
+    g = _kg()
+    if g is None:
+        return _nocache_json({"entities": [], "error": "graph not available"})
+    entities = g.search(q) if q else g.list_entities(limit)
+    return _nocache_json({"entities": entities[:limit], "total": len(entities)})
+
+
+@app.get("/api/kg/entities/{name}")
+async def kg_entity(name: str):
+    """Get one entity plus its relations."""
+    g = _kg()
+    if g is None:
+        return JSONResponse({"error": "graph not available"}, status_code=503)
+    ent = g.get_entity(name)
+    if ent is None:
+        return JSONResponse({"error": "not found"}, status_code=404)
+    return _nocache_json({"entity": ent, "relations": g.get_relations(name)})
+
+
+@app.post("/api/kg/entities")
+async def kg_upsert_entity(req: Request):
+    """Create or update an entity (upsert). Body: {name, type, properties}."""
+    g = _kg()
+    if g is None:
+        return JSONResponse({"error": "graph not available"}, status_code=503)
+    try:
+        body = await req.json()
+    except Exception:
+        body = {}
+    name = (body or {}).get("name", "").strip()
+    if not name:
+        return JSONResponse({"error": "name required"}, status_code=400)
+    ok = g.add_entity(name, (body.get("type") or "unknown"), body.get("properties") or {})
+    return _nocache_json({"ok": bool(ok), "entity": g.get_entity(name)})
+
+
+@app.delete("/api/kg/entities/{name}")
+async def kg_delete_entity(name: str):
+    """Delete an entity and any relations that touch it."""
+    g = _kg()
+    if g is None:
+        return JSONResponse({"error": "graph not available"}, status_code=503)
+    if not g.delete_entity(name):
+        return JSONResponse({"error": "not found"}, status_code=404)
+    return _nocache_json({"ok": True, "deleted": name})
+
+
+@app.post("/api/kg/relations")
+async def kg_add_relation(req: Request):
+    """Create a relation. Body: {source, relation, target, properties}."""
+    g = _kg()
+    if g is None:
+        return JSONResponse({"error": "graph not available"}, status_code=503)
+    try:
+        body = await req.json()
+    except Exception:
+        body = {}
+    source = (body or {}).get("source", "").strip()
+    relation = (body or {}).get("relation", "").strip()
+    target = (body or {}).get("target", "").strip()
+    if not (source and relation and target):
+        return JSONResponse({"error": "source, relation, target required"}, status_code=400)
+    ok = g.add_relation(source, relation, target, body.get("properties") or {})
+    return _nocache_json({"ok": bool(ok)})
+
+
+@app.delete("/api/kg/relations")
+async def kg_delete_relation(source: str, relation: str, target: str):
+    """Delete a specific relation (by source/relation/target)."""
+    g = _kg()
+    if g is None:
+        return JSONResponse({"error": "graph not available"}, status_code=503)
+    if not g.delete_relation(source, relation, target):
+        return JSONResponse({"error": "not found"}, status_code=404)
+    return _nocache_json({"ok": True})
+
+
 @app.post("/api/memory/remember")
 async def memory_remember(req: Request):
     """Store a fact in long-term memory with a real embedding, for later recall."""

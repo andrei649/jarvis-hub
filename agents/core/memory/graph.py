@@ -39,6 +39,19 @@ class KnowledgeGraph(ABC):
     def search(self, keyword: str) -> list[dict]:
         ...
 
+    # ── H12.3 editing surface (view / delete) ──────────────────────────────
+    @abstractmethod
+    def list_entities(self, limit: int = 100) -> list[dict]:
+        ...
+
+    @abstractmethod
+    def delete_entity(self, name: str) -> bool:
+        ...
+
+    @abstractmethod
+    def delete_relation(self, source: str, relation: str, target: str) -> bool:
+        ...
+
 
 class InMemoryGraph(KnowledgeGraph):
     """Fallback — simple dict-based graph."""
@@ -98,6 +111,27 @@ class InMemoryGraph(KnowledgeGraph):
                     results.append(ent)
                     break
         return results
+
+    def list_entities(self, limit: int = 100) -> list[dict]:
+        return list(self.entities.values())[:max(1, limit)]
+
+    def delete_entity(self, name: str) -> bool:
+        if name not in self.entities:
+            return False
+        del self.entities[name]
+        # Drop any relations that touch the removed entity.
+        self.relations = [
+            r for r in self.relations if r["source"] != name and r["target"] != name
+        ]
+        return True
+
+    def delete_relation(self, source: str, relation: str, target: str) -> bool:
+        before = len(self.relations)
+        self.relations = [
+            r for r in self.relations
+            if not (r["source"] == source and r["relation"] == relation and r["target"] == target)
+        ]
+        return len(self.relations) < before
 
 
 class Neo4jGraph(KnowledgeGraph):
@@ -225,6 +259,39 @@ class Neo4jGraph(KnowledgeGraph):
                 "properties": {k: v for k, v in node.items() if k != "name"},
             })
         return results
+
+    def list_entities(self, limit: int = 100) -> list[dict]:
+        rows = self.query(
+            "MATCH (n) RETURN n, labels(n) AS labels LIMIT $limit",
+            {"limit": max(1, limit)},
+        )
+        results = []
+        for row in rows:
+            node = row.get("n", {})
+            results.append({
+                "name": node.get("name", ""),
+                "type": (row.get("labels", []) + ["unknown"])[0].lower(),
+                "properties": {k: v for k, v in node.items() if k != "name"},
+            })
+        return results
+
+    def delete_entity(self, name: str) -> bool:
+        results = self._call_neo4j([{
+            "statement": "MATCH (n {name: $name}) DETACH DELETE n RETURN count(n) AS deleted",
+            "parameters": {"name": name},
+        }])
+        return len(results) > 0
+
+    def delete_relation(self, source: str, relation: str, target: str) -> bool:
+        cypher = (
+            f"MATCH (a {{name: $source}})-[r:{relation.upper()}]->(b {{name: $target}}) "
+            "DELETE r RETURN count(r) AS deleted"
+        )
+        results = self._call_neo4j([{
+            "statement": cypher,
+            "parameters": {"source": source, "target": target},
+        }])
+        return len(results) > 0
 
 
 def create_graph(backend: str = None) -> KnowledgeGraph:
