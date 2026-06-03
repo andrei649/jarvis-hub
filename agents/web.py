@@ -1009,6 +1009,45 @@ async def autonomy_preview(req: Request):
     return _nocache_json(preview_task(body))
 
 
+@app.get("/api/autonomy/escalation/targets")
+async def escalation_targets():
+    """H12.11 — which channels would receive an escalation (governed)."""
+    from agents.core.autonomy.escalation import EscalationRouter
+    channels = getattr(orch, "channels", {}) if orch else {}
+    allow = None
+    if orch:
+        try:
+            allow = (orch._runtime_settings.get("autonomy", {}) or {}).get("escalation_channels")
+        except Exception:
+            allow = None
+    return _nocache_json({"targets": EscalationRouter(channels, allow=allow).targets(),
+                          "available": sorted(channels.keys())})
+
+
+@app.post("/api/autonomy/escalate", dependencies=[Depends(_admin_guard)])
+async def escalation_send(req: Request):
+    """H12.11 — deliver an escalation to governed channels (admin)."""
+    from agents.core.autonomy.escalation import EscalationRouter, render_escalation
+    channels = getattr(orch, "channels", {}) if orch else {}
+    try:
+        body = await req.json()
+    except Exception:
+        body = {}
+    message = (body or {}).get("message", "")
+    if not message and (body or {}).get("task"):
+        message = render_escalation(body["task"])
+    if not message:
+        return JSONResponse({"error": "message or task required"}, status_code=400)
+    allow = None
+    if orch:
+        try:
+            allow = (orch._runtime_settings.get("autonomy", {}) or {}).get("escalation_channels")
+        except Exception:
+            allow = None
+    router = EscalationRouter(channels, allow=allow)
+    return _nocache_json(await router.escalate(message, (body or {}).get("channels")))
+
+
 @app.get("/api/autonomy/tasks/{task_id}/preview")
 async def autonomy_task_preview(task_id: int):
     """H12.5 — dry-run preview of a queued task by id."""
