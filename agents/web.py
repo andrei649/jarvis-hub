@@ -2113,6 +2113,52 @@ async def memory_entities(q: str = "", type: str = "", limit: int = Query(50, ge
     })
 
 
+# ── H8.3b Agentic RAG tool (LLM-callable search_memory over structured stores) ─
+
+def _structured_recall(query: str, top_k: int = 5) -> list:
+    """Offline recall over the structured memory stores (entities + KG)."""
+    hits: list[dict] = []
+    if not orch:
+        return hits
+    q = (query or "").strip()
+    ents = getattr(orch, "entities", None)
+    if ents is not None:
+        for e in ents.search(q, limit=top_k):
+            hits.append({"source": "entity", "text": e["name"], "type": e.get("type", ""),
+                         "score": e.get("mentions", 0)})
+    g = getattr(getattr(orch, "memory", None), "graph", None)
+    if g is not None:
+        try:
+            for node in g.search(q)[:top_k]:
+                hits.append({"source": "graph", "text": node.get("name", ""),
+                             "type": node.get("type", ""), "score": 1})
+        except Exception:
+            pass
+    return hits[:top_k]
+
+
+@app.get("/api/memory/tool-spec")
+async def memory_tool_spec():
+    """H8.3b — the search_memory function-calling spec the model can invoke."""
+    from agents.core.memory.rag_tool import TOOL_SPEC
+    return _nocache_json(TOOL_SPEC)
+
+
+@app.post("/api/memory/search-tool")
+async def memory_search_tool(req: Request):
+    """H8.3b — a single search_memory tool call. Body: {query, top_k?}."""
+    from agents.core.memory.rag_tool import MemorySearchTool
+    try:
+        body = await req.json()
+    except Exception:
+        body = {}
+    query = (body or {}).get("query", "")
+    if not query:
+        return JSONResponse({"error": "query required"}, status_code=400)
+    tool = MemorySearchTool(_structured_recall)
+    return _nocache_json(tool.search(query, int(body.get("top_k", 5))))
+
+
 # ── H14.4 Decay-based forgetting (ACT-R activation + dependency-aware delete) ──
 
 @app.get("/api/memory/decay/ranking")
