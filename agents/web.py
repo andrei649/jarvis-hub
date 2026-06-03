@@ -996,6 +996,32 @@ async def widget_message(token: str, req: Request):
         return _nocache_json({"reply": "", "error": str(e)})
 
 
+@app.post("/api/autonomy/preview")
+async def autonomy_preview(req: Request):
+    """H12.5 — dry-run preview of an action (no execution). Body: a task dict."""
+    from agents.core.autonomy.dry_run import preview_task
+    try:
+        body = await req.json()
+    except Exception:
+        body = {}
+    if not (body or {}).get("kind") and not (body or {}).get("title"):
+        return JSONResponse({"error": "task with kind/title required"}, status_code=400)
+    return _nocache_json(preview_task(body))
+
+
+@app.get("/api/autonomy/tasks/{task_id}/preview")
+async def autonomy_task_preview(task_id: int):
+    """H12.5 — dry-run preview of a queued task by id."""
+    q = getattr(orch, "autonomy_queue", None) if orch else None
+    if q is None:
+        return JSONResponse({"error": "autonomy queue not available"}, status_code=503)
+    task = q.get(task_id) if hasattr(q, "get") else None
+    if task is None:
+        return JSONResponse({"error": "not found"}, status_code=404)
+    from agents.core.autonomy.dry_run import preview_task
+    return _nocache_json(preview_task(task))
+
+
 @app.post("/api/schedule/parse")
 async def schedule_parse(req: Request):
     """H10.27 — parse a natural-language schedule into a cron expression."""
