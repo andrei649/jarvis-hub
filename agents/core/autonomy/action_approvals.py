@@ -84,7 +84,9 @@ class ActionApprovalQueue:
             await asyncio.wait_for(event.wait(), timeout=timeout)
         except asyncio.TimeoutError:
             return "timeout"
-        return self._items[action_id]["status"]
+        # B1: guard against a concurrent clear() between the await and the read.
+        with self._lock:
+            return self._items.get(action_id, {}).get("status", "unknown")
 
     # ── queries ──────────────────────────────────────────────────────────────
 

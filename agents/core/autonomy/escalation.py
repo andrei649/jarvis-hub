@@ -27,7 +27,7 @@ def render_escalation(task: dict) -> str:
         from .dry_run import preview_task
         parts.append(f"Preview: {preview_task(t)['summary']}")
     except Exception:
-        pass
+        logger.debug("escalation preview skipped", exc_info=True)  # B2: best-effort, but traceable
     return "\n".join(parts)
 
 
