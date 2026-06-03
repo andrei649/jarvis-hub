@@ -349,7 +349,14 @@ async def chat(req: ChatRequest):
     if not orch:
         return ChatResponse(reply="Jarvis not initialized.")
     try:
-        reply = await orch.handle_input(req.message, channel="web", agent_override=req.agent if req.agent != "jarvis" else None)
+        # H10.21: inject the active session's notes as persistent context.
+        message = req.message
+        notes = getattr(orch, "notes", None)
+        if notes is not None:
+            prefix = notes.context_for(getattr(orch, "session_id", "web"))
+            if prefix:
+                message = prefix + message
+        reply = await orch.handle_input(message, channel="web", agent_override=req.agent if req.agent != "jarvis" else None)
         return ChatResponse(reply=reply)
     except Exception as e:
         logger.exception("chat error")
@@ -1125,6 +1132,63 @@ async def widget_message(token: str, req: Request):
         return _nocache_json({"reply": reply})
     except Exception as e:
         return _nocache_json({"reply": "", "error": str(e)})
+
+
+# ── H10.21 Conversation Notes ─────────────────────────────────────────────────
+
+class _NoteBody(BaseModel):
+    content: str = Field("", max_length=20000)
+
+
+@app.get("/api/notes")
+async def notes_get():
+    notes = getattr(orch, "notes", None) if orch else None
+    sid = getattr(orch, "session_id", "web") if orch else "web"
+    return _nocache_json({"session": sid, "content": notes.get(sid) if notes else ""})
+
+
+@app.put("/api/notes")
+async def notes_set(body: _NoteBody):
+    notes = getattr(orch, "notes", None) if orch else None
+    if notes is None:
+        return JSONResponse({"error": "notes not available"}, status_code=503)
+    sid = getattr(orch, "session_id", "web")
+    return _nocache_json({"ok": True, "session": sid, **notes.set(sid, body.content)})
+
+
+@app.delete("/api/notes")
+async def notes_clear():
+    notes = getattr(orch, "notes", None) if orch else None
+    sid = getattr(orch, "session_id", "web") if orch else "web"
+    cleared = notes.clear(sid) if notes else False
+    return _nocache_json({"ok": True, "cleared": cleared})
+
+
+@app.post("/api/notes/rewrite")
+async def notes_rewrite(req: Request):
+    """H10.21 — 'Rewrite with AI': run the note through an agent; optionally save."""
+    notes = getattr(orch, "notes", None) if orch else None
+    if notes is None or not orch:
+        return JSONResponse({"error": "notes not available"}, status_code=503)
+    try:
+        body = await req.json()
+    except Exception:
+        body = {}
+    sid = getattr(orch, "session_id", "web")
+    content = notes.get(sid)
+    if not content.strip():
+        return JSONResponse({"error": "note is empty"}, status_code=400)
+    instruction = (body or {}).get("instruction") or "Rewrite these notes to be clearer and well-organized."
+    prompt = f"{instruction}\n\n---\n{content}"
+    try:
+        rewritten = await orch.handle_input(prompt, channel="notes")
+    except Exception as e:
+        return JSONResponse({"error": str(e)}, status_code=500)
+    saved = False
+    if (body or {}).get("save"):
+        notes.set(sid, rewritten)
+        saved = True
+    return _nocache_json({"ok": True, "rewritten": rewritten, "saved": saved})
 
 
 @app.post("/api/workflows/hierarchical")

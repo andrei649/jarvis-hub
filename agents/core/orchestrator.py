@@ -143,6 +143,13 @@ class Orchestrator:
         except Exception:
             logger.warning("WidgetStore init failed — chat widget disabled", exc_info=True)
             self.widgets = None
+        # H10.21: conversation notes (persistent per-session context scratchpad).
+        try:
+            from .notes import NotesStore
+            self.notes = NotesStore()
+        except Exception:
+            logger.warning("NotesStore init failed — conversation notes disabled", exc_info=True)
+            self.notes = None
         # H10.25: human review queue (flagged traces → rubric + thumbs vote).
         try:
             from .observability.review_queue import ReviewQueue
