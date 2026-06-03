@@ -23,6 +23,7 @@ logger = logging.getLogger("jarvis.workflows")
 
 _TIMEOUT = 120.0  # seconds per step
 _MAX_RECENT_RUNS = 50  # H10.2 — recent-run trace ring for the HUD overlay
+_MAX_DEPTH = 5  # H10.14 — max nested sub-workflow recursion depth
 
 
 class WorkflowEngine:
@@ -33,11 +34,12 @@ class WorkflowEngine:
         # H10.2: ring of recent run traces for the visual overlay.
         self.recent_runs: deque = deque(maxlen=_MAX_RECENT_RUNS)
 
-    async def run(self, pipeline: Pipeline, initial_input: str) -> dict:
+    async def run(self, pipeline: Pipeline, initial_input: str, _depth: int = 0) -> dict:
         """Execute *pipeline* and return {step_id: response, ..., _elapsed, _ok}."""
         t0 = time.monotonic()
         ctx: dict[str, str] = {"_input": initial_input}
         ctx["_structured"] = {}
+        ctx["_depth"] = _depth
         errors: list[str] = []
 
         terminated_by: str = ""
@@ -126,7 +128,45 @@ class WorkflowEngine:
             return self._run_guardrail(step, ctx)
         if step.kind == "loop":
             return await self._run_loop(step, ctx, step_map)
+        if step.kind == "subflow":
+            return await self._run_subflow(step, ctx)
         return await self._run_step(step, ctx)
+
+    async def _run_subflow(self, step: WorkflowStep, ctx: dict) -> str:
+        """H10.14 — run a nested sub-pipeline as a single step (recursive decomposition).
+
+        The step's rendered prompt_template is the sub-pipeline's input; the sub
+        steps' outputs are exposed as ``{step.id}.{sub_step_id}`` and the final sub
+        step's output becomes this step's output. Recursion is capped at depth 5.
+        """
+        from .pipeline import Pipeline
+        depth = int(ctx.get("_depth", 0))
+        if depth >= _MAX_DEPTH:
+            return f"[error:subflow: max nesting depth {_MAX_DEPTH} exceeded]"
+        cfg = step.subflow or {}
+        try:
+            sub = Pipeline.from_dict({
+                "id": cfg.get("id", f"{step.id}_sub"),
+                "name": cfg.get("name", step.id),
+                "description": cfg.get("description", ""),
+                "steps": cfg.get("steps", []),
+            })
+        except (ValueError, KeyError) as e:
+            return f"[error:subflow: {e}]"
+        if not sub.steps:
+            return ctx.get(step.id, "")
+
+        sub_input = _render(step.prompt_template, ctx)
+        sub_ctx = await self.run(sub, sub_input, _depth=depth + 1)
+        for k, v in sub_ctx.items():
+            if not k.startswith("_"):
+                ctx[f"{step.id}.{k}"] = v
+        ctx.setdefault("_subflows", {})[step.id] = {
+            "ok": sub_ctx.get("_ok", True),
+            "steps": sub_ctx.get("_trace", []),
+        }
+        output_key = cfg.get("output") or sub.steps[-1].id
+        return sub_ctx.get(output_key, "")
 
     async def _run_loop(self, step: WorkflowStep, ctx: dict, step_map: dict) -> str:
         """H10.6 — re-run an inline body of steps until an exit condition or cap.
