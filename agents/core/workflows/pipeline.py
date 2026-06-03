@@ -18,6 +18,11 @@ class WorkflowStep:
     # H10.10: optional structured-output schema; engine validates the step's reply
     # and exposes typed fields as {step_id.field} to downstream steps.
     output_schema: Optional[dict] = None
+    # H10.15: step kind — "agent" (default) or "critic". A critic evaluates a
+    # target step's output (score + feedback) and can request re-runs.
+    kind: str = "agent"
+    # Critic config: {"target": <step_id>, "pass_threshold": 0.7, "max_retries": 1}.
+    critic: Optional[dict] = None
 
     def to_dict(self) -> dict:
         d = {
@@ -30,6 +35,10 @@ class WorkflowStep:
             d["terminate_when"] = self.terminate_when
         if self.output_schema:
             d["output_schema"] = self.output_schema
+        if self.kind and self.kind != "agent":
+            d["kind"] = self.kind
+        if self.critic:
+            d["critic"] = self.critic
         return d
 
     @classmethod
@@ -41,6 +50,8 @@ class WorkflowStep:
             depends_on=list(d.get("depends_on") or []),
             terminate_when=d.get("terminate_when"),
             output_schema=d.get("output_schema"),
+            kind=d.get("kind", "agent"),
+            critic=d.get("critic"),
         )
 
 
