@@ -37,6 +37,9 @@ class WorkflowStep:
     # an exit condition or iteration cap (loop-back edge / iterative refinement).
     # {"steps": [<step dict>...], "max_iterations": 3, "until": {<condition>}}
     loop: Optional[dict] = None
+    # H10.14: subflow config for kind=="subflow" — a nested sub-pipeline run as one
+    # step (recursive task decomposition). {"steps": [<step dict>...], "output": "<step id>"}
+    subflow: Optional[dict] = None
 
     def to_dict(self) -> dict:
         d = {
@@ -61,6 +64,8 @@ class WorkflowStep:
             d["guardrail"] = self.guardrail
         if self.loop:
             d["loop"] = self.loop
+        if self.subflow:
+            d["subflow"] = self.subflow
         return d
 
     @classmethod
@@ -78,6 +83,7 @@ class WorkflowStep:
             transform=d.get("transform"),
             guardrail=d.get("guardrail"),
             loop=d.get("loop"),
+            subflow=d.get("subflow"),
         )
 
 
