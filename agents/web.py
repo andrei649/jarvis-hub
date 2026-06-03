@@ -3407,6 +3407,7 @@ class WebhookCreateBody(BaseModel):
     target: str = Field(..., max_length=128)
     target_type: str = Field("agent", pattern="^(agent|workflow)$")
     name: str = Field("", max_length=128)
+    signed: bool = False   # H16.4 — require an HMAC X-Signature-256 on triggers
 
 
 @app.get("/api/webhooks")
@@ -3419,7 +3420,7 @@ async def list_webhooks():
 async def create_webhook(body: WebhookCreateBody):
     """Create an inbound webhook; the token is returned ONCE."""
     try:
-        rec = _get_webhook_store().create(body.target, body.target_type, body.name)
+        rec = _get_webhook_store().create(body.target, body.target_type, body.name, signed=body.signed)
     except ValueError as exc:
         return _nocache_json({"error": str(exc)}, status_code=400)
     return _nocache_json(rec)
@@ -3441,14 +3442,21 @@ async def trigger_webhook(hook_id: str, request: Request):
     if hook is None:
         return _nocache_json({"error": "webhook not found"}, status_code=404)
 
-    token = request.headers.get("x-webhook-token") or request.query_params.get("token", "")
-    if not store.verify(hook_id, token):
-        return _nocache_json({"error": "invalid or missing token"}, status_code=401)
+    raw = await request.body()
+    if hook.get("signed"):
+        # H16.4: signed sources authenticate via HMAC over the raw body.
+        signature = request.headers.get("x-signature-256", "")
+        if not store.verify_signature(hook_id, raw, signature):
+            return _nocache_json({"error": "invalid or missing signature"}, status_code=401)
+    else:
+        token = request.headers.get("x-webhook-token") or request.query_params.get("token", "")
+        if not store.verify(hook_id, token):
+            return _nocache_json({"error": "invalid or missing token"}, status_code=401)
 
     try:
-        payload = await request.json()
+        payload = json.loads(raw) if raw else {}
     except Exception:
-        payload = (await request.body()).decode("utf-8", "replace")
+        payload = raw.decode("utf-8", "replace")
 
     from agents.core.webhooks import extract_input
     text = extract_input(payload)
