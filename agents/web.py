@@ -1427,6 +1427,29 @@ async def admin_prompt_ab_summary(agent_id: str):
     return _nocache_json({"agent_id": agent_id, "ab": svs.ab_summary(agent_id)})
 
 
+@app.post("/api/admin/prompts/{agent_id}/preview", dependencies=[Depends(_admin_guard)])
+async def admin_prompt_preview(agent_id: str, req: Request):
+    """H10.28 — preview a proposed SOUL/prompt change (diff + validation).
+
+    Body: {"proposed": "...", "current": "..."?}. If `current` is omitted it's
+    taken from the agent's latest committed version (H10.22).
+    """
+    from agents.core.config_preview import preview_change
+    try:
+        body = await req.json()
+    except Exception:
+        body = {}
+    proposed = (body or {}).get("proposed")
+    if proposed is None:
+        return JSONResponse({"error": "proposed required"}, status_code=400)
+    current = (body or {}).get("current")
+    if current is None:
+        svs = _svs()
+        cur = svs.current(agent_id) if svs else None
+        current = cur["content"] if cur else ""
+    return _nocache_json({"agent_id": agent_id, **preview_change(current, proposed)})
+
+
 class AgentUpdateRequest(BaseModel):
     updates: dict[str, str | bool | int]
 
