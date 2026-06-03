@@ -15,11 +15,12 @@ from __future__ import annotations
 
 import json
 import random
-import threading
 import time
 import uuid
 from pathlib import Path
 from typing import Optional
+
+from .persistence import JsonStore
 
 DEFAULT_PATH = Path("memory_logs/arena.json")
 _K = 32           # ELO K-factor
@@ -31,31 +32,20 @@ def _expected(ra: float, rb: float) -> float:
     return 1.0 / (1.0 + 10 ** ((rb - ra) / 400.0))
 
 
-class Arena:
+class Arena(JsonStore):
+    _matches: dict[str, dict]
+    _ratings: dict[str, dict]   # model -> {elo, wins, losses, games}
+
     def __init__(self, path: str | Path = DEFAULT_PATH) -> None:
-        self.path = Path(path)
-        self._lock = threading.Lock()
-        self._matches: dict[str, dict] = {}
-        self._ratings: dict[str, dict] = {}   # model -> {elo, wins, losses, games}
-        self._load()
+        super().__init__(path)
 
-    # ── persistence ──────────────────────────────────────────────────────────
+    def _serialize(self):
+        return {"matches": self._matches, "ratings": self._ratings}
 
-    def _load(self) -> None:
-        if self.path.exists():
-            try:
-                data = json.loads(self.path.read_text(encoding="utf-8"))
-                self._matches = data.get("matches", {})
-                self._ratings = data.get("ratings", {})
-            except Exception:
-                self._matches, self._ratings = {}, {}
-
-    def _save(self) -> None:
-        self.path.parent.mkdir(parents=True, exist_ok=True)
-        tmp = self.path.with_suffix(".tmp")
-        tmp.write_text(json.dumps({"matches": self._matches, "ratings": self._ratings},
-                                  ensure_ascii=False, indent=2), encoding="utf-8")
-        tmp.replace(self.path)
+    def _deserialize(self, raw) -> None:
+        raw = raw if isinstance(raw, dict) else {}
+        self._matches = raw.get("matches", {})
+        self._ratings = raw.get("ratings", {})
 
     def _rating(self, model: str) -> dict:
         return self._ratings.setdefault(

@@ -10,12 +10,11 @@ JSON-persisted, with a bounded per-room history.
 
 from __future__ import annotations
 
-import json
 import re
-import threading
 import time
 import uuid
 from pathlib import Path
+from .persistence import JsonStore
 from typing import Optional
 
 DEFAULT_PATH = Path("memory_logs/rooms.json")
@@ -23,25 +22,15 @@ _HISTORY_CAP = 200
 _MENTION = re.compile(r"@([A-Za-z0-9_\-]+)")
 
 
-class RoomStore:
+class RoomStore(JsonStore):
     def __init__(self, path: str | Path = DEFAULT_PATH) -> None:
-        self.path = Path(path)
-        self._lock = threading.Lock()
-        self._rooms: dict[str, dict] = {}
-        self._load()
+        super().__init__(path)
 
-    def _load(self) -> None:
-        if self.path.exists():
-            try:
-                self._rooms = json.loads(self.path.read_text(encoding="utf-8"))
-            except Exception:
-                self._rooms = {}
+    def _serialize(self):
+        return self._rooms
 
-    def _save(self) -> None:
-        self.path.parent.mkdir(parents=True, exist_ok=True)
-        tmp = self.path.with_suffix(".tmp")
-        tmp.write_text(json.dumps(self._rooms, ensure_ascii=False, indent=2), encoding="utf-8")
-        tmp.replace(self.path)
+    def _deserialize(self, raw) -> None:
+        self._rooms = raw if isinstance(raw, dict) else {}
 
     # ── CRUD ─────────────────────────────────────────────────────────────────
 
