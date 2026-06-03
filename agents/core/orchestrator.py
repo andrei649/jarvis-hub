@@ -90,6 +90,13 @@ class Orchestrator:
         self.llm_router = HybridRouter(gemini_api_key=gemini_key, anthropic_api_key=anthropic_key)
         self.context_cache = ContextCache(api_key=gemini_key) if gemini_key else None
         self.memory = MemoryManager()
+        # H8.1b: searchable named-entity store (people/projects/places/concepts).
+        try:
+            from .memory.entity import EntityStore
+            self.entities = EntityStore()
+        except Exception:
+            logger.warning("EntityStore init failed — entity memory disabled", exc_info=True)
+            self.entities = None
         self.plugins: dict = {}
         self.skills = SkillLoader()
         self.skill_importer = SkillImporter()
@@ -1292,6 +1299,12 @@ class Orchestrator:
         return True
 
     def _record_interactions(self, text: str, responses: dict, synthesized: str, route_name: str = ""):
+        # H8.1b: index named entities from the user's turn (best-effort, offline).
+        if getattr(self, "entities", None) is not None and text:
+            try:
+                self.entities.ingest_text(text, source="conversation")
+            except Exception:
+                logger.debug("entity ingest skipped", exc_info=True)
         for agent_id, resp in responses.items():
             if agent_id in self.agents and resp:
                 is_timeout = resp.endswith("timeout]")

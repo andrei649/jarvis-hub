@@ -299,7 +299,7 @@ python -m pytest tests/ -v          # 1100+ passed, 8 skipped
 
 | # | Item | S | P | Dep | Sursă |
 |---|------|---|---|-----|-------|
-| H8.1b | **Entity Memory Store** (ext. H8.1) — extragere LLM automată de entități (persoane, proiecte, locuri, concepte) din conversații într-un store structurat separat, searchable, afișat în HUD Memory tab. `core/memory/entity.py`. | 5 | P1 | H8.1, H5.14 | CrewAI |
+| H8.1b ✅ | **Entity Memory Store** (ext. H8.1) — extragere de entități (persoane, proiecte, locuri, concepte) din conversații într-un store structurat separat, searchable, afișat în HUD Memory tab. **Done 2026-06-03:** `core/memory/entity.py` `EntityStore` (JSON file-backed, upsert cu mention-count + sources + contexts + first/last-seen, search/filter pe tip, stats, delete; extracție proper-noun offline `extract_entities` + clasificare pe hint, extractor LLM injectabil ulterior); ingest per-tură în orchestrator (`_record_interactions`); endpoint `GET /api/memory/entities?q=&type=&limit=`. +9 teste offline. | 5 | P1 | H8.1, H5.14 | CrewAI |
 | H8.3b | **Agentic RAG Tool** (ext. H8.3) — recall nu mai e injectat fix (top_k); devine tool call LLM-callable (`search_memory(query)`); modelul decide când/cum să caute și poate retry cu query diferit. | 8 | P2 | H8.3, H7.4 | OpenWebUI |
 | H10.21 | **Conversation Notes** — rich text editor (textarea + markdown preview) în HUD atașat la sesiunea curentă; conținut injectat ca context persistent la orice agent; acțiune „Rescrie cu AI" inline. | 3 | P3 | H1.3 | OpenWebUI |
 

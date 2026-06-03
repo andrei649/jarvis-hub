@@ -1919,6 +1919,17 @@ async def memory_search(q: str = "", top_k: int = 10):
         return _nocache_json({"results": [], "query": q, "total": 0, "error": str(e)})
 
 
+@app.get("/api/memory/entities")
+async def memory_entities(q: str = "", type: str = "", limit: int = Query(50, ge=1, le=200)):
+    """H8.1b — search/list the named-entity store (+ stats)."""
+    if not orch or not getattr(orch, "entities", None):
+        return _nocache_json({"entities": [], "stats": {}, "error": "entity store not available"})
+    return _nocache_json({
+        "entities": orch.entities.search(q, type, limit),
+        "stats": orch.entities.stats(),
+    })
+
+
 @app.post("/api/memory/remember")
 async def memory_remember(req: Request):
     """Store a fact in long-term memory with a real embedding, for later recall."""
