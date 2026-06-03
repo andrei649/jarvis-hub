@@ -440,7 +440,7 @@ python -m pytest tests/ -v          # 1100+ passed, 8 skipped
 | H15.1 | **Agent browser-use local** în spatele approval-queue + sandbox + egress allowlist (browser-use/Playwright-MCP + LLM local). Punct de intrare cu cel mai mic risc. | 8 | P2 | H4.8, H6.2 | browser-use (MIT) |
 | H15.2 | **Modul de înțelegere a ecranului local** (grounding UI-TARS-1.5-7B, opțional fuzionat cu accessibility tree). ⚠️ OmniParser are componentă AGPL — preferă UI-TARS (Apache). | 8 | P2 | H13.1 | UI-TARS, Agent S3 |
 | H15.3 | **Operator în desktop virtual izolat (PiP)** — OS curat, fără credențiale ambientale; acțiuni ireversibile gated; clasificator de injection pe screenshots. Claude computer-use = opt-in cloud. | 13 | P3 | H15.1 | UFO², Anthropic |
-| H15.4 | **Secret broker** — injectează credențiale la momentul acțiunii, în spatele aprobării; niciodată plaintext în contextul agentului. Anti-OpenClaw direct (overlap H12.1). | 5 | P2 | H12.1 | OpenClaw (anti-teză) |
+| H15.4 ✅ | **Secret broker** — injectează credențiale la momentul acțiunii, în spatele aprobării; niciodată plaintext în contextul agentului. **Done 2026-06-03:** `core/security/secret_broker.py` `SecretBroker` (peste `SecretStore` criptat H12.1, fallback in-memory) — agentul vede doar handle-uri `{{secret:NAME}}` (`reference`), `inject(text, approved)` rezolvă valoarea DOAR cu aprobare (altfel placeholder, valoarea nu apare niciodată), `redact` maschează valori cunoscute (defense-in-depth), `names` fără valori; endpoints admin `POST/GET/DELETE /api/secrets/broker` + `/redact` (niciun endpoint nu întoarce plaintext). +7 teste offline. | 5 | P2 | H12.1 | OpenClaw (anti-teză) |
 
 ### ORIZONT 16 — Cetățean al Web-ului Agentic (interop & standarde) — 0/4
 
