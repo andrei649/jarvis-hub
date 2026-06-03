@@ -887,6 +887,42 @@ async def arena_leaderboard():
     return _nocache_json({"leaderboard": arena.leaderboard()})
 
 
+# ── H10.23 Live Quality Monitor ───────────────────────────────────────────────
+
+@app.get("/api/quality")
+async def quality_status():
+    """Rolling quality average + threshold alert for live requests."""
+    q = getattr(orch, "quality", None) if orch else None
+    if q is None:
+        return _nocache_json({"stats": {}, "alert": {"alerting": False}})
+    return _nocache_json({"stats": q.stats(), "alert": q.check_alert()})
+
+
+@app.get("/api/quality/scores")
+async def quality_scores(limit: int = Query(50, ge=1, le=500)):
+    """Recent per-request quality scores (most recent first)."""
+    q = getattr(orch, "quality", None) if orch else None
+    if q is None:
+        return _nocache_json({"scores": []})
+    return _nocache_json({"scores": q.recent(limit)})
+
+
+@app.post("/api/quality/threshold", dependencies=[Depends(_admin_guard)])
+async def quality_set_threshold(req: Request):
+    """Set the alert threshold (admin)."""
+    q = getattr(orch, "quality", None) if orch else None
+    if q is None:
+        return JSONResponse({"error": "quality monitor not available"}, status_code=503)
+    try:
+        body = await req.json()
+    except Exception:
+        body = {}
+    if "threshold" not in (body or {}):
+        return JSONResponse({"error": "threshold required"}, status_code=400)
+    q.set_threshold(float(body["threshold"]))
+    return _nocache_json({"ok": True, "threshold": q.threshold})
+
+
 @app.get("/sandbox/status")
 async def sandbox_status():
     if not orch:
