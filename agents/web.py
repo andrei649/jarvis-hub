@@ -923,6 +923,55 @@ async def quality_set_threshold(req: Request):
     return _nocache_json({"ok": True, "threshold": q.threshold})
 
 
+# ── H15.4 Secret broker (JIT credential injection; handles never expose value) ─
+
+@app.post("/api/secrets/broker", dependencies=[Depends(_admin_guard)])
+async def secret_broker_put(req: Request):
+    """Store a secret value (admin). Values go in, never come back out via API."""
+    broker = getattr(orch, "secret_broker", None) if orch else None
+    if broker is None:
+        return JSONResponse({"error": "secret broker not available"}, status_code=503)
+    try:
+        body = await req.json()
+    except Exception:
+        body = {}
+    name, value = (body or {}).get("name"), (body or {}).get("value")
+    if not name or value is None:
+        return JSONResponse({"error": "name and value required"}, status_code=400)
+    broker.put(name, value)
+    return _nocache_json({"ok": True, "name": name, "reference": broker.reference(name)})
+
+
+@app.get("/api/secrets/broker", dependencies=[Depends(_admin_guard)])
+async def secret_broker_list():
+    """List secret NAMES only (never values)."""
+    broker = getattr(orch, "secret_broker", None) if orch else None
+    if broker is None:
+        return _nocache_json({"names": []})
+    return _nocache_json({"names": broker.names()})
+
+
+@app.delete("/api/secrets/broker/{name}", dependencies=[Depends(_admin_guard)])
+async def secret_broker_delete(name: str):
+    broker = getattr(orch, "secret_broker", None) if orch else None
+    if broker is None or not broker.delete(name):
+        return JSONResponse({"error": "not found"}, status_code=404)
+    return _nocache_json({"ok": True, "deleted": name})
+
+
+@app.post("/api/secrets/broker/redact", dependencies=[Depends(_admin_guard)])
+async def secret_broker_redact(req: Request):
+    """Mask any known secret value present in text (defense-in-depth)."""
+    broker = getattr(orch, "secret_broker", None) if orch else None
+    if broker is None:
+        return JSONResponse({"error": "secret broker not available"}, status_code=503)
+    try:
+        body = await req.json()
+    except Exception:
+        body = {}
+    return _nocache_json({"redacted": broker.redact((body or {}).get("text", ""))})
+
+
 # ── H10.1 Embeddable Chat Widget ──────────────────────────────────────────────
 
 @app.post("/api/admin/widgets", dependencies=[Depends(_admin_guard)])

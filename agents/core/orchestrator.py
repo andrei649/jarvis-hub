@@ -143,6 +143,17 @@ class Orchestrator:
         except Exception:
             logger.warning("WidgetStore init failed — chat widget disabled", exc_info=True)
             self.widgets = None
+        # H15.4: secret broker — JIT credential injection behind approval.
+        try:
+            from .security.secret_broker import SecretBroker
+            try:
+                from .secrets import SecretStore
+                self.secret_broker = SecretBroker(SecretStore())
+            except Exception:
+                self.secret_broker = SecretBroker()   # in-memory fallback
+        except Exception:
+            logger.warning("SecretBroker init failed — secret broker disabled", exc_info=True)
+            self.secret_broker = None
         # H14.4: decay-based forgetting (ACT-R activation ranking + dep-aware delete).
         try:
             from .memory.decay import DecayMemory
