@@ -1134,6 +1134,26 @@ async def widget_message(token: str, req: Request):
         return _nocache_json({"reply": "", "error": str(e)})
 
 
+# ── H14.3 Sleep-time memory consolidation ─────────────────────────────────────
+
+@app.post("/api/memory/consolidate")
+async def memory_consolidate(req: Request):
+    """Plan Mem0-style consolidation ops (ADD/UPDATE/DELETE/NOOP) for candidates
+    against existing memories. Returns a reversible plan (no mutation)."""
+    eng = getattr(orch, "consolidation", None) if orch else None
+    if eng is None:
+        return JSONResponse({"error": "consolidation not available"}, status_code=503)
+    try:
+        body = await req.json()
+    except Exception:
+        body = {}
+    candidates = (body or {}).get("candidates") or []
+    if not candidates:
+        return JSONResponse({"error": "candidates required"}, status_code=400)
+    plan = eng.plan(candidates, (body or {}).get("existing") or [])
+    return _nocache_json({"plan": plan, "summary": eng.summarize(plan)})
+
+
 # ── H7.11 Learning-loop promotions ────────────────────────────────────────────
 
 @app.post("/api/learning/propose", dependencies=[Depends(_admin_guard)])

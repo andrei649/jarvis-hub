@@ -143,6 +143,13 @@ class Orchestrator:
         except Exception:
             logger.warning("WidgetStore init failed — chat widget disabled", exc_info=True)
             self.widgets = None
+        # H14.3: sleep-time memory consolidation (Mem0-style ADD/UPDATE/DELETE/NOOP).
+        try:
+            from .memory.consolidation import ConsolidationEngine
+            self.consolidation = ConsolidationEngine()
+        except Exception:
+            logger.warning("ConsolidationEngine init failed", exc_info=True)
+            self.consolidation = None
         # H10.20: themed chat rooms (per project/context, @mention routing).
         try:
             from .rooms import RoomStore
