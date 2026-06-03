@@ -122,6 +122,13 @@ class Orchestrator:
             logger.warning("Intent log / transparency anchor init failed", exc_info=True)
             self.intent_log = None
             self.transparency = None
+        # H10.19: blind model-comparison arena (win-rate + ELO leaderboard).
+        try:
+            from .arena import Arena
+            self.arena = Arena()
+        except Exception:
+            logger.warning("Arena init failed — model arena disabled", exc_info=True)
+            self.arena = None
         # H14.4: decay-based forgetting (ACT-R activation ranking + dep-aware delete).
         try:
             from .memory.decay import DecayMemory
