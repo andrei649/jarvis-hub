@@ -76,3 +76,15 @@ class LLMRouter:
     @property
     def name(self) -> str:
         return self._backend_name
+
+    @property
+    def active_model(self) -> Optional[str]:
+        """Name of the local model currently selected as active, if any."""
+        return self._detected_model
+
+    def set_active_model(self, model: str) -> None:
+        """Override the active local model name on the live router.
+
+        Subclasses that track a separate `_local_model` should override this to
+        keep their routing state in sync."""
+        self._detected_model = model

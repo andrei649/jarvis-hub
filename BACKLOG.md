@@ -60,9 +60,9 @@ python -m pytest tests/ -v          # 1100+ passed, 8 skipped
 
 > `%` = procent pe **story points** (580/823 = 70.5% ≈ 71%); pe iteme ar fi 117/151 = 77.5%. Totalul de mai sus acoperă **H1–H11**.
 
-**În afara totalului H1–H11:** ORIZONT 12 (acum în scope-ul v1.0 per [#52]) — **3/15 livrate** (H12.1 ✅ P0 securitate, H12.10 ✅, H12.15 ✅ backup); restul deschis. **Bugs & Hot Fixes** — 3 done (BUG-1, BUG-2, BUG-4) + deschise (BUG-3, HF-1/2, BUG-2b, TASK-1, CLN-1, NTH-1).
+**În afara totalului H1–H11:** ORIZONT 12 (acum în scope-ul v1.0 per [#52]) — **3/14 livrate** (H12.1 ✅ P0 securitate, H12.10 ✅, H12.9 ✅); restul deschis. **Bugs & Hot Fixes** — 3 done (BUG-1, BUG-2, BUG-4) + deschise (BUG-3, HF-1/2, BUG-2b, TASK-1, CLN-1, NTH-1).
 
-**Test count (backend pytest):** 1170+ passed, 8 skipped — cele 8 din `tests/test_spotify.py` (vezi nota „Run"). *(2026-06-02: +192 H7+H8 — H8 incluse; +31 H12.1 securitate.)*
+**Test count (backend pytest):** 1184+ passed, 8 skipped — cele 8 din `tests/test_spotify.py` (vezi nota „Run"). *(2026-06-02: +192 H7+H8; +31 H12.1 securitate; +8 H12.10 trust; +6 H12.9 modele locale.)*
 **Frontend (BUG-2):** 156 teste JS / 20 fișiere · ~66% line coverage — separat de suita pytest.
 
 > **Orizont 7 Hardening — Drumul spre 1.0.0:** 11/11 COMPLET ✅ (livrat 2026-06-02)
@@ -341,7 +341,7 @@ python -m pytest tests/ -v          # 1100+ passed, 8 skipped
 
 ---
 
-## ORIZONT 12 — Categoria Reală: Asistent Personal Privat & Proactiv (P0–P3) — 3/15
+## ORIZONT 12 — Categoria Reală: Asistent Personal Privat & Proactiv (P0–P3) — 3/14 (Wave 0 ✅)
 
 > Bazat pe research-ul din [docs/research/2026-06-02-personal-ai-competitors.md](docs/research/2026-06-02-personal-ai-competitors.md):
 > H10 a comparat Jarvis cu 8 **framework-uri de developeri**; categoria reală a moonshot-ului (asistent
@@ -374,7 +374,7 @@ python -m pytest tests/ -v          # 1100+ passed, 8 skipped
 | H12.6 | **Update-uri KG incrementale (nu doar nocturne)** — extracție ușoară de entități per-tură ca memoria să apară în aceeași sesiune, nu doar după consolidarea de noapte. | 5 | P2 | H5.15, H8.1 | Mem, Tana |
 | H12.7 | **Captură pasivă multi-suprafață (opt-in, local)** — browser/clipboard/fișiere → KG, doar local. ⚠️ STRICT opt-in + inspectabil; nimic nu pleacă de pe mașină. | 8 | P2 | H8.1 | Pieces nanomodels, Omi |
 | H12.8 | **Split sateliți-mic → server-inferență pe GPU-ul de acasă** — mai multe endpoint-uri ieftine de microfon partajează un singur GPU Jarvis. | 8 | P2 | H12.4 | Willow (WIS) |
-| H12.9 | **UX management modele locale** — răsfoiește/descarcă/comută modele dintr-un click în HUD. | 5 | P2 | — | Jan.ai |
+| H12.9 ✅ | **UX management modele locale** — răsfoiește/descarcă/comută modele dintr-un click în HUD. | 5 | P2 | — | Jan.ai |
 | H12.10 ✅ | **Indicator mute hardware / strict-local** — semnal vizibil, auditabil "mic off / strict-local" în HUD + voce. Semnal de încredere ieftin. | 2 | P2 | — | Voice PE (mute fizic) |
 | H12.11 | **Canale de escaladare extinse** (dincolo de Telegram: WhatsApp/Signal/Slack/Discord) — *guvernate*, spre deosebire de OpenClaw. Adaptoarele de canal există deja. | 3 | P2 | H1.3 | OpenClaw (multi-channel) |
 

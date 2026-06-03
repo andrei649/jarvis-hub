@@ -275,6 +275,14 @@ class HybridRouter(LLMRouter):
             return self._gemini_backend, "cloud-fallback"
         raise RuntimeError(f"No LLM backend available for howard")
 
+    def set_active_model(self, model: str) -> None:
+        """Switch the active local model used for `local` routing tiers.
+
+        Updates both the auto-detected name (base class) and `_local_model`,
+        which drives select_backend()/get_model() for POLICY_AUTO/local agents."""
+        super().set_active_model(model)
+        self._local_model = model
+
     def get_howard_model(self) -> str:
         return HOWARD_OLLAMA_MODEL if self._ollama_available else "google/gemma-4-26b-a4b"
 

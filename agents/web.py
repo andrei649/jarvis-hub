@@ -1299,6 +1299,110 @@ async def admin_llm_test():
     return {"results": results}
 
 
+# ── Local model management (browse / switch) — H12.9 ─────────────
+#
+# Surfaces models available in the live local backends (LM Studio + Ollama,
+# the same providers the HybridRouter talks to) so the HUD can browse them,
+# see which is active, and switch with a single click — Jan.ai style.
+
+_LM_STUDIO_URL = "http://localhost:1234"
+_OLLAMA_URL = "http://localhost:11434"
+
+
+async def _list_local_models() -> dict:
+    """Query LM Studio and Ollama for installed local models.
+
+    Returns a dict with the active model name (from the live router) and a flat
+    list of `{id, provider, online}` entries. Providers that are offline are
+    reported with `online: False` and an empty model list rather than failing
+    the whole request, so the HUD can still render availability status.
+    """
+    import httpx
+
+    active = None
+    backend = "none"
+    if orch and getattr(orch, "llm_router", None) is not None:
+        active = getattr(orch.llm_router, "active_model", None)
+        backend = orch.llm_router.name
+
+    providers = []
+    models = []
+
+    async def _probe(name, url, parse):
+        try:
+            async with httpx.AsyncClient(timeout=5.0) as client:
+                resp = await client.get(url)
+                if not resp.is_success:
+                    providers.append({"name": name, "online": False, "status": resp.status_code})
+                    return
+                for mid in parse(resp.json()):
+                    if mid:
+                        models.append({"id": mid, "provider": name})
+                providers.append({"name": name, "online": True})
+        except Exception as e:
+            providers.append({"name": name, "online": False, "error": str(e)})
+
+    await _probe(
+        "lm-studio",
+        f"{_LM_STUDIO_URL}/v1/models",
+        lambda d: [m.get("id") for m in (d.get("data") or [])],
+    )
+    await _probe(
+        "ollama",
+        f"{_OLLAMA_URL}/api/tags",
+        lambda d: [m.get("name") for m in (d.get("models") or [])],
+    )
+
+    for m in models:
+        m["active"] = m["id"] == active
+
+    return {
+        "active": active,
+        "backend": backend,
+        "providers": providers,
+        "models": models,
+    }
+
+
+@app.get("/api/models/local", dependencies=[Depends(_admin_guard)])
+async def models_local_list():
+    """List local models from LM Studio / Ollama and mark the active one."""
+    return _nocache_json(await _list_local_models())
+
+
+class LocalModelSwitch(BaseModel):
+    model: str = Field(..., min_length=1)
+
+
+@app.post("/api/models/local/switch", dependencies=[Depends(_admin_guard)])
+async def models_local_switch(body: LocalModelSwitch):
+    """Set the active local model on the live router and persist the choice.
+
+    The model must be present in one of the local backends. The selection is
+    written to `llm.default_model` (settings_db) so it survives a restart, and
+    applied immediately to the running HybridRouter.
+    """
+    if not orch or getattr(orch, "llm_router", None) is None:
+        return _nocache_json({"error": "not initialized"}, status_code=503)
+
+    catalog = await _list_local_models()
+    available = {m["id"] for m in catalog["models"]}
+    if body.model not in available:
+        return _nocache_json(
+            {"error": f"model '{body.model}' not available locally", "available": sorted(available)},
+            status_code=404,
+        )
+
+    orch.llm_router.set_active_model(body.model)
+    try:
+        put_category("llm", {"default_model": body.model})
+    except Exception:
+        # Persistence is best-effort; the live switch already took effect.
+        pass
+
+    return _nocache_json({"ok": True, "active": body.model})
+
+
 # ── MCP (Model Context Protocol) admin endpoints ─────────────────
 
 @app.get("/api/admin/mcp", dependencies=[Depends(_admin_guard)])
