@@ -2068,6 +2068,42 @@ async def clear_traces():
 # ── END H9.2 Trace Explorer endpoints ─────────────────────────────
 
 
+# ── H12.2 Onboarding: drop folder → private chat with your docs ────
+
+_local_docs_last = {"status": "never run"}
+
+
+class LocalDocsIndexBody(BaseModel):
+    path: str = Field(..., max_length=4096)
+
+
+@app.get("/api/local-docs")
+async def local_docs_status():
+    """Return the last local-docs indexing summary (H12.2)."""
+    return _nocache_json(_local_docs_last)
+
+
+@app.post("/api/local-docs/index")
+async def local_docs_index(body: LocalDocsIndexBody):
+    """Index a local folder into memory (offline, no cloud hop)."""
+    global _local_docs_last
+    if not orch:
+        return _nocache_json({"error": "not initialized"}, status_code=503)
+    from agents.core.local_docs import LocalDocsIndexer
+
+    async def _remember(text: str, metadata: dict):
+        return await orch.memory.remember(text, metadata=metadata)
+
+    summary = await LocalDocsIndexer(_remember).index(body.path)
+    status = 400 if summary.get("error") else 200
+    if not summary.get("error"):
+        _local_docs_last = summary
+    return _nocache_json(summary, status_code=status)
+
+
+# ── END H12.2 Onboarding endpoints ────────────────────────────────
+
+
 @app.get("/api/workflows")
 async def list_workflows():
     """List all registered workflow pipelines (H5.6 + H9.1 user-defined)."""
