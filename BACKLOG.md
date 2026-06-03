@@ -325,7 +325,7 @@ python -m pytest tests/ -v          # 1100+ passed, 8 skipped
 
 | # | Item | S | P | Dep | Sursă |
 |---|------|---|---|-----|-------|
-| H10.29 | **Agent Templates Library** — librărie de configurații pre-built pentru agenți comuni (research assistant, email triage, code reviewer, daily brief); importabile și clonabile din Admin. | 3 | P3 | — | Dust |
+| H10.29 ✅ | **Agent Templates Library** — librărie de configurații pre-built pentru agenți comuni; instanțiabile din Admin. **Done 2026-06-03:** `core/agent_templates.py` — catalog 5 arhetipuri (researcher/coder/analyst/assistant/ops) cu tier/model/plugins/voice + SOUL skeleton; `list_templates`/`get_template` (case-insensitive)/`build_agent_config` (slug id, overrides per câmp, randează config agents.yaml-shaped + SOUL); endpoints `GET /api/agent-templates` + `POST /api/agent-templates/instantiate` (404 pe template necunoscut). +6 teste offline. | 3 | P3 | — | Dust |
 | H10.18 | **Action-Level Approval UI** — în HUD, tab live cu tool call-urile pending approval (granularitate sub-task); buton Aprob/Resping per acțiune individuală. Extinde H6.2. | 5 | P3 | H6.2 | SuperAGI |
 | H10.20 | **Chat Channels / Rooms** — canale de chat tematice în HUD (per proiect/context); în fiecare canal poți @mention agenți specifici; pipeline complet (tools, RAG, filters). | 8 | P3 | H1.3 | OpenWebUI |
 | H10.26 | **Data Spaces / Agent Data Scope** — organizează sursele de date (memory segments, plugin outputs, knowledge) în "spații" cu permisiuni per agent; complement la `LOCAL_ONLY_AGENTS`. | 13 | P3 | H8.1, H4.7 | Dust |
