@@ -7,10 +7,10 @@
 
 ## Sesiune curentă
 
-**Data:** <!-- 2026-MM-DD -->
-**Lead agent / Conductor:** <!-- claude / opencode / gemini -->
-**Obiectiv sesiune:** <!-- ex: "Dispatch Wave 3 H10 — Workflow Engine Extensions" -->
-**Branch de bază:** `main` @ <!-- SHA scurt, ex: `a1b2c3d` -->
+**Data:** 2026-06-03
+**Lead agent / Conductor:** claude (claude-sonnet-4-6)
+**Obiectiv sesiune:** Wave 0 H12 — Securitate P0 + trust indicator + local model UX
+**Branch de bază:** `main` @ `050f88a`
 
 ---
 
@@ -18,8 +18,9 @@
 
 | Wave | Branch | PR | Status | Agenți | Note |
 |------|--------|----|--------|--------|------|
-| Wave 1 | `claude/...` | #XX | 🟡 draft / 🟢 green / ✅ merged | agent-name | |
-| Wave 2 | `claude/...` | #XX | ⏳ pending CI | agent-name | |
+| Wave 0 / H12.1 | `claude/h12.1-security` | #55 | ✅ merged | agent-a49c480c3b715fddb | P0 securitate: SecretStore + skill signing + approval split |
+| Wave 0 / H12.10 | `claude/h12.10-mute-indicator` | #53 | ✅ merged | agent-a526fc8bd13e13073 | TrustIndicator HUD (mic + strict-local chips) |
+| Wave 0 / H12.9 | `claude/h12.9-local-model-ux` | #54 | ✅ merged | agent-a227a1aaab3eda740 | Local model browse/switch (LM Studio + Ollama) |
 
 Status legend: ⏳ in progress · 🟡 draft PR · 🟢 CI green · ✅ merged · 🔴 conflict
 
@@ -27,46 +28,76 @@ Status legend: ⏳ in progress · 🟡 draft PR · 🟢 CI green · ✅ merged �
 
 ## Fișiere blocate (în PR draft activ)
 
-| Fișier | PR | Agent proprietar |
-|--------|-----|-----------------|
-| `agents/web.py` | #XX | Wave 1 |
-| `workflows/engine.py` | #XX | Wave 2 |
+_Niciun PR draft activ. Wave 1 neînceput._
 
 Un fișier blocat nu se atinge de alt agent fără confirmare utilizator.
 
 ---
 
-## Ordine de merge (din planul de dispatch)
+## Ordine de merge (Wave 1 — de venit)
 
 ```
-Wave 1 → Wave 2 → Wave 3
-       ↘ Wave 4 (după Wave 2)
+Wave 1 (6 agenți, ~27 SP):
+  H10.24 Cost per Trace (5 SP)
+  H9.3b  Dataset Regression (5 SP)
+  H10.5  MCP Server Mode (8 SP)
+  H10.8  Inbound Webhooks (3 SP)
+  H12.2  Onboarding drop-folder (3 SP)
+  H12.4  Wyoming protocol (5 SP)
 ```
 
-Dependențe stricte: <!-- copiază din docs/plan-*.md secțiunea relevantă -->
+Dependențe Wave 1: toate independente față de Wave 0 (pot rula în paralel).
+Merge order recomandat: H12.2 → H12.4 → H10.24 → H9.3b → H10.8 → H10.5
 
 ---
 
 ## Checklist post-merge (conductor)
 
-După fiecare wave mergjuit:
-- [ ] `BACKLOG.md` actualizat (✅ pe itemii din PR)
-- [ ] Test count actualizat în BACKLOG
-- [ ] `docs/SPRINT.md` marcat wave ca ✅ merged
-- [ ] Branches stale șterse (sau notate pentru ștergere manuală)
-- [ ] Următoarea wave dispatchată (dacă dependențele sunt satisfăcute)
+### Wave 0 — COMPLET ✅
+
+- [x] `BACKLOG.md` actualizat (H12.1 ✅, H12.9 ✅, H12.10 ✅)
+- [x] Test count actualizat în BACKLOG (1184+ passed)
+- [x] `docs/SPRINT.md` marcat wave ca ✅ merged
+- [x] PR #54 cu toate detaliile pentru PM (deploy instructions, env vars, metrici)
+- [ ] Branches stale șterse (claude/h12.1-security, claude/h12.10-mute-indicator, claude/h12.9-local-model-ux)
+
+### Wave 1 — PENDING ⏳
+
+- [ ] Wave 1 dispatched (6 agenți în paralel)
+- [ ] PR-uri create (draft)
+- [ ] CI verde pe toate
+- [ ] Merge în ordine (fără conflicte pe BACKLOG.md)
+- [ ] BACKLOG.md actualizat
 
 ---
 
 ## Log sesiune
 
 ```
-[HH:MM] Wave 1 dispatched — 3 agenți: H10.24, H10.5, H10.8
-[HH:MM] PR #XX (H10.24) CI green — merge
-[HH:MM] BACKLOG.md actualizat
-[HH:MM] Wave 2 dispatched
+[Wave 0] H12.1 dispatched (P0 securitate — anti-OpenClaw differentiator)
+[Wave 0] H12.10 dispatched (trust indicator HUD)
+[Wave 0] H12.9 dispatched (local model UX)
+[Wave 0] PR #55 (H12.1) — CI CodeQL 4 findings → fixat → merged
+[Wave 0] PR #53 (H12.10) — CI CodeQL false positive → fixat (De Morgan) → merged
+[Wave 0] PR #54 (H12.9) — 3 runde conflicte BACKLOG.md → rezolvate; error_logger.py stale → restaurat
+[Wave 0] PR #54 merged @ 050f88a — Wave 0 COMPLET
+[Wave 0] PR #54 title/body actualizat cu toate detaliile pentru PM
+[Wave 1] ⏳ Așteptând confirmare user pentru dispatch
 ```
 
 ---
 
-> Template creat: 2026-06-02. La fiecare sesiune nouă: resetează câmpurile și începe log curat.
+## Metrici Wave 0
+
+| Metric | Valoare |
+|--------|---------|
+| Story Points livrate | 15 SP |
+| Teste noi | 45 |
+| Total teste (main) | 1184+ passed, 8 skipped |
+| PRs merguite | 3 (#53, #54, #55) |
+| Buguri rezolvate | BUG-4 (diagnostics.md separat de BACKLOG.md) |
+| Timp (estimat) | 1 sesiune |
+
+---
+
+> Template creat: 2026-06-02. Ultima actualizare: 2026-06-03 (Wave 0 complete).
