@@ -22,9 +22,9 @@ import hmac
 import json
 import os
 import secrets
-import threading
 import time
 from pathlib import Path
+from ..persistence import JsonStore
 from typing import Optional
 
 INTENT_PATH = Path("memory_logs/security/intent_log.json")
@@ -35,17 +35,20 @@ def _sha(s: str) -> str:
     return hashlib.sha256(s.encode("utf-8")).hexdigest()
 
 
-class IntentLog:
+class IntentLog(JsonStore):
     """Hash-chained, HMAC-signed action records with causal intent attribution."""
 
     def __init__(self, path: str | Path = INTENT_PATH, secret_key: Optional[str] = None) -> None:
-        self.path = Path(path)
-        self._lock = threading.Lock()
-        self._entries: list[dict] = []
+        super().__init__(path)
         # The signing key must be STABLE across restarts, else past entries can't
         # verify. Priority: explicit arg → env → a persisted per-install key file.
         self._key = self._resolve_key(secret_key)
-        self._load()
+
+    def _serialize(self):
+        return self._entries
+
+    def _deserialize(self, raw) -> None:
+        self._entries = raw if isinstance(raw, list) else []
 
     def _resolve_key(self, secret_key: Optional[str]) -> bytes:
         if secret_key:
@@ -73,18 +76,6 @@ class IntentLog:
             self._entries.clear()
             self._save()
 
-    def _load(self) -> None:
-        if self.path.exists():
-            try:
-                self._entries = json.loads(self.path.read_text(encoding="utf-8"))
-            except Exception:
-                self._entries = []
-
-    def _save(self) -> None:
-        self.path.parent.mkdir(parents=True, exist_ok=True)
-        tmp = self.path.with_suffix(".tmp")
-        tmp.write_text(json.dumps(self._entries, ensure_ascii=False, indent=2), encoding="utf-8")
-        tmp.replace(self.path)
 
     def _sign(self, payload: str) -> str:
         return hmac.new(self._key, payload.encode("utf-8"), hashlib.sha256).hexdigest()
@@ -132,27 +123,18 @@ class IntentLog:
             return [dict(e) for e in self._entries[-max(1, limit):]][::-1]
 
 
-class TransparencyAnchor:
+class TransparencyAnchor(JsonStore):
     """Append-only, hash-linked external anchor log (stands in for a public log)."""
 
     def __init__(self, path: str | Path = ANCHOR_PATH) -> None:
-        self.path = Path(path)
-        self._lock = threading.Lock()
-        self._anchors: list[dict] = []
-        self._load()
+        super().__init__(path)
 
-    def _load(self) -> None:
-        if self.path.exists():
-            try:
-                self._anchors = json.loads(self.path.read_text(encoding="utf-8"))
-            except Exception:
-                self._anchors = []
+    def _serialize(self):
+        return self._anchors
 
-    def _save(self) -> None:
-        self.path.parent.mkdir(parents=True, exist_ok=True)
-        tmp = self.path.with_suffix(".tmp")
-        tmp.write_text(json.dumps(self._anchors, ensure_ascii=False, indent=2), encoding="utf-8")
-        tmp.replace(self.path)
+    def _deserialize(self, raw) -> None:
+        self._anchors = raw if isinstance(raw, list) else []
+
 
     def anchor(self, root_hash: str, source: str = "audit", ts: Optional[float] = None) -> dict:
         """Anchor a chain head/root hash; returns the (hash-linked) receipt."""

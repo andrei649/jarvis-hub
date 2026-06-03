@@ -17,9 +17,9 @@ from __future__ import annotations
 
 import json
 import math
-import threading
 import time
 from pathlib import Path
+from ..persistence import JsonStore
 from typing import Optional
 
 DEFAULT_PATH = Path("memory_logs/decay.json")
@@ -36,29 +36,18 @@ def activation(access_times: list[float], now: float, decay: float = DEFAULT_DEC
     return math.log(total) if total > 0 else float("-inf")
 
 
-class DecayMemory:
+class DecayMemory(JsonStore):
     def __init__(self, path: str | Path = DEFAULT_PATH, decay: float = DEFAULT_DECAY) -> None:
-        self.path = Path(path)
         self.decay = decay
-        self._lock = threading.Lock()
+        super().__init__(path)
+
+    def _serialize(self):
+        return self._items
+
+    def _deserialize(self, raw) -> None:
         # {id: {"accesses": [ts...], "depends_on": [ids...], "label": str}}
-        self._items: dict[str, dict] = {}
-        self._load()
+        self._items = raw if isinstance(raw, dict) else {}
 
-    # ── persistence ──────────────────────────────────────────────────────────
-
-    def _load(self) -> None:
-        if self.path.exists():
-            try:
-                self._items = json.loads(self.path.read_text(encoding="utf-8"))
-            except Exception:
-                self._items = {}
-
-    def _save(self) -> None:
-        self.path.parent.mkdir(parents=True, exist_ok=True)
-        tmp = self.path.with_suffix(".tmp")
-        tmp.write_text(json.dumps(self._items, ensure_ascii=False, indent=2), encoding="utf-8")
-        tmp.replace(self.path)
 
     # ── write ──────────────────────────────────────────────────────────────
 

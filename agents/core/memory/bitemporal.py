@@ -19,39 +19,26 @@ offline-testable. Persistence is a single JSON file (atomic writes).
 from __future__ import annotations
 
 import json
-import threading
 import time
 from pathlib import Path
+from ..persistence import JsonStore
 from typing import Optional
 
 DEFAULT_PATH = Path("memory_logs/bitemporal_kg.json")
 
 
-class BiTemporalKG:
+class BiTemporalKG(JsonStore):
     def __init__(self, path: str | Path = DEFAULT_PATH) -> None:
-        self.path = Path(path)
-        self._lock = threading.Lock()
-        self._facts: list[dict] = []
-        self._seq = 0
-        self._load()
+        super().__init__(path)
 
-    # ── persistence ──────────────────────────────────────────────────────────
+    def _serialize(self):
+        return {"facts": self._facts, "seq": self._seq}
 
-    def _load(self) -> None:
-        if self.path.exists():
-            try:
-                data = json.loads(self.path.read_text(encoding="utf-8"))
-                self._facts = data.get("facts", [])
-                self._seq = data.get("seq", len(self._facts))
-            except Exception:
-                self._facts, self._seq = [], 0
+    def _deserialize(self, raw) -> None:
+        raw = raw if isinstance(raw, dict) else {}
+        self._facts = raw.get("facts", [])
+        self._seq = raw.get("seq", len(self._facts))
 
-    def _save(self) -> None:
-        self.path.parent.mkdir(parents=True, exist_ok=True)
-        tmp = self.path.with_suffix(".tmp")
-        tmp.write_text(json.dumps({"facts": self._facts, "seq": self._seq},
-                                  ensure_ascii=False, indent=2), encoding="utf-8")
-        tmp.replace(self.path)
 
     # ── write ──────────────────────────────────────────────────────────────
 
