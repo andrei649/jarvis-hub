@@ -124,7 +124,38 @@ class WorkflowEngine:
             return self._run_transform(step, ctx)
         if step.kind == "guardrail":
             return self._run_guardrail(step, ctx)
+        if step.kind == "loop":
+            return await self._run_loop(step, ctx, step_map)
         return await self._run_step(step, ctx)
+
+    async def _run_loop(self, step: WorkflowStep, ctx: dict, step_map: dict) -> str:
+        """H10.6 — re-run an inline body of steps until an exit condition or cap.
+
+        A loop-back edge with an iteration counter: the body (``loop.steps``) runs
+        in listed order, sharing ``ctx``; after each pass the ``until`` condition is
+        checked against the last body step's output. Useful for retry loops and
+        iterative refinement. ``max_iterations`` is clamped to [1, 100].
+        """
+        cfg = step.loop or {}
+        max_iter = max(1, min(100, int(cfg.get("max_iterations", 3) or 3)))
+        until = cfg.get("until")
+        body = [b if isinstance(b, WorkflowStep) else WorkflowStep.from_dict(b)
+                for b in (cfg.get("steps") or [])]
+        if not body:
+            return ctx.get(step.id, "")
+
+        iterations, exited_by, last = 0, "max_iterations", ctx.get(step.id, "")
+        for i in range(max_iter):
+            iterations += 1
+            ctx[f"{step.id}._iter"] = str(i + 1)
+            for b in body:
+                ctx[b.id] = await self._execute_step(b, ctx, step_map)
+            last = ctx.get(body[-1].id, "")
+            if until and evaluate_condition(until, last):
+                exited_by = "condition"
+                break
+        ctx.setdefault("_loops", {})[step.id] = {"iterations": iterations, "exited_by": exited_by}
+        return last
 
     def _run_transform(self, step: WorkflowStep, ctx: dict) -> str:
         """H10.3 — deterministic, no-LLM transform of the rendered input."""

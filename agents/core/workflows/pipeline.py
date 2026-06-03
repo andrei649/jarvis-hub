@@ -33,6 +33,10 @@ class WorkflowStep:
     # H10.4: guardrail config for kind=="guardrail" — per-workflow secret/PII
     # scanning. {"mode": "warn"|"redact"|"block", "scanners": ["secret", "pii"]}
     guardrail: Optional[dict] = None
+    # H10.6: loop config for kind=="loop" — re-runs an inline body of steps until
+    # an exit condition or iteration cap (loop-back edge / iterative refinement).
+    # {"steps": [<step dict>...], "max_iterations": 3, "until": {<condition>}}
+    loop: Optional[dict] = None
 
     def to_dict(self) -> dict:
         d = {
@@ -55,6 +59,8 @@ class WorkflowStep:
             d["transform"] = self.transform
         if self.guardrail:
             d["guardrail"] = self.guardrail
+        if self.loop:
+            d["loop"] = self.loop
         return d
 
     @classmethod
@@ -71,6 +77,7 @@ class WorkflowStep:
             router=d.get("router"),
             transform=d.get("transform"),
             guardrail=d.get("guardrail"),
+            loop=d.get("loop"),
         )
 
 
