@@ -989,7 +989,6 @@ class Orchestrator:
                 tokens_in = _et(text or "")
                 tokens_out = _et(synthesized or "")
                 # H10.24: estimate $ cost for this trace (local models → $0).
-                cost = 0.0
                 try:
                     from .llm.cost_estimator import estimate_cost as _ec
                     cost = _ec(model, tokens_in, tokens_out).get("total", 0.0)
