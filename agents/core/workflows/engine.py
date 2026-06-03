@@ -13,7 +13,7 @@ import time
 from typing import TYPE_CHECKING
 
 from .pipeline import Pipeline, WorkflowStep
-from .structured import validate_output
+from .structured import extract_json, validate_output
 
 if TYPE_CHECKING:
     from agents.core.orchestrator import Orchestrator
@@ -37,16 +37,17 @@ class WorkflowEngine:
         errors: list[str] = []
 
         terminated_by: str = ""
+        step_map = {s.id: s for s in pipeline.steps}
 
         for batch in pipeline.execution_batches():
             if len(batch) == 1:
                 step = batch[0]
-                out = await self._run_step(step, ctx)
+                out = await self._execute_step(step, ctx, step_map)
                 ctx[step.id] = out
                 if out.startswith("[error:"):
                     errors.append(step.id)
             else:
-                coros = [self._run_step(s, ctx) for s in batch]
+                coros = [self._execute_step(s, ctx, step_map) for s in batch]
                 outputs = await asyncio.gather(*coros, return_exceptions=True)
                 for step, out in zip(batch, outputs):
                     if isinstance(out, Exception):
@@ -74,6 +75,59 @@ class WorkflowEngine:
         ctx["_terminated"] = bool(terminated_by)
         ctx["_terminated_by"] = terminated_by
         return ctx
+
+    async def _execute_step(self, step: WorkflowStep, ctx: dict, step_map: dict) -> str:
+        """Dispatch a step by kind: critic loop (H10.15) or normal agent run."""
+        if step.kind == "critic":
+            return await self._run_critic(step, ctx, step_map)
+        return await self._run_step(step, ctx)
+
+    async def _run_critic(self, step: WorkflowStep, ctx: dict, step_map: dict) -> str:
+        """H10.15 — evaluate a target step's output; re-run it on low scores.
+
+        The critic agent is asked to reply with JSON {"score": 0-1, "pass": bool,
+        "feedback": "..."}. While the critique fails and retries remain, the target
+        step is re-run with the feedback available as {_critic_feedback}.
+        """
+        cfg = step.critic or {}
+        target_id = cfg.get("target", "")
+        threshold = float(cfg.get("pass_threshold", 0.7))
+        max_retries = int(cfg.get("max_retries", 1))
+        target_step = step_map.get(target_id)
+
+        attempts = 0
+        score = None
+        passed = False
+        feedback = ""
+        critique = ""
+        while True:
+            attempts += 1
+            critique = await self._run_step(step, ctx)
+            parsed = extract_json(critique) or {}
+            raw_score = parsed.get("score")
+            try:
+                score = float(raw_score) if raw_score is not None else None
+            except (TypeError, ValueError):
+                score = None
+            feedback = str(parsed.get("feedback", ""))
+            if "pass" in parsed:
+                passed = bool(parsed["pass"])
+            else:
+                passed = score is not None and score >= threshold
+
+            if passed or attempts > max_retries or target_step is None:
+                break
+            # Re-run the target with the critic's feedback in scope.
+            ctx["_critic_feedback"] = feedback
+            ctx[target_id] = await self._run_step(target_step, ctx)
+
+        ctx[f"{step.id}.score"] = "" if score is None else str(score)
+        ctx[f"{step.id}.passed"] = str(passed)
+        ctx.setdefault("_critics", {})[step.id] = {
+            "target": target_id, "score": score, "passed": passed,
+            "feedback": feedback, "attempts": attempts,
+        }
+        return critique
 
     def _apply_structured(self, step: WorkflowStep, ctx: dict, errors: list) -> None:
         """H10.10 — validate a step's output against its schema and expose fields.
