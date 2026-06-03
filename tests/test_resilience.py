@@ -41,8 +41,14 @@ async def test_resilient_call_exponential_backoff():
     delay1 = call_times[1] - call_times[0]
     delay2 = call_times[2] - call_times[1]
     
-    assert 0.08 <= delay1 <= 0.15  # ~0.1s
-    assert 0.15 <= delay2 <= 0.30  # ~0.2s
+    # asyncio.sleep() always waits at least the requested duration, so the lower
+    # bounds reliably verify that exponential backoff happened (~0.1s then ~0.2s).
+    # The upper bounds are loosened well beyond realistic scheduling jitter: the
+    # original tight caps (<=0.15 / <=0.30) flaked on loaded CI runners where a
+    # 0.1s sleep can wake at ~0.16s. The generous caps still catch gross
+    # regressions (backoff_max=1.0, so a single delay should never near a second).
+    assert 0.08 <= delay1 < 1.0  # first retry ~0.1s (backoff_base)
+    assert 0.15 <= delay2 < 1.5  # second retry ~0.2s (exponential growth)
 
 
 @pytest.mark.asyncio

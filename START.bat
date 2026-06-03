@@ -24,15 +24,15 @@ if exist ".venv\Scripts\python.exe" (
   echo        Recomandat: ruleaza intai UPDATE.bat.
 )
 
-echo Pornesc serverul pe http://127.0.0.1:8000
-echo HUD:   http://127.0.0.1:8000/
-echo Admin: http://127.0.0.1:8000/admin
+echo Pornesc serverul pe http://127.0.0.1:8080
+echo HUD:   http://127.0.0.1:8080/
+echo Admin: http://127.0.0.1:8080/admin
 echo.
 echo (Lasa aceasta fereastra deschisa. Inchide-o ca sa opresti serverul.)
 echo.
 
-REM Open the browser once the server is listening (poll port 8000).
-start "" /b powershell -NoProfile -Command "Write-Host 'Astept pornirea serverului...'; while ($true) { try { $r = Invoke-WebRequest -Uri 'http://127.0.0.1:8000/' -UseBasicParsing -TimeoutSec 2; if ($r.StatusCode -eq 200) { Start-Process 'http://127.0.0.1:8000/'; break } } catch { Start-Sleep 3 } }"
+REM Open the browser once the server is listening (poll port 8080).
+start "" /b powershell -NoProfile -Command "Write-Host 'Astept pornirea serverului...'; while ($true) { try { $r = Invoke-WebRequest -Uri 'http://127.0.0.1:8080/' -UseBasicParsing -TimeoutSec 2; if ($r.StatusCode -eq 200) { Start-Process 'http://127.0.0.1:8080/'; break } } catch { Start-Sleep 3 } }"
 
 "%VPY%" serve.py
 
