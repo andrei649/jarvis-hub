@@ -762,6 +762,25 @@ async def get_bench():
     }
 
 
+@app.get("/api/agents/history")
+async def agents_history():
+    """H10.17 — per-agent run-history rollup (runs, last, ok-rate, avg latency)."""
+    if not orch or not getattr(orch, "run_history", None):
+        return _nocache_json({"agents": []})
+    return _nocache_json({"agents": orch.run_history.agents()})
+
+
+@app.get("/api/agents/{agent_id}/history")
+async def agent_history(agent_id: str, limit: int = Query(50, ge=1, le=200)):
+    """H10.17 — recent runs for one agent (most-recent first)."""
+    if not orch or not getattr(orch, "run_history", None):
+        return _nocache_json({"agent_id": agent_id, "runs": []})
+    return _nocache_json({
+        "agent_id": agent_id,
+        "runs": orch.run_history.list(agent_id, limit),
+    })
+
+
 @app.get("/sandbox/status")
 async def sandbox_status():
     if not orch:
