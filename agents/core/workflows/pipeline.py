@@ -12,14 +12,20 @@ class WorkflowStep:
     agent_id: str          # target agent, or "" / "_passthrough" for pass-through
     prompt_template: str   # may reference {_input} or {<step_id>} from prior steps
     depends_on: list[str] = field(default_factory=list)
+    # H10.12: optional early-termination guard evaluated against this step's output.
+    # e.g. {"type": "contains", "value": "APPROVED"} → halt the pipeline if matched.
+    terminate_when: Optional[dict] = None
 
     def to_dict(self) -> dict:
-        return {
+        d = {
             "id": self.id,
             "agent_id": self.agent_id,
             "prompt_template": self.prompt_template,
             "depends_on": self.depends_on,
         }
+        if self.terminate_when:
+            d["terminate_when"] = self.terminate_when
+        return d
 
     @classmethod
     def from_dict(cls, d: dict) -> "WorkflowStep":
@@ -28,6 +34,7 @@ class WorkflowStep:
             agent_id=d["agent_id"],
             prompt_template=d["prompt_template"],
             depends_on=list(d.get("depends_on") or []),
+            terminate_when=d.get("terminate_when"),
         )
 
 
