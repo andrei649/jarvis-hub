@@ -887,6 +887,88 @@ async def arena_leaderboard():
     return _nocache_json({"leaderboard": arena.leaderboard()})
 
 
+# ── H10.25 Human Review Queue ─────────────────────────────────────────────────
+
+@app.get("/api/review/queue")
+async def review_queue_list(status: str = Query("", max_length=20)):
+    q = getattr(orch, "review_queue", None) if orch else None
+    if q is None:
+        return _nocache_json({"items": [], "rubric_criteria": []})
+    from agents.core.observability.review_queue import RUBRIC_CRITERIA
+    return _nocache_json({"items": q.list(status or None), "rubric_criteria": RUBRIC_CRITERIA})
+
+
+@app.get("/api/review/stats")
+async def review_queue_stats():
+    q = getattr(orch, "review_queue", None) if orch else None
+    if q is None:
+        return _nocache_json({"stats": {}})
+    return _nocache_json({"stats": q.stats()})
+
+
+@app.post("/api/review/flag")
+async def review_queue_flag(req: Request):
+    """Manually flag a trace for review. Body: {trace, reason?}."""
+    q = getattr(orch, "review_queue", None) if orch else None
+    if q is None:
+        return JSONResponse({"error": "review queue not available"}, status_code=503)
+    try:
+        body = await req.json()
+    except Exception:
+        body = {}
+    trace = (body or {}).get("trace")
+    if not trace:
+        return JSONResponse({"error": "trace required"}, status_code=400)
+    return _nocache_json({"ok": True, "item": q.flag(trace, (body or {}).get("reason", "manual"))})
+
+
+@app.post("/api/review/{item_id}/vote")
+async def review_queue_vote(item_id: str, req: Request):
+    """Record a thumbs up/down + rubric for a queued item."""
+    q = getattr(orch, "review_queue", None) if orch else None
+    if q is None:
+        return JSONResponse({"error": "review queue not available"}, status_code=503)
+    try:
+        body = await req.json()
+    except Exception:
+        body = {}
+    try:
+        item = q.review(item_id, (body or {}).get("verdict", ""),
+                        (body or {}).get("rubric"), (body or {}).get("notes", ""))
+    except ValueError as e:
+        return JSONResponse({"error": str(e)}, status_code=400)
+    if item is None:
+        return JSONResponse({"error": "not found"}, status_code=404)
+    return _nocache_json({"ok": True, "item": item})
+
+
+@app.post("/api/review/{item_id}/dataset")
+async def review_queue_to_dataset(item_id: str, req: Request):
+    """Promote a reviewed item into an eval dataset (H9.3b)."""
+    q = getattr(orch, "review_queue", None) if orch else None
+    if q is None:
+        return JSONResponse({"error": "review queue not available"}, status_code=503)
+    item = q.get(item_id)
+    if item is None:
+        return JSONResponse({"error": "not found"}, status_code=404)
+    try:
+        body = await req.json()
+    except Exception:
+        body = {}
+    name = (body or {}).get("dataset", "review_flagged")
+    case = q.to_eval_case(item)
+    try:
+        from agents.core.observability.datasets import DatasetStore
+        store = DatasetStore()
+        cases = store.load(name) or []
+        cases.append(case)
+        version = store.save_version(name, cases)
+    except Exception as e:
+        return JSONResponse({"error": f"dataset write failed: {e}"}, status_code=500)
+    q.mark_in_dataset(item_id)
+    return _nocache_json({"ok": True, "dataset": name, "version": version, "case": case})
+
+
 # ── H10.23 Live Quality Monitor ───────────────────────────────────────────────
 
 @app.get("/api/quality")

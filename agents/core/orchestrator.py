@@ -143,6 +143,13 @@ class Orchestrator:
         except Exception:
             logger.warning("WidgetStore init failed — chat widget disabled", exc_info=True)
             self.widgets = None
+        # H10.25: human review queue (flagged traces → rubric + thumbs vote).
+        try:
+            from .observability.review_queue import ReviewQueue
+            self.review_queue = ReviewQueue()
+        except Exception:
+            logger.warning("ReviewQueue init failed — review queue disabled", exc_info=True)
+            self.review_queue = None
         # H15.4: secret broker — JIT credential injection behind approval.
         try:
             from .security.secret_broker import SecretBroker
@@ -1114,7 +1121,11 @@ class Orchestrator:
                     try:
                         trace_id = self.tracer.record(trace_dict)
                         trace_dict["id"] = trace_id
-                        trace_dict["quality"] = self.quality.record(trace_dict)
+                        q = self.quality.record(trace_dict)
+                        trace_dict["quality"] = q
+                        # H10.25: auto-flag low-scoring traces for human review.
+                        if getattr(self, "review_queue", None) is not None:
+                            self.review_queue.auto_flag(trace_dict, q.get("score"), self.quality.threshold)
                     except Exception:
                         logger.debug("quality scoring skipped", exc_info=True)
                 else:
