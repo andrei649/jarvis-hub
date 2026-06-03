@@ -1,8 +1,14 @@
-# Cabinet v0.2.0 — Status Snapshot
+# Jarvis Hub — Status Snapshot
+
+> **Current version:** v0.9.x-beta · **Tests:** 1,184+ passed (8 skipped) · **Agents:** 16 (15 cabinet + Howard emerging, + 17 bench)
+> **Road to v1.0:** v1.0.0 = the *entire backlog* done — H10 + H11 + H12 + H13–H17. See [BACKLOG.md](BACKLOG.md#version-roadmap) + [MOONSHOT.md](MOONSHOT.md) §4.
+>
+> The version labels in the feature tables below (`v0.2.0`, `v0.2.1`) record *when* each capability first
+> landed (provenance), not the current release. For live priorities and the v1.0 gate, BACKLOG.md is the source of truth.
 
 ---
 
-## ✅ Agents — 15 SOUL.md + 11 HEARTBEAT.md (unchanged)
+## ✅ Agents — 15 cabinet SOUL.md + 11 HEARTBEAT.md (+ Howard emerging)
 
 | Agent | Role | Tier | SOUL.md | HEARTBEAT.md |
 |-------|------|------|---------|-------------|
@@ -24,7 +30,7 @@
 
 ---
 
-## ✅ v0.2.0 Features
+## ✅ Core Features (since v0.2.0)
 
 | Feature | Module | Status |
 |---------|--------|--------|

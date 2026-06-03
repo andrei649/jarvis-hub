@@ -1,24 +1,29 @@
 # Jarvis Hub — 1.0 Gap Analysis
 
 > Ce lipsește între v0.5-beta și un produs bun de promovat online.
+>
+> **Actualizat 2026-06-03:** definiția 1.0 s-a lărgit — **v1.0.0 = tot backlogul terminat** (H10 + H11 + H12 +
+> H13–H17). Sursa de adevăr pentru gap-ul rămas e [BACKLOG.md](../BACKLOG.md#version-roadmap) + [MOONSHOT.md](../MOONSHOT.md) §4.
+> Engineering must-have-urile de mai jos sunt în mare **livrate** (H7 hardening + onboarding ✅); ce rămâne aici e
+> mai ales **launch/promo** (landing page, video, Product Hunt).
 
 ## Pentru 1.0 (după H5)
 
 ### Must-have
-- [ ] **Onboarding docs** — README cu GIF/screenshot, quickstart în 3 pași, demo video link
+- [x] **Onboarding docs** — README cu quickstart + badges (tests/license/version); *GIF/demo video încă lipsesc*
 - [ ] **Landing page** — `index.html` care explică ce e Jarvis, nu doar chat UI
-- [ ] **Single-command setup** — `install.ps1` care instalează tot (Python, dependencies, LM Studio check)
-- [ ] **Docker Compose** — `docker-compose.yml` cu toate serviciile (server, Qdrant, Neo4j) + `.env.example`
-- [ ] **CI/CD complet** — Release workflow cu GitHub Actions care face artifact
-- [ ] **Security review** — Pen-test pe endpointuri, auth pe toate `/api/` routes, CORS config
-- [ ] **Error handling** — Toate erorile au mesaje user-friendly, nu stack traces
+- [x] **Single-command setup** — `INSTALL.bat` / `install.ps1` (Python, dependencies, LM Studio check)
+- [x] **Docker Compose** — `docker-compose.yml` + `.env.example` (server, Qdrant, Neo4j)
+- [x] **CI/CD pe PR** — Ubuntu+Windows, ruff/mypy/pytest-cov (H7.2 ✅); *release-artifact workflow rămâne*
+- [ ] **Security review** — H12.1 (secret store, skill signing, guardrails, PII) ✅; *auth pe `/api/` + CORS + dual-LLM quarantine rămân (H17)*
+- [x] **Error handling** — H7 hardening (input validation Pydantic, logging structurat în loc de `except: pass`)
 
 ### Nice-to-have (before 1.0)
-- [ ] **Multi-user** — Login cu parolă + sesiuni per user (vs single-user acum)
-- [ ] **Mobile app** — PWA installable cu push notifications (H5.2)
-- [ ] **Plugin marketplace** — Skills public registry (H5.8)
-- [ ] **Performance benchmark** — Pagină `/bench` publică cu stats
-- [ ] **Internationalization** — EN default, RO optional (H5.3)
+- [ ] **Multi-user** — Login cu parolă + sesiuni per user (vs single-user acum) — *Phase 2/business, post-1.0*
+- [x] **Mobile app** — PWA installable (H5.2) ✅; *push notifications parțiale*
+- [x] **Plugin marketplace** — agent/skill marketplace (H5.8) ✅; *registry semnat & moderat = H12.12*
+- [x] **Performance benchmark** — pagină `/bench` cu stats ✅
+- [x] **Internationalization** — EN/RO (H5.3) ✅
 
 ### Pentru promovare online
 - [ ] **GitHub repo bine întreținut**:
@@ -34,7 +39,7 @@
 ```yaml
 # Run `gh repo edit` pentru a seta:
 gh repo edit andrei649/jarvis-hub \
-  --description "Jarvis Hub — Local-first multi-agent AI orchestration system. 15 specialist agents (+ 15 bench), Python 3.12 + FastAPI + LM Studio. HUD, voice, Telegram, OAuth, RAG, security sandbox, and more." \
+  --description "Jarvis Hub — Local-first multi-agent AI orchestration system. 16 specialist agents (+ 17 bench), Python 3.12 + FastAPI + LM Studio. HUD, voice, Telegram, OAuth, RAG, security sandbox, and more." \
   --homepage "https://github.com/andrei649/jarvis-hub" \
   --add-topic "ai-agent" \
   --add-topic "multi-agent" \
