@@ -1127,6 +1127,28 @@ async def widget_message(token: str, req: Request):
         return _nocache_json({"reply": "", "error": str(e)})
 
 
+@app.post("/api/workflows/hierarchical")
+async def workflow_hierarchical(req: Request):
+    """H10.11 — run a hierarchical workflow: a manager coordinates a crew."""
+    if not orch:
+        return JSONResponse({"error": "not initialized"}, status_code=503)
+    try:
+        body = await req.json()
+    except Exception:
+        body = {}
+    goal = (body or {}).get("goal", "")
+    crew = (body or {}).get("crew") or []
+    if not goal or not crew:
+        return JSONResponse({"error": "goal and crew required"}, status_code=400)
+    from agents.core.workflows.hierarchical import HierarchicalManager
+    mgr = HierarchicalManager(
+        orch,
+        manager_agent=(body or {}).get("manager", "jarvis"),
+        max_retries=int((body or {}).get("max_retries", 1)),
+    )
+    return _nocache_json(await mgr.run(goal, crew))
+
+
 @app.post("/api/autonomy/preview")
 async def autonomy_preview(req: Request):
     """H12.5 — dry-run preview of an action (no execution). Body: a task dict."""
