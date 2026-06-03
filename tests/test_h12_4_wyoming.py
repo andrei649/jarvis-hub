@@ -75,7 +75,7 @@ async def test_two_events_in_stream():
 
 @pytest.mark.asyncio
 async def test_describe_returns_info():
-    srv = WyomingServer(handler=lambda t: _noop(t))
+    srv = WyomingServer(handler=_noop)
     resp = await srv.dispatch(WyomingEvent("describe"))
     assert resp.type == "info"
     assert resp.data["handle"][0]["name"] == "jarvis-hub"
@@ -98,7 +98,7 @@ async def test_transcript_bridges_to_handler():
 
 @pytest.mark.asyncio
 async def test_empty_transcript_ignored():
-    srv = WyomingServer(handler=lambda t: _noop(t))
+    srv = WyomingServer(handler=_noop)
     assert await srv.dispatch(WyomingEvent("transcript", {"text": "  "})) is None
 
 
@@ -115,7 +115,7 @@ async def test_handler_error_yields_empty_synthesize():
 
 @pytest.mark.asyncio
 async def test_ping_pong():
-    srv = WyomingServer(handler=lambda t: _noop(t))
+    srv = WyomingServer(handler=_noop)
     resp = await srv.dispatch(WyomingEvent("ping", {"x": 1}))
     assert resp.type == "pong" and resp.data == {"x": 1}
 

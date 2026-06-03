@@ -128,11 +128,13 @@ class WyomingServer:
                     writer.write(encode_event(response))
                     await writer.drain()
         except (asyncio.IncompleteReadError, ConnectionError):
+            # Client disconnected mid-stream — a normal end to a connection.
             pass
         finally:
             try:
                 writer.close()
             except Exception:
+                # Best-effort close; the connection is already going away.
                 pass
 
     async def serve(self, host: str = "0.0.0.0", port: int = 10700) -> asyncio.AbstractServer:
