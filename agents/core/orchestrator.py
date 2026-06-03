@@ -104,6 +104,15 @@ class Orchestrator:
         except Exception:
             logger.warning("BiTemporalKG init failed — bi-temporal KG disabled", exc_info=True)
             self.bitemporal = None
+        # H12.6: incremental per-turn KG updater (writes triples to the live graph).
+        try:
+            from .memory.incremental import IncrementalKGUpdater
+            self.kg_updater = IncrementalKGUpdater(
+                getattr(self.memory, "graph", None), bitemporal=self.bitemporal,
+            )
+        except Exception:
+            logger.warning("IncrementalKGUpdater init failed — incremental KG disabled", exc_info=True)
+            self.kg_updater = None
         # H10.17: per-agent run history timeline.
         try:
             from .run_history import RunHistory
@@ -1326,6 +1335,12 @@ class Orchestrator:
                 self.entities.ingest_text(text, source="conversation")
             except Exception:
                 logger.debug("entity ingest skipped", exc_info=True)
+        # H12.6: incrementally extract triples into the KG (same-session memory).
+        if getattr(self, "kg_updater", None) is not None and text:
+            try:
+                self.kg_updater.ingest(text, source="conversation")
+            except Exception:
+                logger.debug("incremental KG ingest skipped", exc_info=True)
         for agent_id, resp in responses.items():
             if agent_id in self.agents and resp:
                 is_timeout = resp.endswith("timeout]")
