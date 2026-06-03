@@ -2085,6 +2085,26 @@ async def clear_traces():
 # ── END H9.2 Trace Explorer endpoints ─────────────────────────────
 
 
+# ── H12.4 Wyoming protocol (local-voice interop) ──────────────────
+
+@app.get("/api/voice/wyoming")
+async def wyoming_status():
+    """Wyoming protocol support status (H12.4)."""
+    from agents.core.voice.wyoming import PROTOCOL_VERSION
+    enabled = bool(orch and orch.get_setting("voice.wyoming_enabled", False))
+    port = int(orch.get_setting("voice.wyoming_port", 10700)) if orch else 10700
+    return _nocache_json({
+        "protocol": "wyoming",
+        "version": PROTOCOL_VERSION,
+        "enabled": enabled,
+        "port": port,
+        "role": "handle",  # transcript → reply-to-speak
+    })
+
+
+# ── END H12.4 Wyoming endpoints ───────────────────────────────────
+
+
 # ── H12.2 Onboarding: drop folder → private chat with your docs ────
 
 _local_docs_last = {"status": "never run"}
