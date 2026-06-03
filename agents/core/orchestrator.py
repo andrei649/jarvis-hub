@@ -986,6 +986,14 @@ class Orchestrator:
                     if agent_obj:
                         model = agent_obj.config.get("model", "")
                 from .llm.tokenizer import estimate_tokens as _et
+                tokens_in = _et(text or "")
+                tokens_out = _et(synthesized or "")
+                # H10.24: estimate $ cost for this trace (local models → $0).
+                try:
+                    from .llm.cost_estimator import estimate_cost as _ec
+                    cost = _ec(model, tokens_in, tokens_out).get("total", 0.0)
+                except Exception:
+                    cost = 0.0
                 trace_dict = {
                     "channel": getattr(self, "_last_channel", "unknown"),
                     "text_preview": (text or "")[:120],
@@ -993,8 +1001,9 @@ class Orchestrator:
                     "route": agents_selected[0] if agents_selected else "",
                     "agents": agents_selected,
                     "model": model,
-                    "tokens_in": _et(text or ""),
-                    "tokens_out": _et(synthesized or ""),
+                    "tokens_in": tokens_in,
+                    "tokens_out": tokens_out,
+                    "cost": cost,
                     "timings": {
                         "classify": t_classify,
                         "route": t_route,
