@@ -104,6 +104,13 @@ class Orchestrator:
         except Exception:
             logger.warning("BiTemporalKG init failed — bi-temporal KG disabled", exc_info=True)
             self.bitemporal = None
+        # H14.4: decay-based forgetting (ACT-R activation ranking + dep-aware delete).
+        try:
+            from .memory.decay import DecayMemory
+            self.decay = DecayMemory()
+        except Exception:
+            logger.warning("DecayMemory init failed — decay forgetting disabled", exc_info=True)
+            self.decay = None
         # H12.6: incremental per-turn KG updater (writes triples to the live graph).
         try:
             from .memory.incremental import IncrementalKGUpdater
