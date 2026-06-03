@@ -17,8 +17,9 @@ from pathlib import Path
 from .persistence import JsonStore
 from typing import Optional
 
+from .config import RUN_HISTORY_MAX_PER_AGENT as MAX_PER_AGENT  # Q4: centralized limit
+
 DEFAULT_PATH = Path("memory_logs/run_history.json")
-MAX_PER_AGENT = 100
 
 
 class RunHistory(JsonStore):

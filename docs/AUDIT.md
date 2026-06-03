@@ -70,10 +70,10 @@ defenses hold.
 | Q1 | High | Same as A3 (store duplication). | `JsonStore` base. |
 | Q2 | High | Same as A5 (getattr/503 boilerplate, ~88×). | `require_component` dependency. |
 | Q3 | ✅ **mostly done** | The systemic catch-all already returns a generic 500 (no leak); the explicit `str(e)`-on-500 handlers (TTS, notes-rewrite, skills/marketplace, MCP probe, review-dataset) now log the detail and return a generic `{"error": "internal error", "code": 500}`. 400/404 validation messages kept (user-facing). | `agents/web.py` (handlers exist at lines ~180–201). Full `require_component` boilerplate dedup (A5) deferred — see note. |
-| Q4 | Low | Magic numbers / hardcoded paths: `MAX_LEN=20000` (notes), `_HISTORY_CAP=200` (rooms), `MAX_PER_AGENT=100` (run_history), `RUBRIC_CRITERIA`, and `Path("memory_logs/...")` repeated across ~34 files. | Centralize in `agents/core/config.py` (`MEMORY_DIR`, per-store paths, limits). |
+| Q4 | ✅ **partly done** | The named limits (`NOTES_MAX_LEN`, `ROOM_HISTORY_CAP`, `RUN_HISTORY_MAX_PER_AGENT`) + `MEMORY_DIR` + `data_path()` now live in `agents/core/config.py`; the three modules alias them (back-compat). Migrating every store's `DEFAULT_PATH` to `data_path()` left as an optional follow-up. | `agents/core/config.py` | — |
 | Q5 | Low | ~50+ public methods/classes lack docstrings/return-type hints (e.g. `agent.py`, `cost_tracker.py`, `resilience.py`). | Sweep; add `mypy`/`ruff` docstring lint (non-blocking) to CI. |
 | Q6 | Low | Atomic tmp+replace write used by stores but **not** in `ingestion/watcher.py`, `memory/conversation.py`, `plugins/oracle_bridge.py`. | Once `JsonStore` exists, route these through it. |
-| Q7 | Low | No `tests/README.md` mapping the 140 test files / `test_hXX_*` roadmap codes to features. | Add a short index. |
+| Q7 | ✅ **done** | `tests/README.md` added — run commands, the `test_hXX_*`→backlog naming convention, an area-coverage table, conventions, and the `apscheduler` note. | `tests/README.md` | — |
 
 ---
 
@@ -134,6 +134,9 @@ Applied (each its own PR, behavior-preserving, full-suite green):
   The duplicated `_load`/`_save`/lock boilerplate now exists once, in the base.
 - **A7** `ActionApprovalQueue` persistence (opt-in) + `JsonStore` in-memory mode.
 - **Q3** `str(e)`-on-500 leaks hardened to generic messages (detail still logged).
+- **A3** completed — all 13 stores on the `JsonStore` base (#116).
+- **Q4** named limits + `MEMORY_DIR`/`data_path` centralized in `core/config.py`.
+- **Q7** `tests/README.md` test index added.
 
 **Deferred to post-manual-testing (mechanical, behavior-neutral, higher churn):**
 - **A5/Q2** the `require_component` FastAPI dependency to dedupe the ~88 `getattr(orch,…)→503`
