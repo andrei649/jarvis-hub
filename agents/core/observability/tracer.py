@@ -5,6 +5,8 @@ Captures per-request trace dicts (id, ts, channel, intent, timings, tokens …)
 and exposes list/get/clear.  Thread-safe via threading.Lock.
 """
 
+from __future__ import annotations
+
 import threading
 import time
 import uuid
@@ -49,6 +51,7 @@ class Tracer:
         entry.setdefault("model", "")
         entry.setdefault("tokens_in", 0)
         entry.setdefault("tokens_out", 0)
+        entry.setdefault("cost", 0.0)
         entry.setdefault("timings", {})
         entry.setdefault("ok", True)
         entry.setdefault("text_preview", "")
@@ -102,8 +105,46 @@ class Tracer:
             "model": t.get("model", ""),
             "tokens_in": t.get("tokens_in", 0),
             "tokens_out": t.get("tokens_out", 0),
+            "cost": t.get("cost", 0.0),
             "total_ms": total_ms,
             "ok": t.get("ok", True),
+        }
+
+    # ── H10.24 cost rollups (derived from per-trace `cost`) ─────────────────
+
+    def cost_by_agent(self) -> list[dict]:
+        """Total $ cost + calls per routed agent, highest cost first."""
+        with self._lock:
+            items = list(self._buf)
+        agg: dict[str, dict] = {}
+        for t in items:
+            agent = t.get("route") or (t.get("agents") or [""])[0] or "unknown"
+            row = agg.setdefault(agent, {"agent_id": agent, "calls": 0, "cost": 0.0})
+            row["calls"] += 1
+            row["cost"] = round(row["cost"] + float(t.get("cost", 0.0)), 6)
+        return sorted(agg.values(), key=lambda x: x["cost"], reverse=True)
+
+    def cost_by_day(self) -> list[dict]:
+        """Total $ cost + calls per UTC day, most-recent day first."""
+        from datetime import datetime, timezone
+        with self._lock:
+            items = list(self._buf)
+        agg: dict[str, dict] = {}
+        for t in items:
+            day = datetime.fromtimestamp(
+                t.get("ts", 0) or 0, tz=timezone.utc
+            ).strftime("%Y-%m-%d")
+            row = agg.setdefault(day, {"day": day, "calls": 0, "cost": 0.0})
+            row["calls"] += 1
+            row["cost"] = round(row["cost"] + float(t.get("cost", 0.0)), 6)
+        return sorted(agg.values(), key=lambda x: x["day"], reverse=True)
+
+    def cost_summary(self) -> dict:
+        with self._lock:
+            items = list(self._buf)
+        return {
+            "calls": len(items),
+            "total_cost": round(sum(float(t.get("cost", 0.0)) for t in items), 6),
         }
 
     # ── convenience factory ────────────────────────────────────────────────

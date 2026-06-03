@@ -268,16 +268,18 @@ python -m pytest tests/ -v          # 1100+ passed, 8 skipped
 
 | Horizon | Total | ✅ Done | S total | S done | % |
 |---------|-------|---------|---------|--------|---|
-| **H10 Competitive Edge** | 30 | **0** | 188 | **0** | **0%** |
+| **H10 Competitive Edge** | 30 | **1** | 188 | **5** | **3%** |
+
+> H10.24 Cost per Trace ✅ (2026-06-03) — Wave 1.
 
 ### H10.A — Observability & Eval (P1 — fundație)
 
 | # | Item | S | P | Dep | Sursă |
 |---|------|---|---|-----|-------|
 | H10.16 | **APM Dashboard** — metrici org în Admin HUD: tokens totali consumați (cu cost $ estimat), runs totale, breakdown per agent și per model. Extinde `/admin` + `bench.py`. | 5 | P1 | H9.2 | SuperAGI |
-| H10.24 | **Cost Tracking per Agent** — calcul $ per request (tokens × preț per provider/model), stocat în trace, vizibil per agent/zi în HUD. `PRICE_TABLE` configurabil în `agents.yaml`. | 5 | P1 | H9.2 | LangSmith |
+| H10.24 ✅ | **Cost Tracking per Agent** — calcul $ per request (tokens × preț per provider/model), stocat în trace, vizibil per agent/zi în HUD. **Done 2026-06-03:** cost per-trace via `core/llm/cost_estimator.py` (reutilizat din H7.10, local = $0); `Tracer.cost_by_agent/cost_by_day/cost_summary` peste ring-buffer; endpoint `GET /api/cost` (by_agent + by_day + summary). +8 teste. *(Override `PRICE_TABLE` din config = follow-up.)* | 5 | P1 | H9.2 | LangSmith |
 | H10.19 | **Model Arena / Blind Comparison** — tab HUD: același query trimis la 2 modele, răspunsuri side-by-side anonimizate, buton vot, leaderboard quality score agregat. `/api/arena/run` + `/api/arena/vote`. | 8 | P1 | H7.5 | OpenWebUI |
-| H9.3b | **Dataset Regression Tracking** (ext. H9.3) — datasets de eval persistente cu versiuni (JSONL), track scor per dataset-version, comparare rulări în HUD; integrabil în CI. | 5 | P1 | H9.3 | LangSmith |
+| H9.3b ✅ | **Dataset Regression Tracking** (ext. H9.3) — datasets de eval persistente cu versiuni (JSONL), track scor per dataset-version, comparare rulări în HUD; integrabil în CI. **Done 2026-06-03:** `core/observability/datasets.py` `DatasetStore` (versiuni JSONL + run-log + `compare()` regresii/îmbunătățiri pe caz + score-delta) peste `EvalHarness` (H9.3); endpoints `GET /api/eval/datasets`, `/{name}/runs`, `/{name}/compare`, `POST /api/eval/datasets/run`. +8 teste offline. | 5 | P1 | H9.3 | LangSmith |
 | H10.22 | **Agent Prompt Version Control** — SOUL.md versionat cu history (git-tags sau DB), UI de comparare 2 versiuni, A/B eval pe un dataset, rollback. | 13 | P1 | H9.3b | LangSmith |
 | H10.23 | **Live Quality Monitor** — evaluatori (LLM-as-judge + heuristic) care rulează pe trace-urile live după fiecare request; scor per request în trace; alertă când avg_score scade sub threshold. | 13 | P2 | H9.2, H10.24 | LangSmith |
 | H10.17 | **Per-Agent Run History** — în HUD per agent: timeline run-uri, acțiuni din fiecare run, durată, tokens, status (success/fail/partial). `/api/agents/{id}/runs`. | 8 | P2 | H9.2 | SuperAGI |
@@ -287,7 +289,7 @@ python -m pytest tests/ -v          # 1100+ passed, 8 skipped
 
 | # | Item | S | P | Dep | Sursă |
 |---|------|---|---|-----|-------|
-| H10.5 | **MCP Server Mode** — Jarvis expune agenți + workflow-uri ca tool-uri MCP (stdio/SSE); orice client MCP (Claude Desktop, Cursor, alt Jarvis) poate apela agenți Jarvis ca tool-uri. `core/mcp/server.py`. | 8 | P1 | H4.7 | Langflow |
+| H10.5 ✅ | **MCP Server Mode** — Jarvis expune agenți ca tool-uri MCP *guvernate*; orice client MCP (Claude Desktop, Cursor, alt Jarvis) poate apela agenți Jarvis ca tool-uri. **Done 2026-06-03:** `core/mcp/server.py` `JarvisMCPServer` — core JSON-RPC 2.0 transport-agnostic (initialize/tools/list/tools/call/ping), un tool `ask_<agent>` per agent, allowlist + LAN-only by default, rutează prin orchestrator (guardrails+gate); endpoints `GET /api/mcp/server` (status+tools) + `POST /api/mcp/server/rpc` (gated pe `mcp.server_enabled`, default off). +13 teste offline. *(stdio/SSE loop = transport peste același core, follow-up.)* | 8 | P1 | H4.7 | Langflow |
 | H10.8 ✅ | **Inbound Webhook Triggers** — endpoint `/api/webhooks/{id}` (POST) activează un agent sau workflow pre-configurat cu payload-ul ca input; autentificat cu token. **Done 2026-06-03:** `core/webhooks.py` `WebhookStore` (JSON file-backed, token `secrets` + compare constant-time, mask la list, accounting calls/last_called) + `extract_input` payload→text; endpoints CRUD `GET/POST /api/webhooks`, `DELETE /api/webhooks/{id}` + trigger `POST /api/webhooks/{id}` (token via header `X-Webhook-Token` sau query, rutează la agent prin orchestrator / workflow best-effort). +8 teste offline. | 3 | P2 | H5.6 | Langflow + Dust |
 | H10.27 | **NL Scheduling** — în locul cron manual în APScheduler, câmp de text "every weekday at 7am" / "în fiecare luni la 9" → parse → cron expression. `core/autonomy/nl_schedule.py`. | 3 | P2 | H3.5 | Dust |
 | H10.1 | **Embeddable Chat Widget** — endpoint `/api/widget/{token}` returnează snippet JS + CSS care embed-uiește chat-ul Jarvis pe orice website; theming configurabil din Admin. | 3 | P2 | H1.3 | Flowise |
