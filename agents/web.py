@@ -1168,6 +1168,13 @@ async def security_scan_injection(req: Request):
     return _nocache_json({"flags": flags, "suspicious": bool(flags)})
 
 
+@app.get("/api/security/governance")
+async def security_governance():
+    """H17.2 — public trust scorecard: injection + harm suites + OWASP Top 10 + gate."""
+    from agents.core.security.governance import governance_gate
+    return _nocache_json(governance_gate())
+
+
 @app.get("/api/security/posture", dependencies=[Depends(_admin_guard)])
 async def security_posture():
     """Packaged security posture: encrypted secrets + signed skills + sandbox + guardrails (H12.1)."""
