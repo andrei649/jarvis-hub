@@ -2085,6 +2085,59 @@ async def clear_traces():
 # ── END H9.2 Trace Explorer endpoints ─────────────────────────────
 
 
+# ── H9.3b Dataset Regression Tracking ─────────────────────────────
+
+_dataset_store = None
+
+
+def _get_dataset_store():
+    global _dataset_store
+    if _dataset_store is None:
+        from agents.core.observability.datasets import DatasetStore
+        _dataset_store = DatasetStore()
+    return _dataset_store
+
+
+class DatasetRunBody(BaseModel):
+    name: str = Field(..., max_length=128)
+    version: Optional[int] = None
+
+
+@app.get("/api/eval/datasets")
+async def list_eval_datasets():
+    """List versioned eval datasets with their latest score (H9.3b)."""
+    return _nocache_json({"datasets": _get_dataset_store().list_datasets()})
+
+
+@app.get("/api/eval/datasets/{name}/runs")
+async def list_dataset_runs(name: str, limit: int = Query(20, ge=1, le=200)):
+    """Recent run summaries for a dataset (most-recent first)."""
+    return _nocache_json({"name": name, "runs": _get_dataset_store().runs(name, limit)})
+
+
+@app.get("/api/eval/datasets/{name}/compare")
+async def compare_dataset_runs(name: str, a: str = Query(...), b: str = Query(...)):
+    """Diff two runs (a=baseline, b=candidate): regressions + score delta."""
+    return _nocache_json(_get_dataset_store().compare(name, a, b))
+
+
+@app.post("/api/eval/datasets/run")
+async def run_eval_dataset(body: DatasetRunBody):
+    """Run a dataset version through the live orchestrator and record the run."""
+    if not orch:
+        return _nocache_json({"error": "not initialized"}, status_code=503)
+
+    async def _runner(prompt: str) -> str:
+        return await orch.handle_input(prompt, channel="eval")
+
+    result = await _get_dataset_store().run_dataset(body.name, _runner, body.version)
+    status = 404 if result.get("error") else 200
+    return _nocache_json(result, status_code=status)
+
+
+# ── END H9.3b Dataset Regression endpoints ────────────────────────
+
+
 @app.get("/api/workflows")
 async def list_workflows():
     """List all registered workflow pipelines (H5.6 + H9.1 user-defined)."""
