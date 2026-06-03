@@ -2039,6 +2039,23 @@ async def list_traces(limit: int = Query(50, ge=1, le=200)):
     return _nocache_json({"traces": tracer.list(limit)})
 
 
+@app.get("/api/cost")
+async def cost_breakdown():
+    """H10.24 — estimated $ cost per agent and per day (local models = $0)."""
+    if not orch:
+        return _nocache_json({"error": "not initialized"}, status_code=503)
+    tracer = getattr(orch, "tracer", None)
+    if tracer is None:
+        return _nocache_json(
+            {"by_agent": [], "by_day": [], "summary": {}, "error": "tracer not available"}
+        )
+    return _nocache_json({
+        "by_agent": tracer.cost_by_agent(),
+        "by_day": tracer.cost_by_day(),
+        "summary": tracer.cost_summary(),
+    })
+
+
 @app.get("/api/traces/{trace_id}")
 async def get_trace(trace_id: str):
     """Return the full trace dict for a specific trace id."""
@@ -2113,6 +2130,59 @@ async def mcp_server_rpc(message: dict):
 
 
 # ── END H10.5 MCP Server endpoints ────────────────────────────────
+
+
+# ── H9.3b Dataset Regression Tracking ─────────────────────────────
+
+_dataset_store = None
+
+
+def _get_dataset_store():
+    global _dataset_store
+    if _dataset_store is None:
+        from agents.core.observability.datasets import DatasetStore
+        _dataset_store = DatasetStore()
+    return _dataset_store
+
+
+class DatasetRunBody(BaseModel):
+    name: str = Field(..., max_length=128)
+    version: Optional[int] = None
+
+
+@app.get("/api/eval/datasets")
+async def list_eval_datasets():
+    """List versioned eval datasets with their latest score (H9.3b)."""
+    return _nocache_json({"datasets": _get_dataset_store().list_datasets()})
+
+
+@app.get("/api/eval/datasets/{name}/runs")
+async def list_dataset_runs(name: str, limit: int = Query(20, ge=1, le=200)):
+    """Recent run summaries for a dataset (most-recent first)."""
+    return _nocache_json({"name": name, "runs": _get_dataset_store().runs(name, limit)})
+
+
+@app.get("/api/eval/datasets/{name}/compare")
+async def compare_dataset_runs(name: str, a: str = Query(...), b: str = Query(...)):
+    """Diff two runs (a=baseline, b=candidate): regressions + score delta."""
+    return _nocache_json(_get_dataset_store().compare(name, a, b))
+
+
+@app.post("/api/eval/datasets/run")
+async def run_eval_dataset(body: DatasetRunBody):
+    """Run a dataset version through the live orchestrator and record the run."""
+    if not orch:
+        return _nocache_json({"error": "not initialized"}, status_code=503)
+
+    async def _runner(prompt: str) -> str:
+        return await orch.handle_input(prompt, channel="eval")
+
+    result = await _get_dataset_store().run_dataset(body.name, _runner, body.version)
+    status = 404 if result.get("error") else 200
+    return _nocache_json(result, status_code=status)
+
+
+# ── END H9.3b Dataset Regression endpoints ────────────────────────
 
 
 @app.get("/api/workflows")
