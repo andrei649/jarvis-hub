@@ -2245,6 +2245,23 @@ async def kg_facts_history(subject: str, predicate: str = ""):
     return _nocache_json({"subject": subject, "history": bt.history(subject, predicate)})
 
 
+@app.post("/api/kg/ingest")
+async def kg_ingest(req: Request):
+    """H12.6 — extract triples from text and write them to the KG immediately."""
+    updater = getattr(orch, "kg_updater", None) if orch else None
+    if updater is None:
+        return JSONResponse({"error": "incremental KG not available"}, status_code=503)
+    try:
+        body = await req.json()
+    except Exception:
+        body = {}
+    text = (body or {}).get("text", "")
+    if not text:
+        return JSONResponse({"error": "text required"}, status_code=400)
+    count = updater.ingest(text)
+    return _nocache_json({"ok": True, "added": count, "triples": updater.last_added})
+
+
 @app.get("/api/memory/eval/corpus")
 async def memory_eval_corpus():
     """H14.2 — the owned memory-eval corpus (cases across 5 abilities)."""

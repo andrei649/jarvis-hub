@@ -376,7 +376,7 @@ python -m pytest tests/ -v          # 1100+ passed, 8 skipped
 | # | Item | S | P | Dep | Sursă |
 |---|------|---|---|-----|-------|
 | H12.5 | **Preview / dry-run pentru autonomie** — arată ce *ar* face o acțiune înainte să aprobi pattern-ul; închide și gap-ul de observabilitate (nicio acțiune oarbă). Extinde H6.2. | 5 | P2 | H6.2 | Dust config preview |
-| H12.6 | **Update-uri KG incrementale (nu doar nocturne)** — extracție ușoară de entități per-tură ca memoria să apară în aceeași sesiune, nu doar după consolidarea de noapte. | 5 | P2 | H5.15, H8.1 | Mem, Tana |
+| H12.6 ✅ | **Update-uri KG incrementale (nu doar nocturne)** — extracție ușoară de triple per-tură ca memoria să apară în aceeași sesiune. **Done 2026-06-03:** `core/memory/incremental.py` — `extract_triples` (pattern-uri high-precision: posesiv „X's Y is Z", lives_in/works_at/related_to verbe, copula is_a; sare stopwords + self-refs), `IncrementalKGUpdater.ingest` scrie entități+relații în KnowledgeGraph live + fapte în bi-temporal (H14.1, contradicție→invalidează); hook în orchestrator `_record_interactions` + endpoint `POST /api/kg/ingest`. Calea nocturnă LLM rămâne high-recall. +8 teste offline. | 5 | P2 | H5.15, H8.1 | Mem, Tana |
 | H12.7 | **Captură pasivă multi-suprafață (opt-in, local)** — browser/clipboard/fișiere → KG, doar local. ⚠️ STRICT opt-in + inspectabil; nimic nu pleacă de pe mașină. | 8 | P2 | H8.1 | Pieces nanomodels, Omi |
 | H12.8 | **Split sateliți-mic → server-inferență pe GPU-ul de acasă** — mai multe endpoint-uri ieftine de microfon partajează un singur GPU Jarvis. | 8 | P2 | H12.4 | Willow (WIS) |
 | H12.9 ✅ | **UX management modele locale** — răsfoiește/descarcă/comută modele dintr-un click în HUD. | 5 | P2 | — | Jan.ai |
