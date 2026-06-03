@@ -41,7 +41,7 @@ phase, ship `1.0.0`. The big refactors (router split, service container) are
 | A4 | **Medium** | Blocking I/O on the async path: sync `write_text`/`sqlite3` inside `async def` handlers (JSON store saves, `/api/admin/audit` direct sqlite). | `web.py` store endpoints; `agents/web.py` audit route | Wrap blocking calls in `await asyncio.to_thread(...)`. Files are small so impact is moderate today, but it blocks the event loop under load. |
 | A5 | **Medium** | Repeated 503-guard preamble (`getattr(orch,...)→503`) in ~50+ endpoints. | `web.py` | Add one FastAPI dependency `require_component("arena")` returning the component or raising 503. Removes ~100 LOC. |
 | A6 | — | ✅ **verified safe** — `workflows/engine.py`'s `Orchestrator` import is `TYPE_CHECKING`-guarded (line 19), so there is **no** circular-import risk. (Flagged by the auto-audit; confirmed a non-issue.) | `agents/core/workflows/engine.py:19` | None needed. |
-| A7 | **Low** | `ActionApprovalQueue` is in-memory only — pending approvals lost on restart, unlike the other (persisted) stores. | `autonomy/action_approvals.py` | Persist via the new `JsonStore` base (and re-create `asyncio.Event`s lazily on load). |
+| A7 | ✅ **done** | `ActionApprovalQueue` now inherits `JsonStore` with **opt-in** persistence (orchestrator passes a path; `path=None` stays in-memory for tests); `asyncio.Event`s re-created lazily for reloaded items. | `autonomy/action_approvals.py` | — |
 
 ---
 
@@ -69,7 +69,7 @@ defenses hold.
 |---|----------|---------|----------------|
 | Q1 | High | Same as A3 (store duplication). | `JsonStore` base. |
 | Q2 | High | Same as A5 (getattr/503 boilerplate, ~88×). | `require_component` dependency. |
-| Q3 | Medium | Inconsistent error shapes: mostly `{"error": ...}` but some `HTTPException`, some `{"status": ...}`; raw `str(e)` leaks internals in a few handlers. | Define one `ErrorResponse` model + a global exception handler mapping `errors.py` types → HTTP codes; never return raw `str(e)`. |
+| Q3 | ✅ **mostly done** | The systemic catch-all already returns a generic 500 (no leak); the explicit `str(e)`-on-500 handlers (TTS, notes-rewrite, skills/marketplace, MCP probe, review-dataset) now log the detail and return a generic `{"error": "internal error", "code": 500}`. 400/404 validation messages kept (user-facing). | `agents/web.py` (handlers exist at lines ~180–201). Full `require_component` boilerplate dedup (A5) deferred — see note. |
 | Q4 | Low | Magic numbers / hardcoded paths: `MAX_LEN=20000` (notes), `_HISTORY_CAP=200` (rooms), `MAX_PER_AGENT=100` (run_history), `RUBRIC_CRITERIA`, and `Path("memory_logs/...")` repeated across ~34 files. | Centralize in `agents/core/config.py` (`MEMORY_DIR`, per-store paths, limits). |
 | Q5 | Low | ~50+ public methods/classes lack docstrings/return-type hints (e.g. `agent.py`, `cost_tracker.py`, `resilience.py`). | Sweep; add `mypy`/`ruff` docstring lint (non-blocking) to CI. |
 | Q6 | Low | Atomic tmp+replace write used by stores but **not** in `ingestion/watcher.py`, `memory/conversation.py`, `plugins/oracle_bridge.py`. | Once `JsonStore` exists, route these through it. |
@@ -123,3 +123,19 @@ a high-level overview (deferred; not blocking).
 Code refactors (P0–P2) are intentionally **not** applied here — they belong to
 the post-manual-testing fix phase so audit findings and fixes stay reviewable
 and the `9.9.9` snapshot stays a clean, behavior-frozen baseline for human testing.
+
+## 7. Fix-phase progress (post-audit)
+
+Applied (each its own PR, behavior-preserving, full-suite green):
+- **B1/B2/B6** micro-bug hardening (#113).
+- **A3/Q1** `JsonStore` base + 6 stores migrated (#114).
+- **A7** `ActionApprovalQueue` persistence (opt-in) + `JsonStore` in-memory mode.
+- **Q3** `str(e)`-on-500 leaks hardened to generic messages (detail still logged).
+
+**Deferred to post-manual-testing (mechanical, behavior-neutral, higher churn):**
+- **A5/Q2** the `require_component` FastAPI dependency to dedupe the ~88 `getattr(orch,…)→503`
+  guards — best done in one consistent sweep *after* manual testing has exercised
+  the real degradation paths, since many endpoints intentionally degrade gracefully
+  (return empty) rather than 503, and a blanket migration would change that.
+- **A1** `web.py` router split, **A2** orchestrator component registry, **A4** blocking-I/O
+  offload, **Q4** config centralization — P1/P2, scheduled for after the test gate.

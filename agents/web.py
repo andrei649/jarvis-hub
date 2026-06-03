@@ -439,7 +439,7 @@ async def tts_endpoint(req: TTSRequest):
         )
     except Exception as e:
         logger.exception("TTS error")
-        return JSONResponse({"error": str(e)}, status_code=500)
+        return JSONResponse({"error": "internal error", "code": 500}, status_code=500)
 
 
 # ── Status (HUD-compatible) ──────────────────────────────────────
@@ -970,8 +970,9 @@ async def review_queue_to_dataset(item_id: str, req: Request):
         cases = store.load(name) or []
         cases.append(case)
         version = store.save_version(name, cases)
-    except Exception as e:
-        return JSONResponse({"error": f"dataset write failed: {e}"}, status_code=500)
+    except Exception:
+        logger.exception("review dataset write failed")
+        return JSONResponse({"error": "dataset write failed", "code": 500}, status_code=500)
     q.mark_in_dataset(item_id)
     return _nocache_json({"ok": True, "dataset": name, "version": version, "case": case})
 
@@ -1359,8 +1360,9 @@ async def notes_rewrite(req: Request):
     prompt = f"{instruction}\n\n---\n{content}"
     try:
         rewritten = await orch.handle_input(prompt, channel="notes")
-    except Exception as e:
-        return JSONResponse({"error": str(e)}, status_code=500)
+    except Exception:
+        logger.exception("notes rewrite failed")
+        return JSONResponse({"error": "internal error", "code": 500}, status_code=500)
     saved = False
     if (body or {}).get("save"):
         notes.set(sid, rewritten)
@@ -1560,7 +1562,7 @@ async def marketplace_list():
         return {"skills": skills}
     except Exception as e:
         logger.exception("Failed to list marketplace skills")
-        return JSONResponse({"error": str(e)}, status_code=500)
+        return JSONResponse({"error": "internal error", "code": 500}, status_code=500)
 
 
 @app.post("/api/skills/marketplace/publish", dependencies=[Depends(_admin_guard)])
@@ -1574,7 +1576,7 @@ async def marketplace_publish(body: PublishSkillBody):
         return JSONResponse({"error": str(e)}, status_code=404)
     except Exception as e:
         logger.exception("Failed to publish skill")
-        return JSONResponse({"error": str(e)}, status_code=500)
+        return JSONResponse({"error": "internal error", "code": 500}, status_code=500)
 
 
 @app.post("/api/skills/marketplace/install", dependencies=[Depends(_admin_guard)])
@@ -1591,7 +1593,7 @@ async def marketplace_install(body: InstallSkillBody):
         return JSONResponse({"error": str(e)}, status_code=404)
     except Exception as e:
         logger.exception("Failed to install skill")
-        return JSONResponse({"error": str(e)}, status_code=500)
+        return JSONResponse({"error": "internal error", "code": 500}, status_code=500)
 
 
 @app.post("/api/skills/marketplace/install-zip", dependencies=[Depends(_admin_guard)])
@@ -1608,7 +1610,7 @@ async def marketplace_install_zip(body: InstallZipBody):
         return JSONResponse({"error": "Failed to install skill from zip"}, status_code=500)
     except Exception as e:
         logger.exception("Failed to install skill from zip")
-        return JSONResponse({"error": str(e)}, status_code=500)
+        return JSONResponse({"error": "internal error", "code": 500}, status_code=500)
 
 
 
@@ -2470,7 +2472,8 @@ async def admin_mcp_connect(name: str):
             "tools": [{"name": t.name, "description": t.description} for t in srv.tools],
         }
     except Exception as e:
-        return JSONResponse({"error": str(e), "server": name}, status_code=500)
+        logger.exception("MCP server probe failed: %s", name)
+        return JSONResponse({"error": "internal error", "server": name, "code": 500}, status_code=500)
 
 
 @app.post("/api/admin/mcp/{name}/disconnect", dependencies=[Depends(_admin_guard)])

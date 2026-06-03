@@ -23,8 +23,10 @@ from typing import Any
 
 
 class JsonStore:
-    def __init__(self, path: str | Path) -> None:
-        self.path = Path(path)
+    def __init__(self, path: "str | Path | None") -> None:
+        # path=None → in-memory only (load/save become no-ops); useful for stores
+        # whose persistence is opt-in (e.g. tests, ephemeral runtime state).
+        self.path = Path(path) if path else None
         self._lock = threading.Lock()
         self._load()
 
@@ -42,7 +44,7 @@ class JsonStore:
 
     def _load(self) -> None:
         raw: Any = {}
-        if self.path.exists():
+        if self.path is not None and self.path.exists():
             try:
                 raw = json.loads(self.path.read_text(encoding="utf-8"))
             except Exception:
@@ -50,6 +52,8 @@ class JsonStore:
         self._deserialize(raw)
 
     def _save(self) -> None:
+        if self.path is None:
+            return  # in-memory mode
         self.path.parent.mkdir(parents=True, exist_ok=True)
         tmp = self.path.with_suffix(".tmp")
         tmp.write_text(json.dumps(self._serialize(), ensure_ascii=False, indent=2),
