@@ -40,6 +40,7 @@ python -m pytest tests/ -v          # 1100+ passed, 8 skipped
 | **0.9.1-beta** | 🟢 Live | Recall cu embeddings reale + perf cale fierbinte | H7.1–H7.5 (perf) |
 | **0.9.2-beta** | 🟢 Live | Hardening complet, CI/CD, memorie personală, cost analytics, onboarding | H7 (11 iteme) + H8 (7 iteme) + BUG-1 |
 | **1.0.0** | 🎯 Stable | Tot backlogul terminat: H10 + H11 + **H12** (BUG-2 ✅ deja livrat; H12.1 P0 securitate ✅ = wedge anti-OpenClaw). Plan: [docs/plan-v1-dispatch.md](docs/plan-v1-dispatch.md) | H10 (30) + H11 (4) + H12 (15) |
+| **1.x → 2.0** | 🔭 Planificat (fără grabă) | Frontiere post-paritate — Phase 2–3 din [MOONSHOT.md §4](MOONSHOT.md#4-trajectory--from-cabinet-to-platform): plafon capabilitate locală, memorie vie, computer-use guvernat, cetățean al web-ului agentic, încredere demonstrabilă. Teme-flagship: *sleep-time compute* + *guvernanță măsurabilă*. Cercetare: [docs/research/2026-06-03-frontier-horizons.md](docs/research/2026-06-03-frontier-horizons.md) | H13–H17 (20 iteme, ~146 SP) |
 
 ---
 
@@ -57,10 +58,13 @@ python -m pytest tests/ -v          # 1100+ passed, 8 skipped
 | **H10 Competitive Edge** (P1–P3) | 30 | **0** | 188 | **0** | **0%** |
 | **H11 Platform Parity** (Known Gaps, P3) | 4 | **0** | 55 | **0** | **0%** |
 | **Total H1–H11** | **151** | **117** | **823** | **580** | **71%** (SP) |
+| **H12 Asistent Privat & Proactiv** (P0–P3) | 15 | **3** | 92 | **13** | **14%** |
+| **H13–H17 Frontiere Noi** (post-paritate / post-1.0, P1–P3) | 20 | **0** | 146 | **0** | **0%** |
+| **Total H1–H17** | **186** | **120** | **1061** | **593** | **56%** (SP) |
 
-> `%` = procent pe **story points** (580/823 = 70.5% ≈ 71%); pe iteme ar fi 117/151 = 77.5%. Totalul de mai sus acoperă **H1–H11**.
+> `%` = procent pe **story points**. Sub-total **H1–H11** = 580/823 (≈71% SP; 117/151 iteme). Grand-total **H1–H17** = 593/1061 (≈56% SP; 120/186 iteme). H12 e în scope-ul v1.0 ([#52]); **H13–H17 sunt formalizate ca roadmap post-1.0 (Phase 2–3, fără grabă)** — nu blochează gate-ul v1.0.
 
-**În afara totalului H1–H11:** ORIZONT 12 (acum în scope-ul v1.0 per [#52]) — **3/14 livrate** (H12.1 ✅ P0 securitate, H12.10 ✅, H12.9 ✅); restul deschis. **Bugs & Hot Fixes** — 3 done (BUG-1, BUG-2, BUG-4) + deschise (BUG-3, HF-1/2, BUG-2b, TASK-1, CLN-1, NTH-1).
+**În afara totalului:** **Bugs & Hot Fixes** — 3 done (BUG-1, BUG-2, BUG-4) + deschise (BUG-3, HF-1/2, BUG-2b, TASK-1, CLN-1, NTH-1).
 
 **Test count (backend pytest):** 1184+ passed, 8 skipped — cele 8 din `tests/test_spotify.py` (vezi nota „Run"). *(2026-06-02: +192 H7+H8; +31 H12.1 securitate; +8 H12.10 trust; +6 H12.9 modele locale.)*
 **Frontend (BUG-2):** 156 teste JS / 20 fișiere · ~66% line coverage — separat de suita pytest.
@@ -392,11 +396,14 @@ python -m pytest tests/ -v          # 1100+ passed, 8 skipped
 
 ---
 
-## 📋 PROPUS: ORIZONT 13–17 — Frontiere Noi (post-paritate) — 0/20
+## ORIZONT 13–17 — Frontiere Noi (post-paritate / post-1.0) — 0/20
 
-> Bazat pe research-ul frontieră 2025-2026: [docs/research/2026-06-03-frontier-horizons.md](docs/research/2026-06-03-frontier-horizons.md)
-> (5 agenți paraleli + verificare independentă). Backlogul de features e terminat (H1–H9); H10–H12 sunt paritate
-> competitivă. **Acestea sunt direcțiile de DUPĂ paritate** — unde țintește un OS personal local-first/proactiv/privat.
+> **Status: formalizate în roadmap** (promovate din „propus" 2026-06-03) ca **Phase 2–3** din
+> [MOONSHOT.md §4](MOONSHOT.md#4-trajectory--from-cabinet-to-platform) — milestone-ul **1.x → 2.0**, **fără grabă**:
+> nu blochează gate-ul v1.0 (H10 + H11 + H12). Bazat pe research-ul frontieră 2025-2026:
+> [docs/research/2026-06-03-frontier-horizons.md](docs/research/2026-06-03-frontier-horizons.md) (5 agenți paraleli +
+> verificare independentă). Backlogul de features e terminat (H1–H9); H10–H12 sunt paritate competitivă.
+> **Acestea sunt direcțiile de DUPĂ paritate** — unde țintește un OS personal local-first/proactiv/privat.
 > Fiecare item verificat față de [principiile non-negociabile](MOONSHOT.md#5-non-negotiable-principles-the-guardrails).
 >
 > **Două teme-flagship (apar transversal):** (1) **„sleep-time compute"** — chiar sloganul moonshot (*„lucrează cât dormi"*),
@@ -457,9 +464,10 @@ python -m pytest tests/ -v          # 1100+ passed, 8 skipped
 | H17.3 | **Capability gating + kill-switch out-of-band** pe care agentul NU îl poate escalada (tokeni de capabilitate per-task/per-sursă; halt în afara buclei agentului). Aliniat EU AI Act Art.14 + NIST Agentic Profile. | 8 | P2 | H6.2 | EU AI Act, NIST |
 | H17.4 | **Audit ancorat extern, cu atribuire de intenție** — extinde lanțul Merkle: ancorare în transparency-log extern + identitate semnată per-acțiune + atribuire cauzală („de ce a făcut X"). | 8 | P2 | H4.10 | Apple PCC, AttriGuard |
 
-> **Total PROPUS ORIZONT 13–17:** 20 items, ~146 SP. **Secvențiere recomandată după moonshot phase-gates:**
-> **H17 (Provable Trust)** + **H14 (Living Memory)** sunt cele mai on-mission acum (teza de încredere + „te cunoaște");
-> **H13** ridică plafonul la $0; **H15/H16** sunt teritoriu Phase 3 (Platform). Flagship transversal: **sleep-time compute** (H13/H14).
+> **Total ORIZONT 13–17:** 20 items, ~146 SP (milestone 1.x → 2.0, fără grabă). **Secvențiere recomandată după moonshot phase-gates:**
+> **H17 (Provable Trust)** + **H14 (Living Memory)** sunt cele mai on-mission când deschidem post-1.0 (teza de încredere + „te cunoaște";
+> H17 continuă direct securitatea Wave 0 / H12.1); **H13** ridică plafonul la $0; **H15/H16** sunt teritoriu Phase 3 (Platform).
+> Flagship transversal: **sleep-time compute** (H13/H14) — chiar sloganul moonshot.
 
 ---
 
