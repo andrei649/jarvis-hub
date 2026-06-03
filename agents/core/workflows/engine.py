@@ -10,6 +10,7 @@ import asyncio
 import logging
 import re
 import time
+from collections import deque
 from typing import TYPE_CHECKING
 
 from .pipeline import Pipeline, WorkflowStep
@@ -21,6 +22,7 @@ if TYPE_CHECKING:
 logger = logging.getLogger("jarvis.workflows")
 
 _TIMEOUT = 120.0  # seconds per step
+_MAX_RECENT_RUNS = 50  # H10.2 — recent-run trace ring for the HUD overlay
 
 
 class WorkflowEngine:
@@ -28,6 +30,8 @@ class WorkflowEngine:
 
     def __init__(self, orchestrator: Orchestrator):
         self._orch = orchestrator
+        # H10.2: ring of recent run traces for the visual overlay.
+        self.recent_runs: deque = deque(maxlen=_MAX_RECENT_RUNS)
 
     async def run(self, pipeline: Pipeline, initial_input: str) -> dict:
         """Execute *pipeline* and return {step_id: response, ..., _elapsed, _ok}."""
@@ -38,16 +42,17 @@ class WorkflowEngine:
 
         terminated_by: str = ""
         step_map = {s.id: s for s in pipeline.steps}
+        ctx["_trace"] = []
 
         for batch in pipeline.execution_batches():
             if len(batch) == 1:
                 step = batch[0]
-                out = await self._execute_step(step, ctx, step_map)
+                out = await self._traced_execute(step, ctx, step_map)
                 ctx[step.id] = out
                 if out.startswith("[error:"):
                     errors.append(step.id)
             else:
-                coros = [self._execute_step(s, ctx, step_map) for s in batch]
+                coros = [self._traced_execute(s, ctx, step_map) for s in batch]
                 outputs = await asyncio.gather(*coros, return_exceptions=True)
                 for step, out in zip(batch, outputs):
                     if isinstance(out, Exception):
@@ -74,7 +79,40 @@ class WorkflowEngine:
         ctx["_errors"] = errors
         ctx["_terminated"] = bool(terminated_by)
         ctx["_terminated_by"] = terminated_by
+        # H10.2: stash the run so the HUD can render an overlay of recent runs.
+        self.recent_runs.append({
+            "pipeline_id": pipeline.id,
+            "pipeline_name": pipeline.name,
+            "ts": time.time(),
+            "elapsed": ctx["_elapsed"],
+            "ok": ctx["_ok"],
+            "terminated_by": terminated_by,
+            "steps": list(ctx["_trace"]),
+        })
         return ctx
+
+    async def _traced_execute(self, step: WorkflowStep, ctx: dict, step_map: dict) -> str:
+        """H10.2 — time a step and append a trace entry (input/output/status)."""
+        t = time.monotonic()
+        input_preview = _render(step.prompt_template, ctx)[:160]
+        out = await self._execute_step(step, ctx, step_map)
+        entry = {
+            "step": step.id,
+            "kind": step.kind,
+            "agent": step.agent_id,
+            "input_preview": input_preview,
+            "output_preview": (out or "")[:160],
+            "elapsed_ms": round((time.monotonic() - t) * 1000, 1),
+            "ok": not (out or "").startswith("[error:"),
+        }
+        ctx.setdefault("_trace", []).append(entry)
+        return out
+
+    def recent(self, limit: int = 20) -> list[dict]:
+        """Return up to *limit* recent run traces, most recent first."""
+        runs = list(self.recent_runs)
+        runs.reverse()
+        return runs[:max(1, limit)]
 
     async def _execute_step(self, step: WorkflowStep, ctx: dict, step_map: dict) -> str:
         """Dispatch a step by kind: critic loop (H10.15) or normal agent run."""

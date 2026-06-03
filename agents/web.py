@@ -2646,6 +2646,15 @@ async def run_workflow(body: WorkflowRunBody):
         return _nocache_json({"ok": False, "error": str(e)})
 
 
+@app.get("/api/workflows/traces")
+async def workflow_traces(limit: int = Query(20, ge=1, le=50)):
+    """H10.2 — recent workflow runs with per-step trace for the visual overlay."""
+    engine = getattr(orch, "workflow_engine", None) if orch else None
+    if engine is None:
+        return _nocache_json({"runs": []})
+    return _nocache_json({"runs": engine.recent(limit)})
+
+
 # ── H9.1 Visual Workflow Builder endpoints ───────────────────────
 # Lazy singleton WorkflowStore — created on first request so tests can
 # inject a custom path before the module is fully imported.
