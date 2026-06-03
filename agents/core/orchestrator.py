@@ -136,6 +136,13 @@ class Orchestrator:
         except Exception:
             logger.warning("QualityMonitor init failed — quality monitor disabled", exc_info=True)
             self.quality = None
+        # H10.1: embeddable chat-widget token store.
+        try:
+            from .widget import WidgetStore
+            self.widgets = WidgetStore()
+        except Exception:
+            logger.warning("WidgetStore init failed — chat widget disabled", exc_info=True)
+            self.widgets = None
         # H14.4: decay-based forgetting (ACT-R activation ranking + dep-aware delete).
         try:
             from .memory.decay import DecayMemory
