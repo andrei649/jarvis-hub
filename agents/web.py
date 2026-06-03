@@ -923,6 +923,21 @@ async def quality_set_threshold(req: Request):
     return _nocache_json({"ok": True, "threshold": q.threshold})
 
 
+@app.post("/api/schedule/parse")
+async def schedule_parse(req: Request):
+    """H10.27 — parse a natural-language schedule into a cron expression."""
+    from agents.core.autonomy.nl_schedule import parse_schedule
+    try:
+        body = await req.json()
+    except Exception:
+        body = {}
+    text = (body or {}).get("text", "")
+    if not text:
+        return JSONResponse({"error": "text required"}, status_code=400)
+    result = parse_schedule(text)
+    return _nocache_json(result, status_code=200 if result.get("ok") else 422)
+
+
 @app.get("/sandbox/status")
 async def sandbox_status():
     if not orch:
