@@ -451,7 +451,7 @@ python -m pytest tests/ -v          # 1100+ passed, 8 skipped
 | H16.1 | **MCP server mode** — expune agenții Jarvis ca tool-uri *guvernate*, LAN-only by default (spec 2025-11: OAuth2.1 RS, RFC 8707, CIMD, `.well-known`). = **H10.5** upgradat la specul nou. | 8 | P1 | H4.7 | MCP 2025-11-25 |
 | H16.2 | **Endpoint A2A** cu Agent Card semnat — opt-in, allowlist de peers, task-uri inbound → approval queue. ⚠️ suprafață de rețea: dezactivat by default. | 8 | P3 | H16.1 | A2A (Linux Foundation) |
 | H16.3 | **Plăți agentice opt-in** prin abstracția mandate/cap/approval (agnostic de rail: AP2/ACP/x402); plafoane *hard*; aprobare Cart-Mandate via Telegram; audit local non-repudiabil. ⚠️ nimic nu se decontează peste plafon fără aprobare. | 8 | P3 | H6.2 | Google AP2, Stripe ACP |
-| H16.4 | **Triggere ambientale inbound** (webhooks/cron/change-streams → inbox de escaladare; surse semnate). Extinde **H10.8**. | 5 | P2 | H10.8 | LangChain ambient agents |
+| H16.4 ✅ | **Triggere ambientale inbound** (webhooks → inbox; **surse semnate**). Extinde **H10.8**. **Done 2026-06-03:** semnare HMAC pe `core/webhooks.py` — `create(signed=True)` provizionează `signing_secret` (returnat o singură dată, mascat în list), `compute_signature` (HMAC-SHA256 `sha256=<hex>`), `verify_signature` (constant-time, peste raw body; acceptă și hexdigest gol); endpoint trigger: hook semnat ⇒ cere header `X-Signature-256` valid (token-ul NU bypassează); hook nesemnat ⇒ token ca înainte. Sursă atestată criptografic (stil GitHub/Stripe). +6 teste (provizionare, verify ok/tamper/bad/empty, mascare, round-trip endpoint). | 5 | P2 | H10.8 | LangChain ambient agents |
 
 ### ORIZONT 17 — Încredere Demonstrabilă (siguranță pentru agenți always-on) — 0/4
 

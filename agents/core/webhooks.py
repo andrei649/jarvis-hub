@@ -1,26 +1,40 @@
 """
-webhooks.py — H10.8 Inbound Webhook Triggers.
+webhooks.py — H10.8 Inbound Webhook Triggers · H16.4 Signed ambient sources.
 
 A token-authenticated inbound trigger: ``POST /api/webhooks/{id}`` activates a
 pre-configured agent (or workflow) with the request payload as input. External
 systems (n8n, GitHub, cron services) can poke a Jarvis agent without holding any
 Jarvis credentials beyond a per-webhook token.
 
+H16.4 adds **signed sources**: a webhook can be created with ``signed=True``,
+which provisions an HMAC signing secret. Inbound requests must then carry an
+``X-Signature-256: sha256=<hmac>`` header computed over the raw body — a
+cryptographically attested source (GitHub/Stripe-style), rather than a bearer
+token that travels in the URL.
+
 File-backed store (JSON under ``memory_logs/webhooks.json``), pure-Python and
-offline-testable. Tokens are generated with ``secrets`` and compared with a
-constant-time check.
+offline-testable. Tokens/signatures are compared with constant-time checks.
 """
 
 from __future__ import annotations
 
+import hashlib
 import hmac
 import json
 import secrets
 import time
 from pathlib import Path
-from typing import Optional
+from typing import Optional, Union
 
 DEFAULT_PATH = Path("memory_logs/webhooks.json")
+
+
+def compute_signature(secret: str, body: Union[bytes, str]) -> str:
+    """HMAC-SHA256 of *body* under *secret*, as ``sha256=<hexdigest>``."""
+    if isinstance(body, str):
+        body = body.encode("utf-8")
+    digest = hmac.new(secret.encode("utf-8"), body, hashlib.sha256).hexdigest()
+    return f"sha256={digest}"
 
 
 def extract_input(payload) -> str:
@@ -59,8 +73,13 @@ class WebhookStore:
 
     # ── CRUD ─────────────────────────────────────────────────────────────────
 
-    def create(self, target: str, target_type: str = "agent", name: str = "") -> dict:
-        """Create a webhook; returns the full record incl. the (only) token."""
+    def create(self, target: str, target_type: str = "agent", name: str = "",
+               signed: bool = False) -> dict:
+        """Create a webhook; returns the full record incl. the (only) token.
+
+        When *signed*, also provisions an HMAC ``signing_secret`` (returned once)
+        and requires a valid ``X-Signature-256`` header on every trigger.
+        """
         if target_type not in ("agent", "workflow"):
             raise ValueError(f"invalid target_type: {target_type}")
         hook_id = secrets.token_urlsafe(8)
@@ -71,6 +90,8 @@ class WebhookStore:
             "target": target,
             "target_type": target_type,
             "name": name or target,
+            "signed": bool(signed),
+            "signing_secret": secrets.token_urlsafe(32) if signed else None,
             "created_at": time.time(),
             "calls": 0,
             "last_called": None,
@@ -94,8 +115,9 @@ class WebhookStore:
         """List webhooks with the token masked (never expose it after creation)."""
         out = []
         for rec in self._hooks.values():
-            safe = {k: v for k, v in rec.items() if k != "token"}
+            safe = {k: v for k, v in rec.items() if k not in ("token", "signing_secret")}
             safe["token_hint"] = rec["token"][:4] + "…"
+            safe["signed"] = bool(rec.get("signed"))
             out.append(safe)
         return sorted(out, key=lambda r: r["created_at"], reverse=True)
 
@@ -106,6 +128,17 @@ class WebhookStore:
         if not rec or not token:
             return False
         return hmac.compare_digest(rec["token"], token)
+
+    def verify_signature(self, hook_id: str, raw_body: Union[bytes, str], signature: str) -> bool:
+        """H16.4 — constant-time HMAC check of a signed source's request body."""
+        rec = self._hooks.get(hook_id)
+        if not rec or not rec.get("signing_secret") or not signature:
+            return False
+        expected = compute_signature(rec["signing_secret"], raw_body)
+        provided = signature.strip()
+        if "=" not in provided:                       # allow a bare hexdigest
+            provided = f"sha256={provided}"
+        return hmac.compare_digest(expected, provided)
 
     def mark_called(self, hook_id: str) -> None:
         rec = self._hooks.get(hook_id)
