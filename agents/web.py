@@ -3523,9 +3523,63 @@ async def mcp_server_status():
     return _nocache_json(status)
 
 
+# ── H16.1 MCP OAuth 2.1 Resource Server (2025-11 spec) ────────────
+
+_mcp_rs = None
+
+
+def _get_mcp_rs():
+    """Process-stable MCP resource server (HMAC secret from settings or generated)."""
+    global _mcp_rs
+    if _mcp_rs is None:
+        from agents.core.mcp.oauth import MCPResourceServer
+        secret = orch.get_setting("mcp.oauth_secret", "") if orch else ""
+        _mcp_rs = MCPResourceServer(secret=secret or None)
+    return _mcp_rs
+
+
+def _mcp_resource(request: Request) -> str:
+    return str(request.base_url).rstrip("/") + "/api/mcp/server"
+
+
+@app.get("/.well-known/oauth-protected-resource")
+async def mcp_protected_resource_metadata(request: Request):
+    """RFC 9728 — lets MCP clients discover the authorization server(s)."""
+    from agents.core.mcp.oauth import protected_resource_metadata
+    resource = _mcp_resource(request)
+    auth_servers = []
+    if orch:
+        configured = orch.get_setting("mcp.authorization_servers", None)
+        if isinstance(configured, list):
+            auth_servers = configured
+    return _nocache_json(protected_resource_metadata(resource, auth_servers or [resource]))
+
+
+@app.post("/api/mcp/token", dependencies=[Depends(_admin_guard)])
+async def mcp_issue_token(req: Request):
+    """Issue a local LAN-only bearer token bound to this MCP resource (admin)."""
+    if not orch:
+        return _nocache_json({"error": "not initialized"}, status_code=503)
+    try:
+        body = await req.json()
+    except Exception:
+        body = {}
+    resource = _mcp_resource(req)
+    scopes = (body or {}).get("scopes") or ["mcp"]
+    token = _get_mcp_rs().issue_token(
+        subject=(body or {}).get("subject", "local-client"),
+        resource=resource, scopes=scopes,
+        ttl=int((body or {}).get("ttl", 3600)))
+    return _nocache_json({"ok": True, "token": token, "resource": resource, "scopes": scopes})
+
+
 @app.post("/api/mcp/server/rpc")
-async def mcp_server_rpc(message: dict):
-    """JSON-RPC 2.0 entry point (HTTP transport). Disabled by default; LAN-only."""
+async def mcp_server_rpc(message: dict, request: Request):
+    """JSON-RPC 2.0 entry point (HTTP transport). Disabled by default; LAN-only.
+
+    When ``mcp.oauth_required`` is set, requires an OAuth 2.1 bearer token bound to
+    this resource (RFC 8707) with the ``mcp`` scope.
+    """
     if not orch:
         return _nocache_json({"error": "not initialized"}, status_code=503)
     if not bool(orch.get_setting("mcp.server_enabled", False)):
@@ -3533,6 +3587,15 @@ async def mcp_server_rpc(message: dict):
             {"error": "MCP server mode disabled (set mcp.server_enabled)"},
             status_code=403,
         )
+    if bool(orch.get_setting("mcp.oauth_required", False)):
+        from agents.core.mcp.oauth import MCPResourceServer
+        resource = _mcp_resource(request)
+        result = _get_mcp_rs().validate(
+            request.headers.get("authorization", ""), resource, required_scope="mcp")
+        if not result["ok"]:
+            return JSONResponse(
+                {"error": f"unauthorized: {result['error']}"}, status_code=401,
+                headers={"WWW-Authenticate": MCPResourceServer.challenge(resource)})
     response = await _build_mcp_server().handle(message)
     # JSON-RPC notifications produce no response body.
     return _nocache_json(response if response is not None else {"ok": True})
