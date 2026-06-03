@@ -97,6 +97,13 @@ class Orchestrator:
         except Exception:
             logger.warning("EntityStore init failed — entity memory disabled", exc_info=True)
             self.entities = None
+        # H10.17: per-agent run history timeline.
+        try:
+            from .run_history import RunHistory
+            self.run_history = RunHistory()
+        except Exception:
+            logger.warning("RunHistory init failed — run history disabled", exc_info=True)
+            self.run_history = None
         self.plugins: dict = {}
         self.skills = SkillLoader()
         self.skill_importer = SkillImporter()
@@ -1335,6 +1342,19 @@ class Orchestrator:
                     output_length=len(resp),
                     model=self.agents[agent_id].config.get("model", ""),
                 )
+                # H10.17: append to the per-agent run-history timeline.
+                if getattr(self, "run_history", None) is not None:
+                    try:
+                        self.run_history.record(
+                            agent_id=agent_id,
+                            input_text=text,
+                            output_text=resp,
+                            latency_ms=latency * 1000,
+                            ok=success,
+                            route=route_name,
+                        )
+                    except Exception:
+                        logger.debug("run_history record skipped", exc_info=True)
                 if not success and agent_id in self.agents:
                     agent = self.agents[agent_id]
                     if agent.should_demote:
