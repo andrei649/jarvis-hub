@@ -113,7 +113,7 @@ python -m pytest tests/ -v          # 1100+ passed, 8 skipped
 | # | Item | S | P | Dep | AC |
 |---|------|---|---|-----|----|
 | H7.10 ✅ | **Cost & Usage Analytics** — preț per model + agregare tokens/cost per agent (local vs cloud) + burn lunar; `GET /api/analytics/cost` + tab HUD | 5 | P2 | H5.5 | dashboard arată cost/agent + proiecție lunară din date reale |
-| H7.11 ⏳ | **Activare Learning-Loop (auto promote/demote)** — job săptămânal care propune evoluția agenților prin decision inbox (reversibil, gated). *(Mecanism `LearningLoop.suggest_promotions`/`rank_candidates`/health-score există; rămâne doar wiring-ul job-ului periodic → decision inbox.)* | 5 | P2 | H3.4, H6.5 | după N interacțiuni → propunere în inbox; aprobarea activează agentul |
+| H7.11 ✅ | **Activare Learning-Loop (auto promote/demote)** — job periodic care propune evoluția agenților prin decision inbox (reversibil, gated). **Done 2026-06-03:** `core/learning/scheduler.py` `propose_promotions` — rulează `suggest_promotions`, enqueue propuneri gated (kind `agent_promotion`, `autonomy_level="ask"`, `origin="generated"`, risk_tier 2) în `TaskQueue`, idempotent (skip dacă există deja propunere deschisă/agent activ); job APScheduler `_schedule_learning_loop` (cadență `autonomy.learning_loop_interval_hours`, default 168h=săptămânal) + trigger manual admin `POST /api/learning/propose`. +6 teste (enqueue gated, idempotent, sub-threshold, deja-activ, componente lipsă, endpoint). | 5 | P2 | H3.4, H6.5 | după N interacțiuni → propunere în inbox; aprobarea activează agentul |
 
 > **Total Orizont 7:** ~51 SP. **Secvențiere:** H7.1 → H7.2 → (Track B ∥ Track C) → Track D.
 > **Stretch → Orizont 8 (post-1.0):** voice clone (XTTS), Howard fine-tuning, multi-user/family,

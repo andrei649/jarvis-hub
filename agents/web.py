@@ -1134,6 +1134,17 @@ async def widget_message(token: str, req: Request):
         return _nocache_json({"reply": "", "error": str(e)})
 
 
+# ── H7.11 Learning-loop promotions ────────────────────────────────────────────
+
+@app.post("/api/learning/propose", dependencies=[Depends(_admin_guard)])
+async def learning_propose():
+    """Run the learning loop now: propose agent promotions into the decision inbox."""
+    if not orch or not hasattr(orch, "_run_learning_loop"):
+        return JSONResponse({"error": "not available"}, status_code=503)
+    proposals = await orch._run_learning_loop()
+    return _nocache_json({"ok": True, "proposed": proposals, "count": len(proposals)})
+
+
 # ── H10.20 Chat Channels / Rooms ──────────────────────────────────────────────
 
 @app.get("/api/rooms")

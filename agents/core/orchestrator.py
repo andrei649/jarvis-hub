@@ -492,6 +492,34 @@ class Orchestrator:
         except Exception as e:
             logger.warning(f"Failed to schedule daily digests: {e}")
 
+    def _schedule_learning_loop(self):
+        """H7.11 — periodically propose agent promotions to the decision inbox.
+
+        Cadence from config (autonomy.learning_loop_interval_hours, default 168h =
+        weekly). Each run proposes gated, reversible promotions via the queue.
+        """
+        sched = getattr(self.heartbeat_scheduler, "scheduler", None)
+        if sched is None:
+            return
+        try:
+            hours = float((self.config.get("autonomy", {}) or {}).get(
+                "learning_loop_interval_hours", 168))
+        except Exception:
+            hours = 168.0
+        if hours <= 0:
+            return
+        try:
+            sched.add_job(self._run_learning_loop, "interval", hours=hours,
+                          id="learning-loop-promotions", replace_existing=True)
+            logger.info("Scheduled learning-loop promotions every %sh", hours)
+        except Exception as e:
+            logger.warning(f"Failed to schedule learning loop: {e}")
+
+    async def _run_learning_loop(self) -> list[dict]:
+        """Propose agent promotions into the decision inbox (gated, reversible)."""
+        from .learning.scheduler import propose_promotions
+        return propose_promotions(self.learning, self.autonomy_queue, list(self.agents.keys()))
+
     def _schedule_log_scans(self):
         """Register the three log-bug-finding cadences on the APScheduler.
 
@@ -710,6 +738,7 @@ class Orchestrator:
         self._wire_autonomy()
         self._schedule_daily_digests()
         self._schedule_log_scans()
+        self._schedule_learning_loop()
         self._autonomy_task = asyncio.create_task(self._autonomy_loop())
         if hasattr(self, 'oracle_bridge') and os.getenv("JARVIS_TESTING") != "1":
             self.oracle_bridge.start_watcher()
