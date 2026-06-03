@@ -1,6 +1,6 @@
 # Jarvis Hub — Go-Live Plan
 
-> Generated: 2026-06-02 · Version target: v1.0.0 · Owner: Andrei
+> Generated: 2026-06-02 · Updated: 2026-06-03 · Version target: v1.0.0 (= entire backlog done) · Owner: Andrei
 > North star (vision & phase gates): [MOONSHOT.md](MOONSHOT.md)
 > Source of truth for backlog: [BACKLOG.md](BACKLOG.md)
 
@@ -19,7 +19,7 @@
 
 ---
 
-### 15 Specialist Agents (4 Tiers)
+### 16 Specialist Agents (4 Tiers)
 
 | Tier | Agent | Role |
 |------|-------|------|
@@ -124,15 +124,19 @@
 
 | Category | Count |
 |----------|-------|
-| Total passing | 909 tests |
-| Skipped | 9 (test_spotify HTTP-router, pending spotify.py) |
-| Frontend | 0% (identified gap: ~6,000 LOC React HUD, no Jest/Playwright) |
+| Total passing (backend) | 1,184+ tests |
+| Skipped | 8 (test_spotify HTTP-router, pending spotify.py) |
+| Frontend | 156 JS tests / 20 files · ~66% line coverage (BUG-2 delivered) |
 
 ---
 
-## 2. Future Features
+## 2. Roadmap to v1.0 (= entire backlog done)
 
-### H8 — Personal Memory (0/8, 48 SP) — Next Milestone
+> **v1.0.0 = the full backlog complete.** Foundation (H1–H9), hardening (H7), personal memory (H8), and the
+> security wedge (H12.1) are ✅ delivered. The remaining v1.0 scope is **H10 + H11 + H12-rest + H13–H17**
+> (≈468 SP open). Single source of truth: [BACKLOG.md](BACKLOG.md#version-roadmap).
+
+### ✅ H8 — Personal Memory (8/8, 48 SP) — DELIVERED 2026-06-02
 
 | # | Feature | SP | Priority |
 |---|---------|-----|---------|
@@ -148,7 +152,7 @@
 
 ---
 
-### H7 — Hardening & Release Readiness (0/11, 51 SP) — v1.0 Gate
+### ✅ H7 — Hardening & Release Readiness (11/11, 51 SP) — DELIVERED 2026-06-02
 
 > **Naming note:** The completed perf-hotpath work (SQLite WAL, async offload, checkpoint debounce, embedding LRU, fast/heavy tiering) was also labeled "H7" internally but is fully delivered — see "Performance (H7)" in Existing Features above. This section is the separate **PROPUS hardening track** (H7.1–H7.11), a required gate for v1.0 stable. Full delivery history: [docs/HISTORY.md](docs/HISTORY.md).
 
@@ -168,7 +172,7 @@
 
 ---
 
-### H10 — Competitive Edge (0/30, 188 SP)
+### H10 — Competitive Edge (0/30, 188 SP) — in v1.0 scope
 
 #### H10.A — Observability & Eval
 - APM cost dashboard (tokens + $ per agent/model)
@@ -212,6 +216,20 @@
 
 ---
 
+### H11 — Platform Parity (0/4, 55 SP) — in v1.0 scope
+
+Desktop app (Tauri) · Rust hot-path crates · SFT/GRPO training pipeline · WASM sandbox. All P3 (high cost: GPU/Rust/native build). See [BACKLOG.md](BACKLOG.md) ORIZONT 11.
+
+### H12 — Private & Proactive Assistant (3/15) — in v1.0 scope
+
+✅ delivered: H12.1 security wedge (P0), H12.9 local-model UX, H12.10 trust indicator, H12.15 backup/restore. **Open:** onboarding drop-folder, queryable/editable KG, Wyoming protocol, autonomy dry-run, incremental KG, passive multi-surface capture, satellite-mic split, extended escalation channels, signed marketplace, E2E device sync, fine-tuned agentic model. See [BACKLOG.md](BACKLOG.md) ORIZONT 12.
+
+### H13–H17 — Frontiers, post-parity (0/20, 146 SP) — in v1.0 scope
+
+The forward-looking sweep, folded into v1.0: **H13** local-capability ceiling (strict-local VLM, constrained decoding) · **H14** living memory (bi-temporal KG, sleep-time consolidation, decay-aware forgetting) · **H15** governed computer-use (browser-use behind the approval queue) · **H16** agentic-web citizen (MCP server mode, A2A, opt-in agentic payments) · **H17** provable trust (dual-LLM quarantine + AgentDojo CI badge). Flagship themes: *sleep-time compute* + *measurable governance*. See [BACKLOG.md](BACKLOG.md) ORIZONT 13–17 + [research](docs/research/2026-06-03-frontier-horizons.md).
+
+---
+
 ## 3. Marketing Brief
 
 ### The Problem
@@ -247,7 +265,7 @@ Every night, Jarvis reads the last 60 conversations, extracts entities and relat
 LM Studio + Ollama on local GPU. Zero API cost for 99% of tasks. Athena escalates to Claude API for heavy reasoning — everything else runs at home. Total operating cost: **$0/month**.
 
 **Production-grade under the hood**
-909 tests. 36× database speedup. Circuit breakers per plugin. Reciprocal rank fusion for hybrid recall. Fast/heavy model tiering based on prompt complexity. This isn't a demo.
+1,184+ tests. 36× database speedup. Circuit breakers per plugin. Reciprocal rank fusion for hybrid recall. Fast/heavy model tiering based on prompt complexity. This isn't a demo.
 
 ---
 
@@ -287,31 +305,31 @@ LM Studio + Ollama on local GPU. Zero API cost for 99% of tasks. Athena escalate
 
 | Metric | Value |
 |--------|-------|
-| Active agents | 15 (+ 15 bench) |
+| Active agents | 16 (+ 17 bench) |
 | Channels | 7 (web, voice, Telegram, Discord, Slack, email, sandbox) |
-| Tests passing | 909 |
+| Tests passing | 1,184+ |
 | API endpoints | 17+ |
 | Monthly cost | $0 |
 | SQLite speedup | 36× |
-| Story points delivered | 481 / 712 total (68%) |
+| Story points delivered | 593 / 1061 total (56%) — v1.0 = full backlog |
 
 ---
 
 ### v1.0 Launch Checklist
 
+> v1.0 = **entire backlog done**. The foundation/hardening gate is met; what remains is the rest of the backlog.
+
 | Item | Priority | SP | Status |
 |------|----------|----|--------|
-| CI/CD on PRs (H7.2) | P0 | 5 | ❌ Not started |
-| Hermetic test suite (H7.1) | P0 | 5 | ❌ Not started |
-| Input validation on endpoints (H7.5) | P1 | 3 | ❌ Not started |
-| Clean silent exceptions (H7.6) | P1 | 5 | ❌ Not started |
-| Fix dashboard cache race (BUG-1) | LOW | 1 | ❌ Not started |
-| LICENSE + CONTRIBUTING.md (H7.9) | P1 | 5 | ❌ Not started |
-| docker-compose.yml (H7.9) | P1 | — | ❌ Not started |
-| README badges + screenshot (H7.9) | P1 | — | ❌ Not started |
-| Personal Memory H8 (7 items) | P1 | 43 | ❌ Not started |
+| CI/CD on PRs + hermetic test suite (H7.1/H7.2) | P0 | 10 | ✅ Done |
+| Input validation + clean silent exceptions (H7.5/H7.6) | P1 | 8 | ✅ Done |
+| LICENSE + CONTRIBUTING + docker-compose + README badges (H7.9) | P1 | 5 | ✅ Done |
+| Dashboard cache race (BUG-1) | LOW | 1 | ✅ Done |
+| Personal Memory H8 (8 items) | P1 | 48 | ✅ Done |
+| Security wedge H12.1 (P0, anti-OpenClaw) | P0 | 8 | ✅ Done |
+| **Remaining backlog** — H10 + H11 + H12-rest + H13–H17 | P1–P3 | ~468 | ⏳ Open |
 
-**Estimated gap to v1.0: ~67 SP — approximately 5–7 weeks at current velocity.**
+**Estimated gap to v1.0: ~468 SP** — the full remaining backlog. Foundation, hardening, personal memory, and the P0 security wedge are ✅ delivered; v1.0 ships when H10–H17 are complete.
 
 ---
 
@@ -321,8 +339,9 @@ LM Studio + Ollama on local GPU. Zero API cost for 99% of tasks. Athena escalate
 |---------|--------|-----------|
 | v0.5-beta | 🟢 Live | H1–H4 foundation complete |
 | v0.9.1-beta | 🟢 Live | H7 perf hotpath + real embeddings |
-| v1.0.0 | 🎯 Q3 2026 | H7 hardening + CI/CD + onboarding + H8 memory |
-| v1.1.0 | Planned | H10 competitive edge (30 items) |
+| v0.9.2-beta | 🟢 Live | H7 hardening + H8 personal memory + cost analytics + onboarding |
+| v1.0.0 | 🎯 Stable | **Entire backlog done** — H10 + H11 + H12 + H13–H17 |
+| v1.x → 2.0 | Planned | Business leaps beyond the backlog: hosted Pro, multi-user, ecosystem at scale |
 
 ---
 

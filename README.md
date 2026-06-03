@@ -2,7 +2,7 @@
 
 ![Python 3.12](https://img.shields.io/badge/python-3.12-blue?logo=python&logoColor=white)
 ![License: MIT](https://img.shields.io/badge/license-MIT-green)
-![Tests](https://img.shields.io/badge/tests-909%20passed-brightgreen?logo=pytest)
+![Tests](https://img.shields.io/badge/tests-1184%2B%20passed-brightgreen?logo=pytest)
 
 > 16 specialized AI agents orchestrated through Jarvis, running on Bonobo WS + Pi 5, controlled by voice and web.
 
@@ -74,7 +74,7 @@ A personal AI mesh that handles the cross-section of Andrei's life: work at Raif
 pip install -r requirements-beta.txt
 pip install tiktoken beautifulsoup4 psutil pytest-asyncio   # extras used by newer code
 python serve.py              # http://127.0.0.1:8080
-python -m pytest             # 909 passed
+python -m pytest             # 1184+ passed
 ```
 
 - **HUD:** http://127.0.0.1:8080/
@@ -90,8 +90,14 @@ python -m pytest             # 909 passed
 
 ## Status
 
-**v0.9.1-beta** — 16 specialist agents (+ 17 bench) across 4 tiers; real-embeddings recall (LM Studio) + fused recall +
+**v0.9.x-beta** — 16 specialist agents (+ 17 bench) across 4 tiers; real-embeddings recall (LM Studio) + fused recall +
 RAG injection; hot-path perf (SQLite WAL, event-loop offload, checkpoint debounce, query-embedding
-cache, complexity-based model tiering); autonomous proactive cortex (ORIZONT 6). **909 tests passing.**
+cache, complexity-based model tiering); autonomous proactive cortex (ORIZONT 6); security wedge (encrypted
+secrets, signed skills, reversible/irreversible approval split). **1,184+ tests passing.**
+
+**Road to v1.0:** v1.0.0 ships when the *entire backlog* is done — H10 (competitive edge) + H11 (platform
+parity) + H12 (private/proactive assistant) + H13–H17 (local-capability ceiling, living memory, governed
+computer-use, agentic-web interop, provable trust). See the [version roadmap](BACKLOG.md#version-roadmap)
+and [MOONSHOT.md](MOONSHOT.md) §4.
 
 See `STATUS.md`, `BACKLOG.md`, and `docs/ARCHITECTURE.md` for details.
