@@ -381,7 +381,7 @@ python -m pytest tests/ -v          # 1100+ passed, 8 skipped
 | H12.8 | **Split sateliți-mic → server-inferență pe GPU-ul de acasă** — mai multe endpoint-uri ieftine de microfon partajează un singur GPU Jarvis. | 8 | P2 | H12.4 | Willow (WIS) |
 | H12.9 ✅ | **UX management modele locale** — răsfoiește/descarcă/comută modele dintr-un click în HUD. | 5 | P2 | — | Jan.ai |
 | H12.10 ✅ | **Indicator mute hardware / strict-local** — semnal vizibil, auditabil "mic off / strict-local" în HUD + voce. Semnal de încredere ieftin. | 2 | P2 | — | Voice PE (mute fizic) |
-| H12.11 | **Canale de escaladare extinse** (dincolo de Telegram: WhatsApp/Signal/Slack/Discord) — *guvernate*, spre deosebire de OpenClaw. Adaptoarele de canal există deja. | 3 | P2 | H1.3 | OpenClaw (multi-channel) |
+| H12.11 ✅ | **Canale de escaladare extinse** (dincolo de Telegram: WhatsApp/Signal/Slack/Discord) — *guvernate*. **Done 2026-06-03:** `core/autonomy/escalation.py` `EscalationRouter` — fan-out la adaptoarele de canal existente, *guvernat* prin allowlist (`autonomy.escalation_channels`), best-effort (nu aruncă), `targets()` rezolvă available∩requested∩allow; `render_escalation` mesaj plain channel-agnostic (cu preview H12.5); endpoints `GET /api/autonomy/escalation/targets` + admin `POST /api/autonomy/escalate` (mesaj sau task). +7 teste offline. | 3 | P2 | H1.3 | OpenClaw (multi-channel) |
 
 ### Track D — Platformă & Ecosistem (P3)
 
