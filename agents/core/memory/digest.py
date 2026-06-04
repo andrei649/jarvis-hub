@@ -3,7 +3,7 @@ Weekly digest generator — summarises user profile and recent activity.
 Produces a structured digest dict; delivery (Telegram/email) is handled by channels.
 """
 import logging
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 logger = logging.getLogger(__name__)
 
@@ -14,7 +14,7 @@ async def generate_digest(store, checkpoint=None) -> dict:
     Returns a dict suitable for rendering or delivery via a channel.
     """
     digest = {
-        "generated_at": datetime.utcnow().isoformat(),
+        "generated_at": datetime.now(timezone.utc).isoformat(),
         "period": "weekly",
         "profile_summary": {},
         "activity_summary": {},

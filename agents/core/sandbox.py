@@ -170,6 +170,8 @@ class Sandbox:
             )
 
     async def _execute_subprocess_python(self, code: str, filename: str) -> SandboxResult:
+        logger.warning("Sandbox: running Python on the HOST with no Docker isolation "
+                       "(DEV_MODE/allow_subprocess active) — do not enable in production (HF-6)")
         start = time.monotonic()
         fpath = self.work_dir / filename
         fpath.parent.mkdir(parents=True, exist_ok=True)
@@ -208,6 +210,8 @@ class Sandbox:
             return SandboxResult(stderr=str(e), exit_code=-1, duration=duration)
 
     async def _execute_subprocess_shell(self, command: str) -> SandboxResult:
+        logger.warning("Sandbox: running a shell command on the HOST with no Docker isolation "
+                       "(DEV_MODE/allow_subprocess active) — do not enable in production (HF-6)")
         start = time.monotonic()
         shell_cmd = ["cmd", "/c", command] if platform.system() == "Windows" else ["sh", "-c", command]
 
