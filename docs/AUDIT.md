@@ -12,7 +12,7 @@
 
 ## Executive summary
 
-The codebase is **functionally complete and well-tested** (1,559 offline tests,
+The codebase is **functionally complete and well-tested** (1,655 offline tests,
 green) with **strong horizontal organization** — `agents/core/` splits cleanly
 into `memory/`, `autonomy/`, `workflows/`, `security/`, `observability/`,
 `llm/`, `channels/`, `mcp/`, each coherent. The weaknesses are **vertical**:

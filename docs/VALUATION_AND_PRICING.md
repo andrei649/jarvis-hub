@@ -43,7 +43,7 @@ conservative (what it's worth as code today) to most optimistic (what it could r
 
 What would it cost to rebuild this from scratch with a competent team?
 
-- ~45K LOC of non-trivial code (orchestration, ML/RAG, async infra, 20 integrations, 1,559 tests).
+- ~45K LOC of non-trivial code (orchestration, ML/RAG, async infra, 20 integrations, 1,655 tests).
 - Realistic effort: **9–15 senior person-months** for a strong full-stack + ML engineer (AI-assisted).
 - Loaded monthly cost: €6–10k (RO/EU senior) to $10–15k (US contractor).
 
