@@ -57,3 +57,25 @@ def make_app(module_path: str, fallback_name: str, prefix: str = "",
 
     app.include_router(router, prefix=prefix)
     return app
+
+
+import pytest  # noqa: E402
+
+
+@pytest.fixture(autouse=True)
+def _disable_user_guard():
+    """HF-1: user-facing routes are guarded by web._user_guard. Its behavior is
+    unit-tested directly in test_user_guard_hf1.py; here we override it to a
+    no-op so the existing TestClient(web.app) suites — which connect as a
+    non-localhost 'testclient' host — keep exercising those routes without a
+    token. A test that wants the real guard pops this override itself."""
+    try:
+        from agents import web
+    except Exception:
+        yield
+        return
+    web.app.dependency_overrides[web._user_guard] = lambda: None
+    try:
+        yield
+    finally:
+        web.app.dependency_overrides.pop(web._user_guard, None)

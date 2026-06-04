@@ -219,6 +219,12 @@ Each needs a real token/account and a live round-trip (send → receive → repl
 - [ ] **Admin-guarded endpoints** ✅🔑 — Confirm admin routes (widgets, quality
   threshold, action decide, escalate, learning propose, secrets) reject without a
   valid `X-Admin-Token` and accept with it. Set a strong `ADMIN_TOKEN` in prod.
+- [ ] **User-guarded endpoints (HF-1)** ✅🔑 — From **another device on the LAN**
+  (not localhost), hit `/chat`, `/api/memory/remember`, `/sandbox/execute` with
+  **no** token: expect **403** when `JARVIS_USER_TOKEN` is unset, and **401**
+  when it's set but the header is missing/wrong. Set `JARVIS_USER_TOKEN`, open
+  the HUD from the phone, enter the token at the prompt, and confirm chat +
+  memory work. Localhost still works with no token.
 - [ ] **Sandbox (code execution)** ❌🔑 — Run a sandboxed snippet; confirm isolation
   limits (size cap H7.5, timeouts) hold.
 
