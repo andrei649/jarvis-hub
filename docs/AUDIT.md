@@ -12,7 +12,7 @@
 
 ## Executive summary
 
-The codebase is **functionally complete and well-tested** (1,480+ offline tests,
+The codebase is **functionally complete and well-tested** (1,559 offline tests,
 green) with **strong horizontal organization** — `agents/core/` splits cleanly
 into `memory/`, `autonomy/`, `workflows/`, `security/`, `observability/`,
 `llm/`, `channels/`, `mcp/`, each coherent. The weaknesses are **vertical**:
@@ -81,7 +81,7 @@ defenses hold.
 
 The doc audit found pervasive stale numbers. **Corrected here** (verified against
 code): version `0.9.x` → **9.9.9** everywhere; agent count `15` → **16** (JARVIS.md
-×4); test count (`846`/`909`/`1184`/`1474`) → **1,480+**; endpoint count
+×4); test count (`846`/`909`/`1184`/`1474`) → **1,559** (1,568 collected, 9 skipped; verified 2026-06-04); endpoint count
 (`17`/`19`/`88`) → **~203**; model `gemma-4-26b` → `gemma-4-31b` (JARVIS.md self-conflict);
 ARCHITECTURE port typo `8000` → `8080`; ARCHITECTURE module index gained the
 `observability/` entries (`quality`, `review_queue`, `datasets`); BACKLOG/MOONSHOT/

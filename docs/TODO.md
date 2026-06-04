@@ -76,9 +76,9 @@ reality. What's left to actually **build**:_
 
 7. **HUD "every feature has a home"** — _2026-06-04: added a **Security** group (Kill-Switch,
    Trust Scorecard, Capability Tokens, Audit & Intent), **Cost & Usage**, plus **Local Docs,
-   Local Models, Agent Templates, Daily Reflection** — Console registry 20→29, all tested._
-   **Still missing:** the eval-dataset regression view (`/api/eval/datasets`). (OAuth, Oracle,
-   Resilience already have a home in the Systems panel.) Add via `tools.js` `TOOLS` (~30–50 LOC each).
+   Local Models, Agent Templates, Daily Reflection, Eval Datasets** — Console registry 20→**30**, all tested._
+   Every backend feature group now has a Console home (OAuth/Oracle/Resilience live in the
+   Systems panel).
 
 ---
 
@@ -93,8 +93,9 @@ reality. What's left to actually **build**:_
 11. **v1.0 scope contradiction** — MOONSHOT §4 (Trustworthy gate met) vs BACKLOG roadmap
     (v1.0 = H10+H11+H12+H13–17). Decide: tag v1.0 at the Trustworthy gate + move the rest to v1.x,
     **or** keep the broad gate. The `9.9.9` framing currently sidesteps it.
-12. **Reconcile the test count** — docs disagree: README/STATUS "1,480+", GO_LIVE_PLAN "1,184+",
-    this handoff "~1,520". Run the suite, pick the true number, single-source it (ties to H7.8 doc-truth).
+12. ~~Reconcile the test count~~ ✅ **Done 2026-06-04** — ran the offline suite: **1,559 passed,
+    9 skipped (1,568 collected, 0 failures)**. Single-sourced across README/STATUS/JARVIS/BACKLOG/
+    AUDIT/MOONSHOT/GO_LIVE_PLAN/tests-README + the badge (was a 3-way split: 1,184 / 1,480 / 1,520).
 13. ~~Mask the IBAN in `/ticker`~~ ✅ **Done 2026-06-04** — `BalanceReaderPlugin.get_balances()`
     masks every account to `…NNNN` **at the source** (covers mock + real ING/Libra/CSV, so the
     HUD and Gecko summaries never broadcast a full IBAN). +2 regression tests in `test_balance.py`.

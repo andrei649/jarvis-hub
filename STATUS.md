@@ -1,6 +1,6 @@
 # Jarvis Hub — Status Snapshot
 
-> **Current version:** v9.9.9 (pre-1.0 audit gate) · **Tests:** 1,480+ passed (9 skipped) · **Agents:** 16 (15 cabinet + Howard, + 17 bench) · **HTTP routes:** ~203
+> **Current version:** v9.9.9 (pre-1.0 audit gate) · **Tests:** 1,559 passed (9 skipped) · **Agents:** 16 (15 cabinet + Howard, + 17 bench) · **HTTP routes:** ~203
 > **Road to v1.0:** the feature backlog (H1–H9) and most competitive-edge/frontier work (H10, H12, H14, H16, H17) are code-complete — ~166/186 items (≈82% SP), shipped pending the `9.9.9` audit gate (full code audit [docs/AUDIT.md](docs/AUDIT.md), human manual testing [docs/MANUAL_TESTING.md](docs/MANUAL_TESTING.md), and fixes). *Most* remaining items need hardware/models or external network surfaces; a few open pure-software items remain (mostly P3 — see [BACKLOG.md](BACKLOG.md#status-general)). See [BACKLOG.md](BACKLOG.md#version-roadmap) + [MOONSHOT.md](MOONSHOT.md) §4.
 >
 > The version labels in the feature tables below (`v0.2.0`, `v0.2.1`) record *when* each capability first

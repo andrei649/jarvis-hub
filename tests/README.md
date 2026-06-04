@@ -1,6 +1,6 @@
 # Test suite
 
-**1,520+ tests, fully offline** (mocked LLMs, channels, hardware). Run:
+**1,559 tests (9 skipped), fully offline** (mocked LLMs, channels, hardware). Run:
 
 ```bash
 python -m pytest                       # whole suite (~65s)

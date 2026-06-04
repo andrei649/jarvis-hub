@@ -66,8 +66,8 @@ python -m pytest tests/ -v          # 1100+ passed, 8 skipped
 
 **În afara totalului:** **Bugs & Hot Fixes** — 3 done (BUG-1, BUG-2, BUG-4) + deschise (BUG-3, BUG-5…BUG-12, HF-1/2, HF-3…HF-7, BUG-2b, TASK-1, CLN-1, CLN-2, CLN-3, NTH-1). *(BUG-5…12 / HF-3…7 / CLN-2/3 din auditul de cod 2026-06-04.)*
 
-**Test count (backend pytest):** 1,480+ passed, 9 skipped — cele 9 din `tests/test_spotify.py`/heartbeat opțional (vezi nota „Run"). *(2026-06-03 v9.9.9: backlog software **code-complete** — H10 27/30, H12 10/15, frontiere H13–H17 12/20 (vezi „Status General" de mai sus); rămâne audit + testare manuală, vezi `docs/AUDIT.md`.)*
-**Frontend (BUG-2):** 156 teste JS / 20 fișiere · ~66% line coverage — separat de suita pytest.
+**Test count (backend pytest):** 1,559 passed, 9 skipped — cele 9 din `tests/test_spotify.py`/heartbeat opțional (vezi nota „Run"). *(2026-06-03 v9.9.9: backlog software **code-complete** — H10 27/30, H12 10/15, frontiere H13–H17 12/20 (vezi „Status General" de mai sus); rămâne audit + testare manuală, vezi `docs/AUDIT.md`.)*
+**Frontend (BUG-2):** 179 teste JS / 22 fișiere · ~67% line coverage — separat de suita pytest.
 
 > **Orizont 7 Hardening — Drumul spre 1.0.0:** 11/11 COMPLET ✅ (livrat 2026-06-02)
 
