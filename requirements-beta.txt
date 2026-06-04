@@ -15,6 +15,10 @@ psutil>=7.2.2
 # === Memory (optional — improves with numpy) ===
 numpy>=2.4.6
 
+# === Token counting + HTML parsing (used by newer code; app still boots without them) ===
+tiktoken>=0.7
+beautifulsoup4>=4.12
+
 # === Memory — Qdrant Vector DB (optional) ===
 # Docker: docker run -p 6333:6333 qdrant/qdrant
 # Then set VECTOR_BACKEND=qdrant in .env

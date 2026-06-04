@@ -74,12 +74,12 @@ REM --- 3. Get the code ----------------------------------------
 echo [3/5] Aduc codul proiectului...
 if exist "serve.py" (
   echo   Sunt deja in folderul proiectului. Aduc ultimele modificari...
-  git pull --rebase origin master
+  git pull --rebase origin main
 ) else (
   if exist "jarvis-hub\serve.py" (
     echo   Proiectul exista deja in .\jarvis-hub - il actualizez...
     cd jarvis-hub
-    git pull --rebase origin master
+    git pull --rebase origin main
   ) else (
     echo   Clonez de pe GitHub...
     git clone %REPO_URL%
@@ -100,7 +100,6 @@ if not exist ".venv\Scripts\python.exe" (
 set "VPY=.venv\Scripts\python.exe"
 "%VPY%" -m pip install --quiet --upgrade pip
 "%VPY%" -m pip install --quiet -r requirements-beta.txt
-"%VPY%" -m pip install --quiet tiktoken beautifulsoup4 psutil pytest-asyncio
 echo   [OK] Dependente instalate.
 echo.
 

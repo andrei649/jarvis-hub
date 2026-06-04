@@ -47,8 +47,6 @@ set "VPY=.venv\Scripts\python.exe"
 echo [3/4] Instalez dependentele...
 "%VPY%" -m pip install --quiet --upgrade pip
 "%VPY%" -m pip install --quiet -r requirements-beta.txt
-REM Extra deps used by the newer code (not all are in requirements-beta.txt):
-"%VPY%" -m pip install --quiet tiktoken beautifulsoup4 psutil pytest-asyncio
 echo.
 
 REM --- 4. Run the tests ---------------------------------------
