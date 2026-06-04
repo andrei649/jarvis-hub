@@ -82,9 +82,13 @@ async def _admin_guard(request: Request):
         if not supplied or not secrets.compare_digest(supplied, ADMIN_TOKEN):
             raise HTTPException(status_code=401, detail="admin token required")
         return
-    # No token configured → only localhost may reach admin endpoints.
+    # No token configured → only *direct* localhost may reach admin. If forwarding
+    # headers are present we're behind a reverse proxy and request.client.host is
+    # the proxy's IP (often 127.0.0.1), so the localhost check can't be trusted —
+    # fail closed and require a token. (HF-7)
     client_host = request.client.host if request.client else ""
-    if client_host not in _LOCALHOSTS:
+    behind_proxy = any(h in request.headers for h in ("x-forwarded-for", "x-real-ip", "forwarded"))
+    if behind_proxy or client_host not in _LOCALHOSTS:
         raise HTTPException(
             status_code=403,
             detail="admin disabled from network — set JARVIS_ADMIN_TOKEN to enable remote access",
