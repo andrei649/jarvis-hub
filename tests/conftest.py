@@ -10,6 +10,10 @@ from pathlib import Path
 # This prevents the oracle_bridge watcher and other external pollers from
 # starting and hanging the suite on network timeouts.
 os.environ.setdefault("JARVIS_TESTING", "1")
+# HF-2: the per-IP HTTP rate limiter is off in the suite (TestClient connects as a
+# single non-localhost host and some suites burst many requests). test_rate_limit_hf2
+# monkeypatches a low limit to exercise it directly.
+os.environ.setdefault("JARVIS_RATE_LIMIT", "0")
 
 from fastapi import APIRouter, FastAPI
 

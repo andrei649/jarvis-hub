@@ -227,6 +227,11 @@ Each needs a real token/account and a live round-trip (send → receive → repl
   memory work. Localhost still works with no token.
 - [ ] **Sandbox (code execution)** ❌🔑 — Run a sandboxed snippet; confirm isolation
   limits (size cap H7.5, timeouts) hold.
+- [ ] **Rate limit + CORS (HF-2)** ✅🔑 — From **another LAN device** with no token,
+  hammer any endpoint past `JARVIS_RATE_LIMIT` (default 120/min) → expect **429
+  + Retry-After**; confirm localhost and a valid `X-User-Token` are **not**
+  throttled. If `JARVIS_CORS_ORIGINS` is unset, a cross-origin `fetch` from a
+  foreign page is blocked; set it and confirm the allowed origin works.
 
 ---
 
