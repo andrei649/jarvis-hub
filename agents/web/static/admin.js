@@ -3,6 +3,29 @@
 
 /* h, useState, useEffect, useRef, useMemo, useCallback — from components.js */
 
+/* afetch — like fetch but injects the admin token (shared with the HUD ⚙ via
+   localStorage 'hud.admin_token'). Returns a Response so existing
+   .then(r=>r.json()) call sites are unchanged. Fixes admin actions failing
+   silently whenever JARVIS_ADMIN_TOKEN is set on the server. */
+function afetch(url, opts) {
+  opts = opts || {};
+  opts.headers = Object.assign({ 'X-Admin-Token': localStorage.getItem('hud.admin_token') || '' }, opts.headers || {});
+  return fetch(url, opts);
+}
+
+/* Token field for the admin sidebar (same key the HUD ⚙ menu uses). */
+function AdminToken() {
+  const [tok, setTok] = useState(localStorage.getItem('hud.admin_token') || '');
+  return h('div', { className: 'admin-token-row', style: { padding: '8px 12px 4px' } },
+    h('input', {
+      type: 'password', value: tok, placeholder: 'Admin token (if set)',
+      style: { width: '100%', padding: '5px 8px', fontSize: '12px', borderRadius: '6px',
+               border: '1px solid rgba(120,170,255,.25)', background: 'rgba(255,255,255,.05)', color: 'inherit' },
+      title: 'Required when JARVIS_ADMIN_TOKEN is set on the server',
+      onChange: function (e) { setTok(e.target.value); localStorage.setItem('hud.admin_token', e.target.value); },
+    }));
+}
+
 /* ── SVG icons per category ─────────────────────────────────── */
 
 const ICONS = {
@@ -530,7 +553,7 @@ function AuditLog() {
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(true);
   useEffect(()=>{
-    fetch('/api/admin/audit?limit=30').then(r=>r.json()).then(d=>{setRows(d.rows||[]);setLoading(false)}).catch(()=>setLoading(false));
+    afetch('/api/admin/audit?limit=30').then(r=>r.json()).then(d=>{setRows(d.rows||[]);setLoading(false)}).catch(()=>setLoading(false));
   },[]);
   if (loading) return h('div',{style:{padding:8,fontSize:11,color:'var(--text-dim)'}}, _t('admin.loading'));
   if (!rows.length) return h('div',{style:{padding:8,fontSize:11,color:'var(--text-dim)'}}, _t('admin.no_audit'));
@@ -554,7 +577,7 @@ function LLMTest() {
   const [busy, setBusy] = useState(false);
   const test = () => {
     setBusy(true);
-    fetch('/api/admin/llm/test',{method:'POST'}).then(r=>r.json()).then(d=>{setResults(d.results);setBusy(false)}).catch(()=>setBusy(false));
+    afetch('/api/admin/llm/test',{method:'POST'}).then(r=>r.json()).then(d=>{setResults(d.results);setBusy(false)}).catch(()=>setBusy(false));
   };
   return h('div',null,
     h('button',{className:'admin-btn is-primary', onClick:test, disabled:busy}, busy ? _t('admin.test_busy') : _t('admin.test_btn')),
@@ -575,7 +598,7 @@ function LLMTest() {
 function MemoryClear({ onToast }) {
   const clear = () => {
     if (!confirm(_t('admin.confirm_clear'))) return;
-    fetch('/api/admin/memory/clear',{method:'POST'}).then(r=>r.json()).then(d=>{onToast(d.message||_t('admin.btn_clear'))}).catch(()=>onToast(_t('admin.error_unknown')));
+    afetch('/api/admin/memory/clear',{method:'POST'}).then(r=>r.json()).then(d=>{onToast(d.message||_t('admin.btn_clear'))}).catch(()=>onToast(_t('admin.error_unknown')));
   };
   return h('button',{className:'admin-btn is-danger', onClick:clear}, _t('admin.btn_clear'));
 }
@@ -743,7 +766,7 @@ function MCPPage({ onToast }) {
 
   const fetchServers = () => {
     setLoading(true);
-    fetch('/api/admin/mcp').then(r=>r.json()).then(d=>{setServers(d.servers||[]);setLoading(false)}).catch(()=>setLoading(false));
+    afetch('/api/admin/mcp').then(r=>r.json()).then(d=>{setServers(d.servers||[]);setLoading(false)}).catch(()=>setLoading(false));
   };
   useEffect(()=>{fetchServers();},[]);
 
@@ -753,7 +776,7 @@ function MCPPage({ onToast }) {
     const body = { name:form.name, transport:form.transport };
     if (form.transport === 'stdio') body.command = form.command;
     else body.url = form.url;
-    fetch('/api/admin/mcp', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body)})
+    afetch('/api/admin/mcp', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body)})
       .then(r=>{if (!r.ok) return r.json().then(d=>{throw new Error(d.error)}); return r.json()})
       .then(()=>{ onToast(_t('mcp.add_success')); setShowForm(false); setForm({name:'',transport:'stdio',command:'',url:''}); fetchServers(); })
       .catch(e=>onToast(_t('admin.error_prefix')+e.message));
@@ -761,14 +784,14 @@ function MCPPage({ onToast }) {
 
   const removeServer = (name) => {
     if (!confirm(_t('mcp.remove_confirm')+name+'?')) return;
-    fetch(`/api/admin/mcp/${encodeURIComponent(name)}`, {method:'DELETE'})
+    afetch(`/api/admin/mcp/${encodeURIComponent(name)}`, {method:'DELETE'})
       .then(r=>r.json()).then(()=>{ onToast(_t('mcp.remove_success')); fetchServers(); })
       .catch(e=>onToast(_t('admin.error_prefix')+e.message));
   };
 
   const toggleConnect = (srv) => {
     const action = srv.connected ? 'disconnect' : 'connect';
-    fetch(`/api/admin/mcp/${encodeURIComponent(srv.name)}/${action}`, {method:'POST'})
+    afetch(`/api/admin/mcp/${encodeURIComponent(srv.name)}/${action}`, {method:'POST'})
       .then(r=>r.json()).then(d=>{
         if (action === 'connect') onToast(d.ok ? _t('mcp.connect_success') : (d.error||'Connect failed'));
         else onToast(_t('mcp.disconnect_success'));
@@ -1090,7 +1113,7 @@ function ChartsPage() {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   useEffect(()=>{
-    fetch('/api/admin/stats').then(r=>r.json()).then(d=>{setData(d);setLoading(false)}).catch(()=>setLoading(false));
+    afetch('/api/admin/stats').then(r=>r.json()).then(d=>{setData(d);setLoading(false)}).catch(()=>setLoading(false));
   },[]);
   if (loading) return h('div',{style:{padding:20,fontSize:12,color:'var(--text-dim)'}},_t('admin.loading'));
   if (!data || !data.overview) return h('div',{style:{padding:20,fontSize:12,color:'var(--text-dim)'}},_t('charts.no_data'));
@@ -1210,8 +1233,8 @@ function AdminApp() {
   const [refreshKey, setRefreshKey] = useState(0);
 
   useEffect(()=>{
-    fetch('/api/admin/settings').then(r=>r.json()).then(d=>setSettings(d));
-    fetch('/api/admin/env').then(r=>r.json()).then(d=>setEnvData(d)).catch(()=>{});
+    afetch('/api/admin/settings').then(r=>r.json()).then(d=>setSettings(d));
+    afetch('/api/admin/env').then(r=>r.json()).then(d=>setEnvData(d)).catch(()=>{});
   },[refreshKey]);
 
   const showToast = (msg) => { setToast(msg); setTimeout(()=>setToast(''), 2500); };
@@ -1221,7 +1244,7 @@ function AdminApp() {
   };
 
   const onAgentUpdate = (agentId, key, value) => {
-    fetch(`/api/admin/agents/${agentId}`, {
+    afetch(`/api/admin/agents/${agentId}`, {
       method:'PUT',
       headers:{'Content-Type':'application/json'},
       body:JSON.stringify({updates:{[key]:value}}),
@@ -1254,7 +1277,7 @@ function AdminApp() {
 
     // Make PUT requests for each category in parallel
     const promises = Object.entries(byCategory).map(([cat, values]) => {
-      return fetch(`/api/admin/settings/${cat}`, {
+      return afetch(`/api/admin/settings/${cat}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ values }),
@@ -1266,7 +1289,7 @@ function AdminApp() {
         const totalUpdated = results.reduce((sum, r) => sum + (r.updated || 0), 0);
         setDirty({});
         showToast(`Parametri salvați cu succes! Am actualizat ${totalUpdated} setări.`);
-        fetch('/api/admin/settings').then(r=>r.json()).then(s=>setSettings(s));
+        afetch('/api/admin/settings').then(r=>r.json()).then(s=>setSettings(s));
       })
       .catch(() => showToast('Eroare la salvarea setărilor globale.'));
   };
@@ -1289,6 +1312,7 @@ function AdminApp() {
         ICONS.system,
         _t('admin.brand'),
       ),
+      h(AdminToken),
       h('nav',{className:'admin-nav', style:{marginTop:20}},
         CATEGORIES.map(c=>h('button',{
           key:c.id,
@@ -1306,7 +1330,7 @@ function AdminApp() {
         ? h(AgentsPage,{onUpdate:onAgentUpdate})
 
         : isSystem
-          ? h(SystemPage,{envData, onRefresh:()=>fetch('/api/admin/env').then(r=>r.json()).then(d=>setEnvData(d))})
+          ? h(SystemPage,{envData, onRefresh:()=>afetch('/api/admin/env').then(r=>r.json()).then(d=>setEnvData(d))})
 
           : isOracle
             ? h(OraclePage)
@@ -1336,7 +1360,7 @@ function AdminApp() {
         h('button',{className:'admin-btn is-warning',
           onClick:()=>{
             if (!confirm('Reinițializați toate setările la valorile implicite? Modificările custom vor fi pierdute.')) return;
-            fetch('/api/admin/settings/reseed',{method:'POST'}).then(r=>r.json()).then(d=>{
+            afetch('/api/admin/settings/reseed',{method:'POST'}).then(r=>r.json()).then(d=>{
               showToast(d.message||'Reseeded');
               setDirty({});
               setRefreshKey(k=>k+1);
