@@ -27,6 +27,8 @@ class LLMRouter:
 
         On success, also capture the model actually loaded in the backend so the
         system uses the real loaded model rather than a hard-coded name."""
+        await self._close_backend(self._backend)  # BUG-7: close the prior backend's pool before re-detect
+        self._backend = None
         self._detected_model = None
         if await self._check("http://localhost:1234/v1/models"):
             self._backend = LMStudioBackend()
@@ -115,3 +117,19 @@ class LLMRouter:
             self.set_active_model(model)
             logger.info("Active model refreshed: %s", model)
         return model
+
+    async def aclose(self) -> None:
+        """Close the active backend's HTTP client pool (BUG-7)."""
+        await self._close_backend(self._backend)
+        self._backend = None
+
+    @staticmethod
+    async def _close_backend(backend) -> None:
+        if backend is None:
+            return
+        closer = getattr(backend, "aclose", None) or getattr(backend, "close", None)
+        if closer:
+            try:
+                await closer()
+            except Exception:
+                pass
