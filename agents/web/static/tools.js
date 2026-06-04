@@ -199,6 +199,55 @@
     return Tool('Learning Loop', 'Propose agent promotions → decision inbox (admin)', body, null);
   }
 
+  /* ── Memory ────────────────────────────────────────────────────────────── */
+  function KGPanel() {
+    const _f = useState(null), facts = _f[0], setFacts = _f[1];
+    const _d = useState(''), date = _d[0], setDate = _d[1];
+    const _s = useState(''), subj = _s[0], setSubj = _s[1];
+    const _p = useState(''), pred = _p[0], setPred = _p[1];
+    const _o = useState(''), obj = _o[0], setObj = _o[1];
+    function load() { fetch('/api/kg/facts/as-of?date=' + encodeURIComponent(date || '')).then(function (r) { return r.json(); }).then(function (d) { setFacts(d.facts || []); }).catch(function () { setFacts([]); }); }
+    useEffect(function () { load(); }, []);
+    function add() {
+      if (!subj || !pred || !obj) return;
+      api('/api/kg/facts', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ subject: subj, predicate: pred, object: obj }) })
+        .then(function () { setSubj(''); setPred(''); setObj(''); load(); }).catch(function (e) { alert(e); });
+    }
+    const body = h('div', null,
+      h('div', { className: 'tool-form' }, h('input', { className: 'tool-input', placeholder: 'as-of date YYYY-MM-DD (blank = now)', value: date, onChange: function (e) { setDate(e.target.value); } }), Btn('Recall', load, 'ok')),
+      h('div', { className: 'tool-form' },
+        h('input', { className: 'tool-input', placeholder: 'subject', value: subj, onChange: function (e) { setSubj(e.target.value); } }),
+        h('input', { className: 'tool-input', placeholder: 'predicate', value: pred, onChange: function (e) { setPred(e.target.value); } }),
+        h('input', { className: 'tool-input', placeholder: 'object', value: obj, onChange: function (e) { setObj(e.target.value); } }),
+        Btn('Add fact', add)),
+      facts == null ? Empty('…') : (facts.length ? facts.map(function (f, i) { return h('div', { key: i, className: 'tool-card-text' }, f.subject + ' · ' + f.predicate + ' · ' + f.object); }) : Empty('No facts.')));
+    return Tool('Knowledge Graph', 'Bi-temporal facts · recall as-of a date', body, null);
+  }
+
+  function EntitiesPanel() {
+    const _ = useApi('/api/memory/entities', true), s = _[0], reload = _[1];
+    let body;
+    if (s.err) body = Err(s.err); else if (s.loading) body = Empty('Loading…');
+    else { const e = s.data.entities || []; body = e.length ? e.map(function (x, i) { return h('div', { key: i, className: 'tool-card-text' }, x.name + ' · ' + x.type + ' · ' + x.mentions + ' mentions'); }) : Empty('No entities.'); }
+    return Tool('Entities', 'People · projects · places · concepts', body, Btn('↻', reload));
+  }
+
+  function DecayPanel() {
+    const _ = useApi('/api/memory/decay/ranking', true), s = _[0], reload = _[1];
+    const body = s.err ? Err(s.err) : (s.loading ? Empty('Loading…') : Pre((s.data.ranking || []).slice(0, 30)));
+    return Tool('Decay & Forgetting', 'ACT-R activation ranking (read-only)', body, Btn('↻', reload));
+  }
+
+  function MemorySearchPanel() {
+    const _q = useState(''), q = _q[0], setQ = _q[1];
+    const _r = useState(null), res = _r[0], setRes = _r[1];
+    function search() { fetch('/api/memory/search?q=' + encodeURIComponent(q) + '&top_k=8').then(function (r) { return r.json(); }).then(setRes).catch(function (e) { setRes({ error: String(e) }); }); }
+    const body = h('div', null,
+      h('div', { className: 'tool-form' }, h('input', { className: 'tool-input', placeholder: 'search memory…', value: q, onChange: function (e) { setQ(e.target.value); } }), Btn('Search', search, 'ok')),
+      res && Pre(res));
+    return Tool('Memory Search', 'Vector recall over stored memory', body, null);
+  }
+
   /* ── tool registry ─────────────────────────────────────────────────────── */
   const TOOLS = [
     { id: 'health', group: 'Observability', label: 'Component Health', render: function (p) { return h(HealthPanel, p); } },
@@ -212,6 +261,10 @@
     { id: 'learning', group: 'Autonomy', label: 'Learning Loop', render: function (p) { return h(LearningPanel, p); } },
     { id: 'notes', group: 'Workspace', label: 'Conversation Notes', render: function (p) { return h(NotesPanel, p); } },
     { id: 'rooms', group: 'Workspace', label: 'Chat Rooms', render: function (p) { return h(RoomsPanel, p); } },
+    { id: 'memsearch', group: 'Memory', label: 'Memory Search', render: function (p) { return h(MemorySearchPanel, p); } },
+    { id: 'kg', group: 'Memory', label: 'Knowledge Graph', render: function (p) { return h(KGPanel, p); } },
+    { id: 'entities', group: 'Memory', label: 'Entities', render: function (p) { return h(EntitiesPanel, p); } },
+    { id: 'decay', group: 'Memory', label: 'Decay & Forgetting', render: function (p) { return h(DecayPanel, p); } },
   ];
   window.JARVIS_TOOLS = TOOLS;
 
