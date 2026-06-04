@@ -6,6 +6,7 @@ skills system, checkpointing, agent handoff, promotion/demotion.
 
 import asyncio
 import logging
+import importlib
 import os
 import time
 from pathlib import Path
@@ -102,135 +103,50 @@ class Orchestrator:
         self.llm_router = HybridRouter(gemini_api_key=gemini_key, anthropic_api_key=anthropic_key)
         self.context_cache = ContextCache(api_key=gemini_key) if gemini_key else None
         self.memory = MemoryManager()
-        # H8.1b: searchable named-entity store (people/projects/places/concepts).
-        try:
-            from .memory.entity import EntityStore
-            self.entities = EntityStore()
-        except Exception:
-            logger.warning("EntityStore init failed — entity memory disabled", exc_info=True)
-            self.entities = None
-        # H14.1: bi-temporal KG (valid-time + ingested-at; contradictions invalidate).
-        try:
-            from .memory.bitemporal import BiTemporalKG
-            self.bitemporal = BiTemporalKG()
-        except Exception:
-            logger.warning("BiTemporalKG init failed — bi-temporal KG disabled", exc_info=True)
-            self.bitemporal = None
-        # H17.3: capability tokens + out-of-band kill-switch (non-escalatable).
-        try:
-            from .security.capability import CapabilityBroker, KillSwitch
-            self.capabilities = CapabilityBroker()
-            self.kill_switch = KillSwitch()
-        except Exception:
-            logger.warning("Capability/kill-switch init failed", exc_info=True)
-            self.capabilities = None
-            self.kill_switch = None
-        # H17.4: signed intent log + external transparency anchor for the audit chain.
-        try:
-            from .security.anchor import IntentLog, TransparencyAnchor
-            self.intent_log = IntentLog()
-            self.transparency = TransparencyAnchor()
-        except Exception:
-            logger.warning("Intent log / transparency anchor init failed", exc_info=True)
-            self.intent_log = None
-            self.transparency = None
-        # H10.19: blind model-comparison arena (win-rate + ELO leaderboard).
-        try:
-            from .arena import Arena
-            self.arena = Arena()
-        except Exception:
-            logger.warning("Arena init failed — model arena disabled", exc_info=True)
-            self.arena = None
-        # H10.23: live quality monitor (per-request score + threshold alert).
-        try:
-            from .observability.quality import QualityMonitor
-            self.quality = QualityMonitor()
-        except Exception:
-            logger.warning("QualityMonitor init failed — quality monitor disabled", exc_info=True)
-            self.quality = None
-        # H10.1: embeddable chat-widget token store.
-        try:
-            from .widget import WidgetStore
-            self.widgets = WidgetStore()
-        except Exception:
-            logger.warning("WidgetStore init failed — chat widget disabled", exc_info=True)
-            self.widgets = None
-        # H14.3: sleep-time memory consolidation (Mem0-style ADD/UPDATE/DELETE/NOOP).
-        try:
-            from .memory.consolidation import ConsolidationEngine
-            self.consolidation = ConsolidationEngine()
-        except Exception:
-            logger.warning("ConsolidationEngine init failed", exc_info=True)
-            self.consolidation = None
-        # H10.20: themed chat rooms (per project/context, @mention routing).
-        try:
-            from .rooms import RoomStore
-            self.rooms = RoomStore()
-        except Exception:
-            logger.warning("RoomStore init failed — chat rooms disabled", exc_info=True)
-            self.rooms = None
-        # H10.18: action-level approval queue (pending tool-calls, sub-task grain).
-        try:
-            from .autonomy.action_approvals import ActionApprovalQueue
-            self.action_approvals = ActionApprovalQueue(path="memory_logs/action_approvals.json")
-        except Exception:
-            logger.warning("ActionApprovalQueue init failed", exc_info=True)
-            self.action_approvals = None
-        # H10.21: conversation notes (persistent per-session context scratchpad).
-        try:
-            from .notes import NotesStore
-            self.notes = NotesStore()
-        except Exception:
-            logger.warning("NotesStore init failed — conversation notes disabled", exc_info=True)
-            self.notes = None
-        # H10.25: human review queue (flagged traces → rubric + thumbs vote).
-        try:
-            from .observability.review_queue import ReviewQueue
-            self.review_queue = ReviewQueue()
-        except Exception:
-            logger.warning("ReviewQueue init failed — review queue disabled", exc_info=True)
-            self.review_queue = None
-        # H15.4: secret broker — JIT credential injection behind approval.
-        try:
+
+        # ── optional components via the registry (A2: tames the god-object) ──
+        from .component_registry import ComponentRegistry
+        self.components = ComponentRegistry(self, logger)
+        reg = self.components
+
+        def _capabilities():
+            m = importlib.import_module(".security.capability", "agents.core")
+            return m.CapabilityBroker(), m.KillSwitch()
+
+        def _audit_anchor():
+            m = importlib.import_module(".security.anchor", "agents.core")
+            return m.IntentLog(), m.TransparencyAnchor()
+
+        def _secret_broker():
             from .security.secret_broker import SecretBroker
             try:
                 from .secrets import SecretStore
-                self.secret_broker = SecretBroker(SecretStore())
+                return SecretBroker(SecretStore())
             except Exception:
-                self.secret_broker = SecretBroker()   # in-memory fallback
-        except Exception:
-            logger.warning("SecretBroker init failed — secret broker disabled", exc_info=True)
-            self.secret_broker = None
-        # H14.4: decay-based forgetting (ACT-R activation ranking + dep-aware delete).
-        try:
-            from .memory.decay import DecayMemory
-            self.decay = DecayMemory()
-        except Exception:
-            logger.warning("DecayMemory init failed — decay forgetting disabled", exc_info=True)
-            self.decay = None
-        # H12.6: incremental per-turn KG updater (writes triples to the live graph).
-        try:
-            from .memory.incremental import IncrementalKGUpdater
-            self.kg_updater = IncrementalKGUpdater(
-                getattr(self.memory, "graph", None), bitemporal=self.bitemporal,
-            )
-        except Exception:
-            logger.warning("IncrementalKGUpdater init failed — incremental KG disabled", exc_info=True)
-            self.kg_updater = None
-        # H10.17: per-agent run history timeline.
-        try:
-            from .run_history import RunHistory
-            self.run_history = RunHistory()
-        except Exception:
-            logger.warning("RunHistory init failed — run history disabled", exc_info=True)
-            self.run_history = None
-        # H10.22: SOUL.md / system-prompt version control (history, diff, A/B).
-        try:
-            from .soul_versioning import SoulVersionStore
-            self.soul_versions = SoulVersionStore()
-        except Exception:
-            logger.warning("SoulVersionStore init failed — prompt VC disabled", exc_info=True)
-            self.soul_versions = None
+                return SecretBroker()   # in-memory fallback
+
+        reg.add("entities", ".memory.entity", "EntityStore", label="entity memory")           # H8.1b
+        reg.add("bitemporal", ".memory.bitemporal", "BiTemporalKG", label="bi-temporal KG")    # H14.1
+        reg.register_group(("capabilities", "kill_switch"), _capabilities, "capability/kill-switch")  # H17.3
+        reg.register_group(("intent_log", "transparency"), _audit_anchor, "audit anchor")      # H17.4
+        reg.add("arena", ".arena", "Arena", label="model arena")                               # H10.19
+        reg.add("quality", ".observability.quality", "QualityMonitor", label="quality monitor")  # H10.23
+        reg.add("widgets", ".widget", "WidgetStore", label="chat widget")                      # H10.1
+        reg.add("consolidation", ".memory.consolidation", "ConsolidationEngine", label="consolidation")  # H14.3
+        reg.add("rooms", ".rooms", "RoomStore", label="chat rooms")                            # H10.20
+        reg.add("action_approvals", ".autonomy.action_approvals", "ActionApprovalQueue",
+                path="memory_logs/action_approvals.json", label="action approvals")            # H10.18
+        reg.add("notes", ".notes", "NotesStore", label="conversation notes")                   # H10.21
+        reg.add("review_queue", ".observability.review_queue", "ReviewQueue", label="review queue")  # H10.25
+        reg.register("secret_broker", _secret_broker, "secret broker")                         # H15.4
+        reg.add("decay", ".memory.decay", "DecayMemory", label="decay forgetting")             # H14.4
+        reg.register("kg_updater", lambda: importlib.import_module(  # H12.6
+            ".memory.incremental", "agents.core").IncrementalKGUpdater(
+            getattr(self.memory, "graph", None), bitemporal=self.bitemporal),
+            "incremental KG")
+        reg.add("run_history", ".run_history", "RunHistory", label="run history")              # H10.17
+        reg.add("soul_versions", ".soul_versioning", "SoulVersionStore", label="prompt VC")    # H10.22
+        # ── end optional components ──
         self.plugins: dict = {}
         self.skills = SkillLoader()
         self.skill_importer = SkillImporter()
@@ -768,6 +684,7 @@ class Orchestrator:
             _ll = asyncio.create_task(run_learning_loop(self))
             _ll.add_done_callback(_log_task_result)
         logger.info(f"Channels started: {list(self.channels.keys())}")
+        logger.info("Components: %s", self.components.summary())  # A8: startup health report
 
     async def stop_channels(self):
         for cid, ch in self.channels.items():
