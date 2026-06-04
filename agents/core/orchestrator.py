@@ -810,7 +810,12 @@ class Orchestrator:
         self._schedule_learning_loop()
         self._autonomy_task = asyncio.create_task(self._autonomy_loop())
         self._autonomy_task.add_done_callback(_log_task_result)
-        if hasattr(self, 'oracle_bridge') and os.getenv("JARVIS_TESTING") != "1":
+        # Oracle GitHub watcher is OFF by default: it polls a GitHub repo every 30s,
+        # which a privacy-first local product should not do unsolicited. It's a
+        # dev/dogfooding feature — enable with JARVIS_ORACLE_WATCH=1 or the
+        # `oracle.watch_enabled` setting.
+        _oracle_watch = os.getenv("JARVIS_ORACLE_WATCH") == "1" or self.get_setting("oracle.watch_enabled", False)
+        if hasattr(self, 'oracle_bridge') and os.getenv("JARVIS_TESTING") != "1" and _oracle_watch:
             self.oracle_bridge.start_watcher()
         if os.getenv("JARVIS_TESTING") != "1":
             from agents.core.learning_loop import run_learning_loop
