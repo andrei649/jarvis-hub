@@ -131,6 +131,55 @@ async def _user_guard(request: Request):
         )
 
 
+# ── Rate limiting (HF-2) ──────────────────────────────────────────
+# Per-IP HTTP rate limit — defense-in-depth on top of the per-channel gateway
+# limiter and the HF-1 auth guard: it dampens DoS and brute-force (e.g. guessing
+# a user/admin token) from unauthenticated network clients. Localhost and
+# *validly* authenticated requests are exempt, so the single-user HUD is never
+# throttled — but a wrong-token attempt is NOT exempt, so token guessing is
+# rate-limited. Fixed 60s window; JARVIS_RATE_LIMIT=0 disables it.
+try:
+    RATE_LIMIT_PER_MIN = int(os.environ.get("JARVIS_RATE_LIMIT", "120"))
+except ValueError:
+    RATE_LIMIT_PER_MIN = 120
+_RATE_WINDOW = 60.0
+_RATE_MAX_IPS = 4096
+_rate_hits: dict[str, list[float]] = {}
+
+
+def _client_ip(request: Request) -> str:
+    """Best-effort client IP: behind a proxy trust the first X-Forwarded-For hop
+    (the proxy must set it), otherwise the socket peer."""
+    xff = request.headers.get("x-forwarded-for", "")
+    if xff:
+        return xff.split(",")[0].strip()
+    return request.client.host if request.client else ""
+
+
+def _request_is_authed(request: Request) -> bool:
+    """True only if the request carries a *valid* user or admin token."""
+    ut = request.headers.get("x-user-token", "")
+    if USER_TOKEN and ut and secrets.compare_digest(ut, USER_TOKEN):
+        return True
+    at = request.headers.get("x-admin-token", "")
+    if ADMIN_TOKEN and at and secrets.compare_digest(at, ADMIN_TOKEN):
+        return True
+    return False
+
+
+def _rate_limited(ip: str, now: float) -> bool:
+    """Record a hit for *ip*; return True once it exceeds the per-minute limit."""
+    hits = _rate_hits.get(ip)
+    if hits is None:
+        if len(_rate_hits) >= _RATE_MAX_IPS:
+            _rate_hits.clear()  # crude cap — bounds memory under X-Forwarded-For spoofing
+        hits = _rate_hits[ip] = []
+    cutoff = now - _RATE_WINDOW
+    hits[:] = [t for t in hits if t >= cutoff]
+    hits.append(now)
+    return len(hits) > RATE_LIMIT_PER_MIN
+
+
 orch: Orchestrator = None
 gateway: Gateway = None
 
@@ -216,6 +265,21 @@ async def lifespan(application: FastAPI):
 
 app = FastAPI(title="Jarvis", version="0.5.0-beta", lifespan=lifespan)
 
+# CORS (HF-2): same-origin only by default — with no header the browser blocks
+# cross-origin reads, which is what we want. Set
+# JARVIS_CORS_ORIGINS=https://a.example,https://b.example to allow specific
+# origins (e.g. a site hosting an embedded widget). Empty = unchanged behaviour.
+_cors_origins = [o.strip() for o in os.environ.get("JARVIS_CORS_ORIGINS", "").split(",") if o.strip()]
+if _cors_origins:
+    from fastapi.middleware.cors import CORSMiddleware
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=_cors_origins,
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
+
 
 @app.exception_handler(JarvisError)
 async def jarvis_error_handler(request: Request, exc: JarvisError):
@@ -259,6 +323,22 @@ async def _no_store_for_polling(request: Request, call_next):
     if request.url.path in _NO_STORE_PATHS:
         response.headers["Cache-Control"] = "no-store"
     return response
+
+
+@app.middleware("http")
+async def _rate_limit(request: Request, call_next):
+    """HF-2: throttle unauthenticated network clients (DoS / token brute-force)."""
+    if RATE_LIMIT_PER_MIN > 0:
+        ip = _client_ip(request)
+        if ip not in _LOCALHOSTS and not _request_is_authed(request):
+            if _rate_limited(ip, time.time()):
+                logger.warning("Rate limit exceeded for %s on %s", ip, request.url.path)
+                return JSONResponse(
+                    {"error": "rate limit exceeded", "code": 429},
+                    status_code=429,
+                    headers={"Retry-After": str(int(_RATE_WINDOW))},
+                )
+    return await call_next(request)
 
 
 def _uptime_str() -> str:
