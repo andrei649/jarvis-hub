@@ -14,6 +14,12 @@ os.environ.setdefault("JARVIS_TESTING", "1")
 from fastapi import APIRouter, FastAPI
 
 repo_root = Path(__file__).resolve().parent.parent
+
+# HF-5: keep the audit signing key out of the real ~/.config during tests — point
+# it at a gitignored repo-local dir so IntentLog() (constructed by the orchestrator)
+# doesn't write to the developer's home. Tests that exercise key resolution set
+# JARVIS_KEY_DIR themselves to an isolated tmp path.
+os.environ.setdefault("JARVIS_KEY_DIR", str(repo_root / "memory_logs" / ".keys"))
 sys.path.insert(0, str(repo_root))
 sys.path.insert(0, str(repo_root / "agents"))
 
