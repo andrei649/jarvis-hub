@@ -248,6 +248,83 @@
     return Tool('Memory Search', 'Vector recall over stored memory', body, null);
   }
 
+  /* ── Tools / Dev ───────────────────────────────────────────────────────── */
+  function WidgetsPanel() {
+    const _d = useState(null), data = _d[0], setData = _d[1];
+    const _t = useState(''), title = _t[0], setTitle = _t[1];
+    function load() { adminFetch('/api/admin/widgets').then(function (d) { setData(d.widgets || []); }).catch(function (e) { setData({ err: e.message }); }); }
+    useEffect(function () { load(); }, []);
+    function create() { adminFetch('/api/admin/widgets', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ title: title || 'Jarvis' }) }).then(function () { setTitle(''); load(); }).catch(function (e) { alert(e.message); }); }
+    function del(tok) { adminFetch('/api/admin/widgets/' + tok, { method: 'DELETE' }).then(load).catch(function (e) { alert(e.message); }); }
+    let body;
+    if (data && data.err) body = Err(data.err);
+    else if (data == null) body = Empty('Loading…');
+    else body = h('div', null,
+      h('div', { className: 'tool-form' }, h('input', { className: 'tool-input', placeholder: 'widget title', value: title, onChange: function (e) { setTitle(e.target.value); } }), Btn('Issue token', create, 'admin')),
+      data.length ? data.map(function (w) { return h('div', { key: w.token, className: 'tool-card' }, h('span', { className: 'tool-card-text' }, (w.title || 'Jarvis') + ' · embed /api/widget/' + (w.token || '…')), Btn('Revoke', function () { del(w.token); }, 'bad')); }) : Empty('No widgets.'));
+    return Tool('Embeddable Widgets', 'Per-site chat widget tokens (admin)', body, Btn('↻', load));
+  }
+
+  function GrammarPanel() {
+    const _t = useState('{\n  "type": "object",\n  "properties": {"city": {"type": "string"}},\n  "required": ["city"]\n}'), txt = _t[0], setTxt = _t[1];
+    const _o = useState(''), out = _o[0], setOut = _o[1];
+    function gen() {
+      let schema; try { schema = JSON.parse(txt); } catch (e) { setOut('invalid JSON: ' + e); return; }
+      fetch('/api/llm/grammar', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ schema: schema }) }).then(function (r) { return r.json(); }).then(function (d) { setOut(d.gbnf || d.error || ''); }).catch(function (e) { setOut(String(e)); });
+    }
+    const body = h('div', null,
+      h('textarea', { className: 'tool-input', style: { width: '100%', minHeight: '120px', fontFamily: 'monospace' }, value: txt, onChange: function (e) { setTxt(e.target.value); } }),
+      h('div', { style: { margin: '6px 0' } }, Btn('Generate GBNF', gen, 'ok')), out && Pre(out));
+    return Tool('Constrained Decoding', 'JSON schema → GBNF grammar', body, null);
+  }
+
+  function MCPPanel() {
+    const _ = useApi('/api/mcp/server', true), s = _[0], reload = _[1];
+    const _t = useState(''), tok = _t[0], setTok = _t[1];
+    function issue() { adminFetch('/api/mcp/token', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ scopes: ['mcp'] }) }).then(function (d) { setTok(d.token || ''); }).catch(function (e) { alert(e.message); }); }
+    const body = h('div', null,
+      s.err ? Err(s.err) : (s.loading ? Empty('…') : Pre(s.data)),
+      h('div', { style: { margin: '6px 0' } }, Btn('Issue local token (admin)', issue, 'admin')),
+      tok && Pre(tok));
+    return Tool('MCP Server', 'Expose agents as governed MCP tools', body, Btn('↻', reload));
+  }
+
+  function SecretsPanel() {
+    const _n = useState(null), names = _n[0], setNames = _n[1];
+    const _k = useState(''), nm = _k[0], setNm = _k[1];
+    const _v = useState(''), val = _v[0], setVal = _v[1];
+    function load() { adminFetch('/api/secrets/broker').then(function (d) { setNames(d.names || []); }).catch(function (e) { setNames({ err: e.message }); }); }
+    useEffect(function () { load(); }, []);
+    function add() { if (!nm || !val) return; adminFetch('/api/secrets/broker', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: nm, value: val }) }).then(function () { setNm(''); setVal(''); load(); }).catch(function (e) { alert(e.message); }); }
+    function del(name) { adminFetch('/api/secrets/broker/' + encodeURIComponent(name), { method: 'DELETE' }).then(load).catch(function (e) { alert(e.message); }); }
+    let body;
+    if (names && names.err) body = Err(names.err);
+    else if (names == null) body = Empty('Loading…');
+    else body = h('div', null,
+      h('div', { className: 'tool-form' }, h('input', { className: 'tool-input', placeholder: 'name', value: nm, onChange: function (e) { setNm(e.target.value); } }), h('input', { className: 'tool-input', type: 'password', placeholder: 'value', value: val, onChange: function (e) { setVal(e.target.value); } }), Btn('Store', add, 'admin')),
+      h('div', { className: 'tool-hint' }, 'Reference {{secret:NAME}} in agent configs — value injected only at action time, behind approval.'),
+      names.length ? names.map(function (name) { return h('div', { key: name, className: 'tool-card' }, h('span', { className: 'tool-card-text' }, '🔑 ' + name), Btn('Delete', function () { del(name); }, 'bad')); }) : Empty('No secrets stored.'));
+    return Tool('Secret Broker', 'JIT credential injection — names only, never values', body, Btn('↻', load));
+  }
+
+  function WebhooksPanel() {
+    const _ = useApi('/api/webhooks', true), s = _[0], reload = _[1];
+    const _t = useState('jarvis'), target = _t[0], setTarget = _t[1];
+    const _sg = useState(false), signed = _sg[0], setSigned = _sg[1];
+    const _c = useState(null), created = _c[0], setCreated = _c[1];
+    function create() { api('/api/webhooks', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ target: target, signed: signed }) }).then(function (d) { setCreated(d); reload(); }).catch(function (e) { alert(e); }); }
+    function del(id) { fetch('/api/webhooks/' + id, { method: 'DELETE' }).then(reload).catch(function () {}); }
+    const hooks = s.data ? (s.data.webhooks || []) : [];
+    const body = h('div', null,
+      h('div', { className: 'tool-form' },
+        h('input', { className: 'tool-input', placeholder: 'target agent', value: target, onChange: function (e) { setTarget(e.target.value); } }),
+        h('label', { className: 'tool-hint' }, h('input', { type: 'checkbox', checked: signed, onChange: function (e) { setSigned(e.target.checked); } }), ' HMAC signed'),
+        Btn('Create', create, 'ok')),
+      created && h('div', { className: 'tool-card' }, 'token: ' + (created.token || '') + (created.signing_secret ? (' · secret: ' + created.signing_secret) : ''), h('div', { className: 'tool-hint' }, '(shown once)')),
+      hooks.length ? hooks.map(function (w) { return h('div', { key: w.id, className: 'tool-card' }, h('span', { className: 'tool-card-text' }, (w.name || w.target) + ' → POST /api/webhooks/' + w.id + (w.signed ? ' 🔏' : '')), Btn('Delete', function () { del(w.id); }, 'bad')); }) : Empty('No webhooks.'));
+    return Tool('Webhooks', 'Inbound triggers (optionally HMAC-signed)', body, Btn('↻', reload));
+  }
+
   /* ── tool registry ─────────────────────────────────────────────────────── */
   const TOOLS = [
     { id: 'health', group: 'Observability', label: 'Component Health', render: function (p) { return h(HealthPanel, p); } },
@@ -265,6 +342,11 @@
     { id: 'kg', group: 'Memory', label: 'Knowledge Graph', render: function (p) { return h(KGPanel, p); } },
     { id: 'entities', group: 'Memory', label: 'Entities', render: function (p) { return h(EntitiesPanel, p); } },
     { id: 'decay', group: 'Memory', label: 'Decay & Forgetting', render: function (p) { return h(DecayPanel, p); } },
+    { id: 'widgets', group: 'Tools', label: 'Embeddable Widgets', render: function (p) { return h(WidgetsPanel, p); } },
+    { id: 'grammar', group: 'Tools', label: 'Constrained Decoding', render: function (p) { return h(GrammarPanel, p); } },
+    { id: 'mcp', group: 'Tools', label: 'MCP Server', render: function (p) { return h(MCPPanel, p); } },
+    { id: 'secrets', group: 'Tools', label: 'Secret Broker', render: function (p) { return h(SecretsPanel, p); } },
+    { id: 'webhooks', group: 'Tools', label: 'Webhooks', render: function (p) { return h(WebhooksPanel, p); } },
   ];
   window.JARVIS_TOOLS = TOOLS;
 
