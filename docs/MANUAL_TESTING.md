@@ -1,6 +1,6 @@
 # Manual Testing Guide
 
-> **Why this exists.** The automated suite (1,559 tests) runs fully offline with
+> **Why this exists.** The automated suite (1,632 tests) runs fully offline with
 > mocked LLMs, channels, and hardware. It proves the *logic* is correct, but it
 > **cannot** verify anything that needs a real model, a live channel token, a
 > browser, an external service (Qdrant/Neo4j/n8n), or a human looking at the HUD.
@@ -14,6 +14,52 @@
 
 Legend for coverage: ✅ logic covered by automated tests (you're only checking the
 real-world wiring) · ⚠️ partially covered · ❌ no automated coverage (test carefully).
+
+---
+
+## 0. Run record & 1.0 sign-off
+
+> This runbook **is the human half of the v1.0 gate.** A clean pass — every critical area ✅
+> with no open ❌ blocker — *plus* the green offline suite (**1,632 passed, 1 skipped**) is what
+> clears tagging `v1.0.0`. Record results inline (tick the box; for any ❌/⚠️ add a one-line note
+> and log it in **§K Blockers**). Fill this header on each run.
+
+| Field | Value |
+|---|---|
+| Date / tester | |
+| Build (`/status` version + git sha) | |
+| Hardware | e.g. RTX 5090 box (Bonobo WS) |
+| LLM backend + model | e.g. LM Studio · `google/gemma-4-12b` |
+| Services up | Qdrant ☐ · Neo4j ☐ · n8n ☐ |
+
+| § | Area | Pass / Total | Open blockers |
+|---|---|---|---|
+| ⭐ | Governed demo (§B0) | pass ☐ | |
+| A | Setup & onboarding | / | |
+| B | Core chat & routing | / | |
+| B2 | Per-agent smoke | / 16 | |
+| C | HUD tabs | / | |
+| D | Workflows | / | |
+| E | Autonomy & approvals | / | |
+| F | Channels | / | |
+| G | Security & secrets | / | |
+| H | Memory & RAG | / | |
+| I | Mobile / PWA | / | |
+
+**Sign-off:** ☐ all critical areas pass · ☐ no open ❌ blocker (§K) → **cleared to tag `v1.0.0`.**  Signed: ____________
+
+---
+
+## ⭐ B0. The governed-autonomy demo  (flagship — also your launch demo)
+
+The single end-to-end story that proves the wedge — *capability + governance + audit, visibly, in one flow.* Worth screen-recording (this is your demo GIF / Show-HN clip).
+
+- [ ] Ask Jarvis to do a **real multi-step task with one irreversible step** (e.g. "draft and send an email to <you>", "pay invoice X").
+- [ ] **Reversible** steps run autonomously; the **irreversible** step **blocks** with a decision card (Telegram / HUD) showing a **dry-run preview + irreversibility flag**.
+- [ ] **Approve** it → it executes. Trigger another and **Reject** → it does not.
+- [ ] Open the **audit log** (`/security` / `GET /api/admin/audit`) → every tool call is recorded and hash-chained (tamper-evident).
+- [ ] Hit the **kill-switch** mid-run → autonomy halts immediately.
+- [ ] (Privacy) a **Frigga** (family) interaction makes **zero outbound network calls**.
 
 ---
 
@@ -47,6 +93,29 @@ Prereq: working LLM backend.
 - [ ] **Multi-agent synthesis** 🤖 — A prompt that fans out to several agents
   returns a single coherent synthesized answer.
 - [ ] **Conversation history** ✅ — Reload the HUD; prior turns persist for the session.
+
+---
+
+## B2. Per-agent smoke  🤖
+
+One signature action per agent against a **real** backend. Tick each; note any that misroute, error, or claim a capability they don't have.
+
+- [ ] **Jarvis** — synthesizes a multi-domain prompt into one coherent answer
+- [ ] **Friday** — morning brief (weather + news + market signal)
+- [ ] **Pepper** — calendar read + Gmail triage summary 🔑
+- [ ] **Jerome** — Spotify now-playing / playback control 🔑
+- [ ] **Athena** — a strategy / brand answer (cloud-escalated) 🤖
+- [ ] **Stark** — a KPI / analytics summary
+- [ ] **Veronica** — drafts a post/email in a chosen voice profile
+- [ ] **Vision** — a **cited** web-research synthesis 🔑
+- [ ] **Steve** — system-health report (CPU/GPU/RAM/temp)
+- [ ] **Oracle** — an n8n workflow action 🔑
+- [ ] **Ultron** — a security / port-scan / threat note
+- [ ] **Gecko** — a balance read (ING/Libra/CSV) — **confirm the IBAN is masked (`…NNNN`)**
+- [ ] **Hercules** — health/fitness (sleep / HRV / steps) 🔑
+- [ ] **Hephaestus** — a project / PM status update
+- [ ] **Frigga** — a family record — **confirm strict-local: zero network calls**
+- [ ] **Howard** — personal-twin recall / RAG answer
 
 ---
 
@@ -184,11 +253,22 @@ Each needs a real token/account and a live round-trip (send → receive → repl
 
 ## J. Regression smoke (each release)
 
-- [ ] `pytest tests/` is green. **Note:** `tests/test_heartbeat.py` (4 tests)
-  requires the optional **`apscheduler`** package — `pip install apscheduler`
-  (or `pip install -e .[autonomy]`) or those 4 will fail locally. CI has it.
+- [ ] `pytest tests/` is green — **1,632 passed, 1 skipped** (the 1 skip is the optional
+  heartbeat path). `apscheduler` is bundled in `requirements-beta.txt`, so the suite runs
+  clean from the one-command install (`./install.sh` / `INSTALL.bat`).
 - [ ] `GET /status` → `ok`. HUD loads. A chat round-trip works.
 - [ ] No secrets in logs (grep the log for any planted secret value).
+
+---
+
+## K. Blockers found  (fill during the run)
+
+| # | § | Severity | What broke | Repro | Owner / fix |
+|---|---|----------|------------|-------|-------------|
+|   |   |          |            |       |             |
+
+**1.0 sign-off rule:** the run clears `v1.0.0` when this table has **no open blocker** — every
+row is either fixed or explicitly accepted as out-of-1.0 scope (say which).
 
 ---
 
