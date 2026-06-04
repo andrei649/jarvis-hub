@@ -25,7 +25,8 @@ class FakeBackend(LLMBackend):
 # ── Tokenizer ──────────────────────────────────────────────────────────
 
 def test_estimate_tokens_empty():
-    assert estimate_tokens("") == 1
+    # "" → 0 tokens with a real tokenizer (tiktoken), 1 with the char fallback (len//4 + 1)
+    assert estimate_tokens("") in (0, 1)
 
 
 def test_estimate_tokens_short():

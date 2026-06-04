@@ -22,6 +22,7 @@ step was never required to run.
 | 2 | **INSTALL.bat update path is broken.** `git pull --rebase origin master` (×2), but the default branch is **`main`** → fails on any re-run over an existing checkout. | Bug | `master` → `main` (UPDATE.bat already used `main`). |
 | 3 | **No venv guidance for Linux/macOS.** The "Manual (any OS)" path runs `pip install` against system Python → on modern Debian/Ubuntu/Homebrew it hits PEP-668 "externally-managed-environment" / "Cannot uninstall PyYAML" (**reproduced on this box**). | Friction | Added `python3 -m venv .venv && source ...` to the Quickstart. |
 | 4 | **Stale boot banner.** `serve.py` printed `v0.9.2` (project is 9.9.9). | Doc-truth | Dropped the hard-coded version from the banner. |
+| 5 | **Folding in `tiktoken` flips `estimate_tokens("")` from 1 (char fallback) to 0 (real tokenizer)**, tripping a brittle test that pinned `== 1`. | Test fix | Relaxed `test_estimate_tokens_empty` to `in (0, 1)` (matches its sibling tests' ranges). Caught by CI — **not** reproducible offline because tiktoken's vocab download is blocked in the sandbox, so it silently falls back. |
 
 ## Noted, not changed
 - `requirements-beta.txt` still carries dev deps (`pytest*`) because INSTALL/UPDATE run the suite as a verify step. Splitting runtime vs dev requirements is a possible follow-up.
