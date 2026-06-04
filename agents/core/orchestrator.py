@@ -8,6 +8,7 @@ import asyncio
 import logging
 import importlib
 import os
+import re
 import time
 from pathlib import Path
 from typing import Callable, Optional
@@ -93,6 +94,124 @@ HANDOFF_PREFIX = "[handoff:"
 SKILL_PREFIX = "[learn:"
 
 
+# ── Natural-language LLM-backend control (start / load / unload / status) ─────
+# Lets a chat message drive LMStudioController. Deliberately conservative: a
+# load needs a *plausible* model token, so ordinary phrases like "load up our
+# friends and test them" never trigger a model load. Status questions that slip
+# through still get answered truthfully by the normal chat path (the runtime
+# state block injects the real model), so missing one here is harmless.
+
+_LLM_PREFIX_RE = re.compile(r"^\s*(?:llm|lm[\s\-]?studio)\b[:\s]+(.+)$", re.IGNORECASE)
+_MODEL_FAMILY_RE = re.compile(
+    r"(gemma|qwen|deepseek|llama|mistral|mixtral|phi|gpt|granite|nemotron|smol|yi|command-?r|qwq)",
+    re.IGNORECASE,
+)
+_LOAD_VERB_RE = re.compile(r"\b(load|reload|încarc|incarc|switch|schimb)\w*\b", re.IGNORECASE)
+_START_RE = re.compile(r"\b(start|launch|boot|pornes\w*|porneșt\w*)\b", re.IGNORECASE)
+_UNLOAD_RE = re.compile(r"\b(unload|descarc)\w*\b", re.IGNORECASE)
+_LLM_NOUN_RE = re.compile(r"\b(lm[\s\-]?studio|llm|language model|model|brain|creier|server)\b", re.IGNORECASE)
+_START_TARGET_RE = re.compile(r"\b(lm[\s\-]?studio|llm|language (?:model|server)|the server)\b", re.IGNORECASE)
+_STATUS_RE = re.compile(
+    r"\bwhat are you running\b"
+    r"|\b(?:what|which|ce)\b[^?.!]{0,40}\b(?:llm|lm[\s\-]?studio|language model|ai model|brain|creier)\b"
+    r"|\b(?:what|which|ce)\b[^?.!]{0,30}\bmodel\b[^?.!]{0,30}\b(?:you|run|running|loaded|using|use|rulez\w*|folos\w*|încărc\w*|incarc\w*|activ)\b"
+    r"|\bmodel\b[^?.!]{0,20}\b(?:loaded|running|active|încărcat|incarcat)\b",
+    re.IGNORECASE,
+)
+_MODEL_TOKEN_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9._/:@\-]{1,199}")
+_MODEL_STOPWORDS = {
+    "the", "a", "an", "model", "models", "modelul", "modele", "up", "please", "sir",
+    "to", "into", "my", "our", "your", "new", "llm", "lm", "studio", "lmstudio",
+    "load", "reload", "unload", "switch", "use", "start", "server", "and", "test",
+    "them", "on", "with", "running", "loaded", "active", "now", "current", "default",
+}
+
+
+def _is_plausible_model(tok: str) -> bool:
+    """A model id either looks structured (digit / path / quant) or names a known family."""
+    return bool(re.search(r"[0-9/:@]", tok) or _MODEL_FAMILY_RE.search(tok))
+
+
+def _extract_model(s: str) -> Optional[str]:
+    for tok in _MODEL_TOKEN_RE.findall(s or ""):
+        if tok.lower() in _MODEL_STOPWORDS:
+            continue
+        if _is_plausible_model(tok):
+            return tok
+    return None
+
+
+def _env_flag(name: str, default: bool = True) -> bool:
+    raw = os.environ.get(name)
+    if raw is None or raw.strip() == "":
+        return default
+    return raw.strip().lower() not in ("0", "false", "no", "off", "disable", "disabled")
+
+
+def _as_bool(value, default: bool = True) -> bool:
+    """Coerce a runtime-settings value (bool / int / "true" / "off" / ...) to bool."""
+    if value is None:
+        return default
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float)):
+        return value != 0
+    return str(value).strip().lower() not in ("0", "false", "no", "off", "disable", "disabled", "")
+
+
+def detect_llm_control(text: str) -> Optional[tuple[str, Optional[str]]]:
+    """Detect a chat request to control the LLM backend.
+
+    Returns (action, model) where action ∈ {status, start, load, unload} and
+    model is an optional id, or None if the message is not LLM control.
+    """
+    if not text or not text.strip():
+        return None
+    t = text.strip()
+
+    # Explicit "llm <sub> [args]" / "lm studio <sub>" command form.
+    m = _LLM_PREFIX_RE.match(t)
+    if m:
+        rest = m.group(1).strip()
+        sub, _, arg = rest.partition(" ")
+        sub = sub.lower()
+        if sub in ("status", "state", "ps", "info"):
+            return ("status", None)
+        if sub in ("start", "up", "boot", "launch"):
+            return ("start", None)
+        if sub in ("unload", "stop"):
+            return ("unload", _extract_model(arg))
+        if sub in ("load", "use", "switch"):
+            return ("load", _extract_model(arg))
+        # Unknown sub-command: only act if it names a model ("llm gemma"),
+        # otherwise let normal chat handle it (avoids "lm studio is great").
+        model = _extract_model(rest)
+        return ("load", model) if model else None
+
+    low = t.lower()
+
+    if _UNLOAD_RE.search(low):
+        model = _extract_model(low)
+        if model or _LLM_NOUN_RE.search(low):
+            return ("unload", model)
+
+    if _START_RE.search(low) and _START_TARGET_RE.search(low):
+        return ("start", None)
+
+    if _LOAD_VERB_RE.search(low):
+        model = _extract_model(low)
+        if model and (_LLM_NOUN_RE.search(low) or _is_plausible_model(model)):
+            return ("load", model)
+
+    if _STATUS_RE.search(low):
+        return ("status", None)
+
+    return None
+
+
+
+
+
 class Orchestrator:
     def __init__(self, config: JarvisConfig):
         self.config = config
@@ -164,6 +283,15 @@ class Orchestrator:
         self.security: Optional[GuardrailsEngine] = None
         self.permission_gate = PermissionGate()
         self.audit = AuditLogger()
+        # LM Studio lifecycle control (start server / load / unload). Shares the
+        # live router so a model change refreshes routing + reported state.
+        from .llm.lmstudio_control import LMStudioController
+        # enabled is re-synced from live settings in load_runtime_settings(); the
+        # env var is the boot-time default and a hard kill-switch (see docs).
+        self.lmstudio = LMStudioController(
+            router=self.llm_router,
+            enabled=_env_flag("JARVIS_LMSTUDIO_CONTROL", True),
+        )
         self.session_id: Optional[str] = None
         self.on_token: Optional[Callable] = None
         self._runtime_settings: dict = {}
@@ -379,6 +507,11 @@ class Orchestrator:
                     flat[f"{cat}.{item['key']}"] = item["value"]
             self._runtime_settings = flat
             logger.debug(f"Runtime settings loaded: {len(flat)} keys")
+            # Propagate the live kill-switch to the controller (≤30s to take
+            # effect via the settings watcher) — no restart needed to disable.
+            ctrl = getattr(self, "lmstudio", None)
+            if ctrl is not None:
+                ctrl.set_enabled(self._control_master_enabled())
         except Exception as e:
             log_error(logger, E_INTERNAL_UNEXPECTED, component="settings_db", detail=str(e))
 
@@ -756,6 +889,16 @@ class Orchestrator:
                     }
                     return result
 
+        # Natural-language LLM-backend control (start / load / unload / status).
+        if self._chat_control_enabled():
+            llm_ctl = detect_llm_control(text)
+            if llm_ctl:
+                reply = await self._run_llm_control(*llm_ctl)
+                if reply:
+                    await self.memory.add_turn(self.session_id, "assistant", reply, agent_id="jarvis")
+                    self.last_cognition = self._control_cognition(llm_ctl[0])
+                    return reply
+
         t_c0 = time.perf_counter()
         intent = await self.router.classify(text, self.agents)
         t_classify = int((time.perf_counter() - t_c0) * 1000)
@@ -884,6 +1027,18 @@ class Orchestrator:
                     }
                     return result
 
+        # Natural-language LLM-backend control (start / load / unload / status).
+        if self._chat_control_enabled():
+            llm_ctl = detect_llm_control(text)
+            if llm_ctl:
+                reply = await self._run_llm_control(*llm_ctl)
+                if reply:
+                    await self.memory.add_turn(self.session_id, "assistant", reply, agent_id="jarvis")
+                    if on_token:
+                        on_token(reply)
+                    self.last_cognition = self._control_cognition(llm_ctl[0])
+                    return reply
+
         t_c0 = time.perf_counter()
         intent = await self.router.classify(text, self.agents)
         t_classify = int((time.perf_counter() - t_c0) * 1000)
@@ -899,7 +1054,8 @@ class Orchestrator:
             target = self._route_candidates(intent) if intent.target_agents else ["jarvis"]
 
         temperature = self.get_setting("llm.temperature", 0.7)
-        max_tokens = self.get_setting("llm.max_tokens", 1024)
+        max_tokens = self.get_setting("llm.max_tokens", 2048)
+        deep_max_tokens = self.get_setting("llm.deep_max_tokens", 8192)
         context_window = self.get_setting("memory.context_window", 6)
         synthesized = ""
         # Pre-bind so the post-loop persist/audit never hit UnboundLocalError when
@@ -931,9 +1087,10 @@ class Orchestrator:
                         logger.warning(f"Howard RAG stream lookup failed: {e}")
 
                 recall_block = await self._recall_block(text)
+                runtime_block = self._runtime_state_block()
                 prompt = (
                     f"Conversation history:\n{history}\n\n"
-                    f"{plugin_block}{context_block}{rag_block}{recall_block}"
+                    f"{plugin_block}{context_block}{rag_block}{recall_block}{runtime_block}"
                     f"User: {text}\n"
                     f"Respond as {agent.name}."
                 )
@@ -949,7 +1106,11 @@ class Orchestrator:
                         model = router_model
                     if self.security:
                         backend = self.security
-                    logger.info(f"Routing {agent_id} via {route_name} ({estimate_tokens(prompt)} tokens)")
+                    # Reasoning models on the deep slot need a far larger budget:
+                    # 1–2k tokens is consumed by chain-of-thought before any
+                    # answer, so a small cap truncates mid-thought.
+                    eff_max_tokens = deep_max_tokens if route_name == "local-deep" else max_tokens
+                    logger.info(f"Routing {agent_id} via {route_name} ({estimate_tokens(prompt)} tokens, max_tokens={eff_max_tokens})")
                 except RuntimeError:
                     msg = "I'm sorry, sir — my language backend is not available. Please start Ollama or LM Studio and try again."
                     log_error(logger, E_LLM_BACKEND_MISSING, backend="stream")
@@ -988,19 +1149,26 @@ class Orchestrator:
                     response = await backend.generate_stream(
                         model=model, prompt=prompt,
                         system=system_prompt,
-                        max_tokens=max_tokens, temperature=temperature,
+                        max_tokens=eff_max_tokens, temperature=temperature,
                         on_token=on_token,
                     )
                 else:
                     response = await backend.generate(
                         model=model, prompt=prompt, system=system_prompt,
-                        max_tokens=max_tokens, temperature=temperature,
+                        max_tokens=eff_max_tokens, temperature=temperature,
                     )
                     if on_token:
                         on_token(response)
                 synthesized = response
                 break
 
+        # Truncated-before-answer (or otherwise empty) replies must not surface
+        # as a blank bubble. The backend already refuses to leak raw reasoning,
+        # so an empty string here means "no answer was produced".
+        if not (synthesized or "").strip():
+            synthesized = "My reply was cut short before I finished, sir. Try again, or raise the token limit for heavier requests."
+            if on_token:
+                on_token(synthesized)
         await self.memory.add_turn(self.session_id, "assistant", synthesized, agent_id=agent_id)
         await self._maybe_checkpoint()
         _event_stream = SecurityEvent(
@@ -1241,6 +1409,91 @@ class Orchestrator:
             if value:
                 blocks.append(f"[REAL-TIME DATA — {key.upper()}]:\n{value}")
         return "\n\n".join(blocks) + "\n\n" if blocks else ""
+
+    def _runtime_state_block(self) -> str:
+        """Ground-truth runtime facts injected into the prompt so agents report
+        the model/backend that is *actually* serving them instead of inventing
+        one. The active model is auto-detected from the live backend at startup
+        (LLMRouter.detect), so this stays honest when the loaded model changes."""
+        router = getattr(self, "llm_router", None)
+        backend = getattr(router, "name", None) if router else None
+        if not backend or backend == "none":
+            return ""
+        model = getattr(router, "active_model", None) or "unknown"
+        return (
+            "System runtime (ground truth — use this if asked which model, brain, "
+            "or backend you run on; never invent model names or hardware):\n"
+            f"- LLM backend: {backend}\n"
+            f"- Active model: {model}\n\n"
+        )
+
+    def _control_master_enabled(self) -> bool:
+        """Master switch for LM Studio lifecycle control (chat + admin API + HUD).
+        Off if EITHER the env var or the live ``llm.control_enabled`` setting is
+        off, so any single kill signal wins. Both default on."""
+        return (_env_flag("JARVIS_LMSTUDIO_CONTROL", True)
+                and _as_bool(self.get_setting("llm.control_enabled", True)))
+
+    def _chat_control_enabled(self) -> bool:
+        """Whether a natural-language chat message may drive LLM control. Needs the
+        master switch plus its own ``JARVIS_LMSTUDIO_CHAT_CONTROL`` env /
+        ``llm.chat_control`` setting — lets you mute ambient detection while
+        keeping the explicit admin buttons live."""
+        return (self._control_master_enabled()
+                and _env_flag("JARVIS_LMSTUDIO_CHAT_CONTROL", True)
+                and _as_bool(self.get_setting("llm.chat_control", True)))
+
+    def _control_cognition(self, action: str) -> dict:
+        return {
+            "scoring": [],
+            "decision": {"source": "llm-control", "confidence": 1.0,
+                         "agents_selected": ["jarvis"], "alternatives": [],
+                         "timing": {"classify": 0, "route": 0, "total": 0}},
+            "trace": [{"step": "llm_control", "duration_ms": 0, "result": action}],
+        }
+
+    async def _run_llm_control(self, action: str, model: Optional[str]) -> Optional[str]:
+        """Execute a detected LLM-control action via the controller and narrate
+        the real result in Jarvis's voice — it reflects what actually happened,
+        not theatre."""
+        ctrl = getattr(self, "lmstudio", None)
+        if ctrl is None:
+            return "LM Studio control is not available, sir."
+        router = getattr(self, "llm_router", None)
+        backend = getattr(router, "name", None) or "the local backend"
+
+        if action == "status":
+            st = await ctrl.status()
+            if not st.get("online"):
+                return "The language backend is offline, sir. Say 'start LM Studio' and I will bring it up."
+            name = st.get("active_model") or getattr(router, "active_model", None) or "an unidentified model"
+            return f"I am running {name} on {backend}, sir."
+
+        if action == "start":
+            res = await ctrl.start_server()
+            if res.get("status") == "ok":
+                return "LM Studio is already running, sir." if res.get("already_running") else "LM Studio is up, sir."
+            return f"I could not start LM Studio, sir — {res.get('reason') or 'the server did not come up'}."
+
+        if action == "load":
+            if not model:
+                return "Which model would you like me to load, sir?"
+            res = await ctrl.load_model(model)
+            status = res.get("status")
+            if status == "ok":
+                active = getattr(router, "active_model", None) or model
+                return f"Loaded and running {active}, sir."
+            if status == "rejected":
+                return f"That is not a valid model id, sir: {model!r}."
+            return f"I could not load {model}, sir — {res.get('reason') or 'the load failed'}."
+
+        if action == "unload":
+            res = await ctrl.unload_model(model)
+            if res.get("status") == "ok":
+                return "Unloaded, sir." if model else "All models unloaded, sir."
+            return f"I could not unload, sir — {res.get('reason') or 'the unload failed'}."
+
+        return None
 
     async def _recall_block(self, text: str) -> str:
         """Long-term memory recall injected into the prompt (RAG, all agents).

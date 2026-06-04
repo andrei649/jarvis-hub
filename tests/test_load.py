@@ -17,7 +17,7 @@ class _FakeConfig:
 
 
 class _FakeBackend:
-    async def generate(self, model="", prompt="", system=""):
+    async def generate(self, model="", prompt="", system="", **kwargs):
         await asyncio.sleep(0.5)
         return "[mock reply]"
 

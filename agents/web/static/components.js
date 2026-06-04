@@ -96,7 +96,7 @@ function TrustIndicator({ trust }) {
   );
 }
 
-function TopBar({ activeAgent, voiceState, agentsOnline, agentsTotal, lmOnline, trust, toggles, version, onOpenConsole }) {
+function TopBar({ activeAgent, voiceState, agentsOnline, agentsTotal, lmOnline, activeModel, trust, toggles, version, onOpenConsole }) {
   return h('header', { className: 'topbar' },
     h('div', { className: 'topbar-left' },
       h('div', { className: 'logo' },
@@ -120,7 +120,7 @@ function TopBar({ activeAgent, voiceState, agentsOnline, agentsTotal, lmOnline, 
       h(TrustIndicator, { trust: trust }),
       h(Badge, { label: 'Voice', value: voiceState.toUpperCase(), kind: voiceState === 'idle' ? 'dim' : 'active' }),
       h(Badge, { label: 'Agents', value: `${agentsOnline}/${agentsTotal}`, kind: 'active' }),
-      h(Badge, { label: _t('comp.lmstudio'), value: lmOnline ? '1234' : _t('comp.offline'), kind: lmOnline ? 'active' : 'alert' }),
+      h(Badge, { label: _t('comp.lmstudio'), value: lmOnline ? ((activeModel && activeModel.split('/').pop()) || '1234') : _t('comp.offline'), kind: lmOnline ? 'active' : 'alert', title: activeModel || '' }),
       // Console = the home for every feature; ⚙ = settings (console.js/tools.js).
       h('button', { className: 'topbar-btn console-open-btn', onClick: onOpenConsole, title: 'Console — all features' }, '▦ Console'),
       typeof SettingsMenu !== 'undefined' && h(SettingsMenu, { toggles: toggles, version: version }),

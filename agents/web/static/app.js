@@ -19,6 +19,7 @@ function App() {
   var _o = useState([]), tasks = _o[0], setTasks = _o[1];
   var _p = useState([]), ticker = _p[0], setTicker = _p[1];
   var _q = useState(true), lmOnline = _q[0], setLmOnline = _q[1];
+  var _qm = useState(null), activeModel = _qm[0], setActiveModel = _qm[1];
   var _trust = useState({ mic: 'on', strict_local: true }), trust = _trust[0], setTrust = _trust[1];
   var _r = useState(false), sending = _r[0], setSending = _r[1];
   var _s = useState(true), loading = _s[0], setLoading = _s[1];
@@ -131,6 +132,7 @@ function App() {
         }
         if (d.sys) setSys(function (prev) { var o = {}; for (var k in prev) o[k] = prev[k]; for (var k in d.sys) o[k] = d.sys[k]; return o; });
         if (d.lm_online !== undefined) setLmOnline(d.lm_online);
+        if (d.active_model !== undefined) setActiveModel(d.active_model);
         if (d.voice_state) setVoiceState(d.voice_state);
         if (d.version) setVersion(d.version);
         setApiDown(false);
@@ -314,6 +316,7 @@ function App() {
       agentsOnline: agents.filter(function (a) { return a.status !== 'idle'; }).length,
       agentsTotal: agents.length || 15,
       lmOnline: lmOnline,
+      activeModel: activeModel,
       trust: trust,
       version: version,
       onOpenConsole: function () { setConsoleOpen(true); },

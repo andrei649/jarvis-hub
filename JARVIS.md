@@ -145,7 +145,8 @@ memory_logs/                 # Sessions, checkpoints, learning records
 - LM Studio on port 1234 with `google/gemma-4-31b-a4b` (MoE) — see §default model
 - Auto-detection checks LM Studio first, then Ollama
 - Model has extended thinking (produces `reasoning_content` + `content`)
-- Backend handles both fields, defaults to 1024 token limit
+- Backend handles both fields; `llm.max_tokens` default 2048 (deep route: `llm.deep_max_tokens` 8192). On a length-truncated turn with no answer the backend returns `""` instead of leaking the raw reasoning trace
+- **Lifecycle control:** Jarvis can `lms server start` / `lms load` / `lms unload` from the admin UI and from chat ("start LM Studio", "load gemma", "what model?") — see `docs/ARCHITECTURE.md` §5. Kill-switch: env `JARVIS_LMSTUDIO_CONTROL=0` or live setting `llm.control_enabled=false` (chat-only: `JARVIS_LMSTUDIO_CHAT_CONTROL` / `llm.chat_control`)
 
 **Recall embeddings (long-term memory):**
 - `MemoryManager.embed/remember/recall` turn text into vectors for fused recall (vector ⊕ graph, RRF — H5.14)

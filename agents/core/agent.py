@@ -57,6 +57,21 @@ class Agent:
     def set_checkpoint_manager(self, mgr):
         self._checkpoint_manager = mgr
 
+    def _gen_params(self, route_name: str = "") -> tuple[int, float]:
+        """Resolve (max_tokens, temperature) from runtime settings.
+
+        The deep reasoning slot gets a much larger budget — a reasoning model
+        burns 1–2k tokens on chain-of-thought before the answer, so the normal
+        cap truncates it mid-thought. Degrades to sane defaults off-config."""
+        try:
+            from .settings_db import get_value
+            max_tokens = int(get_value("llm", "max_tokens", 2048))
+            deep_max = int(get_value("llm", "deep_max_tokens", 8192))
+            temperature = float(get_value("llm", "temperature", 0.7))
+        except Exception:
+            max_tokens, deep_max, temperature = 2048, 8192, 0.7
+        return (deep_max if route_name == "local-deep" else max_tokens), temperature
+
     async def process(self, text: str, context: dict) -> str:
         system_prompt = self.soul.get("content", "")
         model = self.config.get("model", "google/gemma-4-31b-a4b")
@@ -101,8 +116,9 @@ class Agent:
         )
 
         res = self.llm_router.select_backend(self.id, prompt)
+        route_name = ""
         if isinstance(res, tuple) and len(res) == 3:
-            backend, routed_model, _ = res
+            backend, routed_model, route_name = res
             if routed_model:
                 model = routed_model
         else:
@@ -113,12 +129,15 @@ class Agent:
         if self._checkpoint_manager:
             self._checkpoint_manager.save_agent_execution(self.id, context.get("session_id", "unknown"), prompt)
 
+        max_tokens, temperature = self._gen_params(route_name)
         start = time.monotonic()
         try:
             response = await backend.generate(
                 model=model,
                 prompt=prompt,
                 system=system_prompt,
+                max_tokens=max_tokens,
+                temperature=temperature,
             )
             latency = time.monotonic() - start
             self._last_latency = latency
@@ -178,13 +197,21 @@ class Agent:
         )
 
         try:
-            backend, _ = self.llm_router.select_backend("jarvis", prompt)
+            res = self.llm_router.select_backend("jarvis", prompt)
+            route_name = ""
+            if isinstance(res, tuple) and len(res) == 3:
+                backend, _, route_name = res
+            else:
+                backend, _ = res
             if self.guardrails:
                 backend = self.guardrails
+            max_tokens, temperature = self._gen_params(route_name)
             response = await backend.generate(
                 model=model,
                 prompt=prompt,
                 system=system_prompt,
+                max_tokens=max_tokens,
+                temperature=temperature,
             )
             return response
         except RuntimeError:
