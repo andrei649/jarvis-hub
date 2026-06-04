@@ -20,12 +20,15 @@ from __future__ import annotations
 import hashlib
 import hmac
 import json
+import logging
 import os
 import secrets
 import time
 from pathlib import Path
 from ..persistence import JsonStore
 from typing import Optional
+
+logger = logging.getLogger(__name__)
 
 INTENT_PATH = Path("memory_logs/security/intent_log.json")
 ANCHOR_PATH = Path("memory_logs/security/transparency_log.json")
@@ -56,18 +59,55 @@ class IntentLog(JsonStore):
         env = os.environ.get("JARVIS_AUDIT_KEY")
         if env:
             return env.encode("utf-8")
-        key_path = self.path.with_suffix(".key")
+        # Prefer a key stored OUTSIDE the audit-log directory: write access to the
+        # log tree alone must not also hand over the signing key (HF-5). Order:
+        #   1. an existing key in the secure dir (JARVIS_KEY_DIR, else ~/.config/jarvis)
+        #   2. a legacy co-located key (<log>.key) — honoured for existing installs,
+        #      with a warning to migrate
+        #   3. a fresh key in the secure dir; only if that dir is unwritable do we
+        #      fall back to co-locating it (so the chain always stays verifiable)
+        name = self.path.stem  # e.g. 'intent_log'
+        secure_dir = Path(os.environ.get("JARVIS_KEY_DIR") or (Path.home() / ".config" / "jarvis"))
+        secure_path = secure_dir / f"{name}.key"
+        legacy_path = self.path.with_suffix(".key")
         try:
-            if key_path.exists():
-                return key_path.read_text(encoding="utf-8").strip().encode("utf-8")
-            key_path.parent.mkdir(parents=True, exist_ok=True)
+            if secure_path.exists():
+                return secure_path.read_text(encoding="utf-8").strip().encode("utf-8")
+            if legacy_path.exists():
+                logger.warning(
+                    "Audit signing key is co-located with the log (%s). Set "
+                    "JARVIS_AUDIT_KEY, or move it under %s, so write access to the "
+                    "log dir alone can't forge the chain (HF-5).", legacy_path, secure_dir,
+                )
+                return legacy_path.read_text(encoding="utf-8").strip().encode("utf-8")
             key = secrets.token_hex(32)
-            key_path.write_text(key, encoding="utf-8")
             try:
-                key_path.chmod(0o600)
+                secure_dir.mkdir(parents=True, exist_ok=True)
+                secure_path.write_text(key, encoding="utf-8")
+                try:
+                    secure_path.chmod(0o600)
+                except Exception:
+                    # chmod is best-effort (no-op on non-POSIX FS); the key is
+                    # already written and usable regardless.
+                    pass
+                return key.encode("utf-8")
             except Exception:
-                pass
-            return key.encode("utf-8")
+                # Secure dir unwritable → keep the old behaviour (key next to the
+                # log) so auditing still works, but make the weaker posture explicit.
+                legacy_path.parent.mkdir(parents=True, exist_ok=True)
+                legacy_path.write_text(key, encoding="utf-8")
+                try:
+                    legacy_path.chmod(0o600)
+                except Exception:
+                    # chmod is best-effort (no-op on non-POSIX FS); the key is
+                    # already written and usable regardless.
+                    pass
+                logger.warning(
+                    "Could not write the audit key to the secure dir (%s); stored it "
+                    "next to the log (%s). Set JARVIS_AUDIT_KEY to harden (HF-5).",
+                    secure_dir, legacy_path,
+                )
+                return key.encode("utf-8")
         except Exception:
             return secrets.token_hex(32).encode("utf-8")
 
