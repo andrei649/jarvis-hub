@@ -2638,3 +2638,26 @@
   background: var(--accent);
 }
 
+
+/* ── ⚙ Settings menu (HUD redesign) ─────────────────────────────────────── */
+.set-wrap { position: relative; display: inline-flex; }
+.set-gear { font-size: 15px; line-height: 1; }
+.set-backdrop { position: fixed; inset: 0; z-index: 4000; background: rgba(0,0,0,.35); }
+.set-menu {
+  position: absolute; top: 52px; right: 16px; width: 300px; max-height: 80vh; overflow-y: auto;
+  background: var(--bg-panel, #0a1320); color: var(--text, #cfe3f5);
+  border: 1px solid var(--border-glass, rgba(120,170,255,.25)); border-radius: 10px;
+  box-shadow: 0 12px 40px rgba(0,0,0,.5); padding: 12px 14px; font-size: 12px;
+}
+.set-head { display: flex; justify-content: space-between; align-items: center; font-weight: 600; font-size: 13px; margin-bottom: 8px; }
+.set-x { background: none; border: 0; color: inherit; font-size: 18px; cursor: pointer; line-height: 1; opacity: .7; }
+.set-x:hover { opacity: 1; }
+.set-group-title { text-transform: uppercase; letter-spacing: .08em; font-size: 9px; opacity: .55; margin: 12px 0 4px; }
+.set-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 4px 0; }
+.set-label { opacity: .85; }
+.set-select, .set-input { background: rgba(255,255,255,.05); color: inherit; border: 1px solid var(--border-glass, rgba(120,170,255,.2)); border-radius: 6px; padding: 3px 6px; font-size: 12px; min-width: 120px; }
+.set-toggle { background: rgba(255,255,255,.06); color: inherit; border: 1px solid var(--border-glass, rgba(120,170,255,.2)); border-radius: 6px; padding: 3px 12px; cursor: pointer; font-size: 11px; }
+.set-toggle.is-on { background: var(--accent, #3b82f6); color: #04101f; border-color: var(--accent, #3b82f6); }
+.set-link { display: block; margin-top: 8px; color: var(--accent, #6db3ff); text-decoration: none; font-size: 12px; }
+.set-link:hover { text-decoration: underline; }
+.set-foot { margin-top: 12px; padding-top: 8px; border-top: 1px solid var(--border-glass, rgba(120,170,255,.15)); opacity: .5; font-size: 10px; text-align: center; }
