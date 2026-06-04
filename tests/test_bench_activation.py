@@ -70,6 +70,24 @@ def test_promote_bench_agent_returns_true_and_registers(tmp_path, monkeypatch):
     assert agent.name == "Bruce"
 
 
+def test_promote_bench_agent_rejects_path_traversal(tmp_path, monkeypatch):
+    """BUG-9: a bench_id that isn't a plain identifier is rejected (no path escape)."""
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "agents" / "_system").mkdir(parents=True)
+    import shutil
+    shutil.copy(
+        str(repo_root / "agents" / "_system" / "agents.yaml"),
+        str(tmp_path / "agents" / "_system" / "agents.yaml"),
+    )
+    cfg = JarvisConfig(path=str(tmp_path / "agents" / "_system" / "agents.yaml"))
+    orch = Orchestrator(cfg)
+
+    for bad in ["../bruce", "../../etc/passwd", "a/b", "..", ""]:
+        assert orch.promote_bench_agent(bad) is False
+    # nothing was written outside the agents/ tree
+    assert not (tmp_path / "SOUL.md").exists()
+
+
 def test_promote_bench_agent_adds_to_routing_table(tmp_path, monkeypatch):
     """The promoted agent should be wake-word routable."""
     monkeypatch.chdir(tmp_path)
