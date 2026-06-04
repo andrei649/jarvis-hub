@@ -326,6 +326,7 @@ LM Studio + Ollama on local GPU. Zero API cost for 99% of tasks. Athena escalate
 | CI/CD on PRs + hermetic test suite (H7.1/H7.2) | P0 | 10 | ✅ Done |
 | Input validation + clean silent exceptions (H7.5/H7.6) | P1 | 8 | ✅ Done |
 | LICENSE + CONTRIBUTING + docker-compose + README badges (H7.9) | P1 | 5 | ✅ Done |
+| **Relicense MIT → Apache-2.0** (+ `TRADEMARKS.md` + CLA note + badge) — decided 2026-06-04, deferred to pre-1.0 ([docs/LICENSE_DECISION.md](docs/LICENSE_DECISION.md)) | P1 | 1 | ⏳ Pre-1.0 |
 | Dashboard cache race (BUG-1) | LOW | 1 | ✅ Done |
 | Personal Memory H8 (8 items) | P1 | 48 | ✅ Done |
 | Security wedge H12.1 (P0, anti-OpenClaw) | P0 | 8 | ✅ Done |
