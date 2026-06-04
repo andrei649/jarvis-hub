@@ -508,7 +508,10 @@ Key env vars loaded at startup:
            return JSONResponse({"error": "not initialized"}, status_code=503)
        return _nocache_json({"result": ...})
    ```
-3. If admin-only, add `dependencies=[Depends(_admin_guard)]`.
+3. If admin-only, add `dependencies=[Depends(_admin_guard)]`. If it exposes the
+   assistant, personal data (memory/notes), or runs code, add
+   `dependencies=[Depends(_user_guard)]` instead (HF-1 — localhost by default,
+   `X-User-Token` / `JARVIS_USER_TOKEN` to expose on a network).
 4. Polling endpoints that return live data: add path to `_NO_STORE_PATHS` dict.
 
 ### Add a runtime setting

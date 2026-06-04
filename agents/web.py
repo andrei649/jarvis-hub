@@ -95,6 +95,42 @@ async def _admin_guard(request: Request):
         )
 
 
+# ── User authentication (HF-1) ────────────────────────────────────
+# The assistant itself (/chat), personal memory, notes, code execution and
+# other user-facing routes must not be reachable unauthenticated on a LAN/Pi.
+# Same model as the admin guard, one tier down:
+#   - If JARVIS_USER_TOKEN is set, require a matching X-User-Token header.
+#     A valid X-Admin-Token also satisfies it (admin is a superset of user).
+#   - If it is NOT set, allow only *direct* localhost — so single-user local
+#     dev keeps working out of the box, but a networked deployment is locked
+#     down until a token is set. Forwarding headers mean we're behind a proxy
+#     and request.client.host can't be trusted, so we fail closed there (HF-7).
+USER_TOKEN = os.environ.get("JARVIS_USER_TOKEN", "").strip()
+
+
+async def _user_guard(request: Request):
+    """Authorize a user-facing request or raise 401/403. See USER_TOKEN above."""
+    if USER_TOKEN:
+        supplied = request.headers.get("x-user-token", "")
+        if supplied and secrets.compare_digest(supplied, USER_TOKEN):
+            return
+        # An admin token is a superset of user access — accept it too.
+        if ADMIN_TOKEN:
+            admin_supplied = request.headers.get("x-admin-token", "")
+            if admin_supplied and secrets.compare_digest(admin_supplied, ADMIN_TOKEN):
+                return
+        raise HTTPException(status_code=401, detail="user token required")
+    # No token configured → only direct localhost may reach user routes. Fail
+    # closed behind a reverse proxy (request.client.host is then the proxy IP). (HF-7)
+    client_host = request.client.host if request.client else ""
+    behind_proxy = any(h in request.headers for h in ("x-forwarded-for", "x-real-ip", "forwarded"))
+    if behind_proxy or client_host not in _LOCALHOSTS:
+        raise HTTPException(
+            status_code=403,
+            detail="user routes disabled from network — set JARVIS_USER_TOKEN to enable remote access",
+        )
+
+
 orch: Orchestrator = None
 gateway: Gateway = None
 
@@ -348,7 +384,7 @@ async def index():
 
 # ── Chat ─────────────────────────────────────────────────────────
 
-@app.post("/chat", response_model=ChatResponse)
+@app.post("/chat", response_model=ChatResponse, dependencies=[Depends(_user_guard)])
 async def chat(req: ChatRequest):
     if not orch:
         return ChatResponse(reply="Jarvis not initialized.")
@@ -367,7 +403,7 @@ async def chat(req: ChatRequest):
         return ChatResponse(reply=f"Internal error: {e}")
 
 
-@app.post("/chat/stream")
+@app.post("/chat/stream", dependencies=[Depends(_user_guard)])
 async def chat_stream(req: ChatRequest):
     if not orch:
         return JSONResponse({"error": "not initialized"}, status_code=503)
@@ -422,7 +458,7 @@ class TTSRequest(BaseModel):
     text: str = Field(..., max_length=4096)
     lang: str = "ro"
 
-@app.post("/tts")
+@app.post("/tts", dependencies=[Depends(_user_guard)])
 async def tts_endpoint(req: TTSRequest):
     """Synthesize text to speech and return MP3 audio."""
     try:
@@ -479,7 +515,7 @@ async def status():
     })
 
 
-@app.get("/api/agents")
+@app.get("/api/agents", dependencies=[Depends(_user_guard)])
 async def api_agents():
     return _nocache_json({"agents": _enrich_agents()})
 
@@ -492,7 +528,7 @@ _dashboard_cache = {"weather": "", "news": [], "cached_at": 0}
 _dashboard_lock = asyncio.Lock()
 
 
-@app.get("/dashboard")
+@app.get("/dashboard", dependencies=[Depends(_user_guard)])
 async def dashboard():
     if not orch:
         return JSONResponse({"error": "not initialized"}, status_code=503)
@@ -564,7 +600,7 @@ async def dashboard():
     })
 
 
-@app.get("/tasks")
+@app.get("/tasks", dependencies=[Depends(_user_guard)])
 async def get_tasks():
     if not orch:
         return JSONResponse({"error": "not initialized"}, status_code=503)
@@ -602,7 +638,7 @@ async def get_tasks():
     return _nocache_json({"tasks": result_tasks})
 
 
-@app.get("/ticker")
+@app.get("/ticker", dependencies=[Depends(_user_guard)])
 async def get_ticker():
     if not orch:
         return _nocache_json({"error": "not initialized"}, status_code=503)
@@ -680,7 +716,7 @@ async def get_agent_soul(agent_id: str):
 
 # ── Existing endpoints (unchanged) ───────────────────────────────
 
-@app.get("/memory")
+@app.get("/memory", dependencies=[Depends(_user_guard)])
 async def memory():
     if not orch:
         return JSONResponse({"error": "not initialized"}, status_code=503)
@@ -688,7 +724,7 @@ async def memory():
     return _nocache_json({"session": orch.session_id, "turns": history})
 
 
-@app.post("/memory/clear")
+@app.post("/memory/clear", dependencies=[Depends(_user_guard)])
 async def clear_memory(req: Request):
     if not orch:
         return JSONResponse({"error": "not initialized"}, status_code=503)
@@ -737,7 +773,7 @@ async def list_skills():
     return {"skills": result}
 
 
-@app.get("/sessions")
+@app.get("/sessions", dependencies=[Depends(_user_guard)])
 async def get_sessions():
     if not orch:
         return JSONResponse({"error": "not initialized"}, status_code=503)
@@ -745,7 +781,7 @@ async def get_sessions():
     return {"sessions": sessions}
 
 
-@app.post("/sessions/resume")
+@app.post("/sessions/resume", dependencies=[Depends(_user_guard)])
 async def resume_session(req: Request):
     if not orch:
         return JSONResponse({"error": "not initialized"}, status_code=503)
@@ -1172,7 +1208,7 @@ async def llm_grammar(req: Request):
 
 # ── H14.3 Sleep-time memory consolidation ─────────────────────────────────────
 
-@app.post("/api/memory/consolidate")
+@app.post("/api/memory/consolidate", dependencies=[Depends(_user_guard)])
 async def memory_consolidate(req: Request):
     """Plan Mem0-style consolidation ops (ADD/UPDATE/DELETE/NOOP) for candidates
     against existing memories. Returns a reversible plan (no mutation)."""
@@ -1203,13 +1239,13 @@ async def learning_propose():
 
 # ── H10.20 Chat Channels / Rooms ──────────────────────────────────────────────
 
-@app.get("/api/rooms")
+@app.get("/api/rooms", dependencies=[Depends(_user_guard)])
 async def rooms_list():
     store = getattr(orch, "rooms", None) if orch else None
     return _nocache_json({"rooms": store.list() if store else []})
 
 
-@app.post("/api/rooms")
+@app.post("/api/rooms", dependencies=[Depends(_user_guard)])
 async def rooms_create(req: Request):
     store = getattr(orch, "rooms", None) if orch else None
     if store is None:
@@ -1225,7 +1261,7 @@ async def rooms_create(req: Request):
     return _nocache_json({"ok": True, "room": room})
 
 
-@app.get("/api/rooms/{room_id}")
+@app.get("/api/rooms/{room_id}", dependencies=[Depends(_user_guard)])
 async def rooms_get(room_id: str):
     store = getattr(orch, "rooms", None) if orch else None
     room = store.get(room_id) if store else None
@@ -1234,7 +1270,7 @@ async def rooms_get(room_id: str):
     return _nocache_json(room)
 
 
-@app.delete("/api/rooms/{room_id}")
+@app.delete("/api/rooms/{room_id}", dependencies=[Depends(_user_guard)])
 async def rooms_delete(room_id: str):
     store = getattr(orch, "rooms", None) if orch else None
     if store is None or not store.delete(room_id):
@@ -1242,7 +1278,7 @@ async def rooms_delete(room_id: str):
     return _nocache_json({"ok": True, "deleted": room_id})
 
 
-@app.get("/api/rooms/{room_id}/history")
+@app.get("/api/rooms/{room_id}/history", dependencies=[Depends(_user_guard)])
 async def rooms_history(room_id: str, limit: int = Query(50, ge=1, le=200)):
     store = getattr(orch, "rooms", None) if orch else None
     if store is None or store.get(room_id) is None:
@@ -1250,7 +1286,7 @@ async def rooms_history(room_id: str, limit: int = Query(50, ge=1, le=200)):
     return _nocache_json({"history": store.history(room_id, limit)})
 
 
-@app.post("/api/rooms/{room_id}/message")
+@app.post("/api/rooms/{room_id}/message", dependencies=[Depends(_user_guard)])
 async def rooms_message(room_id: str, req: Request):
     """Post a message to a room; @mention routes to a specific agent."""
     store = getattr(orch, "rooms", None) if orch else None
@@ -1297,7 +1333,7 @@ async def actions_pending():
     return _nocache_json({"actions": q.list("pending")})
 
 
-@app.post("/api/actions/request")
+@app.post("/api/actions/request", dependencies=[Depends(_user_guard)])
 async def actions_request(req: Request):
     """Register a pending tool-call approval (sub-task granularity)."""
     q = getattr(orch, "action_approvals", None) if orch else None
@@ -1336,14 +1372,14 @@ class _NoteBody(BaseModel):
     content: str = Field("", max_length=20000)
 
 
-@app.get("/api/notes")
+@app.get("/api/notes", dependencies=[Depends(_user_guard)])
 async def notes_get():
     notes = getattr(orch, "notes", None) if orch else None
     sid = getattr(orch, "session_id", "web") if orch else "web"
     return _nocache_json({"session": sid, "content": notes.get(sid) if notes else ""})
 
 
-@app.put("/api/notes")
+@app.put("/api/notes", dependencies=[Depends(_user_guard)])
 async def notes_set(body: _NoteBody):
     notes = getattr(orch, "notes", None) if orch else None
     if notes is None:
@@ -1352,7 +1388,7 @@ async def notes_set(body: _NoteBody):
     return _nocache_json({"ok": True, "session": sid, **notes.set(sid, body.content)})
 
 
-@app.delete("/api/notes")
+@app.delete("/api/notes", dependencies=[Depends(_user_guard)])
 async def notes_clear():
     notes = getattr(orch, "notes", None) if orch else None
     sid = getattr(orch, "session_id", "web") if orch else "web"
@@ -1360,7 +1396,7 @@ async def notes_clear():
     return _nocache_json({"ok": True, "cleared": cleared})
 
 
-@app.post("/api/notes/rewrite")
+@app.post("/api/notes/rewrite", dependencies=[Depends(_user_guard)])
 async def notes_rewrite(req: Request):
     """H10.21 — 'Rewrite with AI': run the note through an agent; optionally save."""
     notes = getattr(orch, "notes", None) if orch else None
@@ -1506,7 +1542,7 @@ class SandboxExecuteBody(BaseModel):
     language: str = "python"
 
 
-@app.post("/sandbox/execute")
+@app.post("/sandbox/execute", dependencies=[Depends(_user_guard)])
 async def sandbox_execute(body: SandboxExecuteBody):
     if not orch:
         return JSONResponse({"error": "not initialized"}, status_code=503)
@@ -1527,7 +1563,7 @@ async def sandbox_execute(body: SandboxExecuteBody):
     }
 
 
-@app.post("/skills/import")
+@app.post("/skills/import", dependencies=[Depends(_user_guard)])
 async def skills_import(req: Request):
     if not orch:
         return JSONResponse({"error": "not initialized"}, status_code=503)
@@ -2892,7 +2928,7 @@ async def trust_status():
 # ── v0.3 Cognition Release endpoints ─────────────────────────────
 
 
-@app.get("/api/cognition")
+@app.get("/api/cognition", dependencies=[Depends(_user_guard)])
 async def get_cognition():
     """Return the last dynamic routing/cognition context."""
     cog = getattr(orch, "last_cognition", None) if orch else None
@@ -2952,7 +2988,7 @@ async def memory_stats():
         return _nocache_json({"sessions": {"total": 0, "current": "", "active": 0}, "vectors": {"stored": 0, "dimension": 0, "backend": ""}, "knowledge_graph": {"entities": 0, "relations": 0, "last_seed": ""}, "agent_contexts": {}})
 
 
-@app.get("/api/memory/search")
+@app.get("/api/memory/search", dependencies=[Depends(_user_guard)])
 async def memory_search(q: str = "", top_k: int = 10):
     """Fused recall via RRF: vector similarity + knowledge-graph (H5.14 Task 4)."""
     top_k = max(1, min(top_k, 50))
@@ -2983,7 +3019,7 @@ async def memory_search(q: str = "", top_k: int = 10):
         return _nocache_json({"results": [], "query": q, "total": 0, "error": str(e)})
 
 
-@app.get("/api/memory/entities")
+@app.get("/api/memory/entities", dependencies=[Depends(_user_guard)])
 async def memory_entities(q: str = "", type: str = "", limit: int = Query(50, ge=1, le=200)):
     """H8.1b — search/list the named-entity store (+ stats)."""
     if not orch or not getattr(orch, "entities", None):
@@ -3025,7 +3061,7 @@ async def memory_tool_spec():
     return _nocache_json(TOOL_SPEC)
 
 
-@app.post("/api/memory/search-tool")
+@app.post("/api/memory/search-tool", dependencies=[Depends(_user_guard)])
 async def memory_search_tool(req: Request):
     """H8.3b — a single search_memory tool call. Body: {query, top_k?}."""
     from agents.core.memory.rag_tool import MemorySearchTool
@@ -3042,7 +3078,7 @@ async def memory_search_tool(req: Request):
 
 # ── H14.4 Decay-based forgetting (ACT-R activation + dependency-aware delete) ──
 
-@app.get("/api/memory/decay/ranking")
+@app.get("/api/memory/decay/ranking", dependencies=[Depends(_user_guard)])
 async def memory_decay_ranking(limit: int = Query(100, ge=1, le=1000)):
     """Memory items ranked by ACT-R activation (recency + frequency)."""
     d = getattr(orch, "decay", None) if orch else None
@@ -3051,7 +3087,7 @@ async def memory_decay_ranking(limit: int = Query(100, ge=1, le=1000)):
     return _nocache_json({"ranking": d.ranking(limit=limit)})
 
 
-@app.get("/api/memory/decay/candidates")
+@app.get("/api/memory/decay/candidates", dependencies=[Depends(_user_guard)])
 async def memory_decay_candidates(threshold: float = 0.0):
     """Items whose activation has decayed below *threshold* (forget candidates)."""
     d = getattr(orch, "decay", None) if orch else None
@@ -3060,7 +3096,7 @@ async def memory_decay_candidates(threshold: float = 0.0):
     return _nocache_json({"threshold": threshold, "candidates": d.forget_candidates(threshold)})
 
 
-@app.post("/api/memory/decay/forget")
+@app.post("/api/memory/decay/forget", dependencies=[Depends(_user_guard)])
 async def memory_decay_forget(req: Request):
     """Forget an item + its transitive dependents (anti-recontamination)."""
     d = getattr(orch, "decay", None) if orch else None
@@ -3245,7 +3281,7 @@ async def memory_eval_run():
     return _nocache_json(run_eval(keyword_answer))
 
 
-@app.post("/api/memory/remember")
+@app.post("/api/memory/remember", dependencies=[Depends(_user_guard)])
 async def memory_remember(req: Request):
     """Store a fact in long-term memory with a real embedding, for later recall."""
     if not orch or not orch.memory:
@@ -3264,7 +3300,7 @@ async def memory_remember(req: Request):
     return _nocache_json({"ok": rid is not None, "id": rid})
 
 
-@app.get("/api/memory/profile")
+@app.get("/api/memory/profile", dependencies=[Depends(_user_guard)])
 async def get_memory_profile():
     """Return all stored user facts/preferences grouped by category."""
     from agents.core.memory.store import MemoryStore
@@ -3272,7 +3308,7 @@ async def get_memory_profile():
     return await store.get_all()
 
 
-@app.get("/api/memory/recall")
+@app.get("/api/memory/recall", dependencies=[Depends(_user_guard)])
 async def recall_memory(q: str = ""):
     """Search memory store by query string."""
     from fastapi import Query as _Query
