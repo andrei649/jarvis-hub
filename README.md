@@ -2,7 +2,7 @@
 
 ![Python 3.12](https://img.shields.io/badge/python-3.12-blue?logo=python&logoColor=white)
 ![License: MIT](https://img.shields.io/badge/license-MIT-green)
-![Tests](https://img.shields.io/badge/tests-1559%20passed-brightgreen?logo=pytest)
+![Tests](https://img.shields.io/badge/tests-1655%20passed-brightgreen?logo=pytest)
 ![Version](https://img.shields.io/badge/version-9.9.9-orange)
 
 > 16 specialized AI agents orchestrated through Jarvis, running on Bonobo WS + Pi 5, controlled by voice and web.
@@ -81,7 +81,7 @@ A personal AI mesh that handles the cross-section of Andrei's life: work at Raif
 python3 -m venv .venv && source .venv/bin/activate   # Windows: .venv\Scripts\activate
 pip install -r requirements-beta.txt                 # one install — full feature set
 python serve.py              # → http://127.0.0.1:8080
-python -m pytest             # 1559 passed, 9 skipped
+python -m pytest             # 1655 passed, 1 skipped
 ```
 
 _Linux/macOS shortcut:_ `./install.sh` does all of the above (venv + install + tests); `./start.sh` launches the server.
@@ -105,7 +105,7 @@ RAG injection; hot-path perf (SQLite WAL, event-loop offload, checkpoint debounc
 cache, complexity-based model tiering); autonomous proactive cortex (ORIZONT 6); security wedge (encrypted
 secrets, signed skills, reversible/irreversible approval split, quarantine/capability/kill-switch); competitive edge
 (workflow engine, model arena, quality monitor, review queue); living memory (bi-temporal KG, decay-forgetting,
-sleep-time consolidation). **1,559 tests passing.**
+sleep-time consolidation). **1,655 tests passing.**
 
 **Road to v1.0:** the feature backlog (H1–H9) plus the bulk of the competitive-edge and frontier work — the
 2026-06-03 wave across H10, H12, H14, H16, H17 — is code-complete: ~166/186 backlog items (≈82% by story

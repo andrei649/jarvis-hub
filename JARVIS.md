@@ -204,7 +204,7 @@ curl.exe http://127.0.0.1:8080/status
 - 7 ported features from OpenJarvis (security, skills, sandbox, multi-channel, bench, learning, streaming)
 - VRAM: ~17 GB used by primary model, ~7 GB free
 - Response time: ~4-5s per query (fast slot); deep slot trades latency for reasoning depth
-- **Tests: 1,559 passed, 9 skipped** (offline suite)
+- **Tests: 1,655 passed, 1 skipped** (offline suite)
 - Horizons done: H1–H7 (foundation → autonomy → perf hot-path); **active: ORIZONT 8 (personal memory)**
 
 ---
