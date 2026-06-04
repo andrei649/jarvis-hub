@@ -511,6 +511,32 @@
     return Tool('Daily Reflection', 'Nightly memory consolidation — run on demand', body, Btn('↻', reload));
   }
 
+  function EvalPanel() {
+    const _ = useApi('/api/eval/datasets', true), s = _[0], reload = _[1];
+    const _b = useState(null), busy = _b[0], setBusy = _b[1];
+    const _r = useState(null), res = _r[0], setRes = _r[1];
+    function run(name) {
+      setBusy(name); setRes(null);
+      api('/api/eval/datasets/run', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: name }) })
+        .then(function (d) { setBusy(null); setRes(d); reload(); }).catch(function (e) { setBusy(null); alert(e); });
+    }
+    let body;
+    if (s.err) body = Err(s.err); else if (s.loading) body = Empty('Loading…');
+    else {
+      const datasets = s.data.datasets || [];
+      body = h('div', null,
+        h('div', { className: 'tool-hint' }, 'Versioned eval sets — run one through the live orchestrator to catch regressions before they ship.'),
+        datasets.length ? datasets.map(function (d) {
+          const score = d.last_score != null ? Math.round(d.last_score * 100) + '%' : '—';
+          return h('div', { key: d.name, className: 'tool-card' },
+            h('span', { className: 'tool-card-text' }, d.name + ' · v' + (d.latest_version || 1) + ' · ' + (d.cases || 0) + ' cases · last ' + score),
+            Btn(busy === d.name ? 'Running…' : 'Run', function () { run(d.name); }, 'ok'));
+        }) : Empty('No datasets yet (add under eval/datasets/).'),
+        res && Pre(res));
+    }
+    return Tool('Eval Datasets', 'Regression-track agents against versioned datasets', body, Btn('↻', reload));
+  }
+
   /* ── tool registry ─────────────────────────────────────────────────────── */
   const TOOLS = [
     { id: 'health', group: 'Observability', label: 'Component Health', render: function (p) { return h(HealthPanel, p); } },
@@ -522,6 +548,7 @@
     { id: 'capabilities', group: 'Security', label: 'Capability Tokens', render: function (p) { return h(CapabilitiesPanel, p); } },
     { id: 'audit', group: 'Security', label: 'Audit & Intent', render: function (p) { return h(AuditPanel, p); } },
     { id: 'arena', group: 'Quality', label: 'Model Arena', render: function (p) { return h(ArenaPanel, p); } },
+    { id: 'eval', group: 'Quality', label: 'Eval Datasets', render: function (p) { return h(EvalPanel, p); } },
     { id: 'actions', group: 'Autonomy', label: 'Action Approvals', render: function (p) { return h(ActionsPanel, p); } },
     { id: 'schedule', group: 'Autonomy', label: 'NL Scheduling', render: function (p) { return h(SchedulePanel, p); } },
     { id: 'dryrun', group: 'Autonomy', label: 'Dry-Run Preview', render: function (p) { return h(DryRunPanel, p); } },
