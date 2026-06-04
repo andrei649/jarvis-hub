@@ -135,6 +135,20 @@ async def test_apply_decision_edit_updates_payload(q):
 
 
 @pytest.mark.asyncio
+async def test_edit_over_cap_reblocks(q):
+    """BUG-11: editing a blocked task past the per-action cap re-blocks instead of
+    silently approving under the original lower-risk decision."""
+    w = make_worker(q)  # cap_per_action=50
+    task = await w.submit("jarvis", "delete_file", "Delete", payload={"path": "/old"})
+    assert q.get(task.id).status == "blocked"
+    await w.apply_decision(task.id, "edit", decided_by="andrei", payload={"amount": 300})
+    assert q.get(task.id).status == "blocked"          # escalated spend → re-blocked
+    task2 = await w.submit("jarvis", "delete_file", "Delete2", payload={"path": "/o2"})
+    await w.apply_decision(task2.id, "edit", decided_by="andrei", payload={"amount": 10})
+    assert q.get(task2.id).status == "approved"        # within-cap edit → approved
+
+
+@pytest.mark.asyncio
 async def test_money_within_cap_auto_acts(q):
     async def executor(task):
         return {"paid": task.payload.get("amount")}

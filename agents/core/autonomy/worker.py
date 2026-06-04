@@ -175,6 +175,27 @@ class AutonomyWorker:
         elif action == "edit":
             if payload is not None:
                 self.queue.update_payload(task_id, payload)
+                # BUG-11: an edit must not escalate spend past the per-action cap
+                # under the original (lower) approval — e.g. blocking "pay $100",
+                # editing to "$300", and having it execute under the old decision.
+                # If the *edited* amount exceeds the cap, keep the task BLOCKED for
+                # an explicit re-approval. Ordinary edits still approve normally.
+                _amt = payload.get("amount")
+                if _amt is not None:
+                    try:
+                        if float(_amt) > self.policy.cap_per_action:
+                            # Leave the task BLOCKED (its current state) for an
+                            # explicit re-approval instead of approving the
+                            # escalated amount under the original decision.
+                            logger.warning(
+                                "apply_decision: edit raised amount to %s (> cap %s) on task %s — "
+                                "kept blocked, needs explicit re-approval",
+                                _amt, self.policy.cap_per_action, task_id)
+                            return self.queue.get(task_id)
+                    except (TypeError, ValueError):
+                        # Non-numeric "amount" → not a money escalation; fall
+                        # through to the normal approval path below.
+                        pass
             task = self.queue.transition(task_id, TaskStatus.APPROVED,
                                          decided_by=decided_by, decision="edit")
         elif action == "reject":
