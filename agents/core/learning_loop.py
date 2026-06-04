@@ -4,7 +4,7 @@ Runs as a background asyncio task. All mutations require human approval via deci
 """
 import asyncio
 import logging
-from datetime import datetime, timedelta
+from datetime import datetime, timezone
 
 logger = logging.getLogger(__name__)
 
@@ -27,7 +27,7 @@ async def _analyse_and_propose(orchestrator):
 
         proposal = {
             "type": "learning_loop_review",
-            "generated_at": datetime.utcnow().isoformat(),
+            "generated_at": datetime.now(timezone.utc).isoformat(),
             "summary": "Weekly agent performance review. Human approval required before any changes.",
             "proposals": [],  # populated from real stats when checkpoint has data
         }
