@@ -46,7 +46,12 @@ describe('AdminApp (full mount + nav sweep)', () => {
     const root = env.document.getElementById('root');
     expect(root.querySelector('.admin-wrap')).not.toBeNull();
     expect(root.querySelectorAll('.admin-nav button').length).toBeGreaterThanOrEqual(8);
-    expect(env.window.fetch).toHaveBeenCalledWith('/api/admin/settings');
+    // admin.js now routes every call through afetch(), which attaches an
+    // X-Admin-Token header (#128), so the bare-URL assertion no longer matches.
+    expect(env.window.fetch).toHaveBeenCalledWith(
+      '/api/admin/settings',
+      expect.objectContaining({ headers: expect.objectContaining({ 'X-Admin-Token': expect.anything() }) }),
+    );
   });
 
   it('navigates through every page without crashing', async () => {

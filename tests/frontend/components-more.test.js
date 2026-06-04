@@ -131,7 +131,6 @@ describe('ThinkingBubble', () => {
 describe('TopBar', () => {
   const base = {
     activeAgent: 'jarvis', voiceState: 'idle', agentsOnline: 3, agentsTotal: 16, lmOnline: true,
-    onToggleCognition: () => {}, onToggleSystems: () => {},
   };
 
   it('renders agent count and LM Studio port when online', () => {
@@ -140,16 +139,15 @@ describe('TopBar', () => {
     expect(container.textContent).toContain('1234');
   });
 
-  it('wires the COG and SYS toggle buttons', () => {
-    const onToggleCognition = vi.fn();
-    const onToggleSystems = vi.fn();
-    const { container } = env.render(h(env.hud.TopBar, { ...base, onToggleCognition, onToggleSystems }));
-    const cog = [...container.querySelectorAll('button')].find((b) => b.textContent === 'COG');
-    const sys = [...container.querySelectorAll('button')].find((b) => b.textContent === 'SYS');
-    env.click(cog);
-    env.click(sys);
-    expect(onToggleCognition).toHaveBeenCalledTimes(1);
-    expect(onToggleSystems).toHaveBeenCalledTimes(1);
+  it('wires the Console open button', () => {
+    // The decluttered TopBar (HUD redesign #123) replaced the COG/SYS toggles
+    // with a single ▦ Console button that opens the feature console.
+    const onOpenConsole = vi.fn();
+    const { container } = env.render(h(env.hud.TopBar, { ...base, onOpenConsole }));
+    const consoleBtn = [...container.querySelectorAll('button')].find((b) => b.textContent.includes('Console'));
+    expect(consoleBtn, 'Console open button').toBeTruthy();
+    env.click(consoleBtn);
+    expect(onOpenConsole).toHaveBeenCalledTimes(1);
   });
 
   it('flags LM Studio offline', () => {
