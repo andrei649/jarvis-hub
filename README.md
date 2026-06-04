@@ -84,6 +84,8 @@ python serve.py              # → http://127.0.0.1:8080
 python -m pytest             # 1559 passed, 9 skipped
 ```
 
+_Linux/macOS shortcut:_ `./install.sh` does all of the above (venv + install + tests); `./start.sh` launches the server.
+
 - **HUD:** http://127.0.0.1:8080/
 - **Admin panel:** http://127.0.0.1:8080/admin
 - **CLI REPL:** `python agents/run.py`
