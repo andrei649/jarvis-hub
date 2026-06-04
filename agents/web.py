@@ -461,7 +461,9 @@ async def status():
     enriched = _enrich_agents()
     voice_state = "idle"
     lm_online = orch.llm_router.name != "none"
+    from agents import __version__
     return _nocache_json({
+        "version": __version__,
         "sys": _sys_info(),
         "voice_state": voice_state,
         "lm_online": lm_online,
