@@ -72,17 +72,15 @@ async def test_user_guard_admin_token_is_superset(monkeypatch):
 
 def test_user_guard_wired_on_chat_route(monkeypatch):
     """Integration: the guard is actually attached to a user route. We pop the
-    suite-wide no-op override (conftest) so the real dependency runs."""
+    suite-wide no-op override (conftest) so the real dependency runs; the
+    autouse fixture re-establishes it for the next test, so no restore here."""
     web.app.dependency_overrides.pop(web._user_guard, None)
-    try:
-        monkeypatch.setattr(web, "USER_TOKEN", "")
-        client = TestClient(web.app)  # connects as host 'testclient' (non-localhost)
-        # No token, network client → blocked.
-        assert client.get("/api/cognition").status_code == 403
-        # With a token configured + supplied → guard passes (handler then runs).
-        monkeypatch.setattr(web, "USER_TOKEN", "secret")
-        assert client.get("/api/cognition", headers={"X-User-Token": "secret"}).status_code != 403
-        # Token configured but absent → blocked.
-        assert client.get("/api/cognition").status_code == 401
-    finally:
-        web.app.dependency_overrides[web._user_guard] = lambda: None
+    monkeypatch.setattr(web, "USER_TOKEN", "")
+    client = TestClient(web.app)  # connects as host 'testclient' (non-localhost)
+    # No token, network client → blocked.
+    assert client.get("/api/cognition").status_code == 403
+    # With a token configured + supplied → guard passes (handler then runs).
+    monkeypatch.setattr(web, "USER_TOKEN", "secret")
+    assert client.get("/api/cognition", headers={"X-User-Token": "secret"}).status_code != 403
+    # Token configured but absent → blocked.
+    assert client.get("/api/cognition").status_code == 401
