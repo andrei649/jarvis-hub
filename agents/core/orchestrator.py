@@ -1801,8 +1801,14 @@ class Orchestrator:
         return sid
 
     async def aclose(self):
-        """Graceful shutdown: flush pending checkpoint before process exit."""
+        """Graceful shutdown: flush checkpoint + close LLM client pools (BUG-7)."""
         await self._flush_checkpoint()
+        router = getattr(self, "llm_router", None)
+        if router is not None:
+            try:
+                await router.aclose()
+            except Exception as e:
+                logger.warning(f"Error closing LLM router: {e}")
 
     async def get_status(self) -> dict:
         return {

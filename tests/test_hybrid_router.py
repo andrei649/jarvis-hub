@@ -39,6 +39,30 @@ def test_estimate_tokens_long():
     assert count > 0
 
 
+@pytest.mark.asyncio
+async def test_local_backend_aclose_closes_pool():
+    """BUG-7: local backends close their httpx pool via aclose()."""
+    from core.llm.base import LMStudioBackend, OllamaBackend
+    b = LMStudioBackend()
+    await b.aclose()
+    assert b.client.is_closed
+    o = OllamaBackend()
+    await o.aclose()
+    assert o.client.is_closed
+
+
+@pytest.mark.asyncio
+async def test_router_aclose_closes_active_backend():
+    """BUG-7: LLMRouter.aclose() closes the active backend's client pool."""
+    from core.llm.router import LLMRouter
+    from core.llm.base import LMStudioBackend
+    r = LLMRouter()
+    r._backend = LMStudioBackend()
+    client = r._backend.client
+    await r.aclose()
+    assert client.is_closed and r._backend is None
+
+
 def test_estimate_tokens_different_inputs():
     short = estimate_tokens("test")
     medium = estimate_tokens("hello world this is a test" * 10)

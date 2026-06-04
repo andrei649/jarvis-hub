@@ -187,6 +187,10 @@ class LMStudioBackend(LLMBackend):
         self.base_url = base_url
         self.client = httpx.AsyncClient(base_url=base_url, timeout=300.0)
 
+    async def aclose(self):
+        """Close the HTTP client's connection pool (BUG-7)."""
+        await self.client.aclose()
+
     async def generate(
         self, model: str, prompt: str, system: str = "",
         max_tokens: int = 1024, temperature: float = 0.7
@@ -300,6 +304,10 @@ class OllamaBackend(LLMBackend):
     def __init__(self, base_url: str = "http://localhost:11434"):
         self.base_url = base_url
         self.client = httpx.AsyncClient(base_url=base_url, timeout=120.0)
+
+    async def aclose(self):
+        """Close the HTTP client's connection pool (BUG-7)."""
+        await self.client.aclose()
 
     async def generate(
         self, model: str, prompt: str, system: str = "",
