@@ -132,4 +132,5 @@ class LLMRouter:
             try:
                 await closer()
             except Exception:
+                # Best-effort close — the backend is being discarded anyway.
                 pass
