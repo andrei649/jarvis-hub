@@ -55,18 +55,18 @@ python -m pytest tests/ -v          # 1100+ passed, 8 skipped
 | **H7 Hardening & Release Readiness** (P0–P2) | 11 | **11** | 51 | **51** | **100%** |
 | **H8 Memorie Personală** (P1–P3) | 7 | **7** | 48 | **48** | **100%** |
 | **H9 Agent Ops: Workflows & Observability** (P2) | 3 | **3** | 29 | **29** | **100%** |
-| **H10 Competitive Edge** (P1–P3) | 30 | **0** | 188 | **0** | **0%** |
+| **H10 Competitive Edge** (P1–P3) | 30 | **27** | 188 | **162** | **86%** |
 | **H11 Platform Parity** (Known Gaps, P3) | 4 | **0** | 55 | **0** | **0%** |
-| **Total H1–H11** | **151** | **117** | **823** | **580** | **71%** (SP) |
-| **H12 Asistent Privat & Proactiv** (P0–P3) | 15 | **3** | 92 | **13** | **14%** |
-| **H13–H17 Frontiere Noi** (post-paritate, în scope v1.0, P1–P3) | 20 | **0** | 146 | **0** | **0%** |
-| **Total H1–H17 = scope 1.0.0** | **186** | **120** | **1061** | **593** | **56%** (SP) |
+| **Total H1–H11** | **151** | **144** | **823** | **742** | **90%** (SP) |
+| **H12 Asistent Privat & Proactiv** (P0–P3) | 15 | **10** | 92 | **47** | **51%** |
+| **H13–H17 Frontiere Noi** (post-paritate, în scope v1.0, P1–P3) | 20 | **12** | 146 | **83** | **57%** |
+| **Total H1–H17 = scope 1.0.0** | **186** | **166** | **1061** | **872** | **82%** (SP) |
 
-> `%` = procent pe **story points**. Sub-total **H1–H11** = 580/823 (≈71% SP; 117/151 iteme). Grand-total **H1–H17** = 593/1061 (≈56% SP; 120/186 iteme). **Gate-ul 1.0.0 = tot backlogul terminat: H10 + H11 + H12 + H13–H17** (toate în scope-ul v1.0 — [#52]).
+> `%` = procent pe **story points**. Sub-total **H1–H11** = 742/823 (≈90% SP; 144/151 iteme). Grand-total **H1–H17** = 872/1061 (≈82% SP; 166/186 iteme). **Gate-ul 1.0.0 = tot backlogul terminat: H10 + H11 + H12 + H13–H17** (toate în scope-ul v1.0 — [#52]).
 
 **În afara totalului:** **Bugs & Hot Fixes** — 3 done (BUG-1, BUG-2, BUG-4) + deschise (BUG-3, BUG-5…BUG-12, HF-1/2, HF-3…HF-7, BUG-2b, TASK-1, CLN-1, CLN-2, CLN-3, NTH-1). *(BUG-5…12 / HF-3…7 / CLN-2/3 din auditul de cod 2026-06-04.)*
 
-**Test count (backend pytest):** 1,480+ passed, 9 skipped — cele 9 din `tests/test_spotify.py`/heartbeat opțional (vezi nota „Run"). *(2026-06-03 v9.9.9: backlog software complet — Waves 6–10 + H13.2/H14.3/H16.1/H16.4; vezi `docs/AUDIT.md`.)*
+**Test count (backend pytest):** 1,480+ passed, 9 skipped — cele 9 din `tests/test_spotify.py`/heartbeat opțional (vezi nota „Run"). *(2026-06-03 v9.9.9: backlog software **code-complete** — H10 27/30, H12 10/15, frontiere H13–H17 12/20 (vezi „Status General" de mai sus); rămâne audit + testare manuală, vezi `docs/AUDIT.md`.)*
 **Frontend (BUG-2):** 156 teste JS / 20 fișiere · ~66% line coverage — separat de suita pytest.
 
 > **Orizont 7 Hardening — Drumul spre 1.0.0:** 11/11 COMPLET ✅ (livrat 2026-06-02)
@@ -281,15 +281,15 @@ python -m pytest tests/ -v          # 1100+ passed, 8 skipped
 
 ---
 
-## ORIZONT 10 — Jarvis Competitive Edge (P1–P3) — 0/30
+## ORIZONT 10 — Jarvis Competitive Edge (P1–P3) — 27/30
 
 ### H10 — Status General
 
 | Horizon | Total | ✅ Done | S total | S done | % |
 |---------|-------|---------|---------|--------|---|
-| **H10 Competitive Edge** | 30 | **1** | 188 | **5** | **3%** |
+| **H10 Competitive Edge** | 30 | **27** | 188 | **162** | **86%** |
 
-> H10.24 Cost per Trace ✅ (2026-06-03) — Wave 1.
+> H10.A–E livrate în valul 2026-06-03; rămân deschise doar **H10.7, H10.26, H10.30** (toate P3).
 
 ### H10.A — Observability & Eval (P1 — fundație)
 
@@ -365,7 +365,7 @@ python -m pytest tests/ -v          # 1100+ passed, 8 skipped
 
 ---
 
-## ORIZONT 12 — Categoria Reală: Asistent Personal Privat & Proactiv (P0–P3) — 3/14 (Wave 0 ✅)
+## ORIZONT 12 — Categoria Reală: Asistent Personal Privat & Proactiv (P0–P3) — 10/15
 
 > Bazat pe research-ul din [docs/research/2026-06-02-personal-ai-competitors.md](docs/research/2026-06-02-personal-ai-competitors.md):
 > H10 a comparat Jarvis cu 8 **framework-uri de developeri**; categoria reală a moonshot-ului (asistent
@@ -416,7 +416,7 @@ python -m pytest tests/ -v          # 1100+ passed, 8 skipped
 
 ---
 
-## ORIZONT 13–17 — Frontiere Noi (post-paritate, în scope v1.0) — 0/20
+## ORIZONT 13–17 — Frontiere Noi (post-paritate, în scope v1.0) — 12/20
 
 > **Status: formalizate în roadmap** (promovate din „propus" 2026-06-03) — **în scope-ul gate-ului 1.0.0**
 > alături de H10 + H11 + H12: **1.0 = tot backlogul terminat**, fără grabă pe tag. Bazat pe research-ul frontieră 2025-2026:
