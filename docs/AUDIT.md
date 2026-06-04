@@ -36,7 +36,7 @@ phase, ship `1.0.0`. The big refactors (router split, service container) are
 | # | Severity | Finding | Location | Recommendation |
 |---|----------|---------|----------|----------------|
 | A1 | **High** | `web.py` is a 3,978-line monolith with ~203 route decorators in one file; ~88 `getattr(orch, "X", None)` reach-ins. | `agents/web.py` | Split into `agents/routers/*` `APIRouter`s by feature area (admin, memory, autonomy, observability, security, workflows, arena, collaboration). Mechanical, test-covered, do incrementally. |
-| A2 | **High** | Orchestrator is a god-object / service-locator: `__init__` has ~51 `try/except` component inits; components reached via `getattr` with silent-None fallback. | `agents/core/orchestrator.py` (~lines 84–274) | Introduce a small **component registry** (name → factory + init-status) and expose typed accessors. Add a startup **health report** so a failed component is visible, not silently `None`. |
+| A2 | ✅ **done** | The 14 repetitive optional-component `try/except` blocks now go through a `ComponentRegistry` (`component_registry.py`): one registrar handles lazy-import + construct + status-tracking, sets `orch.<name>` (back-compat unchanged), and a startup **health report** logs `Components: N/N ok` (**A8**) + `GET /api/health/components`. Collapsed ~80 lines → ~20; failures are now visible, not silent. Remaining god-object surface (plugins/skills/channels init) can follow the same pattern later. | `agents/core/orchestrator.py`, `component_registry.py` | — |
 | A3 | ✅ **done** | (base shipped: `persistence/json_store.py`; 6 stores migrated — Widget/Room/Notes/ReviewQueue/Webhook/Arena. Memory/security stores can follow the same base later.) ~13 JSON stores re-implemented identical `_load`/`_save`(atomic tmp+replace)/`threading.Lock`/`__init__(path)` boilerplate (~26 `_load`/`_save` pairs). | `widget.py`, `rooms.py`, `notes.py`, `arena.py`, `webhooks.py`, `observability/review_queue.py`, `autonomy/action_approvals.py` (in-mem), `memory/{entity,bitemporal,decay}.py`, `security/{anchor,capability}.py`, `run_history.py`, `soul_versioning.py` | Extract `agents/core/persistence/json_store.py` `JsonStore` base; subclasses keep only their schema. Removes ~200 LOC and the drift risk. |
 | A4 | **Medium** | Blocking I/O on the async path: sync `write_text`/`sqlite3` inside `async def` handlers (JSON store saves, `/api/admin/audit` direct sqlite). | `web.py` store endpoints; `agents/web.py` audit route | Wrap blocking calls in `await asyncio.to_thread(...)`. Files are small so impact is moderate today, but it blocks the event loop under load. |
 | A5 | **Medium** | Repeated 503-guard preamble (`getattr(orch,...)→503`) in ~50+ endpoints. | `web.py` | Add one FastAPI dependency `require_component("arena")` returning the component or raising 503. Removes ~100 LOC. |
@@ -137,6 +137,8 @@ Applied (each its own PR, behavior-preserving, full-suite green):
 - **A3** completed — all 13 stores on the `JsonStore` base (#116).
 - **Q4** named limits + `MEMORY_DIR`/`data_path` centralized in `core/config.py`.
 - **Q7** `tests/README.md` test index added.
+- **A2 + A8** `ComponentRegistry` — the 14 god-object `try/except` init blocks
+  collapsed to a registrar with a startup health report (`GET /api/health/components`).
 
 **Deferred to post-manual-testing (mechanical, behavior-neutral, higher churn):**
 - **A5/Q2** the `require_component` FastAPI dependency to dedupe the ~88 `getattr(orch,…)→503`

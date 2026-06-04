@@ -444,6 +444,16 @@ async def tts_endpoint(req: TTSRequest):
 
 # ── Status (HUD-compatible) ──────────────────────────────────────
 
+@app.get("/api/health/components")
+async def component_health():
+    """A8: which optional components initialized (vs failed silently)."""
+    reg = getattr(orch, "components", None) if orch else None
+    if reg is None:
+        return _nocache_json({"components": {}, "summary": "registry unavailable"})
+    return _nocache_json({"components": reg.health(), "failed": reg.failed(),
+                          "summary": reg.summary()})
+
+
 @app.get("/status")
 async def status():
     if not orch:
@@ -451,7 +461,9 @@ async def status():
     enriched = _enrich_agents()
     voice_state = "idle"
     lm_online = orch.llm_router.name != "none"
+    from agents import __version__
     return _nocache_json({
+        "version": __version__,
         "sys": _sys_info(),
         "voice_state": voice_state,
         "lm_online": lm_online,

@@ -32,6 +32,11 @@ function App() {
   var _tab = useState('chat'), activeMobileTab = _tab[0], setActiveMobileTab = _tab[1];
   var _lang = useState(window.currentLocale || 'ro'), locale = _lang[0], setLocaleState = _lang[1];
   var _theme = useState(localStorage.getItem('hud.theme') || 'default'), currentTheme = _theme[0], setThemeState = _theme[1];
+  var _ver = useState(''), version = _ver[0], setVersion = _ver[1];
+  // #5: NetworkBrain is now a toggle (off by default) so chat owns the center.
+  var _net = useState(localStorage.getItem('hud.network') === 'on'), showNetwork = _net[0], setShowNetwork = _net[1];
+  // #6: Console — the home for every feature.
+  var _con = useState(false), consoleOpen = _con[0], setConsoleOpen = _con[1];
   var recRef = useRef(null);
 
   useEffect(function () {
@@ -127,6 +132,7 @@ function App() {
         if (d.sys) setSys(function (prev) { var o = {}; for (var k in prev) o[k] = prev[k]; for (var k in d.sys) o[k] = d.sys[k]; return o; });
         if (d.lm_online !== undefined) setLmOnline(d.lm_online);
         if (d.voice_state) setVoiceState(d.voice_state);
+        if (d.version) setVersion(d.version);
         setApiDown(false);
         try {
           var tRes = await fetch('/ticker');
@@ -141,7 +147,7 @@ function App() {
   var liveSys = useLiveSys(sys);
 
   useHotkey('cmdk', function () { setPaletteOpen(function (o) { return !o; }); });
-  useHotkey('esc', function () { setPaletteOpen(false); setFocusAgent(null); });
+  useHotkey('esc', function () { setPaletteOpen(false); setFocusAgent(null); setConsoleOpen(false); });
 
   var speakText = async function (text, lang) {
     if (window.activeJarvisAudio) {
@@ -309,10 +315,15 @@ function App() {
       agentsTotal: agents.length || 15,
       lmOnline: lmOnline,
       trust: trust,
-      onToggleCognition: function () { setShowCognition(function (v) { return !v; }); },
-      onToggleSystems: function () { setShowSystems(function (v) { return !v; }); },
-      onToggleWorkflows: function () { setShowWorkflows(function (v) { return !v; }); },
-      onToggleObservability: function () { setShowObservability(function (v) { return !v; }); },
+      version: version,
+      onOpenConsole: function () { setConsoleOpen(true); },
+      toggles: {
+        network: showNetwork, onNetwork: function () { setShowNetwork(function (v) { var n = !v; localStorage.setItem('hud.network', n ? 'on' : 'off'); return n; }); },
+        cognition: showCognition, onCognition: function () { setShowCognition(function (v) { return !v; }); },
+        systems: showSystems, onSystems: function () { setShowSystems(function (v) { return !v; }); },
+        workflows: showWorkflows, onWorkflows: function () { setShowWorkflows(function (v) { return !v; }); },
+        observability: showObservability, onObservability: function () { setShowObservability(function (v) { return !v; }); },
+      },
     }),
 
     h(SituationTicker, {
@@ -338,7 +349,7 @@ function App() {
       }),
 
       h('section', { className: 'panel panel-center' },
-        h(NetworkBrain, {
+        showNetwork && h(NetworkBrain, {
           agents: agents,
           tasks: tasks,
           collab: [],
@@ -369,11 +380,7 @@ function App() {
       h('aside', { className: 'panel panel-right' },
         h(WeatherCard, { data: weather }),
         h(CalendarCard, { items: calendar }),
-        h(AgentsGrid, {
-          agents: agents,
-          activeAgent: activeAgent,
-          onSelect: setActiveAgent,
-        }),
+        // #4: agents live in the LEFT rail only — duplicate right-rail grid removed.
         h(HeartbeatFeed, {
           items: notifications,
           agentMap: agentMap,
@@ -424,6 +431,13 @@ function App() {
       onClose: function () { setDossierAgent(null); },
       onChat: function (id) { setActiveAgent(id); setDossierAgent(null); },
       onViewSoul: function (id) { console.log('view soul:', id); },
+    }),
+
+    // #6: Console — discoverable home for every feature.
+    typeof ConsoleOverlay !== 'undefined' && h(ConsoleOverlay, {
+      open: consoleOpen,
+      onClose: function () { setConsoleOpen(false); },
+      agents: agents,
     })
   );
 }
