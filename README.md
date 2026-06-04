@@ -7,6 +7,12 @@
 
 > 16 specialized AI agents orchestrated through Jarvis, running on Bonobo WS + Pi 5, controlled by voice and web.
 
+**A local-first, _governed_ personal AI — the always-on agent the 2026 "OpenClaw" wave proved people want, with the governance, audit, and privacy it's missing.** Runs entirely on your own hardware (LM Studio / Ollama on your GPU) — **$0/month, no cloud by default**. Every autonomous action passes through a reversible/irreversible **approval queue** and a tamper-evident **audit log**, with full observability — and a **family agent that never touches the internet**.
+
+**Get running in minutes →** [Quickstart](#run) · one-click `INSTALL.bat` on Windows.
+
+<!-- TODO(launch): demo GIF above the fold — 30–60s of a real task incl. one approved irreversible step -->
+
 ---
 
 ## What this is
