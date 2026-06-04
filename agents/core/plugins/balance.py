@@ -33,6 +33,31 @@ MOCK_BURN_RATE = {
 }
 
 
+def _mask_account(value: str) -> str:
+    """Mask all but the last 4 characters of an account / IBAN for display.
+
+    The reader only needs to *show* which account a balance belongs to, never the
+    full number — so even when real ING/Libra data is wired in, the HUD and Gecko
+    summaries never broadcast a full IBAN (which the PII scanner flags as HIGH).
+    """
+    s = str(value or "")
+    return s if len(s) <= 4 else "…" + s[-4:]
+
+
+def _mask_accounts(data: dict) -> dict:
+    """Copy a balances dict with every account number masked (keeps flags like 'mock')."""
+    masked: dict = {}
+    for source, accounts in data.items():
+        if isinstance(accounts, list):
+            masked[source] = [
+                {**a, "account": _mask_account(a.get("account", ""))} if isinstance(a, dict) else a
+                for a in accounts
+            ]
+        else:
+            masked[source] = accounts
+    return masked
+
+
 class BalanceReaderPlugin:
     def __init__(self, ing_client_id: str = "", ing_client_secret: str = "",
                  libra_token: str = "", csv_path: str = ""):
@@ -46,6 +71,10 @@ class BalanceReaderPlugin:
         return bool(self.ing_client_id or self.libra_token or self.csv_path)
 
     async def get_balances(self) -> dict:
+        """Aggregated balances, with account numbers masked for display safety."""
+        return _mask_accounts(await self._raw_balances())
+
+    async def _raw_balances(self) -> dict:
         if self.ing_client_id:
             try:
                 return await self._fetch_ing()

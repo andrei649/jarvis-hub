@@ -124,17 +124,19 @@
 
 | Category | Count |
 |----------|-------|
-| Total passing (backend) | 1,184+ tests |
-| Skipped | 8 (test_spotify HTTP-router, pending spotify.py) |
-| Frontend | 156 JS tests / 20 files · ~66% line coverage (BUG-2 delivered) |
+| Total passing (backend) | 1,559 tests |
+| Skipped | 9 (test_spotify HTTP-router + optional heartbeat) |
+| Frontend | 179 JS tests / 22 files · ~67% line coverage (BUG-2 delivered) |
 
 ---
 
 ## 2. Roadmap to v1.0 (= entire backlog done)
 
-> **v1.0.0 = the full backlog complete.** Foundation (H1–H9), hardening (H7), personal memory (H8), and the
-> security wedge (H12.1) are ✅ delivered. The remaining v1.0 scope is **H10 + H11 + H12-rest + H13–H17**
-> (≈468 SP open). Single source of truth: [BACKLOG.md](BACKLOG.md#version-roadmap).
+> **v1.0.0 = the full backlog complete.** Foundation (H1–H9), hardening (H7), personal memory (H8), and most
+> of the competitive-edge + frontier work — the 2026-06-03 wave across H10, H12, H14, H16, H17 — are ✅
+> code-complete: 872/1061 SP (82%). The remaining v1.0 scope is **H11 + the rest of H10/H12 + H13/H15/H16**
+> (≈189 SP open), mostly hardware/models or external network surfaces. Single source of truth:
+> [BACKLOG.md](BACKLOG.md#version-roadmap).
 
 ### ✅ H8 — Personal Memory (8/8, 48 SP) — DELIVERED 2026-06-02
 
@@ -172,7 +174,7 @@
 
 ---
 
-### H10 — Competitive Edge (0/30, 188 SP) — in v1.0 scope
+### H10 — Competitive Edge (27/30, 188 SP) — in v1.0 scope
 
 #### H10.A — Observability & Eval
 - APM cost dashboard (tokens + $ per agent/model)
@@ -220,11 +222,11 @@
 
 Desktop app (Tauri) · Rust hot-path crates · SFT/GRPO training pipeline · WASM sandbox. All P3 (high cost: GPU/Rust/native build). See [BACKLOG.md](BACKLOG.md) ORIZONT 11.
 
-### H12 — Private & Proactive Assistant (3/15) — in v1.0 scope
+### H12 — Private & Proactive Assistant (10/15) — in v1.0 scope
 
-✅ delivered: H12.1 security wedge (P0), H12.9 local-model UX, H12.10 trust indicator, H12.15 backup/restore. **Open:** onboarding drop-folder, queryable/editable KG, Wyoming protocol, autonomy dry-run, incremental KG, passive multi-surface capture, satellite-mic split, extended escalation channels, signed marketplace, E2E device sync, fine-tuned agentic model. See [BACKLOG.md](BACKLOG.md) ORIZONT 12.
+✅ delivered: H12.1 security wedge (P0), H12.2 drop-folder onboarding, H12.3 queryable/editable KG, H12.4 Wyoming protocol, H12.5 autonomy dry-run, H12.6 incremental KG, H12.9 local-model UX, H12.10 trust indicator, H12.11 extended escalation channels, H12.15 backup/restore. **Open:** passive multi-surface capture, satellite-mic split, signed marketplace, E2E device sync, fine-tuned agentic model. See [BACKLOG.md](BACKLOG.md) ORIZONT 12.
 
-### H13–H17 — Frontiers, post-parity (0/20, 146 SP) — in v1.0 scope
+### H13–H17 — Frontiers, post-parity (12/20, 146 SP) — in v1.0 scope
 
 The forward-looking sweep, folded into v1.0: **H13** local-capability ceiling (strict-local VLM, constrained decoding) · **H14** living memory (bi-temporal KG, sleep-time consolidation, decay-aware forgetting) · **H15** governed computer-use (browser-use behind the approval queue) · **H16** agentic-web citizen (MCP server mode, A2A, opt-in agentic payments) · **H17** provable trust (dual-LLM quarantine + AgentDojo CI badge). Flagship themes: *sleep-time compute* + *measurable governance*. See [BACKLOG.md](BACKLOG.md) ORIZONT 13–17 + [research](docs/research/2026-06-03-frontier-horizons.md).
 
@@ -265,7 +267,7 @@ Every night, Jarvis reads the last 60 conversations, extracts entities and relat
 LM Studio + Ollama on local GPU. Zero API cost for 99% of tasks. Athena escalates to Claude API for heavy reasoning — everything else runs at home. Total operating cost: **$0/month**.
 
 **Production-grade under the hood**
-1,184+ tests. 36× database speedup. Circuit breakers per plugin. Reciprocal rank fusion for hybrid recall. Fast/heavy model tiering based on prompt complexity. This isn't a demo.
+1,559 tests. 36× database speedup. Circuit breakers per plugin. Reciprocal rank fusion for hybrid recall. Fast/heavy model tiering based on prompt complexity. This isn't a demo.
 
 ---
 
@@ -307,11 +309,11 @@ LM Studio + Ollama on local GPU. Zero API cost for 99% of tasks. Athena escalate
 |--------|-------|
 | Active agents | 16 (+ 17 bench) |
 | Channels | 7 (web, voice, Telegram, Discord, Slack, email, sandbox) |
-| Tests passing | 1,184+ |
-| API endpoints | 17+ |
+| Tests passing | 1,559 |
+| API endpoints | ~203 |
 | Monthly cost | $0 |
 | SQLite speedup | 36× |
-| Story points delivered | 593 / 1061 total (56%) — v1.0 = full backlog |
+| Story points delivered | 872 / 1061 total (82%) — v1.0 = full backlog |
 
 ---
 
@@ -327,9 +329,9 @@ LM Studio + Ollama on local GPU. Zero API cost for 99% of tasks. Athena escalate
 | Dashboard cache race (BUG-1) | LOW | 1 | ✅ Done |
 | Personal Memory H8 (8 items) | P1 | 48 | ✅ Done |
 | Security wedge H12.1 (P0, anti-OpenClaw) | P0 | 8 | ✅ Done |
-| **Remaining backlog** — H10 + H11 + H12-rest + H13–H17 | P1–P3 | ~468 | ⏳ Open |
+| **Remaining backlog** — H11 + rest of H10/H12 + H13/H15/H16 | P1–P3 | ~189 | ⏳ Open |
 
-**Estimated gap to v1.0: ~468 SP** — the full remaining backlog. Foundation, hardening, personal memory, and the P0 security wedge are ✅ delivered; v1.0 ships when H10–H17 are complete.
+**Estimated gap to v1.0: ~189 SP** — the remaining backlog. Foundation, hardening, personal memory, the security wedge, and the 2026-06-03 competitive-edge/frontier wave are ✅ code-complete; v1.0 ships when the rest of H10–H17 is complete (plus the audit gate).
 
 ---
 

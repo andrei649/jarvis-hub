@@ -74,3 +74,20 @@ class TestCsvImport:
         plugin = BalanceReaderPlugin(csv_path="nonexistent.csv")
         data = await plugin.get_balances()
         assert data.get("mock") is True
+
+
+class TestAccountMasking:
+    async def test_balances_mask_account_numbers(self, empty_plugin):
+        data = await empty_plugin.get_balances()
+        for acct in data["ing"]:
+            assert acct["account"].startswith("…")
+            assert "1234567890" not in acct["account"]
+            assert "0987654321" not in acct["account"]
+        # currency and balance survive the masking copy
+        assert data["ing"][0]["currency"] == "RON"
+
+    async def test_summary_does_not_leak_full_iban(self, empty_plugin):
+        summary = await empty_plugin.get_summary()
+        assert "RO12INGB1234567890" not in summary
+        assert "RO12INGB0987654321" not in summary
+        assert "…7890" in summary  # masked tail still identifies the account

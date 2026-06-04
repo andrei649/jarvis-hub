@@ -2,7 +2,7 @@
 
 ![Python 3.12](https://img.shields.io/badge/python-3.12-blue?logo=python&logoColor=white)
 ![License: MIT](https://img.shields.io/badge/license-MIT-green)
-![Tests](https://img.shields.io/badge/tests-1480%2B%20passed-brightgreen?logo=pytest)
+![Tests](https://img.shields.io/badge/tests-1559%20passed-brightgreen?logo=pytest)
 ![Version](https://img.shields.io/badge/version-9.9.9-orange)
 
 > 16 specialized AI agents orchestrated through Jarvis, running on Bonobo WS + Pi 5, controlled by voice and web.
@@ -75,7 +75,7 @@ A personal AI mesh that handles the cross-section of Andrei's life: work at Raif
 pip install -r requirements-beta.txt
 pip install tiktoken beautifulsoup4 psutil pytest-asyncio   # extras used by newer code
 python serve.py              # http://127.0.0.1:8080
-python -m pytest             # 1480+ passed
+python -m pytest             # 1559 passed, 9 skipped
 ```
 
 - **HUD:** http://127.0.0.1:8080/
@@ -97,11 +97,15 @@ RAG injection; hot-path perf (SQLite WAL, event-loop offload, checkpoint debounc
 cache, complexity-based model tiering); autonomous proactive cortex (ORIZONT 6); security wedge (encrypted
 secrets, signed skills, reversible/irreversible approval split, quarantine/capability/kill-switch); competitive edge
 (workflow engine, model arena, quality monitor, review queue); living memory (bi-temporal KG, decay-forgetting,
-sleep-time consolidation). **1,480+ tests passing.**
+sleep-time consolidation). **1,559 tests passing.**
 
-**Road to v1.0:** the entire *software* backlog is shipped; `9.9.9` is the final pre-1.0 version, pending a full
-code audit (see [`docs/AUDIT.md`](docs/AUDIT.md)), human manual testing ([`docs/MANUAL_TESTING.md`](docs/MANUAL_TESTING.md)),
-and fixes. Remaining backlog items require hardware/models (local VLM, speculative decoding, browser-use,
-desktop operator) or external network surfaces (A2A, agentic payments). See [MOONSHOT.md](MOONSHOT.md) §4.
+**Road to v1.0:** the feature backlog (H1–H9) plus the bulk of the competitive-edge and frontier work — the
+2026-06-03 wave across H10, H12, H14, H16, H17 — is code-complete: ~166/186 backlog items (≈82% by story
+points), shipped pending the `9.9.9` audit gate (a full code audit — see [`docs/AUDIT.md`](docs/AUDIT.md) —
+human manual testing ([`docs/MANUAL_TESTING.md`](docs/MANUAL_TESTING.md)), and fixes). *Most* of what remains
+needs hardware/models (local VLM, speculative decoding, GPU fine-tuning, desktop operator) or external network
+surfaces (A2A, agentic payments); a handful of open items are pure software, mostly P3 (AI-assisted workflow
+builder, data spaces, signed-skill marketplace, and the Tauri/Rust/WASM parity items). See
+[BACKLOG.md](BACKLOG.md#status-general) + [MOONSHOT.md](MOONSHOT.md) §4.
 
 See `STATUS.md`, `BACKLOG.md`, and `docs/ARCHITECTURE.md` for details.

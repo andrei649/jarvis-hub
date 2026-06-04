@@ -325,28 +325,250 @@
     return Tool('Webhooks', 'Inbound triggers (optionally HMAC-signed)', body, Btn('↻', reload));
   }
 
+  /* ── Security & Governance (the governed-product story has a home now) ───── */
+  function KillSwitchPanel() {
+    const _ = useApi('/api/security/kill-switch', true), s = _[0], reload = _[1];
+    const _r = useState(''), reason = _r[0], setReason = _r[1];
+    function post(engage) {
+      adminFetch('/api/security/kill-switch', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ engage: engage, scope: 'global', reason: reason }) })
+        .then(reload).catch(function (e) { alert(e.message); });
+    }
+    let body;
+    if (s.err) body = Err(s.err); else if (s.loading) body = Empty('Loading…');
+    else {
+      const halted = !!(s.data.global || Object.keys(s.data.halted || {}).length);
+      body = h('div', null,
+        h('div', { className: 'tool-stat ' + (halted ? 'bad' : 'ok') }, halted ? '⛔ HALTED — autonomous actions blocked' : '✓ Operational'),
+        Object.keys(s.data.halted || {}).length ? Pre(s.data.halted) : null,
+        h('div', { className: 'tool-form' },
+          h('input', { className: 'tool-input', placeholder: 'reason (optional)', value: reason, onChange: function (e) { setReason(e.target.value); } }),
+          Btn('Engage halt', function () { post(true); }, 'bad'),
+          Btn('Disengage', function () { post(false); }, 'ok')));
+    }
+    return Tool('Kill-Switch', 'Out-of-band halt — the agent cannot disable it (admin)', body, Btn('↻', reload));
+  }
+
+  function TrustScorecardPanel() {
+    const _ = useApi('/api/security/governance', true), s = _[0], reload = _[1];
+    const pct = function (x) { return Math.round((x || 0) * 100) + '%'; };
+    let body;
+    if (s.err) body = Err(s.err); else if (s.loading) body = Empty('Loading…');
+    else {
+      const d = s.data, inj = d.injection || {}, harm = d.harm || {}, owasp = d.owasp || {};
+      body = h('div', null,
+        h('div', { className: 'tool-stat ' + (d.pass ? 'ok' : 'bad') },
+          (d.pass ? '✓ PASS' : '✗ FAIL') + ' · overall ' + pct(d.overall_score) + ' (gate ' + pct(d.threshold) + ')'),
+        h('div', { className: 'tool-grid2' },
+          h('div', { className: 'tool-chip ' + (inj.score >= 1 ? 'ok' : 'bad') }, 'Injection ' + pct(inj.score)),
+          h('div', { className: 'tool-chip ' + (harm.score >= 1 ? 'ok' : 'bad') }, 'Harm ' + pct(harm.score)),
+          h('div', { className: 'tool-chip ' + (owasp.score >= 1 ? 'ok' : 'bad') }, 'OWASP ' + (owasp.covered || 0) + '/' + (owasp.total || 0))));
+    }
+    return Tool('Trust Scorecard', 'AgentDojo + AgentHarm + OWASP — the governance gate', body, Btn('↻', reload));
+  }
+
+  function CapabilitiesPanel() {
+    const _c = useState(''), caps = _c[0], setCaps = _c[1];
+    const _i = useState(null), issued = _i[0], setIssued = _i[1];
+    const _t = useState(''), ctok = _t[0], setCtok = _t[1];
+    const _p = useState(''), ccap = _p[0], setCcap = _p[1];
+    const _r = useState(null), res = _r[0], setRes = _r[1];
+    function issue() {
+      const list = caps.split(',').map(function (x) { return x.trim(); }).filter(Boolean);
+      if (!list.length) { alert('Enter ≥1 capability (comma-separated).'); return; }
+      adminFetch('/api/security/capabilities/issue', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ capabilities: list }) })
+        .then(function (d) { setIssued(d.token); if (d.token) setCtok(d.token.id); }).catch(function (e) { alert(e.message); });
+    }
+    function check() {
+      api('/api/security/capabilities/check?token=' + encodeURIComponent(ctok) + '&capability=' + encodeURIComponent(ccap))
+        .then(setRes).catch(function (e) { setRes({ allowed: false, reason: String(e) }); });
+    }
+    const body = h('div', null,
+      h('div', { className: 'tool-group-title' }, 'Issue scoped token (admin)'),
+      h('div', { className: 'tool-form' },
+        h('input', { className: 'tool-input', placeholder: 'capabilities, comma-sep', value: caps, onChange: function (e) { setCaps(e.target.value); } }),
+        Btn('Issue', issue, 'admin')),
+      issued && Pre(issued),
+      h('div', { className: 'tool-group-title' }, 'Check a token'),
+      h('div', { className: 'tool-form' },
+        h('input', { className: 'tool-input', placeholder: 'token id', value: ctok, onChange: function (e) { setCtok(e.target.value); } }),
+        h('input', { className: 'tool-input', placeholder: 'capability', value: ccap, onChange: function (e) { setCcap(e.target.value); } }),
+        Btn('Check', check, 'ok')),
+      res && h('div', { className: 'tool-stat ' + (res.allowed ? 'ok' : 'bad') }, (res.allowed ? '✓ allowed' : '✗ blocked') + (res.reason ? ' · ' + res.reason : '')));
+    return Tool('Capability Tokens', 'Scoped · expiring · non-escalatable grants', body, null);
+  }
+
+  function AuditPanel() {
+    const _ = useApi('/api/security/audit/intent', true), s = _[0], reload = _[1];
+    let body;
+    if (s.err) body = Err(s.err); else if (s.loading) body = Empty('Loading…');
+    else {
+      const v = s.data.verify, ok = v === true || (v && v.ok), entries = s.data.entries || [];
+      body = h('div', null,
+        h('div', { className: 'tool-stat ' + (ok ? 'ok' : 'bad') }, ok ? '✓ chain verified' : '⚠ chain unverified'),
+        entries.length ? entries.map(function (e, i) {
+          return h('div', { key: i, className: 'tool-card-text' }, (e.actor || '?') + ' · ' + (e.action || '?') + (e.why ? ' — ' + e.why : ''));
+        }) : Empty('No audited actions yet.'));
+    }
+    return Tool('Audit & Intent', 'Hash-chained, signed actions + why they happened', body, Btn('↻', reload));
+  }
+
+  function CostPanel() {
+    const _ = useApi('/api/cost', true), s = _[0], reload = _[1];
+    let body;
+    if (s.err) body = Err(s.err); else if (s.loading) body = Empty('Loading…');
+    else {
+      const sum = s.data.summary || {}, byAgent = s.data.by_agent || [];
+      body = h('div', null,
+        h('div', { className: 'tool-stat' }, '$' + (sum.total_cost || 0) + ' across ' + (sum.calls || 0) + ' calls'),
+        byAgent.length ? byAgent.map(function (a, i) {
+          return h('div', { key: i, className: 'tool-card-text' }, (a.agent_id || '?') + ' · $' + (a.cost || 0) + ' · ' + (a.calls || 0) + ' calls');
+        }) : Empty('No cost yet — local models are $0.'));
+    }
+    return Tool('Cost & Usage', '$ per agent — local models are $0', body, Btn('↻', reload));
+  }
+
+  /* ── Personal data & local models (privacy-first) ──────────────────────── */
+  function LocalDocsPanel() {
+    const _ = useApi('/api/local-docs', true), s = _[0], reload = _[1];
+    const _b = useState(null), busy = _b[0], setBusy = _b[1];
+    function index(key) {
+      setBusy(key);
+      api('/api/local-docs/index', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ key: key }) })
+        .then(function () { setBusy(null); reload(); }).catch(function (e) { setBusy(null); alert(e); });
+    }
+    let body;
+    if (s.err) body = Err(s.err); else if (s.loading) body = Empty('Loading…');
+    else {
+      const keys = s.data.available || [];
+      body = h('div', null,
+        h('div', { className: 'tool-hint' }, 'Index a pre-configured local folder into memory — fully offline. Set folders in local_docs.folders.'),
+        keys.length ? keys.map(function (k) {
+          return h('div', { key: k, className: 'tool-card' },
+            h('span', { className: 'tool-card-text' }, '📁 ' + k),
+            Btn(busy === k ? 'Indexing…' : 'Index', function () { index(k); }, 'ok'));
+        }) : Empty('No folders configured (set local_docs.folders).'),
+        (s.data.indexed != null || s.data.chunks != null) && h('div', { className: 'tool-stat' }, 'Last: ' + (s.data.indexed != null ? s.data.indexed + ' docs' : '') + (s.data.chunks != null ? ' · ' + s.data.chunks + ' chunks' : '')));
+    }
+    return Tool('Local Docs', 'Drop-folder → chat with your files, offline', body, Btn('↻', reload));
+  }
+
+  function ModelsPanel() {
+    const _ = useApi('/api/models/local', true), s = _[0], reload = _[1];
+    function switchTo(id) {
+      adminFetch('/api/models/local/switch', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ model: id }) })
+        .then(reload).catch(function (e) { alert(e.message); });
+    }
+    let body;
+    if (s.err) body = Err(s.err); else if (s.loading) body = Empty('Loading…');
+    else {
+      const models = s.data.models || [], active = s.data.active || '';
+      body = models.length ? models.map(function (m, i) {
+        const id = (m && m.id) || m, isActive = (m && m.active) || id === active;
+        return h('div', { key: i, className: 'tool-card' },
+          h('span', { className: 'tool-card-text' }, (isActive ? '● ' : '○ ') + id),
+          !isActive && Btn('Use', function () { switchTo(id); }, 'admin'));
+      }) : Empty('No local models found (LM Studio / Ollama).');
+    }
+    return Tool('Local Models', 'Browse + switch the active local model (admin)', body, Btn('↻', reload));
+  }
+
+  function TemplatesPanel() {
+    const _ = useApi('/api/agent-templates', true), s = _[0], reload = _[1];
+    const _n = useState(''), name = _n[0], setName = _n[1];
+    const _r = useState(null), res = _r[0], setRes = _r[1];
+    function tid(t) { return typeof t === 'string' ? t : (t.id || t.name || ''); }
+    function tlabel(t) { return typeof t === 'string' ? t : (t.name || t.id || 'template'); }
+    function instantiate(t) {
+      api('/api/agent-templates/instantiate', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ template: tid(t), name: name || tid(t) }) })
+        .then(setRes).catch(function (e) { alert(e); });
+    }
+    let body;
+    if (s.err) body = Err(s.err); else if (s.loading) body = Empty('Loading…');
+    else {
+      const templates = s.data.templates || [];
+      body = h('div', null,
+        h('div', { className: 'tool-form' }, h('input', { className: 'tool-input', placeholder: 'new agent name (optional)', value: name, onChange: function (e) { setName(e.target.value); } })),
+        templates.length ? templates.map(function (t, i) {
+          return h('div', { key: i, className: 'tool-card' },
+            h('span', { className: 'tool-card-text' }, tlabel(t) + (typeof t.description === 'string' ? ' — ' + t.description : '')),
+            Btn('Preview config', function () { instantiate(t); }, 'ok'));
+        }) : Empty('No templates.'),
+        res && Pre(res));
+    }
+    return Tool('Agent Templates', 'Instantiate a pre-built agent (preview config)', body, Btn('↻', reload));
+  }
+
+  function ReflectionPanel() {
+    const _ = useApi('/api/reflection/status', true), s = _[0], reload = _[1];
+    const _r = useState(null), res = _r[0], setRes = _r[1];
+    function run() { api('/api/reflection/run', { method: 'POST' }).then(function (d) { setRes(d); reload(); }).catch(function (e) { alert(e); }); }
+    let body;
+    if (s.err) body = Err(s.err); else if (s.loading) body = Empty('Loading…');
+    else body = h('div', null,
+      h('div', { className: 'tool-stat ' + (s.data.enabled ? 'ok' : '') }, (s.data.enabled ? '✓ enabled' : '○ disabled') + (s.data.last_run ? ' · last ' + s.data.last_run : ' · never run')),
+      Btn('Run reflection now', run, 'ok'),
+      res && Pre(res.result || res));
+    return Tool('Daily Reflection', 'Nightly memory consolidation — run on demand', body, Btn('↻', reload));
+  }
+
+  function EvalPanel() {
+    const _ = useApi('/api/eval/datasets', true), s = _[0], reload = _[1];
+    const _b = useState(null), busy = _b[0], setBusy = _b[1];
+    const _r = useState(null), res = _r[0], setRes = _r[1];
+    function run(name) {
+      setBusy(name); setRes(null);
+      api('/api/eval/datasets/run', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: name }) })
+        .then(function (d) { setBusy(null); setRes(d); reload(); }).catch(function (e) { setBusy(null); alert(e); });
+    }
+    let body;
+    if (s.err) body = Err(s.err); else if (s.loading) body = Empty('Loading…');
+    else {
+      const datasets = s.data.datasets || [];
+      body = h('div', null,
+        h('div', { className: 'tool-hint' }, 'Versioned eval sets — run one through the live orchestrator to catch regressions before they ship.'),
+        datasets.length ? datasets.map(function (d) {
+          const score = d.last_score != null ? Math.round(d.last_score * 100) + '%' : '—';
+          return h('div', { key: d.name, className: 'tool-card' },
+            h('span', { className: 'tool-card-text' }, d.name + ' · v' + (d.latest_version || 1) + ' · ' + (d.cases || 0) + ' cases · last ' + score),
+            Btn(busy === d.name ? 'Running…' : 'Run', function () { run(d.name); }, 'ok'));
+        }) : Empty('No datasets yet (add under eval/datasets/).'),
+        res && Pre(res));
+    }
+    return Tool('Eval Datasets', 'Regression-track agents against versioned datasets', body, Btn('↻', reload));
+  }
+
   /* ── tool registry ─────────────────────────────────────────────────────── */
   const TOOLS = [
     { id: 'health', group: 'Observability', label: 'Component Health', render: function (p) { return h(HealthPanel, p); } },
     { id: 'quality', group: 'Observability', label: 'Quality Monitor', render: function (p) { return h(QualityPanel, p); } },
     { id: 'review', group: 'Observability', label: 'Review Queue', render: function (p) { return h(ReviewPanel, p); } },
+    { id: 'cost', group: 'Observability', label: 'Cost & Usage', render: function (p) { return h(CostPanel, p); } },
+    { id: 'killswitch', group: 'Security', label: 'Kill-Switch', render: function (p) { return h(KillSwitchPanel, p); } },
+    { id: 'trust', group: 'Security', label: 'Trust Scorecard', render: function (p) { return h(TrustScorecardPanel, p); } },
+    { id: 'capabilities', group: 'Security', label: 'Capability Tokens', render: function (p) { return h(CapabilitiesPanel, p); } },
+    { id: 'audit', group: 'Security', label: 'Audit & Intent', render: function (p) { return h(AuditPanel, p); } },
     { id: 'arena', group: 'Quality', label: 'Model Arena', render: function (p) { return h(ArenaPanel, p); } },
+    { id: 'eval', group: 'Quality', label: 'Eval Datasets', render: function (p) { return h(EvalPanel, p); } },
     { id: 'actions', group: 'Autonomy', label: 'Action Approvals', render: function (p) { return h(ActionsPanel, p); } },
     { id: 'schedule', group: 'Autonomy', label: 'NL Scheduling', render: function (p) { return h(SchedulePanel, p); } },
     { id: 'dryrun', group: 'Autonomy', label: 'Dry-Run Preview', render: function (p) { return h(DryRunPanel, p); } },
     { id: 'escalation', group: 'Autonomy', label: 'Escalation', render: function (p) { return h(EscalationPanel, p); } },
     { id: 'learning', group: 'Autonomy', label: 'Learning Loop', render: function (p) { return h(LearningPanel, p); } },
+    { id: 'reflection', group: 'Autonomy', label: 'Daily Reflection', render: function (p) { return h(ReflectionPanel, p); } },
     { id: 'notes', group: 'Workspace', label: 'Conversation Notes', render: function (p) { return h(NotesPanel, p); } },
     { id: 'rooms', group: 'Workspace', label: 'Chat Rooms', render: function (p) { return h(RoomsPanel, p); } },
     { id: 'memsearch', group: 'Memory', label: 'Memory Search', render: function (p) { return h(MemorySearchPanel, p); } },
     { id: 'kg', group: 'Memory', label: 'Knowledge Graph', render: function (p) { return h(KGPanel, p); } },
     { id: 'entities', group: 'Memory', label: 'Entities', render: function (p) { return h(EntitiesPanel, p); } },
     { id: 'decay', group: 'Memory', label: 'Decay & Forgetting', render: function (p) { return h(DecayPanel, p); } },
+    { id: 'localdocs', group: 'Memory', label: 'Local Docs', render: function (p) { return h(LocalDocsPanel, p); } },
     { id: 'widgets', group: 'Tools', label: 'Embeddable Widgets', render: function (p) { return h(WidgetsPanel, p); } },
     { id: 'grammar', group: 'Tools', label: 'Constrained Decoding', render: function (p) { return h(GrammarPanel, p); } },
     { id: 'mcp', group: 'Tools', label: 'MCP Server', render: function (p) { return h(MCPPanel, p); } },
     { id: 'secrets', group: 'Tools', label: 'Secret Broker', render: function (p) { return h(SecretsPanel, p); } },
     { id: 'webhooks', group: 'Tools', label: 'Webhooks', render: function (p) { return h(WebhooksPanel, p); } },
+    { id: 'models', group: 'Tools', label: 'Local Models', render: function (p) { return h(ModelsPanel, p); } },
+    { id: 'templates', group: 'Tools', label: 'Agent Templates', render: function (p) { return h(TemplatesPanel, p); } },
   ];
   window.JARVIS_TOOLS = TOOLS;
 

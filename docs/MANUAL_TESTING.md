@@ -1,6 +1,6 @@
 # Manual Testing Guide
 
-> **Why this exists.** The automated suite (1,480+ tests) runs fully offline with
+> **Why this exists.** The automated suite (1,559 tests) runs fully offline with
 > mocked LLMs, channels, and hardware. It proves the *logic* is correct, but it
 > **cannot** verify anything that needs a real model, a live channel token, a
 > browser, an external service (Qdrant/Neo4j/n8n), or a human looking at the HUD.
