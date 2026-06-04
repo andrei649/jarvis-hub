@@ -467,6 +467,8 @@ async def status():
         "sys": _sys_info(),
         "voice_state": voice_state,
         "lm_online": lm_online,
+        "llm_backend": orch.llm_router.name,
+        "active_model": getattr(orch.llm_router, "active_model", None),
         "agents": [{"id": a["id"], "status": a["status"]} for a in enriched],
         "agents_online": sum(1 for a in enriched if a["status"] != "idle"),
         "agents_total": len(enriched),
@@ -2400,6 +2402,59 @@ async def models_local_switch(body: LocalModelSwitch):
         pass
 
     return _nocache_json({"ok": True, "active": body.model})
+
+
+# ── LM Studio lifecycle control (start server / load / unload) ───
+# Jarvis connects to a running LM Studio and auto-detects the model; these let
+# the operator (or Jarvis) actually start the server and load/unload a model via
+# the `lms` CLI. Admin-guarded, like the model-switch endpoint above.
+
+class LMLoad(BaseModel):
+    model: str = Field(..., min_length=1, max_length=200)
+
+
+class LMUnload(BaseModel):
+    model: str | None = Field(default=None, max_length=200)
+
+
+def _lmstudio_or_503():
+    if not orch or getattr(orch, "lmstudio", None) is None:
+        return None, _nocache_json({"error": "not initialized"}, status_code=503)
+    return orch.lmstudio, None
+
+
+@app.post("/api/llm/server/start", dependencies=[Depends(_admin_guard)])
+async def llm_server_start():
+    ctrl, err = _lmstudio_or_503()
+    if err:
+        return err
+    result = await ctrl.start_server(agent="jarvis")
+    return _nocache_json(result, status_code=200 if result.get("status") == "ok" else 502)
+
+
+@app.post("/api/llm/load", dependencies=[Depends(_admin_guard)])
+async def llm_load(body: LMLoad):
+    ctrl, err = _lmstudio_or_503()
+    if err:
+        return err
+    result = await ctrl.load_model(body.model, agent="jarvis")
+    if result.get("status") == "ok":
+        try:
+            put_category("llm", {"default_model": body.model})
+        except Exception:
+            pass  # live load already took effect; persistence is best-effort
+        return _nocache_json(result)
+    code = 400 if result.get("status") == "rejected" else 502
+    return _nocache_json(result, status_code=code)
+
+
+@app.post("/api/llm/unload", dependencies=[Depends(_admin_guard)])
+async def llm_unload(body: LMUnload):
+    ctrl, err = _lmstudio_or_503()
+    if err:
+        return err
+    result = await ctrl.unload_model(body.model, agent="jarvis")
+    return _nocache_json(result, status_code=200 if result.get("status") == "ok" else 502)
 
 
 # ── MCP (Model Context Protocol) admin endpoints ─────────────────

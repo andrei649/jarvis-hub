@@ -695,6 +695,7 @@ function LocalModelsPage({ onToast }) {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [switching, setSwitching] = useState('');
+  const [busy, setBusy] = useState('');
 
   const fetchModels = () => {
     setLoading(true);
@@ -710,6 +711,23 @@ function LocalModelsPage({ onToast }) {
       .then(r=>{if(!r.ok) return r.json().then(d=>{throw new Error(d.error||'switch failed')}); return r.json();})
       .then(d=>{ onToast('Model activ: '+d.active); setSwitching(''); fetchModels(); })
       .catch(e=>{ onToast('Eroare: '+e.message); setSwitching(''); });
+  };
+
+  // Actually start the LM Studio server / load a model into it via `lms` CLI.
+  const startServer = () => {
+    setBusy('server');
+    fetch('/api/llm/server/start',{method:'POST'})
+      .then(r=>r.json().then(d=>({ok:r.ok,d})))
+      .then(({ok,d})=>{ onToast(ok ? 'LM Studio: server pornit' : ('Eroare: '+(d.reason||d.error||'pornire eșuată'))); setBusy(''); fetchModels(); })
+      .catch(e=>{ onToast('Eroare: '+e.message); setBusy(''); });
+  };
+
+  const loadModel = (id) => {
+    setBusy(id);
+    fetch('/api/llm/load',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({model:id})})
+      .then(r=>r.json().then(d=>({ok:r.ok,d})))
+      .then(({ok,d})=>{ onToast(ok ? ('Model încărcat: '+(d.model||id)) : ('Eroare: '+(d.reason||d.error||'încărcare eșuată'))); setBusy(''); fetchModels(); })
+      .catch(e=>{ onToast('Eroare: '+e.message); setBusy(''); });
   };
 
   if (loading) return h('div',{style:{padding:20,fontSize:12,color:'var(--text-dim)'}}, 'Se încarcă modelele locale…');
@@ -728,7 +746,8 @@ function LocalModelsPage({ onToast }) {
         p.name,
         h('span',{style:{color:'var(--text-dim)'}}, p.online ? 'disponibil' : 'offline'),
       )),
-      h('button',{className:'admin-btn',style:{fontSize:11,padding:'3px 10px',marginLeft:'auto'},onClick:fetchModels}, 'Reîmprospătează'),
+      h('button',{className:'admin-btn',style:{fontSize:11,padding:'3px 10px',marginLeft:'auto'},disabled:busy==='server',onClick:startServer}, busy==='server'?'…':'Pornește server LM Studio'),
+      h('button',{className:'admin-btn',style:{fontSize:11,padding:'3px 10px'},onClick:fetchModels}, 'Reîmprospătează'),
     ),
 
     models.length === 0
@@ -746,11 +765,16 @@ function LocalModelsPage({ onToast }) {
               h('div',{style:{fontSize:13,fontWeight:600,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}, m.id),
               h('div',{style:{fontSize:10,color:'var(--text-dim)'}}, m.provider),
             ),
-            m.active
-              ? h('span',{style:{fontSize:11,color:'var(--accent)',fontWeight:600,padding:'3px 8px'}}, 'Activ')
-              : h('button',{className:'admin-btn is-primary',style:{fontSize:11,padding:'3px 10px'},
-                  disabled: !!switching, onClick:()=>switchModel(m.id)},
-                  switching === m.id ? '…' : 'Activează'),
+            h('div',{style:{display:'flex',gap:6,flexShrink:0}},
+              h('button',{className:'admin-btn',style:{fontSize:11,padding:'3px 10px'},
+                disabled: busy===m.id, onClick:()=>loadModel(m.id)},
+                busy === m.id ? '…' : 'Încarcă'),
+              m.active
+                ? h('span',{style:{fontSize:11,color:'var(--accent)',fontWeight:600,padding:'3px 8px'}}, 'Activ')
+                : h('button',{className:'admin-btn is-primary',style:{fontSize:11,padding:'3px 10px'},
+                    disabled: !!switching, onClick:()=>switchModel(m.id)},
+                    switching === m.id ? '…' : 'Activează'),
+            ),
           )),
         ),
   );

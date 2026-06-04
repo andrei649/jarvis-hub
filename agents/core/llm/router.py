@@ -96,3 +96,22 @@ class LLMRouter:
         Subclasses that track a separate `_local_model` should override this to
         keep their routing state in sync."""
         self._detected_model = model
+
+    async def refresh_active_model(self) -> Optional[str]:
+        """Re-fetch the model currently loaded in the live backend and adopt it.
+
+        Called after a model is loaded/unloaded (e.g. via LMStudioController) so
+        routing and the runtime state agents report reflect the real loaded
+        model immediately, without a restart. No-op if no backend is up."""
+        if self._backend is None:
+            return None
+        if self._backend_name == "lm-studio":
+            model = await self._fetch_loaded_model("http://localhost:1234/v1/models", "lmstudio")
+        elif self._backend_name == "ollama":
+            model = await self._fetch_loaded_model("http://localhost:11434/api/tags", "ollama")
+        else:
+            model = None
+        if model:
+            self.set_active_model(model)
+            logger.info("Active model refreshed: %s", model)
+        return model

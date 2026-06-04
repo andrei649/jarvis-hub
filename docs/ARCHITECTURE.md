@@ -83,6 +83,7 @@ When on: embeds the query, runs fused recall (vector ⊕ graph), injects top-k a
 | `agents/core/llm/base.py` | Abstract backend + LMStudio + Ollama | `LLMBackend`, `LMStudioBackend`, `OllamaBackend`, `strip_thinking`, `ThinkingStreamFilter` |
 | `agents/core/llm/router.py` | Auto-detect LMStudio → Ollama | `LLMRouter.detect` |
 | `agents/core/llm/hybrid_router.py` | Multi-tier routing engine | `HybridRouter.select_backend`, `is_heavy_request`, `LOCAL_ONLY_AGENTS`, `CLAUDE_AGENTS`, `DEEP_THINK_AGENTS` |
+| `agents/core/llm/lmstudio_control.py` | Start LM Studio server + load/unload models via `lms` CLI (no-shell, probed); refreshes live router | `LMStudioController.start_server/load_model/unload_model/status` |
 | `agents/core/llm/anthropic.py` | Claude API backend | `ClaudeBackend` |
 | `agents/core/llm/gemini.py` | Gemini API backend | `GeminiBackend` |
 | `agents/core/llm/gemini_cache.py` | Gemini context cache | `ContextCache`, `create_or_extend` |

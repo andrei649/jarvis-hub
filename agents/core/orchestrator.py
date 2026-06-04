@@ -164,6 +164,10 @@ class Orchestrator:
         self.security: Optional[GuardrailsEngine] = None
         self.permission_gate = PermissionGate()
         self.audit = AuditLogger()
+        # LM Studio lifecycle control (start server / load / unload). Shares the
+        # live router so a model change refreshes routing + reported state.
+        from .llm.lmstudio_control import LMStudioController
+        self.lmstudio = LMStudioController(router=self.llm_router)
         self.session_id: Optional[str] = None
         self.on_token: Optional[Callable] = None
         self._runtime_settings: dict = {}
