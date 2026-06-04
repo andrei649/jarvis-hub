@@ -1,4 +1,4 @@
-const CACHE_NAME = 'jarvis-hud-v2';
+const CACHE_NAME = 'jarvis-hud-v3';
 const STATIC_ASSETS = [
   '/',
   '/static/manifest.json',
@@ -15,7 +15,11 @@ const STATIC_ASSETS = [
   '/static/enhancements.js',
   '/static/cognition.js',
   '/static/systems.js',
+  '/static/workflows.js',
+  '/static/observability.js',
   '/static/dossier-modal.js',
+  '/static/console.js',
+  '/static/tools.js',
   '/static/app.js'
 ];
 
