@@ -96,7 +96,7 @@ function TrustIndicator({ trust }) {
   );
 }
 
-function TopBar({ activeAgent, voiceState, agentsOnline, agentsTotal, lmOnline, trust, toggles, version }) {
+function TopBar({ activeAgent, voiceState, agentsOnline, agentsTotal, lmOnline, trust, toggles, version, onOpenConsole }) {
   return h('header', { className: 'topbar' },
     h('div', { className: 'topbar-left' },
       h('div', { className: 'logo' },
@@ -121,8 +121,8 @@ function TopBar({ activeAgent, voiceState, agentsOnline, agentsTotal, lmOnline, 
       h(Badge, { label: 'Voice', value: voiceState.toUpperCase(), kind: voiceState === 'idle' ? 'dim' : 'active' }),
       h(Badge, { label: 'Agents', value: `${agentsOnline}/${agentsTotal}`, kind: 'active' }),
       h(Badge, { label: _t('comp.lmstudio'), value: lmOnline ? '1234' : _t('comp.offline'), kind: lmOnline ? 'active' : 'alert' }),
-      // Theme/language/panel toggles + admin + version now live in the ⚙ menu
-      // (declutter: 11 controls → status badges + ⚙). SettingsMenu from console.js.
+      // Console = the home for every feature; ⚙ = settings (console.js/tools.js).
+      h('button', { className: 'topbar-btn console-open-btn', onClick: onOpenConsole, title: 'Console — all features' }, '▦ Console'),
       typeof SettingsMenu !== 'undefined' && h(SettingsMenu, { toggles: toggles, version: version }),
     ),
   );

@@ -35,6 +35,8 @@ function App() {
   var _ver = useState(''), version = _ver[0], setVersion = _ver[1];
   // #5: NetworkBrain is now a toggle (off by default) so chat owns the center.
   var _net = useState(localStorage.getItem('hud.network') === 'on'), showNetwork = _net[0], setShowNetwork = _net[1];
+  // #6: Console — the home for every feature.
+  var _con = useState(false), consoleOpen = _con[0], setConsoleOpen = _con[1];
   var recRef = useRef(null);
 
   useEffect(function () {
@@ -145,7 +147,7 @@ function App() {
   var liveSys = useLiveSys(sys);
 
   useHotkey('cmdk', function () { setPaletteOpen(function (o) { return !o; }); });
-  useHotkey('esc', function () { setPaletteOpen(false); setFocusAgent(null); });
+  useHotkey('esc', function () { setPaletteOpen(false); setFocusAgent(null); setConsoleOpen(false); });
 
   var speakText = async function (text, lang) {
     if (window.activeJarvisAudio) {
@@ -314,6 +316,7 @@ function App() {
       lmOnline: lmOnline,
       trust: trust,
       version: version,
+      onOpenConsole: function () { setConsoleOpen(true); },
       toggles: {
         network: showNetwork, onNetwork: function () { setShowNetwork(function (v) { var n = !v; localStorage.setItem('hud.network', n ? 'on' : 'off'); return n; }); },
         cognition: showCognition, onCognition: function () { setShowCognition(function (v) { return !v; }); },
@@ -428,6 +431,13 @@ function App() {
       onClose: function () { setDossierAgent(null); },
       onChat: function (id) { setActiveAgent(id); setDossierAgent(null); },
       onViewSoul: function (id) { console.log('view soul:', id); },
+    }),
+
+    // #6: Console — discoverable home for every feature.
+    typeof ConsoleOverlay !== 'undefined' && h(ConsoleOverlay, {
+      open: consoleOpen,
+      onClose: function () { setConsoleOpen(false); },
+      agents: agents,
     })
   );
 }
