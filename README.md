@@ -78,9 +78,9 @@ A personal AI mesh that handles the cross-section of Andrei's life: work at Raif
 ### Manual (any OS)
 
 ```bash
-pip install -r requirements-beta.txt
-pip install tiktoken beautifulsoup4 psutil pytest-asyncio   # extras used by newer code
-python serve.py              # http://127.0.0.1:8080
+python3 -m venv .venv && source .venv/bin/activate   # Windows: .venv\Scripts\activate
+pip install -r requirements-beta.txt                 # one install — full feature set
+python serve.py              # → http://127.0.0.1:8080
 python -m pytest             # 1559 passed, 9 skipped
 ```
 
