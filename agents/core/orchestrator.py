@@ -141,6 +141,24 @@ def _extract_model(s: str) -> Optional[str]:
     return None
 
 
+def _env_flag(name: str, default: bool = True) -> bool:
+    raw = os.environ.get(name)
+    if raw is None or raw.strip() == "":
+        return default
+    return raw.strip().lower() not in ("0", "false", "no", "off", "disable", "disabled")
+
+
+def _as_bool(value, default: bool = True) -> bool:
+    """Coerce a runtime-settings value (bool / int / "true" / "off" / ...) to bool."""
+    if value is None:
+        return default
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float)):
+        return value != 0
+    return str(value).strip().lower() not in ("0", "false", "no", "off", "disable", "disabled", "")
+
+
 def detect_llm_control(text: str) -> Optional[tuple[str, Optional[str]]]:
     """Detect a chat request to control the LLM backend.
 
@@ -268,7 +286,12 @@ class Orchestrator:
         # LM Studio lifecycle control (start server / load / unload). Shares the
         # live router so a model change refreshes routing + reported state.
         from .llm.lmstudio_control import LMStudioController
-        self.lmstudio = LMStudioController(router=self.llm_router)
+        # enabled is re-synced from live settings in load_runtime_settings(); the
+        # env var is the boot-time default and a hard kill-switch (see docs).
+        self.lmstudio = LMStudioController(
+            router=self.llm_router,
+            enabled=_env_flag("JARVIS_LMSTUDIO_CONTROL", True),
+        )
         self.session_id: Optional[str] = None
         self.on_token: Optional[Callable] = None
         self._runtime_settings: dict = {}
@@ -484,6 +507,11 @@ class Orchestrator:
                     flat[f"{cat}.{item['key']}"] = item["value"]
             self._runtime_settings = flat
             logger.debug(f"Runtime settings loaded: {len(flat)} keys")
+            # Propagate the live kill-switch to the controller (≤30s to take
+            # effect via the settings watcher) — no restart needed to disable.
+            ctrl = getattr(self, "lmstudio", None)
+            if ctrl is not None:
+                ctrl.set_enabled(self._control_master_enabled())
         except Exception as e:
             log_error(logger, E_INTERNAL_UNEXPECTED, component="settings_db", detail=str(e))
 
@@ -862,13 +890,14 @@ class Orchestrator:
                     return result
 
         # Natural-language LLM-backend control (start / load / unload / status).
-        llm_ctl = detect_llm_control(text)
-        if llm_ctl:
-            reply = await self._run_llm_control(*llm_ctl)
-            if reply:
-                await self.memory.add_turn(self.session_id, "assistant", reply, agent_id="jarvis")
-                self.last_cognition = self._control_cognition(llm_ctl[0])
-                return reply
+        if self._chat_control_enabled():
+            llm_ctl = detect_llm_control(text)
+            if llm_ctl:
+                reply = await self._run_llm_control(*llm_ctl)
+                if reply:
+                    await self.memory.add_turn(self.session_id, "assistant", reply, agent_id="jarvis")
+                    self.last_cognition = self._control_cognition(llm_ctl[0])
+                    return reply
 
         t_c0 = time.perf_counter()
         intent = await self.router.classify(text, self.agents)
@@ -999,15 +1028,16 @@ class Orchestrator:
                     return result
 
         # Natural-language LLM-backend control (start / load / unload / status).
-        llm_ctl = detect_llm_control(text)
-        if llm_ctl:
-            reply = await self._run_llm_control(*llm_ctl)
-            if reply:
-                await self.memory.add_turn(self.session_id, "assistant", reply, agent_id="jarvis")
-                if on_token:
-                    on_token(reply)
-                self.last_cognition = self._control_cognition(llm_ctl[0])
-                return reply
+        if self._chat_control_enabled():
+            llm_ctl = detect_llm_control(text)
+            if llm_ctl:
+                reply = await self._run_llm_control(*llm_ctl)
+                if reply:
+                    await self.memory.add_turn(self.session_id, "assistant", reply, agent_id="jarvis")
+                    if on_token:
+                        on_token(reply)
+                    self.last_cognition = self._control_cognition(llm_ctl[0])
+                    return reply
 
         t_c0 = time.perf_counter()
         intent = await self.router.classify(text, self.agents)
@@ -1396,6 +1426,22 @@ class Orchestrator:
             f"- LLM backend: {backend}\n"
             f"- Active model: {model}\n\n"
         )
+
+    def _control_master_enabled(self) -> bool:
+        """Master switch for LM Studio lifecycle control (chat + admin API + HUD).
+        Off if EITHER the env var or the live ``llm.control_enabled`` setting is
+        off, so any single kill signal wins. Both default on."""
+        return (_env_flag("JARVIS_LMSTUDIO_CONTROL", True)
+                and _as_bool(self.get_setting("llm.control_enabled", True)))
+
+    def _chat_control_enabled(self) -> bool:
+        """Whether a natural-language chat message may drive LLM control. Needs the
+        master switch plus its own ``JARVIS_LMSTUDIO_CHAT_CONTROL`` env /
+        ``llm.chat_control`` setting — lets you mute ambient detection while
+        keeping the explicit admin buttons live."""
+        return (self._control_master_enabled()
+                and _env_flag("JARVIS_LMSTUDIO_CHAT_CONTROL", True)
+                and _as_bool(self.get_setting("llm.chat_control", True)))
 
     def _control_cognition(self, action: str) -> dict:
         return {

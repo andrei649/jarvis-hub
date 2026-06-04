@@ -52,6 +52,7 @@ class LMStudioController:
         server_url: str = "http://localhost:1234",
         router=None,
         permission_gate=None,
+        enabled: bool = True,
         exec_fn: Optional[ExecFn] = None,
         probe_fn: Optional[ProbeFn] = None,
         timeout: float = 60.0,
@@ -62,6 +63,11 @@ class LMStudioController:
         self.server_url = server_url.rstrip("/")
         self.router = router
         self.permission_gate = permission_gate
+        # Master kill-switch. When False, every *mutating* action (start / load /
+        # unload) is a no-op that returns status "disabled" without touching the
+        # host — read-only status() still works. Flipped live from settings (see
+        # Orchestrator._control_master_enabled) or hard-off via env at boot.
+        self.enabled = enabled
         self._exec_fn = exec_fn or _default_exec
         self._probe_fn = probe_fn or _default_probe
         self.timeout = timeout
@@ -72,12 +78,22 @@ class LMStudioController:
         self._port = parsed.port or 1234
 
     # ── public API ────────────────────────────────────────────────
+    def set_enabled(self, value: bool) -> None:
+        """Flip the master kill-switch at runtime (driven by settings sync)."""
+        value = bool(value)
+        if value != self.enabled:
+            logger.info("lmstudio_control %s", "enabled" if value else "disabled")
+        self.enabled = value
+
     async def status(self) -> dict:
         online = self._probe()
         model = getattr(self.router, "active_model", None) if (online and self.router) else None
-        return {"online": online, "server_url": self.server_url, "active_model": model}
+        return {"online": online, "enabled": self.enabled,
+                "server_url": self.server_url, "active_model": model}
 
     async def start_server(self, agent: str = "jarvis") -> dict:
+        if not self.enabled:
+            return self._done("disabled", "start_server", reason="LM Studio control is disabled")
         blocked = self._gate(agent, "start_server")
         if blocked:
             return blocked
@@ -92,6 +108,8 @@ class LMStudioController:
                           online=recovered, output=_clip(result))
 
     async def load_model(self, model: str, agent: str = "jarvis") -> dict:
+        if not self.enabled:
+            return self._done("disabled", "load_model", model=model, reason="LM Studio control is disabled")
         blocked = self._gate(agent, "load_model")
         if blocked:
             return blocked
@@ -112,6 +130,8 @@ class LMStudioController:
                           model=model, exit_code=result.exit_code, output=_clip(result))
 
     async def unload_model(self, model: Optional[str] = None, agent: str = "jarvis") -> dict:
+        if not self.enabled:
+            return self._done("disabled", "unload_model", model=model, reason="LM Studio control is disabled")
         blocked = self._gate(agent, "unload_model")
         if blocked:
             return blocked
@@ -158,6 +178,6 @@ class LMStudioController:
 
     def _done(self, status: str, action: str, **extra) -> dict:
         result = {"status": status, "action": action, "kind": "lmstudio_control", **extra}
-        log = logger.info if status == "ok" else logger.warning
+        log = logger.info if status in ("ok", "disabled") else logger.warning
         log(f"lmstudio_control {action}: {status} ({extra.get('reason', '')})".rstrip())
         return result

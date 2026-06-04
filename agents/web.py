@@ -2423,13 +2423,19 @@ def _lmstudio_or_503():
     return orch.lmstudio, None
 
 
+def _llm_status_code(result: dict) -> int:
+    """Map a controller result status to an HTTP code (disabled/blocked → 403)."""
+    return {"ok": 200, "disabled": 403, "blocked": 403, "rejected": 400}.get(
+        result.get("status"), 502)
+
+
 @app.post("/api/llm/server/start", dependencies=[Depends(_admin_guard)])
 async def llm_server_start():
     ctrl, err = _lmstudio_or_503()
     if err:
         return err
     result = await ctrl.start_server(agent="jarvis")
-    return _nocache_json(result, status_code=200 if result.get("status") == "ok" else 502)
+    return _nocache_json(result, status_code=_llm_status_code(result))
 
 
 @app.post("/api/llm/load", dependencies=[Depends(_admin_guard)])
@@ -2444,8 +2450,7 @@ async def llm_load(body: LMLoad):
         except Exception:
             pass  # live load already took effect; persistence is best-effort
         return _nocache_json(result)
-    code = 400 if result.get("status") == "rejected" else 502
-    return _nocache_json(result, status_code=code)
+    return _nocache_json(result, status_code=_llm_status_code(result))
 
 
 @app.post("/api/llm/unload", dependencies=[Depends(_admin_guard)])
@@ -2454,7 +2459,7 @@ async def llm_unload(body: LMUnload):
     if err:
         return err
     result = await ctrl.unload_model(body.model, agent="jarvis")
-    return _nocache_json(result, status_code=200 if result.get("status") == "ok" else 502)
+    return _nocache_json(result, status_code=_llm_status_code(result))
 
 
 # ── MCP (Model Context Protocol) admin endpoints ─────────────────

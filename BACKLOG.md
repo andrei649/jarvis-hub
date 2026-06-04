@@ -44,6 +44,23 @@ python -m pytest tests/ -v          # 1100+ passed, 8 skipped
 
 ---
 
+## LM Studio control + model honesty (shipped — PR #133)
+
+Chat + admin control of the local LLM backend (`lms server start` / `load` / `unload`),
+the live model reported truthfully (runtime-state injection + SOUL fix), and the
+chain-of-thought leak / mid-sentence truncation fixed. Kill-switch:
+`JARVIS_LMSTUDIO_CONTROL` / `llm.control_enabled` (chat-only: `JARVIS_LMSTUDIO_CHAT_CONTROL`
+/ `llm.chat_control`). Docs + troubleshooting: `docs/ARCHITECTURE.md` §5.
+
+**Follow-ups (P2):**
+- Validate end-to-end against a real `lms` binary on the RTX 5090 box — current tests are mock-only.
+- Fuzzy model resolution: "load gemma" → resolve to the full id via `/v1/models` (today a partial
+  name goes straight to `lms load`, which may miss).
+- Surface the kill-switch toggle + a model picker as real controls in the admin Settings UI.
+- Confirm the LM Studio id for Gemma 4 12B — `google/gemma-4-12b` is a placeholder in static config.
+
+---
+
 ## Status General
 
 | Horizon | Total | ✅ Done | S total | S done | % |

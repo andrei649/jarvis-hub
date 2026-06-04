@@ -189,3 +189,81 @@ async def test_run_unload_all():
     o = _orch()
     r = await o._run_llm_control("unload", None)
     assert "All models" in r and ("unload", None) in o.lmstudio.calls
+
+
+# ── kill-switch: master + chat gates ─────────────────────────────
+
+def test_chat_control_enabled_by_default(monkeypatch):
+    monkeypatch.delenv("JARVIS_LMSTUDIO_CONTROL", raising=False)
+    monkeypatch.delenv("JARVIS_LMSTUDIO_CHAT_CONTROL", raising=False)
+    o = _orch()
+    o._runtime_settings = {}
+    assert o._control_master_enabled() is True
+    assert o._chat_control_enabled() is True
+
+
+def test_master_env_off_disables_everything(monkeypatch):
+    monkeypatch.setenv("JARVIS_LMSTUDIO_CONTROL", "0")
+    o = _orch()
+    o._runtime_settings = {}
+    assert o._control_master_enabled() is False
+    assert o._chat_control_enabled() is False
+
+
+def test_live_setting_off_disables_master(monkeypatch):
+    monkeypatch.delenv("JARVIS_LMSTUDIO_CONTROL", raising=False)
+    o = _orch()
+    o._runtime_settings = {"llm.control_enabled": "false"}
+    assert o._control_master_enabled() is False
+
+
+def test_chat_setting_off_keeps_master_on(monkeypatch):
+    monkeypatch.delenv("JARVIS_LMSTUDIO_CONTROL", raising=False)
+    monkeypatch.delenv("JARVIS_LMSTUDIO_CHAT_CONTROL", raising=False)
+    o = _orch()
+    o._runtime_settings = {"llm.chat_control": False}
+    # ambient chat detection muted, but the master (admin buttons) stays live
+    assert o._control_master_enabled() is True
+    assert o._chat_control_enabled() is False
+
+
+async def test_disabled_controller_is_a_noop():
+    from core.llm.lmstudio_control import LMStudioController
+
+    calls = []
+
+    async def exec_fn(argv, timeout, shell):
+        calls.append(argv)
+        raise AssertionError("exec must not run while disabled")
+
+    ctrl = LMStudioController(enabled=False, exec_fn=exec_fn, probe_fn=lambda h, p: True)
+    for res in (await ctrl.start_server(),
+                await ctrl.load_model("google/gemma-4-12b"),
+                await ctrl.unload_model()):
+        assert res["status"] == "disabled"
+    assert calls == []
+    # read-only status still reports, and exposes the switch state
+    st = await ctrl.status()
+    assert st["enabled"] is False
+
+
+async def test_set_enabled_toggles_live():
+    from core.llm.lmstudio_control import LMStudioController
+
+    ran = []
+
+    async def exec_fn(argv, timeout, shell):
+        ran.append(argv)
+        return _ExecOK()
+
+    ctrl = LMStudioController(enabled=False, exec_fn=exec_fn, probe_fn=lambda h, p: True)
+    assert (await ctrl.start_server())["status"] == "disabled"
+    ctrl.set_enabled(True)
+    assert (await ctrl.start_server())["status"] == "ok"  # already running (probe True)
+
+
+class _ExecOK:
+    ok = True
+    exit_code = 0
+    stdout = "ok"
+    stderr = ""
