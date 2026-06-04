@@ -1,4 +1,4 @@
-// tools.js — the ▦ Console overlay, its 20-panel tool registry, and a few of the
+// tools.js — the ▦ Console overlay, its 25-panel tool registry, and a few of the
 // per-panel flows (Notes save, admin-token'd Secret Broker write). Shipped globally
 // (window.JARVIS_TOOLS / window.ConsoleOverlay) with zero coverage until now.
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -15,6 +15,8 @@ function backend() {
     if (url === '/api/health/components') return json({ summary: 'all ok', components: { qdrant: 'ok', neo4j: 'bad' } });
     if (url === '/api/arena/leaderboard') return json({ leaderboard: [{ model: 'gemma', elo: 1500, win_rate: 0.5 }] });
     if (url === '/api/notes') return json({ content: 'hi' });
+    if (url === '/api/security/kill-switch') return json({ halted: {}, global: false });
+    if (url === '/api/security/governance') return json({ pass: true, overall_score: 1, threshold: 0.9, injection: { score: 1 }, harm: { score: 1 }, owasp: { covered: 10, total: 10, score: 1 } });
     return json({});
   });
 }
@@ -39,19 +41,20 @@ function typeArea(el, value) {
 }
 
 describe('tool registry', () => {
-  it('registers 20 tools with unique ids and render functions', () => {
+  it('registers 25 tools with unique ids and render functions', () => {
     const tools = env.window.JARVIS_TOOLS;
     expect(Array.isArray(tools)).toBe(true);
-    expect(tools).toHaveLength(20);
+    expect(tools).toHaveLength(25);
     const ids = tools.map((t) => t.id);
-    expect(new Set(ids).size).toBe(20);
+    expect(new Set(ids).size).toBe(25);
     for (const t of tools) {
       expect(typeof t.render).toBe('function');
       expect(typeof t.label).toBe('string');
       expect(typeof t.group).toBe('string');
     }
-    // Governance/observability tools the product story leans on are present.
-    expect(ids).toEqual(expect.arrayContaining(['arena', 'secrets', 'mcp', 'webhooks', 'review', 'actions']));
+    // Governance tools the product story leans on now have a home.
+    expect(ids).toEqual(expect.arrayContaining(['arena', 'secrets', 'webhooks', 'killswitch', 'trust', 'capabilities', 'audit', 'cost']));
+    expect(tools.some((t) => t.group === 'Security')).toBe(true);
   });
 });
 
@@ -126,5 +129,29 @@ describe('panel flows', () => {
     expect(post, 'POST /api/secrets/broker issued').toBeTruthy();
     expect(post[1].headers['X-Admin-Token']).toBe('adm');
     expect(JSON.parse(post[1].body)).toMatchObject({ name: 'OPENAI_KEY', value: 'sk-xxx' });
+  });
+
+  it('Kill-Switch — Engage halt POSTs (admin) with engage:true', async () => {
+    env.window.localStorage.setItem('hud.admin_token', 'adm');
+    const { container } = overlay();
+    await env.flush();
+    openTool(container, 'Kill-Switch');
+    await env.flush();
+    expect(container.querySelector('.console-content').textContent).toContain('Operational');
+    env.click(toolBtn(container, 'Engage halt'));
+    const post = env.window.fetch.mock.calls.find((c) => c[0] === '/api/security/kill-switch' && c[1] && c[1].method === 'POST');
+    expect(post, 'POST /api/security/kill-switch issued').toBeTruthy();
+    expect(post[1].headers['X-Admin-Token']).toBe('adm');
+    expect(JSON.parse(post[1].body).engage).toBe(true);
+  });
+
+  it('Trust Scorecard — renders the governance gate result', async () => {
+    const { container } = overlay();
+    await env.flush();
+    openTool(container, 'Trust Scorecard');
+    await env.flush();
+    const txt = container.querySelector('.console-content').textContent;
+    expect(txt).toContain('PASS');
+    expect(txt).toContain('100%');
   });
 });

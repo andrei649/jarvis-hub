@@ -41,7 +41,7 @@ up-to-date `origin/main`; rebase if you branched before another PR merged.
   remain (see P1).
 - **Audit done** (`docs/AUDIT.md`); P0 cleanups applied. `web.py` router split (CLN-3 / A1) deferred.
 - **HUD redesigned** (PRs #121–#129): TopBar (status · ▦ Console · ⚙), ⚙ Settings, ▦ Console
-  with 20 feature panels, admin-token wired, cache-bust fixed.
+  with 25 feature panels (incl. a Security group), admin-token wired, cache-bust fixed.
 
 ---
 
@@ -51,10 +51,10 @@ up-to-date `origin/main`; rebase if you branched before another PR merged.
    `frontend` CI job (`ci.yml` → `npm run test:coverage`) is green._ The HUD redesign (8 PRs)
    merged with only Python + `node --check`, so vitest first ran via #130.
 
-2. **Add tests for the new HUD code** — `console.js` + `tools.js` (⚙ Settings menu + 20 Console
-   panels, ~480 LOC) have **zero coverage** _(confirmed 2026-06-04: no `tests/frontend/` spec
-   references them)_. Add specs (SettingsMenu renders + writes localStorage; ConsoleOverlay nav;
-   a couple of panels mock-fetch + render). Harness: `tests/frontend/harness.js` (jsdom).
+2. ~~Add tests for the new HUD code (`console.js` + `tools.js`)~~ ✅ **Done 2026-06-04** —
+   `tests/frontend/{console,tools}.test.js` (21 specs) exercise the real shipped artifacts in
+   JSDOM: fetch helpers, SettingsMenu, the full Console-panel sweep, and admin flows.
+   **console.js 0→97% lines · tools.js 0→71%**; HUD line coverage ~67% (≥60% CI gate).
 
 3. **`docs/MANUAL_TESTING.md` §C — render-test the 20 Console panels** in a real browser (Arena
    run+vote, Notes save, Rooms message, a Tools admin action with a token). Nobody has clicked
@@ -74,12 +74,11 @@ reality. What's left to actually **build**:_
 6. **H12.12 — signed skills marketplace** — `skills/signing.py` exists; likely a thin extension
    (signatures + review gate on import). Verify scope, then finish.
 
-7. **HUD "every feature has a home" is incomplete** — ~12 endpoint groups reportedly still have
-   **no Console panel**: cost/analytics, eval datasets, reflection, oracle, OAuth, agent-templates,
-   local-docs, **security (audit log / capabilities / kill-switch)**, models, trust, resilience.
-   The **kill-switch & capability tokens have no UI** — notable for a "governed" product. Add
-   panels via the `tools.js` `TOOLS` registry (~30–50 LOC each). _(Not re-verified this session —
-   confirm against `tools.js` before starting.)_
+7. **HUD "every feature has a home"** — _2026-06-04: added a **Security** group (Kill-Switch,
+   Trust Scorecard, Capability Tokens, Audit & Intent) + **Cost & Usage** — the governance controls
+   the product story leans on now have a UI (Console registry 20→25, with tests)._ **Still missing
+   panels:** eval datasets, reflection, oracle, OAuth status, agent-templates, local-docs, model
+   management, resilience. Add via the `tools.js` `TOOLS` registry (~30–50 LOC each).
 
 ---
 

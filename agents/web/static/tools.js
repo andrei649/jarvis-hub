@@ -325,11 +325,118 @@
     return Tool('Webhooks', 'Inbound triggers (optionally HMAC-signed)', body, Btn('↻', reload));
   }
 
+  /* ── Security & Governance (the governed-product story has a home now) ───── */
+  function KillSwitchPanel() {
+    const _ = useApi('/api/security/kill-switch', true), s = _[0], reload = _[1];
+    const _r = useState(''), reason = _r[0], setReason = _r[1];
+    function post(engage) {
+      adminFetch('/api/security/kill-switch', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ engage: engage, scope: 'global', reason: reason }) })
+        .then(reload).catch(function (e) { alert(e.message); });
+    }
+    let body;
+    if (s.err) body = Err(s.err); else if (s.loading) body = Empty('Loading…');
+    else {
+      const halted = !!(s.data.global || Object.keys(s.data.halted || {}).length);
+      body = h('div', null,
+        h('div', { className: 'tool-stat ' + (halted ? 'bad' : 'ok') }, halted ? '⛔ HALTED — autonomous actions blocked' : '✓ Operational'),
+        Object.keys(s.data.halted || {}).length ? Pre(s.data.halted) : null,
+        h('div', { className: 'tool-form' },
+          h('input', { className: 'tool-input', placeholder: 'reason (optional)', value: reason, onChange: function (e) { setReason(e.target.value); } }),
+          Btn('Engage halt', function () { post(true); }, 'bad'),
+          Btn('Disengage', function () { post(false); }, 'ok')));
+    }
+    return Tool('Kill-Switch', 'Out-of-band halt — the agent cannot disable it (admin)', body, Btn('↻', reload));
+  }
+
+  function TrustScorecardPanel() {
+    const _ = useApi('/api/security/governance', true), s = _[0], reload = _[1];
+    const pct = function (x) { return Math.round((x || 0) * 100) + '%'; };
+    let body;
+    if (s.err) body = Err(s.err); else if (s.loading) body = Empty('Loading…');
+    else {
+      const d = s.data, inj = d.injection || {}, harm = d.harm || {}, owasp = d.owasp || {};
+      body = h('div', null,
+        h('div', { className: 'tool-stat ' + (d.pass ? 'ok' : 'bad') },
+          (d.pass ? '✓ PASS' : '✗ FAIL') + ' · overall ' + pct(d.overall_score) + ' (gate ' + pct(d.threshold) + ')'),
+        h('div', { className: 'tool-grid2' },
+          h('div', { className: 'tool-chip ' + (inj.score >= 1 ? 'ok' : 'bad') }, 'Injection ' + pct(inj.score)),
+          h('div', { className: 'tool-chip ' + (harm.score >= 1 ? 'ok' : 'bad') }, 'Harm ' + pct(harm.score)),
+          h('div', { className: 'tool-chip ' + (owasp.score >= 1 ? 'ok' : 'bad') }, 'OWASP ' + (owasp.covered || 0) + '/' + (owasp.total || 0))));
+    }
+    return Tool('Trust Scorecard', 'AgentDojo + AgentHarm + OWASP — the governance gate', body, Btn('↻', reload));
+  }
+
+  function CapabilitiesPanel() {
+    const _c = useState(''), caps = _c[0], setCaps = _c[1];
+    const _i = useState(null), issued = _i[0], setIssued = _i[1];
+    const _t = useState(''), ctok = _t[0], setCtok = _t[1];
+    const _p = useState(''), ccap = _p[0], setCcap = _p[1];
+    const _r = useState(null), res = _r[0], setRes = _r[1];
+    function issue() {
+      const list = caps.split(',').map(function (x) { return x.trim(); }).filter(Boolean);
+      if (!list.length) { alert('Enter ≥1 capability (comma-separated).'); return; }
+      adminFetch('/api/security/capabilities/issue', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ capabilities: list }) })
+        .then(function (d) { setIssued(d.token); if (d.token) setCtok(d.token.id); }).catch(function (e) { alert(e.message); });
+    }
+    function check() {
+      api('/api/security/capabilities/check?token=' + encodeURIComponent(ctok) + '&capability=' + encodeURIComponent(ccap))
+        .then(setRes).catch(function (e) { setRes({ allowed: false, reason: String(e) }); });
+    }
+    const body = h('div', null,
+      h('div', { className: 'tool-group-title' }, 'Issue scoped token (admin)'),
+      h('div', { className: 'tool-form' },
+        h('input', { className: 'tool-input', placeholder: 'capabilities, comma-sep', value: caps, onChange: function (e) { setCaps(e.target.value); } }),
+        Btn('Issue', issue, 'admin')),
+      issued && Pre(issued),
+      h('div', { className: 'tool-group-title' }, 'Check a token'),
+      h('div', { className: 'tool-form' },
+        h('input', { className: 'tool-input', placeholder: 'token id', value: ctok, onChange: function (e) { setCtok(e.target.value); } }),
+        h('input', { className: 'tool-input', placeholder: 'capability', value: ccap, onChange: function (e) { setCcap(e.target.value); } }),
+        Btn('Check', check, 'ok')),
+      res && h('div', { className: 'tool-stat ' + (res.allowed ? 'ok' : 'bad') }, (res.allowed ? '✓ allowed' : '✗ blocked') + (res.reason ? ' · ' + res.reason : '')));
+    return Tool('Capability Tokens', 'Scoped · expiring · non-escalatable grants', body, null);
+  }
+
+  function AuditPanel() {
+    const _ = useApi('/api/security/audit/intent', true), s = _[0], reload = _[1];
+    let body;
+    if (s.err) body = Err(s.err); else if (s.loading) body = Empty('Loading…');
+    else {
+      const v = s.data.verify, ok = v === true || (v && v.ok), entries = s.data.entries || [];
+      body = h('div', null,
+        h('div', { className: 'tool-stat ' + (ok ? 'ok' : 'bad') }, ok ? '✓ chain verified' : '⚠ chain unverified'),
+        entries.length ? entries.map(function (e, i) {
+          return h('div', { key: i, className: 'tool-card-text' }, (e.actor || '?') + ' · ' + (e.action || '?') + (e.why ? ' — ' + e.why : ''));
+        }) : Empty('No audited actions yet.'));
+    }
+    return Tool('Audit & Intent', 'Hash-chained, signed actions + why they happened', body, Btn('↻', reload));
+  }
+
+  function CostPanel() {
+    const _ = useApi('/api/cost', true), s = _[0], reload = _[1];
+    let body;
+    if (s.err) body = Err(s.err); else if (s.loading) body = Empty('Loading…');
+    else {
+      const sum = s.data.summary || {}, byAgent = s.data.by_agent || [];
+      body = h('div', null,
+        h('div', { className: 'tool-stat' }, '$' + (sum.total_cost || 0) + ' across ' + (sum.calls || 0) + ' calls'),
+        byAgent.length ? byAgent.map(function (a, i) {
+          return h('div', { key: i, className: 'tool-card-text' }, (a.agent_id || '?') + ' · $' + (a.cost || 0) + ' · ' + (a.calls || 0) + ' calls');
+        }) : Empty('No cost yet — local models are $0.'));
+    }
+    return Tool('Cost & Usage', '$ per agent — local models are $0', body, Btn('↻', reload));
+  }
+
   /* ── tool registry ─────────────────────────────────────────────────────── */
   const TOOLS = [
     { id: 'health', group: 'Observability', label: 'Component Health', render: function (p) { return h(HealthPanel, p); } },
     { id: 'quality', group: 'Observability', label: 'Quality Monitor', render: function (p) { return h(QualityPanel, p); } },
     { id: 'review', group: 'Observability', label: 'Review Queue', render: function (p) { return h(ReviewPanel, p); } },
+    { id: 'cost', group: 'Observability', label: 'Cost & Usage', render: function (p) { return h(CostPanel, p); } },
+    { id: 'killswitch', group: 'Security', label: 'Kill-Switch', render: function (p) { return h(KillSwitchPanel, p); } },
+    { id: 'trust', group: 'Security', label: 'Trust Scorecard', render: function (p) { return h(TrustScorecardPanel, p); } },
+    { id: 'capabilities', group: 'Security', label: 'Capability Tokens', render: function (p) { return h(CapabilitiesPanel, p); } },
+    { id: 'audit', group: 'Security', label: 'Audit & Intent', render: function (p) { return h(AuditPanel, p); } },
     { id: 'arena', group: 'Quality', label: 'Model Arena', render: function (p) { return h(ArenaPanel, p); } },
     { id: 'actions', group: 'Autonomy', label: 'Action Approvals', render: function (p) { return h(ActionsPanel, p); } },
     { id: 'schedule', group: 'Autonomy', label: 'NL Scheduling', render: function (p) { return h(SchedulePanel, p); } },
