@@ -193,6 +193,8 @@ class AutonomyWorker:
                                 _amt, self.policy.cap_per_action, task_id)
                             return self.queue.get(task_id)
                     except (TypeError, ValueError):
+                        # Non-numeric "amount" → not a money escalation; fall
+                        # through to the normal approval path below.
                         pass
             task = self.queue.transition(task_id, TaskStatus.APPROVED,
                                          decided_by=decided_by, decision="edit")
