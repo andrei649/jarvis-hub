@@ -560,6 +560,24 @@ class Orchestrator:
         except Exception as e:
             logger.warning(f"Failed to schedule daily digests: {e}")
 
+    def _schedule_daily_budget_reset(self):
+        """Reset the autonomy daily-spend ceiling at local midnight (BUG-10).
+
+        Without this, AutonomyPolicy._spent_today accrues across calendar days
+        until a restart, so `daily_ceiling` fills permanently and blocks
+        autonomous spend. reset_daily() existed but was never scheduled in prod.
+        """
+        sched = getattr(self.heartbeat_scheduler, "scheduler", None)
+        policy = getattr(getattr(self, "autonomy", None), "policy", None)
+        if sched is None or policy is None:
+            return
+        try:
+            sched.add_job(policy.reset_daily, "cron", hour=0, minute=0,
+                          id="autonomy-daily-budget-reset", replace_existing=True)
+            logger.info("Scheduled daily autonomy-budget reset: 00:00")
+        except Exception as e:
+            logger.warning(f"Failed to schedule daily budget reset: {e}")
+
     def _schedule_learning_loop(self):
         """H7.11 — periodically propose agent promotions to the decision inbox.
 
@@ -808,6 +826,7 @@ class Orchestrator:
         self._schedule_daily_digests()
         self._schedule_log_scans()
         self._schedule_learning_loop()
+        self._schedule_daily_budget_reset()
         self._autonomy_task = asyncio.create_task(self._autonomy_loop())
         self._autonomy_task.add_done_callback(_log_task_result)
         # Oracle GitHub watcher is OFF by default: it polls a GitHub repo every 30s,
@@ -1599,6 +1618,11 @@ class Orchestrator:
         Returns True if promotion happened, False if already active (idempotent).
         If the agent has no SOUL.md a minimal stub is written so Agent loads cleanly.
         """
+        # BUG-9 hardening: bench_id becomes a filesystem path (agents/<id>/SOUL.md),
+        # so reject anything but a plain identifier — a "../" id must never escape agents/.
+        if not bench_id or not bench_id.replace("_", "").replace("-", "").isalnum():
+            logger.warning(f"promote_bench_agent: rejected invalid bench_id {bench_id!r}")
+            return False
         if bench_id in self.agents:
             logger.debug(f"promote_bench_agent: {bench_id} already active — no-op")
             return False

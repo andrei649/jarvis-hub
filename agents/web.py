@@ -3282,7 +3282,7 @@ async def recall_memory(q: str = ""):
 
 @app.get("/api/analytics/cost")
 async def get_analytics_cost():
-    """Return per-agent LLM usage and cost summary."""
+    """Return per-agent LLM usage and cost summary (H7.10)."""
     from agents.core.cost_tracker import get_summary
     return get_summary()
 
@@ -3994,13 +3994,6 @@ async def bench_stats():
         },
         "by_agent": stats.get("by_agent", {}),
     })
-
-
-@app.get("/api/analytics/cost")
-async def get_cost_analytics():
-    """Per-agent token usage and estimated USD cost (H7.10)."""
-    from core.cost_tracker import get_summary
-    return get_summary()
 
 
 @app.get("/heartbeat/status")
