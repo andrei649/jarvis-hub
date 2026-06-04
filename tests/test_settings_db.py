@@ -33,7 +33,7 @@ def test_seeds_all_categories(temp_db):
 def test_get_category_returns_typed_values(temp_db):
     llm = temp_db.get_category("llm")
     by_key = {row["key"]: row for row in llm}
-    assert by_key["max_tokens"]["value"] == 1024          # int preserved
+    assert by_key["max_tokens"]["value"] == 2048          # int preserved
     assert by_key["temperature"]["value"] == 0.7          # float preserved
     assert isinstance(by_key["backend_type"]["opts"], list)
 
@@ -64,7 +64,7 @@ def test_init_db_force_reseeds(temp_db):
     temp_db.put_category("llm", {"max_tokens": 9999})
     temp_db.init_db(force=True)
     llm = {r["key"]: r for r in temp_db.get_category("llm")}
-    assert llm["max_tokens"]["value"] == 1024
+    assert llm["max_tokens"]["value"] == 2048
 
 
 def test_init_db_force_restores_all_categories(temp_db):

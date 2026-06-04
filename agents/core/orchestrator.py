@@ -899,7 +899,8 @@ class Orchestrator:
             target = self._route_candidates(intent) if intent.target_agents else ["jarvis"]
 
         temperature = self.get_setting("llm.temperature", 0.7)
-        max_tokens = self.get_setting("llm.max_tokens", 1024)
+        max_tokens = self.get_setting("llm.max_tokens", 2048)
+        deep_max_tokens = self.get_setting("llm.deep_max_tokens", 8192)
         context_window = self.get_setting("memory.context_window", 6)
         synthesized = ""
         # Pre-bind so the post-loop persist/audit never hit UnboundLocalError when
@@ -931,9 +932,10 @@ class Orchestrator:
                         logger.warning(f"Howard RAG stream lookup failed: {e}")
 
                 recall_block = await self._recall_block(text)
+                runtime_block = self._runtime_state_block()
                 prompt = (
                     f"Conversation history:\n{history}\n\n"
-                    f"{plugin_block}{context_block}{rag_block}{recall_block}"
+                    f"{plugin_block}{context_block}{rag_block}{recall_block}{runtime_block}"
                     f"User: {text}\n"
                     f"Respond as {agent.name}."
                 )
@@ -949,7 +951,11 @@ class Orchestrator:
                         model = router_model
                     if self.security:
                         backend = self.security
-                    logger.info(f"Routing {agent_id} via {route_name} ({estimate_tokens(prompt)} tokens)")
+                    # Reasoning models on the deep slot need a far larger budget:
+                    # 1–2k tokens is consumed by chain-of-thought before any
+                    # answer, so a small cap truncates mid-thought.
+                    eff_max_tokens = deep_max_tokens if route_name == "local-deep" else max_tokens
+                    logger.info(f"Routing {agent_id} via {route_name} ({estimate_tokens(prompt)} tokens, max_tokens={eff_max_tokens})")
                 except RuntimeError:
                     msg = "I'm sorry, sir — my language backend is not available. Please start Ollama or LM Studio and try again."
                     log_error(logger, E_LLM_BACKEND_MISSING, backend="stream")
@@ -988,19 +994,26 @@ class Orchestrator:
                     response = await backend.generate_stream(
                         model=model, prompt=prompt,
                         system=system_prompt,
-                        max_tokens=max_tokens, temperature=temperature,
+                        max_tokens=eff_max_tokens, temperature=temperature,
                         on_token=on_token,
                     )
                 else:
                     response = await backend.generate(
                         model=model, prompt=prompt, system=system_prompt,
-                        max_tokens=max_tokens, temperature=temperature,
+                        max_tokens=eff_max_tokens, temperature=temperature,
                     )
                     if on_token:
                         on_token(response)
                 synthesized = response
                 break
 
+        # Truncated-before-answer (or otherwise empty) replies must not surface
+        # as a blank bubble. The backend already refuses to leak raw reasoning,
+        # so an empty string here means "no answer was produced".
+        if not (synthesized or "").strip():
+            synthesized = "My reply was cut short before I finished, sir. Try again, or raise the token limit for heavier requests."
+            if on_token:
+                on_token(synthesized)
         await self.memory.add_turn(self.session_id, "assistant", synthesized, agent_id=agent_id)
         await self._maybe_checkpoint()
         _event_stream = SecurityEvent(
@@ -1241,6 +1254,23 @@ class Orchestrator:
             if value:
                 blocks.append(f"[REAL-TIME DATA — {key.upper()}]:\n{value}")
         return "\n\n".join(blocks) + "\n\n" if blocks else ""
+
+    def _runtime_state_block(self) -> str:
+        """Ground-truth runtime facts injected into the prompt so agents report
+        the model/backend that is *actually* serving them instead of inventing
+        one. The active model is auto-detected from the live backend at startup
+        (LLMRouter.detect), so this stays honest when the loaded model changes."""
+        router = getattr(self, "llm_router", None)
+        backend = getattr(router, "name", None) if router else None
+        if not backend or backend == "none":
+            return ""
+        model = getattr(router, "active_model", None) or "unknown"
+        return (
+            "System runtime (ground truth — use this if asked which model, brain, "
+            "or backend you run on; never invent model names or hardware):\n"
+            f"- LLM backend: {backend}\n"
+            f"- Active model: {model}\n\n"
+        )
 
     async def _recall_block(self, text: str) -> str:
         """Long-term memory recall injected into the prompt (RAG, all agents).

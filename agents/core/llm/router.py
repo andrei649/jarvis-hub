@@ -3,10 +3,13 @@ router.py — Auto-detect which LLM backend is available.
 Tries LM Studio first (GPU), falls back to Ollama (CPU).
 """
 
+import logging
 from typing import Optional
 
 import httpx
 from .base import LLMBackend, LMStudioBackend, OllamaBackend
+
+logger = logging.getLogger("jarvis.llm.router")
 
 
 class LLMRouter:
@@ -30,14 +33,19 @@ class LLMRouter:
             self._backend_name = "lm-studio"
             self._detected_model = await self._fetch_loaded_model(
                 "http://localhost:1234/v1/models", "lmstudio")
+            logger.info("LLM backend online: lm-studio (:1234), loaded model=%s",
+                        self._detected_model or "unknown")
             return
         if await self._check("http://localhost:11434/api/tags"):
             self._backend = OllamaBackend()
             self._backend_name = "ollama"
             self._detected_model = await self._fetch_loaded_model(
                 "http://localhost:11434/api/tags", "ollama")
+            logger.info("LLM backend online: ollama (:11434), loaded model=%s",
+                        self._detected_model or "unknown")
             return
         self._backend_name = "none"
+        logger.warning("No LLM backend detected — start LM Studio (:1234) or Ollama (:11434)")
 
     async def _check(self, url: str) -> bool:
         try:

@@ -29,7 +29,7 @@ MOCK_REPLY = "[mocked agent reply]"
 
 
 class _FakeBackend:
-    async def generate(self, model="", prompt="", system=""):
+    async def generate(self, model="", prompt="", system="", **kwargs):
         return MOCK_REPLY
 
 
@@ -115,5 +115,5 @@ def test_agent_guardrails_defaults_to_none():
 
 
 class _RaisingBackend:
-    async def generate(self, model="", prompt="", system=""):
+    async def generate(self, model="", prompt="", system="", **kwargs):
         raise RuntimeError("backend down")

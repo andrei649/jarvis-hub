@@ -125,7 +125,7 @@ class MockBackend(LLMBackend):
     def __init__(self):
         self.last_prompt = ""
 
-    async def generate(self, model, prompt, system=""):
+    async def generate(self, model, prompt, system="", **kwargs):
         self.last_prompt = prompt
         return "I remember that."
 

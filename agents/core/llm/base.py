@@ -6,11 +6,14 @@ Supports LM Studio (OpenAI-compatible API) and Ollama.
 import asyncio
 import inspect
 import json
+import logging
 import re
 from abc import ABC, abstractmethod
 from typing import Callable, Optional
 
 import httpx
+
+logger = logging.getLogger("jarvis.llm.base")
 
 
 # ── Post-processing filter (used on non-stream responses) ─────────────────────
@@ -18,16 +21,25 @@ import httpx
 def strip_thinking(text: str) -> str:
     """Remove chain-of-thought reasoning from a complete LLM response.
 
-    Handles formats emitted by thinking-capable models (qwen3, deepseek-r1, etc.):
-      1. <think>...</think> XML-style tags
+    Handles formats emitted by thinking-capable models (qwen3, deepseek-r1,
+    gemma, etc.):
+      1a. <think>...</think> XML-style tags (closed)
+      1b. <think> with no closing tag — reasoning that never reached an answer
+          (e.g. generation truncated at max_tokens mid-thought). Drop to end.
       2. "Here's a thinking process..." prose blocks with numbered steps
       3. Leading numbered-step sections before the actual answer
     """
     if not text:
         return text
 
-    # 1. <think>…</think> blocks
+    # 1a. Closed <think>…</think> blocks
     cleaned = re.sub(r"<think>.*?</think>", "", text, flags=re.DOTALL | re.IGNORECASE)
+
+    # 1b. Unterminated <think> (no closing tag): the model was still reasoning
+    # when the stream ended/was truncated, so everything from the tag onward is
+    # chain-of-thought, not an answer. Without this, a truncated think block
+    # leaks verbatim because the closed-tag regex above never matches it.
+    cleaned = re.sub(r"<think>.*\Z", "", cleaned, flags=re.DOTALL | re.IGNORECASE)
 
     # 2. "Here's a thinking process…" / "**Thinking…**" narrative blocks
     cleaned = re.sub(
@@ -133,6 +145,28 @@ class LLMBackend(ABC):
     ) -> str:
         ...
 
+    @staticmethod
+    def _finalize_stream(emitted: str, reasoning_full: str, finish, model: str) -> str:
+        """Decide the value a streamed generation returns.
+
+        `emitted` is the already-filtered text the user saw. Prefer it. If it is
+        empty, the answer was either (a) placed entirely in reasoning_content by
+        the model — surface it only when generation finished cleanly — or (b)
+        truncated at max_tokens mid-thought (finish == "length"), in which case
+        there is no answer, only chain-of-thought, and we must not leak it.
+        """
+        answer = strip_thinking(emitted)
+        if answer:
+            return answer
+        if finish == "length":
+            logger.warning(
+                "Stream truncated at max_tokens before an answer (model=%s); "
+                "raise llm.max_tokens / llm.deep_max_tokens for reasoning models",
+                model,
+            )
+            return ""
+        return strip_thinking(reasoning_full)
+
     async def generate_stream(
         self, model: str, prompt: str, system: str = "",
         max_tokens: int = 1024, temperature: float = 0.7,
@@ -171,12 +205,26 @@ class LMStudioBackend(LLMBackend):
             resp = await self.client.post("/v1/chat/completions", json=payload)
             resp.raise_for_status()
             data = resp.json()
-            msg = data["choices"][0]["message"]
-            content = msg.get("content", "")
-            if not content:
-                # Fallback for models that put everything in reasoning_content
-                content = msg.get("reasoning_content", "")
-            return strip_thinking(content)
+            choice = data["choices"][0]
+            msg = choice.get("message", {})
+            finish = choice.get("finish_reason")
+            answer = strip_thinking(msg.get("content", "") or "")
+            if answer:
+                return answer
+            # No answer in `content`. This happens two ways:
+            #  - The model puts its whole reply in `reasoning_content` (legit) —
+            #    surface it only when generation actually finished.
+            #  - Generation was truncated at max_tokens mid-thought (finish ==
+            #    "length"): there is no answer yet, only chain-of-thought. Never
+            #    surface that — it is exactly the leak we are guarding against.
+            if finish == "length":
+                logger.warning(
+                    "LM Studio truncated at max_tokens before an answer (model=%s); "
+                    "raise llm.max_tokens / llm.deep_max_tokens for reasoning models",
+                    model,
+                )
+                return ""
+            return strip_thinking(msg.get("reasoning_content", "") or "")
         except Exception as e:
             return f"[LM Studio error: {e}]"
 
@@ -195,8 +243,9 @@ class LMStudioBackend(LLMBackend):
             "temperature": temperature,
             "stream": True,
         }
-        full = ""
-        reasoning_full = ""
+        emitted = ""          # filtered text actually streamed to the user
+        reasoning_full = ""   # accumulated reasoning_content (never emitted live)
+        finish = None
         sf = ThinkingStreamFilter()
         try:
             async with self.client.stream("POST", "/v1/chat/completions", json=payload) as resp:
@@ -208,34 +257,39 @@ class LMStudioBackend(LLMBackend):
                             break
                         try:
                             data = json.loads(chunk)
-                            delta = data.get("choices", [{}])[0].get("delta", {})
+                            choice = data.get("choices", [{}])[0]
+                            if choice.get("finish_reason"):
+                                finish = choice["finish_reason"]
+                            delta = choice.get("delta", {})
                             content = delta.get("content", "")
                             reasoning = delta.get("reasoning_content", "")
                             if content:
                                 safe = sf.feed(content)
-                                full += content
-                                if on_token and safe:
-                                    await _emit(on_token, safe)
+                                if safe:
+                                    emitted += safe
+                                    if on_token:
+                                        await _emit(on_token, safe)
                             if reasoning:
                                 reasoning_full += reasoning
                         except json.JSONDecodeError:
                             continue
         except Exception as e:
             err = f"[LM Studio stream error: {e}]"
-            full = err
             if on_token:
                 await _emit(on_token, err)
-            return full
+            return err
 
-        # Flush any remaining buffered text
+        # Flush any remaining buffered text (drops an unterminated think block)
         remainder = sf.flush()
-        if on_token and remainder:
-            await _emit(on_token, remainder)
+        if remainder:
+            emitted += remainder
+            if on_token:
+                await _emit(on_token, remainder)
 
-        # Fall back to reasoning_full if content was completely empty (for models
-        # that put all thinking and final answers in reasoning_content)
-        text_to_clean = full if full else reasoning_full
-        return strip_thinking(text_to_clean)
+        # Return what was actually streamed, not the raw buffer — otherwise a
+        # truncated <think> / reasoning_content trace would overwrite the clean
+        # bubble and poison conversation memory.
+        return self._finalize_stream(emitted, reasoning_full, finish, model)
 
 
 # ── Ollama ────────────────────────────────────────────────────────────────────
@@ -265,7 +319,14 @@ class OllamaBackend(LLMBackend):
             resp = await self.client.post("/api/generate", json=payload)
             resp.raise_for_status()
             data = resp.json()
-            return strip_thinking(data.get("response", ""))
+            answer = strip_thinking(data.get("response", "") or "")
+            if not answer and data.get("done_reason") == "length":
+                logger.warning(
+                    "Ollama truncated at num_predict before an answer (model=%s); "
+                    "raise llm.max_tokens / llm.deep_max_tokens for reasoning models",
+                    model,
+                )
+            return answer
         except Exception as e:
             return f"[Ollama error: {e}]"
 
@@ -284,8 +345,9 @@ class OllamaBackend(LLMBackend):
                 "temperature": temperature,
             },
         }
-        full = ""
+        emitted = ""
         reasoning_full = ""
+        finish = None
         sf = ThinkingStreamFilter()
         try:
             async with self.client.stream("POST", "/api/generate", json=payload) as resp:
@@ -298,25 +360,27 @@ class OllamaBackend(LLMBackend):
                             reasoning = data.get("reasoning_content", "")
                             if content:
                                 safe = sf.feed(content)
-                                full += content
-                                if on_token and safe:
-                                    await _emit(on_token, safe)
+                                if safe:
+                                    emitted += safe
+                                    if on_token:
+                                        await _emit(on_token, safe)
                             if reasoning:
                                 reasoning_full += reasoning
                             if data.get("done", False):
+                                finish = data.get("done_reason") or finish
                                 break
                         except json.JSONDecodeError:
                             continue
         except Exception as e:
             err = f"[Ollama stream error: {e}]"
-            full = err
             if on_token:
                 await _emit(on_token, err)
-            return full
+            return err
 
         remainder = sf.flush()
-        if on_token and remainder:
-            await _emit(on_token, remainder)
+        if remainder:
+            emitted += remainder
+            if on_token:
+                await _emit(on_token, remainder)
 
-        text_to_clean = full if full else reasoning_full
-        return strip_thinking(text_to_clean)
+        return self._finalize_stream(emitted, reasoning_full, finish, model)
