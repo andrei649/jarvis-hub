@@ -78,12 +78,14 @@ class SecretScanner(BaseScanner):
         "anthropic_key": (r"sk-ant-[A-Za-z0-9_-]{20,}", ThreatLevel.CRITICAL, "Anthropic API key"),
         "aws_access_key": (r"AKIA[0-9A-Z]{16}", ThreatLevel.CRITICAL, "AWS access key"),
         "github_token": (r"(?:ghp|gho|ghs|ghr|github_pat)_[A-Za-z0-9_]{36,}", ThreatLevel.CRITICAL, "GitHub token"),
-        "password_assignment": (r"""(?:password|passwd|pwd)\s*[=:]\s*['"]([^'"]{4,})['"]""", ThreatLevel.HIGH, "Password assignment"),
+        "password_assignment": (r"""(?:password|passwd|pwd)\s*[=:]\s*['"]?([^\s'"]{4,})['"]?""", ThreatLevel.HIGH, "Password assignment"),
         "db_connection_string": (r"(?:postgres|mysql|mongodb|redis)://[^\s]{10,}", ThreatLevel.HIGH, "Database connection string"),
-        "private_key": (r"-----BEGIN (?:RSA )?PRIVATE KEY-----", ThreatLevel.CRITICAL, "Private key"),
+        "private_key": (r"-----BEGIN [A-Z0-9 ]*PRIVATE KEY-----", ThreatLevel.CRITICAL, "Private key"),
         "slack_token": (r"xox[bpors]-[A-Za-z0-9\-]{10,}", ThreatLevel.HIGH, "Slack token"),
         "stripe_key": (r"(?:sk|pk)_(?:test|live)_[A-Za-z0-9]{20,}", ThreatLevel.CRITICAL, "Stripe key"),
         "generic_api_key": (r"""(?:api_key|secret_key|auth_token)\s*[=:]\s*['"]([^'"]{8,})['"]""", ThreatLevel.HIGH, "Generic API key/secret"),
+        "jwt": (r"eyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}", ThreatLevel.HIGH, "JWT"),
+        "bearer_token": (r"Bearer\s+[A-Za-z0-9._~+/=-]{20,}", ThreatLevel.HIGH, "Bearer token"),
     }
 
     def __init__(self):

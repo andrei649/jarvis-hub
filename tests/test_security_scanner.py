@@ -59,6 +59,19 @@ class TestSecretScanner:
             names = _names(s.scan(text))
             assert expected in names, f"{expected} not detected in {text!r}"
 
+    def test_detects_additional_secret_formats(self):
+        """HF-3: unquoted password, broader PEM, JWT, Bearer token."""
+        s = SecretScanner()
+        cases = {
+            "password_assignment": "password=hunter2longvalue",
+            "private_key": "-----BEGIN OPENSSH PRIVATE KEY-----",
+            "jwt": "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJ4eXoifQ.abcDEF123456",
+            "bearer_token": "Authorization: Bearer abcdefghijklmnopqrstuvwxyz0123",
+        }
+        for expected, text in cases.items():
+            names = _names(s.scan(text))
+            assert expected in names, f"{expected} not detected in {text!r}"
+
     def test_clean_text_has_no_findings(self):
         assert SecretScanner().scan("just a normal sentence, nothing secret").clean
 
