@@ -8,8 +8,6 @@ access to the log tree alone can't read the key and forge + re-sign the chain.
 import sys
 from pathlib import Path
 
-import pytest
-
 repo_root = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(repo_root))
 sys.path.insert(0, str(repo_root / "agents"))

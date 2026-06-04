@@ -87,6 +87,8 @@ class IntentLog(JsonStore):
                 try:
                     secure_path.chmod(0o600)
                 except Exception:
+                    # chmod is best-effort (no-op on non-POSIX FS); the key is
+                    # already written and usable regardless.
                     pass
                 return key.encode("utf-8")
             except Exception:
@@ -97,6 +99,8 @@ class IntentLog(JsonStore):
                 try:
                     legacy_path.chmod(0o600)
                 except Exception:
+                    # chmod is best-effort (no-op on non-POSIX FS); the key is
+                    # already written and usable regardless.
                     pass
                 logger.warning(
                     "Could not write the audit key to the secure dir (%s); stored it "
