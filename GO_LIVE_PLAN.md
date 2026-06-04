@@ -331,8 +331,9 @@ LM Studio + Ollama on local GPU. Zero API cost for 99% of tasks. Athena escalate
 | Personal Memory H8 (8 items) | P1 | 48 | ✅ Done |
 | Security wedge H12.1 (P0, anti-OpenClaw) | P0 | 8 | ✅ Done |
 | **Remaining backlog** — H11 + rest of H10/H12 + H13/H15/H16 | P1–P3 | ~189 | ⏳ Open |
+| **Manual-test runbook sign-off** — the human gate; full pass on the RTX box ([docs/MANUAL_TESTING.md](docs/MANUAL_TESTING.md) §0, ⭐B0 governed-autonomy demo) | P0 | — | ⏳ Run before tag |
 
-**Estimated gap to v1.0: ~189 SP** — the remaining backlog. Foundation, hardening, personal memory, the security wedge, and the 2026-06-03 competitive-edge/frontier wave are ✅ code-complete; v1.0 ships when the rest of H10–H17 is complete (plus the audit gate).
+**Estimated gap to v1.0: ~189 SP** of remaining backlog, then the **human gate**. Foundation, hardening, personal memory, the security wedge, and the 2026-06-03 competitive-edge/frontier wave are ✅ code-complete; v1.0 ships when the rest of H10–H17 is complete **and** the manual-test runbook ([docs/MANUAL_TESTING.md](docs/MANUAL_TESTING.md)) is signed off green on real hardware — that runbook *is* the audit gate, and no tag ships without its §0 sign-off.
 
 ---
 
