@@ -1,4 +1,4 @@
-// tools.js — the ▦ Console overlay, its 25-panel tool registry, and a few of the
+// tools.js — the ▦ Console overlay, its 29-panel tool registry, and a few of the
 // per-panel flows (Notes save, admin-token'd Secret Broker write). Shipped globally
 // (window.JARVIS_TOOLS / window.ConsoleOverlay) with zero coverage until now.
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -17,6 +17,7 @@ function backend() {
     if (url === '/api/notes') return json({ content: 'hi' });
     if (url === '/api/security/kill-switch') return json({ halted: {}, global: false });
     if (url === '/api/security/governance') return json({ pass: true, overall_score: 1, threshold: 0.9, injection: { score: 1 }, harm: { score: 1 }, owasp: { covered: 10, total: 10, score: 1 } });
+    if (url === '/api/local-docs') return json({ available: ['notes'] });
     return json({});
   });
 }
@@ -41,19 +42,19 @@ function typeArea(el, value) {
 }
 
 describe('tool registry', () => {
-  it('registers 25 tools with unique ids and render functions', () => {
+  it('registers 29 tools with unique ids and render functions', () => {
     const tools = env.window.JARVIS_TOOLS;
     expect(Array.isArray(tools)).toBe(true);
-    expect(tools).toHaveLength(25);
+    expect(tools).toHaveLength(29);
     const ids = tools.map((t) => t.id);
-    expect(new Set(ids).size).toBe(25);
+    expect(new Set(ids).size).toBe(29);
     for (const t of tools) {
       expect(typeof t.render).toBe('function');
       expect(typeof t.label).toBe('string');
       expect(typeof t.group).toBe('string');
     }
     // Governance tools the product story leans on now have a home.
-    expect(ids).toEqual(expect.arrayContaining(['arena', 'secrets', 'webhooks', 'killswitch', 'trust', 'capabilities', 'audit', 'cost']));
+    expect(ids).toEqual(expect.arrayContaining(['arena', 'secrets', 'webhooks', 'killswitch', 'trust', 'capabilities', 'audit', 'cost', 'localdocs', 'models', 'reflection']));
     expect(tools.some((t) => t.group === 'Security')).toBe(true);
   });
 });
@@ -153,5 +154,18 @@ describe('panel flows', () => {
     const txt = container.querySelector('.console-content').textContent;
     expect(txt).toContain('PASS');
     expect(txt).toContain('100%');
+  });
+
+  it('Local Docs — Index posts the configured folder key', async () => {
+    const { container } = overlay();
+    await env.flush();
+    openTool(container, 'Local Docs');
+    await env.flush();
+    const btn = [...container.querySelectorAll('.console-content .tool-btn')].find((b) => b.textContent === 'Index');
+    expect(btn, 'Index button rendered').toBeTruthy();
+    env.click(btn);
+    const post = env.window.fetch.mock.calls.find((c) => c[0] === '/api/local-docs/index' && c[1] && c[1].method === 'POST');
+    expect(post, 'POST /api/local-docs/index issued').toBeTruthy();
+    expect(JSON.parse(post[1].body).key).toBe('notes');
   });
 });

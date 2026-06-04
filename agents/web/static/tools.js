@@ -427,6 +427,90 @@
     return Tool('Cost & Usage', '$ per agent — local models are $0', body, Btn('↻', reload));
   }
 
+  /* ── Personal data & local models (privacy-first) ──────────────────────── */
+  function LocalDocsPanel() {
+    const _ = useApi('/api/local-docs', true), s = _[0], reload = _[1];
+    const _b = useState(null), busy = _b[0], setBusy = _b[1];
+    function index(key) {
+      setBusy(key);
+      api('/api/local-docs/index', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ key: key }) })
+        .then(function () { setBusy(null); reload(); }).catch(function (e) { setBusy(null); alert(e); });
+    }
+    let body;
+    if (s.err) body = Err(s.err); else if (s.loading) body = Empty('Loading…');
+    else {
+      const keys = s.data.available || [];
+      body = h('div', null,
+        h('div', { className: 'tool-hint' }, 'Index a pre-configured local folder into memory — fully offline. Set folders in local_docs.folders.'),
+        keys.length ? keys.map(function (k) {
+          return h('div', { key: k, className: 'tool-card' },
+            h('span', { className: 'tool-card-text' }, '📁 ' + k),
+            Btn(busy === k ? 'Indexing…' : 'Index', function () { index(k); }, 'ok'));
+        }) : Empty('No folders configured (set local_docs.folders).'),
+        (s.data.indexed != null || s.data.chunks != null) && h('div', { className: 'tool-stat' }, 'Last: ' + (s.data.indexed != null ? s.data.indexed + ' docs' : '') + (s.data.chunks != null ? ' · ' + s.data.chunks + ' chunks' : '')));
+    }
+    return Tool('Local Docs', 'Drop-folder → chat with your files, offline', body, Btn('↻', reload));
+  }
+
+  function ModelsPanel() {
+    const _ = useApi('/api/models/local', true), s = _[0], reload = _[1];
+    function switchTo(id) {
+      adminFetch('/api/models/local/switch', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ model: id }) })
+        .then(reload).catch(function (e) { alert(e.message); });
+    }
+    let body;
+    if (s.err) body = Err(s.err); else if (s.loading) body = Empty('Loading…');
+    else {
+      const models = s.data.models || [], active = s.data.active || '';
+      body = models.length ? models.map(function (m, i) {
+        const id = (m && m.id) || m, isActive = (m && m.active) || id === active;
+        return h('div', { key: i, className: 'tool-card' },
+          h('span', { className: 'tool-card-text' }, (isActive ? '● ' : '○ ') + id),
+          !isActive && Btn('Use', function () { switchTo(id); }, 'admin'));
+      }) : Empty('No local models found (LM Studio / Ollama).');
+    }
+    return Tool('Local Models', 'Browse + switch the active local model (admin)', body, Btn('↻', reload));
+  }
+
+  function TemplatesPanel() {
+    const _ = useApi('/api/agent-templates', true), s = _[0], reload = _[1];
+    const _n = useState(''), name = _n[0], setName = _n[1];
+    const _r = useState(null), res = _r[0], setRes = _r[1];
+    function tid(t) { return typeof t === 'string' ? t : (t.id || t.name || ''); }
+    function tlabel(t) { return typeof t === 'string' ? t : (t.name || t.id || 'template'); }
+    function instantiate(t) {
+      api('/api/agent-templates/instantiate', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ template: tid(t), name: name || tid(t) }) })
+        .then(setRes).catch(function (e) { alert(e); });
+    }
+    let body;
+    if (s.err) body = Err(s.err); else if (s.loading) body = Empty('Loading…');
+    else {
+      const templates = s.data.templates || [];
+      body = h('div', null,
+        h('div', { className: 'tool-form' }, h('input', { className: 'tool-input', placeholder: 'new agent name (optional)', value: name, onChange: function (e) { setName(e.target.value); } })),
+        templates.length ? templates.map(function (t, i) {
+          return h('div', { key: i, className: 'tool-card' },
+            h('span', { className: 'tool-card-text' }, tlabel(t) + (typeof t.description === 'string' ? ' — ' + t.description : '')),
+            Btn('Preview config', function () { instantiate(t); }, 'ok'));
+        }) : Empty('No templates.'),
+        res && Pre(res));
+    }
+    return Tool('Agent Templates', 'Instantiate a pre-built agent (preview config)', body, Btn('↻', reload));
+  }
+
+  function ReflectionPanel() {
+    const _ = useApi('/api/reflection/status', true), s = _[0], reload = _[1];
+    const _r = useState(null), res = _r[0], setRes = _r[1];
+    function run() { api('/api/reflection/run', { method: 'POST' }).then(function (d) { setRes(d); reload(); }).catch(function (e) { alert(e); }); }
+    let body;
+    if (s.err) body = Err(s.err); else if (s.loading) body = Empty('Loading…');
+    else body = h('div', null,
+      h('div', { className: 'tool-stat ' + (s.data.enabled ? 'ok' : '') }, (s.data.enabled ? '✓ enabled' : '○ disabled') + (s.data.last_run ? ' · last ' + s.data.last_run : ' · never run')),
+      Btn('Run reflection now', run, 'ok'),
+      res && Pre(res.result || res));
+    return Tool('Daily Reflection', 'Nightly memory consolidation — run on demand', body, Btn('↻', reload));
+  }
+
   /* ── tool registry ─────────────────────────────────────────────────────── */
   const TOOLS = [
     { id: 'health', group: 'Observability', label: 'Component Health', render: function (p) { return h(HealthPanel, p); } },
@@ -443,17 +527,21 @@
     { id: 'dryrun', group: 'Autonomy', label: 'Dry-Run Preview', render: function (p) { return h(DryRunPanel, p); } },
     { id: 'escalation', group: 'Autonomy', label: 'Escalation', render: function (p) { return h(EscalationPanel, p); } },
     { id: 'learning', group: 'Autonomy', label: 'Learning Loop', render: function (p) { return h(LearningPanel, p); } },
+    { id: 'reflection', group: 'Autonomy', label: 'Daily Reflection', render: function (p) { return h(ReflectionPanel, p); } },
     { id: 'notes', group: 'Workspace', label: 'Conversation Notes', render: function (p) { return h(NotesPanel, p); } },
     { id: 'rooms', group: 'Workspace', label: 'Chat Rooms', render: function (p) { return h(RoomsPanel, p); } },
     { id: 'memsearch', group: 'Memory', label: 'Memory Search', render: function (p) { return h(MemorySearchPanel, p); } },
     { id: 'kg', group: 'Memory', label: 'Knowledge Graph', render: function (p) { return h(KGPanel, p); } },
     { id: 'entities', group: 'Memory', label: 'Entities', render: function (p) { return h(EntitiesPanel, p); } },
     { id: 'decay', group: 'Memory', label: 'Decay & Forgetting', render: function (p) { return h(DecayPanel, p); } },
+    { id: 'localdocs', group: 'Memory', label: 'Local Docs', render: function (p) { return h(LocalDocsPanel, p); } },
     { id: 'widgets', group: 'Tools', label: 'Embeddable Widgets', render: function (p) { return h(WidgetsPanel, p); } },
     { id: 'grammar', group: 'Tools', label: 'Constrained Decoding', render: function (p) { return h(GrammarPanel, p); } },
     { id: 'mcp', group: 'Tools', label: 'MCP Server', render: function (p) { return h(MCPPanel, p); } },
     { id: 'secrets', group: 'Tools', label: 'Secret Broker', render: function (p) { return h(SecretsPanel, p); } },
     { id: 'webhooks', group: 'Tools', label: 'Webhooks', render: function (p) { return h(WebhooksPanel, p); } },
+    { id: 'models', group: 'Tools', label: 'Local Models', render: function (p) { return h(ModelsPanel, p); } },
+    { id: 'templates', group: 'Tools', label: 'Agent Templates', render: function (p) { return h(TemplatesPanel, p); } },
   ];
   window.JARVIS_TOOLS = TOOLS;
 

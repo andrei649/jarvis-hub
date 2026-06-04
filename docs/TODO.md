@@ -75,10 +75,10 @@ reality. What's left to actually **build**:_
    (signatures + review gate on import). Verify scope, then finish.
 
 7. **HUD "every feature has a home"** — _2026-06-04: added a **Security** group (Kill-Switch,
-   Trust Scorecard, Capability Tokens, Audit & Intent) + **Cost & Usage** — the governance controls
-   the product story leans on now have a UI (Console registry 20→25, with tests)._ **Still missing
-   panels:** eval datasets, reflection, oracle, OAuth status, agent-templates, local-docs, model
-   management, resilience. Add via the `tools.js` `TOOLS` registry (~30–50 LOC each).
+   Trust Scorecard, Capability Tokens, Audit & Intent), **Cost & Usage**, plus **Local Docs,
+   Local Models, Agent Templates, Daily Reflection** — Console registry 20→29, all tested._
+   **Still missing:** the eval-dataset regression view (`/api/eval/datasets`). (OAuth, Oracle,
+   Resilience already have a home in the Systems panel.) Add via `tools.js` `TOOLS` (~30–50 LOC each).
 
 ---
 
