@@ -95,10 +95,9 @@ reality. What's left to actually **build**:_
     **or** keep the broad gate. The `9.9.9` framing currently sidesteps it.
 12. **Reconcile the test count** — docs disagree: README/STATUS "1,480+", GO_LIVE_PLAN "1,184+",
     this handoff "~1,520". Run the suite, pick the true number, single-source it (ties to H7.8 doc-truth).
-13. **Mask the IBAN in `/ticker`** — `balance.py` seed data prints a full RO IBAN
-    (`RO12INGB0987654321`). **Mock today** (and not even valid IBAN length), but if
-    `BalanceReaderPlugin` is ever wired to a real account the HUD would broadcast a real IBAN —
-    and the PII scanner flags RO IBANs. Mask (e.g. `…4321`) before real wiring / go-live.
+13. ~~Mask the IBAN in `/ticker`~~ ✅ **Done 2026-06-04** — `BalanceReaderPlugin.get_balances()`
+    masks every account to `…NNNN` **at the source** (covers mock + real ING/Libra/CSV, so the
+    HUD and Gecko summaries never broadcast a full IBAN). +2 regression tests in `test_balance.py`.
 
 ---
 
