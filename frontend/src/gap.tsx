@@ -45,9 +45,17 @@ const act = (p, body, then) => apiPost(p, body).then(then || (() => {})).catch((
 function DataSpacesPanel() {
   const { d, e, loading, reload } = useApi('/api/memory/spaces');
   const spaces = arr(d, 'spaces');
+  const [name, setName] = useState(''); const [src, setSrc] = useState('');
+  const inp = { background: 'var(--surface)', color: 'var(--ink)', border: '1px solid var(--panel-line)', borderRadius: 4, padding: 5, ...mono, fontSize: 11, flex: 1 };
+  const create = () => { if (!name.trim()) return; apiPost('/api/memory/spaces', { name: name.trim(), sources: src.split(',').map((s) => s.trim()).filter(Boolean) }, { admin: true }).then(() => { setName(''); setSrc(''); reload(); }).catch(() => {}); };
   return <Card title="DATA SPACES" sub={spaces.length} onReload={reload}>
     <State e={e} loading={loading} n={spaces.length} />
-    {spaces.slice(0, 12).map((s, i) => <Row key={i}><span style={{ ...mono, color: 'var(--accent-light)' }}>{s.name || s}</span><span style={{ fontSize: 10, color: 'var(--ink-3)' }}>{(s.sources || s.categories || []).join?.(', ')}</span></Row>)}
+    {spaces.slice(0, 12).map((s, i) => <Row key={i}><span style={{ ...mono, color: 'var(--accent-light)' }}>{s.name || s}</span><span style={{ fontSize: 10, color: 'var(--ink-3)' }}>{(s.sources || s.categories || []).join?.(', ')}</span><Btn onClick={() => apiDelete('/api/memory/spaces/' + (s.name || s), { admin: true }).then(reload).catch(() => {})}>✕</Btn></Row>)}
+    <div style={{ display: 'flex', gap: 6, marginTop: 8 }}>
+      <input value={name} onChange={(ev) => setName(ev.target.value)} placeholder="space name" style={inp} />
+      <input value={src} onChange={(ev) => setSrc(ev.target.value)} placeholder="sources, csv" style={inp} />
+      <button className="tool-btn" onClick={create}>+ add</button>
+    </div>
     <div style={{ fontSize: 10, color: 'var(--ink-3)', marginTop: 6 }}>per-agent read scope (H10.26) · default-open</div>
   </Card>;
 }
@@ -76,9 +84,17 @@ function NotesPanel() {
 function SecretsPanel() {
   const { d, e, loading, reload } = useApi('/api/secrets/broker');
   const names = arr(d, 'names', 'secrets');
+  const [nm, setNm] = useState(''); const [vl, setVl] = useState('');
+  const inp = { background: 'var(--surface)', color: 'var(--ink)', border: '1px solid var(--panel-line)', borderRadius: 4, padding: 5, ...mono, fontSize: 11 };
+  const store = () => { if (!nm.trim()) return; apiPost('/api/secrets/broker', { name: nm.trim(), value: vl }, { admin: true }).then(() => { setNm(''); setVl(''); reload(); }).catch(() => {}); };
   return <Card title="SECRET BROKER" sub={names.length} onReload={reload}>
     <State e={e} loading={loading} n={names.length} />
-    {names.slice(0, 12).map((n, i) => <Row key={i}><span style={mono}>{n.name || n}</span><Btn onClick={() => apiDelete('/api/secrets/broker/' + (n.name || n)).then(reload).catch(() => {})}>✕</Btn></Row>)}
+    {names.slice(0, 12).map((n, i) => <Row key={i}><span style={mono}>{n.name || n}</span><Btn onClick={() => apiDelete('/api/secrets/broker/' + (n.name || n), { admin: true }).then(reload).catch(() => {})}>✕</Btn></Row>)}
+    <div style={{ display: 'flex', gap: 6, marginTop: 8 }}>
+      <input value={nm} onChange={(ev) => setNm(ev.target.value)} placeholder="NAME" style={{ ...inp, flex: '0 0 38%' }} />
+      <input value={vl} onChange={(ev) => setVl(ev.target.value)} placeholder="value" type="password" style={{ ...inp, flex: 1 }} />
+      <button className="tool-btn" onClick={store}>store</button>
+    </div>
     <div style={{ fontSize: 10, color: 'var(--ink-3)', marginTop: 6 }}>just-in-time {'{{secret:NAME}}'} injection at approval time</div>
   </Card>;
 }
@@ -263,9 +279,21 @@ function PromptsPanel() {
 function RoomsPanel() {
   const { d, e, loading, reload } = useApi('/api/rooms');
   const rooms = arr(d, 'rooms');
+  const [name, setName] = useState(''); const [sel, setSel] = useState(''); const [msg, setMsg] = useState('');
+  const inp = { background: 'var(--surface)', color: 'var(--ink)', border: '1px solid var(--panel-line)', borderRadius: 4, padding: 5, ...mono, fontSize: 11, flex: 1 };
+  const create = () => { if (!name.trim()) return; apiPost('/api/rooms', { name: name.trim() }).then(() => { setName(''); reload(); }).catch(() => {}); };
+  const send = () => { if (!sel || !msg.trim()) return; apiPost('/api/rooms/' + sel + '/message', { message: msg.trim() }).then(() => setMsg('')).catch(() => {}); };
   return <Card title="ROOMS" sub={rooms.length} onReload={reload}>
     <State e={e} loading={loading} n={rooms.length} />
-    {rooms.slice(0, 10).map((r, i) => <Row key={i}><span style={{ ...mono, color: 'var(--accent-light)' }}>{r.name || r.id}</span><span style={{ marginLeft: 'auto', fontSize: 10, color: 'var(--ink-3)' }}>{(r.agents || []).join(', ')}</span></Row>)}
+    {rooms.slice(0, 10).map((r, i) => <Row key={i}><span style={{ ...mono, color: sel === (r.id || r.name) ? 'var(--accent)' : 'var(--accent-light)', cursor: 'pointer' }} onClick={() => setSel(r.id || r.name)}>{r.name || r.id}</span><span style={{ marginLeft: 'auto', fontSize: 10, color: 'var(--ink-3)' }}>{(r.agents || []).join(', ')}</span></Row>)}
+    <div style={{ display: 'flex', gap: 6, marginTop: 8 }}>
+      <input value={name} onChange={(ev) => setName(ev.target.value)} placeholder="new room" style={inp} />
+      <button className="tool-btn" onClick={create}>+ room</button>
+    </div>
+    {sel && <div style={{ display: 'flex', gap: 6, marginTop: 6 }}>
+      <input value={msg} onChange={(ev) => setMsg(ev.target.value)} placeholder={'message ' + sel + ' (@agent)'} onKeyDown={(ev) => { if (ev.key === 'Enter') send(); }} style={inp} />
+      <button className="tool-btn" onClick={send}>send</button>
+    </div>}
   </Card>;
 }
 
