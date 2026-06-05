@@ -119,6 +119,42 @@ Each gap surface follows the prototype's `ModePanel + SubH + two‑column` templ
 
 ---
 
+## 5b · Backlog cross‑check — surfaces the prototype/plan missed
+A round‑2 pass over `BACKLOG.md` (H8–H17, mostly ✅‑built) found these **shipped‑but‑unsurfaced** or
+under‑weighted items. Folding them in now so v1 can't drop them (all enter the §8 parity gate):
+
+| Surface | Backlog | Why it matters | Home → endpoint |
+|---|---|---|---|
+| **User Profile — "what Jarvis knows about you"** (facts/prefs/people/projects · inspect·edit·**export JSON**·forget) | H8.1 / H8.2 | the **flagship personalization** feature; prototype has no profile view | Memory (first‑class panel) → `GET /api/memory/profile` + forget/export |
+| **Strict‑local / mic‑mute trust badge** | H12.10 | a shipped, explicit HUD trust signal (endpoint at `web.py:3013` → `mic`,`strict_local`) | TopBar/Trust badge |
+| **Discord + Slack channels** | H12.11 | both exist + wired; prototype Comms only has TG/email/WA/voice | Comms inbox + Admin channels + escalation targets |
+| **Sessions browser + resume (+ clear)** | core | current HUD has it; v2 prototype dropped it | Cockpit/Chat → `/sessions`, `/sessions/resume`, `/memory/clear` |
+| **Model browse / download / switch** (not just view) | H12.9 | Jan‑style one‑click model mgmt | Admin models → `/api/models/local`, `/switch` |
+| **Backup trigger + restore** (not just list) | H12.15 | the only real state is git‑ignored — restore matters | Admin backups (scripts) |
+| **NL scheduling** ("every weekday 7am"→cron) | H10.27 | quick proactive affordance | Autonomy/Pepper → `POST /api/schedule/parse` |
+| **Voice satellites (Wyoming) + wake/mute config** | H12.4 / H12.10 | Home‑Assistant voice ecosystem | Voice surface (Admin/Comms) → `/api/voice/wyoming` |
+| **Per‑agent run history timeline** | H10.17 | timeline of runs/cost/route per agent | Dossier (confirm) → `/api/agents/{id}/history` |
+| **APM org dashboard** | H10.16 | tokens/cost/runs by agent+model | Admin/Observe → `/api/admin/apm` |
+
+**Backend‑only (no HTTP surface yet) — decide reserve vs `NOT_IN_HUD`:**
+- **Howard digital‑twin ingestion** — `core/ingestion/` (Facebook/WhatsApp archives → vectors, **stylometry**
+  voice profiling, continuous watcher). **No endpoints today** (only `/api/kg/ingest`). The plan previously
+  didn't mention this subsystem. → either add a small ingestion API + a Memory/Howard panel, or mark
+  `NOT_IN_HUD` until endpoints exist (owner call). Tied to H13.1 (VLM screen/doc understanding feeds it).
+
+**Reserve IA space for in‑scope‑v1.0 frontiers (planned, not built):**
+- **Computer‑Use (H15)** — browser/desktop operation **behind the approval queue** + egress allowlist +
+  screen‑understanding. A *major* future surface with no home in the 15 modes → reserve a **"Control"** mode
+  slot (or fold into Autonomy) **now**, so adding it later isn't a restructure.
+- **Passive multi‑surface capture (H12.7)** + **E2E device sync (H12.13)** — future opt‑in → Memory/Settings.
+- **Onboarding / first‑run (H12.2)** — drop‑folder index + personalization setup; low priority for the single
+  owner but real.
+
+**Deployment note:** D2 = Vite/React makes a future **Tauri desktop wrapper (H11.1)** straightforward (vs the
+old no‑build globals) — a side‑benefit of choosing B.
+
+---
+
 ## 6 · Backend additions needed (anticipated, minimal, non‑breaking)
 Most ❌ items already have endpoints. The few that need backend work:
 1. **Streaming cognition SSE** (`GET /api/cognition/stream`) emitting classify→route(scores)→plugin‑reads→
@@ -127,6 +163,8 @@ Most ❌ items already have endpoints. The few that need backend work:
 2. **Compute‑locality / cost summary** (`GET /api/analytics/locality`) to back the real **% local** meter +
    cost tile (compose from `/api/analytics/model-tiers` + `/api/cost`).
 3. **Optional `response_model=`** on the ~30 consumed endpoints (improves types + `/docs`).
+4. **Howard ingestion API** — *only if* we surface the digital twin (§5b): endpoints for archive ingest +
+   stylometry profile + twin/watcher status (the `core/ingestion/` subsystem is daemon‑only today).
 All via the `docs/ARCHITECTURE.md §8` recipe; new polling paths → `_NO_STORE_PATHS`; no shape changes to
 existing responses.
 
