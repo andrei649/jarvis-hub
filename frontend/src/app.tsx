@@ -8,6 +8,7 @@ import { TopBar, Ticker, Rail, Tabs, RosterColumn, ContextColumn, Palette, Ambie
 import { NetworkBrain } from './network';
 import { Conversation, CognitionStream, InputBar, buildTrace, traceFromCognition } from './cockpit';
 import { loadJarvisData } from './api/loaders';
+import { useLiveModes } from './api/live';
 import { postStream, apiGet } from './api/client';
 import { AgentsMode, Dossier, TrustMode, MemoryMode } from './modes';
 import { AutonomyMode, BuildMode, ObserveMode, InteropMode } from './modes2';
@@ -64,6 +65,7 @@ function App() {
   const clock = useClock();
   const t = V2.I18N[lang];
   const localPct = 87;
+  useLiveModes(); // P4: stream live data into the capability modes (mock fallback)
 
   // hotkeys: number keys jump modes, ⌘K palette, A ambient
   useEffect(() => {
