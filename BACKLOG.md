@@ -382,7 +382,7 @@ chain-of-thought leak / mid-sentence truncation fixed. Kill-switch:
 
 ---
 
-## ORIZONT 12 — Categoria Reală: Asistent Personal Privat & Proactiv (P0–P3) — 10/15
+## ORIZONT 12 — Categoria Reală: Asistent Personal Privat & Proactiv (P0–P3) — 10/20
 
 > Bazat pe research-ul din [docs/research/2026-06-02-personal-ai-competitors.md](docs/research/2026-06-02-personal-ai-competitors.md):
 > H10 a comparat Jarvis cu 8 **framework-uri de developeri**; categoria reală a moonshot-ului (asistent
@@ -428,7 +428,21 @@ chain-of-thought leak / mid-sentence truncation fixed. Kill-switch:
 | H12.14 | **Model agentic mic, fine-tuned** (task-uri router/tool) — overlap cu H11.3 (pipeline SFT/GRPO); $0 COGS. | 8 | P3 | H11.3 | Jan-nano |
 | H12.15 ✅ | **Backup & restore date personale** — `agents/data/` + `memory_logs/` (memoria H8, sesiuni, workflow-uri create, corpus ingerat) sunt **singura stare cu date reale și sunt git-ignored** → fără asta, pierdere totală la orice `clean`/reinstalare (incidentul 2026-06-02). **Done 2026-06-02:** `scripts/backup-data.sh` + `scripts/backup-data.ps1` — arhivă timestamped (tar.gz / zip), restore cu confirmare, retenție ultimele 14, override `BACKUP_DIR` (drive extern/cloud); `backups/` gitignored; păstrează local-first (opt-in cloud). *(Schedule automat = opțional, neimplementat.)* | 3 | P2 | H8.2 | durabilitate local-first |
 
-> **Total ORIZONT 12:** 15 items, ~92 SP. **Acțiune imediată recomandată:** H12.1 (P0) — e simultan hardening real
+### Track E — Paritate guvernată cu OpenClaw (post‑research 2026‑06‑05) (P2–P3)
+
+> Funcționalități adoptate din OpenClaw (`github.com/openclaw/openclaw`, ~377k★) **doar sub guvernanță** —
+> închid decalajul de *reach/UX* fără să atingă vreun non‑negociabil. Analiză completă:
+> [docs/research/2026-06-05-openclaw-feature-analysis.md](docs/research/2026-06-05-openclaw-feature-analysis.md).
+
+| # | Item | S | P | Dep | Sursă |
+|---|------|---|---|-----|-------|
+| H12.16 | **Lărgire canale** (WhatsApp nativ / Signal / iMessage / Matrix / Teams / Google Chat …) pe gateway‑ul *guvernat* (rate‑limit + guardrails + allowlist se aplică). OpenClaw are ~23 canale; noi avem 6. | 5 | P2 | H1.3 | OpenClaw multi‑channel |
+| H12.17 | **Node mesh guvernat** — telefon/desktop ca *noduri de execuție* care rulează doar acțiuni capability‑scoped + aprobate; GPU‑ul de acasă rămâne creierul. Unifică Tauri (H11.1) + split sateliți (H12.8). | 13 | P3 | H11.1, H17.3 | OpenClaw „nodes" / Willow |
+| H12.18 | **Agent Canvas / A2UI** — spațiu vizual condus de agent în HUD (inspectabil + guvernat), peste network brain‑ul v2. | 8 | P3 | HUD v2 | OpenClaw Live Canvas |
+| H12.19 | **Pairing/aprobare expeditor inbound** — senderi necunoscuți pe canale trec printr‑un cod/aprobare (anti‑abuz); oglindă a allowlist‑ului A2A. | 3 | P2 | H1.3, H16.2 | OpenClaw DM pairing |
+| H12.20 | **Rotație profile auth + failover model** în hybrid router (mai multe chei/conturi cu failover). | 3 | P3 | H2.12 | OpenClaw auth rotation |
+
+> **Total ORIZONT 12:** 20 items, ~124 SP. **Acțiune imediată recomandată:** H12.1 (P0) — e simultan hardening real
 > ȘI wedge-ul de marketing (alternativa securizată la OpenClaw). Restul Track B (P1) ridică cel mai mult valoarea per efort.
 
 ---
