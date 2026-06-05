@@ -3906,6 +3906,96 @@ async def a2a_decide(task_id: str, body: A2ADecisionBody):
 # ── END H16.2 A2A endpoints ───────────────────────────────────────
 
 
+# ── H16.3 Governed payments (mandate / cap / approval / audit) ─────
+
+_payment_broker = None
+
+
+def _get_payment_broker():
+    global _payment_broker
+    if _payment_broker is None:
+        from agents.core.payments import PaymentBroker
+        from agents.core.security.anchor import IntentLog
+        _payment_broker = PaymentBroker(
+            audit=IntentLog(path="memory_logs/security/payments_intent.json"))
+    return _payment_broker
+
+
+class CreateMandateBody(BaseModel):
+    payees: list[str] = Field(default_factory=list)
+    per_payment_cap: float = Field(..., gt=0)
+    total_cap: float = Field(..., gt=0)
+    currency: str = Field("EUR", max_length=8)
+    ttl_seconds: Optional[float] = Field(None, gt=0)
+
+
+class RequestPaymentBody(BaseModel):
+    mandate_id: str = Field(..., max_length=64)
+    payee: str = Field(..., max_length=128)
+    amount: float = Field(..., gt=0)
+    currency: str = Field("EUR", max_length=8)
+    memo: str = Field("", max_length=280)
+
+
+@app.post("/api/payments/mandates", dependencies=[Depends(_admin_guard)])
+async def create_payment_mandate(body: CreateMandateBody):
+    """Pre-authorize a spending budget with hard caps + a payee allowlist."""
+    try:
+        return _nocache_json(_get_payment_broker().create_mandate(
+            body.payees, body.per_payment_cap, body.total_cap, body.currency, body.ttl_seconds))
+    except ValueError:
+        return _nocache_json({"error": "invalid mandate (need ≥1 payee and positive caps)"}, status_code=400)
+
+
+@app.get("/api/payments/mandates", dependencies=[Depends(_admin_guard)])
+async def list_payment_mandates():
+    return _nocache_json({"mandates": _get_payment_broker().list_mandates()})
+
+
+@app.post("/api/payments/request", dependencies=[Depends(_admin_guard)])
+async def request_payment(body: RequestPaymentBody):
+    """Request a payment against a mandate. Denied (over cap / bad payee / etc.)
+    returns 400 with a reason code; admissible returns a pending payment."""
+    result = _get_payment_broker().request_payment(
+        body.mandate_id, body.payee, body.amount, body.currency, body.memo)
+    if not result.get("ok"):
+        return _nocache_json({"error": "payment denied", "reason": result.get("reason")}, status_code=400)
+    return _nocache_json(result["payment"])
+
+
+@app.get("/api/payments", dependencies=[Depends(_admin_guard)])
+async def list_payments(status: Optional[str] = None):
+    return _nocache_json({"payments": _get_payment_broker().list_payments(status)})
+
+
+@app.post("/api/payments/{payment_id}/approve", dependencies=[Depends(_admin_guard)])
+async def approve_payment(payment_id: str):
+    try:
+        return _nocache_json(_get_payment_broker().approve(payment_id))
+    except ValueError:
+        return _nocache_json({"error": "payment not found or not pending/admissible"}, status_code=400)
+
+
+@app.post("/api/payments/{payment_id}/reject", dependencies=[Depends(_admin_guard)])
+async def reject_payment(payment_id: str):
+    try:
+        return _nocache_json(_get_payment_broker().reject(payment_id))
+    except ValueError:
+        return _nocache_json({"error": "payment not found or cannot be rejected"}, status_code=400)
+
+
+@app.post("/api/payments/{payment_id}/settle", dependencies=[Depends(_admin_guard)])
+async def settle_payment(payment_id: str):
+    """Settle an approved payment (no real rail moves money here)."""
+    try:
+        return _nocache_json(_get_payment_broker().settle(payment_id))
+    except ValueError:
+        return _nocache_json({"error": "payment not approved, not found, or over cap"}, status_code=400)
+
+
+# ── END H16.3 Governed payments ───────────────────────────────────
+
+
 # ── H10.5 MCP Server Mode (expose Jarvis agents as governed MCP tools) ─
 
 def _build_mcp_server():

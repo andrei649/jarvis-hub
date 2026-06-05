@@ -179,6 +179,11 @@ Prereq: working LLM for agent steps; transform/guardrail steps are deterministic
   card to Telegram with Approve/Reject buttons; tapping one transitions the task.
 - [ ] **Dry-run preview (H12.5)** ✅ — The decision card / `POST /api/autonomy/preview`
   shows what the action *would* do + irreversibility, **before** approval.
+- [ ] **Governed payments (H16.3)** ✅ — Create a mandate (`POST /api/payments/mandates`)
+  with a per-payment + total cap and a payee allowlist. Confirm a request over
+  the cap / to an unlisted payee is **denied** (never pending); an admissible one
+  is **pending** and only **settles after explicit approve**; cumulative spend
+  can't exceed the total. (No real rail — nothing actually moves money.)
 - [ ] **Escalation channels (H12.11)** 🔑 — Configure `autonomy.escalation_channels`;
   `POST /api/autonomy/escalate` delivers to the allowed channels only (Slack/Discord/
   WhatsApp/…), best-effort. Verify each configured channel actually receives it.
