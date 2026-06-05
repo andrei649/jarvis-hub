@@ -1,0 +1,86 @@
+# HUD v2 — Remaining work (next PR)
+
+> What's intentionally **left out** of the P0–P6 build (PR #156 / merged to `main`) and queued for
+> the next pass. The v2 HUD ships at **`/v2`** (opt‑in; `/` unchanged); this is the punch‑list to
+> finish it and eventually cut over. Companion: `HUD_V2_IMPLEMENTATION_PLAN.md`,
+> `HUD_V2_COVERAGE_AND_PLAN.md`. Generated 2026‑06‑05.
+
+## 0. Do this first
+- **Runtime verification.** Nothing was verified against a *running* backend (the build sandbox has
+  no `fastapi`). Run `python serve.py` → open `/v2`, click **every mode + every Console (▦) panel**,
+  and compare against `/` (v1) / known values. The **mock‑fallback** design hides wrong‑but‑not‑
+  failing wiring (a bad field map shows seed data, not an error), so this pass is essential. File
+  shape‑mismatch fixes as found.
+
+## 1. Make real‑vs‑mock visible
+- Surface the loader's existing `live` flag as a **● LIVE / ○ SEED** indicator (top bar + per‑panel),
+  so it's obvious when a panel is showing seed data because its fetch failed.
+
+## 2. Deepen the P4c Console panels (read/basic → full)
+- **Settings DB**: read‑only category tree → full inline editor (toggle/slider/select/text per key,
+  save `PUT /api/admin/settings/{cat}`). Reference: v1 `admin.js` `GlobalConfigPage`.
+- **Prompt versions**: history list → full **A/B + diff + rollback + commit + preview** UI
+  (`/api/admin/prompts/{id}/*`).
+- **Data Spaces**: list → create / assign / unassign CRUD (`/api/memory/spaces*`).
+- **Secrets**: list + delete → add a store form. **Capabilities**: add a grants list + check UI.
+- **Rooms**: list → create + open history + send with `@mentions`.
+
+## 3. Per‑mode live‑wiring depth
+`api/live.ts` wires the headline data for Memory / Observe / Interop / Autonomy / Trust / Admin.
+Still on mock (wire to endpoints; some need plugins configured):
+- **Build**: workflow DAG + skills marketplace + sandbox → `/api/workflows`, `/api/skills/marketplace`.
+- **Memory**: `RECALLS` / `TOPICS` / `KG` live (recall search, decay ranking, bitemporal KG as‑of).
+- **Trust**: capability grants list; real `%‑local` meter (needs a locality/cost summary endpoint, §6).
+- **Autonomy**: per‑agent AUTO/ASK/OFF **policies** (settings‑backed).
+- **Comms**: live threads + **Discord + Slack** channels (exist in backend; not in the inbox yet).
+- **Finance / Health / Knowledge / Family**: plugin‑backed (balance / apple‑health / websearch /
+  frigga) — wire when those plugins are configured.
+- **Dossier**: wire to `/api/agents/{id}/soul` + `/memory/{id}` + run history `/api/agents/{id}/history`
+  (currently reads the `DOSSIER` mock).
+
+## 4. Cockpit / signature interactions
+- **Network task‑fan**: v2 `NetworkBrain` doesn't render per‑agent task dots from `/tasks` (v1 did) —
+  add the task layer + live collab edges.
+- **Per‑message TTS** (🔊 → `/tts`) + **browser mic / SpeechRecognition** input + voice auto‑speak
+  (v1 had these; dropped in the port).
+- **Streaming cognition**: P2 pulls the `/api/cognition` snapshot after the turn; upgrade to a real
+  **SSE** stream (`/api/cognition/stream`, a backend addition) with live scores + redactions.
+- **Strict‑local / mic trust badge** (H12.10): wire `/api/trust/status` into the top bar (endpoint
+  exists; topbar edit deferred).
+
+## 5. Settings / preferences UI
+- The design‑only `TweaksPanel` was dropped. Accent + language persist (palette toggles), but
+  **look / density / motion / scanline / dotgrid** aren't user‑changeable in‑app (defaults only) —
+  add a small settings menu (or a gated tweaks panel) that changes + persists them.
+
+## 6. Toolchain / CI hardening
+- **CI frontend‑build + stale‑bundle guard** (most important): a job that runs `npm ci` →
+  `tsc --noEmit` → `vite build` and **asserts the committed `agents/web/v2/` matches the fresh
+  build**. Today the committed bundle is only gated by a local `vite build`.
+- **OpenAPI types**: generate `src/api/schema.ts` from `/openapi.json` (`openapi-typescript`) + add a
+  `tsc` gate; optionally backfill `response_model=` on the ~30 consumed endpoints. (Most ported files
+  are `// @ts-nocheck` — drop that as types land.)
+- **Self‑host fonts**: vendor Space Grotesk + JetBrains Mono as woff2 (currently system‑font
+  fallback — offline‑clean but off‑brand).
+- **ESM cleanup**: the ported prototype files keep an `import { … } from './ui'` barrel + loose types;
+  tighten to real per‑module imports + TS types over time.
+
+## 7. Backend additions (from the plan §6)
+- `GET /api/cognition/stream` (SSE) + provenance on the chat stream.
+- `GET /api/analytics/locality` (or compose from model‑tiers + cost) for the real **% local** meter.
+- Howard ingestion API — only if we ever surface the digital twin (currently `NOT_IN_HUD`).
+
+## 8. Cutover (P6 follow‑through)
+- Once verified, flip the default: `JARVIS_HUD=v2` (or hardcode) so `/` serves v2; keep `/v1` as the
+  escape hatch; then archive the old `agents/web/` HUD and update `README` / `STATUS.md` / `JARVIS.md`.
+
+## 9. Known infra issue (not a code fix)
+- CI **`Analyze (python)` (CodeQL)** intermittently fails with *"Code scanning is not enabled for this
+  repository"* — a repo **Settings → Code security** toggle (or GHAS availability), owner‑controlled.
+  Unrelated to the HUD; `test` + `frontend` are green. Enable code scanning, or make that check
+  non‑required.
+
+---
+*Parity gate (`tests/test_hud_v2_parity.py`) tracks all 210 routes → every one is mapped to a v2
+surface or `NOT_IN_HUD`, so nothing above can silently disappear — these items are about depth, not
+coverage.*

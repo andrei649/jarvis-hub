@@ -1,0 +1,23 @@
+{
+  "name": "jarvis-hud-v2",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "description": "Jarvis Hub HUD v2 — Vite + React + TS. Built output is committed to ../agents/web/v2 and served by FastAPI at /v2.",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1"
+  },
+  "devDependencies": {
+    "@types/react": "^18.3.12",
+    "@types/react-dom": "^18.3.1",
+    "@vitejs/plugin-react": "^4.3.4",
+    "typescript": "^5.6.3",
+    "vite": "^5.4.11"
+  }
+}
