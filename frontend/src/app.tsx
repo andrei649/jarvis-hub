@@ -77,7 +77,7 @@ function App() {
   // %-local is honest: strict-local proven → 100%; demo → sample 87%; otherwise
   // unknown (no real locality endpoint yet — Batch G) → hidden rather than faked.
   const localPct = trust.strict_local ? 100 : (demo ? 87 : null);
-  useLiveModes(); // P4: stream live data into the capability modes (mock fallback)
+  const liveModes = useLiveModes(); // P4: stream live data into the capability modes; reports which keys are live
   useEffect(() => { try { localStorage.setItem('hud.accent', accent); } catch { /* ignore */ } }, [accent]); // P5 persist
   useEffect(() => { try { localStorage.setItem('hud.lang', lang); } catch { /* ignore */ } }, [lang]);
   useEffect(() => { try { localStorage.setItem('hud.demo', demo ? '1' : '0'); } catch { /* ignore */ } }, [demo]);
@@ -152,11 +152,22 @@ function App() {
         apiGet('/api/cognition').then((cog) => {
           const tr = traceFromCognition(cog, text);
           setTrace({ stages: tr.stages.map((s) => ({ ...s, state: 'done' })) });
-          setMessages((m) => { const c = [...m]; const j = idx >= 0 ? idx : c.length - 1; if (c[j]) c[j] = { ...c[j], prov: { agents: tr.selected, plugins: pluginsFor(text), local: true, conf: +(tr.conf || 0).toFixed(2) } }; return c; });
+          // HONESTY: real plugin reads + locality from the cognition snapshot — never a
+          // client-side guess. Unknown locality renders as "—" instead of a false claim.
+          const dloc = (cog && cog.decision) || {};
+          const reads = (cog && (cog.plugins || dloc.plugins)) || [];
+          const localKnown = typeof dloc.local === 'boolean' ? dloc.local : (cog && typeof cog.local === 'boolean' ? cog.local : undefined);
+          setMessages((m) => { const c = [...m]; const j = idx >= 0 ? idx : c.length - 1; if (c[j]) c[j] = { ...c[j], prov: { agents: tr.selected, plugins: reads, local: localKnown, conf: +(tr.conf || 0).toFixed(2) } }; return c; });
         }).catch(() => {});
       }
-    }).catch(() => runMock(text));
-  }, [t, activeId, runMock]);
+    }).catch(() => {
+      // HONESTY: never fabricate a reply. The staged mock is for DEMO only; otherwise
+      // surface the real failure (e.g. no model loaded / backend offline).
+      if (demo) { runMock(text); return; }
+      setThinking(null);
+      setMessages((m) => [...m, { role: 'agent', who: 'system', role_label: '', ts: fmtTimeShort(new Date()), text: '⚠ No reply — the model backend is unreachable or no model is loaded. Load a model in LM Studio, or enable ◐ DEMO to preview the interface.' }]);
+    });
+  }, [t, activeId, runMock, demo]);
 
   useEffect(() => () => timers.current.forEach(clearTimeout), []);
 
@@ -241,7 +252,7 @@ function App() {
               </div>
             ) : (
               <div className="workzone full" style={{ flex: 1, minHeight: 0 }}>
-                {modeComponent(mode, t)}
+                {modeComponent(mode, t, { demo, live: liveModes.live, onDemo: () => setDemo(true) })}
               </div>
             )}
           </div>
@@ -310,14 +321,52 @@ function ProvModal({ prov, onClose }) {
           <div className="dep-links" style={{ marginBottom: 16 }}>{prov.agents.map((a) => <span key={a} className="dep-link" style={{ cursor: 'default' }}><Glyph id={a} size={12} />{a}</span>)}</div>
           <div style={{ fontFamily: 'var(--font-mono)', fontSize: 9.5, letterSpacing: '.14em', color: 'var(--ink-3)', marginBottom: 8 }}>PLUGIN READS</div>
           <div className="dep-links" style={{ marginBottom: 16 }}>{prov.plugins.map((p) => <span key={p} className="dep-link" style={{ cursor: 'default' }}>{p}</span>)}</div>
-          <div className="verified-row"><Icon d={ICONS.shield} size={13} /> {prov.local ? '100% on-device · no cloud egress' : 'cloud-assisted'} · sealed in audit chain</div>
+          <div className="verified-row"><Icon d={ICONS.shield} size={13} /> {prov.local === true ? '100% on-device · no cloud egress' : prov.local === false ? 'cloud-assisted' : 'locality not reported'}</div>
         </div>
       </div>
     </div>
   );
 }
 
-function modeComponent(mode, t) {
+// Which V2 keys must carry REAL backend data for a capability mode to be "live".
+// Modes absent here (build/comms/finance/health/knowledge/family) have no backend
+// wired yet, so they are demo-only previews until one exists.
+const MODE_LIVE_KEYS = {
+  trust: ['AUDIT_CHAIN', 'PAYMENTS'], memory: ['MEMORY_STATS'], autonomy: ['AUTONOMY'],
+  observe: ['OBSERVE'], interop: ['INTEROP'], admin: ['ADMIN'],
+};
+const MODE_LABELS = {
+  trust: 'Trust & Governance', memory: 'Memory', autonomy: 'Autonomy', build: 'Builds',
+  observe: 'Observability', interop: 'Interop', comms: 'Comms', admin: 'Admin',
+  finance: 'Finance', health: 'Health', knowledge: 'Knowledge', family: 'Family',
+};
+
+function ModeEmpty({ mode, onDemo }) {
+  const keys = MODE_LIVE_KEYS[mode];
+  const wired = !!keys; // has a backend path, just no data yet
+  return (
+    <div className="workzone full" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+      <div className="panel" style={{ maxWidth: 460, textAlign: 'center', padding: '30px 26px' }}>
+        <span className="bk tl"></span><span className="bk tr"></span><span className="bk bl"></span><span className="bk br"></span>
+        <div style={{ fontFamily: 'var(--font-mono)', fontSize: 10, letterSpacing: '.2em', color: 'var(--ink-3)', marginBottom: 10 }}>{(MODE_LABELS[mode] || mode).toUpperCase()}</div>
+        <div style={{ fontSize: 14, color: 'var(--ink)', marginBottom: 8 }}>{wired ? 'Not connected' : 'Design preview'}</div>
+        <div style={{ fontSize: 12.5, color: 'var(--ink-2)', lineHeight: 1.5, marginBottom: 18 }}>
+          {wired
+            ? 'No live data from the backend for this view yet. It populates automatically once the source responds.'
+            : 'This view has no backend wired yet. Enable DEMO to preview the design with sample data.'}
+        </div>
+        <button className="tool-btn" onClick={onDemo} style={{ color: 'var(--amber)', borderColor: 'var(--amber)' }}>◐ enable DEMO</button>
+      </div>
+    </div>
+  );
+}
+
+function modeComponent(mode, t, ctx) {
+  const { demo, live, onDemo } = ctx || {};
+  const keys = MODE_LIVE_KEYS[mode];
+  // Honest gate: show real content only in DEMO, or when this mode's source is live.
+  const isLive = demo || (keys && live && keys.some((k) => live[k]));
+  if (!isLive) return <ModeEmpty mode={mode} onDemo={onDemo} />;
   switch (mode) {
     case 'trust': return <TrustMode t={t} />;
     case 'memory': return <MemoryMode t={t} />;
