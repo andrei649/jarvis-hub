@@ -179,7 +179,7 @@ function App() {
       <div className="tex-scanbar"></div>
 
       <div className="shell">
-        <TopBar clock={clock} lang={lang} setLang={setLang} accent={accent} agents={agents} localPct={localPct}
+        <TopBar clock={clock} lang={lang} setLang={setLang} accent={accent} agents={agents} localPct={localPct} live={live}
           onPalette={() => setPalette(true)} onAmbient={() => setAmbient(true)} t={t} />
         <Ticker items={ticker} t={t} hidden={mode === 'chat'} />
 

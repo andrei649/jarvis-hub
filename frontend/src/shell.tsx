@@ -26,7 +26,7 @@ const MODES = [
   { id:'admin', icon:'admin', tkey:'admin' },
 ];
 
-function TopBar({ clock, lang, setLang, accent, agents, localPct, onPalette, onAmbient, t }){
+function TopBar({ clock, lang, setLang, accent, agents, localPct, live, onPalette, onAmbient, t }){
   return (
     <div className="topbar">
       <div className="brand">
@@ -35,6 +35,7 @@ function TopBar({ clock, lang, setLang, accent, agents, localPct, onPalette, onA
         <div className="badges" style={{marginLeft:18}}>
           <div className="badge active"><div className="k">{t.online}</div><div className="v"><span className="sdot active"></span>{agents.filter(a=>a.status!=='idle').length}/{agents.length}</div></div>
           <div className="badge ok"><div className="k">{t.local}</div><div className="v">{localPct}%</div></div>
+          <div className={'badge' + (live ? ' ok' : '')} title={live ? 'live backend data' : 'seed data — backend unreachable'}><div className="k">DATA</div><div className="v">{live ? '● LIVE' : '○ SEED'}</div></div>
         </div>
       </div>
       <div className="clock">
