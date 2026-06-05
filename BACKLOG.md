@@ -382,7 +382,7 @@ chain-of-thought leak / mid-sentence truncation fixed. Kill-switch:
 
 ---
 
-## ORIZONT 12 — Categoria Reală: Asistent Personal Privat & Proactiv (P0–P3) — 10/20
+## ORIZONT 12 — Categoria Reală: Asistent Personal Privat & Proactiv (P0–P3) — 10/25
 
 > Bazat pe research-ul din [docs/research/2026-06-02-personal-ai-competitors.md](docs/research/2026-06-02-personal-ai-competitors.md):
 > H10 a comparat Jarvis cu 8 **framework-uri de developeri**; categoria reală a moonshot-ului (asistent
@@ -441,8 +441,13 @@ chain-of-thought leak / mid-sentence truncation fixed. Kill-switch:
 | H12.18 | **Agent Canvas / A2UI** — spațiu vizual condus de agent în HUD (inspectabil + guvernat), peste network brain‑ul v2. | 8 | P3 | HUD v2 | OpenClaw Live Canvas |
 | H12.19 | **Pairing/aprobare expeditor inbound** — senderi necunoscuți pe canale trec printr‑un cod/aprobare (anti‑abuz); oglindă a allowlist‑ului A2A. | 3 | P2 | H1.3, H16.2 | OpenClaw DM pairing |
 | H12.20 | **Rotație profile auth + failover model** în hybrid router (mai multe chei/conturi cu failover). | 3 | P3 | H2.12 | OpenClaw auth rotation |
+| H12.21 | **Acțiuni guvernate pe social** (X/Twitter post/reply/DM) — fiecare *write* prin coada de aprobare; auth OAuth/secret‑broker (nu cookie‑uri brute). | 5 | P3 | H6.2 | OpenClaw TweetClaw/Bird |
+| H12.22 | **Voce outbound / call‑back** — agentul sună la prag + persona vocală izolată (Twilio/Telnyx), gated prin interrupt‑budget. | 8 | P3 | H6.2 | OpenClaw SuperCall |
+| H12.23 | **Pack de skill‑uri „digest"** (news multi‑sursă ponderat, earnings, Reddit/YouTube/arXiv/HF, idea‑reality scorer) — skill‑uri semnate, compozabile. | 5 | P3 | Skills | awesome‑openclaw‑usecases |
+| H12.24 | **Generare media** (imagini/thumbnail/video, local sau cloud‑gated) pentru content‑factory. | 5 | P3 | — | OpenClaw content skills |
+| H12.25 | **Transcript‑watcher → taskuri** (notițe ședință → Notion/Todoist prin coada de aprobare). | 3 | P2 | H2.7 | OpenClaw meeting‑notes |
 
-> **Total ORIZONT 12:** 20 items, ~124 SP. **Acțiune imediată recomandată:** H12.1 (P0) — e simultan hardening real
+> **Total ORIZONT 12:** 25 items, ~150 SP. **Acțiune imediată recomandată:** H12.1 (P0) — e simultan hardening real
 > ȘI wedge-ul de marketing (alternativa securizată la OpenClaw). Restul Track B (P1) ridică cel mai mult valoarea per efort.
 
 ---

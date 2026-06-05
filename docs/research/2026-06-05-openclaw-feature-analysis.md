@@ -58,3 +58,27 @@ inverse.)
 ## Sources
 - `github.com/openclaw/openclaw` (live, 2026‑06‑05) · `github.com/hesamsheikh/awesome-openclaw-usecases`
 - `docs/research/2026-06-02-personal-ai-competitors.md` (internal) · `MOONSHOT.md` §5 · `BACKLOG.md` ORIZONT 12
+
+## 6 · Use‑case deep‑dive — OpenClaw vs Jarvis (governed capability catalog)
+
+A research pass over `awesome-openclaw-usecases` (42 documented use‑cases, 8 categories) + OpenClaw docs graded each against Jarvis (**have** / **partial** / **gap**).
+
+**Coverage read:** Jarvis already **meets‑or‑beats** OpenClaw on **memory** (bitemporal KG + RRF fusion + nightly consolidation vs markdown files), **multi‑agent orchestration** (16 governed specialists vs ad‑hoc `sessions_spawn`), **security/governance** (approval queue, Merkle audit, secret broker, signed marketplace, per‑agent plugin gates, local‑only walls for family/health/finance), and **scheduling/autonomy** (heartbeat + reversible night‑shift). Most "partial" rows are *composable from parts we already ship*. OpenClaw's real lead is **actuation surface** + a thicker library of pre‑packaged "digest" skills.
+
+**Per‑category gaps:** X/Twitter + social write‑actions (gap) · outbound voice / call‑back (partial→gap) · AI video editing + media‑gen (gap) · live generative‑UI canvas (partial) · photo‑OCR / screen understanding (needs VLM) · iMessage adapter (gap) · distributed nodes (gap, roadmapped).
+
+### Top gaps to close to beat OpenClaw on use‑cases (prioritized)
+1. **Governed browser / computer‑use (H15.1)** — *highest leverage.* Unblocks the largest cluster at once (overnight app builder, autonomous dev, local‑CRM scraping, market‑research→MVP, web check‑ins, video editing). Playwright/browser‑use behind the approval queue + sandbox + egress allowlist — every click gated + audited.
+2. **Outbound voice / call‑back** (SuperCall‑style) — agent‑initiated calls on threshold + isolated voice persona; we have the voice pipeline + interrupt‑budget governance, need a Twilio/Telnyx outbound bridge. → **H12.22**
+3. **Live generative‑UI canvas** — extend the workflow canvas to render agent‑produced HTML/dashboards (dynamic dashboards, second‑brain UI, LaTeX/PDF preview). → **H12.18**
+4. **Local VLM / screen‑&‑document understanding (H13.1)** — Qwen3‑VL strict‑local; unblocks photo‑OCR + is the prerequisite for trustworthy screen‑grounded computer‑use.
+5. **Governed node mesh (H12.17)** — phone/desktop as capability‑scoped execution surfaces; the brain stays on the home GPU.
+6. **Packaged "digest" skills pack** — multi‑source news (weighted), earnings tracker, Reddit/YouTube/arXiv/HF digests, idea‑reality scorer — composable signed skills (low effort, high perceived breadth). → **H12.23**
+7. **Governed social write‑actions** (X/Twitter post/reply/DM) — through the approval queue, OAuth/secret‑broker auth (not raw cookies). → **H12.21**
+8. **Media generation** (images/thumbnails/video) for the content‑factory cluster. → **H12.24**
+9. **Transcript‑watcher → tasks** (meeting notes → Notion/Todoist via approval queue) — building blocks exist, needs assembly. → **H12.25**
+10. **iMessage / Instagram / Google‑Reviews channel adapters** (macOS iMessage is the notable one) — extends **H12.16**.
+
+> The two biggest gaps (**H15 computer‑use**, **H12.17 node mesh**) are *already* the backlog's named OpenClaw comparators — the wedge holds: our lead is governed/local/audited **memory + orchestration + security**; OpenClaw's lead is raw **actuation**, which we close *under governance*.
+
+**Sources:** `github.com/hesamsheikh/awesome-openclaw-usecases` (+ `usecases/*.md`) · OpenClaw docs (heartbeat / automation / tools / nodes / canvas) · Lenny's Newsletter, DigitalOcean, NVIDIA 2026 OpenClaw overviews.
