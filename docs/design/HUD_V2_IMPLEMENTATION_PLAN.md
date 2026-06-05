@@ -138,9 +138,9 @@ under‑weighted items. Folding them in now so v1 can't drop them (all enter the
 
 **Backend‑only (no HTTP surface yet) — decide reserve vs `NOT_IN_HUD`:**
 - **Howard digital‑twin ingestion** — `core/ingestion/` (Facebook/WhatsApp archives → vectors, **stylometry**
-  voice profiling, continuous watcher). **No endpoints today** (only `/api/kg/ingest`). The plan previously
-  didn't mention this subsystem. → either add a small ingestion API + a Memory/Howard panel, or mark
-  `NOT_IN_HUD` until endpoints exist (owner call). Tied to H13.1 (VLM screen/doc understanding feeds it).
+  voice profiling, continuous watcher). **No endpoints today** (only `/api/kg/ingest`). **Decision (owner):
+  `NOT_IN_HUD` for v1 of v2** — recorded in the parity‑gate allowlist (§8); revisit when an ingestion API +
+  VLM screen/doc understanding (H13.1) land, then add a Memory/Howard panel.
 
 **Reserve IA space for in‑scope‑v1.0 frontiers (planned, not built):**
 - **Computer‑Use (H15)** — browser/desktop operation **behind the approval queue** + egress allowlist +
@@ -152,6 +152,12 @@ under‑weighted items. Folding them in now so v1 can't drop them (all enter the
 
 **Deployment note:** D2 = Vite/React makes a future **Tauri desktop wrapper (H11.1)** straightforward (vs the
 old no‑build globals) — a side‑benefit of choosing B.
+
+**Prototype bug to fix during the port (P2):** the NEURAL NETWORK renders **Jarvis twice** — once as the
+central `JARVIS · CORE` (`v2-network.jsx:126‑133`) and again as a CNS ring node, because the node loop
+iterates *all* agents incl. `jarvis` (`v2-network.jsx:136‑150`). Fix: exclude the orchestrator from the
+orbiting nodes / layout / spokes (`agents.filter(a => a.id !== 'jarvis')`) so it appears only as the core.
+*(Spotted by owner — sweep for other "core vs. agent" double‑counts when wiring the live roster.)*
 
 ---
 
