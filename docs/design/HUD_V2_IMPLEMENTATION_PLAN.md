@@ -161,6 +161,40 @@ orbiting nodes / layout / spokes (`agents.filter(a => a.id !== 'jarvis')`) so it
 
 ---
 
+## 5c · v1 HUD/Admin + full‑docs audit — final additions (round 3)
+A three‑way audit (v1 HUD `static/*.js` · v1 Admin `admin.js` · all docs: README/STATUS/GO_LIVE/
+DOCUMENTATIE_EXHAUSTIVA/CHANGELOG/ANALIZA_CRITICA/features/superpowers/launch) confirmed the v2 modes
+already cover the big surface — **v1's Console (30 tool panels) + Systems (8 tabs) + Admin (9 pages) ≈ the
+whole backend, and they map cleanly onto the v2 modes.** These are the concrete v1 developments to **carry
+over** (each now in the §8 parity gate so it can't be dropped):
+
+| Carry‑over (in v1, missing from the prototype) | Home |
+|---|---|
+| **OAuth connect / force‑refresh per service** — present only in the v1 *HUD* (Systems→OAuth), **not** the Admin SPA (`/api/oauth/status\|refresh`) | Admin |
+| **Oracle "Pipeline Weaver"** — status / sessions / conflicts → sync / resolve (`/api/oracle/*`) | Interop/Admin |
+| **Per‑message TTS playback (🔊)** + **browser mic / SpeechRecognition** + voice auto‑speak + voice‑state core animation | Cockpit |
+| **Theme parity** — migrate v1 named themes **Obsidian / Aero Glass / Cyberpunk** (+ density + scanline) into the look/accent tokens | shell |
+| **Plugin permission visibility** — network / data‑scope / allowed‑domains / served‑agents badges (not just on/off) | Admin/Interop |
+| **Settings DB — full breadth & generic editor** — voice STT/TTS, autonomy budgets+thresholds (`finance_min_ron`, `health_min_sleep`, `calendar_lead_time`, night‑shift, priority senders, caps), **banking/GA4 keys**, cache. Edit **every** category, not a curated subset | Admin |
+| **Restore v1‑orphaned** — audit‑log viewer, **LLM connectivity test**, session **memory‑clear** (defined in v1 but unmounted; backends exist) | Admin/Trust |
+| **Admin Charts depth** — per‑agent success/latency, 14‑day volume sparkline, channel/error/**route usage**, **cost estimates + cache savings**, **resilience metrics + circuit breakers** | Observe/Admin |
+| **Learning surface** — prompt‑optimization before→after diffs + promotion/demotion candidates | Observe/Agents |
+| **Sessions browser + memory‑clear + per‑agent "agent contexts"** | Cockpit/Memory |
+| **Skills: import‑from‑URL** (hermes/openclaw/github) + **built‑in skills list/run** (`/skill cmd args`) — not just the marketplace | Build |
+| **Code‑exec sandbox + status** (Docker, Python+shell, allowlist/timeout/audit) | Build |
+| **Tasks widget** (live autonomy queue) in the Cockpit context column (with decisions/weather/calendar/heartbeat) | Cockpit |
+| **Cost analytics** — $/request per model+agent, **monthly burn projection**, local‑vs‑cloud token split | Observe/Trust |
+| **Trust depth** — capability **check** (not just issue), audit **chain‑verified** flag, scorecard **PASS/FAIL** w/ injection/harm/OWASP chips | Trust |
+| **LM Studio start‑server + load** (not just switch) | Admin |
+
+**Make opt‑in / minor:** v1's **boot‑time `api.github.com` poll** → make opt‑in; slash‑command input
+(`/calendar add`…); Veronica's 5 voice profiles (content drafting); LogBugScanner reports.
+
+**Explicitly OUT of v2‑local scope (note only):** multi‑user / family accounts, hosted "Pro" tier +
+referral/SSO dashboard — commercial/Phase‑2, not the local HUD.
+
+---
+
 ## 6 · Backend additions needed (anticipated, minimal, non‑breaking)
 Most ❌ items already have endpoints. The few that need backend work:
 1. **Streaming cognition SSE** (`GET /api/cognition/stream`) emitting classify→route(scores)→plugin‑reads→
@@ -194,8 +228,10 @@ existing responses.
   loading/empty/error branches with mocked typed responses.
 - **Type check** (`tsc --noEmit`) in CI = a wall against shape drift.
 - **Parity‑gate test:** a checklist test asserting **every one of the 228 endpoints** is either referenced by
-  a loader **or** in an explicit `NOT_IN_HUD` allowlist (machine‑facing specs). This is the automated
-  "nothing missed" guard.
+  a loader **or** in an explicit `NOT_IN_HUD` allowlist. The allowlist + surface map also enumerate **all 30
+  v1 Console panels, 8 Systems tabs, and 9 Admin pages** (§5c) and the §5b carry‑overs — the gate fails if any
+  is unmapped. `NOT_IN_HUD` currently holds: machine‑facing specs (`/api/memory/tool-spec`, `/.well-known/*`,
+  `/api/mcp/server/rpc`) and **Howard ingestion** (owner‑decided). This is the automated "nothing missed" guard.
 - **Keep the legacy `tests/frontend/` suite** green until cutover (current HUD unchanged).
 
 ---
