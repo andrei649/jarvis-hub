@@ -153,6 +153,10 @@ Prereq: working LLM for agent steps; transform/guardrail steps are deterministic
 
 - [ ] **Visual Builder** 👁 — Build a pipeline in the HUD, save, run, and watch the
   live trace overlay (H10.2) light up each step.
+- [ ] **AI step builder (H10.7)** 🤖 — In the builder, describe a step in plain
+  language (`POST /api/workflows/step/generate`); confirm it returns a sensible
+  step config (e.g. "redact secrets" → a `guardrail` step). With no LLM the
+  deterministic keyword fallback still returns a usable step.
 - [ ] **Step kinds end-to-end** 🤖 — In one pipeline exercise each:
   - `agent` (normal), `router` (H10.13 — picks a route), `critic` (H10.15 — scores
     + retries), `transform` (H10.3 — formatter/validator/json_extract/summarize),

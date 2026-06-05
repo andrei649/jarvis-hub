@@ -1504,6 +1504,27 @@ async def notes_rewrite(req: Request):
     return _nocache_json({"ok": True, "rewritten": rewritten, "saved": saved})
 
 
+class GenerateStepBody(BaseModel):
+    description: str = Field(..., max_length=2000)
+
+
+@app.post("/api/workflows/step/generate", dependencies=[Depends(_user_guard)])
+async def generate_workflow_step(body: GenerateStepBody):
+    """H10.7 — 'Describe this step' → a validated workflow-step config.
+
+    Uses the live LLM when available, else a deterministic keyword heuristic.
+    """
+    from agents.core.workflows.ai_builder import generate_step
+    agents_list = list(orch.agents.keys()) if orch else []
+    llm = None
+    if orch:
+        async def _llm(prompt: str) -> str:
+            return await orch.handle_input(prompt, channel="builder")
+        llm = _llm
+    cfg = await generate_step(body.description, agents_list, llm=llm)
+    return _nocache_json({"ok": True, "step": cfg})
+
+
 @app.post("/api/workflows/hierarchical")
 async def workflow_hierarchical(req: Request):
     """H10.11 — run a hierarchical workflow: a manager coordinates a crew."""
