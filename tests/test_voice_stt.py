@@ -29,10 +29,7 @@ def test_capabilities_shape(client):
 @patch("core.voice.stt.HAS_WHISPER", False)
 def test_stt_unavailable_is_honest(client):
     # No fabricated transcript when Whisper isn't installed — a 503 with an install hint.
-    resp = client.post(
-        "/api/voice/stt",
-        files={"audio": ("rec.webm", b"fake-audio-bytes", "audio/webm")},
-    )
+    resp = client.post("/api/voice/stt", content=b"fake-audio-bytes")
     assert resp.status_code == 503
     data = resp.json()
     assert data.get("stt") is False
@@ -45,10 +42,7 @@ def test_stt_transcribes_via_engine(client):
     fake.transcribe_async = AsyncMock(return_value="salut lume")
     # Patch the cached-engine factory so no real model loads.
     with patch.object(web, "_stt_engine", return_value=fake):
-        resp = client.post(
-            "/api/voice/stt?lang=ro",
-            files={"audio": ("rec.webm", b"fake-audio-bytes", "audio/webm")},
-        )
+        resp = client.post("/api/voice/stt?lang=ro", content=b"fake-audio-bytes")
     assert resp.status_code == 200
     data = resp.json()
     assert data["text"] == "salut lume"
@@ -59,8 +53,5 @@ def test_stt_transcribes_via_engine(client):
 @patch("core.voice.stt.HAS_WHISPER", True)
 def test_stt_rejects_empty_audio(client):
     with patch.object(web, "_stt_engine", return_value=AsyncMock()):
-        resp = client.post(
-            "/api/voice/stt",
-            files={"audio": ("rec.webm", b"", "audio/webm")},
-        )
+        resp = client.post("/api/voice/stt", content=b"")
     assert resp.status_code == 400

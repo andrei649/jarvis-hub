@@ -133,8 +133,7 @@ export function useVoice({ lang = 'ro', onTurn } = {}) {
 
   async function transcribe(blob) {
     if (!blob || blob.size < 1400) return '';   // too short to be real speech
-    const fd = new FormData(); fd.append('audio', blob, 'rec.webm');
-    const res = await fetch(`/api/voice/stt?lang=${encodeURIComponent(langRef.current)}`, { method: 'POST', headers: tok(), body: fd });
+    const res = await fetch(`/api/voice/stt?lang=${encodeURIComponent(langRef.current)}`, { method: 'POST', headers: tok({ 'Content-Type': blob.type || 'audio/webm' }), body: blob });
     if (res.status === 503) { setCaps((c) => ({ ...(c || {}), stt: false })); throw new Error('local STT not installed (pip install faster-whisper)'); }
     if (!res.ok) throw new Error('stt ' + res.status);
     const d = await res.json();

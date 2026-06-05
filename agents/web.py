@@ -18,7 +18,7 @@ from typing import Optional
 
 sys.path.insert(0, str(Path(__file__).parent))
 
-from fastapi import FastAPI, Request, Depends, HTTPException, Query, UploadFile, File
+from fastapi import FastAPI, Request, Depends, HTTPException, Query
 from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse, FileResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
@@ -615,8 +615,11 @@ def _stt_engine():
 
 
 @app.post("/api/voice/stt", dependencies=[Depends(_user_guard)])
-async def stt_endpoint(audio: UploadFile = File(...), lang: str = Query("ro")):
-    """Transcribe an uploaded audio blob (browser MediaRecorder) via local Whisper."""
+async def stt_endpoint(request: Request, lang: str = Query("ro")):
+    """Transcribe a raw audio body (browser MediaRecorder blob) via local Whisper.
+
+    Raw body (not multipart) keeps this dependency-free — no python-multipart needed.
+    """
     import tempfile
     from core.voice.stt import HAS_WHISPER
     if not HAS_WHISPER:
@@ -624,13 +627,12 @@ async def stt_endpoint(audio: UploadFile = File(...), lang: str = Query("ro")):
             {"error": "faster-whisper not installed. Run: pip install faster-whisper", "stt": False},
             status_code=503,
         )
-    suffix = os.path.splitext(audio.filename or "")[1] or ".webm"
     tmp = None
     try:
-        data = await audio.read()
+        data = await request.body()
         if not data:
             return JSONResponse({"error": "empty audio"}, status_code=400)
-        with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as f:
+        with tempfile.NamedTemporaryFile(suffix=".webm", delete=False) as f:
             f.write(data)
             tmp = f.name
         text = await _stt_engine().transcribe_async(tmp, language=lang)
