@@ -26,7 +26,8 @@ const MODES = [
   { id:'admin', icon:'admin', tkey:'admin' },
 ];
 
-function TopBar({ clock, lang, setLang, accent, agents, localPct, live, onPalette, onAmbient, t }){
+function TopBar({ clock, lang, setLang, accent, agents, localPct, live, trust, onPalette, onAmbient, t }){
+  const tr = trust || { mic:'on', strict_local:false };
   return (
     <div className="topbar">
       <div className="brand">
@@ -36,6 +37,8 @@ function TopBar({ clock, lang, setLang, accent, agents, localPct, live, onPalett
           <div className="badge active"><div className="k">{t.online}</div><div className="v"><span className="sdot active"></span>{agents.filter(a=>a.status!=='idle').length}/{agents.length}</div></div>
           <div className="badge ok"><div className="k">{t.local}</div><div className="v">{localPct}%</div></div>
           <div className={'badge' + (live ? ' ok' : '')} title={live ? 'live backend data' : 'seed data — backend unreachable'}><div className="k">DATA</div><div className="v">{live ? '● LIVE' : '○ SEED'}</div></div>
+          <div className={'badge' + (tr.strict_local ? ' ok' : '')} title={tr.strict_local ? 'strict-local — no cloud egress path; nothing leaves the machine' : 'hybrid — a cloud backend is reachable'}><div className="k">EGRESS</div><div className="v">{tr.strict_local ? '⊘ SEALED' : '↗ HYBRID'}</div></div>
+          <div className={'badge' + (tr.mic === 'off' ? ' ok' : '')} title={tr.mic === 'off' ? 'microphone muted (JARVIS_MIC_MUTED)' : 'microphone live'}><div className="k">MIC</div><div className="v">{tr.mic === 'off' ? '⊘ MUTED' : '● ON'}</div></div>
         </div>
       </div>
       <div className="clock">

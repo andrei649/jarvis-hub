@@ -17,6 +17,7 @@ export interface JarvisData {
   heartbeat: any[];
   tasks: any[];
   lmOnline: boolean;
+  trust: { mic: string; strict_local: boolean; cloud_available?: boolean; claude_available?: boolean };
 }
 
 const META: Record<string, { tier: string; role: string; name: string; model: string }> = {};
@@ -35,6 +36,7 @@ export async function loadJarvisData(): Promise<JarvisData> {
     heartbeat: V2.HEARTBEAT as any[],
     tasks: [],
     lmOnline: true,
+    trust: { mic: 'on', strict_local: false },
   };
 
   // 1) full enriched roster
@@ -103,6 +105,19 @@ export async function loadJarvisData(): Promise<JarvisData> {
       }));
     }
   } catch { /* keep mock */ }
+
+  // 7) trust signal — mic state + strict-local (visible governance, H12.10)
+  try {
+    const d = await apiGet<any>('/api/trust/status');
+    if (d && typeof d === 'object') {
+      out.trust = {
+        mic: d.mic || 'on',
+        strict_local: !!d.strict_local,
+        cloud_available: !!d.cloud_available,
+        claude_available: !!d.claude_available,
+      };
+    }
+  } catch { /* keep default */ }
 
   return out;
 }

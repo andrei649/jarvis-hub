@@ -6,14 +6,14 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { apiGet, apiPost, apiPut, apiDelete } from './api/client';
 
-function useApi(path, auto = true) {
+function useApi(path, auto = true, admin = false) {
   const [d, setD] = useState(null);
   const [e, setE] = useState(null);
   const [loading, setLoading] = useState(false);
   const reload = useCallback(() => {
     setLoading(true);
-    apiGet(path).then((r) => { setD(r); setE(null); }).catch((err) => setE(err?.message || 'offline')).finally(() => setLoading(false));
-  }, [path]);
+    apiGet(path, admin ? { admin: true } : undefined).then((r) => { setD(r); setE(null); }).catch((err) => setE(err?.message || 'offline')).finally(() => setLoading(false));
+  }, [path, admin]);
   useEffect(() => { if (auto) reload(); }, [auto, reload]);
   return { d, e, loading, reload };
 }
@@ -40,6 +40,16 @@ const Row = ({ children }) => <div style={{ display: 'flex', gap: 8, alignItems:
 const Tag = ({ c, children }) => <span style={{ ...mono, fontSize: 9.5, padding: '1px 5px', border: '1px solid var(--panel-line)', borderRadius: 3, color: c || 'var(--ink-3)' }}>{children}</span>;
 const Btn = ({ onClick, children }) => <button className="tool-btn" onClick={onClick} style={{ marginLeft: 'auto' }}>{children}</button>;
 const act = (p, body, then) => apiPost(p, body).then(then || (() => {})).catch(() => {});
+function DiffView({ text }) {
+  if (text == null) return null;
+  if (text === '') return <div style={{ ...mono, fontSize: 10.5, color: 'var(--ink-3)', marginTop: 6 }}>identical · no changes</div>;
+  const color = (l) => l.startsWith('@@') ? 'var(--accent-light)'
+    : (l.startsWith('+') && !l.startsWith('+++')) ? 'var(--green)'
+    : (l.startsWith('-') && !l.startsWith('---')) ? 'var(--red)' : 'var(--ink-3)';
+  return <pre style={{ ...mono, fontSize: 10.5, lineHeight: 1.45, whiteSpace: 'pre-wrap', maxHeight: 220, overflow: 'auto', margin: '6px 0 0', padding: 8, background: 'var(--surface)', border: '1px solid var(--panel-line)', borderRadius: 4 }}>
+    {text.split('\n').map((l, i) => <div key={i} style={{ color: color(l) }}>{l || ' '}</div>)}
+  </pre>;
+}
 
 /* ── Memory / Knowledge ─────────────────────────────────── */
 function DataSpacesPanel() {
@@ -268,12 +278,72 @@ function SettingsPanel() {
 }
 function PromptsPanel() {
   const [agent, setAgent] = useState('jarvis');
-  const { d, e, loading, reload } = useApi('/api/admin/prompts/' + agent + '/history');
+  const { d, e, loading, reload } = useApi('/api/admin/prompts/' + agent + '/history', true, true);
   const vers = arr(d, 'history', 'versions');
-  return <Card title="PROMPT VERSIONS" sub={agent} onReload={reload}>
-    <input value={agent} onChange={(ev) => setAgent(ev.target.value)} style={{ width: '100%', background: 'var(--surface)', color: 'var(--ink)', border: '1px solid var(--panel-line)', borderRadius: 4, padding: 5, ...mono, marginBottom: 6 }} />
+  const [pick, setPick] = useState([]);          // up to 2 selected versions → [A, B]
+  const [diff, setDiff] = useState(null);
+  const [ab, setAb] = useState(null);
+  const [edit, setEdit] = useState(null);        // { version, content, message }
+  const [preview, setPreview] = useState(null);
+  const [note, setNote] = useState('');
+  const a = pick[0], b = pick[1];
+  const base = '/api/admin/prompts/' + agent;
+  const inp = { background: 'var(--surface)', color: 'var(--ink)', border: '1px solid var(--panel-line)', borderRadius: 4, padding: 5, ...mono, fontSize: 11 };
+
+  const onAgent = (v) => { setAgent(v); setPick([]); setDiff(null); setAb(null); setEdit(null); setPreview(null); setNote(''); };
+  const toggle = (vn) => setPick((p) => p.includes(vn) ? p.filter((x) => x !== vn) : [...p, vn].slice(-2));
+  const loadAB = () => apiGet(base + '/ab', { admin: true }).then((r) => setAb(r.ab || null)).catch(() => setAb(null));
+  const doDiff = () => { if (a == null || b == null) return; setDiff('…'); apiGet(`${base}/diff?a=${a}&b=${b}`, { admin: true }).then((r) => setDiff(r.diff ?? '')).catch(() => setDiff(null)); };
+  const doAB = () => { if (a == null || b == null) return; apiPost(`${base}/ab`, { a, b, split: 0.5 }, { admin: true }).then(loadAB).catch(() => {}); };
+  const rollback = (vn) => apiPost(`${base}/rollback`, { version: vn }, { admin: true }).then(() => { setNote('rolled back to v' + vn); reload(); }).catch(() => {});
+  const loadEdit = (vn) => apiGet(`${base}/version/${vn}`, { admin: true }).then((v) => { setEdit({ version: vn, content: v.content || '', message: '' }); setPreview(null); }).catch(() => {});
+  const doPreview = () => { if (!edit) return; apiPost(`${base}/preview`, { proposed: edit.content }, { admin: true }).then(setPreview).catch(() => {}); };
+  const doCommit = () => { if (!edit) return; apiPost(`${base}/commit`, { content: edit.content, message: edit.message || ('edit of v' + edit.version) }, { admin: true }).then((r) => { setNote('committed v' + (r.version?.version ?? '?')); setEdit(null); setPreview(null); setPick([]); reload(); }).catch(() => {}); };
+
+  useEffect(() => { loadAB(); }, [agent]); // eslint-disable-line
+
+  return <Card title="PROMPT VERSIONS" sub={agent + ' · ' + vers.length} onReload={reload}>
+    <input value={agent} onChange={(ev) => onAgent(ev.target.value)} placeholder="agent id" style={{ ...inp, width: '100%', marginBottom: 6 }} />
     <State e={e} loading={loading} n={vers.length} />
-    {vers.slice(0, 8).map((v, i) => <Row key={i}><span style={mono}>v{v.version ?? i}</span><span style={{ fontSize: 10, color: 'var(--ink-3)' }}>{(v.message || v.author || '').slice(0, 28)}</span></Row>)}
+    {vers.slice(0, 10).map((v, i) => {
+      const vn = v.version ?? i;
+      const slot = a === vn ? 'A' : b === vn ? 'B' : null;
+      return <Row key={i}>
+        <span onClick={() => toggle(vn)} style={{ ...mono, cursor: 'pointer', color: slot ? 'var(--accent)' : 'var(--accent-light)' }} title="pick A/B">v{vn}</span>
+        {slot && <Tag c="var(--accent)">{slot}</Tag>}
+        {v.is_current && <Tag c="var(--green)">current</Tag>}
+        <span style={{ fontSize: 10, color: 'var(--ink-3)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={v.message}>{(v.message || v.author || v.hash || '').slice(0, 22)}</span>
+        <span style={{ marginLeft: 'auto', display: 'flex', gap: 5 }}>
+          <button className="tool-btn" onClick={() => loadEdit(vn)} title="edit → new version">✎</button>
+          {!v.is_current && <button className="tool-btn" onClick={() => rollback(vn)} title="rollback to this">⟲</button>}
+        </span>
+      </Row>;
+    })}
+    <div style={{ display: 'flex', gap: 6, marginTop: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+      <button className="tool-btn" onClick={doDiff} disabled={a == null || b == null}>diff {a ?? '·'}↔{b ?? '·'}</button>
+      <button className="tool-btn" onClick={doAB} disabled={a == null || b == null}>A/B {a ?? '·'}↔{b ?? '·'}</button>
+      {note && <span style={{ fontSize: 10, color: 'var(--green)' }}>{note}</span>}
+    </div>
+    {diff != null && <DiffView text={diff === '…' ? '' : diff} />}
+    {ab && <div style={{ ...mono, fontSize: 10.5, marginTop: 8, padding: 8, background: 'var(--surface)', border: '1px solid var(--panel-line)', borderRadius: 4 }}>
+      <div style={{ color: 'var(--ink-3)', letterSpacing: '.1em' }}>A/B · v{ab.a} vs v{ab.b} · split {Math.round((ab.split ?? 0.5) * 100)}% → B</div>
+      {[ab.a, ab.b].map((ver) => { const r = (ab.results || {})[ver] || {}; const m = (ab.means || {})[ver]; return <Row key={ver}><span>v{ver}{ab.winner === ver ? ' ★' : ''}</span><span style={{ marginLeft: 'auto', color: 'var(--ink-3)' }}>n={r.n ?? 0} · μ={m == null ? '—' : m}</span></Row>; })}
+    </div>}
+    {edit && <div style={{ marginTop: 8 }}>
+      <div style={{ fontSize: 10, color: 'var(--ink-3)', marginBottom: 4 }}>editing from v{edit.version} → commits a NEW version (non-destructive)</div>
+      <textarea value={edit.content} onChange={(ev) => setEdit({ ...edit, content: ev.target.value })} style={{ width: '100%', minHeight: 110, ...inp }} />
+      <div style={{ display: 'flex', gap: 6, marginTop: 6, flexWrap: 'wrap' }}>
+        <input value={edit.message} onChange={(ev) => setEdit({ ...edit, message: ev.target.value })} placeholder="commit message" style={{ ...inp, flex: 1, minWidth: 120 }} />
+        <button className="tool-btn" onClick={doPreview}>preview</button>
+        <button className="tool-btn" onClick={doCommit}>commit</button>
+        <button className="tool-btn" onClick={() => { setEdit(null); setPreview(null); }}>✕</button>
+      </div>
+      {preview && <div style={{ marginTop: 6 }}>
+        <div style={{ ...mono, fontSize: 10, color: preview.valid ? 'var(--green)' : 'var(--amber)' }}>+{preview.added_lines} −{preview.removed_lines} · {preview.valid ? 'valid' : 'warn: ' + (preview.warnings || []).join('; ')}</div>
+        <DiffView text={preview.diff} />
+      </div>}
+    </div>}
+    <div style={{ fontSize: 10, color: 'var(--ink-3)', marginTop: 6 }}>click v# to pick A/B · ✎ edit · ⟲ rollback · A/B + diff + rollback (H10.22)</div>
   </Card>;
 }
 function RoomsPanel() {

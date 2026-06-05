@@ -64,6 +64,7 @@ function App() {
   const [heartbeat, setHeartbeat] = useState(V2.HEARTBEAT);
   const [sys, setSys] = useState(null);
   const [live, setLive] = useState(false);
+  const [trust, setTrust] = useState({ mic: 'on', strict_local: false });
   const baseAgents = useRef(V2.AGENTS);
 
   const clock = useClock();
@@ -157,6 +158,7 @@ function App() {
         setAgents(d.agents); baseAgents.current = d.agents;
         setTicker(d.ticker); setWeather(d.weather); setCalendar(d.calendar);
         setHeartbeat(d.heartbeat); setSys(d.sys); setLive(!!d.live);
+        if (d.trust) setTrust(d.trust);
       } catch { /* keep mock */ }
     }
     refresh();
@@ -179,7 +181,7 @@ function App() {
       <div className="tex-scanbar"></div>
 
       <div className="shell">
-        <TopBar clock={clock} lang={lang} setLang={setLang} accent={accent} agents={agents} localPct={localPct} live={live}
+        <TopBar clock={clock} lang={lang} setLang={setLang} accent={accent} agents={agents} localPct={localPct} live={live} trust={trust}
           onPalette={() => setPalette(true)} onAmbient={() => setAmbient(true)} t={t} />
         <Ticker items={ticker} t={t} hidden={mode === 'chat'} />
 
