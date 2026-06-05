@@ -183,7 +183,8 @@ class SkillMarketplace:
                 raise ValueError(f"Skill '{skill_name}' not found in registry database.")
         finally:
             conn.close()
-        logger.info("Skill '%s' review status set to '%s'", skill_name, status)
+        # Don't log the caller-supplied name (log-injection); status is a fixed enum.
+        logger.info("Marketplace skill review status set to '%s'", status)
         return True
 
     def approve_skill(self, skill_name: str) -> bool:
@@ -287,5 +288,7 @@ class SkillMarketplace:
                 f"Skill '{skill_name}' rejected: {reason} (JARVIS_REQUIRE_SIGNED_SKILLS)."
             )
 
-        logger.info("Installed skill package '%s' into %s (signature: %s)", skill_name, target_dir, reason)
+        # Avoid logging the package-derived name/path (log-injection); signature
+        # reason is a fixed label.
+        logger.info("Installed a marketplace skill package (signature: %s)", reason)
         return True

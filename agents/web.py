@@ -1724,8 +1724,9 @@ async def marketplace_install(body: InstallSkillBody):
             return {"ok": True, "installed": body.name}
         return JSONResponse({"error": f"Failed to install skill '{body.name}'"}, status_code=500)
     except PermissionError:
-        # Blocked by the moderation/signature gate (H12.12).
-        logger.warning("Skill install blocked by policy: %s", body.name)
+        # Blocked by the moderation/signature gate (H12.12). Don't log the
+        # caller-supplied name (log-injection); the response echoes it instead.
+        logger.warning("Skill install blocked by moderation/signature policy")
         return JSONResponse(
             {"error": f"skill '{body.name}' blocked by moderation/signature policy"},
             status_code=403,
