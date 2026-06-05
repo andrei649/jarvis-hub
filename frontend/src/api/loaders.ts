@@ -1,23 +1,30 @@
 /* HUD v2 · live-data loaders — fetch the real backend and map to the shapes the
-   cockpit components expect (the prototype shapes were lifted from product data.js,
-   so they already match). Every fetch is independent and falls back to the seeded
-   mock, so a partial/absent backend never blanks the HUD (recall-never-hard-fails). */
+   cockpit components expect. HONESTY CONTRACT: by default we show only what the
+   backend actually returns; a tile with no real source stays EMPTY (the UI renders
+   an honest "not connected" state) rather than inventing plausible data. The seeded
+   demo corpus is used ONLY when `demo` is true (an explicit, watermarked mode), so
+   the HUD never passes fiction off as fact. */
 import { apiGet } from './client';
 import type { StatusResp, AgentsResp, DashboardResp, TickerResp, TasksResp } from './types';
-// data.ts is the prototype's (untyped) mock — used as the fallback corpus.
+// data.ts is the prototype's (untyped) mock — used ONLY as the opt-in demo corpus.
 import { V2 } from '../data';
 
+export type LlmState = 'ready' | 'no_model' | 'offline' | 'unknown';
+
 export interface JarvisData {
-  live: boolean;
+  demo: boolean;
+  serverUp: boolean;       // /status answered (server reachable)
+  live: boolean;           // real (non-demo) content is present on screen
+  llm: { state: LlmState; model: string | null };
   agents: any[];
   sys: StatusResp['sys'] | null;
   ticker: any[];
-  weather: any;
+  weather: any | null;
   calendar: any[];
   heartbeat: any[];
   tasks: any[];
-  lmOnline: boolean;
   trust: { mic: string; strict_local: boolean; cloud_available?: boolean; claude_available?: boolean };
+  sources: Record<string, boolean>;   // per-tile: did REAL data arrive?
 }
 
 const META: Record<string, { tier: string; role: string; name: string; model: string }> = {};
@@ -25,21 +32,25 @@ const META: Record<string, { tier: string; role: string; name: string; model: st
 const GLYPHS: Record<string, string> = V2.GLYPHS as any;
 const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
 
-export async function loadJarvisData(): Promise<JarvisData> {
+export async function loadJarvisData(demo = false): Promise<JarvisData> {
+  // Default state is HONEST-EMPTY; only `demo` pre-fills the seeded corpus.
   const out: JarvisData = {
+    demo,
+    serverUp: false,
     live: false,
-    agents: V2.AGENTS as any[],
+    llm: { state: 'unknown', model: null },
+    agents: demo ? (V2.AGENTS as any[]) : [],
     sys: null,
-    ticker: V2.TICKER as any[],
-    weather: V2.WEATHER,
-    calendar: V2.CALENDAR as any[],
-    heartbeat: V2.HEARTBEAT as any[],
+    ticker: demo ? (V2.TICKER as any[]) : [],
+    weather: demo ? V2.WEATHER : null,
+    calendar: demo ? (V2.CALENDAR as any[]) : [],
+    heartbeat: demo ? (V2.HEARTBEAT as any[]) : [],
     tasks: [],
-    lmOnline: true,
     trust: { mic: 'on', strict_local: false },
+    sources: {},
   };
 
-  // 1) full enriched roster
+  // 1) full enriched roster (real registry)
   let agents: any[] = [];
   try {
     const d = await apiGet<AgentsResp>('/api/agents');
@@ -58,15 +69,16 @@ export async function loadJarvisData(): Promise<JarvisData> {
     });
   } catch { /* fall through */ }
 
-  // 2) live system + (fallback) statuses; /status is unguarded so it usually succeeds
+  // 2) live system + LLM readiness; /status is unguarded so it usually succeeds
   let statusAgents: { id: string; status: string }[] = [];
   try {
-    const d = await apiGet<StatusResp>('/status');
-    out.live = true;
+    const d = await apiGet<any>('/status');
+    out.serverUp = true;
     if (d.sys) out.sys = d.sys;
-    if (d.lm_online !== undefined) out.lmOnline = !!d.lm_online;
+    if (d.model_state) out.llm = { state: d.model_state, model: d.loaded_model || null };
+    else if (d.lm_online !== undefined) out.llm = { state: d.lm_online ? 'no_model' : 'offline', model: null };
     if (Array.isArray(d.agents)) statusAgents = d.agents;
-  } catch { /* keep mock sys */ }
+  } catch { /* server unreachable */ }
 
   // 3) if /api/agents failed, build the roster from /status + static meta
   if (agents.length === 0 && statusAgents.length) {
@@ -76,20 +88,23 @@ export async function loadJarvisData(): Promise<JarvisData> {
       return { id, name: m.name || cap(id), tier: m.tier, role: m.role, status: sa ? sa.status : 'idle', model: m.model || '', glyph: GLYPHS[id] || '' };
     });
   }
-  if (agents.length) out.agents = agents;
+  if (agents.length) { out.agents = agents; out.sources.agents = true; }
 
-  // 4) ambient: weather / calendar / heartbeat
+  // 4) ambient: weather / calendar / heartbeat — real only when actually populated
   try {
     const d = await apiGet<DashboardResp>('/dashboard');
-    if (d.weather) out.weather = normWeather(d.weather);
-    if (Array.isArray(d.calendar) && d.calendar.length) out.calendar = d.calendar.map(normCal);
-    if (Array.isArray(d.notifications) && d.notifications.length) out.heartbeat = d.notifications.map(normHb);
-  } catch { /* keep mock */ }
+    const w = (d as any).weather;
+    if (w && w.temp != null && String(w.temp) !== '—' && String(w.temp) !== '') {
+      out.weather = normWeather(w); out.sources.weather = true;
+    }
+    if (Array.isArray(d.calendar) && d.calendar.length) { out.calendar = d.calendar.map(normCal); out.sources.calendar = true; }
+    if (Array.isArray(d.notifications) && d.notifications.length) { out.heartbeat = d.notifications.map(normHb); out.sources.heartbeat = true; }
+  } catch { /* not connected */ }
 
-  // 5) tasks (autonomy queue) — empty is a valid state
+  // 5) tasks (autonomy queue) — empty is a valid, honest state
   try {
     const d = await apiGet<TasksResp>('/tasks');
-    out.tasks = d.tasks || [];
+    if (Array.isArray(d.tasks)) { out.tasks = d.tasks; if (d.tasks.length) out.sources.tasks = true; }
   } catch { /* keep [] */ }
 
   // 6) situation ticker — map backend {obj,pct,pri} → UI {text,bar,cls}
@@ -103,8 +118,9 @@ export async function loadJarvisData(): Promise<JarvisData> {
         bar: it.bar != null ? it.bar : it.pct != null ? it.pct : 0,
         cls: it.cls || (({ high: 'hi', mid: 'mid', warn: 'warn', ok: 'ok' } as any)[it.pri || ''] || ''),
       }));
+      out.sources.ticker = true;
     }
-  } catch { /* keep mock */ }
+  } catch { /* keep [] */ }
 
   // 7) trust signal — mic state + strict-local (visible governance, H12.10)
   try {
@@ -119,6 +135,8 @@ export async function loadJarvisData(): Promise<JarvisData> {
     }
   } catch { /* keep default */ }
 
+  // "live" = at least one tile is showing REAL (non-demo) content
+  out.live = Object.values(out.sources).some(Boolean);
   return out;
 }
 

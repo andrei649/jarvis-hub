@@ -606,6 +606,48 @@ async def component_health():
                           "summary": reg.summary()})
 
 
+_llm_ready_cache = {"state": "unknown", "model": None, "at": 0.0}
+
+
+async def _llm_ready() -> dict:
+    """Truthful LLM readiness: is a model actually LOADED, not just configured?
+
+    The OpenAI-compatible ``/v1/models`` lists models LM Studio *can* serve (JIT can
+    load them on demand), so a non-empty list does NOT prove a model is resident —
+    it would report "online" with nothing loaded. LM Studio's native REST
+    ``/api/v0/models`` exposes a per-model ``state`` ("loaded"|"not-loaded"), which
+    is the honest signal. Returns ``state`` ∈ {ready, no_model, offline} + the loaded
+    model id. Cached ~8s so the polled ``/status`` stays cheap; fails to 'offline'.
+    """
+    import httpx
+    now = time.time()
+    if now - _llm_ready_cache["at"] < 8:
+        return {"state": _llm_ready_cache["state"], "model": _llm_ready_cache["model"]}
+    state, model = "offline", None
+    try:
+        async with httpx.AsyncClient(timeout=2.0) as client:
+            try:
+                r = await client.get(f"{_LM_STUDIO_URL}/api/v0/models")
+                if r.is_success:
+                    data = (r.json() or {}).get("data") or []
+                    loaded = [m for m in data if str(m.get("state", "")).lower() == "loaded"]
+                    if loaded:
+                        state, model = "ready", loaded[0].get("id")
+                    else:
+                        state = "no_model"      # LM Studio up, nothing resident
+                else:
+                    state = "no_model"
+            except Exception:
+                # Native API absent (older LM Studio) — fall back to /v1/models, but
+                # stay honest: reachable ≠ loaded, so reachable → 'no_model'.
+                r = await client.get(f"{_LM_STUDIO_URL}/v1/models")
+                state = "no_model" if r.is_success else "offline"
+    except Exception:
+        state = "offline"
+    _llm_ready_cache.update(state=state, model=model, at=now)
+    return {"state": state, "model": model}
+
+
 @app.get("/status")
 async def status():
     if not orch:
@@ -613,12 +655,17 @@ async def status():
     enriched = _enrich_agents()
     voice_state = "idle"
     lm_online = orch.llm_router.name != "none"
+    ready = await _llm_ready()
     from agents import __version__
     return _nocache_json({
         "version": __version__,
         "sys": _sys_info(),
         "voice_state": voice_state,
-        "lm_online": lm_online,
+        "lm_online": lm_online,                       # backend configured/reachable
+        "model_state": ready["state"],                # ready | no_model | offline (truthful)
+        "model_loaded": ready["state"] == "ready",
+        "loaded_model": ready["model"],               # the actually-resident model, or None
+        "configured_model": getattr(orch.llm_router, "active_model", None),
         "llm_backend": orch.llm_router.name,
         "active_model": getattr(orch.llm_router, "active_model", None),
         "agents": [{"id": a["id"], "status": a["status"]} for a in enriched],

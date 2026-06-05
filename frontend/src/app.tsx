@@ -41,12 +41,15 @@ function App() {
   const ia = 'rail';
   const [accent, setAccent] = useState(() => { try { return localStorage.getItem('hud.accent') || 'cyan'; } catch { return 'cyan'; } });
   const [lang, setLang] = useState(() => { try { return localStorage.getItem('hud.lang') || 'en'; } catch { return 'en'; } });
+  // DEMO mode (opt-in, watermarked): OFF by default → the HUD shows ONLY real
+  // backend data + honest empty states; ON → fills the seeded demo corpus.
+  const [demo, setDemo] = useState(() => { try { return localStorage.getItem('hud.demo') === '1' || /[?&]demo=1/.test(window.location.search); } catch { return false; } });
 
   const [mode, setMode] = useState('cockpit');
-  const [agents, setAgents] = useState(V2.AGENTS);
+  const [agents, setAgents] = useState(demo ? V2.AGENTS : []);
   const [activeId, setActiveId] = useState('jarvis');
   const [focusId, setFocusId] = useState(null);
-  const [messages, setMessages] = useState(V2.SEED_MESSAGES);
+  const [messages, setMessages] = useState(demo ? V2.SEED_MESSAGES : []);
   const [thinking, setThinking] = useState(null);
   const [trace, setTrace] = useState(null);
   const [centerTab, setCenterTab] = useState('conversation');
@@ -56,23 +59,33 @@ function App() {
   const [provModal, setProvModal] = useState(null);
   const [dossier, setDossier] = useState(null);
   const [consoleOpen, setConsoleOpen] = useState(false);
-  const [decisions, setDecisions] = useState(() => V2.DECISIONS.map((d, i) => ({ ...d, _id: 'd' + i })));
-  // P1 live-data state (seeded from mock; replaced by the backend when reachable)
-  const [ticker, setTicker] = useState(V2.TICKER);
-  const [weather, setWeather] = useState(V2.WEATHER);
-  const [calendar, setCalendar] = useState(V2.CALENDAR);
-  const [heartbeat, setHeartbeat] = useState(V2.HEARTBEAT);
+  const [decisions, setDecisions] = useState(() => demo ? V2.DECISIONS.map((d, i) => ({ ...d, _id: 'd' + i })) : []);
+  // P1 live-data state — empty by default (honest); demo pre-seeds, backend overwrites
+  const [ticker, setTicker] = useState(demo ? V2.TICKER : []);
+  const [weather, setWeather] = useState(demo ? V2.WEATHER : null);
+  const [calendar, setCalendar] = useState(demo ? V2.CALENDAR : []);
+  const [heartbeat, setHeartbeat] = useState(demo ? V2.HEARTBEAT : []);
   const [sys, setSys] = useState(null);
   const [live, setLive] = useState(false);
+  const [serverUp, setServerUp] = useState(false);
+  const [llm, setLlm] = useState({ state: 'unknown', model: null });
   const [trust, setTrust] = useState({ mic: 'on', strict_local: false });
-  const baseAgents = useRef(V2.AGENTS);
+  const baseAgents = useRef(demo ? V2.AGENTS : []);
 
   const clock = useClock();
   const t = V2.I18N[lang];
-  const localPct = 87;
+  // %-local is honest: strict-local proven → 100%; demo → sample 87%; otherwise
+  // unknown (no real locality endpoint yet — Batch G) → hidden rather than faked.
+  const localPct = trust.strict_local ? 100 : (demo ? 87 : null);
   useLiveModes(); // P4: stream live data into the capability modes (mock fallback)
   useEffect(() => { try { localStorage.setItem('hud.accent', accent); } catch { /* ignore */ } }, [accent]); // P5 persist
   useEffect(() => { try { localStorage.setItem('hud.lang', lang); } catch { /* ignore */ } }, [lang]);
+  useEffect(() => { try { localStorage.setItem('hud.demo', demo ? '1' : '0'); } catch { /* ignore */ } }, [demo]);
+  // Re-seed (or clear) the demo-only cockpit corpus when DEMO toggles at runtime.
+  useEffect(() => {
+    setDecisions(demo ? V2.DECISIONS.map((d, i) => ({ ...d, _id: 'd' + i })) : []);
+    setMessages(demo ? V2.SEED_MESSAGES : []);
+  }, [demo]);
 
   // hotkeys: number keys jump modes, ⌘K palette, A ambient
   useEffect(() => {
@@ -153,18 +166,19 @@ function App() {
     let alive = true;
     async function refresh() {
       try {
-        const d = await loadJarvisData();
+        const d = await loadJarvisData(demo);
         if (!alive) return;
         setAgents(d.agents); baseAgents.current = d.agents;
         setTicker(d.ticker); setWeather(d.weather); setCalendar(d.calendar);
         setHeartbeat(d.heartbeat); setSys(d.sys); setLive(!!d.live);
+        setServerUp(!!d.serverUp); setLlm(d.llm || { state: 'unknown', model: null });
         if (d.trust) setTrust(d.trust);
-      } catch { /* keep mock */ }
+      } catch { /* unreachable — keep current */ }
     }
     refresh();
     const iv = setInterval(refresh, 30000);
     return () => { alive = false; clearInterval(iv); };
-  }, []);
+  }, [demo]);
   const dismissDecision = (id) => setDecisions((ds) => ds.filter((d) => d._id !== id));
 
   const rootAttrs = {
@@ -181,7 +195,9 @@ function App() {
       <div className="tex-scanbar"></div>
 
       <div className="shell">
+        {demo && <DemoBanner onExit={() => setDemo(false)} />}
         <TopBar clock={clock} lang={lang} setLang={setLang} accent={accent} agents={agents} localPct={localPct} live={live} trust={trust}
+          llm={llm} demo={demo} setDemo={setDemo} serverUp={serverUp}
           onPalette={() => setPalette(true)} onAmbient={() => setAmbient(true)} t={t} />
         <Ticker items={ticker} t={t} hidden={mode === 'chat'} />
 
@@ -192,7 +208,7 @@ function App() {
 
             {mode === 'cockpit' ? (
               <div className="workzone cockpit" style={{ flex: 1, minHeight: 0 }}>
-                <RosterColumn agents={agents} activeId={activeId} onSelect={(id) => { setActiveId(id); setDossier(id); }} sys={sys} t={t} />
+                <RosterColumn agents={agents} activeId={activeId} onSelect={(id) => { setActiveId(id); setDossier(id); }} sys={sys} llm={llm} demo={demo} t={t} />
                 <div className="col" style={{ minHeight: 0 }}>
                   <div className="panel" style={{ flex: '1.3 1 0', minHeight: 0 }}>
                     <span className="bk tl"></span><span className="bk tr"></span><span className="bk bl"></span><span className="bk br"></span>
@@ -212,12 +228,12 @@ function App() {
                     <InputBar onSubmit={submit} mic={mic} setMic={setMic} t={t} />
                   </div>
                 </div>
-                <ContextColumn decisions={decisions} onDecision={dismissDecision} weather={weather} calendar={calendar} heartbeat={heartbeat} t={t} />
+                <ContextColumn decisions={decisions} onDecision={dismissDecision} weather={weather} calendar={calendar} heartbeat={heartbeat} demo={demo} t={t} />
               </div>
             ) : mode === 'agents' ? (
               <div className="workzone wide" style={{ flex: 1, minHeight: 0 }}>
                 <AgentsMode agents={agents} onOpen={(id) => { setActiveId(id); setDossier(id); }} t={t} />
-                <ContextColumn decisions={decisions} onDecision={dismissDecision} weather={weather} calendar={calendar} heartbeat={heartbeat} t={t} />
+                <ContextColumn decisions={decisions} onDecision={dismissDecision} weather={weather} calendar={calendar} heartbeat={heartbeat} demo={demo} t={t} />
               </div>
             ) : mode === 'chat' ? (
               <div className="workzone full" style={{ flex: 1, minHeight: 0 }}>
@@ -273,6 +289,16 @@ function replyFor(text, tr) {
     jarvis: "Understood. I'll handle that directly and keep everything on-device.",
   };
   return map[a] || map.jarvis;
+}
+function DemoBanner({ onExit }) {
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 12, padding: '4px 0',
+      background: 'repeating-linear-gradient(45deg, rgba(245,158,11,.16) 0 12px, rgba(245,158,11,.05) 12px 24px)',
+      borderBottom: '1px solid rgba(245,158,11,.5)', fontFamily: 'var(--font-mono)', fontSize: 10.5, letterSpacing: '.18em', color: 'var(--amber)' }}>
+      ◐ DEMO DATA — seeded sample, not your live backend
+      <button className="tool-btn" onClick={onExit}>exit demo</button>
+    </div>
+  );
 }
 function ProvModal({ prov, onClose }) {
   return (
