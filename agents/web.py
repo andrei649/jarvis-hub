@@ -18,7 +18,7 @@ from typing import Optional
 
 sys.path.insert(0, str(Path(__file__).parent))
 
-from fastapi import FastAPI, Request, Depends, HTTPException, Query
+from fastapi import FastAPI, Request, Depends, HTTPException, Query, UploadFile, File
 from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse, FileResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
@@ -592,6 +592,87 @@ async def tts_endpoint(req: TTSRequest):
     except Exception as e:
         logger.exception("TTS error")
         return JSONResponse({"error": "internal error", "code": 500}, status_code=500)
+
+
+# ── STT endpoint (browser mic → local Whisper) ───────────────────
+#
+# The voice engines (Whisper/edge-tts/XTTS) were built for Howard — a mic wired to
+# the server. The HUD runs in a browser, so the loop is: browser captures audio
+# (getUserMedia/MediaRecorder) → POSTs the blob here → local Whisper transcribes →
+# normal /chat/stream. Honest degradation: if faster-whisper isn't installed we 503
+# with an install hint — never a fabricated transcript.
+
+_STT_ENGINE = None
+
+
+def _stt_engine():
+    """Lazily build and cache one Whisper engine (model load is expensive)."""
+    global _STT_ENGINE
+    if _STT_ENGINE is None:
+        from core.voice.stt import STTEngine
+        _STT_ENGINE = STTEngine()
+    return _STT_ENGINE
+
+
+@app.post("/api/voice/stt", dependencies=[Depends(_user_guard)])
+async def stt_endpoint(audio: UploadFile = File(...), lang: str = Query("ro")):
+    """Transcribe an uploaded audio blob (browser MediaRecorder) via local Whisper."""
+    import tempfile
+    from core.voice.stt import HAS_WHISPER
+    if not HAS_WHISPER:
+        return JSONResponse(
+            {"error": "faster-whisper not installed. Run: pip install faster-whisper", "stt": False},
+            status_code=503,
+        )
+    suffix = os.path.splitext(audio.filename or "")[1] or ".webm"
+    tmp = None
+    try:
+        data = await audio.read()
+        if not data:
+            return JSONResponse({"error": "empty audio"}, status_code=400)
+        with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as f:
+            f.write(data)
+            tmp = f.name
+        text = await _stt_engine().transcribe_async(tmp, language=lang)
+        return _nocache_json({"text": text, "lang": lang})
+    except Exception:
+        logger.exception("STT error")
+        return JSONResponse({"error": "internal error", "code": 500}, status_code=500)
+    finally:
+        if tmp:
+            try:
+                os.unlink(tmp)
+            except Exception:
+                pass
+
+
+@app.get("/api/voice/capabilities")
+async def voice_capabilities():
+    """What the voice loop can ACTUALLY do on this host — drives the HUD honestly.
+
+    (The browser always has a fully-local `speechSynthesis` fallback for TTS, which the
+    HUD knows about; this reports only the server-side engines.)
+    """
+    from core.voice.stt import HAS_WHISPER
+    try:
+        from core.voice.tts import HAS_EDGE
+    except Exception:
+        HAS_EDGE = False
+    try:
+        from core.voice.tts import HAS_KOKORO
+    except Exception:
+        HAS_KOKORO = False
+    xtts = bool(os.getenv("XTTS_SERVER_URL"))
+    eleven = bool(os.getenv("ELEVENLABS_API_KEY"))
+    return _nocache_json({
+        "stt": bool(HAS_WHISPER),                       # local Whisper available
+        "tts": bool(HAS_EDGE or HAS_KOKORO or xtts or eleven),
+        "tts_local": bool(xtts or HAS_KOKORO),          # an on-device TTS path exists
+        "providers": {
+            "stt": "faster-whisper" if HAS_WHISPER else None,
+            "xtts": xtts, "elevenlabs": eleven, "edge_tts": bool(HAS_EDGE), "kokoro": bool(HAS_KOKORO),
+        },
+    })
 
 
 # ── Status (HUD-compatible) ──────────────────────────────────────

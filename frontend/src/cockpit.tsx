@@ -125,20 +125,41 @@ function buildTrace(text){
   };
 }
 
-/* input bar */
-function InputBar({ onSubmit, mic, setMic, t }) {
+/* input bar — text + hands-free voice (mic button toggles the useVoice loop) */
+function InputBar({ onSubmit, mic, setMic, voice, t }) {
   const [val,setVal]=useState('');
   const submit=()=>{ if(!val.trim())return; onSubmit(val.trim()); setVal(''); };
+  const showPill = voice && (voice.active || voice.error);
+  const label = voice && voice.error ? voice.error
+    : voice && voice.status==='listening' ? 'listening…'
+    : voice && voice.status==='transcribing' ? 'transcribing…'
+    : voice && voice.status==='speaking' ? 'speaking…' : 'voice on';
+  const dotColor = voice && voice.status==='listening' ? 'var(--green)'
+    : voice && voice.status==='speaking' ? 'var(--accent-light)' : 'var(--ink-3)';
   return (
-    <div className="inputbar">
-      <span className="pre">▸</span>
-      <span className="chan">{t.channel}</span>
-      <div className="field">
-        <input value={val} onChange={e=>setVal(e.target.value)} placeholder={t.placeholder}
-          onKeyDown={e=>{ if(e.key==='Enter') submit(); }}/>
-        <button className={'mic'+(mic?' on':'')} onClick={()=>setMic(m=>!m)} title="voice"><Icon d={ICONS.mic} size={15}/></button>
+    <div>
+      {showPill && (
+        <div style={{display:'flex',alignItems:'center',gap:8,padding:'5px 10px',marginBottom:6,borderRadius:8,fontFamily:'var(--font-mono)',fontSize:11,letterSpacing:'.04em',background:'rgba(0,0,0,.18)',border:'1px solid var(--panel-line)',color:voice.error?'var(--amber)':'var(--accent-light)'}}>
+          {!voice.error && <span style={{width:8,height:8,borderRadius:8,background:dotColor,boxShadow:'0 0 8px currentColor',flex:'none'}}/>}
+          <span style={{flex:'none'}}>{voice.error ? '⚠ ' : ''}{label}</span>
+          {!voice.error && voice.status==='listening' && (
+            <span style={{flex:1,height:4,borderRadius:4,background:'var(--panel-line)',overflow:'hidden'}}>
+              <span style={{display:'block',height:'100%',width:Math.min(100,Math.round((voice.level||0)*400))+'%',background:'var(--green)',transition:'width .08s'}}/>
+            </span>
+          )}
+          {!voice.error && voice.transcript && <span style={{color:'var(--ink-2)',whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis',maxWidth:220}}>“{voice.transcript}”</span>}
+        </div>
+      )}
+      <div className="inputbar">
+        <span className="pre">▸</span>
+        <span className="chan">{t.channel}</span>
+        <div className="field">
+          <input value={val} onChange={e=>setVal(e.target.value)} placeholder={voice && voice.active ? 'listening — just speak (or type)' : t.placeholder}
+            onKeyDown={e=>{ if(e.key==='Enter') submit(); }}/>
+          <button className={'mic'+(mic?' on':'')} onClick={()=>setMic && setMic()} title={voice && voice.supported===false ? 'voice not supported in this browser' : 'hands-free voice'}><Icon d={ICONS.mic} size={15}/></button>
+        </div>
+        <button className="transmit" onClick={submit}><Icon d={ICONS.send} size={13}/>{t.transmit}</button>
       </div>
-      <button className="transmit" onClick={submit}><Icon d={ICONS.send} size={13}/>{t.transmit}</button>
     </div>
   );
 }

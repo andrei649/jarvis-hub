@@ -7,6 +7,7 @@ import { useClock, fmtTimeShort, Icon, ICONS, Glyph } from './primitives';
 import { TopBar, Ticker, Rail, Tabs, RosterColumn, ContextColumn, Palette, Ambient } from './shell';
 import { NetworkBrain } from './network';
 import { Conversation, CognitionStream, InputBar, buildTrace, traceFromCognition } from './cockpit';
+import { useVoice } from './voice';
 import { loadJarvisData } from './api/loaders';
 import { useLiveModes } from './api/live';
 import { postStream, apiGet } from './api/client';
@@ -53,7 +54,7 @@ function App() {
   const [thinking, setThinking] = useState(null);
   const [trace, setTrace] = useState(null);
   const [centerTab, setCenterTab] = useState('conversation');
-  const [mic, setMic] = useState(false);
+  // mic/voice state is owned by the useVoice loop (defined below), not a bare flag
   const [palette, setPalette] = useState(false);
   const [ambient, setAmbient] = useState(false);
   const [provModal, setProvModal] = useState(null);
@@ -131,7 +132,9 @@ function App() {
 
   // P2 — real streaming turn: POST /chat/stream token-by-token, then pull the live
   // /api/cognition snapshot for the trace + provenance. Falls back to runMock offline.
-  const submit = useCallback((text) => {
+  // P2 — real streaming turn. Resolves with the FINAL reply text so the voice loop can
+  // speak it. On /chat/stream failure: honest system notice (or the DEMO staged mock).
+  const runTurn = useCallback((text) => new Promise((resolve) => {
     timers.current.forEach(clearTimeout); timers.current = [];
     setMessages((m) => [...m, { role: 'user', text, ts: fmtTimeShort(new Date()) }]);
     setCenterTab('conversation');
@@ -149,6 +152,7 @@ function App() {
         const finalText = evt.text || streamed;
         setMessages((m) => { const c = [...m]; if (idx >= 0 && c[idx]) c[idx] = { ...c[idx], text: finalText, who: evt.agent || activeId }; else c.push({ role: 'agent', who: evt.agent || activeId, ts: fmtTimeShort(new Date()), text: finalText }); return c; });
         setThinking(null);
+        resolve(finalText);
         apiGet('/api/cognition').then((cog) => {
           const tr = traceFromCognition(cog, text);
           setTrace({ stages: tr.stages.map((s) => ({ ...s, state: 'done' })) });
@@ -163,11 +167,16 @@ function App() {
     }).catch(() => {
       // HONESTY: never fabricate a reply. The staged mock is for DEMO only; otherwise
       // surface the real failure (e.g. no model loaded / backend offline).
-      if (demo) { runMock(text); return; }
+      if (demo) { runMock(text); resolve(''); return; }
       setThinking(null);
       setMessages((m) => [...m, { role: 'agent', who: 'system', role_label: '', ts: fmtTimeShort(new Date()), text: '⚠ No reply — the model backend is unreachable or no model is loaded. Load a model in LM Studio, or enable ◐ DEMO to preview the interface.' }]);
+      resolve('');
     });
-  }, [t, activeId, runMock, demo]);
+  }), [t, activeId, runMock, demo]);
+
+  const submit = useCallback((text) => { runTurn(text); }, [runTurn]);
+  // Hands-free voice loop: mic → local Whisper → runTurn → speak the reply, repeat.
+  const voice = useVoice({ lang, onTurn: runTurn });
 
   useEffect(() => () => timers.current.forEach(clearTimeout), []);
 
@@ -236,7 +245,7 @@ function App() {
                     {centerTab === 'conversation'
                       ? <Conversation messages={messages} thinking={thinking} onProv={setProvModal} t={t} />
                       : <CognitionStream trace={trace} t={t} />}
-                    <InputBar onSubmit={submit} mic={mic} setMic={setMic} t={t} />
+                    <InputBar onSubmit={submit} mic={voice.active} setMic={voice.toggle} voice={voice} t={t} />
                   </div>
                 </div>
                 <ContextColumn decisions={decisions} onDecision={dismissDecision} weather={weather} calendar={calendar} heartbeat={heartbeat} demo={demo} t={t} />
@@ -248,7 +257,7 @@ function App() {
               </div>
             ) : mode === 'chat' ? (
               <div className="workzone full" style={{ flex: 1, minHeight: 0 }}>
-                <ChatMode messages={messages} thinking={thinking} onSubmit={submit} onProv={setProvModal} mic={mic} setMic={setMic} t={t} />
+                <ChatMode messages={messages} thinking={thinking} onSubmit={submit} onProv={setProvModal} mic={voice.active} setMic={voice.toggle} t={t} />
               </div>
             ) : (
               <div className="workzone full" style={{ flex: 1, minHeight: 0 }}>
