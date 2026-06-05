@@ -1723,12 +1723,16 @@ async def marketplace_install(body: InstallSkillBody):
             orch.skills.discover()
             return {"ok": True, "installed": body.name}
         return JSONResponse({"error": f"Failed to install skill '{body.name}'"}, status_code=500)
-    except PermissionError as e:
+    except PermissionError:
         # Blocked by the moderation/signature gate (H12.12).
-        return JSONResponse({"error": str(e)}, status_code=403)
-    except ValueError as e:
-        return JSONResponse({"error": str(e)}, status_code=404)
-    except Exception as e:
+        logger.warning("Skill install blocked by policy: %s", body.name)
+        return JSONResponse(
+            {"error": f"skill '{body.name}' blocked by moderation/signature policy"},
+            status_code=403,
+        )
+    except ValueError:
+        return JSONResponse({"error": f"skill '{body.name}' not found in registry"}, status_code=404)
+    except Exception:
         logger.exception("Failed to install skill")
         return JSONResponse({"error": "internal error", "code": 500}, status_code=500)
 
@@ -1745,10 +1749,14 @@ async def marketplace_install_zip(body: InstallZipBody):
             orch.skills.discover()
             return {"ok": True}
         return JSONResponse({"error": "Failed to install skill from zip"}, status_code=500)
-    except (PermissionError, ValueError) as e:
+    except (PermissionError, ValueError):
         # Rejected by the zip-slip guard or the signature gate (H12.12).
-        return JSONResponse({"error": str(e)}, status_code=400)
-    except Exception as e:
+        logger.warning("Skill zip install rejected (unsafe path or signature policy)")
+        return JSONResponse(
+            {"error": "skill package rejected (unsafe path or signature policy)"},
+            status_code=400,
+        )
+    except Exception:
         logger.exception("Failed to install skill from zip")
         return JSONResponse({"error": "internal error", "code": 500}, status_code=500)
 
@@ -1766,8 +1774,8 @@ async def marketplace_review(body: ReviewSkillBody):
     try:
         orch.marketplace.set_review_status(body.name, body.status)
         return {"ok": True, "name": body.name, "review_status": body.status}
-    except ValueError as e:
-        return JSONResponse({"error": str(e)}, status_code=404)
+    except ValueError:
+        return JSONResponse({"error": f"skill '{body.name}' not found in registry"}, status_code=404)
     except Exception:
         logger.exception("Failed to set skill review status")
         return JSONResponse({"error": "internal error", "code": 500}, status_code=500)

@@ -16,7 +16,7 @@ repo_root = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(repo_root))
 sys.path.insert(0, str(repo_root / "agents"))
 
-from core.skills.marketplace import SkillMarketplace, REVIEW_APPROVED  # noqa: E402
+from core.skills.marketplace import SkillMarketplace  # noqa: E402
 
 
 def _mk(tmp_path):
