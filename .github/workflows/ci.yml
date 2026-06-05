@@ -56,3 +56,27 @@ jobs:
       # Runs the suite instrumented, reports coverage, and fails if line
       # coverage regresses below the BUG-2 target (60%).
       - run: npm run test:coverage
+
+  hud-v2-build:
+    # Build the v2 HUD (Vite + React + TS) and verify the committed bundle is
+    # current — so agents/web/v2 (served at /v2) can't silently go stale.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm ci
+        working-directory: frontend
+      - name: Typecheck (tsc --noEmit)
+        run: npx tsc --noEmit
+        working-directory: frontend
+      - name: Build
+        run: npm run build
+        working-directory: frontend
+      - name: Committed bundle is up to date
+        run: |
+          git diff --exit-code -- agents/web/v2 \
+            || { echo "::error::agents/web/v2 is stale — run 'cd frontend && npm run build' and commit."; exit 1; }

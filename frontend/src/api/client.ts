@@ -88,3 +88,14 @@ export async function postStream(
   }
   if (buf) flush(buf);
 }
+
+export async function apiPut<T = unknown>(path: string, body?: unknown, opts?: { admin?: boolean }): Promise<T> {
+  const res = await request('PUT', path, body, opts);
+  if (!res.ok) throw Object.assign(new Error(`PUT ${path} -> ${res.status}`), { status: res.status });
+  return res.json() as Promise<T>;
+}
+export async function apiDelete<T = unknown>(path: string, opts?: { admin?: boolean }): Promise<T> {
+  const res = await request('DELETE', path, undefined, opts);
+  if (!res.ok) throw Object.assign(new Error(`DELETE ${path} -> ${res.status}`), { status: res.status });
+  return res.json() as Promise<T>;
+}
