@@ -1,0 +1,229 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Jarvis Hub — HUD v2 · Decisions</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"/>
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet"/>
+<style>
+  *,*::before,*::after{box-sizing:border-box;}
+  :root{
+    --void:#04070e;--void-2:#060b15;--surface:rgba(10,22,38,.55);--surface-2:rgba(13,27,46,.72);
+    --line:rgba(120,190,240,.12);--bracket:rgba(140,205,250,.42);
+    --accent:#2bb8f0;--accent-light:#8fe0ff;--accent-dim:rgba(43,184,240,.40);--accent-faint:rgba(43,184,240,.10);
+    --green:#41f59b;--green-dim:rgba(65,245,155,.5);--amber:#ffc24d;--violet:#a78bfa;
+    --ink:#e9f4fd;--ink-2:rgba(233,244,253,.62);--ink-3:rgba(233,244,253,.34);--ink-4:rgba(233,244,253,.18);
+    --ui:'Space Grotesk',system-ui,sans-serif;--mono:'JetBrains Mono',ui-monospace,monospace;
+  }
+  html,body{margin:0;padding:0;}
+  body{background:var(--void);color:var(--ink);font-family:var(--ui);font-size:15px;line-height:1.6;-webkit-font-smoothing:antialiased;
+    background-image:radial-gradient(60% 50% at 50% -6%, var(--accent-faint), transparent 60%);min-height:100vh;}
+  .wrap{max-width:1040px;margin:0 auto;padding:54px 28px 90px;}
+  /* header */
+  .head{display:flex;align-items:flex-start;gap:18px;border-bottom:1px solid var(--line);padding-bottom:26px;margin-bottom:40px;}
+  .reactor{width:38px;height:38px;color:var(--accent);flex:none;margin-top:3px;}
+  .spin1{transform-origin:center;animation:spin 48s linear infinite;} .spin2{transform-origin:center;animation:spin 22s linear infinite reverse;}
+  .h-title{font-size:13px;font-weight:600;letter-spacing:.3em;}
+  .h-sub{font-family:var(--mono);font-size:10px;letter-spacing:.16em;color:var(--ink-3);margin-top:5px;}
+  h1{font-size:33px;font-weight:600;letter-spacing:-.01em;margin:14px 0 0;line-height:1.15;}
+  .lede{color:var(--ink-2);font-size:15px;max-width:74ch;margin-top:14px;}
+  .meta{margin-left:auto;text-align:right;font-family:var(--mono);font-size:10px;color:var(--ink-3);letter-spacing:.08em;line-height:1.9;flex:none;}
+  .meta b{color:var(--accent-light);font-weight:400;}
+  /* legend */
+  .legend{display:flex;gap:20px;flex-wrap:wrap;font-family:var(--mono);font-size:10.5px;color:var(--ink-3);letter-spacing:.06em;margin-bottom:34px;}
+  .legend .pill{display:inline-flex;align-items:center;gap:7px;}
+  .dotp{width:8px;height:8px;border-radius:50%;}
+  /* decision card */
+  .dcard{position:relative;background:var(--surface);border:1px solid var(--line);border-radius:4px;padding:26px 28px;margin-bottom:22px;box-shadow:0 18px 50px -34px rgba(0,0,0,.9);}
+  .bk{position:absolute;width:9px;height:9px;border:1px solid var(--bracket);}
+  .bk.tl{top:-1px;left:-1px;border-right:0;border-bottom:0;} .bk.tr{top:-1px;right:-1px;border-left:0;border-bottom:0;}
+  .bk.bl{bottom:-1px;left:-1px;border-right:0;border-top:0;} .bk.br{bottom:-1px;right:-1px;border-left:0;border-top:0;}
+  .dtop{display:flex;align-items:center;gap:14px;margin-bottom:6px;flex-wrap:wrap;}
+  .dtag{font-family:var(--mono);font-size:11px;font-weight:600;letter-spacing:.14em;color:var(--accent-light);border:1px solid var(--accent-dim);padding:4px 9px;border-radius:4px;}
+  .dh{font-size:21px;font-weight:600;}
+  .status{margin-left:auto;font-family:var(--mono);font-size:10px;letter-spacing:.1em;padding:5px 11px;border-radius:20px;white-space:nowrap;}
+  .status.resolved{background:rgba(65,245,155,.12);color:var(--green);border:1px solid var(--green-dim);}
+  .status.open{background:rgba(255,194,77,.1);color:var(--amber);border:1px solid rgba(255,194,77,.35);}
+  .q{color:var(--ink-2);font-size:14.5px;margin:4px 0 20px;max-width:80ch;}
+  .opts{display:flex;flex-direction:column;gap:9px;}
+  .opt{display:grid;grid-template-columns:18px 1fr;gap:12px;align-items:start;padding:11px 14px;border:1px solid var(--line);border-radius:4px;background:var(--void-2);}
+  .opt.rec{border-color:var(--accent-dim);background:var(--accent-faint);}
+  .opt .mk{font-family:var(--mono);color:var(--ink-4);font-size:13px;line-height:1.5;}
+  .opt.rec .mk{color:var(--accent);}
+  .opt .ot{font-size:14px;font-weight:500;}
+  .opt.rec .ot{color:var(--accent-light);}
+  .opt .ot .recbadge{font-family:var(--mono);font-size:9px;letter-spacing:.1em;color:var(--accent);border:1px solid var(--accent-dim);border-radius:10px;padding:1px 7px;margin-left:9px;vertical-align:middle;}
+  .opt .od{color:var(--ink-3);font-size:12.5px;margin-top:3px;line-height:1.5;}
+  .tradeoff{display:flex;gap:10px;margin-top:18px;font-size:13px;color:var(--ink-2);border-left:2px solid var(--accent-dim);padding:3px 0 3px 14px;}
+  .tradeoff b{color:var(--accent-light);font-weight:600;}
+  .tradeoff .key{font-family:var(--mono);font-size:9.5px;letter-spacing:.14em;text-transform:uppercase;color:var(--ink-3);flex:none;width:78px;padding-top:2px;}
+  /* footer next steps */
+  .foot{margin-top:46px;border-top:1px solid var(--line);padding-top:30px;}
+  .foot h2{font-family:var(--mono);font-size:12px;font-weight:600;letter-spacing:.18em;text-transform:uppercase;color:var(--ink-2);margin:0 0 18px;}
+  .steps{display:grid;grid-template-columns:1fr 1fr;gap:14px;}
+  .step{border:1px solid var(--line);border-radius:4px;padding:16px 18px;background:var(--surface-2);}
+  .step .sn{font-family:var(--mono);font-size:11px;color:var(--accent-light);letter-spacing:.08em;}
+  .step .st{font-size:14px;margin-top:6px;color:var(--ink);}
+  .step .sx{font-size:12.5px;color:var(--ink-3);margin-top:5px;}
+  .sign{display:flex;gap:14px;margin-top:26px;flex-wrap:wrap;}
+  .sign .box{flex:1;min-width:220px;border:1px dashed var(--line);border-radius:4px;padding:16px 18px;}
+  .sign .bl{font-family:var(--mono);font-size:9.5px;letter-spacing:.14em;text-transform:uppercase;color:var(--ink-3);}
+  .sign .ln{height:1px;background:var(--ink-4);margin-top:26px;}
+  @keyframes spin{to{transform:rotate(360deg);}}
+  @media (max-width:720px){.steps,.opts{grid-template-columns:1fr;} h1{font-size:26px;} .meta{display:none;}}
+  @media print{body{background:#fff;color:#111;} .dcard,.step{box-shadow:none;}}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <div class="head">
+    <svg class="reactor" viewBox="-16 -16 32 32" fill="none" stroke="currentColor">
+      <circle class="spin1" r="13" stroke-width="1" stroke-dasharray="4 3" opacity=".5"/>
+      <circle class="spin2" r="9" stroke-width="1.4" stroke-dasharray="2 4"/>
+      <circle r="4.5" stroke-width="1.6"/><circle r="1.6" fill="currentColor" stroke="none"/>
+    </svg>
+    <div>
+      <div class="h-title">JARVIS HUB · HUD v2</div>
+      <div class="h-sub">DESIGN DECISIONS · FOR SIGN-OFF</div>
+      <h1>Four decisions before the build hardens</h1>
+      <p class="lede">The brief frames HUD v2 as a redesign, not a reskin — and names four high-leverage forks (D1–D4) to lock before deep work. The prototype answered D1 and D4 in pixels; D2 and D3 are now signed off as recommended. <b style="color:var(--accent-light)">All four are locked</b> — build can proceed.</p>
+    </div>
+    <div class="meta">REF · <b>HUD_V2_BRIEF.md</b><br/>PROTOTYPE · <b>hud-v2.html</b><br/>STATUS · <b>4 of 4 locked</b></div>
+  </div>
+
+  <div class="legend">
+    <span class="pill"><span class="dotp" style="background:var(--green)"></span> Resolved in prototype</span>
+    <span class="pill"><span class="dotp" style="background:var(--amber)"></span> Needs your call</span>
+    <span class="pill"><span class="dotp" style="background:var(--accent)"></span> ◆ = recommended option</span>
+  </div>
+
+  <!-- D1 -->
+  <div class="dcard">
+    <span class="bk tl"></span><span class="bk tr"></span><span class="bk bl"></span><span class="bk br"></span>
+    <div class="dtop">
+      <span class="dtag">D1</span><span class="dh">Information architecture</span>
+      <span class="status resolved">RESOLVED · prototyped</span>
+    </div>
+    <p class="q">~30 capability areas, 228 endpoints, 16 agents. How does every surface get a calm, reachable home without becoming a wall of tabs?</p>
+    <div class="opts">
+      <div class="opt rec">
+        <span class="mk">◆</span>
+        <div><div class="ot">Left rail of modes + ⌘K universal jump<span class="recbadge">RECOMMENDED</span></div>
+        <div class="od">Cockpit · Agents · Trust · Memory · Autonomy · Build · Observe · Interop · Admin. Eight-or-so modes always visible; the command palette jumps anywhere. Scales to 30 surfaces because each mode owns its own sub-navigation.</div></div>
+      </div>
+      <div class="opt">
+        <span class="mk">○</span>
+        <div><div class="ot">Top tab-bar of modes</div>
+        <div class="od">Same model, horizontal. Cleaner on wide displays but runs out of room past ~8 items and reads less like a cockpit. <em>Built as a live alternative in the prototype's Tweaks → Navigation.</em></div></div>
+      </div>
+      <div class="opt">
+        <span class="mk">○</span>
+        <div><div class="ot">Single dense dashboard, everything via ⌘K + overlays</div>
+        <div class="od">Most "Bloomberg", least discoverable. Power-user ceiling is high but the learning curve is steep and ambient glanceability suffers.</div></div>
+      </div>
+    </div>
+    <div class="tradeoff"><span class="key">In proto</span><span>Both <b>rail</b> and <b>tabs</b> ship as a toggle so you can feel the difference. Rail is the default. ⌘K palette is live (try ⌘K → "Go to").</span></div>
+  </div>
+
+  <!-- D2 -->
+  <div class="dcard">
+    <span class="bk tl"></span><span class="bk tr"></span><span class="bk bl"></span><span class="bk br"></span>
+    <div class="dtop">
+      <span class="dtag">D2</span><span class="dh">Build stack</span>
+      <span class="status resolved">APPROVED · Vite + React + TS</span>
+    </div>
+    <p class="q">The prototype is React-via-Babel in the browser (zero build step) — perfect for design iteration, not for a 24/7 production surface. What does the real thing run on?</p>
+    <div class="opts">
+      <div class="opt rec">
+        <span class="mk">◆</span>
+        <div><div class="ot">Vite + React + TypeScript, bundled<span class="recbadge">RECOMMENDED</span></div>
+        <div class="od">Keeps the component model the prototype already uses, adds type-safety for the 228-endpoint API surface, tree-shakes, and self-hosts fonts/assets. Lowest-friction graduation path from the current code.</div></div>
+      </div>
+      <div class="opt">
+        <span class="mk">○</span>
+        <div><div class="ot">Keep vanilla + Web Components</div>
+        <div class="od">Matches the existing v0.3 shell, no framework lock-in, but state orchestration across 30 surfaces gets hand-rolled and brittle.</div></div>
+      </div>
+      <div class="opt">
+        <span class="mk">○</span>
+        <div><div class="ot">Full framework (Next/SvelteKit)</div>
+        <div class="od">Overkill for a single-user, mostly-client, always-on app with a local backend. Adds SSR complexity you don't need.</div></div>
+      </div>
+    </div>
+    <div class="tradeoff"><span class="key">Driver</span><span>The component boundaries in the prototype (<b>shell / modes / primitives / data</b>) map 1:1 onto a Vite project — the handoff doc lays out that migration.</span></div>
+  </div>
+
+  <!-- D3 -->
+  <div class="dcard">
+    <span class="bk tl"></span><span class="bk tr"></span><span class="bk bl"></span><span class="bk br"></span>
+    <div class="dtop">
+      <span class="dtag">D3</span><span class="dh">HUD / Admin unification</span>
+      <span class="status resolved">APPROVED · unify</span>
+    </div>
+    <p class="q">Today the HUD and the Admin/Settings surface are effectively two apps with two visual languages. Do they become one?</p>
+    <div class="opts">
+      <div class="opt rec">
+        <span class="mk">◆</span>
+        <div><div class="ot">Unify — Admin becomes a mode in the same shell<span class="recbadge">RECOMMENDED</span></div>
+        <div class="od">One design system, one nav, one mental model. Admin sits in the rail like any other mode (it's already stubbed there). Reduces context-switching for a single owner who runs the whole machine.</div></div>
+      </div>
+      <div class="opt">
+        <span class="mk">○</span>
+        <div><div class="ot">Keep separate, share tokens only</div>
+        <div class="od">Less migration now; Admin keeps its current structure but adopts the v2 palette/type. Faster, but the seam stays visible.</div></div>
+      </div>
+    </div>
+    <div class="tradeoff"><span class="key">Note</span><span>The brief leans <b>unify</b>. The v2 token system (CSS variables for look/accent/density) is built to absorb Admin with zero new colors.</span></div>
+  </div>
+
+  <!-- D4 -->
+  <div class="dcard">
+    <span class="bk tl"></span><span class="bk tr"></span><span class="bk bl"></span><span class="bk br"></span>
+    <div class="dtop">
+      <span class="dtag">D4</span><span class="dh">v1 scope</span>
+      <span class="status resolved">RESOLVED · prototyped</span>
+    </div>
+    <p class="q">Which of the ~30 surfaces actually ship in v1? Everything-at-once dilutes the craft; too little doesn't prove the thesis.</p>
+    <div class="opts">
+      <div class="opt rec">
+        <span class="mk">◆</span>
+        <div><div class="ot">Cockpit + Agents + Trust + Memory<span class="recbadge">RECOMMENDED</span></div>
+        <div class="od">The four that carry the north star: the daily driver (Cockpit), the cast (Agents), the safety story (Trust), and the thing that makes it feel alive over time (Memory). All four are built at fidelity in the prototype.</div></div>
+      </div>
+      <div class="opt">
+        <span class="mk">○</span>
+        <div><div class="ot">+ Autonomy &amp; Observe in v1</div>
+        <div class="od">Tempting, but the decision-inbox and eval surfaces need their own deep passes. Stubbed in the rail as "soon" — fast-follow for v1.1.</div></div>
+      </div>
+      <div class="opt">
+        <span class="mk">○</span>
+        <div><div class="ot">Cockpit-only</div>
+        <div class="od">Ships fastest but undersells the platform — Trust and Memory are what differentiate this from a chat window.</div></div>
+      </div>
+    </div>
+    <div class="tradeoff"><span class="key">In proto</span><span>All four modes are live and signature interactions are nailed: <b>cognition trace</b>, <b>network brain + focus</b>, <b>Merkle audit chain</b>, <b>% local meter</b>, <b>bitemporal KG slider</b>.</span></div>
+  </div>
+
+  <!-- footer -->
+  <div class="foot">
+    <h2>Signed off — recommended path locked</h2>
+    <div class="steps">
+      <div class="step"><div class="sn">01 · D1 + D4 → locked</div><div class="st">Promote the prototype as the v1 spec</div><div class="sx">Rail IA + four modes. No further design needed to start building the shell.</div></div>
+      <div class="step"><div class="sn">02 · D2 → Vite/TS</div><div class="st">Scaffold the project, port module-by-module</div><div class="sx">data → primitives → shell → modes, wired to the existing <b style="color:var(--accent-light);font-weight:400">/api</b>, <b style="color:var(--accent-light);font-weight:400">/status</b>, <b style="color:var(--accent-light);font-weight:400">/dashboard</b> endpoints.</div></div>
+      <div class="step"><div class="sn">03 · D3 → unify</div><div class="st">Fold Admin in as a mode</div><div class="sx">Reuse the token system; migrate Admin screens into the v2 shell after the four core modes land.</div></div>
+      <div class="step"><div class="sn">04 · fast-follow</div><div class="st">Autonomy → Observe → Build → Interop</div><div class="sx">Each is stubbed in the rail; build on the same primitives in priority order.</div></div>
+    </div>
+    <div class="sign">
+      <div class="box"><div class="bl">Decision · D1 IA</div><div class="ln"></div></div>
+      <div class="box"><div class="bl">Decision · D2 Stack</div><div class="ln"></div></div>
+      <div class="box"><div class="bl">Decision · D3 Admin</div><div class="ln"></div></div>
+      <div class="box"><div class="bl">Decision · D4 Scope</div><div class="ln"></div></div>
+    </div>
+  </div>
+
+</div>
+</body>
+</html>
