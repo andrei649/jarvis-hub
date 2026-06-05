@@ -14,6 +14,7 @@ import { AgentsMode, Dossier, TrustMode, MemoryMode } from './modes';
 import { AutonomyMode, BuildMode, ObserveMode, InteropMode } from './modes2';
 import { ChatMode, CommsMode, AdminMode } from './modes3';
 import { FinanceMode, HealthMode, KnowledgeMode, FamilyMode } from './modes4';
+import { ConsoleOverlay } from './gap';
 
 function ModeStub({ label }) {
   return (
@@ -54,6 +55,7 @@ function App() {
   const [ambient, setAmbient] = useState(false);
   const [provModal, setProvModal] = useState(null);
   const [dossier, setDossier] = useState(null);
+  const [consoleOpen, setConsoleOpen] = useState(false);
   const [decisions, setDecisions] = useState(() => V2.DECISIONS.map((d, i) => ({ ...d, _id: 'd' + i })));
   // P1 live-data state (seeded from mock; replaced by the backend when reachable)
   const [ticker, setTicker] = useState(V2.TICKER);
@@ -81,6 +83,7 @@ function App() {
       const m = { '1': 'cockpit', '2': 'agents', '3': 'trust', '4': 'memory', '5': 'autonomy', '6': 'build', '7': 'observe', '8': 'interop', '9': 'chat', '0': 'comms' };
       if (m[e.key]) setMode(m[e.key]);
       else if (e.key.toLowerCase() === 'a') setAmbient(true);
+      else if (e.key === '`') { e.preventDefault(); setConsoleOpen((c) => !c); }
     }
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
@@ -229,6 +232,9 @@ function App() {
 
       {provModal && <ProvModal prov={provModal} onClose={() => setProvModal(null)} />}
       {dossier && <Dossier id={dossier} onClose={() => setDossier(null)} onOpen={setDossier} />}
+      {consoleOpen && <ConsoleOverlay onClose={() => setConsoleOpen(false)} />}
+      <button className="tool-btn" onClick={() => setConsoleOpen(true)} title="console (`)"
+        style={{ position: 'fixed', right: 16, bottom: 16, zIndex: 50 }}>▦ CONSOLE</button>
       <Palette open={palette} onClose={() => setPalette(false)} onMode={setMode}
         setAccent={setAccent} setLang={setLang} onAmbient={() => { setPalette(false); setAmbient(true); }} t={t} />
       {ambient && <Ambient onExit={() => setAmbient(false)} clock={clock} lang={lang} agents={agents} decisions={decisions} motion={motion} t={t} />}
