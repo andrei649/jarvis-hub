@@ -1,0 +1,205 @@
+// @ts-nocheck
+/* HUD v2 · APP ROOT — P0: shell + cockpit are live; the other modes render an
+   honest placeholder and get ported from the prototype in the next phase. */
+import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { V2 } from './data';
+import { useClock, fmtTimeShort, Icon, ICONS, Glyph } from './primitives';
+import { TopBar, Ticker, Rail, Tabs, RosterColumn, ContextColumn, Palette, Ambient } from './shell';
+import { NetworkBrain } from './network';
+import { Conversation, CognitionStream, InputBar, buildTrace } from './cockpit';
+
+function ModeStub({ label }) {
+  return (
+    <div className="workzone full" style={{ flex: 1, minHeight: 0 }}>
+      <div className="panel" style={{ flex: 1, minHeight: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+        <span className="bk tl"></span><span className="bk tr"></span><span className="bk bl"></span><span className="bk br"></span>
+        <div style={{ textAlign: 'center', color: 'var(--ink-3)', maxWidth: 360 }}>
+          <div style={{ fontFamily: 'var(--font-mono)', fontSize: 12, letterSpacing: '.18em', color: 'var(--accent-light)' }}>{String(label).toUpperCase()}</div>
+          <div style={{ marginTop: 12, fontSize: 13, color: 'var(--ink-2)' }}>Mode wiring in progress — ported from the prototype next.</div>
+          <div style={{ marginTop: 8, fontFamily: 'var(--font-mono)', fontSize: 10 }}>P0 · shell + cockpit live · build green</div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function App() {
+  // tweak axes (defaults; the design-only Tweaks panel is dropped per the plan —
+  // these become real persisted prefs in a later phase). Accent + language are
+  // user-changeable via the command palette / top bar.
+  const look = 'obsidian', density = 'normal', motion = 'lively', scanline = 'on', dotgrid = 'off';
+  const ia = 'rail';
+  const [accent, setAccent] = useState('cyan');
+  const [lang, setLang] = useState('en');
+
+  const [mode, setMode] = useState('cockpit');
+  const [agents, setAgents] = useState(V2.AGENTS);
+  const [activeId, setActiveId] = useState('jarvis');
+  const [focusId, setFocusId] = useState(null);
+  const [messages, setMessages] = useState(V2.SEED_MESSAGES);
+  const [thinking, setThinking] = useState(null);
+  const [trace, setTrace] = useState(null);
+  const [centerTab, setCenterTab] = useState('conversation');
+  const [mic, setMic] = useState(false);
+  const [palette, setPalette] = useState(false);
+  const [ambient, setAmbient] = useState(false);
+  const [provModal, setProvModal] = useState(null);
+  const [decisions, setDecisions] = useState(() => V2.DECISIONS.map((d, i) => ({ ...d, _id: 'd' + i })));
+
+  const clock = useClock();
+  const t = V2.I18N[lang];
+  const localPct = 87;
+
+  // hotkeys: number keys jump modes, ⌘K palette, A ambient
+  useEffect(() => {
+    function onKey(e) {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') { e.preventDefault(); setPalette((p) => !p); return; }
+      if (ambient) return;
+      const tag = (e.target && e.target.tagName ? e.target.tagName : '').toLowerCase();
+      if (tag === 'input' || tag === 'textarea') return;
+      const m = { '1': 'cockpit', '2': 'agents', '3': 'trust', '4': 'memory', '5': 'autonomy', '6': 'build', '7': 'observe', '8': 'interop', '9': 'chat', '0': 'comms' };
+      if (m[e.key]) setMode(m[e.key]);
+      else if (e.key.toLowerCase() === 'a') setAmbient(true);
+    }
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [ambient]);
+
+  // submit → cognition flow (mock timeline; real SSE arrives in P2)
+  const timers = useRef([]);
+  const submit = useCallback((text) => {
+    timers.current.forEach(clearTimeout); timers.current = [];
+    setMessages((m) => [...m, { role: 'user', text, ts: fmtTimeShort(new Date()) }]);
+    const tr = buildTrace(text);
+    setTrace({ stages: tr.stages.map((s) => ({ ...s, state: '' })) });
+    setCenterTab('cognition');
+    setAgents((prev) => prev.map((a) => (tr.selected.includes(a.id) ? { ...a, status: 'busy' } : a)));
+    setThinking({ label: t.think + ' · classify', route: null });
+    const seq = [
+      [250, () => { setTrace((p) => mark(p, 0, 'on')); }],
+      [700, () => { setTrace((p) => mark(p, 0, 'done', 1, 'on')); setThinking({ label: t.think + ' · route', route: tr.selected.map((s) => s.toUpperCase()) }); }],
+      [1400, () => { setTrace((p) => mark(p, 1, 'done', 2, 'on')); setThinking({ label: t.think + ' · gather', route: tr.selected.map((s) => s.toUpperCase()) }); }],
+      [2300, () => { setTrace((p) => mark(p, 2, 'done', 3, 'on')); setThinking({ label: t.think + ' · synthesize', route: tr.selected.map((s) => s.toUpperCase()) }); }],
+      [3300, () => {
+        setTrace((p) => mark(p, 3, 'done'));
+        setThinking(null);
+        setMessages((m) => [...m, { role: 'agent', who: 'jarvis', role_label: 'Prime Orchestrator', ts: fmtTimeShort(new Date()), text: replyFor(text, tr), prov: { agents: tr.selected, plugins: pluginsFor(text), local: true, conf: +tr.conf.toFixed(2) } }]);
+        setAgents(V2.AGENTS);
+      }],
+    ];
+    seq.forEach(([ms, fn]) => timers.current.push(setTimeout(fn, ms)));
+  }, [t]);
+
+  useEffect(() => () => timers.current.forEach(clearTimeout), []);
+  const dismissDecision = (id) => setDecisions((ds) => ds.filter((d) => d._id !== id));
+
+  const rootAttrs = {
+    className: 'hud-root',
+    'data-look': look, 'data-accent': accent, 'data-density': density,
+    'data-motion': motion, 'data-scanline': scanline, 'data-dotgrid': dotgrid,
+  };
+
+  return (
+    <div {...rootAttrs}>
+      <div className="tex-layer tex-glow"></div>
+      <div className="tex-layer tex-dotgrid"></div>
+      <div className="tex-layer tex-scan"></div>
+      <div className="tex-scanbar"></div>
+
+      <div className="shell">
+        <TopBar clock={clock} lang={lang} setLang={setLang} accent={accent} agents={agents} localPct={localPct}
+          onPalette={() => setPalette(true)} onAmbient={() => setAmbient(true)} t={t} />
+        <Ticker items={V2.TICKER} t={t} hidden={mode === 'chat'} />
+
+        <div className="main" data-ia={ia}>
+          {ia === 'rail' && <Rail mode={mode} setMode={setMode} t={t} />}
+          <div style={{ minHeight: 0, display: 'flex', flexDirection: 'column', gap: 'var(--gap)' }}>
+            {ia === 'tabs' && <Tabs mode={mode} setMode={setMode} t={t} />}
+
+            {mode === 'cockpit' ? (
+              <div className="workzone cockpit" style={{ flex: 1, minHeight: 0 }}>
+                <RosterColumn agents={agents} activeId={activeId} onSelect={(id) => setActiveId(id)} t={t} />
+                <div className="col" style={{ minHeight: 0 }}>
+                  <div className="panel" style={{ flex: '1.3 1 0', minHeight: 0 }}>
+                    <span className="bk tl"></span><span className="bk tr"></span><span className="bk bl"></span><span className="bk br"></span>
+                    <div className="panel-head"><Icon d={ICONS.brain} size={14} /><span className="ttl">{t.network}</span><span className="st">focus mode</span></div>
+                    <NetworkBrain agents={agents} activeId={activeId} onSelect={(id) => setActiveId(id)}
+                      focusId={focusId} setFocusId={setFocusId} motion={motion} t={t} />
+                  </div>
+                  <div className="panel" style={{ flex: '1 1 0', minHeight: 0 }}>
+                    <span className="bk tl"></span><span className="bk tr"></span><span className="bk bl"></span><span className="bk br"></span>
+                    <div className="center-tabs">
+                      <button className={'center-tab' + (centerTab === 'conversation' ? ' active' : '')} onClick={() => setCenterTab('conversation')}>{t.conversation}{thinking && <span className="pip"></span>}</button>
+                      <button className={'center-tab' + (centerTab === 'cognition' ? ' active' : '')} onClick={() => setCenterTab('cognition')}>{t.cognition}{trace && !thinking && <span className="pip"></span>}</button>
+                    </div>
+                    {centerTab === 'conversation'
+                      ? <Conversation messages={messages} thinking={thinking} onProv={setProvModal} t={t} />
+                      : <CognitionStream trace={trace} t={t} />}
+                    <InputBar onSubmit={submit} mic={mic} setMic={setMic} t={t} />
+                  </div>
+                </div>
+                <ContextColumn decisions={decisions} onDecision={dismissDecision} t={t} />
+              </div>
+            ) : (
+              <ModeStub label={mode} />
+            )}
+          </div>
+        </div>
+      </div>
+
+      {provModal && <ProvModal prov={provModal} onClose={() => setProvModal(null)} />}
+      <Palette open={palette} onClose={() => setPalette(false)} onMode={setMode}
+        setAccent={setAccent} setLang={setLang} onAmbient={() => { setPalette(false); setAmbient(true); }} t={t} />
+      {ambient && <Ambient onExit={() => setAmbient(false)} clock={clock} lang={lang} agents={agents} decisions={decisions} motion={motion} t={t} />}
+    </div>
+  );
+}
+
+function mark(trace, i, state, j, jstate) {
+  if (!trace) return trace;
+  const stages = trace.stages.map((s, k) => (k === i ? { ...s, state } : (j !== undefined && k === j) ? { ...s, state: jstate } : s));
+  return { ...trace, stages };
+}
+function pluginsFor(text) {
+  const low = text.toLowerCase(); const p = [];
+  if (/calendar|meeting|schedule/.test(low)) p.push('google-calendar');
+  if (/email|mail|inbox/.test(low)) p.push('gmail');
+  if (/weather/.test(low)) p.push('weather');
+  if (/music|playlist/.test(low)) p.push('spotify');
+  if (p.length === 0) p.push('google-calendar', 'gmail');
+  return p;
+}
+function replyFor(text, tr) {
+  const a = tr.selected[0];
+  const map = {
+    pepper: 'Pepper has it — your calendar is reconciled and the **14:00 Raiffeisen review** is protected with prep at 13:15.',
+    stark: 'Stark pulled the numbers — **Digitaholic MRR is +6.2% WoW**; I flagged the missing churn-cohort slide for the review.',
+    vision: "Vision is on it — indexing sources now; I'll have a cited brief in your queue within the hour.",
+    veronica: 'Veronica drafted it — held for your review since Ultron flagged a **client name** as sensitive.',
+    gecko: "Gecko's watching the markets — EUR/RON steady at 4.97; idle cash is **€4.2k over buffer**, sweep available.",
+    hercules: "Hercules logged it — your sleep was 7h12m; tonight's plan is a light mobility session.",
+    frigga: 'Frigga keeps that local — noted privately, nothing left the device.',
+    friday: 'Friday compiled your brief — **6 items ranked**, weather clear, good day to cycle in.',
+    jerome: 'Jerome cued the soundtrack — focus playlist matched to your morning.',
+    jarvis: "Understood. I'll handle that directly and keep everything on-device.",
+  };
+  return map[a] || map.jarvis;
+}
+function ProvModal({ prov, onClose }) {
+  return (
+    <div className="pal-scrim" onClick={onClose} style={{ alignItems: 'center', paddingTop: 0 }}>
+      <div className="pal" onClick={(e) => e.stopPropagation()} style={{ width: 'min(440px,92vw)' }}>
+        <div className="pal-input" style={{ borderBottom: '1px solid var(--panel-line)' }}><span className="pc"><Icon d={ICONS.shield} size={16} /></span><span style={{ fontSize: 14, letterSpacing: '.04em' }}>PROVENANCE</span><span style={{ marginLeft: 'auto', fontFamily: 'var(--font-mono)', fontSize: 11, color: 'var(--green)' }}>conf {prov.conf}</span></div>
+        <div style={{ padding: 18 }}>
+          <div style={{ fontFamily: 'var(--font-mono)', fontSize: 9.5, letterSpacing: '.14em', color: 'var(--ink-3)', marginBottom: 8 }}>AGENTS CONSULTED</div>
+          <div className="dep-links" style={{ marginBottom: 16 }}>{prov.agents.map((a) => <span key={a} className="dep-link" style={{ cursor: 'default' }}><Glyph id={a} size={12} />{a}</span>)}</div>
+          <div style={{ fontFamily: 'var(--font-mono)', fontSize: 9.5, letterSpacing: '.14em', color: 'var(--ink-3)', marginBottom: 8 }}>PLUGIN READS</div>
+          <div className="dep-links" style={{ marginBottom: 16 }}>{prov.plugins.map((p) => <span key={p} className="dep-link" style={{ cursor: 'default' }}>{p}</span>)}</div>
+          <div className="verified-row"><Icon d={ICONS.shield} size={13} /> {prov.local ? '100% on-device · no cloud egress' : 'cloud-assisted'} · sealed in audit chain</div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+export default App;

@@ -444,6 +444,12 @@ static_dir = HERE / "static"
 if static_dir.is_dir():
     app.mount("/static", StaticFiles(directory=str(static_dir)), name="static")
 
+# HUD v2 (Vite + React + TS). Source in /frontend; the built bundle is committed
+# under web/v2 so the Python runtime needs no Node. Served at /v2 (see route below).
+v2_assets = HERE / "v2" / "assets"
+if v2_assets.is_dir():
+    app.mount("/v2/assets", StaticFiles(directory=str(v2_assets)), name="v2-assets")
+
 
 # ── HTML ─────────────────────────────────────────────────────────
 
@@ -458,6 +464,21 @@ async def service_worker():
 @app.get("/", response_class=HTMLResponse)
 async def index():
     html = HERE / "templates" / "index.html"
+    return HTMLResponse(html.read_text(encoding="utf-8"))
+
+
+@app.get("/v2", response_class=HTMLResponse)
+@app.get("/v2/{path:path}", response_class=HTMLResponse)
+async def hud_v2(path: str = ""):
+    # SPA shell for the v2 HUD; client-side routing handles {path}. Static assets
+    # are served by the /v2/assets mount above (registered first, so it wins).
+    html = HERE / "v2" / "index.html"
+    if not html.is_file():
+        return HTMLResponse(
+            "<h1>HUD v2 not built</h1><p>Run <code>cd frontend &amp;&amp; npm install "
+            "&amp;&amp; npm run build</code> (outputs to agents/web/v2/).</p>",
+            status_code=503,
+        )
     return HTMLResponse(html.read_text(encoding="utf-8"))
 
 
