@@ -61,3 +61,30 @@ export async function apiPost<T = unknown>(path: string, body?: unknown, opts?: 
   if (!res.ok) throw Object.assign(new Error(`POST ${path} -> ${res.status}`), { status: res.status });
   return res.json() as Promise<T>;
 }
+
+export async function postStream(
+  path: string,
+  body: unknown,
+  onEvent: (evt: any) => void,
+  opts: { admin?: boolean } = {},
+): Promise<void> {
+  const res = await request('POST', path, body, opts);
+  if (!res.ok || !res.body) throw Object.assign(new Error(`stream ${path} -> ${res.status}`), { status: res.status });
+  const reader = res.body.getReader();
+  const dec = new TextDecoder();
+  let buf = '';
+  const flush = (line: string) => {
+    const s = line.trim();
+    if (!s.startsWith('data:')) return;
+    try { onEvent(JSON.parse(s.slice(s.indexOf(':') + 1).trim())); } catch { /* ignore */ }
+  };
+  for (;;) {
+    const { value, done } = await reader.read();
+    if (value) buf += dec.decode(value, { stream: true });
+    if (done) break;
+    const parts = buf.split('\n');
+    buf = parts.pop() || '';
+    for (const p of parts) flush(p);
+  }
+  if (buf) flush(buf);
+}

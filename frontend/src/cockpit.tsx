@@ -143,4 +143,35 @@ function InputBar({ onSubmit, mic, setMic, t }) {
   );
 }
 
-export { Conversation, CognitionStream, buildTrace, InputBar, renderRich };
+/* P2 — map the real /api/cognition snapshot onto the 4-stage trace visual */
+function gatherBody(cog){
+  const tr = Array.isArray(cog && cog.trace) ? cog.trace : [];
+  const steps = tr.map(s => s.step || s.name || s.stage).filter(Boolean);
+  return steps.length ? `Context gathered \u00b7 ${steps.join(' \u2192 ')}.` : 'Context gathered \u2014 plugin reads + memory recall.';
+}
+function traceFromCognition(cog, text){
+  if (!cog || (!cog.scoring && !cog.decision)) return buildTrace(text);
+  const scoring = Array.isArray(cog.scoring) ? cog.scoring : [];
+  const dec = cog.decision || {};
+  const sel = Array.isArray(dec.agents_selected) && dec.agents_selected.length ? dec.agents_selected : ['jarvis'];
+  const timing = dec.timing || {};
+  const alts = Array.isArray(dec.alternatives) ? dec.alternatives : [];
+  let scores = alts.map(a => ({ id: a.id || a.agent || a.name || String(a), v: +(a.score != null ? a.score : a.confidence != null ? a.confidence : a.weight != null ? a.weight : 0) }));
+  if (!scores.length) scores = sel.map((id, i) => ({ id, v: i === 0 ? +(dec.confidence != null ? dec.confidence : 0.7) : 0.4 }));
+  scores.forEach(s => { if (sel.indexOf(s.id) >= 0) s.win = true; });
+  if (!scores.some(s => s.win) && scores[0]) scores[0].win = true;
+  scores = scores.slice(0, 6);
+  const kws = scoring.length ? scoring.slice(0, 6).map(s => ({ w: s.keyword, s: +(s.weight != null ? s.weight : 0.5) })) : [{ w: '(general)', s: 0.55 }];
+  const conf = +(dec.confidence != null ? dec.confidence : (scores[0] ? scores[0].v : 0.6));
+  return {
+    selected: sel, conf,
+    stages: [
+      { name: 'CLASSIFY', dur: (timing.classify != null ? timing.classify : 0) + 'ms', kind: 'keywords', keywords: kws, body: `Matched ${scoring.length} routing keyword${scoring.length === 1 ? '' : 's'} via ${dec.source || 'router'}.` },
+      { name: 'ROUTE', dur: (timing.route != null ? timing.route : 0) + 'ms', kind: 'score', scores, body: `Routing to ${sel.map(s => String(s).toUpperCase()).join(' + ')} \u00b7 source ${dec.source || '\u2014'}.`, esc: conf < 0.6 ? 'Low confidence \u2014 Jarvis handling directly.' : null },
+      { name: 'GATHER', dur: '\u2014', body: gatherBody(cog) },
+      { name: 'SYNTHESIZE', dur: (timing.total != null ? timing.total : 0) + 'ms', body: 'Reply composed on-device \u00b7 streamed token-by-token.' },
+    ],
+  };
+}
+
+export { Conversation, CognitionStream, buildTrace, traceFromCognition, InputBar, renderRich };

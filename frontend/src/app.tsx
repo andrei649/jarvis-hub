@@ -6,8 +6,9 @@ import { V2 } from './data';
 import { useClock, fmtTimeShort, Icon, ICONS, Glyph } from './primitives';
 import { TopBar, Ticker, Rail, Tabs, RosterColumn, ContextColumn, Palette, Ambient } from './shell';
 import { NetworkBrain } from './network';
-import { Conversation, CognitionStream, InputBar, buildTrace } from './cockpit';
+import { Conversation, CognitionStream, InputBar, buildTrace, traceFromCognition } from './cockpit';
 import { loadJarvisData } from './api/loaders';
+import { postStream, apiGet } from './api/client';
 
 function ModeStub({ label }) {
   return (
@@ -76,16 +77,17 @@ function App() {
 
   // submit → cognition flow (mock timeline; real SSE arrives in P2)
   const timers = useRef([]);
-  const submit = useCallback((text) => {
+
+  // offline fallback — the prototype's staged timeline so the cockpit still demos
+  const runMock = useCallback((text) => {
     timers.current.forEach(clearTimeout); timers.current = [];
-    setMessages((m) => [...m, { role: 'user', text, ts: fmtTimeShort(new Date()) }]);
     const tr = buildTrace(text);
     setTrace({ stages: tr.stages.map((s) => ({ ...s, state: '' })) });
     setCenterTab('cognition');
     setAgents((prev) => prev.map((a) => (tr.selected.includes(a.id) ? { ...a, status: 'busy' } : a)));
     setThinking({ label: t.think + ' · classify', route: null });
     const seq = [
-      [250, () => { setTrace((p) => mark(p, 0, 'on')); }],
+      [250, () => setTrace((p) => mark(p, 0, 'on'))],
       [700, () => { setTrace((p) => mark(p, 0, 'done', 1, 'on')); setThinking({ label: t.think + ' · route', route: tr.selected.map((s) => s.toUpperCase()) }); }],
       [1400, () => { setTrace((p) => mark(p, 1, 'done', 2, 'on')); setThinking({ label: t.think + ' · gather', route: tr.selected.map((s) => s.toUpperCase()) }); }],
       [2300, () => { setTrace((p) => mark(p, 2, 'done', 3, 'on')); setThinking({ label: t.think + ' · synthesize', route: tr.selected.map((s) => s.toUpperCase()) }); }],
@@ -98,6 +100,35 @@ function App() {
     ];
     seq.forEach(([ms, fn]) => timers.current.push(setTimeout(fn, ms)));
   }, [t]);
+
+  // P2 — real streaming turn: POST /chat/stream token-by-token, then pull the live
+  // /api/cognition snapshot for the trace + provenance. Falls back to runMock offline.
+  const submit = useCallback((text) => {
+    timers.current.forEach(clearTimeout); timers.current = [];
+    setMessages((m) => [...m, { role: 'user', text, ts: fmtTimeShort(new Date()) }]);
+    setCenterTab('conversation');
+    setThinking({ label: t.think + ' · routing', route: null });
+    let streamed = '';
+    let idx = -1;
+    postStream('/chat/stream', { message: text, agent: activeId }, (evt) => {
+      if (evt.type === 'start') {
+        setThinking({ label: t.think, route: [String(evt.agent || activeId).toUpperCase()] });
+        setMessages((m) => { idx = m.length; return [...m, { role: 'agent', who: evt.agent || activeId, role_label: '', ts: fmtTimeShort(new Date()), text: '' }]; });
+      } else if (evt.type === 'token') {
+        streamed += evt.text || '';
+        setMessages((m) => { const c = [...m]; if (idx >= 0 && c[idx]) c[idx] = { ...c[idx], text: streamed }; return c; });
+      } else if (evt.type === 'end') {
+        const finalText = evt.text || streamed;
+        setMessages((m) => { const c = [...m]; if (idx >= 0 && c[idx]) c[idx] = { ...c[idx], text: finalText, who: evt.agent || activeId }; else c.push({ role: 'agent', who: evt.agent || activeId, ts: fmtTimeShort(new Date()), text: finalText }); return c; });
+        setThinking(null);
+        apiGet('/api/cognition').then((cog) => {
+          const tr = traceFromCognition(cog, text);
+          setTrace({ stages: tr.stages.map((s) => ({ ...s, state: 'done' })) });
+          setMessages((m) => { const c = [...m]; const j = idx >= 0 ? idx : c.length - 1; if (c[j]) c[j] = { ...c[j], prov: { agents: tr.selected, plugins: pluginsFor(text), local: true, conf: +(tr.conf || 0).toFixed(2) } }; return c; });
+        }).catch(() => {});
+      }
+    }).catch(() => runMock(text));
+  }, [t, activeId, runMock]);
 
   useEffect(() => () => timers.current.forEach(clearTimeout), []);
 
