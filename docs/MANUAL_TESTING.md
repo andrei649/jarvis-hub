@@ -245,6 +245,11 @@ Each needs a real token/account and a live round-trip (send → receive → repl
   are exposed as governed tools (LAN-only by default).
 - [ ] **Webhooks / ambient triggers (H10.8)** 🔑 — `POST` to `/api/webhooks/...`;
   confirm it routes into the escalation inbox.
+- [ ] **A2A endpoint (H16.2)** ✅🔑 — With `JARVIS_A2A_ENABLED` unset, confirm
+  `/.well-known/agent-card` and `POST /api/a2a/task` return 404. Enable it,
+  allowlist a peer (`POST /api/a2a/peers`), and confirm a task signed with that
+  peer's secret lands in `GET /api/a2a/inbox` as **pending** (never auto-run),
+  while a wrong/absent signature is 401. Approve one via `/decide`.
 - [ ] **Conversation notes (H10.21)** ✅⚠️ — Set a note (`PUT /api/notes`), send a
   chat turn, confirm the note is injected as context (e.g. "always reply in
   French" changes behavior); "Rewrite with AI" (`POST /api/notes/rewrite`) works.
