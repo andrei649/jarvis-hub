@@ -4,7 +4,7 @@
    degrades to an offline/empty state — never blocks. Admin-guarded calls work on
    localhost; on a network they surface the 401 via the client's token prompt. */
 import React, { useState, useEffect, useCallback } from 'react';
-import { apiGet, apiPost } from './api/client';
+import { apiGet, apiPost, apiPut, apiDelete } from './api/client';
 
 function useApi(path, auto = true) {
   const [d, setD] = useState(null);
@@ -66,7 +66,7 @@ function NotesPanel() {
   return <Card title="NOTES" onReload={reload}>
     <textarea value={cur} onChange={(ev) => setV(ev.target.value)} placeholder="session notes injected into every turn…" style={{ width: '100%', minHeight: 70, background: 'var(--surface)', color: 'var(--ink)', border: '1px solid var(--panel-line)', borderRadius: 4, padding: 6, ...mono }} />
     <div style={{ display: 'flex', gap: 8, marginTop: 6 }}>
-      <button className="tool-btn" onClick={() => apiPost('/api/notes', { content: cur }, 'PUT').catch(() => {})}>save</button>
+      <button className="tool-btn" onClick={() => apiPut('/api/notes', { content: cur }).catch(() => {})}>save</button>
       <button className="tool-btn" onClick={() => act('/api/notes/rewrite', { save: true }, reload)}>rewrite with AI</button>
     </div>
   </Card>;
@@ -78,7 +78,7 @@ function SecretsPanel() {
   const names = arr(d, 'names', 'secrets');
   return <Card title="SECRET BROKER" sub={names.length} onReload={reload}>
     <State e={e} loading={loading} n={names.length} />
-    {names.slice(0, 12).map((n, i) => <Row key={i}><span style={mono}>{n.name || n}</span><Btn onClick={() => apiPost('/api/secrets/broker/' + (n.name || n), {}, 'DELETE').then(reload).catch(() => {})}>✕</Btn></Row>)}
+    {names.slice(0, 12).map((n, i) => <Row key={i}><span style={mono}>{n.name || n}</span><Btn onClick={() => apiDelete('/api/secrets/broker/' + (n.name || n)).then(reload).catch(() => {})}>✕</Btn></Row>)}
     <div style={{ fontSize: 10, color: 'var(--ink-3)', marginTop: 6 }}>just-in-time {'{{secret:NAME}}'} injection at approval time</div>
   </Card>;
 }
@@ -206,13 +206,48 @@ function OAuthPanel() {
       </span></Row>)}
   </Card>;
 }
+function settingsField(it, val, on) {
+  const ip = { background: 'var(--surface)', color: 'var(--ink)', border: '1px solid var(--panel-line)', borderRadius: 4, padding: '3px 6px', ...mono, fontSize: 11 };
+  switch (it.kind) {
+    case 'toggle': return <input type="checkbox" checked={!!val} onChange={(e) => on(e.target.checked)} />;
+    case 'select': return <select value={val} onChange={(e) => on(e.target.value)} style={ip}>{(it.opts || []).map((o) => <option key={o} value={o}>{o}</option>)}</select>;
+    case 'number': case 'slider': return <input type="number" value={val} onChange={(e) => on(e.target.value === '' ? '' : Number(e.target.value))} style={{ ...ip, width: 84 }} />;
+    case 'tags': return <input value={Array.isArray(val) ? val.join(', ') : (val || '')} onChange={(e) => on(e.target.value.split(',').map((s) => s.trim()).filter(Boolean))} style={{ ...ip, width: 150 }} />;
+    default: return <input value={val == null ? '' : val} onChange={(e) => on(e.target.value)} style={{ ...ip, width: 150 }} />;
+  }
+}
 function SettingsPanel() {
   const { d, e, loading, reload } = useApi('/api/admin/settings');
-  const cats = d && typeof d === 'object' ? Object.keys(d.settings || d) : [];
-  return <Card title="SETTINGS DB" sub={cats.length} onReload={reload}>
-    <State e={e} loading={loading} n={cats.length} />
-    {cats.slice(0, 14).map((c, i) => <Row key={i}><span style={mono}>{c}</span><span style={{ marginLeft: 'auto', fontSize: 10, color: 'var(--ink-3)' }}>{Object.keys((d.settings || d)[c] || {}).length} keys</span></Row>)}
-    <div style={{ fontSize: 10, color: 'var(--ink-3)', marginTop: 6 }}>full runtime settings tree · inline editor next</div>
+  const [dirty, setDirty] = useState({});
+  const [saved, setSaved] = useState(null);
+  const cats = d && typeof d === 'object' ? d : {};
+  const setVal = (cat, key, v) => setDirty((p) => ({ ...p, [cat]: { ...(p[cat] || {}), [key]: v } }));
+  const valOf = (cat, it) => (dirty[cat] && it.key in dirty[cat]) ? dirty[cat][it.key] : it.value;
+  const nDirty = Object.values(dirty).reduce((a, o) => a + Object.keys(o).length, 0);
+  const save = async () => {
+    let n = 0;
+    for (const cat of Object.keys(dirty)) {
+      try { const r = await apiPut('/api/admin/settings/' + cat, { values: dirty[cat] }, { admin: true }); n += (r && r.updated) || 0; } catch { /* offline */ }
+    }
+    setSaved(n); setDirty({}); reload();
+  };
+  return <Card title="SETTINGS DB" sub={Object.keys(cats).length + ' cat'} onReload={reload}>
+    <State e={e} loading={loading} n={Object.keys(cats).length} />
+    <div style={{ maxHeight: 300, overflow: 'auto' }}>
+      {Object.entries(cats).map(([cat, items]) => (
+        <div key={cat} style={{ marginBottom: 6 }}>
+          <div style={{ ...mono, fontSize: 9.5, letterSpacing: '.16em', color: 'var(--ink-3)', margin: '6px 0 2px' }}>{String(cat).toUpperCase()}</div>
+          {(items || []).map((it) => (
+            <Row key={it.key}>
+              <span style={{ fontSize: 11, color: 'var(--ink-2)', flex: '0 0 46%' }} title={it.key}>{it.label || it.key}</span>
+              <span style={{ marginLeft: 'auto' }}>{settingsField(it, valOf(cat, it), (v) => setVal(cat, it.key, v))}</span>
+            </Row>
+          ))}
+        </div>
+      ))}
+    </div>
+    {nDirty > 0 && <button className="tool-btn" style={{ marginTop: 8 }} onClick={save}>💾 save {nDirty} change{nDirty === 1 ? '' : 's'}</button>}
+    {saved != null && <span style={{ fontSize: 10, color: 'var(--green)', marginLeft: 8 }}>updated {saved}</span>}
   </Card>;
 }
 function PromptsPanel() {
