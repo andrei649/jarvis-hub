@@ -9,6 +9,10 @@ import { NetworkBrain } from './network';
 import { Conversation, CognitionStream, InputBar, buildTrace, traceFromCognition } from './cockpit';
 import { loadJarvisData } from './api/loaders';
 import { postStream, apiGet } from './api/client';
+import { AgentsMode, Dossier, TrustMode, MemoryMode } from './modes';
+import { AutonomyMode, BuildMode, ObserveMode, InteropMode } from './modes2';
+import { ChatMode, CommsMode, AdminMode } from './modes3';
+import { FinanceMode, HealthMode, KnowledgeMode, FamilyMode } from './modes4';
 
 function ModeStub({ label }) {
   return (
@@ -46,6 +50,7 @@ function App() {
   const [palette, setPalette] = useState(false);
   const [ambient, setAmbient] = useState(false);
   const [provModal, setProvModal] = useState(null);
+  const [dossier, setDossier] = useState(null);
   const [decisions, setDecisions] = useState(() => V2.DECISIONS.map((d, i) => ({ ...d, _id: 'd' + i })));
   // P1 live-data state (seeded from mock; replaced by the backend when reachable)
   const [ticker, setTicker] = useState(V2.TICKER);
@@ -176,7 +181,7 @@ function App() {
 
             {mode === 'cockpit' ? (
               <div className="workzone cockpit" style={{ flex: 1, minHeight: 0 }}>
-                <RosterColumn agents={agents} activeId={activeId} onSelect={(id) => setActiveId(id)} sys={sys} t={t} />
+                <RosterColumn agents={agents} activeId={activeId} onSelect={(id) => { setActiveId(id); setDossier(id); }} sys={sys} t={t} />
                 <div className="col" style={{ minHeight: 0 }}>
                   <div className="panel" style={{ flex: '1.3 1 0', minHeight: 0 }}>
                     <span className="bk tl"></span><span className="bk tr"></span><span className="bk bl"></span><span className="bk br"></span>
@@ -198,14 +203,26 @@ function App() {
                 </div>
                 <ContextColumn decisions={decisions} onDecision={dismissDecision} weather={weather} calendar={calendar} heartbeat={heartbeat} t={t} />
               </div>
+            ) : mode === 'agents' ? (
+              <div className="workzone wide" style={{ flex: 1, minHeight: 0 }}>
+                <AgentsMode agents={agents} onOpen={(id) => { setActiveId(id); setDossier(id); }} t={t} />
+                <ContextColumn decisions={decisions} onDecision={dismissDecision} weather={weather} calendar={calendar} heartbeat={heartbeat} t={t} />
+              </div>
+            ) : mode === 'chat' ? (
+              <div className="workzone full" style={{ flex: 1, minHeight: 0 }}>
+                <ChatMode messages={messages} thinking={thinking} onSubmit={submit} onProv={setProvModal} mic={mic} setMic={setMic} t={t} />
+              </div>
             ) : (
-              <ModeStub label={mode} />
+              <div className="workzone full" style={{ flex: 1, minHeight: 0 }}>
+                {modeComponent(mode, t)}
+              </div>
             )}
           </div>
         </div>
       </div>
 
       {provModal && <ProvModal prov={provModal} onClose={() => setProvModal(null)} />}
+      {dossier && <Dossier id={dossier} onClose={() => setDossier(null)} onOpen={setDossier} />}
       <Palette open={palette} onClose={() => setPalette(false)} onMode={setMode}
         setAccent={setAccent} setLang={setLang} onAmbient={() => { setPalette(false); setAmbient(true); }} t={t} />
       {ambient && <Ambient onExit={() => setAmbient(false)} clock={clock} lang={lang} agents={agents} decisions={decisions} motion={motion} t={t} />}
@@ -258,6 +275,24 @@ function ProvModal({ prov, onClose }) {
       </div>
     </div>
   );
+}
+
+function modeComponent(mode, t) {
+  switch (mode) {
+    case 'trust': return <TrustMode t={t} />;
+    case 'memory': return <MemoryMode t={t} />;
+    case 'autonomy': return <AutonomyMode t={t} />;
+    case 'build': return <BuildMode t={t} />;
+    case 'observe': return <ObserveMode t={t} />;
+    case 'interop': return <InteropMode t={t} />;
+    case 'comms': return <CommsMode t={t} />;
+    case 'admin': return <AdminMode t={t} />;
+    case 'finance': return <FinanceMode t={t} />;
+    case 'health': return <HealthMode t={t} />;
+    case 'knowledge': return <KnowledgeMode t={t} />;
+    case 'family': return <FamilyMode t={t} />;
+    default: return <ModeStub label={mode} />;
+  }
 }
 
 export default App;
