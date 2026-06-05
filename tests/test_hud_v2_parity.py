@@ -20,7 +20,7 @@ WEB = Path(__file__).resolve().parent.parent / "agents" / "web.py"
 # design (machine-facing). Keep this in sync with the v2 IA when adding routes.
 RULES = [
     # served shells / infra
-    ("/v2", "shell"), ("/static", "shell"), ("/favicon", "shell"), ("/sw.js", "shell"),
+    ("/v2", "shell"), ("/v1", "shell"), ("/static", "shell"), ("/favicon", "shell"), ("/sw.js", "shell"),
     ("/admin", "admin"),
     # machine-facing — intentionally not a HUD surface
     ("/.well-known/", "NOT_IN_HUD"),

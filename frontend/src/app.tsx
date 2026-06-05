@@ -34,10 +34,12 @@ function App() {
   // tweak axes (defaults; the design-only Tweaks panel is dropped per the plan —
   // these become real persisted prefs in a later phase). Accent + language are
   // user-changeable via the command palette / top bar.
-  const look = 'obsidian', density = 'normal', motion = 'lively', scanline = 'on', dotgrid = 'off';
+  const look = 'obsidian', density = 'normal', scanline = 'on', dotgrid = 'off';
+  // P5 — honor the OS reduced-motion preference (gates packets/ambient animation)
+  const motion = (typeof window !== 'undefined' && window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches) ? 'calm' : 'lively';
   const ia = 'rail';
-  const [accent, setAccent] = useState('cyan');
-  const [lang, setLang] = useState('en');
+  const [accent, setAccent] = useState(() => { try { return localStorage.getItem('hud.accent') || 'cyan'; } catch { return 'cyan'; } });
+  const [lang, setLang] = useState(() => { try { return localStorage.getItem('hud.lang') || 'en'; } catch { return 'en'; } });
 
   const [mode, setMode] = useState('cockpit');
   const [agents, setAgents] = useState(V2.AGENTS);
@@ -66,6 +68,8 @@ function App() {
   const t = V2.I18N[lang];
   const localPct = 87;
   useLiveModes(); // P4: stream live data into the capability modes (mock fallback)
+  useEffect(() => { try { localStorage.setItem('hud.accent', accent); } catch { /* ignore */ } }, [accent]); // P5 persist
+  useEffect(() => { try { localStorage.setItem('hud.lang', lang); } catch { /* ignore */ } }, [lang]);
 
   // hotkeys: number keys jump modes, ⌘K palette, A ambient
   useEffect(() => {

@@ -463,8 +463,19 @@ async def service_worker():
 
 @app.get("/", response_class=HTMLResponse)
 async def index():
-    html = HERE / "templates" / "index.html"
-    return HTMLResponse(html.read_text(encoding="utf-8"))
+    # P6 cutover (opt-in, reversible): JARVIS_HUD=v2 serves the v2 HUD at / once
+    # you've verified it. Default keeps the current HUD; v2 is always at /v2 and
+    # the current HUD stays reachable at /v1.
+    if os.environ.get("JARVIS_HUD", "").lower() == "v2":
+        v2_html = HERE / "v2" / "index.html"
+        if v2_html.is_file():
+            return HTMLResponse(v2_html.read_text(encoding="utf-8"))
+    return HTMLResponse((HERE / "templates" / "index.html").read_text(encoding="utf-8"))
+
+
+@app.get("/v1", response_class=HTMLResponse)
+async def index_v1():
+    return HTMLResponse((HERE / "templates" / "index.html").read_text(encoding="utf-8"))
 
 
 @app.get("/v2", response_class=HTMLResponse)
