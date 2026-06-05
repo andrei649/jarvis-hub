@@ -3437,11 +3437,76 @@ async def memory_remember(req: Request):
 
 
 @app.get("/api/memory/profile", dependencies=[Depends(_user_guard)])
-async def get_memory_profile():
-    """Return all stored user facts/preferences grouped by category."""
+async def get_memory_profile(agent: Optional[str] = None):
+    """Return all stored user facts/preferences grouped by category.
+
+    H10.26: pass ?agent=<id> to apply that agent's data-space scope — only the
+    categories the agent is granted are returned (unscoped agent → everything)."""
     from agents.core.memory.store import MemoryStore
     store = MemoryStore()
-    return await store.get_all()
+    profile = await store.get_all()
+    if agent:
+        profile = _get_data_spaces().filter_categories(profile, agent)
+    return profile
+
+
+# ── H10.26 Data Spaces (per-agent data scope) ─────────────────────
+
+_data_spaces = None
+
+
+def _get_data_spaces():
+    global _data_spaces
+    if _data_spaces is None:
+        from agents.core.data_spaces import DataSpaces
+        _data_spaces = DataSpaces()
+    return _data_spaces
+
+
+class DefineSpaceBody(BaseModel):
+    name: str = Field(..., max_length=128)
+    sources: list[str] = Field(default_factory=list)
+
+
+class AssignSpaceBody(BaseModel):
+    agent: str = Field(..., max_length=128)
+    space: str = Field(..., max_length=128)
+
+
+@app.get("/api/memory/spaces", dependencies=[Depends(_admin_guard)])
+async def list_data_spaces():
+    ds = _get_data_spaces()
+    return _nocache_json({"spaces": ds.list_spaces(), "assignments": ds.list_assignments()})
+
+
+@app.post("/api/memory/spaces", dependencies=[Depends(_admin_guard)])
+async def define_data_space(body: DefineSpaceBody):
+    try:
+        return _nocache_json(_get_data_spaces().define_space(body.name, body.sources))
+    except ValueError:
+        return _nocache_json({"error": "space name is required"}, status_code=400)
+
+
+@app.delete("/api/memory/spaces/{name}", dependencies=[Depends(_admin_guard)])
+async def delete_data_space(name: str):
+    ok = _get_data_spaces().delete_space(name)
+    return _nocache_json({"ok": ok}, status_code=200 if ok else 404)
+
+
+@app.post("/api/memory/spaces/assign", dependencies=[Depends(_admin_guard)])
+async def assign_data_space(body: AssignSpaceBody):
+    try:
+        return _nocache_json(_get_data_spaces().assign(body.agent, body.space))
+    except ValueError:
+        return _nocache_json({"error": "unknown space or missing agent"}, status_code=400)
+
+
+@app.post("/api/memory/spaces/unassign", dependencies=[Depends(_admin_guard)])
+async def unassign_data_space(body: AssignSpaceBody):
+    return _nocache_json(_get_data_spaces().unassign(body.agent, body.space))
+
+
+# ── END H10.26 Data Spaces ────────────────────────────────────────
 
 
 @app.get("/api/memory/recall", dependencies=[Depends(_user_guard)])

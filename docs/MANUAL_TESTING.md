@@ -244,6 +244,10 @@ Each needs a real token/account and a live round-trip (send → receive → repl
 - [ ] **Vector memory / RAG (Qdrant)** 🔑🤖 — Ingest documents; ask a question whose
   answer is only in them; confirm grounded retrieval.
 - [ ] **Knowledge graph (Neo4j)** 🔑 — Entities/relations populate and are queryable.
+- [ ] **Data Spaces / agent scope (H10.26)** ✅ — Define a space over some memory
+  categories (`POST /api/memory/spaces`), assign an agent (`/assign`), then
+  `GET /api/memory/profile?agent=<id>` returns **only** those categories; an
+  unassigned agent (or no `agent`) sees everything.
 - [ ] **Ingestion pipeline** 🔑 — Feed a source; confirm it lands in memory/graph.
 - [ ] **MCP server mode (H10.5)** 🔑 — Connect an MCP client; confirm Jarvis agents
   are exposed as governed tools (LAN-only by default).
