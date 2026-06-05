@@ -7,6 +7,7 @@ import { useClock, fmtTimeShort, Icon, ICONS, Glyph } from './primitives';
 import { TopBar, Ticker, Rail, Tabs, RosterColumn, ContextColumn, Palette, Ambient } from './shell';
 import { NetworkBrain } from './network';
 import { Conversation, CognitionStream, InputBar, buildTrace } from './cockpit';
+import { loadJarvisData } from './api/loaders';
 
 function ModeStub({ label }) {
   return (
@@ -45,6 +46,14 @@ function App() {
   const [ambient, setAmbient] = useState(false);
   const [provModal, setProvModal] = useState(null);
   const [decisions, setDecisions] = useState(() => V2.DECISIONS.map((d, i) => ({ ...d, _id: 'd' + i })));
+  // P1 live-data state (seeded from mock; replaced by the backend when reachable)
+  const [ticker, setTicker] = useState(V2.TICKER);
+  const [weather, setWeather] = useState(V2.WEATHER);
+  const [calendar, setCalendar] = useState(V2.CALENDAR);
+  const [heartbeat, setHeartbeat] = useState(V2.HEARTBEAT);
+  const [sys, setSys] = useState(null);
+  const [live, setLive] = useState(false);
+  const baseAgents = useRef(V2.AGENTS);
 
   const clock = useClock();
   const t = V2.I18N[lang];
@@ -84,13 +93,31 @@ function App() {
         setTrace((p) => mark(p, 3, 'done'));
         setThinking(null);
         setMessages((m) => [...m, { role: 'agent', who: 'jarvis', role_label: 'Prime Orchestrator', ts: fmtTimeShort(new Date()), text: replyFor(text, tr), prov: { agents: tr.selected, plugins: pluginsFor(text), local: true, conf: +tr.conf.toFixed(2) } }]);
-        setAgents(V2.AGENTS);
+        setAgents(baseAgents.current);
       }],
     ];
     seq.forEach(([ms, fn]) => timers.current.push(setTimeout(fn, ms)));
   }, [t]);
 
   useEffect(() => () => timers.current.forEach(clearTimeout), []);
+
+  // P1 — load live data and poll every 30s; falls back to the seeded mock when
+  // the backend is unreachable, so the HUD never blanks (recall-never-hard-fails).
+  useEffect(() => {
+    let alive = true;
+    async function refresh() {
+      try {
+        const d = await loadJarvisData();
+        if (!alive) return;
+        setAgents(d.agents); baseAgents.current = d.agents;
+        setTicker(d.ticker); setWeather(d.weather); setCalendar(d.calendar);
+        setHeartbeat(d.heartbeat); setSys(d.sys); setLive(!!d.live);
+      } catch { /* keep mock */ }
+    }
+    refresh();
+    const iv = setInterval(refresh, 30000);
+    return () => { alive = false; clearInterval(iv); };
+  }, []);
   const dismissDecision = (id) => setDecisions((ds) => ds.filter((d) => d._id !== id));
 
   const rootAttrs = {
@@ -109,7 +136,7 @@ function App() {
       <div className="shell">
         <TopBar clock={clock} lang={lang} setLang={setLang} accent={accent} agents={agents} localPct={localPct}
           onPalette={() => setPalette(true)} onAmbient={() => setAmbient(true)} t={t} />
-        <Ticker items={V2.TICKER} t={t} hidden={mode === 'chat'} />
+        <Ticker items={ticker} t={t} hidden={mode === 'chat'} />
 
         <div className="main" data-ia={ia}>
           {ia === 'rail' && <Rail mode={mode} setMode={setMode} t={t} />}
@@ -118,7 +145,7 @@ function App() {
 
             {mode === 'cockpit' ? (
               <div className="workzone cockpit" style={{ flex: 1, minHeight: 0 }}>
-                <RosterColumn agents={agents} activeId={activeId} onSelect={(id) => setActiveId(id)} t={t} />
+                <RosterColumn agents={agents} activeId={activeId} onSelect={(id) => setActiveId(id)} sys={sys} t={t} />
                 <div className="col" style={{ minHeight: 0 }}>
                   <div className="panel" style={{ flex: '1.3 1 0', minHeight: 0 }}>
                     <span className="bk tl"></span><span className="bk tr"></span><span className="bk bl"></span><span className="bk br"></span>
@@ -138,7 +165,7 @@ function App() {
                     <InputBar onSubmit={submit} mic={mic} setMic={setMic} t={t} />
                   </div>
                 </div>
-                <ContextColumn decisions={decisions} onDecision={dismissDecision} t={t} />
+                <ContextColumn decisions={decisions} onDecision={dismissDecision} weather={weather} calendar={calendar} heartbeat={heartbeat} t={t} />
               </div>
             ) : (
               <ModeStub label={mode} />

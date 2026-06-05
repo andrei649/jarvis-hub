@@ -104,8 +104,8 @@ function Tabs({ mode, setMode, t }){
 }
 
 /* RIGHT CONTEXT COLUMN */
-function ContextColumn({ decisions, onDecision, t }){
-  const D = V2;
+function ContextColumn({ decisions, onDecision, weather, calendar, heartbeat, t }){
+  const D = { WEATHER: weather || V2.WEATHER, CALENDAR: calendar || V2.CALENDAR, HEARTBEAT: heartbeat || V2.HEARTBEAT };
   return (
     <div className="col scrollcol">
       <div className="panel">
@@ -195,11 +195,15 @@ function RosterColumn({ agents, activeId, onSelect, sys, t }){
         <span className="bk tl"></span><span className="bk tr"></span><span className="bk bl"></span><span className="bk br"></span>
         <div className="panel-head"><Icon d={ICONS.admin} size={14}/><span className="ttl">{t.system}</span></div>
         <div className="panel-body tight">
-          <Meter label="CPU" val={34}/>
-          <Meter label="RAM" val={Math.round(42/192*100)}/>
-          <Meter label="VRAM" val={Math.round(10/24*100)}/>
-          <div className="sysrow"><span className="k">BACKEND</span><span className="v acc">llama.cpp · gemma-4-26b</span></div>
-          <div className="sysrow"><span className="k">LATENCY p50</span><span className="v">4.2s</span></div>
+          {(() => { const S = sys || {}; const pct = (u, tot, f) => (tot ? Math.round((u / tot) * 100) : f);
+            return (<>
+              <Meter label="RAM" val={pct(S.ram_used, S.ram_total, 22)}/>
+              <Meter label="VRAM" val={pct(S.vram_used, S.vram_total, 42)}/>
+              <Meter label="GPU" val={S.gpu_load != null ? Math.round(S.gpu_load) : 30}/>
+              <div className="sysrow"><span className="k">BACKEND</span><span className="v acc">{S.backend ? (S.backend + (S.model ? ' · ' + S.model : '')) : 'llama.cpp · gemma-4-26b'}</span></div>
+              <div className="sysrow"><span className="k">LATENCY p50</span><span className="v">{S.latency != null ? S.latency + 's' : '4.2s'}</span></div>
+            </>);
+          })()}
         </div>
       </div>
     </div>
