@@ -26,16 +26,32 @@ const MODES = [
   { id:'admin', icon:'admin', tkey:'admin' },
 ];
 
-function TopBar({ clock, lang, setLang, accent, agents, localPct, live, onPalette, onAmbient, t }){
+function TopBar({ clock, lang, setLang, accent, agents, localPct, live, trust, llm, demo, setDemo, serverUp, onPalette, onAmbient, t }){
+  const tr = trust || { mic:'on', strict_local:false };
+  const lm = llm || { state:'unknown', model:null };
+  const enabled = agents.length;
+  const running = agents.filter(a=>a.status==='busy'||a.status==='active').length;
+  const LLM = ({
+    ready:    { v:'● READY',    c:'var(--green)', t:'model loaded' + (lm.model ? ': ' + lm.model : '') },
+    no_model: { v:'○ NO MODEL', c:'var(--amber)', t:'LM Studio reachable but no model is loaded' },
+    offline:  { v:'○ OFFLINE',  c:'var(--ink-3)', t:'no local LLM backend reachable' },
+  })[lm.state] || { v:'○ —', c:'var(--ink-3)', t:'LLM state unknown' };
+  const DATA = demo ? { v:'◐ DEMO', c:'var(--amber)', t:'demo data — seeded sample, not your live backend' }
+    : !serverUp ? { v:'○ OFFLINE', c:'var(--ink-3)', t:'server unreachable' }
+    : live ? { v:'● LIVE', c:'var(--green)', t:'live backend data' }
+    : { v:'○ EMPTY', c:'var(--ink-3)', t:'server up — no live data yet (connect plugins / load a model)' };
   return (
     <div className="topbar">
       <div className="brand">
         <Reactor/>
         <div className="brand-tx"><div className="l1">JARVIS</div><div className="l2">{t.sub}</div></div>
         <div className="badges" style={{marginLeft:18}}>
-          <div className="badge active"><div className="k">{t.online}</div><div className="v"><span className="sdot active"></span>{agents.filter(a=>a.status!=='idle').length}/{agents.length}</div></div>
-          <div className="badge ok"><div className="k">{t.local}</div><div className="v">{localPct}%</div></div>
-          <div className={'badge' + (live ? ' ok' : '')} title={live ? 'live backend data' : 'seed data — backend unreachable'}><div className="k">DATA</div><div className="v">{live ? '● LIVE' : '○ SEED'}</div></div>
+          <div className="badge" title="agents enabled · actually running"><div className="k">AGENTS</div><div className="v">{enabled} en{running>0 ? ' · '+running+' ▶' : ''}</div></div>
+          <div className="badge" title={LLM.t}><div className="k">LLM</div><div className="v" style={{color:LLM.c}}>{LLM.v}</div></div>
+          <div className="badge" title={DATA.t}><div className="k">DATA</div><div className="v" style={{color:DATA.c}}>{DATA.v}</div></div>
+          {localPct!=null && <div className={'badge' + (localPct===100 ? ' ok' : '')} title="share of processing kept on-device"><div className="k">{t.local}</div><div className="v">{localPct}%</div></div>}
+          <div className={'badge' + (tr.strict_local ? ' ok' : '')} title={tr.strict_local ? 'strict-local — no cloud egress path; nothing leaves the machine' : 'hybrid — a cloud backend is reachable'}><div className="k">EGRESS</div><div className="v">{tr.strict_local ? '⊘ SEALED' : '↗ HYBRID'}</div></div>
+          <div className={'badge' + (tr.mic === 'off' ? ' ok' : '')} title={tr.mic === 'off' ? 'microphone muted (JARVIS_MIC_MUTED)' : 'microphone live'}><div className="k">MIC</div><div className="v">{tr.mic === 'off' ? '⊘ MUTED' : '● ON'}</div></div>
         </div>
       </div>
       <div className="clock">
@@ -43,6 +59,7 @@ function TopBar({ clock, lang, setLang, accent, agents, localPct, live, onPalett
         <div className="clock-date">{fmtDate(clock,lang)}</div>
       </div>
       <div className="badges">
+        <button className="tool-btn" onClick={()=>setDemo&&setDemo(!demo)} title="toggle demo data (seeded sample vs live-only)" style={demo?{color:'var(--amber)',borderColor:'var(--amber)'}:undefined}>{demo?'◐ demo':'○ demo'}</button>
         <button className="tool-btn" onClick={()=>setLang(lang==='en'?'ro':'en')} title="language"><Icon d={ICONS.globe} size={13}/>{t.langName}</button>
         <button className="tool-btn" onClick={onAmbient} title="ambient"><Icon d={ICONS.ambient} size={13}/>{t.enterAmbient}</button>
         <button className="tool-btn" onClick={onPalette} title="command palette">⌘K</button>
@@ -105,15 +122,16 @@ function Tabs({ mode, setMode, t }){
 }
 
 /* RIGHT CONTEXT COLUMN */
-function ContextColumn({ decisions, onDecision, weather, calendar, heartbeat, t }){
-  const D = { WEATHER: weather || V2.WEATHER, CALENDAR: calendar || V2.CALENDAR, HEARTBEAT: heartbeat || V2.HEARTBEAT };
+function ContextColumn({ decisions, onDecision, weather, calendar, heartbeat, demo, t }){
+  const W = weather; const CAL = calendar || []; const HB = heartbeat || [];
+  const empty = (msg) => <div style={{color:'var(--ink-3)',fontSize:11,textAlign:'center',padding:'16px 0',fontFamily:'var(--font-mono)',letterSpacing:'.05em'}}>{msg}</div>;
   return (
     <div className="col scrollcol">
       <div className="panel">
         <span className="bk tl"></span><span className="bk tr"></span><span className="bk bl"></span><span className="bk br"></span>
         <div className="panel-head"><Icon d={ICONS.bolt} size={14}/><span className="ttl">{t.decisions}</span><span className="st">{decisions.length}</span></div>
         <div className="panel-body tight">
-          {decisions.length===0 && <div style={{color:'var(--ink-3)',fontSize:12,textAlign:'center',padding:'18px 0'}}>queue clear ✓</div>}
+          {decisions.length===0 && empty('queue clear ✓')}
           {decisions.map((d,i)=>(
             <div className="dcard" key={d._id}>
               <div className="dh"><span className="who">{d.who}</span><span className={'kind '+d.kind}>{d.kindLabel}</span></div>
@@ -126,27 +144,30 @@ function ContextColumn({ decisions, onDecision, weather, calendar, heartbeat, t 
 
       <div className="panel">
         <span className="bk tl"></span><span className="bk tr"></span><span className="bk bl"></span><span className="bk br"></span>
-        <div className="panel-head"><Icon d={ICONS.observe} size={14}/><span className="ttl">{t.weather}</span><span className="st">{D.WEATHER.city}</span></div>
+        <div className="panel-head"><Icon d={ICONS.observe} size={14}/><span className="ttl">{t.weather}</span>{W && <span className="st">{W.city}</span>}</div>
         <div className="panel-body wcard">
-          <div style={{display:'flex',alignItems:'flex-end',gap:14}}>
-            <div className="temp">{D.WEATHER.temp}°</div>
-            <div style={{paddingBottom:6}}><div style={{fontSize:13,color:'var(--ink)'}}>{D.WEATHER.desc}</div><div style={{fontFamily:'var(--font-mono)',fontSize:10,color:'var(--ink-3)'}}>feels {D.WEATHER.feels}°</div></div>
-          </div>
-          <div className="wgrid">
-            <span className="wk">WIND</span><span className="wv">{D.WEATHER.wind}</span>
-            <span className="wk">HUMIDITY</span><span className="wv">{D.WEATHER.humidity}</span>
-          </div>
-          <div className="wfore" style={{display:'flex',justifyContent:'space-between',marginTop:14}}>
-            {D.WEATHER.forecast.map((f,i)=><div key={i} style={{textAlign:'center',fontFamily:'var(--font-mono)',fontSize:10,color:'var(--ink-3)'}}>{f.d}<div style={{color:'var(--ink)',marginTop:4}}>{f.t}</div></div>)}
-          </div>
+          {W ? (<>
+            <div style={{display:'flex',alignItems:'flex-end',gap:14}}>
+              <div className="temp">{W.temp}°</div>
+              <div style={{paddingBottom:6}}><div style={{fontSize:13,color:'var(--ink)'}}>{W.desc}</div><div style={{fontFamily:'var(--font-mono)',fontSize:10,color:'var(--ink-3)'}}>feels {W.feels}°</div></div>
+            </div>
+            <div className="wgrid">
+              <span className="wk">WIND</span><span className="wv">{W.wind}</span>
+              <span className="wk">HUMIDITY</span><span className="wv">{W.humidity}</span>
+            </div>
+            <div className="wfore" style={{display:'flex',justifyContent:'space-between',marginTop:14}}>
+              {(W.forecast||[]).map((f,i)=><div key={i} style={{textAlign:'center',fontFamily:'var(--font-mono)',fontSize:10,color:'var(--ink-3)'}}>{f.d}<div style={{color:'var(--ink)',marginTop:4}}>{f.t}</div></div>)}
+            </div>
+          </>) : empty('weather not connected')}
         </div>
       </div>
 
       <div className="panel">
         <span className="bk tl"></span><span className="bk tr"></span><span className="bk bl"></span><span className="bk br"></span>
-        <div className="panel-head"><Icon d={ICONS.cockpit} size={14}/><span className="ttl">{t.schedule}</span><span className="st">{D.CALENDAR.length}</span></div>
+        <div className="panel-head"><Icon d={ICONS.cockpit} size={14}/><span className="ttl">{t.schedule}</span><span className="st">{CAL.length}</span></div>
         <div className="panel-body tight">
-          {D.CALENDAR.map((c,i)=>(
+          {CAL.length===0 && empty('calendar not connected')}
+          {CAL.map((c,i)=>(
             <div className={'cal-row '+(c.state||'')} key={i}>
               <span className="tm">{c.tm}</span>
               <div><div className="ti">{c.ti}</div><div className="vw">{c.vw}</div></div>
@@ -159,7 +180,8 @@ function ContextColumn({ decisions, onDecision, weather, calendar, heartbeat, t 
         <span className="bk tl"></span><span className="bk tr"></span><span className="bk bl"></span><span className="bk br"></span>
         <div className="panel-head"><Icon d={ICONS.autonomy} size={14}/><span className="ttl">{t.heartbeat}</span></div>
         <div className="panel-body tight">
-          {D.HEARTBEAT.map((h,i)=>(
+          {HB.length===0 && empty('no activity yet')}
+          {HB.map((h,i)=>(
             <div className="hbrow" key={i}><div className={'sev '+h.sev}></div><div><div className="ht"><span className="ag">{h.ag}</span><span>{h.t}</span></div><div className="hx">{h.x}</div></div></div>
           ))}
         </div>
@@ -169,14 +191,15 @@ function ContextColumn({ decisions, onDecision, weather, calendar, heartbeat, t 
 }
 
 /* LEFT roster column (cockpit only) */
-function RosterColumn({ agents, activeId, onSelect, sys, t }){
+function RosterColumn({ agents, activeId, onSelect, sys, llm, demo, t }){
   const TIERS=V2.TIERS;
   return (
     <div className="col">
       <div className="panel scroll" style={{flex:'1 1 auto'}}>
         <span className="bk tl"></span><span className="bk tr"></span><span className="bk bl"></span><span className="bk br"></span>
-        <div className="panel-head"><Icon d={ICONS.agents} size={14}/><span className="ttl">{t.roster}</span><span className="st">{agents.filter(a=>a.status!=='idle').length} live</span></div>
+        <div className="panel-head"><Icon d={ICONS.agents} size={14}/><span className="ttl">{t.roster}</span><span className="st">{agents.length} enabled</span></div>
         <div className="panel-body tight">
+          {agents.length===0 && <div style={{color:'var(--ink-3)',fontSize:11,textAlign:'center',padding:'16px 0',fontFamily:'var(--font-mono)'}}>roster offline — server unreachable</div>}
           {TIERS.map(tier=>{
             const list=agents.filter(a=>a.tier===tier.id); if(!list.length)return null;
             return <div className="tier-group" key={tier.id}>
@@ -196,13 +219,15 @@ function RosterColumn({ agents, activeId, onSelect, sys, t }){
         <span className="bk tl"></span><span className="bk tr"></span><span className="bk bl"></span><span className="bk br"></span>
         <div className="panel-head"><Icon d={ICONS.admin} size={14}/><span className="ttl">{t.system}</span></div>
         <div className="panel-body tight">
-          {(() => { const S = sys || {}; const pct = (u, tot, f) => (tot ? Math.round((u / tot) * 100) : f);
+          {(() => { const S = sys || {}; const lm = llm || {}; const pct = (u, tot) => (tot ? Math.round((u / tot) * 100) : 0);
+            const model = lm.state==='ready' ? (lm.model || 'loaded') : lm.state==='no_model' ? 'no model loaded' : lm.state==='offline' ? 'backend offline' : '—';
+            const mcol = lm.state==='ready' ? 'var(--accent-light)' : (lm.state==='no_model' || lm.state==='offline') ? 'var(--amber)' : 'var(--ink-3)';
             return (<>
-              <Meter label="RAM" val={pct(S.ram_used, S.ram_total, 22)}/>
-              <Meter label="VRAM" val={pct(S.vram_used, S.vram_total, 42)}/>
-              <Meter label="GPU" val={S.gpu_load != null ? Math.round(S.gpu_load) : 30}/>
-              <div className="sysrow"><span className="k">BACKEND</span><span className="v acc">{S.backend ? (S.backend + (S.model ? ' · ' + S.model : '')) : 'llama.cpp · gemma-4-26b'}</span></div>
-              <div className="sysrow"><span className="k">LATENCY p50</span><span className="v">{S.latency != null ? S.latency + 's' : '4.2s'}</span></div>
+              <Meter label="RAM" val={pct(S.ram_used, S.ram_total)}/>
+              <Meter label="VRAM" val={pct(S.vram_used, S.vram_total)}/>
+              <Meter label="GPU" val={S.gpu_load != null ? Math.round(S.gpu_load) : 0}/>
+              <div className="sysrow"><span className="k">BACKEND</span><span className="v" style={{color:mcol}}>{(S.backend || 'LM Studio') + ' · ' + model}</span></div>
+              <div className="sysrow"><span className="k">LATENCY p50</span><span className="v">{S.latency != null && S.latency > 0 ? S.latency + 's' : '—'}</span></div>
             </>);
           })()}
         </div>
