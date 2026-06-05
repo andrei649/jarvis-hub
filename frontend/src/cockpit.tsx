@@ -25,7 +25,7 @@ function Conversation({ messages, thinking, onProv, t }) {
             {m.prov && (
               <div className="prov-chip" onClick={()=>onProv(m.prov)}>
                 <Icon d={ICONS.shield} size={12}/>
-                <span><b>{m.prov.agents.length}</b> agents · <b>{m.prov.plugins.length}</b> plugins · {m.prov.local?'local':'cloud'} · conf <b>{m.prov.conf}</b></span>
+                <span><b>{m.prov.agents.length}</b> agents · <b>{m.prov.plugins.length}</b> plugins · {m.prov.local===true?'local':m.prov.local===false?'cloud':'locality —'} · conf <b>{m.prov.conf}</b></span>
               </div>
             )}
           </div>

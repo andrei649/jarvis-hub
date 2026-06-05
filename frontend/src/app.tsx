@@ -152,7 +152,12 @@ function App() {
         apiGet('/api/cognition').then((cog) => {
           const tr = traceFromCognition(cog, text);
           setTrace({ stages: tr.stages.map((s) => ({ ...s, state: 'done' })) });
-          setMessages((m) => { const c = [...m]; const j = idx >= 0 ? idx : c.length - 1; if (c[j]) c[j] = { ...c[j], prov: { agents: tr.selected, plugins: pluginsFor(text), local: true, conf: +(tr.conf || 0).toFixed(2) } }; return c; });
+          // HONESTY: real plugin reads + locality from the cognition snapshot — never a
+          // client-side guess. Unknown locality renders as "—" instead of a false claim.
+          const dloc = (cog && cog.decision) || {};
+          const reads = (cog && (cog.plugins || dloc.plugins)) || [];
+          const localKnown = typeof dloc.local === 'boolean' ? dloc.local : (cog && typeof cog.local === 'boolean' ? cog.local : undefined);
+          setMessages((m) => { const c = [...m]; const j = idx >= 0 ? idx : c.length - 1; if (c[j]) c[j] = { ...c[j], prov: { agents: tr.selected, plugins: reads, local: localKnown, conf: +(tr.conf || 0).toFixed(2) } }; return c; });
         }).catch(() => {});
       }
     }).catch(() => {
@@ -316,7 +321,7 @@ function ProvModal({ prov, onClose }) {
           <div className="dep-links" style={{ marginBottom: 16 }}>{prov.agents.map((a) => <span key={a} className="dep-link" style={{ cursor: 'default' }}><Glyph id={a} size={12} />{a}</span>)}</div>
           <div style={{ fontFamily: 'var(--font-mono)', fontSize: 9.5, letterSpacing: '.14em', color: 'var(--ink-3)', marginBottom: 8 }}>PLUGIN READS</div>
           <div className="dep-links" style={{ marginBottom: 16 }}>{prov.plugins.map((p) => <span key={p} className="dep-link" style={{ cursor: 'default' }}>{p}</span>)}</div>
-          <div className="verified-row"><Icon d={ICONS.shield} size={13} /> {prov.local ? '100% on-device · no cloud egress' : 'cloud-assisted'} · sealed in audit chain</div>
+          <div className="verified-row"><Icon d={ICONS.shield} size={13} /> {prov.local === true ? '100% on-device · no cloud egress' : prov.local === false ? 'cloud-assisted' : 'locality not reported'}</div>
         </div>
       </div>
     </div>
