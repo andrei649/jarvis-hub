@@ -38,8 +38,8 @@ repo. It is fully self-contained under `worldview/` and shares no runtime with `
 
 The platform is built in five sequential, gated steps:
 
-1. **Architecture & Schema** ✅ *(this deliverable)* — design doc + TimescaleDB/PostGIS SQL + Kafka pipeline design.
-2. **Project Scaffold** — monorepo skeleton (`frontend`, `backend-api`, `ingestion-workers`).
+1. **Architecture & Schema** ✅ — design doc + TimescaleDB/PostGIS SQL + Kafka pipeline design.
+2. **Project Scaffold** ✅ *(current)* — monorepo skeleton (`frontend`, `backend-api`, `ingestion-workers`) + local infra (`docker-compose.yml`).
 3. **Data Ingestion Workers** — TLE/SGP4, H3 jamming grids, AIS/ADS-B normalizers.
 4. **The 4D API** — Fastify REST + WebSocket serving live (Redis) and historical (TimescaleDB) state.
 5. **Frontend Geospatial UI** — Next.js dashboard, Deck.gl map, timeline scrubber, Zustand sync.
@@ -49,3 +49,19 @@ The platform is built in five sequential, gated steps:
 - [`docs/01-architecture-and-schema.md`](docs/01-architecture-and-schema.md) — the STEP 1 design document.
 - [`db/schema/`](db/schema/) — TimescaleDB + PostGIS DDL.
 - [`db/README.md`](db/README.md) — how to apply the schema.
+- [`docker-compose.yml`](docker-compose.yml) — local infra (Redpanda, TimescaleDB, Redis).
+- [`frontend/`](frontend/) — Next.js 14 + Deck.gl dashboard (scaffold).
+- [`backend-api/`](backend-api/) — Fastify REST + WebSocket 4D API (scaffold).
+- [`ingestion-workers/`](ingestion-workers/) — Python OSINT normalizers (scaffold).
+- [`shared/schemas/`](shared/schemas/) — the canonical telemetry envelope JSON Schema.
+
+## Quick start (local dev)
+
+```bash
+cd worldview
+cp .env.example .env
+docker compose up -d                  # Redpanda + TimescaleDB (schema auto-applied) + Redis
+npm install                           # frontend + backend-api workspaces
+npm run dev:api                       # http://localhost:4000/health
+npm run dev:frontend                  # http://localhost:3000
+```

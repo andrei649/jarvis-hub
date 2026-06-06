@@ -1,0 +1,7 @@
+# WorldView ingestion workers. Pin in your lockfile of choice for production.
+aiokafka>=0.11
+httpx>=0.27
+pydantic>=2.7
+sgp4>=2.23
+h3>=4.0
+python-dotenv>=1.0

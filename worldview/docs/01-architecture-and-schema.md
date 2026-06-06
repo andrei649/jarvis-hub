@@ -440,13 +440,15 @@ views read pre-rolled buckets even after the raw chunks are dropped.
 
 | Step | Deliverable | Status |
 | --- | --- | --- |
-| **1** | Architecture & schema (this doc + SQL DDL) | ✅ **done — awaiting review** |
-| 2 | Monorepo scaffold (`frontend`, `backend-api`, `ingestion-workers`) | ⏳ gated |
-| 3 | Ingestion workers (SGP4, H3, AIS/ADS-B normalizers) | ⏳ |
+| **1** | Architecture & schema (this doc + SQL DDL) | ✅ done |
+| **2** | Monorepo scaffold (`frontend`, `backend-api`, `ingestion-workers`) + local infra | ✅ done |
+| 3 | Ingestion workers (SGP4, H3, AIS/ADS-B normalizers) | ⏳ next |
 | 4 | 4D API (Fastify REST + WebSocket; Redis live + TimescaleDB history) | ⏳ |
 | 5 | Frontend (Next.js, Deck.gl map, timeline scrubber, Zustand sync) | ⏳ |
 
-Per the execution plan, **STEP 2 does not begin until STEP 1 is reviewed and approved.**
+The scaffold wires the skeleton for STEPs 3–5: the canonical envelope schema, the
+`TelemetryProducer` + `DOMAIN_TOPICS` map, the Fastify bootstrap with the Redis/TimescaleDB
+connection factories, and the Zustand master-time store — each marked where the real logic lands.
 
 ### Cross-reference: doc ↔ schema
 

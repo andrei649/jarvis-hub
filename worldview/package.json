@@ -1,0 +1,22 @@
+{
+  "name": "worldview",
+  "version": "0.1.0",
+  "private": true,
+  "description": "WorldView — 4D OSINT command center (monorepo root)",
+  "workspaces": [
+    "frontend",
+    "backend-api"
+  ],
+  "scripts": {
+    "infra:up": "docker compose up -d",
+    "infra:down": "docker compose down",
+    "infra:logs": "docker compose logs -f",
+    "db:apply": "for f in db/schema/*.sql; do psql \"$DATABASE_URL\" -v ON_ERROR_STOP=1 -f \"$f\"; done",
+    "dev:frontend": "npm run dev --workspace frontend",
+    "dev:api": "npm run dev --workspace backend-api",
+    "build": "npm run build --workspaces --if-present"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

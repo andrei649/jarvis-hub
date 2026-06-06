@@ -1,0 +1,74 @@
+# WorldView — local infrastructure for development.
+# Brings up the streaming broker, the temporal+spatial store, and the live cache.
+# Usage:  docker compose up -d   (from worldview/)
+#
+# This is STEP 2 scaffold: service definitions only. Worker/API/UI containers are
+# added in later steps; for now these back local development of those services.
+
+services:
+  # --- Stream broker (Kafka-compatible, single-binary) -----------------------
+  redpanda:
+    image: redpandadata/redpanda:v24.2.7
+    command:
+      - redpanda
+      - start
+      - --smp=1
+      - --overprovisioned
+      - --node-id=0
+      - --kafka-addr=PLAINTEXT://0.0.0.0:29092,EXTERNAL://0.0.0.0:9092
+      - --advertise-kafka-addr=PLAINTEXT://redpanda:29092,EXTERNAL://localhost:9092
+      - --schema-registry-addr=0.0.0.0:8081
+    ports:
+      - "9092:9092"   # Kafka API (host)
+      - "8081:8081"   # Schema Registry
+    healthcheck:
+      test: ["CMD-SHELL", "rpk cluster health | grep -q 'Healthy:.*true'"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  # --- Broker console (optional, dev convenience) ----------------------------
+  redpanda-console:
+    image: redpandadata/console:v2.7.2
+    depends_on:
+      - redpanda
+    environment:
+      KAFKA_BROKERS: redpanda:29092
+      KAFKA_SCHEMAREGISTRY_ENABLED: "true"
+      KAFKA_SCHEMAREGISTRY_URLS: http://redpanda:8081
+    ports:
+      - "8085:8080"
+
+  # --- History store: PostgreSQL + PostGIS + TimescaleDB ---------------------
+  timescaledb:
+    image: timescale/timescaledb-ha:pg16
+    environment:
+      POSTGRES_DB: worldview
+      POSTGRES_USER: worldview
+      POSTGRES_PASSWORD: worldview
+    ports:
+      - "5432:5432"
+    volumes:
+      - timescale-data:/home/postgres/pgdata/data
+      # Schema files are applied in numeric order on first boot.
+      - ./db/schema:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U worldview -d worldview"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  # --- Live-state cache ------------------------------------------------------
+  redis:
+    image: redis:7-alpine
+    command: ["redis-server", "--save", "", "--appendonly", "no"]
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  timescale-data:
