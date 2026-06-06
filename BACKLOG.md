@@ -526,6 +526,33 @@ chain-of-thought leak / mid-sentence truncation fixed. Kill-switch:
 
 ---
 
+## ORIZONT 18 — Aplicații Native iOS/Android & Paritate cu Browser (P2–P3) — 1/10
+
+> Client mobil nativ (Expo SDK 56 / RN 0.85) sub `mobile/`, peste **același API HTTP** (`agents/web.py`)
+> ca HUD-ul browser — niciun backend nou. Fundația livrată în **PR #161**. Restul = paritate progresivă
+> cu HUD-ul + infrastructura de build/release.
+>
+> **Bridge browser↔mobil (sincronizarea backlogului):** suprafața de paritate trăiește în
+> [`mobile/PARITY.md`](mobile/PARITY.md) — un registru endpoint→browser?→mobil?→task. **Regula de sincronizare**
+> (vezi `AGENTS.md` → „Bridge browser↔mobil"): orice feature browser care adaugă/schimbă un endpoint user-facing
+> SAU o capabilitate HUD **trebuie** să (1) actualizeze `mobile/PARITY.md` și (2) deschidă un task de paritate
+> `H18.x` aici dacă mobilul rămâne în urmă. Așa, dezvoltările pe browser devin automat taskuri pe iOS/Android.
+
+| # | Item | S | P | Dep | Sursă |
+|---|------|---|---|-----|-------|
+| H18.1 ✅ | **App nativ iOS/Android (Expo)** — shell cu tab-uri (Chat/Status/Settings), chat streaming token-cu-token peste `POST /chat/stream` (SSE via XHR), `GET /status` cu telemetrie host/GPU + pull-to-refresh, config hub URL + `X-User-Token` persistat (AsyncStorage) + test-connection; temă dark derivată din HUD v2. **Done 2026-06-06 (PR #161):** `mobile/` (App.tsx, src/api/client.ts, src/screens/*, src/context/ServerContext.tsx, src/storage/settings.ts). `tsc --noEmit` curat. | 8 | P2 | — | paritate HUD |
+| H18.2 | **Persistă istoricul chat-ului** — conversațiile sunt acum in-memory, pierdute la restart. Persistă per-sesiune în AsyncStorage (cap pe lungime + clear). | 3 | P2 | H18.1 | — |
+| H18.3 | **Selector de agent** — `/chat/stream` acceptă `agent`, dar app-ul hardcodează `"jarvis"`. Picker alimentat din `GET /api/agents`. | 3 | P2 | H18.1 | paritate HUD agents |
+| H18.4 | **Render Markdown** pentru răspunsurile asistentului (code blocks, liste, linkuri) în loc de text simplu. | 3 | P3 | H18.1 | paritate HUD |
+| H18.5 | **Resume sesiuni + TTS** — folosește `/sessions` (continuitate) + `/tts` (redare voce) deja expuse de hub. | 5 | P3 | H18.1 | paritate HUD voice |
+| H18.6 | **Timeouts + reconnect pe stream** — deadline pe request + back-off la pierderea conexiunii; nicio sesiune blocată „pending" la rețea instabilă. | 3 | P2 | H18.1 | robustețe |
+| H18.7 | **EAS build config (`eas.json`)** — build-uri store-ready (TestFlight / Play) via `eas build`; profile dev/preview/production. | 3 | P2 | H18.1 | Expo EAS |
+| H18.8 | **Test Jest pentru parserul SSE** din `client.ts` (frame split, end-event, abort) — singura logică non-UI cu risc de regresie. | 2 | P2 | H18.1 | — |
+| H18.9 | **Branding** — icon + splash Jarvis pe tema `#030810`/cyan; acum sunt asset-urile default Expo. | 2 | P3 | H18.1 | — |
+| H18.10 | **Paritate continuă (bridge)** — menține `mobile/PARITY.md` la zi: pentru fiecare feature browser nou cu suprafață user-facing, adaugă rândul de paritate + (dacă e cazul) task `H18.x`. Task umbrelă, mereu deschis. | — | P2 | H18.1 | bridge |
+
+---
+
 ## ✅ Arhivă — H1–H4 + Sprint 0 (livrat în 0.5-beta)
 
 > Toate itemurile H1–H4 sunt complet implementate. Detalii complete (67 items, 248 SP): [docs/HISTORY.md](docs/HISTORY.md).
