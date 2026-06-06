@@ -38,7 +38,7 @@ function browserSpeak(text, lang, cancelled) {
   });
 }
 
-export function useVoice({ lang = 'ro', onTurn } = {}) {
+export function useVoice({ lang = 'ro', mode = 'hands-free', ttsSource = 'server', micMuted = false, onTurn } = {}) {
   const supported = typeof navigator !== 'undefined'
     && !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia)
     && typeof window !== 'undefined' && 'MediaRecorder' in window;
@@ -61,6 +61,11 @@ export function useVoice({ lang = 'ro', onTurn } = {}) {
   onTurnRef.current = onTurn;
   const langRef = useRef(lang);
   langRef.current = lang;
+  const modeRef = useRef(mode); modeRef.current = mode;             // 'hands-free' | 'ptt'
+  const ttsRef = useRef(ttsSource); ttsRef.current = ttsSource;     // 'server' | 'browser' | 'off'
+  const micMutedRef = useRef(micMuted); micMutedRef.current = micMuted;
+  const statusRef = useRef('off');
+  const setStat = (s) => { statusRef.current = s; setStatus(s); };  // status + ref (avoids stale-closure reads)
 
   // capabilities — honest "what can this host actually do"
   useEffect(() => {
@@ -143,18 +148,18 @@ export function useVoice({ lang = 'ro', onTurn } = {}) {
   }
 
   async function listenOnce() {
-    setError(null); setStatus('listening'); setTranscript('');
+    setError(null); setStat('listening'); setTranscript('');
     let blob = null;
     try { blob = await recordUtterance(); } catch { /* */ }
     setLevel(0);
     if (!activeRef.current) return '';
-    setStatus('transcribing');
+    setStat('transcribing');
     try { return await transcribe(blob); }
-    catch (e) { setError(String((e && e.message) || e)); setStatus('error'); activeRef.current = false; setActive(false); releaseStream(); return ''; }
+    catch (e) { setError(String((e && e.message) || e)); setStat('error'); activeRef.current = false; setActive(false); releaseStream(); return ''; }
   }
 
   const speak = useCallback(async (text) => {
-    if (!text) return;
+    if (!text || ttsRef.current === 'off') return;
     if (cancelSpeakRef.current) cancelSpeakRef.current();
     let cancelled = false;
     cancelSpeakRef.current = () => {
@@ -162,6 +167,8 @@ export function useVoice({ lang = 'ro', onTurn } = {}) {
       try { if (audioRef.current) audioRef.current.pause(); } catch { /* */ }
       try { if (window.speechSynthesis) window.speechSynthesis.cancel(); } catch { /* */ }
     };
+    // 'browser' → fully-local speechSynthesis only; 'server' → cloned voice via /tts, fall back to local
+    if (ttsRef.current === 'browser') { await browserSpeak(text, langRef.current, () => cancelled); return; }
     try {
       const res = await fetch('/tts', { method: 'POST', headers: tok({ 'Content-Type': 'application/json' }), body: JSON.stringify({ text, lang: langRef.current }) });
       if (cancelled) return;
@@ -183,31 +190,36 @@ export function useVoice({ lang = 'ro', onTurn } = {}) {
     while (activeRef.current) {
       const text = await listenOnce();
       if (!activeRef.current) break;
-      if (!text) continue;                       // silence → just listen again
-      setTranscript(text);
-      let reply = '';
-      try { reply = (onTurnRef.current && (await onTurnRef.current(text))) || ''; } catch { /* */ }
-      if (!activeRef.current) break;
-      if (reply) { setStatus('speaking'); await speak(reply); }
+      if (text) {
+        setTranscript(text);
+        let reply = '';
+        try { reply = (onTurnRef.current && (await onTurnRef.current(text))) || ''; } catch { /* */ }
+        if (!activeRef.current) break;
+        if (reply && ttsRef.current !== 'off') { setStat('speaking'); await speak(reply); }
+      }                                          // (silence → just listen again in hands-free)
+      if (modeRef.current === 'ptt') break;      // push-to-talk: exactly one turn per activation
     }
-    if (status !== 'error') setStatus('off');
+    // natural loop exit (PTT one-shot, or stop()) → free the mic and go idle
+    activeRef.current = false; setActive(false); releaseStream();
+    if (statusRef.current !== 'error') setStat('off');
     setLevel(0);
   }
 
   const start = useCallback(async () => {
-    if (!supported) { setError('Voice not supported in this browser'); setStatus('error'); return; }
+    if (!supported) { setError('Voice not supported in this browser'); setStat('error'); return; }
     if (activeRef.current) return;
-    if (caps && caps.stt === false) { setError('Local speech-to-text not installed on the server (pip install faster-whisper)'); setStatus('error'); return; }
+    if (micMutedRef.current) { setError('Mic is muted — unmute JARVIS to use voice'); setStat('error'); return; }
+    if (caps && caps.stt === false) { setError('Local speech-to-text not installed on the server (pip install faster-whisper)'); setStat('error'); return; }
     setError(null);
-    try { await ensureStream(); } catch { setError('Microphone permission denied'); setStatus('error'); return; }
-    activeRef.current = true; setActive(true); setStatus('idle');
+    try { await ensureStream(); } catch { setError('Microphone permission denied'); setStat('error'); return; }
+    activeRef.current = true; setActive(true); setStat('idle');
     loop();
   }, [supported, caps]);
 
   const stop = useCallback(() => {
     activeRef.current = false; setActive(false);
     if (cancelSpeakRef.current) cancelSpeakRef.current();
-    releaseStream(); setStatus('off'); setLevel(0);
+    releaseStream(); setStat('off'); setLevel(0);
   }, []);
 
   const toggle = useCallback(() => { if (activeRef.current) stop(); else start(); }, [start, stop]);

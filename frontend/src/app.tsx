@@ -45,6 +45,9 @@ function App() {
   // DEMO mode (opt-in, watermarked): OFF by default → the HUD shows ONLY real
   // backend data + honest empty states; ON → fills the seeded demo corpus.
   const [demo, setDemo] = useState(() => { try { return localStorage.getItem('hud.demo') === '1' || /[?&]demo=1/.test(window.location.search); } catch { return false; } });
+  // Voice preferences (persisted): mode = hands-free | ptt; tts = server (cloned) | browser (local) | off; lang = auto | ro | en
+  const [voiceCfg, setVoiceCfg] = useState(() => { const d = { mode: 'hands-free', tts: 'server', lang: 'auto' }; try { return { ...d, ...JSON.parse(localStorage.getItem('hud.voice') || '{}') }; } catch { return d; } });
+  const setVoice = (patch) => setVoiceCfg((c) => ({ ...c, ...patch }));
 
   const [mode, setMode] = useState('cockpit');
   const [agents, setAgents] = useState(demo ? V2.AGENTS : []);
@@ -82,6 +85,7 @@ function App() {
   useEffect(() => { try { localStorage.setItem('hud.accent', accent); } catch { /* ignore */ } }, [accent]); // P5 persist
   useEffect(() => { try { localStorage.setItem('hud.lang', lang); } catch { /* ignore */ } }, [lang]);
   useEffect(() => { try { localStorage.setItem('hud.demo', demo ? '1' : '0'); } catch { /* ignore */ } }, [demo]);
+  useEffect(() => { try { localStorage.setItem('hud.voice', JSON.stringify(voiceCfg)); } catch { /* ignore */ } }, [voiceCfg]);
   // Re-seed (or clear) the demo-only cockpit corpus when DEMO toggles at runtime.
   useEffect(() => {
     setDecisions(demo ? V2.DECISIONS.map((d, i) => ({ ...d, _id: 'd' + i })) : []);
@@ -176,7 +180,7 @@ function App() {
 
   const submit = useCallback((text) => { runTurn(text); }, [runTurn]);
   // Hands-free voice loop: mic → local Whisper → runTurn → speak the reply, repeat.
-  const voice = useVoice({ lang, onTurn: runTurn });
+  const voice = useVoice({ lang: voiceCfg.lang === 'auto' ? lang : voiceCfg.lang, mode: voiceCfg.mode, ttsSource: voiceCfg.tts, micMuted: trust.mic === 'off', onTurn: runTurn });
 
   useEffect(() => () => timers.current.forEach(clearTimeout), []);
 
@@ -245,7 +249,7 @@ function App() {
                     {centerTab === 'conversation'
                       ? <Conversation messages={messages} thinking={thinking} onProv={setProvModal} t={t} />
                       : <CognitionStream trace={trace} t={t} />}
-                    <InputBar onSubmit={submit} mic={voice.active} setMic={voice.toggle} voice={voice} t={t} />
+                    <InputBar onSubmit={submit} mic={voice.active} setMic={voice.toggle} voice={voice} cfg={voiceCfg} onCfg={setVoice} micMuted={trust.mic === 'off'} t={t} />
                   </div>
                 </div>
                 <ContextColumn decisions={decisions} onDecision={dismissDecision} weather={weather} calendar={calendar} heartbeat={heartbeat} demo={demo} t={t} />

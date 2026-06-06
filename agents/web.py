@@ -569,6 +569,7 @@ async def chat_stream(req: ChatRequest):
 class TTSRequest(BaseModel):
     text: str = Field(..., max_length=4096)
     lang: str = "ro"
+    voice: Optional[str] = None   # "xtts" (cloned), "elevenlabs", or an edge voice; None = default chain
 
 @app.post("/tts", dependencies=[Depends(_user_guard)])
 async def tts_endpoint(req: TTSRequest):
@@ -581,7 +582,7 @@ async def tts_endpoint(req: TTSRequest):
                 status_code=503,
             )
         engine = TTSEngine()
-        audio_path = await engine.speak(req.text, lang=req.lang)
+        audio_path = await engine.speak(req.text, voice=req.voice, lang=req.lang)
         if not audio_path:
             return JSONResponse({"error": "TTS synthesis failed"}, status_code=500)
         return FileResponse(
