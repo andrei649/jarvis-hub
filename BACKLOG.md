@@ -553,13 +553,102 @@ chain-of-thought leak / mid-sentence truncation fixed. Kill-switch:
 
 ---
 
-## ORIZONT 19 — Cognition: Living Memory & Human-Like Personality (P1–P3) — 0/10
+## ORIZONT 19 — WorldView (4D OSINT) — Standalone + Integrare JARVIS — 0/33
+
+> **Produs nou, stack separat** (Next.js + Deck.gl + Fastify + Kafka/Redpanda + TimescaleDB/PostGIS + Redis),
+> self-contained sub [`worldview/`](worldview/). Centru de comandă OSINT 4D (aer/mare/spațiu/cyber) pe un glob
+> scrub-abil în timp — inspirat de „God's Eye View" (Bilawal Sidhu) și de patternurile Palantir (Gotham/AIP/
+> Ontology). **Spinele tehnic e livrat** (toate 5 layere, motorul 4D, calea de date Kafka→Redis/TimescaleDB
+> validată în CI vs TimescaleDB real, 58 teste unit + integrare). PR #163.
+>
+> **Strategie & feature-pick:** [`worldview/docs/ROADMAP.md`](worldview/docs/ROADMAP.md) ·
+> **Planul de arhitectură & livrare (scale model, deep-dives, ADRs, exit gates):**
+> [`worldview/docs/02-platform-architecture-and-delivery-plan.md`](worldview/docs/02-platform-architecture-and-delivery-plan.md).
+> Ticketele de mai jos = cele 5 workstream-uri (WS1–WS5) din plan, fiecare cu **criteriu de acceptanță măsurabil (AC)**.
+>
+> **Teza de integrare:** *JARVIS este „AIP"-ul local-first al WorldView* — operatorul în limbaj natural + cortexul
+> proactiv. WorldView e **plugin opt-in, niciodată cerut de core** (respectă MOONSHOT §5: cloud opt-in, inspectabil,
+> ≤4 interrupts/zi). Doar OSINT public — *„datele tale nu antrenează modelul nimănui"*. Agenții strict-local
+> (`frigga`/`ultron`/`howard`) nu îl ating.
+>
+> **Secvențiere (drum critic):** WS1 deblochează WS2+WS5; WS2 deblochează WS3 (alerte de surfacing) + WS4 (insight-uri de guvernat);
+> WS3 (JARVIS) ‖ WS4 (guvernanță) în paralel după WS2; WS5 continuu, front-loaded (tiles + replici).
+
+### WS1 — Calea de date live la scară (Phase A) — 0/7 (H19.1.1–4 cod livrat: toate sursele) · *gate: 50k msg/s susținut, lag<60s, as-of-T p95<300ms sub load, replay 24h real*
+
+| # | Item | S | P | Dep | Track |
+|---|------|---|---|-----|-------|
+| H19.1.1 🔨 | **Sursă ADS-B reală** (OpenSky/ADSB.fi). **Livrat:** `adsb/sources.py` — OpenSky (OAuth2 client-credentials→bearer cu cache/refresh, fallback anonim, bbox viewport, rate-limit/429 + backoff) **și** ADSB.fi (gratuit, centrat pe AOI, tag militar real via `dbFlags`); `worker.py` cu poll adaptiv + backoff exponențial; `ADSB_SOURCE=opensky\|adsbfi`. +7 teste (payload-uri real-shaped, mock HTTP). **Validat** fetch→normalize→envelope→`writeBatch`→`/history` pe payload OpenSky real-shaped (avionul apare în /history cu alt/coords corecte). **Rămâne** (deploy-gated): hop-ul live-net (egress allowlist) + Kafka. **AC:** `osint.adsb` curge din sursă reală; un avion real apare în `/history` în <5s. | 5 | P1 | — | Standalone |
+| H19.1.2 🔨 | **Sursă AIS reală** (AISStream WS). **Livrat:** `ais/stream.py` (subscription config-driven din `AIS_BBOX` + `handle_frame` testabil) + `worker.py` cu **reconnect + backoff exponențial**. +6 teste. **Validat** handle_frame→envelope→`writeBatch`→`/history` (vasul apare, sog corect). **Rămâne** (deploy): hop live-WS + Kafka. **AC:** vase reale curg; dark-vessel detector se declanșează pe un gap AIS real. | 5 | P1 | — | Standalone |
+| H19.1.3 🔨 | **Sursă TLE reală** (Celestrak/Space-Track). **Livrat:** `tle/sources.py` (Celestrak GROUP + filtru NORAD; Space-Track login+`gp`), `tle/sensors.py` (registru senzori curatat optical/SAR), `worker.py` cu sursă pluggable + refresh catalog periodic. +7 teste. **Validat** fetch→propagate→envelope→`writeBatch`→`/history` (satelitul apare cu footprint + `is_sunlit`). **Rămâne** (deploy): hop live-net + Kafka. **AC:** `satellite_ephemeris` populat /minut; footprint optical/SAR corect. | 5 | P1 | — | Standalone |
+| H19.1.4 🔨 | **Surse EW/context reale** (GPSJam/IODA + feed NOTAM/evenimente). **Livrat:** `ew/gpsjam.py` (parser heatmap GPSJam: hexagoane H3 pre-binned → intensitate `bad/(good+bad)`, id din centroid) + `ew/worker.py` îl fetch-uiește; `context/worker.py` fetch evenimente GeoJSON + NOTAM din `CONTEXT_EVENTS_URL`/`CONTEXT_NOTAM_URL`. +2 teste GPSJam (51 total). **Rămâne** (deploy): hop live-net + Kafka; IODA + FAA-NOTAM (auth) ca surse adiționale. **AC:** celule H3 jamming + NOTAM-uri din date live. | 5 | P2 | — | Standalone |
+| H19.1.5 | **Consumeri KEDA-scalați pe lag** + PgBouncer (transaction pooling) + read replica. **AC:** la 50k msg/s sintetic, consumer-group lag <60s; history-writer ține pasul; reads pe replică. | 8 | P1 | H19.1.1 | Standalone |
+| H19.1.6 | **Rig de load-test + SLO as-of-T** (generator replay/sintetic; test perf nightly). **AC:** as-of-T p95<300ms și live-latency p95<2s sub load, documentat + în nightly. | 5 | P1 | H19.1.5 | Standalone |
+| H19.1.7 | **Tiered storage broker + ops retenție** (offload segmente → S3). **AC:** disk local broker mărginit; replay din tier funcționează. | 5 | P2 | H19.1.1 | Standalone |
+
+<!-- recon now end-to-end (worker→writer→/recon→panel); H19.2.1/2.2 operational, contract cross-checked -->
+### WS2 — Motorul de insight („so what") (Phase B) — 0/7 · *gate: platforma EXPLICĂ un eveniment (recon „trecere SAR în N min" + „treceri stivuite"), cu provenance*
+
+| # | Item | S | P | Dep | Track |
+|---|------|---|---|-----|-------|
+| H19.2.1 🔨 | **Recon-window scheduler** (SGP4 → footprint∩AOI → bisecție ingress/egress → scor calitate). **Livrat (algoritm):** `recon/windows.py` — `Aoi`/`ReconWindow`, `footprint_ground` (optical/SAR/coverage), `predict_windows` (walk SGP4 + test circle-vs-circle haversine + bisecție ingress/egress ~1s + closest-approach peak + quality care anulează optic noaptea via `is_sunlit`). +5 teste (ISS: AOI ecuatorial→ferestre ordonate; AOI polar→0; optic-noapte vs SAR). **Rămâne:** persistență `recon_windows` + refresh în deploy (parte din H19.2.2/backend). | 8 | P1 | H19.1.3 | Both |
+| H19.2.2 🔨 | **Alertare recon-window** (scan windows în lead-time → `Alert`). **AC:** o alertă se declanșează ≥lead_time înaintea unei treceri reale peste un AOI urmărit. | 3 | P1 | H19.2.1 | Both |
+| H19.2.3 🔨 | **Schelet motor CEP** (consumer windowed keyed pe `aoi`/`geohash` + state + watermark lateness). **Livrat:** `cep/engine.py` — motor pur event-time, ferestre tumbling per-cheie aliniate la epoch, watermark monoton `= max_event_ts − lateness`; evenimente out-of-order `≥ watermark` intră în fereastră, cele mai vechi sunt drop+counted; fereastra trage regula o dată când watermark-ul îi trece închiderea, apoi e evacuată. `cep/events.py` (contract `worldview.event.v1` + `from_tipping`/`from_anomaly` + `key()`); `cep/worker.py` (consumer/producer proprii, injectabile la test; `json.loads` guarded skip poison pills; reconstruiește `ReconWindow` din `worldview.recon.v1` — contract verificat producer↔consumer; rulează `detect_tipping` per fereastră → `osint.events`; backoff/reconnect). Config `CEP_*` + worker `cep`. +24 teste (18 engine + 6 worker); ruff clean, suită 94 passed. **AC îndeplinit:** o regulă windowed rulează peste stream cu lateness mărginit. | 8 | P2 | H19.1.5 | Both |
+| H19.2.4 🔨 | **Regulă tipping-and-cueing** („≥N recon windows peste un AOI în Δt"). **AC:** scenariu sintetic + real declanșează insight-ul cu linkuri la ferestrele contribuitoare. | 5 | P2 | H19.2.3, H19.2.1 | Both |
+| H19.2.5 🔨 | **Detectori de anomalii** (alege 2–3: holding-pattern, cascadă închideri spațiu aerian, onset jamming, corelație blackout↔eveniment). **AC:** fiecare se declanșează pe un scenariu seeded cu provenance. | 8 | P2 | H19.2.3 | Both |
+| H19.2.6 🔨 | **Layer de adnotare/callout** (API + UI: auto-callouts din `Event` + adnotări manuale pe timeline/hartă). **AC:** insight-urile se randează ca callouts; adnotările manuale persistă. | 5 | P3 | H19.2.4 | Standalone |
+| H19.2.7 | **Reconstrucție eveniment + export replay partajabil** (link/video). **AC:** o reconstrucție mărginită temporal exportă un link/video partajabil + reproductibil. | 8 | P3 | H19.2.6 | Standalone |
+
+### WS3 — Operare agentică (Integrare JARVIS) (Phase C) — 0/6 · *gate: operezi WorldView vorbind cu JARVIS; o alertă ajunge în digest în buget, cu provenance*
+
+| # | Item | S | P | Dep | Track |
+|---|------|---|---|-----|-------|
+| H19.3.1 🔨 | **WorldView MCP server** — tool-uri read consumate de `agents/core/mcp/client.py`. **Livrat:** pachet standalone `worldview/mcp/` (`@worldview/mcp`) — SDK MCP v1.29 (`Server`+`setRequestHandler`, JSON-Schema, stdio); tool-uri `stateAt`, `findDarkVessels`, `trackOf`, `listLayers` (handler-e pure `(args, deps)` cu fetch injectabil, apelează REST-ul WorldView; validare input; erori→isError). +12 teste (stub fetch), tsc clean, build dist. **Rămâne:** tool `recon_windows`/`watch_aoi` (după backend recon) + abonare din JARVIS. | 5 | P1 | H16.1 | JARVIS |
+| H19.3.2 🔨 | **Tool-uri MCP write/async** (`watch_aoi`, `reconstruct_event`) + **auth capability-token** (reutilizează `CapabilityBroker`, H17.3). **Livrat:** `mcp/src/auth.ts` — `verifyCapability(token, scope, {secret, now})` peste token HMAC-SHA256 `base64url(claims).base64url(sig)` cu `{scopes, exp, sub?}`; fail-CLOSED (secret lipsă/sig greșit/expirat/scope lipsă ⇒ deny, fără throw), compare constant-time cu guard de lungime, wildcard `worldview:*`; `audit()` JSON structurat doar pe stderr. Tool-uri `watch_aoi` (scope `worldview:watch` → POST `/recon/watch`) și `reconstruct_event` (scope `worldview:reconstruct` → POST `/reconstruct`), fetch injectabil, degradare grațioasă pe non-2xx; `server.ts` impune auth ÎNAINTE de side-effect (`authorizeWrite` injectabil), read-only neschimbate; `mcpSecret` din `WORLDVIEW_MCP_SECRET` fără default. +24 teste (12 auth + 12 tool/gate; căile deny verifică fetch NU e apelat + audit deny); tsc/build clean, 36 passed. JARVIS emite tokenele via `CapabilityBroker` cu secretul partajat. **AC îndeplinit:** apel neautorizat respins + auditat. **Rămâne:** endpoint-urile backend `/recon/watch` + `/reconstruct` (mock-uite acum). | 5 | P1 | H19.3.1, H17.3 | JARVIS |
+| H19.3.3 | **Plugin JARVIS** `agents/core/plugins/worldview.py` (gated de `plugin_gate`). **AC:** Athena/Stark răspund unei întrebări geospațiale folosind WorldView într-o sesiune JARVIS. | 5 | P1 | H19.3.1 | JARVIS |
+| H19.3.4 | **Autonomy watcher**: alerte WorldView → inbox→severitate→**buget ≤4/zi**→digest JARVIS. **AC:** o alertă dark-vessel/recon apare în digest-ul JARVIS în buget, cu link de provenance. | 8 | P1 | H19.3.1, H6, H19.2.2 | JARVIS |
+| H19.3.5 | **Sync graf de cunoștințe** (change-feed ontologie → `memory/graph.py`; recall fuzionat RRF). **AC:** „ce s-a întâmplat în Hormuz marțea trecută" întoarce geo-evenimente via RRF. | 5 | P2 | H19.3.1, H19.4.1 | JARVIS |
+| H19.3.6 | **Agent intel „Argus"** (SOUL specializat geospațial-OSINT, opțional). **AC:** un agent dedicat răspunde la query-uri geospațial-OSINT folosind tool-urile. | 3 | P3 | H19.3.3 | JARVIS |
+
+### WS4 — Guvernanță & colaborare (Phase D) — 0/6 · *gate: 2 analiști pe un caz cu audit + reconstrucție exportată reproductibil*
+
+| # | Item | S | P | Dep | Track |
+|---|------|---|---|-----|-------|
+| H19.4.1 | **Ontologie**: proiector obiecte+linkuri+**acțiuni** peste SoR-ul relațional + proiecție graf. **AC:** obiecte/linkuri interogabile; acțiunile = endpoint-uri auditate. | 8 | P2 | — | Both |
+| H19.4.2 | **AuthN/Z**: OIDC + RBAC/ABAC (viewer/analyst/admin; scoping AOI/regiune). **AC:** acces scoped pe rol, enforced + testat. | 8 | P2 | — | Both |
+| H19.4.3 🔨 | **Provenance/chain-of-custody** (`source`+`ingested_at`+bitemporal `valid_*` în UI/API). **Livrat (API):** `db/schema/10_provenance.sql` — migrare aditivă+idempotentă: `ADD COLUMN IF NOT EXISTS ingested_at timestamptz NOT NULL DEFAULT now()` pe toate tabelele stream/event (writerele existente merg via DEFAULT), sentinel `source` unde lipsea, view `provenance_latest`; model bitemporal documentat (valid time = `ts`/`effective_*` vs transaction time = `ingested_at`). `repositories/history.ts` — query-urile as-of-T întorc `source`+`ingested_at` în `properties`. `repositories/provenance.ts` + `routes/provenance.ts` — `GET /provenance/:layer/:entityId?t=` întoarce `{source, ts, ingestedAt}` al ultimului datum (42P01-guarded, per-layer). +10 teste mock-pool; tsc clean, 36 passed. **AC îndeplinit (API):** orice datum se trasează la sursă. **Rămâne:** UI provenance (frontend, ticket separat). | 5 | P2 | — | Both |
+| H19.4.4 | **Audit hash-înlănțuit** (reutilizează Merkle audit JARVIS, H4.10/H17.4) pe acțiuni/tool-calls/ack-uri. **AC:** log tamper-evident + endpoint verify. | 5 | P2 | H19.4.1 | Both |
+| H19.4.5 | **Cazuri / adnotări / multi-user**. **AC:** 2 utilizatori colaborează pe un caz partajat. | 8 | P3 | H19.4.2 | Standalone |
+| H19.4.6 | **Export/raportare** (brief PDF, GeoJSON, replay). **AC:** o reconstrucție exportată reproductibil. | 5 | P3 | H19.4.5 | Standalone |
+
+### WS5 — Scale & hardening platformă (Phase A5/D5/D6 + infra) — 0/7 · *gate: 1M+ puncte @60fps via tiles, 10k WS concurente, DR ↦ RPO≤5m/RTO≤30m, SLO-uri verzi*
+
+| # | Item | S | P | Dep | Track |
+|---|------|---|---|-----|-------|
+| H19.5.1 | **Serviciu vector-tiles** (Martin/pg_tileserv) + CDN; clientul comută pe tiles sub un prag de zoom. **AC:** globul randează 1M+ puncte @60fps via tiles. | 8 | P2 | H19.1.5 | Standalone |
+| H19.5.2 | **WS gateway fleet** + coalescing + sharding canale pe geohash (opțiune NATS/Centrifugo). **AC:** 10k clienți WS concurenți susținuți; rata de delta per-client mărginită. | 8 | P2 | — | Standalone |
+| H19.5.3 | **Lakehouse offload** (CDC/sink → Iceberg/Parquet pe S3 + query DuckDB/Trino). **AC:** raw rece interogabil; dimensiunea store-ului OLTP mărginită. | 8 | P3 | H19.1.7 | Standalone |
+| H19.5.4 🔨 | **Glob 3D + camera tours**. **Livrat:** toggle map⇄globe — store `viewMode` + `ViewToggle`; `DeckGlobe` randează cu `_GlobeView` (Deck.gl 9) pe o sferă-pământ întunecată (SolidPolygonLayer + graticule), fără Mapbox sub glob; click/tooltip/zoom în ambele moduri. +2 teste store; tsc clean, 15 vitest, build OK. **Rămâne:** camera tours scriptate. | 5 | P3 | H19.5.1 | Standalone |
+| H19.5.5 | **Observabilitate** (OTel trace end-to-end, dashboards Prometheus/Grafana, error budgets, runbooks). **AC:** dashboards golden-signal + alarmă lag + 1 runbook. | 5 | P2 | — | Both |
+| H19.5.6 | **DR** (multi-AZ, promovare replică, Kafka mirror; test RPO/RTO). **AC:** un game-day DR atinge RPO≤5min/RTO≤30min. | 8 | P3 | H19.1.5 | Standalone |
+| H19.5.7 | **Swarm captură OSINT cu agenți, guvernat** (snapshot cache efemer, rate-limit + provenance). **AC:** o rulare de captură face snapshot la semnale efemere cu provenance + rate-limit. | 13 | P3 | H19.4.4 | Both |
+
+> **Total ORIZONT 19:** 33 items, ~208 SP (WS1 38 · WS2 45 · WS3 31 · WS4 39 · WS5 55). **Primele 5 (the next concrete things):**
+> H19.1.1 (ADS-B real) → H19.2.1+H19.2.2 (recon-window + alertă, wow maxim, reutilizează SGP4) → H19.3.1 (MCP server) →
+> H19.3.4 (un watcher = bucla proactivă) → H19.4.3+H19.4.4 (provenance + audit). Plan complet & ADR-uri:
+> [`worldview/docs/02-platform-architecture-and-delivery-plan.md`](worldview/docs/02-platform-architecture-and-delivery-plan.md).
+
+---
+
+## ORIZONT 20 — Cognition: Living Memory & Human-Like Personality (P1–P3) — 0/10
 
 > **Cea mai importantă temă.** Un creier cognitiv pentru agenți: memorie **nelimitată, append-only,
 > mereu valoroasă în timp** (uitarea = accesibilitate redusă + demotare pe tier, **niciodată ștergere**;
 > doar utilizatorul șterge explicit) + personalitate **consistentă-dar-vie** ancorată pe **onestitate**
 > (HEXACO Honesty-Humility, anti-sycophancy structural). Viitor-proof = **neuroplasticitate**
 > (re-embedding pe modele mai bune, working-memory elastic). Rulează pe cortexul idle (night-shift).
+>
+> *(Renumerotat 19→20: ORIZONT 19 a fost luat de WorldView (4D OSINT) într-o altă sesiune.)*
 >
 > **Hartă schematică & diagnostic:** [`docs/COGNITION.md`](docs/COGNITION.md) (~35 analogii cu creierul,
 > diagrame tier/flux, playbook simptom→cauză→remediu). **Context complet de sesiune:**
@@ -578,24 +667,24 @@ chain-of-thought leak / mid-sentence truncation fixed. Kill-switch:
 
 | # | Item | S | P | Dep | AC |
 |---|------|---|---|-----|----|
-| H19.0 | **Schelet + fix BUG-5** — pachet `cognition/` + `CognitionFacade` (înregistrat în `ComponentRegistry`), `TurnContext` per-cerere, bază `JsonStore` locked+keyed, categorie settings `cognition` (toate OFF), `APIRouter`. **Zero schimbare de comportament.** | 5 | P1 | — | master OFF = no-op măsurabil; `session_id` trece prin `TurnContext` (fără mutație pe instanța partajată → BUG-5 reparat); `/api/cognition/status` întoarce flagurile |
-| H19.1 | **Cheia de onestitate** (start aici) — judecător anti-sycophancy/persona în `QualityMonitor` (axă deterministă în `signals` + judge LLM opțional **deferred**, nu inline); editare atribuire-în-caracter în `synthesize()`; metrica Sycophancy Index. | 5 | P1 | H19.0 | Sycophancy Index calculat & expus; pushback-reversal ≤0.05 pe probe set; `synthesize` păstrează vocile specialiștilor; judge rulează deferred (fără apel LLM pe hot-path) |
-| H19.2 | **Afect + expresie de personalitate** — parser front-matter în `_load_soul` (corp vs `meta`); `affect/` (mood attractor, τ) + `personality/` (whole-trait sampler {μ,σ,skew}, seed reproducibil); injectează blocul în **ambele** prompt-buildere (`agent.process` + streaming `orchestrator.py:1115`); Objective·Obstacle·Tactic + dial de status; prosody în `tts.speak()` (afect în **cheia de cache**). Gated `cognition.affect_enabled`. | 8 | P2 | H19.0 | media realizată a trăsăturii urmărește μ ±0.05 cu σ viu; mood-ul se relaxează spre setpoint și se clampează; prosody diferă pe agent; cache-key include afectul |
-| H19.3 | **Memorie vie, NELIMITATĂ** — reutilizează H14 (`decay`/`bitemporal`/`consolidation`/`entity`); **greenfield**: gate de encodare predictive-coding (înainte de `MemoryManager._lock`, în `VectorRecord.metadata`; detectează hash-fallback), 3-vector neuromodulator (DA/NE/ACh), pattern-separation la scriere / completion la citire, **TCM** re-rank post-fusion (nu atinge RRF); split `DailyReflector` în NREM/REM (idempotency **durabil** + multi-sesiune); nightly replay, tag-and-capture, **SHY** renormalizare, mentenanță (demotare pe tier, **NICIODATĂ ștergere**), **re-projection** (re-embed pe model nou, `embed_version`); stocare tiered hot/warm/cold; core mereu-injectat (bounded JsonStore). | 13 | P2 | H19.0 | nimic auto-șters (doar demotare; user-forget = singura ștergere); reactivare cold→hot pe cue; calibrated-recall (still-true × (1−Brier), penalizare pe fapt depășit); re-projection upgradează vectorii vechi; consolidare idempotentă peste restart + multi-sesiune; S/N stabil pe măsură ce crește |
-| H19.4 | **Învățare & auto-îmbunătățire guvernată** — `learning/kc.db` (KC dual user+agent + calibrare); correction-ledger (extinde `preferences.py` + capturează edit-delta); autonomie calibration-gated (extinde `policy._apply_scoring` cu `kc_mastery`/`calibration`); kind-uri night-shift `practice`/`reinforce`; **bucla de skill auto-scris** (`skill_draft`/`skill_patch` → codegen real → sandbox **Docker** → `DatasetStore.compare()` gate de regresie → `policy.decide()` pe payload-ul **editat** [repară BUG-11] → discover versionat + copy-aside **auto-revert**; forțează Docker [HF-6]). | 13 | P2 | H19.0, H19.1 | mastery/KC↑ cu calibration-error↓; accept-first-pass↑ cât timp gold ține; skill auto-editat trece gate-ul în sandbox sau auto-revert; payload editat re-gated |
-| H19.5 | **Ansamblu & maturare** — `personality_matrix.yaml` (casting) + assert de diversitate ε la boot; `synthesize` în stil regizor (păstrează vocile); drift ancorat-în-identitate (trimestrial, bounded ±0.10 lifetime, SOUL versionat git) + self-test psihometric nightly (tripwire); deltă relațională per-(agent,user). Drift/self-mod **reversibil + human-gated** (decision inbox). | 8 | P3 | H19.2, H19.4 | niciun agent activ în ε în spațiul trăsăturilor; ID-orb ansamblu ≥80% gated de truth-audit; drift bounded, inspectabil `/api/personality/diff` + revertibil; self-test psihometric declanșează pe drift |
+| H20.0 | **Schelet + fix BUG-5** — pachet `cognition/` + `CognitionFacade` (înregistrat în `ComponentRegistry`), `TurnContext` per-cerere, bază `JsonStore` locked+keyed, categorie settings `cognition` (toate OFF), `APIRouter`. **Zero schimbare de comportament.** | 5 | P1 | — | master OFF = no-op măsurabil; `session_id` trece prin `TurnContext` (fără mutație pe instanța partajată → BUG-5 reparat); `/api/cognition/status` întoarce flagurile |
+| H20.1 | **Cheia de onestitate** (start aici) — judecător anti-sycophancy/persona în `QualityMonitor` (axă deterministă în `signals` + judge LLM opțional **deferred**, nu inline); editare atribuire-în-caracter în `synthesize()`; metrica Sycophancy Index. | 5 | P1 | H20.0 | Sycophancy Index calculat & expus; pushback-reversal ≤0.05 pe probe set; `synthesize` păstrează vocile specialiștilor; judge rulează deferred (fără apel LLM pe hot-path) |
+| H20.2 | **Afect + expresie de personalitate** — parser front-matter în `_load_soul` (corp vs `meta`); `affect/` (mood attractor, τ) + `personality/` (whole-trait sampler {μ,σ,skew}, seed reproducibil); injectează blocul în **ambele** prompt-buildere (`agent.process` + streaming `orchestrator.py:1115`); Objective·Obstacle·Tactic + dial de status; prosody în `tts.speak()` (afect în **cheia de cache**). Gated `cognition.affect_enabled`. | 8 | P2 | H20.0 | media realizată a trăsăturii urmărește μ ±0.05 cu σ viu; mood-ul se relaxează spre setpoint și se clampează; prosody diferă pe agent; cache-key include afectul |
+| H20.3 | **Memorie vie, NELIMITATĂ** — reutilizează H14 (`decay`/`bitemporal`/`consolidation`/`entity`); **greenfield**: gate de encodare predictive-coding (înainte de `MemoryManager._lock`, în `VectorRecord.metadata`; detectează hash-fallback), 3-vector neuromodulator (DA/NE/ACh), pattern-separation la scriere / completion la citire, **TCM** re-rank post-fusion (nu atinge RRF); split `DailyReflector` în NREM/REM (idempotency **durabil** + multi-sesiune); nightly replay, tag-and-capture, **SHY** renormalizare, mentenanță (demotare pe tier, **NICIODATĂ ștergere**), **re-projection** (re-embed pe model nou, `embed_version`); stocare tiered hot/warm/cold; core mereu-injectat (bounded JsonStore). | 13 | P2 | H20.0 | nimic auto-șters (doar demotare; user-forget = singura ștergere); reactivare cold→hot pe cue; calibrated-recall (still-true × (1−Brier), penalizare pe fapt depășit); re-projection upgradează vectorii vechi; consolidare idempotentă peste restart + multi-sesiune; S/N stabil pe măsură ce crește |
+| H20.4 | **Învățare & auto-îmbunătățire guvernată** — `learning/kc.db` (KC dual user+agent + calibrare); correction-ledger (extinde `preferences.py` + capturează edit-delta); autonomie calibration-gated (extinde `policy._apply_scoring` cu `kc_mastery`/`calibration`); kind-uri night-shift `practice`/`reinforce`; **bucla de skill auto-scris** (`skill_draft`/`skill_patch` → codegen real → sandbox **Docker** → `DatasetStore.compare()` gate de regresie → `policy.decide()` pe payload-ul **editat** [repară BUG-11] → discover versionat + copy-aside **auto-revert**; forțează Docker [HF-6]). | 13 | P2 | H20.0, H20.1 | mastery/KC↑ cu calibration-error↓; accept-first-pass↑ cât timp gold ține; skill auto-editat trece gate-ul în sandbox sau auto-revert; payload editat re-gated |
+| H20.5 | **Ansamblu & maturare** — `personality_matrix.yaml` (casting) + assert de diversitate ε la boot; `synthesize` în stil regizor (păstrează vocile); drift ancorat-în-identitate (trimestrial, bounded ±0.10 lifetime, SOUL versionat git) + self-test psihometric nightly (tripwire); deltă relațională per-(agent,user). Drift/self-mod **reversibil + human-gated** (decision inbox). | 8 | P3 | H20.2, H20.4 | niciun agent activ în ε în spațiul trăsăturilor; ID-orb ansamblu ≥80% gated de truth-audit; drift bounded, inspectabil `/api/personality/diff` + revertibil; self-test psihometric declanșează pe drift |
 
-### H19 — Itemuri adiacente din sesiune (tools open-source + hardware)
+### H20 — Itemuri adiacente din sesiune (tools open-source + hardware)
 
 > Din evaluarea celor 10 tool-uri + analiza hardware (vezi `docs/research/2026-06-07-cognition-and-tools-session.md`).
 > **Deja livrate (skip):** ollama, whisper, n8n. **Sidegrade (parcate):** plausible, cal.com, appflowy, **penpot (drop)**. **Off-mission:** fooocus.
 
 | # | Item | S | P | Dep | AC |
 |---|------|---|---|-----|----|
-| H19.A | **Secrete în afara `.env` (vaultwarden)** — plugin `vaultwarden` + secret-resolver; Jarvis ia cheile API din vault self-hosted în loc de `.env` plaintext. Aliniat HF-5 (igienă chei) + local-first. | 5 | P2 | — | cheile se rezolvă din vault; fallback explicit; fără cheie în plaintext în config |
-| H19.B | **Skill media (yt-dlp + Whisper)** — `skills/media/`: yt-dlp ia audio → STT Whisper existent → agent rezumă („rezumă acest video/podcast"). Compune cu ce există deja. | 3 | P3 | — | „rezumă <url>" → transcript + rezumat; binar `yt-dlp` opțional |
-| H19.C | **Skill generare imagini pe idle** — kind `image_gen`; cere ziua → night-shift descarcă LLM via `LMStudioController` → ComfyUI/diffusers (Flux FP8) generează → reîncarcă LLM → livrează în brief/Telegram. $0, local, **fără contenție VRAM** (LLM descărcat). | 5 | P3 | autonomy night-shift | imagine generată pe idle fără să blocheze chat-ul; swap LLM↔diffusion narat; backend diffusion configurabil |
-| H19.D | **Prompt-builder video (cloud manual)** — LLM-ul local redactează/rafinează un prompt video pentru lipit manual în Gemini/Veo (opt-in, **$0 tokens API**). Helper mic, nu pipeline. | 2 | P3 | — | „prompt video pentru X" → prompt gata de lipit; fără apel API plătit |
+| H20.A | **Secrete în afara `.env` (vaultwarden)** — plugin `vaultwarden` + secret-resolver; Jarvis ia cheile API din vault self-hosted în loc de `.env` plaintext. Aliniat HF-5 (igienă chei) + local-first. | 5 | P2 | — | cheile se rezolvă din vault; fallback explicit; fără cheie în plaintext în config |
+| H20.B | **Skill media (yt-dlp + Whisper)** — `skills/media/`: yt-dlp ia audio → STT Whisper existent → agent rezumă („rezumă acest video/podcast"). Compune cu ce există deja. | 3 | P3 | — | „rezumă <url>" → transcript + rezumat; binar `yt-dlp` opțional |
+| H20.C | **Skill generare imagini pe idle** — kind `image_gen`; cere ziua → night-shift descarcă LLM via `LMStudioController` → ComfyUI/diffusers (Flux FP8) generează → reîncarcă LLM → livrează în brief/Telegram. $0, local, **fără contenție VRAM** (LLM descărcat). | 5 | P3 | autonomy night-shift | imagine generată pe idle fără să blocheze chat-ul; swap LLM↔diffusion narat; backend diffusion configurabil |
+| H20.D | **Prompt-builder video (cloud manual)** — LLM-ul local redactează/rafinează un prompt video pentru lipit manual în Gemini/Veo (opt-in, **$0 tokens API**). Helper mic, nu pipeline. | 2 | P3 | — | „prompt video pentru X" → prompt gata de lipit; fără apel API plătit |
 
 > **Notă hardware (nu e task):** laptop RTX 5090 (mobile, 24GB, power-capped) **nu se poate upgrada** la GPU.
 > Imagini = local pe idle ($0). Video serios local = nod GPU pe LAN (~$2.8k desktop 5090) sau eGPU — **parcate**;

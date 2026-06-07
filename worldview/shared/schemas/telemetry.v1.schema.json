@@ -1,0 +1,47 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://worldview/schemas/telemetry.v1.schema.json",
+  "title": "worldview.telemetry.v1",
+  "description": "Canonical normalized event envelope every ingestion worker emits to Kafka. See worldview/docs/01-architecture-and-schema.md §3.",
+  "type": "object",
+  "required": ["schema", "domain", "source", "entity_id", "ts"],
+  "additionalProperties": false,
+  "properties": {
+    "schema": {
+      "const": "worldview.telemetry.v1"
+    },
+    "domain": {
+      "type": "string",
+      "enum": ["adsb", "ais", "tle", "ew", "context"],
+      "description": "Which data layer this event belongs to."
+    },
+    "source": {
+      "type": "string",
+      "description": "Provenance of the observation (e.g. 'opensky', 'aisstream', 'celestrak'), for dedup and trust scoring."
+    },
+    "entity_id": {
+      "type": "string",
+      "description": "Stable per-track id: icao24 | mmsi | norad_id | h3_index | event_id. Kafka partition key."
+    },
+    "ts": {
+      "type": "number",
+      "description": "Event time, UNIX seconds (float, ms precision). The fourth dimension."
+    },
+    "ingested_at": {
+      "type": "number",
+      "description": "When the worker observed the message, UNIX seconds. For latency monitoring."
+    },
+    "lon": { "type": ["number", "null"], "minimum": -180, "maximum": 180 },
+    "lat": { "type": ["number", "null"], "minimum": -90, "maximum": 90 },
+    "alt_m": { "type": ["number", "null"], "description": "Altitude in meters; null for sea-level entities." },
+    "geom_wkt": {
+      "type": ["string", "null"],
+      "description": "Optional WKT for polygon-bearing events (footprints, NOTAMs, zones)."
+    },
+    "payload": {
+      "type": "object",
+      "description": "Domain-specific fields, validated per-domain downstream.",
+      "default": {}
+    }
+  }
+}

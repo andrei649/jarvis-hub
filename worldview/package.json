@@ -1,0 +1,34 @@
+{
+  "name": "worldview",
+  "version": "0.1.0",
+  "private": true,
+  "description": "WorldView — 4D OSINT command center (monorepo root)",
+  "workspaces": [
+    "frontend",
+    "backend-api"
+  ],
+  "scripts": {
+    "infra:up": "docker compose up -d",
+    "infra:down": "docker compose down",
+    "infra:logs": "docker compose logs -f",
+    "db:apply": "for f in db/schema/*.sql; do psql \"$DATABASE_URL\" -v ON_ERROR_STOP=1 -f \"$f\"; done",
+    "db:seed": "psql \"$DATABASE_URL\" -v ON_ERROR_STOP=1 -f db/seed/demo.sql",
+    "seed:live": "node scripts/seed-live.mjs",
+    "dev:frontend": "npm run dev --workspace frontend",
+    "dev:api": "npm run dev --workspace backend-api",
+    "build": "npm run build --workspaces --if-present"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "//overrides": "Pin one @deck.gl/core (so @deck.gl/react + @deck.gl/layers share a Layer class) and lock the luma.gl stack to the 9.0.x line deck 9.0.27 was built against (^9.0.15 otherwise floats to 9.3.x, which renamed exports deck imports).",
+  "overrides": {
+    "@deck.gl/core": "9.0.27",
+    "@luma.gl/constants": "9.0.15",
+    "@luma.gl/core": "9.0.15",
+    "@luma.gl/engine": "9.0.15",
+    "@luma.gl/gltf": "9.0.15",
+    "@luma.gl/shadertools": "9.0.15",
+    "@luma.gl/webgl": "9.0.15"
+  }
+}
