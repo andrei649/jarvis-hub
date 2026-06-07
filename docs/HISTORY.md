@@ -5,6 +5,27 @@
 
 ---
 
+## HUD v2 Voice — Sprint 2026-06-07
+
+> Browser-side hands-free voice for the HUD (`/v2`). The engines (Whisper STT, edge-tts/XTTS)
+> already existed but were wired for a host-attached mic; the browser loop that lets you talk
+> to Jarvis *in the interface* did not. Full doc: [VOICE.md](VOICE.md).
+
+| Item | PR | Status |
+|------|----|--------|
+| Browser voice loop — mic → local Whisper (`POST /api/voice/stt`, raw body) → chat → TTS playback (server `/tts` cloned voice + local `speechSynthesis` fallback), hands-free; `frontend/src/voice.ts` `useVoice` | #162 | ✅ |
+| Honest `GET /api/voice/capabilities` + STT `503`-with-hint (never a fabricated transcript); `tests/test_voice_stt.py` (+4 mocked) | #162 | ✅ |
+| Voice settings (hands-free/PTT, speak server/browser/off, lang auto/RO/EN) persisted in `hud.voice`; respects `JARVIS_MIC_MUTED` | #162 | ✅ |
+| Opt-in barge-in (default off, experimental) + SPEAK `CLONED`→`SERVER` honesty rename | #164 | ✅ |
+| Docs: `docs/VOICE.md` (new), ARCHITECTURE §3 + Doc Map; BACKLOG H5.16 corrected | docs | ✅ |
+
+**Honesty note:** the H5.16 backlog correction *claimed* in #162's commit/PR never actually landed
+(the edit was made on a stale checkout and discarded by a `git reset` during a container-resync,
+then not re-applied) — it is corrected for real in the docs PR. Live mic/audio + barge-in tuning
+are verifiable only on a real device, not in headless CI.
+
+---
+
 ## H7 Hardening + H8 Personal Memory — Sprint 2026-06-02 (v0.9.2, Live ✅)
 
 > Echipă: 5 agenți Claude în paralel (wave dispatch cu git worktrees). Durata: 1 sesiune.
