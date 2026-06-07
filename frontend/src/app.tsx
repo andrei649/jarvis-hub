@@ -45,8 +45,9 @@ function App() {
   // DEMO mode (opt-in, watermarked): OFF by default → the HUD shows ONLY real
   // backend data + honest empty states; ON → fills the seeded demo corpus.
   const [demo, setDemo] = useState(() => { try { return localStorage.getItem('hud.demo') === '1' || /[?&]demo=1/.test(window.location.search); } catch { return false; } });
-  // Voice preferences (persisted): mode = hands-free | ptt; tts = server (cloned) | browser (local) | off; lang = auto | ro | en
-  const [voiceCfg, setVoiceCfg] = useState(() => { const d = { mode: 'hands-free', tts: 'server', lang: 'auto' }; try { return { ...d, ...JSON.parse(localStorage.getItem('hud.voice') || '{}') }; } catch { return d; } });
+  // Voice preferences (persisted): mode = hands-free | ptt; tts = server | browser | off;
+  // lang = auto | ro | en; barge = off | on (experimental talk-over interrupt)
+  const [voiceCfg, setVoiceCfg] = useState(() => { const d = { mode: 'hands-free', tts: 'server', lang: 'auto', barge: 'off' }; try { return { ...d, ...JSON.parse(localStorage.getItem('hud.voice') || '{}') }; } catch { return d; } });
   const setVoice = (patch) => setVoiceCfg((c) => ({ ...c, ...patch }));
 
   const [mode, setMode] = useState('cockpit');
@@ -180,7 +181,7 @@ function App() {
 
   const submit = useCallback((text) => { runTurn(text); }, [runTurn]);
   // Hands-free voice loop: mic → local Whisper → runTurn → speak the reply, repeat.
-  const voice = useVoice({ lang: voiceCfg.lang === 'auto' ? lang : voiceCfg.lang, mode: voiceCfg.mode, ttsSource: voiceCfg.tts, micMuted: trust.mic === 'off', onTurn: runTurn });
+  const voice = useVoice({ lang: voiceCfg.lang === 'auto' ? lang : voiceCfg.lang, mode: voiceCfg.mode, ttsSource: voiceCfg.tts, micMuted: trust.mic === 'off', barge: voiceCfg.barge === 'on', onTurn: runTurn });
 
   useEffect(() => () => timers.current.forEach(clearTimeout), []);
 
