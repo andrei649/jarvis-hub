@@ -62,6 +62,7 @@ All five steps are implemented end to end.
 
 - [`docs/01-architecture-and-schema.md`](docs/01-architecture-and-schema.md) — the architecture & schema design document.
 - [`docs/ROADMAP.md`](docs/ROADMAP.md) — evaluation vs God's Eye View + Palantir, feature picks, and the phased roadmap (standalone + JARVIS).
+- [`docs/02-platform-architecture-and-delivery-plan.md`](docs/02-platform-architecture-and-delivery-plan.md) — the architect-grade plan: scale model, component deep-dives, deployment topologies, delivery plan, ADRs.
 - [`DEPLOY.md`](DEPLOY.md) — production deployment & scaling.
 - [`db/schema/`](db/schema/) — TimescaleDB + PostGIS DDL · [`db/seed/demo.sql`](db/seed/demo.sql) — the demo scenario.
 - [`db/README.md`](db/README.md) — how to apply the schema and seed.

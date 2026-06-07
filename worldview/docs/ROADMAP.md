@@ -7,6 +7,11 @@
 > Benchmarks: **Bilawal Sidhu's "God's Eye View" / WorldView** (the consumer/journalist OSINT
 > north star) and **Palantir** (Gotham + Foundry/AIP/Ontology + MetaConstellation/Apollo Edge —
 > the enterprise/defense ceiling). Sources at the bottom.
+>
+> **The build-grade refinement of this roadmap** — target architecture, a quantified scalability
+> model, component deep-dives, reliability/security/observability, deployment topologies, and a
+> sequenced delivery plan with exit gates — is in
+> [`02-platform-architecture-and-delivery-plan.md`](02-platform-architecture-and-delivery-plan.md).
 
 ---
 
