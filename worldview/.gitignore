@@ -24,3 +24,6 @@ venv/
 
 # OS / editor
 .DS_Store
+
+# Redis dump (created by a local redis-server run)
+dump.rdb
