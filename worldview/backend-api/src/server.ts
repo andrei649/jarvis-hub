@@ -5,6 +5,7 @@ import { config } from "./config.js";
 import { healthRoutes } from "./routes/health.js";
 import { historyRoutes } from "./routes/history.js";
 import { liveRoutes } from "./routes/live.js";
+import { reconRoutes } from "./routes/recon.js";
 import { startLiveWriter } from "./consumers/liveWriter.js";
 import { startHistoryWriter } from "./consumers/historyWriter.js";
 import { getRedis } from "./plugins/redis.js";
@@ -21,6 +22,7 @@ export async function buildServer() {
   await app.register(websocket);
   await app.register(healthRoutes);
   await app.register(historyRoutes);
+  await app.register(reconRoutes);
   await app.register(liveRoutes);
 
   if (config.enableLiveWriter) {
