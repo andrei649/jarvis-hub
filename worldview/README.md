@@ -46,15 +46,27 @@ The platform is built in five sequential, gated steps:
 
 All five steps are implemented end to end.
 
+## Capabilities
+
+| Area | What's implemented |
+| --- | --- |
+| **4D playback** | One Zustand master clock drives every layer; seamless live (WebSocket deltas) ↔ historical (`DISTINCT ON` as-of-T) toggle; play/pause, speed, 24h scrub. |
+| **Ingestion** | ADS-B (OpenSky) + AIS (AISStream) normalizers; TLE→SGP4 propagation (TEME→WGS84) with optical/SAR/coverage footprints; EW→H3 aggregation; NOTAM/event parser; dark-vessel detector. |
+| **Data path** | Kafka → **live-writer** (Redis) + **history-writer** (TimescaleDB, batched, idempotent, per-row poison isolation). |
+| **API** | REST `/history/:layer` (as-of-T, bbox-clamped, 50k cap, `lod=minute` rollups) + `/history/:layer/:id/track` (trails) + WebSocket `/live` (snapshot + deltas) + `/health`/`/ready`. |
+| **UI** | Deck.gl globe over Mapbox; timeline scrubber; layer toggles; **entity trails** (click to trace); per-entity **hover tooltips**; **stats HUD** with **dark-vessel alerts**; zoom-driven **level-of-detail**. |
+| **Domain depth** | Dark Vessel Detection (geofenced AIS-gap + dead-reckoning); satellite **daylight/recon windows** (`is_sunlit`); military flight tagging; H3 jamming intensity. |
+| **Quality** | Tests across all three services (Python pytest, Node `node:test`, frontend vitest); path-filtered CI (ruff + pytest + tsc + build); schemas validated against real PostGIS. |
+
 ## Contents
 
-- [`docs/01-architecture-and-schema.md`](docs/01-architecture-and-schema.md) — the STEP 1 design document.
-- [`db/schema/`](db/schema/) — TimescaleDB + PostGIS DDL.
-- [`db/README.md`](db/README.md) — how to apply the schema.
+- [`docs/01-architecture-and-schema.md`](docs/01-architecture-and-schema.md) — the architecture & schema design document.
+- [`db/schema/`](db/schema/) — TimescaleDB + PostGIS DDL · [`db/seed/demo.sql`](db/seed/demo.sql) — the demo scenario.
+- [`db/README.md`](db/README.md) — how to apply the schema and seed.
 - [`docker-compose.yml`](docker-compose.yml) — local infra (Redpanda, TimescaleDB, Redis).
-- [`frontend/`](frontend/) — Next.js 14 + Deck.gl dashboard (scaffold).
-- [`backend-api/`](backend-api/) — Fastify REST + WebSocket 4D API (scaffold).
-- [`ingestion-workers/`](ingestion-workers/) — Python OSINT normalizers (scaffold).
+- [`frontend/`](frontend/) — Next.js 14 + Deck.gl dashboard.
+- [`backend-api/`](backend-api/) — Fastify REST + WebSocket 4D API.
+- [`ingestion-workers/`](ingestion-workers/) — Python OSINT ingestion workers.
 - [`shared/schemas/`](shared/schemas/) — the canonical telemetry envelope JSON Schema.
 
 ## Quick start (local dev)
