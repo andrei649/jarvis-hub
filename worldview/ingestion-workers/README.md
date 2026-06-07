@@ -12,9 +12,12 @@ transformation core unit-tested:
   client-credentials → bearer, falls back to anonymous, optional viewport bbox, rate-limit
   aware) **or ADSB.fi** (free, AOI-centered, with real military tagging via `dbFlags`);
   adaptive polling + exponential backoff. Select with `ADSB_SOURCE=opensky|adsbfi`.
-- **AIS** (`ais/`) — AISStream position-report normalizer + WebSocket loop.
-- **TLE/SGP4** (`tle/`) — catalog parsing, SGP4 propagation (TEME→WGS84 geodetic), and
-  data-driven sensor footprints (optical cone / SAR swath / coverage circle).
+- **AIS** (`ais/`) — AISStream WebSocket with **reconnect + exponential backoff**; config-driven
+  bounding box (`AIS_BBOX`); testable subscription + frame handling in `stream.py`.
+- **TLE/SGP4** (`tle/`) — SGP4 propagation (TEME→WGS84), data-driven sensor footprints, and a
+  pluggable catalog source (`sources.py`): **Celestrak** (GROUP, optional NORAD filter) or
+  **Space-Track** (session login + `gp` query); periodic catalog refresh as TLEs age; a curated
+  per-NORAD **sensor registry** (`sensors.py`) drives optical/SAR footprints + recon daylight.
 - **EW/H3** (`ew/`) — Uber H3 aggregation of jamming/interference observations into cells.
 - **Context** (`context/`) — NOTAM / strike-zone / geopolitical-event normalizers
   (GeoJSON → context envelopes routed to `notams` / `geopolitical_events`).

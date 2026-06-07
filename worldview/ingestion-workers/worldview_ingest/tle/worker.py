@@ -1,34 +1,31 @@
 """TLE / SGP4 worker (Layer C): fetch catalog, propagate, emit ephemeris + footprints.
 
 Publishes one envelope per satellite per tick to osint.tle, carrying the sub-satellite point
-(lon/lat/alt) and the sensor-footprint polygon in geom_wkt.
+(lon/lat/alt), the sensor-footprint polygon (geom_wkt), and the daylight/recon flag. The
+catalog source is selectable (Celestrak / Space-Track) and is periodically re-fetched since
+TLEs age.
 """
 
 from __future__ import annotations
 
 import asyncio
 import logging
+import time
 from datetime import UTC, datetime
-from typing import Any
 
 import httpx
 
+from worldview_ingest.config import settings
 from worldview_ingest.envelope import TelemetryEnvelope
 from worldview_ingest.kafka_io import TelemetryProducer
 from worldview_ingest.sun import is_daylight
-from worldview_ingest.tle.catalog import TleRecord, parse_tle_text
+from worldview_ingest.tle.catalog import TleRecord
 from worldview_ingest.tle.footprint import footprint_wkt
 from worldview_ingest.tle.propagate import propagate
+from worldview_ingest.tle.sensors import DEFAULT_SENSOR, SensorSpec, sensor_for
+from worldview_ingest.tle.sources import build_source
 
 logger = logging.getLogger(__name__)
-
-CELESTRAK_ACTIVE = "https://celestrak.org/NORAD/elements/gp.php?GROUP=active&FORMAT=tle"
-PROPAGATE_SECONDS = 60
-
-# Per-satellite sensor type + footprint params, keyed by NORAD id. In deployment this is
-# loaded from the satellites / sensors_footprint_params tables (design doc §1, 01_reference.sql).
-SensorSpec = tuple[str, dict[str, Any]]
-DEFAULT_SENSOR: SensorSpec = ("optical", {})
 
 
 def build_envelope(
@@ -36,6 +33,7 @@ def build_envelope(
     when: datetime,
     sensor_type: str = "optical",
     params: dict | None = None,
+    source: str = "celestrak",
 ) -> TelemetryEnvelope | None:
     """Propagate one TLE and build its ephemeris envelope, or None on propagation error."""
     try:
@@ -45,7 +43,7 @@ def build_envelope(
         return None
     return TelemetryEnvelope(
         domain="tle",
-        source="celestrak",
+        source=source,
         entity_id=str(record.norad_id),
         ts=when.timestamp(),
         lon=pos.lon,
@@ -64,36 +62,44 @@ def build_envelope(
 
 async def run(
     producer: TelemetryProducer,
-    interval_seconds: int = PROPAGATE_SECONDS,
+    interval_seconds: int | None = None,
     sensors: dict[int, SensorSpec] | None = None,
 ) -> None:
-    """Fetch the catalog once, then propagate the whole set every interval.
+    """Fetch the catalog, then propagate the whole set every interval; re-fetch as TLEs age.
 
-    `sensors` maps NORAD id -> (sensor_type, footprint_params); satellites absent from the
-    map fall back to a generic optical footprint.
+    `sensors` overrides the per-NORAD sensor registry; satellites absent from either fall back
+    to a generic optical footprint.
     """
-    sensors = sensors or {}
+    source = build_source(settings)
+    interval = interval_seconds if interval_seconds is not None else settings.tle_propagate_seconds
+    overrides = sensors or {}
+    logger.info("TLE worker using source=%s, interval=%ss", source.name, interval)
+
     async with httpx.AsyncClient(timeout=60.0) as client:
-        records = await _fetch_catalog(client)
-        logger.info("TLE: loaded %d satellites", len(records))
+        records: list[TleRecord] = []
+        last_fetch = 0.0
         while True:
+            if not records or (time.time() - last_fetch) >= settings.tle_refresh_seconds:
+                fetched = await source.fetch(client)
+                if fetched:
+                    records = fetched
+                    last_fetch = time.time()
+                    logger.info("TLE[%s]: loaded %d satellites", source.name, len(records))
+                elif not records:
+                    await asyncio.sleep(min(interval, 30))
+                    continue
+
             when = datetime.now(UTC)
             published = 0
             for record in records:
-                sensor_type, params = sensors.get(record.norad_id, DEFAULT_SENSOR)
-                envelope = build_envelope(record, when, sensor_type, params)
+                sensor_type, params = overrides.get(record.norad_id) or sensor_for(record.norad_id)
+                envelope = build_envelope(record, when, sensor_type, params, source.name)
                 if envelope is not None:
                     await producer.publish(envelope)
                     published += 1
-            logger.info("TLE: published %d ephemeris points", published)
-            await asyncio.sleep(interval_seconds)
+            logger.info("TLE[%s]: published %d ephemeris points", source.name, published)
+            await asyncio.sleep(interval)
 
 
-async def _fetch_catalog(client: httpx.AsyncClient) -> list[TleRecord]:
-    try:
-        resp = await client.get(CELESTRAK_ACTIVE)
-        resp.raise_for_status()
-        return list(parse_tle_text(resp.text))
-    except (httpx.HTTPError, ValueError) as exc:
-        logger.warning("TLE catalog fetch failed: %s", exc)
-        return []
+# Re-exported for backward compatibility with earlier imports/tests.
+__all__ = ["build_envelope", "run", "DEFAULT_SENSOR", "SensorSpec"]

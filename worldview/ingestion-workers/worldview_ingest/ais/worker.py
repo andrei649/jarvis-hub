@@ -1,38 +1,41 @@
-"""AIS ingestion worker (Layer B): stream AISStream, normalize, publish to osint.ais."""
+"""AIS ingestion worker (Layer B): stream AISStream, normalize, publish to osint.ais.
+
+Reconnects with exponential backoff on stream drops; subscription + frame handling live in
+stream.py (testable, network-free).
+"""
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
-import os
 
 import websockets
 
-from worldview_ingest.ais.normalize import normalize_aisstream
+from worldview_ingest.ais.stream import AISSTREAM_URL, build_subscription, handle_frame
+from worldview_ingest.config import settings
 from worldview_ingest.kafka_io import TelemetryProducer
 
 logger = logging.getLogger(__name__)
 
-AISSTREAM_URL = "wss://stream.aisstream.io/v0/stream"
-# Global bounding box; narrow per deployment (e.g. the Strait of Hormuz) to cut volume.
-WORLD_BBOX = [[[-90.0, -180.0], [90.0, 180.0]]]
-
 
 async def run(producer: TelemetryProducer, api_key: str | None = None) -> None:
-    """Connect to AISStream, subscribe, and publish normalized position reports."""
-    api_key = api_key or os.getenv("AISSTREAM_API_KEY", "")
-    if not api_key:
-        raise RuntimeError("AISSTREAM_API_KEY is required for the AIS worker")
-
-    subscription = {
-        "APIKey": api_key,
-        "BoundingBoxes": WORLD_BBOX,
-        "FilterMessageTypes": ["PositionReport"],
-    }
-    async with websockets.connect(AISSTREAM_URL) as ws:
-        await ws.send(json.dumps(subscription))
-        logger.info("AIS: subscribed to AISStream")
-        async for raw in ws:
-            envelope = normalize_aisstream(json.loads(raw))
-            if envelope is not None:
-                await producer.publish(envelope)
+    """Connect to AISStream, subscribe, and publish normalized position reports (reconnecting)."""
+    subscription = build_subscription(settings, api_key)
+    backoff = 1
+    while True:
+        try:
+            async with websockets.connect(AISSTREAM_URL) as ws:
+                await ws.send(json.dumps(subscription))
+                logger.info(
+                    "AIS: subscribed (%d bbox)", len(subscription["BoundingBoxes"])
+                )
+                backoff = 1
+                async for raw in ws:
+                    envelope = handle_frame(raw)
+                    if envelope is not None:
+                        await producer.publish(envelope)
+        except (TimeoutError, websockets.WebSocketException, OSError) as exc:
+            logger.warning("AIS stream dropped: %s; reconnecting in %ss", exc, backoff)
+            await asyncio.sleep(backoff)
+            backoff = min(backoff * 2, settings.ais_reconnect_max_seconds)

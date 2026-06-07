@@ -28,5 +28,21 @@ class Settings:
     opensky_client_id: str = os.getenv("OPENSKY_CLIENT_ID", "")
     opensky_client_secret: str = os.getenv("OPENSKY_CLIENT_SECRET", "")
 
+    # --- AIS (Layer B) ---
+    aisstream_api_key: str = os.getenv("AISSTREAM_API_KEY", "")
+    # AISStream bounding box "lat_sw,lon_sw,lat_ne,lon_ne" (empty = world; a box cuts volume).
+    ais_bbox: str = os.getenv("AIS_BBOX", "")
+    ais_reconnect_max_seconds: int = int(os.getenv("AIS_RECONNECT_MAX_SECONDS", "60"))
+
+    # --- TLE / Space (Layer C) ---
+    tle_source: str = os.getenv("TLE_SOURCE", "celestrak")  # celestrak | spacetrack
+    tle_group: str = os.getenv("TLE_GROUP", "active")  # Celestrak GROUP (active|visual|...)
+    # Optional comma-separated NORAD ids — a curated recon set; filters the fetched catalog.
+    tle_norad_ids: str = os.getenv("TLE_NORAD_IDS", "")
+    tle_propagate_seconds: int = int(os.getenv("TLE_PROPAGATE_SECONDS", "60"))
+    tle_refresh_seconds: int = int(os.getenv("TLE_REFRESH_SECONDS", str(3 * 3600)))
+    spacetrack_username: str = os.getenv("SPACETRACK_USERNAME", "")
+    spacetrack_password: str = os.getenv("SPACETRACK_PASSWORD", "")
+
 
 settings = Settings()
