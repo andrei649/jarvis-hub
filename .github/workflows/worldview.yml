@@ -58,5 +58,7 @@ jobs:
         run: npm test --workspace backend-api
       - name: Frontend typecheck
         run: npm run typecheck --workspace frontend
+      - name: Frontend tests
+        run: npm test --workspace frontend
       - name: Frontend build
         run: npm run build --workspace frontend
