@@ -8,6 +8,7 @@ import { useWorldViewData } from "@/lib/useWorldViewData";
 import { useEntityTrack } from "@/lib/useEntityTrack";
 import { useTimelineStore } from "@/lib/store/useTimelineStore";
 import { buildLayers } from "@/lib/deckLayers";
+import { getTooltip } from "@/lib/tooltip";
 import { isLayer, type LayerId } from "@/lib/layers";
 
 const MAPBOX_TOKEN = process.env.NEXT_PUBLIC_MAPBOX_ACCESS_TOKEN ?? "";
@@ -49,7 +50,13 @@ export function DeckGlobe() {
   }
 
   return (
-    <DeckGL initialViewState={INITIAL_VIEW_STATE} controller={true} layers={layers} onClick={onClick}>
+    <DeckGL
+      initialViewState={INITIAL_VIEW_STATE}
+      controller={true}
+      layers={layers}
+      onClick={onClick}
+      getTooltip={getTooltip}
+    >
       <Map
         reuseMaps
         mapboxAccessToken={MAPBOX_TOKEN}

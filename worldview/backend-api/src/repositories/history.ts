@@ -1,6 +1,6 @@
 import type { Pool } from "pg";
 import { emptyCollection, rowsToFeatureCollection } from "../geojson.js";
-import { LIVENESS_SECONDS, type BBox, type FeatureCollection } from "../types.js";
+import { LIVENESS_SECONDS, MAX_FEATURES, type BBox, type FeatureCollection } from "../types.js";
 
 // Historical "as-of T" reconstruction (design doc §8.2). Each layer returns the last-known
 // state at or before T for every entity, viewport-bounded, as a GeoJSON FeatureCollection.
@@ -26,7 +26,8 @@ export async function flightsAsOf(pool: Pool, t: number, bbox: BBox | null): Pro
     FROM adsb_positions
     WHERE ts <= to_timestamp($1)
       AND ts >  to_timestamp($1) - make_interval(secs => ${LIVENESS_SECONDS.adsb})${bc.clause}
-    ORDER BY icao24, ts DESC`;
+    ORDER BY icao24, ts DESC
+    LIMIT ${MAX_FEATURES}`;
   const res = await pool.query(sql, [t, ...bc.params]);
   return rowsToFeatureCollection(res.rows);
 }
@@ -40,7 +41,8 @@ export async function vesselsAsOf(pool: Pool, t: number, bbox: BBox | null): Pro
     FROM ais_positions
     WHERE ts <= to_timestamp($1)
       AND ts >  to_timestamp($1) - make_interval(secs => ${LIVENESS_SECONDS.ais})${bc.clause}
-    ORDER BY mmsi, ts DESC`;
+    ORDER BY mmsi, ts DESC
+    LIMIT ${MAX_FEATURES}`;
   const res = await pool.query(sql, [t, ...bc.params]);
   return rowsToFeatureCollection(res.rows);
 }
@@ -54,7 +56,8 @@ export async function satellitesAsOf(pool: Pool, t: number, bbox: BBox | null): 
     FROM satellite_ephemeris
     WHERE ts <= to_timestamp($1)
       AND ts >  to_timestamp($1) - make_interval(secs => ${LIVENESS_SECONDS.tle})${bc.clause}
-    ORDER BY norad_id, ts DESC`;
+    ORDER BY norad_id, ts DESC
+    LIMIT ${MAX_FEATURES}`;
   const res = await pool.query(sql, [t, ...bc.params]);
   return rowsToFeatureCollection(res.rows, "geojson", ["footprint"]);
 }
@@ -68,7 +71,8 @@ export async function jammingAsOf(pool: Pool, t: number, bbox: BBox | null): Pro
     FROM gps_jamming
     WHERE ts <= to_timestamp($1)
       AND ts >  to_timestamp($1) - make_interval(secs => ${LIVENESS_SECONDS.ew})${bc.clause}
-    ORDER BY h3_index, ts DESC`;
+    ORDER BY h3_index, ts DESC
+    LIMIT ${MAX_FEATURES}`;
   const res = await pool.query(sql, [t, ...bc.params]);
   return rowsToFeatureCollection(res.rows);
 }

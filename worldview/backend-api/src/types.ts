@@ -14,14 +14,29 @@ export interface BBox {
   n: number;
 }
 
-/** Parse a "w,s,e,n" query string into a BBox, or null if absent/invalid. */
+const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v));
+
+/**
+ * Parse a "w,s,e,n" query string into a BBox, or null if absent/invalid. Longitudes/latitudes
+ * are clamped to valid WGS84 ranges and reordered so w<=e and s<=n (defensive against
+ * world-wrapped or inverted viewports from the client).
+ */
 export function parseBBox(raw: string | undefined): BBox | null {
   if (!raw) return null;
   const parts = raw.split(",").map(Number);
   if (parts.length !== 4 || parts.some((n) => Number.isNaN(n))) return null;
-  const [w, s, e, n] = parts as [number, number, number, number];
+  let [w, s, e, n] = parts as [number, number, number, number];
+  w = clamp(w, -180, 180);
+  e = clamp(e, -180, 180);
+  s = clamp(s, -90, 90);
+  n = clamp(n, -90, 90);
+  if (w > e) [w, e] = [e, w];
+  if (s > n) [s, n] = [n, s];
   return { w, s, e, n };
 }
+
+// Cap the number of features any single as-of-T query returns, bounding payload size.
+export const MAX_FEATURES = 50000;
 
 export interface GeoJSONFeature {
   type: "Feature";

@@ -17,6 +17,13 @@ test("parseBBox parses w,s,e,n and rejects bad input", () => {
   assert.equal(parseBBox("a,b,c,d"), null);
 });
 
+test("parseBBox clamps to WGS84 ranges and reorders inverted bounds", () => {
+  // Out-of-range values are clamped to [-180,180] / [-90,90].
+  assert.deepEqual(parseBBox("-200,-100,200,100"), { w: -180, s: -90, e: 180, n: 90 });
+  // An inverted (e<w, n<s) box is reordered.
+  assert.deepEqual(parseBBox("58,28,55,25"), { w: 55, s: 25, e: 58, n: 28 });
+});
+
 test("each layer has a defined liveness window", () => {
   for (const layer of ["adsb", "ais", "tle", "ew", "context"] as const) {
     assert.equal(typeof LIVENESS_SECONDS[layer], "number");
