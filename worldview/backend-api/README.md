@@ -11,6 +11,8 @@ STEP 4 implemented — the 4D API:
 - **REST `GET /history/:layer?t=<unix>&bbox=w,s,e,n`** — as-of-T reconstruction per layer
   (`adsb`, `ais`, `tle`, `ew`, `context`) from TimescaleDB via `DISTINCT ON ... WHERE ts <= T`,
   returned as a GeoJSON FeatureCollection (design doc §8.2).
+- **REST `GET /history/:layer/:entityId/track?from=<unix>&to=<unix>`** — one entity's trail
+  (`adsb`/`ais`/`tle`) over a window as a GeoJSON LineString with per-vertex `coordTimes`.
 - **WebSocket `/live?layers=...`** — sends a Redis snapshot per layer on connect, then streams
   deltas published on `chan:<layer>`.
 - **Live-writer** (`consumers/liveWriter.ts`) — Kafka→Redis consumer that upserts the latest
@@ -18,7 +20,8 @@ STEP 4 implemented — the 4D API:
 - **History-writer** (`consumers/historyWriter.ts`) — Kafka→TimescaleDB consumer that batches
   envelopes per domain (~5k rows or 500ms) into the right hypertable with idempotent
   `ON CONFLICT DO NOTHING` inserts; geometry built in-DB from lon/lat/alt or `geom_wkt`.
-  Opt-in (`ENABLE_HISTORY_WRITER=1`). This is what populates `/history`.
+  Opt-in (`ENABLE_HISTORY_WRITER=1`). This is what populates `/history`. On a batch error it
+  falls back to per-row inserts so one poison row can't drop the whole batch.
 - **`/health`** (liveness) and **`/ready`** (pings Redis + TimescaleDB).
 
 Validated: `tsc --noEmit` clean; **13 unit tests** (`npm test`) cover the batch-insert builder

@@ -8,3 +8,7 @@ export const LAYER_IDS = [
 ] as const;
 
 export type LayerId = (typeof LAYER_IDS)[number];
+
+export function isLayer(value: string): value is LayerId {
+  return (LAYER_IDS as readonly string[]).includes(value);
+}

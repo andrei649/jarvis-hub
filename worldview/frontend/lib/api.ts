@@ -22,6 +22,25 @@ export async function fetchHistory(
   }
 }
 
+/** REST: one entity's trail over [from, to] as a GeoJSON LineString FeatureCollection. */
+export async function fetchTrack(
+  layer: LayerId,
+  id: string,
+  from: number,
+  to: number,
+): Promise<FeatureCollection> {
+  const url = new URL(`${API_URL}/history/${layer}/${encodeURIComponent(id)}/track`);
+  url.searchParams.set("from", String(Math.floor(from)));
+  url.searchParams.set("to", String(Math.floor(to)));
+  try {
+    const res = await fetch(url.toString());
+    if (!res.ok) return emptyCollection();
+    return (await res.json()) as FeatureCollection;
+  } catch {
+    return emptyCollection();
+  }
+}
+
 export interface LiveHandlers {
   onSnapshot: (layer: LayerId, data: FeatureCollection) => void;
   onDelta: (layer: LayerId, envelope: Record<string, unknown>) => void;

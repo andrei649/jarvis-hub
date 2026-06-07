@@ -37,3 +37,10 @@ test("all five layers start visible", () => {
   const v = useTimelineStore.getState().layerVisibility;
   expect(Object.values(v).every(Boolean)).toBe(true);
 });
+
+test("selectEntity sets and clears the tracked entity", () => {
+  useTimelineStore.getState().selectEntity({ layer: "ais", id: "636092297" });
+  expect(useTimelineStore.getState().selectedEntity).toEqual({ layer: "ais", id: "636092297" });
+  useTimelineStore.getState().selectEntity(null);
+  expect(useTimelineStore.getState().selectedEntity).toBeNull();
+});

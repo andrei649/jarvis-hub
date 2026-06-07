@@ -16,6 +16,7 @@ const FLIGHT_CIV: [number, number, number] = [80, 180, 255];
 const VESSEL: [number, number, number] = [120, 230, 180];
 const SAT: [number, number, number] = [240, 210, 120];
 const DARK: [number, number, number] = [255, 70, 70];
+const TRAIL: [number, number, number] = [255, 255, 255];
 
 function footprintCollection(data: LayerData["tle"]): FeatureCollection {
   // Satellites carry their footprint polygon in properties.footprint (a GeoJSON geometry).
@@ -31,8 +32,26 @@ function footprintCollection(data: LayerData["tle"]): FeatureCollection {
   };
 }
 
-export function buildLayers(data: LayerData, visibility: Visibility): Layer[] {
+export function buildLayers(
+  data: LayerData,
+  visibility: Visibility,
+  track?: FeatureCollection,
+): Layer[] {
   const layers: Layer[] = [];
+
+  // Selected-entity trail (a LineString path), drawn under the live points.
+  if (track && track.features.length > 0) {
+    layers.push(
+      new GeoJsonLayer({
+        id: "track",
+        data: track,
+        stroked: true,
+        filled: false,
+        getLineColor: [...TRAIL, 220] as [number, number, number, number],
+        lineWidthMinPixels: 2,
+      }),
+    );
+  }
 
   if (visibility.adsb) {
     layers.push(

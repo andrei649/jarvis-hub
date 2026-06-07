@@ -206,32 +206,44 @@ export function buildBatchInsert(spec: DomainSpec, envelopes: Envelope[]): Inser
 
 export { ADSB, AIS, TLE, EW, DARK_VESSEL, EVENT, NOTAM };
 
+/**
+ * Insert a homogeneous batch with one query; on failure, fall back to per-row inserts so a
+ * single poison row (e.g. an FK or NOT NULL violation) can't drop the whole batch.
+ */
+async function insertSpec(pool: Pool, spec: DomainSpec, envelopes: Envelope[]): Promise<number> {
+  if (envelopes.length === 0) return 0;
+  try {
+    const { sql, params } = buildBatchInsert(spec, envelopes);
+    return (await pool.query(sql, params)).rowCount ?? 0;
+  } catch {
+    let written = 0;
+    for (const env of envelopes) {
+      try {
+        const { sql, params } = buildBatchInsert(spec, [env]);
+        written += (await pool.query(sql, params)).rowCount ?? 0;
+      } catch {
+        // Skip the offending row; the rest of the batch still lands.
+      }
+    }
+    return written;
+  }
+}
+
 /** Route a domain batch to its table(s) and execute. */
 export async function writeBatch(pool: Pool, domain: string, envelopes: Envelope[]): Promise<number> {
   if (envelopes.length === 0) return 0;
 
   const simple = SIMPLE_SPECS[domain];
-  if (simple) {
-    const { sql, params } = buildBatchInsert(simple, envelopes);
-    const res = await pool.query(sql, params);
-    return res.rowCount ?? 0;
-  }
+  if (simple) return insertSpec(pool, simple, envelopes);
 
   if (domain === "context") {
-    const dark = envelopes.filter((e) => p(e).kind === "dark_vessel");
-    const events = envelopes.filter((e) => p(e).kind === "event");
-    const notams = envelopes.filter((e) => p(e).kind === "notam");
+    const groups: ReadonlyArray<readonly [DomainSpec, Envelope[]]> = [
+      [DARK_VESSEL, envelopes.filter((e) => p(e).kind === "dark_vessel")],
+      [EVENT, envelopes.filter((e) => p(e).kind === "event")],
+      [NOTAM, envelopes.filter((e) => p(e).kind === "notam")],
+    ];
     let written = 0;
-    for (const [spec, batch] of [
-      [DARK_VESSEL, dark],
-      [EVENT, events],
-      [NOTAM, notams],
-    ] as const) {
-      if (batch.length === 0) continue;
-      const { sql, params } = buildBatchInsert(spec, batch);
-      const res = await pool.query(sql, params);
-      written += res.rowCount ?? 0;
-    }
+    for (const [spec, batch] of groups) written += await insertSpec(pool, spec, batch);
     return written;
   }
 

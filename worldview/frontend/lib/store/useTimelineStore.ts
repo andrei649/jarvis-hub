@@ -16,6 +16,12 @@ const allVisible: LayerVisibility = LAYER_IDS.reduce(
   {} as LayerVisibility,
 );
 
+/** The entity whose trail is shown, if any. */
+export interface SelectedEntity {
+  layer: LayerId;
+  id: string;
+}
+
 interface TimelineState {
   /** Master clock — UNIX seconds. Drives every layer. */
   masterTime: number;
@@ -24,12 +30,14 @@ interface TimelineState {
   speed: number;
   playing: boolean;
   layerVisibility: LayerVisibility;
+  selectedEntity: SelectedEntity | null;
 
   setMasterTime: (ts: number) => void;
   setMode: (mode: PlaybackMode) => void;
   setSpeed: (speed: number) => void;
   setPlaying: (playing: boolean) => void;
   toggleLayer: (id: LayerId) => void;
+  selectEntity: (entity: SelectedEntity | null) => void;
   goLive: () => void;
 }
 
@@ -39,6 +47,7 @@ export const useTimelineStore = create<TimelineState>((set) => ({
   speed: 1,
   playing: true,
   layerVisibility: allVisible,
+  selectedEntity: null,
 
   setMasterTime: (ts) => set({ masterTime: ts }),
   setMode: (mode) => set({ mode }),
@@ -48,5 +57,6 @@ export const useTimelineStore = create<TimelineState>((set) => ({
     set((s) => ({
       layerVisibility: { ...s.layerVisibility, [id]: !s.layerVisibility[id] },
     })),
+  selectEntity: (entity) => set({ selectedEntity: entity }),
   goLive: () => set({ mode: "live", masterTime: Date.now() / 1000, playing: true }),
 }));

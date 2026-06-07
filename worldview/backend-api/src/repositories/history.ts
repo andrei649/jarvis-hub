@@ -1,5 +1,5 @@
 import type { Pool } from "pg";
-import { rowsToFeatureCollection } from "../geojson.js";
+import { emptyCollection, rowsToFeatureCollection } from "../geojson.js";
 import { LIVENESS_SECONDS, type BBox, type FeatureCollection } from "../types.js";
 
 // Historical "as-of T" reconstruction (design doc §8.2). Each layer returns the last-known
@@ -137,3 +137,55 @@ export const HISTORY_BY_LAYER = {
   ew: jammingAsOf,
   context: contextAsOf,
 } as const;
+
+// Point-track layers (an entity has an ordered path over time): table + id column.
+const TRACK_TABLES: Record<string, { table: string; id: string }> = {
+  adsb: { table: "adsb_positions", id: "icao24" },
+  ais: { table: "ais_positions", id: "mmsi" },
+  tle: { table: "satellite_ephemeris", id: "norad_id" },
+};
+
+export const TRACK_LAYERS = Object.keys(TRACK_TABLES);
+
+/**
+ * One entity's trail over [from, to] as a GeoJSON LineString Feature (for a Deck.gl PathLayer).
+ * `coordTimes` carries the per-vertex epochs for optional time-animation. Empty if < 2 points.
+ */
+export async function trackOf(
+  pool: Pool,
+  layer: string,
+  entityId: string,
+  from: number,
+  to: number,
+): Promise<FeatureCollection> {
+  const spec = TRACK_TABLES[layer];
+  if (!spec) return emptyCollection();
+  const idValue = layer === "adsb" ? entityId : Number(entityId);
+  const sql = `
+    SELECT ST_X(geom) AS lon, ST_Y(geom) AS lat, extract(epoch FROM ts) AS ts
+    FROM ${spec.table}
+    WHERE ${spec.id} = $1 AND ts >= to_timestamp($2) AND ts <= to_timestamp($3)
+    ORDER BY ts ASC`;
+  const res = await pool.query(sql, [idValue, from, to]);
+  if (res.rows.length < 2) return emptyCollection();
+
+  const coordinates = res.rows.map((r) => [Number(r.lon), Number(r.lat)]);
+  const coordTimes = res.rows.map((r) => Number(r.ts));
+  return {
+    type: "FeatureCollection",
+    features: [
+      {
+        type: "Feature",
+        geometry: { type: "LineString", coordinates },
+        properties: {
+          entity_id: String(entityId),
+          layer,
+          count: coordinates.length,
+          ts_start: coordTimes[0],
+          ts_end: coordTimes[coordTimes.length - 1],
+          coordTimes,
+        },
+      },
+    ],
+  };
+}

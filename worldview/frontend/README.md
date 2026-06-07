@@ -13,7 +13,9 @@ STEP 5 implemented — the geospatial dashboard:
   intensity-shaded H3 jamming cells, intel/dark-vessel markers). Loaded `ssr: false`.
 - **`components/TimelineScrubber.tsx`** — the master-time slider with play/pause, a LIVE
   toggle, speed control, and a UTC clock readout.
-- **`components/LayerPanel.tsx`** — per-layer visibility toggles.
+- **`components/LayerPanel.tsx`** — per-layer visibility toggles + the active trail selection.
+- **Entity trails** — click an aircraft/vessel/satellite to fetch and draw its trailing-hour
+  path (`useEntityTrack` → REST `/track` → a Deck.gl path layer); click empty space to clear.
 - **`lib/store/useTimelineStore.ts`** — the Zustand "System Master Time" store every layer
   follows; **`lib/useMasterClock.ts`** advances it (wall-clock in live mode, `dt × speed`
   in historical); **`lib/useWorldViewData.ts`** fans the master clock out to data: debounced
