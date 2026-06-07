@@ -15,11 +15,21 @@ STEP 4 implemented — the 4D API:
   deltas published on `chan:<layer>`.
 - **Live-writer** (`consumers/liveWriter.ts`) — Kafka→Redis consumer that upserts the latest
   state per entity (string key + geo set + TTL) and publishes deltas. Opt-in (`ENABLE_LIVE_WRITER=1`).
+- **History-writer** (`consumers/historyWriter.ts`) — Kafka→TimescaleDB consumer that batches
+  envelopes per domain (~5k rows or 500ms) into the right hypertable with idempotent
+  `ON CONFLICT DO NOTHING` inserts; geometry built in-DB from lon/lat/alt or `geom_wkt`.
+  Opt-in (`ENABLE_HISTORY_WRITER=1`). This is what populates `/history`.
 - **`/health`** (liveness) and **`/ready`** (pings Redis + TimescaleDB).
 
-Validated: `tsc --noEmit` clean; all five history queries verified against real PostGIS
-(latest-≤-T per entity, future rows excluded, bbox filtering, footprints, NOTAM interval
-containment, dark-vessel temporal gating); server boots and the WebSocket upgrade succeeds.
+Validated: `tsc --noEmit` clean; **13 unit tests** (`npm test`) cover the batch-insert builder
+and helpers; all five history queries + the full write→read round-trip verified against real
+PostGIS (latest-≤-T per entity, future rows excluded, in-DB geometry, idempotent re-writes,
+context routed to dark_vessel_events / geopolitical_events); server boots and the WebSocket
+upgrade succeeds.
+
+```bash
+npm test --workspace backend-api     # 13 unit tests, no infra required
+```
 
 ## Develop
 
@@ -38,8 +48,9 @@ src/server.ts          Fastify bootstrap (REST + WS + optional live-writer)
 src/config.ts          env-derived config
 src/types.ts           layers, BBox parsing, liveness windows + TTLs
 src/geojson.ts         rows -> GeoJSON FeatureCollection
-src/repositories/      history.ts (TimescaleDB as-of-T) + live.ts (Redis snapshot)
-src/consumers/         liveWriter.ts (Kafka -> Redis + pub/sub)
+src/repositories/      history.ts (read: as-of-T) + historyWriter.ts (write: batch insert) + live.ts
+src/consumers/         liveWriter.ts (Kafka -> Redis) + historyWriter.ts (Kafka -> TimescaleDB)
 src/routes/            health.ts, history.ts, live.ts
 src/plugins/           redis.ts (ioredis) + db.ts (pg pool)
+test/                  node:test unit tests (run via tsx)
 ```
