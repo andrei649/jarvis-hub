@@ -41,8 +41,10 @@ The platform is built in five sequential, gated steps:
 1. **Architecture & Schema** ✅ — design doc + TimescaleDB/PostGIS SQL + Kafka pipeline design.
 2. **Project Scaffold** ✅ — monorepo skeleton (`frontend`, `backend-api`, `ingestion-workers`) + local infra (`docker-compose.yml`).
 3. **Data Ingestion Workers** ✅ — TLE/SGP4, H3 jamming grids, AIS/ADS-B normalizers, dark-vessel detector.
-4. **The 4D API** ✅ *(current)* — Fastify REST `/history` + WebSocket `/live` serving live (Redis) and historical (TimescaleDB) state.
-5. **Frontend Geospatial UI** — Next.js dashboard, Deck.gl map, timeline scrubber, Zustand sync.
+4. **The 4D API** ✅ — Fastify REST `/history` + WebSocket `/live` serving live (Redis) and historical (TimescaleDB) state.
+5. **Frontend Geospatial UI** ✅ — Next.js dashboard, Deck.gl map, timeline scrubber, Zustand sync.
+
+All five steps are implemented end to end.
 
 ## Contents
 

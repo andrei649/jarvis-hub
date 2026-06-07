@@ -1,20 +1,23 @@
-import { LAYER_IDS } from "@/lib/layers";
+"use client";
 
-// STEP 2 scaffold: a placeholder shell. The Deck.gl map, timeline scrubber, and
-// Zustand-driven layer sync are implemented in STEP 5.
+import dynamic from "next/dynamic";
+import { LayerPanel } from "@/components/LayerPanel";
+import { TimelineScrubber } from "@/components/TimelineScrubber";
+import { useMasterClock } from "@/lib/useMasterClock";
+
+// The globe uses WebGL + mapbox-gl (browser-only); load it client-side without SSR.
+const DeckGlobe = dynamic(() => import("@/components/DeckGlobe").then((m) => m.DeckGlobe), {
+  ssr: false,
+});
+
 export default function Home() {
+  useMasterClock(); // drives the global master clock that every layer follows
+
   return (
-    <main className="flex h-screen flex-col items-center justify-center gap-4 p-8 text-center">
-      <h1 className="text-3xl font-semibold text-signal">WorldView</h1>
-      <p className="max-w-xl text-sm opacity-80">
-        4D OSINT command center scaffold. The Deck.gl globe, timeline scrubber, and live
-        layer synchronization land in STEP 5.
-      </p>
-      <ul className="text-xs opacity-60">
-        {LAYER_IDS.map((id) => (
-          <li key={id}>{id}</li>
-        ))}
-      </ul>
+    <main className="relative h-screen w-screen overflow-hidden">
+      <DeckGlobe />
+      <LayerPanel />
+      <TimelineScrubber />
     </main>
   );
 }

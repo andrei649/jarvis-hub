@@ -444,11 +444,12 @@ views read pre-rolled buckets even after the raw chunks are dropped.
 | **2** | Monorepo scaffold (`frontend`, `backend-api`, `ingestion-workers`) + local infra | ✅ done |
 | **3** | Ingestion workers (SGP4, H3, AIS/ADS-B normalizers, dark-vessel detector) | ✅ done |
 | **4** | 4D API (Fastify REST `/history` + WebSocket `/live`; Redis live + TimescaleDB history) | ✅ done |
-| 5 | Frontend (Next.js, Deck.gl map, timeline scrubber, Zustand sync) | ⏳ next |
+| **5** | Frontend (Next.js, Deck.gl map, timeline scrubber, Zustand sync) | ✅ done |
 
-The scaffold wires the skeleton for STEPs 3–5: the canonical envelope schema, the
-`TelemetryProducer` + `DOMAIN_TOPICS` map, the Fastify bootstrap with the Redis/TimescaleDB
-connection factories, and the Zustand master-time store — each marked where the real logic lands.
+All five steps are implemented. The build flows end to end: ingestion workers normalize OSINT
+to the envelope → Kafka → the live-writer + history writer fan out to Redis + TimescaleDB →
+the Fastify API serves live (WebSocket) and historical (REST as-of-T) state → the Next.js
+Deck.gl dashboard renders every layer from one Zustand master clock.
 
 ### Cross-reference: doc ↔ schema
 
