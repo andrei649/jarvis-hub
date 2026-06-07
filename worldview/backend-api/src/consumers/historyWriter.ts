@@ -46,7 +46,14 @@ export async function startHistoryWriter(pool: Pool, brokers: string[]): Promise
       if (!message.value) return;
       const domain = TOPIC_DOMAIN[topic];
       if (!domain) return;
-      const env = JSON.parse(message.value.toString()) as Envelope;
+      let env: Envelope;
+      try {
+        env = JSON.parse(message.value.toString()) as Envelope;
+      } catch {
+        // Skip a malformed message instead of throwing — an unguarded parse error would stop
+        // offset progress and redeliver the poison message forever, wedging the partition.
+        return;
+      }
       (buffers[domain] ??= []).push(env);
       if (buffers[domain].length >= BATCH_SIZE) await flush();
     },
