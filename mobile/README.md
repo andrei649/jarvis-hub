@@ -5,13 +5,21 @@ A native iOS & Android companion app for the Jarvis hub, built with
 
 It talks to the same HTTP API the web HUD uses (`agents/web.py`):
 
-- **Chat** — streaming conversation with Jarvis over `POST /chat/stream`
-  (server-sent events, rendered token-by-token).
+- **Chat** — streaming conversation over `POST /chat/stream` (server-sent
+  events, rendered token-by-token). Assistant replies render **Markdown**
+  (code blocks, lists, bold/italic, links). Pick the **agent** (`GET /api/agents`),
+  tap 🔊 to hear a reply via **TTS** (`POST /tts`), and **Stop** mid-stream.
+  The thread is **persisted on-device** and survives restarts.
 - **Status** — live view of `GET /status`: model state, backend, agents
   online, and host/GPU telemetry, with pull-to-refresh.
 - **Settings** — point the app at any hub (`http://<host>:<port>`), set an
-  optional `JARVIS_USER_TOKEN`, and test the connection. Settings persist
-  on-device via AsyncStorage.
+  optional `JARVIS_USER_TOKEN`, and test the connection. Persisted via
+  AsyncStorage.
+- **History** — resume a previous hub session (`/sessions` → `/sessions/resume`)
+  back into the chat thread.
+
+Network calls have request timeouts, retry/back-off on idempotent GETs, and an
+idle-timeout on the chat stream so a flaky link never leaves a message hanging.
 
 ## Run it
 
@@ -31,24 +39,39 @@ value as the user token; it is sent as the `X-User-Token` header.
 > the box. Use a token (and ideally TLS via a reverse proxy) for anything
 > exposed beyond localhost.
 
+## Scripts
+
+```bash
+npm test                  # Jest — pure logic (SSE decoder, Markdown parser)
+npx tsc --noEmit          # type-check
+node scripts/gen-icons.js # regenerate branded app icons (deterministic, pngjs)
+```
+
 ## Layout
 
 ```
 App.tsx                     root shell + bottom tabs
 src/theme.ts                HUD-derived color palette
 src/context/ServerContext   connection config (loaded/persisted)
-src/storage/settings.ts     AsyncStorage read/write
-src/api/client.ts           fetch + XHR SSE streaming client
+src/storage/                AsyncStorage: settings, chat history, prefs
+src/api/client.ts           fetch + XHR SSE streaming client (timeouts/retries)
+src/api/sse.ts              pure SSE decoder (unit-tested)
+src/audio/tts.ts            /tts → cache file → expo-audio playback
+src/markdown/               pure Markdown parser (unit-tested) + RN renderer
+src/components/             MessageBubble, AgentPicker, SessionsModal
 src/screens/                Chat / Status / Settings
-src/components/              MessageBubble
+scripts/gen-icons.js        icon/splash generator
 ```
 
-## Build
+## Build (EAS)
 
-Use [EAS Build](https://docs.expo.dev/build/introduction/) for store-ready
-binaries:
+Store-ready binaries via [EAS Build](https://docs.expo.dev/build/introduction/);
+profiles are in `eas.json` (development / preview / production):
 
 ```bash
-npx eas build -p ios
-npx eas build -p android
+npx eas build --profile preview     -p android   # internal APK
+npx eas build --profile production  -p ios        # store build
 ```
+
+The first `eas` run links the project to your Expo account (creates the
+`projectId`). TestFlight / Play submission uses the `submit` profile.

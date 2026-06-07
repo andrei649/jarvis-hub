@@ -25,13 +25,13 @@ Legend — **mobile**: ✅ shipped · 🟡 partial · ⬜ not started · ➖ not
 | Surface | API (agents/web.py) | Browser | Mobile | Task |
 |---------|---------------------|:-------:|:------:|------|
 | Chat (streaming) | `POST /chat/stream`, `POST /chat` | ✅ | ✅ | H18.1 |
-| Chat history persistence | — (client-side) | ✅ | ⬜ | H18.2 |
-| Agent selection | `GET /api/agents`, `agent` param | ✅ | ⬜ | H18.3 |
-| Markdown rendering | — (client-side) | ✅ | ⬜ | H18.4 |
+| Chat history persistence | — (client-side) | ✅ | ✅ | H18.2 |
+| Agent selection | `GET /api/agents`, `agent` param | ✅ | ✅ | H18.3 |
+| Markdown rendering | — (client-side) | ✅ | ✅ | H18.4 |
 | Status / telemetry | `GET /status` | ✅ | ✅ | H18.1 |
-| Sessions (resume) | `GET /sessions`, `POST /sessions/resume` | ✅ | ⬜ | H18.5 |
-| Voice / TTS | `POST /tts` | ✅ | ⬜ | H18.5 |
-| Stream timeout / reconnect | — (client-side) | ✅ | ⬜ | H18.6 |
+| Sessions (resume) | `GET /sessions`, `POST /sessions/resume` | ✅ | ✅ | H18.5 |
+| Voice / TTS | `POST /tts` | ✅ | ✅ | H18.5 |
+| Stream timeout / reconnect | — (client-side) | ✅ | ✅ | H18.6 |
 | Dashboard (weather/news) | `GET /dashboard` | ✅ | ⬜ | — |
 | Tasks board | `GET /tasks` | ✅ | ⬜ | — |
 | Ticker | `GET /ticker` | ✅ | ⬜ | — |

@@ -526,7 +526,7 @@ chain-of-thought leak / mid-sentence truncation fixed. Kill-switch:
 
 ---
 
-## ORIZONT 18 — Aplicații Native iOS/Android & Paritate cu Browser (P2–P3) — 1/10
+## ORIZONT 18 — Aplicații Native iOS/Android & Paritate cu Browser (P2–P3) — 9/10
 
 > Client mobil nativ (Expo SDK 56 / RN 0.85) sub `mobile/`, peste **același API HTTP** (`agents/web.py`)
 > ca HUD-ul browser — niciun backend nou. Fundația livrată în **PR #161**. Restul = paritate progresivă
@@ -541,14 +541,14 @@ chain-of-thought leak / mid-sentence truncation fixed. Kill-switch:
 | # | Item | S | P | Dep | Sursă |
 |---|------|---|---|-----|-------|
 | H18.1 ✅ | **App nativ iOS/Android (Expo)** — shell cu tab-uri (Chat/Status/Settings), chat streaming token-cu-token peste `POST /chat/stream` (SSE via XHR), `GET /status` cu telemetrie host/GPU + pull-to-refresh, config hub URL + `X-User-Token` persistat (AsyncStorage) + test-connection; temă dark derivată din HUD v2. **Done 2026-06-06 (PR #161):** `mobile/` (App.tsx, src/api/client.ts, src/screens/*, src/context/ServerContext.tsx, src/storage/settings.ts). `tsc --noEmit` curat. | 8 | P2 | — | paritate HUD |
-| H18.2 | **Persistă istoricul chat-ului** — conversațiile sunt acum in-memory, pierdute la restart. Persistă per-sesiune în AsyncStorage (cap pe lungime + clear). | 3 | P2 | H18.1 | — |
-| H18.3 | **Selector de agent** — `/chat/stream` acceptă `agent`, dar app-ul hardcodează `"jarvis"`. Picker alimentat din `GET /api/agents`. | 3 | P2 | H18.1 | paritate HUD agents |
-| H18.4 | **Render Markdown** pentru răspunsurile asistentului (code blocks, liste, linkuri) în loc de text simplu. | 3 | P3 | H18.1 | paritate HUD |
-| H18.5 | **Resume sesiuni + TTS** — folosește `/sessions` (continuitate) + `/tts` (redare voce) deja expuse de hub. | 5 | P3 | H18.1 | paritate HUD voice |
-| H18.6 | **Timeouts + reconnect pe stream** — deadline pe request + back-off la pierderea conexiunii; nicio sesiune blocată „pending" la rețea instabilă. | 3 | P2 | H18.1 | robustețe |
-| H18.7 | **EAS build config (`eas.json`)** — build-uri store-ready (TestFlight / Play) via `eas build`; profile dev/preview/production. | 3 | P2 | H18.1 | Expo EAS |
-| H18.8 | **Test Jest pentru parserul SSE** din `client.ts` (frame split, end-event, abort) — singura logică non-UI cu risc de regresie. | 2 | P2 | H18.1 | — |
-| H18.9 | **Branding** — icon + splash Jarvis pe tema `#030810`/cyan; acum sunt asset-urile default Expo. | 2 | P3 | H18.1 | — |
+| H18.2 ✅ | **Persistă istoricul chat-ului** — conversațiile supraviețuiesc restartului. **Done 2026-06-07:** `src/storage/chat.ts` (AsyncStorage, cap 200 mesaje, nu persistă mesajele în streaming) + load/save/clear în `ChatScreen` (buton „New"). | 3 | P2 | H18.1 | — |
+| H18.3 ✅ | **Selector de agent** — picker modal pur-JS alimentat din `GET /api/agents`, agent persistat în prefs. **Done 2026-06-07:** `src/components/AgentPicker.tsx` + `src/storage/prefs.ts` + `fetchAgents` în client; `streamChat` trimite agentul ales. | 3 | P2 | H18.1 | paritate HUD agents |
+| H18.4 ✅ | **Render Markdown** — parser propriu (heading/listă/cod/quote/bold/italic/cod-inline/link) + renderer RN. **Done 2026-06-07:** `src/markdown/parse.ts` (pur, testat) + `src/markdown/Markdown.tsx`; folosit în `MessageBubble` pentru răspunsuri. | 3 | P3 | H18.1 | paritate HUD |
+| H18.5 ✅ | **Resume sesiuni + TTS** — listă/resume `/sessions` + redare voce `/tts`. **Done 2026-06-07:** `src/components/SessionsModal.tsx` (`fetchSessions`/`resumeSession` → repopulează firul) + `src/audio/tts.ts` (fetch MP3 → cache → expo-audio, buton 🔊 per mesaj, reset la `didJustFinish`). | 5 | P3 | H18.1 | paritate HUD voice |
+| H18.6 ✅ | **Timeouts + reconnect pe stream** — deadline pe request + retry/back-off pe GET-uri idempotente + idle-timeout pe stream. **Done 2026-06-07:** `AbortController` (15s) + retry exponențial (status/agents/sessions) + idle-timeout 45s pe `streamChat` cu eroare clară. | 3 | P2 | H18.1 | robustețe |
+| H18.7 ✅ | **EAS build config (`eas.json`)** — profile development/preview/production (+ submit). **Done 2026-06-07:** `mobile/eas.json` (`appVersionSource: remote`, APK preview, autoIncrement production). | 3 | P2 | H18.1 | Expo EAS |
+| H18.8 ✅ | **Test Jest** pentru logica pură (SSE decoder + Markdown parser). **Done 2026-06-07:** `jest.config.js` (babel izolat de Metro) + 19 teste (`sse.test.ts`, `parse.test.ts`), `npm test` verde. | 2 | P2 | H18.1 | — |
+| H18.9 ✅ | **Branding** — icon + splash Jarvis (motiv „core" cyan pe `#030810`), generate determinist. **Done 2026-06-07:** `scripts/gen-icons.js` (pngjs) → icon/splash/favicon/adaptive (foreground+background+monochrome); splash dark via plugin `expo-splash-screen` în `app.json`. | 2 | P3 | H18.1 | — |
 | H18.10 | **Paritate continuă (bridge)** — menține `mobile/PARITY.md` la zi: pentru fiecare feature browser nou cu suprafață user-facing, adaugă rândul de paritate + (dacă e cazul) task `H18.x`. Task umbrelă, mereu deschis. | — | P2 | H18.1 | bridge |
 
 ---
