@@ -1,0 +1,11 @@
+**/node_modules
+**/.next
+**/dist
+**/__pycache__
+**/.venv
+**/.ruff_cache
+**/*.tsbuildinfo
+**/.env
+**/.env.local
+dump.rdb
+.git
