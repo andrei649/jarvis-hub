@@ -58,7 +58,9 @@ export async function flightsAsOf(
   const rawSql = `
     SELECT DISTINCT ON (icao24)
       icao24, extract(epoch FROM ts) AS ts, alt_m, gs_kt, track_deg,
-      callsign, squawk, on_ground, is_military, ST_AsGeoJSON(geom) AS geojson
+      callsign, squawk, on_ground, is_military,
+      source, extract(epoch FROM ingested_at) AS ingested_at,
+      ST_AsGeoJSON(geom) AS geojson
     FROM adsb_positions
     WHERE ts <= to_timestamp($1)
       AND ts >  to_timestamp($1) - make_interval(secs => ${LIVENESS_SECONDS.adsb})${bc.clause}
@@ -91,6 +93,7 @@ export async function vesselsAsOf(
   const rawSql = `
     SELECT DISTINCT ON (mmsi)
       mmsi, extract(epoch FROM ts) AS ts, sog_kt, cog_deg, heading_deg, nav_status,
+      source, extract(epoch FROM ingested_at) AS ingested_at,
       ST_AsGeoJSON(geom) AS geojson
     FROM ais_positions
     WHERE ts <= to_timestamp($1)
@@ -122,6 +125,7 @@ export async function satellitesAsOf(
   const sql = `
     SELECT DISTINCT ON (norad_id)
       norad_id, extract(epoch FROM ts) AS ts, sensor_type, velocity_kms, is_sunlit,
+      source, extract(epoch FROM ingested_at) AS ingested_at,
       ST_AsGeoJSON(geom) AS geojson, ST_AsGeoJSON(footprint) AS footprint
     FROM satellite_ephemeris
     WHERE ts <= to_timestamp($1)
@@ -142,6 +146,7 @@ export async function jammingAsOf(
   const sql = `
     SELECT DISTINCT ON (h3_index)
       h3_index, extract(epoch FROM ts) AS ts, intensity, sample_count, h3_resolution,
+      source, extract(epoch FROM ingested_at) AS ingested_at,
       ST_AsGeoJSON(h3_geom) AS geojson
     FROM gps_jamming
     WHERE ts <= to_timestamp($1)
