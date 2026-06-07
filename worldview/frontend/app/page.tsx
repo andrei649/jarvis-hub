@@ -4,6 +4,7 @@ import dynamic from "next/dynamic";
 import { LayerPanel } from "@/components/LayerPanel";
 import { ViewToggle } from "@/components/ViewToggle";
 import { StatsHud } from "@/components/StatsHud";
+import { AlertsPanel } from "@/components/AlertsPanel";
 import { Inspector } from "@/components/Inspector";
 import { TimelineScrubber } from "@/components/TimelineScrubber";
 import { useMasterClock } from "@/lib/useMasterClock";
@@ -26,6 +27,7 @@ export default function Home() {
       <ViewToggle />
       <LayerPanel />
       <StatsHud data={data} />
+      <AlertsPanel data={data} />
       <Inspector data={data} />
       <TimelineScrubber />
     </main>

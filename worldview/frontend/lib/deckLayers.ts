@@ -1,4 +1,4 @@
-import { GeoJsonLayer } from "@deck.gl/layers";
+import { GeoJsonLayer, TextLayer } from "@deck.gl/layers";
 import type { Layer } from "@deck.gl/core";
 import type { Geometry } from "geojson";
 import type { LayerData } from "./useWorldViewData";
@@ -17,6 +17,22 @@ const VESSEL: [number, number, number] = [120, 230, 180];
 const SAT: [number, number, number] = [240, 210, 120];
 const DARK: [number, number, number] = [255, 70, 70];
 const TRAIL: [number, number, number] = [255, 255, 255];
+
+const CALLOUT: [number, number, number] = [230, 220, 255];
+
+// Event callouts: only context features that are events AND have a Point geometry get a label
+// on the map (polygons/zones are skipped). The label is the event category.
+function eventCallouts(data: LayerData["context"]): Feature[] {
+  return data.features.filter(
+    (f) => f.properties.kind === "event" && f.geometry?.type === "Point",
+  );
+}
+
+function calloutPosition(f: Feature): [number, number] {
+  // Safe because eventCallouts only keeps Point geometries.
+  const coords = (f.geometry as { coordinates: number[] }).coordinates;
+  return [Number(coords[0]), Number(coords[1])];
+}
 
 function footprintCollection(data: LayerData["tle"]): FeatureCollection {
   // Satellites carry their footprint polygon in properties.footprint (a GeoJSON geometry).
@@ -134,6 +150,26 @@ export function buildLayers(
         getLineColor: [200, 120, 255, 200],
         lineWidthMinPixels: 1,
         pickable: true,
+      }),
+    );
+
+    // Annotation/callout layer: label notable events with their category on the map.
+    layers.push(
+      new TextLayer<Feature>({
+        id: "context-callouts",
+        data: eventCallouts(data.context),
+        getPosition: calloutPosition,
+        getText: (f: Feature) => String(f.properties.category ?? "event"),
+        getColor: [...CALLOUT, 230] as [number, number, number, number],
+        getSize: 12,
+        sizeUnits: "pixels",
+        getPixelOffset: [8, -8],
+        getTextAnchor: "start",
+        getAlignmentBaseline: "bottom",
+        fontWeight: 600,
+        outlineColor: [10, 14, 22, 200],
+        outlineWidth: 2,
+        fontSettings: { sdf: true },
       }),
     );
   }
