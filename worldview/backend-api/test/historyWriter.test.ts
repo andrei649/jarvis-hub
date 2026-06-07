@@ -7,6 +7,7 @@ import {
   TLE,
   EW,
   DARK_VESSEL,
+  NOTAM,
   type Envelope,
 } from "../src/repositories/historyWriter.js";
 
@@ -117,4 +118,21 @@ test("dark-vessel batch: maps last-seen + extrapolated positions", () => {
   assert.equal(params[4], 56.5); // last_seen lon
   assert.equal(params[7], 56.6); // extrapolated lon
   assert.equal(params[9], "dark");
+});
+
+test("notam batch: maps id/type/effective window/geometry with id conflict target", () => {
+  const env: Envelope = {
+    domain: "context",
+    source: "faa",
+    entity_id: "A1/26",
+    ts: 900,
+    geom_wkt: "POLYGON((55 25,57 25,57 27,55 25))",
+    payload: { kind: "notam", notam_type: "airspace_closure", effective_from: 900, effective_to: 2000 },
+  };
+  const { sql, params } = buildBatchInsert(NOTAM, [env]);
+  assert.match(sql, /ON CONFLICT \(id\) DO NOTHING$/);
+  assert.equal(params[0], "A1/26");
+  assert.equal(params[1], "airspace_closure");
+  assert.equal(params[2], 900);
+  assert.equal(params[3], 2000);
 });

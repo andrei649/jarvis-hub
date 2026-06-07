@@ -17,7 +17,7 @@ from worldview_ingest.kafka_io import DOMAIN_TOPICS, TelemetryProducer
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 logger = logging.getLogger("worldview_ingest")
 
-WORKERS = ("adsb", "ais", "tle", "ew")
+WORKERS = ("adsb", "ais", "tle", "ew", "context")
 
 
 async def _run(worker: str) -> None:

@@ -169,6 +169,24 @@ const EVENT: DomainSpec = {
   },
 };
 
+const NOTAM: DomainSpec = {
+  table: "notams",
+  columns: "id, notam_type, effective_from, effective_to, geom, source",
+  template: "?, ?, to_timestamp(?), to_timestamp(?), ST_GeomFromText(?,4326), ?",
+  conflict: "ON CONFLICT (id) DO NOTHING",
+  params: (env) => {
+    const d = p(env);
+    return [
+      env.entity_id,
+      d.notam_type ?? null,
+      d.effective_from ?? env.ts,
+      d.effective_to ?? null,
+      env.geom_wkt ?? null,
+      env.source,
+    ];
+  },
+};
+
 const SIMPLE_SPECS: Record<string, DomainSpec> = { adsb: ADSB, ais: AIS, tle: TLE, ew: EW };
 
 /** Build a single multi-row INSERT for a homogeneous batch (pure — unit-testable). */
@@ -186,7 +204,7 @@ export function buildBatchInsert(spec: DomainSpec, envelopes: Envelope[]): Inser
   return { sql, params };
 }
 
-export { ADSB, AIS, TLE, EW, DARK_VESSEL, EVENT };
+export { ADSB, AIS, TLE, EW, DARK_VESSEL, EVENT, NOTAM };
 
 /** Route a domain batch to its table(s) and execute. */
 export async function writeBatch(pool: Pool, domain: string, envelopes: Envelope[]): Promise<number> {
@@ -202,10 +220,12 @@ export async function writeBatch(pool: Pool, domain: string, envelopes: Envelope
   if (domain === "context") {
     const dark = envelopes.filter((e) => p(e).kind === "dark_vessel");
     const events = envelopes.filter((e) => p(e).kind === "event");
+    const notams = envelopes.filter((e) => p(e).kind === "notam");
     let written = 0;
     for (const [spec, batch] of [
       [DARK_VESSEL, dark],
       [EVENT, events],
+      [NOTAM, notams],
     ] as const) {
       if (batch.length === 0) continue;
       const { sql, params } = buildBatchInsert(spec, batch);
