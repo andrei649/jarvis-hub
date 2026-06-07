@@ -13,13 +13,13 @@ import time
 
 import httpx
 
+from worldview_ingest.config import settings
 from worldview_ingest.envelope import TelemetryEnvelope
+from worldview_ingest.ew.gpsjam import gpsjam_url, parse_gpsjam
 from worldview_ingest.ew.h3grid import DEFAULT_RESOLUTION, aggregate_to_h3
 from worldview_ingest.kafka_io import TelemetryProducer
 
 logger = logging.getLogger(__name__)
-
-POLL_SECONDS = 300
 
 
 def build_envelopes(
@@ -47,20 +47,27 @@ def build_envelopes(
     return envelopes
 
 
-async def run(producer: TelemetryProducer, poll_seconds: int = POLL_SECONDS) -> None:
-    """Poll the interference source, aggregate to H3, and publish per-cell envelopes."""
+async def run(producer: TelemetryProducer, poll_seconds: int | None = None) -> None:
+    """Poll the EW source (GPSJam by default), build per-cell envelopes, and publish."""
+    interval = poll_seconds if poll_seconds is not None else settings.ew_poll_seconds
     async with httpx.AsyncClient(timeout=60.0) as client:
         while True:
-            observations = await _fetch_observations(client)
-            envelopes = build_envelopes(observations, time.time())
+            envelopes = await _fetch_ew(client)
             for envelope in envelopes:
                 await producer.publish(envelope)
-            logger.info("EW: published %d H3 cells", len(envelopes))
-            await asyncio.sleep(poll_seconds)
+            logger.info("EW[%s]: published %d H3 cells", settings.ew_source, len(envelopes))
+            await asyncio.sleep(interval)
 
 
-async def _fetch_observations(client: httpx.AsyncClient) -> list[tuple[float, float, float]]:
-    """Return (lat, lon, intensity) observations. Source wiring is deployment-specific."""
-    # Placeholder: deployments point this at GPSJam/IODA. Returning [] keeps the loop safe.
-    del client
-    return []
+async def _fetch_ew(client: httpx.AsyncClient) -> list[TelemetryEnvelope]:
+    """Fetch + parse the configured EW source. GPSJam ships pre-binned H3 hexagons."""
+    if settings.ew_source != "gpsjam":
+        return []
+    url = gpsjam_url(settings.gpsjam_base_url)
+    try:
+        resp = await client.get(url)
+        resp.raise_for_status()
+        return parse_gpsjam(resp.json(), time.time())
+    except (httpx.HTTPError, ValueError) as exc:
+        logger.warning("GPSJam fetch failed: %s", exc)
+        return []

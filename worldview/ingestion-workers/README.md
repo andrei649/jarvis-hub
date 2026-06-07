@@ -18,9 +18,10 @@ transformation core unit-tested:
   pluggable catalog source (`sources.py`): **Celestrak** (GROUP, optional NORAD filter) or
   **Space-Track** (session login + `gp` query); periodic catalog refresh as TLEs age; a curated
   per-NORAD **sensor registry** (`sensors.py`) drives optical/SAR footprints + recon daylight.
-- **EW/H3** (`ew/`) — Uber H3 aggregation of jamming/interference observations into cells.
-- **Context** (`context/`) — NOTAM / strike-zone / geopolitical-event normalizers
-  (GeoJSON → context envelopes routed to `notams` / `geopolitical_events`).
+- **EW/H3** (`ew/`) — **GPSJam** daily-heatmap parser (`gpsjam.py`, pre-binned H3 hexagons →
+  `bad/(good+bad)` intensity) + H3 point-aggregation (`h3grid.py`) for raw sources (IODA).
+- **Context** (`context/`) — NOTAM / strike-zone / geopolitical-event normalizers, fed from a
+  configurable events GeoJSON feed + NOTAM feed (`CONTEXT_EVENTS_URL` / `CONTEXT_NOTAM_URL`).
 - **Dark Vessel Detection** (`darkwatch/`) — geofenced AIS-gap detector with dead-reckoned
   extrapolation (design doc §9.1).
 

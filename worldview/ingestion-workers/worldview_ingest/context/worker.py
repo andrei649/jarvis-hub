@@ -12,16 +12,16 @@ import logging
 
 import httpx
 
+from worldview_ingest.config import settings
 from worldview_ingest.context.normalize import normalize_event, normalize_notam
 from worldview_ingest.kafka_io import TelemetryProducer
 
 logger = logging.getLogger(__name__)
 
-POLL_SECONDS = 300
 
-
-async def run(producer: TelemetryProducer, poll_seconds: int = POLL_SECONDS) -> None:
+async def run(producer: TelemetryProducer, poll_seconds: int | None = None) -> None:
     """Poll the context sources, normalize, and publish envelopes."""
+    interval = poll_seconds if poll_seconds is not None else settings.context_poll_seconds
     async with httpx.AsyncClient(timeout=60.0) as client:
         while True:
             published = 0
@@ -36,16 +36,31 @@ async def run(producer: TelemetryProducer, poll_seconds: int = POLL_SECONDS) -> 
                     await producer.publish(env)
                     published += 1
             logger.info("context: published %d intel features", published)
-            await asyncio.sleep(poll_seconds)
+            await asyncio.sleep(interval)
 
 
 async def _fetch_events(client: httpx.AsyncClient) -> list[dict]:
-    """Return GeoJSON event features. Source wiring is deployment-specific."""
-    del client
-    return []
+    """Fetch a GeoJSON FeatureCollection of events (CONTEXT_EVENTS_URL), or [] if unset."""
+    if not settings.context_events_url:
+        return []
+    try:
+        resp = await client.get(settings.context_events_url)
+        resp.raise_for_status()
+        return resp.json().get("features", [])
+    except (httpx.HTTPError, ValueError, AttributeError) as exc:
+        logger.warning("context events fetch failed: %s", exc)
+        return []
 
 
 async def _fetch_notams(client: httpx.AsyncClient) -> list[dict]:
-    """Return NOTAM records. Source wiring is deployment-specific."""
-    del client
-    return []
+    """Fetch NOTAM records (CONTEXT_NOTAM_URL: a JSON list or {notams:[...]}), or [] if unset."""
+    if not settings.context_notam_url:
+        return []
+    try:
+        resp = await client.get(settings.context_notam_url)
+        resp.raise_for_status()
+        data = resp.json()
+        return data if isinstance(data, list) else data.get("notams", [])
+    except (httpx.HTTPError, ValueError, AttributeError) as exc:
+        logger.warning("context NOTAM fetch failed: %s", exc)
+        return []

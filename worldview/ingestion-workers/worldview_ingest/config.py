@@ -44,5 +44,16 @@ class Settings:
     spacetrack_username: str = os.getenv("SPACETRACK_USERNAME", "")
     spacetrack_password: str = os.getenv("SPACETRACK_PASSWORD", "")
 
+    # --- EW / Cyber (Layer D) ---
+    ew_source: str = os.getenv("EW_SOURCE", "gpsjam")
+    gpsjam_base_url: str = os.getenv("GPSJAM_BASE_URL", "https://gpsjam.org/data")
+    ew_poll_seconds: int = int(os.getenv("EW_POLL_SECONDS", "900"))
+
+    # --- Context (Layer E) ---
+    # A GeoJSON FeatureCollection of events, and a NOTAM records feed (both deployment-specific).
+    context_events_url: str = os.getenv("CONTEXT_EVENTS_URL", "")
+    context_notam_url: str = os.getenv("CONTEXT_NOTAM_URL", "")
+    context_poll_seconds: int = int(os.getenv("CONTEXT_POLL_SECONDS", "300"))
+
 
 settings = Settings()
