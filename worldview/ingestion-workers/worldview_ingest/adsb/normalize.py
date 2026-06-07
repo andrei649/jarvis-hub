@@ -64,3 +64,55 @@ def _mps_to_knots(v: float | None) -> float | None:
 
 def _mps_to_fpm(v: float | None) -> float | None:
     return round(v * 196.850394, 1) if v is not None else None
+
+
+_FT_TO_M = 0.3048
+
+
+def normalize_adsbfi_aircraft(
+    ac: dict[str, Any], src_time: float, source: str = "adsbfi"
+) -> TelemetryEnvelope | None:
+    """Map one ADSB.fi aircraft object to a TelemetryEnvelope, or None if it has no position.
+
+    ADSB.fi reports altitude in feet (or the literal "ground"), speed in knots, and a `dbFlags`
+    bitfield whose bit 0 marks military aircraft — a real military tag we surface.
+    """
+    lat = ac.get("lat")
+    lon = ac.get("lon")
+    if lat is None or lon is None:
+        return None
+    icao24 = str(ac.get("hex") or "").strip().lower()
+    if not icao24:
+        return None
+
+    ts = src_time - float(ac.get("seen_pos") or 0.0)
+    alt_raw = ac.get("alt_baro")
+    on_ground = alt_raw == "ground"
+    if on_ground:
+        alt_m: float | None = 0.0
+    elif isinstance(alt_raw, (int, float)):
+        alt_m = float(alt_raw) * _FT_TO_M
+    else:
+        alt_m = None
+
+    flight = ac.get("flight")
+    db_flags = ac.get("dbFlags")
+    payload = {
+        "callsign": flight.strip() if isinstance(flight, str) and flight.strip() else None,
+        "gs_kt": ac.get("gs"),
+        "track_deg": ac.get("track"),
+        "vert_rate_fpm": ac.get("baro_rate"),
+        "squawk": ac.get("squawk"),
+        "on_ground": on_ground,
+        "is_military": bool(db_flags & 1) if isinstance(db_flags, int) else False,
+    }
+    return TelemetryEnvelope(
+        domain="adsb",
+        source=source,
+        entity_id=icao24,
+        ts=ts,
+        lon=float(lon),
+        lat=float(lat),
+        alt_m=alt_m,
+        payload=payload,
+    )

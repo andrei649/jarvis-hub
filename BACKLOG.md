@@ -547,11 +547,11 @@ chain-of-thought leak / mid-sentence truncation fixed. Kill-switch:
 > **Secvențiere (drum critic):** WS1 deblochează WS2+WS5; WS2 deblochează WS3 (alerte de surfacing) + WS4 (insight-uri de guvernat);
 > WS3 (JARVIS) ‖ WS4 (guvernanță) în paralel după WS2; WS5 continuu, front-loaded (tiles + replici).
 
-### WS1 — Calea de date live la scară (Phase A) — 0/7 · *gate: 50k msg/s susținut, lag<60s, as-of-T p95<300ms sub load, replay 24h real*
+### WS1 — Calea de date live la scară (Phase A) — 0/7 (H18.1.1 cod livrat) · *gate: 50k msg/s susținut, lag<60s, as-of-T p95<300ms sub load, replay 24h real*
 
 | # | Item | S | P | Dep | Track |
 |---|------|---|---|-----|-------|
-| H18.1.1 | **Sursă ADS-B reală** (OpenSky/ADSB.fi): implementează poll/fetch + creds + rate-limit + backoff în `adsb/worker.py`. **AC:** `osint.adsb` curge din sursă reală; un avion real apare în `/history` în <5s de la observație. | 5 | P1 | — | Standalone |
+| H18.1.1 🔨 | **Sursă ADS-B reală** (OpenSky/ADSB.fi). **Livrat:** `adsb/sources.py` — OpenSky (OAuth2 client-credentials→bearer cu cache/refresh, fallback anonim, bbox viewport, rate-limit/429 + backoff) **și** ADSB.fi (gratuit, centrat pe AOI, tag militar real via `dbFlags`); `worker.py` cu poll adaptiv + backoff exponențial; `ADSB_SOURCE=opensky\|adsbfi`. +7 teste (payload-uri real-shaped, mock HTTP). **Validat** fetch→normalize→envelope→`writeBatch`→`/history` pe payload OpenSky real-shaped (avionul apare în /history cu alt/coords corecte). **Rămâne** (deploy-gated): hop-ul live-net (egress allowlist) + Kafka. **AC:** `osint.adsb` curge din sursă reală; un avion real apare în `/history` în <5s. | 5 | P1 | — | Standalone |
 | H18.1.2 | **Sursă AIS reală** (AISStream WS): subscribe + parse + publish. **AC:** vase reale curg; dark-vessel detector se declanșează pe un gap AIS real într-un AOI urmărit. | 5 | P1 | — | Standalone |
 | H18.1.3 | **Sursă TLE reală** (Celestrak/Space-Track) + catalog sateliți curatat + parametri footprint. **AC:** `satellite_ephemeris` populat /minut; footprint-urile optical/SAR se randează corect. | 5 | P1 | — | Standalone |
 | H18.1.4 | **Surse EW/context reale** (GPSJam/IODA + un feed NOTAM/evenimente). **AC:** celule H3 de jamming + NOTAM-uri se randează din date live. | 5 | P2 | — | Standalone |

@@ -8,7 +8,10 @@ envelope, and publish to per-domain Kafka topics.
 STEP 3 implemented — fetch + normalize logic for every source, with the pure
 transformation core unit-tested:
 
-- **ADS-B** (`adsb/`) — OpenSky state-vector normalizer + polling loop.
+- **ADS-B** (`adsb/`) — production source layer (`sources.py`): **OpenSky** (OAuth2
+  client-credentials → bearer, falls back to anonymous, optional viewport bbox, rate-limit
+  aware) **or ADSB.fi** (free, AOI-centered, with real military tagging via `dbFlags`);
+  adaptive polling + exponential backoff. Select with `ADSB_SOURCE=opensky|adsbfi`.
 - **AIS** (`ais/`) — AISStream position-report normalizer + WebSocket loop.
 - **TLE/SGP4** (`tle/`) — catalog parsing, SGP4 propagation (TEME→WGS84 geodetic), and
   data-driven sensor footprints (optical cone / SAR swath / coverage circle).
