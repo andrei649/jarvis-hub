@@ -586,6 +586,7 @@ chain-of-thought leak / mid-sentence truncation fixed. Kill-switch:
 | H19.1.6 | **Rig de load-test + SLO as-of-T** (generator replay/sintetic; test perf nightly). **AC:** as-of-T p95<300ms și live-latency p95<2s sub load, documentat + în nightly. | 5 | P1 | H19.1.5 | Standalone |
 | H19.1.7 | **Tiered storage broker + ops retenție** (offload segmente → S3). **AC:** disk local broker mărginit; replay din tier funcționează. | 5 | P2 | H19.1.1 | Standalone |
 
+<!-- recon now end-to-end (worker→writer→/recon→panel); H19.2.1/2.2 operational, contract cross-checked -->
 ### WS2 — Motorul de insight („so what") (Phase B) — 0/7 · *gate: platforma EXPLICĂ un eveniment (recon „trecere SAR în N min" + „treceri stivuite"), cu provenance*
 
 | # | Item | S | P | Dep | Track |
