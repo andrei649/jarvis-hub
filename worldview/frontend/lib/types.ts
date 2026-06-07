@@ -13,3 +13,6 @@ export function emptyCollection(): FeatureCollection {
 }
 
 export type BBox = [number, number, number, number]; // w, s, e, n
+
+// Level of detail: raw points or 1-minute rollups (requested when zoomed out).
+export type Lod = "raw" | "minute";

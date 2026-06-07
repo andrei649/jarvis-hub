@@ -333,7 +333,8 @@ A naive scrub would fire a full query per frame. Three mechanisms prevent that:
 1. **Adaptive downsampling via continuous aggregates.** When zoomed out or scrubbing fast, the
    client requests pre-rolled buckets (1-min / 1-hr position summaries from
    TimescaleDB continuous aggregates, § `07_policies.sql`) instead of raw points — orders of
-   magnitude fewer rows.
+   magnitude fewer rows. *(Implemented: the client requests `?lod=minute` below zoom 5; the
+   API reads `adsb_positions_1m` / `ais_positions_1m` instead of the raw hypertables.)*
 2. **Viewport + LOD culling.** Queries are always bounded by the map bounding box, and feature
    density is capped per tile by level-of-detail.
 3. **Client-side interpolation & debounced fetch.** Between fetched keyframes, Deck.gl

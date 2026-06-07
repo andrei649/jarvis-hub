@@ -1,10 +1,17 @@
 import { useEffect, useRef, useState } from "react";
 import { LAYER_IDS, type LayerId } from "./layers";
 import { fetchHistory, openLiveSocket } from "./api";
-import { emptyCollection, type Feature, type FeatureCollection } from "./types";
+import { emptyCollection, type Feature, type FeatureCollection, type Lod } from "./types";
 import { useTimelineStore } from "./store/useTimelineStore";
 
 export type LayerData = Record<LayerId, FeatureCollection>;
+
+// Below this zoom, request 1-minute rollups for the dense point layers (design doc §8.3).
+const ZOOM_LOD_THRESHOLD = 5;
+
+function lodFor(layer: LayerId, lowZoom: boolean): Lod {
+  return lowZoom && (layer === "adsb" || layer === "ais") ? "minute" : "raw";
+}
 
 function emptyLayerData(): LayerData {
   return LAYER_IDS.reduce(
@@ -28,13 +35,17 @@ export function useWorldViewData(): LayerData {
   const mode = useTimelineStore((s) => s.mode);
   const masterTime = useTimelineStore((s) => s.masterTime);
   const visibility = useTimelineStore((s) => s.layerVisibility);
+  // Only re-render/refetch when crossing the zoom threshold, not on every zoom delta.
+  const lowZoom = useTimelineStore((s) => s.zoom < ZOOM_LOD_THRESHOLD);
 
   // Historical mode: debounced as-of-T fetch for each visible layer.
   useEffect(() => {
     if (mode !== "historical") return;
     const handle = setTimeout(() => {
       const visible = LAYER_IDS.filter((id) => visibility[id]);
-      void Promise.all(visible.map((id) => fetchHistory(id, masterTime))).then((results) => {
+      void Promise.all(
+        visible.map((id) => fetchHistory(id, masterTime, undefined, lodFor(id, lowZoom))),
+      ).then((results) => {
         setData((prev) => {
           const next = { ...prev };
           visible.forEach((id, i) => {
@@ -46,7 +57,7 @@ export function useWorldViewData(): LayerData {
     }, 150);
     return () => clearTimeout(handle);
     // Bucket master time to whole seconds so sub-second clock ticks don't spam fetches.
-  }, [mode, Math.floor(masterTime), visibility]);
+  }, [mode, Math.floor(masterTime), visibility, lowZoom]);
 
   // Live mode: WebSocket snapshot + deltas merged into per-entity maps.
   const liveMaps = useRef<Record<LayerId, Map<string, unknown>>>(

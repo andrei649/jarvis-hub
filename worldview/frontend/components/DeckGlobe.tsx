@@ -33,6 +33,7 @@ export function DeckGlobe({ data }: { data: LayerData }) {
   const track = useEntityTrack();
   const visibility = useTimelineStore((s) => s.layerVisibility);
   const selectEntity = useTimelineStore((s) => s.selectEntity);
+  const setZoom = useTimelineStore((s) => s.setZoom);
   const layers = buildLayers(data, visibility, track);
 
   function onClick(info: PickingInfo) {
@@ -54,6 +55,10 @@ export function DeckGlobe({ data }: { data: LayerData }) {
       controller={true}
       layers={layers}
       onClick={onClick}
+      onViewStateChange={(e) => {
+        const vs = e.viewState as { zoom?: number };
+        if (typeof vs.zoom === "number") setZoom(vs.zoom);
+      }}
       getTooltip={getTooltip}
     >
       <Map

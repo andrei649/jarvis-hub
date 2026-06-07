@@ -26,6 +26,17 @@ test("fetchHistory omits bbox when not provided", async () => {
   expect(url).not.toContain("bbox=");
 });
 
+test("fetchHistory requests minute LOD only when asked", async () => {
+  await fetchHistory("adsb", 1000, undefined, "minute");
+  let url = (globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls[0]![0] as string;
+  expect(url).toContain("lod=minute");
+
+  vi.stubGlobal("fetch", okFetch());
+  await fetchHistory("adsb", 1000, undefined, "raw");
+  url = (globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls[0]![0] as string;
+  expect(url).not.toContain("lod=");
+});
+
 test("fetchHistory returns an empty FeatureCollection on a non-ok response", async () => {
   vi.stubGlobal("fetch", vi.fn(async () => ({ ok: false })));
   const fc = await fetchHistory("ew", 1);

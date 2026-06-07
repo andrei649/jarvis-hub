@@ -44,3 +44,8 @@ test("selectEntity sets and clears the tracked entity", () => {
   useTimelineStore.getState().selectEntity(null);
   expect(useTimelineStore.getState().selectedEntity).toBeNull();
 });
+
+test("setZoom updates the zoom used for level-of-detail", () => {
+  useTimelineStore.getState().setZoom(3.2);
+  expect(useTimelineStore.getState().zoom).toBe(3.2);
+});

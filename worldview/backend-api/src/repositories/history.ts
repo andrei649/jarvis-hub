@@ -1,6 +1,16 @@
 import type { Pool } from "pg";
 import { emptyCollection, rowsToFeatureCollection } from "../geojson.js";
-import { LIVENESS_SECONDS, MAX_FEATURES, type BBox, type FeatureCollection } from "../types.js";
+import {
+  LIVENESS_SECONDS,
+  MAX_FEATURES,
+  type BBox,
+  type FeatureCollection,
+  type Lod,
+} from "../types.js";
+
+// Minute-LOD reads from continuous aggregates (design doc §8.3); buckets are coarse, so use a
+// wider window to ensure at least one bucket is captured at T.
+const MINUTE_WINDOW_SECONDS = 600;
 
 // Historical "as-of T" reconstruction (design doc §8.2). Each layer returns the last-known
 // state at or before T for every entity, viewport-bounded, as a GeoJSON FeatureCollection.
@@ -17,9 +27,25 @@ function bboxClause(bbox: BBox | null, firstParam: number, col = "geom"): {
   };
 }
 
-export async function flightsAsOf(pool: Pool, t: number, bbox: BBox | null): Promise<FeatureCollection> {
+export async function flightsAsOf(
+  pool: Pool,
+  t: number,
+  bbox: BBox | null,
+  lod: Lod = "raw",
+): Promise<FeatureCollection> {
   const bc = bboxClause(bbox, 2);
-  const sql = `
+  const sql =
+    lod === "minute"
+      ? `
+    SELECT DISTINCT ON (icao24)
+      icao24, extract(epoch FROM bucket) AS ts, alt_m, gs_kt, track_deg, is_military,
+      ST_AsGeoJSON(geom) AS geojson
+    FROM adsb_positions_1m
+    WHERE bucket <= to_timestamp($1)
+      AND bucket >  to_timestamp($1) - make_interval(secs => ${MINUTE_WINDOW_SECONDS})${bc.clause}
+    ORDER BY icao24, bucket DESC
+    LIMIT ${MAX_FEATURES}`
+      : `
     SELECT DISTINCT ON (icao24)
       icao24, extract(epoch FROM ts) AS ts, alt_m, gs_kt, track_deg,
       callsign, squawk, on_ground, is_military, ST_AsGeoJSON(geom) AS geojson
@@ -32,9 +58,24 @@ export async function flightsAsOf(pool: Pool, t: number, bbox: BBox | null): Pro
   return rowsToFeatureCollection(res.rows);
 }
 
-export async function vesselsAsOf(pool: Pool, t: number, bbox: BBox | null): Promise<FeatureCollection> {
+export async function vesselsAsOf(
+  pool: Pool,
+  t: number,
+  bbox: BBox | null,
+  lod: Lod = "raw",
+): Promise<FeatureCollection> {
   const bc = bboxClause(bbox, 2);
-  const sql = `
+  const sql =
+    lod === "minute"
+      ? `
+    SELECT DISTINCT ON (mmsi)
+      mmsi, extract(epoch FROM bucket) AS ts, sog_kt, cog_deg, ST_AsGeoJSON(geom) AS geojson
+    FROM ais_positions_1m
+    WHERE bucket <= to_timestamp($1)
+      AND bucket >  to_timestamp($1) - make_interval(secs => ${MINUTE_WINDOW_SECONDS})${bc.clause}
+    ORDER BY mmsi, bucket DESC
+    LIMIT ${MAX_FEATURES}`
+      : `
     SELECT DISTINCT ON (mmsi)
       mmsi, extract(epoch FROM ts) AS ts, sog_kt, cog_deg, heading_deg, nav_status,
       ST_AsGeoJSON(geom) AS geojson
@@ -47,7 +88,12 @@ export async function vesselsAsOf(pool: Pool, t: number, bbox: BBox | null): Pro
   return rowsToFeatureCollection(res.rows);
 }
 
-export async function satellitesAsOf(pool: Pool, t: number, bbox: BBox | null): Promise<FeatureCollection> {
+export async function satellitesAsOf(
+  pool: Pool,
+  t: number,
+  bbox: BBox | null,
+  _lod: Lod = "raw",
+): Promise<FeatureCollection> {
   const bc = bboxClause(bbox, 2);
   const sql = `
     SELECT DISTINCT ON (norad_id)
@@ -62,7 +108,12 @@ export async function satellitesAsOf(pool: Pool, t: number, bbox: BBox | null): 
   return rowsToFeatureCollection(res.rows, "geojson", ["footprint"]);
 }
 
-export async function jammingAsOf(pool: Pool, t: number, bbox: BBox | null): Promise<FeatureCollection> {
+export async function jammingAsOf(
+  pool: Pool,
+  t: number,
+  bbox: BBox | null,
+  _lod: Lod = "raw",
+): Promise<FeatureCollection> {
   const bc = bboxClause(bbox, 2, "h3_geom");
   const sql = `
     SELECT DISTINCT ON (h3_index)
@@ -78,7 +129,12 @@ export async function jammingAsOf(pool: Pool, t: number, bbox: BBox | null): Pro
 }
 
 /** Contextual intel: NOTAMs + strike zones active at T, recent events, and active dark vessels. */
-export async function contextAsOf(pool: Pool, t: number, bbox: BBox | null): Promise<FeatureCollection> {
+export async function contextAsOf(
+  pool: Pool,
+  t: number,
+  bbox: BBox | null,
+  _lod: Lod = "raw",
+): Promise<FeatureCollection> {
   const notamBox = bboxClause(bbox, 2);
   const notams = await pool.query(
     `SELECT 'notam' AS kind, id, notam_type,

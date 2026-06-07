@@ -8,9 +8,11 @@ serving **live state** from Redis (snapshot + pub/sub deltas).
 
 STEP 4 implemented — the 4D API:
 
-- **REST `GET /history/:layer?t=<unix>&bbox=w,s,e,n`** — as-of-T reconstruction per layer
-  (`adsb`, `ais`, `tle`, `ew`, `context`) from TimescaleDB via `DISTINCT ON ... WHERE ts <= T`,
-  returned as a GeoJSON FeatureCollection (design doc §8.2).
+- **REST `GET /history/:layer?t=<unix>&bbox=w,s,e,n&lod=raw|minute`** — as-of-T reconstruction
+  per layer (`adsb`, `ais`, `tle`, `ew`, `context`) from TimescaleDB via
+  `DISTINCT ON ... WHERE ts <= T`, returned as a GeoJSON FeatureCollection (design doc §8.2).
+  `lod=minute` reads 1-minute continuous-aggregate rollups for `adsb`/`ais` (zoomed-out /
+  fast scrubbing, §8.3); bbox is clamped to WGS84 and queries are capped at 50k features.
 - **REST `GET /history/:layer/:entityId/track?from=<unix>&to=<unix>`** — one entity's trail
   (`adsb`/`ais`/`tle`) over a window as a GeoJSON LineString with per-vertex `coordTimes`.
 - **WebSocket `/live?layers=...`** — sends a Redis snapshot per layer on connect, then streams

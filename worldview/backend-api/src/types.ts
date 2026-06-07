@@ -38,6 +38,14 @@ export function parseBBox(raw: string | undefined): BBox | null {
 // Cap the number of features any single as-of-T query returns, bounding payload size.
 export const MAX_FEATURES = 50000;
 
+// Level of detail: raw points, or 1-minute continuous-aggregate rollups for zoomed-out /
+// fast scrubbing (design doc §8.3). Only adsb/ais have rollups; other layers ignore it.
+export type Lod = "raw" | "minute";
+
+export function parseLod(raw: string | undefined): Lod {
+  return raw === "minute" ? "minute" : "raw";
+}
+
 export interface GeoJSONFeature {
   type: "Feature";
   geometry: unknown;

@@ -31,6 +31,8 @@ interface TimelineState {
   playing: boolean;
   layerVisibility: LayerVisibility;
   selectedEntity: SelectedEntity | null;
+  /** Current map zoom; drives level-of-detail (raw vs minute rollups). */
+  zoom: number;
 
   setMasterTime: (ts: number) => void;
   setMode: (mode: PlaybackMode) => void;
@@ -38,6 +40,7 @@ interface TimelineState {
   setPlaying: (playing: boolean) => void;
   toggleLayer: (id: LayerId) => void;
   selectEntity: (entity: SelectedEntity | null) => void;
+  setZoom: (zoom: number) => void;
   goLive: () => void;
 }
 
@@ -48,6 +51,7 @@ export const useTimelineStore = create<TimelineState>((set) => ({
   playing: true,
   layerVisibility: allVisible,
   selectedEntity: null,
+  zoom: 6,
 
   setMasterTime: (ts) => set({ masterTime: ts }),
   setMode: (mode) => set({ mode }),
@@ -58,5 +62,6 @@ export const useTimelineStore = create<TimelineState>((set) => ({
       layerVisibility: { ...s.layerVisibility, [id]: !s.layerVisibility[id] },
     })),
   selectEntity: (entity) => set({ selectedEntity: entity }),
+  setZoom: (zoom) => set({ zoom }),
   goLive: () => set({ mode: "live", masterTime: Date.now() / 1000, playing: true }),
 }));
