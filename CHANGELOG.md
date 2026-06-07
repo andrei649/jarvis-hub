@@ -1,6 +1,26 @@
 # Changelog
 
 ## [Unreleased]
+### HUD voice loop — hands-free voice in the browser (2026-06-07)
+- **Browser voice loop** (PR #162) — the HUD mic button was a dead toggle and the voice
+  engines only worked for a host-attached mic. New `frontend/src/voice.ts` (`useVoice`)
+  captures mic audio (`getUserMedia` + `MediaRecorder`), VAD-segments an utterance, sends it
+  to **local Whisper** via `POST /api/voice/stt` (raw body — deliberately no `python-multipart`),
+  hands the transcript to the chat turn (`app.tsx: runTurn`, now promise-returning), and
+  **speaks the reply** — server `/tts` (cloned voice) with a fully-local `speechSynthesis`
+  fallback. Loops hands-free until toggled off.
+- **Honest capability reporting** — `GET /api/voice/capabilities` (`{stt,tts,tts_local,providers}`)
+  drives the HUD; STT returns `503` + install hint when `faster-whisper` is absent rather than
+  fabricating a transcript. `tests/test_voice_stt.py` (+4 mocked, headless).
+- **Voice settings** (persisted `localStorage['hud.voice']`, ⚙ popover): hands-free vs
+  push-to-talk, speak via server/browser/off, language auto/RO/EN; respects `JARVIS_MIC_MUTED`.
+- **Opt-in barge-in** (PR #164, default OFF, experimental) — sustained over-talk above an
+  echo-resistant threshold cancels the spoken reply so the loop captures you. Renamed the SPEAK
+  option `CLONED`→`SERVER` (it is your cloned voice only when XTTS is configured).
+- Docs: `docs/VOICE.md` (new); `docs/ARCHITECTURE.md` §3 + Doc Map updated; BACKLOG H5.16 corrected.
+- ⚠️ Live mic/audio + barge tuning need a real device — verified here by `tsc`/`vite build` +
+  mocked STT test only.
+
 ### Security — Romanian PII detection (2026-06-01)
 - **`PIIScanner` now detects Romanian identifiers** (`core/security/scanner.py`),
   closing the long-standing gap between the docs ("Romania-specific, CNP format")
