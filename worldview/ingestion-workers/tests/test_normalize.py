@@ -1,5 +1,7 @@
 """Tests for ADS-B and AIS normalizers."""
 
+from datetime import UTC, datetime
+
 from worldview_ingest.adsb.normalize import normalize_opensky_state
 from worldview_ingest.ais.normalize import normalize_aisstream
 
@@ -49,3 +51,21 @@ def test_ais_normalize_position_report():
 
 def test_ais_normalize_ignores_non_position():
     assert normalize_aisstream({"MessageType": "ShipStaticData"}) is None
+
+
+def test_ais_time_is_parsed_as_utc():
+    # The event time must be interpreted as UTC regardless of the host's local timezone.
+    msg = {
+        "MessageType": "PositionReport",
+        "MetaData": {
+            "MMSI": 1,
+            "latitude": 0.0,
+            "longitude": 0.0,
+            "time_utc": "2024-06-07 12:00:00.123456789 +0000 UTC",
+        },
+        "Message": {"PositionReport": {}},
+    }
+    env = normalize_aisstream(msg)
+    assert env is not None
+    expected = datetime(2024, 6, 7, 12, 0, 0, 123456, tzinfo=UTC).timestamp()
+    assert abs(env.ts - expected) < 1e-3

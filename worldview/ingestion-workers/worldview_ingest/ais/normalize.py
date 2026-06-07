@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import time
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Any
 
 from worldview_ingest.envelope import TelemetryEnvelope
@@ -44,16 +44,20 @@ def normalize_aisstream(
 
 
 def _parse_ais_time(value: str | None) -> float:
-    """Parse AISStream's `time_utc` (e.g. '2024-06-07 12:00:00.123 +0000 UTC').
+    """Parse AISStream's `time_utc` (e.g. '2024-06-07 12:00:00.123456789 +0000 UTC').
 
-    Falls back to current time when absent or unparseable.
+    The timestamp is UTC; we parse the date+time tokens and pin tzinfo=UTC so the epoch is
+    correct regardless of the host's local timezone. Falls back to now when unparseable.
     """
     if not value:
         return time.time()
-    head = value.strip()
-    for cut, fmt in ((26, "%Y-%m-%d %H:%M:%S.%f"), (19, "%Y-%m-%d %H:%M:%S")):
+    tokens = value.strip().split()
+    if len(tokens) < 2:
+        return time.time()
+    stamp = f"{tokens[0]} {tokens[1]}"[:26]  # date + time, fractional trimmed to microseconds
+    for fmt in ("%Y-%m-%d %H:%M:%S.%f", "%Y-%m-%d %H:%M:%S"):
         try:
-            return datetime.strptime(head[:cut], fmt).timestamp()
+            return datetime.strptime(stamp, fmt).replace(tzinfo=UTC).timestamp()
         except ValueError:
             continue
     return time.time()

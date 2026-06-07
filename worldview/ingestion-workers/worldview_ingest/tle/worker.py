@@ -9,6 +9,7 @@ from __future__ import annotations
 import asyncio
 import logging
 from datetime import UTC, datetime
+from typing import Any
 
 import httpx
 
@@ -22,6 +23,11 @@ logger = logging.getLogger(__name__)
 
 CELESTRAK_ACTIVE = "https://celestrak.org/NORAD/elements/gp.php?GROUP=active&FORMAT=tle"
 PROPAGATE_SECONDS = 60
+
+# Per-satellite sensor type + footprint params, keyed by NORAD id. In deployment this is
+# loaded from the satellites / sensors_footprint_params tables (design doc §1, 01_reference.sql).
+SensorSpec = tuple[str, dict[str, Any]]
+DEFAULT_SENSOR: SensorSpec = ("optical", {})
 
 
 def build_envelope(
@@ -53,8 +59,17 @@ def build_envelope(
     )
 
 
-async def run(producer: TelemetryProducer, interval_seconds: int = PROPAGATE_SECONDS) -> None:
-    """Fetch the catalog once, then propagate the whole set every interval."""
+async def run(
+    producer: TelemetryProducer,
+    interval_seconds: int = PROPAGATE_SECONDS,
+    sensors: dict[int, SensorSpec] | None = None,
+) -> None:
+    """Fetch the catalog once, then propagate the whole set every interval.
+
+    `sensors` maps NORAD id -> (sensor_type, footprint_params); satellites absent from the
+    map fall back to a generic optical footprint.
+    """
+    sensors = sensors or {}
     async with httpx.AsyncClient(timeout=60.0) as client:
         records = await _fetch_catalog(client)
         logger.info("TLE: loaded %d satellites", len(records))
@@ -62,7 +77,8 @@ async def run(producer: TelemetryProducer, interval_seconds: int = PROPAGATE_SEC
             when = datetime.now(UTC)
             published = 0
             for record in records:
-                envelope = build_envelope(record, when)
+                sensor_type, params = sensors.get(record.norad_id, DEFAULT_SENSOR)
+                envelope = build_envelope(record, when, sensor_type, params)
                 if envelope is not None:
                     await producer.publish(envelope)
                     published += 1
