@@ -61,6 +61,8 @@ All five steps are implemented end to end.
 ## Contents
 
 - [`docs/01-architecture-and-schema.md`](docs/01-architecture-and-schema.md) — the architecture & schema design document.
+- [`docs/ROADMAP.md`](docs/ROADMAP.md) — evaluation vs God's Eye View + Palantir, feature picks, and the phased roadmap (standalone + JARVIS).
+- [`DEPLOY.md`](DEPLOY.md) — production deployment & scaling.
 - [`db/schema/`](db/schema/) — TimescaleDB + PostGIS DDL · [`db/seed/demo.sql`](db/seed/demo.sql) — the demo scenario.
 - [`db/README.md`](db/README.md) — how to apply the schema and seed.
 - [`docker-compose.yml`](docker-compose.yml) — local infra (Redpanda, TimescaleDB, Redis).

@@ -526,6 +526,42 @@ chain-of-thought leak / mid-sentence truncation fixed. Kill-switch:
 
 ---
 
+## ORIZONT 18 — WorldView (4D OSINT) — Standalone + Integrare JARVIS — 0/12
+
+> **Produs nou, stack separat** (Next.js + Deck.gl + Fastify + Kafka/Redpanda + TimescaleDB/PostGIS + Redis),
+> self-contained sub [`worldview/`](worldview/). Centru de comandă OSINT 4D (aer/mare/spațiu/cyber) pe un glob
+> scrub-abil în timp — inspirat de „God's Eye View" (Bilawal Sidhu) și de patternurile Palantir (Gotham/AIP/
+> Ontology). **Spinele tehnic e livrat** (toate 5 layere, motorul 4D, calea de date Kafka→Redis/TimescaleDB
+> validată în CI vs TimescaleDB real, 58 teste unit + integrare). PR #163.
+>
+> **Evaluare completă, feature-pick, poziționare și foaie de parcurs faze A–E:** [`worldview/docs/ROADMAP.md`](worldview/docs/ROADMAP.md).
+>
+> **Teza de integrare:** *JARVIS este „AIP"-ul local-first al WorldView* — operatorul în limbaj natural + cortexul
+> proactiv. WorldView e **plugin opt-in, niciodată cerut de core** (respectă MOONSHOT §5: cloud opt-in, inspectabil,
+> ≤4 interrupts/zi). Doar OSINT public — *„datele tale nu antrenează modelul nimănui"*. Agenții strict-local
+> (`frigga`/`ultron`/`howard`) nu îl ating.
+
+| # | Item | S | P | Dep | Track |
+|---|------|---|---|-----|-------|
+| H18.1 | **WorldView MCP server** cu suita de tool-uri (`state_at`, `find_dark_vessels`, `recon_windows`, `watch_aoi`, `reconstruct_event`, `track_of`) consumat de `agents/core/mcp/client.py` | 8 | P1 | H16.1 | JARVIS |
+| H18.2 | **Plugin** `agents/core/plugins/worldview.py` (gated de `plugin_gate`) — Athena/Stark/Vision trag context geospațial | 5 | P1 | H18.1 | JARVIS |
+| H18.3 | **Autonomy watchers**: alertele WorldView (dark vessel în Hormuz, fereastră recon peste AOI, blackout) → inbox/digest JARVIS în bugetul ≤4/zi | 8 | P1 | H18.1, H6 | JARVIS |
+| H18.4 | **Sync graf de cunoștințe**: entități/evenimente WorldView → `memory/graph.py`; recall fuzionat peste geo-evenimente | 5 | P2 | H18.1 | JARVIS |
+| H18.5 | NL querying prin JARVIS („dark vessels în Hormuz, ultimele 6h"; „alertează-mă la o trecere SAR peste AOI") | 3 | P2 | H18.2 | JARVIS |
+| H18.6 | Agent intel opțional („Argus") — SOUL specializat geospațial-OSINT | 3 | P3 | H18.2 | JARVIS |
+| H18.7 | **Surse live reale** end-to-end (OpenSky/ADSB.fi, AISStream, Celestrak, IODA, GPSJam) | 13 | P1 | — | Standalone |
+| H18.8 | **Predicție fereastră recon + alertă** (SGP4 → „trecere SAR peste AOI în 22 min") — analogul open-source al MetaConstellation | 8 | P1 | H18.7 | Both |
+| H18.9 | **Detector tipping-and-cueing** („N treceri satelit se stivuiesc peste un AOI") + alți detectori de anomalii | 8 | P2 | H18.7 | Both |
+| H18.10 | Guvernanță: provenance/chain-of-custody + access control + audit (reutilizează Merkle audit + SSRF + guardrails JARVIS) | 8 | P2 | — | Both |
+| H18.11 | Layer de insight/adnotare + export replay partajabil (cazul jurnalism) | 8 | P3 | H18.9 | Standalone |
+| H18.12 | **Swarm captură OSINT cu agenți** (snapshot cache efemer, guvernat: rate-limit + provenance) | 13 | P3 | H18.10 | Both |
+
+> **Total ORIZONT 18:** 12 items, ~90 SP. **Secvențiere recomandată:** H18.7 (o sursă reală end-to-end) → H18.8
+> (recon-window, wow maxim, reutilizează SGP4) → H18.1+H18.3 (MCP + un watcher = bucla proactivă prin JARVIS) →
+> H18.10 (guvernanță). Detalii și fazele A–E: [`worldview/docs/ROADMAP.md`](worldview/docs/ROADMAP.md).
+
+---
+
 ## ✅ Arhivă — H1–H4 + Sprint 0 (livrat în 0.5-beta)
 
 > Toate itemurile H1–H4 sunt complet implementate. Detalii complete (67 items, 248 SP): [docs/HISTORY.md](docs/HISTORY.md).
