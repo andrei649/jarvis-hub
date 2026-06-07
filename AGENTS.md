@@ -66,6 +66,16 @@ Agentul care face merge (sau imediat după) actualizează `BACKLOG.md`:
 - actualizează contorul de teste dacă s-au adăugat,
 - nu deschide un PR separat doar pentru BACKLOG — include actualizarea în PR-ul de feature sau într-un commit direct pe main după squash merge.
 
+### Bridge browser↔mobil — paritate sincronizată
+HUD-ul browser și app-urile native iOS/Android (`mobile/`) consumă **același API** (`agents/web.py`).
+Ca dezvoltările pe browser să nu lase mobilul în urmă în tăcere, când un PR adaugă/schimbă un
+**endpoint user-facing sau o capabilitate HUD**, în *același* PR:
+- actualizează registrul de paritate [`mobile/PARITY.md`](mobile/PARITY.md) (rândul suprafeței: browser ✅, starea mobil),
+- dacă mobilul rămâne în urmă, deschide/actualizează un task de paritate `H18.x` în `BACKLOG.md` (ORIZONT 18).
+
+Astfel orice feature de browser devine automat un task pe iOS/Android. Suprafețele intenționat
+desktop-only se marchează `➖` în ledger, cu motivul notat. Menținerea ledgerului = `H18.10` (umbrelă mereu deschisă).
+
 ### Pattern conductor agent
 Pentru sesiuni cu 3+ wave-uri paralele, desemnează un **conductor agent** dedicat care:
 1. Monitorizează CI-ul pe toate PR-urile deschise,
