@@ -3,6 +3,7 @@
 import type { LayerData } from "@/lib/useWorldViewData";
 import { useTimelineStore } from "@/lib/store/useTimelineStore";
 import type { LayerId } from "@/lib/layers";
+import { ProvenanceSection } from "./ProvenanceSection";
 
 // The property holding each layer's entity id (to match the selection back to its feature).
 const ID_PROP: Record<LayerId, string> = {
@@ -17,6 +18,7 @@ const ID_PROP: Record<LayerId, string> = {
 export function Inspector({ data }: { data: LayerData }) {
   const selected = useTimelineStore((s) => s.selectedEntity);
   const selectEntity = useTimelineStore((s) => s.selectEntity);
+  const masterTime = useTimelineStore((s) => s.masterTime);
   if (!selected) return null;
 
   const idProp = ID_PROP[selected.layer];
@@ -24,7 +26,10 @@ export function Inspector({ data }: { data: LayerData }) {
     (f) => String(f.properties[idProp] ?? f.properties.entity_id ?? "") === selected.id,
   );
   const props = feature?.properties ?? {};
-  const entries = Object.entries(props).filter(([k]) => k !== "coordTimes" && k !== "footprint");
+  // `source`/`ingested_at` get their own labeled chain-of-custody block below.
+  const entries = Object.entries(props).filter(
+    ([k]) => k !== "coordTimes" && k !== "footprint" && k !== "source" && k !== "ingested_at",
+  );
 
   return (
     <div className="pointer-events-auto absolute bottom-24 left-4 z-10 w-64 rounded-lg bg-cockpit/90 p-3 text-xs backdrop-blur">
@@ -51,6 +56,13 @@ export function Inspector({ data }: { data: LayerData }) {
       ) : (
         <div className="text-white/50">no data at the current time — scrub to where it was active</div>
       )}
+      <ProvenanceSection
+        layer={selected.layer}
+        entityId={selected.id}
+        masterTime={masterTime}
+        featureSource={props.source}
+        featureIngestedAt={props.ingested_at}
+      />
     </div>
   );
 }
