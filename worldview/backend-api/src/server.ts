@@ -5,6 +5,7 @@ import { config } from "./config.js";
 import { healthRoutes } from "./routes/health.js";
 import { historyRoutes } from "./routes/history.js";
 import { liveRoutes } from "./routes/live.js";
+import { ontologyRoutes } from "./routes/ontology.js";
 import { provenanceRoutes } from "./routes/provenance.js";
 import { reconRoutes } from "./routes/recon.js";
 import { startLiveWriter } from "./consumers/liveWriter.js";
@@ -26,6 +27,7 @@ export async function buildServer() {
   await app.register(historyRoutes);
   await app.register(reconRoutes);
   await app.register(provenanceRoutes);
+  await app.register(ontologyRoutes);
   await app.register(liveRoutes);
 
   if (config.enableLiveWriter) {
