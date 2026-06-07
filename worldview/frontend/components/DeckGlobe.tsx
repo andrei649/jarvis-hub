@@ -4,7 +4,7 @@ import DeckGL from "@deck.gl/react";
 import type { PickingInfo } from "@deck.gl/core";
 import Map from "react-map-gl";
 import "mapbox-gl/dist/mapbox-gl.css";
-import { useWorldViewData } from "@/lib/useWorldViewData";
+import type { LayerData } from "@/lib/useWorldViewData";
 import { useEntityTrack } from "@/lib/useEntityTrack";
 import { useTimelineStore } from "@/lib/store/useTimelineStore";
 import { buildLayers } from "@/lib/deckLayers";
@@ -29,8 +29,7 @@ const TRACK_ID_PROP: Partial<Record<LayerId, string>> = {
   tle: "norad_id",
 };
 
-export function DeckGlobe() {
-  const data = useWorldViewData();
+export function DeckGlobe({ data }: { data: LayerData }) {
   const track = useEntityTrack();
   const visibility = useTimelineStore((s) => s.layerVisibility);
   const selectEntity = useTimelineStore((s) => s.selectEntity);
