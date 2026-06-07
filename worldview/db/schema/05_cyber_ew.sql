@@ -17,6 +17,7 @@ CREATE TABLE IF NOT EXISTS internet_outages (
     score         real        NOT NULL,             -- IODA outage severity (0=normal .. 1=blackout)
     region_geom   geometry(MultiPolygon, 4326),     -- affected region for map shading
     source        text        NOT NULL DEFAULT 'ioda',
+    ingested_at   timestamptz NOT NULL DEFAULT now(),  -- transaction time (provenance)
     PRIMARY KEY (entity_id, ts)
 );
 
@@ -38,6 +39,7 @@ CREATE TABLE IF NOT EXISTS gps_jamming (
     intensity     real        NOT NULL,             -- aggregated interference intensity (0..1)
     sample_count  integer     NOT NULL DEFAULT 0,   -- observations contributing to the bucket
     source        text        NOT NULL DEFAULT 'gpsjam',
+    ingested_at   timestamptz NOT NULL DEFAULT now(),  -- transaction time (provenance)
     PRIMARY KEY (h3_index, ts)
 );
 

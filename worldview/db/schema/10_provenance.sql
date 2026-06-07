@@ -17,66 +17,24 @@
 --
 -- SOURCE LINEAGE
 -- --------------
--- The `source` column already present on most stream tables is the lineage handle (feed name /
--- provider / 'terrestrial' | 'satellite' | ...). Tables that lacked one get it here, defaulting
--- to the 'unknown' sentinel so historic rows and source-less writers keep working.
+-- The `source` column on every stream/event table is the lineage handle (feed name / provider /
+-- 'terrestrial' | 'satellite' | ...). Tables whose writer doesn't supply one default it to the
+-- 'unknown' sentinel so source-less writers and historic rows keep working.
 --
--- This migration is ADDITIVE and IDEMPOTENT: every change is `ADD COLUMN IF NOT EXISTS` (or
--- `CREATE ... IF NOT EXISTS`), so re-applying is safe and existing ingestion writers that omit
--- the new columns keep working via the DEFAULTs. Run after 00..09. TimescaleDB/PostGIS-valid.
-
--- ===========================================================================
--- TRANSACTION TIME — add `ingested_at` (write/record time) to every stream/event table that
--- lacks it. Defaulted to now() so existing INSERTs (which never name the column) still land.
--- NOT NULL is safe because the DEFAULT fills it on every insert and existing rows are backfilled.
--- ===========================================================================
-
-ALTER TABLE adsb_positions
-    ADD COLUMN IF NOT EXISTS ingested_at timestamptz NOT NULL DEFAULT now();
-
-ALTER TABLE ais_positions
-    ADD COLUMN IF NOT EXISTS ingested_at timestamptz NOT NULL DEFAULT now();
-
-ALTER TABLE satellite_ephemeris
-    ADD COLUMN IF NOT EXISTS ingested_at timestamptz NOT NULL DEFAULT now();
-
-ALTER TABLE gps_jamming
-    ADD COLUMN IF NOT EXISTS ingested_at timestamptz NOT NULL DEFAULT now();
-
-ALTER TABLE internet_outages
-    ADD COLUMN IF NOT EXISTS ingested_at timestamptz NOT NULL DEFAULT now();
-
-ALTER TABLE dark_vessel_events
-    ADD COLUMN IF NOT EXISTS ingested_at timestamptz NOT NULL DEFAULT now();
-
-ALTER TABLE geopolitical_events
-    ADD COLUMN IF NOT EXISTS ingested_at timestamptz NOT NULL DEFAULT now();
-
-ALTER TABLE recon_windows
-    ADD COLUMN IF NOT EXISTS ingested_at timestamptz NOT NULL DEFAULT now();
-
--- NOTAMs and strike zones already carry `created_at` (their record time) but we add the
--- canonical `ingested_at` too so the provenance projection is uniform across every layer.
-ALTER TABLE notams
-    ADD COLUMN IF NOT EXISTS ingested_at timestamptz NOT NULL DEFAULT now();
-
-ALTER TABLE strike_zones
-    ADD COLUMN IF NOT EXISTS ingested_at timestamptz NOT NULL DEFAULT now();
-
--- ===========================================================================
--- SOURCE LINEAGE — ensure every stream/event table has a `source`. Most already do (02/03/05/06
--- declare it NOT NULL or with a feed default); only the tables missing one get it here, defaulted
--- to 'unknown' so existing rows and source-less writers keep working.
--- ===========================================================================
-
-ALTER TABLE satellite_ephemeris
-    ADD COLUMN IF NOT EXISTS source text NOT NULL DEFAULT 'unknown';
-
-ALTER TABLE dark_vessel_events
-    ADD COLUMN IF NOT EXISTS source text NOT NULL DEFAULT 'unknown';
-
-ALTER TABLE recon_windows
-    ADD COLUMN IF NOT EXISTS source text NOT NULL DEFAULT 'unknown';
+-- WHERE THE PROVENANCE COLUMNS LIVE
+-- ---------------------------------
+-- `source` and `ingested_at` are declared in each table's base CREATE TABLE (files 02..09),
+-- NOT added here by ALTER. This is deliberate: TimescaleDB forbids `ADD COLUMN ... DEFAULT <non-
+-- constant>` (e.g. DEFAULT now()) once a hypertable has columnstore/compression enabled (07
+-- enables it on adsb_positions / ais_positions / satellite_ephemeris / gps_jamming). Defining the
+-- columns at table-creation time — before 07 runs — sidesteps that restriction entirely and keeps
+-- a fresh schema apply (CI, `docker compose up`) clean. To back-fill these columns onto a PRE-
+-- EXISTING columnstore database, do it in two steps (nullable add, then set the default):
+--     ALTER TABLE <t> ADD COLUMN ingested_at timestamptz;          -- nullable add: allowed
+--     ALTER TABLE <t> ALTER COLUMN ingested_at SET DEFAULT now();  -- catalog-only: allowed
+--
+-- This file is therefore a pure, additive PROJECTION layer: it only defines the read-only
+-- `provenance_latest` view (below). It is idempotent (CREATE OR REPLACE) and safe to re-run.
 
 -- ===========================================================================
 -- PROVENANCE PROJECTION — a read-only VIEW that UNIONs the last-known provenance per
@@ -88,28 +46,31 @@ ALTER TABLE recon_windows
 -- "latest known" convenience surface for dashboards / ad-hoc audit.
 -- ===========================================================================
 
+-- Each UNION arm is parenthesized so its own `DISTINCT ON (...) ... ORDER BY` binds to that arm
+-- (an un-parenthesized trailing ORDER BY would attach to the whole UNION instead — a syntax error
+-- with the per-arm DISTINCT ON). The outer view is unordered; callers sort as needed.
 CREATE OR REPLACE VIEW provenance_latest AS
-    SELECT DISTINCT ON (icao24)
+    (SELECT DISTINCT ON (icao24)
         'adsb'::text AS layer, icao24::text AS entity_id, source, ts, ingested_at
     FROM adsb_positions
-    ORDER BY icao24, ts DESC
+    ORDER BY icao24, ts DESC)
   UNION ALL
-    SELECT DISTINCT ON (mmsi)
+    (SELECT DISTINCT ON (mmsi)
         'ais'::text AS layer, mmsi::text AS entity_id, source, ts, ingested_at
     FROM ais_positions
-    ORDER BY mmsi, ts DESC
+    ORDER BY mmsi, ts DESC)
   UNION ALL
-    SELECT DISTINCT ON (norad_id)
+    (SELECT DISTINCT ON (norad_id)
         'tle'::text AS layer, norad_id::text AS entity_id, source, ts, ingested_at
     FROM satellite_ephemeris
-    ORDER BY norad_id, ts DESC
+    ORDER BY norad_id, ts DESC)
   UNION ALL
-    SELECT DISTINCT ON (h3_index)
+    (SELECT DISTINCT ON (h3_index)
         'ew'::text AS layer, h3_index::text AS entity_id, source, ts, ingested_at
     FROM gps_jamming
-    ORDER BY h3_index, ts DESC
+    ORDER BY h3_index, ts DESC)
   UNION ALL
-    SELECT DISTINCT ON (event_id)
+    (SELECT DISTINCT ON (event_id)
         'context'::text AS layer, event_id::text AS entity_id, source, ts, ingested_at
     FROM geopolitical_events
-    ORDER BY event_id, ts DESC;
+    ORDER BY event_id, ts DESC);

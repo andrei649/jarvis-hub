@@ -9,7 +9,8 @@ CREATE TABLE IF NOT EXISTS ais_positions (
     cog_deg       real,                             -- course over ground
     heading_deg   real,                             -- true heading (may differ from COG)
     nav_status    smallint,                         -- AIS navigational status code
-    source        text             NOT NULL,        -- 'terrestrial' | 'satellite' | feed name
+    source        text             NOT NULL,        -- 'terrestrial' | 'satellite' | feed name (lineage)
+    ingested_at   timestamptz      NOT NULL DEFAULT now(), -- transaction time (provenance)
     PRIMARY KEY (mmsi, ts)
 );
 
@@ -36,6 +37,8 @@ CREATE TABLE IF NOT EXISTS dark_vessel_events (
     status            text NOT NULL DEFAULT 'dark'  -- dark | resumed | cleared
                         CHECK (status IN ('dark','resumed','cleared')),
     metadata          jsonb NOT NULL DEFAULT '{}'::jsonb,
+    source            text  NOT NULL DEFAULT 'unknown',   -- lineage handle (detector / feed)
+    ingested_at       timestamptz NOT NULL DEFAULT now(), -- transaction time (provenance)
     -- ts (detection time) must be in the PK: TimescaleDB requires the partitioning
     -- column to participate in every unique constraint on a hypertable.
     PRIMARY KEY (mmsi, ts)

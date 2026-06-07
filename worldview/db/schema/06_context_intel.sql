@@ -17,7 +17,8 @@ CREATE TABLE IF NOT EXISTS notams (
     upper_alt_m     real,
     raw             text,                           -- original NOTAM text
     source          text NOT NULL DEFAULT 'faa',
-    created_at      timestamptz NOT NULL DEFAULT now()
+    created_at      timestamptz NOT NULL DEFAULT now(),
+    ingested_at     timestamptz NOT NULL DEFAULT now()  -- transaction time (provenance, uniform across layers)
 );
 
 -- ---------------------------------------------------------------------------
@@ -32,7 +33,8 @@ CREATE TABLE IF NOT EXISTS strike_zones (
     severity        smallint NOT NULL DEFAULT 1,    -- 1 (advisory) .. 5 (active strike)
     source          text,
     metadata        jsonb NOT NULL DEFAULT '{}'::jsonb,
-    created_at      timestamptz NOT NULL DEFAULT now()
+    created_at      timestamptz NOT NULL DEFAULT now(),
+    ingested_at     timestamptz NOT NULL DEFAULT now()  -- transaction time (provenance, uniform across layers)
 );
 
 -- ---------------------------------------------------------------------------
@@ -46,6 +48,7 @@ CREATE TABLE IF NOT EXISTS geopolitical_events (
     geom          geometry(Geometry, 4326) NOT NULL,-- point OR polygon depending on event
     source        text        NOT NULL,
     metadata      jsonb       NOT NULL DEFAULT '{}'::jsonb,
+    ingested_at   timestamptz NOT NULL DEFAULT now(),  -- transaction time (provenance)
     PRIMARY KEY (event_id, ts)
 );
 

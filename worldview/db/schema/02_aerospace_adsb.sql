@@ -13,7 +13,8 @@ CREATE TABLE IF NOT EXISTS adsb_positions (
     squawk        text,                             -- transponder code (e.g. '7700' emergency)
     on_ground     boolean NOT NULL DEFAULT false,
     is_military   boolean NOT NULL DEFAULT false,   -- denormalized for fast military-only filters
-    source        text    NOT NULL,                 -- provenance for dedup / trust
+    source        text    NOT NULL,                 -- provenance for dedup / trust (source lineage)
+    ingested_at   timestamptz NOT NULL DEFAULT now(), -- transaction time: when WorldView recorded it
     -- Idempotent ingest: at-least-once Kafka delivery dedups on (icao24, ts).
     PRIMARY KEY (icao24, ts)
 );

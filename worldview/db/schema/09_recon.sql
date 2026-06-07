@@ -19,6 +19,8 @@ CREATE TABLE IF NOT EXISTS recon_windows (
     min_distance_km double precision NOT NULL,         -- closest ground-track distance to AOI (km)
     sunlit_at_peak  boolean     NOT NULL,              -- target illuminated at peak (optical needs it)
     quality         double precision NOT NULL,         -- predictor confidence / usefulness score
+    source          text        NOT NULL DEFAULT 'unknown', -- lineage handle (recon predictor)
+    ingested_at     timestamptz NOT NULL DEFAULT now(),      -- transaction time (provenance)
     PRIMARY KEY (norad_id, aoi_id, t_ingress)
 );
 

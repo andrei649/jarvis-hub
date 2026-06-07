@@ -29,6 +29,8 @@ CREATE TABLE IF NOT EXISTS satellite_ephemeris (
     sensor_type   text             NOT NULL,        -- denormalized: optical | sar | sigint | other
     footprint     geometry(Polygon, 4326),          -- ground footprint (cone / swath / coverage)
     is_sunlit     boolean,                          -- optical sensors need daylight at target
+    source        text             NOT NULL DEFAULT 'unknown', -- lineage handle (propagator / catalog)
+    ingested_at   timestamptz      NOT NULL DEFAULT now(),     -- transaction time (provenance)
     PRIMARY KEY (norad_id, ts)
 );
 
