@@ -55,6 +55,19 @@ class Settings:
     # AOIs to predict: "id:lon,lat,radius_km;id2:..." (empty = a single Strait-of-Hormuz AOI).
     aois: str = os.getenv("AOIS", "")
 
+    # --- CEP (insight engine) ---
+    # Windowed-keyed complex-event-processing over the recon stream. The engine buffers events
+    # into per-key tumbling windows of cep_window_seconds and fires the tipping detector once
+    # the watermark (= max_event_ts - cep_lateness_seconds) passes a window's close; events older
+    # than the watermark are dropped as too-late. Consumes the recon topic(s); emits to its own
+    # output topic. cep_tipping_* are the reused detector thresholds (see cep.tipping).
+    cep_input_topics: str = os.getenv("CEP_INPUT_TOPICS", "osint.recon")
+    cep_output_topic: str = os.getenv("CEP_OUTPUT_TOPIC", "osint.events")
+    cep_window_seconds: int = int(os.getenv("CEP_WINDOW_SECONDS", "600"))
+    cep_lateness_seconds: int = int(os.getenv("CEP_LATENESS_SECONDS", "120"))
+    cep_tipping_delta_seconds: int = int(os.getenv("CEP_TIPPING_DELTA_SECONDS", "600"))
+    cep_tipping_min_count: int = int(os.getenv("CEP_TIPPING_MIN_COUNT", "3"))
+
     # --- EW / Cyber (Layer D) ---
     ew_source: str = os.getenv("EW_SOURCE", "gpsjam")
     gpsjam_base_url: str = os.getenv("GPSJAM_BASE_URL", "https://gpsjam.org/data")
