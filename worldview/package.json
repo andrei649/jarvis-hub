@@ -13,6 +13,7 @@
     "infra:logs": "docker compose logs -f",
     "db:apply": "for f in db/schema/*.sql; do psql \"$DATABASE_URL\" -v ON_ERROR_STOP=1 -f \"$f\"; done",
     "db:seed": "psql \"$DATABASE_URL\" -v ON_ERROR_STOP=1 -f db/seed/demo.sql",
+    "seed:live": "node scripts/seed-live.mjs",
     "dev:frontend": "npm run dev --workspace frontend",
     "dev:api": "npm run dev --workspace backend-api",
     "build": "npm run build --workspaces --if-present"

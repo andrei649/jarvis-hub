@@ -6,7 +6,8 @@ help:
 	@echo "  make infra-up      # start Redpanda + TimescaleDB + Redis (docker compose)"
 	@echo "  make infra-down    # stop infra"
 	@echo "  make db-apply      # apply db/schema/*.sql to \$$DATABASE_URL"
-	@echo "  make db-seed       # load the Strait of Hormuz demo scenario"
+	@echo "  make db-seed       # load the Strait of Hormuz demo scenario (historical)"
+	@echo "  make seed-live     # seed Redis live-state for LIVE mode (no workers needed)"
 	@echo "  make install       # install JS + Python deps for all workspaces"
 	@echo "  make dev-frontend  # run the Next.js dashboard"
 	@echo "  make dev-api       # run the Fastify 4D API"
@@ -23,6 +24,9 @@ db-apply:
 
 db-seed:
 	psql "$$DATABASE_URL" -v ON_ERROR_STOP=1 -f db/seed/demo.sql
+
+seed-live:
+	node scripts/seed-live.mjs
 
 install:
 	npm install

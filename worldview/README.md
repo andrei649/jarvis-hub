@@ -90,5 +90,14 @@ npm run db:seed     # loads a Strait of Hormuz scenario across all 5 layers, las
 Then open the dashboard and **scrub the timeline back ~10 minutes** (historical mode): a civil
 flight crossing the strait, a military orbit, a transiting tanker, a vessel going **dark**, a
 SAR satellite pass with footprint, a ramping **GPS-jamming** cell, a NOTAM, and a strike event —
-all moving in lockstep with the master clock. For live mode, run the ingestion workers with the
-API's `ENABLE_LIVE_WRITER=1` / `ENABLE_HISTORY_WRITER=1`.
+all moving in lockstep with the master clock.
+
+For **LIVE mode** without running Kafka/workers, seed Redis directly:
+
+```bash
+export REDIS_URL=redis://localhost:6379
+npm run seed:live   # writes a live snapshot the /live WebSocket serves immediately
+```
+
+(For the real pipeline, run the ingestion workers with the API's `ENABLE_LIVE_WRITER=1` /
+`ENABLE_HISTORY_WRITER=1`.)
