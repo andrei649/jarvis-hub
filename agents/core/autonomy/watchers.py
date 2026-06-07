@@ -356,6 +356,114 @@ class HealthProbe:
             return []
 
 
+def _eta_text(t_ingress) -> str:
+    """Render ' in ~Nm' from a unix-seconds ingress time, or '' if unknown/past."""
+    try:
+        delta = float(t_ingress) - datetime.now(timezone.utc).timestamp()
+    except (TypeError, ValueError):
+        return ""
+    if delta <= 0:
+        return ""
+    mins = int(delta // 60)
+    return f" in ~{mins}m" if mins else " imminently"
+
+
+class WorldViewProbe:
+    """Monitors the local WorldView 4D OSINT platform for *due* satellite recon
+    passes and dark-vessel detections, turning each into an autonomy signal so it
+    surfaces in the JARVIS digest (within the daily urgent budget) with a
+    provenance link back to WorldView.
+
+    Debounced by a stable per-event key (one alert per pass / per dark vessel).
+    Degrades gracefully: if the WorldView plugin is absent or its backend is
+    unreachable, the probe returns no signals — it never raises and never invents
+    intel (an OSINT surface). Reuses the read-only ``WorldViewPlugin`` (H19.3.3),
+    so it inherits that plugin's retry + circuit-breaker and permission scope.
+    """
+
+    def __init__(self, worldview_plugin=None, lead_min: int = 30, get_setting=None):
+        self.plugin = worldview_plugin
+        self._default_lead_min = lead_min
+        self.get_setting = get_setting
+
+    @property
+    def lead_min(self) -> int:
+        if self.get_setting:
+            try:
+                return int(self.get_setting("autonomy.worldview_lead_min", self._default_lead_min))
+            except Exception:
+                logger.warning("Failed to read autonomy.worldview_lead_min setting", exc_info=True)
+        return self._default_lead_min
+
+    async def __call__(self) -> list[Signal]:
+        if self.plugin is None:
+            return []
+        signals: list[Signal] = []
+        signals.extend(await self._recon_signals())
+        signals.extend(await self._dark_vessel_signals())
+        return signals
+
+    async def _recon_signals(self) -> list[Signal]:
+        """Satellite recon passes due within the lead window → WARN signals."""
+        if not hasattr(self.plugin, "recon_alerts"):
+            return []
+        try:
+            res = await self.plugin.recon_alerts(lead=float(self.lead_min) * 60.0)
+        except Exception as e:
+            logger.warning(f"WorldViewProbe recon probe failed: {e}")
+            return []
+        if not isinstance(res, dict) or res.get("status") != "ok":
+            return []  # backend unavailable → no signals
+        out: list[Signal] = []
+        for alert in res.get("alerts", []) or []:
+            norad = alert.get("norad_id")
+            aoi = alert.get("aoi_id")
+            if norad is None or aoi is None:
+                continue
+            sensor = alert.get("sensor_type") or "sensor"
+            eta = _eta_text(alert.get("t_ingress"))
+            # Provenance link: the pass traces to the WorldView 'tle' layer entity.
+            prov = f"provenance WorldView /provenance/tle/{norad}"
+            out.append(Signal(
+                key=f"worldview.recon.{norad}.{aoi}",
+                healthy=False,
+                severity=Severity.WARN,
+                detail=f"Recon pass: {sensor} sat {norad} over AOI '{aoi}'{eta} — {prov}",
+                agent="athena",
+            ))
+        return out
+
+    async def _dark_vessel_signals(self) -> list[Signal]:
+        """Dark-vessel detections (AIS gap in a watched geofence) → CRITICAL signals."""
+        if not hasattr(self.plugin, "state_at"):
+            return []
+        now = datetime.now(timezone.utc).timestamp()
+        try:
+            res = await self.plugin.state_at("context", now)
+        except Exception as e:
+            logger.warning(f"WorldViewProbe dark-vessel probe failed: {e}")
+            return []
+        if not isinstance(res, dict) or res.get("status") != "ok":
+            return []
+        out: list[Signal] = []
+        for feat in res.get("features", []) or []:
+            props = (feat or {}).get("properties", {}) or {}
+            if props.get("kind") != "dark_vessel":
+                continue
+            mmsi = props.get("mmsi") or props.get("entity_id")
+            if mmsi is None:
+                continue
+            prov = f"provenance WorldView /provenance/ais/{mmsi}"
+            out.append(Signal(
+                key=f"worldview.dark_vessel.{mmsi}",
+                healthy=False,
+                severity=Severity.CRITICAL,
+                detail=f"Dark vessel: MMSI {mmsi} went silent in a watched geofence — {prov}",
+                agent="athena",
+            ))
+        return out
+
+
 # ── the event watcher ────────────────────────────────────────────────
 class EventWatcher:
     """Aggregates probes, debounces events, and feeds the autonomy worker.
