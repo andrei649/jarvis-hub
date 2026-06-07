@@ -563,7 +563,7 @@ chain-of-thought leak / mid-sentence truncation fixed. Kill-switch:
 
 | # | Item | S | P | Dep | Track |
 |---|------|---|---|-----|-------|
-| H18.2.1 | **Recon-window scheduler** (SGP4 → footprint∩AOI → bisecție ingress/egress → scor calitate look-angle/`is_sunlit`) → tabel `recon_windows`, refresh la TLE nou. **AC:** pentru un AOI+sat cunoscut, trecerea prezisă se potrivește cu o efemeridă independentă în toleranță; persistat + reîmprospătat. | 8 | P1 | H18.1.3 | Both |
+| H18.2.1 🔨 | **Recon-window scheduler** (SGP4 → footprint∩AOI → bisecție ingress/egress → scor calitate). **Livrat (algoritm):** `recon/windows.py` — `Aoi`/`ReconWindow`, `footprint_ground` (optical/SAR/coverage), `predict_windows` (walk SGP4 + test circle-vs-circle haversine + bisecție ingress/egress ~1s + closest-approach peak + quality care anulează optic noaptea via `is_sunlit`). +5 teste (ISS: AOI ecuatorial→ferestre ordonate; AOI polar→0; optic-noapte vs SAR). **Rămâne:** persistență `recon_windows` + refresh în deploy (parte din H18.2.2/backend). | 8 | P1 | H18.1.3 | Both |
 | H18.2.2 | **Alertare recon-window** (scan windows în lead-time → `Alert`). **AC:** o alertă se declanșează ≥lead_time înaintea unei treceri reale peste un AOI urmărit. | 3 | P1 | H18.2.1 | Both |
 | H18.2.3 | **Schelet motor CEP** (consumer windowed keyed pe `aoi`/`geohash` + state + watermark lateness). **AC:** o regulă windowed rulează peste streamul live cu lateness mărginit. | 8 | P2 | H18.1.5 | Both |
 | H18.2.4 | **Regulă tipping-and-cueing** („≥N recon windows peste un AOI în Δt"). **AC:** scenariu sintetic + real declanșează insight-ul cu linkuri la ferestrele contribuitoare. | 5 | P2 | H18.2.3, H18.2.1 | Both |
@@ -575,7 +575,7 @@ chain-of-thought leak / mid-sentence truncation fixed. Kill-switch:
 
 | # | Item | S | P | Dep | Track |
 |---|------|---|---|-----|-------|
-| H18.3.1 | **WorldView MCP server** — tool-uri read (`state_at`, `find_dark_vessels`, `recon_windows`, `track_of`, `list_aois`) consumate de `agents/core/mcp/client.py`. **AC:** JARVIS listează + apelează tool-urile; primește GeoJSON/obiecte. | 5 | P1 | H16.1 | JARVIS |
+| H18.3.1 🔨 | **WorldView MCP server** — tool-uri read consumate de `agents/core/mcp/client.py`. **Livrat:** pachet standalone `worldview/mcp/` (`@worldview/mcp`) — SDK MCP v1.29 (`Server`+`setRequestHandler`, JSON-Schema, stdio); tool-uri `stateAt`, `findDarkVessels`, `trackOf`, `listLayers` (handler-e pure `(args, deps)` cu fetch injectabil, apelează REST-ul WorldView; validare input; erori→isError). +12 teste (stub fetch), tsc clean, build dist. **Rămâne:** tool `recon_windows`/`watch_aoi` (după backend recon) + abonare din JARVIS. | 5 | P1 | H16.1 | JARVIS |
 | H18.3.2 | **Tool-uri MCP write/async** (`watch_aoi`, `reconstruct_event`) + **auth capability-token** (reutilizează `CapabilityBroker`, H17.3). **AC:** `watch_aoi` creează o regulă sub token scoped; apelurile neautorizate respinse + auditat. | 5 | P1 | H18.3.1, H17.3 | JARVIS |
 | H18.3.3 | **Plugin JARVIS** `agents/core/plugins/worldview.py` (gated de `plugin_gate`). **AC:** Athena/Stark răspund unei întrebări geospațiale folosind WorldView într-o sesiune JARVIS. | 5 | P1 | H18.3.1 | JARVIS |
 | H18.3.4 | **Autonomy watcher**: alerte WorldView → inbox→severitate→**buget ≤4/zi**→digest JARVIS. **AC:** o alertă dark-vessel/recon apare în digest-ul JARVIS în buget, cu link de provenance. | 8 | P1 | H18.3.1, H6, H18.2.2 | JARVIS |
@@ -600,7 +600,7 @@ chain-of-thought leak / mid-sentence truncation fixed. Kill-switch:
 | H18.5.1 | **Serviciu vector-tiles** (Martin/pg_tileserv) + CDN; clientul comută pe tiles sub un prag de zoom. **AC:** globul randează 1M+ puncte @60fps via tiles. | 8 | P2 | H18.1.5 | Standalone |
 | H18.5.2 | **WS gateway fleet** + coalescing + sharding canale pe geohash (opțiune NATS/Centrifugo). **AC:** 10k clienți WS concurenți susținuți; rata de delta per-client mărginită. | 8 | P2 | — | Standalone |
 | H18.5.3 | **Lakehouse offload** (CDC/sink → Iceberg/Parquet pe S3 + query DuckDB/Trino). **AC:** raw rece interogabil; dimensiunea store-ului OLTP mărginită. | 8 | P3 | H18.1.7 | Standalone |
-| H18.5.4 | **Glob 3D + camera tours**. **AC:** vedere glob + un tur de cameră scriptat al unui eveniment. | 5 | P3 | H18.5.1 | Standalone |
+| H18.5.4 🔨 | **Glob 3D + camera tours**. **Livrat:** toggle map⇄globe — store `viewMode` + `ViewToggle`; `DeckGlobe` randează cu `_GlobeView` (Deck.gl 9) pe o sferă-pământ întunecată (SolidPolygonLayer + graticule), fără Mapbox sub glob; click/tooltip/zoom în ambele moduri. +2 teste store; tsc clean, 15 vitest, build OK. **Rămâne:** camera tours scriptate. | 5 | P3 | H18.5.1 | Standalone |
 | H18.5.5 | **Observabilitate** (OTel trace end-to-end, dashboards Prometheus/Grafana, error budgets, runbooks). **AC:** dashboards golden-signal + alarmă lag + 1 runbook. | 5 | P2 | — | Both |
 | H18.5.6 | **DR** (multi-AZ, promovare replică, Kafka mirror; test RPO/RTO). **AC:** un game-day DR atinge RPO≤5min/RTO≤30min. | 8 | P3 | H18.1.5 | Standalone |
 | H18.5.7 | **Swarm captură OSINT cu agenți, guvernat** (snapshot cache efemer, rate-limit + provenance). **AC:** o rulare de captură face snapshot la semnale efemere cu provenance + rate-limit. | 13 | P3 | H18.4.4 | Both |
