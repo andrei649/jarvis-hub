@@ -1,5 +1,10 @@
 # Hermes / `hermes-agent` — research: what it is, and why our importer is broken against it
 
+> **Update 2026‑06‑07 — FIXED (BUG‑13).** The importer/loader fix in §6 is implemented:
+> `importer.py` now locates `SKILL.md` in the recursive git tree (category nesting + flat +
+> legacy `manifest.*` fallback) and saves it verbatim; `loader.py` parses YAML frontmatter.
+> +8 offline tests (`tests/test_hermes_import.py`). See `BACKLOG.md` BUG‑13.
+>
 > Date 2026‑06‑07 · Goal: ground‑truth what `NousResearch/hermes-agent` actually is in 2026, verify
 > whether `agents/core/skills/importer.py` (`import_from_hermes`) still works against the live repo,
 > and decide what to mine. Grounded in **direct GitHub API + raw‑source fetches** (not memory — the

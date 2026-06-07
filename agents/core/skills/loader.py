@@ -18,6 +18,29 @@ logger = logging.getLogger("jarvis.skills")
 SKILLS_DIR = Path("skills")
 
 
+def _split_frontmatter(content: str) -> tuple[Optional[dict], str]:
+    """Split a SKILL.md into (yaml_frontmatter_dict, body).
+
+    Returns (None, content) when there is no parseable ``---`` frontmatter
+    block, so callers can fall back to the Markdown-heading dialect.
+    """
+    if not content.startswith("---"):
+        return None, content
+    lines = content.split("\n")
+    if lines[0].strip() != "---":
+        return None, content
+    for i in range(1, len(lines)):
+        if lines[i].strip() == "---":
+            try:
+                import yaml
+                data = yaml.safe_load("\n".join(lines[1:i]))
+            except Exception:
+                return None, content
+            body = "\n".join(lines[i + 1:])
+            return (data, body) if isinstance(data, dict) else (None, content)
+    return None, content
+
+
 class Skill:
     def __init__(self, name: str, path: Path, manifest: dict):
         self.name = name
@@ -160,14 +183,50 @@ class SkillLoader:
 
     def _parse_manifest(self, path: Path) -> dict:
         content = path.read_text(encoding="utf-8")
+        default_name = path.parent.name
+
+        # SKILL.md comes in two dialects: our own Markdown-heading style
+        # (# name / > desc / **Version:** …) and the agentskills.io / Hermes
+        # YAML-frontmatter style (--- … ---). Detect frontmatter first; fall
+        # back to the heading parser for everything else.
+        fm, body = _split_frontmatter(content)
+        if fm is not None:
+            return self._manifest_from_frontmatter(fm, body, default_name)
+        return self._manifest_from_headings(content, default_name)
+
+    def _manifest_from_frontmatter(self, fm: dict, body: str, default_name: str) -> dict:
+        meta = fm.get("metadata") if isinstance(fm.get("metadata"), dict) else {}
+        hermes = meta.get("hermes") if isinstance(meta.get("hermes"), dict) else {}
+
+        requires = fm.get("requires") or hermes.get("requires_toolsets") or []
+        if isinstance(requires, str):
+            requires = [r.strip() for r in requires.split(",") if r.strip()]
+        agents = fm.get("agents") or []
+        if isinstance(agents, str):
+            agents = [a.strip() for a in agents.split(",") if a.strip()]
+        commands = fm.get("commands") if isinstance(fm.get("commands"), list) else []
+        if not commands:
+            commands = self._parse_commands_from_body(body)
+
+        return {
+            "name": fm.get("name", default_name),
+            "description": fm.get("description", ""),
+            "version": str(fm.get("version", "0.1.0")),
+            "author": fm.get("author", "unknown"),
+            "license": fm.get("license", ""),
+            "agents": list(agents),
+            "requires": list(requires),
+            "commands": commands,
+        }
+
+    def _manifest_from_headings(self, content: str, default_name: str) -> dict:
         manifest = {
-            "name": path.parent.name, "description": "",
+            "name": default_name, "description": "",
             "version": "0.1.0", "agents": [],
             "requires": [], "commands": [],
         }
 
         in_commands = False
-        current_command = {}
 
         for line in content.split("\n"):
             stripped = line.strip()
@@ -198,6 +257,24 @@ class SkillLoader:
                     })
 
         return manifest
+
+    @staticmethod
+    def _parse_commands_from_body(body: str) -> list[dict]:
+        commands: list[dict] = []
+        in_commands = False
+        for line in body.split("\n"):
+            stripped = line.strip()
+            if stripped.startswith("## "):
+                in_commands = stripped[3:].strip().lower().startswith("commands")
+            elif in_commands and stripped.startswith("- `"):
+                match = re.match(r"- `(\w+)(?:\s+<([^>]+)>)?`\s*—\s*(.+)", stripped)
+                if match:
+                    commands.append({
+                        "command": match.group(1),
+                        "args": match.group(2) or "",
+                        "description": match.group(3),
+                    })
+        return commands
 
     def parse_command(self, text: str) -> Optional[tuple[str, str, str]]:
         """Parse text for skill commands like 'weather bucuresti' or 'skill:weather bucuresti'."""
