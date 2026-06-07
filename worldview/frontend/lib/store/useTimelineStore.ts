@@ -9,6 +9,9 @@ import { LAYER_IDS, type LayerId } from "@/lib/layers";
 
 export type PlaybackMode = "live" | "historical";
 
+/** Map projection: 2.5D Mapbox basemap vs 3D Deck.gl globe. */
+export type ViewMode = "map" | "globe";
+
 type LayerVisibility = Record<LayerId, boolean>;
 
 const allVisible: LayerVisibility = LAYER_IDS.reduce(
@@ -33,6 +36,8 @@ interface TimelineState {
   selectedEntity: SelectedEntity | null;
   /** Current map zoom; drives level-of-detail (raw vs minute rollups). */
   zoom: number;
+  /** Map projection: 2.5D Mapbox basemap ("map") vs 3D Deck.gl globe ("globe"). */
+  viewMode: ViewMode;
 
   setMasterTime: (ts: number) => void;
   setMode: (mode: PlaybackMode) => void;
@@ -41,6 +46,7 @@ interface TimelineState {
   toggleLayer: (id: LayerId) => void;
   selectEntity: (entity: SelectedEntity | null) => void;
   setZoom: (zoom: number) => void;
+  setViewMode: (mode: ViewMode) => void;
   goLive: () => void;
 }
 
@@ -52,6 +58,7 @@ export const useTimelineStore = create<TimelineState>((set) => ({
   layerVisibility: allVisible,
   selectedEntity: null,
   zoom: 6,
+  viewMode: "map",
 
   setMasterTime: (ts) => set({ masterTime: ts }),
   setMode: (mode) => set({ mode }),
@@ -63,5 +70,6 @@ export const useTimelineStore = create<TimelineState>((set) => ({
     })),
   selectEntity: (entity) => set({ selectedEntity: entity }),
   setZoom: (zoom) => set({ zoom }),
+  setViewMode: (mode) => set({ viewMode: mode }),
   goLive: () => set({ mode: "live", masterTime: Date.now() / 1000, playing: true }),
 }));

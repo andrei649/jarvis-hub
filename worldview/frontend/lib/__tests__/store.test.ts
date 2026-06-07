@@ -7,7 +7,7 @@ beforeEach(() => {
     (acc, id) => ({ ...acc, [id]: true }),
     {} as Record<LayerId, boolean>,
   );
-  useTimelineStore.setState({ mode: "live", playing: true, speed: 1, layerVisibility });
+  useTimelineStore.setState({ mode: "live", playing: true, speed: 1, layerVisibility, viewMode: "map" });
 });
 
 test("toggleLayer flips a layer's visibility", () => {
@@ -48,4 +48,15 @@ test("selectEntity sets and clears the tracked entity", () => {
 test("setZoom updates the zoom used for level-of-detail", () => {
   useTimelineStore.getState().setZoom(3.2);
   expect(useTimelineStore.getState().zoom).toBe(3.2);
+});
+
+test("viewMode defaults to map", () => {
+  expect(useTimelineStore.getState().viewMode).toBe("map");
+});
+
+test("setViewMode switches between map and globe", () => {
+  useTimelineStore.getState().setViewMode("globe");
+  expect(useTimelineStore.getState().viewMode).toBe("globe");
+  useTimelineStore.getState().setViewMode("map");
+  expect(useTimelineStore.getState().viewMode).toBe("map");
 });

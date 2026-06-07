@@ -2,6 +2,7 @@
 
 import dynamic from "next/dynamic";
 import { LayerPanel } from "@/components/LayerPanel";
+import { ViewToggle } from "@/components/ViewToggle";
 import { StatsHud } from "@/components/StatsHud";
 import { Inspector } from "@/components/Inspector";
 import { TimelineScrubber } from "@/components/TimelineScrubber";
@@ -22,6 +23,7 @@ export default function Home() {
   return (
     <main className="relative h-screen w-screen overflow-hidden">
       <DeckGlobe data={data} />
+      <ViewToggle />
       <LayerPanel />
       <StatsHud data={data} />
       <Inspector data={data} />
