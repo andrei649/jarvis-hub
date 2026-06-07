@@ -238,7 +238,7 @@ chain-of-thought leak / mid-sentence truncation fixed. Kill-switch:
 | H5.13 ✅ | **Proactive Event Watchers** — `EventWatcher` + Email/Calendar/Finance/Health probes, eșantionate în bucla de autonomie (gated `system.watchers_enabled`). `core/autonomy/watchers.py` | 8 | H6.7 | 0.8 ✅ |
 | H5.14 ✅ | **Retrieval Fusion Engine** — `reciprocal_rank_fusion()` + `HybridRetriever` (vector⊕graph RRF, weight-tunable, injectabil) + `MemoryManager.hybrid_search()`. `core/memory/fusion.py`, 9 teste offline. **Task4 ✅:** `GET /api/memory/search` + `FusedRecallBox` în MemoryTab. | 5 | H3.1, H3.2 | 0.8 ✅ |
 | H5.15 ✅ | **Daily Reflection & Graph Consolidation** — `DailyReflector` (`core/autonomy/reflection.py`): gather context → LLM reflection → JSON entities/relations/lessons → promote to Neo4j graph; idempotent per zi; hookuit în `_autonomy_loop` (fereastră 22:00–07:00, gated `system.reflection_enabled`). Endpoint `/api/reflection/status` + `/api/reflection/run`. 10 teste offline. | 8 | H6.6, H3.2 | 0.8 ✅ |
-| H5.16 ✅ | **Sentence-level TTS & Audio Barge-in** — integration edge-tts, play/stop barge-in sync, auto-speak, unit tested | 8 | H1.1, H5.5 | 0.8 ✅ |
+| H5.16 🟡 | **Sentence-level TTS & Audio Barge-in** — edge-tts integration + server-side play/stop exist and are tested; **but** (audit 2026-06-07, code-read) sentence-level streaming was never implemented. Shipped instead: the **browser voice loop** (mic → local STT `/api/voice/stt` → chat → TTS playback, hands-free; PR #162) with **opt-in barge-in** (PR #164, default off, needs on-device echo-cancellation tuning). Sentence-level TTS streaming + browser wake-word remain TODO. See `docs/VOICE.md`. | 8 | H1.1, H5.5 | 0.8 🟡 |
 | H5.17 ✅ | **Batch & Cache Embeddings Pipeline** — `EmbeddingCache` (content-addressed, sharded, crash-safe) + `Embedder.embed_batch` (dedup + paralel) + retry/backoff (degradare la hash) + cache stats în pipeline. `core/ingestion/embedder.py` | 5 | H5.5 | 0.8 ✅ |
 
 ---
@@ -523,6 +523,33 @@ chain-of-thought leak / mid-sentence truncation fixed. Kill-switch:
 > **H17 (Provable Trust)** + **H14 (Living Memory)** sunt cele mai on-mission (teza de încredere + „te cunoaște";
 > H17 continuă direct securitatea Wave 0 / H12.1); **H13** ridică plafonul la $0; **H15/H16** închid platforma.
 > Flagship transversal: **sleep-time compute** (H13/H14) — chiar sloganul moonshot.
+
+---
+
+## ORIZONT 18 — Aplicații Native iOS/Android & Paritate cu Browser (P2–P3) — 9/10
+
+> Client mobil nativ (Expo SDK 56 / RN 0.85) sub `mobile/`, peste **același API HTTP** (`agents/web.py`)
+> ca HUD-ul browser — niciun backend nou. Fundația livrată în **PR #161**. Restul = paritate progresivă
+> cu HUD-ul + infrastructura de build/release.
+>
+> **Bridge browser↔mobil (sincronizarea backlogului):** suprafața de paritate trăiește în
+> [`mobile/PARITY.md`](mobile/PARITY.md) — un registru endpoint→browser?→mobil?→task. **Regula de sincronizare**
+> (vezi `AGENTS.md` → „Bridge browser↔mobil"): orice feature browser care adaugă/schimbă un endpoint user-facing
+> SAU o capabilitate HUD **trebuie** să (1) actualizeze `mobile/PARITY.md` și (2) deschidă un task de paritate
+> `H18.x` aici dacă mobilul rămâne în urmă. Așa, dezvoltările pe browser devin automat taskuri pe iOS/Android.
+
+| # | Item | S | P | Dep | Sursă |
+|---|------|---|---|-----|-------|
+| H18.1 ✅ | **App nativ iOS/Android (Expo)** — shell cu tab-uri (Chat/Status/Settings), chat streaming token-cu-token peste `POST /chat/stream` (SSE via XHR), `GET /status` cu telemetrie host/GPU + pull-to-refresh, config hub URL + `X-User-Token` persistat (AsyncStorage) + test-connection; temă dark derivată din HUD v2. **Done 2026-06-06 (PR #161):** `mobile/` (App.tsx, src/api/client.ts, src/screens/*, src/context/ServerContext.tsx, src/storage/settings.ts). `tsc --noEmit` curat. | 8 | P2 | — | paritate HUD |
+| H18.2 ✅ | **Persistă istoricul chat-ului** — conversațiile supraviețuiesc restartului. **Done 2026-06-07:** `src/storage/chat.ts` (AsyncStorage, cap 200 mesaje, nu persistă mesajele în streaming) + load/save/clear în `ChatScreen` (buton „New"). | 3 | P2 | H18.1 | — |
+| H18.3 ✅ | **Selector de agent** — picker modal pur-JS alimentat din `GET /api/agents`, agent persistat în prefs. **Done 2026-06-07:** `src/components/AgentPicker.tsx` + `src/storage/prefs.ts` + `fetchAgents` în client; `streamChat` trimite agentul ales. | 3 | P2 | H18.1 | paritate HUD agents |
+| H18.4 ✅ | **Render Markdown** — parser propriu (heading/listă/cod/quote/bold/italic/cod-inline/link) + renderer RN. **Done 2026-06-07:** `src/markdown/parse.ts` (pur, testat) + `src/markdown/Markdown.tsx`; folosit în `MessageBubble` pentru răspunsuri. | 3 | P3 | H18.1 | paritate HUD |
+| H18.5 ✅ | **Resume sesiuni + TTS** — listă/resume `/sessions` + redare voce `/tts`. **Done 2026-06-07:** `src/components/SessionsModal.tsx` (`fetchSessions`/`resumeSession` → repopulează firul) + `src/audio/tts.ts` (fetch MP3 → cache → expo-audio, buton 🔊 per mesaj, reset la `didJustFinish`). | 5 | P3 | H18.1 | paritate HUD voice |
+| H18.6 ✅ | **Timeouts + reconnect pe stream** — deadline pe request + retry/back-off pe GET-uri idempotente + idle-timeout pe stream. **Done 2026-06-07:** `AbortController` (15s) + retry exponențial (status/agents/sessions) + idle-timeout 45s pe `streamChat` cu eroare clară. | 3 | P2 | H18.1 | robustețe |
+| H18.7 ✅ | **EAS build config (`eas.json`)** — profile development/preview/production (+ submit). **Done 2026-06-07:** `mobile/eas.json` (`appVersionSource: remote`, APK preview, autoIncrement production). | 3 | P2 | H18.1 | Expo EAS |
+| H18.8 ✅ | **Test Jest** pentru logica pură (SSE decoder + Markdown parser). **Done 2026-06-07:** `jest.config.js` (babel izolat de Metro) + 19 teste (`sse.test.ts`, `parse.test.ts`), `npm test` verde. | 2 | P2 | H18.1 | — |
+| H18.9 ✅ | **Branding** — icon + splash Jarvis (motiv „core" cyan pe `#030810`), generate determinist. **Done 2026-06-07:** `scripts/gen-icons.js` (pngjs) → icon/splash/favicon/adaptive (foreground+background+monochrome); splash dark via plugin `expo-splash-screen` în `app.json`. | 2 | P3 | H18.1 | — |
+| H18.10 | **Paritate continuă (bridge)** — menține `mobile/PARITY.md` la zi: pentru fiecare feature browser nou cu suprafață user-facing, adaugă rândul de paritate + (dacă e cazul) task `H18.x`. Task umbrelă, mereu deschis. | — | P2 | H18.1 | bridge |
 
 ---
 

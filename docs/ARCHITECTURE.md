@@ -144,7 +144,7 @@ When on: embeds the query, runs fused recall (vector ⊕ graph), injects top-k a
 |------|---------|-------------|
 | `agents/core/channels/base.py` | Abstract channel | `ChannelAdapter.start/stop/send/receive` |
 | `agents/core/channels/web.py` | SSE streaming channel | `WebChannel` |
-| `agents/core/channels/voice.py` | Silero TTS channel | `VoiceChannel` |
+| `agents/core/channels/voice.py` | Voice channel — wraps `VoicePipeline` (server-side mic) | `VoiceChannel` |
 | `agents/core/channels/telegram.py` | Telegram bot | `TelegramChannel`, `send_card`, `on_callback` |
 | `agents/core/channels/discord.py` | Discord bot | `DiscordChannel` |
 | `agents/core/channels/email.py` | SMTP + IMAP | `EmailChannel` |
@@ -189,12 +189,25 @@ Built-in skills: `brief`, `calendar`, `content`, `email_triage`, `family_store`,
 
 ### Voice
 
+Two front-ends, shared engines — full subsystem doc: **`docs/VOICE.md`**.
+
+**Browser HUD loop** (the one that ships — mic in the browser at `/v2`):
+
+| Path | Purpose | Key symbols |
+|------|---------|-------------|
+| `frontend/src/voice.ts` | mic capture + VAD + STT call + TTS playback + hands-free loop + opt-in barge-in | `useVoice` |
+| `agents/web.py` | `POST /api/voice/stt` (raw audio body → Whisper), `GET /api/voice/capabilities` | `stt_endpoint`, `_stt_engine`, `voice_capabilities` |
+| `agents/web.py` | `POST /tts` (text → cloned voice, fallback chain) | `tts_endpoint` |
+
+**Server-side pipeline** ("Howard", host-attached mic; scaffolded, optional deps):
+
 | Path | Purpose | Key symbols |
 |------|---------|-------------|
 | `agents/core/voice/pipeline.py` | Wake → STT → TTS coordinator | `VoicePipeline` |
 | `agents/core/voice/stt.py` | faster-whisper STT | `STTEngine` |
-| `agents/core/voice/tts.py` | edge-tts TTS | `TTSEngine.speak` |
+| `agents/core/voice/tts.py` | TTS fallback chain (XTTS→ElevenLabs→edge-tts→Kokoro) | `TTSEngine.speak` |
 | `agents/core/voice/wake_word.py` | openWakeWord detection | `WakeWordDetector` |
+| `agents/core/voice/wyoming.py` | Wyoming protocol, gated `voice.wyoming_enabled` (port 10700) | `WyomingServer` |
 
 ### Ingestion (Howard Digital Twin)
 
@@ -596,3 +609,4 @@ docs/
 | `docs/research/` | Deep research notes on design decisions |
 | `docs/superpowers/` | Feature specs for Horizons 5, 6, 7 (memory, autonomy, performance) |
 | `docs/ARCHITECTURE.md` | Module index, request lifecycle, recipes (this file) |
+| `docs/VOICE.md` | Voice subsystem — browser HUD loop + server pipeline, endpoints, what's real vs scaffolded |
