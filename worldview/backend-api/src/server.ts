@@ -8,6 +8,7 @@ import { liveRoutes } from "./routes/live.js";
 import { reconRoutes } from "./routes/recon.js";
 import { startLiveWriter } from "./consumers/liveWriter.js";
 import { startHistoryWriter } from "./consumers/historyWriter.js";
+import { startReconWriter } from "./consumers/reconWriter.js";
 import { getRedis } from "./plugins/redis.js";
 import { getPool } from "./plugins/db.js";
 
@@ -34,6 +35,14 @@ export async function buildServer() {
 
   if (config.enableHistoryWriter) {
     const consumer = await startHistoryWriter(getPool(), config.kafkaBrokers);
+    app.addHook("onClose", async () => {
+      await consumer.stop();
+      await consumer.disconnect();
+    });
+  }
+
+  if (config.enableReconWriter) {
+    const consumer = await startReconWriter(getPool(), config.kafkaBrokers);
     app.addHook("onClose", async () => {
       await consumer.stop();
       await consumer.disconnect();

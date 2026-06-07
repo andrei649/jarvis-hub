@@ -11,4 +11,6 @@ export const config = {
   // the API can run without a broker.
   enableLiveWriter: process.env.ENABLE_LIVE_WRITER === "1",
   enableHistoryWriter: process.env.ENABLE_HISTORY_WRITER === "1",
+  // The recon-writer (Kafka -> TimescaleDB recon_windows) is opt-in too.
+  enableReconWriter: process.env.ENABLE_RECON_WRITER === "1",
 };
