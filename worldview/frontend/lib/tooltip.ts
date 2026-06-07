@@ -22,7 +22,12 @@ function format(layerId: string, p: Record<string, unknown>): string[] {
     case "ais":
       return [`MMSI ${p.mmsi}`, fmt("sog", p.sog_kt, "kt"), fmt("cog", p.cog_deg, "°")];
     case "tle":
-      return [`NORAD ${p.norad_id}`, `sensor ${p.sensor_type ?? "?"}`, fmt("v", p.velocity_kms, "km/s")];
+      return [
+        `NORAD ${p.norad_id}`,
+        `sensor ${p.sensor_type ?? "?"}`,
+        fmt("v", p.velocity_kms, "km/s"),
+        p.is_sunlit == null ? "" : p.is_sunlit ? "target: ☀ daylight" : "target: 🌙 night",
+      ];
     case "ew":
       return [`H3 ${p.h3_index}`, fmt("intensity", p.intensity), fmt("samples", p.sample_count)];
     case "context":

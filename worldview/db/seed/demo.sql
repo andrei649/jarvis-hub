@@ -75,12 +75,14 @@ SELECT now() - interval '4 min', 412331100, g.id, now() - interval '5 min',
 FROM geofences g WHERE g.name = 'Strait of Hormuz';
 
 -- Layer C — Space: a SAR satellite pass with a swept footprint (buffered ground circle).
-INSERT INTO satellite_ephemeris (ts, norad_id, geom, velocity_kms, sensor_type, footprint)
+-- is_sunlit ~ whether the local ground point is in daytime hours (UTC), for the recon-window cue.
+INSERT INTO satellite_ephemeris (ts, norad_id, geom, velocity_kms, sensor_type, footprint, is_sunlit)
 SELECT now() - interval '10 min' + make_interval(secs => i * 30),
        40115,
        ST_SetSRID(ST_MakePoint(54.0 + i * 0.25, 24.0 + i * 0.18, 500000), 4326),
        7.5, 'sar',
-       ST_Buffer(ST_SetSRID(ST_MakePoint(54.2 + i * 0.25, 24.0 + i * 0.18), 4326), 0.3)
+       ST_Buffer(ST_SetSRID(ST_MakePoint(54.2 + i * 0.25, 24.0 + i * 0.18), 4326), 0.3),
+       extract(hour FROM now()) BETWEEN 3 AND 14
 FROM generate_series(0, 20) AS i;
 
 -- Layer D — EW: a GPS-jamming H3 cell that ramps up in the second half of the window.

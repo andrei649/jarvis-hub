@@ -97,7 +97,7 @@ export async function satellitesAsOf(
   const bc = bboxClause(bbox, 2);
   const sql = `
     SELECT DISTINCT ON (norad_id)
-      norad_id, extract(epoch FROM ts) AS ts, sensor_type, velocity_kms,
+      norad_id, extract(epoch FROM ts) AS ts, sensor_type, velocity_kms, is_sunlit,
       ST_AsGeoJSON(geom) AS geojson, ST_AsGeoJSON(footprint) AS footprint
     FROM satellite_ephemeris
     WHERE ts <= to_timestamp($1)

@@ -15,6 +15,7 @@ import httpx
 
 from worldview_ingest.envelope import TelemetryEnvelope
 from worldview_ingest.kafka_io import TelemetryProducer
+from worldview_ingest.sun import is_daylight
 from worldview_ingest.tle.catalog import TleRecord, parse_tle_text
 from worldview_ingest.tle.footprint import footprint_wkt
 from worldview_ingest.tle.propagate import propagate
@@ -55,6 +56,8 @@ def build_envelope(
             "name": record.name,
             "velocity_kms": round(pos.velocity_kms, 4),
             "sensor_type": sensor_type,
+            # Optical recon needs the target sunlit; SAR sees through darkness.
+            "is_sunlit": is_daylight(pos.lat, pos.lon, when),
         },
     )
 

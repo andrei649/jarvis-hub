@@ -84,9 +84,9 @@ const AIS: DomainSpec = {
 
 const TLE: DomainSpec = {
   table: "satellite_ephemeris",
-  columns: "ts, norad_id, geom, velocity_kms, sensor_type, footprint",
+  columns: "ts, norad_id, geom, velocity_kms, sensor_type, footprint, is_sunlit",
   template:
-    "to_timestamp(?), ?, ST_SetSRID(ST_MakePoint(?,?,?),4326), ?, ?, ST_GeomFromText(?,4326)",
+    "to_timestamp(?), ?, ST_SetSRID(ST_MakePoint(?,?,?),4326), ?, ?, ST_GeomFromText(?,4326), ?",
   conflict: "ON CONFLICT (norad_id, ts) DO NOTHING",
   params: (env) => {
     const d = p(env);
@@ -99,6 +99,7 @@ const TLE: DomainSpec = {
       d.velocity_kms ?? null,
       d.sensor_type ?? "optical",
       env.geom_wkt ?? null,
+      d.is_sunlit ?? null,
     ];
   },
 };
