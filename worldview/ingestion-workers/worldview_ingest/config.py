@@ -44,6 +44,17 @@ class Settings:
     spacetrack_username: str = os.getenv("SPACETRACK_USERNAME", "")
     spacetrack_password: str = os.getenv("SPACETRACK_PASSWORD", "")
 
+    # --- Recon (Layer C insight) ---
+    # Predicts AOI coverage windows over the TLE catalog (reuses the tle_* source settings)
+    # and publishes them to its own topic. Set TLE_NORAD_IDS to a curated recon set to bound
+    # the CPU cost (build_source filters the catalog when it is set).
+    recon_topic: str = os.getenv("RECON_TOPIC", "osint.recon")
+    recon_interval_seconds: int = int(os.getenv("RECON_INTERVAL_SECONDS", "300"))
+    recon_horizon_seconds: int = int(os.getenv("RECON_HORIZON_SECONDS", str(24 * 3600)))
+    recon_step_seconds: int = int(os.getenv("RECON_STEP_SECONDS", "30"))
+    # AOIs to predict: "id:lon,lat,radius_km;id2:..." (empty = a single Strait-of-Hormuz AOI).
+    aois: str = os.getenv("AOIS", "")
+
     # --- EW / Cyber (Layer D) ---
     ew_source: str = os.getenv("EW_SOURCE", "gpsjam")
     gpsjam_base_url: str = os.getenv("GPSJAM_BASE_URL", "https://gpsjam.org/data")
