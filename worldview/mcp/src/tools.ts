@@ -35,10 +35,17 @@ export interface FeatureCollection {
   features: GeoJSONFeature[];
 }
 
+/** The `init` fields we use — supports both reads (GET) and writes (POST with a JSON body). */
+export interface FetchInit {
+  method?: string;
+  body?: string;
+  headers?: Record<string, string>;
+}
+
 /** Subset of the WHATWG `fetch` we depend on — keeps stubbing trivial in tests. */
 export type FetchLike = (
   url: string,
-  init?: { method?: string },
+  init?: FetchInit,
 ) => Promise<{
   ok: boolean;
   status: number;
@@ -117,6 +124,49 @@ async function fetchCollection(
   }
   const body = (await res.json()) as FeatureCollection;
   return { ok: true, fc: body };
+}
+
+/**
+ * POST a JSON body and parse a JSON response, mapping network/HTTP failures into a ToolResult
+ * error (the WRITE-tool analogue of `fetchCollection`). The backend route may not exist yet; a
+ * non-2xx therefore degrades to a clear error result rather than throwing.
+ */
+async function postJson(
+  url: string,
+  payload: unknown,
+  deps: Deps,
+): Promise<{ ok: true; body: unknown } | { ok: false; result: ToolResult }> {
+  let res: Awaited<ReturnType<FetchLike>>;
+  try {
+    res = await deps.fetchImpl(url, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+  } catch (e) {
+    return { ok: false, result: err(`Request to WorldView API failed: ${(e as Error).message} (${url})`) };
+  }
+  if (!res.ok) {
+    let detail = "";
+    if (typeof res.text === "function") {
+      try {
+        detail = await res.text();
+      } catch {
+        /* ignore body read errors */
+      }
+    }
+    return {
+      ok: false,
+      result: err(`WorldView API returned HTTP ${res.status} for ${url}${detail ? `: ${detail}` : ""}`),
+    };
+  }
+  let body: unknown;
+  try {
+    body = await res.json();
+  } catch {
+    body = {};
+  }
+  return { ok: true, body };
 }
 
 // ---------------------------------------------------------------------------
@@ -255,4 +305,122 @@ export function listLayers(): ToolResult {
     })),
   };
   return ok(`WorldView layers:\n${lines.join("\n")}\n${JSON.stringify(payload)}`);
+}
+
+// ---------------------------------------------------------------------------
+// WRITE / async tools (capability-gated — see server.ts dispatch). Each declares the scope a
+// capability token must grant; the server enforces it BEFORE invoking the handler, so by the time
+// we run here the call is already authorised. The scope constants are exported so the dispatch and
+// the tests share one source of truth.
+// ---------------------------------------------------------------------------
+
+/** Required capability scope for `watch_aoi`. */
+export const WATCH_AOI_SCOPE = "worldview:watch";
+/** Required capability scope for `reconstruct_event`. */
+export const RECONSTRUCT_EVENT_SCOPE = "worldview:reconstruct";
+
+// ---------------------------------------------------------------------------
+// Tool: watch_aoi  (WRITE — creates a watch rule on an area of interest)
+// ---------------------------------------------------------------------------
+
+export interface WatchAoiArgs {
+  aoiId: string;
+  rule: string;
+  lead?: number | string;
+  /** Capability token; verified by the server before this handler runs. */
+  token?: string;
+}
+
+/**
+ * Create a standing watch rule for an area of interest:
+ * `POST {apiUrl}/recon/watch` with `{ aoiId, rule, lead? }`.
+ * WRITE/scoped tool (`worldview:watch`). The backend route may not exist yet; a non-2xx degrades
+ * to a clear error result. Returns a summary of the created watch (incl. any backend-issued id).
+ */
+export async function watchAoi(args: WatchAoiArgs, deps: Deps): Promise<ToolResult> {
+  if (typeof args.aoiId !== "string" || args.aoiId.trim() === "") {
+    return err("Parameter 'aoiId' is required.");
+  }
+  if (typeof args.rule !== "string" || args.rule.trim() === "") {
+    return err("Parameter 'rule' is required.");
+  }
+  let lead: number | undefined;
+  if (args.lead !== undefined) {
+    const n = toNumber(args.lead);
+    if (n === null) return err("Parameter 'lead' must be numeric (seconds of lead time).");
+    lead = n;
+  }
+  const payload = { aoiId: args.aoiId, rule: args.rule, ...(lead !== undefined ? { lead } : {}) };
+  const url = buildUrl(deps.apiUrl, "/recon/watch", {});
+  const got = await postJson(url, payload, deps);
+  if (!got.ok) return got.result;
+  const body = (got.body ?? {}) as Record<string, unknown>;
+  const watchId = typeof body.id === "string" ? body.id : typeof body.watchId === "string" ? body.watchId : undefined;
+  const summary = `Watch created for AOI '${args.aoiId}' (rule: ${args.rule})${
+    watchId ? ` -> watch id ${watchId}` : ""
+  }.`;
+  return ok(`${summary}\n${JSON.stringify(body)}`);
+}
+
+// ---------------------------------------------------------------------------
+// Tool: reconstruct_event  (async / long-running — requests a bounded replay)
+// ---------------------------------------------------------------------------
+
+export interface ReconstructEventArgs {
+  from: number | string;
+  to: number | string;
+  bbox?: string;
+  layers?: string[] | string;
+  /** Capability token; verified by the server before this handler runs. */
+  token?: string;
+}
+
+/**
+ * Request a bounded reconstruction/replay over a time window:
+ * `POST {apiUrl}/reconstruct` with `{ from, to, bbox?, layers? }`.
+ * WRITE/scoped tool (`worldview:reconstruct`). This is an async/long-running-style tool: the
+ * backend kicks off the job and returns a handle, which we surface so the caller can poll later.
+ * Non-2xx degrades to a clear error result.
+ */
+export async function reconstructEvent(args: ReconstructEventArgs, deps: Deps): Promise<ToolResult> {
+  const from = toNumber(args.from);
+  if (from === null) return err("Parameter 'from' (unix seconds) is required and must be numeric.");
+  const to = toNumber(args.to);
+  if (to === null) return err("Parameter 'to' (unix seconds) is required and must be numeric.");
+  if (to <= from) return err("Parameter 'to' must be greater than 'from'.");
+
+  // `layers` may arrive as an array or a comma-separated string; validate against the known layers.
+  let layers: Layer[] | undefined;
+  if (args.layers !== undefined) {
+    const raw = Array.isArray(args.layers)
+      ? args.layers
+      : String(args.layers)
+          .split(",")
+          .map((s) => s.trim())
+          .filter((s) => s !== "");
+    for (const l of raw) {
+      if (!isLayer(l)) {
+        return err(`Invalid layer '${String(l)}' in 'layers'. Must be one of: ${LAYERS.join(", ")}.`);
+      }
+    }
+    layers = raw as Layer[];
+  }
+
+  const payload = {
+    from,
+    to,
+    ...(args.bbox !== undefined ? { bbox: args.bbox } : {}),
+    ...(layers !== undefined ? { layers } : {}),
+  };
+  const url = buildUrl(deps.apiUrl, "/reconstruct", {});
+  const got = await postJson(url, payload, deps);
+  if (!got.ok) return got.result;
+  const body = (got.body ?? {}) as Record<string, unknown>;
+  const jobId =
+    typeof body.id === "string" ? body.id : typeof body.jobId === "string" ? body.jobId : undefined;
+  const status = typeof body.status === "string" ? body.status : "accepted";
+  const summary = `Reconstruction ${jobId ? `'${jobId}' ` : ""}requested for [${from}, ${to}]${
+    layers ? ` over layers ${layers.join(",")}` : ""
+  } (status: ${status}).`;
+  return ok(`${summary}\n${JSON.stringify(body)}`);
 }
