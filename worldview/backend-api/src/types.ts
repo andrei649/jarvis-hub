@@ -38,6 +38,12 @@ export function parseBBox(raw: string | undefined): BBox | null {
 // Cap the number of features any single as-of-T query returns, bounding payload size.
 export const MAX_FEATURES = 50000;
 
+/** Whether a lon/lat falls inside a bbox (inclusive). A null bbox matches everything. */
+export function pointInBBox(lon: number, lat: number, bbox: BBox | null): boolean {
+  if (!bbox) return true;
+  return lon >= bbox.w && lon <= bbox.e && lat >= bbox.s && lat <= bbox.n;
+}
+
 // Level of detail: raw points, or 1-minute continuous-aggregate rollups for zoomed-out /
 // fast scrubbing (design doc §8.3). Only adsb/ais have rollups; other layers ignore it.
 export type Lod = "raw" | "minute";

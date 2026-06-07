@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { isLayer, parseBBox, LIVENESS_SECONDS } from "../src/types.js";
+import { isLayer, parseBBox, pointInBBox, LIVENESS_SECONDS } from "../src/types.js";
 import { rowsToFeatureCollection, emptyCollection } from "../src/geojson.js";
 import { envelopeToFeature, liveKey, geoKey, channel } from "../src/repositories/live.js";
 
@@ -22,6 +22,15 @@ test("parseBBox clamps to WGS84 ranges and reorders inverted bounds", () => {
   assert.deepEqual(parseBBox("-200,-100,200,100"), { w: -180, s: -90, e: 180, n: 90 });
   // An inverted (e<w, n<s) box is reordered.
   assert.deepEqual(parseBBox("58,28,55,25"), { w: 55, s: 25, e: 58, n: 28 });
+});
+
+test("pointInBBox includes points inside, excludes outside, and a null bbox matches all", () => {
+  const box = { w: 55, s: 25, e: 58, n: 28 };
+  assert.equal(pointInBBox(56, 26.5, box), true); // inside
+  assert.equal(pointInBBox(55, 25, box), true); // on the boundary (inclusive)
+  assert.equal(pointInBBox(60, 26, box), false); // east of bbox
+  assert.equal(pointInBBox(56, 30, box), false); // north of bbox
+  assert.equal(pointInBBox(0, 0, null), true); // no viewport => stream everything
 });
 
 test("each layer has a defined liveness window", () => {

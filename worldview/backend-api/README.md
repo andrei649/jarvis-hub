@@ -16,7 +16,8 @@ STEP 4 implemented — the 4D API:
 - **REST `GET /history/:layer/:entityId/track?from=<unix>&to=<unix>`** — one entity's trail
   (`adsb`/`ais`/`tle`) over a window as a GeoJSON LineString with per-vertex `coordTimes`.
 - **WebSocket `/live?layers=...`** — sends a Redis snapshot per layer on connect, then streams
-  deltas published on `chan:<layer>`.
+  deltas published on `chan:<layer>`. Clients may send `{"type":"viewport","bbox":"w,s,e,n"}`
+  to receive only deltas inside their viewport (per-connection; default streams everything).
 - **Live-writer** (`consumers/liveWriter.ts`) — Kafka→Redis consumer that upserts the latest
   state per entity (string key + geo set + TTL) and publishes deltas. Opt-in (`ENABLE_LIVE_WRITER=1`).
 - **History-writer** (`consumers/historyWriter.ts`) — Kafka→TimescaleDB consumer that batches
