@@ -5,6 +5,7 @@ import { LayerPanel } from "@/components/LayerPanel";
 import { ViewToggle } from "@/components/ViewToggle";
 import { StatsHud } from "@/components/StatsHud";
 import { AlertsPanel } from "@/components/AlertsPanel";
+import { ReconPanel } from "@/components/ReconPanel";
 import { Inspector } from "@/components/Inspector";
 import { TimelineScrubber } from "@/components/TimelineScrubber";
 import { useMasterClock } from "@/lib/useMasterClock";
@@ -26,6 +27,7 @@ export default function Home() {
       <DeckGlobe data={data} />
       <ViewToggle />
       <LayerPanel />
+      <ReconPanel />
       <StatsHud data={data} />
       <AlertsPanel data={data} />
       <Inspector data={data} />
