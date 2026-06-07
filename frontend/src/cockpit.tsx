@@ -125,20 +125,71 @@ function buildTrace(text){
   };
 }
 
-/* input bar */
-function InputBar({ onSubmit, mic, setMic, t }) {
-  const [val,setVal]=useState('');
-  const submit=()=>{ if(!val.trim())return; onSubmit(val.trim()); setVal(''); };
+/* segmented toggle for the voice settings popover */
+function Seg({ cur, opts, on }) {
   return (
-    <div className="inputbar">
-      <span className="pre">▸</span>
-      <span className="chan">{t.channel}</span>
-      <div className="field">
-        <input value={val} onChange={e=>setVal(e.target.value)} placeholder={t.placeholder}
-          onKeyDown={e=>{ if(e.key==='Enter') submit(); }}/>
-        <button className={'mic'+(mic?' on':'')} onClick={()=>setMic(m=>!m)} title="voice"><Icon d={ICONS.mic} size={15}/></button>
+    <span style={{display:'inline-flex',gap:3}}>
+      {opts.map(o=>(
+        <button key={o.v} onClick={()=>on(o.v)}
+          style={{padding:'3px 8px',borderRadius:6,border:'1px solid '+(cur===o.v?'var(--accent)':'var(--panel-line)'),background:cur===o.v?'var(--accent)':'transparent',color:cur===o.v?'#021a1f':'var(--ink-2)',fontFamily:'var(--font-mono)',fontSize:10,letterSpacing:'.04em',cursor:'pointer'}}>{o.l}</button>
+      ))}
+    </span>
+  );
+}
+
+/* input bar — text + voice (mic toggles the useVoice loop; ⚙ opens voice settings) */
+function InputBar({ onSubmit, mic, setMic, voice, cfg, onCfg, micMuted, t }) {
+  const [val,setVal]=useState('');
+  const [cfgOpen,setCfgOpen]=useState(false);
+  const submit=()=>{ if(!val.trim())return; onSubmit(val.trim()); setVal(''); };
+  const showPill = voice && (voice.active || voice.error);
+  const label = voice && voice.error ? voice.error
+    : voice && voice.status==='listening' ? 'listening…'
+    : voice && voice.status==='transcribing' ? 'transcribing…'
+    : voice && voice.status==='speaking' ? 'speaking…' : 'voice on';
+  const dotColor = voice && voice.status==='listening' ? 'var(--green)'
+    : voice && voice.status==='speaking' ? 'var(--accent-light)' : 'var(--ink-3)';
+  const row = (lbl,node) => (
+    <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',gap:12,padding:'4px 0'}}>
+      <span style={{color:'var(--ink-3)',fontFamily:'var(--font-mono)',fontSize:10,letterSpacing:'.1em'}}>{lbl}</span>{node}
+    </div>
+  );
+  return (
+    <div style={{position:'relative'}}>
+      {showPill && (
+        <div style={{display:'flex',alignItems:'center',gap:8,padding:'5px 10px',marginBottom:6,borderRadius:8,fontFamily:'var(--font-mono)',fontSize:11,letterSpacing:'.04em',background:'rgba(0,0,0,.18)',border:'1px solid var(--panel-line)',color:voice.error?'var(--amber)':'var(--accent-light)'}}>
+          {!voice.error && <span style={{width:8,height:8,borderRadius:8,background:dotColor,boxShadow:'0 0 8px currentColor',flex:'none'}}/>}
+          <span style={{flex:'none'}}>{voice.error ? '⚠ ' : ''}{label}</span>
+          {!voice.error && voice.status==='listening' && (
+            <span style={{flex:1,height:4,borderRadius:4,background:'var(--panel-line)',overflow:'hidden'}}>
+              <span style={{display:'block',height:'100%',width:Math.min(100,Math.round((voice.level||0)*400))+'%',background:'var(--green)',transition:'width .08s'}}/>
+            </span>
+          )}
+          {!voice.error && voice.transcript && <span style={{color:'var(--ink-2)',whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis',maxWidth:220}}>“{voice.transcript}”</span>}
+        </div>
+      )}
+      {cfgOpen && cfg && onCfg && (
+        <div style={{position:'absolute',bottom:'100%',right:0,marginBottom:8,zIndex:30,minWidth:262,padding:'10px 12px',borderRadius:10,background:'rgba(10,18,24,.98)',border:'1px solid var(--panel-line)',boxShadow:'0 10px 30px rgba(0,0,0,.45)'}}>
+          <div style={{color:'var(--accent-light)',fontFamily:'var(--font-mono)',fontSize:10,letterSpacing:'.14em',marginBottom:6}}>VOICE</div>
+          {row('MODE', <Seg cur={cfg.mode} opts={[{v:'hands-free',l:'HANDS-FREE'},{v:'ptt',l:'PUSH-TO-TALK'}]} on={(v)=>onCfg({mode:v})} />)}
+          {row('SPEAK', <Seg cur={cfg.tts} opts={[{v:'server',l:'CLONED'},{v:'browser',l:'LOCAL'},{v:'off',l:'OFF'}]} on={(v)=>onCfg({tts:v})} />)}
+          {row('LANG', <Seg cur={cfg.lang} opts={[{v:'auto',l:'AUTO'},{v:'ro',l:'RO'},{v:'en',l:'EN'}]} on={(v)=>onCfg({lang:v})} />)}
+          {voice && voice.caps && voice.caps.stt===false && <div style={{marginTop:6,color:'var(--amber)',fontSize:10,fontFamily:'var(--font-mono)'}}>local STT not installed — pip install faster-whisper</div>}
+        </div>
+      )}
+      <div className="inputbar">
+        <span className="pre">▸</span>
+        <span className="chan">{t.channel}</span>
+        <div className="field">
+          <input value={val} onChange={e=>setVal(e.target.value)} placeholder={voice && voice.active ? (cfg && cfg.mode==='ptt' ? 'listening — speak now' : 'listening — just speak (or type)') : t.placeholder}
+            onKeyDown={e=>{ if(e.key==='Enter') submit(); }}/>
+          <button className={'mic'+(mic?' on':'')} onClick={()=>setMic && setMic()}
+            title={micMuted ? 'mic muted — unmute JARVIS' : (voice && voice.supported===false ? 'voice not supported in this browser' : (cfg && cfg.mode==='ptt' ? 'push-to-talk' : 'hands-free voice'))}
+            style={micMuted?{opacity:.4}:undefined}><Icon d={ICONS.mic} size={15}/></button>
+          {cfg && onCfg && <button className="mic" onClick={()=>setCfgOpen(o=>!o)} title="voice settings" style={{opacity:cfgOpen?1:.6,fontSize:13,lineHeight:1}}>⚙</button>}
+        </div>
+        <button className="transmit" onClick={submit}><Icon d={ICONS.send} size={13}/>{t.transmit}</button>
       </div>
-      <button className="transmit" onClick={submit}><Icon d={ICONS.send} size={13}/>{t.transmit}</button>
     </div>
   );
 }

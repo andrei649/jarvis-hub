@@ -7,6 +7,7 @@ import { useClock, fmtTimeShort, Icon, ICONS, Glyph } from './primitives';
 import { TopBar, Ticker, Rail, Tabs, RosterColumn, ContextColumn, Palette, Ambient } from './shell';
 import { NetworkBrain } from './network';
 import { Conversation, CognitionStream, InputBar, buildTrace, traceFromCognition } from './cockpit';
+import { useVoice } from './voice';
 import { loadJarvisData } from './api/loaders';
 import { useLiveModes } from './api/live';
 import { postStream, apiGet } from './api/client';
@@ -44,6 +45,9 @@ function App() {
   // DEMO mode (opt-in, watermarked): OFF by default → the HUD shows ONLY real
   // backend data + honest empty states; ON → fills the seeded demo corpus.
   const [demo, setDemo] = useState(() => { try { return localStorage.getItem('hud.demo') === '1' || /[?&]demo=1/.test(window.location.search); } catch { return false; } });
+  // Voice preferences (persisted): mode = hands-free | ptt; tts = server (cloned) | browser (local) | off; lang = auto | ro | en
+  const [voiceCfg, setVoiceCfg] = useState(() => { const d = { mode: 'hands-free', tts: 'server', lang: 'auto' }; try { return { ...d, ...JSON.parse(localStorage.getItem('hud.voice') || '{}') }; } catch { return d; } });
+  const setVoice = (patch) => setVoiceCfg((c) => ({ ...c, ...patch }));
 
   const [mode, setMode] = useState('cockpit');
   const [agents, setAgents] = useState(demo ? V2.AGENTS : []);
@@ -53,7 +57,7 @@ function App() {
   const [thinking, setThinking] = useState(null);
   const [trace, setTrace] = useState(null);
   const [centerTab, setCenterTab] = useState('conversation');
-  const [mic, setMic] = useState(false);
+  // mic/voice state is owned by the useVoice loop (defined below), not a bare flag
   const [palette, setPalette] = useState(false);
   const [ambient, setAmbient] = useState(false);
   const [provModal, setProvModal] = useState(null);
@@ -81,6 +85,7 @@ function App() {
   useEffect(() => { try { localStorage.setItem('hud.accent', accent); } catch { /* ignore */ } }, [accent]); // P5 persist
   useEffect(() => { try { localStorage.setItem('hud.lang', lang); } catch { /* ignore */ } }, [lang]);
   useEffect(() => { try { localStorage.setItem('hud.demo', demo ? '1' : '0'); } catch { /* ignore */ } }, [demo]);
+  useEffect(() => { try { localStorage.setItem('hud.voice', JSON.stringify(voiceCfg)); } catch { /* ignore */ } }, [voiceCfg]);
   // Re-seed (or clear) the demo-only cockpit corpus when DEMO toggles at runtime.
   useEffect(() => {
     setDecisions(demo ? V2.DECISIONS.map((d, i) => ({ ...d, _id: 'd' + i })) : []);
@@ -131,7 +136,9 @@ function App() {
 
   // P2 — real streaming turn: POST /chat/stream token-by-token, then pull the live
   // /api/cognition snapshot for the trace + provenance. Falls back to runMock offline.
-  const submit = useCallback((text) => {
+  // P2 — real streaming turn. Resolves with the FINAL reply text so the voice loop can
+  // speak it. On /chat/stream failure: honest system notice (or the DEMO staged mock).
+  const runTurn = useCallback((text) => new Promise((resolve) => {
     timers.current.forEach(clearTimeout); timers.current = [];
     setMessages((m) => [...m, { role: 'user', text, ts: fmtTimeShort(new Date()) }]);
     setCenterTab('conversation');
@@ -149,6 +156,7 @@ function App() {
         const finalText = evt.text || streamed;
         setMessages((m) => { const c = [...m]; if (idx >= 0 && c[idx]) c[idx] = { ...c[idx], text: finalText, who: evt.agent || activeId }; else c.push({ role: 'agent', who: evt.agent || activeId, ts: fmtTimeShort(new Date()), text: finalText }); return c; });
         setThinking(null);
+        resolve(finalText);
         apiGet('/api/cognition').then((cog) => {
           const tr = traceFromCognition(cog, text);
           setTrace({ stages: tr.stages.map((s) => ({ ...s, state: 'done' })) });
@@ -163,11 +171,16 @@ function App() {
     }).catch(() => {
       // HONESTY: never fabricate a reply. The staged mock is for DEMO only; otherwise
       // surface the real failure (e.g. no model loaded / backend offline).
-      if (demo) { runMock(text); return; }
+      if (demo) { runMock(text); resolve(''); return; }
       setThinking(null);
       setMessages((m) => [...m, { role: 'agent', who: 'system', role_label: '', ts: fmtTimeShort(new Date()), text: '⚠ No reply — the model backend is unreachable or no model is loaded. Load a model in LM Studio, or enable ◐ DEMO to preview the interface.' }]);
+      resolve('');
     });
-  }, [t, activeId, runMock, demo]);
+  }), [t, activeId, runMock, demo]);
+
+  const submit = useCallback((text) => { runTurn(text); }, [runTurn]);
+  // Hands-free voice loop: mic → local Whisper → runTurn → speak the reply, repeat.
+  const voice = useVoice({ lang: voiceCfg.lang === 'auto' ? lang : voiceCfg.lang, mode: voiceCfg.mode, ttsSource: voiceCfg.tts, micMuted: trust.mic === 'off', onTurn: runTurn });
 
   useEffect(() => () => timers.current.forEach(clearTimeout), []);
 
@@ -236,7 +249,7 @@ function App() {
                     {centerTab === 'conversation'
                       ? <Conversation messages={messages} thinking={thinking} onProv={setProvModal} t={t} />
                       : <CognitionStream trace={trace} t={t} />}
-                    <InputBar onSubmit={submit} mic={mic} setMic={setMic} t={t} />
+                    <InputBar onSubmit={submit} mic={voice.active} setMic={voice.toggle} voice={voice} cfg={voiceCfg} onCfg={setVoice} micMuted={trust.mic === 'off'} t={t} />
                   </div>
                 </div>
                 <ContextColumn decisions={decisions} onDecision={dismissDecision} weather={weather} calendar={calendar} heartbeat={heartbeat} demo={demo} t={t} />
@@ -248,7 +261,7 @@ function App() {
               </div>
             ) : mode === 'chat' ? (
               <div className="workzone full" style={{ flex: 1, minHeight: 0 }}>
-                <ChatMode messages={messages} thinking={thinking} onSubmit={submit} onProv={setProvModal} mic={mic} setMic={setMic} t={t} />
+                <ChatMode messages={messages} thinking={thinking} onSubmit={submit} onProv={setProvModal} mic={voice.active} setMic={voice.toggle} t={t} />
               </div>
             ) : (
               <div className="workzone full" style={{ flex: 1, minHeight: 0 }}>
