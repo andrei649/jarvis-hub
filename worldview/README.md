@@ -39,8 +39,8 @@ repo. It is fully self-contained under `worldview/` and shares no runtime with `
 The platform is built in five sequential, gated steps:
 
 1. **Architecture & Schema** ✅ — design doc + TimescaleDB/PostGIS SQL + Kafka pipeline design.
-2. **Project Scaffold** ✅ *(current)* — monorepo skeleton (`frontend`, `backend-api`, `ingestion-workers`) + local infra (`docker-compose.yml`).
-3. **Data Ingestion Workers** — TLE/SGP4, H3 jamming grids, AIS/ADS-B normalizers.
+2. **Project Scaffold** ✅ — monorepo skeleton (`frontend`, `backend-api`, `ingestion-workers`) + local infra (`docker-compose.yml`).
+3. **Data Ingestion Workers** ✅ *(current)* — TLE/SGP4, H3 jamming grids, AIS/ADS-B normalizers, dark-vessel detector.
 4. **The 4D API** — Fastify REST + WebSocket serving live (Redis) and historical (TimescaleDB) state.
 5. **Frontend Geospatial UI** — Next.js dashboard, Deck.gl map, timeline scrubber, Zustand sync.
 

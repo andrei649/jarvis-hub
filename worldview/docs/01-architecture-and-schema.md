@@ -442,8 +442,8 @@ views read pre-rolled buckets even after the raw chunks are dropped.
 | --- | --- | --- |
 | **1** | Architecture & schema (this doc + SQL DDL) | ✅ done |
 | **2** | Monorepo scaffold (`frontend`, `backend-api`, `ingestion-workers`) + local infra | ✅ done |
-| 3 | Ingestion workers (SGP4, H3, AIS/ADS-B normalizers) | ⏳ next |
-| 4 | 4D API (Fastify REST + WebSocket; Redis live + TimescaleDB history) | ⏳ |
+| **3** | Ingestion workers (SGP4, H3, AIS/ADS-B normalizers, dark-vessel detector) | ✅ done |
+| 4 | 4D API (Fastify REST + WebSocket; Redis live + TimescaleDB history) | ⏳ next |
 | 5 | Frontend (Next.js, Deck.gl map, timeline scrubber, Zustand sync) | ⏳ |
 
 The scaffold wires the skeleton for STEPs 3–5: the canonical envelope schema, the
