@@ -23,3 +23,9 @@ line-length = 100
 [tool.ruff.lint]
 select = ["E", "F", "W", "I", "B", "UP", "SIM", "C4"]
 ignore = ["E501"]
+
+# Self-contained pytest config so runs from this directory don't inherit the repo-root
+# pytest.ini (which injects --timeout / asyncio_mode from the JARVIS test stack).
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = ""

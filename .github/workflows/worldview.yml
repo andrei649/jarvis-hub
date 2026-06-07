@@ -1,0 +1,62 @@
+name: WorldView CI
+
+# Gates the self-contained worldview/ platform (separate stack from JARVIS). Path-filtered so
+# it only runs when worldview/ changes and never affects the main JARVIS CI.
+on:
+  pull_request:
+    paths:
+      - "worldview/**"
+      - ".github/workflows/worldview.yml"
+  push:
+    branches: [main]
+    paths:
+      - "worldview/**"
+      - ".github/workflows/worldview.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: worldview-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  ingestion:
+    name: Ingestion workers (Python)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: worldview/ingestion-workers
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - run: pip install ruff pytest -r requirements.txt
+      - name: Lint (ruff)
+        run: ruff check .
+      - name: Test (pytest)
+        run: python -m pytest
+
+  node:
+    name: API + Frontend (Node)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: worldview
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: worldview/package-lock.json
+      - run: npm ci
+      - name: Backend typecheck
+        run: npm run typecheck --workspace backend-api
+      - name: Backend tests
+        run: npm test --workspace backend-api
+      - name: Frontend typecheck
+        run: npm run typecheck --workspace frontend
+      - name: Frontend build
+        run: npm run build --workspace frontend
