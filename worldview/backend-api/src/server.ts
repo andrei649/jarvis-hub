@@ -3,10 +3,14 @@ import cors from "@fastify/cors";
 import websocket from "@fastify/websocket";
 import { config } from "./config.js";
 import { healthRoutes } from "./routes/health.js";
+import { historyRoutes } from "./routes/history.js";
+import { liveRoutes } from "./routes/live.js";
+import { startLiveWriter } from "./consumers/liveWriter.js";
+import { getRedis } from "./plugins/redis.js";
 
-// STEP 2 scaffold: the Fastify bootstrap with a /health route and the WebSocket plugin
-// registered. The REST history endpoints (TimescaleDB as-of-T) and the /live WebSocket
-// telemetry stream (Redis snapshot + pub/sub deltas) are implemented in STEP 4.
+// The 4D API: REST `/history/:layer` serves as-of-T state from TimescaleDB; the `/live`
+// WebSocket serves the Redis snapshot + pub/sub deltas. The Kafka->Redis live-writer runs
+// alongside when ENABLE_LIVE_WRITER=1.
 
 export async function buildServer() {
   const app = Fastify({ logger: true });
@@ -14,6 +18,15 @@ export async function buildServer() {
   await app.register(cors, { origin: config.corsOrigin });
   await app.register(websocket);
   await app.register(healthRoutes);
+  await app.register(historyRoutes);
+  await app.register(liveRoutes);
+
+  if (config.enableLiveWriter) {
+    const consumer = await startLiveWriter(getRedis(), config.kafkaBrokers);
+    app.addHook("onClose", async () => {
+      await consumer.disconnect();
+    });
+  }
 
   return app;
 }
