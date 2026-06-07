@@ -112,9 +112,26 @@ jobs:
       - name: Seed demo data
         run: psql -h localhost -U worldview -d worldview -v ON_ERROR_STOP=1 -f db/seed/demo.sql
       - name: Refresh continuous aggregates
+        # The background continuous-aggregate policy job may already be refreshing, which makes
+        # a manual refresh fail with "concurrent refresh". Retry until it succeeds so the cagg
+        # is deterministically materialized before the integration test reads it.
         run: |
-          psql -h localhost -U worldview -d worldview -c "CALL refresh_continuous_aggregate('adsb_positions_1m', NULL, NULL);"
-          psql -h localhost -U worldview -d worldview -c "CALL refresh_continuous_aggregate('ais_positions_1m', NULL, NULL);"
+          set +e
+          refresh() {
+            for i in $(seq 1 20); do
+              out=$(psql -h localhost -U worldview -d worldview \
+                    -c "CALL refresh_continuous_aggregate('$1', NULL, NULL);" 2>&1)
+              if [ $? -eq 0 ]; then echo "refreshed $1"; return 0; fi
+              echo "$out"
+              case "$out" in
+                *"concurrent refresh"*) echo "retrying $1..."; sleep 3 ;;
+                *) return 1 ;;
+              esac
+            done
+            return 1
+          }
+          refresh adsb_positions_1m || exit 1
+          refresh ais_positions_1m || exit 1
       - name: Seed live state (Redis)
         run: node scripts/seed-live.mjs
       - name: Integration tests (repositories vs real DB + Redis)
