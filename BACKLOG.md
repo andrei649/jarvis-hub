@@ -526,7 +526,7 @@ chain-of-thought leak / mid-sentence truncation fixed. Kill-switch:
 
 ---
 
-## ORIZONT 18 — WorldView (4D OSINT) — Standalone + Integrare JARVIS — 0/33
+## ORIZONT 19 — WorldView (4D OSINT) — Standalone + Integrare JARVIS — 0/33
 
 > **Produs nou, stack separat** (Next.js + Deck.gl + Fastify + Kafka/Redpanda + TimescaleDB/PostGIS + Redis),
 > self-contained sub [`worldview/`](worldview/). Centru de comandă OSINT 4D (aer/mare/spațiu/cyber) pe un glob
@@ -547,67 +547,67 @@ chain-of-thought leak / mid-sentence truncation fixed. Kill-switch:
 > **Secvențiere (drum critic):** WS1 deblochează WS2+WS5; WS2 deblochează WS3 (alerte de surfacing) + WS4 (insight-uri de guvernat);
 > WS3 (JARVIS) ‖ WS4 (guvernanță) în paralel după WS2; WS5 continuu, front-loaded (tiles + replici).
 
-### WS1 — Calea de date live la scară (Phase A) — 0/7 (H18.1.1–4 cod livrat: toate sursele) · *gate: 50k msg/s susținut, lag<60s, as-of-T p95<300ms sub load, replay 24h real*
+### WS1 — Calea de date live la scară (Phase A) — 0/7 (H19.1.1–4 cod livrat: toate sursele) · *gate: 50k msg/s susținut, lag<60s, as-of-T p95<300ms sub load, replay 24h real*
 
 | # | Item | S | P | Dep | Track |
 |---|------|---|---|-----|-------|
-| H18.1.1 🔨 | **Sursă ADS-B reală** (OpenSky/ADSB.fi). **Livrat:** `adsb/sources.py` — OpenSky (OAuth2 client-credentials→bearer cu cache/refresh, fallback anonim, bbox viewport, rate-limit/429 + backoff) **și** ADSB.fi (gratuit, centrat pe AOI, tag militar real via `dbFlags`); `worker.py` cu poll adaptiv + backoff exponențial; `ADSB_SOURCE=opensky\|adsbfi`. +7 teste (payload-uri real-shaped, mock HTTP). **Validat** fetch→normalize→envelope→`writeBatch`→`/history` pe payload OpenSky real-shaped (avionul apare în /history cu alt/coords corecte). **Rămâne** (deploy-gated): hop-ul live-net (egress allowlist) + Kafka. **AC:** `osint.adsb` curge din sursă reală; un avion real apare în `/history` în <5s. | 5 | P1 | — | Standalone |
-| H18.1.2 🔨 | **Sursă AIS reală** (AISStream WS). **Livrat:** `ais/stream.py` (subscription config-driven din `AIS_BBOX` + `handle_frame` testabil) + `worker.py` cu **reconnect + backoff exponențial**. +6 teste. **Validat** handle_frame→envelope→`writeBatch`→`/history` (vasul apare, sog corect). **Rămâne** (deploy): hop live-WS + Kafka. **AC:** vase reale curg; dark-vessel detector se declanșează pe un gap AIS real. | 5 | P1 | — | Standalone |
-| H18.1.3 🔨 | **Sursă TLE reală** (Celestrak/Space-Track). **Livrat:** `tle/sources.py` (Celestrak GROUP + filtru NORAD; Space-Track login+`gp`), `tle/sensors.py` (registru senzori curatat optical/SAR), `worker.py` cu sursă pluggable + refresh catalog periodic. +7 teste. **Validat** fetch→propagate→envelope→`writeBatch`→`/history` (satelitul apare cu footprint + `is_sunlit`). **Rămâne** (deploy): hop live-net + Kafka. **AC:** `satellite_ephemeris` populat /minut; footprint optical/SAR corect. | 5 | P1 | — | Standalone |
-| H18.1.4 🔨 | **Surse EW/context reale** (GPSJam/IODA + feed NOTAM/evenimente). **Livrat:** `ew/gpsjam.py` (parser heatmap GPSJam: hexagoane H3 pre-binned → intensitate `bad/(good+bad)`, id din centroid) + `ew/worker.py` îl fetch-uiește; `context/worker.py` fetch evenimente GeoJSON + NOTAM din `CONTEXT_EVENTS_URL`/`CONTEXT_NOTAM_URL`. +2 teste GPSJam (51 total). **Rămâne** (deploy): hop live-net + Kafka; IODA + FAA-NOTAM (auth) ca surse adiționale. **AC:** celule H3 jamming + NOTAM-uri din date live. | 5 | P2 | — | Standalone |
-| H18.1.5 | **Consumeri KEDA-scalați pe lag** + PgBouncer (transaction pooling) + read replica. **AC:** la 50k msg/s sintetic, consumer-group lag <60s; history-writer ține pasul; reads pe replică. | 8 | P1 | H18.1.1 | Standalone |
-| H18.1.6 | **Rig de load-test + SLO as-of-T** (generator replay/sintetic; test perf nightly). **AC:** as-of-T p95<300ms și live-latency p95<2s sub load, documentat + în nightly. | 5 | P1 | H18.1.5 | Standalone |
-| H18.1.7 | **Tiered storage broker + ops retenție** (offload segmente → S3). **AC:** disk local broker mărginit; replay din tier funcționează. | 5 | P2 | H18.1.1 | Standalone |
+| H19.1.1 🔨 | **Sursă ADS-B reală** (OpenSky/ADSB.fi). **Livrat:** `adsb/sources.py` — OpenSky (OAuth2 client-credentials→bearer cu cache/refresh, fallback anonim, bbox viewport, rate-limit/429 + backoff) **și** ADSB.fi (gratuit, centrat pe AOI, tag militar real via `dbFlags`); `worker.py` cu poll adaptiv + backoff exponențial; `ADSB_SOURCE=opensky\|adsbfi`. +7 teste (payload-uri real-shaped, mock HTTP). **Validat** fetch→normalize→envelope→`writeBatch`→`/history` pe payload OpenSky real-shaped (avionul apare în /history cu alt/coords corecte). **Rămâne** (deploy-gated): hop-ul live-net (egress allowlist) + Kafka. **AC:** `osint.adsb` curge din sursă reală; un avion real apare în `/history` în <5s. | 5 | P1 | — | Standalone |
+| H19.1.2 🔨 | **Sursă AIS reală** (AISStream WS). **Livrat:** `ais/stream.py` (subscription config-driven din `AIS_BBOX` + `handle_frame` testabil) + `worker.py` cu **reconnect + backoff exponențial**. +6 teste. **Validat** handle_frame→envelope→`writeBatch`→`/history` (vasul apare, sog corect). **Rămâne** (deploy): hop live-WS + Kafka. **AC:** vase reale curg; dark-vessel detector se declanșează pe un gap AIS real. | 5 | P1 | — | Standalone |
+| H19.1.3 🔨 | **Sursă TLE reală** (Celestrak/Space-Track). **Livrat:** `tle/sources.py` (Celestrak GROUP + filtru NORAD; Space-Track login+`gp`), `tle/sensors.py` (registru senzori curatat optical/SAR), `worker.py` cu sursă pluggable + refresh catalog periodic. +7 teste. **Validat** fetch→propagate→envelope→`writeBatch`→`/history` (satelitul apare cu footprint + `is_sunlit`). **Rămâne** (deploy): hop live-net + Kafka. **AC:** `satellite_ephemeris` populat /minut; footprint optical/SAR corect. | 5 | P1 | — | Standalone |
+| H19.1.4 🔨 | **Surse EW/context reale** (GPSJam/IODA + feed NOTAM/evenimente). **Livrat:** `ew/gpsjam.py` (parser heatmap GPSJam: hexagoane H3 pre-binned → intensitate `bad/(good+bad)`, id din centroid) + `ew/worker.py` îl fetch-uiește; `context/worker.py` fetch evenimente GeoJSON + NOTAM din `CONTEXT_EVENTS_URL`/`CONTEXT_NOTAM_URL`. +2 teste GPSJam (51 total). **Rămâne** (deploy): hop live-net + Kafka; IODA + FAA-NOTAM (auth) ca surse adiționale. **AC:** celule H3 jamming + NOTAM-uri din date live. | 5 | P2 | — | Standalone |
+| H19.1.5 | **Consumeri KEDA-scalați pe lag** + PgBouncer (transaction pooling) + read replica. **AC:** la 50k msg/s sintetic, consumer-group lag <60s; history-writer ține pasul; reads pe replică. | 8 | P1 | H19.1.1 | Standalone |
+| H19.1.6 | **Rig de load-test + SLO as-of-T** (generator replay/sintetic; test perf nightly). **AC:** as-of-T p95<300ms și live-latency p95<2s sub load, documentat + în nightly. | 5 | P1 | H19.1.5 | Standalone |
+| H19.1.7 | **Tiered storage broker + ops retenție** (offload segmente → S3). **AC:** disk local broker mărginit; replay din tier funcționează. | 5 | P2 | H19.1.1 | Standalone |
 
 ### WS2 — Motorul de insight („so what") (Phase B) — 0/7 · *gate: platforma EXPLICĂ un eveniment (recon „trecere SAR în N min" + „treceri stivuite"), cu provenance*
 
 | # | Item | S | P | Dep | Track |
 |---|------|---|---|-----|-------|
-| H18.2.1 🔨 | **Recon-window scheduler** (SGP4 → footprint∩AOI → bisecție ingress/egress → scor calitate). **Livrat (algoritm):** `recon/windows.py` — `Aoi`/`ReconWindow`, `footprint_ground` (optical/SAR/coverage), `predict_windows` (walk SGP4 + test circle-vs-circle haversine + bisecție ingress/egress ~1s + closest-approach peak + quality care anulează optic noaptea via `is_sunlit`). +5 teste (ISS: AOI ecuatorial→ferestre ordonate; AOI polar→0; optic-noapte vs SAR). **Rămâne:** persistență `recon_windows` + refresh în deploy (parte din H18.2.2/backend). | 8 | P1 | H18.1.3 | Both |
-| H18.2.2 | **Alertare recon-window** (scan windows în lead-time → `Alert`). **AC:** o alertă se declanșează ≥lead_time înaintea unei treceri reale peste un AOI urmărit. | 3 | P1 | H18.2.1 | Both |
-| H18.2.3 | **Schelet motor CEP** (consumer windowed keyed pe `aoi`/`geohash` + state + watermark lateness). **AC:** o regulă windowed rulează peste streamul live cu lateness mărginit. | 8 | P2 | H18.1.5 | Both |
-| H18.2.4 | **Regulă tipping-and-cueing** („≥N recon windows peste un AOI în Δt"). **AC:** scenariu sintetic + real declanșează insight-ul cu linkuri la ferestrele contribuitoare. | 5 | P2 | H18.2.3, H18.2.1 | Both |
-| H18.2.5 | **Detectori de anomalii** (alege 2–3: holding-pattern, cascadă închideri spațiu aerian, onset jamming, corelație blackout↔eveniment). **AC:** fiecare se declanșează pe un scenariu seeded cu provenance. | 8 | P2 | H18.2.3 | Both |
-| H18.2.6 | **Layer de adnotare/callout** (API + UI: auto-callouts din `Event` + adnotări manuale pe timeline/hartă). **AC:** insight-urile se randează ca callouts; adnotările manuale persistă. | 5 | P3 | H18.2.4 | Standalone |
-| H18.2.7 | **Reconstrucție eveniment + export replay partajabil** (link/video). **AC:** o reconstrucție mărginită temporal exportă un link/video partajabil + reproductibil. | 8 | P3 | H18.2.6 | Standalone |
+| H19.2.1 🔨 | **Recon-window scheduler** (SGP4 → footprint∩AOI → bisecție ingress/egress → scor calitate). **Livrat (algoritm):** `recon/windows.py` — `Aoi`/`ReconWindow`, `footprint_ground` (optical/SAR/coverage), `predict_windows` (walk SGP4 + test circle-vs-circle haversine + bisecție ingress/egress ~1s + closest-approach peak + quality care anulează optic noaptea via `is_sunlit`). +5 teste (ISS: AOI ecuatorial→ferestre ordonate; AOI polar→0; optic-noapte vs SAR). **Rămâne:** persistență `recon_windows` + refresh în deploy (parte din H19.2.2/backend). | 8 | P1 | H19.1.3 | Both |
+| H19.2.2 | **Alertare recon-window** (scan windows în lead-time → `Alert`). **AC:** o alertă se declanșează ≥lead_time înaintea unei treceri reale peste un AOI urmărit. | 3 | P1 | H19.2.1 | Both |
+| H19.2.3 | **Schelet motor CEP** (consumer windowed keyed pe `aoi`/`geohash` + state + watermark lateness). **AC:** o regulă windowed rulează peste streamul live cu lateness mărginit. | 8 | P2 | H19.1.5 | Both |
+| H19.2.4 | **Regulă tipping-and-cueing** („≥N recon windows peste un AOI în Δt"). **AC:** scenariu sintetic + real declanșează insight-ul cu linkuri la ferestrele contribuitoare. | 5 | P2 | H19.2.3, H19.2.1 | Both |
+| H19.2.5 | **Detectori de anomalii** (alege 2–3: holding-pattern, cascadă închideri spațiu aerian, onset jamming, corelație blackout↔eveniment). **AC:** fiecare se declanșează pe un scenariu seeded cu provenance. | 8 | P2 | H19.2.3 | Both |
+| H19.2.6 | **Layer de adnotare/callout** (API + UI: auto-callouts din `Event` + adnotări manuale pe timeline/hartă). **AC:** insight-urile se randează ca callouts; adnotările manuale persistă. | 5 | P3 | H19.2.4 | Standalone |
+| H19.2.7 | **Reconstrucție eveniment + export replay partajabil** (link/video). **AC:** o reconstrucție mărginită temporal exportă un link/video partajabil + reproductibil. | 8 | P3 | H19.2.6 | Standalone |
 
 ### WS3 — Operare agentică (Integrare JARVIS) (Phase C) — 0/6 · *gate: operezi WorldView vorbind cu JARVIS; o alertă ajunge în digest în buget, cu provenance*
 
 | # | Item | S | P | Dep | Track |
 |---|------|---|---|-----|-------|
-| H18.3.1 🔨 | **WorldView MCP server** — tool-uri read consumate de `agents/core/mcp/client.py`. **Livrat:** pachet standalone `worldview/mcp/` (`@worldview/mcp`) — SDK MCP v1.29 (`Server`+`setRequestHandler`, JSON-Schema, stdio); tool-uri `stateAt`, `findDarkVessels`, `trackOf`, `listLayers` (handler-e pure `(args, deps)` cu fetch injectabil, apelează REST-ul WorldView; validare input; erori→isError). +12 teste (stub fetch), tsc clean, build dist. **Rămâne:** tool `recon_windows`/`watch_aoi` (după backend recon) + abonare din JARVIS. | 5 | P1 | H16.1 | JARVIS |
-| H18.3.2 | **Tool-uri MCP write/async** (`watch_aoi`, `reconstruct_event`) + **auth capability-token** (reutilizează `CapabilityBroker`, H17.3). **AC:** `watch_aoi` creează o regulă sub token scoped; apelurile neautorizate respinse + auditat. | 5 | P1 | H18.3.1, H17.3 | JARVIS |
-| H18.3.3 | **Plugin JARVIS** `agents/core/plugins/worldview.py` (gated de `plugin_gate`). **AC:** Athena/Stark răspund unei întrebări geospațiale folosind WorldView într-o sesiune JARVIS. | 5 | P1 | H18.3.1 | JARVIS |
-| H18.3.4 | **Autonomy watcher**: alerte WorldView → inbox→severitate→**buget ≤4/zi**→digest JARVIS. **AC:** o alertă dark-vessel/recon apare în digest-ul JARVIS în buget, cu link de provenance. | 8 | P1 | H18.3.1, H6, H18.2.2 | JARVIS |
-| H18.3.5 | **Sync graf de cunoștințe** (change-feed ontologie → `memory/graph.py`; recall fuzionat RRF). **AC:** „ce s-a întâmplat în Hormuz marțea trecută" întoarce geo-evenimente via RRF. | 5 | P2 | H18.3.1, H18.4.1 | JARVIS |
-| H18.3.6 | **Agent intel „Argus"** (SOUL specializat geospațial-OSINT, opțional). **AC:** un agent dedicat răspunde la query-uri geospațial-OSINT folosind tool-urile. | 3 | P3 | H18.3.3 | JARVIS |
+| H19.3.1 🔨 | **WorldView MCP server** — tool-uri read consumate de `agents/core/mcp/client.py`. **Livrat:** pachet standalone `worldview/mcp/` (`@worldview/mcp`) — SDK MCP v1.29 (`Server`+`setRequestHandler`, JSON-Schema, stdio); tool-uri `stateAt`, `findDarkVessels`, `trackOf`, `listLayers` (handler-e pure `(args, deps)` cu fetch injectabil, apelează REST-ul WorldView; validare input; erori→isError). +12 teste (stub fetch), tsc clean, build dist. **Rămâne:** tool `recon_windows`/`watch_aoi` (după backend recon) + abonare din JARVIS. | 5 | P1 | H16.1 | JARVIS |
+| H19.3.2 | **Tool-uri MCP write/async** (`watch_aoi`, `reconstruct_event`) + **auth capability-token** (reutilizează `CapabilityBroker`, H17.3). **AC:** `watch_aoi` creează o regulă sub token scoped; apelurile neautorizate respinse + auditat. | 5 | P1 | H19.3.1, H17.3 | JARVIS |
+| H19.3.3 | **Plugin JARVIS** `agents/core/plugins/worldview.py` (gated de `plugin_gate`). **AC:** Athena/Stark răspund unei întrebări geospațiale folosind WorldView într-o sesiune JARVIS. | 5 | P1 | H19.3.1 | JARVIS |
+| H19.3.4 | **Autonomy watcher**: alerte WorldView → inbox→severitate→**buget ≤4/zi**→digest JARVIS. **AC:** o alertă dark-vessel/recon apare în digest-ul JARVIS în buget, cu link de provenance. | 8 | P1 | H19.3.1, H6, H19.2.2 | JARVIS |
+| H19.3.5 | **Sync graf de cunoștințe** (change-feed ontologie → `memory/graph.py`; recall fuzionat RRF). **AC:** „ce s-a întâmplat în Hormuz marțea trecută" întoarce geo-evenimente via RRF. | 5 | P2 | H19.3.1, H19.4.1 | JARVIS |
+| H19.3.6 | **Agent intel „Argus"** (SOUL specializat geospațial-OSINT, opțional). **AC:** un agent dedicat răspunde la query-uri geospațial-OSINT folosind tool-urile. | 3 | P3 | H19.3.3 | JARVIS |
 
 ### WS4 — Guvernanță & colaborare (Phase D) — 0/6 · *gate: 2 analiști pe un caz cu audit + reconstrucție exportată reproductibil*
 
 | # | Item | S | P | Dep | Track |
 |---|------|---|---|-----|-------|
-| H18.4.1 | **Ontologie**: proiector obiecte+linkuri+**acțiuni** peste SoR-ul relațional + proiecție graf. **AC:** obiecte/linkuri interogabile; acțiunile = endpoint-uri auditate. | 8 | P2 | — | Both |
-| H18.4.2 | **AuthN/Z**: OIDC + RBAC/ABAC (viewer/analyst/admin; scoping AOI/regiune). **AC:** acces scoped pe rol, enforced + testat. | 8 | P2 | — | Both |
-| H18.4.3 | **Provenance/chain-of-custody** (`source`+`ingested_at`+bitemporal `valid_*` în UI/API). **AC:** orice datum/insight se trasează la sursă; UI arată provenance. | 5 | P2 | — | Both |
-| H18.4.4 | **Audit hash-înlănțuit** (reutilizează Merkle audit JARVIS, H4.10/H17.4) pe acțiuni/tool-calls/ack-uri. **AC:** log tamper-evident + endpoint verify. | 5 | P2 | H18.4.1 | Both |
-| H18.4.5 | **Cazuri / adnotări / multi-user**. **AC:** 2 utilizatori colaborează pe un caz partajat. | 8 | P3 | H18.4.2 | Standalone |
-| H18.4.6 | **Export/raportare** (brief PDF, GeoJSON, replay). **AC:** o reconstrucție exportată reproductibil. | 5 | P3 | H18.4.5 | Standalone |
+| H19.4.1 | **Ontologie**: proiector obiecte+linkuri+**acțiuni** peste SoR-ul relațional + proiecție graf. **AC:** obiecte/linkuri interogabile; acțiunile = endpoint-uri auditate. | 8 | P2 | — | Both |
+| H19.4.2 | **AuthN/Z**: OIDC + RBAC/ABAC (viewer/analyst/admin; scoping AOI/regiune). **AC:** acces scoped pe rol, enforced + testat. | 8 | P2 | — | Both |
+| H19.4.3 | **Provenance/chain-of-custody** (`source`+`ingested_at`+bitemporal `valid_*` în UI/API). **AC:** orice datum/insight se trasează la sursă; UI arată provenance. | 5 | P2 | — | Both |
+| H19.4.4 | **Audit hash-înlănțuit** (reutilizează Merkle audit JARVIS, H4.10/H17.4) pe acțiuni/tool-calls/ack-uri. **AC:** log tamper-evident + endpoint verify. | 5 | P2 | H19.4.1 | Both |
+| H19.4.5 | **Cazuri / adnotări / multi-user**. **AC:** 2 utilizatori colaborează pe un caz partajat. | 8 | P3 | H19.4.2 | Standalone |
+| H19.4.6 | **Export/raportare** (brief PDF, GeoJSON, replay). **AC:** o reconstrucție exportată reproductibil. | 5 | P3 | H19.4.5 | Standalone |
 
 ### WS5 — Scale & hardening platformă (Phase A5/D5/D6 + infra) — 0/7 · *gate: 1M+ puncte @60fps via tiles, 10k WS concurente, DR ↦ RPO≤5m/RTO≤30m, SLO-uri verzi*
 
 | # | Item | S | P | Dep | Track |
 |---|------|---|---|-----|-------|
-| H18.5.1 | **Serviciu vector-tiles** (Martin/pg_tileserv) + CDN; clientul comută pe tiles sub un prag de zoom. **AC:** globul randează 1M+ puncte @60fps via tiles. | 8 | P2 | H18.1.5 | Standalone |
-| H18.5.2 | **WS gateway fleet** + coalescing + sharding canale pe geohash (opțiune NATS/Centrifugo). **AC:** 10k clienți WS concurenți susținuți; rata de delta per-client mărginită. | 8 | P2 | — | Standalone |
-| H18.5.3 | **Lakehouse offload** (CDC/sink → Iceberg/Parquet pe S3 + query DuckDB/Trino). **AC:** raw rece interogabil; dimensiunea store-ului OLTP mărginită. | 8 | P3 | H18.1.7 | Standalone |
-| H18.5.4 🔨 | **Glob 3D + camera tours**. **Livrat:** toggle map⇄globe — store `viewMode` + `ViewToggle`; `DeckGlobe` randează cu `_GlobeView` (Deck.gl 9) pe o sferă-pământ întunecată (SolidPolygonLayer + graticule), fără Mapbox sub glob; click/tooltip/zoom în ambele moduri. +2 teste store; tsc clean, 15 vitest, build OK. **Rămâne:** camera tours scriptate. | 5 | P3 | H18.5.1 | Standalone |
-| H18.5.5 | **Observabilitate** (OTel trace end-to-end, dashboards Prometheus/Grafana, error budgets, runbooks). **AC:** dashboards golden-signal + alarmă lag + 1 runbook. | 5 | P2 | — | Both |
-| H18.5.6 | **DR** (multi-AZ, promovare replică, Kafka mirror; test RPO/RTO). **AC:** un game-day DR atinge RPO≤5min/RTO≤30min. | 8 | P3 | H18.1.5 | Standalone |
-| H18.5.7 | **Swarm captură OSINT cu agenți, guvernat** (snapshot cache efemer, rate-limit + provenance). **AC:** o rulare de captură face snapshot la semnale efemere cu provenance + rate-limit. | 13 | P3 | H18.4.4 | Both |
+| H19.5.1 | **Serviciu vector-tiles** (Martin/pg_tileserv) + CDN; clientul comută pe tiles sub un prag de zoom. **AC:** globul randează 1M+ puncte @60fps via tiles. | 8 | P2 | H19.1.5 | Standalone |
+| H19.5.2 | **WS gateway fleet** + coalescing + sharding canale pe geohash (opțiune NATS/Centrifugo). **AC:** 10k clienți WS concurenți susținuți; rata de delta per-client mărginită. | 8 | P2 | — | Standalone |
+| H19.5.3 | **Lakehouse offload** (CDC/sink → Iceberg/Parquet pe S3 + query DuckDB/Trino). **AC:** raw rece interogabil; dimensiunea store-ului OLTP mărginită. | 8 | P3 | H19.1.7 | Standalone |
+| H19.5.4 🔨 | **Glob 3D + camera tours**. **Livrat:** toggle map⇄globe — store `viewMode` + `ViewToggle`; `DeckGlobe` randează cu `_GlobeView` (Deck.gl 9) pe o sferă-pământ întunecată (SolidPolygonLayer + graticule), fără Mapbox sub glob; click/tooltip/zoom în ambele moduri. +2 teste store; tsc clean, 15 vitest, build OK. **Rămâne:** camera tours scriptate. | 5 | P3 | H19.5.1 | Standalone |
+| H19.5.5 | **Observabilitate** (OTel trace end-to-end, dashboards Prometheus/Grafana, error budgets, runbooks). **AC:** dashboards golden-signal + alarmă lag + 1 runbook. | 5 | P2 | — | Both |
+| H19.5.6 | **DR** (multi-AZ, promovare replică, Kafka mirror; test RPO/RTO). **AC:** un game-day DR atinge RPO≤5min/RTO≤30min. | 8 | P3 | H19.1.5 | Standalone |
+| H19.5.7 | **Swarm captură OSINT cu agenți, guvernat** (snapshot cache efemer, rate-limit + provenance). **AC:** o rulare de captură face snapshot la semnale efemere cu provenance + rate-limit. | 13 | P3 | H19.4.4 | Both |
 
-> **Total ORIZONT 18:** 33 items, ~208 SP (WS1 38 · WS2 45 · WS3 31 · WS4 39 · WS5 55). **Primele 5 (the next concrete things):**
-> H18.1.1 (ADS-B real) → H18.2.1+H18.2.2 (recon-window + alertă, wow maxim, reutilizează SGP4) → H18.3.1 (MCP server) →
-> H18.3.4 (un watcher = bucla proactivă) → H18.4.3+H18.4.4 (provenance + audit). Plan complet & ADR-uri:
+> **Total ORIZONT 19:** 33 items, ~208 SP (WS1 38 · WS2 45 · WS3 31 · WS4 39 · WS5 55). **Primele 5 (the next concrete things):**
+> H19.1.1 (ADS-B real) → H19.2.1+H19.2.2 (recon-window + alertă, wow maxim, reutilizează SGP4) → H19.3.1 (MCP server) →
+> H19.3.4 (un watcher = bucla proactivă) → H19.4.3+H19.4.4 (provenance + audit). Plan complet & ADR-uri:
 > [`worldview/docs/02-platform-architecture-and-delivery-plan.md`](worldview/docs/02-platform-architecture-and-delivery-plan.md).
 
 ---

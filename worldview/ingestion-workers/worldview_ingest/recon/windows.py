@@ -1,4 +1,4 @@
-"""Satellite recon-window prediction (WorldView ticket H18.2.1).
+"""Satellite recon-window prediction (WorldView ticket H19.2.1).
 
 Given an Area of Interest (AOI center + radius), a satellite TLE, and a sensor
 spec, predict the UTC time windows during which the satellite's sensor footprint

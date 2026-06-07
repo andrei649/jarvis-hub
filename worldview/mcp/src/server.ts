@@ -1,4 +1,4 @@
-// WorldView MCP server (ticket H18.3.1).
+// WorldView MCP server (ticket H19.3.1).
 //
 // Exposes the WorldView 4D OSINT REST API (`@worldview/backend-api`) as Model Context Protocol
 // tools over **stdio**, so an MCP client — e.g. the JARVIS agent system — can query the platform.
