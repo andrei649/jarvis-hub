@@ -13,9 +13,9 @@
 
    Verified by typecheck/build only — live mic/audio needs a real browser + device,
    which a headless CI container can't provide. Auto barge-in (interrupt the spoken
-   reply by talking over it) is intentionally deferred: it needs on-device echo-
-   cancellation tuning to avoid the assistant interrupting itself. Tap the mic to cut a
-   reply short for now. */
+   reply by talking over it) is OPT-IN and default-off (EXPERIMENTAL): it relies on the
+   mic's echo cancellation, so it needs on-device tuning to avoid the assistant cutting
+   itself off. With it off, tap the mic to cut a reply short. */
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { getToken } from './api/client';
 
@@ -23,6 +23,8 @@ const SILENCE_MS = 1100;     // trailing silence (after speech) that ends an utt
 const SPEECH_RMS = 0.025;    // mic RMS treated as "speaking"
 const MAX_UTTER_MS = 15000;  // hard cap per utterance
 const WAIT_SPEECH_MS = 7000; // give up a turn if no speech after listening starts
+const BARGE_RMS = 0.045;     // higher bar than SPEECH_RMS — only real speech, not TTS echo, triggers barge-in
+const BARGE_MS = 360;        // sustained over-talk before we cut the reply
 
 function browserSpeak(text, lang, cancelled) {
   return new Promise((resolve) => {
@@ -38,7 +40,7 @@ function browserSpeak(text, lang, cancelled) {
   });
 }
 
-export function useVoice({ lang = 'ro', mode = 'hands-free', ttsSource = 'server', micMuted = false, onTurn } = {}) {
+export function useVoice({ lang = 'ro', mode = 'hands-free', ttsSource = 'server', micMuted = false, barge = false, onTurn } = {}) {
   const supported = typeof navigator !== 'undefined'
     && !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia)
     && typeof window !== 'undefined' && 'MediaRecorder' in window;
@@ -64,6 +66,7 @@ export function useVoice({ lang = 'ro', mode = 'hands-free', ttsSource = 'server
   const modeRef = useRef(mode); modeRef.current = mode;             // 'hands-free' | 'ptt'
   const ttsRef = useRef(ttsSource); ttsRef.current = ttsSource;     // 'server' | 'browser' | 'off'
   const micMutedRef = useRef(micMuted); micMutedRef.current = micMuted;
+  const bargeRef = useRef(barge); bargeRef.current = barge;          // opt-in talk-over interrupt (experimental)
   const statusRef = useRef('off');
   const setStat = (s) => { statusRef.current = s; setStatus(s); };  // status + ref (avoids stale-closure reads)
 
@@ -162,26 +165,45 @@ export function useVoice({ lang = 'ro', mode = 'hands-free', ttsSource = 'server
     if (!text || ttsRef.current === 'off') return;
     if (cancelSpeakRef.current) cancelSpeakRef.current();
     let cancelled = false;
+    let bargeIv = null;
     cancelSpeakRef.current = () => {
       cancelled = true;
       try { if (audioRef.current) audioRef.current.pause(); } catch { /* */ }
       try { if (window.speechSynthesis) window.speechSynthesis.cancel(); } catch { /* */ }
+      if (bargeIv) { clearInterval(bargeIv); bargeIv = null; }
     };
-    // 'browser' → fully-local speechSynthesis only; 'server' → cloned voice via /tts, fall back to local
-    if (ttsRef.current === 'browser') { await browserSpeak(text, langRef.current, () => cancelled); return; }
+    // Opt-in barge-in: while the reply plays, watch the mic — sustained over-talk cancels
+    // playback so the loop captures the user. EXPERIMENTAL (echo-cancellation dependent).
+    if (bargeRef.current && anRef.current) {
+      let voiceMs = 0;
+      bargeIv = setInterval(() => {
+        if (cancelled) return;
+        const lv = rms();
+        if (lv >= BARGE_RMS) { voiceMs += 130; if (voiceMs >= BARGE_MS && cancelSpeakRef.current) cancelSpeakRef.current(); }
+        else voiceMs = Math.max(0, voiceMs - 130);
+      }, 130);
+    }
     try {
-      const res = await fetch('/tts', { method: 'POST', headers: tok({ 'Content-Type': 'application/json' }), body: JSON.stringify({ text, lang: langRef.current }) });
-      if (cancelled) return;
-      if (res.ok) {
-        const blob = await res.blob(); if (cancelled) return;
-        const url = URL.createObjectURL(blob);
-        await new Promise((resolve) => { const a = new Audio(url); audioRef.current = a; a.onended = () => resolve(null); a.onerror = () => resolve(null); a.play().catch(() => resolve(null)); });
-        try { URL.revokeObjectURL(url); } catch { /* */ }
+      // 'browser' → fully-local speechSynthesis; 'server' → cloned voice via /tts, fall back to local
+      if (ttsRef.current === 'browser') {
+        await browserSpeak(text, langRef.current, () => cancelled);
       } else {
-        await browserSpeak(text, langRef.current, () => cancelled);  // local fallback, no network
+        const res = await fetch('/tts', { method: 'POST', headers: tok({ 'Content-Type': 'application/json' }), body: JSON.stringify({ text, lang: langRef.current }) });
+        if (!cancelled) {
+          if (res.ok) {
+            const blob = await res.blob();
+            if (!cancelled) {
+              const url = URL.createObjectURL(blob);
+              await new Promise((resolve) => { const a = new Audio(url); audioRef.current = a; a.onended = () => resolve(null); a.onerror = () => resolve(null); a.play().catch(() => resolve(null)); });
+              try { URL.revokeObjectURL(url); } catch { /* */ }
+            }
+          } else {
+            await browserSpeak(text, langRef.current, () => cancelled);  // local fallback, no network
+          }
+        }
       }
-    } catch { await browserSpeak(text, langRef.current, () => cancelled); }
-    finally { audioRef.current = null; }
+    } catch { if (!cancelled) await browserSpeak(text, langRef.current, () => cancelled); }
+    finally { if (bargeIv) clearInterval(bargeIv); audioRef.current = null; }
   }, []);
 
   const cancelSpeak = useCallback(() => { if (cancelSpeakRef.current) cancelSpeakRef.current(); }, []);

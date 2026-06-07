@@ -172,8 +172,10 @@ function InputBar({ onSubmit, mic, setMic, voice, cfg, onCfg, micMuted, t }) {
         <div style={{position:'absolute',bottom:'100%',right:0,marginBottom:8,zIndex:30,minWidth:262,padding:'10px 12px',borderRadius:10,background:'rgba(10,18,24,.98)',border:'1px solid var(--panel-line)',boxShadow:'0 10px 30px rgba(0,0,0,.45)'}}>
           <div style={{color:'var(--accent-light)',fontFamily:'var(--font-mono)',fontSize:10,letterSpacing:'.14em',marginBottom:6}}>VOICE</div>
           {row('MODE', <Seg cur={cfg.mode} opts={[{v:'hands-free',l:'HANDS-FREE'},{v:'ptt',l:'PUSH-TO-TALK'}]} on={(v)=>onCfg({mode:v})} />)}
-          {row('SPEAK', <Seg cur={cfg.tts} opts={[{v:'server',l:'CLONED'},{v:'browser',l:'LOCAL'},{v:'off',l:'OFF'}]} on={(v)=>onCfg({tts:v})} />)}
+          {row('SPEAK', <Seg cur={cfg.tts} opts={[{v:'server',l:'SERVER'},{v:'browser',l:'LOCAL'},{v:'off',l:'OFF'}]} on={(v)=>onCfg({tts:v})} />)}
           {row('LANG', <Seg cur={cfg.lang} opts={[{v:'auto',l:'AUTO'},{v:'ro',l:'RO'},{v:'en',l:'EN'}]} on={(v)=>onCfg({lang:v})} />)}
+          {row('BARGE-IN', <Seg cur={cfg.barge||'off'} opts={[{v:'off',l:'OFF'},{v:'on',l:'ON'}]} on={(v)=>onCfg({barge:v})} />)}
+          {cfg.barge==='on' && <div style={{marginTop:4,color:'var(--ink-3)',fontSize:9,fontFamily:'var(--font-mono)'}}>experimental — talk over the reply to interrupt; needs echo cancellation</div>}
           {voice && voice.caps && voice.caps.stt===false && <div style={{marginTop:6,color:'var(--amber)',fontSize:10,fontFamily:'var(--font-mono)'}}>local STT not installed — pip install faster-whisper</div>}
         </div>
       )}
