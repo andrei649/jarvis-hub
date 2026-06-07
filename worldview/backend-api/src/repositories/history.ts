@@ -27,6 +27,26 @@ function bboxClause(bbox: BBox | null, firstParam: number, col = "geom"): {
   };
 }
 
+// Postgres "undefined_table" — the continuous aggregate isn't materialized (or we're on plain
+// Postgres). The minute-LOD path falls back to the raw query so the API degrades gracefully.
+const UNDEFINED_TABLE = "42P01";
+
+async function queryWithRawFallback(
+  pool: Pool,
+  primarySql: string,
+  fallbackSql: string,
+  params: unknown[],
+): Promise<FeatureCollection> {
+  try {
+    const res = await pool.query(primarySql, params);
+    return rowsToFeatureCollection(res.rows);
+  } catch (err) {
+    if ((err as { code?: string }).code !== UNDEFINED_TABLE) throw err;
+    const res = await pool.query(fallbackSql, params);
+    return rowsToFeatureCollection(res.rows);
+  }
+}
+
 export async function flightsAsOf(
   pool: Pool,
   t: number,
@@ -34,18 +54,8 @@ export async function flightsAsOf(
   lod: Lod = "raw",
 ): Promise<FeatureCollection> {
   const bc = bboxClause(bbox, 2);
-  const sql =
-    lod === "minute"
-      ? `
-    SELECT DISTINCT ON (icao24)
-      icao24, extract(epoch FROM bucket) AS ts, alt_m, gs_kt, track_deg, is_military,
-      ST_AsGeoJSON(geom) AS geojson
-    FROM adsb_positions_1m
-    WHERE bucket <= to_timestamp($1)
-      AND bucket >  to_timestamp($1) - make_interval(secs => ${MINUTE_WINDOW_SECONDS})${bc.clause}
-    ORDER BY icao24, bucket DESC
-    LIMIT ${MAX_FEATURES}`
-      : `
+  const params = [t, ...bc.params];
+  const rawSql = `
     SELECT DISTINCT ON (icao24)
       icao24, extract(epoch FROM ts) AS ts, alt_m, gs_kt, track_deg,
       callsign, squawk, on_ground, is_military, ST_AsGeoJSON(geom) AS geojson
@@ -54,7 +64,19 @@ export async function flightsAsOf(
       AND ts >  to_timestamp($1) - make_interval(secs => ${LIVENESS_SECONDS.adsb})${bc.clause}
     ORDER BY icao24, ts DESC
     LIMIT ${MAX_FEATURES}`;
-  const res = await pool.query(sql, [t, ...bc.params]);
+  if (lod === "minute") {
+    const minuteSql = `
+    SELECT DISTINCT ON (icao24)
+      icao24, extract(epoch FROM bucket) AS ts, alt_m, gs_kt, track_deg, is_military,
+      ST_AsGeoJSON(geom) AS geojson
+    FROM adsb_positions_1m
+    WHERE bucket <= to_timestamp($1)
+      AND bucket >  to_timestamp($1) - make_interval(secs => ${MINUTE_WINDOW_SECONDS})${bc.clause}
+    ORDER BY icao24, bucket DESC
+    LIMIT ${MAX_FEATURES}`;
+    return queryWithRawFallback(pool, minuteSql, rawSql, params);
+  }
+  const res = await pool.query(rawSql, params);
   return rowsToFeatureCollection(res.rows);
 }
 
@@ -65,17 +87,8 @@ export async function vesselsAsOf(
   lod: Lod = "raw",
 ): Promise<FeatureCollection> {
   const bc = bboxClause(bbox, 2);
-  const sql =
-    lod === "minute"
-      ? `
-    SELECT DISTINCT ON (mmsi)
-      mmsi, extract(epoch FROM bucket) AS ts, sog_kt, cog_deg, ST_AsGeoJSON(geom) AS geojson
-    FROM ais_positions_1m
-    WHERE bucket <= to_timestamp($1)
-      AND bucket >  to_timestamp($1) - make_interval(secs => ${MINUTE_WINDOW_SECONDS})${bc.clause}
-    ORDER BY mmsi, bucket DESC
-    LIMIT ${MAX_FEATURES}`
-      : `
+  const params = [t, ...bc.params];
+  const rawSql = `
     SELECT DISTINCT ON (mmsi)
       mmsi, extract(epoch FROM ts) AS ts, sog_kt, cog_deg, heading_deg, nav_status,
       ST_AsGeoJSON(geom) AS geojson
@@ -84,7 +97,18 @@ export async function vesselsAsOf(
       AND ts >  to_timestamp($1) - make_interval(secs => ${LIVENESS_SECONDS.ais})${bc.clause}
     ORDER BY mmsi, ts DESC
     LIMIT ${MAX_FEATURES}`;
-  const res = await pool.query(sql, [t, ...bc.params]);
+  if (lod === "minute") {
+    const minuteSql = `
+    SELECT DISTINCT ON (mmsi)
+      mmsi, extract(epoch FROM bucket) AS ts, sog_kt, cog_deg, ST_AsGeoJSON(geom) AS geojson
+    FROM ais_positions_1m
+    WHERE bucket <= to_timestamp($1)
+      AND bucket >  to_timestamp($1) - make_interval(secs => ${MINUTE_WINDOW_SECONDS})${bc.clause}
+    ORDER BY mmsi, bucket DESC
+    LIMIT ${MAX_FEATURES}`;
+    return queryWithRawFallback(pool, minuteSql, rawSql, params);
+  }
+  const res = await pool.query(rawSql, params);
   return rowsToFeatureCollection(res.rows);
 }
 
