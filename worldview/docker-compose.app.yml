@@ -1,0 +1,69 @@
+# WorldView application services — overlay on top of the infra in docker-compose.yml.
+#   docker compose -f docker-compose.yml -f docker-compose.app.yml up --build
+# Runs the API (with both consumers), one ingestion worker per domain, and the dashboard.
+# NOTE: the Dockerfiles are templates not built in this repo's CI — build in an env with Docker.
+
+services:
+  api:
+    build:
+      context: .
+      dockerfile: backend-api/Dockerfile
+    environment:
+      DATABASE_URL: postgres://worldview:worldview@timescaledb:5432/worldview
+      REDIS_URL: redis://redis:6379
+      KAFKA_BROKERS: redpanda:29092
+      ENABLE_LIVE_WRITER: "1"
+      ENABLE_HISTORY_WRITER: "1"
+      CORS_ORIGIN: http://localhost:3000
+    ports:
+      - "4000:4000"
+    depends_on:
+      timescaledb:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      redpanda:
+        condition: service_healthy
+
+  frontend:
+    build:
+      context: .
+      dockerfile: frontend/Dockerfile
+      args:
+        NEXT_PUBLIC_API_URL: http://localhost:4000
+        NEXT_PUBLIC_WS_URL: ws://localhost:4000/live
+        NEXT_PUBLIC_MAPBOX_ACCESS_TOKEN: ${MAPBOX_ACCESS_TOKEN:-}
+    ports:
+      - "3000:3000"
+    depends_on:
+      - api
+
+  # One worker per domain. Scale or split per deployment.
+  worker-adsb:
+    build: { context: ./ingestion-workers }
+    command: ["adsb"]
+    environment: { KAFKA_BROKERS: redpanda:29092 }
+    depends_on:
+      redpanda:
+        condition: service_healthy
+  worker-ais:
+    build: { context: ./ingestion-workers }
+    command: ["ais"]
+    environment: { KAFKA_BROKERS: redpanda:29092, AISSTREAM_API_KEY: "${AISSTREAM_API_KEY:-}" }
+    depends_on:
+      redpanda:
+        condition: service_healthy
+  worker-tle:
+    build: { context: ./ingestion-workers }
+    command: ["tle"]
+    environment: { KAFKA_BROKERS: redpanda:29092 }
+    depends_on:
+      redpanda:
+        condition: service_healthy
+  worker-ew:
+    build: { context: ./ingestion-workers }
+    command: ["ew"]
+    environment: { KAFKA_BROKERS: redpanda:29092 }
+    depends_on:
+      redpanda:
+        condition: service_healthy
