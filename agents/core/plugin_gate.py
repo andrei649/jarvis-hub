@@ -192,6 +192,16 @@ BUILTIN_PLUGINS = {
         allowed_domains=["openapi.tuya.com"],
         agents_served=["jarvis", "ultron"],
     ),
+    "worldview": PluginManifest(
+        id="worldview",
+        name="WorldView 4D OSINT",
+        version="0.1.0",
+        description="Query the local WorldView 4D OSINT platform (as-of-T layers, recon windows, provenance)",
+        network_access=NetworkAccess.LAN,
+        data_scope=DataScope.LOCAL_ONLY,
+        allowed_domains=[],
+        agents_served=["jarvis", "athena", "stark", "vision"],
+    ),
 }
 
 

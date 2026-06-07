@@ -75,6 +75,7 @@ from .plugins.n8n import N8NPlugin
 from .plugins.sms_alerts import SMSAlertsPlugin
 from .plugins.crm_sync import CRMSyncPlugin
 from .plugins.iot_control import IoTControlPlugin
+from .plugins.worldview import WorldViewPlugin
 
 logger = logging.getLogger("jarvis.orchestrator")
 
@@ -438,6 +439,10 @@ class Orchestrator:
             client_id=self.get_setting("plugins.tuya_client_id", ""),
             secret=self.get_setting("plugins.tuya_secret", ""),
             device_id=self.get_setting("plugins.tuya_device_id", ""),
+        )
+        # WorldView 4D OSINT (local-first; override host with WORLDVIEW_API_URL).
+        self.plugins["worldview"] = WorldViewPlugin(
+            api_url=os.environ.get("WORLDVIEW_API_URL", ""),
         )
 
         # Autonomy queue — durable self-tasking store (H6.1)
@@ -1412,6 +1417,18 @@ class Orchestrator:
                 wp = self.plugins.get("websearch")
                 if wp:
                     data["websearch"] = await wp.search(text, max_results=5)
+
+        if "worldview" in keywords or any(w in text_lower for w in [
+            "satellite", "satelit", "recon", "overflight", "overpass", "satpass",
+            "geospatial", "osint", "hormuz", "strait", "dark vessel",
+            "jamming", "bruiaj", "footprint", "overhead pass",
+        ]):
+            if self._any_agent_can("worldview", intent):
+                wv = self.plugins.get("worldview")
+                if wv:
+                    data["worldview"] = await wv.recon_overview()
+            else:
+                log_error(logger, E_PLUGIN_BLOCKED, name="worldview")
 
         return data
 
