@@ -9,7 +9,8 @@
     "build": "tsc -p tsconfig.json --noEmit false --outDir dist",
     "start": "node dist/server.js",
     "typecheck": "tsc --noEmit",
-    "test": "node --import tsx --test test/*.test.ts"
+    "test": "node --import tsx --test test/*.test.ts",
+    "test:integration": "tsx integration/run.mts"
   },
   "dependencies": {
     "fastify": "4.28.1",
