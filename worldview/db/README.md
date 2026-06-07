@@ -37,6 +37,15 @@ done
 | `07_policies.sql` | continuous aggregates + compression + retention policies |
 | `08_indexes.sql` | spatial (GiST) + temporal (BRIN) + as-of (composite) indexes |
 
+## Demo data
+
+After the schema is applied, load a Strait of Hormuz scenario spanning all five layers over the
+last 10 minutes (so scrubbing the timeline animates):
+
+```bash
+psql "$DATABASE_URL" -f seed/demo.sql     # or: npm run db:seed
+```
+
 ## Notes
 
 - All geometry is stored as `geometry(…, 4326)` (WGS84) and cast to `geography` only where

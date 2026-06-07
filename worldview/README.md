@@ -67,3 +67,16 @@ npm install                           # frontend + backend-api workspaces
 npm run dev:api                       # http://localhost:4000/health
 npm run dev:frontend                  # http://localhost:3000
 ```
+
+### See it with data (no live feeds needed)
+
+```bash
+export DATABASE_URL=postgres://worldview:worldview@localhost:5432/worldview
+npm run db:seed     # loads a Strait of Hormuz scenario across all 5 layers, last 10 min
+```
+
+Then open the dashboard and **scrub the timeline back ~10 minutes** (historical mode): a civil
+flight crossing the strait, a military orbit, a transiting tanker, a vessel going **dark**, a
+SAR satellite pass with footprint, a ramping **GPS-jamming** cell, a NOTAM, and a strike event —
+all moving in lockstep with the master clock. For live mode, run the ingestion workers with the
+API's `ENABLE_LIVE_WRITER=1` / `ENABLE_HISTORY_WRITER=1`.
