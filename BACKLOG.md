@@ -591,11 +591,11 @@ chain-of-thought leak / mid-sentence truncation fixed. Kill-switch:
 | # | Item | S | P | Dep | Track |
 |---|------|---|---|-----|-------|
 | H19.2.1 🔨 | **Recon-window scheduler** (SGP4 → footprint∩AOI → bisecție ingress/egress → scor calitate). **Livrat (algoritm):** `recon/windows.py` — `Aoi`/`ReconWindow`, `footprint_ground` (optical/SAR/coverage), `predict_windows` (walk SGP4 + test circle-vs-circle haversine + bisecție ingress/egress ~1s + closest-approach peak + quality care anulează optic noaptea via `is_sunlit`). +5 teste (ISS: AOI ecuatorial→ferestre ordonate; AOI polar→0; optic-noapte vs SAR). **Rămâne:** persistență `recon_windows` + refresh în deploy (parte din H19.2.2/backend). | 8 | P1 | H19.1.3 | Both |
-| H19.2.2 | **Alertare recon-window** (scan windows în lead-time → `Alert`). **AC:** o alertă se declanșează ≥lead_time înaintea unei treceri reale peste un AOI urmărit. | 3 | P1 | H19.2.1 | Both |
+| H19.2.2 🔨 | **Alertare recon-window** (scan windows în lead-time → `Alert`). **AC:** o alertă se declanșează ≥lead_time înaintea unei treceri reale peste un AOI urmărit. | 3 | P1 | H19.2.1 | Both |
 | H19.2.3 | **Schelet motor CEP** (consumer windowed keyed pe `aoi`/`geohash` + state + watermark lateness). **AC:** o regulă windowed rulează peste streamul live cu lateness mărginit. | 8 | P2 | H19.1.5 | Both |
-| H19.2.4 | **Regulă tipping-and-cueing** („≥N recon windows peste un AOI în Δt"). **AC:** scenariu sintetic + real declanșează insight-ul cu linkuri la ferestrele contribuitoare. | 5 | P2 | H19.2.3, H19.2.1 | Both |
-| H19.2.5 | **Detectori de anomalii** (alege 2–3: holding-pattern, cascadă închideri spațiu aerian, onset jamming, corelație blackout↔eveniment). **AC:** fiecare se declanșează pe un scenariu seeded cu provenance. | 8 | P2 | H19.2.3 | Both |
-| H19.2.6 | **Layer de adnotare/callout** (API + UI: auto-callouts din `Event` + adnotări manuale pe timeline/hartă). **AC:** insight-urile se randează ca callouts; adnotările manuale persistă. | 5 | P3 | H19.2.4 | Standalone |
+| H19.2.4 🔨 | **Regulă tipping-and-cueing** („≥N recon windows peste un AOI în Δt"). **AC:** scenariu sintetic + real declanșează insight-ul cu linkuri la ferestrele contribuitoare. | 5 | P2 | H19.2.3, H19.2.1 | Both |
+| H19.2.5 🔨 | **Detectori de anomalii** (alege 2–3: holding-pattern, cascadă închideri spațiu aerian, onset jamming, corelație blackout↔eveniment). **AC:** fiecare se declanșează pe un scenariu seeded cu provenance. | 8 | P2 | H19.2.3 | Both |
+| H19.2.6 🔨 | **Layer de adnotare/callout** (API + UI: auto-callouts din `Event` + adnotări manuale pe timeline/hartă). **AC:** insight-urile se randează ca callouts; adnotările manuale persistă. | 5 | P3 | H19.2.4 | Standalone |
 | H19.2.7 | **Reconstrucție eveniment + export replay partajabil** (link/video). **AC:** o reconstrucție mărginită temporal exportă un link/video partajabil + reproductibil. | 8 | P3 | H19.2.6 | Standalone |
 
 ### WS3 — Operare agentică (Integrare JARVIS) (Phase C) — 0/6 · *gate: operezi WorldView vorbind cu JARVIS; o alertă ajunge în digest în buget, cu provenance*
