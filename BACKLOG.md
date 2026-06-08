@@ -671,6 +671,64 @@ chain-of-thought leak / mid-sentence truncation fixed. Kill-switch:
 
 ---
 
+## ORIZONT 21 — Cognition: Living Memory & Human-Like Personality (P1–P3) — 0/10
+
+> **Cea mai importantă temă.** Un creier cognitiv pentru agenți: memorie **nelimitată, append-only,
+> mereu valoroasă în timp** (uitarea = accesibilitate redusă + demotare pe tier, **niciodată ștergere**;
+> doar utilizatorul șterge explicit) + personalitate **consistentă-dar-vie** ancorată pe **onestitate**
+> (HEXACO Honesty-Humility, anti-sycophancy structural). Viitor-proof = **neuroplasticitate**
+> (re-embedding pe modele mai bune, working-memory elastic). Rulează pe cortexul idle (night-shift).
+>
+> *(Renumerotat 19→20→21: ORIZONT 19 = WorldView (4D OSINT), ORIZONT 20 = Hermes Mining — ambele luate în alte sesiuni.)*
+>
+> **Complementar cu ORIZONT 20 (Hermes Mining):** Hermes conduce pe **actuation**, Cognition adâncește
+> **memoria/personalitatea/guvernanța** — același wedge. Reutilizează exact primitivele unde „Jarvis deja
+> conduce" (approval-queue, risk-gate, secret-broker, audit Merkle, KG bitemporal+RRF+reflection). **Nu
+> dublează** bucla de skill din Hermes: H21.4 **hrănește + guvernează** H20.5 (skill self-improvement) și
+> H20.4 (self-evolution DSPy/GEPA), nu le reimplementează.
+>
+> **Hartă schematică & diagnostic:** [`docs/COGNITION.md`](docs/COGNITION.md) (~35 analogii cu creierul,
+> diagrame tier/flux, playbook simptom→cauză→remediu). **Context complet de sesiune:**
+> [`docs/research/2026-06-07-cognition-and-tools-session.md`](docs/research/2026-06-07-cognition-and-tools-session.md).
+>
+> **Decizia de arhitectură (calitate pe termen lung):** un singur pachet `agents/core/cognition/` în
+> spatele unui **`CognitionFacade`** înregistrat prin `ComponentRegistry` (1 linie în orchestrator + 2/handler) →
+> **nu crește god-object-ul** (CLN-2/CLN-3). Stare tranzitorie pe un **`TurnContext` per-cerere** (repară **BUG-5**);
+> stare durabilă în **`JsonStore`-uri locked, keyed** `(agent,user)`/`session` (nu atribute pe instanța partajată).
+> **Master OFF = no-op măsurabil.** Reutilizează primitivele H14 deja livrate: `decay.py` (H14.4),
+> `bitemporal.py` (H14.1), `consolidation.py` (H14.3), `entity.py`. *(SP-urile de mai jos nu sunt încă rulate în „Status General".)*
+>
+> **Metrica nord (conjunctivă, ne-gameable):** mastery/KC↑ cu calibration-error↓; accept-first-pass↑
+> **cât timp** corectitudinea-gold ține (altfel alarmă de sycophancy); media trăsăturii urmărește μ cu
+> varianță vie **și** pushback-reversal ≤0.05 la warmth ridicat; ID-orb ansamblu ≥80% **gated** de truth-audit.
+
+| # | Item | S | P | Dep | AC |
+|---|------|---|---|-----|----|
+| H21.0 | **Schelet + fix BUG-5** — pachet `cognition/` + `CognitionFacade` (înregistrat în `ComponentRegistry`), `TurnContext` per-cerere, bază `JsonStore` locked+keyed, categorie settings `cognition` (toate OFF), `APIRouter`. **Zero schimbare de comportament.** | 5 | P1 | — | master OFF = no-op măsurabil; `session_id` trece prin `TurnContext` (fără mutație pe instanța partajată → BUG-5 reparat); `/api/cognition/status` întoarce flagurile |
+| H21.1 | **Cheia de onestitate** (start aici) — judecător anti-sycophancy/persona în `QualityMonitor` (axă deterministă în `signals` + judge LLM opțional **deferred**, nu inline); editare atribuire-în-caracter în `synthesize()`; metrica Sycophancy Index. | 5 | P1 | H21.0 | Sycophancy Index calculat & expus; pushback-reversal ≤0.05 pe probe set; `synthesize` păstrează vocile specialiștilor; judge rulează deferred (fără apel LLM pe hot-path) |
+| H21.2 | **Afect + expresie de personalitate** — parser front-matter în `_load_soul` (corp vs `meta`; **reutilizează** parserul YAML-frontmatter introdus de BUG-13 în `loader._parse_manifest` dacă se potrivește); `affect/` (mood attractor, τ) + `personality/` (whole-trait sampler {μ,σ,skew}, seed reproducibil); injectează blocul în **ambele** prompt-buildere (`agent.process` + streaming `orchestrator.py:1115`); Objective·Obstacle·Tactic + dial de status; prosody în `tts.speak()` (afect în **cheia de cache**). Gated `cognition.affect_enabled`. | 8 | P2 | H21.0 | media realizată a trăsăturii urmărește μ ±0.05 cu σ viu; mood-ul se relaxează spre setpoint și se clampează; prosody diferă pe agent; cache-key include afectul |
+| H21.3 | **Memorie vie, NELIMITATĂ** — reutilizează H14 (`decay`/`bitemporal`/`consolidation`/`entity`); **greenfield**: gate de encodare predictive-coding (înainte de `MemoryManager._lock`, în `VectorRecord.metadata`; detectează hash-fallback), 3-vector neuromodulator (DA/NE/ACh), pattern-separation la scriere / completion la citire, **TCM** re-rank post-fusion (nu atinge RRF); split `DailyReflector` în NREM/REM (idempotency **durabil** + multi-sesiune); nightly replay, tag-and-capture, **SHY** renormalizare, mentenanță (demotare pe tier, **NICIODATĂ ștergere**), **re-projection** (re-embed pe model nou, `embed_version`); stocare tiered hot/warm/cold; core mereu-injectat (bounded JsonStore). *(Compresia pe **cale fierbinte** e ORIZONT 20 H20.3 ContextCompressor — aici e consolidarea **nocturnă** + tiering + retenție nelimitată; complementare.)* | 13 | P2 | H21.0 | nimic auto-șters (doar demotare; user-forget = singura ștergere); reactivare cold→hot pe cue; calibrated-recall (still-true × (1−Brier), penalizare pe fapt depășit); re-projection upgradează vectorii vechi; consolidare idempotentă peste restart + multi-sesiune; S/N stabil pe măsură ce crește |
+| H21.4 | **Învățare guvernată (semnalele, nu bucla)** — `learning/kc.db` (KC dual user+agent + **calibrare**); correction-ledger (extinde `preferences.py` + capturează edit-delta); **autonomie calibration-gated** (extinde `policy._apply_scoring` cu `kc_mastery`/`calibration`); kind-uri night-shift `practice`/`reinforce`. **NU reimplementează bucla de skill** — **hrănește + guvernează** ORIZONT 20 H20.5 (skill self-improvement) & H20.4 (self-evolution) cu semnale KC/calibrare/corecții + re-gating pe payload editat (BUG-11) + Docker forțat (HF-6). | 13 | P2 | H21.0, H21.1, H20.5, H20.4 | mastery/KC↑ cu calibration-error↓; accept-first-pass↑ cât timp gold ține; auto-îmbunătățirea de skill (H20.5) e gated de calibrare + auto-revert la regresie; payload editat re-gated |
+| H21.5 | **Ansamblu & maturare** — `personality_matrix.yaml` (casting) + assert de diversitate ε la boot; `synthesize` în stil regizor (păstrează vocile); drift ancorat-în-identitate (trimestrial, bounded ±0.10 lifetime, SOUL versionat git) + self-test psihometric nightly (tripwire); deltă relațională per-(agent,user). Drift/self-mod **reversibil + human-gated** (decision inbox). | 8 | P3 | H21.2, H21.4 | niciun agent activ în ε în spațiul trăsăturilor; ID-orb ansamblu ≥80% gated de truth-audit; drift bounded, inspectabil `/api/personality/diff` + revertibil; self-test psihometric declanșează pe drift |
+
+### H21 — Itemuri adiacente din sesiune (tools open-source + hardware)
+
+> Din evaluarea celor 10 tool-uri + analiza hardware (vezi `docs/research/2026-06-07-cognition-and-tools-session.md`).
+> **Deja livrate (skip):** ollama, whisper, n8n. **Sidegrade (parcate):** plausible, cal.com, appflowy, **penpot (drop)**. **Off-mission:** fooocus.
+
+| # | Item | S | P | Dep | AC |
+|---|------|---|---|-----|----|
+| H21.A | **Secrete în afara `.env` (vaultwarden)** — plugin `vaultwarden` + secret-resolver; Jarvis ia cheile API din vault self-hosted în loc de `.env` plaintext. Aliniat HF-5 (igienă chei) + local-first; se leagă de secret-broker H15.4. | 5 | P2 | — | cheile se rezolvă din vault; fallback explicit; fără cheie în plaintext în config |
+| H21.B | **Skill media (yt-dlp + Whisper)** — `skills/media/`: yt-dlp ia audio → STT Whisper existent → agent rezumă („rezumă acest video/podcast"). Compune cu ce există deja. | 3 | P3 | — | „rezumă <url>" → transcript + rezumat; binar `yt-dlp` opțional |
+| H21.C | **Skill generare imagini pe idle** — kind `image_gen`; cere ziua → night-shift descarcă LLM via `LMStudioController` → ComfyUI/diffusers (Flux FP8) generează → reîncarcă LLM → livrează în brief/Telegram. $0, local, **fără contenție VRAM** (LLM descărcat). | 5 | P3 | autonomy night-shift | imagine generată pe idle fără să blocheze chat-ul; swap LLM↔diffusion narat; backend diffusion configurabil |
+| H21.D | **Prompt-builder video (cloud manual)** — LLM-ul local redactează/rafinează un prompt video pentru lipit manual în Gemini/Veo (opt-in, **$0 tokens API**). Helper mic, nu pipeline. | 2 | P3 | — | „prompt video pentru X" → prompt gata de lipit; fără apel API plătit |
+
+> **Notă hardware (nu e task):** laptop RTX 5090 (mobile, 24GB, power-capped) **nu se poate upgrada** la GPU.
+> Imagini = local pe idle ($0). Video serios local = nod GPU pe LAN (~$2.8k desktop 5090) sau eGPU — **parcate**;
+> video = manual via Gemini. *(Reconciliere doc:* `JARVIS.md` descrie un desktop Windows/192GB — de aliniat cu Bonobo-ul real.)*
+
+---
+
 ## ✅ Arhivă — H1–H4 + Sprint 0 (livrat în 0.5-beta)
 
 > Toate itemurile H1–H4 sunt complet implementate. Detalii complete (67 items, 248 SP): [docs/HISTORY.md](docs/HISTORY.md).
