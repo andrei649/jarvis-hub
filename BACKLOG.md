@@ -186,11 +186,17 @@ chain-of-thought leak / mid-sentence truncation fixed. Kill-switch:
 >   (guard admin fail-closed în spatele proxy-ului).
 > - **Fixate în pasul de hardening 2026-06-08:** **BUG-7/NEW-1** (`orch.aclose()` cablat în shutdown, toate
 >   backendurile LLM + mcp + queue închise), **BUG-11** (re-gating complet pe payload-ul editat, nu doar `amount`),
->   **BUG-12** (lock pe `_PROC_CACHE`-ul embedder-ului) + **2 bug-uri noi**: `Orchestrator.process()` lipsea dar
->   era apelat (taskuri autonomy LLM + reflecția nocturnă întorceau gol — acum implementat, fail-safe) și
->   euristica greșită de eroare din `_record_interactions` (marcase răspunsuri reușite ca eșec).
-> - **Rămâne deschis (real):** **BUG-5** (race pe `self.session_id` partajat — arhitectural, scope O21 H21.0 via
->   `TurnContext`), **HF-3** (parțial — pattern-uri scanner rămase), **CLN-2/CLN-3** (god-objects).
+>   **BUG-12** (lock pe `_PROC_CACHE` + atomicitate `_spent_today`) + **2 bug-uri noi**: `Orchestrator.process()`
+>   lipsea dar era apelat (taskuri autonomy LLM + reflecția nocturnă întorceau gol — acum implementat, fail-safe)
+>   și euristica greșită de eroare din `_record_interactions` (marcase răspunsuri reușite ca eșec).
+> - **Fixate în pasul de completare HUD 2026-06-08:** **BUG-5** (session_id izolat per context async via
+>   `contextvars.ContextVar` — chat-uri concurente nu mai amestecă conversații; test de concurență), **HF-3**
+>   (scanner întărit: openai-key 40+, GCP/Azure SA, heuristică entropie; `db_connection_string`/`password`
+>   restrânse). **Toate BUG-* și HF-* sunt acum rezolvate.**
+> - **Rămâne deschis (deliberat, NU bug-uri):** **CLN-2/CLN-3** (refactor god-objects `orchestrator.py`/`web.py`
+>   — P3, churn mare; amânat intenționat ca să nu destabilizeze înainte de testarea manuală). Restul backlog-ului
+>   = orizonturi de produs (H10.30, H11, H12 Track E, H13, H15, O20, O21), nu loose-ends — vezi
+>   [`docs/2026-06-08-future-developments-report.md`](docs/2026-06-08-future-developments-report.md).
 
 ### Buguri
 
