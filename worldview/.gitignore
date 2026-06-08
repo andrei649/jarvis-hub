@@ -1,0 +1,29 @@
+# WorldView monorepo ignores (scoped to worldview/; root has its own .gitignore).
+
+# Node
+node_modules/
+.next/
+out/
+dist/
+*.tsbuildinfo
+npm-debug.log*
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.mypy_cache/
+.ruff_cache/
+*.egg-info/
+
+# Env / secrets
+.env
+.env.local
+*.local
+
+# OS / editor
+.DS_Store
+
+# Redis dump (created by a local redis-server run)
+dump.rdb

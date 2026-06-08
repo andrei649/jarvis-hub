@@ -1,0 +1,25 @@
+{
+  "name": "@worldview/mcp",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Model Context Protocol server exposing the WorldView 4D OSINT REST API as MCP tools.",
+  "main": "dist/server.js",
+  "bin": {
+    "worldview-mcp": "dist/server.js"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc --noEmit",
+    "test": "node --import tsx --test test/*.test.ts",
+    "start": "tsx src/server.ts"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "latest"
+  },
+  "devDependencies": {
+    "typescript": "5.5.4",
+    "tsx": "4.16.5",
+    "@types/node": "20.14.12"
+  }
+}
