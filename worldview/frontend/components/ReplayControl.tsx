@@ -7,6 +7,7 @@ import {
   decodeReplayWindow,
   type ReplayWindow,
 } from "@/lib/export";
+import { replaySampleAt } from "@/lib/replaySchedule";
 
 // Replay affordance (H19.2.7, client side). Given a [from,to] window the user drives masterTime
 // from `from` to `to` at a chosen speed — it does NOT run its own clock, it sets the master-clock
@@ -39,7 +40,7 @@ export function ReplayControl() {
   const [replaying, setReplaying] = useState(false);
   const [copied, setCopied] = useState(false);
   const rafRef = useRef<number | null>(null);
-  const lastRef = useRef<number>(0);
+  const frameRef = useRef<number>(0);
 
   // On mount: if the URL carries ?from&to, restore that window (reproducible replay link).
   useEffect(() => {
@@ -48,21 +49,31 @@ export function ReplayControl() {
     if (decoded) setWin(decoded);
   }, []);
 
-  // Drive the master clock from `from` to `to`. We integrate elapsed wall time × speed and write
-  // masterTime into the store; the master clock's own ticker is paused (playing=false) so we own
-  // the cursor during a replay. Stops at `to`.
+  // Drive the master clock from `from` to `to` on a DETERMINISTIC schedule: a fixed-step frame
+  // counter (replaySampleAt), so the sequence of sampled masterTimes is a pure function of
+  // {from,to,speed} and reproducible regardless of RAF cadence (a late/dropped frame skips ahead
+  // rather than resampling at a different point). The master clock's own ticker is paused
+  // (playing=false) so we own the cursor. Stops at `to`.
+  //
+  // The loop also aborts if another driver takes the cursor: clicking ● LIVE (goLive →
+  // mode:live, playing:true) during a replay must not leave two RAF loops stomping masterTime, so
+  // we bail when the store mode leaves "historical" or playback gets re-enabled by someone else.
   useEffect(() => {
     if (!replaying) return;
     setMode("historical");
     setPlaying(false); // we drive the cursor; don't let useMasterClock double-advance it
     setMasterTime(win.from);
-    lastRef.current = performance.now();
+    frameRef.current = 0;
 
-    const tick = (now: number) => {
-      const dt = (now - lastRef.current) / 1000;
-      lastRef.current = now;
-      const cur = useTimelineStore.getState().masterTime;
-      const next = cur + dt * replaySpeed;
+    const tick = () => {
+      const s = useTimelineStore.getState();
+      // Another driver took over (e.g. goLive flipped mode→live / playing→true): abort cleanly.
+      if (s.mode !== "historical" || s.playing) {
+        setReplaying(false);
+        return;
+      }
+      frameRef.current += 1;
+      const next = replaySampleAt(win.from, win.to, replaySpeed, frameRef.current);
       if (next >= win.to) {
         setMasterTime(win.to);
         setReplaying(false);
@@ -77,6 +88,15 @@ export function ReplayControl() {
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [replaying, win.from, win.to, replaySpeed]);
+
+  // Abort-on-takeover, observed from outside the RAF loop too: if the store mode leaves
+  // "historical" (e.g. ● LIVE → goLive sets mode:live) while we're replaying, stop replaying so the
+  // RAF loop tears down and stops stomping masterTime. We key off mode (not `playing`) because the
+  // replay setup itself toggles `playing`, but only an external driver flips us out of historical.
+  const mode = useTimelineStore((s) => s.mode);
+  useEffect(() => {
+    if (replaying && mode !== "historical") setReplaying(false);
+  }, [replaying, mode]);
 
   function copyLink() {
     if (typeof window === "undefined") return;

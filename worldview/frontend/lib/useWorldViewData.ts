@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { LAYER_IDS, type LayerId } from "./layers";
-import { fetchHistory, openLiveSocket } from "./api";
+import { fetchHistoryResult, openLiveSocket } from "./api";
 import { emptyCollection, type Feature, type FeatureCollection, type Lod } from "./types";
 import { useTimelineStore } from "./store/useTimelineStore";
 
@@ -35,6 +35,8 @@ export function useWorldViewData(): LayerData {
   const mode = useTimelineStore((s) => s.mode);
   const masterTime = useTimelineStore((s) => s.masterTime);
   const visibility = useTimelineStore((s) => s.layerVisibility);
+  const setLayerStatus = useTimelineStore((s) => s.setLayerStatus);
+  const setLiveConnection = useTimelineStore((s) => s.setLiveConnection);
   // Only re-render/refetch when crossing the zoom threshold, not on every zoom delta.
   const lowZoom = useTimelineStore((s) => s.zoom < ZOOM_LOD_THRESHOLD);
 
@@ -43,13 +45,17 @@ export function useWorldViewData(): LayerData {
     if (mode !== "historical") return;
     const handle = setTimeout(() => {
       const visible = LAYER_IDS.filter((id) => visibility[id]);
+      visible.forEach((id) => setLayerStatus(id, "loading"));
       void Promise.all(
-        visible.map((id) => fetchHistory(id, masterTime, undefined, lodFor(id, lowZoom))),
+        visible.map((id) => fetchHistoryResult(id, masterTime, undefined, lodFor(id, lowZoom))),
       ).then((results) => {
         setData((prev) => {
           const next = { ...prev };
           visible.forEach((id, i) => {
-            next[id] = results[i] ?? emptyCollection();
+            const result = results[i];
+            next[id] = result?.data ?? emptyCollection();
+            // Surface per-layer status so the HUD can tell empty apart from a backend failure.
+            setLayerStatus(id, result?.outcome ?? "error");
           });
           return next;
         });
@@ -57,7 +63,7 @@ export function useWorldViewData(): LayerData {
     }, 150);
     return () => clearTimeout(handle);
     // Bucket master time to whole seconds so sub-second clock ticks don't spam fetches.
-  }, [mode, Math.floor(masterTime), visibility, lowZoom]);
+  }, [mode, Math.floor(masterTime), visibility, lowZoom, setLayerStatus]);
 
   // Live mode: WebSocket snapshot + deltas merged into per-entity maps.
   const liveMaps = useRef<Record<LayerId, Map<string, unknown>>>(
@@ -66,7 +72,11 @@ export function useWorldViewData(): LayerData {
 
   useEffect(() => {
     if (mode !== "live") return;
-    const ws = openLiveSocket([...LAYER_IDS], {
+    // Clear any per-entity maps left over from a previous live session so stale entities don't
+    // render as ghosts before the first fresh snapshot arrives.
+    for (const id of LAYER_IDS) liveMaps.current[id].clear();
+    const socket = openLiveSocket([...LAYER_IDS], {
+      onConnectionChange: setLiveConnection,
       onSnapshot: (layer, fc) => {
         const map = liveMaps.current[layer];
         map.clear();
@@ -93,8 +103,8 @@ export function useWorldViewData(): LayerData {
       setData((prev) => ({ ...prev, [layer]: { type: "FeatureCollection", features } }));
     }
 
-    return () => ws.close();
-  }, [mode]);
+    return () => socket.close();
+  }, [mode, setLiveConnection]);
 
   return data;
 }
