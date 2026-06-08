@@ -76,7 +76,15 @@ def mint_capability(
     claims: dict[str, object] = {"scopes": list(scopes), "exp": issued + int(ttl_s)}
     if sub is not None:
         claims["sub"] = sub
-    payload_segment = _b64url_encode(json.dumps(claims, separators=(",", ":")).encode("utf-8"))
+    # ``ensure_ascii=False`` is REQUIRED for byte-identity with TS ``JSON.stringify``: Python's json
+    # default escapes non-ASCII as ``\uXXXX`` while JS emits raw UTF-8, so a token whose scope/sub
+    # carries a non-ASCII char (UTF-8 region/operator names) would otherwise serialize to different
+    # bytes — and a different signature — on each side, silently defeating the cross-language
+    # pinning. ``exp`` is always an int (computed above), matching how TS renders the integer. The
+    # non-ASCII + float-derived fixture vectors guard this invariant in CI.
+    payload_segment = _b64url_encode(
+        json.dumps(claims, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
+    )
     return f"{payload_segment}.{_sign_payload(payload_segment, secret)}"
 
 

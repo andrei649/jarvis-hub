@@ -15,6 +15,14 @@
       "token": "eyJzY29wZXMiOlsid29ybGR2aWV3OioiXSwiZXhwIjoxOTAwMDAwMDAwLCJzdWIiOiJqYXJ2aXMifQ.EgXPprL_rl7aHCgVlhRtrQPdX6NmDYN8-WJ4bhucRM4",
       "grants": ["worldview:watch", "worldview:reconstruct"],
       "denies": []
+    },
+    {
+      "_comment": "Non-ASCII guard: a UTF-8 sub (accented + Greek + emoji). This vector ONLY reproduces if BOTH sides emit raw UTF-8 — TS JSON.stringify does by default; Python json.dumps must pass ensure_ascii=False, else it escapes to \\uXXXX and the token (and signature) diverge. If either side regresses to ASCII-escaping, its mint!=token assertion fails. This is exactly the divergence the original ASCII-only vectors were blind to.",
+      "name": "unicode-sub",
+      "claims": { "scopes": ["worldview:watch"], "exp": 1900000000, "sub": "Estación-Ωmega-😀" },
+      "token": "eyJzY29wZXMiOlsid29ybGR2aWV3OndhdGNoIl0sImV4cCI6MTkwMDAwMDAwMCwic3ViIjoiRXN0YWNpw7NuLc6pbWVnYS3wn5iAIn0.c-Zx6LRYI7qFCjcTAERswXIL6SUrUvBj8QCDonOTPTo",
+      "grants": ["worldview:watch"],
+      "denies": ["worldview:reconstruct"]
     }
   ]
 }

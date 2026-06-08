@@ -109,3 +109,23 @@ def test_fail_closed_on_empty_secret_and_malformed_token() -> None:
 
     with pytest.raises(ValueError):
         mint_capability(["worldview:watch"], "", ttl_s=300)
+
+
+def test_exp_is_always_integral_even_from_a_float_now() -> None:
+    """``exp`` must render as an integer (``1900000000``), never a float (``1900000000.0``).
+
+    TS ``JSON.stringify(1900000000.0)`` yields ``1900000000``; an un-coerced Python float would
+    yield ``1900000000.0`` and diverge. A fractional ``now`` must not leak a float ``exp`` into the
+    payload — the minter floors to an int. We decode the payload segment and assert the raw JSON
+    carries an int (the cross-language byte-identity in the fixtures already pins the integer case).
+    """
+    import base64
+    import json as _json
+
+    token = mint_capability(["worldview:watch"], _SECRET, ttl_s=0, now=1_900_000_000.75)
+    payload_seg = token.split(".")[0]
+    raw = base64.urlsafe_b64decode(payload_seg + "=" * (-len(payload_seg) % 4))
+    claims = _json.loads(raw)
+    assert claims["exp"] == 1_900_000_000
+    assert isinstance(claims["exp"], int)
+    assert ".0" not in raw.decode("utf-8"), "exp leaked a float representation into the payload"
