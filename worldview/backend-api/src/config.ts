@@ -13,4 +13,8 @@ export const config = {
   enableHistoryWriter: process.env.ENABLE_HISTORY_WRITER === "1",
   // The recon-writer (Kafka -> TimescaleDB recon_windows) is opt-in too.
   enableReconWriter: process.env.ENABLE_RECON_WRITER === "1",
+  // AuthN/Z (ticket H19.4.2): the HS256 verification key for the "OIDC-style" bearer. When EMPTY
+  // (the default) auth is DISABLED and all routes are open (back-compat for tests + the integration
+  // CI job); when set, the request guard enforces RBAC + AOI scoping fail-CLOSED.
+  authSecret: process.env.WORLDVIEW_AUTH_SECRET ?? "",
 };

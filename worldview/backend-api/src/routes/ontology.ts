@@ -13,6 +13,12 @@ import {
   recordAnnotation,
   verifyAuditChain,
 } from "../repositories/ontologyAudit.js";
+import {
+  AOI_SCOPED_OBJECT_TYPES,
+  inScope,
+  objectAoiId,
+  type Principal,
+} from "../auth/rbac.js";
 
 // Ontology API (ticket H19.4.1) — the Palantir-style object/link/action surface over the relational
 // SoR. Reads project Objects + Links from the existing tables; the one POST endpoint performs an
@@ -46,6 +52,14 @@ function actorOf(req: FastifyRequest): string | null {
   const h = req.headers["x-actor"];
   if (typeof h === "string" && h.trim()) return h.trim();
   return null;
+}
+
+// Resolve the request principal for ABAC AOI scoping. The guard decorates `request.principal`; when
+// the plugin is mounted WITHOUT the guard (unit tests register the route in isolation) it's absent —
+// treat that as unrestricted so back-compat behavior is preserved.
+function principalOf(req: FastifyRequest): Principal | null {
+  const p = (req as FastifyRequest & { principal?: Principal }).principal;
+  return p ?? null;
 }
 
 // Guard body parsing: Fastify pre-parses JSON, but a non-object body (array/string/null) would break
@@ -104,7 +118,14 @@ export async function ontologyRoutes(app: FastifyInstance): Promise<void> {
         return reply.code(400).send({ error: "'limit' must be a number" });
       }
       const objects = await listObjects(getPool(), type, { limit });
-      return reply.send({ type, objects });
+      // ABAC: for AOI-bearing object types, filter to the objects whose AOI is in the principal's
+      // scope. admin / `*` / no-principal see all (inScope returns true). Non-AOI types pass through.
+      const principal = principalOf(req);
+      const scoped =
+        principal && AOI_SCOPED_OBJECT_TYPES.has(type)
+          ? objects.filter((o) => inScope(principal, objectAoiId(type, o)))
+          : objects;
+      return reply.send({ type, objects: scoped });
     },
   );
 
@@ -119,6 +140,12 @@ export async function ontologyRoutes(app: FastifyInstance): Promise<void> {
       const object = await getObject(getPool(), type, id);
       if (!object) {
         return reply.code(404).send({ error: `no ${type} object with id '${id}'` });
+      }
+      // ABAC: deny (403) a single AOI-bearing object that's outside the principal's scope. admin /
+      // `*` / no-principal pass (inScope true); non-AOI types are not scoped.
+      const principal = principalOf(req);
+      if (principal && AOI_SCOPED_OBJECT_TYPES.has(type) && !inScope(principal, objectAoiId(type, object))) {
+        return reply.code(403).send({ error: "forbidden", reason: `${type} '${id}' is out of scope` });
       }
       return reply.send({ object });
     },

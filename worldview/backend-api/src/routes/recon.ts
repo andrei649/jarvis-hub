@@ -1,6 +1,15 @@
-import type { FastifyInstance } from "fastify";
+import type { FastifyInstance, FastifyRequest } from "fastify";
 import { getPool } from "../plugins/db.js";
 import { dueAlerts, upcomingWindows } from "../repositories/recon.js";
+import { inScope, type Principal } from "../auth/rbac.js";
+
+// Resolve the request principal for ABAC AOI scoping. The guard decorates `request.principal` on every
+// request; when the recon plugin is mounted WITHOUT the guard (e.g. unit tests register the route in
+// isolation) `principal` is absent — treat that as unrestricted so back-compat behavior is preserved.
+function principalOf(req: FastifyRequest): Principal | null {
+  const p = (req as FastifyRequest & { principal?: Principal }).principal;
+  return p ?? null;
+}
 
 // Recon-window API (ticket H19.2.2): list upcoming predicted satellite overflights of an AOI,
 // and the subset that's due to ingress within a lead time (the alertable set). Times are
@@ -29,8 +38,19 @@ export async function reconRoutes(app: FastifyInstance): Promise<void> {
       return reply.code(400).send({ error: "'from'/'to' must be unix seconds" });
     }
     const aoiId = req.query.aoi || undefined;
+
+    // ABAC AOI scoping: a non-admin principal whose token restricts `aois` may only see windows for
+    // those AOIs. If the request asks for a specific `aoi` outside scope, deny (403); otherwise filter
+    // the result set to the in-scope AOIs. admin / `aois=["*"]` (or no principal) bypass scoping.
+    const principal = principalOf(req);
+    if (principal && aoiId && !inScope(principal, aoiId)) {
+      return reply.code(403).send({ error: "forbidden", reason: `AOI '${aoiId}' is out of scope` });
+    }
     const windows = await upcomingWindows(getPool(), { aoiId, from, to });
-    return reply.send({ windows });
+    const scoped = principal
+      ? windows.filter((w) => inScope(principal, w.aoi_id))
+      : windows;
+    return reply.send({ windows: scoped });
   });
 
   // GET /recon/alerts?lead=<seconds>

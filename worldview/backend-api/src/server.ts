@@ -13,6 +13,7 @@ import { startHistoryWriter } from "./consumers/historyWriter.js";
 import { startReconWriter } from "./consumers/reconWriter.js";
 import { getRedis } from "./plugins/redis.js";
 import { getPool } from "./plugins/db.js";
+import { registerGuard } from "./auth/guard.js";
 
 // The 4D API: REST `/history/:layer` serves as-of-T state from TimescaleDB; the `/live`
 // WebSocket serves the Redis snapshot + pub/sub deltas. The Kafka->Redis live-writer runs
@@ -23,6 +24,10 @@ export async function buildServer() {
 
   await app.register(cors, { origin: config.corsOrigin });
   await app.register(websocket);
+  // AuthN/Z guard (ticket H19.4.2): registered BEFORE the routes so its onRequest hook + the
+  // `request.principal` decorator are in place for every handler. No-op when WORLDVIEW_AUTH_SECRET
+  // is unset (open mode); fail-CLOSED RBAC + AOI scoping when set.
+  await registerGuard(app);
   await app.register(healthRoutes);
   await app.register(historyRoutes);
   await app.register(reconRoutes);
