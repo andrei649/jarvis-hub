@@ -561,6 +561,16 @@ chain-of-thought leak / mid-sentence truncation fixed. Kill-switch:
 > Ontology). **Spinele tehnic e livrat** (toate 5 layere, motorul 4D, calea de date Kafka→Redis/TimescaleDB
 > validată în CI vs TimescaleDB real, 58 teste unit + integrare). PR #163.
 >
+> **Launcher (2026-06-08):** `WORLDVIEW.bat` (double-click) ridică infra Docker → seed demo (istoric+LIVE) →
+> pornește API (4000) + dashboard (3000) → deschide browserul. Separat de `START.bat` (JARVIS HUB pe 8080).
+>
+> **Securitate deps (npm audit, 2026-06-08):** aplicat fix sigur in-major `next` 14.2.5→14.2.35 (închide
+> criticul Next.js middleware auth-bypass + câteva; teste/typecheck verzi). **Rămase, toate cer migrări major
+> (tech-debt, risc practic scăzut — stack local-only/opt-in):** **(a)** Fastify 4→5 (`fast-uri` path-traversal +
+> content-type bypass, runtime backend; necesită @fastify/websocket 10→11, @fastify/cors 9→11); **(b)** Next 14→16
+> (highs RSC/cache-poisoning rămase, nepatch-uite în linia 14.2.x); **(c)** dev-only (vitest/vite/esbuild/tsx —
+> moderate, neexpediate). De programat ca follow-up înainte de orice deploy WorldView non-local.
+>
 > **Strategie & feature-pick:** [`worldview/docs/ROADMAP.md`](worldview/docs/ROADMAP.md) ·
 > **Planul de arhitectură & livrare (scale model, deep-dives, ADRs, exit gates):**
 > [`worldview/docs/02-platform-architecture-and-delivery-plan.md`](worldview/docs/02-platform-architecture-and-delivery-plan.md).
