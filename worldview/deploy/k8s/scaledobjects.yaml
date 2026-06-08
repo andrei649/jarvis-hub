@@ -1,0 +1,126 @@
+# KEDA ScaledObjects — lag-scaled ingestion consumers (ticket H19.1.5).
+#
+# Each ScaledObject scales one consumer Deployment on its Kafka/Redpanda CONSUMER-GROUP LAG
+# using KEDA's `kafka` scaler. KEDA reads the committed offset for the group vs the topic's
+# end offset; when lag/partition exceeds `lagThreshold` it scales out, up to `maxReplicaCount`.
+#
+# Group names match the app exactly (backend-api/src/consumers/*.ts):
+#   live-writer / history-writer / recon-writer
+#
+# Multi-topic consumers (live-writer, history-writer) get ONE trigger per subscribed topic;
+# KEDA takes the max desired replicas across triggers. Scaling is bounded by the number of
+# partitions per topic (KEDA won't exceed partitions unless allowIdleConsumers=true).
+#
+# bootstrapServers MUST be the in-cluster broker (PLAINTEXT listener :29092). The placeholder
+# DNS below assumes Redpanda runs in the same `worldview` namespace.
+#   TODO(infra): set bootstrapServers to the real Redpanda service DNS + port.
+
+---
+apiVersion: keda.sh/v1alpha1
+kind: ScaledObject
+metadata:
+  name: live-writer
+  namespace: worldview
+  labels:
+    app.kubernetes.io/part-of: worldview
+spec:
+  scaleTargetRef:
+    name: live-writer
+  pollingInterval: 15        # seconds between lag checks
+  cooldownPeriod: 120        # seconds at zero-trigger before scaling down
+  minReplicaCount: 1
+  maxReplicaCount: 10
+  advanced:
+    horizontalPodAutoscalerConfig:
+      behavior:
+        scaleDown:
+          stabilizationWindowSeconds: 120
+  triggers:
+    - type: kafka
+      metadata:
+        bootstrapServers: redpanda.worldview.svc.cluster.local:29092
+        consumerGroup: live-writer
+        topic: osint.adsb
+        lagThreshold: "10000"
+        offsetResetPolicy: latest
+    - type: kafka
+      metadata:
+        bootstrapServers: redpanda.worldview.svc.cluster.local:29092
+        consumerGroup: live-writer
+        topic: osint.ais
+        lagThreshold: "10000"
+        offsetResetPolicy: latest
+    - type: kafka
+      metadata:
+        bootstrapServers: redpanda.worldview.svc.cluster.local:29092
+        consumerGroup: live-writer
+        topic: osint.ew
+        lagThreshold: "10000"
+        offsetResetPolicy: latest
+
+---
+apiVersion: keda.sh/v1alpha1
+kind: ScaledObject
+metadata:
+  name: history-writer
+  namespace: worldview
+  labels:
+    app.kubernetes.io/part-of: worldview
+spec:
+  scaleTargetRef:
+    name: history-writer
+  pollingInterval: 15
+  cooldownPeriod: 300
+  minReplicaCount: 1
+  maxReplicaCount: 8
+  advanced:
+    horizontalPodAutoscalerConfig:
+      behavior:
+        scaleDown:
+          stabilizationWindowSeconds: 300
+  triggers:
+    - type: kafka
+      metadata:
+        bootstrapServers: redpanda.worldview.svc.cluster.local:29092
+        consumerGroup: history-writer
+        topic: osint.adsb
+        lagThreshold: "20000"
+        offsetResetPolicy: latest
+    - type: kafka
+      metadata:
+        bootstrapServers: redpanda.worldview.svc.cluster.local:29092
+        consumerGroup: history-writer
+        topic: osint.ais
+        lagThreshold: "20000"
+        offsetResetPolicy: latest
+    - type: kafka
+      metadata:
+        bootstrapServers: redpanda.worldview.svc.cluster.local:29092
+        consumerGroup: history-writer
+        topic: osint.context
+        lagThreshold: "5000"
+        offsetResetPolicy: latest
+
+---
+apiVersion: keda.sh/v1alpha1
+kind: ScaledObject
+metadata:
+  name: recon-writer
+  namespace: worldview
+  labels:
+    app.kubernetes.io/part-of: worldview
+spec:
+  scaleTargetRef:
+    name: recon-writer
+  pollingInterval: 30
+  cooldownPeriod: 300
+  minReplicaCount: 1
+  maxReplicaCount: 4
+  triggers:
+    - type: kafka
+      metadata:
+        bootstrapServers: redpanda.worldview.svc.cluster.local:29092
+        consumerGroup: recon-writer
+        topic: osint.recon
+        lagThreshold: "2000"
+        offsetResetPolicy: latest

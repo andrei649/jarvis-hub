@@ -16,6 +16,8 @@ so they share the main project's network and can reach `redpanda` / `timescaledb
 | `observability/` | OTel Collector + Prometheus + Grafana + golden-signal dashboards + lag alarm | H19.5.5 |
 | `observability/RUNBOOK.md` | Golden-signal runbook (dashboards, alarms, first response) | H19.5.5 |
 | `tiles/` | Martin vector-tile server (MVT from PostGIS point tables) | H19.5.1 (server side) |
+| `lakehouse/` | MinIO + Kafka Connect S3/Parquet sink (raw cold lake) + DuckDB query layer | H19.5.3 |
+| `k8s/` | Ingestion consumer Deployments + KEDA `ScaledObject`s (lag-scaled) | H19.1.5 |
 
 ## Run: observability
 
@@ -45,7 +47,40 @@ docker compose -f docker-compose.yml -f deploy/tiles/docker-compose.tiles.yml up
   - `http://localhost:3002/adsb_positions/{z}/{x}/{y}`
   - `http://localhost:3002/ais_positions/{z}/{x}/{y}`
 
-Run both add-on stacks together if you want:
+## Run: lakehouse (H19.5.3)
+
+```bash
+cd worldview
+docker compose up -d   # core infra first (redpanda must be healthy)
+docker compose -f docker-compose.yml -f deploy/lakehouse/docker-compose.lakehouse.yml up -d
+```
+
+- MinIO S3 API: http://localhost:9000 (`worldview` / `worldview-secret`), console: http://localhost:9001
+- Kafka Connect REST: http://localhost:8083 (`/connectors`)
+- Lake bucket layout: `s3://worldview-lake/topics/<topic>/partition=<p>/...parquet`
+- Query the cold lake with DuckDB: `duckdb < deploy/lakehouse/queries.sql`
+
+Captures the `osint.*` firehose as Parquet (Confluent S3 sink) so TimescaleDB stays bounded:
+hot/warm in TSDB (retention in `db/schema/07_policies.sql`), raw cold in the lake. See
+`lakehouse/README.md`.
+
+## Run: KEDA lag-scaled consumers (H19.1.5)
+
+Kubernetes, not compose — needs a local cluster + KEDA:
+
+```bash
+kind create cluster --name worldview
+helm repo add kedacore https://kedacore.github.io/charts && helm repo update
+helm install keda kedacore/keda --namespace keda --create-namespace --version 2.14.0
+kubectl apply -k deploy/k8s/
+kubectl -n worldview get deploy,scaledobject,hpa
+```
+
+Scales `live-writer` / `history-writer` / `recon-writer` on their Kafka consumer-group lag.
+Needs a real in-cluster Redpanda broker + a real consumer image (both flagged TODO). See
+`k8s/README.md`.
+
+Run both add-on compose stacks together if you want:
 
 ```bash
 docker compose \

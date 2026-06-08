@@ -1,0 +1,9 @@
+# WorldView ingestion + KEDA autoscaling (ticket H19.1.5).
+#   kubectl apply -k deploy/k8s/
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+  - namespace.yaml
+  - consumers.yaml
+  - scaledobjects.yaml

@@ -1,0 +1,155 @@
+# WorldView lakehouse offload — ticket H19.5.3 "Lakehouse offload".
+#
+# Lands the OSINT Redpanda topics as Parquet on S3-compatible object storage (MinIO),
+# so the OLTP store (TimescaleDB) stays bounded: hot/warm data lives in TSDB under the
+# retention policies in db/schema/07_policies.sql, and the *raw cold* firehose is captured
+# here in the lake — "raw cold queryable" via DuckDB without bloating Postgres.
+#
+# Topology:
+#   MinIO            S3-compatible object store    -> bucket s3://worldview-lake
+#   minio-init       one-shot: creates the bucket
+#   kafka-connect    Kafka Connect runtime w/ the Confluent S3 sink (Parquet format)
+#   connect-init     one-shot: registers one S3-sink connector per OSINT topic group
+#
+# Bucket layout (Confluent S3 sink default partitioner):
+#   s3://worldview-lake/topics/<topic>/partition=<p>/<topic>+<p>+<startOffset>.parquet
+#   e.g. s3://worldview-lake/topics/osint.adsb/partition=0/osint.adsb+0+0000000000.parquet
+#
+# TWO WAYS TO RUN (both keep this stack on the SAME network as the main infra so the
+# sink can reach `redpanda` by service name):
+#
+#  A) Merged compose (recommended — one project, shared default network):
+#       cd worldview
+#       docker compose up -d   # core infra first (redpanda must be healthy)
+#       docker compose -f docker-compose.yml \
+#         -f deploy/lakehouse/docker-compose.lakehouse.yml up -d
+#     Config paths below are written relative to the worldview/ project dir for this mode.
+#
+#  B) Standalone, attaching to the already-running infra network (external net):
+#       cd worldview && docker compose up -d
+#       docker compose -f deploy/lakehouse/docker-compose.lakehouse.yml \
+#         --project-directory . up -d
+#     Uncomment the per-service `networks:` lines + the top-level external network below.
+#
+# Endpoints:
+#   MinIO S3 API:  http://localhost:9000   (worldview / worldview-secret)
+#   MinIO console: http://localhost:9001
+#   Connect REST:  http://localhost:8083   (GET /connectors to list)
+
+services:
+  # --- S3-compatible object store -------------------------------------------
+  minio:
+    image: minio/minio:RELEASE.2024-06-13T22-53-53Z
+    container_name: worldview-minio
+    command: ["server", "/data", "--console-address", ":9001"]
+    environment:
+      MINIO_ROOT_USER: worldview
+      MINIO_ROOT_PASSWORD: worldview-secret
+    ports:
+      - "9000:9000"   # S3 API
+      - "9001:9001"   # web console
+    volumes:
+      - minio-data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "mc ready local || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+    # networks: [default]
+
+  # --- One-shot: create the lake bucket -------------------------------------
+  minio-init:
+    image: minio/mc:RELEASE.2024-06-12T14-34-03Z
+    container_name: worldview-minio-init
+    depends_on:
+      minio:
+        condition: service_healthy
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        set -e
+        mc alias set lake http://minio:9000 worldview worldview-secret
+        mc mb --ignore-existing lake/worldview-lake
+        mc anonymous set download lake/worldview-lake || true
+        echo "bucket worldview-lake ready"
+    restart: "no"
+    # networks: [default]
+
+  # --- Kafka Connect runtime (Confluent CP) ---------------------------------
+  # The Confluent S3 sink connector + parquet-format jar ship in the cp-kafka-connect
+  # image's confluentinc-kafka-connect-s3 component, so no extra install step is needed.
+  kafka-connect:
+    image: confluentinc/cp-kafka-connect:7.6.1
+    container_name: worldview-kafka-connect
+    depends_on:
+      redpanda:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+      minio-init:
+        condition: service_completed_successfully
+    ports:
+      - "8083:8083"
+    environment:
+      CONNECT_BOOTSTRAP_SERVERS: redpanda:29092
+      CONNECT_REST_ADVERTISED_HOST_NAME: kafka-connect
+      CONNECT_REST_PORT: "8083"
+      CONNECT_GROUP_ID: worldview-lakehouse-connect
+      CONNECT_CONFIG_STORAGE_TOPIC: _connect-configs
+      CONNECT_OFFSET_STORAGE_TOPIC: _connect-offsets
+      CONNECT_STATUS_STORAGE_TOPIC: _connect-status
+      CONNECT_CONFIG_STORAGE_REPLICATION_FACTOR: "1"
+      CONNECT_OFFSET_STORAGE_REPLICATION_FACTOR: "1"
+      CONNECT_STATUS_STORAGE_REPLICATION_FACTOR: "1"
+      CONNECT_KEY_CONVERTER: org.apache.kafka.connect.storage.StringConverter
+      # Topic values are JSON envelopes WITHOUT an embedded Connect schema (design doc §4).
+      CONNECT_VALUE_CONVERTER: org.apache.kafka.connect.json.JsonConverter
+      CONNECT_VALUE_CONVERTER_SCHEMAS_ENABLE: "false"
+      CONNECT_PLUGIN_PATH: /usr/share/java,/usr/share/confluent-hub-components
+      # Point the S3 sink's AWS SDK at MinIO instead of real AWS.
+      AWS_ACCESS_KEY_ID: worldview
+      AWS_SECRET_ACCESS_KEY: worldview-secret
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:8083/connectors || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 20
+    restart: unless-stopped
+    # networks: [default]
+
+  # --- One-shot: register the S3 Parquet sink connectors --------------------
+  connect-init:
+    image: curlimages/curl:8.8.0
+    container_name: worldview-connect-init
+    depends_on:
+      kafka-connect:
+        condition: service_healthy
+    volumes:
+      - ./deploy/lakehouse/connectors:/connectors:ro
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        set -e
+        for f in /connectors/*.json; do
+          name=$$(basename "$$f" .json)
+          echo "registering connector $$name"
+          curl -sf -X PUT \
+            -H "Content-Type: application/json" \
+            --data @"$$f" \
+            "http://kafka-connect:8083/connectors/$$name/config" \
+            && echo " -> ok" || { echo " -> FAILED"; exit 1; }
+        done
+        echo "all connectors registered"
+    restart: "no"
+    # networks: [default]
+
+volumes:
+  minio-data:
+
+# For STANDALONE mode (B) uncomment this and the per-service `networks:` lines.
+# The main `docker compose up` in worldview/ creates this network as <project>_default.
+# networks:
+#   default:
+#     external: true
+#     name: worldview_default
