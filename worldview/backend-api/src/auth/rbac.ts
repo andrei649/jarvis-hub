@@ -20,6 +20,7 @@ export type Permission =
   | "write:cases"
   | "read:export"
   | "write:reconstruction"
+  | "write:recon"
   | "read:audit"
   | "admin";
 
@@ -47,12 +48,15 @@ export const ROLE_PERMISSIONS: Record<Role, ReadonlySet<Permission>> = {
     "write:cases",
     // Saving a shareable reconstruction handle is an analyst+ write.
     "write:reconstruction",
+    // Creating a standing recon watch on an AOI is an analyst+ write (audited).
+    "write:recon",
   ]),
   admin: new Set<Permission>([
     ...VIEWER_READS,
     "write:ontology-action",
     "write:cases",
     "write:reconstruction",
+    "write:recon",
     "read:audit",
     "admin",
   ]),
@@ -111,6 +115,9 @@ export const ROUTE_RULES: RouteRule[] = [
   // Recon — reads; /recon/windows is AOI-scoped (filtered to the principal's AOIs).
   { method: "GET", path: "/recon/windows", permission: "read:recon", requiresScope: true },
   { method: "GET", path: "/recon/alerts", permission: "read:recon" },
+  // Create a standing AOI watch — analyst+ write, audited; the AOI (in the body) is scope-checked
+  // in the handler (the guard can't read the body), so no `requiresScope` here.
+  { method: "POST", path: "/recon/watch", permission: "write:recon" },
 
   // Ontology — the registry + projections are reads; audit log/verify need read:audit; the POST
   // action needs write:ontology-action. Object reads are AOI-scoped for AOI-bearing types.

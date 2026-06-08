@@ -299,3 +299,42 @@ test("auth ENABLED: ABAC scopes ontology AOI reads — list filtered, out-of-sco
     config.authSecret = "";
   }
 });
+
+test("auth ENABLED: POST /recon/watch — RBAC (write:recon) + ABAC scope (reject paths, no DB)", async () => {
+  config.authSecret = SECRET;
+  try {
+    const app = await build();
+    // no token → 401 (guard, before the handler).
+    const noTok = await app.inject({
+      method: "POST",
+      url: "/recon/watch",
+      payload: { aoiId: "aoi-strait", rule: "vessel-enters" },
+    });
+    assert.equal(noTok.statusCode, 401);
+
+    // viewer → 403 (lacks write:recon).
+    const viewer = signToken({ sub: "v", role: "viewer" }, SECRET);
+    const vRes = await app.inject({
+      method: "POST",
+      url: "/recon/watch",
+      headers: bearer(viewer),
+      payload: { aoiId: "aoi-strait", rule: "vessel-enters" },
+    });
+    assert.equal(vRes.statusCode, 403);
+    assert.match(vRes.json().reason, /write:recon/);
+
+    // analyst scoped to aoi-strait, watching aoi-other → 403 (in-handler ABAC, before any DB write).
+    const analyst = signToken({ sub: "an", role: "analyst", aois: ["aoi-strait"] }, SECRET);
+    const oos = await app.inject({
+      method: "POST",
+      url: "/recon/watch",
+      headers: bearer(analyst),
+      payload: { aoiId: "aoi-other", rule: "vessel-enters" },
+    });
+    assert.equal(oos.statusCode, 403);
+    assert.match(oos.json().reason, /out of scope/);
+    await app.close();
+  } finally {
+    config.authSecret = "";
+  }
+});
