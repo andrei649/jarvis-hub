@@ -18,6 +18,7 @@ intel (this is an OSINT surface — no invented data). Mutating operations
 capability-token-gated MCP server, not here.
 """
 
+import asyncio
 import logging
 from urllib.parse import quote
 
@@ -45,7 +46,16 @@ class WorldViewPlugin:
 
     @resilient_call(
         max_retries=2,
-        timeout=15.0,
+        # Interactive budget: this plugin sits on the synchronous chat turn, so keep
+        # the per-attempt timeout small (5s) — worst case ~15s/call across retries
+        # rather than 45s. recon_overview's two sub-calls are issued concurrently
+        # (see below), so an unreachable backend degrades fast instead of stalling
+        # the turn. NB: this is the *inner* circuit breaker (plugin:worldview); the
+        # shared PluginHTTPClient adds an outer one (http_client:worldview). The
+        # double breaker is benign (the inner trips first on this plugin's own error
+        # streak) and intentionally left in place — removing it would drop the
+        # plugin-scoped fail-fast that other plugins also rely on.
+        timeout=5.0,
         backoff_base=0.5,
         backoff_max=2.0,
         circuit_breaker_key="plugin:worldview",
@@ -120,8 +130,12 @@ class WorldViewPlugin:
         having to choose a layer or timestamp. Returns ``unavailable`` only if BOTH
         underlying calls fail (a partial answer still surfaces what it could fetch).
         """
-        windows = await self.recon_windows()
-        alerts = await self.recon_alerts(lead=lead)
+        # Fetch the two sub-calls concurrently so the worst-case latency on the chat
+        # turn is one call's budget, not two back-to-back (each already retried +
+        # circuit-broken inside _safe_get, which never raises).
+        windows, alerts = await asyncio.gather(
+            self.recon_windows(), self.recon_alerts(lead=lead)
+        )
         if windows.get("status") != "ok" and alerts.get("status") != "ok":
             return self._unavailable("recon")
         return {

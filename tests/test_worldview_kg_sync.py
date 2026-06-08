@@ -84,6 +84,33 @@ async def test_recall_returns_geo_event_via_rrf():
     assert any("Hormuz" in fh.id and fh.payload.get("type") == "geo_event" for fh in fused)
 
 
+async def test_repeated_sync_upserts_one_node_per_event():
+    """Two sync passes of the SAME logical event must UPSERT one geo_event node
+    (keyed on the stable worldview_id), not grow the graph by one node per pass.
+    """
+    mm = MemoryManager()
+    fixture = _hormuz_fixture()
+
+    await WorldViewKGSync(mm, fixture).sync()
+    geo_events_after_first = [
+        e for e in mm.graph.entities.values() if e["type"] == "geo_event"
+    ]
+    assert len(geo_events_after_first) == 1
+
+    # Re-sync the identical ontology — same worldview_id → same node (upsert).
+    await WorldViewKGSync(mm, fixture).sync()
+    geo_events_after_second = [
+        e for e in mm.graph.entities.values() if e["type"] == "geo_event"
+    ]
+    assert len(geo_events_after_second) == 1, "re-sync minted a duplicate geo_event node"
+
+    # Identity is anchored on worldview_id; AOI label stays searchable.
+    ev = geo_events_after_second[0]
+    assert ev["properties"]["worldview_id"] == "412331100:1780865129.713659"
+    assert ev["properties"]["aoi"] == "Strait of Hormuz"
+    assert mm.graph.search("Hormuz")
+
+
 async def test_sync_is_noop_when_worldview_unavailable():
     mm = MemoryManager()
     down = FakeWorldView([], {}, {}, status="down")

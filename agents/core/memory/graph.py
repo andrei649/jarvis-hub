@@ -245,8 +245,15 @@ class Neo4jGraph(KnowledgeGraph):
         return rows
 
     def search(self, keyword: str) -> list[dict]:
+        # Match on the node name OR any of its string-ish properties, mirroring
+        # InMemoryGraph.search (name OR any property). Without the property scan a
+        # geo-event whose AOI/source/details live only in properties (e.g. a
+        # ReconWindow with no resolvable AOI in its name) is unfindable on Neo4j.
+        # Injection-safe: the keyword is parameterised and property keys are read
+        # from the node itself via keys(n) — no string interpolation of input.
         rows = self.query(
-            "MATCH (n) WHERE toLower(n.name) CONTAINS toLower($keyword) "
+            "MATCH (n) WHERE toLower(toString(n.name)) CONTAINS toLower($keyword) "
+            "OR any(k IN keys(n) WHERE toLower(toString(n[k])) CONTAINS toLower($keyword)) "
             "RETURN n, labels(n) AS labels LIMIT 50",
             {"keyword": keyword},
         )

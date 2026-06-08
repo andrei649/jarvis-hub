@@ -90,8 +90,12 @@ class WorldViewKGSync:
                 continue
             aoi_label = await self._aoi_for(obj_type, oid, obj, aoi_titles)
             base_title = str(obj.get("title") or f"{obj_type} {oid}")
-            # Embed the AOI in the NAME so a location keyword ("Hormuz") finds the event.
-            name = f"{base_title} — {aoi_label}" if aoi_label else base_title
+            # Node identity is the STABLE worldview_id, not the display title — so two
+            # sync passes of the same logical event UPSERT one node instead of minting
+            # a new node per pass (unbounded graph growth). We still embed the AOI label
+            # in the NAME (and as a property) so a location keyword ("Hormuz") finds it;
+            # the human display title rides along in `title`.
+            name = self._event_name(obj_type, oid, aoi_label)
             prov = obj.get("provenance") if isinstance(obj.get("provenance"), dict) else {}
             await self.memory.add_fact(
                 name=name,
@@ -99,6 +103,7 @@ class WorldViewKGSync:
                 properties={
                     "worldview_type": obj_type,
                     "worldview_id": oid,
+                    "title": base_title,
                     "aoi": aoi_label,
                     "source": prov.get("source"),
                     "valid_time": prov.get("ts"),
@@ -117,6 +122,17 @@ class WorldViewKGSync:
                     name=None, source=name, relation="IN_AOI", target=aoi_label
                 )
                 summary["relations"] += 1
+
+    @staticmethod
+    def _event_name(obj_type: str, oid: str, aoi_label: str) -> str:
+        """Stable, search-friendly entity name for a geo-event.
+
+        Anchored on the WorldView object id (the dedup/MERGE key) so re-syncs of the
+        same logical event collapse to ONE node, while still embedding the AOI label
+        so an ``InMemoryGraph.search("Hormuz")`` (and the Neo4j property scan) matches.
+        """
+        anchor = f"{obj_type} {oid}"
+        return f"{anchor} — {aoi_label}" if aoi_label else anchor
 
     async def _aoi_for(
         self, obj_type: str, oid: str, obj: dict, aoi_titles: dict[str, str]

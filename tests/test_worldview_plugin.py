@@ -1,5 +1,7 @@
 """Tests for the WorldView 4D OSINT plugin + its permission-gate manifest (H19.3.3)."""
 
+import asyncio
+
 from agents.core.plugin_gate import DataScope, NetworkAccess, PermissionGate
 from agents.core.plugins.worldview import LAYERS, WorldViewPlugin
 
@@ -70,6 +72,43 @@ async def test_recon_overview_merges_windows_and_alerts(monkeypatch):
         assert overview["api_url"].endswith(":4000")
     finally:
         await wv.close()
+
+
+async def test_recon_overview_runs_subcalls_concurrently(monkeypatch):
+    """H19.3 latency fix: the two recon_overview sub-calls fire concurrently on the
+    chat turn (asyncio.gather), so worst-case latency is ~one call, not two serial.
+    """
+    wv = WorldViewPlugin()
+    started = 0
+    max_concurrent = 0
+
+    async def slow_get(path, params=None):
+        nonlocal started, max_concurrent
+        started += 1
+        max_concurrent = max(max_concurrent, started)
+        await asyncio.sleep(0.05)  # hold both calls open to observe overlap
+        started -= 1
+        if path == "/recon/windows":
+            return {"windows": []}
+        return {"alerts": []}
+
+    monkeypatch.setattr(wv, "_get", slow_get)
+    try:
+        overview = await wv.recon_overview()
+        assert overview["status"] == "ok"
+        # Both sub-calls were in flight at the same time → concurrent, not serial.
+        assert max_concurrent == 2
+    finally:
+        await wv.close()
+
+
+def test_interactive_timeout_is_small():
+    """The chat-path GET uses a small per-attempt timeout (not the old 15s) so an
+    unreachable backend degrades fast instead of stalling the synchronous turn."""
+    closure = WorldViewPlugin._get.__closure__
+    timeouts = [c.cell_contents for c in closure
+                if isinstance(c.cell_contents, float)]
+    assert 5.0 in timeouts and 15.0 not in timeouts
 
 
 async def test_state_at_happy_path_counts_features(monkeypatch):
