@@ -5,6 +5,7 @@ skills system, checkpointing, agent handoff, promotion/demotion.
 """
 
 import asyncio
+import contextvars
 import logging
 import importlib
 import os
@@ -213,6 +214,25 @@ def detect_llm_control(text: str) -> Optional[tuple[str, Optional[str]]]:
 
 
 
+# BUG-5: per-request session isolation.
+#
+# Orchestrator is a process-wide singleton (web.py builds one `orch`), so a
+# single shared `self.session_id` mutated mid-method let two concurrent turns
+# (two tabs, or web+telegram) interleave across `await` points and land a reply
+# in the WRONG conversation. We make the active session an async-context-local
+# value: `handle_input`/`handle_input_stream` resolve the session once at the
+# top and set this ContextVar, so every downstream read (memory, recall,
+# checkpoint, tracer — including those dispatched via `asyncio.to_thread`, which
+# copies the current context) sees that request's own session and never another
+# request's. The sentinel distinguishes "no active request context" (boot,
+# checkpoint restore, autonomy, status reads) so `self.session_id` falls back to
+# the shared instance default in those paths, preserving prior behavior.
+_SESSION_UNSET = object()
+_active_session: contextvars.ContextVar = contextvars.ContextVar(
+    "jarvis_active_session", default=_SESSION_UNSET
+)
+
+
 class Orchestrator:
     def __init__(self, config: JarvisConfig):
         self.config = config
@@ -293,7 +313,11 @@ class Orchestrator:
             router=self.llm_router,
             enabled=_env_flag("JARVIS_LMSTUDIO_CONTROL", True),
         )
-        self.session_id: Optional[str] = None
+        # Backing store for the shared/default session (see `session_id` property
+        # below). Per-request turns override this via the `_active_session`
+        # ContextVar; this default serves boot, checkpoint restore, autonomy and
+        # status reads that run outside a chat request's async context.
+        self._session_id_default: Optional[str] = None
         self.on_token: Optional[Callable] = None
         self._runtime_settings: dict = {}
         self._channel_sessions: dict[str, str] = {}
@@ -329,6 +353,29 @@ class Orchestrator:
         except Exception:
             logger.warning("Tracer initialisation failed — tracing disabled", exc_info=True)
             self.tracer = None
+
+    # ── BUG-5: session_id is async-context-local ────────────────────────────
+    #
+    # Reads return the per-request session when one is active (set by
+    # handle_input/handle_input_stream/channel_handler via the `_active_session`
+    # ContextVar), otherwise the shared instance default. Writes that happen
+    # *inside* an active request context update only that context (so a turn
+    # cannot clobber another concurrent turn's session); writes outside any
+    # request context (boot, checkpoint restore, new_session, /reset) update the
+    # shared default, preserving the original single-request behavior.
+    @property
+    def session_id(self) -> Optional[str]:
+        val = _active_session.get()
+        if val is _SESSION_UNSET:
+            return self._session_id_default
+        return val
+
+    @session_id.setter
+    def session_id(self, value: Optional[str]) -> None:
+        if _active_session.get() is _SESSION_UNSET:
+            self._session_id_default = value
+        else:
+            _active_session.set(value)
 
     async def load_agents(self):
         await self.llm_router.detect()
@@ -735,6 +782,10 @@ class Orchestrator:
             interval = int(self.get_setting("system.autonomy_tick", 60) or 60)
             await asyncio.sleep(max(15, interval))
             try:
+                # Sync the live autonomy mode (HUD AUTO/ASK/OFF) onto the policy each tick.
+                amode = str(self.get_setting("autonomy.mode", "auto") or "auto").lower()
+                if self.autonomy and self.autonomy.policy.mode != amode:
+                    self.autonomy.policy.mode = amode
                 max_tier = None
                 if self.get_setting("autonomy.night_shift", False):
                     start = int(self.get_setting("autonomy.night_start", 23) or 23)
@@ -742,12 +793,14 @@ class Orchestrator:
                     if is_night_window(datetime.now().hour, start, end):
                         max_tier = 1  # reversible/read-only only
                 await self.autonomy.tick(max_tier=max_tier)
-                # Sample the host and turn state changes into gated tasks.
-                if self.observer and self.get_setting("system.observer_enabled", True):
-                    await self.observer.observe()
-                # Sample personal events (Antigravity watchers)
-                if self.event_watcher and self.get_setting("system.watchers_enabled", True):
-                    await self.event_watcher.observe()
+                # Proactive passes self-generate new tasks — paused entirely in OFF mode.
+                if amode != "off":
+                    # Sample the host and turn state changes into gated tasks.
+                    if self.observer and self.get_setting("system.observer_enabled", True):
+                        await self.observer.observe()
+                    # Sample personal events (Antigravity watchers)
+                    if self.event_watcher and self.get_setting("system.watchers_enabled", True):
+                        await self.event_watcher.observe()
                 # Nightly reflection & graph consolidation (H5.15)
                 if self.reflector and self.get_setting("system.reflection_enabled", True):
                     if is_night_window(datetime.now().hour, start=22, end=7):
@@ -917,12 +970,19 @@ class Orchestrator:
             ck = f"tg:{chat_id}"
             if ck not in self._channel_sessions:
                 self._channel_sessions[ck] = await self.memory.new_session()
-            saved_session = self.session_id
-            self.session_id = self._channel_sessions[ck]
+            # BUG-5: bind this telegram chat's session into the per-request async
+            # context instead of mutating shared `self.session_id` and restoring
+            # it in a finally. The old save/restore-on-self clobbered concurrent
+            # turns (the finally reset the *shared* attribute another in-flight
+            # request was reading). Here we set a *context-local* token and reset
+            # it in finally, so the binding is scoped to this request's async
+            # context only and never touches the shared default. `_resolve_session`
+            # inside handle_input keeps the value we set here.
+            token = _active_session.set(self._channel_sessions[ck])
             try:
                 response = await self.handle_input(text, channel)
             finally:
-                self.session_id = saved_session
+                _active_session.reset(token)
         else:
             response = await self.handle_input(text, channel)
 
@@ -936,7 +996,79 @@ class Orchestrator:
                 await ch.send(response)
         return response
 
-    async def handle_input(self, text: str, channel: str = "voice", agent_override: str = None) -> str:
+    def _resolve_session(self, session_id: Optional[str]) -> str:
+        """BUG-5: bind the active session into the per-request async context.
+
+        Pins the session this turn should use into the `_active_session`
+        ContextVar so that, for the rest of this call, `self.session_id` reads
+        resolve to a request-local value and any in-turn `self.session_id =`
+        write updates only this context — never the shared instance default
+        another concurrent turn might be reading.
+
+        Resolution order:
+          1. an explicit `session_id` passed by the caller (per-request value);
+          2. a session already bound in this async context (e.g. `channel_handler`
+             pinned a per-chat_id telegram session before delegating here);
+          3. the shared instance default (`self.session_id`) — preserves the
+             single-request behavior for callers that don't pass a session.
+        """
+        if session_id is not None:
+            _active_session.set(session_id)
+            return session_id
+        existing = _active_session.get()
+        if existing is not _SESSION_UNSET:
+            return existing
+        sid = self._session_id_default
+        _active_session.set(sid)
+        return sid
+
+    async def process(self, prompt: str, agent: str = "jarvis", channel: str = "internal") -> str:
+        """Single LLM completion via the default-agent path — fails safe.
+
+        Internal helper for callers that need a one-shot LLM answer outside the
+        full handle_input pipeline (nightly reflection, the autonomy `_llm` task
+        executor). Routes the prompt through the requested agent (default
+        `jarvis`) using the same `_call_agents_parallel` path handle_input uses,
+        so backend selection / routing / guardrails all apply.
+
+        Never raises: returns "" on any failure (missing agent, no LLM backend,
+        unexpected error) so swallow-and-continue callers degrade to a no-op
+        instead of silently throwing an AttributeError.
+        """
+        if not prompt:
+            return ""
+        agent_id = agent if agent in self.agents else "jarvis"
+        if agent_id not in self.agents:
+            logger.warning(f"process(): no agent available for completion (agent={agent})")
+            return ""
+        try:
+            responses = await self._call_agents_parallel([agent_id], prompt, {}, {})
+        except RuntimeError:
+            # No LLM backend up — degrade quietly (callers swallow errors anyway).
+            log_error(logger, E_LLM_BACKEND_MISSING, backend=f"process:{channel}")
+            return ""
+        except Exception as e:
+            log_error(logger, E_INTERNAL_UNEXPECTED, component=f"process:{channel}", detail=str(e))
+            return ""
+        resp = responses.get(agent_id, "") if responses else ""
+        # _call_agents_parallel returns structured error/timeout markers instead
+        # of raising; treat those as a soft failure and return "".
+        if resp and re.match(rf"^\[{re.escape(agent_id)} (error|timeout)\b", resp):
+            return ""
+        return resp or ""
+
+    async def handle_input(self, text: str, channel: str = "voice", agent_override: str = None,
+                           session_id: str = None) -> str:
+        # BUG-5: pin this turn to its own session for the whole call. Resolving
+        # the session into the async-context-local `_active_session` here means
+        # every downstream `self.session_id` read (memory, recall, checkpoint,
+        # tracer, and even `_log_session`/checkpoint saves dispatched through
+        # `asyncio.to_thread`, which copies the current context) sees THIS
+        # request's session — never a concurrent request's. Pass an explicit
+        # `session_id` for per-request isolation; omit it to keep the prior
+        # single-shared-session behavior (or to honor a session a caller like
+        # `channel_handler` already pinned in this context).
+        self._resolve_session(session_id)
         self._last_channel = channel  # captured for H9.2 tracer
         t_start = time.perf_counter()
         await self.memory.add_turn(self.session_id, "user", text)
@@ -1073,7 +1205,11 @@ class Orchestrator:
         self._update_cognition(text, intent, plugin_data, synthesized, t_classify, t_route, t_plugin, t_synthesize)
         return synthesized
 
-    async def handle_input_stream(self, text: str, channel: str = "voice", on_token: Callable = None, agent_override: str = None) -> str:
+    async def handle_input_stream(self, text: str, channel: str = "voice", on_token: Callable = None,
+                                  agent_override: str = None, session_id: str = None) -> str:
+        # BUG-5: see handle_input — pin this turn to its own session so it can
+        # never read or write another concurrent request's conversation.
+        self._resolve_session(session_id)
         self._last_channel = channel  # captured for H9.2 tracer
         await self.memory.add_turn(self.session_id, "user", text)
 
@@ -1753,9 +1889,13 @@ class Orchestrator:
                 logger.debug("incremental KG ingest skipped", exc_info=True)
         for agent_id, resp in responses.items():
             if agent_id in self.agents and resp:
-                is_timeout = resp.endswith("timeout]")
-                is_error = resp.endswith("error:") or "error:" in resp
-                success = not (is_timeout or is_error)
+                # Match the exact structured markers _call_agents_parallel emits:
+                #   error   → f"[{agent_id} error: {e}]"   (orchestrator.py ~:1641)
+                #   timeout → f"[{agent_id} timeout]"      (orchestrator.py ~:1637)
+                # A naive "error:" in resp false-positives on any normal answer
+                # that merely mentions the word "error:"; anchor to the marker.
+                failed = bool(re.match(rf"^\[{re.escape(agent_id)} (error|timeout)\b", resp))
+                success = not failed
                 latency = getattr(self, "_last_latencies", {}).get(agent_id, 0.0)
                 metadata = {
                     "channel": "web",
@@ -1862,7 +2002,11 @@ class Orchestrator:
         return sid
 
     async def aclose(self):
-        """Graceful shutdown: flush checkpoint + close LLM client pools (BUG-7)."""
+        """Graceful shutdown: flush checkpoint + close LLM/MCP/queue pools (BUG-7 / NEW-1).
+
+        Defensive throughout — every step is guarded so a failure in one does
+        not abort the rest, and shutdown never raises.
+        """
         await self._flush_checkpoint()
         router = getattr(self, "llm_router", None)
         if router is not None:
@@ -1870,6 +2014,22 @@ class Orchestrator:
                 await router.aclose()
             except Exception as e:
                 logger.warning(f"Error closing LLM router: {e}")
+        # Close MCP sessions (httpx/stdio transports) if any are open.
+        mcp = getattr(self, "mcp", None)
+        close_all = getattr(mcp, "close_all", None)
+        if close_all is not None:
+            try:
+                await close_all()
+            except Exception as e:
+                logger.warning(f"Error closing MCP sessions: {e}")
+        # Close the autonomy sqlite queue connection.
+        queue = getattr(self, "autonomy_queue", None)
+        queue_close = getattr(queue, "close", None)
+        if queue_close is not None:
+            try:
+                queue_close()
+            except Exception as e:
+                logger.warning(f"Error closing autonomy queue: {e}")
 
     async def get_status(self) -> dict:
         return {

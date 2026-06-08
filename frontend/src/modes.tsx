@@ -1,7 +1,8 @@
 // @ts-nocheck
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { V2, Conversation, InputBar } from './ui';
 import { Icon, ICONS, Glyph, statusClass } from './ui';
+import { getKillSwitch, setKillSwitch, getAgentSoul, getAgentHistory, memorySearch } from './api/actions';
 /* HUD v2 · MODES — Agents, Trust, Memory */
 
 /* ============ AGENTS ============ */
@@ -42,33 +43,60 @@ function AgentsMode({ agents, onOpen, t }) {
 }
 
 function Dossier({ id, onClose, onOpen }) {
-  const d = V2.DOSSIER[id];
+  // Soul + run-history are LIVE (as v1 does): GET /api/agents/{id}/soul reads the
+  // on-disk SOUL.md, /api/agents/{id}/history rolls up recent runs. The seed dossier
+  // (archetype/personality/runtime) is the static fallback for fields with no single
+  // backend source; the real SOUL.md overrides the seeded soul blurb when it loads.
+  const d = V2.DOSSIER[id] || {};
   const a = V2.AGENTS.find(x=>x.id===id);
-  if(!d||!a) return null;
+  const [soul,setSoul]=useState(null);   // real SOUL.md text (null = not loaded → seed)
+  const [runs,setRuns]=useState(null);   // real run history ([] = none, null = unloaded)
+  useEffect(() => {
+    if(!id) return;
+    let alive = true;
+    getAgentSoul(id).then((r) => { if(alive && r && r.soul) setSoul(r.soul); }).catch(() => {});
+    getAgentHistory(id).then((r) => { if(alive && r && Array.isArray(r.runs)) setRuns(r.runs); }).catch(() => {});
+    return () => { alive = false; };
+  }, [id]);
+  if(!a) return null;
   const deps = (V2.COLLAB.filter(([x,y])=>x===id||y===id).map(([x,y])=>x===id?y:x));
+  const soulText = soul != null ? soul : (d.soul || '');
+  const plugins = d.plugins || [];
   return (
     <>
       <div className="dossier-scrim" onClick={onClose}></div>
       <div className="dossier">
         <div className="dossier-head">
           <span className="big-glyph"><Glyph id={id} size={46}/></span>
-          <div><div className="nm">{a.name}</div><div className="ar">{d.archetype} · {a.tier}</div></div>
+          <div><div className="nm">{a.name}</div><div className="ar">{d.archetype || a.role} · {a.tier}</div></div>
           <button className="close" onClick={onClose}>✕</button>
         </div>
         <div className="dossier-body">
-          <div className="dsec"><div className="dl">Soul</div><div className="dtx soul">{d.soul}</div></div>
-          <div className="dsec"><div className="dl">Personality</div><div className="dtx">{d.personality}</div></div>
+          <div className="dsec"><div className="dl">Soul{soul!=null?' · SOUL.md':''}</div><div className="dtx soul">{soulText}</div></div>
+          {d.personality && <div className="dsec"><div className="dl">Personality</div><div className="dtx">{d.personality}</div></div>}
           <div className="dsec"><div className="dl">Runtime</div>
             <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'10px 16px'}}>
-              {[['Model',d.model],['Channel',d.channel],['Heartbeat',d.heartbeat],['Policy',d.policy],['Skills',d.skills],['Memory facts',d.memory_facts]].map(([k,v])=>(
+              {[['Model',d.model||a.model],['Channel',d.channel],['Heartbeat',d.heartbeat],['Policy',d.policy||a.policy],['Skills',d.skills],['Memory facts',d.memory_facts]].map(([k,v])=>(
                 <div key={k} style={{fontFamily:'var(--font-mono)',fontSize:12}}>
                   <span style={{color:'var(--ink-3)',fontSize:9,letterSpacing:'.1em',textTransform:'uppercase',display:'block'}}>{k}</span>
-                  <span style={{color:'var(--accent-light)'}}>{v}</span>
+                  <span style={{color:'var(--accent-light)'}}>{v != null && v !== '' ? v : '—'}</span>
                 </div>
               ))}
             </div>
           </div>
-          {d.plugins.length>0 && <div className="dsec"><div className="dl">Plugins</div><div className="dep-links">{d.plugins.map(p=><span key={p} className="dep-link" style={{cursor:'default'}}>{p}</span>)}</div></div>}
+          {/* Recent runs — REAL data from /api/agents/{id}/history. Shown only when the
+              backend actually returns runs (empty/unreachable → section hidden). */}
+          {runs != null && runs.length > 0 && (
+            <div className="dsec"><div className="dl">Recent runs · {runs.length}</div>
+              {runs.slice(0,5).map((r,i)=>(
+                <div key={i} style={{display:'flex',justifyContent:'space-between',fontFamily:'var(--font-mono)',fontSize:11,color:'var(--ink-2)',padding:'3px 0',borderBottom:'1px solid var(--panel-line)'}}>
+                  <span>{r.kind || r.title || r.action || 'run'}</span>
+                  <span style={{color:(r.ok===false||r.status==='error')?'var(--red)':'var(--green)'}}>{r.status || (r.ok===false?'fail':'ok')}{r.latency_ms!=null?' · '+r.latency_ms+'ms':''}</span>
+                </div>
+              ))}
+            </div>
+          )}
+          {plugins.length>0 && <div className="dsec"><div className="dl">Plugins</div><div className="dep-links">{plugins.map(p=><span key={p} className="dep-link" style={{cursor:'default'}}>{p}</span>)}</div></div>}
           <div className="dsec"><div className="dl">Collaborates with</div>
             <div className="dep-links">{deps.map(dep=>{ const da=V2.AGENTS.find(x=>x.id===dep); return <span key={dep} className="dep-link" onClick={()=>onOpen(dep)}><Glyph id={dep} size={12}/>{da?da.name:dep}</span>; })}</div>
           </div>
@@ -79,10 +107,28 @@ function Dossier({ id, onClose, onOpen }) {
 }
 
 /* ============ TRUST ============ */
-function TrustMode({ t }) {
+function TrustMode({ t, localPct = null }) {
+  // Kill-switch is a REAL operator control: GET /api/security/kill-switch reflects
+  // live state, POST engages/disengages (admin-guarded). Optimistic flip with a
+  // re-sync from the server response so the UI never lies about halt state.
   const [killed,setKilled]=useState(false);
+  const [busy,setBusy]=useState(false);
+  const [killErr,setKillErr]=useState(false);
   const D = V2;
-  const localPct = 87;
+  useEffect(() => {
+    let alive = true;
+    getKillSwitch().then((s) => { if (alive && s) setKilled(!!(s.halted ?? s.engaged)); }).catch(() => { if (alive) setKillErr(true); });
+    return () => { alive = false; };
+  }, []);
+  const toggleKill = () => {
+    if (busy) return;
+    const next = !killed;
+    setBusy(true); setKilled(next); // optimistic
+    setKillSwitch(next)
+      .then((r) => { if (r) setKilled(!!(r.engaged ?? next)); })
+      .catch(() => { setKilled(!next); setKillErr(true); }) // revert on failure — honest
+      .finally(() => setBusy(false));
+  };
   return (
     <div className="panel scroll" style={{flex:1}}>
       <span className="bk tl"></span><span className="bk tr"></span><span className="bk bl"></span><span className="bk br"></span>
@@ -107,14 +153,18 @@ function TrustMode({ t }) {
           {/* right: kill + locality + caps + payments */}
           <div className="col">
             <div className="killbox panel" style={{borderRadius:'var(--radius)',background:'var(--surface-2)'}}>
-              <button className={'killbtn'+(killed?' engaged':'')} onClick={()=>setKilled(k=>!k)}>
+              <button className={'killbtn'+(killed?' engaged':'')} onClick={toggleKill} disabled={busy} title={busy?'updating…':killed?'disengage kill-switch':'halt all agents'}>
                 <Icon d={ICONS.shield} size={26}/>
                 <span className="kt">{killed?'HALTED':'STOP'}</span>
                 <span className="ks">{t.killSub}</span>
               </button>
-              <div className={'kill-status '+(killed?'engaged':'armed')}>{killed?t.engaged:t.armed}</div>
+              <div className={'kill-status '+(killed?'engaged':'armed')}>{killErr?'kill-switch unavailable':killed?t.engaged:t.armed}</div>
             </div>
 
+            {/* Locality is shown ONLY when a real source backs it (strict-local proof
+                → 100%, or DEMO sample). Unknown → the whole block is hidden, never a
+                fabricated split. localPct comes from /api/trust/status via app.tsx. */}
+            {localPct != null && (
             <div style={{border:'1px solid var(--panel-line)',borderRadius:'var(--radius)',padding:14,background:'var(--surface-2)'}}>
               <div className="dl" style={{fontFamily:'var(--font-mono)',fontSize:9.5,letterSpacing:'.16em',textTransform:'uppercase',color:'var(--ink-3)',marginBottom:10}}>{t.locality}</div>
               <div className="loc-ring-wrap">
@@ -126,6 +176,7 @@ function TrustMode({ t }) {
               </div>
               <div className="loc-bar"><div className="seg local" style={{width:localPct+'%'}}></div><div className="seg cloud" style={{width:(100-localPct)+'%'}}></div></div>
             </div>
+            )}
 
             <div style={{border:'1px solid var(--panel-line)',borderRadius:'var(--radius)',padding:14,background:'var(--surface-2)'}}>
               <div className="dl" style={{fontFamily:'var(--font-mono)',fontSize:9.5,letterSpacing:'.16em',textTransform:'uppercase',color:'var(--ink-3)',marginBottom:6}}>{t.capsTitle}</div>
@@ -139,7 +190,11 @@ function TrustMode({ t }) {
               {D.PAYMENTS.map((p,i)=>(
                 <div className="pay-row" key={i}><span className="pcap">{p.pcap}</span><span style={{color:'var(--ink-2)'}}>{p.desc}</span><span style={{textAlign:'right',color:p.state==='pending'?'var(--amber)':p.state==='cleared'?'var(--green)':'var(--ink-3)'}}>{p.amt}</span></div>
               ))}
-              <div className="pay-pending"><span style={{color:'var(--amber)',fontFamily:'var(--font-mono)',fontSize:11}}>⏳ 1 payment awaiting your approval — €4,200 sweep</span></div>
+              {/* Pending count is computed from the REAL ledger (PAYMENTS ← /api/payments),
+                  not a hardcoded "€4,200 sweep" claim. Hidden when nothing is pending. */}
+              {D.PAYMENTS.filter(p=>p.state==='pending').length>0 && (
+                <div className="pay-pending"><span style={{color:'var(--amber)',fontFamily:'var(--font-mono)',fontSize:11}}>⏳ {D.PAYMENTS.filter(p=>p.state==='pending').length} payment{D.PAYMENTS.filter(p=>p.state==='pending').length===1?'':'s'} awaiting your approval</span></div>
+              )}
             </div>
           </div>
         </div>
@@ -154,6 +209,27 @@ function MemoryMode({ t }) {
   const M = D.MEMORY_STATS;
   const marks = D.KG.marks;
   const [ti,setTi]=useState(marks.length-1);
+  // LIVE recalls: GET /api/memory/search returns the user's actual top hits. We map
+  // the backend {score,payload,sources} → the seed's {rx,rsrc,score} row shape and
+  // replace the mock list when real results arrive (empty/offline → keep seed corpus).
+  const [recalls,setRecalls]=useState(null);
+  useEffect(() => {
+    let alive = true;
+    // A neutral query surfaces the most salient memories for the "recent recalls" panel.
+    memorySearch('recent').then((r) => {
+      const res = r && Array.isArray(r.results) ? r.results : [];
+      if (!alive || !res.length) return;
+      setRecalls(res.slice(0,6).map((h) => {
+        const p = h.payload || {};
+        const text = p.text || p.content || p.summary || (typeof h.payload === 'string' ? h.payload : '') || h.id || '';
+        const src = (Array.isArray(h.sources) ? h.sources.join('+') : (h.sources || '')) || 'memory';
+        const sc = h.score != null ? Number(h.score).toFixed(2) : '';
+        return { rx: String(text).slice(0,90), rsrc: src + (sc?' · '+sc:''), score: sc };
+      }));
+    }).catch(() => {});
+    return () => { alive = false; };
+  }, []);
+  const RECALLS = recalls || D.RECALLS;
   const born = ti; // 0..3
   const visNodes = D.KG.nodes.filter(n=>n.born<=born);
   const visIds = new Set(visNodes.map(n=>n.id));
@@ -170,7 +246,7 @@ function MemoryMode({ t }) {
         <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'var(--gap)',alignItems:'start'}}>
           <div style={{border:'1px solid var(--panel-line)',borderRadius:'var(--radius)',padding:14,background:'var(--surface-2)'}}>
             <div className="dl" style={{fontFamily:'var(--font-mono)',fontSize:9.5,letterSpacing:'.16em',textTransform:'uppercase',color:'var(--ink-3)',marginBottom:8}}>{t.recall}</div>
-            {D.RECALLS.map((r,i)=>(
+            {RECALLS.map((r,i)=>(
               <div className="recall-row" key={i}><div><div className="rx">{r.rx}</div><div className="rsrc">{r.rsrc}</div></div><span className="recall-score">{r.score}</span></div>
             ))}
             <div className="dl" style={{fontFamily:'var(--font-mono)',fontSize:9.5,letterSpacing:'.16em',textTransform:'uppercase',color:'var(--ink-3)',margin:'16px 0 8px'}}>{t.spaces}</div>

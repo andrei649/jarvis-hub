@@ -4,8 +4,9 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { V2 } from './data';
 
-function NetworkBrain({ agents, activeId, onSelect, focusId, setFocusId, motion, t }) {
+function NetworkBrain({ agents, tasks = [], activeId, onSelect, focusId, setFocusId, motion, t }) {
   const W = 640, H = 460, CX = W/2, CY = H/2;
+  const R_TASK = 250; // outer ring where per-agent task nodes sit (V1's task-fan)
   const [hover, setHover] = useState(null);
   const [tip, setTip] = useState(null);
   const [tick, setTick] = useState(0);
@@ -64,6 +65,41 @@ function NetworkBrain({ agents, activeId, onSelect, focusId, setFocusId, motion,
 
   const dimNode = id => focused && neighbors && !neighbors.has(id);
   const dimLink = l => focused && !(l.a===focused || l.b===focused);
+
+  // ── Task-fan (V1 parity) — real autonomy tasks from /tasks, grouped by owner.
+  // Each task gets an outer-ring node near its owning agent; on focus they fan out
+  // around the focused agent. Owners absent from the layout (or 'jarvis' → core) are
+  // skipped so we never draw a node off the ring. Empty /tasks → no fan (honest).
+  const taskAngle = id => { const p = layout[id]; return p ? Math.atan2(p.y-CY, p.x-CX) : 0; };
+  const positionedTasks = useMemo(() => {
+    const byOwner = {};
+    (tasks || []).forEach(tk => { const o = (tk.owner || tk.agent_id || 'jarvis'); (byOwner[o] ||= []).push(tk); });
+    const out = [];
+    Object.keys(byOwner).forEach(owner => {
+      if (!layout[owner]) return; // owner not on the ring (e.g. jarvis core) → skip
+      const list = byOwner[owner]; const n = list.length; const base = taskAngle(owner);
+      list.forEach((tk, i) => {
+        const offset = n === 1 ? 0 : (i - (n - 1) / 2) * 0.18;
+        const ang = base + offset;
+        out.push({ ...tk, owner, idx: i, x: CX + Math.cos(ang)*R_TASK, y: CY + Math.sin(ang)*R_TASK,
+          ox: layout[owner].x, oy: layout[owner].y });
+      });
+    });
+    return out;
+  }, [tasks, layout]);
+  // When an agent is focused, fan its tasks around it (closer arc) for legibility.
+  const focusedTaskPos = useMemo(() => {
+    if (!focused || !layout[focused]) return [];
+    const list = positionedTasks.filter(tk => tk.owner === focused);
+    const n = list.length; const dir = taskAngle(focused); const span = Math.PI * 0.55; const R = 84;
+    return list.map((tk, i) => {
+      const frac = n === 1 ? 0.5 : i / (n - 1);
+      const a = dir + (frac - 0.5) * span;
+      return { ...tk, x: layout[focused].x + Math.cos(a)*R, y: layout[focused].y + Math.sin(a)*R };
+    });
+  }, [focused, positionedTasks, layout]);
+  const drawTasks = focused ? focusedTaskPos : positionedTasks;
+  const taskColor = s => (s==='running'||s==='active') ? 'var(--accent)' : (s==='blocked'||s==='held'||s==='pending') ? 'var(--amber)' : (s==='error'||s==='failed'||s==='denied') ? 'var(--red)' : 'var(--ink-3)';
 
   function hexPath(cx, cy, r){
     let p='';
@@ -126,6 +162,24 @@ function NetworkBrain({ agents, activeId, onSelect, focusId, setFocusId, motion,
           return <circle key={i} className={'pkt'+(dimLink(l)?' net-dim':'')} cx={x} cy={y} r="1.8" opacity={Math.sin(prog*Math.PI)}/>;
         })}
 
+        {/* TASK-FAN — real /tasks per owner (V1 parity). Spoke from owner → task node. */}
+        {drawTasks.length>0 && (
+          <g className={focused?'':''}>
+            {drawTasks.map((tk,i)=>{
+              const dim = focused && tk.owner!==focused;
+              const ox = focused ? layout[focused].x : tk.ox;
+              const oy = focused ? layout[focused].y : tk.oy;
+              return (
+                <g key={'task'+i} className={dim?'net-dim':''}>
+                  <line x1={ox} y1={oy} x2={tk.x} y2={tk.y} stroke="var(--panel-line)" strokeWidth=".5" opacity=".5"/>
+                  <circle cx={tk.x} cy={tk.y} r={focused?4:2.6} fill="var(--void-2)" stroke={taskColor(tk.state||tk.status)} strokeWidth="1.1"/>
+                  {focused && <text x={tk.x} y={tk.y-7} textAnchor="middle" className="net-label" style={{fontSize:7.5}}>{String(tk.label||tk.title||tk.kind||'task').slice(0,18)}</text>}
+                </g>
+              );
+            })}
+          </g>
+        )}
+
         {/* CORE */}
         <g className="net-core" onClick={()=>setFocusId(null)} style={{cursor:focused?'pointer':'default'}}>
           <circle cx={CX} cy={CY} r="30" fill="var(--void-2)" stroke="var(--accent)" strokeWidth="1.4"/>
@@ -155,7 +209,7 @@ function NetworkBrain({ agents, activeId, onSelect, focusId, setFocusId, motion,
 
       <div className="net-overlay">
         <div className="ol">{t.network} · <b>{agents.length}</b> {t.agents.toLowerCase()}</div>
-        <div className="ol"><b>{activeCount}</b> active · <b>{busyCount}</b> busy</div>
+        <div className="ol"><b>{activeCount}</b> active · <b>{busyCount}</b> busy{positionedTasks.length>0?<> · <b>{positionedTasks.length}</b> tasks</>:null}</div>
       </div>
       {tip && (
         <div className="net-tip" style={tipPos(tip)}>

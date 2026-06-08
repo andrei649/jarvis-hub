@@ -14,12 +14,12 @@
 ```bash
 pip install -r requirements-beta.txt
 python -m uvicorn agents.web:app --host 127.0.0.1 --port 8080
-python -m pytest tests/ -v          # 1100+ passed, 8 skipped
+python -m pytest tests/ -v          # 1764 passed, 1 skipped
 ```
 
-> Cele 8 skipped sunt din `tests/test_spotify.py` (pattern HTTP-router, opencode) care
-> așteaptă `agents/core/skills/spotify.py` — neimplementat. Spotify (H2.5) **funcționează**
-> via `skills/spotify/main.py` (pattern loader, acoperit de `tests/test_spotify_skill.py`).
+> Singurul skip rămas e heartbeat-ul opțional. (Vechiul `tests/test_spotify.py` cu 8 skip-uri a
+> fost eliminat în CLN-1; Spotify (H2.5) **funcționează** via `skills/spotify/main.py`, acoperit
+> de `tests/test_spotify_skill.py`.)
 
 **După modificări JS/CSS:** Ctrl+F5 în browser (cache bust).
 **După modificări Python:** repornire server (Ctrl+C, re-execută comanda uvicorn).
@@ -72,18 +72,20 @@ chain-of-thought leak / mid-sentence truncation fixed. Kill-switch:
 | **H7 Hardening & Release Readiness** (P0–P2) | 11 | **11** | 51 | **51** | **100%** |
 | **H8 Memorie Personală** (P1–P3) | 7 | **7** | 48 | **48** | **100%** |
 | **H9 Agent Ops: Workflows & Observability** (P2) | 3 | **3** | 29 | **29** | **100%** |
-| **H10 Competitive Edge** (P1–P3) | 30 | **27** | 188 | **162** | **86%** |
+| **H10 Competitive Edge** (P1–P3) | 30 | **29** | 188 | **178** | **95%** |
 | **H11 Platform Parity** (Known Gaps, P3) | 4 | **0** | 55 | **0** | **0%** |
-| **Total H1–H11** | **151** | **144** | **823** | **742** | **90%** (SP) |
-| **H12 Asistent Privat & Proactiv** (P0–P3) | 15 | **10** | 92 | **47** | **51%** |
-| **H13–H17 Frontiere Noi** (post-paritate, în scope v1.0, P1–P3) | 20 | **12** | 146 | **83** | **57%** |
-| **Total H1–H17 = scope 1.0.0** | **186** | **166** | **1061** | **872** | **82%** (SP) |
+| **Total H1–H11** | **151** | **146** | **823** | **758** | **92%** (SP) |
+| **H12 Asistent Privat & Proactiv** (P0–P3) | 25 | **11** | 150 | **55** | **37%** |
+| **H13–H17 Frontiere Noi** (post-paritate, în scope v1.0, P1–P3) | 20 | **14** | 146 | **99** | **68%** |
+| **Total H1–H17 = scope 1.0.0** | **196** | **171** | **1119** | **912** | **82%** (SP) |
+| **H18 Mobile Native & Browser Parity** (P2–P3) | 10 | **9** | 32 | **32** | **94%** |
+| **H19 WorldView (4D OSINT)** — standalone product, merged 2026-06-08 | 33 | **33** | 208 | **208** | **100%** ✅ |
 
-> `%` = procent pe **story points**. Sub-total **H1–H11** = 742/823 (≈90% SP; 144/151 iteme). Grand-total **H1–H17** = 872/1061 (≈82% SP; 166/186 iteme). **Gate-ul 1.0.0 = tot backlogul terminat: H10 + H11 + H12 + H13–H17** (toate în scope-ul v1.0 — [#52]).
+> `%` = procent pe **story points**. Sub-total **H1–H11** = 758/823 (≈92% SP; 146/151 iteme). Grand-total **H1–H17** = 912/1119 (≈82% SP; 171/196 iteme). **Gate-ul 1.0.0 = tot backlogul terminat: H10 + H11 + H12 + H13–H17** (toate în scope-ul v1.0 — [#52]). În afara gate-ului: **H18** mobil (9/10) și **H19 WorldView** (33/33 ✅, stack standalone) — livrate.
 
 **În afara totalului:** **Bugs & Hot Fixes** — 3 done (BUG-1, BUG-2, BUG-4) + deschise (BUG-3, BUG-5…BUG-12, HF-1/2, HF-3…HF-7, BUG-2b, TASK-1, CLN-1, CLN-2, CLN-3, NTH-1). *(BUG-5…12 / HF-3…7 / CLN-2/3 din auditul de cod 2026-06-04.)*
 
-**Test count (backend pytest):** 1,655 passed, 1 skipped — skip-ul rămas e heartbeat-ul opțional (`tests/test_spotify.py` eliminat în CLN-1). *(2026-06-03 v9.9.9: backlog software **code-complete** — H10 27/30, H12 10/15, frontiere H13–H17 12/20 (vezi „Status General" de mai sus); rămâne audit + testare manuală, vezi `docs/AUDIT.md`.)*
+**Test count (backend pytest):** 1,764 passed, 1 skipped — skip-ul rămas e heartbeat-ul opțional (`tests/test_spotify.py` eliminat în CLN-1). *(2026-06-08: backlog software **code-complete** — H10 29/30, H12 11/25, frontiere H13–H17 14/20 (vezi „Status General" de mai sus); + WorldView O19 33/33 merged + Argus. Rămâne audit + testare manuală, vezi `docs/AUDIT.md`.)*
 **Frontend (BUG-2):** 184 teste JS / 23 fișiere · ~67% line coverage — separat de suita pytest.
 
 > **Orizont 7 Hardening — Drumul spre 1.0.0:** 11/11 COMPLET ✅ (livrat 2026-06-02)
@@ -177,6 +179,25 @@ chain-of-thought leak / mid-sentence truncation fixed. Kill-switch:
 > HF-3…HF-7, CLN-2/CLN-3. Caveat transversal: majoritatea au risc **scăzut pe deployment
 > single-user/LAN** (designul actual) și devin reale sub concurență / expunere non-LAN.
 
+> **Re-baseline 2026-06-08** (audit de cod + connectivity, verificat vs cod curent):
+> - **Deja fixate în cod** (rândurile de mai jos sunt istorice): **BUG-3** (un singur `/api/analytics/cost`),
+>   **BUG-6** (reload atomic prin rebind), **BUG-8** (parsing cu guard), **BUG-9** (allowlist alfanumeric),
+>   **BUG-10** (reset zilnic programat la miezul nopții), **HF-6** (sandbox Docker-only by default), **HF-7**
+>   (guard admin fail-closed în spatele proxy-ului).
+> - **Fixate în pasul de hardening 2026-06-08:** **BUG-7/NEW-1** (`orch.aclose()` cablat în shutdown, toate
+>   backendurile LLM + mcp + queue închise), **BUG-11** (re-gating complet pe payload-ul editat, nu doar `amount`),
+>   **BUG-12** (lock pe `_PROC_CACHE` + atomicitate `_spent_today`) + **2 bug-uri noi**: `Orchestrator.process()`
+>   lipsea dar era apelat (taskuri autonomy LLM + reflecția nocturnă întorceau gol — acum implementat, fail-safe)
+>   și euristica greșită de eroare din `_record_interactions` (marcase răspunsuri reușite ca eșec).
+> - **Fixate în pasul de completare HUD 2026-06-08:** **BUG-5** (session_id izolat per context async via
+>   `contextvars.ContextVar` — chat-uri concurente nu mai amestecă conversații; test de concurență), **HF-3**
+>   (scanner întărit: openai-key 40+, GCP/Azure SA, heuristică entropie; `db_connection_string`/`password`
+>   restrânse). **Toate BUG-* și HF-* sunt acum rezolvate.**
+> - **Rămâne deschis (deliberat, NU bug-uri):** **CLN-2/CLN-3** (refactor god-objects `orchestrator.py`/`web.py`
+>   — P3, churn mare; amânat intenționat ca să nu destabilizeze înainte de testarea manuală). Restul backlog-ului
+>   = orizonturi de produs (H10.30, H11, H12 Track E, H13, H15, O20, O21), nu loose-ends — vezi
+>   [`docs/2026-06-08-future-developments-report.md`](docs/2026-06-08-future-developments-report.md).
+
 ### Buguri
 
 | # | Bug | Severity | Notes |
@@ -214,7 +235,7 @@ chain-of-thought leak / mid-sentence truncation fixed. Kill-switch:
 | **HF-6** | **Sandbox: bypass prin `DEV_MODE`** — când `DEV_MODE=1` (frecvent în dev), `Sandbox` execută cod **direct pe host** (fără Docker, fără `--network none`/limite mem/pids) — `sandbox.py:75-87,158-163`. Risc major dacă rămâne setat în prod. Fix: opt-in *per-apel* explicit (nu flag global), warning vizibil în HUD/`/status` când subprocess fallback e activ. | 🔒 Hardening · P2 | 3 | — | Audit cod 2026-06-04 · `agents/core/sandbox.py`, `agents/web.py` (DEV_MODE) |
 | **HF-7** | **Admin auth în spatele unui reverse-proxy** — fallback-ul „doar localhost" (`_admin_guard`) folosește `request.client.host`, care devine IP-ul proxy-ului în spatele nginx/ingress → admin expus tuturor dacă `JARVIS_ADMIN_TOKEN` nu e setat. Adaugă suport trusted-proxy/`X-Forwarded-For` + rate-limit pe încercări token. | 🔒 Hardening · P2 | 2 | Cu HF-1/HF-2 | Audit cod 2026-06-04 · `agents/web.py:_admin_guard` |
 | **CLN-2** | **Spargere god-object `Orchestrator`** (`agents/core/orchestrator.py`) — un singur obiect gestionează agenți + pluginuri + memorie + canale + autonomie + checkpoints + learning. **Început în #118 (audit A2 — `ComponentRegistry`)**, care a redus fișierul 1620→1537 LOC; rămâne de extras manageri dedicați (AgentManager/PluginManager/ChannelManager) și de continuat decuplarea. | 🧹 Refactor · P3 | 5 | Continuă #118 (A2) | Audit cod 2026-06-04 |
-| **CLN-3** | **Spargere `web.py`** (~3981 LOC, ~203 rute, singletons globale `orch`/`gateway`) — split în routere FastAPI per-domeniu (`APIRouter`); reduce/elimină mutarea state-ului global. | 🧹 Refactor · P3 | 8 | — | Audit cod 2026-06-04 |
+| **CLN-3** | **Spargere `web.py`** (~4636 LOC, 233 rute, singletons globale `orch`/`gateway`) — split în routere FastAPI per-domeniu (`APIRouter`); reduce/elimină mutarea state-ului global. | 🧹 Refactor · P3 | 8 | — | Audit cod 2026-06-04 |
 
 ## ✅ ORIZONT 5 — Next Wave (P2–P3) — 17/17 COMPLET
 
@@ -299,15 +320,15 @@ chain-of-thought leak / mid-sentence truncation fixed. Kill-switch:
 
 ---
 
-## ORIZONT 10 — Jarvis Competitive Edge (P1–P3) — 27/30
+## ORIZONT 10 — Jarvis Competitive Edge (P1–P3) — 29/30
 
 ### H10 — Status General
 
 | Horizon | Total | ✅ Done | S total | S done | % |
 |---------|-------|---------|---------|--------|---|
-| **H10 Competitive Edge** | 30 | **27** | 188 | **162** | **86%** |
+| **H10 Competitive Edge** | 30 | **29** | 188 | **178** | **95%** |
 
-> H10.A–E livrate în valul 2026-06-03; rămân deschise doar **H10.7, H10.26, H10.30** (toate P3).
+> H10.A–E livrate în valul 2026-06-03; rămâne deschis doar **H10.30** (Write-Back Integrations, P3). *(H10.7 și H10.26 au fost livrate ✅.)*
 
 ### H10.A — Observability & Eval (P1 — fundație)
 
@@ -383,7 +404,7 @@ chain-of-thought leak / mid-sentence truncation fixed. Kill-switch:
 
 ---
 
-## ORIZONT 12 — Categoria Reală: Asistent Personal Privat & Proactiv (P0–P3) — 10/25
+## ORIZONT 12 — Categoria Reală: Asistent Personal Privat & Proactiv (P0–P3) — 11/25
 
 > Bazat pe research-ul din [docs/research/2026-06-02-personal-ai-competitors.md](docs/research/2026-06-02-personal-ai-competitors.md):
 > H10 a comparat Jarvis cu 8 **framework-uri de developeri**; categoria reală a moonshot-ului (asistent
@@ -453,7 +474,7 @@ chain-of-thought leak / mid-sentence truncation fixed. Kill-switch:
 
 ---
 
-## ORIZONT 13–17 — Frontiere Noi (post-paritate, în scope v1.0) — 12/20
+## ORIZONT 13–17 — Frontiere Noi (post-paritate, în scope v1.0) — 14/20
 
 > **Status: formalizate în roadmap** (promovate din „propus" 2026-06-03) — **în scope-ul gate-ului 1.0.0**
 > alături de H10 + H11 + H12: **1.0 = tot backlogul terminat**, fără grabă pe tag. Bazat pe research-ul frontieră 2025-2026:
@@ -467,7 +488,7 @@ chain-of-thought leak / mid-sentence truncation fixed. Kill-switch:
 > pe GPU-ul idle. (2) **Guvernanță măsurabilă** — convertește „suntem alternativa guvernată la OpenClaw" dintr-un *claim* într-un
 > *badge CI verde* (AgentDojo). OpenClaw a devenit prima țintă infostealer (13-feb-2026) — anti-teza dovedită.
 
-### ORIZONT 13 — Plafonul de Capabilitate Locală (modele & inferență) — 0/4
+### ORIZONT 13 — Plafonul de Capabilitate Locală (modele & inferență) — 1/4
 
 | # | Item | S | P | Dep | Sursă |
 |---|------|---|---|-----|-------|
@@ -476,7 +497,7 @@ chain-of-thought leak / mid-sentence truncation fixed. Kill-switch:
 | H13.3 | **Speculative decoding** (draft Qwen3-4B → target 32B/gpt-oss) — 1.5-2.5× throughput interactiv, output identic, $0. | 5 | P2 | — | vLLM / llama.cpp |
 | H13.4 | **Refresh model default → MoE cu reasoning hibrid** (gpt-oss-20b / Qwen3-30B-A3B) — mod thinking/non-thinking poate colapsa tier-urile fast/deep într-un model. Apache-2.0. | 5 | P2 | — | gpt-oss, Qwen3 |
 
-### ORIZONT 14 — Memorie Vie (memorie temporală & auto-întreținută) — 0/4
+### ORIZONT 14 — Memorie Vie (memorie temporală & auto-întreținută) — 4/4 ✅
 
 > Extinde H8 (memorie personală, livrat). Rulează pe Neo4j + Ollama existente; majoritatea Apache-2.0.
 
@@ -487,7 +508,7 @@ chain-of-thought leak / mid-sentence truncation fixed. Kill-switch:
 | H14.3 ✅ | **Agent de consolidare „sleep-time" cu operații explicite** (Mem0-style ADD/UPDATE/DELETE/NOOP). **Done 2026-06-03:** `core/memory/consolidation.py` `ConsolidationEngine` — `decide`/`plan` per candidat vs memorii existente: ADD (nou), UPDATE (supersede same-key/near-duplicate), DELETE (negație/retractare detectată + match), NOOP (duplicat); similaritate Jaccard token (prag configurabil), detector de negație, decider LLM injectabil (fallback euristic); `plan` batch-aware (copie de lucru), `summarize`, `apply` la un store; endpoint `POST /api/memory/consolidate` (plan reversibil, fără mutație). +10 teste offline. | 8 | P2 | H5.15 | Mem0, Letta |
 | H14.4 ✅ | **Uitare cu decay + dependency-aware** (scor activare ACT-R în ranking + ștergere pe graf de dependențe care previne „recontaminarea"). **Done 2026-06-03:** `core/memory/decay.py` — `activation` base-level ACT-R `ln(Σ (now-t)^-d)` (recency+frecvență), `DecayMemory` (JSON file-backed) cu `add`/`access`/`score`/`ranking`/`forget_candidates(threshold)` + `forget` care șterge itemul *și dependenții tranzitivi* (anti-recontaminare); endpoints `GET /api/memory/decay/ranking`, `/candidates`, `POST /api/memory/decay/forget`. +6 teste offline. | 5 | P2 | H8.2 | ACT-R, arXiv:2602.17692 |
 
-### ORIZONT 15 — Computer-Use Guvernat (operează mașina) — 0/4
+### ORIZONT 15 — Computer-Use Guvernat (operează mașina) — 1/4
 
 > Inversul *guvernat* al shell-ului neguvernat OpenClaw. Maturitate onestă: ~1-din-6 task fail → asistă în spatele approval-queue, NU nesupravegheat.
 
@@ -498,7 +519,7 @@ chain-of-thought leak / mid-sentence truncation fixed. Kill-switch:
 | H15.3 | **Operator în desktop virtual izolat (PiP)** — OS curat, fără credențiale ambientale; acțiuni ireversibile gated; clasificator de injection pe screenshots. Claude computer-use = opt-in cloud. | 13 | P3 | H15.1 | UFO², Anthropic |
 | H15.4 ✅ | **Secret broker** — injectează credențiale la momentul acțiunii, în spatele aprobării; niciodată plaintext în contextul agentului. **Done 2026-06-03:** `core/security/secret_broker.py` `SecretBroker` (peste `SecretStore` criptat H12.1, fallback in-memory) — agentul vede doar handle-uri `{{secret:NAME}}` (`reference`), `inject(text, approved)` rezolvă valoarea DOAR cu aprobare (altfel placeholder, valoarea nu apare niciodată), `redact` maschează valori cunoscute (defense-in-depth), `names` fără valori; endpoints admin `POST/GET/DELETE /api/secrets/broker` + `/redact` (niciun endpoint nu întoarce plaintext). +7 teste offline. | 5 | P2 | H12.1 | OpenClaw (anti-teză) |
 
-### ORIZONT 16 — Cetățean al Web-ului Agentic (interop & standarde) — 0/4
+### ORIZONT 16 — Cetățean al Web-ului Agentic (interop & standarde) — 4/4 ✅
 
 > Standardele s-au așezat: **MCP** (agent→tool) + **A2A** (agent→agent, la Linux Foundation). Plățile agentice au sosit (AP2/ACP/x402).
 
@@ -509,7 +530,7 @@ chain-of-thought leak / mid-sentence truncation fixed. Kill-switch:
 | H16.3 ✅ | **Plăți agentice opt-in** prin abstracția mandate/cap/approval; plafoane *hard*; audit local non-repudiabil. **Done:** `core/payments.py` `PaymentBroker` — **mandate** cu plafon per-plată + plafon total + allowlist payee + monedă + expirare; fiecare plată e creată `pending` și **doar aprobarea explicită** o duce spre settle (fără auto-approve la nicio sumă); **plafoanele sunt absolute** (peste cap/payee nepermis/monedă greșită/expirat/peste total ⇒ *denied la creare*, nu devine niciodată pending); spend cumulativ nu poate depăși plafonul total (recheck la approve + settle); fiecare create/approve/reject/settle e scris în audit semnat (H17.4 IntentLog). **Rail-agnostic: niciun rail real, nu mișcă bani.** Endpoints admin `/api/payments/*`. +13 teste offline. | 8 | P3 | H6.2 | Google AP2, Stripe ACP |
 | H16.4 ✅ | **Triggere ambientale inbound** (webhooks → inbox; **surse semnate**). Extinde **H10.8**. **Done 2026-06-03:** semnare HMAC pe `core/webhooks.py` — `create(signed=True)` provizionează `signing_secret` (returnat o singură dată, mascat în list), `compute_signature` (HMAC-SHA256 `sha256=<hex>`), `verify_signature` (constant-time, peste raw body; acceptă și hexdigest gol); endpoint trigger: hook semnat ⇒ cere header `X-Signature-256` valid (token-ul NU bypassează); hook nesemnat ⇒ token ca înainte. Sursă atestată criptografic (stil GitHub/Stripe). +6 teste (provizionare, verify ok/tamper/bad/empty, mascare, round-trip endpoint). | 5 | P2 | H10.8 | LangChain ambient agents |
 
-### ORIZONT 17 — Încredere Demonstrabilă (siguranță pentru agenți always-on) — 0/4
+### ORIZONT 17 — Încredere Demonstrabilă (siguranță pentru agenți always-on) — 4/4 ✅
 
 > Cea mai on-mission pentru teza de încredere + wedge-ul anti-OpenClaw. Injection = nerezolvabil la nivel de model → **containment by-design + măsurare**.
 
@@ -561,6 +582,14 @@ chain-of-thought leak / mid-sentence truncation fixed. Kill-switch:
 > scrub-abil în timp — inspirat de „God's Eye View" (Bilawal Sidhu) și de patternurile Palantir (Gotham/AIP/
 > Ontology). **Spinele tehnic e livrat** (toate 5 layere, motorul 4D, calea de date Kafka→Redis/TimescaleDB
 > validată în CI vs TimescaleDB real, 58 teste unit + integrare). PR #163.
+>
+> **Deep review complet + merged (2026-06-08):** review post-merge al celor 33/33 (Critical: retention vs
+> reconstrucție; + fixuri pe ingestion/backend/frontend/integrare-JARVIS — commits `d162f1a`…`8fc6660`, PR #167),
+> CI integral verde inclusiv jobul TimescaleDB real. Două follow-up-uri rămase, trackuite ca GitHub issues:
+> **#169** (transportul MCP write-tool la runtime — invocarea `watch_aoi`/`reconstruct_event` din
+> `agents/core/mcp/client.py`; formatul de auth e închis & pinned cross-language, rămâne doar cablarea
+> clientului stdio) și **#170** (validarea pe Neo4j real a property-search-ului din KG sync). Launchere noi
+> **INSTALL.bat / START.bat** instalează + pornesc automat WorldView lângă JARVIS (PR #171).
 >
 > **Strategie & feature-pick:** [`worldview/docs/ROADMAP.md`](worldview/docs/ROADMAP.md) ·
 > **Planul de arhitectură & livrare (scale model, deep-dives, ADRs, exit gates):**

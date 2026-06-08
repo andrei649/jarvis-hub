@@ -3,8 +3,28 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { Icon, ICONS, Glyph } from './primitives';
 import { V2 } from './data';
+import { playTts } from './api/actions';
 
-function Conversation({ messages, thinking, onProv, t }) {
+/* Per-message TTS replay (🔊) — POST /tts {text,lang} → audio. Honest states: while
+   speaking shows ◼ (stop is best-effort via re-click), errors fall back silently to
+   the icon. voice.ts owns the live mic loop; this is just on-demand playback of a
+   single past reply, which the prototype was missing. */
+function TtsButton({ text, lang }) {
+  const [state, setState] = useState('idle'); // idle | playing | err
+  const play = () => {
+    if (state === 'playing' || !text) return;
+    setState('playing');
+    playTts(text, lang || 'en').then(() => setState('idle')).catch(() => setState('err'));
+  };
+  return (
+    <button className="mic" onClick={play} title={state==='err'?'TTS unavailable':'replay aloud'}
+      style={{ width: 22, height: 22, opacity: state==='playing'?1:.6, fontSize: 12, lineHeight: 1, color: state==='err'?'var(--amber)':undefined }}>
+      {state==='playing' ? '◼' : '🔊'}
+    </button>
+  );
+}
+
+function Conversation({ messages, thinking, onProv, lang, t }) {
   const endRef = useRef(null);
   useEffect(()=>{ if(endRef.current) endRef.current.scrollTop = endRef.current.scrollHeight; }, [messages, thinking]);
   return (
@@ -20,6 +40,7 @@ function Conversation({ messages, thinking, onProv, t }) {
               <span className="who">{(m.who||'jarvis').toUpperCase()}</span>
               <span className="role">{m.role_label||''}</span>
               <span className="ts">{m.ts||''}</span>
+              {m.text && m.who!=='system' && <span style={{marginLeft:'auto'}}><TtsButton text={m.text} lang={lang} /></span>}
             </div>
             <div className="bubble">{renderRich(m.text)}</div>
             {m.prov && (

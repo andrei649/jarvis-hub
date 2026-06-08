@@ -18,10 +18,23 @@ def client():
 
 
 def test_index_serves_html(client):
+    # `/` now serves the V2 cockpit by default (legacy HUD at /v1).
     resp = client.get("/")
     assert resp.status_code == 200
     assert resp.headers["content-type"].startswith("text/html")
-    assert "JARVIS HUB" in resp.text
+    assert "JARVIS" in resp.text
+
+
+def test_v1_serves_legacy_hud(client):
+    resp = client.get("/v1")
+    assert resp.status_code == 200
+    assert "JARVIS HUB" in resp.text  # legacy HUD title
+
+
+def test_v2_serves_cockpit(client):
+    resp = client.get("/v2")
+    assert resp.status_code == 200
+    assert "HUD v2" in resp.text
 
 
 def test_admin_serves_html(client):

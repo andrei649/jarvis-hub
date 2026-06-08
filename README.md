@@ -2,7 +2,7 @@
 
 ![Python 3.12](https://img.shields.io/badge/python-3.12-blue?logo=python&logoColor=white)
 ![License: MIT](https://img.shields.io/badge/license-MIT-green)
-![Tests](https://img.shields.io/badge/tests-1655%20passed-brightgreen?logo=pytest)
+![Tests](https://img.shields.io/badge/tests-1764%20passed-brightgreen?logo=pytest)
 ![Version](https://img.shields.io/badge/version-9.9.9-orange)
 
 > 16 specialized AI agents orchestrated through Jarvis, running on Bonobo WS + Pi 5, controlled by voice and web.
@@ -63,6 +63,10 @@ A personal AI mesh that handles the cross-section of Andrei's life: work at Raif
 - **Channels:** web (SSE), voice, telegram, discord, email, slack
 - **Security:** PII/secret scanner, SSRF protection, audit log (Merkle chain), guardrails (WARN/REDACT/BLOCK)
 
+### WorldView (4D OSINT) — companion stack
+
+A separate, self-contained **Next.js + Deck.gl + Fastify** stack under [`worldview/`](worldview/) (frontend `:3000`, API `:4000`, infra via Docker: Redpanda/TimescaleDB/Redis) — a time-scrubbable 3D globe fusing air/sea/space/cyber OSINT. It shares no runtime with `agents/`. `INSTALL.bat`/`START.bat` (and `install.sh`/`start.sh`) set it up and auto-start it alongside JARVIS; opt out with `JARVIS_WORLDVIEW=0`. The **Argus** agent queries it read-only and governed. No Mapbox token or API keys are needed for the demo (`npm run db:seed`). See [`worldview/README.md`](worldview/README.md).
+
 ## Run
 
 ### Windows 11 — one-click (no terminal needed)
@@ -72,8 +76,9 @@ A personal AI mesh that handles the cross-section of Andrei's life: work at Raif
    runs the tests. Double-click and follow the prompts.
 2. **`UPDATE.bat`** — double-click to pull the latest from GitHub, install
    dependencies, and run the tests. Run this whenever you want the newest version.
-3. **`START.bat`** — double-click to launch the server and open the HUD in your
-   browser. Keep its window open; close it to stop the server.
+3. **`START.bat`** — double-click to launch JARVIS (`:8080`) **and** WorldView
+   (the 4D OSINT globe at `:3000`) and open the HUD. Keep its window open; close
+   it to stop the server. WorldView opt-out: `set JARVIS_WORLDVIEW=0`.
 
 ### Manual (any OS)
 
@@ -81,12 +86,13 @@ A personal AI mesh that handles the cross-section of Andrei's life: work at Raif
 python3 -m venv .venv && source .venv/bin/activate   # Windows: .venv\Scripts\activate
 pip install -r requirements-beta.txt                 # one install — full feature set
 python serve.py              # → http://127.0.0.1:8080
-python -m pytest             # 1655 passed, 1 skipped
+python -m pytest             # 1764 passed, 1 skipped
 ```
 
 _Linux/macOS shortcut:_ `./install.sh` does all of the above (venv + install + tests); `./start.sh` launches the server.
 
-- **HUD:** http://127.0.0.1:8080/
+- **HUD:** http://127.0.0.1:8080/ — the **V2 cockpit** (primary HUD; legacy HUD at `/v1`, override with `JARVIS_HUD=v1`)
+- **WorldView (4D OSINT):** http://localhost:3000 (separate stack, auto-started by START.bat — see above)
 - **Admin panel:** http://127.0.0.1:8080/admin
 - **CLI REPL:** `python agents/run.py`
 
@@ -97,15 +103,17 @@ _Linux/macOS shortcut:_ `./install.sh` does all of the above (venv + install + t
 - **`JARVIS.md`** — architecture & directory structure · **`AGENTS.md`** — assistant conventions · **`BACKLOG.md`** — priorities & tasks.
 - **`GO_LIVE_PLAN.md`** — features + marketing brief + v1.0 launch checklist · **`docs/VALUATION_AND_PRICING.md`** — valuation, pricing & unit economics.
 - **`docs/MANUAL_TESTING.md`** — human pre-release checklist: everything the offline test suite can't verify (real LLMs, channels, services, HUD rendering).
+- **`docs/2026-06-08-future-developments-report.md`** — forward roadmap: remaining v1.0 gate, WorldView follow-ups, audit-debt hardening, post-1.0 horizons (Hermes, Cognition), and recommended sequencing.
+- **`worldview/README.md`** — the WorldView (4D OSINT) companion stack.
 
 ## Status
 
-**v9.9.9 — pre-1.0 audit gate.** 16 specialist agents (+ 17 bench) across 4 tiers; real-embeddings recall (LM Studio) + fused recall +
+**v9.9.9 — pre-1.0 audit gate.** 16 specialist agents (+ **Argus** for WorldView geoint; + 17 bench) across 4 tiers; real-embeddings recall (LM Studio) + fused recall +
 RAG injection; hot-path perf (SQLite WAL, event-loop offload, checkpoint debounce, query-embedding
 cache, complexity-based model tiering); autonomous proactive cortex (ORIZONT 6); security wedge (encrypted
 secrets, signed skills, reversible/irreversible approval split, quarantine/capability/kill-switch); competitive edge
 (workflow engine, model arena, quality monitor, review queue); living memory (bi-temporal KG, decay-forgetting,
-sleep-time consolidation). **1,655 tests passing.**
+sleep-time consolidation). **1,764 tests passing.**
 
 **Road to v1.0:** the feature backlog (H1–H9) plus the bulk of the competitive-edge and frontier work — the
 2026-06-03 wave across H10, H12, H14, H16, H17 — is code-complete: ~166/186 backlog items (≈82% by story

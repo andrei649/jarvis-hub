@@ -32,11 +32,19 @@ function ModeStub({ label }) {
   );
 }
 
+// Client-only UI prefs persisted to localStorage (mirrors v1). Pure look/feel —
+// no backend involved — so the HUD remembers density/scanline/dotgrid/theme across
+// reloads. Each is read lazily with a safe default and written back on change.
+const UI_PREFS = { look: 'obsidian', density: 'normal', scanline: 'on', dotgrid: 'off' };
+function loadPref(key, def) { try { return localStorage.getItem('hud.' + key) || def; } catch { return def; } }
+
 function App() {
-  // tweak axes (defaults; the design-only Tweaks panel is dropped per the plan —
-  // these become real persisted prefs in a later phase). Accent + language are
-  // user-changeable via the command palette / top bar.
-  const look = 'obsidian', density = 'normal', scanline = 'on', dotgrid = 'off';
+  // tweak axes — persisted client-side prefs (restored regression: v1 remembered
+  // these). Accent + language are user-changeable via the command palette / top bar.
+  const [look, setLook] = useState(() => loadPref('look', UI_PREFS.look));
+  const [density, setDensity] = useState(() => loadPref('density', UI_PREFS.density));
+  const [scanline, setScanline] = useState(() => loadPref('scanline', UI_PREFS.scanline));
+  const [dotgrid, setDotgrid] = useState(() => loadPref('dotgrid', UI_PREFS.dotgrid));
   // P5 — honor the OS reduced-motion preference (gates packets/ambient animation)
   const motion = (typeof window !== 'undefined' && window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches) ? 'calm' : 'lively';
   const ia = 'rail';
@@ -67,6 +75,7 @@ function App() {
   const [decisions, setDecisions] = useState(() => demo ? V2.DECISIONS.map((d, i) => ({ ...d, _id: 'd' + i })) : []);
   // P1 live-data state — empty by default (honest); demo pre-seeds, backend overwrites
   const [ticker, setTicker] = useState(demo ? V2.TICKER : []);
+  const [tasks, setTasks] = useState([]); // autonomy queue → network task-fan (/tasks)
   const [weather, setWeather] = useState(demo ? V2.WEATHER : null);
   const [calendar, setCalendar] = useState(demo ? V2.CALENDAR : []);
   const [heartbeat, setHeartbeat] = useState(demo ? V2.HEARTBEAT : []);
@@ -85,6 +94,10 @@ function App() {
   const liveModes = useLiveModes(); // P4: stream live data into the capability modes; reports which keys are live
   useEffect(() => { try { localStorage.setItem('hud.accent', accent); } catch { /* ignore */ } }, [accent]); // P5 persist
   useEffect(() => { try { localStorage.setItem('hud.lang', lang); } catch { /* ignore */ } }, [lang]);
+  useEffect(() => { try { localStorage.setItem('hud.look', look); } catch { /* ignore */ } }, [look]); // client-only UI prefs
+  useEffect(() => { try { localStorage.setItem('hud.density', density); } catch { /* ignore */ } }, [density]);
+  useEffect(() => { try { localStorage.setItem('hud.scanline', scanline); } catch { /* ignore */ } }, [scanline]);
+  useEffect(() => { try { localStorage.setItem('hud.dotgrid', dotgrid); } catch { /* ignore */ } }, [dotgrid]);
   useEffect(() => { try { localStorage.setItem('hud.demo', demo ? '1' : '0'); } catch { /* ignore */ } }, [demo]);
   useEffect(() => { try { localStorage.setItem('hud.voice', JSON.stringify(voiceCfg)); } catch { /* ignore */ } }, [voiceCfg]);
   // Re-seed (or clear) the demo-only cockpit corpus when DEMO toggles at runtime.
@@ -194,7 +207,7 @@ function App() {
         const d = await loadJarvisData(demo);
         if (!alive) return;
         setAgents(d.agents); baseAgents.current = d.agents;
-        setTicker(d.ticker); setWeather(d.weather); setCalendar(d.calendar);
+        setTicker(d.ticker); setTasks(Array.isArray(d.tasks) ? d.tasks : []); setWeather(d.weather); setCalendar(d.calendar);
         setHeartbeat(d.heartbeat); setSys(d.sys); setLive(!!d.live);
         setServerUp(!!d.serverUp); setLlm(d.llm || { state: 'unknown', model: null });
         if (d.trust) setTrust(d.trust);
@@ -238,7 +251,7 @@ function App() {
                   <div className="panel" style={{ flex: '1.3 1 0', minHeight: 0 }}>
                     <span className="bk tl"></span><span className="bk tr"></span><span className="bk bl"></span><span className="bk br"></span>
                     <div className="panel-head"><Icon d={ICONS.brain} size={14} /><span className="ttl">{t.network}</span><span className="st">focus mode</span></div>
-                    <NetworkBrain agents={agents} activeId={activeId} onSelect={(id) => setActiveId(id)}
+                    <NetworkBrain agents={agents} tasks={tasks} activeId={activeId} onSelect={(id) => setActiveId(id)}
                       focusId={focusId} setFocusId={setFocusId} motion={motion} t={t} />
                   </div>
                   <div className="panel" style={{ flex: '1 1 0', minHeight: 0 }}>
@@ -248,7 +261,7 @@ function App() {
                       <button className={'center-tab' + (centerTab === 'cognition' ? ' active' : '')} onClick={() => setCenterTab('cognition')}>{t.cognition}{trace && !thinking && <span className="pip"></span>}</button>
                     </div>
                     {centerTab === 'conversation'
-                      ? <Conversation messages={messages} thinking={thinking} onProv={setProvModal} t={t} />
+                      ? <Conversation messages={messages} thinking={thinking} onProv={setProvModal} lang={lang} t={t} />
                       : <CognitionStream trace={trace} t={t} />}
                     <InputBar onSubmit={submit} mic={voice.active} setMic={voice.toggle} voice={voice} cfg={voiceCfg} onCfg={setVoice} micMuted={trust.mic === 'off'} t={t} />
                   </div>
@@ -262,11 +275,11 @@ function App() {
               </div>
             ) : mode === 'chat' ? (
               <div className="workzone full" style={{ flex: 1, minHeight: 0 }}>
-                <ChatMode messages={messages} thinking={thinking} onSubmit={submit} onProv={setProvModal} mic={voice.active} setMic={voice.toggle} t={t} />
+                <ChatMode messages={messages} thinking={thinking} onSubmit={submit} onProv={setProvModal} mic={voice.active} setMic={voice.toggle} lang={lang} t={t} />
               </div>
             ) : (
               <div className="workzone full" style={{ flex: 1, minHeight: 0 }}>
-                {modeComponent(mode, t, { demo, live: liveModes.live, onDemo: () => setDemo(true) })}
+                {modeComponent(mode, t, { demo, live: liveModes.live, onDemo: () => setDemo(true), localPct, activeId, onOpen: (id) => { setActiveId(id); setDossier(id); } })}
               </div>
             )}
           </div>
@@ -279,8 +292,9 @@ function App() {
       <button className="tool-btn" onClick={() => setConsoleOpen(true)} title="console (`)"
         style={{ position: 'fixed', right: 16, bottom: 16, zIndex: 50 }}>▦ CONSOLE</button>
       <Palette open={palette} onClose={() => setPalette(false)} onMode={setMode}
-        setAccent={setAccent} setLang={setLang} onAmbient={() => { setPalette(false); setAmbient(true); }} t={t} />
-      {ambient && <Ambient onExit={() => setAmbient(false)} clock={clock} lang={lang} agents={agents} decisions={decisions} motion={motion} t={t} />}
+        setAccent={setAccent} setLang={setLang} onAmbient={() => { setPalette(false); setAmbient(true); }}
+        ui={{ density, setDensity, scanline, setScanline, dotgrid, setDotgrid }} t={t} />
+      {ambient && <Ambient onExit={() => setAmbient(false)} clock={clock} lang={lang} agents={agents} decisions={decisions} motion={motion} localPct={localPct} t={t} />}
     </div>
   );
 }
@@ -376,13 +390,13 @@ function ModeEmpty({ mode, onDemo }) {
 }
 
 function modeComponent(mode, t, ctx) {
-  const { demo, live, onDemo } = ctx || {};
+  const { demo, live, onDemo, localPct } = ctx || {};
   const keys = MODE_LIVE_KEYS[mode];
   // Honest gate: show real content only in DEMO, or when this mode's source is live.
   const isLive = demo || (keys && live && keys.some((k) => live[k]));
   if (!isLive) return <ModeEmpty mode={mode} onDemo={onDemo} />;
   switch (mode) {
-    case 'trust': return <TrustMode t={t} />;
+    case 'trust': return <TrustMode t={t} localPct={localPct} />;
     case 'memory': return <MemoryMode t={t} />;
     case 'autonomy': return <AutonomyMode t={t} />;
     case 'build': return <BuildMode t={t} />;

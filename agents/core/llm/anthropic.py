@@ -105,3 +105,7 @@ class ClaudeBackend(LLMBackend):
         except Exception as e:
             full = f"[Claude API stream error: {e}]"
         return full
+
+    async def aclose(self):
+        """Close the pooled httpx client (BUG-7)."""
+        await self.client.aclose()

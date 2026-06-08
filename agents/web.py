@@ -259,6 +259,10 @@ async def lifespan(application: FastAPI):
     # share these module globals and a prior teardown may have cleared them.
     if orch is not None:
         await orch.stop_channels()
+        # BUG-7 / NEW-1: release pooled httpx clients (LLM backends), MCP
+        # sessions and the autonomy sqlite queue so a closed app context
+        # (e.g. a TestClient context manager) does not leak them.
+        await orch.aclose()
     orch = None
     gateway = None
 
@@ -397,6 +401,7 @@ _AGENT_META = {
     "stark":      {"tier": "BIZ", "role": "Biz Intel"},
     "veronica":   {"tier": "BIZ", "role": "Content & Comms"},
     "vision":     {"tier": "BIZ", "role": "Deep Research / OSINT"},
+    "argus":      {"tier": "BIZ", "role": "Geospatial OSINT / Intel"},
     "steve":      {"tier": "SEC", "role": "CTO / Builds"},
     "oracle":     {"tier": "SEC", "role": "N8N Workflows"},
     "ultron":     {"tier": "SEC", "role": "Security & Automation"},
@@ -463,10 +468,10 @@ async def service_worker():
 
 @app.get("/", response_class=HTMLResponse)
 async def index():
-    # P6 cutover (opt-in, reversible): JARVIS_HUD=v2 serves the v2 HUD at / once
-    # you've verified it. Default keeps the current HUD; v2 is always at /v2 and
-    # the current HUD stays reachable at /v1.
-    if os.environ.get("JARVIS_HUD", "").lower() == "v2":
+    # The V2 cockpit is the PRIMARY HUD (default). Set JARVIS_HUD=v1 for the legacy
+    # HUD; v2 is always at /v2 and the legacy HUD always at /v1. Falls back to legacy
+    # if the v2 bundle hasn't been built.
+    if os.environ.get("JARVIS_HUD", "").lower() != "v1":
         v2_html = HERE / "v2" / "index.html"
         if v2_html.is_file():
             return HTMLResponse(v2_html.read_text(encoding="utf-8"))
@@ -2099,6 +2104,36 @@ async def autonomy_brief(kind: str = "morning"):
     from core.autonomy.digest import build_morning_brief, build_evening_retro
     text = (build_evening_retro if kind == "evening" else build_morning_brief)(orch.autonomy_queue)
     return _nocache_json({"kind": kind, "text": text})
+
+
+@app.get("/autonomy/mode", dependencies=[Depends(_admin_guard)])
+async def autonomy_get_mode():
+    """Current global autonomy mode (AUTO/ASK/OFF) — the HUD AutonomyMode control."""
+    if not orch:
+        return JSONResponse({"error": "not initialized"}, status_code=503)
+    mode = getattr(getattr(orch.autonomy, "policy", None), "mode", None) or orch.get_setting("autonomy.mode", "auto")
+    return _nocache_json({"mode": str(mode).lower()})
+
+
+class AutonomyModeBody(BaseModel):
+    mode: str
+
+
+@app.post("/autonomy/mode", dependencies=[Depends(_admin_guard)])
+async def autonomy_set_mode(body: AutonomyModeBody):
+    """Set the global autonomy mode. Persists the setting and applies it live:
+    auto = balanced; ask = side-effects wait for approval; off = nothing auto-runs
+    and the proactive loop is paused."""
+    if not orch:
+        return JSONResponse({"error": "not initialized"}, status_code=503)
+    mode = str(body.mode or "").lower()
+    if mode not in ("auto", "ask", "off"):
+        return JSONResponse({"error": "mode must be auto|ask|off"}, status_code=422)
+    from core.settings_db import put_category
+    put_category("autonomy", {"mode": mode})  # persist (read back by the autonomy loop)
+    if getattr(orch.autonomy, "policy", None) is not None:
+        orch.autonomy.policy.mode = mode      # apply immediately
+    return _nocache_json({"mode": mode, "ok": True})
 
 
 @app.get("/autonomy/preferences/suggestions", dependencies=[Depends(_admin_guard)])

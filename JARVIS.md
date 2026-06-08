@@ -4,6 +4,8 @@
 
 Jarvis is a local-first multi-agent AI orchestration system. 16 agents across 4 tiers, coordinated by Jarvis (prime orchestrator). Pure Python, runs on Windows via LM Studio with GPU acceleration (RTX 5090 24GB VRAM, 192GB DDR5).
 
+> **Related stack — WorldView (4D OSINT):** a separate, self-contained Next.js + Fastify product under [`worldview/`](worldview/) (ports 3000/4000, Docker infra) that shares **no runtime** with this Python system. The **Argus** agent (`agents/argus/`) is the read-only, governed bridge between JARVIS and WorldView. It is installed and auto-started by `INSTALL.bat`/`START.bat`. See [`worldview/README.md`](worldview/README.md).
+
 **Stack:** Python 3.12 + FastAPI + LM Studio (OpenAI-compatible API)  
 **Server:** http://127.0.0.1:8080  
 **Model:** auto-detected from the model actually loaded in LM Studio/Ollama at startup (`LLMRouter.detect`); falls back to `/admin → llm.default_model` (default `google/gemma-4-31b-a4b`)  
@@ -198,13 +200,13 @@ curl.exe http://127.0.0.1:8080/status
 
 ## Quick Stats
 
-- 15 active agents, 15 bench (reserved)
+- 17 active agents (incl. Argus, the WorldView geoint bridge), bench reserved
 - 34 models downloaded (1.24 TB total)
 - ~203 HTTP routes (full index in docs/ARCHITECTURE.md)
 - 7 ported features from OpenJarvis (security, skills, sandbox, multi-channel, bench, learning, streaming)
 - VRAM: ~17 GB used by primary model, ~7 GB free
 - Response time: ~4-5s per query (fast slot); deep slot trades latency for reasoning depth
-- **Tests: 1,655 passed, 1 skipped** (offline suite)
+- **Tests: 1,764 passed, 1 skipped** (offline suite)
 - Horizons done: H1–H7 (foundation → autonomy → perf hot-path); **active: ORIZONT 8 (personal memory)**
 
 ---

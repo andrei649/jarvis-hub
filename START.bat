@@ -37,8 +37,10 @@ if /I "%JARVIS_WORLDVIEW%"=="0" (
 )
 
 echo.
+REM HUD-ul V2 (cockpit) e cel principal de acum inainte; suprascrie cu  set JARVIS_HUD=v1  pentru cel vechi.
+if not defined JARVIS_HUD set "JARVIS_HUD=v2"
 echo Pornesc serverul pe http://127.0.0.1:8080
-echo HUD:   http://127.0.0.1:8080/
+echo HUD:   http://127.0.0.1:8080/   ^(V2 cockpit; HUD vechi la /v1^)
 echo Admin: http://127.0.0.1:8080/admin
 echo.
 echo (Lasa aceasta fereastra deschisa. Inchide-o ca sa opresti serverul.)

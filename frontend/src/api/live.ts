@@ -108,7 +108,8 @@ export function useLiveModes(): LiveModes {
       }).catch(() => {});
       await apiGet('/plugins').then((p: any) => {
         const plugins = arr(p, 'plugins');
-        if (plugins && plugins.length) { set('ADMIN', { ...V2.ADMIN, plugins: plugins.map((x: any) => ({ name: x.name || x.id, scope: (x.allowed_domains && x.allowed_domains[0]) || x.scope || x.network_access || '', net: String(x.network_access || x.net || '').toLowerCase(), on: x.enabled !== false })) }); mark('ADMIN'); }
+        // Preserve the backend plugin `id` so AdminMode can PUT /plugins/{id}/toggle.
+        if (plugins && plugins.length) { set('ADMIN', { ...V2.ADMIN, plugins: plugins.map((x: any) => ({ id: x.id || x.name, name: x.name || x.id, scope: (x.allowed_domains && x.allowed_domains[0]) || x.scope || x.network_access || '', net: String(x.network_access || x.net || '').toLowerCase(), on: x.enabled !== false })) }); mark('ADMIN'); }
       }).catch(() => {});
 
       if (alive && changed) setVer((v) => v + 1);

@@ -38,6 +38,10 @@ INVALID_CNP = "1960620054675"    # wrong control digit
 VALID_IBAN = "RO49AAAA1B31007593840000"
 INVALID_IBAN = "RO49AAAA1B31007593840001"
 
+# Real OpenAI keys are ≥40 chars after the `sk-` prefix (HF-3). Mixed-case +
+# digits so it's unambiguously key-shaped.
+OPENAI_KEY = "sk-" + "A1b2C3d4E5f6G7h8I9j0K1l2M3n4O5p6Q7r8S9t0"
+
 
 def _names(result):
     return {f.pattern_name for f in result.findings}
@@ -49,7 +53,7 @@ class TestSecretScanner:
     def test_detects_common_secrets(self):
         s = SecretScanner()
         samples = {
-            "openai_key": "sk-abcdefghijklmnopqrstuvwxyz0123",
+            "openai_key": OPENAI_KEY,
             "anthropic_key": "sk-ant-abcdefghijklmnopqrstuvwxyz",
             "aws_access_key": "AKIAIOSFODNN7EXAMPLE",
             "github_token": "ghp_" + "a" * 36,
@@ -77,10 +81,77 @@ class TestSecretScanner:
 
     def test_redaction_removes_secret(self):
         s = SecretScanner()
-        text = "my key is sk-abcdefghijklmnopqrstuvwxyz0123 ok"
+        text = f"my key is {OPENAI_KEY} ok"
         redacted = s.redact(text)
-        assert "sk-abcdefghijklmnopqrstuvwxyz0123" not in redacted
+        assert OPENAI_KEY not in redacted
         assert "[REDACTED:openai_key]" in redacted
+
+    # ── HF-3: tightened/added secret patterns ──────────────────────────────
+
+    def test_real_openai_key_detected(self):
+        """A ≥40-char OpenAI key fires `openai_key`, not just the catch-all."""
+        names = _names(SecretScanner().scan(f"OPENAI_API_KEY={OPENAI_KEY}"))
+        assert "openai_key" in names
+
+    def test_short_sk_token_not_openai(self):
+        """A short `sk-xxx` token must NOT false-positive as an OpenAI key.
+
+        Real keys are ≥40 chars; a 20-something-char `sk-` prefixed slug is
+        almost certainly not a credential, so the specific detector stays quiet.
+        """
+        short = "sk-abcdefghijklmnopqrst"  # 20 chars after the prefix
+        names = _names(SecretScanner().scan(f"see {short} here"))
+        assert "openai_key" not in names
+
+    def test_gcp_service_account_detected(self):
+        """A GCP service-account JSON key blob is detected by its signature."""
+        blob = (
+            '{\n'
+            '  "type": "service_account",\n'
+            '  "project_id": "demo-123",\n'
+            '  "private_key": "-----BEGIN PRIVATE KEY-----\\nMIIabc\\n-----END...",\n'
+            '  "client_email": "svc@demo-123.iam.gserviceaccount.com"\n'
+            '}'
+        )
+        names = _names(SecretScanner().scan(blob))
+        assert "gcp_service_account" in names
+
+    def test_db_connection_string_requires_credentials(self):
+        s = SecretScanner()
+        # Credential-bearing URL → flagged.
+        assert "db_connection_string" in _names(
+            s.scan("DATABASE_URL=postgres://user:s3cr3t@db.host:5432/app")
+        )
+        # Bare scheme://host with no embedded creds → not flagged (low noise).
+        assert "db_connection_string" not in _names(
+            s.scan("connect to redis://cache.local:6379/0")
+        )
+
+    def test_entropy_heuristic_catches_random_token_not_prose(self):
+        s = SecretScanner()
+        # A random 40-char mixed token → caught by the entropy catch-all.
+        random_token = "Zk7Qp2Lm9Xr4Tv1Bn6Wc3Yd8Fg5Hj0Es2Au4Io9z"
+        assert "high_entropy_secret" in _names(s.scan(f"token {random_token}"))
+        # English prose, even long, stays clean (low per-char entropy, spaced).
+        prose = (
+            "the quick brown fox jumps over the lazy dog while the sun sets "
+            "slowly behind the rolling green hills of the countryside"
+        )
+        assert "high_entropy_secret" not in _names(s.scan(prose))
+
+    def test_entropy_validator_direct(self):
+        from agents.core.security.scanner import (
+            looks_like_high_entropy_secret,
+            shannon_entropy,
+        )
+        assert looks_like_high_entropy_secret("Zk7Qp2Lm9Xr4Tv1Bn6Wc3Yd8Fg5Hj0Es2Au4Io9z")
+        # A 40-char all-lowercase slug is low-diversity → not a secret.
+        assert not looks_like_high_entropy_secret("a" * 40)
+        assert not looks_like_high_entropy_secret(
+            "this is just an ordinary english sentence here"
+        )
+        assert shannon_entropy("") == 0.0
+        assert shannon_entropy("aaaa") == 0.0
 
 
 # ── PIIScanner: existing patterns (regression) ──────────────────────────────────

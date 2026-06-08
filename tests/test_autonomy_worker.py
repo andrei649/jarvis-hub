@@ -126,12 +126,46 @@ async def test_apply_decision_reject(q):
 
 @pytest.mark.asyncio
 async def test_apply_decision_edit_updates_payload(q):
+    # An edit whose edited payload clears policy approves normally. The task
+    # starts BLOCKED; editing it to an explicitly read-only payload re-gates to
+    # ACT (BUG-11), so it transitions BLOCKED → APPROVED with the new payload.
     w = make_worker(q)
     task = await w.submit("jarvis", "delete_file", "Delete", payload={"path": "/old"})
-    await w.apply_decision(task.id, "edit", decided_by="andrei", payload={"path": "/new"})
+    assert q.get(task.id).status == "blocked"
+    await w.apply_decision(
+        task.id, "edit", decided_by="andrei",
+        payload={"path": "/new", "risk_tier": "read_only"},
+    )
     t = q.get(task.id)
     assert t.status == "approved"
-    assert t.payload == {"path": "/new"}
+    assert t.payload == {"path": "/new", "risk_tier": "read_only"}
+
+
+@pytest.mark.asyncio
+async def test_edit_to_irreversible_stays_blocked(q):
+    """BUG-11: editing a blocked task toward an irreversible payload (without
+    raising any amount) must re-gate the full payload and stay BLOCKED — the old
+    amount-only check would have auto-approved it under the original decision.
+    Also asserts the edited payload is still persisted, and the card re-pushed."""
+    pushed = []
+
+    async def notifier(task):
+        pushed.append(task.id)
+        return True
+
+    w = make_worker(q, notifier=notifier)
+    task = await w.submit("jarvis", "delete_file", "Delete logs", payload={"path": "/logs"})
+    assert q.get(task.id).status == "blocked"
+    pushed.clear()  # ignore the submit-time push; assert on the re-push below
+    # Edit toward an explicitly irreversible action with no amount change.
+    await w.apply_decision(
+        task.id, "edit", decided_by="andrei",
+        payload={"path": "/etc", "risk_tier": "irreversible"},
+    )
+    t = q.get(task.id)
+    assert t.status == "blocked"                    # re-gated → still needs approval
+    assert t.payload == {"path": "/etc", "risk_tier": "irreversible"}
+    assert pushed == [task.id]                       # fresh decision card re-pushed
 
 
 @pytest.mark.asyncio

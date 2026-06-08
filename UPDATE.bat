@@ -1,10 +1,10 @@
 @echo off
 REM ============================================================
 REM  JARVIS HUB - UPDATE & TEST  (Windows 11, double-click)
-REM  Pulls latest from GitHub, installs deps, runs the tests.
+REM  Pulls latest from GitHub, installs deps (JARVIS + WorldView), runs the tests.
 REM  No terminal knowledge needed - just double-click this file.
 REM ============================================================
-setlocal
+setlocal enabledelayedexpansion
 cd /d "%~dp0"
 title JARVIS HUB - Update ^& Test
 
@@ -44,13 +44,30 @@ if not exist ".venv\Scripts\python.exe" (
 )
 set "VPY=.venv\Scripts\python.exe"
 
-echo [3/4] Instalez dependentele...
+echo [3/5] Instalez dependentele JARVIS...
 "%VPY%" -m pip install --quiet --upgrade pip
 "%VPY%" -m pip install --quiet -r requirements-beta.txt
 echo.
 
-REM --- 4. Run the tests ---------------------------------------
-echo [4/4] Rulez testele...
+REM --- 4. WorldView: refresh dependinte Node (daca exista) ----
+echo [4/5] WorldView: actualizez dependintele Node...
+if exist "worldview\package.json" (
+  where npm >nul 2>&1
+  if !errorlevel!==0 (
+    pushd worldview
+    call npm install
+    popd
+    echo   [OK] WorldView actualizat.
+  ) else (
+    echo   [SKIP] npm negasit - sar peste WorldView ^(JARVIS e actualizat^).
+  )
+) else (
+  echo   [SKIP] worldview lipseste in acest checkout.
+)
+echo.
+
+REM --- 5. Run the tests ---------------------------------------
+echo [5/5] Rulez testele...
 echo ------------------------------------------------------------
 "%VPY%" -m pytest -q
 set "TESTRC=%errorlevel%"

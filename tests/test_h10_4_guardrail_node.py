@@ -11,7 +11,10 @@ from agents.core.workflows.guardrail_node import apply_guardrail
 from agents.core.workflows.engine import WorkflowEngine
 from agents.core.workflows.pipeline import Pipeline, WorkflowStep
 
-SECRET = "key is sk-abcdefghijklmnopqrstuvwxyz123456"
+# Real OpenAI keys are ≥40 chars after the `sk-` prefix (HF-3 tightened the
+# `openai_key` pattern so short `sk-` slugs no longer false-positive).
+_OPENAI_KEY = "sk-A1b2C3d4E5f6G7h8I9j0K1l2M3n4O5p6Q7r8S9t0"
+SECRET = f"key is {_OPENAI_KEY}"
 EMAIL = "reach me at bob@example.com please"
 CLEAN = "just a normal sentence"
 
@@ -31,7 +34,7 @@ def test_warn_passes_through_with_findings():
 
 def test_redact_masks_value():
     out, info = apply_guardrail({"mode": "redact", "scanners": ["secret"]}, SECRET)
-    assert "sk-abcdefghijklmnopqrstuvwxyz123456" not in out
+    assert _OPENAI_KEY not in out
     assert info["action"] == "redact"
 
 
@@ -86,5 +89,5 @@ async def test_guardrail_redact_lets_pipeline_continue():
                      kind="guardrail", guardrail={"mode": "redact"}),
     ])
     ctx = await WorkflowEngine(_LeakyOrch()).run(p, "go")
-    assert "sk-abcdefghijklmnopqrstuvwxyz123456" not in ctx["gate"]
+    assert _OPENAI_KEY not in ctx["gate"]
     assert ctx["_ok"] is True

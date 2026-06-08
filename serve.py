@@ -26,6 +26,13 @@ try:
     import uvicorn
 except ImportError:
     missing.append("uvicorn")
+try:
+    # Hard-imported at module load by agents/core/plugins/oauth.py (pulled in via
+    # the orchestrator); without it boot crashes with an opaque ImportError
+    # instead of the friendly hint below.
+    import cryptography.fernet  # noqa: F401  (availability probe, like the imports above)
+except ImportError:
+    missing.append("cryptography")
 
 if missing:
     print(f"Missing dependencies: {', '.join(missing)}")

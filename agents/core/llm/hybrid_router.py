@@ -318,3 +318,18 @@ class HybridRouter(LLMRouter):
     def get_route_name(self, agent_id: str, prompt: str) -> str:
         _, _, route = self.select_backend(agent_id, prompt)
         return route
+
+    async def aclose(self) -> None:
+        """Close every backend's HTTP client pool (BUG-7).
+
+        The base class only closes the local LM Studio / Ollama backend; the
+        hybrid router also owns Gemini, Claude and the Howard/Ollama backends,
+        each holding a pooled httpx.AsyncClient. Best-effort: `_close_backend`
+        swallows per-backend errors so shutdown never raises.
+        """
+        await super().aclose()
+        for attr in ("_gemini_backend", "_claude_backend", "_ollama_backend"):
+            backend = getattr(self, attr, None)
+            if backend is not None:
+                await self._close_backend(backend)
+                setattr(self, attr, None)
