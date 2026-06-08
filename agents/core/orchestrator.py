@@ -782,6 +782,10 @@ class Orchestrator:
             interval = int(self.get_setting("system.autonomy_tick", 60) or 60)
             await asyncio.sleep(max(15, interval))
             try:
+                # Sync the live autonomy mode (HUD AUTO/ASK/OFF) onto the policy each tick.
+                amode = str(self.get_setting("autonomy.mode", "auto") or "auto").lower()
+                if self.autonomy and self.autonomy.policy.mode != amode:
+                    self.autonomy.policy.mode = amode
                 max_tier = None
                 if self.get_setting("autonomy.night_shift", False):
                     start = int(self.get_setting("autonomy.night_start", 23) or 23)
@@ -789,12 +793,14 @@ class Orchestrator:
                     if is_night_window(datetime.now().hour, start, end):
                         max_tier = 1  # reversible/read-only only
                 await self.autonomy.tick(max_tier=max_tier)
-                # Sample the host and turn state changes into gated tasks.
-                if self.observer and self.get_setting("system.observer_enabled", True):
-                    await self.observer.observe()
-                # Sample personal events (Antigravity watchers)
-                if self.event_watcher and self.get_setting("system.watchers_enabled", True):
-                    await self.event_watcher.observe()
+                # Proactive passes self-generate new tasks — paused entirely in OFF mode.
+                if amode != "off":
+                    # Sample the host and turn state changes into gated tasks.
+                    if self.observer and self.get_setting("system.observer_enabled", True):
+                        await self.observer.observe()
+                    # Sample personal events (Antigravity watchers)
+                    if self.event_watcher and self.get_setting("system.watchers_enabled", True):
+                        await self.event_watcher.observe()
                 # Nightly reflection & graph consolidation (H5.15)
                 if self.reflector and self.get_setting("system.reflection_enabled", True):
                     if is_night_window(datetime.now().hour, start=22, end=7):

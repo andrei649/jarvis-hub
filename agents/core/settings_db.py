@@ -123,6 +123,7 @@ DEFAULTS: list[dict[str, Any]] = [
     # mcp
     dict(category="mcp",     key="servers",          value=[],                    label="MCP servers",        kind="json"),
     # autonomy — Proactive Cortex (ORIZONT 6)
+    dict(category="autonomy", key="mode",            value="auto", label="Autonomy mode (AUTO/ASK/OFF)", kind="select", opts=["auto","ask","off"]),
     dict(category="autonomy", key="owner_chat_id",   value="",     label="Owner Telegram chat ID", kind="text"),
     dict(category="autonomy", key="cap_per_action",  value=50,     label="Money cap per action", kind="number"),
     dict(category="autonomy", key="daily_ceiling",   value=200,    label="Money daily ceiling",  kind="number"),

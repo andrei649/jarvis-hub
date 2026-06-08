@@ -82,6 +82,12 @@ class Decision:
 class AutonomyPolicy:
     """Balanced-by-default autonomy policy."""
 
+    # Global autonomy mode (HUD AUTO/ASK/OFF):
+    #   "auto" — balanced default (per-tier outcomes below).
+    #   "ask"  — anything with a side-effect waits for approval (pure reads still act).
+    #   "off"  — nothing auto-executes (every decision → ASK); the proactive loop is
+    #            also paused upstream (orchestrator skips the observe pass).
+    mode: str = "auto"
     # Money guardrails (same currency as the action's `amount`).
     cap_per_action: float = 50.0
     daily_ceiling: float = 200.0
@@ -153,6 +159,13 @@ class AutonomyPolicy:
     # ── decision ──────────────────────────────────────────────────
     def decide(self, action: dict) -> Decision:
         tier = self.classify(action)
+        # Global mode gate (HUD AUTO/ASK/OFF). OFF makes everything wait; ASK makes
+        # everything with a side-effect wait (pure READ_ONLY still auto-acts). AUTO
+        # falls through to the balanced per-tier logic below.
+        if self.mode == "off":
+            return Decision(ASK, tier, "autonomy mode=off → ask", urgent=False)
+        if self.mode == "ask" and tier != RiskTier.READ_ONLY:
+            return Decision(ASK, tier, "autonomy mode=ask → ask", urgent=False)
         # Money special-case: auto-act if within per-action cap AND daily budget.
         amount = _num(action.get("amount"))
         if tier == RiskTier.IRREVERSIBLE_OR_MONEY and amount > 0:

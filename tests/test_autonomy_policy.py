@@ -112,3 +112,27 @@ class TestSpendConcurrency:
             t.join()
 
         assert policy._spent_today == pytest.approx(threads_count * per_thread)
+
+
+class TestAutonomyMode:
+    """Global AUTO/ASK/OFF mode gate (HUD AutonomyMode control)."""
+
+    def test_auto_mode_is_default_balanced(self):
+        p = AutonomyPolicy()
+        assert p.mode == "auto"
+        # READ_ONLY auto-acts under the balanced default.
+        assert p.decide({"kind": "summarize_inbox"}).outcome == ACT
+
+    def test_ask_mode_holds_side_effects_but_lets_reads_through(self):
+        p = AutonomyPolicy(mode="ask")
+        # A pure read still acts...
+        assert p.decide({"risk_tier": "read_only"}).outcome == ACT
+        # ...but anything with a side-effect (reversible/external/irreversible) waits.
+        assert p.decide({"risk_tier": "reversible"}).outcome == ASK
+        assert p.decide({"kind": "send_email"}).outcome == ASK
+        assert p.decide({"kind": "pay", "amount": 5}).outcome == ASK
+
+    def test_off_mode_blocks_everything(self):
+        p = AutonomyPolicy(mode="off")
+        for action in ({"risk_tier": "read_only"}, {"kind": "send_email"}, {"kind": "pay", "amount": 1}):
+            assert p.decide(action).outcome == ASK

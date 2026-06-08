@@ -1,14 +1,15 @@
 // @ts-nocheck
-import React, { useState as uS3 } from 'react';
+import React, { useState as uS3, useEffect as uE3 } from 'react';
 import { V2, Conversation, InputBar } from './ui';
 import { Icon as Ic3, ICONS as IK3, Glyph as Gl3, statusClass as sc3 } from './ui';
+import { togglePlugin } from './api/actions';
+import { RoomsPanel } from './gap';
 /* HUD v2 · MODES III — Chat (focus), Comms, Admin */
 
 function SubH3({ children, style }){ return <div className="sub-h" style={style}>{children}</div>; }
 
 /* ============ CHAT · distraction-free ============ */
-function ChatMode({ messages, thinking, onSubmit, onProv, mic, setMic, t }){
-  const Conversation = Conversation, InputBar = InputBar;
+function ChatMode({ messages, thinking, onSubmit, onProv, mic, setMic, lang, t }){
   return (
     <div className="chat-wrap">
       <div className="chat-col">
@@ -17,7 +18,7 @@ function ChatMode({ messages, thinking, onSubmit, onProv, mic, setMic, t }){
           <div><div className="chat-title">{t.directLine} · JARVIS</div><div className="chat-sub">{t.focusHintChat}</div></div>
           <span className="chat-live"><span className="sdot active"></span>local</span>
         </div>
-        <Conversation messages={messages} thinking={thinking} onProv={onProv} t={t}/>
+        <Conversation messages={messages} thinking={thinking} onProv={onProv} lang={lang} t={t}/>
         <InputBar onSubmit={onSubmit} mic={mic} setMic={setMic} t={t}/>
       </div>
     </div>
@@ -63,10 +64,18 @@ function CommsMode({ t }){
             <div className="cr-subj">{active.subj}</div>
             <div className="cr-from">{active.from} · {active.ts}</div>
             <div className="cr-body">{active.preview}</div>
+            {/* The unified inbox threads (email/telegram/whatsapp) are a seeded preview —
+                no backend wires per-channel Reply/Hand/Archive yet, so these are DISABLED
+                (never no-op buttons that look live). Real multi-agent messaging lives in
+                the Rooms backend below (/api/rooms/*), reused from the live Console. */}
             <div className="cr-actions">
-              <button className="cr-btn primary">Reply via {active.channel}</button>
-              <button className="cr-btn">Hand to agent</button>
-              <button className="cr-btn">Archive</button>
+              <button className="cr-btn primary" disabled title="not connected — no per-channel reply backend yet" style={{opacity:.5,cursor:'not-allowed'}}>Reply via {active.channel}</button>
+              <button className="cr-btn" disabled title="not connected — channel inbox is a preview" style={{opacity:.5,cursor:'not-allowed'}}>Hand to agent</button>
+              <button className="cr-btn" disabled title="not connected — channel inbox is a preview" style={{opacity:.5,cursor:'not-allowed'}}>Archive</button>
+            </div>
+            <div style={{marginTop:'var(--gap)'}}>
+              <div className="sub-h" style={{marginBottom:8}}>LIVE ROOMS · multi-agent messaging (real backend)</div>
+              <RoomsPanel />
             </div>
           </>)}
         </div>
@@ -79,7 +88,20 @@ function CommsMode({ t }){
 function AdminMode({ t }){
   const A = V2.ADMIN;
   const [plugins,setPlugins]=uS3(A.plugins);
-  const togglePlugin = i => setPlugins(ps=>ps.map((p,j)=>j===i?{...p,on:!p.on}:p));
+  // Keep local plugin list in sync if live.ts swaps in the real registry after mount.
+  uE3(() => { setPlugins(A.plugins); }, [A.plugins]);
+  // REAL toggle: PUT /plugins/{id}/toggle flips enabled on the backend. The seeded
+  // DEMO plugins carry no `id`, so those flip locally only (preview); real plugins
+  // (id present) post and reconcile to the server's returned `enabled` (revert on fail).
+  const onToggle = i => {
+    const p = plugins[i];
+    const next = !p.on;
+    setPlugins(ps=>ps.map((x,j)=>j===i?{...x,on:next}:x)); // optimistic
+    if (!p.id) return; // demo/seed row — no backend id, preview only
+    togglePlugin(p.id)
+      .then((r) => { if (r && typeof r.enabled === 'boolean') setPlugins(ps=>ps.map((x,j)=>j===i?{...x,on:r.enabled}:x)); })
+      .catch(() => setPlugins(ps=>ps.map((x,j)=>j===i?{...x,on:!next}:x))); // revert on failure
+  };
   return (
     <div className="panel scroll" style={{flex:1}}>
       <span className="bk tl"></span><span className="bk tr"></span><span className="bk bl"></span><span className="bk br"></span>
@@ -111,7 +133,7 @@ function AdminMode({ t }){
             {plugins.map((p,i)=>(
               <div className="plg-row" key={i}>
                 <div><div className="plg-name">{p.name}</div><div className="plg-scope">{p.scope}<span className={'plg-net '+p.net}>{p.net}</span></div></div>
-                <button className={'twk-mini '+(p.on?'on':'')} onClick={()=>togglePlugin(i)}><i></i></button>
+                <button className={'twk-mini '+(p.on?'on':'')} onClick={()=>onToggle(i)} title={p.id?(p.on?'disable plugin':'enable plugin'):'demo plugin — preview only'}><i></i></button>
               </div>
             ))}
             <SubH3 style={{marginTop:16}}>CHANNELS</SubH3>

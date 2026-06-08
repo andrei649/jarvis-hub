@@ -1,7 +1,8 @@
 // @ts-nocheck
-import React, { useState as uS2 } from 'react';
+import React, { useState as uS2, useEffect as uE2 } from 'react';
 import { V2, Conversation, InputBar } from './ui';
 import { Icon as Ic, ICONS as IK, Glyph as Gl } from './ui';
+import { installSkill, getAutonomyMode, setAutonomyMode } from './api/actions';
 /* HUD v2 · MODES II — Autonomy, Build, Observe, Interop */
 
 function ModePanel({ icon, title, status, children }){
@@ -18,8 +19,21 @@ function SubH({ children }){ return <div className="sub-h">{children}</div>; }
 /* ============ AUTONOMY ============ */
 function AutonomyMode({ t }){
   const A = V2.AUTONOMY;
-  const [policies,setPolicies]=uS2(A.policies);
-  const cycle = i => setPolicies(ps=>ps.map((p,j)=> j===i ? {...p, mode: p.mode==='auto'?'ask':p.mode==='ask'?'off':'auto'} : p));
+  const policies = A.policies;
+  // LIVE global autonomy mode (AUTO/ASK/OFF) ↔ GET/POST /autonomy/mode. AUTO =
+  // balanced; ASK = side-effects wait for approval; OFF = nothing auto-runs +
+  // the proactive loop is paused. Per-agent rows below are informational.
+  const [mode, setMode] = uS2(null);     // null until loaded
+  const [busy, setBusy] = uS2(false);
+  uE2(()=>{ let ok=true; getAutonomyMode().then(r=>{ if(ok&&r&&r.mode) setMode(String(r.mode).toLowerCase()); }).catch(()=>{}); return ()=>{ok=false;}; }, []);
+  const choose = async (m)=>{
+    if(busy||m===mode) return;
+    const prev = mode; setMode(m); setBusy(true);
+    try { const r = await setAutonomyMode(m); if(r&&r.mode) setMode(String(r.mode).toLowerCase()); }
+    catch { setMode(prev); }   // revert on failure (e.g. needs admin token)
+    finally { setBusy(false); }
+  };
+  const MODES = ['auto','ask','off'];
   return (
     <ModePanel icon="autonomy" title={t.autonomy} status="observer running">
       <div className="auto-grid">
@@ -39,15 +53,24 @@ function AutonomyMode({ t }){
           ))}
         </div>
         <div>
-          <SubH>AUTONOMY POLICIES · what each agent may do unattended</SubH>
+          <SubH>AUTONOMY MODE · global · {mode==null?'…':mode.toUpperCase()}</SubH>
+          <div className="amode-row" role="group" aria-label="autonomy mode" style={{display:'flex',gap:6,marginBottom:6}}>
+            {MODES.map(m=>(
+              <button key={m} className={'pmode '+m+(mode===m?' on':'')} aria-pressed={mode===m}
+                disabled={busy||mode==null} onClick={()=>choose(m)}
+                title={m==='auto'?'balanced — low-risk acts, risky asks':m==='ask'?'everything with a side-effect waits for approval':'nothing auto-runs; proactive loop paused'}
+                style={mode===m?{}:{opacity:.7}}>{m.toUpperCase()}</button>
+            ))}
+          </div>
+          <div className="pol-note">Global <b>AUTO / ASK / OFF</b> (live). Per-task approvals run via the Console (accept / edit / reject / defer).</div>
+          <SubH style={{marginTop:14}}>PER-AGENT SCOPE · reference</SubH>
           {policies.map((p,i)=>(
             <div className="pol-row" key={i}>
               <span className="pag"><Gl id={p.agent} size={14}/>{p.agent}</span>
               <div className="pscope"><div>{p.scope}</div><div className="pbud">{p.budget} · {p.used}</div></div>
-              <button className={'pmode '+p.mode} onClick={()=>cycle(i)} title="click to change">{p.mode.toUpperCase()}</button>
+              <span className={'pmode '+p.mode} style={{opacity:.55}}>{p.mode.toUpperCase()}</span>
             </div>
           ))}
-          <div className="pol-note">Tap a mode to cycle <b>AUTO → ASK → OFF</b>. Budgeted actions log to the audit chain.</div>
         </div>
       </div>
     </ModePanel>
@@ -59,7 +82,21 @@ function BuildMode({ t }){
   const B = V2.BUILD;
   const W = B.workflow;
   const [skills,setSkills]=uS2(B.skills);
-  const toggle = i => setSkills(ss=>ss.map((s,j)=>j===i?{...s,installed:!s.installed}:s));
+  const [pending,setPending]=uS2(null); // index currently installing
+  // INSTALL is REAL: POST /api/skills/marketplace/install {name} (admin, signed +
+  // moderated, H12.12). On success we flip the row to INSTALLED; on failure (404 not
+  // in registry / 403 blocked by moderation) we revert and surface an honest tag so
+  // the seeded demo skill names that aren't in the live registry don't fake success.
+  const [errIdx,setErrIdx]=uS2(null);
+  const install = i => {
+    const s = skills[i];
+    if (s.installed || pending != null) return;
+    setPending(i); setErrIdx(null);
+    installSkill(s.name)
+      .then(() => setSkills(ss=>ss.map((x,j)=>j===i?{...x,installed:true}:x)))
+      .catch(() => setErrIdx(i))
+      .finally(() => setPending(null));
+  };
   const kindColor = k => k==='trigger'?'var(--amber)':k==='plugin'?'var(--accent-light)':k==='agent'?'var(--accent)':'var(--green)';
   return (
     <ModePanel icon="build" title={t.build} status="workflow canvas">
@@ -83,8 +120,8 @@ function BuildMode({ t }){
           {skills.map((s,i)=>(
             <div className="skill-row" key={i}>
               <div><div className="skn">{s.name}</div><div className="skd">{s.desc}</div>
-                <div className="skmeta"><span className="skby"><Gl id={s.author} size={11}/>{s.author}</span>{s.installed&&<span className="skruns">{s.runs} runs</span>}</div></div>
-              <button className={'skbtn '+(s.installed?'on':'')} onClick={()=>toggle(i)}>{s.installed?'INSTALLED':'INSTALL'}</button>
+                <div className="skmeta"><span className="skby"><Gl id={s.author} size={11}/>{s.author}</span>{s.installed&&<span className="skruns">{s.runs} runs</span>}{errIdx===i&&<span className="skruns" style={{color:'var(--amber)'}}>not in registry</span>}</div></div>
+              <button className={'skbtn '+(s.installed?'on':'')} disabled={s.installed||pending!=null} onClick={()=>install(i)} title={s.installed?'installed':'install via signed marketplace'}>{s.installed?'INSTALLED':pending===i?'…':'INSTALL'}</button>
             </div>
           ))}
         </div>

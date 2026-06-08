@@ -2106,6 +2106,36 @@ async def autonomy_brief(kind: str = "morning"):
     return _nocache_json({"kind": kind, "text": text})
 
 
+@app.get("/autonomy/mode", dependencies=[Depends(_admin_guard)])
+async def autonomy_get_mode():
+    """Current global autonomy mode (AUTO/ASK/OFF) — the HUD AutonomyMode control."""
+    if not orch:
+        return JSONResponse({"error": "not initialized"}, status_code=503)
+    mode = getattr(getattr(orch.autonomy, "policy", None), "mode", None) or orch.get_setting("autonomy.mode", "auto")
+    return _nocache_json({"mode": str(mode).lower()})
+
+
+class AutonomyModeBody(BaseModel):
+    mode: str
+
+
+@app.post("/autonomy/mode", dependencies=[Depends(_admin_guard)])
+async def autonomy_set_mode(body: AutonomyModeBody):
+    """Set the global autonomy mode. Persists the setting and applies it live:
+    auto = balanced; ask = side-effects wait for approval; off = nothing auto-runs
+    and the proactive loop is paused."""
+    if not orch:
+        return JSONResponse({"error": "not initialized"}, status_code=503)
+    mode = str(body.mode or "").lower()
+    if mode not in ("auto", "ask", "off"):
+        return JSONResponse({"error": "mode must be auto|ask|off"}, status_code=422)
+    from core.settings_db import put_category
+    put_category("autonomy", {"mode": mode})  # persist (read back by the autonomy loop)
+    if getattr(orch.autonomy, "policy", None) is not None:
+        orch.autonomy.policy.mode = mode      # apply immediately
+    return _nocache_json({"mode": mode, "ok": True})
+
+
 @app.get("/autonomy/preferences/suggestions", dependencies=[Depends(_admin_guard)])
 async def autonomy_pref_suggestions():
     """Classes consistently approved → autonomy-raise suggestions (H6.5)."""

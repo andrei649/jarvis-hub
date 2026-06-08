@@ -1,3 +1,4 @@
+/// <reference types="vitest" />
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 import { fileURLToPath } from 'node:url';
@@ -22,5 +23,12 @@ export default defineConfig({
     port: 5173,
     // dev: run `npm run dev` (5173) beside `python serve.py` (8080); fetches proxy to the real API
     proxy: Object.fromEntries(PROXY.map((p) => [p, { target: API, changeOrigin: true }])),
+  },
+  // Smoke tests for the newly-wired interactive controls — jsdom + mocked fetch.
+  test: {
+    environment: 'jsdom',
+    globals: true,
+    setupFiles: ['./src/test/setup.ts'],
+    include: ['src/**/*.test.{ts,tsx}'],
   },
 });

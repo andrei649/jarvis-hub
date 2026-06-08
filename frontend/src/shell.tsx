@@ -237,11 +237,14 @@ function RosterColumn({ agents, activeId, onSelect, sys, llm, demo, t }){
 }
 
 /* COMMAND PALETTE */
-function Palette({ open, onClose, onMode, setAccent, setLang, onAmbient, t }){
+function Palette({ open, onClose, onMode, setAccent, setLang, onAmbient, ui, t }){
   const [q,setQ]=useState('');
   const [sel,setSel]=useState(0);
   const inputRef=useRef(null);
   useEffect(()=>{ if(open){ setQ(''); setSel(0); setTimeout(()=>inputRef.current&&inputRef.current.focus(),30);} },[open]);
+  // ui = { density, setDensity, scanline, setScanline, dotgrid, setDotgrid }
+  // Client-only display prefs (persisted to localStorage by App); toggled here.
+  const u = ui || {};
   const cmds = useMemo(()=>[
     { g:'Go to', items:[
       { name:'Cockpit', hint:'1', act:()=>onMode('cockpit'), icon:'cockpit' },
@@ -268,7 +271,13 @@ function Palette({ open, onClose, onMode, setAccent, setLang, onAmbient, t }){
       { name:'Accent · Violet', act:()=>setAccent('violet'), icon:'bolt' },
       { name:'Toggle language EN / RO', act:()=>setLang(l=>l==='en'?'ro':'en'), icon:'globe' },
     ]},
-  ],[onMode,setAccent,setLang,onAmbient]);
+    { g:'Display', items:[
+      { name:'Density · '+(u.density==='compact'?'Compact ✓':'Compact'), act:()=>u.setDensity&&u.setDensity('compact'), icon:'bolt' },
+      { name:'Density · '+(u.density==='normal'||!u.density?'Normal ✓':'Normal'), act:()=>u.setDensity&&u.setDensity('normal'), icon:'bolt' },
+      { name:'Scanline · '+(u.scanline==='off'?'On':'Off'), act:()=>u.setScanline&&u.setScanline(u.scanline==='off'?'on':'off'), icon:'bolt' },
+      { name:'Dot grid · '+(u.dotgrid==='on'?'Off':'On'), act:()=>u.setDotgrid&&u.setDotgrid(u.dotgrid==='on'?'off':'on'), icon:'bolt' },
+    ]},
+  ],[onMode,setAccent,setLang,onAmbient,u.density,u.scanline,u.dotgrid]);
   const flat = useMemo(()=>{
     const f=[]; cmds.forEach(grp=>grp.items.forEach(it=>{ if(!q||it.name.toLowerCase().includes(q.toLowerCase())) f.push({...it,g:grp.g}); })); return f;
   },[cmds,q]);
@@ -306,7 +315,7 @@ function Palette({ open, onClose, onMode, setAccent, setLang, onAmbient, t }){
 }
 
 /* AMBIENT */
-function Ambient({ onExit, clock, lang, agents, decisions, motion, t }){
+function Ambient({ onExit, clock, lang, agents, decisions, motion, localPct, t }){
   useEffect(()=>{
     const h=e=>{ if(e.key==='Escape')onExit(); };
     window.addEventListener('keydown',h); return ()=>window.removeEventListener('keydown',h);
@@ -321,8 +330,8 @@ function Ambient({ onExit, clock, lang, agents, decisions, motion, t }){
       </svg>
       <div className="amb-heart">
         <div className="amb-stat"><div className="v">{agents.filter(a=>a.status!=='idle').length}/{agents.length}</div><div className="l">{t.agents}</div></div>
-        <div className="amb-sep"></div>
-        <div className="amb-stat"><div className="v">87%</div><div className="l">{t.local}</div></div>
+        {localPct != null && <><div className="amb-sep"></div>
+        <div className="amb-stat"><div className="v">{localPct}%</div><div className="l">{t.local}</div></div></>}
         <div className="amb-sep"></div>
         <div className="amb-stat"><div className="v">{decisions.length}</div><div className="l">{t.pending}</div></div>
       </div>

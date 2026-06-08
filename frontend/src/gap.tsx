@@ -346,7 +346,7 @@ function PromptsPanel() {
     <div style={{ fontSize: 10, color: 'var(--ink-3)', marginTop: 6 }}>click v# to pick A/B · ✎ edit · ⟲ rollback · A/B + diff + rollback (H10.22)</div>
   </Card>;
 }
-function RoomsPanel() {
+export function RoomsPanel() {
   const { d, e, loading, reload } = useApi('/api/rooms');
   const rooms = arr(d, 'rooms');
   const [name, setName] = useState(''); const [sel, setSel] = useState(''); const [msg, setMsg] = useState('');
