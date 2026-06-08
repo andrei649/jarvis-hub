@@ -18,6 +18,8 @@ so they share the main project's network and can reach `redpanda` / `timescaledb
 | `tiles/` | Martin vector-tile server (MVT from PostGIS point tables) | H19.5.1 (server side) |
 | `lakehouse/` | MinIO + Kafka Connect S3/Parquet sink (raw cold lake) + DuckDB query layer | H19.5.3 |
 | `k8s/` | Ingestion consumer Deployments + KEDA `ScaledObject`s (lag-scaled) | H19.1.5 |
+| `tiering/` | HOT→WARM→COLD storage lifecycle docs (SQL in `db/schema/14_tiering.sql`; cold = lakehouse) | H19.1.7 |
+| `dr/` | DR TimescaleDB streaming replica + Redpanda topic mirror + RPO/RTO game-day drill | H19.5.6 |
 
 ## Run: observability
 
@@ -63,6 +65,43 @@ docker compose -f docker-compose.yml -f deploy/lakehouse/docker-compose.lakehous
 Captures the `osint.*` firehose as Parquet (Confluent S3 sink) so TimescaleDB stays bounded:
 hot/warm in TSDB (retention in `db/schema/07_policies.sql`), raw cold in the lake. See
 `lakehouse/README.md`.
+
+## Tiered storage (H19.1.7)
+
+No compose stack — tiering is policy DDL (`db/schema/14_tiering.sql`, applied with
+the rest of the schema) plus the existing `lakehouse/` lake as the COLD tier.
+
+- **HOT** = recent uncompressed chunks (TimescaleDB row store).
+- **WARM** = compressed columnstore chunks (TimescaleDB, ~10-20x smaller, queryable).
+- **COLD** = Parquet in `s3://worldview-lake` (already streamed from Kafka), queryable via DuckDB.
+
+`14_tiering.sql` extends `07_policies.sql`: confirms per-layer HOT→WARM compress
+ages (adsb/ais 2d, ephemeris/jamming 7d), adds columnstore + 30d compression for
+the three intel layers, and sets WARM→drop retention per layer (adsb 90d, ais/
+ephemeris 180d, jamming/outages 365d, recon 730d; dark-vessel + geopolitical kept
+forever). Continuous aggregates survive retention for long-range scrubbing. All
+DDL idempotent; no `ALTER ... ADD COLUMN` on compressed tables. The enterprise
+`add_tiering_policy` path is documented (OSS image lacks managed object-tiering).
+See `tiering/README.md` for the per-layer table + storage-size math.
+
+## DR: replica + Kafka mirror + game-day (H19.5.6)
+
+```bash
+cd worldview
+docker compose up -d                                   # primary infra first
+docker compose -f docker-compose.yml -f deploy/dr/docker-compose.dr.yml up -d
+deploy/dr/game-day.sh             # checks RPO (lag) + mirror, no promotion
+deploy/dr/game-day.sh --promote   # also promotes the replica + measures RTO
+```
+
+- DR TimescaleDB streaming replica: `localhost:5433` (read-only hot standby).
+- DR Redpanda mirror target: `localhost:9093` (`osint.*` topics mirrored).
+- Targets: RPO ≤ 5 min (replication lag), RTO ≤ 30 min (promotion time).
+
+**Primary-side prerequisites are TODOs** (replication slot `dr_slot`, `replicator`
+role, `pg_hba` replication line, `max_wal_senders`) — see `dr/README.md`. True
+multi-AZ + real RPO/RTO numbers need a real multi-zone deployment; this delivers
+the mechanics + a local rehearsable drill.
 
 ## Run: KEDA lag-scaled consumers (H19.1.5)
 
