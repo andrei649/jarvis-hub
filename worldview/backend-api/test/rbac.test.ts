@@ -43,6 +43,22 @@ test("admin holds every permission (incl read:audit + admin)", () => {
   }
 });
 
+test("export RBAC (H19.2.7/H19.4.6): read:export is viewer+, write:reconstruction is analyst+", () => {
+  // Export reads (replay bundle / case brief) are viewer+.
+  assert.ok(can("viewer", "read:export"));
+  assert.ok(can("analyst", "read:export"));
+  assert.ok(can("admin", "read:export"));
+  // Saving a shareable reconstruction handle is analyst+ (viewer denied).
+  assert.equal(can("viewer", "write:reconstruction"), false);
+  assert.ok(can("analyst", "write:reconstruction"));
+  assert.ok(can("admin", "write:reconstruction"));
+  // Route mappings: create gated to write:reconstruction; reads/export gated to read:export.
+  assert.equal(ruleFor("POST", "/reconstructions")?.permission, "write:reconstruction");
+  assert.equal(ruleFor("GET", "/reconstructions")?.permission, "read:export");
+  assert.equal(ruleFor("GET", "/reconstructions/:id/export")?.permission, "read:export");
+  assert.equal(ruleFor("GET", "/cases/:id/export")?.permission, "read:export");
+});
+
 test("inScope: admin and wildcard bypass scoping", () => {
   const admin: Principal = { sub: "a", role: "admin", aois: ["aoi-x"] };
   const wild: Principal = { sub: "w", role: "viewer", aois: ["*"] };

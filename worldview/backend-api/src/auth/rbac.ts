@@ -18,6 +18,8 @@ export type Permission =
   | "write:ontology-action"
   | "read:cases"
   | "write:cases"
+  | "read:export"
+  | "write:reconstruction"
   | "read:audit"
   | "admin";
 
@@ -33,15 +35,24 @@ const VIEWER_READS: Permission[] = [
   "read:recon",
   "read:ontology",
   "read:cases",
+  // Export reads (a saved reconstruction's replay bundle / a case brief+geojson+json) are viewer+.
+  "read:export",
 ];
 
 export const ROLE_PERMISSIONS: Record<Role, ReadonlySet<Permission>> = {
   viewer: new Set<Permission>(VIEWER_READS),
-  analyst: new Set<Permission>([...VIEWER_READS, "write:ontology-action", "write:cases"]),
+  analyst: new Set<Permission>([
+    ...VIEWER_READS,
+    "write:ontology-action",
+    "write:cases",
+    // Saving a shareable reconstruction handle is an analyst+ write.
+    "write:reconstruction",
+  ]),
   admin: new Set<Permission>([
     ...VIEWER_READS,
     "write:ontology-action",
     "write:cases",
+    "write:reconstruction",
     "read:audit",
     "admin",
   ]),
@@ -130,6 +141,16 @@ export const ROUTE_RULES: RouteRule[] = [
   { method: "POST", path: "/cases/:id/comments", permission: "write:cases" },
   { method: "GET", path: "/cases/:id/comments", permission: "read:cases" },
   { method: "GET", path: "/cases/:id/history", permission: "read:cases" },
+
+  // Reconstruction + export (tickets H19.2.7 / H19.4.6). Saving a shareable reconstruction handle is a
+  // write:reconstruction (analyst+); reading/listing a handle and downloading ANY export bundle (replay
+  // or case brief/geojson/json) is read:export (viewer+). Reproducible: the export re-derives frames
+  // from the saved params, so the same handle always exports the same bundle.
+  { method: "POST", path: "/reconstructions", permission: "write:reconstruction" },
+  { method: "GET", path: "/reconstructions", permission: "read:export" },
+  { method: "GET", path: "/reconstructions/:id", permission: "read:export" },
+  { method: "GET", path: "/reconstructions/:id/export", permission: "read:export" },
+  { method: "GET", path: "/cases/:id/export", permission: "read:export" },
 ];
 
 /**
