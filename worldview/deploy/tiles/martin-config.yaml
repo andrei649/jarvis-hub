@@ -1,0 +1,28 @@
+# Martin vector-tile server config for WorldView (server side of ticket H19.5.1).
+# Martin connects to the WorldView TimescaleDB/PostGIS and serves MVT tiles.
+#
+# Auto-discovery: Martin scans the DB and publishes a tile source per geometry-bearing
+# table it finds (adsb_positions, ais_positions, satellite_ephemeris, etc.). The default
+# geometry column `geom` (SRID 4326) used across the WorldView schema is picked up
+# automatically. The published source id == the table name.
+#
+# Tile URL template (what the frontend NEXT_PUBLIC_TILE_URL points at):
+#   http://localhost:3002/{table}/{z}/{x}/{y}
+#   e.g.  http://localhost:3002/adsb_positions/{z}/{x}/{y}
+#         http://localhost:3002/ais_positions/{z}/{x}/{y}
+# Per-source TileJSON:  http://localhost:3002/{table}    (catalog: /catalog)
+
+# Listen on all interfaces inside the container; published on host :3002 (see compose).
+listen_addresses: "0.0.0.0:3000"
+
+# Connection to the WorldView TimescaleDB (creds from worldview/docker-compose.yml).
+postgres:
+  connection_string: "postgresql://worldview:worldview@timescaledb:5432/worldview"
+  # Cap rows per tile so a busy live table can't blow up a tile.
+  max_feature_count: 10000
+  pool_size: 10
+  # auto_publish is on by default; listing tables here is optional. We let Martin
+  # auto-discover so new geometry tables show up without editing this file.
+
+# Cache rendered tiles in memory (MB).
+cache_size_mb: 256

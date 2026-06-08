@@ -1,0 +1,15 @@
+# Grafana dashboard provider — loads all JSON dashboards from the mounted folder.
+apiVersion: 1
+
+providers:
+  - name: worldview
+    orgId: 1
+    folder: WorldView
+    type: file
+    disableDeletion: false
+    updateIntervalSeconds: 30
+    allowUiUpdates: true
+    options:
+      # Mounted read-only from deploy/observability/grafana/dashboards/ (see compose).
+      path: /var/lib/grafana/dashboards
+      foldersFromFilesStructure: false

@@ -1,0 +1,111 @@
+# WorldView observability stack — ticket H19.5.5 "Observability".
+# OpenTelemetry Collector + Prometheus + Grafana, golden-signal dashboards, lag alarm.
+#
+# TWO WAYS TO RUN (both put this stack on the SAME network as the main infra):
+#
+#  A) Merged compose (recommended — one project, shared default network):
+#       cd worldview
+#       docker compose -f docker-compose.yml -f deploy/observability/docker-compose.observability.yml up -d
+#     Config paths below are written relative to the worldview/ project dir for this mode.
+#
+#  B) Standalone, attaching to the already-running infra's network (external net):
+#       cd worldview && docker compose up -d            # start infra first
+#       docker compose -f deploy/observability/docker-compose.observability.yml \
+#         --project-directory . up -d
+#     This requires the `worldview_default` external network (created by `up` above).
+#     Uncomment the `networks:` blocks + the top-level external network for this mode.
+#
+# Grafana: http://localhost:3001  (admin / admin)
+# Prometheus: http://localhost:9090
+# OTLP in:  otel-collector:4317 (gRPC) / 4318 (HTTP)  [host: localhost:4317 / 4318]
+
+services:
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:0.103.1
+    container_name: worldview-otel-collector
+    command: ["--config=/etc/otelcol-contrib/config.yaml"]
+    volumes:
+      - ./deploy/observability/otel-collector-config.yaml:/etc/otelcol-contrib/config.yaml:ro
+    ports:
+      - "4317:4317"   # OTLP gRPC
+      - "4318:4318"   # OTLP HTTP
+      - "8889:8889"   # Prometheus exporter (scrape target)
+      - "13133:13133" # health_check extension
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O-", "http://localhost:13133/"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+    # networks: [default]
+
+  prometheus:
+    image: prom/prometheus:v2.53.1
+    container_name: worldview-prometheus
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --storage.tsdb.retention.time=15d
+      - --web.enable-lifecycle
+    volumes:
+      - ./deploy/observability/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./deploy/observability/alerts.yml:/etc/prometheus/alerts.yml:ro
+      - prometheus-data:/prometheus
+    ports:
+      - "9090:9090"
+    depends_on:
+      - otel-collector
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O-", "http://localhost:9090/-/healthy"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+    # networks: [default]
+
+  grafana:
+    image: grafana/grafana:11.1.3
+    container_name: worldview-grafana
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: admin
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Viewer
+    volumes:
+      - ./deploy/observability/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./deploy/observability/grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - grafana-data:/var/lib/grafana
+    ports:
+      - "3001:3000"   # host 3001 -> grafana 3000 (3000 is the frontend)
+    depends_on:
+      - prometheus
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O- http://localhost:3000/api/health | grep -q ok || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+    # networks: [default]
+
+  # OPTIONAL Redis metrics. Uncomment to enable the `redis` scrape job in prometheus.yml.
+  # redis-exporter:
+  #   image: oliver006/redis_exporter:v1.62.0-alpine
+  #   container_name: worldview-redis-exporter
+  #   environment:
+  #     REDIS_ADDR: redis://redis:6379
+  #   ports:
+  #     - "9121:9121"
+  #   restart: unless-stopped
+  #   # networks: [default]
+
+volumes:
+  prometheus-data:
+  grafana-data:
+
+# For STANDALONE mode (B) uncomment this and the per-service `networks:` lines.
+# The main `docker compose up` in worldview/ creates this network as <project>_default.
+# networks:
+#   default:
+#     external: true
+#     name: worldview_default

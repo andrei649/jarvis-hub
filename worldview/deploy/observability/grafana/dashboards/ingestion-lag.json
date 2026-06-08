@@ -1,0 +1,111 @@
+{
+  "annotations": { "list": [] },
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 1,
+  "id": null,
+  "links": [],
+  "liveNow": false,
+  "panels": [
+    {
+      "title": "Consumer group lag (messages)",
+      "type": "timeseries",
+      "datasource": { "type": "prometheus", "uid": "worldview-prometheus" },
+      "gridPos": { "h": 9, "w": 16, "x": 0, "y": 0 },
+      "description": "live-writer / history-writer / recon-writer backlog. Alarm fires >50k for 5m.",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "thresholds": { "mode": "absolute", "steps": [ { "color": "green", "value": null }, { "color": "yellow", "value": 50000 }, { "color": "red", "value": 250000 } ] }
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "max by (redpanda_group) (redpanda_kafka_consumer_group_lag_sum)",
+          "legendFormat": "{{redpanda_group}}"
+        },
+        {
+          "refId": "B",
+          "expr": "sum by (consumergroup) (kafka_consumergroup_lag)",
+          "legendFormat": "{{consumergroup}} (exporter)"
+        }
+      ]
+    },
+    {
+      "title": "Max lag (current)",
+      "type": "stat",
+      "datasource": { "type": "prometheus", "uid": "worldview-prometheus" },
+      "gridPos": { "h": 9, "w": 8, "x": 16, "y": 0 },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "thresholds": { "mode": "absolute", "steps": [ { "color": "green", "value": null }, { "color": "yellow", "value": 50000 }, { "color": "red", "value": 250000 } ] }
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "max(redpanda_kafka_consumer_group_lag_sum) or max(kafka_consumergroup_lag)",
+          "legendFormat": "max lag"
+        }
+      ]
+    },
+    {
+      "title": "Ingestion throughput (records consumed/s)",
+      "type": "timeseries",
+      "datasource": { "type": "prometheus", "uid": "worldview-prometheus" },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 9 },
+      "fieldConfig": { "defaults": { "unit": "rps" }, "overrides": [] },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (redpanda_topic) (rate(redpanda_kafka_records_consumed_total[5m]))",
+          "legendFormat": "consumed {{redpanda_topic}}"
+        }
+      ]
+    },
+    {
+      "title": "Broker produce rate (records produced/s)",
+      "type": "timeseries",
+      "datasource": { "type": "prometheus", "uid": "worldview-prometheus" },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 9 },
+      "fieldConfig": { "defaults": { "unit": "rps" }, "overrides": [] },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (redpanda_topic) (rate(redpanda_kafka_records_produced_total[5m]))",
+          "legendFormat": "produced {{redpanda_topic}}"
+        }
+      ]
+    },
+    {
+      "title": "History-writer rows inserted/s (app metric)",
+      "type": "timeseries",
+      "datasource": { "type": "prometheus", "uid": "worldview-prometheus" },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 17 },
+      "description": "APP-SIDE: expected worldview_history_rows_written_total emitted by history-writer.",
+      "fieldConfig": { "defaults": { "unit": "rps" }, "overrides": [] },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (domain) (rate(worldview_history_rows_written_total[5m]))",
+          "legendFormat": "{{domain}}"
+        }
+      ]
+    }
+  ],
+  "refresh": "30s",
+  "schemaVersion": 39,
+  "tags": ["worldview", "golden-signals", "ingestion", "lag"],
+  "templating": { "list": [] },
+  "time": { "from": "now-1h", "to": "now" },
+  "timepicker": {},
+  "timezone": "",
+  "title": "WorldView — Ingestion & Consumer Lag",
+  "uid": "worldview-ingestion-lag",
+  "version": 1,
+  "weekStart": ""
+}

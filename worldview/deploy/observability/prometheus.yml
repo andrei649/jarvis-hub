@@ -1,0 +1,59 @@
+# Prometheus scrape config for WorldView (ticket H19.5.5).
+# All targets use the service names from worldview/docker-compose.yml — this stack
+# joins the same compose network (see docker-compose.observability.yml).
+
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+  external_labels:
+    cluster: worldview-local
+
+rule_files:
+  - /etc/prometheus/alerts.yml
+
+scrape_configs:
+  # 1. The OTel collector re-exposes the app's OTLP metrics here.
+  - job_name: otel-collector
+    static_configs:
+      - targets: ["otel-collector:8889"]
+        labels: { component: otel-collector }
+    metric_relabel_configs: []
+
+  # The collector's own internal telemetry (pipeline health, dropped points).
+  - job_name: otel-collector-internal
+    static_configs:
+      - targets: ["otel-collector:8888"]
+        labels: { component: otel-collector }
+
+  # 2. Backend API native /metrics (Prometheus exposition).
+  #    APP-SIDE FOLLOW-UP: backend-api does not expose /metrics yet. Add a
+  #    prom-client (or @fastify/metrics) registry on GET /metrics. Until then this
+  #    target shows as DOWN — that is expected, not a stack misconfiguration.
+  #    The API container is named `api` in docker-compose.app.yml, port 4000.
+  - job_name: backend-api
+    metrics_path: /metrics
+    static_configs:
+      - targets: ["api:4000"]
+        labels: { component: backend-api }
+
+  # 3. Redpanda exposes Prometheus metrics on the admin port (9644).
+  #    /public_metrics = curated golden-signal set (recommended);
+  #    /metrics = full internal set. We scrape both job-labelled.
+  - job_name: redpanda-public
+    metrics_path: /public_metrics
+    static_configs:
+      - targets: ["redpanda:9644"]
+        labels: { component: redpanda }
+  - job_name: redpanda-internal
+    metrics_path: /metrics
+    static_configs:
+      - targets: ["redpanda:9644"]
+        labels: { component: redpanda }
+
+  # 4. Redis. OPTIONAL: Redis itself does not speak Prometheus. To enable this
+  #    target, run oliver006/redis_exporter as a sidecar (commented in the compose
+  #    file) and it will expose :9121/metrics. Left here, disabled-by-target.
+  - job_name: redis
+    static_configs:
+      - targets: ["redis-exporter:9121"]
+        labels: { component: redis }

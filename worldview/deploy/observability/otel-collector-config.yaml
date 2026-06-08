@@ -1,0 +1,70 @@
+# OpenTelemetry Collector config for WorldView (ticket H19.5.5).
+#
+# The app (backend-api / ingestion-workers) exports OTLP to this collector.
+# Point the app at it with:
+#   OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4318   (HTTP)
+#   OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4317   (gRPC)
+# (use otel-collector:<port> inside the compose network; localhost:<port> from the host).
+#
+# Flow:  app --OTLP--> collector --(prometheus exporter :8889)--> Prometheus scrape
+#                                \--(debug exporter)--> collector stdout (logs)
+#
+# Prometheus scrapes this collector on :8889/metrics (see prometheus.yml).
+
+receivers:
+  otlp:
+    protocols:
+      grpc:
+        endpoint: 0.0.0.0:4317
+      http:
+        endpoint: 0.0.0.0:4318
+
+processors:
+  batch:
+    timeout: 5s
+    send_batch_size: 1024
+  # Tag everything that flows through this collector so dashboards can filter by it.
+  resource:
+    attributes:
+      - key: deployment.environment
+        value: local
+        action: upsert
+  memory_limiter:
+    check_interval: 5s
+    limit_percentage: 80
+    spike_limit_percentage: 25
+
+exporters:
+  # App metrics are re-exposed here for Prometheus to scrape.
+  prometheus:
+    endpoint: 0.0.0.0:8889
+    # Keep the original metric names and resource attributes as labels.
+    resource_to_telemetry_conversion:
+      enabled: true
+    enable_open_metrics: true
+  # Logs + a sample of traces/metrics to the collector's stdout (docker logs otel-collector).
+  debug:
+    verbosity: normal
+
+extensions:
+  health_check:
+    endpoint: 0.0.0.0:13133
+
+service:
+  extensions: [health_check]
+  pipelines:
+    metrics:
+      receivers: [otlp]
+      processors: [memory_limiter, resource, batch]
+      exporters: [prometheus]
+    traces:
+      receivers: [otlp]
+      processors: [memory_limiter, resource, batch]
+      exporters: [debug]
+    logs:
+      receivers: [otlp]
+      processors: [memory_limiter, resource, batch]
+      exporters: [debug]
+  telemetry:
+    logs:
+      level: info
