@@ -21,6 +21,21 @@ def test_circle_polygon_is_closed_ring():
     assert coords[0] == coords[-1]  # ring closed
 
 
+def test_circle_polygon_is_ccw():
+    """Exterior ring follows the OGC/GeoJSON right-hand rule (CCW => positive area)."""
+    wkt = circle_polygon_wkt(26.5, 56.2, 50.0, segments=12)
+    coords = [
+        (float(p.split(" ")[0]), float(p.split(" ")[1]))
+        for p in wkt[len("POLYGON((") : -2].split(", ")
+    ]
+    # Shoelace signed area over the closed ring; positive => counter-clockwise.
+    area = sum(
+        coords[i][0] * coords[i + 1][1] - coords[i + 1][0] * coords[i][1]
+        for i in range(len(coords) - 1)
+    )
+    assert area > 0.0
+
+
 def test_point_in_polygon():
     square = [(0.0, 0.0), (0.0, 10.0), (10.0, 10.0), (10.0, 0.0)]
     assert point_in_polygon(5.0, 5.0, square) is True

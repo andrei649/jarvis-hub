@@ -129,6 +129,13 @@ def predict_windows(
     sunlit at peak (else quality is 0); SAR and other sensors ignore sunlight.
 
     Returns the windows sorted by ``t_ingress``.
+
+    Caveat: the coarse ``step_s`` walk can *alias* — a small optical footprint
+    (a few-km nadir circle moving at ~7 km/s, i.e. sub-``step_s`` dwell over the
+    AOI) may slip entirely between two samples and be missed. The 30 s default is
+    tuned for the broad coverage/SAR footprints; TODO(worldview): adapt ``step_s``
+    to the footprint radius (or do a finer pre-pass) before relying on this for
+    narrow optical tasking.
     """
 
     def coverage_at(t: float) -> tuple[bool, float, float]:
@@ -205,7 +212,10 @@ def predict_windows(
         if end_idx == n - 1:
             t_egress = min(t_last, t_end)
         else:
-            t_egress = bisect_boundary(samples[end_idx + 1][0], t_last, False)
+            # lo = last covered sample (earlier), hi = first uncovered sample
+            # (later), lo_covered=True — mirrors the ingress convention so the
+            # transition is actually bisected to ~1 s.
+            t_egress = bisect_boundary(t_last, samples[end_idx + 1][0], True)
 
         # Peak: minimum-distance in-window sample, then a short refinement.
         peak_idx = min(

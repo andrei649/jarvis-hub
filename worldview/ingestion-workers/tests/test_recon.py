@@ -10,6 +10,7 @@ from worldview_ingest.recon.windows import (
     haversine_km,
     predict_windows,
 )
+from worldview_ingest.tle.propagate import propagate
 
 # Real ISS (ZARYA) TLE — inclination ~51.6°, so ground track stays within ~±52°.
 ISS_L1 = "1 25544U 98067A   24001.50000000  .00016717  00000-0  10270-3 0  9007"
@@ -106,3 +107,35 @@ def test_footprint_ground_shapes() -> None:
     clat, clon, r = footprint_ground("coverage", {"coverage_radius_km": 600.0}, 5.0, 6.0, 500.0)
     assert (clat, clon) == (5.0, 6.0)
     assert r == 600.0
+
+
+def _covered_at(aoi: Aoi, params: dict, t: float) -> bool:
+    """Replicate windows.coverage_at's covered test for a coverage sensor."""
+    sub = propagate(ISS_L1, ISS_L2, datetime.fromtimestamp(t, tz=UTC))
+    dist = haversine_km(sub.lat, sub.lon, aoi.lat, aoi.lon)
+    return dist <= float(params["coverage_radius_km"]) + aoi.radius_km
+
+
+def test_egress_is_refined_to_one_second() -> None:
+    """Egress must bisect to ~1 s, not snap to the 30 s coarse grid.
+
+    With the old (lo>hi) argument order the egress guard was immediately false and
+    egress snapped to the last covered coarse sample, leaving coverage still true
+    for up to ~step_s afterwards. After the fix, coverage flips from True to False
+    within ~1-2 s of t_egress.
+    """
+    aoi = Aoi(id="equator", lat=0.0, lon=0.0, radius_km=300.0)
+    windows = predict_windows(
+        aoi, NORAD, ISS_L1, ISS_L2, "coverage", COVERAGE_PARAMS, T0, HORIZON
+    )
+    assert windows, "expected at least one ISS pass over the equatorial AOI"
+
+    # Use an interior window (not clamped to the horizon edge) so egress is a real
+    # covered->uncovered transition that bisection refines.
+    interior = [w for w in windows if w.t_egress < T0 + HORIZON - 1.0]
+    assert interior, "expected an interior window with a real egress transition"
+
+    for w in interior:
+        # Just inside egress is covered; ~2 s past it is not -> boundary pinned to ~1 s.
+        assert _covered_at(aoi, COVERAGE_PARAMS, w.t_egress - 0.5)
+        assert not _covered_at(aoi, COVERAGE_PARAMS, w.t_egress + 2.0)

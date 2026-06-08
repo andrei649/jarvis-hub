@@ -59,9 +59,15 @@ def parse_gpsjam(
 
 
 def _ring_centroid(geometry: dict[str, Any]) -> tuple[float, float]:
-    """Average of a Polygon's exterior ring (or a ring) → (lon, lat)."""
+    """Average of a Polygon's exterior ring (or a ring) → (lon, lat).
+
+    Drops a duplicated closing vertex (first == last) before averaging so it
+    doesn't double-weight that point and bias the centroid.
+    """
     coords = geometry["coordinates"]
     ring = coords[0] if geometry.get("type") == "Polygon" else coords
+    if len(ring) > 1 and ring[0] == ring[-1]:
+        ring = ring[:-1]
     lons = [pt[0] for pt in ring]
     lats = [pt[1] for pt in ring]
     return sum(lons) / len(lons), sum(lats) / len(lats)

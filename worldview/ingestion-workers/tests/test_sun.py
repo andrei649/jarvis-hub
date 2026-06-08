@@ -27,3 +27,16 @@ def test_polar_night_in_winter():
 def test_elevation_is_bounded():
     el = solar_elevation(45.0, -75.0, datetime(2024, 6, 21, 17, 0, 0, tzinfo=UTC))
     assert -90.0 <= el <= 90.0
+
+
+def test_solar_elevation_matches_reference_value():
+    """Pin one solar elevation against an independent reference.
+
+    Reference: NOAA ESRL Solar Position Calculator (https://gml.noaa.gov/grad/solcalc/)
+    for 2024-06-21 (summer solstice) 12:00 UTC at 45.0°N, 0.0°E — near local solar
+    noon, so elevation ~= 90 - (lat - declination) = 90 - (45 - 23.44) ~= 68.4°.
+    A declination/equation-of-time or hour-angle sign regression would miss this
+    by several degrees. We allow 0.5° (the NOAA approximation's stated accuracy).
+    """
+    el = solar_elevation(45.0, 0.0, datetime(2024, 6, 21, 12, 0, 0, tzinfo=UTC))
+    assert abs(el - 68.44) < 0.5
