@@ -433,7 +433,7 @@ Key env vars loaded at startup:
 ### Testing
 
 - **Framework:** pytest with `asyncio_mode = auto` (see `pytest.ini`) — all `async def test_*` run without decorators.
-- **Test count:** ~1082+ passing tests (3 pre-existing infrastructure failures unrelated to features: `test_settings_db` × 2, `test_system_monitor` temps — require psutil/real DB).
+- **Test count:** ~1,764 passing tests, 1 skipped (offline suite). *(WorldView, the separate `worldview/` Node stack, has its own CI + test suites — see `worldview/`.)*
 - **sys.path pattern:** Every test file inserts `repo_root` and `repo_root/agents` at the top. Always use this, not relative imports.
 - **Offline by default:** Tests inject fake backends (e.g. `FakeBackend(LLMBackend)`, `FakeLMStudioClient`). No real network/LLM required.
 - **Orchestrator instantiation trick:** Avoid `Orchestrator(config)` in unit tests (heavy init). Use `Orchestrator.__new__(Orchestrator)` + manual attribute assignment, or mock the heavy dependencies.
@@ -611,3 +611,5 @@ docs/
 | `docs/ARCHITECTURE.md` | Module index, request lifecycle, recipes (this file) |
 | `docs/VOICE.md` | Voice subsystem — browser HUD loop + server pipeline, endpoints, what's real vs scaffolded |
 | `docs/COGNITION.md` | Cognition subsystem (planned ORIZONT 21) — living memory + personality **schematic & diagnostic map** (brain analogies, tiers, troubleshooting playbook) |
+| `worldview/README.md` | **WorldView (4D OSINT)** — separate Next.js + Fastify stack (ports 3000/4000), not sharing the Python runtime. Bridged into JARVIS by the **Argus** agent (`agents/argus/`, geoint router intent → read-only governed plugin). Launched by `START.bat`/`start.sh`. |
+| `docs/2026-06-08-future-developments-report.md` | Forward roadmap — remaining v1.0 gate, WorldView follow-ups (#169/#170), audit-debt hardening, post-1.0 horizons (O20 Hermes, O21 Cognition), recommended sequencing |

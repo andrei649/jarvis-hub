@@ -124,7 +124,7 @@
 
 | Category | Count |
 |----------|-------|
-| Total passing (backend) | 1,655 tests |
+| Total passing (backend) | 1,764 tests |
 | Skipped | 1 (optional heartbeat; test_spotify removed in CLN-1) |
 | Frontend | 184 JS tests / 23 files · ~67% line coverage (BUG-2 delivered) |
 
@@ -267,7 +267,7 @@ Every night, Jarvis reads the last 60 conversations, extracts entities and relat
 LM Studio + Ollama on local GPU. Zero API cost for 99% of tasks. Athena escalates to Claude API for heavy reasoning — everything else runs at home. Total operating cost: **$0/month**.
 
 **Production-grade under the hood**
-1,655 tests. 36× database speedup. Circuit breakers per plugin. Reciprocal rank fusion for hybrid recall. Fast/heavy model tiering based on prompt complexity. This isn't a demo.
+1,764 tests. 36× database speedup. Circuit breakers per plugin. Reciprocal rank fusion for hybrid recall. Fast/heavy model tiering based on prompt complexity. This isn't a demo.
 
 ---
 
@@ -309,7 +309,7 @@ LM Studio + Ollama on local GPU. Zero API cost for 99% of tasks. Athena escalate
 |--------|-------|
 | Active agents | 16 (+ 17 bench) |
 | Channels | 7 (web, voice, Telegram, Discord, Slack, email, sandbox) |
-| Tests passing | 1,655 |
+| Tests passing | 1,764 |
 | API endpoints | ~203 |
 | Monthly cost | $0 |
 | SQLite speedup | 36× |
