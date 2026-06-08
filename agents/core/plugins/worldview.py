@@ -80,7 +80,10 @@ class WorldViewPlugin:
         try:
             return await self._get(path, params)
         except Exception as e:  # httpx / OS / circuit-open — degrade, never crash the agent
-            logger.warning("WorldView API unavailable (%s): %s", path, e)
+            # Expected when WorldView isn't running (optional, separate stack on :4000); the
+            # caller degrades to {"status": "unavailable"} and never fabricates intel. DEBUG so a
+            # down backend doesn't flood the log every autonomy tick.
+            logger.debug("WorldView API unavailable (%s): %s", path, e)
             return None
 
     # ── read tools (mirror the WorldView MCP server) ───────────────

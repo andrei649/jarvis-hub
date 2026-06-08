@@ -1,14 +1,23 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import { useTimelineStore } from "@/lib/store/useTimelineStore";
 import { ReplayControl } from "./ReplayControl";
 
 const WINDOW_SECONDS = 24 * 3600; // scrub the last 24h
 const SPEEDS = [1, 10, 60, 300];
+const TIME_PLACEHOLDER = "————-——-—— ——:——:—— UTC";
 
 export function TimelineScrubber() {
   const { masterTime, mode, playing, speed, setMasterTime, setMode, setSpeed, setPlaying, goLive } =
     useTimelineStore();
+
+  // `masterTime` and `now` derive from Date.now(), which differs between the server render and the
+  // client hydration a moment later → React hydration mismatch (the "Text content did not match"
+  // error). Gate the time-dependent pieces behind `mounted` so the server HTML and the FIRST client
+  // render agree (both with mounted=false); the real values appear right after mount.
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => setMounted(true), []);
 
   const now = Date.now() / 1000;
   const min = now - WINDOW_SECONDS;
@@ -40,8 +49,10 @@ export function TimelineScrubber() {
           ● LIVE
         </button>
 
-        <span className="tabular-nums text-white/80">
-          {new Date(masterTime * 1000).toISOString().replace("T", " ").slice(0, 19)} UTC
+        <span suppressHydrationWarning className="tabular-nums text-white/80">
+          {mounted
+            ? `${new Date(masterTime * 1000).toISOString().replace("T", " ").slice(0, 19)} UTC`
+            : TIME_PLACEHOLDER}
         </span>
 
         <label className="ml-auto flex items-center gap-1 text-white/60">
@@ -64,15 +75,21 @@ export function TimelineScrubber() {
         <ReplayControl />
       </div>
 
-      <input
-        type="range"
-        min={min}
-        max={now}
-        step={1}
-        value={Math.min(masterTime, now)}
-        onChange={(e) => onScrub(Number(e.target.value))}
-        className="w-full accent-signal"
-      />
+      {/* The slider's min/max/value derive from Date.now()/masterTime, so render it only after mount
+          (SSR + first client render skip it identically → no hydration mismatch). */}
+      {mounted ? (
+        <input
+          type="range"
+          min={min}
+          max={now}
+          step={1}
+          value={Math.min(masterTime, now)}
+          onChange={(e) => onScrub(Number(e.target.value))}
+          className="w-full accent-signal"
+        />
+      ) : (
+        <div className="h-[18px] w-full" aria-hidden />
+      )}
     </div>
   );
 }

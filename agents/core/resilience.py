@@ -37,7 +37,7 @@ def resilient_call(
                     recovery_timeout=circuit_breaker_recovery,
                 )
                 if cb.is_open():
-                    logger.warning(f"Circuit breaker open for {circuit_breaker_key}")
+                    logger.debug(f"Circuit breaker open for {circuit_breaker_key}")
                     raise RuntimeError(f"Circuit breaker open: {circuit_breaker_key}")
             
             # Track metrics if agent/backend provided
@@ -86,13 +86,15 @@ def resilient_call(
                         
                     if attempt < max_retries:
                         delay = min(backoff_base * (2 ** attempt), backoff_max)
-                        logger.warning(
+                        logger.debug(
                             f"Attempt {attempt + 1}/{max_retries + 1} failed ({error_type}), "
                             f"retrying in {delay:.1f}s"
                         )
                         await asyncio.sleep(delay)
                     else:
-                        logger.error(
+                        # Expected/handled by the caller (which logs anything user-facing) and the
+                        # breaker state is exposed via /api/resilience — keep the plumbing quiet.
+                        logger.debug(
                             f"All {max_retries + 1} attempts failed, last error: {e}"
                         )
                     
@@ -130,10 +132,15 @@ class CircuitBreaker:
         self.last_failure_time = time.time()
         
         if self.failure_count >= self.failure_threshold:
+            # Log the transition ONCE at WARNING (closed → open). A half-open probe that
+            # re-fails is an expected re-open while the backend stays down — keep it at DEBUG
+            # so a persistently-unreachable optional backend doesn't flood the log every tick.
+            was_tripped = self.state in ("open", "half-open")
             self.state = "open"
-            logger.warning(
-                f"Circuit breaker opened after {self.failure_count} failures"
-            )
+            if was_tripped:
+                logger.debug(f"Circuit breaker re-opened after {self.failure_count} failures")
+            else:
+                logger.warning(f"Circuit breaker opened after {self.failure_count} failures")
     
     def is_open(self) -> bool:
         """Check if circuit is open (should fail fast)."""

@@ -34,10 +34,12 @@ class AppleHealthPlugin:
             data = resp.json()
             return data if isinstance(data, list) else data.get("data", [])
         except (httpx.ConnectError, httpx.TimeoutException):
-            logger.warning(f"Apple Health bridge not reachable at {self.bridge_url}")
+            # Optional LAN bridge — expected to be absent. DEBUG so it doesn't flood the log
+            # every autonomy tick when the bridge isn't running.
+            logger.debug(f"Apple Health bridge not reachable at {self.bridge_url}")
             return []
         except Exception as e:
-            logger.error(f"Apple Health sleep error: {e}")
+            logger.debug(f"Apple Health sleep error: {e}")
             return []
 
     async def get_hrv(self, days: int = 1) -> list[dict]:
@@ -53,7 +55,7 @@ class AppleHealthPlugin:
         except (httpx.ConnectError, httpx.TimeoutException):
             return []
         except Exception as e:
-            logger.error(f"Apple Health HRV error: {e}")
+            logger.debug(f"Apple Health HRV error: {e}")
             return []
 
     async def get_activity(self, days: int = 1) -> list[dict]:
@@ -69,7 +71,7 @@ class AppleHealthPlugin:
         except (httpx.ConnectError, httpx.TimeoutException):
             return []
         except Exception as e:
-            logger.error(f"Apple Health activity error: {e}")
+            logger.debug(f"Apple Health activity error: {e}")
             return []
 
     async def get_steps(self, days: int = 1) -> list[dict]:
@@ -85,7 +87,7 @@ class AppleHealthPlugin:
         except (httpx.ConnectError, httpx.TimeoutException):
             return []
         except Exception as e:
-            logger.error(f"Apple Health steps error: {e}")
+            logger.debug(f"Apple Health steps error: {e}")
             return []
 
     async def get_workouts(self, days: int = 1) -> list[dict]:
@@ -101,7 +103,7 @@ class AppleHealthPlugin:
         except (httpx.ConnectError, httpx.TimeoutException):
             return []
         except Exception as e:
-            logger.error(f"Apple Health workouts error: {e}")
+            logger.debug(f"Apple Health workouts error: {e}")
             return []
 
     async def get_summary(self, days: int = 1) -> dict:

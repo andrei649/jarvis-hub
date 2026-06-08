@@ -114,7 +114,7 @@ class PluginHTTPClient:
     async def get(self, url: str, **kwargs) -> httpx.Response:
         """Perform a GET request with plugin timeouts applied."""
         if self.circuit_breaker.is_open():
-            logger.warning(
+            logger.debug(
                 "Circuit breaker open for plugin '%s', refusing GET %s",
                 self.plugin_name, url,
             )
@@ -133,7 +133,7 @@ class PluginHTTPClient:
     async def post(self, url: str, **kwargs) -> httpx.Response:
         """Perform a POST request with plugin timeouts applied."""
         if self.circuit_breaker.is_open():
-            logger.warning(
+            logger.debug(
                 "Circuit breaker open for plugin '%s', refusing POST %s",
                 self.plugin_name, url,
             )

@@ -42,6 +42,11 @@ export function ReplayControl() {
   const rafRef = useRef<number | null>(null);
   const frameRef = useRef<number>(0);
 
+  // `win` defaults from Date.now(), so the rendered clock times differ between the server render
+  // and client hydration. Gate the displayed times behind `mounted` to avoid a hydration mismatch.
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => setMounted(true), []);
+
   // On mount: if the URL carries ?from&to, restore that window (reproducible replay link).
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -119,8 +124,10 @@ export function ReplayControl() {
   return (
     <div className="flex items-center gap-2 text-white/60">
       <span className="text-white/45">replay</span>
-      <span className="tabular-nums">
-        {clock(win.from)}→{clock(win.to)} ({spanMin}m)
+      <span suppressHydrationWarning className="tabular-nums">
+        {mounted
+          ? `${clock(win.from)}→${clock(win.to)} (${spanMin}m)`
+          : `--:--:--→--:--:-- (${spanMin}m)`}
       </span>
       <select
         value={replaySpeed}
