@@ -1,0 +1,30 @@
+{
+  "connector.class": "io.confluent.connect.s3.S3SinkConnector",
+  "tasks.max": "2",
+  "topics": "osint.adsb,osint.ais,osint.tle,osint.ew",
+
+  "store.url": "http://minio:9000",
+  "s3.bucket.name": "worldview-lake",
+  "s3.region": "us-east-1",
+  "s3.path.style.access.enabled": "true",
+
+  "storage.class": "io.confluent.connect.s3.storage.S3Storage",
+  "format.class": "io.confluent.connect.s3.format.parquet.ParquetFormat",
+  "parquet.codec": "snappy",
+
+  "key.converter": "org.apache.kafka.connect.storage.StringConverter",
+  "value.converter": "org.apache.kafka.connect.json.JsonConverter",
+  "value.converter.schemas.enable": "false",
+
+  "topics.dir": "topics",
+  "partitioner.class": "io.confluent.connect.storage.partitioner.DefaultPartitioner",
+
+  "flush.size": "10000",
+  "rotate.interval.ms": "60000",
+  "rotate.schedule.interval.ms": "300000",
+  "timezone": "UTC",
+
+  "schema.compatibility": "NONE",
+  "errors.tolerance": "all",
+  "errors.log.enable": "true"
+}

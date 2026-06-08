@@ -11,3 +11,12 @@ export function getRedis(): Redis {
   }
   return client;
 }
+
+/**
+ * Test seam: inject a (mock) Redis client, bypassing the real connection. Pass `null` to reset back
+ * to the lazily-constructed real client. Only intended for unit tests of the WS/live path so they
+ * can observe pub/sub subscriptions without a live Redis.
+ */
+export function setRedisForTesting(mock: Redis | null): void {
+  client = mock;
+}

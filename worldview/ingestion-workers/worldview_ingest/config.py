@@ -68,6 +68,21 @@ class Settings:
     cep_tipping_delta_seconds: int = int(os.getenv("CEP_TIPPING_DELTA_SECONDS", "600"))
     cep_tipping_min_count: int = int(os.getenv("CEP_TIPPING_MIN_COUNT", "3"))
 
+    # --- Capture swarm (governed OSINT capture, ticket H19.5.7) ---
+    # A governed set of capture tasks that snapshot EPHEMERAL signals (a transient ADS-B squawk,
+    # an AIS gap, a short-lived RF/jamming spike, a NOTAM about to expire) to a TTL'd ephemeral
+    # cache so they aren't lost, each snapshot stamped with provenance, under a token-bucket
+    # rate-limit (per-source AND global) so the swarm can't hammer sources or explode. Owns its
+    # own producer/topic (osint.capture). The *_global_* limits default to the per-source values.
+    capture_topic: str = os.getenv("CAPTURE_TOPIC", "osint.capture")
+    capture_interval_seconds: int = int(os.getenv("CAPTURE_INTERVAL_SECONDS", "30"))
+    capture_rate_per_sec: float = float(os.getenv("CAPTURE_RATE_PER_SEC", "5"))
+    capture_burst: float = float(os.getenv("CAPTURE_BURST", "10"))
+    capture_global_rate_per_sec: float = float(os.getenv("CAPTURE_GLOBAL_RATE_PER_SEC", "20"))
+    capture_global_burst: float = float(os.getenv("CAPTURE_GLOBAL_BURST", "40"))
+    capture_cache_ttl_seconds: float = float(os.getenv("CAPTURE_CACHE_TTL_SECONDS", "300"))
+    capture_cache_capacity: int = int(os.getenv("CAPTURE_CACHE_CAPACITY", "10000"))
+
     # --- EW / Cyber (Layer D) ---
     ew_source: str = os.getenv("EW_SOURCE", "gpsjam")
     gpsjam_base_url: str = os.getenv("GPSJAM_BASE_URL", "https://gpsjam.org/data")
@@ -78,6 +93,21 @@ class Settings:
     context_events_url: str = os.getenv("CONTEXT_EVENTS_URL", "")
     context_notam_url: str = os.getenv("CONTEXT_NOTAM_URL", "")
     context_poll_seconds: int = int(os.getenv("CONTEXT_POLL_SECONDS", "300"))
+
+    # --- Load-test rig + as-of-T SLO (TOOL, not a worker; ticket H19.1.6) ---
+    # Pumps synthetic telemetry at LOADTEST_TARGET_RATE msg/s for LOADTEST_DURATION_S
+    # seconds across LOADTEST_LAYERS, simulating LOADTEST_ENTITIES tracks per layer,
+    # then fires as-of-T GET {LOADTEST_API_URL}/history/:layer?t=&bbox= queries and
+    # measures the latency SLO (p95 < LOADTEST_SLO_P95_S). Run via `python -m
+    # worldview_ingest.loadtest`; it is NOT in WORKERS — it is a measurement tool.
+    loadtest_target_rate: float = float(os.getenv("LOADTEST_TARGET_RATE", "100"))
+    loadtest_duration_s: float = float(os.getenv("LOADTEST_DURATION_S", "60"))
+    loadtest_entities: int = int(os.getenv("LOADTEST_ENTITIES", "500"))
+    # Comma-separated domains to load (adsb,ais,tle,ew,context).
+    loadtest_layers: str = os.getenv("LOADTEST_LAYERS", "adsb,ais")
+    loadtest_probe_count: int = int(os.getenv("LOADTEST_PROBE_COUNT", "200"))
+    loadtest_slo_p95_s: float = float(os.getenv("LOADTEST_SLO_P95_S", "0.5"))
+    loadtest_api_url: str = os.getenv("LOADTEST_API_URL", "http://localhost:8080")
 
 
 settings = Settings()

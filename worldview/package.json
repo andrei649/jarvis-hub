@@ -21,9 +21,11 @@
   "engines": {
     "node": ">=20"
   },
-  "//overrides": "Pin one @deck.gl/core (so @deck.gl/react + @deck.gl/layers share a Layer class) and lock the luma.gl stack to the 9.0.x line deck 9.0.27 was built against (^9.0.15 otherwise floats to 9.3.x, which renamed exports deck imports).",
+  "//overrides": "Pin one @deck.gl/core (so @deck.gl/react + @deck.gl/layers share a Layer class) and lock the luma.gl stack to the 9.0.x line deck 9.0.27 was built against (^9.0.15 otherwise floats to 9.3.x, which renamed exports deck imports). @deck.gl/extensions + @deck.gl/mesh-layers are transitive (^9.0.0) and must match core too: the deckExtensionsShim aliases ClipExtension from @deck.gl/extensions against the pinned core, so an unpinned extensions copy hoisting to 9.3.x would mismatch the 9.0.27 Layer class.",
   "overrides": {
     "@deck.gl/core": "9.0.27",
+    "@deck.gl/extensions": "9.0.27",
+    "@deck.gl/mesh-layers": "9.0.27",
     "@luma.gl/constants": "9.0.15",
     "@luma.gl/core": "9.0.15",
     "@luma.gl/engine": "9.0.15",

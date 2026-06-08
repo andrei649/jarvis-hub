@@ -2,7 +2,7 @@
 
 from datetime import UTC, datetime
 
-from worldview_ingest.ew.gpsjam import gpsjam_url, parse_gpsjam
+from worldview_ingest.ew.gpsjam import _ring_centroid, gpsjam_url, parse_gpsjam
 
 # A real-shaped GPSJam heatmap: an interference hexagon + a "no observations" one (skipped).
 GPSJAM = {
@@ -42,3 +42,16 @@ def test_parse_gpsjam_intensity_and_skip_empty():
     assert env.payload["h3_resolution"] == 4
     assert env.geom_wkt.startswith("POLYGON((")
     assert env.entity_id  # an H3 cell id derived from the hexagon centroid
+
+
+def test_ring_centroid_drops_duplicate_closing_vertex():
+    """The closing vertex (first == last) must not be double-counted in the average."""
+    # Closed square ring: vertices average to (0.5, 0.5); the repeated first/last
+    # vertex would pull the mean toward (0,0) if not dropped.
+    geometry = {
+        "type": "Polygon",
+        "coordinates": [[[0.0, 0.0], [1.0, 0.0], [1.0, 1.0], [0.0, 1.0], [0.0, 0.0]]],
+    }
+    lon, lat = _ring_centroid(geometry)
+    assert lon == 0.5
+    assert lat == 0.5

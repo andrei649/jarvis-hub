@@ -7,7 +7,8 @@
     "incremental": true,
     "plugins": [{ "name": "next" }],
     "paths": {
-      "@/*": ["./*"]
+      "@/*": ["./*"],
+      "@deck.gl-mvt-layer": ["../node_modules/@deck.gl/geo-layers/dist/mvt-layer/mvt-layer"]
     }
   },
   "include": ["next-env.d.ts", "**/*.ts", "**/*.tsx", ".next/types/**/*.ts"],

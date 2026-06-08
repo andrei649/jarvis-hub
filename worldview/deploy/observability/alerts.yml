@@ -1,0 +1,137 @@
+# Prometheus alert rules for WorldView golden signals (ticket H19.5.5).
+#
+# Metric-name expectations (document the contract with the app side):
+#   * Redpanda exposes consumer-group lag as:
+#       redpanda_kafka_consumer_group_lag_sum / _max  (labels: redpanda_group, redpanda_topic)
+#     Older builds use kafka_consumergroup_lag from a kafka-exporter; both forms are
+#     handled below with an `or`.
+#   * Backend API (APP-SIDE FOLLOW-UP — expose /metrics) is expected to emit, via
+#     OTLP or prom-client, HTTP server metrics following OTel/Prom conventions:
+#       http_server_requests_total{http_route, http_response_status_code}
+#       http_server_request_duration_seconds_bucket{http_route, le}
+#     and a live-WS gauge:
+#       worldview_ws_active_connections
+#   These names are what the dashboards + rules below assume; if the app uses other
+#   names, update the exprs here and in the dashboard JSON together.
+
+groups:
+  # -------------------------------------------------------------------------
+  # Ingestion / streaming golden signal: consumer-group lag.
+  # -------------------------------------------------------------------------
+  - name: worldview-ingestion
+    rules:
+      - alert: KafkaConsumerLagHigh
+        # Total un-consumed messages per consumer group. Fires when any group
+        # (live-writer / history-writer / recon-writer) stays backed up.
+        expr: |
+          max by (redpanda_group) (redpanda_kafka_consumer_group_lag_sum)
+            > 50000
+          or
+          sum by (consumergroup) (kafka_consumergroup_lag)
+            > 50000
+        for: 5m
+        labels:
+          severity: warning
+          signal: saturation
+          domain: ingestion
+        annotations:
+          summary: "Consumer group lag is high"
+          description: >
+            Consumer group has >50k un-consumed messages for 5m. The writer is
+            falling behind the firehose. Runbook: check worker health, scale the
+            consumer group, or replay. See RUNBOOK.md#consumer-lag.
+
+      - alert: KafkaConsumerLagCritical
+        expr: |
+          max by (redpanda_group) (redpanda_kafka_consumer_group_lag_sum)
+            > 250000
+          or
+          sum by (consumergroup) (kafka_consumergroup_lag)
+            > 250000
+        for: 10m
+        labels:
+          severity: critical
+          signal: saturation
+          domain: ingestion
+        annotations:
+          summary: "Consumer group lag is critical"
+          description: >
+            Consumer group has >250k un-consumed messages for 10m. Live map is
+            stale. Runbook: RUNBOOK.md#consumer-lag.
+
+  # -------------------------------------------------------------------------
+  # API golden signals: error rate + latency.
+  # -------------------------------------------------------------------------
+  - name: worldview-api
+    rules:
+      - alert: ApiErrorRateHigh
+        # >5% of API responses are 5xx over the last 5m.
+        expr: |
+          (
+            sum(rate(http_server_requests_total{http_response_status_code=~"5.."}[5m]))
+            /
+            clamp_min(sum(rate(http_server_requests_total[5m])), 1)
+          ) > 0.05
+        for: 5m
+        labels:
+          severity: critical
+          signal: errors
+          domain: api
+        annotations:
+          summary: "API 5xx error rate >5%"
+          description: >
+            More than 5% of API responses are 5xx for 5m. Runbook: check API
+            logs and DB/Redis health. See RUNBOOK.md#api-errors.
+
+      - alert: ApiLatencyHigh
+        # p95 request latency > 1s over 5m.
+        expr: |
+          histogram_quantile(
+            0.95,
+            sum by (le) (rate(http_server_request_duration_seconds_bucket[5m]))
+          ) > 1.0
+        for: 5m
+        labels:
+          severity: warning
+          signal: latency
+          domain: api
+        annotations:
+          summary: "API p95 latency >1s"
+          description: >
+            p95 request latency exceeded 1s for 5m. Check DB query time, history
+            reads, and CPU. See RUNBOOK.md#api-latency.
+
+      - alert: ApiDown
+        # No successful scrape of the API /metrics target.
+        expr: up{job="backend-api"} == 0
+        for: 2m
+        labels:
+          severity: critical
+          signal: availability
+          domain: api
+        annotations:
+          summary: "Backend API metrics target is down"
+          description: >
+            Prometheus cannot scrape backend-api:4000/metrics for 2m. Either the
+            API is down or /metrics is not yet wired (app-side follow-up).
+
+  # -------------------------------------------------------------------------
+  # Live path golden signal: WebSocket connections / fan-out.
+  # -------------------------------------------------------------------------
+  - name: worldview-live
+    rules:
+      - alert: LiveWsConnectionsDropped
+        # WS connections collapsed to zero while the API is up — fan-out broke.
+        expr: |
+          worldview_ws_active_connections == 0
+          and on() (up{job="backend-api"} == 1)
+        for: 5m
+        labels:
+          severity: warning
+          signal: availability
+          domain: live
+        annotations:
+          summary: "No active WebSocket connections"
+          description: >
+            Live WS connection count is 0 for 5m while the API is up. Check the
+            Redis pub/sub path and the /live endpoint. See RUNBOOK.md#ws-path.

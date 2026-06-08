@@ -1,0 +1,98 @@
+{
+  "annotations": { "list": [] },
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 1,
+  "id": null,
+  "links": [],
+  "liveNow": false,
+  "panels": [
+    {
+      "title": "Active WebSocket connections",
+      "type": "timeseries",
+      "datasource": { "type": "prometheus", "uid": "worldview-prometheus" },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 0 },
+      "description": "APP-SIDE: expected gauge worldview_ws_active_connections.",
+      "fieldConfig": { "defaults": { "unit": "short" }, "overrides": [] },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(worldview_ws_active_connections)",
+          "legendFormat": "ws connections"
+        }
+      ]
+    },
+    {
+      "title": "Connections now",
+      "type": "stat",
+      "datasource": { "type": "prometheus", "uid": "worldview-prometheus" },
+      "gridPos": { "h": 8, "w": 6, "x": 12, "y": 0 },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "thresholds": { "mode": "absolute", "steps": [ { "color": "red", "value": null }, { "color": "green", "value": 1 } ] }
+        },
+        "overrides": []
+      },
+      "targets": [
+        { "refId": "A", "expr": "sum(worldview_ws_active_connections)", "legendFormat": "ws" }
+      ]
+    },
+    {
+      "title": "Live messages pushed to clients/s",
+      "type": "timeseries",
+      "datasource": { "type": "prometheus", "uid": "worldview-prometheus" },
+      "gridPos": { "h": 8, "w": 6, "x": 18, "y": 0 },
+      "description": "APP-SIDE: expected worldview_ws_messages_sent_total.",
+      "fieldConfig": { "defaults": { "unit": "mps" }, "overrides": [] },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(rate(worldview_ws_messages_sent_total[1m]))",
+          "legendFormat": "msgs/s"
+        }
+      ]
+    },
+    {
+      "title": "Redis pub/sub throughput (ops/s)",
+      "type": "timeseries",
+      "datasource": { "type": "prometheus", "uid": "worldview-prometheus" },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 8 },
+      "description": "OPTIONAL: needs redis_exporter sidecar (redis_commands_processed_total).",
+      "fieldConfig": { "defaults": { "unit": "ops" }, "overrides": [] },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "rate(redis_commands_processed_total[5m])",
+          "legendFormat": "redis ops/s"
+        }
+      ]
+    },
+    {
+      "title": "Redis connected clients",
+      "type": "timeseries",
+      "datasource": { "type": "prometheus", "uid": "worldview-prometheus" },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 8 },
+      "description": "OPTIONAL: needs redis_exporter sidecar (redis_connected_clients).",
+      "fieldConfig": { "defaults": { "unit": "short" }, "overrides": [] },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "redis_connected_clients",
+          "legendFormat": "clients"
+        }
+      ]
+    }
+  ],
+  "refresh": "30s",
+  "schemaVersion": 39,
+  "tags": ["worldview", "golden-signals", "live", "websocket"],
+  "templating": { "list": [] },
+  "time": { "from": "now-1h", "to": "now" },
+  "timepicker": {},
+  "timezone": "",
+  "title": "WorldView — Live / WebSocket Path",
+  "uid": "worldview-live-ws",
+  "version": 1,
+  "weekStart": ""
+}

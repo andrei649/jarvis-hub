@@ -1,0 +1,153 @@
+# WorldView ingestion consumers (ticket H19.1.5).
+#
+# The three Kafka/Redpanda consumer groups that persist the firehose:
+#   live-writer     -> Redis live-state   (osint.adsb/ais/tle/ew)        group: live-writer
+#   history-writer  -> TimescaleDB        (osint.adsb/ais/tle/ew/context) group: history-writer
+#   recon-writer    -> TimescaleDB        (osint.recon)                   group: recon-writer
+#
+# These are the backend-api consumers (backend-api/src/consumers/*.ts), each gated by an
+# ENABLE_* flag in server.ts. We run them as dedicated, independently-scalable Deployments
+# (one consumer role per Deployment) so KEDA can scale each on its own group's lag.
+#
+# IMAGE: replace `ghcr.io/worldview/backend-api:TODO` with the real published tag.
+#   TODO(app): publish a backend-api image; until then this is a placeholder. The image
+#   must run ONLY the relevant consumer (set the ENABLE_* flags as below) — ideally a
+#   consumer-only entrypoint so each pod doesn't also bind the HTTP server.
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: live-writer
+  namespace: worldview
+  labels:
+    app.kubernetes.io/name: live-writer
+    app.kubernetes.io/part-of: worldview
+    app.kubernetes.io/component: ingestion-consumer
+spec:
+  # KEDA owns the replica count (min 1). Start at 1.
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: live-writer
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: live-writer
+        app.kubernetes.io/part-of: worldview
+        app.kubernetes.io/component: ingestion-consumer
+    spec:
+      containers:
+        - name: live-writer
+          image: ghcr.io/worldview/backend-api:TODO   # TODO(app): real image tag
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: KAFKA_BROKERS
+              value: "redpanda.worldview.svc.cluster.local:29092"   # TODO(infra): real broker DNS
+            - name: REDIS_URL
+              value: "redis://redis.worldview.svc.cluster.local:6379"
+            - name: ENABLE_LIVE_WRITER
+              value: "1"
+            - name: ENABLE_HISTORY_WRITER
+              value: "0"
+            - name: ENABLE_RECON_WRITER
+              value: "0"
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "128Mi"
+            limits:
+              cpu: "500m"
+              memory: "256Mi"
+          # TODO(app): expose a health/readiness port for these probes (no HTTP server in
+          # consumer-only mode yet). Until then probes are omitted so pods stay Ready.
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: history-writer
+  namespace: worldview
+  labels:
+    app.kubernetes.io/name: history-writer
+    app.kubernetes.io/part-of: worldview
+    app.kubernetes.io/component: ingestion-consumer
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: history-writer
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: history-writer
+        app.kubernetes.io/part-of: worldview
+        app.kubernetes.io/component: ingestion-consumer
+    spec:
+      containers:
+        - name: history-writer
+          image: ghcr.io/worldview/backend-api:TODO   # TODO(app): real image tag
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: KAFKA_BROKERS
+              value: "redpanda.worldview.svc.cluster.local:29092"
+            - name: DATABASE_URL
+              value: "postgresql://worldview:worldview@timescaledb.worldview.svc.cluster.local:5432/worldview"
+            - name: ENABLE_LIVE_WRITER
+              value: "0"
+            - name: ENABLE_HISTORY_WRITER
+              value: "1"
+            - name: ENABLE_RECON_WRITER
+              value: "0"
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "128Mi"
+            limits:
+              cpu: "500m"
+              memory: "256Mi"
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: recon-writer
+  namespace: worldview
+  labels:
+    app.kubernetes.io/name: recon-writer
+    app.kubernetes.io/part-of: worldview
+    app.kubernetes.io/component: ingestion-consumer
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: recon-writer
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: recon-writer
+        app.kubernetes.io/part-of: worldview
+        app.kubernetes.io/component: ingestion-consumer
+    spec:
+      containers:
+        - name: recon-writer
+          image: ghcr.io/worldview/backend-api:TODO   # TODO(app): real image tag
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: KAFKA_BROKERS
+              value: "redpanda.worldview.svc.cluster.local:29092"
+            - name: DATABASE_URL
+              value: "postgresql://worldview:worldview@timescaledb.worldview.svc.cluster.local:5432/worldview"
+            - name: ENABLE_LIVE_WRITER
+              value: "0"
+            - name: ENABLE_HISTORY_WRITER
+              value: "0"
+            - name: ENABLE_RECON_WRITER
+              value: "1"
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "128Mi"
+            limits:
+              cpu: "500m"
+              memory: "256Mi"

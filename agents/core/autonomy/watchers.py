@@ -19,12 +19,18 @@ or mock data.
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from typing import Callable, Optional
 
 from .observer import Signal, Severity, Finding, RiskTier
 
 logger = logging.getLogger("jarvis.autonomy.watchers")
+
+# How recently a same-key generated task must have been submitted for a fresh
+# alert to be treated as a duplicate (debounce window). Survives a process
+# restart because the autonomy queue is a durable SQLite store — the in-memory
+# EventWatcher._state map does not (see _already_submitted).
+SUBMIT_DEDUPE_WINDOW = timedelta(hours=12)
 
 
 class EmailProbe:
@@ -356,6 +362,180 @@ class HealthProbe:
             return []
 
 
+def _eta_seconds(t_ingress) -> Optional[float]:
+    """Seconds until a unix-seconds ingress time, or ``None`` if unknown/past.
+
+    Used to order due passes soonest-first when the per-tick cap has to choose
+    which alerts to surface.
+    """
+    try:
+        delta = float(t_ingress) - datetime.now(timezone.utc).timestamp()
+    except (TypeError, ValueError):
+        return None
+    return delta if delta > 0 else None
+
+
+def _eta_text(t_ingress) -> str:
+    """Render ' in ~Nm' from a unix-seconds ingress time, or '' if unknown/past."""
+    delta = _eta_seconds(t_ingress)
+    if delta is None:
+        return ""
+    mins = int(delta // 60)
+    return f" in ~{mins}m" if mins else " imminently"
+
+
+class WorldViewProbe:
+    """Monitors the local WorldView 4D OSINT platform for *due* satellite recon
+    passes and dark-vessel detections, turning each into an autonomy signal so it
+    surfaces in the JARVIS digest with a provenance link back to WorldView.
+
+    Alert hygiene is enforced at the *source* (this probe), not by the autonomy
+    InterruptBudget — these are READ_ONLY signals that the policy auto-approves
+    (ACT) before the budget is ever consulted (the budget gates ASK/push only).
+    So a noisy or mis-behaving WorldView backend that reports many due events in
+    a single tick could otherwise flood the queue with uncapped auto-approved
+    tasks. Three guards keep that in check:
+
+      * **Per-tick cap** (``max_per_tick``, default 4): each call emits at most a
+        small constant number of *alert* signals, picked top-K by severity then
+        soonest ETA — so dark-vessel CRITICALs always win over recon WARNs.
+        Dropped alerts are aggregated into a single digest signal rather than
+        lost (recoveries/healthy signals are never capped).
+      * **Debounce** (``EventWatcher._state``): a still-due event only fires once
+        per state transition, not every tick.
+      * **Digest batching**: the overflow beyond the cap is summarised into one
+        signal instead of N.
+
+    Degrades gracefully: if the WorldView plugin is absent or its backend is
+    unreachable, the probe returns no signals — it never raises and never invents
+    intel (an OSINT surface). Reuses the read-only ``WorldViewPlugin`` (H19.3.3),
+    so it inherits that plugin's retry + circuit-breaker and permission scope.
+    """
+
+    # A small constant cap so a noisy backend can't flood the autonomy queue in
+    # one tick. Keep it in step with the digest's interruption hygiene.
+    DEFAULT_MAX_PER_TICK = 4
+
+    def __init__(self, worldview_plugin=None, lead_min: int = 30, get_setting=None,
+                 max_per_tick: int = DEFAULT_MAX_PER_TICK):
+        self.plugin = worldview_plugin
+        self._default_lead_min = lead_min
+        self.get_setting = get_setting
+        self.max_per_tick = max(1, int(max_per_tick))
+
+    @property
+    def lead_min(self) -> int:
+        if self.get_setting:
+            try:
+                return int(self.get_setting("autonomy.worldview_lead_min", self._default_lead_min))
+            except Exception:
+                logger.warning("Failed to read autonomy.worldview_lead_min setting", exc_info=True)
+        return self._default_lead_min
+
+    async def __call__(self) -> list[Signal]:
+        if self.plugin is None:
+            return []
+        signals: list[Signal] = []
+        signals.extend(await self._recon_signals())
+        signals.extend(await self._dark_vessel_signals())
+        return self._cap(signals)
+
+    def _cap(self, signals: list[Signal]) -> list[Signal]:
+        """Bound alert emissions per tick so a noisy backend can't flood the queue.
+
+        Keeps at most ``max_per_tick`` *alert* signals (the unhealthy ones),
+        prioritised by severity then soonest ETA — dark-vessel CRITICALs win over
+        recon WARNs. The overflow is aggregated into one digest signal instead of
+        being dropped silently. Healthy/recovery signals pass through untouched
+        (they only ever resolve existing alerts, they don't interrupt).
+        """
+        alerts = [s for s in signals if not s.healthy]
+        others = [s for s in signals if s.healthy]
+        if len(alerts) <= self.max_per_tick:
+            return signals
+        # Sort by severity desc, then soonest ETA (signals carry their ingress ETA
+        # in `.value`; None/unknown sorts last). Stable for deterministic tests.
+        def _rank(s: Signal):
+            eta = s.value if isinstance(s.value, (int, float)) else float("inf")
+            return (-int(s.severity), eta)
+        ranked = sorted(alerts, key=_rank)
+        kept, dropped = ranked[: self.max_per_tick], ranked[self.max_per_tick:]
+        n = len(dropped)
+        crit = sum(1 for s in dropped if s.severity >= Severity.CRITICAL)
+        digest = Signal(
+            key="worldview.digest.overflow",
+            healthy=False,
+            severity=Severity.CRITICAL if crit else Severity.WARN,
+            detail=(f"WorldView: {n} more due event(s) suppressed this tick "
+                    f"({crit} critical) — see WorldView for the full list"),
+            agent="athena",
+        )
+        return kept + [digest] + others
+
+    async def _recon_signals(self) -> list[Signal]:
+        """Satellite recon passes due within the lead window → WARN signals."""
+        if not hasattr(self.plugin, "recon_alerts"):
+            return []
+        try:
+            res = await self.plugin.recon_alerts(lead=float(self.lead_min) * 60.0)
+        except Exception as e:
+            logger.warning(f"WorldViewProbe recon probe failed: {e}")
+            return []
+        if not isinstance(res, dict) or res.get("status") != "ok":
+            return []  # backend unavailable → no signals
+        out: list[Signal] = []
+        for alert in res.get("alerts", []) or []:
+            norad = alert.get("norad_id")
+            aoi = alert.get("aoi_id")
+            if norad is None or aoi is None:
+                continue
+            sensor = alert.get("sensor_type") or "sensor"
+            eta = _eta_text(alert.get("t_ingress"))
+            # Seconds-to-ingress drives the per-tick cap's soonest-first ordering.
+            eta_sec = _eta_seconds(alert.get("t_ingress"))
+            # Provenance link: the pass traces to the WorldView 'tle' layer entity.
+            prov = f"provenance WorldView /provenance/tle/{norad}"
+            out.append(Signal(
+                key=f"worldview.recon.{norad}.{aoi}",
+                healthy=False,
+                severity=Severity.WARN,
+                detail=f"Recon pass: {sensor} sat {norad} over AOI '{aoi}'{eta} — {prov}",
+                value=eta_sec,
+                agent="athena",
+            ))
+        return out
+
+    async def _dark_vessel_signals(self) -> list[Signal]:
+        """Dark-vessel detections (AIS gap in a watched geofence) → CRITICAL signals."""
+        if not hasattr(self.plugin, "state_at"):
+            return []
+        now = datetime.now(timezone.utc).timestamp()
+        try:
+            res = await self.plugin.state_at("context", now)
+        except Exception as e:
+            logger.warning(f"WorldViewProbe dark-vessel probe failed: {e}")
+            return []
+        if not isinstance(res, dict) or res.get("status") != "ok":
+            return []
+        out: list[Signal] = []
+        for feat in res.get("features", []) or []:
+            props = (feat or {}).get("properties", {}) or {}
+            if props.get("kind") != "dark_vessel":
+                continue
+            mmsi = props.get("mmsi") or props.get("entity_id")
+            if mmsi is None:
+                continue
+            prov = f"provenance WorldView /provenance/ais/{mmsi}"
+            out.append(Signal(
+                key=f"worldview.dark_vessel.{mmsi}",
+                healthy=False,
+                severity=Severity.CRITICAL,
+                detail=f"Dark vessel: MMSI {mmsi} went silent in a watched geofence — {prov}",
+                agent="athena",
+            ))
+        return out
+
+
 # ── the event watcher ────────────────────────────────────────────────
 class EventWatcher:
     """Aggregates probes, debounces events, and feeds the autonomy worker.
@@ -395,6 +575,13 @@ class EventWatcher:
         submitted = 0
         for finding in findings:
             try:
+                if finding.is_alert and self._already_submitted(finding.signal.key):
+                    # Durable dedupe: a process restart wipes self._state, so every
+                    # still-due event would re-fire as a fresh "alert" transition.
+                    # The autonomy queue persists across restarts, so we suppress an
+                    # alert whose key was already submitted inside the debounce
+                    # window — no re-flood on boot.
+                    continue
                 await self._submit(finding)
                 submitted += 1
             except Exception as e:
@@ -405,6 +592,39 @@ class EventWatcher:
             "submitted": submitted,
             "unhealthy": [k for k, ok in self._state.items() if not ok],
         }
+
+    def _already_submitted(self, key: str) -> bool:
+        """True if a generated task with this ``payload['key']`` was already
+        submitted inside ``SUBMIT_DEDUPE_WINDOW``.
+
+        Consulted against the *durable* autonomy queue (SQLite), so it holds
+        across a process restart where the in-memory ``_state`` debounce map is
+        empty. Fail-open: if the queue can't be read, we do NOT suppress (an
+        occasional duplicate alert is safer than silently dropping a real one).
+        """
+        queue = getattr(self.worker, "queue", None)
+        lister = getattr(queue, "list", None)
+        if lister is None:
+            return False
+        cutoff = datetime.now(timezone.utc) - SUBMIT_DEDUPE_WINDOW
+        try:
+            recent = lister(origin="generated", limit=200)
+        except Exception as e:
+            logger.warning(f"EventWatcher dedupe lookup failed for {key}: {e}")
+            return False
+        for task in recent:
+            payload = getattr(task, "payload", None) or {}
+            if payload.get("key") != key:
+                continue
+            try:
+                created = datetime.fromisoformat(task.created_at)
+            except (TypeError, ValueError):
+                continue
+            if created.tzinfo is None:
+                created = created.replace(tzinfo=timezone.utc)
+            if created >= cutoff:
+                return True
+        return False
 
     async def _submit(self, finding: Finding):
         sig = finding.signal
@@ -417,7 +637,10 @@ class EventWatcher:
                 origin="generated",
             )
 
-        # Alerts are submitted as READ_ONLY -> auto-approved and surfaced in HUD / brief
+        # Alerts are submitted as READ_ONLY -> auto-approved and surfaced in HUD /
+        # brief. NB: READ_ONLY skips the InterruptBudget entirely (that budget only
+        # caps ASK/push interrupts), so alert volume is bounded upstream by each
+        # probe's per-tick cap + the EventWatcher debounce, not by the budget.
         prefix = "⚠️ " if sig.severity >= Severity.CRITICAL else "🔔 "
         return await self.worker.submit(
             agent=sig.agent,

@@ -269,12 +269,13 @@ test("reconstructEvent POSTs the window and returns a job handle", async () => {
 
   assert.equal(calls.length, 1);
   const u = new URL(calls[0]!.url);
-  assert.equal(u.pathname, "/reconstruct");
+  assert.equal(u.pathname, "/reconstructions");
   assert.equal(calls[0]!.init?.method, "POST");
   const sent = JSON.parse(calls[0]!.init!.body!);
   assert.deepEqual(sent, {
     from: 1699990000,
     to: 1700000000,
+    stepSeconds: 60,
     bbox: "-5,50,5,55",
     layers: ["adsb", "ais"],
   });

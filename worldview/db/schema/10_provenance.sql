@@ -44,6 +44,13 @@
 -- reads scalar/time columns, no geometry. Callers that want point-in-time provenance should use
 -- the parameterized `provenanceOf` repository (it filters `ts <= T`); this view is the
 -- "latest known" convenience surface for dashboards / ad-hoc audit.
+--
+-- COST / NOT A HOT PATH. Each DISTINCT ON arm scans the FULL history hypertable for its layer
+-- (no ts bound, no entity filter) to find every entity's newest row — i.e. cost is O(all rows),
+-- growing without limit as history accumulates. This is an AD-HOC / AUDIT CONVENIENCE only: do
+-- NOT wire it into any request/hot path (map reads, reconstruction frames, per-entity lookups).
+-- Hot, point-in-time provenance MUST go through the parameterized `provenanceOf` repository,
+-- which bounds the scan with `ts <= T` + an entity filter and is index-backed.
 -- ===========================================================================
 
 -- Each UNION arm is parenthesized so its own `DISTINCT ON (...) ... ORDER BY` binds to that arm

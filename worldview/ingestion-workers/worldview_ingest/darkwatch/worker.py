@@ -28,6 +28,11 @@ logger = logging.getLogger(__name__)
 SWEEP_SECONDS = 60
 
 
+def _is_number(value: object) -> bool:
+    """True for real numeric coordinates (rejects bools, strings, None)."""
+    return isinstance(value, (int, float)) and not isinstance(value, bool)
+
+
 def event_to_envelope(event: DarkVesselEvent, ts: float) -> TelemetryEnvelope:
     """Wrap a dark-vessel event as a context-domain envelope for the persistence writer."""
     return TelemetryEnvelope(
@@ -63,13 +68,24 @@ async def run(geofences: list[Geofence], producer: TelemetryProducer) -> None:
     sweeper = asyncio.create_task(_sweep_loop(detector, producer))
     try:
         async for msg in consumer:
-            env = msg.value
-            p = env.get("payload") or {}
+            # One malformed AIS envelope must not kill the consumer loop: parse and
+            # validate the per-message body in isolation, logging + skipping on failure
+            # (mirrors ais/stream.py:handle_frame's "return None" discipline).
+            try:
+                env = msg.value
+                p = env.get("payload") or {}
+                mmsi = int(env["entity_id"])
+                lon, lat, ts = env["lon"], env["lat"], env["ts"]
+                if not _is_number(lon) or not _is_number(lat):
+                    raise ValueError("lon/lat missing or non-numeric")
+            except (KeyError, TypeError, ValueError, AttributeError) as exc:
+                logger.warning("skipping malformed AIS envelope: %s", exc)
+                continue
             resumed = detector.process(
-                mmsi=int(env["entity_id"]),
-                lon=env["lon"],
-                lat=env["lat"],
-                ts=env["ts"],
+                mmsi=mmsi,
+                lon=lon,
+                lat=lat,
+                ts=ts,
                 cog=p.get("cog_deg") or 0.0,
                 sog=p.get("sog_kt") or 0.0,
             )

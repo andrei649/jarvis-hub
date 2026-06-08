@@ -38,10 +38,15 @@ def destination_point(
 def circle_polygon_wkt(
     lat_deg: float, lon_deg: float, radius_km: float, segments: int = 24
 ) -> str:
-    """A closed WKT POLYGON ring approximating a circle of `radius_km` around a point."""
+    """A closed WKT POLYGON ring approximating a circle of `radius_km` around a point.
+
+    Vertices are emitted counter-clockwise (decreasing bearing) so the exterior
+    ring follows the OGC/GeoJSON right-hand-rule convention; sweeping bearings
+    0->360 would trace a clockwise ring.
+    """
     points: list[tuple[float, float]] = []
     for i in range(segments):
-        bearing = 360.0 * i / segments
+        bearing = -360.0 * i / segments  # CCW: N -> W -> S -> E
         plat, plon = destination_point(lat_deg, lon_deg, bearing, radius_km)
         points.append((plon, plat))
     points.append(points[0])  # close the ring
@@ -50,7 +55,14 @@ def circle_polygon_wkt(
 
 
 def point_in_polygon(lon: float, lat: float, ring: list[tuple[float, float]]) -> bool:
-    """Ray-casting point-in-polygon test. `ring` is a list of (lon, lat) vertices."""
+    """Ray-casting point-in-polygon test. `ring` is a list of (lon, lat) vertices.
+
+    Limitation: ray-casts in raw lon/lat and is NOT antimeridian-safe — geofences
+    that cross ±180° (or wrap a pole) will mis-test. The shipped Strait of Hormuz
+    fence stays well clear of the antimeridian, so this is fine today.
+    TODO(worldview): split/normalize rings crossing ±180° before testing if we
+    ever add a Pacific/dateline-spanning geofence.
+    """
     inside = False
     n = len(ring)
     j = n - 1

@@ -104,6 +104,19 @@ class TestInMemoryGraph:
         results = g.search("bucharest")
         assert len(results) == 1
 
+    def test_search_finds_geo_event_by_aoi_property(self):
+        # Contract (H19.3.5): a geo-event whose AOI lives only in a property must be
+        # findable by the location keyword — mirrors the Neo4j property scan below.
+        g = InMemoryGraph()
+        g.add_entity(
+            "ReconWindow rw-77",
+            "geo_event",
+            {"worldview_id": "rw-77", "aoi": "Strait of Hormuz", "source": "demo"},
+        )
+        results = g.search("Hormuz")
+        assert len(results) == 1
+        assert results[0]["properties"]["aoi"] == "Strait of Hormuz"
+
 
 class TestNeo4jGraph:
     def test_init_defaults(self):
@@ -185,6 +198,58 @@ class TestNeo4jGraph:
             mock_client.return_value.__enter__.return_value.post.return_value = mock_response
             rels = g.get_relations("Andrei")
             assert rels == []
+
+    def test_search_cypher_scans_properties_injection_safe(self):
+        """Neo4j search must match name OR any string property (H19.3.5 contract),
+        with the keyword parameterised (no string interpolation = injection-safe)."""
+        g = Neo4jGraph(url="http://mock")
+        g._connected = True
+        mock_response = MagicMock()
+        mock_response.raise_for_status = MagicMock()
+        mock_response.json.return_value = {"results": [{"columns": ["n", "labels"], "data": []}]}
+        with patch.object(httpx, "Client") as mock_client:
+            posted = {}
+
+            def _capture(url, json=None, auth=None):
+                posted.update(json)
+                return mock_response
+
+            mock_client.return_value.__enter__.return_value.post.side_effect = _capture
+            g.search("Hormuz")
+
+        stmt = posted["statements"][0]
+        cypher = stmt["statement"]
+        # Scans node properties (not just n.name) so AOI/source/details are findable.
+        assert "keys(n)" in cypher and "CONTAINS toLower($keyword)" in cypher
+        # Keyword is bound as a parameter, never inlined into the query string.
+        assert "Hormuz" not in cypher
+        assert stmt["parameters"]["keyword"] == "Hormuz"
+
+    def test_search_property_match_mock(self):
+        """End-to-end (mocked): a node returned by the property-scan query is parsed
+        into a result with its properties intact."""
+        g = Neo4jGraph(url="http://mock")
+        g._connected = True
+        mock_response = MagicMock()
+        mock_response.raise_for_status = MagicMock()
+        mock_response.json.return_value = {
+            "results": [
+                {
+                    "columns": ["n", "labels"],
+                    "data": [
+                        {"row": [
+                            {"name": "ReconWindow rw-77", "aoi": "Strait of Hormuz"},
+                            ["Geo_event"],
+                        ]}
+                    ],
+                }
+            ]
+        }
+        with patch.object(httpx, "Client") as mock_client:
+            mock_client.return_value.__enter__.return_value.post.return_value = mock_response
+            results = g.search("Hormuz")
+        assert len(results) == 1
+        assert results[0]["properties"]["aoi"] == "Strait of Hormuz"
 
 
 class TestCreateGraph:

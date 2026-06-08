@@ -35,7 +35,7 @@ done
 | `05_cyber_ew.sql` | Layer D — IODA outages + GPS-jamming H3 cells |
 | `06_context_intel.sql` | Layer E — NOTAMs, strike zones, geopolitical events |
 | `07_policies.sql` | continuous aggregates + compression + retention policies |
-| `08_indexes.sql` | spatial (GiST) + temporal (BRIN) + as-of (composite) indexes |
+| `08_indexes.sql` | spatial (GiST) + as-of (composite) indexes |
 
 ## Demo data
 

@@ -1,0 +1,45 @@
+# WorldView vector-tile server (Martin) — server side of ticket H19.5.1.
+# Serves MVT tiles from the WorldView TimescaleDB/PostGIS point tables.
+#
+# RUN (merged with the main infra so it shares the network + reaches `timescaledb`):
+#   cd worldview
+#   docker compose -f docker-compose.yml -f deploy/tiles/docker-compose.tiles.yml up -d
+#
+# Then:
+#   catalog:   http://localhost:3002/catalog
+#   TileJSON:  http://localhost:3002/adsb_positions
+#   tiles:     http://localhost:3002/adsb_positions/{z}/{x}/{y}
+#              http://localhost:3002/ais_positions/{z}/{x}/{y}
+#
+# Frontend wiring:  NEXT_PUBLIC_TILE_URL=http://localhost:3002/{table}/{z}/{x}/{y}
+# (the {table} placeholder is filled per layer by the map client).
+
+services:
+  martin:
+    image: ghcr.io/maplibre/martin:v0.14.2
+    container_name: worldview-martin
+    command: ["--config", "/config/martin-config.yaml"]
+    environment:
+      # Martin also reads DATABASE_URL; kept in sync with the config file.
+      DATABASE_URL: "postgresql://worldview:worldview@timescaledb:5432/worldview"
+      RUST_LOG: info
+    volumes:
+      - ./deploy/tiles/martin-config.yaml:/config/martin-config.yaml:ro
+    ports:
+      - "3002:3000"   # host 3002 -> martin 3000
+    depends_on:
+      timescaledb:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O-", "http://localhost:3000/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+# Standalone (attach to already-running infra) mode — uncomment, then run with
+#   docker compose -f deploy/tiles/docker-compose.tiles.yml --project-directory . up -d
+# networks:
+#   default:
+#     external: true
+#     name: worldview_default

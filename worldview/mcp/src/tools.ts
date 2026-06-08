@@ -371,15 +371,17 @@ export interface ReconstructEventArgs {
   to: number | string;
   bbox?: string;
   layers?: string[] | string;
+  /** Frame step in seconds (default 60); the backend requires one to bound frame count. */
+  stepSeconds?: number | string;
   /** Capability token; verified by the server before this handler runs. */
   token?: string;
 }
 
 /**
  * Request a bounded reconstruction/replay over a time window:
- * `POST {apiUrl}/reconstruct` with `{ from, to, bbox?, layers? }`.
- * WRITE/scoped tool (`worldview:reconstruct`). This is an async/long-running-style tool: the
- * backend kicks off the job and returns a handle, which we surface so the caller can poll later.
+ * `POST {apiUrl}/reconstructions` with `{ from, to, stepSeconds, bbox?, layers? }`.
+ * WRITE/scoped tool (`worldview:reconstruct`). The backend saves a shareable reconstruction handle
+ * (frames re-derive reproducibly from these params); we surface its id so the caller can export it.
  * Non-2xx degrades to a clear error result.
  */
 export async function reconstructEvent(args: ReconstructEventArgs, deps: Deps): Promise<ToolResult> {
@@ -406,18 +408,23 @@ export async function reconstructEvent(args: ReconstructEventArgs, deps: Deps): 
     layers = raw as Layer[];
   }
 
+  // The backend requires a stepSeconds to bound the frame count; default to 60s.
+  const stepSeconds = args.stepSeconds !== undefined ? (toNumber(args.stepSeconds) ?? 60) : 60;
   const payload = {
     from,
     to,
+    stepSeconds,
     ...(args.bbox !== undefined ? { bbox: args.bbox } : {}),
     ...(layers !== undefined ? { layers } : {}),
   };
-  const url = buildUrl(deps.apiUrl, "/reconstruct", {});
+  const url = buildUrl(deps.apiUrl, "/reconstructions", {});
   const got = await postJson(url, payload, deps);
   if (!got.ok) return got.result;
   const body = (got.body ?? {}) as Record<string, unknown>;
-  const jobId =
-    typeof body.id === "string" ? body.id : typeof body.jobId === "string" ? body.jobId : undefined;
+  // The route returns `{ reconstruction: { id, ... } }`; accept a bare `id`/`jobId` too.
+  const recon = (body.reconstruction ?? {}) as Record<string, unknown>;
+  const reconId = recon.id ?? body.id ?? body.jobId;
+  const jobId = reconId !== undefined && reconId !== null ? String(reconId) : undefined;
   const status = typeof body.status === "string" ? body.status : "accepted";
   const summary = `Reconstruction ${jobId ? `'${jobId}' ` : ""}requested for [${from}, ${to}]${
     layers ? ` over layers ${layers.join(",")}` : ""

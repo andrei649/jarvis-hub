@@ -1,0 +1,7 @@
+# WorldView ingestion namespace (ticket H19.1.5).
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: worldview
+  labels:
+    app.kubernetes.io/part-of: worldview

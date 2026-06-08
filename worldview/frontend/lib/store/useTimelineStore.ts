@@ -19,6 +19,23 @@ const allVisible: LayerVisibility = LAYER_IDS.reduce(
   {} as LayerVisibility,
 );
 
+/**
+ * Per-layer fetch outcome so the HUD can tell a genuinely empty time slice ("empty") apart from
+ * a backend 500 / network drop ("error"). "loading" while a fetch is in flight, "ok" when the
+ * last fetch returned features. The API client never throws — this is how failures surface.
+ */
+export type FetchStatus = "loading" | "ok" | "empty" | "error";
+
+type LayerStatus = Record<LayerId, FetchStatus>;
+
+const allOk: LayerStatus = LAYER_IDS.reduce(
+  (acc, id) => ({ ...acc, [id]: "ok" }),
+  {} as LayerStatus,
+);
+
+/** Live WebSocket connection state, surfaced so the HUD can show a connection indicator. */
+export type LiveConnectionState = "connecting" | "open" | "reconnecting" | "closed";
+
 /** The entity whose trail is shown, if any. */
 export interface SelectedEntity {
   layer: LayerId;
@@ -38,6 +55,10 @@ interface TimelineState {
   zoom: number;
   /** Map projection: 2.5D Mapbox basemap ("map") vs 3D Deck.gl globe ("globe"). */
   viewMode: ViewMode;
+  /** Per-layer last-fetch status (historical mode), so the HUD can distinguish empty vs error. */
+  layerStatus: LayerStatus;
+  /** Live WebSocket connection state (live mode), surfaced for a HUD indicator. */
+  liveConnection: LiveConnectionState;
 
   setMasterTime: (ts: number) => void;
   setMode: (mode: PlaybackMode) => void;
@@ -47,6 +68,8 @@ interface TimelineState {
   selectEntity: (entity: SelectedEntity | null) => void;
   setZoom: (zoom: number) => void;
   setViewMode: (mode: ViewMode) => void;
+  setLayerStatus: (id: LayerId, status: FetchStatus) => void;
+  setLiveConnection: (state: LiveConnectionState) => void;
   goLive: () => void;
 }
 
@@ -59,6 +82,8 @@ export const useTimelineStore = create<TimelineState>((set) => ({
   selectedEntity: null,
   zoom: 6,
   viewMode: "map",
+  layerStatus: allOk,
+  liveConnection: "connecting",
 
   setMasterTime: (ts) => set({ masterTime: ts }),
   setMode: (mode) => set({ mode }),
@@ -71,5 +96,8 @@ export const useTimelineStore = create<TimelineState>((set) => ({
   selectEntity: (entity) => set({ selectedEntity: entity }),
   setZoom: (zoom) => set({ zoom }),
   setViewMode: (mode) => set({ viewMode: mode }),
+  setLayerStatus: (id, status) =>
+    set((s) => ({ layerStatus: { ...s.layerStatus, [id]: status } })),
+  setLiveConnection: (state) => set({ liveConnection: state }),
   goLive: () => set({ mode: "live", masterTime: Date.now() / 1000, playing: true }),
 }));

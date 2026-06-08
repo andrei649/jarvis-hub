@@ -75,6 +75,7 @@ from .plugins.n8n import N8NPlugin
 from .plugins.sms_alerts import SMSAlertsPlugin
 from .plugins.crm_sync import CRMSyncPlugin
 from .plugins.iot_control import IoTControlPlugin
+from .plugins.worldview import WorldViewPlugin
 
 logger = logging.getLogger("jarvis.orchestrator")
 
@@ -439,6 +440,10 @@ class Orchestrator:
             secret=self.get_setting("plugins.tuya_secret", ""),
             device_id=self.get_setting("plugins.tuya_device_id", ""),
         )
+        # WorldView 4D OSINT (local-first; override host with WORLDVIEW_API_URL).
+        self.plugins["worldview"] = WorldViewPlugin(
+            api_url=os.environ.get("WORLDVIEW_API_URL", ""),
+        )
 
         # Autonomy queue — durable self-tasking store (H6.1)
         try:
@@ -448,17 +453,20 @@ class Orchestrator:
             self.observer = ProactiveObserver(self.autonomy, probes=default_probes())
 
             # Setup personal event probes using active plugins (Antigravity watchers)
-            from .autonomy.watchers import EventWatcher, EmailProbe, CalendarProbe, FinanceProbe, HealthProbe
+            from .autonomy.watchers import EventWatcher, EmailProbe, CalendarProbe, FinanceProbe, HealthProbe, WorldViewProbe
             gmail = self.plugins.get("gmail")
             calendar = self.plugins.get("google-calendar")
             balance = self.plugins.get("balance")
             health = self.plugins.get("apple-health")
+            worldview = self.plugins.get("worldview")
 
             event_probes = [
                 EmailProbe(gmail_plugin=gmail, priority_senders=self.get_setting("autonomy.priority_senders", ["andrei"]), get_setting=self.get_setting),
                 CalendarProbe(calendar_plugin=calendar, lead_time_min=int(self.get_setting("autonomy.calendar_lead_time", 30)), get_setting=self.get_setting),
                 FinanceProbe(balance_plugin=balance, min_ron=float(self.get_setting("autonomy.finance_min_ron", 2000.0)), min_eur=float(self.get_setting("autonomy.finance_min_eur", 400.0)), get_setting=self.get_setting),
                 HealthProbe(health_plugin=health, min_sleep_hrs=float(self.get_setting("autonomy.health_min_sleep", 5.0)), min_hrv_ms=float(self.get_setting("autonomy.health_min_hrv", 30.0)), get_setting=self.get_setting),
+                # WorldView 4D OSINT: recon passes + dark-vessel alerts → digest (degrades to no-op if WorldView is down).
+                WorldViewProbe(worldview_plugin=worldview, lead_min=int(self.get_setting("autonomy.worldview_lead_min", 30)), get_setting=self.get_setting),
             ]
             self.event_watcher = EventWatcher(self.autonomy, event_probes)
 
@@ -788,6 +796,46 @@ class Orchestrator:
 
         return executor
 
+    def _schedule_worldview_kg_sync(self):
+        """Periodically sync the WorldView ontology into the knowledge graph (H19.3.5).
+
+        OFF by default — like the Oracle watcher, a privacy-first local product should not
+        poll a service unsolicited. Enable with JARVIS_WORLDVIEW_KG_SYNC=1 or the
+        `worldview.kg_sync_enabled` setting. Each pass degrades to a no-op when WorldView
+        is unreachable (the plugin fails closed), so an enabled-but-offline deployment is
+        harmless. Skipped under JARVIS_TESTING.
+        """
+        if os.getenv("JARVIS_TESTING") == "1":
+            return
+        enabled = os.getenv("JARVIS_WORLDVIEW_KG_SYNC") == "1" or self.get_setting(
+            "worldview.kg_sync_enabled", False
+        )
+        if not enabled:
+            return
+        sched = getattr(self.heartbeat_scheduler, "scheduler", None)
+        if sched is None:
+            return
+        interval = max(60, int(self.get_setting("worldview.kg_sync_interval", 900)))
+        try:
+            sched.add_job(self._run_worldview_kg_sync, "interval", seconds=interval,
+                          id="worldview-kg-sync", replace_existing=True)
+            logger.info("Scheduled WorldView KG sync every %ss", interval)
+        except Exception as e:
+            logger.warning(f"Failed to schedule WorldView KG sync: {e}")
+
+    async def _run_worldview_kg_sync(self):
+        """Run one WorldView ontology -> knowledge-graph sync pass (best-effort)."""
+        plugin = self.plugins.get("worldview")
+        if plugin is None or getattr(self, "memory", None) is None:
+            return
+        try:
+            from .memory.worldview_sync import WorldViewKGSync
+            summary = await WorldViewKGSync(self.memory, plugin).sync()
+            if summary.get("events"):
+                logger.info("WorldView KG sync: %s", summary)
+        except Exception as e:
+            logger.warning(f"WorldView KG sync failed: {e}")
+
     async def _run_daily_digest(self, kind: str):
         """Build and ship the morning brief / evening retro to the owner."""
         try:
@@ -827,6 +875,7 @@ class Orchestrator:
         self._schedule_log_scans()
         self._schedule_learning_loop()
         self._schedule_daily_budget_reset()
+        self._schedule_worldview_kg_sync()
         self._autonomy_task = asyncio.create_task(self._autonomy_loop())
         self._autonomy_task.add_done_callback(_log_task_result)
         # Oracle GitHub watcher is OFF by default: it polls a GitHub repo every 30s,
@@ -1412,6 +1461,18 @@ class Orchestrator:
                 wp = self.plugins.get("websearch")
                 if wp:
                     data["websearch"] = await wp.search(text, max_results=5)
+
+        if "worldview" in keywords or any(w in text_lower for w in [
+            "satellite", "satelit", "recon", "overflight", "overpass", "satpass",
+            "geospatial", "osint", "hormuz", "strait", "dark vessel",
+            "jamming", "bruiaj", "footprint", "overhead pass",
+        ]):
+            if self._any_agent_can("worldview", intent):
+                wv = self.plugins.get("worldview")
+                if wv:
+                    data["worldview"] = await wv.recon_overview()
+            else:
+                log_error(logger, E_PLUGIN_BLOCKED, name="worldview")
 
         return data
 

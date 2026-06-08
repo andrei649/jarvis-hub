@@ -98,6 +98,16 @@ agents:
     llm_policy: claude
     plugins: [cloud-llm, websearch]
 
+  argus:
+    name: Argus
+    archetype: Geospatial OSINT Intel
+    status: active
+    tier: business
+    channel: web-dashboard
+    heartbeat: "6h"
+    llm_policy: claude
+    plugins: [worldview, cloud-llm]
+
   steve:
     name: Steve
     archetype: CTO Plus Builds

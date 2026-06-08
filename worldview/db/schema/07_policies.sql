@@ -36,6 +36,17 @@ FROM ais_positions
 GROUP BY bucket, mmsi
 WITH NO DATA;
 
+-- Spatial index on each continuous aggregate's geom. The minute-LOD bbox reads
+-- (history.ts flightsAsOf/vesselsAsOf, `geom && ST_MakeEnvelope(...)`) hit the cagg, NOT the
+-- base hypertable, so they do NOT inherit the base GiST (08_indexes.sql) and would seq-scan the
+-- materialized cagg. TimescaleDB 2.x supports creating an index directly on the cagg by name
+-- (it is materialized into an underlying hypertable); `CREATE INDEX ... ON <cagg> USING gist`
+-- applies cleanly. Guarded with IF NOT EXISTS so a re-apply is idempotent.
+-- NOTE: requires a real TimescaleDB to validate (no local timescaledb here) — the CI integration
+-- job's schema apply is what proves this statement is accepted by the engine.
+CREATE INDEX IF NOT EXISTS adsb_positions_1m_geom_gist ON adsb_positions_1m USING gist (geom);
+CREATE INDEX IF NOT EXISTS ais_positions_1m_geom_gist  ON ais_positions_1m  USING gist (geom);
+
 -- Keep continuous aggregates current (refresh recent window on a schedule).
 SELECT add_continuous_aggregate_policy('adsb_positions_1m',
     start_offset      => INTERVAL '3 hours',
@@ -85,6 +96,14 @@ SELECT add_compression_policy('gps_jamming', INTERVAL '7 days', if_not_exists =>
 -- ===========================================================================
 -- RETENTION — drop raw chunks past their useful window. Continuous aggregates
 -- survive (separate hypertables), so long-range zoomed-out scrubbing still works.
+--
+-- RECONSTRUCTION INTERACTION (review CRITICAL). The default `raw`-LOD as-of-T readers (backend-api
+-- history.ts) query ONLY the raw hypertable, so a reconstruction frame whose T is older than a
+-- layer's horizon below would return EMPTY once its raw chunks are dropped. To avoid that silent
+-- gap, reconstruction.ts (buildFrames / lodForFrame, RETENTION_HORIZON_SECONDS) routes as-of-T reads
+-- OLDER than the per-layer horizon to the minute continuous aggregate (which survives retention).
+-- The horizon constants there MUST stay in sync with the windows below (currently adsb 90d, ais
+-- 180d — the layers that have a minute cagg).
 -- ===========================================================================
 
 SELECT add_retention_policy('adsb_positions',      INTERVAL '90 days',  if_not_exists => TRUE);

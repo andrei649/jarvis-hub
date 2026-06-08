@@ -1,6 +1,16 @@
-import type { FastifyInstance } from "fastify";
+import type { FastifyInstance, FastifyRequest } from "fastify";
 import { getPool } from "../plugins/db.js";
 import { dueAlerts, upcomingWindows } from "../repositories/recon.js";
+import { recordAction } from "../repositories/ontologyAudit.js";
+import { inScope, type Principal } from "../auth/rbac.js";
+
+// Resolve the request principal for ABAC AOI scoping. The guard decorates `request.principal` on every
+// request; when the recon plugin is mounted WITHOUT the guard (e.g. unit tests register the route in
+// isolation) `principal` is absent — treat that as unrestricted so back-compat behavior is preserved.
+function principalOf(req: FastifyRequest): Principal | null {
+  const p = (req as FastifyRequest & { principal?: Principal }).principal;
+  return p ?? null;
+}
 
 // Recon-window API (ticket H19.2.2): list upcoming predicted satellite overflights of an AOI,
 // and the subset that's due to ingress within a lead time (the alertable set). Times are
@@ -29,8 +39,19 @@ export async function reconRoutes(app: FastifyInstance): Promise<void> {
       return reply.code(400).send({ error: "'from'/'to' must be unix seconds" });
     }
     const aoiId = req.query.aoi || undefined;
+
+    // ABAC AOI scoping: a non-admin principal whose token restricts `aois` may only see windows for
+    // those AOIs. If the request asks for a specific `aoi` outside scope, deny (403); otherwise filter
+    // the result set to the in-scope AOIs. admin / `aois=["*"]` (or no principal) bypass scoping.
+    const principal = principalOf(req);
+    if (principal && aoiId && !inScope(principal, aoiId)) {
+      return reply.code(403).send({ error: "forbidden", reason: `AOI '${aoiId}' is out of scope` });
+    }
     const windows = await upcomingWindows(getPool(), { aoiId, from, to });
-    return reply.send({ windows });
+    const scoped = principal
+      ? windows.filter((w) => inScope(principal, w.aoi_id))
+      : windows;
+    return reply.send({ windows: scoped });
   });
 
   // GET /recon/alerts?lead=<seconds>
@@ -42,6 +63,48 @@ export async function reconRoutes(app: FastifyInstance): Promise<void> {
     }
     const now = Date.now() / 1000;
     const alerts = await dueAlerts(getPool(), { now, leadSeconds });
-    return reply.send({ alerts });
+    // ABAC: a scoped non-admin principal only sees alerts for AOIs in their scope (mirrors
+    // /recon/windows, so out-of-scope intel doesn't leak into JARVIS digests / MCP). admin / `*` /
+    // no-principal see all (inScope returns true).
+    const principal = principalOf(req);
+    const scoped = principal ? alerts.filter((a) => inScope(principal, a.aoi_id)) : alerts;
+    return reply.send({ alerts: scoped });
+  });
+
+  // POST /recon/watch — create a standing watch rule on an AOI (analyst+ via write:recon).
+  // Body: { aoiId, rule, lead? }. The watch is appended to the tamper-evident hash chain
+  // (objectType 'ReconWatch', action 'watch') — the audit row IS the watch record. ABAC: the AOI
+  // (in the body) must be in the principal's scope (the guard can't read the body, so we check here).
+  // This is the backend the WorldView MCP server's `watch_aoi` write tool calls.
+  app.post("/recon/watch", async (req, reply) => {
+    const body = (req.body && typeof req.body === "object" ? req.body : {}) as Record<string, unknown>;
+    const aoiId = typeof body.aoiId === "string" ? body.aoiId.trim() : "";
+    const rule = typeof body.rule === "string" ? body.rule.trim() : "";
+    if (!aoiId) return reply.code(400).send({ error: "'aoiId' is required" });
+    if (!rule) return reply.code(400).send({ error: "'rule' is required" });
+    let lead: number | undefined;
+    if (body.lead !== undefined) {
+      const n = Number(body.lead);
+      if (Number.isNaN(n)) return reply.code(400).send({ error: "'lead' must be numeric seconds" });
+      lead = n;
+    }
+    const principal = principalOf(req);
+    if (principal && !inScope(principal, aoiId)) {
+      return reply.code(403).send({ error: "forbidden", reason: `AOI '${aoiId}' is out of scope` });
+    }
+    const actor =
+      principal?.sub?.trim() ||
+      (typeof req.headers["x-actor"] === "string" ? req.headers["x-actor"] : null);
+    const audit = await recordAction(getPool(), {
+      actor,
+      objectType: "ReconWatch",
+      objectId: aoiId,
+      action: "watch",
+      params: { rule, ...(lead !== undefined ? { lead } : {}) },
+      source: "api",
+    });
+    return reply
+      .code(201)
+      .send({ id: audit.id, watchId: String(audit.id), aoiId, rule, ...(lead !== undefined ? { lead } : {}) });
   });
 }

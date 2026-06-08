@@ -1,0 +1,168 @@
+# WorldView DR stack — ticket H19.5.6 "DR (multi-AZ, replica promotion, Kafka mirror)".
+#
+# Stands up the DR-SIDE of a disaster-recovery topology next to the primary infra
+# in worldview/docker-compose.yml:
+#
+#   timescaledb (primary)  ──WAL streaming replication──►  timescaledb-dr (hot standby)
+#   redpanda    (primary)  ──rpk topic mirror (osint.*)──►  redpanda-dr   (DR cluster)
+#
+# Both DR services live on the SAME default network as the primary (run merged,
+# below) so they reach `timescaledb` / `redpanda` by service name. This is the
+# rehearsable LOCAL drill — true multi-AZ needs a real multi-zone deployment
+# (see deploy/dr/README.md). The MECHANICS (replica + mirror + promote + verify)
+# are real and exercised by deploy/dr/game-day.sh.
+#
+# RUN (merged — recommended):
+#   cd worldview
+#   docker compose up -d                                   # primary infra first
+#   docker compose -f docker-compose.yml \
+#     -f deploy/dr/docker-compose.dr.yml up -d
+#
+# PRIMARY-SIDE PREREQUISITES (must be set on the primary `timescaledb` BEFORE the
+# replica can stream — these are TODOs the parent applies to the real primary,
+# documented fully in deploy/dr/README.md):
+#   * postgresql.conf:  wal_level=replica (default on this image), max_wal_senders>=10,
+#                       wal_keep_size>='512MB', hot_standby=on
+#   * a physical replication slot:  SELECT pg_create_physical_replication_slot('dr_slot');
+#   * a replication role:           CREATE ROLE replicator WITH REPLICATION LOGIN PASSWORD '...';
+#   * pg_hba.conf:                  host replication replicator <dr-subnet> scram-sha-256
+# The timescaledb-dr service below bootstraps itself from the primary with
+# pg_basebackup using these; if they are absent it logs the exact missing item.
+
+services:
+  # --- DR TimescaleDB: streaming hot-standby replica of the primary -----------
+  timescaledb-dr:
+    image: timescale/timescaledb-ha:pg16          # pinned: MUST match the primary image
+    container_name: worldview-timescaledb-dr
+    user: postgres
+    environment:
+      # Connection details used by entrypoint to base-backup + stream from primary.
+      PRIMARY_HOST: timescaledb
+      PRIMARY_PORT: "5432"
+      REPL_USER: replicator
+      REPL_PASSWORD: replicator                   # TODO: match the primary's replicator role
+      REPL_SLOT: dr_slot
+      PGDATA: /home/postgres/pgdata/data
+    # Bootstrap-and-stream: if the data dir is empty, pg_basebackup from the
+    # primary (creates standby.signal + primary_conninfo via -R), then start as a
+    # read-only hot standby. Idempotent: a populated data dir just starts up.
+    entrypoint:
+      - /bin/bash
+      - -c
+      - |
+        set -euo pipefail
+        DATADIR="$${PGDATA}"
+        export PGPASSWORD="$${REPL_PASSWORD}"
+        if [ ! -s "$${DATADIR}/PG_VERSION" ]; then
+          echo "[dr] empty data dir -> pg_basebackup from $${PRIMARY_HOST}:$${PRIMARY_PORT}"
+          until pg_isready -h "$${PRIMARY_HOST}" -p "$${PRIMARY_PORT}" -U "$${REPL_USER}"; do
+            echo "[dr] waiting for primary to accept replication connections..."; sleep 3
+          done
+          rm -rf "$${DATADIR:?}/"* || true
+          pg_basebackup \
+            -h "$${PRIMARY_HOST}" -p "$${PRIMARY_PORT}" -U "$${REPL_USER}" \
+            -D "$${DATADIR}" -Fp -Xs -P -R \
+            -S "$${REPL_SLOT}" -C \
+          || { echo "[dr] pg_basebackup FAILED — check primary prerequisites (slot/role/pg_hba)"; exit 1; }
+          echo "standby_mode = 'on'" >> "$${DATADIR}/postgresql.auto.conf" || true
+          touch "$${DATADIR}/standby.signal"
+          echo "[dr] base backup complete; starting as hot standby"
+        else
+          echo "[dr] existing data dir -> resuming standby"
+        fi
+        exec postgres -D "$${DATADIR}" -c hot_standby=on
+    ports:
+      - "5433:5432"            # host 5433 -> DR replica (primary stays on 5432)
+    volumes:
+      - timescale-dr-data:/home/postgres/pgdata/data
+    healthcheck:
+      # Healthy = accepting connections AND actually in recovery (a true standby).
+      test:
+        - CMD-SHELL
+        - >-
+          pg_isready -U worldview -d worldview &&
+          psql -U worldview -d worldview -tAc 'SELECT pg_is_in_recovery()' | grep -q t
+      interval: 15s
+      timeout: 5s
+      retries: 20
+      start_period: 60s
+    restart: unless-stopped
+    # networks: [default]
+
+  # --- DR Redpanda: target cluster for osint.* topic mirroring ----------------
+  redpanda-dr:
+    image: redpandadata/redpanda:v24.2.7          # pinned: matches primary broker
+    container_name: worldview-redpanda-dr
+    command:
+      - redpanda
+      - start
+      - --smp=1
+      - --overprovisioned
+      - --node-id=0
+      - --kafka-addr=PLAINTEXT://0.0.0.0:29093,EXTERNAL://0.0.0.0:9093
+      - --advertise-kafka-addr=PLAINTEXT://redpanda-dr:29093,EXTERNAL://localhost:9093
+    ports:
+      - "9093:9093"            # DR Kafka API on host 9093 (primary is 9092)
+    healthcheck:
+      test: ["CMD-SHELL", "rpk cluster health | grep -q 'Healthy:.*true'"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+    # networks: [default]
+
+  # --- One-shot: configure osint.* topic mirroring primary -> DR --------------
+  # Redpanda's built-in producer-side mirror via `rpk`: register the primary as
+  # an upstream source on the DR cluster and mirror the osint.* topics. Idempotent
+  # — re-running just re-applies the source config. This is the runnable option
+  # for the redpanda image (no separate MirrorMaker2 JVM needed).
+  redpanda-mirror-init:
+    image: redpandadata/redpanda:v24.2.7
+    container_name: worldview-redpanda-mirror-init
+    depends_on:
+      redpanda:
+        condition: service_healthy
+      redpanda-dr:
+        condition: service_healthy
+    entrypoint: ["/bin/bash", "-c"]
+    command:
+      - |
+        set -euo pipefail
+        SRC=redpanda:29092         # primary (source) broker
+        DST=redpanda-dr:29093      # DR (target) broker
+        TOPICS="osint.adsb osint.ais osint.tle osint.ew osint.context osint.recon"
+        echo "[mirror] ensuring osint.* topics exist on DR target ($${DST})"
+        for t in $${TOPICS}; do
+          rpk topic create "$${t}" --brokers "$${DST}" -p 4 -r 1 2>/dev/null \
+            && echo "  created $${t} on DR" || echo "  $${t} already on DR"
+        done
+        # Try native multi-cluster mirroring first; fall back to a documented
+        # MirrorMaker2 note if this rpk build lacks the verb (kept non-fatal so
+        # the drill can still proceed against pre-mirrored topics).
+        if rpk cluster mirror --help >/dev/null 2>&1; then
+          echo "[mirror] registering primary ($${SRC}) as mirror source on DR ($${DST})"
+          rpk cluster mirror create \
+            --brokers "$${DST}" \
+            --source-broker "$${SRC}" \
+            --topics "$${TOPICS// /,}" \
+          || echo "[mirror] mirror create returned non-zero (may already exist / enterprise-gated) — continuing"
+        else
+          echo "[mirror] this rpk build has no 'cluster mirror' verb."
+          echo "[mirror] Use Kafka MirrorMaker2 instead: connect-mirror-maker mm2.properties"
+          echo "[mirror] with clusters primary=$${SRC}, dr=$${DST} and topics=$${TOPICS// /,}"
+          echo "[mirror] (template in deploy/dr/README.md)."
+        fi
+        echo "[mirror] mirror init complete"
+    restart: "no"
+    # networks: [default]
+
+volumes:
+  timescale-dr-data:
+
+# For STANDALONE mode (attach to an already-running primary network) uncomment
+# this and the per-service `networks:` lines. `docker compose up` in worldview/
+# creates the network as <project>_default (worldview_default).
+# networks:
+#   default:
+#     external: true
+#     name: worldview_default
