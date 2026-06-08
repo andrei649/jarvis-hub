@@ -5,6 +5,7 @@ import { liveSnapshot } from "../repositories/live.js";
 import { config } from "../config.js";
 import { Coalescer } from "../live/coalescer.js";
 import { planSubscription } from "../live/subscription.js";
+import { wsActiveConnections, wsMessagesSentTotal } from "../metrics/registry.js";
 import { isLayer, LAYERS, parseBBox, pointInBBox, type BBox, type Layer } from "../types.js";
 
 interface LiveQuery {
@@ -42,6 +43,16 @@ export async function liveRoutes(app: FastifyInstance): Promise<void> {
       const layerSet = new Set<string>(layers);
       const redis = getRedis();
 
+      // Observability (ticket H19.5.5): count this open connection; decremented exactly once on close.
+      wsActiveConnections.inc();
+      let counted = true;
+      const releaseConn = () => {
+        if (counted) {
+          counted = false;
+          wsActiveConnections.dec();
+        }
+      };
+
       // Per-connection viewport. Seeded from the connect-time `?bbox=` query param, and updated when
       // the client sends `{type:"viewport", bbox:"w,s,e,n"}` as it pans/zooms. Null = stream
       // everything in the subscribed channels.
@@ -66,6 +77,7 @@ export async function liveRoutes(app: FastifyInstance): Promise<void> {
               if (socket.readyState !== socket.OPEN) return;
               for (const d of batch) {
                 socket.send(JSON.stringify({ type: "delta", layer: d.layer, data: d.env }));
+                wsMessagesSentTotal.inc();
               }
             },
           })
@@ -84,7 +96,10 @@ export async function liveRoutes(app: FastifyInstance): Promise<void> {
       // Initial snapshot per layer.
       for (const layer of layers) {
         liveSnapshot(redis, layer)
-          .then((data) => socket.send(JSON.stringify({ type: "snapshot", layer, data })))
+          .then((data) => {
+            socket.send(JSON.stringify({ type: "snapshot", layer, data }));
+            wsMessagesSentTotal.inc();
+          })
           .catch((err) => req.log.warn({ err }, "snapshot failed"));
       }
 
@@ -114,10 +129,12 @@ export async function liveRoutes(app: FastifyInstance): Promise<void> {
           coalescer.push({ layer, env });
         } else if (socket.readyState === socket.OPEN) {
           socket.send(JSON.stringify({ type: "delta", layer, data: env }));
+          wsMessagesSentTotal.inc();
         }
       });
 
       socket.on("close", () => {
+        releaseConn();
         coalescer?.close();
         void sub.quit();
       });

@@ -28,4 +28,9 @@ export const config = {
   wsCoalesceMaxBatch: Number(process.env.WS_COALESCE_MAX_BATCH ?? 500),
   wsMaxClientQueue: Number(process.env.WS_MAX_CLIENT_QUEUE ?? 5000),
   wsGeohashPrecision: Number(process.env.WS_GEOHASH_PRECISION ?? 3),
+  // OTLP tracing (ticket H19.5.5) — strictly OPT-IN. Tracing is initialized ONLY when
+  // otelExporterOtlpEndpoint is non-empty; otherwise the OpenTelemetry SDK is never started (no
+  // collector required, no effect on tests/CI). otelServiceName labels the emitted spans.
+  otelExporterOtlpEndpoint: process.env.OTEL_EXPORTER_OTLP_ENDPOINT ?? "",
+  otelServiceName: process.env.OTEL_SERVICE_NAME ?? "worldview-api",
 };

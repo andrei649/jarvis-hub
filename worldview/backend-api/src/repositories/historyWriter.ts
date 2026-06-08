@@ -1,4 +1,5 @@
 import type { Pool } from "pg";
+import { historyRowsWrittenTotal } from "../metrics/registry.js";
 
 // History writer (design doc §4.4): batches normalized envelopes into the right TimescaleDB
 // hypertable. Idempotent on the PK (ON CONFLICT DO NOTHING), so at-least-once Kafka delivery
@@ -230,10 +231,8 @@ async function insertSpec(pool: Pool, spec: DomainSpec, envelopes: Envelope[]): 
   }
 }
 
-/** Route a domain batch to its table(s) and execute. */
-export async function writeBatch(pool: Pool, domain: string, envelopes: Envelope[]): Promise<number> {
-  if (envelopes.length === 0) return 0;
-
+/** Route a domain batch to its table(s) and execute, returning the number of rows written. */
+async function writeBatchInner(pool: Pool, domain: string, envelopes: Envelope[]): Promise<number> {
   const simple = SIMPLE_SPECS[domain];
   if (simple) return insertSpec(pool, simple, envelopes);
 
@@ -249,4 +248,22 @@ export async function writeBatch(pool: Pool, domain: string, envelopes: Envelope
   }
 
   return 0; // unknown domain: drop (the schema registry is the upstream guard)
+}
+
+/**
+ * Route a domain batch to its table(s) and execute. Increments
+ * worldview_history_rows_written_total{domain} by the number of rows actually inserted (the metric
+ * is best-effort and never affects the write result).
+ */
+export async function writeBatch(pool: Pool, domain: string, envelopes: Envelope[]): Promise<number> {
+  if (envelopes.length === 0) return 0;
+  const written = await writeBatchInner(pool, domain, envelopes);
+  if (written > 0) {
+    try {
+      historyRowsWrittenTotal.inc({ domain }, written);
+    } catch {
+      // metrics must never affect the write path
+    }
+  }
+  return written;
 }
