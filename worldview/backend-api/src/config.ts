@@ -17,4 +17,15 @@ export const config = {
   // (the default) auth is DISABLED and all routes are open (back-compat for tests + the integration
   // CI job); when set, the request guard enforces RBAC + AOI scoping fail-CLOSED.
   authSecret: process.env.WORLDVIEW_AUTH_SECRET ?? "",
+  // Live WebSocket fleet scaling (ticket H19.5.2). Coalescing bounds each client's outbound delta
+  // rate; geohash sharding scopes a client to only the channels covering its viewport.
+  //   wsCoalesceMs       — flush interval for per-client delta coalescing (0 disables coalescing →
+  //                        immediate send, the pre-H19.5.2 back-compat behavior).
+  //   wsCoalesceMaxBatch — flush early once this many distinct entities are buffered.
+  //   wsMaxClientQueue   — hard cap on buffered distinct entities per client (drop-oldest backpressure).
+  //   wsGeohashPrecision — geohash char count for channel cells (3 ≈ 150km cells). 0 disables sharding.
+  wsCoalesceMs: Number(process.env.WS_COALESCE_MS ?? 100),
+  wsCoalesceMaxBatch: Number(process.env.WS_COALESCE_MAX_BATCH ?? 500),
+  wsMaxClientQueue: Number(process.env.WS_MAX_CLIENT_QUEUE ?? 5000),
+  wsGeohashPrecision: Number(process.env.WS_GEOHASH_PRECISION ?? 3),
 };
