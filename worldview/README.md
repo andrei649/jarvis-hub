@@ -102,5 +102,22 @@ export REDIS_URL=redis://localhost:6379
 npm run seed:live   # writes a live snapshot the /live WebSocket serves immediately
 ```
 
-(For the real pipeline, run the ingestion workers with the API's `ENABLE_LIVE_WRITER=1` /
-`ENABLE_HISTORY_WRITER=1`.)
+### Always-on demo data (no API keys)
+
+For a map that **stays alive** — entities that keep moving, with recent trails when you scrub —
+run the synthetic demo feed (no external keys, no Kafka/workers):
+
+```bash
+export REDIS_URL=redis://localhost:6379
+export DATABASE_URL=postgres://worldview:worldview@localhost:5432/worldview
+npm run demo:feed   # continuous: live snapshots to Redis (~1 Hz) + rolling history to TimescaleDB
+```
+
+`START.bat` launches this automatically alongside the API + frontend (opt out with
+`JARVIS_WORLDVIEW_DEMO=0`). Tunables via env: `DEMO_TICK_MS`, `DEMO_HISTORY_EVERY_MS`,
+`DEMO_HISTORY_RETENTION_MIN`, `DEMO_NO_HISTORY=1` (Redis-only). It prunes its own rows
+(`source='demo'`) to a rolling window so it never grows unbounded.
+
+For **real OSINT feeds**, run the ingestion workers (`ingestion-workers/`) with the source API
+keys in `.env` (OpenSky / AISStream / SpaceTrack / IODA) and the API's `ENABLE_LIVE_WRITER=1` /
+`ENABLE_HISTORY_WRITER=1`.
