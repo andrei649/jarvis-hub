@@ -6,6 +6,8 @@ RRF-fused recall keyed on the location surfaces them via the graph source.
 
 from __future__ import annotations
 
+import types
+
 from agents.core.memory.manager import MemoryManager
 from agents.core.memory.worldview_sync import WorldViewKGSync
 
@@ -87,3 +89,18 @@ async def test_sync_is_noop_when_worldview_unavailable():
     down = FakeWorldView([], {}, {}, status="down")
     summary = await WorldViewKGSync(mm, down).sync()
     assert summary == {"aois": 0, "events": 0, "relations": 0}
+
+
+async def test_orchestrator_kg_sync_pass_is_best_effort():
+    """The orchestrator's periodic sync pass never raises (no plugin / backend down)."""
+    from agents.core.orchestrator import Orchestrator
+
+    # No WorldView plugin registered → quiet no-op.
+    await Orchestrator._run_worldview_kg_sync(
+        types.SimpleNamespace(plugins={}, memory=object())
+    )
+    # Plugin present but backend unreachable → sync no-ops, still no raise.
+    down = FakeWorldView([], {}, {}, status="down")
+    await Orchestrator._run_worldview_kg_sync(
+        types.SimpleNamespace(plugins={"worldview": down}, memory=MemoryManager())
+    )

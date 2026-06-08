@@ -796,6 +796,46 @@ class Orchestrator:
 
         return executor
 
+    def _schedule_worldview_kg_sync(self):
+        """Periodically sync the WorldView ontology into the knowledge graph (H19.3.5).
+
+        OFF by default — like the Oracle watcher, a privacy-first local product should not
+        poll a service unsolicited. Enable with JARVIS_WORLDVIEW_KG_SYNC=1 or the
+        `worldview.kg_sync_enabled` setting. Each pass degrades to a no-op when WorldView
+        is unreachable (the plugin fails closed), so an enabled-but-offline deployment is
+        harmless. Skipped under JARVIS_TESTING.
+        """
+        if os.getenv("JARVIS_TESTING") == "1":
+            return
+        enabled = os.getenv("JARVIS_WORLDVIEW_KG_SYNC") == "1" or self.get_setting(
+            "worldview.kg_sync_enabled", False
+        )
+        if not enabled:
+            return
+        sched = getattr(self.heartbeat_scheduler, "scheduler", None)
+        if sched is None:
+            return
+        interval = max(60, int(self.get_setting("worldview.kg_sync_interval", 900)))
+        try:
+            sched.add_job(self._run_worldview_kg_sync, "interval", seconds=interval,
+                          id="worldview-kg-sync", replace_existing=True)
+            logger.info("Scheduled WorldView KG sync every %ss", interval)
+        except Exception as e:
+            logger.warning(f"Failed to schedule WorldView KG sync: {e}")
+
+    async def _run_worldview_kg_sync(self):
+        """Run one WorldView ontology -> knowledge-graph sync pass (best-effort)."""
+        plugin = self.plugins.get("worldview")
+        if plugin is None or getattr(self, "memory", None) is None:
+            return
+        try:
+            from .memory.worldview_sync import WorldViewKGSync
+            summary = await WorldViewKGSync(self.memory, plugin).sync()
+            if summary.get("events"):
+                logger.info("WorldView KG sync: %s", summary)
+        except Exception as e:
+            logger.warning(f"WorldView KG sync failed: {e}")
+
     async def _run_daily_digest(self, kind: str):
         """Build and ship the morning brief / evening retro to the owner."""
         try:
@@ -835,6 +875,7 @@ class Orchestrator:
         self._schedule_log_scans()
         self._schedule_learning_loop()
         self._schedule_daily_budget_reset()
+        self._schedule_worldview_kg_sync()
         self._autonomy_task = asyncio.create_task(self._autonomy_loop())
         self._autonomy_task.add_done_callback(_log_task_result)
         # Oracle GitHub watcher is OFF by default: it polls a GitHub repo every 30s,
