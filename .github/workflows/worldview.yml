@@ -63,6 +63,30 @@ jobs:
       - name: Frontend build
         run: npm run build --workspace frontend
 
+  mcp:
+    name: MCP server (Node)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: worldview/mcp
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: worldview/mcp/package-lock.json
+      - run: npm ci
+      - name: Typecheck
+        run: npm run typecheck
+      - name: Build
+        run: npm run build
+      - name: Test (incl. cross-language capability vectors)
+        # capabilityVectors.test.ts pins the SAME shared fixture the JARVIS Python suite
+        # (tests/test_worldview_mcp_capability.py) asserts, so the two security implementations
+        # of the MCP capability-token format can never silently diverge.
+        run: npm test
+
   integration:
     name: Integration (TimescaleDB + Redis)
     runs-on: ubuntu-latest

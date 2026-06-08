@@ -1,0 +1,20 @@
+{
+  "_comment": "Shared cross-language test vectors for the WorldView MCP capability token (H19.3.2). Both the JARVIS Python minter (agents/core/security/worldview_mcp.py, tested in tests/test_worldview_mcp_capability.py) AND the MCP server's TS implementation (worldview/mcp/src/auth.ts, tested in worldview/mcp/test/capabilityVectors.test.ts) assert that minting these claims produces the exact token AND that verifying the token returns the claims. If either side's format drifts, CI fails — so the two security implementations can never silently diverge.",
+  "secret": "worldview-shared-test-secret",
+  "vectors": [
+    {
+      "name": "watch-scope",
+      "claims": { "scopes": ["worldview:watch"], "exp": 1900000000, "sub": "argus" },
+      "token": "eyJzY29wZXMiOlsid29ybGR2aWV3OndhdGNoIl0sImV4cCI6MTkwMDAwMDAwMCwic3ViIjoiYXJndXMifQ.kIFzfFbNWb-xzD0k2i9Sc508YxWG83Cn1epwOBgtYNo",
+      "grants": ["worldview:watch"],
+      "denies": ["worldview:reconstruct"]
+    },
+    {
+      "name": "wildcard-admin",
+      "claims": { "scopes": ["worldview:*"], "exp": 1900000000, "sub": "jarvis" },
+      "token": "eyJzY29wZXMiOlsid29ybGR2aWV3OioiXSwiZXhwIjoxOTAwMDAwMDAwLCJzdWIiOiJqYXJ2aXMifQ.EgXPprL_rl7aHCgVlhRtrQPdX6NmDYN8-WJ4bhucRM4",
+      "grants": ["worldview:watch", "worldview:reconstruct"],
+      "denies": []
+    }
+  ]
+}
