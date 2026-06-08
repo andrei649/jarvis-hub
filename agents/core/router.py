@@ -93,6 +93,10 @@ INTENT_RULES: dict[str, tuple[list[str], tuple[str, ...], float]] = {
     "research":  (["vision"], ("research", "search", "investigate", "osint",
                                "cercet", "cauta", "cautare",
                                "gaseste", "investigheaza"), W_NORMAL),
+    "geoint":    (["argus"], ("satellite", "satelit", "recon", "overflight", "overpass",
+                              "orbit", "vessel", "tanker", "aircraft", "adsb", "ais",
+                              "hormuz", "strait", "geospatial", "geoint", "worldview",
+                              "jamming", "bruiaj", "footprint", "aoi"), W_STRONG),
     "kpi":       (["stark"], ("kpi", "board", "raiffeisen", "analytics", "ga4",
                               "indicatori", "raport"), W_STRONG),
     "strategy":  (["athena"], ("strategy", "career", "digitaholic", "brand", "cmo",
@@ -146,7 +150,7 @@ class IntentRouter:
         "veronica": ["veronica"], "vision": ["vision"], "steve": ["steve"],
         "oracle": ["oracle"], "ultron": ["ultron"], "gecko": ["gecko"],
         "hercules": ["hercules"], "hephaestus": ["hephaestus"],
-        "frigga": ["frigga"], "howard": ["howard"],
+        "frigga": ["frigga"], "howard": ["howard"], "argus": ["argus"],
     }
 
     # Back-compat: flat keyword → agents view (some tooling/tests may read it).

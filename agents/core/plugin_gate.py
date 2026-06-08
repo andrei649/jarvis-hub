@@ -200,7 +200,7 @@ BUILTIN_PLUGINS = {
         network_access=NetworkAccess.LAN,
         data_scope=DataScope.LOCAL_ONLY,
         allowed_domains=[],
-        agents_served=["jarvis", "athena", "stark", "vision"],
+        agents_served=["jarvis", "athena", "stark", "vision", "argus"],
     ),
 }
 
