@@ -17,6 +17,9 @@ import { CameraTour } from "./CameraTour";
 import type { TourStep } from "@/lib/cameraTour";
 
 const MAPBOX_TOKEN = process.env.NEXT_PUBLIC_MAPBOX_ACCESS_TOKEN ?? "";
+// The 2.5D flat basemap is Mapbox, which needs a token. Without one we draw our own dark-earth
+// backdrop (below) instead of a blank void, so the map is always visible.
+const HAS_MAPBOX = MAPBOX_TOKEN.length > 0;
 
 // Centered on the Strait of Hormuz — the platform's reference choke point.
 const INITIAL_VIEW_STATE = {
@@ -194,23 +197,33 @@ export function DeckGlobe({ data }: { data: LayerData }) {
     );
   }
 
+  // Flat (2.5D) map. With a Mapbox token, use the Mapbox basemap. Without one, draw the data on the
+  // same dark-earth + graticule backdrop the globe uses (so it's never a blank void) and show a hint.
   return (
     <>
       {tourControl}
       <DeckGL
         {...controlledProps}
         controller={true}
-        layers={dataLayers}
+        layers={HAS_MAPBOX ? dataLayers : [...backgroundLayers(), ...dataLayers]}
         onClick={onClick}
         onViewStateChange={onViewStateChange}
         getTooltip={getTooltip}
       >
-        <Map
-          reuseMaps
-          mapboxAccessToken={MAPBOX_TOKEN}
-          mapStyle="mapbox://styles/mapbox/dark-v11"
-        />
+        {HAS_MAPBOX && (
+          <Map
+            reuseMaps
+            mapboxAccessToken={MAPBOX_TOKEN}
+            mapStyle="mapbox://styles/mapbox/dark-v11"
+          />
+        )}
       </DeckGL>
+      {!HAS_MAPBOX && (
+        <div className="pointer-events-none absolute left-1/2 top-3 z-10 -translate-x-1/2 rounded bg-cockpit/80 px-3 py-1 text-[11px] text-white/60 backdrop-blur">
+          No Mapbox token — basemap hidden. Set{" "}
+          <span className="text-white/80">NEXT_PUBLIC_MAPBOX_ACCESS_TOKEN</span> for streets, or use 3D Globe.
+        </div>
+      )}
     </>
   );
 }
