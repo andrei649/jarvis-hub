@@ -192,6 +192,7 @@ chain-of-thought leak / mid-sentence truncation fixed. Kill-switch:
 | BUG-10 | **Buget zilnic de cheltuieli nereresetat** — `AutonomyPolicy.reset_daily()` există (`agents/core/autonomy/policy.py:164`) dar **nu e apelat nicăieri** în producție (doar într-un test). `_spent_today` persistă peste zile calendaristice până la restart → plafonul `daily_ceiling` se umple permanent. Fix: job APScheduler la miezul nopții (tz din `general.timezone`). | MEDIUM | Audit cod 2026-06-04 |
 | BUG-11 | **Task editat-după-block sare peste re-gating** — `AutonomyWorker.apply_decision(action="edit")` (`agents/core/autonomy/worker.py:176-178`) face `update_payload` apoi transition→APPROVED **fără** a rerula `policy.decide()` pe noul payload. Ex.: blochezi „pay $100" (tier ASK), editezi la „$300", accepți → se execută $300 sub decizia veche de risc. Escaladare de privilegii prin editare. Fix: re-evaluează politica pe payload-ul editat înainte de APPROVED. | MEDIUM | Audit cod 2026-06-04 |
 | BUG-12 | **Thread-safety reziduală (low)** — `Embedder._PROC_CACHE` (LRU in-proc) mutat fără lock; `InMemoryVectorStore` fără lock intern (se bazează pe `MemoryManager._lock`); `AutonomyPolicy._spent_today += …` (`agents/core/autonomy/policy.py:162`) increment ne-atomic. Risc real scăzut (GIL + un singur worker azi), dar fragil dacă se rulează workeri paraleli. | LOW | Audit cod 2026-06-04 |
+| ~~BUG-13~~ ✅ | **Skill import din `hermes` complet rupt vs. repo-ul real** — `agents/core/skills/importer.py` cerea `main/skills/<nume>/manifest.{json,yaml}` (layout plat), dar `NousResearch/hermes-agent` (real, MIT, ~185.7k★, activ) folosește `skills/<categorie>/<skill>/SKILL.md` cu **YAML frontmatter** (standardul agentskills.io) → `import_from_hermes()` dădea 404 pe **fiecare** skill și întorcea `False`. Al doilea defect (local): `_save_skill` scria `manifest.json` dar `loader.py` descoperă **doar** `SKILL.md` → chiar și un import reușit nu se încărca niciodată. **Fixed 2026-06-07** (research: [docs/research/2026-06-07-hermes-agent.md](docs/research/2026-06-07-hermes-agent.md)): importer rescris să localizeze skill-ul în arborele git recursiv (`…/<slug>/SKILL.md`, suportă nesting pe categorii + layout plat + fallback legacy `manifest.*`) și să salveze **`SKILL.md` verbatim** (+ sidecar `manifest.json` doar pt. provenance/`list_imported`); `loader._parse_manifest` învățat să parseze frontmatter YAML (`requires_toolsets`→`requires`, comenzi din body) cu fallback la dialectul Markdown-heading existent. +8 teste offline (httpx mock: frontmatter, nested-tree import, skill importat e loader-discoverable, list_imported, missing→False) în `tests/test_hermes_import.py`. Suita skill (172 teste) verde. **Verificare live restantă:** căile de fetch sunt acoperite doar cu httpx **mock** (sandbox fără rețea); rămâne un smoke-test real (`DEV_MODE=1` → `import_from_hermes("github-issues")` pe GitHub real) înainte de a fi confirmat în producție. | ~~HIGH~~ (feature mort; LOW expunere — gated `DEV_MODE`) | Găsit la research-ul Hermes 2026-06-07 |
 | ~~BUG-4~~ ✅ | Aplicația scria în `BACKLOG.md` la fiecare autonomy tick (`sync_problems_to_backlog`, setare `error_backlog_sync_enabled` default ON) → modifica fișierul **trackuit** pe disc (pe Windows flip-uia și LF→CRLF pe tot fișierul) → orice `git pull` ulterior **conflicta pe BACKLOG.md**. Cauza reală a conflictelor recurente. **Fixed 2026-06-02:** redirectat către `memory_logs/diagnostics.md` (gitignored) cu scriere idempotentă + LF pinned; scos blocul auto din BACKLOG; `.gitattributes` `eol=lf`; reparat `UPDATE.bat` (`origin master` → `origin main`). | ~~HIGH~~ | Diagnosticat din simptomul „conflict pe backlog la pornirea pe laptop" |
 
 ### Hot fixes & taskuri orfane (promovate 2026-06-02)
@@ -637,6 +638,36 @@ chain-of-thought leak / mid-sentence truncation fixed. Kill-switch:
 > H19.1.1 (ADS-B real) → H19.2.1+H19.2.2 (recon-window + alertă, wow maxim, reutilizează SGP4) → H19.3.1 (MCP server) →
 > H19.3.4 (un watcher = bucla proactivă) → H19.4.3+H19.4.4 (provenance + audit). Plan complet & ADR-uri:
 > [`worldview/docs/02-platform-architecture-and-delivery-plan.md`](worldview/docs/02-platform-architecture-and-delivery-plan.md).
+
+---
+
+## ORIZONT 20 — Hermes Mining (capabilități nete din `hermes-agent`, post-1.0) — 0/6
+
+> Sursă: research [docs/research/2026-06-07-hermes-agent.md](docs/research/2026-06-07-hermes-agent.md) §7.
+> `hermes-agent` (NousResearch, MIT, ~185.7k★, activ) se suprapune masiv cu OpenClaw (are chiar
+> `hermes claw migrate`), așa că **gap-urile de reach/UX sunt deja trackuite** din
+> `2026-06-05-openclaw-feature-analysis.md`: canale (H12.16), node mesh (H12.17), canvas (H12.18),
+> computer-use (H15), desktop Tauri (H11.1). Aici stau doar **capabilitățile NETE, specifice Hermes**.
+> Importul SKILL.md / agentskills.io e deja închis (BUG-13). **Principiu (neschimbat):** adoptăm sub
+> guvernare — fiecare capabilitate trece prin approval-queue / risk-gate / secret-broker / audit.
+>
+> **Unde Jarvis deja conduce (NU sunt gap-uri):** approval-queue + risk-gating, audit Merkle,
+> secret broker (H15.4 ✅), secrete criptate, marketplace semnat (vs Skills Hub deschis), KG bitemporal
+> + RRF + reflection (vs procedural memory mai plată), dual-LLM quarantine (H17), cost analytics +
+> observability. Hermes conduce pe **actuation**; Jarvis pe **guvernanță/memorie/securitate** — același wedge.
+
+| # | Item | S | P | Dep | Sursă |
+|---|------|---|---|-----|-------|
+| H20.1 | **Tool-RPC în sandbox (`execute_code`)** — agentul scrie Python care apelează **tool-urile Jarvis** printr-un RPC local (Unix-socket) din interiorul sandbox-ului → „zero-context-cost pipelines" (orchestrează N tool-calls într-un script, fără round-trip prin contextul LLM per pas). Secretele NU sunt citibile în sandbox (peste secret broker H15.4). **Gated:** suprafața RPC pe allowlist + approval pe tool-uri tier-extern. Cel mai mare câștig net din Hermes. | 13 | P2 | H15.4, `sandbox.py` | hermes-agent `execute_code` |
+| H20.2 | **Lățime providere + hot-swap** — adaptor **OpenRouter** (o cheie → sute de modele) + comandă chat/admin de schimbare backend la cald (`/model …`), peste hybrid router-ul existent (Claude/Gemini/LM Studio/Ollama). | 5 | P2 | PR #133 (LM Studio control) | hermes `hermes model` / OpenRouter |
+| H20.3 | **ContextCompressor runtime** — compresie de context pentru sesiuni lungi (rezumare / eviction inteligentă pe cale fierbinte), distinct de consolidarea nocturnă (H5.15). Se leagă de tema „sleep-time compute" (H13). | 8 | P2 | H5.15 | hermes ContextCompressor |
+| H20.4 | **Self-evolution (DSPy / GEPA)** — optimizare automată de prompturi/skill-uri din traiectorii (ShareGPT-style), gated prin decision inbox (reversibil). Extinde learning-loop-ul de agenți (H7.11) de la „ce agent" la „cât de bine e promptat". | 8 | P3 | H7.11, H6.5 | hermes-agent-self-evolution |
+| H20.5 | **Skill self-improvement + drift manifest** — rafinează skill-uri existente (nu doar `generate_skill` care doar creează) + manifest content-hash pt. detectarea modificărilor la sync `hermes update`-style. | 5 | P3 | BUG-13, `loader.generate_skill` | hermes Skills Hub / `.bundled_manifest` |
+| H20.6 | **Delegare dinamică de sub-agenți** — agentul poate spawna la runtime un sub-agent izolat (sesiune proprie), concurent (cap configurabil), gated. Extinde WorkflowEngine (H5.6) de la paralelism author-defined la spawn inițiat de agent. | 8 | P3 | H5.6 | hermes `delegate_tool` |
+
+> **Total Orizont 20:** ~47 SP, **post-1.0** (NU în gate-ul 1.0.0). Headline: **H20.1**.
+> Secvențiere: H20.1 → H20.2 → H20.3 → (H20.4 ∥ H20.5 ∥ H20.6).
+
 
 ---
 
