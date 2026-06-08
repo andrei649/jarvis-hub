@@ -1,7 +1,8 @@
 "use client";
 
+import { useState } from "react";
 import DeckGL from "@deck.gl/react";
-import { _GlobeView as GlobeView } from "@deck.gl/core";
+import { _GlobeView as GlobeView, FlyToInterpolator } from "@deck.gl/core";
 import type { Layer, PickingInfo, Position } from "@deck.gl/core";
 import { SolidPolygonLayer, PathLayer } from "@deck.gl/layers";
 import Map from "react-map-gl";
@@ -12,6 +13,8 @@ import { useTimelineStore } from "@/lib/store/useTimelineStore";
 import { buildLayers } from "@/lib/deckLayers";
 import { getTooltip } from "@/lib/tooltip";
 import { isLayer, type LayerId } from "@/lib/layers";
+import { CameraTour } from "./CameraTour";
+import type { TourStep } from "@/lib/cameraTour";
 
 const MAPBOX_TOKEN = process.env.NEXT_PUBLIC_MAPBOX_ACCESS_TOKEN ?? "";
 
@@ -90,6 +93,17 @@ function backgroundLayers(): Layer[] {
   ];
 }
 
+// Controlled viewState we hand to deck during a camera tour (FlyTo-animated).
+type TourViewState = {
+  longitude: number;
+  latitude: number;
+  zoom: number;
+  pitch?: number;
+  bearing?: number;
+  transitionDuration?: number;
+  transitionInterpolator?: FlyToInterpolator;
+};
+
 // Layers whose features identify a trackable entity, and the property holding its id.
 const TRACK_ID_PROP: Partial<Record<LayerId, string>> = {
   adsb: "icao24",
@@ -107,6 +121,20 @@ export function DeckGlobe({ data }: { data: LayerData }) {
   // zoom drives the H19.5.1 vector-tile switch: zoomed out (+ a tile URL) → MVT tiles.
   const dataLayers = buildLayers(data, visibility, track, zoom);
 
+  // Camera tour: while a tour runs we control the deck viewState (and animate via FlyTo). When
+  // idle, viewState is undefined so deck stays uncontrolled (initialViewState + user control).
+  const [tourActive, setTourActive] = useState(false);
+  const [viewState, setViewState] = useState<TourViewState | undefined>(undefined);
+  const baseViewState = viewMode === "globe" ? GLOBE_VIEW_STATE : INITIAL_VIEW_STATE;
+
+  function onTourViewState(vs: TourStep["viewState"]) {
+    setViewState({
+      ...baseViewState,
+      ...vs,
+      transitionInterpolator: new FlyToInterpolator({ speed: 1.2 }),
+    });
+  }
+
   function onClick(info: PickingInfo) {
     const props = (info.object as { properties?: Record<string, unknown> } | null)?.properties;
     if (!info.object || !props) {
@@ -120,41 +148,69 @@ export function DeckGlobe({ data }: { data: LayerData }) {
     if (id != null) selectEntity({ layer: layerId, id: String(id) });
   }
 
-  function onViewStateChange(e: { viewState: unknown }) {
+  function onViewStateChange(e: { viewState: unknown; interactionState?: { isZooming?: boolean; isPanning?: boolean; isRotating?: boolean } }) {
     const vs = e.viewState as { zoom?: number };
     if (typeof vs.zoom === "number") setZoom(vs.zoom);
+    // A user drag/zoom/rotate during a tour cancels it and hands control back.
+    const i = e.interactionState;
+    if (tourActive && i && (i.isZooming || i.isPanning || i.isRotating)) {
+      setTourActive(false);
+      setViewState(undefined);
+    } else if (tourActive) {
+      // Keep our controlled viewState in sync with deck's in-flight interpolation.
+      setViewState(e.viewState as TourViewState);
+    }
   }
+
+  const tourControl = (
+    <CameraTour
+      onViewState={onTourViewState}
+      onActiveChange={(a) => {
+        setTourActive(a);
+        if (!a) setViewState(undefined);
+      }}
+    />
+  );
+
+  // While a tour is active we pass controlled viewState; otherwise leave deck uncontrolled.
+  const controlledProps = tourActive && viewState ? { viewState } : { initialViewState: baseViewState };
 
   if (viewMode === "globe") {
     // GlobeView: no Mapbox basemap (it can't render under a globe). Draw the data
     // on a dark earth sphere; the controller keeps onViewStateChange→setZoom live.
     return (
-      <DeckGL
-        views={new GlobeView({ resolution: 1 })}
-        initialViewState={GLOBE_VIEW_STATE}
-        controller={true}
-        layers={[...backgroundLayers(), ...dataLayers]}
-        onClick={onClick}
-        onViewStateChange={onViewStateChange}
-        getTooltip={getTooltip}
-      />
+      <>
+        {tourControl}
+        <DeckGL
+          views={new GlobeView({ resolution: 1 })}
+          {...controlledProps}
+          controller={true}
+          layers={[...backgroundLayers(), ...dataLayers]}
+          onClick={onClick}
+          onViewStateChange={onViewStateChange}
+          getTooltip={getTooltip}
+        />
+      </>
     );
   }
 
   return (
-    <DeckGL
-      initialViewState={INITIAL_VIEW_STATE}
-      controller={true}
-      layers={dataLayers}
-      onClick={onClick}
-      onViewStateChange={onViewStateChange}
-      getTooltip={getTooltip}
-    >
-      <Map
-        reuseMaps
-        mapboxAccessToken={MAPBOX_TOKEN}
-        mapStyle="mapbox://styles/mapbox/dark-v11"
-      />
-    </DeckGL>
+    <>
+      {tourControl}
+      <DeckGL
+        {...controlledProps}
+        controller={true}
+        layers={dataLayers}
+        onClick={onClick}
+        onViewStateChange={onViewStateChange}
+        getTooltip={getTooltip}
+      >
+        <Map
+          reuseMaps
+          mapboxAccessToken={MAPBOX_TOKEN}
+          mapStyle="mapbox://styles/mapbox/dark-v11"
+        />
+      </DeckGL>
+    </>
   );
 }

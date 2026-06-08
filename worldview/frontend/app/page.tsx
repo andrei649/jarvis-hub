@@ -6,6 +6,7 @@ import { ViewToggle } from "@/components/ViewToggle";
 import { StatsHud } from "@/components/StatsHud";
 import { AlertsPanel } from "@/components/AlertsPanel";
 import { ReconPanel } from "@/components/ReconPanel";
+import { ExportPanel } from "@/components/ExportPanel";
 import { Inspector } from "@/components/Inspector";
 import { TimelineScrubber } from "@/components/TimelineScrubber";
 import { useMasterClock } from "@/lib/useMasterClock";
@@ -29,6 +30,7 @@ export default function Home() {
       <LayerPanel />
       <ReconPanel />
       <StatsHud data={data} />
+      <ExportPanel data={data} />
       <AlertsPanel data={data} />
       <Inspector data={data} />
       <TimelineScrubber />

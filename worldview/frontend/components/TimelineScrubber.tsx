@@ -1,6 +1,7 @@
 "use client";
 
 import { useTimelineStore } from "@/lib/store/useTimelineStore";
+import { ReplayControl } from "./ReplayControl";
 
 const WINDOW_SECONDS = 24 * 3600; // scrub the last 24h
 const SPEEDS = [1, 10, 60, 300];
@@ -57,6 +58,10 @@ export function TimelineScrubber() {
             ))}
           </select>
         </label>
+      </div>
+
+      <div className="flex items-center gap-4 text-xs">
+        <ReplayControl />
       </div>
 
       <input
