@@ -6,12 +6,19 @@ Supports importing skills from:
 - Hermes Agent (GitHub: NousResearch/hermes-agent)
 - OpenClaw (GitHub: openclaw/skills)
 - Any GitHub repo with agentskills.io-compatible manifests
+
+Skill format: the agentskills.io / Hermes convention is a ``SKILL.md`` file
+with YAML frontmatter (``name``/``description``/``version``/``author``/…) plus a
+markdown instruction body, laid out as ``skills/<category>/<skill>/SKILL.md``
+(category nesting is optional). Imported skills are written back out as
+``SKILL.md`` so the local ``SkillLoader`` discovers them; a small
+``manifest.json`` sidecar records import provenance for ``list_imported()``.
+A legacy ``manifest.json``/``manifest.yaml`` layout is still accepted as a
+fallback for older repos.
 """
 
-import asyncio
 import json
 import logging
-import re
 from pathlib import Path
 from typing import Optional
 
@@ -54,42 +61,88 @@ class SkillImporter:
         except ImportError:
             raise SkillImportError("httpx required for skill import")
 
-        skill_path = skill_name.lower().replace(" ", "-")
+        skill_slug = skill_name.lower().replace(" ", "-")
+        branch, subdir = self._split_base_path(base_path)
 
-        urls = [
-            f"{GITHUB_RAW}/{repo}/{base_path}/{skill_path}/manifest.json",
-            f"{GITHUB_RAW}/{repo}/{base_path}/{skill_path}/manifest.yaml",
-            f"{GITHUB_RAW}/{repo}/{base_path}/{skill_path}.json",
-            f"{GITHUB_RAW}/{repo}/{base_path}/{skill_path}.yaml",
-            f"{GITHUB_API}/repos/{repo}/contents/{base_path}/{skill_path}",
+        async with httpx.AsyncClient(timeout=15.0, follow_redirects=True) as client:
+            # 1. SKILL.md in a flat layout: <subdir>/<slug>/SKILL.md
+            skill_md = await self._fetch_skill_md_flat(client, repo, branch, subdir, skill_slug)
+
+            # 2. SKILL.md nested under a category: <subdir>/<category>/<slug>/SKILL.md.
+            #    The real Hermes repo nests skills one level below the category,
+            #    so locate the file via the recursive git-tree listing.
+            if skill_md is None:
+                found = await self._locate_skill_in_tree(client, repo, branch, subdir, skill_slug)
+                if found:
+                    skill_md = await self._fetch_raw(client, repo, branch, found)
+
+            if skill_md is not None:
+                return await self._save_skill(skill_name, source, skill_md_text=skill_md)
+
+            # 3. Legacy fallback: manifest.json / manifest.yaml
+            manifest = await self._fetch_manifest(client, repo, branch, subdir, skill_slug)
+            if manifest:
+                return await self._save_skill(skill_name, source, manifest=manifest)
+
+        logger.warning(f"Skill '{skill_name}' not found in {source}")
+        return False
+
+    @staticmethod
+    def _split_base_path(base_path: str) -> tuple[str, str]:
+        """Split e.g. ``main/skills`` into (branch="main", subdir="skills")."""
+        parts = base_path.strip("/").split("/", 1)
+        branch = parts[0] if parts and parts[0] else "main"
+        subdir = parts[1] if len(parts) > 1 else ""
+        return branch, subdir
+
+    async def _fetch_raw(self, client, repo: str, branch: str, path: str) -> Optional[str]:
+        url = f"{GITHUB_RAW}/{repo}/{branch}/{path.lstrip('/')}"
+        try:
+            resp = await client.get(url)
+            if resp.status_code == 200:
+                return resp.text
+        except Exception as e:  # network / transient — try the next candidate
+            logger.debug(f"Failed to fetch {url}: {e}")
+        return None
+
+    async def _fetch_skill_md_flat(self, client, repo, branch, subdir, slug) -> Optional[str]:
+        rel = f"{subdir}/{slug}/SKILL.md" if subdir else f"{slug}/SKILL.md"
+        return await self._fetch_raw(client, repo, branch, rel)
+
+    async def _locate_skill_in_tree(self, client, repo, branch, subdir, slug) -> Optional[str]:
+        """Find ``…/<slug>/SKILL.md`` anywhere under ``subdir`` via the git tree."""
+        url = f"{GITHUB_API}/repos/{repo}/git/trees/{branch}?recursive=1"
+        try:
+            resp = await client.get(url)
+            if resp.status_code != 200:
+                return None
+            tree = resp.json().get("tree", [])
+        except Exception as e:
+            logger.debug(f"Failed to list tree for {repo}@{branch}: {e}")
+            return None
+
+        suffix = f"/{slug}/SKILL.md"
+        prefix = f"{subdir}/" if subdir else ""
+        matches = [
+            item["path"]
+            for item in tree
+            if item.get("type") == "blob"
+            and item.get("path", "").endswith(suffix)
+            and item.get("path", "").startswith(prefix)
         ]
+        # Prefer the shallowest match when a slug appears more than once.
+        matches.sort(key=lambda p: p.count("/"))
+        return matches[0] if matches else None
 
-        async with httpx.AsyncClient(timeout=15.0) as client:
-            manifest_data = None
-            for url in urls:
-                try:
-                    resp = await client.get(url)
-                    if resp.status_code == 200:
-                        if "api.github.com" in url:
-                            items = resp.json()
-                            for item in items:
-                                if item["name"] in ("manifest.json", "manifest.yaml", "manifest.yml"):
-                                    file_resp = await client.get(item["download_url"])
-                                    if file_resp.status_code == 200:
-                                        manifest_data = self._parse_manifest(file_resp.text, item["name"])
-                                        break
-                        else:
-                            manifest_data = self._parse_manifest(resp.text, url.split("/")[-1])
-                        if manifest_data:
-                            break
-                except Exception as e:
-                    logger.debug(f"Failed to fetch {url}: {e}")
-
-            if not manifest_data:
-                logger.warning(f"Skill '{skill_name}' not found in {source}")
-                return False
-
-            return await self._save_skill(skill_name, manifest_data, source)
+    async def _fetch_manifest(self, client, repo, branch, subdir, slug) -> Optional[dict]:
+        base = f"{subdir}/{slug}" if subdir else slug
+        for fname in ("manifest.json", "manifest.yaml", "manifest.yml"):
+            text = await self._fetch_raw(client, repo, branch, f"{base}/{fname}")
+            if text:
+                data = self._parse_manifest(text, fname)
+                if data:
+                    return data
+        return None
 
     def _parse_manifest(self, content: str, filename: str) -> Optional[dict]:
         if filename.endswith(".json"):
@@ -107,33 +160,81 @@ class SkillImporter:
                 return None
         return None
 
-    async def _save_skill(self, skill_name: str, manifest: dict, source: str) -> bool:
-        target_dir = self.skills_dir / skill_name.lower().replace(" ", "-")
+    async def _save_skill(
+        self,
+        skill_name: str,
+        source: str,
+        skill_md_text: Optional[str] = None,
+        manifest: Optional[dict] = None,
+    ) -> bool:
+        slug = skill_name.lower().replace(" ", "-")
+        target_dir = self.skills_dir / slug
         target_dir.mkdir(parents=True, exist_ok=True)
 
-        manifest_path = target_dir / "manifest.json"
-        with open(manifest_path, "w", encoding="utf-8") as f:
-            json.dump({
-                "name": manifest.get("name", skill_name),
-                "description": manifest.get("description", ""),
-                "version": manifest.get("version", "1.0.0"),
-                "source": source,
-                "author": manifest.get("author", ""),
-                "tools": manifest.get("tools", manifest.get("capabilities", [])),
-                "dependencies": manifest.get("dependencies", []),
-                "prompt": manifest.get("prompt", manifest.get("instruction", "")),
-                "command": manifest.get("command", manifest.get("trigger", "")),
-                "agents": manifest.get("agents", []),
-            }, f, indent=2, ensure_ascii=False)
+        if skill_md_text is None:
+            skill_md_text = self._synthesize_skill_md(skill_name, manifest or {}, source)
 
-        readme = manifest.get("readme", manifest.get("description", ""))
-        if readme:
-            readme_path = target_dir / "README.md"
-            with open(readme_path, "w", encoding="utf-8") as f:
-                f.write(f"# {skill_name}\n\n{readme}\n\n*Imported from {source}*")
+        # Write SKILL.md so the SkillLoader (which only discovers SKILL.md) loads it.
+        (target_dir / "SKILL.md").write_text(skill_md_text, encoding="utf-8")
+
+        # Sidecar manifest.json records import provenance for list_imported().
+        fm = self._extract_frontmatter(skill_md_text)
+        meta = manifest or {}
+        sidecar = {
+            "name": fm.get("name") or meta.get("name", skill_name),
+            "description": fm.get("description") or meta.get("description", ""),
+            "version": str(fm.get("version") or meta.get("version", "1.0.0")),
+            "author": fm.get("author") or meta.get("author", ""),
+            "license": fm.get("license", ""),
+            "source": source,
+            "imported": True,
+        }
+        (target_dir / "manifest.json").write_text(
+            json.dumps(sidecar, indent=2, ensure_ascii=False), encoding="utf-8"
+        )
 
         logger.info(f"Imported skill '{skill_name}' from {source} -> {target_dir}")
         return True
+
+    @staticmethod
+    def _synthesize_skill_md(skill_name: str, manifest: dict, source: str) -> str:
+        """Build a SKILL.md (frontmatter + body) from a legacy manifest dict."""
+        import yaml
+
+        name = manifest.get("name", skill_name)
+        fm = {
+            "name": name,
+            "description": manifest.get("description", ""),
+            "version": str(manifest.get("version", "1.0.0")),
+            "author": manifest.get("author", ""),
+        }
+        body = [f"# {name}", ""]
+        desc = manifest.get("readme") or manifest.get("description") or ""
+        if desc:
+            body += [desc, ""]
+        prompt = manifest.get("prompt") or manifest.get("instruction") or ""
+        if prompt:
+            body += ["## Instructions", "", prompt, ""]
+        body += [f"*Imported from {source}*", ""]
+        fm_text = yaml.safe_dump(fm, sort_keys=False, allow_unicode=True).strip()
+        return f"---\n{fm_text}\n---\n\n" + "\n".join(body)
+
+    @staticmethod
+    def _extract_frontmatter(text: str) -> dict:
+        if not text or not text.startswith("---"):
+            return {}
+        lines = text.split("\n")
+        if lines[0].strip() != "---":
+            return {}
+        for i in range(1, len(lines)):
+            if lines[i].strip() == "---":
+                try:
+                    import yaml
+                    data = yaml.safe_load("\n".join(lines[1:i]))
+                    return data if isinstance(data, dict) else {}
+                except Exception:
+                    return {}
+        return {}
 
     async def sync_source(self, source: str, category: Optional[str] = None) -> list[str]:
         try:
@@ -147,40 +248,57 @@ class SkillImporter:
         if "/" not in repo:
             repo = f"github/{repo}"
 
-        url = f"{GITHUB_API}/repos/{repo}/contents/{skills_path}"
-        if category:
-            url += f"/{category}"
+        branch, subdir = self._split_base_path(skills_path)
 
-        imported = []
-        async with httpx.AsyncClient(timeout=15.0) as client:
+        # Walk the recursive tree and import every <…>/<skill>/SKILL.md found
+        # under subdir (optionally scoped to a category). This handles the
+        # category-nested Hermes layout, which a shallow contents listing misses.
+        url = f"{GITHUB_API}/repos/{repo}/git/trees/{branch}?recursive=1"
+        scope = f"{subdir}/{category}/" if (subdir and category) else (f"{subdir}/" if subdir else "")
+
+        imported: list[str] = []
+        async with httpx.AsyncClient(timeout=15.0, follow_redirects=True) as client:
             try:
                 resp = await client.get(url)
-                if resp.status_code == 200:
-                    items = resp.json()
-                    for item in items:
-                        if item["type"] == "dir":
-                            name = item["name"]
-                            ok = await self._import_from_github(repo, skills_path, name, source)
-                            if ok:
-                                imported.append(name)
-                else:
+                if resp.status_code != 200:
                     logger.warning(f"Failed to list skills from {source}: {resp.status_code}")
+                    return imported
+                tree = resp.json().get("tree", [])
             except Exception as e:
                 logger.warning(f"Failed to sync {source}: {e}")
+                return imported
+
+            seen: set[str] = set()
+            for item in tree:
+                path = item.get("path", "")
+                if item.get("type") != "blob" or not path.endswith("/SKILL.md"):
+                    continue
+                if scope and not path.startswith(scope):
+                    continue
+                name = path[: -len("/SKILL.md")].rsplit("/", 1)[-1]
+                if name in seen:
+                    continue
+                seen.add(name)
+                if await self._import_from_github(repo, skills_path, name, source):
+                    imported.append(name)
 
         return imported
 
     def list_imported(self) -> list[dict]:
         imported = []
+        if not self.skills_dir.exists():
+            return imported
         for skill_dir in self.skills_dir.iterdir():
-            if skill_dir.is_dir():
-                manifest_path = skill_dir / "manifest.json"
-                if manifest_path.exists():
-                    try:
-                        with open(manifest_path, "r") as f:
-                            data = json.load(f)
-                            if data.get("source") in ("hermes", "openclaw"):
-                                imported.append(data)
-                    except (json.JSONDecodeError, IOError):
-                        pass
+            if not skill_dir.is_dir():
+                continue
+            manifest_path = skill_dir / "manifest.json"
+            if not manifest_path.exists():
+                continue
+            try:
+                with open(manifest_path, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+            except (json.JSONDecodeError, IOError):
+                continue
+            if data.get("imported") or data.get("source") in ("hermes", "openclaw"):
+                imported.append(data)
         return imported

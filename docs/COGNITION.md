@@ -1,6 +1,6 @@
 # Jarvis Cognition — Living Memory & Human-Like Personality
 
-> **Schematic & diagnostic map** for the `cognition` subsystem (planned **ORIZONT 20**).
+> **Schematic & diagnostic map** for the `cognition` subsystem (planned **ORIZONT 21**).
 > Companion to `ARCHITECTURE.md` (where code lives) and `VOICE.md`. This doc is the
 > place to look when memory or personality misbehaves: it maps every component to a
 > **brain analogy**, a **module**, a **store**, a **settings flag**, and a
@@ -270,4 +270,4 @@ _autonomy_loop  (night window, tier ≤ 1, gated, asyncio.to_thread)
 
 *This schematic is the diagnostic source of truth for the cognition subsystem. Update it
 whenever a component, store, flag, or failure mode changes — `ARCHITECTURE.md` §Doc-Map
-should link here once ORIZONT 20 lands.*
+should link here once ORIZONT 21 lands.*

@@ -4,7 +4,7 @@
 > **Status:** design + validated plan (no implementation yet) · **No PR opened this session.**
 >
 > Complete record of a single working session so nothing is lost. Companion artifacts:
-> **`docs/COGNITION.md`** (the schematic & diagnostic map) and **`BACKLOG.md` → ORIZONT 20**
+> **`docs/COGNITION.md`** (the schematic & diagnostic map) and **`BACKLOG.md` → ORIZONT 21**
 > (the tracked work). This doc is the *narrative + decisions + raw findings*; COGNITION.md is
 > the *operational map*; the backlog is the *task list*. Read this to understand **why**.
 
@@ -38,7 +38,7 @@ overlap with what's already built if it adds no real gain.** Lens = the MOONSHOT
 | 🟡 **New but off-mission** | **fooocus** (local image-gen — competes for VRAM, not in north-star; see §2 for the idle-time answer) | Parked |
 
 **Recommendation:** do **vaultwarden** (best principle-alignment) and a **yt-dlp media skill**;
-everything else is already built, a sidegrade, or off-mission. → BACKLOG H20.A / H20.B.
+everything else is already built, a sidegrade, or off-mission. → BACKLOG H21.A / H21.B.
 
 ---
 
@@ -57,11 +57,11 @@ Bonobo (Linux). *Note:* `JARVIS.md` describes a Windows desktop w/ 192GB DDR5 + 
   LLM↔diffusion VRAM swap per batch, hidden during night-shift.
   → This is exactly the autonomy/night-shift pattern (queue request → idle dispatch →
   `LMStudioController` unload LLM → ComfyUI/diffusers generate → reload → deliver via brief/Telegram).
-  → BACKLOG H20.C.
+  → BACKLOG H21.C.
 - **Video generation:** local serious video is a $5–10k upgrade for output worse than cloud,
   and a laptop is the wrong host. **Decision: manual via the user's Gemini/Veo account** ($0 API
   tokens — user pastes the prompt). Jarvis's role = a **prompt-builder** (local LLM drafts/refines
-  the prompt for paste). → BACKLOG H20.D. *(If local video is ever required: a ~$2.8k LAN desktop
+  the prompt for paste). → BACKLOG H21.D. *(If local video is ever required: a ~$2.8k LAN desktop
   node with a desktop 5090 32GB, or an eGPU — both parked.)*
 
 ---
@@ -81,7 +81,18 @@ Hermes ("the agent that grows with you", Nous Research) is already a skill *sour
 
 **Finding:** Jarvis already out-architects Hermes on 4/5 pillars. The one thing worth stealing is
 exactly what the user liked — **autonomous, self-improving procedural skill-building** + the
-**always-on curated memory core**. → folded into H20.4 (skill loop) and H20.3 (bounded core).
+**always-on curated memory core**. → curated core lands in Cognition **H21.3**; the self-writing
+skill loop is now tracked separately in **ORIZONT 20 — Hermes Mining** (H20.5 skill self-improvement,
+H20.4 self-evolution), which Cognition **H21.4** *feeds + governs* (KC/calibration/correction signals)
+rather than duplicates.
+
+> **Update (post-session, on `main`):** another session shipped **PR #166** — it **fixed BUG-13**
+> (the broken `import_from_hermes` against the real `hermes-agent` SKILL.md / agentskills.io layout)
+> and added **`ORIZONT 20 — Hermes Mining`** (net Hermes capabilities: tool-RPC `execute_code`,
+> OpenRouter hot-swap, ContextCompressor, DSPy/GEPA self-evolution, skill self-improvement, sub-agent
+> delegation) + `docs/research/2026-06-07-hermes-agent.md`. So the importer is no longer broken and the
+> skill-self-writing "gap" is now a tracked horizon — Cognition (ORIZONT 21) is the complementary
+> memory/personality/governance deepening, reusing the YAML-frontmatter parser BUG-13 introduced.
 
 ---
 
@@ -232,7 +243,7 @@ single component; **per-request `TurnContext`** for transient state (fixes BUG-5
 `JsonStore`s** for durable signals; **master-off = true no-op**; heavy work deferred to idle;
 deterministic-default + optional injected LLM; HTTP via a dedicated `APIRouter`.
 
-**Phases (= BACKLOG H20.0–H20.5):**
+**Phases (= BACKLOG H21.0–H21.5):**
 0. **Scaffold + BUG-5 fix** (ships no behavior change).
 1. **Honesty keystone** — anti-sycophancy/persona judge (deferred) + synthesize attribution. *(start here)*
 2. **Affect + personality expression** — SOUL front-matter parser; mood attractor + whole-trait
@@ -283,12 +294,12 @@ symptom→cause→remedy troubleshooting playbook → `docs/COGNITION.md`** (the
 - Steal from Hermes: **self-writing skills** + **always-on curated core**.
 - Build the cognition subsystem as **one `cognition/` facade** reusing H14 memory + autonomy/eval; honesty load-bearing.
 - **Memory is unbounded/append-only** (forgetting = accessibility, not deletion) and **neuroplastic** (re-embed on better models).
-- **ORIZONT 20** is the cognition horizon — ORIZONT 19 was claimed by **WorldView (4D OSINT)** in another session (18 = native apps), so cognition was renumbered 19→20 and merged alongside it.
+- **ORIZONT 21** is the cognition horizon — ORIZONT 19 = **WorldView (4D OSINT)** and ORIZONT 20 = **Hermes Mining**, both claimed by other sessions (18 = native apps). Cognition was renumbered 19→20→21 and placed next to Hermes, de-duplicated against it.
 
 **Open questions / to reconcile**
 - `JARVIS.md` hardware section (Windows desktop / 192GB) vs the actual Bonobo laptop — doc-truth pass needed.
-- Confirm BUG-10's cron is actually called at startup; BUG-11 tier-escalation re-gate; HF-6 force-Docker — prerequisites for H20.4.
-- Resolved: ORIZONT 19 was taken by WorldView (4D OSINT); cognition merged in as ORIZONT 20.
+- Confirm BUG-10's cron is actually called at startup; BUG-11 tier-escalation re-gate; HF-6 force-Docker — prerequisites for H21.4 / the Hermes skill loop it governs (H20.5).
+- Resolved: ORIZONT 19 = WorldView, ORIZONT 20 = Hermes Mining; Cognition merged in as ORIZONT 21, de-duplicated against Hermes (H21.4 feeds/governs H20.5/H20.4 instead of re-implementing the skill loop).
 
 **Sources (AI-implementation grounding; human-science = established theory)**
 - Generative Agents (Park et al., Stanford) · MemGPT/Letta · A-MEM (Zettelkasten) · TiMem ·

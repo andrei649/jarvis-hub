@@ -610,4 +610,4 @@ docs/
 | `docs/superpowers/` | Feature specs for Horizons 5, 6, 7 (memory, autonomy, performance) |
 | `docs/ARCHITECTURE.md` | Module index, request lifecycle, recipes (this file) |
 | `docs/VOICE.md` | Voice subsystem — browser HUD loop + server pipeline, endpoints, what's real vs scaffolded |
-| `docs/COGNITION.md` | Cognition subsystem (planned ORIZONT 20) — living memory + personality **schematic & diagnostic map** (brain analogies, tiers, troubleshooting playbook) |
+| `docs/COGNITION.md` | Cognition subsystem (planned ORIZONT 21) — living memory + personality **schematic & diagnostic map** (brain analogies, tiers, troubleshooting playbook) |
