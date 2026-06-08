@@ -11,6 +11,7 @@ import type { LayerData } from "@/lib/useWorldViewData";
 import { useEntityTrack } from "@/lib/useEntityTrack";
 import { useTimelineStore } from "@/lib/store/useTimelineStore";
 import { buildLayers } from "@/lib/deckLayers";
+import { landLayer } from "@/lib/landLayer";
 import { getTooltip } from "@/lib/tooltip";
 import { isLayer, type LayerId } from "@/lib/layers";
 import { CameraTour } from "./CameraTour";
@@ -73,7 +74,8 @@ function buildGraticule(): GratPath[] {
 }
 const GRATICULE_PATHS = buildGraticule();
 
-// Background layers (dark sphere + graticule) drawn beneath the data layers in globe mode.
+// Background layers (dark ocean sphere + landmasses + graticule) drawn beneath the data layers in
+// globe mode and in the token-less 2.5D fallback, so the map always reads as Earth.
 function backgroundLayers(): Layer[] {
   return [
     new SolidPolygonLayer<SpherePoly>({
@@ -84,6 +86,7 @@ function backgroundLayers(): Layer[] {
       filled: true,
       pickable: false,
     }),
+    landLayer(),
     new PathLayer<GratPath>({
       id: "graticule",
       data: GRATICULE_PATHS,
@@ -219,9 +222,10 @@ export function DeckGlobe({ data }: { data: LayerData }) {
         )}
       </DeckGL>
       {!HAS_MAPBOX && (
-        <div className="pointer-events-none absolute left-1/2 top-3 z-10 -translate-x-1/2 rounded bg-cockpit/80 px-3 py-1 text-[11px] text-white/60 backdrop-blur">
-          No Mapbox token — basemap hidden. Set{" "}
-          <span className="text-white/80">NEXT_PUBLIC_MAPBOX_ACCESS_TOKEN</span> for streets, or use 3D Globe.
+        // Lower-left, clear of the top toggle / Tour AOIs / Export / Layers / timeline controls.
+        <div className="pointer-events-none absolute bottom-32 left-4 z-10 max-w-xs rounded bg-cockpit/80 px-3 py-1 text-[11px] text-white/55 backdrop-blur">
+          Showing coastlines (no Mapbox token). Set{" "}
+          <span className="text-white/75">NEXT_PUBLIC_MAPBOX_ACCESS_TOKEN</span> for street tiles, or use 3D Globe.
         </div>
       )}
     </>
