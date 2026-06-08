@@ -140,4 +140,27 @@ Dec 2025, trained on Nous's Psyche network; GGUF + LM Studio listing; fits ~24 G
 5. **Add a real integration test** (recorded fixture of a live `SKILL.md`) so the next upstream layout change is caught, not silently shipped as "✅".
 6. **Strategic framing:** don't bet on "Hermes format" — bet on **`SKILL.md` + MCP**. We already speak `SKILL.md` natively and have many MCP servers wired; aligning the importer to the open standard is the durable move. Hermes 4.3 36B is a reasonable *optional* local model, not a backbone.
 
+## 7. Gap analysis vs jarvis‑hub → backlog Horizon 20 (Hermes Mining)
+
+`hermes-agent` overlaps heavily with OpenClaw (it ships `hermes claw migrate`), so most reach/UX
+gaps are **already tracked** from `2026-06-05-openclaw-feature-analysis.md` — channels (H12.16),
+node mesh (H12.17), canvas (H12.18), computer‑use (H15), desktop Tauri (H11.1). The SKILL.md /
+agentskills.io import is closed (BUG‑13). The **net‑new, Hermes‑specific** gaps are tracked as
+**Horizon 20 (Hermes Mining)** in `BACKLOG.md`:
+
+| H20 | Hermes capability | jarvis‑hub today | P |
+|---|---|---|---|
+| H20.1 | `execute_code` — agent‑authored Python calling **Jarvis tools over a local (Unix‑socket) RPC** inside the sandbox ("zero‑context‑cost pipelines"); secrets unreadable | `sandbox.py` isolates code, **no tool‑RPC callback** | **P2 — headline** |
+| H20.2 | Provider breadth + hot‑swap (OpenRouter 200+, `hermes model`) | 4 backends + hybrid router + LM Studio control | P2 |
+| H20.3 | Runtime ContextCompressor for long sessions | nightly consolidation/reflection only (H5.15) | P2 |
+| H20.4 | Self‑evolution (DSPy/GEPA prompt+skill optimization from trajectories) | agent promote/demote (H7.11) + preference learning | P3 |
+| H20.5 | Skill *self‑improvement* + update‑drift manifest | `generate_skill()` creates; no refine/drift | P3 |
+| H20.6 | Agent‑initiated dynamic sub‑agent delegation (own session) | author‑defined workflow parallelism (H5.6) | P3 |
+
+**Where jarvis‑hub already leads (not gaps):** approval queue + risk gating, Merkle audit, secret
+broker (H15.4), encrypted secrets, signed marketplace (vs open Skills Hub), bitemporal KG + RRF +
+reflection (vs flatter procedural memory), dual‑LLM quarantine (H17), cost analytics/observability.
+Hermes leads on **actuation**; jarvis on **governance/memory/security** — the same wedge as the
+OpenClaw analysis. **Adopt under governance only.** Headline pick: **H20.1**.
+
 **Sources:** `https://api.github.com/repos/NousResearch/hermes-agent` · `https://api.github.com/orgs/NousResearch/repos` · `github.com/NousResearch/hermes-agent` (+ `/tree/main/skills`, `skills/github/github-issues/SKILL.md`, LICENSE) · `github.com/NousResearch/Hermes-Function-Calling` (LICENSE, `prompt_assets/sys_prompt.yml`) · `hermes-agent.nousresearch.com/docs` · HF `NousResearch/Hermes-{2-Pro,3,4-14B,4-70B,4-405B,4.3-36B}` cards · Hermes 3/4 tech reports (arXiv 2408.11857, 2508.18255) · agentskills.io (Anthropic, 2025‑12‑18) · modelcontextprotocol.io 2026 roadmap · vLLM/llama.cpp/Ollama tool‑calling docs · internal: `agents/core/skills/{importer,loader}.py`, `docs/research/2026-06-05-openclaw-feature-analysis.md`.
