@@ -1,7 +1,7 @@
 import type { Pool } from "pg";
 import { recordAction } from "./ontologyAudit.js";
 import { HISTORY_BY_LAYER } from "./history.js";
-import { isLayer, type BBox, type FeatureCollection, type Layer } from "../types.js";
+import { isLayer, type BBox, type FeatureCollection, type Layer, type Lod } from "../types.js";
 
 // Reconstruction repository (tickets H19.2.7 "Event reconstruction + shareable replay export" and
 // H19.4.6 "Export / reporting"). A RECONSTRUCTION is a temporally-bounded, viewport-bounded request to
@@ -32,6 +32,31 @@ export const MAX_FRAMES = 600;
 // Sanity bounds on the step so a 0/negative/huge step can't be saved.
 const MIN_STEP_SECONDS = 1;
 const MAX_STEP_SECONDS = 86_400; // one day
+
+const DAY_SECONDS = 86_400;
+
+// RETENTION HORIZONS (seconds) — MUST mirror the per-layer add_retention_policy() windows in
+// db/schema/07_policies.sql, which DROP raw chunks older than these. The default `raw`-LOD as-of-T
+// readers (history.ts) query ONLY the raw hypertable, so a reconstruction with a frame T older than
+// the layer's horizon would silently return EMPTY frames once the raw chunks are dropped. The minute
+// continuous aggregates (adsb_positions_1m / ais_positions_1m) are SEPARATE hypertables that survive
+// retention, so for frames older than the horizon we route those layers to the "minute" LOD (which
+// reads the surviving cagg) instead of returning empty raw results. Only adsb/ais have a minute cagg
+// path in history.ts; layers without one keep "raw" (the lod arg is ignored there anyway). Keep these
+// in sync with 07_policies.sql (review CRITICAL: retention vs reconstruction).
+const RETENTION_HORIZON_SECONDS: Partial<Record<Layer, number>> = {
+  adsb: 90 * DAY_SECONDS,
+  ais: 180 * DAY_SECONDS,
+};
+
+// Pick the LOD for reading `layer` at frame time `t`: route reads OLDER than the layer's retention
+// horizon (relative to `nowSeconds`) to "minute" (the surviving cagg), else "raw". Layers without a
+// horizon/cagg always read "raw". Pure so buildFrames + tests can reason about it deterministically.
+export function lodForFrame(layer: Layer, t: number, nowSeconds: number): Lod {
+  const horizon = RETENTION_HORIZON_SECONDS[layer];
+  if (horizon !== undefined && t < nowSeconds - horizon) return "minute";
+  return "raw";
+}
 
 export interface ReconstructionParams {
   from: number;
@@ -203,15 +228,22 @@ export async function listReconstructions(pool: Pool): Promise<ReconstructionRow
  * The frame count is BOUNDED at MAX_FRAMES (validateParams rejects over-cap ranges at create time; we
  * also truncate defensively here so a directly-built params object can't run away). Reads are issued per
  * layer per frame; a 42P01 inside a reader already degrades to an empty collection there.
+ *
+ * RETENTION-AWARE LOD. Raw chunks older than a layer's retention horizon (07_policies.sql) are dropped,
+ * so a frame T older than that horizon is routed to the "minute" LOD (the surviving continuous
+ * aggregate) instead of returning empty raw results — see lodForFrame / RETENTION_HORIZON_SECONDS.
  */
 export async function buildFrames(pool: Pool, params: ReconstructionParams): Promise<Frame[]> {
   const { from, to, stepSeconds, bbox, layers } = params;
+  // Single `now` for the whole build so every frame's retention decision is consistent (and tests
+  // can pin it). buildFrames is invoked at export time, so "now" is the request instant.
+  const nowSeconds = Date.now() / 1000;
   const frames: Frame[] = [];
   for (let t = from; t <= to && frames.length < MAX_FRAMES; t += stepSeconds) {
     const layerEntries: Record<string, FeatureCollection> = {};
     for (const layer of layers) {
       const reader = HISTORY_BY_LAYER[layer];
-      layerEntries[layer] = await reader(pool, t, bbox ?? null, "raw");
+      layerEntries[layer] = await reader(pool, t, bbox ?? null, lodForFrame(layer, t, nowSeconds));
     }
     frames.push({ t, layers: layerEntries });
   }

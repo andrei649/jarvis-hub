@@ -81,10 +81,15 @@ export async function recordAction(
 
     // Reserve this row's id + ts and read the current chain tip, all under the lock. id/ts are
     // generated here (not by column DEFAULT) because the hash must be computed from the exact values
-    // that get stored. ts is rendered as UNIX seconds (UTC instant) for a stable hash input.
+    // that get stored. ts is reserved as WHOLE UNIX SECONDS (floor(epoch)::bigint): the row stores
+    // to_timestamp(ts) and verify re-derives extract(epoch FROM ts) — an integral seconds value
+    // round-trips byte-identically through a microsecond timestamptz, whereas a fractional epoch
+    // double would not, causing a false `entry_hash mismatch` on a real-DB verify (ticket H19.4.4).
+    // NOTE: this integral coercion is for the SCALAR audit ts ONLY — do NOT apply ::bigint rounding
+    // to any composite entity id elsewhere.
     const head = await client.query(
       `SELECT nextval('ontology_actions_id_seq')::bigint            AS id,
-              extract(epoch FROM now())                             AS ts,
+              floor(extract(epoch FROM now()))::bigint              AS ts,
               (SELECT entry_hash FROM ontology_actions
                  ORDER BY id DESC LIMIT 1)                          AS tip_hash`,
     );
@@ -209,15 +214,53 @@ export async function fetchChain(
   }
 }
 
+// Page size for the COMPLETE verification walk. fetchChain (the display reader) caps at MAX_FEATURES;
+// verification must instead page the WHOLE chain so it can't return a false all-clear past one page.
+const VERIFY_PAGE_SIZE = MAX_FEATURES;
+
 /**
- * Fetch the chain and verify it — convenience wrapper used by GET /ontology/audit/verify. Returns
- * verifyChain's { ok, count, brokenAtId?, reason? } pinpointing the first broken link (if any).
+ * Fetch the ENTIRE chain in id ASC order, paging by `id > lastId` until exhausted. Unlike fetchChain
+ * (capped at MAX_FEATURES for display), this never stops early: verification of a >page-sized chain
+ * MUST walk every row, or tampering past the cap would slip through as a false ok=true (ticket
+ * H19.4.4 / review HIGH). Degrades to [] on undefined_table so a verify against an un-applied schema
+ * reports a vacuously-valid empty chain rather than 500.
  */
-export async function verifyAuditChain(
-  pool: Pool,
-  { limit }: { limit?: number } = {},
-): Promise<VerifyResult> {
-  const rows = await fetchChain(pool, { limit });
+async function fetchEntireChain(pool: Pool): Promise<StoredChainRow[]> {
+  const all: StoredChainRow[] = [];
+  let lastId = -Infinity; // first page starts above the smallest possible id
+  try {
+    for (;;) {
+      // `id > $1` keyset-pages forward by the PK (monotonic append order); $1 is -1 on the first page
+      // (ids are positive), then the last id seen, so each page strictly advances until none remain.
+      const sql = `
+        SELECT id, extract(epoch FROM ts) AS ts, actor,
+               object_type, object_id, action, params, result, source, prev_hash, entry_hash
+        FROM ontology_actions
+        WHERE id > $1
+        ORDER BY id ASC
+        LIMIT ${VERIFY_PAGE_SIZE}`;
+      const res = await pool.query(sql, [Number.isFinite(lastId) ? lastId : -1]);
+      if (res.rows.length === 0) break;
+      for (const r of res.rows) all.push(toStoredChainRow(r as Record<string, unknown>));
+      lastId = all[all.length - 1]!.id;
+      if (res.rows.length < VERIFY_PAGE_SIZE) break; // short page = last page
+    }
+  } catch (err) {
+    if ((err as { code?: string }).code !== UNDEFINED_TABLE) throw err;
+    return [];
+  }
+  return all;
+}
+
+/**
+ * Fetch the chain and verify it — convenience wrapper used by GET /ontology/audit/verify. Pages the
+ * ENTIRE chain (not just the first MAX_FEATURES rows) so verification is COMPLETE regardless of size:
+ * a chain longer than one page is fully walked, and tampering in a later page is detected rather than
+ * silently passing. Returns verifyChain's { ok, count, brokenAtId?, reason? } pinpointing the first
+ * broken link (if any).
+ */
+export async function verifyAuditChain(pool: Pool): Promise<VerifyResult> {
+  const rows = await fetchEntireChain(pool);
   return verifyChain(rows);
 }
 

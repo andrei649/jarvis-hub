@@ -92,16 +92,19 @@ export async function ontologyRoutes(app: FastifyInstance): Promise<void> {
     return reply.send({ actions });
   });
 
-  // GET /ontology/audit/verify?limit= → verify the tamper-evident hash chain (ticket H19.4.4).
-  // Walks the audit log in id order, recomputing each row's entry_hash and checking the prev_hash
-  // links, and returns { ok, count, brokenAtId?, reason? } pinpointing the FIRST broken link.
+  // GET /ontology/audit/verify → verify the tamper-evident hash chain (ticket H19.4.4). Walks the
+  // ENTIRE audit log in id order (paged, no row cap), recomputing each row's entry_hash and checking
+  // the prev_hash links, and returns { ok, count, brokenAtId?, reason? } pinpointing the FIRST broken
+  // link. Verification is intentionally COMPLETE (not `limit`-bounded): a capped walk could return a
+  // false ok=true past the cap. A `limit` query param is still accepted+validated for compatibility
+  // but does NOT truncate the verification scan.
   // Registered before the parameterized /ontology/objects/:type routes; distinct path, no conflict.
   app.get<{ Querystring: ListQuery }>("/ontology/audit/verify", async (req, reply) => {
     const limit = req.query.limit ? Number(req.query.limit) : undefined;
     if (limit !== undefined && Number.isNaN(limit)) {
       return reply.code(400).send({ error: "'limit' must be a number" });
     }
-    const result = await verifyAuditChain(getPool(), { limit });
+    const result = await verifyAuditChain(getPool());
     return reply.send(result);
   });
 

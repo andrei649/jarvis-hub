@@ -121,7 +121,17 @@ export async function satellitesAsOf(
   bbox: BBox | null,
   _lod: Lod = "raw",
 ): Promise<FeatureCollection> {
-  const bc = bboxClause(bbox, 2);
+  // A satellite is "in view" if its sub-satellite point OR its FOOTPRINT intersects the viewport —
+  // a satellite overhead just outside the box can still illuminate it. Match on either geometry
+  // (both GiST-indexed: geom_gist + footprint_gist). Built inline (not bboxClause) so we can OR two
+  // columns against the same envelope; the four envelope params follow $1 (t) as $2..$5.
+  let bboxFilter = "";
+  const bboxParams: number[] = [];
+  if (bbox) {
+    const env = `ST_MakeEnvelope($2, $3, $4, $5, 4326)`;
+    bboxFilter = ` AND (geom && ${env} OR footprint && ${env})`;
+    bboxParams.push(bbox.w, bbox.s, bbox.e, bbox.n);
+  }
   const sql = `
     SELECT DISTINCT ON (norad_id)
       norad_id, extract(epoch FROM ts) AS ts, sensor_type, velocity_kms, is_sunlit,
@@ -129,10 +139,10 @@ export async function satellitesAsOf(
       ST_AsGeoJSON(geom) AS geojson, ST_AsGeoJSON(footprint) AS footprint
     FROM satellite_ephemeris
     WHERE ts <= to_timestamp($1)
-      AND ts >  to_timestamp($1) - make_interval(secs => ${LIVENESS_SECONDS.tle})${bc.clause}
+      AND ts >  to_timestamp($1) - make_interval(secs => ${LIVENESS_SECONDS.tle})${bboxFilter}
     ORDER BY norad_id, ts DESC
     LIMIT ${MAX_FEATURES}`;
-  const res = await pool.query(sql, [t, ...bc.params]);
+  const res = await pool.query(sql, [t, ...bboxParams]);
   return rowsToFeatureCollection(res.rows, "geojson", ["footprint"]);
 }
 
@@ -199,15 +209,20 @@ export async function contextAsOf(
     [t, ...eventBox.params],
   );
 
-  // Latest dark-vessel state per MMSI, still flagged dark at T.
+  // Latest dark-vessel state per MMSI, still flagged dark at T. Viewport-bounded on the displayed
+  // geometry (COALESCE(extrapolated_geom, last_seen_geom)) and LIMITed like every sibling arm —
+  // without these this DISTINCT ON (mmsi) scan is unbounded, and contextAsOf is called up to
+  // MAX_FRAMES times per export (review MEDIUM).
+  const darkBox = bboxClause(bbox, 2, "COALESCE(extrapolated_geom, last_seen_geom)");
   const dark = await pool.query(
     `SELECT DISTINCT ON (mmsi) 'dark_vessel' AS kind, mmsi, geofence_id, gap_seconds,
             extract(epoch FROM ts) AS ts, status,
             ST_AsGeoJSON(COALESCE(extrapolated_geom, last_seen_geom)) AS geojson
        FROM dark_vessel_events
-      WHERE ts <= to_timestamp($1) AND status = 'dark'
-      ORDER BY mmsi, ts DESC`,
-    [t],
+      WHERE ts <= to_timestamp($1) AND status = 'dark'${darkBox.clause}
+      ORDER BY mmsi, ts DESC
+      LIMIT ${MAX_FEATURES}`,
+    [t, ...darkBox.params],
   );
 
   const fc = rowsToFeatureCollection([

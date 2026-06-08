@@ -155,6 +155,27 @@ test("recordAction: appends a chained audit row inside a txn, binds id/ts/prev_h
   });
 });
 
+test("recordAction: reserves an INTEGRAL ts (floor(epoch)::bigint) so a real-DB round-trip can't false-tamper", async () => {
+  // The head SELECT must reserve whole UNIX seconds: the row stores to_timestamp(ts) and verify
+  // re-derives extract(epoch FROM ts); only an integral seconds value round-trips byte-identically
+  // through a microsecond timestamptz, so the hashed ts must NOT be a fractional epoch double.
+  const cap: Captured = { calls: [] };
+  await recordAction(mockPool(cap), {
+    actor: null,
+    objectType: "Aoi",
+    objectId: "7",
+    action: "watch",
+    params: {},
+  });
+  const headSel = cap.calls.find((c) => /nextval\('ontology_actions_id_seq'\)/.test(c.sql))!;
+  assert.match(headSel.sql, /floor\(extract\(epoch FROM now\(\)\)\)::bigint\s+AS ts/);
+  // The bound ts (param $2, fed to to_timestamp) is exactly the integral value that was hashed —
+  // the mock head supplies an integer, mirroring floor()::bigint, and it must pass through unrounded.
+  const ins = findInsert(cap);
+  assert.equal(ins.params[1], 1717795200);
+  assert.equal(Number.isInteger(Number(ins.params[1])), true);
+});
+
 test("recordAction: genesis row binds prev_hash null (tip_hash NULL) and a GENESIS-based entry_hash", async () => {
   const cap: Captured = { calls: [] };
   await recordAction(mockPool(cap, { headRow: { id: 1, ts: 1717795200, tip_hash: null } }), {
@@ -239,8 +260,87 @@ test("fetchChain: degrades to [] on undefined_table (42P01)", async () => {
 
 test("verifyAuditChain: empty/un-applied chain verifies ok (vacuously)", async () => {
   const cap: Captured = { calls: [] };
-  const res = await verifyAuditChain(mockPool(cap, { queryRows: [] }), {});
+  const res = await verifyAuditChain(mockPool(cap, { queryRows: [] }));
   assert.deepEqual(res, { ok: true, count: 0 });
+});
+
+// ---------------------------------------------------------------------------
+// verifyAuditChain: COMPLETE multi-page walk (review HIGH — a capped walk past
+// VERIFY_PAGE_SIZE/MAX_FEATURES would return a false ok=true). We build a chain a touch longer than
+// one page so verification MUST issue a second page, then prove (a) a clean long chain verifies and
+// (b) tampering a row in the LATER page is detected — neither possible if verify stopped at the cap.
+// ---------------------------------------------------------------------------
+
+// A pool that serves a stored chain via keyset paging: each query carries `WHERE id > $1` + `LIMIT N`
+// (parsed from the SQL), exactly the loop verifyAuditChain runs. Rows are pre-hashed valid links.
+function pagingPool(rows: Record<string, unknown>[]): Pool {
+  return {
+    query: async (sql: string, params: unknown[] = []) => {
+      const afterId = Number(params[0]); // `id > $1`
+      const limitMatch = /LIMIT\s+(\d+)/i.exec(sql);
+      const limit = limitMatch ? Number(limitMatch[1]) : rows.length;
+      const page = rows.filter((r) => Number(r.id) > afterId).slice(0, limit);
+      return { rows: page, rowCount: page.length };
+    },
+    connect: async () => ({ query: async () => ({ rows: [], rowCount: 0 }), release: () => {} }),
+  } as unknown as Pool;
+}
+
+// Build a valid stored chain of `n` rows (id 1..n) as the DB would return them (snake_case columns,
+// ts as UNIX seconds), with correct prev_hash/entry_hash links so verifyChain accepts it.
+function buildStoredChain(n: number): Record<string, unknown>[] {
+  const out: Record<string, unknown>[] = [];
+  let prev: string | null = null;
+  for (let id = 1; id <= n; id++) {
+    const chainRow = {
+      id,
+      ts: 1717795200 + id,
+      actor: null,
+      objectType: "Aircraft",
+      objectId: String(id),
+      action: "watch",
+      params: { i: id },
+      result: null,
+      source: "api",
+    };
+    const entryHash = computeEntryHash(prev, chainRow);
+    out.push({
+      id,
+      ts: chainRow.ts,
+      actor: null,
+      object_type: "Aircraft",
+      object_id: String(id),
+      action: "watch",
+      params: { i: id },
+      result: null,
+      source: "api",
+      prev_hash: prev,
+      entry_hash: entryHash,
+    });
+    prev = entryHash;
+  }
+  return out;
+}
+
+// One row past the page size so the walk needs a SECOND page (VERIFY_PAGE_SIZE === MAX_FEATURES).
+const MULTI_PAGE_N = 50001;
+
+test("verifyAuditChain: a chain longer than one page is fully walked and verifies ok", async () => {
+  const rows = buildStoredChain(MULTI_PAGE_N);
+  const res = await verifyAuditChain(pagingPool(rows));
+  assert.deepEqual(res, { ok: true, count: MULTI_PAGE_N });
+});
+
+test("verifyAuditChain: tampering a row in a LATER page is detected (not a false all-clear)", async () => {
+  const rows = buildStoredChain(MULTI_PAGE_N);
+  // Mutate a field of a row in the SECOND page — its stored entry_hash no longer matches its content.
+  const tamperedId = MULTI_PAGE_N; // last row, well past the first page
+  const victim = rows.find((r) => r.id === tamperedId)!;
+  victim.action = "annotate"; // any content change breaks the integrity check
+  const res = await verifyAuditChain(pagingPool(rows));
+  assert.equal(res.ok, false);
+  assert.equal(res.brokenAtId, tamperedId);
+  assert.equal(res.count, MULTI_PAGE_N);
 });
 
 test("recordAnnotation: INSERTs the note + tags(jsonb) and returns the new annotation id", async () => {

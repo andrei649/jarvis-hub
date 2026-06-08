@@ -6,6 +6,7 @@ import {
   createReconstruction,
   getReconstruction,
   listReconstructions,
+  lodForFrame,
   validateParams,
   MAX_FRAMES,
   type ReconstructionParams,
@@ -244,6 +245,53 @@ test("buildFrames: caps the number of frames at MAX_FRAMES (defensive)", async (
   };
   const frames = await buildFrames(pool, params);
   assert.equal(frames.length, MAX_FRAMES);
+});
+
+// ---------------------------------------------------------------------------
+// lodForFrame / retention-aware routing (review CRITICAL: retention vs reconstruction).
+// Raw chunks older than a layer's retention horizon are dropped, so an old-T frame must read the
+// surviving minute cagg instead of the (empty) raw hypertable.
+// ---------------------------------------------------------------------------
+
+const DAY = 86_400;
+
+test("lodForFrame: routes reads older than the layer retention horizon to 'minute', else 'raw'", () => {
+  const now = 1_700_000_000;
+  // adsb horizon = 90d: a frame just inside the window stays raw; one past it routes to minute.
+  assert.equal(lodForFrame("adsb", now - 89 * DAY, now), "raw");
+  assert.equal(lodForFrame("adsb", now - 91 * DAY, now), "minute");
+  // ais horizon = 180d.
+  assert.equal(lodForFrame("ais", now - 179 * DAY, now), "raw");
+  assert.equal(lodForFrame("ais", now - 181 * DAY, now), "minute");
+  // Layers without a minute cagg / horizon always read raw (the lod arg is ignored downstream).
+  assert.equal(lodForFrame("tle", now - 365 * DAY, now), "raw");
+  assert.equal(lodForFrame("context", now - 365 * DAY, now), "raw");
+});
+
+test("buildFrames: a frame older than the retention horizon reads the minute cagg, recent stays raw", async () => {
+  const cap: Captured = { calls: [] };
+  const pool = mockPool(cap, () => []);
+  const now = Math.floor(Date.now() / 1000);
+  // Two adsb frames: one ~200d old (past the 90d raw horizon) and one recent.
+  const oldT = now - 200 * DAY;
+  const recentT = now - DAY;
+  await buildFrames(pool, {
+    from: oldT,
+    to: recentT,
+    stepSeconds: recentT - oldT, // exactly two frames: oldT and recentT
+    bbox: null,
+    layers: ["adsb"],
+  });
+  // The old frame must hit the minute continuous aggregate (survives retention).
+  const minuteReads = cap.calls.filter((c) => /FROM adsb_positions_1m/.test(c.sql));
+  assert.equal(minuteReads.length, 1, "old-T frame should read adsb_positions_1m (minute cagg)");
+  assert.equal(minuteReads[0].params[0], oldT);
+  // The recent frame must hit the raw hypertable (FROM adsb_positions, not the _1m cagg).
+  const rawReads = cap.calls.filter(
+    (c) => /FROM adsb_positions\b/.test(c.sql) && !/adsb_positions_1m/.test(c.sql),
+  );
+  assert.equal(rawReads.length, 1, "recent frame should read the raw adsb_positions hypertable");
+  assert.equal(rawReads[0].params[0], recentT);
 });
 
 test("buildFrames: same params -> same frame timestamps (reproducibility)", async () => {
