@@ -33,6 +33,7 @@ import json
 import logging
 import math
 import os
+import threading
 import time
 from collections import OrderedDict
 from concurrent.futures import ThreadPoolExecutor
@@ -50,20 +51,27 @@ EMBEDDING_DIM = 768
 # never collide even when the text is identical.
 _PROC_CACHE_MAX = 256
 _PROC_CACHE: "OrderedDict[tuple, list[float]]" = OrderedDict()
+# BUG-12: embedding runs via asyncio.to_thread, so the module-global OrderedDict
+# is touched concurrently from multiple threads. Guard every get/put/move/popitem
+# under this lock — OrderedDict mutation is not thread-safe and a concurrent
+# move_to_end/popitem can corrupt its internal linked list.
+_PROC_CACHE_LOCK = threading.Lock()
 
 
 def _proc_cache_get(key: tuple) -> Optional[list[float]]:
-    if key in _PROC_CACHE:
-        _PROC_CACHE.move_to_end(key)  # LRU: mark as recently used
-        return _PROC_CACHE[key]
+    with _PROC_CACHE_LOCK:
+        if key in _PROC_CACHE:
+            _PROC_CACHE.move_to_end(key)  # LRU: mark as recently used
+            return _PROC_CACHE[key]
     return None
 
 
 def _proc_cache_put(key: tuple, vec: list[float]) -> None:
-    _PROC_CACHE[key] = vec
-    _PROC_CACHE.move_to_end(key)
-    while len(_PROC_CACHE) > _PROC_CACHE_MAX:
-        _PROC_CACHE.popitem(last=False)  # evict LRU entry
+    with _PROC_CACHE_LOCK:
+        _PROC_CACHE[key] = vec
+        _PROC_CACHE.move_to_end(key)
+        while len(_PROC_CACHE) > _PROC_CACHE_MAX:
+            _PROC_CACHE.popitem(last=False)  # evict LRU entry
 
 
 class EmbeddingCache:

@@ -259,6 +259,10 @@ async def lifespan(application: FastAPI):
     # share these module globals and a prior teardown may have cleared them.
     if orch is not None:
         await orch.stop_channels()
+        # BUG-7 / NEW-1: release pooled httpx clients (LLM backends), MCP
+        # sessions and the autonomy sqlite queue so a closed app context
+        # (e.g. a TestClient context manager) does not leak them.
+        await orch.aclose()
     orch = None
     gateway = None
 
@@ -397,6 +401,7 @@ _AGENT_META = {
     "stark":      {"tier": "BIZ", "role": "Biz Intel"},
     "veronica":   {"tier": "BIZ", "role": "Content & Comms"},
     "vision":     {"tier": "BIZ", "role": "Deep Research / OSINT"},
+    "argus":      {"tier": "BIZ", "role": "Geospatial OSINT / Intel"},
     "steve":      {"tier": "SEC", "role": "CTO / Builds"},
     "oracle":     {"tier": "SEC", "role": "N8N Workflows"},
     "ultron":     {"tier": "SEC", "role": "Security & Automation"},

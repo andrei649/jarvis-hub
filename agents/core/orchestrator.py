@@ -936,6 +936,41 @@ class Orchestrator:
                 await ch.send(response)
         return response
 
+    async def process(self, prompt: str, agent: str = "jarvis", channel: str = "internal") -> str:
+        """Single LLM completion via the default-agent path — fails safe.
+
+        Internal helper for callers that need a one-shot LLM answer outside the
+        full handle_input pipeline (nightly reflection, the autonomy `_llm` task
+        executor). Routes the prompt through the requested agent (default
+        `jarvis`) using the same `_call_agents_parallel` path handle_input uses,
+        so backend selection / routing / guardrails all apply.
+
+        Never raises: returns "" on any failure (missing agent, no LLM backend,
+        unexpected error) so swallow-and-continue callers degrade to a no-op
+        instead of silently throwing an AttributeError.
+        """
+        if not prompt:
+            return ""
+        agent_id = agent if agent in self.agents else "jarvis"
+        if agent_id not in self.agents:
+            logger.warning(f"process(): no agent available for completion (agent={agent})")
+            return ""
+        try:
+            responses = await self._call_agents_parallel([agent_id], prompt, {}, {})
+        except RuntimeError:
+            # No LLM backend up — degrade quietly (callers swallow errors anyway).
+            log_error(logger, E_LLM_BACKEND_MISSING, backend=f"process:{channel}")
+            return ""
+        except Exception as e:
+            log_error(logger, E_INTERNAL_UNEXPECTED, component=f"process:{channel}", detail=str(e))
+            return ""
+        resp = responses.get(agent_id, "") if responses else ""
+        # _call_agents_parallel returns structured error/timeout markers instead
+        # of raising; treat those as a soft failure and return "".
+        if resp and re.match(rf"^\[{re.escape(agent_id)} (error|timeout)\b", resp):
+            return ""
+        return resp or ""
+
     async def handle_input(self, text: str, channel: str = "voice", agent_override: str = None) -> str:
         self._last_channel = channel  # captured for H9.2 tracer
         t_start = time.perf_counter()
@@ -1753,9 +1788,13 @@ class Orchestrator:
                 logger.debug("incremental KG ingest skipped", exc_info=True)
         for agent_id, resp in responses.items():
             if agent_id in self.agents and resp:
-                is_timeout = resp.endswith("timeout]")
-                is_error = resp.endswith("error:") or "error:" in resp
-                success = not (is_timeout or is_error)
+                # Match the exact structured markers _call_agents_parallel emits:
+                #   error   → f"[{agent_id} error: {e}]"   (orchestrator.py ~:1641)
+                #   timeout → f"[{agent_id} timeout]"      (orchestrator.py ~:1637)
+                # A naive "error:" in resp false-positives on any normal answer
+                # that merely mentions the word "error:"; anchor to the marker.
+                failed = bool(re.match(rf"^\[{re.escape(agent_id)} (error|timeout)\b", resp))
+                success = not failed
                 latency = getattr(self, "_last_latencies", {}).get(agent_id, 0.0)
                 metadata = {
                     "channel": "web",
@@ -1862,7 +1901,11 @@ class Orchestrator:
         return sid
 
     async def aclose(self):
-        """Graceful shutdown: flush checkpoint + close LLM client pools (BUG-7)."""
+        """Graceful shutdown: flush checkpoint + close LLM/MCP/queue pools (BUG-7 / NEW-1).
+
+        Defensive throughout — every step is guarded so a failure in one does
+        not abort the rest, and shutdown never raises.
+        """
         await self._flush_checkpoint()
         router = getattr(self, "llm_router", None)
         if router is not None:
@@ -1870,6 +1913,22 @@ class Orchestrator:
                 await router.aclose()
             except Exception as e:
                 logger.warning(f"Error closing LLM router: {e}")
+        # Close MCP sessions (httpx/stdio transports) if any are open.
+        mcp = getattr(self, "mcp", None)
+        close_all = getattr(mcp, "close_all", None)
+        if close_all is not None:
+            try:
+                await close_all()
+            except Exception as e:
+                logger.warning(f"Error closing MCP sessions: {e}")
+        # Close the autonomy sqlite queue connection.
+        queue = getattr(self, "autonomy_queue", None)
+        queue_close = getattr(queue, "close", None)
+        if queue_close is not None:
+            try:
+                queue_close()
+            except Exception as e:
+                logger.warning(f"Error closing autonomy queue: {e}")
 
     async def get_status(self) -> dict:
         return {

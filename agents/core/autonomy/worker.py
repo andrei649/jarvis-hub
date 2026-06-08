@@ -175,27 +175,30 @@ class AutonomyWorker:
         elif action == "edit":
             if payload is not None:
                 self.queue.update_payload(task_id, payload)
-                # BUG-11: an edit must not escalate spend past the per-action cap
-                # under the original (lower) approval — e.g. blocking "pay $100",
-                # editing to "$300", and having it execute under the old decision.
-                # If the *edited* amount exceeds the cap, keep the task BLOCKED for
-                # an explicit re-approval. Ordinary edits still approve normally.
-                _amt = payload.get("amount")
-                if _amt is not None:
-                    try:
-                        if float(_amt) > self.policy.cap_per_action:
-                            # Leave the task BLOCKED (its current state) for an
-                            # explicit re-approval instead of approving the
-                            # escalated amount under the original decision.
-                            logger.warning(
-                                "apply_decision: edit raised amount to %s (> cap %s) on task %s — "
-                                "kept blocked, needs explicit re-approval",
-                                _amt, self.policy.cap_per_action, task_id)
-                            return self.queue.get(task_id)
-                    except (TypeError, ValueError):
-                        # Non-numeric "amount" → not a money escalation; fall
-                        # through to the normal approval path below.
-                        pass
+                # BUG-11: an edit must not be auto-approved under the *original*
+                # (lower-risk) decision. Re-gate the FULL edited payload — not
+                # just the amount — so changing kind/target/reversible/risk_tier
+                # (e.g. READ_ONLY → an irreversible kind), or an amount under the
+                # per-action cap but over the remaining daily ceiling, is caught.
+                edited = self.queue.get(task_id)
+                action_payload = {"kind": edited.kind, **(edited.payload or {})}
+                decision = self.policy.decide(action_payload)
+                if decision.outcome == ASK:
+                    # Edited payload still needs explicit approval — keep the task
+                    # in its current BLOCKED state (no transition: BLOCKED→BLOCKED
+                    # is illegal) and re-push a fresh decision card to the inbox.
+                    logger.warning(
+                        "apply_decision: edited payload on task %s still requires "
+                        "approval (%s) — kept blocked, re-pushed for re-approval",
+                        task_id, decision.reason)
+                    await self._maybe_push(edited)
+                    self._audit("autonomy.decision.edit", edited, f"by {decided_by} (re-gated, blocked)")
+                    if self.prefs:
+                        try:
+                            self.prefs.record(edited, action, decided_by=decided_by)
+                        except Exception as e:
+                            logger.warning(f"Preference record failed for #{task_id}: {e}")
+                    return edited
             task = self.queue.transition(task_id, TaskStatus.APPROVED,
                                          decided_by=decided_by, decision="edit")
         elif action == "reject":

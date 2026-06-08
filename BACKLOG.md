@@ -179,6 +179,19 @@ chain-of-thought leak / mid-sentence truncation fixed. Kill-switch:
 > HF-3…HF-7, CLN-2/CLN-3. Caveat transversal: majoritatea au risc **scăzut pe deployment
 > single-user/LAN** (designul actual) și devin reale sub concurență / expunere non-LAN.
 
+> **Re-baseline 2026-06-08** (audit de cod + connectivity, verificat vs cod curent):
+> - **Deja fixate în cod** (rândurile de mai jos sunt istorice): **BUG-3** (un singur `/api/analytics/cost`),
+>   **BUG-6** (reload atomic prin rebind), **BUG-8** (parsing cu guard), **BUG-9** (allowlist alfanumeric),
+>   **BUG-10** (reset zilnic programat la miezul nopții), **HF-6** (sandbox Docker-only by default), **HF-7**
+>   (guard admin fail-closed în spatele proxy-ului).
+> - **Fixate în pasul de hardening 2026-06-08:** **BUG-7/NEW-1** (`orch.aclose()` cablat în shutdown, toate
+>   backendurile LLM + mcp + queue închise), **BUG-11** (re-gating complet pe payload-ul editat, nu doar `amount`),
+>   **BUG-12** (lock pe `_PROC_CACHE`-ul embedder-ului) + **2 bug-uri noi**: `Orchestrator.process()` lipsea dar
+>   era apelat (taskuri autonomy LLM + reflecția nocturnă întorceau gol — acum implementat, fail-safe) și
+>   euristica greșită de eroare din `_record_interactions` (marcase răspunsuri reușite ca eșec).
+> - **Rămâne deschis (real):** **BUG-5** (race pe `self.session_id` partajat — arhitectural, scope O21 H21.0 via
+>   `TurnContext`), **HF-3** (parțial — pattern-uri scanner rămase), **CLN-2/CLN-3** (god-objects).
+
 ### Buguri
 
 | # | Bug | Severity | Notes |
