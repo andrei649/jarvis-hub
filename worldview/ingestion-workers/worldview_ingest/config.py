@@ -94,5 +94,20 @@ class Settings:
     context_notam_url: str = os.getenv("CONTEXT_NOTAM_URL", "")
     context_poll_seconds: int = int(os.getenv("CONTEXT_POLL_SECONDS", "300"))
 
+    # --- Load-test rig + as-of-T SLO (TOOL, not a worker; ticket H19.1.6) ---
+    # Pumps synthetic telemetry at LOADTEST_TARGET_RATE msg/s for LOADTEST_DURATION_S
+    # seconds across LOADTEST_LAYERS, simulating LOADTEST_ENTITIES tracks per layer,
+    # then fires as-of-T GET {LOADTEST_API_URL}/history/:layer?t=&bbox= queries and
+    # measures the latency SLO (p95 < LOADTEST_SLO_P95_S). Run via `python -m
+    # worldview_ingest.loadtest`; it is NOT in WORKERS — it is a measurement tool.
+    loadtest_target_rate: float = float(os.getenv("LOADTEST_TARGET_RATE", "100"))
+    loadtest_duration_s: float = float(os.getenv("LOADTEST_DURATION_S", "60"))
+    loadtest_entities: int = int(os.getenv("LOADTEST_ENTITIES", "500"))
+    # Comma-separated domains to load (adsb,ais,tle,ew,context).
+    loadtest_layers: str = os.getenv("LOADTEST_LAYERS", "adsb,ais")
+    loadtest_probe_count: int = int(os.getenv("LOADTEST_PROBE_COUNT", "200"))
+    loadtest_slo_p95_s: float = float(os.getenv("LOADTEST_SLO_P95_S", "0.5"))
+    loadtest_api_url: str = os.getenv("LOADTEST_API_URL", "http://localhost:8080")
+
 
 settings = Settings()
