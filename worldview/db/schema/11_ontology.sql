@@ -18,6 +18,16 @@
 -- ontology_actions — the audit trail. One immutable row per action invocation. The backend writes
 -- it via recordAction() (INSERT ... RETURNING) and reads it back via listActions() so "actions =
 -- audited endpoints" is verifiable. `params`/`result` are jsonb (the action's input + outcome).
+--
+-- TAMPER-EVIDENT HASH CHAIN (ticket H19.4.4): each row carries `prev_hash` (the previous row's
+-- entry_hash, NULL only for the genesis row) and `entry_hash` = sha256(prev_hash + '\n' +
+-- canonicalize(row)). Recomputing the chain and comparing detects any mutation, insertion, removal
+-- or reordering of a row — see backend-api/src/ontology/auditChain.ts (the authoritative hash
+-- definition) and GET /ontology/audit/verify. The DB stores the chain; it does not enforce it
+-- (the chain is computed in the backend writer so the hashing stays in one place + unit-testable).
+-- These columns are FRESH on this NEW table (this file isn't applied anywhere downstream yet), so
+-- they're declared inline in CREATE TABLE rather than via ALTER — and crucially NOT on any existing
+-- compressed hypertable (the columnstore lesson above).
 -- ===========================================================================
 CREATE TABLE IF NOT EXISTS ontology_actions (
     id           bigserial   PRIMARY KEY,
@@ -28,7 +38,9 @@ CREATE TABLE IF NOT EXISTS ontology_actions (
     action       text        NOT NULL,                    -- action name (e.g. 'annotate', 'watch')
     params       jsonb       NOT NULL DEFAULT '{}'::jsonb,-- normalized action input
     result       jsonb,                                   -- action outcome (nullable until/if produced)
-    source       text        NOT NULL DEFAULT 'api'       -- invocation channel (api | mcp | ...)
+    source       text        NOT NULL DEFAULT 'api',      -- invocation channel (api | mcp | ...)
+    prev_hash    text,                                    -- previous row's entry_hash (NULL at genesis)
+    entry_hash   text        NOT NULL                     -- sha256(prev_hash + '\n' + canonicalize(row))
 );
 
 -- Audit reads are "trail for this object" and "recent across all objects": index both access paths.
@@ -36,6 +48,9 @@ CREATE INDEX IF NOT EXISTS ontology_actions_object_idx
     ON ontology_actions (object_type, object_id, ts DESC);
 CREATE INDEX IF NOT EXISTS ontology_actions_ts_idx
     ON ontology_actions (ts DESC);
+-- Chain walks read the tip (ORDER BY id DESC LIMIT 1) and replay the whole chain in id order; the
+-- bigserial PRIMARY KEY already provides a btree on id, so an explicit id index is redundant. Index
+-- on id is therefore intentionally NOT duplicated (the PK suffices for both the tip read and walk).
 
 -- ===========================================================================
 -- ontology_annotations — the note CONTENT for the `annotate` action. Separate from the audit row

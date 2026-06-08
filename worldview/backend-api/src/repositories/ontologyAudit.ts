@@ -1,5 +1,12 @@
-import type { Pool } from "pg";
+import type { Pool, PoolClient } from "pg";
 import { MAX_FEATURES } from "../types.js";
+import {
+  computeEntryHash,
+  verifyChain,
+  type AuditChainRow,
+  type StoredChainRow,
+  type VerifyResult,
+} from "../ontology/auditChain.js";
 
 // Ontology action-audit repository (ticket H19.4.1). Every ontology ACTION (a write, e.g. annotate /
 // watch) is appended to the `ontology_actions` audit table so "actions = audited endpoints" is
@@ -37,35 +44,104 @@ export interface ActionAuditRow {
   params: Record<string, unknown>;
   result: Record<string, unknown> | null;
   source: string;
+  prevHash: string | null;
+  entryHash: string;
 }
+
+// Constant key for the transaction-scoped advisory lock that serializes chain appends (any stable
+// application-chosen value; pg_advisory_xact_lock(bigint) takes a signed 64-bit key). See recordAction.
+const CHAIN_LOCK_KEY = 0x4f_6e_74_6f_41_75_64; // "OntoAud" bytes — well within signed bigint range
 
 /**
  * Append one audit row for an action invocation and return the persisted row (id + ts stamped by the
- * DB). Parameterized INSERT ... RETURNING; jsonb params bound as JSON.stringify'd text and cast in
- * SQL. The audit write is the chain-of-custody guarantee, so a missing table re-throws rather than
- * silently dropping the record.
+ * DB). The row is part of a TAMPER-EVIDENT HASH CHAIN (ticket H19.4.4): prev_hash = the previous
+ * row's entry_hash (GENESIS at the head), entry_hash = sha256(prev_hash + canonicalize(row)) — see
+ * ontology/auditChain.ts for the exact construction.
+ *
+ * CONCURRENCY. entry_hash depends on this row's id AND ts, which are DB-generated, so we can't
+ * compute the hash before knowing them. We run inside a TRANSACTION and take a transaction-scoped
+ * ADVISORY LOCK (pg_advisory_xact_lock) on a fixed key so only one writer appends to the chain tip at
+ * a time — this is what keeps the chain valid under concurrent inserts (a plain `SELECT tip ... FOR
+ * UPDATE` can't lock the as-yet-uninserted next row, leaving a gap; the advisory lock has no such
+ * gap and auto-releases on commit/rollback). Holding the lock we: (1) read the tip's entry_hash as
+ * prev_hash, (2) reserve this row's id from the sequence and stamp ts = now(), (3) compute entry_hash
+ * in TS, (4) INSERT the row with explicit id/ts/prev_hash/entry_hash. The audit write is the
+ * chain-of-custody guarantee, so a missing table (or any error) re-throws rather than silently
+ * dropping the record.
  */
 export async function recordAction(
   pool: Pool,
   entry: ActionAuditEntry,
 ): Promise<ActionAuditRow> {
-  const sql = `
-    INSERT INTO ontology_actions
-      (actor, object_type, object_id, action, params, result, source)
-    VALUES ($1, $2, $3, $4, $5::jsonb, $6::jsonb, $7)
-    RETURNING id, extract(epoch FROM ts) AS ts, actor,
-              object_type, object_id, action, params, result, source`;
-  const params = [
-    entry.actor ?? null,
-    entry.objectType,
-    entry.objectId,
-    entry.action,
-    JSON.stringify(entry.params ?? {}),
-    entry.result === undefined ? null : JSON.stringify(entry.result),
-    entry.source ?? "api",
-  ];
-  const res = await pool.query(sql, params);
-  return toAuditRow(res.rows[0] as Record<string, unknown>);
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    // Serialize chain appends so prev_hash always points at the true tip (auto-released on commit).
+    await client.query("SELECT pg_advisory_xact_lock($1)", [CHAIN_LOCK_KEY]);
+
+    // Reserve this row's id + ts and read the current chain tip, all under the lock. id/ts are
+    // generated here (not by column DEFAULT) because the hash must be computed from the exact values
+    // that get stored. ts is rendered as UNIX seconds (UTC instant) for a stable hash input.
+    const head = await client.query(
+      `SELECT nextval('ontology_actions_id_seq')::bigint            AS id,
+              extract(epoch FROM now())                             AS ts,
+              (SELECT entry_hash FROM ontology_actions
+                 ORDER BY id DESC LIMIT 1)                          AS tip_hash`,
+    );
+    const headRow = head.rows[0] as Record<string, unknown>;
+    const id = Number(headRow.id);
+    const ts = Number(headRow.ts);
+    const prevHash = headRow.tip_hash == null ? null : String(headRow.tip_hash);
+
+    const params = entry.params ?? {};
+    const result = entry.result === undefined ? null : entry.result;
+    const source = entry.source ?? "api";
+    const actor = entry.actor ?? null;
+
+    const chainRow: AuditChainRow = {
+      id,
+      ts,
+      actor,
+      objectType: entry.objectType,
+      objectId: entry.objectId,
+      action: entry.action,
+      params,
+      result,
+      source,
+    };
+    const entryHash = computeEntryHash(prevHash, chainRow);
+
+    const sql = `
+      INSERT INTO ontology_actions
+        (id, ts, actor, object_type, object_id, action, params, result, source, prev_hash, entry_hash)
+      VALUES ($1, to_timestamp($2), $3, $4, $5, $6, $7::jsonb, $8::jsonb, $9, $10, $11)
+      RETURNING id, extract(epoch FROM ts) AS ts, actor,
+                object_type, object_id, action, params, result, source, prev_hash, entry_hash`;
+    const res = await client.query(sql, [
+      id,
+      ts,
+      actor,
+      entry.objectType,
+      entry.objectId,
+      entry.action,
+      JSON.stringify(params),
+      result === null ? null : JSON.stringify(result),
+      source,
+      prevHash,
+      entryHash,
+    ]);
+    await client.query("COMMIT");
+    return toAuditRow(res.rows[0] as Record<string, unknown>);
+  } catch (err) {
+    try {
+      await client.query("ROLLBACK");
+    } catch {
+      // ignore rollback failure; surface the original error
+    }
+    throw err;
+  } finally {
+    client.release();
+  }
 }
 
 /**
@@ -94,7 +170,7 @@ export async function listActions(
   const cap = Math.min(limit && limit > 0 ? Math.floor(limit) : DEFAULT_LIMIT, MAX_FEATURES);
   const sql = `
     SELECT id, extract(epoch FROM ts) AS ts, actor,
-           object_type, object_id, action, params, result, source
+           object_type, object_id, action, params, result, source, prev_hash, entry_hash
     FROM ontology_actions${where}
     ORDER BY ts DESC, id DESC
     LIMIT ${cap}`;
@@ -105,6 +181,44 @@ export async function listActions(
     if ((err as { code?: string }).code !== UNDEFINED_TABLE) throw err;
     return [];
   }
+}
+
+/**
+ * Fetch the hash chain in id (append) order — the input verifyChain() needs. Distinct from
+ * listActions (newest-first, for display): chain verification MUST walk oldest→newest by id so each
+ * row's prev_hash can be matched to the prior row's entry_hash. Degrades to [] on undefined_table so
+ * /audit/verify on an un-applied schema reports an (vacuously valid) empty chain rather than 500.
+ */
+export async function fetchChain(
+  pool: Pool,
+  { limit }: { limit?: number } = {},
+): Promise<StoredChainRow[]> {
+  const cap = Math.min(limit && limit > 0 ? Math.floor(limit) : MAX_FEATURES, MAX_FEATURES);
+  const sql = `
+    SELECT id, extract(epoch FROM ts) AS ts, actor,
+           object_type, object_id, action, params, result, source, prev_hash, entry_hash
+    FROM ontology_actions
+    ORDER BY id ASC
+    LIMIT ${cap}`;
+  try {
+    const res = await pool.query(sql);
+    return res.rows.map((r) => toStoredChainRow(r as Record<string, unknown>));
+  } catch (err) {
+    if ((err as { code?: string }).code !== UNDEFINED_TABLE) throw err;
+    return [];
+  }
+}
+
+/**
+ * Fetch the chain and verify it — convenience wrapper used by GET /ontology/audit/verify. Returns
+ * verifyChain's { ok, count, brokenAtId?, reason? } pinpointing the first broken link (if any).
+ */
+export async function verifyAuditChain(
+  pool: Pool,
+  { limit }: { limit?: number } = {},
+): Promise<VerifyResult> {
+  const rows = await fetchChain(pool, { limit });
+  return verifyChain(rows);
 }
 
 /**
@@ -166,5 +280,24 @@ function toAuditRow(r: Record<string, unknown>): ActionAuditRow {
     params: asJson(r.params) ?? {},
     result: asJson(r.result),
     source: String(r.source),
+    prevHash: r.prev_hash == null ? null : String(r.prev_hash),
+    entryHash: String(r.entry_hash),
+  };
+}
+
+// Map a DB row to the StoredChainRow shape verifyChain consumes (camelCase + numeric ts + hashes).
+function toStoredChainRow(r: Record<string, unknown>): StoredChainRow {
+  return {
+    id: Number(r.id),
+    ts: Number(r.ts),
+    actor: r.actor == null ? null : String(r.actor),
+    objectType: String(r.object_type),
+    objectId: String(r.object_id),
+    action: String(r.action),
+    params: asJson(r.params) ?? {},
+    result: asJson(r.result),
+    source: String(r.source),
+    prevHash: r.prev_hash == null ? null : String(r.prev_hash),
+    entryHash: String(r.entry_hash),
   };
 }

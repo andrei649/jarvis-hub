@@ -11,6 +11,7 @@ import {
   listActions,
   recordAction,
   recordAnnotation,
+  verifyAuditChain,
 } from "../repositories/ontologyAudit.js";
 
 // Ontology API (ticket H19.4.1) — the Palantir-style object/link/action surface over the relational
@@ -75,6 +76,19 @@ export async function ontologyRoutes(app: FastifyInstance): Promise<void> {
       limit,
     });
     return reply.send({ actions });
+  });
+
+  // GET /ontology/audit/verify?limit= → verify the tamper-evident hash chain (ticket H19.4.4).
+  // Walks the audit log in id order, recomputing each row's entry_hash and checking the prev_hash
+  // links, and returns { ok, count, brokenAtId?, reason? } pinpointing the FIRST broken link.
+  // Registered before the parameterized /ontology/objects/:type routes; distinct path, no conflict.
+  app.get<{ Querystring: ListQuery }>("/ontology/audit/verify", async (req, reply) => {
+    const limit = req.query.limit ? Number(req.query.limit) : undefined;
+    if (limit !== undefined && Number.isNaN(limit)) {
+      return reply.code(400).send({ error: "'limit' must be a number" });
+    }
+    const result = await verifyAuditChain(getPool(), { limit });
+    return reply.send(result);
   });
 
   // GET /ontology/objects/:type?limit= → list objects of a type (latest state).

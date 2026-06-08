@@ -2,33 +2,66 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import type { Pool } from "pg";
 import {
+  fetchChain,
   listActions,
   recordAction,
   recordAnnotation,
+  verifyAuditChain,
 } from "../src/repositories/ontologyAudit.js";
+import { computeEntryHash } from "../src/ontology/auditChain.js";
 
-// Capturing mock pool (same shape as the other repo tests): records the (sql, params) and returns
-// canned rows. recordAction does INSERT ... RETURNING, so the mock returns the persisted row.
+// Capturing mock pool. recordAction now runs INSIDE A TRANSACTION (BEGIN / advisory lock / read tip
+// + next id / INSERT ... RETURNING / COMMIT) via pool.connect()->client, so the mock exposes a
+// connect() returning a capturing client. The other functions (listActions/fetchChain/...) use
+// pool.query directly, so the mock also keeps a top-level query. Both record (sql, params).
 interface Captured {
-  sql: string;
-  params: unknown[];
+  // Every (sql, params) seen, in order — lets a test find the INSERT among the txn statements.
+  calls: { sql: string; params: unknown[] }[];
 }
 
-function mockPool(rows: Record<string, unknown>[], captured: Captured): Pool {
+// A scripted client whose query() returns canned rows keyed by which SQL is running. `headRow`
+// supplies the reserved id/ts + chain tip; `persisted` is the INSERT ... RETURNING row.
+function mockPool(
+  cap: Captured,
+  opts: {
+    headRow?: Record<string, unknown>;
+    persisted?: Record<string, unknown>;
+    queryRows?: Record<string, unknown>[]; // for direct pool.query (listActions/fetchChain)
+  } = {},
+): Pool {
+  const head = opts.headRow ?? { id: 42, ts: 1717795200, tip_hash: null };
+  const persisted = opts.persisted ?? PERSISTED;
+  const clientQuery = async (sql: string, params: unknown[] = []) => {
+    cap.calls.push({ sql, params });
+    if (/nextval\('ontology_actions_id_seq'\)/.test(sql)) return { rows: [head], rowCount: 1 };
+    if (/INSERT INTO ontology_actions/.test(sql)) return { rows: [persisted], rowCount: 1 };
+    return { rows: [], rowCount: 0 }; // BEGIN / advisory lock / COMMIT
+  };
   return {
-    query: async (sql: string, params: unknown[]) => {
-      captured.sql = sql;
-      captured.params = params;
-      return { rows, rowCount: rows.length };
+    query: async (sql: string, params: unknown[] = []) => {
+      cap.calls.push({ sql, params });
+      return { rows: opts.queryRows ?? [persisted], rowCount: (opts.queryRows ?? [persisted]).length };
     },
+    connect: async () => ({ query: clientQuery, release: () => {} }),
   } as unknown as Pool;
 }
 
 function undefinedTablePool(): Pool {
+  const fail = async () => {
+    throw Object.assign(new Error("relation does not exist"), { code: "42P01" });
+  };
   return {
-    query: async () => {
-      throw Object.assign(new Error("relation does not exist"), { code: "42P01" });
-    },
+    query: fail,
+    connect: async () => ({
+      query: async (sql: string) => {
+        // BEGIN / advisory lock succeed; the SELECT/INSERT against the table throw undefined_table.
+        if (/^\s*(BEGIN|ROLLBACK|COMMIT)/i.test(sql) || /pg_advisory_xact_lock/.test(sql)) {
+          return { rows: [], rowCount: 0 };
+        }
+        return fail();
+      },
+      release: () => {},
+    }),
   } as unknown as Pool;
 }
 
@@ -42,35 +75,58 @@ const PERSISTED = {
   params: { note: "tracking", tags: ["watch"] },
   result: { annotationId: 9 },
   source: "api",
+  prev_hash: null,
+  entry_hash: "deadbeef",
 };
 
-test("recordAction: appends an audit row (INSERT ... RETURNING), jsonb-casts params/result, binds in order", async () => {
-  const cap = {} as Captured;
-  const row = await recordAction(mockPool([PERSISTED], cap), {
-    actor: "andrei",
-    objectType: "Aircraft",
-    objectId: "4ca7b3",
-    action: "annotate",
-    params: { note: "tracking", tags: ["watch"] },
-    result: { annotationId: 9 },
-  });
+function findInsert(cap: Captured): { sql: string; params: unknown[] } {
+  const c = cap.calls.find((x) => /INSERT INTO ontology_actions/.test(x.sql));
+  assert.ok(c, "expected an INSERT INTO ontology_actions");
+  return c!;
+}
 
-  // The audit write: INSERT into ontology_actions with the seven columns, jsonb casts on params/result.
-  assert.match(cap.sql, /INSERT INTO ontology_actions/);
-  assert.match(cap.sql, /\(actor, object_type, object_id, action, params, result, source\)/);
-  assert.match(cap.sql, /VALUES \(\$1, \$2, \$3, \$4, \$5::jsonb, \$6::jsonb, \$7\)/);
-  assert.match(cap.sql, /RETURNING id, extract\(epoch FROM ts\) AS ts/);
-  // Binds in column order; jsonb params are JSON.stringify'd text; source defaults to 'api'.
-  assert.equal(cap.params[0], "andrei");
-  assert.equal(cap.params[1], "Aircraft");
-  assert.equal(cap.params[2], "4ca7b3");
-  assert.equal(cap.params[3], "annotate");
-  assert.equal(cap.params[4], JSON.stringify({ note: "tracking", tags: ["watch"] }));
-  assert.equal(cap.params[5], JSON.stringify({ annotationId: 9 }));
-  assert.equal(cap.params[6], "api");
+test("recordAction: appends a chained audit row inside a txn, binds id/ts/prev_hash/entry_hash, jsonb-casts params/result", async () => {
+  const cap: Captured = { calls: [] };
+  const row = await recordAction(
+    mockPool(cap, { headRow: { id: 42, ts: 1717795200, tip_hash: "prevtiphash" } }),
+    {
+      actor: "andrei",
+      objectType: "Aircraft",
+      objectId: "4ca7b3",
+      action: "annotate",
+      params: { note: "tracking", tags: ["watch"] },
+      result: { annotationId: 9 },
+    },
+  );
 
-  // Returns the persisted row mapped to camelCase with ts as UNIX seconds.
-  assert.deepEqual(row, {
+  // Transaction shape: BEGIN, advisory lock, read tip+next-id, INSERT, COMMIT.
+  const sqls = cap.calls.map((c) => c.sql).join(" | ");
+  assert.match(sqls, /BEGIN/);
+  assert.match(sqls, /pg_advisory_xact_lock/);
+  assert.match(sqls, /nextval\('ontology_actions_id_seq'\)/);
+  assert.match(sqls, /COMMIT/);
+
+  const ins = findInsert(cap);
+  // The INSERT now carries id/ts + the two chain columns (11 columns).
+  assert.match(ins.sql, /\(id, ts, actor, object_type, object_id, action, params, result, source, prev_hash, entry_hash\)/);
+  assert.match(ins.sql, /VALUES \(\$1, to_timestamp\(\$2\), \$3, \$4, \$5, \$6, \$7::jsonb, \$8::jsonb, \$9, \$10, \$11\)/);
+  assert.match(ins.sql, /RETURNING id, extract\(epoch FROM ts\) AS ts/);
+  assert.match(ins.sql, /prev_hash, entry_hash/);
+
+  // Binds in column order; jsonb params JSON.stringify'd; prev_hash = the tip; entry_hash computed.
+  assert.equal(ins.params[0], 42); // reserved id
+  assert.equal(ins.params[1], 1717795200); // ts (UNIX seconds, fed to to_timestamp)
+  assert.equal(ins.params[2], "andrei");
+  assert.equal(ins.params[3], "Aircraft");
+  assert.equal(ins.params[4], "4ca7b3");
+  assert.equal(ins.params[5], "annotate");
+  assert.equal(ins.params[6], JSON.stringify({ note: "tracking", tags: ["watch"] }));
+  assert.equal(ins.params[7], JSON.stringify({ annotationId: 9 }));
+  assert.equal(ins.params[8], "api");
+  assert.equal(ins.params[9], "prevtiphash"); // prev_hash = the chain tip we read
+
+  // entry_hash (param 11) is exactly computeEntryHash(prevHash, the row we're inserting).
+  const expectedHash = computeEntryHash("prevtiphash", {
     id: 42,
     ts: 1717795200,
     actor: "andrei",
@@ -81,20 +137,51 @@ test("recordAction: appends an audit row (INSERT ... RETURNING), jsonb-casts par
     result: { annotationId: 9 },
     source: "api",
   });
+  assert.equal(ins.params[10], expectedHash);
+
+  // Returns the persisted row mapped to camelCase with ts as UNIX seconds + chain fields.
+  assert.deepEqual(row, {
+    id: 42,
+    ts: 1717795200,
+    actor: "andrei",
+    objectType: "Aircraft",
+    objectId: "4ca7b3",
+    action: "annotate",
+    params: { note: "tracking", tags: ["watch"] },
+    result: { annotationId: 9 },
+    source: "api",
+    prevHash: null,
+    entryHash: "deadbeef",
+  });
 });
 
-test("recordAction: null actor + omitted result bind as null; default source 'api'", async () => {
-  const cap = {} as Captured;
-  await recordAction(mockPool([PERSISTED], cap), {
+test("recordAction: genesis row binds prev_hash null (tip_hash NULL) and a GENESIS-based entry_hash", async () => {
+  const cap: Captured = { calls: [] };
+  await recordAction(mockPool(cap, { headRow: { id: 1, ts: 1717795200, tip_hash: null } }), {
     actor: null,
     objectType: "Aoi",
     objectId: "7",
     action: "watch",
     params: { watched: true },
   });
-  assert.equal(cap.params[0], null);
-  assert.equal(cap.params[5], null); // omitted result -> null
-  assert.equal(cap.params[6], "api");
+  const ins = findInsert(cap);
+  assert.equal(ins.params[2], null); // null actor
+  assert.equal(ins.params[7], null); // omitted result -> null
+  assert.equal(ins.params[8], "api"); // default source
+  assert.equal(ins.params[9], null); // genesis prev_hash
+  // entry_hash uses GENESIS (prevHash null) for the first row.
+  const expected = computeEntryHash(null, {
+    id: 1,
+    ts: 1717795200,
+    actor: null,
+    objectType: "Aoi",
+    objectId: "7",
+    action: "watch",
+    params: { watched: true },
+    result: null,
+    source: "api",
+  });
+  assert.equal(ins.params[10], expected);
 });
 
 test("recordAction: a missing audit table re-throws (the audit guarantee must surface)", async () => {
@@ -111,21 +198,24 @@ test("recordAction: a missing audit table re-throws (the audit guarantee must su
   );
 });
 
-test("listActions: newest-first, optional object filters renumber binds, default limit", async () => {
-  const cap = {} as Captured;
-  await listActions(mockPool([PERSISTED], cap), { objectType: "Aircraft", objectId: "4ca7b3" });
-  assert.match(cap.sql, /FROM ontology_actions/);
-  assert.match(cap.sql, /WHERE object_type = \$1 AND object_id = \$2/);
-  assert.match(cap.sql, /ORDER BY ts DESC, id DESC/);
-  assert.match(cap.sql, /LIMIT 200/);
-  assert.deepEqual(cap.params, ["Aircraft", "4ca7b3"]);
+test("listActions: newest-first, optional object filters renumber binds, default limit, selects chain cols", async () => {
+  const cap: Captured = { calls: [] };
+  await listActions(mockPool(cap), { objectType: "Aircraft", objectId: "4ca7b3" });
+  const c = cap.calls[0];
+  assert.match(c.sql, /FROM ontology_actions/);
+  assert.match(c.sql, /prev_hash, entry_hash/);
+  assert.match(c.sql, /WHERE object_type = \$1 AND object_id = \$2/);
+  assert.match(c.sql, /ORDER BY ts DESC, id DESC/);
+  assert.match(c.sql, /LIMIT 200/);
+  assert.deepEqual(c.params, ["Aircraft", "4ca7b3"]);
 });
 
 test("listActions: no filters -> no WHERE clause, empty params", async () => {
-  const cap = {} as Captured;
-  await listActions(mockPool([PERSISTED], cap), {});
-  assert.doesNotMatch(cap.sql, /WHERE/);
-  assert.deepEqual(cap.params, []);
+  const cap: Captured = { calls: [] };
+  await listActions(mockPool(cap), {});
+  const c = cap.calls[0];
+  assert.doesNotMatch(c.sql, /WHERE/);
+  assert.deepEqual(c.params, []);
 });
 
 test("listActions: degrades to [] on undefined_table (42P01)", async () => {
@@ -133,18 +223,42 @@ test("listActions: degrades to [] on undefined_table (42P01)", async () => {
   assert.deepEqual(rows, []);
 });
 
+test("fetchChain: selects chain columns ordered by id ASC (append order) for verification", async () => {
+  const cap: Captured = { calls: [] };
+  await fetchChain(mockPool(cap, { queryRows: [] }), {});
+  const c = cap.calls[0];
+  assert.match(c.sql, /FROM ontology_actions/);
+  assert.match(c.sql, /prev_hash, entry_hash/);
+  assert.match(c.sql, /ORDER BY id ASC/);
+});
+
+test("fetchChain: degrades to [] on undefined_table (42P01)", async () => {
+  const rows = await fetchChain(undefinedTablePool(), {});
+  assert.deepEqual(rows, []);
+});
+
+test("verifyAuditChain: empty/un-applied chain verifies ok (vacuously)", async () => {
+  const cap: Captured = { calls: [] };
+  const res = await verifyAuditChain(mockPool(cap, { queryRows: [] }), {});
+  assert.deepEqual(res, { ok: true, count: 0 });
+});
+
 test("recordAnnotation: INSERTs the note + tags(jsonb) and returns the new annotation id", async () => {
-  const cap = {} as Captured;
-  const { annotationId } = await recordAnnotation(mockPool([{ id: 9 }], cap), {
-    actor: "andrei",
-    objectType: "Aircraft",
-    objectId: "4ca7b3",
-    note: "tracking this military flight",
-    tags: ["watch", "mil"],
-  });
-  assert.match(cap.sql, /INSERT INTO ontology_annotations \(actor, object_type, object_id, note, tags\)/);
-  assert.match(cap.sql, /VALUES \(\$1, \$2, \$3, \$4, \$5::jsonb\)/);
-  assert.equal(cap.params[3], "tracking this military flight");
-  assert.equal(cap.params[4], JSON.stringify(["watch", "mil"]));
+  const cap: Captured = { calls: [] };
+  const { annotationId } = await recordAnnotation(
+    mockPool(cap, { queryRows: [{ id: 9 }] }),
+    {
+      actor: "andrei",
+      objectType: "Aircraft",
+      objectId: "4ca7b3",
+      note: "tracking this military flight",
+      tags: ["watch", "mil"],
+    },
+  );
+  const c = cap.calls[0];
+  assert.match(c.sql, /INSERT INTO ontology_annotations \(actor, object_type, object_id, note, tags\)/);
+  assert.match(c.sql, /VALUES \(\$1, \$2, \$3, \$4, \$5::jsonb\)/);
+  assert.equal(c.params[3], "tracking this military flight");
+  assert.equal(c.params[4], JSON.stringify(["watch", "mil"]));
   assert.equal(annotationId, 9);
 });
