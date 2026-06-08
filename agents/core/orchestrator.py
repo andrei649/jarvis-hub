@@ -5,6 +5,7 @@ skills system, checkpointing, agent handoff, promotion/demotion.
 """
 
 import asyncio
+import contextvars
 import logging
 import importlib
 import os
@@ -213,6 +214,25 @@ def detect_llm_control(text: str) -> Optional[tuple[str, Optional[str]]]:
 
 
 
+# BUG-5: per-request session isolation.
+#
+# Orchestrator is a process-wide singleton (web.py builds one `orch`), so a
+# single shared `self.session_id` mutated mid-method let two concurrent turns
+# (two tabs, or web+telegram) interleave across `await` points and land a reply
+# in the WRONG conversation. We make the active session an async-context-local
+# value: `handle_input`/`handle_input_stream` resolve the session once at the
+# top and set this ContextVar, so every downstream read (memory, recall,
+# checkpoint, tracer — including those dispatched via `asyncio.to_thread`, which
+# copies the current context) sees that request's own session and never another
+# request's. The sentinel distinguishes "no active request context" (boot,
+# checkpoint restore, autonomy, status reads) so `self.session_id` falls back to
+# the shared instance default in those paths, preserving prior behavior.
+_SESSION_UNSET = object()
+_active_session: contextvars.ContextVar = contextvars.ContextVar(
+    "jarvis_active_session", default=_SESSION_UNSET
+)
+
+
 class Orchestrator:
     def __init__(self, config: JarvisConfig):
         self.config = config
@@ -293,7 +313,11 @@ class Orchestrator:
             router=self.llm_router,
             enabled=_env_flag("JARVIS_LMSTUDIO_CONTROL", True),
         )
-        self.session_id: Optional[str] = None
+        # Backing store for the shared/default session (see `session_id` property
+        # below). Per-request turns override this via the `_active_session`
+        # ContextVar; this default serves boot, checkpoint restore, autonomy and
+        # status reads that run outside a chat request's async context.
+        self._session_id_default: Optional[str] = None
         self.on_token: Optional[Callable] = None
         self._runtime_settings: dict = {}
         self._channel_sessions: dict[str, str] = {}
@@ -329,6 +353,29 @@ class Orchestrator:
         except Exception:
             logger.warning("Tracer initialisation failed — tracing disabled", exc_info=True)
             self.tracer = None
+
+    # ── BUG-5: session_id is async-context-local ────────────────────────────
+    #
+    # Reads return the per-request session when one is active (set by
+    # handle_input/handle_input_stream/channel_handler via the `_active_session`
+    # ContextVar), otherwise the shared instance default. Writes that happen
+    # *inside* an active request context update only that context (so a turn
+    # cannot clobber another concurrent turn's session); writes outside any
+    # request context (boot, checkpoint restore, new_session, /reset) update the
+    # shared default, preserving the original single-request behavior.
+    @property
+    def session_id(self) -> Optional[str]:
+        val = _active_session.get()
+        if val is _SESSION_UNSET:
+            return self._session_id_default
+        return val
+
+    @session_id.setter
+    def session_id(self, value: Optional[str]) -> None:
+        if _active_session.get() is _SESSION_UNSET:
+            self._session_id_default = value
+        else:
+            _active_session.set(value)
 
     async def load_agents(self):
         await self.llm_router.detect()
@@ -917,12 +964,19 @@ class Orchestrator:
             ck = f"tg:{chat_id}"
             if ck not in self._channel_sessions:
                 self._channel_sessions[ck] = await self.memory.new_session()
-            saved_session = self.session_id
-            self.session_id = self._channel_sessions[ck]
+            # BUG-5: bind this telegram chat's session into the per-request async
+            # context instead of mutating shared `self.session_id` and restoring
+            # it in a finally. The old save/restore-on-self clobbered concurrent
+            # turns (the finally reset the *shared* attribute another in-flight
+            # request was reading). Here we set a *context-local* token and reset
+            # it in finally, so the binding is scoped to this request's async
+            # context only and never touches the shared default. `_resolve_session`
+            # inside handle_input keeps the value we set here.
+            token = _active_session.set(self._channel_sessions[ck])
             try:
                 response = await self.handle_input(text, channel)
             finally:
-                self.session_id = saved_session
+                _active_session.reset(token)
         else:
             response = await self.handle_input(text, channel)
 
@@ -935,6 +989,32 @@ class Orchestrator:
             elif channel == "voice":
                 await ch.send(response)
         return response
+
+    def _resolve_session(self, session_id: Optional[str]) -> str:
+        """BUG-5: bind the active session into the per-request async context.
+
+        Pins the session this turn should use into the `_active_session`
+        ContextVar so that, for the rest of this call, `self.session_id` reads
+        resolve to a request-local value and any in-turn `self.session_id =`
+        write updates only this context — never the shared instance default
+        another concurrent turn might be reading.
+
+        Resolution order:
+          1. an explicit `session_id` passed by the caller (per-request value);
+          2. a session already bound in this async context (e.g. `channel_handler`
+             pinned a per-chat_id telegram session before delegating here);
+          3. the shared instance default (`self.session_id`) — preserves the
+             single-request behavior for callers that don't pass a session.
+        """
+        if session_id is not None:
+            _active_session.set(session_id)
+            return session_id
+        existing = _active_session.get()
+        if existing is not _SESSION_UNSET:
+            return existing
+        sid = self._session_id_default
+        _active_session.set(sid)
+        return sid
 
     async def process(self, prompt: str, agent: str = "jarvis", channel: str = "internal") -> str:
         """Single LLM completion via the default-agent path — fails safe.
@@ -971,7 +1051,18 @@ class Orchestrator:
             return ""
         return resp or ""
 
-    async def handle_input(self, text: str, channel: str = "voice", agent_override: str = None) -> str:
+    async def handle_input(self, text: str, channel: str = "voice", agent_override: str = None,
+                           session_id: str = None) -> str:
+        # BUG-5: pin this turn to its own session for the whole call. Resolving
+        # the session into the async-context-local `_active_session` here means
+        # every downstream `self.session_id` read (memory, recall, checkpoint,
+        # tracer, and even `_log_session`/checkpoint saves dispatched through
+        # `asyncio.to_thread`, which copies the current context) sees THIS
+        # request's session — never a concurrent request's. Pass an explicit
+        # `session_id` for per-request isolation; omit it to keep the prior
+        # single-shared-session behavior (or to honor a session a caller like
+        # `channel_handler` already pinned in this context).
+        self._resolve_session(session_id)
         self._last_channel = channel  # captured for H9.2 tracer
         t_start = time.perf_counter()
         await self.memory.add_turn(self.session_id, "user", text)
@@ -1108,7 +1199,11 @@ class Orchestrator:
         self._update_cognition(text, intent, plugin_data, synthesized, t_classify, t_route, t_plugin, t_synthesize)
         return synthesized
 
-    async def handle_input_stream(self, text: str, channel: str = "voice", on_token: Callable = None, agent_override: str = None) -> str:
+    async def handle_input_stream(self, text: str, channel: str = "voice", on_token: Callable = None,
+                                  agent_override: str = None, session_id: str = None) -> str:
+        # BUG-5: see handle_input — pin this turn to its own session so it can
+        # never read or write another concurrent request's conversation.
+        self._resolve_session(session_id)
         self._last_channel = channel  # captured for H9.2 tracer
         await self.memory.add_turn(self.session_id, "user", text)
 
