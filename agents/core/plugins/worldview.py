@@ -131,5 +131,23 @@ class WorldViewPlugin:
             "api_url": self.api_url,
         }
 
+    # ── ontology (graph projection — feeds the JARVIS knowledge-graph sync) ──
+    async def ontology_objects(self, obj_type: str, limit: int | None = None) -> dict:
+        """Ontology objects of one type: ``GET /ontology/objects/:type?limit=``."""
+        body = await self._safe_get(
+            f"/ontology/objects/{quote(str(obj_type), safe='')}", {"limit": limit}
+        )
+        if body is None:
+            return self._unavailable(f"ontology/objects/{obj_type}")
+        return {"status": "ok", "type": obj_type, "objects": body.get("objects", []) or []}
+
+    async def ontology_links(self, obj_type: str, obj_id: str) -> dict:
+        """Links incident to one object: ``GET /ontology/objects/:type/:id/links``."""
+        path = f"/ontology/objects/{quote(str(obj_type), safe='')}/{quote(str(obj_id), safe='')}/links"
+        body = await self._safe_get(path)
+        if body is None:
+            return self._unavailable(f"ontology/links/{obj_type}")
+        return {"status": "ok", "type": obj_type, "id": obj_id, "links": body.get("links", []) or []}
+
     async def close(self):
         await self.client.close()
