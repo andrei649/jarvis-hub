@@ -95,10 +95,18 @@ export function validateParams(
   return { params: { from, to, stepSeconds, bbox: bbox ?? null, layers } };
 }
 
-// Accept a bbox as either a {w,s,e,n} object (jsonb round-trips this) — returns the BBox, null when
+// Accept a bbox as either a {w,s,e,n} object (jsonb round-trips this) OR a "w,s,e,n" comma string
+// (the form /history, /live, and the MCP reconstruct_event tool use) — returns the BBox, null when
 // absent, or `undefined` to signal a malformed bbox (so the caller can 400).
 function parseBBoxParam(raw: unknown): BBox | null | undefined {
   if (raw == null) return null;
+  // "w,s,e,n" string form — unify with the rest of the stack's bbox convention.
+  if (typeof raw === "string") {
+    const parts = raw.split(",").map(Number);
+    if (parts.length !== 4 || parts.some((v) => !Number.isFinite(v))) return undefined;
+    const [w, s, e, n] = parts as [number, number, number, number];
+    return { w, s, e, n };
+  }
   if (typeof raw !== "object" || Array.isArray(raw)) return undefined;
   const o = raw as Record<string, unknown>;
   const w = Number(o.w);

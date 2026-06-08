@@ -63,7 +63,12 @@ export async function reconRoutes(app: FastifyInstance): Promise<void> {
     }
     const now = Date.now() / 1000;
     const alerts = await dueAlerts(getPool(), { now, leadSeconds });
-    return reply.send({ alerts });
+    // ABAC: a scoped non-admin principal only sees alerts for AOIs in their scope (mirrors
+    // /recon/windows, so out-of-scope intel doesn't leak into JARVIS digests / MCP). admin / `*` /
+    // no-principal see all (inScope returns true).
+    const principal = principalOf(req);
+    const scoped = principal ? alerts.filter((a) => inScope(principal, a.aoi_id)) : alerts;
+    return reply.send({ alerts: scoped });
   });
 
   // POST /recon/watch — create a standing watch rule on an AOI (analyst+ via write:recon).

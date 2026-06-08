@@ -24,6 +24,11 @@ declare module "fastify" {
 // so handlers that consult `request.principal` behave as open as the pre-auth code did.
 const OPEN_PRINCIPAL: Principal = { sub: "anonymous", role: "admin", aois: [AOI_WILDCARD] };
 
+// Routes that are intentionally public (no auth) even when a secret is set: health/readiness probes
+// and the Prometheus scrape endpoint. Any OTHER route without an RBAC rule is default-DENIED when auth
+// is enabled (fail-CLOSED) so a route added without a rule isn't silently world-readable with admin scope.
+const PUBLIC_PATHS = new Set(["/health", "/ready", "/metrics"]);
+
 // Pull the bearer token out of the Authorization header (case-insensitive scheme), or null. Guarded
 // against a non-string / array header value.
 function bearerOf(req: FastifyRequest): string | null {
@@ -45,6 +50,15 @@ export async function registerGuard(app: FastifyInstance): Promise<void> {
   const secret = config.authSecret;
   const enabled = secret.length > 0;
 
+  // Secure-by-default nudge: a deployment that forgets WORLDVIEW_AUTH_SECRET runs fully OPEN. Warn
+  // loudly at startup (local-first dev is fine; a real deployment should always set it).
+  if (!enabled) {
+    app.log.warn(
+      "WORLDVIEW_AUTH_SECRET is not set — the API is running OPEN (no RBAC/ABAC). " +
+        "Set WORLDVIEW_AUTH_SECRET to enforce authentication for any non-local deployment.",
+    );
+  }
+
   // Decorate so `request.principal` is a known property (and typed); default to the open principal.
   app.decorateRequest("principal", null);
 
@@ -60,11 +74,14 @@ export async function registerGuard(app: FastifyInstance): Promise<void> {
     const routerPath = req.routeOptions?.url ?? req.url.split("?")[0] ?? req.url;
     const rule = ruleFor(req.method, routerPath);
 
-    // No rule ⇒ public route (e.g. /health, /ready). Still set a principal for any handler that reads
-    // it, but don't require a token.
+    // No rule: public-allowlisted probes/metrics are open; ANY other unmatched route is default-DENIED
+    // (fail-CLOSED) so a route added without an RBAC rule can't be reached unauthenticated with admin scope.
     if (!rule) {
-      req.principal = OPEN_PRINCIPAL;
-      return;
+      if (PUBLIC_PATHS.has(routerPath)) {
+        req.principal = OPEN_PRINCIPAL;
+        return;
+      }
+      return reply.code(403).send({ error: "forbidden", reason: "no authorization rule for this route" });
     }
 
     // Enabled + protected route ⇒ require a valid bearer (fail-CLOSED on missing/blank/invalid).

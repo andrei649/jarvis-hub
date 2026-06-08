@@ -94,6 +94,14 @@ test("validateParams: rejects from>=to, bad step, no layers, bad bbox, over-cap"
   assert.ok("error" in validateParams({ from: 0, to: 1_000_000, stepSeconds: 1, layers: ["adsb"] }));
 });
 
+test("validateParams: accepts a 'w,s,e,n' string bbox (the /history + MCP reconstruct_event form)", () => {
+  const res = validateParams({ ...VALID, bbox: "1,2,3,4" });
+  assert.ok("params" in res);
+  if ("params" in res) assert.deepEqual(res.params.bbox, { w: 1, s: 2, e: 3, n: 4 });
+  // a malformed comma-string is still rejected.
+  assert.ok("error" in validateParams({ ...VALID, bbox: "1,2,3" }));
+});
+
 // ---------------------------------------------------------------------------
 // createReconstruction
 // ---------------------------------------------------------------------------

@@ -338,3 +338,26 @@ test("auth ENABLED: POST /recon/watch — RBAC (write:recon) + ABAC scope (rejec
     config.authSecret = "";
   }
 });
+
+test("auth ENABLED: a route with NO rbac rule is default-DENIED (fail-closed), even with an admin token", async () => {
+  config.authSecret = SECRET;
+  try {
+    const app = Fastify();
+    await registerGuard(app);
+    await app.register(healthRoutes); // /health is public-allowlisted
+    app.get("/__norule", async () => ({ ok: true })); // registered but absent from ROUTE_RULES
+    await app.ready();
+
+    // Public allowlist stays open.
+    assert.equal((await app.inject({ method: "GET", url: "/health" })).statusCode, 200);
+
+    // A rule-less route is denied with no token AND with a valid admin token (no rule ⇒ no access).
+    assert.equal((await app.inject({ method: "GET", url: "/__norule" })).statusCode, 403);
+    const admin = signToken({ sub: "a", role: "admin" }, SECRET);
+    const withAdmin = await app.inject({ method: "GET", url: "/__norule", headers: bearer(admin) });
+    assert.equal(withAdmin.statusCode, 403);
+    await app.close();
+  } finally {
+    config.authSecret = "";
+  }
+});

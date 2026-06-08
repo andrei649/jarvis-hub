@@ -159,6 +159,16 @@ export async function ontologyRoutes(app: FastifyInstance): Promise<void> {
       if (!isObjectType(type)) {
         return reply.code(404).send({ error: `unknown object type '${type}'` });
       }
+      // ABAC: deny links for an AOI-bearing object outside the principal's scope (mirrors the single-
+      // object read), so an out-of-scope geofence/AOI id isn't disclosed via an edge. admin / `*` /
+      // no-principal pass; non-AOI types are not scoped.
+      const principal = principalOf(req);
+      if (principal && AOI_SCOPED_OBJECT_TYPES.has(type)) {
+        const object = await getObject(getPool(), type, id);
+        if (object && !inScope(principal, objectAoiId(type, object))) {
+          return reply.code(403).send({ error: "forbidden", reason: `${type} '${id}' is out of scope` });
+        }
+      }
       const links = await linksOf(getPool(), type, id);
       return reply.send({ type, id, links });
     },
