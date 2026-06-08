@@ -16,26 +16,32 @@ export type Permission =
   | "read:recon"
   | "read:ontology"
   | "write:ontology-action"
+  | "read:cases"
+  | "write:cases"
   | "read:audit"
   | "admin";
 
 // The role->permission matrix. viewer = reads only; analyst = reads + write:ontology-action; admin =
 // everything (incl read:audit + admin). Listed explicitly (not derived) so the policy is auditable at
 // a glance.
+// viewer reads (incl. read:cases — a viewer may READ shared case files). analyst additionally writes
+// (ontology actions + case collaboration). admin holds everything.
 const VIEWER_READS: Permission[] = [
   "read:history",
   "read:live",
   "read:provenance",
   "read:recon",
   "read:ontology",
+  "read:cases",
 ];
 
 export const ROLE_PERMISSIONS: Record<Role, ReadonlySet<Permission>> = {
   viewer: new Set<Permission>(VIEWER_READS),
-  analyst: new Set<Permission>([...VIEWER_READS, "write:ontology-action"]),
+  analyst: new Set<Permission>([...VIEWER_READS, "write:ontology-action", "write:cases"]),
   admin: new Set<Permission>([
     ...VIEWER_READS,
     "write:ontology-action",
+    "write:cases",
     "read:audit",
     "admin",
   ]),
@@ -108,6 +114,22 @@ export const ROUTE_RULES: RouteRule[] = [
     path: "/ontology/objects/:type/:id/actions/:action",
     permission: "write:ontology-action",
   },
+
+  // Cases (ticket H19.4.5) — collaborative case files. Reads need read:cases (viewer+); every
+  // mutation (create / status / members / items / comments) needs write:cases (analyst+). Membership
+  // is an in-case role layer recorded in case_members; the RBAC permission gates the API itself.
+  { method: "POST", path: "/cases", permission: "write:cases" },
+  { method: "GET", path: "/cases", permission: "read:cases" },
+  { method: "GET", path: "/cases/:id", permission: "read:cases" },
+  { method: "PATCH", path: "/cases/:id", permission: "write:cases" },
+  { method: "POST", path: "/cases/:id/members", permission: "write:cases" },
+  { method: "GET", path: "/cases/:id/members", permission: "read:cases" },
+  { method: "DELETE", path: "/cases/:id/members/:actor", permission: "write:cases" },
+  { method: "POST", path: "/cases/:id/items", permission: "write:cases" },
+  { method: "GET", path: "/cases/:id/items", permission: "read:cases" },
+  { method: "POST", path: "/cases/:id/comments", permission: "write:cases" },
+  { method: "GET", path: "/cases/:id/comments", permission: "read:cases" },
+  { method: "GET", path: "/cases/:id/history", permission: "read:cases" },
 ];
 
 /**
