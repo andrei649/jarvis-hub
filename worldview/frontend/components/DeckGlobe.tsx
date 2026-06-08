@@ -103,7 +103,9 @@ export function DeckGlobe({ data }: { data: LayerData }) {
   const selectEntity = useTimelineStore((s) => s.selectEntity);
   const setZoom = useTimelineStore((s) => s.setZoom);
   const viewMode = useTimelineStore((s) => s.viewMode);
-  const dataLayers = buildLayers(data, visibility, track);
+  const zoom = useTimelineStore((s) => s.zoom);
+  // zoom drives the H19.5.1 vector-tile switch: zoomed out (+ a tile URL) → MVT tiles.
+  const dataLayers = buildLayers(data, visibility, track, zoom);
 
   function onClick(info: PickingInfo) {
     const props = (info.object as { properties?: Record<string, unknown> } | null)?.properties;

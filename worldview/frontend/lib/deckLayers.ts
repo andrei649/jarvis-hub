@@ -1,9 +1,11 @@
 import { GeoJsonLayer, TextLayer } from "@deck.gl/layers";
+import { MVTLayer } from "./mvtLayer";
 import type { Layer } from "@deck.gl/core";
 import type { Geometry } from "geojson";
 import type { LayerData } from "./useWorldViewData";
 import type { LayerId } from "./layers";
 import type { Feature, FeatureCollection } from "./types";
+import { shouldUseTiles, buildTileLayerProps, type TileLayerProps } from "./tiles";
 
 // Build Deck.gl layers from the per-layer FeatureCollections. Each WorldView layer maps to a
 // GeoJsonLayer styled for its domain. All layers are driven by the same as-of-T data, so they
@@ -48,12 +50,49 @@ function footprintCollection(data: LayerData["tle"]): FeatureCollection {
   };
 }
 
+// MVTLayer is parametrized by its feature *properties* type; its accessors receive a GeoJSON
+// Feature carrying those properties.
+type TileProps = Record<string, unknown>;
+type TileFeature = { properties: TileProps };
+
+// Per-tileable-layer styling for the MVT fill. Mirrors the scatter colors above so the
+// zoomed-out tile view reads the same as the per-point view.
+function tileFillColor(id: LayerId): (f: TileFeature) => [number, number, number] {
+  if (id === "adsb") return (f) => (f.properties.is_military ? FLIGHT_MIL : FLIGHT_CIV);
+  return () => VESSEL; // ais
+}
+
+// Build a vector-tile layer for a high-cardinality point layer (adsb/ais). The tile server
+// (Martin/pg_tileserv) serves pre-aggregated MVT tiles so we stream only what's in view
+// instead of shipping every point. Picking stays on so selection/tooltips keep working.
+function tileLayer(id: LayerId, props: TileLayerProps): Layer {
+  return new MVTLayer<TileProps>({
+    id: `${id}-tiles`,
+    data: props.data,
+    minZoom: props.minZoom,
+    maxZoom: props.maxZoom,
+    pointType: "circle",
+    pointRadiusUnits: "pixels",
+    getPointRadius: 3,
+    getFillColor: tileFillColor(id),
+    pickable: true,
+  });
+}
+
 export function buildLayers(
   data: LayerData,
   visibility: Visibility,
   track?: FeatureCollection,
+  zoom?: number,
 ): Layer[] {
   const layers: Layer[] = [];
+
+  // Vector-tile switch (H19.5.1): when zoomed out far enough AND a tile URL is configured,
+  // render server-aggregated MVT tiles for adsb/ais instead of per-point scatter. With no
+  // tile URL set this is always false, so today's point rendering is unchanged (a no-op).
+  const tileProps = buildTileLayerProps();
+  const useTiles = (id: LayerId): boolean =>
+    tileProps != null && zoom != null && shouldUseTiles(zoom) && (id === "adsb" || id === "ais");
 
   // Selected-entity trail (a LineString path), drawn under the live points.
   if (track && track.features.length > 0) {
@@ -70,31 +109,39 @@ export function buildLayers(
   }
 
   if (visibility.adsb) {
-    layers.push(
-      new GeoJsonLayer({
-        id: "adsb",
-        data: data.adsb,
-        pointType: "circle",
-        pointRadiusUnits: "pixels",
-        getPointRadius: 3,
-        getFillColor: (f: Feature) => (f.properties.is_military ? FLIGHT_MIL : FLIGHT_CIV),
-        pickable: true,
-      }),
-    );
+    if (useTiles("adsb") && tileProps) {
+      layers.push(tileLayer("adsb", tileProps));
+    } else {
+      layers.push(
+        new GeoJsonLayer({
+          id: "adsb",
+          data: data.adsb,
+          pointType: "circle",
+          pointRadiusUnits: "pixels",
+          getPointRadius: 3,
+          getFillColor: (f: Feature) => (f.properties.is_military ? FLIGHT_MIL : FLIGHT_CIV),
+          pickable: true,
+        }),
+      );
+    }
   }
 
   if (visibility.ais) {
-    layers.push(
-      new GeoJsonLayer({
-        id: "ais",
-        data: data.ais,
-        pointType: "circle",
-        pointRadiusUnits: "pixels",
-        getPointRadius: 3,
-        getFillColor: VESSEL,
-        pickable: true,
-      }),
-    );
+    if (useTiles("ais") && tileProps) {
+      layers.push(tileLayer("ais", tileProps));
+    } else {
+      layers.push(
+        new GeoJsonLayer({
+          id: "ais",
+          data: data.ais,
+          pointType: "circle",
+          pointRadiusUnits: "pixels",
+          getPointRadius: 3,
+          getFillColor: VESSEL,
+          pickable: true,
+        }),
+      );
+    }
   }
 
   if (visibility.tle) {
