@@ -16,6 +16,7 @@ ceiling. See docs/research/2026-05-31-autonomous-proactive-agents.md.
 from __future__ import annotations
 
 import re
+import threading
 from dataclasses import dataclass, field
 from enum import IntEnum
 from typing import Optional
@@ -92,6 +93,12 @@ class AutonomyPolicy:
         RiskTier.IRREVERSIBLE_OR_MONEY: ASK,
     })
     _spent_today: float = 0.0
+    # BUG-12: guard the read-modify-write on `_spent_today` so concurrent
+    # `record_spend` calls (and the daily-ceiling read in `decide`) can't lose
+    # an increment. Excluded from repr/eq/hash — it's internal mutable state.
+    _spend_lock: threading.Lock = field(
+        default_factory=threading.Lock, repr=False, compare=False
+    )
 
     # ── classification ────────────────────────────────────────────
     def classify(self, action: dict) -> RiskTier:
@@ -149,7 +156,9 @@ class AutonomyPolicy:
         # Money special-case: auto-act if within per-action cap AND daily budget.
         amount = _num(action.get("amount"))
         if tier == RiskTier.IRREVERSIBLE_OR_MONEY and amount > 0:
-            if amount <= self.cap_per_action and (self._spent_today + amount) <= self.daily_ceiling:
+            with self._spend_lock:
+                spent_today = self._spent_today
+            if amount <= self.cap_per_action and (spent_today + amount) <= self.daily_ceiling:
                 return Decision(ACT, tier, f"within caps (≤{self.cap_per_action}, daily ok)")
             return Decision(ASK, tier, f"exceeds cap {self.cap_per_action} or daily ceiling", urgent=True)
 
@@ -159,10 +168,13 @@ class AutonomyPolicy:
         return Decision(outcome, tier, reason, urgent=urgent)
 
     def record_spend(self, amount: float) -> None:
-        self._spent_today += max(0.0, _num(amount))
+        # Atomic read-modify-write so concurrent callers can't lose increments.
+        with self._spend_lock:
+            self._spent_today += max(0.0, _num(amount))
 
     def reset_daily(self) -> None:
-        self._spent_today = 0.0
+        with self._spend_lock:
+            self._spent_today = 0.0
 
 
 # Risk sets in priority order (highest tier first) for token classification.

@@ -1,5 +1,5 @@
 """Tests for the autonomy risk gate / policy (H6.3)."""
-import sys, os
+import sys, os, threading
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'agents'))
 
@@ -89,3 +89,26 @@ class TestUrgency:
     def test_time_sensitive_ask_is_urgent(self, policy):
         d = policy.decide({"kind": "delete_file", "time_sensitivity": 0.9})
         assert d.outcome == ASK and d.urgent is True
+
+
+class TestSpendConcurrency:
+    """BUG-12: `record_spend` must be atomic under concurrency."""
+
+    def test_concurrent_record_spend_loses_no_increment(self):
+        policy = AutonomyPolicy(cap_per_action=50.0, daily_ceiling=1e12)
+        threads_count = 16
+        per_thread = 500
+        barrier = threading.Barrier(threads_count)
+
+        def worker():
+            barrier.wait()  # maximize contention by releasing all at once
+            for _ in range(per_thread):
+                policy.record_spend(1.0)
+
+        threads = [threading.Thread(target=worker) for _ in range(threads_count)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+
+        assert policy._spent_today == pytest.approx(threads_count * per_thread)

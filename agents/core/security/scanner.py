@@ -12,10 +12,58 @@ reported: this keeps false positives near zero on arbitrary 13-digit numbers
 or IBAN-shaped strings.
 """
 
+import math
 import re
 from typing import Callable
 
 from .types import ScanFinding, ScanResult, ThreatLevel
+
+
+# ── Generic secret heuristics ─────────────────────────────────────────────────
+# A long, high-entropy base64-ish run is almost certainly a credential, not
+# prose. We only consider runs of "secret-shaped" characters (base64 / base64url
+# / hex) and require both length and entropy thresholds so English text — which
+# is low-entropy and rarely produces 32-char unbroken alphanumeric runs — is not
+# flagged. Mirrors the precision bar set by the CNP/IBAN checksum validators.
+_HIGH_ENTROPY_RUN = re.compile(r"[A-Za-z0-9+/_-]{32,}")
+# Minimum Shannon entropy (bits/char) for a run to count as a secret. Random
+# base64 tends toward ~5–6 bits/char; English words sit well below ~3.5.
+_MIN_ENTROPY_BITS = 3.6
+
+
+def shannon_entropy(value: str) -> float:
+    """Shannon entropy of `value` in bits per character (0 for empty)."""
+    if not value:
+        return 0.0
+    counts: dict[str, int] = {}
+    for ch in value:
+        counts[ch] = counts.get(ch, 0) + 1
+    n = len(value)
+    return -sum((c / n) * math.log2(c / n) for c in counts.values())
+
+
+def looks_like_high_entropy_secret(value: str) -> bool:
+    """True if `value` contains a long, high-entropy secret-shaped token.
+
+    Precision-first: requires a ≥32-char base64/hex-ish run *and* a Shannon
+    entropy above ~3.6 bits/char, plus a digit-or-mixed-case signal so that
+    long all-lowercase identifiers (e.g. a hyphen-free German compound word or
+    a 32-char slug) don't trip it. English prose, with its low per-character
+    entropy and word boundaries, stays clean.
+    """
+    for m in _HIGH_ENTROPY_RUN.finditer(value):
+        run = m.group()
+        if shannon_entropy(run) < _MIN_ENTROPY_BITS:
+            continue
+        has_digit = any(c.isdigit() for c in run)
+        has_upper = any(c.isupper() for c in run)
+        has_lower = any(c.islower() for c in run)
+        # Require character-class diversity typical of generated tokens; a run
+        # that is purely one class (all lowercase letters) is more likely an
+        # identifier/slug than a key.
+        if (has_digit and (has_upper or has_lower)) or (has_upper and has_lower):
+            return True
+    return False
 
 
 # ── Romanian identifier validators ────────────────────────────────────────────
@@ -74,32 +122,67 @@ class SecretScanner(BaseScanner):
     scanner_id = "secrets"
 
     PATTERNS: dict[str, tuple[str, ThreatLevel, str]] = {
-        "openai_key": (r"sk-[A-Za-z0-9_-]{20,}", ThreatLevel.CRITICAL, "OpenAI API key"),
+        # OpenAI keys are ≥40 chars. The negative lookahead keeps this from
+        # pre-empting the more specific `sk-ant-` (Anthropic) format; Stripe
+        # uses an underscore (`sk_`) so it can't collide here.
+        "openai_key": (r"sk-(?!ant-)[A-Za-z0-9_-]{40,}", ThreatLevel.CRITICAL, "OpenAI API key"),
         "anthropic_key": (r"sk-ant-[A-Za-z0-9_-]{20,}", ThreatLevel.CRITICAL, "Anthropic API key"),
-        "aws_access_key": (r"AKIA[0-9A-Z]{16}", ThreatLevel.CRITICAL, "AWS access key"),
+        "aws_access_key": (r"(?:AKIA|ASIA|AGPA|AIDA|AROA|AIPA|ANPA|ANVA)[0-9A-Z]{16}", ThreatLevel.CRITICAL, "AWS access key"),
         "github_token": (r"(?:ghp|gho|ghs|ghr|github_pat)_[A-Za-z0-9_]{36,}", ThreatLevel.CRITICAL, "GitHub token"),
-        "password_assignment": (r"""(?:password|passwd|pwd)\s*[=:]\s*['"]?([^\s'"]{4,})['"]?""", ThreatLevel.HIGH, "Password assignment"),
-        "db_connection_string": (r"(?:postgres|mysql|mongodb|redis)://[^\s]{10,}", ThreatLevel.HIGH, "Database connection string"),
+        # Quoted or bare assignment; the bare form requires a credential-ish
+        # value (no whitespace, ≥6 chars) so `password = ` placeholders or short
+        # words rarely fire.
+        "password_assignment": (r"""(?i:password|passwd|pwd)\s*[=:]\s*(?:['"]([^\s'"]{4,})['"]|([^\s'"]{6,}))""", ThreatLevel.HIGH, "Password assignment"),
+        # Require a credential-bearing URL: scheme://user:pass@host. Bare
+        # `scheme://host/path` (no embedded creds) is no longer flagged.
+        "db_connection_string": (r"(?:postgres(?:ql)?|mysql|mongodb(?:\+srv)?|redis|amqp)://[^\s:/@]+:[^\s:/@]+@[^\s/]+", ThreatLevel.HIGH, "Database connection string"),
         "private_key": (r"-----BEGIN [A-Z0-9 ]*PRIVATE KEY-----", ThreatLevel.CRITICAL, "Private key"),
         "slack_token": (r"xox[bpors]-[A-Za-z0-9\-]{10,}", ThreatLevel.HIGH, "Slack token"),
-        "stripe_key": (r"(?:sk|pk)_(?:test|live)_[A-Za-z0-9]{20,}", ThreatLevel.CRITICAL, "Stripe key"),
-        "generic_api_key": (r"""(?:api_key|secret_key|auth_token)\s*[=:]\s*['"]([^'"]{8,})['"]""", ThreatLevel.HIGH, "Generic API key/secret"),
+        "stripe_key": (r"(?:sk|pk|rk)_(?:test|live)_[A-Za-z0-9]{20,}", ThreatLevel.CRITICAL, "Stripe key"),
+        # GCP service-account JSON key: the `"type": "service_account"` marker
+        # paired with a `"private_key"` field (order-independent, whitespace
+        # tolerant) is a near-unique signature.
+        "gcp_service_account": (r'"type"\s*:\s*"service_account"[\s\S]{0,400}?"private_key"\s*:', ThreatLevel.CRITICAL, "GCP service-account key"),
+        "azure_storage_key": (r"AccountKey=[A-Za-z0-9+/]{86}==", ThreatLevel.CRITICAL, "Azure storage account key"),
+        "generic_api_key": (r"""(?i:api_key|secret_key|auth_token)\s*[=:]\s*['"]([^'"]{8,})['"]""", ThreatLevel.HIGH, "Generic API key/secret"),
         "jwt": (r"eyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}", ThreatLevel.HIGH, "JWT"),
         "bearer_token": (r"Bearer\s+[A-Za-z0-9._~+/=-]{20,}", ThreatLevel.HIGH, "Bearer token"),
+        # Generic catch-all for long, high-entropy tokens that don't match a
+        # known vendor format. Gated by the entropy validator below to keep
+        # false positives near zero.
+        "high_entropy_secret": (r"[A-Za-z0-9+/_-]{32,}", ThreatLevel.HIGH, "High-entropy secret"),
+    }
+
+    # Pattern names whose regex must be matched case-sensitively. Key formats
+    # (OpenAI/Anthropic/AWS/Stripe/Azure) carry meaningful case, so IGNORECASE
+    # would broaden them and let `SK-…` style prose tokens false-positive.
+    CASE_SENSITIVE = frozenset({
+        "openai_key", "anthropic_key", "aws_access_key", "github_token",
+        "stripe_key", "azure_storage_key", "high_entropy_secret",
+    })
+
+    # Patterns whose regex matches must additionally pass a heuristic validator
+    # to count as findings — mirrors PIIScanner's checksum gating.
+    VALIDATORS: dict[str, Callable[[str], bool]] = {
+        "high_entropy_secret": looks_like_high_entropy_secret,
     }
 
     def __init__(self):
         self._compiled: list[tuple[str, re.Pattern, ThreatLevel, str]] = []
         for name, (pattern, threat, desc) in self.PATTERNS.items():
+            flags = 0 if name in self.CASE_SENSITIVE else re.IGNORECASE
             try:
-                self._compiled.append((name, re.compile(pattern, re.IGNORECASE), threat, desc))
+                self._compiled.append((name, re.compile(pattern, flags), threat, desc))
             except re.error:
                 pass
 
     def scan(self, text: str) -> ScanResult:
         result = ScanResult()
         for name, pattern, threat, desc in self._compiled:
+            validator = self.VALIDATORS.get(name)
             for match in pattern.finditer(text):
+                if validator and not validator(match.group()):
+                    continue
                 result.findings.append(ScanFinding(
                     pattern_name=name,
                     matched_text=match.group(),
@@ -112,7 +195,16 @@ class SecretScanner(BaseScanner):
 
     def redact(self, text: str) -> str:
         for name, pattern, threat, desc in self._compiled:
-            text = pattern.sub(f"[REDACTED:{name}]", text)
+            validator = self.VALIDATORS.get(name)
+            if validator:
+                text = pattern.sub(
+                    lambda m, _n=name, _v=validator: (
+                        f"[REDACTED:{_n}]" if _v(m.group()) else m.group()
+                    ),
+                    text,
+                )
+            else:
+                text = pattern.sub(f"[REDACTED:{name}]", text)
         return text
 
 
