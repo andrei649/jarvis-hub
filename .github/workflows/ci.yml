@@ -73,6 +73,9 @@ jobs:
       - name: Typecheck (tsc --noEmit)
         run: npx tsc --noEmit
         working-directory: frontend
+      - name: Test (vitest)
+        run: npm test
+        working-directory: frontend
       - name: Build
         run: npm run build
         working-directory: frontend

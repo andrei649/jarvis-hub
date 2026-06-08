@@ -468,10 +468,10 @@ async def service_worker():
 
 @app.get("/", response_class=HTMLResponse)
 async def index():
-    # P6 cutover (opt-in, reversible): JARVIS_HUD=v2 serves the v2 HUD at / once
-    # you've verified it. Default keeps the current HUD; v2 is always at /v2 and
-    # the current HUD stays reachable at /v1.
-    if os.environ.get("JARVIS_HUD", "").lower() == "v2":
+    # The V2 cockpit is the PRIMARY HUD (default). Set JARVIS_HUD=v1 for the legacy
+    # HUD; v2 is always at /v2 and the legacy HUD always at /v1. Falls back to legacy
+    # if the v2 bundle hasn't been built.
+    if os.environ.get("JARVIS_HUD", "").lower() != "v1":
         v2_html = HERE / "v2" / "index.html"
         if v2_html.is_file():
             return HTMLResponse(v2_html.read_text(encoding="utf-8"))
