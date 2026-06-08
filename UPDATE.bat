@@ -26,7 +26,7 @@ if %errorlevel% neq 0 (
 )
 
 REM --- 2. Pull latest from GitHub -----------------------------
-echo [1/4] Aduc ultimele modificari de pe GitHub...
+echo [1/5] Aduc ultimele modificari de pe GitHub...
 git pull --rebase origin main
 if %errorlevel% neq 0 (
   echo.
@@ -37,7 +37,7 @@ if %errorlevel% neq 0 (
 echo.
 
 REM --- 3. Virtual env + dependencies --------------------------
-echo [2/4] Pregatesc mediul Python (.venv)...
+echo [2/5] Pregatesc mediul Python (.venv)...
 if not exist ".venv\Scripts\python.exe" (
   echo     Creez mediul virtual prima data...
   %PY% -m venv .venv
