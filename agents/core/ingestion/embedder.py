@@ -362,7 +362,8 @@ class Embedder:
             start = (i * chunk_size) % len(text_bytes)
             end = min(start + chunk_size, len(text_bytes))
             chunk = text_bytes[start:end] if end > start else text_bytes[start:start + 1]
-            hash_bytes = hashlib.md5(chunk).digest()
+            # Deterministic hash→float for the fallback embedding (not security).
+            hash_bytes = hashlib.md5(chunk, usedforsecurity=False).digest()
             vec[i] = (int.from_bytes(hash_bytes[:4], "big") / 2**32) * 2 - 1
 
         norm = math.sqrt(sum(v * v for v in vec))
