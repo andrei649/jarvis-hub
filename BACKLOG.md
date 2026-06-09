@@ -14,7 +14,7 @@
 ```bash
 pip install -r requirements-beta.txt
 python -m uvicorn agents.web:app --host 127.0.0.1 --port 8080
-python -m pytest tests/ -v          # 2104 passed, 1 skipped
+python -m pytest tests/ -v          # 2117 passed, 1 skipped
 ```
 
 > Singurul skip rămas e heartbeat-ul opțional. (Vechiul `tests/test_spotify.py` cu 8 skip-uri a
@@ -85,7 +85,7 @@ chain-of-thought leak / mid-sentence truncation fixed. Kill-switch:
 
 **În afara totalului:** **Bugs & Hot Fixes** — **toate BUG-\* și HF-\* rezolvate** (BUG-1…13 + HF-1…7; vezi re-baseline 2026-06-08 + tabelul de mai jos). Rămân deschise **deliberat**: **CLN-2/CLN-3** (refactor god-objects `orchestrator.py`/`web.py`, P3) + taskuri/nice-to-have netrackuite ca buguri (**TASK-1** Howard backend, **BUG-2b** frontend E2E, **NTH-1**). *(Detalii audit cod 2026-06-04 în tabel.)*
 
-**Test count (backend pytest):** 2,104 passed, 1 skipped — skip-ul rămas e heartbeat-ul opțional (`tests/test_spotify.py` eliminat în CLN-1). *(2026-06-09: backlog software **code-complete** — H10 30/30, H11 1/4, H12 23/25, frontiere H13–H17 15/20 (vezi „Status General" de mai sus); + WorldView O19 33/33 merged + Argus. Rămâne audit + testare manuală, vezi `docs/AUDIT.md`.)*
+**Test count (backend pytest):** 2,117 passed, 1 skipped — skip-ul rămas e heartbeat-ul opțional (`tests/test_spotify.py` eliminat în CLN-1). *(2026-06-09: backlog software **code-complete** — H10 30/30, H11 1/4, H12 23/25, frontiere H13–H17 15/20 (vezi „Status General" de mai sus); + WorldView O19 33/33 merged + Argus. Rămâne audit + testare manuală, vezi `docs/AUDIT.md`.)*
 **Frontend (BUG-2):** 184 teste JS / 23 fișiere · ~67% line coverage — separat de suita pytest.
 
 > **Orizont 7 Hardening — Drumul spre 1.0.0:** 11/11 COMPLET ✅ (livrat 2026-06-02)
@@ -700,7 +700,7 @@ chain-of-thought leak / mid-sentence truncation fixed. Kill-switch:
 
 ---
 
-## ORIZONT 21 — Cognition: Living Memory & Human-Like Personality (P1–P3) — 6/10
+## ORIZONT 21 — Cognition: Living Memory & Human-Like Personality (P1–P3) — 10/10 ✅
 
 > **Cea mai importantă temă.** Un creier cognitiv pentru agenți: memorie **nelimitată, append-only,
 > mereu valoroasă în timp** (uitarea = accesibilitate redusă + demotare pe tier, **niciodată ștergere**;
@@ -747,10 +747,10 @@ chain-of-thought leak / mid-sentence truncation fixed. Kill-switch:
 
 | # | Item | S | P | Dep | AC |
 |---|------|---|---|-----|----|
-| H21.A | **Secrete în afara `.env` (vaultwarden)** — plugin `vaultwarden` + secret-resolver; Jarvis ia cheile API din vault self-hosted în loc de `.env` plaintext. Aliniat HF-5 (igienă chei) + local-first; se leagă de secret-broker H15.4. | 5 | P2 | — | cheile se rezolvă din vault; fallback explicit; fără cheie în plaintext în config |
-| H21.B | **Skill media (yt-dlp + Whisper)** — `skills/media/`: yt-dlp ia audio → STT Whisper existent → agent rezumă („rezumă acest video/podcast"). Compune cu ce există deja. | 3 | P3 | — | „rezumă <url>" → transcript + rezumat; binar `yt-dlp` opțional |
-| H21.C | **Skill generare imagini pe idle** — kind `image_gen`; cere ziua → night-shift descarcă LLM via `LMStudioController` → ComfyUI/diffusers (Flux FP8) generează → reîncarcă LLM → livrează în brief/Telegram. $0, local, **fără contenție VRAM** (LLM descărcat). | 5 | P3 | autonomy night-shift | imagine generată pe idle fără să blocheze chat-ul; swap LLM↔diffusion narat; backend diffusion configurabil |
-| H21.D | **Prompt-builder video (cloud manual)** — LLM-ul local redactează/rafinează un prompt video pentru lipit manual în Gemini/Veo (opt-in, **$0 tokens API**). Helper mic, nu pipeline. | 2 | P3 | — | „prompt video pentru X" → prompt gata de lipit; fără apel API plătit |
+| H21.A ✅ | **Secrete în afara `.env` (vaultwarden)** — plugin `vaultwarden` + secret-resolver; Jarvis ia cheile API din vault self-hosted în loc de `.env` plaintext. Aliniat HF-5 (igienă chei) + local-first; se leagă de secret-broker H15.4. **Done 2026-06-09:** `core/secrets_vault.py` `VaultResolver` — rezolvă din vault (client injectabil) cu **fallback explicit** la env; sursă raportată (vault/env/missing); fără plaintext. +4 teste offline. *(Clientul HTTP vaultwarden = poartă host.)* | 5 | P2 | — | cheile se rezolvă din vault; fallback explicit; fără cheie în plaintext în config |
+| H21.B ✅ | **Skill media (yt-dlp + Whisper)** — `skills/media/`: yt-dlp ia audio → STT Whisper existent → agent rezumă („rezumă acest video/podcast"). Compune cu ce există deja. **Done 2026-06-09:** `core/media_skill.py` `MediaSummarizer` — pipeline `summarize_url` (downloader→transcriber→summarizer injectabili); yt-dlp/Whisper = poartă host (→ `host_tools_unavailable` fără ele). +3 teste offline. | 3 | P3 | — | „rezumă <url>" → transcript + rezumat; binar `yt-dlp` opțional |
+| H21.C ✅ | **Skill generare imagini pe idle** — kind `image_gen`; cere ziua → night-shift descarcă LLM via `LMStudioController` → ComfyUI/diffusers (Flux FP8) generează → reîncarcă LLM → livrează în brief/Telegram. $0, local, **fără contenție VRAM** (LLM descărcat). **Done 2026-06-09:** `core/image_gen.py` `ImageGenOrchestrator` — `generate` descarcă LLM → diffusion (injectabil) → reîncarcă LLM (**fără contenție VRAM**; restaurează LLM-ul ȘI la eșec). Backend diffusion = poartă host. +3 teste offline. | 5 | P3 | autonomy night-shift | imagine generată pe idle fără să blocheze chat-ul; swap LLM↔diffusion narat; backend diffusion configurabil |
+| H21.D ✅ | **Prompt-builder video (cloud manual)** — LLM-ul local redactează/rafinează un prompt video pentru lipit manual în Gemini/Veo (opt-in, **$0 tokens API**). Helper mic, nu pipeline. **Done 2026-06-09:** `core/video_prompt.py` `build_video_prompt` — LLM injectabil rafinează ideea într-un prompt video gata de lipit; fallback template determinist; **$0 API**. +3 teste offline. | 2 | P3 | — | „prompt video pentru X" → prompt gata de lipit; fără apel API plătit |
 
 > **Notă hardware (nu e task):** laptop RTX 5090 (mobile, 24GB, power-capped) **nu se poate upgrada** la GPU.
 > Imagini = local pe idle ($0). Video serios local = nod GPU pe LAN (~$2.8k desktop 5090) sau eGPU — **parcate**;
