@@ -1,0 +1,16 @@
+# H11.2 — Jarvis native hot-path crate (PyO3). Host build only.
+#   maturin develop --release      # local dev install
+#   maturin build --release        # wheel
+# The pure-Python fallback (agents/core/native_fallback.py) is used when this
+# extension isn't built, so the system works with or without it.
+[package]
+name = "jarvis_native"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+name = "jarvis_native"
+crate-type = ["cdylib"]
+
+[dependencies]
+pyo3 = { version = "0.22", features = ["extension-module"] }

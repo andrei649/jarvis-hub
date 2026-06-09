@@ -1,0 +1,17 @@
+# H11.1 — Jarvis Hub desktop shell (Tauri v2). HOST BUILD ONLY.
+#   cargo tauri build      # package native desktop app (Win/macOS/Linux)
+# Wraps the existing web HUD (http://127.0.0.1:8080) with a native window, tray
+# icon, and auto-start — no new backend.
+[package]
+name = "jarvis-hub-desktop"
+version = "0.9.2"
+edition = "2021"
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = ["tray-icon"] }
+tauri-plugin-autostart = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"

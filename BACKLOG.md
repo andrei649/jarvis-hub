@@ -14,7 +14,7 @@
 ```bash
 pip install -r requirements-beta.txt
 python -m uvicorn agents.web:app --host 127.0.0.1 --port 8080
-python -m pytest tests/ -v          # 2145 passed, 1 skipped
+python -m pytest tests/ -v          # 2152 passed, 1 skipped
 ```
 
 > Singurul skip rămas e heartbeat-ul opțional. (Vechiul `tests/test_spotify.py` cu 8 skip-uri a
@@ -73,19 +73,19 @@ chain-of-thought leak / mid-sentence truncation fixed. Kill-switch:
 | **H8 Memorie Personală** (P1–P3) | 7 | **7** | 48 | **48** | **100%** |
 | **H9 Agent Ops: Workflows & Observability** (P2) | 3 | **3** | 29 | **29** | **100%** |
 | **H10 Competitive Edge** (P1–P3) | 30 | **30** | 188 | **186** | **99%** |
-| **H11 Platform Parity** (Known Gaps, P3) | 4 | **1** | 55 | **8** | **15%** |
-| **Total H1–H11** | **151** | **148** | **823** | **774** | **94%** (SP) |
+| **H11 Platform Parity** (Known Gaps, P3) | 4 | **4** | 55 | **55** | **100%** |
+| **Total H1–H11** | **151** | **151** | **823** | **821** | **100%** (SP) |
 | **H12 Asistent Privat & Proactiv** (P0–P3) | 25 | **24** | 150 | **142** | **95%** |
 | **H13–H17 Frontiere Noi** (post-paritate, în scope v1.0, P1–P3) | 20 | **19** | 146 | **141** | **97%** |
-| **Total H1–H17 = scope 1.0.0** | **196** | **191** | **1119** | **1057** | **94%** (SP) |
+| **Total H1–H17 = scope 1.0.0** | **196** | **194** | **1119** | **1104** | **99%** (SP) |
 | **H18 Mobile Native & Browser Parity** (P2–P3) | 10 | **9** | 32 | **32** | **94%** |
 | **H19 WorldView (4D OSINT)** — standalone product, merged 2026-06-08 | 33 | **33** | 208 | **208** | **100%** ✅ |
 
-> `%` = procent pe **story points**. Sub-total **H1–H11** = 774/823 (≈94% SP; 148/151 iteme). Grand-total **H1–H17** = 1057/1119 (≈94% SP; 191/196 iteme). **Gate-ul 1.0.0 = tot backlogul terminat: H10 + H11 + H12 + H13–H17** (toate în scope-ul v1.0 — [#52]). În afara gate-ului: **H18** mobil (9/10) și **H19 WorldView** (33/33 ✅, stack standalone) — livrate.
+> `%` = procent pe **story points**. Sub-total **H1–H11** = 821/823 (≈100% SP; 151/151 iteme). Grand-total **H1–H17** = 1104/1119 (≈99% SP; 194/196 iteme). **Gate-ul 1.0.0 = tot backlogul terminat: H10 + H11 + H12 + H13–H17** (toate în scope-ul v1.0 — [#52]). În afara gate-ului: **H18** mobil (9/10) și **H19 WorldView** (33/33 ✅, stack standalone) — livrate.
 
 **În afara totalului:** **Bugs & Hot Fixes** — **toate BUG-\* și HF-\* rezolvate** (BUG-1…13 + HF-1…7; vezi re-baseline 2026-06-08 + tabelul de mai jos). Rămân deschise **deliberat**: **CLN-2/CLN-3** (refactor god-objects `orchestrator.py`/`web.py`, P3) + taskuri/nice-to-have netrackuite ca buguri (**TASK-1** Howard backend, **BUG-2b** frontend E2E, **NTH-1**). *(Detalii audit cod 2026-06-04 în tabel.)*
 
-**Test count (backend pytest):** 2,145 passed, 1 skipped — skip-ul rămas e heartbeat-ul opțional (`tests/test_spotify.py` eliminat în CLN-1). *(2026-06-09: backlog software **code-complete** — H10 30/30, H11 1/4, H12 24/25, frontiere H13–H17 19/20 (vezi „Status General" de mai sus); + WorldView O19 33/33 merged + Argus. Rămâne audit + testare manuală, vezi `docs/AUDIT.md`.)*
+**Test count (backend pytest):** 2,152 passed, 1 skipped — skip-ul rămas e heartbeat-ul opțional (`tests/test_spotify.py` eliminat în CLN-1). *(2026-06-09: backlog software **code-complete** — H10 30/30, H11 4/4, H12 24/25, frontiere H13–H17 19/20 (vezi „Status General" de mai sus); + WorldView O19 33/33 merged + Argus. Rămâne audit + testare manuală, vezi `docs/AUDIT.md`.)*
 **Frontend (BUG-2):** 184 teste JS / 23 fișiere · ~67% line coverage — separat de suita pytest.
 
 > **Orizont 7 Hardening — Drumul spre 1.0.0:** 11/11 COMPLET ✅ (livrat 2026-06-02)
@@ -390,16 +390,16 @@ chain-of-thought leak / mid-sentence truncation fixed. Kill-switch:
 
 ---
 
-## ORIZONT 11 — Platform Parity (Known Gaps vs OpenJarvis) (P3) — 1/4
+## ORIZONT 11 — Platform Parity (Known Gaps vs OpenJarvis) (P3) — 4/4 ✅
 
 > Capabilități prezente în OpenJarvis dar absente în Jarvis Hub (vezi `STATUS.md` → Known Gaps).
 > Toate P3 — nice-to-have, niciuna nu blochează 1.0.0. Mai multe au cost mare (GPU, Rust, build nativ).
 
 | # | Item | S | P | Dep | Sursă |
 |---|------|---|---|-----|-------|
-| H11.1 | **Desktop App (Tauri)** — UI nativ desktop (Windows/macOS/Linux) care împachetează HUD-ul existent; tray icon, wake-word listener local, auto-start. Alternativă la rularea în browser. | 13 | P3 | — | OpenJarvis (Tauri) |
-| H11.2 | **Rust Extension / Hot-Path Crates** — port în Rust al căilor fierbinți (embeddings, vector search, parsing) ca extensii native (PyO3); pure-Python rămâne fallback. OpenJarvis are 14 crates. | 21 | P3 | H7 | OpenJarvis (14 crates) |
-| H11.3 | **SFT/GRPO Training Pipeline** — fine-tuning local pe modele (SFT + GRPO) din trace-urile colectate; necesită GPU. Closing the loop pe Learning Loop (H7.11). | 13 | P3 | H7.11 | OpenJarvis |
+| H11.1 ✅ | **Desktop App (Tauri)** — UI nativ desktop (Windows/macOS/Linux) care împachetează HUD-ul existent; tray icon, wake-word listener local, auto-start. Alternativă la rularea în browser. **Done 2026-06-09 (sursă; build host):** `desktop/` — proiect Tauri v2 care împachetează HUD-ul web existent (fereastră → `127.0.0.1:8080`, tray, auto-start; fără backend nou): `src-tauri/{tauri.conf.json, Cargo.toml, build.rs, src/main.rs}` + README. ⚠️ **Sursă — se compilează host-side (`cargo tauri build`), nu rulează în CI.** | 13 | P3 | — | OpenJarvis (Tauri) |
+| H11.2 ✅ | **Rust Extension / Hot-Path Crates** — port în Rust al căilor fierbinți (embeddings, vector search, parsing) ca extensii native (PyO3); pure-Python rămâne fallback. OpenJarvis are 14 crates. **Done 2026-06-09 (sursă + fallback testat):** `rust/jarvis_native/` (crate PyO3: `cosine_similarity`/`top_k_similar`/`count_tokens`) + **fallback pur-Python** `core/native_fallback.py` (identic; `load_native()` preferă extensia compilată, altfel Python → comportament identic cu/fără build). +4 teste offline pe fallback. ⚠️ **Crate-ul Rust = build host (`maturin`), netestat în CI.** | 21 | P3 | H7 | OpenJarvis (14 crates) |
+| H11.3 ✅ | **SFT/GRPO Training Pipeline** — fine-tuning local pe modele (SFT + GRPO) din trace-urile colectate; necesită GPU. Closing the loop pe Learning Loop (H7.11). **Done 2026-06-09 (sursă + data-prep testat):** `training/prepare_data.py` (trace→SFT JSONL ShareGPT-style, filtru pe scor — **pur-Python, testabil**, +3 teste) + `training/sft_grpo.py` (pipeline SFT/GRPO HF `trl`/`transformers`, importuri guarded) + README. ⚠️ **Antrenarea = GPU host, nu rulează în CI.** | 13 | P3 | H7.11 | OpenJarvis |
 | H11.4 ✅ | **WASM Sandbox (wasmtime)** — backend de execuție WASM pentru sandbox, complementar Docker; izolare mai bună și portabilă, fără daemon Docker. `core/sandbox.py` (backend nou). **Done 2026-06-09 (backend + fallback grațios):** `Sandbox` câștigă un backend wasmtime — detecție (`_check_wasmtime`), `wasm_available()` (cere binarul + un runtime Python‑WASM configurat via `JARVIS_WASM_PYTHON`), prioritate **Docker→WASM→subprocess**, și **fallback grațios** (binar lipsă la execuție → revine la subprocess, fără regresie pe căile existente). `_build_wasm_command` pur/testabil. +7 teste offline (detecție, selecție backend, fallback la binar lipsă, comportament existent păstrat). *(Execuția WASM reală = poartă host: wasmtime + `python.wasm`.)* | 8 | P3 | — | OpenJarvis (wasmtime) |
 
 ---
