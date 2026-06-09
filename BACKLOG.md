@@ -14,7 +14,7 @@
 ```bash
 pip install -r requirements-beta.txt
 python -m uvicorn agents.web:app --host 127.0.0.1 --port 8080
-python -m pytest tests/ -v          # 2152 passed, 1 skipped
+python -m pytest tests/ -v          # 2156 passed, 1 skipped
 ```
 
 > Singurul skip rămas e heartbeat-ul opțional. (Vechiul `tests/test_spotify.py` cu 8 skip-uri a
@@ -85,7 +85,7 @@ chain-of-thought leak / mid-sentence truncation fixed. Kill-switch:
 
 **În afara totalului:** **Bugs & Hot Fixes** — **toate BUG-\* și HF-\* rezolvate** (BUG-1…13 + HF-1…7; vezi re-baseline 2026-06-08 + tabelul de mai jos). Rămân deschise **deliberat**: **CLN-2/CLN-3** (refactor god-objects `orchestrator.py`/`web.py`, P3) + taskuri/nice-to-have netrackuite ca buguri (**TASK-1** Howard backend, **BUG-2b** frontend E2E, **NTH-1**). *(Detalii audit cod 2026-06-04 în tabel.)*
 
-**Test count (backend pytest):** 2,152 passed, 1 skipped — skip-ul rămas e heartbeat-ul opțional (`tests/test_spotify.py` eliminat în CLN-1). *(2026-06-09: backlog software **code-complete** — H10 30/30, H11 4/4, H12 24/25, frontiere H13–H17 19/20 (vezi „Status General" de mai sus); + WorldView O19 33/33 merged + Argus. Rămâne audit + testare manuală, vezi `docs/AUDIT.md`.)*
+**Test count (backend pytest):** 2,156 passed, 1 skipped — skip-ul rămas e heartbeat-ul opțional (`tests/test_spotify.py` eliminat în CLN-1). *(2026-06-09: backlog software **code-complete** — H10 30/30, H11 4/4, H12 24/25, frontiere H13–H17 19/20 (vezi „Status General" de mai sus); + WorldView O19 33/33 merged + Argus. Rămâne audit + testare manuală, vezi `docs/AUDIT.md`.)*
 **Frontend (BUG-2):** 184 teste JS / 23 fișiere · ~67% line coverage — separat de suita pytest.
 
 > **Orizont 7 Hardening — Drumul spre 1.0.0:** 11/11 COMPLET ✅ (livrat 2026-06-02)
