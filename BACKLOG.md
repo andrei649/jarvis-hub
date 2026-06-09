@@ -14,7 +14,7 @@
 ```bash
 pip install -r requirements-beta.txt
 python -m uvicorn agents.web:app --host 127.0.0.1 --port 8080
-python -m pytest tests/ -v          # 2084 passed, 1 skipped
+python -m pytest tests/ -v          # 2088 passed, 1 skipped
 ```
 
 > Singurul skip rămas e heartbeat-ul opțional. (Vechiul `tests/test_spotify.py` cu 8 skip-uri a
@@ -85,7 +85,7 @@ chain-of-thought leak / mid-sentence truncation fixed. Kill-switch:
 
 **În afara totalului:** **Bugs & Hot Fixes** — **toate BUG-\* și HF-\* rezolvate** (BUG-1…13 + HF-1…7; vezi re-baseline 2026-06-08 + tabelul de mai jos). Rămân deschise **deliberat**: **CLN-2/CLN-3** (refactor god-objects `orchestrator.py`/`web.py`, P3) + taskuri/nice-to-have netrackuite ca buguri (**TASK-1** Howard backend, **BUG-2b** frontend E2E, **NTH-1**). *(Detalii audit cod 2026-06-04 în tabel.)*
 
-**Test count (backend pytest):** 2,084 passed, 1 skipped — skip-ul rămas e heartbeat-ul opțional (`tests/test_spotify.py` eliminat în CLN-1). *(2026-06-09: backlog software **code-complete** — H10 30/30, H11 1/4, H12 23/25, frontiere H13–H17 15/20 (vezi „Status General" de mai sus); + WorldView O19 33/33 merged + Argus. Rămâne audit + testare manuală, vezi `docs/AUDIT.md`.)*
+**Test count (backend pytest):** 2,088 passed, 1 skipped — skip-ul rămas e heartbeat-ul opțional (`tests/test_spotify.py` eliminat în CLN-1). *(2026-06-09: backlog software **code-complete** — H10 30/30, H11 1/4, H12 23/25, frontiere H13–H17 15/20 (vezi „Status General" de mai sus); + WorldView O19 33/33 merged + Argus. Rămâne audit + testare manuală, vezi `docs/AUDIT.md`.)*
 **Frontend (BUG-2):** 184 teste JS / 23 fișiere · ~67% line coverage — separat de suita pytest.
 
 > **Orizont 7 Hardening — Drumul spre 1.0.0:** 11/11 COMPLET ✅ (livrat 2026-06-02)
@@ -670,7 +670,7 @@ chain-of-thought leak / mid-sentence truncation fixed. Kill-switch:
 
 ---
 
-## ORIZONT 20 — Hermes Mining (capabilități nete din `hermes-agent`, post-1.0) — 2/6
+## ORIZONT 20 — Hermes Mining (capabilități nete din `hermes-agent`, post-1.0) — 3/6
 
 > Sursă: research [docs/research/2026-06-07-hermes-agent.md](docs/research/2026-06-07-hermes-agent.md) §7.
 > `hermes-agent` (NousResearch, MIT, ~185.7k★, activ) se suprapune masiv cu OpenClaw (are chiar
@@ -688,7 +688,7 @@ chain-of-thought leak / mid-sentence truncation fixed. Kill-switch:
 | # | Item | S | P | Dep | Sursă |
 |---|------|---|---|-----|-------|
 | H20.1 ✅ | **Tool-RPC în sandbox (`execute_code`)** — agentul scrie Python care apelează **tool-urile Jarvis** printr-un RPC local (Unix-socket) din interiorul sandbox-ului → „zero-context-cost pipelines" (orchestrează N tool-calls într-un script, fără round-trip prin contextul LLM per pas). Secretele NU sunt citibile în sandbox (peste secret broker H15.4). **Gated:** suprafața RPC pe allowlist + approval pe tool-uri tier-extern. Cel mai mare câștig net din Hermes. **Done 2026-06-09 (suprafață guvernată):** `core/tool_rpc.py` `ToolRPCServer` — **allowlist** (doar tool-uri înregistrate; necunoscut → refuzat), **risk-gating** (read-only inline; gated/extern → **task ask-tier**, nu rulează din sandbox; execută via executor `toolrpc` DOAR după aprobare), **secret-scrub** recursiv pe răspuns (sandbox-ul nu vede secrete). `run_pipeline` = N tool-calls fără round-trip LLM. Endpoints `GET /api/toolrpc/tools`, `POST /api/toolrpc/call`. Allowlist de start: `echo`/`time` (integrările adaugă tool-uri gated). +10 teste offline (allowlist, gating+enqueue, scrub secrete, pipeline, execute post-aprobare). *(Transport Unix-socket + clientul din sandbox + rularea codului = poartă host.)* | 13 | P2 | H15.4, `sandbox.py` | hermes-agent `execute_code` |
-| H20.2 | **Lățime providere + hot-swap** — adaptor **OpenRouter** (o cheie → sute de modele) + comandă chat/admin de schimbare backend la cald (`/model …`), peste hybrid router-ul existent (Claude/Gemini/LM Studio/Ollama). | 5 | P2 | PR #133 (LM Studio control) | hermes `hermes model` / OpenRouter |
+| H20.2 ✅ | **Lățime providere + hot-swap** — adaptor **OpenRouter** (o cheie → sute de modele) + comandă chat/admin de schimbare backend la cald (`/model …`), peste hybrid router-ul existent (Claude/Gemini/LM Studio/Ollama). **Done 2026-06-09:** `core/llm/openrouter.py` `OpenRouterBackend` (LLMBackend OpenAI-compat, bearer-auth, `strip_thinking`, client injectabil → offline-testable) + `parse_model_command` (`/model <id>` → swap; `/model` → list). Endpoint admin `POST /api/llm/openrouter` (parsează comanda + raportează disponibilitatea cheii). +4 teste offline. *(Cablarea live în HybridRouter + apelul de rețea = poartă host.)* | 5 | P2 | PR #133 (LM Studio control) | hermes `hermes model` / OpenRouter |
 | H20.3 | **ContextCompressor runtime** — compresie de context pentru sesiuni lungi (rezumare / eviction inteligentă pe cale fierbinte), distinct de consolidarea nocturnă (H5.15). Se leagă de tema „sleep-time compute" (H13). | 8 | P2 | H5.15 | hermes ContextCompressor |
 | H20.4 | **Self-evolution (DSPy / GEPA)** — optimizare automată de prompturi/skill-uri din traiectorii (ShareGPT-style), gated prin decision inbox (reversibil). Extinde learning-loop-ul de agenți (H7.11) de la „ce agent" la „cât de bine e promptat". | 8 | P3 | H7.11, H6.5 | hermes-agent-self-evolution |
 | H20.5 | **Skill self-improvement + drift manifest** — rafinează skill-uri existente (nu doar `generate_skill` care doar creează) + manifest content-hash pt. detectarea modificărilor la sync `hermes update`-style. | 5 | P3 | BUG-13, `loader.generate_skill` | hermes Skills Hub / `.bundled_manifest` |

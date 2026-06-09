@@ -2123,6 +2123,21 @@ async def subagents_spawn(body: SubAgentSpawnBody):
     return _nocache_json(result, status_code=200 if result.get("ok") else 429)
 
 
+class ModelSwapBody(BaseModel):
+    command: str = Field(..., max_length=200)
+
+
+@app.post("/api/llm/openrouter", dependencies=[Depends(_admin_guard)])
+async def llm_openrouter_swap(body: ModelSwapBody):
+    """H20.2 — parse a `/model` hot-swap command; report OpenRouter availability."""
+    from agents.core.llm.openrouter import parse_model_command, OPENROUTER_BASE
+    parsed = parse_model_command(body.command)
+    if parsed is None:
+        return _nocache_json({"ok": False, "reason": "not_a_model_command"}, status_code=422)
+    return _nocache_json({"ok": True, "parsed": parsed, "base": OPENROUTER_BASE,
+                          "configured": bool(os.environ.get("OPENROUTER_API_KEY", ""))})
+
+
 # H21.0 — mount the cognition APIRouter (keeps cognition endpoints out of the
 # web.py god-object). User-guarded like the rest of the /api surface.
 from agents.core.cognition.api import router as _cognition_router  # noqa: E402
