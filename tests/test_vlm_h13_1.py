@@ -52,6 +52,15 @@ def test_encode_image_block_bad_path_returns_none():
     assert encode_image_block("/no/such/file.png") is None
 
 
+def test_untrusted_input_rejects_local_files():
+    # path injection guard: untrusted callers must not be able to open host files
+    assert encode_image_block("/etc/hostname", allow_local_files=False) is None
+    assert encode_image_block("relative/path.png", allow_local_files=False) is None
+    # URLs and data-URIs are still allowed from untrusted input
+    assert encode_image_block("https://x/i.png", allow_local_files=False)["image_url"]["url"] == "https://x/i.png"
+    assert encode_image_block("data:image/png;base64,AAA", allow_local_files=False) is not None
+
+
 def test_build_vision_messages():
     msgs = build_vision_messages("what is this?", images=[b"img"], system="be terse")
     assert msgs[0] == {"role": "system", "content": "be terse"}
