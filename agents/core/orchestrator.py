@@ -299,6 +299,8 @@ class Orchestrator:
             self.cognition.register_module("honesty", HonestyModule())
             from .cognition.persona import PersonaModule                                          # H21.2
             self.cognition.register_module("persona", PersonaModule())
+            from .cognition.memory import LivingMemory                                            # H21.3
+            self.cognition.register_module("memory", LivingMemory())
         # ── end optional components ──
         self.plugins: dict = {}
         self.skills = SkillLoader()

@@ -47,3 +47,13 @@ async def cognition_personality():
     if m is None:
         return {"available": False}
     return m.status()
+
+
+@router.get("/memory")
+async def cognition_memory():
+    """H21.3 — living-memory status (tier counts, core size, embed version)."""
+    f = _facade()
+    m = f.module("memory") if f is not None else None
+    if m is None:
+        return {"available": False}
+    return m.status()
