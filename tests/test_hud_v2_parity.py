@@ -33,6 +33,7 @@ RULES = [
     ("/api/agents", "agents"), ("/agents", "agents"), ("/dashboard", "cockpit"),
     ("/ticker", "cockpit"), ("/tasks", "cockpit"), ("/api/cognition", "cockpit"),
     ("/tts", "cockpit"), ("/sessions", "cockpit"), ("/memory/clear", "cockpit"),
+    ("/api/canvas", "cockpit"),
     ("/api/trust/status", "topbar"),
     # memory & knowledge
     ("/api/kg/", "memory"), ("/api/memory/", "memory"), ("/memory/stats", "memory"),

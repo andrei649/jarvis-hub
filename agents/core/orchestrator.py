@@ -276,6 +276,8 @@ class Orchestrator:
         reg.add("rooms", ".rooms", "RoomStore", label="chat rooms")                            # H10.20
         reg.add("sender_pairing", ".channels.pairing", "SenderPairing",
                 path="memory_logs/sender_pairing.json", label="sender pairing")                 # H12.19
+        reg.add("canvas", ".canvas", "CanvasStore",
+                path="memory_logs/canvas.json", label="agent canvas")                           # H12.18
         reg.add("action_approvals", ".autonomy.action_approvals", "ActionApprovalQueue",
                 path="memory_logs/action_approvals.json", label="action approvals")            # H10.18
         reg.add("notes", ".notes", "NotesStore", label="conversation notes")                   # H10.21

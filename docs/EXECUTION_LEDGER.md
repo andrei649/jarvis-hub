@@ -27,7 +27,7 @@ item** (sau cluster mic coerent), fiecare cu teste offline, sub guvernare. Refre
 Ordine: P1 > P2 > P3; în interiorul aceleiași priorități, **întâi ce e complet verificabil aici** (loop rapid,
 cadență dovedită), apoi clusterele hardware/externe (oricum au poartă umană).
 
-### Val 1 — paritate guvernată, complet verificabilă aici (cadență rapidă)
+### Val 1 — paritate guvernată, complet verificabilă aici (cadență rapidă) — ✅ 5/5 livrate
 
 | # | Item | SP | P | Verif. | Status |
 |---|------|----|----|--------|--------|
@@ -35,7 +35,7 @@ cadență dovedită), apoi clusterele hardware/externe (oricum au poartă umană
 | H12.20 | Rotație profile auth + failover model (hybrid router) | 3 | P3 | ✅ sandbox | ✅ **DONE 2026-06-09** |
 | H12.25 | Transcript-watcher → taskuri (notițe ședință → coadă aprobare) | 3 | P2 | 🟡 (mock Notion/Todoist) | ✅ **DONE 2026-06-09** (extract+enqueue; creare live = poartă) |
 | H12.23 | Pack skill-uri „digest" (news/earnings/Reddit/arXiv/HF, scorer) | 5 | P3 | 🟡 (mock fetch) | ✅ **DONE 2026-06-09** (motor + scorer; live fetch = poartă) |
-| H12.18 | Agent Canvas / A2UI (spațiu vizual guvernat în HUD) | 8 | P3 | 🟡 (frontend; dep HUD v2) | ☐ |
+| H12.18 | Agent Canvas / A2UI (spațiu vizual guvernat în HUD) | 8 | P3 | 🟡 (frontend; dep HUD v2) | ✅ **DONE 2026-06-09** (backend guvernat; randare SVG = frontend) |
 
 ### Val 2 — frontieră P1/P2 (capabilitate locală + computer-use)
 
@@ -124,3 +124,4 @@ fundație P1 care repară BUG-5).
 | 2026-06-09 | **H12.20** Rotație profile auth + failover model | (acest branch) | `core/llm/auth_rotation.py` `AuthProfilePool` (multi-key + cooldown exponențial) cablat în Claude/Gemini + router + endpoint admin + 18 teste. Suită: 1838 passed, 1 skipped. |
 | 2026-06-09 | **H12.25** Transcript-watcher → taskuri | (acest branch) | `core/autonomy/transcript_watcher.py` (extracție high-precision + enqueue ask-tier guvernat) + endpoint + 10 teste. Suită: 1848 passed, 1 skipped. |
 | 2026-06-09 | **H12.23** Pack skill-uri „digest" | (acest branch) | `core/digest.py` (surse RSS/Atom ponderate, fetch injectabil, idea-reality scorer, aggregator dedup+rank) + endpoint + 11 teste. Suită: 1859 passed, 1 skipped. |
+| 2026-06-09 | **H12.18** Agent Canvas / A2UI (backend) | (acest branch) | `core/canvas.py` `CanvasStore` (elemente tipizate sanitizate, guvernate) + 5 endpoints + 12 teste. **Val-1 complet (5/5).** Suită: 1871 passed, 1 skipped. |

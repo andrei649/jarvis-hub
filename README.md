@@ -2,7 +2,7 @@
 
 ![Python 3.12](https://img.shields.io/badge/python-3.12-blue?logo=python&logoColor=white)
 ![License: MIT](https://img.shields.io/badge/license-MIT-green)
-![Tests](https://img.shields.io/badge/tests-1859%20passed-brightgreen?logo=pytest)
+![Tests](https://img.shields.io/badge/tests-1871%20passed-brightgreen?logo=pytest)
 ![Version](https://img.shields.io/badge/version-9.9.9-orange)
 
 > 16 specialized AI agents orchestrated through Jarvis, running on Bonobo WS + Pi 5, controlled by voice and web.
@@ -86,7 +86,7 @@ A separate, self-contained **Next.js + Deck.gl + Fastify** stack under [`worldvi
 python3 -m venv .venv && source .venv/bin/activate   # Windows: .venv\Scripts\activate
 pip install -r requirements-beta.txt                 # one install — full feature set
 python serve.py              # → http://127.0.0.1:8080
-python -m pytest             # 1859 passed, 1 skipped
+python -m pytest             # 1871 passed, 1 skipped
 ```
 
 _Linux/macOS shortcut:_ `./install.sh` does all of the above (venv + install + tests); `./start.sh` launches the server.
