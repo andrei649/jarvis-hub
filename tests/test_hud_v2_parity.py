@@ -54,9 +54,9 @@ RULES = [
     ("/bench", "observe"), ("/api/cost", "observe"), ("/api/analytics", "observe"),
     ("/api/digest", "observe"),
     ("/api/health/components", "observe"),
-    # interop (a2a / mcp client mgmt / webhooks)
+    # interop (a2a / mcp client mgmt / webhooks / external write-back + social)
     ("/api/a2a/", "interop"), ("/api/admin/mcp", "interop"), ("/api/admin/widgets", "interop"),
-    ("/api/mcp", "interop"), ("/api/webhooks", "interop"),
+    ("/api/mcp", "interop"), ("/api/webhooks", "interop"), ("/api/integrations/", "interop"),
     # comms (rooms / notes / channel sender pairing)
     ("/api/rooms", "comms"), ("/api/notes", "comms"), ("/api/channels/", "comms"),
     # agent ops (heartbeat / learning / templates)

@@ -14,7 +14,7 @@
 ```bash
 pip install -r requirements-beta.txt
 python -m uvicorn agents.web:app --host 127.0.0.1 --port 8080
-python -m pytest tests/ -v          # 1894 passed, 1 skipped
+python -m pytest tests/ -v          # 1945 passed, 1 skipped
 ```
 
 > Singurul skip rămas e heartbeat-ul opțional. (Vechiul `tests/test_spotify.py` cu 8 skip-uri a
@@ -75,17 +75,17 @@ chain-of-thought leak / mid-sentence truncation fixed. Kill-switch:
 | **H10 Competitive Edge** (P1–P3) | 30 | **30** | 188 | **186** | **99%** |
 | **H11 Platform Parity** (Known Gaps, P3) | 4 | **0** | 55 | **0** | **0%** |
 | **Total H1–H11** | **151** | **147** | **823** | **766** | **93%** (SP) |
-| **H12 Asistent Privat & Proactiv** (P0–P3) | 25 | **18** | 150 | **90** | **60%** |
+| **H12 Asistent Privat & Proactiv** (P0–P3) | 25 | **19** | 150 | **95** | **63%** |
 | **H13–H17 Frontiere Noi** (post-paritate, în scope v1.0, P1–P3) | 20 | **15** | 146 | **107** | **73%** |
-| **Total H1–H17 = scope 1.0.0** | **196** | **180** | **1119** | **963** | **86%** (SP) |
+| **Total H1–H17 = scope 1.0.0** | **196** | **181** | **1119** | **968** | **87%** (SP) |
 | **H18 Mobile Native & Browser Parity** (P2–P3) | 10 | **9** | 32 | **32** | **94%** |
 | **H19 WorldView (4D OSINT)** — standalone product, merged 2026-06-08 | 33 | **33** | 208 | **208** | **100%** ✅ |
 
-> `%` = procent pe **story points**. Sub-total **H1–H11** = 766/823 (≈93% SP; 147/151 iteme). Grand-total **H1–H17** = 963/1119 (≈86% SP; 180/196 iteme). **Gate-ul 1.0.0 = tot backlogul terminat: H10 + H11 + H12 + H13–H17** (toate în scope-ul v1.0 — [#52]). În afara gate-ului: **H18** mobil (9/10) și **H19 WorldView** (33/33 ✅, stack standalone) — livrate.
+> `%` = procent pe **story points**. Sub-total **H1–H11** = 766/823 (≈93% SP; 147/151 iteme). Grand-total **H1–H17** = 968/1119 (≈87% SP; 181/196 iteme). **Gate-ul 1.0.0 = tot backlogul terminat: H10 + H11 + H12 + H13–H17** (toate în scope-ul v1.0 — [#52]). În afara gate-ului: **H18** mobil (9/10) și **H19 WorldView** (33/33 ✅, stack standalone) — livrate.
 
 **În afara totalului:** **Bugs & Hot Fixes** — **toate BUG-\* și HF-\* rezolvate** (BUG-1…13 + HF-1…7; vezi re-baseline 2026-06-08 + tabelul de mai jos). Rămân deschise **deliberat**: **CLN-2/CLN-3** (refactor god-objects `orchestrator.py`/`web.py`, P3) + taskuri/nice-to-have netrackuite ca buguri (**TASK-1** Howard backend, **BUG-2b** frontend E2E, **NTH-1**). *(Detalii audit cod 2026-06-04 în tabel.)*
 
-**Test count (backend pytest):** 1,894 passed, 1 skipped — skip-ul rămas e heartbeat-ul opțional (`tests/test_spotify.py` eliminat în CLN-1). *(2026-06-09: backlog software **code-complete** — H10 30/30, H12 18/25, frontiere H13–H17 15/20 (vezi „Status General" de mai sus); + WorldView O19 33/33 merged + Argus. Rămâne audit + testare manuală, vezi `docs/AUDIT.md`.)*
+**Test count (backend pytest):** 1,945 passed, 1 skipped — skip-ul rămas e heartbeat-ul opțional (`tests/test_spotify.py` eliminat în CLN-1). *(2026-06-09: backlog software **code-complete** — H10 30/30, H12 19/25, frontiere H13–H17 15/20 (vezi „Status General" de mai sus); + WorldView O19 33/33 merged + Argus. Rămâne audit + testare manuală, vezi `docs/AUDIT.md`.)*
 **Frontend (BUG-2):** 184 teste JS / 23 fișiere · ~67% line coverage — separat de suita pytest.
 
 > **Orizont 7 Hardening — Drumul spre 1.0.0:** 11/11 COMPLET ✅ (livrat 2026-06-02)
@@ -404,7 +404,7 @@ chain-of-thought leak / mid-sentence truncation fixed. Kill-switch:
 
 ---
 
-## ORIZONT 12 — Categoria Reală: Asistent Personal Privat & Proactiv (P0–P3) — 18/25
+## ORIZONT 12 — Categoria Reală: Asistent Personal Privat & Proactiv (P0–P3) — 19/25
 
 > Bazat pe research-ul din [docs/research/2026-06-02-personal-ai-competitors.md](docs/research/2026-06-02-personal-ai-competitors.md):
 > H10 a comparat Jarvis cu 8 **framework-uri de developeri**; categoria reală a moonshot-ului (asistent
@@ -458,7 +458,7 @@ chain-of-thought leak / mid-sentence truncation fixed. Kill-switch:
 
 | # | Item | S | P | Dep | Sursă |
 |---|------|---|---|-----|-------|
-| H12.16 | **Lărgire canale** (WhatsApp nativ / Signal / iMessage / Matrix / Teams / Google Chat …) pe gateway‑ul *guvernat* (rate‑limit + guardrails + allowlist se aplică). OpenClaw are ~23 canale; noi avem 6. | 5 | P2 | H1.3 | OpenClaw multi‑channel |
+| H12.16 ✅ | **Lărgire canale** (WhatsApp nativ / Signal / iMessage / Matrix / Teams / Google Chat …) pe gateway‑ul *guvernat* (rate‑limit + guardrails + allowlist se aplică). OpenClaw are ~23 canale; noi avem 6. **Done 2026-06-09:** `core/channels/webhook_channels.py` — familie de adaptoare HTTP/webhook (`WhatsApp`/`Signal`/`Matrix`/`Teams`/`GoogleChat`) pe **același gateway guvernat**: fiecare inbound trece `sender` → **poarta de pairing H12.19 + rate‑limit + guardrails se aplică** înainte de orchestrator; outbound prin **transport injectabil** (offline-testable, rețeaua reală = poartă host). Per‑provider doar 2 funcții pure: `build_send` (mesaj→request HTTP) + `parse_inbound` (payload→`text,sender`). Factory `build_channel`/`channels_from_config`; wiring în lifespan via `JARVIS_WEBHOOK_CHANNELS` (default‑off); endpoints `GET /api/channels/webhook` + `POST /api/channels/{id}/inbound`. **iMessage exclus deliberat** (macOS/host‑bound, fără suprafață HTTP curată → bridge host, nu acest strat). 6→11 canale. +18 teste offline (build_send/parse_inbound per provider, send via transport mock, inbound guvernat de pairing). | 5 | P2 | H1.3 | OpenClaw multi‑channel |
 | H12.17 | **Node mesh guvernat** — telefon/desktop ca *noduri de execuție* care rulează doar acțiuni capability‑scoped + aprobate; GPU‑ul de acasă rămâne creierul. Unifică Tauri (H11.1) + split sateliți (H12.8). | 13 | P3 | H11.1, H17.3 | OpenClaw „nodes" / Willow |
 | H12.18 ✅ | **Agent Canvas / A2UI** — spațiu vizual condus de agent în HUD (inspectabil + guvernat), peste network brain‑ul v2. **Done 2026-06-09 (backend guvernat):** `core/canvas.py` `CanvasStore` — agentul postează DOAR elemente tipizate known‑safe (`text/markdown/list/link/metric/table/image_ref`), fiecare **sanitizat** (whitelist câmpuri + bound lungime/count, URL doar `http(s)`/same‑origin → **niciun HTML/script brut**, disciplina „validate down to known‑safe" din AI builder); atribuit pe agent, inspectabil, `pin`/`remove`/`clear` (pinned păstrat), bounded+evict. Înregistrat în `ComponentRegistry`; 5 endpoints (`GET /api/canvas`, `POST /api/canvas/post` 422 pe tip necunoscut, `/{id}/pin`, `DELETE /{id}`, `/clear`). +12 teste offline. *(Randarea SVG/React în HUD v2 = pas frontend.)* | 8 | P3 | HUD v2 | OpenClaw Live Canvas |
 | H12.19 ✅ | **Pairing/aprobare expeditor inbound** — senderi necunoscuți pe canale trec printr‑un cod/aprobare (anti‑abuz); oglindă a allowlist‑ului A2A. **Done 2026-06-09:** `core/channels/pairing.py` `SenderPairing` (JsonStore keyed `(channel,sender)`) — **opt‑in** (`JARVIS_CHANNEL_PAIRING`, default OFF → `is_allowed` True pentru toți, comportament neschimbat); sender necunoscut → `pending` (**held, niciodată executat**, ca inboxul A2A), owner approve/reject/block/unpair; **cod self‑service** rotativ (auto‑approve la cod corect, `hmac.compare_digest`); **anti‑abuz** (rate‑limit per `(channel,sender)` + pending bounded + evict). Gate cablat în `Gateway.route` (kwarg `sender`, backward‑compatible) + threading `sender` din Telegram; înregistrat în `ComponentRegistry`; 4 endpoints (`POST /api/channels/pairing/request` gated‑404, `GET /api/channels/pairing` + `POST /decide` + `POST /code` admin). +20 teste offline. | 3 | P2 | H1.3, H16.2 | OpenClaw DM pairing |

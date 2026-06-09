@@ -246,6 +246,22 @@ async def lifespan(application: FastAPI):
         await orch.register_channel(slack_ch)
         logger.info("Slack channel wired")
 
+    # H12.16 — broaden governed channels (WhatsApp/Signal/Matrix/Teams/Google
+    # Chat). Configured via JARVIS_WEBHOOK_CHANNELS = {"<kind>": {<config>}}.
+    # Default-off; each adapter routes inbound through the same governed gateway.
+    wh_raw = os.environ.get("JARVIS_WEBHOOK_CHANNELS", "")
+    if wh_raw:
+        try:
+            wh_cfg = json.loads(wh_raw)
+        except Exception:
+            wh_cfg = {}
+            logger.warning("JARVIS_WEBHOOK_CHANNELS is not valid JSON — ignored")
+        from core.channels.webhook_channels import channels_from_config
+        for ch in channels_from_config(wh_cfg, gateway.route):
+            gateway.register_channel(ch.channel_id)
+            await orch.register_channel(ch)
+            logger.info("Webhook channel wired: %s", ch.channel_id)
+
     await orch.start_channels()
     logger.info(
         f"Jarvis Beta ready — {orch.llm_router.name}, "
@@ -1866,6 +1882,37 @@ async def social_request(body: SocialActionBody):
     result = sb.request(body.platform, body.action, body.fields,
                         agent=body.agent, source=body.source)
     return _nocache_json(result, status_code=200 if result.get("ok") else 422)
+
+
+@app.get("/api/channels/webhook", dependencies=[Depends(_user_guard)])
+async def channels_webhook_list():
+    """H12.16 — supported governed webhook channels + which are live."""
+    from agents.core.channels.webhook_channels import SUPPORTED_CHANNELS, WebhookChannel
+    live = []
+    if orch and hasattr(orch, "channels"):
+        live = [cid for cid, ch in orch.channels.items() if isinstance(ch, WebhookChannel)]
+    return _nocache_json({"supported": list(SUPPORTED_CHANNELS), "live": live})
+
+
+@app.post("/api/channels/{channel_id}/inbound", dependencies=[Depends(_user_guard)])
+async def channel_inbound(channel_id: str, request: Request):
+    """H12.16 — deliver an inbound webhook payload to a governed channel adapter.
+
+    The adapter parses (text, sender) and routes through the governed gateway, so
+    the H12.19 pairing gate + rate-limit + guardrails all apply before the
+    orchestrator sees the text. (Provider signature verification is the host
+    seam — front this with the H16.4 signed-webhook path in production.)"""
+    if not orch:
+        return JSONResponse({"error": "not initialized"}, status_code=503)
+    ch = orch.channels.get(channel_id) if hasattr(orch, "channels") else None
+    if ch is None or not hasattr(ch, "handle_inbound"):
+        return JSONResponse({"error": f"no webhook channel '{channel_id}'"}, status_code=404)
+    try:
+        payload = await request.json()
+    except Exception:
+        payload = {}
+    reply = await ch.handle_inbound(payload)
+    return _nocache_json({"ok": True, "channel": channel_id, "reply": reply})
 
 
 class DigestRunBody(BaseModel):
