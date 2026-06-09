@@ -1,0 +1,14 @@
+name: "Jarvis Hub CodeQL config"
+
+# Full security + quality suite on application code.
+queries:
+  - uses: security-and-quality
+
+# Don't scan test code. Test fixtures intentionally contain fake tokens
+# (py/hardcoded-credentials), throwaway values, and patterns that are correct
+# for tests but would otherwise gate the security check. Application code is
+# still fully scanned.
+paths-ignore:
+  - tests
+  - "**/test_*.py"
+  - "**/conftest.py"

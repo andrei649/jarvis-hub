@@ -43,20 +43,14 @@ from .bench import LatencyBenchmark
 from .plugin_gate import PermissionGate
 from .security.guardrails import GuardrailsEngine
 from .security.audit import AuditLogger
-from .security.types import RedactionMode, SecurityEvent, SecurityEventType, ThreatLevel
+from .security.types import RedactionMode, SecurityEvent, SecurityEventType
 from .log import log_error
 from .errors import (
-    E_CONFIG_MISSING_ENV, E_PLUGIN_BLOCKED, E_LLM_BACKEND_MISSING, E_LLM_TIMEOUT,
+    E_PLUGIN_BLOCKED, E_LLM_BACKEND_MISSING, E_LLM_TIMEOUT,
     E_INTERNAL_UNEXPECTED, E_CHANNEL_START_FAIL,
 )
 from .channels.base import ChannelAdapter
-from .channels.web import WebChannel
-from .channels.voice import VoiceChannel
-from .channels.telegram import TelegramChannel
-from .channels.discord import DiscordChannel
-from .channels.email import EmailChannel
-from .channels.slack import SlackChannel
-from .settings_db import get_all as _get_settings, get_category as _get_settings_category
+from .settings_db import get_all as _get_settings
 from .plugins.oauth import init_from_env as _oauth_init, load_token as _load_token
 from .plugins.weather import WeatherPlugin
 from .plugins.news import NewsPlugin
@@ -274,6 +268,10 @@ class Orchestrator:
         reg.add("widgets", ".widget", "WidgetStore", label="chat widget")                      # H10.1
         reg.add("consolidation", ".memory.consolidation", "ConsolidationEngine", label="consolidation")  # H14.3
         reg.add("rooms", ".rooms", "RoomStore", label="chat rooms")                            # H10.20
+        reg.add("sender_pairing", ".channels.pairing", "SenderPairing",
+                path="memory_logs/sender_pairing.json", label="sender pairing")                 # H12.19
+        reg.add("canvas", ".canvas", "CanvasStore",
+                path="memory_logs/canvas.json", label="agent canvas")                           # H12.18
         reg.add("action_approvals", ".autonomy.action_approvals", "ActionApprovalQueue",
                 path="memory_logs/action_approvals.json", label="action approvals")            # H10.18
         reg.add("notes", ".notes", "NotesStore", label="conversation notes")                   # H10.21
@@ -286,6 +284,21 @@ class Orchestrator:
             "incremental KG")
         reg.add("run_history", ".run_history", "RunHistory", label="run history")              # H10.17
         reg.add("soul_versions", ".soul_versioning", "SoulVersionStore", label="prompt VC")    # H10.22
+        reg.add("e2e_sync", ".e2e_sync", "E2ESync", label="E2E device sync")                   # H12.13
+        reg.add("satellite_hub", ".satellite_hub", "SatelliteHub", label="satellite hub")      # H12.8
+        reg.add("cognition", ".cognition", "CognitionFacade",
+                get_setting=self.get_setting, label="cognition (H21)")                          # H21.0
+        if getattr(self, "cognition", None) is not None:                                         # H21.1
+            from .cognition.honesty import HonestyModule
+            self.cognition.register_module("honesty", HonestyModule())
+            from .cognition.persona import PersonaModule                                          # H21.2
+            self.cognition.register_module("persona", PersonaModule())
+            from .cognition.memory import LivingMemory                                            # H21.3
+            self.cognition.register_module("memory", LivingMemory())
+            from .cognition.learning import LearningModule                                        # H21.4
+            self.cognition.register_module("learning", LearningModule())
+            from .cognition.ensemble import EnsembleModule                                        # H21.5
+            self.cognition.register_module("ensemble", EnsembleModule())
         # ── end optional components ──
         self.plugins: dict = {}
         self.skills = SkillLoader()
@@ -847,6 +860,112 @@ class Orchestrator:
 
         executor.register("restart_service", _restart_service)
 
+        # H10.30 — governed write-back integrations (Notion/GitHub/Calendar).
+        # Approved `writeback.*` tasks resolve credentials at action time (behind
+        # approval) and call an injectable client (offline NullWriteBackClient by
+        # default; the live HTTP rail is a host-side seam).
+        from .writeback import WriteBackBroker
+        self.writeback = WriteBackBroker(
+            enqueue=self.autonomy_queue.enqueue,
+            secret_broker=getattr(self, "secret_broker", None),
+            audit=getattr(self, "audit", None),
+        )
+        executor.register("writeback", self.writeback.execute)
+
+        # H12.21 — governed social actions (X/Twitter post/reply/DM). Same
+        # governance: approved `social.*` tasks resolve OAuth/bearer credentials
+        # at action time (behind approval) and post via an injectable client.
+        from .social import SocialBroker
+        self.social = SocialBroker(
+            enqueue=self.autonomy_queue.enqueue,
+            secret_broker=getattr(self, "secret_broker", None),
+            audit=getattr(self, "audit", None),
+        )
+        executor.register("social", self.social.execute)
+
+        # H12.22 — governed outbound voice / call-back. A call is an interruption,
+        # so it's gated by BOTH the approval queue and the daily interrupt budget;
+        # live telephony (Twilio/Telnyx) is deferred to a host-side client.
+        import json as _json
+        from .autonomy.call_broker import CallBroker
+        try:
+            _call_cfg = _json.loads(os.environ.get("JARVIS_CALL_CONFIG", "") or "{}")
+        except Exception:
+            _call_cfg = {}
+        self.call_broker = CallBroker(
+            enqueue=self.autonomy_queue.enqueue,
+            secret_broker=getattr(self, "secret_broker", None),
+            audit=getattr(self, "audit", None),
+            budget=getattr(self.autonomy, "budget", None),
+            config=_call_cfg,
+        )
+        executor.register("call", self.call_broker.execute)
+
+        # H12.17 — governed node mesh (phone/desktop execution nodes). Capability-
+        # scoped (H17.3 broker + kill-switch) + approval-gated; the on-device run
+        # is a host seam (Tauri/phone client).
+        from .node_mesh import NodeMesh
+        self.node_mesh = NodeMesh(
+            capability_broker=getattr(self, "capabilities", None),
+            kill_switch=getattr(self, "kill_switch", None),
+            enqueue=self.autonomy_queue.enqueue,
+            audit=getattr(self, "audit", None),
+        )
+        executor.register("node", self.node_mesh.execute)
+
+        # H20.1 — governed Tool-RPC surface for sandboxed zero-context pipelines.
+        # Read-only tools run inline; gated tools enqueue an ask-tier task (and
+        # run via this executor only after approval). Starter allowlist is safe
+        # built-ins; integrations register more (incl. gated) over time.
+        from .tool_rpc import ToolRPCServer
+        import time as _t
+        self.tool_rpc = ToolRPCServer(
+            secret_broker=getattr(self, "secret_broker", None),
+            enqueue=self.autonomy_queue.enqueue,
+            audit=getattr(self, "audit", None),
+        )
+
+        async def _rpc_echo(args):
+            return {"echo": args}
+
+        async def _rpc_time(args):
+            return {"now": _t.time()}
+
+        self.tool_rpc.register_tool("echo", _rpc_echo)
+        self.tool_rpc.register_tool("time", _rpc_time)
+        executor.register("toolrpc", self.tool_rpc.execute)
+
+        # H21.4: wire the calibration-gated autonomy hook (gated; no-op unless
+        # cognition.learning_enabled — and it only ever ADDS caution).
+        def _calibration_hook(action):
+            cog = getattr(self, "cognition", None)
+            if cog is None or not cog.sub_enabled("learning_enabled"):
+                return 0
+            lm = cog.module("learning")
+            if lm is None:
+                return 0
+            try:
+                return lm.autonomy_adjustment(str(action.get("kind", "")))
+            except Exception:
+                return 0
+        try:
+            self.autonomy.policy.calibration_hook = _calibration_hook
+        except Exception:
+            logger.debug("calibration hook wiring skipped", exc_info=True)
+
+        # H20.6 — agent-initiated sub-agent delegation (isolated session, capped).
+        from .subagents import SubAgentManager
+
+        async def _subagent_runner(task, session_id, agent):
+            picked = agent if agent in self.agents else "jarvis"
+            out = await self.process(task, agent=picked, channel="subagent")
+            return {"output": out, "session_id": session_id}
+
+        self.subagents = SubAgentManager(
+            runner=_subagent_runner,
+            max_concurrent=int(self.get_setting("autonomy.max_subagents", 3) or 3),
+        )
+
         return executor
 
     def _schedule_worldview_kg_sync(self):
@@ -1070,7 +1189,6 @@ class Orchestrator:
         # `channel_handler` already pinned in this context).
         self._resolve_session(session_id)
         self._last_channel = channel  # captured for H9.2 tracer
-        t_start = time.perf_counter()
         await self.memory.add_turn(self.session_id, "user", text)
 
         skill_cmd = self.skills.parse_command(text)
@@ -1445,7 +1563,6 @@ class Orchestrator:
         # H9.2: persist to tracer ring buffer (defensive — never breaks a request)
         try:
             if self.tracer is not None:
-                from .observability.tracer import Tracer
                 model = ""
                 agents_selected = decision.get("agents_selected", [])
                 if agents_selected:
@@ -1490,6 +1607,13 @@ class Orchestrator:
                         trace_dict["id"] = trace_id
                         q = self.quality.record(trace_dict)
                         trace_dict["quality"] = q
+                        # H21.1: anti-sycophancy axis (gated; master OFF = no-op).
+                        cog = getattr(self, "cognition", None)
+                        if cog is not None and cog.sub_enabled("honesty_enabled"):
+                            hm = cog.module("honesty")
+                            if hm is not None:
+                                _txt = trace_dict.get("text_preview") or trace_dict.get("output_preview") or ""
+                                trace_dict["honesty"] = hm.score_response(_txt, trace_id=trace_dict.get("id", ""))
                         # H10.25: auto-flag low-scoring traces for human review.
                         if getattr(self, "review_queue", None) is not None:
                             self.review_queue.auto_flag(trace_dict, q.get("score"), self.quality.threshold)
@@ -1761,6 +1885,15 @@ class Orchestrator:
             agent_context = await self.memory.get_agent_context(agent_id)
             if agent_context:
                 enriched_text = f"Agent context: {agent_context}\n\n{enriched_text}"
+            # H21.2: prepend the persona block (gated; master OFF = no-op). Both
+            # prompt builders funnel through here (process() → _call_agents_parallel).
+            _cog = getattr(self, "cognition", None)
+            if _cog is not None and _cog.sub_enabled("affect_enabled"):
+                _pm = _cog.module("persona")
+                if _pm is not None:
+                    _pb = _pm.prompt_block(agent_id)
+                    if _pb:
+                        enriched_text = f"{_pb}\n\n{enriched_text}"
             try:
                 resp = await asyncio.wait_for(
                     self.agents[agent_id].process(enriched_text, context),
@@ -1799,7 +1932,10 @@ class Orchestrator:
                 if agent_id != "jarvis" and resp:
                     parts.append(f"[{agent_id}]: {resp}")
             return "\n".join(parts) if parts else responses.get("jarvis", "")
-        return await jarvis.synthesize(responses, intent)
+        # H21.1: preserve specialist voices when the honesty module is active.
+        cog = getattr(self, "cognition", None)
+        in_character = bool(cog is not None and cog.sub_enabled("honesty_enabled"))
+        return await jarvis.synthesize(responses, intent, in_character=in_character)
 
     async def run_heartbeat(self, agent_id: str) -> Optional[str]:
         agent = self.agents.get(agent_id)

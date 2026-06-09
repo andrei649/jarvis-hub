@@ -12,6 +12,7 @@ from typing import Callable, Optional
 import httpx
 
 from .base import ChannelAdapter
+from ..log_safe import log_safe
 
 logger = logging.getLogger("jarvis.channels.telegram")
 
@@ -105,13 +106,15 @@ class TelegramChannel(ChannelAdapter):
                         continue
                     uid = msg["from"]["id"]
                     if self.allowed_users and uid not in self.allowed_users:
-                        logger.info(f"Ignored message from user {uid}")
+                        logger.info("Ignored message from user %s", log_safe(uid))
                         continue
                     text = msg.get("text", "")
                     chat_id = msg["chat"]["id"]
                     if not text:
                         continue
-                    await self.receive(text, chat_id=chat_id)
+                    # Pass the sender id so the gateway's H12.19 pairing gate can
+                    # hold unknown senders for approval (no-op unless enabled).
+                    await self.receive(text, chat_id=chat_id, sender=str(uid))
             except Exception as e:
                 logger.warning(f"Telegram poll error: {e}")
                 await __import__("asyncio").sleep(3)

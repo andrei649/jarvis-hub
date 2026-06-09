@@ -9,7 +9,6 @@ declared permissions.
 import logging
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Optional
 
 logger = logging.getLogger("jarvis.plugins")
 

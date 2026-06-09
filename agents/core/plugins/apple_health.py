@@ -6,10 +6,7 @@ Agents served: hercules (fitness, sleep, nutrition).
 Data scope: LOCAL_ONLY — health data never leaves the local network.
 """
 
-import json
 import logging
-from datetime import datetime, timedelta
-from typing import Optional
 
 import httpx
 

@@ -9,7 +9,6 @@ from pathlib import Path
 from typing import Optional
 
 from .llm.hybrid_router import HybridRouter
-from .security.guardrails import GuardrailsEngine
 
 logger = logging.getLogger("jarvis.agent")
 
@@ -45,7 +44,14 @@ class Agent:
         soul_path = Path(f"agents/{self.id}/SOUL.md")
         if soul_path.exists():
             content = soul_path.read_text(encoding="utf-8")
-            self.soul = {"content": content, "path": soul_path}
+            # H21.2: split optional YAML front-matter (personality/affect config)
+            # from the prose body. No front-matter → ({}, full text) = no-op.
+            try:
+                from .cognition.frontmatter import parse_frontmatter
+                meta, body = parse_frontmatter(content)
+            except Exception:
+                meta, body = {}, content
+            self.soul = {"content": body, "path": soul_path, "meta": meta}
             logger.info(f"Loaded SOUL for {self.id} ({len(content)} chars)")
         else:
             logger.warning(f"SOUL.md not found for {self.id}")
@@ -169,7 +175,7 @@ class Agent:
         available = DEMOTION_TIERS.get(current_tier, [])
         return available[0] if available else None
 
-    async def synthesize(self, responses: dict[str, str], intent) -> str:
+    async def synthesize(self, responses: dict[str, str], intent, in_character: bool = False) -> str:
         jarvis_only = all(k == "jarvis" for k in responses)
         if jarvis_only:
             return responses.get("jarvis", "Done, sir.")
@@ -190,10 +196,19 @@ class Agent:
         model = self.config.get("model", "google/gemma-4-31b-a4b")
         system_prompt = self.soul.get("content", "")
 
+        if in_character:
+            directive = (
+                "Weave these specialist answers into one coherent reply, but PRESERVE each "
+                "specialist's distinct voice and attribute their contributions in character. "
+                "Be honest and direct — do not flatter, over-agree, or reverse a correct claim "
+                "to please. Use the user's language."
+            )
+        else:
+            directive = "Be concise. Use the user's language. Do not mention internal agent IDs."
         prompt = (
             f"Synthesize the following specialist responses into a single, coherent reply for the user:\n"
             f"{agent_reports}\n\n"
-            f"Be concise. Use the user's language. Do not mention internal agent IDs."
+            f"{directive}"
         )
 
         try:

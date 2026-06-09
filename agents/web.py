@@ -11,7 +11,7 @@ import statistics
 import time
 import sys
 from collections import defaultdict
-from datetime import date, datetime
+from datetime import date
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Optional
@@ -35,9 +35,8 @@ from core.config import JarvisConfig
 from core.orchestrator import Orchestrator
 from core.channels.web import WebChannel
 from core.channels.gateway import Gateway
-from core.checkpoint import CheckpointManager
+from core.log_safe import log_safe
 from core.settings_db import get_all, get_category, put_category, init_db
-from core.settings_db import DB_PATH as _SDB
 from core.channels.voice import VoiceChannel
 from core.channels.telegram import TelegramChannel
 from core.channels.discord import DiscordChannel
@@ -191,7 +190,7 @@ async def lifespan(application: FastAPI):
     config = JarvisConfig()
     orch = Orchestrator(config)
 
-    gateway = Gateway(handler=orch.channel_handler)
+    gateway = Gateway(handler=orch.channel_handler, pairing=getattr(orch, "sender_pairing", None))
     gateway.register_channel("web")
     gateway.register_channel("voice")
     gateway.register_channel("telegram")
@@ -245,6 +244,22 @@ async def lifespan(application: FastAPI):
         slack_ch = SlackChannel(token=slack_token, handler=gateway.route)
         await orch.register_channel(slack_ch)
         logger.info("Slack channel wired")
+
+    # H12.16 — broaden governed channels (WhatsApp/Signal/Matrix/Teams/Google
+    # Chat). Configured via JARVIS_WEBHOOK_CHANNELS = {"<kind>": {<config>}}.
+    # Default-off; each adapter routes inbound through the same governed gateway.
+    wh_raw = os.environ.get("JARVIS_WEBHOOK_CHANNELS", "")
+    if wh_raw:
+        try:
+            wh_cfg = json.loads(wh_raw)
+        except Exception:
+            wh_cfg = {}
+            logger.warning("JARVIS_WEBHOOK_CHANNELS is not valid JSON — ignored")
+        from core.channels.webhook_channels import channels_from_config
+        for ch in channels_from_config(wh_cfg, gateway.route):
+            gateway.register_channel(ch.channel_id)
+            await orch.register_channel(ch)
+            logger.info("Webhook channel wired: %s", ch.channel_id)
 
     await orch.start_channels()
     logger.info(
@@ -336,7 +351,8 @@ async def _rate_limit(request: Request, call_next):
         ip = _client_ip(request)
         if ip not in _LOCALHOSTS and not _request_is_authed(request):
             if _rate_limited(ip, time.time()):
-                logger.warning("Rate limit exceeded for %s on %s", ip, request.url.path)
+                logger.warning("Rate limit exceeded for %s on %s",
+                               log_safe(ip), log_safe(request.url.path))
                 return JSONResponse(
                     {"error": "rate limit exceeded", "code": 429},
                     status_code=429,
@@ -595,7 +611,7 @@ async def tts_endpoint(req: TTSRequest):
             media_type="audio/mpeg",
             headers={"Cache-Control": "no-cache"},
         )
-    except Exception as e:
+    except Exception:
         logger.exception("TTS error")
         return JSONResponse({"error": "internal error", "code": 500}, status_code=500)
 
@@ -1780,6 +1796,477 @@ async def autonomy_task_preview(task_id: int):
     return _nocache_json(preview_task(task))
 
 
+class TranscriptIngestBody(BaseModel):
+    transcript: str = Field(..., max_length=200_000)
+    source: str = Field("", max_length=200)
+    target: Optional[str] = Field(None, max_length=16)   # todoist | notion
+
+
+@app.post("/api/transcripts/ingest", dependencies=[Depends(_user_guard)])
+async def transcript_ingest(body: TranscriptIngestBody):
+    """H12.25 — meeting transcript → action items → approval queue (governed).
+
+    Nothing is created externally here; each item lands as an ask-tier task the
+    owner approves. Without a live queue, returns an extraction-only preview."""
+    from agents.core.autonomy.transcript_watcher import TranscriptWatcher
+    q = getattr(orch, "autonomy_queue", None) if orch else None
+    watcher = TranscriptWatcher(enqueue=q.enqueue if q is not None else None)
+    return _nocache_json(watcher.ingest(body.transcript, source=body.source, target=body.target))
+
+
+class WriteBackBody(BaseModel):
+    target: str = Field(..., max_length=40)
+    action: str = Field(..., max_length=40)
+    fields: dict = Field(default_factory=dict)
+    agent: Optional[str] = Field(None, max_length=40)
+    source: str = Field("", max_length=120)
+
+
+@app.get("/api/integrations/writeback", dependencies=[Depends(_user_guard)])
+async def writeback_targets():
+    """H10.30 — list supported governed write-back targets (Notion/GitHub/Calendar)."""
+    from agents.core.writeback import WriteBackBroker
+    wb = getattr(orch, "writeback", None) if orch else None
+    targets = wb.targets() if wb is not None else WriteBackBroker().targets()
+    return _nocache_json({"targets": targets})
+
+
+@app.post("/api/integrations/writeback", dependencies=[Depends(_user_guard)])
+async def writeback_request(body: WriteBackBody):
+    """H10.30 — request a governed write-back into an external system.
+
+    Validates against the allowlist and enqueues an ask-tier task. Nothing is
+    written externally here; on approval the autonomy worker dispatches it to the
+    write-back executor (credentials resolved at action time, behind approval).
+    Without a live queue, returns a validation-only preview."""
+    from agents.core.writeback import WriteBackBroker
+    wb = getattr(orch, "writeback", None) if orch else None
+    if wb is None:
+        q = getattr(orch, "autonomy_queue", None) if orch else None
+        wb = WriteBackBroker(enqueue=q.enqueue if q is not None else None)
+    result = wb.request(body.target, body.action, body.fields,
+                        agent=body.agent, source=body.source)
+    return _nocache_json(result, status_code=200 if result.get("ok") else 422)
+
+
+class SocialActionBody(BaseModel):
+    platform: str = Field(..., max_length=40)
+    action: str = Field(..., max_length=40)
+    fields: dict = Field(default_factory=dict)
+    agent: Optional[str] = Field(None, max_length=40)
+    source: str = Field("", max_length=120)
+
+
+@app.get("/api/integrations/social", dependencies=[Depends(_user_guard)])
+async def social_targets():
+    """H12.21 — list supported governed social actions (X post/reply/DM)."""
+    from agents.core.social import SocialBroker
+    sb = getattr(orch, "social", None) if orch else None
+    targets = sb.targets() if sb is not None else SocialBroker().targets()
+    return _nocache_json({"targets": targets})
+
+
+@app.post("/api/integrations/social", dependencies=[Depends(_user_guard)])
+async def social_request(body: SocialActionBody):
+    """H12.21 — request a governed social write (X/Twitter post/reply/DM).
+
+    Validates against the allowlist and enqueues an ask-tier task. Nothing is
+    posted here; on approval the autonomy worker dispatches it to the social
+    executor (OAuth/bearer resolved at action time, behind approval — never raw
+    cookies). Without a live queue, returns a validation-only preview."""
+    from agents.core.social import SocialBroker
+    sb = getattr(orch, "social", None) if orch else None
+    if sb is None:
+        q = getattr(orch, "autonomy_queue", None) if orch else None
+        sb = SocialBroker(enqueue=q.enqueue if q is not None else None)
+    result = sb.request(body.platform, body.action, body.fields,
+                        agent=body.agent, source=body.source)
+    return _nocache_json(result, status_code=200 if result.get("ok") else 422)
+
+
+@app.get("/api/channels/webhook", dependencies=[Depends(_user_guard)])
+async def channels_webhook_list():
+    """H12.16 — supported governed webhook channels + which are live."""
+    from agents.core.channels.webhook_channels import SUPPORTED_CHANNELS, WebhookChannel
+    live = []
+    if orch and hasattr(orch, "channels"):
+        live = [cid for cid, ch in orch.channels.items() if isinstance(ch, WebhookChannel)]
+    return _nocache_json({"supported": list(SUPPORTED_CHANNELS), "live": live})
+
+
+@app.post("/api/channels/{channel_id}/inbound", dependencies=[Depends(_user_guard)])
+async def channel_inbound(channel_id: str, request: Request):
+    """H12.16 — deliver an inbound webhook payload to a governed channel adapter.
+
+    The adapter parses (text, sender) and routes through the governed gateway, so
+    the H12.19 pairing gate + rate-limit + guardrails all apply before the
+    orchestrator sees the text. (Provider signature verification is the host
+    seam — front this with the H16.4 signed-webhook path in production.)"""
+    if not orch:
+        return JSONResponse({"error": "not initialized"}, status_code=503)
+    ch = orch.channels.get(channel_id) if hasattr(orch, "channels") else None
+    if ch is None or not hasattr(ch, "handle_inbound"):
+        return JSONResponse({"error": f"no webhook channel '{channel_id}'"}, status_code=404)
+    try:
+        payload = await request.json()
+    except Exception:
+        payload = {}
+    reply = await ch.handle_inbound(payload)
+    return _nocache_json({"ok": True, "channel": channel_id, "reply": reply})
+
+
+class CallRequestBody(BaseModel):
+    to: str = Field(..., max_length=40)
+    message: str = Field(..., max_length=2000)
+    provider: str = Field("twilio", max_length=20)
+    reason: str = Field("", max_length=200)
+    agent: Optional[str] = Field(None, max_length=40)
+
+
+@app.post("/api/autonomy/call", dependencies=[Depends(_user_guard)])
+async def autonomy_call(body: CallRequestBody):
+    """H12.22 — request a governed outbound call (budget-gated + approval).
+
+    Nothing dials here; on approval the worker draws an interrupt-budget slot,
+    resolves the telephony credential behind approval, and places the call via an
+    injectable client (live Twilio/Telnyx = host seam)."""
+    from agents.core.autonomy.call_broker import CallBroker
+    cb = getattr(orch, "call_broker", None) if orch else None
+    if cb is None:
+        q = getattr(orch, "autonomy_queue", None) if orch else None
+        cb = CallBroker(enqueue=q.enqueue if q is not None else None)
+    result = cb.request(body.to, body.message, provider=body.provider,
+                        reason=body.reason, agent=body.agent)
+    return _nocache_json(result, status_code=200 if result.get("ok") else 422)
+
+
+@app.get("/api/sync", dependencies=[Depends(_user_guard)])
+async def sync_status():
+    """H12.13 — E2E device-sync status (opt-in, fail-closed)."""
+    s = getattr(orch, "e2e_sync", None) if orch else None
+    if s is None:
+        return _nocache_json({"enabled": False, "available": False, "backend": "unavailable"})
+    return _nocache_json(s.status())
+
+
+class SyncPushBody(BaseModel):
+    records: list[dict] = Field(default_factory=list)
+    kind: str = Field("memory", max_length=40)
+
+
+@app.post("/api/sync/push", dependencies=[Depends(_user_guard)])
+async def sync_push(body: SyncPushBody):
+    """H12.13 — encrypt records into an E2E manifest (transport is host-side)."""
+    s = getattr(orch, "e2e_sync", None) if orch else None
+    if s is None:
+        return JSONResponse({"error": "e2e sync unavailable"}, status_code=503)
+    return _nocache_json(s.build_push(body.records, kind=body.kind))
+
+
+class SyncPullBody(BaseModel):
+    manifest: dict = Field(default_factory=dict)
+
+
+@app.post("/api/sync/pull", dependencies=[Depends(_user_guard)])
+async def sync_pull(body: SyncPullBody):
+    """H12.13 — decrypt an inbound E2E manifest from another device."""
+    s = getattr(orch, "e2e_sync", None) if orch else None
+    if s is None:
+        return JSONResponse({"error": "e2e sync unavailable"}, status_code=503)
+    return _nocache_json({"records": s.apply_pull(body.manifest)})
+
+
+class SatelliteRegisterBody(BaseModel):
+    satellite_id: str = Field(..., max_length=80)
+    meta: dict = Field(default_factory=dict)
+
+
+@app.get("/api/satellites", dependencies=[Depends(_user_guard)])
+async def satellites_list():
+    """H12.8 — registered mic satellites + shared-inference stats."""
+    h = getattr(orch, "satellite_hub", None) if orch else None
+    if h is None:
+        return _nocache_json({"satellites": [], "stats": {}})
+    return _nocache_json({"satellites": h.list(), "stats": h.stats()})
+
+
+@app.post("/api/satellites/register", dependencies=[Depends(_user_guard)])
+async def satellites_register(body: SatelliteRegisterBody):
+    """H12.8 — register a mic satellite with the shared-GPU hub."""
+    h = getattr(orch, "satellite_hub", None) if orch else None
+    if h is None:
+        return JSONResponse({"error": "satellite hub unavailable"}, status_code=503)
+    return _nocache_json({"ok": True, "satellite": h.register(body.satellite_id, body.meta)})
+
+
+@app.delete("/api/satellites/{satellite_id}", dependencies=[Depends(_user_guard)])
+async def satellites_unregister(satellite_id: str):
+    """H12.8 — remove a satellite from the hub."""
+    h = getattr(orch, "satellite_hub", None) if orch else None
+    if h is None:
+        return JSONResponse({"error": "satellite hub unavailable"}, status_code=503)
+    return _nocache_json({"ok": h.unregister(satellite_id)})
+
+
+class SatelliteDispatchBody(BaseModel):
+    payload: str = Field("", max_length=20000)
+    kind: str = Field("transcribe", max_length=40)
+
+
+@app.post("/api/satellites/{satellite_id}/dispatch", dependencies=[Depends(_user_guard)])
+async def satellites_dispatch(satellite_id: str, body: SatelliteDispatchBody):
+    """H12.8 — forward a satellite's request to the shared inference rail."""
+    h = getattr(orch, "satellite_hub", None) if orch else None
+    if h is None:
+        return JSONResponse({"error": "satellite hub unavailable"}, status_code=503)
+    result = await h.dispatch(satellite_id, body.payload, kind=body.kind)
+    return _nocache_json(result, status_code=200 if result.get("ok") else 404)
+
+
+class NodeRegisterBody(BaseModel):
+    node_id: str = Field(..., max_length=80)
+    capabilities: list[str] = Field(default_factory=list)
+    meta: dict = Field(default_factory=dict)
+
+
+@app.get("/api/nodes", dependencies=[Depends(_user_guard)])
+async def nodes_list():
+    """H12.17 — registered governed execution nodes (capabilities only, no tokens)."""
+    h = getattr(orch, "node_mesh", None) if orch else None
+    return _nocache_json({"nodes": h.nodes() if h is not None else []})
+
+
+@app.post("/api/nodes/register", dependencies=[Depends(_admin_guard)])
+async def nodes_register(body: NodeRegisterBody):
+    """H12.17 — register an execution node; mints a capability-scoped token (admin)."""
+    h = getattr(orch, "node_mesh", None) if orch else None
+    if h is None:
+        return JSONResponse({"error": "node mesh unavailable"}, status_code=503)
+    return _nocache_json({"ok": True, "node": h.register_node(
+        body.node_id, body.capabilities, body.meta)})
+
+
+@app.delete("/api/nodes/{node_id}", dependencies=[Depends(_admin_guard)])
+async def nodes_unregister(node_id: str):
+    """H12.17 — revoke a node and its capability token (admin)."""
+    h = getattr(orch, "node_mesh", None) if orch else None
+    if h is None:
+        return JSONResponse({"error": "node mesh unavailable"}, status_code=503)
+    return _nocache_json({"ok": h.revoke(node_id)})
+
+
+class NodeDispatchBody(BaseModel):
+    capability: str = Field(..., max_length=80)
+    action: str = Field("", max_length=200)
+    payload: dict = Field(default_factory=dict)
+
+
+@app.post("/api/nodes/{node_id}/dispatch", dependencies=[Depends(_user_guard)])
+async def nodes_dispatch(node_id: str, body: NodeDispatchBody):
+    """H12.17 — dispatch a capability-scoped action to a node (gated + approval).
+
+    Authorized against the node's capability token + kill-switch (H17.3), then
+    enqueued ask-tier; the on-device run is deferred to the node client."""
+    h = getattr(orch, "node_mesh", None) if orch else None
+    if h is None:
+        return JSONResponse({"error": "node mesh unavailable"}, status_code=503)
+    result = h.dispatch(node_id, body.capability, body.action, body.payload)
+    return _nocache_json(result, status_code=200 if result.get("ok") else 422)
+
+
+class ToolRPCCallBody(BaseModel):
+    tool: str = Field(..., max_length=80)
+    args: dict = Field(default_factory=dict)
+
+
+@app.get("/api/toolrpc/tools", dependencies=[Depends(_user_guard)])
+async def toolrpc_tools():
+    """H20.1 — tools the governed RPC surface exposes to sandboxed code."""
+    s = getattr(orch, "tool_rpc", None) if orch else None
+    return _nocache_json({"tools": s.tools() if s is not None else []})
+
+
+@app.post("/api/toolrpc/call", dependencies=[Depends(_user_guard)])
+async def toolrpc_call(body: ToolRPCCallBody):
+    """H20.1 — call a tool through the governed RPC surface (allowlist + gating).
+
+    Read-only tools return inline; gated tools return approval_required + a task
+    id (they run only after approval). Mirrors what sandboxed script code does."""
+    s = getattr(orch, "tool_rpc", None) if orch else None
+    if s is None:
+        return JSONResponse({"error": "tool-rpc unavailable"}, status_code=503)
+    result = await s.handle({"tool": body.tool, "args": body.args})
+    return _nocache_json(result, status_code=200 if result.get("ok") else 422)
+
+
+class SubAgentSpawnBody(BaseModel):
+    task: str = Field(..., max_length=4000)
+    agent: str = Field("", max_length=40)
+
+
+@app.get("/api/subagents", dependencies=[Depends(_user_guard)])
+async def subagents_list():
+    """H20.6 — spawned sub-agents + concurrency stats."""
+    m = getattr(orch, "subagents", None) if orch else None
+    if m is None:
+        return _nocache_json({"spawns": [], "stats": {}})
+    return _nocache_json({"spawns": m.list(), "stats": m.stats()})
+
+
+@app.post("/api/subagents/spawn", dependencies=[Depends(_user_guard)])
+async def subagents_spawn(body: SubAgentSpawnBody):
+    """H20.6 — spawn an isolated sub-agent (capped; rejected past the cap)."""
+    m = getattr(orch, "subagents", None) if orch else None
+    if m is None:
+        return JSONResponse({"error": "sub-agents unavailable"}, status_code=503)
+    result = await m.spawn(body.task, agent=body.agent)
+    return _nocache_json(result, status_code=200 if result.get("ok") else 429)
+
+
+class ModelSwapBody(BaseModel):
+    command: str = Field(..., max_length=200)
+
+
+@app.post("/api/llm/openrouter", dependencies=[Depends(_admin_guard)])
+async def llm_openrouter_swap(body: ModelSwapBody):
+    """H20.2 — parse a `/model` hot-swap command; report OpenRouter availability."""
+    from agents.core.llm.openrouter import parse_model_command, OPENROUTER_BASE
+    parsed = parse_model_command(body.command)
+    if parsed is None:
+        return _nocache_json({"ok": False, "reason": "not_a_model_command"}, status_code=422)
+    return _nocache_json({"ok": True, "parsed": parsed, "base": OPENROUTER_BASE,
+                          "configured": bool(os.environ.get("OPENROUTER_API_KEY", ""))})
+
+
+class ContextCompressBody(BaseModel):
+    turns: list[dict] = Field(default_factory=list)
+    max_tokens: int = Field(2000, ge=100, le=100000)
+    keep_recent: int = Field(4, ge=1, le=50)
+
+
+@app.post("/api/context/compress", dependencies=[Depends(_user_guard)])
+async def context_compress(body: ContextCompressBody):
+    """H20.3 — compress a long turn history (keep recent, digest/summarize older)."""
+    from agents.core.context_compressor import ContextCompressor
+    summarizer = None
+    if orch is not None:
+        async def summarizer(text):  # noqa: E731 — wire the LLM summarizer
+            return await orch.process(f"Summarize this conversation concisely:\n{text}",
+                                      channel="compress")
+    cc = ContextCompressor(summarizer=summarizer, max_tokens=body.max_tokens,
+                           keep_recent=body.keep_recent)
+    return _nocache_json(await cc.compress(body.turns))
+
+
+class VLMDescribeBody(BaseModel):
+    prompt: str = Field(..., max_length=4000)
+    images: list[str] = Field(default_factory=list, max_length=8)
+    model: str = Field("", max_length=80)
+
+
+@app.get("/api/vlm/status", dependencies=[Depends(_user_guard)])
+async def vlm_status():
+    """H13.1 — whether a local VLM endpoint is configured (host deployment)."""
+    return _nocache_json({"configured": bool(os.environ.get("JARVIS_VLM_URL", "")),
+                          "default_model": os.environ.get("JARVIS_VLM_MODEL", "qwen2-vl")})
+
+
+@app.post("/api/vlm/describe", dependencies=[Depends(_user_guard)])
+async def vlm_describe(body: VLMDescribeBody):
+    """H13.1 — send image(s) + a prompt to the local VLM (screen/doc/receipt).
+
+    Requires JARVIS_VLM_URL to point at a local OpenAI-vision server (the model
+    + GGUF + GPU are the host deployment seam)."""
+    url = os.environ.get("JARVIS_VLM_URL", "")
+    if not url:
+        return JSONResponse({"error": "VLM not configured — set JARVIS_VLM_URL"}, status_code=503)
+    from agents.core.llm.vlm import VLMBackend
+    vlm = VLMBackend(base_url=url, api_key=os.environ.get("JARVIS_VLM_KEY", ""))
+    try:
+        model = body.model or os.environ.get("JARVIS_VLM_MODEL", "qwen2-vl")
+        # encode_image_block accepts only data:/http(s) image sources, never file
+        # paths — request-supplied images can't read host files.
+        out = await vlm.generate_vision(model, body.prompt, images=body.images)
+        return _nocache_json({"ok": True, "model": model, "response": out})
+    finally:
+        await vlm.aclose()
+
+
+class MoERouteBody(BaseModel):
+    prompt: str = Field(..., max_length=8000)
+    model: str = Field("gpt-oss-20b", max_length=80)
+
+
+@app.post("/api/llm/moe/route", dependencies=[Depends(_admin_guard)])
+async def llm_moe_route(body: MoERouteBody):
+    """H13.4 — preview the MoE thinking/non-thinking routing decision."""
+    from agents.core.llm.moe_routing import route_moe
+    return _nocache_json(route_moe(body.prompt, model=body.model))
+
+
+class DesktopStepsBody(BaseModel):
+    steps: list[dict] = Field(default_factory=list, max_length=100)
+
+
+@app.post("/api/desktop/preview", dependencies=[Depends(_user_guard)])
+async def desktop_preview(body: DesktopStepsBody):
+    """H15.3 — dry-run a desktop step plan (which steps need approval)."""
+    from agents.core.desktop_operator import GovernedDesktop
+    return _nocache_json(await GovernedDesktop().preview(body.steps))
+
+
+class MediaGenBody(BaseModel):
+    kind: str = Field(..., max_length=20)
+    prompt: str = Field(..., max_length=4000)
+    cloud: bool = False
+
+
+@app.get("/api/media", dependencies=[Depends(_user_guard)])
+async def media_status():
+    """H12.24 — supported media kinds + which backends are wired."""
+    from agents.core.media_gen import MediaGenManager
+    return _nocache_json({"kinds": MediaGenManager().kinds()})
+
+
+@app.post("/api/media/generate", dependencies=[Depends(_user_guard)])
+async def media_generate(body: MediaGenBody):
+    """H12.24 — governed media generation (cloud generation is approval-gated)."""
+    from agents.core.media_gen import MediaGenManager
+    q = getattr(orch, "autonomy_queue", None) if orch else None
+    m = MediaGenManager(enqueue=q.enqueue if q is not None else None)
+    result = await m.generate(body.kind, body.prompt, cloud=body.cloud)
+    return _nocache_json(result, status_code=200 if result.get("ok") else 422)
+
+
+# H21.0 — mount the cognition APIRouter (keeps cognition endpoints out of the
+# web.py god-object). User-guarded like the rest of the /api surface.
+from agents.core.cognition.api import router as _cognition_router  # noqa: E402
+app.include_router(_cognition_router, dependencies=[Depends(_user_guard)])
+
+
+class DigestRunBody(BaseModel):
+    topic: str = Field("", max_length=200)
+    sources: Optional[list[str]] = Field(None, max_length=10)
+    limit: int = Field(10, ge=1, le=50)
+    weights: Optional[dict] = None
+
+
+@app.post("/api/digest/run", dependencies=[Depends(_user_guard)])
+async def digest_run(body: DigestRunBody):
+    """H12.23 — composable multi-source digest ranked by weight × idea-reality."""
+    from agents.core.digest import build_default_aggregator
+    from agents.core.http_client import PluginHTTPClient
+    client = PluginHTTPClient.for_plugin("digest")
+
+    async def _fetch(url: str) -> str:
+        resp = await client.get(url)
+        resp.raise_for_status()
+        return resp.text
+
+    agg = build_default_aggregator(_fetch, weights=body.weights, names=body.sources)
+    return _nocache_json(await agg.run(body.topic, limit=body.limit))
+
+
 @app.post("/api/schedule/parse")
 async def schedule_parse(req: Request):
     """H10.27 — parse a natural-language schedule into a cron expression."""
@@ -1883,7 +2370,7 @@ async def marketplace_list():
     try:
         skills = orch.marketplace.list_skills()
         return {"skills": skills}
-    except Exception as e:
+    except Exception:
         logger.exception("Failed to list marketplace skills")
         return JSONResponse({"error": "internal error", "code": 500}, status_code=500)
 
@@ -1897,7 +2384,7 @@ async def marketplace_publish(body: PublishSkillBody):
         return {"ok": True, "published": res}
     except FileNotFoundError as e:
         return JSONResponse({"error": str(e)}, status_code=404)
-    except Exception as e:
+    except Exception:
         logger.exception("Failed to publish skill")
         return JSONResponse({"error": "internal error", "code": 500}, status_code=500)
 
@@ -2803,6 +3290,18 @@ def _llm_status_code(result: dict) -> int:
         result.get("status"), 502)
 
 
+@app.get("/api/llm/auth-profiles", dependencies=[Depends(_admin_guard)])
+async def llm_auth_profiles():
+    """H12.20 — masked status of the cloud auth-profile pools (rotation/failover)."""
+    router = getattr(orch, "llm_router", None) if orch else None
+    pools = {}
+    for name in ("_anthropic_pool", "_gemini_pool"):
+        pool = getattr(router, name, None) if router else None
+        if pool is not None:
+            pools[pool.provider or name] = pool.status()
+    return _nocache_json({"pools": pools})
+
+
 @app.post("/api/llm/server/start", dependencies=[Depends(_admin_guard)])
 async def llm_server_start():
     ctrl, err = _lmstudio_or_503()
@@ -2917,7 +3416,7 @@ async def admin_mcp_connect(name: str):
             "tools_count": len(srv.tools),
             "tools": [{"name": t.name, "description": t.description} for t in srv.tools],
         }
-    except Exception as e:
+    except Exception:
         logger.exception("MCP server probe failed: %s", name)
         return JSONResponse({"error": "internal error", "server": name, "code": 500}, status_code=500)
 
@@ -3710,7 +4209,6 @@ async def unassign_data_space(body: AssignSpaceBody):
 @app.get("/api/memory/recall", dependencies=[Depends(_user_guard)])
 async def recall_memory(q: str = ""):
     """Search memory store by query string."""
-    from fastapi import Query as _Query
     from agents.core.memory.store import MemoryStore
     store = MemoryStore()
     if not q:
@@ -3729,7 +4227,7 @@ async def get_analytics_cost():
 @app.get("/api/analytics/model-tiers")
 async def get_model_tiers():
     """Return per-agent model tier classification and usage summary."""
-    from agents.core.cost_tracker import get_summary, MODEL_PRICES
+    from agents.core.cost_tracker import get_summary
     summary = get_summary()
 
     def classify_tier(model: str) -> str:
@@ -3925,6 +4423,7 @@ async def local_docs_index(body: LocalDocsIndexBody):
 
 _webhook_store = None
 _a2a_registry = None
+_sender_pairing = None
 
 
 def _get_webhook_store():
@@ -4102,6 +4601,230 @@ async def a2a_decide(task_id: str, body: A2ADecisionBody):
 
 
 # ── END H16.2 A2A endpoints ───────────────────────────────────────
+
+
+# ── H12.19 Inbound sender pairing / approval (anti-abuse) ──────────
+
+def _get_sender_pairing():
+    """Shared registry: prefer the orchestrator's, else a module-level singleton."""
+    if orch is not None and getattr(orch, "sender_pairing", None) is not None:
+        return orch.sender_pairing
+    global _sender_pairing
+    if _sender_pairing is None:
+        from agents.core.channels.pairing import SenderPairing
+        _sender_pairing = SenderPairing()
+    return _sender_pairing
+
+
+class PairingRequestBody(BaseModel):
+    channel: str = Field(..., max_length=64)
+    sender_id: str = Field(..., max_length=128)
+    code: Optional[str] = Field(None, max_length=128)
+    name: str = Field("", max_length=128)
+
+
+class PairingDecisionBody(BaseModel):
+    channel: str = Field(..., max_length=64)
+    sender_id: str = Field(..., max_length=128)
+    action: str = Field(..., max_length=16)   # approve | reject | block | unpair
+    name: str = Field("", max_length=128)
+
+
+class PairingCodeBody(BaseModel):
+    code: Optional[str] = Field(None, max_length=128)
+
+
+@app.post("/api/channels/pairing/request")
+async def pairing_request(body: PairingRequestBody):
+    """Inbound first-contact from a sender. Authenticated by the pairing flow
+    itself (not a user token); off (404) unless pairing is enabled. Records a
+    pending request or auto-pairs on a correct code — never executes anything."""
+    from agents.core.channels.pairing import pairing_enabled
+    if not pairing_enabled():
+        return _nocache_json({"error": "pairing disabled"}, status_code=404)
+    try:
+        result = _get_sender_pairing().request(
+            body.channel, body.sender_id, code=body.code, name=body.name)
+    except ValueError:
+        return _nocache_json({"error": "channel and sender_id required"}, status_code=400)
+    return _nocache_json(result)
+
+
+@app.get("/api/channels/pairing", dependencies=[Depends(_admin_guard)])
+async def pairing_list(status: Optional[str] = None):
+    reg = _get_sender_pairing()
+    return _nocache_json({"senders": reg.list_senders(status), "summary": reg.summary()})
+
+
+@app.post("/api/channels/pairing/decide", dependencies=[Depends(_admin_guard)])
+async def pairing_decide(body: PairingDecisionBody):
+    """Owner decision on a sender: approve / reject / block / unpair."""
+    try:
+        return _nocache_json(_get_sender_pairing().decide(
+            body.channel, body.sender_id, body.action, name=body.name))
+    except ValueError:
+        return _nocache_json({"error": "unknown action"}, status_code=400)
+
+
+@app.post("/api/channels/pairing/code", dependencies=[Depends(_admin_guard)])
+async def pairing_set_code(body: PairingCodeBody):
+    """Set/rotate (or clear) the self-service pairing code."""
+    reg = _get_sender_pairing()
+    reg.set_code(body.code)
+    return _nocache_json({"has_code": reg.has_code()})
+
+
+# ── END H12.19 pairing endpoints ──────────────────────────────────
+
+
+# ── H12.18 Agent Canvas / A2UI (governed visual surface) ──────────
+
+_canvas_store = None
+
+
+def _get_canvas():
+    if orch is not None and getattr(orch, "canvas", None) is not None:
+        return orch.canvas
+    global _canvas_store
+    if _canvas_store is None:
+        from agents.core.canvas import CanvasStore
+        _canvas_store = CanvasStore()
+    return _canvas_store
+
+
+class CanvasPostBody(BaseModel):
+    agent: str = Field("agent", max_length=64)
+    type: str = Field(..., max_length=32)
+    payload: dict = Field(default_factory=dict)
+    pinned: bool = False
+
+
+@app.get("/api/canvas", dependencies=[Depends(_user_guard)])
+async def canvas_list(agent: Optional[str] = None):
+    return _nocache_json({"elements": _get_canvas().list(agent)})
+
+
+@app.post("/api/canvas/post", dependencies=[Depends(_user_guard)])
+async def canvas_post(body: CanvasPostBody):
+    """Add a typed, sanitized element. Unsafe/unknown types are rejected (422)."""
+    try:
+        return _nocache_json(_get_canvas().post(body.agent, body.type, body.payload,
+                                                pinned=body.pinned))
+    except ValueError as e:
+        return _nocache_json({"error": str(e)}, status_code=422)
+
+
+@app.post("/api/canvas/{el_id}/pin", dependencies=[Depends(_user_guard)])
+async def canvas_pin(el_id: str, pinned: bool = True):
+    el = _get_canvas().pin(el_id, pinned)
+    return _nocache_json(el or {"error": "not found"}, status_code=200 if el else 404)
+
+
+@app.delete("/api/canvas/{el_id}", dependencies=[Depends(_user_guard)])
+async def canvas_remove(el_id: str):
+    ok = _get_canvas().remove(el_id)
+    return _nocache_json({"removed": ok}, status_code=200 if ok else 404)
+
+
+@app.post("/api/canvas/clear", dependencies=[Depends(_user_guard)])
+async def canvas_clear(agent: Optional[str] = None, keep_pinned: bool = True):
+    return _nocache_json({"removed": _get_canvas().clear(agent, keep_pinned=keep_pinned)})
+
+
+# ── END H12.18 canvas endpoints ───────────────────────────────────
+
+
+# ── H15.1 Governed browser-use (egress allowlist + approval) ──────
+
+class BrowserCheckBody(BaseModel):
+    url: str = Field(..., max_length=2000)
+    allowlist: list[str] = Field(default_factory=list, max_length=100)
+
+
+class BrowserPreviewBody(BaseModel):
+    plan: list[dict] = Field(default_factory=list, max_length=200)
+    allowlist: list[str] = Field(default_factory=list, max_length=100)
+
+
+@app.post("/api/browser/check", dependencies=[Depends(_user_guard)])
+async def browser_check(body: BrowserCheckBody):
+    """H15.1 — would this URL pass the egress allowlist + SSRF filter?"""
+    from agents.core.browser_agent import BrowserPolicy
+    ok, reason = BrowserPolicy(body.allowlist).domain_allowed(body.url)
+    return _nocache_json({"allowed": ok, "reason": reason})
+
+
+@app.post("/api/browser/plan/preview", dependencies=[Depends(_user_guard)])
+async def browser_plan_preview(body: BrowserPreviewBody):
+    """H15.1 — governance dry-run: per-step run/approve/block (no execution)."""
+    from agents.core.browser_agent import GovernedBrowser, BrowserPolicy
+    gb = GovernedBrowser(policy=BrowserPolicy(body.allowlist))
+    return _nocache_json(gb.preview(body.plan))
+
+
+# ── END H15.1 browser endpoints ───────────────────────────────────
+
+
+# ── H12.7 Passive multi-surface capture (opt-in, local) ───────────
+
+_passive_capture = None
+
+
+def _get_capture():
+    global _passive_capture
+    if _passive_capture is None:
+        from agents.core.passive_capture import PassiveCapture
+        kg = getattr(orch, "kg_updater", None) if orch else None
+        _passive_capture = PassiveCapture(kg_updater=kg)
+    return _passive_capture
+
+
+class CaptureIngestBody(BaseModel):
+    surface: str = Field(..., max_length=32)
+    content: str = Field(..., max_length=100_000)
+    source: str = Field("", max_length=200)
+
+
+class CaptureSurfacesBody(BaseModel):
+    surfaces: dict = Field(default_factory=dict)
+
+
+@app.get("/api/capture/status", dependencies=[Depends(_user_guard)])
+async def capture_status():
+    return _nocache_json(_get_capture().status())
+
+
+@app.post("/api/capture/ingest", dependencies=[Depends(_user_guard)])
+async def capture_ingest(body: CaptureIngestBody):
+    """Opt-in: capture a surface event (redacted, local, inspectable)."""
+    try:
+        return _nocache_json(_get_capture().ingest(body.surface, body.content, body.source))
+    except ValueError as e:
+        return _nocache_json({"error": str(e)}, status_code=422)
+
+
+@app.get("/api/capture", dependencies=[Depends(_user_guard)])
+async def capture_list(surface: Optional[str] = None):
+    return _nocache_json({"records": _get_capture().list(surface)})
+
+
+@app.post("/api/capture/surfaces", dependencies=[Depends(_user_guard)])
+async def capture_set_surfaces(body: CaptureSurfacesBody):
+    return _nocache_json({"surfaces": _get_capture().set_surfaces(body.surfaces)})
+
+
+@app.delete("/api/capture/{rec_id}", dependencies=[Depends(_user_guard)])
+async def capture_forget(rec_id: str):
+    ok = _get_capture().forget(rec_id)
+    return _nocache_json({"forgotten": ok}, status_code=200 if ok else 404)
+
+
+@app.post("/api/capture/clear", dependencies=[Depends(_user_guard)])
+async def capture_clear(surface: Optional[str] = None):
+    return _nocache_json({"removed": _get_capture().clear(surface)})
+
+
+# ── END H12.7 capture endpoints ───────────────────────────────────
 
 
 # ── H16.3 Governed payments (mandate / cap / approval / audit) ─────
@@ -4417,7 +5140,7 @@ async def workflow_traces(limit: int = Query(20, ge=1, le=50)):
 # Lazy singleton WorkflowStore — created on first request so tests can
 # inject a custom path before the module is fully imported.
 
-_wf_store_instance: Optional["_WorkflowStoreType"] = None  # type: ignore[name-defined]
+_wf_store_instance = None  # lazily-created WorkflowStore (H9.1)
 
 
 def _wf_store():
@@ -4664,7 +5387,7 @@ async def heartbeat_run(agent_id: str):
 
 
 @app.get("/api/status")
-async def status():
+async def api_status():
     """Return service version, agent count, and health status."""
     from agents import __version__, AGENT_COUNT
     return {"version": __version__, "agents": AGENT_COUNT, "status": "ok"}

@@ -11,12 +11,10 @@ import asyncio
 import logging
 import os
 import platform
-import shutil
 import sys
 import tempfile
 import time
 from pathlib import Path
-from typing import Optional
 
 logger = logging.getLogger("jarvis.sandbox")
 
@@ -49,6 +47,8 @@ class Sandbox:
         max_memory_mb: int = 256,
         work_dir: str = "",
         allow_subprocess: bool = False,
+        allow_wasm: bool = True,
+        wasm_runtime: str = "",
     ):
         self.docker_image = docker_image
         self.timeout = timeout
@@ -56,6 +56,13 @@ class Sandbox:
         self.work_dir = Path(work_dir) if work_dir else Path(tempfile.mkdtemp())
         self._has_docker = self._check_docker()
         self.allow_subprocess = allow_subprocess
+        # H11.4 — WASM (wasmtime) backend: isolation without a Docker daemon.
+        # Needs the wasmtime binary + a Python-compiled-to-WASM runtime; both are
+        # host-provided, so when either is missing the backend degrades silently
+        # to the existing Docker/subprocess path (no behavior change).
+        self.allow_wasm = allow_wasm
+        self.wasm_runtime = wasm_runtime or os.environ.get("JARVIS_WASM_PYTHON", "")
+        self._has_wasmtime = self._check_wasmtime() if allow_wasm else False
 
     def _check_docker(self) -> bool:
         try:
@@ -69,15 +76,80 @@ class Sandbox:
             logger.warning("Docker availability check failed — falling back to subprocess sandbox", exc_info=True)
             return False
 
+    def _check_wasmtime(self) -> bool:
+        try:
+            import subprocess
+            result = subprocess.run(
+                ["wasmtime", "--version"],
+                capture_output=True, text=True, timeout=5,
+            )
+            return result.returncode == 0
+        except Exception:
+            logger.warning("wasmtime availability check failed — WASM sandbox unavailable", exc_info=True)
+            return False
+
+    def wasm_available(self) -> bool:
+        """True only if wasmtime AND a Python WASM runtime are usable right now."""
+        return bool(
+            self.allow_wasm and self._has_wasmtime and self.wasm_runtime
+            and Path(self.wasm_runtime).exists()
+        )
+
+    def _build_wasm_command(self, script_rel: str) -> list[str]:
+        # Grant the runtime read access to the workdir only (no network, no other
+        # FS) — the WASM module is sandboxed by wasmtime by construction.
+        return ["wasmtime", "run", "--dir", str(self.work_dir),
+                self.wasm_runtime, f"/workspace/{script_rel}"]
+
     async def execute_python(self, code: str, filename: str = "script.py") -> SandboxResult:
         if self._has_docker:
             return await self._execute_docker_python(code, filename)
+        if self.wasm_available():
+            return await self._execute_wasm_python(code, filename)
         if not self.allow_subprocess:
             return SandboxResult(
                 stderr="Subprocess execution disabled — set DEV_MODE=1 or configure allow_subprocess=True",
                 exit_code=-1,
             )
         return await self._execute_subprocess_python(code, filename)
+
+    async def _execute_wasm_python(self, code: str, filename: str) -> SandboxResult:
+        start = time.monotonic()
+        fpath = self.work_dir / filename
+        fpath.parent.mkdir(parents=True, exist_ok=True)
+        fpath.write_text(code, encoding="utf-8")
+        try:
+            proc = await asyncio.create_subprocess_exec(
+                *self._build_wasm_command(filename),
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+            )
+            try:
+                stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=self.timeout)
+                return SandboxResult(
+                    stdout=stdout.decode("utf-8", errors="replace"),
+                    stderr=stderr.decode("utf-8", errors="replace"),
+                    exit_code=proc.returncode or 0,
+                    duration=time.monotonic() - start,
+                )
+            except asyncio.TimeoutError:
+                proc.kill()
+                await proc.wait()
+                return SandboxResult(
+                    stderr=f"Execution timed out after {self.timeout}s",
+                    exit_code=-1, duration=time.monotonic() - start,
+                )
+        except FileNotFoundError:
+            logger.warning("wasmtime not found at execution — falling back")
+            self._has_wasmtime = False
+            if self.allow_subprocess:
+                return await self._execute_subprocess_python(code, filename)
+            return SandboxResult(
+                stderr="WASM runtime unavailable and subprocess execution disabled",
+                exit_code=-1, duration=time.monotonic() - start,
+            )
+        except Exception as e:
+            return SandboxResult(stderr=str(e), exit_code=-1, duration=time.monotonic() - start)
 
     async def execute_shell(self, command: str) -> SandboxResult:
         if self._has_docker:
@@ -100,7 +172,6 @@ class Sandbox:
         ])
 
     async def _run_docker(self, cmd: list[str], files: dict[str, str] = None) -> SandboxResult:
-        import subprocess
         start = time.monotonic()
 
         container_name = f"cabinet-sandbox-{int(time.time())}"

@@ -33,32 +33,43 @@ RULES = [
     ("/api/agents", "agents"), ("/agents", "agents"), ("/dashboard", "cockpit"),
     ("/ticker", "cockpit"), ("/tasks", "cockpit"), ("/api/cognition", "cockpit"),
     ("/tts", "cockpit"), ("/sessions", "cockpit"), ("/memory/clear", "cockpit"),
+    ("/api/canvas", "cockpit"),
     ("/api/trust/status", "topbar"),
     # memory & knowledge
     ("/api/kg/", "memory"), ("/api/memory/", "memory"), ("/memory/stats", "memory"),
-    ("/memory", "memory"), ("/api/local-docs", "memory"),
+    ("/memory", "memory"), ("/api/local-docs", "memory"), ("/api/capture", "memory"),
+    ("/api/context", "memory"),  # runtime context compression (H20.3)
     # trust / security / payments
     ("/api/security/", "trust"), ("/security", "trust"), ("/api/secrets/", "trust"),
     ("/api/payments", "trust"),
     # autonomy
     ("/autonomy/", "autonomy"), ("/api/autonomy/", "autonomy"), ("/api/actions", "autonomy"),
     ("/api/reflection", "autonomy"), ("/api/schedule/parse", "autonomy"),
+    ("/api/transcripts", "autonomy"),
     # build (workflows / skills / sandbox / grammar)
     ("/api/workflows", "build"), ("/api/skills", "build"), ("/skills", "build"),
-    ("/sandbox", "build"), ("/api/llm/grammar", "build"),
+    ("/sandbox", "build"), ("/api/llm/grammar", "build"), ("/api/browser", "build"),
+    ("/api/toolrpc", "build"),  # governed Tool-RPC for sandboxed pipelines (H20.1)
+    ("/api/vlm", "build"),  # vision-language model adapter (H13.1)
+    ("/api/desktop", "build"),  # governed desktop operator (H15.3)
+    ("/api/media", "build"),  # governed media generation (H12.24)
     # observe (traces / eval / quality / review / arena / resilience / bench / cost)
     ("/api/traces", "observe"), ("/api/eval", "observe"), ("/api/quality", "observe"),
     ("/api/review", "observe"), ("/api/arena", "observe"), ("/api/resilience", "observe"),
     ("/bench", "observe"), ("/api/cost", "observe"), ("/api/analytics", "observe"),
+    ("/api/digest", "observe"),
     ("/api/health/components", "observe"),
-    # interop (a2a / mcp client mgmt / webhooks)
+    # interop (a2a / mcp client mgmt / webhooks / external write-back + social)
     ("/api/a2a/", "interop"), ("/api/admin/mcp", "interop"), ("/api/admin/widgets", "interop"),
-    ("/api/mcp", "interop"), ("/api/webhooks", "interop"),
-    # comms (rooms / notes)
-    ("/api/rooms", "comms"), ("/api/notes", "comms"),
+    ("/api/mcp", "interop"), ("/api/webhooks", "interop"), ("/api/integrations/", "interop"),
+    ("/api/sync", "interop"),  # E2E device sync (H12.13)
+    ("/api/nodes", "interop"),  # governed node mesh (H12.17)
+    # comms (rooms / notes / channel sender pairing / mic satellites)
+    ("/api/rooms", "comms"), ("/api/notes", "comms"), ("/api/channels/", "comms"),
+    ("/api/satellites", "comms"),  # shared-GPU mic satellites (H12.8)
     # agent ops (heartbeat / learning / templates)
     ("/heartbeat", "agents"), ("/learning", "agents"), ("/api/learning", "agents"),
-    ("/api/agent-templates", "agents"),
+    ("/api/agent-templates", "agents"), ("/api/subagents", "agents"),  # H20.6
     # admin (settings / env / models / llm lifecycle / oauth / oracle / plugins / voice / prompts / stats)
     ("/api/admin/", "admin"), ("/plugins", "admin"), ("/api/models", "admin"),
     ("/api/llm/", "admin"), ("/api/oauth", "admin"), ("/api/oracle", "admin"),

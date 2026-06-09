@@ -289,9 +289,8 @@ class TestSeedGraph:
     def test_seed_idempotent(self):
         from agents.core.memory.seed_graph import seed_graph
         g = InMemoryGraph()
-        count1 = seed_graph(g)
-        count2 = seed_graph(g)
-        assert count2 == 0
+        assert seed_graph(g) > 0      # first seed adds facts
+        assert seed_graph(g) == 0     # second seed is idempotent
 
     def test_usage_scenario_unde_lucreaza(self):
         """Acceptance criteria: 'Unde lucrează Andrei?' → răspunde din graph."""

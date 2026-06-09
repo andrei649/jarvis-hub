@@ -4,10 +4,11 @@ Single entry point for incoming messages, regardless of source channel.
 Provides consistent message routing, rate limiting, and channel health.
 """
 
-import asyncio
 import logging
 import time
 from typing import Any, Callable, Optional
+
+from ..log_safe import log_safe
 
 logger = logging.getLogger("jarvis.gateway")
 
@@ -20,8 +21,12 @@ class Gateway:
     channel health tracking.
     """
 
-    def __init__(self, handler: Optional[Callable] = None):
+    def __init__(self, handler: Optional[Callable] = None, pairing: Any = None):
         self.handler = handler
+        # H12.19 — optional inbound sender-pairing gate. When set (and pairing is
+        # enabled), unknown senders are held for approval instead of reaching the
+        # handler. None → unchanged behavior.
+        self.pairing = pairing
         self._channels: dict[str, dict] = {}
         self._rate_limits: dict[str, list[float]] = {}
         self._max_rate = 10
@@ -37,20 +42,36 @@ class Gateway:
             "status": "active",
             **(metadata or {}),
         }
-        logger.info(f"Gateway: channel '{channel_id}' registered")
+        logger.info("Gateway: channel '%s' registered", log_safe(channel_id))
 
     def unregister_channel(self, channel_id: str):
         self._channels.pop(channel_id, None)
         self._rate_limits.pop(channel_id, None)
-        logger.info(f"Gateway: channel '{channel_id}' unregistered")
+        logger.info("Gateway: channel '%s' unregistered", log_safe(channel_id))
 
     async def route(self, text: str, channel: str = "web", **kwargs) -> Optional[str]:
         if channel not in self._channels:
             self.register_channel(channel)
 
         if not self._check_rate_limit(channel):
-            logger.warning(f"Gateway: rate limit exceeded for channel '{channel}'")
+            logger.warning("Gateway: rate limit exceeded for channel '%s'", log_safe(channel))
             return "Rate limit exceeded. Please wait before sending another message."
+
+        # H12.19 — inbound sender pairing. A `sender` identity (set by the channel)
+        # that isn't allowed is held for owner approval; the message never reaches
+        # the handler. No pairing gate or no sender → routes as before.
+        sender = kwargs.get("sender")
+        if self.pairing is not None and sender is not None:
+            try:
+                decision = self.pairing.gate_inbound(channel, str(sender),
+                                                      code=kwargs.get("pairing_code"))
+            except Exception:
+                logger.warning("Gateway: pairing gate error — allowing", exc_info=True)
+                decision = {"allowed": True}
+            if not decision.get("allowed", True):
+                logger.info("Gateway: held unpaired sender on '%s' (status=%s)",
+                            log_safe(channel), decision.get('status'))
+                return decision.get("message") or None
 
         self._channels[channel]["message_count"] += 1
         self._channels[channel]["last_activity"] = time.time()
@@ -65,7 +86,7 @@ class Gateway:
             return result
         except Exception as e:
             self._channels[channel]["error_count"] += 1
-            logger.error(f"Gateway: handler error on channel '{channel}': {e}")
+            logger.error("Gateway: handler error on channel '%s': %s", log_safe(channel), e)
             return None
 
     def _check_rate_limit(self, channel: str) -> bool:

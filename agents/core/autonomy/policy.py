@@ -154,6 +154,17 @@ class AutonomyPolicy:
         sig = action.get("signal_quality")
         if sig is not None and _num(sig) < 0.3 and tier < RiskTier.IRREVERSIBLE_OR_MONEY:
             tier = RiskTier(tier + 1)
+        # H21.4: calibration-gated autonomy. Optional hook (set by the orchestrator,
+        # gated by cognition.learning_enabled) returns a tier *bump* (≥0, never
+        # lowers gating). Default: no hook → unchanged behavior.
+        hook = getattr(self, "calibration_hook", None)
+        if hook is not None and tier < RiskTier.IRREVERSIBLE_OR_MONEY:
+            try:
+                bump = int(hook(action))
+            except Exception:
+                bump = 0
+            if bump > 0:
+                tier = RiskTier(min(int(RiskTier.IRREVERSIBLE_OR_MONEY), int(tier) + bump))
         return tier
 
     # ── decision ──────────────────────────────────────────────────

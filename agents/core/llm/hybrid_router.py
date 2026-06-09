@@ -23,9 +23,9 @@ Set JARVIS_AUTO_DEEP=0 to disable complexity-based escalation.
 
 import logging
 import os
-from typing import Callable, Optional
+from typing import Optional
 
-from .base import LLMBackend, LMStudioBackend, OllamaBackend
+from .base import LLMBackend, OllamaBackend
 from .router import LLMRouter
 from .tokenizer import estimate_tokens
 
@@ -127,6 +127,8 @@ class HybridRouter(LLMRouter):
         self.anthropic_api_key = anthropic_api_key
         self._gemini_backend: Optional[LLMBackend] = None
         self._claude_backend: Optional[LLMBackend] = None
+        self._gemini_pool = None       # H12.20 — built in detect()
+        self._anthropic_pool = None
         self._local_available = False
         self._cloud_available = False
         self._claude_available = False
@@ -156,18 +158,26 @@ class HybridRouter(LLMRouter):
             self._detected_model
             or self._admin_setting("default_model", DEFAULT_LOCAL_MODEL)
         )
-        self._cloud_available = bool(self.gemini_api_key)
+        # H12.20 — build auth-profile pools (multi-key + failover). A *_API_KEYS
+        # env var (comma/space separated) supplies extra accounts; falls back to
+        # the single *_API_KEY, so single-key deployments are unchanged.
+        from .auth_rotation import AuthProfilePool
+        self._gemini_pool = AuthProfilePool.from_env("GEMINI_API_KEY", "GEMINI_API_KEYS", "gemini")
+        self._anthropic_pool = AuthProfilePool.from_env("ANTHROPIC_API_KEY", "ANTHROPIC_API_KEYS", "anthropic")
+
+        self._cloud_available = bool(self.gemini_api_key) or self._gemini_pool.size > 0
         if self._cloud_available:
             from .gemini import GeminiBackend
-            self._gemini_backend = GeminiBackend(api_key=self.gemini_api_key)
+            self._gemini_backend = GeminiBackend(api_key=self.gemini_api_key, auth_pool=self._gemini_pool)
 
         # Claude model is admin-configurable (/admin → llm.claude_model).
         self._claude_model = self._admin_setting("claude_model", DEFAULT_CLAUDE_MODEL)
-        self._claude_available = bool(self.anthropic_api_key)
+        self._claude_available = bool(self.anthropic_api_key) or self._anthropic_pool.size > 0
         if self._claude_available:
             from .anthropic import ClaudeBackend
-            self._claude_backend = ClaudeBackend(api_key=self.anthropic_api_key, model=self._claude_model)
-            logger.info(f"Claude API available ({self._claude_model})")
+            self._claude_backend = ClaudeBackend(
+                api_key=self.anthropic_api_key, model=self._claude_model, auth_pool=self._anthropic_pool)
+            logger.info(f"Claude API available ({self._claude_model}; {self._anthropic_pool.size} auth profile(s))")
         else:
             logger.warning("ANTHROPIC_API_KEY not set — Claude tiering disabled, heavy agents will fall back")
 
@@ -273,7 +283,7 @@ class HybridRouter(LLMRouter):
         if self._cloud_available:
             logger.warning("All local backends unavailable for Howard, falling back to cloud")
             return self._gemini_backend, "cloud-fallback"
-        raise RuntimeError(f"No LLM backend available for howard")
+        raise RuntimeError("No LLM backend available for howard")
 
     def set_active_model(self, model: str) -> None:
         """Switch the active local model used for `local` routing tiers.
