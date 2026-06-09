@@ -894,6 +894,18 @@ class Orchestrator:
         )
         executor.register("call", self.call_broker.execute)
 
+        # H12.17 — governed node mesh (phone/desktop execution nodes). Capability-
+        # scoped (H17.3 broker + kill-switch) + approval-gated; the on-device run
+        # is a host seam (Tauri/phone client).
+        from .node_mesh import NodeMesh
+        self.node_mesh = NodeMesh(
+            capability_broker=getattr(self, "capabilities", None),
+            kill_switch=getattr(self, "kill_switch", None),
+            enqueue=self.autonomy_queue.enqueue,
+            audit=getattr(self, "audit", None),
+        )
+        executor.register("node", self.node_mesh.execute)
+
         return executor
 
     def _schedule_worldview_kg_sync(self):

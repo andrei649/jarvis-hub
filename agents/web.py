@@ -2023,6 +2023,57 @@ async def satellites_dispatch(satellite_id: str, body: SatelliteDispatchBody):
     return _nocache_json(result, status_code=200 if result.get("ok") else 404)
 
 
+class NodeRegisterBody(BaseModel):
+    node_id: str = Field(..., max_length=80)
+    capabilities: list[str] = Field(default_factory=list)
+    meta: dict = Field(default_factory=dict)
+
+
+@app.get("/api/nodes", dependencies=[Depends(_user_guard)])
+async def nodes_list():
+    """H12.17 — registered governed execution nodes (capabilities only, no tokens)."""
+    h = getattr(orch, "node_mesh", None) if orch else None
+    return _nocache_json({"nodes": h.nodes() if h is not None else []})
+
+
+@app.post("/api/nodes/register", dependencies=[Depends(_admin_guard)])
+async def nodes_register(body: NodeRegisterBody):
+    """H12.17 — register an execution node; mints a capability-scoped token (admin)."""
+    h = getattr(orch, "node_mesh", None) if orch else None
+    if h is None:
+        return JSONResponse({"error": "node mesh unavailable"}, status_code=503)
+    return _nocache_json({"ok": True, "node": h.register_node(
+        body.node_id, body.capabilities, body.meta)})
+
+
+@app.delete("/api/nodes/{node_id}", dependencies=[Depends(_admin_guard)])
+async def nodes_unregister(node_id: str):
+    """H12.17 — revoke a node and its capability token (admin)."""
+    h = getattr(orch, "node_mesh", None) if orch else None
+    if h is None:
+        return JSONResponse({"error": "node mesh unavailable"}, status_code=503)
+    return _nocache_json({"ok": h.revoke(node_id)})
+
+
+class NodeDispatchBody(BaseModel):
+    capability: str = Field(..., max_length=80)
+    action: str = Field("", max_length=200)
+    payload: dict = Field(default_factory=dict)
+
+
+@app.post("/api/nodes/{node_id}/dispatch", dependencies=[Depends(_user_guard)])
+async def nodes_dispatch(node_id: str, body: NodeDispatchBody):
+    """H12.17 — dispatch a capability-scoped action to a node (gated + approval).
+
+    Authorized against the node's capability token + kill-switch (H17.3), then
+    enqueued ask-tier; the on-device run is deferred to the node client."""
+    h = getattr(orch, "node_mesh", None) if orch else None
+    if h is None:
+        return JSONResponse({"error": "node mesh unavailable"}, status_code=503)
+    result = h.dispatch(node_id, body.capability, body.action, body.payload)
+    return _nocache_json(result, status_code=200 if result.get("ok") else 422)
+
+
 class DigestRunBody(BaseModel):
     topic: str = Field("", max_length=200)
     sources: Optional[list[str]] = Field(None, max_length=10)

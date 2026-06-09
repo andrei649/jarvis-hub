@@ -58,6 +58,7 @@ RULES = [
     ("/api/a2a/", "interop"), ("/api/admin/mcp", "interop"), ("/api/admin/widgets", "interop"),
     ("/api/mcp", "interop"), ("/api/webhooks", "interop"), ("/api/integrations/", "interop"),
     ("/api/sync", "interop"),  # E2E device sync (H12.13)
+    ("/api/nodes", "interop"),  # governed node mesh (H12.17)
     # comms (rooms / notes / channel sender pairing / mic satellites)
     ("/api/rooms", "comms"), ("/api/notes", "comms"), ("/api/channels/", "comms"),
     ("/api/satellites", "comms"),  # shared-GPU mic satellites (H12.8)
