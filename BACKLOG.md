@@ -72,20 +72,20 @@ chain-of-thought leak / mid-sentence truncation fixed. Kill-switch:
 | **H7 Hardening & Release Readiness** (P0–P2) | 11 | **11** | 51 | **51** | **100%** |
 | **H8 Memorie Personală** (P1–P3) | 7 | **7** | 48 | **48** | **100%** |
 | **H9 Agent Ops: Workflows & Observability** (P2) | 3 | **3** | 29 | **29** | **100%** |
-| **H10 Competitive Edge** (P1–P3) | 30 | **29** | 188 | **178** | **95%** |
+| **H10 Competitive Edge** (P1–P3) | 30 | **30** | 188 | **186** | **99%** |
 | **H11 Platform Parity** (Known Gaps, P3) | 4 | **0** | 55 | **0** | **0%** |
-| **Total H1–H11** | **151** | **146** | **823** | **758** | **92%** (SP) |
+| **Total H1–H11** | **151** | **147** | **823** | **766** | **93%** (SP) |
 | **H12 Asistent Privat & Proactiv** (P0–P3) | 25 | **17** | 150 | **85** | **57%** |
 | **H13–H17 Frontiere Noi** (post-paritate, în scope v1.0, P1–P3) | 20 | **15** | 146 | **107** | **73%** |
-| **Total H1–H17 = scope 1.0.0** | **196** | **178** | **1119** | **950** | **85%** (SP) |
+| **Total H1–H17 = scope 1.0.0** | **196** | **179** | **1119** | **958** | **86%** (SP) |
 | **H18 Mobile Native & Browser Parity** (P2–P3) | 10 | **9** | 32 | **32** | **94%** |
 | **H19 WorldView (4D OSINT)** — standalone product, merged 2026-06-08 | 33 | **33** | 208 | **208** | **100%** ✅ |
 
-> `%` = procent pe **story points**. Sub-total **H1–H11** = 758/823 (≈92% SP; 146/151 iteme). Grand-total **H1–H17** = 950/1119 (≈85% SP; 178/196 iteme). **Gate-ul 1.0.0 = tot backlogul terminat: H10 + H11 + H12 + H13–H17** (toate în scope-ul v1.0 — [#52]). În afara gate-ului: **H18** mobil (9/10) și **H19 WorldView** (33/33 ✅, stack standalone) — livrate.
+> `%` = procent pe **story points**. Sub-total **H1–H11** = 766/823 (≈93% SP; 147/151 iteme). Grand-total **H1–H17** = 958/1119 (≈86% SP; 179/196 iteme). **Gate-ul 1.0.0 = tot backlogul terminat: H10 + H11 + H12 + H13–H17** (toate în scope-ul v1.0 — [#52]). În afara gate-ului: **H18** mobil (9/10) și **H19 WorldView** (33/33 ✅, stack standalone) — livrate.
 
 **În afara totalului:** **Bugs & Hot Fixes** — **toate BUG-\* și HF-\* rezolvate** (BUG-1…13 + HF-1…7; vezi re-baseline 2026-06-08 + tabelul de mai jos). Rămân deschise **deliberat**: **CLN-2/CLN-3** (refactor god-objects `orchestrator.py`/`web.py`, P3) + taskuri/nice-to-have netrackuite ca buguri (**TASK-1** Howard backend, **BUG-2b** frontend E2E, **NTH-1**). *(Detalii audit cod 2026-06-04 în tabel.)*
 
-**Test count (backend pytest):** 1,894 passed, 1 skipped — skip-ul rămas e heartbeat-ul opțional (`tests/test_spotify.py` eliminat în CLN-1). *(2026-06-09: backlog software **code-complete** — H10 29/30, H12 17/25, frontiere H13–H17 15/20 (vezi „Status General" de mai sus); + WorldView O19 33/33 merged + Argus. Rămâne audit + testare manuală, vezi `docs/AUDIT.md`.)*
+**Test count (backend pytest):** 1,894 passed, 1 skipped — skip-ul rămas e heartbeat-ul opțional (`tests/test_spotify.py` eliminat în CLN-1). *(2026-06-09: backlog software **code-complete** — H10 30/30, H12 17/25, frontiere H13–H17 15/20 (vezi „Status General" de mai sus); + WorldView O19 33/33 merged + Argus. Rămâne audit + testare manuală, vezi `docs/AUDIT.md`.)*
 **Frontend (BUG-2):** 184 teste JS / 23 fișiere · ~67% line coverage — separat de suita pytest.
 
 > **Orizont 7 Hardening — Drumul spre 1.0.0:** 11/11 COMPLET ✅ (livrat 2026-06-02)
@@ -320,15 +320,15 @@ chain-of-thought leak / mid-sentence truncation fixed. Kill-switch:
 
 ---
 
-## ORIZONT 10 — Jarvis Competitive Edge (P1–P3) — 29/30
+## ORIZONT 10 — Jarvis Competitive Edge (P1–P3) — 30/30
 
 ### H10 — Status General
 
 | Horizon | Total | ✅ Done | S total | S done | % |
 |---------|-------|---------|---------|--------|---|
-| **H10 Competitive Edge** | 30 | **29** | 188 | **178** | **95%** |
+| **H10 Competitive Edge** | 30 | **30** | 188 | **186** | **99%** |
 
-> H10.A–E livrate în valul 2026-06-03; rămâne deschis doar **H10.30** (Write-Back Integrations, P3). *(H10.7 și H10.26 au fost livrate ✅.)*
+> H10.A–E livrate în valul 2026-06-03; **H10.30** (Write-Back Integrations) livrat 2026-06-09 → **H10 complet (30/30)**. *(H10.7 și H10.26 au fost livrate ✅.)*
 
 ### H10.A — Observability & Eval (P1 — fundație)
 
@@ -351,7 +351,7 @@ chain-of-thought leak / mid-sentence truncation fixed. Kill-switch:
 | H10.8 ✅ | **Inbound Webhook Triggers** — endpoint `/api/webhooks/{id}` (POST) activează un agent sau workflow pre-configurat cu payload-ul ca input; autentificat cu token. **Done 2026-06-03:** `core/webhooks.py` `WebhookStore` (JSON file-backed, token `secrets` + compare constant-time, mask la list, accounting calls/last_called) + `extract_input` payload→text; endpoints CRUD `GET/POST /api/webhooks`, `DELETE /api/webhooks/{id}` + trigger `POST /api/webhooks/{id}` (token via header `X-Webhook-Token` sau query, rutează la agent prin orchestrator / workflow best-effort). +8 teste offline. | 3 | P2 | H5.6 | Langflow + Dust |
 | H10.27 ✅ | **NL Scheduling** — text "every weekday at 7am" / "în fiecare luni la 9" → cron. **Done 2026-06-03:** `core/autonomy/nl_schedule.py` `parse_schedule` — EN+RO, time parse (7am/6:30pm/19:00/„la 9"), zile (weekday/weekend/zile specifice multiple), intervale (every N min/hours, hourly) → cron 5-câmpuri + descriere; eroare clară la timp lipsă/invalid; endpoint `POST /api/schedule/parse` (422 pe neparsabil). +10 teste offline. | 3 | P2 | H3.5 | Dust |
 | H10.1 ✅ | **Embeddable Chat Widget** — `/api/widget/{token}` returnează snippet JS+CSS care embed-uiește chat-ul pe orice site; theming din Admin. **Done 2026-06-03:** `core/widget.py` `WidgetStore` (token-uri per-site, theming title/color/position/greeting, issue/get/update/revoke, persistat) + `render_snippet` (IIFE self-contained: bulă flotantă + panel, postează la endpoint token-scoped); endpoints admin `POST/GET/DELETE /api/admin/widgets`, public `GET /api/widget/{token}` (JS) + `/config` + `POST /api/widget/{token}/message` (rutează prin orchestrator, channel=widget). +4 teste offline. | 3 | P2 | H1.3 | Flowise |
-| H10.30_writebacks | **Write-Back Integrations** — agenții pot scrie înapoi în sisteme externe (Notion, GitHub Issues, Google Calendar) ca tool-uri native; Pepper/Hephaestus primii candidați. | 8 | P3 | H2.1, H2.7 | Dust |
+| H10.30 ✅ | **Write-Back Integrations** — agenții pot scrie înapoi în sisteme externe (Notion, GitHub Issues, Google Calendar) ca tool-uri native; Pepper/Hephaestus primii candidați. **Done 2026-06-09 (strat guvernat):** `core/writeback.py` `WriteBackBroker` — request → validare pe allowlist (5 perechi target/action) + sanitizare câmpuri (drop chei străine, cap lungimi/liste) → **task guvernat ask-tier** în coadă (`kind=writeback.<target>.<action>`, `autonomy_level="ask"`, tier extern); **nimic nu se scrie extern la request**. Pe aprobare, worker-ul (executor prefix `writeback`) dispecerizează la `WriteBackBroker.execute` care **rezolvă credențialele la momentul acțiunii, în spatele aprobării** (SecretBroker H15.4 — agentul stochează doar handle `{{secret:…}}`, niciodată tokenul) și apelează un **client injectabil** (`NullWriteBackClient` offline default; `HttpWriteBackClient` = rail live host-side construit prin `build_request` pur). Endpoints `GET/POST /api/integrations/writeback` (user-guarded). +18 teste offline (catalog/supports, validare target+câmpuri, sanitizare, build_request per (target,action), execute behind-approval cu/fără secret, e2e prin TaskQueue+worker real). *(Apelul de rețea real = poartă host.)* | 8 | P3 | H2.1, H2.7 | Dust |
 
 ### H10.C — Memory & RAG (P1–P2)
 

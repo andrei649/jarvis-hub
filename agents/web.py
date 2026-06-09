@@ -1798,6 +1798,41 @@ async def transcript_ingest(body: TranscriptIngestBody):
     return _nocache_json(watcher.ingest(body.transcript, source=body.source, target=body.target))
 
 
+class WriteBackBody(BaseModel):
+    target: str = Field(..., max_length=40)
+    action: str = Field(..., max_length=40)
+    fields: dict = Field(default_factory=dict)
+    agent: Optional[str] = Field(None, max_length=40)
+    source: str = Field("", max_length=120)
+
+
+@app.get("/api/integrations/writeback", dependencies=[Depends(_user_guard)])
+async def writeback_targets():
+    """H10.30 — list supported governed write-back targets (Notion/GitHub/Calendar)."""
+    from agents.core.writeback import WriteBackBroker
+    wb = getattr(orch, "writeback", None) if orch else None
+    targets = wb.targets() if wb is not None else WriteBackBroker().targets()
+    return _nocache_json({"targets": targets})
+
+
+@app.post("/api/integrations/writeback", dependencies=[Depends(_user_guard)])
+async def writeback_request(body: WriteBackBody):
+    """H10.30 — request a governed write-back into an external system.
+
+    Validates against the allowlist and enqueues an ask-tier task. Nothing is
+    written externally here; on approval the autonomy worker dispatches it to the
+    write-back executor (credentials resolved at action time, behind approval).
+    Without a live queue, returns a validation-only preview."""
+    from agents.core.writeback import WriteBackBroker
+    wb = getattr(orch, "writeback", None) if orch else None
+    if wb is None:
+        q = getattr(orch, "autonomy_queue", None) if orch else None
+        wb = WriteBackBroker(enqueue=q.enqueue if q is not None else None)
+    result = wb.request(body.target, body.action, body.fields,
+                        agent=body.agent, source=body.source)
+    return _nocache_json(result, status_code=200 if result.get("ok") else 422)
+
+
 class DigestRunBody(BaseModel):
     topic: str = Field("", max_length=200)
     sources: Optional[list[str]] = Field(None, max_length=10)

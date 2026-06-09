@@ -851,6 +851,18 @@ class Orchestrator:
 
         executor.register("restart_service", _restart_service)
 
+        # H10.30 — governed write-back integrations (Notion/GitHub/Calendar).
+        # Approved `writeback.*` tasks resolve credentials at action time (behind
+        # approval) and call an injectable client (offline NullWriteBackClient by
+        # default; the live HTTP rail is a host-side seam).
+        from .writeback import WriteBackBroker
+        self.writeback = WriteBackBroker(
+            enqueue=self.autonomy_queue.enqueue,
+            secret_broker=getattr(self, "secret_broker", None),
+            audit=getattr(self, "audit", None),
+        )
+        executor.register("writeback", self.writeback.execute)
+
         return executor
 
     def _schedule_worldview_kg_sync(self):
