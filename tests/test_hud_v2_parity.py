@@ -51,6 +51,8 @@ RULES = [
     ("/sandbox", "build"), ("/api/llm/grammar", "build"), ("/api/browser", "build"),
     ("/api/toolrpc", "build"),  # governed Tool-RPC for sandboxed pipelines (H20.1)
     ("/api/vlm", "build"),  # vision-language model adapter (H13.1)
+    ("/api/desktop", "build"),  # governed desktop operator (H15.3)
+    ("/api/media", "build"),  # governed media generation (H12.24)
     # observe (traces / eval / quality / review / arena / resilience / bench / cost)
     ("/api/traces", "observe"), ("/api/eval", "observe"), ("/api/quality", "observe"),
     ("/api/review", "observe"), ("/api/arena", "observe"), ("/api/resilience", "observe"),

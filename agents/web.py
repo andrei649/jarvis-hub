@@ -2190,6 +2190,52 @@ async def vlm_describe(body: VLMDescribeBody):
         await vlm.aclose()
 
 
+class MoERouteBody(BaseModel):
+    prompt: str = Field(..., max_length=8000)
+    model: str = Field("gpt-oss-20b", max_length=80)
+
+
+@app.post("/api/llm/moe/route", dependencies=[Depends(_admin_guard)])
+async def llm_moe_route(body: MoERouteBody):
+    """H13.4 — preview the MoE thinking/non-thinking routing decision."""
+    from agents.core.llm.moe_routing import route_moe
+    return _nocache_json(route_moe(body.prompt, model=body.model))
+
+
+class DesktopStepsBody(BaseModel):
+    steps: list[dict] = Field(default_factory=list, max_length=100)
+
+
+@app.post("/api/desktop/preview", dependencies=[Depends(_user_guard)])
+async def desktop_preview(body: DesktopStepsBody):
+    """H15.3 — dry-run a desktop step plan (which steps need approval)."""
+    from agents.core.desktop_operator import GovernedDesktop
+    return _nocache_json(await GovernedDesktop().preview(body.steps))
+
+
+class MediaGenBody(BaseModel):
+    kind: str = Field(..., max_length=20)
+    prompt: str = Field(..., max_length=4000)
+    cloud: bool = False
+
+
+@app.get("/api/media", dependencies=[Depends(_user_guard)])
+async def media_status():
+    """H12.24 — supported media kinds + which backends are wired."""
+    from agents.core.media_gen import MediaGenManager
+    return _nocache_json({"kinds": MediaGenManager().kinds()})
+
+
+@app.post("/api/media/generate", dependencies=[Depends(_user_guard)])
+async def media_generate(body: MediaGenBody):
+    """H12.24 — governed media generation (cloud generation is approval-gated)."""
+    from agents.core.media_gen import MediaGenManager
+    q = getattr(orch, "autonomy_queue", None) if orch else None
+    m = MediaGenManager(enqueue=q.enqueue if q is not None else None)
+    result = await m.generate(body.kind, body.prompt, cloud=body.cloud)
+    return _nocache_json(result, status_code=200 if result.get("ok") else 422)
+
+
 # H21.0 — mount the cognition APIRouter (keeps cognition endpoints out of the
 # web.py god-object). User-guarded like the rest of the /api surface.
 from agents.core.cognition.api import router as _cognition_router  # noqa: E402
