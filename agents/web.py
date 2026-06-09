@@ -2290,6 +2290,8 @@ async def sandbox_status():
         "available": orch.sandbox._has_docker,
         "docker_image": orch.sandbox.docker_image,
         "timeout": orch.sandbox.timeout,
+        # HF-6 — expose isolation posture so an active host-exec fallback is visible.
+        **orch.sandbox.security_status(),
     }
 
 
@@ -2840,15 +2842,15 @@ async def security_posture():
     skill_rows = [s.to_dict() for s in skills]
     untrusted = [s for s in skill_rows if not s.get("trusted")]
 
-    # Sandbox availability.
-    sandbox_docker = False
+    # Sandbox isolation posture (HF-6 — flag host-exec without isolation, not just
+    # docker availability). Reflects the orchestrator's live Sandbox instance.
     try:
-        from core.sandbox import Sandbox
-        sandbox_docker = Sandbox()._has_docker
+        sandbox_sec = orch.sandbox.security_status()
     except Exception:
-        # Sandbox/Docker is optional; absence just means posture reports
-        # docker=False rather than failing the security-posture endpoint.
-        sandbox_docker = False
+        # Sandbox is optional; absence just means posture reports an unavailable
+        # backend rather than failing the security-posture endpoint.
+        sandbox_sec = {"backend": "unavailable", "isolated": False,
+                       "insecure_host_exec": False, "docker": False}
 
     return _nocache_json({
         "secrets": {"encrypted_at_rest": True, "backend": secret_backend},
@@ -2860,7 +2862,7 @@ async def security_posture():
             "untrusted_names": [s["name"] for s in untrusted],
             "detail": skill_rows,
         },
-        "sandbox": {"docker_available": sandbox_docker},
+        "sandbox": {"docker_available": sandbox_sec.get("docker", False), **sandbox_sec},
         "guardrails": {"mode": orch.get_setting("security.guardrails_mode", "WARN")},
     })
 

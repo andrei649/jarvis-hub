@@ -95,6 +95,45 @@ class Sandbox:
             and Path(self.wasm_runtime).exists()
         )
 
+    def active_backend(self) -> str:
+        """Which backend ``execute_*`` will actually use right now.
+
+        One of ``docker`` / ``wasm`` (isolated), ``subprocess-host`` (NOT isolated —
+        code runs directly on the host) or ``disabled`` (no isolated backend and the
+        host fallback is off).
+        """
+        if self._has_docker:
+            return "docker"
+        if self.wasm_available():
+            return "wasm"
+        if self.allow_subprocess:
+            return "subprocess-host"
+        return "disabled"
+
+    def is_isolated(self) -> bool:
+        """True only if the active backend isolates code from the host."""
+        return self.active_backend() in ("docker", "wasm")
+
+    def security_status(self) -> dict:
+        """HF-6 — explicit isolation posture so the HUD / ``/status`` can surface
+        when code would run on the HOST with no isolation. ``insecure_host_exec`` is
+        the bit that matters: it's only True when the host fallback is the active
+        backend (``allow_subprocess=True`` *and* neither Docker nor WASM is usable)."""
+        backend = self.active_backend()
+        insecure = backend == "subprocess-host"
+        return {
+            "backend": backend,
+            "isolated": backend in ("docker", "wasm"),
+            "insecure_host_exec": insecure,
+            "docker": self._has_docker,
+            "wasm": self.wasm_available(),
+            "allow_subprocess": self.allow_subprocess,
+            "warning": (
+                "Code runs on the HOST with no isolation (allow_subprocess=True and "
+                "neither Docker nor WASM is available). Do not enable in production (HF-6)."
+            ) if insecure else "",
+        }
+
     def _build_wasm_command(self, script_rel: str) -> list[str]:
         # Grant the runtime read access to the workdir only (no network, no other
         # FS) — the WASM module is sandboxed by wasmtime by construction.
@@ -108,7 +147,8 @@ class Sandbox:
             return await self._execute_wasm_python(code, filename)
         if not self.allow_subprocess:
             return SandboxResult(
-                stderr="Subprocess execution disabled — set DEV_MODE=1 or configure allow_subprocess=True",
+                stderr="Code execution disabled: no Docker/WASM isolation and the host "
+                       "fallback is off (allow_subprocess=False).",
                 exit_code=-1,
             )
         return await self._execute_subprocess_python(code, filename)
@@ -156,7 +196,8 @@ class Sandbox:
             return await self._execute_docker_shell(command)
         if not self.allow_subprocess:
             return SandboxResult(
-                stderr="Subprocess execution disabled — set DEV_MODE=1 or configure allow_subprocess=True",
+                stderr="Code execution disabled: no Docker/WASM isolation and the host "
+                       "fallback is off (allow_subprocess=False).",
                 exit_code=-1,
             )
         return await self._execute_subprocess_shell(command)
@@ -231,7 +272,8 @@ class Sandbox:
                     files.get("script.py", ""), "script.py"
                 )
             return SandboxResult(
-                stderr="Docker not available and subprocess execution disabled — set DEV_MODE=1",
+                stderr="Code execution disabled: Docker not available and the host "
+                       "fallback is off (allow_subprocess=False).",
                 exit_code=-1,
             )
         except Exception as e:
@@ -242,7 +284,7 @@ class Sandbox:
 
     async def _execute_subprocess_python(self, code: str, filename: str) -> SandboxResult:
         logger.warning("Sandbox: running Python on the HOST with no Docker isolation "
-                       "(DEV_MODE/allow_subprocess active) — do not enable in production (HF-6)")
+                       "(allow_subprocess=True) — do not enable in production (HF-6)")
         start = time.monotonic()
         fpath = self.work_dir / filename
         fpath.parent.mkdir(parents=True, exist_ok=True)
@@ -282,7 +324,7 @@ class Sandbox:
 
     async def _execute_subprocess_shell(self, command: str) -> SandboxResult:
         logger.warning("Sandbox: running a shell command on the HOST with no Docker isolation "
-                       "(DEV_MODE/allow_subprocess active) — do not enable in production (HF-6)")
+                       "(allow_subprocess=True) — do not enable in production (HF-6)")
         start = time.monotonic()
         shell_cmd = ["cmd", "/c", command] if platform.system() == "Windows" else ["sh", "-c", command]
 
