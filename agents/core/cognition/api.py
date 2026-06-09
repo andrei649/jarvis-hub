@@ -8,7 +8,11 @@ probe that reflects the (all-OFF) flags.
 
 from __future__ import annotations
 
+import asyncio
+import json
+
 from fastapi import APIRouter
+from fastapi.responses import StreamingResponse
 
 router = APIRouter(prefix="/api/cognition", tags=["cognition"])
 
@@ -77,3 +81,48 @@ async def cognition_ensemble():
     if m is None:
         return {"available": False}
     return m.status()
+
+
+async def _cognition_events(get_cog, *, sleep=asyncio.sleep, interval=1.0,
+                            heartbeat_every=15, max_iterations=None):
+    """NTH-1 — yield SSE frames for live cognition scoring.
+
+    Emits a ``data:`` frame whenever the ``last_cognition`` snapshot changes and a
+    ``: keepalive`` comment every ``heartbeat_every`` idle ticks. ``get_cog`` and
+    ``sleep`` are injected so the generator is deterministically testable offline.
+    """
+    last_sig = None
+    idle = 0
+    i = 0
+    while max_iterations is None or i < max_iterations:
+        i += 1
+        cog = get_cog()
+        sig = json.dumps(cog, sort_keys=True, default=str) if cog else ""
+        if cog and sig != last_sig:
+            last_sig = sig
+            idle = 0
+            yield f"data: {json.dumps({'type': 'cognition', 'cognition': cog})}\n\n"
+        else:
+            idle += 1
+            if heartbeat_every and idle % heartbeat_every == 0:
+                yield ": keepalive\n\n"
+        await sleep(interval)
+
+
+def _live_cognition():
+    """Current ``last_cognition`` snapshot from the live orchestrator (or None)."""
+    from agents import web
+    orch = getattr(web, "orch", None)
+    return getattr(orch, "last_cognition", None) if orch else None
+
+
+@router.get("/stream")
+async def cognition_stream():
+    """NTH-1 — server-sent stream of live cognition scoring (vs the static
+    ``/api/cognition`` snapshot), so the HUD can show routing decisions as they
+    happen."""
+    return StreamingResponse(
+        _cognition_events(_live_cognition),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
