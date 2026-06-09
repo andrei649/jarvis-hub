@@ -14,7 +14,7 @@
 ```bash
 pip install -r requirements-beta.txt
 python -m uvicorn agents.web:app --host 127.0.0.1 --port 8080
-python -m pytest tests/ -v          # 2117 passed, 1 skipped
+python -m pytest tests/ -v          # 2124 passed, 1 skipped
 ```
 
 > Singurul skip rămas e heartbeat-ul opțional. (Vechiul `tests/test_spotify.py` cu 8 skip-uri a
@@ -76,16 +76,16 @@ chain-of-thought leak / mid-sentence truncation fixed. Kill-switch:
 | **H11 Platform Parity** (Known Gaps, P3) | 4 | **1** | 55 | **8** | **15%** |
 | **Total H1–H11** | **151** | **148** | **823** | **774** | **94%** (SP) |
 | **H12 Asistent Privat & Proactiv** (P0–P3) | 25 | **23** | 150 | **137** | **91%** |
-| **H13–H17 Frontiere Noi** (post-paritate, în scope v1.0, P1–P3) | 20 | **15** | 146 | **107** | **73%** |
-| **Total H1–H17 = scope 1.0.0** | **196** | **186** | **1119** | **1018** | **91%** (SP) |
+| **H13–H17 Frontiere Noi** (post-paritate, în scope v1.0, P1–P3) | 20 | **16** | 146 | **115** | **79%** |
+| **Total H1–H17 = scope 1.0.0** | **196** | **187** | **1119** | **1026** | **92%** (SP) |
 | **H18 Mobile Native & Browser Parity** (P2–P3) | 10 | **9** | 32 | **32** | **94%** |
 | **H19 WorldView (4D OSINT)** — standalone product, merged 2026-06-08 | 33 | **33** | 208 | **208** | **100%** ✅ |
 
-> `%` = procent pe **story points**. Sub-total **H1–H11** = 774/823 (≈94% SP; 148/151 iteme). Grand-total **H1–H17** = 1018/1119 (≈91% SP; 186/196 iteme). **Gate-ul 1.0.0 = tot backlogul terminat: H10 + H11 + H12 + H13–H17** (toate în scope-ul v1.0 — [#52]). În afara gate-ului: **H18** mobil (9/10) și **H19 WorldView** (33/33 ✅, stack standalone) — livrate.
+> `%` = procent pe **story points**. Sub-total **H1–H11** = 774/823 (≈94% SP; 148/151 iteme). Grand-total **H1–H17** = 1026/1119 (≈92% SP; 187/196 iteme). **Gate-ul 1.0.0 = tot backlogul terminat: H10 + H11 + H12 + H13–H17** (toate în scope-ul v1.0 — [#52]). În afara gate-ului: **H18** mobil (9/10) și **H19 WorldView** (33/33 ✅, stack standalone) — livrate.
 
 **În afara totalului:** **Bugs & Hot Fixes** — **toate BUG-\* și HF-\* rezolvate** (BUG-1…13 + HF-1…7; vezi re-baseline 2026-06-08 + tabelul de mai jos). Rămân deschise **deliberat**: **CLN-2/CLN-3** (refactor god-objects `orchestrator.py`/`web.py`, P3) + taskuri/nice-to-have netrackuite ca buguri (**TASK-1** Howard backend, **BUG-2b** frontend E2E, **NTH-1**). *(Detalii audit cod 2026-06-04 în tabel.)*
 
-**Test count (backend pytest):** 2,117 passed, 1 skipped — skip-ul rămas e heartbeat-ul opțional (`tests/test_spotify.py` eliminat în CLN-1). *(2026-06-09: backlog software **code-complete** — H10 30/30, H11 1/4, H12 23/25, frontiere H13–H17 15/20 (vezi „Status General" de mai sus); + WorldView O19 33/33 merged + Argus. Rămâne audit + testare manuală, vezi `docs/AUDIT.md`.)*
+**Test count (backend pytest):** 2,124 passed, 1 skipped — skip-ul rămas e heartbeat-ul opțional (`tests/test_spotify.py` eliminat în CLN-1). *(2026-06-09: backlog software **code-complete** — H10 30/30, H11 1/4, H12 23/25, frontiere H13–H17 16/20 (vezi „Status General" de mai sus); + WorldView O19 33/33 merged + Argus. Rămâne audit + testare manuală, vezi `docs/AUDIT.md`.)*
 **Frontend (BUG-2):** 184 teste JS / 23 fișiere · ~67% line coverage — separat de suita pytest.
 
 > **Orizont 7 Hardening — Drumul spre 1.0.0:** 11/11 COMPLET ✅ (livrat 2026-06-02)
@@ -488,11 +488,11 @@ chain-of-thought leak / mid-sentence truncation fixed. Kill-switch:
 > pe GPU-ul idle. (2) **Guvernanță măsurabilă** — convertește „suntem alternativa guvernată la OpenClaw" dintr-un *claim* într-un
 > *badge CI verde* (AgentDojo). OpenClaw a devenit prima țintă infostealer (13-feb-2026) — anti-teza dovedită.
 
-### ORIZONT 13 — Plafonul de Capabilitate Locală (modele & inferență) — 1/4
+### ORIZONT 13 — Plafonul de Capabilitate Locală (modele & inferență) — 2/4
 
 | # | Item | S | P | Dep | Sursă |
 |---|------|---|---|-----|-------|
-| H13.1 | **Tier VLM strict-local** (Qwen3-VL-8B) — înțelegere ecran/documente/bonuri/PDF → alimentează pipeline-ul Howard; cea mai mare capabilitate *nouă*, fără cloud. ⚠️ verifică build GGUF + buget KV-cache pe 24GB. | 8 | P1 | H5.1 | Qwen3-VL (Oct 2025) |
+| H13.1 ✅ | **Tier VLM strict-local** (Qwen3-VL-8B) — înțelegere ecran/documente/bonuri/PDF → alimentează pipeline-ul Howard; cea mai mare capabilitate *nouă*, fără cloud. ⚠️ verifică build GGUF + buget KV-cache pe 24GB. **Done 2026-06-09 (strat de integrare):** `core/llm/vlm.py` `VLMBackend` — adapter **OpenAI-vision-compat** (mesaje cu `image_url`), preprocesare imagini pură (`to_data_uri` base64, `_downscale` opțional Pillow pt. bugetul KV-cache, `encode_image_block` bytes/path/url/data-uri), `generate_vision` (alimentează pipeline-ul Howard) + `generate` text-only (contract LLMBackend); client injectabil → offline-testable ca adaptorul OpenRouter. Endpoints `GET /api/vlm/status`, `POST /api/vlm/describe` (gated pe `JARVIS_VLM_URL`). +7 teste offline. *(Modelul local — weights + GGUF + GPU 24GB — = pas de deployment host: pointează `JARVIS_VLM_URL` la un server vision local vLLM/llama.cpp.)* | 8 | P1 | H5.1 | Qwen3-VL (Oct 2025) |
 | H13.2 ✅ | **Decodare constrânsă (GBNF) pentru tool-calling** — garantează tool-args valide. **Done 2026-06-03:** `core/llm/grammar.py` — `json_schema_to_gbnf`/`tool_to_gbnf` generează gramatică GBNF llama.cpp din JSON schema (object cu chei ordonate, string/integer/number/boolean/array/enum/nested object; cluster permisiv value/object/array pentru tipuri nedeclarate) + `validate_args` fallback (tipuri/required/enum, pentru backend-uri fără gramatică); endpoint `POST /api/llm/grammar`. *Generarea gramaticii + validarea sunt complete; enforcement-ul rămâne hook-ul backend-ului (param `grammar=` llama.cpp/XGrammar).* +10 teste offline. | 5 | P1 | — | XGrammar / llama.cpp |
 | H13.3 | **Speculative decoding** (draft Qwen3-4B → target 32B/gpt-oss) — 1.5-2.5× throughput interactiv, output identic, $0. | 5 | P2 | — | vLLM / llama.cpp |
 | H13.4 | **Refresh model default → MoE cu reasoning hibrid** (gpt-oss-20b / Qwen3-30B-A3B) — mod thinking/non-thinking poate colapsa tier-urile fast/deep într-un model. Apache-2.0. | 5 | P2 | — | gpt-oss, Qwen3 |

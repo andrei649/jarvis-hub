@@ -2158,6 +2158,38 @@ async def context_compress(body: ContextCompressBody):
     return _nocache_json(await cc.compress(body.turns))
 
 
+class VLMDescribeBody(BaseModel):
+    prompt: str = Field(..., max_length=4000)
+    images: list[str] = Field(default_factory=list, max_length=8)
+    model: str = Field("", max_length=80)
+
+
+@app.get("/api/vlm/status", dependencies=[Depends(_user_guard)])
+async def vlm_status():
+    """H13.1 — whether a local VLM endpoint is configured (host deployment)."""
+    return _nocache_json({"configured": bool(os.environ.get("JARVIS_VLM_URL", "")),
+                          "default_model": os.environ.get("JARVIS_VLM_MODEL", "qwen2-vl")})
+
+
+@app.post("/api/vlm/describe", dependencies=[Depends(_user_guard)])
+async def vlm_describe(body: VLMDescribeBody):
+    """H13.1 — send image(s) + a prompt to the local VLM (screen/doc/receipt).
+
+    Requires JARVIS_VLM_URL to point at a local OpenAI-vision server (the model
+    + GGUF + GPU are the host deployment seam)."""
+    url = os.environ.get("JARVIS_VLM_URL", "")
+    if not url:
+        return JSONResponse({"error": "VLM not configured — set JARVIS_VLM_URL"}, status_code=503)
+    from agents.core.llm.vlm import VLMBackend
+    vlm = VLMBackend(base_url=url, api_key=os.environ.get("JARVIS_VLM_KEY", ""))
+    try:
+        model = body.model or os.environ.get("JARVIS_VLM_MODEL", "qwen2-vl")
+        out = await vlm.generate_vision(model, body.prompt, images=body.images)
+        return _nocache_json({"ok": True, "model": model, "response": out})
+    finally:
+        await vlm.aclose()
+
+
 # H21.0 — mount the cognition APIRouter (keeps cognition endpoints out of the
 # web.py god-object). User-guarded like the rest of the /api surface.
 from agents.core.cognition.api import router as _cognition_router  # noqa: E402

@@ -50,6 +50,7 @@ RULES = [
     ("/api/workflows", "build"), ("/api/skills", "build"), ("/skills", "build"),
     ("/sandbox", "build"), ("/api/llm/grammar", "build"), ("/api/browser", "build"),
     ("/api/toolrpc", "build"),  # governed Tool-RPC for sandboxed pipelines (H20.1)
+    ("/api/vlm", "build"),  # vision-language model adapter (H13.1)
     # observe (traces / eval / quality / review / arena / resilience / bench / cost)
     ("/api/traces", "observe"), ("/api/eval", "observe"), ("/api/quality", "observe"),
     ("/api/review", "observe"), ("/api/arena", "observe"), ("/api/resilience", "observe"),
