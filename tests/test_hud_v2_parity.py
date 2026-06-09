@@ -54,8 +54,8 @@ RULES = [
     # interop (a2a / mcp client mgmt / webhooks)
     ("/api/a2a/", "interop"), ("/api/admin/mcp", "interop"), ("/api/admin/widgets", "interop"),
     ("/api/mcp", "interop"), ("/api/webhooks", "interop"),
-    # comms (rooms / notes)
-    ("/api/rooms", "comms"), ("/api/notes", "comms"),
+    # comms (rooms / notes / channel sender pairing)
+    ("/api/rooms", "comms"), ("/api/notes", "comms"), ("/api/channels/", "comms"),
     # agent ops (heartbeat / learning / templates)
     ("/heartbeat", "agents"), ("/learning", "agents"), ("/api/learning", "agents"),
     ("/api/agent-templates", "agents"),

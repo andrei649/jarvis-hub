@@ -20,8 +20,12 @@ class Gateway:
     channel health tracking.
     """
 
-    def __init__(self, handler: Optional[Callable] = None):
+    def __init__(self, handler: Optional[Callable] = None, pairing: Any = None):
         self.handler = handler
+        # H12.19 — optional inbound sender-pairing gate. When set (and pairing is
+        # enabled), unknown senders are held for approval instead of reaching the
+        # handler. None → unchanged behavior.
+        self.pairing = pairing
         self._channels: dict[str, dict] = {}
         self._rate_limits: dict[str, list[float]] = {}
         self._max_rate = 10
@@ -51,6 +55,22 @@ class Gateway:
         if not self._check_rate_limit(channel):
             logger.warning(f"Gateway: rate limit exceeded for channel '{channel}'")
             return "Rate limit exceeded. Please wait before sending another message."
+
+        # H12.19 — inbound sender pairing. A `sender` identity (set by the channel)
+        # that isn't allowed is held for owner approval; the message never reaches
+        # the handler. No pairing gate or no sender → routes as before.
+        sender = kwargs.get("sender")
+        if self.pairing is not None and sender is not None:
+            try:
+                decision = self.pairing.gate_inbound(channel, str(sender),
+                                                      code=kwargs.get("pairing_code"))
+            except Exception:
+                logger.warning("Gateway: pairing gate error — allowing", exc_info=True)
+                decision = {"allowed": True}
+            if not decision.get("allowed", True):
+                logger.info(f"Gateway: held unpaired sender on '{channel}' "
+                            f"(status={decision.get('status')})")
+                return decision.get("message") or None
 
         self._channels[channel]["message_count"] += 1
         self._channels[channel]["last_activity"] = time.time()

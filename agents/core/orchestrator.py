@@ -274,6 +274,8 @@ class Orchestrator:
         reg.add("widgets", ".widget", "WidgetStore", label="chat widget")                      # H10.1
         reg.add("consolidation", ".memory.consolidation", "ConsolidationEngine", label="consolidation")  # H14.3
         reg.add("rooms", ".rooms", "RoomStore", label="chat rooms")                            # H10.20
+        reg.add("sender_pairing", ".channels.pairing", "SenderPairing",
+                path="memory_logs/sender_pairing.json", label="sender pairing")                 # H12.19
         reg.add("action_approvals", ".autonomy.action_approvals", "ActionApprovalQueue",
                 path="memory_logs/action_approvals.json", label="action approvals")            # H10.18
         reg.add("notes", ".notes", "NotesStore", label="conversation notes")                   # H10.21

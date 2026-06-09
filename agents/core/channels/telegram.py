@@ -111,7 +111,9 @@ class TelegramChannel(ChannelAdapter):
                     chat_id = msg["chat"]["id"]
                     if not text:
                         continue
-                    await self.receive(text, chat_id=chat_id)
+                    # Pass the sender id so the gateway's H12.19 pairing gate can
+                    # hold unknown senders for approval (no-op unless enabled).
+                    await self.receive(text, chat_id=chat_id, sender=str(uid))
             except Exception as e:
                 logger.warning(f"Telegram poll error: {e}")
                 await __import__("asyncio").sleep(3)
