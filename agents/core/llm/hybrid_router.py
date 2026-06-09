@@ -283,7 +283,7 @@ class HybridRouter(LLMRouter):
         if self._cloud_available:
             logger.warning("All local backends unavailable for Howard, falling back to cloud")
             return self._gemini_backend, "cloud-fallback"
-        raise RuntimeError(f"No LLM backend available for howard")
+        raise RuntimeError("No LLM backend available for howard")
 
     def set_active_model(self, model: str) -> None:
         """Switch the active local model used for `local` routing tiers.

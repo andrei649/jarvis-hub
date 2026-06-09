@@ -5138,7 +5138,7 @@ async def workflow_traces(limit: int = Query(20, ge=1, le=50)):
 # Lazy singleton WorkflowStore — created on first request so tests can
 # inject a custom path before the module is fully imported.
 
-_wf_store_instance: Optional["_WorkflowStoreType"] = None  # type: ignore[name-defined]
+_wf_store_instance = None  # lazily-created WorkflowStore (H9.1)
 
 
 def _wf_store():
