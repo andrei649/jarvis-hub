@@ -294,6 +294,9 @@ class Orchestrator:
         reg.add("satellite_hub", ".satellite_hub", "SatelliteHub", label="satellite hub")      # H12.8
         reg.add("cognition", ".cognition", "CognitionFacade",
                 get_setting=self.get_setting, label="cognition (H21)")                          # H21.0
+        if getattr(self, "cognition", None) is not None:                                         # H21.1
+            from .cognition.honesty import HonestyModule
+            self.cognition.register_module("honesty", HonestyModule())
         # ── end optional components ──
         self.plugins: dict = {}
         self.skills = SkillLoader()
@@ -1573,6 +1576,13 @@ class Orchestrator:
                         trace_dict["id"] = trace_id
                         q = self.quality.record(trace_dict)
                         trace_dict["quality"] = q
+                        # H21.1: anti-sycophancy axis (gated; master OFF = no-op).
+                        cog = getattr(self, "cognition", None)
+                        if cog is not None and cog.sub_enabled("honesty_enabled"):
+                            hm = cog.module("honesty")
+                            if hm is not None:
+                                _txt = trace_dict.get("text_preview") or trace_dict.get("output_preview") or ""
+                                trace_dict["honesty"] = hm.score_response(_txt, trace_id=trace_dict.get("id", ""))
                         # H10.25: auto-flag low-scoring traces for human review.
                         if getattr(self, "review_queue", None) is not None:
                             self.review_queue.auto_flag(trace_dict, q.get("score"), self.quality.threshold)
@@ -1882,7 +1892,10 @@ class Orchestrator:
                 if agent_id != "jarvis" and resp:
                     parts.append(f"[{agent_id}]: {resp}")
             return "\n".join(parts) if parts else responses.get("jarvis", "")
-        return await jarvis.synthesize(responses, intent)
+        # H21.1: preserve specialist voices when the honesty module is active.
+        cog = getattr(self, "cognition", None)
+        in_character = bool(cog is not None and cog.sub_enabled("honesty_enabled"))
+        return await jarvis.synthesize(responses, intent, in_character=in_character)
 
     async def run_heartbeat(self, agent_id: str) -> Optional[str]:
         agent = self.agents.get(agent_id)

@@ -169,7 +169,7 @@ class Agent:
         available = DEMOTION_TIERS.get(current_tier, [])
         return available[0] if available else None
 
-    async def synthesize(self, responses: dict[str, str], intent) -> str:
+    async def synthesize(self, responses: dict[str, str], intent, in_character: bool = False) -> str:
         jarvis_only = all(k == "jarvis" for k in responses)
         if jarvis_only:
             return responses.get("jarvis", "Done, sir.")
@@ -190,10 +190,19 @@ class Agent:
         model = self.config.get("model", "google/gemma-4-31b-a4b")
         system_prompt = self.soul.get("content", "")
 
+        if in_character:
+            directive = (
+                "Weave these specialist answers into one coherent reply, but PRESERVE each "
+                "specialist's distinct voice and attribute their contributions in character. "
+                "Be honest and direct — do not flatter, over-agree, or reverse a correct claim "
+                "to please. Use the user's language."
+            )
+        else:
+            directive = "Be concise. Use the user's language. Do not mention internal agent IDs."
         prompt = (
             f"Synthesize the following specialist responses into a single, coherent reply for the user:\n"
             f"{agent_reports}\n\n"
-            f"Be concise. Use the user's language. Do not mention internal agent IDs."
+            f"{directive}"
         )
 
         try:

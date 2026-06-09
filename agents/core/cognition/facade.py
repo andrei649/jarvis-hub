@@ -27,6 +27,14 @@ class CognitionFacade:
     def __init__(self, get_setting: Optional[Callable] = None) -> None:
         # get_setting(key, default) — defaults to "everything OFF".
         self._get = get_setting or (lambda k, d=None: d)
+        self._modules: dict = {}
+
+    def register_module(self, name: str, module) -> None:
+        """Submodules (honesty, affect, memory, …) register here as H21 grows."""
+        self._modules[name] = module
+
+    def module(self, name: str):
+        return self._modules.get(name)
 
     def flag(self, name: str) -> bool:
         return bool(self._get(f"cognition.{name}", False))
@@ -45,7 +53,7 @@ class CognitionFacade:
             "enabled": master,
             "available": True,
             "flags": {f: (master and self.flag(f)) for f in _SUB_FLAGS},
-            "modules": [],   # submodules register here in later H21 items
+            "modules": sorted(self._modules.keys()),
         }
 
     def new_turn(self, session_id: str = "", agent: str = "", user: str = "") -> TurnContext:

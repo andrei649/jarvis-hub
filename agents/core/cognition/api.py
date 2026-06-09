@@ -27,3 +27,13 @@ async def cognition_status():
     if f is None:
         return {"enabled": False, "available": False}
     return f.status()
+
+
+@router.get("/honesty")
+async def cognition_honesty():
+    """H21.1 — Sycophancy Index + alert (anti-sycophancy axis)."""
+    f = _facade()
+    m = f.module("honesty") if f is not None else None
+    if m is None:
+        return {"available": False}
+    return m.status()
