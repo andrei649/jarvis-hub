@@ -138,9 +138,9 @@ class GovernedBrowser:
         try:
             result = await getattr(self.driver, action)(**{k: v for k, v in step.items() if k != "action"})
             return {"action": action, "status": "done", "result": result}
-        except Exception as e:
+        except Exception:
             logger.warning("browser step %s failed", action, exc_info=True)
-            return {"action": action, "status": "error", "reason": str(e)}
+            return {"action": action, "status": "error", "reason": "step failed"}
 
     async def run(self, plan: list[dict], stop_on_block: bool = True) -> dict:
         trace = []

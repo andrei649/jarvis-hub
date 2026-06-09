@@ -11,6 +11,9 @@ restores the LLM (even on diffusion failure).
 from __future__ import annotations
 
 import inspect
+import logging
+
+logger = logging.getLogger("jarvis.image_gen")
 
 
 async def _maybe_await(v):
@@ -38,8 +41,9 @@ class ImageGenOrchestrator:
         try:
             path = await _maybe_await(self._diff(prompt))
             result = {"ok": True, "path": path, "swapped": swapped}
-        except Exception as e:
-            result = {"ok": False, "reason": "diffusion_error", "error": str(e), "swapped": swapped}
+        except Exception:
+            logger.warning("diffusion failed", exc_info=True)
+            result = {"ok": False, "reason": "diffusion_error", "swapped": swapped}
         finally:
             if swapped and self._load is not None:
                 try:

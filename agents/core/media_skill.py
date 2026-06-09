@@ -10,6 +10,9 @@ pipeline orchestration is offline-testable.
 from __future__ import annotations
 
 import inspect
+import logging
+
+logger = logging.getLogger("jarvis.media_skill")
 
 
 async def _maybe_await(v):
@@ -30,8 +33,9 @@ class MediaSummarizer:
         try:
             audio = await _maybe_await(self._dl(url))
             transcript = await _maybe_await(self._tr(audio))
-        except Exception as e:
-            return {"ok": False, "reason": "pipeline_error", "error": str(e)}
+        except Exception:
+            logger.warning("media pipeline failed", exc_info=True)
+            return {"ok": False, "reason": "pipeline_error"}
         summary = ""
         if self._sum is not None:
             try:

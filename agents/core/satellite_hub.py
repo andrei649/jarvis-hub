@@ -81,12 +81,11 @@ class SatelliteHub:
                 self._peak_inflight = max(self._peak_inflight, self._inflight)
             try:
                 result = await self._inf.process(kind, payload)
-            except Exception as e:
+            except Exception:
                 logger.warning("satellite inference failed", exc_info=True)
                 with self._lock:
                     self._inflight -= 1
-                return {"ok": False, "reason": "inference_error", "error": str(e),
-                        "satellite": sid}
+                return {"ok": False, "reason": "inference_error", "satellite": sid}
             with self._lock:
                 self._inflight -= 1
                 self._sats[sid]["calls"] += 1
