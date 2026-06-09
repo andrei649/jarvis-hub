@@ -34,7 +34,7 @@ cadență dovedită), apoi clusterele hardware/externe (oricum au poartă umană
 | H12.19 | Pairing/aprobare expeditor inbound | 3 | P2 | ✅ sandbox | ✅ **DONE 2026-06-09** (PR în curs) |
 | H12.20 | Rotație profile auth + failover model (hybrid router) | 3 | P3 | ✅ sandbox | ✅ **DONE 2026-06-09** |
 | H12.25 | Transcript-watcher → taskuri (notițe ședință → coadă aprobare) | 3 | P2 | 🟡 (mock Notion/Todoist) | ✅ **DONE 2026-06-09** (extract+enqueue; creare live = poartă) |
-| H12.23 | Pack skill-uri „digest" (news/earnings/Reddit/arXiv/HF, scorer) | 5 | P3 | 🟡 (mock fetch) | ☐ |
+| H12.23 | Pack skill-uri „digest" (news/earnings/Reddit/arXiv/HF, scorer) | 5 | P3 | 🟡 (mock fetch) | ✅ **DONE 2026-06-09** (motor + scorer; live fetch = poartă) |
 | H12.18 | Agent Canvas / A2UI (spațiu vizual guvernat în HUD) | 8 | P3 | 🟡 (frontend; dep HUD v2) | ☐ |
 
 ### Val 2 — frontieră P1/P2 (capabilitate locală + computer-use)
@@ -123,3 +123,4 @@ fundație P1 care repară BUG-5).
 | 2026-06-09 | **H12.19** Pairing/aprobare expeditor inbound | (acest branch) | `core/channels/pairing.py` + gateway gate + 4 endpoints + 20 teste. Suită: 1820 passed, 1 skipped. |
 | 2026-06-09 | **H12.20** Rotație profile auth + failover model | (acest branch) | `core/llm/auth_rotation.py` `AuthProfilePool` (multi-key + cooldown exponențial) cablat în Claude/Gemini + router + endpoint admin + 18 teste. Suită: 1838 passed, 1 skipped. |
 | 2026-06-09 | **H12.25** Transcript-watcher → taskuri | (acest branch) | `core/autonomy/transcript_watcher.py` (extracție high-precision + enqueue ask-tier guvernat) + endpoint + 10 teste. Suită: 1848 passed, 1 skipped. |
+| 2026-06-09 | **H12.23** Pack skill-uri „digest" | (acest branch) | `core/digest.py` (surse RSS/Atom ponderate, fetch injectabil, idea-reality scorer, aggregator dedup+rank) + endpoint + 11 teste. Suită: 1859 passed, 1 skipped. |

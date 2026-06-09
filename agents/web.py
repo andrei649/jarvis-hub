@@ -1798,6 +1798,29 @@ async def transcript_ingest(body: TranscriptIngestBody):
     return _nocache_json(watcher.ingest(body.transcript, source=body.source, target=body.target))
 
 
+class DigestRunBody(BaseModel):
+    topic: str = Field("", max_length=200)
+    sources: Optional[list[str]] = Field(None, max_length=10)
+    limit: int = Field(10, ge=1, le=50)
+    weights: Optional[dict] = None
+
+
+@app.post("/api/digest/run", dependencies=[Depends(_user_guard)])
+async def digest_run(body: DigestRunBody):
+    """H12.23 — composable multi-source digest ranked by weight × idea-reality."""
+    from agents.core.digest import build_default_aggregator
+    from agents.core.http_client import PluginHTTPClient
+    client = PluginHTTPClient.for_plugin("digest")
+
+    async def _fetch(url: str) -> str:
+        resp = await client.get(url)
+        resp.raise_for_status()
+        return resp.text
+
+    agg = build_default_aggregator(_fetch, weights=body.weights, names=body.sources)
+    return _nocache_json(await agg.run(body.topic, limit=body.limit))
+
+
 @app.post("/api/schedule/parse")
 async def schedule_parse(req: Request):
     """H10.27 — parse a natural-language schedule into a cron expression."""

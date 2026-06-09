@@ -51,6 +51,7 @@ RULES = [
     ("/api/traces", "observe"), ("/api/eval", "observe"), ("/api/quality", "observe"),
     ("/api/review", "observe"), ("/api/arena", "observe"), ("/api/resilience", "observe"),
     ("/bench", "observe"), ("/api/cost", "observe"), ("/api/analytics", "observe"),
+    ("/api/digest", "observe"),
     ("/api/health/components", "observe"),
     # interop (a2a / mcp client mgmt / webhooks)
     ("/api/a2a/", "interop"), ("/api/admin/mcp", "interop"), ("/api/admin/widgets", "interop"),
