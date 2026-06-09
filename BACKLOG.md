@@ -14,7 +14,7 @@
 ```bash
 pip install -r requirements-beta.txt
 python -m uvicorn agents.web:app --host 127.0.0.1 --port 8080
-python -m pytest tests/ -v          # 1820 passed, 1 skipped
+python -m pytest tests/ -v          # 1838 passed, 1 skipped
 ```
 
 > Singurul skip rămas e heartbeat-ul opțional. (Vechiul `tests/test_spotify.py` cu 8 skip-uri a
@@ -75,17 +75,17 @@ chain-of-thought leak / mid-sentence truncation fixed. Kill-switch:
 | **H10 Competitive Edge** (P1–P3) | 30 | **29** | 188 | **178** | **95%** |
 | **H11 Platform Parity** (Known Gaps, P3) | 4 | **0** | 55 | **0** | **0%** |
 | **Total H1–H11** | **151** | **146** | **823** | **758** | **92%** (SP) |
-| **H12 Asistent Privat & Proactiv** (P0–P3) | 25 | **12** | 150 | **58** | **39%** |
+| **H12 Asistent Privat & Proactiv** (P0–P3) | 25 | **13** | 150 | **61** | **41%** |
 | **H13–H17 Frontiere Noi** (post-paritate, în scope v1.0, P1–P3) | 20 | **14** | 146 | **99** | **68%** |
-| **Total H1–H17 = scope 1.0.0** | **196** | **172** | **1119** | **915** | **82%** (SP) |
+| **Total H1–H17 = scope 1.0.0** | **196** | **173** | **1119** | **918** | **82%** (SP) |
 | **H18 Mobile Native & Browser Parity** (P2–P3) | 10 | **9** | 32 | **32** | **94%** |
 | **H19 WorldView (4D OSINT)** — standalone product, merged 2026-06-08 | 33 | **33** | 208 | **208** | **100%** ✅ |
 
-> `%` = procent pe **story points**. Sub-total **H1–H11** = 758/823 (≈92% SP; 146/151 iteme). Grand-total **H1–H17** = 915/1119 (≈82% SP; 172/196 iteme). **Gate-ul 1.0.0 = tot backlogul terminat: H10 + H11 + H12 + H13–H17** (toate în scope-ul v1.0 — [#52]). În afara gate-ului: **H18** mobil (9/10) și **H19 WorldView** (33/33 ✅, stack standalone) — livrate.
+> `%` = procent pe **story points**. Sub-total **H1–H11** = 758/823 (≈92% SP; 146/151 iteme). Grand-total **H1–H17** = 918/1119 (≈82% SP; 173/196 iteme). **Gate-ul 1.0.0 = tot backlogul terminat: H10 + H11 + H12 + H13–H17** (toate în scope-ul v1.0 — [#52]). În afara gate-ului: **H18** mobil (9/10) și **H19 WorldView** (33/33 ✅, stack standalone) — livrate.
 
 **În afara totalului:** **Bugs & Hot Fixes** — 3 done (BUG-1, BUG-2, BUG-4) + deschise (BUG-3, BUG-5…BUG-12, HF-1/2, HF-3…HF-7, BUG-2b, TASK-1, CLN-1, CLN-2, CLN-3, NTH-1). *(BUG-5…12 / HF-3…7 / CLN-2/3 din auditul de cod 2026-06-04.)*
 
-**Test count (backend pytest):** 1,820 passed, 1 skipped — skip-ul rămas e heartbeat-ul opțional (`tests/test_spotify.py` eliminat în CLN-1). *(2026-06-09: backlog software **code-complete** — H10 29/30, H12 12/25, frontiere H13–H17 14/20 (vezi „Status General" de mai sus); + WorldView O19 33/33 merged + Argus. Rămâne audit + testare manuală, vezi `docs/AUDIT.md`.)*
+**Test count (backend pytest):** 1,838 passed, 1 skipped — skip-ul rămas e heartbeat-ul opțional (`tests/test_spotify.py` eliminat în CLN-1). *(2026-06-09: backlog software **code-complete** — H10 29/30, H12 13/25, frontiere H13–H17 14/20 (vezi „Status General" de mai sus); + WorldView O19 33/33 merged + Argus. Rămâne audit + testare manuală, vezi `docs/AUDIT.md`.)*
 **Frontend (BUG-2):** 184 teste JS / 23 fișiere · ~67% line coverage — separat de suita pytest.
 
 > **Orizont 7 Hardening — Drumul spre 1.0.0:** 11/11 COMPLET ✅ (livrat 2026-06-02)
@@ -462,7 +462,7 @@ chain-of-thought leak / mid-sentence truncation fixed. Kill-switch:
 | H12.17 | **Node mesh guvernat** — telefon/desktop ca *noduri de execuție* care rulează doar acțiuni capability‑scoped + aprobate; GPU‑ul de acasă rămâne creierul. Unifică Tauri (H11.1) + split sateliți (H12.8). | 13 | P3 | H11.1, H17.3 | OpenClaw „nodes" / Willow |
 | H12.18 | **Agent Canvas / A2UI** — spațiu vizual condus de agent în HUD (inspectabil + guvernat), peste network brain‑ul v2. | 8 | P3 | HUD v2 | OpenClaw Live Canvas |
 | H12.19 ✅ | **Pairing/aprobare expeditor inbound** — senderi necunoscuți pe canale trec printr‑un cod/aprobare (anti‑abuz); oglindă a allowlist‑ului A2A. **Done 2026-06-09:** `core/channels/pairing.py` `SenderPairing` (JsonStore keyed `(channel,sender)`) — **opt‑in** (`JARVIS_CHANNEL_PAIRING`, default OFF → `is_allowed` True pentru toți, comportament neschimbat); sender necunoscut → `pending` (**held, niciodată executat**, ca inboxul A2A), owner approve/reject/block/unpair; **cod self‑service** rotativ (auto‑approve la cod corect, `hmac.compare_digest`); **anti‑abuz** (rate‑limit per `(channel,sender)` + pending bounded + evict). Gate cablat în `Gateway.route` (kwarg `sender`, backward‑compatible) + threading `sender` din Telegram; înregistrat în `ComponentRegistry`; 4 endpoints (`POST /api/channels/pairing/request` gated‑404, `GET /api/channels/pairing` + `POST /decide` + `POST /code` admin). +20 teste offline. | 3 | P2 | H1.3, H16.2 | OpenClaw DM pairing |
-| H12.20 | **Rotație profile auth + failover model** în hybrid router (mai multe chei/conturi cu failover). | 3 | P3 | H2.12 | OpenClaw auth rotation |
+| H12.20 ✅ | **Rotație profile auth + failover model** în hybrid router (mai multe chei/conturi cu failover). **Done 2026-06-09:** `core/llm/auth_rotation.py` `AuthProfilePool` — chei multiple per provider (din `*_API_KEYS` comma/space, fallback la `*_API_KEY` single → **backward-compatible**); eroare rotabilă (401/403/429) → failover la următoarea cheie sănătoasă, cheia picată intră în **cooldown exponențial** (cap 15 min), `report_success` resetează; clock injectabil (cooldown determinist în teste). Cablat în `ClaudeBackend`/`GeminiBackend` (cheia din pool + retry-and-rotate pe `generate`, report_failure pe stream) și construit din env în `HybridRouter.detect()`; endpoint admin `GET /api/llm/auth-profiles` (status mascat). +18 teste offline. | 3 | P3 | H2.12 | OpenClaw auth rotation |
 | H12.21 | **Acțiuni guvernate pe social** (X/Twitter post/reply/DM) — fiecare *write* prin coada de aprobare; auth OAuth/secret‑broker (nu cookie‑uri brute). | 5 | P3 | H6.2 | OpenClaw TweetClaw/Bird |
 | H12.22 | **Voce outbound / call‑back** — agentul sună la prag + persona vocală izolată (Twilio/Telnyx), gated prin interrupt‑budget. | 8 | P3 | H6.2 | OpenClaw SuperCall |
 | H12.23 | **Pack de skill‑uri „digest"** (news multi‑sursă ponderat, earnings, Reddit/YouTube/arXiv/HF, idea‑reality scorer) — skill‑uri semnate, compozabile. | 5 | P3 | Skills | awesome‑openclaw‑usecases |

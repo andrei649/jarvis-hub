@@ -2803,6 +2803,18 @@ def _llm_status_code(result: dict) -> int:
         result.get("status"), 502)
 
 
+@app.get("/api/llm/auth-profiles", dependencies=[Depends(_admin_guard)])
+async def llm_auth_profiles():
+    """H12.20 — masked status of the cloud auth-profile pools (rotation/failover)."""
+    router = getattr(orch, "llm_router", None) if orch else None
+    pools = {}
+    for name in ("_anthropic_pool", "_gemini_pool"):
+        pool = getattr(router, name, None) if router else None
+        if pool is not None:
+            pools[pool.provider or name] = pool.status()
+    return _nocache_json({"pools": pools})
+
+
 @app.post("/api/llm/server/start", dependencies=[Depends(_admin_guard)])
 async def llm_server_start():
     ctrl, err = _lmstudio_or_503()
