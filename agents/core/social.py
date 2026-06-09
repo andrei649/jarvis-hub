@@ -178,6 +178,7 @@ class HttpSocialClient:
         try:
             out["response"] = resp.json()
         except Exception:
+            # non-JSON response body → omit it from the result
             pass
         return out
 

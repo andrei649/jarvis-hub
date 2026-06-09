@@ -57,7 +57,7 @@ class MediaGenManager:
         try:
             result = await _maybe_await(backend(prompt, opts or {}))
         except Exception:
-            logger.warning("media generation failed (kind=%s)", kind, exc_info=True)
+            logger.warning("media generation failed", exc_info=True)
             return {"ok": False, "reason": "generation_error"}
         return {"ok": True, "kind": kind, "result": result}
 

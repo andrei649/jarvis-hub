@@ -2182,9 +2182,9 @@ async def vlm_describe(body: VLMDescribeBody):
     vlm = VLMBackend(base_url=url, api_key=os.environ.get("JARVIS_VLM_KEY", ""))
     try:
         model = body.model or os.environ.get("JARVIS_VLM_MODEL", "qwen2-vl")
-        # Untrusted input: only URLs / data-URIs, never local file paths (path injection).
-        out = await vlm.generate_vision(model, body.prompt, images=body.images,
-                                        allow_local_files=False)
+        # encode_image_block accepts only data:/http(s) image sources, never file
+        # paths — request-supplied images can't read host files.
+        out = await vlm.generate_vision(model, body.prompt, images=body.images)
         return _nocache_json({"ok": True, "model": model, "response": out})
     finally:
         await vlm.aclose()

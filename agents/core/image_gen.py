@@ -37,6 +37,7 @@ class ImageGenOrchestrator:
                 await _maybe_await(self._unload())
                 swapped = True
             except Exception:
+                # unload is best-effort; generation proceeds and the LLM is restored below
                 pass
         try:
             path = await _maybe_await(self._diff(prompt))
@@ -49,5 +50,6 @@ class ImageGenOrchestrator:
                 try:
                     await _maybe_await(self._load())   # always restore the LLM
                 except Exception:
+                    # best-effort restore of the LLM after generation
                     pass
         return result

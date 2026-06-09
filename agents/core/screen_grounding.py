@@ -36,6 +36,7 @@ def parse_grounding(vlm_output: str) -> "list[dict]":
             if out:
                 return out
     except Exception:
+        # not valid JSON → fall through to the free-text grounding parse below
         pass
     # free-text form
     out = []

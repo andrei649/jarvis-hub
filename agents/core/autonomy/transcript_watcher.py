@@ -25,15 +25,15 @@ logger = logging.getLogger("jarvis.autonomy.transcript")
 _PREFIX_RE = re.compile(
     r"^\s*(?:[-*]\s*)?(?:\[[ x]?\]\s*)?"                       # optional bullet / checkbox
     r"(?:action item|action|todo|to-do|ai|next step|follow[\s-]?up)\s*[:\-]\s*"
-    r"(?P<task>.+\S)\s*$",
+    r"(?P<task>.+)$",
     re.IGNORECASE,
 )
 # Bare checkbox line ("- [ ] do the thing") with no keyword prefix.
-_CHECKBOX_RE = re.compile(r"^\s*(?:[-*]\s*)?\[[ x]?\]\s*(?P<task>.+\S)\s*$")
+_CHECKBOX_RE = re.compile(r"^\s*(?:[-*]\s*)?\[[ x]?\]\s*(?P<task>.+)$")
 # "<Name> will/to <verb...>" — an assignment we can attribute.
 _ASSIGN_RE = re.compile(
     r"^\s*(?:[-*]\s*)?(?:@)?(?P<who>[A-Z][\w.-]{1,30})\s+(?:will|to|should|needs? to)\s+"
-    r"(?P<task>.+\S)\s*$",
+    r"(?P<task>.+)$",
 )
 
 _VALID_TARGETS = ("todoist", "notion")

@@ -27,6 +27,7 @@ async def build_video_prompt(idea: str, llm: Optional[object] = None,
             if refined:
                 return {"ok": True, "prompt": str(refined), "source": "llm"}
         except Exception:
+            # LLM refinement failed → fall back to the heuristic prompt below
             pass
     prompt = (f"{style} shot: {idea}. Camera: slow dolly-in. Lighting: natural, soft. "
               f"Composition: rule-of-thirds. Duration: 5s. Mood: evocative. "

@@ -195,6 +195,7 @@ async def reproject(records: "list[dict]", current_version: int, embedder: Calla
             r["embed_version"] = current_version
             done += 1
         except Exception:
+            # best-effort migration: skip a row that fails to re-embed
             pass
     return {"reprojected": done, "version": current_version}
 

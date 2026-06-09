@@ -31,6 +31,7 @@ class VaultResolver:
                 if v:
                     return {"value": v, "source": "vault"}
             except Exception:
+                # vault backend unavailable/locked → fall through to the next source
                 pass
         if self.fallback_env:
             v = os.environ.get(self.prefix + key) or os.environ.get(key)

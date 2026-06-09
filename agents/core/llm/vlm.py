@@ -59,13 +59,13 @@ def _downscale(image_bytes: bytes, max_dim: int) -> "tuple[bytes, str]":
         return image_bytes, "PNG"   # Pillow missing / not an image → pass through
 
 
-def encode_image_block(source, max_dim: int = 1024,
-                       allow_local_files: bool = True) -> Optional[dict]:
-    """Turn bytes / file-path / URL / data-URI into an OpenAI image_url content block.
+def encode_image_block(source, max_dim: int = 1024) -> Optional[dict]:
+    """Turn bytes / URL / data-URI into an OpenAI image_url content block.
 
-    ``allow_local_files`` must be **False** for untrusted (e.g. HTTP request)
-    input — otherwise a caller could read arbitrary host files by passing a path
-    (path injection). Internal callers (on-disk screenshots) may pass True.
+    Only in-memory bytes, ``data:`` URIs, and ``http(s)`` URLs are accepted —
+    never a filesystem path, so a request-supplied value can never be used to
+    read host files (path injection). A caller holding a file on disk reads the
+    bytes itself and passes them in.
     """
     if isinstance(source, (bytes, bytearray)):
         data, fmt = _downscale(bytes(source), max_dim)
@@ -73,25 +73,16 @@ def encode_image_block(source, max_dim: int = 1024,
     s = str(source)
     if s.startswith(("data:", "http://", "https://")):
         return {"type": "image_url", "image_url": {"url": s}}
-    if not allow_local_files:
-        logger.warning("VLM: rejected non-URL image source from untrusted input")
-        return None
-    try:
-        with open(s, "rb") as f:
-            raw = f.read()
-        data, fmt = _downscale(raw, max_dim)
-        return {"type": "image_url", "image_url": {"url": to_data_uri(data, _mime(fmt))}}
-    except Exception:
-        logger.warning("VLM: could not read image source %r", s)
-        return None
+    logger.warning("VLM: unsupported image source (expected bytes, a data: URI, or an http(s) URL)")
+    return None
 
 
 def build_vision_messages(prompt: str, images=None, system: str = "",
-                          max_dim: int = 1024, allow_local_files: bool = True) -> list:
+                          max_dim: int = 1024) -> list:
     """Build OpenAI vision `messages` (text + image blocks)."""
     content = [{"type": "text", "text": prompt}]
     for img in (images or []):
-        block = encode_image_block(img, max_dim, allow_local_files=allow_local_files)
+        block = encode_image_block(img, max_dim)
         if block:
             content.append(block)
     messages = []
@@ -124,10 +115,8 @@ class VLMBackend(LLMBackend):
         return h
 
     async def generate_vision(self, model: str, prompt: str, images=None, system: str = "",
-                              max_tokens: int = 1024, temperature: float = 0.2,
-                              allow_local_files: bool = True) -> str:
-        messages = build_vision_messages(prompt, images, system, self.max_image_dim,
-                                         allow_local_files=allow_local_files)
+                              max_tokens: int = 1024, temperature: float = 0.2) -> str:
+        messages = build_vision_messages(prompt, images, system, self.max_image_dim)
         payload = {"model": model, "messages": messages,
                    "max_tokens": max_tokens, "temperature": temperature, "stream": False}
         try:
