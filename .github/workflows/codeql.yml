@@ -29,7 +29,8 @@ jobs:
         uses: github/codeql-action/init@v4
         with:
           languages: python
-          queries: security-and-quality
+          # Suite + paths-ignore (test code excluded) live in the config file.
+          config-file: ./.github/codeql/codeql-config.yml
 
       - name: Perform CodeQL Analysis
         # Code scanning (SARIF upload) needs GitHub Advanced Security, which is
