@@ -43,6 +43,7 @@ RULES = [
     # autonomy
     ("/autonomy/", "autonomy"), ("/api/autonomy/", "autonomy"), ("/api/actions", "autonomy"),
     ("/api/reflection", "autonomy"), ("/api/schedule/parse", "autonomy"),
+    ("/api/transcripts", "autonomy"),
     # build (workflows / skills / sandbox / grammar)
     ("/api/workflows", "build"), ("/api/skills", "build"), ("/skills", "build"),
     ("/sandbox", "build"), ("/api/llm/grammar", "build"),

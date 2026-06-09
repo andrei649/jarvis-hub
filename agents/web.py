@@ -1780,6 +1780,24 @@ async def autonomy_task_preview(task_id: int):
     return _nocache_json(preview_task(task))
 
 
+class TranscriptIngestBody(BaseModel):
+    transcript: str = Field(..., max_length=200_000)
+    source: str = Field("", max_length=200)
+    target: Optional[str] = Field(None, max_length=16)   # todoist | notion
+
+
+@app.post("/api/transcripts/ingest", dependencies=[Depends(_user_guard)])
+async def transcript_ingest(body: TranscriptIngestBody):
+    """H12.25 — meeting transcript → action items → approval queue (governed).
+
+    Nothing is created externally here; each item lands as an ask-tier task the
+    owner approves. Without a live queue, returns an extraction-only preview."""
+    from agents.core.autonomy.transcript_watcher import TranscriptWatcher
+    q = getattr(orch, "autonomy_queue", None) if orch else None
+    watcher = TranscriptWatcher(enqueue=q.enqueue if q is not None else None)
+    return _nocache_json(watcher.ingest(body.transcript, source=body.source, target=body.target))
+
+
 @app.post("/api/schedule/parse")
 async def schedule_parse(req: Request):
     """H10.27 — parse a natural-language schedule into a cron expression."""
