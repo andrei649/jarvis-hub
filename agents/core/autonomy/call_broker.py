@@ -23,11 +23,22 @@ from __future__ import annotations
 
 import logging
 from typing import Callable, Optional
+from urllib.parse import urlparse
 
 from .dry_run import preview_task
 from ..security.secret_broker import SecretBroker
 
 logger = logging.getLogger("jarvis.autonomy.call")
+
+# SSRF guard: the live telephony rail may only reach these provider hosts.
+_ALLOWED_HOSTS = frozenset({"api.twilio.com", "api.telnyx.com"})
+
+
+def _assert_allowed_host(url: str, allowed=_ALLOWED_HOSTS) -> str:
+    host = (urlparse(url).hostname or "").lower()
+    if host not in allowed:
+        raise ValueError(f"call host not allowed: {host!r}")
+    return host
 
 # A phone call is an external action that reaches a person → ASK (tier 2,
 # consistent with the write-back/social brokers); it additionally spends an
@@ -112,6 +123,7 @@ class HttpCallClient:
     async def call(self, provider: str, to: str, message: str,
                    credentials: dict, config: dict) -> dict:
         spec = build_call_request(provider, to, message, credentials, config)
+        _assert_allowed_host(spec["url"])   # SSRF guard before any request
         http = self._http
         if http is None:  # pragma: no cover - real network path
             from ..http_client import PluginHTTPClient

@@ -32,11 +32,24 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass
 from typing import Callable, Optional
+from urllib.parse import urlparse
 
 from .autonomy.dry_run import preview_task
 from .security.secret_broker import SecretBroker
 
 logger = logging.getLogger("jarvis.writeback")
+
+# SSRF guard: the live rail may only reach these fixed provider API hosts. Field
+# input can shape the path but never the host (defense-in-depth + breaks the
+# CodeQL SSRF taint flow).
+_ALLOWED_HOSTS = frozenset({"api.notion.com", "api.github.com", "www.googleapis.com"})
+
+
+def _assert_allowed_host(url: str, allowed=_ALLOWED_HOSTS) -> str:
+    host = (urlparse(url).hostname or "").lower()
+    if host not in allowed:
+        raise ValueError(f"write-back host not allowed: {host!r}")
+    return host
 
 # External writes always ask. Tier 2 = "external" in the 4-tier policy, which
 # maps to ASK; `autonomy_level="ask"` is also passed explicitly to the queue.
@@ -256,6 +269,7 @@ class HttpWriteBackClient:
 
     async def write(self, target: str, action: str, fields: dict, credentials: dict) -> dict:
         spec = build_request(target, action, fields, credentials)
+        _assert_allowed_host(spec["url"])   # SSRF guard before any request
         http = self._http
         if http is None:  # pragma: no cover - real network path
             from .http_client import PluginHTTPClient

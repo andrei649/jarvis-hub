@@ -138,7 +138,7 @@ class VLMBackend(LLMBackend):
             return strip_thinking(content)
         except Exception as e:
             logger.warning("VLM generate failed: %s", e)
-            return f"[VLM error: {e}]"
+            return "[VLM error]"
 
     async def generate(self, model: str, prompt: str, system: str = "",
                        max_tokens: int = 1024, temperature: float = 0.7) -> str:

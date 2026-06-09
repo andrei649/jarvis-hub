@@ -57,7 +57,7 @@ class OpenRouterBackend(LLMBackend):
             return strip_thinking(content)
         except Exception as e:
             logger.warning("OpenRouter generate failed: %s", e)
-            return f"[OpenRouter error: {e}]"
+            return "[OpenRouter error]"
 
 
 def parse_model_command(text: str) -> Optional[dict]:

@@ -24,11 +24,22 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass
 from typing import Callable, Optional
+from urllib.parse import urlparse
 
 from .autonomy.dry_run import preview_task
 from .security.secret_broker import SecretBroker
 
 logger = logging.getLogger("jarvis.social")
+
+# SSRF guard: the live rail may only reach the X/Twitter API host.
+_ALLOWED_HOSTS = frozenset({"api.twitter.com"})
+
+
+def _assert_allowed_host(url: str, allowed=_ALLOWED_HOSTS) -> str:
+    host = (urlparse(url).hostname or "").lower()
+    if host not in allowed:
+        raise ValueError(f"social host not allowed: {host!r}")
+    return host
 
 # Social writes reach people publicly/directly — external tier, always ASK.
 _RISK_TIER = 2
@@ -155,6 +166,7 @@ class HttpSocialClient:
 
     async def send(self, platform: str, action: str, fields: dict, credentials: dict) -> dict:
         spec = build_social_request(platform, action, fields, credentials)
+        _assert_allowed_host(spec["url"])   # SSRF guard before any request
         http = self._http
         if http is None:  # pragma: no cover - real network path
             from .http_client import PluginHTTPClient

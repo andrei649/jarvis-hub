@@ -58,10 +58,10 @@ class SubAgentManager:
             result = await self._runner(task, session_id, agent or "sub")
             rec["status"] = "done"
             rec["result"] = result
-        except Exception as e:
+        except Exception:
             logger.warning("sub-agent run failed", exc_info=True)
             rec["status"] = "failed"
-            rec["result"] = {"error": str(e)}
+            rec["result"] = {"error": "run failed"}
         finally:
             self._active -= 1
         return {"ok": rec["status"] == "done", "id": spawn_id,

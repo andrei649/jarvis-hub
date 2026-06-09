@@ -10,7 +10,10 @@ the diffusion/cloud backends are the host seam.
 from __future__ import annotations
 
 import inspect
+import logging
 from typing import Callable, Optional
+
+logger = logging.getLogger("jarvis.media_gen")
 
 KINDS = ("image", "thumbnail", "video")
 
@@ -53,8 +56,9 @@ class MediaGenManager:
             return {"ok": False, "reason": "backend_unavailable", "kind": kind}
         try:
             result = await _maybe_await(backend(prompt, opts or {}))
-        except Exception as e:
-            return {"ok": False, "reason": "generation_error", "error": str(e)}
+        except Exception:
+            logger.warning("media generation failed (kind=%s)", kind, exc_info=True)
+            return {"ok": False, "reason": "generation_error"}
         return {"ok": True, "kind": kind, "result": result}
 
     def kinds(self) -> dict:
