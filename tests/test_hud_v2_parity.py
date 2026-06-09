@@ -37,7 +37,7 @@ RULES = [
     ("/api/trust/status", "topbar"),
     # memory & knowledge
     ("/api/kg/", "memory"), ("/api/memory/", "memory"), ("/memory/stats", "memory"),
-    ("/memory", "memory"), ("/api/local-docs", "memory"),
+    ("/memory", "memory"), ("/api/local-docs", "memory"), ("/api/capture", "memory"),
     # trust / security / payments
     ("/api/security/", "trust"), ("/security", "trust"), ("/api/secrets/", "trust"),
     ("/api/payments", "trust"),

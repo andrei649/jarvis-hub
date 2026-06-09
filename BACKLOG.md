@@ -14,7 +14,7 @@
 ```bash
 pip install -r requirements-beta.txt
 python -m uvicorn agents.web:app --host 127.0.0.1 --port 8080
-python -m pytest tests/ -v          # 1883 passed, 1 skipped
+python -m pytest tests/ -v          # 1894 passed, 1 skipped
 ```
 
 > Singurul skip rămas e heartbeat-ul opțional. (Vechiul `tests/test_spotify.py` cu 8 skip-uri a
@@ -75,17 +75,17 @@ chain-of-thought leak / mid-sentence truncation fixed. Kill-switch:
 | **H10 Competitive Edge** (P1–P3) | 30 | **29** | 188 | **178** | **95%** |
 | **H11 Platform Parity** (Known Gaps, P3) | 4 | **0** | 55 | **0** | **0%** |
 | **Total H1–H11** | **151** | **146** | **823** | **758** | **92%** (SP) |
-| **H12 Asistent Privat & Proactiv** (P0–P3) | 25 | **16** | 150 | **77** | **51%** |
+| **H12 Asistent Privat & Proactiv** (P0–P3) | 25 | **17** | 150 | **85** | **57%** |
 | **H13–H17 Frontiere Noi** (post-paritate, în scope v1.0, P1–P3) | 20 | **15** | 146 | **107** | **73%** |
-| **Total H1–H17 = scope 1.0.0** | **196** | **177** | **1119** | **942** | **84%** (SP) |
+| **Total H1–H17 = scope 1.0.0** | **196** | **178** | **1119** | **950** | **85%** (SP) |
 | **H18 Mobile Native & Browser Parity** (P2–P3) | 10 | **9** | 32 | **32** | **94%** |
 | **H19 WorldView (4D OSINT)** — standalone product, merged 2026-06-08 | 33 | **33** | 208 | **208** | **100%** ✅ |
 
-> `%` = procent pe **story points**. Sub-total **H1–H11** = 758/823 (≈92% SP; 146/151 iteme). Grand-total **H1–H17** = 942/1119 (≈84% SP; 177/196 iteme). **Gate-ul 1.0.0 = tot backlogul terminat: H10 + H11 + H12 + H13–H17** (toate în scope-ul v1.0 — [#52]). În afara gate-ului: **H18** mobil (9/10) și **H19 WorldView** (33/33 ✅, stack standalone) — livrate.
+> `%` = procent pe **story points**. Sub-total **H1–H11** = 758/823 (≈92% SP; 146/151 iteme). Grand-total **H1–H17** = 950/1119 (≈85% SP; 178/196 iteme). **Gate-ul 1.0.0 = tot backlogul terminat: H10 + H11 + H12 + H13–H17** (toate în scope-ul v1.0 — [#52]). În afara gate-ului: **H18** mobil (9/10) și **H19 WorldView** (33/33 ✅, stack standalone) — livrate.
 
 **În afara totalului:** **Bugs & Hot Fixes** — 3 done (BUG-1, BUG-2, BUG-4) + deschise (BUG-3, BUG-5…BUG-12, HF-1/2, HF-3…HF-7, BUG-2b, TASK-1, CLN-1, CLN-2, CLN-3, NTH-1). *(BUG-5…12 / HF-3…7 / CLN-2/3 din auditul de cod 2026-06-04.)*
 
-**Test count (backend pytest):** 1,883 passed, 1 skipped — skip-ul rămas e heartbeat-ul opțional (`tests/test_spotify.py` eliminat în CLN-1). *(2026-06-09: backlog software **code-complete** — H10 29/30, H12 16/25, frontiere H13–H17 15/20 (vezi „Status General" de mai sus); + WorldView O19 33/33 merged + Argus. Rămâne audit + testare manuală, vezi `docs/AUDIT.md`.)*
+**Test count (backend pytest):** 1,894 passed, 1 skipped — skip-ul rămas e heartbeat-ul opțional (`tests/test_spotify.py` eliminat în CLN-1). *(2026-06-09: backlog software **code-complete** — H10 29/30, H12 17/25, frontiere H13–H17 15/20 (vezi „Status General" de mai sus); + WorldView O19 33/33 merged + Argus. Rămâne audit + testare manuală, vezi `docs/AUDIT.md`.)*
 **Frontend (BUG-2):** 184 teste JS / 23 fișiere · ~67% line coverage — separat de suita pytest.
 
 > **Orizont 7 Hardening — Drumul spre 1.0.0:** 11/11 COMPLET ✅ (livrat 2026-06-02)
@@ -435,7 +435,7 @@ chain-of-thought leak / mid-sentence truncation fixed. Kill-switch:
 |---|------|---|---|-----|-------|
 | H12.5 ✅ | **Preview / dry-run pentru autonomie** — arată ce *ar* face o acțiune înainte de aprobare; nicio acțiune oarbă. **Done 2026-06-03:** `core/autonomy/dry_run.py` `preview_task` — extrage kind/title/target/effects din payload, clasifică ireversibilitatea (reutilizează H17.1 `QuarantinePolicy` + tokeni send/delete/transfer…), `requires_approval` (ireversibil sau risc tier≤2), `would_execute=False`; integrat în `build_decision_card` (linie _Preview:_) + endpoints `POST /api/autonomy/preview` + `GET /api/autonomy/tasks/{id}/preview`. +6 teste offline. | 5 | P2 | H6.2 | Dust config preview |
 | H12.6 ✅ | **Update-uri KG incrementale (nu doar nocturne)** — extracție ușoară de triple per-tură ca memoria să apară în aceeași sesiune. **Done 2026-06-03:** `core/memory/incremental.py` — `extract_triples` (pattern-uri high-precision: posesiv „X's Y is Z", lives_in/works_at/related_to verbe, copula is_a; sare stopwords + self-refs), `IncrementalKGUpdater.ingest` scrie entități+relații în KnowledgeGraph live + fapte în bi-temporal (H14.1, contradicție→invalidează); hook în orchestrator `_record_interactions` + endpoint `POST /api/kg/ingest`. Calea nocturnă LLM rămâne high-recall. +8 teste offline. | 5 | P2 | H5.15, H8.1 | Mem, Tana |
-| H12.7 | **Captură pasivă multi-suprafață (opt-in, local)** — browser/clipboard/fișiere → KG, doar local. ⚠️ STRICT opt-in + inspectabil; nimic nu pleacă de pe mașină. | 8 | P2 | H8.1 | Pieces nanomodels, Omi |
+| H12.7 ✅ | **Captură pasivă multi-suprafață (opt-in, local)** — browser/clipboard/fișiere → KG, doar local. ⚠️ STRICT opt-in + inspectabil; nimic nu pleacă de pe mașină. **Done 2026-06-09:** `core/passive_capture.py` `PassiveCapture` — **dublu opt-in** (master `JARVIS_PASSIVE_CAPTURE` + per-suprafață, default OFF → nimic capturat), **local-only** (fără rețea; KG + store on-disk bounded), **secrete redactate înainte de stocare** (`SecretScanner.redact` → cheie copiată în clipboard nu se persistă niciodată), ingestie în KG-ul incremental (H12.6) pe text redactat, **inspectabil + forgettable** (`list`/`get`/`forget`/`clear`). Înregistrat lazy; 6 endpoints (`/api/capture/status|ingest|surfaces`, `GET /api/capture`, `DELETE /{id}`, `/clear`). +11 teste offline. *(Hook-urile OS clipboard/browser/file = seam host-side care apelează `ingest`.)* | 8 | P2 | H8.1 | Pieces nanomodels, Omi |
 | H12.8 | **Split sateliți-mic → server-inferență pe GPU-ul de acasă** — mai multe endpoint-uri ieftine de microfon partajează un singur GPU Jarvis. | 8 | P2 | H12.4 | Willow (WIS) |
 | H12.9 ✅ | **UX management modele locale** — răsfoiește/descarcă/comută modele dintr-un click în HUD. | 5 | P2 | — | Jan.ai |
 | H12.10 ✅ | **Indicator mute hardware / strict-local** — semnal vizibil, auditabil "mic off / strict-local" în HUD + voce. Semnal de încredere ieftin. | 2 | P2 | — | Voice PE (mute fizic) |

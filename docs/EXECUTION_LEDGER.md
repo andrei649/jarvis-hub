@@ -47,7 +47,7 @@ cadență dovedită), apoi clusterele hardware/externe (oricum au poartă umană
 | H13.3 | Speculative decoding (draft→target) | 5 | P2 | 🖥️ hardware (GPU/vLLM) | ☐ |
 | H15.2 | Modul înțelegere ecran local (UI-TARS-7B) | 8 | P2 | 🖥️ hardware (dep H13.1) | ☐ |
 | H12.8 | Split sateliți-mic → server-inferență pe GPU acasă | 8 | P2 | 🖥️ hardware | ☐ |
-| H12.7 | Captură pasivă multi-suprafață (opt-in, local) | 8 | P2 | 🟡 (logica+KG testabil; hook-uri OS = host) | ☐ |
+| H12.7 | Captură pasivă multi-suprafață (opt-in, local) | 8 | P2 | 🟡 (logica+KG testabil; hook-uri OS = host) | ✅ **DONE 2026-06-09** (gate+redact+KG+inspect; hook-uri OS = host) |
 | H15.3 | Operator în desktop virtual izolat (PiP) | 13 | P3 | 🖥️🔌 heavy | ☐ |
 
 ### Val 3 — restul Track E + write-back (P3, majoritar extern)
@@ -126,3 +126,4 @@ fundație P1 care repară BUG-5).
 | 2026-06-09 | **H12.23** Pack skill-uri „digest" | (acest branch) | `core/digest.py` (surse RSS/Atom ponderate, fetch injectabil, idea-reality scorer, aggregator dedup+rank) + endpoint + 11 teste. Suită: 1859 passed, 1 skipped. |
 | 2026-06-09 | **H12.18** Agent Canvas / A2UI (backend) | (acest branch) | `core/canvas.py` `CanvasStore` (elemente tipizate sanitizate, guvernate) + 5 endpoints + 12 teste. **Val-1 complet (5/5).** Suită: 1871 passed, 1 skipped. |
 | 2026-06-09 | **H15.1** Agent browser-use local (guvernat) | (acest branch) | `core/browser_agent.py` (egress allowlist + approval-queue + driver injectabil) + 2 endpoints + 12 teste. Suită: 1883 passed, 1 skipped. |
+| 2026-06-09 | **H12.7** Captură pasivă multi-suprafață | (acest branch) | `core/passive_capture.py` (dublu opt-in, redactare secrete, KG local, inspectabil/forgettable) + 6 endpoints + 11 teste. Suită: 1894 passed, 1 skipped. |

@@ -4320,6 +4320,68 @@ async def browser_plan_preview(body: BrowserPreviewBody):
 # ── END H15.1 browser endpoints ───────────────────────────────────
 
 
+# ── H12.7 Passive multi-surface capture (opt-in, local) ───────────
+
+_passive_capture = None
+
+
+def _get_capture():
+    global _passive_capture
+    if _passive_capture is None:
+        from agents.core.passive_capture import PassiveCapture
+        kg = getattr(orch, "kg_updater", None) if orch else None
+        _passive_capture = PassiveCapture(kg_updater=kg)
+    return _passive_capture
+
+
+class CaptureIngestBody(BaseModel):
+    surface: str = Field(..., max_length=32)
+    content: str = Field(..., max_length=100_000)
+    source: str = Field("", max_length=200)
+
+
+class CaptureSurfacesBody(BaseModel):
+    surfaces: dict = Field(default_factory=dict)
+
+
+@app.get("/api/capture/status", dependencies=[Depends(_user_guard)])
+async def capture_status():
+    return _nocache_json(_get_capture().status())
+
+
+@app.post("/api/capture/ingest", dependencies=[Depends(_user_guard)])
+async def capture_ingest(body: CaptureIngestBody):
+    """Opt-in: capture a surface event (redacted, local, inspectable)."""
+    try:
+        return _nocache_json(_get_capture().ingest(body.surface, body.content, body.source))
+    except ValueError as e:
+        return _nocache_json({"error": str(e)}, status_code=422)
+
+
+@app.get("/api/capture", dependencies=[Depends(_user_guard)])
+async def capture_list(surface: Optional[str] = None):
+    return _nocache_json({"records": _get_capture().list(surface)})
+
+
+@app.post("/api/capture/surfaces", dependencies=[Depends(_user_guard)])
+async def capture_set_surfaces(body: CaptureSurfacesBody):
+    return _nocache_json({"surfaces": _get_capture().set_surfaces(body.surfaces)})
+
+
+@app.delete("/api/capture/{rec_id}", dependencies=[Depends(_user_guard)])
+async def capture_forget(rec_id: str):
+    ok = _get_capture().forget(rec_id)
+    return _nocache_json({"forgotten": ok}, status_code=200 if ok else 404)
+
+
+@app.post("/api/capture/clear", dependencies=[Depends(_user_guard)])
+async def capture_clear(surface: Optional[str] = None):
+    return _nocache_json({"removed": _get_capture().clear(surface)})
+
+
+# ── END H12.7 capture endpoints ───────────────────────────────────
+
+
 # ── H16.3 Governed payments (mandate / cap / approval / audit) ─────
 
 _payment_broker = None
