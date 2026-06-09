@@ -42,7 +42,7 @@ cadență dovedită), apoi clusterele hardware/externe (oricum au poartă umană
 | # | Item | SP | P | Verif. | Status |
 |---|------|----|----|--------|--------|
 | H13.1 | Tier VLM strict-local (Qwen3-VL-8B) — ecran/docs/bonuri | 8 | **P1** | 🖥️ hardware (GGUF+24GB) | ☐ — *singurul P1 rămas; soft-prep aici, rulare = poartă* |
-| H15.1 | Agent browser-use local (approval-queue + sandbox + egress allowlist) | 8 | P2 | 🟡 (mock browser; real Playwright = host) | ☐ |
+| H15.1 | Agent browser-use local (approval-queue + sandbox + egress allowlist) | 8 | P2 | 🟡 (mock browser; real Playwright = host) | ✅ **DONE 2026-06-09** (strat guvernat; driving real = host) |
 | H13.4 | Refresh model default → MoE reasoning hibrid (gpt-oss/Qwen3-30B-A3B) | 5 | P2 | 🟡 (router testabil; load model = hardware) | ☐ |
 | H13.3 | Speculative decoding (draft→target) | 5 | P2 | 🖥️ hardware (GPU/vLLM) | ☐ |
 | H15.2 | Modul înțelegere ecran local (UI-TARS-7B) | 8 | P2 | 🖥️ hardware (dep H13.1) | ☐ |
@@ -125,3 +125,4 @@ fundație P1 care repară BUG-5).
 | 2026-06-09 | **H12.25** Transcript-watcher → taskuri | (acest branch) | `core/autonomy/transcript_watcher.py` (extracție high-precision + enqueue ask-tier guvernat) + endpoint + 10 teste. Suită: 1848 passed, 1 skipped. |
 | 2026-06-09 | **H12.23** Pack skill-uri „digest" | (acest branch) | `core/digest.py` (surse RSS/Atom ponderate, fetch injectabil, idea-reality scorer, aggregator dedup+rank) + endpoint + 11 teste. Suită: 1859 passed, 1 skipped. |
 | 2026-06-09 | **H12.18** Agent Canvas / A2UI (backend) | (acest branch) | `core/canvas.py` `CanvasStore` (elemente tipizate sanitizate, guvernate) + 5 endpoints + 12 teste. **Val-1 complet (5/5).** Suită: 1871 passed, 1 skipped. |
+| 2026-06-09 | **H15.1** Agent browser-use local (guvernat) | (acest branch) | `core/browser_agent.py` (egress allowlist + approval-queue + driver injectabil) + 2 endpoints + 12 teste. Suită: 1883 passed, 1 skipped. |

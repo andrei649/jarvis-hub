@@ -14,7 +14,7 @@
 ```bash
 pip install -r requirements-beta.txt
 python -m uvicorn agents.web:app --host 127.0.0.1 --port 8080
-python -m pytest tests/ -v          # 1871 passed, 1 skipped
+python -m pytest tests/ -v          # 1883 passed, 1 skipped
 ```
 
 > Singurul skip rămas e heartbeat-ul opțional. (Vechiul `tests/test_spotify.py` cu 8 skip-uri a
@@ -76,16 +76,16 @@ chain-of-thought leak / mid-sentence truncation fixed. Kill-switch:
 | **H11 Platform Parity** (Known Gaps, P3) | 4 | **0** | 55 | **0** | **0%** |
 | **Total H1–H11** | **151** | **146** | **823** | **758** | **92%** (SP) |
 | **H12 Asistent Privat & Proactiv** (P0–P3) | 25 | **16** | 150 | **77** | **51%** |
-| **H13–H17 Frontiere Noi** (post-paritate, în scope v1.0, P1–P3) | 20 | **14** | 146 | **99** | **68%** |
-| **Total H1–H17 = scope 1.0.0** | **196** | **176** | **1119** | **934** | **83%** (SP) |
+| **H13–H17 Frontiere Noi** (post-paritate, în scope v1.0, P1–P3) | 20 | **15** | 146 | **107** | **73%** |
+| **Total H1–H17 = scope 1.0.0** | **196** | **177** | **1119** | **942** | **84%** (SP) |
 | **H18 Mobile Native & Browser Parity** (P2–P3) | 10 | **9** | 32 | **32** | **94%** |
 | **H19 WorldView (4D OSINT)** — standalone product, merged 2026-06-08 | 33 | **33** | 208 | **208** | **100%** ✅ |
 
-> `%` = procent pe **story points**. Sub-total **H1–H11** = 758/823 (≈92% SP; 146/151 iteme). Grand-total **H1–H17** = 934/1119 (≈83% SP; 176/196 iteme). **Gate-ul 1.0.0 = tot backlogul terminat: H10 + H11 + H12 + H13–H17** (toate în scope-ul v1.0 — [#52]). În afara gate-ului: **H18** mobil (9/10) și **H19 WorldView** (33/33 ✅, stack standalone) — livrate.
+> `%` = procent pe **story points**. Sub-total **H1–H11** = 758/823 (≈92% SP; 146/151 iteme). Grand-total **H1–H17** = 942/1119 (≈84% SP; 177/196 iteme). **Gate-ul 1.0.0 = tot backlogul terminat: H10 + H11 + H12 + H13–H17** (toate în scope-ul v1.0 — [#52]). În afara gate-ului: **H18** mobil (9/10) și **H19 WorldView** (33/33 ✅, stack standalone) — livrate.
 
 **În afara totalului:** **Bugs & Hot Fixes** — 3 done (BUG-1, BUG-2, BUG-4) + deschise (BUG-3, BUG-5…BUG-12, HF-1/2, HF-3…HF-7, BUG-2b, TASK-1, CLN-1, CLN-2, CLN-3, NTH-1). *(BUG-5…12 / HF-3…7 / CLN-2/3 din auditul de cod 2026-06-04.)*
 
-**Test count (backend pytest):** 1,871 passed, 1 skipped — skip-ul rămas e heartbeat-ul opțional (`tests/test_spotify.py` eliminat în CLN-1). *(2026-06-09: backlog software **code-complete** — H10 29/30, H12 16/25, frontiere H13–H17 14/20 (vezi „Status General" de mai sus); + WorldView O19 33/33 merged + Argus. Rămâne audit + testare manuală, vezi `docs/AUDIT.md`.)*
+**Test count (backend pytest):** 1,883 passed, 1 skipped — skip-ul rămas e heartbeat-ul opțional (`tests/test_spotify.py` eliminat în CLN-1). *(2026-06-09: backlog software **code-complete** — H10 29/30, H12 16/25, frontiere H13–H17 15/20 (vezi „Status General" de mai sus); + WorldView O19 33/33 merged + Argus. Rămâne audit + testare manuală, vezi `docs/AUDIT.md`.)*
 **Frontend (BUG-2):** 184 teste JS / 23 fișiere · ~67% line coverage — separat de suita pytest.
 
 > **Orizont 7 Hardening — Drumul spre 1.0.0:** 11/11 COMPLET ✅ (livrat 2026-06-02)
@@ -508,13 +508,13 @@ chain-of-thought leak / mid-sentence truncation fixed. Kill-switch:
 | H14.3 ✅ | **Agent de consolidare „sleep-time" cu operații explicite** (Mem0-style ADD/UPDATE/DELETE/NOOP). **Done 2026-06-03:** `core/memory/consolidation.py` `ConsolidationEngine` — `decide`/`plan` per candidat vs memorii existente: ADD (nou), UPDATE (supersede same-key/near-duplicate), DELETE (negație/retractare detectată + match), NOOP (duplicat); similaritate Jaccard token (prag configurabil), detector de negație, decider LLM injectabil (fallback euristic); `plan` batch-aware (copie de lucru), `summarize`, `apply` la un store; endpoint `POST /api/memory/consolidate` (plan reversibil, fără mutație). +10 teste offline. | 8 | P2 | H5.15 | Mem0, Letta |
 | H14.4 ✅ | **Uitare cu decay + dependency-aware** (scor activare ACT-R în ranking + ștergere pe graf de dependențe care previne „recontaminarea"). **Done 2026-06-03:** `core/memory/decay.py` — `activation` base-level ACT-R `ln(Σ (now-t)^-d)` (recency+frecvență), `DecayMemory` (JSON file-backed) cu `add`/`access`/`score`/`ranking`/`forget_candidates(threshold)` + `forget` care șterge itemul *și dependenții tranzitivi* (anti-recontaminare); endpoints `GET /api/memory/decay/ranking`, `/candidates`, `POST /api/memory/decay/forget`. +6 teste offline. | 5 | P2 | H8.2 | ACT-R, arXiv:2602.17692 |
 
-### ORIZONT 15 — Computer-Use Guvernat (operează mașina) — 1/4
+### ORIZONT 15 — Computer-Use Guvernat (operează mașina) — 2/4
 
 > Inversul *guvernat* al shell-ului neguvernat OpenClaw. Maturitate onestă: ~1-din-6 task fail → asistă în spatele approval-queue, NU nesupravegheat.
 
 | # | Item | S | P | Dep | Sursă |
 |---|------|---|---|-----|-------|
-| H15.1 | **Agent browser-use local** în spatele approval-queue + sandbox + egress allowlist (browser-use/Playwright-MCP + LLM local). Punct de intrare cu cel mai mic risc. | 8 | P2 | H4.8, H6.2 | browser-use (MIT) |
+| H15.1 ✅ | **Agent browser-use local** în spatele approval-queue + sandbox + egress allowlist (browser-use/Playwright-MCP + LLM local). Punct de intrare cu cel mai mic risc. **Done 2026-06-09 (strat guvernat):** `core/browser_agent.py` — 3 porți compozabile: **egress allowlist** (`BrowserPolicy`, suffix‑match + filtrul SSRF HF‑4 → navigare off‑listă **hard‑blocked**, neaprobabilă; fail‑closed pe listă goală), **approval‑queue** (pași read‑only `navigate/extract/screenshot/wait` auto pe domeniu permis; pași mutanți `click/type/submit/download/execute_js` → `ActionApprovalQueue` H10.18 cu `await_decision`), **driver injectabil** (`NullBrowserDriver` default; Playwright real = add‑on host‑gated → stratul de guvernare e 100% offline‑testabil). `GovernedBrowser.preview` (dry‑run run/approve/block per pas) + `run` (trace, stop‑on‑block). Endpoints `POST /api/browser/check` (egress) + `/api/browser/plan/preview` (guvernanță). +12 teste offline. *(Driving real al browserului = poartă umană/host.)* | 8 | P2 | H4.8, H6.2 | browser-use (MIT) |
 | H15.2 | **Modul de înțelegere a ecranului local** (grounding UI-TARS-1.5-7B, opțional fuzionat cu accessibility tree). ⚠️ OmniParser are componentă AGPL — preferă UI-TARS (Apache). | 8 | P2 | H13.1 | UI-TARS, Agent S3 |
 | H15.3 | **Operator în desktop virtual izolat (PiP)** — OS curat, fără credențiale ambientale; acțiuni ireversibile gated; clasificator de injection pe screenshots. Claude computer-use = opt-in cloud. | 13 | P3 | H15.1 | UFO², Anthropic |
 | H15.4 ✅ | **Secret broker** — injectează credențiale la momentul acțiunii, în spatele aprobării; niciodată plaintext în contextul agentului. **Done 2026-06-03:** `core/security/secret_broker.py` `SecretBroker` (peste `SecretStore` criptat H12.1, fallback in-memory) — agentul vede doar handle-uri `{{secret:NAME}}` (`reference`), `inject(text, approved)` rezolvă valoarea DOAR cu aprobare (altfel placeholder, valoarea nu apare niciodată), `redact` maschează valori cunoscute (defense-in-depth), `names` fără valori; endpoints admin `POST/GET/DELETE /api/secrets/broker` + `/redact` (niciun endpoint nu întoarce plaintext). +7 teste offline. | 5 | P2 | H12.1 | OpenClaw (anti-teză) |
