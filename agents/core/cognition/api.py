@@ -67,3 +67,13 @@ async def cognition_learning():
     if m is None:
         return {"available": False}
     return m.status()
+
+
+@router.get("/ensemble")
+async def cognition_ensemble():
+    """H21.5 — ensemble diversity + maturation status."""
+    f = _facade()
+    m = f.module("ensemble") if f is not None else None
+    if m is None:
+        return {"available": False}
+    return m.status()

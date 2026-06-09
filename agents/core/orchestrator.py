@@ -303,6 +303,8 @@ class Orchestrator:
             self.cognition.register_module("memory", LivingMemory())
             from .cognition.learning import LearningModule                                        # H21.4
             self.cognition.register_module("learning", LearningModule())
+            from .cognition.ensemble import EnsembleModule                                        # H21.5
+            self.cognition.register_module("ensemble", EnsembleModule())
         # ── end optional components ──
         self.plugins: dict = {}
         self.skills = SkillLoader()
