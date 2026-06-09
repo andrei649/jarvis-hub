@@ -216,9 +216,9 @@ class CallBroker:
         config = self.config.get(provider, {}) if isinstance(self.config, dict) else {}
         try:
             result = await self._client.call(provider, to, message, credentials, config)
-        except Exception as e:
+        except Exception:
             logger.warning("call execute failed", exc_info=True)
-            return {"status": "failed", "reason": "client_error", "error": str(e)}
+            return {"status": "failed", "reason": "client_error"}
         self._record("call.execute", f"{provider}:{to}", to=to)
         return {"status": "ok", "provider": provider, "to": to, "call": result}
 

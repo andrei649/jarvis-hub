@@ -383,9 +383,9 @@ class WriteBackBroker:
         credentials = self._resolve_credentials(payload)
         try:
             result = await self._client.write(target, action, fields, credentials)
-        except Exception as e:
+        except Exception:
             logger.warning("write-back execute failed", exc_info=True)
-            return {"status": "failed", "reason": "client_error", "error": str(e),
+            return {"status": "failed", "reason": "client_error",
                     "target": target, "action": action}
         self._record("writeback.execute", f"{target}.{action}", target=target)
         return {"status": "ok", "target": target, "action": action, "writeback": result}

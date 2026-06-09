@@ -87,9 +87,9 @@ class ToolRPCServer:
 
         try:
             result = await spec["handler"](args)
-        except Exception as e:
+        except Exception:
             logger.warning("tool-rpc handler failed: %s", name, exc_info=True)
-            return {"ok": False, "reason": "tool_error", "tool": name, "error": str(e)}
+            return {"ok": False, "reason": "tool_error", "tool": name}
 
         self._record("toolrpc.call", name)
         return {"ok": True, "tool": name, "result": self._scrub(result)}
@@ -109,9 +109,9 @@ class ToolRPCServer:
             return {"status": "failed", "reason": "tool_not_allowed", "tool": name}
         try:
             result = await spec["handler"](args)
-        except Exception as e:
+        except Exception:
             logger.warning("tool-rpc approved execute failed: %s", name, exc_info=True)
-            return {"status": "failed", "reason": "tool_error", "tool": name, "error": str(e)}
+            return {"status": "failed", "reason": "tool_error", "tool": name}
         self._record("toolrpc.execute", name)
         return {"status": "ok", "tool": name, "result": self._scrub(result)}
 

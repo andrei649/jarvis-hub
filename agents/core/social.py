@@ -270,9 +270,9 @@ class SocialBroker:
         credentials = self._resolve_credentials(payload)
         try:
             result = await self._client.send(platform, action, fields, credentials)
-        except Exception as e:
+        except Exception:
             logger.warning("social execute failed", exc_info=True)
-            return {"status": "failed", "reason": "client_error", "error": str(e),
+            return {"status": "failed", "reason": "client_error",
                     "platform": platform, "action": action}
         self._record("social.execute", f"{platform}.{action}", target=platform)
         return {"status": "ok", "platform": platform, "action": action, "social": result}
