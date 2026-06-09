@@ -37,3 +37,13 @@ async def cognition_honesty():
     if m is None:
         return {"available": False}
     return m.status()
+
+
+@router.get("/personality")
+async def cognition_personality():
+    """H21.2 — persona module status (configured agents)."""
+    f = _facade()
+    m = f.module("persona") if f is not None else None
+    if m is None:
+        return {"available": False}
+    return m.status()

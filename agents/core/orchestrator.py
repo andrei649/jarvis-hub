@@ -297,6 +297,8 @@ class Orchestrator:
         if getattr(self, "cognition", None) is not None:                                         # H21.1
             from .cognition.honesty import HonestyModule
             self.cognition.register_module("honesty", HonestyModule())
+            from .cognition.persona import PersonaModule                                          # H21.2
+            self.cognition.register_module("persona", PersonaModule())
         # ── end optional components ──
         self.plugins: dict = {}
         self.skills = SkillLoader()
@@ -1854,6 +1856,15 @@ class Orchestrator:
             agent_context = await self.memory.get_agent_context(agent_id)
             if agent_context:
                 enriched_text = f"Agent context: {agent_context}\n\n{enriched_text}"
+            # H21.2: prepend the persona block (gated; master OFF = no-op). Both
+            # prompt builders funnel through here (process() → _call_agents_parallel).
+            _cog = getattr(self, "cognition", None)
+            if _cog is not None and _cog.sub_enabled("affect_enabled"):
+                _pm = _cog.module("persona")
+                if _pm is not None:
+                    _pb = _pm.prompt_block(agent_id)
+                    if _pb:
+                        enriched_text = f"{_pb}\n\n{enriched_text}"
             try:
                 resp = await asyncio.wait_for(
                     self.agents[agent_id].process(enriched_text, context),

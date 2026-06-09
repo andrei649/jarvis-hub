@@ -45,7 +45,14 @@ class Agent:
         soul_path = Path(f"agents/{self.id}/SOUL.md")
         if soul_path.exists():
             content = soul_path.read_text(encoding="utf-8")
-            self.soul = {"content": content, "path": soul_path}
+            # H21.2: split optional YAML front-matter (personality/affect config)
+            # from the prose body. No front-matter → ({}, full text) = no-op.
+            try:
+                from .cognition.frontmatter import parse_frontmatter
+                meta, body = parse_frontmatter(content)
+            except Exception:
+                meta, body = {}, content
+            self.soul = {"content": body, "path": soul_path, "meta": meta}
             logger.info(f"Loaded SOUL for {self.id} ({len(content)} chars)")
         else:
             logger.warning(f"SOUL.md not found for {self.id}")
