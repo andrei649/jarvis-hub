@@ -57,3 +57,13 @@ async def cognition_memory():
     if m is None:
         return {"available": False}
     return m.status()
+
+
+@router.get("/learning")
+async def cognition_learning():
+    """H21.4 — governed-learning status (KC count, corrections)."""
+    f = _facade()
+    m = f.module("learning") if f is not None else None
+    if m is None:
+        return {"available": False}
+    return m.status()

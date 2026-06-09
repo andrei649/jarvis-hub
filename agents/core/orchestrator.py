@@ -301,6 +301,8 @@ class Orchestrator:
             self.cognition.register_module("persona", PersonaModule())
             from .cognition.memory import LivingMemory                                            # H21.3
             self.cognition.register_module("memory", LivingMemory())
+            from .cognition.learning import LearningModule                                        # H21.4
+            self.cognition.register_module("learning", LearningModule())
         # ── end optional components ──
         self.plugins: dict = {}
         self.skills = SkillLoader()
@@ -936,6 +938,24 @@ class Orchestrator:
         self.tool_rpc.register_tool("echo", _rpc_echo)
         self.tool_rpc.register_tool("time", _rpc_time)
         executor.register("toolrpc", self.tool_rpc.execute)
+
+        # H21.4: wire the calibration-gated autonomy hook (gated; no-op unless
+        # cognition.learning_enabled — and it only ever ADDS caution).
+        def _calibration_hook(action):
+            cog = getattr(self, "cognition", None)
+            if cog is None or not cog.sub_enabled("learning_enabled"):
+                return 0
+            lm = cog.module("learning")
+            if lm is None:
+                return 0
+            try:
+                return lm.autonomy_adjustment(str(action.get("kind", "")))
+            except Exception:
+                return 0
+        try:
+            self.autonomy.policy.calibration_hook = _calibration_hook
+        except Exception:
+            logger.debug("calibration hook wiring skipped", exc_info=True)
 
         return executor
 
