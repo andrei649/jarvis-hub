@@ -35,6 +35,7 @@ from core.config import JarvisConfig
 from core.orchestrator import Orchestrator
 from core.channels.web import WebChannel
 from core.channels.gateway import Gateway
+from core.log_safe import log_safe
 from core.settings_db import get_all, get_category, put_category, init_db
 from core.channels.voice import VoiceChannel
 from core.channels.telegram import TelegramChannel
@@ -350,7 +351,8 @@ async def _rate_limit(request: Request, call_next):
         ip = _client_ip(request)
         if ip not in _LOCALHOSTS and not _request_is_authed(request):
             if _rate_limited(ip, time.time()):
-                logger.warning("Rate limit exceeded for %s on %s", ip, request.url.path)
+                logger.warning("Rate limit exceeded for %s on %s",
+                               log_safe(ip), log_safe(request.url.path))
                 return JSONResponse(
                     {"error": "rate limit exceeded", "code": 429},
                     status_code=429,

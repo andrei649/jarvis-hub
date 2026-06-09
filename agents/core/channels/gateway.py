@@ -8,6 +8,8 @@ import logging
 import time
 from typing import Any, Callable, Optional
 
+from ..log_safe import log_safe
+
 logger = logging.getLogger("jarvis.gateway")
 
 
@@ -40,19 +42,19 @@ class Gateway:
             "status": "active",
             **(metadata or {}),
         }
-        logger.info(f"Gateway: channel '{channel_id}' registered")
+        logger.info("Gateway: channel '%s' registered", log_safe(channel_id))
 
     def unregister_channel(self, channel_id: str):
         self._channels.pop(channel_id, None)
         self._rate_limits.pop(channel_id, None)
-        logger.info(f"Gateway: channel '{channel_id}' unregistered")
+        logger.info("Gateway: channel '%s' unregistered", log_safe(channel_id))
 
     async def route(self, text: str, channel: str = "web", **kwargs) -> Optional[str]:
         if channel not in self._channels:
             self.register_channel(channel)
 
         if not self._check_rate_limit(channel):
-            logger.warning(f"Gateway: rate limit exceeded for channel '{channel}'")
+            logger.warning("Gateway: rate limit exceeded for channel '%s'", log_safe(channel))
             return "Rate limit exceeded. Please wait before sending another message."
 
         # H12.19 — inbound sender pairing. A `sender` identity (set by the channel)
@@ -67,8 +69,8 @@ class Gateway:
                 logger.warning("Gateway: pairing gate error — allowing", exc_info=True)
                 decision = {"allowed": True}
             if not decision.get("allowed", True):
-                logger.info(f"Gateway: held unpaired sender on '{channel}' "
-                            f"(status={decision.get('status')})")
+                logger.info("Gateway: held unpaired sender on '%s' (status=%s)",
+                            log_safe(channel), decision.get('status'))
                 return decision.get("message") or None
 
         self._channels[channel]["message_count"] += 1
@@ -84,7 +86,7 @@ class Gateway:
             return result
         except Exception as e:
             self._channels[channel]["error_count"] += 1
-            logger.error(f"Gateway: handler error on channel '{channel}': {e}")
+            logger.error("Gateway: handler error on channel '%s': %s", log_safe(channel), e)
             return None
 
     def _check_rate_limit(self, channel: str) -> bool:

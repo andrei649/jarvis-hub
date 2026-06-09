@@ -12,6 +12,7 @@ from typing import Callable, Optional
 import httpx
 
 from .base import ChannelAdapter
+from ..log_safe import log_safe
 
 logger = logging.getLogger("jarvis.channels.telegram")
 
@@ -105,7 +106,7 @@ class TelegramChannel(ChannelAdapter):
                         continue
                     uid = msg["from"]["id"]
                     if self.allowed_users and uid not in self.allowed_users:
-                        logger.info(f"Ignored message from user {uid}")
+                        logger.info("Ignored message from user %s", log_safe(uid))
                         continue
                     text = msg.get("text", "")
                     chat_id = msg["chat"]["id"]
