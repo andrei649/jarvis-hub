@@ -90,6 +90,14 @@ echo [2/3] Pornesc WorldView API ^(:4000^) si Frontend ^(:3000^) in ferestre sep
 start "WorldView API" /d "%~dp0worldview" cmd /k "npm run dev:api"
 start "WorldView Frontend" /d "%~dp0worldview" cmd /k "npm run dev:frontend"
 
+REM --- Feed sintetic "always-on" (fara chei API): harta ramane vie. Opt-out cu JARVIS_WORLDVIEW_DEMO=0 ---
+if /I "%JARVIS_WORLDVIEW_DEMO%"=="0" (
+  echo [INFO] Feed demo dezactivat ^(JARVIS_WORLDVIEW_DEMO=0^) - harta va fi goala pana la ingestion reala.
+) else (
+  echo       Pornesc si feed-ul sintetic demo ^(harta ramane vie, fara chei API; opreste cu JARVIS_WORLDVIEW_DEMO=0^).
+  start "WorldView Demo Feed" /d "%~dp0worldview" cmd /k "npm run demo:feed"
+)
+
 echo [3/3] Voi deschide http://localhost:3000 cand e gata.
 echo       ^(Prima pornire dureaza ceva - Next.js compileaza. Lasa ferestrele WorldView deschise.^)
 start "" /b powershell -NoProfile -Command "Write-Host 'Astept WorldView (:3000)...'; while ($true) { try { $r = Invoke-WebRequest -Uri 'http://localhost:3000/' -UseBasicParsing -TimeoutSec 2; if ($r.StatusCode -eq 200) { Start-Process 'http://localhost:3000/'; break } } catch { Start-Sleep 3 } }"

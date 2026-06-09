@@ -102,5 +102,54 @@ export REDIS_URL=redis://localhost:6379
 npm run seed:live   # writes a live snapshot the /live WebSocket serves immediately
 ```
 
-(For the real pipeline, run the ingestion workers with the API's `ENABLE_LIVE_WRITER=1` /
-`ENABLE_HISTORY_WRITER=1`.)
+### Always-on demo data (no API keys)
+
+For a map that **stays alive** — entities that keep moving, with recent trails when you scrub —
+run the synthetic demo feed (no external keys, no Kafka/workers):
+
+```bash
+export REDIS_URL=redis://localhost:6379
+export DATABASE_URL=postgres://worldview:worldview@localhost:5432/worldview
+npm run demo:feed   # continuous: live snapshots to Redis (~1 Hz) + rolling history to TimescaleDB
+```
+
+`START.bat` launches this automatically alongside the API + frontend (opt out with
+`JARVIS_WORLDVIEW_DEMO=0`). Tunables via env: `DEMO_TICK_MS`, `DEMO_HISTORY_EVERY_MS`,
+`DEMO_HISTORY_RETENTION_MIN`, `DEMO_NO_HISTORY=1` (Redis-only). It prunes its own rows
+(`source='demo'`) to a rolling window so it never grows unbounded.
+
+### Real OSINT data (free, local — no keys for 3 of 4 layers)
+
+Three layers have **free, no-key** sources that work out of the box; only ships need a free key:
+
+| Layer | Source | Key? |
+| --- | --- | --- |
+| ✈️ Aircraft (ADS-B) | **adsb.fi** (`ADSB_SOURCE=adsbfi`) | **none** |
+| 🛰️ Satellites (TLE/SGP4) | **Celestrak** (`TLE_SOURCE=celestrak`, default) | **none** |
+| 📡 GPS jamming (EW) | **gpsjam.org** (default) | **none** |
+| 🚢 Vessels (AIS) | **AISStream** | free key ([aisstream.io](https://aisstream.io)) |
+
+**Run it (after `docker compose up -d`; turn the demo feed off so they don't mix):**
+
+```bash
+# 1) one-time: a Python venv for the workers
+cd worldview/ingestion-workers
+python -m venv .venv && .venv/Scripts/pip install -r requirements.txt   # (.venv/bin/pip on macOS/Linux)
+
+# 2) the API, with the Kafka→Redis/DB writers enabled (one terminal, in worldview/)
+ENABLE_LIVE_WRITER=1 ENABLE_HISTORY_WRITER=1 npm run dev:api
+#   Windows:  set ENABLE_LIVE_WRITER=1 && set ENABLE_HISTORY_WRITER=1 && npm run dev:api
+
+# 3) the free workers — each in its own terminal, from worldview/ingestion-workers (venv active):
+ADSB_SOURCE=adsbfi .venv/bin/python -m worldview_ingest adsb     # ✈️ real planes near the AOI
+.venv/bin/python -m worldview_ingest tle                          # 🛰️ real satellites (Celestrak)
+.venv/bin/python -m worldview_ingest ew                           # 📡 GPS-jamming cells
+.venv/bin/python -m worldview_ingest recon                        # upcoming satellite passes over the AOI
+
+# 4) (optional) ships — get a free AISStream key, then:
+AISSTREAM_API_KEY=... .venv/bin/python -m worldview_ingest ais
+```
+
+Tune the area with `ADSB_CENTER=lat,lon` + `ADSB_RADIUS_NM` and `AIS_BBOX` (defaults = Strait of
+Hormuz). The pipeline is **workers → Kafka (Redpanda) → API writers → Redis/TimescaleDB → the map**,
+so the globe shows real, live, time-scrubbable OSINT. Data path config: `ingestion-workers/.env`.
