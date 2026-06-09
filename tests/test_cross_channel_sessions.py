@@ -14,6 +14,7 @@ sys.path.insert(0, str(repo_root))
 sys.path.insert(0, str(repo_root / "agents"))
 
 from agents.core.orchestrator import Orchestrator
+from agents.core.channels.manager import ChannelManager
 
 
 def _bare_orchestrator():
@@ -23,7 +24,7 @@ def _bare_orchestrator():
     orch._channel_sessions = {}
     orch._runtime_settings = {}
     orch.session_id = "web_shared"
-    orch.channels = {}
+    orch.channel_manager = ChannelManager()  # CLN-2: registry lives here now
     captured = {}
 
     async def fake_handle_input(text, channel="voice", agent_override=None):

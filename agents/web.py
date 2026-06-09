@@ -61,6 +61,31 @@ DEV_MODE = os.environ.get("DEV_MODE", "").lower() in ("1", "true", "yes")
 ADMIN_TOKEN = os.environ.get("JARVIS_ADMIN_TOKEN", "").strip()
 _LOCALHOSTS = {"127.0.0.1", "::1", "localhost"}
 
+# HF-7 — by default the localhost-origin gate fails CLOSED behind a reverse proxy
+# (forwarding headers present → request.client.host is the proxy, untrustworthy →
+# require a token). Set JARVIS_TRUSTED_PROXY=1 ONLY when a trusted proxy populates
+# X-Forwarded-For; we then read the first hop as the real client IP for the gate.
+TRUSTED_PROXY = os.environ.get("JARVIS_TRUSTED_PROXY", "").strip().lower() in ("1", "true", "yes")
+
+
+def _real_client_host(request: Request) -> str:
+    """Origin host for the localhost-fallback gate (HF-7).
+
+    Behind a reverse proxy the socket peer is the proxy, so forwarding headers are
+    present. We do NOT trust them unless JARVIS_TRUSTED_PROXY is set: untrusted →
+    return "" so the localhost check fails closed (token required). Trusted → use
+    the first X-Forwarded-For hop (falling back to X-Real-IP) as the client IP.
+    """
+    behind_proxy = any(h in request.headers for h in ("x-forwarded-for", "x-real-ip", "forwarded"))
+    if not behind_proxy:
+        return request.client.host if request.client else ""
+    if not TRUSTED_PROXY:
+        return ""  # untrusted proxy → never localhost → fail closed
+    xff = request.headers.get("x-forwarded-for", "")
+    if xff:
+        return xff.split(",")[0].strip()
+    return request.headers.get("x-real-ip", "").strip()
+
 # Substrings that mark an env var as sensitive — its value is masked in
 # /api/admin/env so keys/tokens/secrets are never returned in clear text.
 _SECRET_HINTS = ("key", "token", "secret", "password", "passwd", "pass", "client_id")
@@ -81,13 +106,10 @@ async def _admin_guard(request: Request):
         if not supplied or not secrets.compare_digest(supplied, ADMIN_TOKEN):
             raise HTTPException(status_code=401, detail="admin token required")
         return
-    # No token configured → only *direct* localhost may reach admin. If forwarding
-    # headers are present we're behind a reverse proxy and request.client.host is
-    # the proxy's IP (often 127.0.0.1), so the localhost check can't be trusted —
-    # fail closed and require a token. (HF-7)
-    client_host = request.client.host if request.client else ""
-    behind_proxy = any(h in request.headers for h in ("x-forwarded-for", "x-real-ip", "forwarded"))
-    if behind_proxy or client_host not in _LOCALHOSTS:
+    # No token configured → only localhost may reach admin. Behind an untrusted
+    # reverse proxy _real_client_host returns "" → fails closed (HF-7); set
+    # JARVIS_TRUSTED_PROXY=1 to trust X-Forwarded-For from a known proxy.
+    if _real_client_host(request) not in _LOCALHOSTS:
         raise HTTPException(
             status_code=403,
             detail="admin disabled from network — set JARVIS_ADMIN_TOKEN to enable remote access",
@@ -119,11 +141,10 @@ async def _user_guard(request: Request):
             if admin_supplied and secrets.compare_digest(admin_supplied, ADMIN_TOKEN):
                 return
         raise HTTPException(status_code=401, detail="user token required")
-    # No token configured → only direct localhost may reach user routes. Fail
-    # closed behind a reverse proxy (request.client.host is then the proxy IP). (HF-7)
-    client_host = request.client.host if request.client else ""
-    behind_proxy = any(h in request.headers for h in ("x-forwarded-for", "x-real-ip", "forwarded"))
-    if behind_proxy or client_host not in _LOCALHOSTS:
+    # No token configured → only localhost may reach user routes. Fails closed
+    # behind an untrusted reverse proxy (HF-7); JARVIS_TRUSTED_PROXY=1 opts into
+    # trusting X-Forwarded-For from a known proxy.
+    if _real_client_host(request) not in _LOCALHOSTS:
         raise HTTPException(
             status_code=403,
             detail="user routes disabled from network — set JARVIS_USER_TOKEN to enable remote access",
@@ -2243,6 +2264,27 @@ async def media_generate(body: MediaGenBody):
 from agents.core.cognition.api import router as _cognition_router  # noqa: E402
 app.include_router(_cognition_router, dependencies=[Depends(_user_guard)])
 
+# Per-domain routers extracted from this god-object (CLN-3). These preserve the
+# original (ungated) behavior of their routes — mounted without extra deps.
+from agents.core.routers.wyoming import router as _wyoming_router  # noqa: E402
+from agents.core.routers.onboarding import router as _onboarding_router  # noqa: E402
+app.include_router(_wyoming_router)
+app.include_router(_onboarding_router)
+# These preserve each route's original per-route deps (gating lives on the routes
+# themselves, not the include), so behavior is unchanged.
+from agents.core.routers.webhooks import router as _webhooks_router  # noqa: E402
+from agents.core.routers.a2a import router as _a2a_router  # noqa: E402
+from agents.core.routers.pairing import router as _pairing_router  # noqa: E402
+from agents.core.routers.canvas import router as _canvas_router  # noqa: E402
+from agents.core.routers.browser import router as _browser_router  # noqa: E402
+from agents.core.routers.capture import router as _capture_router  # noqa: E402
+app.include_router(_webhooks_router)
+app.include_router(_a2a_router)
+app.include_router(_pairing_router)
+app.include_router(_canvas_router)
+app.include_router(_browser_router)
+app.include_router(_capture_router)
+
 
 class DigestRunBody(BaseModel):
     topic: str = Field("", max_length=200)
@@ -2290,6 +2332,8 @@ async def sandbox_status():
         "available": orch.sandbox._has_docker,
         "docker_image": orch.sandbox.docker_image,
         "timeout": orch.sandbox.timeout,
+        # HF-6 — expose isolation posture so an active host-exec fallback is visible.
+        **orch.sandbox.security_status(),
     }
 
 
@@ -2840,15 +2884,15 @@ async def security_posture():
     skill_rows = [s.to_dict() for s in skills]
     untrusted = [s for s in skill_rows if not s.get("trusted")]
 
-    # Sandbox availability.
-    sandbox_docker = False
+    # Sandbox isolation posture (HF-6 — flag host-exec without isolation, not just
+    # docker availability). Reflects the orchestrator's live Sandbox instance.
     try:
-        from core.sandbox import Sandbox
-        sandbox_docker = Sandbox()._has_docker
+        sandbox_sec = orch.sandbox.security_status()
     except Exception:
-        # Sandbox/Docker is optional; absence just means posture reports
-        # docker=False rather than failing the security-posture endpoint.
-        sandbox_docker = False
+        # Sandbox is optional; absence just means posture reports an unavailable
+        # backend rather than failing the security-posture endpoint.
+        sandbox_sec = {"backend": "unavailable", "isolated": False,
+                       "insecure_host_exec": False, "docker": False}
 
     return _nocache_json({
         "secrets": {"encrypted_at_rest": True, "backend": secret_backend},
@@ -2860,7 +2904,7 @@ async def security_posture():
             "untrusted_names": [s["name"] for s in untrusted],
             "detail": skill_rows,
         },
-        "sandbox": {"docker_available": sandbox_docker},
+        "sandbox": {"docker_available": sandbox_sec.get("docker", False), **sandbox_sec},
         "guardrails": {"mode": orch.get_setting("security.guardrails_mode", "WARN")},
     })
 
@@ -4344,487 +4388,16 @@ async def clear_traces():
 # ── END H9.2 Trace Explorer endpoints ─────────────────────────────
 
 
-# ── H12.4 Wyoming protocol (local-voice interop) ──────────────────
-
-@app.get("/api/voice/wyoming")
-async def wyoming_status():
-    """Wyoming protocol support status (H12.4)."""
-    from agents.core.voice.wyoming import PROTOCOL_VERSION
-    enabled = bool(orch and orch.get_setting("voice.wyoming_enabled", False))
-    port = int(orch.get_setting("voice.wyoming_port", 10700)) if orch else 10700
-    return _nocache_json({
-        "protocol": "wyoming",
-        "version": PROTOCOL_VERSION,
-        "enabled": enabled,
-        "port": port,
-        "role": "handle",  # transcript → reply-to-speak
-    })
-
-
+# ── H12.4 Wyoming protocol (local-voice interop) → core/routers/wyoming.py (CLN-3) ──
 # ── END H12.4 Wyoming endpoints ───────────────────────────────────
 
 
-# ── H12.2 Onboarding: drop folder → private chat with your docs ────
-
-_local_docs_last = {"status": "never run"}
-
-
-class LocalDocsIndexBody(BaseModel):
-    # Select a pre-configured folder by key — NOT a raw path. The actual folder
-    # path comes from owner configuration (`local_docs.folders`), so no
-    # request-supplied value ever reaches a filesystem path expression.
-    key: str = Field(..., max_length=128)
-
-
-def _configured_doc_folders() -> dict:
-    """Owner-configured ``{key: folder_path}`` map of indexable folders."""
-    folders = orch.get_setting("local_docs.folders", {}) if orch else {}
-    return folders if isinstance(folders, dict) else {}
-
-
-@app.get("/api/local-docs")
-async def local_docs_status():
-    """Last indexing summary + the configured folder keys (H12.2)."""
-    return _nocache_json({**_local_docs_last, "available": sorted(_configured_doc_folders())})
-
-
-@app.post("/api/local-docs/index")
-async def local_docs_index(body: LocalDocsIndexBody):
-    """Index a pre-configured local folder (by key) into memory (offline)."""
-    global _local_docs_last
-    if not orch:
-        return _nocache_json({"error": "not initialized"}, status_code=503)
-
-    folders = _configured_doc_folders()
-    folder = folders.get(body.key)
-    if not folder:
-        return _nocache_json(
-            {"error": f"unknown folder key '{body.key}'",
-             "available": sorted(folders)},
-            status_code=404,
-        )
-
-    from agents.core.local_docs import LocalDocsIndexer
-
-    async def _remember(text: str, metadata: dict):
-        return await orch.memory.remember(text, metadata=metadata)
-
-    summary = await LocalDocsIndexer(_remember).index(folder)
-    status = 400 if summary.get("error") else 200
-    if not summary.get("error"):
-        _local_docs_last = summary
-    return _nocache_json(summary, status_code=status)
-
-
+# ── H12.2 Onboarding (drop folder → private chat with docs) → core/routers/onboarding.py (CLN-3) ──
 # ── END H12.2 Onboarding endpoints ────────────────────────────────
 
 
-# ── H10.8 Inbound Webhook Triggers ────────────────────────────────
-
-_webhook_store = None
-_a2a_registry = None
-_sender_pairing = None
-
-
-def _get_webhook_store():
-    global _webhook_store
-    if _webhook_store is None:
-        from agents.core.webhooks import WebhookStore
-        _webhook_store = WebhookStore()
-    return _webhook_store
-
-
-class WebhookCreateBody(BaseModel):
-    target: str = Field(..., max_length=128)
-    target_type: str = Field("agent", pattern="^(agent|workflow)$")
-    name: str = Field("", max_length=128)
-    signed: bool = False   # H16.4 — require an HMAC X-Signature-256 on triggers
-
-
-@app.get("/api/webhooks")
-async def list_webhooks():
-    """List configured inbound webhooks (tokens masked)."""
-    return _nocache_json({"webhooks": _get_webhook_store().list()})
-
-
-@app.post("/api/webhooks")
-async def create_webhook(body: WebhookCreateBody):
-    """Create an inbound webhook; the token is returned ONCE."""
-    try:
-        rec = _get_webhook_store().create(body.target, body.target_type, body.name, signed=body.signed)
-    except ValueError as exc:
-        return _nocache_json({"error": str(exc)}, status_code=400)
-    return _nocache_json(rec)
-
-
-@app.delete("/api/webhooks/{hook_id}")
-async def delete_webhook(hook_id: str):
-    ok = _get_webhook_store().delete(hook_id)
-    return _nocache_json({"ok": ok}, status_code=200 if ok else 404)
-
-
-@app.post("/api/webhooks/{hook_id}")
-async def trigger_webhook(hook_id: str, request: Request):
-    """Token-authenticated trigger → runs the configured agent/workflow."""
-    if not orch:
-        return _nocache_json({"error": "not initialized"}, status_code=503)
-    store = _get_webhook_store()
-    hook = store.get(hook_id)
-    if hook is None:
-        return _nocache_json({"error": "webhook not found"}, status_code=404)
-
-    raw = await request.body()
-    if hook.get("signed"):
-        # H16.4: signed sources authenticate via HMAC over the raw body.
-        signature = request.headers.get("x-signature-256", "")
-        if not store.verify_signature(hook_id, raw, signature):
-            return _nocache_json({"error": "invalid or missing signature"}, status_code=401)
-    else:
-        token = request.headers.get("x-webhook-token") or request.query_params.get("token", "")
-        if not store.verify(hook_id, token):
-            return _nocache_json({"error": "invalid or missing token"}, status_code=401)
-
-    try:
-        payload = json.loads(raw) if raw else {}
-    except Exception:
-        payload = raw.decode("utf-8", "replace")
-
-    from agents.core.webhooks import extract_input
-    text = extract_input(payload)
-    store.mark_called(hook_id)
-
-    if hook["target_type"] == "agent":
-        reply = await orch.handle_input(text, channel="webhook", agent_override=hook["target"])
-        return _nocache_json({"ok": True, "target": hook["target"], "response": reply})
-
-    # workflow target (best-effort — requires the workflow engine)
-    engine = getattr(orch, "workflow_engine", None)
-    if engine is None or not hasattr(engine, "run"):
-        return _nocache_json({"error": "workflow execution not available"}, status_code=501)
-    result = await engine.run(hook["target"], {"input": text})
-    return _nocache_json({"ok": True, "target": hook["target"], "result": result})
-
-
-# ── END H10.8 Inbound Webhook endpoints ───────────────────────────
-
-
-# ── H16.2 Agent-to-Agent (A2A) — opt-in, allowlisted, approval-gated ──
-
-def _get_a2a_registry():
-    global _a2a_registry
-    if _a2a_registry is None:
-        from agents.core.a2a import A2ARegistry
-        _a2a_registry = A2ARegistry()
-    return _a2a_registry
-
-
-class A2APeerBody(BaseModel):
-    peer_id: str = Field(..., max_length=128)
-    name: str = Field("", max_length=128)
-
-
-class A2ACardBody(BaseModel):
-    name: str = Field("jarvis", max_length=128)
-    capabilities: list[str] = Field(default_factory=list)
-
-
-class A2ADecisionBody(BaseModel):
-    approve: bool
-
-
-@app.get("/.well-known/agent-card")
-async def a2a_agent_card():
-    """Public: our advertised, signed Agent Card — only when A2A is enabled."""
-    from agents.core.a2a import a2a_enabled
-    if not a2a_enabled():
-        return _nocache_json({"error": "a2a disabled"}, status_code=404)
-    return _nocache_json(_get_a2a_registry().agent_card())
-
-
-@app.post("/api/a2a/task")
-async def a2a_receive_task(request: Request):
-    """Inbound peer task. Authenticated by the peer's HMAC signature (not a user
-    token); off unless enabled; verified tasks land in the inbox for approval."""
-    from agents.core.a2a import a2a_enabled
-    if not a2a_enabled():
-        return _nocache_json({"error": "a2a disabled"}, status_code=404)
-    peer_id = request.headers.get("x-a2a-peer", "")
-    signature = request.headers.get("x-signature-256", "")
-    raw = await request.body()
-    try:
-        receipt = _get_a2a_registry().receive_task(peer_id, raw, signature)
-        return _nocache_json(receipt)
-    except PermissionError:
-        # Unknown peer or bad signature — fail closed without leaking which.
-        return _nocache_json({"error": "rejected"}, status_code=401)
-    except ValueError:
-        return _nocache_json({"error": "invalid task body"}, status_code=400)
-
-
-@app.get("/api/a2a/peers", dependencies=[Depends(_admin_guard)])
-async def a2a_list_peers():
-    return _nocache_json({"peers": _get_a2a_registry().list_peers()})
-
-
-@app.post("/api/a2a/peers", dependencies=[Depends(_admin_guard)])
-async def a2a_add_peer(body: A2APeerBody):
-    """Allowlist a peer; the shared secret is returned ONCE."""
-    try:
-        return _nocache_json(_get_a2a_registry().add_peer(body.peer_id, name=body.name))
-    except ValueError:
-        return _nocache_json({"error": "peer_id is required"}, status_code=400)
-
-
-@app.delete("/api/a2a/peers/{peer_id}", dependencies=[Depends(_admin_guard)])
-async def a2a_remove_peer(peer_id: str):
-    ok = _get_a2a_registry().remove_peer(peer_id)
-    return _nocache_json({"ok": ok}, status_code=200 if ok else 404)
-
-
-@app.post("/api/a2a/card", dependencies=[Depends(_admin_guard)])
-async def a2a_set_card(body: A2ACardBody):
-    return _nocache_json(_get_a2a_registry().set_card(body.name, body.capabilities))
-
-
-@app.get("/api/a2a/inbox", dependencies=[Depends(_admin_guard)])
-async def a2a_inbox(status: Optional[str] = None):
-    return _nocache_json({"inbox": _get_a2a_registry().list_inbox(status)})
-
-
-@app.post("/api/a2a/inbox/{task_id}/decide", dependencies=[Depends(_admin_guard)])
-async def a2a_decide(task_id: str, body: A2ADecisionBody):
-    """Approve or reject a pending inbound task. Approval does NOT execute it."""
-    try:
-        return _nocache_json(_get_a2a_registry().decide(task_id, body.approve))
-    except ValueError:
-        return _nocache_json({"error": "task not found or already decided"}, status_code=404)
-
-
-# ── END H16.2 A2A endpoints ───────────────────────────────────────
-
-
-# ── H12.19 Inbound sender pairing / approval (anti-abuse) ──────────
-
-def _get_sender_pairing():
-    """Shared registry: prefer the orchestrator's, else a module-level singleton."""
-    if orch is not None and getattr(orch, "sender_pairing", None) is not None:
-        return orch.sender_pairing
-    global _sender_pairing
-    if _sender_pairing is None:
-        from agents.core.channels.pairing import SenderPairing
-        _sender_pairing = SenderPairing()
-    return _sender_pairing
-
-
-class PairingRequestBody(BaseModel):
-    channel: str = Field(..., max_length=64)
-    sender_id: str = Field(..., max_length=128)
-    code: Optional[str] = Field(None, max_length=128)
-    name: str = Field("", max_length=128)
-
-
-class PairingDecisionBody(BaseModel):
-    channel: str = Field(..., max_length=64)
-    sender_id: str = Field(..., max_length=128)
-    action: str = Field(..., max_length=16)   # approve | reject | block | unpair
-    name: str = Field("", max_length=128)
-
-
-class PairingCodeBody(BaseModel):
-    code: Optional[str] = Field(None, max_length=128)
-
-
-@app.post("/api/channels/pairing/request")
-async def pairing_request(body: PairingRequestBody):
-    """Inbound first-contact from a sender. Authenticated by the pairing flow
-    itself (not a user token); off (404) unless pairing is enabled. Records a
-    pending request or auto-pairs on a correct code — never executes anything."""
-    from agents.core.channels.pairing import pairing_enabled
-    if not pairing_enabled():
-        return _nocache_json({"error": "pairing disabled"}, status_code=404)
-    try:
-        result = _get_sender_pairing().request(
-            body.channel, body.sender_id, code=body.code, name=body.name)
-    except ValueError:
-        return _nocache_json({"error": "channel and sender_id required"}, status_code=400)
-    return _nocache_json(result)
-
-
-@app.get("/api/channels/pairing", dependencies=[Depends(_admin_guard)])
-async def pairing_list(status: Optional[str] = None):
-    reg = _get_sender_pairing()
-    return _nocache_json({"senders": reg.list_senders(status), "summary": reg.summary()})
-
-
-@app.post("/api/channels/pairing/decide", dependencies=[Depends(_admin_guard)])
-async def pairing_decide(body: PairingDecisionBody):
-    """Owner decision on a sender: approve / reject / block / unpair."""
-    try:
-        return _nocache_json(_get_sender_pairing().decide(
-            body.channel, body.sender_id, body.action, name=body.name))
-    except ValueError:
-        return _nocache_json({"error": "unknown action"}, status_code=400)
-
-
-@app.post("/api/channels/pairing/code", dependencies=[Depends(_admin_guard)])
-async def pairing_set_code(body: PairingCodeBody):
-    """Set/rotate (or clear) the self-service pairing code."""
-    reg = _get_sender_pairing()
-    reg.set_code(body.code)
-    return _nocache_json({"has_code": reg.has_code()})
-
-
-# ── END H12.19 pairing endpoints ──────────────────────────────────
-
-
-# ── H12.18 Agent Canvas / A2UI (governed visual surface) ──────────
-
-_canvas_store = None
-
-
-def _get_canvas():
-    if orch is not None and getattr(orch, "canvas", None) is not None:
-        return orch.canvas
-    global _canvas_store
-    if _canvas_store is None:
-        from agents.core.canvas import CanvasStore
-        _canvas_store = CanvasStore()
-    return _canvas_store
-
-
-class CanvasPostBody(BaseModel):
-    agent: str = Field("agent", max_length=64)
-    type: str = Field(..., max_length=32)
-    payload: dict = Field(default_factory=dict)
-    pinned: bool = False
-
-
-@app.get("/api/canvas", dependencies=[Depends(_user_guard)])
-async def canvas_list(agent: Optional[str] = None):
-    return _nocache_json({"elements": _get_canvas().list(agent)})
-
-
-@app.post("/api/canvas/post", dependencies=[Depends(_user_guard)])
-async def canvas_post(body: CanvasPostBody):
-    """Add a typed, sanitized element. Unsafe/unknown types are rejected (422)."""
-    try:
-        return _nocache_json(_get_canvas().post(body.agent, body.type, body.payload,
-                                                pinned=body.pinned))
-    except ValueError as e:
-        return _nocache_json({"error": str(e)}, status_code=422)
-
-
-@app.post("/api/canvas/{el_id}/pin", dependencies=[Depends(_user_guard)])
-async def canvas_pin(el_id: str, pinned: bool = True):
-    el = _get_canvas().pin(el_id, pinned)
-    return _nocache_json(el or {"error": "not found"}, status_code=200 if el else 404)
-
-
-@app.delete("/api/canvas/{el_id}", dependencies=[Depends(_user_guard)])
-async def canvas_remove(el_id: str):
-    ok = _get_canvas().remove(el_id)
-    return _nocache_json({"removed": ok}, status_code=200 if ok else 404)
-
-
-@app.post("/api/canvas/clear", dependencies=[Depends(_user_guard)])
-async def canvas_clear(agent: Optional[str] = None, keep_pinned: bool = True):
-    return _nocache_json({"removed": _get_canvas().clear(agent, keep_pinned=keep_pinned)})
-
-
-# ── END H12.18 canvas endpoints ───────────────────────────────────
-
-
-# ── H15.1 Governed browser-use (egress allowlist + approval) ──────
-
-class BrowserCheckBody(BaseModel):
-    url: str = Field(..., max_length=2000)
-    allowlist: list[str] = Field(default_factory=list, max_length=100)
-
-
-class BrowserPreviewBody(BaseModel):
-    plan: list[dict] = Field(default_factory=list, max_length=200)
-    allowlist: list[str] = Field(default_factory=list, max_length=100)
-
-
-@app.post("/api/browser/check", dependencies=[Depends(_user_guard)])
-async def browser_check(body: BrowserCheckBody):
-    """H15.1 — would this URL pass the egress allowlist + SSRF filter?"""
-    from agents.core.browser_agent import BrowserPolicy
-    ok, reason = BrowserPolicy(body.allowlist).domain_allowed(body.url)
-    return _nocache_json({"allowed": ok, "reason": reason})
-
-
-@app.post("/api/browser/plan/preview", dependencies=[Depends(_user_guard)])
-async def browser_plan_preview(body: BrowserPreviewBody):
-    """H15.1 — governance dry-run: per-step run/approve/block (no execution)."""
-    from agents.core.browser_agent import GovernedBrowser, BrowserPolicy
-    gb = GovernedBrowser(policy=BrowserPolicy(body.allowlist))
-    return _nocache_json(gb.preview(body.plan))
-
-
-# ── END H15.1 browser endpoints ───────────────────────────────────
-
-
-# ── H12.7 Passive multi-surface capture (opt-in, local) ───────────
-
-_passive_capture = None
-
-
-def _get_capture():
-    global _passive_capture
-    if _passive_capture is None:
-        from agents.core.passive_capture import PassiveCapture
-        kg = getattr(orch, "kg_updater", None) if orch else None
-        _passive_capture = PassiveCapture(kg_updater=kg)
-    return _passive_capture
-
-
-class CaptureIngestBody(BaseModel):
-    surface: str = Field(..., max_length=32)
-    content: str = Field(..., max_length=100_000)
-    source: str = Field("", max_length=200)
-
-
-class CaptureSurfacesBody(BaseModel):
-    surfaces: dict = Field(default_factory=dict)
-
-
-@app.get("/api/capture/status", dependencies=[Depends(_user_guard)])
-async def capture_status():
-    return _nocache_json(_get_capture().status())
-
-
-@app.post("/api/capture/ingest", dependencies=[Depends(_user_guard)])
-async def capture_ingest(body: CaptureIngestBody):
-    """Opt-in: capture a surface event (redacted, local, inspectable)."""
-    try:
-        return _nocache_json(_get_capture().ingest(body.surface, body.content, body.source))
-    except ValueError as e:
-        return _nocache_json({"error": str(e)}, status_code=422)
-
-
-@app.get("/api/capture", dependencies=[Depends(_user_guard)])
-async def capture_list(surface: Optional[str] = None):
-    return _nocache_json({"records": _get_capture().list(surface)})
-
-
-@app.post("/api/capture/surfaces", dependencies=[Depends(_user_guard)])
-async def capture_set_surfaces(body: CaptureSurfacesBody):
-    return _nocache_json({"surfaces": _get_capture().set_surfaces(body.surfaces)})
-
-
-@app.delete("/api/capture/{rec_id}", dependencies=[Depends(_user_guard)])
-async def capture_forget(rec_id: str):
-    ok = _get_capture().forget(rec_id)
-    return _nocache_json({"forgotten": ok}, status_code=200 if ok else 404)
-
-
-@app.post("/api/capture/clear", dependencies=[Depends(_user_guard)])
-async def capture_clear(surface: Optional[str] = None):
-    return _nocache_json({"removed": _get_capture().clear(surface)})
-
-
-# ── END H12.7 capture endpoints ───────────────────────────────────
+# ── Extracted to core/routers/ (CLN-3): H10.8 webhooks · H16.2 a2a · H12.19 pairing ──
+# ──   · H12.18 canvas · H15.1 browser · H12.7 capture (mounted near the cognition router). ──
 
 
 # ── H16.3 Governed payments (mandate / cap / approval / audit) ─────

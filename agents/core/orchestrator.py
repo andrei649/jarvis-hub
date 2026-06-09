@@ -47,9 +47,10 @@ from .security.types import RedactionMode, SecurityEvent, SecurityEventType
 from .log import log_error
 from .errors import (
     E_PLUGIN_BLOCKED, E_LLM_BACKEND_MISSING, E_LLM_TIMEOUT,
-    E_INTERNAL_UNEXPECTED, E_CHANNEL_START_FAIL,
+    E_INTERNAL_UNEXPECTED,
 )
 from .channels.base import ChannelAdapter
+from .channels.manager import ChannelManager
 from .settings_db import get_all as _get_settings
 from .plugins.oauth import init_from_env as _oauth_init, load_token as _load_token
 from .plugins.weather import WeatherPlugin
@@ -305,7 +306,7 @@ class Orchestrator:
         self.skill_importer = SkillImporter()
         self.marketplace = SkillMarketplace()
         self.mcp = MCPManager()
-        self.channels: dict[str, ChannelAdapter] = {}
+        self.channel_manager = ChannelManager()  # CLN-2: owns the channel registry + I/O
         self.checkpoints = CheckpointManager()
         self.learning = LearningLoop()
         rules = config.get_promotion_rules() if hasattr(config, "get_promotion_rules") else None
@@ -376,6 +377,16 @@ class Orchestrator:
     # cannot clobber another concurrent turn's session); writes outside any
     # request context (boot, checkpoint restore, new_session, /reset) update the
     # shared default, preserving the original single-request behavior.
+    @property
+    def channels(self) -> dict[str, ChannelAdapter]:
+        """CLN-2: the channel registry now lives in ChannelManager; this delegating
+        property keeps existing `orch.channels[...]` access working unchanged."""
+        return self.channel_manager.channels
+
+    @channels.setter
+    def channels(self, value: dict) -> None:
+        self.channel_manager.channels = value
+
     @property
     def session_id(self) -> Optional[str]:
         val = _active_session.get()
@@ -1030,15 +1041,10 @@ class Orchestrator:
         logger.info(f"Daily digest ready: {kind}")
 
     async def register_channel(self, channel: ChannelAdapter):
-        self.channels[channel.channel_id] = channel
-        logger.info(f"Channel registered: {channel.channel_id}")
+        self.channel_manager.register(channel)
 
     async def start_channels(self):
-        for cid, ch in self.channels.items():
-            try:
-                await ch.start()
-            except Exception as e:
-                log_error(logger, E_CHANNEL_START_FAIL, name=cid, detail=str(e))
+        await self.channel_manager.start_all()
         self.heartbeat_scheduler.start(self)
         self._settings_watcher_task = asyncio.create_task(self._settings_watcher_loop())
         self._settings_watcher_task.add_done_callback(_log_task_result)
@@ -1065,8 +1071,7 @@ class Orchestrator:
         logger.info("Components: %s", self.components.summary())  # A8: startup health report
 
     async def stop_channels(self):
-        for cid, ch in self.channels.items():
-            await ch.stop()
+        await self.channel_manager.stop_all()
         self.heartbeat_scheduler.stop()
         if self._settings_watcher_task:
             self._settings_watcher_task.cancel()
@@ -1105,14 +1110,7 @@ class Orchestrator:
         else:
             response = await self.handle_input(text, channel)
 
-        ch = self.channels.get(channel)
-        if ch:
-            if channel == "telegram":
-                await ch.send(response, **kwargs)
-            elif channel == "web":
-                await ch.send(response, **kwargs)
-            elif channel == "voice":
-                await ch.send(response)
+        await self.channel_manager.send(channel, response, **kwargs)
         return response
 
     def _resolve_session(self, session_id: Optional[str]) -> str:
