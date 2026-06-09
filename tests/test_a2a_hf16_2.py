@@ -80,8 +80,11 @@ def test_decide_is_terminal_and_does_not_execute(reg):
 
 # ── endpoints ─────────────────────────────────────────────────────
 
+import agents.core.routers.a2a as _a2a_mod  # noqa: E402
+
+
 def _client(monkeypatch, tmp_path):
-    monkeypatch.setattr(web, "_a2a_registry", A2ARegistry(path=str(tmp_path / "a2a.json"), identity_secret="idk"))
+    monkeypatch.setattr(_a2a_mod, "_a2a_registry", A2ARegistry(path=str(tmp_path / "a2a.json"), identity_secret="idk"))
     monkeypatch.setattr(web, "ADMIN_TOKEN", "adm")
     return TestClient(web.app), {"X-Admin-Token": "adm"}
 
@@ -95,7 +98,7 @@ def test_card_endpoint_gated_on_enabled(monkeypatch, tmp_path):
 
 def test_task_endpoint_rejects_bad_signature_and_accepts_valid(monkeypatch, tmp_path):
     client, hdr = _client(monkeypatch, tmp_path)
-    peer = web._a2a_registry.add_peer("alice")
+    peer = _a2a_mod._a2a_registry.add_peer("alice")
     body = json.dumps({"task": {"kind": "research"}})
     # bad signature → 401
     bad = client.post("/api/a2a/task", content=body, headers={"X-A2A-Peer": "alice", "X-Signature-256": "sha256=no"})

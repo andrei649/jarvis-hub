@@ -99,7 +99,8 @@ def test_persistence_round_trip(tmp_path):
 # ── endpoints ─────────────────────────────────────────────────────
 
 def _client(monkeypatch, tmp_path):
-    monkeypatch.setattr(web, "_canvas_store", CanvasStore(path=str(tmp_path / "c.json")))
+    import agents.core.routers.canvas as _canvas_mod
+    monkeypatch.setattr(_canvas_mod, "_canvas_store", CanvasStore(path=str(tmp_path / "c.json")))
     monkeypatch.setattr(web, "orch", None)
     return TestClient(web.app)
 

@@ -85,7 +85,17 @@ def _disable_user_guard():
         yield
         return
     web.app.dependency_overrides[web._user_guard] = lambda: None
+    # Routes extracted into core/routers/ depend on a lazy wrapper (the same guard,
+    # resolved at request time to avoid an import cycle). Override it too so those
+    # routes behave like the inline ones did under TestClient.
+    try:
+        from agents.core.routers._deps import user_guard as _ru
+        web.app.dependency_overrides[_ru] = lambda: None
+    except Exception:
+        _ru = None
     try:
         yield
     finally:
         web.app.dependency_overrides.pop(web._user_guard, None)
+        if _ru is not None:
+            web.app.dependency_overrides.pop(_ru, None)

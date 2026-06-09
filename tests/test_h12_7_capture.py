@@ -116,7 +116,8 @@ def test_status_and_persistence(tmp_path, on):
 # ── endpoints ─────────────────────────────────────────────────────
 
 def _client(monkeypatch, tmp_path):
-    monkeypatch.setattr(web, "_passive_capture",
+    import agents.core.routers.capture as _capture_mod
+    monkeypatch.setattr(_capture_mod, "_passive_capture",
                         PassiveCapture(path=str(tmp_path / "c.json"),
                                        scanner=_FakeScanner(), kg_updater=_FakeKG()))
     monkeypatch.setattr(web, "orch", None)

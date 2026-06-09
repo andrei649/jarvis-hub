@@ -171,7 +171,8 @@ async def test_gateway_code_auto_pairs(reg, enabled):
 # ── endpoints ─────────────────────────────────────────────────────
 
 def _client(monkeypatch, tmp_path):
-    monkeypatch.setattr(web, "_sender_pairing",
+    import agents.core.routers.pairing as _pairing_mod
+    monkeypatch.setattr(_pairing_mod, "_sender_pairing",
                         SenderPairing(path=str(tmp_path / "pairing.json")))
     monkeypatch.setattr(web, "orch", None)
     monkeypatch.setattr(web, "ADMIN_TOKEN", "adm")
