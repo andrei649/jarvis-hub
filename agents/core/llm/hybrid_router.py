@@ -23,9 +23,9 @@ Set JARVIS_AUTO_DEEP=0 to disable complexity-based escalation.
 
 import logging
 import os
-from typing import Callable, Optional
+from typing import Optional
 
-from .base import LLMBackend, LMStudioBackend, OllamaBackend
+from .base import LLMBackend, OllamaBackend
 from .router import LLMRouter
 from .tokenizer import estimate_tokens
 

@@ -5,7 +5,7 @@ and Pro (heavy) model families.
 """
 
 import json
-from typing import Callable, Optional
+from typing import Callable
 
 import httpx
 

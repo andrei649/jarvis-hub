@@ -11,12 +11,10 @@ import asyncio
 import logging
 import os
 import platform
-import shutil
 import sys
 import tempfile
 import time
 from pathlib import Path
-from typing import Optional
 
 logger = logging.getLogger("jarvis.sandbox")
 
@@ -174,7 +172,6 @@ class Sandbox:
         ])
 
     async def _run_docker(self, cmd: list[str], files: dict[str, str] = None) -> SandboxResult:
-        import subprocess
         start = time.monotonic()
 
         container_name = f"cabinet-sandbox-{int(time.time())}"

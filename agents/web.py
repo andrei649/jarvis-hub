@@ -11,7 +11,7 @@ import statistics
 import time
 import sys
 from collections import defaultdict
-from datetime import date, datetime
+from datetime import date
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Optional
@@ -35,9 +35,7 @@ from core.config import JarvisConfig
 from core.orchestrator import Orchestrator
 from core.channels.web import WebChannel
 from core.channels.gateway import Gateway
-from core.checkpoint import CheckpointManager
 from core.settings_db import get_all, get_category, put_category, init_db
-from core.settings_db import DB_PATH as _SDB
 from core.channels.voice import VoiceChannel
 from core.channels.telegram import TelegramChannel
 from core.channels.discord import DiscordChannel
@@ -611,7 +609,7 @@ async def tts_endpoint(req: TTSRequest):
             media_type="audio/mpeg",
             headers={"Cache-Control": "no-cache"},
         )
-    except Exception as e:
+    except Exception:
         logger.exception("TTS error")
         return JSONResponse({"error": "internal error", "code": 500}, status_code=500)
 
@@ -2370,7 +2368,7 @@ async def marketplace_list():
     try:
         skills = orch.marketplace.list_skills()
         return {"skills": skills}
-    except Exception as e:
+    except Exception:
         logger.exception("Failed to list marketplace skills")
         return JSONResponse({"error": "internal error", "code": 500}, status_code=500)
 
@@ -2384,7 +2382,7 @@ async def marketplace_publish(body: PublishSkillBody):
         return {"ok": True, "published": res}
     except FileNotFoundError as e:
         return JSONResponse({"error": str(e)}, status_code=404)
-    except Exception as e:
+    except Exception:
         logger.exception("Failed to publish skill")
         return JSONResponse({"error": "internal error", "code": 500}, status_code=500)
 
@@ -3416,7 +3414,7 @@ async def admin_mcp_connect(name: str):
             "tools_count": len(srv.tools),
             "tools": [{"name": t.name, "description": t.description} for t in srv.tools],
         }
-    except Exception as e:
+    except Exception:
         logger.exception("MCP server probe failed: %s", name)
         return JSONResponse({"error": "internal error", "server": name, "code": 500}, status_code=500)
 
@@ -4209,7 +4207,6 @@ async def unassign_data_space(body: AssignSpaceBody):
 @app.get("/api/memory/recall", dependencies=[Depends(_user_guard)])
 async def recall_memory(q: str = ""):
     """Search memory store by query string."""
-    from fastapi import Query as _Query
     from agents.core.memory.store import MemoryStore
     store = MemoryStore()
     if not q:
@@ -4228,7 +4225,7 @@ async def get_analytics_cost():
 @app.get("/api/analytics/model-tiers")
 async def get_model_tiers():
     """Return per-agent model tier classification and usage summary."""
-    from agents.core.cost_tracker import get_summary, MODEL_PRICES
+    from agents.core.cost_tracker import get_summary
     summary = get_summary()
 
     def classify_tier(model: str) -> str:
@@ -5388,7 +5385,7 @@ async def heartbeat_run(agent_id: str):
 
 
 @app.get("/api/status")
-async def status():
+async def api_status():
     """Return service version, agent count, and health status."""
     from agents import __version__, AGENT_COUNT
     return {"version": __version__, "agents": AGENT_COUNT, "status": "ok"}

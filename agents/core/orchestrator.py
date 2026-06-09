@@ -43,20 +43,14 @@ from .bench import LatencyBenchmark
 from .plugin_gate import PermissionGate
 from .security.guardrails import GuardrailsEngine
 from .security.audit import AuditLogger
-from .security.types import RedactionMode, SecurityEvent, SecurityEventType, ThreatLevel
+from .security.types import RedactionMode, SecurityEvent, SecurityEventType
 from .log import log_error
 from .errors import (
-    E_CONFIG_MISSING_ENV, E_PLUGIN_BLOCKED, E_LLM_BACKEND_MISSING, E_LLM_TIMEOUT,
+    E_PLUGIN_BLOCKED, E_LLM_BACKEND_MISSING, E_LLM_TIMEOUT,
     E_INTERNAL_UNEXPECTED, E_CHANNEL_START_FAIL,
 )
 from .channels.base import ChannelAdapter
-from .channels.web import WebChannel
-from .channels.voice import VoiceChannel
-from .channels.telegram import TelegramChannel
-from .channels.discord import DiscordChannel
-from .channels.email import EmailChannel
-from .channels.slack import SlackChannel
-from .settings_db import get_all as _get_settings, get_category as _get_settings_category
+from .settings_db import get_all as _get_settings
 from .plugins.oauth import init_from_env as _oauth_init, load_token as _load_token
 from .plugins.weather import WeatherPlugin
 from .plugins.news import NewsPlugin
@@ -1195,7 +1189,6 @@ class Orchestrator:
         # `channel_handler` already pinned in this context).
         self._resolve_session(session_id)
         self._last_channel = channel  # captured for H9.2 tracer
-        t_start = time.perf_counter()
         await self.memory.add_turn(self.session_id, "user", text)
 
         skill_cmd = self.skills.parse_command(text)
@@ -1570,7 +1563,6 @@ class Orchestrator:
         # H9.2: persist to tracer ring buffer (defensive — never breaks a request)
         try:
             if self.tracer is not None:
-                from .observability.tracer import Tracer
                 model = ""
                 agents_selected = decision.get("agents_selected", [])
                 if agents_selected:

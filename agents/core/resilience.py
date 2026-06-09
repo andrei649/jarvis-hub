@@ -5,7 +5,7 @@ import asyncio
 import functools
 import logging
 import time
-from typing import Callable, Any, Optional
+from typing import Callable, Optional
 from dataclasses import dataclass, field
 
 logger = logging.getLogger("jarvis.resilience")

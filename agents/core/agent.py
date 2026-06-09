@@ -9,7 +9,6 @@ from pathlib import Path
 from typing import Optional
 
 from .llm.hybrid_router import HybridRouter
-from .security.guardrails import GuardrailsEngine
 
 logger = logging.getLogger("jarvis.agent")
 

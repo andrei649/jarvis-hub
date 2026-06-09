@@ -38,7 +38,7 @@ import time
 from collections import OrderedDict
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
-from typing import Callable, Optional
+from typing import Optional
 
 from .normalizer import NormalizedMessage
 

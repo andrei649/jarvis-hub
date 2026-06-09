@@ -133,7 +133,6 @@ class CalendarProbe:
 
             for ev in events:
                 title = ev.get("title", "(no title)")
-                state = ev.get("state")
                 ts_str = ev.get("ts")
                 
                 # Parse timestamp

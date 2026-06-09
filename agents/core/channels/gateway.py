@@ -4,7 +4,6 @@ Single entry point for incoming messages, regardless of source channel.
 Provides consistent message routing, rate limiting, and channel health.
 """
 
-import asyncio
 import logging
 import time
 from typing import Any, Callable, Optional

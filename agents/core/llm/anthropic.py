@@ -4,7 +4,7 @@ Uses Anthropic Messages API directly via httpx (no SDK dependency).
 """
 
 import json
-from typing import Callable, Optional
+from typing import Callable
 
 import httpx
 
