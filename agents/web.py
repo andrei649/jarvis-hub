@@ -61,6 +61,31 @@ DEV_MODE = os.environ.get("DEV_MODE", "").lower() in ("1", "true", "yes")
 ADMIN_TOKEN = os.environ.get("JARVIS_ADMIN_TOKEN", "").strip()
 _LOCALHOSTS = {"127.0.0.1", "::1", "localhost"}
 
+# HF-7 — by default the localhost-origin gate fails CLOSED behind a reverse proxy
+# (forwarding headers present → request.client.host is the proxy, untrustworthy →
+# require a token). Set JARVIS_TRUSTED_PROXY=1 ONLY when a trusted proxy populates
+# X-Forwarded-For; we then read the first hop as the real client IP for the gate.
+TRUSTED_PROXY = os.environ.get("JARVIS_TRUSTED_PROXY", "").strip().lower() in ("1", "true", "yes")
+
+
+def _real_client_host(request: Request) -> str:
+    """Origin host for the localhost-fallback gate (HF-7).
+
+    Behind a reverse proxy the socket peer is the proxy, so forwarding headers are
+    present. We do NOT trust them unless JARVIS_TRUSTED_PROXY is set: untrusted →
+    return "" so the localhost check fails closed (token required). Trusted → use
+    the first X-Forwarded-For hop (falling back to X-Real-IP) as the client IP.
+    """
+    behind_proxy = any(h in request.headers for h in ("x-forwarded-for", "x-real-ip", "forwarded"))
+    if not behind_proxy:
+        return request.client.host if request.client else ""
+    if not TRUSTED_PROXY:
+        return ""  # untrusted proxy → never localhost → fail closed
+    xff = request.headers.get("x-forwarded-for", "")
+    if xff:
+        return xff.split(",")[0].strip()
+    return request.headers.get("x-real-ip", "").strip()
+
 # Substrings that mark an env var as sensitive — its value is masked in
 # /api/admin/env so keys/tokens/secrets are never returned in clear text.
 _SECRET_HINTS = ("key", "token", "secret", "password", "passwd", "pass", "client_id")
@@ -81,13 +106,10 @@ async def _admin_guard(request: Request):
         if not supplied or not secrets.compare_digest(supplied, ADMIN_TOKEN):
             raise HTTPException(status_code=401, detail="admin token required")
         return
-    # No token configured → only *direct* localhost may reach admin. If forwarding
-    # headers are present we're behind a reverse proxy and request.client.host is
-    # the proxy's IP (often 127.0.0.1), so the localhost check can't be trusted —
-    # fail closed and require a token. (HF-7)
-    client_host = request.client.host if request.client else ""
-    behind_proxy = any(h in request.headers for h in ("x-forwarded-for", "x-real-ip", "forwarded"))
-    if behind_proxy or client_host not in _LOCALHOSTS:
+    # No token configured → only localhost may reach admin. Behind an untrusted
+    # reverse proxy _real_client_host returns "" → fails closed (HF-7); set
+    # JARVIS_TRUSTED_PROXY=1 to trust X-Forwarded-For from a known proxy.
+    if _real_client_host(request) not in _LOCALHOSTS:
         raise HTTPException(
             status_code=403,
             detail="admin disabled from network — set JARVIS_ADMIN_TOKEN to enable remote access",
@@ -119,11 +141,10 @@ async def _user_guard(request: Request):
             if admin_supplied and secrets.compare_digest(admin_supplied, ADMIN_TOKEN):
                 return
         raise HTTPException(status_code=401, detail="user token required")
-    # No token configured → only direct localhost may reach user routes. Fail
-    # closed behind a reverse proxy (request.client.host is then the proxy IP). (HF-7)
-    client_host = request.client.host if request.client else ""
-    behind_proxy = any(h in request.headers for h in ("x-forwarded-for", "x-real-ip", "forwarded"))
-    if behind_proxy or client_host not in _LOCALHOSTS:
+    # No token configured → only localhost may reach user routes. Fails closed
+    # behind an untrusted reverse proxy (HF-7); JARVIS_TRUSTED_PROXY=1 opts into
+    # trusting X-Forwarded-For from a known proxy.
+    if _real_client_host(request) not in _LOCALHOSTS:
         raise HTTPException(
             status_code=403,
             detail="user routes disabled from network — set JARVIS_USER_TOKEN to enable remote access",
