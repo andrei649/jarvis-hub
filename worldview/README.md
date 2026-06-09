@@ -153,3 +153,11 @@ AISSTREAM_API_KEY=... .venv/bin/python -m worldview_ingest ais
 Tune the area with `ADSB_CENTER=lat,lon` + `ADSB_RADIUS_NM` and `AIS_BBOX` (defaults = Strait of
 Hormuz). The pipeline is **workers → Kafka (Redpanda) → API writers → Redis/TimescaleDB → the map**,
 so the globe shows real, live, time-scrubbable OSINT. Data path config: `ingestion-workers/.env`.
+
+**One-click:** `INSTALL.bat` provisions the worker venv (`ingestion-workers/.venv`) + `.env`, and
+`START.bat` does all of the above for you when you set the feed mode:
+
+```
+set JARVIS_WORLDVIEW_FEED=real   ::  real OSINT  (demo = synthetic default · off = no feed)
+START.bat
+```

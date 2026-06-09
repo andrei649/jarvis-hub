@@ -86,16 +86,37 @@ if errorlevel 1 (
 )
 popd
 
+REM Mod feed: demo (implicit, sintetic) | real (date OSINT REALE, fara chei pt 3/4 layere) | off.
+set "WV_FEED=demo"
+if defined JARVIS_WORLDVIEW_FEED set "WV_FEED=%JARVIS_WORLDVIEW_FEED%"
+if /I "%JARVIS_WORLDVIEW_DEMO%"=="0" if not defined JARVIS_WORLDVIEW_FEED set "WV_FEED=off"
+
 echo [2/3] Pornesc WorldView API ^(:4000^) si Frontend ^(:3000^) in ferestre separate...
-start "WorldView API" /d "%~dp0worldview" cmd /k "npm run dev:api"
+if /I "%WV_FEED%"=="real" (
+  start "WorldView API" /d "%~dp0worldview" cmd /k "set ENABLE_LIVE_WRITER=1&&set ENABLE_HISTORY_WRITER=1&&npm run dev:api"
+) else (
+  start "WorldView API" /d "%~dp0worldview" cmd /k "npm run dev:api"
+)
 start "WorldView Frontend" /d "%~dp0worldview" cmd /k "npm run dev:frontend"
 
-REM --- Feed sintetic "always-on" (fara chei API): harta ramane vie. Opt-out cu JARVIS_WORLDVIEW_DEMO=0 ---
-if /I "%JARVIS_WORLDVIEW_DEMO%"=="0" (
-  echo [INFO] Feed demo dezactivat ^(JARVIS_WORLDVIEW_DEMO=0^) - harta va fi goala pana la ingestion reala.
+if /I "%WV_FEED%"=="real" (
+  if exist "worldview\ingestion-workers\.venv\Scripts\python.exe" (
+    echo       Mod REAL: pornesc workerii OSINT gratuiti ^(aircraft/satellites/jamming/recon^)...
+    start "WV aircraft adsb.fi" /d "%~dp0worldview\ingestion-workers" cmd /k "set ADSB_SOURCE=adsbfi&&.venv\Scripts\python -m worldview_ingest adsb"
+    start "WV satellites Celestrak" /d "%~dp0worldview\ingestion-workers" cmd /k ".venv\Scripts\python -m worldview_ingest tle"
+    start "WV gps-jamming" /d "%~dp0worldview\ingestion-workers" cmd /k ".venv\Scripts\python -m worldview_ingest ew"
+    start "WV recon passes" /d "%~dp0worldview\ingestion-workers" cmd /k ".venv\Scripts\python -m worldview_ingest recon"
+    echo       ^(Nave: pune o cheie AISStream gratuita in worldview\ingestion-workers\.env, apoi  python -m worldview_ingest ais^)
+  ) else (
+    echo [SKIP] Mod REAL cerut, dar lipseste worldview\ingestion-workers\.venv - ruleaza INSTALL.bat intai.
+  )
 ) else (
-  echo       Pornesc si feed-ul sintetic demo ^(harta ramane vie, fara chei API; opreste cu JARVIS_WORLDVIEW_DEMO=0^).
-  start "WorldView Demo Feed" /d "%~dp0worldview" cmd /k "npm run demo:feed"
+  if /I "%WV_FEED%"=="off" (
+    echo [INFO] Feed dezactivat ^(WV_FEED=off^) - harta goala pana pornesti un feed.
+  ) else (
+    echo       Pornesc feed-ul sintetic demo ^(harta ramane vie, fara chei API^). Date reale:  set JARVIS_WORLDVIEW_FEED=real
+    start "WorldView Demo Feed" /d "%~dp0worldview" cmd /k "npm run demo:feed"
+  )
 )
 
 echo [3/3] Voi deschide http://localhost:3000 cand e gata.

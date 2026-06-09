@@ -145,6 +145,7 @@ if exist "worldview\package.json" (
   if not exist "worldview\.env" copy /Y "worldview\.env.example" "worldview\.env" >nul
   if not exist "worldview\backend-api\.env" copy /Y "worldview\backend-api\.env.example" "worldview\backend-api\.env" >nul
   if not exist "worldview\frontend\.env.local" copy /Y "worldview\frontend\.env.local.example" "worldview\frontend\.env.local" >nul
+  if not exist "worldview\ingestion-workers\.env" copy /Y "worldview\ingestion-workers\.env.example" "worldview\ingestion-workers\.env" >nul
   echo   [OK] Fisiere .env create ^(cheile pentru feed-uri live + Mapbox sunt optionale^).
   echo   Instalez dependintele Node ^(dureaza cateva minute prima data^)...
   pushd worldview
@@ -152,6 +153,16 @@ if exist "worldview\package.json" (
   set "NPMRC=!errorlevel!"
   popd
   if "!NPMRC!"=="0" ( echo   [OK] WorldView gata. ) else ( echo   [ATENTIE] npm install a raportat erori - vezi mesajele de mai sus. )
+  REM Mediu Python pentru workerii de ingestion OSINT (date REALE: aircraft/satellites/jamming).
+  if exist "worldview\ingestion-workers\requirements.txt" (
+    if not exist "worldview\ingestion-workers\.venv\Scripts\python.exe" (
+      echo   Pregatesc mediul workerilor OSINT ^(pentru date reale; optional, dureaza un pic^)...
+      %PY% -m venv "worldview\ingestion-workers\.venv"
+      "worldview\ingestion-workers\.venv\Scripts\python.exe" -m pip install --quiet --upgrade pip
+      "worldview\ingestion-workers\.venv\Scripts\python.exe" -m pip install --quiet -r "worldview\ingestion-workers\requirements.txt"
+      echo   [OK] Workeri OSINT gata ^(porneste date reale cu  set JARVIS_WORLDVIEW_FEED=real  apoi START.bat^).
+    )
+  )
 ) else (
   echo   [SKIP] Folderul worldview lipseste in acest checkout.
 )
