@@ -30,7 +30,7 @@ client are all injected.
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Callable, Optional
 
 from .autonomy.dry_run import preview_task

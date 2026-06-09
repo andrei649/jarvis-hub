@@ -1915,6 +1915,114 @@ async def channel_inbound(channel_id: str, request: Request):
     return _nocache_json({"ok": True, "channel": channel_id, "reply": reply})
 
 
+class CallRequestBody(BaseModel):
+    to: str = Field(..., max_length=40)
+    message: str = Field(..., max_length=2000)
+    provider: str = Field("twilio", max_length=20)
+    reason: str = Field("", max_length=200)
+    agent: Optional[str] = Field(None, max_length=40)
+
+
+@app.post("/api/autonomy/call", dependencies=[Depends(_user_guard)])
+async def autonomy_call(body: CallRequestBody):
+    """H12.22 — request a governed outbound call (budget-gated + approval).
+
+    Nothing dials here; on approval the worker draws an interrupt-budget slot,
+    resolves the telephony credential behind approval, and places the call via an
+    injectable client (live Twilio/Telnyx = host seam)."""
+    from agents.core.autonomy.call_broker import CallBroker
+    cb = getattr(orch, "call_broker", None) if orch else None
+    if cb is None:
+        q = getattr(orch, "autonomy_queue", None) if orch else None
+        cb = CallBroker(enqueue=q.enqueue if q is not None else None)
+    result = cb.request(body.to, body.message, provider=body.provider,
+                        reason=body.reason, agent=body.agent)
+    return _nocache_json(result, status_code=200 if result.get("ok") else 422)
+
+
+@app.get("/api/sync", dependencies=[Depends(_user_guard)])
+async def sync_status():
+    """H12.13 — E2E device-sync status (opt-in, fail-closed)."""
+    s = getattr(orch, "e2e_sync", None) if orch else None
+    if s is None:
+        return _nocache_json({"enabled": False, "available": False, "backend": "unavailable"})
+    return _nocache_json(s.status())
+
+
+class SyncPushBody(BaseModel):
+    records: list[dict] = Field(default_factory=list)
+    kind: str = Field("memory", max_length=40)
+
+
+@app.post("/api/sync/push", dependencies=[Depends(_user_guard)])
+async def sync_push(body: SyncPushBody):
+    """H12.13 — encrypt records into an E2E manifest (transport is host-side)."""
+    s = getattr(orch, "e2e_sync", None) if orch else None
+    if s is None:
+        return JSONResponse({"error": "e2e sync unavailable"}, status_code=503)
+    return _nocache_json(s.build_push(body.records, kind=body.kind))
+
+
+class SyncPullBody(BaseModel):
+    manifest: dict = Field(default_factory=dict)
+
+
+@app.post("/api/sync/pull", dependencies=[Depends(_user_guard)])
+async def sync_pull(body: SyncPullBody):
+    """H12.13 — decrypt an inbound E2E manifest from another device."""
+    s = getattr(orch, "e2e_sync", None) if orch else None
+    if s is None:
+        return JSONResponse({"error": "e2e sync unavailable"}, status_code=503)
+    return _nocache_json({"records": s.apply_pull(body.manifest)})
+
+
+class SatelliteRegisterBody(BaseModel):
+    satellite_id: str = Field(..., max_length=80)
+    meta: dict = Field(default_factory=dict)
+
+
+@app.get("/api/satellites", dependencies=[Depends(_user_guard)])
+async def satellites_list():
+    """H12.8 — registered mic satellites + shared-inference stats."""
+    h = getattr(orch, "satellite_hub", None) if orch else None
+    if h is None:
+        return _nocache_json({"satellites": [], "stats": {}})
+    return _nocache_json({"satellites": h.list(), "stats": h.stats()})
+
+
+@app.post("/api/satellites/register", dependencies=[Depends(_user_guard)])
+async def satellites_register(body: SatelliteRegisterBody):
+    """H12.8 — register a mic satellite with the shared-GPU hub."""
+    h = getattr(orch, "satellite_hub", None) if orch else None
+    if h is None:
+        return JSONResponse({"error": "satellite hub unavailable"}, status_code=503)
+    return _nocache_json({"ok": True, "satellite": h.register(body.satellite_id, body.meta)})
+
+
+@app.delete("/api/satellites/{satellite_id}", dependencies=[Depends(_user_guard)])
+async def satellites_unregister(satellite_id: str):
+    """H12.8 — remove a satellite from the hub."""
+    h = getattr(orch, "satellite_hub", None) if orch else None
+    if h is None:
+        return JSONResponse({"error": "satellite hub unavailable"}, status_code=503)
+    return _nocache_json({"ok": h.unregister(satellite_id)})
+
+
+class SatelliteDispatchBody(BaseModel):
+    payload: str = Field("", max_length=20000)
+    kind: str = Field("transcribe", max_length=40)
+
+
+@app.post("/api/satellites/{satellite_id}/dispatch", dependencies=[Depends(_user_guard)])
+async def satellites_dispatch(satellite_id: str, body: SatelliteDispatchBody):
+    """H12.8 — forward a satellite's request to the shared inference rail."""
+    h = getattr(orch, "satellite_hub", None) if orch else None
+    if h is None:
+        return JSONResponse({"error": "satellite hub unavailable"}, status_code=503)
+    result = await h.dispatch(satellite_id, body.payload, kind=body.kind)
+    return _nocache_json(result, status_code=200 if result.get("ok") else 404)
+
+
 class DigestRunBody(BaseModel):
     topic: str = Field("", max_length=200)
     sources: Optional[list[str]] = Field(None, max_length=10)

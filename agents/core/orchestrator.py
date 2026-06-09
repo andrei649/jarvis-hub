@@ -290,6 +290,8 @@ class Orchestrator:
             "incremental KG")
         reg.add("run_history", ".run_history", "RunHistory", label="run history")              # H10.17
         reg.add("soul_versions", ".soul_versioning", "SoulVersionStore", label="prompt VC")    # H10.22
+        reg.add("e2e_sync", ".e2e_sync", "E2ESync", label="E2E device sync")                   # H12.13
+        reg.add("satellite_hub", ".satellite_hub", "SatelliteHub", label="satellite hub")      # H12.8
         # ── end optional components ──
         self.plugins: dict = {}
         self.skills = SkillLoader()
@@ -873,6 +875,24 @@ class Orchestrator:
             audit=getattr(self, "audit", None),
         )
         executor.register("social", self.social.execute)
+
+        # H12.22 — governed outbound voice / call-back. A call is an interruption,
+        # so it's gated by BOTH the approval queue and the daily interrupt budget;
+        # live telephony (Twilio/Telnyx) is deferred to a host-side client.
+        import json as _json
+        from .autonomy.call_broker import CallBroker
+        try:
+            _call_cfg = _json.loads(os.environ.get("JARVIS_CALL_CONFIG", "") or "{}")
+        except Exception:
+            _call_cfg = {}
+        self.call_broker = CallBroker(
+            enqueue=self.autonomy_queue.enqueue,
+            secret_broker=getattr(self, "secret_broker", None),
+            audit=getattr(self, "audit", None),
+            budget=getattr(self.autonomy, "budget", None),
+            config=_call_cfg,
+        )
+        executor.register("call", self.call_broker.execute)
 
         return executor
 

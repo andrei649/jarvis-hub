@@ -57,8 +57,10 @@ RULES = [
     # interop (a2a / mcp client mgmt / webhooks / external write-back + social)
     ("/api/a2a/", "interop"), ("/api/admin/mcp", "interop"), ("/api/admin/widgets", "interop"),
     ("/api/mcp", "interop"), ("/api/webhooks", "interop"), ("/api/integrations/", "interop"),
-    # comms (rooms / notes / channel sender pairing)
+    ("/api/sync", "interop"),  # E2E device sync (H12.13)
+    # comms (rooms / notes / channel sender pairing / mic satellites)
     ("/api/rooms", "comms"), ("/api/notes", "comms"), ("/api/channels/", "comms"),
+    ("/api/satellites", "comms"),  # shared-GPU mic satellites (H12.8)
     # agent ops (heartbeat / learning / templates)
     ("/heartbeat", "agents"), ("/learning", "agents"), ("/api/learning", "agents"),
     ("/api/agent-templates", "agents"),
