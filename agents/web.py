@@ -2138,6 +2138,26 @@ async def llm_openrouter_swap(body: ModelSwapBody):
                           "configured": bool(os.environ.get("OPENROUTER_API_KEY", ""))})
 
 
+class ContextCompressBody(BaseModel):
+    turns: list[dict] = Field(default_factory=list)
+    max_tokens: int = Field(2000, ge=100, le=100000)
+    keep_recent: int = Field(4, ge=1, le=50)
+
+
+@app.post("/api/context/compress", dependencies=[Depends(_user_guard)])
+async def context_compress(body: ContextCompressBody):
+    """H20.3 — compress a long turn history (keep recent, digest/summarize older)."""
+    from agents.core.context_compressor import ContextCompressor
+    summarizer = None
+    if orch is not None:
+        async def summarizer(text):  # noqa: E731 — wire the LLM summarizer
+            return await orch.process(f"Summarize this conversation concisely:\n{text}",
+                                      channel="compress")
+    cc = ContextCompressor(summarizer=summarizer, max_tokens=body.max_tokens,
+                           keep_recent=body.keep_recent)
+    return _nocache_json(await cc.compress(body.turns))
+
+
 # H21.0 — mount the cognition APIRouter (keeps cognition endpoints out of the
 # web.py god-object). User-guarded like the rest of the /api surface.
 from agents.core.cognition.api import router as _cognition_router  # noqa: E402

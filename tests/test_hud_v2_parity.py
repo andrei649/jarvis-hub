@@ -38,6 +38,7 @@ RULES = [
     # memory & knowledge
     ("/api/kg/", "memory"), ("/api/memory/", "memory"), ("/memory/stats", "memory"),
     ("/memory", "memory"), ("/api/local-docs", "memory"), ("/api/capture", "memory"),
+    ("/api/context", "memory"),  # runtime context compression (H20.3)
     # trust / security / payments
     ("/api/security/", "trust"), ("/security", "trust"), ("/api/secrets/", "trust"),
     ("/api/payments", "trust"),
