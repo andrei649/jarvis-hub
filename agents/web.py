@@ -2099,6 +2099,30 @@ async def toolrpc_call(body: ToolRPCCallBody):
     return _nocache_json(result, status_code=200 if result.get("ok") else 422)
 
 
+class SubAgentSpawnBody(BaseModel):
+    task: str = Field(..., max_length=4000)
+    agent: str = Field("", max_length=40)
+
+
+@app.get("/api/subagents", dependencies=[Depends(_user_guard)])
+async def subagents_list():
+    """H20.6 — spawned sub-agents + concurrency stats."""
+    m = getattr(orch, "subagents", None) if orch else None
+    if m is None:
+        return _nocache_json({"spawns": [], "stats": {}})
+    return _nocache_json({"spawns": m.list(), "stats": m.stats()})
+
+
+@app.post("/api/subagents/spawn", dependencies=[Depends(_user_guard)])
+async def subagents_spawn(body: SubAgentSpawnBody):
+    """H20.6 — spawn an isolated sub-agent (capped; rejected past the cap)."""
+    m = getattr(orch, "subagents", None) if orch else None
+    if m is None:
+        return JSONResponse({"error": "sub-agents unavailable"}, status_code=503)
+    result = await m.spawn(body.task, agent=body.agent)
+    return _nocache_json(result, status_code=200 if result.get("ok") else 429)
+
+
 # H21.0 — mount the cognition APIRouter (keeps cognition endpoints out of the
 # web.py god-object). User-guarded like the rest of the /api surface.
 from agents.core.cognition.api import router as _cognition_router  # noqa: E402

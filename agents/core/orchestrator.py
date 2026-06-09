@@ -959,6 +959,19 @@ class Orchestrator:
         except Exception:
             logger.debug("calibration hook wiring skipped", exc_info=True)
 
+        # H20.6 — agent-initiated sub-agent delegation (isolated session, capped).
+        from .subagents import SubAgentManager
+
+        async def _subagent_runner(task, session_id, agent):
+            picked = agent if agent in self.agents else "jarvis"
+            out = await self.process(task, agent=picked, channel="subagent")
+            return {"output": out, "session_id": session_id}
+
+        self.subagents = SubAgentManager(
+            runner=_subagent_runner,
+            max_concurrent=int(self.get_setting("autonomy.max_subagents", 3) or 3),
+        )
+
         return executor
 
     def _schedule_worldview_kg_sync(self):

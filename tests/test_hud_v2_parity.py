@@ -65,7 +65,7 @@ RULES = [
     ("/api/satellites", "comms"),  # shared-GPU mic satellites (H12.8)
     # agent ops (heartbeat / learning / templates)
     ("/heartbeat", "agents"), ("/learning", "agents"), ("/api/learning", "agents"),
-    ("/api/agent-templates", "agents"),
+    ("/api/agent-templates", "agents"), ("/api/subagents", "agents"),  # H20.6
     # admin (settings / env / models / llm lifecycle / oauth / oracle / plugins / voice / prompts / stats)
     ("/api/admin/", "admin"), ("/plugins", "admin"), ("/api/models", "admin"),
     ("/api/llm/", "admin"), ("/api/oauth", "admin"), ("/api/oracle", "admin"),

@@ -14,7 +14,7 @@
 ```bash
 pip install -r requirements-beta.txt
 python -m uvicorn agents.web:app --host 127.0.0.1 --port 8080
-python -m pytest tests/ -v          # 2079 passed, 1 skipped
+python -m pytest tests/ -v          # 2084 passed, 1 skipped
 ```
 
 > Singurul skip rămas e heartbeat-ul opțional. (Vechiul `tests/test_spotify.py` cu 8 skip-uri a
@@ -85,7 +85,7 @@ chain-of-thought leak / mid-sentence truncation fixed. Kill-switch:
 
 **În afara totalului:** **Bugs & Hot Fixes** — **toate BUG-\* și HF-\* rezolvate** (BUG-1…13 + HF-1…7; vezi re-baseline 2026-06-08 + tabelul de mai jos). Rămân deschise **deliberat**: **CLN-2/CLN-3** (refactor god-objects `orchestrator.py`/`web.py`, P3) + taskuri/nice-to-have netrackuite ca buguri (**TASK-1** Howard backend, **BUG-2b** frontend E2E, **NTH-1**). *(Detalii audit cod 2026-06-04 în tabel.)*
 
-**Test count (backend pytest):** 2,079 passed, 1 skipped — skip-ul rămas e heartbeat-ul opțional (`tests/test_spotify.py` eliminat în CLN-1). *(2026-06-09: backlog software **code-complete** — H10 30/30, H11 1/4, H12 23/25, frontiere H13–H17 15/20 (vezi „Status General" de mai sus); + WorldView O19 33/33 merged + Argus. Rămâne audit + testare manuală, vezi `docs/AUDIT.md`.)*
+**Test count (backend pytest):** 2,084 passed, 1 skipped — skip-ul rămas e heartbeat-ul opțional (`tests/test_spotify.py` eliminat în CLN-1). *(2026-06-09: backlog software **code-complete** — H10 30/30, H11 1/4, H12 23/25, frontiere H13–H17 15/20 (vezi „Status General" de mai sus); + WorldView O19 33/33 merged + Argus. Rămâne audit + testare manuală, vezi `docs/AUDIT.md`.)*
 **Frontend (BUG-2):** 184 teste JS / 23 fișiere · ~67% line coverage — separat de suita pytest.
 
 > **Orizont 7 Hardening — Drumul spre 1.0.0:** 11/11 COMPLET ✅ (livrat 2026-06-02)
@@ -670,7 +670,7 @@ chain-of-thought leak / mid-sentence truncation fixed. Kill-switch:
 
 ---
 
-## ORIZONT 20 — Hermes Mining (capabilități nete din `hermes-agent`, post-1.0) — 1/6
+## ORIZONT 20 — Hermes Mining (capabilități nete din `hermes-agent`, post-1.0) — 2/6
 
 > Sursă: research [docs/research/2026-06-07-hermes-agent.md](docs/research/2026-06-07-hermes-agent.md) §7.
 > `hermes-agent` (NousResearch, MIT, ~185.7k★, activ) se suprapune masiv cu OpenClaw (are chiar
@@ -692,7 +692,7 @@ chain-of-thought leak / mid-sentence truncation fixed. Kill-switch:
 | H20.3 | **ContextCompressor runtime** — compresie de context pentru sesiuni lungi (rezumare / eviction inteligentă pe cale fierbinte), distinct de consolidarea nocturnă (H5.15). Se leagă de tema „sleep-time compute" (H13). | 8 | P2 | H5.15 | hermes ContextCompressor |
 | H20.4 | **Self-evolution (DSPy / GEPA)** — optimizare automată de prompturi/skill-uri din traiectorii (ShareGPT-style), gated prin decision inbox (reversibil). Extinde learning-loop-ul de agenți (H7.11) de la „ce agent" la „cât de bine e promptat". | 8 | P3 | H7.11, H6.5 | hermes-agent-self-evolution |
 | H20.5 | **Skill self-improvement + drift manifest** — rafinează skill-uri existente (nu doar `generate_skill` care doar creează) + manifest content-hash pt. detectarea modificărilor la sync `hermes update`-style. | 5 | P3 | BUG-13, `loader.generate_skill` | hermes Skills Hub / `.bundled_manifest` |
-| H20.6 | **Delegare dinamică de sub-agenți** — agentul poate spawna la runtime un sub-agent izolat (sesiune proprie), concurent (cap configurabil), gated. Extinde WorkflowEngine (H5.6) de la paralelism author-defined la spawn inițiat de agent. | 8 | P3 | H5.6 | hermes `delegate_tool` |
+| H20.6 ✅ | **Delegare dinamică de sub-agenți** — agentul poate spawna la runtime un sub-agent izolat (sesiune proprie), concurent (cap configurabil), gated. Extinde WorkflowEngine (H5.6) de la paralelism author-defined la spawn inițiat de agent. **Done 2026-06-09:** `core/subagents.py` `SubAgentManager` — `spawn` rulează un sub-agent în **sesiune izolată** (`session::sub-…`) printr-un **runner injectabil** (dispatch orchestrator în prod; stub offline), **cap configurabil** de concurență (`autonomy.max_subagents`, respins peste cap → 429), eliberat pe succes/eșec. Endpoints `GET /api/subagents`, `POST /api/subagents/spawn`. +5 teste offline (izolare sesiune, cap concurență, eșec capturat). | 8 | P3 | H5.6 | hermes `delegate_tool` |
 
 > **Total Orizont 20:** ~47 SP, **post-1.0** (NU în gate-ul 1.0.0). Headline: **H20.1**.
 > Secvențiere: H20.1 → H20.2 → H20.3 → (H20.4 ∥ H20.5 ∥ H20.6).
