@@ -14,7 +14,7 @@
 ```bash
 pip install -r requirements-beta.txt
 python -m uvicorn agents.web:app --host 127.0.0.1 --port 8080
-python -m pytest tests/ -v          # 1996 passed, 1 skipped
+python -m pytest tests/ -v          # 2015 passed, 1 skipped
 ```
 
 > Singurul skip rămas e heartbeat-ul opțional. (Vechiul `tests/test_spotify.py` cu 8 skip-uri a
@@ -85,7 +85,7 @@ chain-of-thought leak / mid-sentence truncation fixed. Kill-switch:
 
 **În afara totalului:** **Bugs & Hot Fixes** — **toate BUG-\* și HF-\* rezolvate** (BUG-1…13 + HF-1…7; vezi re-baseline 2026-06-08 + tabelul de mai jos). Rămân deschise **deliberat**: **CLN-2/CLN-3** (refactor god-objects `orchestrator.py`/`web.py`, P3) + taskuri/nice-to-have netrackuite ca buguri (**TASK-1** Howard backend, **BUG-2b** frontend E2E, **NTH-1**). *(Detalii audit cod 2026-06-04 în tabel.)*
 
-**Test count (backend pytest):** 1,996 passed, 1 skipped — skip-ul rămas e heartbeat-ul opțional (`tests/test_spotify.py` eliminat în CLN-1). *(2026-06-09: backlog software **code-complete** — H10 30/30, H11 1/4, H12 23/25, frontiere H13–H17 15/20 (vezi „Status General" de mai sus); + WorldView O19 33/33 merged + Argus. Rămâne audit + testare manuală, vezi `docs/AUDIT.md`.)*
+**Test count (backend pytest):** 2,015 passed, 1 skipped — skip-ul rămas e heartbeat-ul opțional (`tests/test_spotify.py` eliminat în CLN-1). *(2026-06-09: backlog software **code-complete** — H10 30/30, H11 1/4, H12 23/25, frontiere H13–H17 15/20 (vezi „Status General" de mai sus); + WorldView O19 33/33 merged + Argus. Rămâne audit + testare manuală, vezi `docs/AUDIT.md`.)*
 **Frontend (BUG-2):** 184 teste JS / 23 fișiere · ~67% line coverage — separat de suita pytest.
 
 > **Orizont 7 Hardening — Drumul spre 1.0.0:** 11/11 COMPLET ✅ (livrat 2026-06-02)
@@ -670,7 +670,7 @@ chain-of-thought leak / mid-sentence truncation fixed. Kill-switch:
 
 ---
 
-## ORIZONT 20 — Hermes Mining (capabilități nete din `hermes-agent`, post-1.0) — 0/6
+## ORIZONT 20 — Hermes Mining (capabilități nete din `hermes-agent`, post-1.0) — 1/6
 
 > Sursă: research [docs/research/2026-06-07-hermes-agent.md](docs/research/2026-06-07-hermes-agent.md) §7.
 > `hermes-agent` (NousResearch, MIT, ~185.7k★, activ) se suprapune masiv cu OpenClaw (are chiar
@@ -687,7 +687,7 @@ chain-of-thought leak / mid-sentence truncation fixed. Kill-switch:
 
 | # | Item | S | P | Dep | Sursă |
 |---|------|---|---|-----|-------|
-| H20.1 | **Tool-RPC în sandbox (`execute_code`)** — agentul scrie Python care apelează **tool-urile Jarvis** printr-un RPC local (Unix-socket) din interiorul sandbox-ului → „zero-context-cost pipelines" (orchestrează N tool-calls într-un script, fără round-trip prin contextul LLM per pas). Secretele NU sunt citibile în sandbox (peste secret broker H15.4). **Gated:** suprafața RPC pe allowlist + approval pe tool-uri tier-extern. Cel mai mare câștig net din Hermes. | 13 | P2 | H15.4, `sandbox.py` | hermes-agent `execute_code` |
+| H20.1 ✅ | **Tool-RPC în sandbox (`execute_code`)** — agentul scrie Python care apelează **tool-urile Jarvis** printr-un RPC local (Unix-socket) din interiorul sandbox-ului → „zero-context-cost pipelines" (orchestrează N tool-calls într-un script, fără round-trip prin contextul LLM per pas). Secretele NU sunt citibile în sandbox (peste secret broker H15.4). **Gated:** suprafața RPC pe allowlist + approval pe tool-uri tier-extern. Cel mai mare câștig net din Hermes. **Done 2026-06-09 (suprafață guvernată):** `core/tool_rpc.py` `ToolRPCServer` — **allowlist** (doar tool-uri înregistrate; necunoscut → refuzat), **risk-gating** (read-only inline; gated/extern → **task ask-tier**, nu rulează din sandbox; execută via executor `toolrpc` DOAR după aprobare), **secret-scrub** recursiv pe răspuns (sandbox-ul nu vede secrete). `run_pipeline` = N tool-calls fără round-trip LLM. Endpoints `GET /api/toolrpc/tools`, `POST /api/toolrpc/call`. Allowlist de start: `echo`/`time` (integrările adaugă tool-uri gated). +10 teste offline (allowlist, gating+enqueue, scrub secrete, pipeline, execute post-aprobare). *(Transport Unix-socket + clientul din sandbox + rularea codului = poartă host.)* | 13 | P2 | H15.4, `sandbox.py` | hermes-agent `execute_code` |
 | H20.2 | **Lățime providere + hot-swap** — adaptor **OpenRouter** (o cheie → sute de modele) + comandă chat/admin de schimbare backend la cald (`/model …`), peste hybrid router-ul existent (Claude/Gemini/LM Studio/Ollama). | 5 | P2 | PR #133 (LM Studio control) | hermes `hermes model` / OpenRouter |
 | H20.3 | **ContextCompressor runtime** — compresie de context pentru sesiuni lungi (rezumare / eviction inteligentă pe cale fierbinte), distinct de consolidarea nocturnă (H5.15). Se leagă de tema „sleep-time compute" (H13). | 8 | P2 | H5.15 | hermes ContextCompressor |
 | H20.4 | **Self-evolution (DSPy / GEPA)** — optimizare automată de prompturi/skill-uri din traiectorii (ShareGPT-style), gated prin decision inbox (reversibil). Extinde learning-loop-ul de agenți (H7.11) de la „ce agent" la „cât de bine e promptat". | 8 | P3 | H7.11, H6.5 | hermes-agent-self-evolution |
@@ -700,7 +700,7 @@ chain-of-thought leak / mid-sentence truncation fixed. Kill-switch:
 
 ---
 
-## ORIZONT 21 — Cognition: Living Memory & Human-Like Personality (P1–P3) — 0/10
+## ORIZONT 21 — Cognition: Living Memory & Human-Like Personality (P1–P3) — 1/10
 
 > **Cea mai importantă temă.** Un creier cognitiv pentru agenți: memorie **nelimitată, append-only,
 > mereu valoroasă în timp** (uitarea = accesibilitate redusă + demotare pe tier, **niciodată ștergere**;
@@ -733,7 +733,7 @@ chain-of-thought leak / mid-sentence truncation fixed. Kill-switch:
 
 | # | Item | S | P | Dep | AC |
 |---|------|---|---|-----|----|
-| H21.0 | **Schelet + fix BUG-5** — pachet `cognition/` + `CognitionFacade` (înregistrat în `ComponentRegistry`), `TurnContext` per-cerere, bază `JsonStore` locked+keyed, categorie settings `cognition` (toate OFF), `APIRouter`. **Zero schimbare de comportament.** | 5 | P1 | — | master OFF = no-op măsurabil; `session_id` trece prin `TurnContext` (fără mutație pe instanța partajată → BUG-5 reparat); `/api/cognition/status` întoarce flagurile |
+| H21.0 ✅ | **Schelet + fix BUG-5** — pachet `cognition/` + `CognitionFacade` (înregistrat în `ComponentRegistry`), `TurnContext` per-cerere, bază `JsonStore` locked+keyed, categorie settings `cognition` (toate OFF), `APIRouter`. **Zero schimbare de comportament.** **Done 2026-06-09:** pachet `core/cognition/` — `CognitionFacade` (înregistrat în `ComponentRegistry`, **master OFF = no-op**; sub-flag activ doar dacă master ȘI flag), `TurnContext` async-context-local (izolat pe taskuri concurente, ca fix-ul BUG-5), `KeyedStore` (JsonStore locked+keyed `(agent,user)`), **`APIRouter`** montat (`GET /api/cognition/status`) ca să nu crească web.py. +9 teste offline (no-op master, izolare context, store persist+reload, endpoint cu/fără orch). | 5 | P1 | — | master OFF = no-op măsurabil; `session_id` trece prin `TurnContext` (fără mutație pe instanța partajată → BUG-5 reparat); `/api/cognition/status` întoarce flagurile |
 | H21.1 | **Cheia de onestitate** (start aici) — judecător anti-sycophancy/persona în `QualityMonitor` (axă deterministă în `signals` + judge LLM opțional **deferred**, nu inline); editare atribuire-în-caracter în `synthesize()`; metrica Sycophancy Index. | 5 | P1 | H21.0 | Sycophancy Index calculat & expus; pushback-reversal ≤0.05 pe probe set; `synthesize` păstrează vocile specialiștilor; judge rulează deferred (fără apel LLM pe hot-path) |
 | H21.2 | **Afect + expresie de personalitate** — parser front-matter în `_load_soul` (corp vs `meta`; **reutilizează** parserul YAML-frontmatter introdus de BUG-13 în `loader._parse_manifest` dacă se potrivește); `affect/` (mood attractor, τ) + `personality/` (whole-trait sampler {μ,σ,skew}, seed reproducibil); injectează blocul în **ambele** prompt-buildere (`agent.process` + streaming `orchestrator.py:1115`); Objective·Obstacle·Tactic + dial de status; prosody în `tts.speak()` (afect în **cheia de cache**). Gated `cognition.affect_enabled`. | 8 | P2 | H21.0 | media realizată a trăsăturii urmărește μ ±0.05 cu σ viu; mood-ul se relaxează spre setpoint și se clampează; prosody diferă pe agent; cache-key include afectul |
 | H21.3 | **Memorie vie, NELIMITATĂ** — reutilizează H14 (`decay`/`bitemporal`/`consolidation`/`entity`); **greenfield**: gate de encodare predictive-coding (înainte de `MemoryManager._lock`, în `VectorRecord.metadata`; detectează hash-fallback), 3-vector neuromodulator (DA/NE/ACh), pattern-separation la scriere / completion la citire, **TCM** re-rank post-fusion (nu atinge RRF); split `DailyReflector` în NREM/REM (idempotency **durabil** + multi-sesiune); nightly replay, tag-and-capture, **SHY** renormalizare, mentenanță (demotare pe tier, **NICIODATĂ ștergere**), **re-projection** (re-embed pe model nou, `embed_version`); stocare tiered hot/warm/cold; core mereu-injectat (bounded JsonStore). *(Compresia pe **cale fierbinte** e ORIZONT 20 H20.3 ContextCompressor — aici e consolidarea **nocturnă** + tiering + retenție nelimitată; complementare.)* | 13 | P2 | H21.0 | nimic auto-șters (doar demotare; user-forget = singura ștergere); reactivare cold→hot pe cue; calibrated-recall (still-true × (1−Brier), penalizare pe fapt depășit); re-projection upgradează vectorii vechi; consolidare idempotentă peste restart + multi-sesiune; S/N stabil pe măsură ce crește |

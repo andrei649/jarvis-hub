@@ -2074,6 +2074,37 @@ async def nodes_dispatch(node_id: str, body: NodeDispatchBody):
     return _nocache_json(result, status_code=200 if result.get("ok") else 422)
 
 
+class ToolRPCCallBody(BaseModel):
+    tool: str = Field(..., max_length=80)
+    args: dict = Field(default_factory=dict)
+
+
+@app.get("/api/toolrpc/tools", dependencies=[Depends(_user_guard)])
+async def toolrpc_tools():
+    """H20.1 — tools the governed RPC surface exposes to sandboxed code."""
+    s = getattr(orch, "tool_rpc", None) if orch else None
+    return _nocache_json({"tools": s.tools() if s is not None else []})
+
+
+@app.post("/api/toolrpc/call", dependencies=[Depends(_user_guard)])
+async def toolrpc_call(body: ToolRPCCallBody):
+    """H20.1 — call a tool through the governed RPC surface (allowlist + gating).
+
+    Read-only tools return inline; gated tools return approval_required + a task
+    id (they run only after approval). Mirrors what sandboxed script code does."""
+    s = getattr(orch, "tool_rpc", None) if orch else None
+    if s is None:
+        return JSONResponse({"error": "tool-rpc unavailable"}, status_code=503)
+    result = await s.handle({"tool": body.tool, "args": body.args})
+    return _nocache_json(result, status_code=200 if result.get("ok") else 422)
+
+
+# H21.0 — mount the cognition APIRouter (keeps cognition endpoints out of the
+# web.py god-object). User-guarded like the rest of the /api surface.
+from agents.core.cognition.api import router as _cognition_router  # noqa: E402
+app.include_router(_cognition_router, dependencies=[Depends(_user_guard)])
+
+
 class DigestRunBody(BaseModel):
     topic: str = Field("", max_length=200)
     sources: Optional[list[str]] = Field(None, max_length=10)

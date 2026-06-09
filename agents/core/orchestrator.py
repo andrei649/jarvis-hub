@@ -292,6 +292,8 @@ class Orchestrator:
         reg.add("soul_versions", ".soul_versioning", "SoulVersionStore", label="prompt VC")    # H10.22
         reg.add("e2e_sync", ".e2e_sync", "E2ESync", label="E2E device sync")                   # H12.13
         reg.add("satellite_hub", ".satellite_hub", "SatelliteHub", label="satellite hub")      # H12.8
+        reg.add("cognition", ".cognition", "CognitionFacade",
+                get_setting=self.get_setting, label="cognition (H21)")                          # H21.0
         # ── end optional components ──
         self.plugins: dict = {}
         self.skills = SkillLoader()
@@ -905,6 +907,28 @@ class Orchestrator:
             audit=getattr(self, "audit", None),
         )
         executor.register("node", self.node_mesh.execute)
+
+        # H20.1 — governed Tool-RPC surface for sandboxed zero-context pipelines.
+        # Read-only tools run inline; gated tools enqueue an ask-tier task (and
+        # run via this executor only after approval). Starter allowlist is safe
+        # built-ins; integrations register more (incl. gated) over time.
+        from .tool_rpc import ToolRPCServer
+        import time as _t
+        self.tool_rpc = ToolRPCServer(
+            secret_broker=getattr(self, "secret_broker", None),
+            enqueue=self.autonomy_queue.enqueue,
+            audit=getattr(self, "audit", None),
+        )
+
+        async def _rpc_echo(args):
+            return {"echo": args}
+
+        async def _rpc_time(args):
+            return {"now": _t.time()}
+
+        self.tool_rpc.register_tool("echo", _rpc_echo)
+        self.tool_rpc.register_tool("time", _rpc_time)
+        executor.register("toolrpc", self.tool_rpc.execute)
 
         return executor
 
