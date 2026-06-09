@@ -1833,6 +1833,41 @@ async def writeback_request(body: WriteBackBody):
     return _nocache_json(result, status_code=200 if result.get("ok") else 422)
 
 
+class SocialActionBody(BaseModel):
+    platform: str = Field(..., max_length=40)
+    action: str = Field(..., max_length=40)
+    fields: dict = Field(default_factory=dict)
+    agent: Optional[str] = Field(None, max_length=40)
+    source: str = Field("", max_length=120)
+
+
+@app.get("/api/integrations/social", dependencies=[Depends(_user_guard)])
+async def social_targets():
+    """H12.21 — list supported governed social actions (X post/reply/DM)."""
+    from agents.core.social import SocialBroker
+    sb = getattr(orch, "social", None) if orch else None
+    targets = sb.targets() if sb is not None else SocialBroker().targets()
+    return _nocache_json({"targets": targets})
+
+
+@app.post("/api/integrations/social", dependencies=[Depends(_user_guard)])
+async def social_request(body: SocialActionBody):
+    """H12.21 — request a governed social write (X/Twitter post/reply/DM).
+
+    Validates against the allowlist and enqueues an ask-tier task. Nothing is
+    posted here; on approval the autonomy worker dispatches it to the social
+    executor (OAuth/bearer resolved at action time, behind approval — never raw
+    cookies). Without a live queue, returns a validation-only preview."""
+    from agents.core.social import SocialBroker
+    sb = getattr(orch, "social", None) if orch else None
+    if sb is None:
+        q = getattr(orch, "autonomy_queue", None) if orch else None
+        sb = SocialBroker(enqueue=q.enqueue if q is not None else None)
+    result = sb.request(body.platform, body.action, body.fields,
+                        agent=body.agent, source=body.source)
+    return _nocache_json(result, status_code=200 if result.get("ok") else 422)
+
+
 class DigestRunBody(BaseModel):
     topic: str = Field("", max_length=200)
     sources: Optional[list[str]] = Field(None, max_length=10)

@@ -863,6 +863,17 @@ class Orchestrator:
         )
         executor.register("writeback", self.writeback.execute)
 
+        # H12.21 — governed social actions (X/Twitter post/reply/DM). Same
+        # governance: approved `social.*` tasks resolve OAuth/bearer credentials
+        # at action time (behind approval) and post via an injectable client.
+        from .social import SocialBroker
+        self.social = SocialBroker(
+            enqueue=self.autonomy_queue.enqueue,
+            secret_broker=getattr(self, "secret_broker", None),
+            audit=getattr(self, "audit", None),
+        )
+        executor.register("social", self.social.execute)
+
         return executor
 
     def _schedule_worldview_kg_sync(self):
