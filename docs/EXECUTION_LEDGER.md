@@ -82,6 +82,12 @@ cadență dovedită), apoi clusterele hardware/externe (oricum au poartă umană
 Nu sunt în gate-ul 1.0.0. Pornesc după ce Faza 1 e închisă (sau la cererea ta, în paralel — ex. H21.0 e
 fundație P1 care repară BUG-5).
 
+> **UPDATE 2026-06-09 — ORIZONT 20 (H20.1–H20.6) și ORIZONT 21 (H21.0–H21.5 + H21.A–H21.D) sunt livrate
+> integral în cod (vezi rândurile `✅` din `BACKLOG.md`); checkbox-urile `☐` din tabelele de mai jos sunt
+> istorice și nu mai reflectă starea reală. Restul efectiv-deschis: gate-uri GPU/host (H12.14, H13.3),
+> probe la rulare pe infra reală pentru `H19.x` (Kafka/Postgres/WS — codul e livrat), și refactor-urile
+> amânate intenționat CLN-2/CLN-3.**
+
 ### ORIZONT 21 — Cognition (cea mai importantă temă; refolosește H14)
 
 | # | Item | SP | P | Verif. | Status |
@@ -120,6 +126,7 @@ fundație P1 care repară BUG-5).
 
 | Dată | Item | PR | Note |
 |------|------|----|------|
+| 2026-06-09 | **HF-6 · HF-7 · NTH-1 · reconciliere backlog** | `claude/backlog-status-rfod8p` | HF-6: postură izolare sandbox expusă în `/sandbox/status` + posture (`insecure_host_exec`/warning), host-fallback opt-in per-instanță, mesaje corectate (+4 teste). HF-7: mod trusted-proxy opt-in (`JARVIS_TRUSTED_PROXY` + `_real_client_host`), default fail-closed păstrat (+1 test). NTH-1: SSE `GET /api/cognition/stream` (+3 teste). Reconciliere: HF-3/CLN-1 erau deja livrate; marcate ✅. Suită: **2168 passed, 2 skipped**; ruff clean. |
 | 2026-06-09 | **H12.19** Pairing/aprobare expeditor inbound | (acest branch) | `core/channels/pairing.py` + gateway gate + 4 endpoints + 20 teste. Suită: 1820 passed, 1 skipped. |
 | 2026-06-09 | **H12.20** Rotație profile auth + failover model | (acest branch) | `core/llm/auth_rotation.py` `AuthProfilePool` (multi-key + cooldown exponențial) cablat în Claude/Gemini + router + endpoint admin + 18 teste. Suită: 1838 passed, 1 skipped. |
 | 2026-06-09 | **H12.25** Transcript-watcher → taskuri | (acest branch) | `core/autonomy/transcript_watcher.py` (extracție high-precision + enqueue ask-tier guvernat) + endpoint + 10 teste. Suită: 1848 passed, 1 skipped. |
