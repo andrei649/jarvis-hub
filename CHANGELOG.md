@@ -1,6 +1,19 @@
 # Changelog
 
 ## [Unreleased]
+### Diagnostics — surface a silent OAuth failure + CLN sequencing (2026-06-10)
+- **`oauth.load_token` no longer swallows a decrypt failure.** A rotated/missing secret key or
+  corrupted token file silently left the still-encrypted token in place — the connected service
+  (Gmail/Calendar/Spotify) would then fail mysteriously with no trace. Now it **warns** ("re-
+  authorize the service"), so the owner can diagnose it during the manual-test run. +1 test.
+- Telegram cosmetic calls (callback-ack, typing indicator) and the Qdrant collection probe:
+  documented their intentional swallows (debug log / comment) so they're no longer indistinguishable
+  from a missing handler. (Surveyed all 355 `except` blocks; the rest are legitimate documented
+  graceful-degradation — left as-is to avoid log noise.)
+- **CLN-2/CLN-3 (god-object split) sequenced post-1.0** by owner decision — a 5,000-line refactor
+  carries regression risk that shouldn't land before the human manual-test gate. Recorded in
+  BACKLOG + OWNER_TASKS.
+
 ### API honesty — two inconsistencies found by running the app (2026-06-10)
 - **`GET /api/agents/{id}/history` 404s for unknown agents**, consistent with `/soul` (it
   was returning a misleading `200 + empty runs` for any id, so a typo'd agent looked real

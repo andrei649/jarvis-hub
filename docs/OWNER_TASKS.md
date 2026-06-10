@@ -63,5 +63,9 @@
 
 ## Parking lot (decisions, no rush)
 
+- [ ] **After the manual-test pass:** green-light **CLN-2/CLN-3** (the big `orchestrator.py` /
+  `web.py` split) — deliberately sequenced post-1.0 (your call, 2026-06-10) so a refactor
+  can't add regression risk before the human gate.
+
 - [ ] Phase 2 design partners: who are the first 3–5 non-Andrei users? (MOONSHOT §4, Phase 2 gate)
 - [ ] Hosted-Pro appetite: build vs wait for pull (VALUATION_AND_PRICING §9).

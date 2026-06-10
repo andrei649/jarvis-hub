@@ -78,8 +78,8 @@ class TelegramChannel(ChannelAdapter):
                 f"{self.api_base}/answerCallbackQuery",
                 json={"callback_query_id": callback_id, "text": text},
             )
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug("Telegram answerCallbackQuery failed (cosmetic): %s", e)
 
     async def send_action(self, chat_id: int, action: str = "typing"):
         try:
@@ -87,8 +87,8 @@ class TelegramChannel(ChannelAdapter):
                 f"{self.api_base}/sendChatAction",
                 json={"chat_id": chat_id, "action": action},
             )
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug("Telegram sendChatAction failed (cosmetic): %s", e)
 
     async def _poll_loop(self):
         while self._running:

@@ -31,6 +31,8 @@ class QdrantVectorStore(VectorStore):
                 self._collection_ready = True
                 return
         except Exception:
+            # Collection-exists probe failed → fall through to create below, which
+            # logs the real error if Qdrant is unreachable. Intentionally quiet here.
             pass
         try:
             payload = {
