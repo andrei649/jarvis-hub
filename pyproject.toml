@@ -9,7 +9,7 @@
 target-version = "py312"
 line-length = 100
 # Keep the analysis scoped to source we own.
-extend-exclude = ["repo_export.txt", "design_handoff_jarvis_hub", ".opencode"]
+extend-exclude = ["repo_export.txt", "docs/internal/design_handoff_jarvis_hub", ".opencode"]
 
 [tool.ruff.lint]
 # High-signal rules: real bugs (F), pyflakes/pycodestyle (E,W), import hygiene (I),

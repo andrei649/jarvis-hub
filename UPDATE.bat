@@ -19,68 +19,68 @@ where py >nul 2>&1
 if %errorlevel%==0 (set "PY=py") else (set "PY=python")
 %PY% --version >nul 2>&1
 if %errorlevel% neq 0 (
-  echo [EROARE] Python nu este instalat sau nu e in PATH.
-  echo Descarca de la https://www.python.org/downloads/ si bifeaza
-  echo "Add Python to PATH" la instalare.
+  echo [ERROR] Python is not installed or not in PATH.
+  echo Download it from https://www.python.org/downloads/ and check
+  echo "Add Python to PATH" during installation.
   goto :end
 )
 
 REM --- 2. Pull latest from GitHub -----------------------------
-echo [1/5] Aduc ultimele modificari de pe GitHub...
+echo [1/5] Pulling the latest changes from GitHub...
 git pull --rebase origin main
 if %errorlevel% neq 0 (
   echo.
-  echo [ATENTIE] git pull a esuat. Poate ai modificari locale nesalvate.
-  echo Ruleaza in terminal:  git status
+  echo [WARNING] git pull failed. You may have unsaved local changes.
+  echo Run in a terminal:  git status
   goto :end
 )
 echo.
 
 REM --- 3. Virtual env + dependencies --------------------------
-echo [2/5] Pregatesc mediul Python (.venv)...
+echo [2/5] Preparing the Python environment (.venv)...
 if not exist ".venv\Scripts\python.exe" (
-  echo     Creez mediul virtual prima data...
+  echo     Creating the virtual environment for the first time...
   %PY% -m venv .venv
 )
 set "VPY=.venv\Scripts\python.exe"
 
-echo [3/5] Instalez dependentele JARVIS...
+echo [3/5] Installing JARVIS dependencies...
 "%VPY%" -m pip install --quiet --upgrade pip
 "%VPY%" -m pip install --quiet -r requirements-beta.txt
 echo.
 
-REM --- 4. WorldView: refresh dependinte Node (daca exista) ----
-echo [4/5] WorldView: actualizez dependintele Node...
+REM --- 4. WorldView: refresh Node dependencies (if present) ----
+echo [4/5] WorldView: updating Node dependencies...
 if exist "worldview\package.json" (
   where npm >nul 2>&1
   if !errorlevel!==0 (
     pushd worldview
     call npm install
     popd
-    echo   [OK] WorldView actualizat.
+    echo   [OK] WorldView updated.
   ) else (
-    echo   [SKIP] npm negasit - sar peste WorldView ^(JARVIS e actualizat^).
+    echo   [SKIP] npm not found - skipping WorldView ^(JARVIS is updated^).
   )
 ) else (
-  echo   [SKIP] worldview lipseste in acest checkout.
+  echo   [SKIP] worldview is missing in this checkout.
 )
 echo.
 
 REM --- 5. Run the tests ---------------------------------------
-echo [5/5] Rulez testele...
+echo [5/5] Running the tests...
 echo ------------------------------------------------------------
 "%VPY%" -m pytest -q
 set "TESTRC=%errorlevel%"
 echo ------------------------------------------------------------
 echo.
 if "%TESTRC%"=="0" (
-  echo   [OK] Totul a trecut. Poti porni aplicatia cu START.bat
+  echo   [OK] Everything passed. Start the app with START.bat
 ) else (
-  echo   [ATENTIE] Unele teste au esuat ^(vezi mai sus^).
+  echo   [WARNING] Some tests failed ^(see above^).
 )
 
 :end
 echo.
-echo Apasa o tasta pentru a inchide...
+echo Press any key to close...
 pause >nul
 endlocal

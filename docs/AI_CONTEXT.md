@@ -65,9 +65,8 @@ something is the way it is. Dated reports are immutable snapshots; never "fix" t
 
 - `package-lock.json`, `repo_export.txt` (unless regenerated for a sweep), `agents/web/v2/assets/*`
   (built bundle — read `frontend/src` instead), `agents/web/static/*` (legacy v1 HUD),
-  `memory_logs/`, `training/`, `worldview/**/dist`, `design_handoff_jarvis_hub/` (historical
-  HUD-v2 handoff scratch), root prompt files (`claude_batch_prompt.md`,
-  `gemini_architecture_prompt.md`, `PROMPTURI_FEATURES.md` — session prompts, not docs).
+  `memory_logs/`, `training/`, `worldview/**/dist`, `docs/internal/` (archived scratch — design
+  handoff, one-shot session prompts, superseded v0.2.x docs; see its README for what's there).
 - `BACKLOG.md` middle sections for unrelated horizons — use the header + your section.
 
 ## Keeping this map healthy (rules for every PR)
