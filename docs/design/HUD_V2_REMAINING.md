@@ -55,9 +55,10 @@ Still on mock (wire to endpoints; some need plugins configured):
   add a small settings menu (or a gated tweaks panel) that changes + persists them.
 
 ## 6. Toolchain / CI hardening
-- **CI frontend‑build + stale‑bundle guard** (most important): a job that runs `npm ci` →
-  `tsc --noEmit` → `vite build` and **asserts the committed `agents/web/v2/` matches the fresh
-  build**. Today the committed bundle is only gated by a local `vite build`.
+- ~~**CI frontend‑build + stale‑bundle guard**~~ ✅ **EXISTS** — the `hud-v2-build` job in
+  `.github/workflows/ci.yml` runs `npm ci` → `tsc --noEmit` → vitest → `vite build` and fails
+  if the committed `agents/web/v2` differs from a fresh build. *(This line was stale — noticed
+  2026‑06‑10 while re‑checking the punch‑list.)*
 - **OpenAPI types**: generate `src/api/schema.ts` from `/openapi.json` (`openapi-typescript`) + add a
   `tsc` gate; optionally backfill `response_model=` on the ~30 consumed endpoints. (Most ported files
   are `// @ts-nocheck` — drop that as types land.)

@@ -59,8 +59,10 @@ export async function registerGuard(app: FastifyInstance): Promise<void> {
     );
   }
 
-  // Decorate so `request.principal` is a known property (and typed); default to the open principal.
-  app.decorateRequest("principal", null);
+  // Decorate so `request.principal` is a known property (and typed); the value is
+  // assigned per-request in the onRequest hook below. (fastify v5 typing rejects a
+  // null initial value here — declare the property without one.)
+  app.decorateRequest("principal");
 
   app.addHook("onRequest", async (req: FastifyRequest, reply: FastifyReply) => {
     if (!enabled) {
