@@ -14,7 +14,9 @@ Când utilizatorul menționează **"backlog"**, **"ce urmează"**, **"next"**, *
 
 ## Hărți de orientare
 - **Navigare pentru AI (începe aici):** `docs/ARCHITECTURE.md` — entry points, request lifecycle, index de module, rețete „cum adaug X". Optimizat să găsești rapid unde trăiește codul, fără a citi tot.
+- **Context mare (1M tokens):** `docs/AI_CONTEXT.md` — tier-uri de încărcare + bundle-uri per task cu estimări de tokeni; nu încărca repo-ul brut.
 - **Arhitectură & structură:** `JARVIS.md` (stack, directoare, fluxul orchestrator → router → skills).
+- **Taskuri owner-only:** `docs/OWNER_TASKS.md` — hardware/GitHub-settings/decizii; nu le bloca pe agenți, marchează-le acolo.
 - **Specs & planuri (opencode):** `.opencode/plans/*.md` — un spec per skill/modul, scris înainte de implementare (TDD).
 - **Workflow paralel:** `PARALLEL_WORKFLOW.md` + `lock.py` (locks la nivel de componentă, evită coliziuni între agenți).
 
@@ -75,6 +77,15 @@ Ca dezvoltările pe browser să nu lase mobilul în urmă în tăcere, când un 
 
 Astfel orice feature de browser devine automat un task pe iOS/Android. Suprafețele intenționat
 desktop-only se marchează `➖` în ledger, cu motivul notat. Menținerea ledgerului = `H18.10` (umbrelă mereu deschisă).
+
+### Backend↔HUD — aceeași regulă pentru cockpit-ul V2
+Gate-ul de *coverage* (`tests/test_hud_v2_parity.py`) clasifică fiecare rută, dar nu garantează
+**controale UI** (audit 2026-06-10: backendul a luat-o înainte cu ~37 endpoint-uri — vezi `TASK-2`
+în `BACKLOG.md`). De aceea, când un PR adaugă/schimbă un **endpoint user-facing**, în *același* PR:
+- ori adaugi/wirezi suprafața în HUD V2 (`frontend/src/`),
+- ori adaugi endpoint-ul explicit în punch-list-ul `docs/design/HUD_V2_REMAINING.md` (+ rândul TASK-2
+  din `BACKLOG.md` dacă schimbă scopul). Endpoint-urile machine-facing se marchează `NOT_IN_HUD`
+  în gate-ul de paritate, cu motivul notat.
 
 ### Pattern conductor agent
 Pentru sesiuni cu 3+ wave-uri paralele, desemnează un **conductor agent** dedicat care:

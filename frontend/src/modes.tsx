@@ -2,7 +2,7 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { V2, Conversation, InputBar } from './ui';
 import { Icon, ICONS, Glyph, statusClass } from './ui';
-import { getKillSwitch, setKillSwitch, getAgentSoul, getAgentHistory, memorySearch } from './api/actions';
+import { getKillSwitch, setKillSwitch, getAgentSoul, getAgentHistory, memorySearch, decidePayment } from './api/actions';
 /* HUD v2 · MODES — Agents, Trust, Memory */
 
 /* ============ AGENTS ============ */
@@ -114,7 +114,16 @@ function TrustMode({ t, localPct = null }) {
   const [killed,setKilled]=useState(false);
   const [busy,setBusy]=useState(false);
   const [killErr,setKillErr]=useState(false);
+  const [,payTick]=useState(0);
   const D = V2;
+  // Payment lifecycle (H16.3): act on the broker, then reflect its returned state in
+  // the shared ledger — live.ts re-syncs from /api/payments on its next poll.
+  const payAct = (p, action) => {
+    if (!p.id) return;
+    decidePayment(p.id, action)
+      .then((r) => { p.state = (r && (r.state || r.status)) || (action === 'approve' ? 'approved' : action === 'reject' ? 'rejected' : 'cleared'); payTick((n) => n + 1); })
+      .catch(() => {});
+  };
   useEffect(() => {
     let alive = true;
     getKillSwitch().then((s) => { if (alive && s) setKilled(!!(s.halted ?? s.engaged)); }).catch(() => { if (alive) setKillErr(true); });
@@ -188,7 +197,19 @@ function TrustMode({ t, localPct = null }) {
             <div style={{border:'1px solid var(--panel-line)',borderRadius:'var(--radius)',padding:14,background:'var(--surface-2)'}}>
               <div className="dl" style={{fontFamily:'var(--font-mono)',fontSize:9.5,letterSpacing:'.16em',textTransform:'uppercase',color:'var(--ink-3)',marginBottom:6}}>{t.payTitle}</div>
               {D.PAYMENTS.map((p,i)=>(
-                <div className="pay-row" key={i}><span className="pcap">{p.pcap}</span><span style={{color:'var(--ink-2)'}}>{p.desc}</span><span style={{textAlign:'right',color:p.state==='pending'?'var(--amber)':p.state==='cleared'?'var(--green)':'var(--ink-3)'}}>{p.amt}</span></div>
+                <div className="pay-row" key={i}><span className="pcap">{p.pcap}</span><span style={{color:'var(--ink-2)'}}>{p.desc}</span>
+                  <span style={{textAlign:'right',color:p.state==='pending'?'var(--amber)':p.state==='cleared'?'var(--green)':'var(--ink-3)'}}>{p.amt}</span>
+                  {/* Lifecycle controls only when the row carries a real broker id (live data). */}
+                  {p.id && p.state==='pending' && (
+                    <span style={{display:'flex',gap:4,marginLeft:6}}>
+                      <button className="tool-btn" title="approve payment" onClick={()=>payAct(p,'approve')}>✓</button>
+                      <button className="tool-btn" title="reject payment" onClick={()=>payAct(p,'reject')}>✕</button>
+                    </span>
+                  )}
+                  {p.id && p.state==='approved' && (
+                    <button className="tool-btn" style={{marginLeft:6}} title="settle approved payment" onClick={()=>payAct(p,'settle')}>settle</button>
+                  )}
+                </div>
               ))}
               {/* Pending count is computed from the REAL ledger (PAYMENTS ← /api/payments),
                   not a hardcoded "€4,200 sweep" claim. Hidden when nothing is pending. */}

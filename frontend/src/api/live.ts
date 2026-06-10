@@ -98,7 +98,8 @@ export function useLiveModes(): LiveModes {
       }).catch(() => {});
       await apiGet('/api/payments').then((p: any) => {
         const list = arr(p, 'payments');
-        if (list && list.length) { set('PAYMENTS', list.map((x: any) => ({ pcap: x.mandate_id || x.payee || '', desc: x.memo || x.desc || '', amt: String(x.currency || '') + (x.amount != null ? x.amount : ''), state: x.state || x.status || 'pending' }))); mark('PAYMENTS'); }
+        // Keep the broker `id` so TrustMode can POST /api/payments/{id}/approve|reject|settle.
+        if (list && list.length) { set('PAYMENTS', list.map((x: any) => ({ id: x.id || x.payment_id || '', pcap: x.mandate_id || x.payee || '', desc: x.memo || x.desc || '', amt: String(x.currency || '') + (x.amount != null ? x.amount : ''), state: x.state || x.status || 'pending' }))); mark('PAYMENTS'); }
       }).catch(() => {});
 
       // ADMIN — local models + plugin registry

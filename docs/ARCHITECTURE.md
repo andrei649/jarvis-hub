@@ -73,7 +73,7 @@ When on: embeds the query, runs fused recall (vector ⊕ graph), injects top-k a
 |------|---------|-------------|
 | `agents/serve.py` | Uvicorn launcher | `app` import from `agents/web.py` |
 | `agents/run.py` | CLI REPL | `main()` |
-| `agents/web.py` | FastAPI app, lifespan, all HTTP endpoints (~203 routes) | `app`, `lifespan`, `orch` global |
+| `agents/web.py` | FastAPI app, lifespan, all HTTP endpoints (~253 routes) | `app`, `lifespan`, `orch` global |
 | `agents/core/orchestrator.py` | Main loop | `Orchestrator`, `handle_input`, `handle_input_stream`, `_maybe_checkpoint` |
 | `agents/core/agent.py` | Single agent runtime | `Agent`, `Agent.process`, `Agent.synthesize`, `Agent._load_soul` |
 | `agents/core/router.py` | Intent classifier | `IntentRouter.classify`, `Intent`, `INTENT_RULES` |
@@ -433,7 +433,7 @@ Key env vars loaded at startup:
 ### Testing
 
 - **Framework:** pytest with `asyncio_mode = auto` (see `pytest.ini`) — all `async def test_*` run without decorators.
-- **Test count:** ~1,764 passing tests, 1 skipped (offline suite). *(WorldView, the separate `worldview/` Node stack, has its own CI + test suites — see `worldview/`.)*
+- **Test count:** ~2,156 passing tests, 1 skipped (offline suite). *(WorldView, the separate `worldview/` Node stack, has its own CI + test suites — see `worldview/`.)*
 - **sys.path pattern:** Every test file inserts `repo_root` and `repo_root/agents` at the top. Always use this, not relative imports.
 - **Offline by default:** Tests inject fake backends (e.g. `FakeBackend(LLMBackend)`, `FakeLMStudioClient`). No real network/LLM required.
 - **Orchestrator instantiation trick:** Avoid `Orchestrator(config)` in unit tests (heavy init). Use `Orchestrator.__new__(Orchestrator)` + manual attribute assignment, or mock the heavy dependencies.
@@ -549,7 +549,7 @@ Key env vars loaded at startup:
 serve.py                          Uvicorn launcher
 agents/
   run.py                          CLI REPL
-  web.py                          FastAPI app (~203 routes; uvicorn on port 8080)
+  web.py                          FastAPI app (~253 routes; uvicorn on port 8080)
   web/                            Static assets for web dashboard (HTML/CSS/JS)
   _system/agents.yaml             Agent registry (canonical source of truth)
   core/

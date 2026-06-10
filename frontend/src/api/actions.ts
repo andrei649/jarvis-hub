@@ -66,6 +66,24 @@ export async function setAutonomyMode(mode: string) {
   return apiPost('/autonomy/mode', { mode }, { admin: true });
 }
 
+/* ── Trust · governed payments lifecycle (modes.tsx, H16.3) ──────
+   POST /api/payments/{id}/approve|reject|settle  (admin) */
+export async function decidePayment(id: string, action: 'approve' | 'reject' | 'settle') {
+  return apiPost('/api/payments/' + encodeURIComponent(id) + '/' + action, {}, { admin: true });
+}
+
+/* ── Build · marketplace moderation (gap.tsx, H12.12) ────────────
+   POST /api/skills/marketplace/review {name,status}  (admin) */
+export async function reviewSkill(name: string, status: 'approved' | 'rejected' | 'pending') {
+  return apiPost('/api/skills/marketplace/review', { name, status }, { admin: true });
+}
+
+/* ── Agents · bench promotion (gap.tsx) ──────────────────────────
+   POST /learning/promote {bench_agent}  (admin) */
+export async function promoteBench(benchAgent: string) {
+  return apiPost('/learning/promote', { bench_agent: benchAgent }, { admin: true });
+}
+
 /* ── Voice · per-message TTS replay (cockpit.tsx) ────────────────
    POST /tts {text,lang} → audio blob; play it. Returns a stop() handle. */
 export async function playTts(text: string, lang = 'en') {

@@ -1,14 +1,14 @@
 # Jarvis Hub — Status Snapshot
 
-> **Current version:** v9.9.9 (pre-1.0 audit gate) · **Tests:** 1,764 passed (1 skipped) · **Agents:** 16 (15 cabinet + Howard, + 17 bench) · **HTTP routes:** ~203
-> **Road to v1.0:** the feature backlog (H1–H9) and most competitive-edge/frontier work (H10, H12, H14, H16, H17) are code-complete — ~166/186 items (≈82% SP), shipped pending the `9.9.9` audit gate (full code audit [docs/AUDIT.md](docs/AUDIT.md), human manual testing [docs/MANUAL_TESTING.md](docs/MANUAL_TESTING.md), and fixes). *Most* remaining items need hardware/models or external network surfaces; a few open pure-software items remain (mostly P3 — see [BACKLOG.md](BACKLOG.md#status-general)). See [BACKLOG.md](BACKLOG.md#version-roadmap) + [MOONSHOT.md](MOONSHOT.md) §4.
+> **Current version:** v9.9.9 (pre-1.0 audit gate) · **Tests:** 2,156 passed (1 skipped) + 184 frontend JS · **Agents:** 17 active (16 cabinet incl. Howard + Argus, the WorldView bridge; + 17 bench) · **HTTP routes:** ~253
+> **Road to v1.0:** the v1.0 backlog (H1–H17) is **code-complete — 194/196 items (≈99% SP)**, shipped pending the `9.9.9` audit gate (full code audit [docs/AUDIT.md](docs/AUDIT.md), human manual testing [docs/MANUAL_TESTING.md](docs/MANUAL_TESTING.md), and fixes). The only two open items (H12.14, H13.3) need the GPU host. HUD V2 is the default UI; deep write-controls for newer backend surfaces are tracked in [docs/design/HUD_V2_REMAINING.md](docs/design/HUD_V2_REMAINING.md). See [BACKLOG.md](BACKLOG.md#version-roadmap) + [MOONSHOT.md](MOONSHOT.md) §4.
 >
 > The version labels in the feature tables below (`v0.2.0`, `v0.2.1`) record *when* each capability first
 > landed (provenance), not the current release. For live priorities and the v1.0 gate, BACKLOG.md is the source of truth.
 
 ---
 
-## ✅ Agents — 15 cabinet SOUL.md + 11 HEARTBEAT.md (+ Howard emerging)
+## ✅ Agents — 17 active (15 classic cabinet + Howard emerging + Argus WorldView bridge)
 
 | Agent | Role | Tier | SOUL.md | HEARTBEAT.md |
 |-------|------|------|---------|-------------|
@@ -27,6 +27,8 @@
 | Hercules | Fitness | foundation | ✅ | ✅ daily |
 | Hephaestus | Builder | foundation | ✅ | ✅ daily |
 | Frigga | Family | foundation | ✅ | ✅ daily |
+| Argus | Geoint (WorldView bridge, read-only) | business | ✅ | ❌ reactive |
+| Howard | Digital Twin (emerging, local-only) | foundation | ✅ | ❌ reactive |
 
 ---
 
@@ -97,7 +99,7 @@
 
 ---
 
-## ✅ Web Endpoints (17) — All Smoke Tested PASS
+## ✅ Web Endpoints (17) — All Smoke Tested PASS *(historical v0.2 snapshot — the current surface is ~253 routes; full index in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md))*
 
 | Endpoint | Route | Status |
 |----------|-------|--------|

@@ -169,6 +169,8 @@ has an audit trail and future contributors understand *why*, not just *what*.
 | [docs/HISTORY.md](docs/HISTORY.md) | The record — *what we delivered + decision log* |
 | [STATUS.md](STATUS.md) | The snapshot — *where we are right now* |
 | [docs/gap-analysis-1.0.md](docs/gap-analysis-1.0.md) | The gaps — *what stands between us and 1.0* |
+| [docs/OWNER_TASKS.md](docs/OWNER_TASKS.md) | The human gate — *what only the owner can do* |
+| [docs/AI_CONTEXT.md](docs/AI_CONTEXT.md) | The loading map — *how an assistant ingests this repo* |
 
 ---
 

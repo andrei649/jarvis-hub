@@ -1,9 +1,10 @@
 # HUD v2 — Remaining work (next PR)
 
 > What's intentionally **left out** of the P0–P6 build (PR #156 / merged to `main`) and queued for
-> the next pass. The v2 HUD ships at **`/v2`** (opt‑in; `/` unchanged); this is the punch‑list to
-> finish it and eventually cut over. Companion: `HUD_V2_IMPLEMENTATION_PLAN.md`,
-> `HUD_V2_COVERAGE_AND_PLAN.md`. Generated 2026‑06‑05.
+> the next pass. **Update 2026‑06‑08: the cutover happened — V2 is the default HUD at `/`** (legacy
+> at `/v1`, override `JARVIS_HUD=v1`); §8 below is done, the rest is the depth punch‑list.
+> Companion: `HUD_V2_IMPLEMENTATION_PLAN.md`, `HUD_V2_COVERAGE_AND_PLAN.md`. Generated 2026‑06‑05;
+> **re‑audited 2026‑06‑10** (see §10).
 
 ## 0. Do this first
 - **Runtime verification.** Nothing was verified against a *running* backend (the build sandbox has
@@ -80,7 +81,43 @@ Still on mock (wire to endpoints; some need plugins configured):
   Unrelated to the HUD; `test` + `frontend` are green. Enable code scanning, or make that check
   non‑required.
 
+## 10. Parity re‑audit — 2026‑06‑10 (backend moved ahead again)
+
+The 2026‑06‑09 backend waves (PR #178/#180) shipped new surfaces **with no HUD controls**, on top of
+the still‑open depth items above. Snapshot: backend ≈253 routes; HUD v2 actively calls ~50, partially
+~10; **~37 write/recent endpoints lack any UI control**. New since the 2026‑06‑05 plan:
+
+- `GET /api/cognition/stream` (SSE, NTH‑1 ✅ backend) — cockpit still polls the static snapshot (§4).
+- Sender pairing gate (H12.19, 4 routes) — not in Comms.
+- Cloud auth‑profile rotation (H12.20, `GET /api/llm/auth-profiles`) — not in Admin.
+- Transcript → governed tasks (H12.25, `POST /api/transcripts/ingest`) — no surface.
+- A2A approval inbox (H16.2 `/api/a2a/inbox*`), payments lifecycle actions (H16.3
+  approve/reject/settle), marketplace review (H12.12) — read‑only or absent in Trust/Build.
+- Still missing interactive controls (carried from §2–§4): preference‑learning suggestions,
+  reflection run/status, bench promotion (`/learning/promote`), heartbeat start/stop/run, sandbox
+  execute, prompt rollback/commit, Data Spaces CRUD, secrets store form, LM Studio model controls.
+
+**Conclusion:** coverage gate still green (nothing silently dropped), but the *depth* gap regrew.
+Tracked as **TASK‑2** in `BACKLOG.md`; estimated 3–5 PRs (~2–3 weeks part‑time) to "nothing missed".
+
+### 2026‑06‑10 depth pass (same day, PR #181) — the control gap is CLOSED
+
+All ~37 missing **write/recent controls** above now have live HUD surfaces (Console panels in
+`frontend/src/gap.tsx` + Trust mode + cockpit):
+cognition SSE stream (cockpit live trace) · payments approve/reject/settle (Trust) · sender
+pairing approve/reject/block + code (H12.19) · injection scan (H17.1) · transcript→tasks ingest
+(H12.25) · escalation targets+send (H12.11) · reflection status+run · heartbeat run/start/stop ·
+bench promotion (`/learning/promote`) · marketplace review ✓/✕ (H12.12) · eval runs + compare ·
+AI step builder (H10.7) · sandbox execute (DEV_MODE‑gated, honest 403) · agent templates
+(H10.29) · LM Studio server/load/unload · cloud auth profiles (H12.20). Admin‑guarded calls now
+send the admin token (`actA`). +7 frontend tests (19 total).
+
+**Still open (the tail of TASK‑2):** §3 plugin‑gated mode wiring (Finance/Health/Knowledge/
+Family, Comms Discord/Slack threads), per‑panel LIVE/SEED chips (§1 — global badge exists),
+§6 toolchain (CI stale‑bundle guard, OpenAPI types, self‑hosted fonts), §7 locality endpoint.
+Estimated 1–2 PRs.
+
 ---
-*Parity gate (`tests/test_hud_v2_parity.py`) tracks all 210 routes → every one is mapped to a v2
+*Parity gate (`tests/test_hud_v2_parity.py`) tracks all routes → every one is mapped to a v2
 surface or `NOT_IN_HUD`, so nothing above can silently disappear — these items are about depth, not
 coverage.*
