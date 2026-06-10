@@ -19,7 +19,7 @@ For whole-project work, `export_repo.py` has three measured profiles (2026-06-10
 
 | Profile | Contents | ≈ tokens | Fits 1M? |
 |---|---|---|---|
-| `--research` | **The whole hub product, junk-free**: `agents/` Python + `frontend/src` TS + `tests/` + `skills/` + current docs. Excludes the standalone stacks (worldview/mobile/desktop/rust) and provenance archives (docs/superpowers, docs/research, docs/internal) | **~940K** | ✅ yes, ~6% headroom — drop BACKLOG's middle sections (−38K) for comfort |
+| `--research` | **The whole hub product, junk-free**: `agents/` Python + `frontend/src` TS + `tests/` + `skills/` + current docs (incl. `docs/contracts/worldview-bridge.md` — everything the hub needs to know about WorldView without loading it). Excludes the standalone stacks (worldview/mobile/desktop/rust) and provenance archives (docs/superpowers, docs/research, docs/internal) | **~940K** | ✅ yes, ~6% headroom — drop BACKLOG's middle sections (−38K) for comfort |
 | `--core` | `--research` minus `tests/` | ~685K | ✅ comfortable |
 | *(none)* | everything incl. WorldView + provenance | ~1.34M | ❌ no |
 
@@ -53,7 +53,7 @@ Order matters: each file assumes the previous ones.
 |------|------|----------|
 | **Backend work** (`agents/`) | `agents/core/<touched module>` + `agents/web.py` (or the relevant `agents/core/routers/*`) + matching `tests/test_*.py`. Full backend = ~330K — prefer the module index in ARCHITECTURE §3 to pick files | 10–330K |
 | **HUD v2 / frontend** | `frontend/src/**` (~67K) + `docs/design/HUD_V2_REMAINING.md` + `HUD_V2_COVERAGE_AND_PLAN.md` + `tests/test_hud_v2_parity.py` | ~80K |
-| **WorldView** | `worldview/README.md` + `worldview/{frontend,api}/src` — standalone stack, nothing else needed | ~150K |
+| **WorldView** | `worldview/README.md` + `worldview/{frontend,backend-api}/src` + **`docs/contracts/worldview-bridge.md`** (the only hub coupling) — standalone stack, nothing else needed | ~150K |
 | **Mobile parity** | `mobile/**` + `mobile/PARITY.md` + the endpoint list from ARCHITECTURE | ~25K |
 | **Security/audit** | `agents/core/security/**` + `docs/AUDIT.md` + `docs/MANUAL_TESTING.md` + `SECURITY.md` | ~40K |
 | **Marketing/brand** | `docs/BRAND_BOOK.md` + `GO_LIVE_PLAN.md` §3 + `docs/VALUATION_AND_PRICING.md` + `docs/GTM_PLAN.md` | ~25K |

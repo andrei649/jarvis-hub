@@ -6,11 +6,13 @@ on:
   pull_request:
     paths:
       - "worldview/**"
+      - "docs/contracts/worldview-bridge.md"
       - ".github/workflows/worldview.yml"
   push:
     branches: [main]
     paths:
       - "worldview/**"
+      - "docs/contracts/worldview-bridge.md"
       - ".github/workflows/worldview.yml"
 
 permissions:
