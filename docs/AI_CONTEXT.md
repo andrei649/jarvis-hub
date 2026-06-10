@@ -13,12 +13,15 @@
 ## TL;DR for an assistant with 1M context
 
 The whole repo as text is **~2M tokens** — do NOT load it raw. Load **Tier 0 + Tier 1**
-(~75K tokens) for any task, then add the **one task bundle** you need (each ≤350K). For code +
-docs at once, `python export_repo.py --core` → `repo_export.txt` (**~730K tokens**: the Python
-hub + all docs, skipping tests/worldview/mobile/desktop/rust) fits a 1M window with headroom;
-the full export without `--core` is **~1.1M** and does NOT fit once you add prompt overhead.
-*(Numbers re-measured 2026-06-10 after fixing the exporter — it used to swallow lockfiles and
-its own previous output.)*
+(~75K tokens) for any task, then add the **one task bundle** you need (each ≤350K).
+
+For whole-project work, `export_repo.py` has three measured profiles (2026-06-10, post-cleanup):
+
+| Profile | Contents | ≈ tokens | Fits 1M? |
+|---|---|---|---|
+| `--research` | **The whole hub product, junk-free**: `agents/` Python + `frontend/src` TS + `tests/` + `skills/` + current docs. Excludes the standalone stacks (worldview/mobile/desktop/rust) and provenance archives (docs/superpowers, docs/research, docs/internal) | **~940K** | ✅ yes, ~6% headroom — drop BACKLOG's middle sections (−38K) for comfort |
+| `--core` | `--research` minus `tests/` | ~685K | ✅ comfortable |
+| *(none)* | everything incl. WorldView + provenance | ~1.34M | ❌ no |
 
 ---
 
@@ -55,7 +58,7 @@ Order matters: each file assumes the previous ones.
 | **Security/audit** | `agents/core/security/**` + `docs/AUDIT.md` + `docs/MANUAL_TESTING.md` + `SECURITY.md` | ~40K |
 | **Marketing/brand** | `docs/BRAND_BOOK.md` + `GO_LIVE_PLAN.md` §3 + `docs/VALUATION_AND_PRICING.md` + `docs/GTM_PLAN.md` | ~25K |
 | **Voice** | `docs/VOICE.md` + `agents/core/voice/**` + `frontend/src/voice.ts` | ~25K |
-| **Whole-codebase sweep** | `python export_repo.py --core` → `repo_export.txt` (hub + docs; regenerate on demand — the file is gitignored, never committed). Full export (no flag) ≈1.1M — too big for 1M with overhead | ~730K |
+| **Whole-codebase sweep** | `python export_repo.py --research` → `repo_export.txt` (hub + HUD source + tests + current docs; gitignored, regenerate on demand). `--core` drops tests (~685K); the unflagged full export (~1.34M) does NOT fit | ~940K |
 
 **History / research** (`docs/HISTORY.md`, `docs/research/*`, `docs/superpowers/*`,
 `CHANGELOG.md` below the Unreleased block) is provenance — load only when investigating *why*
