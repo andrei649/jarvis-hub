@@ -3,7 +3,7 @@
 # Each agent maps to a SOUL.md in agents/<id>/
 
 jarvis:
-  name: "Andrei's Jarvis"
+  name: "Jarvis Hub"
   version: "0.5.0-beta"
   architecture: "pure-python-plugin"
   cardinality_cap: 18
@@ -258,7 +258,7 @@ bench:
   artemis:
     name: Artemis
     archetype: Lead Generation
-    trigger: "Digitaholic needs client pipeline"
+    trigger: "Side business needs client pipeline"
 
   demeter:
     name: Demeter

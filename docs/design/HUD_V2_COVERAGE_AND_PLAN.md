@@ -1,6 +1,6 @@
 # Jarvis Hub — HUD v2: Coverage Report & Integration Plan
 
-> **Purpose:** verify the design session's HUD v2 prototype (`design_handoff_jarvis_hub/pr-hud-v2/`)
+> **Purpose:** verify the design session's HUD v2 prototype (`docs/internal/design_handoff_jarvis_hub/pr-hud-v2/`)
 > covers **everything we've built**, and lay out how to **include it without dropping any capability**.
 > This is the "plan first / gap report" deliverable — **no implementation here**; review, decide the
 > two open points (§6), then I build in stages.

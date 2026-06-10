@@ -7,7 +7,7 @@
 > ready-to-run "different port" test setup. **Read this top-to-bottom before designing.**
 >
 > **Status:** brief only — no v2 code exists yet. Owner: Andrei. Generated 2026-06-05.
-> Prior art: the v0.3 prototype in [`design_handoff_jarvis_hub/`](../../design_handoff_jarvis_hub/)
+> Prior art: the v0.3 prototype in [`design_handoff_jarvis_hub/`](../internal/design_handoff_jarvis_hub/)
 > (open `design/index.html` in a browser to feel the current aesthetic). The *current shipping*
 > HUD lives in `agents/web/` and already implements that v0.3 handoff — **v2 supersedes it.**
 
@@ -122,7 +122,7 @@ Grouped by file in `agents/web/static/`:
 | `auth.js` | token handling for guarded endpoints (see §8 auth) |
 
 > **Read these files** — they are the *de facto* spec of "everything the product can do today."
-> The current 3-column layout: TopBar → SituationTicker → grid [AgentList+SysStats | Network+Conversation+Input | Weather+Calendar+AgentsGrid+Heartbeat], with Cognition/Systems/Workflows/Observability/Tools/Dossier as overlays/expansions and ⌘K palette over everything. Full layout/spec of the *current* design: [`design_handoff_jarvis_hub/README.md`](../../design_handoff_jarvis_hub/README.md).
+> The current 3-column layout: TopBar → SituationTicker → grid [AgentList+SysStats | Network+Conversation+Input | Weather+Calendar+AgentsGrid+Heartbeat], with Cognition/Systems/Workflows/Observability/Tools/Dossier as overlays/expansions and ⌘K palette over everything. Full layout/spec of the *current* design: [`design_handoff_jarvis_hub/README.md`](../internal/design_handoff_jarvis_hub/README.md).
 
 ### 3.3 Honest critique of the baseline (your brief is to fix these)
 - **Panel sprawl.** `tools.js` alone is 30+ panels bolted on as the backend grew. There's no
@@ -485,7 +485,7 @@ result must feel calmer than today, not busier.
 ## 11 · Deliverables & file layout
 
 1. **Prototype** (the visual + interaction spec): a self-contained `design/index.html` you can open
-   in a browser, in the spirit of the existing `design_handoff_jarvis_hub/design/`. Include all
+   in a browser, in the spirit of the existing `docs/internal/design_handoff_jarvis_hub/design/`. Include all
    modes you're proposing, real interactions (palette, focus mode, KG time slider, decision cards),
    and the design tokens. *The prototype IS the spec.*
 2. **A short decisions doc** resolving D1–D4 (§9.3) with rationale — for owner sign-off.
@@ -631,7 +631,7 @@ remaining modes → port to `agents/web2/` + `serve_hud_v2.py` → tests → cut
 
 **Read first (in order):** `MOONSHOT.md` (why) → `docs/ARCHITECTURE.md` (where code lives,
 lifecycle, recipes) → `agents/web.py` (the whole API) → `agents/web/static/*.js` (today's UI as a
-spec) → `agents/_system/agents.yaml` (+ a few `agents/<id>/SOUL.md`) → `design_handoff_jarvis_hub/`
+spec) → `agents/_system/agents.yaml` (+ a few `agents/<id>/SOUL.md`) → `docs/internal/design_handoff_jarvis_hub/`
 (current aesthetic + prototype) → `agents/core/settings_db.py` (runtime settings the admin edits).
 
 **Data shapes:** `data.js` (frontend adapter + `GLYPHS`/`COLLAB`/`TIERS`), and the JSON returned by

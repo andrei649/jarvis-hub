@@ -27,7 +27,7 @@ python -m uvicorn agents.web:app --host 127.0.0.1 --port 8080   # HUD: http://12
 python -m pytest tests/ -v
 ```
 - După modificări JS/CSS: Ctrl+F5 (cache bust). După Python: repornește serverul uvicorn.
-- CI rulează `tests/` la fiecare push pe `master` (`.github/workflows/`).
+- CI rulează `tests/` la fiecare push pe `main` (`.github/workflows/`).
 - **Code health (caută îmbunătățiri):** `pip install -r requirements-dev.txt` apoi
   `python scripts/code_health.py` — lint + format + dead-code + complexitate, dintr-o
   singură comandă. Config în `pyproject.toml`. **Advisory, nu blochează** (rulează și în
@@ -41,10 +41,11 @@ python -m pytest tests/ -v
 - **Agenți cloud-only:** athena. Restul: routing `auto` (grei → Claude/Gemini, ușori → local).
 - **Skills:** pattern loader în `skills/<name>/{SKILL.md,main.py}`, descoperite de `agents/core/skills/loader.py`.
 - **Limbă:** docs și personalitățile agenților (`agents/*/SOUL.md`) sunt în RO/EN după context; nu schimba tonul unui agent fără acordul utilizatorului.
+- **Souls = template-uri publice.** Detaliile personale NU intră niciodată în `SOUL.md`/`HEARTBEAT.md` (sunt publice) — merg în `agents/<id>/SOUL.local.md`/`HEARTBEAT.local.md` (gitignored, suprascriu template-ul la încărcare). Vezi `docs/ARCHITECTURE.md` §8.
 
 ## Stil de lucru
 Verde devreme peste perfecțiune · teste peste documentație · livrare peste analiză.
-Branch de feature per task → PR draft în `master`. Nu împinge direct în `master`.
+Branch de feature per task → PR draft în `main`. Nu împinge direct în `main`.
 
 ## Coordonare multi-agent (reguli non-negociabile)
 

@@ -10,6 +10,8 @@ checklist:
   - Flag recurring meeting inefficiencies
 ---
 
+> *Template soul — generic by design. Personal specifics are filled at onboarding and live in `HEARTBEAT.local.md` (gitignored), which overrides this file at load time.*
+
 # Pepper — Sunday Review
 
 ## Trigger
@@ -22,7 +24,7 @@ checklist:
 2. Extract top 3 priorities for the coming week
 3. Check for quarterly objective drift (are we on track?)
 4. Flag any recurring meeting that doesn't deliver value
-5. Blind spot audit: one thing Andrei likely missed this week
+5. Blind spot audit: one thing the owner likely missed this week
 
 ## Output Rule
 

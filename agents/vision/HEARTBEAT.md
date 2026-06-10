@@ -6,6 +6,8 @@ channel: log-only
 enabled: true
 ---
 
+> *Template soul — generic by design. Personal specifics are filled at onboarding and live in `HEARTBEAT.local.md` (gitignored), which overrides this file at load time.*
+
 # Vision — Regulatory Watch
 
 ## Trigger
@@ -17,7 +19,7 @@ enabled: true
 1. Check GDPR enforcement news (EU + Romania)
 2. Check AI Act implementation timeline updates
 3. Check competitor MarTech announcements (Adobe, Salesforce, HubSpot)
-4. Check any regulatory changes relevant to Raiffeisen or Digitaholic
+4. Check any regulatory changes relevant to the employer or the side business
 
 ## Output Rule
 
@@ -26,5 +28,5 @@ enabled: true
 
 ## Escalation
 
-- If regulation directly impacts active Digitaholic client work: flag next business day
+- If regulation directly impacts active side-business client work: flag next business day
 - If GDPR fine precedent changes risk profile: flag within 24h

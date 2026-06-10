@@ -7,7 +7,7 @@
 ## 1. TL;DR / Orientation
 
 - Local-first multi-agent AI orchestration. Python 3.12 + FastAPI + LM Studio (port 1234).
-- 16 active agents (4 tiers), 17 bench agents (dormant, promotable at runtime).
+- 17 active agents (4 tiers, incl. Argus + Howard), 17 bench agents (dormant, promotable at runtime).
 - Single entry point for web: `serve.py` → `agents/web.py` (FastAPI `app`); uvicorn binds on port 8080.
 - CLI REPL entry point: `agents/run.py` → `Orchestrator.handle_input`.
 - Everything routes through `agents/core/orchestrator.py:Orchestrator`.
@@ -305,10 +305,14 @@ recall(query_text, top_k)
 
 ### Policy per agent (`hybrid_router.py:get_agent_policy`)
 
+Resolution order: **(1)** `LOCAL_ONLY_AGENTS` security floor (code-enforced — the registry can
+never pull a strict-local agent to the cloud) → **(2)** `llm_policy` from the canonical registry
+`agents/_system/agents.yaml` → **(3)** in-code fallback sets → **(4)** `auto`.
+
 | Policy | Agents |
 |--------|--------|
-| `local` | `frigga`, `ultron`, `howard` — never leave the machine |
-| `claude` | `vision`, `steve` — Claude Sonnet via Anthropic API |
+| `local` | `frigga`, `ultron`, `howard` — never leave the machine; **fail closed** if local backend is down (no cloud fallback, ever) |
+| `claude` | `vision`, `steve`, `argus` (argus via registry) — Claude Sonnet via Anthropic API |
 | `cloud` | `athena` — Gemini flash via Gemini API |
 | `auto` | All others — local first, escalate on size/complexity |
 
@@ -406,6 +410,7 @@ squash commit.
 | `llm.temperature` | `0.7` | |
 | `llm.max_tokens` | `2048` | Deep route uses `llm.deep_max_tokens` (`8192`) |
 | `llm.default_model` | `google/gemma-4-31b-a4b` | |
+| `llm.cloud_fallback` | `on-demand` | `never`/`on-demand`/`always` — governs cloud *escalation* for auto-policy agents (never = stay local even oversized; honored live, ≤30s). Explicit cloud policies (athena) are unaffected |
 | `llm.control_enabled` | `true` | Master kill-switch for LM Studio start/load/unload (chat + admin) |
 | `llm.chat_control` | `true` | Allow natural-language LLM control in chat (admin buttons unaffected) |
 | `memory.context_window` | `6` | Turns in each prompt |
@@ -461,9 +466,19 @@ Key env vars loaded at startup:
 
 ## 8. How-to Recipes
 
+### Personalize an agent (SOUL.local.md overlay)
+
+The repo ships **generic template souls**. Personal specifics never go into `SOUL.md` /
+`HEARTBEAT.md` (they're public); they go into `agents/<id>/SOUL.local.md` /
+`HEARTBEAT.local.md` — **gitignored** files that fully override the template at load time
+(`Agent._load_soul`, `HeartbeatScheduler.load_all`, `GET /api/agents/{id}/soul`). Copy the
+template, personalize, restart. One-time migration after the 2026-06-10 templating change:
+`python scripts/restore_personal_souls.py` (restores the pre-templating personalized souls
+from git history into `*.local.md`).
+
 ### Add a new agent (active)
 
-1. Create `agents/<agent_id>/SOUL.md` — see any existing soul for format (Identity / Mission / Voice sections).
+1. Create `agents/<agent_id>/SOUL.md` — see any existing soul for format (Identity / Mission / Voice sections). Keep it generic; personal details go in `SOUL.local.md` (above).
 2. Add entry under `agents:` in `agents/_system/agents.yaml`:
    ```yaml
    myagent:
@@ -612,4 +627,5 @@ docs/
 | `docs/VOICE.md` | Voice subsystem — browser HUD loop + server pipeline, endpoints, what's real vs scaffolded |
 | `docs/COGNITION.md` | Cognition subsystem (planned ORIZONT 21) — living memory + personality **schematic & diagnostic map** (brain analogies, tiers, troubleshooting playbook) |
 | `worldview/README.md` | **WorldView (4D OSINT)** — separate Next.js + Fastify stack (ports 3000/4000), not sharing the Python runtime. Bridged into JARVIS by the **Argus** agent (`agents/argus/`, geoint router intent → read-only governed plugin). Launched by `START.bat`/`start.sh`. |
+| `docs/contracts/worldview-bridge.md` | **The hub↔WorldView integration contract** (v1) — the only coupling between the two stacks: 6 read-only GET endpoints, enforced by contract tests on both sides (`tests/test_worldview_bridge_contract.py` · `worldview/backend-api/test/bridgeContract.test.ts`) |
 | `docs/2026-06-08-future-developments-report.md` | Forward roadmap — remaining v1.0 gate, WorldView follow-ups (#169/#170), audit-debt hardening, post-1.0 horizons (O20 Hermes, O21 Cognition), recommended sequencing |

@@ -88,7 +88,7 @@ Pentru fiecare task, scrii:
 - Testează doar critical path (1-2 asserturi per test)
 - Dacă un API key lipsește, implementează fallback + log warning
 - La final: `python -m pytest tests/ -v` trebuie să treacă
-- Commit și push la final pe master
+- Commit și push la final pe main
 
 ---
 

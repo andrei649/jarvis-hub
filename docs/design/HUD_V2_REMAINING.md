@@ -114,8 +114,9 @@ send the admin token (`actA`). +7 frontend tests (19 total).
 
 **Still open (the tail of TASK‑2):** §3 plugin‑gated mode wiring (Finance/Health/Knowledge/
 Family, Comms Discord/Slack threads), per‑panel LIVE/SEED chips (§1 — global badge exists),
-§6 toolchain (CI stale‑bundle guard, OpenAPI types, self‑hosted fonts), §7 locality endpoint.
-Estimated 1–2 PRs.
+§6 toolchain (CI stale‑bundle guard, OpenAPI types, self‑hosted fonts), §7 locality endpoint,
+and `GET /api/security/audit/verify` (BUG‑17, added 2026‑06‑10) — surface the chain‑integrity
+verdict as a Trust‑mode chip next to the audit feed. Estimated 1–2 PRs.
 
 ---
 *Parity gate (`tests/test_hud_v2_parity.py`) tracks all routes → every one is mapped to a v2

@@ -4,7 +4,7 @@
 > **Locked:** D1 rail+⌘K · **D2 = Vite + React + TypeScript** · D3 unify Admin · D4 all modes ·
 > rollout = **`/v2` on the same FastAPI server** · **every capability surfaced** (parity gate).
 > Companion: `HUD_V2_BRIEF.md` (north star) · `HUD_V2_COVERAGE_AND_PLAN.md` (the gap matrix this plan
-> executes) · prototype in `design_handoff_jarvis_hub/pr-hud-v2/`.
+> executes) · prototype in `docs/internal/design_handoff_jarvis_hub/pr-hud-v2/`.
 > Generated 2026‑06‑05 · Owner: Andrei.
 
 ## 0 · Verified ground truth (so the plan isn't hand‑wavy)

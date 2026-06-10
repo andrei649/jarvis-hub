@@ -1,4 +1,4 @@
-# Jarvis Hub — "Andrei's Cabinet"
+# Jarvis Hub — your AI cabinet
 
 ![Python 3.12](https://img.shields.io/badge/python-3.12-blue?logo=python&logoColor=white)
 ![License: MIT](https://img.shields.io/badge/license-MIT-green)
@@ -17,7 +17,9 @@
 
 ## What this is
 
-A personal AI mesh that handles the cross-section of Andrei's life: work at Raiffeisen + Digitaholic, family with Alexandra and Max, the BMW E93, the build at Cosmina de Sus, fitness, finance, content. Each domain has a dedicated agent. They talk to each other through Jarvis. They learn from interactions.
+A personal AI mesh that handles the cross-section of *your* life: the day job and the side business, the family, the car and the house projects, fitness, finance, content. Each domain has a dedicated agent. They talk to each other through Jarvis. They learn from interactions.
+
+**The agents ship as templates and personalize themselves in your first session:** guided onboarding (drop-folder import + profile memory) teaches Jarvis your people, projects, and preferences, every learned fact is inspectable and deletable, and each agent's personality is editable. Your personalized souls live in gitignored `agents/<id>/SOUL.local.md` overlays — the public repo stays generic, your instance stays yours. The roster below shows each agent's *role*; the specifics become yours.
 
 ## Architecture
 
@@ -32,8 +34,8 @@ A personal AI mesh that handles the cross-section of Andrei's life: work at Raif
 - **Jerome** — Leisure & Soundtrack. Music, retro tech, decompression.
 
 **Business tier** — 5 agents:
-- **Athena** — External Strategist. Digitaholic, personal brand, CMO trajectory.
-- **Stark** — Internal Corporate Intel. Raiffeisen KPIs, board prep, channels.
+- **Athena** — External Strategist. Your side business, personal brand, career trajectory.
+- **Stark** — Internal Corporate Intel. Day-job KPIs, board prep, channels.
 - **Veronica** — The Voice. Drafts emails, posts, captions in 5 voice profiles.
 - **Vision** — Deep Researcher + OSINT. Cited synthesis, regulatory watch.
 - **Argus** — Geoint Sentinel. Read-only, governed bridge to WorldView (4D OSINT).
@@ -45,9 +47,9 @@ A personal AI mesh that handles the cross-section of Andrei's life: work at Raif
 
 **Foundation tier** — 5 agents:
 - **Gecko** — Capital Allocator. Numbers cold; no advice.
-- **Hercules** — Physical Engine. Sleep, recovery, snowboard prep.
-- **Hephaestus** — Builder & Mechanic. BMW E93 N54 + Cosmina build.
-- **Frigga** — The Matriarch. Max + Alexandra + Beads & Blush. Local-only.
+- **Hercules** — Physical Engine. Sleep, recovery, training prep.
+- **Hephaestus** — Builder & Mechanic. Your project car and house build.
+- **Frigga** — The Matriarch. Family memory and care — names, dates, routines. Strictly local-only.
 - **Howard** — Digital Twin (emerging). Voice clone, personal RAG, fine-tune candidate. Local-only.
 
 ## Hardware
@@ -76,6 +78,8 @@ A separate, self-contained **Next.js + Deck.gl + Fastify** stack under [`worldvi
 1. **`INSTALL.bat`** — first time on a clean PC. Checks/installs Python + Git
    (via winget), gets the code, builds the environment, installs everything,
    runs the tests. Double-click and follow the prompts.
+   *(PowerShell users: `install.ps1` is the same installer as a script — no
+   double-click, no winget; it assumes Python/Node are already present.)*
 2. **`UPDATE.bat`** — double-click to pull the latest from GitHub, install
    dependencies, and run the tests. Run this whenever you want the newest version.
 3. **`START.bat`** — double-click to launch JARVIS (`:8080`) **and** WorldView

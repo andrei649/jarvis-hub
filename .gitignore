@@ -24,3 +24,10 @@ agents/data/
 # Personal-data backups (scripts/backup-data.* — contain real data, never commit)
 backups/
 
+
+# LLM context export — regenerate on demand (python export_repo.py [--core]), never commit
+repo_export.txt
+
+# Personalized agent souls — owner-specific, never committed (repo ships generic templates)
+agents/*/SOUL.local.md
+agents/*/HEARTBEAT.local.md

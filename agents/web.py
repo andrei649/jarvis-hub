@@ -6,6 +6,7 @@ import asyncio
 import json
 import logging
 import os
+import re
 import secrets
 import statistics
 import time
@@ -977,14 +978,25 @@ async def get_ticker():
     return _nocache_json({"ticker": items})
 
 
+_AGENT_ID_RE = re.compile(r"^[a-z0-9_-]{1,64}$")
+
+
 @app.get("/api/agents/{agent_id}/soul")
 async def get_agent_soul(agent_id: str):
     """Read and return the live SOUL.md content for an agent."""
     agent_id = agent_id.strip().lower()
-    
+    # The id becomes a filesystem path segment below — reject anything outside
+    # the agent-id alphabet (CodeQL: uncontrolled data in path expression).
+    if not _AGENT_ID_RE.match(agent_id):
+        raise HTTPException(status_code=404, detail="Agent not found")
+
     # Allow reading SOUL.md if the file physically exists, even if orch is not initialized (e.g. in tests)
+    # The personalized overlay (SOUL.local.md, gitignored) wins when present —
+    # same resolution as Agent._load_soul.
     base_dir = Path(__file__).parent.resolve()
-    soul_path = base_dir / agent_id / "SOUL.md"
+    soul_path = base_dir / agent_id / "SOUL.local.md"
+    if not soul_path.exists():
+        soul_path = base_dir / agent_id / "SOUL.md"
     
     if orch and agent_id not in orch.agents:
         raise HTTPException(status_code=404, detail=f"Agent '{agent_id}' not found")
@@ -2854,6 +2866,23 @@ async def audit_anchor():
         root = orch.intent_log.head()
     receipt = anchor.anchor(root or "empty", source="audit")
     return _nocache_json({"ok": True, "receipt": receipt})
+
+
+@app.get("/api/security/audit/verify")
+async def audit_verify():
+    """Verify the Merkle hash chain of the security audit log (tamper evidence).
+
+    'Tamper-evident' is only real if the chain is actually checked — this is the
+    check. Returns the first broken row id when integrity fails."""
+    audit = getattr(orch, "audit", None) if orch else None
+    if audit is None:
+        return JSONResponse({"error": "audit log not available"}, status_code=503)
+    valid, first_bad = await asyncio.to_thread(audit.verify_chain)
+    return _nocache_json({
+        "valid": valid,
+        "first_invalid_id": first_bad,
+        "entries": await asyncio.to_thread(audit.count),
+    })
 
 
 @app.get("/api/security/audit/anchors")

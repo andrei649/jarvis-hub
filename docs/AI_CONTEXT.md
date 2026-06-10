@@ -13,9 +13,15 @@
 ## TL;DR for an assistant with 1M context
 
 The whole repo as text is **~2M tokens** — do NOT load it raw. Load **Tier 0 + Tier 1**
-(~75K tokens) for any task, then add the **one task bundle** you need (each ≤350K). The
-curated full-code export (`python export_repo.py` → `repo_export.txt`, *.py/*.md/*.yaml only,
-~250K tokens) fits comfortably alongside all docs if you want code + docs at once.
+(~75K tokens) for any task, then add the **one task bundle** you need (each ≤350K).
+
+For whole-project work, `export_repo.py` has three measured profiles (2026-06-10, post-cleanup):
+
+| Profile | Contents | ≈ tokens | Fits 1M? |
+|---|---|---|---|
+| `--research` | **The whole hub product, junk-free**: `agents/` Python + `frontend/src` TS + `tests/` + `skills/` + current docs (incl. `docs/contracts/worldview-bridge.md` — everything the hub needs to know about WorldView without loading it). Excludes the standalone stacks (worldview/mobile/desktop/rust) and provenance archives (docs/superpowers, docs/research, docs/internal) | **~940K** | ✅ yes, ~6% headroom — drop BACKLOG's middle sections (−38K) for comfort |
+| `--core` | `--research` minus `tests/` | ~685K | ✅ comfortable |
+| *(none)* | everything incl. WorldView + provenance | ~1.34M | ❌ no |
 
 ---
 
@@ -47,12 +53,12 @@ Order matters: each file assumes the previous ones.
 |------|------|----------|
 | **Backend work** (`agents/`) | `agents/core/<touched module>` + `agents/web.py` (or the relevant `agents/core/routers/*`) + matching `tests/test_*.py`. Full backend = ~330K — prefer the module index in ARCHITECTURE §3 to pick files | 10–330K |
 | **HUD v2 / frontend** | `frontend/src/**` (~67K) + `docs/design/HUD_V2_REMAINING.md` + `HUD_V2_COVERAGE_AND_PLAN.md` + `tests/test_hud_v2_parity.py` | ~80K |
-| **WorldView** | `worldview/README.md` + `worldview/{frontend,api}/src` — standalone stack, nothing else needed | ~150K |
+| **WorldView** | `worldview/README.md` + `worldview/{frontend,backend-api}/src` + **`docs/contracts/worldview-bridge.md`** (the only hub coupling) — standalone stack, nothing else needed | ~150K |
 | **Mobile parity** | `mobile/**` + `mobile/PARITY.md` + the endpoint list from ARCHITECTURE | ~25K |
 | **Security/audit** | `agents/core/security/**` + `docs/AUDIT.md` + `docs/MANUAL_TESTING.md` + `SECURITY.md` | ~40K |
 | **Marketing/brand** | `docs/BRAND_BOOK.md` + `GO_LIVE_PLAN.md` §3 + `docs/VALUATION_AND_PRICING.md` + `docs/GTM_PLAN.md` | ~25K |
 | **Voice** | `docs/VOICE.md` + `agents/core/voice/**` + `frontend/src/voice.ts` | ~25K |
-| **Whole-codebase sweep** | `python export_repo.py` → `repo_export.txt` (py/md/yaml only; regenerate first — the committed one goes stale) | ~250K |
+| **Whole-codebase sweep** | `python export_repo.py --research` → `repo_export.txt` (hub + HUD source + tests + current docs; gitignored, regenerate on demand). `--core` drops tests (~685K); the unflagged full export (~1.34M) does NOT fit | ~940K |
 
 **History / research** (`docs/HISTORY.md`, `docs/research/*`, `docs/superpowers/*`,
 `CHANGELOG.md` below the Unreleased block) is provenance — load only when investigating *why*
@@ -62,7 +68,8 @@ something is the way it is. Dated reports are immutable snapshots; never "fix" t
 
 - `package-lock.json`, `repo_export.txt` (unless regenerated for a sweep), `agents/web/v2/assets/*`
   (built bundle — read `frontend/src` instead), `agents/web/static/*` (legacy v1 HUD),
-  `memory_logs/`, `training/`, `worldview/**/dist`.
+  `memory_logs/`, `training/`, `worldview/**/dist`, `docs/internal/` (archived scratch — design
+  handoff, one-shot session prompts, superseded v0.2.x docs; see its README for what's there).
 - `BACKLOG.md` middle sections for unrelated horizons — use the header + your section.
 
 ## Keeping this map healthy (rules for every PR)

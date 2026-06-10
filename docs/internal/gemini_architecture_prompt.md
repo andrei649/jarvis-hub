@@ -461,7 +461,7 @@ Howard ingests 15+ years of Facebook Messenger and WhatsApp conversations, extra
 |------|---|-------------|
 | S0.1 Model Tiering | 3 | Claude API for heavy agents (Vision, Steve), local 7B for light agents |
 | S0.2 Heartbeat Sanity | 2 | Change intervals to ≥60 min (currently 1-15 min causing thrashing) |
-| S0.3 CI Smoke Test | 2 | GitHub Actions: pytest on push to master |
+| S0.3 CI Smoke Test | 2 | GitHub Actions: pytest on push to main |
 
 ### Cross-cutting Remaining
 | Item | S |

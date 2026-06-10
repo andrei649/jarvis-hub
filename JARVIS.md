@@ -4,7 +4,7 @@
 
 Jarvis is a local-first multi-agent AI orchestration system. 17 active agents across 4 tiers (incl. Argus, the WorldView bridge, and Howard, the emerging digital twin), coordinated by Jarvis (prime orchestrator). Pure Python, runs on Windows via LM Studio with GPU acceleration (RTX 5090 24GB VRAM, 192GB DDR5).
 
-> **Related stack — WorldView (4D OSINT):** a separate, self-contained Next.js + Fastify product under [`worldview/`](worldview/) (ports 3000/4000, Docker infra) that shares **no runtime** with this Python system. The **Argus** agent (`agents/argus/`) is the read-only, governed bridge between JARVIS and WorldView. It is installed and auto-started by `INSTALL.bat`/`START.bat`. See [`worldview/README.md`](worldview/README.md).
+> **Related stack — WorldView (4D OSINT):** a separate, self-contained Next.js + Fastify product under [`worldview/`](worldview/) (ports 3000/4000, Docker infra) that shares **no runtime** with this Python system. The **Argus** agent (`agents/argus/`) is the read-only, governed bridge between JARVIS and WorldView; the entire integration surface is the versioned contract in [`docs/contracts/worldview-bridge.md`](docs/contracts/worldview-bridge.md) (6 read-only endpoints, contract-tested on both sides). It is installed and auto-started by `INSTALL.bat`/`START.bat`. See [`worldview/README.md`](worldview/README.md).
 
 **Stack:** Python 3.12 + FastAPI + LM Studio (OpenAI-compatible API)  
 **Server:** http://127.0.0.1:8080  
