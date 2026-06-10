@@ -2,7 +2,7 @@
 
 ## Overview
 
-Jarvis is a local-first multi-agent AI orchestration system. 16 agents across 4 tiers, coordinated by Jarvis (prime orchestrator). Pure Python, runs on Windows via LM Studio with GPU acceleration (RTX 5090 24GB VRAM, 192GB DDR5).
+Jarvis is a local-first multi-agent AI orchestration system. 17 active agents across 4 tiers (incl. Argus, the WorldView bridge, and Howard, the emerging digital twin), coordinated by Jarvis (prime orchestrator). Pure Python, runs on Windows via LM Studio with GPU acceleration (RTX 5090 24GB VRAM, 192GB DDR5).
 
 > **Related stack — WorldView (4D OSINT):** a separate, self-contained Next.js + Fastify product under [`worldview/`](worldview/) (ports 3000/4000, Docker infra) that shares **no runtime** with this Python system. The **Argus** agent (`agents/argus/`) is the read-only, governed bridge between JARVIS and WorldView. It is installed and auto-started by `INSTALL.bat`/`START.bat`. See [`worldview/README.md`](worldview/README.md).
 
@@ -23,7 +23,7 @@ Jarvis is a local-first multi-agent AI orchestration system. 16 agents across 4 
 ```
 agents/
 ├── _system/
-│   ├── agents.yaml          # Agent registry (16 agents, 17 bench)
+│   ├── agents.yaml          # Agent registry (17 active, 17 bench)
 │   └── agents.yaml.latest   # Auto-generated backup
 ├── core/
 │   ├── agent.py             # Single agent runtime (SOUL.md + model call)
@@ -88,7 +88,7 @@ agents/
 │   │   └── wake_word.py     # Wake word detection (openWakeWord)
 │   └── mcp/
 │       └── client.py        # MCP client
-├── web.py                   # FastAPI web app (~203 HTTP routes — see docs/ARCHITECTURE.md)
+├── web.py                   # FastAPI web app (~253 HTTP routes — see docs/ARCHITECTURE.md)
 ├── run.py                   # CLI REPL entry point
 ├── jarvis/
 │   └── SOUL.md              # Jarvis agent soul (identity prompt)
@@ -96,7 +96,7 @@ agents/
 │   └── SOUL.md
 ├── pepper/
 │   └── SOUL.md
-├── ... (16 agent dirs total)
+├── ... (17 agent dirs total)
 └── .venv/                   # Python virtual environment
 serve.py                     # Uvicorn launcher
 memory_logs/                 # Sessions, checkpoints, learning records
@@ -109,9 +109,9 @@ memory_logs/                 # Sessions, checkpoints, learning records
 | Tier | Agents | Role |
 |---|---|---|
 | **Command** | Jarvis, Friday, Pepper, Jerome | Orchestration, daily ops, staff |
-| **Business** | Athena, Stark, Veronica, Vision | Strategy, intel, comms |
+| **Business** | Athena, Stark, Veronica, Vision, Argus | Strategy, intel, comms, geoint (WorldView bridge) |
 | **Tech** | Steve, Oracle, Ultron | Infra, workflows, security |
-| **Foundation** | Gecko, Hercules, Hephaestus, Frigga | Finance, fitness, builds, family |
+| **Foundation** | Gecko, Hercules, Hephaestus, Frigga, Howard | Finance, fitness, builds, family, digital twin |
 
 ---
 
@@ -202,12 +202,12 @@ curl.exe http://127.0.0.1:8080/status
 
 - 17 active agents (incl. Argus, the WorldView geoint bridge), bench reserved
 - 34 models downloaded (1.24 TB total)
-- ~203 HTTP routes (full index in docs/ARCHITECTURE.md)
+- ~253 HTTP routes (full index in docs/ARCHITECTURE.md)
 - 7 ported features from OpenJarvis (security, skills, sandbox, multi-channel, bench, learning, streaming)
 - VRAM: ~17 GB used by primary model, ~7 GB free
 - Response time: ~4-5s per query (fast slot); deep slot trades latency for reasoning depth
-- **Tests: 1,764 passed, 1 skipped** (offline suite)
-- Horizons done: H1–H7 (foundation → autonomy → perf hot-path); **active: ORIZONT 8 (personal memory)**
+- **Tests: 2,156 passed, 1 skipped** (offline suite) + 184 frontend JS tests
+- Horizons: H1–H17 software **code-complete** (194/196 items, ≈99% SP); **active: pre-1.0 audit gate** (docs/AUDIT.md + docs/MANUAL_TESTING.md)
 
 ---
 

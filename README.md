@@ -1,11 +1,11 @@
-# Andrei's Cabinet
+# Jarvis Hub — "Andrei's Cabinet"
 
 ![Python 3.12](https://img.shields.io/badge/python-3.12-blue?logo=python&logoColor=white)
 ![License: MIT](https://img.shields.io/badge/license-MIT-green)
-![Tests](https://img.shields.io/badge/tests-1894%20passed-brightgreen?logo=pytest)
+![Tests](https://img.shields.io/badge/tests-2156%20passed-brightgreen?logo=pytest)
 ![Version](https://img.shields.io/badge/version-9.9.9-orange)
 
-> 16 specialized AI agents orchestrated through Jarvis, running on Bonobo WS + Pi 5, controlled by voice and web.
+> 17 specialized AI agents orchestrated through Jarvis, running on Bonobo WS + Pi 5, controlled by voice and web.
 
 **A local-first, _governed_ personal AI — the always-on agent the 2026 "OpenClaw" wave proved people want, with the governance, audit, and privacy it's missing.** Runs entirely on your own hardware (LM Studio / Ollama on your GPU) — **$0/month, no cloud by default**. Every autonomous action passes through a reversible/irreversible **approval queue** and a tamper-evident **audit log**, with full observability — and a **family agent that never touches the internet**.
 
@@ -31,22 +31,24 @@ A personal AI mesh that handles the cross-section of Andrei's life: work at Raif
 - **Pepper** — Chief of Staff. Calendar + meetings + reflection.
 - **Jerome** — Leisure & Soundtrack. Music, retro tech, decompression.
 
-**Business tier** — 4 agents:
+**Business tier** — 5 agents:
 - **Athena** — External Strategist. Digitaholic, personal brand, CMO trajectory.
 - **Stark** — Internal Corporate Intel. Raiffeisen KPIs, board prep, channels.
 - **Veronica** — The Voice. Drafts emails, posts, captions in 5 voice profiles.
 - **Vision** — Deep Researcher + OSINT. Cited synthesis, regulatory watch.
+- **Argus** — Geoint Sentinel. Read-only, governed bridge to WorldView (4D OSINT).
 
 **Tech tier** — 3 agents:
 - **Steve** — CTO + Infrastructure. Bonobo + Pi + models + backups.
 - **Oracle** — Pipeline Weaver. n8n workflows, silent when working.
 - **Ultron** — The Shield. Firewall, GDPR/ATT, smart home VLAN.
 
-**Foundation tier** — 4 agents:
+**Foundation tier** — 5 agents:
 - **Gecko** — Capital Allocator. Numbers cold; no advice.
 - **Hercules** — Physical Engine. Sleep, recovery, snowboard prep.
 - **Hephaestus** — Builder & Mechanic. BMW E93 N54 + Cosmina build.
 - **Frigga** — The Matriarch. Max + Alexandra + Beads & Blush. Local-only.
+- **Howard** — Digital Twin (emerging). Voice clone, personal RAG, fine-tune candidate. Local-only.
 
 ## Hardware
 
@@ -86,7 +88,7 @@ A separate, self-contained **Next.js + Deck.gl + Fastify** stack under [`worldvi
 python3 -m venv .venv && source .venv/bin/activate   # Windows: .venv\Scripts\activate
 pip install -r requirements-beta.txt                 # one install — full feature set
 python serve.py              # → http://127.0.0.1:8080
-python -m pytest             # 1894 passed, 1 skipped
+python -m pytest             # 2156 passed, 1 skipped
 ```
 
 _Linux/macOS shortcut:_ `./install.sh` does all of the above (venv + install + tests); `./start.sh` launches the server.
@@ -108,20 +110,20 @@ _Linux/macOS shortcut:_ `./install.sh` does all of the above (venv + install + t
 
 ## Status
 
-**v9.9.9 — pre-1.0 audit gate.** 16 specialist agents (+ **Argus** for WorldView geoint; + 17 bench) across 4 tiers; real-embeddings recall (LM Studio) + fused recall +
+**v9.9.9 — pre-1.0 audit gate.** 17 specialist agents (incl. **Argus** for WorldView geoint and **Howard**, the emerging digital twin; + 17 bench) across 4 tiers; real-embeddings recall (LM Studio) + fused recall +
 RAG injection; hot-path perf (SQLite WAL, event-loop offload, checkpoint debounce, query-embedding
 cache, complexity-based model tiering); autonomous proactive cortex (ORIZONT 6); security wedge (encrypted
 secrets, signed skills, reversible/irreversible approval split, quarantine/capability/kill-switch); competitive edge
 (workflow engine, model arena, quality monitor, review queue); living memory (bi-temporal KG, decay-forgetting,
-sleep-time consolidation). **1,764 tests passing.**
+sleep-time consolidation). **2,156 tests passing** (+184 frontend JS tests).
 
-**Road to v1.0:** the feature backlog (H1–H9) plus the bulk of the competitive-edge and frontier work — the
-2026-06-03 wave across H10, H12, H14, H16, H17 — is code-complete: ~166/186 backlog items (≈82% by story
-points), shipped pending the `9.9.9` audit gate (a full code audit — see [`docs/AUDIT.md`](docs/AUDIT.md) —
-human manual testing ([`docs/MANUAL_TESTING.md`](docs/MANUAL_TESTING.md)), and fixes). *Most* of what remains
-needs hardware/models (local VLM, speculative decoding, GPU fine-tuning, desktop operator) or external network
-surfaces (A2A, agentic payments); a handful of open items are pure software, mostly P3 (AI-assisted workflow
-builder, data spaces, signed-skill marketplace, and the Tauri/Rust/WASM parity items). See
+**Road to v1.0:** the v1.0 backlog (H1–H17) is **code-complete at 194/196 items (≈99% by story points)** —
+the only two open items (H12.14 fine-tuned agentic model, H13.3 speculative decoding) need the GPU host
+(runbook: `docs/GPU_RUNBOOK.md`). What stands between `9.9.9` and the `1.0.0` tag is the audit gate: a full
+code audit ([`docs/AUDIT.md`](docs/AUDIT.md)), human manual testing on real hardware
+([`docs/MANUAL_TESTING.md`](docs/MANUAL_TESTING.md)), and fixes. The HUD V2 cockpit is the default UI;
+deep write-controls for ~37 newer backend surfaces are tracked in
+[`docs/design/HUD_V2_REMAINING.md`](docs/design/HUD_V2_REMAINING.md). See
 [BACKLOG.md](BACKLOG.md#status-general) + [MOONSHOT.md](MOONSHOT.md) §4.
 
 See `STATUS.md`, `BACKLOG.md`, and `docs/ARCHITECTURE.md` for details.

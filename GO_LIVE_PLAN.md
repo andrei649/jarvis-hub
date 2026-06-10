@@ -1,6 +1,6 @@
 # Jarvis Hub — Go-Live Plan
 
-> Generated: 2026-06-02 · Updated: 2026-06-03 · Version target: v1.0.0 (= entire backlog done) · Owner: Andrei
+> Generated: 2026-06-02 · Updated: 2026-06-10 · Version target: v1.0.0 (= entire backlog done) · Owner: Andrei
 > North star (vision & phase gates): [MOONSHOT.md](MOONSHOT.md)
 > Source of truth for backlog: [BACKLOG.md](BACKLOG.md)
 
@@ -19,7 +19,7 @@
 
 ---
 
-### 16 Specialist Agents (4 Tiers)
+### 17 Specialist Agents (4 Tiers)
 
 | Tier | Agent | Role |
 |------|-------|------|
@@ -31,6 +31,7 @@
 | Business | **Athena** | High-reasoning — cloud-only (Claude API) |
 | Business | **Stark** | Analytics — GA4 KPI summaries, trend analysis |
 | Business | **Veronica** | Content & comms — LinkedIn posts, articles, drafting |
+| Business | **Argus** | Geoint sentinel — read-only, governed bridge to WorldView (4D OSINT) |
 | Tech | **Steve** | System health — CPU/GPU/RAM/temp monitoring + alerts |
 | Tech | **Oracle** | Workflow automation — n8n designer + webhook triggers |
 | Tech | **Ultron** | Security & audit — port scanning, threat detection |
@@ -124,7 +125,7 @@
 
 | Category | Count |
 |----------|-------|
-| Total passing (backend) | 1,764 tests |
+| Total passing (backend) | 2,156 tests |
 | Skipped | 1 (optional heartbeat; test_spotify removed in CLN-1) |
 | Frontend | 184 JS tests / 23 files · ~67% line coverage (BUG-2 delivered) |
 
@@ -218,15 +219,15 @@
 
 ---
 
-### H11 — Platform Parity (0/4, 55 SP) — in v1.0 scope
+### H11 — Platform Parity (4/4, 55 SP) ✅ — in v1.0 scope
 
-Desktop app (Tauri) · Rust hot-path crates · SFT/GRPO training pipeline · WASM sandbox. All P3 (high cost: GPU/Rust/native build). See [BACKLOG.md](BACKLOG.md) ORIZONT 11.
+Desktop app (Tauri) · Rust hot-path crates · SFT/GRPO training pipeline · WASM sandbox — all delivered as source 2026-06-09 (native pieces compile host-side, not in CI). See [BACKLOG.md](BACKLOG.md) ORIZONT 11.
 
-### H12 — Private & Proactive Assistant (10/15) — in v1.0 scope
+### H12 — Private & Proactive Assistant (24/25) — in v1.0 scope
 
-✅ delivered: H12.1 security wedge (P0), H12.2 drop-folder onboarding, H12.3 queryable/editable KG, H12.4 Wyoming protocol, H12.5 autonomy dry-run, H12.6 incremental KG, H12.9 local-model UX, H12.10 trust indicator, H12.11 extended escalation channels, H12.15 backup/restore. **Open:** passive multi-surface capture, satellite-mic split, signed marketplace, E2E device sync, fine-tuned agentic model. See [BACKLOG.md](BACKLOG.md) ORIZONT 12.
+All delivered except **H12.14** (small fine-tuned agentic model — needs the GPU host, runbook `docs/GPU_RUNBOOK.md`). See [BACKLOG.md](BACKLOG.md) ORIZONT 12.
 
-### H13–H17 — Frontiers, post-parity (12/20, 146 SP) — in v1.0 scope
+### H13–H17 — Frontiers, post-parity (19/20, 146 SP) — in v1.0 scope
 
 The forward-looking sweep, folded into v1.0: **H13** local-capability ceiling (strict-local VLM, constrained decoding) · **H14** living memory (bi-temporal KG, sleep-time consolidation, decay-aware forgetting) · **H15** governed computer-use (browser-use behind the approval queue) · **H16** agentic-web citizen (MCP server mode, A2A, opt-in agentic payments) · **H17** provable trust (dual-LLM quarantine + AgentDojo CI badge). Flagship themes: *sleep-time compute* + *measurable governance*. See [BACKLOG.md](BACKLOG.md) ORIZONT 13–17 + [research](docs/research/2026-06-03-frontier-horizons.md).
 
@@ -244,7 +245,7 @@ Chatbots are **reactive** — they wait for you. Workflow builders are **rigid**
 
 ### The Product
 
-**Jarvis Hub is your personal AI operating system** — 15 specialist agents that work 24/7, proactively, on your hardware.
+**Jarvis Hub is your personal AI operating system** — 17 specialist agents that work 24/7, proactively, on your hardware.
 
 It doesn't wait to be asked. It monitors your system health, watches your email and calendar, scans its own logs for bugs, and consolidates every conversation into a knowledge graph every night. Every morning at 07:00 it delivers a prioritized brief.
 
@@ -267,7 +268,7 @@ Every night, Jarvis reads the last 60 conversations, extracts entities and relat
 LM Studio + Ollama on local GPU. Zero API cost for 99% of tasks. Athena escalates to Claude API for heavy reasoning — everything else runs at home. Total operating cost: **$0/month**.
 
 **Production-grade under the hood**
-1,764 tests. 36× database speedup. Circuit breakers per plugin. Reciprocal rank fusion for hybrid recall. Fast/heavy model tiering based on prompt complexity. This isn't a demo.
+2,156 tests. 36× database speedup. Circuit breakers per plugin. Reciprocal rank fusion for hybrid recall. Fast/heavy model tiering based on prompt complexity. This isn't a demo.
 
 ---
 
@@ -307,13 +308,13 @@ LM Studio + Ollama on local GPU. Zero API cost for 99% of tasks. Athena escalate
 
 | Metric | Value |
 |--------|-------|
-| Active agents | 16 (+ 17 bench) |
+| Active agents | 17 (+ 17 bench) |
 | Channels | 7 (web, voice, Telegram, Discord, Slack, email, sandbox) |
-| Tests passing | 1,764 |
-| API endpoints | ~203 |
+| Tests passing | 2,156 (+ 184 frontend JS) |
+| API endpoints | ~253 |
 | Monthly cost | $0 |
 | SQLite speedup | 36× |
-| Story points delivered | 872 / 1061 total (82%) — v1.0 = full backlog |
+| Story points delivered | 1,104 / 1,119 total (99%) — v1.0 = full backlog |
 
 ---
 
@@ -330,10 +331,13 @@ LM Studio + Ollama on local GPU. Zero API cost for 99% of tasks. Athena escalate
 | Dashboard cache race (BUG-1) | LOW | 1 | ✅ Done |
 | Personal Memory H8 (8 items) | P1 | 48 | ✅ Done |
 | Security wedge H12.1 (P0, anti-OpenClaw) | P0 | 8 | ✅ Done |
-| **Remaining backlog** — H11 + rest of H10/H12 + H13/H15/H16 | P1–P3 | ~189 | ⏳ Open |
+| **Remaining backlog** — H12.14 + H13.3 (both GPU-host-bound; runbook `docs/GPU_RUNBOOK.md`) | P2–P3 | ~13 | ⏳ Open |
 | **Manual-test runbook sign-off** — the human gate; full pass on the RTX box ([docs/MANUAL_TESTING.md](docs/MANUAL_TESTING.md) §0, ⭐B0 governed-autonomy demo) | P0 | — | ⏳ Run before tag |
 
-**Estimated gap to v1.0: ~189 SP** of remaining backlog, then the **human gate**. Foundation, hardening, personal memory, the security wedge, and the 2026-06-03 competitive-edge/frontier wave are ✅ code-complete; v1.0 ships when the rest of H10–H17 is complete **and** the manual-test runbook ([docs/MANUAL_TESTING.md](docs/MANUAL_TESTING.md)) is signed off green on real hardware — that runbook *is* the audit gate, and no tag ships without its §0 sign-off.
+**Estimated gap to v1.0: ~13 SP** (two GPU-host-bound items), then the **human gate**. The software backlog
+H1–H17 is ✅ code-complete (194/196 items, ≈99% SP, 2026-06-09); v1.0 ships when the audit
+([docs/AUDIT.md](docs/AUDIT.md)) and the manual-test runbook ([docs/MANUAL_TESTING.md](docs/MANUAL_TESTING.md))
+are signed off green on real hardware — that runbook *is* the audit gate, and no tag ships without its §0 sign-off.
 
 ---
 
