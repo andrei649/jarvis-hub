@@ -103,3 +103,26 @@ def test_service_worker_endpoint(client):
     # (which invalidate stale/corrupted cached assets) don't break this test.
     assert "jarvis-hud-v" in content
     assert "STATIC_ASSETS" in content
+
+
+def test_agent_history_unknown_agent_404(client):
+    """API honesty: an unknown agent 404s on /history, consistent with /soul —
+    not a misleading 200 + empty runs (found by running the app, 2026-06-10)."""
+    r = client.get("/api/agents/definitely-not-an-agent/history")
+    assert r.status_code == 404
+
+
+def test_agent_history_known_agent_200(client):
+    r = client.get("/api/agents/jarvis/history")
+    assert r.status_code == 200
+    assert r.json()["agent_id"] == "jarvis"
+
+
+def test_promote_unknown_bench_is_not_ok(client, monkeypatch):
+    """Promoting a nonexistent bench agent must not report success — it returns
+    404 / ok:false, not the old {ok:true, promoted:false} that lied to the UI."""
+    monkeypatch.setattr(web, "ADMIN_TOKEN", "adm")
+    r = client.post("/learning/promote", json={"bench_agent": "nobody-here"},
+                    headers={"X-Admin-Token": "adm"})
+    assert r.status_code == 404
+    assert r.json()["ok"] is False
