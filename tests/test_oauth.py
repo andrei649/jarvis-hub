@@ -262,3 +262,20 @@ def test_exchange_pops_verifier(monkeypatch):
     monkeypatch.setattr(oauth, "_expected_states", {"teststate"})
     assert oauth.verify_state("teststate") == "teststate"
     assert len(oauth._expected_states) == 0
+
+
+def test_decrypt_failure_warns_not_silent(tmp_path, monkeypatch, caplog):
+    """A token saved under one key then read under a rotated key must WARN (so the
+    owner knows to re-authorize) instead of silently returning the still-encrypted
+    value — found in the silent-except logging pass, 2026-06-10."""
+    import logging
+    monkeypatch.setattr(oauth, "TOKEN_DIR", tmp_path)
+    monkeypatch.setattr(oauth, "_fernet", None)
+    oauth.save_token("svc", {"access_token": "abc", "refresh_token": "def"})
+    # Rotate the key file: a fresh Fernet can't decrypt what the old one wrote.
+    from cryptography.fernet import Fernet
+    (tmp_path / ".encryption_key").write_bytes(Fernet.generate_key())
+    monkeypatch.setattr(oauth, "_fernet", None)
+    with caplog.at_level(logging.WARNING, logger="jarvis.oauth"):
+        oauth.load_token("svc")
+    assert any("decrypt failed" in r.message for r in caplog.records)

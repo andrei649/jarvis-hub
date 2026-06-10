@@ -88,12 +88,20 @@ def load_token(service: str) -> Optional[dict]:
             try:
                 data["access_token"] = f.decrypt(data["access_token"].encode()).decode()
             except Exception:
-                pass
+                # A decrypt failure (rotated/missing secret key, corrupted token
+                # file) would otherwise leave the still-encrypted value in place
+                # and the service fails mysteriously later. Surface it so the owner
+                # knows to re-authorize, instead of silent confusion.
+                logger.warning(
+                    "OAuth access_token decrypt failed for %s — re-authorize the "
+                    "service (the secret key may have changed)", service)
         if "refresh_token" in data:
             try:
                 data["refresh_token"] = f.decrypt(data["refresh_token"].encode()).decode()
             except Exception:
-                pass
+                logger.warning(
+                    "OAuth refresh_token decrypt failed for %s — re-authorize the "
+                    "service (the secret key may have changed)", service)
     return data
 
 
