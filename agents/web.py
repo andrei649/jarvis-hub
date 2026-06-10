@@ -4355,6 +4355,20 @@ async def get_model_tiers():
     }
 
 
+@app.get("/api/analytics/locality")
+async def analytics_locality():
+    """% of agent runs served on-device vs cloud (MOONSHOT §6 counter-metric).
+
+    Drives the HUD Trust mode's "%-local" meter with a REAL number from the run
+    history's route field — `local_pct` is null until there's at least one routed
+    run, so the meter shows "—" rather than a fabricated 100%."""
+    rh = getattr(orch, "run_history", None) if orch else None
+    if rh is None:
+        return _nocache_json({"local_pct": None, "local": 0, "cloud": 0,
+                              "unknown": 0, "total": 0})
+    return _nocache_json(rh.locality())
+
+
 @app.get("/api/reflection/status")
 async def reflection_status():
     """Daily reflection status (H5.15)."""

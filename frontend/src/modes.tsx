@@ -180,7 +180,7 @@ function TrustMode({ t, localPct = null }) {
                 <div className="loc-pct">{localPct}%</div>
                 <div className="loc-legend">
                   <div className="ll"><span className="sw" style={{background:'var(--green)'}}></span> on-device · {localPct}%</div>
-                  <div className="ll"><span className="sw" style={{background:'var(--violet)'}}></span> cloud (Claude) · {100-localPct}%</div>
+                  <div className="ll"><span className="sw" style={{background:'var(--violet)'}}></span> cloud · {100-localPct}%</div>
                 </div>
               </div>
               <div className="loc-bar"><div className="seg local" style={{width:localPct+'%'}}></div><div className="seg cloud" style={{width:(100-localPct)+'%'}}></div></div>

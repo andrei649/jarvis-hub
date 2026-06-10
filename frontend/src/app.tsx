@@ -84,13 +84,16 @@ function App() {
   const [serverUp, setServerUp] = useState(false);
   const [llm, setLlm] = useState({ state: 'unknown', model: null });
   const [trust, setTrust] = useState({ mic: 'on', strict_local: false });
+  const [locality, setLocality] = useState(null); // {local_pct} from real runs, or null
   const baseAgents = useRef(demo ? V2.AGENTS : []);
 
   const clock = useClock();
   const t = V2.I18N[lang];
-  // %-local is honest: strict-local proven → 100%; demo → sample 87%; otherwise
-  // unknown (no real locality endpoint yet — Batch G) → hidden rather than faked.
-  const localPct = trust.strict_local ? 100 : (demo ? 87 : null);
+  // %-local is honest, in priority order: a real measured split from /api/analytics/
+  // locality (the brand metric, from run-history routes) → strict-local proof (100%)
+  // → demo sample → unknown (hidden, never faked).
+  const localPct = (locality && locality.local_pct != null) ? locality.local_pct
+    : trust.strict_local ? 100 : (demo ? 87 : null);
   const liveModes = useLiveModes(); // P4: stream live data into the capability modes; reports which keys are live
   useEffect(() => { try { localStorage.setItem('hud.accent', accent); } catch { /* ignore */ } }, [accent]); // P5 persist
   useEffect(() => { try { localStorage.setItem('hud.lang', lang); } catch { /* ignore */ } }, [lang]);
@@ -234,6 +237,10 @@ function App() {
         setHeartbeat(d.heartbeat); setSys(d.sys); setLive(!!d.live);
         setServerUp(!!d.serverUp); setLlm(d.llm || { state: 'unknown', model: null });
         if (d.trust) setTrust(d.trust);
+        if (!demo) {
+          // Real %-local from run-history routes; failure leaves it null (meter hides).
+          apiGet('/api/analytics/locality').then((l) => { if (alive) setLocality(l); }).catch(() => {});
+        }
       } catch { /* unreachable — keep current */ }
     }
     refresh();

@@ -69,7 +69,7 @@ Still on mock (wire to endpoints; some need plugins configured):
 
 ## 7. Backend additions (from the plan §6)
 - `GET /api/cognition/stream` (SSE) + provenance on the chat stream.
-- `GET /api/analytics/locality` (or compose from model‑tiers + cost) for the real **% local** meter.
+- ~~`GET /api/analytics/locality`~~ ✅ **DONE 2026‑06‑10** — computes %‑local from the run‑history route field; HUD Trust meter prefers it, falls back to strict‑local proof, never fabricates a split (`local_pct` null until real routed runs exist).
 - Howard ingestion API — only if we ever surface the digital twin (currently `NOT_IN_HUD`).
 
 ## 8. Cutover (P6 follow‑through)
