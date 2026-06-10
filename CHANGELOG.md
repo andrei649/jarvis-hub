@@ -1,6 +1,17 @@
 # Changelog
 
 ## [Unreleased]
+### Security — strict-local agents fail closed (BUG-14, 2026-06-10)
+- **Frigga could reach the cloud.** `HybridRouter.select_backend` with `policy=local` fell
+  back to Gemini (`cloud-fallback`) whenever the local backend was down — and a unit test
+  enshrined it. This contradicted non-negotiable principle #1 (MOONSHOT §5.1, AGENTS.md:
+  "no external calls, no cloud fallback — ever"). Now `policy=local` **fails closed** with an
+  explicit error; tests assert frigga is never routed off-machine even with cloud available.
+- **`agents.yaml` `llm_policy` is now honored** in routing (it was silently ignored —
+  Argus was registered `claude` but routed `auto`). Resolution order: `LOCAL_ONLY_AGENTS`
+  security floor (code-enforced, registry can't override) → registry `llm_policy` → in-code
+  fallback sets → `auto`. +3 tests; ARCHITECTURE §5 updated.
+
 ### HUD v2 depth pass — UI controls for the 2026-06-09 backend wave (2026-06-10)
 - **TASK-2 control gap closed** (PR #181) — the parity re-audit found ~37 backend endpoints
   with no HUD v2 control; all now have live surfaces:

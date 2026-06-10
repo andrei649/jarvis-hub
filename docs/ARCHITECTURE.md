@@ -7,7 +7,7 @@
 ## 1. TL;DR / Orientation
 
 - Local-first multi-agent AI orchestration. Python 3.12 + FastAPI + LM Studio (port 1234).
-- 16 active agents (4 tiers), 17 bench agents (dormant, promotable at runtime).
+- 17 active agents (4 tiers, incl. Argus + Howard), 17 bench agents (dormant, promotable at runtime).
 - Single entry point for web: `serve.py` → `agents/web.py` (FastAPI `app`); uvicorn binds on port 8080.
 - CLI REPL entry point: `agents/run.py` → `Orchestrator.handle_input`.
 - Everything routes through `agents/core/orchestrator.py:Orchestrator`.
@@ -305,10 +305,14 @@ recall(query_text, top_k)
 
 ### Policy per agent (`hybrid_router.py:get_agent_policy`)
 
+Resolution order: **(1)** `LOCAL_ONLY_AGENTS` security floor (code-enforced — the registry can
+never pull a strict-local agent to the cloud) → **(2)** `llm_policy` from the canonical registry
+`agents/_system/agents.yaml` → **(3)** in-code fallback sets → **(4)** `auto`.
+
 | Policy | Agents |
 |--------|--------|
-| `local` | `frigga`, `ultron`, `howard` — never leave the machine |
-| `claude` | `vision`, `steve` — Claude Sonnet via Anthropic API |
+| `local` | `frigga`, `ultron`, `howard` — never leave the machine; **fail closed** if local backend is down (no cloud fallback, ever) |
+| `claude` | `vision`, `steve`, `argus` (argus via registry) — Claude Sonnet via Anthropic API |
 | `cloud` | `athena` — Gemini flash via Gemini API |
 | `auto` | All others — local first, escalate on size/complexity |
 

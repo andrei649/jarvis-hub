@@ -23,6 +23,8 @@ Set JARVIS_AUTO_DEEP=0 to disable complexity-based escalation.
 
 import logging
 import os
+from functools import lru_cache
+from pathlib import Path
 from typing import Optional
 
 from .base import LLMBackend, OllamaBackend
@@ -120,6 +122,27 @@ DEFAULT_DEEP_MODEL = os.environ.get(
 )
 
 
+@lru_cache(maxsize=1)
+def _registry_policies() -> dict:
+    """Per-agent llm_policy from the canonical registry (agents/_system/agents.yaml).
+
+    Cached for the process lifetime; any failure returns {} so routing degrades to
+    the in-code policy sets rather than breaking. LOCAL_ONLY_AGENTS is enforced
+    *before* this is consulted, so the registry can never pull a strict-local
+    agent to the cloud.
+    """
+    try:
+        import yaml as _yaml
+        path = Path(__file__).resolve().parents[2] / "_system" / "agents.yaml"
+        data = _yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+        return {
+            aid: str((cfg or {}).get("llm_policy", "")).strip().lower()
+            for aid, cfg in (data.get("agents") or {}).items()
+        }
+    except Exception:
+        return {}
+
+
 class HybridRouter(LLMRouter):
     def __init__(self, gemini_api_key: str = "", anthropic_api_key: str = ""):
         super().__init__()
@@ -189,8 +212,14 @@ class HybridRouter(LLMRouter):
             logger.warning("Ollama not available — Howard will fall back to default backend")
 
     def get_agent_policy(self, agent_id: str) -> str:
+        # Security floor first: code-enforced, the registry cannot override it.
         if agent_id in LOCAL_ONLY_AGENTS:
             return POLICY_LOCAL
+        # agents.yaml is the canonical registry (ARCHITECTURE §3) — honor its
+        # llm_policy before the in-code sets, which act as fallback defaults.
+        registry = _registry_policies().get(agent_id, "")
+        if registry in (POLICY_LOCAL, POLICY_CLAUDE, POLICY_CLOUD, POLICY_AUTO):
+            return registry
         if agent_id in CLAUDE_AGENTS:
             return POLICY_CLAUDE
         if agent_id in CLOUD_ONLY_AGENTS:
@@ -219,10 +248,12 @@ class HybridRouter(LLMRouter):
         if policy == POLICY_LOCAL:
             if self._local_available:
                 return self._backend, self._local_model, "local"
-            logger.warning(f"Local backend unavailable for {agent_id} (policy=local), falling back to cloud")
-            if self._cloud_available:
-                return self._gemini_backend, "gemini-2.5-flash", "cloud-fallback"
-            raise RuntimeError(f"No LLM backend available for {agent_id}")
+            # NON-NEGOTIABLE (MOONSHOT §5.1 / AGENTS.md): strict-local agents
+            # never leave the machine — no cloud fallback, fail closed instead.
+            raise RuntimeError(
+                f"Local backend unavailable for {agent_id} (policy=local) — "
+                "strict-local agents never fall back to cloud; start LM Studio/Ollama"
+            )
 
         if policy == POLICY_CLAUDE:
             if self._claude_available:

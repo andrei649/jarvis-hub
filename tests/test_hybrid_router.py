@@ -226,12 +226,34 @@ def test_select_backend_cloud_only_policy_cloud(monkeypatch):
     assert route == "cloud"
 
 
-def test_select_backend_cloud_only_policy_local_fallback(monkeypatch):
+def test_select_backend_strict_local_never_cloud(monkeypatch):
+    """NON-NEGOTIABLE (MOONSHOT §5.1): strict-local agents fail closed — even with a
+    cloud backend ready, frigga must never be routed off the machine."""
     router = HybridRouter(gemini_api_key="test")
     router._cloud_available = True
     router._gemini_backend = FakeBackend()
-    backend, model, route = router.select_backend("frigga", "hello")
-    assert route == "cloud-fallback"
+    with pytest.raises(RuntimeError, match="strict-local"):
+        router.select_backend("frigga", "hello")
+
+
+def test_registry_llm_policy_is_honored(monkeypatch):
+    """agents.yaml is the canonical registry — its llm_policy must drive routing
+    (argus is registered `claude` but is absent from the in-code CLAUDE_AGENTS set)."""
+    router = HybridRouter(anthropic_api_key="test")
+    assert router.get_agent_policy("argus") == "claude"
+    router._claude_available = True
+    router._claude_backend = FakeBackend()
+    backend, model, route = router.select_backend("argus", "hello")
+    assert route == "claude"
+
+
+def test_registry_cannot_override_local_only(monkeypatch):
+    """The LOCAL_ONLY security floor is code-enforced: a (mis)edited registry entry
+    can never pull a strict-local agent to the cloud."""
+    import agents.core.llm.hybrid_router as hr
+    monkeypatch.setattr(hr, "_registry_policies", lambda: {"frigga": "cloud"})
+    router = HybridRouter()
+    assert router.get_agent_policy("frigga") == "local"
 
 
 # ── Both backends available ───────────────────────────────────────────
