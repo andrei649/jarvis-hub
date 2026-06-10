@@ -1,5 +1,9 @@
 # HUD Redesign Plan — human-friendly workspace
 
+> ⚠️ **HISTORICAL — SUPERSEDED by the HUD V2 program** (shipped 2026-06-08 as the default UI):
+> see [`docs/design/HUD_V2_BRIEF.md`](design/HUD_V2_BRIEF.md) and
+> [`docs/design/HUD_V2_REMAINING.md`](design/HUD_V2_REMAINING.md). Kept as provenance.
+
 > Goal (from user): the HUD has too many cryptic buttons, some don't work, and
 > **most features have no UI at all** — "if it's not there, I can't work with it."
 > Make it human-friendly and give **every** backend feature a discoverable home.

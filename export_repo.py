@@ -14,10 +14,19 @@ VALID_EXTENSIONS = (
 IGNORE_DIRS = {
     ".git", "__pycache__", "node_modules",
     ".venv", "venv", "env", ".idea", ".vscode",
-    "tmp",
+    "tmp", "memory_logs", "training", "dist", "build",
+    "design_handoff_jarvis_hub", ".opencode",  # scratch/handoff — ruff excludes them too
 }
 
-IGNORE_FILES = {"export_repo.py"}
+IGNORE_FILES = {
+    "export_repo.py",
+    "repo_export.txt",      # own output — including it makes each run snowball
+    "package-lock.json",    # lockfiles: ~1.1MB of resolver noise across 4 workspaces
+}
+
+# --core: only the Python hub + docs (fits a 1M-token context with headroom;
+# the full export is ~1.1M tokens — see docs/AI_CONTEXT.md).
+CORE_EXTRA_IGNORE_DIRS = {"tests", "worldview", "mobile", "desktop", "rust"}
 
 
 def build_tree(root: str) -> list[str]:
@@ -94,4 +103,8 @@ def export(output_filename: str = "repo_export.txt") -> None:
 
 
 if __name__ == "__main__":
+    import sys
+
+    if "--core" in sys.argv:
+        IGNORE_DIRS |= CORE_EXTRA_IGNORE_DIRS
     export()

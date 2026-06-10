@@ -13,9 +13,12 @@
 ## TL;DR for an assistant with 1M context
 
 The whole repo as text is **~2M tokens** — do NOT load it raw. Load **Tier 0 + Tier 1**
-(~75K tokens) for any task, then add the **one task bundle** you need (each ≤350K). The
-curated full-code export (`python export_repo.py` → `repo_export.txt`, *.py/*.md/*.yaml only,
-~250K tokens) fits comfortably alongside all docs if you want code + docs at once.
+(~75K tokens) for any task, then add the **one task bundle** you need (each ≤350K). For code +
+docs at once, `python export_repo.py --core` → `repo_export.txt` (**~730K tokens**: the Python
+hub + all docs, skipping tests/worldview/mobile/desktop/rust) fits a 1M window with headroom;
+the full export without `--core` is **~1.1M** and does NOT fit once you add prompt overhead.
+*(Numbers re-measured 2026-06-10 after fixing the exporter — it used to swallow lockfiles and
+its own previous output.)*
 
 ---
 
@@ -52,7 +55,7 @@ Order matters: each file assumes the previous ones.
 | **Security/audit** | `agents/core/security/**` + `docs/AUDIT.md` + `docs/MANUAL_TESTING.md` + `SECURITY.md` | ~40K |
 | **Marketing/brand** | `docs/BRAND_BOOK.md` + `GO_LIVE_PLAN.md` §3 + `docs/VALUATION_AND_PRICING.md` + `docs/GTM_PLAN.md` | ~25K |
 | **Voice** | `docs/VOICE.md` + `agents/core/voice/**` + `frontend/src/voice.ts` | ~25K |
-| **Whole-codebase sweep** | `python export_repo.py` → `repo_export.txt` (py/md/yaml only; regenerate first — the committed one goes stale) | ~250K |
+| **Whole-codebase sweep** | `python export_repo.py --core` → `repo_export.txt` (hub + docs; regenerate on demand — the file is gitignored, never committed). Full export (no flag) ≈1.1M — too big for 1M with overhead | ~730K |
 
 **History / research** (`docs/HISTORY.md`, `docs/research/*`, `docs/superpowers/*`,
 `CHANGELOG.md` below the Unreleased block) is provenance — load only when investigating *why*
@@ -62,7 +65,9 @@ something is the way it is. Dated reports are immutable snapshots; never "fix" t
 
 - `package-lock.json`, `repo_export.txt` (unless regenerated for a sweep), `agents/web/v2/assets/*`
   (built bundle — read `frontend/src` instead), `agents/web/static/*` (legacy v1 HUD),
-  `memory_logs/`, `training/`, `worldview/**/dist`.
+  `memory_logs/`, `training/`, `worldview/**/dist`, `design_handoff_jarvis_hub/` (historical
+  HUD-v2 handoff scratch), root prompt files (`claude_batch_prompt.md`,
+  `gemini_architecture_prompt.md`, `PROMPTURI_FEATURES.md` — session prompts, not docs).
 - `BACKLOG.md` middle sections for unrelated horizons — use the header + your section.
 
 ## Keeping this map healthy (rules for every PR)

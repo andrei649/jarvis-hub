@@ -1,5 +1,9 @@
 # TODO / Next-Session Handoff
 
+> ⚠️ **HISTORICAL (2026-06-04, PR #132 era).** Superseded by [`BACKLOG.md`](../BACKLOG.md)
+> (priorities) and [`docs/OWNER_TASKS.md`](OWNER_TASKS.md) (human-gated queue). Kept as
+> provenance — do not work from this file.
+
 > **Purpose:** start a new session from here. Captures open work, things that were
 > **missed**, and — importantly — **other sessions running in parallel** so you don't collide.
 >
