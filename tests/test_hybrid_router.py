@@ -612,3 +612,69 @@ async def test_claude_generate_stream_network_error(monkeypatch):
     cb = ClaudeBackend(api_key="sk-ant-test")
     result = await cb.generate_stream("claude-sonnet-4-20250514", "hello")
     assert "Claude API stream error" in result
+
+
+# ── Strict-local Howard + the llm.cloud_fallback knob (2026-06-10 audit) ──────
+
+
+def test_howard_strict_local_never_cloud():
+    """Howard (the digital twin) is LOCAL_ONLY — with both local backends down and
+    cloud ready, routing must fail closed, never spill the archive to Gemini."""
+    router = HybridRouter(gemini_api_key="test")
+    router._cloud_available = True
+    router._gemini_backend = FakeBackend()
+    with pytest.raises(RuntimeError, match="strict-local"):
+        router.select_backend("howard", "hello")
+
+
+def test_cloud_fallback_never_keeps_oversize_local():
+    """/admin llm.cloud_fallback=never: auto agents must not spill to cloud even
+    when the prompt outgrows the local window — degrade locally instead."""
+    router = HybridRouter(gemini_api_key="test")
+    router._cloud_available = True
+    router._gemini_backend = FakeBackend()
+    router._local_available = True
+    router._backend = FakeBackend()
+    router.set_cloud_fallback_mode("never")
+    long_prompt = "word " * (LOCAL_MAX_TOKENS * 4)
+    backend, model, route = router.select_backend("jarvis", long_prompt)
+    assert route == "local-fallback"
+
+
+def test_cloud_fallback_never_without_local_raises():
+    router = HybridRouter(gemini_api_key="test")
+    router._cloud_available = True
+    router._gemini_backend = FakeBackend()
+    router.set_cloud_fallback_mode("never")
+    with pytest.raises(RuntimeError):
+        router.select_backend("jarvis", "hello")
+
+
+def test_cloud_fallback_always_prefers_cloud():
+    router = HybridRouter(gemini_api_key="test")
+    router._cloud_available = True
+    router._gemini_backend = FakeBackend()
+    router._local_available = True
+    router._backend = FakeBackend()
+    router.set_cloud_fallback_mode("always")
+    backend, model, route = router.select_backend("jarvis", "short prompt")
+    assert route == "cloud-flash"
+
+
+def test_cloud_fallback_on_demand_is_default_and_unchanged():
+    router = HybridRouter(gemini_api_key="test")
+    router._cloud_available = True
+    router._gemini_backend = FakeBackend()
+    router._local_available = True
+    router._backend = FakeBackend()
+    assert router._cloud_fallback_mode == "on-demand"
+    backend, model, route = router.select_backend("jarvis", "short prompt")
+    assert route == "local"
+
+
+def test_cloud_fallback_mode_validates_input():
+    router = HybridRouter()
+    router.set_cloud_fallback_mode("bogus")
+    assert router._cloud_fallback_mode == "on-demand"
+    router.set_cloud_fallback_mode("NEVER ")
+    assert router._cloud_fallback_mode == "never"

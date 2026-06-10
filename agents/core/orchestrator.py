@@ -591,6 +591,11 @@ class Orchestrator:
             ctrl = getattr(self, "lmstudio", None)
             if ctrl is not None:
                 ctrl.set_enabled(self._control_master_enabled())
+            # Propagate llm.cloud_fallback (never|on-demand|always) to the router
+            # so the /admin privacy knob actually governs cloud escalation live.
+            router = getattr(self, "llm_router", None)
+            if router is not None and hasattr(router, "set_cloud_fallback_mode"):
+                router.set_cloud_fallback_mode(flat.get("llm.cloud_fallback", "on-demand"))
         except Exception as e:
             log_error(logger, E_INTERNAL_UNEXPECTED, component="settings_db", detail=str(e))
 

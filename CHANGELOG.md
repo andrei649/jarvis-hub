@@ -1,6 +1,23 @@
 # Changelog
 
 ## [Unreleased]
+### Security — governance promises verified against code, 3 fixes (2026-06-10)
+Second docs-vs-code audit pass (same method that found BUG-14):
+- **BUG-15 — Howard could reach the cloud.** `_select_howard_backend` short-circuits
+  *before* the policy gate, and its last resort was Gemini (`cloud-fallback`) — for the
+  LOCAL_ONLY digital twin holding the owner's conversation archive. Now fails closed,
+  like Frigga (BUG-14). +1 test.
+- **BUG-16 — `llm.cloud_fallback` was a dead knob.** The /admin privacy setting
+  (`never|on-demand|always`) was defined and rendered but read by NOTHING — an owner
+  selecting "never" still got cloud spill. Now honored live in `HybridRouter`
+  (`never` keeps auto-policy agents local even oversized; `always` prefers cloud;
+  `on-demand` = previous behavior), re-synced ≤30s by the settings watcher. +6 tests.
+- **BUG-17 — the Merkle audit chain was never verified.** `AuditLogger.verify_chain()`
+  had zero callers — "tamper-evident" without an evidence check. New
+  `GET /api/security/audit/verify` returns `{valid, first_invalid_id, entries}`;
+  unit tests prove real tampering and re-linking are detected. +5 tests
+  (HUD surface queued in the TASK-2 punch-list).
+
 ### Security — strict-local agents fail closed (BUG-14, 2026-06-10)
 - **Frigga could reach the cloud.** `HybridRouter.select_backend` with `policy=local` fell
   back to Gemini (`cloud-fallback`) whenever the local backend was down — and a unit test

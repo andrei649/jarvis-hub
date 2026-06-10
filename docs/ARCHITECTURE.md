@@ -410,6 +410,7 @@ squash commit.
 | `llm.temperature` | `0.7` | |
 | `llm.max_tokens` | `2048` | Deep route uses `llm.deep_max_tokens` (`8192`) |
 | `llm.default_model` | `google/gemma-4-31b-a4b` | |
+| `llm.cloud_fallback` | `on-demand` | `never`/`on-demand`/`always` — governs cloud *escalation* for auto-policy agents (never = stay local even oversized; honored live, ≤30s). Explicit cloud policies (athena) are unaffected |
 | `llm.control_enabled` | `true` | Master kill-switch for LM Studio start/load/unload (chat + admin) |
 | `llm.chat_control` | `true` | Allow natural-language LLM control in chat (admin buttons unaffected) |
 | `memory.context_window` | `6` | Turns in each prompt |

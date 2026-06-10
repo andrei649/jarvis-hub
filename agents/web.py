@@ -2868,6 +2868,23 @@ async def audit_anchor():
     return _nocache_json({"ok": True, "receipt": receipt})
 
 
+@app.get("/api/security/audit/verify")
+async def audit_verify():
+    """Verify the Merkle hash chain of the security audit log (tamper evidence).
+
+    'Tamper-evident' is only real if the chain is actually checked — this is the
+    check. Returns the first broken row id when integrity fails."""
+    audit = getattr(orch, "audit", None) if orch else None
+    if audit is None:
+        return JSONResponse({"error": "audit log not available"}, status_code=503)
+    valid, first_bad = await asyncio.to_thread(audit.verify_chain)
+    return _nocache_json({
+        "valid": valid,
+        "first_invalid_id": first_bad,
+        "entries": await asyncio.to_thread(audit.count),
+    })
+
+
 @app.get("/api/security/audit/anchors")
 async def audit_anchors(limit: int = Query(100, ge=1, le=1000)):
     """List external anchor receipts + verify the anchor chain."""

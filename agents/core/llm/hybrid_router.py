@@ -161,6 +161,11 @@ class HybridRouter(LLMRouter):
         # Resolved in detect(): Claude model from /admin config (settings_db);
         # local model prefers the real model loaded in the live backend.
         self._claude_model = DEFAULT_CLAUDE_MODEL
+        # /admin → llm.cloud_fallback: never | on-demand | always. Governs the
+        # FALLBACK/escalation cloud hops for auto-policy agents (explicit cloud
+        # policies like athena are policy, not fallback). Re-synced live by the
+        # orchestrator's settings watcher via set_cloud_fallback_mode().
+        self._cloud_fallback_mode = "on-demand"
 
     @staticmethod
     def _admin_setting(key: str, default):
@@ -195,6 +200,7 @@ class HybridRouter(LLMRouter):
 
         # Claude model is admin-configurable (/admin → llm.claude_model).
         self._claude_model = self._admin_setting("claude_model", DEFAULT_CLAUDE_MODEL)
+        self.set_cloud_fallback_mode(self._admin_setting("cloud_fallback", "on-demand"))
         self._claude_available = bool(self.anthropic_api_key) or self._anthropic_pool.size > 0
         if self._claude_available:
             from .anthropic import ClaudeBackend
@@ -259,7 +265,7 @@ class HybridRouter(LLMRouter):
             if self._claude_available:
                 return self._claude_backend, self._claude_model, "claude"
             logger.warning(f"Claude unavailable for {agent_id}, falling back to cloud")
-            if self._cloud_available:
+            if self._cloud_available and self._cloud_fallback_mode != "never":
                 return self._gemini_backend, "gemini-2.5-flash", "cloud-fallback"
             if self._local_available:
                 logger.warning(f"No cloud backend for {agent_id}, falling back to local")
@@ -280,7 +286,13 @@ class HybridRouter(LLMRouter):
                 return self._claude_backend, self._claude_model, "claude"
             return self._claude_backend, DEFAULT_CLAUDE_MODEL, "claude"
 
-        # Default: local first, cloud if context too big.
+        # Default: local first, cloud if context too big — governed by the
+        # /admin llm.cloud_fallback knob (never | on-demand | always):
+        #   never     → auto-policy agents NEVER spill to cloud (local or fail)
+        #   on-demand → spill only when the context outgrows the local window
+        #   always    → prefer cloud for auto agents whenever it's available
+        if self._cloud_fallback_mode == "always" and self._cloud_available:
+            return self._gemini_backend, "gemini-2.5-flash", "cloud-flash"
         # H7.5 — Complexity escalation: heavy prompts for auto-policy agents
         # are routed to the deep local slot (DDR5) when AUTO_DEEP_ENABLED.
         # This only applies here (token_count <= LOCAL_MAX_TOKENS path) because
@@ -292,10 +304,11 @@ class HybridRouter(LLMRouter):
                 )
                 return self._backend, DEFAULT_DEEP_MODEL, "local-deep"
             return self._backend, self._local_model, "local"
-        if token_count <= FLASH_MAX_TOKENS and self._cloud_available:
-            return self._gemini_backend, "gemini-2.5-flash", "cloud-flash"
-        if self._cloud_available:
-            return self._gemini_backend, "gemini-2.5-pro", "cloud-pro"
+        if self._cloud_fallback_mode != "never":
+            if token_count <= FLASH_MAX_TOKENS and self._cloud_available:
+                return self._gemini_backend, "gemini-2.5-flash", "cloud-flash"
+            if self._cloud_available:
+                return self._gemini_backend, "gemini-2.5-pro", "cloud-pro"
 
         if self._local_available:
             logger.warning("Cloud unavailable, falling back to local (context may be truncated)")
@@ -311,10 +324,21 @@ class HybridRouter(LLMRouter):
         if self._local_available:
             logger.warning("Ollama unavailable for Howard, falling back to LM Studio")
             return self._backend, "local-fallback"
-        if self._cloud_available:
-            logger.warning("All local backends unavailable for Howard, falling back to cloud")
-            return self._gemini_backend, "cloud-fallback"
-        raise RuntimeError("No LLM backend available for howard")
+        # NON-NEGOTIABLE (MOONSHOT §5.1): Howard is LOCAL_ONLY — the digital twin's
+        # archive never leaves the machine. No cloud fallback; fail closed.
+        raise RuntimeError(
+            "No local backend available for howard (strict-local) — "
+            "start Ollama or LM Studio; cloud fallback is forbidden"
+        )
+
+    def set_cloud_fallback_mode(self, mode) -> None:
+        """Live update from /admin → llm.cloud_fallback (settings watcher, ≤30s)."""
+        mode = str(mode or "on-demand").strip().lower()
+        if mode not in ("never", "on-demand", "always"):
+            mode = "on-demand"
+        if mode != self._cloud_fallback_mode:
+            logger.info("Cloud fallback mode → %s", mode)
+        self._cloud_fallback_mode = mode
 
     def set_active_model(self, model: str) -> None:
         """Switch the active local model used for `local` routing tiers.
