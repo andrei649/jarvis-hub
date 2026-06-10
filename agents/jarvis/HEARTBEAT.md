@@ -7,14 +7,16 @@ enabled: true
 do_not_disturb:
   - timezone: Europe/Bucharest
   - vacation_periods: managed_by_pepper
-  - max_sleeping: managed_by_frigga
+  - child_sleeping: managed_by_frigga
 checklist:
-  - Fetch weather for Bucharest
+  - Fetch weather for the home city
   - Fetch top 5 news headlines
   - Fetch today calendar agenda
   - Perform email triage
   - Synthesize morning brief report
 ---
+
+> *Template heartbeat — generic by design. Personal specifics are filled at onboarding and live in `HEARTBEAT.local.md` (gitignored), which overrides this file at load time.*
 
 # Jarvis — Morning Brief
 
@@ -22,15 +24,15 @@ checklist:
 
 07:00 Europe/Bucharest, every day.
 - Weekends: delay to 08:30 unless override.flag is set.
-- If Frigga reports Max still sleeping: delay until 07:30 or Max's wake event.
+- If Frigga reports the child still sleeping: delay until 07:30 or the child's wake event.
 - If Hercules reports sleep deficit >90 min: soften brief (no urgency framing).
 
 ## Checklist
 
-1. **Friday** — fetch weather (Nerva Traian + Cosmina de Sus, next 12h), top 3 news. Wait max 4s.
+1. **Friday** — fetch weather (home + the second location, next 12h), top 3 news. Wait max 4s.
 2. **Pepper** — today's calendar, top 3 priorities, overdue items. Wait max 3s.
-3. **Frigga** — Max's overnight log. Wait max 2s.
-4. **Stark** — Raiffeisen Slack mentions, flagged emails, GA4 anomalies overnight. Wait max 4s.
+3. **Frigga** — the child's overnight log. Wait max 2s.
+4. **Stark** — day-job Slack mentions, flagged emails, GA4 anomalies overnight. Wait max 4s.
 5. **Scan all other specialists** for any signal:true heartbeat alert from the past 12h.
 6. **Synthesize** into one =90-second audio brief.
 

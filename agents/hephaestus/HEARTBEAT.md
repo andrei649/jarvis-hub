@@ -6,6 +6,8 @@ channel: log-only
 enabled: true
 ---
 
+> *Template heartbeat — generic by design. Personal specifics are filled at onboarding and live in `HEARTBEAT.local.md` (gitignored), which overrides this file at load time.*
+
 # Hephaestus — Daily Project Health
 
 ## Trigger
@@ -14,9 +16,9 @@ enabled: true
 
 ## Checklist
 
-1. Check if any Cosmina contractors are past due on communication (>48h no update)
+1. Check if any build-site contractors are past due on communication (>48h no update)
 2. Check any material deliveries due, mark received if acknowledged
-3. Check BMW E93 issue tracker for any new symptoms logged
+3. Check the project car's issue tracker for any new symptoms logged
 4. Flag any approaching maintenance deadlines (oil, plugs, coils, injectors)
 
 ## Output Rule
@@ -27,6 +29,6 @@ enabled: true
 ## Escalation
 
 - Contractor no-comms >72h: escalate to Jarvis for call decision
-- BMW critical item (coolant leak, boost leak, misfire): immediate alert
+- Project-car critical item (coolant leak, boost leak, misfire): immediate alert
 - Material shortage on critical path: flag with impact on timeline
 - Permit nearing expiration: flag 30 days before, escalate at 14 days

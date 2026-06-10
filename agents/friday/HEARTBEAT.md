@@ -5,10 +5,12 @@ silent_by_default: true
 channel: log-only
 enabled: true
 checklist:
-  - Fetch weather for Bucharest
+  - Fetch weather for the home city
   - Fetch top 5 news headlines
   - Synthesize morning brief
 ---
+
+> *Template heartbeat — generic by design. Personal specifics are filled at onboarding and live in `HEARTBEAT.local.md` (gitignored), which overrides this file at load time.*
 
 # Friday — Pre-Dawn Collection
 
@@ -18,7 +20,7 @@ checklist:
 
 ## Checklist
 
-1. Fetch weather for Nerva Traian + Cosmina de Sus — next 12h
+1. Fetch weather for home + the second location — next 12h
 2. Fetch top 3 from each RSS feed (tech, banking, CRM)
 3. Check market data if trading day
 4. Check traffic (weekday only)
@@ -26,7 +28,7 @@ checklist:
 
 ## Output Rule
 
-- Never surface to Andrei directly. Data is consumed by Jarvis.
+- Never surface to the owner directly. Data is consumed by Jarvis.
 - Time budget: 25s total. If a source hangs >4s, skip.
 - Flag repeats: "same as yesterday, delta: +2°C"
 
