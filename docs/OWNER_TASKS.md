@@ -47,6 +47,12 @@
   until the GIF lands) — art direction in BRAND_BOOK §7.
 - [ ] **Decide the "Jarvis" naming question** before anything commercial (Phase 2) —
   trademark-risk note in BRAND_BOOK §2.
+- [ ] **SOUL.md templating decision** — the README is de-personalized (2026-06-10), but 11
+  `agents/*/SOUL.md` files + `agents.yaml` still carry real family/employer details (Frigga's
+  soul alone: 18 family-name mentions). Per AGENTS.md, agent personalities don't change without
+  your sign-off. Proposed follow-up (agent-doable once approved): generic SOUL *templates* in
+  the repo + first-session onboarding fills the personal specifics into profile memory /
+  local-only overrides — a fresh clone is clean, and *your* instance stays yours.
 
 ## Parking lot (decisions, no rush)
 
