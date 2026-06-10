@@ -1,6 +1,13 @@
 # Changelog
 
 ## [Unreleased]
+### API honesty — two inconsistencies found by running the app (2026-06-10)
+- **`GET /api/agents/{id}/history` 404s for unknown agents**, consistent with `/soul` (it
+  was returning a misleading `200 + empty runs` for any id, so a typo'd agent looked real
+  with no history). Also validates the id against the agent-id alphabet.
+- **`POST /learning/promote` of a nonexistent bench agent returns 404 / `ok:false`** instead
+  of the old `{ok:true, promoted:false}` that reported success for a no-op. +3 endpoint tests.
+
 ### Governance audit pass 3 — 3 promises hold, 1 defense-in-depth gap closed (2026-06-10)
 Verified four governance promises against the code (the method that found BUG-14..17):
 - **Autonomy risk gate ✅ holds** — ASK-tier tasks go to BLOCKED, `runnable()` queries only

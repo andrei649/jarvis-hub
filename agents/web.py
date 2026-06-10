@@ -1141,6 +1141,13 @@ async def agents_history():
 @app.get("/api/agents/{agent_id}/history")
 async def agent_history(agent_id: str, limit: int = Query(50, ge=1, le=200)):
     """H10.17 — recent runs for one agent (most-recent first)."""
+    agent_id = agent_id.strip().lower()
+    if not _AGENT_ID_RE.match(agent_id):
+        raise HTTPException(status_code=404, detail="Agent not found")
+    # Consistent with /soul: an unknown agent 404s rather than returning a
+    # misleading empty-but-OK run list (a fresh-but-real agent still 200s with []).
+    if orch and agent_id not in orch.agents:
+        raise HTTPException(status_code=404, detail=f"Agent '{agent_id}' not found")
     if not orch or not getattr(orch, "run_history", None):
         return _nocache_json({"agent_id": agent_id, "runs": []})
     return _nocache_json({
@@ -2552,6 +2559,14 @@ async def learning_promote(body: PromoteRequest):
     if not bench_id:
         return JSONResponse({"error": "bench_agent is required"}, status_code=400)
     promoted = orch.promote_bench_agent(bench_id)
+    if not promoted:
+        # Honest result: a no-op (unknown bench id, or already active) is not a
+        # success — say so with 404 so the HUD shows an error, not a fake "ok".
+        return JSONResponse(
+            {"ok": False, "bench_agent": bench_id, "promoted": False,
+             "error": f"'{bench_id}' is not a promotable bench agent (unknown or already active)"},
+            status_code=404,
+        )
     return _nocache_json({
         "ok": True,
         "bench_agent": bench_id,
