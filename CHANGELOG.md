@@ -1,6 +1,20 @@
 # Changelog
 
 ## [Unreleased]
+### Stability & UX — found by running the app as a first-time user (2026-06-10)
+Booted the server and walked the journeys a new user hits before loading a model:
+- **Friendly "no model loaded" message.** A fresh install with no LLM returned a raw
+  `[jarvis error: No LLM backend available]` as the chat reply — the single most common
+  first-run state, with the least helpful message. Now every channel (web/telegram/discord/
+  CLI) returns one actionable line: "No language model is loaded yet. Start LM Studio (or
+  Ollama)…". Fixed centrally in the orchestrator's agent-call handler.
+- **`AGENT_COUNT` no longer drifts.** `/api/status` (consumed by the HUD) reported 16 active
+  agents while the roster was 17 — a hardcoded constant. Now computed from the canonical
+  registry (`agents.yaml`) with a registry-pinned regression test.
+- **Blank turns rejected.** An empty/whitespace `/chat` message was accepted and spent a full
+  routing + LLM turn; now rejected with 422 before reaching the orchestrator (`min_length` +
+  a not-blank validator). Cheap no-op for an accidental Enter.
+
 ### Security — governance promises verified against code, 3 fixes (2026-06-10)
 Second docs-vs-code audit pass (same method that found BUG-14):
 - **BUG-15 — Howard could reach the cloud.** `_select_howard_backend` short-circuits

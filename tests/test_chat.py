@@ -24,9 +24,17 @@ def test_chat_request_custom_agent():
     assert req.agent == "friday"
 
 
-def test_chat_request_empty_message():
-    req = ChatRequest(message="")
-    assert req.message == ""
+def test_chat_request_empty_message_rejected():
+    # A blank/whitespace turn must not reach the orchestrator or spend an LLM
+    # call — pydantic rejects it before the endpoint runs (422 to the client).
+    import pytest
+    from pydantic import ValidationError
+
+    for blank in ("", "   ", "\n\t "):
+        with pytest.raises(ValidationError):
+            ChatRequest(message=blank)
+    # A real message still validates.
+    assert ChatRequest(message="hello").message == "hello"
 
 
 def test_chat_response_model():
