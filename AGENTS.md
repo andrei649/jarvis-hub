@@ -14,7 +14,9 @@ Când utilizatorul menționează **"backlog"**, **"ce urmează"**, **"next"**, *
 
 ## Hărți de orientare
 - **Navigare pentru AI (începe aici):** `docs/ARCHITECTURE.md` — entry points, request lifecycle, index de module, rețete „cum adaug X". Optimizat să găsești rapid unde trăiește codul, fără a citi tot.
+- **Context mare (1M tokens):** `docs/AI_CONTEXT.md` — tier-uri de încărcare + bundle-uri per task cu estimări de tokeni; nu încărca repo-ul brut.
 - **Arhitectură & structură:** `JARVIS.md` (stack, directoare, fluxul orchestrator → router → skills).
+- **Taskuri owner-only:** `docs/OWNER_TASKS.md` — hardware/GitHub-settings/decizii; nu le bloca pe agenți, marchează-le acolo.
 - **Specs & planuri (opencode):** `.opencode/plans/*.md` — un spec per skill/modul, scris înainte de implementare (TDD).
 - **Workflow paralel:** `PARALLEL_WORKFLOW.md` + `lock.py` (locks la nivel de componentă, evită coliziuni între agenți).
 
