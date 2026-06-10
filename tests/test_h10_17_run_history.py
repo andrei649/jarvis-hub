@@ -63,3 +63,30 @@ def test_history_endpoints():
         body = r2.json()
         assert body["agent_id"] == "veronica"
         assert isinstance(body["runs"], list)
+
+
+def test_locality_classifies_routes(tmp_path):
+    """Locality %-local is computed from the route field (MOONSHOT §6 metric):
+    cloud* / claude / gemini are cloud, everything else routed is local,
+    empty routes are unknown and excluded from the percentage."""
+    import sys
+    from pathlib import Path
+    root = Path(__file__).resolve().parent.parent
+    sys.path.insert(0, str(root)); sys.path.insert(0, str(root / "agents"))
+    from agents.core.run_history import RunHistory
+    rh = RunHistory(path=tmp_path / "rh.json")
+    for route in ("local", "local-deep", "ollama-howard", "cloud-flash", "claude", ""):
+        rh.record(agent_id="jarvis", input_text="x", output_text="y", route=route)
+    loc = rh.locality()
+    assert loc["local"] == 3 and loc["cloud"] == 2 and loc["unknown"] == 1
+    assert loc["local_pct"] == 60  # 3 of 5 decided
+
+
+def test_locality_empty_is_none(tmp_path):
+    import sys
+    from pathlib import Path
+    root = Path(__file__).resolve().parent.parent
+    sys.path.insert(0, str(root)); sys.path.insert(0, str(root / "agents"))
+    from agents.core.run_history import RunHistory
+    rh = RunHistory(path=tmp_path / "rh2.json")
+    assert rh.locality()["local_pct"] is None  # never fabricate a split

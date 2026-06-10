@@ -100,6 +100,30 @@ class RunHistory(JsonStore):
         out.sort(key=lambda r: r["last_ts"], reverse=True)
         return out
 
+    def locality(self) -> dict:
+        """% of recorded runs served on-device vs cloud, from the route field.
+
+        The brand's north-star counter-metric (MOONSHOT §6: "% tasks served
+        locally vs cloud"). A route is local unless it starts with "cloud" or is
+        a known cloud route ("claude"); unrouted/empty rows are 'unknown' and
+        excluded from the percentage so the meter never fabricates a split."""
+        with self._lock:
+            snapshot = [r for runs in self._runs.values() for r in runs]
+        local = cloud = unknown = 0
+        for r in snapshot:
+            route = str(r.get("route", "")).lower()
+            if not route:
+                unknown += 1
+            elif route.startswith("cloud") or route in ("claude", "gemini"):
+                cloud += 1
+            else:  # local, local-deep, local-fallback, ollama-howard, …
+                local += 1
+        decided = local + cloud
+        return {
+            "local": local, "cloud": cloud, "unknown": unknown, "total": len(snapshot),
+            "local_pct": round(100 * local / decided) if decided else None,
+        }
+
     def clear(self, agent_id: Optional[str] = None) -> None:
         with self._lock:
             if agent_id:
