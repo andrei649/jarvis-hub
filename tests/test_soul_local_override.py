@@ -79,3 +79,16 @@ def test_heartbeat_falls_back_to_template(tmp_path):
     sched = HeartbeatScheduler(agents_dir=str(tmp_path / "agents"))
     sched.load_all()
     assert "generic step" in str(sched._heartbeat_configs["qux"])
+
+
+async def test_soul_endpoint_rejects_path_traversal():
+    """The soul endpoint turns agent_id into a path segment — ids outside the
+    agent alphabet (dots, slashes, traversal) must 404 before touching disk."""
+    import pytest
+    from fastapi import HTTPException
+    from agents.web import get_agent_soul
+
+    for bad in ("..", "../jarvis", "a/../../etc", "jarvis%2f..", ".hidden", "x" * 65):
+        with pytest.raises(HTTPException) as exc:
+            await get_agent_soul(bad)
+        assert exc.value.status_code == 404

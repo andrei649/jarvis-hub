@@ -6,6 +6,7 @@ import asyncio
 import json
 import logging
 import os
+import re
 import secrets
 import statistics
 import time
@@ -977,11 +978,18 @@ async def get_ticker():
     return _nocache_json({"ticker": items})
 
 
+_AGENT_ID_RE = re.compile(r"^[a-z0-9_-]{1,64}$")
+
+
 @app.get("/api/agents/{agent_id}/soul")
 async def get_agent_soul(agent_id: str):
     """Read and return the live SOUL.md content for an agent."""
     agent_id = agent_id.strip().lower()
-    
+    # The id becomes a filesystem path segment below — reject anything outside
+    # the agent-id alphabet (CodeQL: uncontrolled data in path expression).
+    if not _AGENT_ID_RE.match(agent_id):
+        raise HTTPException(status_code=404, detail="Agent not found")
+
     # Allow reading SOUL.md if the file physically exists, even if orch is not initialized (e.g. in tests)
     # The personalized overlay (SOUL.local.md, gitignored) wins when present —
     # same resolution as Agent._load_soul.
