@@ -100,6 +100,23 @@ the still‑open depth items above. Snapshot: backend ≈253 routes; HUD v2 acti
 **Conclusion:** coverage gate still green (nothing silently dropped), but the *depth* gap regrew.
 Tracked as **TASK‑2** in `BACKLOG.md`; estimated 3–5 PRs (~2–3 weeks part‑time) to "nothing missed".
 
+### 2026‑06‑10 depth pass (same day, PR #181) — the control gap is CLOSED
+
+All ~37 missing **write/recent controls** above now have live HUD surfaces (Console panels in
+`frontend/src/gap.tsx` + Trust mode + cockpit):
+cognition SSE stream (cockpit live trace) · payments approve/reject/settle (Trust) · sender
+pairing approve/reject/block + code (H12.19) · injection scan (H17.1) · transcript→tasks ingest
+(H12.25) · escalation targets+send (H12.11) · reflection status+run · heartbeat run/start/stop ·
+bench promotion (`/learning/promote`) · marketplace review ✓/✕ (H12.12) · eval runs + compare ·
+AI step builder (H10.7) · sandbox execute (DEV_MODE‑gated, honest 403) · agent templates
+(H10.29) · LM Studio server/load/unload · cloud auth profiles (H12.20). Admin‑guarded calls now
+send the admin token (`actA`). +7 frontend tests (19 total).
+
+**Still open (the tail of TASK‑2):** §3 plugin‑gated mode wiring (Finance/Health/Knowledge/
+Family, Comms Discord/Slack threads), per‑panel LIVE/SEED chips (§1 — global badge exists),
+§6 toolchain (CI stale‑bundle guard, OpenAPI types, self‑hosted fonts), §7 locality endpoint.
+Estimated 1–2 PRs.
+
 ---
 *Parity gate (`tests/test_hud_v2_parity.py`) tracks all routes → every one is mapped to a v2
 surface or `NOT_IN_HUD`, so nothing above can silently disappear — these items are about depth, not

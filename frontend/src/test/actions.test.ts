@@ -6,6 +6,7 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 import {
   getKillSwitch, setKillSwitch, installSkill, togglePlugin,
   getAgentSoul, getAgentHistory, memorySearch, kgEntities, playTts,
+  decidePayment, reviewSkill, promoteBench,
 } from '../api/actions';
 
 function mockFetch(json: any = { ok: true }, opts: any = {}) {
@@ -90,6 +91,43 @@ describe('memory + KG', () => {
     const fn = mockFetch({ entities: [] });
     await kgEntities();
     expect(lastCall(fn)[0]).toContain('/api/kg/entities');
+  });
+});
+
+describe('payments lifecycle (H16.3)', () => {
+  it('POSTs /api/payments/{id}/approve with the id encoded', async () => {
+    const fn = mockFetch({ id: 'p1', state: 'approved' });
+    await decidePayment('p 1', 'approve');
+    const [path, init] = lastCall(fn);
+    expect(path).toBe('/api/payments/p%201/approve');
+    expect(init.method).toBe('POST');
+  });
+  it('POSTs settle to /api/payments/{id}/settle', async () => {
+    const fn = mockFetch({ id: 'p1', state: 'cleared' });
+    await decidePayment('p1', 'settle');
+    expect(lastCall(fn)[0]).toBe('/api/payments/p1/settle');
+  });
+});
+
+describe('marketplace moderation (H12.12)', () => {
+  it('POSTs {name,status} to /api/skills/marketplace/review', async () => {
+    const fn = mockFetch({ ok: true });
+    await reviewSkill('Demo Skill', 'approved');
+    const [path, init] = lastCall(fn);
+    expect(path).toBe('/api/skills/marketplace/review');
+    expect(init.method).toBe('POST');
+    expect(JSON.parse(init.body)).toEqual({ name: 'Demo Skill', status: 'approved' });
+  });
+});
+
+describe('bench promotion', () => {
+  it('POSTs {bench_agent} to /learning/promote', async () => {
+    const fn = mockFetch({ ok: true, promoted: true });
+    await promoteBench('bruce');
+    const [path, init] = lastCall(fn);
+    expect(path).toBe('/learning/promote');
+    expect(init.method).toBe('POST');
+    expect(JSON.parse(init.body)).toEqual({ bench_agent: 'bruce' });
   });
 });
 

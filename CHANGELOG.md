@@ -1,6 +1,27 @@
 # Changelog
 
 ## [Unreleased]
+### HUD v2 depth pass — UI controls for the 2026-06-09 backend wave (2026-06-10)
+- **TASK-2 control gap closed** (PR #181) — the parity re-audit found ~37 backend endpoints
+  with no HUD v2 control; all now have live surfaces:
+  - **Cockpit:** live cognition over SSE (`/api/cognition/stream`, NTH-1) — routing decisions
+    stream into the trace as they happen; the post-turn snapshot stays as fallback.
+  - **Trust:** payment approve/reject/settle on the real broker ids (H16.3); sender-pairing
+    approvals + pairing code (H12.19); prompt-injection scanner (H17.1).
+  - **Autonomy & Agents:** heartbeat run/start/stop; transcript→governed-tasks ingest (H12.25);
+    escalation targets + send (H12.11); bench promotion (`/learning/promote`); agent templates
+    (H10.29).
+  - **Build:** AI step builder (H10.7); sandbox execute with honest DEV_MODE 403; marketplace
+    review ✓/✕ (H12.12).
+  - **Memory/Observe:** nightly-reflection status + run-now; eval dataset runs + compare.
+  - **Admin:** LM Studio server start / model load / unload; cloud auth-profile pools (H12.20).
+- Admin-guarded Console actions now send the admin token (`actA`) instead of relying on the
+  localhost exemption (kill-switch, A2A decide, capability issue, marketplace review, promote).
+- `frontend/`: +7 tests (19 total) — payments/review/promote helpers, PairingPanel decide flow,
+  SandboxPanel execute + 403 honesty. `tsc` clean; bundle rebuilt to `agents/web/v2/`.
+- Punch-list updated: `docs/design/HUD_V2_REMAINING.md` §10 (remaining tail: plugin-gated mode
+  wiring, per-panel LIVE/SEED chips, §6 toolchain, locality endpoint).
+
 ### HUD voice loop — hands-free voice in the browser (2026-06-07)
 - **Browser voice loop** (PR #162) — the HUD mic button was a dead toggle and the voice
   engines only worked for a host-attached mic. New `frontend/src/voice.ts` (`useVoice`)

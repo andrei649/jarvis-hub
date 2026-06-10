@@ -40,6 +40,11 @@ const Row = ({ children }) => <div style={{ display: 'flex', gap: 8, alignItems:
 const Tag = ({ c, children }) => <span style={{ ...mono, fontSize: 9.5, padding: '1px 5px', border: '1px solid var(--panel-line)', borderRadius: 3, color: c || 'var(--ink-3)' }}>{children}</span>;
 const Btn = ({ onClick, children }) => <button className="tool-btn" onClick={onClick} style={{ marginLeft: 'auto' }}>{children}</button>;
 const act = (p, body, then) => apiPost(p, body).then(then || (() => {})).catch(() => {});
+const actA = (p, body, then) => apiPost(p, body, { admin: true }).then(then || (() => {})).catch(() => {});
+const inpS = { background: 'var(--surface)', color: 'var(--ink)', border: '1px solid var(--panel-line)', borderRadius: 4, padding: 5, ...mono, fontSize: 11 };
+const taS = { width: '100%', minHeight: 64, background: 'var(--surface)', color: 'var(--ink)', border: '1px solid var(--panel-line)', borderRadius: 4, padding: 6, ...mono };
+const Json = ({ v, max = 220 }) => (v == null ? null
+  : <pre style={{ ...mono, fontSize: 10, lineHeight: 1.45, whiteSpace: 'pre-wrap', maxHeight: max, overflow: 'auto', margin: '6px 0 0', padding: 8, background: 'var(--surface)', border: '1px solid var(--panel-line)', borderRadius: 4, color: 'var(--ink-2)' }}>{typeof v === 'string' ? v : JSON.stringify(v, null, 2)}</pre>);
 function DiffView({ text }) {
   if (text == null) return null;
   if (text === '') return <div style={{ ...mono, fontSize: 10.5, color: 'var(--ink-3)', marginTop: 6 }}>identical · no changes</div>;
@@ -90,7 +95,60 @@ function NotesPanel() {
   </Card>;
 }
 
+function ReflectionPanel() {
+  const { d, e, loading, reload } = useApi('/api/reflection/status');
+  const [out, setOut] = useState(null);
+  const run = () => { setOut('running…'); act('/api/reflection/run', {}, (r) => { setOut(r?.ok ? (r.result || 'done') : (r?.error || 'failed')); reload(); }); };
+  return <Card title="NIGHTLY REFLECTION" onReload={reload}>
+    <State e={e} loading={loading} n={d ? 1 : 0} />
+    {d && <div style={{ ...mono, fontSize: 11 }}>
+      <Row><span>enabled</span><span style={{ marginLeft: 'auto', color: d.enabled ? 'var(--green)' : 'var(--ink-3)' }}>{String(!!d.enabled)}</span></Row>
+      <Row><span>last run</span><span style={{ marginLeft: 'auto', color: 'var(--ink-3)' }}>{d.last_run || 'never'}</span></Row>
+    </div>}
+    <button className="tool-btn" style={{ marginTop: 6 }} onClick={run}>run now</button>
+    {out != null && <Json v={out} max={120} />}
+    <div style={{ fontSize: 10, color: 'var(--ink-3)', marginTop: 6 }}>last 60 turns → entities/relations/lessons → KG (H5.15)</div>
+  </Card>;
+}
+
 /* ── Trust / Security ───────────────────────────────────── */
+export function PairingPanel() {
+  const { d, e, loading, reload } = useApi('/api/channels/pairing', true, true);
+  const senders = arr(d, 'senders');
+  const [code, setCode] = useState('');
+  const decide = (s, action) => actA('/api/channels/pairing/decide', { channel: s.channel, sender_id: s.sender_id || s.id, action }, reload);
+  return <Card title="SENDER PAIRING" sub={d?.summary ? (d.summary.pending ?? senders.length) + ' pending' : senders.length} onReload={reload}>
+    <State e={e} loading={loading} n={senders.length} />
+    {senders.slice(0, 10).map((s, i) => <Row key={i}>
+      <span style={mono}>{s.name || s.sender_id || s.id}</span>
+      <Tag>{s.channel}</Tag>
+      <Tag c={s.status === 'paired' ? 'var(--green)' : s.status === 'blocked' ? 'var(--red)' : 'var(--amber)'}>{s.status || 'pending'}</Tag>
+      <span style={{ marginLeft: 'auto', display: 'flex', gap: 5 }}>
+        {s.status !== 'paired' && <button className="tool-btn" title="approve" onClick={() => decide(s, 'approve')}>✓</button>}
+        {s.status !== 'blocked' && <button className="tool-btn" title="block" onClick={() => decide(s, 'block')}>⛔</button>}
+        {s.status === 'paired' ? <button className="tool-btn" title="unpair" onClick={() => decide(s, 'unpair')}>✕</button>
+          : <button className="tool-btn" title="reject" onClick={() => decide(s, 'reject')}>✕</button>}
+      </span></Row>)}
+    <div style={{ display: 'flex', gap: 6, marginTop: 8 }}>
+      <input value={code} onChange={(ev) => setCode(ev.target.value)} placeholder="pairing code (empty = clear)" style={{ ...inpS, flex: 1 }} />
+      <button className="tool-btn" onClick={() => actA('/api/channels/pairing/code', { code: code || null }, () => { setCode(''); reload(); })}>set code</button>
+    </div>
+    <div style={{ fontSize: 10, color: 'var(--ink-3)', marginTop: 6 }}>unknown senders are held until you decide (H12.19)</div>
+  </Card>;
+}
+function InjectionScanPanel() {
+  const [text, setText] = useState('');
+  const [out, setOut] = useState(null);
+  const scan = () => act('/api/security/scan-injection', { text }, setOut);
+  return <Card title="INJECTION SCAN">
+    <textarea value={text} onChange={(ev) => setText(ev.target.value)} placeholder="paste suspect text — emails, skill output, web content…" style={taS} />
+    <button className="tool-btn" style={{ marginTop: 6 }} onClick={scan}>scan</button>
+    {out && <div style={{ ...mono, fontSize: 11, marginTop: 6, color: out.suspicious ? 'var(--red)' : 'var(--green)' }}>
+      {out.suspicious ? '⚠ ' + (out.flags || []).length + ' pattern(s): ' + (out.flags || []).join(', ') : '✓ clean — no injection patterns'}
+    </div>}
+    <div style={{ fontSize: 10, color: 'var(--ink-3)', marginTop: 6 }}>prompt-injection detector (H17.1) — same engine as the quarantine gate</div>
+  </Card>;
+}
 function SecretsPanel() {
   const { d, e, loading, reload } = useApi('/api/secrets/broker');
   const names = arr(d, 'names', 'secrets');
@@ -114,7 +172,7 @@ function KillSwitchPanel() {
   return <Card title="KILL-SWITCH" onReload={reload}>
     <State e={e} loading={loading} n={1} />
     <Row><span style={{ color: halted ? 'var(--red)' : 'var(--green)' }}>{halted ? 'ENGAGED · all agents halted' : 'ARMED · operational'}</span>
-      <Btn onClick={() => act('/api/security/kill-switch', { engage: !halted, scope: 'global', reason: 'hud' }, reload)}>{halted ? 'disengage' : 'HALT ALL'}</Btn></Row>
+      <Btn onClick={() => actA('/api/security/kill-switch', { engage: !halted, scope: 'global', reason: 'hud' }, reload)}>{halted ? 'disengage' : 'HALT ALL'}</Btn></Row>
   </Card>;
 }
 function CapabilitiesPanel() {
@@ -122,7 +180,7 @@ function CapabilitiesPanel() {
   return <Card title="CAPABILITY TOKENS">
     <input value={caps} onChange={(e) => setCaps(e.target.value)} style={{ width: '100%', background: 'var(--surface)', color: 'var(--ink)', border: '1px solid var(--panel-line)', borderRadius: 4, padding: 6, ...mono }} />
     <div style={{ display: 'flex', gap: 8, marginTop: 6 }}>
-      <button className="tool-btn" onClick={() => act('/api/security/capabilities/issue', { capabilities: caps.split(',').map((s) => s.trim()) }, (r) => setOut(JSON.stringify(r)))}>issue</button>
+      <button className="tool-btn" onClick={() => actA('/api/security/capabilities/issue', { capabilities: caps.split(',').map((s) => s.trim()) }, (r) => setOut(JSON.stringify(r)))}>issue</button>
     </div>
     {out && <pre style={{ ...mono, fontSize: 10, color: 'var(--ink-3)', whiteSpace: 'pre-wrap', marginTop: 6 }}>{out.slice(0, 200)}</pre>}
   </Card>;
@@ -136,8 +194,8 @@ function A2AInboxPanel() {
     <State e={e} loading={loading} n={items.length} />
     {items.slice(0, 10).map((it, i) => <Row key={i}><span style={mono}>{it.peer || it.from || '?'}</span><span style={{ fontSize: 11, color: 'var(--ink-2)' }}>{(it.task || it.summary || '').slice(0, 40)}</span>
       <span style={{ marginLeft: 'auto', display: 'flex', gap: 6 }}>
-        <button className="tool-btn" onClick={() => act(`/api/a2a/inbox/${it.id || it.task_id}/decide`, { approved: true }, reload)}>✓</button>
-        <button className="tool-btn" onClick={() => act(`/api/a2a/inbox/${it.id || it.task_id}/decide`, { approved: false }, reload)}>✕</button>
+        <button className="tool-btn" onClick={() => actA(`/api/a2a/inbox/${it.id || it.task_id}/decide`, { approved: true }, reload)}>✓</button>
+        <button className="tool-btn" onClick={() => actA(`/api/a2a/inbox/${it.id || it.task_id}/decide`, { approved: false }, reload)}>✕</button>
       </span></Row>)}
     <div style={{ fontSize: 10, color: 'var(--ink-3)', marginTop: 6 }}>verified peer tasks land here; never auto-execute (H16.2)</div>
   </Card>;
@@ -148,11 +206,13 @@ function MarketplacePanel() {
   return <Card title="SKILLS MARKETPLACE" sub={skills.length} onReload={reload}>
     <State e={e} loading={loading} n={skills.length} />
     {skills.slice(0, 10).map((s, i) => <Row key={i}><span style={{ ...mono, color: 'var(--accent-light)' }}>{s.name}</span>
-      <span style={{ marginLeft: 'auto', display: 'flex', gap: 5 }}>
+      <span style={{ marginLeft: 'auto', display: 'flex', gap: 5, alignItems: 'center' }}>
         <Tag c={s.signed ? 'var(--green)' : 'var(--amber)'}>{s.signed ? 'signed' : 'unsigned'}</Tag>
         <Tag c={s.review_status === 'approved' ? 'var(--green)' : s.review_status === 'rejected' ? 'var(--red)' : 'var(--amber)'}>{s.review_status || 'pending'}</Tag>
+        {s.review_status !== 'approved' && <button className="tool-btn" title="approve skill" onClick={() => actA('/api/skills/marketplace/review', { name: s.name, status: 'approved' }, reload)}>✓</button>}
+        {s.review_status !== 'rejected' && <button className="tool-btn" title="reject skill" onClick={() => actA('/api/skills/marketplace/review', { name: s.name, status: 'rejected' }, reload)}>✕</button>}
       </span></Row>)}
-    <div style={{ fontSize: 10, color: 'var(--ink-3)', marginTop: 6 }}>signed + moderated (anti-ClawHub, H12.12)</div>
+    <div style={{ fontSize: 10, color: 'var(--ink-3)', marginTop: 6 }}>signed + moderated — ✓/✕ sets review status (anti-ClawHub, H12.12)</div>
   </Card>;
 }
 
@@ -160,9 +220,37 @@ function MarketplacePanel() {
 function EvalPanel() {
   const { d, e, loading, reload } = useApi('/api/eval/datasets');
   const ds = arr(d, 'datasets');
+  const [open, setOpen] = useState(null);   // dataset name whose runs are expanded
+  const [runs, setRuns] = useState([]);
+  const [cmp, setCmp] = useState(null);
+  const showRuns = (name) => {
+    if (open === name) { setOpen(null); setCmp(null); return; }
+    setOpen(name); setCmp(null);
+    apiGet('/api/eval/datasets/' + encodeURIComponent(name) + '/runs?limit=6').then((r) => setRuns(arr(r, 'runs'))).catch(() => setRuns([]));
+  };
+  const compare = () => {
+    if (!open || runs.length < 2) return;
+    const idOf = (r) => r.run_id || r.id || r.ts;
+    apiGet(`/api/eval/datasets/${encodeURIComponent(open)}/compare?a=${encodeURIComponent(idOf(runs[1]))}&b=${encodeURIComponent(idOf(runs[0]))}`).then(setCmp).catch(() => setCmp(null));
+  };
   return <Card title="EVAL DATASETS" sub={ds.length} onReload={reload}>
     <State e={e} loading={loading} n={ds.length} />
-    {ds.slice(0, 8).map((x, i) => <Row key={i}><span style={mono}>{x.name}</span><span style={{ fontSize: 10, color: 'var(--ink-3)' }}>v{x.version} · {x.cases ?? x.count ?? '?'}</span><Btn onClick={() => act('/api/eval/datasets/run', { name: x.name }, reload)}>run</Btn></Row>)}
+    {ds.slice(0, 8).map((x, i) => <Row key={i}>
+      <span style={{ ...mono, cursor: 'pointer', color: open === x.name ? 'var(--accent)' : 'var(--ink)' }} onClick={() => showRuns(x.name)} title="show recent runs">{x.name}</span>
+      <span style={{ fontSize: 10, color: 'var(--ink-3)' }}>v{x.version} · {x.cases ?? x.count ?? '?'}</span>
+      <Btn onClick={() => act('/api/eval/datasets/run', { name: x.name }, reload)}>run</Btn></Row>)}
+    {open && <div style={{ marginTop: 6 }}>
+      <div style={{ ...mono, fontSize: 9.5, letterSpacing: '.14em', color: 'var(--ink-3)' }}>{open.toUpperCase()} · RECENT RUNS</div>
+      {runs.length === 0 && <div style={{ fontSize: 11, color: 'var(--ink-3)', marginTop: 4 }}>no recorded runs</div>}
+      {runs.map((r, i) => <Row key={i}><span style={mono}>{(r.run_id || r.id || r.ts || '').toString().slice(0, 19)}</span>
+        <span style={{ marginLeft: 'auto', ...mono, fontSize: 10, color: 'var(--accent-light)' }}>μ {r.mean_score ?? r.score ?? '—'}</span></Row>)}
+      {runs.length >= 2 && <button className="tool-btn" style={{ marginTop: 6 }} onClick={compare}>compare last two</button>}
+      {cmp && <div style={{ ...mono, fontSize: 10.5, marginTop: 6 }}>
+        <span style={{ color: (cmp.score_delta ?? 0) >= 0 ? 'var(--green)' : 'var(--red)' }}>Δ score {cmp.score_delta ?? '—'}</span>
+        <span style={{ color: 'var(--ink-3)' }}> · {(cmp.regressions || []).length} regression(s) · {(cmp.improvements || []).length} improvement(s)</span>
+        {(cmp.regressions || []).slice(0, 4).map((g, i) => <div key={i} style={{ color: 'var(--red)' }}>− {(g.case || g.prompt || g.id || '').toString().slice(0, 48)}</div>)}
+      </div>}
+    </div>}
   </Card>;
 }
 function ReviewPanel() {
@@ -199,14 +287,131 @@ function SchedulePanel() {
   </Card>;
 }
 
+function HeartbeatPanel() {
+  const { d, e, loading, reload } = useApi('/heartbeat/status');
+  const hbs = arr(d, 'heartbeats', 'agents') || Object.entries(d || {}).map(([k, v]) => ({ agent_id: k, ...(typeof v === 'object' ? v : { status: v }) }));
+  const list = Array.isArray(hbs) ? hbs : [];
+  const hb = (id, op) => act('/heartbeat/' + encodeURIComponent(id) + '/' + op, {}, reload);
+  return <Card title="HEARTBEATS" sub={list.length} onReload={reload}>
+    <State e={e} loading={loading} n={list.length} />
+    {list.slice(0, 12).map((h, i) => { const id = h.agent_id || h.agent || h.id; const on = h.running ?? h.active ?? (h.status === 'running' || h.status === 'started'); return <Row key={i}>
+      <span style={mono}>{id}</span>
+      <Tag c={on ? 'var(--green)' : 'var(--ink-3)'}>{on ? 'running' : 'stopped'}</Tag>
+      <span style={{ fontSize: 10, color: 'var(--ink-3)' }}>{h.schedule || h.interval || ''}</span>
+      <span style={{ marginLeft: 'auto', display: 'flex', gap: 5 }}>
+        <button className="tool-btn" title="run once now" onClick={() => hb(id, 'run')}>▶ now</button>
+        {on ? <button className="tool-btn" title="stop schedule" onClick={() => hb(id, 'stop')}>⏹</button>
+          : <button className="tool-btn" title="start schedule" onClick={() => hb(id, 'start')}>⏵</button>}
+      </span></Row>; })}
+  </Card>;
+}
+function TranscriptPanel() {
+  const [text, setText] = useState('');
+  const [src, setSrc] = useState('');
+  const [out, setOut] = useState(null);
+  const ingest = () => { if (!text.trim()) return; setOut('extracting…'); act('/api/transcripts/ingest', { transcript: text, source: src }, (r) => { setOut(r); setText(''); }); };
+  return <Card title="TRANSCRIPT → TASKS">
+    <textarea value={text} onChange={(ev) => setText(ev.target.value)} placeholder="paste a meeting transcript — action items land in the approval queue, nothing executes" style={taS} />
+    <div style={{ display: 'flex', gap: 6, marginTop: 6 }}>
+      <input value={src} onChange={(ev) => setSrc(ev.target.value)} placeholder="source (optional)" style={{ ...inpS, flex: 1 }} />
+      <button className="tool-btn" onClick={ingest}>ingest</button>
+    </div>
+    {out != null && (typeof out === 'string' ? <div style={{ ...mono, fontSize: 11, color: 'var(--ink-3)', marginTop: 6 }}>{out}</div>
+      : <div style={{ ...mono, fontSize: 11, color: 'var(--accent-light)', marginTop: 6 }}>
+        {(out.items || out.tasks || []).length} action item(s) {out.enqueued != null ? `· ${out.enqueued} queued for approval` : '· preview only (queue offline)'}
+        {(out.items || out.tasks || []).slice(0, 5).map((it, i) => <div key={i} style={{ color: 'var(--ink-2)' }}>· {(it.title || it.text || it).toString().slice(0, 60)}</div>)}
+      </div>)}
+    <div style={{ fontSize: 10, color: 'var(--ink-3)', marginTop: 6 }}>governed — every item is an ask-tier task you approve (H12.25)</div>
+  </Card>;
+}
+function EscalationPanel() {
+  const { d, e, loading, reload } = useApi('/api/autonomy/escalation/targets');
+  const targets = arr(d, 'targets');
+  const [msg, setMsg] = useState('');
+  const [out, setOut] = useState(null);
+  const send = () => { if (!msg.trim()) return; actA('/api/autonomy/escalate', { message: msg.trim() }, (r) => { setOut(r); setMsg(''); }); };
+  return <Card title="ESCALATION" sub={targets.length + ' ch'} onReload={reload}>
+    <State e={e} loading={loading} n={targets.length} />
+    <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap' }}>{targets.map((tg, i) => <Tag key={i} c="var(--accent-light)">{tg.channel || tg}</Tag>)}</div>
+    <div style={{ display: 'flex', gap: 6, marginTop: 8 }}>
+      <input value={msg} onChange={(ev) => setMsg(ev.target.value)} placeholder="escalation message" onKeyDown={(ev) => { if (ev.key === 'Enter') send(); }} style={{ ...inpS, flex: 1 }} />
+      <button className="tool-btn" onClick={send}>send</button>
+    </div>
+    {out && <div style={{ ...mono, fontSize: 10.5, color: 'var(--ink-3)', marginTop: 6 }}>{JSON.stringify(out).slice(0, 140)}</div>}
+    <div style={{ fontSize: 10, color: 'var(--ink-3)', marginTop: 6 }}>governed channels only (H12.11) · admin</div>
+  </Card>;
+}
+function TemplatesPanel() {
+  const { d, e, loading, reload } = useApi('/api/agent-templates');
+  const tpls = arr(d, 'templates');
+  const [name, setName] = useState('');
+  const [out, setOut] = useState(null);
+  const inst = (tpl) => act('/api/agent-templates/instantiate', { template: tpl.id || tpl.name || tpl, name: name || undefined }, (r) => setOut(r.config || r));
+  return <Card title="AGENT TEMPLATES" sub={tpls.length} onReload={reload}>
+    <State e={e} loading={loading} n={tpls.length} />
+    {tpls.slice(0, 8).map((tp, i) => <Row key={i}><span style={{ ...mono, color: 'var(--accent-light)' }}>{tp.id || tp.name || tp}</span><span style={{ fontSize: 10, color: 'var(--ink-3)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{(tp.description || tp.role || '').slice(0, 36)}</span><Btn onClick={() => inst(tp)}>instantiate</Btn></Row>)}
+    <input value={name} onChange={(ev) => setName(ev.target.value)} placeholder="new agent name (optional)" style={{ ...inpS, width: '100%', marginTop: 8 }} />
+    {out && <Json v={out} />}
+    <div style={{ fontSize: 10, color: 'var(--ink-3)', marginTop: 6 }}>renders an agents.yaml config + SOUL skeleton — save via the normal agent flow (H10.29)</div>
+  </Card>;
+}
+
+/* ── Build ─────────────────────────────────────────────── */
+function StepGenPanel() {
+  const [desc, setDesc] = useState('');
+  const [out, setOut] = useState(null);
+  const gen = () => { if (!desc.trim()) return; setOut('generating…'); act('/api/workflows/step/generate', { description: desc }, (r) => setOut(r.step || r)); };
+  return <Card title="AI STEP BUILDER">
+    <textarea value={desc} onChange={(ev) => setDesc(ev.target.value)} placeholder="describe the workflow step — e.g. 'have vision summarize the week's research and hand it to veronica'" style={taS} />
+    <button className="tool-btn" style={{ marginTop: 6 }} onClick={gen}>generate step</button>
+    {out != null && <Json v={out} />}
+    <div style={{ fontSize: 10, color: 'var(--ink-3)', marginTop: 6 }}>description → validated WorkflowStep config (H10.7) · paste into the workflow builder</div>
+  </Card>;
+}
+export function SandboxPanel() {
+  const { d: st, reload } = useApi('/sandbox/status');
+  const [code, setCode] = useState('');
+  const [lang, setLang] = useState('python');
+  const [out, setOut] = useState(null);
+  const run = () => {
+    if (!code.trim()) return;
+    setOut('running…');
+    apiPost('/sandbox/execute', { code, language: lang })
+      .then(setOut)
+      .catch((err) => setOut(err?.status === 403 ? 'sandbox disabled — set DEV_MODE=1 on the server' : 'offline · ' + (err?.message || '')));
+  };
+  const insecure = st?.insecure_host_exec;
+  return <Card title="SANDBOX" sub={st ? (st.backend || st.active_backend || (st.docker ? 'docker' : 'subprocess')) : null} onReload={reload}>
+    {insecure && <div style={{ ...mono, fontSize: 10, color: 'var(--red)', marginBottom: 6 }}>⚠ host-exec fallback active — code runs WITHOUT isolation</div>}
+    <textarea value={code} onChange={(ev) => setCode(ev.target.value)} placeholder={lang === 'python' ? 'print("hello from the sandbox")' : 'echo hello'} style={taS} spellCheck={false} />
+    <div style={{ display: 'flex', gap: 6, marginTop: 6, alignItems: 'center' }}>
+      <select value={lang} onChange={(ev) => setLang(ev.target.value)} style={inpS}><option value="python">python</option><option value="shell">shell</option></select>
+      <button className="tool-btn" onClick={run}>execute</button>
+    </div>
+    {out != null && (typeof out === 'string' ? <div style={{ ...mono, fontSize: 11, color: 'var(--amber)', marginTop: 6 }}>{out}</div>
+      : <Json v={(out.stdout || out.output || '') + (out.stderr ? '\n[stderr] ' + out.stderr : '') || out} />)}
+    <div style={{ fontSize: 10, color: 'var(--ink-3)', marginTop: 6 }}>Docker-isolated execution, audited (DEV_MODE gate)</div>
+  </Card>;
+}
+
 /* ── Agents ops ────────────────────────────────────────── */
 function LearningPanel() {
   const { d, e, loading, reload } = useApi('/learning');
-  const cands = arr(d, 'promotion_candidates', 'candidates');
+  const cands = arr(d, 'promotion_suggestions', 'promotion_candidates', 'candidates');
+  const [agent, setAgent] = useState('');
+  const [note, setNote] = useState('');
+  const promote = (id) => { if (!id) return; actA('/learning/promote', { bench_agent: id }, (r) => { setNote(r?.promoted ? 'promoted ' + id : 'not promoted'); setAgent(''); reload(); }); };
   return <Card title="LEARNING · BENCH" sub={cands.length} onReload={reload}>
     <State e={e} loading={loading} n={cands.length} />
-    {cands.slice(0, 8).map((c, i) => <Row key={i}><span style={mono}>{c.agent || c.id || c}</span><span style={{ fontSize: 10, color: 'var(--ink-3)' }}>{c.trigger || c.uses || ''}</span></Row>)}
-    <button className="tool-btn" style={{ marginTop: 6 }} onClick={() => act('/api/learning/propose', {}, reload)}>propose promotions</button>
+    {cands.slice(0, 8).map((c, i) => { const id = c.agent || c.bench_agent || c.id || (typeof c === 'string' ? c : ''); return <Row key={i}><span style={mono}>{id}</span><span style={{ fontSize: 10, color: 'var(--ink-3)' }}>{c.trigger || c.reason || c.uses || ''}</span><Btn onClick={() => promote(id)}>promote</Btn></Row>; })}
+    <div style={{ display: 'flex', gap: 6, marginTop: 8 }}>
+      <input value={agent} onChange={(ev) => setAgent(ev.target.value)} placeholder="bench agent id (e.g. bruce)" style={{ ...inpS, flex: 1 }} />
+      <button className="tool-btn" onClick={() => promote(agent.trim().toLowerCase())}>promote</button>
+    </div>
+    <div style={{ display: 'flex', gap: 8, marginTop: 6, alignItems: 'center' }}>
+      <button className="tool-btn" onClick={() => actA('/api/learning/propose', {}, reload)}>propose promotions</button>
+      {note && <span style={{ fontSize: 10, color: 'var(--green)' }}>{note}</span>}
+    </div>
   </Card>;
 }
 function SessionsPanel() {
@@ -219,6 +424,48 @@ function SessionsPanel() {
 }
 
 /* ── Admin ─────────────────────────────────────────────── */
+function LMStudioPanel() {
+  const { d, e, loading, reload } = useApi('/api/models/local');
+  const models = arr(d, 'models');
+  const [model, setModel] = useState('');
+  const [note, setNote] = useState('');
+  const say = (r) => { setNote(typeof r === 'object' ? (r.detail || r.status || (r.ok ? 'ok' : JSON.stringify(r).slice(0, 60))) : String(r)); reload(); };
+  return <Card title="LM STUDIO" sub={models.length + ' models'} onReload={reload}>
+    <State e={e} loading={loading} n={models.length} />
+    {models.slice(0, 8).map((m, i) => <Row key={i}>
+      <span style={{ ...mono, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{m.name || m.id}</span>
+      <Tag c={m.status === 'loaded' || m.active ? 'var(--green)' : 'var(--ink-3)'}>{m.status || (m.active ? 'loaded' : 'ready')}</Tag>
+      <span style={{ marginLeft: 'auto', display: 'flex', gap: 5 }}>
+        {(m.status === 'loaded' || m.active)
+          ? <button className="tool-btn" title="unload" onClick={() => actA('/api/llm/unload', { model: m.id || m.name }, say)}>⏏</button>
+          : <button className="tool-btn" title="load" onClick={() => actA('/api/llm/load', { model: m.id || m.name }, say)}>▶</button>}
+      </span></Row>)}
+    <div style={{ display: 'flex', gap: 6, marginTop: 8, flexWrap: 'wrap' }}>
+      <button className="tool-btn" onClick={() => actA('/api/llm/server/start', {}, say)}>start server</button>
+      <input value={model} onChange={(ev) => setModel(ev.target.value)} placeholder="model id" style={{ ...inpS, flex: 1, minWidth: 110 }} />
+      <button className="tool-btn" onClick={() => model.trim() && actA('/api/llm/load', { model: model.trim() }, say)}>load</button>
+      <button className="tool-btn" onClick={() => actA('/api/llm/unload', model.trim() ? { model: model.trim() } : {}, say)}>unload</button>
+    </div>
+    {note && <div style={{ ...mono, fontSize: 10.5, color: 'var(--ink-3)', marginTop: 6 }}>{note}</div>}
+    <div style={{ fontSize: 10, color: 'var(--ink-3)', marginTop: 6 }}>lms server/load/unload — kill-switch: llm.control_enabled</div>
+  </Card>;
+}
+function AuthProfilesPanel() {
+  const { d, e, loading, reload } = useApi('/api/llm/auth-profiles', true, true);
+  const pools = arr(d, 'profiles', 'pools') || Object.entries(d || {}).map(([k, v]) => ({ provider: k, ...(typeof v === 'object' ? v : {}) }));
+  const list = Array.isArray(pools) ? pools : [];
+  return <Card title="CLOUD AUTH PROFILES" sub={list.length} onReload={reload}>
+    <State e={e} loading={loading} n={list.length} />
+    {list.slice(0, 8).map((p, i) => <Row key={i}>
+      <span style={mono}>{p.provider || p.name || '?'}</span>
+      <span style={{ fontSize: 10, color: 'var(--ink-3)' }}>{p.active || p.current || ''}</span>
+      <span style={{ marginLeft: 'auto', display: 'flex', gap: 5 }}>
+        <Tag c={(p.healthy ?? p.ok ?? true) ? 'var(--green)' : 'var(--red)'}>{p.keys != null ? p.keys + ' key(s)' : (p.healthy ?? p.ok ?? true) ? 'healthy' : 'failing'}</Tag>
+        {p.cooldown ? <Tag c="var(--amber)">cooldown</Tag> : null}
+      </span></Row>)}
+    <div style={{ fontSize: 10, color: 'var(--ink-3)', marginTop: 6 }}>masked rotation/failover pools (H12.20) · keys never shown</div>
+  </Card>;
+}
 function OAuthPanel() {
   const { d, e, loading, reload } = useApi('/api/oauth/status');
   const svcs = arr(d, 'services') || Object.entries(d || {}).map(([k, v]) => ({ service: k, ...(v || {}) }));
@@ -368,12 +615,13 @@ export function RoomsPanel() {
 }
 
 const SECTIONS = [
-  ['Memory', [DataSpacesPanel, LocalDocsPanel, NotesPanel]],
-  ['Trust', [KillSwitchPanel, SecretsPanel, CapabilitiesPanel]],
+  ['Memory', [DataSpacesPanel, LocalDocsPanel, NotesPanel, ReflectionPanel]],
+  ['Trust', [KillSwitchPanel, SecretsPanel, CapabilitiesPanel, PairingPanel, InjectionScanPanel]],
   ['Interop', [A2AInboxPanel, MarketplacePanel]],
   ['Observe', [EvalPanel, ReviewPanel, APMPanel]],
-  ['Autonomy & Agents', [SchedulePanel, LearningPanel, SessionsPanel]],
-  ['Admin', [OAuthPanel, SettingsPanel, PromptsPanel, RoomsPanel]],
+  ['Build', [StepGenPanel, SandboxPanel, TemplatesPanel]],
+  ['Autonomy & Agents', [SchedulePanel, LearningPanel, SessionsPanel, HeartbeatPanel, TranscriptPanel, EscalationPanel]],
+  ['Admin', [OAuthPanel, SettingsPanel, PromptsPanel, RoomsPanel, LMStudioPanel, AuthProfilesPanel]],
 ];
 
 export function ConsoleOverlay({ onClose }) {

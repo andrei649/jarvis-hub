@@ -122,6 +122,29 @@ function App() {
     return () => window.removeEventListener('keydown', onKey);
   }, [ambient]);
 
+  // NTH-1 — live cognition scoring over SSE (/api/cognition/stream). EventSource
+  // can't send the user token, so this only attaches where the guard is
+  // localhost-exempt; elsewhere it errors out silently and the post-turn
+  // /api/cognition snapshot (runTurn) remains the source. Frames only arrive when
+  // the snapshot CHANGES, so this never overwrites a fresher post-turn trace with
+  // stale data — it upgrades the cockpit to routing-decisions-as-they-happen.
+  useEffect(() => {
+    if (demo || typeof EventSource === 'undefined') return undefined;
+    let es;
+    try { es = new EventSource('/api/cognition/stream'); } catch { return undefined; }
+    es.onmessage = (ev) => {
+      try {
+        const f = JSON.parse(ev.data);
+        const cog = f && f.type === 'cognition' ? f.cognition : null;
+        if (!cog) return;
+        const tr = traceFromCognition(cog, '');
+        setTrace({ stages: tr.stages.map((s) => ({ ...s, state: 'done' })) });
+      } catch { /* malformed frame — ignore */ }
+    };
+    es.onerror = () => { try { es.close(); } catch { /* ignore */ } };
+    return () => { try { es.close(); } catch { /* ignore */ } };
+  }, [demo]);
+
   // submit → cognition flow (mock timeline; real SSE arrives in P2)
   const timers = useRef([]);
 
