@@ -983,8 +983,12 @@ async def get_agent_soul(agent_id: str):
     agent_id = agent_id.strip().lower()
     
     # Allow reading SOUL.md if the file physically exists, even if orch is not initialized (e.g. in tests)
+    # The personalized overlay (SOUL.local.md, gitignored) wins when present —
+    # same resolution as Agent._load_soul.
     base_dir = Path(__file__).parent.resolve()
-    soul_path = base_dir / agent_id / "SOUL.md"
+    soul_path = base_dir / agent_id / "SOUL.local.md"
+    if not soul_path.exists():
+        soul_path = base_dir / agent_id / "SOUL.md"
     
     if orch and agent_id not in orch.agents:
         raise HTTPException(status_code=404, detail=f"Agent '{agent_id}' not found")

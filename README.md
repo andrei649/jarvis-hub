@@ -19,7 +19,7 @@
 
 A personal AI mesh that handles the cross-section of *your* life: the day job and the side business, the family, the car and the house projects, fitness, finance, content. Each domain has a dedicated agent. They talk to each other through Jarvis. They learn from interactions.
 
-**The agents ship as templates and personalize themselves in your first session:** guided onboarding (drop-folder import + profile memory) teaches Jarvis your people, projects, and preferences, every learned fact is inspectable and deletable, and each agent's `SOUL.md` personality is editable from the admin panel. The roster below shows each agent's *role*; the specifics become yours.
+**The agents ship as templates and personalize themselves in your first session:** guided onboarding (drop-folder import + profile memory) teaches Jarvis your people, projects, and preferences, every learned fact is inspectable and deletable, and each agent's personality is editable. Your personalized souls live in gitignored `agents/<id>/SOUL.local.md` overlays — the public repo stays generic, your instance stays yours. The roster below shows each agent's *role*; the specifics become yours.
 
 ## Architecture
 

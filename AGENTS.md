@@ -41,6 +41,7 @@ python -m pytest tests/ -v
 - **Agenți cloud-only:** athena. Restul: routing `auto` (grei → Claude/Gemini, ușori → local).
 - **Skills:** pattern loader în `skills/<name>/{SKILL.md,main.py}`, descoperite de `agents/core/skills/loader.py`.
 - **Limbă:** docs și personalitățile agenților (`agents/*/SOUL.md`) sunt în RO/EN după context; nu schimba tonul unui agent fără acordul utilizatorului.
+- **Souls = template-uri publice.** Detaliile personale NU intră niciodată în `SOUL.md`/`HEARTBEAT.md` (sunt publice) — merg în `agents/<id>/SOUL.local.md`/`HEARTBEAT.local.md` (gitignored, suprascriu template-ul la încărcare). Vezi `docs/ARCHITECTURE.md` §8.
 
 ## Stil de lucru
 Verde devreme peste perfecțiune · teste peste documentație · livrare peste analiză.

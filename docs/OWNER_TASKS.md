@@ -47,12 +47,15 @@
   until the GIF lands) — art direction in BRAND_BOOK §7.
 - [ ] **Decide the "Jarvis" naming question** before anything commercial (Phase 2) —
   trademark-risk note in BRAND_BOOK §2.
-- [ ] **SOUL.md templating decision** — the README is de-personalized (2026-06-10), but 11
-  `agents/*/SOUL.md` files + `agents.yaml` still carry real family/employer details (Frigga's
-  soul alone: 18 family-name mentions). Per AGENTS.md, agent personalities don't change without
-  your sign-off. Proposed follow-up (agent-doable once approved): generic SOUL *templates* in
-  the repo + first-session onboarding fills the personal specifics into profile memory /
-  local-only overrides — a fresh clone is clean, and *your* instance stays yours.
+- [x] **SOUL.md templating** — ✅ approved + shipped 2026-06-10: repo souls/heartbeats are
+  generic templates; personalized copies live in gitignored `agents/<id>/SOUL.local.md` /
+  `HEARTBEAT.local.md` overlays that win at load time (`docs/ARCHITECTURE.md` §8).
+  - [ ] **Your one-time action (deployed box, after pulling):**
+    `python scripts/restore_personal_souls.py` then restart — restores your personalized
+    souls from git history into the `*.local.md` overlays.
+  - [ ] **History caveat (your call):** the personal details remain visible in old git
+    commits (the repo was public throughout). A full scrub needs a history rewrite
+    (BFG/filter-repo + force-push) — disruptive, and forks/caches may retain copies anyway.
 
 ## Parking lot (decisions, no rush)
 

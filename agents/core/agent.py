@@ -41,7 +41,12 @@ class Agent:
         self._load_soul()
 
     def _load_soul(self):
-        soul_path = Path(f"agents/{self.id}/SOUL.md")
+        # Personalization overlay: the repo ships generic SOUL.md templates; the
+        # owner's personalized copy lives in SOUL.local.md (gitignored, never
+        # committed) and wins when present. See docs/ARCHITECTURE.md §8.
+        soul_path = Path(f"agents/{self.id}/SOUL.local.md")
+        if not soul_path.exists():
+            soul_path = Path(f"agents/{self.id}/SOUL.md")
         if soul_path.exists():
             content = soul_path.read_text(encoding="utf-8")
             # H21.2: split optional YAML front-matter (personality/affect config)

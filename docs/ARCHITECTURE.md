@@ -465,9 +465,19 @@ Key env vars loaded at startup:
 
 ## 8. How-to Recipes
 
+### Personalize an agent (SOUL.local.md overlay)
+
+The repo ships **generic template souls**. Personal specifics never go into `SOUL.md` /
+`HEARTBEAT.md` (they're public); they go into `agents/<id>/SOUL.local.md` /
+`HEARTBEAT.local.md` — **gitignored** files that fully override the template at load time
+(`Agent._load_soul`, `HeartbeatScheduler.load_all`, `GET /api/agents/{id}/soul`). Copy the
+template, personalize, restart. One-time migration after the 2026-06-10 templating change:
+`python scripts/restore_personal_souls.py` (restores the pre-templating personalized souls
+from git history into `*.local.md`).
+
 ### Add a new agent (active)
 
-1. Create `agents/<agent_id>/SOUL.md` — see any existing soul for format (Identity / Mission / Voice sections).
+1. Create `agents/<agent_id>/SOUL.md` — see any existing soul for format (Identity / Mission / Voice sections). Keep it generic; personal details go in `SOUL.local.md` (above).
 2. Add entry under `agents:` in `agents/_system/agents.yaml`:
    ```yaml
    myagent:

@@ -39,7 +39,11 @@ class HeartbeatScheduler:
         for agent_dir in self.agents_dir.iterdir():
             if not agent_dir.is_dir():
                 continue
-            hb_path = agent_dir / "HEARTBEAT.md"
+            # Personalization overlay: HEARTBEAT.local.md (gitignored) wins over
+            # the shipped template — same convention as SOUL.local.md.
+            hb_path = agent_dir / "HEARTBEAT.local.md"
+            if not hb_path.exists():
+                hb_path = agent_dir / "HEARTBEAT.md"
             if hb_path.exists():
                 config = self._parse_heartbeat(hb_path)
                 if config:
