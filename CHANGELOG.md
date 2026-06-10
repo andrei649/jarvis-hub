@@ -1,6 +1,38 @@
 # Changelog
 
 ## [Unreleased]
+### Governance audit pass 3 — 3 promises hold, 1 defense-in-depth gap closed (2026-06-10)
+Verified four governance promises against the code (the method that found BUG-14..17):
+- **Autonomy risk gate ✅ holds** — ASK-tier tasks go to BLOCKED, `runnable()` queries only
+  `approved`, night-shift `max_tier` is enforced at the SQL level, edits are re-gated. An
+  irreversible/money task cannot execute without explicit approval.
+- **Interrupt budget ✅ holds** — `consume()` gates before every push and again at execute
+  time; day-rollover is atomic; the 5th interrupt is held for daily review, not dropped.
+- **Capability tokens ✅ hold** — expiry is checked at USE time (not just issue), scope is
+  fixed at issue, `authorize()` requires both the token and the kill-switch.
+- **Injection quarantine — wired into the untrusted-input gate.** The quarantine primitives
+  existed but weren't invoked on the path that turns untrusted text into actions. *Corrected
+  severity:* not a critical exploit (chat agents return text, never call mutating tools; the
+  only text→task path — transcript ingest — is already hard-forced to ask-tier=3, so nothing
+  auto-runs). Closed the defense-in-depth gap: transcript ingest now runs `detect_injection`
+  and surfaces `injection_flags` + an `untrusted_source` marker on the **approval card**, so
+  the human gate is informed when content is tainted. +1 test. Broader "taint-track every
+  external channel" left as a tracked finding (architecture decision — see BACKLOG TASK-3).
+
+### Stability & UX — found by running the app as a first-time user (2026-06-10)
+Booted the server and walked the journeys a new user hits before loading a model:
+- **Friendly "no model loaded" message.** A fresh install with no LLM returned a raw
+  `[jarvis error: No LLM backend available]` as the chat reply — the single most common
+  first-run state, with the least helpful message. Now every channel (web/telegram/discord/
+  CLI) returns one actionable line: "No language model is loaded yet. Start LM Studio (or
+  Ollama)…". Fixed centrally in the orchestrator's agent-call handler.
+- **`AGENT_COUNT` no longer drifts.** `/api/status` (consumed by the HUD) reported 16 active
+  agents while the roster was 17 — a hardcoded constant. Now computed from the canonical
+  registry (`agents.yaml`) with a registry-pinned regression test.
+- **Blank turns rejected.** An empty/whitespace `/chat` message was accepted and spent a full
+  routing + LLM turn; now rejected with 422 before reaching the orchestrator (`min_length` +
+  a not-blank validator). Cheap no-op for an accidental Enter.
+
 ### Security — governance promises verified against code, 3 fixes (2026-06-10)
 Second docs-vs-code audit pass (same method that found BUG-14):
 - **BUG-15 — Howard could reach the cloud.** `_select_howard_backend` short-circuits

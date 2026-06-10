@@ -49,6 +49,13 @@ def build_decision_card(task) -> dict:
         lines.append(f"_Rezultat așteptat:_ {_md(str(payload['expected']))}")
     if payload.get("amount"):
         lines.append(f"_Sumă:_ {payload['amount']}")
+    # Surface injection taint from untrusted-source tasks (e.g. transcripts) so the
+    # human approving sees it — the gate stays human, but now it's informed.
+    flags = payload.get("injection_flags") or []
+    if flags:
+        lines.append(f"⚠️ *Conținut suspect* (injection): {len(flags)} tipar(e) — verifică sursa înainte de aprobare.")
+    elif payload.get("untrusted_source"):
+        lines.append("_Sursă externă (neîncredere): conținut tratat ca date, nu instrucțiuni._")
     # H12.5: dry-run preview — show what the action would do before approval.
     try:
         from .dry_run import preview_task

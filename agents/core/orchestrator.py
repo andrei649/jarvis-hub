@@ -1910,6 +1910,16 @@ class Orchestrator:
             except Exception as e:
                 self.agents[agent_id]._record_failure(str(e))
                 log_error(logger, E_INTERNAL_UNEXPECTED, component=f"agent:{agent_id}", detail=str(e))
+                # First-run UX: "no model loaded" is the single most common failure,
+                # and a raw "[jarvis error: No LLM backend available]" tells the user
+                # nothing. Return one friendly, actionable line instead — on every
+                # channel (web/telegram/discord/CLI), not just the HUD.
+                if "No LLM backend available" in str(e):
+                    return agent_id, (
+                        "No language model is loaded yet. Start LM Studio (or Ollama) "
+                        "and load a model, then try again — or enable DEMO mode in the "
+                        "HUD to preview the interface."
+                    ), 0.0
                 return agent_id, f"[{agent_id} error: {e}]", 0.0
 
         valid_ids = [aid for aid in agent_ids if aid in self.agents]

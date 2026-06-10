@@ -14,9 +14,13 @@
   Console (▦) panel against the live backend ([`docs/design/HUD_V2_REMAINING.md`](design/HUD_V2_REMAINING.md) §0).
   The mock-fallback design hides wrong-but-not-failing wiring; the 2026-06-10 depth pass (PR #181)
   shipped ~16 new control surfaces that have only been verified offline (tsc + mocked tests).
-- [ ] **Dependabot: 54 vulnerabilities on main (6 critical, 14 high)** —
-  https://github.com/andrei649/jarvis-hub/security/dependabot. Likely mostly `worldview/` npm
-  deps; triage criticals first. An agent can do the upgrade PRs once you confirm scope.
+- [x] **Dependabot: 54 vulnerabilities on main** — ✅ fixed 2026-06-10 (agent wave): HUD
+  frontend 5→0 (vite 7/vitest 4), worldview 13→2 (fastify 5, next 16.2.9 + react 19,
+  vitest 4, tsx), mcp 2→0; all suites green (HUD 19, WV frontend 101, backend 218).
+  - [ ] **Remaining, needs you:** the 2 worldview moderates are a postcss XSS *bundled inside
+    next itself* — clears when Vercel ships next 16.3 stable (re-run `npm audit` then).
+    **mobile/: 11 moderates** are the Expo SDK chain — needs an Expo SDK upgrade verified on a
+    real device (can't be validated headlessly). Python deps: clean (`pip-audit`).
 - [ ] **Relicense MIT → Apache-2.0 + `TRADEMARKS.md`** — decided 2026-06-04, deferred to pre-1.0
   ([`docs/LICENSE_DECISION.md`](LICENSE_DECISION.md)). 1 SP, but only you can sign off a license change.
 

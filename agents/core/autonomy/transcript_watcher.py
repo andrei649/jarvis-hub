@@ -91,6 +91,15 @@ class TranscriptWatcher:
         """
         tgt = target if target in _VALID_TARGETS else self.target
         items = extract_action_items(transcript)
+        # Transcripts are untrusted input. The tasks are already hard-gated to
+        # ask-tier (nothing auto-executes), but flag any prompt-injection patterns
+        # so the owner SEES the taint on the approval card — an informed human gate.
+        injection_flags: list = []
+        try:
+            from ..security.quarantine import detect_injection
+            injection_flags = detect_injection(transcript)
+        except Exception:
+            injection_flags = []
         enqueued = []
         for item in items:
             title = item["text"][:120]
@@ -100,6 +109,8 @@ class TranscriptWatcher:
                 "assignee": item["assignee"],
                 "source": source,
                 "action": "create_task",
+                "injection_flags": injection_flags,
+                "untrusted_source": True,
             }
             if self._enqueue is None:
                 enqueued.append({"title": title, "queued": False, **item})
@@ -112,4 +123,6 @@ class TranscriptWatcher:
             except Exception:
                 logger.warning("transcript task enqueue failed", exc_info=True)
                 enqueued.append({"title": title, "queued": False, **item})
-        return {"source": source, "target": tgt, "count": len(items), "items": enqueued}
+        return {"source": source, "target": tgt, "count": len(items),
+                "injection_flags": injection_flags, "suspicious": bool(injection_flags),
+                "items": enqueued}

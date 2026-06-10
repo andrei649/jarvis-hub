@@ -22,7 +22,7 @@ sys.path.insert(0, str(Path(__file__).parent))
 from fastapi import FastAPI, Request, Depends, HTTPException, Query
 from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse, FileResponse, Response
 from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 
 def _nocache_json(content: dict, status_code: int = 200) -> JSONResponse:
@@ -473,8 +473,18 @@ def _enrich_agents() -> list[dict]:
 
 
 class ChatRequest(BaseModel):
-    message: str = Field(..., max_length=4096)
+    message: str = Field(..., min_length=1, max_length=4096)
     agent: str = "jarvis"
+
+    @field_validator("message")
+    @classmethod
+    def _not_blank(cls, v: str) -> str:
+        # A blank/whitespace turn shouldn't reach the orchestrator or spend an
+        # LLM call — reject cheaply so an accidental Enter on an empty box is a
+        # no-op, not a wasted turn.
+        if not v.strip():
+            raise ValueError("message must not be empty")
+        return v
 
 
 class ChatResponse(BaseModel):
