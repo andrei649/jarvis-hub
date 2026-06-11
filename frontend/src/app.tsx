@@ -82,6 +82,9 @@ function App() {
   const [sys, setSys] = useState(null);
   const [live, setLive] = useState(false);
   const [serverUp, setServerUp] = useState(false);
+  const [firstRunDismissed, setFirstRunDismissed] = useState(() => {
+    try { return localStorage.getItem('hud.seen') === '1'; } catch { return false; }
+  });
   const [llm, setLlm] = useState({ state: 'unknown', model: null });
   const [trust, setTrust] = useState({ mic: 'on', strict_local: false });
   const [locality, setLocality] = useState(null); // {local_pct} from real runs, or null
@@ -264,6 +267,10 @@ function App() {
 
       <div className="shell">
         {demo && <DemoBanner onExit={() => setDemo(false)} />}
+        {!demo && serverUp && !firstRunDismissed && !llm.model && llm.state !== 'unknown' && (
+          <FirstRunBanner llm={llm} onDemo={() => setDemo(true)}
+            onDismiss={() => { setFirstRunDismissed(true); try { localStorage.setItem('hud.seen', '1'); } catch { /* ignore */ } }} t={t} />
+        )}
         <TopBar clock={clock} lang={lang} setLang={setLang} accent={accent} agents={agents} localPct={localPct} live={live} trust={trust}
           llm={llm} demo={demo} setDemo={setDemo} serverUp={serverUp}
           onPalette={() => setPalette(true)} onAmbient={() => setAmbient(true)} t={t} />
@@ -369,6 +376,29 @@ function DemoBanner({ onExit }) {
     </div>
   );
 }
+
+/* First-run guidance: shown only when the server is up but nothing is configured
+   yet (no agents, no model, not in demo) — the exact state a fresh install / the
+   first manual-test boot lands in. Without it the cockpit is a wall of "not
+   connected" with no next step. Dismissible + remembered. */
+function FirstRunBanner({ llm, onDemo, onDismiss, t }) {
+  const noModel = !llm || llm.state === 'unknown' || llm.state === 'offline' || !llm.model;
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 14, flexWrap: 'wrap',
+      padding: '7px 14px', background: 'rgba(43,184,240,.08)', borderBottom: '1px solid rgba(43,184,240,.35)',
+      fontSize: 12, color: 'var(--ink-2)' }}>
+      <span style={{ fontFamily: 'var(--font-mono)', letterSpacing: '.12em', color: 'var(--accent)' }}>◇ WELCOME</span>
+      <span>
+        {noModel
+          ? 'No language model is loaded yet — start LM Studio (or Ollama) and load a model, then this fills with your data.'
+          : 'Connect plugins in Admin to populate weather, calendar, email and the rest.'}
+      </span>
+      <button className="tool-btn" onClick={onDemo} style={{ borderColor: 'var(--amber)', color: 'var(--amber)' }}>◐ preview with demo</button>
+      <button className="tool-btn" onClick={onDismiss}>dismiss</button>
+    </div>
+  );
+}
+
 function ProvModal({ prov, onClose }) {
   return (
     <div className="pal-scrim" onClick={onClose} style={{ alignItems: 'center', paddingTop: 0 }}>
