@@ -1,6 +1,16 @@
 # Changelog
 
 ## [Unreleased]
+### UX — first-run onboarding + pre-test review (2026-06-10)
+- **First-run guidance banner** (HUD `app.tsx`). Booting the real bundle in a browser confirmed a
+  fresh install (server up, no model, no plugins — the manual-test starting state) showed a wall of
+  "not connected" with no next step. Added a dismissible, model-aware welcome strip ("start LM
+  Studio…" / "connect plugins in Admin") with one-click demo preview; remembered in localStorage.
+  tsc + 19 frontend tests green, bundle rebuilt.
+- **Deep UX review of both frontends** → `docs/2026-06-10-ux-review-hud-worldview.md` (triaged P1/P2/P3,
+  verified the honesty system + design visually). Remaining items tracked as BACKLOG TASK-4 for a
+  focused post-manual-test pass — deliberately not bulk-fixed before the human gate.
+
 ### Diagnostics — surface a silent OAuth failure + CLN sequencing (2026-06-10)
 - **`oauth.load_token` no longer swallows a decrypt failure.** A rotated/missing secret key or
   corrupted token file silently left the still-encrypted token in place — the connected service
