@@ -223,9 +223,12 @@ export function DeckGlobe({ data }: { data: LayerData }) {
       </DeckGL>
       {!HAS_MAPBOX && (
         // Lower-left, clear of the top toggle / Tour AOIs / Export / Layers / timeline controls.
-        <div className="pointer-events-none absolute bottom-32 left-4 z-10 max-w-xs rounded bg-cockpit/80 px-3 py-1 text-[11px] text-white/55 backdrop-blur">
-          Showing coastlines (no Mapbox token). Set{" "}
-          <span className="text-white/75">NEXT_PUBLIC_MAPBOX_ACCESS_TOKEN</span> for street tiles, or use 3D Globe.
+        // Amber + actionable (UX review P2#8): says exactly where the token goes and what to do after.
+        <div className="pointer-events-none absolute bottom-32 left-4 z-10 max-w-xs rounded border border-amber-500/30 bg-amber-500/10 px-3 py-1.5 text-[11px] leading-relaxed text-amber-200/90 backdrop-blur">
+          🗺 No Mapbox token — showing coastlines only. For street tiles, add{" "}
+          <code className="text-amber-100">NEXT_PUBLIC_MAPBOX_ACCESS_TOKEN=pk…</code> to{" "}
+          <code className="text-amber-100">frontend/.env.local</code> and restart — or switch to the
+          3D Globe (top toggle), which needs no token.
         </div>
       )}
     </>

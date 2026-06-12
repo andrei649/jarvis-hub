@@ -11,6 +11,22 @@ const LABELS: Record<LayerId, string> = {
   context: "Intel / Dark Vessels",
 };
 
+// Swatch CSS colors mirror the globe fill colors in lib/deckLayers.ts so the legend is honest.
+// Two-tone layers (aircraft mil/civ, vessels normal/dark) show both.
+const SWATCHES: Record<LayerId, { c: string; t: string }[]> = {
+  adsb: [
+    { c: "rgb(80,180,255)", t: "civilian" },
+    { c: "rgb(255,92,92)", t: "military" },
+  ],
+  ais: [
+    { c: "rgb(120,230,180)", t: "vessel" },
+    { c: "rgb(255,70,70)", t: "dark (AIS gap)" },
+  ],
+  tle: [{ c: "rgb(240,210,120)", t: "satellite + footprint" }],
+  ew: [{ c: "rgb(255,140,40)", t: "jamming cell" }],
+  context: [{ c: "rgb(230,220,255)", t: "intel / event" }],
+};
+
 export function LayerPanel() {
   const visibility = useTimelineStore((s) => s.layerVisibility);
   const toggleLayer = useTimelineStore((s) => s.toggleLayer);
@@ -18,18 +34,34 @@ export function LayerPanel() {
   const selectEntity = useTimelineStore((s) => s.selectEntity);
 
   return (
-    <div className="pointer-events-auto absolute left-4 top-4 z-10 flex flex-col gap-1 rounded-lg bg-cockpit/85 p-3 text-xs backdrop-blur">
+    <div className="pointer-events-auto absolute left-4 top-4 z-10 flex w-56 flex-col gap-1 rounded-lg bg-cockpit/85 p-3 text-xs backdrop-blur">
       <div className="mb-1 font-semibold text-signal">WorldView · Layers</div>
       {LAYER_IDS.map((id) => (
-        <label key={id} className="flex cursor-pointer items-center gap-2 text-white/80">
-          <input
-            type="checkbox"
-            checked={visibility[id]}
-            onChange={() => toggleLayer(id)}
-            className="accent-signal"
-          />
-          {LABELS[id]}
-        </label>
+        <div key={id}>
+          <label className="flex cursor-pointer items-center gap-2 text-white/85">
+            <input
+              type="checkbox"
+              checked={visibility[id]}
+              onChange={() => toggleLayer(id)}
+              className="accent-signal"
+              aria-label={`Toggle ${LABELS[id]}`}
+            />
+            {LABELS[id]}
+          </label>
+          {/* Legend: tiny color swatches so symbols on the globe are decipherable. */}
+          <div className={`ml-6 flex flex-wrap gap-x-3 gap-y-0.5 ${visibility[id] ? "" : "opacity-40"}`}>
+            {SWATCHES[id].map((sw) => (
+              <span key={sw.t} className="flex items-center gap-1 text-[10px] text-white/55">
+                <span
+                  className="inline-block h-2 w-2 shrink-0 rounded-full"
+                  style={{ backgroundColor: sw.c }}
+                  aria-hidden
+                />
+                {sw.t}
+              </span>
+            ))}
+          </div>
+        </div>
       ))}
 
       {selected && (
@@ -45,7 +77,9 @@ export function LayerPanel() {
           </button>
         </div>
       )}
-      <div className="mt-1 text-[10px] text-white/40">click an entity to trace its path</div>
+      <div className="mt-1 text-[10px] text-white/45">
+        click an entity to trace its path · press <kbd className="rounded bg-white/15 px-1">?</kbd> for shortcuts
+      </div>
     </div>
   );
 }

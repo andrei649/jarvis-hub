@@ -13,11 +13,12 @@ const LABELS: Record<LayerId, string> = {
 };
 
 // Per-layer status dot — distinguishes a genuinely empty time slice from a backend failure.
+// Opacities ≥/55 so the dots clear WCAG contrast on the dark cockpit background (UX review P2#6).
 const STATUS_DOT: Record<FetchStatus, { cls: string; title: string } | null> = {
   ok: null, // healthy: no dot, keep the HUD quiet
-  loading: { cls: "text-white/40", title: "loading…" },
-  empty: { cls: "text-white/30", title: "no data in this time slice" },
-  error: { cls: "text-red-400", title: "fetch failed (backend error / offline)" },
+  loading: { cls: "text-white/60", title: "loading…" },
+  empty: { cls: "text-white/55", title: "no data in this time slice" },
+  error: { cls: "text-red-300", title: "fetch failed (backend error / offline)" },
 };
 
 // Top-right command-center overview: live feature counts per layer + a dark-vessel alert.
@@ -31,17 +32,17 @@ export function StatsHud({ data }: { data: LayerData }) {
   ).length;
 
   // In live mode the connection state is the relevant health signal; in historical it's per-layer.
-  const liveBadge =
-    liveConnection === "open"
-      ? null
-      : {
-          reconnecting: { cls: "bg-amber-500/20 text-amber-300", label: "⟳ reconnecting" },
-          connecting: { cls: "bg-white/10 text-white/60", label: "… connecting" },
-          closed: { cls: "bg-red-500/20 text-red-300", label: "✕ disconnected" },
-        }[liveConnection];
+  // Always-on (UX review P2#20): the healthy state is shown too, so a connection DROP is a visible
+  // change instead of a badge quietly appearing where none was before.
+  const liveBadge = {
+    open: { cls: "bg-emerald-500/15 text-emerald-300", label: "✓ live feed connected" },
+    reconnecting: { cls: "bg-amber-500/20 text-amber-300", label: "⟳ reconnecting…" },
+    connecting: { cls: "bg-amber-500/15 text-amber-200", label: "⟳ connecting…" },
+    closed: { cls: "bg-red-500/20 text-red-300", label: "✕ feed disconnected" },
+  }[liveConnection];
 
   return (
-    <div className="pointer-events-none absolute right-4 top-4 z-10 flex flex-col gap-1 rounded-lg bg-cockpit/85 p-3 text-xs backdrop-blur">
+    <div className="pointer-events-none flex flex-col gap-1 rounded-lg bg-cockpit/85 p-3 text-xs backdrop-blur">
       <div className="mb-1 font-semibold text-signal">On globe</div>
       {LAYER_IDS.map((id) => {
         const dot = mode === "historical" ? STATUS_DOT[layerStatus[id]] : null;
@@ -59,7 +60,7 @@ export function StatsHud({ data }: { data: LayerData }) {
           </div>
         );
       })}
-      {mode === "live" && liveBadge && (
+      {mode === "live" && (
         <div className={`mt-2 rounded px-2 py-1 font-medium ${liveBadge.cls}`}>
           {liveBadge.label}
         </div>
