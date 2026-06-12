@@ -16,6 +16,8 @@
     "@deck.gl/layers": "9.0.27",
     "@deck.gl/mapbox": "9.0.27",
     "@deck.gl/react": "9.0.27",
+    "@fontsource/jetbrains-mono": "^5.2.8",
+    "@fontsource/space-grotesk": "^5.2.10",
     "deck.gl": "9.0.27",
     "mapbox-gl": "3.5.2",
     "next": "^16.2.9",

@@ -42,6 +42,27 @@ export interface SelectedEntity {
   id: string;
 }
 
+/** A replay window [from, to] in UNIX seconds (lifted here so the timeline, the replay
+ *  control and the arrival deep-link all drive the same bracket — spec §3.3/§5.1). */
+export interface StoreReplayWindow {
+  from: number;
+  to: number;
+}
+
+/** Arrival context when the session was opened from a deep link (e.g. a JARVIS/Argus digest). */
+export interface ArrivalContext {
+  agent: string;
+  window: StoreReplayWindow;
+  entity: SelectedEntity | null;
+}
+
+/** A one-shot camera request (arrival deep links); consumed by the globe. */
+export interface FlyToTarget {
+  longitude: number;
+  latitude: number;
+  zoom: number;
+}
+
 interface TimelineState {
   /** Master clock — UNIX seconds. Drives every layer. */
   masterTime: number;
@@ -59,6 +80,18 @@ interface TimelineState {
   layerStatus: LayerStatus;
   /** Live WebSocket connection state (live mode), surfaced for a HUD indicator. */
   liveConnection: LiveConnectionState;
+  /** Camera tour running (started from the app bar, sequenced inside the globe). */
+  tour: boolean;
+  /** Keyboard-shortcuts overlay visibility (driven from the app bar `?` and the key). */
+  helpOpen: boolean;
+  /** The current replay window bracket, if one is set. */
+  replayWindow: StoreReplayWindow | null;
+  /** A replay is actively driving the master clock. */
+  replaying: boolean;
+  /** Set when the session arrived via a deep link (?from&to…); cleared on dismiss. */
+  arrival: ArrivalContext | null;
+  /** One-shot camera request; the globe consumes it and clears it. */
+  flyTo: FlyToTarget | null;
 
   setMasterTime: (ts: number) => void;
   setMode: (mode: PlaybackMode) => void;
@@ -70,6 +103,12 @@ interface TimelineState {
   setViewMode: (mode: ViewMode) => void;
   setLayerStatus: (id: LayerId, status: FetchStatus) => void;
   setLiveConnection: (state: LiveConnectionState) => void;
+  setTour: (tour: boolean) => void;
+  setHelpOpen: (open: boolean) => void;
+  setReplayWindow: (win: StoreReplayWindow | null) => void;
+  setReplaying: (replaying: boolean) => void;
+  setArrival: (arrival: ArrivalContext | null) => void;
+  setFlyTo: (target: FlyToTarget | null) => void;
   goLive: () => void;
 }
 
@@ -84,6 +123,12 @@ export const useTimelineStore = create<TimelineState>((set) => ({
   viewMode: "map",
   layerStatus: allOk,
   liveConnection: "connecting",
+  tour: false,
+  helpOpen: false,
+  replayWindow: null,
+  replaying: false,
+  arrival: null,
+  flyTo: null,
 
   setMasterTime: (ts) => set({ masterTime: ts }),
   setMode: (mode) => set({ mode }),
@@ -99,5 +144,14 @@ export const useTimelineStore = create<TimelineState>((set) => ({
   setLayerStatus: (id, status) =>
     set((s) => ({ layerStatus: { ...s.layerStatus, [id]: status } })),
   setLiveConnection: (state) => set({ liveConnection: state }),
-  goLive: () => set({ mode: "live", masterTime: Date.now() / 1000, playing: true }),
+  setTour: (tour) => set({ tour }),
+  setHelpOpen: (open) => set({ helpOpen: open }),
+  setReplayWindow: (win) => set({ replayWindow: win }),
+  setReplaying: (replaying) => set({ replaying }),
+  setArrival: (arrival) => set({ arrival }),
+  setFlyTo: (target) => set({ flyTo: target }),
+  // Going live always tears down replay state: the pill/frame must never claim REPLAY
+  // (or fake LIVE) while another driver still owns the cursor.
+  goLive: () =>
+    set({ mode: "live", masterTime: Date.now() / 1000, playing: true, replaying: false }),
 }));
