@@ -19,6 +19,8 @@ export function Inspector({ data }: { data: LayerData }) {
   const selected = useTimelineStore((s) => s.selectedEntity);
   const selectEntity = useTimelineStore((s) => s.selectEntity);
   const masterTime = useTimelineStore((s) => s.masterTime);
+  const mode = useTimelineStore((s) => s.mode);
+  const goLive = useTimelineStore((s) => s.goLive);
   if (!selected) return null;
 
   const idProp = ID_PROP[selected.layer];
@@ -54,7 +56,26 @@ export function Inspector({ data }: { data: LayerData }) {
           ))}
         </dl>
       ) : (
-        <div className="text-white/50">no data at the current time — scrub to where it was active</div>
+        <div className="text-white/60">
+          <p>
+            No position for this entity at{" "}
+            <span className="font-mono text-white/75">
+              {new Date(masterTime * 1000).toISOString().slice(11, 19)} UTC
+            </span>
+            {mode === "historical" ? " — it wasn't reporting at this moment." : "."}
+          </p>
+          <p className="mt-1 text-white/45">
+            Scrub along its white trail to where it was active{mode === "historical" ? ", or:" : "."}
+          </p>
+          {mode === "historical" && (
+            <button
+              onClick={goLive}
+              className="mt-2 rounded bg-signal/20 px-2 py-1 font-medium text-signal hover:bg-signal/30"
+            >
+              ● Jump to live
+            </button>
+          )}
+        </div>
       )}
       <ProvenanceSection
         layer={selected.layer}

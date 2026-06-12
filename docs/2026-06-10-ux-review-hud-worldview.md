@@ -48,15 +48,17 @@ when data is offline.
 WorldView is **notably less polished than the HUD** on degradation/onboarding — expected for the
 newer standalone stack. Its data layer and WebSocket resilience are sound; the gaps are UX-surface.
 
-**P1:** API-down / empty-globe gives no explanation or recovery path (tiny red status dot only) —
-a first-run user with no `:4000` API sees a dark globe and assumes it's broken
-(`useWorldViewData.ts`, `DeckGlobe.tsx`); "connecting" state on load is near-invisible
-(`StatsHud.tsx`); LIVE-vs-HISTORICAL mode is a dim toggle, easy to miss you've left live
-(`TimelineScrubber.tsx`); no symbol/colour **legend** for the layers (aircraft/vessel/sat/jamming).
+**P1 — ✅ ALL FIXED 2026-06-12** (browser-verified with screenshots): centered SystemStatus
+overlay explains API-down/connecting/empty states with the exact recovery commands; always-on
+connection badge (healthy state shown too, so a drop is visible); LIVE vs ◷ HISTORICAL amber mode
+chip in the scrubber; per-layer colour **legend** with swatches mirroring the real globe colours.
 
-**P2:** keyboard shortcuts (space / L / ←→ / esc) are undiscoverable (no help overlay);
-Mapbox-token-missing hint is tiny, low-contrast, map-mode-only; Stats + Export panels crowd the
-same top-right corner; status-dot contrast fails WCAG (`text-white/30` on near-black).
+**P2 — ✅ FIXED 2026-06-12:** `?` keyboard-shortcuts help overlay (+ corner button); Mapbox hint
+now amber + actionable (where the token goes, restart step, no-token alternative); Export panel
+collapsed to a chip in a right-rail column (it literally overlapped StatsHud at the same
+`right-4 top-4` anchor); status-dot contrast bumped to WCAG-passing opacities. Bonus: WebGL
+error boundary (diagnosis + steps instead of a silent black screen); Inspector's "no data at this
+time" now shows the timestamp + a one-click "jump to live" recovery.
 
 **P3:** no graticule coordinate labels; provenance jargon ("valid time" / "transaction time")
 unexplained; dark-vessel click shows generic props, not the alert context; no responsive layout

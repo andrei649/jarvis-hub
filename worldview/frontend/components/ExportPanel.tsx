@@ -37,6 +37,9 @@ export function ExportPanel({ data }: { data: LayerData }) {
   const [caseId, setCaseId] = useState("");
   const [reconId, setReconId] = useState("");
   const [status, setStatus] = useState<Status>({ kind: "idle", msg: "" });
+  // Collapsed by default (UX review P2#9): it shared the top-right corner with StatsHud and
+  // buried both. A one-line toggle keeps the corner calm until export is actually wanted.
+  const [open, setOpen] = useState(false);
 
   function exportCurrentView() {
     const fc = mergeFeatureCollections(data as unknown as Record<string, FeatureCollection>);
@@ -71,9 +74,31 @@ export function ExportPanel({ data }: { data: LayerData }) {
     setStatus({ kind: "ok", msg: `Downloaded reconstruction ${id}` });
   }
 
+  if (!open) {
+    return (
+      <button
+        type="button"
+        onClick={() => setOpen(true)}
+        className="pointer-events-auto rounded-lg bg-cockpit/85 px-3 py-1.5 text-xs font-medium text-signal backdrop-blur hover:bg-cockpit"
+      >
+        ⬇ Export…
+      </button>
+    );
+  }
+
   return (
-    <div className="pointer-events-auto absolute right-4 top-4 z-10 flex w-64 flex-col gap-2 rounded-lg bg-cockpit/85 p-3 text-xs backdrop-blur">
-      <div className="font-semibold text-signal">Export</div>
+    <div className="pointer-events-auto flex w-64 flex-col gap-2 rounded-lg bg-cockpit/85 p-3 text-xs backdrop-blur">
+      <div className="flex items-center justify-between">
+        <span className="font-semibold text-signal">Export</span>
+        <button
+          type="button"
+          onClick={() => setOpen(false)}
+          className="rounded bg-white/10 px-1.5 leading-5 text-white/70 hover:bg-white/20"
+          aria-label="Collapse export panel"
+        >
+          ×
+        </button>
+      </div>
 
       <button type="button" onClick={exportCurrentView} className={btn}>
         ⬇ Current view (GeoJSON)

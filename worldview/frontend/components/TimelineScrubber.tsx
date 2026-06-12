@@ -40,14 +40,23 @@ export function TimelineScrubber() {
 
         <button
           onClick={goLive}
+          title={mode === "live" ? "Receiving real-time data" : "Click (or press L) to return to real-time"}
           className={`rounded px-3 py-1 font-medium ${
             mode === "live"
-              ? "bg-red-500/30 text-red-300"
+              ? "bg-red-500/30 text-red-300 ring-1 ring-red-400/50"
               : "bg-white/10 text-white/70 hover:bg-white/20"
           }`}
         >
           ● LIVE
         </button>
+
+        {/* Mode chip — the UX review found users scrub into historical without noticing they've
+            left live. Make the current mode unmissable, with the way back spelled out. */}
+        {mode === "historical" && (
+          <span className="rounded bg-amber-500/20 px-2 py-1 font-medium text-amber-300">
+            ◷ HISTORICAL — press L for live
+          </span>
+        )}
 
         <span suppressHydrationWarning className="tabular-nums text-white/80">
           {mounted

@@ -9,6 +9,9 @@ import { ReconPanel } from "@/components/ReconPanel";
 import { ExportPanel } from "@/components/ExportPanel";
 import { Inspector } from "@/components/Inspector";
 import { TimelineScrubber } from "@/components/TimelineScrubber";
+import { SystemStatus } from "@/components/SystemStatus";
+import { HelpOverlay } from "@/components/HelpOverlay";
+import { GlobeErrorBoundary } from "@/components/GlobeErrorBoundary";
 import { useMasterClock } from "@/lib/useMasterClock";
 import { useKeyboardShortcuts } from "@/lib/useKeyboardShortcuts";
 import { useWorldViewData } from "@/lib/useWorldViewData";
@@ -25,14 +28,21 @@ export default function Home() {
 
   return (
     <main className="relative h-screen w-screen overflow-hidden">
-      <DeckGlobe data={data} />
+      <GlobeErrorBoundary>
+        <DeckGlobe data={data} />
+      </GlobeErrorBoundary>
       <ViewToggle />
       <LayerPanel />
       <ReconPanel />
-      <StatsHud data={data} />
-      <ExportPanel data={data} />
+      {/* Right rail: StatsHud + the collapsed Export toggle, stacked instead of overlapping. */}
+      <div className="pointer-events-none absolute right-4 top-4 z-10 flex flex-col items-end gap-2">
+        <StatsHud data={data} />
+        <ExportPanel data={data} />
+      </div>
       <AlertsPanel data={data} />
       <Inspector data={data} />
+      <SystemStatus data={data} />
+      <HelpOverlay />
       <TimelineScrubber />
     </main>
   );
