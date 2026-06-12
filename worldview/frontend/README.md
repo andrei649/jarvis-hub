@@ -37,11 +37,20 @@ The globe needs a Mapbox token for the basemap; layer data needs the backend-api
 
 ## Layout
 
+Redesigned 2026-06-12 per `docs/design/WORLDVIEW_UX_SPEC.md` (brand tokens, zone system,
+mode system, shape encodings, negative-space grammar — see the spec + `WORLDVIEW_UX_HANDOFF.md`
+at the repo root `docs/design/`).
+
 ```
-app/          App Router entry (layout, page, globals.css)
-components/    DeckGlobe, TimelineScrubber, LayerPanel
-lib/          layers.ts, api.ts, types.ts, deckLayers.ts,
-              useMasterClock.ts, useWorldViewData.ts, store/useTimelineStore.ts
+app/          App Router entry (layout: fontsource imports · page: app bar + zone rails + timeline)
+components/   AppBar, ModeFrame, Panel (shared anatomy), MarkGlyph, DeckGlobe, CameraTour,
+              LayerPanel (=legend), ReconPanel, StatsHud, Inspector (+ProvenanceSection),
+              AlertsPanel, ExportPanel, TimelineScrubber (+ReplayControl), SystemStatus,
+              HelpOverlay, ArrivalBanner, DemoLens, GlobeErrorBoundary
+lib/          layers.ts, api.ts, types.ts, deckLayers.ts, markStyle.ts, markAtlas.ts,
+              negativeSpace.ts, uiMode.ts, inspectorFields.ts, timelineMarkers.ts, arrival.ts,
+              shortcuts.ts, tooltip.ts, useMasterClock.ts, useWorldViewData.ts,
+              useReconWindows.ts, store/useTimelineStore.ts
 ```
 
 ## Note on dependency pins

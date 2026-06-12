@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import DeckGL from "@deck.gl/react";
 import { _GlobeView as GlobeView, FlyToInterpolator } from "@deck.gl/core";
 import type { Layer, PickingInfo, Position } from "@deck.gl/core";
@@ -99,8 +99,8 @@ function backgroundLayers(): Layer[] {
   ];
 }
 
-// Controlled viewState we hand to deck during a camera tour (FlyTo-animated).
-type TourViewState = {
+// Controlled viewState we hand to deck while a camera driver (tour / arrival fly-to) runs.
+type DrivenViewState = {
   longitude: number;
   latitude: number;
   zoom: number;
@@ -124,13 +124,17 @@ export function DeckGlobe({ data }: { data: LayerData }) {
   const setZoom = useTimelineStore((s) => s.setZoom);
   const viewMode = useTimelineStore((s) => s.viewMode);
   const zoom = useTimelineStore((s) => s.zoom);
+  // The tour's start/stop control lives in the AppBar (spec §2); the globe follows the store.
+  const tourActive = useTimelineStore((s) => s.tour);
+  const setTour = useTimelineStore((s) => s.setTour);
+  const flyTo = useTimelineStore((s) => s.flyTo);
+  const setFlyTo = useTimelineStore((s) => s.setFlyTo);
   // zoom drives the H19.5.1 vector-tile switch: zoomed out (+ a tile URL) → MVT tiles.
   const dataLayers = buildLayers(data, visibility, track, zoom);
 
-  // Camera tour: while a tour runs we control the deck viewState (and animate via FlyTo). When
-  // idle, viewState is undefined so deck stays uncontrolled (initialViewState + user control).
-  const [tourActive, setTourActive] = useState(false);
-  const [viewState, setViewState] = useState<TourViewState | undefined>(undefined);
+  // While a tour or a one-shot arrival fly-to runs we control the deck viewState (FlyTo-animated).
+  // When idle, viewState is undefined so deck stays uncontrolled (initialViewState + user control).
+  const [viewState, setViewState] = useState<DrivenViewState | undefined>(undefined);
   const baseViewState = viewMode === "globe" ? GLOBE_VIEW_STATE : INITIAL_VIEW_STATE;
 
   function onTourViewState(vs: TourStep["viewState"]) {
@@ -140,6 +144,26 @@ export function DeckGlobe({ data }: { data: LayerData }) {
       transitionInterpolator: new FlyToInterpolator({ speed: 1.2 }),
     });
   }
+
+  // Arrival deep link (spec §5.1): consume the one-shot fly-to so the camera lands on the entity.
+  useEffect(() => {
+    if (!flyTo) return;
+    setViewState({
+      ...baseViewState,
+      longitude: flyTo.longitude,
+      latitude: flyTo.latitude,
+      zoom: flyTo.zoom,
+      transitionDuration: 1200,
+      transitionInterpolator: new FlyToInterpolator({ speed: 1.2 }),
+    });
+    setFlyTo(null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [flyTo]);
+
+  // Tour stopped (app bar / user interaction) → hand camera control back to the user.
+  useEffect(() => {
+    if (!tourActive) setViewState(undefined);
+  }, [tourActive]);
 
   function onClick(info: PickingInfo) {
     const props = (info.object as { properties?: Record<string, unknown> } | null)?.properties;
@@ -157,29 +181,22 @@ export function DeckGlobe({ data }: { data: LayerData }) {
   function onViewStateChange(e: { viewState: unknown; interactionState?: { isZooming?: boolean; isPanning?: boolean; isRotating?: boolean } }) {
     const vs = e.viewState as { zoom?: number };
     if (typeof vs.zoom === "number") setZoom(vs.zoom);
-    // A user drag/zoom/rotate during a tour cancels it and hands control back.
+    // A user drag/zoom/rotate cancels any camera driver and hands control back.
     const i = e.interactionState;
-    if (tourActive && i && (i.isZooming || i.isPanning || i.isRotating)) {
-      setTourActive(false);
+    const userMoved = i && (i.isZooming || i.isPanning || i.isRotating);
+    if (userMoved) {
+      if (tourActive) setTour(false);
       setViewState(undefined);
     } else if (tourActive) {
       // Keep our controlled viewState in sync with deck's in-flight interpolation.
-      setViewState(e.viewState as TourViewState);
+      setViewState(e.viewState as DrivenViewState);
     }
   }
 
-  const tourControl = (
-    <CameraTour
-      onViewState={onTourViewState}
-      onActiveChange={(a) => {
-        setTourActive(a);
-        if (!a) setViewState(undefined);
-      }}
-    />
-  );
+  const tourControl = <CameraTour onViewState={onTourViewState} />;
 
-  // While a tour is active we pass controlled viewState; otherwise leave deck uncontrolled.
-  const controlledProps = tourActive && viewState ? { viewState } : { initialViewState: baseViewState };
+  // While a camera driver is active we pass controlled viewState; otherwise leave deck uncontrolled.
+  const controlledProps = viewState ? { viewState } : { initialViewState: baseViewState };
 
   if (viewMode === "globe") {
     // GlobeView: no Mapbox basemap (it can't render under a globe). Draw the data
@@ -196,12 +213,16 @@ export function DeckGlobe({ data }: { data: LayerData }) {
           onViewStateChange={onViewStateChange}
           getTooltip={getTooltip}
         />
+        {/* Basemap status (spec §4, designed): the dark earth is ours by principle. */}
+        <div className="pointer-events-none absolute bottom-1.5 left-3.5 z-[5] font-mono text-[8.5px] tracking-[.1em] text-ink/30">
+          BASEMAP · WORLDVIEW DARK EARTH — MAPBOX UNUSED IN GLOBE PROJECTION
+        </div>
       </>
     );
   }
 
   // Flat (2.5D) map. With a Mapbox token, use the Mapbox basemap. Without one, draw the data on the
-  // same dark-earth + graticule backdrop the globe uses (so it's never a blank void) and show a hint.
+  // same dark-earth + graticule backdrop the globe uses (so it's never a blank void) and say so.
   return (
     <>
       {tourControl}
@@ -222,13 +243,13 @@ export function DeckGlobe({ data }: { data: LayerData }) {
         )}
       </DeckGL>
       {!HAS_MAPBOX && (
-        // Lower-left, clear of the top toggle / Tour AOIs / Export / Layers / timeline controls.
-        // Amber + actionable (UX review P2#8): says exactly where the token goes and what to do after.
-        <div className="pointer-events-none absolute bottom-32 left-4 z-10 max-w-xs rounded border border-amber-500/30 bg-amber-500/10 px-3 py-1.5 text-[11px] leading-relaxed text-amber-200/90 backdrop-blur">
-          🗺 No Mapbox token — showing coastlines only. For street tiles, add{" "}
-          <code className="text-amber-100">NEXT_PUBLIC_MAPBOX_ACCESS_TOKEN=pk…</code> to{" "}
-          <code className="text-amber-100">frontend/.env.local</code> and restart — or switch to the
-          3D Globe (top toggle), which needs no token.
+        // Basemap status, actionable (UX review P2#8): exact env var, where it goes, and the
+        // no-token alternative. Bottom edge of the stage, clear of both rails.
+        <div className="pointer-events-none absolute bottom-1.5 left-3.5 z-[5] max-w-lg font-mono text-[8.5px] leading-relaxed tracking-[.06em] text-amber/70">
+          BASEMAP · COASTLINES (NO MAPBOX TOKEN) — add{" "}
+          <span className="text-amber">NEXT_PUBLIC_MAPBOX_ACCESS_TOKEN=pk…</span> to{" "}
+          <span className="text-amber">frontend/.env.local</span> + restart for street tiles, or
+          switch to 3D GLOBE (no token needed)
         </div>
       )}
     </>

@@ -2,28 +2,19 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useTimelineStore } from "@/lib/store/useTimelineStore";
-import {
-  buildReplayLink,
-  decodeReplayWindow,
-  type ReplayWindow,
-} from "@/lib/export";
+import { buildReplayLink } from "@/lib/export";
 import { replaySampleAt } from "@/lib/replaySchedule";
 
-// Replay affordance (H19.2.7, client side). Given a [from,to] window the user drives masterTime
-// from `from` to `to` at a chosen speed — it does NOT run its own clock, it sets the master-clock
-// store (historical mode + speed), so every layer replays in lockstep. A "copy replay link"
-// encodes {from,to} in the URL query so reopening restores the window (reproducible). On mount we
-// read any ?from&to from the URL and pre-fill the window.
+// Replay chip (spec §4, H19.2.7). The window lives in the STORE (shared with the scrubber's
+// violet bracket and the arrival deep link); this control arms it, drives masterTime from
+// `from` to `to` on a deterministic schedule, and copies the reproducible ?from&to link.
+// It does NOT run its own clock — it sets the master-clock store so every layer replays in
+// lockstep, and it aborts cleanly if another driver (● LIVE) takes the cursor.
 
 const DEFAULT_WINDOW_MINUTES = 15;
 const REPLAY_SPEEDS = [10, 60, 300];
 
-function defaultWindow(): ReplayWindow {
-  const now = Math.floor(Date.now() / 1000);
-  return { from: now - DEFAULT_WINDOW_MINUTES * 60, to: now };
-}
-
-/** "HH:MM:SS UTC" — compact enough for the inline labels. */
+/** "HH:MM:SS" — compact enough for the inline labels. */
 function clock(epoch: number): string {
   return new Date(epoch * 1000).toISOString().slice(11, 19);
 }
@@ -34,37 +25,26 @@ export function ReplayControl() {
   const setSpeed = useTimelineStore((s) => s.setSpeed);
   const setPlaying = useTimelineStore((s) => s.setPlaying);
   const masterTime = useTimelineStore((s) => s.masterTime);
+  const win = useTimelineStore((s) => s.replayWindow);
+  const setWin = useTimelineStore((s) => s.setReplayWindow);
+  const replaying = useTimelineStore((s) => s.replaying);
+  const setReplaying = useTimelineStore((s) => s.setReplaying);
 
-  const [win, setWin] = useState<ReplayWindow>(defaultWindow);
   const [replaySpeed, setReplaySpeed] = useState(60);
-  const [replaying, setReplaying] = useState(false);
   const [copied, setCopied] = useState(false);
   const rafRef = useRef<number | null>(null);
   const frameRef = useRef<number>(0);
 
-  // `win` defaults from Date.now(), so the rendered clock times differ between the server render
-  // and client hydration. Gate the displayed times behind `mounted` to avoid a hydration mismatch.
+  // Times derive from Date.now() — gate display behind mount (hydration, house pattern).
   const [mounted, setMounted] = useState(false);
   useEffect(() => setMounted(true), []);
 
-  // On mount: if the URL carries ?from&to, restore that window (reproducible replay link).
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    const decoded = decodeReplayWindow(window.location.search);
-    if (decoded) setWin(decoded);
-  }, []);
-
   // Drive the master clock from `from` to `to` on a DETERMINISTIC schedule: a fixed-step frame
   // counter (replaySampleAt), so the sequence of sampled masterTimes is a pure function of
-  // {from,to,speed} and reproducible regardless of RAF cadence (a late/dropped frame skips ahead
-  // rather than resampling at a different point). The master clock's own ticker is paused
-  // (playing=false) so we own the cursor. Stops at `to`.
-  //
-  // The loop also aborts if another driver takes the cursor: clicking ● LIVE (goLive →
-  // mode:live, playing:true) during a replay must not leave two RAF loops stomping masterTime, so
-  // we bail when the store mode leaves "historical" or playback gets re-enabled by someone else.
+  // {from,to,speed} and reproducible regardless of RAF cadence. The master clock's own ticker
+  // is paused (playing=false) so we own the cursor. Stops at `to`.
   useEffect(() => {
-    if (!replaying) return;
+    if (!replaying || !win) return;
     setMode("historical");
     setPlaying(false); // we drive the cursor; don't let useMasterClock double-advance it
     setMasterTime(win.from);
@@ -92,19 +72,22 @@ export function ReplayControl() {
       if (rafRef.current != null) cancelAnimationFrame(rafRef.current);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [replaying, win.from, win.to, replaySpeed]);
+  }, [replaying, win?.from, win?.to, replaySpeed]);
 
-  // Abort-on-takeover, observed from outside the RAF loop too: if the store mode leaves
-  // "historical" (e.g. ● LIVE → goLive sets mode:live) while we're replaying, stop replaying so the
-  // RAF loop tears down and stops stomping masterTime. We key off mode (not `playing`) because the
-  // replay setup itself toggles `playing`, but only an external driver flips us out of historical.
+  // Abort-on-takeover, observed from outside the RAF loop too (● LIVE → mode:live).
   const mode = useTimelineStore((s) => s.mode);
   useEffect(() => {
     if (replaying && mode !== "historical") setReplaying(false);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [replaying, mode]);
 
+  function arm() {
+    const now = Math.floor(Date.now() / 1000);
+    setWin({ from: now - DEFAULT_WINDOW_MINUTES * 60, to: now });
+  }
+
   function copyLink() {
-    if (typeof window === "undefined") return;
+    if (typeof window === "undefined" || !win) return;
     const link = buildReplayLink(window.location.href, win);
     void navigator.clipboard?.writeText(link).then(
       () => {
@@ -115,6 +98,21 @@ export function ReplayControl() {
     );
   }
 
+  const chipBtn =
+    "font-mono text-[9.5px] text-violet hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-signal";
+
+  if (!win) {
+    return (
+      <button
+        onClick={arm}
+        className="flex items-center gap-2 rounded-md border border-violet/35 bg-violet/5 px-2.5 py-1 font-mono text-[9.5px] tracking-[.04em] text-violet/75 hover:bg-violet/10 focus-visible:outline focus-visible:outline-2 focus-visible:outline-signal"
+        title="Arm a replay window (last 15 minutes) you can play, share and reproduce"
+      >
+        SET REPLAY WINDOW ⧉
+      </button>
+    );
+  }
+
   const spanMin = Math.max(0, Math.round((win.to - win.from) / 60));
   const progress =
     replaying && win.to > win.from
@@ -122,18 +120,15 @@ export function ReplayControl() {
       : 0;
 
   return (
-    <div className="flex items-center gap-2 text-white/60">
-      <span className="text-white/45">replay</span>
+    <span className="flex items-center gap-2.5 rounded-md border border-violet/35 bg-violet/5 px-2.5 py-1 font-mono text-[9.5px] text-violet">
       <span suppressHydrationWarning className="tabular-nums">
-        {mounted
-          ? `${clock(win.from)}→${clock(win.to)} (${spanMin}m)`
-          : `--:--:--→--:--:-- (${spanMin}m)`}
+        REPLAY {mounted ? `${clock(win.from)} → ${clock(win.to)}` : "—"} ({spanMin}m)
       </span>
       <select
         value={replaySpeed}
         onChange={(e) => setReplaySpeed(Number(e.target.value))}
-        className="rounded bg-white/10 px-1 py-0.5"
-        aria-label="replay speed"
+        className="rounded border border-line bg-void-2 px-1 py-0.5 text-[9px] text-ink/65"
+        aria-label="Replay speed"
       >
         {REPLAY_SPEEDS.map((s) => (
           <option key={s} value={s}>
@@ -142,27 +137,31 @@ export function ReplayControl() {
         ))}
       </select>
       <button
-        type="button"
+        className={chipBtn}
         onClick={() => {
           if (replaying) {
             setReplaying(false);
           } else {
-            // Re-anchor "now" so a default window stays fresh when re-launched live-adjacent.
             setReplaying(true);
             setSpeed(replaySpeed);
           }
         }}
-        className="rounded bg-signal/20 px-2 py-0.5 font-medium text-signal hover:bg-signal/30"
       >
-        {replaying ? `■ Stop (${Math.round(progress * 100)}%)` : "▶ Replay"}
+        {replaying ? `■ STOP (${Math.round(progress * 100)}%)` : "▶ REPLAY"}
+      </button>
+      <button className={chipBtn} onClick={copyLink}>
+        {copied ? "✓ COPIED" : "🔗 LINK"}
       </button>
       <button
-        type="button"
-        onClick={copyLink}
-        className="rounded bg-white/10 px-2 py-0.5 text-white/70 hover:bg-white/20"
+        className="font-mono text-[9.5px] text-ink/40 hover:text-ink/80 focus-visible:outline focus-visible:outline-2 focus-visible:outline-signal"
+        onClick={() => {
+          setReplaying(false);
+          setWin(null);
+        }}
+        aria-label="Clear replay window"
       >
-        {copied ? "✓ Copied" : "🔗 Link"}
+        ✕
       </button>
-    </div>
+    </span>
   );
 }

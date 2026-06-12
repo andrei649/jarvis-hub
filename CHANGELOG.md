@@ -1,6 +1,22 @@
 # Changelog
 
 ## [Unreleased]
+### WorldView — full UX redesign implemented from the Claude Design spec (2026-06-12)
+- **The complete TASK-4 WorldView redesign** (`docs/design/WORLDVIEW_UX_SPEC.md`, all 11 steps),
+  on top of the tactical fixes from PR #193: brand-unified tokens (void/surface/signal `#2BB8F0`,
+  Space Grotesk + JetBrains Mono via fontsource), an app bar + two-rail **zone system** (no more
+  absolute-offset panel collisions), a three-signal **mode system** (2px frame + pill with GO LIVE
+  + timeline restatement; DEMO watermark bound to feed source), **Legend=Layers** with the real
+  map glyphs + live counts, de-collided **shape+color map encodings** (canvas icon atlas with
+  circle fallback; military=amber hollow chevron, red reserved for wrong), the **negative-space
+  grammar** (signal-loss ghosts, dashed dead-reckoned paths, uncertainty cones, voided-zone
+  outlines — never animated, never invented), humanized **Inspector** with dark-vessel alert
+  context + plain-words provenance, first-run overlay per spec copy, timeline **event markers** +
+  store-lifted replay window, styled tooltips, help overlay from a shared shortcut map (+`1–5`,
+  `G` bindings), and the **arrival deep link** (`?from&to&layer&id&lon&lat&zoom&agent` → camera
+  pre-positioned, entity selected, REPLAY from frame one, Argus banner) + the optional demo lens.
+  39 new frontend tests (140 green), tsc + `next build` green. Design package + impl: PR #194.
+
 ### UX — first-run onboarding + pre-test review (2026-06-10)
 - **First-run guidance banner** (HUD `app.tsx`). Booting the real bundle in a browser confirmed a
   fresh install (server up, no model, no plugins — the manual-test starting state) showed a wall of
