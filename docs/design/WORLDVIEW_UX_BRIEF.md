@@ -7,9 +7,10 @@
 > UI must communicate, the ranked problem list, brand + technical constraints, user journeys,
 > success criteria, and the requested deliverables.
 >
-> Generated: 2026-06-12 · Owner: Andrei · Status: v1 (pre-manual-test) ·
+> Generated: 2026-06-12 · Owner: Andrei · Status: v1.1 (pre-manual-test) ·
 > Sources: `worldview/frontend/` code read end-to-end, `docs/2026-06-10-ux-review-hud-worldview.md`,
-> `worldview/docs/ROADMAP.md`, `docs/BRAND_BOOK.md` §7, `BACKLOG.md` H19 + TASK-4, `MOONSHOT.md` §5.
+> `worldview/docs/ROADMAP.md`, `docs/BRAND_BOOK.md` §7, `BACKLOG.md` H19 + TASK-4, `MOONSHOT.md` §5,
+> `docs/research/2026-06-12-bilawal-worldview-reverse-engineering.md` (the benchmark, reverse-engineered).
 
 ---
 
@@ -55,6 +56,20 @@ collaboration with a hash-chained audit trail), and **reproducible replay links 
    interrupts/day) with provenance links. UX implication: people will *arrive* in WorldView from
    an alert or a shared replay link (`?from&to`), not only from a cold start — landing into a
    specific entity/time must be a designed moment.
+
+**Know the benchmark (and design our differences to be visible).** Sidhu's WorldView — the
+direct inspiration — is reverse-engineered in
+`docs/research/2026-06-12-bilawal-worldview-reverse-engineering.md`. In short: closed-source,
+solo-built, aesthetic-first; Google **Photorealistic 3D Tiles** as the globe, custom GLSL "lens"
+shaders (CRT scan lines, night-vision, FLIR thermal, military reticle), OSM traffic as particle
+flow, CCTV projected onto 3D buildings; public launch ~April 2026; positioned as the demo for
+"SpatialOS," a world model queryable by AI agents. He won on *cinema*; our durable differences
+are **local-first + self-hosted + open source**, **governed** (provenance, audit, cases,
+reproducible exports), and **operated by the user's own AI** (JARVIS/Argus) instead of a closed
+cloud. The UX should make those differences *visible on screen* — provenance one click away,
+honesty badges, replay links — not just claimed in marketing. His sousveillance line is
+essentially our pitch: *"Same data streams… but the interface is in your browser, and you
+control it."*
 
 **Reference geography:** the default Area of Interest (AOI) is the **Strait of Hormuz**
 (initial camera: lon 56.4, lat 26.6, zoom 6, pitch 30°). The demo seed is a full Hormuz scenario:
@@ -315,6 +330,28 @@ passes seeded/demo data as real, never fakes a healthy state, and prefers an hon
 here's what to do" over a silent empty screen. States to badge explicitly: LIVE (real feed) ·
 DEMO (synthetic) · HISTORICAL (as-of T) · REPLAY · OFFLINE/DISCONNECTED.
 
+**Learning from the benchmark's aesthetic — adopt the lesson, not the cosplay.** Sidhu's
+WorldView gets its signature look from GLSL "lenses" (CRT scan lines, night-vision, FLIR,
+military reticle), with this rationale: military display systems were *"engineered to extract
+maximum information from sensor data"* — the look is a byproduct of information-density
+discipline. **Adopt:** that discipline — every glow, color, and stroke must earn its place by
+carrying information (this is already the brand's position). **Reject:** targeting-style UI —
+no reticles, crosshairs, lock-on framing, or bounding-box "acquisition" effects. Our stated
+lane is *"OSINT analysis & reconstruction, not operational targeting"* (`worldview/docs/
+ROADMAP.md` §3), and tactical cosplay would undercut the calm-trust brand. **Optional (P3):**
+*one* restrained cinematic "lens" as a view treatment for the tour/demo journey (§9.6) — e.g. a
+subtle scanline or monochrome NVG-adjacent grade — clearly cosmetic, instantly dismissable,
+honoring `prefers-reduced-motion`. Design it only if it stays calm; skip it without guilt.
+
+**Design absence as signal ("negative space" intelligence).** The benchmark's most-quoted
+insight: in OSINT, what *disappears* is the story — a vessel stops transmitting (dark vessel),
+GPS confidence collapses (jamming), an airspace empties before a strike. *"When 3,400 flights
+simultaneously clear an airspace, you don't need a security clearance to tell you what's
+coming."* The current UI renders only presence (dots); give disappearance its own visual
+grammar — last-known-position ghosts, gap markers on trails, deliberately-voided zones — so an
+analyst reads a gap as *rendered evidence*, not as missing data. (Directly serves the
+dark-vessel inspector context in §6.3.12 and the jamming layer's meaning.)
+
 **Voice for UI copy:** calm, specific, declarative; butler not hype-man. "No vessels in this time
 slice" beats "Nothing to see!". Every label should help an analyst trust the screen.
 
@@ -338,6 +375,12 @@ slice" beats "Nothing to see!". Every label should help an analyst trust the scr
 - **Implementation reality:** the redesign will be built incrementally (per-panel PRs) by AI
   agents working from your spec — favor a tokens-first, component-by-component spec with exact
   Tailwind-expressible values over a big-bang layout that must land at once.
+- **Basemap stance (vs the benchmark):** Sidhu's WorldView gets its wow from Google
+  Photorealistic 3D Tiles — cloud-metered and closed. Our principles (local-first, every cloud
+  hop opt-in — MOONSHOT §5) mean the Mapbox basemap is already our *one* optional cloud
+  dependency, with a fully-local coastline fallback. Do **not** design presence that depends on
+  photoreal cities; achieve it through abstraction — lighting, graticule, glow, motion, and the
+  art-directable dark-earth globe (§8 bullet 3).
 - **Env that shapes UX:** `NEXT_PUBLIC_MAPBOX_ACCESS_TOKEN` (basemap or fallback),
   `NEXT_PUBLIC_API_URL` (default `http://localhost:4000`), `NEXT_PUBLIC_TILE_URL` (tile switch),
   `NEXT_PUBLIC_TOUR_AOIS` (tour waypoints). Auth exists server-side (JWT/RBAC, opt-in) but there
@@ -407,7 +450,10 @@ In order — each is independently shippable to the implementing agents:
    replay affordance, tick labels), ReconPanel, ExportPanel, tooltips (styled, on-brand),
    help overlay, demo badge.
 5. **Interaction + motion spec** — selection/trail, alert→locate, tour, replay; durations/easing;
-   `prefers-reduced-motion` fallbacks.
+   whether/how motion *encodes information* (e.g. trail-recency fade, restrained flow textures —
+   see the benchmark notes in §7) and the "negative space" grammar (last-known ghosts, trail-gap
+   markers); the optional single demo "lens" treatment (§7) if it survives your judgment;
+   `prefers-reduced-motion` fallbacks for all of it.
 6. **Accessibility annotations** on all of the above.
 
 **Format:** Markdown spec(s) with exact values (hex, px/rem, Tailwind classes welcome) +
@@ -461,6 +507,7 @@ stage; the P1s alone are worth the session (per the UX review).
 | Alert derivation | `worldview/frontend/lib/alerts.ts` |
 | Brand | `docs/BRAND_BOOK.md` §7 · `docs/marketing/DESIGN_BRIEF.md` §1 |
 | The UX review behind §6 | `docs/2026-06-10-ux-review-hud-worldview.md` |
+| The benchmark, reverse-engineered | `docs/research/2026-06-12-bilawal-worldview-reverse-engineering.md` |
 | Backlog tracking | `BACKLOG.md` → TASK-4 |
 
 ---
