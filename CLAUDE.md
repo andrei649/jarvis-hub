@@ -11,3 +11,5 @@ pe tier-uri și bundle-uri per task, cu estimări de tokeni. Nu încărca repo-u
 Când se discută "viziune"/"north star"/"moonshot"/"strategie"/"suntem pe drumul bun?" → citește `MOONSHOT.md`
 (north star: viziune, principii non-negociabile, phase gates, ritmul de lucru și harta documentelor).
 Taskurile care țin **doar de owner** (hardware, GitHub settings, decizii) → `docs/OWNER_TASKS.md`.
+Materiale de **marketing** (launch, teaser, campanie, brand review, competitive brief) → `marketing/`
+(operațional) + `docs/marketing/` (announcement, teaser pack, design brief). Brand: `docs/BRAND_BOOK.md`.
