@@ -5,6 +5,10 @@
 > design-approved by the owner (mock verified 2026-06-12, all scenarios pass).
 > Delivered by Claude Design 2026-06-12; landed in-repo with the **repo reality
 > check** below (PR #193 shipped tactical fixes while the design session ran).
+>
+> **✅ IMPLEMENTED 2026-06-12 (PR #194):** all 11 steps of spec §6 are live in
+> `worldview/frontend/` (140 frontend tests, tsc + build green). This document
+> remains as the design record; the mock stays the visual reference for review.
 
 ## What's in this package
 

@@ -1,9 +1,11 @@
 "use client";
 
-import { useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import dynamic from "next/dynamic";
 import { AppBar } from "@/components/AppBar";
 import { ModeFrame } from "@/components/ModeFrame";
+import { ArrivalBanner } from "@/components/ArrivalBanner";
+import { DemoLens } from "@/components/DemoLens";
 import { LayerPanel } from "@/components/LayerPanel";
 import { StatsHud } from "@/components/StatsHud";
 import { AlertsPanel } from "@/components/AlertsPanel";
@@ -20,6 +22,7 @@ import { useWorldViewData } from "@/lib/useWorldViewData";
 import { useReconWindows } from "@/lib/useReconWindows";
 import { useTimelineStore } from "@/lib/store/useTimelineStore";
 import { deriveUiMode, isDemoFeed } from "@/lib/uiMode";
+import { parseArrival } from "@/lib/arrival";
 
 // The globe uses WebGL + mapbox-gl (browser-only); load it client-side without SSR.
 const DeckGlobe = dynamic(() => import("@/components/DeckGlobe").then((m) => m.DeckGlobe), {
@@ -46,6 +49,29 @@ export default function Home() {
   // One recon fetch feeds both the panel and the timeline's markers (they can't disagree).
   const recon = useReconWindows(masterTime);
 
+  // Arrival deep link (spec §5.1): ?from&to restores the replay window; +agent/entity makes it
+  // an ARRIVAL — camera pre-positioned, entity selected, banner shown, REPLAY from frame one.
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const parsed = parseArrival(window.location.search);
+    if (!parsed) return;
+    const s = useTimelineStore.getState();
+    s.setReplayWindow({ from: parsed.window.from, to: parsed.window.to });
+    s.setMode("historical");
+    s.setPlaying(false);
+    s.setMasterTime(parsed.window.from);
+    if (parsed.entity) s.selectEntity(parsed.entity);
+    if (parsed.view) s.setFlyTo(parsed.view);
+    if (parsed.isArrival) {
+      s.setArrival({
+        agent: parsed.agent ?? "ARGUS",
+        window: { from: parsed.window.from, to: parsed.window.to },
+        entity: parsed.entity,
+      });
+    }
+  }, []);
+
+
   // One derivation feeds every mode surface (frame, pill, timeline restate, watermark).
   const demoFeed = useMemo(() => isDemoFeed(data), [data]);
   const uiMode = deriveUiMode({
@@ -56,9 +82,22 @@ export default function Home() {
     demoFeed,
   });
 
+  // The demo lens (spec §5.2): offered only on the tour/demo journey, never on by default.
+  const tour = useTimelineStore((s) => s.tour);
+  const [lens, setLens] = useState(false);
+  const lensAvailable = tour || uiMode === "demo";
+  useEffect(() => {
+    if (!lensAvailable) setLens(false);
+  }, [lensAvailable]);
+
   return (
     <main className="relative flex h-screen w-screen flex-col overflow-hidden bg-void">
-      <AppBar uiMode={uiMode} />
+      <AppBar
+        uiMode={uiMode}
+        lensAvailable={lensAvailable}
+        lens={lens}
+        onToggleLens={() => setLens(!lens)}
+      />
 
       <div className="relative min-h-0 flex-1">
         <GlobeErrorBoundary>
@@ -86,6 +125,9 @@ export default function Home() {
           <div className="flex-1" />
           <ExportPanel data={data} />
         </div>
+
+        <ArrivalBanner />
+        {lens && <DemoLens onOff={() => setLens(false)} />}
 
         <SystemStatus data={data} />
         <HelpOverlay />

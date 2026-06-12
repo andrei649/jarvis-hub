@@ -19,7 +19,18 @@ function clockText(epoch: number): string {
   return new Date(epoch * 1000).toISOString().slice(11, 19);
 }
 
-export function AppBar({ uiMode }: { uiMode: UiMode }) {
+export function AppBar({
+  uiMode,
+  lensAvailable = false,
+  lens = false,
+  onToggleLens,
+}: {
+  uiMode: UiMode;
+  /** The demo lens is offered only on the tour/demo journey (spec §5.2). */
+  lensAvailable?: boolean;
+  lens?: boolean;
+  onToggleLens?: () => void;
+}) {
   const masterTime = useTimelineStore((s) => s.masterTime);
   const mode = useTimelineStore((s) => s.mode);
   const liveConnection = useTimelineStore((s) => s.liveConnection);
@@ -105,6 +116,12 @@ export function AppBar({ uiMode }: { uiMode: UiMode }) {
       <button className={barBtn} onClick={() => setTour(!tour)} aria-pressed={tour}>
         {tour ? "■ STOP TOUR" : "◈ TOUR AOIs"}
       </button>
+
+      {lensAvailable && onToggleLens && (
+        <button className={barBtn} onClick={onToggleLens} aria-pressed={lens}>
+          {lens ? "LENS ✕" : "LENS"}
+        </button>
+      )}
 
       <div className="flex-1" />
 

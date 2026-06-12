@@ -25,8 +25,6 @@ const config: Config = {
         amber: "#FFB23F",
         red: "#FF5A52",
         violet: "#A78BFA",
-        // Legacy token (pre-redesign); dropped once the last component migrates to surface/void.
-        cockpit: "#0a0e14",
       },
       fontFamily: {
         sans: ['"Space Grotesk"', "ui-sans-serif", "system-ui", "sans-serif"],
