@@ -5,7 +5,7 @@
 pyyaml>=6.0.3
 apscheduler>=3.11.2
 httpx>=0.28.1
-cryptography>=48.0.0
+cryptography>=48.0.1
 python-dotenv>=1.2.2
 ollama>=0.6.2
 fastapi>=0.136.3
@@ -16,8 +16,8 @@ psutil>=7.2.2
 numpy>=2.4.6
 
 # === Token counting + HTML parsing (used by newer code; app still boots without them) ===
-tiktoken>=0.7
-beautifulsoup4>=4.12
+tiktoken>=0.13.0
+beautifulsoup4>=4.15.0
 
 # === Memory — Qdrant Vector DB (optional) ===
 # Docker: docker run -p 6333:6333 qdrant/qdrant
