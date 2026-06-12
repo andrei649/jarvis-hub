@@ -32,8 +32,8 @@ The market proved the demand (OpenClaw ~377k★ in 6 months) and proved the gap 
 - **Endorse hybrid** explicitly (local default + optional cloud escalation) — kills the "is local good enough?" objection.
 - **Lead with "it just works"** — friction is the #1 adoption killer; the one-command/one-click install is existential, not cosmetic.
 - **Taglines to A/B** (specific vs emotional — the one trade-off the research couldn't resolve for our ICP):
-  - B (spine): *"16 agents. One system. Your data stays home."*
-  - A (hook, governance-qualified): *"16 agents working while you sleep — one system, every action logged, your data never leaves home."*
+  - B (spine): *"17 agents. One system. Your data stays home."*
+  - A (hook, governance-qualified): *"17 agents working while you sleep — one system, every action logged, your data never leaves home."*
 
 ## Launch checklist (top 3 channels, fired together for GitHub star velocity)
 

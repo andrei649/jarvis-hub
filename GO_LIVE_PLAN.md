@@ -296,7 +296,7 @@ LM Studio + Ollama on local GPU. Zero API cost for 99% of tasks. Athena escalate
 
 > *"The AI that works while you sleep."*
 
-> *"15 agents. One system. Your data stays home."*
+> *"17 agents. One system. Your data stays home."*
 
 > *"Finally: an AI assistant that learns what to stop asking you."*
 
