@@ -157,6 +157,10 @@ is canonical.
 > per-agent opt-in, and the family agent never touches the internet. 2,156 tests, ~253 API routes,
 > $0/month. The AI that works while you sleep — owned by you.
 
+**Ready-to-use launch assets** built from this brand: [`docs/marketing/`](marketing/) —
+`ANNOUNCEMENT.md` (release post), `TEASER_PACK.md` (social + video script), `DESIGN_BRIEF.md`
+(creative brief for Claude Design / a designer, with exact specs).
+
 ---
 
 ## 9. GitHub Repo Metadata (apply in Settings → General)
