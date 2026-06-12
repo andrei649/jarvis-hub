@@ -14,18 +14,36 @@ import {
   mimeForFormat,
   type ExportFormat,
 } from "@/lib/export";
+import { Panel } from "./Panel";
 
-// Export panel (H19.4.6 / H19.2.7, client side). Sits top-right. Offers:
-//   - Export the CURRENT view (the globe's in-memory features) as a tagged GeoJSON file.
-//   - Given a case id, download its brief (Markdown) or GeoJSON from the backend export endpoint.
-//   - Given a reconstruction id, download its GeoJSON / JSON.
-// All backend fetches degrade gracefully (the endpoints are being built in parallel): on a
-// 404 / offline they return null and we surface a one-line status instead of throwing.
+// Export panel (spec §3.4): docked at the bottom of the right rail, collapsed to its header by
+// default. Expanded: current-view download + case/reconstruction id fetches with paste-target
+// "recent" chips so raw id entry feels intentional. Backend fetches degrade gracefully.
 
 type Status = { kind: "idle" | "ok" | "err"; msg: string };
 
-const btn =
-  "rounded bg-signal/20 px-2 py-1 font-medium text-signal hover:bg-signal/30 disabled:opacity-40 disabled:hover:bg-signal/20";
+const RECENTS_KEY = "worldview.export.recents";
+
+function loadRecents(): string[] {
+  if (typeof localStorage === "undefined") return [];
+  try {
+    const raw = localStorage.getItem(RECENTS_KEY);
+    const list = raw ? (JSON.parse(raw) as unknown) : [];
+    return Array.isArray(list) ? list.filter((x): x is string => typeof x === "string").slice(0, 4) : [];
+  } catch {
+    return [];
+  }
+}
+
+function pushRecent(id: string) {
+  if (typeof localStorage === "undefined") return;
+  const next = [id, ...loadRecents().filter((x) => x !== id)].slice(0, 4);
+  try {
+    localStorage.setItem(RECENTS_KEY, JSON.stringify(next));
+  } catch {
+    /* quota/private mode — recents are a convenience, not state */
+  }
+}
 
 function tsSlug(epoch: number): string {
   // Compact UTC stamp for filenames, e.g. 20260608T065137Z.
@@ -37,9 +55,12 @@ export function ExportPanel({ data }: { data: LayerData }) {
   const [caseId, setCaseId] = useState("");
   const [reconId, setReconId] = useState("");
   const [status, setStatus] = useState<Status>({ kind: "idle", msg: "" });
-  // Collapsed by default (UX review P2#9): it shared the top-right corner with StatsHud and
-  // buried both. A one-line toggle keeps the corner calm until export is actually wanted.
-  const [open, setOpen] = useState(false);
+  const [recents, setRecents] = useState<string[]>(loadRecents);
+
+  function remember(id: string) {
+    pushRecent(id);
+    setRecents(loadRecents());
+  }
 
   function exportCurrentView() {
     const fc = mergeFeatureCollections(data as unknown as Record<string, FeatureCollection>);
@@ -58,6 +79,7 @@ export function ExportPanel({ data }: { data: LayerData }) {
       return;
     }
     downloadBlob(result.body, `case-${id}.${extForFormat(format)}`, result.contentType);
+    remember(id);
     setStatus({ kind: "ok", msg: `Downloaded case ${id}` });
   }
 
@@ -71,78 +93,73 @@ export function ExportPanel({ data }: { data: LayerData }) {
       return;
     }
     downloadBlob(result.body, `reconstruction-${id}.${extForFormat(format)}`, result.contentType);
+    remember(id);
     setStatus({ kind: "ok", msg: `Downloaded reconstruction ${id}` });
   }
 
-  if (!open) {
-    return (
-      <button
-        type="button"
-        onClick={() => setOpen(true)}
-        className="pointer-events-auto rounded-lg bg-cockpit/85 px-3 py-1.5 text-xs font-medium text-signal backdrop-blur hover:bg-cockpit"
-      >
-        ⬇ Export…
-      </button>
-    );
-  }
+  const miniBtn =
+    "rounded-md border border-line px-2.5 py-1.5 font-mono text-[9px] tracking-[.04em] text-ink/65 transition-colors hover:border-signal-dim hover:text-signal-light focus-visible:outline focus-visible:outline-2 focus-visible:outline-signal disabled:opacity-35 disabled:hover:border-line disabled:hover:text-ink/65";
+  const input =
+    "min-w-0 flex-1 rounded-md border border-line bg-void-2 px-2 py-1.5 font-mono text-[10px] text-ink placeholder:text-ink/20 focus-visible:outline focus-visible:outline-2 focus-visible:outline-signal";
 
   return (
-    <div className="pointer-events-auto flex w-64 flex-col gap-2 rounded-lg bg-cockpit/85 p-3 text-xs backdrop-blur">
-      <div className="flex items-center justify-between">
-        <span className="font-semibold text-signal">Export</span>
-        <button
-          type="button"
-          onClick={() => setOpen(false)}
-          className="rounded bg-white/10 px-1.5 leading-5 text-white/70 hover:bg-white/20"
-          aria-label="Collapse export panel"
-        >
-          ×
-        </button>
-      </div>
-
-      <button type="button" onClick={exportCurrentView} className={btn}>
-        ⬇ Current view (GeoJSON)
+    <Panel title="Export" meta="GeoJSON · brief" collapsible defaultOpen={false}>
+      <button onClick={exportCurrentView} className={`${miniBtn} w-full py-2`}>
+        ⬇ CURRENT VIEW · GEOJSON
       </button>
 
-      <div className="mt-1 flex flex-col gap-1">
-        <label className="text-white/45">Case id</label>
+      <div className="mt-2 flex gap-1.5">
         <input
           value={caseId}
           onChange={(e) => setCaseId(e.target.value)}
-          placeholder="case-123"
-          className="rounded bg-white/10 px-2 py-1 text-white/85 placeholder:text-white/30"
+          placeholder="case id…"
+          aria-label="Case id"
+          className={input}
         />
-        <div className="flex gap-1">
-          <button type="button" onClick={() => downloadCase("brief")} disabled={!caseId.trim()} className={btn}>
-            Brief
-          </button>
-          <button type="button" onClick={() => downloadCase("geojson")} disabled={!caseId.trim()} className={btn}>
-            GeoJSON
-          </button>
-        </div>
+        <button onClick={() => downloadCase("brief")} disabled={!caseId.trim()} className={miniBtn}>
+          BRIEF
+        </button>
+        <button onClick={() => downloadCase("geojson")} disabled={!caseId.trim()} className={miniBtn}>
+          GEO
+        </button>
       </div>
 
-      <div className="mt-1 flex flex-col gap-1">
-        <label className="text-white/45">Reconstruction id</label>
+      <div className="mt-1.5 flex gap-1.5">
         <input
           value={reconId}
           onChange={(e) => setReconId(e.target.value)}
-          placeholder="recon-456"
-          className="rounded bg-white/10 px-2 py-1 text-white/85 placeholder:text-white/30"
+          placeholder="reconstruction id…"
+          aria-label="Reconstruction id"
+          className={input}
         />
-        <div className="flex gap-1">
-          <button type="button" onClick={() => downloadRecon("geojson")} disabled={!reconId.trim()} className={btn}>
-            GeoJSON
-          </button>
-          <button type="button" onClick={() => downloadRecon("json")} disabled={!reconId.trim()} className={btn}>
-            JSON
-          </button>
-        </div>
+        <button onClick={() => downloadRecon("geojson")} disabled={!reconId.trim()} className={miniBtn}>
+          GEO
+        </button>
+        <button onClick={() => downloadRecon("json")} disabled={!reconId.trim()} className={miniBtn}>
+          JSON
+        </button>
       </div>
 
-      {status.msg && (
-        <div className={status.kind === "err" ? "text-red-300" : "text-white/55"}>{status.msg}</div>
+      {recents.length > 0 && (
+        <div className="mt-1.5 font-mono text-[8.5px] text-ink/40">
+          recent:{" "}
+          {recents.map((id) => (
+            <button
+              key={id}
+              onClick={() => (id.startsWith("recon") ? setReconId(id) : setCaseId(id))}
+              className="mr-2 text-signal-light hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-signal"
+            >
+              {id}
+            </button>
+          ))}
+        </div>
       )}
-    </div>
+
+      {status.msg && (
+        <div className={`mt-1.5 text-[10px] ${status.kind === "err" ? "text-red" : "text-ink/55"}`}>
+          {status.msg}
+        </div>
+      )}
+    </Panel>
   );
 }

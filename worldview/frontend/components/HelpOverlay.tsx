@@ -1,80 +1,80 @@
 "use client";
 
-import { useEffect, useState } from "react";
-
-const SHORTCUTS: [string, string][] = [
-  ["Space", "Play / pause playback"],
-  ["L", "Jump to LIVE (real-time)"],
-  ["← / →", "Scrub ±30 s (switches to historical)"],
-  ["Esc", "Clear selected entity / close this help"],
-  ["?", "Show / hide this help"],
-];
+import { useEffect, useRef } from "react";
+import { useTimelineStore } from "@/lib/store/useTimelineStore";
+import { SHORTCUTS } from "@/lib/shortcuts";
 
 /**
- * Keyboard-shortcuts help overlay (UX review P2#7 — the shortcuts existed but were
- * undiscoverable). Opens with `?` or the corner button; closes with Esc / ? / click-away.
+ * Keyboard-shortcuts overlay (spec §4). Opened from the app bar `?` button or the `?` key
+ * (handled in useKeyboardShortcuts, which also routes Esc here first). Focus moves into the
+ * dialog on open and is trapped until it closes; click-away closes.
  */
 export function HelpOverlay() {
-  const [open, setOpen] = useState(false);
+  const open = useTimelineStore((s) => s.helpOpen);
+  const setOpen = useTimelineStore((s) => s.setHelpOpen);
+  const cardRef = useRef<HTMLDivElement | null>(null);
 
+  // Focus trap: focus the dialog on open; keep Tab cycling inside it.
   useEffect(() => {
+    if (!open) return;
+    const card = cardRef.current;
+    card?.focus();
     function onKey(e: KeyboardEvent) {
-      const tag = (e.target as HTMLElement | null)?.tagName;
-      if (tag === "INPUT" || tag === "SELECT" || tag === "TEXTAREA") return;
-      if (e.key === "?") setOpen((o) => !o);
-      else if (e.key === "Escape") setOpen(false);
+      if (e.key !== "Tab" || !card) return;
+      const focusables = card.querySelectorAll<HTMLElement>("button, [href], [tabindex]");
+      if (focusables.length === 0) return;
+      const first = focusables[0]!;
+      const last = focusables[focusables.length - 1]!;
+      if (e.shiftKey && document.activeElement === first) {
+        e.preventDefault();
+        last.focus();
+      } else if (!e.shiftKey && document.activeElement === last) {
+        e.preventDefault();
+        first.focus();
+      }
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, []);
+  }, [open]);
+
+  if (!open) return null;
 
   return (
-    <>
-      <button
-        onClick={() => setOpen(true)}
-        title="Keyboard shortcuts (?)"
+    <div
+      className="absolute inset-0 z-[80] flex items-center justify-center bg-void/80 backdrop-blur-[6px]"
+      onClick={() => setOpen(false)}
+    >
+      <div
+        ref={cardRef}
+        role="dialog"
+        aria-modal="true"
         aria-label="Keyboard shortcuts"
-        className="pointer-events-auto absolute bottom-32 right-4 z-10 h-7 w-7 rounded-full bg-cockpit/85 text-sm font-semibold text-white/60 backdrop-blur hover:text-signal"
+        tabIndex={-1}
+        onClick={(e) => e.stopPropagation()}
+        className="w-[520px] max-w-[92vw] rounded-[10px] border border-line bg-surface-2 p-8 outline-none"
       >
-        ?
-      </button>
-
-      {open && (
-        <div
-          className="absolute inset-0 z-30 flex items-center justify-center bg-black/40"
-          onClick={() => setOpen(false)}
-        >
-          <div
-            role="dialog"
-            aria-label="Keyboard shortcuts"
-            onClick={(e) => e.stopPropagation()}
-            className="w-80 rounded-xl border border-white/15 bg-cockpit/95 p-5 text-sm shadow-2xl backdrop-blur-md"
-          >
-            <div className="mb-3 flex items-center justify-between">
-              <span className="font-semibold text-signal">Keyboard shortcuts</span>
-              <button
-                onClick={() => setOpen(false)}
-                className="rounded bg-white/10 px-1.5 leading-5 text-white/70 hover:bg-white/20"
-                aria-label="Close"
-              >
-                ×
-              </button>
+        <div className="text-[21px] font-semibold tracking-[.01em]">Keyboard</div>
+        <div className="mt-3.5 grid grid-cols-2 gap-x-6 gap-y-1">
+          {SHORTCUTS.map(([key, label]) => (
+            <div
+              key={key}
+              className="flex items-center justify-between border-b border-line-2 py-1.5"
+            >
+              <span className="text-[12px] text-ink/65">{label}</span>
+              <kbd>{key}</kbd>
             </div>
-            <dl className="space-y-1.5">
-              {SHORTCUTS.map(([key, desc]) => (
-                <div key={key} className="flex items-baseline justify-between gap-4">
-                  <dt>
-                    <kbd className="rounded bg-white/15 px-1.5 py-0.5 font-mono text-xs text-white/90">
-                      {key}
-                    </kbd>
-                  </dt>
-                  <dd className="text-right text-white/70">{desc}</dd>
-                </div>
-              ))}
-            </dl>
-          </div>
+          ))}
         </div>
-      )}
-    </>
+        <div className="mt-4 flex items-center justify-between text-[11px] text-ink/40">
+          <span>Esc or click anywhere to close.</span>
+          <button
+            onClick={() => setOpen(false)}
+            className="rounded-md border border-line px-3 py-1 font-mono text-[9.5px] tracking-[.08em] text-ink/65 hover:border-signal-dim hover:text-signal-light focus-visible:outline focus-visible:outline-2 focus-visible:outline-signal"
+          >
+            CLOSE
+          </button>
+        </div>
+      </div>
+    </div>
   );
 }

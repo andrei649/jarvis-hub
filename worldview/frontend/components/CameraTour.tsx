@@ -1,51 +1,40 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { useTimelineStore } from "@/lib/store/useTimelineStore";
 import { defaultTour, type TourStep } from "@/lib/cameraTour";
 
-// Camera-tour control (H19.5.4, remaining slice). Drives the deck viewState through a sequence
-// of AOI waypoints. This component owns the tour timing (advance after each waypoint's dwell +
-// fly-in) and hands the target viewState back to DeckGlobe via `onViewState`. The pure tour
-// model lives in lib/cameraTour.ts; here we just sequence it on a timer and stop on demand.
+// Camera-tour sequencer (H19.5.4). The start/stop button lives in the AppBar (store.tour);
+// this component owns the tour TIMING — advance after each waypoint's fly-in + dwell — and
+// hands each target viewState to DeckGlobe via `onViewState`. While active it shows the
+// waypoint chip top-center (the only thing that may occupy that space, and only mid-tour).
 
 export interface CameraTourProps {
   /** Called with each waypoint's deck viewState (incl. transitionDuration) as the tour advances. */
   onViewState: (viewState: TourStep["viewState"]) => void;
-  /** Called when the tour starts/stops so the parent can switch to controlled viewState. */
-  onActiveChange?: (active: boolean) => void;
 }
 
-export function CameraTour({ onViewState, onActiveChange }: CameraTourProps) {
-  const [active, setActive] = useState(false);
+export function CameraTour({ onViewState }: CameraTourProps) {
+  const tour = useTimelineStore((s) => s.tour);
   const [label, setLabel] = useState("");
   const stepsRef = useRef<TourStep[]>([]);
   const idxRef = useRef(0);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const clearTimer = () => {
-    if (timerRef.current != null) {
-      clearTimeout(timerRef.current);
-      timerRef.current = null;
-    }
-  };
-
-  const stop = useCallback(() => {
-    clearTimer();
-    setActive(false);
-    setLabel("");
-    onActiveChange?.(false);
-  }, [onActiveChange]);
-
-  // Sequence the tour: fly to the current step, then after (transition + dwell) advance.
   useEffect(() => {
-    if (!active) return;
+    if (!tour) {
+      setLabel("");
+      return;
+    }
+    stepsRef.current = defaultTour({ loop: true });
+    idxRef.current = 0;
     let cancelled = false;
 
     const run = () => {
       if (cancelled) return;
       const steps = stepsRef.current;
       if (steps.length === 0) {
-        stop();
+        useTimelineStore.getState().setTour(false);
         return;
       }
       const step = steps[idxRef.current % steps.length]!;
@@ -58,28 +47,18 @@ export function CameraTour({ onViewState, onActiveChange }: CameraTourProps) {
 
     return () => {
       cancelled = true;
-      clearTimer();
+      if (timerRef.current != null) {
+        clearTimeout(timerRef.current);
+        timerRef.current = null;
+      }
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [active]);
+  }, [tour]);
 
-  function start() {
-    stepsRef.current = defaultTour({ loop: true });
-    idxRef.current = 0;
-    setActive(true);
-    onActiveChange?.(true);
-  }
-
+  if (!tour || !label) return null;
   return (
-    <div className="pointer-events-auto absolute left-1/2 top-16 z-10 flex -translate-x-1/2 items-center gap-2 rounded-lg bg-cockpit/85 px-3 py-1.5 text-xs backdrop-blur">
-      <button
-        type="button"
-        onClick={() => (active ? stop() : start())}
-        className="rounded bg-signal/20 px-3 py-1 font-medium text-signal hover:bg-signal/30"
-      >
-        {active ? "■ Stop tour" : "🎬 Tour AOIs"}
-      </button>
-      {active && label && <span className="text-white/70">→ {label}</span>}
+    <div className="pointer-events-none absolute left-1/2 top-3.5 z-10 -translate-x-1/2 rounded-2xl border border-signal-dim bg-surface-2 px-4 py-1.5 font-mono text-[10px] tracking-[.18em] text-signal-light backdrop-blur-[10px]">
+      → {label.toUpperCase()}
     </div>
   );
 }
