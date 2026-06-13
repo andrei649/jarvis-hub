@@ -141,7 +141,16 @@ each call) — never `from agents.web import orch` (freezes `None`). `lifespan` 
 
 ---
 
-## 4. Phase 2 — CLN-2 orchestrator decomposition (facade-preserving)
+## 4. Phase 2 — CLN-2 orchestrator decomposition (facade-preserving) — 🟡 step 1 LANDED 2026-06-13
+
+**Status (step 1 — `SchedulerService`):** shipped. `core/scheduler_service.py` owns the 5 `schedule_*`
+registration methods + 4 job bodies (`run_log_quick/hourly/daily_scan`, `run_daily_digest`); `start_channels`
+now calls `self._scheduler.schedule_all()`. orchestrator.py: **2,202 → 1,989 LOC (−213)**. Two job bodies
+deliberately stayed on the Orchestrator because callers reach them there: `_run_learning_loop` (admin
+`POST /api/learning/propose`) and `_run_worldview_kg_sync` (`test_worldview_kg_sync` calls it *unbound* on a
+`SimpleNamespace`, so it must read `self.plugins`/`self.memory` directly). The lifespan smoke test now
+asserts the exact 7 job IDs the service wires. Behavior-identical: full suite **2,234 passed / 2 skipped**.
+Remaining managers (`LLMControlManager`, `PluginGatherer`, `AutonomyCoordinator`) below.
 
 Four safe manager extractions, ascending risk. Each is a *free-function-body + thin-wrapper* move so bare
 tests keep working (the wrapper reads only the orch attributes the bare test sets).

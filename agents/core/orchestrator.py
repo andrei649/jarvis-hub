@@ -25,6 +25,7 @@ from .llm.tokenizer import estimate_tokens
 from .memory.manager import MemoryManager
 from .checkpoint import CheckpointManager
 from .heartbeat import HeartbeatScheduler
+from .scheduler_service import SchedulerService
 from .learning.loop import LearningLoop
 from .skills.loader import SkillLoader
 from .skills.importer import SkillImporter
@@ -315,6 +316,7 @@ class Orchestrator:
         self.bench = LatencyBenchmark()
         self.sandbox = Sandbox()
         self.heartbeat_scheduler = HeartbeatScheduler(agents_dir=str(Path(__file__).resolve().parent.parent.parent / "agents"))
+        self._scheduler = SchedulerService(self)  # CLN-2: owns the cron/interval job wiring
         self.security: Optional[GuardrailsEngine] = None
         self.permission_gate = PermissionGate()
         self.audit = AuditLogger()
@@ -630,175 +632,10 @@ class Orchestrator:
             logger.warning(f"Autonomy decision callback failed: {e}")
             return None
 
-    def _schedule_daily_digests(self):
-        """Cron the morning brief (07:00) and evening retro (20:00) — H6.4."""
-        sched = getattr(self.heartbeat_scheduler, "scheduler", None)
-        if sched is None:
-            return
-        try:
-            sched.add_job(self._run_daily_digest, "cron", hour=7, minute=0,
-                          args=["morning"], id="autonomy-morning-brief", replace_existing=True)
-            sched.add_job(self._run_daily_digest, "cron", hour=20, minute=0,
-                          args=["evening"], id="autonomy-evening-retro", replace_existing=True)
-            logger.info("Scheduled daily digests: morning 07:00, evening 20:00")
-        except Exception as e:
-            logger.warning(f"Failed to schedule daily digests: {e}")
-
-    def _schedule_daily_budget_reset(self):
-        """Reset the autonomy daily-spend ceiling at local midnight (BUG-10).
-
-        Without this, AutonomyPolicy._spent_today accrues across calendar days
-        until a restart, so `daily_ceiling` fills permanently and blocks
-        autonomous spend. reset_daily() existed but was never scheduled in prod.
-        """
-        sched = getattr(self.heartbeat_scheduler, "scheduler", None)
-        policy = getattr(getattr(self, "autonomy", None), "policy", None)
-        if sched is None or policy is None:
-            return
-        try:
-            sched.add_job(policy.reset_daily, "cron", hour=0, minute=0,
-                          id="autonomy-daily-budget-reset", replace_existing=True)
-            logger.info("Scheduled daily autonomy-budget reset: 00:00")
-        except Exception as e:
-            logger.warning(f"Failed to schedule daily budget reset: {e}")
-
-    def _schedule_learning_loop(self):
-        """H7.11 — periodically propose agent promotions to the decision inbox.
-
-        Cadence from config (autonomy.learning_loop_interval_hours, default 168h =
-        weekly). Each run proposes gated, reversible promotions via the queue.
-        """
-        sched = getattr(self.heartbeat_scheduler, "scheduler", None)
-        if sched is None:
-            return
-        try:
-            hours = float((self.config.get("autonomy", {}) or {}).get(
-                "learning_loop_interval_hours", 168))
-        except Exception:
-            hours = 168.0
-        if hours <= 0:
-            return
-        try:
-            sched.add_job(self._run_learning_loop, "interval", hours=hours,
-                          id="learning-loop-promotions", replace_existing=True)
-            logger.info("Scheduled learning-loop promotions every %sh", hours)
-        except Exception as e:
-            logger.warning(f"Failed to schedule learning loop: {e}")
-
     async def _run_learning_loop(self) -> list[dict]:
         """Propose agent promotions into the decision inbox (gated, reversible)."""
         from .learning.scheduler import propose_promotions
         return propose_promotions(self.learning, self.autonomy_queue, list(self.agents.keys()))
-
-    def _schedule_log_scans(self):
-        """Register the three log-bug-finding cadences on the APScheduler.
-
-        quick  — every 15 min: spike + new-code detection
-        hourly — every hour:   trend analysis + backlog sync
-        daily  — 07:05 daily:  full 24-h digest → memory_logs/reports/
-        """
-        sched = getattr(self.heartbeat_scheduler, "scheduler", None)
-        if sched is None:
-            return
-        try:
-            sched.add_job(self._run_log_quick_scan, "interval", seconds=900,
-                          id="log-scan-quick", replace_existing=True)
-            sched.add_job(self._run_log_hourly_scan, "interval", seconds=3600,
-                          id="log-scan-hourly", replace_existing=True)
-            sched.add_job(self._run_log_daily_scan, "cron", hour=7, minute=5,
-                          id="log-scan-daily", replace_existing=True)
-            logger.info("Scheduled log-bug scans: quick/15min, hourly, daily/07:05")
-        except Exception as e:
-            logger.warning(f"Failed to schedule log scans: {e}")
-
-    async def _run_log_quick_scan(self):
-        """15-min scan: submit autonomy alert on spike or new error code."""
-        if not self.get_setting("system.log_scan_enabled", True):
-            return
-        try:
-            base = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-            problems_path = os.path.join(base, "..", "memory_logs", "problems.jsonl")
-            result = self.log_scanner.quick_scan(problems_path)
-            if result.healthy:
-                return
-            issues = ", ".join(
-                f"{i['code']}×{i['count']}" for i in result.top_issues[:3]
-            )
-            parts = []
-            if result.spike_detected:
-                parts.append(f"spike: {result.total_errors} errors in 15 min")
-            if result.new_codes:
-                parts.append(f"new codes: {', '.join(result.new_codes[:3])}")
-            title = "Log spike detected — " + "; ".join(parts)
-            if issues:
-                title += f" [{issues}]"
-            await self.autonomy.submit(
-                agent="steve", kind="monitor.log_spike", title=title,
-                payload={"risk_tier": 0, "spike": result.spike_detected,
-                         "new_codes": result.new_codes,
-                         "total_errors": result.total_errors},
-                origin="log_scanner",
-            )
-        except Exception as e:
-            logger.warning(f"Log quick scan failed: {e}")
-
-    async def _run_log_hourly_scan(self):
-        """Hourly scan: trend analysis and backlog sync."""
-        if not self.get_setting("system.log_scan_enabled", True):
-            return
-        try:
-            base = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-            problems_path = os.path.join(base, "..", "memory_logs", "problems.jsonl")
-            result = self.log_scanner.hourly_scan(problems_path)
-            from .autonomy.error_logger import sync_problems_to_diagnostics
-            sync_problems_to_diagnostics()
-            if result.healthy:
-                return
-            parts = []
-            if result.spike_detected:
-                parts.append(f"spike: {result.total_errors} errors this hour")
-            if result.new_codes:
-                parts.append(f"new codes: {', '.join(result.new_codes[:3])}")
-            if parts:
-                await self.autonomy.submit(
-                    agent="steve", kind="monitor.log_trend", title="Hourly log trend — " + "; ".join(parts),
-                    payload={"risk_tier": 0, "spike": result.spike_detected,
-                             "new_codes": result.new_codes,
-                             "total_errors": result.total_errors},
-                    origin="log_scanner",
-                )
-        except Exception as e:
-            logger.warning(f"Log hourly scan failed: {e}")
-
-    async def _run_log_daily_scan(self):
-        """07:05 daily scan: write 24-h bug-report digest."""
-        if not self.get_setting("system.log_scan_enabled", True):
-            return
-        try:
-            base = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-            problems_path = os.path.join(base, "..", "memory_logs", "problems.jsonl")
-            result = self.log_scanner.daily_scan(problems_path)
-            logger.info(
-                f"Daily log scan: {result.total_errors} errors, "
-                f"{len(result.new_codes)} new codes, report={result.report_path}"
-            )
-            if result.healthy:
-                return
-            issues_summary = ", ".join(
-                f"{i['code']}×{i['count']}" for i in result.top_issues[:5]
-            )
-            title = f"Daily bug digest: {result.total_errors} errors"
-            if result.new_codes:
-                title += f", {len(result.new_codes)} new codes"
-            await self.autonomy.submit(
-                agent="steve", kind="monitor.log_daily", title=title,
-                payload={"risk_tier": 0, "total_errors": result.total_errors,
-                         "new_codes": result.new_codes, "top_issues": issues_summary,
-                         "report_path": result.report_path},
-                origin="log_scanner",
-            )
-        except Exception as e:
-            logger.warning(f"Log daily scan failed: {e}")
 
     async def _autonomy_loop(self):
         """Periodically run approved autonomy tasks (the self-tasking worker).
@@ -984,33 +821,6 @@ class Orchestrator:
 
         return executor
 
-    def _schedule_worldview_kg_sync(self):
-        """Periodically sync the WorldView ontology into the knowledge graph (H19.3.5).
-
-        OFF by default — like the Oracle watcher, a privacy-first local product should not
-        poll a service unsolicited. Enable with JARVIS_WORLDVIEW_KG_SYNC=1 or the
-        `worldview.kg_sync_enabled` setting. Each pass degrades to a no-op when WorldView
-        is unreachable (the plugin fails closed), so an enabled-but-offline deployment is
-        harmless. Skipped under JARVIS_TESTING.
-        """
-        if os.getenv("JARVIS_TESTING") == "1":
-            return
-        enabled = os.getenv("JARVIS_WORLDVIEW_KG_SYNC") == "1" or self.get_setting(
-            "worldview.kg_sync_enabled", False
-        )
-        if not enabled:
-            return
-        sched = getattr(self.heartbeat_scheduler, "scheduler", None)
-        if sched is None:
-            return
-        interval = max(60, int(self.get_setting("worldview.kg_sync_interval", 900)))
-        try:
-            sched.add_job(self._run_worldview_kg_sync, "interval", seconds=interval,
-                          id="worldview-kg-sync", replace_existing=True)
-            logger.info("Scheduled WorldView KG sync every %ss", interval)
-        except Exception as e:
-            logger.warning(f"Failed to schedule WorldView KG sync: {e}")
-
     async def _run_worldview_kg_sync(self):
         """Run one WorldView ontology -> knowledge-graph sync pass (best-effort)."""
         plugin = self.plugins.get("worldview")
@@ -1024,27 +834,6 @@ class Orchestrator:
         except Exception as e:
             logger.warning(f"WorldView KG sync failed: {e}")
 
-    async def _run_daily_digest(self, kind: str):
-        """Build and ship the morning brief / evening retro to the owner."""
-        try:
-            if kind == "morning":
-                text = build_morning_brief(self.autonomy_queue)
-            else:
-                text = build_evening_retro(self.autonomy_queue)
-        except Exception as e:
-            logger.warning(f"Digest build failed ({kind}): {e}")
-            return
-        owner = os.environ.get("AUTONOMY_OWNER_CHAT_ID", "") or str(
-            self.get_setting("autonomy.owner_chat_id", "") or ""
-        )
-        tg = self.channels.get("telegram")
-        if tg and owner:
-            try:
-                await tg.send(text, chat_id=int(owner))
-            except Exception as e:
-                logger.warning(f"Digest send failed ({kind}): {e}")
-        logger.info(f"Daily digest ready: {kind}")
-
     async def register_channel(self, channel: ChannelAdapter):
         self.channel_manager.register(channel)
 
@@ -1054,11 +843,7 @@ class Orchestrator:
         self._settings_watcher_task = asyncio.create_task(self._settings_watcher_loop())
         self._settings_watcher_task.add_done_callback(_log_task_result)
         self._wire_autonomy()
-        self._schedule_daily_digests()
-        self._schedule_log_scans()
-        self._schedule_learning_loop()
-        self._schedule_daily_budget_reset()
-        self._schedule_worldview_kg_sync()
+        self._scheduler.schedule_all()
         self._autonomy_task = asyncio.create_task(self._autonomy_loop())
         self._autonomy_task.add_done_callback(_log_task_result)
         # Oracle GitHub watcher is OFF by default: it polls a GitHub repo every 30s,

@@ -39,9 +39,14 @@ def test_lifespan_starts_and_stops_clean():
         )
 
         # the scheduler/digest/log-scan/learning-loop/budget-reset jobs registered
-        # (this is the CLN-2 SchedulerService surface)
-        jobs = orch.heartbeat_scheduler.scheduler.get_jobs()
-        assert jobs, "no scheduler jobs registered during startup"
+        # (this is the CLN-2 SchedulerService surface; worldview-kg-sync is skipped
+        # under JARVIS_TESTING). Locks the exact job wiring the service owns.
+        job_ids = {j.id for j in orch.heartbeat_scheduler.scheduler.get_jobs()}
+        assert {
+            "autonomy-morning-brief", "autonomy-evening-retro",
+            "log-scan-quick", "log-scan-hourly", "log-scan-daily",
+            "learning-loop-promotions", "autonomy-daily-budget-reset",
+        } <= job_ids, f"SchedulerService did not wire its jobs: {sorted(job_ids)}"
 
         # the app actually serves
         r = c.get("/api/status")
