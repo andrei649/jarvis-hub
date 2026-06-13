@@ -147,6 +147,16 @@ class SecretScanner(BaseScanner):
         "generic_api_key": (r"""(?i:api_key|secret_key|auth_token)\s*[=:]\s*['"]([^'"]{8,})['"]""", ThreatLevel.HIGH, "Generic API key/secret"),
         "jwt": (r"eyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}", ThreatLevel.HIGH, "JWT"),
         "bearer_token": (r"Bearer\s+[A-Za-z0-9._~+/=-]{20,}", ThreatLevel.HIGH, "Bearer token"),
+        # Telegram bot token (`<bot_id>:<35-char auth>`) — this system's primary
+        # control channel runs on one (`TELEGRAM_BOT_TOKEN`), so a leak in an
+        # echoed/ingested message would hand over the bot. The numeric id + colon
+        # + exactly-35 base64url chars is a near-unique shape; the trailing
+        # negative lookahead pins the auth length so a longer run can't slip past.
+        "telegram_bot_token": (r"\b\d{6,12}:[A-Za-z0-9_-]{35}(?![A-Za-z0-9_-])", ThreatLevel.CRITICAL, "Telegram bot token"),
+        # Google API key (`AIza` + 35 chars) — the format of this system's
+        # `GEMINI_API_KEY`. The `AIza` prefix never occurs in prose, so it is
+        # case-sensitive (below) and effectively zero-false-positive.
+        "google_api_key": (r"AIza[0-9A-Za-z_-]{35}(?![0-9A-Za-z_-])", ThreatLevel.CRITICAL, "Google API key"),
         # Generic catch-all for long, high-entropy tokens that don't match a
         # known vendor format. Gated by the entropy validator below to keep
         # false positives near zero.
@@ -158,7 +168,7 @@ class SecretScanner(BaseScanner):
     # would broaden them and let `SK-…` style prose tokens false-positive.
     CASE_SENSITIVE = frozenset({
         "openai_key", "anthropic_key", "aws_access_key", "github_token",
-        "stripe_key", "azure_storage_key", "high_entropy_secret",
+        "stripe_key", "azure_storage_key", "google_api_key", "high_entropy_secret",
     })
 
     # Patterns whose regex matches must additionally pass a heuristic validator
