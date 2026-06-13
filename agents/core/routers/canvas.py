@@ -7,7 +7,7 @@ from pydantic import BaseModel, Field
 
 from agents.core.routers._deps import user_guard
 
-from agents.core.web_helpers import nocache_json
+from agents.core.web_helpers import nocache_json, error_json
 from agents.core.app_state import get_orch
 
 
@@ -46,7 +46,7 @@ async def canvas_post(body: CanvasPostBody):
         return nocache_json(_get_canvas().post(body.agent, body.type, body.payload,
                                                     pinned=body.pinned))
     except ValueError as e:
-        return nocache_json({"error": str(e)}, status_code=422)
+        return error_json(e, 422, "invalid or unsupported canvas element")
 
 
 @router.post("/api/canvas/{el_id}/pin", dependencies=[Depends(user_guard)])

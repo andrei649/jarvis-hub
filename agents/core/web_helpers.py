@@ -13,7 +13,11 @@ call site — and any test that references them — keeps working unchanged.
 
 from __future__ import annotations
 
+import logging
+
 from fastapi.responses import JSONResponse
+
+logger = logging.getLogger("jarvis.web")
 
 
 def nocache_json(content: dict, status_code: int = 200) -> JSONResponse:
@@ -23,6 +27,22 @@ def nocache_json(content: dict, status_code: int = 200) -> JSONResponse:
         status_code=status_code,
         headers={"Cache-Control": "no-cache, no-store, must-revalidate"},
     )
+
+
+def error_json(exc, status_code: int, public_message: str, *, extra: dict | None = None, log=None) -> JSONResponse:
+    """CWE-209-safe error response.
+
+    Logs the *full* exception detail server-side and returns ONLY a controlled,
+    static `public_message` to the client — never the raw exception text, which
+    can carry stack traces, filesystem paths, or other internal detail. `extra`
+    preserves any additional response keys the endpoint's contract requires
+    (e.g. ``{"ok": False}`` or ``{"results": []}``); it must not contain
+    exception-derived values.
+    """
+    (log or logger).warning("request error [%s] (%s): %s", public_message, status_code, exc)
+    body = dict(extra or {})
+    body["error"] = public_message
+    return nocache_json(body, status_code=status_code)
 
 
 def mask_secret(value: str) -> str:

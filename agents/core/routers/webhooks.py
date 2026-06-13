@@ -5,7 +5,7 @@ import json
 from fastapi import APIRouter, Request
 from pydantic import BaseModel, Field
 
-from agents.core.web_helpers import nocache_json
+from agents.core.web_helpers import nocache_json, error_json
 from agents.core.app_state import get_orch
 
 
@@ -41,7 +41,7 @@ async def create_webhook(body: WebhookCreateBody):
     try:
         rec = _get_webhook_store().create(body.target, body.target_type, body.name, signed=body.signed)
     except ValueError as exc:
-        return nocache_json({"error": str(exc)}, status_code=400)
+        return error_json(exc, 400, "invalid webhook target")
     return nocache_json(rec)
 
 

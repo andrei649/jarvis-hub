@@ -28,7 +28,7 @@ from pydantic import BaseModel, Field, field_validator
 # Pure response/format helpers live in core.web_helpers (CLN-3 shared kernel) so
 # the extracted routers can import them without reaching back into this module.
 # Re-exported here under their original private names for backward compatibility.
-from core.web_helpers import nocache_json as _nocache_json, mask_secret as _mask_secret
+from core.web_helpers import nocache_json as _nocache_json, mask_secret as _mask_secret, error_json
 
 from core.config import JarvisConfig
 from core.orchestrator import Orchestrator
@@ -1208,7 +1208,7 @@ async def arena_run(req: Request):
     try:
         match = arena.create_match(query, candidates)
     except ValueError as e:
-        return JSONResponse({"error": str(e)}, status_code=400)
+        return error_json(e, 400, "invalid match request")
     return _nocache_json({"ok": True, "match": match})
 
 
@@ -1231,7 +1231,7 @@ async def arena_vote(req: Request):
     except KeyError:
         return JSONResponse({"error": "unknown match"}, status_code=404)
     except ValueError as e:
-        return JSONResponse({"error": str(e)}, status_code=400)
+        return error_json(e, 400, "invalid vote")
 
 
 @app.get("/api/arena/match/{match_id}")
@@ -1302,7 +1302,7 @@ async def review_queue_vote(item_id: str, req: Request):
         item = q.review(item_id, (body or {}).get("verdict", ""),
                         (body or {}).get("rubric"), (body or {}).get("notes", ""))
     except ValueError as e:
-        return JSONResponse({"error": str(e)}, status_code=400)
+        return error_json(e, 400, "invalid review verdict")
     if item is None:
         return JSONResponse({"error": "not found"}, status_code=404)
     return _nocache_json({"ok": True, "item": item})
@@ -1491,7 +1491,7 @@ async def widget_message(token: str, req: Request):
         reply = await orch.handle_input(message, channel="widget")
         return _nocache_json({"reply": reply})
     except Exception as e:
-        return _nocache_json({"reply": "", "error": str(e)})
+        return error_json(e, 200, "request failed", extra={"reply": ""})
 
 
 # ── H13.2 Constrained decoding (GBNF grammar) ─────────────────────────────────
@@ -2447,7 +2447,7 @@ async def marketplace_publish(body: PublishSkillBody):
         res = orch.marketplace.publish_skill(body.name)
         return {"ok": True, "published": res}
     except FileNotFoundError as e:
-        return JSONResponse({"error": str(e)}, status_code=404)
+        return error_json(e, 404, "skill not found")
     except Exception:
         logger.exception("Failed to publish skill")
         return JSONResponse({"error": "internal error", "code": 500}, status_code=500)
@@ -2651,7 +2651,7 @@ async def autonomy_decide(task_id: int, body: AutonomyDecisionBody):
             task_id, body.action.strip().lower(), decided_by="admin", payload=body.payload,
         )
     except TaskQueueError as e:
-        return JSONResponse({"error": str(e)}, status_code=409)
+        return error_json(e, 409, "decision could not be applied")
     return _nocache_json({"ok": True, "task": task.to_dict()})
 
 
@@ -3939,8 +3939,7 @@ async def memory_search(q: str = "", top_k: int = 10):
             "total": len(hits),
         })
     except Exception as e:
-        logger.warning(f"memory/search error: {e}")
-        return _nocache_json({"results": [], "query": q, "total": 0, "error": str(e)})
+        return error_json(e, 200, "memory search failed", extra={"results": [], "query": q, "total": 0})
 
 
 @app.get("/api/memory/entities", dependencies=[Depends(_user_guard)])
@@ -4383,8 +4382,7 @@ async def reflection_run():
         )
         return _nocache_json({"ok": True, "result": result})
     except Exception as e:
-        logger.warning(f"reflection/run error: {e}")
-        return _nocache_json({"ok": False, "error": str(e)})
+        return error_json(e, 200, "reflection run failed", extra={"ok": False})
 
 
 # ── H9.2 Trace Explorer endpoints ────────────────────────────────
@@ -4750,15 +4748,14 @@ async def run_workflow(body: WorkflowRunBody):
                 from core.workflows.pipeline import Pipeline as _Pipeline
                 pipeline = _Pipeline.from_dict(stored)
             except Exception as e:
-                return _nocache_json({"ok": False, "error": f"Invalid stored pipeline: {e}"})
+                return error_json(e, 200, "invalid stored pipeline", extra={"ok": False})
     if not pipeline:
         raise HTTPException(status_code=404, detail=f"Pipeline '{body.pipeline_id}' not found")
     try:
         result = await orch.workflow_engine.run(pipeline, initial_input=body.input)
         return _nocache_json({"ok": result.get("_ok", True), "result": result})
     except Exception as e:
-        logger.warning(f"workflow/run error: {e}")
-        return _nocache_json({"ok": False, "error": str(e)})
+        return error_json(e, 200, "workflow run failed", extra={"ok": False})
 
 
 @app.get("/api/workflows/traces")

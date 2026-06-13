@@ -10,7 +10,7 @@ from pydantic import BaseModel, Field
 
 from agents.core.routers._deps import user_guard
 
-from agents.core.web_helpers import nocache_json
+from agents.core.web_helpers import nocache_json, error_json
 from agents.core.app_state import get_orch
 
 
@@ -50,7 +50,7 @@ async def capture_ingest(body: CaptureIngestBody):
     try:
         return nocache_json(_get_capture().ingest(body.surface, body.content, body.source))
     except ValueError as e:
-        return nocache_json({"error": str(e)}, status_code=422)
+        return error_json(e, 422, "invalid capture input")
 
 
 @router.get("/api/capture", dependencies=[Depends(user_guard)])
