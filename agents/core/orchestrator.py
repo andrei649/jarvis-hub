@@ -1829,8 +1829,15 @@ class Orchestrator:
             res = await ctrl.load_model(model)
             status = res.get("status")
             if status == "ok":
-                active = getattr(router, "active_model", None) or model
+                active = getattr(router, "active_model", None) or res.get("model") or model
+                if res.get("resolved_from"):
+                    return f"I matched '{res['resolved_from']}' to {active} and loaded it, sir."
                 return f"Loaded and running {active}, sir."
+            if status == "ambiguous":
+                cands = res.get("candidates") or []
+                shown = ", ".join(cands[:6])
+                return (f"Several models match '{model}', sir: {shown}. "
+                        "Which one shall I load?")
             if status == "rejected":
                 return f"That is not a valid model id, sir: {model!r}."
             return f"I could not load {model}, sir — {res.get('reason') or 'the load failed'}."

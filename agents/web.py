@@ -3384,8 +3384,8 @@ def _lmstudio_or_503():
 
 def _llm_status_code(result: dict) -> int:
     """Map a controller result status to an HTTP code (disabled/blocked → 403)."""
-    return {"ok": 200, "disabled": 403, "blocked": 403, "rejected": 400}.get(
-        result.get("status"), 502)
+    return {"ok": 200, "disabled": 403, "blocked": 403, "rejected": 400,
+            "ambiguous": 409}.get(result.get("status"), 502)
 
 
 @app.get("/api/llm/auth-profiles", dependencies=[Depends(_admin_guard)])
@@ -3417,7 +3417,9 @@ async def llm_load(body: LMLoad):
     result = await ctrl.load_model(body.model, agent="jarvis")
     if result.get("status") == "ok":
         try:
-            put_category("llm", {"default_model": body.model})
+            # Persist the model that was actually loaded — the controller may have
+            # resolved a partial request ("gemma") to the full servable id.
+            put_category("llm", {"default_model": result.get("model") or body.model})
         except Exception:
             pass  # live load already took effect; persistence is best-effort
         return _nocache_json(result)

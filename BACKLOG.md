@@ -54,8 +54,10 @@ chain-of-thought leak / mid-sentence truncation fixed. Kill-switch:
 
 **Follow-ups (P2):**
 - Validate end-to-end against a real `lms` binary on the RTX 5090 box — current tests are mock-only.
-- Fuzzy model resolution: "load gemma" → resolve to the full id via `/v1/models` (today a partial
-  name goes straight to `lms load`, which may miss).
+- ✅ Fuzzy model resolution: "load gemma" → resolves to the full id via `/v1/models` before `lms load`
+  (`LMStudioController._resolve_model`). Unique match loads (reply names the resolved id); several
+  matches → `ambiguous` + candidates (chat asks which / admin returns 409); list unreachable → literal
+  passthrough. Admin `/api/llm/load` persists the resolved id. +13 tests.
 - Surface the kill-switch toggle + a model picker as real controls in the admin Settings UI.
 - Confirm the LM Studio id for Gemma 4 12B — `google/gemma-4-12b` is a placeholder in static config.
 

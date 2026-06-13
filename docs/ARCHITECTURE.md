@@ -385,8 +385,11 @@ squash commit.
   isn't installed where the server runs. The controller never starts LM Studio the app,
   only its server via `lms server start`.
 - *`status:"rejected"`* → model id failed the `_MODEL_RE` regex (only letters/digits/`._-/:@`).
-- *"load gemma" loads the wrong/no model* → a partial name is passed straight to `lms load`;
-  use the full id (e.g. `google/gemma-4-12b`) for an exact match.
+- *"load gemma" loads the wrong/no model* → the controller now resolves a partial name to the
+  full servable id via `/v1/models` before `lms load` (`LMStudioController._resolve_model`). A
+  unique match loads (the reply names the resolved id); several matches return
+  `status:"ambiguous"` with the candidates so you can pick; if `/v1/models` is unreachable it
+  falls back to passing the literal name straight to `lms load`.
 - *Jarvis still names the old model after a load* → router refresh failed; check
   `refresh_active_model` on the router and the LM Studio `/v1/models` response.
 - *A chat message unexpectedly triggered control* → tighten `detect_llm_control`; the
