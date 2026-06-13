@@ -25,12 +25,10 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field, field_validator
 
 
-def _nocache_json(content: dict, status_code: int = 200) -> JSONResponse:
-    return JSONResponse(
-        content=content,
-        status_code=status_code,
-        headers={"Cache-Control": "no-cache, no-store, must-revalidate"},
-    )
+# Pure response/format helpers live in core.web_helpers (CLN-3 shared kernel) so
+# the extracted routers can import them without reaching back into this module.
+# Re-exported here under their original private names for backward compatibility.
+from core.web_helpers import nocache_json as _nocache_json, mask_secret as _mask_secret
 
 from core.config import JarvisConfig
 from core.orchestrator import Orchestrator
@@ -90,14 +88,7 @@ def _real_client_host(request: Request) -> str:
 # Substrings that mark an env var as sensitive — its value is masked in
 # /api/admin/env so keys/tokens/secrets are never returned in clear text.
 _SECRET_HINTS = ("key", "token", "secret", "password", "passwd", "pass", "client_id")
-
-
-def _mask_secret(value: str) -> str:
-    if not value:
-        return ""
-    if len(value) <= 8:
-        return "****"
-    return f"{value[:4]}…{value[-2:]}"
+# _mask_secret is imported from core.web_helpers above (re-exported for compat).
 
 
 async def _admin_guard(request: Request):
