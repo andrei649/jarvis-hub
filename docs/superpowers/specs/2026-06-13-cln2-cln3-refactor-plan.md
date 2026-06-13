@@ -100,7 +100,22 @@ media/vlm/desktop, integrations) are backfilled just-in-time per extracted domai
 
 ---
 
-## 3. Phase 1 — Shared-kernel decoupling (low risk, Phase-0-guarded)
+## 3. Phase 1 — Shared-kernel decoupling (low risk, Phase-0-guarded) — ✅ steps 1–3 LANDED 2026-06-13
+
+**Status:** the shared kernel exists and the 8 extracted routers are fully decoupled from `web`.
+`core/web_helpers.py` (pure: `nocache_json`, `mask_secret`; `web.py` re-exports them under
+`_nocache_json`/`_mask_secret`) and `core/app_state.py` (`get_orch()`, late-binding to `web.orch`,
+re-exported via `routers/_deps.py`) shipped. The routers (a2a/browser/canvas/capture/onboarding/
+pairing/webhooks/wyoming) replaced their 52 `web._nocache_json` + 7 `web.orch` + lazy
+`from agents import web` with direct `core/` imports — **zero residual `web.*` refs**. Behavior-identical:
+route-parity + lifespan guards green, full suite **2,230 passed / 2 skipped**. `orch` stays owned by
+`web.py` (lifespan). `cognition/api.py` left as-is (canonical `_facade()`).
+
+**Deferred to Phase 3 (by design):** relocating the remaining stateful helpers + the ~10 lazy singletons
+(`_payment_broker`, `_data_spaces`, `_wf_store_instance`, `_mcp_rs`, `_dataset_store`, `_stt_engine`, …).
+No extracted router uses them yet, and the plan already moves each singleton *with its domain* during the
+Phase 3 route extraction — so relocating them now would be premature churn against the test sites that
+rebind `web._payment_broker`/`web._wf_store_instance`. They move when their domain does.
 
 Strict 3-layer topology so routers stop importing `web` (none of layers 0–3 imports `web` at module top;
 the only `web` reference is *inside* `get_orch()`/guards, at request time):
