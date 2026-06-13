@@ -530,8 +530,17 @@ from git history into `*.local.md`).
 
 ### Add a web endpoint
 
-1. Open `agents/web.py`.
-2. Add your route function after existing endpoints, e.g.:
+> **Convention (anti-god-object, CLN-3):** new routes go in a **per-domain router**
+> `agents/core/routers/<domain>.py`, *not* inline in `web.py` (already 255 inline routes).
+> Mirror an existing router (e.g. `capture.py`): an `APIRouter`, guards imported from
+> `routers/_deps.py`, shared state reached lazily via `from agents import web`; mount it in
+> `web.py` with `app.include_router(...)`. Don't add new `@app.*` decorators inline. The
+> route-parity guard (`tests/test_route_parity_guard.py`, snapshots `app.routes`) will flag any
+> surface change — re-seed it in the same PR with `python tests/test_route_parity_guard.py --update`.
+> Full plan: `docs/superpowers/specs/2026-06-13-cln2-cln3-refactor-plan.md`.
+
+1. Create/open `agents/core/routers/<domain>.py` (a fresh `@app.*` in `web.py` only for a true one-off).
+2. Add your route function, e.g.:
    ```python
    @app.get("/api/myroute")
    async def my_route():

@@ -1,7 +1,8 @@
 # CLN-2 / CLN-3 — God-Object Decomposition Plan
 
-> Generated: 2026-06-13 · Owner: Andrei · Status: **PLAN ONLY (not started)** · Priority: P3
-> Gate: **post-1.0 / after the manual-test sign-off** (owner decision 2026-06-10 stands).
+> Generated: 2026-06-13 · Owner: Andrei · Status: **Phase 0 LANDED · Phases 1–3 not started** · Priority: P3
+> Gate: Phase 0 is gate-safe (pure-additive) and shipped. **Phases 1–3 remain post-1.0 / after the
+> manual-test sign-off** (owner decision 2026-06-10 stands).
 > Backlog rows: `BACKLOG.md` CLN-2 / CLN-3. Related: `docs/2026-06-08-future-developments-report.md` §4.
 >
 > Produced from a 4-agent parallel analysis (orchestrator decomposition · route inventory ·
@@ -59,10 +60,25 @@ Three hard consequences (all independently confirmed):
 
 ---
 
-## 2. Phase 0 — Safety net (ZERO behavior risk; safe *before* the gate)
+## 2. Phase 0 — Safety net (ZERO behavior risk; safe *before* the gate) — ✅ LANDED 2026-06-13
 
 Pure-additive: new tests + a convention. Nothing in the live surface changes, so it cannot regress the
 manual-test gate, and it de-risks everything after. **This is the only phase recommended pre-gate.**
+
+**Status:** shipped. `tests/test_route_parity_guard.py` (snapshot of all **294** routes, in
+`tests/_snapshots/route_surface.json`), `tests/test_openapi_parity_guard.py` (294 operations), and
+`tests/test_lifespan_smoke.py` (verifies channels start, **20** scheduler jobs register via
+`orch.heartbeat_scheduler.scheduler`, `/api/status`→200, clean teardown) are green. A first
+characterization batch (`tests/test_route_guard_contracts.py`, 7 tests) locks the admin-guard +
+validation contracts of the riskiest untested routes (`llm/load`, `llm/auth-profiles`, `autonomy/mode`,
+`payments/{id}/reject`) plus the open reads (`/api/status`, `/heartbeat/status`, `security/kill-switch`).
+The "new routes → per-domain router" convention is documented in `AGENTS.md` + `docs/ARCHITECTURE.md`.
+Full suite after Phase 0: **2,223 passed, 2 skipped**. Remaining 76 hard-untested routes (Appendix B) are
+backfilled just-in-time per extracted domain during Phase 3.
+
+> Two spec assumptions were corrected against the live app while implementing: the scheduler is at
+> `orch.heartbeat_scheduler.scheduler` (not `orch.scheduler`), and `/api/status` returns
+> `{version, agents, status}` (not `{ok, agents, channels}`).
 
 1. **Route-parity guard** — `tests/test_route_parity_guard.py`: snapshot `app.routes` (294 method+path),
    assert zero diff. Catches a router that fails to mount, a wrong `prefix=`, a dropped method, a renamed
