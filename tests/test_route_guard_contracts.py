@@ -88,3 +88,57 @@ def test_security_kill_switch_read_is_open(client):
     r = client.get("/api/security/kill-switch")
     assert r.status_code == 200
     assert "global" in r.json()
+
+
+# ── distributed-mesh / dispatch (Tier-4: untested; smoke before extraction) ────
+# These routes had NO test coverage. The plan extracts them late and says "write
+# smoke tests first" — this is that. User-guarded routes reach their handlers
+# because conftest's autouse `_disable_user_guard` is active; admin-guarded
+# mutations correctly require a token.
+
+def test_nodes_list_open_register_admin(client):
+    assert client.get("/api/nodes").status_code == 200          # roster read
+    # registration mutates the mesh → admin-guarded (no token → 401)
+    assert client.post("/api/nodes/register", json={}).status_code == 401
+    assert client.delete("/api/nodes/n1").status_code == 401
+
+
+def test_node_dispatch_validates_body(client):
+    # user-guarded (guard disabled in tests) → reaches body validation
+    r = client.post("/api/nodes/n1/dispatch", json={})
+    assert r.status_code == 422
+    assert r.json()["detail"][0]["loc"][-1] == "capability"
+
+
+def test_satellites_list_open_register_validates(client):
+    assert client.get("/api/satellites").status_code == 200
+    r = client.post("/api/satellites/register", json={})
+    assert r.status_code == 422
+    assert r.json()["detail"][0]["loc"][-1] == "satellite_id"
+
+
+def test_subagents_spawn_and_toolrpc_validate_body(client):
+    assert client.post("/api/subagents/spawn", json={}).json()["detail"][0]["loc"][-1] == "task"
+    assert client.post("/api/toolrpc/call", json={}).json()["detail"][0]["loc"][-1] == "tool"
+
+
+def test_sync_and_compress_are_safe_noops_when_disabled(client):
+    # sync is off by default → read-only no-ops (no network), not errors
+    assert client.post("/api/sync/push", json={}).status_code == 200
+    assert client.post("/api/sync/pull", json={}).status_code == 200
+    assert client.post("/api/context/compress", json={}).status_code == 200
+
+
+# ── oauth service-routing + admin read surface ─────────────────────────────────
+
+def test_oauth_unknown_service_is_404(client):
+    # missing/blank `service` → "Unknown service" (locks the dispatch contract)
+    assert client.get("/api/oauth/auth-url").status_code == 404
+    assert client.post("/api/oauth/refresh", json={}).status_code == 404
+
+
+def test_admin_read_surface_requires_admin(client):
+    for path in ("/api/admin/audit", "/api/admin/widgets", "/api/admin/agents/stats"):
+        assert client.get(path).status_code == 401, f"{path} should require admin"
+        assert client.get(path, headers=ADMIN).status_code == 200, f"{path} authed"
+

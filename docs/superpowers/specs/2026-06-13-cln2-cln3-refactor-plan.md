@@ -68,13 +68,16 @@ manual-test gate, and it de-risks everything after. **This is the only phase rec
 **Status:** shipped. `tests/test_route_parity_guard.py` (snapshot of all **294** routes, in
 `tests/_snapshots/route_surface.json`), `tests/test_openapi_parity_guard.py` (294 operations), and
 `tests/test_lifespan_smoke.py` (verifies channels start, **20** scheduler jobs register via
-`orch.heartbeat_scheduler.scheduler`, `/api/status`→200, clean teardown) are green. A first
-characterization batch (`tests/test_route_guard_contracts.py`, 7 tests) locks the admin-guard +
-validation contracts of the riskiest untested routes (`llm/load`, `llm/auth-profiles`, `autonomy/mode`,
-`payments/{id}/reject`) plus the open reads (`/api/status`, `/heartbeat/status`, `security/kill-switch`).
-The "new routes → per-domain router" convention is documented in `AGENTS.md` + `docs/ARCHITECTURE.md`.
-Full suite after Phase 0: **2,223 passed, 2 skipped**. Remaining 76 hard-untested routes (Appendix B) are
-backfilled just-in-time per extracted domain during Phase 3.
+`orch.heartbeat_scheduler.scheduler`, `/api/status`→200, clean teardown) are green. A characterization suite (`tests/test_route_guard_contracts.py`, **14 tests**) locks the admin-guard +
+validation + safe-behavior contracts of the riskiest previously-untested routes: LLM
+(`llm/load`, `llm/auth-profiles`), autonomy (`autonomy/mode`), payments (`payments/{id}/reject`), the
+**distributed-mesh / dispatch group** (`nodes` list/register/dispatch/delete, `satellites`
+list/register, `subagents/spawn`, `toolrpc/call`, `sync push|pull`, `context/compress`) — the Tier-4
+"smoke tests before extraction" the plan prescribes — plus oauth service-routing (`auth-url`/`refresh`
+→ 404) and the admin read surface (`audit`/`widgets`/`agents/stats`). The "new routes → per-domain
+router" convention is documented in `AGENTS.md` + `docs/ARCHITECTURE.md`. Full suite after Phase 0:
+**2,230 passed, 2 skipped**. The remaining ~60 hard-untested routes (lower-risk reads: cognition GETs,
+media/vlm/desktop, integrations) are backfilled just-in-time per extracted domain during Phase 3.
 
 > Two spec assumptions were corrected against the live app while implementing: the scheduler is at
 > `orch.heartbeat_scheduler.scheduler` (not `orch.scheduler`), and `/api/status` returns
