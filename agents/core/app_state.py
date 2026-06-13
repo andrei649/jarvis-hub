@@ -10,19 +10,24 @@ than from `web`.
 than capturing it at import. That is load-bearing — the orchestrator global is
 owned by `web.py` (it is set in `lifespan`), and the test suite rebinds it with
 `monkeypatch.setattr(web, "orch", ...)` ~112×. Reading the attribute on each call
-means those rebinds (and the lifespan set/clear) are always observed. The
-`from agents import web` import lives *inside* the function so importing this
-module never triggers the web app + lifespan (no import cycle) — the same pattern
-already used by `core/cognition/api.py:_facade()` and `core/routers/*`.
+means those rebinds (and the lifespan set/clear) are always observed.
+
+It looks the module up in `sys.modules` rather than `import`-ing it. `get_orch()`
+is only ever called at request time, by which point `agents.web` is always loaded
+(it owns the running app), so a dict lookup is equivalent to `from agents import
+web` for every real call site — but it is *not* a static import edge, so this
+module stays a leaf and never participates in an import cycle (CodeQL flagged the
+`app_state → web → routers → app_state` cycle that the in-function import created).
+Before startup / if web were somehow unloaded, it simply returns None.
 """
 
 from __future__ import annotations
 
+import sys
 from typing import Optional
 
 
 def get_orch() -> Optional[object]:
     """Return the live Orchestrator (or None before startup / after shutdown)."""
-    from agents import web
-
-    return getattr(web, "orch", None)
+    web = sys.modules.get("agents.web")
+    return getattr(web, "orch", None) if web is not None else None

@@ -104,8 +104,8 @@ media/vlm/desktop, integrations) are backfilled just-in-time per extracted domai
 
 **Status:** the shared kernel exists and the 8 extracted routers are fully decoupled from `web`.
 `core/web_helpers.py` (pure: `nocache_json`, `mask_secret`; `web.py` re-exports them under
-`_nocache_json`/`_mask_secret`) and `core/app_state.py` (`get_orch()`, late-binding to `web.orch`,
-re-exported via `routers/_deps.py`) shipped. The routers (a2a/browser/canvas/capture/onboarding/
+`_nocache_json`/`_mask_secret`) and `core/app_state.py` (`get_orch()`, late-binding to `web.orch` via a
+`sys.modules` lookup so it stays a leaf — no static import edge, no cycle) shipped. The routers (a2a/browser/canvas/capture/onboarding/
 pairing/webhooks/wyoming) replaced their 52 `web._nocache_json` + 7 `web.orch` + lazy
 `from agents import web` with direct `core/` imports — **zero residual `web.*` refs**. Behavior-identical:
 route-parity + lifespan guards green, full suite **2,230 passed / 2 skipped**. `orch` stays owned by
@@ -123,7 +123,7 @@ the only `web` reference is *inside* `get_orch()`/guards, at request time):
 ```
 Layer 0  core/web_helpers.py   pure: nocache_json, _sys_info, _mask_secret, NO_STORE_PATHS …  (no orch)
 Layer 1  core/app_state.py     singletons + get_*() accessors; get_orch(): lazy `from agents import web`
-Layer 2  core/routers/_deps.py re-exports get_orch + lazy user_guard/admin_guard
+Layer 2  core/routers/_deps.py lazy user_guard/admin_guard (routers import get_orch from app_state)
 Layer 3  core/routers/*.py     import web_helpers/_deps at TOP; drop `from agents import web`
 Layer 4  agents/web.py         owns orch/gateway (lifespan); thin re-export shims; include_router()
 ```
