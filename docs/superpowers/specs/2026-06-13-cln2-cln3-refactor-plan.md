@@ -141,7 +141,7 @@ each call) — never `from agents.web import orch` (freezes `None`). `lifespan` 
 
 ---
 
-## 4. Phase 2 — CLN-2 orchestrator decomposition (facade-preserving) — 🟡 steps 1–3 LANDED 2026-06-13
+## 4. Phase 2 — CLN-2 orchestrator decomposition (facade-preserving) — ✅ COMPLETE (steps 1–4) 2026-06-13/14
 
 **Status (step 1 — `SchedulerService`):** shipped. `core/scheduler_service.py` owns the 5 `schedule_*`
 registration methods + 4 job bodies (`run_log_quick/hourly/daily_scan`, `run_daily_digest`); `start_channels`
@@ -168,8 +168,19 @@ method); `_any_agent_can`/`_first_target_agent` stay callable (`test_routing` ca
 modules (`.log`, `.errors`) and takes `orch` as a parameter → no import cycle. (Also removed 3 now-unused
 imports orphaned by steps 1/3.)
 
-orchestrator.py: **2,202 → 1,822 LOC (−380 across steps 1–3)**. Behavior-identical: route-parity + lifespan
-guards green, full suite **2,234 passed / 2 skipped**. Remaining manager (`AutonomyCoordinator`) below.
+**Status (step 4 — `autonomy_coordinator`):** shipped. `_wire_autonomy`, `_on_autonomy_callback`,
+`_build_autonomy_executor`, `_autonomy_loop` moved to `core/autonomy_coordinator.py` (`wire()`,
+`_on_callback()`, `build_executor()`, `loop()`) — all four moved outright (no test calls them directly).
+`build_executor()` still sets the 6 broker attributes on the orchestrator via the back-ref
+(`writeback`/`social`/`call_broker`/`node_mesh`/`tool_rpc`/`subagents` — all read in web.py) and still wires
+`autonomy.policy.calibration_hook`. The 6 plain autonomy attributes stay plain (test_shutdown_cleanup assigns
+`autonomy_queue`). `start_channels` task-creation/ordering byte-identical (`asyncio.create_task(self._autonomy.loop())`).
+Removed 3 orphaned imports (`TaskExecutor`, `build_decision_card`, `is_night_window`). No import cycle.
+
+orchestrator.py: **2,202 → 1,619 LOC (−583 across steps 1–4)** — Phase 2 complete. Behavior-identical:
+route-parity + lifespan guards green, full suite **2,234 passed / 2 skipped** throughout. The residual
+orchestrator is the legitimate request-lifecycle core (handle_input/_stream, the BUG-5 session ContextVar,
+agent runtime, checkpoint/recall) that the bare-init tests pin to the facade. Next: Phase 3 route extraction.
 
 
 Four safe manager extractions, ascending risk. Each is a *free-function-body + thin-wrapper* move so bare

@@ -26,6 +26,7 @@ from .memory.manager import MemoryManager
 from .checkpoint import CheckpointManager
 from .heartbeat import HeartbeatScheduler
 from .scheduler_service import SchedulerService
+from .autonomy_coordinator import AutonomyCoordinator
 from .llm_control import detect_llm_control  # re-exported: NL LLM-control detection (CLN-2)
 from . import plugin_gatherer  # live-plugin data gathering (CLN-2)
 from .learning.loop import LearningLoop
@@ -33,10 +34,8 @@ from .skills.loader import SkillLoader
 from .skills.importer import SkillImporter
 from .skills.marketplace import SkillMarketplace
 from .mcp.client import MCPManager
-from .autonomy import AutonomyWorker, TaskQueue, AutonomyPolicy, PreferenceStore, TaskExecutor
+from .autonomy import AutonomyWorker, TaskQueue, AutonomyPolicy, PreferenceStore
 from .autonomy import ProactiveObserver, default_probes
-from .autonomy.inbox import build_decision_card
-from .autonomy.worker import is_night_window
 from .autonomy.reflection import DailyReflector
 from .autonomy.log_scanner import LogBugScanner
 from .workflows import WorkflowEngine, WorkflowRegistry
@@ -222,6 +221,7 @@ class Orchestrator:
         self.sandbox = Sandbox()
         self.heartbeat_scheduler = HeartbeatScheduler(agents_dir=str(Path(__file__).resolve().parent.parent.parent / "agents"))
         self._scheduler = SchedulerService(self)  # CLN-2: owns the cron/interval job wiring
+        self._autonomy = AutonomyCoordinator(self)  # CLN-2: owns autonomy wiring + worker loop
         self.security: Optional[GuardrailsEngine] = None
         self.permission_gate = PermissionGate()
         self.audit = AuditLogger()
@@ -427,7 +427,7 @@ class Orchestrator:
         try:
             self.autonomy_queue.initialize()
             self.autonomy_prefs.initialize()
-            self.autonomy.executor = self._build_autonomy_executor().execute
+            self.autonomy.executor = self._autonomy.build_executor().execute
             self.observer = ProactiveObserver(self.autonomy, probes=default_probes())
 
             # Setup personal event probes using active plugins (Antigravity watchers)
@@ -515,216 +515,13 @@ class Orchestrator:
             self.load_runtime_settings()
 
     # ── Autonomy / Proactive Cortex (H6.1–H6.3) ────────────────────
-    def _wire_autonomy(self):
-        """Wire the decision inbox to Telegram if a bot + owner chat are set."""
-        owner = os.environ.get("AUTONOMY_OWNER_CHAT_ID", "") or str(
-            self.get_setting("autonomy.owner_chat_id", "") or ""
-        )
-        tg = self.channels.get("telegram")
-        if tg and owner and hasattr(tg, "send_card"):
-            async def notifier(task):
-                return await tg.send_card(int(owner), build_decision_card(task))
-            self.autonomy.notifier = notifier
-            tg.on_callback = self._on_autonomy_callback
-            logger.info("Autonomy decision inbox wired to Telegram")
-
-    async def _on_autonomy_callback(self, task_id: int, action: str, **kwargs):
-        """Handle a decision-inbox button tap from Telegram."""
-        try:
-            await self.autonomy.apply_decision(task_id, action, decided_by="telegram")
-            return f"Task #{task_id}: {action}"
-        except Exception as e:
-            logger.warning(f"Autonomy decision callback failed: {e}")
-            return None
+    # Autonomy wiring (inbox→Telegram), the executor build, and the worker
+    # loop live in AutonomyCoordinator (CLN-2); see self._autonomy.
 
     async def _run_learning_loop(self) -> list[dict]:
         """Propose agent promotions into the decision inbox (gated, reversible)."""
         from .learning.scheduler import propose_promotions
         return propose_promotions(self.learning, self.autonomy_queue, list(self.agents.keys()))
-
-    async def _autonomy_loop(self):
-        """Periodically run approved autonomy tasks (the self-tasking worker).
-
-        During the night window (H6.6) only reversible/read-only work runs, so
-        external/irreversible tasks always wait for a waking human.
-        """
-        from datetime import datetime
-        while True:
-            interval = int(self.get_setting("system.autonomy_tick", 60) or 60)
-            await asyncio.sleep(max(15, interval))
-            try:
-                # Sync the live autonomy mode (HUD AUTO/ASK/OFF) onto the policy each tick.
-                amode = str(self.get_setting("autonomy.mode", "auto") or "auto").lower()
-                if self.autonomy and self.autonomy.policy.mode != amode:
-                    self.autonomy.policy.mode = amode
-                max_tier = None
-                if self.get_setting("autonomy.night_shift", False):
-                    start = int(self.get_setting("autonomy.night_start", 23) or 23)
-                    end = int(self.get_setting("autonomy.night_end", 6) or 6)
-                    if is_night_window(datetime.now().hour, start, end):
-                        max_tier = 1  # reversible/read-only only
-                await self.autonomy.tick(max_tier=max_tier)
-                # Proactive passes self-generate new tasks — paused entirely in OFF mode.
-                if amode != "off":
-                    # Sample the host and turn state changes into gated tasks.
-                    if self.observer and self.get_setting("system.observer_enabled", True):
-                        await self.observer.observe()
-                    # Sample personal events (Antigravity watchers)
-                    if self.event_watcher and self.get_setting("system.watchers_enabled", True):
-                        await self.event_watcher.observe()
-                # Nightly reflection & graph consolidation (H5.15)
-                if self.reflector and self.get_setting("system.reflection_enabled", True):
-                    if is_night_window(datetime.now().hour, start=22, end=7):
-                        await self.reflector.run(enabled=True)
-                # Continuous Ingestion Watcher (H5.1)
-                if self.ingestion_watcher and self.get_setting("system.ingestion_watcher_enabled", True):
-                    await asyncio.to_thread(self.ingestion_watcher.check_and_run)
-                # Sync error/problem log to the git-ignored memory_logs/diagnostics.md
-                # (never the tracked BACKLOG.md — that caused git conflicts).
-                if self.get_setting("system.error_backlog_sync_enabled", True):
-                    from .autonomy.error_logger import sync_problems_to_diagnostics
-                    sync_problems_to_diagnostics()
-            except Exception as e:
-                logger.warning(f"Autonomy tick failed: {e}")
-
-    def _build_autonomy_executor(self) -> TaskExecutor:
-        """Wire task kinds to real capabilities, degrading gracefully."""
-        async def _research(task):
-            query = (task.payload or {}).get("query") or task.title
-            ws = self.plugins.get("websearch")
-            if ws and hasattr(ws, "handle"):
-                return {"status": "ok", "kind": "research", "output": await ws.handle(query)}
-            return {"status": "noop", "note": "websearch unavailable"}
-
-        async def _llm(task):
-            prompt = (task.payload or {}).get("prompt") or task.title
-            out = await self.process(prompt, channel="autonomy")
-            return {"status": "ok", "kind": task.kind, "output": out}
-
-        executor = TaskExecutor(fallback=_llm)
-        for kw in ("research", "search", "monitor", "scan", "lookup", "check"):
-            executor.register(kw, _research)
-        for kw in ("summarize", "analyze", "review", "draft", "plan", "prepare"):
-            executor.register(kw, _llm)
-
-        # Safe system recovery remediation handler (H6 / Antigravity recovery)
-        from .autonomy.remediation import RemediationRunner
-        runner = RemediationRunner(permission_gate=self.permission_gate, audit=self.audit)
-
-        async def _restart_service(task):
-            service = (task.payload or {}).get("service")
-            agent = getattr(task, "agent", "steve")
-            return await runner.restart(service, agent=agent)
-
-        executor.register("restart_service", _restart_service)
-
-        # H10.30 — governed write-back integrations (Notion/GitHub/Calendar).
-        # Approved `writeback.*` tasks resolve credentials at action time (behind
-        # approval) and call an injectable client (offline NullWriteBackClient by
-        # default; the live HTTP rail is a host-side seam).
-        from .writeback import WriteBackBroker
-        self.writeback = WriteBackBroker(
-            enqueue=self.autonomy_queue.enqueue,
-            secret_broker=getattr(self, "secret_broker", None),
-            audit=getattr(self, "audit", None),
-        )
-        executor.register("writeback", self.writeback.execute)
-
-        # H12.21 — governed social actions (X/Twitter post/reply/DM). Same
-        # governance: approved `social.*` tasks resolve OAuth/bearer credentials
-        # at action time (behind approval) and post via an injectable client.
-        from .social import SocialBroker
-        self.social = SocialBroker(
-            enqueue=self.autonomy_queue.enqueue,
-            secret_broker=getattr(self, "secret_broker", None),
-            audit=getattr(self, "audit", None),
-        )
-        executor.register("social", self.social.execute)
-
-        # H12.22 — governed outbound voice / call-back. A call is an interruption,
-        # so it's gated by BOTH the approval queue and the daily interrupt budget;
-        # live telephony (Twilio/Telnyx) is deferred to a host-side client.
-        import json as _json
-        from .autonomy.call_broker import CallBroker
-        try:
-            _call_cfg = _json.loads(os.environ.get("JARVIS_CALL_CONFIG", "") or "{}")
-        except Exception:
-            _call_cfg = {}
-        self.call_broker = CallBroker(
-            enqueue=self.autonomy_queue.enqueue,
-            secret_broker=getattr(self, "secret_broker", None),
-            audit=getattr(self, "audit", None),
-            budget=getattr(self.autonomy, "budget", None),
-            config=_call_cfg,
-        )
-        executor.register("call", self.call_broker.execute)
-
-        # H12.17 — governed node mesh (phone/desktop execution nodes). Capability-
-        # scoped (H17.3 broker + kill-switch) + approval-gated; the on-device run
-        # is a host seam (Tauri/phone client).
-        from .node_mesh import NodeMesh
-        self.node_mesh = NodeMesh(
-            capability_broker=getattr(self, "capabilities", None),
-            kill_switch=getattr(self, "kill_switch", None),
-            enqueue=self.autonomy_queue.enqueue,
-            audit=getattr(self, "audit", None),
-        )
-        executor.register("node", self.node_mesh.execute)
-
-        # H20.1 — governed Tool-RPC surface for sandboxed zero-context pipelines.
-        # Read-only tools run inline; gated tools enqueue an ask-tier task (and
-        # run via this executor only after approval). Starter allowlist is safe
-        # built-ins; integrations register more (incl. gated) over time.
-        from .tool_rpc import ToolRPCServer
-        import time as _t
-        self.tool_rpc = ToolRPCServer(
-            secret_broker=getattr(self, "secret_broker", None),
-            enqueue=self.autonomy_queue.enqueue,
-            audit=getattr(self, "audit", None),
-        )
-
-        async def _rpc_echo(args):
-            return {"echo": args}
-
-        async def _rpc_time(args):
-            return {"now": _t.time()}
-
-        self.tool_rpc.register_tool("echo", _rpc_echo)
-        self.tool_rpc.register_tool("time", _rpc_time)
-        executor.register("toolrpc", self.tool_rpc.execute)
-
-        # H21.4: wire the calibration-gated autonomy hook (gated; no-op unless
-        # cognition.learning_enabled — and it only ever ADDS caution).
-        def _calibration_hook(action):
-            cog = getattr(self, "cognition", None)
-            if cog is None or not cog.sub_enabled("learning_enabled"):
-                return 0
-            lm = cog.module("learning")
-            if lm is None:
-                return 0
-            try:
-                return lm.autonomy_adjustment(str(action.get("kind", "")))
-            except Exception:
-                return 0
-        try:
-            self.autonomy.policy.calibration_hook = _calibration_hook
-        except Exception:
-            logger.debug("calibration hook wiring skipped", exc_info=True)
-
-        # H20.6 — agent-initiated sub-agent delegation (isolated session, capped).
-        from .subagents import SubAgentManager
-
-        async def _subagent_runner(task, session_id, agent):
-            picked = agent if agent in self.agents else "jarvis"
-            out = await self.process(task, agent=picked, channel="subagent")
-            return {"output": out, "session_id": session_id}
-
-        self.subagents = SubAgentManager(
-            runner=_subagent_runner,
-            max_concurrent=int(self.get_setting("autonomy.max_subagents", 3) or 3),
-        )
-
-        return executor
 
     async def _run_worldview_kg_sync(self):
         """Run one WorldView ontology -> knowledge-graph sync pass (best-effort)."""
@@ -747,9 +544,9 @@ class Orchestrator:
         self.heartbeat_scheduler.start(self)
         self._settings_watcher_task = asyncio.create_task(self._settings_watcher_loop())
         self._settings_watcher_task.add_done_callback(_log_task_result)
-        self._wire_autonomy()
+        self._autonomy.wire()
         self._scheduler.schedule_all()
-        self._autonomy_task = asyncio.create_task(self._autonomy_loop())
+        self._autonomy_task = asyncio.create_task(self._autonomy.loop())
         self._autonomy_task.add_done_callback(_log_task_result)
         # Oracle GitHub watcher is OFF by default: it polls a GitHub repo every 30s,
         # which a privacy-first local product should not do unsolicited. It's a
