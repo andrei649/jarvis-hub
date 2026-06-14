@@ -1924,6 +1924,11 @@ from agents.core.routers.actions import router as _actions_router  # noqa: E402
 from agents.core.routers.arena import router as _arena_router  # noqa: E402
 from agents.core.routers.review import router as _review_router  # noqa: E402
 from agents.core.routers.quality import router as _quality_router  # noqa: E402
+from agents.core.routers.security import router as _security_router  # noqa: E402
+# Re-export handler symbols some tests import directly from agents.web (CLN-3
+# pre-approved unblock A) — the router module is already imported above, so this
+# adds no new coupling; it only keeps `from agents.web import audit_verify` working.
+from agents.core.routers.security import audit_verify  # noqa: F401,E402
 app.include_router(_webhooks_router)
 app.include_router(_a2a_router)
 app.include_router(_pairing_router)
@@ -1936,6 +1941,7 @@ app.include_router(_actions_router)
 app.include_router(_arena_router)
 app.include_router(_review_router)
 app.include_router(_quality_router)
+app.include_router(_security_router)
 
 
 class DigestRunBody(BaseModel):
@@ -2377,212 +2383,6 @@ async def autonomy_approvals():
             "reversible": len(reversible),
             "irreversible": len(irreversible),
         },
-    })
-
-
-@app.post("/api/security/spotlight")
-async def security_spotlight(req: Request):
-    """H17.1 — datamark untrusted content + flag prompt-injection attempts."""
-    from agents.core.security.quarantine import spotlight
-    try:
-        body = await req.json()
-    except Exception:
-        body = {}
-    text = (body or {}).get("text", "")
-    if not text:
-        return JSONResponse({"error": "text required"}, status_code=400)
-    return _nocache_json(spotlight(text, (body or {}).get("source", "untrusted")))
-
-
-@app.post("/api/security/scan-injection")
-async def security_scan_injection(req: Request):
-    """H17.1 — return prompt-injection patterns found in text (empty = clean)."""
-    from agents.core.security.quarantine import detect_injection
-    try:
-        body = await req.json()
-    except Exception:
-        body = {}
-    flags = detect_injection((body or {}).get("text", ""))
-    return _nocache_json({"flags": flags, "suspicious": bool(flags)})
-
-
-@app.get("/api/security/governance")
-async def security_governance():
-    """H17.2 — public trust scorecard: injection + harm suites + OWASP Top 10 + gate."""
-    from agents.core.security.governance import governance_gate
-    return _nocache_json(governance_gate())
-
-
-# ── H17.3 Capability tokens + out-of-band kill-switch ─────────────────────────
-
-@app.post("/api/security/capabilities/issue", dependencies=[Depends(_admin_guard)])
-async def capabilities_issue(req: Request):
-    """Mint a scoped, expiring capability token (out-of-band; admin only)."""
-    broker = getattr(orch, "capabilities", None) if orch else None
-    if broker is None:
-        return JSONResponse({"error": "capability broker not available"}, status_code=503)
-    try:
-        body = await req.json()
-    except Exception:
-        body = {}
-    caps = (body or {}).get("capabilities") or []
-    if not caps:
-        return JSONResponse({"error": "capabilities required"}, status_code=400)
-    token = broker.issue(caps, source=body.get("source", ""),
-                         task_id=body.get("task_id", ""), ttl=float(body.get("ttl", 3600)))
-    return _nocache_json({"ok": True, "token": token})
-
-
-@app.get("/api/security/capabilities/check")
-async def capabilities_check(token: str, capability: str):
-    """Check whether a token currently grants a capability (read-only)."""
-    broker = getattr(orch, "capabilities", None) if orch else None
-    kill = getattr(orch, "kill_switch", None) if orch else None
-    if broker is None or kill is None:
-        return JSONResponse({"error": "capability broker not available"}, status_code=503)
-    from agents.core.security.capability import authorize
-    return _nocache_json(authorize(broker, kill, token, capability))
-
-
-@app.get("/api/security/kill-switch")
-async def kill_switch_status():
-    """Out-of-band kill-switch status."""
-    kill = getattr(orch, "kill_switch", None) if orch else None
-    if kill is None:
-        return JSONResponse({"error": "kill-switch not available"}, status_code=503)
-    return _nocache_json(kill.status())
-
-
-@app.post("/api/security/kill-switch", dependencies=[Depends(_admin_guard)])
-async def kill_switch_set(req: Request):
-    """Engage/disengage the kill-switch (operator action; agent can't reach this)."""
-    kill = getattr(orch, "kill_switch", None) if orch else None
-    if kill is None:
-        return JSONResponse({"error": "kill-switch not available"}, status_code=503)
-    try:
-        body = await req.json()
-    except Exception:
-        body = {}
-    scope = (body or {}).get("scope", "global")
-    if (body or {}).get("engage", True):
-        return _nocache_json({"ok": True, "engaged": kill.engage(scope, body.get("reason", ""))})
-    return _nocache_json({"ok": True, "disengaged": kill.disengage(scope)})
-
-
-# ── H17.4 Externally-anchored audit + intent attribution ──────────────────────
-
-@app.post("/api/security/audit/action")
-async def audit_record_action(req: Request):
-    """Record a signed action with causal intent attribution (why it happened)."""
-    log = getattr(orch, "intent_log", None) if orch else None
-    if log is None:
-        return JSONResponse({"error": "intent log not available"}, status_code=503)
-    try:
-        body = await req.json()
-    except Exception:
-        body = {}
-    for k in ("actor", "action", "why"):
-        if not (body or {}).get(k):
-            return JSONResponse({"error": "actor, action, why required"}, status_code=400)
-    entry = log.record(body["actor"], body["action"], body["why"],
-                       cause=body.get("cause", ""), metadata=body.get("metadata"))
-    return _nocache_json({"ok": True, "entry": entry})
-
-
-@app.get("/api/security/audit/intent")
-async def audit_intent(limit: int = Query(100, ge=1, le=1000)):
-    """List signed intent records + chain/signature verification."""
-    log = getattr(orch, "intent_log", None) if orch else None
-    if log is None:
-        return JSONResponse({"error": "intent log not available"}, status_code=503)
-    return _nocache_json({"verify": log.verify(), "entries": log.list(limit)})
-
-
-@app.post("/api/security/audit/anchor", dependencies=[Depends(_admin_guard)])
-async def audit_anchor():
-    """Anchor the audit / intent chain head into the external transparency log."""
-    anchor = getattr(orch, "transparency", None) if orch else None
-    if anchor is None:
-        return JSONResponse({"error": "transparency anchor not available"}, status_code=503)
-    root = ""
-    if getattr(orch, "audit", None) is not None:
-        try:
-            root = orch.audit.tail_hash()
-        except Exception:
-            root = ""
-    if not root and getattr(orch, "intent_log", None) is not None:
-        root = orch.intent_log.head()
-    receipt = anchor.anchor(root or "empty", source="audit")
-    return _nocache_json({"ok": True, "receipt": receipt})
-
-
-@app.get("/api/security/audit/verify")
-async def audit_verify():
-    """Verify the Merkle hash chain of the security audit log (tamper evidence).
-
-    'Tamper-evident' is only real if the chain is actually checked — this is the
-    check. Returns the first broken row id when integrity fails."""
-    audit = getattr(orch, "audit", None) if orch else None
-    if audit is None:
-        return JSONResponse({"error": "audit log not available"}, status_code=503)
-    valid, first_bad = await asyncio.to_thread(audit.verify_chain)
-    return _nocache_json({
-        "valid": valid,
-        "first_invalid_id": first_bad,
-        "entries": await asyncio.to_thread(audit.count),
-    })
-
-
-@app.get("/api/security/audit/anchors")
-async def audit_anchors(limit: int = Query(100, ge=1, le=1000)):
-    """List external anchor receipts + verify the anchor chain."""
-    anchor = getattr(orch, "transparency", None) if orch else None
-    if anchor is None:
-        return JSONResponse({"error": "transparency anchor not available"}, status_code=503)
-    return _nocache_json({"verify": anchor.verify(), "anchors": anchor.list(limit)})
-
-
-@app.get("/api/security/posture", dependencies=[Depends(_admin_guard)])
-async def security_posture():
-    """Packaged security posture: encrypted secrets + signed skills + sandbox + guardrails (H12.1)."""
-    if not orch:
-        return JSONResponse({"error": "not initialized"}, status_code=503)
-
-    # Secrets at-rest backend.
-    try:
-        from core.secrets import SecretStore
-        secret_backend = SecretStore().backend
-    except Exception:
-        secret_backend = "unavailable"
-
-    # Skill signing posture.
-    from core.skills import signing as _signing
-    skills = list(getattr(orch.skills, "skills", {}).values()) if getattr(orch, "skills", None) else []
-    skill_rows = [s.to_dict() for s in skills]
-    untrusted = [s for s in skill_rows if not s.get("trusted")]
-
-    # Sandbox isolation posture (HF-6 — flag host-exec without isolation, not just
-    # docker availability). Reflects the orchestrator's live Sandbox instance.
-    try:
-        sandbox_sec = orch.sandbox.security_status()
-    except Exception:
-        # Sandbox is optional; absence just means posture reports an unavailable
-        # backend rather than failing the security-posture endpoint.
-        sandbox_sec = {"backend": "unavailable", "isolated": False,
-                       "insecure_host_exec": False, "docker": False}
-
-    return _nocache_json({
-        "secrets": {"encrypted_at_rest": True, "backend": secret_backend},
-        "skills": {
-            "require_signed": _signing.require_signed(),
-            "total": len(skill_rows),
-            "trusted": len(skill_rows) - len(untrusted),
-            "untrusted": len(untrusted),
-            "untrusted_names": [s["name"] for s in untrusted],
-            "detail": skill_rows,
-        },
-        "sandbox": {"docker_available": sandbox_sec.get("docker", False), **sandbox_sec},
-        "guardrails": {"mode": orch.get_setting("security.guardrails_mode", "WARN")},
     })
 
 
