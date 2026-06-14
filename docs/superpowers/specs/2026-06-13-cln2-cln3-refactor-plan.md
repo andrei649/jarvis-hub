@@ -222,10 +222,10 @@ optional, wrap-only 5th step.
 
 ## 5. Phase 3 — CLN-3 route extraction (incremental, one domain per PR) — 🟡 IN PROGRESS 2026-06-14
 
-**Status:** 12 domains extracted into per-domain routers under `core/routers/` (each its own commit,
+**Status:** 14 domains extracted into per-domain routers under `core/routers/` (each its own commit,
 route-parity + full suite green throughout): rooms, notes, actions, arena, review, quality, security, skills,
-data_spaces, secrets, **mesh** (satellites/nodes/sync/toolrpc/subagents), **autonomy**. All use the Phase-1
-shared kernel — zero static `from agents import web`. **web.py: 5,037 → 3,644 LOC** so far.
+data_spaces, secrets, mesh, autonomy, **models_llm**, **oauth** (oauth+oracle+trust). All use the Phase-1
+shared kernel — zero static `from agents import web`. **web.py: 5,037 → 3,328 LOC** so far.
 
 **Two infra fixes during this work:** (1) pinned `fastapi>=0.136.3,<0.137` in both requirements files — fastapi
 0.137.0 regressed `app.include_router` (mounted routers add 0 routes → the app silently loses ~100 routes); CI
