@@ -222,18 +222,26 @@ optional, wrap-only 5th step.
 
 ## 5. Phase 3 — CLN-3 route extraction (incremental, one domain per PR) — 🟡 IN PROGRESS 2026-06-14
 
-**Status:** 6 domains extracted into per-domain routers under `core/routers/` (each its own commit, route-parity
-+ full suite green throughout): **rooms, notes, actions** (batch 1) and **arena, review, quality** (batch 3).
-All use the Phase-1 shared kernel (`nocache_json`/`error_json` from `web_helpers`, `get_orch` from `app_state`,
-guards from `_deps`) — zero `from agents import web`. **web.py: 5,037 → 4,657 LOC** so far. Also fixed the
-routers↔web import cycle at the source: `_deps.py` now resolves web via `sys.modules` (leaf module), clearing
-the CodeQL cyclic-import alerts for every router import and future extraction.
+**Status:** 8 domains extracted into per-domain routers under `core/routers/` (each its own commit, route-parity
++ full suite green throughout): **rooms, notes, actions** (batch 1), **arena, review, quality** (batch 3), and
+**security, skills** (batch 4). All use the Phase-1 shared kernel (`nocache_json`/`error_json` from
+`web_helpers`, `get_orch`/`dev_mode` from `app_state`, guards from `_deps`) — zero static `from agents import
+web`. **web.py: 5,037 → 4,264 LOC** so far. Also fixed the routers↔web import cycle at the source: `_deps.py`
+resolves web via `sys.modules` (leaf module), clearing the CodeQL cyclic-import alerts for every router import.
 
-**Deferred (need the keep-singleton-on-web + alias approach):** `data_spaces` and `secrets` own singletons
-that tests monkeypatch on `web` (`monkeypatch.setattr(web, "_data_spaces", …)`), so moving the singleton into
-the router would break those tests — handle by keeping the singleton's home on `web` (or repointing the 1-2
-test sites) per the §3 risk note. Payments/eval-datasets have cross-domain singleton edges
-(`clear_traces`→`_payment_broker`, `mcp_rpc`→`_dataset_store`) — extract with their consumers.
+**Unblock policy for test-coupled domains (established batch 4, zero test edits):** most remaining domains have
+test-coupling to `web`. Two sanctioned, behavior-preserving unblocks: **(A)** if a test imports a handler
+symbol from `agents.web` (e.g. `from agents.web import audit_verify`), re-export it from `web.py` after moving
+(`from agents.core.routers.X import handler  # noqa: F401`); **(B)** if a handler reads a web.py module-global a
+test monkeypatches (`DEV_MODE`, lazily-created singletons), add a request-time `app_state` accessor that reads
+`web.X` via `sys.modules` (like `get_orch`/`dev_mode`) so the monkeypatch stays observed. Both keep every test
+unchanged and add no static import edge.
+
+**Still to extract:** `data_spaces`/`secrets` (singletons monkeypatched on `web` → unblock B: keep the
+singleton's home on `web`, read via a sys.modules accessor); payments/eval-datasets (cross-domain singleton
+edges — extract with consumers); the larger memory/KG, autonomy, MCP, analytics, oauth/oracle, admin
+(settings/prompts/stats), models/llm, integrations, misc/heartbeat/health-voice; dashboard + chat-SSE LAST
+(hot path / shared `asyncio.Lock`).
 
 Tiered easiest→hardest; each PR gated by the Phase-0 parity guard + full suite. Mirror the existing
 `capture.py`/`pairing.py` pattern; move a domain's owning singleton with it; keep `put_category` in
