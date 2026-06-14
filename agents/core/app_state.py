@@ -31,3 +31,17 @@ def get_orch() -> Optional[object]:
     """Return the live Orchestrator (or None before startup / after shutdown)."""
     web = sys.modules.get("agents.web")
     return getattr(web, "orch", None) if web is not None else None
+
+
+def dev_mode() -> bool:
+    """Return web.py's DEV_MODE flag, read at REQUEST time (CLN-3 unblock B).
+
+    Same late-binding rationale as `get_orch`: `DEV_MODE` is a web.py
+    module-global (and the skills test suite rebinds it with
+    `monkeypatch.setattr(web, "DEV_MODE", ...)`), so the extracted skills router
+    must read it through `sys.modules` on each call rather than capturing a bare
+    `DEV_MODE` at import — that keeps the test's monkeypatch observed and avoids a
+    static import edge back into `agents.web`.
+    """
+    web = sys.modules.get("agents.web")
+    return bool(getattr(web, "DEV_MODE", False)) if web is not None else False

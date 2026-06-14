@@ -1055,22 +1055,6 @@ async def get_agents():
     return {"agents": result}
 
 
-@app.get("/skills")
-async def list_skills():
-    if not orch:
-        return JSONResponse({"error": "not initialized"}, status_code=503)
-    result = {}
-    for name, skill in orch.skills.skills.items():
-        result[name] = {
-            "name": skill.name,
-            "version": skill.version,
-            "description": skill.description,
-            "agents": skill.agents,
-            "commands": skill.commands_meta,
-        }
-    return {"skills": result}
-
-
 @app.get("/sessions", dependencies=[Depends(_user_guard)])
 async def get_sessions():
     if not orch:
@@ -1925,6 +1909,7 @@ from agents.core.routers.arena import router as _arena_router  # noqa: E402
 from agents.core.routers.review import router as _review_router  # noqa: E402
 from agents.core.routers.quality import router as _quality_router  # noqa: E402
 from agents.core.routers.security import router as _security_router  # noqa: E402
+from agents.core.routers.skills import router as _skills_router  # noqa: E402
 # Re-export handler symbols some tests import directly from agents.web (CLN-3
 # pre-approved unblock A) — the router module is already imported above, so this
 # adds no new coupling; it only keeps `from agents.web import audit_verify` working.
@@ -1942,6 +1927,7 @@ app.include_router(_arena_router)
 app.include_router(_review_router)
 app.include_router(_quality_router)
 app.include_router(_security_router)
+app.include_router(_skills_router)
 
 
 class DigestRunBody(BaseModel):
@@ -1980,185 +1966,6 @@ async def schedule_parse(req: Request):
         return JSONResponse({"error": "text required"}, status_code=400)
     result = parse_schedule(text)
     return _nocache_json(result, status_code=200 if result.get("ok") else 422)
-
-
-@app.get("/sandbox/status")
-async def sandbox_status():
-    if not orch:
-        return JSONResponse({"error": "not initialized"}, status_code=503)
-    return {
-        "available": orch.sandbox._has_docker,
-        "docker_image": orch.sandbox.docker_image,
-        "timeout": orch.sandbox.timeout,
-        # HF-6 — expose isolation posture so an active host-exec fallback is visible.
-        **orch.sandbox.security_status(),
-    }
-
-
-class SandboxExecuteBody(BaseModel):
-    code: str = Field("", max_length=32768)
-    language: str = "python"
-
-
-@app.post("/sandbox/execute", dependencies=[Depends(_user_guard)])
-async def sandbox_execute(body: SandboxExecuteBody):
-    if not orch:
-        return JSONResponse({"error": "not initialized"}, status_code=503)
-    if not DEV_MODE:
-        return JSONResponse({"error": "sandbox disabled — set DEV_MODE=1 to enable"}, status_code=403)
-    code = body.code
-    language = body.language
-    if language == "python":
-        result = await orch.sandbox.execute_python(code)
-    else:
-        result = await orch.sandbox.execute_shell(code)
-    return {
-        "stdout": result.stdout,
-        "stderr": result.stderr,
-        "exit_code": result.exit_code,
-        "duration": result.duration,
-        "success": result.success,
-    }
-
-
-@app.post("/skills/import", dependencies=[Depends(_user_guard)])
-async def skills_import(req: Request):
-    if not orch:
-        return JSONResponse({"error": "not initialized"}, status_code=503)
-    if not DEV_MODE:
-        return JSONResponse({"error": "skill import disabled — set DEV_MODE=1 to enable"}, status_code=403)
-    body = await req.json()
-    source = body.get("source", "hermes")
-    skill_name = body.get("skill", "")
-    if not skill_name:
-        return JSONResponse({"error": "skill name required"}, status_code=400)
-    if source == "hermes":
-        ok = await orch.skill_importer.import_from_hermes(skill_name)
-    elif source == "openclaw":
-        ok = await orch.skill_importer.import_from_openclaw(skill_name)
-    else:
-        ok = await orch.skill_importer.import_from_github(source, skill_name)
-    if ok:
-        orch.skills.discover()
-        return {"ok": True, "source": source, "skill": skill_name}
-    return JSONResponse({"ok": False, "error": f"Skill '{skill_name}' not found in {source}"}, status_code=404)
-
-
-@app.get("/skills/imported")
-async def skills_imported():
-    if not orch:
-        return JSONResponse({"error": "not initialized"}, status_code=503)
-    return {"imported": orch.skill_importer.list_imported()}
-
-
-# ── Agent Marketplace Endpoints (H5.8) ───────────────────────────
-
-class PublishSkillBody(BaseModel):
-    name: str
-
-
-class InstallSkillBody(BaseModel):
-    name: str
-
-
-class InstallZipBody(BaseModel):
-    zip_base64: str
-
-
-@app.get("/api/skills/marketplace", dependencies=[Depends(_admin_guard)])
-async def marketplace_list():
-    if not orch:
-        return JSONResponse({"error": "not initialized"}, status_code=503)
-    try:
-        skills = orch.marketplace.list_skills()
-        return {"skills": skills}
-    except Exception:
-        logger.exception("Failed to list marketplace skills")
-        return JSONResponse({"error": "internal error", "code": 500}, status_code=500)
-
-
-@app.post("/api/skills/marketplace/publish", dependencies=[Depends(_admin_guard)])
-async def marketplace_publish(body: PublishSkillBody):
-    if not orch:
-        return JSONResponse({"error": "not initialized"}, status_code=503)
-    try:
-        res = orch.marketplace.publish_skill(body.name)
-        return {"ok": True, "published": res}
-    except FileNotFoundError as e:
-        return error_json(e, 404, "skill not found")
-    except Exception:
-        logger.exception("Failed to publish skill")
-        return JSONResponse({"error": "internal error", "code": 500}, status_code=500)
-
-
-@app.post("/api/skills/marketplace/install", dependencies=[Depends(_admin_guard)])
-async def marketplace_install(body: InstallSkillBody):
-    if not orch:
-        return JSONResponse({"error": "not initialized"}, status_code=503)
-    try:
-        ok = orch.marketplace.install_skill(body.name)
-        if ok:
-            orch.skills.discover()
-            return {"ok": True, "installed": body.name}
-        return JSONResponse({"error": f"Failed to install skill '{body.name}'"}, status_code=500)
-    except PermissionError:
-        # Blocked by the moderation/signature gate (H12.12). Don't log the
-        # caller-supplied name (log-injection); the response echoes it instead.
-        logger.warning("Skill install blocked by moderation/signature policy")
-        return JSONResponse(
-            {"error": f"skill '{body.name}' blocked by moderation/signature policy"},
-            status_code=403,
-        )
-    except ValueError:
-        return JSONResponse({"error": f"skill '{body.name}' not found in registry"}, status_code=404)
-    except Exception:
-        logger.exception("Failed to install skill")
-        return JSONResponse({"error": "internal error", "code": 500}, status_code=500)
-
-
-@app.post("/api/skills/marketplace/install-zip", dependencies=[Depends(_admin_guard)])
-async def marketplace_install_zip(body: InstallZipBody):
-    if not orch:
-        return JSONResponse({"error": "not initialized"}, status_code=503)
-    try:
-        import base64
-        zip_bytes = base64.b64decode(body.zip_base64)
-        ok = orch.marketplace.install_from_zip(zip_bytes)
-        if ok:
-            orch.skills.discover()
-            return {"ok": True}
-        return JSONResponse({"error": "Failed to install skill from zip"}, status_code=500)
-    except (PermissionError, ValueError):
-        # Rejected by the zip-slip guard or the signature gate (H12.12).
-        logger.warning("Skill zip install rejected (unsafe path or signature policy)")
-        return JSONResponse(
-            {"error": "skill package rejected (unsafe path or signature policy)"},
-            status_code=400,
-        )
-    except Exception:
-        logger.exception("Failed to install skill from zip")
-        return JSONResponse({"error": "internal error", "code": 500}, status_code=500)
-
-
-class ReviewSkillBody(BaseModel):
-    name: str
-    status: str = Field(..., pattern="^(pending|approved|rejected)$")
-
-
-@app.post("/api/skills/marketplace/review", dependencies=[Depends(_admin_guard)])
-async def marketplace_review(body: ReviewSkillBody):
-    """Moderate a marketplace skill (H12.12): set review status to approved/rejected/pending."""
-    if not orch:
-        return JSONResponse({"error": "not initialized"}, status_code=503)
-    try:
-        orch.marketplace.set_review_status(body.name, body.status)
-        return {"ok": True, "name": body.name, "review_status": body.status}
-    except ValueError:
-        return JSONResponse({"error": f"skill '{body.name}' not found in registry"}, status_code=404)
-    except Exception:
-        logger.exception("Failed to set skill review status")
-        return JSONResponse({"error": "internal error", "code": 500}, status_code=500)
-
 
 
 @app.get("/learning")
