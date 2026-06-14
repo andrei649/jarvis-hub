@@ -1469,189 +1469,6 @@ async def autonomy_call(body: CallRequestBody):
     return _nocache_json(result, status_code=200 if result.get("ok") else 422)
 
 
-@app.get("/api/sync", dependencies=[Depends(_user_guard)])
-async def sync_status():
-    """H12.13 — E2E device-sync status (opt-in, fail-closed)."""
-    s = getattr(orch, "e2e_sync", None) if orch else None
-    if s is None:
-        return _nocache_json({"enabled": False, "available": False, "backend": "unavailable"})
-    return _nocache_json(s.status())
-
-
-class SyncPushBody(BaseModel):
-    records: list[dict] = Field(default_factory=list)
-    kind: str = Field("memory", max_length=40)
-
-
-@app.post("/api/sync/push", dependencies=[Depends(_user_guard)])
-async def sync_push(body: SyncPushBody):
-    """H12.13 — encrypt records into an E2E manifest (transport is host-side)."""
-    s = getattr(orch, "e2e_sync", None) if orch else None
-    if s is None:
-        return JSONResponse({"error": "e2e sync unavailable"}, status_code=503)
-    return _nocache_json(s.build_push(body.records, kind=body.kind))
-
-
-class SyncPullBody(BaseModel):
-    manifest: dict = Field(default_factory=dict)
-
-
-@app.post("/api/sync/pull", dependencies=[Depends(_user_guard)])
-async def sync_pull(body: SyncPullBody):
-    """H12.13 — decrypt an inbound E2E manifest from another device."""
-    s = getattr(orch, "e2e_sync", None) if orch else None
-    if s is None:
-        return JSONResponse({"error": "e2e sync unavailable"}, status_code=503)
-    return _nocache_json({"records": s.apply_pull(body.manifest)})
-
-
-class SatelliteRegisterBody(BaseModel):
-    satellite_id: str = Field(..., max_length=80)
-    meta: dict = Field(default_factory=dict)
-
-
-@app.get("/api/satellites", dependencies=[Depends(_user_guard)])
-async def satellites_list():
-    """H12.8 — registered mic satellites + shared-inference stats."""
-    h = getattr(orch, "satellite_hub", None) if orch else None
-    if h is None:
-        return _nocache_json({"satellites": [], "stats": {}})
-    return _nocache_json({"satellites": h.list(), "stats": h.stats()})
-
-
-@app.post("/api/satellites/register", dependencies=[Depends(_user_guard)])
-async def satellites_register(body: SatelliteRegisterBody):
-    """H12.8 — register a mic satellite with the shared-GPU hub."""
-    h = getattr(orch, "satellite_hub", None) if orch else None
-    if h is None:
-        return JSONResponse({"error": "satellite hub unavailable"}, status_code=503)
-    return _nocache_json({"ok": True, "satellite": h.register(body.satellite_id, body.meta)})
-
-
-@app.delete("/api/satellites/{satellite_id}", dependencies=[Depends(_user_guard)])
-async def satellites_unregister(satellite_id: str):
-    """H12.8 — remove a satellite from the hub."""
-    h = getattr(orch, "satellite_hub", None) if orch else None
-    if h is None:
-        return JSONResponse({"error": "satellite hub unavailable"}, status_code=503)
-    return _nocache_json({"ok": h.unregister(satellite_id)})
-
-
-class SatelliteDispatchBody(BaseModel):
-    payload: str = Field("", max_length=20000)
-    kind: str = Field("transcribe", max_length=40)
-
-
-@app.post("/api/satellites/{satellite_id}/dispatch", dependencies=[Depends(_user_guard)])
-async def satellites_dispatch(satellite_id: str, body: SatelliteDispatchBody):
-    """H12.8 — forward a satellite's request to the shared inference rail."""
-    h = getattr(orch, "satellite_hub", None) if orch else None
-    if h is None:
-        return JSONResponse({"error": "satellite hub unavailable"}, status_code=503)
-    result = await h.dispatch(satellite_id, body.payload, kind=body.kind)
-    return _nocache_json(result, status_code=200 if result.get("ok") else 404)
-
-
-class NodeRegisterBody(BaseModel):
-    node_id: str = Field(..., max_length=80)
-    capabilities: list[str] = Field(default_factory=list)
-    meta: dict = Field(default_factory=dict)
-
-
-@app.get("/api/nodes", dependencies=[Depends(_user_guard)])
-async def nodes_list():
-    """H12.17 — registered governed execution nodes (capabilities only, no tokens)."""
-    h = getattr(orch, "node_mesh", None) if orch else None
-    return _nocache_json({"nodes": h.nodes() if h is not None else []})
-
-
-@app.post("/api/nodes/register", dependencies=[Depends(_admin_guard)])
-async def nodes_register(body: NodeRegisterBody):
-    """H12.17 — register an execution node; mints a capability-scoped token (admin)."""
-    h = getattr(orch, "node_mesh", None) if orch else None
-    if h is None:
-        return JSONResponse({"error": "node mesh unavailable"}, status_code=503)
-    return _nocache_json({"ok": True, "node": h.register_node(
-        body.node_id, body.capabilities, body.meta)})
-
-
-@app.delete("/api/nodes/{node_id}", dependencies=[Depends(_admin_guard)])
-async def nodes_unregister(node_id: str):
-    """H12.17 — revoke a node and its capability token (admin)."""
-    h = getattr(orch, "node_mesh", None) if orch else None
-    if h is None:
-        return JSONResponse({"error": "node mesh unavailable"}, status_code=503)
-    return _nocache_json({"ok": h.revoke(node_id)})
-
-
-class NodeDispatchBody(BaseModel):
-    capability: str = Field(..., max_length=80)
-    action: str = Field("", max_length=200)
-    payload: dict = Field(default_factory=dict)
-
-
-@app.post("/api/nodes/{node_id}/dispatch", dependencies=[Depends(_user_guard)])
-async def nodes_dispatch(node_id: str, body: NodeDispatchBody):
-    """H12.17 — dispatch a capability-scoped action to a node (gated + approval).
-
-    Authorized against the node's capability token + kill-switch (H17.3), then
-    enqueued ask-tier; the on-device run is deferred to the node client."""
-    h = getattr(orch, "node_mesh", None) if orch else None
-    if h is None:
-        return JSONResponse({"error": "node mesh unavailable"}, status_code=503)
-    result = h.dispatch(node_id, body.capability, body.action, body.payload)
-    return _nocache_json(result, status_code=200 if result.get("ok") else 422)
-
-
-class ToolRPCCallBody(BaseModel):
-    tool: str = Field(..., max_length=80)
-    args: dict = Field(default_factory=dict)
-
-
-@app.get("/api/toolrpc/tools", dependencies=[Depends(_user_guard)])
-async def toolrpc_tools():
-    """H20.1 — tools the governed RPC surface exposes to sandboxed code."""
-    s = getattr(orch, "tool_rpc", None) if orch else None
-    return _nocache_json({"tools": s.tools() if s is not None else []})
-
-
-@app.post("/api/toolrpc/call", dependencies=[Depends(_user_guard)])
-async def toolrpc_call(body: ToolRPCCallBody):
-    """H20.1 — call a tool through the governed RPC surface (allowlist + gating).
-
-    Read-only tools return inline; gated tools return approval_required + a task
-    id (they run only after approval). Mirrors what sandboxed script code does."""
-    s = getattr(orch, "tool_rpc", None) if orch else None
-    if s is None:
-        return JSONResponse({"error": "tool-rpc unavailable"}, status_code=503)
-    result = await s.handle({"tool": body.tool, "args": body.args})
-    return _nocache_json(result, status_code=200 if result.get("ok") else 422)
-
-
-class SubAgentSpawnBody(BaseModel):
-    task: str = Field(..., max_length=4000)
-    agent: str = Field("", max_length=40)
-
-
-@app.get("/api/subagents", dependencies=[Depends(_user_guard)])
-async def subagents_list():
-    """H20.6 — spawned sub-agents + concurrency stats."""
-    m = getattr(orch, "subagents", None) if orch else None
-    if m is None:
-        return _nocache_json({"spawns": [], "stats": {}})
-    return _nocache_json({"spawns": m.list(), "stats": m.stats()})
-
-
-@app.post("/api/subagents/spawn", dependencies=[Depends(_user_guard)])
-async def subagents_spawn(body: SubAgentSpawnBody):
-    """H20.6 — spawn an isolated sub-agent (capped; rejected past the cap)."""
-    m = getattr(orch, "subagents", None) if orch else None
-    if m is None:
-        return JSONResponse({"error": "sub-agents unavailable"}, status_code=503)
-    result = await m.spawn(body.task, agent=body.agent)
-    return _nocache_json(result, status_code=200 if result.get("ok") else 429)
-
-
 class ModelSwapBody(BaseModel):
     command: str = Field(..., max_length=200)
 
@@ -1796,6 +1613,7 @@ from agents.core.routers.security import router as _security_router  # noqa: E40
 from agents.core.routers.skills import router as _skills_router  # noqa: E402
 from agents.core.routers.data_spaces import router as _data_spaces_router  # noqa: E402
 from agents.core.routers.secrets import router as _secrets_router  # noqa: E402
+from agents.core.routers.mesh import router as _mesh_router  # noqa: E402
 app.include_router(_webhooks_router)
 app.include_router(_a2a_router)
 app.include_router(_pairing_router)
@@ -1812,6 +1630,7 @@ app.include_router(_security_router)
 app.include_router(_skills_router)
 app.include_router(_data_spaces_router)
 app.include_router(_secrets_router)
+app.include_router(_mesh_router)
 
 
 class DigestRunBody(BaseModel):
