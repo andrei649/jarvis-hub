@@ -141,7 +141,7 @@ each call) — never `from agents.web import orch` (freezes `None`). `lifespan` 
 
 ---
 
-## 4. Phase 2 — CLN-2 orchestrator decomposition (facade-preserving) — 🟡 steps 1–2 LANDED 2026-06-13
+## 4. Phase 2 — CLN-2 orchestrator decomposition (facade-preserving) — 🟡 steps 1–3 LANDED 2026-06-13
 
 **Status (step 1 — `SchedulerService`):** shipped. `core/scheduler_service.py` owns the 5 `schedule_*`
 registration methods + 4 job bodies (`run_log_quick/hourly/daily_scan`, `run_daily_digest`); `start_channels`
@@ -158,9 +158,18 @@ bare-init constraint, the *methods* `_run_llm_control`, `_control_master_enabled
 only `lmstudio`/`llm_router`/`_runtime_settings` set). `_env_flag`/`_as_bool` (general helpers, interleaved in
 the block) also stayed.
 
-orchestrator.py: **2,202 → ~1,892 LOC (−310 across steps 1–2)**. Behavior-identical: route-parity + lifespan
-guards green, full suite **2,234 passed / 2 skipped**. Remaining managers (`PluginGatherer`,
-`AutonomyCoordinator`) below.
+**Status (step 3 — `plugin_gatherer`):** shipped. The plugin-data assembly moved to
+`core/plugin_gatherer.py` as module-level free functions (`gather_plugin_data(orch, …)`,
+`extract_location`, `format_plugin_data`, `any_agent_can(orch, …)`, `first_target_agent(orch, …)`); the
+orchestrator keeps all five as **thin one-line wrappers/delegators** so the public surface is byte-compatible.
+`_gather_plugin_data` stays a bound entrypoint (`test_concurrent_session_isolation` replaces it as a bound
+method); `_any_agent_can`/`_first_target_agent` stay callable (`test_routing` calls them on a full-init orch);
+`_format_plugin_data` stays a wrapper (called via `self.` at two sites). `plugin_gatherer` imports only leaf
+modules (`.log`, `.errors`) and takes `orch` as a parameter → no import cycle. (Also removed 3 now-unused
+imports orphaned by steps 1/3.)
+
+orchestrator.py: **2,202 → 1,822 LOC (−380 across steps 1–3)**. Behavior-identical: route-parity + lifespan
+guards green, full suite **2,234 passed / 2 skipped**. Remaining manager (`AutonomyCoordinator`) below.
 
 
 Four safe manager extractions, ascending risk. Each is a *free-function-body + thin-wrapper* move so bare

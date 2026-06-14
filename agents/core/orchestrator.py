@@ -27,6 +27,7 @@ from .checkpoint import CheckpointManager
 from .heartbeat import HeartbeatScheduler
 from .scheduler_service import SchedulerService
 from .llm_control import detect_llm_control  # re-exported: NL LLM-control detection (CLN-2)
+from . import plugin_gatherer  # live-plugin data gathering (CLN-2)
 from .learning.loop import LearningLoop
 from .skills.loader import SkillLoader
 from .skills.importer import SkillImporter
@@ -35,7 +36,6 @@ from .mcp.client import MCPManager
 from .autonomy import AutonomyWorker, TaskQueue, AutonomyPolicy, PreferenceStore, TaskExecutor
 from .autonomy import ProactiveObserver, default_probes
 from .autonomy.inbox import build_decision_card
-from .autonomy.digest import build_morning_brief, build_evening_retro
 from .autonomy.worker import is_night_window
 from .autonomy.reflection import DailyReflector
 from .autonomy.log_scanner import LogBugScanner
@@ -48,7 +48,7 @@ from .security.audit import AuditLogger
 from .security.types import RedactionMode, SecurityEvent, SecurityEventType
 from .log import log_error
 from .errors import (
-    E_PLUGIN_BLOCKED, E_LLM_BACKEND_MISSING, E_LLM_TIMEOUT,
+    E_LLM_BACKEND_MISSING, E_LLM_TIMEOUT,
     E_INTERNAL_UNEXPECTED,
 )
 from .channels.base import ChannelAdapter
@@ -1364,89 +1364,19 @@ class Orchestrator:
         return chosen
 
     def _first_target_agent(self, intent) -> str:
-        return intent.target_agents[0] if intent.target_agents and len(intent.target_agents) > 0 else "jarvis"
+        return plugin_gatherer.first_target_agent(self, intent)
 
     def _any_agent_can(self, plugin: str, intent) -> bool:
-        agents = intent.target_agents if intent.target_agents else ["jarvis"]
-        return any(self.permission_gate.check_call(plugin, a) for a in agents)
+        return plugin_gatherer.any_agent_can(self, plugin, intent)
 
     async def _gather_plugin_data(self, text: str, intent) -> dict:
-        data = {}
-        keywords = intent.context.get("keywords_found", [])
-        text_lower = text.lower()
-
-        if "weather" in keywords or any(w in text_lower for w in ["weather", "vremea", "temperature", "ploaie", "temperatura"]):
-            if self._any_agent_can("weather", intent):
-                wp = self.plugins.get("weather")
-                if wp:
-                    location = self._extract_location(text)
-                    data["weather"] = await wp.get_weather(location)
-            else:
-                log_error(logger, E_PLUGIN_BLOCKED, name="weather")
-
-        if "news" in keywords or any(w in text_lower for w in ["news", "stiri", "headlines", "noutati"]):
-            if self._any_agent_can("news", intent):
-                np = self.plugins.get("news")
-                if np:
-                    category = "general"
-                    if any(w in text_lower for w in ["tech", "technology", "tehnologie"]):
-                        category = "technology"
-                    elif any(w in text_lower for w in ["business", "afaceri"]):
-                        category = "business"
-                    data["news"] = await np.summarize(category)
-            else:
-                log_error(logger, E_PLUGIN_BLOCKED, name="news")
-
-        if "calendar" in keywords or any(w in text_lower for w in ["calendar", "agenda", "program", "sedin", "meeting", "eveniment"]):
-            if self._any_agent_can("google-calendar", intent):
-                gp = self.plugins.get("google-calendar")
-                if gp and gp.access_token:
-                    data["calendar"] = await gp.get_today_events()
-
-        if "email" in keywords or any(w in text_lower for w in ["email", "mail", "inbox", "mesaj", "hangup", "prim"]):
-            if self._any_agent_can("gmail", intent):
-                gp = self.plugins.get("gmail")
-                if gp and gp.access_token:
-                    data["email"] = await gp.list_messages(max_results=5)
-
-        if "research" in keywords or "search" in keywords or any(w in text_lower for w in ["research", "caut", "search", "find", "gaseste", "investigheaza"]):
-            if self._any_agent_can("websearch", intent):
-                wp = self.plugins.get("websearch")
-                if wp:
-                    data["websearch"] = await wp.search(text, max_results=5)
-
-        if "worldview" in keywords or any(w in text_lower for w in [
-            "satellite", "satelit", "recon", "overflight", "overpass", "satpass",
-            "geospatial", "osint", "hormuz", "strait", "dark vessel",
-            "jamming", "bruiaj", "footprint", "overhead pass",
-        ]):
-            if self._any_agent_can("worldview", intent):
-                wv = self.plugins.get("worldview")
-                if wv:
-                    data["worldview"] = await wv.recon_overview()
-            else:
-                log_error(logger, E_PLUGIN_BLOCKED, name="worldview")
-
-        return data
+        return await plugin_gatherer.gather_plugin_data(self, text, intent)
 
     def _extract_location(self, text: str) -> str:
-        text_lower = text.lower()
-        for kw in ["in ", "la ", "pentru ", "din "]:
-            if kw in text_lower:
-                idx = text_lower.index(kw) + len(kw)
-                rest = text[idx:].strip().rstrip("?.!")
-                if rest and not rest.startswith(("the", "a", "an", "my")):
-                    return rest
-        return ""
+        return plugin_gatherer.extract_location(text)
 
     def _format_plugin_data(self, data: dict) -> str:
-        if not data:
-            return ""
-        blocks = []
-        for key, value in data.items():
-            if value:
-                blocks.append(f"[REAL-TIME DATA — {key.upper()}]:\n{value}")
-        return "\n\n".join(blocks) + "\n\n" if blocks else ""
+        return plugin_gatherer.format_plugin_data(data)
 
     def _runtime_state_block(self) -> str:
         """Ground-truth runtime facts injected into the prompt so agents report
