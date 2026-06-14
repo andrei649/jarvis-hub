@@ -222,11 +222,11 @@ optional, wrap-only 5th step.
 
 ## 5. Phase 3 — CLN-3 route extraction (incremental, one domain per PR) — 🟡 IN PROGRESS 2026-06-14
 
-**Status:** 8 domains extracted into per-domain routers under `core/routers/` (each its own commit, route-parity
-+ full suite green throughout): **rooms, notes, actions** (batch 1), **arena, review, quality** (batch 3), and
-**security, skills** (batch 4). All use the Phase-1 shared kernel (`nocache_json`/`error_json` from
-`web_helpers`, `get_orch`/`dev_mode` from `app_state`, guards from `_deps`) — zero static `from agents import
-web`. **web.py: 5,037 → 4,264 LOC** so far. Also fixed the routers↔web import cycle at the source: `_deps.py`
+**Status:** 10 domains extracted into per-domain routers under `core/routers/` (each its own commit,
+route-parity + full suite green throughout): **rooms, notes, actions** (batch 1), **arena, review, quality**
+(batch 3), **security, skills** (batch 4), and **data_spaces, secrets/widgets** (batch 5). All use the Phase-1
+shared kernel (`nocache_json`/`error_json` from `web_helpers`, `get_orch`/`dev_mode` from `app_state`, guards
+from `_deps`) — zero static `from agents import web`. **web.py: 5,037 → 4,095 LOC** so far. Also fixed the routers↔web import cycle at the source: `_deps.py`
 resolves web via `sys.modules` (leaf module), clearing the CodeQL cyclic-import alerts for every router import.
 
 **Unblock policy for test-coupled domains (established batch 4, zero test edits):** most remaining domains have
@@ -239,11 +239,11 @@ test monkeypatches (`DEV_MODE`, lazily-created singletons), add a request-time `
 `web.X` via `sys.modules` (like `get_orch`/`dev_mode`) so the monkeypatch stays observed. Both keep every test
 unchanged and add no static import edge.
 
-**Still to extract:** `data_spaces`/`secrets` (singletons monkeypatched on `web` → unblock B: keep the
-singleton's home on `web`, read via a sys.modules accessor); payments/eval-datasets (cross-domain singleton
-edges — extract with consumers); the larger memory/KG, autonomy, MCP, analytics, oauth/oracle, admin
-(settings/prompts/stats), models/llm, integrations, misc/heartbeat/health-voice; dashboard + chat-SSE LAST
-(hot path / shared `asyncio.Lock`).
+**Still to extract:** payments/eval-datasets (cross-domain singleton edges — extract with consumers); the
+larger memory/KG, autonomy, MCP, analytics, oauth/oracle, admin (settings/prompts/stats), models/llm,
+integrations, misc/heartbeat/health-voice; dashboard + chat-SSE LAST (hot path / shared `asyncio.Lock`).
+`data_spaces`/`secrets` ✅ done (batch 5) — `data_spaces` via unblock B (singleton home stays on `web`, router
+reads it via a sys.modules accessor); `secrets` was orchestrator-only (no unblock needed).
 
 Tiered easiest→hardest; each PR gated by the Phase-0 parity guard + full suite. Mirror the existing
 `capture.py`/`pairing.py` pattern; move a domain's owning singleton with it; keep `put_category` in
