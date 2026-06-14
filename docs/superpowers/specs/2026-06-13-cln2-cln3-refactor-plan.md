@@ -220,7 +220,20 @@ optional, wrap-only 5th step.
 
 ---
 
-## 5. Phase 3 — CLN-3 route extraction (incremental, one domain per PR)
+## 5. Phase 3 — CLN-3 route extraction (incremental, one domain per PR) — 🟡 IN PROGRESS 2026-06-14
+
+**Status:** 6 domains extracted into per-domain routers under `core/routers/` (each its own commit, route-parity
++ full suite green throughout): **rooms, notes, actions** (batch 1) and **arena, review, quality** (batch 3).
+All use the Phase-1 shared kernel (`nocache_json`/`error_json` from `web_helpers`, `get_orch` from `app_state`,
+guards from `_deps`) — zero `from agents import web`. **web.py: 5,037 → 4,657 LOC** so far. Also fixed the
+routers↔web import cycle at the source: `_deps.py` now resolves web via `sys.modules` (leaf module), clearing
+the CodeQL cyclic-import alerts for every router import and future extraction.
+
+**Deferred (need the keep-singleton-on-web + alias approach):** `data_spaces` and `secrets` own singletons
+that tests monkeypatch on `web` (`monkeypatch.setattr(web, "_data_spaces", …)`), so moving the singleton into
+the router would break those tests — handle by keeping the singleton's home on `web` (or repointing the 1-2
+test sites) per the §3 risk note. Payments/eval-datasets have cross-domain singleton edges
+(`clear_traces`→`_payment_broker`, `mcp_rpc`→`_dataset_store`) — extract with their consumers.
 
 Tiered easiest→hardest; each PR gated by the Phase-0 parity guard + full suite. Mirror the existing
 `capture.py`/`pairing.py` pattern; move a domain's owning singleton with it; keep `put_category` in
