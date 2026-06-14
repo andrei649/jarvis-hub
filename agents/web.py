@@ -1542,57 +1542,6 @@ async def learning_propose():
     return _nocache_json({"ok": True, "proposed": proposals, "count": len(proposals)})
 
 
-# ── H10.18 Action-Level Approval ──────────────────────────────────────────────
-
-@app.get("/api/actions")
-async def actions_list(status: str = Query("", max_length=20)):
-    q = getattr(orch, "action_approvals", None) if orch else None
-    if q is None:
-        return _nocache_json({"actions": [], "stats": {}})
-    return _nocache_json({"actions": q.list(status or None), "stats": q.stats()})
-
-
-@app.get("/api/actions/pending")
-async def actions_pending():
-    q = getattr(orch, "action_approvals", None) if orch else None
-    if q is None:
-        return _nocache_json({"actions": []})
-    return _nocache_json({"actions": q.list("pending")})
-
-
-@app.post("/api/actions/request", dependencies=[Depends(_user_guard)])
-async def actions_request(req: Request):
-    """Register a pending tool-call approval (sub-task granularity)."""
-    q = getattr(orch, "action_approvals", None) if orch else None
-    if q is None:
-        return JSONResponse({"error": "action approvals not available"}, status_code=503)
-    try:
-        body = await req.json()
-    except Exception:
-        body = {}
-    if not (body or {}).get("tool"):
-        return JSONResponse({"error": "tool required"}, status_code=400)
-    return _nocache_json({"ok": True, "action": q.request(body)})
-
-
-@app.post("/api/actions/{action_id}/decide", dependencies=[Depends(_admin_guard)])
-async def actions_decide(action_id: str, req: Request):
-    """Approve or reject a single pending action (admin)."""
-    q = getattr(orch, "action_approvals", None) if orch else None
-    if q is None:
-        return JSONResponse({"error": "action approvals not available"}, status_code=503)
-    try:
-        body = await req.json()
-    except Exception:
-        body = {}
-    if "approved" not in (body or {}):
-        return JSONResponse({"error": "approved (bool) required"}, status_code=400)
-    item = q.decide(action_id, bool(body["approved"]), by=(body or {}).get("by", "user"))
-    if item is None:
-        return JSONResponse({"error": "not found"}, status_code=404)
-    return _nocache_json({"ok": True, "action": item})
-
-
 class GenerateStepBody(BaseModel):
     description: str = Field(..., max_length=2000)
 
@@ -2164,6 +2113,7 @@ from agents.core.routers.browser import router as _browser_router  # noqa: E402
 from agents.core.routers.capture import router as _capture_router  # noqa: E402
 from agents.core.routers.rooms import router as _rooms_router  # noqa: E402
 from agents.core.routers.notes import router as _notes_router  # noqa: E402
+from agents.core.routers.actions import router as _actions_router  # noqa: E402
 app.include_router(_webhooks_router)
 app.include_router(_a2a_router)
 app.include_router(_pairing_router)
@@ -2172,6 +2122,7 @@ app.include_router(_browser_router)
 app.include_router(_capture_router)
 app.include_router(_rooms_router)
 app.include_router(_notes_router)
+app.include_router(_actions_router)
 
 
 class DigestRunBody(BaseModel):
