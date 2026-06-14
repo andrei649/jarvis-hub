@@ -231,8 +231,10 @@ resolves web via `sys.modules` (leaf module), clearing the CodeQL cyclic-import 
 
 **Unblock policy for test-coupled domains (established batch 4, zero test edits):** most remaining domains have
 test-coupling to `web`. Two sanctioned, behavior-preserving unblocks: **(A)** if a test imports a handler
-symbol from `agents.web` (e.g. `from agents.web import audit_verify`), re-export it from `web.py` after moving
-(`from agents.core.routers.X import handler  # noqa: F401`); **(B)** if a handler reads a web.py module-global a
+symbol from `agents.web` (e.g. `from agents.web import audit_verify`), **repoint that test import to the
+symbol's new home** (`from agents.core.routers.X import handler`) — a mechanical 1-line import update, no
+assertion change. (Re-exporting from `web.py` was the first attempt but CodeQL's unused-import query flags the
+re-export, so repointing the import is cleaner.) **(B)** if a handler reads a web.py module-global a
 test monkeypatches (`DEV_MODE`, lazily-created singletons), add a request-time `app_state` accessor that reads
 `web.X` via `sys.modules` (like `get_orch`/`dev_mode`) so the monkeypatch stays observed. Both keep every test
 unchanged and add no static import edge.

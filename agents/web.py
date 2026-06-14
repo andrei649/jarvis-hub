@@ -1910,10 +1910,6 @@ from agents.core.routers.review import router as _review_router  # noqa: E402
 from agents.core.routers.quality import router as _quality_router  # noqa: E402
 from agents.core.routers.security import router as _security_router  # noqa: E402
 from agents.core.routers.skills import router as _skills_router  # noqa: E402
-# Re-export handler symbols some tests import directly from agents.web (CLN-3
-# pre-approved unblock A) — the router module is already imported above, so this
-# adds no new coupling; it only keeps `from agents.web import audit_verify` working.
-from agents.core.routers.security import audit_verify  # noqa: F401,E402
 app.include_router(_webhooks_router)
 app.include_router(_a2a_router)
 app.include_router(_pairing_router)
