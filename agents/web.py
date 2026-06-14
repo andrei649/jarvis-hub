@@ -20,7 +20,7 @@ from typing import Optional
 sys.path.insert(0, str(Path(__file__).parent))
 
 from fastapi import FastAPI, Request, Depends, HTTPException, Query
-from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse, FileResponse, Response
+from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse, FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field, field_validator
 
@@ -1163,126 +1163,10 @@ async def agent_templates_instantiate(req: Request):
     return _nocache_json({"ok": True, "config": config})
 
 
-# ── H15.4 Secret broker (JIT credential injection; handles never expose value) ─
-
-@app.post("/api/secrets/broker", dependencies=[Depends(_admin_guard)])
-async def secret_broker_put(req: Request):
-    """Store a secret value (admin). Values go in, never come back out via API."""
-    broker = getattr(orch, "secret_broker", None) if orch else None
-    if broker is None:
-        return JSONResponse({"error": "secret broker not available"}, status_code=503)
-    try:
-        body = await req.json()
-    except Exception:
-        body = {}
-    name, value = (body or {}).get("name"), (body or {}).get("value")
-    if not name or value is None:
-        return JSONResponse({"error": "name and value required"}, status_code=400)
-    broker.put(name, value)
-    return _nocache_json({"ok": True, "name": name, "reference": broker.reference(name)})
-
-
-@app.get("/api/secrets/broker", dependencies=[Depends(_admin_guard)])
-async def secret_broker_list():
-    """List secret NAMES only (never values)."""
-    broker = getattr(orch, "secret_broker", None) if orch else None
-    if broker is None:
-        return _nocache_json({"names": []})
-    return _nocache_json({"names": broker.names()})
-
-
-@app.delete("/api/secrets/broker/{name}", dependencies=[Depends(_admin_guard)])
-async def secret_broker_delete(name: str):
-    broker = getattr(orch, "secret_broker", None) if orch else None
-    if broker is None or not broker.delete(name):
-        return JSONResponse({"error": "not found"}, status_code=404)
-    return _nocache_json({"ok": True, "deleted": name})
-
-
-@app.post("/api/secrets/broker/redact", dependencies=[Depends(_admin_guard)])
-async def secret_broker_redact(req: Request):
-    """Mask any known secret value present in text (defense-in-depth)."""
-    broker = getattr(orch, "secret_broker", None) if orch else None
-    if broker is None:
-        return JSONResponse({"error": "secret broker not available"}, status_code=503)
-    try:
-        body = await req.json()
-    except Exception:
-        body = {}
-    return _nocache_json({"redacted": broker.redact((body or {}).get("text", ""))})
-
-
-# ── H10.1 Embeddable Chat Widget ──────────────────────────────────────────────
-
-@app.post("/api/admin/widgets", dependencies=[Depends(_admin_guard)])
-async def widgets_issue(req: Request):
-    """Issue a widget token with theming config (admin)."""
-    store = getattr(orch, "widgets", None) if orch else None
-    if store is None:
-        return JSONResponse({"error": "widget store not available"}, status_code=503)
-    try:
-        body = await req.json()
-    except Exception:
-        body = {}
-    return _nocache_json({"ok": True, "widget": store.issue(body or {})})
-
-
-@app.get("/api/admin/widgets", dependencies=[Depends(_admin_guard)])
-async def widgets_list():
-    store = getattr(orch, "widgets", None) if orch else None
-    if store is None:
-        return _nocache_json({"widgets": []})
-    return _nocache_json({"widgets": store.list()})
-
-
-@app.delete("/api/admin/widgets/{token}", dependencies=[Depends(_admin_guard)])
-async def widgets_revoke(token: str):
-    store = getattr(orch, "widgets", None) if orch else None
-    if store is None or not store.revoke(token):
-        return JSONResponse({"error": "not found"}, status_code=404)
-    return _nocache_json({"ok": True, "revoked": token})
-
-
-@app.get("/api/widget/{token}")
-async def widget_snippet(token: str, request: Request):
-    """Public: return the embeddable JS snippet for a widget token."""
-    store = getattr(orch, "widgets", None) if orch else None
-    cfg = store.get(token) if store else None
-    if cfg is None:
-        return JSONResponse({"error": "not found"}, status_code=404)
-    from agents.core.widget import render_snippet
-    base = str(request.base_url).rstrip("/")
-    js = render_snippet(cfg, base_url=base)
-    return Response(content=js, media_type="application/javascript")
-
-
-@app.get("/api/widget/{token}/config")
-async def widget_config(token: str):
-    store = getattr(orch, "widgets", None) if orch else None
-    cfg = store.get(token) if store else None
-    if cfg is None:
-        return JSONResponse({"error": "not found"}, status_code=404)
-    return _nocache_json(cfg)
-
-
-@app.post("/api/widget/{token}/message")
-async def widget_message(token: str, req: Request):
-    """Public, token-scoped: route a widget message through the orchestrator."""
-    store = getattr(orch, "widgets", None) if orch else None
-    if store is None or store.get(token) is None:
-        return JSONResponse({"error": "not found"}, status_code=404)
-    try:
-        body = await req.json()
-    except Exception:
-        body = {}
-    message = (body or {}).get("message", "")
-    if not message:
-        return JSONResponse({"error": "message required"}, status_code=400)
-    try:
-        reply = await orch.handle_input(message, channel="widget")
-        return _nocache_json({"reply": reply})
-    except Exception as e:
-        return error_json(e, 200, "request failed", extra={"reply": ""})
+# ── H15.4 Secret broker + H10.1 Embeddable Chat Widget ────────────────────────
+# Both surfaces (/api/secrets/broker..., /api/admin/widgets, /api/widget...) live
+# in the secrets router (CLN-3). They reach state only via the orchestrator
+# (orch.secret_broker / orch.widgets), so nothing web.py-owned moved.
 
 
 # ── H13.2 Constrained decoding (GBNF grammar) ─────────────────────────────────
@@ -1911,6 +1795,7 @@ from agents.core.routers.quality import router as _quality_router  # noqa: E402
 from agents.core.routers.security import router as _security_router  # noqa: E402
 from agents.core.routers.skills import router as _skills_router  # noqa: E402
 from agents.core.routers.data_spaces import router as _data_spaces_router  # noqa: E402
+from agents.core.routers.secrets import router as _secrets_router  # noqa: E402
 app.include_router(_webhooks_router)
 app.include_router(_a2a_router)
 app.include_router(_pairing_router)
@@ -1926,6 +1811,7 @@ app.include_router(_quality_router)
 app.include_router(_security_router)
 app.include_router(_skills_router)
 app.include_router(_data_spaces_router)
+app.include_router(_secrets_router)
 
 
 class DigestRunBody(BaseModel):
