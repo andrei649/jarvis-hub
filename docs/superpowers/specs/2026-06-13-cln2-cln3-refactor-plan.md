@@ -222,11 +222,17 @@ optional, wrap-only 5th step.
 
 ## 5. Phase 3 — CLN-3 route extraction (incremental, one domain per PR) — 🟡 IN PROGRESS 2026-06-14
 
-**Status:** 10 domains extracted into per-domain routers under `core/routers/` (each its own commit,
-route-parity + full suite green throughout): **rooms, notes, actions** (batch 1), **arena, review, quality**
-(batch 3), **security, skills** (batch 4), and **data_spaces, secrets/widgets** (batch 5). All use the Phase-1
-shared kernel (`nocache_json`/`error_json` from `web_helpers`, `get_orch`/`dev_mode` from `app_state`, guards
-from `_deps`) — zero static `from agents import web`. **web.py: 5,037 → 4,095 LOC** so far. Also fixed the routers↔web import cycle at the source: `_deps.py`
+**Status:** 12 domains extracted into per-domain routers under `core/routers/` (each its own commit,
+route-parity + full suite green throughout): rooms, notes, actions, arena, review, quality, security, skills,
+data_spaces, secrets, **mesh** (satellites/nodes/sync/toolrpc/subagents), **autonomy**. All use the Phase-1
+shared kernel — zero static `from agents import web`. **web.py: 5,037 → 3,644 LOC** so far.
+
+**Two infra fixes during this work:** (1) pinned `fastapi>=0.136.3,<0.137` in both requirements files — fastapi
+0.137.0 regressed `app.include_router` (mounted routers add 0 routes → the app silently loses ~100 routes); CI
+(Python 3.12) floated to 0.137.0 and the **route-parity guard caught it** (would have broken production too).
+(2) `tests/test_hud_v2_parity.py` `_routes()` now scans `core/routers/*.py` too (not just inline `web.py` @app
+routes) — extraction had dropped the inline count below its `>150` floor; the fix restores it and strengthens
+the gate (extracted routes are now checked for a v2 home). Also fixed the routers↔web import cycle at the source: `_deps.py`
 resolves web via `sys.modules` (leaf module), clearing the CodeQL cyclic-import alerts for every router import.
 
 **Unblock policy for test-coupled domains (established batch 4, zero test edits):** most remaining domains have
