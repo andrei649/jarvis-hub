@@ -1593,64 +1593,6 @@ async def actions_decide(action_id: str, req: Request):
     return _nocache_json({"ok": True, "action": item})
 
 
-# ── H10.21 Conversation Notes ─────────────────────────────────────────────────
-
-class _NoteBody(BaseModel):
-    content: str = Field("", max_length=20000)
-
-
-@app.get("/api/notes", dependencies=[Depends(_user_guard)])
-async def notes_get():
-    notes = getattr(orch, "notes", None) if orch else None
-    sid = getattr(orch, "session_id", "web") if orch else "web"
-    return _nocache_json({"session": sid, "content": notes.get(sid) if notes else ""})
-
-
-@app.put("/api/notes", dependencies=[Depends(_user_guard)])
-async def notes_set(body: _NoteBody):
-    notes = getattr(orch, "notes", None) if orch else None
-    if notes is None:
-        return JSONResponse({"error": "notes not available"}, status_code=503)
-    sid = getattr(orch, "session_id", "web")
-    return _nocache_json({"ok": True, "session": sid, **notes.set(sid, body.content)})
-
-
-@app.delete("/api/notes", dependencies=[Depends(_user_guard)])
-async def notes_clear():
-    notes = getattr(orch, "notes", None) if orch else None
-    sid = getattr(orch, "session_id", "web") if orch else "web"
-    cleared = notes.clear(sid) if notes else False
-    return _nocache_json({"ok": True, "cleared": cleared})
-
-
-@app.post("/api/notes/rewrite", dependencies=[Depends(_user_guard)])
-async def notes_rewrite(req: Request):
-    """H10.21 — 'Rewrite with AI': run the note through an agent; optionally save."""
-    notes = getattr(orch, "notes", None) if orch else None
-    if notes is None or not orch:
-        return JSONResponse({"error": "notes not available"}, status_code=503)
-    try:
-        body = await req.json()
-    except Exception:
-        body = {}
-    sid = getattr(orch, "session_id", "web")
-    content = notes.get(sid)
-    if not content.strip():
-        return JSONResponse({"error": "note is empty"}, status_code=400)
-    instruction = (body or {}).get("instruction") or "Rewrite these notes to be clearer and well-organized."
-    prompt = f"{instruction}\n\n---\n{content}"
-    try:
-        rewritten = await orch.handle_input(prompt, channel="notes")
-    except Exception:
-        logger.exception("notes rewrite failed")
-        return JSONResponse({"error": "internal error", "code": 500}, status_code=500)
-    saved = False
-    if (body or {}).get("save"):
-        notes.set(sid, rewritten)
-        saved = True
-    return _nocache_json({"ok": True, "rewritten": rewritten, "saved": saved})
-
-
 class GenerateStepBody(BaseModel):
     description: str = Field(..., max_length=2000)
 
@@ -2221,6 +2163,7 @@ from agents.core.routers.canvas import router as _canvas_router  # noqa: E402
 from agents.core.routers.browser import router as _browser_router  # noqa: E402
 from agents.core.routers.capture import router as _capture_router  # noqa: E402
 from agents.core.routers.rooms import router as _rooms_router  # noqa: E402
+from agents.core.routers.notes import router as _notes_router  # noqa: E402
 app.include_router(_webhooks_router)
 app.include_router(_a2a_router)
 app.include_router(_pairing_router)
@@ -2228,6 +2171,7 @@ app.include_router(_canvas_router)
 app.include_router(_browser_router)
 app.include_router(_capture_router)
 app.include_router(_rooms_router)
+app.include_router(_notes_router)
 
 
 class DigestRunBody(BaseModel):
