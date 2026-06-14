@@ -121,7 +121,7 @@ def _structured_recall(query: str, top_k: int = 5) -> list:
                 hits.append({"source": "graph", "text": node.get("name", ""),
                              "type": node.get("type", ""), "score": 1})
         except Exception:
-            pass
+            pass  # best-effort recall: a graph-search failure must not break the response
     return hits[:top_k]
 
 
