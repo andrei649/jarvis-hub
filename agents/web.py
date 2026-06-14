@@ -1171,21 +1171,6 @@ async def agent_templates_instantiate(req: Request):
 
 # ── H13.2 Constrained decoding (GBNF grammar) ─────────────────────────────────
 
-@app.post("/api/llm/grammar")
-async def llm_grammar(req: Request):
-    """Generate a GBNF grammar from a JSON schema or tool spec (constrained decoding)."""
-    from agents.core.llm.grammar import json_schema_to_gbnf, tool_to_gbnf
-    try:
-        body = await req.json()
-    except Exception:
-        body = {}
-    if (body or {}).get("tool"):
-        return _nocache_json({"gbnf": tool_to_gbnf(body["tool"])})
-    if (body or {}).get("schema"):
-        return _nocache_json({"gbnf": json_schema_to_gbnf(body["schema"])})
-    return JSONResponse({"error": "schema or tool required"}, status_code=400)
-
-
 # ── H14.3 Sleep-time memory consolidation ─────────────────────────────────────
 
 @app.post("/api/memory/consolidate", dependencies=[Depends(_user_guard)])
@@ -1379,21 +1364,6 @@ async def channel_inbound(channel_id: str, request: Request):
     return _nocache_json({"ok": True, "channel": channel_id, "reply": reply})
 
 
-class ModelSwapBody(BaseModel):
-    command: str = Field(..., max_length=200)
-
-
-@app.post("/api/llm/openrouter", dependencies=[Depends(_admin_guard)])
-async def llm_openrouter_swap(body: ModelSwapBody):
-    """H20.2 — parse a `/model` hot-swap command; report OpenRouter availability."""
-    from agents.core.llm.openrouter import parse_model_command, OPENROUTER_BASE
-    parsed = parse_model_command(body.command)
-    if parsed is None:
-        return _nocache_json({"ok": False, "reason": "not_a_model_command"}, status_code=422)
-    return _nocache_json({"ok": True, "parsed": parsed, "base": OPENROUTER_BASE,
-                          "configured": bool(os.environ.get("OPENROUTER_API_KEY", ""))})
-
-
 class ContextCompressBody(BaseModel):
     turns: list[dict] = Field(default_factory=list)
     max_tokens: int = Field(2000, ge=100, le=100000)
@@ -1446,18 +1416,6 @@ async def vlm_describe(body: VLMDescribeBody):
         return _nocache_json({"ok": True, "model": model, "response": out})
     finally:
         await vlm.aclose()
-
-
-class MoERouteBody(BaseModel):
-    prompt: str = Field(..., max_length=8000)
-    model: str = Field("gpt-oss-20b", max_length=80)
-
-
-@app.post("/api/llm/moe/route", dependencies=[Depends(_admin_guard)])
-async def llm_moe_route(body: MoERouteBody):
-    """H13.4 — preview the MoE thinking/non-thinking routing decision."""
-    from agents.core.llm.moe_routing import route_moe
-    return _nocache_json(route_moe(body.prompt, model=body.model))
 
 
 class DesktopStepsBody(BaseModel):
@@ -1525,6 +1483,7 @@ from agents.core.routers.data_spaces import router as _data_spaces_router  # noq
 from agents.core.routers.secrets import router as _secrets_router  # noqa: E402
 from agents.core.routers.mesh import router as _mesh_router  # noqa: E402
 from agents.core.routers.autonomy import router as _autonomy_router  # noqa: E402
+from agents.core.routers.models_llm import router as _models_llm_router  # noqa: E402
 app.include_router(_webhooks_router)
 app.include_router(_a2a_router)
 app.include_router(_pairing_router)
@@ -1543,6 +1502,7 @@ app.include_router(_data_spaces_router)
 app.include_router(_secrets_router)
 app.include_router(_mesh_router)
 app.include_router(_autonomy_router)
+app.include_router(_models_llm_router)
 
 
 class DigestRunBody(BaseModel):
@@ -1985,117 +1945,6 @@ async def _list_local_models() -> dict:
         "providers": providers,
         "models": models,
     }
-
-
-@app.get("/api/models/local", dependencies=[Depends(_admin_guard)])
-async def models_local_list():
-    """List local models from LM Studio / Ollama and mark the active one."""
-    return _nocache_json(await _list_local_models())
-
-
-class LocalModelSwitch(BaseModel):
-    model: str = Field(..., min_length=1)
-
-
-@app.post("/api/models/local/switch", dependencies=[Depends(_admin_guard)])
-async def models_local_switch(body: LocalModelSwitch):
-    """Set the active local model on the live router and persist the choice.
-
-    The model must be present in one of the local backends. The selection is
-    written to `llm.default_model` (settings_db) so it survives a restart, and
-    applied immediately to the running HybridRouter.
-    """
-    if not orch or getattr(orch, "llm_router", None) is None:
-        return _nocache_json({"error": "not initialized"}, status_code=503)
-
-    catalog = await _list_local_models()
-    available = {m["id"] for m in catalog["models"]}
-    if body.model not in available:
-        return _nocache_json(
-            {"error": f"model '{body.model}' not available locally", "available": sorted(available)},
-            status_code=404,
-        )
-
-    orch.llm_router.set_active_model(body.model)
-    try:
-        put_category("llm", {"default_model": body.model})
-    except Exception:
-        # Persistence is best-effort; the live switch already took effect.
-        pass
-
-    return _nocache_json({"ok": True, "active": body.model})
-
-
-# ── LM Studio lifecycle control (start server / load / unload) ───
-# Jarvis connects to a running LM Studio and auto-detects the model; these let
-# the operator (or Jarvis) actually start the server and load/unload a model via
-# the `lms` CLI. Admin-guarded, like the model-switch endpoint above.
-
-class LMLoad(BaseModel):
-    model: str = Field(..., min_length=1, max_length=200)
-
-
-class LMUnload(BaseModel):
-    model: str | None = Field(default=None, max_length=200)
-
-
-def _lmstudio_or_503():
-    if not orch or getattr(orch, "lmstudio", None) is None:
-        return None, _nocache_json({"error": "not initialized"}, status_code=503)
-    return orch.lmstudio, None
-
-
-def _llm_status_code(result: dict) -> int:
-    """Map a controller result status to an HTTP code (disabled/blocked → 403)."""
-    return {"ok": 200, "disabled": 403, "blocked": 403, "rejected": 400,
-            "ambiguous": 409}.get(result.get("status"), 502)
-
-
-@app.get("/api/llm/auth-profiles", dependencies=[Depends(_admin_guard)])
-async def llm_auth_profiles():
-    """H12.20 — masked status of the cloud auth-profile pools (rotation/failover)."""
-    router = getattr(orch, "llm_router", None) if orch else None
-    pools = {}
-    for name in ("_anthropic_pool", "_gemini_pool"):
-        pool = getattr(router, name, None) if router else None
-        if pool is not None:
-            pools[pool.provider or name] = pool.status()
-    return _nocache_json({"pools": pools})
-
-
-@app.post("/api/llm/server/start", dependencies=[Depends(_admin_guard)])
-async def llm_server_start():
-    ctrl, err = _lmstudio_or_503()
-    if err:
-        return err
-    result = await ctrl.start_server(agent="jarvis")
-    return _nocache_json(result, status_code=_llm_status_code(result))
-
-
-@app.post("/api/llm/load", dependencies=[Depends(_admin_guard)])
-async def llm_load(body: LMLoad):
-    ctrl, err = _lmstudio_or_503()
-    if err:
-        return err
-    result = await ctrl.load_model(body.model, agent="jarvis")
-    if result.get("status") == "ok":
-        try:
-            # Persist the model that was actually loaded — the controller may have
-            # resolved a partial request ("gemma") to the full servable id.
-            put_category("llm", {"default_model": result.get("model") or body.model})
-        except Exception:
-            pass  # live load already took effect; persistence is best-effort
-        return _nocache_json(result)
-    return _nocache_json(result, status_code=_llm_status_code(result))
-
-
-@app.post("/api/llm/unload", dependencies=[Depends(_admin_guard)])
-async def llm_unload(body: LMUnload):
-    ctrl, err = _lmstudio_or_503()
-    if err:
-        return err
-    result = await ctrl.unload_model(body.model, agent="jarvis")
-    return _nocache_json(result, status_code=_llm_status_code(result))
 
 
 # ── MCP (Model Context Protocol) admin endpoints ─────────────────
