@@ -1,0 +1,319 @@
+"""Autonomy / Proactive-Cortex endpoints — extracted from web.py (CLN-3).
+
+Covers the autonomy surface in two address spaces:
+
+* `/api/autonomy/*` — dry-run preview (H12.5), escalation routing (H12.11),
+  per-task preview, and the governed outbound-call request (H12.22).
+* `/autonomy/*` — the admin proactive-cortex console (H6.x / H12.1): task list,
+  queue status, OS-observer state, task submit/decision, morning brief / evening
+  retro, global autonomy mode, autonomy-raise suggestions, and the reversible vs
+  irreversible approval queue.
+
+Orchestrator-only: each handler reads its subsystem off the live orchestrator
+(`orch.autonomy` / `orch.autonomy_queue` / `orch.observer` / `orch.autonomy_prefs`
+/ `orch.call_broker`) via `get_orch()`, with no web-module globals. The
+`_reversibility(task)` helper is autonomy-local (it was used only by the approval
+endpoint) and moved here verbatim. Leaf imports (`put_category`, `TaskQueueError`,
+digest builders, …) stay inline at call time as in the originals.
+"""
+
+from typing import Optional
+
+from fastapi import APIRouter, Depends, Request, Query
+from fastapi.responses import JSONResponse
+from pydantic import BaseModel, Field
+
+from agents.core.routers._deps import user_guard, admin_guard
+
+from agents.core.web_helpers import nocache_json, error_json
+from agents.core.app_state import get_orch
+
+
+router = APIRouter(tags=["autonomy"])
+
+
+@router.post("/api/autonomy/preview")
+async def autonomy_preview(req: Request):
+    """H12.5 — dry-run preview of an action (no execution). Body: a task dict."""
+    from agents.core.autonomy.dry_run import preview_task
+    try:
+        body = await req.json()
+    except Exception:
+        body = {}
+    if not (body or {}).get("kind") and not (body or {}).get("title"):
+        return JSONResponse({"error": "task with kind/title required"}, status_code=400)
+    return nocache_json(preview_task(body))
+
+
+@router.get("/api/autonomy/escalation/targets")
+async def escalation_targets():
+    """H12.11 — which channels would receive an escalation (governed)."""
+    from agents.core.autonomy.escalation import EscalationRouter
+    orch = get_orch()
+    channels = getattr(orch, "channels", {}) if orch else {}
+    allow = None
+    if orch:
+        try:
+            allow = (orch._runtime_settings.get("autonomy", {}) or {}).get("escalation_channels")
+        except Exception:
+            allow = None
+    return nocache_json({"targets": EscalationRouter(channels, allow=allow).targets(),
+                         "available": sorted(channels.keys())})
+
+
+@router.post("/api/autonomy/escalate", dependencies=[Depends(admin_guard)])
+async def escalation_send(req: Request):
+    """H12.11 — deliver an escalation to governed channels (admin)."""
+    from agents.core.autonomy.escalation import EscalationRouter, render_escalation
+    orch = get_orch()
+    channels = getattr(orch, "channels", {}) if orch else {}
+    try:
+        body = await req.json()
+    except Exception:
+        body = {}
+    message = (body or {}).get("message", "")
+    if not message and (body or {}).get("task"):
+        message = render_escalation(body["task"])
+    if not message:
+        return JSONResponse({"error": "message or task required"}, status_code=400)
+    allow = None
+    if orch:
+        try:
+            allow = (orch._runtime_settings.get("autonomy", {}) or {}).get("escalation_channels")
+        except Exception:
+            allow = None
+    router_ = EscalationRouter(channels, allow=allow)
+    return nocache_json(await router_.escalate(message, (body or {}).get("channels")))
+
+
+@router.get("/api/autonomy/tasks/{task_id}/preview")
+async def autonomy_task_preview(task_id: int):
+    """H12.5 — dry-run preview of a queued task by id."""
+    orch = get_orch()
+    q = getattr(orch, "autonomy_queue", None) if orch else None
+    if q is None:
+        return JSONResponse({"error": "autonomy queue not available"}, status_code=503)
+    task = q.get(task_id) if hasattr(q, "get") else None
+    if task is None:
+        return JSONResponse({"error": "not found"}, status_code=404)
+    from agents.core.autonomy.dry_run import preview_task
+    return nocache_json(preview_task(task))
+
+
+class CallRequestBody(BaseModel):
+    to: str = Field(..., max_length=40)
+    message: str = Field(..., max_length=2000)
+    provider: str = Field("twilio", max_length=20)
+    reason: str = Field("", max_length=200)
+    agent: Optional[str] = Field(None, max_length=40)
+
+
+@router.post("/api/autonomy/call", dependencies=[Depends(user_guard)])
+async def autonomy_call(body: CallRequestBody):
+    """H12.22 — request a governed outbound call (budget-gated + approval).
+
+    Nothing dials here; on approval the worker draws an interrupt-budget slot,
+    resolves the telephony credential behind approval, and places the call via an
+    injectable client (live Twilio/Telnyx = host seam)."""
+    from agents.core.autonomy.call_broker import CallBroker
+    orch = get_orch()
+    cb = getattr(orch, "call_broker", None) if orch else None
+    if cb is None:
+        q = getattr(orch, "autonomy_queue", None) if orch else None
+        cb = CallBroker(enqueue=q.enqueue if q is not None else None)
+    result = cb.request(body.to, body.message, provider=body.provider,
+                        reason=body.reason, agent=body.agent)
+    return nocache_json(result, status_code=200 if result.get("ok") else 422)
+
+
+# ── Autonomy / Proactive Cortex (H6.1–H6.3) ─────────────────────
+
+
+class AutonomyTaskBody(BaseModel):
+    agent: str
+    kind: str
+    title: str
+    payload: Optional[dict] = None
+    origin: str = "generated"
+
+
+class AutonomyDecisionBody(BaseModel):
+    action: str            # accept / edit / reject / defer
+    payload: Optional[dict] = None
+
+
+@router.get("/autonomy/tasks", dependencies=[Depends(admin_guard)])
+async def autonomy_list(status: str = None, origin: str = None, limit: int = Query(100, ge=1, le=200)):
+    """List autonomy tasks, optionally filtered by status/origin."""
+    orch = get_orch()
+    if not orch:
+        return JSONResponse({"error": "not initialized"}, status_code=503)
+    tasks = orch.autonomy_queue.list(status=status, origin=origin, limit=limit)
+    return nocache_json({"tasks": [t.to_dict() for t in tasks], "total": len(tasks)})
+
+
+@router.get("/autonomy/status", dependencies=[Depends(admin_guard)])
+async def autonomy_status():
+    """Queue stats + remaining interruption budget."""
+    orch = get_orch()
+    if not orch:
+        return JSONResponse({"error": "not initialized"}, status_code=503)
+    return nocache_json({
+        "stats": orch.autonomy_queue.stats(),
+        "interrupt_budget_remaining": orch.autonomy.budget.remaining(),
+        "interrupt_budget_per_day": orch.autonomy.budget.per_day,
+        "pending_decisions": [t.to_dict() for t in orch.autonomy_queue.pending_decisions()],
+    })
+
+
+@router.get("/autonomy/observer", dependencies=[Depends(admin_guard)])
+async def autonomy_observer_status():
+    """Proactive OS Observer state: tracked signals + currently unhealthy ones."""
+    orch = get_orch()
+    if not orch:
+        return JSONResponse({"error": "not initialized"}, status_code=503)
+    if not orch.observer:
+        return nocache_json({"enabled": False, "reason": "observer not initialized"})
+    return nocache_json({
+        "enabled": bool(orch.get_setting("system.observer_enabled", True)),
+        **orch.observer.status(),
+    })
+
+
+@router.post("/autonomy/observer/run", dependencies=[Depends(admin_guard)])
+async def autonomy_observer_run():
+    """Trigger one observer sample now (sample → debounce → gate → queue)."""
+    orch = get_orch()
+    if not orch:
+        return JSONResponse({"error": "not initialized"}, status_code=503)
+    if not orch.observer:
+        return JSONResponse({"error": "observer not initialized"}, status_code=503)
+    summary = await orch.observer.observe()
+    return nocache_json({"ok": True, "summary": summary})
+
+
+@router.post("/autonomy/tasks", dependencies=[Depends(admin_guard)])
+async def autonomy_submit(body: AutonomyTaskBody):
+    """Submit a task to the autonomy worker (gated through the risk policy)."""
+    orch = get_orch()
+    if not orch:
+        return JSONResponse({"error": "not initialized"}, status_code=503)
+    task = await orch.autonomy.submit(
+        agent=body.agent.strip().lower(), kind=body.kind.strip(),
+        title=body.title, payload=body.payload, origin=body.origin,
+    )
+    return nocache_json({"ok": True, "task": task.to_dict()})
+
+
+@router.post("/autonomy/tasks/{task_id}/decision", dependencies=[Depends(admin_guard)])
+async def autonomy_decide(task_id: int, body: AutonomyDecisionBody):
+    """Resolve a blocked task (accept/edit/reject/defer)."""
+    orch = get_orch()
+    if not orch:
+        return JSONResponse({"error": "not initialized"}, status_code=503)
+    from core.autonomy.queue import TaskQueueError
+    try:
+        task = await orch.autonomy.apply_decision(
+            task_id, body.action.strip().lower(), decided_by="admin", payload=body.payload,
+        )
+    except TaskQueueError as e:
+        return error_json(e, 409, "decision could not be applied")
+    return nocache_json({"ok": True, "task": task.to_dict()})
+
+
+@router.get("/autonomy/brief", dependencies=[Depends(admin_guard)])
+async def autonomy_brief(kind: str = "morning"):
+    """Render the morning brief or evening retro (H6.4)."""
+    orch = get_orch()
+    if not orch:
+        return JSONResponse({"error": "not initialized"}, status_code=503)
+    from core.autonomy.digest import build_morning_brief, build_evening_retro
+    text = (build_evening_retro if kind == "evening" else build_morning_brief)(orch.autonomy_queue)
+    return nocache_json({"kind": kind, "text": text})
+
+
+@router.get("/autonomy/mode", dependencies=[Depends(admin_guard)])
+async def autonomy_get_mode():
+    """Current global autonomy mode (AUTO/ASK/OFF) — the HUD AutonomyMode control."""
+    orch = get_orch()
+    if not orch:
+        return JSONResponse({"error": "not initialized"}, status_code=503)
+    mode = getattr(getattr(orch.autonomy, "policy", None), "mode", None) or orch.get_setting("autonomy.mode", "auto")
+    return nocache_json({"mode": str(mode).lower()})
+
+
+class AutonomyModeBody(BaseModel):
+    mode: str
+
+
+@router.post("/autonomy/mode", dependencies=[Depends(admin_guard)])
+async def autonomy_set_mode(body: AutonomyModeBody):
+    """Set the global autonomy mode. Persists the setting and applies it live:
+    auto = balanced; ask = side-effects wait for approval; off = nothing auto-runs
+    and the proactive loop is paused."""
+    orch = get_orch()
+    if not orch:
+        return JSONResponse({"error": "not initialized"}, status_code=503)
+    mode = str(body.mode or "").lower()
+    if mode not in ("auto", "ask", "off"):
+        return JSONResponse({"error": "mode must be auto|ask|off"}, status_code=422)
+    from core.settings_db import put_category
+    put_category("autonomy", {"mode": mode})  # persist (read back by the autonomy loop)
+    if getattr(orch.autonomy, "policy", None) is not None:
+        orch.autonomy.policy.mode = mode      # apply immediately
+    return nocache_json({"mode": mode, "ok": True})
+
+
+@router.get("/autonomy/preferences/suggestions", dependencies=[Depends(admin_guard)])
+async def autonomy_pref_suggestions():
+    """Classes consistently approved → autonomy-raise suggestions (H6.5)."""
+    orch = get_orch()
+    if not orch:
+        return JSONResponse({"error": "not initialized"}, status_code=503)
+    return nocache_json({"suggestions": orch.autonomy_prefs.suggest_autonomy_raise()})
+
+
+# ── H12.1: reversible / irreversible approval queue + security posture ──
+# RiskTier 0-1 (read-only / reversible) are undoable; 2-3 (external /
+# irreversible-or-money) are not. The HUD surfaces this so the user knows which
+# pending actions can be safely auto-approved vs. which need scrutiny — the
+# "anti-OpenClaw" reversibility story.
+
+
+def _reversibility(task) -> dict:
+    """Annotate a queued Task with a human-facing reversibility verdict."""
+    from core.autonomy.policy import RiskTier
+
+    tier = int(task.risk_tier)
+    reversible = tier <= int(RiskTier.REVERSIBLE)
+    try:
+        tier_name = RiskTier(tier).name
+    except ValueError:
+        tier_name = "UNKNOWN"
+    d = task.to_dict()
+    d["reversible"] = reversible
+    d["tier_name"] = tier_name
+    d["reversibility"] = "reversible" if reversible else "irreversible"
+    return d
+
+
+@router.get("/autonomy/approvals", dependencies=[Depends(admin_guard)])
+async def autonomy_approvals():
+    """Pending approvals split into reversible vs irreversible buckets (H12.1)."""
+    orch = get_orch()
+    if not orch:
+        return JSONResponse({"error": "not initialized"}, status_code=503)
+    pending = orch.autonomy_queue.pending_decisions()
+    annotated = [_reversibility(t) for t in pending]
+    reversible = [t for t in annotated if t["reversible"]]
+    irreversible = [t for t in annotated if not t["reversible"]]
+    return nocache_json({
+        "pending": annotated,
+        "reversible": reversible,
+        "irreversible": irreversible,
+        "counts": {
+            "total": len(annotated),
+            "reversible": len(reversible),
+            "irreversible": len(irreversible),
+        },
+    })
