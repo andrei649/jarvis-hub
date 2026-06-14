@@ -26,6 +26,7 @@ from .memory.manager import MemoryManager
 from .checkpoint import CheckpointManager
 from .heartbeat import HeartbeatScheduler
 from .scheduler_service import SchedulerService
+from .llm_control import detect_llm_control  # re-exported: NL LLM-control detection (CLN-2)
 from .learning.loop import LearningLoop
 from .skills.loader import SkillLoader
 from .skills.importer import SkillImporter
@@ -92,53 +93,6 @@ HANDOFF_PREFIX = "[handoff:"
 SKILL_PREFIX = "[learn:"
 
 
-# ── Natural-language LLM-backend control (start / load / unload / status) ─────
-# Lets a chat message drive LMStudioController. Deliberately conservative: a
-# load needs a *plausible* model token, so ordinary phrases like "load up our
-# friends and test them" never trigger a model load. Status questions that slip
-# through still get answered truthfully by the normal chat path (the runtime
-# state block injects the real model), so missing one here is harmless.
-
-_LLM_PREFIX_RE = re.compile(r"^\s*(?:llm|lm[\s\-]?studio)\b[:\s]+(.+)$", re.IGNORECASE)
-_MODEL_FAMILY_RE = re.compile(
-    r"(gemma|qwen|deepseek|llama|mistral|mixtral|phi|gpt|granite|nemotron|smol|yi|command-?r|qwq)",
-    re.IGNORECASE,
-)
-_LOAD_VERB_RE = re.compile(r"\b(load|reload|încarc|incarc|switch|schimb)\w*\b", re.IGNORECASE)
-_START_RE = re.compile(r"\b(start|launch|boot|pornes\w*|porneșt\w*)\b", re.IGNORECASE)
-_UNLOAD_RE = re.compile(r"\b(unload|descarc)\w*\b", re.IGNORECASE)
-_LLM_NOUN_RE = re.compile(r"\b(lm[\s\-]?studio|llm|language model|model|brain|creier|server)\b", re.IGNORECASE)
-_START_TARGET_RE = re.compile(r"\b(lm[\s\-]?studio|llm|language (?:model|server)|the server)\b", re.IGNORECASE)
-_STATUS_RE = re.compile(
-    r"\bwhat are you running\b"
-    r"|\b(?:what|which|ce)\b[^?.!]{0,40}\b(?:llm|lm[\s\-]?studio|language model|ai model|brain|creier)\b"
-    r"|\b(?:what|which|ce)\b[^?.!]{0,30}\bmodel\b[^?.!]{0,30}\b(?:you|run|running|loaded|using|use|rulez\w*|folos\w*|încărc\w*|incarc\w*|activ)\b"
-    r"|\bmodel\b[^?.!]{0,20}\b(?:loaded|running|active|încărcat|incarcat)\b",
-    re.IGNORECASE,
-)
-_MODEL_TOKEN_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9._/:@\-]{1,199}")
-_MODEL_STOPWORDS = {
-    "the", "a", "an", "model", "models", "modelul", "modele", "up", "please", "sir",
-    "to", "into", "my", "our", "your", "new", "llm", "lm", "studio", "lmstudio",
-    "load", "reload", "unload", "switch", "use", "start", "server", "and", "test",
-    "them", "on", "with", "running", "loaded", "active", "now", "current", "default",
-}
-
-
-def _is_plausible_model(tok: str) -> bool:
-    """A model id either looks structured (digit / path / quant) or names a known family."""
-    return bool(re.search(r"[0-9/:@]", tok) or _MODEL_FAMILY_RE.search(tok))
-
-
-def _extract_model(s: str) -> Optional[str]:
-    for tok in _MODEL_TOKEN_RE.findall(s or ""):
-        if tok.lower() in _MODEL_STOPWORDS:
-            continue
-        if _is_plausible_model(tok):
-            return tok
-    return None
-
-
 def _env_flag(name: str, default: bool = True) -> bool:
     raw = os.environ.get(name)
     if raw is None or raw.strip() == "":
@@ -156,55 +110,6 @@ def _as_bool(value, default: bool = True) -> bool:
         return value != 0
     return str(value).strip().lower() not in ("0", "false", "no", "off", "disable", "disabled", "")
 
-
-def detect_llm_control(text: str) -> Optional[tuple[str, Optional[str]]]:
-    """Detect a chat request to control the LLM backend.
-
-    Returns (action, model) where action ∈ {status, start, load, unload} and
-    model is an optional id, or None if the message is not LLM control.
-    """
-    if not text or not text.strip():
-        return None
-    t = text.strip()
-
-    # Explicit "llm <sub> [args]" / "lm studio <sub>" command form.
-    m = _LLM_PREFIX_RE.match(t)
-    if m:
-        rest = m.group(1).strip()
-        sub, _, arg = rest.partition(" ")
-        sub = sub.lower()
-        if sub in ("status", "state", "ps", "info"):
-            return ("status", None)
-        if sub in ("start", "up", "boot", "launch"):
-            return ("start", None)
-        if sub in ("unload", "stop"):
-            return ("unload", _extract_model(arg))
-        if sub in ("load", "use", "switch"):
-            return ("load", _extract_model(arg))
-        # Unknown sub-command: only act if it names a model ("llm gemma"),
-        # otherwise let normal chat handle it (avoids "lm studio is great").
-        model = _extract_model(rest)
-        return ("load", model) if model else None
-
-    low = t.lower()
-
-    if _UNLOAD_RE.search(low):
-        model = _extract_model(low)
-        if model or _LLM_NOUN_RE.search(low):
-            return ("unload", model)
-
-    if _START_RE.search(low) and _START_TARGET_RE.search(low):
-        return ("start", None)
-
-    if _LOAD_VERB_RE.search(low):
-        model = _extract_model(low)
-        if model and (_LLM_NOUN_RE.search(low) or _is_plausible_model(model)):
-            return ("load", model)
-
-    if _STATUS_RE.search(low):
-        return ("status", None)
-
-    return None
 
 
 

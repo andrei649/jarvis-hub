@@ -141,16 +141,27 @@ each call) — never `from agents.web import orch` (freezes `None`). `lifespan` 
 
 ---
 
-## 4. Phase 2 — CLN-2 orchestrator decomposition (facade-preserving) — 🟡 step 1 LANDED 2026-06-13
+## 4. Phase 2 — CLN-2 orchestrator decomposition (facade-preserving) — 🟡 steps 1–2 LANDED 2026-06-13
 
 **Status (step 1 — `SchedulerService`):** shipped. `core/scheduler_service.py` owns the 5 `schedule_*`
 registration methods + 4 job bodies (`run_log_quick/hourly/daily_scan`, `run_daily_digest`); `start_channels`
-now calls `self._scheduler.schedule_all()`. orchestrator.py: **2,202 → 1,989 LOC (−213)**. Two job bodies
-deliberately stayed on the Orchestrator because callers reach them there: `_run_learning_loop` (admin
-`POST /api/learning/propose`) and `_run_worldview_kg_sync` (`test_worldview_kg_sync` calls it *unbound* on a
-`SimpleNamespace`, so it must read `self.plugins`/`self.memory` directly). The lifespan smoke test now
-asserts the exact 7 job IDs the service wires. Behavior-identical: full suite **2,234 passed / 2 skipped**.
-Remaining managers (`LLMControlManager`, `PluginGatherer`, `AutonomyCoordinator`) below.
+now calls `self._scheduler.schedule_all()`. Two job bodies deliberately stayed on the Orchestrator because
+callers reach them there: `_run_learning_loop` (admin `POST /api/learning/propose`) and
+`_run_worldview_kg_sync` (`test_worldview_kg_sync` calls it *unbound* on a `SimpleNamespace`, so it must read
+`self.plugins`/`self.memory` directly). The lifespan smoke test asserts the exact 7 job IDs the service wires.
+
+**Status (step 2 — `llm_control`):** shipped. The self-contained NL-detection block (`detect_llm_control`,
+its regexes, `_extract_model`, `_is_plausible_model`) moved to `core/llm_control.py`; orchestrator re-exports
+`detect_llm_control` (tests import it from `core.orchestrator`; the request lifecycle calls it). Per the
+bare-init constraint, the *methods* `_run_llm_control`, `_control_master_enabled`, `_chat_control_enabled`,
+`_runtime_state_block` stayed on the facade (`test_llm_control_intent` calls them on a `__new__` orch with
+only `lmstudio`/`llm_router`/`_runtime_settings` set). `_env_flag`/`_as_bool` (general helpers, interleaved in
+the block) also stayed.
+
+orchestrator.py: **2,202 → ~1,892 LOC (−310 across steps 1–2)**. Behavior-identical: route-parity + lifespan
+guards green, full suite **2,234 passed / 2 skipped**. Remaining managers (`PluginGatherer`,
+`AutonomyCoordinator`) below.
+
 
 Four safe manager extractions, ascending risk. Each is a *free-function-body + thin-wrapper* move so bare
 tests keep working (the wrapper reads only the orch attributes the bare test sets).
