@@ -1172,23 +1172,7 @@ async def agent_templates_instantiate(req: Request):
 # ── H13.2 Constrained decoding (GBNF grammar) ─────────────────────────────────
 
 # ── H14.3 Sleep-time memory consolidation ─────────────────────────────────────
-
-@app.post("/api/memory/consolidate", dependencies=[Depends(_user_guard)])
-async def memory_consolidate(req: Request):
-    """Plan Mem0-style consolidation ops (ADD/UPDATE/DELETE/NOOP) for candidates
-    against existing memories. Returns a reversible plan (no mutation)."""
-    eng = getattr(orch, "consolidation", None) if orch else None
-    if eng is None:
-        return JSONResponse({"error": "consolidation not available"}, status_code=503)
-    try:
-        body = await req.json()
-    except Exception:
-        body = {}
-    candidates = (body or {}).get("candidates") or []
-    if not candidates:
-        return JSONResponse({"error": "candidates required"}, status_code=400)
-    plan = eng.plan(candidates, (body or {}).get("existing") or [])
-    return _nocache_json({"plan": plan, "summary": eng.summarize(plan)})
+# `/api/memory/consolidate` lives in the memory_kg router (CLN-3).
 
 
 # ── H7.11 Learning-loop promotions ────────────────────────────────────────────
@@ -1485,6 +1469,7 @@ from agents.core.routers.mesh import router as _mesh_router  # noqa: E402
 from agents.core.routers.autonomy import router as _autonomy_router  # noqa: E402
 from agents.core.routers.models_llm import router as _models_llm_router  # noqa: E402
 from agents.core.routers.oauth import router as _oauth_router  # noqa: E402
+from agents.core.routers.memory_kg import router as _memory_kg_router  # noqa: E402
 app.include_router(_webhooks_router)
 app.include_router(_a2a_router)
 app.include_router(_pairing_router)
@@ -1505,6 +1490,7 @@ app.include_router(_mesh_router)
 app.include_router(_autonomy_router)
 app.include_router(_models_llm_router)
 app.include_router(_oauth_router)
+app.include_router(_memory_kg_router)
 
 
 class DigestRunBody(BaseModel):
@@ -2268,315 +2254,10 @@ async def memory_stats():
         return _nocache_json({"sessions": {"total": 0, "current": "", "active": 0}, "vectors": {"stored": 0, "dimension": 0, "backend": ""}, "knowledge_graph": {"entities": 0, "relations": 0, "last_seed": ""}, "agent_contexts": {}})
 
 
-@app.get("/api/memory/search", dependencies=[Depends(_user_guard)])
-async def memory_search(q: str = "", top_k: int = 10):
-    """Fused recall via RRF: vector similarity + knowledge-graph (H5.14 Task 4)."""
-    top_k = max(1, min(top_k, 50))
-    if not orch or not orch.memory:
-        return _nocache_json({"results": [], "query": q, "total": 0})
-    try:
-        # Real semantic recall: embed the query so the vector arm of fused recall
-        # actually contributes (degrades to keyword/graph-only if embedding fails).
-        embedding = await orch.memory.embed(q) if q and hasattr(orch.memory, "embed") else None
-        hits = await orch.memory.hybrid_search(
-            embedding=embedding, keyword=q or None, top_k=top_k
-        )
-        return _nocache_json({
-            "results": [
-                {
-                    "id": h.id,
-                    "score": round(h.score, 4),
-                    "sources": h.sources,
-                    "payload": h.payload,
-                }
-                for h in hits
-            ],
-            "query": q,
-            "total": len(hits),
-        })
-    except Exception as e:
-        return error_json(e, 200, "memory search failed", extra={"results": [], "query": q, "total": 0})
-
-
-@app.get("/api/memory/entities", dependencies=[Depends(_user_guard)])
-async def memory_entities(q: str = "", type: str = "", limit: int = Query(50, ge=1, le=200)):
-    """H8.1b — search/list the named-entity store (+ stats)."""
-    if not orch or not getattr(orch, "entities", None):
-        return _nocache_json({"entities": [], "stats": {}, "error": "entity store not available"})
-    return _nocache_json({
-        "entities": orch.entities.search(q, type, limit),
-        "stats": orch.entities.stats(),
-    })
-
-
-# ── H8.3b Agentic RAG tool (LLM-callable search_memory over structured stores) ─
-
-def _structured_recall(query: str, top_k: int = 5) -> list:
-    """Offline recall over the structured memory stores (entities + KG)."""
-    hits: list[dict] = []
-    if not orch:
-        return hits
-    q = (query or "").strip()
-    ents = getattr(orch, "entities", None)
-    if ents is not None:
-        for e in ents.search(q, limit=top_k):
-            hits.append({"source": "entity", "text": e["name"], "type": e.get("type", ""),
-                         "score": e.get("mentions", 0)})
-    g = getattr(getattr(orch, "memory", None), "graph", None)
-    if g is not None:
-        try:
-            for node in g.search(q)[:top_k]:
-                hits.append({"source": "graph", "text": node.get("name", ""),
-                             "type": node.get("type", ""), "score": 1})
-        except Exception:
-            pass
-    return hits[:top_k]
-
-
-@app.get("/api/memory/tool-spec")
-async def memory_tool_spec():
-    """H8.3b — the search_memory function-calling spec the model can invoke."""
-    from agents.core.memory.rag_tool import TOOL_SPEC
-    return _nocache_json(TOOL_SPEC)
-
-
-@app.post("/api/memory/search-tool", dependencies=[Depends(_user_guard)])
-async def memory_search_tool(req: Request):
-    """H8.3b — a single search_memory tool call. Body: {query, top_k?}."""
-    from agents.core.memory.rag_tool import MemorySearchTool
-    try:
-        body = await req.json()
-    except Exception:
-        body = {}
-    query = (body or {}).get("query", "")
-    if not query:
-        return JSONResponse({"error": "query required"}, status_code=400)
-    tool = MemorySearchTool(_structured_recall)
-    return _nocache_json(tool.search(query, int(body.get("top_k", 5))))
-
-
-# ── H14.4 Decay-based forgetting (ACT-R activation + dependency-aware delete) ──
-
-@app.get("/api/memory/decay/ranking", dependencies=[Depends(_user_guard)])
-async def memory_decay_ranking(limit: int = Query(100, ge=1, le=1000)):
-    """Memory items ranked by ACT-R activation (recency + frequency)."""
-    d = getattr(orch, "decay", None) if orch else None
-    if d is None:
-        return _nocache_json({"ranking": []})
-    return _nocache_json({"ranking": d.ranking(limit=limit)})
-
-
-@app.get("/api/memory/decay/candidates", dependencies=[Depends(_user_guard)])
-async def memory_decay_candidates(threshold: float = 0.0):
-    """Items whose activation has decayed below *threshold* (forget candidates)."""
-    d = getattr(orch, "decay", None) if orch else None
-    if d is None:
-        return _nocache_json({"candidates": []})
-    return _nocache_json({"threshold": threshold, "candidates": d.forget_candidates(threshold)})
-
-
-@app.post("/api/memory/decay/forget", dependencies=[Depends(_user_guard)])
-async def memory_decay_forget(req: Request):
-    """Forget an item + its transitive dependents (anti-recontamination)."""
-    d = getattr(orch, "decay", None) if orch else None
-    if d is None:
-        return JSONResponse({"error": "decay memory not available"}, status_code=503)
-    try:
-        body = await req.json()
-    except Exception:
-        body = {}
-    item_id = (body or {}).get("id", "")
-    if not item_id:
-        return JSONResponse({"error": "id required"}, status_code=400)
-    removed = d.forget(item_id)
-    if not removed:
-        return JSONResponse({"error": "not found"}, status_code=404)
-    return _nocache_json({"ok": True, "removed": removed})
-
-
-# ── H12.3 Knowledge-graph editor (query / edit / delete entities + relations) ─
-
-def _kg():
-    """Return the live knowledge graph, or None."""
-    if not orch or not getattr(orch, "memory", None):
-        return None
-    return getattr(orch.memory, "graph", None)
-
-
-@app.get("/api/kg/entities")
-async def kg_entities(q: str = "", limit: int = Query(100, ge=1, le=500)):
-    """List (or search with ?q=) knowledge-graph entities."""
-    g = _kg()
-    if g is None:
-        return _nocache_json({"entities": [], "error": "graph not available"})
-    entities = g.search(q) if q else g.list_entities(limit)
-    return _nocache_json({"entities": entities[:limit], "total": len(entities)})
-
-
-@app.get("/api/kg/entities/{name}")
-async def kg_entity(name: str):
-    """Get one entity plus its relations."""
-    g = _kg()
-    if g is None:
-        return JSONResponse({"error": "graph not available"}, status_code=503)
-    ent = g.get_entity(name)
-    if ent is None:
-        return JSONResponse({"error": "not found"}, status_code=404)
-    return _nocache_json({"entity": ent, "relations": g.get_relations(name)})
-
-
-@app.post("/api/kg/entities")
-async def kg_upsert_entity(req: Request):
-    """Create or update an entity (upsert). Body: {name, type, properties}."""
-    g = _kg()
-    if g is None:
-        return JSONResponse({"error": "graph not available"}, status_code=503)
-    try:
-        body = await req.json()
-    except Exception:
-        body = {}
-    name = (body or {}).get("name", "").strip()
-    if not name:
-        return JSONResponse({"error": "name required"}, status_code=400)
-    ok = g.add_entity(name, (body.get("type") or "unknown"), body.get("properties") or {})
-    return _nocache_json({"ok": bool(ok), "entity": g.get_entity(name)})
-
-
-@app.delete("/api/kg/entities/{name}")
-async def kg_delete_entity(name: str):
-    """Delete an entity and any relations that touch it."""
-    g = _kg()
-    if g is None:
-        return JSONResponse({"error": "graph not available"}, status_code=503)
-    if not g.delete_entity(name):
-        return JSONResponse({"error": "not found"}, status_code=404)
-    return _nocache_json({"ok": True, "deleted": name})
-
-
-@app.post("/api/kg/relations")
-async def kg_add_relation(req: Request):
-    """Create a relation. Body: {source, relation, target, properties}."""
-    g = _kg()
-    if g is None:
-        return JSONResponse({"error": "graph not available"}, status_code=503)
-    try:
-        body = await req.json()
-    except Exception:
-        body = {}
-    source = (body or {}).get("source", "").strip()
-    relation = (body or {}).get("relation", "").strip()
-    target = (body or {}).get("target", "").strip()
-    if not (source and relation and target):
-        return JSONResponse({"error": "source, relation, target required"}, status_code=400)
-    ok = g.add_relation(source, relation, target, body.get("properties") or {})
-    return _nocache_json({"ok": bool(ok)})
-
-
-@app.delete("/api/kg/relations")
-async def kg_delete_relation(source: str, relation: str, target: str):
-    """Delete a specific relation (by source/relation/target)."""
-    g = _kg()
-    if g is None:
-        return JSONResponse({"error": "graph not available"}, status_code=503)
-    if not g.delete_relation(source, relation, target):
-        return JSONResponse({"error": "not found"}, status_code=404)
-    return _nocache_json({"ok": True})
-
-
-# ── H14.1 Bi-temporal KG (valid-time + ingested-at; as-of recall) ─────────────
-
-@app.post("/api/kg/facts")
-async def kg_add_fact(req: Request):
-    """Add a bi-temporal fact. Body: {subject, predicate, object, valid_from?,
-    ingested_at?, multi?}. Single-valued predicates invalidate (not delete) a
-    contradicting prior fact."""
-    bt = getattr(orch, "bitemporal", None) if orch else None
-    if bt is None:
-        return JSONResponse({"error": "bi-temporal KG not available"}, status_code=503)
-    try:
-        body = await req.json()
-    except Exception:
-        body = {}
-    for k in ("subject", "predicate", "object"):
-        if not (body or {}).get(k):
-            return JSONResponse({"error": "subject, predicate, object required"}, status_code=400)
-    fact = bt.add_fact(
-        body["subject"], body["predicate"], body["object"],
-        valid_from=body.get("valid_from"), ingested_at=body.get("ingested_at"),
-        multi=bool(body.get("multi", False)),
-    )
-    return _nocache_json({"ok": True, "fact": fact})
-
-
-@app.get("/api/kg/facts/as-of")
-async def kg_facts_as_of(at: Optional[float] = None, subject: str = "", predicate: str = ""):
-    """Valid-time recall: facts true in the world at time `at` (default now)."""
-    bt = getattr(orch, "bitemporal", None) if orch else None
-    if bt is None:
-        return JSONResponse({"error": "bi-temporal KG not available"}, status_code=503)
-    return _nocache_json({"at": at, "facts": bt.as_of(at, subject, predicate)})
-
-
-@app.get("/api/kg/facts/history")
-async def kg_facts_history(subject: str, predicate: str = ""):
-    """All versions (incl. invalidated) for a subject, oldest first."""
-    bt = getattr(orch, "bitemporal", None) if orch else None
-    if bt is None:
-        return JSONResponse({"error": "bi-temporal KG not available"}, status_code=503)
-    return _nocache_json({"subject": subject, "history": bt.history(subject, predicate)})
-
-
-@app.post("/api/kg/ingest")
-async def kg_ingest(req: Request):
-    """H12.6 — extract triples from text and write them to the KG immediately."""
-    updater = getattr(orch, "kg_updater", None) if orch else None
-    if updater is None:
-        return JSONResponse({"error": "incremental KG not available"}, status_code=503)
-    try:
-        body = await req.json()
-    except Exception:
-        body = {}
-    text = (body or {}).get("text", "")
-    if not text:
-        return JSONResponse({"error": "text required"}, status_code=400)
-    count = updater.ingest(text)
-    return _nocache_json({"ok": True, "added": count, "triples": updater.last_added})
-
-
-@app.get("/api/memory/eval/corpus")
-async def memory_eval_corpus():
-    """H14.2 — the owned memory-eval corpus (cases across 5 abilities)."""
-    from agents.core.memory.eval import DEFAULT_CORPUS, ABILITIES
-    return _nocache_json({
-        "abilities": ABILITIES,
-        "cases": [c.to_dict() for c in DEFAULT_CORPUS],
-    })
-
-
-@app.post("/api/memory/eval/run")
-async def memory_eval_run():
-    """H14.2 — run the harness with the offline keyword baseline answerer."""
-    from agents.core.memory.eval import run_eval, keyword_answer
-    return _nocache_json(run_eval(keyword_answer))
-
-
-@app.post("/api/memory/remember", dependencies=[Depends(_user_guard)])
-async def memory_remember(req: Request):
-    """Store a fact in long-term memory with a real embedding, for later recall."""
-    if not orch or not orch.memory:
-        return JSONResponse({"error": "not initialized"}, status_code=503)
-    try:
-        body = await req.json()
-    except Exception:
-        body = {}
-    text = (body or {}).get("text", "")
-    text = text.strip() if isinstance(text, str) else ""
-    if not text:
-        return JSONResponse({"error": "text required"}, status_code=400)
-    metadata = (body or {}).get("metadata")
-    metadata = metadata if isinstance(metadata, dict) else {}
-    rid = await orch.memory.remember(text, metadata=metadata)
-    return _nocache_json({"ok": rid is not None, "id": rid})
+# ── Memory + Knowledge-Graph surface ──────────────────────────────────────────
+# All `/api/memory/*` (except the data-space routes below) and all `/api/kg/*`
+# routes live in the memory_kg router (CLN-3). The `_kg()` + `_structured_recall()`
+# helpers moved there with them (they were used only by those handlers).
 
 
 # ── H10.26 Data Spaces (per-agent data scope) ─────────────────────
@@ -2599,15 +2280,7 @@ def _get_data_spaces():
 # ── END H10.26 Data Spaces ────────────────────────────────────────
 
 
-@app.get("/api/memory/recall", dependencies=[Depends(_user_guard)])
-async def recall_memory(q: str = ""):
-    """Search memory store by query string."""
-    from agents.core.memory.store import MemoryStore
-    store = MemoryStore()
-    if not q:
-        return {"results": []}
-    results = await store.search(q, limit=20)
-    return {"results": results, "query": q}
+# `/api/memory/recall` lives in the memory_kg router (CLN-3).
 
 
 @app.get("/api/analytics/cost")
