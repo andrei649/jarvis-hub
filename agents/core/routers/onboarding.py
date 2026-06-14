@@ -7,6 +7,10 @@ folder (selected by key, never a raw request path) into memory, offline.
 from fastapi import APIRouter
 from pydantic import BaseModel, Field
 
+from agents.core.web_helpers import nocache_json
+from agents.core.app_state import get_orch
+
+
 router = APIRouter(tags=["onboarding"])
 
 _local_docs_last = {"status": "never run"}
@@ -21,8 +25,7 @@ class LocalDocsIndexBody(BaseModel):
 
 def _configured_doc_folders() -> dict:
     """Owner-configured ``{key: folder_path}`` map of indexable folders."""
-    from agents import web
-    orch = web.orch
+    orch = get_orch()
     folders = orch.get_setting("local_docs.folders", {}) if orch else {}
     return folders if isinstance(folders, dict) else {}
 
@@ -30,23 +33,21 @@ def _configured_doc_folders() -> dict:
 @router.get("/api/local-docs")
 async def local_docs_status():
     """Last indexing summary + the configured folder keys (H12.2)."""
-    from agents import web
-    return web._nocache_json({**_local_docs_last, "available": sorted(_configured_doc_folders())})
+    return nocache_json({**_local_docs_last, "available": sorted(_configured_doc_folders())})
 
 
 @router.post("/api/local-docs/index")
 async def local_docs_index(body: LocalDocsIndexBody):
     """Index a pre-configured local folder (by key) into memory (offline)."""
     global _local_docs_last
-    from agents import web
-    orch = web.orch
+    orch = get_orch()
     if not orch:
-        return web._nocache_json({"error": "not initialized"}, status_code=503)
+        return nocache_json({"error": "not initialized"}, status_code=503)
 
     folders = _configured_doc_folders()
     folder = folders.get(body.key)
     if not folder:
-        return web._nocache_json(
+        return nocache_json(
             {"error": f"unknown folder key '{body.key}'",
              "available": sorted(folders)},
             status_code=404,
@@ -61,4 +62,4 @@ async def local_docs_index(body: LocalDocsIndexBody):
     status = 400 if summary.get("error") else 200
     if not summary.get("error"):
         _local_docs_last = summary
-    return web._nocache_json(summary, status_code=status)
+    return nocache_json(summary, status_code=status)

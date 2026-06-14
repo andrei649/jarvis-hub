@@ -61,7 +61,7 @@ def test_chain_detects_relinking(tmp_path):
 
 async def test_verify_endpoint(tmp_path, monkeypatch):
     import agents.web as web
-    from agents.web import audit_verify
+    from agents.core.routers.security import audit_verify
 
     class _Orch:
         audit = _logger_with_events(tmp_path)
@@ -74,7 +74,7 @@ async def test_verify_endpoint(tmp_path, monkeypatch):
 
 async def test_verify_endpoint_unavailable(monkeypatch):
     import agents.web as web
-    from agents.web import audit_verify
+    from agents.core.routers.security import audit_verify
 
     monkeypatch.setattr(web, "orch", None)
     resp = await audit_verify()

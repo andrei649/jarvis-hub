@@ -2,6 +2,10 @@
 import pytest
 from fastapi.testclient import TestClient
 from agents import web
+# _trust_status / _env_truthy moved into the oauth router (CLN-3). They read the
+# live orchestrator via app_state.get_orch(), which resolves web.orch at call
+# time, so monkeypatch.setattr(web, "orch", ...) below is still observed.
+from agents.core.routers.oauth import _trust_status, _env_truthy
 
 
 @pytest.fixture
@@ -26,21 +30,21 @@ def test_trust_status_no_store_header(client):
 
 
 def test_mic_default_on():
-    assert web._trust_status()["mic"] == "on"
+    assert _trust_status()["mic"] == "on"
 
 
 def test_mic_muted_via_env(monkeypatch):
     monkeypatch.setenv("JARVIS_MIC_MUTED", "1")
-    assert web._trust_status()["mic"] == "off"
+    assert _trust_status()["mic"] == "off"
     monkeypatch.setenv("JARVIS_MIC_MUTED", "true")
-    assert web._trust_status()["mic"] == "off"
+    assert _trust_status()["mic"] == "off"
     monkeypatch.setenv("JARVIS_MIC_MUTED", "0")
-    assert web._trust_status()["mic"] == "on"
+    assert _trust_status()["mic"] == "on"
 
 
 def test_strict_local_env_override_forces_on(monkeypatch):
     monkeypatch.setenv("JARVIS_STRICT_LOCAL", "1")
-    assert web._trust_status()["strict_local"] is True
+    assert _trust_status()["strict_local"] is True
 
 
 def test_strict_local_reflects_cloud_availability(monkeypatch):
@@ -52,7 +56,7 @@ def test_strict_local_reflects_cloud_availability(monkeypatch):
         _claude_available = False
 
     monkeypatch.setattr(web, "orch", type("O", (), {"llm_router": _Router()})())
-    data = web._trust_status()
+    data = _trust_status()
     assert data["cloud_available"] is True
     assert data["strict_local"] is False
 
@@ -65,12 +69,12 @@ def test_strict_local_true_when_no_cloud(monkeypatch):
         _claude_available = False
 
     monkeypatch.setattr(web, "orch", type("O", (), {"llm_router": _Router()})())
-    assert web._trust_status()["strict_local"] is True
+    assert _trust_status()["strict_local"] is True
 
 
 def test_env_truthy_spellings():
-    assert web._env_truthy("yes") is True
-    assert web._env_truthy("ON") is True
-    assert web._env_truthy("") is False
-    assert web._env_truthy(None) is False
-    assert web._env_truthy("off") is False
+    assert _env_truthy("yes") is True
+    assert _env_truthy("ON") is True
+    assert _env_truthy("") is False
+    assert _env_truthy(None) is False
+    assert _env_truthy("off") is False

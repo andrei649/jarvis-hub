@@ -185,6 +185,28 @@ async def test_run_load_missing_model_asks():
     assert "Which model" in r
 
 
+async def test_run_load_narrates_resolved_id():
+    o = _orch()
+
+    async def _load(model):
+        return {"status": "ok", "model": "google/gemma-4-12b", "resolved_from": model}
+    o.lmstudio.load_model = _load
+    o.llm_router.active_model = None  # force narration to use the controller result
+    r = await o._run_llm_control("load", "gemma")
+    assert "gemma" in r and "google/gemma-4-12b" in r
+
+
+async def test_run_load_ambiguous_asks_to_pick():
+    o = _orch()
+
+    async def _load(model):
+        return {"status": "ambiguous",
+                "candidates": ["google/gemma-4-12b", "google/gemma-2-9b"]}
+    o.lmstudio.load_model = _load
+    r = await o._run_llm_control("load", "gemma")
+    assert "match" in r.lower() and "gemma-2-9b" in r and "Which one" in r
+
+
 async def test_run_unload_all():
     o = _orch()
     r = await o._run_llm_control("unload", None)

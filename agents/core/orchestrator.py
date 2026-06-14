@@ -25,16 +25,17 @@ from .llm.tokenizer import estimate_tokens
 from .memory.manager import MemoryManager
 from .checkpoint import CheckpointManager
 from .heartbeat import HeartbeatScheduler
+from .scheduler_service import SchedulerService
+from .autonomy_coordinator import AutonomyCoordinator
+from .llm_control import detect_llm_control  # re-exported: NL LLM-control detection (CLN-2)
+from . import plugin_gatherer  # live-plugin data gathering (CLN-2)
 from .learning.loop import LearningLoop
 from .skills.loader import SkillLoader
 from .skills.importer import SkillImporter
 from .skills.marketplace import SkillMarketplace
 from .mcp.client import MCPManager
-from .autonomy import AutonomyWorker, TaskQueue, AutonomyPolicy, PreferenceStore, TaskExecutor
+from .autonomy import AutonomyWorker, TaskQueue, AutonomyPolicy, PreferenceStore
 from .autonomy import ProactiveObserver, default_probes
-from .autonomy.inbox import build_decision_card
-from .autonomy.digest import build_morning_brief, build_evening_retro
-from .autonomy.worker import is_night_window
 from .autonomy.reflection import DailyReflector
 from .autonomy.log_scanner import LogBugScanner
 from .workflows import WorkflowEngine, WorkflowRegistry
@@ -46,7 +47,7 @@ from .security.audit import AuditLogger
 from .security.types import RedactionMode, SecurityEvent, SecurityEventType
 from .log import log_error
 from .errors import (
-    E_PLUGIN_BLOCKED, E_LLM_BACKEND_MISSING, E_LLM_TIMEOUT,
+    E_LLM_BACKEND_MISSING, E_LLM_TIMEOUT,
     E_INTERNAL_UNEXPECTED,
 )
 from .channels.base import ChannelAdapter
@@ -91,53 +92,6 @@ HANDOFF_PREFIX = "[handoff:"
 SKILL_PREFIX = "[learn:"
 
 
-# ── Natural-language LLM-backend control (start / load / unload / status) ─────
-# Lets a chat message drive LMStudioController. Deliberately conservative: a
-# load needs a *plausible* model token, so ordinary phrases like "load up our
-# friends and test them" never trigger a model load. Status questions that slip
-# through still get answered truthfully by the normal chat path (the runtime
-# state block injects the real model), so missing one here is harmless.
-
-_LLM_PREFIX_RE = re.compile(r"^\s*(?:llm|lm[\s\-]?studio)\b[:\s]+(.+)$", re.IGNORECASE)
-_MODEL_FAMILY_RE = re.compile(
-    r"(gemma|qwen|deepseek|llama|mistral|mixtral|phi|gpt|granite|nemotron|smol|yi|command-?r|qwq)",
-    re.IGNORECASE,
-)
-_LOAD_VERB_RE = re.compile(r"\b(load|reload|încarc|incarc|switch|schimb)\w*\b", re.IGNORECASE)
-_START_RE = re.compile(r"\b(start|launch|boot|pornes\w*|porneșt\w*)\b", re.IGNORECASE)
-_UNLOAD_RE = re.compile(r"\b(unload|descarc)\w*\b", re.IGNORECASE)
-_LLM_NOUN_RE = re.compile(r"\b(lm[\s\-]?studio|llm|language model|model|brain|creier|server)\b", re.IGNORECASE)
-_START_TARGET_RE = re.compile(r"\b(lm[\s\-]?studio|llm|language (?:model|server)|the server)\b", re.IGNORECASE)
-_STATUS_RE = re.compile(
-    r"\bwhat are you running\b"
-    r"|\b(?:what|which|ce)\b[^?.!]{0,40}\b(?:llm|lm[\s\-]?studio|language model|ai model|brain|creier)\b"
-    r"|\b(?:what|which|ce)\b[^?.!]{0,30}\bmodel\b[^?.!]{0,30}\b(?:you|run|running|loaded|using|use|rulez\w*|folos\w*|încărc\w*|incarc\w*|activ)\b"
-    r"|\bmodel\b[^?.!]{0,20}\b(?:loaded|running|active|încărcat|incarcat)\b",
-    re.IGNORECASE,
-)
-_MODEL_TOKEN_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9._/:@\-]{1,199}")
-_MODEL_STOPWORDS = {
-    "the", "a", "an", "model", "models", "modelul", "modele", "up", "please", "sir",
-    "to", "into", "my", "our", "your", "new", "llm", "lm", "studio", "lmstudio",
-    "load", "reload", "unload", "switch", "use", "start", "server", "and", "test",
-    "them", "on", "with", "running", "loaded", "active", "now", "current", "default",
-}
-
-
-def _is_plausible_model(tok: str) -> bool:
-    """A model id either looks structured (digit / path / quant) or names a known family."""
-    return bool(re.search(r"[0-9/:@]", tok) or _MODEL_FAMILY_RE.search(tok))
-
-
-def _extract_model(s: str) -> Optional[str]:
-    for tok in _MODEL_TOKEN_RE.findall(s or ""):
-        if tok.lower() in _MODEL_STOPWORDS:
-            continue
-        if _is_plausible_model(tok):
-            return tok
-    return None
-
-
 def _env_flag(name: str, default: bool = True) -> bool:
     raw = os.environ.get(name)
     if raw is None or raw.strip() == "":
@@ -155,55 +109,6 @@ def _as_bool(value, default: bool = True) -> bool:
         return value != 0
     return str(value).strip().lower() not in ("0", "false", "no", "off", "disable", "disabled", "")
 
-
-def detect_llm_control(text: str) -> Optional[tuple[str, Optional[str]]]:
-    """Detect a chat request to control the LLM backend.
-
-    Returns (action, model) where action ∈ {status, start, load, unload} and
-    model is an optional id, or None if the message is not LLM control.
-    """
-    if not text or not text.strip():
-        return None
-    t = text.strip()
-
-    # Explicit "llm <sub> [args]" / "lm studio <sub>" command form.
-    m = _LLM_PREFIX_RE.match(t)
-    if m:
-        rest = m.group(1).strip()
-        sub, _, arg = rest.partition(" ")
-        sub = sub.lower()
-        if sub in ("status", "state", "ps", "info"):
-            return ("status", None)
-        if sub in ("start", "up", "boot", "launch"):
-            return ("start", None)
-        if sub in ("unload", "stop"):
-            return ("unload", _extract_model(arg))
-        if sub in ("load", "use", "switch"):
-            return ("load", _extract_model(arg))
-        # Unknown sub-command: only act if it names a model ("llm gemma"),
-        # otherwise let normal chat handle it (avoids "lm studio is great").
-        model = _extract_model(rest)
-        return ("load", model) if model else None
-
-    low = t.lower()
-
-    if _UNLOAD_RE.search(low):
-        model = _extract_model(low)
-        if model or _LLM_NOUN_RE.search(low):
-            return ("unload", model)
-
-    if _START_RE.search(low) and _START_TARGET_RE.search(low):
-        return ("start", None)
-
-    if _LOAD_VERB_RE.search(low):
-        model = _extract_model(low)
-        if model and (_LLM_NOUN_RE.search(low) or _is_plausible_model(model)):
-            return ("load", model)
-
-    if _STATUS_RE.search(low):
-        return ("status", None)
-
-    return None
 
 
 
@@ -315,6 +220,8 @@ class Orchestrator:
         self.bench = LatencyBenchmark()
         self.sandbox = Sandbox()
         self.heartbeat_scheduler = HeartbeatScheduler(agents_dir=str(Path(__file__).resolve().parent.parent.parent / "agents"))
+        self._scheduler = SchedulerService(self)  # CLN-2: owns the cron/interval job wiring
+        self._autonomy = AutonomyCoordinator(self)  # CLN-2: owns autonomy wiring + worker loop
         self.security: Optional[GuardrailsEngine] = None
         self.permission_gate = PermissionGate()
         self.audit = AuditLogger()
@@ -520,7 +427,7 @@ class Orchestrator:
         try:
             self.autonomy_queue.initialize()
             self.autonomy_prefs.initialize()
-            self.autonomy.executor = self._build_autonomy_executor().execute
+            self.autonomy.executor = self._autonomy.build_executor().execute
             self.observer = ProactiveObserver(self.autonomy, probes=default_probes())
 
             # Setup personal event probes using active plugins (Antigravity watchers)
@@ -608,408 +515,13 @@ class Orchestrator:
             self.load_runtime_settings()
 
     # ── Autonomy / Proactive Cortex (H6.1–H6.3) ────────────────────
-    def _wire_autonomy(self):
-        """Wire the decision inbox to Telegram if a bot + owner chat are set."""
-        owner = os.environ.get("AUTONOMY_OWNER_CHAT_ID", "") or str(
-            self.get_setting("autonomy.owner_chat_id", "") or ""
-        )
-        tg = self.channels.get("telegram")
-        if tg and owner and hasattr(tg, "send_card"):
-            async def notifier(task):
-                return await tg.send_card(int(owner), build_decision_card(task))
-            self.autonomy.notifier = notifier
-            tg.on_callback = self._on_autonomy_callback
-            logger.info("Autonomy decision inbox wired to Telegram")
-
-    async def _on_autonomy_callback(self, task_id: int, action: str, **kwargs):
-        """Handle a decision-inbox button tap from Telegram."""
-        try:
-            await self.autonomy.apply_decision(task_id, action, decided_by="telegram")
-            return f"Task #{task_id}: {action}"
-        except Exception as e:
-            logger.warning(f"Autonomy decision callback failed: {e}")
-            return None
-
-    def _schedule_daily_digests(self):
-        """Cron the morning brief (07:00) and evening retro (20:00) — H6.4."""
-        sched = getattr(self.heartbeat_scheduler, "scheduler", None)
-        if sched is None:
-            return
-        try:
-            sched.add_job(self._run_daily_digest, "cron", hour=7, minute=0,
-                          args=["morning"], id="autonomy-morning-brief", replace_existing=True)
-            sched.add_job(self._run_daily_digest, "cron", hour=20, minute=0,
-                          args=["evening"], id="autonomy-evening-retro", replace_existing=True)
-            logger.info("Scheduled daily digests: morning 07:00, evening 20:00")
-        except Exception as e:
-            logger.warning(f"Failed to schedule daily digests: {e}")
-
-    def _schedule_daily_budget_reset(self):
-        """Reset the autonomy daily-spend ceiling at local midnight (BUG-10).
-
-        Without this, AutonomyPolicy._spent_today accrues across calendar days
-        until a restart, so `daily_ceiling` fills permanently and blocks
-        autonomous spend. reset_daily() existed but was never scheduled in prod.
-        """
-        sched = getattr(self.heartbeat_scheduler, "scheduler", None)
-        policy = getattr(getattr(self, "autonomy", None), "policy", None)
-        if sched is None or policy is None:
-            return
-        try:
-            sched.add_job(policy.reset_daily, "cron", hour=0, minute=0,
-                          id="autonomy-daily-budget-reset", replace_existing=True)
-            logger.info("Scheduled daily autonomy-budget reset: 00:00")
-        except Exception as e:
-            logger.warning(f"Failed to schedule daily budget reset: {e}")
-
-    def _schedule_learning_loop(self):
-        """H7.11 — periodically propose agent promotions to the decision inbox.
-
-        Cadence from config (autonomy.learning_loop_interval_hours, default 168h =
-        weekly). Each run proposes gated, reversible promotions via the queue.
-        """
-        sched = getattr(self.heartbeat_scheduler, "scheduler", None)
-        if sched is None:
-            return
-        try:
-            hours = float((self.config.get("autonomy", {}) or {}).get(
-                "learning_loop_interval_hours", 168))
-        except Exception:
-            hours = 168.0
-        if hours <= 0:
-            return
-        try:
-            sched.add_job(self._run_learning_loop, "interval", hours=hours,
-                          id="learning-loop-promotions", replace_existing=True)
-            logger.info("Scheduled learning-loop promotions every %sh", hours)
-        except Exception as e:
-            logger.warning(f"Failed to schedule learning loop: {e}")
+    # Autonomy wiring (inbox→Telegram), the executor build, and the worker
+    # loop live in AutonomyCoordinator (CLN-2); see self._autonomy.
 
     async def _run_learning_loop(self) -> list[dict]:
         """Propose agent promotions into the decision inbox (gated, reversible)."""
         from .learning.scheduler import propose_promotions
         return propose_promotions(self.learning, self.autonomy_queue, list(self.agents.keys()))
-
-    def _schedule_log_scans(self):
-        """Register the three log-bug-finding cadences on the APScheduler.
-
-        quick  — every 15 min: spike + new-code detection
-        hourly — every hour:   trend analysis + backlog sync
-        daily  — 07:05 daily:  full 24-h digest → memory_logs/reports/
-        """
-        sched = getattr(self.heartbeat_scheduler, "scheduler", None)
-        if sched is None:
-            return
-        try:
-            sched.add_job(self._run_log_quick_scan, "interval", seconds=900,
-                          id="log-scan-quick", replace_existing=True)
-            sched.add_job(self._run_log_hourly_scan, "interval", seconds=3600,
-                          id="log-scan-hourly", replace_existing=True)
-            sched.add_job(self._run_log_daily_scan, "cron", hour=7, minute=5,
-                          id="log-scan-daily", replace_existing=True)
-            logger.info("Scheduled log-bug scans: quick/15min, hourly, daily/07:05")
-        except Exception as e:
-            logger.warning(f"Failed to schedule log scans: {e}")
-
-    async def _run_log_quick_scan(self):
-        """15-min scan: submit autonomy alert on spike or new error code."""
-        if not self.get_setting("system.log_scan_enabled", True):
-            return
-        try:
-            base = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-            problems_path = os.path.join(base, "..", "memory_logs", "problems.jsonl")
-            result = self.log_scanner.quick_scan(problems_path)
-            if result.healthy:
-                return
-            issues = ", ".join(
-                f"{i['code']}×{i['count']}" for i in result.top_issues[:3]
-            )
-            parts = []
-            if result.spike_detected:
-                parts.append(f"spike: {result.total_errors} errors in 15 min")
-            if result.new_codes:
-                parts.append(f"new codes: {', '.join(result.new_codes[:3])}")
-            title = "Log spike detected — " + "; ".join(parts)
-            if issues:
-                title += f" [{issues}]"
-            await self.autonomy.submit(
-                agent="steve", kind="monitor.log_spike", title=title,
-                payload={"risk_tier": 0, "spike": result.spike_detected,
-                         "new_codes": result.new_codes,
-                         "total_errors": result.total_errors},
-                origin="log_scanner",
-            )
-        except Exception as e:
-            logger.warning(f"Log quick scan failed: {e}")
-
-    async def _run_log_hourly_scan(self):
-        """Hourly scan: trend analysis and backlog sync."""
-        if not self.get_setting("system.log_scan_enabled", True):
-            return
-        try:
-            base = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-            problems_path = os.path.join(base, "..", "memory_logs", "problems.jsonl")
-            result = self.log_scanner.hourly_scan(problems_path)
-            from .autonomy.error_logger import sync_problems_to_diagnostics
-            sync_problems_to_diagnostics()
-            if result.healthy:
-                return
-            parts = []
-            if result.spike_detected:
-                parts.append(f"spike: {result.total_errors} errors this hour")
-            if result.new_codes:
-                parts.append(f"new codes: {', '.join(result.new_codes[:3])}")
-            if parts:
-                await self.autonomy.submit(
-                    agent="steve", kind="monitor.log_trend", title="Hourly log trend — " + "; ".join(parts),
-                    payload={"risk_tier": 0, "spike": result.spike_detected,
-                             "new_codes": result.new_codes,
-                             "total_errors": result.total_errors},
-                    origin="log_scanner",
-                )
-        except Exception as e:
-            logger.warning(f"Log hourly scan failed: {e}")
-
-    async def _run_log_daily_scan(self):
-        """07:05 daily scan: write 24-h bug-report digest."""
-        if not self.get_setting("system.log_scan_enabled", True):
-            return
-        try:
-            base = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-            problems_path = os.path.join(base, "..", "memory_logs", "problems.jsonl")
-            result = self.log_scanner.daily_scan(problems_path)
-            logger.info(
-                f"Daily log scan: {result.total_errors} errors, "
-                f"{len(result.new_codes)} new codes, report={result.report_path}"
-            )
-            if result.healthy:
-                return
-            issues_summary = ", ".join(
-                f"{i['code']}×{i['count']}" for i in result.top_issues[:5]
-            )
-            title = f"Daily bug digest: {result.total_errors} errors"
-            if result.new_codes:
-                title += f", {len(result.new_codes)} new codes"
-            await self.autonomy.submit(
-                agent="steve", kind="monitor.log_daily", title=title,
-                payload={"risk_tier": 0, "total_errors": result.total_errors,
-                         "new_codes": result.new_codes, "top_issues": issues_summary,
-                         "report_path": result.report_path},
-                origin="log_scanner",
-            )
-        except Exception as e:
-            logger.warning(f"Log daily scan failed: {e}")
-
-    async def _autonomy_loop(self):
-        """Periodically run approved autonomy tasks (the self-tasking worker).
-
-        During the night window (H6.6) only reversible/read-only work runs, so
-        external/irreversible tasks always wait for a waking human.
-        """
-        from datetime import datetime
-        while True:
-            interval = int(self.get_setting("system.autonomy_tick", 60) or 60)
-            await asyncio.sleep(max(15, interval))
-            try:
-                # Sync the live autonomy mode (HUD AUTO/ASK/OFF) onto the policy each tick.
-                amode = str(self.get_setting("autonomy.mode", "auto") or "auto").lower()
-                if self.autonomy and self.autonomy.policy.mode != amode:
-                    self.autonomy.policy.mode = amode
-                max_tier = None
-                if self.get_setting("autonomy.night_shift", False):
-                    start = int(self.get_setting("autonomy.night_start", 23) or 23)
-                    end = int(self.get_setting("autonomy.night_end", 6) or 6)
-                    if is_night_window(datetime.now().hour, start, end):
-                        max_tier = 1  # reversible/read-only only
-                await self.autonomy.tick(max_tier=max_tier)
-                # Proactive passes self-generate new tasks — paused entirely in OFF mode.
-                if amode != "off":
-                    # Sample the host and turn state changes into gated tasks.
-                    if self.observer and self.get_setting("system.observer_enabled", True):
-                        await self.observer.observe()
-                    # Sample personal events (Antigravity watchers)
-                    if self.event_watcher and self.get_setting("system.watchers_enabled", True):
-                        await self.event_watcher.observe()
-                # Nightly reflection & graph consolidation (H5.15)
-                if self.reflector and self.get_setting("system.reflection_enabled", True):
-                    if is_night_window(datetime.now().hour, start=22, end=7):
-                        await self.reflector.run(enabled=True)
-                # Continuous Ingestion Watcher (H5.1)
-                if self.ingestion_watcher and self.get_setting("system.ingestion_watcher_enabled", True):
-                    await asyncio.to_thread(self.ingestion_watcher.check_and_run)
-                # Sync error/problem log to the git-ignored memory_logs/diagnostics.md
-                # (never the tracked BACKLOG.md — that caused git conflicts).
-                if self.get_setting("system.error_backlog_sync_enabled", True):
-                    from .autonomy.error_logger import sync_problems_to_diagnostics
-                    sync_problems_to_diagnostics()
-            except Exception as e:
-                logger.warning(f"Autonomy tick failed: {e}")
-
-    def _build_autonomy_executor(self) -> TaskExecutor:
-        """Wire task kinds to real capabilities, degrading gracefully."""
-        async def _research(task):
-            query = (task.payload or {}).get("query") or task.title
-            ws = self.plugins.get("websearch")
-            if ws and hasattr(ws, "handle"):
-                return {"status": "ok", "kind": "research", "output": await ws.handle(query)}
-            return {"status": "noop", "note": "websearch unavailable"}
-
-        async def _llm(task):
-            prompt = (task.payload or {}).get("prompt") or task.title
-            out = await self.process(prompt, channel="autonomy")
-            return {"status": "ok", "kind": task.kind, "output": out}
-
-        executor = TaskExecutor(fallback=_llm)
-        for kw in ("research", "search", "monitor", "scan", "lookup", "check"):
-            executor.register(kw, _research)
-        for kw in ("summarize", "analyze", "review", "draft", "plan", "prepare"):
-            executor.register(kw, _llm)
-
-        # Safe system recovery remediation handler (H6 / Antigravity recovery)
-        from .autonomy.remediation import RemediationRunner
-        runner = RemediationRunner(permission_gate=self.permission_gate, audit=self.audit)
-
-        async def _restart_service(task):
-            service = (task.payload or {}).get("service")
-            agent = getattr(task, "agent", "steve")
-            return await runner.restart(service, agent=agent)
-
-        executor.register("restart_service", _restart_service)
-
-        # H10.30 — governed write-back integrations (Notion/GitHub/Calendar).
-        # Approved `writeback.*` tasks resolve credentials at action time (behind
-        # approval) and call an injectable client (offline NullWriteBackClient by
-        # default; the live HTTP rail is a host-side seam).
-        from .writeback import WriteBackBroker
-        self.writeback = WriteBackBroker(
-            enqueue=self.autonomy_queue.enqueue,
-            secret_broker=getattr(self, "secret_broker", None),
-            audit=getattr(self, "audit", None),
-        )
-        executor.register("writeback", self.writeback.execute)
-
-        # H12.21 — governed social actions (X/Twitter post/reply/DM). Same
-        # governance: approved `social.*` tasks resolve OAuth/bearer credentials
-        # at action time (behind approval) and post via an injectable client.
-        from .social import SocialBroker
-        self.social = SocialBroker(
-            enqueue=self.autonomy_queue.enqueue,
-            secret_broker=getattr(self, "secret_broker", None),
-            audit=getattr(self, "audit", None),
-        )
-        executor.register("social", self.social.execute)
-
-        # H12.22 — governed outbound voice / call-back. A call is an interruption,
-        # so it's gated by BOTH the approval queue and the daily interrupt budget;
-        # live telephony (Twilio/Telnyx) is deferred to a host-side client.
-        import json as _json
-        from .autonomy.call_broker import CallBroker
-        try:
-            _call_cfg = _json.loads(os.environ.get("JARVIS_CALL_CONFIG", "") or "{}")
-        except Exception:
-            _call_cfg = {}
-        self.call_broker = CallBroker(
-            enqueue=self.autonomy_queue.enqueue,
-            secret_broker=getattr(self, "secret_broker", None),
-            audit=getattr(self, "audit", None),
-            budget=getattr(self.autonomy, "budget", None),
-            config=_call_cfg,
-        )
-        executor.register("call", self.call_broker.execute)
-
-        # H12.17 — governed node mesh (phone/desktop execution nodes). Capability-
-        # scoped (H17.3 broker + kill-switch) + approval-gated; the on-device run
-        # is a host seam (Tauri/phone client).
-        from .node_mesh import NodeMesh
-        self.node_mesh = NodeMesh(
-            capability_broker=getattr(self, "capabilities", None),
-            kill_switch=getattr(self, "kill_switch", None),
-            enqueue=self.autonomy_queue.enqueue,
-            audit=getattr(self, "audit", None),
-        )
-        executor.register("node", self.node_mesh.execute)
-
-        # H20.1 — governed Tool-RPC surface for sandboxed zero-context pipelines.
-        # Read-only tools run inline; gated tools enqueue an ask-tier task (and
-        # run via this executor only after approval). Starter allowlist is safe
-        # built-ins; integrations register more (incl. gated) over time.
-        from .tool_rpc import ToolRPCServer
-        import time as _t
-        self.tool_rpc = ToolRPCServer(
-            secret_broker=getattr(self, "secret_broker", None),
-            enqueue=self.autonomy_queue.enqueue,
-            audit=getattr(self, "audit", None),
-        )
-
-        async def _rpc_echo(args):
-            return {"echo": args}
-
-        async def _rpc_time(args):
-            return {"now": _t.time()}
-
-        self.tool_rpc.register_tool("echo", _rpc_echo)
-        self.tool_rpc.register_tool("time", _rpc_time)
-        executor.register("toolrpc", self.tool_rpc.execute)
-
-        # H21.4: wire the calibration-gated autonomy hook (gated; no-op unless
-        # cognition.learning_enabled — and it only ever ADDS caution).
-        def _calibration_hook(action):
-            cog = getattr(self, "cognition", None)
-            if cog is None or not cog.sub_enabled("learning_enabled"):
-                return 0
-            lm = cog.module("learning")
-            if lm is None:
-                return 0
-            try:
-                return lm.autonomy_adjustment(str(action.get("kind", "")))
-            except Exception:
-                return 0
-        try:
-            self.autonomy.policy.calibration_hook = _calibration_hook
-        except Exception:
-            logger.debug("calibration hook wiring skipped", exc_info=True)
-
-        # H20.6 — agent-initiated sub-agent delegation (isolated session, capped).
-        from .subagents import SubAgentManager
-
-        async def _subagent_runner(task, session_id, agent):
-            picked = agent if agent in self.agents else "jarvis"
-            out = await self.process(task, agent=picked, channel="subagent")
-            return {"output": out, "session_id": session_id}
-
-        self.subagents = SubAgentManager(
-            runner=_subagent_runner,
-            max_concurrent=int(self.get_setting("autonomy.max_subagents", 3) or 3),
-        )
-
-        return executor
-
-    def _schedule_worldview_kg_sync(self):
-        """Periodically sync the WorldView ontology into the knowledge graph (H19.3.5).
-
-        OFF by default — like the Oracle watcher, a privacy-first local product should not
-        poll a service unsolicited. Enable with JARVIS_WORLDVIEW_KG_SYNC=1 or the
-        `worldview.kg_sync_enabled` setting. Each pass degrades to a no-op when WorldView
-        is unreachable (the plugin fails closed), so an enabled-but-offline deployment is
-        harmless. Skipped under JARVIS_TESTING.
-        """
-        if os.getenv("JARVIS_TESTING") == "1":
-            return
-        enabled = os.getenv("JARVIS_WORLDVIEW_KG_SYNC") == "1" or self.get_setting(
-            "worldview.kg_sync_enabled", False
-        )
-        if not enabled:
-            return
-        sched = getattr(self.heartbeat_scheduler, "scheduler", None)
-        if sched is None:
-            return
-        interval = max(60, int(self.get_setting("worldview.kg_sync_interval", 900)))
-        try:
-            sched.add_job(self._run_worldview_kg_sync, "interval", seconds=interval,
-                          id="worldview-kg-sync", replace_existing=True)
-            logger.info("Scheduled WorldView KG sync every %ss", interval)
-        except Exception as e:
-            logger.warning(f"Failed to schedule WorldView KG sync: {e}")
 
     async def _run_worldview_kg_sync(self):
         """Run one WorldView ontology -> knowledge-graph sync pass (best-effort)."""
@@ -1024,27 +536,6 @@ class Orchestrator:
         except Exception as e:
             logger.warning(f"WorldView KG sync failed: {e}")
 
-    async def _run_daily_digest(self, kind: str):
-        """Build and ship the morning brief / evening retro to the owner."""
-        try:
-            if kind == "morning":
-                text = build_morning_brief(self.autonomy_queue)
-            else:
-                text = build_evening_retro(self.autonomy_queue)
-        except Exception as e:
-            logger.warning(f"Digest build failed ({kind}): {e}")
-            return
-        owner = os.environ.get("AUTONOMY_OWNER_CHAT_ID", "") or str(
-            self.get_setting("autonomy.owner_chat_id", "") or ""
-        )
-        tg = self.channels.get("telegram")
-        if tg and owner:
-            try:
-                await tg.send(text, chat_id=int(owner))
-            except Exception as e:
-                logger.warning(f"Digest send failed ({kind}): {e}")
-        logger.info(f"Daily digest ready: {kind}")
-
     async def register_channel(self, channel: ChannelAdapter):
         self.channel_manager.register(channel)
 
@@ -1053,13 +544,9 @@ class Orchestrator:
         self.heartbeat_scheduler.start(self)
         self._settings_watcher_task = asyncio.create_task(self._settings_watcher_loop())
         self._settings_watcher_task.add_done_callback(_log_task_result)
-        self._wire_autonomy()
-        self._schedule_daily_digests()
-        self._schedule_log_scans()
-        self._schedule_learning_loop()
-        self._schedule_daily_budget_reset()
-        self._schedule_worldview_kg_sync()
-        self._autonomy_task = asyncio.create_task(self._autonomy_loop())
+        self._autonomy.wire()
+        self._scheduler.schedule_all()
+        self._autonomy_task = asyncio.create_task(self._autonomy.loop())
         self._autonomy_task.add_done_callback(_log_task_result)
         # Oracle GitHub watcher is OFF by default: it polls a GitHub repo every 30s,
         # which a privacy-first local product should not do unsolicited. It's a
@@ -1674,89 +1161,19 @@ class Orchestrator:
         return chosen
 
     def _first_target_agent(self, intent) -> str:
-        return intent.target_agents[0] if intent.target_agents and len(intent.target_agents) > 0 else "jarvis"
+        return plugin_gatherer.first_target_agent(self, intent)
 
     def _any_agent_can(self, plugin: str, intent) -> bool:
-        agents = intent.target_agents if intent.target_agents else ["jarvis"]
-        return any(self.permission_gate.check_call(plugin, a) for a in agents)
+        return plugin_gatherer.any_agent_can(self, plugin, intent)
 
     async def _gather_plugin_data(self, text: str, intent) -> dict:
-        data = {}
-        keywords = intent.context.get("keywords_found", [])
-        text_lower = text.lower()
-
-        if "weather" in keywords or any(w in text_lower for w in ["weather", "vremea", "temperature", "ploaie", "temperatura"]):
-            if self._any_agent_can("weather", intent):
-                wp = self.plugins.get("weather")
-                if wp:
-                    location = self._extract_location(text)
-                    data["weather"] = await wp.get_weather(location)
-            else:
-                log_error(logger, E_PLUGIN_BLOCKED, name="weather")
-
-        if "news" in keywords or any(w in text_lower for w in ["news", "stiri", "headlines", "noutati"]):
-            if self._any_agent_can("news", intent):
-                np = self.plugins.get("news")
-                if np:
-                    category = "general"
-                    if any(w in text_lower for w in ["tech", "technology", "tehnologie"]):
-                        category = "technology"
-                    elif any(w in text_lower for w in ["business", "afaceri"]):
-                        category = "business"
-                    data["news"] = await np.summarize(category)
-            else:
-                log_error(logger, E_PLUGIN_BLOCKED, name="news")
-
-        if "calendar" in keywords or any(w in text_lower for w in ["calendar", "agenda", "program", "sedin", "meeting", "eveniment"]):
-            if self._any_agent_can("google-calendar", intent):
-                gp = self.plugins.get("google-calendar")
-                if gp and gp.access_token:
-                    data["calendar"] = await gp.get_today_events()
-
-        if "email" in keywords or any(w in text_lower for w in ["email", "mail", "inbox", "mesaj", "hangup", "prim"]):
-            if self._any_agent_can("gmail", intent):
-                gp = self.plugins.get("gmail")
-                if gp and gp.access_token:
-                    data["email"] = await gp.list_messages(max_results=5)
-
-        if "research" in keywords or "search" in keywords or any(w in text_lower for w in ["research", "caut", "search", "find", "gaseste", "investigheaza"]):
-            if self._any_agent_can("websearch", intent):
-                wp = self.plugins.get("websearch")
-                if wp:
-                    data["websearch"] = await wp.search(text, max_results=5)
-
-        if "worldview" in keywords or any(w in text_lower for w in [
-            "satellite", "satelit", "recon", "overflight", "overpass", "satpass",
-            "geospatial", "osint", "hormuz", "strait", "dark vessel",
-            "jamming", "bruiaj", "footprint", "overhead pass",
-        ]):
-            if self._any_agent_can("worldview", intent):
-                wv = self.plugins.get("worldview")
-                if wv:
-                    data["worldview"] = await wv.recon_overview()
-            else:
-                log_error(logger, E_PLUGIN_BLOCKED, name="worldview")
-
-        return data
+        return await plugin_gatherer.gather_plugin_data(self, text, intent)
 
     def _extract_location(self, text: str) -> str:
-        text_lower = text.lower()
-        for kw in ["in ", "la ", "pentru ", "din "]:
-            if kw in text_lower:
-                idx = text_lower.index(kw) + len(kw)
-                rest = text[idx:].strip().rstrip("?.!")
-                if rest and not rest.startswith(("the", "a", "an", "my")):
-                    return rest
-        return ""
+        return plugin_gatherer.extract_location(text)
 
     def _format_plugin_data(self, data: dict) -> str:
-        if not data:
-            return ""
-        blocks = []
-        for key, value in data.items():
-            if value:
-                blocks.append(f"[REAL-TIME DATA — {key.upper()}]:\n{value}")
-        return "\n\n".join(blocks) + "\n\n" if blocks else ""
+        return plugin_gatherer.format_plugin_data(data)
 
     def _runtime_state_block(self) -> str:
         """Ground-truth runtime facts injected into the prompt so agents report
@@ -1829,8 +1246,15 @@ class Orchestrator:
             res = await ctrl.load_model(model)
             status = res.get("status")
             if status == "ok":
-                active = getattr(router, "active_model", None) or model
+                active = getattr(router, "active_model", None) or res.get("model") or model
+                if res.get("resolved_from"):
+                    return f"I matched '{res['resolved_from']}' to {active} and loaded it, sir."
                 return f"Loaded and running {active}, sir."
+            if status == "ambiguous":
+                cands = res.get("candidates") or []
+                shown = ", ".join(cands[:6])
+                return (f"Several models match '{model}', sir: {shown}. "
+                        "Which one shall I load?")
             if status == "rejected":
                 return f"That is not a valid model id, sir: {model!r}."
             return f"I could not load {model}, sir — {res.get('reason') or 'the load failed'}."

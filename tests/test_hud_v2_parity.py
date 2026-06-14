@@ -13,7 +13,14 @@ See ``docs/design/HUD_V2_IMPLEMENTATION_PLAN.md`` §8 and the coverage map in
 import re
 from pathlib import Path
 
-WEB = Path(__file__).resolve().parent.parent / "agents" / "web.py"
+_AGENTS = Path(__file__).resolve().parent.parent / "agents"
+WEB = _AGENTS / "web.py"
+# CLN-3 moves routes out of the web.py god-object into per-domain APIRouters in
+# agents/core/routers/. The parity gate must still see every route, so it scans
+# both the inline @app.* routes in web.py AND the @router.* routes in those
+# extracted modules — otherwise an extracted endpoint would silently escape the
+# "every route has a v2 home" check.
+ROUTERS = _AGENTS / "core" / "routers"
 
 # Ordered (prefix, surface); first match wins, so put the more specific prefixes
 # first. Surfaces mirror the v2 modes + chrome. NOT_IN_HUD = surfaced nowhere by
@@ -81,9 +88,12 @@ CORE_SURFACES = ["cockpit", "agents", "memory", "trust", "autonomy", "build",
 
 
 def _routes():
-    src = WEB.read_text(encoding="utf-8")
-    pat = r'^@app\.(?:get|post|put|delete|patch)\("([^"]+)"'
-    return sorted(set(re.findall(pat, src, re.M)))
+    app_pat = r'^@app\.(?:get|post|put|delete|patch)\("([^"]+)"'
+    router_pat = r'^@router\.(?:get|post|put|delete|patch)\("([^"]+)"'
+    found = set(re.findall(app_pat, WEB.read_text(encoding="utf-8"), re.M))
+    for mod in sorted(ROUTERS.glob("*.py")):
+        found |= set(re.findall(router_pat, mod.read_text(encoding="utf-8"), re.M))
+    return sorted(found)
 
 
 def _classify(path):

@@ -51,9 +51,19 @@ class _Router:
         return self.active_model
 
 
+def _models(ids=()):
+    """A models_fn returning a fixed servable list (keeps tests off the network)."""
+    async def _fn():
+        return list(ids)
+    return _fn
+
+
 def _ctrl(**kw):
     kw.setdefault("verify_attempts", 3)
     kw.setdefault("verify_delay", 0)
+    # Hermetic default: no /v1/models probe, so resolution falls through to the
+    # literal name. Resolution tests pass their own models_fn with candidates.
+    kw.setdefault("models_fn", _models())
     return LMStudioController(**kw)
 
 
@@ -131,6 +141,86 @@ async def test_load_model_exec_nonzero_no_refresh():
     out = await ctrl.load_model("m/x")
     assert out["status"] == "failed"
     assert router.refreshed == 0
+
+
+# ── fuzzy model resolution (load "gemma" → full id via /v1/models) ──
+
+CATALOG = ["google/gemma-4-12b", "qwen/qwen3-14b", "deepseek-r1-distill-qwen-32b"]
+
+
+async def test_load_resolves_partial_name_to_full_id():
+    ex = _Exec()
+    ctrl = _ctrl(exec_fn=ex, probe_fn=_Probe([True]), models_fn=_models(CATALOG))
+    out = await ctrl.load_model("gemma")
+    assert out["status"] == "ok"
+    assert out["model"] == "google/gemma-4-12b"
+    assert out["resolved_from"] == "gemma"
+    assert ex.calls == [["lms", "load", "google/gemma-4-12b", "-y"]]
+
+
+async def test_load_exact_id_is_not_marked_resolved():
+    ex = _Exec()
+    ctrl = _ctrl(exec_fn=ex, probe_fn=_Probe([True]), models_fn=_models(CATALOG))
+    out = await ctrl.load_model("google/gemma-4-12b")
+    assert out["status"] == "ok"
+    assert "resolved_from" not in out
+    assert ex.calls == [["lms", "load", "google/gemma-4-12b", "-y"]]
+
+
+async def test_load_ambiguous_partial_stops_and_reports_candidates():
+    ex = _Exec()
+    catalog = ["google/gemma-4-12b", "google/gemma-2-9b"]
+    ctrl = _ctrl(exec_fn=ex, probe_fn=_Probe([True]), models_fn=_models(catalog))
+    out = await ctrl.load_model("gemma")
+    assert out["status"] == "ambiguous"
+    assert sorted(out["candidates"]) == sorted(catalog)
+    assert ex.calls == []  # nothing loaded when ambiguous
+
+
+async def test_load_unique_exact_segment_breaks_tie():
+    # "qwen" substring-matches two ids, but the query equals one's last segment.
+    ex = _Exec()
+    catalog = ["qwen/qwen", "deepseek-r1-distill-qwen-32b"]
+    ctrl = _ctrl(exec_fn=ex, probe_fn=_Probe([True]), models_fn=_models(catalog))
+    out = await ctrl.load_model("qwen")
+    assert out["status"] == "ok"
+    assert out["model"] == "qwen/qwen"
+
+
+async def test_load_unknown_name_falls_through_to_literal():
+    # Name not in the catalog → literal passthrough (LM Studio JIT may still find it).
+    ex = _Exec()
+    ctrl = _ctrl(exec_fn=ex, probe_fn=_Probe([True]), models_fn=_models(CATALOG))
+    out = await ctrl.load_model("mistral-7b")
+    assert out["status"] == "ok"
+    assert "resolved_from" not in out
+    assert ex.calls == [["lms", "load", "mistral-7b", "-y"]]
+
+
+async def test_load_unreachable_catalog_falls_through_to_literal():
+    # models_fn raises (server flaky) → empty list → literal passthrough, no crash.
+    async def _boom():
+        raise RuntimeError("connection refused")
+    ex = _Exec()
+    ctrl = _ctrl(exec_fn=ex, probe_fn=_Probe([True]), models_fn=_boom)
+    out = await ctrl.load_model("google/gemma-4-12b")
+    assert out["status"] == "ok"
+    assert ex.calls == [["lms", "load", "google/gemma-4-12b", "-y"]]
+
+
+def test_resolve_model_pure_cases():
+    r = LMStudioController._resolve_model
+    # exact id present
+    assert r("a/b", ["a/b", "a/c"]) == ("a/b", ["a/b"])
+    # single substring match
+    assert r("gem", ["google/gemma-4-12b", "qwen/q"]) == ("google/gemma-4-12b", ["google/gemma-4-12b"])
+    # ambiguous
+    resolved, cands = r("g", ["g/one", "g/two"])
+    assert resolved is None and sorted(cands) == ["g/one", "g/two"]
+    # no match → literal
+    assert r("zzz", ["a/b"]) == ("zzz", [])
+    # empty catalog → literal
+    assert r("anything", []) == ("anything", [])
 
 
 # ── unload_model ─────────────────────────────────────────────────

@@ -385,8 +385,11 @@ squash commit.
   isn't installed where the server runs. The controller never starts LM Studio the app,
   only its server via `lms server start`.
 - *`status:"rejected"`* → model id failed the `_MODEL_RE` regex (only letters/digits/`._-/:@`).
-- *"load gemma" loads the wrong/no model* → a partial name is passed straight to `lms load`;
-  use the full id (e.g. `google/gemma-4-12b`) for an exact match.
+- *"load gemma" loads the wrong/no model* → the controller now resolves a partial name to the
+  full servable id via `/v1/models` before `lms load` (`LMStudioController._resolve_model`). A
+  unique match loads (the reply names the resolved id); several matches return
+  `status:"ambiguous"` with the candidates so you can pick; if `/v1/models` is unreachable it
+  falls back to passing the literal name straight to `lms load`.
 - *Jarvis still names the old model after a load* → router refresh failed; check
   `refresh_active_model` on the router and the LM Studio `/v1/models` response.
 - *A chat message unexpectedly triggered control* → tighten `detect_llm_control`; the
@@ -527,8 +530,17 @@ from git history into `*.local.md`).
 
 ### Add a web endpoint
 
-1. Open `agents/web.py`.
-2. Add your route function after existing endpoints, e.g.:
+> **Convention (anti-god-object, CLN-3):** new routes go in a **per-domain router**
+> `agents/core/routers/<domain>.py`, *not* inline in `web.py` (already 255 inline routes).
+> Mirror an existing router (e.g. `capture.py`): an `APIRouter`, guards imported from
+> `routers/_deps.py`, shared state reached lazily via `from agents import web`; mount it in
+> `web.py` with `app.include_router(...)`. Don't add new `@app.*` decorators inline. The
+> route-parity guard (`tests/test_route_parity_guard.py`, snapshots `app.routes`) will flag any
+> surface change — re-seed it in the same PR with `python tests/test_route_parity_guard.py --update`.
+> Full plan: `docs/superpowers/specs/2026-06-13-cln2-cln3-refactor-plan.md`.
+
+1. Create/open `agents/core/routers/<domain>.py` (a fresh `@app.*` in `web.py` only for a true one-off).
+2. Add your route function, e.g.:
    ```python
    @app.get("/api/myroute")
    async def my_route():

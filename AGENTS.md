@@ -88,6 +88,16 @@ Gate-ul de *coverage* (`tests/test_hud_v2_parity.py`) clasifică fiecare rută, 
   din `BACKLOG.md` dacă schimbă scopul). Endpoint-urile machine-facing se marchează `NOT_IN_HUD`
   în gate-ul de paritate, cu motivul notat.
 
+### Rute noi → routere per-domeniu (anti-god-object CLN-3)
+`agents/web.py` e un god-object (255 rute inline). Ca să nu-l creștem: **rutele noi se adaugă
+într-un router per-domeniu** `agents/core/routers/<domeniu>.py` (pattern: `APIRouter`, guard-uri din
+`_deps.py`, stare partajată lazy via `from agents import web`), montat în `web.py` cu
+`app.include_router(...)`. **Nu adăuga `@app.*` inline noi.** Plasă de siguranță (rulează înainte de
+orice splitting): `tests/test_route_parity_guard.py` (snapshot pe `app.routes`) +
+`test_openapi_parity_guard.py` + `test_lifespan_smoke.py`. La o schimbare *intenționată* de rute,
+re-seed: `python tests/test_route_parity_guard.py --update` (+ openapi) în același PR. Plan complet:
+`docs/superpowers/specs/2026-06-13-cln2-cln3-refactor-plan.md`.
+
 ### Pattern conductor agent
 Pentru sesiuni cu 3+ wave-uri paralele, desemnează un **conductor agent** dedicat care:
 1. Monitorizează CI-ul pe toate PR-urile deschise,

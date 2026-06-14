@@ -1,0 +1,228 @@
+"""Skills, sandbox, and skill-marketplace endpoints — extracted from web.py (CLN-3).
+
+Covers the skills surface: `/skills` listing, `/skills/import` + `/skills/imported`,
+the `/sandbox/*` execution endpoints, and the `/api/skills/marketplace/*`
+agent-marketplace endpoints (H5.8 / H12.12).
+
+`skills_import` and `sandbox_execute` gate on web.py's `DEV_MODE` flag. They read
+it via `app_state.dev_mode()` (CLN-3 unblock B), which resolves `web.DEV_MODE` at
+request time through `sys.modules` — so the skills test suite's
+`monkeypatch.setattr(web, "DEV_MODE", ...)` is still observed and no test changes.
+"""
+
+from fastapi import APIRouter, Depends, Request
+from fastapi.responses import JSONResponse
+from pydantic import BaseModel, Field
+
+from agents.core.routers._deps import user_guard, admin_guard
+
+from agents.core.web_helpers import error_json, logger
+from agents.core import app_state
+from agents.core.app_state import get_orch
+
+
+router = APIRouter(tags=["skills"])
+
+
+@router.get("/skills")
+async def list_skills():
+    orch = get_orch()
+    if not orch:
+        return JSONResponse({"error": "not initialized"}, status_code=503)
+    result = {}
+    for name, skill in orch.skills.skills.items():
+        result[name] = {
+            "name": skill.name,
+            "version": skill.version,
+            "description": skill.description,
+            "agents": skill.agents,
+            "commands": skill.commands_meta,
+        }
+    return {"skills": result}
+
+
+@router.get("/sandbox/status")
+async def sandbox_status():
+    orch = get_orch()
+    if not orch:
+        return JSONResponse({"error": "not initialized"}, status_code=503)
+    return {
+        "available": orch.sandbox._has_docker,
+        "docker_image": orch.sandbox.docker_image,
+        "timeout": orch.sandbox.timeout,
+        # HF-6 — expose isolation posture so an active host-exec fallback is visible.
+        **orch.sandbox.security_status(),
+    }
+
+
+class SandboxExecuteBody(BaseModel):
+    code: str = Field("", max_length=32768)
+    language: str = "python"
+
+
+@router.post("/sandbox/execute", dependencies=[Depends(user_guard)])
+async def sandbox_execute(body: SandboxExecuteBody):
+    orch = get_orch()
+    if not orch:
+        return JSONResponse({"error": "not initialized"}, status_code=503)
+    if not app_state.dev_mode():
+        return JSONResponse({"error": "sandbox disabled — set DEV_MODE=1 to enable"}, status_code=403)
+    code = body.code
+    language = body.language
+    if language == "python":
+        result = await orch.sandbox.execute_python(code)
+    else:
+        result = await orch.sandbox.execute_shell(code)
+    return {
+        "stdout": result.stdout,
+        "stderr": result.stderr,
+        "exit_code": result.exit_code,
+        "duration": result.duration,
+        "success": result.success,
+    }
+
+
+@router.post("/skills/import", dependencies=[Depends(user_guard)])
+async def skills_import(req: Request):
+    orch = get_orch()
+    if not orch:
+        return JSONResponse({"error": "not initialized"}, status_code=503)
+    if not app_state.dev_mode():
+        return JSONResponse({"error": "skill import disabled — set DEV_MODE=1 to enable"}, status_code=403)
+    body = await req.json()
+    source = body.get("source", "hermes")
+    skill_name = body.get("skill", "")
+    if not skill_name:
+        return JSONResponse({"error": "skill name required"}, status_code=400)
+    if source == "hermes":
+        ok = await orch.skill_importer.import_from_hermes(skill_name)
+    elif source == "openclaw":
+        ok = await orch.skill_importer.import_from_openclaw(skill_name)
+    else:
+        ok = await orch.skill_importer.import_from_github(source, skill_name)
+    if ok:
+        orch.skills.discover()
+        return {"ok": True, "source": source, "skill": skill_name}
+    return JSONResponse({"ok": False, "error": f"Skill '{skill_name}' not found in {source}"}, status_code=404)
+
+
+@router.get("/skills/imported")
+async def skills_imported():
+    orch = get_orch()
+    if not orch:
+        return JSONResponse({"error": "not initialized"}, status_code=503)
+    return {"imported": orch.skill_importer.list_imported()}
+
+
+# ── Agent Marketplace Endpoints (H5.8) ───────────────────────────
+
+class PublishSkillBody(BaseModel):
+    name: str
+
+
+class InstallSkillBody(BaseModel):
+    name: str
+
+
+class InstallZipBody(BaseModel):
+    zip_base64: str
+
+
+@router.get("/api/skills/marketplace", dependencies=[Depends(admin_guard)])
+async def marketplace_list():
+    orch = get_orch()
+    if not orch:
+        return JSONResponse({"error": "not initialized"}, status_code=503)
+    try:
+        skills = orch.marketplace.list_skills()
+        return {"skills": skills}
+    except Exception:
+        logger.exception("Failed to list marketplace skills")
+        return JSONResponse({"error": "internal error", "code": 500}, status_code=500)
+
+
+@router.post("/api/skills/marketplace/publish", dependencies=[Depends(admin_guard)])
+async def marketplace_publish(body: PublishSkillBody):
+    orch = get_orch()
+    if not orch:
+        return JSONResponse({"error": "not initialized"}, status_code=503)
+    try:
+        res = orch.marketplace.publish_skill(body.name)
+        return {"ok": True, "published": res}
+    except FileNotFoundError as e:
+        return error_json(e, 404, "skill not found")
+    except Exception:
+        logger.exception("Failed to publish skill")
+        return JSONResponse({"error": "internal error", "code": 500}, status_code=500)
+
+
+@router.post("/api/skills/marketplace/install", dependencies=[Depends(admin_guard)])
+async def marketplace_install(body: InstallSkillBody):
+    orch = get_orch()
+    if not orch:
+        return JSONResponse({"error": "not initialized"}, status_code=503)
+    try:
+        ok = orch.marketplace.install_skill(body.name)
+        if ok:
+            orch.skills.discover()
+            return {"ok": True, "installed": body.name}
+        return JSONResponse({"error": f"Failed to install skill '{body.name}'"}, status_code=500)
+    except PermissionError:
+        # Blocked by the moderation/signature gate (H12.12). Don't log the
+        # caller-supplied name (log-injection); the response echoes it instead.
+        logger.warning("Skill install blocked by moderation/signature policy")
+        return JSONResponse(
+            {"error": f"skill '{body.name}' blocked by moderation/signature policy"},
+            status_code=403,
+        )
+    except ValueError:
+        return JSONResponse({"error": f"skill '{body.name}' not found in registry"}, status_code=404)
+    except Exception:
+        logger.exception("Failed to install skill")
+        return JSONResponse({"error": "internal error", "code": 500}, status_code=500)
+
+
+@router.post("/api/skills/marketplace/install-zip", dependencies=[Depends(admin_guard)])
+async def marketplace_install_zip(body: InstallZipBody):
+    orch = get_orch()
+    if not orch:
+        return JSONResponse({"error": "not initialized"}, status_code=503)
+    try:
+        import base64
+        zip_bytes = base64.b64decode(body.zip_base64)
+        ok = orch.marketplace.install_from_zip(zip_bytes)
+        if ok:
+            orch.skills.discover()
+            return {"ok": True}
+        return JSONResponse({"error": "Failed to install skill from zip"}, status_code=500)
+    except (PermissionError, ValueError):
+        # Rejected by the zip-slip guard or the signature gate (H12.12).
+        logger.warning("Skill zip install rejected (unsafe path or signature policy)")
+        return JSONResponse(
+            {"error": "skill package rejected (unsafe path or signature policy)"},
+            status_code=400,
+        )
+    except Exception:
+        logger.exception("Failed to install skill from zip")
+        return JSONResponse({"error": "internal error", "code": 500}, status_code=500)
+
+
+class ReviewSkillBody(BaseModel):
+    name: str
+    status: str = Field(..., pattern="^(pending|approved|rejected)$")
+
+
+@router.post("/api/skills/marketplace/review", dependencies=[Depends(admin_guard)])
+async def marketplace_review(body: ReviewSkillBody):
+    """Moderate a marketplace skill (H12.12): set review status to approved/rejected/pending."""
+    orch = get_orch()
+    if not orch:
+        return JSONResponse({"error": "not initialized"}, status_code=503)
+    try:
+        orch.marketplace.set_review_status(body.name, body.status)
+        return {"ok": True, "name": body.name, "review_status": body.status}
+    except ValueError:
+        return JSONResponse({"error": f"skill '{body.name}' not found in registry"}, status_code=404)
+    except Exception:
+        logger.exception("Failed to set skill review status")
+        return JSONResponse({"error": "internal error", "code": 500}, status_code=500)

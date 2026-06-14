@@ -7,14 +7,17 @@ from pydantic import BaseModel, Field
 
 from agents.core.routers._deps import user_guard
 
+from agents.core.web_helpers import nocache_json, error_json
+from agents.core.app_state import get_orch
+
+
 router = APIRouter(tags=["canvas"])
 
 _canvas_store = None
 
 
 def _get_canvas():
-    from agents import web
-    orch = web.orch
+    orch = get_orch()
     if orch is not None and getattr(orch, "canvas", None) is not None:
         return orch.canvas
     global _canvas_store
@@ -33,36 +36,31 @@ class CanvasPostBody(BaseModel):
 
 @router.get("/api/canvas", dependencies=[Depends(user_guard)])
 async def canvas_list(agent: Optional[str] = None):
-    from agents import web
-    return web._nocache_json({"elements": _get_canvas().list(agent)})
+    return nocache_json({"elements": _get_canvas().list(agent)})
 
 
 @router.post("/api/canvas/post", dependencies=[Depends(user_guard)])
 async def canvas_post(body: CanvasPostBody):
     """Add a typed, sanitized element. Unsafe/unknown types are rejected (422)."""
-    from agents import web
     try:
-        return web._nocache_json(_get_canvas().post(body.agent, body.type, body.payload,
+        return nocache_json(_get_canvas().post(body.agent, body.type, body.payload,
                                                     pinned=body.pinned))
     except ValueError as e:
-        return web._nocache_json({"error": str(e)}, status_code=422)
+        return error_json(e, 422, "invalid or unsupported canvas element")
 
 
 @router.post("/api/canvas/{el_id}/pin", dependencies=[Depends(user_guard)])
 async def canvas_pin(el_id: str, pinned: bool = True):
-    from agents import web
     el = _get_canvas().pin(el_id, pinned)
-    return web._nocache_json(el or {"error": "not found"}, status_code=200 if el else 404)
+    return nocache_json(el or {"error": "not found"}, status_code=200 if el else 404)
 
 
 @router.delete("/api/canvas/{el_id}", dependencies=[Depends(user_guard)])
 async def canvas_remove(el_id: str):
-    from agents import web
     ok = _get_canvas().remove(el_id)
-    return web._nocache_json({"removed": ok}, status_code=200 if ok else 404)
+    return nocache_json({"removed": ok}, status_code=200 if ok else 404)
 
 
 @router.post("/api/canvas/clear", dependencies=[Depends(user_guard)])
 async def canvas_clear(agent: Optional[str] = None, keep_pinned: bool = True):
-    from agents import web
-    return web._nocache_json({"removed": _get_canvas().clear(agent, keep_pinned=keep_pinned)})
+    return nocache_json({"removed": _get_canvas().clear(agent, keep_pinned=keep_pinned)})

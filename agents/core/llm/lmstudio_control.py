@@ -13,12 +13,17 @@ JARVIS.md and run by hand: `lms server start`, `lms load <model>`,
     the only variable is a validated model identifier.
   - **Bounded + probed** — every action has a timeout and a port recovery probe
     so success is judged by the server actually coming up, not just an exit code.
+  - **Fuzzy load target** — a partial name ("load gemma") is resolved to the full
+    servable id ("google/gemma-4-12b") via `/v1/models` before `lms load`, so the
+    load hits an exact model instead of relying on LM Studio to guess. Best-effort:
+    if the list is unavailable the literal name is used (unchanged); if several
+    models match, the load stops and reports them (status "ambiguous").
 
 After a model change it refreshes the live router so routing + the runtime
 state agents report reflect the real loaded model immediately, no restart.
 
-All I/O is injectable (exec_fn / probe_fn) so the controller is unit-tested
-offline without spawning processes or opening sockets.
+All I/O is injectable (exec_fn / probe_fn / models_fn) so the controller is
+unit-tested offline without spawning processes or opening sockets.
 """
 from __future__ import annotations
 
@@ -38,10 +43,28 @@ _MODEL_RE = re.compile(r"^[A-Za-z0-9._/:@\-]{1,200}$")
 
 ExecFn = Callable[[list[str], float, bool], Awaitable[ExecResult]]
 ProbeFn = Callable[[str, int], bool]
+ModelsFn = Callable[[], Awaitable[list[str]]]
 
 
 def _clip(result: ExecResult) -> str:
     return ((result.stdout or result.stderr) or "")[:500]
+
+
+async def _default_models(server_url: str, timeout: float) -> list[str]:
+    """List the model ids LM Studio can serve, via the OpenAI-compatible
+    ``GET /v1/models`` ({"data": [{"id": ...}]}). Best-effort: any failure
+    (server down, bad payload) returns an empty list so resolution degrades to
+    using the literal name the caller asked for."""
+    import httpx
+    try:
+        async with httpx.AsyncClient(timeout=timeout) as client:
+            resp = await client.get(f"{server_url}/v1/models")
+            if resp.status_code != 200:
+                return []
+            data = resp.json() or {}
+            return [m.get("id") for m in (data.get("data") or []) if m.get("id")]
+    except Exception:
+        return []
 
 
 class LMStudioController:
@@ -55,7 +78,9 @@ class LMStudioController:
         enabled: bool = True,
         exec_fn: Optional[ExecFn] = None,
         probe_fn: Optional[ProbeFn] = None,
+        models_fn: Optional[ModelsFn] = None,
         timeout: float = 60.0,
+        resolve_timeout: float = 5.0,
         verify_attempts: int = 8,
         verify_delay: float = 0.75,
     ):
@@ -70,7 +95,9 @@ class LMStudioController:
         self.enabled = enabled
         self._exec_fn = exec_fn or _default_exec
         self._probe_fn = probe_fn or _default_probe
+        self._models_fn = models_fn
         self.timeout = timeout
+        self.resolve_timeout = resolve_timeout
         self.verify_attempts = verify_attempts
         self.verify_delay = verify_delay
         parsed = urlparse(self.server_url)
@@ -120,14 +147,28 @@ class LMStudioController:
             if started.get("status") != "ok":
                 return self._done("failed", "load_model", model=model,
                                   reason="LM Studio server not running and could not be started")
+        # Resolve a partial name to the full servable id (the server is up by now,
+        # so /v1/models is reachable). Best-effort: no list / no match → use the
+        # literal name (unchanged); several matches → stop and report them.
+        target, resolved_from = model, None
+        resolved, candidates = self._resolve_model(model, await self._available_models())
+        if resolved is None:
+            return self._done("ambiguous", "load_model", model=model, candidates=candidates,
+                              reason=f"{len(candidates)} models match {model!r}")
+        if resolved != model:
+            if not _MODEL_RE.match(resolved):  # defense in depth on the resolved id
+                return self._done("rejected", "load_model", reason=f"invalid model id: {resolved!r}")
+            target, resolved_from = resolved, model
         try:
-            result = await self._exec_fn([self.lms_bin, "load", model, "-y"], self.timeout, False)
+            result = await self._exec_fn([self.lms_bin, "load", target, "-y"], self.timeout, False)
         except Exception as e:
-            return self._done("failed", "load_model", model=model, reason=str(e))
+            return self._done("failed", "load_model", model=target, reason=str(e))
         if result.ok:
             await self._refresh_router()
-        return self._done("ok" if result.ok else "failed", "load_model",
-                          model=model, exit_code=result.exit_code, output=_clip(result))
+        extra = {"model": target, "exit_code": result.exit_code, "output": _clip(result)}
+        if resolved_from is not None:
+            extra["resolved_from"] = resolved_from
+        return self._done("ok" if result.ok else "failed", "load_model", **extra)
 
     async def unload_model(self, model: Optional[str] = None, agent: str = "jarvis") -> dict:
         if not self.enabled:
@@ -148,6 +189,45 @@ class LMStudioController:
                           model=model, exit_code=result.exit_code, output=_clip(result))
 
     # ── helpers ───────────────────────────────────────────────────
+    async def _available_models(self) -> list[str]:
+        """Model ids LM Studio can serve, for load-target resolution. Never
+        raises — a failure degrades to an empty list (→ literal passthrough)."""
+        try:
+            if self._models_fn is not None:
+                return list(await self._models_fn())
+            return await _default_models(self.server_url, self.resolve_timeout)
+        except Exception:
+            logger.warning("listing servable models failed", exc_info=True)
+            return []
+
+    @staticmethod
+    def _resolve_model(query: str, available: list[str]) -> tuple[Optional[str], list[str]]:
+        """Resolve a (possibly partial) model name against the servable list.
+
+        Returns ``(resolved_id, candidates)``:
+          - exact id present            → ``(query, [query])``
+          - one case-insensitive match  → ``(match, [match])``
+          - several matches             → ``(None, candidates)``  — ambiguous
+          - empty list / no match       → ``(query, [])``  — literal passthrough
+
+        A unique exact last-segment match (e.g. query ``"gemma-4-12b"`` against
+        ``"google/gemma-4-12b"``) breaks an otherwise-ambiguous tie.
+        """
+        if not available:
+            return query, []
+        if query in available:
+            return query, [query]
+        q = query.lower()
+        matches = [m for m in available if q in m.lower()]
+        if len(matches) == 1:
+            return matches[0], matches
+        if len(matches) > 1:
+            exact_seg = [m for m in matches if m.rsplit("/", 1)[-1].lower() == q]
+            if len(exact_seg) == 1:
+                return exact_seg[0], exact_seg
+            return None, matches
+        return query, []
+
     def _gate(self, agent: str, action: str) -> Optional[dict]:
         if self.permission_gate is not None and not self.permission_gate.check_call("system-control", agent):
             return self._done("blocked", action, reason=f"agent '{agent}' not permitted for system-control")

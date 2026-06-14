@@ -139,6 +139,45 @@ class TestSecretScanner:
         )
         assert "high_entropy_secret" not in _names(s.scan(prose))
 
+    # ── HF-3: system-relevant vendor tokens (Telegram, Google) ─────────────
+
+    def test_telegram_bot_token_detected_and_redacted(self):
+        """The Telegram bot token (this system's control channel) is caught
+        by its specific pattern and redacted whole — id, colon, and auth."""
+        s = SecretScanner()
+        auth = ("AaBb12_-Cc" * 4)[:35]      # 35-char base64url auth
+        token = f"123456789:{auth}"
+        assert len(auth) == 35
+        text = f"TELEGRAM_BOT_TOKEN={token}"
+        assert "telegram_bot_token" in _names(s.scan(text))
+        redacted = s.redact(text)
+        assert token not in redacted
+        assert "[REDACTED:telegram_bot_token]" in redacted
+
+    def test_telegram_token_shape_not_in_prose(self):
+        """A plain `number: word` (wrong auth length) must not false-positive."""
+        s = SecretScanner()
+        assert "telegram_bot_token" not in _names(
+            s.scan("see note 12345678: remember to call the bank tomorrow")
+        )
+
+    def test_google_api_key_detected_and_redacted(self):
+        s = SecretScanner()
+        key = "AIza" + ("Sy0aB1cD2eF" * 4)[:35]   # AIza + 35 chars = 39 total
+        assert len(key) == 39
+        text = f"GEMINI_API_KEY={key}"
+        assert "google_api_key" in _names(s.scan(text))
+        redacted = s.redact(text)
+        assert key not in redacted
+        assert "[REDACTED:google_api_key]" in redacted
+
+    def test_google_api_key_prefix_is_case_sensitive(self):
+        """Lowercased `aiza…` (e.g. inside prose) must not match the key format."""
+        s = SecretScanner()
+        assert "google_api_key" not in _names(
+            s.scan("aizawl is a city; aiza" + "x" * 35 + " is not a key")
+        )
+
     def test_entropy_validator_direct(self):
         from agents.core.security.scanner import (
             looks_like_high_entropy_secret,
