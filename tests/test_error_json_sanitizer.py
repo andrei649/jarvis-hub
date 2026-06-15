@@ -1,8 +1,15 @@
-"""Lock the CWE-209 sanitizer (web_helpers.error_json).
+"""Lock the CWE-209 sanitizer (web_helpers.error_json) and the reflected-input
+sanitizer (web_helpers.safe_reflect).
 
 Error responses must expose only a controlled, static message to the client and
 keep the raw exception detail server-side (logs). This guards the fix for the
 CodeQL "information exposure through an exception" finding so it can't regress.
+
+`safe_reflect` guards the companion class: endpoints that echo a user-supplied
+path/query identifier back into the response body ("trace '<id>' not found", a
+correlation key, …). Raw echo is a reflected-XSS / response-splitting taint sink
+(CWE-79/-116); this guards that valid identifiers pass through unchanged while
+markup/whitespace is neutralized so the CodeQL finding can't regress.
 """
 
 import json
@@ -14,7 +21,7 @@ repo_root = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(repo_root))
 sys.path.insert(0, str(repo_root / "agents"))
 
-from agents.core.web_helpers import error_json  # noqa: E402
+from agents.core.web_helpers import error_json, safe_reflect  # noqa: E402
 
 
 def _body(resp) -> dict:
@@ -50,3 +57,29 @@ def test_error_json_logs_the_detail_server_side(caplog):
 def test_error_json_sets_no_store_headers():
     resp = error_json(ValueError("x"), 400, "bad request")
     assert "no-store" in resp.headers.get("Cache-Control", "")
+
+
+# ── safe_reflect (reflected user-input sanitizer) ────────────────────────────
+
+def test_safe_reflect_passes_valid_identifiers_unchanged():
+    # The realistic inputs (agent/trace/channel/category ids) must round-trip
+    # byte-identical, so existing routes/contracts and their tests stay green.
+    for ident in ("jarvis", "models", "abc-123", "trace_1.2", "a/b@c:d"):
+        assert safe_reflect(ident) == ident
+
+
+def test_safe_reflect_neutralizes_markup_and_whitespace():
+    out = safe_reflect("<script>alert(1)</script>")
+    assert "<" not in out and ">" not in out
+    # quotes / spaces / newlines that enable XSS or response-splitting are gone
+    assert safe_reflect('a" onload="x') == "aonloadx"
+    assert safe_reflect("a\r\nb") == "ab"
+
+
+def test_safe_reflect_truncates_long_input():
+    assert len(safe_reflect("x" * 5000)) == 100
+
+
+def test_safe_reflect_coerces_non_strings():
+    assert safe_reflect(42) == "42"
+    assert safe_reflect(None) == "None"

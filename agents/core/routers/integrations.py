@@ -6,7 +6,7 @@ from pydantic import BaseModel, Field
 
 from agents.core.routers._deps import user_guard
 
-from agents.core.web_helpers import nocache_json
+from agents.core.web_helpers import nocache_json, safe_reflect
 from agents.core.app_state import get_orch
 
 
@@ -130,7 +130,7 @@ async def channel_inbound(channel_id: str, request: Request):
         return JSONResponse({"error": "not initialized"}, status_code=503)
     ch = orch.channels.get(channel_id) if hasattr(orch, "channels") else None
     if ch is None or not hasattr(ch, "handle_inbound"):
-        return JSONResponse({"error": f"no webhook channel '{channel_id}'"}, status_code=404)
+        return JSONResponse({"error": f"no webhook channel '{safe_reflect(channel_id)}'"}, status_code=404)
     try:
         payload = await request.json()
     except Exception:

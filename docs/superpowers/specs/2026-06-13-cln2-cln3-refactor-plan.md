@@ -233,6 +233,16 @@ it in the router's namespace, so web.py no longer carries the import purely as a
 "unused import" alert). The admin `llm/test` backend probe no longer returns `str(e)` per item; it logs the full
 detail server-side and exposes a static reason (CWE-209).
 
+**Reflected user-input sweep (CodeQL, PR #196):** the four newest routers echoed a user-supplied path/query
+identifier straight into a response body (`unknown category: {category}`, `agent {agent_id} not found`,
+`trace '{trace_id}' not found`, `no webhook channel '{channel_id}'`, and the prompt-diff body's `agent_id`
+correlation key) — a reflected-XSS / response-splitting taint sink (CWE-79/-116). Added one shared sanitizer,
+`web_helpers.safe_reflect(value)`: truncate → strip to a conservative identifier charset → `html.escape`. The
+escape is the taint barrier CodeQL recognizes; for the realistic inputs (agent/trace/channel/category ids) it's
+a no-op, so routes/OpenAPI stay byte-identical and every existing assertion (e.g. `"unknown category" in error`)
+still holds. Locked by `tests/test_error_json_sanitizer.py`. Free-text echoes (`q`/`subject` search queries) are
+left untouched — sanitizing them would corrupt legitimate spaces/text, and they weren't in the alert set.
+
 **integrations** (batch 6, no test edits): the only HTTP-level test (`test_h12_25_transcript`) monkeypatches
 `web.orch`/`web.USER_TOKEN`, both already honored by `get_orch()` + the user guard accessor, so the standard
 pattern applied with zero coupling work. Request models modernized to `str | None`.

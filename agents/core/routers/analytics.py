@@ -17,7 +17,7 @@ web-module globals. The cost/model-tier handlers are pure leaf calls into
 
 from fastapi import APIRouter, Query
 
-from agents.core.web_helpers import nocache_json, error_json
+from agents.core.web_helpers import nocache_json, error_json, safe_reflect
 from agents.core.app_state import get_orch
 
 
@@ -149,7 +149,7 @@ async def get_trace(trace_id: str):
         return nocache_json({"error": "tracer not available"}, status_code=503)
     item = tracer.get(trace_id)
     if item is None:
-        return nocache_json({"error": f"trace '{trace_id}' not found"}, status_code=404)
+        return nocache_json({"error": f"trace '{safe_reflect(trace_id)}' not found"}, status_code=404)
     return nocache_json(item)
 
 

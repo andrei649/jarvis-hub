@@ -42,7 +42,7 @@ from pydantic import BaseModel
 
 from agents.core.routers._deps import admin_guard
 
-from agents.core.web_helpers import nocache_json, mask_secret
+from agents.core.web_helpers import nocache_json, mask_secret, safe_reflect
 from agents.core.app_state import get_orch
 
 logger = logging.getLogger("jarvis.web")
@@ -75,7 +75,7 @@ async def admin_get_all():
 async def admin_get_category(category: str):
     items = get_category(category)
     if not items:
-        return JSONResponse({"error": f"unknown category: {category}"}, status_code=404)
+        return JSONResponse({"error": f"unknown category: {safe_reflect(category)}"}, status_code=404)
     return {category: items}
 
 
@@ -231,7 +231,7 @@ async def admin_prompt_diff(agent_id: str, a: int, b: int):
     d = svs.diff(agent_id, a, b)
     if d is None:
         return JSONResponse({"error": "version not found"}, status_code=404)
-    return nocache_json({"agent_id": agent_id, "a": a, "b": b, "diff": d})
+    return nocache_json({"agent_id": safe_reflect(agent_id), "a": a, "b": b, "diff": d})
 
 
 @router.post("/api/admin/prompts/{agent_id}/rollback", dependencies=[Depends(admin_guard)])
@@ -309,7 +309,7 @@ async def admin_agents_put(agent_id: str, req: AgentUpdateRequest):
     if not orch:
         return JSONResponse({"error": "not initialized"}, status_code=503)
     if agent_id not in orch.agents:
-        return JSONResponse({"error": f"agent {agent_id} not found"}, status_code=404)
+        return JSONResponse({"error": f"agent {safe_reflect(agent_id)} not found"}, status_code=404)
     _web()._get_agent_settings()[agent_id] = req.updates
     return {"saved": True, "agent": agent_id, "applied": list(req.updates.keys())}
 
