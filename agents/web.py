@@ -8,11 +8,8 @@ import logging
 import os
 import re
 import secrets
-import statistics
 import time
 import sys
-from collections import defaultdict
-from datetime import date
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Optional
@@ -28,14 +25,18 @@ from pydantic import BaseModel, Field, field_validator
 # Pure response/format helpers live in core.web_helpers (CLN-3 shared kernel) so
 # the extracted routers can import them without reaching back into this module.
 # Re-exported here under their original private names for backward compatibility.
-from core.web_helpers import nocache_json as _nocache_json, mask_secret as _mask_secret, error_json
+from core.web_helpers import nocache_json as _nocache_json, error_json
 
 from core.config import JarvisConfig
 from core.orchestrator import Orchestrator
 from core.channels.web import WebChannel
 from core.channels.gateway import Gateway
 from core.log_safe import log_safe
-from core.settings_db import get_all, get_category, put_category, init_db
+# `put_category` is kept as a module attribute purely as the monkeypatch target
+# for the local-models suite (`patch.object(web, "put_category")`), which the
+# models_llm router reads back via `sys.modules`. web.py's own settings-DB reads
+# use local imports (admin routes moved to routers/admin.py — CLN-3).
+from core.settings_db import put_category  # noqa: F401
 from core.channels.voice import VoiceChannel
 from core.channels.telegram import TelegramChannel
 from core.channels.discord import DiscordChannel
@@ -44,8 +45,6 @@ from core.channels.slack import SlackChannel
 from core.log import setup_logging, log_error
 from core.errors import JarvisError, E_INTERNAL_UNEXPECTED, E_SECURITY_BLOCKED
 from core.security.guardrails import SecurityBlockError
-from core.llm.cost_estimator import estimate_monthly
-from core.resilience import get_metrics, _circuit_breakers
 
 logger = logging.getLogger("jarvis.web")
 
@@ -84,12 +83,6 @@ def _real_client_host(request: Request) -> str:
     if xff:
         return xff.split(",")[0].strip()
     return request.headers.get("x-real-ip", "").strip()
-
-# Substrings that mark an env var as sensitive — its value is masked in
-# /api/admin/env so keys/tokens/secrets are never returned in clear text.
-_SECRET_HINTS = ("key", "token", "secret", "password", "passwd", "pass", "client_id")
-# _mask_secret is imported from core.web_helpers above (re-exported for compat).
-
 
 async def _admin_guard(request: Request):
     """Authorize an /api/admin/* request or raise 401/403."""
@@ -420,6 +413,19 @@ def _sys_info() -> dict:
 
 
 _AGENT_SETTINGS = {}  # mutable per-agent overrides: { id: { field: value } }
+
+
+def _get_agent_settings() -> dict:
+    """Accessor for the mutable per-agent override store (CLN-3 unblock).
+
+    `_AGENT_SETTINGS` is read here by `_enrich_agents` (the agents surface) AND
+    mutated by the admin router's `PUT /api/admin/agents/{id}`, so it is a
+    multi-domain global and stays in web.py. The extracted admin router reaches
+    it at request time via `sys.modules.get("agents.web")._get_agent_settings()`
+    so the single shared dict is read/mutated, not a per-module copy.
+    """
+    return _AGENT_SETTINGS
+
 
 _AGENT_META = {
     "jarvis":     {"tier": "CNS", "role": "Prime Orchestrator"},
@@ -1471,6 +1477,7 @@ from agents.core.routers.models_llm import router as _models_llm_router  # noqa:
 from agents.core.routers.oauth import router as _oauth_router  # noqa: E402
 from agents.core.routers.memory_kg import router as _memory_kg_router  # noqa: E402
 from agents.core.routers.analytics import router as _analytics_router  # noqa: E402
+from agents.core.routers.admin import router as _admin_router  # noqa: E402
 app.include_router(_webhooks_router)
 app.include_router(_a2a_router)
 app.include_router(_pairing_router)
@@ -1493,6 +1500,7 @@ app.include_router(_models_llm_router)
 app.include_router(_oauth_router)
 app.include_router(_memory_kg_router)
 app.include_router(_analytics_router)
+app.include_router(_admin_router)
 
 
 class DigestRunBody(BaseModel):
@@ -1611,265 +1619,15 @@ async def admin_page():
     )
 
 
-@app.get("/api/admin/settings", dependencies=[Depends(_admin_guard)])
-async def admin_get_all():
-    return get_all()
-
-
-@app.get("/api/admin/settings/{category}", dependencies=[Depends(_admin_guard)])
-async def admin_get_category(category: str):
-    items = get_category(category)
-    if not items:
-        return JSONResponse({"error": f"unknown category: {category}"}, status_code=404)
-    return {category: items}
-
-
-class AdminPutBody(BaseModel):
-    values: dict
-
-
-@app.put("/api/admin/settings/{category}", dependencies=[Depends(_admin_guard)])
-async def admin_put_category(category: str, body: AdminPutBody):
-    updated, skipped = put_category(category, body.values)
-    resp = {"updated": updated, "category": category}
-    if skipped:
-        resp["skipped"] = skipped
-    return resp
-
-
-@app.post("/api/admin/settings/reseed", dependencies=[Depends(_admin_guard)])
-async def admin_reseed():
-    init_db(force=True)
-    return {"ok": True, "message": "Settings reseeded from defaults"}
-
-
-@app.get("/api/admin/env", dependencies=[Depends(_admin_guard)])
-async def admin_get_env():
-    # Mask anything that looks like a credential so secrets are never
-    # returned in clear text, even to an authorized admin.
-    out = {}
-    for key, val in sorted(os.environ.items()):
-        if key.startswith("_"):
-            continue
-        if any(h in key.lower() for h in _SECRET_HINTS):
-            out[key] = _mask_secret(val)
-        else:
-            out[key] = val
-    return out
-
-
-@app.get("/api/admin/audit", dependencies=[Depends(_admin_guard)])
-async def admin_get_audit(page: int = Query(1, ge=1), limit: int = Query(50, ge=1, le=200)):
-    import sqlite3
-    db = Path("memory_logs/security/audit.db")
-    if not db.exists():
-        return {"page": page, "limit": limit, "total": 0, "rows": []}
-    conn = sqlite3.connect(str(db))
-    conn.row_factory = sqlite3.Row
-    has_audit = conn.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='audit_events'").fetchone()
-    table = "audit_events" if has_audit else "security_events"
-    _QUERIES = {
-        "audit_events": ("SELECT COUNT(*) FROM audit_events", "SELECT timestamp, event_type, content_preview AS summary, findings_json AS details FROM audit_events ORDER BY rowid DESC LIMIT ? OFFSET ?"),
-        "security_events": ("SELECT COUNT(*) FROM security_events", "SELECT timestamp, event_type, content_preview AS summary, findings_json AS details FROM security_events ORDER BY rowid DESC LIMIT ? OFFSET ?"),
-    }
-    count_q, select_q = _QUERIES[table]
-    total = conn.execute(count_q).fetchone()[0]
-    offset = (page - 1) * limit
-    rows = conn.execute(select_q, (limit, offset)).fetchall()
-    conn.close()
-    return {
-        "page": page,
-        "limit": limit,
-        "total": total,
-        "rows": [dict(r) for r in rows],
-    }
-
-
-@app.post("/api/admin/memory/clear", dependencies=[Depends(_admin_guard)])
-async def admin_memory_clear():
-    if not orch:
-        return JSONResponse({"error": "not initialized"}, status_code=503)
-    await orch.memory.clear()
-    return {"ok": True, "message": "Session memory cleared"}
-
-
-@app.get("/api/admin/agents/stats", dependencies=[Depends(_admin_guard)])
-async def admin_agents_stats():
-    if not orch:
-        return JSONResponse({"error": "not initialized"}, status_code=503)
-    return {
-        aid: {
-            "status": agent.status if hasattr(agent, "status") else "unknown",
-            "model": agent.model if hasattr(agent, "model") else "",
-            "tier": agent.tier if hasattr(agent, "tier") else "",
-            "latency_ms": round(getattr(agent, "_last_latency", 0) * 1000, 1),
-        }
-        for aid, agent in orch.agents.items()
-    }
-
-
-@app.get("/api/admin/apm", dependencies=[Depends(_admin_guard)])
-async def admin_apm():
-    """H10.16 — org APM: total tokens + $ cost + runs, per agent and per model."""
-    from agents.core.cost_tracker import apm_summary
-    apm = apm_summary()
-    # Fold in live latency/throughput from the bench system when available.
-    if orch and getattr(orch, "bench", None) is not None:
-        try:
-            apm["latency"] = orch.bench.get_summary()
-        except Exception:
-            apm["latency"] = {}
-    return _nocache_json(apm)
-
-
-# ── H10.22 Prompt Version Control (SOUL.md history / diff / rollback / A/B) ──
-
-def _svs():
-    """Return the SOUL version store, or None."""
-    return getattr(orch, "soul_versions", None) if orch else None
-
-
-@app.get("/api/admin/prompts/{agent_id}/history", dependencies=[Depends(_admin_guard)])
-async def admin_prompt_history(agent_id: str):
-    svs = _svs()
-    if svs is None:
-        return JSONResponse({"error": "prompt VC not available"}, status_code=503)
-    return _nocache_json({"agent_id": agent_id, "history": svs.history(agent_id)})
-
-
-@app.get("/api/admin/prompts/{agent_id}/version/{version}", dependencies=[Depends(_admin_guard)])
-async def admin_prompt_version(agent_id: str, version: int):
-    svs = _svs()
-    if svs is None:
-        return JSONResponse({"error": "prompt VC not available"}, status_code=503)
-    v = svs.get(agent_id, version)
-    if v is None:
-        return JSONResponse({"error": "not found"}, status_code=404)
-    return _nocache_json(v)
-
-
-@app.post("/api/admin/prompts/{agent_id}/commit", dependencies=[Depends(_admin_guard)])
-async def admin_prompt_commit(agent_id: str, req: Request):
-    svs = _svs()
-    if svs is None:
-        return JSONResponse({"error": "prompt VC not available"}, status_code=503)
-    try:
-        body = await req.json()
-    except Exception:
-        body = {}
-    content = (body or {}).get("content")
-    if content is None:
-        return JSONResponse({"error": "content required"}, status_code=400)
-    entry = svs.commit(agent_id, content, message=body.get("message", ""), author=body.get("author", ""))
-    return _nocache_json({"ok": True, "version": entry})
-
-
-@app.get("/api/admin/prompts/{agent_id}/diff", dependencies=[Depends(_admin_guard)])
-async def admin_prompt_diff(agent_id: str, a: int, b: int):
-    svs = _svs()
-    if svs is None:
-        return JSONResponse({"error": "prompt VC not available"}, status_code=503)
-    d = svs.diff(agent_id, a, b)
-    if d is None:
-        return JSONResponse({"error": "version not found"}, status_code=404)
-    return _nocache_json({"agent_id": agent_id, "a": a, "b": b, "diff": d})
-
-
-@app.post("/api/admin/prompts/{agent_id}/rollback", dependencies=[Depends(_admin_guard)])
-async def admin_prompt_rollback(agent_id: str, req: Request):
-    svs = _svs()
-    if svs is None:
-        return JSONResponse({"error": "prompt VC not available"}, status_code=503)
-    try:
-        body = await req.json()
-    except Exception:
-        body = {}
-    version = (body or {}).get("version")
-    if version is None:
-        return JSONResponse({"error": "version required"}, status_code=400)
-    entry = svs.rollback(agent_id, int(version), author=body.get("author", ""))
-    if entry is None:
-        return JSONResponse({"error": "version not found"}, status_code=404)
-    return _nocache_json({"ok": True, "version": entry})
-
-
-@app.post("/api/admin/prompts/{agent_id}/ab", dependencies=[Depends(_admin_guard)])
-async def admin_prompt_ab_set(agent_id: str, req: Request):
-    svs = _svs()
-    if svs is None:
-        return JSONResponse({"error": "prompt VC not available"}, status_code=503)
-    try:
-        body = await req.json()
-    except Exception:
-        body = {}
-    try:
-        ab = svs.set_experiment(agent_id, int(body["a"]), int(body["b"]), float(body.get("split", 0.5)))
-    except KeyError:
-        return JSONResponse({"error": "a and b must be existing versions"}, status_code=400)
-    return _nocache_json({"ok": True, "experiment": ab})
-
-
-@app.get("/api/admin/prompts/{agent_id}/ab", dependencies=[Depends(_admin_guard)])
-async def admin_prompt_ab_summary(agent_id: str):
-    svs = _svs()
-    if svs is None:
-        return JSONResponse({"error": "prompt VC not available"}, status_code=503)
-    return _nocache_json({"agent_id": agent_id, "ab": svs.ab_summary(agent_id)})
-
-
-@app.post("/api/admin/prompts/{agent_id}/preview", dependencies=[Depends(_admin_guard)])
-async def admin_prompt_preview(agent_id: str, req: Request):
-    """H10.28 — preview a proposed SOUL/prompt change (diff + validation).
-
-    Body: {"proposed": "...", "current": "..."?}. If `current` is omitted it's
-    taken from the agent's latest committed version (H10.22).
-    """
-    from agents.core.config_preview import preview_change
-    try:
-        body = await req.json()
-    except Exception:
-        body = {}
-    proposed = (body or {}).get("proposed")
-    if proposed is None:
-        return JSONResponse({"error": "proposed required"}, status_code=400)
-    current = (body or {}).get("current")
-    if current is None:
-        svs = _svs()
-        cur = svs.current(agent_id) if svs else None
-        current = cur["content"] if cur else ""
-    return _nocache_json({"agent_id": agent_id, **preview_change(current, proposed)})
-
-
-class AgentUpdateRequest(BaseModel):
-    updates: dict[str, str | bool | int]
-
-
-@app.put("/api/admin/agents/{agent_id}", dependencies=[Depends(_admin_guard)])
-async def admin_agents_put(agent_id: str, req: AgentUpdateRequest):
-    if not orch:
-        return JSONResponse({"error": "not initialized"}, status_code=503)
-    if agent_id not in orch.agents:
-        return JSONResponse({"error": f"agent {agent_id} not found"}, status_code=404)
-    _AGENT_SETTINGS[agent_id] = req.updates
-    return {"saved": True, "agent": agent_id, "applied": list(req.updates.keys())}
-
-
-@app.post("/api/admin/llm/test", dependencies=[Depends(_admin_guard)])
-async def admin_llm_test():
-    import httpx
-    configs = [
-        ("LM Studio", "http://localhost:1234/v1/models"),
-        ("Ollama", "http://localhost:11434/api/tags"),
-    ]
-    results = []
-    for name, url in configs:
-        try:
-            async with httpx.AsyncClient(timeout=5) as client:
-                r = await client.get(url)
-                results.append({"name": name, "url": url, "ok": r.is_success, "status": r.status_code})
-        except Exception as e:
-            results.append({"name": name, "url": url, "ok": False, "error": str(e)})
-    return {"results": results}
+# ── Admin control surface ────────────────────────────────────────────────────
+# All admin-guarded `/api/admin/*` routes — settings, env, audit, memory/clear,
+# agents/stats, apm, prompts/* (H10.22 prompt VC), PUT /api/admin/agents/{id},
+# llm/test, and /api/admin/stats (admin charts) — live in the admin router
+# (CLN-3). EXCEPTIONS that stay out of it: `/api/admin/mcp*` (still inline below)
+# and `/api/admin/widgets*` (the secrets router). The admin-only helpers `_svs`
+# and `_SECRET_HINTS` moved into that router; `_AGENT_SETTINGS` stays here (it's
+# also read by `_enrich_agents`) and the router mutates it via
+# `web._get_agent_settings()`.
 
 
 # ── Local model management (browse / switch) — H12.9 ─────────────
@@ -2056,125 +1814,7 @@ def _load_mcp_config():
     logger.info("No MCP servers configured in settings")
 
 
-# ── Admin Charts endpoint ──────────────────────────────────────
-
-@app.get("/api/admin/stats", dependencies=[Depends(_admin_guard)])
-async def admin_stats():
-    """Aggregated stats for admin charts: latency, usage, success rate."""
-    interactions = getattr(orch.learning, 'interactions', [])
-    samples = getattr(orch.bench, 'samples', [])
-
-    total = len(interactions)
-    successes = sum(1 for r in interactions if r.success)
-    success_rate = successes / total if total else 0.0
-    latencies = [r.latency for r in interactions if r.success and r.latency > 0]
-    avg_latency = statistics.mean(latencies) if latencies else 0.0
-
-    unique_agents = set(s.agent_id for s in samples) | set(r.agent_id for r in interactions)
-
-    agents_list = []
-    for aid in sorted(unique_agents):
-        results = orch.bench.get_results(aid, last_n=100) if hasattr(orch.bench, 'get_results') else []
-        if results:
-            r = results[0]
-            agents_list.append({
-                "agent_id": aid,
-                "samples": r.samples,
-                "success_rate": round(r.success_rate, 3),
-                "p50_latency": round(r.median_latency, 2),
-                "p95_latency": round(r.p95_latency, 2),
-                "avg_latency": round(r.mean_latency, 2),
-                "model": r.model,
-            })
-        else:
-            agent_records = [x for x in interactions if x.agent_id == aid]
-            if agent_records:
-                agent_lat = [x.latency for x in agent_records if x.success and x.latency > 0]
-                agents_list.append({
-                    "agent_id": aid,
-                    "samples": len(agent_records),
-                    "success_rate": round(sum(1 for x in agent_records if x.success) / len(agent_records), 3),
-                    "p50_latency": round(statistics.median(agent_lat), 2) if len(agent_lat) > 1 else round(agent_lat[0], 2) if agent_lat else 0,
-                    "p95_latency": 0,
-                    "avg_latency": round(statistics.mean(agent_lat), 2) if agent_lat else 0,
-                    "model": "",
-                })
-
-    daily_map = defaultdict(lambda: {"total": 0, "successful": 0, "failed": 0, "latencies": []})
-    for r in interactions:
-        d = date.fromtimestamp(r.timestamp).isoformat()
-        daily_map[d]["total"] += 1
-        if r.success:
-            daily_map[d]["successful"] += 1
-            if r.latency > 0:
-                daily_map[d]["latencies"].append(r.latency)
-        else:
-            daily_map[d]["failed"] += 1
-    daily = []
-    for d in sorted(daily_map.keys()):
-        entry = daily_map[d]
-        daily.append({
-            "date": d,
-            "total": entry["total"],
-            "successful": entry["successful"],
-            "failed": entry["failed"],
-            "avg_latency": round(statistics.mean(entry["latencies"]), 2) if entry["latencies"] else 0,
-        })
-
-    channels = defaultdict(int)
-    for r in interactions:
-        ch = (r.metadata or {}).get("channel", "unknown")
-        channels[ch] += 1
-
-    error_types = {}
-    if hasattr(orch.learning, 'get_failure_patterns'):
-        for aid in unique_agents:
-            patterns = orch.learning.get_failure_patterns(aid)
-            for err, count in patterns:
-                error_types[err] = error_types.get(err, 0) + count
-    error_types_list = sorted(error_types.items(), key=lambda x: -x[1])[:10]
-
-    # Route usage
-    route_usage = orch.learning.get_route_counts() if hasattr(orch.learning, 'get_route_counts') else {}
-
-    # Cost estimates
-    cost_records = []
-    for r in interactions:
-        cost_records.append({
-            "model": r.route_name or "unknown",
-            "input_tokens": (r.metadata or {}).get("input_tokens", 0),
-            "output_tokens": (r.metadata or {}).get("output_tokens", 0),
-            "cached_tokens": (r.metadata or {}).get("cached_tokens", 0),
-        })
-    cost_estimates = estimate_monthly(cost_records)
-
-    # Resilience metrics
-    resilience_metrics = get_metrics().get_stats()
-    circuit_breaker_states = {
-        key: {
-            "state": cb.state,
-            "failure_count": cb.failure_count,
-            "last_failure_time": cb.last_failure_time,
-        }
-        for key, cb in _circuit_breakers.items()
-    }
-
-    return _nocache_json({
-        "overview": {
-            "total_interactions": total,
-            "success_rate": round(success_rate, 3),
-            "avg_latency": round(avg_latency, 2),
-            "agents_tracked": len(unique_agents),
-        },
-        "agents": agents_list,
-        "daily": daily[-30:],
-        "channels": dict(channels),
-        "error_types": [[k, v] for k, v in error_types_list],
-        "route_usage": route_usage,
-        "cost_estimates": cost_estimates,
-        "resilience": resilience_metrics,
-        "circuit_breakers": circuit_breaker_states,
-    })
+# ── Admin Charts endpoint → core/routers/admin.py (CLN-3) ──────────
 
 
 @app.get("/api/resilience")
