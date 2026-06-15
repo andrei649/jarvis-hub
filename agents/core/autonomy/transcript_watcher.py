@@ -22,18 +22,22 @@ from typing import Callable, Optional
 logger = logging.getLogger("jarvis.autonomy.transcript")
 
 # Explicit task markers at the start of a line → the remainder is the task.
+# The task group starts with `\S` (not `.+`) so it can't overlap the preceding
+# `\s*`; that overlap would let the engine split a whitespace run two ways and
+# backtrack polynomially (CWE-1333) on untrusted transcript input. The greedy
+# `\s*` already consumes all leading whitespace, so this is behavior-identical.
 _PREFIX_RE = re.compile(
     r"^\s*(?:[-*]\s*)?(?:\[[ x]?\]\s*)?"                       # optional bullet / checkbox
     r"(?:action item|action|todo|to-do|ai|next step|follow[\s-]?up)\s*[:\-]\s*"
-    r"(?P<task>.+)$",
+    r"(?P<task>\S.*)$",
     re.IGNORECASE,
 )
 # Bare checkbox line ("- [ ] do the thing") with no keyword prefix.
-_CHECKBOX_RE = re.compile(r"^\s*(?:[-*]\s*)?\[[ x]?\]\s*(?P<task>.+)$")
+_CHECKBOX_RE = re.compile(r"^\s*(?:[-*]\s*)?\[[ x]?\]\s*(?P<task>\S.*)$")
 # "<Name> will/to <verb...>" — an assignment we can attribute.
 _ASSIGN_RE = re.compile(
     r"^\s*(?:[-*]\s*)?(?:@)?(?P<who>[A-Z][\w.-]{1,30})\s+(?:will|to|should|needs? to)\s+"
-    r"(?P<task>.+)$",
+    r"(?P<task>\S.*)$",
 )
 
 _VALID_TARGETS = ("todoist", "notion")
