@@ -1230,125 +1230,6 @@ async def workflow_hierarchical(req: Request):
     return _nocache_json(await mgr.run(goal, crew))
 
 
-class TranscriptIngestBody(BaseModel):
-    transcript: str = Field(..., max_length=200_000)
-    source: str = Field("", max_length=200)
-    target: Optional[str] = Field(None, max_length=16)   # todoist | notion
-
-
-@app.post("/api/transcripts/ingest", dependencies=[Depends(_user_guard)])
-async def transcript_ingest(body: TranscriptIngestBody):
-    """H12.25 — meeting transcript → action items → approval queue (governed).
-
-    Nothing is created externally here; each item lands as an ask-tier task the
-    owner approves. Without a live queue, returns an extraction-only preview."""
-    from agents.core.autonomy.transcript_watcher import TranscriptWatcher
-    q = getattr(orch, "autonomy_queue", None) if orch else None
-    watcher = TranscriptWatcher(enqueue=q.enqueue if q is not None else None)
-    return _nocache_json(watcher.ingest(body.transcript, source=body.source, target=body.target))
-
-
-class WriteBackBody(BaseModel):
-    target: str = Field(..., max_length=40)
-    action: str = Field(..., max_length=40)
-    fields: dict = Field(default_factory=dict)
-    agent: Optional[str] = Field(None, max_length=40)
-    source: str = Field("", max_length=120)
-
-
-@app.get("/api/integrations/writeback", dependencies=[Depends(_user_guard)])
-async def writeback_targets():
-    """H10.30 — list supported governed write-back targets (Notion/GitHub/Calendar)."""
-    from agents.core.writeback import WriteBackBroker
-    wb = getattr(orch, "writeback", None) if orch else None
-    targets = wb.targets() if wb is not None else WriteBackBroker().targets()
-    return _nocache_json({"targets": targets})
-
-
-@app.post("/api/integrations/writeback", dependencies=[Depends(_user_guard)])
-async def writeback_request(body: WriteBackBody):
-    """H10.30 — request a governed write-back into an external system.
-
-    Validates against the allowlist and enqueues an ask-tier task. Nothing is
-    written externally here; on approval the autonomy worker dispatches it to the
-    write-back executor (credentials resolved at action time, behind approval).
-    Without a live queue, returns a validation-only preview."""
-    from agents.core.writeback import WriteBackBroker
-    wb = getattr(orch, "writeback", None) if orch else None
-    if wb is None:
-        q = getattr(orch, "autonomy_queue", None) if orch else None
-        wb = WriteBackBroker(enqueue=q.enqueue if q is not None else None)
-    result = wb.request(body.target, body.action, body.fields,
-                        agent=body.agent, source=body.source)
-    return _nocache_json(result, status_code=200 if result.get("ok") else 422)
-
-
-class SocialActionBody(BaseModel):
-    platform: str = Field(..., max_length=40)
-    action: str = Field(..., max_length=40)
-    fields: dict = Field(default_factory=dict)
-    agent: Optional[str] = Field(None, max_length=40)
-    source: str = Field("", max_length=120)
-
-
-@app.get("/api/integrations/social", dependencies=[Depends(_user_guard)])
-async def social_targets():
-    """H12.21 — list supported governed social actions (X post/reply/DM)."""
-    from agents.core.social import SocialBroker
-    sb = getattr(orch, "social", None) if orch else None
-    targets = sb.targets() if sb is not None else SocialBroker().targets()
-    return _nocache_json({"targets": targets})
-
-
-@app.post("/api/integrations/social", dependencies=[Depends(_user_guard)])
-async def social_request(body: SocialActionBody):
-    """H12.21 — request a governed social write (X/Twitter post/reply/DM).
-
-    Validates against the allowlist and enqueues an ask-tier task. Nothing is
-    posted here; on approval the autonomy worker dispatches it to the social
-    executor (OAuth/bearer resolved at action time, behind approval — never raw
-    cookies). Without a live queue, returns a validation-only preview."""
-    from agents.core.social import SocialBroker
-    sb = getattr(orch, "social", None) if orch else None
-    if sb is None:
-        q = getattr(orch, "autonomy_queue", None) if orch else None
-        sb = SocialBroker(enqueue=q.enqueue if q is not None else None)
-    result = sb.request(body.platform, body.action, body.fields,
-                        agent=body.agent, source=body.source)
-    return _nocache_json(result, status_code=200 if result.get("ok") else 422)
-
-
-@app.get("/api/channels/webhook", dependencies=[Depends(_user_guard)])
-async def channels_webhook_list():
-    """H12.16 — supported governed webhook channels + which are live."""
-    from agents.core.channels.webhook_channels import SUPPORTED_CHANNELS, WebhookChannel
-    live = []
-    if orch and hasattr(orch, "channels"):
-        live = [cid for cid, ch in orch.channels.items() if isinstance(ch, WebhookChannel)]
-    return _nocache_json({"supported": list(SUPPORTED_CHANNELS), "live": live})
-
-
-@app.post("/api/channels/{channel_id}/inbound", dependencies=[Depends(_user_guard)])
-async def channel_inbound(channel_id: str, request: Request):
-    """H12.16 — deliver an inbound webhook payload to a governed channel adapter.
-
-    The adapter parses (text, sender) and routes through the governed gateway, so
-    the H12.19 pairing gate + rate-limit + guardrails all apply before the
-    orchestrator sees the text. (Provider signature verification is the host
-    seam — front this with the H16.4 signed-webhook path in production.)"""
-    if not orch:
-        return JSONResponse({"error": "not initialized"}, status_code=503)
-    ch = orch.channels.get(channel_id) if hasattr(orch, "channels") else None
-    if ch is None or not hasattr(ch, "handle_inbound"):
-        return JSONResponse({"error": f"no webhook channel '{channel_id}'"}, status_code=404)
-    try:
-        payload = await request.json()
-    except Exception:
-        payload = {}
-    reply = await ch.handle_inbound(payload)
-    return _nocache_json({"ok": True, "channel": channel_id, "reply": reply})
-
-
 class ContextCompressBody(BaseModel):
     turns: list[dict] = Field(default_factory=list)
     max_tokens: int = Field(2000, ge=100, le=100000)
@@ -1472,6 +1353,7 @@ from agents.core.routers.models_llm import router as _models_llm_router  # noqa:
 from agents.core.routers.oauth import router as _oauth_router  # noqa: E402
 from agents.core.routers.memory_kg import router as _memory_kg_router  # noqa: E402
 from agents.core.routers.analytics import router as _analytics_router  # noqa: E402
+from agents.core.routers.integrations import router as _integrations_router  # noqa: E402
 from agents.core.routers.admin import router as _admin_router  # noqa: E402
 app.include_router(_webhooks_router)
 app.include_router(_a2a_router)
@@ -1496,6 +1378,7 @@ app.include_router(_oauth_router)
 app.include_router(_memory_kg_router)
 app.include_router(_analytics_router)
 app.include_router(_admin_router)
+app.include_router(_integrations_router)
 
 
 class DigestRunBody(BaseModel):
