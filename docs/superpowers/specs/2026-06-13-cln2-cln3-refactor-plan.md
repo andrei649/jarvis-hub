@@ -222,10 +222,20 @@ optional, wrap-only 5th step.
 
 ## 5. Phase 3 — CLN-3 route extraction (incremental, one domain per PR) — 🟡 IN PROGRESS 2026-06-14
 
-**Status:** 17 domains extracted into per-domain routers under `core/routers/` (each its own commit,
+**Status:** 18 domains extracted into per-domain routers under `core/routers/` (each its own commit,
 route-parity + full suite green throughout): rooms, notes, actions, arena, review, quality, security, skills,
-data_spaces, secrets, mesh, autonomy, models_llm, oauth, memory_kg, **admin**, **analytics**. All use
-the Phase-1 shared kernel — zero static `from agents import web`. **web.py: 5,037 → 2,510 LOC (−50%)** so far.
+data_spaces, secrets, mesh, autonomy, models_llm, oauth, memory_kg, **admin**, **analytics**, **integrations**.
+All use the Phase-1 shared kernel — zero static `from agents import web`. **web.py: 5,037 → 2,388 LOC (−53%)** so far.
+
+**CodeQL cleanup (post-merge, PR #196):** dropped the last cross-cutting `put_category` web-global — the
+models_llm router now imports it directly from its leaf (`core.settings_db`) and the local-models test patches
+it in the router's namespace, so web.py no longer carries the import purely as a monkeypatch target (cleared the
+"unused import" alert). The admin `llm/test` backend probe no longer returns `str(e)` per item; it logs the full
+detail server-side and exposes a static reason (CWE-209).
+
+**integrations** (batch 6, no test edits): the only HTTP-level test (`test_h12_25_transcript`) monkeypatches
+`web.orch`/`web.USER_TOKEN`, both already honored by `get_orch()` + the user guard accessor, so the standard
+pattern applied with zero coupling work. Request models modernized to `str | None`.
 
 **Two infra fixes during this work:** (1) pinned `fastapi>=0.136.3,<0.137` in both requirements files — fastapi
 0.137.0 regressed `app.include_router` (mounted routers add 0 routes → the app silently loses ~100 routes); CI
@@ -245,11 +255,13 @@ test monkeypatches (`DEV_MODE`, lazily-created singletons), add a request-time `
 `web.X` via `sys.modules` (like `get_orch`/`dev_mode`) so the monkeypatch stays observed. Both keep every test
 unchanged and add no static import edge.
 
-**Still to extract:** payments/eval-datasets (cross-domain singleton edges — extract with consumers); the
-larger memory/KG, autonomy, MCP, analytics, oauth/oracle, admin (settings/prompts/stats), models/llm,
-integrations, misc/heartbeat/health-voice; dashboard + chat-SSE LAST (hot path / shared `asyncio.Lock`).
+**Still to extract:** payments/eval-datasets (cross-domain singleton edges — extract with consumers); MCP
+(heavy singletons: `_build_mcp_server`, admin/mcp lifecycle); workflows/pipelines; misc tail
+(status/sessions/plugins/learning/bench/agent-templates, vlm/media/desktop/context/digest/schedule, voice/tts,
+heartbeat, health/components); dashboard + chat-SSE LAST (hot path / shared `asyncio.Lock`).
 `data_spaces`/`secrets` ✅ done (batch 5) — `data_spaces` via unblock B (singleton home stays on `web`, router
-reads it via a sys.modules accessor); `secrets` was orchestrator-only (no unblock needed).
+reads it via a sys.modules accessor); `secrets` was orchestrator-only (no unblock needed). `integrations`
+✅ done (batch 6).
 
 Tiered easiest→hardest; each PR gated by the Phase-0 parity guard + full suite. Mirror the existing
 `capture.py`/`pairing.py` pattern; move a domain's owning singleton with it; keep `put_category` in
