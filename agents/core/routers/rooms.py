@@ -7,7 +7,7 @@ from fastapi.responses import JSONResponse
 
 from agents.core.routers._deps import user_guard
 
-from agents.core.web_helpers import nocache_json
+from agents.core.web_helpers import nocache_json, logsafe
 from agents.core.app_state import get_orch
 
 logger = logging.getLogger("jarvis.web")
@@ -94,7 +94,8 @@ async def rooms_message(room_id: str, req: Request):
     except Exception as e:
         # CWE-209: log the full detail server-side, never echo the raw exception
         # text (it can carry internal paths / stack info) back to the client.
-        logger.warning("room handle_input failed (room=%s, agent=%s): %s", room_id, target, e)
+        logger.warning("room handle_input failed (room=%s, agent=%s): %s",
+                       logsafe(room_id), logsafe(target), logsafe(e))
         reply = "[error: the agent could not process this message]"
     store.add_message(room_id, "assistant", reply, agent=target)
     return nocache_json({"reply": reply, "agent": target,

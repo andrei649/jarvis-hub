@@ -66,6 +66,16 @@ def safe_reflect(value, *, max_len: int = 100) -> str:
     return html.escape(cleaned, quote=True)
 
 
+def logsafe(value: object) -> str:
+    """Neutralize newlines so untrusted values can't forge log records (CWE-117).
+
+    A value containing CR/LF logged verbatim could inject fake log lines;
+    stripping the line breaks is the standard log-injection remediation. Use at
+    every log site that interpolates request-controlled data.
+    """
+    return str(value).replace("\r", " ").replace("\n", " ")
+
+
 def mask_secret(value: str) -> str:
     """Mask a secret-ish env value for display (e.g. in /api/admin/env)."""
     if not value:
