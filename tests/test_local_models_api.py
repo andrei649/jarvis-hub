@@ -113,9 +113,10 @@ def test_switch_to_available_model(token_client):
         "models": [{"id": "qwen3:7b", "provider": "lm-studio", "active": True},
                    {"id": "llama3:8b", "provider": "lm-studio", "active": False}],
     }
+    import agents.core.routers.models_llm as models_llm
     with patch.object(web, "orch", MagicMock(llm_router=router)):
         with patch.object(web, "_list_local_models", AsyncMock(return_value=catalog)):
-            with patch.object(web, "put_category") as put:
+            with patch.object(models_llm, "put_category") as put:
                 resp = token_client.post(
                     "/api/models/local/switch", json={"model": "llama3:8b"}, headers=HEADERS)
 

@@ -32,11 +32,6 @@ from core.orchestrator import Orchestrator
 from core.channels.web import WebChannel
 from core.channels.gateway import Gateway
 from core.log_safe import log_safe
-# `put_category` is kept as a module attribute purely as the monkeypatch target
-# for the local-models suite (`patch.object(web, "put_category")`), which the
-# models_llm router reads back via `sys.modules`. web.py's own settings-DB reads
-# use local imports (admin routes moved to routers/admin.py — CLN-3).
-from core.settings_db import put_category  # noqa: F401
 from core.channels.voice import VoiceChannel
 from core.channels.telegram import TelegramChannel
 from core.channels.discord import DiscordChannel

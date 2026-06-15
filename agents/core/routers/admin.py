@@ -28,6 +28,7 @@ State handling (established CLN-3 unblock policy):
   imports (cost/resilience modules), unchanged from web.py.
 """
 
+import logging
 import os
 import statistics
 import sys
@@ -43,6 +44,8 @@ from agents.core.routers._deps import admin_guard
 
 from agents.core.web_helpers import nocache_json, mask_secret
 from agents.core.app_state import get_orch
+
+logger = logging.getLogger("jarvis.web")
 
 # Settings-DB functions are leaf imports (no edge back into web.py).
 from agents.core.settings_db import get_all, get_category, put_category, init_db
@@ -325,7 +328,10 @@ async def admin_llm_test():
                 r = await client.get(url)
                 results.append({"name": name, "url": url, "ok": r.is_success, "status": r.status_code})
         except Exception as e:
-            results.append({"name": name, "url": url, "ok": False, "error": str(e)})
+            # CWE-209: log the full detail server-side, expose only a static
+            # reason to the client (the raw exception can carry internal paths).
+            logger.warning("admin llm/test probe failed for %s (%s): %s", name, url, e)
+            results.append({"name": name, "url": url, "ok": False, "error": "connection failed"})
     return {"results": results}
 
 
