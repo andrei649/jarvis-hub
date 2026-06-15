@@ -1470,6 +1470,7 @@ from agents.core.routers.autonomy import router as _autonomy_router  # noqa: E40
 from agents.core.routers.models_llm import router as _models_llm_router  # noqa: E402
 from agents.core.routers.oauth import router as _oauth_router  # noqa: E402
 from agents.core.routers.memory_kg import router as _memory_kg_router  # noqa: E402
+from agents.core.routers.analytics import router as _analytics_router  # noqa: E402
 app.include_router(_webhooks_router)
 app.include_router(_a2a_router)
 app.include_router(_pairing_router)
@@ -1491,6 +1492,7 @@ app.include_router(_autonomy_router)
 app.include_router(_models_llm_router)
 app.include_router(_oauth_router)
 app.include_router(_memory_kg_router)
+app.include_router(_analytics_router)
 
 
 class DigestRunBody(BaseModel):
@@ -2283,144 +2285,11 @@ def _get_data_spaces():
 # `/api/memory/recall` lives in the memory_kg router (CLN-3).
 
 
-@app.get("/api/analytics/cost")
-async def get_analytics_cost():
-    """Return per-agent LLM usage and cost summary (H7.10)."""
-    from agents.core.cost_tracker import get_summary
-    return get_summary()
-
-
-@app.get("/api/analytics/model-tiers")
-async def get_model_tiers():
-    """Return per-agent model tier classification and usage summary."""
-    from agents.core.cost_tracker import get_summary
-    summary = get_summary()
-
-    def classify_tier(model: str) -> str:
-        m = model.lower()
-        if "local" in m or m == "default":
-            return "local"
-        if "haiku" in m or "mini" in m or "flash" in m:
-            return "fast"
-        if "opus" in m:
-            return "heavy"
-        return "standard"
-
-    tiers: dict[str, list] = {"local": [], "fast": [], "standard": [], "heavy": []}
-    for agent_name, data in summary.get("agents", {}).items():
-        tier = classify_tier(data.get("model", "default"))
-        tiers[tier].append({
-            "agent": agent_name,
-            "model": data.get("model", "unknown"),
-            "calls": data.get("calls", 0),
-            "cost_usd": data.get("cost_usd", 0),
-        })
-
-    return {
-        "tiers": tiers,
-        "total_cost_usd": summary.get("total_cost_usd", 0),
-        "tier_counts": {k: len(v) for k, v in tiers.items()},
-    }
-
-
-@app.get("/api/analytics/locality")
-async def analytics_locality():
-    """% of agent runs served on-device vs cloud (MOONSHOT §6 counter-metric).
-
-    Drives the HUD Trust mode's "%-local" meter with a REAL number from the run
-    history's route field — `local_pct` is null until there's at least one routed
-    run, so the meter shows "—" rather than a fabricated 100%."""
-    rh = getattr(orch, "run_history", None) if orch else None
-    if rh is None:
-        return _nocache_json({"local_pct": None, "local": 0, "cloud": 0,
-                              "unknown": 0, "total": 0})
-    return _nocache_json(rh.locality())
-
-
-@app.get("/api/reflection/status")
-async def reflection_status():
-    """Daily reflection status (H5.15)."""
-    if not orch or not hasattr(orch, "reflector") or not orch.reflector:
-        return _nocache_json({"enabled": False, "last_run": None, "last_result": None})
-    return _nocache_json(orch.reflector.status())
-
-
-@app.post("/api/reflection/run")
-async def reflection_run():
-    """Trigger nightly reflection manually (H5.15)."""
-    if not orch or not hasattr(orch, "reflector") or not orch.reflector:
-        return _nocache_json({"ok": False, "error": "reflector not initialized"})
-    try:
-        # Force re-run by temporarily clearing last_run
-        orch.reflector._last_run = None
-        result = await orch.reflector.run(
-            enabled=orch.get_setting("system.reflection_enabled", True)
-        )
-        return _nocache_json({"ok": True, "result": result})
-    except Exception as e:
-        return error_json(e, 200, "reflection run failed", extra={"ok": False})
-
-
-# ── H9.2 Trace Explorer endpoints ────────────────────────────────
-# Placed immediately before the workflows block; do NOT move the
-# workflows handlers below.
-
-@app.get("/api/traces")
-async def list_traces(limit: int = Query(50, ge=1, le=200)):
-    """Return recent per-request traces (most-recent first, summarized)."""
-    if not orch:
-        return _nocache_json({"traces": [], "error": "not initialized"}, status_code=503)
-    tracer = getattr(orch, "tracer", None)
-    if tracer is None:
-        return _nocache_json({"traces": [], "error": "tracer not available"})
-    limit = max(1, min(limit, 500))
-    return _nocache_json({"traces": tracer.list(limit)})
-
-
-@app.get("/api/cost")
-async def cost_breakdown():
-    """H10.24 — estimated $ cost per agent and per day (local models = $0)."""
-    if not orch:
-        return _nocache_json({"error": "not initialized"}, status_code=503)
-    tracer = getattr(orch, "tracer", None)
-    if tracer is None:
-        return _nocache_json(
-            {"by_agent": [], "by_day": [], "summary": {}, "error": "tracer not available"}
-        )
-    return _nocache_json({
-        "by_agent": tracer.cost_by_agent(),
-        "by_day": tracer.cost_by_day(),
-        "summary": tracer.cost_summary(),
-    })
-
-
-@app.get("/api/traces/{trace_id}")
-async def get_trace(trace_id: str):
-    """Return the full trace dict for a specific trace id."""
-    if not orch:
-        return _nocache_json({"error": "not initialized"}, status_code=503)
-    tracer = getattr(orch, "tracer", None)
-    if tracer is None:
-        return _nocache_json({"error": "tracer not available"}, status_code=503)
-    item = tracer.get(trace_id)
-    if item is None:
-        return _nocache_json({"error": f"trace '{trace_id}' not found"}, status_code=404)
-    return _nocache_json(item)
-
-
-@app.post("/api/traces/clear")
-async def clear_traces():
-    """Flush all traces from the in-memory ring buffer."""
-    if not orch:
-        return _nocache_json({"error": "not initialized"}, status_code=503)
-    tracer = getattr(orch, "tracer", None)
-    if tracer is None:
-        return _nocache_json({"error": "tracer not available"}, status_code=503)
-    tracer.clear()
-    return _nocache_json({"ok": True})
-
-
-# ── END H9.2 Trace Explorer endpoints ─────────────────────────────
+# ── Analytics / cost / traces / reflection surface ───────────────────────────
+# All `/api/analytics/*`, `/api/cost`, `/api/traces/*` (H9.2 Trace Explorer) and
+# `/api/reflection/*` routes live in the analytics router (CLN-3). Every handler
+# reads its subsystem off the live orchestrator via get_orch(); none used a
+# web-module global, so nothing stayed behind.
 
 
 # ── H12.4 Wyoming protocol (local-voice interop) → core/routers/wyoming.py (CLN-3) ──
