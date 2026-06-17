@@ -44,6 +44,24 @@ python -m pytest tests/ -v          # 2156 passed, 1 skipped
 
 ---
 
+## Scalability: index hot/unbounded SQLite tables (shipped — PR pending)
+
+Behavior-preserving index pass on the four tables that are read on hot paths
+while growing without bound — keeps those lookups O(log n) instead of degrading
+to full scans at scale. All are `CREATE INDEX IF NOT EXISTS` in the init path,
+so existing DBs gain them on the next startup; results are identical, only faster.
+
+- `tasks(status, id)` — autonomy worker/inbox poll `runnable()`/`list()`/`pending_decisions()` by status.
+- `security_events(event_type, timestamp)` — audit `query()`; one row per turn (fastest-growing table).
+- `preferences(agent, kind, risk_tier)` — `approval_rate()` on the autonomy decision path.
+- `sessions(started_at)` — `list_sessions()` ordered scan.
+
+Guarded by `tests/test_db_indexes.py` (+5): each index must exist **and** be used
+by its hot query (asserted via `EXPLAIN QUERY PLAN`), so a future schema change
+that silently regresses to a full scan fails CI. Audit pre-work confirmed WAL is
+already set on every store and there are no blocking-I/O calls in async paths
+(repo-wide AST scan), so no further safe wins remained in those categories.
+
 ## LM Studio control + model honesty (shipped — PR #133)
 
 Chat + admin control of the local LLM backend (`lms server start` / `load` / `unload`),
