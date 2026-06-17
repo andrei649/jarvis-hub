@@ -32,6 +32,11 @@ html,body{margin:0;padding:0;background:#05080a;}
 @keyframes axStreamIn{from{opacity:0;transform:translateX(-10px);background:rgba(var(--axr,52,211,153),0.12);}to{opacity:1;transform:translateX(0);background:transparent;}}
 @keyframes axSpark{from{stroke-dashoffset:240;}to{stroke-dashoffset:0;}}
 @keyframes axSheen{0%{transform:translateX(-120%);}100%{transform:translateX(240%);}}
+/* embed mode (?embed=1): chrome-less, mesh-only — for the dashboard panel iframe */
+html.embed,html.embed body{height:100%;background:#05080a;}
+html.embed #boot{display:none!important;}
+html.embed #page{max-width:none!important;margin:0!important;padding:0!important;}
+html.embed #meshPanel{height:100vh!important;margin:0!important;border:none!important;border-radius:0!important;}
 .sheen{position:relative; overflow:hidden;}
 .sheen::after{content:""; position:absolute; top:0; bottom:0; left:0; width:38%; background:linear-gradient(90deg, transparent, rgba(255,255,255,0.28), transparent); animation:axSheen 2.2s linear infinite;}
 .rbtn{background:transparent; border:none; border-right:1px solid rgba(var(--axr,52,211,153),0.12); color:#5d7268; font-family:var(--mono); font-size:10.5px; letter-spacing:0.12em; padding:5px 10px; cursor:pointer; transition:color .15s, background .15s;}
@@ -63,7 +68,7 @@ a:hover{color:var(--ax2,#6ee7b7) !important;}
     </div>
   </div>
 
-  <div style="position:relative; z-index:2; max-width:1340px; margin:0 auto; padding:0 28px;">
+  <div id="page" style="position:relative; z-index:2; max-width:1340px; margin:0 auto; padding:0 28px;">
 
     <div style="position:sticky; top:0; z-index:40; display:flex; align-items:center; justify-content:space-between; gap:18px; flex-wrap:wrap; padding:18px 0 15px; backdrop-filter:blur(10px); -webkit-backdrop-filter:blur(10px); background:linear-gradient(180deg, rgba(5,8,10,0.94), rgba(5,8,10,0.32)); border-bottom:1px solid rgba(var(--axr,52,211,153),0.1);">
       <div style="display:flex; align-items:baseline; gap:16px;">
@@ -89,7 +94,7 @@ a:hover{color:var(--ax2,#6ee7b7) !important;}
       <span style="font-size:14px;">&#9888;</span> unpriced models &mdash; cost is a floor, not exact: <span id="unpricedList" style="color:#f5b13d; font-weight:600;"></span>
     </div>
 
-    <div style="position:relative; height:600px; border:1px solid rgba(var(--axr,52,211,153),0.15); border-radius:18px; overflow:hidden; background:radial-gradient(760px 480px at 50% 48%, rgba(15,32,24,0.55), rgba(5,9,8,0.92)); margin:14px 0 26px;">
+    <div id="meshPanel" style="position:relative; height:600px; border:1px solid rgba(var(--axr,52,211,153),0.15); border-radius:18px; overflow:hidden; background:radial-gradient(760px 480px at 50% 48%, rgba(15,32,24,0.55), rgba(5,9,8,0.92)); margin:14px 0 26px;">
       <canvas id="brain" style="position:absolute; inset:0; width:100%; height:100%; display:block;"></canvas>
       <div style="position:absolute; left:18px; top:16px; width:26px; height:26px; border-left:1px solid rgba(var(--axr,52,211,153),0.4); border-top:1px solid rgba(var(--axr,52,211,153),0.4); pointer-events:none;"></div>
       <div style="position:absolute; right:18px; top:16px; width:26px; height:26px; border-right:1px solid rgba(var(--axr,52,211,153),0.4); border-top:1px solid rgba(var(--axr,52,211,153),0.4); pointer-events:none;"></div>
@@ -585,6 +590,18 @@ document.addEventListener('DOMContentLoaded', ()=>{
   $('btnPng').addEventListener('click', ()=>{ const cv=AX.drawShareCard(); if(!cv) return; cv.toBlob(b=>{ const u=URL.createObjectURL(b); const a=document.createElement('a'); a.href=u; a.download='axon-recap.png'; a.click(); URL.revokeObjectURL(u); }); });
   $('btnCopy').addEventListener('click', ()=>{ const cv=AX.drawShareCard(); if(!cv||!navigator.clipboard||!window.ClipboardItem) return; cv.toBlob(b=>{ navigator.clipboard.write([new ClipboardItem({'image/png':b})]).catch(()=>{}); }); });
 });
+</script>
+<script>
+// Embed mode: drop every section except the neural mesh so the page can be
+// iframed into the dashboard cockpit panel as a chrome-less, full-bleed brain.
+(function(){
+  if(!new URLSearchParams(location.search).has('embed')) return;
+  document.documentElement.classList.add('embed');
+  var page=document.getElementById('page');
+  if(page){ Array.prototype.forEach.call(page.children, function(c){ if(c.id!=='meshPanel') c.style.display='none'; }); }
+  var boot=document.getElementById('boot'); if(boot){ boot.style.display='none'; }
+  window.dispatchEvent(new Event('resize'));
+})();
 </script>
 </body>
 </html>
