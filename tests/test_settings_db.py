@@ -23,10 +23,10 @@ def temp_db(tmp_path, monkeypatch):
 
 def test_seeds_all_categories(temp_db):
     groups = temp_db.get_all()
-    # 12 categories are defined in DEFAULTS
-    assert len(groups) == 12
+    # 11 categories are defined in DEFAULTS (the empty "agents" category was removed)
+    assert len(groups) == 11
     for cat in ("general", "llm", "voice", "security", "memory",
-                "channels", "plugins", "agents", "skills", "system", "mcp"):
+                "channels", "plugins", "skills", "system", "mcp"):
         assert cat in groups, f"missing category: {cat}"
 
 
@@ -79,7 +79,7 @@ def test_init_db_force_restores_all_categories(temp_db):
     temp_db.put_category("general", {"timezone": "Custom/Time"})
     temp_db.init_db(force=True)
     groups = temp_db.get_all()
-    assert len(groups) == 12  # all categories restored
+    assert len(groups) == 11  # all categories restored
     gen = {r["key"]: r for r in groups["general"]}
     # Custom values gone, defaults back
     assert gen["timezone"]["value"] != "Custom/Time"
