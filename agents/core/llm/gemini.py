@@ -10,7 +10,7 @@ from typing import Callable
 import httpx
 
 from .auth_rotation import is_rotatable_status
-from .base import LLMBackend
+from .base import LLMBackend, cloud_cap
 
 
 GEMINI_API_BASE = "https://generativelanguage.googleapis.com/v1beta"
@@ -40,7 +40,7 @@ class GeminiBackend(LLMBackend):
         payload = {
             "contents": contents,
             "generationConfig": {
-                "maxOutputTokens": max_tokens,
+                "maxOutputTokens": cloud_cap(max_tokens),
                 "temperature": temperature,
             },
         }

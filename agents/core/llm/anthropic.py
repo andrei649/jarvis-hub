@@ -9,7 +9,7 @@ from typing import Callable
 import httpx
 
 from .auth_rotation import is_rotatable_status
-from .base import LLMBackend
+from .base import LLMBackend, cloud_cap
 
 ANTHROPIC_API_BASE = "https://api.anthropic.com/v1"
 ANTHROPIC_VERSION = "2023-06-01"
@@ -47,7 +47,7 @@ class ClaudeBackend(LLMBackend):
         model = model or self.model
         payload = {
             "model": model,
-            "max_tokens": max_tokens,
+            "max_tokens": cloud_cap(max_tokens),
             "temperature": temperature,
             "system": system,
             "messages": self._build_messages(prompt, system),
@@ -93,7 +93,7 @@ class ClaudeBackend(LLMBackend):
         model = model or self.model
         payload = {
             "model": model,
-            "max_tokens": max_tokens,
+            "max_tokens": cloud_cap(max_tokens),
             "temperature": temperature,
             "system": system,
             "messages": self._build_messages(prompt, system),
