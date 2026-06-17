@@ -626,7 +626,8 @@ async def tts_endpoint(req: TTSRequest):
                 {"error": "edge-tts not installed. Run: pip install edge-tts"},
                 status_code=503,
             )
-        engine = TTSEngine()
+        from core.settings_db import get_value
+        engine = TTSEngine(default_voice=get_value("voice", "tts_voice", "en-GB-RyanNeural"))
         audio_path = await engine.speak(req.text, voice=req.voice, lang=req.lang)
         if not audio_path:
             return JSONResponse({"error": "TTS synthesis failed"}, status_code=500)
@@ -656,15 +657,18 @@ def _stt_engine():
     global _STT_ENGINE
     if _STT_ENGINE is None:
         from core.voice.stt import STTEngine
-        _STT_ENGINE = STTEngine()
+        from core.settings_db import get_value
+        _STT_ENGINE = STTEngine(model_size=get_value("voice", "stt_model_size", "medium"))
     return _STT_ENGINE
 
 
 @app.post("/api/voice/stt", dependencies=[Depends(_user_guard)])
-async def stt_endpoint(request: Request, lang: str = Query("ro")):
+async def stt_endpoint(request: Request, lang: Optional[str] = Query(None)):
     """Transcribe a raw audio body (browser MediaRecorder blob) via local Whisper.
 
     Raw body (not multipart) keeps this dependency-free — no python-multipart needed.
+    Language falls back to the /admin `voice.stt_language` setting when the caller
+    doesn't pass ?lang=.
     """
     import tempfile
     from core.voice.stt import HAS_WHISPER
@@ -673,6 +677,8 @@ async def stt_endpoint(request: Request, lang: str = Query("ro")):
             {"error": "faster-whisper not installed. Run: pip install faster-whisper", "stt": False},
             status_code=503,
         )
+    from core.settings_db import get_value
+    lang = lang or get_value("voice", "stt_language", "ro")
     tmp = None
     try:
         data = await request.body()

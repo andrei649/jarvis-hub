@@ -45,7 +45,6 @@ DEFAULTS: list[dict[str, Any]] = [
     dict(category="general", key="timezone",         value="Europe/Bucharest",    label="Timezone",           kind="select",  opts=["Europe/Bucharest","UTC","US/Eastern"]),
     dict(category="general", key="wake_words",       value=["jarvis","hub"],      label="Wake words",         kind="tags"),
     dict(category="general", key="addressing",       value="sir",                 label="Addressing mode",    kind="select",  opts=["sir","boss","none"]),
-    dict(category="general", key="default_tts",      value="kokoro-en-british-male-1", label="Default TTS voice", kind="text"),
     dict(category="general", key="ui_density",       value="normal",              label="UI density",         kind="select",  opts=["normal","compact"]),
     dict(category="general", key="dev_mode",         value=False,                 label="Developer mode",     kind="toggle"),
     # llm

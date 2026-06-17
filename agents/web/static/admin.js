@@ -268,7 +268,6 @@ const FRIENDLY_NAMES = {
   timezone: "Fus orar local",
   wake_words: "Cuvinte de trezire vocală",
   addressing: "Mod de adresare",
-  default_tts: "Voce implicită pentru sinteză",
   ui_density: "Densitate interfață HUD",
   dev_mode: "Mod Dezvoltator activat",
   backend_type: "Tip motor inteligență artificială (LLM)",
@@ -375,7 +374,7 @@ function GlobalConfigPage({ settings, dirty, onUpdate, onSave }) {
     {
       title: "⚙️ Preferințe Asistent Globale",
       desc: "Setări generale referitoare la fusul orar, cuvinte de trezire și adresare.",
-      keys: ["general.timezone", "general.wake_words", "general.addressing", "general.default_tts", "general.ui_density", "general.dev_mode"]
+      keys: ["general.timezone", "general.wake_words", "general.addressing", "general.ui_density", "general.dev_mode"]
     },
     {
       title: "🎙️ Configurare Voce & Sunet (STT / TTS)",
