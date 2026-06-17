@@ -88,6 +88,29 @@ def test_lifespan_wires_rate_limit_and_web_enabled(monkeypatch):
         assert "voice" in web.gateway._channels        # other channels unaffected
 
 
+# ── LM Studio control kill-switches (llm.control_enabled / chat_control) ──────
+def test_lmstudio_control_toggles_surfaced_and_wired(monkeypatch):
+    # surfaced: both toggles exist in the /admin defaults
+    from core import settings_db
+    keys = {(d["category"], d["key"]) for d in settings_db.DEFAULTS}
+    assert ("llm", "control_enabled") in keys and ("llm", "chat_control") in keys
+
+    # wired: the orchestrator's gating honors the live settings
+    from core.config import JarvisConfig
+    from core.orchestrator import Orchestrator
+    o = Orchestrator(JarvisConfig())
+
+    monkeypatch.setattr(o, "get_setting",
+                        lambda k, d=None: {"llm.control_enabled": False, "llm.chat_control": True}.get(k, d))
+    assert o._control_master_enabled() is False
+    assert o._chat_control_enabled() is False   # chat control is gated by master control
+
+    monkeypatch.setattr(o, "get_setting",
+                        lambda k, d=None: {"llm.control_enabled": True, "llm.chat_control": False}.get(k, d))
+    assert o._control_master_enabled() is True
+    assert o._chat_control_enabled() is False   # its own toggle is off
+
+
 # ── guardrails (security.guardrails_mode / scan_input / scan_output) ──────────
 @pytest.mark.asyncio
 async def test_orchestrator_guardrails_honors_settings(monkeypatch):

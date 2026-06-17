@@ -10,7 +10,7 @@ function adminBackend() {
   return vi.fn((url, opts) => {
     if (url === '/api/admin/settings') {
       return json({ general: [
-        { key: 'dev_mode', label: 'Dev mode', kind: 'toggle', value: false },
+        { key: 'timezone', label: 'Timezone', kind: 'select', value: 'UTC', opts: ['UTC', 'Europe/Bucharest'] },
         { key: 'log_level', label: 'Log level', kind: 'select', value: 'info', opts: ['info', 'debug'] },
       ] });
     }
@@ -135,12 +135,12 @@ describe('admin chart/card components', () => {
 
   it('GlobalConfigPage renders rows and fires onSave', () => {
     const onSave = vi.fn();
-    const settings = { general: [{ key: 'dev_mode', label: 'Dev', kind: 'toggle', value: true }] };
+    const settings = { general: [{ key: 'timezone', label: 'Timezone', kind: 'select', value: 'UTC', opts: ['UTC', 'Europe/Bucharest'] }] };
     const { container } = env.render(
-      h(env.hud.GlobalConfigPage, { settings, dirty: { dev_mode: true }, onUpdate: vi.fn(), onSave }),
+      h(env.hud.GlobalConfigPage, { settings, dirty: { timezone: 'UTC' }, onUpdate: vi.fn(), onSave }),
     );
-    // The page relabels keys via FRIENDLY_NAMES, so dev_mode → "Mod Dezvoltator…".
-    expect(container.textContent.toLowerCase()).toContain('dezvoltator');
+    // The page relabels keys via FRIENDLY_NAMES, so timezone → "Fus orar local".
+    expect(container.textContent.toLowerCase()).toContain('fus orar');
     const saveBtn = [...container.querySelectorAll('button')].find((b) => /salv|save/i.test(b.textContent));
     expect(saveBtn).toBeTruthy();
     env.click(saveBtn);
