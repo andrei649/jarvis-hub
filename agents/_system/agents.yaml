@@ -13,8 +13,6 @@ jarvis:
 general:
   timezone: Europe/Bucharest
   wake_words: ["jarvis", "hub"]
-  default_tts: kokoro-en-british-male-1
-  addressing: sir
   llm_backend: auto  # "auto" = try LM Studio first, fallback Ollama
   llm_endpoints:
     lm_studio: http://localhost:1234
