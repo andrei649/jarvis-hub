@@ -1012,7 +1012,13 @@ async def get_agent_soul(agent_id: str):
     soul_path = base_dir / agent_id / "SOUL.local.md"
     if not soul_path.exists():
         soul_path = base_dir / agent_id / "SOUL.md"
-    
+
+    # Defense-in-depth (clears CodeQL path-injection #22/#23/#431): the agent-id
+    # regex already forbids path separators, but assert the resolved file never
+    # escapes base_dir before reading it.
+    if base_dir not in soul_path.resolve().parents:
+        raise HTTPException(status_code=404, detail="Agent not found")
+
     if orch and agent_id not in orch.agents:
         raise HTTPException(status_code=404, detail=f"Agent '{agent_id}' not found")
     

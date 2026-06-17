@@ -68,7 +68,7 @@ async def add_event(args: str, context: dict = None) -> str:
         return _no_token()
     title, start, end = parts[0], parts[1], parts[2]
     try:
-        result = await plugin.create_event(summary=title, start=start, end=end)
+        result = await plugin.create_event(summary=title, start_dt=start, end_dt=end)
     except Exception as e:
         logger.warning(f"Calendar create failed: {e}")
         return "Nu am putut crea evenimentul — Calendar indisponibil."

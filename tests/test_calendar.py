@@ -34,7 +34,9 @@ class _FakeCal:
         return [{"start": "10:00", "summary": "Standup"},
                 {"start": "14:00", "summary": "Review"}]
 
-    async def create_event(self, summary, start, end):
+    # Mirror the real GoogleCalendarPlugin.create_event signature (summary/start_dt/
+    # end_dt) so the skill's call contract is actually exercised (CodeQL #248).
+    async def create_event(self, summary, start_dt, end_dt):
         return {"id": "ev123", "summary": summary}
 
 
