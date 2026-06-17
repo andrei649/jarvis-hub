@@ -248,6 +248,53 @@ function Group({ title, children }) {
   );
 }
 
+/* ── Live local-model picker (kind: "model-select") ──────────────
+ * Reads the live LM Studio / Ollama catalog (/api/models/local) and switches
+ * the active local model immediately (/api/models/local/switch persists it to
+ * llm.default_model). Applies on pick — independent of the dirty/Save flow.
+ * Honest degradation: if no backend is up, shows the persisted value + a note
+ * instead of a fake dropdown. */
+function ModelPickerRow({ label, value }) {
+  const [models, setModels] = useState(null);   // null = loading, [] = none, [...] = catalog
+  const [active, setActive] = useState(value || '');
+  const [status, setStatus] = useState('');
+  useEffect(() => {
+    afetch('/api/models/local')
+      .then(r => r.json())
+      .then(d => {
+        setModels((d.models || []).map(m => m.id));
+        if (d.active) setActive(d.active);
+      })
+      .catch(() => setModels([]));
+  }, []);
+  const onPick = (m) => {
+    setActive(m);
+    setStatus('Se comută…');
+    afetch('/api/models/local/switch', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ model: m }),
+    })
+      .then(r => r.json())
+      .then(d => setStatus(d.ok ? `Activ: ${d.active || m}` : (d.error || 'Eroare la comutare')))
+      .catch(() => setStatus('Eroare la comutare'));
+  };
+  // Keep the persisted value selectable even if it isn't in the live catalog.
+  const opts = active && models && !models.includes(active) ? [active, ...models] : (models || []);
+  return h('div', { className: 'admin-row' },
+    h('div', { className: 'admin-row-label' }, label),
+    h('div', { className: 'admin-row-control' },
+      models === null
+        ? h('span', { style: { color: 'var(--text-dim)' } }, 'Se încarcă modelele locale…')
+        : models.length === 0
+          ? h('span', { style: { color: 'var(--text-dim)' } }, `${active || '—'} · niciun model local detectat`)
+          : h('select', { value: active, onChange: e => onPick(e.target.value) },
+              opts.map(m => h('option', { key: m, value: m }, m))),
+      status && h('span', { style: { marginLeft: 8, fontSize: 10, color: 'var(--text-dim)' } }, status),
+    ),
+  );
+}
+
 /* ── Settings row renderer ──────────────────────────────────── */
 
 function renderRow(s, i, onUpdate, onAction) {
@@ -255,6 +302,7 @@ function renderRow(s, i, onUpdate, onAction) {
   switch (s.kind) {
     case 'toggle': return h(ToggleRow,{key:i,label:s.label,value:!!s.value,onChange:update});
     case 'select': return h(SelectRow,{key:i,label:s.label,value:s.value,onChange:update,opts:s.opts});
+    case 'model-select': return h(ModelPickerRow,{key:i,label:s.label,value:s.value});
     case 'slider': return h(SliderRow,{key:i,label:s.label,value:s.value,onChange:update});
     case 'tags':   return h(TagInputRow,{key:i,label:s.label,value:s.value,onChange:update});
     case 'number': return h(InputRow,{key:i,label:s.label,value:s.value,onChange:update,kind:'number'});

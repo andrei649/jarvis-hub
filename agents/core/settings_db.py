@@ -48,7 +48,7 @@ DEFAULTS: list[dict[str, Any]] = [
     dict(category="llm",     key="backend_type",     value="auto",                label="Backend type",       kind="select",  opts=["auto","lm-studio","ollama"]),
     dict(category="llm",     key="lm_studio_url",    value="http://localhost:1234",  label="LM Studio URL",    kind="text"),
     dict(category="llm",     key="ollama_url",       value="http://localhost:11434", label="Ollama URL",       kind="text"),
-    dict(category="llm",     key="default_model",    value="google/gemma-4-12b",  label="Default model",    kind="text"),
+    dict(category="llm",     key="default_model",    value="google/gemma-4-12b",  label="Default local model", kind="model-select"),
     dict(category="llm",     key="temperature",      value=0.7,                   label="Temperature",        kind="slider"),
     dict(category="llm",     key="max_tokens",       value=0,                     label="Max tokens (0 = auto: use the model's loaded context)", kind="number"),
     dict(category="llm",     key="deep_max_tokens",  value=0,                     label="Deep-slot max tokens (0 = auto)", kind="number"),
