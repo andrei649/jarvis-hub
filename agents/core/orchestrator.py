@@ -34,7 +34,7 @@ from .skills.loader import SkillLoader
 from .skills.importer import SkillImporter
 from .skills.marketplace import SkillMarketplace
 from .mcp.client import MCPManager
-from .autonomy import AutonomyWorker, TaskQueue, AutonomyPolicy, PreferenceStore
+from .autonomy import AutonomyWorker, TaskQueue, AutonomyPolicy, PreferenceStore, InterruptBudget
 from .autonomy import ProactiveObserver, default_probes
 from .autonomy.reflection import DailyReflector
 from .autonomy.log_scanner import LogBugScanner
@@ -253,8 +253,18 @@ class Orchestrator:
         # ── Autonomy / Proactive Cortex (H6.1–H6.6) ──
         self.autonomy_queue = TaskQueue()
         self.autonomy_prefs = PreferenceStore()
+        # /admin → autonomy.cap_per_action / daily_ceiling / interrupt_budget.
+        # These were dataclass defaults (50/200/4); live-resynced each tick by the
+        # autonomy coordinator (like autonomy.mode).
+        from .settings_db import get_value as _gv
         self.autonomy = AutonomyWorker(
-            self.autonomy_queue, policy=AutonomyPolicy(), prefs=self.autonomy_prefs,
+            self.autonomy_queue,
+            policy=AutonomyPolicy(
+                cap_per_action=float(_gv("autonomy", "cap_per_action", 50.0)),
+                daily_ceiling=float(_gv("autonomy", "daily_ceiling", 200.0)),
+            ),
+            prefs=self.autonomy_prefs,
+            budget=InterruptBudget(per_day=int(_gv("autonomy", "interrupt_budget", 4))),
         )
         # Proactive OS Observer — the trigger layer that feeds the queue.
         self.observer: Optional[ProactiveObserver] = None

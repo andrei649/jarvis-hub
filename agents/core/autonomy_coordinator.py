@@ -64,10 +64,18 @@ class AutonomyCoordinator:
             interval = int(self._orch.get_setting("system.autonomy_tick", 60) or 60)
             await asyncio.sleep(max(15, interval))
             try:
-                # Sync the live autonomy mode (HUD AUTO/ASK/OFF) onto the policy each tick.
+                # Sync the live autonomy knobs (/admin) onto the policy each tick:
+                # mode (AUTO/ASK/OFF) + the money caps + the interrupt budget.
                 amode = str(self._orch.get_setting("autonomy.mode", "auto") or "auto").lower()
-                if self._orch.autonomy and self._orch.autonomy.policy.mode != amode:
-                    self._orch.autonomy.policy.mode = amode
+                if self._orch.autonomy:
+                    pol = self._orch.autonomy.policy
+                    if pol.mode != amode:
+                        pol.mode = amode
+                    pol.cap_per_action = float(self._orch.get_setting("autonomy.cap_per_action", 50.0) or 50.0)
+                    pol.daily_ceiling = float(self._orch.get_setting("autonomy.daily_ceiling", 200.0) or 200.0)
+                    bud = getattr(self._orch.autonomy, "budget", None)
+                    if bud is not None:
+                        bud.per_day = int(self._orch.get_setting("autonomy.interrupt_budget", 4) or 4)
                 max_tier = None
                 if self._orch.get_setting("autonomy.night_shift", False):
                     start = int(self._orch.get_setting("autonomy.night_start", 23) or 23)
