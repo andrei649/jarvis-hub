@@ -275,6 +275,8 @@ const FRIENDLY_NAMES = {
   max_tokens: "Lungime maximă răspuns (0 = automat: folosește tot contextul modelului)",
   cloud_fallback: "Regim backup în Cloud",
   gemini_model: "Model Google Gemini din Cloud",
+  control_enabled: "Control LM Studio (pornire server / încărcare model)",
+  chat_control: "Control LM Studio prin chat",
   hybrid_local_max: "Prag rutare local — prompturi până la N tokeni de intrare rămân pe modelul local (0 = nelimitat)",
   hybrid_flash_max: "Prag rutare Cloud Flash — peste N tokeni de intrare escaladează la Pro (0 = nelimitat)",
   stt_model_size: "Mărime model recunoaștere vocală (STT)",
@@ -337,6 +339,8 @@ const FRIENDLY_DESCS = {
   backend_type: "Alege între detecție automată, LM Studio local sau Ollama local.",
   temperature: "Valori mai mari oferă răspunsuri creative; valori mai mici oferă răspunsuri precise.",
   cloud_fallback: "Fallback automat pe cloud (Anthropic/Gemini) dacă motorul local este offline sau suprasolicitat.",
+  control_enabled: "Permite asistentului să pornească serverul LM Studio și să încarce/descarce modele. Dezactivează pentru a îngheța backendul local (mai e nevoie și de variabila de mediu JARVIS_LMSTUDIO_CONTROL).",
+  chat_control: "Permite comenzi de tip „încarcă gemma\" direct din chat. Necesită controlul LM Studio activ.",
   guardrails_mode: "Modul în care datele confidențiale sau PII sunt filtrate (Avertizare, Redactare sau Blocare completă).",
   sandbox_timeout: "Timpul maxim acordat execuției de cod nesigur înainte de a fi oprită forțat.",
   observer_enabled: "Rulează bucla de fundal ce monitorizează starea Docker, procesele gazdei și memoria liberă.",
@@ -368,7 +372,7 @@ function GlobalConfigPage({ settings, dirty, onUpdate, onSave }) {
     {
       title: "🤖 Modele Lingvistice & AI (LLM)",
       desc: "Configurarea motoarelor LLM locale (LM Studio / Ollama) și a fallback-urilor inteligente în Cloud.",
-      keys: ["llm.backend_type", "llm.lm_studio_url", "llm.ollama_url", "llm.default_model", "llm.temperature", "llm.max_tokens", "llm.cloud_fallback", "llm.gemini_model", "llm.hybrid_local_max", "llm.hybrid_flash_max"]
+      keys: ["llm.backend_type", "llm.lm_studio_url", "llm.ollama_url", "llm.default_model", "llm.temperature", "llm.max_tokens", "llm.cloud_fallback", "llm.gemini_model", "llm.hybrid_local_max", "llm.hybrid_flash_max", "llm.control_enabled", "llm.chat_control"]
     },
     {
       title: "🔒 Securitate & Sandbox Protejat",
