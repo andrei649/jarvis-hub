@@ -50,6 +50,37 @@ def test_stt_transcribes_via_engine(client):
     fake.transcribe_async.assert_awaited_once()
 
 
+def test_stt_engine_uses_configured_model_size(monkeypatch):
+    # _stt_engine() must build Whisper with the /admin voice.stt_model_size, not a
+    # hardcoded "medium".
+    captured = {}
+
+    class FakeSTT:
+        def __init__(self, model_size="medium", device="auto"):
+            captured["model_size"] = model_size
+
+    monkeypatch.setattr("core.voice.stt.STTEngine", FakeSTT)
+    monkeypatch.setattr("core.settings_db.get_value",
+                        lambda cat, key, default=None: "small" if key == "stt_model_size" else default)
+    monkeypatch.setattr(web, "_STT_ENGINE", None)  # bust the cache
+    web._stt_engine()
+    assert captured["model_size"] == "small"
+
+
+@patch("core.voice.stt.HAS_WHISPER", True)
+def test_stt_lang_falls_back_to_setting(client, monkeypatch):
+    # No ?lang= → use voice.stt_language from /admin instead of the old "ro" literal.
+    fake = AsyncMock()
+    fake.transcribe_async = AsyncMock(return_value="hello world")
+    monkeypatch.setattr("core.settings_db.get_value",
+                        lambda cat, key, default=None: "en" if key == "stt_language" else default)
+    with patch.object(web, "_stt_engine", return_value=fake):
+        resp = client.post("/api/voice/stt", content=b"fake-audio-bytes")
+    assert resp.status_code == 200
+    assert resp.json()["lang"] == "en"
+    fake.transcribe_async.assert_awaited_once()
+
+
 @patch("core.voice.stt.HAS_WHISPER", True)
 def test_stt_rejects_empty_audio(client):
     with patch.object(web, "_stt_engine", return_value=AsyncMock()):

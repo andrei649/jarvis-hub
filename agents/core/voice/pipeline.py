@@ -17,8 +17,9 @@ logger = logging.getLogger("jarvis.voice")
 class VoicePipeline:
     def __init__(self, on_transcription: Callable = None):
         self.detector = WakeWordDetector(callback=self._on_wake_word)
-        self.stt = STTEngine(model_size="medium", device="auto")
-        self.tts = TTSEngine()
+        from ..settings_db import get_value
+        self.stt = STTEngine(model_size=get_value("voice", "stt_model_size", "medium"), device="auto")
+        self.tts = TTSEngine(default_voice=get_value("voice", "tts_voice", "en-GB-RyanNeural"))
         self.on_transcription = on_transcription
         self._running = False
         self._last_audio: Optional[str] = None
