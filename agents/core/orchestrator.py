@@ -503,6 +503,11 @@ class Orchestrator:
             router = getattr(self, "llm_router", None)
             if router is not None and hasattr(router, "set_cloud_fallback_mode"):
                 router.set_cloud_fallback_mode(flat.get("llm.cloud_fallback", "on-demand"))
+            # Propagate the prompt-size routing thresholds (local vs cloud-flash)
+            # so the /admin knobs actually govern routing live. 0 = unlimited.
+            if router is not None and hasattr(router, "set_local_max"):
+                router.set_local_max(flat.get("llm.hybrid_local_max"))
+                router.set_flash_max(flat.get("llm.hybrid_flash_max"))
         except Exception as e:
             log_error(logger, E_INTERNAL_UNEXPECTED, component="settings_db", detail=str(e))
 

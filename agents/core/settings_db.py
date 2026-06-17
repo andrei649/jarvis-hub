@@ -59,8 +59,8 @@ DEFAULTS: list[dict[str, Any]] = [
     dict(category="llm",     key="cloud_fallback",   value="on-demand",           label="Cloud LLM fallback", kind="select",  opts=["never","on-demand","always"]),
     dict(category="llm",     key="gemini_model",     value="gemini-2.5-flash",     label="Gemini model",       kind="select",  opts=["gemini-2.5-flash","gemini-2.5-pro","gemini-3.1-pro"]),
     dict(category="llm",     key="claude_model",     value="claude-sonnet-4-20250514", label="Claude model",   kind="text"),
-    dict(category="llm",     key="hybrid_local_max", value=8000,                   label="Local max tokens",   kind="number"),
-    dict(category="llm",     key="hybrid_flash_max", value=128000,                 label="Flash max tokens",   kind="number"),
+    dict(category="llm",     key="hybrid_local_max", value=131072,                 label="Local routing threshold — prompts up to N input tokens stay local (0 = unlimited)", kind="number"),
+    dict(category="llm",     key="hybrid_flash_max", value=1000000,                label="Cloud Flash routing threshold — above N input tokens escalates to Pro (0 = unlimited)", kind="number"),
     # voice
     dict(category="voice",   key="stt_model_size",   value="medium",              label="STT model size",     kind="select",  opts=["tiny","base","small","medium","large"]),
     dict(category="voice",   key="stt_language",     value="ro",                  label="STT language",       kind="text"),

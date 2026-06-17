@@ -23,6 +23,7 @@ Set JARVIS_AUTO_DEEP=0 to disable complexity-based escalation.
 
 import logging
 import os
+import sys
 from functools import lru_cache
 from pathlib import Path
 from typing import Optional
@@ -167,6 +168,13 @@ class HybridRouter(LLMRouter):
         # orchestrator's settings watcher via set_cloud_fallback_mode().
         self._cloud_fallback_mode = "on-demand"
 
+        # Routing size thresholds (prompt INPUT tokens), live-tunable from /admin
+        # via set_local_max / set_flash_max (settings watcher). Default to the
+        # module constants; 0 / non-positive means "no limit" (sys.maxsize) — e.g.
+        # a local-only user can let every prompt stay on the local model.
+        self._local_max = LOCAL_MAX_TOKENS
+        self._flash_max = FLASH_MAX_TOKENS
+
     @staticmethod
     def _admin_setting(key: str, default):
         """Read an `llm` setting from /admin config (settings_db), safely."""
@@ -282,7 +290,7 @@ class HybridRouter(LLMRouter):
 
         # POLICY_AUTO: prefer Claude for heavy agents, local for light
         if agent_id in CLAUDE_AGENTS and self._claude_available:
-            if token_count > LOCAL_MAX_TOKENS:
+            if token_count > self._local_max:
                 return self._claude_backend, self._claude_model, "claude"
             return self._claude_backend, DEFAULT_CLAUDE_MODEL, "claude"
 
@@ -295,9 +303,9 @@ class HybridRouter(LLMRouter):
             return self._gemini_backend, "gemini-2.5-flash", "cloud-flash"
         # H7.5 — Complexity escalation: heavy prompts for auto-policy agents
         # are routed to the deep local slot (DDR5) when AUTO_DEEP_ENABLED.
-        # This only applies here (token_count <= LOCAL_MAX_TOKENS path) because
+        # This only applies here (token_count <= local threshold path) because
         # oversized prompts already spill to cloud via the branches below.
-        if token_count <= LOCAL_MAX_TOKENS and self._local_available:
+        if token_count <= self._local_max and self._local_available:
             if AUTO_DEEP_ENABLED and is_heavy_request(prompt):
                 logger.debug(
                     "Complexity escalation: routing %s to deep slot (local-deep)", agent_id
@@ -305,7 +313,7 @@ class HybridRouter(LLMRouter):
                 return self._backend, DEFAULT_DEEP_MODEL, "local-deep"
             return self._backend, self._local_model, "local"
         if self._cloud_fallback_mode != "never":
-            if token_count <= FLASH_MAX_TOKENS and self._cloud_available:
+            if token_count <= self._flash_max and self._cloud_available:
                 return self._gemini_backend, "gemini-2.5-flash", "cloud-flash"
             if self._cloud_available:
                 return self._gemini_backend, "gemini-2.5-pro", "cloud-pro"
@@ -339,6 +347,34 @@ class HybridRouter(LLMRouter):
         if mode != self._cloud_fallback_mode:
             logger.info("Cloud fallback mode → %s", mode)
         self._cloud_fallback_mode = mode
+
+    @staticmethod
+    def _resolve_threshold(value, default: int) -> int:
+        """Coerce an /admin threshold to an int. Non-positive / blank / bad → no
+        limit (sys.maxsize), so '0' in /admin means 'route everything here'."""
+        try:
+            n = int(value)
+        except (TypeError, ValueError):
+            return default
+        return n if n > 0 else sys.maxsize
+
+    def set_local_max(self, value) -> None:
+        """Live update from /admin → llm.hybrid_local_max. Prompts up to this many
+        input tokens route to the local model (0 = unlimited)."""
+        resolved = self._resolve_threshold(value, LOCAL_MAX_TOKENS)
+        if resolved != self._local_max:
+            shown = "unlimited" if resolved == sys.maxsize else resolved
+            logger.info("Local routing threshold → %s tokens", shown)
+        self._local_max = resolved
+
+    def set_flash_max(self, value) -> None:
+        """Live update from /admin → llm.hybrid_flash_max. Prompts up to this many
+        input tokens route to cloud Flash (above → Pro); 0 = unlimited."""
+        resolved = self._resolve_threshold(value, FLASH_MAX_TOKENS)
+        if resolved != self._flash_max:
+            shown = "unlimited" if resolved == sys.maxsize else resolved
+            logger.info("Flash routing threshold → %s tokens", shown)
+        self._flash_max = resolved
 
     def set_active_model(self, model: str) -> None:
         """Switch the active local model used for `local` routing tiers.
