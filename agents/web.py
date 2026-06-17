@@ -191,8 +191,12 @@ async def lifespan(application: FastAPI):
     config = JarvisConfig()
     orch = Orchestrator(config)
 
+    from core.settings_db import get_value
     gateway = Gateway(handler=orch.channel_handler, pairing=getattr(orch, "sender_pairing", None))
-    gateway.register_channel("web")
+    gateway.set_rate_limit(int(get_value("channels", "rate_limit", 10)))  # /admin → channels.rate_limit
+    web_enabled = bool(get_value("channels", "web_enabled", True))        # /admin → channels.web_enabled
+    if web_enabled:
+        gateway.register_channel("web")
     gateway.register_channel("voice")
     gateway.register_channel("telegram")
 
@@ -207,8 +211,11 @@ async def lifespan(application: FastAPI):
         metadata={"source": "web", "agents": len(orch.agents)},
     )
 
-    web_ch = WebChannel(handler=gateway.route)
-    await orch.register_channel(web_ch)
+    if web_enabled:
+        web_ch = WebChannel(handler=gateway.route)
+        await orch.register_channel(web_ch)
+    else:
+        logger.warning("Web chat channel disabled (/admin → channels.web_enabled)")
 
     voice_ch = VoiceChannel(handler=gateway.route, wake_words=orch.get_setting("general.wake_words", ["jarvis", "hub"]))
     await orch.register_channel(voice_ch)
