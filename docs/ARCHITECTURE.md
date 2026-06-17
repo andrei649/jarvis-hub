@@ -75,6 +75,7 @@ When on: embeds the query, runs fused recall (vector ⊕ graph), injects top-k a
 | `agents/run.py` | CLI REPL | `main()` |
 | `agents/web.py` | FastAPI app, lifespan, all HTTP endpoints (~253 routes) | `app`, `lifespan`, `orch` global |
 | `agents/core/orchestrator.py` | Main loop | `Orchestrator`, `handle_input`, `handle_input_stream`, `_maybe_checkpoint` |
+| `agents/core/routers/brain.py` | Neural Mesh page (`/brain`) + live feed (`/api/brain/summary`) — tracer rollups → canvas "brain" of agents+models firing. Viz adapted from Axon (MIT, `LICENSES/axon-MIT.txt`) | `build_summary`, `brain_page`, `brain_summary` |
 | `agents/core/agent.py` | Single agent runtime | `Agent`, `Agent.process`, `Agent.synthesize`, `Agent._load_soul` |
 | `agents/core/router.py` | Intent classifier | `IntentRouter.classify`, `Intent`, `INTENT_RULES` |
 | `agents/core/config.py` | YAML config loader | `JarvisConfig` |
