@@ -13,7 +13,10 @@ from agents.core.workflows.pipeline import Pipeline, WorkflowStep
 
 # Real OpenAI keys are ≥40 chars after the `sk-` prefix (HF-3 tightened the
 # `openai_key` pattern so short `sk-` slugs no longer false-positive).
-_OPENAI_KEY = "sk-A1b2C3d4E5f6G7h8I9j0K1l2M3n4O5p6Q7r8S9t0"
+# Built by concatenation so the `sk-`+40-char shape never appears verbatim in
+# source — avoids a GitHub secret-scanning "public leak" false positive on this
+# synthetic fixture. The scanner still sees the full value at runtime and flags it.
+_OPENAI_KEY = "sk-" + "A1b2C3d4E5f6G7h8I9j0K1l2M3n4O5p6Q7r8S9t0"
 SECRET = f"key is {_OPENAI_KEY}"
 EMAIL = "reach me at bob@example.com please"
 CLEAN = "just a normal sentence"
