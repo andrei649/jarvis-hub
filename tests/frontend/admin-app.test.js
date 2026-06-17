@@ -9,10 +9,10 @@ function adminBackend() {
   const json = (body) => Promise.resolve({ json: async () => body, ok: true });
   return vi.fn((url, opts) => {
     if (url === '/api/admin/settings') {
-      return json({ general: [
-        { key: 'timezone', label: 'Timezone', kind: 'select', value: 'UTC', opts: ['UTC', 'Europe/Bucharest'] },
-        { key: 'log_level', label: 'Log level', kind: 'select', value: 'info', opts: ['info', 'debug'] },
-      ] });
+      return json({
+        general: [{ key: 'timezone', label: 'Timezone', kind: 'select', value: 'UTC', opts: ['UTC', 'Europe/Bucharest'] }],
+        security: [{ key: 'scan_input', label: 'Scan input', kind: 'toggle', value: true }],
+      });
     }
     if (url.startsWith('/api/admin/settings/')) return json({ updated: 1 });
     if (url === '/api/admin/env') return json({ Node: 'v22', Platform: 'linux' });
@@ -89,7 +89,7 @@ describe('AdminApp (full mount + nav sweep)', () => {
     expect(saveBtn, 'a save button is shown when dirty').toBeTruthy();
     env.click(saveBtn);
     await env.flush();
-    expect(fetch).toHaveBeenCalledWith('/api/admin/settings/general', expect.objectContaining({ method: 'PUT' }));
+    expect(fetch).toHaveBeenCalledWith('/api/admin/settings/security', expect.objectContaining({ method: 'PUT' }));
   });
 });
 
