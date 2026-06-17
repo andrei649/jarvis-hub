@@ -44,6 +44,29 @@ python -m pytest tests/ -v          # 2156 passed, 1 skipped
 
 ---
 
+## 🔐 Security route-policy gate (audit 2026-06-17 — assessment done, fix pending)
+
+External GPT audit + **runtime verification** (300 routes: 89 admin / 87 user /
+**124 open, of which 43 are open *and* mutating**). Guard model is sound; the gap
+is routes with **no guard attached**. Footguns on localhost; real unauthorized
+control surfaces on LAN/Pi/proxy/tunnel. Full verified write-up + proposed
+route-policy table: **`docs/SECURITY_ROUTE_AUDIT_2026-06-17.md`**.
+
+| # | Item | S | P | AC |
+|---|------|---|---|----|
+| SEC-1 | **Guard webhook management** — `GET/POST/DELETE /api/webhooks` → `admin_guard`; keep trigger token/HMAC. (`POST /api/webhooks` mints a token → agent exec.) | 2 | **P0** | unauth `POST /api/webhooks` → 401/403 off-localhost; trigger still works with token |
+| SEC-2 | **Route-auth matrix test** — runtime introspect `app.routes` vs a checked-in policy file; CI fails on any unclassified/unguarded mutator (seed policy = the doc's table). | 3 | P1 | new endpoint without a guard/policy fails CI |
+| SEC-3 | **Apply policy to remaining open mutators** (admin/user per table) + sensitive open reads. Localhost dev unaffected. | 5 | P1 | every mutating route guarded or explicitly allowlisted |
+| SEC-4 | Env/posture follow-ups: npm Dependabot ecosystems (F-05), `JARVIS_HOME` for runtime state (F-08), regenerate stale route/test doc counters (F-09), promote matrix test to required gate (F-10). | 3 | P2 | — |
+
+> Verified false-alarms / owner-side (not repo defects): F-04 (auditor's stale
+> Windows venv/node_modules — CI builds clean), most of F-05 (needs owner
+> Dependabot view). Self-authenticating opens confirmed safe: webhook trigger
+> (token/HMAC), a2a/task (peer HMAC, off by default), mcp/server/rpc (disabled by
+> default + OAuth), oauth/callback (state-validated).
+
+---
+
 ## Scalability: index hot/unbounded SQLite tables (shipped — PR pending)
 
 Behavior-preserving index pass on the four tables that are read on hot paths
