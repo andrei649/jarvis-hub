@@ -1351,6 +1351,7 @@ from agents.core.routers.mesh import router as _mesh_router  # noqa: E402
 from agents.core.routers.autonomy import router as _autonomy_router  # noqa: E402
 from agents.core.routers.models_llm import router as _models_llm_router  # noqa: E402
 from agents.core.routers.oauth import router as _oauth_router  # noqa: E402
+from agents.core.routers.brain import router as _brain_router  # noqa: E402
 from agents.core.routers.memory_kg import router as _memory_kg_router  # noqa: E402
 from agents.core.routers.analytics import router as _analytics_router  # noqa: E402
 from agents.core.routers.integrations import router as _integrations_router  # noqa: E402
@@ -1375,6 +1376,7 @@ app.include_router(_mesh_router)
 app.include_router(_autonomy_router)
 app.include_router(_models_llm_router)
 app.include_router(_oauth_router)
+app.include_router(_brain_router)
 app.include_router(_memory_kg_router)
 app.include_router(_analytics_router)
 app.include_router(_admin_router)

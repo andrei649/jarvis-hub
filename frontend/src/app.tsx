@@ -5,7 +5,6 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { V2 } from './data';
 import { useClock, fmtTimeShort, Icon, ICONS, Glyph } from './primitives';
 import { TopBar, Ticker, Rail, Tabs, RosterColumn, ContextColumn, Palette, Ambient } from './shell';
-import { NetworkBrain } from './network';
 import { Conversation, CognitionStream, InputBar, buildTrace, traceFromCognition } from './cockpit';
 import { useVoice } from './voice';
 import { loadJarvisData } from './api/loaders';
@@ -288,8 +287,10 @@ function App() {
                   <div className="panel" style={{ flex: '1.3 1 0', minHeight: 0 }}>
                     <span className="bk tl"></span><span className="bk tr"></span><span className="bk bl"></span><span className="bk br"></span>
                     <div className="panel-head"><Icon d={ICONS.brain} size={14} /><span className="ttl">{t.network}</span><span className="st">focus mode</span></div>
-                    <NetworkBrain agents={agents} tasks={tasks} activeId={activeId} onSelect={(id) => setActiveId(id)}
-                      focusId={focusId} setFocusId={setFocusId} motion={motion} t={t} />
+                    {/* Neural Mesh — live canvas brain of agents + models firing
+                        (chrome-less /brain?embed=1; replaces the legacy SVG ring). */}
+                    <iframe title={t.network} src="/brain?embed=1" loading="lazy"
+                      style={{ flex: 1, minHeight: 0, width: '100%', border: 'none', borderRadius: '0 0 var(--radius) var(--radius)', background: '#05080a' }} />
                   </div>
                   <div className="panel" style={{ flex: '1 1 0', minHeight: 0 }}>
                     <span className="bk tl"></span><span className="bk tr"></span><span className="bk bl"></span><span className="bk br"></span>

@@ -1,6 +1,24 @@
 # Changelog
 
 ## [Unreleased]
+### Neural Mesh — live brain visualization of the orchestrator (2026-06-17)
+- **`/brain` — the JARVIS Neural Mesh**, a live canvas "brain" of agents + models firing in real
+  time (core node = the orchestrator, inner shell = models sized by cost, outer shell = agents,
+  with token-flow particles animating along the attribution edges; hover to isolate, click to pin,
+  drag to stretch). The visualization is adapted from **Axon's "NEURAL MESH" by Daniel Tamas**
+  ([github.com/danieltamas/axon](https://github.com/danieltamas/axon)), used under the MIT License
+  (retained in `LICENSES/axon-MIT.txt`).
+- **`GET /api/brain/summary`** (`agents/core/routers/brain.py`) feeds it from the real request
+  **tracer** — per-agent / per-model token + cost rollups, by-backend (local/claude/gemini)
+  attribution, and a live recent-turns feed — seeded with the full agent roster so the mesh shows
+  every node even when idle, then lights up the nodes with real traffic. `?range=today|7d|30d|all`.
+  Both routes are `user_guard`-gated (localhost by default). 7 new tests (`tests/test_brain_summary.py`).
+- **Dashboard integration** — the Neural Mesh now **replaces the agent-ring visualizer** in the
+  primary v2 HUD cockpit (`frontend/src/app.tsx`): the network panel embeds the chrome-less mesh
+  (`/brain?embed=1`) instead of the legacy SVG ring. `brain.html` gained an `?embed=1` mode that
+  drops all chrome and renders only the full-bleed mesh. v2 bundle rebuilt; tsc + 19 v2 tests +
+  184 legacy frontend tests green. (The legacy `/v1` HUD keeps its SVG ring.)
+
 ### WorldView — full UX redesign implemented from the Claude Design spec (2026-06-12)
 - **The complete TASK-4 WorldView redesign** (`docs/design/WORLDVIEW_UX_SPEC.md`, all 11 steps),
   on top of the tactical fixes from PR #193: brand-unified tokens (void/surface/signal `#2BB8F0`,
