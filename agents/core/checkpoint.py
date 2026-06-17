@@ -72,6 +72,12 @@ class CheckpointManager:
                 metadata TEXT DEFAULT '{}'
             )
         """)
+        # list_sessions() orders by started_at and the table grows one row per
+        # session; index started_at so the ordered scan stays cheap as history
+        # accumulates.
+        self._conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_sessions_started ON sessions(started_at)"
+        )
         self._conn.commit()
         logger.info(f"Checkpoint DB initialized: {self.db_path}")
 

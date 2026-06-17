@@ -43,6 +43,14 @@ class AuditLogger:
                 prev_hash       TEXT DEFAULT ''
             )
         """)
+        # query() filters by event_type and a timestamp floor, ordering by
+        # timestamp — and this table grows one row per turn, so it is among the
+        # fastest-growing in the system. Index (event_type, timestamp) to keep
+        # those lookups off a full table scan.
+        self._conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_security_events_type_ts "
+            "ON security_events(event_type, timestamp)"
+        )
         self._conn.commit()
         self._migrate_schema()
 
