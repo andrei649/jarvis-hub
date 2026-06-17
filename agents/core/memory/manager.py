@@ -22,7 +22,12 @@ class MemoryManager:
     def __init__(self, graph_backend: str = None, vector_backend: str = None):
         if vector_backend is None:
             vector_backend = os.getenv("VECTOR_BACKEND", "memory")
-        self.conversation = ConversationMemory(max_turns=100, persist=True)
+        # /admin → memory.max_turns / memory.persist (were hardcoded 100 / True).
+        from ..settings_db import get_value
+        self.conversation = ConversationMemory(
+            max_turns=int(get_value("memory", "max_turns", 100)),
+            persist=bool(get_value("memory", "persist", True)),
+        )
         if vector_backend == "qdrant":
             self.vectors = self._init_qdrant()
         else:

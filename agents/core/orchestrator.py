@@ -218,7 +218,13 @@ class Orchestrator:
         if rules:
             self.learning.set_promotion_rules(rules)
         self.bench = LatencyBenchmark()
-        self.sandbox = Sandbox()
+        from .settings_db import get_value as _gv
+        # /admin → security.sandbox_timeout / sandbox_memory. allow_subprocess stays
+        # OFF (HF-6): the host-exec fallback is never enabled by these knobs.
+        self.sandbox = Sandbox(
+            timeout=int(_gv("security", "sandbox_timeout", 30)),
+            max_memory_mb=int(_gv("security", "sandbox_memory", 256)),
+        )
         self.heartbeat_scheduler = HeartbeatScheduler(agents_dir=str(Path(__file__).resolve().parent.parent.parent / "agents"))
         self._scheduler = SchedulerService(self)  # CLN-2: owns the cron/interval job wiring
         self._autonomy = AutonomyCoordinator(self)  # CLN-2: owns autonomy wiring + worker loop
@@ -314,13 +320,19 @@ class Orchestrator:
 
         try:
             backend = self.llm_router.backend
+            # /admin → security.guardrails_mode / scan_input / scan_output. The
+            # engine previously hardcoded WARN + both scans on, ignoring these.
+            from .settings_db import get_value as _gv
+            _mode_raw = str(_gv("security", "guardrails_mode", "WARN")).upper()
+            _mode = RedactionMode[_mode_raw] if _mode_raw in RedactionMode.__members__ else RedactionMode.WARN
             self.security = GuardrailsEngine(
                 backend=backend,
-                mode=RedactionMode.WARN,
-                scan_input=True,
-                scan_output=True,
+                mode=_mode,
+                scan_input=bool(_gv("security", "scan_input", True)),
+                scan_output=bool(_gv("security", "scan_output", True)),
             )
-            logger.info("Security guardrails enabled")
+            logger.info("Security guardrails enabled (mode=%s, scan_in=%s, scan_out=%s)",
+                        _mode.value, self.security._scan_input, self.security._scan_output)
         except RuntimeError:
             log_error(logger, E_LLM_BACKEND_MISSING, backend="guardrails")
             self.security = None

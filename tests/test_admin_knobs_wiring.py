@@ -1,0 +1,71 @@
+"""Guards that /admin settings are actually wired into the subsystems they name
+(part of the "no dead knobs" cleanup). Each test sets a non-default value and
+asserts the constructed object reflects it — so a future refactor that silently
+stops reading a setting fails CI."""
+import sys
+from pathlib import Path
+
+import pytest
+
+repo_root = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(repo_root))
+sys.path.insert(0, str(repo_root / "agents"))
+
+
+def _gv_factory(overrides):
+    """Fake settings_db.get_value backed by a {"category.key": value} dict."""
+    def fake(category, key, default=None):
+        return overrides.get(f"{category}.{key}", default)
+    return fake
+
+
+# ── memory ──────────────────────────────────────────────────────────────────
+def test_memory_manager_honors_settings(monkeypatch):
+    import core.memory.manager as mm
+    captured = {}
+
+    class FakeCM:
+        def __init__(self, max_turns=100, persist=True):
+            captured["max_turns"] = max_turns
+            captured["persist"] = persist
+
+    monkeypatch.setattr(mm, "ConversationMemory", FakeCM)
+    monkeypatch.setattr("core.settings_db.get_value",
+                        _gv_factory({"memory.max_turns": 42, "memory.persist": False}))
+    mm.MemoryManager()
+    assert captured == {"max_turns": 42, "persist": False}
+
+
+# ── sandbox (security.sandbox_timeout / sandbox_memory) ───────────────────────
+def test_orchestrator_sandbox_honors_settings(monkeypatch):
+    monkeypatch.setattr("core.settings_db.get_value",
+                        _gv_factory({"security.sandbox_timeout": 99, "security.sandbox_memory": 777}))
+    from core.config import JarvisConfig
+    from core.orchestrator import Orchestrator
+    o = Orchestrator(JarvisConfig())
+    assert o.sandbox.timeout == 99
+    assert o.sandbox.max_memory_mb == 777
+    assert o.sandbox.allow_subprocess is False  # HF-6: host-exec stays off
+
+
+# ── guardrails (security.guardrails_mode / scan_input / scan_output) ──────────
+@pytest.mark.asyncio
+async def test_orchestrator_guardrails_honors_settings(monkeypatch):
+    from core.llm.hybrid_router import HybridRouter
+    from core.security.types import RedactionMode
+
+    # Give the router a backend so GuardrailsEngine actually constructs (the engine
+    # only stores the backend at init, so a plain sentinel is enough).
+    monkeypatch.setattr(HybridRouter, "backend", property(lambda self: object()))
+    monkeypatch.setattr("core.settings_db.get_value",
+                        _gv_factory({"security.guardrails_mode": "BLOCK",
+                                     "security.scan_input": False,
+                                     "security.scan_output": True}))
+    from core.config import JarvisConfig
+    from core.orchestrator import Orchestrator
+    o = Orchestrator(JarvisConfig())
+    await o.load_agents()  # GuardrailsEngine is built here, not in __init__
+    assert o.security is not None
+    assert o.security._mode == RedactionMode.BLOCK
+    assert o.security._scan_input is False
+    assert o.security._scan_output is True
