@@ -8,11 +8,8 @@ import logging
 import os
 import re
 import secrets
-import statistics
 import time
 import sys
-from collections import defaultdict
-from datetime import date
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Optional
@@ -28,14 +25,13 @@ from pydantic import BaseModel, Field, field_validator
 # Pure response/format helpers live in core.web_helpers (CLN-3 shared kernel) so
 # the extracted routers can import them without reaching back into this module.
 # Re-exported here under their original private names for backward compatibility.
-from core.web_helpers import nocache_json as _nocache_json, mask_secret as _mask_secret, error_json
+from core.web_helpers import nocache_json as _nocache_json, error_json
 
 from core.config import JarvisConfig
 from core.orchestrator import Orchestrator
 from core.channels.web import WebChannel
 from core.channels.gateway import Gateway
 from core.log_safe import log_safe
-from core.settings_db import get_all, get_category, put_category, init_db
 from core.channels.voice import VoiceChannel
 from core.channels.telegram import TelegramChannel
 from core.channels.discord import DiscordChannel
@@ -44,8 +40,6 @@ from core.channels.slack import SlackChannel
 from core.log import setup_logging, log_error
 from core.errors import JarvisError, E_INTERNAL_UNEXPECTED, E_SECURITY_BLOCKED
 from core.security.guardrails import SecurityBlockError
-from core.llm.cost_estimator import estimate_monthly
-from core.resilience import get_metrics, _circuit_breakers
 
 logger = logging.getLogger("jarvis.web")
 
@@ -84,12 +78,6 @@ def _real_client_host(request: Request) -> str:
     if xff:
         return xff.split(",")[0].strip()
     return request.headers.get("x-real-ip", "").strip()
-
-# Substrings that mark an env var as sensitive — its value is masked in
-# /api/admin/env so keys/tokens/secrets are never returned in clear text.
-_SECRET_HINTS = ("key", "token", "secret", "password", "passwd", "pass", "client_id")
-# _mask_secret is imported from core.web_helpers above (re-exported for compat).
-
 
 async def _admin_guard(request: Request):
     """Authorize an /api/admin/* request or raise 401/403."""
@@ -420,6 +408,19 @@ def _sys_info() -> dict:
 
 
 _AGENT_SETTINGS = {}  # mutable per-agent overrides: { id: { field: value } }
+
+
+def _get_agent_settings() -> dict:
+    """Accessor for the mutable per-agent override store (CLN-3 unblock).
+
+    `_AGENT_SETTINGS` is read here by `_enrich_agents` (the agents surface) AND
+    mutated by the admin router's `PUT /api/admin/agents/{id}`, so it is a
+    multi-domain global and stays in web.py. The extracted admin router reaches
+    it at request time via `sys.modules.get("agents.web")._get_agent_settings()`
+    so the single shared dict is read/mutated, not a per-module copy.
+    """
+    return _AGENT_SETTINGS
+
 
 _AGENT_META = {
     "jarvis":     {"tier": "CNS", "role": "Prime Orchestrator"},
@@ -1172,23 +1173,7 @@ async def agent_templates_instantiate(req: Request):
 # ── H13.2 Constrained decoding (GBNF grammar) ─────────────────────────────────
 
 # ── H14.3 Sleep-time memory consolidation ─────────────────────────────────────
-
-@app.post("/api/memory/consolidate", dependencies=[Depends(_user_guard)])
-async def memory_consolidate(req: Request):
-    """Plan Mem0-style consolidation ops (ADD/UPDATE/DELETE/NOOP) for candidates
-    against existing memories. Returns a reversible plan (no mutation)."""
-    eng = getattr(orch, "consolidation", None) if orch else None
-    if eng is None:
-        return JSONResponse({"error": "consolidation not available"}, status_code=503)
-    try:
-        body = await req.json()
-    except Exception:
-        body = {}
-    candidates = (body or {}).get("candidates") or []
-    if not candidates:
-        return JSONResponse({"error": "candidates required"}, status_code=400)
-    plan = eng.plan(candidates, (body or {}).get("existing") or [])
-    return _nocache_json({"plan": plan, "summary": eng.summarize(plan)})
+# `/api/memory/consolidate` lives in the memory_kg router (CLN-3).
 
 
 # ── H7.11 Learning-loop promotions ────────────────────────────────────────────
@@ -1243,125 +1228,6 @@ async def workflow_hierarchical(req: Request):
         max_retries=int((body or {}).get("max_retries", 1)),
     )
     return _nocache_json(await mgr.run(goal, crew))
-
-
-class TranscriptIngestBody(BaseModel):
-    transcript: str = Field(..., max_length=200_000)
-    source: str = Field("", max_length=200)
-    target: Optional[str] = Field(None, max_length=16)   # todoist | notion
-
-
-@app.post("/api/transcripts/ingest", dependencies=[Depends(_user_guard)])
-async def transcript_ingest(body: TranscriptIngestBody):
-    """H12.25 — meeting transcript → action items → approval queue (governed).
-
-    Nothing is created externally here; each item lands as an ask-tier task the
-    owner approves. Without a live queue, returns an extraction-only preview."""
-    from agents.core.autonomy.transcript_watcher import TranscriptWatcher
-    q = getattr(orch, "autonomy_queue", None) if orch else None
-    watcher = TranscriptWatcher(enqueue=q.enqueue if q is not None else None)
-    return _nocache_json(watcher.ingest(body.transcript, source=body.source, target=body.target))
-
-
-class WriteBackBody(BaseModel):
-    target: str = Field(..., max_length=40)
-    action: str = Field(..., max_length=40)
-    fields: dict = Field(default_factory=dict)
-    agent: Optional[str] = Field(None, max_length=40)
-    source: str = Field("", max_length=120)
-
-
-@app.get("/api/integrations/writeback", dependencies=[Depends(_user_guard)])
-async def writeback_targets():
-    """H10.30 — list supported governed write-back targets (Notion/GitHub/Calendar)."""
-    from agents.core.writeback import WriteBackBroker
-    wb = getattr(orch, "writeback", None) if orch else None
-    targets = wb.targets() if wb is not None else WriteBackBroker().targets()
-    return _nocache_json({"targets": targets})
-
-
-@app.post("/api/integrations/writeback", dependencies=[Depends(_user_guard)])
-async def writeback_request(body: WriteBackBody):
-    """H10.30 — request a governed write-back into an external system.
-
-    Validates against the allowlist and enqueues an ask-tier task. Nothing is
-    written externally here; on approval the autonomy worker dispatches it to the
-    write-back executor (credentials resolved at action time, behind approval).
-    Without a live queue, returns a validation-only preview."""
-    from agents.core.writeback import WriteBackBroker
-    wb = getattr(orch, "writeback", None) if orch else None
-    if wb is None:
-        q = getattr(orch, "autonomy_queue", None) if orch else None
-        wb = WriteBackBroker(enqueue=q.enqueue if q is not None else None)
-    result = wb.request(body.target, body.action, body.fields,
-                        agent=body.agent, source=body.source)
-    return _nocache_json(result, status_code=200 if result.get("ok") else 422)
-
-
-class SocialActionBody(BaseModel):
-    platform: str = Field(..., max_length=40)
-    action: str = Field(..., max_length=40)
-    fields: dict = Field(default_factory=dict)
-    agent: Optional[str] = Field(None, max_length=40)
-    source: str = Field("", max_length=120)
-
-
-@app.get("/api/integrations/social", dependencies=[Depends(_user_guard)])
-async def social_targets():
-    """H12.21 — list supported governed social actions (X post/reply/DM)."""
-    from agents.core.social import SocialBroker
-    sb = getattr(orch, "social", None) if orch else None
-    targets = sb.targets() if sb is not None else SocialBroker().targets()
-    return _nocache_json({"targets": targets})
-
-
-@app.post("/api/integrations/social", dependencies=[Depends(_user_guard)])
-async def social_request(body: SocialActionBody):
-    """H12.21 — request a governed social write (X/Twitter post/reply/DM).
-
-    Validates against the allowlist and enqueues an ask-tier task. Nothing is
-    posted here; on approval the autonomy worker dispatches it to the social
-    executor (OAuth/bearer resolved at action time, behind approval — never raw
-    cookies). Without a live queue, returns a validation-only preview."""
-    from agents.core.social import SocialBroker
-    sb = getattr(orch, "social", None) if orch else None
-    if sb is None:
-        q = getattr(orch, "autonomy_queue", None) if orch else None
-        sb = SocialBroker(enqueue=q.enqueue if q is not None else None)
-    result = sb.request(body.platform, body.action, body.fields,
-                        agent=body.agent, source=body.source)
-    return _nocache_json(result, status_code=200 if result.get("ok") else 422)
-
-
-@app.get("/api/channels/webhook", dependencies=[Depends(_user_guard)])
-async def channels_webhook_list():
-    """H12.16 — supported governed webhook channels + which are live."""
-    from agents.core.channels.webhook_channels import SUPPORTED_CHANNELS, WebhookChannel
-    live = []
-    if orch and hasattr(orch, "channels"):
-        live = [cid for cid, ch in orch.channels.items() if isinstance(ch, WebhookChannel)]
-    return _nocache_json({"supported": list(SUPPORTED_CHANNELS), "live": live})
-
-
-@app.post("/api/channels/{channel_id}/inbound", dependencies=[Depends(_user_guard)])
-async def channel_inbound(channel_id: str, request: Request):
-    """H12.16 — deliver an inbound webhook payload to a governed channel adapter.
-
-    The adapter parses (text, sender) and routes through the governed gateway, so
-    the H12.19 pairing gate + rate-limit + guardrails all apply before the
-    orchestrator sees the text. (Provider signature verification is the host
-    seam — front this with the H16.4 signed-webhook path in production.)"""
-    if not orch:
-        return JSONResponse({"error": "not initialized"}, status_code=503)
-    ch = orch.channels.get(channel_id) if hasattr(orch, "channels") else None
-    if ch is None or not hasattr(ch, "handle_inbound"):
-        return JSONResponse({"error": f"no webhook channel '{channel_id}'"}, status_code=404)
-    try:
-        payload = await request.json()
-    except Exception:
-        payload = {}
-    reply = await ch.handle_inbound(payload)
-    return _nocache_json({"ok": True, "channel": channel_id, "reply": reply})
 
 
 class ContextCompressBody(BaseModel):
@@ -1485,6 +1351,10 @@ from agents.core.routers.mesh import router as _mesh_router  # noqa: E402
 from agents.core.routers.autonomy import router as _autonomy_router  # noqa: E402
 from agents.core.routers.models_llm import router as _models_llm_router  # noqa: E402
 from agents.core.routers.oauth import router as _oauth_router  # noqa: E402
+from agents.core.routers.memory_kg import router as _memory_kg_router  # noqa: E402
+from agents.core.routers.analytics import router as _analytics_router  # noqa: E402
+from agents.core.routers.integrations import router as _integrations_router  # noqa: E402
+from agents.core.routers.admin import router as _admin_router  # noqa: E402
 app.include_router(_webhooks_router)
 app.include_router(_a2a_router)
 app.include_router(_pairing_router)
@@ -1505,6 +1375,10 @@ app.include_router(_mesh_router)
 app.include_router(_autonomy_router)
 app.include_router(_models_llm_router)
 app.include_router(_oauth_router)
+app.include_router(_memory_kg_router)
+app.include_router(_analytics_router)
+app.include_router(_admin_router)
+app.include_router(_integrations_router)
 
 
 class DigestRunBody(BaseModel):
@@ -1623,265 +1497,15 @@ async def admin_page():
     )
 
 
-@app.get("/api/admin/settings", dependencies=[Depends(_admin_guard)])
-async def admin_get_all():
-    return get_all()
-
-
-@app.get("/api/admin/settings/{category}", dependencies=[Depends(_admin_guard)])
-async def admin_get_category(category: str):
-    items = get_category(category)
-    if not items:
-        return JSONResponse({"error": f"unknown category: {category}"}, status_code=404)
-    return {category: items}
-
-
-class AdminPutBody(BaseModel):
-    values: dict
-
-
-@app.put("/api/admin/settings/{category}", dependencies=[Depends(_admin_guard)])
-async def admin_put_category(category: str, body: AdminPutBody):
-    updated, skipped = put_category(category, body.values)
-    resp = {"updated": updated, "category": category}
-    if skipped:
-        resp["skipped"] = skipped
-    return resp
-
-
-@app.post("/api/admin/settings/reseed", dependencies=[Depends(_admin_guard)])
-async def admin_reseed():
-    init_db(force=True)
-    return {"ok": True, "message": "Settings reseeded from defaults"}
-
-
-@app.get("/api/admin/env", dependencies=[Depends(_admin_guard)])
-async def admin_get_env():
-    # Mask anything that looks like a credential so secrets are never
-    # returned in clear text, even to an authorized admin.
-    out = {}
-    for key, val in sorted(os.environ.items()):
-        if key.startswith("_"):
-            continue
-        if any(h in key.lower() for h in _SECRET_HINTS):
-            out[key] = _mask_secret(val)
-        else:
-            out[key] = val
-    return out
-
-
-@app.get("/api/admin/audit", dependencies=[Depends(_admin_guard)])
-async def admin_get_audit(page: int = Query(1, ge=1), limit: int = Query(50, ge=1, le=200)):
-    import sqlite3
-    db = Path("memory_logs/security/audit.db")
-    if not db.exists():
-        return {"page": page, "limit": limit, "total": 0, "rows": []}
-    conn = sqlite3.connect(str(db))
-    conn.row_factory = sqlite3.Row
-    has_audit = conn.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='audit_events'").fetchone()
-    table = "audit_events" if has_audit else "security_events"
-    _QUERIES = {
-        "audit_events": ("SELECT COUNT(*) FROM audit_events", "SELECT timestamp, event_type, content_preview AS summary, findings_json AS details FROM audit_events ORDER BY rowid DESC LIMIT ? OFFSET ?"),
-        "security_events": ("SELECT COUNT(*) FROM security_events", "SELECT timestamp, event_type, content_preview AS summary, findings_json AS details FROM security_events ORDER BY rowid DESC LIMIT ? OFFSET ?"),
-    }
-    count_q, select_q = _QUERIES[table]
-    total = conn.execute(count_q).fetchone()[0]
-    offset = (page - 1) * limit
-    rows = conn.execute(select_q, (limit, offset)).fetchall()
-    conn.close()
-    return {
-        "page": page,
-        "limit": limit,
-        "total": total,
-        "rows": [dict(r) for r in rows],
-    }
-
-
-@app.post("/api/admin/memory/clear", dependencies=[Depends(_admin_guard)])
-async def admin_memory_clear():
-    if not orch:
-        return JSONResponse({"error": "not initialized"}, status_code=503)
-    await orch.memory.clear()
-    return {"ok": True, "message": "Session memory cleared"}
-
-
-@app.get("/api/admin/agents/stats", dependencies=[Depends(_admin_guard)])
-async def admin_agents_stats():
-    if not orch:
-        return JSONResponse({"error": "not initialized"}, status_code=503)
-    return {
-        aid: {
-            "status": agent.status if hasattr(agent, "status") else "unknown",
-            "model": agent.model if hasattr(agent, "model") else "",
-            "tier": agent.tier if hasattr(agent, "tier") else "",
-            "latency_ms": round(getattr(agent, "_last_latency", 0) * 1000, 1),
-        }
-        for aid, agent in orch.agents.items()
-    }
-
-
-@app.get("/api/admin/apm", dependencies=[Depends(_admin_guard)])
-async def admin_apm():
-    """H10.16 — org APM: total tokens + $ cost + runs, per agent and per model."""
-    from agents.core.cost_tracker import apm_summary
-    apm = apm_summary()
-    # Fold in live latency/throughput from the bench system when available.
-    if orch and getattr(orch, "bench", None) is not None:
-        try:
-            apm["latency"] = orch.bench.get_summary()
-        except Exception:
-            apm["latency"] = {}
-    return _nocache_json(apm)
-
-
-# ── H10.22 Prompt Version Control (SOUL.md history / diff / rollback / A/B) ──
-
-def _svs():
-    """Return the SOUL version store, or None."""
-    return getattr(orch, "soul_versions", None) if orch else None
-
-
-@app.get("/api/admin/prompts/{agent_id}/history", dependencies=[Depends(_admin_guard)])
-async def admin_prompt_history(agent_id: str):
-    svs = _svs()
-    if svs is None:
-        return JSONResponse({"error": "prompt VC not available"}, status_code=503)
-    return _nocache_json({"agent_id": agent_id, "history": svs.history(agent_id)})
-
-
-@app.get("/api/admin/prompts/{agent_id}/version/{version}", dependencies=[Depends(_admin_guard)])
-async def admin_prompt_version(agent_id: str, version: int):
-    svs = _svs()
-    if svs is None:
-        return JSONResponse({"error": "prompt VC not available"}, status_code=503)
-    v = svs.get(agent_id, version)
-    if v is None:
-        return JSONResponse({"error": "not found"}, status_code=404)
-    return _nocache_json(v)
-
-
-@app.post("/api/admin/prompts/{agent_id}/commit", dependencies=[Depends(_admin_guard)])
-async def admin_prompt_commit(agent_id: str, req: Request):
-    svs = _svs()
-    if svs is None:
-        return JSONResponse({"error": "prompt VC not available"}, status_code=503)
-    try:
-        body = await req.json()
-    except Exception:
-        body = {}
-    content = (body or {}).get("content")
-    if content is None:
-        return JSONResponse({"error": "content required"}, status_code=400)
-    entry = svs.commit(agent_id, content, message=body.get("message", ""), author=body.get("author", ""))
-    return _nocache_json({"ok": True, "version": entry})
-
-
-@app.get("/api/admin/prompts/{agent_id}/diff", dependencies=[Depends(_admin_guard)])
-async def admin_prompt_diff(agent_id: str, a: int, b: int):
-    svs = _svs()
-    if svs is None:
-        return JSONResponse({"error": "prompt VC not available"}, status_code=503)
-    d = svs.diff(agent_id, a, b)
-    if d is None:
-        return JSONResponse({"error": "version not found"}, status_code=404)
-    return _nocache_json({"agent_id": agent_id, "a": a, "b": b, "diff": d})
-
-
-@app.post("/api/admin/prompts/{agent_id}/rollback", dependencies=[Depends(_admin_guard)])
-async def admin_prompt_rollback(agent_id: str, req: Request):
-    svs = _svs()
-    if svs is None:
-        return JSONResponse({"error": "prompt VC not available"}, status_code=503)
-    try:
-        body = await req.json()
-    except Exception:
-        body = {}
-    version = (body or {}).get("version")
-    if version is None:
-        return JSONResponse({"error": "version required"}, status_code=400)
-    entry = svs.rollback(agent_id, int(version), author=body.get("author", ""))
-    if entry is None:
-        return JSONResponse({"error": "version not found"}, status_code=404)
-    return _nocache_json({"ok": True, "version": entry})
-
-
-@app.post("/api/admin/prompts/{agent_id}/ab", dependencies=[Depends(_admin_guard)])
-async def admin_prompt_ab_set(agent_id: str, req: Request):
-    svs = _svs()
-    if svs is None:
-        return JSONResponse({"error": "prompt VC not available"}, status_code=503)
-    try:
-        body = await req.json()
-    except Exception:
-        body = {}
-    try:
-        ab = svs.set_experiment(agent_id, int(body["a"]), int(body["b"]), float(body.get("split", 0.5)))
-    except KeyError:
-        return JSONResponse({"error": "a and b must be existing versions"}, status_code=400)
-    return _nocache_json({"ok": True, "experiment": ab})
-
-
-@app.get("/api/admin/prompts/{agent_id}/ab", dependencies=[Depends(_admin_guard)])
-async def admin_prompt_ab_summary(agent_id: str):
-    svs = _svs()
-    if svs is None:
-        return JSONResponse({"error": "prompt VC not available"}, status_code=503)
-    return _nocache_json({"agent_id": agent_id, "ab": svs.ab_summary(agent_id)})
-
-
-@app.post("/api/admin/prompts/{agent_id}/preview", dependencies=[Depends(_admin_guard)])
-async def admin_prompt_preview(agent_id: str, req: Request):
-    """H10.28 — preview a proposed SOUL/prompt change (diff + validation).
-
-    Body: {"proposed": "...", "current": "..."?}. If `current` is omitted it's
-    taken from the agent's latest committed version (H10.22).
-    """
-    from agents.core.config_preview import preview_change
-    try:
-        body = await req.json()
-    except Exception:
-        body = {}
-    proposed = (body or {}).get("proposed")
-    if proposed is None:
-        return JSONResponse({"error": "proposed required"}, status_code=400)
-    current = (body or {}).get("current")
-    if current is None:
-        svs = _svs()
-        cur = svs.current(agent_id) if svs else None
-        current = cur["content"] if cur else ""
-    return _nocache_json({"agent_id": agent_id, **preview_change(current, proposed)})
-
-
-class AgentUpdateRequest(BaseModel):
-    updates: dict[str, str | bool | int]
-
-
-@app.put("/api/admin/agents/{agent_id}", dependencies=[Depends(_admin_guard)])
-async def admin_agents_put(agent_id: str, req: AgentUpdateRequest):
-    if not orch:
-        return JSONResponse({"error": "not initialized"}, status_code=503)
-    if agent_id not in orch.agents:
-        return JSONResponse({"error": f"agent {agent_id} not found"}, status_code=404)
-    _AGENT_SETTINGS[agent_id] = req.updates
-    return {"saved": True, "agent": agent_id, "applied": list(req.updates.keys())}
-
-
-@app.post("/api/admin/llm/test", dependencies=[Depends(_admin_guard)])
-async def admin_llm_test():
-    import httpx
-    configs = [
-        ("LM Studio", "http://localhost:1234/v1/models"),
-        ("Ollama", "http://localhost:11434/api/tags"),
-    ]
-    results = []
-    for name, url in configs:
-        try:
-            async with httpx.AsyncClient(timeout=5) as client:
-                r = await client.get(url)
-                results.append({"name": name, "url": url, "ok": r.is_success, "status": r.status_code})
-        except Exception as e:
-            results.append({"name": name, "url": url, "ok": False, "error": str(e)})
-    return {"results": results}
+# ── Admin control surface ────────────────────────────────────────────────────
+# All admin-guarded `/api/admin/*` routes — settings, env, audit, memory/clear,
+# agents/stats, apm, prompts/* (H10.22 prompt VC), PUT /api/admin/agents/{id},
+# llm/test, and /api/admin/stats (admin charts) — live in the admin router
+# (CLN-3). EXCEPTIONS that stay out of it: `/api/admin/mcp*` (still inline below)
+# and `/api/admin/widgets*` (the secrets router). The admin-only helpers `_svs`
+# and `_SECRET_HINTS` moved into that router; `_AGENT_SETTINGS` stays here (it's
+# also read by `_enrich_agents`) and the router mutates it via
+# `web._get_agent_settings()`.
 
 
 # ── Local model management (browse / switch) — H12.9 ─────────────
@@ -2068,125 +1692,7 @@ def _load_mcp_config():
     logger.info("No MCP servers configured in settings")
 
 
-# ── Admin Charts endpoint ──────────────────────────────────────
-
-@app.get("/api/admin/stats", dependencies=[Depends(_admin_guard)])
-async def admin_stats():
-    """Aggregated stats for admin charts: latency, usage, success rate."""
-    interactions = getattr(orch.learning, 'interactions', [])
-    samples = getattr(orch.bench, 'samples', [])
-
-    total = len(interactions)
-    successes = sum(1 for r in interactions if r.success)
-    success_rate = successes / total if total else 0.0
-    latencies = [r.latency for r in interactions if r.success and r.latency > 0]
-    avg_latency = statistics.mean(latencies) if latencies else 0.0
-
-    unique_agents = set(s.agent_id for s in samples) | set(r.agent_id for r in interactions)
-
-    agents_list = []
-    for aid in sorted(unique_agents):
-        results = orch.bench.get_results(aid, last_n=100) if hasattr(orch.bench, 'get_results') else []
-        if results:
-            r = results[0]
-            agents_list.append({
-                "agent_id": aid,
-                "samples": r.samples,
-                "success_rate": round(r.success_rate, 3),
-                "p50_latency": round(r.median_latency, 2),
-                "p95_latency": round(r.p95_latency, 2),
-                "avg_latency": round(r.mean_latency, 2),
-                "model": r.model,
-            })
-        else:
-            agent_records = [x for x in interactions if x.agent_id == aid]
-            if agent_records:
-                agent_lat = [x.latency for x in agent_records if x.success and x.latency > 0]
-                agents_list.append({
-                    "agent_id": aid,
-                    "samples": len(agent_records),
-                    "success_rate": round(sum(1 for x in agent_records if x.success) / len(agent_records), 3),
-                    "p50_latency": round(statistics.median(agent_lat), 2) if len(agent_lat) > 1 else round(agent_lat[0], 2) if agent_lat else 0,
-                    "p95_latency": 0,
-                    "avg_latency": round(statistics.mean(agent_lat), 2) if agent_lat else 0,
-                    "model": "",
-                })
-
-    daily_map = defaultdict(lambda: {"total": 0, "successful": 0, "failed": 0, "latencies": []})
-    for r in interactions:
-        d = date.fromtimestamp(r.timestamp).isoformat()
-        daily_map[d]["total"] += 1
-        if r.success:
-            daily_map[d]["successful"] += 1
-            if r.latency > 0:
-                daily_map[d]["latencies"].append(r.latency)
-        else:
-            daily_map[d]["failed"] += 1
-    daily = []
-    for d in sorted(daily_map.keys()):
-        entry = daily_map[d]
-        daily.append({
-            "date": d,
-            "total": entry["total"],
-            "successful": entry["successful"],
-            "failed": entry["failed"],
-            "avg_latency": round(statistics.mean(entry["latencies"]), 2) if entry["latencies"] else 0,
-        })
-
-    channels = defaultdict(int)
-    for r in interactions:
-        ch = (r.metadata or {}).get("channel", "unknown")
-        channels[ch] += 1
-
-    error_types = {}
-    if hasattr(orch.learning, 'get_failure_patterns'):
-        for aid in unique_agents:
-            patterns = orch.learning.get_failure_patterns(aid)
-            for err, count in patterns:
-                error_types[err] = error_types.get(err, 0) + count
-    error_types_list = sorted(error_types.items(), key=lambda x: -x[1])[:10]
-
-    # Route usage
-    route_usage = orch.learning.get_route_counts() if hasattr(orch.learning, 'get_route_counts') else {}
-
-    # Cost estimates
-    cost_records = []
-    for r in interactions:
-        cost_records.append({
-            "model": r.route_name or "unknown",
-            "input_tokens": (r.metadata or {}).get("input_tokens", 0),
-            "output_tokens": (r.metadata or {}).get("output_tokens", 0),
-            "cached_tokens": (r.metadata or {}).get("cached_tokens", 0),
-        })
-    cost_estimates = estimate_monthly(cost_records)
-
-    # Resilience metrics
-    resilience_metrics = get_metrics().get_stats()
-    circuit_breaker_states = {
-        key: {
-            "state": cb.state,
-            "failure_count": cb.failure_count,
-            "last_failure_time": cb.last_failure_time,
-        }
-        for key, cb in _circuit_breakers.items()
-    }
-
-    return _nocache_json({
-        "overview": {
-            "total_interactions": total,
-            "success_rate": round(success_rate, 3),
-            "avg_latency": round(avg_latency, 2),
-            "agents_tracked": len(unique_agents),
-        },
-        "agents": agents_list,
-        "daily": daily[-30:],
-        "channels": dict(channels),
-        "error_types": [[k, v] for k, v in error_types_list],
-        "route_usage": route_usage,
-        "cost_estimates": cost_estimates,
-        "resilience": resilience_metrics,
-        "circuit_breakers": circuit_breaker_states,
-    })
+# ── Admin Charts endpoint → core/routers/admin.py (CLN-3) ──────────
 
 
 @app.get("/api/resilience")
@@ -2268,315 +1774,10 @@ async def memory_stats():
         return _nocache_json({"sessions": {"total": 0, "current": "", "active": 0}, "vectors": {"stored": 0, "dimension": 0, "backend": ""}, "knowledge_graph": {"entities": 0, "relations": 0, "last_seed": ""}, "agent_contexts": {}})
 
 
-@app.get("/api/memory/search", dependencies=[Depends(_user_guard)])
-async def memory_search(q: str = "", top_k: int = 10):
-    """Fused recall via RRF: vector similarity + knowledge-graph (H5.14 Task 4)."""
-    top_k = max(1, min(top_k, 50))
-    if not orch or not orch.memory:
-        return _nocache_json({"results": [], "query": q, "total": 0})
-    try:
-        # Real semantic recall: embed the query so the vector arm of fused recall
-        # actually contributes (degrades to keyword/graph-only if embedding fails).
-        embedding = await orch.memory.embed(q) if q and hasattr(orch.memory, "embed") else None
-        hits = await orch.memory.hybrid_search(
-            embedding=embedding, keyword=q or None, top_k=top_k
-        )
-        return _nocache_json({
-            "results": [
-                {
-                    "id": h.id,
-                    "score": round(h.score, 4),
-                    "sources": h.sources,
-                    "payload": h.payload,
-                }
-                for h in hits
-            ],
-            "query": q,
-            "total": len(hits),
-        })
-    except Exception as e:
-        return error_json(e, 200, "memory search failed", extra={"results": [], "query": q, "total": 0})
-
-
-@app.get("/api/memory/entities", dependencies=[Depends(_user_guard)])
-async def memory_entities(q: str = "", type: str = "", limit: int = Query(50, ge=1, le=200)):
-    """H8.1b — search/list the named-entity store (+ stats)."""
-    if not orch or not getattr(orch, "entities", None):
-        return _nocache_json({"entities": [], "stats": {}, "error": "entity store not available"})
-    return _nocache_json({
-        "entities": orch.entities.search(q, type, limit),
-        "stats": orch.entities.stats(),
-    })
-
-
-# ── H8.3b Agentic RAG tool (LLM-callable search_memory over structured stores) ─
-
-def _structured_recall(query: str, top_k: int = 5) -> list:
-    """Offline recall over the structured memory stores (entities + KG)."""
-    hits: list[dict] = []
-    if not orch:
-        return hits
-    q = (query or "").strip()
-    ents = getattr(orch, "entities", None)
-    if ents is not None:
-        for e in ents.search(q, limit=top_k):
-            hits.append({"source": "entity", "text": e["name"], "type": e.get("type", ""),
-                         "score": e.get("mentions", 0)})
-    g = getattr(getattr(orch, "memory", None), "graph", None)
-    if g is not None:
-        try:
-            for node in g.search(q)[:top_k]:
-                hits.append({"source": "graph", "text": node.get("name", ""),
-                             "type": node.get("type", ""), "score": 1})
-        except Exception:
-            pass
-    return hits[:top_k]
-
-
-@app.get("/api/memory/tool-spec")
-async def memory_tool_spec():
-    """H8.3b — the search_memory function-calling spec the model can invoke."""
-    from agents.core.memory.rag_tool import TOOL_SPEC
-    return _nocache_json(TOOL_SPEC)
-
-
-@app.post("/api/memory/search-tool", dependencies=[Depends(_user_guard)])
-async def memory_search_tool(req: Request):
-    """H8.3b — a single search_memory tool call. Body: {query, top_k?}."""
-    from agents.core.memory.rag_tool import MemorySearchTool
-    try:
-        body = await req.json()
-    except Exception:
-        body = {}
-    query = (body or {}).get("query", "")
-    if not query:
-        return JSONResponse({"error": "query required"}, status_code=400)
-    tool = MemorySearchTool(_structured_recall)
-    return _nocache_json(tool.search(query, int(body.get("top_k", 5))))
-
-
-# ── H14.4 Decay-based forgetting (ACT-R activation + dependency-aware delete) ──
-
-@app.get("/api/memory/decay/ranking", dependencies=[Depends(_user_guard)])
-async def memory_decay_ranking(limit: int = Query(100, ge=1, le=1000)):
-    """Memory items ranked by ACT-R activation (recency + frequency)."""
-    d = getattr(orch, "decay", None) if orch else None
-    if d is None:
-        return _nocache_json({"ranking": []})
-    return _nocache_json({"ranking": d.ranking(limit=limit)})
-
-
-@app.get("/api/memory/decay/candidates", dependencies=[Depends(_user_guard)])
-async def memory_decay_candidates(threshold: float = 0.0):
-    """Items whose activation has decayed below *threshold* (forget candidates)."""
-    d = getattr(orch, "decay", None) if orch else None
-    if d is None:
-        return _nocache_json({"candidates": []})
-    return _nocache_json({"threshold": threshold, "candidates": d.forget_candidates(threshold)})
-
-
-@app.post("/api/memory/decay/forget", dependencies=[Depends(_user_guard)])
-async def memory_decay_forget(req: Request):
-    """Forget an item + its transitive dependents (anti-recontamination)."""
-    d = getattr(orch, "decay", None) if orch else None
-    if d is None:
-        return JSONResponse({"error": "decay memory not available"}, status_code=503)
-    try:
-        body = await req.json()
-    except Exception:
-        body = {}
-    item_id = (body or {}).get("id", "")
-    if not item_id:
-        return JSONResponse({"error": "id required"}, status_code=400)
-    removed = d.forget(item_id)
-    if not removed:
-        return JSONResponse({"error": "not found"}, status_code=404)
-    return _nocache_json({"ok": True, "removed": removed})
-
-
-# ── H12.3 Knowledge-graph editor (query / edit / delete entities + relations) ─
-
-def _kg():
-    """Return the live knowledge graph, or None."""
-    if not orch or not getattr(orch, "memory", None):
-        return None
-    return getattr(orch.memory, "graph", None)
-
-
-@app.get("/api/kg/entities")
-async def kg_entities(q: str = "", limit: int = Query(100, ge=1, le=500)):
-    """List (or search with ?q=) knowledge-graph entities."""
-    g = _kg()
-    if g is None:
-        return _nocache_json({"entities": [], "error": "graph not available"})
-    entities = g.search(q) if q else g.list_entities(limit)
-    return _nocache_json({"entities": entities[:limit], "total": len(entities)})
-
-
-@app.get("/api/kg/entities/{name}")
-async def kg_entity(name: str):
-    """Get one entity plus its relations."""
-    g = _kg()
-    if g is None:
-        return JSONResponse({"error": "graph not available"}, status_code=503)
-    ent = g.get_entity(name)
-    if ent is None:
-        return JSONResponse({"error": "not found"}, status_code=404)
-    return _nocache_json({"entity": ent, "relations": g.get_relations(name)})
-
-
-@app.post("/api/kg/entities")
-async def kg_upsert_entity(req: Request):
-    """Create or update an entity (upsert). Body: {name, type, properties}."""
-    g = _kg()
-    if g is None:
-        return JSONResponse({"error": "graph not available"}, status_code=503)
-    try:
-        body = await req.json()
-    except Exception:
-        body = {}
-    name = (body or {}).get("name", "").strip()
-    if not name:
-        return JSONResponse({"error": "name required"}, status_code=400)
-    ok = g.add_entity(name, (body.get("type") or "unknown"), body.get("properties") or {})
-    return _nocache_json({"ok": bool(ok), "entity": g.get_entity(name)})
-
-
-@app.delete("/api/kg/entities/{name}")
-async def kg_delete_entity(name: str):
-    """Delete an entity and any relations that touch it."""
-    g = _kg()
-    if g is None:
-        return JSONResponse({"error": "graph not available"}, status_code=503)
-    if not g.delete_entity(name):
-        return JSONResponse({"error": "not found"}, status_code=404)
-    return _nocache_json({"ok": True, "deleted": name})
-
-
-@app.post("/api/kg/relations")
-async def kg_add_relation(req: Request):
-    """Create a relation. Body: {source, relation, target, properties}."""
-    g = _kg()
-    if g is None:
-        return JSONResponse({"error": "graph not available"}, status_code=503)
-    try:
-        body = await req.json()
-    except Exception:
-        body = {}
-    source = (body or {}).get("source", "").strip()
-    relation = (body or {}).get("relation", "").strip()
-    target = (body or {}).get("target", "").strip()
-    if not (source and relation and target):
-        return JSONResponse({"error": "source, relation, target required"}, status_code=400)
-    ok = g.add_relation(source, relation, target, body.get("properties") or {})
-    return _nocache_json({"ok": bool(ok)})
-
-
-@app.delete("/api/kg/relations")
-async def kg_delete_relation(source: str, relation: str, target: str):
-    """Delete a specific relation (by source/relation/target)."""
-    g = _kg()
-    if g is None:
-        return JSONResponse({"error": "graph not available"}, status_code=503)
-    if not g.delete_relation(source, relation, target):
-        return JSONResponse({"error": "not found"}, status_code=404)
-    return _nocache_json({"ok": True})
-
-
-# ── H14.1 Bi-temporal KG (valid-time + ingested-at; as-of recall) ─────────────
-
-@app.post("/api/kg/facts")
-async def kg_add_fact(req: Request):
-    """Add a bi-temporal fact. Body: {subject, predicate, object, valid_from?,
-    ingested_at?, multi?}. Single-valued predicates invalidate (not delete) a
-    contradicting prior fact."""
-    bt = getattr(orch, "bitemporal", None) if orch else None
-    if bt is None:
-        return JSONResponse({"error": "bi-temporal KG not available"}, status_code=503)
-    try:
-        body = await req.json()
-    except Exception:
-        body = {}
-    for k in ("subject", "predicate", "object"):
-        if not (body or {}).get(k):
-            return JSONResponse({"error": "subject, predicate, object required"}, status_code=400)
-    fact = bt.add_fact(
-        body["subject"], body["predicate"], body["object"],
-        valid_from=body.get("valid_from"), ingested_at=body.get("ingested_at"),
-        multi=bool(body.get("multi", False)),
-    )
-    return _nocache_json({"ok": True, "fact": fact})
-
-
-@app.get("/api/kg/facts/as-of")
-async def kg_facts_as_of(at: Optional[float] = None, subject: str = "", predicate: str = ""):
-    """Valid-time recall: facts true in the world at time `at` (default now)."""
-    bt = getattr(orch, "bitemporal", None) if orch else None
-    if bt is None:
-        return JSONResponse({"error": "bi-temporal KG not available"}, status_code=503)
-    return _nocache_json({"at": at, "facts": bt.as_of(at, subject, predicate)})
-
-
-@app.get("/api/kg/facts/history")
-async def kg_facts_history(subject: str, predicate: str = ""):
-    """All versions (incl. invalidated) for a subject, oldest first."""
-    bt = getattr(orch, "bitemporal", None) if orch else None
-    if bt is None:
-        return JSONResponse({"error": "bi-temporal KG not available"}, status_code=503)
-    return _nocache_json({"subject": subject, "history": bt.history(subject, predicate)})
-
-
-@app.post("/api/kg/ingest")
-async def kg_ingest(req: Request):
-    """H12.6 — extract triples from text and write them to the KG immediately."""
-    updater = getattr(orch, "kg_updater", None) if orch else None
-    if updater is None:
-        return JSONResponse({"error": "incremental KG not available"}, status_code=503)
-    try:
-        body = await req.json()
-    except Exception:
-        body = {}
-    text = (body or {}).get("text", "")
-    if not text:
-        return JSONResponse({"error": "text required"}, status_code=400)
-    count = updater.ingest(text)
-    return _nocache_json({"ok": True, "added": count, "triples": updater.last_added})
-
-
-@app.get("/api/memory/eval/corpus")
-async def memory_eval_corpus():
-    """H14.2 — the owned memory-eval corpus (cases across 5 abilities)."""
-    from agents.core.memory.eval import DEFAULT_CORPUS, ABILITIES
-    return _nocache_json({
-        "abilities": ABILITIES,
-        "cases": [c.to_dict() for c in DEFAULT_CORPUS],
-    })
-
-
-@app.post("/api/memory/eval/run")
-async def memory_eval_run():
-    """H14.2 — run the harness with the offline keyword baseline answerer."""
-    from agents.core.memory.eval import run_eval, keyword_answer
-    return _nocache_json(run_eval(keyword_answer))
-
-
-@app.post("/api/memory/remember", dependencies=[Depends(_user_guard)])
-async def memory_remember(req: Request):
-    """Store a fact in long-term memory with a real embedding, for later recall."""
-    if not orch or not orch.memory:
-        return JSONResponse({"error": "not initialized"}, status_code=503)
-    try:
-        body = await req.json()
-    except Exception:
-        body = {}
-    text = (body or {}).get("text", "")
-    text = text.strip() if isinstance(text, str) else ""
-    if not text:
-        return JSONResponse({"error": "text required"}, status_code=400)
-    metadata = (body or {}).get("metadata")
-    metadata = metadata if isinstance(metadata, dict) else {}
-    rid = await orch.memory.remember(text, metadata=metadata)
-    return _nocache_json({"ok": rid is not None, "id": rid})
+# ── Memory + Knowledge-Graph surface ──────────────────────────────────────────
+# All `/api/memory/*` (except the data-space routes below) and all `/api/kg/*`
+# routes live in the memory_kg router (CLN-3). The `_kg()` + `_structured_recall()`
+# helpers moved there with them (they were used only by those handlers).
 
 
 # ── H10.26 Data Spaces (per-agent data scope) ─────────────────────
@@ -2599,155 +1800,14 @@ def _get_data_spaces():
 # ── END H10.26 Data Spaces ────────────────────────────────────────
 
 
-@app.get("/api/memory/recall", dependencies=[Depends(_user_guard)])
-async def recall_memory(q: str = ""):
-    """Search memory store by query string."""
-    from agents.core.memory.store import MemoryStore
-    store = MemoryStore()
-    if not q:
-        return {"results": []}
-    results = await store.search(q, limit=20)
-    return {"results": results, "query": q}
+# `/api/memory/recall` lives in the memory_kg router (CLN-3).
 
 
-@app.get("/api/analytics/cost")
-async def get_analytics_cost():
-    """Return per-agent LLM usage and cost summary (H7.10)."""
-    from agents.core.cost_tracker import get_summary
-    return get_summary()
-
-
-@app.get("/api/analytics/model-tiers")
-async def get_model_tiers():
-    """Return per-agent model tier classification and usage summary."""
-    from agents.core.cost_tracker import get_summary
-    summary = get_summary()
-
-    def classify_tier(model: str) -> str:
-        m = model.lower()
-        if "local" in m or m == "default":
-            return "local"
-        if "haiku" in m or "mini" in m or "flash" in m:
-            return "fast"
-        if "opus" in m:
-            return "heavy"
-        return "standard"
-
-    tiers: dict[str, list] = {"local": [], "fast": [], "standard": [], "heavy": []}
-    for agent_name, data in summary.get("agents", {}).items():
-        tier = classify_tier(data.get("model", "default"))
-        tiers[tier].append({
-            "agent": agent_name,
-            "model": data.get("model", "unknown"),
-            "calls": data.get("calls", 0),
-            "cost_usd": data.get("cost_usd", 0),
-        })
-
-    return {
-        "tiers": tiers,
-        "total_cost_usd": summary.get("total_cost_usd", 0),
-        "tier_counts": {k: len(v) for k, v in tiers.items()},
-    }
-
-
-@app.get("/api/analytics/locality")
-async def analytics_locality():
-    """% of agent runs served on-device vs cloud (MOONSHOT §6 counter-metric).
-
-    Drives the HUD Trust mode's "%-local" meter with a REAL number from the run
-    history's route field — `local_pct` is null until there's at least one routed
-    run, so the meter shows "—" rather than a fabricated 100%."""
-    rh = getattr(orch, "run_history", None) if orch else None
-    if rh is None:
-        return _nocache_json({"local_pct": None, "local": 0, "cloud": 0,
-                              "unknown": 0, "total": 0})
-    return _nocache_json(rh.locality())
-
-
-@app.get("/api/reflection/status")
-async def reflection_status():
-    """Daily reflection status (H5.15)."""
-    if not orch or not hasattr(orch, "reflector") or not orch.reflector:
-        return _nocache_json({"enabled": False, "last_run": None, "last_result": None})
-    return _nocache_json(orch.reflector.status())
-
-
-@app.post("/api/reflection/run")
-async def reflection_run():
-    """Trigger nightly reflection manually (H5.15)."""
-    if not orch or not hasattr(orch, "reflector") or not orch.reflector:
-        return _nocache_json({"ok": False, "error": "reflector not initialized"})
-    try:
-        # Force re-run by temporarily clearing last_run
-        orch.reflector._last_run = None
-        result = await orch.reflector.run(
-            enabled=orch.get_setting("system.reflection_enabled", True)
-        )
-        return _nocache_json({"ok": True, "result": result})
-    except Exception as e:
-        return error_json(e, 200, "reflection run failed", extra={"ok": False})
-
-
-# ── H9.2 Trace Explorer endpoints ────────────────────────────────
-# Placed immediately before the workflows block; do NOT move the
-# workflows handlers below.
-
-@app.get("/api/traces")
-async def list_traces(limit: int = Query(50, ge=1, le=200)):
-    """Return recent per-request traces (most-recent first, summarized)."""
-    if not orch:
-        return _nocache_json({"traces": [], "error": "not initialized"}, status_code=503)
-    tracer = getattr(orch, "tracer", None)
-    if tracer is None:
-        return _nocache_json({"traces": [], "error": "tracer not available"})
-    limit = max(1, min(limit, 500))
-    return _nocache_json({"traces": tracer.list(limit)})
-
-
-@app.get("/api/cost")
-async def cost_breakdown():
-    """H10.24 — estimated $ cost per agent and per day (local models = $0)."""
-    if not orch:
-        return _nocache_json({"error": "not initialized"}, status_code=503)
-    tracer = getattr(orch, "tracer", None)
-    if tracer is None:
-        return _nocache_json(
-            {"by_agent": [], "by_day": [], "summary": {}, "error": "tracer not available"}
-        )
-    return _nocache_json({
-        "by_agent": tracer.cost_by_agent(),
-        "by_day": tracer.cost_by_day(),
-        "summary": tracer.cost_summary(),
-    })
-
-
-@app.get("/api/traces/{trace_id}")
-async def get_trace(trace_id: str):
-    """Return the full trace dict for a specific trace id."""
-    if not orch:
-        return _nocache_json({"error": "not initialized"}, status_code=503)
-    tracer = getattr(orch, "tracer", None)
-    if tracer is None:
-        return _nocache_json({"error": "tracer not available"}, status_code=503)
-    item = tracer.get(trace_id)
-    if item is None:
-        return _nocache_json({"error": f"trace '{trace_id}' not found"}, status_code=404)
-    return _nocache_json(item)
-
-
-@app.post("/api/traces/clear")
-async def clear_traces():
-    """Flush all traces from the in-memory ring buffer."""
-    if not orch:
-        return _nocache_json({"error": "not initialized"}, status_code=503)
-    tracer = getattr(orch, "tracer", None)
-    if tracer is None:
-        return _nocache_json({"error": "tracer not available"}, status_code=503)
-    tracer.clear()
-    return _nocache_json({"ok": True})
-
-
-# ── END H9.2 Trace Explorer endpoints ─────────────────────────────
+# ── Analytics / cost / traces / reflection surface ───────────────────────────
+# All `/api/analytics/*`, `/api/cost`, `/api/traces/*` (H9.2 Trace Explorer) and
+# `/api/reflection/*` routes live in the analytics router (CLN-3). Every handler
+# reads its subsystem off the live orchestrator via get_orch(); none used a
+# web-module global, so nothing stayed behind.
 
 
 # ── H12.4 Wyoming protocol (local-voice interop) → core/routers/wyoming.py (CLN-3) ──
