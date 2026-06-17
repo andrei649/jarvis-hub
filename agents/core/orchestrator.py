@@ -871,8 +871,11 @@ class Orchestrator:
             target = self._route_candidates(intent) if intent.target_agents else ["jarvis"]
 
         temperature = self.get_setting("llm.temperature", 0.7)
-        max_tokens = self.get_setting("llm.max_tokens", 2048)
-        deep_max_tokens = self.get_setting("llm.deep_max_tokens", 8192)
+        # 0 = auto: let the model answer using its full loaded context (the single
+        # dial you size in LM Studio) instead of a separate, smaller Jarvis cap.
+        # A positive value still imposes a hard ceiling (see llm/base.py).
+        max_tokens = self.get_setting("llm.max_tokens", 0)
+        deep_max_tokens = self.get_setting("llm.deep_max_tokens", 0)
         context_window = self.get_setting("memory.context_window", 6)
         synthesized = ""
         # Pre-bind so the post-loop persist/audit never hit UnboundLocalError when
@@ -927,7 +930,8 @@ class Orchestrator:
                     # 1–2k tokens is consumed by chain-of-thought before any
                     # answer, so a small cap truncates mid-thought.
                     eff_max_tokens = deep_max_tokens if route_name == "local-deep" else max_tokens
-                    logger.info(f"Routing {agent_id} via {route_name} ({estimate_tokens(prompt)} tokens, max_tokens={eff_max_tokens})")
+                    cap_label = "auto" if eff_max_tokens <= 0 else eff_max_tokens
+                    logger.info(f"Routing {agent_id} via {route_name} ({estimate_tokens(prompt)} tokens, max_tokens={cap_label})")
                 except RuntimeError:
                     msg = "I'm sorry, sir — my language backend is not available. Please start Ollama or LM Studio and try again."
                     log_error(logger, E_LLM_BACKEND_MISSING, backend="stream")
@@ -983,7 +987,7 @@ class Orchestrator:
         # as a blank bubble. The backend already refuses to leak raw reasoning,
         # so an empty string here means "no answer was produced".
         if not (synthesized or "").strip():
-            synthesized = "My reply was cut short before I finished, sir. Try again, or raise the token limit for heavier requests."
+            synthesized = "My reply was cut short before I finished, sir — the model ran out of context while thinking. Try again, simplify the request, or load a larger-context model in LM Studio."
             if on_token:
                 on_token(synthesized)
         await self.memory.add_turn(self.session_id, "assistant", synthesized, agent_id=agent_id)

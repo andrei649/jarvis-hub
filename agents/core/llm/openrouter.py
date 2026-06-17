@@ -14,7 +14,7 @@ from typing import Optional
 
 import httpx
 
-from .base import LLMBackend, strip_thinking
+from .base import LLMBackend, cloud_cap, strip_thinking
 
 logger = logging.getLogger("jarvis.llm.openrouter")
 
@@ -47,7 +47,7 @@ class OpenRouterBackend(LLMBackend):
             "model": model,
             "messages": [{"role": "system", "content": system},
                          {"role": "user", "content": prompt}],
-            "max_tokens": max_tokens, "temperature": temperature, "stream": False,
+            "max_tokens": cloud_cap(max_tokens), "temperature": temperature, "stream": False,
         }
         try:
             resp = await self.client.post("/chat/completions", json=payload, headers=self._headers())

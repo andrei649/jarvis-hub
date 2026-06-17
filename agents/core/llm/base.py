@@ -16,6 +16,27 @@ import httpx
 logger = logging.getLogger("jarvis.llm.base")
 
 
+# ── Output-budget ("max tokens") resolution ───────────────────────────────────
+# A single dial, not two. `max_tokens <= 0` (or falsy) means **auto**: let the
+# model answer using its full loaded context — i.e. whatever you sized in LM
+# Studio / Ollama — instead of a second, smaller Jarvis-side cap that silently
+# truncates reasoning models mid-thought. Local servers express "use the whole
+# context" natively (LM Studio: omit the field; Ollama: num_predict = -1). Cloud
+# APIs can't — they require a concrete positive ceiling — so for them auto falls
+# back to CLOUD_AUTO_MAX_TOKENS.
+CLOUD_AUTO_MAX_TOKENS = 8192
+
+
+def is_auto_max_tokens(max_tokens: int) -> bool:
+    """True when the caller wants the model's full context (auto), not a hard cap."""
+    return not max_tokens or max_tokens <= 0
+
+
+def cloud_cap(max_tokens: int) -> int:
+    """Concrete output ceiling for cloud backends (auto -> CLOUD_AUTO_MAX_TOKENS)."""
+    return max_tokens if (max_tokens and max_tokens > 0) else CLOUD_AUTO_MAX_TOKENS
+
+
 # ── Post-processing filter (used on non-stream responses) ─────────────────────
 
 def strip_thinking(text: str) -> str:
@@ -161,7 +182,8 @@ class LLMBackend(ABC):
         if finish == "length":
             logger.warning(
                 "Stream truncated at max_tokens before an answer (model=%s); "
-                "raise llm.max_tokens / llm.deep_max_tokens for reasoning models",
+                "the model filled its context before answering — load a larger-context "
+                "model in LM Studio (or, if llm.max_tokens is set to a manual cap, raise it)",
                 model,
             )
             return ""
@@ -201,10 +223,13 @@ class LMStudioBackend(LLMBackend):
                 {"role": "system", "content": system},
                 {"role": "user", "content": prompt},
             ],
-            "max_tokens": max_tokens,
             "temperature": temperature,
             "stream": False,
         }
+        # Auto (max_tokens <= 0): omit the cap so LM Studio answers up to the
+        # loaded model's full context — the single dial sized in LM Studio.
+        if not is_auto_max_tokens(max_tokens):
+            payload["max_tokens"] = max_tokens
         try:
             resp = await self.client.post("/v1/chat/completions", json=payload)
             resp.raise_for_status()
@@ -224,7 +249,8 @@ class LMStudioBackend(LLMBackend):
             if finish == "length":
                 logger.warning(
                     "LM Studio truncated at max_tokens before an answer (model=%s); "
-                    "raise llm.max_tokens / llm.deep_max_tokens for reasoning models",
+                    "the model filled its context before answering — load a larger-context "
+                "model in LM Studio (or, if llm.max_tokens is set to a manual cap, raise it)",
                     model,
                 )
                 return ""
@@ -243,10 +269,13 @@ class LMStudioBackend(LLMBackend):
                 {"role": "system", "content": system},
                 {"role": "user", "content": prompt},
             ],
-            "max_tokens": max_tokens,
             "temperature": temperature,
             "stream": True,
         }
+        # Auto (max_tokens <= 0): omit the cap so LM Studio answers up to the
+        # loaded model's full context — the single dial sized in LM Studio.
+        if not is_auto_max_tokens(max_tokens):
+            payload["max_tokens"] = max_tokens
         emitted = ""          # filtered text actually streamed to the user
         reasoning_full = ""   # accumulated reasoning_content (never emitted live)
         finish = None
@@ -319,7 +348,9 @@ class OllamaBackend(LLMBackend):
             "system": system,
             "stream": False,
             "options": {
-                "num_predict": max_tokens,
+                # Auto (max_tokens <= 0) -> -1: generate until the loaded model's
+                # context is full (Ollama's "infinite"), matching the single dial.
+                "num_predict": max_tokens if not is_auto_max_tokens(max_tokens) else -1,
                 "temperature": temperature,
             },
         }
@@ -331,7 +362,8 @@ class OllamaBackend(LLMBackend):
             if not answer and data.get("done_reason") == "length":
                 logger.warning(
                     "Ollama truncated at num_predict before an answer (model=%s); "
-                    "raise llm.max_tokens / llm.deep_max_tokens for reasoning models",
+                    "the model filled its context before answering — load a larger-context "
+                "model in LM Studio (or, if llm.max_tokens is set to a manual cap, raise it)",
                     model,
                 )
             return answer
@@ -349,7 +381,9 @@ class OllamaBackend(LLMBackend):
             "system": system,
             "stream": True,
             "options": {
-                "num_predict": max_tokens,
+                # Auto (max_tokens <= 0) -> -1: generate until the loaded model's
+                # context is full (Ollama's "infinite"), matching the single dial.
+                "num_predict": max_tokens if not is_auto_max_tokens(max_tokens) else -1,
                 "temperature": temperature,
             },
         }
