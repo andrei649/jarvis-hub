@@ -21,33 +21,47 @@ class LLMRouter:
         # Name of the model actually loaded in the live backend (auto-detected in
         # detect()). None until detected / when no backend is up.
         self._detected_model: Optional[str] = None
+        # /admin → llm.backend_type / llm.lm_studio_url / llm.ollama_url. Resolved
+        # from settings before detect() (subclasses set these); defaults preserve
+        # the original hardcoded behavior.
+        self.backend_type: str = "auto"           # auto | lm-studio | ollama
+        self.lm_studio_url: str = "http://localhost:1234"
+        self.ollama_url: str = "http://localhost:11434"
 
     async def detect(self):
         """Try LM Studio (GPU) first, fall back to Ollama.
 
         On success, also capture the model actually loaded in the backend so the
-        system uses the real loaded model rather than a hard-coded name."""
+        system uses the real loaded model rather than a hard-coded name.
+
+        Honors `backend_type` (/admin): "lm-studio"/"ollama" pin a single backend;
+        "auto" (default) probes LM Studio then Ollama. URLs come from `lm_studio_url`
+        / `ollama_url`."""
         await self._close_backend(self._backend)  # BUG-7: close the prior backend's pool before re-detect
         self._backend = None
         self._detected_model = None
-        if await self._check("http://localhost:1234/v1/models"):
-            self._backend = LMStudioBackend()
+        lm_url = (self.lm_studio_url or "http://localhost:1234").rstrip("/")
+        ol_url = (self.ollama_url or "http://localhost:11434").rstrip("/")
+        bt = self.backend_type or "auto"
+        if bt in ("auto", "lm-studio") and await self._check(f"{lm_url}/v1/models"):
+            self._backend = LMStudioBackend(base_url=lm_url)
             self._backend_name = "lm-studio"
             self._detected_model = await self._fetch_loaded_model(
-                "http://localhost:1234/v1/models", "lmstudio")
-            logger.info("LLM backend online: lm-studio (:1234), loaded model=%s",
-                        self._detected_model or "unknown")
+                f"{lm_url}/v1/models", "lmstudio")
+            logger.info("LLM backend online: lm-studio (%s), loaded model=%s",
+                        lm_url, self._detected_model or "unknown")
             return
-        if await self._check("http://localhost:11434/api/tags"):
-            self._backend = OllamaBackend()
+        if bt in ("auto", "ollama") and await self._check(f"{ol_url}/api/tags"):
+            self._backend = OllamaBackend(base_url=ol_url)
             self._backend_name = "ollama"
             self._detected_model = await self._fetch_loaded_model(
-                "http://localhost:11434/api/tags", "ollama")
-            logger.info("LLM backend online: ollama (:11434), loaded model=%s",
-                        self._detected_model or "unknown")
+                f"{ol_url}/api/tags", "ollama")
+            logger.info("LLM backend online: ollama (%s), loaded model=%s",
+                        ol_url, self._detected_model or "unknown")
             return
         self._backend_name = "none"
-        logger.warning("No LLM backend detected — start LM Studio (:1234) or Ollama (:11434)")
+        logger.warning("No LLM backend detected (backend_type=%s) — start LM Studio (%s) or Ollama (%s)",
+                       bt, lm_url, ol_url)
 
     async def _check(self, url: str) -> bool:
         try:
@@ -108,9 +122,11 @@ class LLMRouter:
         if self._backend is None:
             return None
         if self._backend_name == "lm-studio":
-            model = await self._fetch_loaded_model("http://localhost:1234/v1/models", "lmstudio")
+            lm_url = (self.lm_studio_url or "http://localhost:1234").rstrip("/")
+            model = await self._fetch_loaded_model(f"{lm_url}/v1/models", "lmstudio")
         elif self._backend_name == "ollama":
-            model = await self._fetch_loaded_model("http://localhost:11434/api/tags", "ollama")
+            ol_url = (self.ollama_url or "http://localhost:11434").rstrip("/")
+            model = await self._fetch_loaded_model(f"{ol_url}/api/tags", "ollama")
         else:
             model = None
         if model:

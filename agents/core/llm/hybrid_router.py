@@ -175,6 +175,11 @@ class HybridRouter(LLMRouter):
         self._local_max = LOCAL_MAX_TOKENS
         self._flash_max = FLASH_MAX_TOKENS
 
+        # /admin → llm.gemini_model: the Gemini model used for cloud (flash-tier)
+        # routes; oversized prompts still escalate to gemini-2.5-pro. Resolved in
+        # detect() from settings_db.
+        self._gemini_model = "gemini-2.5-flash"
+
     @staticmethod
     def _admin_setting(key: str, default):
         """Read an `llm` setting from /admin config (settings_db), safely."""
@@ -186,6 +191,12 @@ class HybridRouter(LLMRouter):
             return default
 
     async def detect(self):
+        # Resolve the connectivity knobs (/admin) before probing so the base
+        # detect() honors them: backend pin + URLs.
+        self.backend_type = self._admin_setting("backend_type", "auto")
+        self.lm_studio_url = self._admin_setting("lm_studio_url", "http://localhost:1234")
+        self.ollama_url = self._admin_setting("ollama_url", "http://localhost:11434")
+        self._gemini_model = self._admin_setting("gemini_model", "gemini-2.5-flash")
         await super().detect()
         self._local_available = self._backend is not None
         # Use the real model loaded in the live backend; fall back to the /admin
@@ -204,7 +215,8 @@ class HybridRouter(LLMRouter):
         self._cloud_available = bool(self.gemini_api_key) or self._gemini_pool.size > 0
         if self._cloud_available:
             from .gemini import GeminiBackend
-            self._gemini_backend = GeminiBackend(api_key=self.gemini_api_key, auth_pool=self._gemini_pool)
+            self._gemini_backend = GeminiBackend(
+                api_key=self.gemini_api_key, model=self._gemini_model, auth_pool=self._gemini_pool)
 
         # Claude model is admin-configurable (/admin → llm.claude_model).
         self._claude_model = self._admin_setting("claude_model", DEFAULT_CLAUDE_MODEL)
@@ -274,7 +286,7 @@ class HybridRouter(LLMRouter):
                 return self._claude_backend, self._claude_model, "claude"
             logger.warning(f"Claude unavailable for {agent_id}, falling back to cloud")
             if self._cloud_available and self._cloud_fallback_mode != "never":
-                return self._gemini_backend, "gemini-2.5-flash", "cloud-fallback"
+                return self._gemini_backend, self._gemini_model, "cloud-fallback"
             if self._local_available:
                 logger.warning(f"No cloud backend for {agent_id}, falling back to local")
                 return self._backend, self._local_model, "local-fallback"
@@ -282,7 +294,7 @@ class HybridRouter(LLMRouter):
 
         if policy == POLICY_CLOUD:
             if self._cloud_available:
-                return self._gemini_backend, "gemini-2.5-flash", "cloud"
+                return self._gemini_backend, self._gemini_model, "cloud"
             logger.warning(f"Cloud backend unavailable for {agent_id} (policy=cloud), falling back to local")
             if self._local_available:
                 return self._backend, self._local_model, "local-fallback"
@@ -300,7 +312,7 @@ class HybridRouter(LLMRouter):
         #   on-demand → spill only when the context outgrows the local window
         #   always    → prefer cloud for auto agents whenever it's available
         if self._cloud_fallback_mode == "always" and self._cloud_available:
-            return self._gemini_backend, "gemini-2.5-flash", "cloud-flash"
+            return self._gemini_backend, self._gemini_model, "cloud-flash"
         # H7.5 — Complexity escalation: heavy prompts for auto-policy agents
         # are routed to the deep local slot (DDR5) when AUTO_DEEP_ENABLED.
         # This only applies here (token_count <= local threshold path) because
@@ -314,7 +326,7 @@ class HybridRouter(LLMRouter):
             return self._backend, self._local_model, "local"
         if self._cloud_fallback_mode != "never":
             if token_count <= self._flash_max and self._cloud_available:
-                return self._gemini_backend, "gemini-2.5-flash", "cloud-flash"
+                return self._gemini_backend, self._gemini_model, "cloud-flash"
             if self._cloud_available:
                 return self._gemini_backend, "gemini-2.5-pro", "cloud-pro"
 
