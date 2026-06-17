@@ -60,6 +60,27 @@ def test_ignores_plain_prose():
     assert extract_action_items("We talked about the weather and then went home.") == []
 
 
+def test_extraction_is_redos_safe_on_pathological_input():
+    """CWE-1333: the line markers are matched against untrusted transcript text.
+    A long run of whitespace on a marker-ish line used to backtrack
+    polynomially; the `\\S`-anchored task group makes matching linear. This must
+    return promptly (and correctly) rather than hang."""
+    import time
+    # Whitespace-heavy lines that brush each regex's ambiguous boundary.
+    pathological = (
+        "TODO:" + " " * 50000 + "\n"
+        "- [ ]" + " " * 50000 + "\n"
+        "Alice to" + " " * 50000 + "\n"
+    )
+    start = time.monotonic()
+    items = extract_action_items(pathological)
+    assert time.monotonic() - start < 2.0      # linear, not polynomial
+    # None of these produce a real task (only whitespace after the marker).
+    assert items == []
+    # And a normal task on a heavily-padded line still extracts.
+    assert extract_action_items("TODO:    ship it   ") == [{"text": "ship it", "assignee": ""}]
+
+
 # ── watcher: governed enqueue ─────────────────────────────────────
 
 class _FakeQueue:

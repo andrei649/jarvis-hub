@@ -9,16 +9,16 @@ Covers two address spaces that together form the LLM-control surface:
 * `/api/models/*` — local-model browse + switch (H12.9): list models from the
   live local backends (LM Studio + Ollama) and activate one on the router.
 
-Orchestrator-only state is read at request time via `get_orch()`. Two web.py
-helpers are kept in `web.py` because the local-models test suite monkeypatches
-them on the module (`monkeypatch.setattr(web, "_list_local_models", ...)` and
-`patch.object(web, "put_category", ...)`): `_list_local_models` (which also owns
-the `_LM_STUDIO_URL`/`_OLLAMA_URL` probe constants, themselves still read by
-`web._llm_ready`) and `put_category` (also used by `admin_put_category`). Both
-are reached at request time through `sys.modules.get("agents.web").<name>` so the
-monkeypatches are observed and there is no static import edge back into web. The
-LM Studio lifecycle helpers `_lmstudio_or_503` / `_llm_status_code` were used only
-by this domain and are moved here verbatim.
+Orchestrator-only state is read at request time via `get_orch()`. One web.py
+helper is kept in `web.py` because the local-models test suite monkeypatches it
+on the module (`monkeypatch.setattr(web, "_list_local_models", ...)`):
+`_list_local_models` owns the `_LM_STUDIO_URL`/`_OLLAMA_URL` probe constants,
+themselves still read by `web._llm_ready`. It is reached at request time through
+`sys.modules.get("agents.web")._list_local_models` so the monkeypatch is observed
+and there is no static import edge back into web. `put_category` is imported here
+directly from its leaf module (`core.settings_db`); the local-models suite patches
+it in this module's namespace. The LM Studio lifecycle helpers `_lmstudio_or_503`
+/ `_llm_status_code` were used only by this domain and are moved here verbatim.
 """
 
 import os
@@ -27,6 +27,8 @@ import sys
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
+
+from core.settings_db import put_category
 
 from agents.core.routers._deps import admin_guard
 
@@ -39,8 +41,8 @@ router = APIRouter(tags=["models"])
 
 def _web():
     # Always present at request time (the app is running). Not an import edge.
-    # `_list_local_models` and `put_category` are monkeypatched on `agents.web`
-    # by the local-models test suite, so they must be resolved here on each call.
+    # `_list_local_models` is monkeypatched on `agents.web` by the local-models
+    # test suite, so it must be resolved here on each call.
     return sys.modules.get("agents.web")
 
 
@@ -129,7 +131,7 @@ async def models_local_switch(body: LocalModelSwitch):
 
     orch.llm_router.set_active_model(body.model)
     try:
-        _web().put_category("llm", {"default_model": body.model})
+        put_category("llm", {"default_model": body.model})
     except Exception:
         # Persistence is best-effort; the live switch already took effect.
         pass
@@ -195,7 +197,7 @@ async def llm_load(body: LMLoad):
         try:
             # Persist the model that was actually loaded — the controller may have
             # resolved a partial request ("gemma") to the full servable id.
-            _web().put_category("llm", {"default_model": result.get("model") or body.model})
+            put_category("llm", {"default_model": result.get("model") or body.model})
         except Exception:
             pass  # live load already took effect; persistence is best-effort
         return nocache_json(result)

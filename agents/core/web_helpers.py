@@ -13,7 +13,9 @@ call site — and any test that references them — keeps working unchanged.
 
 from __future__ import annotations
 
+import html
 import logging
+import re
 
 from fastapi.responses import JSONResponse
 
@@ -43,6 +45,35 @@ def error_json(exc, status_code: int, public_message: str, *, extra: dict | None
     body = dict(extra or {})
     body["error"] = public_message
     return nocache_json(body, status_code=status_code)
+
+
+# Anything outside this conservative identifier charset is dropped before a
+# user-supplied value is echoed back into a response body.
+_REFLECT_UNSAFE = re.compile(r"[^A-Za-z0-9._:@/-]")
+
+
+def safe_reflect(value, *, max_len: int = 100) -> str:
+    """Sanitize a user-supplied identifier for safe echo into a response.
+
+    Endpoints sometimes reflect a path/query value back ("trace '<id>' not
+    found", or a correlation key in a success body). Echoing raw input is a
+    reflected-XSS / response-splitting taint sink (CWE-79/-116). This truncates,
+    strips anything outside a conservative identifier charset, then HTML-escapes
+    — the escape both clears the taint and neutralizes any residual markup,
+    while valid identifiers (the realistic inputs) pass through unchanged.
+    """
+    cleaned = _REFLECT_UNSAFE.sub("", str(value)[:max_len])
+    return html.escape(cleaned, quote=True)
+
+
+def logsafe(value: object) -> str:
+    """Neutralize newlines so untrusted values can't forge log records (CWE-117).
+
+    A value containing CR/LF logged verbatim could inject fake log lines;
+    stripping the line breaks is the standard log-injection remediation. Use at
+    every log site that interpolates request-controlled data.
+    """
+    return str(value).replace("\r", " ").replace("\n", " ")
 
 
 def mask_secret(value: str) -> str:

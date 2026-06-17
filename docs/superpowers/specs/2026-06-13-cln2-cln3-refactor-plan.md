@@ -222,10 +222,49 @@ optional, wrap-only 5th step.
 
 ## 5. Phase 3 — CLN-3 route extraction (incremental, one domain per PR) — 🟡 IN PROGRESS 2026-06-14
 
-**Status:** 14 domains extracted into per-domain routers under `core/routers/` (each its own commit,
+**Status:** 18 domains extracted into per-domain routers under `core/routers/` (each its own commit,
 route-parity + full suite green throughout): rooms, notes, actions, arena, review, quality, security, skills,
-data_spaces, secrets, mesh, autonomy, **models_llm**, **oauth** (oauth+oracle+trust). All use the Phase-1
-shared kernel — zero static `from agents import web`. **web.py: 5,037 → 3,328 LOC** so far.
+data_spaces, secrets, mesh, autonomy, models_llm, oauth, memory_kg, **admin**, **analytics**, **integrations**.
+All use the Phase-1 shared kernel — zero static `from agents import web`. **web.py: 5,037 → 2,388 LOC (−53%)** so far.
+
+**CodeQL cleanup (post-merge, PR #196):** dropped the last cross-cutting `put_category` web-global — the
+models_llm router now imports it directly from its leaf (`core.settings_db`) and the local-models test patches
+it in the router's namespace, so web.py no longer carries the import purely as a monkeypatch target (cleared the
+"unused import" alert). The admin `llm/test` backend probe no longer returns `str(e)` per item; it logs the full
+detail server-side and exposes a static reason (CWE-209).
+
+**The 5 blocking alerts (CodeQL, PR #196) — identified by running CodeQL locally.** The agent env can't
+enumerate code-scanning alerts via MCP, so the exact set was confirmed by building a CodeQL DB (same
+`security-and-quality` suite as `.github/codeql/codeql-config.yml`) and diffing head vs the merge base. CodeQL
+reports taint alerts at the **sink**, so they don't appear *in* the four new router files — the routers are the
+**source**, the sinks live in shared/leaf modules. The 5 (4 high + 1 medium):
+- **4× `py/polynomial-redos` (CWE-1333)** — `integrations.py` transcript-ingest body flows into the three
+  line-marker regexes in `autonomy/transcript_watcher.py`. Each had a trailing `\s*`/`\s+` immediately followed
+  by `(?P<task>.+)` — both match whitespace, so a long space run backtracks polynomially. Fix: anchor the task
+  group as `(?P<task>\S.*)`. The greedy leading `\s*`/`\s+` already eats all whitespace, so this is
+  behavior-identical (verified by the H12.25 suite) while removing the ambiguous overlap.
+- **1× `py/log-injection` (CWE-117)** — `admin.py` put-category (category + body keys) flows into
+  `settings_db.put_category`'s `logger.warning`. Fix: `settings_db._logsafe()` strips CR/LF before logging, and
+  the call switched to `%`-style lazy args.
+
+Re-running the local CodeQL DB after the fix: all 5 cleared, **0 new alerts** introduced (the only remaining
+alert touching a changed file is a *pre-existing* `py/stack-trace-exposure` from `rooms.py`'s `f"[error:{e}]"`
+chat reply → `nocache_json`, which is on `main` and in a different domain, so out of scope here). Locked by
+`tests/test_h12_25_transcript.py::test_extraction_is_redos_safe_on_pathological_input` and
+`tests/test_settings_db.py::test_logsafe_strips_newlines`.
+
+**Reflected user-input hardening (PR #196 "harden now" item):** independent of the 5 above (CodeQL did *not*
+flag these — JSON responses aren't an XSS sink here), the four routers also echoed a user-supplied path/query id
+into response bodies. Added `web_helpers.safe_reflect(value)` (truncate → strip to a conservative identifier
+charset → `html.escape`) and applied it to the `unknown category` / `agent … not found` / `trace … not found` /
+`no webhook channel` messages and the prompt-diff `agent_id` key — defense-in-depth for the reflected-input
+class the PR plan called out. No-op for realistic ids, so routes/OpenAPI stay byte-identical; locked by
+`tests/test_error_json_sanitizer.py`. Free-text echoes (`q`/`subject`) are left untouched (sanitizing would
+corrupt legitimate spaces/text).
+
+**integrations** (batch 6, no test edits): the only HTTP-level test (`test_h12_25_transcript`) monkeypatches
+`web.orch`/`web.USER_TOKEN`, both already honored by `get_orch()` + the user guard accessor, so the standard
+pattern applied with zero coupling work. Request models modernized to `str | None`.
 
 **Two infra fixes during this work:** (1) pinned `fastapi>=0.136.3,<0.137` in both requirements files — fastapi
 0.137.0 regressed `app.include_router` (mounted routers add 0 routes → the app silently loses ~100 routes); CI
@@ -245,11 +284,13 @@ test monkeypatches (`DEV_MODE`, lazily-created singletons), add a request-time `
 `web.X` via `sys.modules` (like `get_orch`/`dev_mode`) so the monkeypatch stays observed. Both keep every test
 unchanged and add no static import edge.
 
-**Still to extract:** payments/eval-datasets (cross-domain singleton edges — extract with consumers); the
-larger memory/KG, autonomy, MCP, analytics, oauth/oracle, admin (settings/prompts/stats), models/llm,
-integrations, misc/heartbeat/health-voice; dashboard + chat-SSE LAST (hot path / shared `asyncio.Lock`).
+**Still to extract:** payments/eval-datasets (cross-domain singleton edges — extract with consumers); MCP
+(heavy singletons: `_build_mcp_server`, admin/mcp lifecycle); workflows/pipelines; misc tail
+(status/sessions/plugins/learning/bench/agent-templates, vlm/media/desktop/context/digest/schedule, voice/tts,
+heartbeat, health/components); dashboard + chat-SSE LAST (hot path / shared `asyncio.Lock`).
 `data_spaces`/`secrets` ✅ done (batch 5) — `data_spaces` via unblock B (singleton home stays on `web`, router
-reads it via a sys.modules accessor); `secrets` was orchestrator-only (no unblock needed).
+reads it via a sys.modules accessor); `secrets` was orchestrator-only (no unblock needed). `integrations`
+✅ done (batch 6).
 
 Tiered easiest→hardest; each PR gated by the Phase-0 parity guard + full suite. Mirror the existing
 `capture.py`/`pairing.py` pattern; move a domain's owning singleton with it; keep `put_category` in

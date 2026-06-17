@@ -12,6 +12,16 @@ from typing import Any
 
 logger = logging.getLogger("jarvis.settings")
 
+
+def _logsafe(value: object) -> str:
+    """Neutralize newlines so untrusted values can't forge log records (CWE-117).
+
+    The admin settings category + keys come straight from the request; a value
+    containing CR/LF could otherwise inject fake log lines. Stripping the line
+    breaks is the standard log-injection remediation.
+    """
+    return str(value).replace("\r", " ").replace("\n", " ")
+
 DB_PATH = Path(__file__).parent.parent.parent / "memory_logs" / "settings.db"
 
 # ── schema ────────────────────────────────────────────────────────
@@ -267,7 +277,8 @@ def put_category(cat: str, data: dict[str, Any]) -> tuple[int, list[str]]:
     conn.commit()
     conn.close()
     if skipped:
-        logger.warning(f"put_category({cat}): ignored unknown keys: {skipped}")
+        logger.warning("put_category(%s): ignored unknown keys: %s",
+                       _logsafe(cat), _logsafe(skipped))
     return updated, skipped
 
 # ── init on first use (via _ensure_init) — NOT at import ─────────

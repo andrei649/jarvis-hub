@@ -57,6 +57,14 @@ class PreferenceStore:
                 created_at TEXT NOT NULL
             )
         """)
+        # approval_rate() and suggest_autonomy_raise() filter/group by the
+        # (agent, kind, risk_tier) class on the autonomy decision path, and the
+        # journal grows one row per decision. Index the class so those reads
+        # stay fast as the preference history accumulates.
+        self._conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_preferences_class "
+            "ON preferences(agent, kind, risk_tier)"
+        )
         self._conn.execute("PRAGMA journal_mode=WAL")
         self._conn.commit()
         return self

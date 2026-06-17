@@ -127,8 +127,13 @@ class TaskQueue:
                 updated_at TEXT NOT NULL
             )
         """)
-        self._conn.execute("PRAGMA journal_mode=WAL")
-        self._conn.execute("PRAGMA synchronous=NORMAL")
+        # The worker polls runnable()/pending_decisions() and the inbox calls
+        # list() in a continuous loop — all filtered by status — while the table
+        # grows unboundedly as decided tasks accumulate. Index status so those
+        # reads stay O(log n) instead of degrading to full scans at scale.
+        self._conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_tasks_status ON tasks(status, id)"
+        )
         self._conn.commit()
         return self
 

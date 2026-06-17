@@ -60,6 +60,14 @@ def test_get_unknown_category_empty(temp_db):
     assert temp_db.get_category("nonexistent") == []
 
 
+def test_logsafe_strips_newlines():
+    # CWE-117: the admin category/keys are request-controlled and get logged;
+    # CR/LF must be neutralized so a value can't forge extra log lines.
+    out = settings_db._logsafe("evil\r\nINFO admin: forged line")
+    assert "\n" not in out and "\r" not in out
+    assert settings_db._logsafe(["a\nb", "c"]) .count("\n") == 0
+
+
 def test_init_db_force_reseeds(temp_db):
     temp_db.put_category("llm", {"max_tokens": 9999})
     temp_db.init_db(force=True)
