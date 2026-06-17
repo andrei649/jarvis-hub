@@ -180,7 +180,12 @@ export function DeckGlobe({ data }: { data: LayerData }) {
 
   function onViewStateChange(e: { viewState: unknown; interactionState?: { isZooming?: boolean; isPanning?: boolean; isRotating?: boolean } }) {
     const vs = e.viewState as { zoom?: number };
-    if (typeof vs.zoom === "number") setZoom(vs.zoom);
+    if (typeof vs.zoom === "number" && vs.zoom !== useTimelineStore.getState().zoom) {
+      // Deck can emit onViewStateChange during its own render while viewState is
+      // controlled (camera tour / fly-to). Defer the store write so we never update
+      // a zoom subscriber (LOD selector / bar) while DeckGL is rendering.
+      queueMicrotask(() => setZoom(vs.zoom as number));
+    }
     // A user drag/zoom/rotate cancels any camera driver and hands control back.
     const i = e.interactionState;
     const userMoved = i && (i.isZooming || i.isPanning || i.isRotating);
