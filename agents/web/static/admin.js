@@ -267,9 +267,6 @@ function renderRow(s, i, onUpdate, onAction) {
 const FRIENDLY_NAMES = {
   timezone: "Fus orar local",
   wake_words: "Cuvinte de trezire vocală",
-  addressing: "Mod de adresare",
-  ui_density: "Densitate interfață HUD",
-  dev_mode: "Mod Dezvoltator activat",
   backend_type: "Tip motor inteligență artificială (LLM)",
   lm_studio_url: "Adresă URL server LM Studio",
   ollama_url: "Adresă URL server Ollama local",
@@ -283,10 +280,6 @@ const FRIENDLY_NAMES = {
   stt_model_size: "Mărime model recunoaștere vocală (STT)",
   stt_language: "Limbă recunoaștere vocală",
   tts_voice: "Voce sinteză Microsoft (TTS)",
-  wake_threshold: "Sensibilitate detectare cuvânt trezire",
-  silence_sec: "Toleranță liniște înainte de răspuns (secunde)",
-  max_recording: "Durată maximă înregistrare vocală (secunde)",
-  volume_threshold: "Prag volum de fundal microfon",
   guardrails_mode: "Mod protecție date sensibile",
   scan_input: "Scanează datele introduse de utilizator",
   scan_output: "Scanează răspunsurile generate de AI",
@@ -313,18 +306,12 @@ const FRIENDLY_NAMES = {
   gecko_csv_path: "Cale fișiere export extras bancar CSV",
   stark_ga4_service_account: "Cale fișier credențiale GA4 (Stark)",
   stark_ga4_property_id: "Identificator Proprietate Google Analytics 4",
-  auto_scale: "Scalare automată a resurselor agenților",
-  cardinality_cap: "Capacitate maximă de agenți încărcați",
-  promote_on_use: "Număr utilizări necesare promovării în HUD",
-  demote_on_inactive: "Număr luni de inactivitate până la demovare",
   auto_generate: "Autogenerare automată de noi abilități",
   sandbox_enabled: "Execuție în sandbox protejat",
   max_skills: "Număr maxim de abilități memorate",
   import_source: "Sursă implicită de import abilități",
   log_level: "Nivel detaliere loguri sistem",
-  heartbeat_interval: "Interval heartbeat (secunde)",
   poll_interval: "Interval verificare status (secunde)",
-  theme: "Temă interfață vizuală",
   autonomy_tick: "Frecvență verificare autonomie (secunde)",
   observer_enabled: "Monitorizare resurse gazdă (Observer)",
   watchers_enabled: "Monitorizare evenimente personale (Watchers)",
@@ -347,9 +334,6 @@ const FRIENDLY_NAMES = {
 const FRIENDLY_DESCS = {
   timezone: "Zona orară utilizată pentru planificarea alertelor și a sarcinilor în fundal.",
   wake_words: "Cuvintele la care asistentul vocal local va răspunde automat la rostire.",
-  addressing: "Modul în care asistentul se adresează utilizatorului (ex: 'sir' sau 'boss').",
-  ui_density: "Compactitatea vizuală a elementelor afișate în interfața grafică HUD.",
-  dev_mode: "Activează instrumentele suplimentare pentru depanare și execuție sandbox.",
   backend_type: "Alege între detecție automată, LM Studio local sau Ollama local.",
   temperature: "Valori mai mari oferă răspunsuri creative; valori mai mici oferă răspunsuri precise.",
   cloud_fallback: "Fallback automat pe cloud (Anthropic/Gemini) dacă motorul local este offline sau suprasolicitat.",
@@ -374,12 +358,12 @@ function GlobalConfigPage({ settings, dirty, onUpdate, onSave }) {
     {
       title: "⚙️ Preferințe Asistent Globale",
       desc: "Setări generale referitoare la fusul orar, cuvinte de trezire și adresare.",
-      keys: ["general.timezone", "general.wake_words", "general.addressing", "general.ui_density", "general.dev_mode"]
+      keys: ["general.timezone", "general.wake_words"]
     },
     {
       title: "🎙️ Configurare Voce & Sunet (STT / TTS)",
       desc: "Parametrii microfonului local, ai algoritmilor de recunoaștere vocală și ai sintezei de voce.",
-      keys: ["voice.stt_model_size", "voice.stt_language", "voice.tts_voice", "voice.wake_threshold", "voice.silence_sec", "voice.max_recording", "voice.volume_threshold"]
+      keys: ["voice.stt_model_size", "voice.stt_language", "voice.tts_voice"]
     },
     {
       title: "🤖 Modele Lingvistice & AI (LLM)",

@@ -44,9 +44,6 @@ DEFAULTS: list[dict[str, Any]] = [
     # general
     dict(category="general", key="timezone",         value="Europe/Bucharest",    label="Timezone",           kind="select",  opts=["Europe/Bucharest","UTC","US/Eastern"]),
     dict(category="general", key="wake_words",       value=["jarvis","hub"],      label="Wake words",         kind="tags"),
-    dict(category="general", key="addressing",       value="sir",                 label="Addressing mode",    kind="select",  opts=["sir","boss","none"]),
-    dict(category="general", key="ui_density",       value="normal",              label="UI density",         kind="select",  opts=["normal","compact"]),
-    dict(category="general", key="dev_mode",         value=False,                 label="Developer mode",     kind="toggle"),
     # llm
     dict(category="llm",     key="backend_type",     value="auto",                label="Backend type",       kind="select",  opts=["auto","lm-studio","ollama"]),
     dict(category="llm",     key="lm_studio_url",    value="http://localhost:1234",  label="LM Studio URL",    kind="text"),
@@ -64,10 +61,6 @@ DEFAULTS: list[dict[str, Any]] = [
     dict(category="voice",   key="stt_model_size",   value="medium",              label="STT model size",     kind="select",  opts=["tiny","base","small","medium","large"]),
     dict(category="voice",   key="stt_language",     value="ro",                  label="STT language",       kind="text"),
     dict(category="voice",   key="tts_voice",        value="en-GB-RyanNeural",    label="TTS voice",          kind="text"),
-    dict(category="voice",   key="wake_threshold",   value=0.5,                   label="Wake word threshold",kind="slider"),
-    dict(category="voice",   key="silence_sec",      value=1.5,                   label="Silence timeout (s)",kind="number"),
-    dict(category="voice",   key="max_recording",    value=15,                    label="Max recording (s)",   kind="number"),
-    dict(category="voice",   key="volume_threshold", value=200,                   label="Volume threshold",    kind="number"),
     # security
     dict(category="security",key="guardrails_mode",  value="WARN",                label="Guardrails mode",    kind="select",  opts=["WARN","REDACT","BLOCK"]),
     dict(category="security",key="scan_input",       value=True,                  label="Scan user input",    kind="toggle"),
@@ -114,11 +107,6 @@ DEFAULTS: list[dict[str, Any]] = [
     # stark — analytics
     dict(category="plugins", key="stark_ga4_service_account", value="", label="Stark – GA4 Service Account JSON", kind="text"),
     dict(category="plugins", key="stark_ga4_property_id",     value="", label="Stark – GA4 Property ID",          kind="text"),
-    # agents
-    dict(category="agents",  key="auto_scale",       value=False,                 label="Auto-scale agents",  kind="toggle"),
-    dict(category="agents",  key="cardinality_cap",  value=18,                    label="Max agents",         kind="number"),
-    dict(category="agents",  key="promote_on_use",   value=20,                    label="Promote after uses", kind="number"),
-    dict(category="agents",  key="demote_on_inactive",value=2,                    label="Demote after months", kind="number"),
     # skills
     dict(category="skills",  key="auto_generate",    value=True,                  label="Auto-generate skills",kind="toggle"),
     dict(category="skills",  key="sandbox_enabled",  value=True,                  label="Sandbox execution",  kind="toggle"),
@@ -126,9 +114,7 @@ DEFAULTS: list[dict[str, Any]] = [
     dict(category="skills",  key="import_source",    value="hermes",              label="Import source",      kind="select", opts=["hermes","openclaw","none"]),
     # system
     dict(category="system",  key="log_level",        value="INFO",                label="Log level",          kind="select", opts=["DEBUG","INFO","WARNING","ERROR"]),
-    dict(category="system",  key="heartbeat_interval",value=60,                   label="Heartbeat interval (s)", kind="number"),
     dict(category="system",  key="poll_interval",    value=10,                    label="Poll interval (s)",  kind="number"),
-    dict(category="system",  key="theme",            value="dark",                label="Theme",              kind="select", opts=["dark","light"]),
     # mcp
     dict(category="mcp",     key="servers",          value=[],                    label="MCP servers",        kind="json"),
     # autonomy — Proactive Cortex (ORIZONT 6)
