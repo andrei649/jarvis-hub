@@ -711,6 +711,59 @@ def test_set_local_max_bad_value_falls_back_to_default():
     assert router._flash_max == FLASH_MAX_TOKENS
 
 
+def _mock_net(monkeypatch, router, *, respond, model="loaded-model"):
+    """Mock the network probes used by detect(): respond(url)->bool."""
+    checked = []
+    async def fake_check(url):
+        checked.append(url)
+        return respond(url)
+    async def fake_fetch(url, kind):
+        return model
+    monkeypatch.setattr(router, "_check", fake_check)
+    monkeypatch.setattr(router, "_fetch_loaded_model", fake_fetch)
+    return checked
+
+
+@pytest.mark.asyncio
+async def test_detect_honors_custom_lm_studio_url(monkeypatch):
+    router = HybridRouter(gemini_api_key="")
+    monkeypatch.setattr(router, "_admin_setting",
+        lambda key, default: {"lm_studio_url": "http://box:9999", "backend_type": "auto"}.get(key, default))
+    checked = _mock_net(monkeypatch, router, respond=lambda u: "box:9999" in u)
+    await router.detect()
+    assert router.lm_studio_url == "http://box:9999"
+    assert router._backend_name == "lm-studio"
+    assert router._backend.base_url == "http://box:9999"
+    assert any("box:9999/v1/models" in u for u in checked)
+
+
+@pytest.mark.asyncio
+async def test_backend_type_pins_ollama_skips_lm_studio(monkeypatch):
+    router = HybridRouter(gemini_api_key="")
+    monkeypatch.setattr(router, "_admin_setting",
+        lambda key, default: {"backend_type": "ollama"}.get(key, default))
+    checked = _mock_net(monkeypatch, router, respond=lambda u: True)  # everything would respond
+    await router.detect()
+    assert router._backend_name == "ollama"
+    # LM Studio must not even be probed for backend selection when pinned to ollama
+    assert not any("/v1/models" in u for u in checked)
+
+
+@pytest.mark.asyncio
+async def test_gemini_model_wired_into_backend_and_route(monkeypatch):
+    router = HybridRouter(gemini_api_key="test-key")
+    monkeypatch.setattr(router, "_admin_setting",
+        lambda key, default: {"gemini_model": "gemini-2.5-pro"}.get(key, default))
+    _mock_net(monkeypatch, router, respond=lambda u: False)  # no local backend
+    await router.detect()
+    assert router._gemini_model == "gemini-2.5-pro"
+    assert router._gemini_backend is not None
+    assert router._gemini_backend.model == "gemini-2.5-pro"
+    # a cloud-policy agent's route carries the configured model
+    _, model, route = router.select_backend("athena", "hi")
+    assert route == "cloud" and model == "gemini-2.5-pro"
+
+
 def test_unlimited_local_keeps_long_prompt_on_local():
     # With the local threshold lifted (0 = unlimited), a prompt that would
     # normally exceed LOCAL_MAX_TOKENS stays on the clean local path instead of
