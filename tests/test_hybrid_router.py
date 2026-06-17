@@ -13,6 +13,7 @@ from core.llm.tokenizer import estimate_tokens, estimate_messages
 from core.llm.hybrid_router import (
     HybridRouter, POLICY_LOCAL, POLICY_CLOUD, POLICY_CLAUDE, POLICY_AUTO,
     LOCAL_ONLY_AGENTS, CLOUD_ONLY_AGENTS, CLAUDE_AGENTS, LOCAL_MAX_TOKENS,
+    FLASH_MAX_TOKENS,
 )
 from core.llm.base import LLMBackend
 
@@ -678,3 +679,51 @@ def test_cloud_fallback_mode_validates_input():
     assert router._cloud_fallback_mode == "on-demand"
     router.set_cloud_fallback_mode("NEVER ")
     assert router._cloud_fallback_mode == "never"
+
+
+# ── Configurable routing thresholds (/admin: hybrid_local_max / hybrid_flash_max)
+
+def test_routing_thresholds_default_to_constants():
+    router = HybridRouter()
+    assert router._local_max == LOCAL_MAX_TOKENS
+    assert router._flash_max == FLASH_MAX_TOKENS
+
+
+def test_set_local_max_positive():
+    router = HybridRouter()
+    router.set_local_max(200000)
+    assert router._local_max == 200000
+
+
+def test_set_local_max_zero_means_unlimited():
+    router = HybridRouter()
+    router.set_local_max(0)
+    assert router._local_max == sys.maxsize
+    router.set_flash_max(-5)
+    assert router._flash_max == sys.maxsize
+
+
+def test_set_local_max_bad_value_falls_back_to_default():
+    router = HybridRouter()
+    router.set_local_max("not-a-number")
+    assert router._local_max == LOCAL_MAX_TOKENS
+    router.set_flash_max(None)
+    assert router._flash_max == FLASH_MAX_TOKENS
+
+
+def test_unlimited_local_keeps_long_prompt_on_local():
+    # With the local threshold lifted (0 = unlimited), a prompt that would
+    # normally exceed LOCAL_MAX_TOKENS stays on the clean local path instead of
+    # degrading to the truncated "local-fallback" tier.
+    router = HybridRouter()
+    router._local_available = True
+    router._backend = FakeBackend()
+    router._backend_name = "lm-studio"
+    long_prompt = "word " * (LOCAL_MAX_TOKENS * 4)
+    # default threshold → fallback tier
+    _, _, route_default = router.select_backend("jarvis", long_prompt)
+    assert route_default == "local-fallback"
+    # unlimited → clean local tier
+    router.set_local_max(0)
+    _, _, route_unlimited = router.select_backend("jarvis", long_prompt)
+    assert route_unlimited in ("local", "local-deep")
