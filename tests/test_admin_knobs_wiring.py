@@ -62,6 +62,32 @@ def test_orchestrator_autonomy_caps_honor_settings(monkeypatch):
     assert o.autonomy.budget.per_day == 7
 
 
+# ── system.log_level ──────────────────────────────────────────────────────────
+def test_setup_logging_honors_log_level(monkeypatch):
+    import logging
+    import core.log as log
+    monkeypatch.setattr("core.settings_db.get_value",
+                        lambda cat, key, default=None: "WARNING" if key == "log_level" else default)
+    try:
+        log.setup_logging()
+        assert logging.getLogger().level == logging.WARNING
+    finally:
+        log.setup_logging(logging.INFO)  # restore so other tests aren't affected
+
+
+# ── channels.rate_limit / web_enabled (wired in the web lifespan) ─────────────
+def test_lifespan_wires_rate_limit_and_web_enabled(monkeypatch):
+    from fastapi.testclient import TestClient
+    from agents import web
+    monkeypatch.setattr("core.settings_db.get_value",
+                        lambda cat, key, default=None:
+                        {"channels.rate_limit": 33, "channels.web_enabled": False}.get(f"{cat}.{key}", default))
+    with TestClient(web.app):
+        assert web.gateway._max_rate == 33
+        assert "web" not in web.gateway._channels      # disabled → not registered
+        assert "voice" in web.gateway._channels        # other channels unaffected
+
+
 # ── guardrails (security.guardrails_mode / scan_input / scan_output) ──────────
 @pytest.mark.asyncio
 async def test_orchestrator_guardrails_honors_settings(monkeypatch):

@@ -12,7 +12,15 @@ _LOG_DATE_FORMAT = "%Y-%m-%d %H:%M:%S"
 logger = logging.getLogger(__name__)
 
 
-def setup_logging(level: int = logging.INFO) -> None:
+def setup_logging(level: Optional[int] = None) -> None:
+    # When no level is passed, honor /admin → system.log_level (was always INFO).
+    if level is None:
+        try:
+            from .settings_db import get_value
+            name = str(get_value("system", "log_level", "INFO")).upper()
+            level = getattr(logging, name, logging.INFO)
+        except Exception:
+            level = logging.INFO
     logging.basicConfig(
         level=level,
         format=_LOG_FORMAT,
