@@ -48,6 +48,20 @@ def test_orchestrator_sandbox_honors_settings(monkeypatch):
     assert o.sandbox.allow_subprocess is False  # HF-6: host-exec stays off
 
 
+# ── autonomy (cap_per_action / daily_ceiling / interrupt_budget) ──────────────
+def test_orchestrator_autonomy_caps_honor_settings(monkeypatch):
+    monkeypatch.setattr("core.settings_db.get_value",
+                        _gv_factory({"autonomy.cap_per_action": 12.5,
+                                     "autonomy.daily_ceiling": 99.0,
+                                     "autonomy.interrupt_budget": 7}))
+    from core.config import JarvisConfig
+    from core.orchestrator import Orchestrator
+    o = Orchestrator(JarvisConfig())
+    assert o.autonomy.policy.cap_per_action == 12.5
+    assert o.autonomy.policy.daily_ceiling == 99.0
+    assert o.autonomy.budget.per_day == 7
+
+
 # ── guardrails (security.guardrails_mode / scan_input / scan_output) ──────────
 @pytest.mark.asyncio
 async def test_orchestrator_guardrails_honors_settings(monkeypatch):
