@@ -10,7 +10,7 @@ from typing import Optional
 
 import yaml
 
-from agents.core.paths import data_path, data_root
+from agents.core.paths import data_root  # config.py defines its own data_path() below
 
 # ── storage location + tunable limits (Q4) ───────────────────────────────────
 # Root directory for on-disk state (JSON stores, SQLite DBs, logs). Override
