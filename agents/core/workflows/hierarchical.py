@@ -17,7 +17,9 @@ from typing import Optional
 
 
 def _render(template: str, ctx: dict) -> str:
-    return re.sub(r"\{([^}]+)\}", lambda m: str(ctx.get(m.group(1), "")), template)
+    # Possessive `[^}]++` keeps the match linear (no O(n²) backtracking on input
+    # with unmatched `{`) — same capture/behavior. CodeQL #302.
+    return re.sub(r"\{([^}]++)\}", lambda m: str(ctx.get(m.group(1), "")), template)
 
 
 def _ok(text: str) -> bool:

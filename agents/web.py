@@ -1670,7 +1670,7 @@ async def admin_mcp_connect(name: str):
             "tools": [{"name": t.name, "description": t.description} for t in srv.tools],
         }
     except Exception:
-        logger.exception("MCP server probe failed: %s", name)
+        logger.exception("MCP server probe failed: %s", log_safe(name))
         return JSONResponse({"error": "internal error", "server": name, "code": 500}, status_code=500)
 
 
@@ -2276,7 +2276,7 @@ async def toggle_plugin(plugin_id: str):
     else:
         orch.permission_gate.enable(plugin_id)
         action = "enabled"
-    logger.info(f"Plugin {plugin_id} {action}")
+    logger.info("Plugin %s %s", log_safe(plugin_id), action)
     return _nocache_json({"id": plugin_id, "enabled": manifest.enabled, "action": action})
 
 
