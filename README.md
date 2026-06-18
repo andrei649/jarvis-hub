@@ -2,7 +2,7 @@
 
 ![Python 3.12](https://img.shields.io/badge/python-3.12-blue?logo=python&logoColor=white)
 ![License: MIT](https://img.shields.io/badge/license-MIT-green)
-![Tests](https://img.shields.io/badge/tests-2156%20passed-brightgreen?logo=pytest)
+![Tests](https://img.shields.io/badge/tests-2288%20passed-brightgreen?logo=pytest)
 ![Version](https://img.shields.io/badge/version-9.9.9-orange)
 
 > 17 specialized AI agents orchestrated through Jarvis, running on Bonobo WS + Pi 5, controlled by voice and web.
@@ -92,7 +92,7 @@ A separate, self-contained **Next.js + Deck.gl + Fastify** stack under [`worldvi
 python3 -m venv .venv && source .venv/bin/activate   # Windows: .venv\Scripts\activate
 pip install -r requirements-beta.txt                 # one install — full feature set
 python serve.py              # → http://127.0.0.1:8080
-python -m pytest             # 2156 passed, 1 skipped
+python -m pytest             # 2288 passed, 2 skipped
 ```
 
 _Linux/macOS shortcut:_ `./install.sh` does all of the above (venv + install + tests); `./start.sh` launches the server.
@@ -121,7 +121,7 @@ RAG injection; hot-path perf (SQLite WAL, event-loop offload, checkpoint debounc
 cache, complexity-based model tiering); autonomous proactive cortex (ORIZONT 6); security wedge (encrypted
 secrets, signed skills, reversible/irreversible approval split, quarantine/capability/kill-switch); competitive edge
 (workflow engine, model arena, quality monitor, review queue); living memory (bi-temporal KG, decay-forgetting,
-sleep-time consolidation). **2,156 tests passing** (+184 frontend JS tests).
+sleep-time consolidation). **2,288 tests passing** (+184 frontend JS tests).
 
 **Road to v1.0:** the v1.0 backlog (H1–H17) is **code-complete at 194/196 items (≈99% by story points)** —
 the only two open items (H12.14 fine-tuned agentic model, H13.3 speculative decoding) need the GPU host
