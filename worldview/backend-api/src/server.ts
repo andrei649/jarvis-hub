@@ -1,3 +1,4 @@
+import { pathToFileURL } from "node:url";
 import Fastify, { type FastifyReply, type FastifyRequest } from "fastify";
 import cors from "@fastify/cors";
 import websocket from "@fastify/websocket";
@@ -130,6 +131,11 @@ async function main() {
 }
 
 // Only auto-start when run directly (so tests can import buildServer()).
-if (import.meta.url === `file://${process.argv[1]}`) {
+// Use pathToFileURL (not `file://${argv[1]}`) so the check holds on Windows too,
+// where argv[1] is a backslash path (C:\…) and import.meta.url is file:///C:/… —
+// the naive concat never matches, so the API would silently never listen. Matches
+// the guard already used in mcp/src/server.ts.
+const entryPath = process.argv[1];
+if (entryPath && import.meta.url === pathToFileURL(entryPath).href) {
   void main();
 }
