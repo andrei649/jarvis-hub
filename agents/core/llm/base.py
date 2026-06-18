@@ -71,9 +71,12 @@ def strip_thinking(text: str) -> str:
         flags=re.DOTALL | re.IGNORECASE,
     )
 
-    # 3. Leading numbered-step blocks (stop at first blank line after steps)
+    # 3. Leading numbered-step blocks (stop at first blank line after steps).
+    # Each step line is newline-bounded ([ \t] then [^\n]*) so the pattern stays
+    # linear — the old `\d+\.\s+.+` let `\s+` span newlines and overlap `.+`,
+    # which CodeQL flagged as a super-linear (ReDoS-prone) regex (#1).
     cleaned = re.sub(
-        r"^(?:\d+\.\s+.+\n)+\n",
+        r"^(?:\d+\.[ \t][^\n]*\n)+\n",
         "",
         cleaned,
         flags=re.MULTILINE,

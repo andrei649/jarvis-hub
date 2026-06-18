@@ -94,6 +94,19 @@ def test_strip_plain_passthrough():
     assert strip_thinking("Just a normal reply.") == "Just a normal reply."
 
 
+def test_strip_leading_numbered_steps():
+    # a leading numbered-step block terminated by a blank line is dropped
+    assert strip_thinking("1. Plan it\n2. Execute\n\nFinal answer.") == "Final answer."
+
+
+def test_strip_numbered_steps_redos_safe():
+    # Pathological input for the old super-linear regex (many "N. …" lines, no
+    # terminating blank line). The linear pattern must return promptly and leave
+    # the text unchanged (no match → no strip), not hang.
+    pathological = "1. " + "a" * 50000
+    assert strip_thinking(pathological) == pathological
+
+
 # ── _finalize_stream decision logic ──────────────────────────────────────
 
 def test_finalize_prefers_emitted():
