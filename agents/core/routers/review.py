@@ -1,6 +1,7 @@
 """Human Review Queue endpoints (H10.25) — extracted from web.py (CLN-3)."""
 
-from fastapi import APIRouter, Request, Query
+from fastapi import APIRouter, Request, Query, Depends
+from agents.core.routers._deps import user_guard
 from fastapi.responses import JSONResponse
 
 from agents.core.web_helpers import nocache_json, error_json, logger
@@ -29,7 +30,7 @@ async def review_queue_stats():
     return nocache_json({"stats": q.stats()})
 
 
-@router.post("/api/review/flag")
+@router.post("/api/review/flag", dependencies=[Depends(user_guard)])
 async def review_queue_flag(req: Request):
     """Manually flag a trace for review. Body: {trace, reason?}."""
     orch = get_orch()
@@ -46,7 +47,7 @@ async def review_queue_flag(req: Request):
     return nocache_json({"ok": True, "item": q.flag(trace, (body or {}).get("reason", "manual"))})
 
 
-@router.post("/api/review/{item_id}/vote")
+@router.post("/api/review/{item_id}/vote", dependencies=[Depends(user_guard)])
 async def review_queue_vote(item_id: str, req: Request):
     """Record a thumbs up/down + rubric for a queued item."""
     orch = get_orch()
@@ -67,7 +68,7 @@ async def review_queue_vote(item_id: str, req: Request):
     return nocache_json({"ok": True, "item": item})
 
 
-@router.post("/api/review/{item_id}/dataset")
+@router.post("/api/review/{item_id}/dataset", dependencies=[Depends(user_guard)])
 async def review_queue_to_dataset(item_id: str, req: Request):
     """Promote a reviewed item into an eval dataset (H9.3b)."""
     orch = get_orch()

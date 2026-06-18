@@ -42,20 +42,7 @@ INTENTIONALLY_OPEN = {
 # Open mutating routes still awaiting a guard — SEC-3 backlog. Listed explicitly
 # so the debt is bounded and visible; this set shrinks (never grows) as SEC-3
 # lands guards and the snapshot flips those routes to user/admin.
-PENDING_GUARD = {
-    # SEC-3 batch 1 (admin: workflows CRUD, plugin toggle, heartbeat, traces/clear,
-    # oauth refresh, oracle sync/resolve, audit action) is DONE — removed below.
-    "POST /api/workflows/run", "POST /api/workflows/hierarchical",
-    "POST /api/kg/entities", "DELETE /api/kg/entities/{name}", "POST /api/kg/facts",
-    "POST /api/kg/ingest", "POST /api/kg/relations", "DELETE /api/kg/relations",
-    "POST /api/local-docs/index", "POST /api/reflection/run",
-    "POST /api/arena/run", "POST /api/arena/vote", "POST /api/autonomy/preview",
-    "POST /api/agent-templates/instantiate", "POST /api/memory/eval/run",
-    "POST /api/eval/datasets/run", "POST /api/review/flag",
-    "POST /api/review/{item_id}/vote", "POST /api/review/{item_id}/dataset",
-    "POST /api/security/scan-injection", "POST /api/security/spotlight",
-    "POST /api/llm/grammar", "POST /api/schedule/parse",
-}
+PENDING_GUARD = set()  # SEC-3 COMPLETE — every open mutator is now guarded or in INTENTIONALLY_OPEN.
 
 
 def _runtime_guards():

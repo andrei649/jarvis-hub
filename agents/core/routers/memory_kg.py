@@ -221,7 +221,7 @@ async def kg_entity(name: str):
     return nocache_json({"entity": ent, "relations": g.get_relations(name)})
 
 
-@router.post("/api/kg/entities")
+@router.post("/api/kg/entities", dependencies=[Depends(user_guard)])
 async def kg_upsert_entity(req: Request):
     """Create or update an entity (upsert). Body: {name, type, properties}."""
     g = _kg()
@@ -238,7 +238,7 @@ async def kg_upsert_entity(req: Request):
     return nocache_json({"ok": bool(ok), "entity": g.get_entity(name)})
 
 
-@router.delete("/api/kg/entities/{name}")
+@router.delete("/api/kg/entities/{name}", dependencies=[Depends(user_guard)])
 async def kg_delete_entity(name: str):
     """Delete an entity and any relations that touch it."""
     g = _kg()
@@ -249,7 +249,7 @@ async def kg_delete_entity(name: str):
     return nocache_json({"ok": True, "deleted": name})
 
 
-@router.post("/api/kg/relations")
+@router.post("/api/kg/relations", dependencies=[Depends(user_guard)])
 async def kg_add_relation(req: Request):
     """Create a relation. Body: {source, relation, target, properties}."""
     g = _kg()
@@ -268,7 +268,7 @@ async def kg_add_relation(req: Request):
     return nocache_json({"ok": bool(ok)})
 
 
-@router.delete("/api/kg/relations")
+@router.delete("/api/kg/relations", dependencies=[Depends(user_guard)])
 async def kg_delete_relation(source: str, relation: str, target: str):
     """Delete a specific relation (by source/relation/target)."""
     g = _kg()
@@ -281,7 +281,7 @@ async def kg_delete_relation(source: str, relation: str, target: str):
 
 # ── H14.1 Bi-temporal KG (valid-time + ingested-at; as-of recall) ─────────────
 
-@router.post("/api/kg/facts")
+@router.post("/api/kg/facts", dependencies=[Depends(user_guard)])
 async def kg_add_fact(req: Request):
     """Add a bi-temporal fact. Body: {subject, predicate, object, valid_from?,
     ingested_at?, multi?}. Single-valued predicates invalidate (not delete) a
@@ -325,7 +325,7 @@ async def kg_facts_history(subject: str, predicate: str = ""):
     return nocache_json({"subject": subject, "history": bt.history(subject, predicate)})
 
 
-@router.post("/api/kg/ingest")
+@router.post("/api/kg/ingest", dependencies=[Depends(user_guard)])
 async def kg_ingest(req: Request):
     """H12.6 — extract triples from text and write them to the KG immediately."""
     orch = get_orch()
@@ -353,7 +353,7 @@ async def memory_eval_corpus():
     })
 
 
-@router.post("/api/memory/eval/run")
+@router.post("/api/memory/eval/run", dependencies=[Depends(user_guard)])
 async def memory_eval_run():
     """H14.2 — run the harness with the offline keyword baseline answerer."""
     from agents.core.memory.eval import run_eval, keyword_answer

@@ -32,7 +32,7 @@ from agents.core.app_state import get_orch
 router = APIRouter(tags=["autonomy"])
 
 
-@router.post("/api/autonomy/preview")
+@router.post("/api/autonomy/preview", dependencies=[Depends(user_guard)])
 async def autonomy_preview(req: Request):
     """H12.5 — dry-run preview of an action (no execution). Body: a task dict."""
     from agents.core.autonomy.dry_run import preview_task

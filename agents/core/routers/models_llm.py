@@ -30,7 +30,7 @@ from pydantic import BaseModel, Field
 
 from core.settings_db import put_category
 
-from agents.core.routers._deps import admin_guard
+from agents.core.routers._deps import admin_guard, user_guard
 
 from agents.core.web_helpers import nocache_json
 from agents.core.app_state import get_orch
@@ -46,7 +46,7 @@ def _web():
     return sys.modules.get("agents.web")
 
 
-@router.post("/api/llm/grammar")
+@router.post("/api/llm/grammar", dependencies=[Depends(user_guard)])
 async def llm_grammar(req: Request):
     """Generate a GBNF grammar from a JSON schema or tool spec (constrained decoding)."""
     from agents.core.llm.grammar import json_schema_to_gbnf, tool_to_gbnf

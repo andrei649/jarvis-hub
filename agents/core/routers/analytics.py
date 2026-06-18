@@ -19,7 +19,7 @@ from fastapi import APIRouter, Query, Depends
 
 from agents.core.web_helpers import nocache_json, error_json, safe_reflect
 from agents.core.app_state import get_orch
-from agents.core.routers._deps import admin_guard
+from agents.core.routers._deps import admin_guard, user_guard
 
 
 router = APIRouter(tags=["observe"])
@@ -89,7 +89,7 @@ async def reflection_status():
     return nocache_json(orch.reflector.status())
 
 
-@router.post("/api/reflection/run")
+@router.post("/api/reflection/run", dependencies=[Depends(user_guard)])
 async def reflection_run():
     """Trigger nightly reflection manually (H5.15)."""
     orch = get_orch()
