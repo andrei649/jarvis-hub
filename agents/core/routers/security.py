@@ -10,7 +10,7 @@ import asyncio
 from fastapi import APIRouter, Depends, Request, Query
 from fastapi.responses import JSONResponse
 
-from agents.core.routers._deps import admin_guard
+from agents.core.routers._deps import admin_guard, user_guard
 
 from agents.core.web_helpers import nocache_json
 from agents.core.app_state import get_orch
@@ -19,7 +19,7 @@ from agents.core.app_state import get_orch
 router = APIRouter(tags=["security"])
 
 
-@router.post("/api/security/spotlight")
+@router.post("/api/security/spotlight", dependencies=[Depends(user_guard)])
 async def security_spotlight(req: Request):
     """H17.1 — datamark untrusted content + flag prompt-injection attempts."""
     from agents.core.security.quarantine import spotlight
@@ -33,7 +33,7 @@ async def security_spotlight(req: Request):
     return nocache_json(spotlight(text, (body or {}).get("source", "untrusted")))
 
 
-@router.post("/api/security/scan-injection")
+@router.post("/api/security/scan-injection", dependencies=[Depends(user_guard)])
 async def security_scan_injection(req: Request):
     """H17.1 — return prompt-injection patterns found in text (empty = clean)."""
     from agents.core.security.quarantine import detect_injection

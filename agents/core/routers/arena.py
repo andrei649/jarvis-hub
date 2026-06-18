@@ -1,6 +1,7 @@
 """Model Arena / Blind Comparison endpoints (H10.19) — extracted from web.py (CLN-3)."""
 
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, Request, Depends
+from agents.core.routers._deps import user_guard
 from fastapi.responses import JSONResponse
 
 from agents.core.web_helpers import nocache_json, error_json
@@ -10,7 +11,7 @@ from agents.core.app_state import get_orch
 router = APIRouter(tags=["arena"])
 
 
-@router.post("/api/arena/run")
+@router.post("/api/arena/run", dependencies=[Depends(user_guard)])
 async def arena_run(req: Request):
     """Create a blind match. Body: {query, candidates:{model:response}} or
     {query, agents:[id,...]} to run the query against those agents live."""
@@ -42,7 +43,7 @@ async def arena_run(req: Request):
     return nocache_json({"ok": True, "match": match})
 
 
-@router.post("/api/arena/vote")
+@router.post("/api/arena/vote", dependencies=[Depends(user_guard)])
 async def arena_vote(req: Request):
     """Vote for a label; reveals the mapping and updates ELO/win-rate."""
     orch = get_orch()

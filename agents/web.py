@@ -1152,7 +1152,7 @@ async def agent_templates_list():
     return _nocache_json({"templates": list_templates()})
 
 
-@app.post("/api/agent-templates/instantiate")
+@app.post("/api/agent-templates/instantiate", dependencies=[Depends(_user_guard)])
 async def agent_templates_instantiate(req: Request):
     """H10.29 — render a ready-to-save agent config from a template.
 
@@ -1221,7 +1221,7 @@ async def generate_workflow_step(body: GenerateStepBody):
     return _nocache_json({"ok": True, "step": cfg})
 
 
-@app.post("/api/workflows/hierarchical")
+@app.post("/api/workflows/hierarchical", dependencies=[Depends(_user_guard)])
 async def workflow_hierarchical(req: Request):
     """H10.11 — run a hierarchical workflow: a manager coordinates a crew."""
     if not orch:
@@ -1419,7 +1419,7 @@ async def digest_run(body: DigestRunBody):
     return _nocache_json(await agg.run(body.topic, limit=body.limit))
 
 
-@app.post("/api/schedule/parse")
+@app.post("/api/schedule/parse", dependencies=[Depends(_user_guard)])
 async def schedule_parse(req: Request):
     """H10.27 — parse a natural-language schedule into a cron expression."""
     from agents.core.autonomy.nl_schedule import parse_schedule
@@ -2073,7 +2073,7 @@ async def compare_dataset_runs(name: str, a: str = Query(...), b: str = Query(..
     return _nocache_json(_get_dataset_store().compare(name, a, b))
 
 
-@app.post("/api/eval/datasets/run")
+@app.post("/api/eval/datasets/run", dependencies=[Depends(_user_guard)])
 async def run_eval_dataset(body: DatasetRunBody):
     """Run a dataset version through the live orchestrator and record the run."""
     if not orch:
@@ -2112,7 +2112,7 @@ class WorkflowRunBody(BaseModel):
     input: str = ""
 
 
-@app.post("/api/workflows/run")
+@app.post("/api/workflows/run", dependencies=[Depends(_user_guard)])
 async def run_workflow(body: WorkflowRunBody):
     """Execute a named workflow pipeline (H5.6)."""
     if not orch or not hasattr(orch, "workflow_engine") or not orch.workflow_engine:

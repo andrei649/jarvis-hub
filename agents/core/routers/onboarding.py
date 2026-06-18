@@ -4,7 +4,8 @@
 folder (selected by key, never a raw request path) into memory, offline.
 """
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
+from agents.core.routers._deps import user_guard
 from pydantic import BaseModel, Field
 
 from agents.core.web_helpers import nocache_json
@@ -36,7 +37,7 @@ async def local_docs_status():
     return nocache_json({**_local_docs_last, "available": sorted(_configured_doc_folders())})
 
 
-@router.post("/api/local-docs/index")
+@router.post("/api/local-docs/index", dependencies=[Depends(user_guard)])
 async def local_docs_index(body: LocalDocsIndexBody):
     """Index a pre-configured local folder (by key) into memory (offline)."""
     global _local_docs_last
