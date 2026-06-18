@@ -114,7 +114,7 @@ async def kill_switch_set(req: Request):
 
 # ── H17.4 Externally-anchored audit + intent attribution ──────────────────────
 
-@router.post("/api/security/audit/action")
+@router.post("/api/security/audit/action", dependencies=[Depends(admin_guard)])
 async def audit_record_action(req: Request):
     """Record a signed action with causal intent attribution (why it happened)."""
     orch = get_orch()

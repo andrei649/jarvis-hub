@@ -84,9 +84,9 @@ def test_endpoints():
                 return
             web.orch.intent_log.clear()
             web.orch.transparency.clear()
-            assert c.post("/api/security/audit/action", json={"actor": "x"}).status_code == 400
+            assert c.post("/api/security/audit/action", json={"actor": "x"}, headers=hdr).status_code == 400
             rec = c.post("/api/security/audit/action",
-                         json={"actor": "jarvis", "action": "reply", "why": "user asked"})
+                         json={"actor": "jarvis", "action": "reply", "why": "user asked"}, headers=hdr)
             assert rec.status_code == 200 and rec.json()["entry"]["signature"]
 
             intent = c.get("/api/security/audit/intent")

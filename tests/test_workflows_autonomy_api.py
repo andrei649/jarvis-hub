@@ -41,6 +41,9 @@ def _isolated_wf_store(tmp_path, monkeypatch):
     """Each test gets its own WorkflowStore backed by a tmp directory."""
     from core.workflows.storage import WorkflowStore
     monkeypatch.setattr(web, "_wf_store_instance", WorkflowStore(tmp_path))
+    # SEC-3: workflow CRUD is admin-guarded now; these tests exercise endpoint
+    # behavior, not auth, so bypass the admin guard (as conftest does for user).
+    monkeypatch.setitem(web.app.dependency_overrides, web._admin_guard, lambda: None)
 
 
 def _mock_orch() -> MagicMock:
