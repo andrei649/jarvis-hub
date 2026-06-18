@@ -13,10 +13,17 @@ from typing import Optional
 
 try:
     from apscheduler.schedulers.asyncio import AsyncIOScheduler
-    from apscheduler.schedulers import SchedulerNotRunningError
+    # APScheduler 3.x defines this under `.base`; importing it from the package
+    # root fails there, which used to leave SchedulerNotRunningError = None and turn
+    # `except SchedulerNotRunningError` into `except None` → TypeError (CodeQL #26).
+    from apscheduler.schedulers.base import SchedulerNotRunningError
 except ImportError:
     AsyncIOScheduler = None
-    SchedulerNotRunningError = None
+
+    # Keep the name bound to a real exception type so the `except` clause in stop()
+    # is always valid (never None) even when APScheduler isn't installed.
+    class SchedulerNotRunningError(Exception):  # type: ignore[no-redef]
+        pass
 
 logger = logging.getLogger("jarvis.heartbeat")
 
