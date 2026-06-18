@@ -23,6 +23,8 @@ import os
 from datetime import datetime, timezone
 from typing import Optional
 
+from agents.core.paths import data_path
+
 # Using the unified ErrorLog structure from core.errors
 from ..errors import ErrorLog
 
@@ -41,7 +43,7 @@ def persist_problem(error_log: ErrorLog) -> None:
 
     # Locate cabinet root directory relative to this file
     base_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
-    problems_path = os.path.join(base_dir, "memory_logs", "problems.jsonl")
+    problems_path = str(data_path("problems.jsonl"))
 
     try:
         os.makedirs(os.path.dirname(problems_path), exist_ok=True)
@@ -86,9 +88,9 @@ def sync_problems_to_diagnostics(output_path: Optional[str] = None, problems_pat
     base_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
     if output_path is None:
-        output_path = os.path.join(base_dir, "memory_logs", "diagnostics.md")
+        output_path = str(data_path("diagnostics.md"))
     if problems_path is None:
-        problems_path = os.path.join(base_dir, "memory_logs", "problems.jsonl")
+        problems_path = str(data_path("problems.jsonl"))
 
     # Load problems
     problems = []

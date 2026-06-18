@@ -40,6 +40,8 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Optional
 
+from agents.core.paths import data_path
+
 from .normalizer import NormalizedMessage
 
 logger = logging.getLogger("jarvis.ingestion.embedder")
@@ -211,7 +213,7 @@ class Embedder:
         base_url = os.getenv("EMBED_BASE_URL", "http://localhost:1234")
         if cache_dir is None:
             _repo_root = Path(__file__).resolve().parent.parent.parent.parent
-            _default_cache = _repo_root / "memory_logs" / "embedding_cache" / "recall"
+            _default_cache = data_path("embedding_cache", "recall")
             cache_dir = os.getenv("EMBED_CACHE_DIR") or str(_default_cache)
         return cls(backend=backend, model=model, cache_dir=cache_dir,
                    base_url=base_url, max_retries=1, backoff_base=0.2, backoff_max=1.0)

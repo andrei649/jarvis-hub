@@ -7,9 +7,11 @@ import asyncio
 import logging
 from typing import Callable, Optional
 
-from .wake_word import WakeWordDetector
+from agents.core.paths import data_path
+
 from .stt import STTEngine
 from .tts import TTSEngine
+from .wake_word import WakeWordDetector
 
 logger = logging.getLogger("jarvis.voice")
 
@@ -62,9 +64,10 @@ class VoicePipeline:
     async def _record_audio(self) -> Optional[str]:
         """Record from mic until silence. Returns temp file path."""
         try:
-            import pyaudio
             import wave
+
             import numpy as np
+            import pyaudio
 
             CHUNK = 1024
             FORMAT = pyaudio.paInt16
@@ -129,4 +132,4 @@ class VoicePipeline:
             logger.error(f"Playback error: {e}")
 
 
-TEMP_DIR = __import__("pathlib").Path(__file__).parent.parent.parent / "memory_logs" / "audio"
+TEMP_DIR = data_path("audio")

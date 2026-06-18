@@ -28,9 +28,11 @@ import json
 import logging
 import os
 from collections import Counter
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Optional
+
+from agents.core.paths import data_path
 
 logger = logging.getLogger("jarvis.autonomy.log_scanner")
 
@@ -267,7 +269,7 @@ class LogBugScanner:
             base = os.path.dirname(
                 os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
             )
-            report_dir = os.path.join(base, "memory_logs", "reports")
+            report_dir = str(data_path("reports"))
         try:
             os.makedirs(report_dir, exist_ok=True)
         except OSError:

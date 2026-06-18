@@ -26,9 +26,11 @@ import time
 from pathlib import Path
 from typing import Optional, Union
 
+from agents.core.paths import data_path
+
 from .persistence import JsonStore
 
-DEFAULT_PATH = Path("memory_logs/webhooks.json")
+DEFAULT_PATH = data_path("webhooks.json")
 
 
 def compute_signature(secret: str, body: Union[bytes, str]) -> str:

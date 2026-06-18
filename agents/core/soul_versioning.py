@@ -14,14 +14,16 @@ from __future__ import annotations
 
 import difflib
 import hashlib
-import json
 import random
 import time
 from pathlib import Path
-from .persistence import JsonStore
 from typing import Optional
 
-DEFAULT_PATH = Path("memory_logs/soul_versions.json")
+from agents.core.paths import data_path
+
+from .persistence import JsonStore
+
+DEFAULT_PATH = data_path("soul_versions.json")
 
 
 def _hash(content: str) -> str:

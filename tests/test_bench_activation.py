@@ -48,6 +48,7 @@ def _seed(orch, agent_id, n, success=True):
 def test_promote_bench_agent_returns_true_and_registers(tmp_path, monkeypatch):
     """promote_bench_agent should add the bench agent to self.agents and the routing table."""
     monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("JARVIS_HOME", str(tmp_path / "memory_logs"))  # F-08: isolate runtime state per-test
     # Copy agents/_system/agents.yaml to tmp_path so config loads from here,
     # and create a minimal agents dir so the SOUL stub path is writable.
     (tmp_path / "agents" / "_system").mkdir(parents=True)
@@ -73,6 +74,7 @@ def test_promote_bench_agent_returns_true_and_registers(tmp_path, monkeypatch):
 def test_promote_bench_agent_rejects_path_traversal(tmp_path, monkeypatch):
     """BUG-9: a bench_id that isn't a plain identifier is rejected (no path escape)."""
     monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("JARVIS_HOME", str(tmp_path / "memory_logs"))  # F-08: isolate runtime state per-test
     (tmp_path / "agents" / "_system").mkdir(parents=True)
     import shutil
     shutil.copy(
@@ -91,6 +93,7 @@ def test_promote_bench_agent_rejects_path_traversal(tmp_path, monkeypatch):
 def test_promote_bench_agent_adds_to_routing_table(tmp_path, monkeypatch):
     """The promoted agent should be wake-word routable."""
     monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("JARVIS_HOME", str(tmp_path / "memory_logs"))  # F-08: isolate runtime state per-test
     (tmp_path / "agents" / "_system").mkdir(parents=True)
     import shutil
     shutil.copy(
@@ -110,6 +113,7 @@ def test_promote_bench_agent_adds_to_routing_table(tmp_path, monkeypatch):
 def test_promote_bench_agent_writes_soul_stub(tmp_path, monkeypatch):
     """When no SOUL.md exists, a stub should be created."""
     monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("JARVIS_HOME", str(tmp_path / "memory_logs"))  # F-08: isolate runtime state per-test
     (tmp_path / "agents" / "_system").mkdir(parents=True)
     import shutil
     shutil.copy(
@@ -134,6 +138,7 @@ def test_promote_bench_agent_writes_soul_stub(tmp_path, monkeypatch):
 def test_promote_bench_agent_soul_not_overwritten(tmp_path, monkeypatch):
     """If a SOUL.md already exists it should be left untouched."""
     monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("JARVIS_HOME", str(tmp_path / "memory_logs"))  # F-08: isolate runtime state per-test
     (tmp_path / "agents" / "_system").mkdir(parents=True)
     import shutil
     shutil.copy(
@@ -159,6 +164,7 @@ def test_promote_bench_agent_soul_not_overwritten(tmp_path, monkeypatch):
 def test_promote_bench_agent_idempotent(tmp_path, monkeypatch):
     """Calling promote_bench_agent twice returns False on second call, no crash."""
     monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("JARVIS_HOME", str(tmp_path / "memory_logs"))  # F-08: isolate runtime state per-test
     (tmp_path / "agents" / "_system").mkdir(parents=True)
     import shutil
     shutil.copy(
@@ -181,6 +187,7 @@ def test_promote_bench_agent_idempotent(tmp_path, monkeypatch):
 def test_promote_bench_agent_routing_table_idempotent(tmp_path, monkeypatch):
     """Double promotion doesn't duplicate the routing table entry."""
     monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("JARVIS_HOME", str(tmp_path / "memory_logs"))  # F-08: isolate runtime state per-test
     (tmp_path / "agents" / "_system").mkdir(parents=True)
     import shutil
     shutil.copy(
@@ -214,6 +221,7 @@ def test_auto_promote_off_no_promotion_but_suggestions_visible(tmp_path, monkeyp
     """With auto_promote OFF (default), _record_interactions must NOT promote
     even when the threshold is crossed, but suggestions are still returned."""
     monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("JARVIS_HOME", str(tmp_path / "memory_logs"))  # F-08: isolate runtime state per-test
     (tmp_path / "agents" / "_system").mkdir(parents=True)
     import shutil
     shutil.copy(
@@ -247,6 +255,7 @@ def test_auto_promote_on_promotes_when_threshold_met(tmp_path, monkeypatch):
     """With auto_promote ON, _record_interactions must promote bruce once the
     vision threshold (20) is crossed."""
     monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("JARVIS_HOME", str(tmp_path / "memory_logs"))  # F-08: isolate runtime state per-test
     (tmp_path / "agents" / "_system").mkdir(parents=True)
     import shutil
     shutil.copy(
@@ -271,6 +280,7 @@ def test_auto_promote_on_promotes_when_threshold_met(tmp_path, monkeypatch):
 def test_auto_promote_on_below_threshold_no_promotion(tmp_path, monkeypatch):
     """auto_promote ON but below threshold: still no promotion."""
     monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("JARVIS_HOME", str(tmp_path / "memory_logs"))  # F-08: isolate runtime state per-test
     (tmp_path / "agents" / "_system").mkdir(parents=True)
     import shutil
     shutil.copy(
@@ -294,6 +304,7 @@ def test_auto_promote_on_below_threshold_no_promotion(tmp_path, monkeypatch):
 def test_promoted_agent_is_wake_word_routable(tmp_path, monkeypatch):
     """After promotion, the router should resolve 'bruce' as a wake word."""
     monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("JARVIS_HOME", str(tmp_path / "memory_logs"))  # F-08: isolate runtime state per-test
     (tmp_path / "agents" / "_system").mkdir(parents=True)
     import shutil
     shutil.copy(
