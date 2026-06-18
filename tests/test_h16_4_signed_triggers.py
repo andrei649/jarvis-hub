@@ -56,12 +56,14 @@ def test_list_masks_signing_secret(tmp_path):
 
 # ── endpoint round-trip ──────────────────────────────────────────────────────
 
-def test_signed_webhook_endpoint():
+def test_signed_webhook_endpoint(monkeypatch):
     from agents import web
+    monkeypatch.setattr(web, "ADMIN_TOKEN", "test-admin-secret")  # SEC-1: management is admin-only
+    _admin = {"X-Admin-Token": "test-admin-secret"}
     with TestClient(web.app) as c:
         if web.orch is None:
             return
-        created = c.post("/api/webhooks", json={"target": "jarvis", "signed": True})
+        created = c.post("/api/webhooks", json={"target": "jarvis", "signed": True}, headers=_admin)
         assert created.status_code == 200
         rec = created.json()
         hook_id, secret = rec["id"], rec["signing_secret"]
@@ -91,4 +93,4 @@ def test_signed_webhook_endpoint():
                           headers={"X-Webhook-Token": rec["token"]}).status_code == 401
         finally:
             web.orch.handle_input = orig
-        c.delete(f"/api/webhooks/{hook_id}")
+        c.delete(f"/api/webhooks/{hook_id}", headers=_admin)
