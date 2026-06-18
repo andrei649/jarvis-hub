@@ -7,7 +7,6 @@ import base64
 import hashlib
 import json
 import logging
-import os
 import secrets
 import time
 from pathlib import Path
@@ -16,12 +15,14 @@ from typing import Optional
 import httpx
 from cryptography.fernet import Fernet
 
+from agents.core.paths import data_path
+
 logger = logging.getLogger("jarvis.oauth")
 
 _pending_verifiers: dict[str, str] = {}
 _expected_states: set[str] = set()
 
-TOKEN_DIR = Path(__file__).resolve().parent.parent.parent.parent / "memory_logs" / "tokens"
+TOKEN_DIR = data_path("tokens")
 TOKEN_DIR.mkdir(parents=True, exist_ok=True)
 
 

@@ -11,6 +11,9 @@ import json
 import logging
 from pathlib import Path
 from typing import Optional
+
+from agents.core.paths import data_path
+
 from .pipeline import IngestionPipeline
 
 logger = logging.getLogger("jarvis.ingestion.watcher")
@@ -22,11 +25,11 @@ class IngestionWatcher:
     def __init__(
         self,
         data_root: str = "data",
-        state_path: str = "memory_logs/archive/watcher_state.json",
+        state_path: str = None,
         pipeline: Optional[IngestionPipeline] = None,
     ):
         self.data_root = Path(data_root)
-        self.state_path = Path(state_path)
+        self.state_path = Path(state_path) if state_path is not None else data_path("archive", "watcher_state.json")
         self.pipeline = pipeline or IngestionPipeline(data_root=data_root)
         self.state_path.parent.mkdir(parents=True, exist_ok=True)
 

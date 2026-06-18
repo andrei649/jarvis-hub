@@ -14,14 +14,16 @@ typing. Storage is a small JSON file (atomic writes), fully offline-testable.
 
 from __future__ import annotations
 
-import json
 import re
 import time
 from pathlib import Path
-from ..persistence import JsonStore
 from typing import Optional
 
-DEFAULT_PATH = Path("memory_logs/entities.json")
+from agents.core.paths import data_path
+
+from ..persistence import JsonStore
+
+DEFAULT_PATH = data_path("entities.json")
 
 # Type hints by keyword — cheap classification for the heuristic extractor.
 _TYPE_HINTS = {

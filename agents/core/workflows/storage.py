@@ -8,9 +8,11 @@ import time
 from pathlib import Path
 from typing import Optional
 
+from agents.core.paths import data_path
+
 from .pipeline import Pipeline
 
-_DEFAULT_DIR = Path("memory_logs/workflows")
+_DEFAULT_DIR = data_path("workflows")
 
 
 class WorkflowStore:

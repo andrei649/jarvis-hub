@@ -10,16 +10,17 @@ ring kept on disk.
 
 from __future__ import annotations
 
-import json
 import time
 from collections import deque
 from pathlib import Path
-from .persistence import JsonStore
 from typing import Optional
 
-from .config import RUN_HISTORY_MAX_PER_AGENT as MAX_PER_AGENT  # Q4: centralized limit
+from agents.core.paths import data_path
 
-DEFAULT_PATH = Path("memory_logs/run_history.json")
+from .config import RUN_HISTORY_MAX_PER_AGENT as MAX_PER_AGENT  # Q4: centralized limit
+from .persistence import JsonStore
+
+DEFAULT_PATH = data_path("run_history.json")
 
 
 class RunHistory(JsonStore):

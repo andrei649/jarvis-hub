@@ -17,15 +17,17 @@ Two controls the agent **cannot escalate**, aligned with EU AI Act Art.14
 
 from __future__ import annotations
 
-import json
 import secrets
 import threading
 import time
 from pathlib import Path
-from ..persistence import JsonStore
 from typing import Optional
 
-DEFAULT_KILL_PATH = Path("memory_logs/kill_switch.json")
+from agents.core.paths import data_path
+
+from ..persistence import JsonStore
+
+DEFAULT_KILL_PATH = data_path("kill_switch.json")
 GLOBAL = "global"
 
 

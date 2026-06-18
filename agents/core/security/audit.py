@@ -9,9 +9,10 @@ import json
 import logging
 import sqlite3
 import threading
-import time
 from pathlib import Path
 from typing import Optional
+
+from agents.core.paths import data_path
 
 from .types import ScanFinding, SecurityEvent, SecurityEventType, ThreatLevel
 
@@ -19,8 +20,8 @@ logger = logging.getLogger(__name__)
 
 
 class AuditLogger:
-    def __init__(self, db_path: str = "memory_logs/security/audit.db"):
-        self._db_path = Path(db_path)
+    def __init__(self, db_path: str = None):
+        self._db_path = Path(db_path) if db_path is not None else data_path("security", "audit.db")
         self._db_path.parent.mkdir(parents=True, exist_ok=True)
         # threading.Lock serialises all writes; check_same_thread=False allows
         # the connection to be used from asyncio thread-pool workers (H7.4).

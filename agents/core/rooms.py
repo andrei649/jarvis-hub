@@ -14,12 +14,14 @@ import re
 import time
 import uuid
 from pathlib import Path
-from .persistence import JsonStore
 from typing import Optional
 
-from .config import ROOM_HISTORY_CAP as _HISTORY_CAP  # Q4: centralized limit
+from agents.core.paths import data_path
 
-DEFAULT_PATH = Path("memory_logs/rooms.json")
+from .config import ROOM_HISTORY_CAP as _HISTORY_CAP  # Q4: centralized limit
+from .persistence import JsonStore
+
+DEFAULT_PATH = data_path("rooms.json")
 _MENTION = re.compile(r"@([A-Za-z0-9_\-]+)")
 
 

@@ -18,7 +18,9 @@ from __future__ import annotations
 import logging
 import os
 
-from .autonomy.digest import build_morning_brief, build_evening_retro
+from agents.core.paths import data_path
+
+from .autonomy.digest import build_evening_retro, build_morning_brief
 
 logger = logging.getLogger("jarvis.orchestrator")
 
@@ -146,7 +148,7 @@ class SchedulerService:
             return
         try:
             base = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-            problems_path = os.path.join(base, "..", "memory_logs", "problems.jsonl")
+            problems_path = str(data_path("problems.jsonl"))
             result = self._orch.log_scanner.quick_scan(problems_path)
             if result.healthy:
                 return
@@ -177,7 +179,7 @@ class SchedulerService:
             return
         try:
             base = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-            problems_path = os.path.join(base, "..", "memory_logs", "problems.jsonl")
+            problems_path = str(data_path("problems.jsonl"))
             result = self._orch.log_scanner.hourly_scan(problems_path)
             from .autonomy.error_logger import sync_problems_to_diagnostics
             sync_problems_to_diagnostics()
@@ -205,7 +207,7 @@ class SchedulerService:
             return
         try:
             base = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-            problems_path = os.path.join(base, "..", "memory_logs", "problems.jsonl")
+            problems_path = str(data_path("problems.jsonl"))
             result = self._orch.log_scanner.daily_scan(problems_path)
             logger.info(
                 f"Daily log scan: {result.total_errors} errors, "

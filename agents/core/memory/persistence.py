@@ -4,9 +4,10 @@ persistence.py — Memory persistence: saves/loads conversation history across r
 
 import json
 import logging
-from pathlib import Path
 
-MEMORY_DIR = Path("memory_logs")
+from agents.core.paths import data_root
+
+MEMORY_DIR = data_root()
 
 logger = logging.getLogger("jarvis.persistence")
 
