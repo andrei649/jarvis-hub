@@ -75,6 +75,16 @@ def test_agent_soul_endpoint(client):
 
 
 def test_plugin_toggle_endpoint(client):
+    # SEC-3: PUT /plugins/{id}/toggle is admin-guarded now; this test checks toggle
+    # behavior, not auth, so bypass the admin guard for it.
+    web.app.dependency_overrides[web._admin_guard] = lambda: None
+    try:
+        _plugin_toggle_body(client)
+    finally:
+        web.app.dependency_overrides.pop(web._admin_guard, None)
+
+
+def _plugin_toggle_body(client):
     get_resp = client.get("/plugins")
     assert get_resp.status_code == 200
     plugins = get_resp.json()["plugins"]

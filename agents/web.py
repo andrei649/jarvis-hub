@@ -2169,7 +2169,7 @@ class WorkflowSaveBody(BaseModel):
     steps: list[dict] = []
 
 
-@app.post("/api/workflows")
+@app.post("/api/workflows", dependencies=[Depends(_admin_guard)])
 async def create_workflow(body: WorkflowSaveBody):
     """Create or update a user-defined workflow pipeline (H9.1)."""
     if not orch:
@@ -2191,7 +2191,7 @@ async def create_workflow(body: WorkflowSaveBody):
     return _nocache_json(saved)
 
 
-@app.put("/api/workflows/{pipeline_id}")
+@app.put("/api/workflows/{pipeline_id}", dependencies=[Depends(_admin_guard)])
 async def update_workflow(pipeline_id: str, body: WorkflowSaveBody):
     """Update an existing user-defined workflow pipeline (H9.1)."""
     if not orch:
@@ -2213,7 +2213,7 @@ async def update_workflow(pipeline_id: str, body: WorkflowSaveBody):
     return _nocache_json(saved)
 
 
-@app.delete("/api/workflows/{pipeline_id}")
+@app.delete("/api/workflows/{pipeline_id}", dependencies=[Depends(_admin_guard)])
 async def delete_workflow(pipeline_id: str):
     """Delete a user-defined workflow pipeline (H9.1)."""
     if not orch:
@@ -2264,7 +2264,7 @@ async def list_plugins():
     return _nocache_json({"plugins": plugins, "total": len(plugins)})
 
 
-@app.put("/plugins/{plugin_id}/toggle")
+@app.put("/plugins/{plugin_id}/toggle", dependencies=[Depends(_admin_guard)])
 async def toggle_plugin(plugin_id: str):
     """Toggle a plugin's enabled state."""
     manifest = orch.permission_gate.plugins.get(plugin_id)
@@ -2359,7 +2359,7 @@ async def heartbeat_status():
     return _nocache_json(orch.heartbeat_scheduler.get_status())
 
 
-@app.post("/heartbeat/{agent_id}/start")
+@app.post("/heartbeat/{agent_id}/start", dependencies=[Depends(_admin_guard)])
 async def heartbeat_start(agent_id: str):
     """Start a heartbeat for an agent."""
     if agent_id not in orch.agents:
@@ -2372,7 +2372,7 @@ async def heartbeat_start(agent_id: str):
         raise HTTPException(status_code=400, detail=f"Failed to start heartbeat for '{agent_id}'")
 
 
-@app.post("/heartbeat/{agent_id}/stop")
+@app.post("/heartbeat/{agent_id}/stop", dependencies=[Depends(_admin_guard)])
 async def heartbeat_stop(agent_id: str):
     """Stop a heartbeat for an agent."""
     if agent_id not in orch.agents:
@@ -2385,7 +2385,7 @@ async def heartbeat_stop(agent_id: str):
         raise HTTPException(status_code=400, detail=f"Failed to stop heartbeat for '{agent_id}'")
 
 
-@app.post("/heartbeat/{agent_id}/run")
+@app.post("/heartbeat/{agent_id}/run", dependencies=[Depends(_admin_guard)])
 async def heartbeat_run(agent_id: str):
     """Run a heartbeat immediately."""
     if agent_id not in orch.agents:

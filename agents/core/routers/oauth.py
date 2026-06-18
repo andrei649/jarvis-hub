@@ -20,12 +20,13 @@ singleton remains.
 
 import os
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
 from agents.core.web_helpers import nocache_json
 from agents.core.app_state import get_orch
+from agents.core.routers._deps import admin_guard
 
 from core.plugins.oauth import (
     init_from_env, get_google_auth_url, get_spotify_auth_url,
@@ -93,7 +94,7 @@ async def oauth_auth_url(service: str = ""):
     return {"url": info["url"]()}
 
 
-@router.post("/api/oauth/refresh")
+@router.post("/api/oauth/refresh", dependencies=[Depends(admin_guard)])
 async def oauth_refresh(service: str = ""):
     if service == "spotify":
         token = await refresh_spotify_token()
@@ -118,7 +119,7 @@ async def oracle_status():
     return nocache_json(bridge.status())
 
 
-@router.post("/api/oracle/sync")
+@router.post("/api/oracle/sync", dependencies=[Depends(admin_guard)])
 async def oracle_sync():
     orch = get_orch()
     bridge = getattr(orch, "oracle_bridge", None)
@@ -138,7 +139,7 @@ async def oracle_conflicts():
     return nocache_json({"conflicts": conflicts})
 
 
-@router.post("/api/oracle/conflicts/resolve")
+@router.post("/api/oracle/conflicts/resolve", dependencies=[Depends(admin_guard)])
 async def oracle_resolve_conflicts():
     orch = get_orch()
     bridge = getattr(orch, "oracle_bridge", None)

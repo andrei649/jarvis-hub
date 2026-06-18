@@ -15,10 +15,11 @@ web-module globals. The cost/model-tier handlers are pure leaf calls into
 `core.cost_tracker`.
 """
 
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, Query, Depends
 
 from agents.core.web_helpers import nocache_json, error_json, safe_reflect
 from agents.core.app_state import get_orch
+from agents.core.routers._deps import admin_guard
 
 
 router = APIRouter(tags=["observe"])
@@ -153,7 +154,7 @@ async def get_trace(trace_id: str):
     return nocache_json(item)
 
 
-@router.post("/api/traces/clear")
+@router.post("/api/traces/clear", dependencies=[Depends(admin_guard)])
 async def clear_traces():
     """Flush all traces from the in-memory ring buffer."""
     orch = get_orch()

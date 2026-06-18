@@ -227,10 +227,13 @@ def wf_client(tmp_path):
     # the app lifespan, whose shutdown joins background threads and can hang under
     # full-suite ordering (global orch leak). These endpoints only need the
     # injected mock orch + store, so a plain client (no lifespan) is correct.
+    # SEC-3: workflow CRUD is admin-guarded; bypass the guard for endpoint-behavior tests.
+    web.app.dependency_overrides[web._admin_guard] = lambda: None
     c = TestClient(web.app)
     try:
         yield c
     finally:
+        web.app.dependency_overrides.pop(web._admin_guard, None)
         web.orch = old_orch
         web._wf_store_instance = old_store
 

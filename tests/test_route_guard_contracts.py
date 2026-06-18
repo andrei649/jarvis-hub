@@ -134,7 +134,7 @@ def test_sync_and_compress_are_safe_noops_when_disabled(client):
 def test_oauth_unknown_service_is_404(client):
     # missing/blank `service` → "Unknown service" (locks the dispatch contract)
     assert client.get("/api/oauth/auth-url").status_code == 404
-    assert client.post("/api/oauth/refresh", json={}).status_code == 404
+    assert client.post("/api/oauth/refresh", json={}, headers=ADMIN).status_code == 404  # SEC-3: now admin-guarded
 
 
 def test_admin_read_surface_requires_admin(client):
