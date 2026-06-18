@@ -20,3 +20,55 @@ updates:
       actions:
         patterns:
           - "*"
+
+  # npm lockfiles (SEC-4 / audit F-05): HUD root, HUD v2 frontend, WorldView
+  # monorepo, WorldView MCP, and mobile. Grouped weekly like the pip config.
+  - package-ecosystem: npm
+    directory: "/"
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    groups:
+      npm-root:
+        patterns:
+          - "*"
+
+  - package-ecosystem: npm
+    directory: "/frontend"
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    groups:
+      npm-frontend:
+        patterns:
+          - "*"
+
+  - package-ecosystem: npm
+    directory: "/worldview"
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    groups:
+      npm-worldview:
+        patterns:
+          - "*"
+
+  - package-ecosystem: npm
+    directory: "/worldview/mcp"
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    groups:
+      npm-worldview-mcp:
+        patterns:
+          - "*"
+
+  - package-ecosystem: npm
+    directory: "/mobile"
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    groups:
+      npm-mobile:
+        patterns:
+          - "*"
