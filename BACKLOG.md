@@ -54,9 +54,9 @@ route-policy table: **`docs/SECURITY_ROUTE_AUDIT_2026-06-17.md`**.
 
 | # | Item | S | P | AC |
 |---|------|---|---|----|
-| SEC-1 | **Guard webhook management** — `GET/POST/DELETE /api/webhooks` → `admin_guard`; keep trigger token/HMAC. (`POST /api/webhooks` mints a token → agent exec.) | 2 | **P0** | unauth `POST /api/webhooks` → 401/403 off-localhost; trigger still works with token |
-| SEC-2 | **Route-auth matrix test** — runtime introspect `app.routes` vs a checked-in policy file; CI fails on any unclassified/unguarded mutator (seed policy = the doc's table). | 3 | P1 | new endpoint without a guard/policy fails CI |
-| SEC-3 | **Apply policy to remaining open mutators** (admin/user per table) + sensitive open reads. Localhost dev unaffected. | 5 | P1 | every mutating route guarded or explicitly allowlisted |
+| SEC-1 ✅ | **Guard webhook management** — `GET/POST/DELETE /api/webhooks` → `admin_guard`; trigger keeps token/HMAC. Done: `webhooks.py` + contract test (`POST /api/webhooks` off-localhost → 403). | 2 | **P0** | ✅ unauth management → 401/403; trigger still works with token |
+| SEC-2 ✅ | **Route-auth matrix test** — `tests/test_route_auth_matrix.py` introspects `app.routes` vs `tests/_snapshots/route_auth.json`; fails CI on guard drift / new or unclassified open mutator. `PENDING_GUARD` set tracks the SEC-3 backlog (shrinks as guards land). | 3 | P1 | ✅ a new unguarded mutator fails CI |
+| SEC-3 | **Apply policy to remaining open mutators** (35 in `PENDING_GUARD`: workflows, KG, heartbeat, plugin toggle, traces clear, oauth refresh, oracle sync, reflection, arena, review, …) + sensitive open reads — admin/user per the doc table. Localhost dev unaffected. | 5 | P1 | every mutating route guarded or in `INTENTIONALLY_OPEN`; `PENDING_GUARD` → empty |
 | SEC-4 | Env/posture follow-ups: npm Dependabot ecosystems (F-05), `JARVIS_HOME` for runtime state (F-08), regenerate stale route/test doc counters (F-09), promote matrix test to required gate (F-10). | 3 | P2 | — |
 
 > Verified false-alarms / owner-side (not repo defects): F-04 (auditor's stale

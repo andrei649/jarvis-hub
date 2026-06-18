@@ -2,11 +2,12 @@
 
 import json
 
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, Request, Depends
 from pydantic import BaseModel, Field
 
 from agents.core.web_helpers import nocache_json, error_json
 from agents.core.app_state import get_orch
+from agents.core.routers._deps import admin_guard
 
 
 router = APIRouter(tags=["webhooks"])
@@ -29,13 +30,17 @@ class WebhookCreateBody(BaseModel):
     signed: bool = False   # H16.4 — require an HMAC X-Signature-256 on triggers
 
 
-@router.get("/api/webhooks")
+# SEC-1: webhook *management* is admin-only. Creating a webhook mints a trigger
+# token and a webhook can run an agent/workflow, so an unguarded management
+# surface defeats the trigger's own token/HMAC auth. The trigger route below
+# stays open by design — it authenticates per-webhook (token or HMAC).
+@router.get("/api/webhooks", dependencies=[Depends(admin_guard)])
 async def list_webhooks():
     """List configured inbound webhooks (tokens masked)."""
     return nocache_json({"webhooks": _get_webhook_store().list()})
 
 
-@router.post("/api/webhooks")
+@router.post("/api/webhooks", dependencies=[Depends(admin_guard)])
 async def create_webhook(body: WebhookCreateBody):
     """Create an inbound webhook; the token is returned ONCE."""
     try:
@@ -45,7 +50,7 @@ async def create_webhook(body: WebhookCreateBody):
     return nocache_json(rec)
 
 
-@router.delete("/api/webhooks/{hook_id}")
+@router.delete("/api/webhooks/{hook_id}", dependencies=[Depends(admin_guard)])
 async def delete_webhook(hook_id: str):
     ok = _get_webhook_store().delete(hook_id)
     return nocache_json({"ok": ok}, status_code=200 if ok else 404)

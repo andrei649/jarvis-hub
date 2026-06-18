@@ -78,24 +78,38 @@ def test_mark_called_increments(tmp_path):
 
 # ── endpoints (admin CRUD + token-gated trigger) ────────────────────────────
 
-def test_webhook_endpoints_flow():
+_ADMIN = {"X-Admin-Token": "test-admin-secret"}
+
+
+def test_webhook_management_requires_admin():
+    """SEC-1: management routes are admin-only; the unauthenticated network client
+    (TestClient host is not localhost) must be rejected, so it cannot mint a token."""
     from agents import web
     with TestClient(web.app) as c:
-        # create
-        resp = c.post("/api/webhooks", json={"target": "jarvis", "target_type": "agent"})
+        assert c.post("/api/webhooks", json={"target": "jarvis"}).status_code in (401, 403)
+        assert c.get("/api/webhooks").status_code in (401, 403)
+        assert c.delete("/api/webhooks/anything").status_code in (401, 403)
+
+
+def test_webhook_endpoints_flow(monkeypatch):
+    from agents import web
+    monkeypatch.setattr(web, "ADMIN_TOKEN", "test-admin-secret")  # SEC-1: management needs admin
+    with TestClient(web.app) as c:
+        # create (admin)
+        resp = c.post("/api/webhooks", json={"target": "jarvis", "target_type": "agent"}, headers=_ADMIN)
         assert resp.status_code == 200
         rec = resp.json()
         hook_id, token = rec["id"], rec["token"]
 
-        # list masks the token
-        listed = c.get("/api/webhooks").json()["webhooks"]
+        # list masks the token (admin)
+        listed = c.get("/api/webhooks", headers=_ADMIN).json()["webhooks"]
         assert any(w["id"] == hook_id and "token" not in w for w in listed)
 
-        # trigger without token → 401
+        # trigger without token → 401 (trigger stays open but per-webhook authenticated)
         no_token = c.post(f"/api/webhooks/{hook_id}", json={"text": "hi"})
         assert no_token.status_code == 401
 
-        # trigger with token (header) → 200, runs the agent
+        # trigger with token (header) → 200, runs the agent — no admin token needed
         ok = c.post(
             f"/api/webhooks/{hook_id}",
             json={"text": "hello"},
@@ -109,6 +123,6 @@ def test_webhook_endpoints_flow():
         unknown = c.post("/api/webhooks/nope", json={}, headers={"X-Webhook-Token": "x"})
         assert unknown.status_code == 404
 
-        # delete
-        deleted = c.delete(f"/api/webhooks/{hook_id}")
+        # delete (admin)
+        deleted = c.delete(f"/api/webhooks/{hook_id}", headers=_ADMIN)
         assert deleted.status_code == 200
