@@ -12,7 +12,6 @@ from __future__ import annotations
 
 import re
 import threading
-from typing import Optional
 
 _HANDLE = re.compile(r"\{\{\s*secret:([A-Za-z0-9_.\-]+)\s*\}\}")
 

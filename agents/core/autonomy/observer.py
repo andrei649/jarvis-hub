@@ -26,7 +26,6 @@ offline in unit tests without psutil, sockets, or a live LM.
 
 from __future__ import annotations
 
-import asyncio
 import logging
 import socket
 from dataclasses import dataclass, field

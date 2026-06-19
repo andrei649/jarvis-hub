@@ -4,10 +4,8 @@ Aggregates balances from ING API, Libra API, or CSV import.
 Returns realistic mock data when no source is configured.
 """
 import csv
-import json
 import logging
 from pathlib import Path
-from typing import Optional
 
 from ..http_client import PluginHTTPClient
 

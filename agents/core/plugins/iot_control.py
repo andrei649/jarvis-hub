@@ -10,7 +10,7 @@ class IoTControlPlugin:
         self.client_id = client_id.strip()
         self.secret = secret.strip()
         self.device_id = device_id.strip()
-        self.client = PluginHTTPClient.for_plugin("iot")
+        self.client = PluginHTTPClient.for_plugin("iot-control")
 
     @resilient_call(
         max_retries=2,

@@ -4,8 +4,6 @@ Falls back to a simple placeholder if not installed.
 """
 
 import logging
-import os
-from typing import Optional
 
 logger = logging.getLogger("jarvis.voice.stt")
 
