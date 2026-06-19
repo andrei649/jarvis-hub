@@ -17,7 +17,7 @@ logger = logging.getLogger("jarvis.plugins.whatsapp")
 class WhatsAppBridgePlugin:
     def __init__(self, bridge_url: str = "http://192.168.1.100:3000"):
         self.bridge_url = bridge_url
-        self.client = PluginHTTPClient.for_plugin("whatsapp")
+        self.client = PluginHTTPClient.for_plugin("whatsapp-bridge")
 
     async def send_message(self, to: str, message: str) -> bool:
         try:

@@ -24,7 +24,7 @@ class CloudLLMPlugin:
         self.gemini_key = gemini_key
         # Cloud LLM calls can be slow — use extended read timeout
         self.client = PluginHTTPClient.for_plugin(
-            "cloud_llm",
+            "cloud-llm",
             timeouts=PluginTimeouts(connect=5.0, read=120.0, total=120.0),
         )
         self._prefer = "anthropic" if anthropic_key else "gemini" if gemini_key else "openai" if openai_key else None
