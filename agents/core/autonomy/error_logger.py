@@ -41,8 +41,6 @@ def persist_problem(error_log: ErrorLog) -> None:
         "meta": error_log.meta or {}
     }
 
-    # Locate cabinet root directory relative to this file
-    base_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
     problems_path = str(data_path("problems.jsonl"))
 
     try:
@@ -85,8 +83,6 @@ def sync_problems_to_diagnostics(output_path: Optional[str] = None, problems_pat
     diagnostics now live in a git-ignored file and never touch tracked docs.
     The write is idempotent (skips when unchanged) and pins LF endings.
     """
-    base_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
-
     if output_path is None:
         output_path = str(data_path("diagnostics.md"))
     if problems_path is None:

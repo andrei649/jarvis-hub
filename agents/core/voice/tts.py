@@ -3,7 +3,6 @@ tts.py — Text-to-speech via edge-tts (Microsoft Edge, online, high quality).
 Falls back to Kokoro or pyttsx3 if available.
 """
 
-import asyncio
 import logging
 import tempfile
 from pathlib import Path

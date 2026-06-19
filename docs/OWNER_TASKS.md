@@ -31,6 +31,17 @@
 - [ ] **Enable code scanning** (Settings → Code security) or make the `Analyze (python)` CodeQL
   check non-required — it intermittently fails with "Code scanning is not enabled"
   ([`HUD_V2_REMAINING.md`](design/HUD_V2_REMAINING.md) §9).
+- [ ] **Dismiss resolved scanning alerts** (Security → Secret/Code scanning) — the code-side fixes
+  merged 2026-06-17 (#215, #216); these remaining ones are false positives / won't-fix:
+  - Secret scanning **#1** (OpenAI key) → "Used in tests" — it's a synthetic guardrail fixture (#215).
+  - CodeQL **#22 / #23 / #431** (path injection in `get_agent_soul`) → false positive: the agent-id
+    regex `^[a-z0-9_-]{1,64}$` forbids separators, so traversal is impossible.
+  - CodeQL **#299 / #298 / #247** ("variable defined multiple times") → false positive: those are
+    fallback defaults that are actually read.
+  - CodeQL **#432** (info exposure) → won't-fix: it's a docs code-snippet, not shipped.
+- [ ] **Paste the remaining ~12 CodeQL alerts** to the agent — only 13 of the 25 selected came
+  through and there's no MCP tool to list code-scanning alerts, so the rest need a manual paste to
+  finish triage (6 real ones fixed in #216; the 7 above are FPs/won't-fix).
 
 ## 🟡 GPU-host work (the last 2 backlog items + Howard)
 

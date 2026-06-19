@@ -5,7 +5,6 @@ Wraps the VoicePipeline (wake word -> STT -> TTS cycle)
 into a ChannelAdapter that the orchestrator can route through.
 """
 
-import asyncio
 import logging
 from typing import Callable, Optional
 

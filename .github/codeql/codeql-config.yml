@@ -12,3 +12,19 @@ paths-ignore:
   - tests
   - "**/test_*.py"
   - "**/conftest.py"
+
+# Suppress two quality rules that, in this codebase, only fire on intentional
+# idioms — verified against the full local scan (2026-06-19). Keeps every
+# security query and the useful `unused-*` quality queries.
+#   py/ineffectual-statement — flags the `...` bodies of @abstractmethod stubs
+#     (KnowledgeGraph, VectorStore, ChannelBase, LLMBackend); the standard Python
+#     stub idiom, not dead code.
+#   py/empty-except — best-effort `except: pass` blocks deliberately kept after a
+#     full survey of all 355 except sites (CHANGELOG 2026-06-10) to avoid log noise.
+# On the next scan CodeQL auto-closes the alerts these rules raised (~60).
+query-filters:
+  - exclude:
+      id: py/ineffectual-statement
+  - exclude:
+      id: py/empty-except
+
