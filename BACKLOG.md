@@ -57,13 +57,27 @@ route-policy table: **`docs/SECURITY_ROUTE_AUDIT_2026-06-17.md`**.
 | SEC-1 ✅ | **Guard webhook management** — `GET/POST/DELETE /api/webhooks` → `admin_guard`; trigger keeps token/HMAC. Done: `webhooks.py` + contract test (`POST /api/webhooks` off-localhost → 403). | 2 | **P0** | ✅ unauth management → 401/403; trigger still works with token |
 | SEC-2 ✅ | **Route-auth matrix test** — `tests/test_route_auth_matrix.py` introspects `app.routes` vs `tests/_snapshots/route_auth.json`; fails CI on guard drift / new or unclassified open mutator. `PENDING_GUARD` set tracks the SEC-3 backlog (shrinks as guards land). | 3 | P1 | ✅ a new unguarded mutator fails CI |
 | SEC-3 ✅ | **Apply policy to remaining open mutators** — DONE. Batch 1 (12 → admin): workflows CRUD, plugin toggle, heartbeat ×3, traces/clear, oauth/refresh, oracle sync+resolve, audit/action. Batch 2 (23 → user): workflows run/hierarchical, KG writes ×6, local-docs, reflection, arena ×2, review ×3, eval ×2, autonomy/preview, agent-templates, llm/grammar, schedule/parse, security scan/spotlight. `PENDING_GUARD` is now **empty** — every mutating route is guarded or in `INTENTIONALLY_OPEN` (6 self-authenticating). Final surface: **110 user / 104 admin / 86 open**. Localhost dev unaffected. | 5 | P1 | ✅ enforced by SEC-2 matrix gate |
-| SEC-4 | Env/posture follow-ups: **npm Dependabot ✅** · **doc counters refreshed ✅** · **`JARVIS_HOME` runtime-state relocation ✅** (F-08 — all stores resolve via `core/paths.data_path`; default unchanged = repo `memory_logs/`; `JARVIS_HOME`/`JARVIS_MEMORY_DIR` relocates everything; startup warns when state is in the checkout; guarded by `tests/test_jarvis_home.py`). **Remaining:** promote matrix/parity tests to **required** branch-protection checks (F-10, owner GitHub setting). | 3 | P2 | — |
+| SEC-4 | Env/posture follow-ups: **npm Dependabot ✅** · **doc counters refreshed ✅** · **`JARVIS_HOME` runtime-state relocation ✅** (F-08). **Remaining:** promote matrix/parity tests to **required** branch-protection checks (F-10, owner GitHub setting). | 3 | P2 | — |
+| SEC-5 ✅ | **F-06 ✅** WorldView bridge Bearer auth (`WORLDVIEW_API_TOKEN`). **F-07 ✅** plugin egress boundary — anchored host/sub-domain matching + `PluginHTTPClient` per-request manifest enforcement, now **strict by default** (`JARVIS_STRICT_EGRESS=0` opts out). Renamed 9 `for_plugin` ids to match manifests; completed allowlists (cloud-llm +Gemini, gmail/gcal +oauth2.googleapis.com, news +RO feeds); self-consistency test pins each plugin's real hosts. | 3 | P2 | ✅ undeclared plugin egress blocked |
+| SEC-5b | **Manifest the remaining networked plugins** so the egress gate covers them too (today they have no manifest → unrestricted): `balance` (api.ing.com / api.libra.ro), `analytics` (analyticsdata.googleapis.com / oauth2.googleapis.com), `websearch` (api.tavily.com / html.duckduckgo.com / SearXNG — note interaction with `test_ssrf.py`), `n8n` (config URL), and the dynamic `for_plugin` families (`social_*`, `writeback_*`, `call_*`, `channel_*`, `digest`). They keep in-code SSRF guards meanwhile. | 3 | P2 | every networked plugin enforced by the gate |
 
 > Verified false-alarms / owner-side (not repo defects): F-04 (auditor's stale
 > Windows venv/node_modules — CI builds clean), most of F-05 (needs owner
 > Dependabot view). Self-authenticating opens confirmed safe: webhook trigger
 > (token/HMAC), a2a/task (peer HMAC, off by default), mcp/server/rpc (disabled by
 > default + OAuth), oauth/callback (state-validated).
+
+---
+
+## 🔍 CodeQL & secret-scanning alerts (2026-06-17 — code fixes shipped; dismissals + ~12 triage pending)
+
+GitHub scanning surfaced 25 CodeQL alerts + 1 secret-scanning alert. Of the 13 reviewed:
+
+| # | Item | S | P | AC |
+|---|------|---|---|----|
+| CQ-1 ✅ | **Fix the real findings** (merged #215, #216): calendar `create_event` kwargs (#248, was a runtime `TypeError`), heartbeat `except None` (#26), `strip_thinking` ReDoS (#1), possessive template regex (#302), `log_safe()` on two admin log lines (#311/#24), and the secret-scan fixture FP (#215). | 3 | P1 | ✅ all green in CI; merged |
+| CQ-2 | **Owner: dismiss FPs/won't-fix in the UI** — secret-scan #1 (test fixture), CodeQL path-injection #22/#23/#431 (agent-id regex blocks traversal), var-defined #299/#298/#247 (used defaults), docs #432. See [`docs/OWNER_TASKS.md`](docs/OWNER_TASKS.md) §GitHub settings. | 1 | P2 | owner GitHub action |
+| CQ-3 | **Triage the remaining ~12 alerts** — only 13 of 25 selected were captured (no MCP code-scanning-list tool); needs an owner paste to finish. | 2 | P2 | paste → triage → fix real ones |
 
 ---
 

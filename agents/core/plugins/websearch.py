@@ -3,7 +3,6 @@ websearch.py — Web search plugin for Vision (OSINT / research).
 Supports DuckDuckGo (no-API) and optional Tavily / SearXNG.
 """
 
-import json
 import logging
 from typing import Optional
 
