@@ -8,12 +8,13 @@ httpx>=0.28.1
 cryptography>=49.0.0
 python-dotenv>=1.2.2
 ollama>=0.6.2
-# Pin below 0.137: fastapi 0.137.0 regressed `app.include_router` so mounted
-# routers add 0 routes — the app silently loses ~100 routes (the extracted
-# core/routers/* domains). Caught by tests/test_route_parity_guard.py. Verified
-# 0.137.1 STILL regressed (route surface 296 -> 83 in a clean venv). Unpin once
-# a 0.137.x is verified to mount routers again.
-fastapi>=0.137.2,<0.138
+# Pin below 0.137: 0.137 wraps `include_router` results in an opaque _IncludedRouter
+# object instead of flattening them into app.routes, so the route-parity / auth-matrix
+# guards (which iterate app.routes) see only ~83 of ~296 routes. The app itself is fine
+# (routes serve + appear in app.openapi()); only the introspection guards regress.
+# Root cause + unblock plan (recursive flattener, then bump with a bounded starlette pin):
+# docs/research/2026-06-19-fastapi-0.137-include-router-regression.md
+fastapi>=0.136.3,<0.137
 uvicorn>=0.49.0
 psutil>=7.2.2
 
