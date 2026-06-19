@@ -266,9 +266,6 @@ class LogBugScanner:
         report_dir: Optional[str],
     ) -> Optional[str]:
         if report_dir is None:
-            base = os.path.dirname(
-                os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-            )
             report_dir = str(data_path("reports"))
         try:
             os.makedirs(report_dir, exist_ok=True)

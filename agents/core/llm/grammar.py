@@ -15,7 +15,6 @@ enforcement is the backend's job (pass `grammar=` to llama.cpp / use XGrammar).
 from __future__ import annotations
 
 import json
-from typing import Optional
 
 # GBNF primitive rules shared by every generated grammar.
 _PRIMITIVES = {

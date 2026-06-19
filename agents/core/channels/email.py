@@ -90,8 +90,6 @@ class EmailChannel(ChannelAdapter):
                 await self.handler(text, channel="email", from_addr=sender, subject=subject)
 
     def _imap_fetch(self) -> list[tuple[str, str, str]]:
-        import imaplib
-        import email
 
         mail = imaplib.IMAP4_SSL(self.imap["host"], self.imap.get("port", 993))
         mail.login(self.imap["user"], self.imap.get("password", ""))

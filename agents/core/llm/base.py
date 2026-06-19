@@ -3,13 +3,12 @@ base.py — Abstract LLM backend interface with streaming support.
 Supports LM Studio (OpenAI-compatible API) and Ollama.
 """
 
-import asyncio
 import inspect
 import json
 import logging
 import re
 from abc import ABC, abstractmethod
-from typing import Callable, Optional
+from typing import Callable
 
 import httpx
 
