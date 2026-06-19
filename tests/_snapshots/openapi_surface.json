@@ -290,6 +290,7 @@
   "POST /sessions/resume": "resume_session_sessions_resume_post",
   "POST /skills/import": "skills_import_skills_import_post",
   "POST /tts": "tts_endpoint_tts_post",
+  "POST /tts/stream": "tts_stream_endpoint_tts_stream_post",
   "PUT /api/admin/agents/{agent_id}": "admin_agents_put_api_admin_agents__agent_id__put",
   "PUT /api/admin/settings/{category}": "admin_put_category_api_admin_settings__category__put",
   "PUT /api/notes": "notes_set_api_notes_put",
