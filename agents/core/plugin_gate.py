@@ -58,7 +58,7 @@ BUILTIN_PLUGINS = {
         description="News headlines from BBC RSS feeds",
         network_access=NetworkAccess.RESTRICTED,
         data_scope=DataScope.PROCESSED,
-        allowed_domains=["feeds.bbci.co.uk"],
+        allowed_domains=["feeds.bbci.co.uk", "www.hotnews.ro", "www.stiripesurse.ro"],
         agents_served=["all"],
     ),
     "cloud-llm": PluginManifest(
@@ -68,7 +68,7 @@ BUILTIN_PLUGINS = {
         description="Optional Anthropic/OpenAI fallback for heavy reasoning",
         network_access=NetworkAccess.RESTRICTED,
         data_scope=DataScope.TRANSMITTED,
-        allowed_domains=["api.anthropic.com", "api.openai.com"],
+        allowed_domains=["api.anthropic.com", "api.openai.com", "generativelanguage.googleapis.com"],
         agents_served=["jarvis", "athena", "stark", "vision", "veronica"],
     ),
     "telegram": PluginManifest(
@@ -88,7 +88,7 @@ BUILTIN_PLUGINS = {
         description="Read and compose emails",
         network_access=NetworkAccess.RESTRICTED,
         data_scope=DataScope.PROCESSED,
-        allowed_domains=["gmail.googleapis.com", "www.googleapis.com"],
+        allowed_domains=["gmail.googleapis.com", "www.googleapis.com", "oauth2.googleapis.com"],
         agents_served=["stark", "pepper", "veronica"],
     ),
     "google-calendar": PluginManifest(
@@ -98,7 +98,7 @@ BUILTIN_PLUGINS = {
         description="Read and manage calendar events",
         network_access=NetworkAccess.RESTRICTED,
         data_scope=DataScope.PROCESSED,
-        allowed_domains=["www.googleapis.com"],
+        allowed_domains=["www.googleapis.com", "oauth2.googleapis.com"],
         agents_served=["pepper"],
     ),
     "whatsapp-bridge": PluginManifest(

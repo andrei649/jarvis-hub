@@ -10,7 +10,7 @@ class SMSAlertsPlugin:
         self.account_sid = account_sid.strip()
         self.auth_token = auth_token.strip()
         self.from_number = from_number.strip()
-        self.client = PluginHTTPClient.for_plugin("sms")
+        self.client = PluginHTTPClient.for_plugin("sms-alerts")
 
     @resilient_call(
         max_retries=2,

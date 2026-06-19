@@ -151,11 +151,10 @@ class PluginHTTPClient:
         Looks up the plugin's manifest (by exact id). Plugins with no manifest
         (internal/ad-hoc clients) are unaffected. ``NONE`` always blocks — a
         no-network plugin making an HTTP call is unambiguously wrong. For ``LAN``
-        and ``RESTRICTED`` a violation is logged; it is *raised* only when strict
-        mode is on (``JARVIS_STRICT_EGRESS``), so allowlists/names can be
-        reconciled (some ``for_plugin`` names don't yet match a manifest id, and a
-        few allowlists are incomplete) before flipping the hard boundary on.
-        ``FULL`` is unrestricted by declaration.
+        and ``RESTRICTED`` a host outside the policy is **blocked by default**
+        (SEC-5); set ``JARVIS_STRICT_EGRESS=0`` to downgrade to a warning (escape
+        hatch if a new host needs allowlisting). ``FULL`` is unrestricted by
+        declaration.
         """
         try:
             from agents.core.plugin_gate import BUILTIN_PLUGINS, NetworkAccess, host_in_allowlist
@@ -185,9 +184,11 @@ class PluginHTTPClient:
         else:
             return
         import os
-        if os.environ.get("JARVIS_STRICT_EGRESS", "").strip().lower() in ("1", "true", "yes"):
+        # SEC-5: strict by default; opt out with JARVIS_STRICT_EGRESS=0/false/no.
+        strict = os.environ.get("JARVIS_STRICT_EGRESS", "1").strip().lower() not in ("0", "false", "no")
+        if strict:
             raise PluginEgressError(f"egress blocked: {violation}")
-        logger.warning("egress policy violation (JARVIS_STRICT_EGRESS off, allowing): %s", violation)
+        logger.warning("egress policy violation (JARVIS_STRICT_EGRESS=0, allowing): %s", violation)
 
     # ── HTTP methods ───────────────────────────────────────────────
 
