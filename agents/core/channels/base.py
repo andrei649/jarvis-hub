@@ -6,7 +6,7 @@ and registers with the orchestrator for routing.
 """
 
 from abc import ABC, abstractmethod
-from typing import Any, Callable, Optional
+from typing import Callable, Optional
 
 
 class ChannelAdapter(ABC):

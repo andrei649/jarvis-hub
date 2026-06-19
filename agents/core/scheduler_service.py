@@ -147,7 +147,6 @@ class SchedulerService:
         if not self._orch.get_setting("system.log_scan_enabled", True):
             return
         try:
-            base = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
             problems_path = str(data_path("problems.jsonl"))
             result = self._orch.log_scanner.quick_scan(problems_path)
             if result.healthy:
@@ -178,7 +177,6 @@ class SchedulerService:
         if not self._orch.get_setting("system.log_scan_enabled", True):
             return
         try:
-            base = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
             problems_path = str(data_path("problems.jsonl"))
             result = self._orch.log_scanner.hourly_scan(problems_path)
             from .autonomy.error_logger import sync_problems_to_diagnostics
@@ -206,7 +204,6 @@ class SchedulerService:
         if not self._orch.get_setting("system.log_scan_enabled", True):
             return
         try:
-            base = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
             problems_path = str(data_path("problems.jsonl"))
             result = self._orch.log_scanner.daily_scan(problems_path)
             logger.info(
