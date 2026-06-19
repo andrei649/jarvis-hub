@@ -1,0 +1,17 @@
+{
+  "name": "@jarvis/signal-layer",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Jarvis Signal Layer with WorldMonitor provider and replay mode",
+  "scripts": {
+    "start": "node src/index.mjs",
+    "smoke": "node test/smoke.mjs",
+    "test": "node test/smoke.mjs"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {},
+  "devDependencies": {}
+}

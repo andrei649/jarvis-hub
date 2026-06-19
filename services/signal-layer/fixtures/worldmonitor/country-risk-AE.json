@@ -1,0 +1,90 @@
+{
+  "id": "assessment-country-ae-demo-001",
+  "subject": {
+    "type": "country",
+    "id": "AE",
+    "label": "United Arab Emirates"
+  },
+  "risk": {
+    "score": 52,
+    "level": "elevated",
+    "components": {
+      "aviation": 25,
+      "natural_disaster": 10,
+      "geopolitical_news": 17
+    }
+  },
+  "claim": "The UAE is assessed as elevated in this demo snapshot because watched aviation and regional monitoring signals intersect with user watch targets. One weather/disaster source group is stale.",
+  "confidence": "medium",
+  "drivers": [
+    {
+      "title": "DXB aviation monitoring",
+      "type": "aviation",
+      "severity": "elevated"
+    },
+    {
+      "title": "Stale weather/disaster feed",
+      "type": "natural_disaster",
+      "severity": "normal"
+    }
+  ],
+  "recommendations": [
+    {
+      "type": "monitor",
+      "label": "Refresh travel and aviation signals before making itinerary decisions.",
+      "requiresApproval": true
+    },
+    {
+      "type": "monitor",
+      "label": "Keep DXB on 24-hour travel watch.",
+      "requiresApproval": true
+    }
+  ],
+  "evidenceIds": [
+    "ev-aviation-dxb-001",
+    "ev-disaster-ae-001"
+  ],
+  "evidence": [
+    {
+      "id": "ev-aviation-dxb-001",
+      "provider": "worldmonitor",
+      "sourceName": "WorldMonitor aviation cache",
+      "sourceFamily": "aviation",
+      "url": null,
+      "observedAt": "2026-06-19T11:30:00Z",
+      "publishedAt": "2026-06-19T11:30:00Z",
+      "fetchedAt": "2026-06-19T11:36:00Z",
+      "cachedAt": "2026-06-19T11:42:00Z",
+      "stale": false,
+      "reliability": "medium",
+      "raw": {
+        "fixture": true
+      }
+    },
+    {
+      "id": "ev-disaster-ae-001",
+      "provider": "worldmonitor",
+      "sourceName": "WorldMonitor weather/disaster cache",
+      "sourceFamily": "weather",
+      "url": null,
+      "observedAt": "2026-06-19T06:00:00Z",
+      "publishedAt": "2026-06-19T06:00:00Z",
+      "fetchedAt": "2026-06-19T07:00:00Z",
+      "cachedAt": "2026-06-19T07:00:00Z",
+      "stale": true,
+      "reliability": "medium",
+      "raw": {
+        "fixture": true
+      }
+    }
+  ],
+  "freshness": {
+    "stale": true,
+    "checkedAt": "2026-06-19T12:00:00Z",
+    "cachedAt": "2026-06-19T11:42:00Z"
+  },
+  "provider": "worldmonitor",
+  "raw": {
+    "fixture": true
+  }
+}

@@ -1,0 +1,12 @@
+{
+  "stale": true,
+  "checkedAt": "2026-06-19T12:00:00Z",
+  "cachedAt": "2026-06-19T11:45:00Z",
+  "degraded": false,
+  "errors": [
+    {
+      "code": "stale_weather_cache",
+      "message": "One weather/disaster fixture is intentionally stale for demo visibility."
+    }
+  ]
+}

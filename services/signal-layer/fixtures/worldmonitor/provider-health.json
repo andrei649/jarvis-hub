@@ -1,0 +1,12 @@
+{
+  "provider": "worldmonitor",
+  "mode": "replay",
+  "status": "ok",
+  "checkedAt": "2026-06-19T12:00:00Z",
+  "latencyMs": 3,
+  "fresh": 5,
+  "stale": 1,
+  "raw": {
+    "fixture": true
+  }
+}
