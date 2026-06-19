@@ -19,6 +19,42 @@
   drops all chrome and renders only the full-bleed mesh. v2 bundle rebuilt; tsc + 19 v2 tests +
   184 legacy frontend tests green. (The legacy `/v1` HUD keeps its SVG ring.)
 
+### WorldView — API never starts on Windows (2026-06-17, #204)
+- **`worldview/backend-api/src/server.ts`** gated its auto-start on
+  ``import.meta.url === `file://${process.argv[1]}` ``. On Windows `process.argv[1]` is a backslash
+  path (`C:\…\server.ts`) while `import.meta.url` is `file:///C:/…/server.ts`, so the concat never
+  matched → `main()` skipped → `app.listen()` never called → **nothing on `:4000`** (the frontend
+  sat at "Reconnecting to the live feed… API may be offline"). Switched to the platform-aware
+  `pathToFileURL(process.argv[1]).href` — the guard already used in `worldview/mcp/src/server.ts`.
+  tsc clean, 218 backend tests pass.
+
+### WorldView — two frontend dev-console warnings silenced (2026-06-17, #202)
+- `app/layout.tsx`: `suppressHydrationWarning` on `<body>` (Grammarly/ColorZilla inject attributes
+  before hydration — not a WorldView bug). `components/DeckGlobe.tsx`: deferred the `setZoom` store
+  write out of Deck.gl's render-phase `onViewStateChange` (and skip when unchanged) — fixes the
+  "Cannot update AppBar while rendering DeckGLWithRef" setState-in-render warning. tsc + 140 vitest
+  tests + `next build` green.
+
+### Security — synthetic OpenAI-key fixture defused (2026-06-17, #215)
+- `tests/test_h10_4_guardrail_node.py` held a hand-crafted `sk-…` placeholder (a fixture for the
+  guardrail/secret-scanner, **not** a real key) that GitHub secret-scanning flagged as a public
+  leak. Built it by concatenation so the `sk-`+40-char shape never appears verbatim in source; the
+  runtime value (and every assertion) is unchanged. No rotation, no history rewrite.
+
+### CodeQL — correctness, ReDoS & log-injection fixes (2026-06-17, #216)
+- **#248** (`skills/calendar/main.py`): `add_event` called `create_event(start=…, end=…)` but the
+  plugin signature is `(summary, start_dt, end_dt)` → `TypeError` on every call. Fixed kwargs +
+  corrected the test fake that mirrored the wrong signature and masked the bug.
+- **#26** (`agents/core/heartbeat.py`): `SchedulerNotRunningError` was imported from the wrong module
+  with a `= None` fallback → `except None:` `TypeError` in `stop()`. Import from `.base` with a real
+  `Exception` fallback.
+- **#1** (`agents/core/llm/base.py` `strip_thinking`): rewrote the leading-numbered-step regex to a
+  linear form (`^(?:\d+\.[ \t][^\n]*\n)+\n`) — the old `\s+.+` backtracked super-linearly.
+- **#302** (`workflows/hierarchical.py`): made the `_render` template group possessive `\{([^}]++)\}`.
+- **#311 / #24** (`agents/web.py`, admin-only routes): routed user input through `log_safe()` before
+  logging (CR/LF log-forging). The path-injection alerts #22/#23/#431 are false positives (the
+  agent-id regex `^[a-z0-9_-]{1,64}$` forbids separators) — dismissed in the UI, not patched.
+
 ### WorldView — full UX redesign implemented from the Claude Design spec (2026-06-12)
 - **The complete TASK-4 WorldView redesign** (`docs/design/WORLDVIEW_UX_SPEC.md`, all 11 steps),
   on top of the tactical fixes from PR #193: brand-unified tokens (void/surface/signal `#2BB8F0`,
