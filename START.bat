@@ -10,7 +10,11 @@ REM  WorldView is OPT-OUT: to start JARVIS only, run with
 REM    set JARVIS_WORLDVIEW=0
 REM  Signal Layer is OPT-OUT: to skip the WorldView/Signal API, run with
 REM    set JARVIS_SIGNAL_LAYER=0
-REM  (or set either permanently in your environment).
+REM  Signal Layer live mode is OPT-IN:
+REM    set JARVIS_SIGNAL_LAYER_MODE=live
+REM    set WORLDMONITOR_BASE_URL=http://localhost:3100
+REM    set WORLDMONITOR_MCP_URL=http://localhost:3100/api/mcp
+REM  (or set any of these permanently in your environment).
 REM ============================================================
 setlocal enableextensions
 cd /d "%~dp0"
@@ -139,9 +143,9 @@ REM ============================================================
 REM  Subroutine: start Jarvis Signal Layer
 REM  Starts the provider-neutral situational-awareness API (:8787)
 REM  in replay mode by default. Live WorldMonitor mode is opt-in:
-REM    set JARVIS_WORLDVIEW_MODE=live
-REM    set WORLDMONITOR_BASE_URL=http://localhost:3000
-REM    set WORLDMONITOR_MCP_URL=http://localhost:3000/api/mcp
+REM    set JARVIS_SIGNAL_LAYER_MODE=live
+REM    set WORLDMONITOR_BASE_URL=http://localhost:3100
+REM    set WORLDMONITOR_MCP_URL=http://localhost:3100/api/mcp
 REM  Skips gracefully if Node or the service files are missing.
 REM ============================================================
 :start_signal_layer
@@ -154,10 +158,13 @@ if not exist "services\signal-layer\src\index.mjs" (
   echo [SKIP] services\signal-layer is missing - skipping Signal Layer.
   goto :eof
 )
-if not defined JARVIS_WORLDVIEW_MODE set "JARVIS_WORLDVIEW_MODE=replay"
+if not defined JARVIS_SIGNAL_LAYER_MODE (
+  if defined JARVIS_WORLDVIEW_MODE set "JARVIS_SIGNAL_LAYER_MODE=%JARVIS_WORLDVIEW_MODE%"
+)
+if not defined JARVIS_SIGNAL_LAYER_MODE set "JARVIS_SIGNAL_LAYER_MODE=replay"
 if not defined SIGNAL_LAYER_HOST set "SIGNAL_LAYER_HOST=0.0.0.0"
 if not defined SIGNAL_LAYER_PORT set "SIGNAL_LAYER_PORT=8787"
-echo [INFO] Mode: %JARVIS_WORLDVIEW_MODE%  Port: %SIGNAL_LAYER_PORT%
+echo [INFO] Mode: %JARVIS_SIGNAL_LAYER_MODE%  Port: %SIGNAL_LAYER_PORT%
 echo [INFO] Starting Signal Layer in a separate window...
 start "Jarvis Signal Layer" /d "%~dp0services\signal-layer" cmd /k "node src\index.mjs"
 goto :eof
