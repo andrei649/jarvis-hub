@@ -24,7 +24,7 @@ class GoogleCalendarPlugin:
         self.access_token = access_token
         self.calendar_id = calendar_id
         self.api_base = "https://www.googleapis.com/calendar/v3"
-        self.client = PluginHTTPClient.for_plugin("google_calendar")
+        self.client = PluginHTTPClient.for_plugin("google-calendar")
 
     def _headers(self) -> dict:
         return {"Authorization": f"Bearer {self.access_token}"}

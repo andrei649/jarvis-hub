@@ -64,7 +64,7 @@ class OracleBridgePlugin:
         self.conflicts: list[Conflict] = []
         self._watcher_task: Optional[asyncio.Task] = None
         self._running = False
-        self._client = PluginHTTPClient.for_plugin("oracle")
+        self._client = PluginHTTPClient.for_plugin("oracle-bridge")
         self._load_state()
 
     # ── Public API ────────────────────────────────────────────────

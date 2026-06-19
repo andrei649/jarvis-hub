@@ -14,6 +14,10 @@ os.environ.setdefault("JARVIS_TESTING", "1")
 # single non-localhost host and some suites burst many requests). test_rate_limit_hf2
 # monkeypatches a low limit to exercise it directly.
 os.environ.setdefault("JARVIS_RATE_LIMIT", "0")
+# SEC-5: plugin egress is strict-by-default in production, but the suite runs
+# non-strict so plugin tests that hit real/mock hosts aren't blocked; the
+# dedicated egress tests opt back into strict via monkeypatch.setenv.
+os.environ.setdefault("JARVIS_STRICT_EGRESS", "0")
 
 from fastapi import APIRouter, FastAPI
 
