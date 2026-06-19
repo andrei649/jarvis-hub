@@ -40,7 +40,17 @@ def load_memory(session_id: str) -> list[dict]:
 def list_sessions() -> list[str]:
     MEMORY_DIR.mkdir(parents=True, exist_ok=True)
     sessions = []
-    for f in sorted(MEMORY_DIR.glob("*.json"), key=lambda p: p.stat().st_mtime, reverse=True):
+    # Sort by nanosecond mtime (finer than float-seconds st_mtime) with the stem as
+    # a deterministic tiebreak: when two sessions are written within one filesystem
+    # mtime tick — common on Windows — a plain st_mtime sort ties them and the stable
+    # sort keeps alphabetical (glob) order, restoring the OLDER session on restart.
+    # On a tie, alphabetically-last wins, which matches "most recent" for both the
+    # timestamp session names and sequentially-named ones.
+    for f in sorted(
+        MEMORY_DIR.glob("*.json"),
+        key=lambda p: (p.stat().st_mtime_ns, p.stem),
+        reverse=True,
+    ):
         sid = f.stem
         if sid not in sessions:
             sessions.append(sid)
