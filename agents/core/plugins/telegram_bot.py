@@ -7,7 +7,6 @@ Uses the PermissionGate to enforce domain restrictions.
 """
 
 import logging
-from typing import Optional
 
 from ..http_client import PluginHTTPClient
 
@@ -18,7 +17,7 @@ class TelegramBotPlugin:
     def __init__(self, token: str = ""):
         self.token = token
         self.api_base = f"https://api.telegram.org/bot{token}" if token else ""
-        self.client = PluginHTTPClient.for_plugin("telegram_bot")
+        self.client = PluginHTTPClient.for_plugin("telegram")
 
     async def send_message(self, chat_id: int, text: str,
                            parse_mode: str = "Markdown",

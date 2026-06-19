@@ -28,7 +28,7 @@ _repo_root = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(_repo_root))
 sys.path.insert(0, str(_repo_root / "agents"))
 
-from agents.core.ingestion.embedder import Embedder, EMBEDDING_DIM  # noqa: E402
+from agents.core.ingestion.embedder import Embedder  # noqa: E402
 
 # ---------------------------------------------------------------------------
 # Sample queries: 5 related pairs  (anchor, related, unrelated)

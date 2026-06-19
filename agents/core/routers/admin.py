@@ -34,22 +34,20 @@ import statistics
 import sys
 from collections import defaultdict
 from datetime import date
-from pathlib import Path
 
-from fastapi import APIRouter, Depends, Request, Query
+from fastapi import APIRouter, Depends, Query, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
-from agents.core.routers._deps import admin_guard
-
-from agents.core.web_helpers import nocache_json, mask_secret, safe_reflect
 from agents.core.app_state import get_orch
+from agents.core.paths import data_path
+from agents.core.routers._deps import admin_guard
+from agents.core.web_helpers import mask_secret, nocache_json, safe_reflect
 
 logger = logging.getLogger("jarvis.web")
 
 # Settings-DB functions are leaf imports (no edge back into web.py).
-from agents.core.settings_db import get_all, get_category, put_category, init_db
-
+from agents.core.settings_db import get_all, get_category, init_db, put_category
 
 router = APIRouter(tags=["admin"])
 
@@ -116,7 +114,7 @@ async def admin_get_env():
 @router.get("/api/admin/audit", dependencies=[Depends(admin_guard)])
 async def admin_get_audit(page: int = Query(1, ge=1), limit: int = Query(50, ge=1, le=200)):
     import sqlite3
-    db = Path("memory_logs/security/audit.db")
+    db = data_path("security/audit.db")
     if not db.exists():
         return {"page": page, "limit": limit, "total": 0, "rows": []}
     conn = sqlite3.connect(str(db))
@@ -348,7 +346,7 @@ async def admin_stats():
     # must read the same module to observe them (estimate_monthly is stateless but
     # kept on the same path for consistency).
     from core.llm.cost_estimator import estimate_monthly
-    from core.resilience import get_metrics, _circuit_breakers
+    from core.resilience import _circuit_breakers, get_metrics
     orch = get_orch()
     interactions = getattr(orch.learning, 'interactions', [])
     samples = getattr(orch.bench, 'samples', [])

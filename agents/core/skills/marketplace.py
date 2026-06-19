@@ -4,7 +4,6 @@ Provides SQLite DB persistence, ZIP packaging/unpacking, and dynamic loader inte
 """
 
 import io
-import json
 import logging
 import os
 import sqlite3
@@ -12,15 +11,17 @@ import threading
 import zipfile
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import List, Dict, Any, Optional
+from typing import List, Optional
 
-from .loader import SkillLoader
+from agents.core.paths import data_path
+
 from . import signing
+from .loader import SkillLoader
 
 logger = logging.getLogger("jarvis.skills.marketplace")
 
 # Locate the DB under memory_logs/
-DB_PATH = Path(__file__).parent.parent.parent.parent / "memory_logs" / "marketplace.db"
+DB_PATH = data_path("marketplace.db")
 
 # Review states for the moderation gate (H12.12, anti-ClawHub supply chain).
 REVIEW_PENDING = "pending"

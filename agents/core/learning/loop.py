@@ -8,10 +8,11 @@ optimized prompts to improve agent performance over time.
 import json
 import logging
 import time
-from collections import defaultdict
-from dataclasses import dataclass, field, asdict
+from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Optional
+
+from agents.core.paths import data_path
 
 logger = logging.getLogger("jarvis.learning")
 
@@ -45,8 +46,8 @@ class LearningLoop:
         "bruce": {"source": "vision", "threshold": 20, "window_days": 30},
     }
 
-    def __init__(self, db_path: str = "memory_logs/learning/", promotion_rules: dict = None):
-        self.db_path = Path(db_path)
+    def __init__(self, db_path: str = None, promotion_rules: dict = None):
+        self.db_path = Path(db_path) if db_path is not None else data_path("learning")
         self.db_path.mkdir(parents=True, exist_ok=True)
         self.interactions: list[InteractionRecord] = []
         self.promotion_rules: dict = promotion_rules or dict(self.DEFAULT_PROMOTION_RULES)

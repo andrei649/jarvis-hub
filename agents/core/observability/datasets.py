@@ -26,12 +26,14 @@ import uuid
 from pathlib import Path
 from typing import Awaitable, Callable, Optional
 
+from agents.core.paths import data_path
+
 from .eval import EvalCase, EvalHarness
 
 
 class DatasetStore:
-    def __init__(self, root: str | Path = "memory_logs/eval") -> None:
-        self.root = Path(root)
+    def __init__(self, root: str | Path = None) -> None:
+        self.root = Path(root) if root is not None else data_path("eval")
         self.datasets_dir = self.root / "datasets"
 
     # ── paths ────────────────────────────────────────────────────────────────

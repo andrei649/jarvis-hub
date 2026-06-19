@@ -5,15 +5,17 @@ Loads agents.yaml and provides typed access to all config values.
 Also the single home for storage location + tunable limits (audit Q4).
 """
 
-import os
-import yaml
 from pathlib import Path
 from typing import Optional
+
+import yaml
+
+from agents.core.paths import data_root  # config.py defines its own data_path() below
 
 # ── storage location + tunable limits (Q4) ───────────────────────────────────
 # Root directory for on-disk state (JSON stores, SQLite DBs, logs). Override
 # with the JARVIS_MEMORY_DIR env var.
-MEMORY_DIR = Path(os.environ.get("JARVIS_MEMORY_DIR", "memory_logs"))
+MEMORY_DIR = data_root()
 
 NOTES_MAX_LEN = 20_000             # max chars of a session note (H10.21)
 ROOM_HISTORY_CAP = 200             # max messages kept per chat room (H10.20)

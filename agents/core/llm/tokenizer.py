@@ -3,7 +3,6 @@ tokenizer.py — Token estimator for hybrid routing decisions.
 Uses tiktoken cl100k_base when available, character-based fallback otherwise.
 """
 
-from typing import Optional
 
 try:
     import tiktoken

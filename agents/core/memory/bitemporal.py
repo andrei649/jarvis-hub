@@ -18,13 +18,15 @@ offline-testable. Persistence is a single JSON file (atomic writes).
 
 from __future__ import annotations
 
-import json
 import time
 from pathlib import Path
-from ..persistence import JsonStore
 from typing import Optional
 
-DEFAULT_PATH = Path("memory_logs/bitemporal_kg.json")
+from agents.core.paths import data_path
+
+from ..persistence import JsonStore
+
+DEFAULT_PATH = data_path("bitemporal_kg.json")
 
 
 class BiTemporalKG(JsonStore):
