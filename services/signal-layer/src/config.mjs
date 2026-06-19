@@ -1,12 +1,18 @@
 export function loadConfig(env = process.env) {
-  const mode = env.JARVIS_WORLDVIEW_MODE === 'live' ? 'live' : 'replay';
+  // Prefer the Signal Layer-specific env. Keep JARVIS_WORLDVIEW_MODE as a
+  // deprecated fallback so early sprint scripts still work, but avoid coupling
+  // the provider-neutral Signal Layer to the existing Jarvis WorldView stack.
+  const modeEnv = env.JARVIS_SIGNAL_LAYER_MODE || env.JARVIS_WORLDVIEW_MODE || 'replay';
+  const mode = modeEnv === 'live' ? 'live' : 'replay';
   return {
     mode,
     host: env.SIGNAL_LAYER_HOST || '0.0.0.0',
     port: Number.parseInt(env.SIGNAL_LAYER_PORT || '8787', 10),
     worldMonitor: {
-      baseUrl: trimTrailingSlash(env.WORLDMONITOR_BASE_URL || 'http://localhost:3000'),
-      mcpUrl: env.WORLDMONITOR_MCP_URL || 'http://localhost:3000/api/mcp',
+      // Keep WorldMonitor off :3000 by default because Jarvis's existing
+      // WorldView frontend already owns localhost:3000.
+      baseUrl: trimTrailingSlash(env.WORLDMONITOR_BASE_URL || 'http://localhost:3100'),
+      mcpUrl: env.WORLDMONITOR_MCP_URL || 'http://localhost:3100/api/mcp',
       timeoutMs: Number.parseInt(env.WORLDMONITOR_TIMEOUT_MS || '8000', 10)
     }
   };
