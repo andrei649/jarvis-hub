@@ -69,6 +69,27 @@ route-policy table: **`docs/SECURITY_ROUTE_AUDIT_2026-06-17.md`**.
 
 ---
 
+## 📦 Dependency upkeep & the fastapi 0.137 hold (2026-06-19)
+
+Dependabot triage this session — **merged** (safe): `actions/checkout` v6→v7 (#222),
+worldview-mcp dev deps (#223), root `vitest` 2→4 + `jsdom` 25→29 (#224). **Held for their own
+review cycle:** React 18→19 frontend (#226 — needs v2 bundle rebuild + visual check), WorldView
+23-update group (#228), mobile group (#227 — owner-gated, real-device validation per `OWNER_TASKS`).
+
+**fastapi 0.137 upgrade — BLOCKED (tracked task):** Dependabot #237 bumps `fastapi` to 0.137.2,
+which collapses the *introspected* route surface **296→83** and fails the route-parity / auth-matrix
+guards. **Root-caused (#247):** fastapi 0.137 wraps `include_router` results in an opaque
+`_IncludedRouter` object instead of flattening them into `app.routes`. **The app is NOT broken** —
+routes serve at runtime and appear in `app.openapi()`; only the two `app.routes`-iterating guards
+regress. **To unblock** (full plan + repro:
+[`docs/research/2026-06-19-fastapi-0.137-include-router-regression.md`](docs/research/2026-06-19-fastapi-0.137-include-router-regression.md)):
+(1) add a recursive route flattener (no-op on ≤0.136) + switch the parity guard to
+`app.openapi()["paths"]`; (2) **then** bump `fastapi>=0.137.2` with a **bounded** `starlette` pin in
+the same PR. Until then keep `fastapi>=0.136.3,<0.137`. #237's harmless `pytest-xdist`/`ruff` dev
+bumps are split out separately so they still land.
+
+---
+
 ## 🔍 CodeQL & secret-scanning alerts (2026-06-17 — code fixes shipped; dismissals + ~12 triage pending)
 
 GitHub scanning surfaced 25 CodeQL alerts + 1 secret-scanning alert. Of the 13 reviewed:
