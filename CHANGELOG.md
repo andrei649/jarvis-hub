@@ -1,6 +1,24 @@
 # Changelog
 
 ## [Unreleased]
+### Maintenance — dependency upkeep, bug-table reconciliation, fastapi 0.137 hold (2026-06-19)
+- **Dependabot triage:** merged the safe bumps — `actions/checkout` v6→v7 (#222), worldview-mcp dev
+  deps (#223), root `vitest` 2→4 + `jsdom` 25→29 (#224). Held for dedicated review: React 18→19
+  frontend (#226), WorldView 23-update group (#228), mobile group (#227, owner-gated). #237's harmless
+  `pytest-xdist`/`ruff` dev bumps were split out from its held `fastapi` bump.
+- **fastapi 0.137 held + root-caused (#247):** 0.137's `include_router` wraps included routers in an
+  opaque `_IncludedRouter` instead of flattening into `app.routes`, collapsing the *introspected* route
+  surface 296→83 and failing the parity / auth-matrix guards. The **app is unaffected** (routes serve +
+  appear in OpenAPI); remediation + repro in
+  `docs/research/2026-06-19-fastapi-0.137-include-router-regression.md`. Pinned `fastapi<0.137`.
+- **MCP client `asyncio` NameError fixed (#243):** `MCPServer._send` awaited `asyncio.wait_for` with
+  `asyncio` imported only inside `connect()`; the NameError was swallowed by a broad `except`, so
+  **every** outbound MCP request silently returned `{}`. Hoisted the import + regression test
+  (`tests/test_mcp_client.py`). Surfaced by `ruff F821`.
+- **BACKLOG bug-table reconciled (#245):** BUG-3/6/7/8/9/10/11 were already fixed in code (with tests)
+  yet still listed open — marked ✅ with fix location + guard test; BUG-12 → 🟡 (spend race closed via
+  `_spend_lock`).
+
 ### Neural Mesh — live brain visualization of the orchestrator (2026-06-17)
 - **`/brain` — the JARVIS Neural Mesh**, a live canvas "brain" of agents + models firing in real
   time (core node = the orchestrator, inner shell = models sized by cost, outer shell = agents,
