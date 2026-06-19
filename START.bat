@@ -2,12 +2,15 @@
 REM ============================================================
 REM  JARVIS HUB - START  (Windows 11, double-click)
 REM  Starts the server and opens the HUD in your browser.
-REM  Also auto-starts WorldView (4D OSINT) if it's set up.
+REM  Also auto-starts WorldView (4D OSINT) and the Jarvis
+REM  Signal Layer if they are set up.
 REM  Run UPDATE.bat first if you want the latest version.
 REM
 REM  WorldView is OPT-OUT: to start JARVIS only, run with
 REM    set JARVIS_WORLDVIEW=0
-REM  (or set it permanently in your environment).
+REM  Signal Layer is OPT-OUT: to skip the WorldView/Signal API, run with
+REM    set JARVIS_SIGNAL_LAYER=0
+REM  (or set either permanently in your environment).
 REM ============================================================
 setlocal enableextensions
 cd /d "%~dp0"
@@ -31,17 +34,25 @@ if exist ".venv\Scripts\python.exe" (
 
 REM --- WorldView (4D OSINT) - auto-start (optional, opt-out with JARVIS_WORLDVIEW=0) ---
 if /I "%JARVIS_WORLDVIEW%"=="0" (
-  echo [INFO] WorldView disabled ^(JARVIS_WORLDVIEW=0^) - starting JARVIS only.
+  echo [INFO] WorldView disabled ^(JARVIS_WORLDVIEW=0^) - skipping WorldView.
 ) else (
   call :start_worldview
+)
+
+REM --- Jarvis Signal Layer - auto-start (optional, opt-out with JARVIS_SIGNAL_LAYER=0) ---
+if /I "%JARVIS_SIGNAL_LAYER%"=="0" (
+  echo [INFO] Signal Layer disabled ^(JARVIS_SIGNAL_LAYER=0^) - skipping Signal Layer.
+) else (
+  call :start_signal_layer
 )
 
 echo.
 REM The V2 HUD (cockpit) is the primary one from now on; override with  set JARVIS_HUD=v1  for the legacy HUD.
 if not defined JARVIS_HUD set "JARVIS_HUD=v2"
 echo Starting the server on http://127.0.0.1:8080
-echo HUD:   http://127.0.0.1:8080/   ^(V2 cockpit; legacy HUD at /v1^)
-echo Admin: http://127.0.0.1:8080/admin
+echo HUD:          http://127.0.0.1:8080/   ^(V2 cockpit; legacy HUD at /v1^)
+echo Admin:        http://127.0.0.1:8080/admin
+echo Signal Layer: http://127.0.0.1:8787/healthz ^(if started^)
 echo.
 echo (Keep this window open. Close it to stop the server.)
 echo.
@@ -53,7 +64,7 @@ start "" /b powershell -NoProfile -Command "Write-Host 'Waiting for the server t
 
 echo.
 echo The server has stopped.
-echo (WorldView, if it started, runs in its own windows - close them manually.)
+echo (WorldView and Signal Layer, if they started, run in their own windows - close them manually.)
 pause >nul
 endlocal
 exit /b
@@ -122,4 +133,31 @@ if /I "%WV_FEED%"=="real" (
 echo [3/3] Will open http://localhost:3000 when it's ready.
 echo       ^(The first start takes a while - Next.js is compiling. Keep the WorldView windows open.^)
 start "" /b powershell -NoProfile -Command "Write-Host 'Waiting for WorldView (:3000)...'; while ($true) { try { $r = Invoke-WebRequest -Uri 'http://localhost:3000/' -UseBasicParsing -TimeoutSec 2; if ($r.StatusCode -eq 200) { Start-Process 'http://localhost:3000/'; break } } catch { Start-Sleep 3 } }"
+goto :eof
+
+REM ============================================================
+REM  Subroutine: start Jarvis Signal Layer
+REM  Starts the provider-neutral situational-awareness API (:8787)
+REM  in replay mode by default. Live WorldMonitor mode is opt-in:
+REM    set JARVIS_WORLDVIEW_MODE=live
+REM    set WORLDMONITOR_BASE_URL=http://localhost:3000
+REM    set WORLDMONITOR_MCP_URL=http://localhost:3000/api/mcp
+REM  Skips gracefully if Node or the service files are missing.
+REM ============================================================
+:start_signal_layer
+echo.
+echo ------------------------------------------------------------
+echo   Jarvis Signal Layer - auto-start
+echo ------------------------------------------------------------
+where node >nul 2>&1 || (echo [SKIP] Node not found ^(Node 20+ required^) - skipping Signal Layer. & goto :eof)
+if not exist "services\signal-layer\src\index.mjs" (
+  echo [SKIP] services\signal-layer is missing - skipping Signal Layer.
+  goto :eof
+)
+if not defined JARVIS_WORLDVIEW_MODE set "JARVIS_WORLDVIEW_MODE=replay"
+if not defined SIGNAL_LAYER_HOST set "SIGNAL_LAYER_HOST=0.0.0.0"
+if not defined SIGNAL_LAYER_PORT set "SIGNAL_LAYER_PORT=8787"
+echo [INFO] Mode: %JARVIS_WORLDVIEW_MODE%  Port: %SIGNAL_LAYER_PORT%
+echo [INFO] Starting Signal Layer in a separate window...
+start "Jarvis Signal Layer" /d "%~dp0services\signal-layer" cmd /k "node src\index.mjs"
 goto :eof
