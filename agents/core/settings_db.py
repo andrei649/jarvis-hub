@@ -7,8 +7,9 @@ import json
 import logging
 import sqlite3
 import threading
-from pathlib import Path
 from typing import Any
+
+from agents.core.paths import data_path
 
 logger = logging.getLogger("jarvis.settings")
 
@@ -22,7 +23,7 @@ def _logsafe(value: object) -> str:
     """
     return str(value).replace("\r", " ").replace("\n", " ")
 
-DB_PATH = Path(__file__).parent.parent.parent / "memory_logs" / "settings.db"
+DB_PATH = data_path("settings.db")
 
 # ── schema ────────────────────────────────────────────────────────
 

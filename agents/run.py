@@ -5,7 +5,6 @@ skills, checkpointing, and starts an interactive REPL.
 """
 
 import asyncio
-import logging
 import sys
 from pathlib import Path
 

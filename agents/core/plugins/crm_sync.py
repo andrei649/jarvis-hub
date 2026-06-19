@@ -9,7 +9,7 @@ class CRMSyncPlugin:
     def __init__(self, integration_token: str = "", database_id: str = ""):
         self.integration_token = integration_token.strip()
         self.database_id = database_id.strip()
-        self.client = PluginHTTPClient.for_plugin("crm")
+        self.client = PluginHTTPClient.for_plugin("crm-sync")
 
     @resilient_call(
         max_retries=2,

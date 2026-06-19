@@ -20,10 +20,12 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 
+from agents.core.paths import data_path
+
 logger = logging.getLogger("jarvis.autonomy.preferences")
 
-DEFAULT_DB = Path("memory_logs") / "autonomy.db"
-JOURNAL = Path("memory_logs") / "autonomy_journal.jsonl"
+DEFAULT_DB = data_path("autonomy.db")
+JOURNAL = data_path("autonomy_journal.jsonl")
 
 # Approve here means the human let it run (accept/edit); reject/defer do not.
 _APPROVE = {"accept", "edit"}

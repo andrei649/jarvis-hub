@@ -11,11 +11,13 @@ from __future__ import annotations
 
 import time
 from pathlib import Path
-from .persistence import JsonStore
+
+from agents.core.paths import data_path
 
 from .config import NOTES_MAX_LEN as MAX_LEN  # Q4: centralized limit
+from .persistence import JsonStore
 
-DEFAULT_PATH = Path("memory_logs/notes.json")
+DEFAULT_PATH = data_path("notes.json")
 
 
 class NotesStore(JsonStore):

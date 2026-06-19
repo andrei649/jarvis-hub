@@ -29,9 +29,11 @@ import time
 from pathlib import Path
 from typing import Optional
 
+from agents.core.paths import data_path
+
 from ..persistence import JsonStore
 
-DEFAULT_PATH = Path("memory_logs/sender_pairing.json")
+DEFAULT_PATH = data_path("sender_pairing.json")
 
 ALLOWED = "allowed"
 PENDING = "pending"

@@ -58,7 +58,7 @@ BUILTIN_PLUGINS = {
         description="News headlines from BBC RSS feeds",
         network_access=NetworkAccess.RESTRICTED,
         data_scope=DataScope.PROCESSED,
-        allowed_domains=["feeds.bbci.co.uk"],
+        allowed_domains=["feeds.bbci.co.uk", "www.hotnews.ro", "www.stiripesurse.ro"],
         agents_served=["all"],
     ),
     "cloud-llm": PluginManifest(
@@ -68,7 +68,7 @@ BUILTIN_PLUGINS = {
         description="Optional Anthropic/OpenAI fallback for heavy reasoning",
         network_access=NetworkAccess.RESTRICTED,
         data_scope=DataScope.TRANSMITTED,
-        allowed_domains=["api.anthropic.com", "api.openai.com"],
+        allowed_domains=["api.anthropic.com", "api.openai.com", "generativelanguage.googleapis.com"],
         agents_served=["jarvis", "athena", "stark", "vision", "veronica"],
     ),
     "telegram": PluginManifest(
@@ -88,7 +88,7 @@ BUILTIN_PLUGINS = {
         description="Read and compose emails",
         network_access=NetworkAccess.RESTRICTED,
         data_scope=DataScope.PROCESSED,
-        allowed_domains=["gmail.googleapis.com", "www.googleapis.com"],
+        allowed_domains=["gmail.googleapis.com", "www.googleapis.com", "oauth2.googleapis.com"],
         agents_served=["stark", "pepper", "veronica"],
     ),
     "google-calendar": PluginManifest(
@@ -98,7 +98,7 @@ BUILTIN_PLUGINS = {
         description="Read and manage calendar events",
         network_access=NetworkAccess.RESTRICTED,
         data_scope=DataScope.PROCESSED,
-        allowed_domains=["www.googleapis.com"],
+        allowed_domains=["www.googleapis.com", "oauth2.googleapis.com"],
         agents_served=["pepper"],
     ),
     "whatsapp-bridge": PluginManifest(
@@ -204,6 +204,23 @@ BUILTIN_PLUGINS = {
 }
 
 
+def host_in_allowlist(host: str, allowed_domains: list[str]) -> bool:
+    """True if *host* exactly matches an allowed domain or is a sub-domain of one.
+
+    F-07: replaces the old ``any(d in host)`` substring test, which let
+    ``api.openai.com.evil.example`` slip past an allowlist of ``api.openai.com``.
+    Matching is now anchored: ``host == d`` or ``host`` ends with ``"." + d``.
+    """
+    host = (host or "").lower().strip().rstrip(".")
+    if not host:
+        return False
+    for d in allowed_domains or []:
+        d = (d or "").lower().strip().rstrip(".")
+        if d and (host == d or host.endswith("." + d)):
+            return True
+    return False
+
+
 class PermissionGate:
     """
     Central gate that all agent-to-plugin calls pass through.
@@ -249,8 +266,8 @@ class PermissionGate:
 
         if manifest.network_access == NetworkAccess.RESTRICTED:
             if not target_domain:
-                return True  # No domain specified = internal processing
-            allowed = any(d in target_domain for d in manifest.allowed_domains)
+                return True  # No domain specified = internal processing (URL-level egress is enforced in PluginHTTPClient)
+            allowed = host_in_allowlist(target_domain, manifest.allowed_domains)
             if not allowed:
                 logger.warning(f"Domain {target_domain} not allowed by plugin {plugin_id} — blocked")
             return allowed

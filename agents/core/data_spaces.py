@@ -16,9 +16,11 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Optional
 
+from agents.core.paths import data_path
+
 from .persistence import JsonStore
 
-DEFAULT_PATH = Path("memory_logs/data_spaces.json")
+DEFAULT_PATH = data_path("data_spaces.json")
 
 
 class DataSpaces(JsonStore):

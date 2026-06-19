@@ -4,8 +4,7 @@ Runs periodically to keep the profile fresh. All writes go through MemoryStore.
 """
 import logging
 import re
-from dataclasses import dataclass, field
-from typing import Optional
+from dataclasses import dataclass
 
 logger = logging.getLogger(__name__)
 
