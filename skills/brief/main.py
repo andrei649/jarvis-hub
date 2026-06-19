@@ -10,7 +10,6 @@ Commands (see get_commands):
 """
 
 import logging
-import os
 
 logger = logging.getLogger("jarvis.skills.brief")
 

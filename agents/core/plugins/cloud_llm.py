@@ -7,7 +7,6 @@ Only enabled for approved agents: jarvis, athena, stark, vision, veronica.
 """
 
 import logging
-from typing import Optional
 
 from ..http_client import PluginHTTPClient, PluginTimeouts
 from ..resilience import resilient_call
