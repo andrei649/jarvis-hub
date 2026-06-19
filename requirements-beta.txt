@@ -56,3 +56,4 @@ beautifulsoup4>=4.15.0
 pytest>=9.1.0
 pytest-asyncio>=1.4.0
 pytest-timeout>=2.4.0
+pytest-xdist>=3.6.0
