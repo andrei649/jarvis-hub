@@ -7,7 +7,6 @@ Bridge connects to a local WhatsApp Web instance running on the Pi 5.
 """
 
 import logging
-from typing import Optional
 
 from ..http_client import PluginHTTPClient
 

@@ -13,7 +13,6 @@ manager rather than encoded as edges.
 from __future__ import annotations
 
 import re
-from typing import Optional
 
 
 def _render(template: str, ctx: dict) -> str:

@@ -7,7 +7,6 @@ Uses the PermissionGate to enforce domain restrictions.
 """
 
 import logging
-from typing import Optional
 
 from ..http_client import PluginHTTPClient
 

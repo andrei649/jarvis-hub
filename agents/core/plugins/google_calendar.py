@@ -182,7 +182,7 @@ class GoogleCalendarPlugin:
             if end_dt:
                 body["end"] = {"dateTime": end_dt, "timeZone": "Europe/Bucharest"}
 
-            resp = await self._request(
+            await self._request(
                 "PATCH", f"/calendars/{self.calendar_id}/events/{event_id}",
                 json=body,
             )
