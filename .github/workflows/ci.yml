@@ -19,8 +19,10 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # Full matrix on pushes to main; PRs run the cheaper ubuntu-only leg.
-        os: ${{ github.event_name == 'pull_request' && fromJSON('["ubuntu-latest"]') || fromJSON('["ubuntu-latest", "windows-latest"]') }}
+        # Full matrix (ubuntu + windows) on every PR and push — Windows is a
+        # first-class target (Jarvis runs on Windows), so `test (windows-latest)`
+        # is a required check on PRs, not just post-merge.
+        os: ["ubuntu-latest", "windows-latest"]
     steps:
       - uses: actions/checkout@v6
       - uses: actions/setup-python@v6
