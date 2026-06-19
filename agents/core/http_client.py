@@ -157,7 +157,9 @@ class PluginHTTPClient:
         declaration.
         """
         try:
-            from agents.core.plugin_gate import BUILTIN_PLUGINS, NetworkAccess, host_in_allowlist
+            from agents.core.plugin_gate import (
+                BUILTIN_PLUGINS, NetworkAccess, host_in_allowlist, dynamic_domains,
+            )
         except Exception:
             return
         manifest = BUILTIN_PLUGINS.get(self.plugin_name)
@@ -177,10 +179,13 @@ class PluginHTTPClient:
                 return
             violation = f"plugin '{self.plugin_name}' is LAN-only but '{host}' is not a local address"
         elif na == NetworkAccess.RESTRICTED:
-            if host and host_in_allowlist(host, manifest.allowed_domains):
+            # SEC-5b: static allowlist ∪ hosts registered at init for config/env-
+            # driven plugins (n8n, SearXNG, Signal, Matrix).
+            allowed = manifest.allowed_domains + dynamic_domains(self.plugin_name)
+            if host and host_in_allowlist(host, allowed):
                 return
             violation = (f"plugin '{self.plugin_name}' may not reach '{host}' "
-                         f"(allowed: {manifest.allowed_domains})")
+                         f"(allowed: {allowed})")
         else:
             return
         import os
