@@ -1,6 +1,17 @@
 # Changelog
 
 ## [Unreleased]
+### fastapi 0.137 upgrade unblocked — route-introspection flattener (2026-06-19)
+- **`fastapi` bumped to `>=0.137.2,<0.138`** (+ `starlette>=0.46,<1.0`). fastapi 0.137 wraps
+  `include_router` results in an opaque `_IncludedRouter` instead of flattening them into
+  `app.routes`, which collapsed the *introspected* route surface 296→83 and failed the route-parity /
+  auth-matrix guards (the app was never broken — routes served + appeared in OpenAPI).
+- **Fix:** `tests/_route_introspect.py::iter_effective_routes` flattens the wrappers via fastapi's own
+  `_iter_routes_with_context` — yielding effective routes with merged `.path`/`.methods`/`.dependant`
+  — and falls back to plain `app.routes` on fastapi ≤0.136. `test_route_parity_guard.py` and
+  `test_route_auth_matrix.py` use it; **snapshots unchanged** (validated on 0.137.1: parity 296/296,
+  auth-matrix 300/300, 0 drift, include-time guards resolve). Closes the hold tracked in #247.
+
 ### Maintenance — dependency upkeep, bug-table reconciliation, fastapi 0.137 hold (2026-06-19)
 - **Dependabot triage:** merged the safe bumps — `actions/checkout` v6→v7 (#222), worldview-mcp dev
   deps (#223), root `vitest` 2→4 + `jsdom` 25→29 (#224). Held for dedicated review: React 18→19
