@@ -35,10 +35,18 @@ DEFAULT_API_URL = "http://localhost:4000"
 class WorldViewPlugin:
     """Read-only client for the WorldView 4D OSINT REST API."""
 
-    def __init__(self, api_url: str = ""):
+    def __init__(self, api_url: str = "", api_token: str = ""):
         # Local-first default; override with WORLDVIEW_API_URL for a remote deployment.
         self.api_url = (api_url or DEFAULT_API_URL).rstrip("/")
+        # F-06: when WorldView auth is enabled (authSecret), the bridge must present a
+        # read-scoped bearer token. Off by default (local, auth-disabled) → no header,
+        # unchanged behavior. Set WORLDVIEW_API_TOKEN to authenticate the bridge.
+        import os
+        self.api_token = (api_token or os.environ.get("WORLDVIEW_API_TOKEN", "")).strip()
         self.client = PluginHTTPClient.for_plugin("worldview")
+
+    def _auth_headers(self) -> dict:
+        return {"Authorization": f"Bearer {self.api_token}"} if self.api_token else {}
 
     # ── internals ──────────────────────────────────────────────────
     def _url(self, path: str) -> str:
@@ -66,7 +74,7 @@ class WorldViewPlugin:
     async def _get(self, path: str, params: dict | None = None) -> dict:
         """GET a JSON object from the backend (retried + circuit-broken). Raises on failure."""
         clean = {k: v for k, v in (params or {}).items() if v not in (None, "")}
-        resp = await self.client.get(self._url(path), params=clean)
+        resp = await self.client.get(self._url(path), params=clean, headers=self._auth_headers())
         resp.raise_for_status()
         body = resp.json()
         return body if isinstance(body, dict) else {"data": body}
