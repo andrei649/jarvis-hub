@@ -67,6 +67,18 @@ route-policy table: **`docs/SECURITY_ROUTE_AUDIT_2026-06-17.md`**.
 
 ---
 
+## 🔍 CodeQL & secret-scanning alerts (2026-06-17 — code fixes shipped; dismissals + ~12 triage pending)
+
+GitHub scanning surfaced 25 CodeQL alerts + 1 secret-scanning alert. Of the 13 reviewed:
+
+| # | Item | S | P | AC |
+|---|------|---|---|----|
+| CQ-1 ✅ | **Fix the real findings** (merged #215, #216): calendar `create_event` kwargs (#248, was a runtime `TypeError`), heartbeat `except None` (#26), `strip_thinking` ReDoS (#1), possessive template regex (#302), `log_safe()` on two admin log lines (#311/#24), and the secret-scan fixture FP (#215). | 3 | P1 | ✅ all green in CI; merged |
+| CQ-2 | **Owner: dismiss FPs/won't-fix in the UI** — secret-scan #1 (test fixture), CodeQL path-injection #22/#23/#431 (agent-id regex blocks traversal), var-defined #299/#298/#247 (used defaults), docs #432. See [`docs/OWNER_TASKS.md`](docs/OWNER_TASKS.md) §GitHub settings. | 1 | P2 | owner GitHub action |
+| CQ-3 | **Triage the remaining ~12 alerts** — only 13 of 25 selected were captured (no MCP code-scanning-list tool); needs an owner paste to finish. | 2 | P2 | paste → triage → fix real ones |
+
+---
+
 ## Scalability: index hot/unbounded SQLite tables (shipped — PR pending)
 
 Behavior-preserving index pass on the four tables that are read on hot paths
