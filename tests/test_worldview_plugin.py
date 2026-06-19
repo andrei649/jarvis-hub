@@ -125,3 +125,40 @@ async def test_state_at_happy_path_counts_features(monkeypatch):
         assert res["count"] == 2
     finally:
         await wv.close()
+
+
+# ── F-06: bridge auth (Authorization: Bearer when WORLDVIEW_API_TOKEN is set) ──
+
+class _FakeResp:
+    def raise_for_status(self):
+        pass
+    def json(self):
+        return {"ok": True}
+
+
+async def test_bridge_sends_bearer_when_token_set(monkeypatch):
+    monkeypatch.setenv("WORLDVIEW_API_TOKEN", "wv-secret")
+    wv = WorldViewPlugin(api_url="http://localhost:4000")
+    captured = {}
+
+    async def fake_get(url, **kwargs):
+        captured["headers"] = kwargs.get("headers")
+        return _FakeResp()
+
+    monkeypatch.setattr(wv.client, "get", fake_get)
+    await wv._get("history/state")
+    assert captured["headers"].get("Authorization") == "Bearer wv-secret"
+
+
+async def test_bridge_sends_no_auth_header_by_default(monkeypatch):
+    monkeypatch.delenv("WORLDVIEW_API_TOKEN", raising=False)
+    wv = WorldViewPlugin(api_url="http://localhost:4000")  # no token → local, auth-disabled
+    captured = {}
+
+    async def fake_get(url, **kwargs):
+        captured["headers"] = kwargs.get("headers")
+        return _FakeResp()
+
+    monkeypatch.setattr(wv.client, "get", fake_get)
+    await wv._get("history/state")
+    assert "Authorization" not in (captured["headers"] or {})

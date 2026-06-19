@@ -41,7 +41,7 @@ class RecordingClient:
     def __init__(self):
         self.calls: list[tuple[str, str]] = []  # (method, path)
 
-    async def get(self, url: str, params=None):
+    async def get(self, url: str, params=None, **kwargs):  # **kwargs: F-06 added headers=
         self.calls.append(("GET", "/" + url.split("/", 3)[3]))  # strip http://host:port
         class _Resp:
             def raise_for_status(self):
