@@ -2,7 +2,7 @@
 
 ## 1. Windows one-click startup
 
-`START.bat` now auto-starts the Jarvis Signal Layer in a separate window after the existing WorldView startup block and before `serve.py`.
+`START.bat` auto-starts the Jarvis Signal Layer in a separate window after the existing WorldView startup block and before `serve.py`.
 
 Default behavior:
 
@@ -27,16 +27,30 @@ set JARVIS_SIGNAL_LAYER=0
 START.bat
 ```
 
-Live WorldMonitor mode is opt-in:
+Live WorldMonitor mode is opt-in. WorldMonitor should not use host port `:3000` because Jarvis's existing WorldView frontend owns that port. Use `:3100` by convention:
 
 ```bat
-set JARVIS_WORLDVIEW_MODE=live
-set WORLDMONITOR_BASE_URL=http://localhost:3000
-set WORLDMONITOR_MCP_URL=http://localhost:3000/api/mcp
+set JARVIS_SIGNAL_LAYER_MODE=live
+set WORLDMONITOR_BASE_URL=http://localhost:3100
+set WORLDMONITOR_MCP_URL=http://localhost:3100/api/mcp
 START.bat
 ```
 
-## 2. Replay mode
+## 2. Linux/macOS startup
+
+`start.sh` also starts the Signal Layer unless disabled:
+
+```bash
+./start.sh
+```
+
+Opt out:
+
+```bash
+JARVIS_SIGNAL_LAYER=0 ./start.sh
+```
+
+## 3. Replay mode
 
 Use this for development, demos, and tests.
 
@@ -55,19 +69,21 @@ curl http://localhost:8787/briefs/world
 curl http://localhost:8787/assessments/country/RO
 ```
 
-## 3. Live mode
+## 4. Live mode
 
-Run WorldMonitor separately, then:
+Run WorldMonitor separately, mapped to host port `:3100`, then:
 
 ```bash
-export JARVIS_WORLDVIEW_MODE=live
-export WORLDMONITOR_BASE_URL=http://localhost:3000
-export WORLDMONITOR_MCP_URL=http://localhost:3000/api/mcp
+export JARVIS_SIGNAL_LAYER_MODE=live
+export WORLDMONITOR_BASE_URL=http://localhost:3100
+export WORLDMONITOR_MCP_URL=http://localhost:3100/api/mcp
 cd services/signal-layer
 npm start
 ```
 
-## 4. Degraded provider behavior
+`JARVIS_WORLDVIEW_MODE` is accepted only as a deprecated sprint fallback. Prefer `JARVIS_SIGNAL_LAYER_MODE`.
+
+## 5. Degraded provider behavior
 
 The live provider should not crash the service. When WorldMonitor is down, routes should return:
 
@@ -79,27 +95,39 @@ The live provider should not crash the service. When WorldMonitor is down, route
 }
 ```
 
-## 5. Demo safety
+## 6. Demo safety
 
 Use replay mode during the Sunday demo unless live data has been verified immediately beforehand.
 
 ```bash
-export JARVIS_WORLDVIEW_MODE=replay
+export JARVIS_SIGNAL_LAYER_MODE=replay
 npm start
 ```
 
 On Windows, this is already the default when launched from `START.bat`.
 
-## 6. Jarvis Hub UI integration
+## 7. Jarvis agent integration
 
-Set:
+Agents should call the Python `SignalLayerPlugin` for evidence-backed world intelligence:
+
+```python
+from agents.core.plugins.signal_layer import SignalLayerPlugin
+
+sl = SignalLayerPlugin()
+await sl.world_brief()
+await sl.signals(relevant_only=True)
+await sl.country_assessment("RO")
+await sl.ask_world("What changed overnight that matters to me?")
+```
+
+The existing `WorldViewPlugin` remains the bridge to the local WorldView 4D OSINT stack.
+
+## 8. Jarvis Hub UI integration
+
+For Vite HUD integration, prefer:
 
 ```bash
-NEXT_PUBLIC_SIGNAL_LAYER_URL=http://localhost:8787
+VITE_SIGNAL_LAYER_URL=http://localhost:8787
 ```
 
-Mount `WorldViewPage` under the Jarvis route you want, for example:
-
-```text
-/jarvis/worldview
-```
+The current `apps/jarvis-hub/src/features/worldview` React scaffold is not yet mounted into the real `frontend/` Vite HUD. The next UI step is to port or mount that cockpit in the actual HUD app.
