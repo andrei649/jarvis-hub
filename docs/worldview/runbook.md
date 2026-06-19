@@ -1,6 +1,42 @@
 # Jarvis Signal Layer Runbook
 
-## 1. Replay mode
+## 1. Windows one-click startup
+
+`START.bat` now auto-starts the Jarvis Signal Layer in a separate window after the existing WorldView startup block and before `serve.py`.
+
+Default behavior:
+
+```bat
+START.bat
+```
+
+Starts:
+
+```text
+Jarvis Hub:     http://127.0.0.1:8080
+Signal Layer:   http://127.0.0.1:8787/healthz
+WorldView:      http://localhost:3000, when enabled and installed
+```
+
+The Signal Layer defaults to replay mode so Windows startup works without WorldMonitor or API keys.
+
+Opt out:
+
+```bat
+set JARVIS_SIGNAL_LAYER=0
+START.bat
+```
+
+Live WorldMonitor mode is opt-in:
+
+```bat
+set JARVIS_WORLDVIEW_MODE=live
+set WORLDMONITOR_BASE_URL=http://localhost:3000
+set WORLDMONITOR_MCP_URL=http://localhost:3000/api/mcp
+START.bat
+```
+
+## 2. Replay mode
 
 Use this for development, demos, and tests.
 
@@ -19,7 +55,7 @@ curl http://localhost:8787/briefs/world
 curl http://localhost:8787/assessments/country/RO
 ```
 
-## 2. Live mode
+## 3. Live mode
 
 Run WorldMonitor separately, then:
 
@@ -31,7 +67,7 @@ cd services/signal-layer
 npm start
 ```
 
-## 3. Degraded provider behavior
+## 4. Degraded provider behavior
 
 The live provider should not crash the service. When WorldMonitor is down, routes should return:
 
@@ -43,7 +79,7 @@ The live provider should not crash the service. When WorldMonitor is down, route
 }
 ```
 
-## 4. Demo safety
+## 5. Demo safety
 
 Use replay mode during the Sunday demo unless live data has been verified immediately beforehand.
 
@@ -52,7 +88,9 @@ export JARVIS_WORLDVIEW_MODE=replay
 npm start
 ```
 
-## 5. Jarvis Hub UI integration
+On Windows, this is already the default when launched from `START.bat`.
+
+## 6. Jarvis Hub UI integration
 
 Set:
 
