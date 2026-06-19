@@ -4,7 +4,6 @@ types.py — Security data types: scan results, threats, events.
 
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Optional
 
 
 class ThreatLevel(str, Enum):

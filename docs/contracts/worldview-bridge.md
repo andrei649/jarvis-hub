@@ -57,10 +57,11 @@ endpoints:
    `{"status": "unavailable", ...}` — it never raises into the chat turn and never invents
    OSINT data. Budget: 5s per attempt, ≤3 attempts, circuit breaker `plugin:worldview`.
 3. **Transport & discovery.** Plain HTTP on the LAN; base URL `http://localhost:4000`,
-   overridable via `WORLDVIEW_API_URL`. No auth header is sent by the bridge — when WorldView
-   auth is enabled (`authSecret`), the deployment must mint the bridge a read-scoped token
-   (see `rbac.ts` permissions: `read:history`, `read:recon`, `read:provenance`,
-   `read:ontology`).
+   overridable via `WORLDVIEW_API_URL`. **Auth (F-06):** by default (WorldView auth
+   disabled) the bridge sends no `Authorization` header — unchanged. When WorldView auth
+   is enabled (`authSecret`), set `WORLDVIEW_API_TOKEN` to a read-scoped token and the
+   bridge sends `Authorization: Bearer <token>` on every GET (see `rbac.ts` permissions:
+   `read:history`, `read:recon`, `read:provenance`, `read:ontology`).
 4. **Versioning.** Additive provider changes (new endpoints/fields) don't break the contract.
    Removing/renaming any endpoint or response key listed above is a breaking change: bump
    `version` here and update both sides in one PR. If the repos are ever split, this file

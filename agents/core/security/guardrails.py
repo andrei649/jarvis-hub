@@ -3,7 +3,7 @@ guardrails.py — Security-aware LLM call wrapper with scan/redact/block.
 """
 
 import logging
-from typing import Callable, Optional
+from typing import Callable
 
 from .scanner import PIIScanner, SecretScanner
 from .types import RedactionMode, ScanResult

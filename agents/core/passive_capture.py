@@ -27,11 +27,13 @@ import time
 from pathlib import Path
 from typing import Optional
 
+from agents.core.paths import data_path
+
 from .persistence import JsonStore
 
 logger = logging.getLogger("jarvis.capture")
 
-DEFAULT_PATH = Path("memory_logs/passive_capture.json")
+DEFAULT_PATH = data_path("passive_capture.json")
 SURFACES = ("clipboard", "browser", "files")
 _MAX_RECORDS = 500
 _PREVIEW_LEN = 500

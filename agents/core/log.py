@@ -1,9 +1,8 @@
 import logging
-import sys
 from datetime import datetime, timezone
 from typing import Optional
 
-from .errors import ErrorCategory, ErrorSeverity, JarvisError, ErrorLog
+from .errors import ErrorSeverity, ErrorLog
 
 
 _LOG_FORMAT = "%(asctime)s  %(levelname)s  %(name)s  %(message)s"
@@ -35,7 +34,7 @@ def log_error(
     exc: Optional[BaseException] = None,
     **kwargs,
 ) -> None:
-    from .errors import CODES, ErrorCategory, ErrorSeverity
+    from .errors import CODES
 
     entry = CODES.get(code)
     if not entry:

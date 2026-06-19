@@ -30,9 +30,11 @@ import time
 from pathlib import Path
 from typing import Optional, Union
 
+from agents.core.paths import data_path
+
 from .persistence import JsonStore
 
-DEFAULT_PATH = Path("memory_logs/a2a.json")
+DEFAULT_PATH = data_path("a2a.json")
 
 INBOUND_PENDING = "pending"
 INBOUND_APPROVED = "approved"

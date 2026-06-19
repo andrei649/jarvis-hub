@@ -19,12 +19,14 @@ from dataclasses import asdict
 from pathlib import Path
 from typing import Optional
 
+from agents.core.paths import data_path
+
+from .embedder import Embedder
+from .knowledge import KnowledgeExtractor
 from .normalizer import NormalizedMessage
 from .parser_facebook import FacebookParser
 from .parser_whatsapp import WhatsAppParser
 from .stylometry import StylometryAnalyzer
-from .knowledge import KnowledgeExtractor
-from .embedder import Embedder
 
 logger = logging.getLogger("jarvis.ingestion.pipeline")
 
@@ -35,12 +37,12 @@ class IngestionPipeline:
     def __init__(
         self,
         data_root: str = "data",
-        output_root: str = "memory_logs/archive",
+        output_root: str = None,
         my_name: str = "Andrei Tarcomnicu",
         my_short_name: str = "Andrei",
     ):
         self.data_root = Path(data_root)
-        self.output_root = Path(output_root)
+        self.output_root = Path(output_root) if output_root is not None else data_path("archive")
         self.output_root.mkdir(parents=True, exist_ok=True)
 
         self.fb_parser = FacebookParser(my_name=my_name)

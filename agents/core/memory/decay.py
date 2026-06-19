@@ -15,14 +15,16 @@ Times are epoch seconds; persistence is a single JSON file (atomic writes).
 
 from __future__ import annotations
 
-import json
 import math
 import time
 from pathlib import Path
-from ..persistence import JsonStore
 from typing import Optional
 
-DEFAULT_PATH = Path("memory_logs/decay.json")
+from agents.core.paths import data_path
+
+from ..persistence import JsonStore
+
+DEFAULT_PATH = data_path("decay.json")
 DEFAULT_DECAY = 0.5            # ACT-R d parameter
 _EPS = 1e-3                    # floor for time-since-access (avoid div-by-zero)
 

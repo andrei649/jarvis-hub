@@ -9,22 +9,20 @@ conflicts, and exposes real-time status to the HUD and OpenCode CLI.
 import asyncio
 import json
 import logging
-import os
 import subprocess
 import time
-from dataclasses import dataclass, field, asdict
-from datetime import datetime, timezone
+from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Optional
 
-import httpx
+from agents.core.paths import data_path
 
 from ..http_client import PluginHTTPClient
 
 logger = logging.getLogger("jarvis.oracle")
 
 REPO_DIR = Path(__file__).resolve().parent.parent.parent.parent
-CONFLICT_DIR = REPO_DIR / "memory_logs" / "oracle"
+CONFLICT_DIR = data_path("oracle")
 CONFLICT_DIR.mkdir(parents=True, exist_ok=True)
 SESSION_FILE = CONFLICT_DIR / "sessions.json"
 FILE_HASH_FILE = CONFLICT_DIR / "file_hashes.json"
@@ -66,7 +64,7 @@ class OracleBridgePlugin:
         self.conflicts: list[Conflict] = []
         self._watcher_task: Optional[asyncio.Task] = None
         self._running = False
-        self._client = PluginHTTPClient.for_plugin("oracle")
+        self._client = PluginHTTPClient.for_plugin("oracle-bridge")
         self._load_state()
 
     # ── Public API ────────────────────────────────────────────────

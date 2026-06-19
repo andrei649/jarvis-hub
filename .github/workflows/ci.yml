@@ -19,8 +19,10 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # Full matrix on pushes to main; PRs run the cheaper ubuntu-only leg.
-        os: ${{ github.event_name == 'pull_request' && fromJSON('["ubuntu-latest"]') || fromJSON('["ubuntu-latest", "windows-latest"]') }}
+        # Full matrix (ubuntu + windows) on every PR and push — Windows is a
+        # first-class target (Jarvis runs on Windows), so `test (windows-latest)`
+        # is a required check on PRs, not just post-merge.
+        os: ["ubuntu-latest", "windows-latest"]
     steps:
       - uses: actions/checkout@v6
       - uses: actions/setup-python@v6
@@ -38,7 +40,10 @@ jobs:
         run: ruff check . --exit-zero
         continue-on-error: true
       - name: Test
-        run: python -m pytest tests/ --timeout=90 -q --tb=short
+        # -n auto: parallelize across runner cores (Windows full-suite goes from
+        # ~15min to a few). --dist loadfile keeps each test file on one worker, and
+        # conftest gives each worker an isolated JARVIS_HOME so file stores don't race.
+        run: python -m pytest tests/ -n auto --dist loadfile --timeout=90 -q --tb=short
         env:
           JARVIS_TESTING: "1"
 

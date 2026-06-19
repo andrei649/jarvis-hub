@@ -10,7 +10,7 @@ by an injected planner (the LLM in production, a scripted fake in tests).
 
 from __future__ import annotations
 
-from typing import Callable, Optional
+from typing import Callable
 
 # Function-calling schema exposed to the model (Anthropic/OpenAI-style).
 TOOL_SPEC = {
