@@ -1108,26 +1108,7 @@ async def get_agent_soul(agent_id: str):
 
 # ── Existing endpoints (unchanged) ───────────────────────────────
 
-@app.get("/memory", dependencies=[Depends(_user_guard)])
-async def memory():
-    if not orch:
-        return JSONResponse({"error": "not initialized"}, status_code=503)
-    history = await orch.memory.get_history(orch.session_id, last_n=20)
-    return _nocache_json({"session": orch.session_id, "turns": history})
-
-
-@app.post("/memory/clear", dependencies=[Depends(_user_guard)])
-async def clear_memory(req: Request):
-    if not orch:
-        return JSONResponse({"error": "not initialized"}, status_code=503)
-    if not DEV_MODE:
-        confirm = req.headers.get("x-confirm", "").lower()
-        if confirm != "true":
-            return JSONResponse({"error": "memory clear requires confirmation — send X-Confirm: true header or set DEV_MODE=1"}, status_code=400)
-    await orch.memory.clear(session_id=orch.session_id)
-    orch.session_id = await orch.memory.new_session()
-    orch.checkpoints.create_session_record(orch.session_id)
-    return JSONResponse({"ok": True, "new_session": orch.session_id})
+# `/memory` + `/memory/clear` (bare HUD routes) live in the memory_hud router (CLN-3).
 
 
 @app.get("/agents")
@@ -1438,6 +1419,7 @@ from agents.core.routers.canvas import router as _canvas_router  # noqa: E402
 from agents.core.routers.capture import router as _capture_router  # noqa: E402
 from agents.core.routers.data_spaces import router as _data_spaces_router  # noqa: E402
 from agents.core.routers.integrations import router as _integrations_router  # noqa: E402
+from agents.core.routers.memory_hud import router as _memory_hud_router  # noqa: E402
 from agents.core.routers.memory_kg import router as _memory_kg_router  # noqa: E402
 from agents.core.routers.mesh import router as _mesh_router  # noqa: E402
 from agents.core.routers.models_llm import router as _models_llm_router  # noqa: E402
@@ -1476,6 +1458,7 @@ app.include_router(_autonomy_router)
 app.include_router(_models_llm_router)
 app.include_router(_oauth_router)
 app.include_router(_brain_router)
+app.include_router(_memory_hud_router)
 app.include_router(_memory_kg_router)
 app.include_router(_analytics_router)
 app.include_router(_admin_router)
@@ -1846,36 +1829,7 @@ async def get_cognition():
     return _nocache_json(cog)
 
 
-@app.get("/memory/stats")
-async def memory_stats():
-    """Live memory stats for SystemsPanel."""
-    try:
-        if not orch or not hasattr(orch, 'memory') or not orch.memory:
-            return _nocache_json({"sessions": {"total": 0, "current": "", "active": 0}, "vectors": {"stored": 0, "dimension": 0, "backend": ""}, "knowledge_graph": {"entities": 0, "relations": 0, "last_seed": ""}, "agent_contexts": {}})
-        stats = await orch.memory.get_session_stats() if hasattr(orch.memory, 'get_session_stats') else {"sessions": 0, "current_session": "", "vectors": 0, "agent_contexts": []}
-        contexts = {}
-        if hasattr(orch.memory, 'agent_contexts') and orch.memory.agent_contexts:
-            for aid, ctx in orch.memory.agent_contexts.items():
-                contexts[aid] = len(ctx) if isinstance(ctx, dict) else (len(ctx) if hasattr(ctx, '__len__') else 0)
-        kg_entities = 0
-        kg_relations = 0
-        kg_last = ""
-        if hasattr(orch.memory, 'graph') and orch.memory.graph:
-            try:
-                g = orch.memory.graph
-                kg_entities = len(g.entities) if hasattr(g, 'entities') else 0
-                kg_relations = len(g.relations) if hasattr(g, 'relations') else 0
-                kg_last = g.last_seed if hasattr(g, 'last_seed') else ""
-            except Exception:
-                pass
-        return _nocache_json({
-            "sessions": {"total": stats.get("sessions", 0), "current": stats.get("current_session", ""), "active": stats.get("active", stats.get("sessions", 0))},
-            "vectors": {"stored": stats.get("vectors", 0), "dimension": 768 if stats.get("vectors", 0) > 0 else 0, "backend": "in-memory" if stats.get("vectors", 0) > 0 else ""},
-            "knowledge_graph": {"entities": kg_entities, "relations": kg_relations, "last_seed": kg_last},
-            "agent_contexts": contexts,
-        })
-    except Exception:
-        return _nocache_json({"sessions": {"total": 0, "current": "", "active": 0}, "vectors": {"stored": 0, "dimension": 0, "backend": ""}, "knowledge_graph": {"entities": 0, "relations": 0, "last_seed": ""}, "agent_contexts": {}})
+# `/memory/stats` (HUD/SystemsPanel) lives in the memory_hud router (CLN-3).
 
 
 # ── Memory + Knowledge-Graph surface ──────────────────────────────────────────
@@ -2199,18 +2153,7 @@ async def delete_workflow(pipeline_id: str):
     return _nocache_json({"ok": True, "deleted": pipeline_id})
 
 
-@app.get("/memory/{agent_id}")
-async def get_agent_memory(agent_id: str):
-    """Return per-agent memory context."""
-    if agent_id not in orch.agents:
-        raise HTTPException(status_code=404, detail=f"Agent '{agent_id}' not found")
-    ctx = await orch.memory.get_agent_context(agent_id)
-    return _nocache_json({
-        "agent_id": agent_id,
-        "context_keys": list(ctx.keys()) if ctx else [],
-        "context": ctx or {},
-        "last_updated": ctx.get("_updated") if ctx else None,
-    })
+# `/memory/{agent_id}` (per-agent memory context) lives in the memory_hud router (CLN-3).
 
 
 @app.get("/plugins")
