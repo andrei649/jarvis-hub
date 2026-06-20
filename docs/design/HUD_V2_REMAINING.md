@@ -88,7 +88,7 @@ Still on mock (wire to endpoints; some need plugins configured):
 ## 10. Parity re‑audit — 2026‑06‑10 (backend moved ahead again)
 
 The 2026‑06‑09 backend waves (PR #178/#180) shipped new surfaces **with no HUD controls**, on top of
-the still‑open depth items above. Snapshot: backend ≈253 routes; HUD v2 actively calls ~50, partially
+the still‑open depth items above. Snapshot: backend ≈299 routes; HUD v2 actively calls ~50, partially
 ~10; **~37 write/recent endpoints lack any UI control**. New since the 2026‑06‑05 plan:
 
 - `GET /api/cognition/stream` (SSE, NTH‑1 ✅ backend) — cockpit still polls the static snapshot (§4).

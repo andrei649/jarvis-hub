@@ -87,6 +87,7 @@
   "GET /api/memory/search",
   "GET /api/memory/spaces",
   "GET /api/memory/tool-spec",
+  "GET /api/metrics/north-star",
   "GET /api/models/local",
   "GET /api/nodes",
   "GET /api/notes",

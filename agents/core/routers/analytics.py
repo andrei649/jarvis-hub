@@ -15,12 +15,11 @@ web-module globals. The cost/model-tier handlers are pure leaf calls into
 `core.cost_tracker`.
 """
 
-from fastapi import APIRouter, Query, Depends
+from fastapi import APIRouter, Depends, Query
 
-from agents.core.web_helpers import nocache_json, error_json, safe_reflect
 from agents.core.app_state import get_orch
 from agents.core.routers._deps import admin_guard, user_guard
-
+from agents.core.web_helpers import error_json, nocache_json, safe_reflect
 
 router = APIRouter(tags=["observe"])
 
@@ -78,6 +77,31 @@ async def analytics_locality():
         return nocache_json({"local_pct": None, "local": 0, "cloud": 0,
                               "unknown": 0, "total": 0})
     return nocache_json(rh.locality())
+
+
+@router.get("/api/metrics/north-star")
+async def metrics_north_star(days: int = Query(7, ge=1, le=90)):
+    """The MOONSHOT §6 metric set in one call — north-star + counter-metrics.
+
+    Weekly autonomous actions *accepted* per active user, plus interrupt rate,
+    reject rate, %-local, and p95 per-turn non-LLM latency. Open like the sibling
+    analytics/locality + traces meters (non-sensitive aggregate counts; the whole
+    app is localhost-only until a token is set). Single-user today, so the meter
+    reports `active_users` honestly rather than fabricating a fleet."""
+    orch = get_orch()
+    if not orch:
+        return nocache_json({"error": "not initialized"}, status_code=503)
+    queue = getattr(orch, "autonomy_queue", None)
+    if queue is None:
+        return nocache_json({"error": "autonomy queue not available"}, status_code=503)
+    from agents.core.observability.north_star import compute_north_star
+    return nocache_json(compute_north_star(
+        queue,
+        getattr(orch, "run_history", None),
+        getattr(orch, "tracer", None),
+        budget=getattr(getattr(orch, "autonomy", None), "budget", None),
+        days=days,
+    ))
 
 
 @router.get("/api/reflection/status")
