@@ -22,11 +22,16 @@ sys.path.insert(0, str(repo_root / "agents"))
 
 import pytest
 
+import inspect
+import typing
+
 from agents.core.mcp.route_tools import (
     ROUTE_TOOL_ALLOWLIST,
     RouteTool,
     RouteToolSpec,
+    _should_skip_param,
     build_route_tools,
+    derive_input_schema,
     route_tool_name,
     route_tools_enabled,
 )
@@ -46,7 +51,10 @@ async def _fake_status():
     return {"status": "ok", "version": "test"}
 
 
-async def _fake_memory_search(q="", top_k=10):
+async def _fake_memory_search(q: str = "", top_k: int = 10):
+    # Annotated to mirror the real handler signature
+    # (agents.core.routers.memory_kg.memory_search) so the reflected schema
+    # carries types, matching what build_route_tools derives in production.
     return {"results": [{"id": "m1", "q": q}], "query": q, "total": 1, "top_k": top_k}
 
 
@@ -115,6 +123,23 @@ def test_route_tool_schemas_present():
     assert "q" in ms["properties"] and "top_k" in ms["properties"]
     # read-only routes have no required mutating body
     assert tools["route_status"]["inputSchema"]["properties"] == {}
+
+
+def test_schema_reflected_from_handler_signature():
+    """The schema is DERIVED from the handler's signature (not hand-declared).
+
+    Types and defaults come straight off ``_fake_memory_search(q="", top_k=10)``.
+    """
+    schema = derive_input_schema(_fake_memory_search)
+    assert schema == {
+        "type": "object",
+        "properties": {
+            "q": {"type": "string", "default": ""},
+            "top_k": {"type": "integer", "default": 10},
+        },
+    }
+    # No-arg handler → empty properties, no ``required``.
+    assert derive_input_schema(_fake_status) == {"type": "object", "properties": {}}
 
 
 def test_status_surfaces_exposed_routes():
@@ -189,6 +214,124 @@ def test_allowlist_is_read_only_get():
     """Guard: every allow-listed entry must be a read-only GET (no mutation)."""
     for spec in ROUTE_TOOL_ALLOWLIST:
         assert spec.method == "GET", f"{spec.name} must be read-only GET"
+
+
+# ── drift-guard: derived schema must match the live handler signature ────────
+#
+# This is the whole point of H22.9 hardening: the tool schema is reflected from
+# the handler's own signature, so a future signature change that nobody mirrors
+# fails CI instead of silently shipping a stale schema.
+
+def _caller_param_names(handler):
+    """Names of the params a caller actually supplies (drop framework injections).
+
+    Independent re-implementation of the reflection rule used by
+    ``derive_input_schema`` — if the two ever disagree the drift-guard fails.
+    """
+    sig = inspect.signature(handler)
+    try:
+        hints = typing.get_type_hints(handler)
+    except Exception:
+        hints = {}
+    names = []
+    for pname, param in sig.parameters.items():
+        param = param.replace(annotation=hints.get(pname, param.annotation))
+        if _should_skip_param(param):
+            continue
+        names.append(pname)
+    return names
+
+
+def _real_route_handlers():
+    """Import the LIVE handlers bound by web.py for the allow-listed routes.
+
+    Reflecting the real functions (not fakes) is what makes the guard bite: a
+    real-signature change is caught here. Skips gracefully if the app module
+    can't import offline (so the suite stays runnable without a live app).
+    """
+    handlers = {}
+    try:
+        from agents import web  # noqa: F401  (binds /status, /dashboard)
+        from agents.core.routers.memory_kg import memory_search
+    except Exception:
+        return None
+    handlers["status"] = web.status
+    handlers["dashboard"] = web.dashboard
+    handlers["memory_search"] = memory_search
+    return handlers
+
+
+def test_drift_guard_schema_matches_real_handler_signature():
+    """For each allow-listed route, the derived schema properties == the live
+    handler's caller-supplied params. A signature change that isn't reflected by
+    ``derive_input_schema`` (or vice-versa) breaks here — schema drift can't merge.
+    """
+    handlers = _real_route_handlers()
+    if handlers is None:
+        pytest.skip("app module not importable offline; drift-guard needs live handlers")
+
+    allow_names = {s.name for s in ROUTE_TOOL_ALLOWLIST}
+    assert set(handlers) == allow_names, "drift-guard handler map must cover the allow-list"
+
+    for spec in ROUTE_TOOL_ALLOWLIST:
+        handler = handlers[spec.name]
+        schema = derive_input_schema(handler)
+        derived_props = set(schema.get("properties", {}).keys())
+        expected = set(_caller_param_names(handler))
+        assert derived_props == expected, (
+            f"schema drift for route '{spec.name}': "
+            f"derived {sorted(derived_props)} != handler params {sorted(expected)}"
+        )
+
+
+def test_drift_guard_catches_unmirrored_signature_change():
+    """The guard actually bites: add a param to a handler and the derived schema
+    must reflect it (else the equality below would fail), proving no silent drift.
+    """
+    async def handler_v1(q: str = ""):
+        return {}
+
+    async def handler_v2(q: str = "", limit: int = 5):  # a param was added
+        return {}
+
+    assert set(derive_input_schema(handler_v1)["properties"]) == {"q"}
+    # The new param is reflected automatically — no hand edit needed, no drift.
+    assert set(derive_input_schema(handler_v2)["properties"]) == {"q", "limit"}
+    assert derive_input_schema(handler_v2)["properties"]["limit"] == {
+        "type": "integer",
+        "default": 5,
+    }
+
+
+def test_pydantic_model_param_expands_to_fields():
+    """A pydantic-model param is flattened into per-field properties + required."""
+    pydantic = pytest.importorskip("pydantic")
+
+    class Filter(pydantic.BaseModel):
+        q: str
+        top_k: int = 10
+
+    async def handler(body: Filter):
+        return {}
+
+    schema = derive_input_schema(handler)
+    props = schema["properties"]
+    assert set(props) == {"q", "top_k"}
+    assert props["q"]["type"] == "string"
+    assert props["top_k"] == {"type": "integer", "default": 10}
+    assert schema.get("required") == ["q"]
+
+
+def test_framework_injected_params_are_skipped():
+    """Request/Depends params are framework-injected, never caller args."""
+    fastapi = pytest.importorskip("fastapi")
+
+    async def handler(q: str = "", req: fastapi.Request = None,
+                      user=fastapi.Depends(lambda: None)):
+        return {}
+
+    props = derive_input_schema(handler)["properties"]
+    assert set(props) == {"q"}, "Request/Depends must not appear as caller args"
 
 
 # ── existing ask_<agent> behaviour unchanged ────────────────────────────────

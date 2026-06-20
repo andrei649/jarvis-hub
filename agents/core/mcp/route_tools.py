@@ -13,10 +13,13 @@ Design (mirrors the agent allow-list in ``server.py``):
     route's handler coroutine directly and normalises the return to JSON.
   * **Kill-switch.** ``JARVIS_MCP_ROUTE_TOOLS`` (default OFF). When off, the MCP
     server exposes only the agent tools — today's behaviour, unchanged.
-  * **Hand-declared minimal schemas.** Rather than pull full OpenAPI extraction
-    into the server (heavy, and the app-build import cycle makes it awkward), each
-    allow-listed entry carries a small, correct ``input_schema``. Read-only GET
-    routes take few/no params, so the schemas stay tiny and are unit-tested.
+  * **Reflected schemas (no hand-drift).** A tool's ``inputSchema`` is **derived
+    from the route handler's own signature** (``inspect.signature`` + type hints,
+    plus pydantic field defaults when a param is a pydantic model). This is
+    lightweight — it reflects only the handler function, it does NOT import or
+    build the whole FastAPI app graph / ``app.openapi()``. A drift-guard test
+    asserts the derived schema matches the live handler, so a future signature
+    change that nobody mirrors fails CI rather than silently going stale.
 
 The route **handlers** are injected by the caller (``web.py``) so this module — and
 the tests — need no live app or orchestrator.
@@ -24,7 +27,10 @@ the tests — need no live app or orchestrator.
 
 from __future__ import annotations
 
+import inspect
 import os
+import types
+import typing
 from dataclasses import dataclass
 from typing import Any, Awaitable, Callable
 
@@ -43,12 +49,15 @@ class RouteToolSpec:
 
     ``name`` is the bare tool key (the MCP tool is ``route_<name>``). ``method``
     is documentation-only here — every allow-listed route is a read-only GET.
+
+    Note: the input schema is **not** declared here — it is reflected from the
+    bound handler's signature at build time (see ``derive_input_schema``), so it
+    cannot drift from the route's real parameters.
     """
 
     name: str
     path: str
     summary: str
-    input_schema: dict
     method: str = "GET"
 
 
@@ -61,35 +70,169 @@ ROUTE_TOOL_ALLOWLIST: tuple[RouteToolSpec, ...] = (
         name="status",
         path="/status",
         summary="Hub health: version, system info, LLM/model state, agent roster.",
-        input_schema={"type": "object", "properties": {}},
     ),
     RouteToolSpec(
         name="memory_search",
         path="/api/memory/search",
         summary="Fused recall over memory (vector + knowledge-graph). Read-only.",
-        input_schema={
-            "type": "object",
-            "properties": {
-                "q": {"type": "string", "description": "Search query."},
-                "top_k": {
-                    "type": "integer",
-                    "description": "Max results (1-50).",
-                    "minimum": 1,
-                    "maximum": 50,
-                    "default": 10,
-                },
-            },
-        },
     ),
     RouteToolSpec(
         name="dashboard",
         path="/dashboard",
         summary="HUD dashboard payload (weather, news, agent summary). Read-only.",
-        input_schema={"type": "object", "properties": {}},
     ),
 )
 
 ALLOWLIST_BY_NAME: dict[str, RouteToolSpec] = {s.name: s for s in ROUTE_TOOL_ALLOWLIST}
+
+
+# ── Signature → JSON-schema reflection ──────────────────────────────────────────
+#
+# Map a route handler's own parameters to a minimal JSON-schema. We reflect ONLY
+# the handler function (inspect.signature + type hints); we never import/build the
+# whole FastAPI app graph or call ``app.openapi()``.
+
+# Python annotation → JSON-schema "type". Anything not here falls back to leaving
+# the type out (an open "any") rather than guessing wrong — surfaced as a caveat.
+_JSON_TYPE_BY_PY: dict[type, str] = {
+    str: "string",
+    bool: "boolean",
+    int: "integer",
+    float: "number",
+    list: "array",
+    dict: "object",
+}
+
+# FastAPI / Starlette parameters that are injected by the framework, not supplied
+# by the MCP caller — skip them when reflecting (the in-process dispatch in
+# server.py calls the handler with only the schema's properties as kwargs).
+_INJECTED_PARAM_TYPE_NAMES = frozenset({"Request", "Response", "WebSocket", "BackgroundTasks"})
+
+
+def _is_pydantic_model(tp: Any) -> bool:
+    return isinstance(tp, type) and hasattr(tp, "model_fields")
+
+
+def _json_type_for(annotation: Any) -> str | None:
+    """Best-effort JSON-schema type for a Python annotation.
+
+    Unwraps ``Optional[T]`` / ``T | None``. Returns ``None`` when the type can't
+    be inferred (annotation missing or unknown), so callers can emit an open
+    property instead of guessing.
+    """
+    if annotation is inspect.Parameter.empty or annotation is None:
+        return None
+    origin = typing.get_origin(annotation)
+    if origin is typing.Union or origin is getattr(types, "UnionType", None):
+        non_none = [a for a in typing.get_args(annotation) if a is not type(None)]
+        if len(non_none) == 1:
+            return _json_type_for(non_none[0])
+        return None
+    if origin in (list, tuple, set, frozenset):
+        return "array"
+    if origin is dict:
+        return "object"
+    if isinstance(annotation, type):
+        return _JSON_TYPE_BY_PY.get(annotation)
+    return None
+
+
+def _should_skip_param(param: inspect.Parameter) -> bool:
+    """True for params the framework injects (Request/Response/Depends/etc.)."""
+    if param.kind in (inspect.Parameter.VAR_POSITIONAL, inspect.Parameter.VAR_KEYWORD):
+        return True
+    ann = param.annotation
+    type_name = getattr(ann, "__name__", "")
+    if type_name in _INJECTED_PARAM_TYPE_NAMES:
+        return True
+    # A ``Depends(...)`` / ``Security(...)`` default is a framework injection.
+    default = param.default
+    default_cls = type(default).__name__
+    if default_cls in ("Depends", "Security"):
+        return True
+    return False
+
+
+def _property_for(param: inspect.Parameter) -> dict:
+    """Build the JSON-schema property object for one handler parameter."""
+    prop: dict[str, Any] = {}
+    jtype = _json_type_for(param.annotation)
+    if jtype is not None:
+        prop["type"] = jtype
+    if param.default is not inspect.Parameter.empty and _is_jsonable_default(param.default):
+        prop["default"] = param.default
+    return prop
+
+
+def _is_jsonable_default(value: Any) -> bool:
+    """Only surface a default that is a plain JSON scalar/container.
+
+    FastAPI markers (``Query(...)``, ``Depends(...)``) and arbitrary objects are
+    excluded so we never leak a framework sentinel into the schema.
+    """
+    return isinstance(value, (str, int, float, bool, list, dict)) or value is None
+
+
+def derive_input_schema(handler: RouteHandler) -> dict:
+    """Reflect a route handler's signature into a minimal JSON input schema.
+
+    * Walks ``inspect.signature`` + resolved type hints of the handler itself.
+    * Skips framework-injected params (``Request``/``Depends``/``*args``/…).
+    * If a remaining param is a **pydantic model**, expands its fields into
+      properties (using each field's type + whether it is required), since FastAPI
+      would flatten such a body/query model into individual parameters.
+    * A param with no default is ``required``.
+
+    Lightweight by design: only the handler function is reflected — no app build,
+    no ``app.openapi()``.
+    """
+    schema: dict[str, Any] = {"type": "object", "properties": {}}
+    properties: dict[str, dict] = schema["properties"]
+    required: list[str] = []
+
+    try:
+        sig = inspect.signature(handler)
+    except (TypeError, ValueError):
+        return schema
+    try:
+        hints = typing.get_type_hints(handler)
+    except Exception:
+        hints = {}
+
+    for pname, param in sig.parameters.items():
+        if _should_skip_param(param):
+            continue
+        # Prefer a resolved type hint over the raw (possibly string) annotation.
+        annotation = hints.get(pname, param.annotation)
+        param = param.replace(annotation=annotation)
+
+        if _is_pydantic_model(annotation):
+            _expand_pydantic_model(annotation, properties, required)
+            continue
+
+        properties[pname] = _property_for(param)
+        if param.default is inspect.Parameter.empty:
+            required.append(pname)
+
+    if required:
+        schema["required"] = required
+    return schema
+
+
+def _expand_pydantic_model(model: Any, properties: dict, required: list) -> None:
+    """Flatten a pydantic model's fields into schema properties (pydantic v2)."""
+    for fname, field in model.model_fields.items():
+        prop: dict[str, Any] = {}
+        jtype = _json_type_for(field.annotation)
+        if jtype is not None:
+            prop["type"] = jtype
+        if field.is_required():
+            required.append(fname)
+        else:
+            default = getattr(field, "default", None)
+            if _is_jsonable_default(default) and default is not None:
+                prop["default"] = default
+        properties[fname] = prop
 
 
 def route_tools_enabled() -> bool:
@@ -107,10 +250,20 @@ def route_tool_name(name: str) -> str:
 
 @dataclass
 class RouteTool:
-    """An allow-listed route bound to its in-process handler."""
+    """An allow-listed route bound to its in-process handler.
+
+    The ``input_schema`` is **reflected from the bound handler's signature** at
+    construction (see ``derive_input_schema``), so it can never drift from the
+    route's real parameters — a CI drift-guard test enforces this.
+    """
 
     spec: RouteToolSpec
     handler: RouteHandler
+    input_schema: dict = None  # type: ignore[assignment]
+
+    def __post_init__(self) -> None:
+        if self.input_schema is None:
+            self.input_schema = derive_input_schema(self.handler)
 
     @property
     def tool_name(self) -> str:
@@ -120,12 +273,12 @@ class RouteTool:
         return {
             "name": self.tool_name,
             "description": self.spec.summary,
-            "inputSchema": self.spec.input_schema,
+            "inputSchema": self.input_schema,
         }
 
     def filtered_kwargs(self, arguments: dict | None) -> dict:
         """Keep only arguments declared in the schema (defence in depth)."""
-        allowed = set(self.spec.input_schema.get("properties", {}).keys())
+        allowed = set(self.input_schema.get("properties", {}).keys())
         return {k: v for k, v in (arguments or {}).items() if k in allowed}
 
 
