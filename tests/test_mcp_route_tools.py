@@ -153,6 +153,10 @@ def _mutating_server(
         invokers = {"memory_remember": invoke}
     if identity_check is None:
         identity_check = _allow_identity
+    if auditor is None:
+        # Mutating tools fail closed without an auditor (SEC F3); production always
+        # has orch.audit, so default one here for the dispatch/gate tests.
+        auditor = _FakeAuditor()
     route_tools = build_route_tools(_handlers()) if read_only else []
     mut_tools = build_mutating_route_tools(
         invokers,
@@ -802,3 +806,36 @@ def test_identity_check_matches_user_guard_rule():
         assert web._mcp_identity_check("adm1n") is True
     finally:
         w.USER_TOKEN, w.ADMIN_TOKEN = orig_user, orig_admin
+
+
+# ── SEC review hardening (F3 fail-closed audit, F4 name disjointness) ─────────
+
+def test_mutating_tools_require_auditor_fail_closed():
+    """SEC F3: binding mutating tools without an auditor binds NOTHING (fail closed),
+    so a write can never run un-audited even if the switches are on."""
+    invoke, _ = _fake_remember_invoker()
+    tools = build_mutating_route_tools(
+        {"memory_remember": invoke},
+        auditor=None,
+        read_only_enabled=True,
+        mutating_enabled=True,
+        identity_check=_allow_identity,
+    )
+    assert tools == []
+
+
+def test_read_and_mutating_name_collision_rejected():
+    """SEC F4: a tool name present in BOTH the read and mutating sets is refused at
+    build time, so the read path (no identity, no audit) can never shadow a write."""
+    import pytest
+
+    class _Stub:
+        def __init__(self, name):
+            self.tool_name = name
+
+    with pytest.raises(ValueError):
+        JarvisMCPServer(
+            _runner, AGENTS,
+            route_tools=[_Stub("route_x")],
+            mutating_route_tools=[_Stub("route_x")],
+        )

@@ -593,6 +593,15 @@ def build_mutating_route_tools(
     if not (read_only_enabled and mutating_enabled):
         return []
 
+    # SEC (review F3): the security model promises every mutating call is audited.
+    # Binding write tools without an auditor would let writes run un-audited
+    # (fail-open). Refuse to bind any mutating tool when no auditor is available.
+    if auditor is None:
+        import logging
+        logging.getLogger(__name__).warning(
+            "mutating route tools require an auditor — not binding any (fail closed)")
+        return []
+
     tools: list[MutatingRouteTool] = []
     for spec in allowlist:
         invoke = invokers.get(spec.name)

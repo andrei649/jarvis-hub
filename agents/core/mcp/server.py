@@ -87,6 +87,13 @@ class JarvisMCPServer:
         self.mutating_route_tools: dict[str, MutatingRouteTool] = {
             rt.tool_name: rt for rt in (mutating_route_tools or [])
         }
+        # SEC (review F4): a name in BOTH sets would let the read path (no identity,
+        # no audit) shadow the mutating path in call_tool — refuse to build rather
+        # than silently bypass the write gate.
+        _collision = set(self.route_tools) & set(self.mutating_route_tools)
+        if _collision:
+            raise ValueError(
+                f"route tool name(s) in both read-only and mutating sets: {sorted(_collision)}")
 
     # ── tools ────────────────────────────────────────────────────────────────
 

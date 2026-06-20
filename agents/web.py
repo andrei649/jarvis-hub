@@ -2230,6 +2230,24 @@ async def mcp_server_rpc(message: dict, request: Request):
             return JSONResponse(
                 {"error": f"unauthorized: {result['error']}"}, status_code=401,
                 headers={"WWW-Authenticate": MCPResourceServer.challenge(resource)})
+    else:
+        # SEC (review F1/F2): with OAuth off, the MCP transport must enforce the
+        # SAME posture as every other user route (HF-1) — a matching user/admin
+        # token if JARVIS_USER_TOKEN is set, else localhost-only (fail closed
+        # behind an untrusted proxy, HF-7). Without this gate a REMOTE caller could
+        # reach read tools (dashboard/memory) and even mutating tools, because the
+        # per-tool identity gate trusts the unset-token case as "localhost".
+        if USER_TOKEN:
+            if not _user_credential_ok(
+                user_supplied=request.headers.get("x-user-token", ""),
+                admin_supplied=request.headers.get("x-admin-token", ""),
+            ):
+                return JSONResponse({"error": "unauthorized: user token required"}, status_code=401)
+        elif _real_client_host(request) not in _LOCALHOSTS:
+            return JSONResponse(
+                {"error": "MCP server disabled from network — set JARVIS_USER_TOKEN to enable remote access"},
+                status_code=403,
+            )
     # Thread the caller's user identity (same header user_guard reads) into the
     # server so MUTATING route tools can enforce the per-identity gate. An admin
     # token also satisfies the user gate (admin ⊇ user), so prefer whichever the
