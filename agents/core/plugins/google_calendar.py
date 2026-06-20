@@ -24,7 +24,7 @@ class GoogleCalendarPlugin:
         self.access_token = access_token
         self.calendar_id = calendar_id
         self.api_base = "https://www.googleapis.com/calendar/v3"
-        self.client = PluginHTTPClient.for_plugin("google_calendar")
+        self.client = PluginHTTPClient.for_plugin("google-calendar")
 
     def _headers(self) -> dict:
         return {"Authorization": f"Bearer {self.access_token}"}
@@ -182,7 +182,7 @@ class GoogleCalendarPlugin:
             if end_dt:
                 body["end"] = {"dateTime": end_dt, "timeZone": "Europe/Bucharest"}
 
-            resp = await self._request(
+            await self._request(
                 "PATCH", f"/calendars/{self.calendar_id}/events/{event_id}",
                 json=body,
             )

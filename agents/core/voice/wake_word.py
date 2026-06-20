@@ -6,7 +6,7 @@ Supports: "jarvis", "hub"
 
 import asyncio
 import logging
-from typing import Callable, Optional
+from typing import Callable
 
 logger = logging.getLogger("jarvis.voice.wake_word")
 

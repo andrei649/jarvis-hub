@@ -2,14 +2,15 @@ import asyncio
 import json
 import logging
 from datetime import datetime, timezone
-from pathlib import Path
 from typing import Optional
 
-from .persistence import save_memory, load_memory, list_sessions
+from agents.core.paths import data_root
+
+from .persistence import list_sessions, load_memory, save_memory
 
 logger = logging.getLogger("jarvis.memory.conversation")
 
-MEMORY_DIR = Path("memory_logs")
+MEMORY_DIR = data_root()
 
 
 class Turn:

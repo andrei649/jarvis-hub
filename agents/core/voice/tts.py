@@ -3,11 +3,12 @@ tts.py — Text-to-speech via edge-tts (Microsoft Edge, online, high quality).
 Falls back to Kokoro or pyttsx3 if available.
 """
 
-import asyncio
 import logging
 import tempfile
 from pathlib import Path
-from typing import Optional
+from typing import AsyncIterator, Optional
+
+from .sentence_stream import split_sentences
 
 logger = logging.getLogger("jarvis.voice.tts")
 
@@ -63,6 +64,29 @@ class TTSEngine:
         else:
             logger.warning("No TTS backend available. Install: pip install edge-tts")
             return None
+
+    async def speak_stream(
+        self, text: str, voice: str = None, lang: str = None,
+    ) -> AsyncIterator[tuple[int, str, Optional[str]]]:
+        """Sentence-level streaming synthesis (H5.16).
+
+        Splits `text` into sentences and synthesizes them one at a time, yielding
+        ``(index, sentence, audio_path)`` as each chunk is ready — so a caller can
+        start playback after the first sentence instead of waiting for the whole
+        reply. `audio_path` is None for a sentence that failed to synthesize (the
+        stream continues; the caller decides whether to skip or fall back).
+
+        The segmentation is the pure `split_sentences`; only the per-chunk synthesis
+        here touches a backend. Falls back to a single chunk if there's no boundary.
+        """
+        sentences = split_sentences(text)
+        for idx, sentence in enumerate(sentences):
+            try:
+                path = await self.speak(sentence, voice=voice, lang=lang)
+            except Exception as e:  # pragma: no cover - defensive; per-chunk isolation
+                logger.warning(f"sentence {idx} TTS failed ({e}); continuing")
+                path = None
+            yield idx, sentence, path
 
     async def _speak_xtts(self, text: str, voice: str) -> Optional[str]:
         import httpx

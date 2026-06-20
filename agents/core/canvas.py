@@ -20,9 +20,11 @@ from pathlib import Path
 from typing import Optional
 from urllib.parse import urlparse
 
+from agents.core.paths import data_path
+
 from .persistence import JsonStore
 
-DEFAULT_PATH = Path("memory_logs/canvas.json")
+DEFAULT_PATH = data_path("canvas.json")
 
 _MAX_ELEMENTS = 200          # bound the canvas (evict oldest unpinned)
 _SAFE_SCHEMES = ("http", "https")

@@ -19,19 +19,21 @@ from __future__ import annotations
 
 import hashlib
 import hmac
-import json
 import logging
 import os
 import secrets
 import time
 from pathlib import Path
-from ..persistence import JsonStore
 from typing import Optional
+
+from agents.core.paths import data_path
+
+from ..persistence import JsonStore
 
 logger = logging.getLogger(__name__)
 
-INTENT_PATH = Path("memory_logs/security/intent_log.json")
-ANCHOR_PATH = Path("memory_logs/security/transparency_log.json")
+INTENT_PATH = data_path("security/intent_log.json")
+ANCHOR_PATH = data_path("security/transparency_log.json")
 
 
 def _sha(s: str) -> str:

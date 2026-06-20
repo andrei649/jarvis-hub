@@ -3,8 +3,10 @@ name: Smoke Test
 # Boots the real server on Windows. The pytest suite is covered by ci.yml,
 # so this workflow only verifies the app actually starts and serves a request.
 on:
+  pull_request:
   push:
     branches: [main]
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -15,7 +17,7 @@ jobs:
     timeout-minutes: 10
 
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - name: Set up Python 3.12
         uses: actions/setup-python@v6
@@ -30,7 +32,19 @@ jobs:
       - name: Verify server starts
         run: |
           Start-Process -NoNewWindow python -ArgumentList "-m", "uvicorn", "agents.web:app", "--host", "127.0.0.1", "--port", "8080"
-          Start-Sleep -Seconds 5
-          $response = Invoke-WebRequest -Uri "http://127.0.0.1:8080/" -UseBasicParsing -TimeoutSec 10
-          if ($response.StatusCode -ne 200) { throw "Server did not return 200" }
+          # Poll until the server binds and serves 200. The cold start (17 agents +
+          # plugins + orchestrator wiring) routinely takes longer than the old fixed
+          # 5s on Windows runners, so a single probe raced the bind and failed with
+          # "connection actively refused". Retry every 2s for up to ~60s instead.
+          $ok = $false
+          foreach ($i in 1..30) {
+            Start-Sleep -Seconds 2
+            try {
+              $response = Invoke-WebRequest -Uri "http://127.0.0.1:8080/" -UseBasicParsing -TimeoutSec 5
+              if ($response.StatusCode -eq 200) { $ok = $true; break }
+            } catch {
+              # server not listening yet — keep polling
+            }
+          }
+          if (-not $ok) { throw "Server did not become ready on http://127.0.0.1:8080/ within 60s" }
           Write-Output "Server smoke test passed"

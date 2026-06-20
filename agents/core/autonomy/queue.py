@@ -22,12 +22,13 @@ import threading
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from enum import Enum
-from pathlib import Path
 from typing import Optional
+
+from agents.core.paths import data_path
 
 logger = logging.getLogger("jarvis.autonomy.queue")
 
-DEFAULT_DB = Path("memory_logs") / "autonomy.db"
+DEFAULT_DB = data_path("autonomy.db")
 MAX_ATTEMPTS = 3
 
 

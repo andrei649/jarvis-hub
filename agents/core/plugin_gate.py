@@ -9,6 +9,7 @@ declared permissions.
 import logging
 from dataclasses import dataclass, field
 from enum import Enum
+from urllib.parse import urlparse
 
 logger = logging.getLogger("jarvis.plugins")
 
@@ -58,7 +59,7 @@ BUILTIN_PLUGINS = {
         description="News headlines from BBC RSS feeds",
         network_access=NetworkAccess.RESTRICTED,
         data_scope=DataScope.PROCESSED,
-        allowed_domains=["feeds.bbci.co.uk"],
+        allowed_domains=["feeds.bbci.co.uk", "www.hotnews.ro", "www.stiripesurse.ro"],
         agents_served=["all"],
     ),
     "cloud-llm": PluginManifest(
@@ -68,7 +69,7 @@ BUILTIN_PLUGINS = {
         description="Optional Anthropic/OpenAI fallback for heavy reasoning",
         network_access=NetworkAccess.RESTRICTED,
         data_scope=DataScope.TRANSMITTED,
-        allowed_domains=["api.anthropic.com", "api.openai.com"],
+        allowed_domains=["api.anthropic.com", "api.openai.com", "generativelanguage.googleapis.com"],
         agents_served=["jarvis", "athena", "stark", "vision", "veronica"],
     ),
     "telegram": PluginManifest(
@@ -88,7 +89,7 @@ BUILTIN_PLUGINS = {
         description="Read and compose emails",
         network_access=NetworkAccess.RESTRICTED,
         data_scope=DataScope.PROCESSED,
-        allowed_domains=["gmail.googleapis.com", "www.googleapis.com"],
+        allowed_domains=["gmail.googleapis.com", "www.googleapis.com", "oauth2.googleapis.com"],
         agents_served=["stark", "pepper", "veronica"],
     ),
     "google-calendar": PluginManifest(
@@ -98,7 +99,7 @@ BUILTIN_PLUGINS = {
         description="Read and manage calendar events",
         network_access=NetworkAccess.RESTRICTED,
         data_scope=DataScope.PROCESSED,
-        allowed_domains=["www.googleapis.com"],
+        allowed_domains=["www.googleapis.com", "oauth2.googleapis.com"],
         agents_served=["pepper"],
     ),
     "whatsapp-bridge": PluginManifest(
@@ -201,7 +202,228 @@ BUILTIN_PLUGINS = {
         allowed_domains=[],
         agents_served=["jarvis", "athena", "stark", "vision", "argus"],
     ),
+    # ── SEC-5b: previously-unmanifested networked plugins ─────────────────────
+    # These reached the network with no manifest (→ fail-open / unrestricted).
+    # Now each is gated by the egress boundary. Config/env-driven hosts (n8n,
+    # SearXNG, Signal, Matrix) carry no static allowlist and are augmented at
+    # init via register_dynamic_domain(); see the plugins' constructors.
+    "balance": PluginManifest(
+        id="balance",
+        name="Bank Balance Reader",
+        version="0.1.0",
+        description="Read-only account balances from ING / Libra bank APIs",
+        network_access=NetworkAccess.RESTRICTED,
+        data_scope=DataScope.PROCESSED,
+        allowed_domains=["api.ing.com", "api.libra.ro"],
+        agents_served=["all"],
+    ),
+    "analytics": PluginManifest(
+        id="analytics",
+        name="Google Analytics (GA4)",
+        version="0.1.0",
+        description="GA4 KPI reporting via the Analytics Data API",
+        network_access=NetworkAccess.RESTRICTED,
+        data_scope=DataScope.PROCESSED,
+        allowed_domains=["analyticsdata.googleapis.com", "oauth2.googleapis.com"],
+        agents_served=["all"],
+    ),
+    "websearch": PluginManifest(
+        id="websearch",
+        name="Web Search",
+        version="0.1.0",
+        description="Web search via Tavily / DuckDuckGo / (optional) SearXNG",
+        network_access=NetworkAccess.RESTRICTED,
+        data_scope=DataScope.PROCESSED,
+        # SearXNG host is config-driven (SEARXNG_URL) → registered dynamically.
+        allowed_domains=["api.tavily.com", "html.duckduckgo.com"],
+        agents_served=["all"],
+    ),
+    "n8n": PluginManifest(
+        id="n8n",
+        name="n8n Workflow Designer",
+        version="0.1.0",
+        description="Create/list/activate n8n workflows via its REST API",
+        network_access=NetworkAccess.RESTRICTED,
+        data_scope=DataScope.PROCESSED,
+        # Base URL is config-driven (N8N_BASE_URL) → registered dynamically.
+        allowed_domains=[],
+        agents_served=["all"],
+    ),
+    "digest": PluginManifest(
+        id="digest",
+        name="Topic Digest Aggregator",
+        version="0.1.0",
+        description="Aggregate public RSS/Atom feeds (HN, Reddit, arXiv, YouTube, Google News)",
+        network_access=NetworkAccess.RESTRICTED,
+        data_scope=DataScope.PROCESSED,
+        allowed_domains=["hnrss.org", "www.reddit.com", "export.arxiv.org",
+                         "news.google.com", "www.youtube.com"],
+        agents_served=["all"],
+    ),
+    # Governed social writes (social.py) — one id per platform: social_<platform>.
+    "social_x": PluginManifest(
+        id="social_x",
+        name="Social: X/Twitter",
+        version="0.1.0",
+        description="Governed X/Twitter post/reply/DM",
+        network_access=NetworkAccess.RESTRICTED,
+        data_scope=DataScope.TRANSMITTED,
+        allowed_domains=["api.twitter.com"],
+        agents_served=["all"],
+    ),
+    # Governed write-back (writeback.py) — one id per target: writeback_<target>.
+    "writeback_notion": PluginManifest(
+        id="writeback_notion",
+        name="Write-back: Notion",
+        version="0.1.0",
+        description="Governed Notion page/block write-back",
+        network_access=NetworkAccess.RESTRICTED,
+        data_scope=DataScope.TRANSMITTED,
+        allowed_domains=["api.notion.com"],
+        agents_served=["all"],
+    ),
+    "writeback_github": PluginManifest(
+        id="writeback_github",
+        name="Write-back: GitHub",
+        version="0.1.0",
+        description="Governed GitHub issue/comment write-back",
+        network_access=NetworkAccess.RESTRICTED,
+        data_scope=DataScope.TRANSMITTED,
+        allowed_domains=["api.github.com"],
+        agents_served=["all"],
+    ),
+    "writeback_google_calendar": PluginManifest(
+        id="writeback_google_calendar",
+        name="Write-back: Google Calendar",
+        version="0.1.0",
+        description="Governed Google Calendar event write-back",
+        network_access=NetworkAccess.RESTRICTED,
+        data_scope=DataScope.TRANSMITTED,
+        allowed_domains=["www.googleapis.com"],
+        agents_served=["all"],
+    ),
+    # Governed outbound calls (autonomy/call_broker.py) — id per provider.
+    "call_twilio": PluginManifest(
+        id="call_twilio",
+        name="Call: Twilio",
+        version="0.1.0",
+        description="Governed outbound voice via Twilio",
+        network_access=NetworkAccess.RESTRICTED,
+        data_scope=DataScope.TRANSMITTED,
+        allowed_domains=["api.twilio.com"],
+        agents_served=["all"],
+    ),
+    "call_telnyx": PluginManifest(
+        id="call_telnyx",
+        name="Call: Telnyx",
+        version="0.1.0",
+        description="Governed outbound voice via Telnyx",
+        network_access=NetworkAccess.RESTRICTED,
+        data_scope=DataScope.TRANSMITTED,
+        allowed_domains=["api.telnyx.com"],
+        agents_served=["all"],
+    ),
+    # Governed webhook channels (channels/webhook_channels.py) — id per channel.
+    "channel_whatsapp": PluginManifest(
+        id="channel_whatsapp",
+        name="Channel: WhatsApp Cloud",
+        version="0.1.0",
+        description="WhatsApp Cloud API (Meta Graph) outbound",
+        network_access=NetworkAccess.RESTRICTED,
+        data_scope=DataScope.TRANSMITTED,
+        allowed_domains=["graph.facebook.com"],
+        agents_served=["all"],
+    ),
+    "channel_google_chat": PluginManifest(
+        id="channel_google_chat",
+        name="Channel: Google Chat",
+        version="0.1.0",
+        description="Google Chat incoming-webhook outbound",
+        network_access=NetworkAccess.RESTRICTED,
+        data_scope=DataScope.TRANSMITTED,
+        allowed_domains=["chat.googleapis.com"],
+        agents_served=["all"],
+    ),
+    "channel_teams": PluginManifest(
+        id="channel_teams",
+        name="Channel: Microsoft Teams",
+        version="0.1.0",
+        description="Microsoft Teams incoming-webhook outbound",
+        network_access=NetworkAccess.RESTRICTED,
+        data_scope=DataScope.TRANSMITTED,
+        # Teams webhook hosts (anchored subdomain match covers per-tenant prefixes);
+        # a config-supplied webhook host is also registered dynamically.
+        allowed_domains=["webhook.office.com", "logic.azure.com"],
+        agents_served=["all"],
+    ),
+    "channel_signal": PluginManifest(
+        id="channel_signal",
+        name="Channel: Signal",
+        version="0.1.0",
+        description="Signal via signal-cli REST API (host from config base_url)",
+        network_access=NetworkAccess.RESTRICTED,
+        data_scope=DataScope.TRANSMITTED,
+        allowed_domains=[],  # base_url is config-driven → registered dynamically
+        agents_served=["all"],
+    ),
+    "channel_matrix": PluginManifest(
+        id="channel_matrix",
+        name="Channel: Matrix",
+        version="0.1.0",
+        description="Matrix client-server API (homeserver from config)",
+        network_access=NetworkAccess.RESTRICTED,
+        data_scope=DataScope.TRANSMITTED,
+        allowed_domains=[],  # homeserver is config-driven → registered dynamically
+        agents_served=["all"],
+    ),
 }
+
+
+def host_in_allowlist(host: str, allowed_domains: list[str]) -> bool:
+    """True if *host* exactly matches an allowed domain or is a sub-domain of one.
+
+    F-07: replaces the old ``any(d in host)`` substring test, which let
+    ``api.openai.com.evil.example`` slip past an allowlist of ``api.openai.com``.
+    Matching is now anchored: ``host == d`` or ``host`` ends with ``"." + d``.
+    """
+    host = (host or "").lower().strip().rstrip(".")
+    if not host:
+        return False
+    for d in allowed_domains or []:
+        d = (d or "").lower().strip().rstrip(".")
+        if d and (host == d or host.endswith("." + d)):
+            return True
+    return False
+
+
+# ── SEC-5b: runtime allowlist augmentation ───────────────────────────────────
+# Some networked plugins take their egress host from config/env (n8n
+# N8N_BASE_URL, websearch SEARXNG_URL, Signal base_url, Matrix homeserver), so it
+# can't be a static ``allowed_domains`` entry. Such a plugin registers its
+# configured host once at init; the egress gate unions these in with the
+# manifest's static allowlist. This keeps the strict-by-default boundary on
+# (unregistered hosts are still blocked) without a FULL/unmanifested escape.
+_DYNAMIC_DOMAINS: "dict[str, set[str]]" = {}
+
+
+def register_dynamic_domain(plugin_id: str, url_or_host: str) -> None:
+    """Allow *plugin_id* to reach the host in *url_or_host*.
+
+    Accepts a full URL (``https://host:port/path``) or a bare host (``host:port``
+    / ``host``). No-op on empty/unparseable input. Idempotent.
+    """
+    if not plugin_id or not url_or_host:
+        return
+    raw = str(url_or_host).strip()
+    parsed = urlparse(raw if "//" in raw else "//" + raw)
+    host = (parsed.hostname or "").lower().strip().rstrip(".")
+    if host:
+        _DYNAMIC_DOMAINS.setdefault(plugin_id, set()).add(host)
+
+
+def dynamic_domains(plugin_id: str) -> list[str]:
+    """Hosts registered at runtime for *plugin_id* (see register_dynamic_domain)."""
+    return sorted(_DYNAMIC_DOMAINS.get(plugin_id, ()))
 
 
 class PermissionGate:
@@ -249,8 +471,8 @@ class PermissionGate:
 
         if manifest.network_access == NetworkAccess.RESTRICTED:
             if not target_domain:
-                return True  # No domain specified = internal processing
-            allowed = any(d in target_domain for d in manifest.allowed_domains)
+                return True  # No domain specified = internal processing (URL-level egress is enforced in PluginHTTPClient)
+            allowed = host_in_allowlist(target_domain, manifest.allowed_domains)
             if not allowed:
                 logger.warning(f"Domain {target_domain} not allowed by plugin {plugin_id} — blocked")
             return allowed

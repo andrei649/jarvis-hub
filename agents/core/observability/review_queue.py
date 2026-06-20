@@ -12,10 +12,13 @@ from __future__ import annotations
 import time
 import uuid
 from pathlib import Path
-from ..persistence import JsonStore
 from typing import Optional
 
-DEFAULT_PATH = Path("memory_logs/review_queue.json")
+from agents.core.paths import data_path
+
+from ..persistence import JsonStore
+
+DEFAULT_PATH = data_path("review_queue.json")
 RUBRIC_CRITERIA = ["accuracy", "completeness", "tone", "safety"]
 
 

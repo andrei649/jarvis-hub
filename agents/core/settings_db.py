@@ -7,8 +7,9 @@ import json
 import logging
 import sqlite3
 import threading
-from pathlib import Path
 from typing import Any
+
+from agents.core.paths import data_path
 
 logger = logging.getLogger("jarvis.settings")
 
@@ -22,7 +23,7 @@ def _logsafe(value: object) -> str:
     """
     return str(value).replace("\r", " ").replace("\n", " ")
 
-DB_PATH = Path(__file__).parent.parent.parent / "memory_logs" / "settings.db"
+DB_PATH = data_path("settings.db")
 
 # ── schema ────────────────────────────────────────────────────────
 
@@ -63,6 +64,7 @@ DEFAULTS: list[dict[str, Any]] = [
     dict(category="voice",   key="stt_model_size",   value="medium",              label="STT model size",     kind="select",  opts=["tiny","base","small","medium","large"]),
     dict(category="voice",   key="stt_language",     value="ro",                  label="STT language",       kind="text"),
     dict(category="voice",   key="tts_voice",        value="en-GB-RyanNeural",    label="TTS voice",          kind="text"),
+    dict(category="voice",   key="sentence_streaming", value=False,               label="Sentence-level TTS streaming (H5.16) — speak the reply sentence-by-sentence so audio starts sooner", kind="toggle"),
     # security
     dict(category="security",key="guardrails_mode",  value="WARN",                label="Guardrails mode",    kind="select",  opts=["WARN","REDACT","BLOCK"]),
     dict(category="security",key="scan_input",       value=True,                  label="Scan user input",    kind="toggle"),

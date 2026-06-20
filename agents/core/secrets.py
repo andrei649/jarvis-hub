@@ -42,9 +42,11 @@ import stat
 from pathlib import Path
 from typing import Optional
 
+from agents.core.paths import data_path
+
 logger = logging.getLogger("jarvis.secrets")
 
-DEFAULT_STORE = Path("memory_logs") / "security" / "secrets.enc"
+DEFAULT_STORE = data_path("security", "secrets.enc")
 
 _PBKDF2_ITERATIONS = 390_000
 _FALLBACK_PREFIX = b"xhmac1:"  # marks pure-Python fallback ciphertext

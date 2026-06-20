@@ -31,6 +31,10 @@ class N8NPlugin:
         self.base_url = (base_url or os.getenv("N8N_BASE_URL", "")).rstrip("/")
         self.api_key = api_key or os.getenv("N8N_API_KEY", "")
         self._client = PluginHTTPClient.for_plugin("n8n")
+        # SEC-5b: n8n's host is config-driven; allow it through the egress gate.
+        if self.base_url:
+            from ..plugin_gate import register_dynamic_domain
+            register_dynamic_domain("n8n", self.base_url)
 
     # ── helpers ────────────────────────────────────────────────────
 
