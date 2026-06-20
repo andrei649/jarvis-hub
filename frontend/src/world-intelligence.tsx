@@ -1,6 +1,5 @@
 // @ts-nocheck
 import React, { useEffect, useMemo, useState } from 'react';
-import { Icon as Ic, ICONS as IK } from './ui';
 import { loadWorldIntelligence } from './api/signalLayer';
 
 function SubH({ children, style }) { return <div className="sub-h" style={style}>{children}</div>; }
@@ -8,10 +7,12 @@ function Stat({ value, label }) { return <div className="stat-card"><div classNa
 function Cap({ title, detail, tag = 'INFO', kind = 'scoped' }) {
   return <div className="cap-row"><div><div className="cn">{title}</div>{detail && <div className="cd">{detail}</div>}</div><span className={'cap-tag ' + kind}>{tag}</span></div>;
 }
+function Pill({ children, kind = 'scoped' }) { return <span className={'cap-tag ' + kind}>{children}</span>; }
 
 function SignalRow({ signal, evidenceById }) {
   const ev = (signal.evidenceIds || []).map(id => evidenceById.get(id)).filter(Boolean)[0];
   const severe = signal.severity === 'high' || signal.severity === 'critical';
+  const relevanceReason = signal.relevance?.reasons?.[0] || signal.whyItMatters || '';
   return (
     <div className="trace-row">
       <div className="tr-top">
@@ -20,12 +21,32 @@ function SignalRow({ signal, evidenceById }) {
         <span className={'tr-status ' + (severe ? 'failed' : 'ok')}>{signal.severity || 'n/a'}</span>
         <span className="tr-tot">{signal.confidence || 'conf?'}</span>
       </div>
-      <div className="hx" style={{ marginTop: 6, lineHeight: 1.45 }}>{signal.summary || signal.whyItMatters || signal.relevance?.reasons?.[0] || 'No summary.'}</div>
+      <div className="hx" style={{ marginTop: 6, lineHeight: 1.45 }}>{signal.summary || relevanceReason || 'No summary.'}</div>
+      {relevanceReason && signal.summary !== relevanceReason && <div className="cd" style={{ marginTop: 5 }}>Why it matters: {relevanceReason}</div>}
       <div className="tr-agents" style={{ marginTop: 8 }}>
         <span className="topic-pill">{signal.claimStatus || 'claim'}</span>
         {signal.relevance?.score != null && <span className="topic-pill">relevance {signal.relevance.score}</span>}
         {ev && <span className="topic-pill">{ev.sourceFamily} · {ev.stale ? 'stale' : 'fresh'}</span>}
       </div>
+    </div>
+  );
+}
+
+function SignalLayerDown({ onRetry }) {
+  return (
+    <div className="cap-row" style={{ borderColor: 'rgba(245,158,11,.45)', alignItems: 'flex-start' }}>
+      <div>
+        <div className="cn">Signal Layer unavailable</div>
+        <div className="cd" style={{ lineHeight: 1.55 }}>
+          Start Jarvis with <b>START.bat</b> or <b>./start.sh</b>, then check <b>http://127.0.0.1:8787/healthz</b>. Replay mode is the Sunday-safe path and needs no WorldMonitor or API keys.
+        </div>
+        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 10 }}>
+          <Pill kind="gated">NO LIVE PANEL DATA</Pill>
+          <Pill>EXPECTED PORT :8787</Pill>
+          <Pill>REPLAY DEFAULT</Pill>
+        </div>
+      </div>
+      <button className="tool-btn" onClick={onRetry}>retry</button>
     </div>
   );
 }
@@ -47,6 +68,7 @@ export function WorldIntelligencePanel() {
   const evidenceById = useMemo(() => new Map((data.evidence || []).map(item => [item.id, item])), [data.evidence]);
   const provider = health.provider || {};
   const freshness = brief.freshness || {};
+  const down = !state.loading && !health.ok && !brief.title && !signals.length;
 
   return (
     <>
@@ -58,7 +80,8 @@ export function WorldIntelligencePanel() {
         <Stat value={signals.length} label="relevant signals" />
       </div>
 
-      {state.error && <Cap title="Signal Layer notice" detail={state.error} tag="CHECK" kind="gated" />}
+      {down ? <SignalLayerDown onRetry={load} /> : null}
+      {!down && state.error && <Cap title="Signal Layer notice" detail={state.error} tag="PARTIAL" kind="gated" />}
 
       <div className="obs-grid">
         <div>
@@ -67,8 +90,9 @@ export function WorldIntelligencePanel() {
               <div className="cn">{brief.title || 'Global Intelligence Brief'}</div>
               <div className="cd" style={{ lineHeight: 1.55, marginTop: 6 }}>{brief.executiveSummary || (state.loading ? 'Loading brief…' : 'No brief returned yet.')}</div>
               <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 10 }}>
-                <span className="cap-tag allow">freshness: {freshness.stale ? 'stale present' : 'ok'}</span>
-                <span className="cap-tag scoped">source: Signal Layer</span>
+                <Pill kind={freshness.stale ? 'gated' : 'allow'}>freshness: {freshness.stale ? 'stale present' : 'ok'}</Pill>
+                <Pill>source: Signal Layer</Pill>
+                <Pill>actions: preview-only</Pill>
               </div>
             </div>
             <button className="tool-btn" onClick={load} disabled={state.loading}>{state.loading ? '…' : 'refresh'}</button>
@@ -76,7 +100,7 @@ export function WorldIntelligencePanel() {
 
           <SubH style={{ marginTop: 16 }}>TOP SIGNALS</SubH>
           {signals.slice(0, 6).map((signal, index) => <SignalRow key={signal.id || index} signal={signal} evidenceById={evidenceById} />)}
-          {!signals.length && !state.loading && <Cap title="No relevant signals returned" detail="Check that the Signal Layer is running on :8787." tag="EMPTY" />}
+          {!signals.length && !state.loading && !down && <Cap title="No relevant signals returned" detail="The Signal Layer responded, but no relevant signals were returned for the current watchlist." tag="EMPTY" />}
         </div>
 
         <div>
@@ -101,7 +125,7 @@ export function WorldIntelligenceMode() {
     <div className="workzone full" style={{ flex: 1, minHeight: 0 }}>
       <div className="panel scroll" style={{ flex: 1 }}>
         <span className="bk tl"></span><span className="bk tr"></span><span className="bk bl"></span><span className="bk br"></span>
-        <div className="panel-head"><Ic d={IK.globe || IK.observe} size={14}/><span className="ttl">World Intelligence</span><span className="st">Signal Layer · Argus</span></div>
+        <div className="panel-head"><span className="ttl">World Intelligence</span><span className="st">Signal Layer · Argus</span></div>
         <div className="panel-body"><WorldIntelligencePanel /></div>
       </div>
     </div>
