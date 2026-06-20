@@ -295,6 +295,47 @@ function ModelPickerRow({ label, value }) {
   );
 }
 
+/* ── Live LM Studio controller status card ───────────────────────
+ * Fetches /api/llm/status on mount and shows the live controller state:
+ * the kill-switch (enabled?), whether the server is online, and the active
+ * model. Read-only and independent of the dirty/Save flow. Honest degradation:
+ * if the controller is unavailable / the fetch fails, it says so instead of
+ * faking a healthy state (mirrors ModelPickerRow's posture). */
+function LMStudioStatusRow({ label }) {
+  const [st, setSt] = useState(null);   // null = loading, false = unavailable, {} = state
+  useEffect(() => {
+    afetch('/api/llm/status')
+      .then(r => (r.ok ? r.json() : Promise.reject()))
+      .then(d => setSt(d && typeof d === 'object' ? d : false))
+      .catch(() => setSt(false));
+  }, []);
+  const dim = { color: 'var(--text-dim)' };
+  let body;
+  if (st === null) {
+    body = h('span', { style: dim }, 'Se verifică starea LM Studio…');
+  } else if (st === false) {
+    body = h('span', { style: dim }, 'Controler LM Studio indisponibil');
+  } else {
+    const chip = (text, on) => h('span', {
+      style: {
+        fontSize: 11, padding: '1px 7px', borderRadius: 6, marginRight: 6,
+        color: on ? 'var(--ok, #6ee7a8)' : 'var(--text-dim)',
+        border: `1px solid ${on ? 'var(--ok, #6ee7a8)' : 'var(--border-glass)'}`,
+      },
+    }, text);
+    body = h('div', { style: { display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 2 } },
+      chip(st.enabled ? 'Control activ' : 'Control oprit', !!st.enabled),
+      chip(st.online ? 'Server online' : 'Server offline', !!st.online),
+      h('span', { style: { ...dim, fontFamily: 'var(--font-mono)', fontSize: 11, marginLeft: 4 } },
+        st.active_model ? `Model: ${st.active_model}` : 'Niciun model încărcat'),
+    );
+  }
+  return h('div', { className: 'admin-row' },
+    h('div', { className: 'admin-row-label' }, label),
+    h('div', { className: 'admin-row-control' }, body),
+  );
+}
+
 /* ── Settings row renderer ──────────────────────────────────── */
 
 function renderRow(s, i, onUpdate, onAction) {
@@ -496,8 +537,15 @@ function GlobalConfigPage({ settings, dirty, onUpdate, onSave }) {
 
       if (sectionSettings.length === 0) return null;
 
+      // Live LM Studio controller status, shown at the top of the LLM section
+      // (read-only, independent of the dirty/Save flow). Suppressed while a
+      // search is active so it doesn't sit above an unrelated filtered list.
+      const showLmStatus = !search && section.keys.some(k => k.startsWith('llm.'));
+
       return h(Group, { key: idx, title: section.title },
         section.desc && h('p', { style: { padding: '0 12px 10px 12px', fontSize: 11, color: 'var(--text-dim)', fontStyle: 'italic' } }, section.desc),
+        showLmStatus && h('div', { className: 'flat-setting-wrapper', style: { borderBottom: '1px solid var(--border-glass)', paddingBottom: 8, marginBottom: 8 } },
+          h(LMStudioStatusRow, { label: 'Stare LM Studio (live)' })),
         sectionSettings.map((s, i) => {
           return h('div', { key: i, className: 'flat-setting-wrapper', style: { borderBottom: '1px solid var(--border-glass)', paddingBottom: 8, marginBottom: 8 } },
             renderRow(

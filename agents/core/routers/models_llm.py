@@ -178,6 +178,29 @@ async def llm_auth_profiles():
     return nocache_json({"pools": pools})
 
 
+@router.get("/api/llm/status", dependencies=[Depends(admin_guard)])
+async def llm_status():
+    """Live LM Studio controller state for the admin UI.
+
+    Returns ``{online, enabled, server_url, active_model}`` from
+    ``LMStudioController.status()``. Degrades gracefully when the controller is
+    not wired yet (orchestrator still booting) so the status card can render an
+    honest "unavailable" instead of erroring."""
+    ctrl, err = _lmstudio_or_503()
+    if err:
+        return err
+    try:
+        return nocache_json(await ctrl.status())
+    except Exception:
+        # status() never raises by design, but never let host control crash the
+        # endpoint — degrade to an offline/unavailable shape the UI can render.
+        return nocache_json(
+            {"online": False, "enabled": getattr(ctrl, "enabled", False),
+             "server_url": getattr(ctrl, "server_url", ""), "active_model": None},
+            status_code=200,
+        )
+
+
 @router.post("/api/llm/server/start", dependencies=[Depends(admin_guard)])
 async def llm_server_start():
     ctrl, err = _lmstudio_or_503()

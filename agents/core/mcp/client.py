@@ -3,6 +3,7 @@ client.py — Model Context Protocol (MCP) client.
 Connects to MCP servers via stdio or SSE transport.
 """
 
+import asyncio
 import json
 import logging
 from typing import Any
@@ -29,7 +30,6 @@ class MCPServer:
 
     async def connect(self):
         if self.transport == "stdio" and self.command:
-            import asyncio
             self._proc = await asyncio.create_subprocess_shell(
                 self.command,
                 stdin=asyncio.subprocess.PIPE,

@@ -74,6 +74,7 @@
   "GET /api/kg/facts/as-of": "kg_facts_as_of_api_kg_facts_as_of_get",
   "GET /api/kg/facts/history": "kg_facts_history_api_kg_facts_history_get",
   "GET /api/llm/auth-profiles": "llm_auth_profiles_api_llm_auth_profiles_get",
+  "GET /api/llm/status": "llm_status_api_llm_status_get",
   "GET /api/local-docs": "local_docs_status_api_local_docs_get",
   "GET /api/mcp/server": "mcp_server_status_api_mcp_server_get",
   "GET /api/media": "media_status_api_media_get",
