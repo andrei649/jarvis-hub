@@ -1,0 +1,66 @@
+{
+  "id": "assessment-country-il-demo-001",
+  "subject": {
+    "type": "country",
+    "id": "IL",
+    "label": "Israel"
+  },
+  "risk": {
+    "score": 68,
+    "level": "elevated",
+    "components": {
+      "conflict": 45
+    }
+  },
+  "claim": "Israel is assessed as elevated risk in this demo snapshot, based on unconfirmed border-tension leads.",
+  "confidence": "medium",
+  "drivers": [
+    {
+      "title": "Border tension (raw OSINT leads)",
+      "type": "conflict",
+      "severity": "high"
+    }
+  ],
+  "recommendations": [
+    {
+      "type": "monitor",
+      "label": "Keep Israel on the watchlist for daily briefs.",
+      "requiresApproval": true
+    },
+    {
+      "type": "brief",
+      "label": "Generate a country brief before travel or business decisions.",
+      "requiresApproval": true
+    }
+  ],
+  "evidenceIds": [
+    "ev-country-il-risk"
+  ],
+  "evidence": [
+    {
+      "id": "ev-country-il-risk",
+      "provider": "worldmonitor",
+      "sourceName": "WorldMonitor government cache",
+      "sourceFamily": "government",
+      "url": null,
+      "observedAt": "2026-06-19T09:00:00Z",
+      "publishedAt": "2026-06-19T09:00:00Z",
+      "fetchedAt": "2026-06-19T10:00:00Z",
+      "cachedAt": "2026-06-19T10:00:00Z",
+      "stale": false,
+      "reliability": "medium",
+      "raw": {
+        "fixture": true
+      }
+    }
+  ],
+  "freshness": {
+    "stale": false,
+    "checkedAt": "2026-06-19T12:00:00Z",
+    "cachedAt": "2026-06-19T10:00:00Z"
+  },
+  "provider": "worldmonitor",
+  "raw": {
+    "fixture": true
+  }
+}

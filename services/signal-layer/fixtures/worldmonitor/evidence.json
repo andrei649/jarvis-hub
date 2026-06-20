@@ -94,5 +94,197 @@
     "raw": {
       "fixture": true
     }
+  },
+  {
+    "id": "ev-aviation-otp-001",
+    "provider": "worldmonitor",
+    "sourceName": "WorldMonitor aviation cache",
+    "sourceFamily": "aviation",
+    "url": null,
+    "observedAt": "2026-06-19T09:00:00Z",
+    "publishedAt": "2026-06-19T09:00:00Z",
+    "fetchedAt": "2026-06-19T10:00:00Z",
+    "cachedAt": "2026-06-19T10:00:00Z",
+    "stale": false,
+    "reliability": "medium",
+    "raw": {
+      "fixture": true
+    }
+  },
+  {
+    "id": "ev-aviation-hormuz-001",
+    "provider": "worldmonitor",
+    "sourceName": "WorldMonitor aviation cache",
+    "sourceFamily": "aviation",
+    "url": null,
+    "observedAt": "2026-06-19T09:00:00Z",
+    "publishedAt": "2026-06-19T09:00:00Z",
+    "fetchedAt": "2026-06-19T10:00:00Z",
+    "cachedAt": "2026-06-19T10:00:00Z",
+    "stale": false,
+    "reliability": "medium",
+    "raw": {
+      "fixture": true
+    }
+  },
+  {
+    "id": "ev-market-xau-001",
+    "provider": "worldmonitor",
+    "sourceName": "WorldMonitor market cache",
+    "sourceFamily": "market",
+    "url": null,
+    "observedAt": "2026-06-19T09:00:00Z",
+    "publishedAt": "2026-06-19T09:00:00Z",
+    "fetchedAt": "2026-06-19T10:00:00Z",
+    "cachedAt": "2026-06-19T10:00:00Z",
+    "stale": false,
+    "reliability": "medium",
+    "raw": {
+      "fixture": true
+    }
+  },
+  {
+    "id": "ev-market-brent-001",
+    "provider": "worldmonitor",
+    "sourceName": "WorldMonitor market cache",
+    "sourceFamily": "market",
+    "url": null,
+    "observedAt": "2026-06-19T09:00:00Z",
+    "publishedAt": "2026-06-19T09:00:00Z",
+    "fetchedAt": "2026-06-19T10:00:00Z",
+    "cachedAt": "2026-06-19T10:00:00Z",
+    "stale": false,
+    "reliability": "medium",
+    "raw": {
+      "fixture": true
+    }
+  },
+  {
+    "id": "ev-cyber-us-001",
+    "provider": "worldmonitor",
+    "sourceName": "WorldMonitor cyber cache",
+    "sourceFamily": "cyber",
+    "url": null,
+    "observedAt": "2026-06-19T09:00:00Z",
+    "publishedAt": "2026-06-19T09:00:00Z",
+    "fetchedAt": "2026-06-19T10:00:00Z",
+    "cachedAt": "2026-06-19T10:00:00Z",
+    "stale": false,
+    "reliability": "medium",
+    "raw": {
+      "fixture": true
+    }
+  },
+  {
+    "id": "ev-cyber-in-001",
+    "provider": "worldmonitor",
+    "sourceName": "WorldMonitor cyber cache",
+    "sourceFamily": "cyber",
+    "url": null,
+    "observedAt": "2026-06-19T09:00:00Z",
+    "publishedAt": "2026-06-19T09:00:00Z",
+    "fetchedAt": "2026-06-19T10:00:00Z",
+    "cachedAt": "2026-06-19T10:00:00Z",
+    "stale": false,
+    "reliability": "medium",
+    "raw": {
+      "fixture": true
+    }
+  },
+  {
+    "id": "ev-conflict-ua-001",
+    "provider": "worldmonitor",
+    "sourceName": "WorldMonitor osint cache",
+    "sourceFamily": "osint",
+    "url": null,
+    "observedAt": "2026-06-19T09:00:00Z",
+    "publishedAt": "2026-06-19T09:00:00Z",
+    "fetchedAt": "2026-06-19T10:00:00Z",
+    "cachedAt": "2026-06-19T10:00:00Z",
+    "stale": false,
+    "reliability": "unknown",
+    "raw": {
+      "fixture": true
+    }
+  },
+  {
+    "id": "ev-conflict-il-001",
+    "provider": "worldmonitor",
+    "sourceName": "WorldMonitor osint cache",
+    "sourceFamily": "osint",
+    "url": null,
+    "observedAt": "2026-06-19T09:00:00Z",
+    "publishedAt": "2026-06-19T09:00:00Z",
+    "fetchedAt": "2026-06-19T10:00:00Z",
+    "cachedAt": "2026-06-19T10:00:00Z",
+    "stale": false,
+    "reliability": "unknown",
+    "raw": {
+      "fixture": true
+    }
+  },
+  {
+    "id": "ev-news-cn-001",
+    "provider": "worldmonitor",
+    "sourceName": "WorldMonitor rss cache",
+    "sourceFamily": "rss",
+    "url": null,
+    "observedAt": "2026-06-19T09:00:00Z",
+    "publishedAt": "2026-06-19T09:00:00Z",
+    "fetchedAt": "2026-06-19T10:00:00Z",
+    "cachedAt": "2026-06-19T10:00:00Z",
+    "stale": false,
+    "reliability": "unknown",
+    "raw": {
+      "fixture": true
+    }
+  },
+  {
+    "id": "ev-news-tr-001",
+    "provider": "worldmonitor",
+    "sourceName": "WorldMonitor rss cache",
+    "sourceFamily": "rss",
+    "url": null,
+    "observedAt": "2026-06-19T09:00:00Z",
+    "publishedAt": "2026-06-19T09:00:00Z",
+    "fetchedAt": "2026-06-19T10:00:00Z",
+    "cachedAt": "2026-06-19T10:00:00Z",
+    "stale": false,
+    "reliability": "unknown",
+    "raw": {
+      "fixture": true
+    }
+  },
+  {
+    "id": "ev-disaster-in-001",
+    "provider": "worldmonitor",
+    "sourceName": "WorldMonitor weather cache",
+    "sourceFamily": "weather",
+    "url": null,
+    "observedAt": "2026-06-19T09:00:00Z",
+    "publishedAt": "2026-06-19T09:00:00Z",
+    "fetchedAt": "2026-06-19T10:00:00Z",
+    "cachedAt": "2026-06-19T10:00:00Z",
+    "stale": false,
+    "reliability": "medium",
+    "raw": {
+      "fixture": true
+    }
+  },
+  {
+    "id": "ev-disaster-us-001",
+    "provider": "worldmonitor",
+    "sourceName": "WorldMonitor weather cache",
+    "sourceFamily": "weather",
+    "url": null,
+    "observedAt": "2026-06-19T09:00:00Z",
+    "publishedAt": "2026-06-19T09:00:00Z",
+    "fetchedAt": "2026-06-19T10:00:00Z",
+    "cachedAt": "2026-06-19T10:00:00Z",
+    "stale": true,
+    "reliability": "medium",
+    "raw": {
+      "fixture": true
+    }
   }
 ]

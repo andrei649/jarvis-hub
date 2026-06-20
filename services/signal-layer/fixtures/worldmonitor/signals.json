@@ -213,5 +213,419 @@
     "raw": {
       "fixture": true
     }
+  },
+  {
+    "id": "sig-aviation-otp-001",
+    "domain": "world",
+    "type": "aviation",
+    "title": "Schedule pressure at Bucharest OTP",
+    "summary": "Aviation feeds show schedule pressure and occasional holds around OTP. No travel change recommended from this alone.",
+    "entities": [
+      {
+        "type": "country",
+        "id": "RO",
+        "label": "Romania"
+      },
+      {
+        "type": "airport",
+        "id": "OTP",
+        "label": "Bucharest OTP"
+      }
+    ],
+    "evidenceIds": [
+      "ev-aviation-otp-001"
+    ],
+    "severity": "normal",
+    "confidence": "medium",
+    "claimStatus": "confirmed",
+    "status": "new",
+    "observedAt": "2026-06-19T09:00:00Z",
+    "publishedAt": "2026-06-19T09:00:00Z",
+    "fetchedAt": "2026-06-19T10:00:00Z",
+    "cachedAt": "2026-06-19T10:00:00Z",
+    "stale": false,
+    "provider": "worldmonitor",
+    "relevance": {
+      "score": 0,
+      "reasons": [],
+      "matchedTargets": []
+    }
+  },
+  {
+    "id": "sig-aviation-hormuz-001",
+    "domain": "world",
+    "type": "aviation",
+    "title": "Heightened airspace caution near Hormuz",
+    "summary": "Operators report heightened caution for routing near the Strait of Hormuz corridor.",
+    "entities": [
+      {
+        "type": "route",
+        "id": "hormuz",
+        "label": "Strait of Hormuz"
+      },
+      {
+        "type": "country",
+        "id": "AE",
+        "label": "United Arab Emirates"
+      }
+    ],
+    "evidenceIds": [
+      "ev-aviation-hormuz-001"
+    ],
+    "severity": "elevated",
+    "confidence": "medium",
+    "claimStatus": "confirmed",
+    "status": "new",
+    "observedAt": "2026-06-19T09:00:00Z",
+    "publishedAt": "2026-06-19T09:00:00Z",
+    "fetchedAt": "2026-06-19T10:00:00Z",
+    "cachedAt": "2026-06-19T10:00:00Z",
+    "stale": false,
+    "provider": "worldmonitor",
+    "relevance": {
+      "score": 0,
+      "reasons": [],
+      "matchedTargets": []
+    }
+  },
+  {
+    "id": "sig-market-xau-001",
+    "domain": "world",
+    "type": "market",
+    "title": "Gold bid firms on risk sentiment",
+    "summary": "XAU bid firms modestly amid broader risk sentiment. Informational only.",
+    "entities": [
+      {
+        "type": "market",
+        "id": "XAU",
+        "label": "Gold"
+      }
+    ],
+    "evidenceIds": [
+      "ev-market-xau-001"
+    ],
+    "severity": "normal",
+    "confidence": "medium",
+    "claimStatus": "confirmed",
+    "status": "new",
+    "observedAt": "2026-06-19T09:00:00Z",
+    "publishedAt": "2026-06-19T09:00:00Z",
+    "fetchedAt": "2026-06-19T10:00:00Z",
+    "cachedAt": "2026-06-19T10:00:00Z",
+    "stale": false,
+    "provider": "worldmonitor",
+    "relevance": {
+      "score": 0,
+      "reasons": [],
+      "matchedTargets": []
+    }
+  },
+  {
+    "id": "sig-market-brent-001",
+    "domain": "world",
+    "type": "market",
+    "title": "Brent crude volatility uptick",
+    "summary": "BRENT shows a volatility uptick tied to supply-route headlines.",
+    "entities": [
+      {
+        "type": "market",
+        "id": "BRENT",
+        "label": "Brent Crude"
+      },
+      {
+        "type": "route",
+        "id": "hormuz",
+        "label": "Strait of Hormuz"
+      }
+    ],
+    "evidenceIds": [
+      "ev-market-brent-001"
+    ],
+    "severity": "elevated",
+    "confidence": "medium",
+    "claimStatus": "confirmed",
+    "status": "new",
+    "observedAt": "2026-06-19T09:00:00Z",
+    "publishedAt": "2026-06-19T09:00:00Z",
+    "fetchedAt": "2026-06-19T10:00:00Z",
+    "cachedAt": "2026-06-19T10:00:00Z",
+    "stale": false,
+    "provider": "worldmonitor",
+    "relevance": {
+      "score": 0,
+      "reasons": [],
+      "matchedTargets": []
+    }
+  },
+  {
+    "id": "sig-cyber-us-001",
+    "domain": "world",
+    "type": "cyber",
+    "title": "Credential-stuffing wave hits US fintech",
+    "summary": "Cyber feeds flag a credential-stuffing wave against US fintech endpoints.",
+    "entities": [
+      {
+        "type": "country",
+        "id": "US",
+        "label": "United States"
+      },
+      {
+        "type": "market",
+        "id": "cyber",
+        "label": "Cyber risk"
+      }
+    ],
+    "evidenceIds": [
+      "ev-cyber-us-001"
+    ],
+    "severity": "high",
+    "confidence": "medium",
+    "claimStatus": "confirmed",
+    "status": "new",
+    "observedAt": "2026-06-19T09:00:00Z",
+    "publishedAt": "2026-06-19T09:00:00Z",
+    "fetchedAt": "2026-06-19T10:00:00Z",
+    "cachedAt": "2026-06-19T10:00:00Z",
+    "stale": false,
+    "provider": "worldmonitor",
+    "relevance": {
+      "score": 0,
+      "reasons": [],
+      "matchedTargets": []
+    }
+  },
+  {
+    "id": "sig-cyber-in-001",
+    "domain": "world",
+    "type": "cyber",
+    "title": "Phishing kit targeting IN banking",
+    "summary": "A phishing kit targeting Indian banking customers is circulating.",
+    "entities": [
+      {
+        "type": "country",
+        "id": "IN",
+        "label": "India"
+      },
+      {
+        "type": "market",
+        "id": "cyber",
+        "label": "Cyber risk"
+      }
+    ],
+    "evidenceIds": [
+      "ev-cyber-in-001"
+    ],
+    "severity": "normal",
+    "confidence": "medium",
+    "claimStatus": "confirmed",
+    "status": "new",
+    "observedAt": "2026-06-19T09:00:00Z",
+    "publishedAt": "2026-06-19T09:00:00Z",
+    "fetchedAt": "2026-06-19T10:00:00Z",
+    "cachedAt": "2026-06-19T10:00:00Z",
+    "stale": false,
+    "provider": "worldmonitor",
+    "relevance": {
+      "score": 0,
+      "reasons": [],
+      "matchedTargets": []
+    }
+  },
+  {
+    "id": "sig-conflict-ua-001",
+    "domain": "world",
+    "type": "conflict",
+    "title": "Front-line activity reported in UA",
+    "summary": "OSINT leads report front-line activity. Unconfirmed; treat as raw lead.",
+    "entities": [
+      {
+        "type": "country",
+        "id": "UA",
+        "label": "Ukraine"
+      }
+    ],
+    "evidenceIds": [
+      "ev-conflict-ua-001"
+    ],
+    "severity": "critical",
+    "confidence": "low",
+    "claimStatus": "raw_osint_lead",
+    "status": "new",
+    "observedAt": "2026-06-19T09:00:00Z",
+    "publishedAt": "2026-06-19T09:00:00Z",
+    "fetchedAt": "2026-06-19T10:00:00Z",
+    "cachedAt": "2026-06-19T10:00:00Z",
+    "stale": false,
+    "provider": "worldmonitor",
+    "relevance": {
+      "score": 0,
+      "reasons": [],
+      "matchedTargets": []
+    }
+  },
+  {
+    "id": "sig-conflict-il-001",
+    "domain": "world",
+    "type": "conflict",
+    "title": "Border tension flagged near IL",
+    "summary": "OSINT leads flag border tension. Unconfirmed; raw lead pending corroboration.",
+    "entities": [
+      {
+        "type": "country",
+        "id": "IL",
+        "label": "Israel"
+      }
+    ],
+    "evidenceIds": [
+      "ev-conflict-il-001"
+    ],
+    "severity": "high",
+    "confidence": "low",
+    "claimStatus": "raw_osint_lead",
+    "status": "new",
+    "observedAt": "2026-06-19T09:00:00Z",
+    "publishedAt": "2026-06-19T09:00:00Z",
+    "fetchedAt": "2026-06-19T10:00:00Z",
+    "cachedAt": "2026-06-19T10:00:00Z",
+    "stale": false,
+    "provider": "worldmonitor",
+    "relevance": {
+      "score": 0,
+      "reasons": [],
+      "matchedTargets": []
+    }
+  },
+  {
+    "id": "sig-news-cn-001",
+    "domain": "world",
+    "type": "geopolitical_news",
+    "title": "Trade-policy signal from CN",
+    "summary": "Geopolitical feeds note a trade-policy signal from China relevant to supply chains.",
+    "entities": [
+      {
+        "type": "country",
+        "id": "CN",
+        "label": "China"
+      }
+    ],
+    "evidenceIds": [
+      "ev-news-cn-001"
+    ],
+    "severity": "elevated",
+    "confidence": "medium",
+    "claimStatus": "raw_osint_lead",
+    "status": "new",
+    "observedAt": "2026-06-19T09:00:00Z",
+    "publishedAt": "2026-06-19T09:00:00Z",
+    "fetchedAt": "2026-06-19T10:00:00Z",
+    "cachedAt": "2026-06-19T10:00:00Z",
+    "stale": false,
+    "provider": "worldmonitor",
+    "relevance": {
+      "score": 0,
+      "reasons": [],
+      "matchedTargets": []
+    }
+  },
+  {
+    "id": "sig-news-tr-001",
+    "domain": "world",
+    "type": "geopolitical_news",
+    "title": "Diplomatic activity around TR corridors",
+    "summary": "Diplomatic activity noted around Turkish transit corridors.",
+    "entities": [
+      {
+        "type": "country",
+        "id": "TR",
+        "label": "Turkey"
+      },
+      {
+        "type": "route",
+        "id": "suez",
+        "label": "Suez Canal"
+      }
+    ],
+    "evidenceIds": [
+      "ev-news-tr-001"
+    ],
+    "severity": "normal",
+    "confidence": "medium",
+    "claimStatus": "raw_osint_lead",
+    "status": "new",
+    "observedAt": "2026-06-19T09:00:00Z",
+    "publishedAt": "2026-06-19T09:00:00Z",
+    "fetchedAt": "2026-06-19T10:00:00Z",
+    "cachedAt": "2026-06-19T10:00:00Z",
+    "stale": false,
+    "provider": "worldmonitor",
+    "relevance": {
+      "score": 0,
+      "reasons": [],
+      "matchedTargets": []
+    }
+  },
+  {
+    "id": "sig-disaster-in-001",
+    "domain": "world",
+    "type": "natural_disaster",
+    "title": "Monsoon flooding risk in IN",
+    "summary": "Weather models indicate elevated monsoon flooding risk in parts of India.",
+    "entities": [
+      {
+        "type": "country",
+        "id": "IN",
+        "label": "India"
+      }
+    ],
+    "evidenceIds": [
+      "ev-disaster-in-001"
+    ],
+    "severity": "elevated",
+    "confidence": "medium",
+    "claimStatus": "confirmed",
+    "status": "new",
+    "observedAt": "2026-06-19T09:00:00Z",
+    "publishedAt": "2026-06-19T09:00:00Z",
+    "fetchedAt": "2026-06-19T10:00:00Z",
+    "cachedAt": "2026-06-19T10:00:00Z",
+    "stale": false,
+    "provider": "worldmonitor",
+    "relevance": {
+      "score": 0,
+      "reasons": [],
+      "matchedTargets": []
+    }
+  },
+  {
+    "id": "sig-disaster-us-001",
+    "domain": "world",
+    "type": "natural_disaster",
+    "title": "Severe storm system over US plains",
+    "summary": "A severe storm system is tracked over the US plains; infrastructure watch advised.",
+    "entities": [
+      {
+        "type": "country",
+        "id": "US",
+        "label": "United States"
+      }
+    ],
+    "evidenceIds": [
+      "ev-disaster-us-001"
+    ],
+    "severity": "high",
+    "confidence": "medium",
+    "claimStatus": "confirmed",
+    "status": "new",
+    "observedAt": "2026-06-19T09:00:00Z",
+    "publishedAt": "2026-06-19T09:00:00Z",
+    "fetchedAt": "2026-06-19T10:00:00Z",
+    "cachedAt": "2026-06-19T10:00:00Z",
+    "stale": true,
+    "provider": "worldmonitor",
+    "relevance": {
+      "score": 0,
+      "reasons": [],
+      "matchedTargets": []
+    }
   }
 ]

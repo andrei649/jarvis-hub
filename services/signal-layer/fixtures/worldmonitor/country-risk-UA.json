@@ -1,0 +1,72 @@
+{
+  "id": "assessment-country-ua-demo-001",
+  "subject": {
+    "type": "country",
+    "id": "UA",
+    "label": "Ukraine"
+  },
+  "risk": {
+    "score": 82,
+    "level": "high",
+    "components": {
+      "conflict": 60,
+      "infrastructure": 40
+    }
+  },
+  "claim": "Ukraine is assessed as high risk in this demo snapshot, based on unconfirmed conflict leads pending corroboration.",
+  "confidence": "medium",
+  "drivers": [
+    {
+      "title": "Active conflict (raw OSINT leads)",
+      "type": "conflict",
+      "severity": "critical"
+    },
+    {
+      "title": "Infrastructure disruption",
+      "type": "infrastructure",
+      "severity": "high"
+    }
+  ],
+  "recommendations": [
+    {
+      "type": "monitor",
+      "label": "Keep Ukraine on the watchlist for daily briefs.",
+      "requiresApproval": true
+    },
+    {
+      "type": "brief",
+      "label": "Generate a country brief before travel or business decisions.",
+      "requiresApproval": true
+    }
+  ],
+  "evidenceIds": [
+    "ev-country-ua-risk"
+  ],
+  "evidence": [
+    {
+      "id": "ev-country-ua-risk",
+      "provider": "worldmonitor",
+      "sourceName": "WorldMonitor government cache",
+      "sourceFamily": "government",
+      "url": null,
+      "observedAt": "2026-06-19T09:00:00Z",
+      "publishedAt": "2026-06-19T09:00:00Z",
+      "fetchedAt": "2026-06-19T10:00:00Z",
+      "cachedAt": "2026-06-19T10:00:00Z",
+      "stale": false,
+      "reliability": "medium",
+      "raw": {
+        "fixture": true
+      }
+    }
+  ],
+  "freshness": {
+    "stale": false,
+    "checkedAt": "2026-06-19T12:00:00Z",
+    "cachedAt": "2026-06-19T10:00:00Z"
+  },
+  "provider": "worldmonitor",
+  "raw": {
+    "fixture": true
+  }
+}
