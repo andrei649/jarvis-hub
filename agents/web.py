@@ -655,6 +655,78 @@ async def tts_endpoint(req: TTSRequest):
         return JSONResponse({"error": "internal error", "code": 500}, status_code=500)
 
 
+# ── Sentence-level streaming TTS (H5.16) ─────────────────────────
+#
+# `/tts` synthesizes the whole reply before any audio comes back, so the user waits
+# for the full message. `/tts/stream` splits the reply into sentences and streams each
+# one's audio as soon as it's synthesized, so playback can start after sentence #1.
+# Opt-in: gated by the `voice.sentence_streaming` setting (default off — back-compat).
+#
+# Wire framing (one frame per sentence, in order):
+#   <json-header>\n<raw-audio-bytes>
+# where the header is a single-line JSON object
+#   {"idx": int, "text": str, "lang": str, "bytes": int, "done": bool}
+# and exactly `bytes` audio bytes follow. A terminal frame {"done": true, "bytes": 0}
+# (no audio) closes the stream. A sentence that failed to synthesize gets bytes:0 and
+# is skipped by the client. This is multipart-free (no python-multipart) like /tts.
+
+def _tts_stream_enabled() -> bool:
+    """Whether sentence-level streaming TTS is turned on (default off)."""
+    from core.settings_db import get_value
+    return bool(get_value("voice", "sentence_streaming", False))
+
+
+@app.post("/tts/stream", dependencies=[Depends(_user_guard)])
+async def tts_stream_endpoint(req: TTSRequest):
+    """Stream sentence-by-sentence TTS audio frames (opt-in). See module comment."""
+    import json as _json
+
+    from core.voice.tts import HAS_EDGE, TTSEngine
+
+    if not _tts_stream_enabled():
+        return JSONResponse(
+            {"error": "sentence streaming disabled. Enable voice.sentence_streaming.",
+             "enabled": False},
+            status_code=409,
+        )
+    if not HAS_EDGE:
+        return JSONResponse(
+            {"error": "edge-tts not installed. Run: pip install edge-tts"},
+            status_code=503,
+        )
+    from core.settings_db import get_value
+    engine = TTSEngine(default_voice=get_value("voice", "tts_voice", "en-GB-RyanNeural"))
+
+    async def _gen():
+        try:
+            async for idx, sentence, path in engine.speak_stream(
+                req.text, voice=req.voice, lang=req.lang,
+            ):
+                audio = b""
+                if path:
+                    try:
+                        audio = Path(path).read_bytes()
+                    except Exception:
+                        logger.warning("tts/stream: cannot read chunk %s", path)
+                        audio = b""
+                header = _json.dumps({
+                    "idx": idx, "text": sentence, "lang": req.lang,
+                    "bytes": len(audio), "done": False,
+                })
+                yield header.encode("utf-8") + b"\n" + audio
+        except Exception:
+            logger.exception("tts/stream error")
+        # Terminal frame.
+        yield _json.dumps({"idx": -1, "text": "", "lang": req.lang, "bytes": 0,
+                           "done": True}).encode("utf-8") + b"\n"
+
+    return StreamingResponse(
+        _gen(),
+        media_type="application/octet-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
+
+
 # ── STT endpoint (browser mic → local Whisper) ───────────────────
 #
 # The voice engines (Whisper/edge-tts/XTTS) were built for Howard — a mic wired to

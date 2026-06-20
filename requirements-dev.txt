@@ -5,5 +5,5 @@
 # Runtime + test deps live in requirements-beta.txt; this file is only the
 # static-analysis toolchain so CI and contributors share identical versions.
 
-ruff>=0.15.17
+ruff>=0.15.18
 vulture>=2.16

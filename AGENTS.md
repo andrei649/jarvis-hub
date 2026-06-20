@@ -16,6 +16,8 @@ Când utilizatorul menționează **"backlog"**, **"ce urmează"**, **"next"**, *
 - **Navigare pentru AI (începe aici):** `docs/ARCHITECTURE.md` — entry points, request lifecycle, index de module, rețete „cum adaug X". Optimizat să găsești rapid unde trăiește codul, fără a citi tot.
 - **Context mare (1M tokens):** `docs/AI_CONTEXT.md` — tier-uri de încărcare + bundle-uri per task cu estimări de tokeni; nu încărca repo-ul brut.
 - **Arhitectură & structură:** `JARVIS.md` (stack, directoare, fluxul orchestrator → router → skills).
+- **Workflow agentic / Superpowers-style:** `docs/AGENT_WORKFLOW.md` — design înainte de cod, branch/worktree, TDD unde are sens, review, finish branch.
+- **Instrucțiuni ChatGPT pentru Jarvis:** `docs/CHATGPT_CUSTOM_INSTRUCTIONS.md` — bloc paste-ready pentru ChatGPT project/custom instructions.
 - **Taskuri owner-only:** `docs/OWNER_TASKS.md` — hardware/GitHub-settings/decizii; nu le bloca pe agenți, marchează-le acolo.
 - **Specs & planuri (opencode):** `.opencode/plans/*.md` — un spec per skill/modul, scris înainte de implementare (TDD).
 - **Workflow paralel:** `PARALLEL_WORKFLOW.md` + `lock.py` (locks la nivel de componentă, evită coliziuni între agenți).
@@ -46,6 +48,21 @@ python -m pytest tests/ -v
 ## Stil de lucru
 Verde devreme peste perfecțiune · teste peste documentație · livrare peste analiză.
 Branch de feature per task → PR draft în `main`. Nu împinge direct în `main`.
+
+## Superpowers-style workflow pentru agenți
+
+Jarvis adoptă Superpowers ca metodologie de lucru pentru agenți, nu ca runtime dependency vendored în repo.
+Pentru taskuri non-triviale (feature, security, refactor, bugfix incert, release-gate):
+
+1. Citește contextul relevant (`BACKLOG.md`, `STATUS.md`, docs, PR-uri deschise).
+2. Scrie sau include un design scurt: goal / non-goals / files / risk / tests / rollback.
+3. Lucrează în branch + PR draft; respectă draft PR-urile altor agenți ca file locks.
+4. Folosește TDD unde are sens: test roșu → fix minim → test verde.
+5. Raportează verificarea exactă: comandă, rezultat, failures cunoscute.
+6. Închide sesiunea cu status explicit: merged / auto-merge / waiting checks / draft-hold / blocked / superseded.
+
+Detaliile sunt în `docs/AGENT_WORKFLOW.md`. Blocul pentru ChatGPT este în
+`docs/CHATGPT_CUSTOM_INSTRUCTIONS.md` și trebuie sincronizat manual în ChatGPT Project/Custom Instructions.
 
 ## Coordonare multi-agent (reguli non-negociabile)
 

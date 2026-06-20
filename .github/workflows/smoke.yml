@@ -3,8 +3,10 @@ name: Smoke Test
 # Boots the real server on Windows. The pytest suite is covered by ci.yml,
 # so this workflow only verifies the app actually starts and serves a request.
 on:
+  pull_request:
   push:
     branches: [main]
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -15,7 +17,7 @@ jobs:
     timeout-minutes: 10
 
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - name: Set up Python 3.12
         uses: actions/setup-python@v6
