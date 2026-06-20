@@ -5,6 +5,8 @@
 >
 > The version labels in the feature tables below (`v0.2.0`, `v0.2.1`) record *when* each capability first
 > landed (provenance), not the current release. For live priorities and the v1.0 gate, BACKLOG.md is the source of truth.
+>
+> **Year-one review (candid, owner-facing):** [docs/REVIEW_YEAR_ONE.md](docs/REVIEW_YEAR_ONE.md) — status, the 12 learnings, the gap between *code-complete* and *desirable product*, and the next-90-days plan.
 
 ---
 
