@@ -184,6 +184,7 @@
   "POST /api/admin/settings/reseed": "admin",
   "POST /api/admin/widgets": "admin",
   "POST /api/agent-templates/instantiate": "user",
+  "POST /api/analytics/event": "open",
   "POST /api/arena/run": "user",
   "POST /api/arena/vote": "user",
   "POST /api/autonomy/call": "user",
