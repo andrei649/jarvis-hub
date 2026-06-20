@@ -26,6 +26,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import sqlite3
 import threading
 from datetime import datetime, timezone
@@ -41,6 +42,13 @@ DEFAULT_DB = data_path("analytics.db")
 # validates, but the store is the last line of defence for direct callers.
 _MAX_STR = 512
 _MAX_PROPS_BYTES = 2048
+
+# Retention (review #3): keep at most this many newest events so the public
+# ingest can't grow the table without bound (slow disk-fill DoS). 0 disables it.
+# Pruned lazily every _PRUNE_EVERY inserts to keep the O(n) sweep off the hot path.
+_MAX_EVENTS = int(os.environ.get("JARVIS_ANALYTICS_MAX_EVENTS", "200000") or 0)
+_PRUNE_EVERY = 1000
+_inserts_since_prune = 0
 
 _conn: Optional[sqlite3.Connection] = None
 _lock = threading.Lock()
@@ -129,6 +137,7 @@ def record_event(
     Values are clipped to bounded lengths and ``props`` is serialized to JSON
     (non-dict / unserializable props degrade to ``{}`` rather than raising — a
     beacon must never 500 the ingest path on a bad prop bag)."""
+    global _inserts_since_prune
     conn = _require()
     name = _clip(name) or "event"
     try:
@@ -152,7 +161,36 @@ def record_event(
             row,
         )
         conn.commit()
-        return cur.lastrowid
+        rowid = cur.lastrowid
+        _inserts_since_prune += 1
+        due = bool(_MAX_EVENTS) and _inserts_since_prune >= _PRUNE_EVERY
+        if due:
+            _inserts_since_prune = 0
+    # Prune outside the lock (prune() takes it itself; threading.Lock isn't reentrant).
+    if due:
+        try:
+            prune()
+        except Exception:  # pragma: no cover - retention is best-effort
+            logger.warning("analytics retention prune failed", exc_info=True)
+    return rowid
+
+
+def prune(max_events: Optional[int] = None) -> int:
+    """Delete all but the newest *max_events* rows (newest = highest id). Returns
+    the number of rows deleted. No-op when the cap is 0/None. Safe with id gaps:
+    keeps an exact count via a subquery rather than arithmetic on ids."""
+    cap = _MAX_EVENTS if max_events is None else max_events
+    if not cap or cap <= 0:
+        return 0
+    conn = _require()
+    with _lock:
+        cur = conn.execute(
+            "DELETE FROM events WHERE id NOT IN "
+            "(SELECT id FROM events ORDER BY id DESC LIMIT ?)",
+            (cap,),
+        )
+        conn.commit()
+        return cur.rowcount or 0
 
 
 # ── aggregate-on-read ─────────────────────────────────────────────────
