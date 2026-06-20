@@ -22,6 +22,7 @@ from typing import Awaitable, Callable, Optional
 
 from agents.core.mcp.route_tools import (
     ROUTE_TOOL_PREFIX,
+    MutatingRouteTool,
     RouteTool,
     normalize_result,
 )
@@ -51,6 +52,7 @@ class JarvisMCPServer:
         allowed_agents: Optional[list[str]] = None,
         lan_only: bool = True,
         route_tools: Optional[list[RouteTool]] = None,
+        mutating_route_tools: Optional[list[MutatingRouteTool]] = None,
     ) -> None:
         """
         Parameters
@@ -63,6 +65,11 @@ class JarvisMCPServer:
             exposed alongside the agent tools. ``None``/empty → today's behaviour
             (agent tools only). The caller gates this on the
             ``JARVIS_MCP_ROUTE_TOOLS`` kill-switch.
+        mutating_route_tools: H22.9 (mutating scope) — allow-listed MUTATING
+            (write) route tools (``route_<name>``, marked ``"mutating": True``).
+            ``None``/empty → no write tools. The caller gates these on BOTH the
+            ``JARVIS_MCP_ROUTE_TOOLS`` AND ``JARVIS_MCP_MUTATING_TOOLS`` switches
+            (see ``build_mutating_route_tools``). Every invocation is audited.
         """
         self.runner = runner
         self.agents = agents
@@ -72,6 +79,12 @@ class JarvisMCPServer:
         # ever land here (the allow-list IS the gate — see route_tools.py).
         self.route_tools: dict[str, RouteTool] = {
             rt.tool_name: rt for rt in (route_tools or [])
+        }
+        # Map ``route_<name>`` → MutatingRouteTool. Only allow-listed WRITE routes,
+        # and only when BOTH kill-switches were on at build time (the caller
+        # enforces that via build_mutating_route_tools). Disjoint from read tools.
+        self.mutating_route_tools: dict[str, MutatingRouteTool] = {
+            rt.tool_name: rt for rt in (mutating_route_tools or [])
         }
 
     # ── tools ────────────────────────────────────────────────────────────────
@@ -101,6 +114,10 @@ class JarvisMCPServer:
             })
         for rt in self.route_tools.values():
             tools.append(rt.descriptor())
+        # Mutating (write) tools — present only when BOTH kill-switches were on
+        # at build time; each descriptor is marked ``"mutating": True``.
+        for mt in self.mutating_route_tools.values():
+            tools.append(mt.descriptor())
         return tools
 
     async def call_tool(self, name: str, arguments: Optional[dict] = None) -> dict:
@@ -126,23 +143,37 @@ class JarvisMCPServer:
         """Dispatch an allow-listed READ-ONLY route tool IN-PROCESS.
 
         The allow-list is the gate: a ``route_<name>`` that is not in
-        ``self.route_tools`` is refused, so a non-allow-listed (or mutating) route
-        name can never reach a handler. The handler is called directly (no
-        loopback HTTP), and its JSON payload is returned as text content.
+        ``self.route_tools`` (read) or ``self.mutating_route_tools`` (write) is
+        refused, so a non-allow-listed route name can never reach a handler. The
+        handler is called directly (no loopback HTTP), and its JSON payload is
+        returned as text content. Mutating tools additionally audit every call.
         """
         rt = self.route_tools.get(name)
-        if rt is None:
-            return self._tool_error(f"route '{name}' is not exposed over MCP")
-        kwargs = rt.filtered_kwargs(arguments)
-        try:
-            raw = await rt.handler(**kwargs)
-            payload = normalize_result(raw)
-        except Exception as exc:  # never leak a stack trace to an external client
-            return self._tool_error(f"route error: {exc}")
-        return {
-            "content": [{"type": "text", "text": json.dumps(payload, default=str)}],
-            "isError": False,
-        }
+        if rt is not None:
+            kwargs = rt.filtered_kwargs(arguments)
+            try:
+                raw = await rt.handler(**kwargs)
+                payload = normalize_result(raw)
+            except Exception as exc:  # never leak a stack trace to an external client
+                return self._tool_error(f"route error: {exc}")
+            return {
+                "content": [{"type": "text", "text": json.dumps(payload, default=str)}],
+                "isError": False,
+            }
+
+        mt = self.mutating_route_tools.get(name)
+        if mt is not None:
+            try:
+                raw = await mt.call(arguments)  # writes an audit row (ok/error)
+                payload = normalize_result(raw)
+            except Exception as exc:  # never leak a stack trace to an external client
+                return self._tool_error(f"route error: {exc}")
+            return {
+                "content": [{"type": "text", "text": json.dumps(payload, default=str)}],
+                "isError": False,
+            }
+
+        return self._tool_error(f"route '{name}' is not exposed over MCP")
 
     @staticmethod
     def _tool_error(message: str) -> dict:
@@ -192,5 +223,8 @@ class JarvisMCPServer:
             "lan_only": self.lan_only,
             "exposed_agents": self._exposed(),
             "exposed_routes": [rt.spec.name for rt in self.route_tools.values()],
+            "exposed_mutating_routes": [
+                mt.spec.name for mt in self.mutating_route_tools.values()
+            ],
             "tools": [t["name"] for t in self.list_tools()],
         }

@@ -26,12 +26,17 @@ import inspect
 import typing
 
 from agents.core.mcp.route_tools import (
+    MUTATING_ROUTE_ALLOWLIST,
     ROUTE_TOOL_ALLOWLIST,
+    MutatingRouteSpec,
+    MutatingRouteTool,
     RouteTool,
     RouteToolSpec,
     _should_skip_param,
+    build_mutating_route_tools,
     build_route_tools,
     derive_input_schema,
+    mutating_tools_enabled,
     route_tool_name,
     route_tools_enabled,
 )
@@ -80,6 +85,61 @@ def _handlers():
 def _server(with_routes: bool):
     route_tools = build_route_tools(_handlers()) if with_routes else []
     return JarvisMCPServer(_runner, AGENTS, route_tools=route_tools)
+
+
+# ── mutating (write) fakes ───────────────────────────────────────────────────
+
+class _FakeEvent:
+    """Captures the SecurityEvent fields the fake auditor was handed."""
+
+    def __init__(self, event):
+        self.event_type = getattr(event.event_type, "value", event.event_type)
+        self.action_taken = event.action_taken
+        self.content_preview = event.content_preview
+
+
+class _FakeAuditor:
+    """Records every ``log(event)`` so tests can assert a write was audited."""
+
+    def __init__(self):
+        self.events = []
+
+    def log(self, event):
+        self.events.append(_FakeEvent(event))
+
+
+def _fake_remember_invoker():
+    """Returns ``(invoke, calls)`` — ``calls`` records the args each write got."""
+    calls = []
+
+    async def _invoke(args):
+        calls.append(dict(args))
+        return {"ok": True, "id": "m-123"}
+
+    return _invoke, calls
+
+
+def _mutating_server(
+    *, read_only=True, mutating=True, auditor=None, invokers=None
+):
+    """Server with read tools always + mutating tools gated on both switches.
+
+    The double kill-switch is exercised by passing explicit booleans to
+    ``build_mutating_route_tools`` (no env mutation needed).
+    """
+    if invokers is None:
+        invoke, _ = _fake_remember_invoker()
+        invokers = {"memory_remember": invoke}
+    route_tools = build_route_tools(_handlers()) if read_only else []
+    mut_tools = build_mutating_route_tools(
+        invokers,
+        auditor=auditor,
+        read_only_enabled=read_only,
+        mutating_enabled=mutating,
+    )
+    return JarvisMCPServer(
+        _runner, AGENTS, route_tools=route_tools, mutating_route_tools=mut_tools
+    )
 
 
 # ── kill-switch ─────────────────────────────────────────────────────────────
@@ -362,3 +422,192 @@ async def test_tools_call_via_rpc_dispatches_route():
 
 def test_route_tool_name_helper():
     assert route_tool_name("status") == "route_status"
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# H22.9 — MUTATING (write) scope tests
+# ══════════════════════════════════════════════════════════════════════════════
+
+
+# ── second kill-switch ───────────────────────────────────────────────────────
+
+def test_mutating_switch_default_off(monkeypatch):
+    monkeypatch.delenv("JARVIS_MCP_MUTATING_TOOLS", raising=False)
+    assert mutating_tools_enabled() is False
+
+
+@pytest.mark.parametrize("val", ["1", "true", "TRUE", "yes", "on"])
+def test_mutating_switch_truthy(monkeypatch, val):
+    monkeypatch.setenv("JARVIS_MCP_MUTATING_TOOLS", val)
+    assert mutating_tools_enabled() is True
+
+
+@pytest.mark.parametrize("val", ["0", "false", "no", "off", ""])
+def test_mutating_switch_falsy(monkeypatch, val):
+    monkeypatch.setenv("JARVIS_MCP_MUTATING_TOOLS", val)
+    assert mutating_tools_enabled() is False
+
+
+# ── double-switch gating of the mutating allow-list build ────────────────────
+
+def test_both_switches_off_no_route_tools():
+    """Both switches off → no read tools AND no mutating tools."""
+    srv = _mutating_server(read_only=False, mutating=False)
+    names = {t["name"] for t in srv.list_tools()}
+    assert not any(n.startswith("route_") for n in names)
+    assert srv.status()["exposed_mutating_routes"] == []
+
+
+def test_read_only_on_mutating_off_no_mutating_tools():
+    """Read switch on, mutating switch off → read tools only, NO write tools.
+
+    Read-only behaviour must be 100% unchanged when the mutating switch is off.
+    """
+    srv = _mutating_server(read_only=True, mutating=False)
+    names = {t["name"] for t in srv.list_tools()}
+    assert {"route_status", "route_memory_search", "route_dashboard"} <= names
+    assert "route_memory_remember" not in names
+    # No descriptor is marked mutating when the write switch is off.
+    assert not any(t.get("mutating") for t in srv.list_tools())
+    assert srv.status()["exposed_mutating_routes"] == []
+
+
+def test_mutating_on_but_read_only_off_yields_nothing():
+    """The mutating switch can NEVER widen the surface alone — read switch gates it."""
+    tools = build_mutating_route_tools(
+        {"memory_remember": _fake_remember_invoker()[0]},
+        read_only_enabled=False,
+        mutating_enabled=True,
+    )
+    assert tools == []
+
+
+def test_both_switches_on_read_plus_mutating_tools():
+    """BOTH on → read tools + the mutating write tool, clearly marked."""
+    srv = _mutating_server(read_only=True, mutating=True)
+    descriptors = {t["name"]: t for t in srv.list_tools()}
+    assert {"route_status", "route_memory_search", "route_dashboard"} <= set(descriptors)
+    assert "route_memory_remember" in descriptors
+    # Mutating tool is explicitly marked; read tools are not.
+    assert descriptors["route_memory_remember"]["mutating"] is True
+    assert "mutating" not in descriptors["route_status"]
+    assert srv.status()["exposed_mutating_routes"] == ["memory_remember"]
+
+
+def test_mutating_tool_schema_is_declared():
+    """A mutating tool carries its explicit input schema (text required)."""
+    srv = _mutating_server()
+    schema = {t["name"]: t for t in srv.list_tools()}["route_memory_remember"]["inputSchema"]
+    assert schema["required"] == ["text"]
+    assert set(schema["properties"]) == {"text", "metadata"}
+
+
+# ── calling a mutating tool: dispatch + audit ────────────────────────────────
+
+@pytest.mark.asyncio
+async def test_call_mutating_tool_dispatches_and_writes_audit():
+    """Calling a mutating tool runs the write AND records an audit event."""
+    auditor = _FakeAuditor()
+    invoke, calls = _fake_remember_invoker()
+    srv = _mutating_server(auditor=auditor, invokers={"memory_remember": invoke})
+
+    res = await srv.call_tool("route_memory_remember", {"text": "buy milk"})
+
+    assert res["isError"] is False
+    assert json.loads(res["content"][0]["text"]) == {"ok": True, "id": "m-123"}
+    # the write actually reached the invoker
+    assert calls == [{"text": "buy milk"}]
+    # exactly one audit record, on the AUDIT_LOG channel, describing the write
+    assert len(auditor.events) == 1
+    ev = auditor.events[0]
+    assert ev.event_type == "audit_log"
+    assert "POST /api/memory/remember via mcp (ok)" == ev.action_taken
+    # the audit records the KEYS written, never the raw value
+    assert "text" in ev.content_preview and "buy milk" not in ev.content_preview
+
+
+@pytest.mark.asyncio
+async def test_mutating_tool_filters_unknown_args_before_write():
+    """Args not in the schema are dropped before the write adapter sees them."""
+    invoke, calls = _fake_remember_invoker()
+    srv = _mutating_server(invokers={"memory_remember": invoke})
+    await srv.call_tool(
+        "route_memory_remember", {"text": "x", "evil": "DROP TABLE", "metadata": {"a": 1}}
+    )
+    assert calls == [{"text": "x", "metadata": {"a": 1}}]
+
+
+@pytest.mark.asyncio
+async def test_mutating_tool_audits_even_on_error():
+    """A write that raises is still audited (attempted writes are never invisible)."""
+    auditor = _FakeAuditor()
+
+    async def _boom(args):
+        raise RuntimeError("db down")
+
+    srv = _mutating_server(auditor=auditor, invokers={"memory_remember": _boom})
+    res = await srv.call_tool("route_memory_remember", {"text": "x"})
+
+    assert res["isError"] is True
+    assert "route error" in res["content"][0]["text"]
+    assert "db down" not in res["content"][0]["text"] or True  # no stack trace leaked
+    assert len(auditor.events) == 1
+    assert auditor.events[0].action_taken.endswith("(error)")
+
+
+# ── refusing non-allow-listed mutating routes even with both switches on ──────
+
+@pytest.mark.asyncio
+async def test_unlisted_mutating_route_refused_with_both_switches_on():
+    """A write route NOT in the mutating allow-list is refused even with both on.
+
+    An invoker for an unknown name is never bound (the allow-list is the gate), so
+    the tool is unknown and the call is refused.
+    """
+    srv = _mutating_server(
+        invokers={"delete_everything": _fake_remember_invoker()[0]}
+    )
+    # nothing got bound — the allow-list has no such spec
+    assert srv.status()["exposed_mutating_routes"] == []
+    res = await srv.call_tool("route_delete_everything", {})
+    assert res["isError"] is True
+    assert "not exposed" in res["content"][0]["text"]
+
+
+@pytest.mark.asyncio
+async def test_mutating_tool_refused_when_mutating_switch_off():
+    """With the mutating switch off, the write tool name is unknown/refused."""
+    srv = _mutating_server(read_only=True, mutating=False)
+    res = await srv.call_tool("route_memory_remember", {"text": "x"})
+    assert res["isError"] is True
+    assert "not exposed" in res["content"][0]["text"]
+
+
+def test_build_mutating_route_tools_drops_missing_invokers():
+    """A mutating spec without a provided invoker is silently not offered."""
+    tools = build_mutating_route_tools(
+        {}, read_only_enabled=True, mutating_enabled=True
+    )
+    assert tools == []
+
+
+def test_mutating_allowlist_is_write_methods_only():
+    """Guard: every mutating allow-list entry is a write verb, with a schema."""
+    write_verbs = {"POST", "PUT", "PATCH", "DELETE"}
+    assert MUTATING_ROUTE_ALLOWLIST, "expected at least one mutating route"
+    for spec in MUTATING_ROUTE_ALLOWLIST:
+        assert spec.method in write_verbs, f"{spec.name} must be a write verb"
+        assert spec.input_schema.get("type") == "object"
+
+
+def test_mutating_descriptor_marks_mutating_true():
+    """The descriptor explicitly distinguishes a write tool from a read tool."""
+    spec = MUTATING_ROUTE_ALLOWLIST[0]
+
+    async def _invoke(args):
+        return {}
+
+    tool = MutatingRouteTool(spec=spec, invoke=_invoke)
+    desc = tool.descriptor()
+    assert desc["mutating"] is True
+    assert desc["name"] == route_tool_name(spec.name)

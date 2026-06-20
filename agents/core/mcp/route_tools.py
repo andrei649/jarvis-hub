@@ -37,6 +37,10 @@ from typing import Any, Awaitable, Callable
 ROUTE_TOOL_ENV = "JARVIS_MCP_ROUTE_TOOLS"
 ROUTE_TOOL_PREFIX = "route_"
 
+# H22.9 (mutating scope) — a SECOND, independent kill-switch. Mutating route
+# tools are exposed only when BOTH this AND ``JARVIS_MCP_ROUTE_TOOLS`` are on.
+MUTATING_TOOL_ENV = "JARVIS_MCP_MUTATING_TOOLS"
+
 # A route handler: an async callable returning either a plain dict/list or an
 # object with a ``.body`` (e.g. a Starlette ``JSONResponse``). It is called with
 # only the keyword arguments named in the tool's ``input_schema`` properties.
@@ -244,6 +248,17 @@ def route_tools_enabled() -> bool:
     return val in ("1", "true", "yes", "on")
 
 
+def mutating_tools_enabled() -> bool:
+    """SECOND kill-switch for the MUTATING (write) scope. Default OFF.
+
+    Independent of ``route_tools_enabled()``. Mutating route tools are exposed
+    only when BOTH switches are on (see ``build_mutating_route_tools``), so a
+    single flag can never widen the write surface by itself.
+    """
+    val = os.environ.get(MUTATING_TOOL_ENV, "").strip().lower()
+    return val in ("1", "true", "yes", "on")
+
+
 def route_tool_name(name: str) -> str:
     return f"{ROUTE_TOOL_PREFIX}{name}"
 
@@ -317,3 +332,200 @@ def normalize_result(result: Any) -> Any:
         except (ValueError, TypeError):
             return raw
     return result
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# H22.9 — MUTATING (write) scope.  STACKED on the read-only scope above.
+# ══════════════════════════════════════════════════════════════════════════════
+#
+# This exposes a SEPARATE, explicit allow-list of MUTATING (write) routes as MCP
+# tools — but ONLY behind a SECOND, independent, default-OFF kill-switch
+# (``JARVIS_MCP_MUTATING_TOOLS``) AND with the read-only switch
+# (``JARVIS_MCP_ROUTE_TOOLS``) also on. With the mutating switch off the
+# read-only behaviour above is 100% unchanged.
+#
+# Why a separate mechanism (not just more ``RouteToolSpec`` rows):
+#   * Read-only tools dispatch by reflecting the handler signature and passing
+#     schema kwargs. Real write handlers (e.g. ``memory_remember``) take a raw
+#     Starlette ``Request`` and read ``await req.json()`` — they cannot be driven
+#     by kwargs. So a mutating tool carries an explicit ``invoke`` adapter that
+#     performs the same write the HTTP route would, plus an explicit input schema.
+#   * Every mutating invocation is AUDITED through ``AuditLogger.log`` before the
+#     result is returned, so the write surface always leaves a hash-chained trail.
+#
+# ⚠️  SECURITY CAVEAT — REMAINING HARDENING BEFORE NETWORK EXPOSURE  ⚠️
+# There is NO ``Request`` object in this in-process dispatch path, so the HTTP
+# route's per-identity guard (``Depends(user_guard)`` → token/cookie identity)
+# is NOT enforced here. For now the gate is: (1) the explicit mutating allow-list,
+# (2) the DOUBLE default-OFF kill-switch, and (3) the audit record. That is
+# adequate ONLY for a LAN-only, single-trust-domain deployment. Before this is
+# ever enabled on a network-exposed instance, real per-identity guard wiring
+# (an identity/token threaded into ``invoke`` and checked the same way the HTTP
+# guard checks it) MUST be added. Until then, keep ``JARVIS_MCP_MUTATING_TOOLS``
+# OFF on anything reachable beyond localhost/LAN.
+
+MUTATING_ROUTE_PREFIX = ROUTE_TOOL_PREFIX  # mutating tools share the route_ prefix
+
+
+# An ``invoke`` adapter: ``async (arguments: dict) -> Any``. It performs the same
+# write the HTTP route performs and returns a JSON-able payload (or a
+# JSONResponse-like object with ``.body``; ``normalize_result`` decodes either).
+MutatingInvoke = Callable[[dict], Awaitable[Any]]
+
+
+@dataclass(frozen=True)
+class MutatingRouteSpec:
+    """Static description of an allow-listed MUTATING (write) route.
+
+    Unlike ``RouteToolSpec``, the input schema is declared explicitly here: the
+    real write handlers read their body off a ``Request`` (not kwargs), so there
+    is no signature to reflect. ``method`` is documentation-only (always a write
+    verb — POST/PUT/PATCH/DELETE).
+    """
+
+    name: str
+    path: str
+    summary: str
+    input_schema: dict
+    method: str = "POST"
+
+
+# ── The MUTATING allow-list: curated, WRITE routes only ─────────────────────────
+#
+# Keep this SMALL and conservative — each entry widens the externally-drivable
+# write surface of the hub. Every entry MUST be a clearly-bounded write.
+#
+# ``memory_remember`` (``POST /api/memory/remember``) is included: it stores a
+# single text fact in long-term memory with optional metadata. It is bounded
+# (append-only, no delete/overwrite of arbitrary state), genuinely useful for an
+# agent, and its body is a simple ``{text, metadata?}`` — easy to schema and audit.
+MUTATING_ROUTE_ALLOWLIST: tuple[MutatingRouteSpec, ...] = (
+    MutatingRouteSpec(
+        name="memory_remember",
+        path="/api/memory/remember",
+        summary="Store a single text fact in long-term memory (append-only write).",
+        input_schema={
+            "type": "object",
+            "properties": {
+                "text": {"type": "string", "description": "The fact to remember."},
+                "metadata": {"type": "object", "description": "Optional metadata tags."},
+            },
+            "required": ["text"],
+        },
+    ),
+)
+
+MUTATING_ALLOWLIST_BY_NAME: dict[str, MutatingRouteSpec] = {
+    s.name: s for s in MUTATING_ROUTE_ALLOWLIST
+}
+
+
+@dataclass
+class MutatingRouteTool:
+    """An allow-listed MUTATING route bound to its in-process write adapter.
+
+    Every call is AUDITED (through the injected ``auditor.log``) before the
+    result is returned. The descriptor is marked ``"mutating": True`` so a client
+    can tell a write tool from a read tool.
+    """
+
+    spec: MutatingRouteSpec
+    invoke: MutatingInvoke
+    auditor: Any = None  # an AuditLogger-like object exposing ``log(SecurityEvent)``
+
+    @property
+    def tool_name(self) -> str:
+        return route_tool_name(self.spec.name)
+
+    def descriptor(self) -> dict:
+        return {
+            "name": self.tool_name,
+            "description": self.spec.summary,
+            "inputSchema": self.spec.input_schema,
+            # Explicit marker: this tool WRITES. Read tools never carry this.
+            "mutating": True,
+        }
+
+    def filtered_kwargs(self, arguments: dict | None) -> dict:
+        """Keep only arguments declared in the schema (defence in depth)."""
+        allowed = set(self.spec.input_schema.get("properties", {}).keys())
+        return {k: v for k, v in (arguments or {}).items() if k in allowed}
+
+    def _audit(self, arguments: dict, outcome: str) -> None:
+        """Append one hash-chained audit row for this write invocation.
+
+        Best-effort: an auditor failure must never break the tool call (the write
+        either happened or not regardless), but it is logged. Reuses the same
+        ``SecurityEvent``/``AuditLogger.log`` path the HTTP turn-loop uses.
+        """
+        if self.auditor is None:
+            return
+        try:
+            import time
+
+            from agents.core.security.types import SecurityEvent, SecurityEventType
+
+            # Record the keys written, NOT the values — avoid persisting raw
+            # user content (e.g. the remembered text) into the audit preview.
+            keys = sorted(self.filtered_kwargs(arguments).keys())
+            event = SecurityEvent(
+                event_type=SecurityEventType.AUDIT_LOG,
+                timestamp=time.time(),
+                findings=[],
+                content_preview=f"mcp mutating tool {self.tool_name} keys={keys}"[:100],
+                action_taken=f"{self.spec.method} {self.spec.path} via mcp ({outcome})",
+            )
+            self.auditor.log(event)
+        except Exception:  # pragma: no cover - auditing is best-effort
+            import logging
+
+            logging.getLogger(__name__).warning(
+                "audit log failed for mutating tool %s", self.tool_name, exc_info=True
+            )
+
+    async def call(self, arguments: dict | None) -> Any:
+        """Run the write adapter with schema-filtered args, auditing the call.
+
+        The audit row is written whether the invoke succeeds or raises, so an
+        attempted write is never invisible. Exceptions propagate to the server,
+        which converts them to a tool error (no stack trace leaks to the client).
+        """
+        kwargs = self.filtered_kwargs(arguments)
+        try:
+            result = await self.invoke(kwargs)
+        except Exception:
+            self._audit(arguments, outcome="error")
+            raise
+        self._audit(arguments, outcome="ok")
+        return result
+
+
+def build_mutating_route_tools(
+    invokers: dict[str, MutatingInvoke],
+    auditor: Any = None,
+    allowlist: tuple[MutatingRouteSpec, ...] = MUTATING_ROUTE_ALLOWLIST,
+    *,
+    read_only_enabled: bool | None = None,
+    mutating_enabled: bool | None = None,
+) -> list["MutatingRouteTool"]:
+    """Bind allow-listed mutating specs to provided write adapters.
+
+    The DOUBLE kill-switch is enforced here: unless BOTH the read-only switch AND
+    the mutating switch are on, this returns ``[]`` (no mutating tools). By
+    default the switches are read from the environment; tests may pass explicit
+    booleans. A spec without a provided invoker is silently not offered.
+    """
+    if read_only_enabled is None:
+        read_only_enabled = route_tools_enabled()
+    if mutating_enabled is None:
+        mutating_enabled = mutating_tools_enabled()
+    if not (read_only_enabled and mutating_enabled):
+        return []
+
+    tools: list[MutatingRouteTool] = []
+    for spec in allowlist:
+        invoke = invokers.get(spec.name)
+        if invoke is None:
+            continue
+        tools.append(MutatingRouteTool(spec=spec, invoke=invoke, auditor=auditor))
+    return tools

@@ -2026,8 +2026,14 @@ def _build_mcp_server():
 
     allowed = orch.get_setting("mcp.exposed_agents", None)
     route_tools = _build_mcp_route_tools()
+    mutating_route_tools = _build_mcp_mutating_route_tools()
     return JarvisMCPServer(
-        _runner, agents, allowed_agents=allowed, lan_only=True, route_tools=route_tools
+        _runner,
+        agents,
+        allowed_agents=allowed,
+        lan_only=True,
+        route_tools=route_tools,
+        mutating_route_tools=mutating_route_tools,
     )
 
 
@@ -2052,6 +2058,40 @@ def _build_mcp_route_tools():
         "dashboard": dashboard,
     }
     return build_route_tools(handlers)
+
+
+def _build_mcp_mutating_route_tools():
+    """H22.9 (mutating) — bind allow-listed WRITE routes for MCP exposure.
+
+    DOUBLE-gated OFF by default: returns ``[]`` unless BOTH
+    ``JARVIS_MCP_ROUTE_TOOLS`` AND ``JARVIS_MCP_MUTATING_TOOLS`` are on. When both
+    are on, the curated mutating route(s) are bound to an in-process write adapter
+    (NOT a loopback HTTP call) and every invocation is audited via ``orch.audit``.
+
+    SECURITY: the in-process adapter has no ``Request`` and therefore does NOT
+    enforce the HTTP route's per-identity ``user_guard``. The allow-list + double
+    kill-switch + audit are the gate for now (LAN-only). Per-identity guard wiring
+    is the remaining hardening before enabling on a network-exposed instance — see
+    the caveat block in ``agents/core/mcp/route_tools.py``.
+    """
+    from agents.core.mcp.route_tools import build_mutating_route_tools
+
+    async def _invoke_memory_remember(args: dict):
+        """Same write as ``POST /api/memory/remember`` (sans Request body parse)."""
+        if not orch or not orch.memory:
+            return {"error": "not initialized"}
+        text = args.get("text", "")
+        text = text.strip() if isinstance(text, str) else ""
+        if not text:
+            return {"error": "text required"}
+        metadata = args.get("metadata")
+        metadata = metadata if isinstance(metadata, dict) else {}
+        rid = await orch.memory.remember(text, metadata=metadata)
+        return {"ok": rid is not None, "id": rid}
+
+    invokers = {"memory_remember": _invoke_memory_remember}
+    auditor = orch.audit if orch else None
+    return build_mutating_route_tools(invokers, auditor=auditor)
 
 
 @app.get("/api/mcp/server")
