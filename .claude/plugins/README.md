@@ -15,13 +15,22 @@ repo-local marketplace declared in `.claude/settings.json`
   its SessionStart dispatcher hooks (`superpowers/hooks/hooks.json`), which
   activate automatically once the plugin is enabled.
 
+### Staying current
+Drift from upstream is tracked automatically: `.github/third-party-manifest.json`
+pins the version, `scripts/check_thirdparty_drift.py` compares it to the latest
+GitHub release, and `.github/workflows/thirdparty-drift.yml` runs weekly (opening
+a tracking issue when behind). Run it locally with
+`python scripts/check_thirdparty_drift.py`.
+
 ### Updating
-Re-vendor from upstream and bump the version above:
+Re-vendor from upstream, then bump the pin in `.github/third-party-manifest.json`:
 ```bash
 git clone --depth 1 https://github.com/obra/superpowers /tmp/sp
 rm -rf .claude/plugins/superpowers && cp -r /tmp/sp .claude/plugins/superpowers
 rm -rf .claude/plugins/superpowers/.git
 cp .claude/plugins/superpowers/LICENSE LICENSES/superpowers-MIT.txt
+# then set "pinned_version" in .github/third-party-manifest.json to the new version
+python scripts/check_thirdparty_drift.py --consistency   # must pass
 ```
 
 > The repo-specific **jarvis** dev-skills live separately in `.claude/skills/`

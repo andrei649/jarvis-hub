@@ -1,0 +1,99 @@
+name: Third-Party Drift
+
+# Flags vendored / doc-pinned third-party sources that fall behind upstream —
+# the gap Dependabot can't see (it covers pip/npm/github-actions; see
+# .github/dependabot.yml). Manifest: .github/third-party-manifest.json.
+on:
+  pull_request:
+    paths:
+      - ".github/third-party-manifest.json"
+      - "scripts/check_thirdparty_drift.py"
+      - ".claude/plugins/superpowers/.claude-plugin/plugin.json"
+      - "docs/dev/codebase-memory-mcp.md"
+      - ".github/workflows/thirdparty-drift.yml"
+  workflow_dispatch:
+  schedule:
+    # Mondays 06:00 UTC — weekly drift sweep on the default branch.
+    - cron: "0 6 * * 1"
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: thirdparty-drift-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  drift:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      # Deterministic + offline: fails the PR if the manifest's pinned version no
+      # longer matches the vendored file (e.g. re-vendored but forgot the pin).
+      - name: Consistency check (manifest vs vendored files)
+        run: python scripts/check_thirdparty_drift.py --consistency
+
+      # Advisory: compare each pin to the latest upstream GitHub release.
+      - name: Drift check (vs upstream latest)
+        id: drift
+        continue-on-error: true
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          python scripts/check_thirdparty_drift.py --json > drift.json || true
+          python scripts/check_thirdparty_drift.py > drift.txt || true
+          if grep -q '"drift": "DRIFT"' drift.json; then
+            echo "has_drift=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "has_drift=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Publish to job summary
+        if: always()
+        run: |
+          {
+            echo '## 📦 Third-party version drift'
+            echo '```'
+            cat drift.txt
+            echo '```'
+            echo '_Vendored / doc-pinned sources only — package deps are handled by Dependabot._'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      # On the scheduled / manual run (not PRs), raise or refresh a tracking issue.
+      - name: Open or update drift issue
+        if: steps.drift.outputs.has_drift == 'true' && github.event_name != 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const table = fs.readFileSync('drift.txt', 'utf8');
+            const marker = '<!-- thirdparty-drift -->';
+            const title = 'Third-party version drift detected';
+            const body = [
+              marker,
+              'A vendored / doc-pinned third-party source is behind its latest upstream release.',
+              '',
+              '```',
+              table.trim(),
+              '```',
+              '',
+              'To resolve: re-vendor/update the source, bump `pinned_version` in',
+              '`.github/third-party-manifest.json` (and the `update_doc`), then re-run this workflow.',
+              '_Auto-managed by `.github/workflows/thirdparty-drift.yml`._',
+            ].join('\n');
+            const { owner, repo } = context.repo;
+            const open = await github.paginate(github.rest.issues.listForRepo, {
+              owner, repo, state: 'open', per_page: 100,
+            });
+            const hit = open.find(i => i.title === title && i.body && i.body.includes(marker));
+            if (hit) {
+              await github.rest.issues.update({ owner, repo, issue_number: hit.number, body });
+            } else {
+              await github.rest.issues.create({ owner, repo, title, body });
+            }
