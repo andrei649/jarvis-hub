@@ -13,6 +13,7 @@ _server_err*.txt
 _server_out*.txt
 *.zip
 .claude/worktrees/
+.mcp.json
 agents/data/
 
 # Runtime SQLite databases (created by the app/tests, e.g. H8 MemoryStore)

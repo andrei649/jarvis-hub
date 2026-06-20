@@ -1,0 +1,36 @@
+{
+  "_comment": "Third-party sources NOT covered by Dependabot (vendored copies + doc-pinned tools). Drift is checked by scripts/check_thirdparty_drift.py and .github/workflows/thirdparty-drift.yml. Dependabot already handles pip/npm/github-actions — see .github/dependabot.yml.",
+  "sources": [
+    {
+      "name": "superpowers",
+      "repo": "obra/superpowers",
+      "kind": "vendored",
+      "path": ".claude/plugins/superpowers/",
+      "pinned_version": "6.0.3",
+      "version_source": {
+        "file": ".claude/plugins/superpowers/.claude-plugin/plugin.json",
+        "json_key": "version"
+      },
+      "track_drift": true,
+      "update_doc": ".claude/plugins/README.md"
+    },
+    {
+      "name": "codebase-memory-mcp",
+      "repo": "DeusData/codebase-memory-mcp",
+      "kind": "doc-pinned (trial host binary)",
+      "path": "docs/dev/codebase-memory-mcp.md",
+      "pinned_version": "0.8.1",
+      "track_drift": true,
+      "update_doc": "docs/dev/codebase-memory-mcp.md"
+    }
+  ],
+  "untracked": [
+    {
+      "name": "axon",
+      "kind": "adapted (not vendored verbatim)",
+      "path": "agents/core/routers/brain.py",
+      "license": "LICENSES/axon-MIT.txt",
+      "note": "One-time visualization adaptation, not a tracked dependency — review manually if Axon changes; no version to pin."
+    }
+  ]
+}

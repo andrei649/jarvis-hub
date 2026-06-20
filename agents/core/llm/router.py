@@ -134,6 +134,26 @@ class LLMRouter:
             logger.info("Active model refreshed: %s", model)
         return model
 
+    async def warm_up(self) -> bool:
+        """Preload the detected local model so the first turn skips cold-load.
+
+        Sends a minimal generation (and, on Ollama, pins the model resident) to
+        the live local backend for the model auto-detected in detect(). Cloud
+        backends need no warming. Best-effort: returns False (never raises) when
+        no local backend/model is up, so it is safe to fire-and-forget at
+        startup."""
+        if self._backend is None or not self._detected_model:
+            return False
+        try:
+            ok = await self._backend.warm_up(self._detected_model)
+            if ok:
+                logger.info("Warmed up local model: %s", self._detected_model)
+            else:
+                logger.debug("Warm-up of %s did not complete", self._detected_model)
+            return ok
+        except Exception:
+            return False
+
     async def aclose(self) -> None:
         """Close the active backend's HTTP client pool (BUG-7)."""
         await self._close_backend(self._backend)

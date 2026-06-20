@@ -24,6 +24,10 @@ logger = logging.getLogger("jarvis.workflows")
 _TIMEOUT = 120.0  # seconds per step
 _MAX_RECENT_RUNS = 50  # H10.2 — recent-run trace ring for the HUD overlay
 _MAX_DEPTH = 5  # H10.14 — max nested sub-workflow recursion depth
+# H22.6 — cap concurrent steps within a parallel batch so a wide pipeline can't
+# fan out into dozens of simultaneous LLM calls (one per agent) and starve the
+# interactive path. Each step already has a per-step timeout (_TIMEOUT).
+_MAX_PARALLEL_STEPS = 8
 
 
 class WorkflowEngine:
@@ -54,7 +58,16 @@ class WorkflowEngine:
                 if out.startswith("[error:"):
                     errors.append(step.id)
             else:
-                coros = [self._traced_execute(s, ctx, step_map) for s in batch]
+                # H22.6 — bound the parallel fan-out with a semaphore so a wide
+                # batch interleaves at most _MAX_PARALLEL_STEPS at a time instead
+                # of launching every step's LLM call at once.
+                sem = asyncio.Semaphore(_MAX_PARALLEL_STEPS)
+
+                async def _bounded(s, _sem=sem):
+                    async with _sem:
+                        return await self._traced_execute(s, ctx, step_map)
+
+                coros = [_bounded(s) for s in batch]
                 outputs = await asyncio.gather(*coros, return_exceptions=True)
                 for step, out in zip(batch, outputs):
                     if isinstance(out, Exception):

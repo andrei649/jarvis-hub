@@ -1,0 +1,10 @@
+{
+  "extraKnownMarketplaces": {
+    "superpowers-dev": {
+      "source": "./.claude/plugins/superpowers"
+    }
+  },
+  "enabledPlugins": {
+    "superpowers@superpowers-dev": true
+  }
+}

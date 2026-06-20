@@ -7,6 +7,7 @@ import base64
 import hashlib
 import json
 import logging
+import os
 import secrets
 import time
 from pathlib import Path
@@ -54,16 +55,46 @@ def _token_path(service: str) -> Path:
 _fernet: Optional[Fernet] = None
 
 
+def _resolve_token_key() -> bytes:
+    """Resolve the Fernet key used to encrypt OAuth tokens at rest.
+
+    Order, most secure first (BACKLOG H22.10):
+      1. **vault / env `JARVIS_TOKEN_KEY`** via `secrets_vault.VaultResolver`
+         (H21.A) — the key never touches disk. With a vault client wired it comes
+         from the vault; otherwise the resolver falls back to the environment.
+      2. **legacy on-disk key file**, hardened to `0600`. A freshly generated key
+         is written with restricted perms plus a warning recommending option 1 —
+         previously the key was written world-default next to its own ciphertext,
+         which made the encryption decorative.
+    """
+    from agents.core.secrets_vault import VaultResolver
+    res = VaultResolver().resolve("JARVIS_TOKEN_KEY")
+    if res.get("value"):
+        val = res["value"]
+        return val.encode() if isinstance(val, str) else val
+
+    key_file = TOKEN_DIR / ".encryption_key"
+    if key_file.exists():
+        return key_file.read_bytes()
+    key = Fernet.generate_key()
+    key_file.write_bytes(key)
+    try:
+        os.chmod(key_file, 0o600)
+    except OSError:
+        # chmod is best-effort (e.g. Windows) — the warning still stands.
+        pass
+    logger.warning(
+        "Generated an on-disk token-encryption key (%s, perms 0600). For stronger "
+        "hygiene set JARVIS_TOKEN_KEY (resolved from the secrets vault) so the key "
+        "never touches disk.", key_file,
+    )
+    return key
+
+
 def _get_fernet() -> Fernet:
     global _fernet
     if _fernet is None:
-        key_file = TOKEN_DIR / ".encryption_key"
-        if key_file.exists():
-            key = key_file.read_bytes()
-        else:
-            key = Fernet.generate_key()
-            key_file.write_bytes(key)
-        _fernet = Fernet(key)
+        _fernet = Fernet(_resolve_token_key())
     return _fernet
 
 
