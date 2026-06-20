@@ -291,6 +291,7 @@
   "POST /sessions/resume",
   "POST /skills/import",
   "POST /tts",
+  "POST /tts/stream",
   "PUT /api/admin/agents/{agent_id}",
   "PUT /api/admin/settings/{category}",
   "PUT /api/notes",

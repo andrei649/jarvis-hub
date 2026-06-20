@@ -202,6 +202,16 @@ BUILTIN_PLUGINS = {
         allowed_domains=[],
         agents_served=["jarvis", "athena", "stark", "vision", "argus"],
     ),
+    "signal-layer": PluginManifest(
+        id="signal-layer",
+        name="Jarvis Signal Layer",
+        version="0.1.0",
+        description="Query local situational-awareness signals, evidence, briefs, assessments, and provider health",
+        network_access=NetworkAccess.LAN,
+        data_scope=DataScope.LOCAL_ONLY,
+        allowed_domains=[],
+        agents_served=["jarvis", "friday", "athena", "stark", "vision", "argus"],
+    ),
     # ── SEC-5b: previously-unmanifested networked plugins ─────────────────────
     # These reached the network with no manifest (→ fail-open / unrestricted).
     # Now each is gated by the egress boundary. Config/env-driven hosts (n8n,
@@ -384,7 +394,7 @@ def host_in_allowlist(host: str, allowed_domains: list[str]) -> bool:
 
     F-07: replaces the old ``any(d in host)`` substring test, which let
     ``api.openai.com.evil.example`` slip past an allowlist of ``api.openai.com``.
-    Matching is now anchored: ``host == d`` or ``host`` ends with ``"." + d``.
+    Matching is now anchored: ``host == d`` or ``host`` ends with ``." + d``.
     """
     host = (host or "").lower().strip().rstrip(".")
     if not host:

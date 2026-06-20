@@ -295,6 +295,7 @@
   "POST /sessions/resume": "user",
   "POST /skills/import": "user",
   "POST /tts": "user",
+  "POST /tts/stream": "user",
   "PUT /api/admin/agents/{agent_id}": "admin",
   "PUT /api/admin/settings/{category}": "admin",
   "PUT /api/notes": "user",

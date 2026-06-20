@@ -48,6 +48,16 @@ Push-to-talk mode runs one pass of the same flow per mic tap.
 | `POST /api/voice/stt?lang=ro` | Raw audio body (browser `MediaRecorder` blob) → local Whisper transcript `{text, lang}`. Engine cached via `_stt_engine()`. | `503 {stt:false, error:"…pip install faster-whisper"}` when Whisper absent — **never a fabricated transcript**. |
 | `GET /api/voice/capabilities` | What this host can actually do: `{stt, tts, tts_local, providers}`. Drives the HUD's honest state. | Always returns real booleans; browser knows it always has a local `speechSynthesis` fallback. |
 | `POST /tts` | Text → audio (cloned voice). `TTSEngine.speak` fallback chain. | `503` when `edge-tts` absent (and no other provider). |
+| `POST /tts/stream` | **Sentence-level streaming (H5.16, opt-in).** Splits the reply into sentences (`core/voice/sentence_stream.py:split_sentences`) and streams each sentence's audio as soon as it's synthesized, so playback can start after sentence #1 instead of the whole reply. | `409 {enabled:false}` when the `voice.sentence_streaming` setting is off (**default**); `503` when `edge-tts` absent. |
+
+> **Sentence-level streaming wire framing.** `/tts/stream` returns a single
+> `application/octet-stream` body of ordered frames, one per sentence:
+> a single-line JSON header `{"idx","text","lang","bytes","done"}` + `\n` + exactly
+> `bytes` raw audio bytes. A terminal `{"done":true,"bytes":0}` frame closes the
+> stream; a sentence that failed to synthesize gets `bytes:0` (skip it). Segmentation
+> is pure/unit-tested (`SentenceAggregator` also supports incremental token streams);
+> only per-chunk synthesis touches a backend. Gated by `voice.sentence_streaming`
+> (default off — fully back-compatible; the browser loop still uses `/tts`).
 
 > **Raw body, not multipart.** `/api/voice/stt` reads `await request.body()` rather than an
 > `UploadFile` — deliberately, so it needs **no `python-multipart`** dependency. (A `File(...)`
@@ -146,6 +156,11 @@ pretending to listen.
   room + speakers so the assistant doesn't interrupt itself. Currently opt-in/default-off.
 - **Browser wake-word** ("hey jarvis" with no click) — needs a JS wake-word lib (Porcupine,
   licensed) or a cloud hop; not yet implemented. Path A's `openwakeword` is server-only.
-- **Sentence-level TTS streaming** — replies are spoken as one blob, not streamed sentence-by-
-  sentence. (This is the part of backlog H5.16 that was never actually built — see BACKLOG.)
+- **Sentence-level TTS streaming** — **server side landed** (H5.16): `POST /tts/stream` +
+  `core/voice/sentence_stream.py` split a reply into sentences and synthesize/emit each as it's
+  ready (opt-in via `voice.sentence_streaming`, default off). **Remaining:** wiring the browser
+  loop (`frontend/src/voice.ts`) to consume `/tts/stream` and play chunks back-to-back, and a
+  fully token-streamed path (synthesize while the chat is still generating) — the building block
+  for that (`SentenceAggregator`) exists and is tested, but the chat→TTS pipe still resolves the
+  full reply first.
 - **No live `voice_state`** — `/status` reports a static `"idle"`; the HUD owns loop state client-side.

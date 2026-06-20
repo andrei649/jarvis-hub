@@ -3,6 +3,7 @@ import React, { useState as uS2, useEffect as uE2 } from 'react';
 import { V2, Conversation, InputBar } from './ui';
 import { Icon as Ic, ICONS as IK, Glyph as Gl } from './ui';
 import { installSkill, getAutonomyMode, setAutonomyMode } from './api/actions';
+import { WorldIntelligencePanel } from './world-intelligence';
 /* HUD v2 · MODES II — Autonomy, Build, Observe, Interop */
 
 function ModePanel({ icon, title, status, children }){
@@ -144,7 +145,8 @@ function ObserveMode({ t }){
   const O = V2.OBSERVE;
   const maxLat = Math.max(...O.by_agent.map(a=>a.v));
   return (
-    <ModePanel icon="observe" title={t.observe} status="traces · eval · resilience">
+    <ModePanel icon="observe" title={t.observe} status="world · traces · eval · resilience">
+      <WorldIntelligencePanel />
       <div className="mem-grid" style={{marginBottom:'var(--gap)'}}>
         <div className="stat-card"><div className="sv">{Math.round(O.quality.success_rate*100)}%</div><div className="sl">success rate</div></div>
         <div className="stat-card"><div className="sv">{O.quality.interactions}</div><div className="sl">interactions</div></div>
@@ -180,7 +182,7 @@ function ObserveMode({ t }){
             </div>
           ))}
           <SubH style={{marginTop:16}}>RESILIENCE</SubH>
-          <div className="cap-row"><div className="cn">SSRF blocked</div><span className="cap-tag allow">{O.resilience.ssrf_blocked}</span></div>
+          <div className="cap-row"><div className="cn">Network guard</div><span className="cap-tag allow">{O.resilience.ssrf_blocked}</span></div>
           <div className="cap-row"><div className="cn">Errors · 24h</div><span className="cap-tag allow">{O.resilience.errors_24h}</span></div>
           <div className="cap-row"><div className="cn">PII redactions</div><span className="cap-tag gated">{O.resilience.redactions}</span></div>
           <div className="cap-row"><div className="cn">Escalations</div><span className="cap-tag scoped">{O.quality.escalations}</span></div>
