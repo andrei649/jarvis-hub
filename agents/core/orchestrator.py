@@ -240,6 +240,17 @@ class Orchestrator:
             router=self.llm_router,
             enabled=_env_flag("JARVIS_LMSTUDIO_CONTROL", True),
         )
+        # H22.5 — attach the LRU residency manager, backed by the LM Studio
+        # controller above. Default-off via JARVIS_MODEL_MANAGER (GPU-unvalidated):
+        # when off, the router's ensure_resident hook is a no-op and behavior is
+        # exactly today's. Best-effort, never raises into routing.
+        try:
+            from .llm.model_manager import ModelManager, LMStudioControllerAdapter
+            self.llm_router.attach_model_manager(
+                ModelManager(LMStudioControllerAdapter(self.lmstudio))
+            )
+        except Exception:
+            logger.warning("model_manager attach failed — residency tracking off", exc_info=True)
         # Backing store for the shared/default session (see `session_id` property
         # below). Per-request turns override this via the `_active_session`
         # ContextVar; this default serves boot, checkpoint restore, autonomy and
