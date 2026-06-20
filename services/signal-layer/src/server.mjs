@@ -53,8 +53,17 @@ export function createServer({ config, provider }) {
       if (method === 'POST' && url.pathname === '/watchlist') {
         const body = await readJson(req);
         const target = validateWatchTarget(body);
-        state.watchlist.push(target);
-        return send(res, 201, { watchlist: state.watchlist, added: target });
+        if (state.watchlist.length >= MAX_WATCHLIST && !state.watchlist.some(t => t.id === target.id)) {
+          const error = new Error(`Watchlist is full (max ${MAX_WATCHLIST} targets)`);
+          error.statusCode = 409;
+          error.code = 'watchlist_full';
+          throw error;
+        }
+        // De-dupe by id: replace an existing target instead of appending duplicates.
+        const idx = state.watchlist.findIndex(t => t.id === target.id);
+        if (idx >= 0) state.watchlist[idx] = target;
+        else state.watchlist.push(target);
+        return send(res, idx >= 0 ? 200 : 201, { watchlist: state.watchlist, added: target });
       }
 
       if (method === 'GET' && url.pathname === '/signals') {
@@ -183,9 +192,22 @@ function isAuthorized(req, token) {
   return header === `Bearer ${token}`;
 }
 
+const MAX_BODY_BYTES = 64 * 1024; // these payloads are tiny; cap to avoid unbounded buffering
+const MAX_WATCHLIST = 200;        // bound the in-memory watchlist
+
 async function readJson(req) {
   const chunks = [];
-  for await (const chunk of req) chunks.push(chunk);
+  let size = 0;
+  for await (const chunk of req) {
+    size += chunk.length;
+    if (size > MAX_BODY_BYTES) {
+      const error = new Error('Request body too large');
+      error.statusCode = 413;
+      error.code = 'payload_too_large';
+      throw error;
+    }
+    chunks.push(chunk);
+  }
   const raw = Buffer.concat(chunks).toString('utf8');
   if (!raw.trim()) return {};
   try {

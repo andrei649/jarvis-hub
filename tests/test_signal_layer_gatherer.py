@@ -50,3 +50,17 @@ def test_signal_layer_gatherer_formats_data_block():
     assert "REAL-TIME DATA" in text
     assert "SIGNAL-LAYER" in text
     assert "World brief" in text
+
+
+def test_wants_signal_layer_ignores_generic_news():
+    # A plain news query must NOT fan out to the Signal Layer.
+    assert plugin_gatherer.wants_signal_layer("any local news today", ["news"]) is False
+    assert plugin_gatherer.wants_signal_layer("what's the latest celebrity news", []) is False
+
+
+def test_wants_signal_layer_triggers_on_world_intent():
+    assert plugin_gatherer.wants_signal_layer("give me a world brief", []) is True
+    assert plugin_gatherer.wants_signal_layer("what is the country risk for romania", []) is True
+    assert plugin_gatherer.wants_signal_layer("what changed overnight", []) is True
+    # WorldView OSINT surface keyword stays an explicit trigger.
+    assert plugin_gatherer.wants_signal_layer("open the map", ["worldview"]) is True

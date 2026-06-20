@@ -44,9 +44,11 @@ def any_agent_can(orch, plugin: str, intent) -> bool:
 
 
 def wants_signal_layer(text_lower: str, keywords: list[str]) -> bool:
+    # Only ground on world-intelligence intent. A bare "news" keyword used to
+    # trigger this, which fired a Signal Layer fan-out on any news query and added
+    # latency to unrelated requests — require explicit world/global signals instead.
     return (
         "worldview" in keywords
-        or "news" in keywords
         or any(w in text_lower for w in [
             "world brief", "global brief", "world intelligence", "signal layer",
             "what changed overnight", "changed overnight", "overnight",
