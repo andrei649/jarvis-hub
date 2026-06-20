@@ -33,11 +33,21 @@ class WebhookChannel(ChannelAdapter):
 
     channel_id = "webhook"
 
+    # SEC-5b: config keys whose value carries this channel's egress host (e.g.
+    # Signal ``base_url``, Matrix ``homeserver``). Registered with the egress
+    # gate at init so a config-driven host is allowed without a FULL escape.
+    _DYNAMIC_HOST_CONFIG_KEYS: "tuple[str, ...]" = ()
+
     def __init__(self, handler: Optional[Callable] = None,
                  config: Optional[dict] = None, transport=None) -> None:
         super().__init__(self.channel_id, handler)
         self.config = config or {}
         self._transport = transport  # async request(method, url, headers=, json=)
+        for key in self._DYNAMIC_HOST_CONFIG_KEYS:
+            val = self.config.get(key)
+            if val:
+                from ..plugin_gate import register_dynamic_domain
+                register_dynamic_domain(f"channel_{self.channel_id}", val)
 
     async def start(self):
         # Webhook-driven: inbound arrives via the HTTP endpoint, no poll loop.
@@ -141,6 +151,7 @@ class SignalChannel(WebhookChannel):
     """Signal via the signal-cli REST API (local daemon)."""
 
     channel_id = "signal"
+    _DYNAMIC_HOST_CONFIG_KEYS = ("base_url",)
 
     def build_send(self, message, kwargs):
         base = (self.config.get("base_url", "") or "").rstrip("/")
@@ -165,6 +176,7 @@ class MatrixChannel(WebhookChannel):
     """Matrix client-server API (any homeserver)."""
 
     channel_id = "matrix"
+    _DYNAMIC_HOST_CONFIG_KEYS = ("homeserver",)
 
     def build_send(self, message, kwargs):
         room = kwargs.get("room_id") or self.config.get("default_room")
@@ -195,6 +207,9 @@ class TeamsChannel(WebhookChannel):
     """Microsoft Teams — outbound via incoming webhook; inbound via Bot activity."""
 
     channel_id = "teams"
+    # A config-supplied webhook host is registered too; the manifest's static
+    # allowlist covers the common Microsoft hosts for kwargs-supplied webhooks.
+    _DYNAMIC_HOST_CONFIG_KEYS = ("webhook",)
 
     def build_send(self, message, kwargs):
         url = kwargs.get("webhook") or self.config.get("webhook")

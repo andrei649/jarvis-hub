@@ -59,7 +59,7 @@ route-policy table: **`docs/SECURITY_ROUTE_AUDIT_2026-06-17.md`**.
 | SEC-3 ✅ | **Apply policy to remaining open mutators** — DONE. Batch 1 (12 → admin): workflows CRUD, plugin toggle, heartbeat ×3, traces/clear, oauth/refresh, oracle sync+resolve, audit/action. Batch 2 (23 → user): workflows run/hierarchical, KG writes ×6, local-docs, reflection, arena ×2, review ×3, eval ×2, autonomy/preview, agent-templates, llm/grammar, schedule/parse, security scan/spotlight. `PENDING_GUARD` is now **empty** — every mutating route is guarded or in `INTENTIONALLY_OPEN` (6 self-authenticating). Final surface: **110 user / 104 admin / 86 open**. Localhost dev unaffected. | 5 | P1 | ✅ enforced by SEC-2 matrix gate |
 | SEC-4 | Env/posture follow-ups: **npm Dependabot ✅** · **doc counters refreshed ✅** · **`JARVIS_HOME` runtime-state relocation ✅** (F-08). **Remaining:** promote matrix/parity tests to **required** branch-protection checks (F-10, owner GitHub setting). | 3 | P2 | — |
 | SEC-5 ✅ | **F-06 ✅** WorldView bridge Bearer auth (`WORLDVIEW_API_TOKEN`). **F-07 ✅** plugin egress boundary — anchored host/sub-domain matching + `PluginHTTPClient` per-request manifest enforcement, now **strict by default** (`JARVIS_STRICT_EGRESS=0` opts out). Renamed 9 `for_plugin` ids to match manifests; completed allowlists (cloud-llm +Gemini, gmail/gcal +oauth2.googleapis.com, news +RO feeds); self-consistency test pins each plugin's real hosts. | 3 | P2 | ✅ undeclared plugin egress blocked |
-| SEC-5b | **Manifest the remaining networked plugins** so the egress gate covers them too (today they have no manifest → unrestricted): `balance` (api.ing.com / api.libra.ro), `analytics` (analyticsdata.googleapis.com / oauth2.googleapis.com), `websearch` (api.tavily.com / html.duckduckgo.com / SearXNG — note interaction with `test_ssrf.py`), `n8n` (config URL), and the dynamic `for_plugin` families (`social_*`, `writeback_*`, `call_*`, `channel_*`, `digest`). They keep in-code SSRF guards meanwhile. | 3 | P2 | every networked plugin enforced by the gate |
+| SEC-5b ✅ | **Manifest the remaining networked plugins** — DONE. Added RESTRICTED manifests for `balance`, `analytics`, `websearch`, `digest`, `n8n`, the social/writeback/call families (`social_x`, `writeback_{notion,github,google_calendar}`, `call_{twilio,telnyx}`) and the webhook channels (`channel_{whatsapp,google_chat,teams,signal,matrix}`). Config/env-driven hosts (n8n `N8N_BASE_URL`, websearch `SEARXNG_URL`, Signal `base_url`, Matrix `homeserver`) are handled by a new **`register_dynamic_domain`** runtime allowlist that the egress gate unions with the static `allowed_domains` — no FULL/unmanifested escape. A new registry-driven test (`test_dynamic_family_ids_all_have_manifests`) pins every concrete family member to a manifest so a new member fails CI instead of silently re-opening the gap (the literal-regex test couldn't see the f-string ids). In-code SSRF guards retained as defense-in-depth. **Residual:** per-call webhook URLs passed via `kwargs` to `channel_teams`/`channel_google_chat` are constrained to the Microsoft/Google host suffixes by the static allowlist, not to one specific webhook. | 3 | P2 | ✅ every networked plugin enforced by the gate |
 
 > Verified false-alarms / owner-side (not repo defects): F-04 (auditor's stale
 > Windows venv/node_modules — CI builds clean), most of F-05 (needs owner
@@ -76,17 +76,14 @@ worldview-mcp dev deps (#223), root `vitest` 2→4 + `jsdom` 25→29 (#224). **H
 review cycle:** React 18→19 frontend (#226 — needs v2 bundle rebuild + visual check), WorldView
 23-update group (#228), mobile group (#227 — owner-gated, real-device validation per `OWNER_TASKS`).
 
-**fastapi 0.137 upgrade — BLOCKED (tracked task):** Dependabot #237 bumps `fastapi` to 0.137.2,
-which collapses the *introspected* route surface **296→83** and fails the route-parity / auth-matrix
-guards. **Root-caused (#247):** fastapi 0.137 wraps `include_router` results in an opaque
-`_IncludedRouter` object instead of flattening them into `app.routes`. **The app is NOT broken** —
-routes serve at runtime and appear in `app.openapi()`; only the two `app.routes`-iterating guards
-regress. **To unblock** (full plan + repro:
-[`docs/research/2026-06-19-fastapi-0.137-include-router-regression.md`](docs/research/2026-06-19-fastapi-0.137-include-router-regression.md)):
-(1) add a recursive route flattener (no-op on ≤0.136) + switch the parity guard to
-`app.openapi()["paths"]`; (2) **then** bump `fastapi>=0.137.2` with a **bounded** `starlette` pin in
-the same PR. Until then keep `fastapi>=0.136.3,<0.137`. #237's harmless `pytest-xdist`/`ruff` dev
-bumps are split out separately so they still land.
+**fastapi 0.137 upgrade — ✅ RESOLVED (2026-06-19):** fastapi 0.137 wraps `include_router` results in
+an opaque `_IncludedRouter` instead of flattening them into `app.routes`, which collapsed the
+*introspected* route surface **296→83** and failed the route-parity / auth-matrix guards (the app was
+never broken — routes served + appeared in OpenAPI). **Fixed:** `tests/_route_introspect.py`
+`iter_effective_routes` flattens the wrappers via fastapi's own `_iter_routes_with_context` (no-op on
+≤0.136); both guards use it with **snapshots unchanged**, and `fastapi` is bumped to `>=0.137.2,<0.138`
+with `starlette>=0.46,<1.0`. Root cause + repro:
+[`docs/research/2026-06-19-fastapi-0.137-include-router-regression.md`](docs/research/2026-06-19-fastapi-0.137-include-router-regression.md).
 
 ---
 
@@ -134,7 +131,10 @@ chain-of-thought leak / mid-sentence truncation fixed. Kill-switch:
   (`LMStudioController._resolve_model`). Unique match loads (reply names the resolved id); several
   matches → `ambiguous` + candidates (chat asks which / admin returns 409); list unreachable → literal
   passthrough. Admin `/api/llm/load` persists the resolved id. +13 tests.
-- Surface the kill-switch toggle + a model picker as real controls in the admin Settings UI.
+- ✅ Surface the kill-switch toggles + a model picker as real controls in the admin Settings UI —
+  `llm.control_enabled` / `llm.chat_control` toggles + live model picker (`ModelPickerRow`, kind
+  `model-select`), and a live controller-status card backed by new admin-guarded `GET /api/llm/status`
+  → `{online, enabled, server_url, active_model}` (`LMStudioStatusRow` in `admin.js`). +Python +JS tests.
 - Confirm the LM Studio id for Gemma 4 12B — `google/gemma-4-12b` is a placeholder in static config.
 
 ---
@@ -345,7 +345,7 @@ chain-of-thought leak / mid-sentence truncation fixed. Kill-switch:
 | H5.13 ✅ | **Proactive Event Watchers** — `EventWatcher` + Email/Calendar/Finance/Health probes, eșantionate în bucla de autonomie (gated `system.watchers_enabled`). `core/autonomy/watchers.py` | 8 | H6.7 | 0.8 ✅ |
 | H5.14 ✅ | **Retrieval Fusion Engine** — `reciprocal_rank_fusion()` + `HybridRetriever` (vector⊕graph RRF, weight-tunable, injectabil) + `MemoryManager.hybrid_search()`. `core/memory/fusion.py`, 9 teste offline. **Task4 ✅:** `GET /api/memory/search` + `FusedRecallBox` în MemoryTab. | 5 | H3.1, H3.2 | 0.8 ✅ |
 | H5.15 ✅ | **Daily Reflection & Graph Consolidation** — `DailyReflector` (`core/autonomy/reflection.py`): gather context → LLM reflection → JSON entities/relations/lessons → promote to Neo4j graph; idempotent per zi; hookuit în `_autonomy_loop` (fereastră 22:00–07:00, gated `system.reflection_enabled`). Endpoint `/api/reflection/status` + `/api/reflection/run`. 10 teste offline. | 8 | H6.6, H3.2 | 0.8 ✅ |
-| H5.16 🟡 | **Sentence-level TTS & Audio Barge-in** — edge-tts integration + server-side play/stop exist and are tested; **but** (audit 2026-06-07, code-read) sentence-level streaming was never implemented. Shipped instead: the **browser voice loop** (mic → local STT `/api/voice/stt` → chat → TTS playback, hands-free; PR #162) with **opt-in barge-in** (PR #164, default off, needs on-device echo-cancellation tuning). Sentence-level TTS streaming + browser wake-word remain TODO. See `docs/VOICE.md`. | 8 | H1.1, H5.5 | 0.8 🟡 |
+| H5.16 🟡 | **Sentence-level TTS & Audio Barge-in** — edge-tts integration + server-side play/stop exist and are tested. **Sentence-level streaming (server) landed:** pure splitter `core/voice/sentence_stream.py` (`split_sentences` + incremental `SentenceAggregator`, 18 offline tests) + `TTSEngine.speak_stream` + `POST /tts/stream` (opt-in `voice.sentence_streaming`, default off; multipart-free framed audio so synthesis/playback can start after sentence #1). Earlier shipped: **browser voice loop** (mic → local STT `/api/voice/stt` → chat → TTS playback, hands-free; PR #162) with **opt-in barge-in** (PR #164, default off, needs on-device echo-cancellation tuning). **Still TODO:** wire `frontend/src/voice.ts` to consume `/tts/stream` (play chunks back-to-back); synthesize *while* the chat streams (the `SentenceAggregator` building block is ready); browser wake-word. See `docs/VOICE.md`. | 8 | H1.1, H5.5 | 0.8 🟡 |
 | H5.17 ✅ | **Batch & Cache Embeddings Pipeline** — `EmbeddingCache` (content-addressed, sharded, crash-safe) + `Embedder.embed_batch` (dedup + paralel) + retry/backoff (degradare la hash) + cache stats în pipeline. `core/ingestion/embedder.py` | 5 | H5.5 | 0.8 ✅ |
 
 ---

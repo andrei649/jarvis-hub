@@ -44,6 +44,9 @@ Still on mock (wire to endpoints; some need plugins configured):
   add the task layer + live collab edges.
 - **Per‑message TTS** (🔊 → `/tts`) + **browser mic / SpeechRecognition** input + voice auto‑speak
   (v1 had these; dropped in the port).
+- **Sentence-level TTS streaming** (H5.16): backend `POST /tts/stream` exists (opt-in
+  `voice.sentence_streaming`, default off) — wire `frontend/src/voice.ts` to consume the framed
+  chunk stream and play sentences back-to-back so audio starts after sentence #1.
 - **Streaming cognition**: P2 pulls the `/api/cognition` snapshot after the turn; upgrade to a real
   **SSE** stream (`/api/cognition/stream`, a backend addition) with live scores + redactions.
 - **Strict‑local / mic trust badge** (H12.10): wire `/api/trust/status` into the top bar (endpoint
