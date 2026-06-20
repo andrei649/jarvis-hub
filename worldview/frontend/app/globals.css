@@ -1,6 +1,7 @@
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+@import "tailwindcss";
+
+/* Keep the existing JS theme (custom brand colors + fonts) under Tailwind v4. */
+@config "../tailwind.config.ts";
 
 html,
 body {

@@ -8,10 +8,19 @@ import { useState, useEffect } from 'react';
 import { apiGet } from './client';
 import { V2 } from '../data';
 
+const SIGNAL_LAYER_URL = import.meta.env?.VITE_SIGNAL_LAYER_URL || 'http://localhost:8787';
+
 const arr = (x: any, ...keys: string[]) => {
   if (Array.isArray(x)) return x;
   for (const k of keys) if (x && Array.isArray(x[k])) return x[k];
   return null;
+};
+
+const signalLayerHealth = () => {
+  if (typeof fetch !== 'function') return Promise.resolve(null);
+  return fetch(`${SIGNAL_LAYER_URL}/healthz`, { cache: 'no-store' })
+    .then(r => r.ok ? r.json() : null)
+    .catch(() => null);
 };
 
 export interface LiveModes { ver: number; live: Record<string, boolean>; }
@@ -43,14 +52,16 @@ export function useLiveModes(): LiveModes {
         mark('MEMORY_STATS');
       }).catch(() => {});
 
-      // OBSERVE — compose from several endpoints
+      // OBSERVE — compose from several Jarvis endpoints plus Signal Layer health.
+      // Signal Layer is enough to make Observe useful for the Sunday replay path.
       await Promise.all([
         apiGet('/bench/stats').catch(() => null),
         apiGet('/api/quality').catch(() => null),
         apiGet('/api/resilience').catch(() => null),
         apiGet('/api/arena/leaderboard').catch(() => null),
         apiGet('/api/traces?limit=8').catch(() => null),
-      ]).then(([bench, quality, resil, arena, traces]: any[]) => {
+        signalLayerHealth(),
+      ]).then(([bench, quality, resil, arena, traces, signalLayer]: any[]) => {
         const O = { ...V2.OBSERVE };
         if (bench) O.bench = { p50: bench.latency?.p50 ?? bench.p50 ?? O.bench.p50, p95: bench.latency?.p95 ?? bench.p95 ?? O.bench.p95, p99: bench.latency?.p99 ?? bench.p99 ?? O.bench.p99 };
         if (quality) O.quality = { success_rate: quality.success_rate ?? quality.rolling_avg ?? O.quality.success_rate, interactions: quality.interactions ?? quality.count ?? O.quality.interactions, escalations: quality.escalations ?? O.quality.escalations };
@@ -60,7 +71,7 @@ export function useLiveModes(): LiveModes {
         const tl = arr(traces, 'traces');
         if (tl && tl.length) O.traces = tl.slice(0, 6).map((tr: any) => ({ id: tr.id || tr.trace_id, query: tr.query || tr.intent || '', agents: tr.agents || [], total: tr.total || tr.latency_ms || 0, status: tr.status || 'ok', stages: tr.stages || [] }));
         set('OBSERVE', O);
-        if (bench || quality || resil || (al && al.length) || (tl && tl.length)) mark('OBSERVE');
+        if (bench || quality || resil || (al && al.length) || (tl && tl.length) || signalLayer?.ok) mark('OBSERVE');
       }).catch(() => {});
 
       // INTEROP — a2a peers / mcp servers / widgets / webhooks
