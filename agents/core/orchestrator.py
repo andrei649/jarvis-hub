@@ -271,6 +271,7 @@ class Orchestrator:
         # Proactive Event Watcher — personal event trigger layer.
         self.event_watcher = None
         self._autonomy_task: Optional[asyncio.Task] = None
+        self._warmup_task: Optional[asyncio.Task] = None
         self.last_cognition = None
         # Daily Reflection & Graph Consolidation (H5.15)
         self.reflector: Optional[DailyReflector] = None
@@ -327,6 +328,14 @@ class Orchestrator:
     async def load_agents(self):
         await self.llm_router.detect()
         logger.info(f"LLM backend: {self.llm_router.name}")
+
+        # Preload the detected local model so the first turn (often a voice
+        # command) skips the cold-load cost. Fire-and-forget — the model load
+        # can take seconds and must not delay startup. Gate with
+        # JARVIS_LLM_WARMUP=0 for environments where preloading is unwanted.
+        if os.environ.get("JARVIS_LLM_WARMUP", "1") not in ("0", "false", "False"):
+            self._warmup_task = asyncio.create_task(self.llm_router.warm_up())
+            self._warmup_task.add_done_callback(_log_task_result)
 
         try:
             backend = self.llm_router.backend

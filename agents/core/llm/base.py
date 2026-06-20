@@ -168,6 +168,21 @@ class LLMBackend(ABC):
     ) -> str:
         ...
 
+    async def warm_up(self, model: str) -> bool:
+        """Preload *model* with a minimal generation so the first real request
+        doesn't pay the cold-load cost (model weights swapped into VRAM).
+
+        Best-effort: returns True on a clean response, False on any failure, and
+        never raises — warm-up must not break startup. Backends with a native
+        preload path (e.g. Ollama) override this."""
+        try:
+            out = await self.generate(model, ".", max_tokens=1, temperature=0.0)
+            # generate() reports failures as a "[backend error: …]" string, not
+            # an exception — treat those as a failed warm-up.
+            return not (isinstance(out, str) and out.startswith("["))
+        except Exception:
+            return False
+
     @staticmethod
     def _finalize_stream(emitted: str, reasoning_full: str, finish, model: str) -> str:
         """Decide the value a streamed generation returns.
@@ -339,6 +354,22 @@ class OllamaBackend(LLMBackend):
     async def aclose(self):
         """Close the HTTP client's connection pool (BUG-7)."""
         await self.client.aclose()
+
+    async def warm_up(self, model: str) -> bool:
+        """Preload via Ollama's load path (empty prompt loads weights without
+        generating) and pin the model resident with keep_alive=-1 so it doesn't
+        unload between turns. Best-effort, never raises."""
+        try:
+            resp = await self.client.post("/api/generate", json={
+                "model": model,
+                "prompt": "",
+                "keep_alive": -1,
+                "stream": False,
+            })
+            resp.raise_for_status()
+            return True
+        except Exception:
+            return False
 
     async def generate(
         self, model: str, prompt: str, system: str = "",

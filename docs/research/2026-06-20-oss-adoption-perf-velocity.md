@@ -18,8 +18,8 @@ All three are **verified against the code** and are small.
 | # | Win | File | Effort | Why it matters |
 |---|-----|------|--------|----------------|
 | 1 | **Parallelize the plugin fan-out** ✅ *done in this PR* | `agents/core/plugin_gatherer.py` | **S** | It ran each plugin `await` **sequentially**; a query triggering weather+news+calendar paid N serial round-trips. Now run via `asyncio.gather` under a bounded semaphore with a per-plugin `wait_for` deadline + failure isolation (`tests/test_plugin_gatherer_concurrency.py`). `ARCHITECTURE.md:33`'s "(parallel)" label is now accurate. |
-| 2 | **Preload + keep-warm the fast model** | `agents/core/llm/router.py` | **S** | We poll `/v1/models` to *detect* the model but never *warm* it. An empty-prompt request at startup + a keep-alive ping (Ollama `keep_alive:-1`) removes cold-load latency from the first voice turn — a big chunk of the "4–5s". |
-| 3 | **`beam_size=1` + `int8_float16` for the live STT loop** | `agents/core/voice/stt.py` | **S** | ✅ STT calls `transcribe(..., beam_size=5)` on a raw `WhisperModel`, fp16, no batching. Greedy decode is much faster on short clear utterances at negligible accuracy loss; `int8_float16` frees ~1.5GB VRAM the LLM slots want. |
+| 2 | **Preload + keep-warm the fast model** ✅ *done in this PR* | `agents/core/llm/router.py` | **S** | We polled `/v1/models` to *detect* the model but never *warmed* it. Now `LLMRouter.warm_up()` fires a minimal generation at startup (gated by `JARVIS_LLM_WARMUP`); the Ollama backend uses an empty-prompt load + `keep_alive:-1` to pin it resident. Removes cold-load latency from the first voice turn (`tests/test_llm_warmup.py`). |
+| 3 | **`beam_size=1` + `int8_float16` for the live STT loop** ✅ *done in this PR* | `agents/core/voice/stt.py` | **S** | STT called `transcribe(..., beam_size=5)`, fp16. Now defaults to greedy decode + `int8_float16` on CUDA / `int8` on CPU, both overridable per-instance or via env (`JARVIS_STT_BEAM_SIZE`, `JARVIS_STT_COMPUTE_TYPE`). Frees ~1.5GB VRAM and cuts decode time (`tests/test_stt_config.py`). |
 
 Everything below is the per-repo backing for these and the larger bets.
 
@@ -144,8 +144,8 @@ TS framework where one `defineAction()` (Zod schema + `run()`) auto-exposes as M
 | # | Action | Repo lineage | File(s) | Effort | Impact |
 |---|--------|--------------|---------|--------|--------|
 | 1 | `asyncio.gather` the plugin fan-out (+ per-plugin timeout) | yt-dlp | `plugin_gatherer.py` | S | **High** ✅ **done in this PR** |
-| 2 | Preload + keep-warm the fast model | ollama | `llm/router.py` | S | **High** (cold-load latency) |
-| 3 | STT greedy `beam_size=1` + `int8_float16` | faster-whisper | `voice/stt.py` | S | **High** (voice path) ✅ |
+| 2 | Preload + keep-warm the fast model | ollama | `llm/router.py` | S | **High** ✅ **done in this PR** |
+| 3 | STT greedy `beam_size=1` + `int8_float16` | faster-whisper | `voice/stt.py` | S | **High** ✅ **done in this PR** |
 | 4 | `OLLAMA_NUM_PARALLEL=2–4` for the Ollama backend | ollama | backend config | S | Medium (concurrency) |
 | 5 | First-party SQLite analytics + beacon (drop GA4) | plausible | `plugins/analytics.py` | S–M | Medium (kills mock/OAuth) |
 | 6 | Calendar `busy_intervals` provider contract | cal.com | calendar plugins | S | Medium |
