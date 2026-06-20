@@ -263,14 +263,25 @@ class Agent:
                 backend, _ = res
             if self.guardrails:
                 backend = self.guardrails
+
+            # H22.5 — best-effort local model residency, same guarded pattern as
+            # process(): default OFF via JARVIS_MODEL_MANAGER, a no-op for
+            # cloud/Claude routes and when no manager is attached. ensure_resident
+            # swaps the LRU local model before loading this one (never raises);
+            # using() ref-counts it so a concurrent request can't evict mid-generate.
+            manager = getattr(self.llm_router, "model_manager", None)
+            await self._ensure_resident(route_name, model)
+            residency = manager.using(model) if (manager is not None and route_name.startswith("local")) else _NullCtx()
+
             max_tokens, temperature = self._gen_params(route_name)
-            response = await backend.generate(
-                model=model,
-                prompt=prompt,
-                system=system_prompt,
-                max_tokens=max_tokens,
-                temperature=temperature,
-            )
+            async with residency:
+                response = await backend.generate(
+                    model=model,
+                    prompt=prompt,
+                    system=system_prompt,
+                    max_tokens=max_tokens,
+                    temperature=temperature,
+                )
             return response
         except RuntimeError:
             parts = []

@@ -93,6 +93,57 @@ class LMStudioControllerAdapter:
         return await self._controller.unload_model(model_id, agent=self._agent)
 
 
+class OllamaControllerAdapter:
+    """Adapts an Ollama server to the `ModelController` protocol.
+
+    Ollama has no explicit "unload" verb; instead residency is controlled per
+    request via `keep_alive`:
+
+      - **load** mirrors `OllamaBackend.warm_up`: POST `/api/generate` with an
+        empty prompt (loads the weights without generating) and `keep_alive: -1`
+        so the model is pinned resident and doesn't unload between turns.
+      - **unload (evict)** is the same endpoint with `keep_alive: 0`, which tells
+        Ollama to drop the model from memory immediately after the (no-op) call.
+
+    The HTTP client is **injectable** so the adapter is unit-tested offline with a
+    fake that records calls — no Ollama server, no network. Any client whose
+    `post(url, json=...)` is awaitable works (httpx.AsyncClient is the default in
+    production, constructed by the caller). Best-effort: a failing request is
+    logged and swallowed so the manager falls through to today's JIT behavior.
+    """
+
+    def __init__(self, client, *, generate_path: str = "/api/generate"):
+        self._client = client
+        self._generate_path = generate_path
+
+    async def load(self, model_id: str):
+        # Warm-up: empty prompt loads weights without generating; keep_alive=-1
+        # pins it resident. Identical contract to OllamaBackend.warm_up.
+        return await self._post(model_id, keep_alive=-1)
+
+    async def unload(self, model_id: str):
+        # keep_alive=0 → Ollama evicts the model from memory right away.
+        return await self._post(model_id, keep_alive=0)
+
+    async def _post(self, model_id: str, *, keep_alive: int):
+        try:
+            return await self._client.post(
+                self._generate_path,
+                json={
+                    "model": model_id,
+                    "prompt": "",
+                    "keep_alive": keep_alive,
+                    "stream": False,
+                },
+            )
+        except Exception:
+            logger.warning(
+                "ollama_control: keep_alive=%d request for %s failed",
+                keep_alive, model_id, exc_info=True,
+            )
+            return None
+
+
 class _Resident:
     """Bookkeeping for one resident model: last-used ts, ref-count, size hint."""
 

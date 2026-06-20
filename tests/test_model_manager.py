@@ -14,7 +14,11 @@ repo_root = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(repo_root))
 sys.path.insert(0, str(repo_root / "agents"))
 
-from core.llm.model_manager import ModelManager, LMStudioControllerAdapter
+from core.llm.model_manager import (
+    ModelManager,
+    LMStudioControllerAdapter,
+    OllamaControllerAdapter,
+)
 
 
 class FakeController:
@@ -286,3 +290,182 @@ async def test_router_hook_noop_without_manager():
     # No manager attached → silently no-op, never raises.
     await router.ensure_resident("anything", "local")
     assert router.model_manager is None
+
+
+# ── Ollama controller adapter (keep_alive load/evict) ─────────────
+
+class FakeOllamaClient:
+    """Records POSTs; never touches a network. Mimics httpx.AsyncClient.post:
+    an awaitable returning an object with raise_for_status()."""
+
+    class _Resp:
+        def raise_for_status(self):
+            return None
+
+    def __init__(self, *, raise_on_post=False):
+        self.posts: list[tuple[str, dict]] = []
+        self._raise = raise_on_post
+
+    async def post(self, url, json=None):
+        self.posts.append((url, json))
+        if self._raise:
+            raise RuntimeError("boom-post")
+        return self._Resp()
+
+
+async def test_ollama_adapter_unload_issues_keep_alive_zero():
+    client = FakeOllamaClient()
+    adapter = OllamaControllerAdapter(client)
+    await adapter.unload("llama3.1:8b")
+    assert len(client.posts) == 1
+    url, body = client.posts[0]
+    assert url == "/api/generate"
+    assert body == {
+        "model": "llama3.1:8b",
+        "prompt": "",
+        "keep_alive": 0,
+        "stream": False,
+    }
+
+
+async def test_ollama_adapter_load_warms_with_keep_alive_minus_one():
+    # load() mirrors OllamaBackend.warm_up: empty prompt + keep_alive=-1.
+    client = FakeOllamaClient()
+    adapter = OllamaControllerAdapter(client)
+    await adapter.load("qwen2.5:14b")
+    assert len(client.posts) == 1
+    url, body = client.posts[0]
+    assert url == "/api/generate"
+    assert body == {
+        "model": "qwen2.5:14b",
+        "prompt": "",
+        "keep_alive": -1,
+        "stream": False,
+    }
+
+
+async def test_ollama_adapter_post_failure_is_swallowed():
+    # The adapter is best-effort: a failing HTTP client never raises into the
+    # manager (which falls through to Ollama's own JIT load on its TTL).
+    client = FakeOllamaClient(raise_on_post=True)
+    adapter = OllamaControllerAdapter(client)
+    assert await adapter.load("m") is None
+    assert await adapter.unload("m") is None
+    assert len(client.posts) == 2
+
+
+async def test_ollama_adapter_drives_manager_eviction():
+    # Wire the Ollama adapter into the manager and force an LRU eviction: the
+    # evicted model must get a keep_alive:0 POST, the loaded ones keep_alive:-1.
+    client = FakeOllamaClient()
+    adapter = OllamaControllerAdapter(client)
+    clock = FakeClock()
+    mgr = _mgr(adapter, total=10_000, reserve=2_000,
+               hints={"a": 5_000, "b": 5_000}, clock=clock)
+    clock.tick(); await mgr.ensure_resident("a")   # load a (keep_alive=-1)
+    clock.tick(); await mgr.ensure_resident("b")   # evict a (keep_alive=0), load b
+    keep_alives = [(body["model"], body["keep_alive"]) for _, body in client.posts]
+    assert keep_alives == [("a", -1), ("a", 0), ("b", -1)]
+    assert mgr.is_resident("a") is False
+    assert mgr.is_resident("b") is True
+
+
+# ── synthesize() residency hook (mirror of process()) ─────────────
+
+class _FakeBackend:
+    """Records the model it was asked to generate with."""
+
+    def __init__(self):
+        self.calls: list[str] = []
+
+    async def generate(self, model, prompt, system="", max_tokens=1024, temperature=0.7):
+        self.calls.append(model)
+        return "synthesized reply"
+
+
+class _FakeRouter:
+    """Minimal HybridRouter surface the Agent's synthesize() touches: a fixed
+    route decision, the best-effort ensure_resident hook, and model_manager."""
+
+    def __init__(self, backend, route_name, manager):
+        self._backend = backend
+        self._route_name = route_name
+        self._manager = manager
+
+    @property
+    def model_manager(self):
+        return self._manager
+
+    def select_backend(self, agent_id, prompt):
+        return (self._backend, "deep-local-model", self._route_name)
+
+    async def ensure_resident(self, model, route):
+        if self._manager is None or not route.startswith("local"):
+            return
+        await self._manager.ensure_resident(model)
+
+
+def _agent(router):
+    from core.agent import Agent
+    # config only — _load_soul is best-effort and missing SOUL.md is fine offline.
+    agent = Agent("jarvis", {"name": "Jarvis", "model": "deep-local-model"}, llm_router=router)
+    return agent
+
+
+async def test_synthesize_hook_noop_when_killswitch_off():
+    # Manager attached but disabled → ensure_resident is a no-op, using() doesn't
+    # ref-count, and synthesize still produces a reply (today's behavior).
+    ctrl = FakeController()
+    mgr = _mgr(ctrl, enabled=False, hints={"deep-local-model": 1_000})
+    backend = _FakeBackend()
+    router = _FakeRouter(backend, "local-deep", mgr)
+    agent = _agent(router)
+
+    out = await agent.synthesize({"jarvis": "", "howard": "fact A"}, intent=None)
+    assert out == "synthesized reply"
+    assert backend.calls == ["deep-local-model"]
+    # Disabled: nothing loaded, nothing tracked.
+    assert ctrl.loads == []
+    assert mgr.resident_models == []
+
+
+async def test_synthesize_hook_refcounts_model_when_enabled():
+    # Kill-switch on + local route → ensure_resident loads the model and using()
+    # ref-counts it for the duration of the generate.
+    ctrl = FakeController()
+    mgr = _mgr(ctrl, enabled=True, hints={"deep-local-model": 1_000})
+
+    seen_refs = {}
+
+    class _AssertingBackend(_FakeBackend):
+        async def generate(self, model, prompt, system="", max_tokens=1024, temperature=0.7):
+            # Inside generate the model must be pinned (refs > 0) so a concurrent
+            # ensure_resident can't evict it mid-flight.
+            seen_refs["refs"] = mgr._residents[model].refs
+            return await super().generate(model, prompt, system, max_tokens, temperature)
+
+    backend = _AssertingBackend()
+    router = _FakeRouter(backend, "local-deep", mgr)
+    agent = _agent(router)
+
+    out = await agent.synthesize({"jarvis": "", "howard": "fact A"}, intent=None)
+    assert out == "synthesized reply"
+    assert ctrl.loads == ["deep-local-model"]
+    assert seen_refs["refs"] == 1            # pinned during generate
+    assert mgr.is_resident("deep-local-model") is True
+    assert mgr._residents["deep-local-model"].refs == 0  # released after
+
+
+async def test_synthesize_hook_noop_on_cloud_route_when_enabled():
+    # Even with the kill-switch on, a non-local (cloud) route has nothing to swap:
+    # ensure_resident must not load, and using() must not be wrapped.
+    ctrl = FakeController()
+    mgr = _mgr(ctrl, enabled=True, hints={"deep-local-model": 1_000})
+    backend = _FakeBackend()
+    router = _FakeRouter(backend, "cloud-flash", mgr)
+    agent = _agent(router)
+
+    out = await agent.synthesize({"jarvis": "", "howard": "fact A"}, intent=None)
+    assert out == "synthesized reply"
+    assert ctrl.loads == []
+    assert mgr.resident_models == []
