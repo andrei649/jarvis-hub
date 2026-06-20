@@ -1447,6 +1447,7 @@ from agents.core.routers.pairing import router as _pairing_router  # noqa: E402
 from agents.core.routers.payments import router as _payments_router  # noqa: E402
 from agents.core.routers.eval import router as _eval_router  # noqa: E402
 from agents.core.routers.heartbeat import router as _heartbeat_router  # noqa: E402
+from agents.core.routers.plugins import router as _plugins_router  # noqa: E402
 from agents.core.routers.quality import router as _quality_router  # noqa: E402
 from agents.core.routers.review import router as _review_router  # noqa: E402
 from agents.core.routers.rooms import router as _rooms_router  # noqa: E402
@@ -1483,6 +1484,7 @@ app.include_router(_integrations_router)
 app.include_router(_payments_router)
 app.include_router(_eval_router)
 app.include_router(_heartbeat_router)
+app.include_router(_plugins_router)
 
 
 class DigestRunBody(BaseModel):
@@ -2213,41 +2215,7 @@ async def get_agent_memory(agent_id: str):
     })
 
 
-@app.get("/plugins")
-async def list_plugins():
-    """Return all registered plugins with status."""
-    if orch is None or orch.permission_gate is None:
-        return _nocache_json({"plugins": [], "total": 0})
-    plugins = []
-    for pid, manifest in orch.permission_gate.plugins.items():
-        plugins.append({
-            "id": manifest.id,
-            "name": manifest.name,
-            "version": manifest.version,
-            "description": manifest.description,
-            "network_access": manifest.network_access.value,
-            "data_scope": manifest.data_scope.value,
-            "allowed_domains": manifest.allowed_domains,
-            "agents_served": manifest.agents_served,
-            "enabled": manifest.enabled,
-        })
-    return _nocache_json({"plugins": plugins, "total": len(plugins)})
-
-
-@app.put("/plugins/{plugin_id}/toggle", dependencies=[Depends(_admin_guard)])
-async def toggle_plugin(plugin_id: str):
-    """Toggle a plugin's enabled state."""
-    manifest = orch.permission_gate.plugins.get(plugin_id)
-    if not manifest:
-        raise HTTPException(status_code=404, detail=f"Plugin '{plugin_id}' not found")
-    if manifest.enabled:
-        orch.permission_gate.disable(plugin_id)
-        action = "disabled"
-    else:
-        orch.permission_gate.enable(plugin_id)
-        action = "enabled"
-    logger.info("Plugin %s %s", log_safe(plugin_id), action)
-    return _nocache_json({"id": plugin_id, "enabled": manifest.enabled, "action": action})
+# /plugins and /plugins/{plugin_id}/toggle extracted to agents/core/routers/plugins.py (CLN-3)
 
 
 @app.get("/learning/stats")
