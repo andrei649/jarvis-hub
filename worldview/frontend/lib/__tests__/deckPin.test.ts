@@ -2,11 +2,12 @@ import { test, expect } from "vitest";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
-// Guards the deck/luma shim pin (H19.5.1). lib/deckExtensionsShim.mjs aliases ClipExtension out of
-// @deck.gl/extensions against the pinned @deck.gl/core Layer class. If @deck.gl/extensions (or
-// @deck.gl/mesh-layers) is left to float on ^9.0.0 it hoists to a 9.3.x copy whose Layer class no
-// longer matches 9.0.27 core — exactly the fragility this pin removes. Read the *resolved*
-// versions from node_modules so a future float (an unpinned override / lockfile drift) trips here.
+// Guards the deck/luma version coherence (H19.5.1). lib/deckExtensionsShim.mjs aliases ClipExtension
+// out of @deck.gl/extensions against the @deck.gl/core Layer class, so @deck.gl/extensions and
+// @deck.gl/mesh-layers must resolve to the SAME @deck.gl/core version — otherwise their Layer class
+// diverges from core's. The whole stack is on the 9.3.x line; the overrides in worldview/package.json
+// keep core/extensions/mesh-layers aligned. Read the *resolved* versions from node_modules so a
+// future float (an unpinned override / lockfile drift) trips here.
 //
 // node_modules lives at the worldview root (monorepo install), one level up from frontend/.
 const root = fileURLToPath(new URL("../../..", import.meta.url));
@@ -24,6 +25,6 @@ test("@deck.gl/mesh-layers resolves to the same version as @deck.gl/core", () =>
   expect(resolvedVersion("@deck.gl/mesh-layers")).toBe(resolvedVersion("@deck.gl/core"));
 });
 
-test("@deck.gl/core is pinned to 9.0.27", () => {
-  expect(resolvedVersion("@deck.gl/core")).toBe("9.0.27");
+test("@deck.gl/core is pinned to 9.3.4", () => {
+  expect(resolvedVersion("@deck.gl/core")).toBe("9.3.4");
 });

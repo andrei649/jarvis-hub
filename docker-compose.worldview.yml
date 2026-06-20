@@ -1,0 +1,21 @@
+services:
+  jarvis-signal-layer:
+    build: ./services/signal-layer
+    environment:
+      JARVIS_SIGNAL_LAYER_MODE: ${JARVIS_SIGNAL_LAYER_MODE:-replay}
+      SIGNAL_LAYER_PORT: 8787
+      SIGNAL_LAYER_HOST: 0.0.0.0
+      WORLDMONITOR_BASE_URL: ${WORLDMONITOR_BASE_URL:-http://worldmonitor:3100}
+      WORLDMONITOR_MCP_URL: ${WORLDMONITOR_MCP_URL:-http://worldmonitor:3100/api/mcp}
+    ports:
+      - "8787:8787"
+
+  # Optional. Keep WorldMonitor external or mount your cloned copy here.
+  # WorldMonitor's upstream default is :3000, but Jarvis's existing WorldView
+  # frontend also uses :3000, so map the host port to :3100 when running both.
+  # worldmonitor:
+  #   build: ./external/worldmonitor
+  #   ports:
+  #     - "3100:3000"
+  #   env_file:
+  #     - ./external/worldmonitor/.env

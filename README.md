@@ -38,7 +38,7 @@ A personal AI mesh that handles the cross-section of *your* life: the day job an
 - **Stark** — Internal Corporate Intel. Day-job KPIs, board prep, channels.
 - **Veronica** — The Voice. Drafts emails, posts, captions in 5 voice profiles.
 - **Vision** — Deep Researcher + OSINT. Cited synthesis, regulatory watch.
-- **Argus** — Geoint Sentinel. Read-only, governed bridge to WorldView (4D OSINT).
+- **Argus** — Geoint Sentinel. Read-only, governed bridge to WorldView (4D OSINT) and the Signal Layer.
 
 **Tech tier** — 3 agents:
 - **Steve** — CTO + Infrastructure. Bonobo + Pi + models + backups.
@@ -67,9 +67,11 @@ A personal AI mesh that handles the cross-section of *your* life: the day job an
 - **Channels:** web (SSE), voice, telegram, discord, email, slack
 - **Security:** PII/secret scanner, SSRF protection, audit log (Merkle chain), guardrails (WARN/REDACT/BLOCK)
 
-### WorldView (4D OSINT) — companion stack
+### WorldView (4D OSINT) + Signal Layer
 
 A separate, self-contained **Next.js + Deck.gl + Fastify** stack under [`worldview/`](worldview/) (frontend `:3000`, API `:4000`, infra via Docker: Redpanda/TimescaleDB/Redis) — a time-scrubbable 3D globe fusing air/sea/space/cyber OSINT. It shares no runtime with `agents/`. `INSTALL.bat`/`START.bat` (and `install.sh`/`start.sh`) set it up and auto-start it alongside JARVIS; opt out with `JARVIS_WORLDVIEW=0`. The **Argus** agent queries it read-only and governed. No Mapbox token or API keys are needed for the demo (`npm run db:seed`). See [`worldview/README.md`](worldview/README.md).
+
+The **Jarvis Signal Layer** is the provider-neutral situational-awareness API at `:8787`. It turns provider data into evidence, signals, relevance, assessments, briefs, and approval-gated recommendations. It starts in deterministic replay mode by default and can later use a WorldMonitor sidecar as provider #1. Keep WorldMonitor off `:3000`; Jarvis convention is `:3100` because WorldView already owns `:3000`. See [`docs/worldview/worldview-worldmonitor-fusion.md`](docs/worldview/worldview-worldmonitor-fusion.md).
 
 ## Run
 
@@ -82,9 +84,11 @@ A separate, self-contained **Next.js + Deck.gl + Fastify** stack under [`worldvi
    double-click, no winget; it assumes Python/Node are already present.)*
 2. **`UPDATE.bat`** — double-click to pull the latest from GitHub, install
    dependencies, and run the tests. Run this whenever you want the newest version.
-3. **`START.bat`** — double-click to launch JARVIS (`:8080`) **and** WorldView
-   (the 4D OSINT globe at `:3000`) and open the HUD. Keep its window open; close
-   it to stop the server. WorldView opt-out: `set JARVIS_WORLDVIEW=0`.
+3. **`START.bat`** — double-click to launch JARVIS (`:8080`), WorldView
+   (the 4D OSINT globe at `:3000`, when installed), and the Signal Layer (`:8787`,
+   replay mode by default), then open the HUD. Keep its window open; close it to
+   stop the server. WorldView opt-out: `set JARVIS_WORLDVIEW=0`. Signal Layer
+   opt-out: `set JARVIS_SIGNAL_LAYER=0`.
 
 ### Manual (any OS)
 
@@ -95,10 +99,11 @@ python serve.py              # → http://127.0.0.1:8080
 python -m pytest             # 2288 passed, 2 skipped
 ```
 
-_Linux/macOS shortcut:_ `./install.sh` does all of the above (venv + install + tests); `./start.sh` launches the server.
+_Linux/macOS shortcut:_ `./install.sh` does all of the above (venv + install + tests); `./start.sh` launches the server, WorldView when available, and the Signal Layer unless disabled.
 
 - **HUD:** http://127.0.0.1:8080/ — the **V2 cockpit** (primary HUD; legacy HUD at `/v1`, override with `JARVIS_HUD=v1`)
-- **WorldView (4D OSINT):** http://localhost:3000 (separate stack, auto-started by START.bat — see above)
+- **WorldView (4D OSINT):** http://localhost:3000 (separate stack, auto-started by START.bat/start.sh — see above)
+- **Signal Layer:** http://127.0.0.1:8787/healthz (replay mode by default; opt out with `JARVIS_SIGNAL_LAYER=0`)
 - **Admin panel:** http://127.0.0.1:8080/admin
 - **CLI REPL:** `python agents/run.py`
 
@@ -113,6 +118,7 @@ _Linux/macOS shortcut:_ `./install.sh` does all of the above (venv + install + t
 - **`docs/MANUAL_TESTING.md`** — human pre-release checklist: everything the offline test suite can't verify (real LLMs, channels, services, HUD rendering).
 - **`docs/2026-06-08-future-developments-report.md`** — forward roadmap: remaining v1.0 gate, WorldView follow-ups, audit-debt hardening, post-1.0 horizons (Hermes, Cognition), and recommended sequencing.
 - **`worldview/README.md`** — the WorldView (4D OSINT) companion stack.
+- **`docs/worldview/worldview-worldmonitor-fusion.md`** — how Jarvis fuses WorldView, WorldMonitor, Signal Layer, and Argus without collapsing their boundaries.
 
 ## Status
 
