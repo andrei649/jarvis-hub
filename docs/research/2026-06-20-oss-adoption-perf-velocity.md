@@ -17,7 +17,7 @@ All three are **verified against the code** and are small.
 
 | # | Win | File | Effort | Why it matters |
 |---|-----|------|--------|----------------|
-| 1 | **Parallelize the plugin fan-out** | `agents/core/plugin_gatherer.py` | **S** | ✅ It runs each plugin `await` **sequentially**. A query that triggers weather+news+calendar pays N serial network round-trips. `asyncio.gather` (bounded + per-plugin `wait_for`) collapses them to ~1. `ARCHITECTURE.md:33` even mislabels this path "(parallel)" — it isn't. |
+| 1 | **Parallelize the plugin fan-out** ✅ *done in this PR* | `agents/core/plugin_gatherer.py` | **S** | It ran each plugin `await` **sequentially**; a query triggering weather+news+calendar paid N serial round-trips. Now run via `asyncio.gather` under a bounded semaphore with a per-plugin `wait_for` deadline + failure isolation (`tests/test_plugin_gatherer_concurrency.py`). `ARCHITECTURE.md:33`'s "(parallel)" label is now accurate. |
 | 2 | **Preload + keep-warm the fast model** | `agents/core/llm/router.py` | **S** | We poll `/v1/models` to *detect* the model but never *warm* it. An empty-prompt request at startup + a keep-alive ping (Ollama `keep_alive:-1`) removes cold-load latency from the first voice turn — a big chunk of the "4–5s". |
 | 3 | **`beam_size=1` + `int8_float16` for the live STT loop** | `agents/core/voice/stt.py` | **S** | ✅ STT calls `transcribe(..., beam_size=5)` on a raw `WhisperModel`, fp16, no batching. Greedy decode is much faster on short clear utterances at negligible accuracy loss; `int8_float16` frees ~1.5GB VRAM the LLM slots want. |
 
@@ -143,7 +143,7 @@ TS framework where one `defineAction()` (Zod schema + `run()`) auto-exposes as M
 
 | # | Action | Repo lineage | File(s) | Effort | Impact |
 |---|--------|--------------|---------|--------|--------|
-| 1 | `asyncio.gather` the plugin fan-out (+ per-plugin timeout) | yt-dlp | `plugin_gatherer.py` | S | **High** ✅ verified serial |
+| 1 | `asyncio.gather` the plugin fan-out (+ per-plugin timeout) | yt-dlp | `plugin_gatherer.py` | S | **High** ✅ **done in this PR** |
 | 2 | Preload + keep-warm the fast model | ollama | `llm/router.py` | S | **High** (cold-load latency) |
 | 3 | STT greedy `beam_size=1` + `int8_float16` | faster-whisper | `voice/stt.py` | S | **High** (voice path) ✅ |
 | 4 | `OLLAMA_NUM_PARALLEL=2–4` for the Ollama backend | ollama | backend config | S | Medium (concurrency) |
@@ -163,7 +163,7 @@ TS framework where one `defineAction()` (Zod schema + `run()`) auto-exposes as M
 
 ## Verified-against-code findings (so the quick wins aren't speculative)
 
-- ✅ `plugin_gatherer.py:gather_plugin_data` awaits each plugin sequentially; `ARCHITECTURE.md:33` mislabels it "(parallel)".
+- ✅ `plugin_gatherer.py:gather_plugin_data` awaited each plugin sequentially; `ARCHITECTURE.md:33` mislabeled it "(parallel)". **Fixed in this PR** — concurrent fan-out + per-plugin timeout + isolation, covered by `tests/test_plugin_gatherer_concurrency.py`.
 - ✅ `voice/stt.py` calls `transcribe(..., beam_size=5)` on a raw `WhisperModel`, hardcoded `compute_type`, no `BatchedInferencePipeline`.
 - ✅ `mcp/server.py` exposes agents as governed `ask_<agent>` tools — not the ~298 routes.
 - ✅ `plugins/oauth.py` `_get_fernet()` stores the encryption key in plaintext (`TOKEN_DIR/.encryption_key`) next to the ciphertext.
