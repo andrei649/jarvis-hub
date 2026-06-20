@@ -45,10 +45,10 @@ _MAX_PROPS_BYTES = 2048
 
 # Retention (review #3): keep at most this many newest events so the public
 # ingest can't grow the table without bound (slow disk-fill DoS). 0 disables it.
-# Pruned lazily every _PRUNE_EVERY inserts to keep the O(n) sweep off the hot path.
+# Pruned lazily (off the hot path) whenever a row id is a multiple of _PRUNE_EVERY
+# — stateless, so no shared counter to race or carry across reopens.
 _MAX_EVENTS = int(os.environ.get("JARVIS_ANALYTICS_MAX_EVENTS", "200000") or 0)
 _PRUNE_EVERY = 1000
-_inserts_since_prune = 0
 
 _conn: Optional[sqlite3.Connection] = None
 _lock = threading.Lock()
@@ -137,7 +137,6 @@ def record_event(
     Values are clipped to bounded lengths and ``props`` is serialized to JSON
     (non-dict / unserializable props degrade to ``{}`` rather than raising — a
     beacon must never 500 the ingest path on a bad prop bag)."""
-    global _inserts_since_prune
     conn = _require()
     name = _clip(name) or "event"
     try:
@@ -162,11 +161,10 @@ def record_event(
         )
         conn.commit()
         rowid = cur.lastrowid
-        _inserts_since_prune += 1
-        due = bool(_MAX_EVENTS) and _inserts_since_prune >= _PRUNE_EVERY
-        if due:
-            _inserts_since_prune = 0
-    # Prune outside the lock (prune() takes it itself; threading.Lock isn't reentrant).
+    # Lazy retention: prune when a row id crosses a _PRUNE_EVERY boundary — keeps
+    # the O(n) sweep off most inserts without a stateful counter. Run OUTSIDE the
+    # lock (prune() takes it itself; threading.Lock isn't reentrant).
+    due = bool(_MAX_EVENTS) and rowid is not None and rowid % _PRUNE_EVERY == 0
     if due:
         try:
             prune()
