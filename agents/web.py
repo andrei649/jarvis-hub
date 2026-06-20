@@ -1149,28 +1149,7 @@ async def get_agents():
     return {"agents": result}
 
 
-@app.get("/sessions", dependencies=[Depends(_user_guard)])
-async def get_sessions():
-    if not orch:
-        return JSONResponse({"error": "not initialized"}, status_code=503)
-    sessions = orch.checkpoints.get_sessions(limit=20)
-    return {"sessions": sessions}
-
-
-@app.post("/sessions/resume", dependencies=[Depends(_user_guard)])
-async def resume_session(req: Request):
-    if not orch:
-        return JSONResponse({"error": "not initialized"}, status_code=503)
-    body = await req.json()
-    sid = body.get("session_id")
-    if not sid:
-        return JSONResponse({"error": "session_id required"}, status_code=400)
-    ok = await orch.memory.resume_session(sid)
-    if not ok:
-        return JSONResponse({"error": f"session '{sid}' not found"}, status_code=404)
-    orch.session_id = sid
-    history = await orch.memory.get_history(sid, last_n=20)
-    return JSONResponse({"ok": True, "session": sid, "turns": history})
+# CLN-3: /sessions + /sessions/resume extracted to agents/core/routers/sessions.py
 
 
 @app.get("/security")
@@ -1449,6 +1428,7 @@ from agents.core.routers.eval import router as _eval_router  # noqa: E402
 from agents.core.routers.heartbeat import router as _heartbeat_router  # noqa: E402
 from agents.core.routers.quality import router as _quality_router  # noqa: E402
 from agents.core.routers.review import router as _review_router  # noqa: E402
+from agents.core.routers.sessions import router as _sessions_router  # noqa: E402
 from agents.core.routers.rooms import router as _rooms_router  # noqa: E402
 from agents.core.routers.secrets import router as _secrets_router  # noqa: E402
 from agents.core.routers.security import router as _security_router  # noqa: E402
@@ -1483,6 +1463,7 @@ app.include_router(_integrations_router)
 app.include_router(_payments_router)
 app.include_router(_eval_router)
 app.include_router(_heartbeat_router)
+app.include_router(_sessions_router)
 
 
 class DigestRunBody(BaseModel):
