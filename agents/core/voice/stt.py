@@ -7,7 +7,9 @@ matters more than squeezing out the last fraction of accuracy:
   * beam_size defaults to 1 (greedy) — beam search (the old default of 5) is the
     single costliest decode knob and buys little on short commands.
   * compute_type defaults to int8_float16 on CUDA (≈ same speed as float16 but
-    frees ~1.5GB VRAM the LLM slots want) and int8 on CPU.
+    frees VRAM for the LLM slots — order of ~0.5-0.8GB on the default `medium`
+    model; the ~1.5GB figure in the faster-whisper README is for large-v3) and
+    int8 on CPU.
 Both are overridable per instance or via env (JARVIS_STT_BEAM_SIZE,
 JARVIS_STT_COMPUTE_TYPE) so a transcription-quality job can opt back into
 beam search without a code change.

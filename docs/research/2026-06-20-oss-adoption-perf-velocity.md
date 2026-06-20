@@ -19,7 +19,7 @@ All three are **verified against the code** and are small.
 |---|-----|------|--------|----------------|
 | 1 | **Parallelize the plugin fan-out** ✅ *done in this PR* | `agents/core/plugin_gatherer.py` | **S** | It ran each plugin `await` **sequentially**; a query triggering weather+news+calendar paid N serial round-trips. Now run via `asyncio.gather` under a bounded semaphore with a per-plugin `wait_for` deadline + failure isolation (`tests/test_plugin_gatherer_concurrency.py`). `ARCHITECTURE.md:33`'s "(parallel)" label is now accurate. |
 | 2 | **Preload + keep-warm the fast model** ✅ *done in this PR* | `agents/core/llm/router.py` | **S** | We polled `/v1/models` to *detect* the model but never *warmed* it. Now `LLMRouter.warm_up()` fires a minimal generation at startup (gated by `JARVIS_LLM_WARMUP`); the Ollama backend uses an empty-prompt load + `keep_alive:-1` to pin it resident. Removes cold-load latency from the first voice turn (`tests/test_llm_warmup.py`). |
-| 3 | **`beam_size=1` + `int8_float16` for the live STT loop** ✅ *done in this PR* | `agents/core/voice/stt.py` | **S** | STT called `transcribe(..., beam_size=5)`, fp16. Now defaults to greedy decode + `int8_float16` on CUDA / `int8` on CPU, both overridable per-instance or via env (`JARVIS_STT_BEAM_SIZE`, `JARVIS_STT_COMPUTE_TYPE`). Frees ~1.5GB VRAM and cuts decode time (`tests/test_stt_config.py`). |
+| 3 | **`beam_size=1` + `int8_float16` for the live STT loop** ✅ *done in this PR* | `agents/core/voice/stt.py` | **S** | STT called `transcribe(..., beam_size=5)`, fp16. Now defaults to greedy decode + `int8_float16` on CUDA / `int8` on CPU, both overridable per-instance or via env (`JARVIS_STT_BEAM_SIZE`, `JARVIS_STT_COMPUTE_TYPE`). Frees VRAM (~0.5–0.8GB on the `medium` default; the ~1.5GB benchmark figure is for large-v3) and cuts decode time (`tests/test_stt_config.py`). |
 
 Everything below is the per-repo backing for these and the larger bets.
 
@@ -40,7 +40,7 @@ Go server over llama.cpp with real lifecycle + concurrency knobs.
 CTranslate2 reimplementation, ~4× faster than openai-whisper at equal accuracy.
 
 - **`beam_size`**: the costliest single knob; **1 (greedy)** for the live loop. → **Win #3.**
-- **`compute_type="int8_float16"`** on GPU: ~4525MB → ~2926MB VRAM, ~same speed.
+- **`compute_type="int8_float16"`** on GPU: ~4525MB → ~2926MB VRAM, ~same speed — *but that's the large-v3 benchmark; jarvis defaults to `medium`, so the real saving is ~0.5–0.8GB.*
 - **`BatchedInferencePipeline(model, batch_size=8/16)`**: drop-in for `model.transcribe`; 13min audio 1m03s → 17s on GPU. Helps multi-segment clips more than 1-shot HUD utterances.
 - **`distil-large-v3` / `turbo`** models: large-v3 quality at a fraction of decode time.
 - **Adopt:** `stt.py:_init_model` hardcodes `compute_type` and `beam_size=5` — make both config, default greedy + `int8_float16` for the HUD, optional batched pipeline for long clips. Effort S.
