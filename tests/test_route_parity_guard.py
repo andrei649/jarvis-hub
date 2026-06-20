@@ -16,8 +16,6 @@ import json
 import sys
 from pathlib import Path
 
-from fastapi.routing import APIRoute
-
 repo_root = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(repo_root))
 sys.path.insert(0, str(repo_root / "agents"))
@@ -28,11 +26,16 @@ SNAPSHOT = Path(__file__).resolve().parent / "_snapshots" / "route_surface.json"
 def _route_surface() -> list[str]:
     # Import inside the function so collection never depends on app import order.
     from agents import web
+    from tests._route_introspect import iter_effective_routes
 
     sig = set()
-    for r in web.app.routes:
-        if isinstance(r, APIRoute):
-            for m in (r.methods - {"HEAD", "OPTIONS"}):
+    # iter_effective_routes flattens fastapi 0.137 _IncludedRouter wrappers. An
+    # APIRoute (top-level) and an _EffectiveRouteContext (included) both expose
+    # .methods + .dependant; plain Starlette routes (/docs, /openapi.json) and
+    # mounts lack .dependant and are excluded — exactly the old isinstance(APIRoute).
+    for r in iter_effective_routes(web.app):
+        if getattr(r, "methods", None) and hasattr(r, "dependant"):
+            for m in (set(r.methods) - {"HEAD", "OPTIONS"}):
                 sig.add(f"{m} {r.path}")
     return sorted(sig)
 

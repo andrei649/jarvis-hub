@@ -19,8 +19,6 @@ import json
 import sys
 from pathlib import Path
 
-from starlette.routing import Route
-
 repo_root = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(repo_root))
 sys.path.insert(0, str(repo_root / "agents"))
@@ -48,9 +46,14 @@ PENDING_GUARD = set()  # SEC-3 COMPLETE — every open mutator is now guarded or
 def _runtime_guards():
     """Map "METHOD /path" -> "open|user|admin" from the live app's dependant graph."""
     from agents.web import app
+    from tests._route_introspect import iter_effective_routes
+
     out = {}
-    for r in app.routes:
-        if not isinstance(r, Route):
+    # iter_effective_routes flattens fastapi 0.137 _IncludedRouter wrappers and
+    # exposes each route's *merged* dependant (include-time guards folded in), so
+    # routers mounted with `dependencies=[Depends(_user_guard)]` classify correctly.
+    for r in iter_effective_routes(app):
+        if not getattr(r, "methods", None):
             continue
         names = set()
         dep = getattr(r, "dependant", None)
