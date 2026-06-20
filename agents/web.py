@@ -1165,17 +1165,7 @@ async def get_security():
     }
 
 
-@app.get("/bench")
-async def get_bench():
-    if not orch:
-        return JSONResponse({"error": "not initialized"}, status_code=503)
-    return {
-        "summary": orch.bench.get_summary(),
-        "agents": {
-            aid: orch.bench.get_results(aid)
-            for aid in list(orch.agents.keys())[:5]
-        },
-    }
+# /bench route extracted to agents/core/routers/bench.py (CLN-3).
 
 
 @app.get("/api/agents/history")
@@ -1371,6 +1361,7 @@ from agents.core.routers.admin import router as _admin_router  # noqa: E402
 from agents.core.routers.analytics import router as _analytics_router  # noqa: E402
 from agents.core.routers.arena import router as _arena_router  # noqa: E402
 from agents.core.routers.autonomy import router as _autonomy_router  # noqa: E402
+from agents.core.routers.bench import router as _bench_router  # noqa: E402
 from agents.core.routers.brain import router as _brain_router  # noqa: E402
 from agents.core.routers.browser import router as _browser_router  # noqa: E402
 from agents.core.routers.canvas import router as _canvas_router  # noqa: E402
@@ -1428,6 +1419,7 @@ app.include_router(_heartbeat_router)
 app.include_router(_workflows_router)
 app.include_router(_plugins_router)
 app.include_router(_sessions_router)
+app.include_router(_bench_router)
 
 
 class DigestRunBody(BaseModel):
@@ -2094,27 +2086,7 @@ async def security_status():
     })
 
 
-@app.get("/bench/stats")
-async def bench_stats():
-    """Return benchmark statistics."""
-    try:
-        summary = orch.bench.get_summary()
-        stats = {k: summary[k] for k in summary} if isinstance(summary, dict) else {}
-    except Exception:
-        stats = {}
-    return _nocache_json({
-        "latency": {
-            "p50": stats.get("p50", 4.2),
-            "p95": stats.get("p95", 7.8),
-            "p99": stats.get("p99", 12.1),
-            "unit": "s",
-        },
-        "throughput": {
-            "rpm": stats.get("rpm", 12),
-            "avg_tokens": stats.get("avg_tokens", 234),
-        },
-        "by_agent": stats.get("by_agent", {}),
-    })
+# /bench/stats route extracted to agents/core/routers/bench.py (CLN-3).
 
 
 # /heartbeat/* routes extracted to agents/core/routers/heartbeat.py (CLN-3).
