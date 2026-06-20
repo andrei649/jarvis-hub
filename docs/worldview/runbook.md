@@ -83,7 +83,21 @@ npm start
 
 `JARVIS_WORLDVIEW_MODE` is accepted only as a deprecated sprint fallback. Prefer `JARVIS_SIGNAL_LAYER_MODE`.
 
-## 5. Degraded provider behavior
+## 5. Optional live WorldMonitor contract check
+
+This is not part of normal CI and should not block replay-mode demos. Use it only after starting a WorldMonitor sidecar on `:3100`:
+
+```bash
+cd services/signal-layer
+JARVIS_SIGNAL_LAYER_MODE=live \
+WORLDMONITOR_BASE_URL=http://localhost:3100 \
+WORLDMONITOR_MCP_URL=http://localhost:3100/api/mcp \
+npm run test:live-contract
+```
+
+The script checks WorldMonitor health, MCP tools, representative cache tools, country-risk resource reading, and normalizer output. If WorldMonitor is not running, it exits cleanly with a skipped JSON payload instead of failing the Sunday replay path.
+
+## 6. Degraded provider behavior
 
 The live provider should not crash the service. When WorldMonitor is down, routes should return:
 
@@ -95,7 +109,7 @@ The live provider should not crash the service. When WorldMonitor is down, route
 }
 ```
 
-## 6. Demo safety
+## 7. Demo safety
 
 Use replay mode during the Sunday demo unless live data has been verified immediately beforehand.
 
@@ -106,7 +120,7 @@ npm start
 
 On Windows, this is already the default when launched from `START.bat`.
 
-## 7. Jarvis agent integration
+## 8. Jarvis agent integration
 
 Agents should call the Python `SignalLayerPlugin` for evidence-backed world intelligence:
 
@@ -122,7 +136,7 @@ await sl.ask_world("What changed overnight that matters to me?")
 
 The existing `WorldViewPlugin` remains the bridge to the local WorldView 4D OSINT stack.
 
-## 8. Jarvis Hub UI integration
+## 9. Jarvis Hub UI integration
 
 For Vite HUD integration, prefer:
 
@@ -130,4 +144,4 @@ For Vite HUD integration, prefer:
 VITE_SIGNAL_LAYER_URL=http://localhost:8787
 ```
 
-The current `apps/jarvis-hub/src/features/worldview` React scaffold is not yet mounted into the real `frontend/` Vite HUD. The next UI step is to port or mount that cockpit in the actual HUD app.
+The active Sunday surface is the real Vite HUD Observe mode. The earlier `apps/jarvis-hub/src/features/worldview` scaffold remains a reference scaffold unless it is explicitly mounted later.
