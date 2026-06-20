@@ -1,6 +1,6 @@
 # Jarvis World Intelligence — Continuation Handoff
 
-_Last updated: 2026-06-20. Primary branch: `feature/jarvis-signal-layer`. Primary PR: #248._
+_Last updated: 2026-06-20 (post #261/#267/#268 merge + main-merge + hardening #269). Primary branch: `feature/jarvis-signal-layer`. Primary PR: #248._
 
 This document is the handoff point for Claude, Codex, local agents, or any future contributor continuing the World Intelligence sprint without reading the full chat history.
 
@@ -110,11 +110,13 @@ docs/worldview/worldview-worldmonitor-fusion.md
 
 ## 4. Key branches and PRs
 
-| Branch / PR | Purpose | Merge target |
+| Branch / PR | Purpose | Status |
 |---|---|---|
-| `feature/jarvis-signal-layer` / PR #248 | Integration spine | `main`, after conflicts/CI |
-| `feature/world-intelligence-demo-freeze` / PR #261 | Sunday demo script | `feature/jarvis-signal-layer` |
-| `feature/world-intelligence-hud-polish` | HUD polish lane | `feature/jarvis-signal-layer` |
+| `feature/jarvis-signal-layer` / PR #248 | Integration spine | **draft** — `main` merged in; awaiting hardening before undraft |
+| `feature/world-intelligence-demo-freeze` / PR #261 | Sunday demo script | ✅ merged into spine |
+| `feature/world-intelligence-hud-polish` / PR #267 | HUD polish + rebuilt bundle | ✅ merged into spine |
+| `feature/world-intelligence-startup-verify` / PR #268 | Launcher + replay validation | ✅ merged into spine |
+| `feature/world-intelligence-service-hardening` / PR #269 | Local bind, token gate, scoped CORS | in review → spine |
 
 Recommended future child branches:
 
@@ -122,7 +124,6 @@ Recommended future child branches:
 feature/world-intelligence-live-contract
 feature/world-intelligence-argus-routing
 feature/world-intelligence-governance-preview
-feature/world-intelligence-startup-verify
 ```
 
 ## 5. Current implementation status
@@ -131,13 +132,14 @@ feature/world-intelligence-startup-verify
 |---|---:|---|
 | Signal Layer service | Strong v0.1 | Replay provider, routes, evidence, relevance, briefs, assessments |
 | Replay/demo path | Strong | Deterministic; no WorldMonitor/API keys required |
-| Windows startup | Good | `START.bat` starts Signal Layer unless `JARVIS_SIGNAL_LAYER=0` |
-| Unix startup | Good | `start.sh` starts Signal Layer unless `JARVIS_SIGNAL_LAYER=0` |
-| Jarvis-native HUD | Medium-good | Observe mode includes World Intelligence panel |
+| Windows startup | Validated (#268) | `START.bat` starts Signal Layer unless `JARVIS_SIGNAL_LAYER=0`; syntax + ports verified |
+| Unix startup | Validated (#268) | `start.sh` passes `bash -n`; opt-out + port boundaries verified |
+| Jarvis-native HUD | Good (#267) | Observe mode World Intelligence panel + fallback states; bundle current |
 | Agent bridge | Medium-good | `SignalLayerPlugin` and `plugin_gatherer` integration exist |
+| Service security | Hardened (#269, in review) | Default bind 127.0.0.1, optional bearer-token gate, scoped CORS |
 | Live WorldMonitor | Medium-low | Optional contract test exists; real sidecar payloads still need validation |
 | Governance bridge | Medium-low | Recommendations are preview-only, not real approval queue items yet |
-| Merge readiness | Blocked | Branch/main drift and CI visibility must be resolved before undraft/merge |
+| Merge readiness | Unblocking | `main` merged into spine (0 behind, CI green); SEC-5b de-duplicated; remaining gate: land hardening (#269), then undraft #248 |
 
 ## 6. Signal Layer API contract
 
@@ -160,12 +162,18 @@ Core env:
 
 ```text
 JARVIS_SIGNAL_LAYER_MODE=replay|live
-SIGNAL_LAYER_HOST=0.0.0.0
+SIGNAL_LAYER_HOST=127.0.0.1          # local-only default; set 0.0.0.0 for LAN (use a token!)
 SIGNAL_LAYER_PORT=8787
+SIGNAL_LAYER_API_TOKEN=              # optional bearer token; when set, required on all routes except GET /healthz
+SIGNAL_LAYER_ALLOWED_ORIGINS=       # extra CORS origins beyond localhost/127.0.0.1/::1 (comma-separated)
 WORLDMONITOR_BASE_URL=http://localhost:3100
 WORLDMONITOR_MCP_URL=http://localhost:3100/api/mcp
 VITE_SIGNAL_LAYER_URL=http://localhost:8787
 ```
+
+Security posture (#269): the service binds local-only by default, scopes CORS to local
+origins, and enforces the bearer token when one is set. The browser HUD runs tokenless and
+relies on the local bind; token mode is for hardened/headless use.
 
 Deprecated fallback:
 
@@ -397,9 +405,14 @@ Jarvis can now observe external reality, convert it into evidence-backed signals
 
 ## 15. Next best actions
 
-1. Finish `feature/world-intelligence-hud-polish`.
-2. Build frontend and commit generated bundle if changed.
-3. Merge PR #261 into `feature/jarvis-signal-layer` when convenient.
-4. Start `feature/world-intelligence-startup-verify` for launcher validation.
-5. Start `feature/world-intelligence-live-contract` only when WorldMonitor can run locally on `:3100`.
-6. Rebase/resolve `feature/jarvis-signal-layer` after `main` stabilizes.
+Done since the first handoff: HUD polish + bundle (#267), demo-script freeze (#261),
+startup-verify (#268) — all merged into the spine; `main` merged into the spine and the
+SEC-5b `plugin_gate.py` duplication de-duplicated; service hardening (#269) in review.
+
+Remaining:
+
+1. Land service hardening (#269) into `feature/jarvis-signal-layer`.
+2. Undraft PR #248 into `main` once CI/build/mergeability are confirmed clean (owner decision).
+3. Start `feature/world-intelligence-live-contract` only when WorldMonitor can run locally on `:3100`.
+4. Re-merge `main` into the spine if `main` advances again before #248 lands.
+5. Later lanes: `argus-routing`, `governance-preview` (real approval-queue integration).
