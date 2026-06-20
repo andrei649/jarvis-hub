@@ -353,3 +353,34 @@ async def test_google_calendar_provider_adapts_plugin_shape():
     )
     # Timed 10:00-11:00 merged with the all-day block (whole day) -> full day.
     assert busy == [(_dt(2026, 6, 22, 0), _dt(2026, 6, 23, 0))]
+
+
+# ── regression: provider must fetch enough days for a FUTURE window ───────────
+
+async def test_provider_fetches_enough_days_for_future_window():
+    """google_calendar_provider must request days_ahead reaching the END of the
+    query window (measured from now), not just the window width — else a future-day
+    query fetches too few days and misses events (wrongly reporting 'free')."""
+    from datetime import datetime, timedelta
+    from zoneinfo import ZoneInfo
+
+    from agents.core.calendar_availability import (
+        busy_intervals,
+        google_calendar_provider,
+    )
+
+    tz = ZoneInfo("Europe/Bucharest")
+    seen = {}
+
+    class _FakePlugin:
+        async def list_events(self, max_results=250, days_ahead=1):
+            seen["days_ahead"] = days_ahead
+            return []
+
+    provider = google_calendar_provider(_FakePlugin())
+    now = datetime.now(tz)
+    start = (now + timedelta(days=3)).replace(hour=15, minute=0, second=0, microsecond=0)
+    end = start + timedelta(minutes=30)
+    await busy_intervals(start, end, tz, provider=provider)
+    # 3 days out + the day itself → at least 4; window-width (the old bug) was 1.
+    assert seen["days_ahead"] >= 4
