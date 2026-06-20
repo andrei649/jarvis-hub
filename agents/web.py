@@ -1444,6 +1444,7 @@ from agents.core.routers.models_llm import router as _models_llm_router  # noqa:
 from agents.core.routers.notes import router as _notes_router  # noqa: E402
 from agents.core.routers.oauth import router as _oauth_router  # noqa: E402
 from agents.core.routers.pairing import router as _pairing_router  # noqa: E402
+from agents.core.routers.payments import router as _payments_router  # noqa: E402
 from agents.core.routers.quality import router as _quality_router  # noqa: E402
 from agents.core.routers.review import router as _review_router  # noqa: E402
 from agents.core.routers.rooms import router as _rooms_router  # noqa: E402
@@ -1477,6 +1478,7 @@ app.include_router(_memory_kg_router)
 app.include_router(_analytics_router)
 app.include_router(_admin_router)
 app.include_router(_integrations_router)
+app.include_router(_payments_router)
 
 
 class DigestRunBody(BaseModel):
@@ -1935,78 +1937,9 @@ def _get_payment_broker():
     return _payment_broker
 
 
-class CreateMandateBody(BaseModel):
-    payees: list[str] = Field(default_factory=list)
-    per_payment_cap: float = Field(..., gt=0)
-    total_cap: float = Field(..., gt=0)
-    currency: str = Field("EUR", max_length=8)
-    ttl_seconds: Optional[float] = Field(None, gt=0)
-
-
-class RequestPaymentBody(BaseModel):
-    mandate_id: str = Field(..., max_length=64)
-    payee: str = Field(..., max_length=128)
-    amount: float = Field(..., gt=0)
-    currency: str = Field("EUR", max_length=8)
-    memo: str = Field("", max_length=280)
-
-
-@app.post("/api/payments/mandates", dependencies=[Depends(_admin_guard)])
-async def create_payment_mandate(body: CreateMandateBody):
-    """Pre-authorize a spending budget with hard caps + a payee allowlist."""
-    try:
-        return _nocache_json(_get_payment_broker().create_mandate(
-            body.payees, body.per_payment_cap, body.total_cap, body.currency, body.ttl_seconds))
-    except ValueError:
-        return _nocache_json({"error": "invalid mandate (need ≥1 payee and positive caps)"}, status_code=400)
-
-
-@app.get("/api/payments/mandates", dependencies=[Depends(_admin_guard)])
-async def list_payment_mandates():
-    return _nocache_json({"mandates": _get_payment_broker().list_mandates()})
-
-
-@app.post("/api/payments/request", dependencies=[Depends(_admin_guard)])
-async def request_payment(body: RequestPaymentBody):
-    """Request a payment against a mandate. Denied (over cap / bad payee / etc.)
-    returns 400 with a reason code; admissible returns a pending payment."""
-    result = _get_payment_broker().request_payment(
-        body.mandate_id, body.payee, body.amount, body.currency, body.memo)
-    if not result.get("ok"):
-        return _nocache_json({"error": "payment denied", "reason": result.get("reason")}, status_code=400)
-    return _nocache_json(result["payment"])
-
-
-@app.get("/api/payments", dependencies=[Depends(_admin_guard)])
-async def list_payments(status: Optional[str] = None):
-    return _nocache_json({"payments": _get_payment_broker().list_payments(status)})
-
-
-@app.post("/api/payments/{payment_id}/approve", dependencies=[Depends(_admin_guard)])
-async def approve_payment(payment_id: str):
-    try:
-        return _nocache_json(_get_payment_broker().approve(payment_id))
-    except ValueError:
-        return _nocache_json({"error": "payment not found or not pending/admissible"}, status_code=400)
-
-
-@app.post("/api/payments/{payment_id}/reject", dependencies=[Depends(_admin_guard)])
-async def reject_payment(payment_id: str):
-    try:
-        return _nocache_json(_get_payment_broker().reject(payment_id))
-    except ValueError:
-        return _nocache_json({"error": "payment not found or cannot be rejected"}, status_code=400)
-
-
-@app.post("/api/payments/{payment_id}/settle", dependencies=[Depends(_admin_guard)])
-async def settle_payment(payment_id: str):
-    """Settle an approved payment (no real rail moves money here)."""
-    try:
-        return _nocache_json(_get_payment_broker().settle(payment_id))
-    except ValueError:
-        return _nocache_json({"error": "payment not approved, not found, or over cap"}, status_code=400)
-
-
+# Routes extracted to agents/core/routers/payments.py (CLN-3). The singleton +
+# accessor above stay here (web owns it; tests patch web._payment_broker); the
+# router resolves it at request time via sys.modules.
 # ── END H16.3 Governed payments ───────────────────────────────────
 
 
