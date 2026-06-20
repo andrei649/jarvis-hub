@@ -2,7 +2,8 @@ import { stableId } from '../util/id.mjs';
 
 export function normalizeWorldMonitorToolResult(toolName, result) {
   const payload = unwrapMcpPayload(result);
-  const records = asArray(payload?.items || payload?.events || payload?.data || payload?.results || payload);
+  const records = asArray(payload?.items || payload?.events || payload?.data || payload?.results || payload)
+    .filter(isRecordLike);
   const evidence = [];
   const signals = [];
 
@@ -13,6 +14,16 @@ export function normalizeWorldMonitorToolResult(toolName, result) {
   }
 
   return { signals, evidence };
+}
+
+// Guard against fabricating a phantom signal from an empty/unstructured payload:
+// when records fall back to the payload object itself, keep it only if it carries
+// at least one field a real record would have.
+function isRecordLike(record) {
+  if (!record || typeof record !== 'object' || Array.isArray(record)) return false;
+  const fields = ['title', 'headline', 'name', 'summary', 'description', 'body', 'text',
+    'url', 'link', 'symbol', 'airport', 'country', 'countryCode', 'country_code', 'type', 'severity'];
+  return fields.some(f => record[f] != null && record[f] !== '');
 }
 
 export function normalizeWorldMonitorBrief(result) {
