@@ -28,6 +28,7 @@ import typing
 from agents.core.mcp.route_tools import (
     MUTATING_ROUTE_ALLOWLIST,
     ROUTE_TOOL_ALLOWLIST,
+    MutatingIdentityError,
     MutatingRouteSpec,
     MutatingRouteTool,
     RouteTool,
@@ -41,6 +42,23 @@ from agents.core.mcp.route_tools import (
     route_tools_enabled,
 )
 from agents.core.mcp.server import JarvisMCPServer
+
+
+# Per-identity gate fakes (H22.9 hardening). A mutating tool now fails CLOSED
+# unless an ``identity_check`` is bound, so the default helper binds a permissive
+# one (mirroring the unset-token localhost-trust dev posture). Tests that exercise
+# the gate pass an explicit token-checking variant.
+
+def _allow_identity(_token):
+    """Permissive gate — mirrors the unset-token (localhost-trust) dev posture."""
+    return True
+
+
+def _token_identity(expected):
+    """Gate that accepts only ``expected`` — mirrors the SET-token HTTP rule."""
+    def _check(token):
+        return token == expected
+    return _check
 
 
 # ── fakes ───────────────────────────────────────────────────────────────────
@@ -120,22 +138,28 @@ def _fake_remember_invoker():
 
 
 def _mutating_server(
-    *, read_only=True, mutating=True, auditor=None, invokers=None
+    *, read_only=True, mutating=True, auditor=None, invokers=None, identity_check=None
 ):
     """Server with read tools always + mutating tools gated on both switches.
 
     The double kill-switch is exercised by passing explicit booleans to
-    ``build_mutating_route_tools`` (no env mutation needed).
+    ``build_mutating_route_tools`` (no env mutation needed). ``identity_check``
+    defaults to a permissive gate (the unset-token dev posture) so the existing
+    dispatch/audit tests — which call without a token — stay green; gate tests
+    pass an explicit token-checking variant.
     """
     if invokers is None:
         invoke, _ = _fake_remember_invoker()
         invokers = {"memory_remember": invoke}
+    if identity_check is None:
+        identity_check = _allow_identity
     route_tools = build_route_tools(_handlers()) if read_only else []
     mut_tools = build_mutating_route_tools(
         invokers,
         auditor=auditor,
         read_only_enabled=read_only,
         mutating_enabled=mutating,
+        identity_check=identity_check,
     )
     return JarvisMCPServer(
         _runner, AGENTS, route_tools=route_tools, mutating_route_tools=mut_tools
@@ -611,3 +635,170 @@ def test_mutating_descriptor_marks_mutating_true():
     desc = tool.descriptor()
     assert desc["mutating"] is True
     assert desc["name"] == route_tool_name(spec.name)
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# H22.9 hardening — per-identity gate on MUTATING tools
+# ══════════════════════════════════════════════════════════════════════════════
+#
+# A mutating tool call must present a valid identity (the same credential the HTTP
+# ``user_guard`` checks). A missing/wrong identity is refused with NO write — even
+# when BOTH kill-switches are on. Read-only tools are unaffected. When the token is
+# unset (localhost-trust dev posture) the in-process call is allowed, matching the
+# HTTP guard's unset-token branch.
+
+
+@pytest.mark.asyncio
+async def test_mutating_tool_with_valid_token_dispatches_and_audits():
+    """A mutating call with a matching identity writes AND audits as ``ok``."""
+    auditor = _FakeAuditor()
+    invoke, calls = _fake_remember_invoker()
+    srv = _mutating_server(
+        auditor=auditor,
+        invokers={"memory_remember": invoke},
+        identity_check=_token_identity("s3cret"),
+    )
+
+    res = await srv.call_tool("route_memory_remember", {"text": "buy milk"}, identity="s3cret")
+
+    assert res["isError"] is False
+    assert json.loads(res["content"][0]["text"]) == {"ok": True, "id": "m-123"}
+    assert calls == [{"text": "buy milk"}]  # the write reached the invoker
+    assert len(auditor.events) == 1
+    assert auditor.events[0].action_taken.endswith("(ok)")
+
+
+@pytest.mark.asyncio
+async def test_mutating_tool_missing_token_refused_no_write():
+    """No identity → refused, NO write, audited as a refusal (both switches on)."""
+    auditor = _FakeAuditor()
+    invoke, calls = _fake_remember_invoker()
+    srv = _mutating_server(
+        auditor=auditor,
+        invokers={"memory_remember": invoke},
+        identity_check=_token_identity("s3cret"),
+    )
+
+    res = await srv.call_tool("route_memory_remember", {"text": "buy milk"})  # no identity
+
+    assert res["isError"] is True
+    assert "identity required" in res["content"][0]["text"]
+    assert calls == []  # the write NEVER happened
+    # the refusal is still audited — an attempted write is never invisible
+    assert len(auditor.events) == 1
+    assert auditor.events[0].action_taken.endswith("(refused-identity)")
+
+
+@pytest.mark.asyncio
+async def test_mutating_tool_wrong_token_refused_no_write():
+    """A wrong identity is refused exactly like the HTTP 401 path — no write."""
+    invoke, calls = _fake_remember_invoker()
+    srv = _mutating_server(
+        invokers={"memory_remember": invoke},
+        identity_check=_token_identity("s3cret"),
+    )
+
+    res = await srv.call_tool("route_memory_remember", {"text": "x"}, identity="WRONG")
+
+    assert res["isError"] is True
+    assert "identity required" in res["content"][0]["text"]
+    assert calls == []
+
+
+@pytest.mark.asyncio
+async def test_mutating_tool_fails_closed_without_identity_check():
+    """No identity policy bound → fail CLOSED: every mutating call is refused."""
+    invoke, calls = _fake_remember_invoker()
+    # Build the tool directly with NO identity_check (the build_* default is None).
+    tool = MutatingRouteTool(spec=MUTATING_ROUTE_ALLOWLIST[0], invoke=invoke)
+    with pytest.raises(MutatingIdentityError):
+        await tool.call({"text": "x"}, token="anything")
+    assert calls == []
+
+
+@pytest.mark.asyncio
+async def test_mutating_tool_unset_token_dev_posture_allows():
+    """Unset-token (localhost-trust) posture allows the in-process call, no token.
+
+    Mirrors ``_user_guard``: with JARVIS_USER_TOKEN unset the HTTP guard trusts a
+    localhost origin and requires no token, so the in-process MCP call is allowed.
+    """
+    invoke, calls = _fake_remember_invoker()
+    srv = _mutating_server(
+        invokers={"memory_remember": invoke},
+        identity_check=_allow_identity,  # permissive == unset-token dev posture
+    )
+    res = await srv.call_tool("route_memory_remember", {"text": "x"})  # no identity
+    assert res["isError"] is False
+    assert calls == [{"text": "x"}]
+
+
+@pytest.mark.asyncio
+async def test_read_only_tools_need_no_identity():
+    """Read-only tools dispatch with no identity — gate is mutating-only."""
+    srv = _mutating_server(identity_check=_token_identity("s3cret"))
+    # No identity supplied; read tool still works (unchanged behaviour).
+    res = await srv.call_tool("route_status", {})
+    assert res["isError"] is False
+    assert json.loads(res["content"][0]["text"]) == {"status": "ok", "version": "test"}
+
+
+@pytest.mark.asyncio
+async def test_identity_threaded_through_rpc_tools_call():
+    """The JSON-RPC tools/call path forwards the identity to the mutating gate."""
+    invoke, calls = _fake_remember_invoker()
+    srv = _mutating_server(
+        invokers={"memory_remember": invoke},
+        identity_check=_token_identity("s3cret"),
+    )
+    # No identity on handle() → refused.
+    res = await srv.handle({
+        "jsonrpc": "2.0", "id": 1, "method": "tools/call",
+        "params": {"name": "route_memory_remember", "arguments": {"text": "x"}},
+    })
+    assert res["result"]["isError"] is True
+    assert calls == []
+    # Identity supplied to handle() → dispatched.
+    res = await srv.handle({
+        "jsonrpc": "2.0", "id": 2, "method": "tools/call",
+        "params": {"name": "route_memory_remember", "arguments": {"text": "x"}},
+    }, identity="s3cret")
+    assert res["result"]["isError"] is False
+    assert calls == [{"text": "x"}]
+
+
+def test_identity_check_matches_user_guard_rule():
+    """The web.py identity gate reuses user_guard's rule (no fork).
+
+    Imports the live ``_mcp_identity_check`` / ``_user_credential_ok`` and asserts:
+    unset token → allow (dev); set token → only the matching credential passes.
+    Skips gracefully if web can't import offline.
+    """
+    try:
+        from agents import web
+    except Exception:
+        pytest.skip("web module not importable offline")
+
+    import agents.web as w
+
+    # Unset token → localhost-trust dev posture → any/no token allowed.
+    orig_user, orig_admin = w.USER_TOKEN, w.ADMIN_TOKEN
+    try:
+        w.USER_TOKEN = ""
+        assert web._mcp_identity_check(None) is True
+        assert web._mcp_identity_check("whatever") is True
+
+        # Set token → only the matching credential passes (same as user_guard).
+        w.USER_TOKEN = "s3cret"
+        w.ADMIN_TOKEN = ""
+        assert web._mcp_identity_check("s3cret") is True
+        assert web._mcp_identity_check("nope") is False
+        assert web._mcp_identity_check(None) is False
+        assert web._user_credential_ok(user_supplied="s3cret") is True
+        assert web._user_credential_ok(user_supplied="nope") is False
+
+        # An admin token satisfies the user gate (admin ⊇ user).
+        w.ADMIN_TOKEN = "adm1n"
+        assert web._mcp_identity_check("adm1n") is True
+    finally:
+        w.USER_TOKEN, w.ADMIN_TOKEN = orig_user, orig_admin
