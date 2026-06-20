@@ -21,6 +21,17 @@ DEMOTION_TIERS = {
 }
 
 
+class _NullCtx:
+    """No-op async context manager — used when H22.5 residency tracking is off
+    so the generate path stays a plain `async with` either way."""
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *exc):
+        return False
+
+
 class Agent:
     def __init__(self, agent_id: str, config: dict, llm_router: HybridRouter = None, permission_gate=None):
         self.id = agent_id
@@ -140,16 +151,27 @@ class Agent:
         if self._checkpoint_manager:
             self._checkpoint_manager.save_agent_execution(self.id, context.get("session_id", "unknown"), prompt)
 
+        # H22.5 — best-effort local model residency (LRU swap fast↔deep). Default
+        # OFF via JARVIS_MODEL_MANAGER; a no-op for cloud/Claude routes and when
+        # no manager is attached. ensure_resident swaps the LRU local model out
+        # before loading this one (never raises); `using()` ref-counts the model
+        # so a concurrent request can't evict it mid-generate. Both degrade to a
+        # no-op when the kill-switch is off, leaving today's behavior unchanged.
+        manager = getattr(self.llm_router, "model_manager", None)
+        await self._ensure_resident(route_name, model)
+        residency = manager.using(model) if (manager is not None and route_name.startswith("local")) else _NullCtx()
+
         max_tokens, temperature = self._gen_params(route_name)
         start = time.monotonic()
         try:
-            response = await backend.generate(
-                model=model,
-                prompt=prompt,
-                system=system_prompt,
-                max_tokens=max_tokens,
-                temperature=temperature,
-            )
+            async with residency:
+                response = await backend.generate(
+                    model=model,
+                    prompt=prompt,
+                    system=system_prompt,
+                    max_tokens=max_tokens,
+                    temperature=temperature,
+                )
             latency = time.monotonic() - start
             self._last_latency = latency
 
@@ -166,6 +188,22 @@ class Agent:
             if self._checkpoint_manager:
                 self._checkpoint_manager.record_call(self.id, success=False, latency=latency, error=str(e))
             raise
+
+    async def _ensure_resident(self, route_name: str, model: str) -> None:
+        """H22.5 best-effort residency hook — guarded, no-op when disabled.
+
+        Delegates to the router's ensure_resident (which only acts for local
+        routes and when the ModelManager kill-switch is on). Wrapped so a hook
+        failure can never break a generate; the manager itself also never
+        raises, this is belt-and-braces."""
+        router = self.llm_router
+        ensure = getattr(router, "ensure_resident", None)
+        if ensure is None:
+            return
+        try:
+            await ensure(model, route_name)
+        except Exception:
+            logger.debug("model residency hook failed for %s/%s", route_name, model, exc_info=True)
 
     def _record_failure(self, reason: str = "unknown"):
         self._failures += 1
