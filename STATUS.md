@@ -1,6 +1,6 @@
 # Jarvis Hub — Status Snapshot
 
-> **Current version:** v9.9.9 (pre-1.0 audit gate) · **Tests:** 2,288 passed (2 skipped) + 184 frontend JS · **Agents:** 17 active (16 cabinet incl. Howard + Argus, the WorldView bridge; + 17 bench) · **HTTP routes:** ~296
+> **Current version:** v9.9.9 (pre-1.0 audit gate) · **Tests:** ~2,400 passed (2 skipped) + 184 frontend JS · **Agents:** 17 active (16 cabinet incl. Howard + Argus, the WorldView bridge; + 17 bench) · **HTTP routes:** ~299
 > **Road to v1.0:** the v1.0 backlog (H1–H17) is **code-complete — 194/196 items (≈99% SP)**, shipped pending the `9.9.9` audit gate (full code audit [docs/AUDIT.md](docs/AUDIT.md), human manual testing [docs/MANUAL_TESTING.md](docs/MANUAL_TESTING.md), and fixes). The only two open items (H12.14, H13.3) need the GPU host. HUD V2 is the default UI; deep write-controls for newer backend surfaces are tracked in [docs/design/HUD_V2_REMAINING.md](docs/design/HUD_V2_REMAINING.md). See [BACKLOG.md](BACKLOG.md#version-roadmap) + [MOONSHOT.md](MOONSHOT.md) §4.
 >
 > The version labels in the feature tables below (`v0.2.0`, `v0.2.1`) record *when* each capability first
@@ -101,7 +101,7 @@
 
 ---
 
-## ✅ Web Endpoints (17) — All Smoke Tested PASS *(historical v0.2 snapshot — the current surface is ~296 routes; full index in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md))*
+## ✅ Web Endpoints (17) — All Smoke Tested PASS *(historical v0.2 snapshot — the current surface is ~299 routes; full index in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md))*
 
 | Endpoint | Route | Status |
 |----------|-------|--------|

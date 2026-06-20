@@ -45,7 +45,7 @@ running for a month because it earned it.
 | Open backlog items | 2 — both GPU-host-gated (H12.14 fine-tune, H13.3 speculative decoding) |
 | Tests | ~2,300 backend (pytest, offline-first) + 184 frontend (Jest, ~67% line) |
 | Agents | 17 active (incl. Howard emerging, Argus WorldView bridge) + 17 bench |
-| Surface | ~296 HTTP routes · 22 plugins · 13 skills · 6 channels |
+| Surface | ~299 HTTP routes · 22 plugins · 13 skills · 6 channels |
 | Codebase | ~40K LOC `agents/` + ~30K LOC tests + ~5K LOC frontend + WorldView (separate stack) |
 | Cost to run | **$0/month** (local inference + free tiers) |
 | **Real users** | **1 (you)** |
@@ -247,7 +247,7 @@ These are a few focused weeks. **None of them is why the product isn't desirable
 - **No distribution motion.** No design partners, no landing page that explains
   rather than chats, no demo video, no launch. (`docs/gap-analysis-1.0.md` already
   flags landing page / video / Product Hunt as open.)
-- **Single-maintainer reality.** ~70K LOC, 17 agents, ~296 routes, a second
+- **Single-maintainer reality.** ~70K LOC, 17 agents, ~299 routes, a second
   Node/OSINT stack — maintained by one person. Bus factor 1 is the quiet risk under
   every other line.
 - **"Jarvis" naming/trademark** — fine for OSS, a wall at Phase 2.

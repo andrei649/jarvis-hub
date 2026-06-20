@@ -73,7 +73,7 @@ When on: embeds the query, runs fused recall (vector ⊕ graph), injects top-k a
 |------|---------|-------------|
 | `agents/serve.py` | Uvicorn launcher | `app` import from `agents/web.py` |
 | `agents/run.py` | CLI REPL | `main()` |
-| `agents/web.py` | FastAPI app, lifespan, all HTTP endpoints (~253 routes) | `app`, `lifespan`, `orch` global |
+| `agents/web.py` | FastAPI app, lifespan, all HTTP endpoints (~299 routes) | `app`, `lifespan`, `orch` global |
 | `agents/core/orchestrator.py` | Main loop | `Orchestrator`, `handle_input`, `handle_input_stream`, `_maybe_checkpoint` |
 | `agents/core/routers/brain.py` | Neural Mesh page (`/brain`) + live feed (`/api/brain/summary`) — tracer rollups → canvas "brain" of agents+models firing. Viz adapted from Axon (MIT, `LICENSES/axon-MIT.txt`) | `build_summary`, `brain_page`, `brain_summary` |
 | `agents/core/agent.py` | Single agent runtime | `Agent`, `Agent.process`, `Agent.synthesize`, `Agent._load_soul` |
@@ -240,6 +240,7 @@ Two front-ends, shared engines — full subsystem doc: **`docs/VOICE.md`**.
 | `agents/core/observability/quality.py` | Live quality monitor (per-request score + alert) | `QualityMonitor` |
 | `agents/core/observability/review_queue.py` | Human review queue (flag → rubric → eval dataset) | `ReviewQueue` |
 | `agents/core/observability/datasets.py` | Eval dataset store + regression runs | `DatasetStore` |
+| `agents/core/observability/north_star.py` | North-star + counter-metric aggregator (MOONSHOT §6) — exposed at `GET /api/metrics/north-star?days=1-90`; see [METRICS.md](METRICS.md) | `compute_north_star` |
 
 ### Agent Registry
 
@@ -442,7 +443,7 @@ Key env vars loaded at startup:
 ### Testing
 
 - **Framework:** pytest with `asyncio_mode = auto` (see `pytest.ini`) — all `async def test_*` run without decorators.
-- **Test count:** ~2,156 passing tests, 1 skipped (offline suite). *(WorldView, the separate `worldview/` Node stack, has its own CI + test suites — see `worldview/`.)*
+- **Test count:** ~2,400 passing tests, 1 skipped (offline suite). *(WorldView, the separate `worldview/` Node stack, has its own CI + test suites — see `worldview/`.)*
 - **sys.path pattern:** Every test file inserts `repo_root` and `repo_root/agents` at the top. Always use this, not relative imports.
 - **Offline by default:** Tests inject fake backends (e.g. `FakeBackend(LLMBackend)`, `FakeLMStudioClient`). No real network/LLM required.
 - **Orchestrator instantiation trick:** Avoid `Orchestrator(config)` in unit tests (heavy init). Use `Orchestrator.__new__(Orchestrator)` + manual attribute assignment, or mock the heavy dependencies.
@@ -577,7 +578,7 @@ from git history into `*.local.md`).
 serve.py                          Uvicorn launcher
 agents/
   run.py                          CLI REPL
-  web.py                          FastAPI app (~253 routes; uvicorn on port 8080)
+  web.py                          FastAPI app (~299 routes; uvicorn on port 8080)
   web/                            Static assets for web dashboard (HTML/CSS/JS)
   _system/agents.yaml             Agent registry (canonical source of truth)
   core/

@@ -14,7 +14,7 @@
 ```bash
 pip install -r requirements-beta.txt
 python -m uvicorn agents.web:app --host 127.0.0.1 --port 8080
-python -m pytest tests/ -v          # 2156 passed, 1 skipped
+python -m pytest tests/ -v          # ~2,400 passed, 1 skipped
 ```
 
 > Singurul skip rămas e heartbeat-ul opțional. (Vechiul `tests/test_spotify.py` cu 8 skip-uri a
@@ -163,8 +163,9 @@ chain-of-thought leak / mid-sentence truncation fixed. Kill-switch:
 
 **În afara totalului:** **Bugs & Hot Fixes** — **toate BUG-\* și HF-\* rezolvate** (BUG-1…17 + HF-1…7 + NTH-1; vezi re-baseline 2026-06-08 + tabelul de mai jos). Rămân deschise **deliberat**: **CLN-2/CLN-3** (refactor god-objects `orchestrator.py`/`web.py`, P3 — **decizie owner 2026-06-10: split-ul mare se face DUPĂ testarea manuală / gate-ul 1.0**, nu înainte; risc de regresie inutil înaintea gate-ului uman) + taskuri netrackuite ca buguri (**TASK-1** Howard backend, **TASK-2** HUD v2 depth, **TASK-3** taint-tracking canale, **BUG-2b** frontend E2E). *(Detalii audit cod 2026-06-04 în tabel.)*
 
-**Test count (backend pytest):** 2,156 passed, 1 skipped — skip-ul rămas e heartbeat-ul opțional (`tests/test_spotify.py` eliminat în CLN-1). *(2026-06-09: backlog software **code-complete** — H10 30/30, H11 4/4, H12 24/25, frontiere H13–H17 19/20 (vezi „Status General" de mai sus); + WorldView O19 33/33 merged + Argus. Rămâne audit + testare manuală, vezi `docs/AUDIT.md`.)*
+**Test count (backend pytest):** ~2,400 passed, 1 skipped — skip-ul rămas e heartbeat-ul opțional (`tests/test_spotify.py` eliminat în CLN-1). *(2026-06-09: backlog software **code-complete** — H10 30/30, H11 4/4, H12 24/25, frontiere H13–H17 19/20 (vezi „Status General" de mai sus); + WorldView O19 33/33 merged + Argus. Rămâne audit + testare manuală, vezi `docs/AUDIT.md`.)*
 **Frontend (BUG-2):** 184 teste JS / 23 fișiere · ~67% line coverage — separat de suita pytest.
+**Observability (MOONSHOT §6):** north-star + counter-metrics (accepted/active user, interrupt rate, reject rate, %-local, p95) sunt acum calculate într-un singur loc (`agents/core/observability/north_star.py`) și expuse la `GET /api/metrics/north-star` — vezi [docs/METRICS.md](docs/METRICS.md).
 
 > **Orizont 7 Hardening — Drumul spre 1.0.0:** 11/11 COMPLET ✅ (livrat 2026-06-02)
 

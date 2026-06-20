@@ -174,6 +174,8 @@ has an audit trail and future contributors understand *why*, not just *what*.
 | [docs/gap-analysis-1.0.md](docs/gap-analysis-1.0.md) | The gaps — *what stands between us and 1.0* |
 | [docs/OWNER_TASKS.md](docs/OWNER_TASKS.md) | The human gate — *what only the owner can do* |
 | [docs/AI_CONTEXT.md](docs/AI_CONTEXT.md) | The loading map — *how an assistant ingests this repo* |
+| [docs/REVIEW_YEAR_ONE.md](docs/REVIEW_YEAR_ONE.md) | The review — *candid year-one retrospective: status, learnings, gaps, next 90 days* |
+| [docs/METRICS.md](docs/METRICS.md) | The meters — *§6 north-star + counter-metric definitions and the n=1 honesty caveat* |
 
 ---
 
