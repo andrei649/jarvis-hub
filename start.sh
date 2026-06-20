@@ -28,7 +28,7 @@ fi
 if [ "${JARVIS_SIGNAL_LAYER:-1}" != "0" ] && [ -f services/signal-layer/src/index.mjs ]; then
   if command -v node >/dev/null 2>&1; then
     export JARVIS_SIGNAL_LAYER_MODE="${JARVIS_SIGNAL_LAYER_MODE:-${JARVIS_WORLDVIEW_MODE:-replay}}"
-    export SIGNAL_LAYER_HOST="${SIGNAL_LAYER_HOST:-0.0.0.0}"
+    export SIGNAL_LAYER_HOST="${SIGNAL_LAYER_HOST:-127.0.0.1}"
     export SIGNAL_LAYER_PORT="${SIGNAL_LAYER_PORT:-8787}"
     export WORLDMONITOR_BASE_URL="${WORLDMONITOR_BASE_URL:-http://localhost:3100}"
     export WORLDMONITOR_MCP_URL="${WORLDMONITOR_MCP_URL:-http://localhost:3100/api/mcp}"

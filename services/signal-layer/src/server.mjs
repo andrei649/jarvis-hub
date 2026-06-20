@@ -18,7 +18,17 @@ export function createServer({ config, provider }) {
       const url = new URL(req.url || '/', `http://${req.headers.host || 'localhost'}`);
       const method = req.method || 'GET';
 
+      applyCors(req, res, config);
+
       if (method === 'OPTIONS') return send(res, 204, null);
+
+      // Bearer-token gate, only when a token is configured. /healthz stays open
+      // as a liveness/fallback probe (it exposes only ok/mode, no data).
+      if (config.authToken && !(method === 'GET' && url.pathname === '/healthz')) {
+        if (!isAuthorized(req, config.authToken)) {
+          return send(res, 401, { error: { code: 'unauthorized', message: 'Missing or invalid bearer token' } });
+        }
+      }
 
       if (method === 'GET' && url.pathname === '/healthz') {
         const providerHealth = await provider.health();
@@ -134,12 +144,8 @@ function parsePositiveInt(value, fallback) {
 }
 
 function send(res, status, payload) {
-  const headers = {
-    'access-control-allow-origin': '*',
-    'access-control-allow-methods': 'GET,POST,OPTIONS',
-    'access-control-allow-headers': 'content-type',
-    'cache-control': 'no-store'
-  };
+  // CORS headers are set per-request via applyCors(); writeHead merges them in.
+  const headers = { 'cache-control': 'no-store' };
 
   if (payload === null) {
     res.writeHead(status, headers);
@@ -149,6 +155,32 @@ function send(res, status, payload) {
   const body = JSON.stringify(payload, null, 2);
   res.writeHead(status, { ...headers, 'content-type': 'application/json; charset=utf-8' });
   res.end(body);
+}
+
+// CORS: reflect the request Origin only for local pages (localhost / 127.0.0.1 /
+// ::1, any port) plus any explicitly allowed origins — never a blanket `*`, which
+// would let any website read this service from a user's browser.
+function applyCors(req, res, config) {
+  res.setHeader('access-control-allow-methods', 'GET,POST,OPTIONS');
+  res.setHeader('access-control-allow-headers', 'content-type, authorization');
+  const origin = req.headers.origin;
+  if (origin && isAllowedOrigin(origin, config)) {
+    res.setHeader('access-control-allow-origin', origin);
+    res.setHeader('vary', 'Origin');
+    if (config.authToken) res.setHeader('access-control-allow-credentials', 'true');
+  }
+}
+
+function isAllowedOrigin(origin, config) {
+  let host;
+  try { host = new URL(origin).hostname; } catch { return false; }
+  if (host === 'localhost' || host === '127.0.0.1' || host === '::1') return true;
+  return (config.allowedOrigins || []).includes(origin);
+}
+
+function isAuthorized(req, token) {
+  const header = req.headers['authorization'] || '';
+  return header === `Bearer ${token}`;
 }
 
 async function readJson(req) {
