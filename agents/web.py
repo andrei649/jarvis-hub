@@ -1343,72 +1343,9 @@ async def context_compress(body: ContextCompressBody):
     return _nocache_json(await cc.compress(body.turns))
 
 
-class VLMDescribeBody(BaseModel):
-    prompt: str = Field(..., max_length=4000)
-    images: list[str] = Field(default_factory=list, max_length=8)
-    model: str = Field("", max_length=80)
-
-
-@app.get("/api/vlm/status", dependencies=[Depends(_user_guard)])
-async def vlm_status():
-    """H13.1 — whether a local VLM endpoint is configured (host deployment)."""
-    return _nocache_json({"configured": bool(os.environ.get("JARVIS_VLM_URL", "")),
-                          "default_model": os.environ.get("JARVIS_VLM_MODEL", "qwen2-vl")})
-
-
-@app.post("/api/vlm/describe", dependencies=[Depends(_user_guard)])
-async def vlm_describe(body: VLMDescribeBody):
-    """H13.1 — send image(s) + a prompt to the local VLM (screen/doc/receipt).
-
-    Requires JARVIS_VLM_URL to point at a local OpenAI-vision server (the model
-    + GGUF + GPU are the host deployment seam)."""
-    url = os.environ.get("JARVIS_VLM_URL", "")
-    if not url:
-        return JSONResponse({"error": "VLM not configured — set JARVIS_VLM_URL"}, status_code=503)
-    from agents.core.llm.vlm import VLMBackend
-    vlm = VLMBackend(base_url=url, api_key=os.environ.get("JARVIS_VLM_KEY", ""))
-    try:
-        model = body.model or os.environ.get("JARVIS_VLM_MODEL", "qwen2-vl")
-        # encode_image_block accepts only data:/http(s) image sources, never file
-        # paths — request-supplied images can't read host files.
-        out = await vlm.generate_vision(model, body.prompt, images=body.images)
-        return _nocache_json({"ok": True, "model": model, "response": out})
-    finally:
-        await vlm.aclose()
-
-
-class DesktopStepsBody(BaseModel):
-    steps: list[dict] = Field(default_factory=list, max_length=100)
-
-
-@app.post("/api/desktop/preview", dependencies=[Depends(_user_guard)])
-async def desktop_preview(body: DesktopStepsBody):
-    """H15.3 — dry-run a desktop step plan (which steps need approval)."""
-    from agents.core.desktop_operator import GovernedDesktop
-    return _nocache_json(await GovernedDesktop().preview(body.steps))
-
-
-class MediaGenBody(BaseModel):
-    kind: str = Field(..., max_length=20)
-    prompt: str = Field(..., max_length=4000)
-    cloud: bool = False
-
-
-@app.get("/api/media", dependencies=[Depends(_user_guard)])
-async def media_status():
-    """H12.24 — supported media kinds + which backends are wired."""
-    from agents.core.media_gen import MediaGenManager
-    return _nocache_json({"kinds": MediaGenManager().kinds()})
-
-
-@app.post("/api/media/generate", dependencies=[Depends(_user_guard)])
-async def media_generate(body: MediaGenBody):
-    """H12.24 — governed media generation (cloud generation is approval-gated)."""
-    from agents.core.media_gen import MediaGenManager
-    q = getattr(orch, "autonomy_queue", None) if orch else None
-    m = MediaGenManager(enqueue=q.enqueue if q is not None else None)
-    result = await m.generate(body.kind, body.prompt, cloud=body.cloud)
-    return _nocache_json(result, status_code=200 if result.get("ok") else 422)
+# CLN-3: vlm/desktop/media routes (VLMDescribeBody/DesktopStepsBody/MediaGenBody +
+# /api/vlm/status, /api/vlm/describe, /api/desktop/preview, /api/media,
+# /api/media/generate) extracted to agents/core/routers/multimodal.py.
 
 
 # H21.0 — mount the cognition APIRouter (keeps cognition endpoints out of the
@@ -1441,6 +1378,7 @@ from agents.core.routers.integrations import router as _integrations_router  # n
 from agents.core.routers.memory_kg import router as _memory_kg_router  # noqa: E402
 from agents.core.routers.mesh import router as _mesh_router  # noqa: E402
 from agents.core.routers.models_llm import router as _models_llm_router  # noqa: E402
+from agents.core.routers.multimodal import router as _multimodal_router  # noqa: E402
 from agents.core.routers.notes import router as _notes_router  # noqa: E402
 from agents.core.routers.oauth import router as _oauth_router  # noqa: E402
 from agents.core.routers.pairing import router as _pairing_router  # noqa: E402
@@ -1481,6 +1419,7 @@ app.include_router(_analytics_router)
 app.include_router(_admin_router)
 app.include_router(_integrations_router)
 app.include_router(_payments_router)
+app.include_router(_multimodal_router)
 app.include_router(_eval_router)
 app.include_router(_heartbeat_router)
 
