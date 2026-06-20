@@ -35,6 +35,41 @@ DEFAULT_TOTAL_TIMEOUT = 60.0
 _clients: dict[str, "PluginHTTPClient"] = {}
 
 
+class PluginEgressError(PermissionError):
+    """A plugin HTTP request violated its manifest's network policy (F-07)."""
+
+
+def _host_is_local(host: str) -> bool:
+    """True if *host* is loopback / private / link-local / mDNS (.local) — i.e. LAN."""
+    if not host:
+        return False
+    host = host.lower().rstrip(".")
+    if host == "localhost" or host.endswith(".local"):
+        return True
+    import ipaddress
+    try:
+        ip = ipaddress.ip_address(host)
+        return ip.is_private or ip.is_loopback or ip.is_link_local
+    except ValueError:
+        pass
+    # Hostname (not a literal IP): resolve best-effort; all addresses must be local.
+    import socket
+    try:
+        ips = {info[4][0] for info in socket.getaddrinfo(host, None)}
+    except Exception:
+        return False
+    if not ips:
+        return False
+    for ip in ips:
+        try:
+            a = ipaddress.ip_address(ip)
+        except ValueError:
+            return False
+        if not (a.is_private or a.is_loopback or a.is_link_local):
+            return False
+    return True
+
+
 @dataclass
 class PluginTimeouts:
     """Timeout configuration for a PluginHTTPClient."""
@@ -109,6 +144,57 @@ class PluginHTTPClient:
             )
         return self._client
 
+    # ── Egress policy (F-07) ───────────────────────────────────────
+    def _enforce_egress(self, url: str) -> None:
+        """Enforce the plugin manifest's network policy on an outbound URL.
+
+        Looks up the plugin's manifest (by exact id). Plugins with no manifest
+        (internal/ad-hoc clients) are unaffected. ``NONE`` always blocks — a
+        no-network plugin making an HTTP call is unambiguously wrong. For ``LAN``
+        and ``RESTRICTED`` a host outside the policy is **blocked by default**
+        (SEC-5); set ``JARVIS_STRICT_EGRESS=0`` to downgrade to a warning (escape
+        hatch if a new host needs allowlisting). ``FULL`` is unrestricted by
+        declaration.
+        """
+        try:
+            from agents.core.plugin_gate import (
+                BUILTIN_PLUGINS, NetworkAccess, host_in_allowlist, dynamic_domains,
+            )
+        except Exception:
+            return
+        manifest = BUILTIN_PLUGINS.get(self.plugin_name)
+        if manifest is None:
+            return  # no declared policy → unchanged behavior
+        na = manifest.network_access
+        if na == NetworkAccess.FULL:
+            return
+        from urllib.parse import urlparse
+        host = (urlparse(url).hostname or "").lower().rstrip(".")
+        if na == NetworkAccess.NONE:
+            raise PluginEgressError(
+                f"egress blocked: plugin '{self.plugin_name}' has no network access (tried {host or url})"
+            )
+        if na == NetworkAccess.LAN:
+            if _host_is_local(host):
+                return
+            violation = f"plugin '{self.plugin_name}' is LAN-only but '{host}' is not a local address"
+        elif na == NetworkAccess.RESTRICTED:
+            # SEC-5b: static allowlist ∪ hosts registered at init for config/env-
+            # driven plugins (n8n, SearXNG, Signal, Matrix).
+            allowed = manifest.allowed_domains + dynamic_domains(self.plugin_name)
+            if host and host_in_allowlist(host, allowed):
+                return
+            violation = (f"plugin '{self.plugin_name}' may not reach '{host}' "
+                         f"(allowed: {allowed})")
+        else:
+            return
+        import os
+        # SEC-5: strict by default; opt out with JARVIS_STRICT_EGRESS=0/false/no.
+        strict = os.environ.get("JARVIS_STRICT_EGRESS", "1").strip().lower() not in ("0", "false", "no")
+        if strict:
+            raise PluginEgressError(f"egress blocked: {violation}")
+        logger.warning("egress policy violation (JARVIS_STRICT_EGRESS=0, allowing): %s", violation)
+
     # ── HTTP methods ───────────────────────────────────────────────
 
     async def get(self, url: str, **kwargs) -> httpx.Response:
@@ -121,6 +207,7 @@ class PluginHTTPClient:
             raise RuntimeError(
                 f"Circuit breaker open: plugin={self.plugin_name}"
             )
+        self._enforce_egress(url)
         kwargs.setdefault("timeout", self.timeouts.to_httpx_timeout())
         try:
             resp = await self._get_client().get(url, **kwargs)
@@ -140,6 +227,7 @@ class PluginHTTPClient:
             raise RuntimeError(
                 f"Circuit breaker open: plugin={self.plugin_name}"
             )
+        self._enforce_egress(url)
         kwargs.setdefault("timeout", self.timeouts.to_httpx_timeout())
         try:
             resp = await self._get_client().post(url, **kwargs)
@@ -155,6 +243,7 @@ class PluginHTTPClient:
             raise RuntimeError(
                 f"Circuit breaker open: plugin={self.plugin_name}"
             )
+        self._enforce_egress(url)
         kwargs.setdefault("timeout", self.timeouts.to_httpx_timeout())
         try:
             resp = await self._get_client().put(url, **kwargs)
@@ -170,6 +259,7 @@ class PluginHTTPClient:
             raise RuntimeError(
                 f"Circuit breaker open: plugin={self.plugin_name}"
             )
+        self._enforce_egress(url)
         kwargs.setdefault("timeout", self.timeouts.to_httpx_timeout())
         try:
             resp = await self._get_client().patch(url, **kwargs)
@@ -185,6 +275,7 @@ class PluginHTTPClient:
             raise RuntimeError(
                 f"Circuit breaker open: plugin={self.plugin_name}"
             )
+        self._enforce_egress(url)
         kwargs.setdefault("timeout", self.timeouts.to_httpx_timeout())
         try:
             resp = await self._get_client().delete(url, **kwargs)
@@ -200,6 +291,7 @@ class PluginHTTPClient:
             raise RuntimeError(
                 f"Circuit breaker open: plugin={self.plugin_name}"
             )
+        self._enforce_egress(url)
         kwargs.setdefault("timeout", self.timeouts.to_httpx_timeout())
         try:
             resp = await self._get_client().request(method, url, **kwargs)

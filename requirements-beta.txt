@@ -8,12 +8,14 @@ httpx>=0.28.1
 cryptography>=49.0.0
 python-dotenv>=1.2.2
 ollama>=0.6.2
-# Pin below 0.137: fastapi 0.137.0 regressed `app.include_router` so mounted
-# routers add 0 routes — the app silently loses ~100 routes (the extracted
-# core/routers/* domains). Caught by tests/test_route_parity_guard.py. Verified
-# 0.137.1 STILL regressed (route surface 296 -> 83 in a clean venv). Unpin once
-# a 0.137.x is verified to mount routers again.
-fastapi>=0.136.3,<0.137
+# fastapi 0.137 wraps include_router results in an opaque _IncludedRouter instead of
+# flattening them into app.routes. The app is unaffected (routes serve + appear in
+# OpenAPI); the route-parity / auth-matrix guards now flatten the wrappers via
+# tests/_route_introspect.iter_effective_routes. starlette is pinned below the 1.x
+# major (untested with this fastapi). Background:
+# docs/research/2026-06-19-fastapi-0.137-include-router-regression.md
+fastapi>=0.137.2,<0.138
+starlette>=0.46,<1.0
 uvicorn>=0.49.0
 psutil>=7.2.2
 
@@ -56,3 +58,4 @@ beautifulsoup4>=4.15.0
 pytest>=9.1.0
 pytest-asyncio>=1.4.0
 pytest-timeout>=2.4.0
+pytest-xdist>=3.8.0

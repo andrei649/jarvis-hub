@@ -14,6 +14,10 @@ os.environ.setdefault("JARVIS_TESTING", "1")
 # single non-localhost host and some suites burst many requests). test_rate_limit_hf2
 # monkeypatches a low limit to exercise it directly.
 os.environ.setdefault("JARVIS_RATE_LIMIT", "0")
+# SEC-5: plugin egress is strict-by-default in production, but the suite runs
+# non-strict so plugin tests that hit real/mock hosts aren't blocked; the
+# dedicated egress tests opt back into strict via monkeypatch.setenv.
+os.environ.setdefault("JARVIS_STRICT_EGRESS", "0")
 
 from fastapi import APIRouter, FastAPI
 
@@ -23,7 +27,18 @@ repo_root = Path(__file__).resolve().parent.parent
 # it at a gitignored repo-local dir so IntentLog() (constructed by the orchestrator)
 # doesn't write to the developer's home. Tests that exercise key resolution set
 # JARVIS_KEY_DIR themselves to an isolated tmp path.
-os.environ.setdefault("JARVIS_KEY_DIR", str(repo_root / "memory_logs" / ".keys"))
+# Parallel isolation (pytest-xdist): each worker gets its own runtime-data root +
+# key dir so the file-backed stores (settings.db, audit.db, JSON stores) can't
+# collide across processes. Must run before any store module is imported, so it's
+# here at conftest module load. Serial runs (no xdist) keep the repo defaults.
+_xdist_worker = os.environ.get("PYTEST_XDIST_WORKER")
+if _xdist_worker:
+    import tempfile
+    _worker_home = tempfile.mkdtemp(prefix=f"jarvis-test-{_xdist_worker}-")
+    os.environ["JARVIS_HOME"] = _worker_home  # data_root() honors this (F-08)
+    os.environ["JARVIS_KEY_DIR"] = str(Path(_worker_home) / ".keys")
+else:
+    os.environ.setdefault("JARVIS_KEY_DIR", str(repo_root / "memory_logs" / ".keys"))
 sys.path.insert(0, str(repo_root))
 sys.path.insert(0, str(repo_root / "agents"))
 

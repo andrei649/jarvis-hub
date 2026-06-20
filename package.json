@@ -9,8 +9,8 @@
   },
   "devDependencies": {
     "istanbul-lib-instrument": "^6.0.3",
-    "jsdom": "^25.0.1",
+    "jsdom": "^29.1.1",
     "nyc": "^18.0.0",
-    "vitest": "^2.1.8"
+    "vitest": "^4.1.9"
   }
 }

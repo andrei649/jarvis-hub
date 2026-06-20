@@ -20,9 +20,11 @@ import uuid
 from pathlib import Path
 from typing import Optional
 
+from agents.core.paths import data_path
+
 from .persistence import JsonStore
 
-DEFAULT_PATH = Path("memory_logs/arena.json")
+DEFAULT_PATH = data_path("arena.json")
 _K = 32           # ELO K-factor
 _BASE = 1500.0    # ELO starting rating
 _LABELS = "ABCDEFGH"

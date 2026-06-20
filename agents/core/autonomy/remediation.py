@@ -32,7 +32,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import socket
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Awaitable, Callable, Optional
 
 logger = logging.getLogger("jarvis.autonomy.remediation")

@@ -8,38 +8,39 @@ import logging
 import os
 import re
 import secrets
-import time
 import sys
+import time
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Optional
 
+from agents.core.paths import data_path
+
 sys.path.insert(0, str(Path(__file__).parent))
 
-from fastapi import FastAPI, Request, Depends, HTTPException, Query
-from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse, FileResponse
-from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel, Field, field_validator
-
+from core.channels.discord import DiscordChannel
+from core.channels.email import EmailChannel
+from core.channels.gateway import Gateway
+from core.channels.slack import SlackChannel
+from core.channels.telegram import TelegramChannel
+from core.channels.voice import VoiceChannel
+from core.channels.web import WebChannel
+from core.config import JarvisConfig
+from core.errors import E_INTERNAL_UNEXPECTED, E_SECURITY_BLOCKED, JarvisError
+from core.log import log_error, setup_logging
+from core.log_safe import log_safe
+from core.orchestrator import Orchestrator
+from core.security.guardrails import SecurityBlockError
+from core.web_helpers import error_json
 
 # Pure response/format helpers live in core.web_helpers (CLN-3 shared kernel) so
 # the extracted routers can import them without reaching back into this module.
 # Re-exported here under their original private names for backward compatibility.
-from core.web_helpers import nocache_json as _nocache_json, error_json
-
-from core.config import JarvisConfig
-from core.orchestrator import Orchestrator
-from core.channels.web import WebChannel
-from core.channels.gateway import Gateway
-from core.log_safe import log_safe
-from core.channels.voice import VoiceChannel
-from core.channels.telegram import TelegramChannel
-from core.channels.discord import DiscordChannel
-from core.channels.email import EmailChannel
-from core.channels.slack import SlackChannel
-from core.log import setup_logging, log_error
-from core.errors import JarvisError, E_INTERNAL_UNEXPECTED, E_SECURITY_BLOCKED
-from core.security.guardrails import SecurityBlockError
+from core.web_helpers import nocache_json as _nocache_json
+from fastapi import Depends, FastAPI, HTTPException, Query, Request
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, StreamingResponse
+from fastapi.staticfiles import StaticFiles
+from pydantic import BaseModel, Field, field_validator
 
 logger = logging.getLogger("jarvis.web")
 
@@ -188,6 +189,12 @@ gateway: Gateway = None
 async def lifespan(application: FastAPI):
     global orch, gateway
     setup_logging()
+    # SEC-4 / audit F-08: warn when private runtime state lives inside the git
+    # checkout (accidental commit/zip/share risk). Set JARVIS_HOME to relocate it.
+    from core.paths import data_root, is_inside_repo
+    if is_inside_repo():
+        logger.warning("Runtime state is inside the git checkout (%s) — set JARVIS_HOME "
+                       "to store it outside the repo.", data_root())
     config = JarvisConfig()
     orch = Orchestrator(config)
 
@@ -627,7 +634,7 @@ class TTSRequest(BaseModel):
 async def tts_endpoint(req: TTSRequest):
     """Synthesize text to speech and return MP3 audio."""
     try:
-        from core.voice.tts import TTSEngine, HAS_EDGE
+        from core.voice.tts import HAS_EDGE, TTSEngine
         if not HAS_EDGE:
             return JSONResponse(
                 {"error": "edge-tts not installed. Run: pip install edge-tts"},
@@ -648,6 +655,78 @@ async def tts_endpoint(req: TTSRequest):
         return JSONResponse({"error": "internal error", "code": 500}, status_code=500)
 
 
+# ── Sentence-level streaming TTS (H5.16) ─────────────────────────
+#
+# `/tts` synthesizes the whole reply before any audio comes back, so the user waits
+# for the full message. `/tts/stream` splits the reply into sentences and streams each
+# one's audio as soon as it's synthesized, so playback can start after sentence #1.
+# Opt-in: gated by the `voice.sentence_streaming` setting (default off — back-compat).
+#
+# Wire framing (one frame per sentence, in order):
+#   <json-header>\n<raw-audio-bytes>
+# where the header is a single-line JSON object
+#   {"idx": int, "text": str, "lang": str, "bytes": int, "done": bool}
+# and exactly `bytes` audio bytes follow. A terminal frame {"done": true, "bytes": 0}
+# (no audio) closes the stream. A sentence that failed to synthesize gets bytes:0 and
+# is skipped by the client. This is multipart-free (no python-multipart) like /tts.
+
+def _tts_stream_enabled() -> bool:
+    """Whether sentence-level streaming TTS is turned on (default off)."""
+    from core.settings_db import get_value
+    return bool(get_value("voice", "sentence_streaming", False))
+
+
+@app.post("/tts/stream", dependencies=[Depends(_user_guard)])
+async def tts_stream_endpoint(req: TTSRequest):
+    """Stream sentence-by-sentence TTS audio frames (opt-in). See module comment."""
+    import json as _json
+
+    from core.voice.tts import HAS_EDGE, TTSEngine
+
+    if not _tts_stream_enabled():
+        return JSONResponse(
+            {"error": "sentence streaming disabled. Enable voice.sentence_streaming.",
+             "enabled": False},
+            status_code=409,
+        )
+    if not HAS_EDGE:
+        return JSONResponse(
+            {"error": "edge-tts not installed. Run: pip install edge-tts"},
+            status_code=503,
+        )
+    from core.settings_db import get_value
+    engine = TTSEngine(default_voice=get_value("voice", "tts_voice", "en-GB-RyanNeural"))
+
+    async def _gen():
+        try:
+            async for idx, sentence, path in engine.speak_stream(
+                req.text, voice=req.voice, lang=req.lang,
+            ):
+                audio = b""
+                if path:
+                    try:
+                        audio = Path(path).read_bytes()
+                    except Exception:
+                        logger.warning("tts/stream: cannot read chunk %s", path)
+                        audio = b""
+                header = _json.dumps({
+                    "idx": idx, "text": sentence, "lang": req.lang,
+                    "bytes": len(audio), "done": False,
+                })
+                yield header.encode("utf-8") + b"\n" + audio
+        except Exception:
+            logger.exception("tts/stream error")
+        # Terminal frame.
+        yield _json.dumps({"idx": -1, "text": "", "lang": req.lang, "bytes": 0,
+                           "done": True}).encode("utf-8") + b"\n"
+
+    return StreamingResponse(
+        _gen(),
+        media_type="application/octet-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
+
+
 # ── STT endpoint (browser mic → local Whisper) ───────────────────
 #
 # The voice engines (Whisper/edge-tts/XTTS) were built for Howard — a mic wired to
@@ -663,8 +742,8 @@ def _stt_engine():
     """Lazily build and cache one Whisper engine (model load is expensive)."""
     global _STT_ENGINE
     if _STT_ENGINE is None:
-        from core.voice.stt import STTEngine
         from core.settings_db import get_value
+        from core.voice.stt import STTEngine
         _STT_ENGINE = STTEngine(model_size=get_value("voice", "stt_model_size", "medium"))
     return _STT_ENGINE
 
@@ -678,6 +757,7 @@ async def stt_endpoint(request: Request, lang: Optional[str] = Query(None)):
     doesn't pass ?lang=.
     """
     import tempfile
+
     from core.voice.stt import HAS_WHISPER
     if not HAS_WHISPER:
         return JSONResponse(
@@ -1334,41 +1414,44 @@ async def media_generate(body: MediaGenBody):
 # H21.0 — mount the cognition APIRouter (keeps cognition endpoints out of the
 # web.py god-object). User-guarded like the rest of the /api surface.
 from agents.core.cognition.api import router as _cognition_router  # noqa: E402
+
 app.include_router(_cognition_router, dependencies=[Depends(_user_guard)])
 
 # Per-domain routers extracted from this god-object (CLN-3). These preserve the
 # original (ungated) behavior of their routes — mounted without extra deps.
-from agents.core.routers.wyoming import router as _wyoming_router  # noqa: E402
 from agents.core.routers.onboarding import router as _onboarding_router  # noqa: E402
+from agents.core.routers.wyoming import router as _wyoming_router  # noqa: E402
+
 app.include_router(_wyoming_router)
 app.include_router(_onboarding_router)
 # These preserve each route's original per-route deps (gating lives on the routes
 # themselves, not the include), so behavior is unchanged.
-from agents.core.routers.webhooks import router as _webhooks_router  # noqa: E402
 from agents.core.routers.a2a import router as _a2a_router  # noqa: E402
-from agents.core.routers.pairing import router as _pairing_router  # noqa: E402
-from agents.core.routers.canvas import router as _canvas_router  # noqa: E402
-from agents.core.routers.browser import router as _browser_router  # noqa: E402
-from agents.core.routers.capture import router as _capture_router  # noqa: E402
-from agents.core.routers.rooms import router as _rooms_router  # noqa: E402
-from agents.core.routers.notes import router as _notes_router  # noqa: E402
 from agents.core.routers.actions import router as _actions_router  # noqa: E402
+from agents.core.routers.admin import router as _admin_router  # noqa: E402
+from agents.core.routers.analytics import router as _analytics_router  # noqa: E402
 from agents.core.routers.arena import router as _arena_router  # noqa: E402
-from agents.core.routers.review import router as _review_router  # noqa: E402
+from agents.core.routers.autonomy import router as _autonomy_router  # noqa: E402
+from agents.core.routers.brain import router as _brain_router  # noqa: E402
+from agents.core.routers.browser import router as _browser_router  # noqa: E402
+from agents.core.routers.canvas import router as _canvas_router  # noqa: E402
+from agents.core.routers.capture import router as _capture_router  # noqa: E402
+from agents.core.routers.data_spaces import router as _data_spaces_router  # noqa: E402
+from agents.core.routers.integrations import router as _integrations_router  # noqa: E402
+from agents.core.routers.memory_kg import router as _memory_kg_router  # noqa: E402
+from agents.core.routers.mesh import router as _mesh_router  # noqa: E402
+from agents.core.routers.models_llm import router as _models_llm_router  # noqa: E402
+from agents.core.routers.notes import router as _notes_router  # noqa: E402
+from agents.core.routers.oauth import router as _oauth_router  # noqa: E402
+from agents.core.routers.pairing import router as _pairing_router  # noqa: E402
 from agents.core.routers.quality import router as _quality_router  # noqa: E402
+from agents.core.routers.review import router as _review_router  # noqa: E402
+from agents.core.routers.rooms import router as _rooms_router  # noqa: E402
+from agents.core.routers.secrets import router as _secrets_router  # noqa: E402
 from agents.core.routers.security import router as _security_router  # noqa: E402
 from agents.core.routers.skills import router as _skills_router  # noqa: E402
-from agents.core.routers.data_spaces import router as _data_spaces_router  # noqa: E402
-from agents.core.routers.secrets import router as _secrets_router  # noqa: E402
-from agents.core.routers.mesh import router as _mesh_router  # noqa: E402
-from agents.core.routers.autonomy import router as _autonomy_router  # noqa: E402
-from agents.core.routers.models_llm import router as _models_llm_router  # noqa: E402
-from agents.core.routers.oauth import router as _oauth_router  # noqa: E402
-from agents.core.routers.brain import router as _brain_router  # noqa: E402
-from agents.core.routers.memory_kg import router as _memory_kg_router  # noqa: E402
-from agents.core.routers.analytics import router as _analytics_router  # noqa: E402
-from agents.core.routers.integrations import router as _integrations_router  # noqa: E402
-from agents.core.routers.admin import router as _admin_router  # noqa: E402
+from agents.core.routers.webhooks import router as _webhooks_router  # noqa: E402
+
 app.include_router(_webhooks_router)
 app.include_router(_a2a_router)
 app.include_router(_pairing_router)
@@ -1713,7 +1796,7 @@ def _load_mcp_config():
 @app.get("/api/resilience")
 async def resilience_public():
     """Public resilience metrics and circuit breaker states (no admin auth)."""
-    from core.resilience import get_metrics, _circuit_breakers
+    from core.resilience import _circuit_breakers, get_metrics
     metrics = get_metrics().get_stats()
     breakers = {
         key: {
@@ -1848,7 +1931,7 @@ def _get_payment_broker():
         from agents.core.payments import PaymentBroker
         from agents.core.security.anchor import IntentLog
         _payment_broker = PaymentBroker(
-            audit=IntentLog(path="memory_logs/security/payments_intent.json"))
+            audit=IntentLog(path=str(data_path("security/payments_intent.json"))))
     return _payment_broker
 
 
@@ -2398,6 +2481,6 @@ async def heartbeat_run(agent_id: str):
 @app.get("/api/status")
 async def api_status():
     """Return service version, agent count, and health status."""
-    from agents import __version__, AGENT_COUNT
+    from agents import AGENT_COUNT, __version__
     return {"version": __version__, "agents": AGENT_COUNT, "status": "ok"}
 

@@ -9,12 +9,13 @@ import logging
 import sqlite3
 import threading
 from datetime import datetime, timezone
-from pathlib import Path
 from typing import Optional
+
+from agents.core.paths import data_path
 
 logger = logging.getLogger("jarvis.checkpoint")
 
-CHECKPOINT_DIR = Path("memory_logs/checkpoints")
+CHECKPOINT_DIR = data_path("checkpoints")
 
 
 class CheckpointManager:

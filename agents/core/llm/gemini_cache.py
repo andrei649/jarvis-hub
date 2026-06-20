@@ -12,7 +12,7 @@ from typing import Optional
 
 import httpx
 
-from core.settings_db import DB_PATH, get_conn
+from core.settings_db import get_conn
 
 logger = logging.getLogger("jarvis.gemini.cache")
 

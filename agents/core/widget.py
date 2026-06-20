@@ -15,9 +15,11 @@ from pathlib import Path
 from string import Template
 from typing import Optional
 
+from agents.core.paths import data_path
+
 from .persistence import JsonStore
 
-DEFAULT_PATH = Path("memory_logs/widgets.json")
+DEFAULT_PATH = data_path("widgets.json")
 
 _DEFAULTS = {
     "title": "Jarvis",

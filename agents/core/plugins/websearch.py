@@ -3,7 +3,6 @@ websearch.py — Web search plugin for Vision (OSINT / research).
 Supports DuckDuckGo (no-API) and optional Tavily / SearXNG.
 """
 
-import json
 import logging
 from typing import Optional
 
@@ -20,6 +19,10 @@ class WebSearchPlugin:
         self.tavily_api_key = tavily_api_key
         self.searxng_url = searxng_url
         self._client = PluginHTTPClient.for_plugin("websearch")
+        # SEC-5b: the optional SearXNG host is config-driven; allow it through.
+        if self.searxng_url:
+            from ..plugin_gate import register_dynamic_domain
+            register_dynamic_domain("websearch", self.searxng_url)
 
     async def search(self, query: str, max_results: int = 5) -> list[dict]:
         if self.tavily_api_key:
