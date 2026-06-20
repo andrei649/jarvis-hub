@@ -2025,7 +2025,33 @@ def _build_mcp_server():
         return await orch.handle_input(text, channel="mcp", agent_override=agent_id)
 
     allowed = orch.get_setting("mcp.exposed_agents", None)
-    return JarvisMCPServer(_runner, agents, allowed_agents=allowed, lan_only=True)
+    route_tools = _build_mcp_route_tools()
+    return JarvisMCPServer(
+        _runner, agents, allowed_agents=allowed, lan_only=True, route_tools=route_tools
+    )
+
+
+def _build_mcp_route_tools():
+    """H22.9 (read-only) — bind allow-listed READ-ONLY routes for MCP exposure.
+
+    Gated OFF by default via the ``JARVIS_MCP_ROUTE_TOOLS`` kill-switch: when the
+    switch is off this returns ``[]`` and the MCP server exposes only the existing
+    ``ask_<agent>`` tools (unchanged behaviour). When on, the curated read-only
+    routes (``/status``, ``/api/memory/search``, ``/dashboard``) are bound to their
+    in-process handlers — no loopback HTTP, no mutating routes (those are post-1.0).
+    """
+    from agents.core.mcp.route_tools import build_route_tools, route_tools_enabled
+
+    if not route_tools_enabled():
+        return []
+    from agents.core.routers.memory_kg import memory_search
+
+    handlers = {
+        "status": status,
+        "memory_search": memory_search,
+        "dashboard": dashboard,
+    }
+    return build_route_tools(handlers)
 
 
 @app.get("/api/mcp/server")
