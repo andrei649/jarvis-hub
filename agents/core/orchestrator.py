@@ -272,6 +272,7 @@ class Orchestrator:
         self.event_watcher = None
         self._autonomy_task: Optional[asyncio.Task] = None
         self._warmup_task: Optional[asyncio.Task] = None
+        self._drive_ai_task: Optional[asyncio.Task] = None
         self.last_cognition = None
         # Daily Reflection & Graph Consolidation (H5.15)
         self.reflector: Optional[DailyReflector] = None
@@ -336,6 +337,13 @@ class Orchestrator:
         if os.environ.get("JARVIS_LLM_WARMUP", "1") not in ("0", "false", "False"):
             self._warmup_task = asyncio.create_task(self.llm_router.warm_up())
             self._warmup_task.add_done_callback(_log_task_result)
+
+        # Personalization (PRIVATE) — import the owner's Drive "AI" folder via
+        # rclone into a gitignored local dir and ingest it into memory. Opt-in
+        # (JARVIS_DRIVE_AI_SYNC=1) and fire-and-forget so it never blocks startup.
+        if os.environ.get("JARVIS_DRIVE_AI_SYNC") in ("1", "true", "True"):
+            self._drive_ai_task = asyncio.create_task(self._drive_ai_startup())
+            self._drive_ai_task.add_done_callback(_log_task_result)
 
         try:
             backend = self.llm_router.backend
@@ -1214,6 +1222,34 @@ class Orchestrator:
 
     def _format_plugin_data(self, data: dict) -> str:
         return plugin_gatherer.format_plugin_data(data)
+
+    async def _drive_ai_startup(self) -> None:
+        """PRIVATE personalization: rclone-import the owner's Drive "AI" folder
+        into a gitignored local dir, then ingest it into memory via the existing
+        local-docs indexer (H12.2). Best-effort; never raises."""
+        from agents.core.ingestion.drive_sync import DriveAISync
+        sync = DriveAISync.from_env()
+        if not sync.available():
+            logger.info("Drive AI sync skipped (no JARVIS_DRIVE_AI_REMOTE or rclone not on PATH)")
+            return
+        summary = await sync.sync()
+        if not summary.get("ok"):
+            logger.warning("Drive AI sync failed: %s", summary.get("error"))
+            return
+        logger.info("Drive AI synced → %s", summary.get("dest"))
+        # Ingest into memory unless disabled (JARVIS_DRIVE_AI_INDEX=0 = sync only).
+        if os.environ.get("JARVIS_DRIVE_AI_INDEX", "1") in ("0", "false", "False"):
+            return
+        try:
+            from agents.core.local_docs import LocalDocsIndexer
+
+            async def _remember(text: str, metadata: dict):
+                return await self.memory.remember(text, metadata=metadata)
+
+            result = await LocalDocsIndexer(_remember).index(summary["dest"])
+            logger.info("Drive AI indexed into memory: %s", result)
+        except Exception as e:  # pragma: no cover - defensive
+            logger.warning("Drive AI index failed: %s", e)
 
     def _runtime_state_block(self) -> str:
         """Ground-truth runtime facts injected into the prompt so agents report
