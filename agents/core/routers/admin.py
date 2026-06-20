@@ -28,6 +28,7 @@ State handling (established CLN-3 unblock policy):
   imports (cost/resilience modules), unchanged from web.py.
 """
 
+import asyncio
 import logging
 import os
 import statistics
@@ -113,29 +114,33 @@ async def admin_get_env():
 
 @router.get("/api/admin/audit", dependencies=[Depends(admin_guard)])
 async def admin_get_audit(page: int = Query(1, ge=1), limit: int = Query(50, ge=1, le=200)):
-    import sqlite3
     db = data_path("security/audit.db")
     if not db.exists():
         return {"page": page, "limit": limit, "total": 0, "rows": []}
-    conn = sqlite3.connect(str(db))
-    conn.row_factory = sqlite3.Row
-    has_audit = conn.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='audit_events'").fetchone()
-    table = "audit_events" if has_audit else "security_events"
-    _QUERIES = {
-        "audit_events": ("SELECT COUNT(*) FROM audit_events", "SELECT timestamp, event_type, content_preview AS summary, findings_json AS details FROM audit_events ORDER BY rowid DESC LIMIT ? OFFSET ?"),
-        "security_events": ("SELECT COUNT(*) FROM security_events", "SELECT timestamp, event_type, content_preview AS summary, findings_json AS details FROM security_events ORDER BY rowid DESC LIMIT ? OFFSET ?"),
-    }
-    count_q, select_q = _QUERIES[table]
-    total = conn.execute(count_q).fetchone()[0]
-    offset = (page - 1) * limit
-    rows = conn.execute(select_q, (limit, offset)).fetchall()
-    conn.close()
-    return {
-        "page": page,
-        "limit": limit,
-        "total": total,
-        "rows": [dict(r) for r in rows],
-    }
+
+    # A full-table COUNT + page scan is blocking sqlite I/O; offload it so the audit
+    # page (fastest-growing table) can't stall the event loop under load (audit A4).
+    def _read() -> tuple[int, list[dict]]:
+        import sqlite3
+        conn = sqlite3.connect(str(db))
+        try:
+            conn.row_factory = sqlite3.Row
+            has_audit = conn.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='audit_events'").fetchone()
+            table = "audit_events" if has_audit else "security_events"
+            _QUERIES = {
+                "audit_events": ("SELECT COUNT(*) FROM audit_events", "SELECT timestamp, event_type, content_preview AS summary, findings_json AS details FROM audit_events ORDER BY rowid DESC LIMIT ? OFFSET ?"),
+                "security_events": ("SELECT COUNT(*) FROM security_events", "SELECT timestamp, event_type, content_preview AS summary, findings_json AS details FROM security_events ORDER BY rowid DESC LIMIT ? OFFSET ?"),
+            }
+            count_q, select_q = _QUERIES[table]
+            total = conn.execute(count_q).fetchone()[0]
+            offset = (page - 1) * limit
+            rows = conn.execute(select_q, (limit, offset)).fetchall()
+            return total, [dict(r) for r in rows]
+        finally:
+            conn.close()
+
+    total, rows = await asyncio.to_thread(_read)
+    return {"page": page, "limit": limit, "total": total, "rows": rows}
 
 
 @router.post("/api/admin/memory/clear", dependencies=[Depends(admin_guard)])
