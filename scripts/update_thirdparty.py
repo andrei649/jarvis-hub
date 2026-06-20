@@ -41,12 +41,9 @@ from typing import Callable, Optional
 
 # Reuse the drift checker's helpers (latest-version fetch + version compare)
 # instead of duplicating them. `scripts/` is on sys.path when run as a script;
-# fall back to an explicit insert when imported as a module from tests.
-try:  # pragma: no cover - import shim
-    import check_thirdparty_drift as drift
-except ModuleNotFoundError:  # pragma: no cover - import shim
-    sys.path.insert(0, str(Path(__file__).resolve().parent))
-    import check_thirdparty_drift as drift
+# add it explicitly so this resolves in both cases without importing twice.
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import check_thirdparty_drift as drift  # noqa: E402
 
 _REPO_ROOT = Path(__file__).resolve().parent.parent
 _DEFAULT_MANIFEST = _REPO_ROOT / ".github" / "third-party-manifest.json"
