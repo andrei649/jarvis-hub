@@ -843,6 +843,35 @@ chain-of-thought leak / mid-sentence truncation fixed. Kill-switch:
 
 ---
 
+## ORIZONT 22 — Adopție OSS Runda 2: Performanță & Velocity (research 2026-06-20)
+
+> Sursă: [`docs/research/2026-06-20-oss-adoption-perf-velocity.md`](docs/research/2026-06-20-oss-adoption-perf-velocity.md)
+> — 13 repo-uri mapate la ținte la nivel de fișier (perf runtime + velocity dev).
+> **Reconciliere cu H21** (`docs/research/2026-06-07-cognition-and-tools-session.md`): secret-vault =
+> **deja livrat** (H21.A `secrets_vault.py`); **plausible / cal.com / appflowy = parcate (sidegrade)** sub H21;
+> **penpot = drop**, **fooocus = off-mission** (image-gen idle livrat = H21.C); ollama/whisper/n8n = backend deja
+> integrat. Itemurile de mai jos sunt **doar cele noi**, neacoperite de H21.
+
+| # | Item | S | P | Dep | AC |
+|---|------|---|---|-----|----|
+| H22.1 ✅ | **Fan-out plugin concurent** (yt-dlp) — `plugin_gatherer.py`: eligibilitate (keyword+permission) separată de execuție; pluginele eligibile rulează cu `asyncio.gather` sub semafor + `wait_for`/plugin; eșec izolat (`E_PLUGIN_EXEC_FAIL`). **Done PR #264** (+`tests/test_plugin_gatherer_concurrency.py`). | 2 | P2 | — | turn cu N plugine → ~1 RTT, nu N; un plugin lent nu blochează turul; ordine deterministă |
+| H22.2 ✅ | **Warm-up model local la pornire** (ollama) — `LLMBackend.warm_up()` + override Ollama (empty-prompt load + `keep_alive:-1`) + `LLMRouter.warm_up()`; `load_agents` îl lansează fire-and-forget post-`detect()`, gated `JARVIS_LLM_WARMUP`. **Done PR #264** (+`tests/test_llm_warmup.py`). | 2 | P2 | — | primul tur (voce) nu plătește cold-load; kill-switch `JARVIS_LLM_WARMUP=0` |
+| H22.3 ✅ | **STT decode mai rapid** (faster-whisper) — `voice/stt.py` default greedy (`beam_size=1`) + `int8_float16` pe CUDA / `int8` pe CPU; override per-instanță/env (`JARVIS_STT_BEAM_SIZE`, `JARVIS_STT_COMPUTE_TYPE`). **Done PR #264** (+`tests/test_stt_config.py`). | 1 | P2 | — | latență STT mai mică pe enunțuri scurte; precizie reglabilă din env |
+| H22.4 | **`OLLAMA_NUM_PARALLEL=2–4`** pe backend-ul Ollama — un tur voce + un apel de fundal se întrețes în loc de head-of-line blocking. *(Necesită validare pe GPU.)* | 1 | P3 | — | 2 requesturi concurente pe același model nu se serializează |
+| H22.5 | **Model-manager LRU fast↔deep** (Fooocus/ComfyUI `free_memory`) — track modele rezidente + unload LRU cu headroom înainte de load deep; anti-OOM-thrash în `hybrid_router`. Distinct de H21.C (swap LLM↔diffusion pt. image-gen). *(Validare GPU întâi.)* | 5 | P3 | H22.2, H22.4 | swap fast↔deep fără OOM; evict LRU narat |
+| H22.6 | **Workflow runs → worker autonomie** (n8n queue-mode) — rulările grele de workflow pe worker-ul de autonomie, nu pe coroutina de request; concurență mărginită + timeout/pas + prune istoric (`workflows/engine.py`, `storage.py`). | 5 | P3 | — | latența requestului nu mai absoarbe costul workflow-ului; istoric mărginit |
+| H22.7 | **superpowers + dev-skills jarvis** (`.claude/skills/`) — instalează plugin-ul + 3–5 SKILL.md cu convenții repo (React no-JSX, bootstrap `sys.path`, ritual router+parity, dispatcher „ce bundle AI_CONTEXT"). | 2 | P2 | — | asistenții (Claude/opencode/Gemini) primesc pipeline TDD+plan+review; skills repo trigger automat |
+| H22.8 | **Trial codebase-memory-mcp** (`.mcp.json`) — index structural (tree-sitter→KG) al repo-ului pt. agenți; automatizează ce face manual `AI_CONTEXT.md`. Trial înainte de commit (embeddings bundle mai slabe; binar `curl\|bash`, SLSA L3). | 2 | P2 | — | `index_repository` rulează; agentul găsește simboluri fără file-by-file |
+| H22.9 | **Rute guvernate via MCP server** (BuilderIO/agent-native, *pattern*) — manifest acțiuni din OpenAPI; `mcp/server.py` expune rute allow-listed ca tool-uri MCP lângă agenți, reutilizând permission gate. **Post-1.0.** | 5 | P3 | — | un client MCP poate conduce hub-ul prin rute guvernate |
+| H22.10 | **Follow-up `oauth.py` → vault** (bitwarden/H21.A) — `_get_fernet()` scrie cheia Fernet în plaintext (`TOKEN_DIR/.encryption_key`) lângă ciphertext; consumă cheia din `secrets_vault.py` (H21.A) în loc de fișier plaintext. *(Hardening, nu greenfield — leagă H21.A.)* | 3 | P2 | H21.A | cheia de criptare a token-urilor OAuth nu mai stă în plaintext pe disc |
+
+> **Stare:** 3/10 livrate (H22.1–3, **PR #264**). Secvență recomandată pentru rest:
+> **H22.7 + H22.8** (velocity, risc ~0, accelerează tot ce urmează) → **H22.10** (securitate, aliniat gate pre-1.0) →
+> **H22.4** (validare GPU) → **H22.5/H22.6** (arhitectură) → **H22.9** post-1.0.
+> *(plausible/cal.com/appflowy NU se redeschid — decizie „sidegrade parcat" la H21; vezi nota de sus.)*
+
+---
+
 ## ✅ Arhivă — H1–H4 + Sprint 0 (livrat în 0.5-beta)
 
 > Toate itemurile H1–H4 sunt complet implementate. Detalii complete (67 items, 248 SP): [docs/HISTORY.md](docs/HISTORY.md).

@@ -103,6 +103,7 @@ E2E secrets manager. Most of it (zero-knowledge server, org RSA key hierarchy) a
 
 - **Wrapped-data-key hierarchy**: derive a wrapping key from a master passphrase (**Argon2id**), generate a random data key, store it **wrapped**; password change re-wraps, never re-encrypts data. **Self-describing AEAD envelope** with an `alg_version` tag for painless migration.
 - **Adopt (M, high):** replace plain `.env` + the *decorative* encryption in `plugins/oauth.py` — today `_get_fernet()` writes the Fernet key **in plaintext next to** the ciphertext (`TOKEN_DIR/.encryption_key`). Build one local vault: Argon2id-derived wrapping key (`argon2-cffi`) → random 32-byte data key wrapped with **AES-256-GCM** → all secrets (OAuth tokens, `*_CLIENT_SECRET`, API keys) as consumers. Unlock once at startup, hold the data key in memory only. Use **AES-GCM** (don't hand-roll Bitwarden's CBC+HMAC); 600k+ PBKDF2 or prefer Argon2id.
+- **Reconciliation:** an API-key vault already exists — `agents/core/secrets_vault.py:VaultResolver` (BACKLOG H21.A). So this is *not* greenfield; the remaining gap is narrow: `oauth.py` still writes its Fernet key in plaintext. Tracked as **BACKLOG H22.10** (wire OAuth token encryption to the existing vault), not a new vault build.
 - Sources: bitwarden.com security white paper, kdf-algorithms, secrets-manager docs.
 
 ### Penpot — low value here
