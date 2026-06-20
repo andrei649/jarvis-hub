@@ -87,6 +87,7 @@
   "GET /api/memory/search": "memory_search_api_memory_search_get",
   "GET /api/memory/spaces": "list_data_spaces_api_memory_spaces_get",
   "GET /api/memory/tool-spec": "memory_tool_spec_api_memory_tool_spec_get",
+  "GET /api/metrics/north-star": "metrics_north_star_api_metrics_north_star_get",
   "GET /api/models/local": "models_local_list_api_models_local_get",
   "GET /api/nodes": "nodes_list_api_nodes_get",
   "GET /api/notes": "notes_get_api_notes_get",

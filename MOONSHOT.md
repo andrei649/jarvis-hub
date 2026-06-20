@@ -106,6 +106,9 @@ wrong even if it ships faster.
   - p95 per-turn latency (non-LLM) — must stay flat as we add features.
 - **Commercial signals (Phase 2+):** self-host installs, hosted paid conversion, NRR, gross margin
   (model in [VALUATION_AND_PRICING.md](docs/VALUATION_AND_PRICING.md) §6, §9).
+- **Now instrumented:** the north-star + all four counter-metrics are computed in one place
+  (`agents/core/observability/north_star.py`) and exposed read-only at `GET /api/metrics/north-star`.
+  Field definitions and the single-user (n=1) honesty caveat: [docs/METRICS.md](docs/METRICS.md).
 
 ---
 
