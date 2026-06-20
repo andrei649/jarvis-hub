@@ -1445,6 +1445,8 @@ from agents.core.routers.notes import router as _notes_router  # noqa: E402
 from agents.core.routers.oauth import router as _oauth_router  # noqa: E402
 from agents.core.routers.pairing import router as _pairing_router  # noqa: E402
 from agents.core.routers.payments import router as _payments_router  # noqa: E402
+from agents.core.routers.eval import router as _eval_router  # noqa: E402
+from agents.core.routers.heartbeat import router as _heartbeat_router  # noqa: E402
 from agents.core.routers.quality import router as _quality_router  # noqa: E402
 from agents.core.routers.review import router as _review_router  # noqa: E402
 from agents.core.routers.rooms import router as _rooms_router  # noqa: E402
@@ -1479,6 +1481,8 @@ app.include_router(_analytics_router)
 app.include_router(_admin_router)
 app.include_router(_integrations_router)
 app.include_router(_payments_router)
+app.include_router(_eval_router)
+app.include_router(_heartbeat_router)
 
 
 class DigestRunBody(BaseModel):
@@ -2053,57 +2057,7 @@ async def mcp_server_rpc(message: dict, request: Request):
 # ── END H10.5 MCP Server endpoints ────────────────────────────────
 
 
-# ── H9.3b Dataset Regression Tracking ─────────────────────────────
-
-_dataset_store = None
-
-
-def _get_dataset_store():
-    global _dataset_store
-    if _dataset_store is None:
-        from agents.core.observability.datasets import DatasetStore
-        _dataset_store = DatasetStore()
-    return _dataset_store
-
-
-class DatasetRunBody(BaseModel):
-    name: str = Field(..., max_length=128)
-    version: Optional[int] = None
-
-
-@app.get("/api/eval/datasets")
-async def list_eval_datasets():
-    """List versioned eval datasets with their latest score (H9.3b)."""
-    return _nocache_json({"datasets": _get_dataset_store().list_datasets()})
-
-
-@app.get("/api/eval/datasets/{name}/runs")
-async def list_dataset_runs(name: str, limit: int = Query(20, ge=1, le=200)):
-    """Recent run summaries for a dataset (most-recent first)."""
-    return _nocache_json({"name": name, "runs": _get_dataset_store().runs(name, limit)})
-
-
-@app.get("/api/eval/datasets/{name}/compare")
-async def compare_dataset_runs(name: str, a: str = Query(...), b: str = Query(...)):
-    """Diff two runs (a=baseline, b=candidate): regressions + score delta."""
-    return _nocache_json(_get_dataset_store().compare(name, a, b))
-
-
-@app.post("/api/eval/datasets/run", dependencies=[Depends(_user_guard)])
-async def run_eval_dataset(body: DatasetRunBody):
-    """Run a dataset version through the live orchestrator and record the run."""
-    if not orch:
-        return _nocache_json({"error": "not initialized"}, status_code=503)
-
-    async def _runner(prompt: str) -> str:
-        return await orch.handle_input(prompt, channel="eval")
-
-    result = await _get_dataset_store().run_dataset(body.name, _runner, body.version)
-    status = 404 if result.get("error") else 200
-    return _nocache_json(result, status_code=status)
-
-
-# ── END H9.3b Dataset Regression endpoints ────────────────────────
+# H9.3b Dataset Regression routes extracted to agents/core/routers/eval.py (CLN-3).
 
 
 @app.get("/api/workflows")
@@ -2369,46 +2323,7 @@ async def bench_stats():
     })
 
 
-@app.get("/heartbeat/status")
-async def heartbeat_status():
-    """Return status of all scheduled heartbeats."""
-    return _nocache_json(orch.heartbeat_scheduler.get_status())
-
-
-@app.post("/heartbeat/{agent_id}/start", dependencies=[Depends(_admin_guard)])
-async def heartbeat_start(agent_id: str):
-    """Start a heartbeat for an agent."""
-    if agent_id not in orch.agents:
-        raise HTTPException(status_code=404, detail=f"Agent '{agent_id}' not found")
-    
-    success = orch.heartbeat_scheduler.start_heartbeat(agent_id, orch)
-    if success:
-        return _nocache_json({"agent_id": agent_id, "status": "started"})
-    else:
-        raise HTTPException(status_code=400, detail=f"Failed to start heartbeat for '{agent_id}'")
-
-
-@app.post("/heartbeat/{agent_id}/stop", dependencies=[Depends(_admin_guard)])
-async def heartbeat_stop(agent_id: str):
-    """Stop a heartbeat for an agent."""
-    if agent_id not in orch.agents:
-        raise HTTPException(status_code=404, detail=f"Agent '{agent_id}' not found")
-    
-    success = orch.heartbeat_scheduler.stop_heartbeat(agent_id)
-    if success:
-        return _nocache_json({"agent_id": agent_id, "status": "stopped"})
-    else:
-        raise HTTPException(status_code=400, detail=f"Failed to stop heartbeat for '{agent_id}'")
-
-
-@app.post("/heartbeat/{agent_id}/run", dependencies=[Depends(_admin_guard)])
-async def heartbeat_run(agent_id: str):
-    """Run a heartbeat immediately."""
-    if agent_id not in orch.agents:
-        raise HTTPException(status_code=404, detail=f"Agent '{agent_id}' not found")
-
-    await orch.heartbeat_scheduler.run_now(agent_id, orch)
-    return _nocache_json({"agent_id": agent_id, "status": "executed"})
+# /heartbeat/* routes extracted to agents/core/routers/heartbeat.py (CLN-3).
 
 
 @app.get("/api/status")
