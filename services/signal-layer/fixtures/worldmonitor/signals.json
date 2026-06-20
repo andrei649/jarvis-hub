@@ -1,0 +1,217 @@
+[
+  {
+    "id": "sig-aviation-dxb-001",
+    "domain": "world",
+    "type": "aviation",
+    "title": "Elevated aviation monitoring around DXB",
+    "summary": "Aviation feeds indicate elevated monitoring for regional airspace and airport operations around Dubai. No automatic travel change is recommended from this signal alone.",
+    "entities": [
+      {
+        "type": "country",
+        "id": "AE",
+        "label": "United Arab Emirates"
+      },
+      {
+        "type": "airport",
+        "id": "DXB",
+        "label": "Dubai DXB"
+      }
+    ],
+    "evidenceIds": [
+      "ev-aviation-dxb-001"
+    ],
+    "severity": "elevated",
+    "confidence": "medium",
+    "claimStatus": "confirmed",
+    "status": "new",
+    "observedAt": "2026-06-19T11:30:00Z",
+    "publishedAt": "2026-06-19T11:30:00Z",
+    "fetchedAt": "2026-06-19T11:36:00Z",
+    "cachedAt": "2026-06-19T11:42:00Z",
+    "stale": false,
+    "provider": "worldmonitor",
+    "relevance": {
+      "score": 0,
+      "reasons": [],
+      "matchedTargets": []
+    },
+    "raw": {
+      "fixture": true
+    }
+  },
+  {
+    "id": "sig-market-btc-001",
+    "domain": "world",
+    "type": "market",
+    "title": "Crypto volatility signal affecting BTC-USD watch target",
+    "summary": "Market pulse shows elevated volatility across major crypto assets. Treat as a monitoring signal, not a trade recommendation.",
+    "entities": [
+      {
+        "type": "market",
+        "id": "BTC-USD",
+        "label": "Bitcoin"
+      }
+    ],
+    "evidenceIds": [
+      "ev-market-btc-001"
+    ],
+    "severity": "elevated",
+    "confidence": "medium",
+    "claimStatus": "confirmed",
+    "status": "new",
+    "observedAt": "2026-06-19T11:15:00Z",
+    "publishedAt": "2026-06-19T11:15:00Z",
+    "fetchedAt": "2026-06-19T11:45:00Z",
+    "cachedAt": "2026-06-19T11:45:00Z",
+    "stale": false,
+    "provider": "worldmonitor",
+    "relevance": {
+      "score": 0,
+      "reasons": [],
+      "matchedTargets": []
+    },
+    "raw": {
+      "fixture": true
+    }
+  },
+  {
+    "id": "sig-cyber-001",
+    "domain": "world",
+    "type": "cyber",
+    "title": "Cyber exploitation watchlist requires review",
+    "summary": "Cyber feeds contain active exploitation indicators. Jarvis should not infer exposure without linked infrastructure or vendor inventory.",
+    "entities": [
+      {
+        "type": "topic",
+        "id": "cyber",
+        "label": "Cyber risk"
+      }
+    ],
+    "evidenceIds": [
+      "ev-cyber-001"
+    ],
+    "severity": "high",
+    "confidence": "medium",
+    "claimStatus": "confirmed",
+    "status": "new",
+    "observedAt": "2026-06-19T10:00:00Z",
+    "publishedAt": "2026-06-19T10:00:00Z",
+    "fetchedAt": "2026-06-19T11:18:00Z",
+    "cachedAt": "2026-06-19T11:18:00Z",
+    "stale": false,
+    "provider": "worldmonitor",
+    "relevance": {
+      "score": 0,
+      "reasons": [],
+      "matchedTargets": []
+    },
+    "raw": {
+      "fixture": true
+    }
+  },
+  {
+    "id": "sig-conflict-suez-001",
+    "domain": "world",
+    "type": "conflict",
+    "title": "Suez-adjacent geopolitical risk remains on watch",
+    "summary": "OSINT/news-derived monitoring signals show continued regional risk around a watched chokepoint. Treat as raw lead until corroborated by official or structured sources.",
+    "entities": [
+      {
+        "type": "route",
+        "id": "suez",
+        "label": "Suez Canal"
+      }
+    ],
+    "evidenceIds": [
+      "ev-conflict-suez-001"
+    ],
+    "severity": "high",
+    "confidence": "low",
+    "claimStatus": "raw_osint_lead",
+    "status": "new",
+    "observedAt": "2026-06-19T09:00:00Z",
+    "publishedAt": "2026-06-19T09:00:00Z",
+    "fetchedAt": "2026-06-19T11:00:00Z",
+    "cachedAt": "2026-06-19T11:00:00Z",
+    "stale": false,
+    "provider": "worldmonitor",
+    "relevance": {
+      "score": 0,
+      "reasons": [],
+      "matchedTargets": []
+    },
+    "raw": {
+      "fixture": true
+    }
+  },
+  {
+    "id": "sig-country-ro-001",
+    "domain": "world",
+    "type": "geopolitical_news",
+    "title": "Romania regional watch remains moderate",
+    "summary": "Country-level risk inputs place Romania in a moderate monitoring state due to regional security context and infrastructure sensitivity.",
+    "entities": [
+      {
+        "type": "country",
+        "id": "RO",
+        "label": "Romania"
+      }
+    ],
+    "evidenceIds": [
+      "ev-country-ro-001"
+    ],
+    "severity": "normal",
+    "confidence": "medium",
+    "claimStatus": "model_inference",
+    "status": "new",
+    "observedAt": "2026-06-19T08:00:00Z",
+    "publishedAt": "2026-06-19T08:00:00Z",
+    "fetchedAt": "2026-06-19T10:00:00Z",
+    "cachedAt": "2026-06-19T10:00:00Z",
+    "stale": false,
+    "provider": "worldmonitor",
+    "relevance": {
+      "score": 0,
+      "reasons": [],
+      "matchedTargets": []
+    },
+    "raw": {
+      "fixture": true
+    }
+  },
+  {
+    "id": "sig-disaster-ae-001",
+    "domain": "world",
+    "type": "natural_disaster",
+    "title": "Weather/disaster feed for UAE needs refresh",
+    "summary": "A stale weather/disaster cache exists for the UAE watch target. The signal is useful as a freshness warning, not as a current hazard assessment.",
+    "entities": [
+      {
+        "type": "country",
+        "id": "AE",
+        "label": "United Arab Emirates"
+      }
+    ],
+    "evidenceIds": [
+      "ev-disaster-ae-001"
+    ],
+    "severity": "normal",
+    "confidence": "low",
+    "claimStatus": "unknown",
+    "status": "new",
+    "observedAt": "2026-06-19T06:00:00Z",
+    "publishedAt": "2026-06-19T06:00:00Z",
+    "fetchedAt": "2026-06-19T07:00:00Z",
+    "cachedAt": "2026-06-19T07:00:00Z",
+    "stale": true,
+    "provider": "worldmonitor",
+    "relevance": {
+      "score": 0,
+      "reasons": [],
+      "matchedTargets": []
+    },
+    "raw": {
+      "fixture": true
+    }
+  }
+]

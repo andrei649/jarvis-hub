@@ -47,6 +47,23 @@ jobs:
         env:
           JARVIS_TESTING: "1"
 
+  signal-layer-smoke:
+    # Proves the provider-neutral Signal Layer can run its deterministic replay
+    # path without WorldMonitor, Docker, API keys, or network access.
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: ["ubuntu-latest", "windows-latest"]
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "22"
+      - name: Smoke test Signal Layer replay mode
+        run: npm test
+        working-directory: services/signal-layer
+
   frontend:
     # HUD (React-via-globals) unit tests. Runs the real shipped static
     # artifacts inside JSDOM — see tests/frontend/README.md.
