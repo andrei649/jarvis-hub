@@ -73,6 +73,8 @@ from .plugins.sms_alerts import SMSAlertsPlugin
 from .plugins.crm_sync import CRMSyncPlugin
 from .plugins.iot_control import IoTControlPlugin
 from .plugins.worldview import WorldViewPlugin
+from .plugins.signal_layer import SignalLayerPlugin
+from .argus import ArgusInterface
 
 logger = logging.getLogger("jarvis.orchestrator")
 
@@ -461,6 +463,15 @@ class Orchestrator:
         self.plugins["worldview"] = WorldViewPlugin(
             api_url=os.environ.get("WORLDVIEW_API_URL", ""),
         )
+        # Signal Layer — provider-neutral world intelligence (local-first; :8787).
+        # Read-only + fail-safe: a down service returns {"status":"unavailable"}.
+        self.plugins["signal-layer"] = SignalLayerPlugin(
+            api_url=os.environ.get("SIGNAL_LAYER_API_URL", ""),
+            api_token=os.environ.get("SIGNAL_LAYER_API_TOKEN", ""),
+        )
+        # Argus — one governed facade over WorldView + Signal Layer for world-intel
+        # queries. Built after both backends are registered; every call is gated.
+        self.argus = ArgusInterface.from_orchestrator(self)
 
         # Autonomy queue — durable self-tasking store (H6.1)
         try:
