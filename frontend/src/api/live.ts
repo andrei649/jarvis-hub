@@ -16,6 +16,13 @@ const arr = (x: any, ...keys: string[]) => {
   return null;
 };
 
+const signalLayerHealth = () => {
+  if (typeof fetch !== 'function') return Promise.resolve(null);
+  return fetch(`${SIGNAL_LAYER_URL}/healthz`, { cache: 'no-store' })
+    .then(r => r.ok ? r.json() : null)
+    .catch(() => null);
+};
+
 export interface LiveModes { ver: number; live: Record<string, boolean>; }
 
 /* Returns `live`: which V2 keys received REAL, non-empty backend data this session.
@@ -53,10 +60,10 @@ export function useLiveModes(): LiveModes {
         apiGet('/api/resilience').catch(() => null),
         apiGet('/api/arena/leaderboard').catch(() => null),
         apiGet('/api/traces?limit=8').catch(() => null),
-        fetch(`${SIGNAL_LAYER_URL}/healthz`, { cache: 'no-store' }).then(r => r.ok ? r.json() : null).catch(() => null),
+        signalLayerHealth(),
       ]).then(([bench, quality, resil, arena, traces, signalLayer]: any[]) => {
         const O = { ...V2.OBSERVE };
-        if (bench) O.bench = { p50: bench.latency?.p50 ?? bench.p50 ?? O.bench.p50, p95: bench.latency?.p95 ?? bench.p95 ?? O.bench.p95, p99: bench.latency?.p99 ?? O.bench.p99 };
+        if (bench) O.bench = { p50: bench.latency?.p50 ?? bench.p50 ?? O.bench.p50, p95: bench.latency?.p95 ?? bench.p95 ?? O.bench.p95, p99: bench.latency?.p99 ?? bench.p99 ?? O.bench.p99 };
         if (quality) O.quality = { success_rate: quality.success_rate ?? quality.rolling_avg ?? O.quality.success_rate, interactions: quality.interactions ?? quality.count ?? O.quality.interactions, escalations: quality.escalations ?? O.quality.escalations };
         if (resil) O.resilience = { uptime: resil.uptime ?? O.resilience.uptime, ssrf_blocked: resil.ssrf_blocked ?? O.resilience.ssrf_blocked, errors_24h: resil.errors_24h ?? O.resilience.errors_24h, redactions: resil.redactions ?? O.resilience.redactions };
         const al = arr(arena, 'leaderboard');
