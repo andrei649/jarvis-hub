@@ -5,7 +5,7 @@ import DeckGL from "@deck.gl/react";
 import { _GlobeView as GlobeView, FlyToInterpolator } from "@deck.gl/core";
 import type { Layer, PickingInfo, Position } from "@deck.gl/core";
 import { SolidPolygonLayer, PathLayer } from "@deck.gl/layers";
-import Map from "react-map-gl";
+import Map from "react-map-gl/mapbox";
 import "mapbox-gl/dist/mapbox-gl.css";
 import type { LayerData } from "@/lib/useWorldViewData";
 import { useEntityTrack } from "@/lib/useEntityTrack";
