@@ -131,7 +131,10 @@ chain-of-thought leak / mid-sentence truncation fixed. Kill-switch:
   (`LMStudioController._resolve_model`). Unique match loads (reply names the resolved id); several
   matches → `ambiguous` + candidates (chat asks which / admin returns 409); list unreachable → literal
   passthrough. Admin `/api/llm/load` persists the resolved id. +13 tests.
-- Surface the kill-switch toggle + a model picker as real controls in the admin Settings UI.
+- ✅ Surface the kill-switch toggles + a model picker as real controls in the admin Settings UI —
+  `llm.control_enabled` / `llm.chat_control` toggles + live model picker (`ModelPickerRow`, kind
+  `model-select`), and a live controller-status card backed by new admin-guarded `GET /api/llm/status`
+  → `{online, enabled, server_url, active_model}` (`LMStudioStatusRow` in `admin.js`). +Python +JS tests.
 - Confirm the LM Studio id for Gemma 4 12B — `google/gemma-4-12b` is a placeholder in static config.
 
 ---
