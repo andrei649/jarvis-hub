@@ -5,7 +5,7 @@ import { scoreSignalsForWatchlist } from '../src/core/relevance.mjs';
 import { buildWorldBriefFromSignals } from '../src/core/assessment.mjs';
 import { defaultWatchlist } from '../src/core/watchlist.mjs';
 
-process.env.JARVIS_WORLDVIEW_MODE = 'replay';
+process.env.JARVIS_SIGNAL_LAYER_MODE = 'replay';
 const config = loadConfig();
 const provider = createProvider(config);
 
