@@ -1,9 +1,9 @@
 """plugin_gatherer.py — live-plugin data gathering extracted from the Orchestrator (CLN-2).
 
 Owns the keyword-triggered fan-out to the real-time plugins (weather, news,
-calendar, gmail, websearch, worldview), the small location heuristic, the prompt
-block formatter, and the two routing helpers it depends on. Every function takes
-the orchestrator as an explicit collaborator and reads its live state
+calendar, gmail, websearch, worldview, signal-layer), the small location heuristic,
+the prompt block formatter, and the two routing helpers it depends on. Every
+function takes the orchestrator as an explicit collaborator and reads its live state
 (``plugins``, ``permission_gate``) at call time — the same delegation pattern as
 SchedulerService / ChannelManager.
 
@@ -31,6 +31,44 @@ def first_target_agent(orch, intent) -> str:
 def any_agent_can(orch, plugin: str, intent) -> bool:
     agents = intent.target_agents if intent.target_agents else ["jarvis"]
     return any(orch.permission_gate.check_call(plugin, a) for a in agents)
+
+
+def wants_signal_layer(text_lower: str, keywords: list[str]) -> bool:
+    return (
+        "worldview" in keywords
+        or "news" in keywords
+        or any(w in text_lower for w in [
+            "world brief", "global brief", "world intelligence", "signal layer",
+            "what changed overnight", "changed overnight", "overnight",
+            "geopolitic", "country risk", "risk for romania", "risk for uae",
+            "romania risk", "uae risk", "external world", "world today",
+            "global status", "global risk", "osint", "chokepoint", "suez",
+        ])
+    )
+
+
+async def _signal_layer_answer(orch, text: str, text_lower: str) -> dict:
+    """Ask the local Signal Layer for an evidence-backed world answer.
+
+    The orchestrator may not have registered the plugin yet on older branches, so
+    this function lazily instantiates the read-only client. Failure is returned as
+    structured plugin data and never fabricated into a world-intel answer.
+    """
+    plugin = orch.plugins.get("signal-layer")
+    if plugin is None:
+        try:
+            from .plugins.signal_layer import SignalLayerPlugin
+            plugin = SignalLayerPlugin()
+            orch.plugins["signal-layer"] = plugin
+        except Exception as e:
+            return {"status": "unavailable", "error": f"SignalLayerPlugin unavailable: {e}"}
+
+    mode = "overnight_brief" if "overnight" in text_lower else "general"
+    country = "RO" if "romania" in text_lower else "AE" if "uae" in text_lower or "emirates" in text_lower else ""
+    try:
+        return await plugin.ask_world(text, mode=mode, country=country, limit=8)
+    except Exception as e:
+        return {"status": "unavailable", "error": str(e), "provider": "signal-layer"}
 
 
 async def gather_plugin_data(orch, text: str, intent) -> dict:
@@ -89,6 +127,12 @@ async def gather_plugin_data(orch, text: str, intent) -> dict:
                 data["worldview"] = await wv.recon_overview()
         else:
             log_error(logger, E_PLUGIN_BLOCKED, name="worldview")
+
+    if wants_signal_layer(text_lower, keywords):
+        if any_agent_can(orch, "signal-layer", intent):
+            data["signal-layer"] = await _signal_layer_answer(orch, text, text_lower)
+        else:
+            log_error(logger, E_PLUGIN_BLOCKED, name="signal-layer")
 
     return data
 
