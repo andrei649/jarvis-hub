@@ -1,0 +1,10 @@
+{
+  "//": "BACKLOG H22.8 — codebase-memory-mcp trial. Copy to .mcp.json to enable (.mcp.json is gitignored so each dev opts in). Requires the binary installed first — see docs/dev/codebase-memory-mcp.md. Verify the exact command/args against the upstream README before trusting this.",
+  "mcpServers": {
+    "codebase-memory": {
+      "command": "codebase-memory-mcp",
+      "args": ["serve", "--repo", "."],
+      "env": {}
+    }
+  }
+}

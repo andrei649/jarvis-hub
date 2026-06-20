@@ -110,6 +110,38 @@ Mark **H13.3 ✅** once output-identity holds and you see the speedup.
 
 ---
 
+## H22.4 — Ollama concurrency & keep-warm (server-side tuning)
+
+> These are **Ollama server** environment variables, set where `ollama serve`
+> runs (the host), not in jarvis code — jarvis connects to Ollama, it doesn't
+> launch it. Pair with the startup warm-up jarvis already does (`JARVIS_LLM_WARMUP`,
+> BACKLOG H22.2). **Validate on the GPU box** — effects can't be measured in CI.
+
+Set in the Ollama service env (e.g. `~/.ollama` / systemd drop-in / shell that
+starts `ollama serve`):
+
+```bash
+export OLLAMA_NUM_PARALLEL=2        # 2–4: interleave concurrent requests on one
+                                    # loaded model (default 1 = serial/head-of-line).
+                                    # RAM scales ~ NUM_PARALLEL × context.
+export OLLAMA_KEEP_ALIVE=-1         # keep the model resident (no 5m unload).
+export OLLAMA_FLASH_ATTENTION=1     # enables KV-cache quant; gate per-model.
+export OLLAMA_KV_CACHE_TYPE=q8_0    # ~½ KV memory vs f16 (needs flash-attn on).
+```
+
+### Verify
+1. **Concurrency** — fire two chat requests at the same loaded model; with
+   `NUM_PARALLEL=1` they serialize, with `2` they overlap (watch tokens/sec and
+   wall-clock of the pair).
+2. **Warm start** — first turn after boot should skip the cold-load (the jarvis
+   warm-up + `KEEP_ALIVE=-1` keep it resident).
+3. **Flash-attn / KV quant** — confirm no quality regression or crashes on your
+   specific model (known crash reports on some architectures — keep an allowlist).
+
+Mark **H22.4 ✅** once concurrent requests overlap and the model stays warm.
+
+---
+
 ## Notes
 - Both items are **$0 incremental COGS** — they run on local hardware you already
   provision for the strict-local tier (H13.1/H13.4).
