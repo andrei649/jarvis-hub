@@ -168,5 +168,3 @@ TS framework where one `defineAction()` (Zod schema + `run()`) auto-exposes as M
 - ✅ `mcp/server.py` exposes agents as governed `ask_<agent>` tools — not the ~298 routes.
 - ✅ `plugins/oauth.py` `_get_fernet()` stores the encryption key in plaintext (`TOKEN_DIR/.encryption_key`) next to the ciphertext.
 - ✅ `workflows/` engine + `autonomy/queue.py` worker + `plugins/n8n.py` all exist (the n8n borrow is reshaping, not greenfield).
-</content>
-</invoke>
