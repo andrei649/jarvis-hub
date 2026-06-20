@@ -444,6 +444,9 @@ class Orchestrator:
         self.plugins["analytics"] = AnalyticsPlugin(
             ga4_service_account=self.get_setting("plugins.stark_ga4_service_account", ""),
             ga4_property_id=self.get_setting("plugins.stark_ga4_property_id", ""),
+            # H22: local-first analytics is the default; the GA4 remote mirror is
+            # opt-in and OFF unless explicitly enabled.
+            ga4_enabled=bool(self.get_setting("plugins.stark_ga4_enabled", False)),
         )
 
         self.plugins["oracle-bridge"] = OracleBridgePlugin(

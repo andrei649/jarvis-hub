@@ -180,6 +180,7 @@
   "POST /api/admin/settings/reseed": "admin_reseed_api_admin_settings_reseed_post",
   "POST /api/admin/widgets": "widgets_issue_api_admin_widgets_post",
   "POST /api/agent-templates/instantiate": "agent_templates_instantiate_api_agent_templates_instantiate_post",
+  "POST /api/analytics/event": "ingest_analytics_event_api_analytics_event_post",
   "POST /api/arena/run": "arena_run_api_arena_run_post",
   "POST /api/arena/vote": "arena_vote_api_arena_vote_post",
   "POST /api/autonomy/call": "autonomy_call_api_autonomy_call_post",

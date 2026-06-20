@@ -180,6 +180,7 @@
   "POST /api/admin/settings/reseed",
   "POST /api/admin/widgets",
   "POST /api/agent-templates/instantiate",
+  "POST /api/analytics/event",
   "POST /api/arena/run",
   "POST /api/arena/vote",
   "POST /api/autonomy/call",
