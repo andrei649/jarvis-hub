@@ -99,7 +99,7 @@ GitHub scanning surfaced 25 CodeQL alerts + 1 secret-scanning alert. Of the 13 r
 
 ---
 
-## Scalability: index hot/unbounded SQLite tables (shipped — PR pending)
+## Scalability: index hot/unbounded SQLite tables (shipped — PR #199)
 
 Behavior-preserving index pass on the four tables that are read on hot paths
 while growing without bound — keeps those lookups O(log n) instead of degrading
