@@ -1,6 +1,6 @@
 # Jarvis World Intelligence — Continuation Handoff
 
-_Last updated: 2026-06-20 (post #261/#267/#268 merge + main-merge + hardening #269). Primary branch: `feature/jarvis-signal-layer`. Primary PR: #248._
+_Last updated: 2026-06-20 — **Signal Layer shipped to `main`** (PR #248 + child lanes). Primary branch is now `main`. Only open item: governance bridge **#280 (draft, awaiting owner review)**._
 
 This document is the handoff point for Claude, Codex, local agents, or any future contributor continuing the World Intelligence sprint without reading the full chat history.
 
@@ -110,20 +110,19 @@ docs/worldview/worldview-worldmonitor-fusion.md
 
 ## 4. Key branches and PRs
 
-| Branch / PR | Purpose | Status |
+| PR | Purpose | Status |
 |---|---|---|
-| `feature/jarvis-signal-layer` / PR #248 | Integration spine | **draft** — `main` merged in; awaiting hardening before undraft |
-| `feature/world-intelligence-demo-freeze` / PR #261 | Sunday demo script | ✅ merged into spine |
-| `feature/world-intelligence-hud-polish` / PR #267 | HUD polish + rebuilt bundle | ✅ merged into spine |
-| `feature/world-intelligence-startup-verify` / PR #268 | Launcher + replay validation | ✅ merged into spine |
-| `feature/world-intelligence-service-hardening` / PR #269 | Local bind, token gate, scoped CORS | in review → spine |
+| #248 | Signal Layer integration spine | ✅ **merged to `main`** |
+| #261 / #267 / #268 / #269 / #270 | demo-freeze, HUD polish, startup-verify, service hardening, docs | ✅ merged |
+| #275 / #277 / #278 / #283 | robustness+tests, live-feed readiness, Argus facade, mock WorldMonitor (CI live-path) | ✅ merged to `main` |
+| #287 / #288 | orchestrator wiring (Signal Layer + Argus), richer replay fixtures | ✅ merged / landing |
+| **#280** | governance bridge — recs → approval inbox (**default-off, preview-only**) | 🟡 **draft — awaiting owner review** |
 
-Recommended future child branches:
+Remaining future lanes (not started):
 
 ```text
-feature/world-intelligence-live-contract
-feature/world-intelligence-argus-routing
-feature/world-intelligence-governance-preview
+feature/world-intelligence-argus-routing       # deeper agent-dispatch routing (needs human verification)
+feature/world-intelligence-governance-enable   # owner decision to enable #280
 ```
 
 ## 5. Current implementation status
@@ -131,15 +130,14 @@ feature/world-intelligence-governance-preview
 | Area | Status | Notes |
 |---|---:|---|
 | Signal Layer service | Strong v0.1 | Replay provider, routes, evidence, relevance, briefs, assessments |
-| Replay/demo path | Strong | Deterministic; no WorldMonitor/API keys required |
-| Windows startup | Validated (#268) | `START.bat` starts Signal Layer unless `JARVIS_SIGNAL_LAYER=0`; syntax + ports verified |
-| Unix startup | Validated (#268) | `start.sh` passes `bash -n`; opt-out + port boundaries verified |
-| Jarvis-native HUD | Good (#267) | Observe mode World Intelligence panel + fallback states; bundle current |
-| Agent bridge | Medium-good | `SignalLayerPlugin` and `plugin_gatherer` integration exist |
-| Service security | Hardened (#269, in review) | Default bind 127.0.0.1, optional bearer-token gate, scoped CORS |
-| Live WorldMonitor | Medium-low | Optional contract test exists; real sidecar payloads still need validation |
-| Governance bridge | Medium-low | Recommendations are preview-only, not real approval queue items yet |
-| Merge readiness | Unblocking | `main` merged into spine (0 behind, CI green); SEC-5b de-duplicated; remaining gate: land hardening (#269), then undraft #248 |
+| Replay/demo path | Strong | Deterministic; 18 signals / 8 countries (#288); no WorldMonitor/API keys |
+| Windows / Unix startup | Validated (#268) | `START.bat` / `start.sh` opt-out + port boundaries verified |
+| Jarvis-native HUD | Good (#267) | Observe-mode World Intelligence panel + fallback states; bundle current |
+| Agent bridge | **Wired (#287)** | `SignalLayerPlugin` registered at startup + `ArgusInterface` facade in the orchestrator; `plugin_gatherer` grounding live |
+| Service security | Hardened (#269) | Default bind 127.0.0.1, optional bearer-token gate, scoped CORS |
+| Live WorldMonitor | Code-path validated (#283) | Mock-sidecar live path runs in CI; **real `:3100` sidecar still needed** to validate the actual feed |
+| Governance bridge | Built, **default-off** (#280 draft) | Preview-only: recs → existing approval inbox, never executes; awaiting owner enable decision |
+| Ship status | **Shipped to `main`** | Signal Layer + bridge + HUD + launchers all on `main`; only #280 (governance) remains a draft |
 
 ## 6. Signal Layer API contract
 
@@ -258,9 +256,11 @@ The HUD may claim:
 
 ## 9. Agent bridge continuation guidance
 
-`SignalLayerPlugin` is the only agent-facing Signal Layer client.
+`SignalLayerPlugin` is the only agent-facing Signal Layer client, and `ArgusInterface`
+(`agents/core/argus.py`, wired as `orch.argus` in #287) is the governed facade over it +
+WorldView. Both are registered in the orchestrator at startup.
 
-Do not bypass it with raw HTTP calls in agent code.
+Do not bypass them with raw HTTP calls in agent code.
 
 Current prompt grounding path:
 
@@ -330,7 +330,7 @@ Do not claim WorldMonitor is started automatically by default.
 
 WorldMonitor is a sidecar that must be started separately for live mode.
 
-## 12. Required checks before undrafting PR #248
+## 12. Standing CI gate (was: checks before undrafting #248 — now merged)
 
 Minimum:
 
@@ -405,14 +405,15 @@ Jarvis can now observe external reality, convert it into evidence-backed signals
 
 ## 15. Next best actions
 
-Done since the first handoff: HUD polish + bundle (#267), demo-script freeze (#261),
-startup-verify (#268) — all merged into the spine; `main` merged into the spine and the
-SEC-5b `plugin_gate.py` duplication de-duplicated; service hardening (#269) in review.
+Shipped to `main`: the whole Signal Layer (#248), demo-freeze/HUD/startup/hardening/docs
+(#261/#267/#268/#269/#270), robustness+tests (#275), live-feed readiness (#277), Argus
+facade (#278), mock-WM CI live-path (#283), orchestrator wiring (#287), richer fixtures (#288).
 
-Remaining:
+Remaining (owner / needs a real service):
 
-1. Land service hardening (#269) into `feature/jarvis-signal-layer`.
-2. Undraft PR #248 into `main` once CI/build/mergeability are confirmed clean (owner decision).
-3. Start `feature/world-intelligence-live-contract` only when WorldMonitor can run locally on `:3100`.
-4. Re-merge `main` into the spine if `main` advances again before #248 lands.
-5. Later lanes: `argus-routing`, `governance-preview` (real approval-queue integration).
+1. **Review & enable governance #280** (owner) — it's a draft, default-off, preview-only. Flip
+   `JARVIS_SIGNAL_GOVERNANCE` to route recs into the approval inbox once happy.
+2. **Validate the real WorldMonitor feed** — run `npm run test:live-contract` against a real
+   `:3100` sidecar (CI already exercises the code path via the mock: `npm run test:live-contract:mock`).
+3. **Deeper Argus agent-dispatch routing** — route the `argus` agent's world queries through
+   `ArgusInterface`; deferred because it changes conversational behavior and needs human verification.
