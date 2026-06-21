@@ -14,6 +14,7 @@ orchestrator (via `get_orch()`) or leaf imports. The agent-id regex moved with t
 (only the soul + history routes use it).
 """
 
+import os
 import re
 import sys
 from pathlib import Path
@@ -55,21 +56,17 @@ async def get_agent_soul(agent_id: str):
     agent_id = agent_id.strip().lower()
     if not _AGENT_ID_RE.match(agent_id):
         raise HTTPException(status_code=404, detail="Agent not found")
+    # os.path.basename strips any directory component — the path-traversal sanitizer
+    # CodeQL recognizes. A no-op for the already-validated [a-z0-9_-] id, but it makes
+    # every path built from it below provably safe (defense-in-depth).
+    agent_id = os.path.basename(agent_id)
 
     # Allow reading SOUL.md if the file physically exists, even if orch is not initialized (e.g. in tests)
-    # The id becomes a path segment below. The regex already forbids separators, but
-    # resolve the agent dir and require it to stay under the agents/ root — the
-    # path-traversal barrier CodeQL recognizes (and defense-in-depth). All file ops
-    # below derive from this checked path, never the raw id.
-    agent_dir = (_AGENTS_DIR / agent_id).resolve()
-    if not agent_dir.is_relative_to(_AGENTS_DIR):
-        raise HTTPException(status_code=404, detail="Agent not found")
-
     # The personalized overlay (SOUL.local.md, gitignored) wins when present —
     # same resolution as Agent._load_soul.
-    soul_path = agent_dir / "SOUL.local.md"
+    soul_path = _AGENTS_DIR / agent_id / "SOUL.local.md"
     if not soul_path.exists():
-        soul_path = agent_dir / "SOUL.md"
+        soul_path = _AGENTS_DIR / agent_id / "SOUL.md"
 
     orch = get_orch()
     if orch and agent_id not in orch.agents:
