@@ -164,7 +164,8 @@ When on: embeds the query, runs fused recall (vector ⊕ graph), injects top-k a
 | `agents/core/plugins/google_calendar.py` | Google Calendar | `GoogleCalendarPlugin.get_today_events` |
 | `agents/core/plugins/spotify_plugin.py` | Spotify | `SpotifyPlugin` |
 | `agents/core/plugins/balance.py` | ING/Libra bank balance | `BalanceReaderPlugin` (gecko) |
-| `agents/core/plugins/analytics.py` | GA4 | `AnalyticsPlugin` (stark) |
+| `agents/core/plugins/analytics.py` | first-party local analytics (Plausible-style; GA4 mirror opt-in) | `AnalyticsPlugin` (stark) |
+| `agents/core/analytics_store.py` | local SQLite event table (H22); aggregate-on-read | `record_event` / `kpis` |
 | `agents/core/plugins/oracle_bridge.py` | GitHub watcher | `OracleBridgePlugin` |
 | `agents/core/plugins/n8n.py` | n8n workflows | `N8NPlugin` |
 | `agents/core/plugins/homebridge.py` | HomeKit / Homebridge | `HomebridgePlugin` |

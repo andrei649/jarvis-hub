@@ -1,0 +1,130 @@
+name: Third-Party Auto-Update
+
+# Auto-update variant of Third-Party Drift. Where thirdparty-drift.yml only
+# *detects* drift and opens a tracking issue, this workflow *acts*: for each
+# vendored / doc-pinned source that is behind upstream, it re-vendors the source
+# and bumps the pin in .github/third-party-manifest.json, then opens a PR for
+# review. Manifest: .github/third-party-manifest.json.
+on:
+  workflow_dispatch:
+  schedule:
+    # Thursdays 07:00 UTC — offset from the drift sweep (Mon 06:00) so the two
+    # don't race, and so a fresh PR lands mid-week for review.
+    - cron: "0 7 * * 4"
+
+# create-pull-request needs to push a branch (contents) and open the PR.
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: thirdparty-autoupdate-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  # Discover which tracked sources are behind upstream and fan out one
+  # update job per source. Each source gets its own stable branch / PR.
+  discover:
+    runs-on: ubuntu-latest
+    outputs:
+      names: ${{ steps.collect.outputs.names }}
+      has_updates: ${{ steps.collect.outputs.has_updates }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Drift check (vs upstream latest)
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: python scripts/check_thirdparty_drift.py --json > drift.json
+
+      - name: Collect drifted source names
+        id: collect
+        run: |
+          # JSON array of source names whose drift == DRIFT, for the matrix.
+          names="$(python - <<'PY'
+          import json
+          rows = json.load(open("drift.json"))
+          print(json.dumps([r["name"] for r in rows if r.get("drift") == "DRIFT"]))
+          PY
+          )"
+          echo "names=${names}" >> "$GITHUB_OUTPUT"
+          if [ "${names}" = "[]" ]; then
+            echo "has_updates=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "has_updates=true" >> "$GITHUB_OUTPUT"
+          fi
+
+  update:
+    needs: discover
+    if: needs.discover.outputs.has_updates == 'true'
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        name: ${{ fromJSON(needs.discover.outputs.names) }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      # Re-vendor (vendored sources) + bump the pin for this one source.
+      - name: Re-vendor and bump pin
+        id: bump
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          python scripts/update_thirdparty.py --name "${{ matrix.name }}" --json | tee update.json
+          # The update must leave the offline consistency check green.
+          python scripts/check_thirdparty_drift.py --consistency
+          python - <<'PY' >> "$GITHUB_OUTPUT"
+          import json
+          s = json.load(open("update.json"))
+          m = json.load(open(".github/third-party-manifest.json"))
+          e = next(x for x in m["sources"] if x["name"] == s["name"])
+          print(f"changed={'true' if s['changed'] else 'false'}")
+          print(f"old_version={s['old_version']}")
+          print(f"new_version={s['new_version']}")
+          print(f"repo={e.get('repo', '')}")
+          PY
+
+      # Open or update the PR on a stable per-source branch. Re-runs reuse the
+      # same branch, so no duplicate PRs for the same bump (idempotent).
+      - name: Create or update pull request
+        if: steps.bump.outputs.changed == 'true'
+        uses: peter-evans/create-pull-request@v7
+        with:
+          token: ${{ github.token }}
+          branch: chore/thirdparty-update-${{ matrix.name }}
+          base: main
+          delete-branch: true
+          commit-message: |
+            chore(deps): bump ${{ matrix.name }} ${{ steps.bump.outputs.old_version }} → ${{ steps.bump.outputs.new_version }}
+
+            Auto-re-vendored from upstream and pin bumped in
+            .github/third-party-manifest.json by thirdparty-autoupdate.yml.
+          title: "chore(deps): bump ${{ matrix.name }} to ${{ steps.bump.outputs.new_version }}"
+          body: |
+            ## Third-party auto-update
+
+            **${{ matrix.name }}** is behind upstream — this PR re-vendors it and
+            bumps `pinned_version` in `.github/third-party-manifest.json`.
+
+            | | |
+            |---|---|
+            | source | `${{ matrix.name }}` |
+            | from | `${{ steps.bump.outputs.old_version }}` |
+            | to | `${{ steps.bump.outputs.new_version }}` |
+            | upstream | https://github.com/${{ steps.bump.outputs.repo }}/releases/tag/${{ steps.bump.outputs.new_version }} |
+
+            The offline consistency check (`check_thirdparty_drift.py --consistency`)
+            was run as part of the update and passes. Review the vendored diff
+            (and license refresh, for vendored sources) before merging.
+
+            _Auto-managed by `.github/workflows/thirdparty-autoupdate.yml`._
