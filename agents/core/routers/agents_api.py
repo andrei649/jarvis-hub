@@ -14,15 +14,14 @@ orchestrator (via `get_orch()`) or leaf imports. The agent-id regex moved with t
 (only the soul + history routes use it).
 """
 
-import os
 import re
 import sys
 from pathlib import Path
 
-import agents as _agents_pkg
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import JSONResponse
 
+import agents as _agents_pkg
 from agents.core.app_state import get_orch
 from agents.core.routers._deps import user_guard
 from agents.core.web_helpers import nocache_json
@@ -56,23 +55,28 @@ async def get_agent_soul(agent_id: str):
     agent_id = agent_id.strip().lower()
     if not _AGENT_ID_RE.match(agent_id):
         raise HTTPException(status_code=404, detail="Agent not found")
-    # os.path.basename strips any directory component — the path-traversal sanitizer
-    # CodeQL recognizes. A no-op for the already-validated [a-z0-9_-] id, but it makes
-    # every path built from it below provably safe (defense-in-depth).
-    agent_id = os.path.basename(agent_id)
 
-    # Allow reading SOUL.md if the file physically exists, even if orch is not initialized (e.g. in tests)
-    # The personalized overlay (SOUL.local.md, gitignored) wins when present —
-    # same resolution as Agent._load_soul.
-    soul_path = _AGENTS_DIR / agent_id / "SOUL.local.md"
-    if not soul_path.exists():
-        soul_path = _AGENTS_DIR / agent_id / "SOUL.md"
+    # Resolve the agent dir by matching the validated id against the actual directory
+    # listing, so the SOUL.md path is built from a trusted, enumerated entry name —
+    # no request value ever reaches a path expression (path-injection defeated at the
+    # source; the regex already forbids separators). Works even without orch.
+    agent_dir = next(
+        (d for d in _AGENTS_DIR.iterdir() if d.is_dir() and d.name == agent_id),
+        None,
+    )
+    soul_path = None
+    if agent_dir is not None:
+        # The personalized overlay (SOUL.local.md, gitignored) wins when present —
+        # same resolution as Agent._load_soul.
+        soul_path = agent_dir / "SOUL.local.md"
+        if not soul_path.exists():
+            soul_path = agent_dir / "SOUL.md"
 
     orch = get_orch()
     if orch and agent_id not in orch.agents:
         raise HTTPException(status_code=404, detail=f"Agent '{agent_id}' not found")
 
-    if not soul_path.exists():
+    if soul_path is None or not soul_path.exists():
         raise HTTPException(status_code=404, detail=f"SOUL.md not found for agent '{agent_id}'")
 
     try:
