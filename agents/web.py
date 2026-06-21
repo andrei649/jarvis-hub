@@ -705,7 +705,9 @@ async def tts_stream_endpoint(req: TTSRequest):
                 audio = b""
                 if path:
                     try:
-                        audio = Path(path).read_bytes()
+                        # Offload the per-chunk disk read so reading one sentence's
+                        # audio doesn't block the event loop mid-stream (audit A4).
+                        audio = await asyncio.to_thread(Path(path).read_bytes)
                     except Exception:
                         logger.warning("tts/stream: cannot read chunk %s", path)
                         audio = b""
