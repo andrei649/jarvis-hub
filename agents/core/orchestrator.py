@@ -25,6 +25,7 @@ from .checkpoint import CheckpointManager
 from .heartbeat import HeartbeatScheduler
 from .scheduler_service import SchedulerService
 from .autonomy_coordinator import AutonomyCoordinator
+from . import llm_control  # CLN-2: NL LLM-control detection + execution
 from .llm_control import detect_llm_control  # re-exported: NL LLM-control detection (CLN-2)
 from . import plugin_gatherer  # live-plugin data gathering (CLN-2)
 from .plugin_manager import PluginManager  # CLN-2: owns the live-plugin registry + I/O
@@ -1204,63 +1205,11 @@ class Orchestrator:
                 and _as_bool(self.get_setting("llm.chat_control", True)))
 
     def _control_cognition(self, action: str) -> dict:
-        return {
-            "scoring": [],
-            "decision": {"source": "llm-control", "confidence": 1.0,
-                         "agents_selected": ["jarvis"], "alternatives": [],
-                         "timing": {"classify": 0, "route": 0, "total": 0}},
-            "trace": [{"step": "llm_control", "duration_ms": 0, "result": action}],
-        }
+        return llm_control.control_cognition(action)
 
     async def _run_llm_control(self, action: str, model: Optional[str]) -> Optional[str]:
-        """Execute a detected LLM-control action via the controller and narrate
-        the real result in Jarvis's voice — it reflects what actually happened,
-        not theatre."""
-        ctrl = getattr(self, "lmstudio", None)
-        if ctrl is None:
-            return "LM Studio control is not available, sir."
-        router = getattr(self, "llm_router", None)
-        backend = getattr(router, "name", None) or "the local backend"
-
-        if action == "status":
-            st = await ctrl.status()
-            if not st.get("online"):
-                return "The language backend is offline, sir. Say 'start LM Studio' and I will bring it up."
-            name = st.get("active_model") or getattr(router, "active_model", None) or "an unidentified model"
-            return f"I am running {name} on {backend}, sir."
-
-        if action == "start":
-            res = await ctrl.start_server()
-            if res.get("status") == "ok":
-                return "LM Studio is already running, sir." if res.get("already_running") else "LM Studio is up, sir."
-            return f"I could not start LM Studio, sir — {res.get('reason') or 'the server did not come up'}."
-
-        if action == "load":
-            if not model:
-                return "Which model would you like me to load, sir?"
-            res = await ctrl.load_model(model)
-            status = res.get("status")
-            if status == "ok":
-                active = getattr(router, "active_model", None) or res.get("model") or model
-                if res.get("resolved_from"):
-                    return f"I matched '{res['resolved_from']}' to {active} and loaded it, sir."
-                return f"Loaded and running {active}, sir."
-            if status == "ambiguous":
-                cands = res.get("candidates") or []
-                shown = ", ".join(cands[:6])
-                return (f"Several models match '{model}', sir: {shown}. "
-                        "Which one shall I load?")
-            if status == "rejected":
-                return f"That is not a valid model id, sir: {model!r}."
-            return f"I could not load {model}, sir — {res.get('reason') or 'the load failed'}."
-
-        if action == "unload":
-            res = await ctrl.unload_model(model)
-            if res.get("status") == "ok":
-                return "Unloaded, sir." if model else "All models unloaded, sir."
-            return f"I could not unload, sir — {res.get('reason') or 'the unload failed'}."
-
-        return None
+        """Execute a detected LLM-control action (delegates to llm_control, CLN-2)."""
+        return await llm_control.run_llm_control(self, action, model)
 
     async def _recall_block(self, text: str) -> str:
         """Long-term memory recall injected into the prompt (RAG, all agents).

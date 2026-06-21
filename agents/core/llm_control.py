@@ -105,3 +105,68 @@ def detect_llm_control(text: str) -> Optional[tuple[str, Optional[str]]]:
         return ("status", None)
 
     return None
+
+
+def control_cognition(action: str) -> dict:
+    """The cognition trace stamped on `orch.last_cognition` when a turn was served
+    by LLM control instead of the normal scoring/routing path (so the HUD shows a
+    truthful one-step decision rather than fabricated agent scoring)."""
+    return {
+        "scoring": [],
+        "decision": {"source": "llm-control", "confidence": 1.0,
+                     "agents_selected": ["jarvis"], "alternatives": [],
+                     "timing": {"classify": 0, "route": 0, "total": 0}},
+        "trace": [{"step": "llm_control", "duration_ms": 0, "result": action}],
+    }
+
+
+async def run_llm_control(orch, action: str, model: Optional[str]) -> Optional[str]:
+    """Execute a detected LLM-control action via the controller and narrate the
+    real result in Jarvis's voice — it reflects what actually happened, not
+    theatre. Reads `orch.lmstudio` (the LMStudioController) and `orch.llm_router`.
+    """
+    ctrl = getattr(orch, "lmstudio", None)
+    if ctrl is None:
+        return "LM Studio control is not available, sir."
+    router = getattr(orch, "llm_router", None)
+    backend = getattr(router, "name", None) or "the local backend"
+
+    if action == "status":
+        st = await ctrl.status()
+        if not st.get("online"):
+            return "The language backend is offline, sir. Say 'start LM Studio' and I will bring it up."
+        name = st.get("active_model") or getattr(router, "active_model", None) or "an unidentified model"
+        return f"I am running {name} on {backend}, sir."
+
+    if action == "start":
+        res = await ctrl.start_server()
+        if res.get("status") == "ok":
+            return "LM Studio is already running, sir." if res.get("already_running") else "LM Studio is up, sir."
+        return f"I could not start LM Studio, sir — {res.get('reason') or 'the server did not come up'}."
+
+    if action == "load":
+        if not model:
+            return "Which model would you like me to load, sir?"
+        res = await ctrl.load_model(model)
+        status = res.get("status")
+        if status == "ok":
+            active = getattr(router, "active_model", None) or res.get("model") or model
+            if res.get("resolved_from"):
+                return f"I matched '{res['resolved_from']}' to {active} and loaded it, sir."
+            return f"Loaded and running {active}, sir."
+        if status == "ambiguous":
+            cands = res.get("candidates") or []
+            shown = ", ".join(cands[:6])
+            return (f"Several models match '{model}', sir: {shown}. "
+                    "Which one shall I load?")
+        if status == "rejected":
+            return f"That is not a valid model id, sir: {model!r}."
+        return f"I could not load {model}, sir — {res.get('reason') or 'the load failed'}."
+
+    if action == "unload":
+        res = await ctrl.unload_model(model)
+        if res.get("status") == "ok":
+            return "Unloaded, sir." if model else "All models unloaded, sir."
+        return f"I could not unload, sir — {res.get('reason') or 'the unload failed'}."
+
+    return None
