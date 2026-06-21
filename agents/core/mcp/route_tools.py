@@ -32,7 +32,7 @@ import os
 import types
 import typing
 from dataclasses import dataclass
-from typing import Any, Awaitable, Callable
+from typing import Any, Awaitable, Callable, Optional
 
 ROUTE_TOOL_ENV = "JARVIS_MCP_ROUTE_TOOLS"
 ROUTE_TOOL_PREFIX = "route_"
@@ -353,16 +353,36 @@ def normalize_result(result: Any) -> Any:
 #   * Every mutating invocation is AUDITED through ``AuditLogger.log`` before the
 #     result is returned, so the write surface always leaves a hash-chained trail.
 #
-# ⚠️  SECURITY CAVEAT — REMAINING HARDENING BEFORE NETWORK EXPOSURE  ⚠️
-# There is NO ``Request`` object in this in-process dispatch path, so the HTTP
-# route's per-identity guard (``Depends(user_guard)`` → token/cookie identity)
-# is NOT enforced here. For now the gate is: (1) the explicit mutating allow-list,
-# (2) the DOUBLE default-OFF kill-switch, and (3) the audit record. That is
-# adequate ONLY for a LAN-only, single-trust-domain deployment. Before this is
-# ever enabled on a network-exposed instance, real per-identity guard wiring
-# (an identity/token threaded into ``invoke`` and checked the same way the HTTP
-# guard checks it) MUST be added. Until then, keep ``JARVIS_MCP_MUTATING_TOOLS``
-# OFF on anything reachable beyond localhost/LAN.
+# ✅  PER-IDENTITY ENFORCEMENT (H22.9 hardening)  ✅
+# The in-process dispatch path still has NO ``Request`` object, so the HTTP
+# route's ``Depends(user_guard)`` does not run here directly. Instead a mutating
+# tool now carries an ``identity_check`` callable that re-applies the SAME rule
+# ``user_guard`` uses (see ``web.py``: ``_user_credential_ok`` /
+# ``_user_token_required``), and ``call`` is given the caller's presented
+# credential (``token``). A mutating tool invoked WITHOUT a valid identity is
+# REFUSED (and the refusal is audited) — even when BOTH kill-switches are on.
+#
+# Identity rule, mirroring ``_user_guard`` exactly:
+#   * If ``JARVIS_USER_TOKEN`` is set → the call must present a credential that
+#     matches it (or a matching ``JARVIS_ADMIN_TOKEN``, admin ⊇ user). No token →
+#     refused, just like the HTTP 401.
+#   * If ``JARVIS_USER_TOKEN`` is UNSET → localhost-only dev posture: the HTTP
+#     guard trusts a localhost origin and requires no token; the in-process MCP
+#     call is localhost-equivalent (it originates inside the process), so it is
+#     allowed with no credential. This keeps local dev working unchanged.
+#
+# The gate is therefore now: (1) the explicit mutating allow-list, (2) the DOUBLE
+# default-OFF kill-switch, (3) the per-identity check above, and (4) the audit
+# record.
+#
+# ⚠️  RESIDUAL GAP  ⚠️
+# The identity is a bearer credential threaded from the MCP transport into the
+# tool call — there is no per-request HTTP context, no rate-limiting, and no
+# proxy-origin (HF-7) reasoning on this path. So a leaked ``JARVIS_USER_TOKEN``
+# is sufficient to drive the write surface, and in the unset-token posture the
+# in-process call is trusted unconditionally (correct ONLY when the MCP transport
+# itself is bound localhost/LAN). Keep ``JARVIS_MCP_MUTATING_TOOLS`` OFF on
+# anything reachable beyond localhost/LAN unless a real per-identity token is set.
 
 MUTATING_ROUTE_PREFIX = ROUTE_TOOL_PREFIX  # mutating tools share the route_ prefix
 
@@ -371,6 +391,23 @@ MUTATING_ROUTE_PREFIX = ROUTE_TOOL_PREFIX  # mutating tools share the route_ pre
 # write the HTTP route performs and returns a JSON-able payload (or a
 # JSONResponse-like object with ``.body``; ``normalize_result`` decodes either).
 MutatingInvoke = Callable[[dict], Awaitable[Any]]
+
+
+# An identity check: ``(token: str | None) -> bool``. Returns True when the
+# presented credential authorises a mutating call under the SAME rule the HTTP
+# ``user_guard`` applies. ``web.py`` provides an implementation backed by
+# ``_user_token_required`` / ``_user_credential_ok``; tests inject a fake. When
+# no check is provided a mutating tool fails CLOSED (refuses) — a write tool is
+# never reachable without an explicit identity policy bound to it.
+IdentityCheck = Callable[[Optional[str]], bool]
+
+
+class MutatingIdentityError(PermissionError):
+    """Raised when a mutating tool is invoked without a valid identity.
+
+    Surfaced by the server as a tool error (no stack trace leaks). The refusal
+    is audited before this propagates, so a rejected write is never invisible.
+    """
 
 
 @dataclass(frozen=True)
@@ -432,6 +469,10 @@ class MutatingRouteTool:
     spec: MutatingRouteSpec
     invoke: MutatingInvoke
     auditor: Any = None  # an AuditLogger-like object exposing ``log(SecurityEvent)``
+    # Per-identity gate: ``(token) -> bool``, applying the SAME rule as the HTTP
+    # ``user_guard`` (see web.py). ``None`` → fail closed (every call refused),
+    # so a write tool can never be reachable without an explicit identity policy.
+    identity_check: Optional[IdentityCheck] = None
 
     @property
     def tool_name(self) -> str:
@@ -483,13 +524,37 @@ class MutatingRouteTool:
                 "audit log failed for mutating tool %s", self.tool_name, exc_info=True
             )
 
-    async def call(self, arguments: dict | None) -> Any:
+    def _identity_ok(self, token: Optional[str]) -> bool:
+        """Apply the bound per-identity gate. No gate bound → fail CLOSED."""
+        if self.identity_check is None:
+            return False
+        try:
+            return bool(self.identity_check(token))
+        except Exception:  # a faulty identity check must never authorise a write
+            import logging
+
+            logging.getLogger(__name__).warning(
+                "identity check raised for mutating tool %s", self.tool_name, exc_info=True
+            )
+            return False
+
+    async def call(self, arguments: dict | None, token: Optional[str] = None) -> Any:
         """Run the write adapter with schema-filtered args, auditing the call.
 
-        The audit row is written whether the invoke succeeds or raises, so an
-        attempted write is never invisible. Exceptions propagate to the server,
-        which converts them to a tool error (no stack trace leaks to the client).
+        Before any write, the per-identity gate (``identity_check``) must accept
+        the presented ``token`` under the SAME rule the HTTP ``user_guard`` uses.
+        A missing/wrong identity REFUSES the call (no write happens) and audits
+        the refusal, then raises ``MutatingIdentityError``.
+
+        The audit row is written whether the invoke succeeds, raises, or is
+        refused, so an attempted write is never invisible. Exceptions propagate
+        to the server, which converts them to a tool error (no stack trace leaks).
         """
+        if not self._identity_ok(token):
+            self._audit(arguments, outcome="refused-identity")
+            raise MutatingIdentityError(
+                f"mutating tool {self.tool_name} requires a valid identity"
+            )
         kwargs = self.filtered_kwargs(arguments)
         try:
             result = await self.invoke(kwargs)
@@ -507,6 +572,7 @@ def build_mutating_route_tools(
     *,
     read_only_enabled: bool | None = None,
     mutating_enabled: bool | None = None,
+    identity_check: Optional[IdentityCheck] = None,
 ) -> list["MutatingRouteTool"]:
     """Bind allow-listed mutating specs to provided write adapters.
 
@@ -514,6 +580,11 @@ def build_mutating_route_tools(
     the mutating switch are on, this returns ``[]`` (no mutating tools). By
     default the switches are read from the environment; tests may pass explicit
     booleans. A spec without a provided invoker is silently not offered.
+
+    ``identity_check`` is the per-identity gate threaded onto every bound tool
+    (the SAME rule the HTTP ``user_guard`` applies — see ``web.py``). When it is
+    ``None`` each tool fails CLOSED: a mutating call is refused unless an explicit
+    identity policy is bound, so a write tool is never reachable unauthenticated.
     """
     if read_only_enabled is None:
         read_only_enabled = route_tools_enabled()
@@ -522,10 +593,23 @@ def build_mutating_route_tools(
     if not (read_only_enabled and mutating_enabled):
         return []
 
+    # SEC (review F3): the security model promises every mutating call is audited.
+    # Binding write tools without an auditor would let writes run un-audited
+    # (fail-open). Refuse to bind any mutating tool when no auditor is available.
+    if auditor is None:
+        import logging
+        logging.getLogger(__name__).warning(
+            "mutating route tools require an auditor — not binding any (fail closed)")
+        return []
+
     tools: list[MutatingRouteTool] = []
     for spec in allowlist:
         invoke = invokers.get(spec.name)
         if invoke is None:
             continue
-        tools.append(MutatingRouteTool(spec=spec, invoke=invoke, auditor=auditor))
+        tools.append(
+            MutatingRouteTool(
+                spec=spec, invoke=invoke, auditor=auditor, identity_check=identity_check
+            )
+        )
     return tools
