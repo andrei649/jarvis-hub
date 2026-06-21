@@ -59,28 +59,75 @@ def wants_signal_layer(text_lower: str, keywords: list[str]) -> bool:
     )
 
 
-async def _signal_layer_answer(orch, text: str, text_lower: str) -> dict:
-    """Ask the local Signal Layer for an evidence-backed world answer.
+# Country name/alias → ISO-2 for the watchlist set (the countries that have
+# committed replay assessments, so ``country_risk`` resolves real fixture data).
+_COUNTRY_ISO2 = {
+    "romania": "RO", "uae": "AE", "emirates": "AE", "united states": "US",
+    "u.s.": "US", "america": "US", "ukraine": "UA", "israel": "IL",
+    "china": "CN", "turkey": "TR", "türkiye": "TR", "india": "IN",
+}
 
-    The orchestrator may not have registered the plugin yet on older branches, so
-    this function lazily instantiates the read-only client. Failure is returned as
-    structured plugin data and never fabricated into a world-intel answer.
+# Query-shape vocabularies that route a world-intel ask to the right facade
+# method. ``" risk"`` (leading space) catches "<country> risk" without matching
+# unrelated substrings; "global risk"/"world today" stay brief-shaped below.
+_RISK_PHRASES = ("country risk", "risk for", "risk assessment", "assessment", " risk")
+_BRIEF_PHRASES = (
+    "world brief", "global brief", "world today", "global status",
+    "global risk", "what changed overnight", "changed overnight",
+)
+_SIGNAL_PHRASES = ("alert", "critical", "chokepoint", "jamming", "dark vessel", "osint")
+
+
+def _resolve_country_iso2(text_lower: str) -> str:
+    """First watchlist country named in the text, as an ISO-2 code (or "")."""
+    for name, iso2 in _COUNTRY_ISO2.items():
+        if name in text_lower:
+            return iso2
+    return ""
+
+
+def _argus(orch):
+    """The orchestrator's governed Argus facade, built on demand if absent.
+
+    On ``main`` the orchestrator wires ``orch.argus`` at startup; older branches
+    and lightweight test orchestrators may not, so fall back to constructing one
+    from the orchestrator's ``permission_gate`` + ``plugins``.
     """
-    plugin = orch.plugins.get("signal-layer")
-    if plugin is None:
-        try:
-            from .plugins.signal_layer import SignalLayerPlugin
-            plugin = SignalLayerPlugin()
-            orch.plugins["signal-layer"] = plugin
-        except Exception as e:
-            return {"status": "unavailable", "error": f"SignalLayerPlugin unavailable: {e}"}
+    argus = getattr(orch, "argus", None)
+    if argus is None:
+        from .argus import ArgusInterface
+        argus = ArgusInterface.from_orchestrator(orch)
+    return argus
 
+
+async def _signal_layer_answer(orch, text: str, text_lower: str) -> dict:
+    """Route a world-intelligence query through the governed Argus facade.
+
+    Picks the facade method by query intent — country risk, global brief, signal
+    feed, or the general World Analyst answer — instead of always calling
+    ``ask_world``. Every call passes the egress permission gate inside the facade
+    and returns structured ``{"status": ...}`` data; failure is never fabricated
+    into a world-intel answer.
+    """
+    argus = _argus(orch)
+    iso2 = _resolve_country_iso2(text_lower)
+
+    # 1. Country risk — a watchlist country plus a risk/assessment-shaped ask.
+    if iso2 and any(p in text_lower for p in _RISK_PHRASES):
+        return await argus.country_risk(iso2)
+
+    # 2. Global brief — a world-wide ask with no specific country in focus.
+    if not iso2 and any(p in text_lower for p in _BRIEF_PHRASES):
+        return await argus.world_brief()
+
+    # 3. Signal feed — alert / severity / OSINT-shaped asks.
+    if any(p in text_lower for p in _SIGNAL_PHRASES):
+        min_sev = "high" if ("critical" in text_lower or "high" in text_lower) else ""
+        return await argus.signals(relevant_only=True, country=iso2, min_severity=min_sev)
+
+    # 4. Default — the general World Analyst answer (preserves overnight mode).
     mode = "overnight_brief" if "overnight" in text_lower else "general"
-    country = "RO" if "romania" in text_lower else "AE" if "uae" in text_lower or "emirates" in text_lower else ""
-    try:
-        return await plugin.ask_world(text, mode=mode, country=country, limit=8)
-    except Exception as e:
-        return {"status": "unavailable", "error": str(e), "provider": "signal-layer"}
+    return await argus.ask_world(text, mode=mode, country=iso2, limit=8)
 
 
 async def gather_plugin_data(orch, text: str, intent) -> dict:
@@ -177,7 +224,10 @@ def _eligible_plugins(orch, text: str, intent) -> list[tuple[str, Callable[[], o
         if any_agent_can(orch, "worldview", intent):
             wv = orch.plugins.get("worldview")
             if wv:
-                specs.append(("worldview", lambda wv=wv: wv.recon_overview()))
+                # Route through the governed facade so the WorldView recon shares
+                # one gated path with the rest of world-intel (recon_overview
+                # accepts the facade's optional ``lead`` arg).
+                specs.append(("worldview", lambda: _argus(orch).recon_overview()))
         else:
             log_error(logger, E_PLUGIN_BLOCKED, name="worldview")
 
