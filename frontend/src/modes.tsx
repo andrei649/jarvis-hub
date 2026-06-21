@@ -2,7 +2,7 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { V2, Conversation, InputBar } from './ui';
 import { Icon, ICONS, Glyph, statusClass } from './ui';
-import { getKillSwitch, setKillSwitch, getAgentSoul, getAgentHistory, memorySearch, decidePayment } from './api/actions';
+import { getKillSwitch, setKillSwitch, getAgentSoul, getAgentHistory, memorySearch, decidePayment, getAuditVerify } from './api/actions';
 /* HUD v2 · MODES — Agents, Trust, Memory */
 
 /* ============ AGENTS ============ */
@@ -115,6 +115,16 @@ function TrustMode({ t, localPct = null }) {
   const [busy,setBusy]=useState(false);
   const [killErr,setKillErr]=useState(false);
   const [,payTick]=useState(0);
+  // Live tamper-evidence: GET /api/security/audit/verify actually re-checks the
+  // Merkle chain, so the "verified" badge reflects a real result instead of a
+  // static claim. {valid, first_invalid_id, entries} — null while loading.
+  const [audit,setAudit]=useState(null);
+  const [auditErr,setAuditErr]=useState(false);
+  useEffect(()=>{
+    let alive=true;
+    getAuditVerify().then(r=>{ if(alive&&r) setAudit(r); }).catch(()=>{ if(alive) setAuditErr(true); });
+    return ()=>{ alive=false; };
+  },[]);
   const D = V2;
   // Payment lifecycle (H16.3): act on the broker, then reflect its returned state in
   // the shared ledger — live.ts re-syncs from /api/payments on its next poll.
@@ -141,13 +151,27 @@ function TrustMode({ t, localPct = null }) {
   return (
     <div className="panel scroll" style={{flex:1}}>
       <span className="bk tl"></span><span className="bk tr"></span><span className="bk bl"></span><span className="bk br"></span>
-      <div className="panel-head"><Icon d={ICONS.trust} size={14}/><span className="ttl">{t.trust} Center</span><span className="st">Merkle-verified</span></div>
+      <div className="panel-head"><Icon d={ICONS.trust} size={14}/><span className="ttl">{t.trust} Center</span>
+        <span className="st" style={audit&&!audit.valid?{color:'var(--red)'}:undefined}>{
+          auditErr ? 'audit unavailable'
+          : audit==null ? 'verifying…'
+          : audit.valid ? `Merkle-verified · ${audit.entries} entries`
+          : `chain broken @ #${audit.first_invalid_id}`
+        }</span></div>
       <div className="panel-body">
         <div className="trust-grid">
           {/* left: audit chain */}
           <div>
             <div className="dl" style={{fontFamily:'var(--font-mono)',fontSize:9.5,letterSpacing:'.16em',textTransform:'uppercase',color:'var(--ink-3)',marginBottom:10}}>{t.auditTitle}</div>
-            <div className="verified-row"><Icon d={ICONS.trust} size={13}/> {t.verified}</div>
+            {/* Live chain-verification result (real GET /api/security/audit/verify),
+                replacing the static badge. Falls back to the demo chain visual below. */}
+            <div className="verified-row" style={audit&&!audit.valid?{color:'var(--red)'}:undefined}>
+              <Icon d={ICONS.trust} size={13}/> {
+                auditErr ? t.verified
+                : audit==null ? 'verifying chain…'
+                : audit.valid ? `chain intact · ${audit.entries} sealed entries`
+                : `TAMPER DETECTED · first bad row #${audit.first_invalid_id}`
+              }</div>
             {D.AUDIT_CHAIN.map((b,i)=>(
               <div className="audit-block" key={i}>
                 <div className="anchor"><div className="hash-dot"></div><div className="vline"></div></div>

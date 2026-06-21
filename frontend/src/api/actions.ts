@@ -16,6 +16,25 @@ export async function setKillSwitch(engage: boolean) {
   return apiPost('/api/security/kill-switch', { engage, scope: 'global', reason: 'hud' }, { admin: true });
 }
 
+/* ── Trust · live audit-chain verification (modes.tsx) ───────────
+   GET /api/security/audit/verify → { valid, first_invalid_id, entries }
+   Makes the "Merkle-verified" badge honest: it reflects a real chain check,
+   not a static claim. */
+export async function getAuditVerify() {
+  return apiGet('/api/security/audit/verify');
+}
+
+/* ── Analytics · MOONSHOT §6 north-star meter (modes2.tsx · ObserveMode) ──
+   GET /api/metrics/north-star?days=N →
+     { north_star:{ accepted_per_active_user, total_accepted, active_users },
+       counter_metrics:{ interrupt_rate_per_day, reject_rate, local_pct, p95_latency_ms },
+       interrupt_budget, raw, days }
+   The 1.0-gating metric. Every value is null (not a fabricated 0) when its
+   source has no data — the meter renders that as "—", never invents a number. */
+export async function getNorthStar(days = 7) {
+  return apiGet(`/api/metrics/north-star?days=${days}`);
+}
+
 /* ── Build · marketplace skill install (modes2.tsx) ──────────────
    GET  /api/skills/marketplace          → { skills:[{name,signed,review_status}] } (admin)
    POST /api/skills/marketplace/install {name}  (admin, H12.12) */
