@@ -1031,13 +1031,7 @@ async def agent_templates_instantiate(req: Request):
 
 # ── H7.11 Learning-loop promotions ────────────────────────────────────────────
 
-@app.post("/api/learning/propose", dependencies=[Depends(_admin_guard)])
-async def learning_propose():
-    """Run the learning loop now: propose agent promotions into the decision inbox."""
-    if not orch or not hasattr(orch, "_run_learning_loop"):
-        return JSONResponse({"error": "not available"}, status_code=503)
-    proposals = await orch._run_learning_loop()
-    return _nocache_json({"ok": True, "proposed": proposals, "count": len(proposals)})
+# /api/learning/propose extracted to agents/core/routers/learning.py (CLN-3)
 
 
 # /api/workflows step/generate + hierarchical extracted to routers/workflows.py (CLN-3).
@@ -1108,6 +1102,7 @@ from agents.core.routers.payments import router as _payments_router  # noqa: E40
 from agents.core.routers.voice import router as _voice_router  # noqa: E402
 from agents.core.routers.eval import router as _eval_router  # noqa: E402
 from agents.core.routers.heartbeat import router as _heartbeat_router  # noqa: E402
+from agents.core.routers.learning import router as _learning_router  # noqa: E402
 from agents.core.routers.workflows import router as _workflows_router  # noqa: E402
 from agents.core.routers.plugins import router as _plugins_router  # noqa: E402
 from agents.core.routers.quality import router as _quality_router  # noqa: E402
@@ -1150,6 +1145,7 @@ app.include_router(_voice_router)
 app.include_router(_multimodal_router)
 app.include_router(_eval_router)
 app.include_router(_heartbeat_router)
+app.include_router(_learning_router)
 app.include_router(_workflows_router)
 app.include_router(_plugins_router)
 app.include_router(_sessions_router)
@@ -1194,47 +1190,7 @@ async def schedule_parse(req: Request):
     return _nocache_json(result, status_code=200 if result.get("ok") else 422)
 
 
-@app.get("/learning")
-async def get_learning():
-    if not orch:
-        return JSONResponse({"error": "not initialized"}, status_code=503)
-    return {
-        "stats": orch.learning.get_stats(active_ids=set(orch.agents.keys())),
-        "optimizations": {
-            aid: orch.learning.optimize_prompt(aid)
-            for aid in orch.agents
-        },
-        "promotion_suggestions": orch.learning.suggest_promotions(active_ids=set(orch.agents.keys())),
-    }
-
-
-class PromoteRequest(BaseModel):
-    bench_agent: str
-
-
-@app.post("/learning/promote", dependencies=[Depends(_admin_guard)])
-async def learning_promote(body: PromoteRequest):
-    """Manually promote a bench agent to active status."""
-    if not orch:
-        return JSONResponse({"error": "not initialized"}, status_code=503)
-    bench_id = body.bench_agent.strip().lower()
-    if not bench_id:
-        return JSONResponse({"error": "bench_agent is required"}, status_code=400)
-    promoted = orch.promote_bench_agent(bench_id)
-    if not promoted:
-        # Honest result: a no-op (unknown bench id, or already active) is not a
-        # success — say so with 404 so the HUD shows an error, not a fake "ok".
-        return JSONResponse(
-            {"ok": False, "bench_agent": bench_id, "promoted": False,
-             "error": f"'{bench_id}' is not a promotable bench agent (unknown or already active)"},
-            status_code=404,
-        )
-    return _nocache_json({
-        "ok": True,
-        "bench_agent": bench_id,
-        "promoted": promoted,
-        "active_agents": list(orch.agents.keys()),
-    })
+# /learning and /learning/promote (+ PromoteRequest) extracted to agents/core/routers/learning.py (CLN-3)
 
 
 # ── Admin panel ──────────────────────────────────────────────────
@@ -1796,33 +1752,7 @@ def _wf_store():
 # /plugins and /plugins/{plugin_id}/toggle extracted to agents/core/routers/plugins.py (CLN-3)
 
 
-@app.get("/learning/stats")
-async def learning_stats():
-    """Live learning stats for SystemsPanel."""
-    if not orch or not hasattr(orch, 'learning') or not orch.learning:
-        return _nocache_json({"interactions_total": 0, "success_rate": 0, "prompt_optimizations": [], "promotion_candidates": [], "demotion_warnings": []})
-    try:
-        stats = orch.learning.get_stats()
-        active_ids = list(stats.get("agents_tracked", stats.get("active_ids", [])))
-        optimizations = []
-        for aid in active_ids:
-            opt = orch.learning.optimize_prompt(aid) if hasattr(orch.learning, 'optimize_prompt') else None
-            if opt:
-                optimizations.append({"agent": aid, "before": "", "after": opt, "improvement": ""})
-        promotions = orch.learning.suggest_promotions(active_ids) if hasattr(orch.learning, 'suggest_promotions') else []
-        promos = [{"agent": p.get("bench_agent", p.get("agent", "")), "triggers": p.get("count", 0), "threshold": p.get("threshold", 0)} for p in promotions]
-        total = stats.get("total_interactions", 0)
-        successful = stats.get("successful", 0)
-        rate = successful / total if total > 0 else 0
-        return _nocache_json({
-            "interactions_total": total,
-            "success_rate": round(rate, 3),
-            "prompt_optimizations": optimizations,
-            "promotion_candidates": promos,
-            "demotion_warnings": [],
-        })
-    except Exception:
-        return _nocache_json({"interactions_total": 0, "success_rate": 0, "prompt_optimizations": [], "promotion_candidates": [], "demotion_warnings": []})
+# /learning/stats extracted to agents/core/routers/learning.py (CLN-3)
 
 
 @app.get("/security/status")
