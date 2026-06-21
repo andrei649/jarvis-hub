@@ -754,17 +754,7 @@ async def get_agents():
 # CLN-3: /sessions + /sessions/resume extracted to agents/core/routers/sessions.py
 
 
-@app.get("/security")
-async def get_security():
-    if not orch:
-        return JSONResponse({"error": "not initialized"}, status_code=503)
-    guardrails = orch.security is not None
-    return {
-        "enabled": guardrails,
-        "scanners": ["secrets", "pii"] if guardrails else [],
-        "ssrf_protection": True,
-        "audit_count": orch.checkpoints.count() if hasattr(orch.checkpoints, "count") else 0,
-    }
+# /security route extracted to agents/core/routers/security_hud.py (CLN-3).
 
 
 # /bench route extracted to agents/core/routers/bench.py (CLN-3).
@@ -923,6 +913,7 @@ from agents.core.routers.sessions import router as _sessions_router  # noqa: E40
 from agents.core.routers.rooms import router as _rooms_router  # noqa: E402
 from agents.core.routers.secrets import router as _secrets_router  # noqa: E402
 from agents.core.routers.security import router as _security_router  # noqa: E402
+from agents.core.routers.security_hud import router as _security_hud_router  # noqa: E402
 from agents.core.routers.skills import router as _skills_router  # noqa: E402
 from agents.core.routers.status import router as _status_router  # noqa: E402
 from agents.core.routers.status import status  # noqa: E402  (re-export: MCP route-tool + drift guard resolve web.status)
@@ -941,6 +932,7 @@ app.include_router(_arena_router)
 app.include_router(_review_router)
 app.include_router(_quality_router)
 app.include_router(_security_router)
+app.include_router(_security_hud_router)
 app.include_router(_skills_router)
 app.include_router(_status_router)
 app.include_router(_data_spaces_router)
@@ -1571,25 +1563,7 @@ def _wf_store():
 # /learning/stats extracted to agents/core/routers/learning.py (CLN-3)
 
 
-@app.get("/security/status")
-async def security_status():
-    """Return security system status."""
-    return _nocache_json({
-        "guardrails": {
-            "mode": "WARN",
-            "redact_count": 0,
-            "block_count": 0,
-        },
-        "scanners": {
-            "secret": {"patterns": 10, "findings": 0},
-            "pii": {"patterns": 6, "findings": 0},
-        },
-        "ssrf": {
-            "enabled": True,
-            "blocked_requests": 0,
-            "max_redirects": 5,
-        },
-    })
+# /security/status route extracted to agents/core/routers/security_hud.py (CLN-3).
 
 
 # /bench/stats route extracted to agents/core/routers/bench.py (CLN-3).
