@@ -885,6 +885,7 @@ from agents.core.routers.analytics import router as _analytics_router  # noqa: E
 from agents.core.routers.arena import router as _arena_router  # noqa: E402
 from agents.core.routers.autonomy import router as _autonomy_router  # noqa: E402
 from agents.core.routers.bench import router as _bench_router  # noqa: E402
+from agents.core.routers.ops import router as _ops_router  # noqa: E402
 from agents.core.routers.brain import router as _brain_router  # noqa: E402
 from agents.core.routers.browser import router as _browser_router  # noqa: E402
 from agents.core.routers.canvas import router as _canvas_router  # noqa: E402
@@ -958,6 +959,7 @@ app.include_router(_workflows_router)
 app.include_router(_plugins_router)
 app.include_router(_sessions_router)
 app.include_router(_bench_router)
+app.include_router(_ops_router)
 
 
 class DigestRunBody(BaseModel):
@@ -1234,51 +1236,7 @@ def _load_mcp_config():
 # ── Admin Charts endpoint → core/routers/admin.py (CLN-3) ──────────
 
 
-@app.get("/api/resilience")
-async def resilience_public():
-    """Public resilience metrics and circuit breaker states (no admin auth)."""
-    from core.resilience import _circuit_breakers, get_metrics
-    metrics = get_metrics().get_stats()
-    breakers = {
-        key: {
-            "state": cb.state,
-            "failure_count": cb.failure_count,
-            "last_failure_time": cb.last_failure_time,
-        }
-        for key, cb in _circuit_breakers.items()
-    }
-    return _nocache_json({"metrics": metrics, "circuit_breakers": breakers})
-
-
-# ── v0.3 Cognition Release endpoints ─────────────────────────────
-
-
-@app.get("/api/cognition", dependencies=[Depends(_user_guard)])
-async def get_cognition():
-    """Return the last dynamic routing/cognition context."""
-    cog = getattr(orch, "last_cognition", None) if orch else None
-    if not cog:
-        from core.router import INTENT_RULES
-        scoring = []
-        for kw, rule in list(INTENT_RULES.items())[:5]:
-            scoring.append({
-                "keyword": kw,
-                "weight": rule[2],
-                "agents": rule[0],
-                "category": kw
-            })
-        cog = {
-            "scoring": scoring,
-            "decision": {
-                "source": "standby",
-                "confidence": 1.0,
-                "agents_selected": ["jarvis"],
-                "alternatives": [],
-                "timing": {"classify": 0, "route": 0, "total": 0}
-            },
-            "trace": []
-        }
-    return _nocache_json(cog)
+# `GET /api/resilience` + `GET /api/cognition` (system/ops reads) live in the ops router (CLN-3).
 
 
 # `/memory/stats` (HUD/SystemsPanel) lives in the memory_hud router (CLN-3).
