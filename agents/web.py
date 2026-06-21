@@ -820,14 +820,7 @@ async def voice_capabilities():
 
 # ── Status (HUD-compatible) ──────────────────────────────────────
 
-@app.get("/api/health/components")
-async def component_health():
-    """A8: which optional components initialized (vs failed silently)."""
-    reg = getattr(orch, "components", None) if orch else None
-    if reg is None:
-        return _nocache_json({"components": {}, "summary": "registry unavailable"})
-    return _nocache_json({"components": reg.health(), "failed": reg.failed(),
-                          "summary": reg.summary()})
+# ... extracted to routers/status.py (CLN-3)
 
 
 _llm_ready_cache = {"state": "unknown", "model": None, "at": 0.0}
@@ -872,30 +865,7 @@ async def _llm_ready() -> dict:
     return {"state": state, "model": model}
 
 
-@app.get("/status")
-async def status():
-    if not orch:
-        return _nocache_json({"status": "starting"})
-    enriched = _enrich_agents()
-    voice_state = "idle"
-    lm_online = orch.llm_router.name != "none"
-    ready = await _llm_ready()
-    from agents import __version__
-    return _nocache_json({
-        "version": __version__,
-        "sys": _sys_info(),
-        "voice_state": voice_state,
-        "lm_online": lm_online,                       # backend configured/reachable
-        "model_state": ready["state"],                # ready | no_model | offline (truthful)
-        "model_loaded": ready["state"] == "ready",
-        "loaded_model": ready["model"],               # the actually-resident model, or None
-        "configured_model": getattr(orch.llm_router, "active_model", None),
-        "llm_backend": orch.llm_router.name,
-        "active_model": getattr(orch.llm_router, "active_model", None),
-        "agents": [{"id": a["id"], "status": a["status"]} for a in enriched],
-        "agents_online": sum(1 for a in enriched if a["status"] != "idle"),
-        "agents_total": len(enriched),
-    })
+# ... /status extracted to routers/status.py (CLN-3)
 
 
 @app.get("/api/agents", dependencies=[Depends(_user_guard)])
@@ -1308,6 +1278,8 @@ from agents.core.routers.rooms import router as _rooms_router  # noqa: E402
 from agents.core.routers.secrets import router as _secrets_router  # noqa: E402
 from agents.core.routers.security import router as _security_router  # noqa: E402
 from agents.core.routers.skills import router as _skills_router  # noqa: E402
+from agents.core.routers.status import router as _status_router  # noqa: E402
+from agents.core.routers.status import status  # noqa: E402  (re-export: MCP route-tool + drift guard resolve web.status)
 from agents.core.routers.webhooks import router as _webhooks_router  # noqa: E402
 
 app.include_router(_webhooks_router)
@@ -1324,6 +1296,7 @@ app.include_router(_review_router)
 app.include_router(_quality_router)
 app.include_router(_security_router)
 app.include_router(_skills_router)
+app.include_router(_status_router)
 app.include_router(_data_spaces_router)
 app.include_router(_secrets_router)
 app.include_router(_mesh_router)
@@ -2042,9 +2015,5 @@ async def security_status():
 # /heartbeat/* routes extracted to agents/core/routers/heartbeat.py (CLN-3).
 
 
-@app.get("/api/status")
-async def api_status():
-    """Return service version, agent count, and health status."""
-    from agents import AGENT_COUNT, __version__
-    return {"version": __version__, "agents": AGENT_COUNT, "status": "ok"}
+# ... /api/status extracted to routers/status.py (CLN-3)
 
