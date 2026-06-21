@@ -3,7 +3,7 @@
 > The main marketing brand reference. Positioning, naming, messaging, voice, and visual identity —
 > all downstream of [MOONSHOT.md](../MOONSHOT.md) (the *why*) and consistent with
 > [GO_LIVE_PLAN.md](../GO_LIVE_PLAN.md) §3 (the launch brief).
-> Generated: 2026-06-10 · Owner: Andrei · Status: v1 (pre-1.0 launch)
+> Generated: 2026-06-10 · Owner: Andrei · Status: **v0.10.0** (feature-complete, productionizing toward 1.0)
 
 ---
 

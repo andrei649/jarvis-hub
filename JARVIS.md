@@ -207,7 +207,7 @@ curl.exe http://127.0.0.1:8080/status
 - VRAM: ~17 GB used by primary model, ~7 GB free
 - Response time: ~4-5s per query (fast slot); deep slot trades latency for reasoning depth
 - **Tests: ~2,400 passed, 1 skipped** (offline suite) + 184 frontend JS tests
-- Horizons: H1–H17 software **code-complete** (194/196 items, ≈99% SP); **active: pre-1.0 audit gate** (docs/AUDIT.md + docs/MANUAL_TESTING.md)
+- Version: **v0.10.0** — every feature horizon (H1–H22 + WorldView O19) delivered; now productionizing toward 1.0 (H23 — see [BACKLOG.md](BACKLOG.md#version-roadmap)). 1.0 = all dev done + real design-partner users.
 
 ---
 

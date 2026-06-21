@@ -1,11 +1,11 @@
 # Owner tasks — things only Andrei can do
 
-> The agent-side backlog is code-complete at 194/196 (≈99% SP); what's left to reach v1.0 and
-> launch is mostly **human-gated**: real hardware, GitHub settings, and decisions. This is your
-> queue, ordered. Tracked mirror: GitHub issue "Owner tasks — the human gate to v1.0".
-> Created 2026-06-10 · check items off here (or in the issue) as you go.
+> The **feature** backlog is delivered — that's **v0.10.0**. The road to 1.0 is the productionization
+> layer (**H23** in [BACKLOG.md](../BACKLOG.md#version-roadmap)) plus real design-partner users; this file is
+> the **owner lane** running alongside it — the human-gated bits (real hardware, GitHub settings, legal,
+> decisions) that only Andrei can do. Ordered queue. Created 2026-06-10 · check items off as you go.
 
-## 🔴 Blockers for the v1.0 tag
+## 🔴 Owner gates that block tagging a release (and ultimately 1.0)
 
 - [ ] **Run the manual-test runbook on the RTX box** — [`docs/MANUAL_TESTING.md`](MANUAL_TESTING.md),
   full pass incl. §0 sign-off and the ⭐B0 governed-autonomy demo. *This runbook IS the audit

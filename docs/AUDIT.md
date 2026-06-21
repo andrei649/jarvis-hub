@@ -1,9 +1,10 @@
-# Code & Architecture Audit — v9.9.9 (pre-1.0 gate)
+# Code & Architecture Audit — 2026-06-03 (the v0.10.0 feature-complete baseline)
 
 > **Date:** 2026-06-03 · **Scope:** whole codebase (architecture, bugs, code quality, docs).
-> **Purpose:** `9.9.9` is the last version before 1.0. This audit is the gate:
-> findings here feed the **human manual-testing** pass (`docs/MANUAL_TESTING.md`)
-> and the **fix** pass that follow, before tagging `1.0.0`.
+> **Purpose:** a release-readiness audit taken when the feature backlog finished (the baseline now
+> tagged **v0.10.0**). Findings feed the **human manual-testing** pass (`docs/MANUAL_TESTING.md`),
+> which is the release step that verifies any version before its tag. The road to 1.0 (productionization
+> H23 + real design-partner users) is the [version roadmap](../BACKLOG.md#version-roadmap).
 >
 > Method: four parallel read-only reviews (architecture, bug-hunt, code-quality,
 > docs) cross-checked against the running code. Every finding below was

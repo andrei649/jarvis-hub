@@ -1,10 +1,10 @@
 # Jarvis Hub — Status Snapshot
 
-> **Current version:** v9.9.9 (pre-1.0 audit gate) · **Tests:** 2,555 passed (2 skipped) + 184 frontend JS · **Agents:** 17 active (16 cabinet incl. Howard + Argus, the WorldView bridge; + 17 bench) · **HTTP routes:** ~299
-> **Road to v1.0:** the v1.0 backlog (H1–H17) is **code-complete — 194/196 items (≈99% SP)**, shipped pending the `9.9.9` audit gate (full code audit [docs/AUDIT.md](docs/AUDIT.md), human manual testing [docs/MANUAL_TESTING.md](docs/MANUAL_TESTING.md), and fixes). The only two open items (H12.14, H13.3) need the GPU host. HUD V2 is the default UI; deep write-controls for newer backend surfaces are tracked in [docs/design/HUD_V2_REMAINING.md](docs/design/HUD_V2_REMAINING.md). See [BACKLOG.md](BACKLOG.md#version-roadmap) + [MOONSHOT.md](MOONSHOT.md) §4.
+> **Current version:** v0.10.0 (feature-complete; productionizing toward 1.0) · **Tests:** 2,555 passed (2 skipped) + 184 frontend JS · **Agents:** 17 active (16 cabinet incl. Howard + Argus, the WorldView bridge; + 17 bench) · **HTTP routes:** ~299
+> **The version is the roadmap.** Every feature horizon (H1–H22 + WorldView O19) is delivered — that's **0.10.0**. There is no "audit gate" version: 1.0 is a real destination reached by finishing the productionization layer (**H23**: agentic-safety budgets, DB migrations, backup/restore + export-delete, operability, quality + user docs) **and** proving it with real design-partner users. The plan is the version line in [BACKLOG.md](BACKLOG.md#version-roadmap); strategy in [MOONSHOT.md](MOONSHOT.md) §4. Manual testing/audit ([docs/MANUAL_TESTING.md](docs/MANUAL_TESTING.md), [docs/AUDIT.md](docs/AUDIT.md)) is the release step that tags a version. GPU-gated dev (H12.14, H13.3, Howard) is its own minor (0.18). HUD deep write-controls tracked in [docs/design/HUD_V2_REMAINING.md](docs/design/HUD_V2_REMAINING.md).
 >
 > The version labels in the feature tables below (`v0.2.0`, `v0.2.1`) record *when* each capability first
-> landed (provenance), not the current release. For live priorities and the v1.0 gate, BACKLOG.md is the source of truth.
+> landed (provenance), not the current release. For live priorities and the version roadmap, BACKLOG.md is the source of truth.
 >
 > **Year-one review (candid, owner-facing):** [docs/REVIEW_YEAR_ONE.md](docs/REVIEW_YEAR_ONE.md) — status, the 12 learnings, the gap between *code-complete* and *desirable product*, and the next-90-days plan.
 

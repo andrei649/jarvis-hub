@@ -2,8 +2,9 @@
 
 > Ce lipsește între v0.5-beta și un produs bun de promovat online.
 >
-> **Actualizat 2026-06-03:** definiția 1.0 s-a lărgit — **v1.0.0 = tot backlogul terminat** (H10 + H11 + H12 +
-> H13–H17). Sursa de adevăr pentru gap-ul rămas e [BACKLOG.md](../BACKLOG.md#version-roadmap) + [MOONSHOT.md](../MOONSHOT.md) §4.
+> **Actualizat 2026-06-21:** toate orizonturile de features sunt livrate = **v0.10.0**. **1.0 NU mai e "tot
+> backlogul terminat"** — e *productionizare* (**H23**) + validare cu useri reali (design partners). Sursa de
+> adevăr pentru plan e linia de versiuni din [BACKLOG.md](../BACKLOG.md#version-roadmap) + [MOONSHOT.md](../MOONSHOT.md) §4.
 > Engineering must-have-urile de mai jos sunt în mare **livrate** (H7 hardening + onboarding ✅); ce rămâne aici e
 > mai ales **launch/promo** (landing page, video, Product Hunt).
 

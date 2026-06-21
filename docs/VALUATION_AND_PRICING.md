@@ -1,6 +1,6 @@
 # Jarvis Hub — Project Valuation & Subscription Pricing
 
-> Generated: 2026-06-02 (refreshed 2026-06-03) · Stage: v9.9.9 (pre-1.0, pre-revenue) · Owner: Andrei
+> Generated: 2026-06-02 (refreshed 2026-06-21) · Stage: **v0.10.0** (feature-complete, productionizing toward 1.0; pre-revenue) · Owner: Andrei
 > North star: [MOONSHOT.md](../MOONSHOT.md) · Companion to [GO_LIVE_PLAN.md](../GO_LIVE_PLAN.md) and [BACKLOG.md](../BACKLOG.md)
 >
 > **Disclaimer:** These are estimates for internal planning, not a formal appraisal or
