@@ -16,8 +16,11 @@ fi
 
 ROOT="${CLAUDE_PROJECT_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)}"
 
-echo "[session-start] Installing WorldView workspace dependencies (worldview/)..."
+# All progress output goes to stderr: SessionStart stdout is injected into the
+# model's context every session (and on each auto-compact), so we keep npm
+# chatter out of the token budget.
+echo "[session-start] Installing WorldView workspace dependencies (worldview/)..." >&2
 # `npm install` (not `ci`) is idempotent and lets the cached container reuse the
 # existing tree on later runs.
-( cd "$ROOT/worldview" && npm install --no-audit --no-fund )
-echo "[session-start] WorldView dependencies ready."
+( cd "$ROOT/worldview" && npm install --no-audit --no-fund --loglevel=error ) >&2
+echo "[session-start] WorldView dependencies ready." >&2
