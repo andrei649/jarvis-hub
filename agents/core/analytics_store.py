@@ -26,6 +26,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import sqlite3
 import threading
 from datetime import datetime, timezone
@@ -41,6 +42,14 @@ DEFAULT_DB = data_path("analytics.db")
 # validates, but the store is the last line of defence for direct callers.
 _MAX_STR = 512
 _MAX_PROPS_BYTES = 2048
+
+# Retention (review #3): keep at most this many newest events so the public
+# ingest can't grow the table without bound (slow disk-fill DoS). 0 disables it.
+# Pruned lazily (off the hot path) whenever a row id is a multiple of _PRUNE_EVERY
+# — stateless, so no shared counter to race or carry across reopens.
+_MAX_EVENTS = int(os.environ.get("JARVIS_ANALYTICS_MAX_EVENTS", "200000") or 0)
+_PRUNE_EVERY = 1000
+
 
 class _DB:
     """Holder for the single shared connection plus the path it was opened with.
@@ -161,7 +170,35 @@ def record_event(
             row,
         )
         conn.commit()
-        return cur.lastrowid
+        rowid = cur.lastrowid
+    # Lazy retention: prune when a row id crosses a _PRUNE_EVERY boundary — keeps
+    # the O(n) sweep off most inserts without a stateful counter. Run OUTSIDE the
+    # lock (prune() takes it itself; threading.Lock isn't reentrant).
+    due = bool(_MAX_EVENTS) and rowid is not None and rowid % _PRUNE_EVERY == 0
+    if due:
+        try:
+            prune()
+        except Exception:  # pragma: no cover - retention is best-effort
+            logger.warning("analytics retention prune failed", exc_info=True)
+    return rowid
+
+
+def prune(max_events: Optional[int] = None) -> int:
+    """Delete all but the newest *max_events* rows (newest = highest id). Returns
+    the number of rows deleted. No-op when the cap is 0/None. Safe with id gaps:
+    keeps an exact count via a subquery rather than arithmetic on ids."""
+    cap = _MAX_EVENTS if max_events is None else max_events
+    if not cap or cap <= 0:
+        return 0
+    conn = _require()
+    with _lock:
+        cur = conn.execute(
+            "DELETE FROM events WHERE id NOT IN "
+            "(SELECT id FROM events ORDER BY id DESC LIMIT ?)",
+            (cap,),
+        )
+        conn.commit()
+        return cur.rowcount or 0
 
 
 # ── aggregate-on-read ─────────────────────────────────────────────────
