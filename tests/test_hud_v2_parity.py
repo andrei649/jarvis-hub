@@ -64,6 +64,7 @@ RULES = [
     ("/api/traces", "observe"), ("/api/eval", "observe"), ("/api/quality", "observe"),
     ("/api/review", "observe"), ("/api/arena", "observe"), ("/api/resilience", "observe"),
     ("/bench", "observe"), ("/api/cost", "observe"), ("/api/analytics", "observe"),
+    ("/api/metrics", "observe"),  # MOONSHOT §6 north-star meter (sibling of analytics/cost)
     ("/api/digest", "observe"),
     ("/brain", "observe"), ("/api/brain", "observe"),  # neural-mesh brain (live agents+models)
     ("/api/health/components", "observe"),

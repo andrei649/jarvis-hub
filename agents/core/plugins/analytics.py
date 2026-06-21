@@ -1,45 +1,43 @@
 """
-analytics.py — Stark GA4 + Firebase Analytics Plugin.
-Uses Google Analytics Data API v1 and Firebase Analytics API.
-Returns realistic mock KPIs when no Service Account is configured.
+analytics.py — first-party local analytics plugin (H22).
+
+Privacy-first, offline analytics in the lineage of Plausible: KPIs are aggregated
+**on read** with SQL `GROUP BY` over a local first-party event table
+(`core.analytics_store`), not fetched from GA4. We own the data; nothing leaves
+the box.
+
+The public interface (`get_kpis()` / `get_summary()` / `get_campaign_performance()`)
+is unchanged so the HUD/dashboard wiring is untouched — only the data path moved
+from "GA4 mock / GA4 API" to "local SQLite aggregate-on-read".
+
+The old GA4 Data API path is kept behind a disabled-by-default setting
+(``ga4_service_account`` + ``ga4_property_id`` AND ``ga4_enabled=True``); when off
+(the default) it is never called. ``available()`` reflects whether that legacy
+remote path is wired, NOT whether local analytics works — local always works.
 """
 import json
 import logging
 from typing import Optional
 
 from ..http_client import PluginHTTPClient
+from .. import analytics_store
 
 logger = logging.getLogger("jarvis.stark.analytics")
 
-MOCK_KPIS = {
-    "daily_users": 1420,
-    "page_views": 8900,
-    "sessions": 5600,
-    "conversion_rate": 0.032,
-    "revenue": 45200.00,
-    "top_pages": [
-        {"page": "/pricing", "views": 2100},
-        {"page": "/blog", "views": 1800},
-        {"page": "/features", "views": 1500},
-    ],
-    "mock": True,
-}
-
-MOCK_CAMPAIGNS = {
-    "campaigns": [
-        {"name": "Q2 Launch", "impressions": 45000, "clicks": 2300, "spend": 3200.00, "revenue": 12400.00},
-        {"name": "Email June", "impressions": 12000, "clicks": 890, "spend": 500.00, "revenue": 3400.00},
-    ],
-    "total_roas": 3.8,
-    "mock": True,
-}
-
 
 class AnalyticsPlugin:
-    def __init__(self, ga4_service_account: str = "", ga4_property_id: str = ""):
+    def __init__(
+        self,
+        ga4_service_account: str = "",
+        ga4_property_id: str = "",
+        ga4_enabled: bool = False,
+    ):
         self.client = PluginHTTPClient.for_plugin("analytics")
         self._sa = self._parse_service_account(ga4_service_account) if ga4_service_account else None
         self.property_id = ga4_property_id
+        # GA4 is an opt-in legacy remote path, OFF by default. Local-first wins.
+        self.ga4_enabled = bool(ga4_enabled)
+        analytics_store.initialize()
 
     def _parse_service_account(self, raw: str) -> Optional[dict]:
         try:
@@ -48,16 +46,24 @@ class AnalyticsPlugin:
             return None
 
     def available(self) -> bool:
-        return self._sa is not None and bool(self.property_id)
+        """True only when the (disabled-by-default) GA4 remote path is wired.
+
+        Local analytics is always available — this flag is solely about whether
+        the optional GA4 mirror could be queried."""
+        return self.ga4_enabled and self._sa is not None and bool(self.property_id)
 
     async def get_kpis(self, days: int = 30) -> dict:
-        if not self.available():
-            return dict(MOCK_KPIS)
-        try:
-            return await self._fetch_ga4_kpis(days)
-        except Exception as e:
-            logger.warning(f"GA4 API failed: {e}")
-            return dict(MOCK_KPIS)
+        """Headline KPIs, aggregated on read from the local event table.
+
+        When the GA4 remote path is explicitly enabled AND configured, it is used
+        as the source instead; any failure falls back to local aggregates rather
+        than fabricated mock data."""
+        if self.available():
+            try:
+                return await self._fetch_ga4_kpis(days)
+            except Exception as e:
+                logger.warning(f"GA4 API failed, falling back to local: {e}")
+        return analytics_store.kpis(days)
 
     async def get_summary(self) -> str:
         data = await self.get_kpis()
@@ -68,18 +74,24 @@ class AnalyticsPlugin:
             f"**Conversion Rate:** {data.get('conversion_rate', 0)*100:.1f}%",
             f"**Revenue:** ${data.get('revenue', 0):,.2f}",
         ]
-        if data.get("mock"):
-            lines.append("_(mock data — configurează GA4 Service Account în Admin → Plugins)_")
+        if data.get("total_events", 0) == 0 and not data.get("mock"):
+            lines.append("_(no local events yet — POST to /api/analytics/event to populate)_")
         return "\n".join(lines)
 
     async def get_campaign_performance(self) -> dict:
-        if not self.available():
-            return dict(MOCK_CAMPAIGNS)
-        try:
-            return await self._fetch_ga4_campaigns()
-        except Exception as e:
-            logger.warning(f"GA4 campaigns failed: {e}")
-            return dict(MOCK_CAMPAIGNS)
+        """Campaign/ROAS performance.
+
+        Campaigns require ad-network spend data we don't collect locally, so this
+        returns an empty, explicitly-not-mock structure unless the GA4 remote path
+        is enabled. Shape is unchanged for the dashboard."""
+        if self.available():
+            try:
+                return await self._fetch_ga4_campaigns()
+            except Exception as e:
+                logger.warning(f"GA4 campaigns failed: {e}")
+        return {"campaigns": [], "total_roas": 0.0, "mock": False}
+
+    # ── legacy GA4 remote path (opt-in, disabled by default) ───────────
 
     async def _fetch_ga4_kpis(self, days: int) -> dict:
         access_token = await self._get_access_token()
@@ -107,10 +119,11 @@ class AnalyticsPlugin:
             "conversion_rate": float(metric_values.get("conversionRate", 0)),
             "revenue": float(metric_values.get("totalRevenue", 0)),
             "top_pages": [],
+            "mock": False,
         }
 
     async def _fetch_ga4_campaigns(self) -> dict:
-        return dict(MOCK_CAMPAIGNS)
+        return {"campaigns": [], "total_roas": 0.0, "mock": False}
 
     async def _get_access_token(self) -> str:
         if not self._sa:
