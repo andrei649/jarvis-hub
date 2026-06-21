@@ -135,3 +135,27 @@ def test_mcp_endpoints():
         # RPC is gated off by default
         rpc = c.post("/api/mcp/server/rpc", json={"jsonrpc": "2.0", "id": 1, "method": "tools/list"})
         assert rpc.status_code == 403
+
+
+def test_rpc_transport_gate_enforces_user_token(monkeypatch):
+    """With server mode on and OAuth off, the RPC transport still demands the same
+    user/admin token as every other route (review F1) — not wide-open to callers."""
+    from agents import web
+    with TestClient(web.app) as c:
+        orig = web.orch.get_setting
+
+        def fake_get_setting(key, default=None):
+            if key == "mcp.server_enabled":
+                return True
+            if key == "mcp.oauth_required":
+                return False
+            return orig(key, default)
+
+        monkeypatch.setattr(web.orch, "get_setting", fake_get_setting)
+        monkeypatch.setattr(web, "USER_TOKEN", "secret-tok")
+        body = {"jsonrpc": "2.0", "id": 1, "method": "tools/list"}
+        # No token → 401, even though server mode is enabled.
+        assert c.post("/api/mcp/server/rpc", json=body).status_code == 401
+        # Valid user token → passes the gate to the JSON-RPC handler.
+        ok = c.post("/api/mcp/server/rpc", json=body, headers={"x-user-token": "secret-tok"})
+        assert ok.status_code == 200

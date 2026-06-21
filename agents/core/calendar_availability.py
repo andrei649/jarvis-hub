@@ -294,7 +294,12 @@ def google_calendar_provider(plugin) -> EventsProvider:
     """
 
     async def _provider(start: datetime, end: datetime) -> list[RawEvent]:
-        span_days = max(1, (end.date() - start.date()).days + 1)
+        # `days_ahead` must reach the END of the query window measured from NOW
+        # (the plugin fetches forward from today), NOT just the window width —
+        # otherwise a query about a future day (e.g. "free tomorrow at 3pm")
+        # fetches too few days and misses that day's events, wrongly reporting free.
+        ref = datetime.now(end.tzinfo) if end.tzinfo else datetime.now()
+        span_days = max(1, (end.date() - ref.date()).days + 1)
         raw = await plugin.list_events(max_results=250, days_ahead=span_days)
         events: list[RawEvent] = []
         for ev in raw:
