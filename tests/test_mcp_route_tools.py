@@ -311,12 +311,13 @@ def _real_route_handlers():
     """
     handlers = {}
     try:
-        from agents import web  # noqa: F401  (binds /status, /dashboard)
+        from agents import web  # noqa: F401  (binds /status)
+        from agents.core.routers.dashboard import dashboard
         from agents.core.routers.memory_kg import memory_search
     except Exception:
         return None
     handlers["status"] = web.status
-    handlers["dashboard"] = web.dashboard
+    handlers["dashboard"] = dashboard
     handlers["memory_search"] = memory_search
     return handlers
 
