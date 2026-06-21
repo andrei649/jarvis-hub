@@ -73,8 +73,9 @@ When on: embeds the query, runs fused recall (vector ⊕ graph), injects top-k a
 |------|---------|-------------|
 | `agents/serve.py` | Uvicorn launcher | `app` import from `agents/web.py` |
 | `agents/run.py` | CLI REPL | `main()` |
-| `agents/web.py` | FastAPI app, lifespan, all HTTP endpoints (~299 routes) | `app`, `lifespan`, `orch` global |
-| `agents/core/orchestrator.py` | Main loop | `Orchestrator`, `handle_input`, `handle_input_stream`, `_maybe_checkpoint` |
+| `agents/web.py` | FastAPI app shell + lifespan; mounts the 45 per-domain routers. Only **9 inline routes** stay here (app-shell `/`,`/v1`,`/v2`,favicon,sw.js + `/chat`,`/chat/stream` + `/admin`). The 304-route surface lives in `agents/core/routers/*` (CLN-3, #296) | `app`, `lifespan`, `orch` global, `_user_guard`, `_admin_guard` |
+| `agents/core/routers/*.py` | **The HTTP surface** — 45 per-domain `APIRouter`s (agents_api, tools, ops, payments, eval, workflows, sessions, memory_hud, status, dashboard, voice, mcp, …). Guards from `routers/_deps.py`; shared state via `app_state.get_orch()` / `sys.modules["agents.web"]` | one `router` per file, mounted via `app.include_router` |
+| `agents/core/orchestrator.py` | Main loop (+ delegated managers: `ChannelManager`, `PluginManager`, `llm_control`, `cognition_trace`, CLN-2) | `Orchestrator`, `handle_input`, `handle_input_stream`, `_maybe_checkpoint` |
 | `agents/core/routers/brain.py` | Neural Mesh page (`/brain`) + live feed (`/api/brain/summary`) — tracer rollups → canvas "brain" of agents+models firing. Viz adapted from Axon (MIT, `LICENSES/axon-MIT.txt`) | `build_summary`, `brain_page`, `brain_summary` |
 | `agents/core/agent.py` | Single agent runtime | `Agent`, `Agent.process`, `Agent.synthesize`, `Agent._load_soul` |
 | `agents/core/router.py` | Intent classifier | `IntentRouter.classify`, `Intent`, `INTENT_RULES` |
@@ -533,8 +534,8 @@ from git history into `*.local.md`).
 
 ### Add a web endpoint
 
-> **Convention (anti-god-object, CLN-3):** new routes go in a **per-domain router**
-> `agents/core/routers/<domain>.py`, *not* inline in `web.py` (already 255 inline routes).
+> **Convention (anti-god-object, CLN-3 — done #296):** new routes go in a **per-domain router**
+> `agents/core/routers/<domain>.py`, *not* inline in `web.py` (which now keeps only 9 app-shell/chat/admin routes; the other 295 live in 45 routers).
 > Mirror an existing router (e.g. `capture.py`): an `APIRouter`, guards imported from
 > `routers/_deps.py`, shared state reached lazily via `from agents import web`; mount it in
 > `web.py` with `app.include_router(...)`. Don't add new `@app.*` decorators inline. The
@@ -579,11 +580,12 @@ from git history into `*.local.md`).
 serve.py                          Uvicorn launcher
 agents/
   run.py                          CLI REPL
-  web.py                          FastAPI app (~299 routes; uvicorn on port 8080)
+  web.py                          FastAPI app shell + lifespan (9 inline routes; mounts 45 routers → 304-route surface; uvicorn on port 8080)
   web/                            Static assets for web dashboard (HTML/CSS/JS)
   _system/agents.yaml             Agent registry (canonical source of truth)
   core/
-    orchestrator.py               Main loop
+    routers/                      45 per-domain APIRouters = the HTTP surface (CLN-3); _deps.py = lazy auth guards
+    orchestrator.py               Main loop (+ CLN-2 managers: channel/plugin, llm_control, cognition_trace)
     agent.py                      Single agent runtime (SOUL.md loader)
     router.py                     Intent classifier
     config.py                     JarvisConfig (YAML loader)
