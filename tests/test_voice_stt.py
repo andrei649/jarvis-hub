@@ -7,6 +7,7 @@ import pytest
 from unittest.mock import AsyncMock, patch
 from fastapi.testclient import TestClient
 from agents import web
+from agents.core.routers import voice as voice_router  # voice routes extracted from web.py (CLN-3)
 
 
 @pytest.fixture
@@ -41,7 +42,7 @@ def test_stt_transcribes_via_engine(client):
     fake = AsyncMock()
     fake.transcribe_async = AsyncMock(return_value="salut lume")
     # Patch the cached-engine factory so no real model loads.
-    with patch.object(web, "_stt_engine", return_value=fake):
+    with patch.object(voice_router, "_stt_engine", return_value=fake):
         resp = client.post("/api/voice/stt?lang=ro", content=b"fake-audio-bytes")
     assert resp.status_code == 200
     data = resp.json()
@@ -62,8 +63,8 @@ def test_stt_engine_uses_configured_model_size(monkeypatch):
     monkeypatch.setattr("core.voice.stt.STTEngine", FakeSTT)
     monkeypatch.setattr("core.settings_db.get_value",
                         lambda cat, key, default=None: "small" if key == "stt_model_size" else default)
-    monkeypatch.setattr(web, "_STT_ENGINE", None)  # bust the cache
-    web._stt_engine()
+    monkeypatch.setattr(voice_router, "_STT_ENGINE", None)  # bust the cache
+    voice_router._stt_engine()
     assert captured["model_size"] == "small"
 
 
@@ -74,7 +75,7 @@ def test_stt_lang_falls_back_to_setting(client, monkeypatch):
     fake.transcribe_async = AsyncMock(return_value="hello world")
     monkeypatch.setattr("core.settings_db.get_value",
                         lambda cat, key, default=None: "en" if key == "stt_language" else default)
-    with patch.object(web, "_stt_engine", return_value=fake):
+    with patch.object(voice_router, "_stt_engine", return_value=fake):
         resp = client.post("/api/voice/stt", content=b"fake-audio-bytes")
     assert resp.status_code == 200
     assert resp.json()["lang"] == "en"
@@ -83,6 +84,6 @@ def test_stt_lang_falls_back_to_setting(client, monkeypatch):
 
 @patch("core.voice.stt.HAS_WHISPER", True)
 def test_stt_rejects_empty_audio(client):
-    with patch.object(web, "_stt_engine", return_value=AsyncMock()):
+    with patch.object(voice_router, "_stt_engine", return_value=AsyncMock()):
         resp = client.post("/api/voice/stt", content=b"")
     assert resp.status_code == 400

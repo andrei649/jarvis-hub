@@ -128,8 +128,10 @@ def test_dashboard_concurrent_refresh_fetches_weather_once(monkeypatch):
     monkeypatch.setattr(web, "_dashboard_cache", {"weather": "", "news": [], "cached_at": 0})
     monkeypatch.setattr(web, "_dashboard_lock", asyncio.Lock())
 
+    from agents.core.routers.dashboard import dashboard as _dashboard_handler
+
     async def _run():
-        await asyncio.gather(*(web.dashboard() for _ in range(8)))
+        await asyncio.gather(*(_dashboard_handler() for _ in range(8)))
 
     asyncio.run(_run())
     assert calls["n"] == 1
