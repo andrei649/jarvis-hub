@@ -911,168 +911,9 @@ _dashboard_cache = {"weather": "", "news": [], "cached_at": 0}
 _dashboard_lock = asyncio.Lock()
 
 
-@app.get("/dashboard", dependencies=[Depends(_user_guard)])
-async def dashboard():
-    if not orch:
-        return JSONResponse({"error": "not initialized"}, status_code=503)
-    now = time.time()
-    if now - _dashboard_cache.get("cached_at", 0) > 120:
-        async with _dashboard_lock:
-            # Re-check inside the lock: a concurrent request may have just refreshed.
-            if now - _dashboard_cache.get("cached_at", 0) > 120:
-                try:
-                    weather_plugin = orch.plugins.get("weather")
-                    w = await weather_plugin.get_weather("") if weather_plugin else ""
-                    _dashboard_cache["weather"] = w.strip()
-                except Exception:
-                    _dashboard_cache["weather"] = _dashboard_cache.get("weather", "")
-                _dashboard_cache["cached_at"] = now
-
-    raw = _dashboard_cache["weather"]
-    w_temp = "—"; w_desc = "Indisponibil"; w_wind = "—"; w_humidity = "—"
-    if raw:
-        parts = raw.split(", ")
-        for p in parts:
-            if "°" in p and ("+" in p or "-" in p):
-                cleaned = p.split(":")[-1].strip().replace("+", "").replace("°C", "").strip()
-                if cleaned:
-                    w_temp = cleaned
-            elif "humidity" in p:
-                w_humidity = p.replace(" humidity", "").strip()
-            elif "wind" in p:
-                w_wind = p.replace(" wind", "").strip()
-            elif p and "°" not in p and ":" not in p:
-                candidate = p.strip()
-                if candidate and len(candidate) > 2:
-                    w_desc = candidate
-    weather_data = {
-        "city": "București",
-        "temp": w_temp,
-        "desc": w_desc,
-        "wind": w_wind,
-        "humidity": w_humidity,
-        "feels": "—",
-        "updated": "—",
-        "forecast": [],
-    }
-
-    calendar_data = _dashboard_cache.get("calendar", [])
-    if now - _dashboard_cache.get("calendar_cached_at", 0) > 120 and orch:
-        async with _dashboard_lock:
-            # Re-check inside the lock to avoid a redundant concurrent fetch.
-            if now - _dashboard_cache.get("calendar_cached_at", 0) > 120:
-                try:
-                    cal_plugin = orch.plugins.get("google-calendar")
-                    if cal_plugin and cal_plugin.access_token:
-                        events = await cal_plugin.get_today_events()
-                        if events and not (len(events) == 1 and "error" in events[0]):
-                            calendar_data = events
-                            _dashboard_cache["calendar"] = events
-                            _dashboard_cache["calendar_cached_at"] = now
-                except Exception:
-                    pass
-            else:
-                calendar_data = _dashboard_cache.get("calendar", [])
-
-    notifications = []
-
-    return _nocache_json({
-        "weather": weather_data,
-        "calendar": calendar_data,
-        "notifications": notifications,
-    })
-
-
-@app.get("/tasks", dependencies=[Depends(_user_guard)])
-async def get_tasks():
-    if not orch:
-        return JSONResponse({"error": "not initialized"}, status_code=503)
-    
-    try:
-        all_tasks = orch.autonomy_queue.list(limit=30)
-    except Exception:
-        all_tasks = []
-        
-    # Format and enrich tasks for both backend model schema and frontend React network/widgets schema
-    def format_task(t):
-        if hasattr(t, "to_dict"):
-            d = t.to_dict()
-        else:
-            d = dict(t)
-        # Ensure owner, state, label, and project are present for React component compatibility (e.g. NetworkBrain)
-        d["owner"] = d.get("owner") or d.get("agent_id") or "jarvis"
-        d["state"] = d.get("state") or d.get("status") or "done"
-        d["label"] = d.get("label") or d.get("title") or "Task"
-        d["project"] = d.get("project") or d.get("kind") or "Autonomy"
-        return d
-
-    # 1. Check for running tasks first
-    running_tasks = [t for t in all_tasks if getattr(t, "status", None) == "running" or getattr(t, "state", None) == "running"]
-    
-    if running_tasks:
-        result_tasks = [format_task(t) for t in running_tasks]
-    elif all_tasks:
-        # 2. If no running tasks, return recent history
-        result_tasks = [format_task(t) for t in all_tasks]
-    else:
-        # H7.7: No active tasks — return empty list instead of misleading dummy data
-        result_tasks = []
-        
-    return _nocache_json({"tasks": result_tasks})
-
-
-@app.get("/ticker", dependencies=[Depends(_user_guard)])
-async def get_ticker():
-    if not orch:
-        return _nocache_json({"error": "not initialized"}, status_code=503)
-    items = []
-    
-    # 1. Add active unhealthy signals from observer
-    if orch.observer:
-        try:
-            obs_status = orch.observer.status()
-            for key, state in obs_status.get("signals", {}).items():
-                if not state.get("healthy", True):
-                    items.append({
-                        "agent": state.get("agent", "steve"),
-                        "verb": "WARNING",
-                        "obj": state.get("detail", key),
-                        "pct": 100,
-                        "pri": "high" if state.get("severity") == "CRITICAL" else "mid",
-                    })
-        except Exception:
-            pass
-
-    # 2. Add active unhealthy signals from event watcher
-    if getattr(orch, "event_watcher", None):
-        try:
-            watcher_state = orch.event_watcher._state
-            for key, healthy in watcher_state.items():
-                if not healthy:
-                    agent = "gecko" if "finance" in key else ("pepper" if "calendar" in key else ("stark" if "email" in key else "hercules"))
-                    items.append({
-                        "agent": agent,
-                        "verb": "ALERT",
-                        "obj": f"Unhealthy event signal: {key}",
-                        "pct": 100,
-                        "pri": "mid",
-                    })
-        except Exception:
-            pass
-
-    # 3. Fallback to active agent standby messages so it's never empty
-    if not items:
-        enriched = _enrich_agents()
-        for a in enriched:
-            items.append({
-                "agent": a["id"],
-                "verb": "monitoring" if a["status"] == "ready" else "standby",
-                "obj": a["role"],
-                "pct": 50,
-                "pri": "mid",
-            })
-            
-    return _nocache_json({"ticker": items})
+# CLN-3: /dashboard, /tasks, /ticker extracted to agents/core/routers/dashboard.py
+# (`_dashboard_cache` + `_dashboard_lock` above stay here — the router reads them
+#  through `sys.modules.get("agents.web")` so tests' monkeypatch is still observed.)
 
 
 _AGENT_ID_RE = re.compile(r"^[a-z0-9_-]{1,64}$")
@@ -1296,6 +1137,7 @@ from agents.core.routers.multimodal import router as _multimodal_router  # noqa:
 from agents.core.routers.notes import router as _notes_router  # noqa: E402
 from agents.core.routers.oauth import router as _oauth_router  # noqa: E402
 from agents.core.routers.pairing import router as _pairing_router  # noqa: E402
+from agents.core.routers.dashboard import router as _dashboard_router  # noqa: E402
 from agents.core.routers.payments import router as _payments_router  # noqa: E402
 from agents.core.routers.eval import router as _eval_router  # noqa: E402
 from agents.core.routers.heartbeat import router as _heartbeat_router  # noqa: E402
@@ -1336,6 +1178,7 @@ app.include_router(_memory_kg_router)
 app.include_router(_analytics_router)
 app.include_router(_admin_router)
 app.include_router(_integrations_router)
+app.include_router(_dashboard_router)
 app.include_router(_payments_router)
 app.include_router(_multimodal_router)
 app.include_router(_eval_router)
