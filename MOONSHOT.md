@@ -106,6 +106,9 @@ wrong even if it ships faster.
   - p95 per-turn latency (non-LLM) — must stay flat as we add features.
 - **Commercial signals (Phase 2+):** self-host installs, hosted paid conversion, NRR, gross margin
   (model in [VALUATION_AND_PRICING.md](docs/VALUATION_AND_PRICING.md) §6, §9).
+- **Now instrumented:** the north-star + all four counter-metrics are computed in one place
+  (`agents/core/observability/north_star.py`) and exposed read-only at `GET /api/metrics/north-star`.
+  Field definitions and the single-user (n=1) honesty caveat: [docs/METRICS.md](docs/METRICS.md).
 
 ---
 
@@ -171,6 +174,8 @@ has an audit trail and future contributors understand *why*, not just *what*.
 | [docs/gap-analysis-1.0.md](docs/gap-analysis-1.0.md) | The gaps — *what stands between us and 1.0* |
 | [docs/OWNER_TASKS.md](docs/OWNER_TASKS.md) | The human gate — *what only the owner can do* |
 | [docs/AI_CONTEXT.md](docs/AI_CONTEXT.md) | The loading map — *how an assistant ingests this repo* |
+| [docs/REVIEW_YEAR_ONE.md](docs/REVIEW_YEAR_ONE.md) | The review — *candid year-one retrospective: status, learnings, gaps, next 90 days* |
+| [docs/METRICS.md](docs/METRICS.md) | The meters — *§6 north-star + counter-metric definitions and the n=1 honesty caveat* |
 
 ---
 

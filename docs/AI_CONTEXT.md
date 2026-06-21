@@ -46,12 +46,13 @@ Order matters: each file assumes the previous ones.
 | `BACKLOG.md` | 42K | THE priority truth. Large because it's the full ledger — for quick tasks read only the header through "Status General" (~3K) plus the section you're touching |
 | `GO_LIVE_PLAN.md` | 5.5K | Features, marketing brief, v1.0 launch checklist |
 | `docs/2026-06-10-full-project-analysis.md` | 1.5K | Latest whole-repo audit: stats, debt, parity verdict |
+| `docs/REVIEW_YEAR_ONE.md` | 2.5K | Candid year-one review: status, the 12 learnings, gap to a desirable product, next-90-days plan |
 
 ## Task bundles — add exactly one (Tier 2)
 
 | Task | Load | ≈ tokens |
 |------|------|----------|
-| **Backend work** (`agents/`) | `agents/core/<touched module>` + `agents/web.py` (or the relevant `agents/core/routers/*`) + matching `tests/test_*.py`. Full backend = ~330K — prefer the module index in ARCHITECTURE §3 to pick files | 10–330K |
+| **Backend work** (`agents/`) | `agents/core/<touched module>` + `agents/web.py` (or the relevant `agents/core/routers/*`) + matching `tests/test_*.py`. Full backend = ~330K — prefer the module index in ARCHITECTURE §3 to pick files. For metrics/observability work also load `docs/METRICS.md` | 10–330K |
 | **HUD v2 / frontend** | `frontend/src/**` (~67K) + `docs/design/HUD_V2_REMAINING.md` + `HUD_V2_COVERAGE_AND_PLAN.md` + `tests/test_hud_v2_parity.py` | ~80K |
 | **WorldView** | `worldview/README.md` + `worldview/{frontend,backend-api}/src` + **`docs/contracts/worldview-bridge.md`** (the only hub coupling) — standalone stack, nothing else needed | ~150K |
 | **Mobile parity** | `mobile/**` + `mobile/PARITY.md` + the endpoint list from ARCHITECTURE | ~25K |

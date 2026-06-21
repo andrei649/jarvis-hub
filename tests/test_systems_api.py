@@ -76,12 +76,17 @@ def test_agent_soul_endpoint(client):
 
 def test_plugin_toggle_endpoint(client):
     # SEC-3: PUT /plugins/{id}/toggle is admin-guarded now; this test checks toggle
-    # behavior, not auth, so bypass the admin guard for it.
+    # behavior, not auth, so bypass the admin guard for it. The route was extracted
+    # into core/routers/plugins.py (CLN-3) and now depends on the lazy admin_guard
+    # wrapper, so override that too (same pattern as conftest does for user_guard).
+    from agents.core.routers._deps import admin_guard as _ra
     web.app.dependency_overrides[web._admin_guard] = lambda: None
+    web.app.dependency_overrides[_ra] = lambda: None
     try:
         _plugin_toggle_body(client)
     finally:
         web.app.dependency_overrides.pop(web._admin_guard, None)
+        web.app.dependency_overrides.pop(_ra, None)
 
 
 def _plugin_toggle_body(client):
