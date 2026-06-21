@@ -42,9 +42,20 @@ DEFAULT_DB = data_path("analytics.db")
 _MAX_STR = 512
 _MAX_PROPS_BYTES = 2048
 
-_conn: Optional[sqlite3.Connection] = None
+class _DB:
+    """Holder for the single shared connection plus the path it was opened with.
+
+    Bundling the two as connection-state (rather than two separate module globals)
+    keeps ``initialize()`` idempotent — the stored ``path`` is what lets a repeated
+    same-path call return the cached connection instead of reopening — while making
+    that role explicit and keeping the module's global surface to one object."""
+
+    conn: Optional[sqlite3.Connection] = None
+    path: Optional[str] = None
+
+
+_db = _DB()
 _lock = threading.Lock()
-_db_path: Optional[str] = None
 
 
 def _now_iso() -> str:
@@ -60,13 +71,12 @@ def _clip(value: Optional[str], limit: int = _MAX_STR) -> Optional[str]:
 
 def initialize(db_path: Optional[str] = None) -> sqlite3.Connection:
     """Open (or reopen) the events DB and ensure the schema. Idempotent."""
-    global _conn, _db_path
     with _lock:
-        if _conn is not None and (db_path is None or db_path == _db_path):
-            return _conn
-        if _conn is not None:
-            _conn.close()
-            _conn = None
+        if _db.conn is not None and (db_path is None or db_path == _db.path):
+            return _db.conn
+        if _db.conn is not None:
+            _db.conn.close()
+            _db.conn = None
         path = db_path or str(DEFAULT_DB)
         if path != ":memory:":
             DEFAULT_DB.parent.mkdir(parents=True, exist_ok=True)
@@ -93,24 +103,23 @@ def initialize(db_path: Optional[str] = None) -> sqlite3.Connection:
         # ts so the period scan stays cheap as the table grows unboundedly.
         conn.execute("CREATE INDEX IF NOT EXISTS idx_events_ts ON events(ts)")
         conn.commit()
-        _conn = conn
-        _db_path = path
-        return _conn
+        _db.conn = conn
+        _db.path = path
+        return _db.conn
 
 
 def _require() -> sqlite3.Connection:
-    if _conn is None:
+    if _db.conn is None:
         return initialize()
-    return _conn
+    return _db.conn
 
 
 def close() -> None:
-    global _conn, _db_path
     with _lock:
-        if _conn is not None:
-            _conn.close()
-            _conn = None
-            _db_path = None
+        if _db.conn is not None:
+            _db.conn.close()
+            _db.conn = None
+            _db.path = None
 
 
 # ── writes ────────────────────────────────────────────────────────────
