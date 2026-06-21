@@ -110,17 +110,44 @@ async def _admin_guard(request: Request):
 USER_TOKEN = os.environ.get("JARVIS_USER_TOKEN", "").strip()
 
 
+def _user_token_required() -> bool:
+    """True when a JARVIS_USER_TOKEN is configured (network posture).
+
+    When False the hub is in the localhost-only dev posture: the HTTP guard
+    trusts a localhost origin and requires no token (see ``_user_guard``). This
+    is the single source of truth reused by the MCP mutating-tool identity gate
+    so it can match the HTTP guard's unset-token behaviour exactly."""
+    return bool(USER_TOKEN)
+
+
+def _user_credential_ok(user_supplied: str = "", admin_supplied: str = "") -> bool:
+    """Validate a presented user credential the SAME way ``_user_guard`` does.
+
+    Request-free core of the user identity check, so a non-HTTP caller (the MCP
+    in-process mutating-tool path, which has no ``Request``) can enforce the
+    identical rule instead of forking it:
+
+      * a user token that matches ``JARVIS_USER_TOKEN`` (constant-time), OR
+      * an admin token that matches ``JARVIS_ADMIN_TOKEN`` (admin ⊇ user).
+
+    Only meaningful when ``_user_token_required()`` is True; with no token
+    configured the localhost-trust posture applies and no credential is needed."""
+    if USER_TOKEN and user_supplied and secrets.compare_digest(user_supplied, USER_TOKEN):
+        return True
+    # An admin token is a superset of user access — accept it too.
+    if ADMIN_TOKEN and admin_supplied and secrets.compare_digest(admin_supplied, ADMIN_TOKEN):
+        return True
+    return False
+
+
 async def _user_guard(request: Request):
     """Authorize a user-facing request or raise 401/403. See USER_TOKEN above."""
     if USER_TOKEN:
-        supplied = request.headers.get("x-user-token", "")
-        if supplied and secrets.compare_digest(supplied, USER_TOKEN):
+        if _user_credential_ok(
+            user_supplied=request.headers.get("x-user-token", ""),
+            admin_supplied=request.headers.get("x-admin-token", ""),
+        ):
             return
-        # An admin token is a superset of user access — accept it too.
-        if ADMIN_TOKEN:
-            admin_supplied = request.headers.get("x-admin-token", "")
-            if admin_supplied and secrets.compare_digest(admin_supplied, ADMIN_TOKEN):
-                return
         raise HTTPException(status_code=401, detail="user token required")
     # No token configured → only localhost may reach user routes. Fails closed
     # behind an untrusted reverse proxy (HF-7); JARVIS_TRUSTED_PROXY=1 opts into
@@ -159,13 +186,10 @@ def _client_ip(request: Request) -> str:
 
 def _request_is_authed(request: Request) -> bool:
     """True only if the request carries a *valid* user or admin token."""
-    ut = request.headers.get("x-user-token", "")
-    if USER_TOKEN and ut and secrets.compare_digest(ut, USER_TOKEN):
-        return True
-    at = request.headers.get("x-admin-token", "")
-    if ADMIN_TOKEN and at and secrets.compare_digest(at, ADMIN_TOKEN):
-        return True
-    return False
+    return _user_credential_ok(
+        user_supplied=request.headers.get("x-user-token", ""),
+        admin_supplied=request.headers.get("x-admin-token", ""),
+    )
 
 
 def _rate_limited(ip: str, now: float) -> bool:
@@ -900,6 +924,7 @@ from agents.core.routers.notes import router as _notes_router  # noqa: E402
 from agents.core.routers.oauth import router as _oauth_router  # noqa: E402
 from agents.core.routers.pairing import router as _pairing_router  # noqa: E402
 from agents.core.routers.dashboard import router as _dashboard_router  # noqa: E402
+from agents.core.routers.dashboard import dashboard  # noqa: E402  (re-export: MCP route-tool + drift guard resolve web.dashboard)
 from agents.core.routers.payments import router as _payments_router  # noqa: E402
 from agents.core.routers.voice import router as _voice_router  # noqa: E402
 from agents.core.routers.eval import router as _eval_router  # noqa: E402
@@ -1411,11 +1436,16 @@ def _build_mcp_mutating_route_tools():
     are on, the curated mutating route(s) are bound to an in-process write adapter
     (NOT a loopback HTTP call) and every invocation is audited via ``orch.audit``.
 
-    SECURITY: the in-process adapter has no ``Request`` and therefore does NOT
-    enforce the HTTP route's per-identity ``user_guard``. The allow-list + double
-    kill-switch + audit are the gate for now (LAN-only). Per-identity guard wiring
-    is the remaining hardening before enabling on a network-exposed instance — see
-    the caveat block in ``agents/core/mcp/route_tools.py``.
+    SECURITY: the in-process adapter has no ``Request``, so it cannot run
+    ``Depends(user_guard)`` directly. Instead a per-identity gate
+    (``_mcp_identity_check``) is threaded onto every mutating tool; it re-applies
+    the SAME rule ``user_guard`` uses (``_user_token_required`` /
+    ``_user_credential_ok``). A mutating call without a valid identity is refused
+    even with both kill-switches on. The transport (``mcp_server_rpc``) extracts
+    the credential from the request headers and passes it to the server. Residual
+    gap: a leaked token alone drives the write surface, and the unset-token posture
+    trusts the in-process call unconditionally — see the caveat block in
+    ``agents/core/mcp/route_tools.py``.
     """
     from agents.core.mcp.route_tools import build_mutating_route_tools
 
@@ -1434,7 +1464,24 @@ def _build_mcp_mutating_route_tools():
 
     invokers = {"memory_remember": _invoke_memory_remember}
     auditor = orch.audit if orch else None
-    return build_mutating_route_tools(invokers, auditor=auditor)
+    return build_mutating_route_tools(
+        invokers, auditor=auditor, identity_check=_mcp_identity_check
+    )
+
+
+def _mcp_identity_check(token: Optional[str]) -> bool:
+    """Per-identity gate for MCP mutating tools — the SAME rule as ``user_guard``.
+
+    Reuses the HTTP guard's primitives so the rule is never forked:
+      * If ``JARVIS_USER_TOKEN`` is UNSET → localhost-only dev posture: the HTTP
+        guard trusts a localhost origin and needs no token, so the in-process MCP
+        call (localhost-equivalent) is allowed with no credential. Dev unchanged.
+      * If it is SET → require a credential that matches ``JARVIS_USER_TOKEN`` (or
+        a matching ``JARVIS_ADMIN_TOKEN``, admin ⊇ user), exactly as the HTTP 401
+        path checks it."""
+    if not _user_token_required():
+        return True
+    return _user_credential_ok(user_supplied=token or "", admin_supplied=token or "")
 
 
 @app.get("/api/mcp/server")
@@ -1521,7 +1568,29 @@ async def mcp_server_rpc(message: dict, request: Request):
             return JSONResponse(
                 {"error": f"unauthorized: {result['error']}"}, status_code=401,
                 headers={"WWW-Authenticate": MCPResourceServer.challenge(resource)})
-    response = await _build_mcp_server().handle(message)
+    else:
+        # SEC (review F1/F2): with OAuth off, the MCP transport must enforce the
+        # SAME posture as every other user route (HF-1) — a matching user/admin
+        # token if JARVIS_USER_TOKEN is set, else localhost-only (fail closed
+        # behind an untrusted proxy, HF-7). Without this gate a REMOTE caller could
+        # reach the read tools (dashboard/memory) over the MCP transport even though
+        # the equivalent HTTP routes are guarded.
+        if USER_TOKEN:
+            if not _request_is_authed(request):
+                return JSONResponse(
+                    {"error": "unauthorized: user token required"}, status_code=401)
+        elif _real_client_host(request) not in _LOCALHOSTS:
+            return JSONResponse(
+                {"error": "MCP server disabled from network — set JARVIS_USER_TOKEN to enable remote access"},
+                status_code=403,
+            )
+    # Thread the caller's user identity (same header user_guard reads) into the
+    # server so MUTATING route tools can enforce the per-identity gate. An admin
+    # token also satisfies the user gate (admin ⊇ user), so prefer whichever the
+    # caller sent. With JARVIS_USER_TOKEN unset this is irrelevant (localhost-trust
+    # dev posture applies inside _mcp_identity_check).
+    identity = request.headers.get("x-user-token") or request.headers.get("x-admin-token")
+    response = await _build_mcp_server().handle(message, identity=identity)
     # JSON-RPC notifications produce no response body.
     return _nocache_json(response if response is not None else {"ok": True})
 

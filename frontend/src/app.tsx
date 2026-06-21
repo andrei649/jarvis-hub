@@ -15,6 +15,7 @@ import { AutonomyMode, BuildMode, ObserveMode, InteropMode } from './modes2';
 import { ChatMode, CommsMode, AdminMode } from './modes3';
 import { FinanceMode, HealthMode, KnowledgeMode, FamilyMode } from './modes4';
 import { ConsoleOverlay } from './gap';
+import { initAnalytics, trackPageview } from './analytics';
 
 function ModeStub({ label }) {
   return (
@@ -97,6 +98,17 @@ function App() {
   const localPct = (locality && locality.local_pct != null) ? locality.local_pct
     : trust.strict_local ? 100 : (demo ? 87 : null);
   const liveModes = useLiveModes(); // P4: stream live data into the capability modes; reports which keys are live
+  // H22 — first-party page-view beacon. Fires once on load (privacy-first, no
+  // cookies/PII; see analytics.ts), then once per HUD view change. The SPA has no
+  // real URL routing, so we report the current `mode` as the path. initAnalytics()
+  // is idempotent and already fired the initial view, so the per-mode effect skips
+  // its first run to avoid a duplicate on mount.
+  useEffect(() => { initAnalytics(); }, []);
+  const _firstView = useRef(true);
+  useEffect(() => {
+    if (_firstView.current) { _firstView.current = false; return; }
+    trackPageview('/' + mode);
+  }, [mode]);
   useEffect(() => { try { localStorage.setItem('hud.accent', accent); } catch { /* ignore */ } }, [accent]); // P5 persist
   useEffect(() => { try { localStorage.setItem('hud.lang', lang); } catch { /* ignore */ } }, [lang]);
   useEffect(() => { try { localStorage.setItem('hud.look', look); } catch { /* ignore */ } }, [look]); // client-only UI prefs
