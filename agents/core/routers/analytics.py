@@ -16,12 +16,56 @@ web-module globals. The cost/model-tier handlers are pure leaf calls into
 """
 
 from fastapi import APIRouter, Depends, Query
+from pydantic import BaseModel, Field
 
 from agents.core.app_state import get_orch
 from agents.core.routers._deps import admin_guard, user_guard
 from agents.core.web_helpers import error_json, nocache_json, safe_reflect
 
 router = APIRouter(tags=["observe"])
+
+
+# ── H22 first-party local analytics: beacon ingest ───────────────────
+
+class AnalyticsEvent(BaseModel):
+    """Validated body for the public analytics beacon (H22).
+
+    Deliberately tiny: a page-view / custom event. Nothing sensitive — `props`
+    is a small free-form bag, `session_id` is an opaque per-visit token (not a
+    user id). Lengths are bounded so the public ingest can't bloat the table;
+    the store clips again as a backstop. extra='forbid' rejects junk keys."""
+
+    model_config = {"extra": "forbid"}
+
+    name: str = Field(..., min_length=1, max_length=128)
+    path: str | None = Field(default=None, max_length=512)
+    referrer: str | None = Field(default=None, max_length=512)
+    session_id: str | None = Field(default=None, max_length=128)
+    props: dict | None = Field(default=None)
+
+
+@router.post("/api/analytics/event")
+async def ingest_analytics_event(event: AnalyticsEvent):
+    """Ingest a single first-party analytics event (privacy-first, local-only).
+
+    Public beacon by design (page-view tracking must work without auth), but it
+    is rate-limited by the global unauthenticated throttle and writes nothing
+    sensitive — a single bounded INSERT into the local events table. Aggregation
+    happens on read (`/api/analytics/*` KPIs), Plausible-style. CLN-3: route lives
+    here; auth-matrix classifies it INTENTIONALLY_OPEN (public ingress, mints
+    nothing)."""
+    from agents.core import analytics_store
+    try:
+        event_id = analytics_store.record_event(
+            event.name,
+            path=event.path,
+            referrer=event.referrer,
+            props=event.props,
+            session_id=event.session_id,
+        )
+        return nocache_json({"ok": True, "id": event_id})
+    except Exception as e:
+        return error_json(e, 200, "analytics ingest failed", extra={"ok": False})
 
 
 @router.get("/api/analytics/cost")

@@ -2025,7 +2025,73 @@ def _build_mcp_server():
         return await orch.handle_input(text, channel="mcp", agent_override=agent_id)
 
     allowed = orch.get_setting("mcp.exposed_agents", None)
-    return JarvisMCPServer(_runner, agents, allowed_agents=allowed, lan_only=True)
+    route_tools = _build_mcp_route_tools()
+    mutating_route_tools = _build_mcp_mutating_route_tools()
+    return JarvisMCPServer(
+        _runner,
+        agents,
+        allowed_agents=allowed,
+        lan_only=True,
+        route_tools=route_tools,
+        mutating_route_tools=mutating_route_tools,
+    )
+
+
+def _build_mcp_route_tools():
+    """H22.9 (read-only) — bind allow-listed READ-ONLY routes for MCP exposure.
+
+    Gated OFF by default via the ``JARVIS_MCP_ROUTE_TOOLS`` kill-switch: when the
+    switch is off this returns ``[]`` and the MCP server exposes only the existing
+    ``ask_<agent>`` tools (unchanged behaviour). When on, the curated read-only
+    routes (``/status``, ``/api/memory/search``, ``/dashboard``) are bound to their
+    in-process handlers — no loopback HTTP, no mutating routes (those are post-1.0).
+    """
+    from agents.core.mcp.route_tools import build_route_tools, route_tools_enabled
+
+    if not route_tools_enabled():
+        return []
+    from agents.core.routers.memory_kg import memory_search
+
+    handlers = {
+        "status": status,
+        "memory_search": memory_search,
+        "dashboard": dashboard,
+    }
+    return build_route_tools(handlers)
+
+
+def _build_mcp_mutating_route_tools():
+    """H22.9 (mutating) — bind allow-listed WRITE routes for MCP exposure.
+
+    DOUBLE-gated OFF by default: returns ``[]`` unless BOTH
+    ``JARVIS_MCP_ROUTE_TOOLS`` AND ``JARVIS_MCP_MUTATING_TOOLS`` are on. When both
+    are on, the curated mutating route(s) are bound to an in-process write adapter
+    (NOT a loopback HTTP call) and every invocation is audited via ``orch.audit``.
+
+    SECURITY: the in-process adapter has no ``Request`` and therefore does NOT
+    enforce the HTTP route's per-identity ``user_guard``. The allow-list + double
+    kill-switch + audit are the gate for now (LAN-only). Per-identity guard wiring
+    is the remaining hardening before enabling on a network-exposed instance — see
+    the caveat block in ``agents/core/mcp/route_tools.py``.
+    """
+    from agents.core.mcp.route_tools import build_mutating_route_tools
+
+    async def _invoke_memory_remember(args: dict):
+        """Same write as ``POST /api/memory/remember`` (sans Request body parse)."""
+        if not orch or not orch.memory:
+            return {"error": "not initialized"}
+        text = args.get("text", "")
+        text = text.strip() if isinstance(text, str) else ""
+        if not text:
+            return {"error": "text required"}
+        metadata = args.get("metadata")
+        metadata = metadata if isinstance(metadata, dict) else {}
+        rid = await orch.memory.remember(text, metadata=metadata)
+        return {"ok": rid is not None, "id": rid}
+
+    invokers = {"memory_remember": _invoke_memory_remember}
+    auditor = orch.audit if orch else None
+    return build_mutating_route_tools(invokers, auditor=auditor)
 
 
 @app.get("/api/mcp/server")
