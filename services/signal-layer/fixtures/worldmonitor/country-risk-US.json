@@ -1,0 +1,72 @@
+{
+  "id": "assessment-country-us-demo-001",
+  "subject": {
+    "type": "country",
+    "id": "US",
+    "label": "United States"
+  },
+  "risk": {
+    "score": 45,
+    "level": "moderate",
+    "components": {
+      "cyber": 40,
+      "natural_disaster": 35
+    }
+  },
+  "claim": "United States is assessed as moderate risk in this demo snapshot, driven by cyber and severe-weather activity.",
+  "confidence": "medium",
+  "drivers": [
+    {
+      "title": "Cyber threat activity",
+      "type": "cyber",
+      "severity": "high"
+    },
+    {
+      "title": "Severe weather",
+      "type": "natural_disaster",
+      "severity": "high"
+    }
+  ],
+  "recommendations": [
+    {
+      "type": "monitor",
+      "label": "Keep United States on the watchlist for daily briefs.",
+      "requiresApproval": true
+    },
+    {
+      "type": "brief",
+      "label": "Generate a country brief before travel or business decisions.",
+      "requiresApproval": true
+    }
+  ],
+  "evidenceIds": [
+    "ev-country-us-risk"
+  ],
+  "evidence": [
+    {
+      "id": "ev-country-us-risk",
+      "provider": "worldmonitor",
+      "sourceName": "WorldMonitor government cache",
+      "sourceFamily": "government",
+      "url": null,
+      "observedAt": "2026-06-19T09:00:00Z",
+      "publishedAt": "2026-06-19T09:00:00Z",
+      "fetchedAt": "2026-06-19T10:00:00Z",
+      "cachedAt": "2026-06-19T10:00:00Z",
+      "stale": false,
+      "reliability": "medium",
+      "raw": {
+        "fixture": true
+      }
+    }
+  ],
+  "freshness": {
+    "stale": false,
+    "checkedAt": "2026-06-19T12:00:00Z",
+    "cachedAt": "2026-06-19T10:00:00Z"
+  },
+  "provider": "worldmonitor",
+  "raw": {
+    "fixture": true
+  }
+}
