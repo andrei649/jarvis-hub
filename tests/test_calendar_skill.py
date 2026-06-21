@@ -115,22 +115,33 @@ def test_parse_day_offset():
 # --------------------------------------------------------------------------- #
 
 
+def _tomorrow_at(hour: int, minute: int = 0) -> datetime:
+    """A datetime on the skill's real 'tomorrow' (now+1d), so these tests stay
+    deterministic regardless of the wall-clock date they run on."""
+    day = (datetime.now(ZONE) + timedelta(days=1)).date()
+    return datetime(day.year, day.month, day.day, hour, minute, tzinfo=ZONE)
+
+
+def _tomorrow_stamp(hour: int, minute: int = 0) -> str:
+    return _tomorrow_at(hour, minute).strftime("%d %b %H:%M")
+
+
 async def test_am_i_free_with_clashing_event_is_busy():
     # An event 14:30–15:30 clashes with a "3pm" (15:00) query.
-    clash = datetime(2026, 6, 21, 14, 30, tzinfo=ZONE)
+    clash = _tomorrow_at(14, 30)
     _inject([_wire_event(clash, 60)])
     out = await cal.free("am I free tomorrow at 3pm?")
     assert "Nu" in out  # busy
-    assert "21 Jun 15:00" in out
+    assert _tomorrow_stamp(15, 0) in out
 
 
 async def test_am_i_free_with_free_time_is_free():
     # Event 10:00–11:00; a 15:00 query is well clear of it.
-    other = datetime(2026, 6, 21, 10, 0, tzinfo=ZONE)
+    other = _tomorrow_at(10, 0)
     _inject([_wire_event(other, 60)])
     out = await cal.free("am I free tomorrow at 3pm?")
     assert "Da" in out  # free
-    assert "21 Jun 15:00" in out
+    assert _tomorrow_stamp(15, 0) in out
 
 
 async def test_am_i_free_empty_calendar_is_free():
@@ -158,7 +169,7 @@ async def test_no_token_is_graceful():
 
 async def test_free_slots_listing_tomorrow():
     # Tomorrow: one event 10:00–12:00 inside 9–18 working hours.
-    busy = datetime(2026, 6, 21, 10, 0, tzinfo=ZONE)
+    busy = _tomorrow_at(10, 0)
     _inject([_wire_event(busy, 120)])
     out = await cal.free("cand sunt liber maine?")
     assert out.startswith("Sloturi libere")
@@ -170,7 +181,7 @@ async def test_free_slots_listing_tomorrow():
 
 async def test_free_slots_listing_handles_full_day():
     # A wall-to-wall all-day style block leaves no slots tomorrow.
-    busy = datetime(2026, 6, 21, 9, 0, tzinfo=ZONE)
+    busy = _tomorrow_at(9, 0)
     _inject([_wire_event(busy, 9 * 60)])  # 09:00–18:00
     out = await cal.free("free slots tomorrow")
     assert "Nu mai ai sloturi libere" in out
