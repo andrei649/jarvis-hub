@@ -4,7 +4,7 @@
 > brand deck — those live in `marketing/` and `MOONSHOT.md`. This is the document you
 > read alone, at night, to decide what the next year is actually about.
 >
-> **Date:** 2026-06-20 · **At version:** v9.9.9 (pre-1.0 audit gate) · **Companion
+> **Date:** 2026-06-20 · **At version:** v0.10.0 (re-baselined 2026-06-21 from the old "v9.9.9"; feature-complete, productionizing toward 1.0) · **Companion
 > docs:** [`MOONSHOT.md`](../MOONSHOT.md) (the bet), [`BACKLOG.md`](../BACKLOG.md) (the
 > work), [`STATUS.md`](../STATUS.md) (the snapshot), [`docs/HISTORY.md`](HISTORY.md)
 > (the chronicle). This review *reads* those; it does not rewrite them.
@@ -40,7 +40,7 @@ running for a month because it earned it.
 
 | Dimension | State |
 |---|---|
-| Version / gate | **v9.9.9**, pre-1.0 audit gate |
+| Version | **v0.10.0** — feature-complete; productionizing toward 1.0 (see [version roadmap](../BACKLOG.md#version-roadmap)) |
 | Backlog (H1–H17) | **194 / 196 items code-complete (~99% SP)** |
 | Open backlog items | 2 — both GPU-host-gated (H12.14 fine-tune, H13.3 speculative decoding) |
 | Tests | ~2,300 backend (pytest, offline-first) + 184 frontend (Jest, ~67% line) |

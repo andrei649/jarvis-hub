@@ -1,6 +1,6 @@
 # Jarvis Hub — Go-Live Plan
 
-> Generated: 2026-06-02 · Updated: 2026-06-10 · Version target: v1.0.0 (= entire backlog done) · Owner: Andrei
+> Generated: 2026-06-02 · Updated: 2026-06-21 · Current: **v0.10.0** (feature-complete) · Target: **v1.0.0 = productionized (H23) + proven by real design partners** ([version roadmap](BACKLOG.md#version-roadmap)) · Owner: Andrei
 > North star (vision & phase gates): [MOONSHOT.md](MOONSHOT.md)
 > Source of truth for backlog: [BACKLOG.md](BACKLOG.md)
 
@@ -131,7 +131,7 @@
 
 ---
 
-## 2. Roadmap to v1.0 (= entire backlog done)
+## 2. Roadmap to v1.0 (= productionized + proven by real users; see [version roadmap](BACKLOG.md#version-roadmap))
 
 > **v1.0.0 = the full backlog complete.** Foundation (H1–H9), hardening (H7), personal memory (H8), and most
 > of the competitive-edge + frontier work — the 2026-06-03 wave across H10, H12, H14, H16, H17 — are ✅
@@ -320,7 +320,7 @@ LM Studio + Ollama on local GPU. Zero API cost for 99% of tasks. Athena escalate
 
 ### v1.0 Launch Checklist
 
-> v1.0 = **entire backlog done**. The foundation/hardening gate is met; what remains is the rest of the backlog.
+> We are at **v0.10.0** — every feature horizon is delivered. v1.0 = the **productionization layer (H23)** done **and** the system proven by 3–5 real design partners. The version line in [BACKLOG.md](BACKLOG.md#version-roadmap) is the plan.
 
 | Item | Priority | SP | Status |
 |------|----------|----|--------|

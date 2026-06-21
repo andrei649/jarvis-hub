@@ -1,7 +1,7 @@
 # Jarvis Hub — Moonshot
 
 > The north-star document. Everything else (roadmap, architecture, pricing) serves this.
-> Generated: 2026-06-02 (audit 2026-06-03) · Stage: v9.9.9 (pre-1.0 audit gate) → v1.0.0 · Owner: Andrei
+> Generated: 2026-06-02 · Stage: **v0.10.0** (feature-complete; productionizing toward 1.0 — see §4 + [version roadmap](BACKLOG.md#version-roadmap)) · Owner: Andrei
 >
 > **How to use this doc:** read §1–§4 to know *where we're going*, §7 to know *how we stay on
 > track*. When a decision feels off-mission, check it against §5 (principles) and §1 (the bet).
@@ -65,16 +65,16 @@ a clear "done" gate; we do not skip gates.
 
 | Phase | Horizon → Version | The leap | Gate (done when…) |
 |-------|-------------------|----------|-------------------|
-| **0 — Foundation** ✅ | H1–H4, H5, H6, H7-perf, H9 → v0.9.1-beta | 16 agents, memory, autonomy, workflows, observability all work | Live; 1,764 tests green |
-| **1 — Complete & Trustworthy** 🎯 | H7 hardening + H8 + **H10 + H11 + H12 + H13–H17** → **v1.0.0** | From "works for Andrei" to a complete, trustworthy, local-first AI OS — *every backlog horizon shipped* | Foundation gate (CI/CD on PRs, hermetic tests, LICENSE, one-command self-host, personal memory) **plus the full backlog done**: competitive edge, governed computer-use, living memory, agentic-web interop, and a green provable-trust CI badge (see [v1.0 launch checklist](GO_LIVE_PLAN.md#v10-launch-checklist)) |
-| **2 — Sellable** | Hosted Pro + open-core license → post-1.0 (v1.x) | First non-Andrei users; hosted tier; first revenue | 3–5 design partners, hosted Pro live, paid conversion measured |
-| **3 — Ecosystem at scale** | Multi-user + moderated marketplace + 3rd-party adoption → v2.0 | Others build *on* Jarvis; it runs households/teams, not just Andrei | Third parties ship via agents-as-tools / A2A / embedded widget; multi-user + signed marketplace live |
+| **0 — Foundation** ✅ | H1–H9 → v0.9.x-beta | 16 agents, memory, autonomy, workflows, observability all work | Live; foundation green |
+| **1 — Feature-complete** ✅ | H10 + H11 + H12 + H13–H17 + H18–H22 + WorldView O19 → **v0.10.0** (here now) | From "works for Andrei" to a feature-rich, local-first AI OS — *every feature horizon shipped* | All feature backlog delivered; north-star instrumented. **But: single-user, unproven, not yet productionized.** |
+| **2 — Productionized & proven** 🎯 | **H23** productionization + design partners → **v0.11 … v1.0.0** | From "code-complete" to a product a stranger can install, trust, upgrade — and that real users keep running | Per the [version roadmap](BACKLOG.md#version-roadmap): agentic-safety + upgrade/data-durability + operability + quality/docs **done**, **and** validated by 3–5 design partners. **This is the 1.0 gate.** |
+| **3 — Sellable / ecosystem** | Hosted Pro + multi-user + moderated marketplace → post-1.0 (v1.x → v2.0) | Hosted tier, first revenue; others build *on* Jarvis; households/teams not just Andrei | Paid conversion measured; multi-user + signed marketplace + 3rd-party A2A/widget adoption |
 
-> Phase boundaries are **release gates**, not suggestions. The current gate is **Phase 1 → v1.0**, and per
-> the [version roadmap](BACKLOG.md#version-roadmap) **v1.0 = the entire backlog done** (H10 + H11 + H12 +
-> H13–H17, on top of the shipped hardening + personal memory). Capability leaps once filed under "Phase 3"
-> (MCP server mode, governed computer-use, agentic-web interop) are now *inside* the 1.0 gate; Phases 2–3
-> above are the **business** leaps beyond it (hosting, revenue, scale), not new product scope.
+> Phase boundaries are **release gates**, not suggestions. We are at **v0.10.0** (Phase 1 done). The
+> version number *is* the roadmap: **1.0 is a real destination**, not the current state — it ships only
+> when the productionization layer (H23) is finished **and** the system is proven with real
+> design-partner users (the old "Phase 2 sellable" user-proof, pulled into the 1.0 bar). Manual
+> testing/audit is the *release step that tags a version*, not a gate item.
 
 ---
 
@@ -164,7 +164,7 @@ has an audit trail and future contributors understand *why*, not just *what*.
 |------|-------------------------------|
 | **MOONSHOT.md** | North star — *why we exist, where we're going, how we stay on track* |
 | [BACKLOG.md](BACKLOG.md) | The plan — *what's next, prioritized* |
-| [GO_LIVE_PLAN.md](GO_LIVE_PLAN.md) | The launch — *features, marketing, v1.0 gate* |
+| [GO_LIVE_PLAN.md](GO_LIVE_PLAN.md) | The launch — *features, marketing, road to 1.0* |
 | [docs/VALUATION_AND_PRICING.md](docs/VALUATION_AND_PRICING.md) | The business — *value, pricing, unit economics* |
 | [JARVIS.md](JARVIS.md) | The architecture overview |
 | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | The navigable map — *where code lives, how to change it* |

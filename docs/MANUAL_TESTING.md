@@ -19,7 +19,7 @@ real-world wiring) · ⚠️ partially covered · ❌ no automated coverage (tes
 
 ## 0. Run record & 1.0 sign-off
 
-> This runbook **is the human half of the v1.0 gate.** A clean pass — every critical area ✅
+> This runbook **is the release step that tags a version** (the human verification before any tag, 1.0 included). A clean pass — every critical area ✅
 > with no open ❌ blocker — *plus* the green offline suite (**~2,400 passed, 2 skipped**) is what
 > clears tagging `v1.0.0`. Record results inline (tick the box; for any ❌/⚠️ add a one-line note
 > and log it in **§K Blockers**). Fill this header on each run.

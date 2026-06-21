@@ -3,7 +3,7 @@
 ![Python 3.12](https://img.shields.io/badge/python-3.12-blue?logo=python&logoColor=white)
 ![License: MIT](https://img.shields.io/badge/license-MIT-green)
 ![Tests](https://img.shields.io/badge/tests-2400%2B%20passed-brightgreen?logo=pytest)
-![Version](https://img.shields.io/badge/version-9.9.9-orange)
+![Version](https://img.shields.io/badge/version-0.10.0-orange)
 
 > 17 specialized AI agents orchestrated through Jarvis, running on Bonobo WS + Pi 5, controlled by voice and web.
 
@@ -122,7 +122,7 @@ _Linux/macOS shortcut:_ `./install.sh` does all of the above (venv + install + t
 
 ## Status
 
-**v9.9.9 — pre-1.0 audit gate.** 17 specialist agents (incl. **Argus** for WorldView geoint and **Howard**, the emerging digital twin; + 17 bench) across 4 tiers; real-embeddings recall (LM Studio) + fused recall +
+**v0.10.0 — feature-complete, productionizing toward 1.0** (the version line is the roadmap — see [BACKLOG.md](BACKLOG.md#version-roadmap); 1.0 ships when the productionization layer is done **and** real design-partner users prove it). 17 specialist agents (incl. **Argus** for WorldView geoint and **Howard**, the emerging digital twin; + 17 bench) across 4 tiers; real-embeddings recall (LM Studio) + fused recall +
 RAG injection; hot-path perf (SQLite WAL, event-loop offload, checkpoint debounce, query-embedding
 cache, complexity-based model tiering); autonomous proactive cortex (ORIZONT 6); security wedge (encrypted
 secrets, signed skills, reversible/irreversible approval split, quarantine/capability/kill-switch); competitive edge
@@ -131,9 +131,11 @@ sleep-time consolidation). **~2,400 tests passing** (+184 frontend JS tests).
 
 **Road to v1.0:** the v1.0 backlog (H1–H17) is **code-complete at 194/196 items (≈99% by story points)** —
 the only two open items (H12.14 fine-tuned agentic model, H13.3 speculative decoding) need the GPU host
-(runbook: `docs/GPU_RUNBOOK.md`). What stands between `9.9.9` and the `1.0.0` tag is the audit gate: a full
-code audit ([`docs/AUDIT.md`](docs/AUDIT.md)), human manual testing on real hardware
-([`docs/MANUAL_TESTING.md`](docs/MANUAL_TESTING.md)), and fixes. The HUD V2 cockpit is the default UI;
+(runbook: `docs/GPU_RUNBOOK.md`). What stands between `0.10.0` and the `1.0.0` tag is the **productionization
+layer** (H23: agentic-safety budgets, DB migrations, backup/restore + export-delete, operability, quality +
+user docs — see the [version roadmap](BACKLOG.md#version-roadmap)) **and** proving it with real design-partner
+users; manual testing ([`docs/MANUAL_TESTING.md`](docs/MANUAL_TESTING.md)) + code audit
+([`docs/AUDIT.md`](docs/AUDIT.md)) are the release step that tags a version. The HUD V2 cockpit is the default UI;
 deep write-controls for ~37 newer backend surfaces are tracked in
 [`docs/design/HUD_V2_REMAINING.md`](docs/design/HUD_V2_REMAINING.md). See
 [BACKLOG.md](BACKLOG.md#status-general) + [MOONSHOT.md](MOONSHOT.md) §4.

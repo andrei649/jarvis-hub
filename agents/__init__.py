@@ -1,6 +1,6 @@
 """Jarvis Hub — agents package."""
 
-__version__ = "9.9.9"
+__version__ = "0.10.0"
 
 
 def _count_active_agents() -> int:
