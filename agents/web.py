@@ -676,9 +676,6 @@ async def _llm_ready() -> dict:
 # ... /status extracted to routers/status.py (CLN-3)
 
 
-@app.get("/api/agents", dependencies=[Depends(_user_guard)])
-async def api_agents():
-    return _nocache_json({"agents": _enrich_agents()})
 
 
 # ── Dashboard (HUD-compatible) ───────────────────────────────────
@@ -694,37 +691,6 @@ _dashboard_lock = asyncio.Lock()
 #  through `sys.modules.get("agents.web")` so tests' monkeypatch is still observed.)
 
 
-_AGENT_ID_RE = re.compile(r"^[a-z0-9_-]{1,64}$")
-
-
-@app.get("/api/agents/{agent_id}/soul")
-async def get_agent_soul(agent_id: str):
-    """Read and return the live SOUL.md content for an agent."""
-    agent_id = agent_id.strip().lower()
-    # The id becomes a filesystem path segment below — reject anything outside
-    # the agent-id alphabet (CodeQL: uncontrolled data in path expression).
-    if not _AGENT_ID_RE.match(agent_id):
-        raise HTTPException(status_code=404, detail="Agent not found")
-
-    # Allow reading SOUL.md if the file physically exists, even if orch is not initialized (e.g. in tests)
-    # The personalized overlay (SOUL.local.md, gitignored) wins when present —
-    # same resolution as Agent._load_soul.
-    base_dir = Path(__file__).parent.resolve()
-    soul_path = base_dir / agent_id / "SOUL.local.md"
-    if not soul_path.exists():
-        soul_path = base_dir / agent_id / "SOUL.md"
-
-    if orch and agent_id not in orch.agents:
-        raise HTTPException(status_code=404, detail=f"Agent '{agent_id}' not found")
-    
-    if not soul_path.exists():
-        raise HTTPException(status_code=404, detail=f"SOUL.md not found for agent '{agent_id}'")
-        
-    try:
-        content = soul_path.read_text(encoding="utf-8")
-        return {"agent_id": agent_id, "soul": content}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to read SOUL.md: {e}")
 
 
 # ── Existing endpoints (unchanged) ───────────────────────────────
@@ -732,23 +698,6 @@ async def get_agent_soul(agent_id: str):
 # `/memory` + `/memory/clear` (bare HUD routes) live in the memory_hud router (CLN-3).
 
 
-@app.get("/agents")
-async def get_agents():
-    if not orch:
-        return JSONResponse({"error": "not initialized"}, status_code=503)
-    result = {}
-    for aid, agent in orch.agents.items():
-        stats = orch.checkpoints.get_agent_stats(aid)
-        skills = [s.name for s in orch.skills.get_skills_for_agent(aid)]
-        result[aid] = {
-            "name": agent.name,
-            "tier": agent.config.get("tier", ""),
-            "model": agent.config.get("model", ""),
-            "heartbeat": agent.has_heartbeat,
-            "stats": stats,
-            "skills": skills,
-        }
-    return {"agents": result}
 
 
 # CLN-3: /sessions + /sessions/resume extracted to agents/core/routers/sessions.py
@@ -760,62 +709,10 @@ async def get_agents():
 # /bench route extracted to agents/core/routers/bench.py (CLN-3).
 
 
-@app.get("/api/agents/history")
-async def agents_history():
-    """H10.17 — per-agent run-history rollup (runs, last, ok-rate, avg latency)."""
-    if not orch or not getattr(orch, "run_history", None):
-        return _nocache_json({"agents": []})
-    return _nocache_json({"agents": orch.run_history.agents()})
 
 
-@app.get("/api/agents/{agent_id}/history")
-async def agent_history(agent_id: str, limit: int = Query(50, ge=1, le=200)):
-    """H10.17 — recent runs for one agent (most-recent first)."""
-    agent_id = agent_id.strip().lower()
-    if not _AGENT_ID_RE.match(agent_id):
-        raise HTTPException(status_code=404, detail="Agent not found")
-    # Consistent with /soul: an unknown agent 404s rather than returning a
-    # misleading empty-but-OK run list (a fresh-but-real agent still 200s with []).
-    if orch and agent_id not in orch.agents:
-        raise HTTPException(status_code=404, detail=f"Agent '{agent_id}' not found")
-    if not orch or not getattr(orch, "run_history", None):
-        return _nocache_json({"agent_id": agent_id, "runs": []})
-    return _nocache_json({
-        "agent_id": agent_id,
-        "runs": orch.run_history.list(agent_id, limit),
-    })
 
 
-@app.get("/api/agent-templates")
-async def agent_templates_list():
-    """H10.29 — list the pre-configured agent template catalog."""
-    from agents.core.agent_templates import list_templates
-    return _nocache_json({"templates": list_templates()})
-
-
-@app.post("/api/agent-templates/instantiate", dependencies=[Depends(_user_guard)])
-async def agent_templates_instantiate(req: Request):
-    """H10.29 — render a ready-to-save agent config from a template.
-
-    Body: {"template": "researcher", "name": "Vega", "overrides": {...}}.
-    Returns the agents.yaml-shaped config + a SOUL.md skeleton (preview); the
-    caller persists it via the normal agent-creation flow.
-    """
-    from agents.core.agent_templates import build_agent_config
-    try:
-        body = await req.json()
-    except Exception:
-        body = {}
-    template = (body or {}).get("template", "")
-    try:
-        config = build_agent_config(
-            template,
-            name=(body or {}).get("name"),
-            overrides=(body or {}).get("overrides") or {},
-        )
-    except KeyError:
-        return JSONResponse({"error": f"unknown template: {template}"}, status_code=404)
-    return _nocache_json({"ok": True, "config": config})
 
 
 # ── H15.4 Secret broker + H10.1 Embeddable Chat Widget ────────────────────────
@@ -900,6 +797,7 @@ from agents.core.routers.notes import router as _notes_router  # noqa: E402
 from agents.core.routers.oauth import router as _oauth_router  # noqa: E402
 from agents.core.routers.pairing import router as _pairing_router  # noqa: E402
 from agents.core.routers.dashboard import router as _dashboard_router  # noqa: E402
+from agents.core.routers.agents_api import router as _agents_api_router  # noqa: E402
 from agents.core.routers.payments import router as _payments_router  # noqa: E402
 from agents.core.routers.voice import router as _voice_router  # noqa: E402
 from agents.core.routers.eval import router as _eval_router  # noqa: E402
@@ -949,6 +847,7 @@ app.include_router(_admin_router)
 app.include_router(_integrations_router)
 app.include_router(_dashboard_router)
 app.include_router(_payments_router)
+app.include_router(_agents_api_router)
 app.include_router(_voice_router)
 app.include_router(_multimodal_router)
 app.include_router(_eval_router)
