@@ -180,6 +180,39 @@ class HybridRouter(LLMRouter):
         # detect() from settings_db.
         self._gemini_model = "gemini-2.5-flash"
 
+        # H22.5 — LRU residency manager for the local fast↔deep model swap.
+        # Default-off via JARVIS_MODEL_MANAGER; the orchestrator injects the real
+        # LMStudioController-backed manager via attach_model_manager(). Kept off
+        # the routing *decision* path — it's a best-effort residency side effect
+        # the caller invokes right before a local generate.
+        self._model_manager = None
+
+    def attach_model_manager(self, manager) -> None:
+        """Wire in the H22.5 ModelManager (called by the orchestrator at boot).
+
+        The manager owns its own kill-switch; when off, ensure_resident() is a
+        no-op, so attaching it unconditionally is safe."""
+        self._model_manager = manager
+
+    @property
+    def model_manager(self):
+        """The attached H22.5 ModelManager, or None if not wired."""
+        return self._model_manager
+
+    async def ensure_resident(self, model: str, route: str) -> None:
+        """Best-effort: make `model` resident before a local generate (H22.5).
+
+        Only acts for *local* routes (the fast/deep LM Studio slots); cloud /
+        Claude routes have nothing to swap. No-op when no manager is attached or
+        its kill-switch is off. Never raises — the manager swallows its own
+        errors so routing degrades to the backend's JIT load."""
+        mgr = self._model_manager
+        if mgr is None or not model or not route:
+            return
+        if not route.startswith("local"):
+            return
+        await mgr.ensure_resident(model)
+
     @staticmethod
     def _admin_setting(key: str, default):
         """Read an `llm` setting from /admin config (settings_db), safely."""

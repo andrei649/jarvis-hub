@@ -228,12 +228,17 @@ def wf_client(tmp_path):
     # full-suite ordering (global orch leak). These endpoints only need the
     # injected mock orch + store, so a plain client (no lifespan) is correct.
     # SEC-3: workflow CRUD is admin-guarded; bypass the guard for endpoint-behavior tests.
+    # CRUD/run routes were extracted to routers/workflows.py (CLN-3) → they depend on
+    # _deps.admin_guard, so override BOTH callables (mirrors conftest's user-guard handling).
+    from agents.core.routers._deps import admin_guard as _ra
     web.app.dependency_overrides[web._admin_guard] = lambda: None
+    web.app.dependency_overrides[_ra] = lambda: None
     c = TestClient(web.app)
     try:
         yield c
     finally:
         web.app.dependency_overrides.pop(web._admin_guard, None)
+        web.app.dependency_overrides.pop(_ra, None)
         web.orch = old_orch
         web._wf_store_instance = old_store
 
