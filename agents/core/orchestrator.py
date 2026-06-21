@@ -27,6 +27,7 @@ from .scheduler_service import SchedulerService
 from .autonomy_coordinator import AutonomyCoordinator
 from . import llm_control  # CLN-2: NL LLM-control detection + execution
 from .llm_control import detect_llm_control  # re-exported: NL LLM-control detection (CLN-2)
+from . import cognition_trace  # CLN-2: builds + persists the per-turn cognition trace
 from . import plugin_gatherer  # live-plugin data gathering (CLN-2)
 from .plugin_manager import PluginManager  # CLN-2: owns the live-plugin registry + I/O
 from .learning.loop import LearningLoop
@@ -969,118 +970,10 @@ class Orchestrator:
         return synthesized
 
     def _update_cognition(self, text, intent, plugin_data, synthesized, t_classify, t_route, t_plugin, t_synthesize):
-        from core.router import INTENT_RULES
-        scoring = []
-        for kw in intent.context.get("keywords_found", []):
-            if kw in INTENT_RULES:
-                agents, surfaces, weight = INTENT_RULES[kw]
-                scoring.append({
-                    "keyword": kw,
-                    "weight": weight,
-                    "agents": agents,
-                    "category": kw
-                })
-        
-        if not scoring:
-            scoring = []
-
-        alternatives = []
-        for a, s in intent.context.get("scores", {}).items():
-            if a not in (intent.target_agents or ["jarvis"]):
-                alternatives.append({"agent": a, "score": s})
-
-        alternatives = sorted(alternatives, key=lambda x: -x["score"])
-
-        decision = {
-            "source": intent.context.get("source", "keyword_match"),
-            "confidence": intent.confidence,
-            "agents_selected": intent.target_agents or ["jarvis"],
-            "alternatives": alternatives,
-            "timing": {
-                "classify": t_classify,
-                "route": t_route,
-                "total": t_classify + t_route
-            }
-        }
-
-        trace = [
-            {"step": "classify", "duration_ms": t_classify, "result": intent.context.get("source", "keyword_match")},
-            {"step": "route", "duration_ms": t_route, "agents": intent.target_agents or ["jarvis"]}
-        ]
-        if plugin_data:
-            trace.append({"step": "plugin_data", "duration_ms": t_plugin, "plugins": list(plugin_data.keys())})
-        if synthesized:
-            trace.append({"step": "synthesize", "duration_ms": t_synthesize, "tokens": len(synthesized) // 4})
-
-        self.last_cognition = {
-            "scoring": scoring,
-            "decision": decision,
-            "trace": trace
-        }
-
-        # H9.2: persist to tracer ring buffer (defensive — never breaks a request)
-        try:
-            if self.tracer is not None:
-                model = ""
-                agents_selected = decision.get("agents_selected", [])
-                if agents_selected:
-                    first_agent = agents_selected[0]
-                    agent_obj = self.agents.get(first_agent)
-                    if agent_obj:
-                        model = agent_obj.config.get("model", "")
-                from .llm.tokenizer import estimate_tokens as _et
-                tokens_in = _et(text or "")
-                tokens_out = _et(synthesized or "")
-                # H10.24: estimate $ cost for this trace (local models → $0).
-                try:
-                    from .llm.cost_estimator import estimate_cost as _ec
-                    cost = _ec(model, tokens_in, tokens_out).get("total", 0.0)
-                except Exception:
-                    cost = 0.0
-                trace_dict = {
-                    "channel": getattr(self, "_last_channel", "unknown"),
-                    "text_preview": (text or "")[:120],
-                    "intent": decision.get("source", ""),
-                    "route": agents_selected[0] if agents_selected else "",
-                    "agents": agents_selected,
-                    "model": model,
-                    "tokens_in": tokens_in,
-                    "tokens_out": tokens_out,
-                    "cost": cost,
-                    "timings": {
-                        "classify": t_classify,
-                        "route": t_route,
-                        "plugin": t_plugin,
-                        "synthesize": t_synthesize,
-                        "total_ms": t_classify + t_route + t_plugin + t_synthesize,
-                    },
-                    "ok": True,
-                    "scoring": scoring,
-                    "full_trace": trace,
-                }
-                # H10.23: score the request live and attach it to the trace.
-                if getattr(self, "quality", None) is not None:
-                    try:
-                        trace_id = self.tracer.record(trace_dict)
-                        trace_dict["id"] = trace_id
-                        q = self.quality.record(trace_dict)
-                        trace_dict["quality"] = q
-                        # H21.1: anti-sycophancy axis (gated; master OFF = no-op).
-                        cog = getattr(self, "cognition", None)
-                        if cog is not None and cog.sub_enabled("honesty_enabled"):
-                            hm = cog.module("honesty")
-                            if hm is not None:
-                                _txt = trace_dict.get("text_preview") or trace_dict.get("output_preview") or ""
-                                trace_dict["honesty"] = hm.score_response(_txt, trace_id=trace_dict.get("id", ""))
-                        # H10.25: auto-flag low-scoring traces for human review.
-                        if getattr(self, "review_queue", None) is not None:
-                            self.review_queue.auto_flag(trace_dict, q.get("score"), self.quality.threshold)
-                    except Exception:
-                        logger.debug("quality scoring skipped", exc_info=True)
-                else:
-                    self.tracer.record(trace_dict)
-        except Exception as _te:
-            logger.debug(f"tracer.record skipped: {_te}")
+        """Build + persist the per-turn cognition trace (delegates to cognition_trace, CLN-2)."""
+        cognition_trace.update_cognition(
+            self, text, intent, plugin_data, synthesized,
+            t_classify, t_route, t_plugin, t_synthesize)
 
     def _detect_handoff(self, responses: dict[str, str]) -> Optional[str]:
         for agent_id, resp in responses.items():
