@@ -5,6 +5,31 @@
 
 ---
 
+## North-Star Instrumentation + Year-One Review — Sprint 2026-06-20
+
+> The MOONSHOT §6 metric set was defined but never computed in one place. This sprint
+> added the aggregator + endpoint, and a candid year-one retrospective.
+
+- **North-star aggregator** (`agents/core/observability/north_star.py`, `compute_north_star`):
+  folds the existing autonomy `TaskQueue` (accepted/`done`, `rejected`, `pushed`),
+  `RunHistory.locality()`, and the `Tracer` per-turn `total_ms` into one dashboard dict —
+  weekly autonomous actions *accepted* per active user + the four counter-metrics
+  (interrupt rate, reject rate, %-local, p95 non-LLM latency). Pure function over injected
+  stores; no schema change, no behaviour change. Single-user honest (`active_users` 0/1,
+  never fabricates a fleet; every metric `null` when its source has no data).
+- **Endpoint** `GET /api/metrics/north-star?days=1-90` (`agents/core/routers/analytics.py`,
+  open like the sibling `analytics/locality` + `cost` + `traces` meters; mapped to the
+  Observe HUD surface). +8 offline tests (`tests/test_north_star.py`).
+- **Docs:** `docs/METRICS.md` (field definitions + n=1 caveat); MOONSHOT §6 marked
+  "Now instrumented".
+- **`docs/REVIEW_YEAR_ONE.md`** — owner-facing candid year-one review (status, the 12
+  learnings, the gap between code-complete and a *desirable* product, next-90-days plan).
+- **Doc reconciliation:** swept stale counts to current values across the canonical docs
+  (routes ~253/~296 → ~299 from the route snapshots; backend tests 2,156/2,288 → ~2,400),
+  and registered the two new docs in MOONSHOT §8, CLAUDE.md, and docs/AI_CONTEXT.md.
+
+---
+
 ## HUD v2 Voice — Sprint 2026-06-07
 
 > Browser-side hands-free voice for the HUD (`/v2`). The engines (Whisper STT, edge-tts/XTTS)

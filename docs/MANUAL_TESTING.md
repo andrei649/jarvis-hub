@@ -1,6 +1,6 @@
 # Manual Testing Guide
 
-> **Why this exists.** The automated suite (2,288 tests) runs fully offline with
+> **Why this exists.** The automated suite (~2,400 tests) runs fully offline with
 > mocked LLMs, channels, and hardware. It proves the *logic* is correct, but it
 > **cannot** verify anything that needs a real model, a live channel token, a
 > browser, an external service (Qdrant/Neo4j/n8n), or a human looking at the HUD.
@@ -20,7 +20,7 @@ real-world wiring) · ⚠️ partially covered · ❌ no automated coverage (tes
 ## 0. Run record & 1.0 sign-off
 
 > This runbook **is the human half of the v1.0 gate.** A clean pass — every critical area ✅
-> with no open ❌ blocker — *plus* the green offline suite (**2,288 passed, 2 skipped**) is what
+> with no open ❌ blocker — *plus* the green offline suite (**~2,400 passed, 2 skipped**) is what
 > clears tagging `v1.0.0`. Record results inline (tick the box; for any ❌/⚠️ add a one-line note
 > and log it in **§K Blockers**). Fill this header on each run.
 
@@ -282,7 +282,7 @@ Each needs a real token/account and a live round-trip (send → receive → repl
 
 ## J. Regression smoke (each release)
 
-- [ ] `pytest tests/` is green — **2,288 passed, 2 skipped** (the 1 skip is the optional
+- [ ] `pytest tests/` is green — **~2,400 passed, 2 skipped** (the 1 skip is the optional
   heartbeat path). `apscheduler` is bundled in `requirements-beta.txt`, so the suite runs
   clean from the one-command install (`./install.sh` / `INSTALL.bat`).
 - [ ] `GET /status` → `ok`. HUD loads. A chat round-trip works.

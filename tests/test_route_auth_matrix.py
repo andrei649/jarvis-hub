@@ -35,6 +35,7 @@ INTENTIONALLY_OPEN = {
     "POST /api/oauth/callback",             # provider redirect; verify_state() gates it
     "POST /api/widget/{token}/message",     # widget capability token in the path
     "POST /api/channels/pairing/request",   # inbound pairing; lands in approval, mints nothing
+    "POST /api/analytics/event",            # H22 public privacy-first beacon; bounded INSERT, mints nothing
 }
 
 # Open mutating routes still awaiting a guard — SEC-3 backlog. Listed explicitly

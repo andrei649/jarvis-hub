@@ -18,6 +18,7 @@
    itself off. With it off, tap the mic to cut a reply short. */
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { getToken } from './api/client';
+import { streamTts } from './api/ttsStream';
 
 const SILENCE_MS = 1100;     // trailing silence (after speech) that ends an utterance
 const SPEECH_RMS = 0.025;    // mic RMS treated as "speaking"
@@ -115,6 +116,21 @@ export function useVoice({ lang = 'ro', mode = 'hands-free', ttsSource = 'server
     return '';
   }
 
+  // Play one audio buffer to completion (or until cancelled). Sets audioRef so the
+  // barge-in / cancelSpeak path can pause it. Resolves on end/error/cancel — never rejects.
+  function playAudioBlob(blob, isCancelled) {
+    return new Promise((resolve) => {
+      if (isCancelled && isCancelled()) return resolve(null);
+      let url;
+      try { url = URL.createObjectURL(blob); } catch { return resolve(null); }
+      const a = new Audio(url);
+      audioRef.current = a;
+      const done = () => { try { URL.revokeObjectURL(url); } catch { /* */ } resolve(null); };
+      a.onended = done; a.onerror = done;
+      a.play().catch(done);
+    });
+  }
+
   // record ONE VAD-segmented utterance → Blob | null
   function recordUtterance() {
     return new Promise((resolve) => {
@@ -188,17 +204,25 @@ export function useVoice({ lang = 'ro', mode = 'hands-free', ttsSource = 'server
       if (ttsRef.current === 'browser') {
         await browserSpeak(text, langRef.current, () => cancelled);
       } else {
-        const res = await fetch('/tts', { method: 'POST', headers: tok({ 'Content-Type': 'application/json' }), body: JSON.stringify({ text, lang: langRef.current }) });
-        if (!cancelled) {
-          if (res.ok) {
-            const blob = await res.blob();
-            if (!cancelled) {
-              const url = URL.createObjectURL(blob);
-              await new Promise((resolve) => { const a = new Audio(url); audioRef.current = a; a.onended = () => resolve(null); a.onerror = () => resolve(null); a.play().catch(() => resolve(null)); });
-              try { URL.revokeObjectURL(url); } catch { /* */ }
+        // H5.16: try sentence-level streaming first — each sentence plays as soon as it's
+        // synthesized, so audio starts after sentence #1 instead of the whole reply. The
+        // endpoint is opt-in server-side (default off → 409), so this falls back cleanly to
+        // the whole-reply /tts path below. 'streamed' means we already played the audio.
+        const streamed = await streamTts(
+          text, langRef.current,
+          (frame) => playAudioBlob(new Blob([frame.audio], { type: 'audio/mpeg' }), () => cancelled),
+          { headers: tok(), cancelled: () => cancelled },
+        );
+        if (!cancelled && streamed !== 'streamed' && streamed !== 'cancelled') {
+          // Whole-reply fallback (unchanged behavior): synthesize the full reply, then play.
+          const res = await fetch('/tts', { method: 'POST', headers: tok({ 'Content-Type': 'application/json' }), body: JSON.stringify({ text, lang: langRef.current }) });
+          if (!cancelled) {
+            if (res.ok) {
+              const blob = await res.blob();
+              if (!cancelled) await playAudioBlob(blob, () => cancelled);
+            } else {
+              await browserSpeak(text, langRef.current, () => cancelled);  // local fallback, no network
             }
-          } else {
-            await browserSpeak(text, langRef.current, () => cancelled);  // local fallback, no network
           }
         }
       }

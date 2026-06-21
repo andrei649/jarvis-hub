@@ -43,7 +43,13 @@ def _isolated_wf_store(tmp_path, monkeypatch):
     monkeypatch.setattr(web, "_wf_store_instance", WorkflowStore(tmp_path))
     # SEC-3: workflow CRUD is admin-guarded now; these tests exercise endpoint
     # behavior, not auth, so bypass the admin guard (as conftest does for user).
+    # The workflow CRUD routes were extracted to routers/workflows.py (CLN-3), which
+    # depends on _deps.admin_guard; the autonomy routes still use web._admin_guard.
+    # Override BOTH callables so the bypass covers inline + extracted (mirrors the
+    # user-guard handling in conftest).
     monkeypatch.setitem(web.app.dependency_overrides, web._admin_guard, lambda: None)
+    from agents.core.routers._deps import admin_guard as _ra
+    monkeypatch.setitem(web.app.dependency_overrides, _ra, lambda: None)
 
 
 def _mock_orch() -> MagicMock:

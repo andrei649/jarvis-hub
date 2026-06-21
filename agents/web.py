@@ -705,7 +705,9 @@ async def tts_stream_endpoint(req: TTSRequest):
                 audio = b""
                 if path:
                     try:
-                        audio = Path(path).read_bytes()
+                        # Offload the per-chunk disk read so reading one sentence's
+                        # audio doesn't block the event loop mid-stream (audit A4).
+                        audio = await asyncio.to_thread(Path(path).read_bytes)
                     except Exception:
                         logger.warning("tts/stream: cannot read chunk %s", path)
                         audio = b""
@@ -1108,26 +1110,7 @@ async def get_agent_soul(agent_id: str):
 
 # ── Existing endpoints (unchanged) ───────────────────────────────
 
-@app.get("/memory", dependencies=[Depends(_user_guard)])
-async def memory():
-    if not orch:
-        return JSONResponse({"error": "not initialized"}, status_code=503)
-    history = await orch.memory.get_history(orch.session_id, last_n=20)
-    return _nocache_json({"session": orch.session_id, "turns": history})
-
-
-@app.post("/memory/clear", dependencies=[Depends(_user_guard)])
-async def clear_memory(req: Request):
-    if not orch:
-        return JSONResponse({"error": "not initialized"}, status_code=503)
-    if not DEV_MODE:
-        confirm = req.headers.get("x-confirm", "").lower()
-        if confirm != "true":
-            return JSONResponse({"error": "memory clear requires confirmation — send X-Confirm: true header or set DEV_MODE=1"}, status_code=400)
-    await orch.memory.clear(session_id=orch.session_id)
-    orch.session_id = await orch.memory.new_session()
-    orch.checkpoints.create_session_record(orch.session_id)
-    return JSONResponse({"ok": True, "new_session": orch.session_id})
+# `/memory` + `/memory/clear` (bare HUD routes) live in the memory_hud router (CLN-3).
 
 
 @app.get("/agents")
@@ -1149,28 +1132,7 @@ async def get_agents():
     return {"agents": result}
 
 
-@app.get("/sessions", dependencies=[Depends(_user_guard)])
-async def get_sessions():
-    if not orch:
-        return JSONResponse({"error": "not initialized"}, status_code=503)
-    sessions = orch.checkpoints.get_sessions(limit=20)
-    return {"sessions": sessions}
-
-
-@app.post("/sessions/resume", dependencies=[Depends(_user_guard)])
-async def resume_session(req: Request):
-    if not orch:
-        return JSONResponse({"error": "not initialized"}, status_code=503)
-    body = await req.json()
-    sid = body.get("session_id")
-    if not sid:
-        return JSONResponse({"error": "session_id required"}, status_code=400)
-    ok = await orch.memory.resume_session(sid)
-    if not ok:
-        return JSONResponse({"error": f"session '{sid}' not found"}, status_code=404)
-    orch.session_id = sid
-    history = await orch.memory.get_history(sid, last_n=20)
-    return JSONResponse({"ok": True, "session": sid, "turns": history})
+# CLN-3: /sessions + /sessions/resume extracted to agents/core/routers/sessions.py
 
 
 @app.get("/security")
@@ -1186,17 +1148,7 @@ async def get_security():
     }
 
 
-@app.get("/bench")
-async def get_bench():
-    if not orch:
-        return JSONResponse({"error": "not initialized"}, status_code=503)
-    return {
-        "summary": orch.bench.get_summary(),
-        "agents": {
-            aid: orch.bench.get_results(aid)
-            for aid in list(orch.agents.keys())[:5]
-        },
-    }
+# /bench route extracted to agents/core/routers/bench.py (CLN-3).
 
 
 @app.get("/api/agents/history")
@@ -1280,47 +1232,7 @@ async def learning_propose():
     return _nocache_json({"ok": True, "proposed": proposals, "count": len(proposals)})
 
 
-class GenerateStepBody(BaseModel):
-    description: str = Field(..., max_length=2000)
-
-
-@app.post("/api/workflows/step/generate", dependencies=[Depends(_user_guard)])
-async def generate_workflow_step(body: GenerateStepBody):
-    """H10.7 — 'Describe this step' → a validated workflow-step config.
-
-    Uses the live LLM when available, else a deterministic keyword heuristic.
-    """
-    from agents.core.workflows.ai_builder import generate_step
-    agents_list = list(orch.agents.keys()) if orch else []
-    llm = None
-    if orch:
-        async def _llm(prompt: str) -> str:
-            return await orch.handle_input(prompt, channel="builder")
-        llm = _llm
-    cfg = await generate_step(body.description, agents_list, llm=llm)
-    return _nocache_json({"ok": True, "step": cfg})
-
-
-@app.post("/api/workflows/hierarchical", dependencies=[Depends(_user_guard)])
-async def workflow_hierarchical(req: Request):
-    """H10.11 — run a hierarchical workflow: a manager coordinates a crew."""
-    if not orch:
-        return JSONResponse({"error": "not initialized"}, status_code=503)
-    try:
-        body = await req.json()
-    except Exception:
-        body = {}
-    goal = (body or {}).get("goal", "")
-    crew = (body or {}).get("crew") or []
-    if not goal or not crew:
-        return JSONResponse({"error": "goal and crew required"}, status_code=400)
-    from agents.core.workflows.hierarchical import HierarchicalManager
-    mgr = HierarchicalManager(
-        orch,
-        manager_agent=(body or {}).get("manager", "jarvis"),
-        max_retries=int((body or {}).get("max_retries", 1)),
-    )
-    return _nocache_json(await mgr.run(goal, crew))
+# /api/workflows step/generate + hierarchical extracted to routers/workflows.py (CLN-3).
 
 
 class ContextCompressBody(BaseModel):
@@ -1343,72 +1255,9 @@ async def context_compress(body: ContextCompressBody):
     return _nocache_json(await cc.compress(body.turns))
 
 
-class VLMDescribeBody(BaseModel):
-    prompt: str = Field(..., max_length=4000)
-    images: list[str] = Field(default_factory=list, max_length=8)
-    model: str = Field("", max_length=80)
-
-
-@app.get("/api/vlm/status", dependencies=[Depends(_user_guard)])
-async def vlm_status():
-    """H13.1 — whether a local VLM endpoint is configured (host deployment)."""
-    return _nocache_json({"configured": bool(os.environ.get("JARVIS_VLM_URL", "")),
-                          "default_model": os.environ.get("JARVIS_VLM_MODEL", "qwen2-vl")})
-
-
-@app.post("/api/vlm/describe", dependencies=[Depends(_user_guard)])
-async def vlm_describe(body: VLMDescribeBody):
-    """H13.1 — send image(s) + a prompt to the local VLM (screen/doc/receipt).
-
-    Requires JARVIS_VLM_URL to point at a local OpenAI-vision server (the model
-    + GGUF + GPU are the host deployment seam)."""
-    url = os.environ.get("JARVIS_VLM_URL", "")
-    if not url:
-        return JSONResponse({"error": "VLM not configured — set JARVIS_VLM_URL"}, status_code=503)
-    from agents.core.llm.vlm import VLMBackend
-    vlm = VLMBackend(base_url=url, api_key=os.environ.get("JARVIS_VLM_KEY", ""))
-    try:
-        model = body.model or os.environ.get("JARVIS_VLM_MODEL", "qwen2-vl")
-        # encode_image_block accepts only data:/http(s) image sources, never file
-        # paths — request-supplied images can't read host files.
-        out = await vlm.generate_vision(model, body.prompt, images=body.images)
-        return _nocache_json({"ok": True, "model": model, "response": out})
-    finally:
-        await vlm.aclose()
-
-
-class DesktopStepsBody(BaseModel):
-    steps: list[dict] = Field(default_factory=list, max_length=100)
-
-
-@app.post("/api/desktop/preview", dependencies=[Depends(_user_guard)])
-async def desktop_preview(body: DesktopStepsBody):
-    """H15.3 — dry-run a desktop step plan (which steps need approval)."""
-    from agents.core.desktop_operator import GovernedDesktop
-    return _nocache_json(await GovernedDesktop().preview(body.steps))
-
-
-class MediaGenBody(BaseModel):
-    kind: str = Field(..., max_length=20)
-    prompt: str = Field(..., max_length=4000)
-    cloud: bool = False
-
-
-@app.get("/api/media", dependencies=[Depends(_user_guard)])
-async def media_status():
-    """H12.24 — supported media kinds + which backends are wired."""
-    from agents.core.media_gen import MediaGenManager
-    return _nocache_json({"kinds": MediaGenManager().kinds()})
-
-
-@app.post("/api/media/generate", dependencies=[Depends(_user_guard)])
-async def media_generate(body: MediaGenBody):
-    """H12.24 — governed media generation (cloud generation is approval-gated)."""
-    from agents.core.media_gen import MediaGenManager
-    q = getattr(orch, "autonomy_queue", None) if orch else None
-    m = MediaGenManager(enqueue=q.enqueue if q is not None else None)
-    result = await m.generate(body.kind, body.prompt, cloud=body.cloud)
-    return _nocache_json(result, status_code=200 if result.get("ok") else 422)
+# CLN-3: vlm/desktop/media routes (VLMDescribeBody/DesktopStepsBody/MediaGenBody +
+# /api/vlm/status, /api/vlm/describe, /api/desktop/preview, /api/media,
+# /api/media/generate) extracted to agents/core/routers/multimodal.py.
 
 
 # H21.0 — mount the cognition APIRouter (keeps cognition endpoints out of the
@@ -1432,20 +1281,29 @@ from agents.core.routers.admin import router as _admin_router  # noqa: E402
 from agents.core.routers.analytics import router as _analytics_router  # noqa: E402
 from agents.core.routers.arena import router as _arena_router  # noqa: E402
 from agents.core.routers.autonomy import router as _autonomy_router  # noqa: E402
+from agents.core.routers.bench import router as _bench_router  # noqa: E402
 from agents.core.routers.brain import router as _brain_router  # noqa: E402
 from agents.core.routers.browser import router as _browser_router  # noqa: E402
 from agents.core.routers.canvas import router as _canvas_router  # noqa: E402
 from agents.core.routers.capture import router as _capture_router  # noqa: E402
 from agents.core.routers.data_spaces import router as _data_spaces_router  # noqa: E402
 from agents.core.routers.integrations import router as _integrations_router  # noqa: E402
+from agents.core.routers.memory_hud import router as _memory_hud_router  # noqa: E402
 from agents.core.routers.memory_kg import router as _memory_kg_router  # noqa: E402
 from agents.core.routers.mesh import router as _mesh_router  # noqa: E402
 from agents.core.routers.models_llm import router as _models_llm_router  # noqa: E402
+from agents.core.routers.multimodal import router as _multimodal_router  # noqa: E402
 from agents.core.routers.notes import router as _notes_router  # noqa: E402
 from agents.core.routers.oauth import router as _oauth_router  # noqa: E402
 from agents.core.routers.pairing import router as _pairing_router  # noqa: E402
+from agents.core.routers.payments import router as _payments_router  # noqa: E402
+from agents.core.routers.eval import router as _eval_router  # noqa: E402
+from agents.core.routers.heartbeat import router as _heartbeat_router  # noqa: E402
+from agents.core.routers.workflows import router as _workflows_router  # noqa: E402
+from agents.core.routers.plugins import router as _plugins_router  # noqa: E402
 from agents.core.routers.quality import router as _quality_router  # noqa: E402
 from agents.core.routers.review import router as _review_router  # noqa: E402
+from agents.core.routers.sessions import router as _sessions_router  # noqa: E402
 from agents.core.routers.rooms import router as _rooms_router  # noqa: E402
 from agents.core.routers.secrets import router as _secrets_router  # noqa: E402
 from agents.core.routers.security import router as _security_router  # noqa: E402
@@ -1473,10 +1331,19 @@ app.include_router(_autonomy_router)
 app.include_router(_models_llm_router)
 app.include_router(_oauth_router)
 app.include_router(_brain_router)
+app.include_router(_memory_hud_router)
 app.include_router(_memory_kg_router)
 app.include_router(_analytics_router)
 app.include_router(_admin_router)
 app.include_router(_integrations_router)
+app.include_router(_payments_router)
+app.include_router(_multimodal_router)
+app.include_router(_eval_router)
+app.include_router(_heartbeat_router)
+app.include_router(_workflows_router)
+app.include_router(_plugins_router)
+app.include_router(_sessions_router)
+app.include_router(_bench_router)
 
 
 class DigestRunBody(BaseModel):
@@ -1840,36 +1707,7 @@ async def get_cognition():
     return _nocache_json(cog)
 
 
-@app.get("/memory/stats")
-async def memory_stats():
-    """Live memory stats for SystemsPanel."""
-    try:
-        if not orch or not hasattr(orch, 'memory') or not orch.memory:
-            return _nocache_json({"sessions": {"total": 0, "current": "", "active": 0}, "vectors": {"stored": 0, "dimension": 0, "backend": ""}, "knowledge_graph": {"entities": 0, "relations": 0, "last_seed": ""}, "agent_contexts": {}})
-        stats = await orch.memory.get_session_stats() if hasattr(orch.memory, 'get_session_stats') else {"sessions": 0, "current_session": "", "vectors": 0, "agent_contexts": []}
-        contexts = {}
-        if hasattr(orch.memory, 'agent_contexts') and orch.memory.agent_contexts:
-            for aid, ctx in orch.memory.agent_contexts.items():
-                contexts[aid] = len(ctx) if isinstance(ctx, dict) else (len(ctx) if hasattr(ctx, '__len__') else 0)
-        kg_entities = 0
-        kg_relations = 0
-        kg_last = ""
-        if hasattr(orch.memory, 'graph') and orch.memory.graph:
-            try:
-                g = orch.memory.graph
-                kg_entities = len(g.entities) if hasattr(g, 'entities') else 0
-                kg_relations = len(g.relations) if hasattr(g, 'relations') else 0
-                kg_last = g.last_seed if hasattr(g, 'last_seed') else ""
-            except Exception:
-                pass
-        return _nocache_json({
-            "sessions": {"total": stats.get("sessions", 0), "current": stats.get("current_session", ""), "active": stats.get("active", stats.get("sessions", 0))},
-            "vectors": {"stored": stats.get("vectors", 0), "dimension": 768 if stats.get("vectors", 0) > 0 else 0, "backend": "in-memory" if stats.get("vectors", 0) > 0 else ""},
-            "knowledge_graph": {"entities": kg_entities, "relations": kg_relations, "last_seed": kg_last},
-            "agent_contexts": contexts,
-        })
-    except Exception:
-        return _nocache_json({"sessions": {"total": 0, "current": "", "active": 0}, "vectors": {"stored": 0, "dimension": 0, "backend": ""}, "knowledge_graph": {"entities": 0, "relations": 0, "last_seed": ""}, "agent_contexts": {}})
+# `/memory/stats` (HUD/SystemsPanel) lives in the memory_hud router (CLN-3).
 
 
 # ── Memory + Knowledge-Graph surface ──────────────────────────────────────────
@@ -1935,78 +1773,9 @@ def _get_payment_broker():
     return _payment_broker
 
 
-class CreateMandateBody(BaseModel):
-    payees: list[str] = Field(default_factory=list)
-    per_payment_cap: float = Field(..., gt=0)
-    total_cap: float = Field(..., gt=0)
-    currency: str = Field("EUR", max_length=8)
-    ttl_seconds: Optional[float] = Field(None, gt=0)
-
-
-class RequestPaymentBody(BaseModel):
-    mandate_id: str = Field(..., max_length=64)
-    payee: str = Field(..., max_length=128)
-    amount: float = Field(..., gt=0)
-    currency: str = Field("EUR", max_length=8)
-    memo: str = Field("", max_length=280)
-
-
-@app.post("/api/payments/mandates", dependencies=[Depends(_admin_guard)])
-async def create_payment_mandate(body: CreateMandateBody):
-    """Pre-authorize a spending budget with hard caps + a payee allowlist."""
-    try:
-        return _nocache_json(_get_payment_broker().create_mandate(
-            body.payees, body.per_payment_cap, body.total_cap, body.currency, body.ttl_seconds))
-    except ValueError:
-        return _nocache_json({"error": "invalid mandate (need ≥1 payee and positive caps)"}, status_code=400)
-
-
-@app.get("/api/payments/mandates", dependencies=[Depends(_admin_guard)])
-async def list_payment_mandates():
-    return _nocache_json({"mandates": _get_payment_broker().list_mandates()})
-
-
-@app.post("/api/payments/request", dependencies=[Depends(_admin_guard)])
-async def request_payment(body: RequestPaymentBody):
-    """Request a payment against a mandate. Denied (over cap / bad payee / etc.)
-    returns 400 with a reason code; admissible returns a pending payment."""
-    result = _get_payment_broker().request_payment(
-        body.mandate_id, body.payee, body.amount, body.currency, body.memo)
-    if not result.get("ok"):
-        return _nocache_json({"error": "payment denied", "reason": result.get("reason")}, status_code=400)
-    return _nocache_json(result["payment"])
-
-
-@app.get("/api/payments", dependencies=[Depends(_admin_guard)])
-async def list_payments(status: Optional[str] = None):
-    return _nocache_json({"payments": _get_payment_broker().list_payments(status)})
-
-
-@app.post("/api/payments/{payment_id}/approve", dependencies=[Depends(_admin_guard)])
-async def approve_payment(payment_id: str):
-    try:
-        return _nocache_json(_get_payment_broker().approve(payment_id))
-    except ValueError:
-        return _nocache_json({"error": "payment not found or not pending/admissible"}, status_code=400)
-
-
-@app.post("/api/payments/{payment_id}/reject", dependencies=[Depends(_admin_guard)])
-async def reject_payment(payment_id: str):
-    try:
-        return _nocache_json(_get_payment_broker().reject(payment_id))
-    except ValueError:
-        return _nocache_json({"error": "payment not found or cannot be rejected"}, status_code=400)
-
-
-@app.post("/api/payments/{payment_id}/settle", dependencies=[Depends(_admin_guard)])
-async def settle_payment(payment_id: str):
-    """Settle an approved payment (no real rail moves money here)."""
-    try:
-        return _nocache_json(_get_payment_broker().settle(payment_id))
-    except ValueError:
-        return _nocache_json({"error": "payment not approved, not found, or over cap"}, status_code=400)
-
-
+# Routes extracted to agents/core/routers/payments.py (CLN-3). The singleton +
+# accessor above stay here (web owns it; tests patch web._payment_broker); the
+# router resolves it at request time via sys.modules.
 # ── END H16.3 Governed payments ───────────────────────────────────
 
 
@@ -2025,7 +1794,73 @@ def _build_mcp_server():
         return await orch.handle_input(text, channel="mcp", agent_override=agent_id)
 
     allowed = orch.get_setting("mcp.exposed_agents", None)
-    return JarvisMCPServer(_runner, agents, allowed_agents=allowed, lan_only=True)
+    route_tools = _build_mcp_route_tools()
+    mutating_route_tools = _build_mcp_mutating_route_tools()
+    return JarvisMCPServer(
+        _runner,
+        agents,
+        allowed_agents=allowed,
+        lan_only=True,
+        route_tools=route_tools,
+        mutating_route_tools=mutating_route_tools,
+    )
+
+
+def _build_mcp_route_tools():
+    """H22.9 (read-only) — bind allow-listed READ-ONLY routes for MCP exposure.
+
+    Gated OFF by default via the ``JARVIS_MCP_ROUTE_TOOLS`` kill-switch: when the
+    switch is off this returns ``[]`` and the MCP server exposes only the existing
+    ``ask_<agent>`` tools (unchanged behaviour). When on, the curated read-only
+    routes (``/status``, ``/api/memory/search``, ``/dashboard``) are bound to their
+    in-process handlers — no loopback HTTP, no mutating routes (those are post-1.0).
+    """
+    from agents.core.mcp.route_tools import build_route_tools, route_tools_enabled
+
+    if not route_tools_enabled():
+        return []
+    from agents.core.routers.memory_kg import memory_search
+
+    handlers = {
+        "status": status,
+        "memory_search": memory_search,
+        "dashboard": dashboard,
+    }
+    return build_route_tools(handlers)
+
+
+def _build_mcp_mutating_route_tools():
+    """H22.9 (mutating) — bind allow-listed WRITE routes for MCP exposure.
+
+    DOUBLE-gated OFF by default: returns ``[]`` unless BOTH
+    ``JARVIS_MCP_ROUTE_TOOLS`` AND ``JARVIS_MCP_MUTATING_TOOLS`` are on. When both
+    are on, the curated mutating route(s) are bound to an in-process write adapter
+    (NOT a loopback HTTP call) and every invocation is audited via ``orch.audit``.
+
+    SECURITY: the in-process adapter has no ``Request`` and therefore does NOT
+    enforce the HTTP route's per-identity ``user_guard``. The allow-list + double
+    kill-switch + audit are the gate for now (LAN-only). Per-identity guard wiring
+    is the remaining hardening before enabling on a network-exposed instance — see
+    the caveat block in ``agents/core/mcp/route_tools.py``.
+    """
+    from agents.core.mcp.route_tools import build_mutating_route_tools
+
+    async def _invoke_memory_remember(args: dict):
+        """Same write as ``POST /api/memory/remember`` (sans Request body parse)."""
+        if not orch or not orch.memory:
+            return {"error": "not initialized"}
+        text = args.get("text", "")
+        text = text.strip() if isinstance(text, str) else ""
+        if not text:
+            return {"error": "text required"}
+        metadata = args.get("metadata")
+        metadata = metadata if isinstance(metadata, dict) else {}
+        rid = await orch.memory.remember(text, metadata=metadata)
+        return {"ok": rid is not None, "id": rid}
+
+    invokers = {"memory_remember": _invoke_memory_remember}
+    auditor = orch.audit if orch else None
+    return build_mutating_route_tools(invokers, auditor=auditor)
 
 
 @app.get("/api/mcp/server")
@@ -2120,115 +1955,13 @@ async def mcp_server_rpc(message: dict, request: Request):
 # ── END H10.5 MCP Server endpoints ────────────────────────────────
 
 
-# ── H9.3b Dataset Regression Tracking ─────────────────────────────
-
-_dataset_store = None
+# H9.3b Dataset Regression routes extracted to agents/core/routers/eval.py (CLN-3).
 
 
-def _get_dataset_store():
-    global _dataset_store
-    if _dataset_store is None:
-        from agents.core.observability.datasets import DatasetStore
-        _dataset_store = DatasetStore()
-    return _dataset_store
+# /api/workflows list/run/traces extracted to routers/workflows.py (CLN-3).
 
 
-class DatasetRunBody(BaseModel):
-    name: str = Field(..., max_length=128)
-    version: Optional[int] = None
-
-
-@app.get("/api/eval/datasets")
-async def list_eval_datasets():
-    """List versioned eval datasets with their latest score (H9.3b)."""
-    return _nocache_json({"datasets": _get_dataset_store().list_datasets()})
-
-
-@app.get("/api/eval/datasets/{name}/runs")
-async def list_dataset_runs(name: str, limit: int = Query(20, ge=1, le=200)):
-    """Recent run summaries for a dataset (most-recent first)."""
-    return _nocache_json({"name": name, "runs": _get_dataset_store().runs(name, limit)})
-
-
-@app.get("/api/eval/datasets/{name}/compare")
-async def compare_dataset_runs(name: str, a: str = Query(...), b: str = Query(...)):
-    """Diff two runs (a=baseline, b=candidate): regressions + score delta."""
-    return _nocache_json(_get_dataset_store().compare(name, a, b))
-
-
-@app.post("/api/eval/datasets/run", dependencies=[Depends(_user_guard)])
-async def run_eval_dataset(body: DatasetRunBody):
-    """Run a dataset version through the live orchestrator and record the run."""
-    if not orch:
-        return _nocache_json({"error": "not initialized"}, status_code=503)
-
-    async def _runner(prompt: str) -> str:
-        return await orch.handle_input(prompt, channel="eval")
-
-    result = await _get_dataset_store().run_dataset(body.name, _runner, body.version)
-    status = 404 if result.get("error") else 200
-    return _nocache_json(result, status_code=status)
-
-
-# ── END H9.3b Dataset Regression endpoints ────────────────────────
-
-
-@app.get("/api/workflows")
-async def list_workflows():
-    """List all registered workflow pipelines (H5.6 + H9.1 user-defined)."""
-    builtin: list[dict] = []
-    if orch and hasattr(orch, "workflow_registry"):
-        builtin = orch.workflow_registry.list()
-
-    # Merge user-defined pipelines from the store.
-    user_dicts = _wf_store().list()
-    # Build merged list: built-ins first, user-defined after (user overrides builtin by id).
-    merged: dict[str, dict] = {w["id"]: w for w in builtin}
-    for u in user_dicts:
-        merged[u["id"]] = u
-    workflows = list(merged.values())
-    return _nocache_json({"workflows": workflows, "total": len(workflows)})
-
-
-class WorkflowRunBody(BaseModel):
-    pipeline_id: str
-    input: str = ""
-
-
-@app.post("/api/workflows/run", dependencies=[Depends(_user_guard)])
-async def run_workflow(body: WorkflowRunBody):
-    """Execute a named workflow pipeline (H5.6)."""
-    if not orch or not hasattr(orch, "workflow_engine") or not orch.workflow_engine:
-        return _nocache_json({"ok": False, "error": "workflow engine not initialized"})
-    # Look in registry first, then in the user store.
-    pipeline = orch.workflow_registry.get(body.pipeline_id)
-    if pipeline is None:
-        stored = _wf_store().get(body.pipeline_id)
-        if stored:
-            try:
-                from core.workflows.pipeline import Pipeline as _Pipeline
-                pipeline = _Pipeline.from_dict(stored)
-            except Exception as e:
-                return error_json(e, 200, "invalid stored pipeline", extra={"ok": False})
-    if not pipeline:
-        raise HTTPException(status_code=404, detail=f"Pipeline '{body.pipeline_id}' not found")
-    try:
-        result = await orch.workflow_engine.run(pipeline, initial_input=body.input)
-        return _nocache_json({"ok": result.get("_ok", True), "result": result})
-    except Exception as e:
-        return error_json(e, 200, "workflow run failed", extra={"ok": False})
-
-
-@app.get("/api/workflows/traces")
-async def workflow_traces(limit: int = Query(20, ge=1, le=50)):
-    """H10.2 — recent workflow runs with per-step trace for the visual overlay."""
-    engine = getattr(orch, "workflow_engine", None) if orch else None
-    if engine is None:
-        return _nocache_json({"runs": []})
-    return _nocache_json({"runs": engine.recent(limit)})
-
-
-# ── H9.1 Visual Workflow Builder endpoints ───────────────────────
+# ── H9.1 Visual Workflow Builder store (singleton stays in web.py) ─
 # Lazy singleton WorkflowStore — created on first request so tests can
 # inject a custom path before the module is fully imported.
 
@@ -2244,123 +1977,13 @@ def _wf_store():
     return _wf_store_instance
 
 
-class WorkflowSaveBody(BaseModel):
-    """Body for creating or updating a user-defined workflow."""
-    id: str
-    name: str = ""
-    description: str = ""
-    steps: list[dict] = []
+# /api/workflows CRUD (create/update/delete) extracted to routers/workflows.py (CLN-3).
 
 
-@app.post("/api/workflows", dependencies=[Depends(_admin_guard)])
-async def create_workflow(body: WorkflowSaveBody):
-    """Create or update a user-defined workflow pipeline (H9.1)."""
-    if not orch:
-        return _nocache_json({"ok": False, "error": "not initialized"}, status_code=503)
-    raw = body.model_dump()
-    try:
-        saved = _wf_store().save(raw)
-    except (ValueError, KeyError) as e:
-        raise HTTPException(status_code=422, detail=str(e))
-    except Exception as e:
-        logger.warning(f"workflow/save error: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
-    # Register into live registry so it is immediately runnable.
-    try:
-        from core.workflows.pipeline import Pipeline as _Pipeline
-        orch.workflow_registry.register(_Pipeline.from_dict(saved))
-    except Exception:
-        pass
-    return _nocache_json(saved)
+# `/memory/{agent_id}` (per-agent memory context) lives in the memory_hud router (CLN-3).
 
 
-@app.put("/api/workflows/{pipeline_id}", dependencies=[Depends(_admin_guard)])
-async def update_workflow(pipeline_id: str, body: WorkflowSaveBody):
-    """Update an existing user-defined workflow pipeline (H9.1)."""
-    if not orch:
-        return _nocache_json({"ok": False, "error": "not initialized"}, status_code=503)
-    raw = body.model_dump()
-    raw["id"] = pipeline_id  # id in URL takes precedence
-    try:
-        saved = _wf_store().save(raw)
-    except (ValueError, KeyError) as e:
-        raise HTTPException(status_code=422, detail=str(e))
-    except Exception as e:
-        logger.warning(f"workflow/update error: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
-    try:
-        from core.workflows.pipeline import Pipeline as _Pipeline
-        orch.workflow_registry.register(_Pipeline.from_dict(saved))
-    except Exception:
-        pass
-    return _nocache_json(saved)
-
-
-@app.delete("/api/workflows/{pipeline_id}", dependencies=[Depends(_admin_guard)])
-async def delete_workflow(pipeline_id: str):
-    """Delete a user-defined workflow pipeline (H9.1)."""
-    if not orch:
-        return _nocache_json({"ok": False, "error": "not initialized"}, status_code=503)
-    deleted = _wf_store().delete(pipeline_id)
-    if not deleted:
-        raise HTTPException(status_code=404, detail=f"Workflow '{pipeline_id}' not found in store")
-    # Best-effort removal from live registry (built-ins are intentionally kept).
-    try:
-        orch.workflow_registry._pipelines.pop(pipeline_id, None)
-    except Exception:
-        pass
-    return _nocache_json({"ok": True, "deleted": pipeline_id})
-
-
-@app.get("/memory/{agent_id}")
-async def get_agent_memory(agent_id: str):
-    """Return per-agent memory context."""
-    if agent_id not in orch.agents:
-        raise HTTPException(status_code=404, detail=f"Agent '{agent_id}' not found")
-    ctx = await orch.memory.get_agent_context(agent_id)
-    return _nocache_json({
-        "agent_id": agent_id,
-        "context_keys": list(ctx.keys()) if ctx else [],
-        "context": ctx or {},
-        "last_updated": ctx.get("_updated") if ctx else None,
-    })
-
-
-@app.get("/plugins")
-async def list_plugins():
-    """Return all registered plugins with status."""
-    if orch is None or orch.permission_gate is None:
-        return _nocache_json({"plugins": [], "total": 0})
-    plugins = []
-    for pid, manifest in orch.permission_gate.plugins.items():
-        plugins.append({
-            "id": manifest.id,
-            "name": manifest.name,
-            "version": manifest.version,
-            "description": manifest.description,
-            "network_access": manifest.network_access.value,
-            "data_scope": manifest.data_scope.value,
-            "allowed_domains": manifest.allowed_domains,
-            "agents_served": manifest.agents_served,
-            "enabled": manifest.enabled,
-        })
-    return _nocache_json({"plugins": plugins, "total": len(plugins)})
-
-
-@app.put("/plugins/{plugin_id}/toggle", dependencies=[Depends(_admin_guard)])
-async def toggle_plugin(plugin_id: str):
-    """Toggle a plugin's enabled state."""
-    manifest = orch.permission_gate.plugins.get(plugin_id)
-    if not manifest:
-        raise HTTPException(status_code=404, detail=f"Plugin '{plugin_id}' not found")
-    if manifest.enabled:
-        orch.permission_gate.disable(plugin_id)
-        action = "disabled"
-    else:
-        orch.permission_gate.enable(plugin_id)
-        action = "enabled"
-    logger.info("Plugin %s %s", log_safe(plugin_id), action)
-    return _nocache_json({"id": plugin_id, "enabled": manifest.enabled, "action": action})
+# /plugins and /plugins/{plugin_id}/toggle extracted to agents/core/routers/plugins.py (CLN-3)
 
 
 @app.get("/learning/stats")
@@ -2413,69 +2036,10 @@ async def security_status():
     })
 
 
-@app.get("/bench/stats")
-async def bench_stats():
-    """Return benchmark statistics."""
-    try:
-        summary = orch.bench.get_summary()
-        stats = {k: summary[k] for k in summary} if isinstance(summary, dict) else {}
-    except Exception:
-        stats = {}
-    return _nocache_json({
-        "latency": {
-            "p50": stats.get("p50", 4.2),
-            "p95": stats.get("p95", 7.8),
-            "p99": stats.get("p99", 12.1),
-            "unit": "s",
-        },
-        "throughput": {
-            "rpm": stats.get("rpm", 12),
-            "avg_tokens": stats.get("avg_tokens", 234),
-        },
-        "by_agent": stats.get("by_agent", {}),
-    })
+# /bench/stats route extracted to agents/core/routers/bench.py (CLN-3).
 
 
-@app.get("/heartbeat/status")
-async def heartbeat_status():
-    """Return status of all scheduled heartbeats."""
-    return _nocache_json(orch.heartbeat_scheduler.get_status())
-
-
-@app.post("/heartbeat/{agent_id}/start", dependencies=[Depends(_admin_guard)])
-async def heartbeat_start(agent_id: str):
-    """Start a heartbeat for an agent."""
-    if agent_id not in orch.agents:
-        raise HTTPException(status_code=404, detail=f"Agent '{agent_id}' not found")
-    
-    success = orch.heartbeat_scheduler.start_heartbeat(agent_id, orch)
-    if success:
-        return _nocache_json({"agent_id": agent_id, "status": "started"})
-    else:
-        raise HTTPException(status_code=400, detail=f"Failed to start heartbeat for '{agent_id}'")
-
-
-@app.post("/heartbeat/{agent_id}/stop", dependencies=[Depends(_admin_guard)])
-async def heartbeat_stop(agent_id: str):
-    """Stop a heartbeat for an agent."""
-    if agent_id not in orch.agents:
-        raise HTTPException(status_code=404, detail=f"Agent '{agent_id}' not found")
-    
-    success = orch.heartbeat_scheduler.stop_heartbeat(agent_id)
-    if success:
-        return _nocache_json({"agent_id": agent_id, "status": "stopped"})
-    else:
-        raise HTTPException(status_code=400, detail=f"Failed to stop heartbeat for '{agent_id}'")
-
-
-@app.post("/heartbeat/{agent_id}/run", dependencies=[Depends(_admin_guard)])
-async def heartbeat_run(agent_id: str):
-    """Run a heartbeat immediately."""
-    if agent_id not in orch.agents:
-        raise HTTPException(status_code=404, detail=f"Agent '{agent_id}' not found")
-
-    await orch.heartbeat_scheduler.run_now(agent_id, orch)
-    return _nocache_json({"agent_id": agent_id, "status": "executed"})
+# /heartbeat/* routes extracted to agents/core/routers/heartbeat.py (CLN-3).
 
 
 @app.get("/api/status")
