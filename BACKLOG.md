@@ -39,8 +39,67 @@ python -m pytest tests/ -v          # ~2,400 passed, 1 skipped
 | **0.9-beta** | 🟢 Live | New integrations + agent marketplace | H5.7, H5.8 |
 | **0.9.1-beta** | 🟢 Live | Recall cu embeddings reale + perf cale fierbinte | H7.1–H7.5 (perf) |
 | **0.9.2-beta** | 🟢 Live | Hardening complet, CI/CD, memorie personală, cost analytics, onboarding | H7 (11 iteme) + H8 (7 iteme) + BUG-1 |
-| **9.9.9** | 🟢 Live | **Pre-1.0 audit gate** — tot backlogul *software* livrat (Waves 6–10: arena, quality monitor, review queue, action approvals, chat rooms, notes, workflow transform/guardrail/loop/subflow/hierarchical/flow-API; + H13.2 GBNF, H14.3 consolidare, H16.1 MCP OAuth, H16.4 surse semnate). Urmează: audit ([docs/AUDIT.md](docs/AUDIT.md)) → testare manuală ([docs/MANUAL_TESTING.md](docs/MANUAL_TESTING.md)) → fixuri → 1.0. | H10.x + H7.11 + H13.2 + H14.3 + H16.1 + H16.4 |
-| **1.0.0** | 🎯 Stable | **Tot backlogul terminat** — H10 + H11 + **H12** + **H13–H17** (BUG-2 ✅ deja livrat; H12.1 P0 securitate ✅ = wedge anti-OpenClaw). Frontierele H13–H17 (plafon capabilitate locală, memorie vie, computer-use guvernat, web agentic, încredere demonstrabilă; teme-flagship *sleep-time compute* + *guvernanță măsurabilă*) sunt **în scope-ul 1.0**. Planuri: [docs/plan-v1-dispatch.md](docs/plan-v1-dispatch.md) · [docs/research/2026-06-03-frontier-horizons.md](docs/research/2026-06-03-frontier-horizons.md) | H10 (30) + H11 (4) + H12 (15) + H13–H17 (20) |
+
+> The `0.5-beta…0.9.2-beta` rows above are **provenance** (when each capability first landed).
+> The line below is the **forward plan** — there is no separate "audit gate" version; the version
+> number *is* the roadmap. **1.0 is a real destination**, not the current near-done state: it ships
+> only when all planned development is finished **and** the system is proven with real
+> design-partner users. Manual testing/audit is the *release step that tags a version*, not a
+> roadmap item; owner-only items (license, naming, GitHub settings) live in [docs/OWNER_TASKS.md](docs/OWNER_TASKS.md).
+
+### Forward roadmap — the version is the plan (theme-per-minor)
+
+`⚠️` = surfaced by the 2026-06-21 productionization research (was not previously tracked); now in **H23** below.
+
+| Version | Theme | Scope highlights |
+|---------|-------|------------------|
+| **0.10.0** | **Baseline (here now)** | Everything delivered to date: H1–H21 + ORIZONT 22 + WorldView O19 + CLN-3 batch 2; north-star instrumented; **single-user** |
+| **0.11.0** | Finish the refactor | CLN-3 remaining `web.py` extraction + CLN-2 `orchestrator.py` split |
+| **0.12.0** | Harden what shipped | ORIZONT-22 review fixes (#294, merged); #292 argus governed-facade wiring; #279 MCP route-tools harden/remove; TASK-3 cross-channel taint-tracking |
+| **0.13.0 ⚠️** | Agentic safety completeness | step/recursion + token/time **budgets + loop detection**; **model-version pinning & reproducibility**; **kill-switch in the HUD** + credential quarantine; eval/regression harness as a **release gate**; audit-log verify UI + secret redaction |
+| **0.14.0 ⚠️** | Upgrade & data durability | **DB schema-migration framework**; **backup/restore** + restore drill; **data export + delete/forget** endpoints (finishes H8.2); retention defaults; rollback story |
+| **0.15.0 ⚠️** | Operability & distribution | health endpoint; signal handlers + graceful shutdown; log rotation; graceful **local-LLM-down** everywhere; systemd/service templates; **release artifacts** (tar/zip, optional PyPI + Docker publish); **semver compatibility contract** + supported-versions matrix + deprecation policy; platform matrix |
+| **0.16.0** | HUD depth + observability UI | TASK-2 ~37 surfaces incl. **north-star panel** + **network monitor** (watch LOCAL_ONLY make zero calls); LIVE/SEED indicators; OpenAPI types; plugin-gated modes |
+| **0.17.0** | Local ceiling + velocity | H22.4 concurrency, H22.5 model-manager LRU, H22.9 agent-native routes, constrained-decoding tail |
+| **0.18.0 🖥️** | Digital twin & fine-tune (**GPU-gated**) | H12.14 fine-tuned model, H13.3 speculative decoding, TASK-1 Howard first real run |
+| **0.19.0 ⚠️** | Reach, quality & user docs | mobile parity tail (H18); **quality gates** (E2E, load/soak, a11y, i18n, browser+mobile matrix); **user docs** (USER_GUIDE, FAQ, UPGRADE, THREAT_MODEL, SECURITY disclosure, NOTICE/SBOM, privacy policy); **onboarding wizard** + activation funnel + cold-start error guidance |
+| **0.20.0 ⚠️** | Product-proof | design-partner program (recruit 1–3); in-app **feedback/NPS**; support channel + SLA; north-star **measured on real usage**; landing page + demo |
+| **1.0.0** | 🎯 **Owned & proven** | all dev complete **+ design-partner validation**; owner legal/brand done; manual-test/audit pass → tag |
+
+---
+
+## 🆕 H23 — Productionization & 1.0 Readiness (the un-ticketed layer)
+
+> Surfaced 2026-06-21 by cross-referencing the codebase against an external 1.0 checklist
+> (Immich "stable" criteria, OpenSSF baseline, OWASP Agentic/LLM Top-10). These are the things a
+> credible 1.0 needs that the feature backlog never captured. Status tags: **EXISTS** (code there,
+> expose/gate only) · **PARTIAL** · **MISSING**. Each item is its own future PR; mapped to a version above.
+
+| ID | Item | Status | → Version |
+|----|------|--------|-----------|
+| H23.1 | Per-task step/recursion + token/time **budgets + loop detection** (OWASP unbounded-consumption) | MISSING | 0.13 |
+| H23.2 | **Model-version pinning & reproducibility** — record id/quant per run; approved-model allowlist | MISSING | 0.13 |
+| H23.3 | **Kill-switch in the HUD** (one-tap) + credential quarantine on halt | EXISTS (code) / no UI | 0.13 |
+| H23.4 | Promote **eval/regression harness to a pre-release gate** | EXISTS / not a gate | 0.13 |
+| H23.5 | Audit-log **verify button** in HUD + secret redaction guarantee | EXISTS / no UI | 0.13 |
+| H23.6 | TASK-3 indirect-injection / cross-channel **taint-tracking** | open | 0.12 |
+| H23.7 | **DB schema-migration framework** (`_schema_version` + forward-only on startup) | MISSING | 0.14 |
+| H23.8 | **Backup/restore** (one-command) + a tested **restore drill** | MISSING | 0.14 |
+| H23.9 | **Data export + delete/forget** endpoints (finishes promised H8.2) | PARTIAL | 0.14 |
+| H23.10 | Data-**retention defaults** (conversations, audit log, memory) + rollback story | MISSING | 0.14 |
+| H23.11 | Health/readiness endpoint; signal handlers + graceful shutdown; **log rotation** | MISSING | 0.15 |
+| H23.12 | Graceful **local-LLM-down** handling everywhere (no hang/crash) | PARTIAL | 0.15 |
+| H23.13 | **Release engineering** — artifacts (tar/zip), optional PyPI + Docker publish, signed releases | PARTIAL | 0.15 |
+| H23.14 | **Semver compatibility contract** + supported-versions matrix + deprecation policy + platform matrix | MISSING | 0.15 |
+| H23.15 | systemd/service templates (Linux/Windows) | MISSING | 0.15 |
+| H23.16 | **Network monitor** HUD panel (prove LOCAL_ONLY agents make zero outbound calls) | MISSING | 0.16 |
+| H23.17 | **Quality gates** — E2E (Playwright), load/soak, a11y (WCAG), i18n completeness, browser+mobile matrix | MISSING | 0.19 |
+| H23.18 | **User docs** — USER_GUIDE, FAQ, UPGRADE (per-version migration notes) | MISSING | 0.19 |
+| H23.19 | **Trust/security docs** — THREAT_MODEL, SECURITY disclosure policy + advisories, NOTICE/SBOM, **telemetry opt-in disclosure**, privacy policy | MISSING | 0.19 |
+| H23.20 | **Onboarding wizard** + activation-funnel instrumentation + cold-start error guidance | MISSING | 0.19 |
+| H23.21 | **Design-partner program** — recruit 1–3, in-app feedback/NPS, support SLA, collect north-star from real usage | MISSING | 0.20 |
+| H23.22 | Landing page + demo recorded (owner-led; dev-supportable) | MISSING | 0.20 |
+| H23.23 | **Multi-user readiness call** — accept single-user for 1.0 & document it, OR scope per-user isolation (north-star is "per active user") | DECISION | 0.20 |
 
 ---
 
@@ -159,7 +218,7 @@ chain-of-thought leak / mid-sentence truncation fixed. Kill-switch:
 | **H18 Mobile Native & Browser Parity** (P2–P3) | 10 | **9** | 32 | **32** | **94%** |
 | **H19 WorldView (4D OSINT)** — standalone product, merged 2026-06-08 | 33 | **33** | 208 | **208** | **100%** ✅ |
 
-> `%` = procent pe **story points**. Sub-total **H1–H11** = 821/823 (≈100% SP; 151/151 iteme). Grand-total **H1–H17** = 1104/1119 (≈99% SP; 194/196 iteme). **Gate-ul 1.0.0 = tot backlogul terminat: H10 + H11 + H12 + H13–H17** (toate în scope-ul v1.0 — [#52]). În afara gate-ului: **H18** mobil (9/10) și **H19 WorldView** (33/33 ✅, stack standalone) — livrate.
+> `%` = procent pe **story points**. Sub-total **H1–H11** = 821/823 (≈100% SP; 151/151 iteme). Grand-total **H1–H17** = 1104/1119 (≈99% SP; 194/196 iteme). **Toate orizonturile de features sunt livrate = v0.10.0** (H18 mobil 9/10 + H19 WorldView 33/33 standalone — livrate). **Nu mai există un "audit gate" ca versiune**; restul drumului până la 1.0 e *productionizarea* (vezi **H23** + roadmap-ul de versiuni mai sus), iar **1.0 = totul livrat + validat de useri reali (design partners)**.
 
 **În afara totalului:** **Bugs & Hot Fixes** — **toate BUG-\* și HF-\* rezolvate** (BUG-1…17 + HF-1…7 + NTH-1; vezi re-baseline 2026-06-08 + tabelul de mai jos). Rămân deschise **deliberat**: **CLN-2/CLN-3** (refactor god-objects `orchestrator.py`/`web.py`, P3 — **decizie owner 2026-06-10: split-ul mare se face DUPĂ testarea manuală / gate-ul 1.0**, nu înainte; risc de regresie inutil înaintea gate-ului uman) + taskuri netrackuite ca buguri (**TASK-1** Howard backend, **TASK-2** HUD v2 depth, **TASK-3** taint-tracking canale, **BUG-2b** frontend E2E). *(Detalii audit cod 2026-06-04 în tabel.)*
 
@@ -562,8 +621,8 @@ chain-of-thought leak / mid-sentence truncation fixed. Kill-switch:
 
 ## ORIZONT 13–17 — Frontiere Noi (post-paritate, în scope v1.0) — 14/20
 
-> **Status: formalizate în roadmap** (promovate din „propus" 2026-06-03) — **în scope-ul gate-ului 1.0.0**
-> alături de H10 + H11 + H12: **1.0 = tot backlogul terminat**, fără grabă pe tag. Bazat pe research-ul frontieră 2025-2026:
+> **Status: livrate** (toate în v0.10.0). Drumul până la 1.0 e productionizarea (**H23**) + validarea cu useri reali —
+> **1.0 = totul livrat + design partners**, fără grabă pe tag. Bazat pe research-ul frontieră 2025-2026:
 > [docs/research/2026-06-03-frontier-horizons.md](docs/research/2026-06-03-frontier-horizons.md) (5 agenți paraleli +
 > verificare independentă). Backlogul de features e terminat (H1–H9); H10–H12 sunt paritate competitivă.
 > **Acestea sunt direcțiile de DUPĂ paritate** — unde țintește un OS personal local-first/proactiv/privat.
