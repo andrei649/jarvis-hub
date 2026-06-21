@@ -838,24 +838,7 @@ async def agent_templates_instantiate(req: Request):
 # /api/workflows step/generate + hierarchical extracted to routers/workflows.py (CLN-3).
 
 
-class ContextCompressBody(BaseModel):
-    turns: list[dict] = Field(default_factory=list)
-    max_tokens: int = Field(2000, ge=100, le=100000)
-    keep_recent: int = Field(4, ge=1, le=50)
-
-
-@app.post("/api/context/compress", dependencies=[Depends(_user_guard)])
-async def context_compress(body: ContextCompressBody):
-    """H20.3 — compress a long turn history (keep recent, digest/summarize older)."""
-    from agents.core.context_compressor import ContextCompressor
-    summarizer = None
-    if orch is not None:
-        async def summarizer(text):  # noqa: E731 — wire the LLM summarizer
-            return await orch.process(f"Summarize this conversation concisely:\n{text}",
-                                      channel="compress")
-    cc = ContextCompressor(summarizer=summarizer, max_tokens=body.max_tokens,
-                           keep_recent=body.keep_recent)
-    return _nocache_json(await cc.compress(body.turns))
+# /api/context/compress (+ ContextCompressBody) extracted to routers/tools.py (CLN-3)
 
 
 # CLN-3: vlm/desktop/media routes (VLMDescribeBody/DesktopStepsBody/MediaGenBody +
@@ -917,6 +900,7 @@ from agents.core.routers.security_hud import router as _security_hud_router  # n
 from agents.core.routers.skills import router as _skills_router  # noqa: E402
 from agents.core.routers.status import router as _status_router  # noqa: E402
 from agents.core.routers.status import status  # noqa: E402  (re-export: MCP route-tool + drift guard resolve web.status)
+from agents.core.routers.tools import router as _tools_router  # noqa: E402
 from agents.core.routers.webhooks import router as _webhooks_router  # noqa: E402
 
 app.include_router(_webhooks_router)
@@ -955,47 +939,13 @@ app.include_router(_eval_router)
 app.include_router(_heartbeat_router)
 app.include_router(_learning_router)
 app.include_router(_workflows_router)
+app.include_router(_tools_router)
 app.include_router(_plugins_router)
 app.include_router(_sessions_router)
 app.include_router(_bench_router)
 
 
-class DigestRunBody(BaseModel):
-    topic: str = Field("", max_length=200)
-    sources: Optional[list[str]] = Field(None, max_length=10)
-    limit: int = Field(10, ge=1, le=50)
-    weights: Optional[dict] = None
-
-
-@app.post("/api/digest/run", dependencies=[Depends(_user_guard)])
-async def digest_run(body: DigestRunBody):
-    """H12.23 — composable multi-source digest ranked by weight × idea-reality."""
-    from agents.core.digest import build_default_aggregator
-    from agents.core.http_client import PluginHTTPClient
-    client = PluginHTTPClient.for_plugin("digest")
-
-    async def _fetch(url: str) -> str:
-        resp = await client.get(url)
-        resp.raise_for_status()
-        return resp.text
-
-    agg = build_default_aggregator(_fetch, weights=body.weights, names=body.sources)
-    return _nocache_json(await agg.run(body.topic, limit=body.limit))
-
-
-@app.post("/api/schedule/parse", dependencies=[Depends(_user_guard)])
-async def schedule_parse(req: Request):
-    """H10.27 — parse a natural-language schedule into a cron expression."""
-    from agents.core.autonomy.nl_schedule import parse_schedule
-    try:
-        body = await req.json()
-    except Exception:
-        body = {}
-    text = (body or {}).get("text", "")
-    if not text:
-        return JSONResponse({"error": "text required"}, status_code=400)
-    result = parse_schedule(text)
-    return _nocache_json(result, status_code=200 if result.get("ok") else 422)
+# /api/digest/run (+ DigestRunBody) and /api/schedule/parse extracted to routers/tools.py (CLN-3)
 
 
 # /learning and /learning/promote (+ PromoteRequest) extracted to agents/core/routers/learning.py (CLN-3)
