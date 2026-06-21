@@ -6,7 +6,7 @@ import tempfile
 from unittest.mock import AsyncMock, patch
 from fastapi.testclient import TestClient
 from agents import web
-from agents.web import TTSRequest
+from agents.core.routers.voice import TTSRequest  # voice routes extracted from web.py (CLN-3)
 
 
 @pytest.fixture
@@ -149,7 +149,7 @@ def test_tts_stream_disabled_by_default(client):
     assert resp.json()["enabled"] is False
 
 
-@patch("agents.web._tts_stream_enabled", return_value=True)
+@patch("agents.core.routers.voice._tts_stream_enabled", return_value=True)
 @patch("core.voice.tts.HAS_EDGE", False)
 def test_tts_stream_no_edge(_enabled, client):
     resp = client.post("/tts/stream", json={"text": "Hi.", "lang": "en"})
@@ -157,7 +157,7 @@ def test_tts_stream_no_edge(_enabled, client):
     assert "edge-tts not installed" in resp.json()["error"]
 
 
-@patch("agents.web._tts_stream_enabled", return_value=True)
+@patch("agents.core.routers.voice._tts_stream_enabled", return_value=True)
 @patch("core.voice.tts.HAS_EDGE", True)
 @patch("core.voice.tts.TTSEngine.speak")
 def test_tts_stream_frames_per_sentence(mock_speak, _enabled, client):
