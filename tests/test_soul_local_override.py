@@ -86,7 +86,7 @@ async def test_soul_endpoint_rejects_path_traversal():
     agent alphabet (dots, slashes, traversal) must 404 before touching disk."""
     import pytest
     from fastapi import HTTPException
-    from agents.web import get_agent_soul
+    from agents.core.routers.agents_api import get_agent_soul  # extracted from web.py (CLN-3)
 
     for bad in ("..", "../jarvis", "a/../../etc", "jarvis%2f..", ".hidden", "x" * 65):
         with pytest.raises(HTTPException) as exc:

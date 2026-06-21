@@ -700,9 +700,6 @@ async def _llm_ready() -> dict:
 # ... /status extracted to routers/status.py (CLN-3)
 
 
-@app.get("/api/agents", dependencies=[Depends(_user_guard)])
-async def api_agents():
-    return _nocache_json({"agents": _enrich_agents()})
 
 
 # ── Dashboard (HUD-compatible) ───────────────────────────────────
@@ -718,37 +715,6 @@ _dashboard_lock = asyncio.Lock()
 #  through `sys.modules.get("agents.web")` so tests' monkeypatch is still observed.)
 
 
-_AGENT_ID_RE = re.compile(r"^[a-z0-9_-]{1,64}$")
-
-
-@app.get("/api/agents/{agent_id}/soul")
-async def get_agent_soul(agent_id: str):
-    """Read and return the live SOUL.md content for an agent."""
-    agent_id = agent_id.strip().lower()
-    # The id becomes a filesystem path segment below — reject anything outside
-    # the agent-id alphabet (CodeQL: uncontrolled data in path expression).
-    if not _AGENT_ID_RE.match(agent_id):
-        raise HTTPException(status_code=404, detail="Agent not found")
-
-    # Allow reading SOUL.md if the file physically exists, even if orch is not initialized (e.g. in tests)
-    # The personalized overlay (SOUL.local.md, gitignored) wins when present —
-    # same resolution as Agent._load_soul.
-    base_dir = Path(__file__).parent.resolve()
-    soul_path = base_dir / agent_id / "SOUL.local.md"
-    if not soul_path.exists():
-        soul_path = base_dir / agent_id / "SOUL.md"
-
-    if orch and agent_id not in orch.agents:
-        raise HTTPException(status_code=404, detail=f"Agent '{agent_id}' not found")
-    
-    if not soul_path.exists():
-        raise HTTPException(status_code=404, detail=f"SOUL.md not found for agent '{agent_id}'")
-        
-    try:
-        content = soul_path.read_text(encoding="utf-8")
-        return {"agent_id": agent_id, "soul": content}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to read SOUL.md: {e}")
 
 
 # ── Existing endpoints (unchanged) ───────────────────────────────
@@ -756,23 +722,6 @@ async def get_agent_soul(agent_id: str):
 # `/memory` + `/memory/clear` (bare HUD routes) live in the memory_hud router (CLN-3).
 
 
-@app.get("/agents")
-async def get_agents():
-    if not orch:
-        return JSONResponse({"error": "not initialized"}, status_code=503)
-    result = {}
-    for aid, agent in orch.agents.items():
-        stats = orch.checkpoints.get_agent_stats(aid)
-        skills = [s.name for s in orch.skills.get_skills_for_agent(aid)]
-        result[aid] = {
-            "name": agent.name,
-            "tier": agent.config.get("tier", ""),
-            "model": agent.config.get("model", ""),
-            "heartbeat": agent.has_heartbeat,
-            "stats": stats,
-            "skills": skills,
-        }
-    return {"agents": result}
 
 
 # CLN-3: /sessions + /sessions/resume extracted to agents/core/routers/sessions.py
@@ -784,62 +733,10 @@ async def get_agents():
 # /bench route extracted to agents/core/routers/bench.py (CLN-3).
 
 
-@app.get("/api/agents/history")
-async def agents_history():
-    """H10.17 — per-agent run-history rollup (runs, last, ok-rate, avg latency)."""
-    if not orch or not getattr(orch, "run_history", None):
-        return _nocache_json({"agents": []})
-    return _nocache_json({"agents": orch.run_history.agents()})
 
 
-@app.get("/api/agents/{agent_id}/history")
-async def agent_history(agent_id: str, limit: int = Query(50, ge=1, le=200)):
-    """H10.17 — recent runs for one agent (most-recent first)."""
-    agent_id = agent_id.strip().lower()
-    if not _AGENT_ID_RE.match(agent_id):
-        raise HTTPException(status_code=404, detail="Agent not found")
-    # Consistent with /soul: an unknown agent 404s rather than returning a
-    # misleading empty-but-OK run list (a fresh-but-real agent still 200s with []).
-    if orch and agent_id not in orch.agents:
-        raise HTTPException(status_code=404, detail=f"Agent '{agent_id}' not found")
-    if not orch or not getattr(orch, "run_history", None):
-        return _nocache_json({"agent_id": agent_id, "runs": []})
-    return _nocache_json({
-        "agent_id": agent_id,
-        "runs": orch.run_history.list(agent_id, limit),
-    })
 
 
-@app.get("/api/agent-templates")
-async def agent_templates_list():
-    """H10.29 — list the pre-configured agent template catalog."""
-    from agents.core.agent_templates import list_templates
-    return _nocache_json({"templates": list_templates()})
-
-
-@app.post("/api/agent-templates/instantiate", dependencies=[Depends(_user_guard)])
-async def agent_templates_instantiate(req: Request):
-    """H10.29 — render a ready-to-save agent config from a template.
-
-    Body: {"template": "researcher", "name": "Vega", "overrides": {...}}.
-    Returns the agents.yaml-shaped config + a SOUL.md skeleton (preview); the
-    caller persists it via the normal agent-creation flow.
-    """
-    from agents.core.agent_templates import build_agent_config
-    try:
-        body = await req.json()
-    except Exception:
-        body = {}
-    template = (body or {}).get("template", "")
-    try:
-        config = build_agent_config(
-            template,
-            name=(body or {}).get("name"),
-            overrides=(body or {}).get("overrides") or {},
-        )
-    except KeyError:
-        return JSONResponse({"error": f"unknown template: {template}"}, status_code=404)
-    return _nocache_json({"ok": True, "config": config})
 
 
 # ── H15.4 Secret broker + H10.1 Embeddable Chat Widget ────────────────────────
@@ -862,24 +759,7 @@ async def agent_templates_instantiate(req: Request):
 # /api/workflows step/generate + hierarchical extracted to routers/workflows.py (CLN-3).
 
 
-class ContextCompressBody(BaseModel):
-    turns: list[dict] = Field(default_factory=list)
-    max_tokens: int = Field(2000, ge=100, le=100000)
-    keep_recent: int = Field(4, ge=1, le=50)
-
-
-@app.post("/api/context/compress", dependencies=[Depends(_user_guard)])
-async def context_compress(body: ContextCompressBody):
-    """H20.3 — compress a long turn history (keep recent, digest/summarize older)."""
-    from agents.core.context_compressor import ContextCompressor
-    summarizer = None
-    if orch is not None:
-        async def summarizer(text):  # noqa: E731 — wire the LLM summarizer
-            return await orch.process(f"Summarize this conversation concisely:\n{text}",
-                                      channel="compress")
-    cc = ContextCompressor(summarizer=summarizer, max_tokens=body.max_tokens,
-                           keep_recent=body.keep_recent)
-    return _nocache_json(await cc.compress(body.turns))
+# /api/context/compress (+ ContextCompressBody) extracted to routers/tools.py (CLN-3)
 
 
 # CLN-3: vlm/desktop/media routes (VLMDescribeBody/DesktopStepsBody/MediaGenBody +
@@ -909,6 +789,7 @@ from agents.core.routers.analytics import router as _analytics_router  # noqa: E
 from agents.core.routers.arena import router as _arena_router  # noqa: E402
 from agents.core.routers.autonomy import router as _autonomy_router  # noqa: E402
 from agents.core.routers.bench import router as _bench_router  # noqa: E402
+from agents.core.routers.ops import router as _ops_router  # noqa: E402
 from agents.core.routers.brain import router as _brain_router  # noqa: E402
 from agents.core.routers.browser import router as _browser_router  # noqa: E402
 from agents.core.routers.canvas import router as _canvas_router  # noqa: E402
@@ -924,8 +805,10 @@ from agents.core.routers.notes import router as _notes_router  # noqa: E402
 from agents.core.routers.oauth import router as _oauth_router  # noqa: E402
 from agents.core.routers.pairing import router as _pairing_router  # noqa: E402
 from agents.core.routers.dashboard import router as _dashboard_router  # noqa: E402
+from agents.core.routers.agents_api import router as _agents_api_router  # noqa: E402
 from agents.core.routers.dashboard import dashboard  # noqa: E402  (re-export: MCP route-tool + drift guard resolve web.dashboard)
 from agents.core.routers.payments import router as _payments_router  # noqa: E402
+from agents.core.routers.mcp import router as _mcp_router  # noqa: E402
 from agents.core.routers.voice import router as _voice_router  # noqa: E402
 from agents.core.routers.eval import router as _eval_router  # noqa: E402
 from agents.core.routers.heartbeat import router as _heartbeat_router  # noqa: E402
@@ -942,6 +825,7 @@ from agents.core.routers.security_hud import router as _security_hud_router  # n
 from agents.core.routers.skills import router as _skills_router  # noqa: E402
 from agents.core.routers.status import router as _status_router  # noqa: E402
 from agents.core.routers.status import status  # noqa: E402  (re-export: MCP route-tool + drift guard resolve web.status)
+from agents.core.routers.tools import router as _tools_router  # noqa: E402
 from agents.core.routers.webhooks import router as _webhooks_router  # noqa: E402
 
 app.include_router(_webhooks_router)
@@ -974,53 +858,22 @@ app.include_router(_admin_router)
 app.include_router(_integrations_router)
 app.include_router(_dashboard_router)
 app.include_router(_payments_router)
+app.include_router(_mcp_router)
+app.include_router(_agents_api_router)
 app.include_router(_voice_router)
 app.include_router(_multimodal_router)
 app.include_router(_eval_router)
 app.include_router(_heartbeat_router)
 app.include_router(_learning_router)
 app.include_router(_workflows_router)
+app.include_router(_tools_router)
 app.include_router(_plugins_router)
 app.include_router(_sessions_router)
 app.include_router(_bench_router)
+app.include_router(_ops_router)
 
 
-class DigestRunBody(BaseModel):
-    topic: str = Field("", max_length=200)
-    sources: Optional[list[str]] = Field(None, max_length=10)
-    limit: int = Field(10, ge=1, le=50)
-    weights: Optional[dict] = None
-
-
-@app.post("/api/digest/run", dependencies=[Depends(_user_guard)])
-async def digest_run(body: DigestRunBody):
-    """H12.23 — composable multi-source digest ranked by weight × idea-reality."""
-    from agents.core.digest import build_default_aggregator
-    from agents.core.http_client import PluginHTTPClient
-    client = PluginHTTPClient.for_plugin("digest")
-
-    async def _fetch(url: str) -> str:
-        resp = await client.get(url)
-        resp.raise_for_status()
-        return resp.text
-
-    agg = build_default_aggregator(_fetch, weights=body.weights, names=body.sources)
-    return _nocache_json(await agg.run(body.topic, limit=body.limit))
-
-
-@app.post("/api/schedule/parse", dependencies=[Depends(_user_guard)])
-async def schedule_parse(req: Request):
-    """H10.27 — parse a natural-language schedule into a cron expression."""
-    from agents.core.autonomy.nl_schedule import parse_schedule
-    try:
-        body = await req.json()
-    except Exception:
-        body = {}
-    text = (body or {}).get("text", "")
-    if not text:
-        return JSONResponse({"error": "text required"}, status_code=400)
-    result = parse_schedule(text)
-    return _nocache_json(result, status_code=200 if result.get("ok") else 422)
+# /api/digest/run (+ DigestRunBody) and /api/schedule/parse extracted to routers/tools.py (CLN-3)
 
 
 # /learning and /learning/promote (+ PromoteRequest) extracted to agents/core/routers/learning.py (CLN-3)
@@ -1139,102 +992,16 @@ async def _list_local_models() -> dict:
 
 # ── MCP (Model Context Protocol) admin endpoints ─────────────────
 
-@app.get("/api/admin/mcp", dependencies=[Depends(_admin_guard)])
-async def admin_mcp_list():
-    """List all configured MCP servers with their status."""
-    if not orch:
-        return JSONResponse({"error": "not initialized"}, status_code=503)
-    servers = []
-    for name, srv in orch.mcp.servers.items():
-        servers.append({
-            "name": name,
-            "transport": srv.transport,
-            "command": srv.command,
-            "url": srv.url,
-            "connected": srv._proc is not None and srv._proc.returncode is None,
-            "tools_count": len(srv.tools),
-            "tools": [{"name": t.name, "description": t.description} for t in srv.tools],
-        })
-    return {"servers": servers, "total": len(servers)}
 
 
-class MCPServerConfig(BaseModel):
-    name: str
-    transport: str = "stdio"
-    command: Optional[str] = None
-    url: Optional[str] = None
 
 
-@app.post("/api/admin/mcp", dependencies=[Depends(_admin_guard)])
-async def admin_mcp_add(req: MCPServerConfig):
-    """Add a new MCP server configuration."""
-    if not orch:
-        return JSONResponse({"error": "not initialized"}, status_code=503)
-    from core.mcp.client import MCPServer
-    if req.name in orch.mcp.servers:
-        return JSONResponse({"error": f"MCP server '{req.name}' already exists"}, status_code=409)
-    srv = MCPServer(
-        name=req.name,
-        transport=req.transport,
-        command=req.command,
-        url=req.url,
-    )
-    orch.mcp.servers[srv.name] = srv
-    # Persist to settings DB
-    _save_mcp_config()
-    return {"ok": True, "server": req.name, "message": f"MCP server '{req.name}' added"}
 
 
-@app.delete("/api/admin/mcp/{name}", dependencies=[Depends(_admin_guard)])
-async def admin_mcp_remove(name: str):
-    """Remove an MCP server configuration."""
-    if not orch:
-        return JSONResponse({"error": "not initialized"}, status_code=503)
-    if name not in orch.mcp.servers:
-        return JSONResponse({"error": f"MCP server '{name}' not found"}, status_code=404)
-    srv = orch.mcp.servers[name]
-    if srv._proc:
-        await srv.close()
-    del orch.mcp.servers[name]
-    # Persist to settings DB
-    _save_mcp_config()
-    return {"ok": True, "server": name, "message": f"MCP server '{name}' removed"}
 
 
-@app.post("/api/admin/mcp/{name}/connect", dependencies=[Depends(_admin_guard)])
-async def admin_mcp_connect(name: str):
-    """Connect to an MCP server and discover tools."""
-    if not orch:
-        return JSONResponse({"error": "not initialized"}, status_code=503)
-    if name not in orch.mcp.servers:
-        return JSONResponse({"error": f"MCP server '{name}' not found"}, status_code=404)
-    srv = orch.mcp.servers[name]
-    try:
-        await srv.connect()
-        return {
-            "ok": True,
-            "server": name,
-            "connected": True,
-            "tools_count": len(srv.tools),
-            "tools": [{"name": t.name, "description": t.description} for t in srv.tools],
-        }
-    except Exception:
-        logger.exception("MCP server probe failed: %s", log_safe(name))
-        return JSONResponse({"error": "internal error", "server": name, "code": 500}, status_code=500)
 
 
-@app.post("/api/admin/mcp/{name}/disconnect", dependencies=[Depends(_admin_guard)])
-async def admin_mcp_disconnect(name: str):
-    """Disconnect from an MCP server."""
-    if not orch:
-        return JSONResponse({"error": "not initialized"}, status_code=503)
-    if name not in orch.mcp.servers:
-        return JSONResponse({"error": f"MCP server '{name}' not found"}, status_code=404)
-    srv = orch.mcp.servers[name]
-    if srv._proc:
-        await srv.close()
-        return {"ok": True, "server": name, "message": f"MCP server '{name}' disconnected"}
-    return {"ok": True, "server": name, "message": f"MCP server '{name}' was not connected"}
 
 
 def _save_mcp_config():
@@ -1259,51 +1026,7 @@ def _load_mcp_config():
 # ── Admin Charts endpoint → core/routers/admin.py (CLN-3) ──────────
 
 
-@app.get("/api/resilience")
-async def resilience_public():
-    """Public resilience metrics and circuit breaker states (no admin auth)."""
-    from core.resilience import _circuit_breakers, get_metrics
-    metrics = get_metrics().get_stats()
-    breakers = {
-        key: {
-            "state": cb.state,
-            "failure_count": cb.failure_count,
-            "last_failure_time": cb.last_failure_time,
-        }
-        for key, cb in _circuit_breakers.items()
-    }
-    return _nocache_json({"metrics": metrics, "circuit_breakers": breakers})
-
-
-# ── v0.3 Cognition Release endpoints ─────────────────────────────
-
-
-@app.get("/api/cognition", dependencies=[Depends(_user_guard)])
-async def get_cognition():
-    """Return the last dynamic routing/cognition context."""
-    cog = getattr(orch, "last_cognition", None) if orch else None
-    if not cog:
-        from core.router import INTENT_RULES
-        scoring = []
-        for kw, rule in list(INTENT_RULES.items())[:5]:
-            scoring.append({
-                "keyword": kw,
-                "weight": rule[2],
-                "agents": rule[0],
-                "category": kw
-            })
-        cog = {
-            "scoring": scoring,
-            "decision": {
-                "source": "standby",
-                "confidence": 1.0,
-                "agents_selected": ["jarvis"],
-                "alternatives": [],
-                "timing": {"classify": 0, "route": 0, "total": 0}
-            },
-            "trace": []
-        }
-    return _nocache_json(cog)
+# `GET /api/resilience` + `GET /api/cognition` (system/ops reads) live in the ops router (CLN-3).
 
 
 # `/memory/stats` (HUD/SystemsPanel) lives in the memory_hud router (CLN-3).
@@ -1484,15 +1207,6 @@ def _mcp_identity_check(token: Optional[str]) -> bool:
     return _user_credential_ok(user_supplied=token or "", admin_supplied=token or "")
 
 
-@app.get("/api/mcp/server")
-async def mcp_server_status():
-    """Status + governed tool list for Jarvis's MCP server mode (H10.5)."""
-    if not orch:
-        return _nocache_json({"error": "not initialized"}, status_code=503)
-    enabled = bool(orch.get_setting("mcp.server_enabled", False))
-    status = _build_mcp_server().status()
-    status["enabled"] = enabled
-    return _nocache_json(status)
 
 
 # ── H16.1 MCP OAuth 2.1 Resource Server (2025-11 spec) ────────────
@@ -1510,89 +1224,12 @@ def _get_mcp_rs():
     return _mcp_rs
 
 
-def _mcp_resource(request: Request) -> str:
-    return str(request.base_url).rstrip("/") + "/api/mcp/server"
 
 
-@app.get("/.well-known/oauth-protected-resource")
-async def mcp_protected_resource_metadata(request: Request):
-    """RFC 9728 — lets MCP clients discover the authorization server(s)."""
-    from agents.core.mcp.oauth import protected_resource_metadata
-    resource = _mcp_resource(request)
-    auth_servers = []
-    if orch:
-        configured = orch.get_setting("mcp.authorization_servers", None)
-        if isinstance(configured, list):
-            auth_servers = configured
-    return _nocache_json(protected_resource_metadata(resource, auth_servers or [resource]))
 
 
-@app.post("/api/mcp/token", dependencies=[Depends(_admin_guard)])
-async def mcp_issue_token(req: Request):
-    """Issue a local LAN-only bearer token bound to this MCP resource (admin)."""
-    if not orch:
-        return _nocache_json({"error": "not initialized"}, status_code=503)
-    try:
-        body = await req.json()
-    except Exception:
-        body = {}
-    resource = _mcp_resource(req)
-    scopes = (body or {}).get("scopes") or ["mcp"]
-    token = _get_mcp_rs().issue_token(
-        subject=(body or {}).get("subject", "local-client"),
-        resource=resource, scopes=scopes,
-        ttl=int((body or {}).get("ttl", 3600)))
-    return _nocache_json({"ok": True, "token": token, "resource": resource, "scopes": scopes})
 
 
-@app.post("/api/mcp/server/rpc")
-async def mcp_server_rpc(message: dict, request: Request):
-    """JSON-RPC 2.0 entry point (HTTP transport). Disabled by default; LAN-only.
-
-    When ``mcp.oauth_required`` is set, requires an OAuth 2.1 bearer token bound to
-    this resource (RFC 8707) with the ``mcp`` scope.
-    """
-    if not orch:
-        return _nocache_json({"error": "not initialized"}, status_code=503)
-    if not bool(orch.get_setting("mcp.server_enabled", False)):
-        return _nocache_json(
-            {"error": "MCP server mode disabled (set mcp.server_enabled)"},
-            status_code=403,
-        )
-    if bool(orch.get_setting("mcp.oauth_required", False)):
-        from agents.core.mcp.oauth import MCPResourceServer
-        resource = _mcp_resource(request)
-        result = _get_mcp_rs().validate(
-            request.headers.get("authorization", ""), resource, required_scope="mcp")
-        if not result["ok"]:
-            return JSONResponse(
-                {"error": f"unauthorized: {result['error']}"}, status_code=401,
-                headers={"WWW-Authenticate": MCPResourceServer.challenge(resource)})
-    else:
-        # SEC (review F1/F2): with OAuth off, the MCP transport must enforce the
-        # SAME posture as every other user route (HF-1) — a matching user/admin
-        # token if JARVIS_USER_TOKEN is set, else localhost-only (fail closed
-        # behind an untrusted proxy, HF-7). Without this gate a REMOTE caller could
-        # reach the read tools (dashboard/memory) over the MCP transport even though
-        # the equivalent HTTP routes are guarded.
-        if USER_TOKEN:
-            if not _request_is_authed(request):
-                return JSONResponse(
-                    {"error": "unauthorized: user token required"}, status_code=401)
-        elif _real_client_host(request) not in _LOCALHOSTS:
-            return JSONResponse(
-                {"error": "MCP server disabled from network — set JARVIS_USER_TOKEN to enable remote access"},
-                status_code=403,
-            )
-    # Thread the caller's user identity (same header user_guard reads) into the
-    # server so MUTATING route tools can enforce the per-identity gate. An admin
-    # token also satisfies the user gate (admin ⊇ user), so prefer whichever the
-    # caller sent. With JARVIS_USER_TOKEN unset this is irrelevant (localhost-trust
-    # dev posture applies inside _mcp_identity_check).
-    identity = request.headers.get("x-user-token") or request.headers.get("x-admin-token")
-    response = await _build_mcp_server().handle(message, identity=identity)
-    # JSON-RPC notifications produce no response body.
-    return _nocache_json(response if response is not None else {"ok": True})
 
 
 # ── END H10.5 MCP Server endpoints ────────────────────────────────

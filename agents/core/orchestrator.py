@@ -14,8 +14,6 @@ import time
 from pathlib import Path
 from typing import Callable, Optional
 
-from dotenv import load_dotenv
-
 from .agent import Agent
 from .router import IntentRouter
 from .config import JarvisConfig
@@ -27,8 +25,11 @@ from .checkpoint import CheckpointManager
 from .heartbeat import HeartbeatScheduler
 from .scheduler_service import SchedulerService
 from .autonomy_coordinator import AutonomyCoordinator
+from . import llm_control  # CLN-2: NL LLM-control detection + execution
 from .llm_control import detect_llm_control  # re-exported: NL LLM-control detection (CLN-2)
+from . import cognition_trace  # CLN-2: builds + persists the per-turn cognition trace
 from . import plugin_gatherer  # live-plugin data gathering (CLN-2)
+from .plugin_manager import PluginManager  # CLN-2: owns the live-plugin registry + I/O
 from .learning.loop import LearningLoop
 from .skills.loader import SkillLoader
 from .skills.importer import SkillImporter
@@ -53,28 +54,7 @@ from .errors import (
 from .channels.base import ChannelAdapter
 from .channels.manager import ChannelManager
 from .settings_db import get_all as _get_settings
-from .plugins.oauth import init_from_env as _oauth_init, load_token as _load_token
-from .plugins.weather import WeatherPlugin
-from .plugins.news import NewsPlugin
-from .plugins.cloud_llm import CloudLLMPlugin
-from .plugins.telegram_bot import TelegramBotPlugin
-from .plugins.gmail_plugin import GmailPlugin
-from .plugins.whatsapp_bridge import WhatsAppBridgePlugin
-from .plugins.spotify_plugin import SpotifyPlugin
-from .plugins.google_calendar import GoogleCalendarPlugin
-from .plugins.apple_health import AppleHealthPlugin
-from .plugins.websearch import WebSearchPlugin
-from .plugins.homebridge import HomebridgePlugin
-from .plugins.balance import BalanceReaderPlugin
-from .plugins.analytics import AnalyticsPlugin
-from .plugins.oracle_bridge import OracleBridgePlugin
-from .plugins.n8n import N8NPlugin
-from .plugins.sms_alerts import SMSAlertsPlugin
-from .plugins.crm_sync import CRMSyncPlugin
-from .plugins.iot_control import IoTControlPlugin
-from .plugins.worldview import WorldViewPlugin
-from .plugins.signal_layer import SignalLayerPlugin
-from .argus import ArgusInterface
+# Live-plugin classes + oauth helpers moved with the registry to PluginManager (CLN-2).
 
 logger = logging.getLogger("jarvis.orchestrator")
 
@@ -208,7 +188,7 @@ class Orchestrator:
             from .cognition.ensemble import EnsembleModule                                        # H21.5
             self.cognition.register_module("ensemble", EnsembleModule())
         # ── end optional components ──
-        self.plugins: dict = {}
+        self.plugin_manager = PluginManager()  # CLN-2: owns the live-plugin registry + I/O
         self.skills = SkillLoader()
         self.skill_importer = SkillImporter()
         self.marketplace = SkillMarketplace()
@@ -326,6 +306,17 @@ class Orchestrator:
         self.channel_manager.channels = value
 
     @property
+    def plugins(self) -> dict:
+        """CLN-2: the live-plugin registry now lives in PluginManager; this
+        delegating property keeps existing `orch.plugins[...]` / `.get(...)`
+        access working unchanged."""
+        return self.plugin_manager.plugins
+
+    @plugins.setter
+    def plugins(self, value: dict) -> None:
+        self.plugin_manager.plugins = value
+
+    @property
     def session_id(self) -> Optional[str]:
         val = _active_session.get()
         if val is _SESSION_UNSET:
@@ -393,99 +384,9 @@ class Orchestrator:
                 self.agents[agent_id] = agent
                 logger.info(f"Loaded: {agent_id}")
 
-        self.plugins["weather"] = WeatherPlugin()
-        self.plugins["news"] = NewsPlugin()
-        env_path = Path(__file__).resolve().parent.parent.parent / ".env"
-        load_dotenv(env_path)
-        self.plugins["cloud-llm"] = CloudLLMPlugin(
-            anthropic_key=os.environ.get("ANTHROPIC_API_KEY", ""),
-            openai_key=os.environ.get("OPENAI_API_KEY", ""),
-            gemini_key=os.environ.get("GEMINI_API_KEY", ""),
-        )
-        self.plugins["telegram"] = TelegramBotPlugin(
-            token=os.environ.get("TELEGRAM_BOT_TOKEN", ""),
-        )
-        _oauth_init()
-        _gmail_token = os.environ.get("GMAIL_ACCESS_TOKEN", "") or (_load_token("google") or {}).get("access_token", "")
-        self.plugins["gmail"] = GmailPlugin(
-            access_token=_gmail_token,
-        )
-        self.plugins["whatsapp"] = WhatsAppBridgePlugin(
-            bridge_url=os.environ.get("WHATSAPP_BRIDGE_URL", "http://192.168.1.100:3000"),
-        )
-        _spotify_token = os.environ.get("SPOTIFY_ACCESS_TOKEN", "") or (_load_token("spotify") or {}).get("access_token", "")
-        _spotify_refresh = os.environ.get("SPOTIFY_REFRESH_TOKEN", "") or (_load_token("spotify") or {}).get("refresh_token", "")
-        self.plugins["spotify"] = SpotifyPlugin(
-            client_id=os.environ.get("SPOTIFY_CLIENT_ID", ""),
-            client_secret=os.environ.get("SPOTIFY_CLIENT_SECRET", ""),
-            access_token=_spotify_token,
-            refresh_token=_spotify_refresh,
-        )
-        _cal_token = os.environ.get("GOOGLE_CALENDAR_TOKEN", "") or (_load_token("google") or {}).get("access_token", "")
-        self.plugins["google-calendar"] = GoogleCalendarPlugin(
-            access_token=_cal_token,
-        )
-        self.plugins["apple-health"] = AppleHealthPlugin(
-            bridge_url=os.environ.get("APPLE_HEALTH_BRIDGE_URL", "http://192.168.1.100:8081"),
-        )
-        self.plugins["homebridge"] = HomebridgePlugin(
-            bridge_url=os.environ.get("HOMEBRIDGE_URL", "http://192.168.1.100:8581"),
-            api_token=os.environ.get("HOMEBRIDGE_TOKEN", ""),
-        )
-        self.plugins["websearch"] = WebSearchPlugin(
-            tavily_api_key=os.environ.get("TAVILY_API_KEY", ""),
-            searxng_url=os.environ.get("SEARXNG_URL", ""),
-        )
-
-        self.plugins["balance"] = BalanceReaderPlugin(
-            ing_client_id=self.get_setting("plugins.gecko_ing_client_id", ""),
-            ing_client_secret=self.get_setting("plugins.gecko_ing_client_secret", ""),
-            libra_token=self.get_setting("plugins.gecko_libra_token", ""),
-            csv_path=self.get_setting("plugins.gecko_csv_path", ""),
-        )
-        self.plugins["analytics"] = AnalyticsPlugin(
-            ga4_service_account=self.get_setting("plugins.stark_ga4_service_account", ""),
-            ga4_property_id=self.get_setting("plugins.stark_ga4_property_id", ""),
-            # H22: local-first analytics is the default; the GA4 remote mirror is
-            # opt-in and OFF unless explicitly enabled.
-            ga4_enabled=bool(self.get_setting("plugins.stark_ga4_enabled", False)),
-        )
-
-        self.plugins["oracle-bridge"] = OracleBridgePlugin(
-            github_token=os.environ.get("GITHUB_TOKEN", ""),
-        )
-        self.oracle_bridge = self.plugins["oracle-bridge"]
-        self.plugins["n8n"] = N8NPlugin(
-            base_url=os.environ.get("N8N_BASE_URL", ""),
-            api_key=os.environ.get("N8N_API_KEY", ""),
-        )
-        self.plugins["sms-alerts"] = SMSAlertsPlugin(
-            account_sid=self.get_setting("plugins.twilio_account_sid", ""),
-            auth_token=self.get_setting("plugins.twilio_auth_token", ""),
-            from_number=self.get_setting("plugins.twilio_from_number", ""),
-        )
-        self.plugins["crm-sync"] = CRMSyncPlugin(
-            integration_token=self.get_setting("plugins.notion_integration_token", ""),
-            database_id=self.get_setting("plugins.notion_database_id", ""),
-        )
-        self.plugins["iot-control"] = IoTControlPlugin(
-            client_id=self.get_setting("plugins.tuya_client_id", ""),
-            secret=self.get_setting("plugins.tuya_secret", ""),
-            device_id=self.get_setting("plugins.tuya_device_id", ""),
-        )
-        # WorldView 4D OSINT (local-first; override host with WORLDVIEW_API_URL).
-        self.plugins["worldview"] = WorldViewPlugin(
-            api_url=os.environ.get("WORLDVIEW_API_URL", ""),
-        )
-        # Signal Layer — provider-neutral world intelligence (local-first; :8787).
-        # Read-only + fail-safe: a down service returns {"status":"unavailable"}.
-        self.plugins["signal-layer"] = SignalLayerPlugin(
-            api_url=os.environ.get("SIGNAL_LAYER_API_URL", ""),
-            api_token=os.environ.get("SIGNAL_LAYER_API_TOKEN", ""),
-        )
-        # Argus — one governed facade over WorldView + Signal Layer for world-intel
-        # queries. Built after both backends are registered; every call is gated.
-        self.argus = ArgusInterface.from_orchestrator(self)
+        # CLN-2: live-plugin registry build moved to PluginManager (byte-identical
+        # construction order + env/settings reads; sets self.oracle_bridge + self.argus).
+        self.plugin_manager.build(self)
 
         # Autonomy queue — durable self-tasking store (H6.1)
         try:
@@ -636,13 +537,8 @@ class Orchestrator:
         self.heartbeat_scheduler.stop()
         if self._settings_watcher_task:
             self._settings_watcher_task.cancel()
-        # Close all active plugins gracefully
-        for pid, plugin in self.plugins.items():
-            if hasattr(plugin, "close"):
-                try:
-                    await plugin.close()
-                except Exception as e:
-                    logger.warning(f"Error closing plugin {pid}: {e}")
+        # Close all active plugins gracefully (CLN-2: owned by PluginManager).
+        await self.plugin_manager.close_all()
         logger.info("Channels stopped")
 
     async def channel_handler(self, text: str, channel: str = "voice", **kwargs) -> Optional[str]:
@@ -1074,118 +970,10 @@ class Orchestrator:
         return synthesized
 
     def _update_cognition(self, text, intent, plugin_data, synthesized, t_classify, t_route, t_plugin, t_synthesize):
-        from core.router import INTENT_RULES
-        scoring = []
-        for kw in intent.context.get("keywords_found", []):
-            if kw in INTENT_RULES:
-                agents, surfaces, weight = INTENT_RULES[kw]
-                scoring.append({
-                    "keyword": kw,
-                    "weight": weight,
-                    "agents": agents,
-                    "category": kw
-                })
-        
-        if not scoring:
-            scoring = []
-
-        alternatives = []
-        for a, s in intent.context.get("scores", {}).items():
-            if a not in (intent.target_agents or ["jarvis"]):
-                alternatives.append({"agent": a, "score": s})
-
-        alternatives = sorted(alternatives, key=lambda x: -x["score"])
-
-        decision = {
-            "source": intent.context.get("source", "keyword_match"),
-            "confidence": intent.confidence,
-            "agents_selected": intent.target_agents or ["jarvis"],
-            "alternatives": alternatives,
-            "timing": {
-                "classify": t_classify,
-                "route": t_route,
-                "total": t_classify + t_route
-            }
-        }
-
-        trace = [
-            {"step": "classify", "duration_ms": t_classify, "result": intent.context.get("source", "keyword_match")},
-            {"step": "route", "duration_ms": t_route, "agents": intent.target_agents or ["jarvis"]}
-        ]
-        if plugin_data:
-            trace.append({"step": "plugin_data", "duration_ms": t_plugin, "plugins": list(plugin_data.keys())})
-        if synthesized:
-            trace.append({"step": "synthesize", "duration_ms": t_synthesize, "tokens": len(synthesized) // 4})
-
-        self.last_cognition = {
-            "scoring": scoring,
-            "decision": decision,
-            "trace": trace
-        }
-
-        # H9.2: persist to tracer ring buffer (defensive — never breaks a request)
-        try:
-            if self.tracer is not None:
-                model = ""
-                agents_selected = decision.get("agents_selected", [])
-                if agents_selected:
-                    first_agent = agents_selected[0]
-                    agent_obj = self.agents.get(first_agent)
-                    if agent_obj:
-                        model = agent_obj.config.get("model", "")
-                from .llm.tokenizer import estimate_tokens as _et
-                tokens_in = _et(text or "")
-                tokens_out = _et(synthesized or "")
-                # H10.24: estimate $ cost for this trace (local models → $0).
-                try:
-                    from .llm.cost_estimator import estimate_cost as _ec
-                    cost = _ec(model, tokens_in, tokens_out).get("total", 0.0)
-                except Exception:
-                    cost = 0.0
-                trace_dict = {
-                    "channel": getattr(self, "_last_channel", "unknown"),
-                    "text_preview": (text or "")[:120],
-                    "intent": decision.get("source", ""),
-                    "route": agents_selected[0] if agents_selected else "",
-                    "agents": agents_selected,
-                    "model": model,
-                    "tokens_in": tokens_in,
-                    "tokens_out": tokens_out,
-                    "cost": cost,
-                    "timings": {
-                        "classify": t_classify,
-                        "route": t_route,
-                        "plugin": t_plugin,
-                        "synthesize": t_synthesize,
-                        "total_ms": t_classify + t_route + t_plugin + t_synthesize,
-                    },
-                    "ok": True,
-                    "scoring": scoring,
-                    "full_trace": trace,
-                }
-                # H10.23: score the request live and attach it to the trace.
-                if getattr(self, "quality", None) is not None:
-                    try:
-                        trace_id = self.tracer.record(trace_dict)
-                        trace_dict["id"] = trace_id
-                        q = self.quality.record(trace_dict)
-                        trace_dict["quality"] = q
-                        # H21.1: anti-sycophancy axis (gated; master OFF = no-op).
-                        cog = getattr(self, "cognition", None)
-                        if cog is not None and cog.sub_enabled("honesty_enabled"):
-                            hm = cog.module("honesty")
-                            if hm is not None:
-                                _txt = trace_dict.get("text_preview") or trace_dict.get("output_preview") or ""
-                                trace_dict["honesty"] = hm.score_response(_txt, trace_id=trace_dict.get("id", ""))
-                        # H10.25: auto-flag low-scoring traces for human review.
-                        if getattr(self, "review_queue", None) is not None:
-                            self.review_queue.auto_flag(trace_dict, q.get("score"), self.quality.threshold)
-                    except Exception:
-                        logger.debug("quality scoring skipped", exc_info=True)
-                else:
-                    self.tracer.record(trace_dict)
-        except Exception as _te:
-            logger.debug(f"tracer.record skipped: {_te}")
+        """Build + persist the per-turn cognition trace (delegates to cognition_trace, CLN-2)."""
+        cognition_trace.update_cognition(
+            self, text, intent, plugin_data, synthesized,
+            t_classify, t_route, t_plugin, t_synthesize)
 
     def _detect_handoff(self, responses: dict[str, str]) -> Optional[str]:
         for agent_id, resp in responses.items():
@@ -1310,63 +1098,11 @@ class Orchestrator:
                 and _as_bool(self.get_setting("llm.chat_control", True)))
 
     def _control_cognition(self, action: str) -> dict:
-        return {
-            "scoring": [],
-            "decision": {"source": "llm-control", "confidence": 1.0,
-                         "agents_selected": ["jarvis"], "alternatives": [],
-                         "timing": {"classify": 0, "route": 0, "total": 0}},
-            "trace": [{"step": "llm_control", "duration_ms": 0, "result": action}],
-        }
+        return llm_control.control_cognition(action)
 
     async def _run_llm_control(self, action: str, model: Optional[str]) -> Optional[str]:
-        """Execute a detected LLM-control action via the controller and narrate
-        the real result in Jarvis's voice — it reflects what actually happened,
-        not theatre."""
-        ctrl = getattr(self, "lmstudio", None)
-        if ctrl is None:
-            return "LM Studio control is not available, sir."
-        router = getattr(self, "llm_router", None)
-        backend = getattr(router, "name", None) or "the local backend"
-
-        if action == "status":
-            st = await ctrl.status()
-            if not st.get("online"):
-                return "The language backend is offline, sir. Say 'start LM Studio' and I will bring it up."
-            name = st.get("active_model") or getattr(router, "active_model", None) or "an unidentified model"
-            return f"I am running {name} on {backend}, sir."
-
-        if action == "start":
-            res = await ctrl.start_server()
-            if res.get("status") == "ok":
-                return "LM Studio is already running, sir." if res.get("already_running") else "LM Studio is up, sir."
-            return f"I could not start LM Studio, sir — {res.get('reason') or 'the server did not come up'}."
-
-        if action == "load":
-            if not model:
-                return "Which model would you like me to load, sir?"
-            res = await ctrl.load_model(model)
-            status = res.get("status")
-            if status == "ok":
-                active = getattr(router, "active_model", None) or res.get("model") or model
-                if res.get("resolved_from"):
-                    return f"I matched '{res['resolved_from']}' to {active} and loaded it, sir."
-                return f"Loaded and running {active}, sir."
-            if status == "ambiguous":
-                cands = res.get("candidates") or []
-                shown = ", ".join(cands[:6])
-                return (f"Several models match '{model}', sir: {shown}. "
-                        "Which one shall I load?")
-            if status == "rejected":
-                return f"That is not a valid model id, sir: {model!r}."
-            return f"I could not load {model}, sir — {res.get('reason') or 'the load failed'}."
-
-        if action == "unload":
-            res = await ctrl.unload_model(model)
-            if res.get("status") == "ok":
-                return "Unloaded, sir." if model else "All models unloaded, sir."
-            return f"I could not unload, sir — {res.get('reason') or 'the unload failed'}."
-
-        return None
+        """Execute a detected LLM-control action (delegates to llm_control, CLN-2)."""
+        return await llm_control.run_llm_control(self, action, model)
 
     async def _recall_block(self, text: str) -> str:
         """Long-term memory recall injected into the prompt (RAG, all agents).
