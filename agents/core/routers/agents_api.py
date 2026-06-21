@@ -57,11 +57,19 @@ async def get_agent_soul(agent_id: str):
         raise HTTPException(status_code=404, detail="Agent not found")
 
     # Allow reading SOUL.md if the file physically exists, even if orch is not initialized (e.g. in tests)
+    # The id becomes a path segment below. The regex already forbids separators, but
+    # resolve the agent dir and require it to stay under the agents/ root — the
+    # path-traversal barrier CodeQL recognizes (and defense-in-depth). All file ops
+    # below derive from this checked path, never the raw id.
+    agent_dir = (_AGENTS_DIR / agent_id).resolve()
+    if not agent_dir.is_relative_to(_AGENTS_DIR):
+        raise HTTPException(status_code=404, detail="Agent not found")
+
     # The personalized overlay (SOUL.local.md, gitignored) wins when present —
     # same resolution as Agent._load_soul.
-    soul_path = _AGENTS_DIR / agent_id / "SOUL.local.md"
+    soul_path = agent_dir / "SOUL.local.md"
     if not soul_path.exists():
-        soul_path = _AGENTS_DIR / agent_id / "SOUL.md"
+        soul_path = agent_dir / "SOUL.md"
 
     orch = get_orch()
     if orch and agent_id not in orch.agents:
