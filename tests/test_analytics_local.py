@@ -213,3 +213,39 @@ class TestPluginInterface:
         camps = await plugin.get_campaign_performance()
         assert camps["mock"] is False
         assert "campaigns" in camps and "total_roas" in camps
+
+
+# ── retention + body bounds (review #2 / #3 hardening) ────────────────
+
+class TestRetention:
+    def test_prune_keeps_newest(self, store):
+        for i in range(10):
+            store.record_event("pageview", path=f"/p{i}")
+        deleted = store.prune(max_events=3)
+        assert deleted == 7
+        paths = {r["path"] for r in store.top_paths(days=0, limit=20)}
+        assert paths == {"/p7", "/p8", "/p9"}  # newest 3 kept
+
+    def test_prune_zero_is_noop(self, store):
+        for i in range(5):
+            store.record_event("pageview", path=f"/p{i}")
+        assert store.prune(max_events=0) == 0
+        assert len(store.top_paths(days=0, limit=20)) == 5
+
+
+class TestPropsBound:
+    def test_oversized_props_rejected(self):
+        import pydantic
+
+        from agents.core.routers.analytics import AnalyticsEvent
+
+        with pytest.raises(pydantic.ValidationError):
+            AnalyticsEvent(name="pv", props={f"k{i}": i for i in range(31)})  # >30 keys
+        with pytest.raises(pydantic.ValidationError):
+            AnalyticsEvent(name="pv", props={"big": "z" * 3000})  # >2048 bytes
+
+    def test_small_props_ok(self):
+        from agents.core.routers.analytics import AnalyticsEvent
+
+        ev = AnalyticsEvent(name="pv", props={"plan": "pro", "n": 3})
+        assert ev.props == {"plan": "pro", "n": 3}

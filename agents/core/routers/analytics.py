@@ -15,8 +15,10 @@ web-module globals. The cost/model-tier handlers are pure leaf calls into
 `core.cost_tracker`.
 """
 
+import json as _json
+
 from fastapi import APIRouter, Depends, Query
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 from agents.core.app_state import get_orch
 from agents.core.routers._deps import admin_guard, user_guard
@@ -42,6 +44,20 @@ class AnalyticsEvent(BaseModel):
     referrer: str | None = Field(default=None, max_length=512)
     session_id: str | None = Field(default=None, max_length=128)
     props: dict | None = Field(default=None)
+
+    @field_validator("props")
+    @classmethod
+    def _bound_props(cls, v):
+        """Bound the one free-form field at the parse layer (review #2): the other
+        fields are length-capped, but ``props`` was unbounded → reject (422) an
+        oversized bag rather than buffer/parse it."""
+        if v is None:
+            return v
+        if len(v) > 30:
+            raise ValueError("props has too many keys (max 30)")
+        if len(_json.dumps(v, ensure_ascii=False)) > 2048:
+            raise ValueError("props too large (max 2048 bytes serialized)")
+        return v
 
 
 @router.post("/api/analytics/event")

@@ -110,17 +110,44 @@ async def _admin_guard(request: Request):
 USER_TOKEN = os.environ.get("JARVIS_USER_TOKEN", "").strip()
 
 
+def _user_token_required() -> bool:
+    """True when a JARVIS_USER_TOKEN is configured (network posture).
+
+    When False the hub is in the localhost-only dev posture: the HTTP guard
+    trusts a localhost origin and requires no token (see ``_user_guard``). This
+    is the single source of truth reused by the MCP mutating-tool identity gate
+    so it can match the HTTP guard's unset-token behaviour exactly."""
+    return bool(USER_TOKEN)
+
+
+def _user_credential_ok(user_supplied: str = "", admin_supplied: str = "") -> bool:
+    """Validate a presented user credential the SAME way ``_user_guard`` does.
+
+    Request-free core of the user identity check, so a non-HTTP caller (the MCP
+    in-process mutating-tool path, which has no ``Request``) can enforce the
+    identical rule instead of forking it:
+
+      * a user token that matches ``JARVIS_USER_TOKEN`` (constant-time), OR
+      * an admin token that matches ``JARVIS_ADMIN_TOKEN`` (admin ⊇ user).
+
+    Only meaningful when ``_user_token_required()`` is True; with no token
+    configured the localhost-trust posture applies and no credential is needed."""
+    if USER_TOKEN and user_supplied and secrets.compare_digest(user_supplied, USER_TOKEN):
+        return True
+    # An admin token is a superset of user access — accept it too.
+    if ADMIN_TOKEN and admin_supplied and secrets.compare_digest(admin_supplied, ADMIN_TOKEN):
+        return True
+    return False
+
+
 async def _user_guard(request: Request):
     """Authorize a user-facing request or raise 401/403. See USER_TOKEN above."""
     if USER_TOKEN:
-        supplied = request.headers.get("x-user-token", "")
-        if supplied and secrets.compare_digest(supplied, USER_TOKEN):
+        if _user_credential_ok(
+            user_supplied=request.headers.get("x-user-token", ""),
+            admin_supplied=request.headers.get("x-admin-token", ""),
+        ):
             return
-        # An admin token is a superset of user access — accept it too.
-        if ADMIN_TOKEN:
-            admin_supplied = request.headers.get("x-admin-token", "")
-            if admin_supplied and secrets.compare_digest(admin_supplied, ADMIN_TOKEN):
-                return
         raise HTTPException(status_code=401, detail="user token required")
     # No token configured → only localhost may reach user routes. Fails closed
     # behind an untrusted reverse proxy (HF-7); JARVIS_TRUSTED_PROXY=1 opts into
@@ -159,13 +186,10 @@ def _client_ip(request: Request) -> str:
 
 def _request_is_authed(request: Request) -> bool:
     """True only if the request carries a *valid* user or admin token."""
-    ut = request.headers.get("x-user-token", "")
-    if USER_TOKEN and ut and secrets.compare_digest(ut, USER_TOKEN):
-        return True
-    at = request.headers.get("x-admin-token", "")
-    if ADMIN_TOKEN and at and secrets.compare_digest(at, ADMIN_TOKEN):
-        return True
-    return False
+    return _user_credential_ok(
+        user_supplied=request.headers.get("x-user-token", ""),
+        admin_supplied=request.headers.get("x-admin-token", ""),
+    )
 
 
 def _rate_limited(ip: str, now: float) -> bool:
@@ -623,211 +647,12 @@ async def chat_stream(req: ChatRequest):
     )
 
 
-# ── TTS endpoint ─────────────────────────────────────────────────
-
-class TTSRequest(BaseModel):
-    text: str = Field(..., max_length=4096)
-    lang: str = "ro"
-    voice: Optional[str] = None   # "xtts" (cloned), "elevenlabs", or an edge voice; None = default chain
-
-@app.post("/tts", dependencies=[Depends(_user_guard)])
-async def tts_endpoint(req: TTSRequest):
-    """Synthesize text to speech and return MP3 audio."""
-    try:
-        from core.voice.tts import HAS_EDGE, TTSEngine
-        if not HAS_EDGE:
-            return JSONResponse(
-                {"error": "edge-tts not installed. Run: pip install edge-tts"},
-                status_code=503,
-            )
-        from core.settings_db import get_value
-        engine = TTSEngine(default_voice=get_value("voice", "tts_voice", "en-GB-RyanNeural"))
-        audio_path = await engine.speak(req.text, voice=req.voice, lang=req.lang)
-        if not audio_path:
-            return JSONResponse({"error": "TTS synthesis failed"}, status_code=500)
-        return FileResponse(
-            audio_path,
-            media_type="audio/mpeg",
-            headers={"Cache-Control": "no-cache"},
-        )
-    except Exception:
-        logger.exception("TTS error")
-        return JSONResponse({"error": "internal error", "code": 500}, status_code=500)
-
-
-# ── Sentence-level streaming TTS (H5.16) ─────────────────────────
-#
-# `/tts` synthesizes the whole reply before any audio comes back, so the user waits
-# for the full message. `/tts/stream` splits the reply into sentences and streams each
-# one's audio as soon as it's synthesized, so playback can start after sentence #1.
-# Opt-in: gated by the `voice.sentence_streaming` setting (default off — back-compat).
-#
-# Wire framing (one frame per sentence, in order):
-#   <json-header>\n<raw-audio-bytes>
-# where the header is a single-line JSON object
-#   {"idx": int, "text": str, "lang": str, "bytes": int, "done": bool}
-# and exactly `bytes` audio bytes follow. A terminal frame {"done": true, "bytes": 0}
-# (no audio) closes the stream. A sentence that failed to synthesize gets bytes:0 and
-# is skipped by the client. This is multipart-free (no python-multipart) like /tts.
-
-def _tts_stream_enabled() -> bool:
-    """Whether sentence-level streaming TTS is turned on (default off)."""
-    from core.settings_db import get_value
-    return bool(get_value("voice", "sentence_streaming", False))
-
-
-@app.post("/tts/stream", dependencies=[Depends(_user_guard)])
-async def tts_stream_endpoint(req: TTSRequest):
-    """Stream sentence-by-sentence TTS audio frames (opt-in). See module comment."""
-    import json as _json
-
-    from core.voice.tts import HAS_EDGE, TTSEngine
-
-    if not _tts_stream_enabled():
-        return JSONResponse(
-            {"error": "sentence streaming disabled. Enable voice.sentence_streaming.",
-             "enabled": False},
-            status_code=409,
-        )
-    if not HAS_EDGE:
-        return JSONResponse(
-            {"error": "edge-tts not installed. Run: pip install edge-tts"},
-            status_code=503,
-        )
-    from core.settings_db import get_value
-    engine = TTSEngine(default_voice=get_value("voice", "tts_voice", "en-GB-RyanNeural"))
-
-    async def _gen():
-        try:
-            async for idx, sentence, path in engine.speak_stream(
-                req.text, voice=req.voice, lang=req.lang,
-            ):
-                audio = b""
-                if path:
-                    try:
-                        # Offload the per-chunk disk read so reading one sentence's
-                        # audio doesn't block the event loop mid-stream (audit A4).
-                        audio = await asyncio.to_thread(Path(path).read_bytes)
-                    except Exception:
-                        logger.warning("tts/stream: cannot read chunk %s", path)
-                        audio = b""
-                header = _json.dumps({
-                    "idx": idx, "text": sentence, "lang": req.lang,
-                    "bytes": len(audio), "done": False,
-                })
-                yield header.encode("utf-8") + b"\n" + audio
-        except Exception:
-            logger.exception("tts/stream error")
-        # Terminal frame.
-        yield _json.dumps({"idx": -1, "text": "", "lang": req.lang, "bytes": 0,
-                           "done": True}).encode("utf-8") + b"\n"
-
-    return StreamingResponse(
-        _gen(),
-        media_type="application/octet-stream",
-        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
-    )
-
-
-# ── STT endpoint (browser mic → local Whisper) ───────────────────
-#
-# The voice engines (Whisper/edge-tts/XTTS) were built for Howard — a mic wired to
-# the server. The HUD runs in a browser, so the loop is: browser captures audio
-# (getUserMedia/MediaRecorder) → POSTs the blob here → local Whisper transcribes →
-# normal /chat/stream. Honest degradation: if faster-whisper isn't installed we 503
-# with an install hint — never a fabricated transcript.
-
-_STT_ENGINE = None
-
-
-def _stt_engine():
-    """Lazily build and cache one Whisper engine (model load is expensive)."""
-    global _STT_ENGINE
-    if _STT_ENGINE is None:
-        from core.settings_db import get_value
-        from core.voice.stt import STTEngine
-        _STT_ENGINE = STTEngine(model_size=get_value("voice", "stt_model_size", "medium"))
-    return _STT_ENGINE
-
-
-@app.post("/api/voice/stt", dependencies=[Depends(_user_guard)])
-async def stt_endpoint(request: Request, lang: Optional[str] = Query(None)):
-    """Transcribe a raw audio body (browser MediaRecorder blob) via local Whisper.
-
-    Raw body (not multipart) keeps this dependency-free — no python-multipart needed.
-    Language falls back to the /admin `voice.stt_language` setting when the caller
-    doesn't pass ?lang=.
-    """
-    import tempfile
-
-    from core.voice.stt import HAS_WHISPER
-    if not HAS_WHISPER:
-        return JSONResponse(
-            {"error": "faster-whisper not installed. Run: pip install faster-whisper", "stt": False},
-            status_code=503,
-        )
-    from core.settings_db import get_value
-    lang = lang or get_value("voice", "stt_language", "ro")
-    tmp = None
-    try:
-        data = await request.body()
-        if not data:
-            return JSONResponse({"error": "empty audio"}, status_code=400)
-        with tempfile.NamedTemporaryFile(suffix=".webm", delete=False) as f:
-            f.write(data)
-            tmp = f.name
-        text = await _stt_engine().transcribe_async(tmp, language=lang)
-        return _nocache_json({"text": text, "lang": lang})
-    except Exception:
-        logger.exception("STT error")
-        return JSONResponse({"error": "internal error", "code": 500}, status_code=500)
-    finally:
-        if tmp:
-            try:
-                os.unlink(tmp)
-            except Exception:
-                pass
-
-
-@app.get("/api/voice/capabilities")
-async def voice_capabilities():
-    """What the voice loop can ACTUALLY do on this host — drives the HUD honestly.
-
-    (The browser always has a fully-local `speechSynthesis` fallback for TTS, which the
-    HUD knows about; this reports only the server-side engines.)
-    """
-    from core.voice.stt import HAS_WHISPER
-    try:
-        from core.voice.tts import HAS_EDGE
-    except Exception:
-        HAS_EDGE = False
-    try:
-        from core.voice.tts import HAS_KOKORO
-    except Exception:
-        HAS_KOKORO = False
-    xtts = bool(os.getenv("XTTS_SERVER_URL"))
-    eleven = bool(os.getenv("ELEVENLABS_API_KEY"))
-    return _nocache_json({
-        "stt": bool(HAS_WHISPER),                       # local Whisper available
-        "tts": bool(HAS_EDGE or HAS_KOKORO or xtts or eleven),
-        "tts_local": bool(xtts or HAS_KOKORO),          # an on-device TTS path exists
-        "providers": {
-            "stt": "faster-whisper" if HAS_WHISPER else None,
-            "xtts": xtts, "elevenlabs": eleven, "edge_tts": bool(HAS_EDGE), "kokoro": bool(HAS_KOKORO),
-        },
-    })
+# Voice routes (/tts, /tts/stream, /api/voice/*) extracted to routers/voice.py (CLN-3).
 
 
 # ── Status (HUD-compatible) ──────────────────────────────────────
 
-@app.get("/api/health/components")
-async def component_health():
-    """A8: which optional components initialized (vs failed silently)."""
-    reg = getattr(orch, "components", None) if orch else None
-    if reg is None:
-        return _nocache_json({"components": {}, "summary": "registry unavailable"})
-    return _nocache_json({"components": reg.health(), "failed": reg.failed(),
-                          "summary": reg.summary()})
+# ... extracted to routers/status.py (CLN-3)
 
 
 _llm_ready_cache = {"state": "unknown", "model": None, "at": 0.0}
@@ -872,30 +697,7 @@ async def _llm_ready() -> dict:
     return {"state": state, "model": model}
 
 
-@app.get("/status")
-async def status():
-    if not orch:
-        return _nocache_json({"status": "starting"})
-    enriched = _enrich_agents()
-    voice_state = "idle"
-    lm_online = orch.llm_router.name != "none"
-    ready = await _llm_ready()
-    from agents import __version__
-    return _nocache_json({
-        "version": __version__,
-        "sys": _sys_info(),
-        "voice_state": voice_state,
-        "lm_online": lm_online,                       # backend configured/reachable
-        "model_state": ready["state"],                # ready | no_model | offline (truthful)
-        "model_loaded": ready["state"] == "ready",
-        "loaded_model": ready["model"],               # the actually-resident model, or None
-        "configured_model": getattr(orch.llm_router, "active_model", None),
-        "llm_backend": orch.llm_router.name,
-        "active_model": getattr(orch.llm_router, "active_model", None),
-        "agents": [{"id": a["id"], "status": a["status"]} for a in enriched],
-        "agents_online": sum(1 for a in enriched if a["status"] != "idle"),
-        "agents_total": len(enriched),
-    })
+# ... /status extracted to routers/status.py (CLN-3)
 
 
 @app.get("/api/agents", dependencies=[Depends(_user_guard)])
@@ -911,168 +713,9 @@ _dashboard_cache = {"weather": "", "news": [], "cached_at": 0}
 _dashboard_lock = asyncio.Lock()
 
 
-@app.get("/dashboard", dependencies=[Depends(_user_guard)])
-async def dashboard():
-    if not orch:
-        return JSONResponse({"error": "not initialized"}, status_code=503)
-    now = time.time()
-    if now - _dashboard_cache.get("cached_at", 0) > 120:
-        async with _dashboard_lock:
-            # Re-check inside the lock: a concurrent request may have just refreshed.
-            if now - _dashboard_cache.get("cached_at", 0) > 120:
-                try:
-                    weather_plugin = orch.plugins.get("weather")
-                    w = await weather_plugin.get_weather("") if weather_plugin else ""
-                    _dashboard_cache["weather"] = w.strip()
-                except Exception:
-                    _dashboard_cache["weather"] = _dashboard_cache.get("weather", "")
-                _dashboard_cache["cached_at"] = now
-
-    raw = _dashboard_cache["weather"]
-    w_temp = "—"; w_desc = "Indisponibil"; w_wind = "—"; w_humidity = "—"
-    if raw:
-        parts = raw.split(", ")
-        for p in parts:
-            if "°" in p and ("+" in p or "-" in p):
-                cleaned = p.split(":")[-1].strip().replace("+", "").replace("°C", "").strip()
-                if cleaned:
-                    w_temp = cleaned
-            elif "humidity" in p:
-                w_humidity = p.replace(" humidity", "").strip()
-            elif "wind" in p:
-                w_wind = p.replace(" wind", "").strip()
-            elif p and "°" not in p and ":" not in p:
-                candidate = p.strip()
-                if candidate and len(candidate) > 2:
-                    w_desc = candidate
-    weather_data = {
-        "city": "București",
-        "temp": w_temp,
-        "desc": w_desc,
-        "wind": w_wind,
-        "humidity": w_humidity,
-        "feels": "—",
-        "updated": "—",
-        "forecast": [],
-    }
-
-    calendar_data = _dashboard_cache.get("calendar", [])
-    if now - _dashboard_cache.get("calendar_cached_at", 0) > 120 and orch:
-        async with _dashboard_lock:
-            # Re-check inside the lock to avoid a redundant concurrent fetch.
-            if now - _dashboard_cache.get("calendar_cached_at", 0) > 120:
-                try:
-                    cal_plugin = orch.plugins.get("google-calendar")
-                    if cal_plugin and cal_plugin.access_token:
-                        events = await cal_plugin.get_today_events()
-                        if events and not (len(events) == 1 and "error" in events[0]):
-                            calendar_data = events
-                            _dashboard_cache["calendar"] = events
-                            _dashboard_cache["calendar_cached_at"] = now
-                except Exception:
-                    pass
-            else:
-                calendar_data = _dashboard_cache.get("calendar", [])
-
-    notifications = []
-
-    return _nocache_json({
-        "weather": weather_data,
-        "calendar": calendar_data,
-        "notifications": notifications,
-    })
-
-
-@app.get("/tasks", dependencies=[Depends(_user_guard)])
-async def get_tasks():
-    if not orch:
-        return JSONResponse({"error": "not initialized"}, status_code=503)
-    
-    try:
-        all_tasks = orch.autonomy_queue.list(limit=30)
-    except Exception:
-        all_tasks = []
-        
-    # Format and enrich tasks for both backend model schema and frontend React network/widgets schema
-    def format_task(t):
-        if hasattr(t, "to_dict"):
-            d = t.to_dict()
-        else:
-            d = dict(t)
-        # Ensure owner, state, label, and project are present for React component compatibility (e.g. NetworkBrain)
-        d["owner"] = d.get("owner") or d.get("agent_id") or "jarvis"
-        d["state"] = d.get("state") or d.get("status") or "done"
-        d["label"] = d.get("label") or d.get("title") or "Task"
-        d["project"] = d.get("project") or d.get("kind") or "Autonomy"
-        return d
-
-    # 1. Check for running tasks first
-    running_tasks = [t for t in all_tasks if getattr(t, "status", None) == "running" or getattr(t, "state", None) == "running"]
-    
-    if running_tasks:
-        result_tasks = [format_task(t) for t in running_tasks]
-    elif all_tasks:
-        # 2. If no running tasks, return recent history
-        result_tasks = [format_task(t) for t in all_tasks]
-    else:
-        # H7.7: No active tasks — return empty list instead of misleading dummy data
-        result_tasks = []
-        
-    return _nocache_json({"tasks": result_tasks})
-
-
-@app.get("/ticker", dependencies=[Depends(_user_guard)])
-async def get_ticker():
-    if not orch:
-        return _nocache_json({"error": "not initialized"}, status_code=503)
-    items = []
-    
-    # 1. Add active unhealthy signals from observer
-    if orch.observer:
-        try:
-            obs_status = orch.observer.status()
-            for key, state in obs_status.get("signals", {}).items():
-                if not state.get("healthy", True):
-                    items.append({
-                        "agent": state.get("agent", "steve"),
-                        "verb": "WARNING",
-                        "obj": state.get("detail", key),
-                        "pct": 100,
-                        "pri": "high" if state.get("severity") == "CRITICAL" else "mid",
-                    })
-        except Exception:
-            pass
-
-    # 2. Add active unhealthy signals from event watcher
-    if getattr(orch, "event_watcher", None):
-        try:
-            watcher_state = orch.event_watcher._state
-            for key, healthy in watcher_state.items():
-                if not healthy:
-                    agent = "gecko" if "finance" in key else ("pepper" if "calendar" in key else ("stark" if "email" in key else "hercules"))
-                    items.append({
-                        "agent": agent,
-                        "verb": "ALERT",
-                        "obj": f"Unhealthy event signal: {key}",
-                        "pct": 100,
-                        "pri": "mid",
-                    })
-        except Exception:
-            pass
-
-    # 3. Fallback to active agent standby messages so it's never empty
-    if not items:
-        enriched = _enrich_agents()
-        for a in enriched:
-            items.append({
-                "agent": a["id"],
-                "verb": "monitoring" if a["status"] == "ready" else "standby",
-                "obj": a["role"],
-                "pct": 50,
-                "pri": "mid",
-            })
-            
-    return _nocache_json({"ticker": items})
+# CLN-3: /dashboard, /tasks, /ticker extracted to agents/core/routers/dashboard.py
+# (`_dashboard_cache` + `_dashboard_lock` above stay here — the router reads them
+#  through `sys.modules.get("agents.web")` so tests' monkeypatch is still observed.)
 
 
 _AGENT_ID_RE = re.compile(r"^[a-z0-9_-]{1,64}$")
@@ -1135,17 +778,7 @@ async def get_agents():
 # CLN-3: /sessions + /sessions/resume extracted to agents/core/routers/sessions.py
 
 
-@app.get("/security")
-async def get_security():
-    if not orch:
-        return JSONResponse({"error": "not initialized"}, status_code=503)
-    guardrails = orch.security is not None
-    return {
-        "enabled": guardrails,
-        "scanners": ["secrets", "pii"] if guardrails else [],
-        "ssrf_protection": True,
-        "audit_count": orch.checkpoints.count() if hasattr(orch.checkpoints, "count") else 0,
-    }
+# /security route extracted to agents/core/routers/security_hud.py (CLN-3).
 
 
 # /bench route extracted to agents/core/routers/bench.py (CLN-3).
@@ -1223,13 +856,7 @@ async def agent_templates_instantiate(req: Request):
 
 # ── H7.11 Learning-loop promotions ────────────────────────────────────────────
 
-@app.post("/api/learning/propose", dependencies=[Depends(_admin_guard)])
-async def learning_propose():
-    """Run the learning loop now: propose agent promotions into the decision inbox."""
-    if not orch or not hasattr(orch, "_run_learning_loop"):
-        return JSONResponse({"error": "not available"}, status_code=503)
-    proposals = await orch._run_learning_loop()
-    return _nocache_json({"ok": True, "proposed": proposals, "count": len(proposals)})
+# /api/learning/propose extracted to agents/core/routers/learning.py (CLN-3)
 
 
 # /api/workflows step/generate + hierarchical extracted to routers/workflows.py (CLN-3).
@@ -1296,9 +923,13 @@ from agents.core.routers.multimodal import router as _multimodal_router  # noqa:
 from agents.core.routers.notes import router as _notes_router  # noqa: E402
 from agents.core.routers.oauth import router as _oauth_router  # noqa: E402
 from agents.core.routers.pairing import router as _pairing_router  # noqa: E402
+from agents.core.routers.dashboard import router as _dashboard_router  # noqa: E402
+from agents.core.routers.dashboard import dashboard  # noqa: E402  (re-export: MCP route-tool + drift guard resolve web.dashboard)
 from agents.core.routers.payments import router as _payments_router  # noqa: E402
+from agents.core.routers.voice import router as _voice_router  # noqa: E402
 from agents.core.routers.eval import router as _eval_router  # noqa: E402
 from agents.core.routers.heartbeat import router as _heartbeat_router  # noqa: E402
+from agents.core.routers.learning import router as _learning_router  # noqa: E402
 from agents.core.routers.workflows import router as _workflows_router  # noqa: E402
 from agents.core.routers.plugins import router as _plugins_router  # noqa: E402
 from agents.core.routers.quality import router as _quality_router  # noqa: E402
@@ -1307,7 +938,10 @@ from agents.core.routers.sessions import router as _sessions_router  # noqa: E40
 from agents.core.routers.rooms import router as _rooms_router  # noqa: E402
 from agents.core.routers.secrets import router as _secrets_router  # noqa: E402
 from agents.core.routers.security import router as _security_router  # noqa: E402
+from agents.core.routers.security_hud import router as _security_hud_router  # noqa: E402
 from agents.core.routers.skills import router as _skills_router  # noqa: E402
+from agents.core.routers.status import router as _status_router  # noqa: E402
+from agents.core.routers.status import status  # noqa: E402  (re-export: MCP route-tool + drift guard resolve web.status)
 from agents.core.routers.webhooks import router as _webhooks_router  # noqa: E402
 
 app.include_router(_webhooks_router)
@@ -1323,7 +957,9 @@ app.include_router(_arena_router)
 app.include_router(_review_router)
 app.include_router(_quality_router)
 app.include_router(_security_router)
+app.include_router(_security_hud_router)
 app.include_router(_skills_router)
+app.include_router(_status_router)
 app.include_router(_data_spaces_router)
 app.include_router(_secrets_router)
 app.include_router(_mesh_router)
@@ -1336,10 +972,13 @@ app.include_router(_memory_kg_router)
 app.include_router(_analytics_router)
 app.include_router(_admin_router)
 app.include_router(_integrations_router)
+app.include_router(_dashboard_router)
 app.include_router(_payments_router)
+app.include_router(_voice_router)
 app.include_router(_multimodal_router)
 app.include_router(_eval_router)
 app.include_router(_heartbeat_router)
+app.include_router(_learning_router)
 app.include_router(_workflows_router)
 app.include_router(_plugins_router)
 app.include_router(_sessions_router)
@@ -1384,47 +1023,7 @@ async def schedule_parse(req: Request):
     return _nocache_json(result, status_code=200 if result.get("ok") else 422)
 
 
-@app.get("/learning")
-async def get_learning():
-    if not orch:
-        return JSONResponse({"error": "not initialized"}, status_code=503)
-    return {
-        "stats": orch.learning.get_stats(active_ids=set(orch.agents.keys())),
-        "optimizations": {
-            aid: orch.learning.optimize_prompt(aid)
-            for aid in orch.agents
-        },
-        "promotion_suggestions": orch.learning.suggest_promotions(active_ids=set(orch.agents.keys())),
-    }
-
-
-class PromoteRequest(BaseModel):
-    bench_agent: str
-
-
-@app.post("/learning/promote", dependencies=[Depends(_admin_guard)])
-async def learning_promote(body: PromoteRequest):
-    """Manually promote a bench agent to active status."""
-    if not orch:
-        return JSONResponse({"error": "not initialized"}, status_code=503)
-    bench_id = body.bench_agent.strip().lower()
-    if not bench_id:
-        return JSONResponse({"error": "bench_agent is required"}, status_code=400)
-    promoted = orch.promote_bench_agent(bench_id)
-    if not promoted:
-        # Honest result: a no-op (unknown bench id, or already active) is not a
-        # success — say so with 404 so the HUD shows an error, not a fake "ok".
-        return JSONResponse(
-            {"ok": False, "bench_agent": bench_id, "promoted": False,
-             "error": f"'{bench_id}' is not a promotable bench agent (unknown or already active)"},
-            status_code=404,
-        )
-    return _nocache_json({
-        "ok": True,
-        "bench_agent": bench_id,
-        "promoted": promoted,
-        "active_agents": list(orch.agents.keys()),
-    })
+# /learning and /learning/promote (+ PromoteRequest) extracted to agents/core/routers/learning.py (CLN-3)
 
 
 # ── Admin panel ──────────────────────────────────────────────────
@@ -1837,11 +1436,16 @@ def _build_mcp_mutating_route_tools():
     are on, the curated mutating route(s) are bound to an in-process write adapter
     (NOT a loopback HTTP call) and every invocation is audited via ``orch.audit``.
 
-    SECURITY: the in-process adapter has no ``Request`` and therefore does NOT
-    enforce the HTTP route's per-identity ``user_guard``. The allow-list + double
-    kill-switch + audit are the gate for now (LAN-only). Per-identity guard wiring
-    is the remaining hardening before enabling on a network-exposed instance — see
-    the caveat block in ``agents/core/mcp/route_tools.py``.
+    SECURITY: the in-process adapter has no ``Request``, so it cannot run
+    ``Depends(user_guard)`` directly. Instead a per-identity gate
+    (``_mcp_identity_check``) is threaded onto every mutating tool; it re-applies
+    the SAME rule ``user_guard`` uses (``_user_token_required`` /
+    ``_user_credential_ok``). A mutating call without a valid identity is refused
+    even with both kill-switches on. The transport (``mcp_server_rpc``) extracts
+    the credential from the request headers and passes it to the server. Residual
+    gap: a leaked token alone drives the write surface, and the unset-token posture
+    trusts the in-process call unconditionally — see the caveat block in
+    ``agents/core/mcp/route_tools.py``.
     """
     from agents.core.mcp.route_tools import build_mutating_route_tools
 
@@ -1860,7 +1464,24 @@ def _build_mcp_mutating_route_tools():
 
     invokers = {"memory_remember": _invoke_memory_remember}
     auditor = orch.audit if orch else None
-    return build_mutating_route_tools(invokers, auditor=auditor)
+    return build_mutating_route_tools(
+        invokers, auditor=auditor, identity_check=_mcp_identity_check
+    )
+
+
+def _mcp_identity_check(token: Optional[str]) -> bool:
+    """Per-identity gate for MCP mutating tools — the SAME rule as ``user_guard``.
+
+    Reuses the HTTP guard's primitives so the rule is never forked:
+      * If ``JARVIS_USER_TOKEN`` is UNSET → localhost-only dev posture: the HTTP
+        guard trusts a localhost origin and needs no token, so the in-process MCP
+        call (localhost-equivalent) is allowed with no credential. Dev unchanged.
+      * If it is SET → require a credential that matches ``JARVIS_USER_TOKEN`` (or
+        a matching ``JARVIS_ADMIN_TOKEN``, admin ⊇ user), exactly as the HTTP 401
+        path checks it."""
+    if not _user_token_required():
+        return True
+    return _user_credential_ok(user_supplied=token or "", admin_supplied=token or "")
 
 
 @app.get("/api/mcp/server")
@@ -1947,7 +1568,29 @@ async def mcp_server_rpc(message: dict, request: Request):
             return JSONResponse(
                 {"error": f"unauthorized: {result['error']}"}, status_code=401,
                 headers={"WWW-Authenticate": MCPResourceServer.challenge(resource)})
-    response = await _build_mcp_server().handle(message)
+    else:
+        # SEC (review F1/F2): with OAuth off, the MCP transport must enforce the
+        # SAME posture as every other user route (HF-1) — a matching user/admin
+        # token if JARVIS_USER_TOKEN is set, else localhost-only (fail closed
+        # behind an untrusted proxy, HF-7). Without this gate a REMOTE caller could
+        # reach the read tools (dashboard/memory) over the MCP transport even though
+        # the equivalent HTTP routes are guarded.
+        if USER_TOKEN:
+            if not _request_is_authed(request):
+                return JSONResponse(
+                    {"error": "unauthorized: user token required"}, status_code=401)
+        elif _real_client_host(request) not in _LOCALHOSTS:
+            return JSONResponse(
+                {"error": "MCP server disabled from network — set JARVIS_USER_TOKEN to enable remote access"},
+                status_code=403,
+            )
+    # Thread the caller's user identity (same header user_guard reads) into the
+    # server so MUTATING route tools can enforce the per-identity gate. An admin
+    # token also satisfies the user gate (admin ⊇ user), so prefer whichever the
+    # caller sent. With JARVIS_USER_TOKEN unset this is irrelevant (localhost-trust
+    # dev posture applies inside _mcp_identity_check).
+    identity = request.headers.get("x-user-token") or request.headers.get("x-admin-token")
+    response = await _build_mcp_server().handle(message, identity=identity)
     # JSON-RPC notifications produce no response body.
     return _nocache_json(response if response is not None else {"ok": True})
 
@@ -1986,54 +1629,10 @@ def _wf_store():
 # /plugins and /plugins/{plugin_id}/toggle extracted to agents/core/routers/plugins.py (CLN-3)
 
 
-@app.get("/learning/stats")
-async def learning_stats():
-    """Live learning stats for SystemsPanel."""
-    if not orch or not hasattr(orch, 'learning') or not orch.learning:
-        return _nocache_json({"interactions_total": 0, "success_rate": 0, "prompt_optimizations": [], "promotion_candidates": [], "demotion_warnings": []})
-    try:
-        stats = orch.learning.get_stats()
-        active_ids = list(stats.get("agents_tracked", stats.get("active_ids", [])))
-        optimizations = []
-        for aid in active_ids:
-            opt = orch.learning.optimize_prompt(aid) if hasattr(orch.learning, 'optimize_prompt') else None
-            if opt:
-                optimizations.append({"agent": aid, "before": "", "after": opt, "improvement": ""})
-        promotions = orch.learning.suggest_promotions(active_ids) if hasattr(orch.learning, 'suggest_promotions') else []
-        promos = [{"agent": p.get("bench_agent", p.get("agent", "")), "triggers": p.get("count", 0), "threshold": p.get("threshold", 0)} for p in promotions]
-        total = stats.get("total_interactions", 0)
-        successful = stats.get("successful", 0)
-        rate = successful / total if total > 0 else 0
-        return _nocache_json({
-            "interactions_total": total,
-            "success_rate": round(rate, 3),
-            "prompt_optimizations": optimizations,
-            "promotion_candidates": promos,
-            "demotion_warnings": [],
-        })
-    except Exception:
-        return _nocache_json({"interactions_total": 0, "success_rate": 0, "prompt_optimizations": [], "promotion_candidates": [], "demotion_warnings": []})
+# /learning/stats extracted to agents/core/routers/learning.py (CLN-3)
 
 
-@app.get("/security/status")
-async def security_status():
-    """Return security system status."""
-    return _nocache_json({
-        "guardrails": {
-            "mode": "WARN",
-            "redact_count": 0,
-            "block_count": 0,
-        },
-        "scanners": {
-            "secret": {"patterns": 10, "findings": 0},
-            "pii": {"patterns": 6, "findings": 0},
-        },
-        "ssrf": {
-            "enabled": True,
-            "blocked_requests": 0,
-            "max_redirects": 5,
-        },
-    })
+# /security/status route extracted to agents/core/routers/security_hud.py (CLN-3).
 
 
 # /bench/stats route extracted to agents/core/routers/bench.py (CLN-3).
@@ -2042,9 +1641,5 @@ async def security_status():
 # /heartbeat/* routes extracted to agents/core/routers/heartbeat.py (CLN-3).
 
 
-@app.get("/api/status")
-async def api_status():
-    """Return service version, agent count, and health status."""
-    from agents import AGENT_COUNT, __version__
-    return {"version": __version__, "agents": AGENT_COUNT, "status": "ok"}
+# ... /api/status extracted to routers/status.py (CLN-3)
 

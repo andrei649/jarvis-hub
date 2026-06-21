@@ -22,6 +22,7 @@ from typing import Awaitable, Callable, Optional
 
 from agents.core.mcp.route_tools import (
     ROUTE_TOOL_PREFIX,
+    MutatingIdentityError,
     MutatingRouteTool,
     RouteTool,
     normalize_result,
@@ -86,6 +87,13 @@ class JarvisMCPServer:
         self.mutating_route_tools: dict[str, MutatingRouteTool] = {
             rt.tool_name: rt for rt in (mutating_route_tools or [])
         }
+        # SEC (review F4): a name in BOTH sets would let the read path (no identity,
+        # no audit) shadow the mutating path in call_tool — refuse to build rather
+        # than silently bypass the write gate.
+        _collision = set(self.route_tools) & set(self.mutating_route_tools)
+        if _collision:
+            raise ValueError(
+                f"route tool name(s) in both read-only and mutating sets: {sorted(_collision)}")
 
     # ── tools ────────────────────────────────────────────────────────────────
 
@@ -120,11 +128,23 @@ class JarvisMCPServer:
             tools.append(mt.descriptor())
         return tools
 
-    async def call_tool(self, name: str, arguments: Optional[dict] = None) -> dict:
-        """Run a tool; return an MCP tool-result ({content, isError})."""
+    async def call_tool(
+        self,
+        name: str,
+        arguments: Optional[dict] = None,
+        identity: Optional[str] = None,
+    ) -> dict:
+        """Run a tool; return an MCP tool-result ({content, isError}).
+
+        ``identity`` is the caller's presented credential (e.g. ``JARVIS_USER_TOKEN``),
+        threaded from the MCP transport. It is required only by MUTATING route
+        tools, which enforce it with the same rule as the HTTP ``user_guard``; a
+        missing/invalid identity refuses the write. Read-only tools and agent
+        tools ignore it (unchanged behaviour).
+        """
         arguments = arguments or {}
         if name.startswith(ROUTE_TOOL_PREFIX):
-            return await self._call_route_tool(name, arguments)
+            return await self._call_route_tool(name, arguments, identity)
         agent_id = name[len("ask_"):] if name.startswith("ask_") else ""
         if not agent_id or agent_id not in self.agents:
             return self._tool_error(f"unknown tool: {name}")
@@ -139,14 +159,20 @@ class JarvisMCPServer:
             return self._tool_error(f"agent error: {exc}")
         return {"content": [{"type": "text", "text": str(reply)}], "isError": False}
 
-    async def _call_route_tool(self, name: str, arguments: dict) -> dict:
-        """Dispatch an allow-listed READ-ONLY route tool IN-PROCESS.
+    async def _call_route_tool(
+        self, name: str, arguments: dict, identity: Optional[str] = None
+    ) -> dict:
+        """Dispatch an allow-listed route tool IN-PROCESS (read or write).
 
         The allow-list is the gate: a ``route_<name>`` that is not in
         ``self.route_tools`` (read) or ``self.mutating_route_tools`` (write) is
         refused, so a non-allow-listed route name can never reach a handler. The
         handler is called directly (no loopback HTTP), and its JSON payload is
-        returned as text content. Mutating tools additionally audit every call.
+        returned as text content.
+
+        Read-only tools need no identity. Mutating tools enforce ``identity``
+        with the same rule as the HTTP ``user_guard`` (and audit every call,
+        including a refusal); an invalid identity is refused without writing.
         """
         rt = self.route_tools.get(name)
         if rt is not None:
@@ -164,8 +190,13 @@ class JarvisMCPServer:
         mt = self.mutating_route_tools.get(name)
         if mt is not None:
             try:
-                raw = await mt.call(arguments)  # writes an audit row (ok/error)
+                # Per-identity gate runs inside call(); audits the refusal too.
+                raw = await mt.call(arguments, token=identity)
                 payload = normalize_result(raw)
+            except MutatingIdentityError as exc:
+                # A write refused for want of a valid identity — clear error,
+                # no stack trace, no write performed (audited as refused).
+                return self._tool_error(f"identity required: {exc}")
             except Exception as exc:  # never leak a stack trace to an external client
                 return self._tool_error(f"route error: {exc}")
             return {
@@ -181,8 +212,14 @@ class JarvisMCPServer:
 
     # ── JSON-RPC dispatch ────────────────────────────────────────────────────
 
-    async def handle(self, message: dict) -> Optional[dict]:
-        """Dispatch one JSON-RPC 2.0 message; return the response (or None for a notification)."""
+    async def handle(self, message: dict, identity: Optional[str] = None) -> Optional[dict]:
+        """Dispatch one JSON-RPC 2.0 message; return the response (or None for a notification).
+
+        ``identity`` is the caller's credential, supplied by the transport (the
+        HTTP/SSE route in web.py reads the ``X-User-Token``/``X-Admin-Token``
+        header; a stdio loop may pass it explicitly). It is forwarded to
+        ``call_tool`` and enforced only for mutating route tools.
+        """
         msg_id = message.get("id")
         method = message.get("method", "")
         params = message.get("params") or {}
@@ -199,7 +236,7 @@ class JarvisMCPServer:
             return self._ok(msg_id, {"tools": self.list_tools()})
         if method == "tools/call":
             name = params.get("name", "")
-            result = await self.call_tool(name, params.get("arguments"))
+            result = await self.call_tool(name, params.get("arguments"), identity=identity)
             return self._ok(msg_id, result)
         if method == "ping":
             return self._ok(msg_id, {})
