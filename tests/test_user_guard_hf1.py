@@ -75,6 +75,13 @@ def test_user_guard_wired_on_chat_route(monkeypatch):
     suite-wide no-op override (conftest) so the real dependency runs; the
     autouse fixture re-establishes it for the next test, so no restore here."""
     web.app.dependency_overrides.pop(web._user_guard, None)
+    # /api/cognition now runs through the extracted _deps.user_guard wrapper
+    # (CLN-3 ops router), so pop that override too to let the real guard run.
+    try:
+        from agents.core.routers._deps import user_guard as _ru
+        web.app.dependency_overrides.pop(_ru, None)
+    except Exception:
+        pass
     monkeypatch.setattr(web, "USER_TOKEN", "")
     client = TestClient(web.app)  # connects as host 'testclient' (non-localhost)
     # No token, network client → blocked.
