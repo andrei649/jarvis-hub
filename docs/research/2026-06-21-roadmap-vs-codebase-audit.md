@@ -4,6 +4,13 @@
 > `.github/`, `docs/`. Verdicts are grounded in concrete `file:line` / module evidence (see each row).
 > Input roadmap: the uploaded `PLAN.md` ("Competitive Gap Plan: OSS Repos → Bigger Pre-1.0 Roadmap"),
 > a **proposed** 0.19–1.0 expansion. The numbers `0.19…0.63` are that plan's, not the current BACKLOG version line.
+>
+> **This audit is now folded into [`BACKLOG.md` → "Competitive-Gap Roadmap"](../../BACKLOG.md#-competitive-gap-roadmap-product-depth)** as the single source of truth.
+
+> **Update 2026-06-22** — shipped since this audit: **0.32 Mission Workspaces** (SEED→✅ DONE, #301),
+> **backup/restore + drill** (0.14/0.20/0.63 PARTIAL→✅ DONE, #302). **In open PRs:** **0.14 data export**
+> (PARTIAL→🟢 export half, #303, auto-merging); **0.56 Trust Center + 0.60 Local Analytics** HUD panels (#300, live
+> audit-verify + north-star meter). Still the #1 finish-first: **0.36 Action-Manifest unify** (not started).
 
 ## TL;DR
 
