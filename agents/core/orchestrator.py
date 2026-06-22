@@ -35,7 +35,7 @@ from .skills.loader import SkillLoader
 from .skills.importer import SkillImporter
 from .skills.marketplace import SkillMarketplace
 from .mcp.client import MCPManager
-from .autonomy import AutonomyWorker, TaskQueue, AutonomyPolicy, PreferenceStore, InterruptBudget
+from .autonomy import AutonomyWorker, TaskQueue, AutonomyPolicy, PreferenceStore, InterruptBudget, MissionStore
 from .autonomy import ProactiveObserver, default_probes
 from .autonomy.reflection import DailyReflector
 from .autonomy.log_scanner import LogBugScanner
@@ -246,6 +246,11 @@ class Orchestrator:
         # ── Autonomy / Proactive Cortex (H6.1–H6.6) ──
         self.autonomy_queue = TaskQueue()
         self.autonomy_prefs = PreferenceStore()
+        # Mission Workspaces (0.32): persistent long-horizon workspaces — goal,
+        # plan, budget, pause/resume, on-disk artifacts + an append-only event
+        # audit trail. Independent of the task queue (a mission can span many
+        # tasks/turns and survive restarts).
+        self.missions = MissionStore()
         # /admin → autonomy.cap_per_action / daily_ceiling / interrupt_budget.
         # These were dataclass defaults (50/200/4); live-resynced each tick by the
         # autonomy coordinator (like autonomy.mode).
@@ -392,6 +397,7 @@ class Orchestrator:
         try:
             self.autonomy_queue.initialize()
             self.autonomy_prefs.initialize()
+            self.missions.initialize()
             self.autonomy.executor = self._autonomy.build_executor().execute
             self.observer = ProactiveObserver(self.autonomy, probes=default_probes())
 
