@@ -790,6 +790,7 @@ from agents.core.routers.arena import router as _arena_router  # noqa: E402
 from agents.core.routers.autonomy import router as _autonomy_router  # noqa: E402
 from agents.core.routers.bench import router as _bench_router  # noqa: E402
 from agents.core.routers.ops import router as _ops_router  # noqa: E402
+from agents.core.routers.backup import router as _backup_router  # noqa: E402
 from agents.core.routers.brain import router as _brain_router  # noqa: E402
 from agents.core.routers.browser import router as _browser_router  # noqa: E402
 from agents.core.routers.canvas import router as _canvas_router  # noqa: E402
@@ -871,6 +872,7 @@ app.include_router(_plugins_router)
 app.include_router(_sessions_router)
 app.include_router(_bench_router)
 app.include_router(_ops_router)
+app.include_router(_backup_router)
 
 
 # /api/digest/run (+ DigestRunBody) and /api/schedule/parse extracted to routers/tools.py (CLN-3)
