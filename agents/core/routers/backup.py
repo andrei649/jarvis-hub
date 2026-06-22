@@ -7,6 +7,9 @@ overwrites live state and is an operator CLI action (`python -m agents.core.back
 restore <name> <target> --force` with the server stopped). A verify target is
 resolved by matching the trusted backups listing, so no request value reaches a
 path expression.
+
+Also hosts the destructive sibling `POST /api/admin/forget` (H23.9): a confirm-gated,
+backup-first "forget me" purge of the user's structured content at rest.
 """
 
 import logging
@@ -15,6 +18,7 @@ from fastapi import APIRouter, Depends, Request
 from fastapi.responses import JSONResponse
 
 from agents.core import backup as _backup
+from agents.core import data_purge as _purge
 from agents.core.routers._deps import admin_guard
 from agents.core.web_helpers import nocache_json
 
@@ -67,3 +71,28 @@ async def backup_verify(req: Request):
         logger.warning("backup verify failed: %s", e)
         return JSONResponse({"error": "verify failed"}, status_code=500)
     return nocache_json(report)
+
+
+@router.post("/api/admin/forget", dependencies=[Depends(admin_guard)])
+async def forget_data(req: Request):
+    """Irreversibly erase the user's structured content (backup-first). Body: {confirm}.
+
+    Requires an explicit ``{"confirm": "FORGET"}`` body in addition to the admin guard —
+    a deliberate, hard-to-fat-finger acknowledgement. A snapshot is taken and verified
+    before anything is deleted, so the purge is recoverable from the archive it just made.
+    """
+    try:
+        body = await req.json()
+    except Exception:
+        body = {}
+    if (body or {}).get("confirm") != "FORGET":
+        return JSONResponse(
+            {"error": 'forget requires confirmation — send {"confirm": "FORGET"}'},
+            status_code=400,
+        )
+    try:
+        result = _purge.purge_data(backup_first=True)
+    except (OSError, ValueError, _purge.PurgeError) as e:
+        logger.warning("forget purge failed: %s", e)
+        return JSONResponse({"error": "forget failed"}, status_code=500)
+    return nocache_json(result)
