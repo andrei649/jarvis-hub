@@ -9,6 +9,8 @@ and read its budget + audit-trail. Reads are open (HUD polls them); every
 
 import logging
 
+from core.log_safe import log_safe
+
 from fastapi import APIRouter, Depends, Query, Request
 from fastapi.responses import JSONResponse
 
@@ -63,7 +65,7 @@ async def missions_create(req: Request):
     except (MissionError, ValueError) as e:
         # Fixed message keyed on the failure category — the exception object never
         # reaches the response (CodeQL: no info exposure); detail is logged instead.
-        logger.debug("mission create rejected: %s", e)
+        logger.debug("mission create rejected: %s", log_safe(str(e)))
         return JSONResponse({"error": "invalid mission parameters"}, status_code=400)
     return nocache_json({"ok": True, "mission": _mission_payload(store, m)})
 
@@ -94,12 +96,12 @@ def _transition(mission_id: int, op: str, **kwargs):
         m = getattr(store, op)(mission_id, **kwargs)
     except BudgetExceeded as e:
         # Category-fixed messages; the exception never flows to the body (CodeQL).
-        logger.debug("mission %s %s: budget exhausted: %s", mission_id, op, e)
+        logger.debug("mission %s %s: budget exhausted: %s", mission_id, op, log_safe(str(e)))
         return JSONResponse(
             {"error": "mission step budget exhausted", "budget_exceeded": True},
             status_code=409)
     except MissionError as e:
-        logger.debug("mission %s %s rejected: %s", mission_id, op, e)
+        logger.debug("mission %s %s rejected: %s", mission_id, op, log_safe(str(e)))
         return JSONResponse(
             {"error": "operation not allowed in current mission state"},
             status_code=409)
