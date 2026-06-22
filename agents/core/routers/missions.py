@@ -96,12 +96,15 @@ def _transition(mission_id: int, op: str, **kwargs):
         m = getattr(store, op)(mission_id, **kwargs)
     except BudgetExceeded as e:
         # Category-fixed messages; the exception never flows to the body (CodeQL).
-        logger.debug("mission %s %s: budget exhausted: %s", mission_id, op, log_safe(str(e)))
+        # op is an internal literal; mission_id (a path param) is omitted from the
+        # log so no user-traced value reaches the sink — the sanitized exception
+        # text already carries the id.
+        logger.debug("mission op=%s budget exhausted: %s", op, log_safe(str(e)))
         return JSONResponse(
             {"error": "mission step budget exhausted", "budget_exceeded": True},
             status_code=409)
     except MissionError as e:
-        logger.debug("mission %s %s rejected: %s", mission_id, op, log_safe(str(e)))
+        logger.debug("mission op=%s rejected: %s", op, log_safe(str(e)))
         return JSONResponse(
             {"error": "operation not allowed in current mission state"},
             status_code=409)
