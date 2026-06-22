@@ -14,11 +14,26 @@ from pathlib import Path
 from typing import List, Optional
 
 from agents.core.paths import data_path
+from agents.core.persistence.migrations import apply_migrations
 
 from . import signing
 from .loader import SkillLoader
 
 logger = logging.getLogger("jarvis.skills.marketplace")
+
+
+def _v1_moderation_columns(conn: sqlite3.Connection) -> None:
+    """v1 — moderation/signature columns. Guarded for older DBs that predate them
+    (no-op on fresh DBs whose CREATE TABLE already declares them)."""
+    cols = {row[1] for row in conn.execute("PRAGMA table_info(marketplace_skills)").fetchall()}
+    if "review_status" not in cols:
+        conn.execute("ALTER TABLE marketplace_skills ADD COLUMN review_status TEXT NOT NULL DEFAULT 'pending'")
+    if "signature" not in cols:
+        conn.execute("ALTER TABLE marketplace_skills ADD COLUMN signature TEXT DEFAULT ''")
+
+
+# Forward-only, append-only. Never edit/reorder a shipped entry — only append.
+_MIGRATIONS = [_v1_moderation_columns]
 
 # Locate the DB under memory_logs/
 DB_PATH = data_path("marketplace.db")
@@ -64,13 +79,10 @@ class SkillMarketplace:
                     signature TEXT DEFAULT ''
                 )
             """)
-            # Migrate older DBs that predate the moderation/signature columns.
-            cols = {row[1] for row in conn.execute("PRAGMA table_info(marketplace_skills)").fetchall()}
-            if "review_status" not in cols:
-                conn.execute("ALTER TABLE marketplace_skills ADD COLUMN review_status TEXT NOT NULL DEFAULT 'pending'")
-            if "signature" not in cols:
-                conn.execute("ALTER TABLE marketplace_skills ADD COLUMN signature TEXT DEFAULT ''")
             conn.commit()
+            # Versioned, forward-only schema migrations (H23.7), replacing the
+            # former inline table_info/ALTER guards.
+            apply_migrations(conn, _MIGRATIONS, name="marketplace")
         finally:
             conn.close()
 
