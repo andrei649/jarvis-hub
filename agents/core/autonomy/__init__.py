@@ -11,6 +11,10 @@ from .queue import Task, TaskQueue, TaskStatus, TaskQueueError
 from .worker import AutonomyWorker, InterruptBudget, is_night_window
 from .inbox import build_decision_card, parse_callback_data, DECISION_ACTIONS
 from .executor import TaskExecutor
+from .missions import (
+    MissionStore, Mission, MissionEvent, MissionStatus, StepStatus,
+    MissionError, BudgetExceeded,
+)
 from .digest import build_morning_brief, build_evening_retro
 from .preferences import PreferenceStore
 from .remediation import RemediationRunner, ServiceCommand, ExecResult
@@ -29,6 +33,8 @@ __all__ = [
     "AutonomyWorker", "InterruptBudget", "is_night_window",
     "build_decision_card", "parse_callback_data", "DECISION_ACTIONS",
     "TaskExecutor",
+    "MissionStore", "Mission", "MissionEvent", "MissionStatus", "StepStatus",
+    "MissionError", "BudgetExceeded",
     "build_morning_brief", "build_evening_retro",
     "PreferenceStore",
     "RemediationRunner", "ServiceCommand", "ExecResult",
