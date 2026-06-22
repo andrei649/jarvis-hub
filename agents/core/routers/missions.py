@@ -7,12 +7,16 @@ and read its budget + audit-trail. Reads are open (HUD polls them); every
 — a step that exhausts it auto-fails the mission (a 409, not silent overrun).
 """
 
+import logging
+
 from fastapi import APIRouter, Depends, Query, Request
 from fastapi.responses import JSONResponse
 
 from agents.core.app_state import get_orch
 from agents.core.routers._deps import user_guard
 from agents.core.web_helpers import nocache_json
+
+logger = logging.getLogger("jarvis.web")
 
 router = APIRouter(tags=["missions"])
 
@@ -57,7 +61,10 @@ async def missions_create(req: Request):
             max_seconds=int((body or {}).get("max_seconds", DEFAULT_MAX_SECONDS)),
         )
     except (MissionError, ValueError) as e:
-        return JSONResponse({"error": str(e)}, status_code=400)
+        # Fixed message keyed on the failure category — the exception object never
+        # reaches the response (CodeQL: no info exposure); detail is logged instead.
+        logger.debug("mission create rejected: %s", e)
+        return JSONResponse({"error": "invalid mission parameters"}, status_code=400)
     return nocache_json({"ok": True, "mission": _mission_payload(store, m)})
 
 
@@ -86,9 +93,16 @@ def _transition(mission_id: int, op: str, **kwargs):
     try:
         m = getattr(store, op)(mission_id, **kwargs)
     except BudgetExceeded as e:
-        return JSONResponse({"error": str(e), "budget_exceeded": True}, status_code=409)
+        # Category-fixed messages; the exception never flows to the body (CodeQL).
+        logger.debug("mission %s %s: budget exhausted: %s", mission_id, op, e)
+        return JSONResponse(
+            {"error": "mission step budget exhausted", "budget_exceeded": True},
+            status_code=409)
     except MissionError as e:
-        return JSONResponse({"error": str(e)}, status_code=409)
+        logger.debug("mission %s %s rejected: %s", mission_id, op, e)
+        return JSONResponse(
+            {"error": "operation not allowed in current mission state"},
+            status_code=409)
     return nocache_json({"ok": True, "mission": _mission_payload(store, m)})
 
 
