@@ -13,10 +13,25 @@ from pathlib import Path
 from typing import Optional
 
 from agents.core.paths import data_path
+from agents.core.persistence.migrations import apply_migrations
 
 from .types import ScanFinding, SecurityEvent, SecurityEventType, ThreatLevel
 
 logger = logging.getLogger(__name__)
+
+
+def _v1_hash_columns(conn: sqlite3.Connection) -> None:
+    """v1 — Merkle hash-chain columns (row_hash/prev_hash). Guarded for legacy DBs
+    that predate them (and a no-op on fresh DBs whose CREATE TABLE already has them)."""
+    cols = {row[1] for row in conn.execute("PRAGMA table_info(security_events)").fetchall()}
+    if "row_hash" not in cols:
+        conn.execute("ALTER TABLE security_events ADD COLUMN row_hash TEXT DEFAULT ''")
+    if "prev_hash" not in cols:
+        conn.execute("ALTER TABLE security_events ADD COLUMN prev_hash TEXT DEFAULT ''")
+
+
+# Forward-only, append-only. Never edit/reorder a shipped entry — only append.
+_MIGRATIONS = [_v1_hash_columns]
 
 
 class AuditLogger:
@@ -53,15 +68,9 @@ class AuditLogger:
             "ON security_events(event_type, timestamp)"
         )
         self._conn.commit()
-        self._migrate_schema()
-
-    def _migrate_schema(self):
-        columns = {row[1] for row in self._conn.execute("PRAGMA table_info(security_events)").fetchall()}
-        if "row_hash" not in columns:
-            self._conn.execute("ALTER TABLE security_events ADD COLUMN row_hash TEXT DEFAULT ''")
-        if "prev_hash" not in columns:
-            self._conn.execute("ALTER TABLE security_events ADD COLUMN prev_hash TEXT DEFAULT ''")
-        self._conn.commit()
+        # Versioned, forward-only schema migrations (H23.7), replacing the former
+        # ad-hoc _migrate_schema().
+        apply_migrations(self._conn, _MIGRATIONS, name="audit")
 
     def log(self, event: SecurityEvent):
         findings_json = json.dumps([

@@ -51,6 +51,7 @@ RULES = [
     ("/api/payments", "trust"),
     # autonomy
     ("/autonomy/", "autonomy"), ("/api/autonomy/", "autonomy"), ("/api/actions", "autonomy"),
+    ("/api/missions", "autonomy"),  # Mission Workspaces (0.32) — long-horizon workspaces
     ("/api/reflection", "autonomy"), ("/api/schedule/parse", "autonomy"),
     ("/api/transcripts", "autonomy"),
     # build (workflows / skills / sandbox / grammar)

@@ -57,7 +57,7 @@ python -m pytest tests/ -v          # ~2,400 passed, 1 skipped
 | **0.11.0** | 🟢 **Finish the refactor (done, #296)** | CLN-3 **complete** — `web.py` 4,636→1,282 LOC, 233→9 inline routes across 45 per-domain routers (304-route surface byte-identical, parity-guarded). CLN-2 substantially done — `PluginManager`+`llm_control`+`cognition_trace` extracted; orchestrator 1,620→1,456 LOC (remaining inline = the BUG-5 request pipeline, not safely extractable). |
 | **0.12.0** | **Harden what shipped (here now)** | ORIZONT-22 review fixes (#294, merged); #292 argus governed-facade wiring; #279 MCP route-tools harden/remove; TASK-3 cross-channel taint-tracking |
 | **0.13.0 ⚠️** | Agentic safety completeness | step/recursion + token/time **budgets + loop detection**; **model-version pinning & reproducibility**; **kill-switch in the HUD** + credential quarantine; eval/regression harness as a **release gate**; audit-log verify UI + secret redaction |
-| **0.14.0 ⚠️** | Upgrade & data durability | **DB schema-migration framework**; **backup/restore** + restore drill; **data export + delete/forget** endpoints (finishes H8.2); retention defaults; rollback story |
+| **0.14.0 ⚠️** | Upgrade & data durability | **backup/restore** + restore drill ✅ (#302); **data export** 🟢 (#303, export half); **DB schema-migration framework** (H23.7); **delete/forget** endpoint; retention defaults; rollback story |
 | **0.15.0 ⚠️** | Operability & distribution | health endpoint; signal handlers + graceful shutdown; log rotation; graceful **local-LLM-down** everywhere; systemd/service templates; **release artifacts** (tar/zip, optional PyPI + Docker publish); **semver compatibility contract** + supported-versions matrix + deprecation policy; platform matrix |
 | **0.16.0** | HUD depth + observability UI | TASK-2 ~37 surfaces incl. **north-star panel** + **network monitor** (watch LOCAL_ONLY make zero calls); LIVE/SEED indicators; OpenAPI types; plugin-gated modes |
 | **0.17.0** | Local ceiling + velocity | H22.4 concurrency, H22.5 model-manager LRU, H22.9 agent-native routes, constrained-decoding tail |
@@ -65,6 +65,74 @@ python -m pytest tests/ -v          # ~2,400 passed, 1 skipped
 | **0.19.0 ⚠️** | Reach, quality & user docs | mobile parity tail (H18); **quality gates** (E2E, load/soak, a11y, i18n, browser+mobile matrix); **user docs** (USER_GUIDE, FAQ, UPGRADE, THREAT_MODEL, SECURITY disclosure, NOTICE/SBOM, privacy policy); **onboarding wizard** + activation funnel + cold-start error guidance |
 | **0.20.0 ⚠️** | Product-proof | design-partner program (recruit 1–3); in-app **feedback/NPS**; support channel + SLA; north-star **measured on real usage**; landing page + demo |
 | **1.0.0** | 🎯 **Owned & proven** | all dev complete **+ design-partner validation**; owner legal/brand done; manual-test/audit pass → tag |
+
+---
+
+## 🧭 Competitive-Gap Roadmap (product depth) — folded in from the uploaded plan
+
+> The owner's 2026-06-21 **Competitive Gap Plan** (themes `0.19`–`0.63` + gates, derived from 24 OSS
+> "Jarvis"/agent repos) is captured here so this file stays the **single source of truth**. These ~48
+> themes are **product-depth slices, NOT a release sequence** — the version line above (the H23 spine)
+> is the real path to 1.0; the numbers below are **theme-IDs**, and many are already DONE, so they
+> can't be a monotonic version order. Each theme maps onto an existing version/H-item. Status is grounded
+> in the code audit: [`docs/research/2026-06-21-roadmap-vs-codebase-audit.md`](docs/research/2026-06-21-roadmap-vs-codebase-audit.md).
+> **Headline: ~85% already seeded; only 7 are truly greenfield.** Status keys: ✅ done · 🟢 in open PR ·
+> 🟡 partial · 🌱 seed (module exists, feature mostly unbuilt) · ⬜ missing.
+
+| Theme | Status | What exists / the bounded gap | Maps to |
+|-------|--------|-------------------------------|---------|
+| 0.19 First-Run Command Center | 🟡 partial | `routers/onboarding.py`+`status.py`+demo mode / unified install-health+model+first-action screen | H23.20 |
+| 0.20 Jarvis Vault | ⬜ missing | `paths.py`,`secrets_vault.py` / 1 TB vault + retention (backup ✅ #302; export 🟢 #303) | H23.10 |
+| 0.21 Offline Knowledge Packs | 🌱 seed | `local_docs.py` / Kiwix-style packs + installer | 0.21 |
+| 0.22 Appliance Install/Update | 🟡 partial | `install.sh`,`start.sh`,`docker-compose.yml` / uninstall, signed artifacts, no-telemetry proof | H23.13/15 |
+| 0.23 Hardware Benchmark & Profiles | 🟡 partial | `bench.py`,`llm/model_manager.py` (VRAM) / RTX scoring + mode profiles (GPU-gated) | 0.18 |
+| 0.24 Voice Hotkey & Dictation | 🟡 partial | `voice/{wake_word,stt,pipeline}.py` / hold-to-talk hotkey, filler removal | — |
+| 0.25 Desktop Control Pack | 🌱 seed | `desktop_operator.py`,`screen_grounding.py`,`browser_agent.py` / recording, app launch, OS control | — |
+| 0.26 Capture Inbox | 🟡 partial | `passive_capture.py`+`routers/capture.py` / phone export, transcript sync, inbox view | — |
+| 0.27 Local VLM Eyes | ✅ done | `llm/vlm.py` + `/api/vlm/describe` | — |
+| 0.28 Voice Persona Studio | 🟡 partial | `cognition/persona.py`,`voice/tts.py`,`ttsStream.ts` / consent, barge-in→HUD (BUG-2b.3) | TASK-4 |
+| 0.29 Native Launcher | 🟡 partial | `desktop/src-tauri/tauri.conf.json` (Tauri shell) / PWA, signed installers | 0.15 |
+| 0.30 Context Compression | ✅ done | `context_compressor.py` wired in `routers/tools.py` | — |
+| 0.31 Code Intelligence MCP | 🌱 seed | `mcp/{client,server}.py` / code-indexing backend | — |
+| 0.32 Mission Workspaces | ✅ done | `autonomy/missions.py` + `routers/missions.py` (#301) | — |
+| 0.33 Subagent Gateway | ✅ done | `subagents.py` + `a2a.py` + `autonomy_coordinator.py` | — |
+| 0.34 Workflow Runtime Upgrade | 🟡 partial | `workflows/engine.py` (timeouts, bounded concurrency, recursion cap) / persistent queue, pruning | 0.17 |
+| 0.35 Prompt Registry | ✅ done | `soul_versioning.py` (commit/diff/rollback + A/B) | — |
+| 0.36 Agent-Native Action Manifest | ✅ built · 🟡 unseamed | `mcp/route_tools.py` + web wiring works / **unify the allow-list with `route_auth.json`** (#1 refactor) | 0.12 (#279) |
+| 0.37 Memory Ingestion Lab | 🟡 partial | `ingestion/pipeline.py` (7-phase) + `data_spaces.py` / ontology, cross-agent sharing, provenance | — |
+| 0.38 Today In Jarvis | 🟡 partial | `autonomy/digest.py` + `memory/digest.py` / unified chronological timeline | — |
+| 0.39 Market Intel Pack | 🌱 seed | `plugins/{balance,analytics,signal_layer}.py` / watchlists, alerts, disclaimers | — |
+| 0.40 OSINT Investigator Pack | 🌱 seed | `plugins/worldview.py` + `argus.py` / SpiderFoot modules, correlation, evidence drawer | — |
+| 0.41 World Signal Packs | 🌱 seed | `signal_layer.py` (`world_brief`,`country_assessment`) / per-domain signal routing | — |
+| 0.42 Security Skills Pack | ⬜ missing | `security/` is infra, not curated skills / ATT&CK/ATLAS/D3FEND/NIST taxonomy | — |
+| 0.43 Learning Coach Pack | 🌱 seed | `learning/scheduler.py` (not tutoring) / curriculum, spaced review | — |
+| 0.44 Safe Comms Pack | 🟡 partial | `channels/{telegram,email}.py`,`whatsapp_bridge.py`,`action_approvals.py` / draft-before-send UI, per-channel rate limits | — |
+| 0.45 High-Risk Automation Contracts | 🟡 partial | `plugin_gate.py`,`signal_governance.py`,`routers/payments.py` / reusable contract-template abstraction | H23.1 |
+| 0.46 Media Library | 🟡 partial | `media_gen.py`,`media_skill.py` / catalog, searchable timeline, export bundles | — |
+| 0.47 Creative Asset Pipeline | 🌱 seed | `video_prompt.py`,`image_gen.py`,`media_gen.py` / coordinated pipeline + provenance | — |
+| 0.48 Video Production Pipelines | ⬜ missing | `video_prompt.py` is a prompt builder only / assembly/effects/localization | — |
+| 0.49 Timeline Adapter | 🟡 partial | `canvas.py` + worldview `timelineMarkers.ts` / interactive approval-gated timeline | — |
+| 0.50 Publishing Studio | 🌱 seed | `writeback.py`,`social.py` / export/render packs (YouTube/IG/README) | — |
+| 0.51 Reference-Driven Creation | 🟡 partial | `plugins/websearch.py` (SSRF-safe fetch) / reference→grounded-plan choreography | — |
+| 0.52 Product Demo Factory | ⬜ missing | `docs/marketing/TEASER_PACK.md` storyboard / HUD-footage capture + assembly | H23.22 |
+| 0.53 Design System Manifest | 🟡 partial | `frontend/src/styles.css` tokens + `BRAND_BOOK.md` / inspectable component library | — |
+| 0.54 Skill Operating System | ✅ done | `skills/{loader,importer}.py`,`skill_drift.py`, SKILL.md manifests | — |
+| 0.55 Design Partner Kit | ⬜ missing | — / feedback/NPS widget, issue bundle, SLA | H23.21 |
+| 0.56 Trust Center | 🟢 in PR #300 | `security/audit.py`,`routers/security.py` (kill_switch, audit_verify), `LOCAL_ONLY_AGENTS` + HUD panel (#300) / cloud-hop log, consent | H23.3/5/16 |
+| 0.57 Release Packaging | ⬜ missing | `release.yml` basic / signed artifacts, SBOM/NOTICE, compat matrix | H23.13/14 |
+| 0.58 Pack Manager | 🟡 partial | `skills/marketplace.py` (registry) / model/domain/content packs, remove/rollback | — |
+| 0.59 Proof Assets | 🌱 seed | `marketing/` + `docs/marketing/` / landing, README hero, demo video | H23.22 |
+| 0.60 Local Analytics | 🟢 in PR #300 | `analytics_store.py`,`observability/north_star.py`,`/api/metrics/north-star` + HUD meter (#300) / activation funnel | H23.20 |
+| 0.61 Database Future Check | 🌱 seed | `settings_db.py` (WAL) / Turso/libSQL eval, migration framework | H23.7 |
+| 0.62 System Profiles | ⬜ missing | VRAM mgmt only / Gaming/AI/Multimedia/Admin modes | 0.17 |
+| 0.63 Restore & Soak | 🟡 partial | backup/restore+drill ✅ (#302) + `resilience.py` / 72h soak, failure injection | H23.8/12 |
+| 0.90–1.0 gates (Freeze · RC · Partner · Burn-In · Owned) | ⬜ pending | `AUDIT.md`,`MANUAL_TESTING.md`,parity/auth gates, north-star eval / promote eval→required gate; design partners; landing+demo | 1.0.0 row + H23.21/22 |
+
+> **The only 7 truly greenfield (⬜):** 0.20 Vault · 0.42 Security Skills · 0.48 Video Production ·
+> 0.52 Demo Factory · 0.55 Design Partner Kit · 0.57 Release Packaging · 0.62 System Profiles.
+> Everything else is ✅/🟢/🟡/🌱 — **finish-the-PARTIALs beats start-greenfield** (audit guidance).
+> Top remaining finish-firsts: **0.36 Action-Manifest unify**, **H23.9 delete/forget** (export half 🟢 #303),
+> **H23.7 DB migrations**, **H23.10 retention**.
 
 ---
 
@@ -81,11 +149,11 @@ python -m pytest tests/ -v          # ~2,400 passed, 1 skipped
 | H23.2 | **Model-version pinning & reproducibility** — record id/quant per run; approved-model allowlist | MISSING | 0.13 |
 | H23.3 | **Kill-switch in the HUD** (one-tap) + credential quarantine on halt | EXISTS (code) / no UI | 0.13 |
 | H23.4 | Promote **eval/regression harness to a pre-release gate** | EXISTS / not a gate | 0.13 |
-| H23.5 | Audit-log **verify button** in HUD + secret redaction guarantee | EXISTS / no UI | 0.13 |
+| H23.5 | Audit-log **verify button** in HUD + secret redaction guarantee | EXISTS · UI **in PR #300** (Trust-mode live audit-verify badge) | 0.13 |
 | H23.6 | TASK-3 indirect-injection / cross-channel **taint-tracking** | open | 0.12 |
 | H23.7 | **DB schema-migration framework** (`_schema_version` + forward-only on startup) | MISSING | 0.14 |
-| H23.8 | **Backup/restore** (one-command) + a tested **restore drill** | MISSING | 0.14 |
-| H23.9 | **Data export + delete/forget** endpoints (finishes promised H8.2) | PARTIAL | 0.14 |
+| H23.8 | **Backup/restore** (one-command) + a tested **restore drill** | ✅ **DONE (#302)** — `agents/core/backup.py` + `/api/admin/backup` (consistent SQLite snapshots, restore-drill) | 0.14 |
+| H23.9 | **Data export + delete/forget** endpoints (finishes promised H8.2) | 🟢 export **in PR #303** (auto-merging) — `agents/core/data_export.py` (CLI); **delete/forget + HTTP surface still open** | 0.14 |
 | H23.10 | Data-**retention defaults** (conversations, audit log, memory) + rollback story | MISSING | 0.14 |
 | H23.11 | Health/readiness endpoint; signal handlers + graceful shutdown; **log rotation** | MISSING | 0.15 |
 | H23.12 | Graceful **local-LLM-down** handling everywhere (no hang/crash) | PARTIAL | 0.15 |

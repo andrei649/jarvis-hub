@@ -565,6 +565,24 @@ from git history into `*.local.md`).
 3. Read it anywhere via `orch.get_setting("category.key", default)` (reloaded every 30s).
 4. For per-plugin credentials, use category `"plugins"`.
 
+### Evolve a store's schema (migrations, H23.7)
+
+SQLite stores version their schema with `PRAGMA user_version` via
+`agents/core/persistence/migrations.py`. To change a store's schema:
+
+1. Keep the store's `CREATE TABLE IF NOT EXISTS` reflecting the **full current**
+   schema (fresh DBs get it directly).
+2. Add a module-level `_MIGRATIONS` list and, after the create-schema block in
+   `initialize()`/`_init_db()`, call
+   `apply_migrations(conn, _MIGRATIONS, name="<store>")`.
+3. For each schema change, **append** one migration callable (index `i` upgrades
+   `vi → v(i+1)`). Use `column_adder(table, col, decl)` for a guarded `ADD COLUMN`,
+   or write a callable taking the `conn`. **Never edit or reorder a shipped
+   migration** — only append. Each migration + its version bump apply atomically;
+   a failure rolls back and leaves the DB at the last good version.
+
+Reference adopters: `agents/core/security/audit.py`, `agents/core/skills/marketplace.py`.
+
 ### Add a channel
 
 1. Create `agents/core/channels/<name>.py` subclassing `ChannelAdapter`.
