@@ -2,7 +2,7 @@
 import React, { useState as uS2, useEffect as uE2 } from 'react';
 import { V2, Conversation, InputBar } from './ui';
 import { Icon as Ic, ICONS as IK, Glyph as Gl } from './ui';
-import { installSkill, getAutonomyMode, setAutonomyMode } from './api/actions';
+import { installSkill, getAutonomyMode, setAutonomyMode, getNorthStar } from './api/actions';
 import { WorldIntelligencePanel } from './world-intelligence';
 /* HUD v2 · MODES II — Autonomy, Build, Observe, Interop */
 
@@ -141,11 +141,58 @@ function BuildMode({ t }){
 }
 
 /* ============ OBSERVE ============ */
+/* MOONSHOT §6 north-star meter — the 1.0-gating metric, live from
+   /api/metrics/north-star. Single-user honesty: null sources render as "—",
+   never a fabricated 0; the interrupt counter flags when it breaches the ≤4/day
+   budget. This was the missing HUD consumer — the endpoint existed, nothing
+   surfaced it. */
+function NorthStarMeter(){
+  const [d,setD] = uS2(null);
+  const [st,setSt] = uS2('loading');
+  uE2(()=>{
+    let alive = true;
+    getNorthStar(7)
+      .then(r=>{ if(alive){ setD(r||null); setSt(r ? 'live' : 'empty'); } })
+      .catch(()=>{ if(alive) setSt('error'); });
+    return ()=>{ alive = false; };
+  },[]);
+  const ns = (d && d.north_star) || {};
+  const cm = (d && d.counter_metrics) || {};
+  const has = v => v !== null && v !== undefined;
+  const n  = (v,suf='') => has(v) ? (v+suf) : '—';            // plain number
+  const p1 = v => has(v) ? (Math.round(v)+'%') : '—';          // already 0–100
+  const p100 = v => has(v) ? (Math.round(v*100)+'%') : '—';    // ratio 0–1 → %
+  const budget = cm.interrupt_rate_per_day;
+  const overBudget = has(budget) && budget > 4;                // MOONSHOT budget ≤4/day
+  const statusLabel = st==='live' ? '7-day · live'
+                     : st==='loading' ? 'loading…'
+                     : st==='error' ? 'unavailable' : 'no data';
+  return (
+    <div style={{marginBottom:'var(--gap)'}}>
+      <SubH>NORTH-STAR · weekly accepted actions / active user
+        <span className="st" style={{marginLeft:8,opacity:.7}}>{statusLabel}</span></SubH>
+      <div className="mem-grid">
+        <div className="stat-card"><div className="sv">{n(ns.accepted_per_active_user)}</div><div className="sl">accepted / user · wk</div></div>
+        <div className="stat-card"><div className="sv">{n(ns.total_accepted)}</div><div className="sl">total accepted</div></div>
+        <div className="stat-card"><div className="sv">{n(ns.active_users)}</div><div className="sl">active users</div></div>
+        <div className="stat-card"><div className="sv" style={overBudget?{color:'var(--red)'}:undefined}>{n(budget)}</div><div className="sl">interrupts / day {overBudget?'⚠':''}</div></div>
+      </div>
+      <div className="mem-grid" style={{marginTop:'var(--gap)'}}>
+        <div className="stat-card"><div className="sv">{p100(cm.reject_rate)}</div><div className="sl">reject rate</div></div>
+        <div className="stat-card"><div className="sv">{p1(cm.local_pct)}</div><div className="sl">% served local</div></div>
+        <div className="stat-card"><div className="sv">{n(cm.p95_latency_ms,'ms')}</div><div className="sl">p95 turn latency</div></div>
+        <div className="stat-card"><div className="sv">{has(ns.active_users)&&ns.active_users===0?'idle':n((d&&d.raw)?d.raw.decisions:undefined)}</div><div className="sl">decisions · window</div></div>
+      </div>
+    </div>
+  );
+}
+
 function ObserveMode({ t }){
   const O = V2.OBSERVE;
   const maxLat = Math.max(...O.by_agent.map(a=>a.v));
   return (
-    <ModePanel icon="observe" title={t.observe} status="world · traces · eval · resilience">
+    <ModePanel icon="observe" title={t.observe} status="world · north-star · traces · eval">
+      <NorthStarMeter />
       <WorldIntelligencePanel />
       <div className="mem-grid" style={{marginBottom:'var(--gap)'}}>
         <div className="stat-card"><div className="sv">{Math.round(O.quality.success_rate*100)}%</div><div className="sl">success rate</div></div>
