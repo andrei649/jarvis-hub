@@ -174,6 +174,7 @@
   "POST /api/actions/{action_id}/decide": "actions_decide_api_actions__action_id__decide_post",
   "POST /api/admin/backup": "backup_create_api_admin_backup_post",
   "POST /api/admin/backup/verify": "backup_verify_api_admin_backup_verify_post",
+  "POST /api/admin/forget": "forget_data_api_admin_forget_post",
   "POST /api/admin/llm/test": "admin_llm_test_api_admin_llm_test_post",
   "POST /api/admin/mcp": "admin_mcp_add_api_admin_mcp_post",
   "POST /api/admin/mcp/{name}/connect": "admin_mcp_connect_api_admin_mcp__name__connect_post",

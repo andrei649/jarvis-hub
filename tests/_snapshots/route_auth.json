@@ -178,6 +178,7 @@
   "POST /api/actions/{action_id}/decide": "admin",
   "POST /api/admin/backup": "admin",
   "POST /api/admin/backup/verify": "admin",
+  "POST /api/admin/forget": "admin",
   "POST /api/admin/llm/test": "admin",
   "POST /api/admin/mcp": "admin",
   "POST /api/admin/mcp/{name}/connect": "admin",
