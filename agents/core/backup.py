@@ -27,7 +27,7 @@ from __future__ import annotations
 import argparse
 import json
 import logging
-import os
+import secrets
 import shutil
 import sqlite3
 import tarfile
@@ -99,11 +99,15 @@ def create_backup(source_root: Optional[str] = None, out_dir: Optional[str] = No
     out = Path(out_dir) if out_dir else default_backup_dir(src)
     out.mkdir(parents=True, exist_ok=True)
 
-    ts = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
-    safe_label = "".join(c for c in label if c.isalnum() or c in "-_")
-    archive = out / f"{_ARCHIVE_PREFIX}{ts}{('-' + safe_label) if safe_label else ''}.tar.gz"
+    # The archive filename is built ONLY from a server-generated timestamp +
+    # random suffix — the caller's label never reaches the path (it is recorded in
+    # the manifest as data instead), so no user-controlled value enters a path
+    # expression. The microsecond stamp + token also keep rapid backups unique.
+    ts = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S_%fZ")
+    archive = out / f"{_ARCHIVE_PREFIX}{ts}_{secrets.token_hex(3)}.tar.gz"
+    safe_label = "".join(c for c in (label or "") if c.isalnum() or c in "-_ ")[:80]
     manifest = {"created_at": _now_iso(), "source_root": str(src),
-                "version": BACKUP_VERSION, "dbs": [], "file_count": 0}
+                "version": BACKUP_VERSION, "label": safe_label, "dbs": [], "file_count": 0}
 
     # Materialise the file list BEFORE opening the archive so the growing archive
     # (written into out/) is never itself swept in.
