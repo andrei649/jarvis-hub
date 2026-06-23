@@ -68,7 +68,7 @@ jobs:
       # On the scheduled / manual run (not PRs), raise or refresh a tracking issue.
       - name: Open or update drift issue
         if: steps.drift.outputs.has_drift == 'true' && github.event_name != 'pull_request'
-        uses: actions/github-script@v7
+        uses: actions/github-script@v9
         with:
           script: |
             const fs = require('fs');

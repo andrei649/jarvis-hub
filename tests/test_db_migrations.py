@@ -103,14 +103,15 @@ def test_audit_adopter_upgrades_legacy_db(tmp_path):
     _legacy_audit_db(db)
     a = AuditLogger(db_path=str(db))
     cols = {r[1] for r in a._conn.execute("PRAGMA table_info(security_events)").fetchall()}
-    assert {"row_hash", "prev_hash"} <= cols
-    assert a._conn.execute("PRAGMA user_version").fetchone()[0] == 1
+    # v1 added the hash-chain columns; v2 (AUD-9) added the per-row hash_algo marker.
+    assert {"row_hash", "prev_hash", "hash_algo"} <= cols
+    assert a._conn.execute("PRAGMA user_version").fetchone()[0] == 2
 
 
 def test_audit_adopter_fresh_db_at_latest_version(tmp_path):
     from agents.core.security.audit import AuditLogger
     a = AuditLogger(db_path=str(tmp_path / "audit.db"))
-    assert a._conn.execute("PRAGMA user_version").fetchone()[0] == 1
+    assert a._conn.execute("PRAGMA user_version").fetchone()[0] == 2
 
 
 def test_marketplace_adopter_upgrades_legacy_db(tmp_path):
