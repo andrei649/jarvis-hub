@@ -27,26 +27,78 @@ from __future__ import annotations
 import argparse
 import json
 import logging
+import os
 import secrets
 import shutil
 import sqlite3
 import tarfile
 import tempfile
+from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Optional
+from typing import Iterator, Optional
 
 from agents.core.paths import data_root
+from agents.core.secrets import SecretStore
 
 logger = logging.getLogger("jarvis.backup")
 
 BACKUP_VERSION = 1
 _ARCHIVE_PREFIX = "jarvis-backup-"
 _SQLITE_SIDECARS = ("-wal", "-shm", "-journal")
+_ENC_SUFFIX = ".enc"  # an encrypted archive is "<name>.tar.gz.enc"
 
 
 def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
+
+
+# ── archive encryption (AUD-1 / F2) ───────────────────────────────
+# A backup archives settings.db, tokens/ and secrets.enc — so it must not sit on
+# disk as plaintext. When a backup key is configured the whole archive is
+# encrypted with the key-managed cipher in agents.core.secrets. The key lives
+# OUTSIDE the data root (so a stolen archive never ships its own key): an explicit
+# arg / $JARVIS_BACKUP_KEY, else a persisted keyfile under $JARVIS_KEY_DIR.
+
+def _key_dir() -> Path:
+    return Path(os.environ.get("JARVIS_KEY_DIR") or (Path.home() / ".config" / "jarvis"))
+
+
+def _backup_cipher(key: Optional[str]) -> SecretStore:
+    """A SecretStore whose key resolves to the backup key (never the data root).
+
+    Reuses SecretStore's full key management (raw key / passphrase / generated
+    keyfile) and its Fernet-or-fallback cipher; the keyfile, if generated, lands
+    in $JARVIS_KEY_DIR — outside the archived data root.
+    """
+    kd = _key_dir()
+    kd.mkdir(parents=True, exist_ok=True)
+    return SecretStore(path=kd / "backup.cipher",
+                       key=key or os.environ.get("JARVIS_BACKUP_KEY") or None)
+
+
+def _should_encrypt(encrypt: Optional[bool], key: Optional[str]) -> bool:
+    """Resolve whether to encrypt: explicit flag wins, else 'a key is configured'."""
+    if encrypt is not None:
+        return encrypt
+    return bool(key or os.environ.get("JARVIS_BACKUP_KEY"))
+
+
+def _is_encrypted(name: str) -> bool:
+    return name.endswith(_ENC_SUFFIX)
+
+
+@contextmanager
+def _readable_archive(arc: Path, key: Optional[str]) -> Iterator[Path]:
+    """Yield a path to a readable (plaintext) ``.tar.gz``, decrypting if needed."""
+    if _is_encrypted(arc.name):
+        store = _backup_cipher(key)
+        with tempfile.TemporaryDirectory() as td:
+            plain = Path(td) / "archive.tar.gz"
+            plain.write_bytes(store.decrypt_bytes(arc.read_bytes()))
+            yield plain
+    else:
+        yield arc
 
 
 def _is_within(path: Path, root: Path) -> bool:
@@ -87,11 +139,16 @@ def default_backup_dir(source_root: Optional[Path] = None) -> Path:
 
 # ── create ────────────────────────────────────────────────────────
 def create_backup(source_root: Optional[str] = None, out_dir: Optional[str] = None,
-                  label: str = "") -> dict:
+                  label: str = "", encrypt: Optional[bool] = None,
+                  key: Optional[str] = None) -> dict:
     """Snapshot the data root into a single ``.tar.gz``; return a manifest dict.
 
     DBs are copied through the SQLite backup API (consistent); everything else is
     archived as-is. The output ``backups/`` dir and SQLite sidecars are excluded.
+
+    When a backup key is configured (``key`` arg / ``$JARVIS_BACKUP_KEY``) or
+    ``encrypt=True``, the archive is encrypted at rest (``.tar.gz.enc``) so it
+    carries no plaintext secrets (AUD-1). Default behavior (no key) is unchanged.
     """
     src = Path(source_root) if source_root else data_root()
     if not src.exists():
@@ -99,50 +156,72 @@ def create_backup(source_root: Optional[str] = None, out_dir: Optional[str] = No
     out = Path(out_dir) if out_dir else default_backup_dir(src)
     out.mkdir(parents=True, exist_ok=True)
 
+    do_encrypt = _should_encrypt(encrypt, key)
+
     # The archive filename is built ONLY from a server-generated timestamp +
     # random suffix — the caller's label never reaches the path (it is recorded in
     # the manifest as data instead), so no user-controlled value enters a path
     # expression. The microsecond stamp + token also keep rapid backups unique.
     ts = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S_%fZ")
-    archive = out / f"{_ARCHIVE_PREFIX}{ts}_{secrets.token_hex(3)}.tar.gz"
+    name = f"{_ARCHIVE_PREFIX}{ts}_{secrets.token_hex(3)}.tar.gz"
+    archive = out / (name + _ENC_SUFFIX if do_encrypt else name)
     safe_label = "".join(c for c in (label or "") if c.isalnum() or c in "-_ ")[:80]
     manifest = {"created_at": _now_iso(), "source_root": str(src),
-                "version": BACKUP_VERSION, "label": safe_label, "dbs": [], "file_count": 0}
+                "version": BACKUP_VERSION, "label": safe_label, "encrypted": do_encrypt,
+                "dbs": [], "file_count": 0}
 
     # Materialise the file list BEFORE opening the archive so the growing archive
     # (written into out/) is never itself swept in.
     files = sorted(p for p in src.rglob("*") if p.is_file())
-    with tempfile.TemporaryDirectory() as tmp, tarfile.open(archive, "w:gz") as tar:
+    with tempfile.TemporaryDirectory() as tmp:
         tmp = Path(tmp)
-        for path in files:
-            if _is_within(path, out):
-                continue  # never back up the backups dir
-            if path.name.endswith(_SQLITE_SIDECARS):
-                continue  # WAL/shm/journal — folded into the DB snapshot
-            rel = path.relative_to(src)
-            if path.suffix == ".db":
-                snap = tmp / rel
-                _sqlite_consistent_copy(path, snap)
-                tar.add(snap, arcname=str(rel))
-                manifest["dbs"].append(str(rel))
-            else:
-                tar.add(path, arcname=str(rel))
-            manifest["file_count"] += 1
-        mpath = tmp / "backup_manifest.json"
-        mpath.write_text(json.dumps(manifest, indent=2), encoding="utf-8")
-        tar.add(mpath, arcname="backup_manifest.json")
+        # Stage the tar inside the temp dir (never plaintext in out/ when encrypting).
+        staged = tmp / "archive.tar.gz"
+        with tarfile.open(staged, "w:gz") as tar:
+            for path in files:
+                if _is_within(path, out):
+                    continue  # never back up the backups dir
+                if path.name.endswith(_SQLITE_SIDECARS):
+                    continue  # WAL/shm/journal — folded into the DB snapshot
+                rel = path.relative_to(src)
+                if path.suffix == ".db":
+                    snap = tmp / "snap" / rel
+                    _sqlite_consistent_copy(path, snap)
+                    tar.add(snap, arcname=str(rel))
+                    manifest["dbs"].append(str(rel))
+                else:
+                    tar.add(path, arcname=str(rel))
+                manifest["file_count"] += 1
+            mpath = tmp / "backup_manifest.json"
+            mpath.write_text(json.dumps(manifest, indent=2), encoding="utf-8")
+            tar.add(mpath, arcname="backup_manifest.json")
+
+        if do_encrypt:
+            archive.write_bytes(_backup_cipher(key).encrypt_bytes(staged.read_bytes()))
+        else:
+            shutil.move(str(staged), str(archive))
 
     return {"archive": str(archive), "bytes": archive.stat().st_size, **manifest}
 
 
 # ── list ──────────────────────────────────────────────────────────
+def _iter_archives(out: Path) -> Iterator[Path]:
+    """Yield both plaintext (``.tar.gz``) and encrypted (``.tar.gz.enc``) archives."""
+    seen: set[str] = set()
+    for pat in (f"{_ARCHIVE_PREFIX}*.tar.gz", f"{_ARCHIVE_PREFIX}*.tar.gz{_ENC_SUFFIX}"):
+        for p in out.glob(pat):
+            if p.name not in seen:
+                seen.add(p.name)
+                yield p
+
+
 def list_backups(out_dir: Optional[str] = None) -> list[dict]:
     """List backup archives (newest first) with size + mtime."""
     out = Path(out_dir) if out_dir else default_backup_dir()
     if not out.exists():
         return []
     rows = []
-    for p in out.glob(f"{_ARCHIVE_PREFIX}*.tar.gz"):
+    for p in _iter_archives(out):
         try:
             st = p.stat()
         except OSError:
@@ -150,6 +229,7 @@ def list_backups(out_dir: Optional[str] = None) -> list[dict]:
         rows.append({
             "name": p.name,
             "bytes": st.st_size,
+            "encrypted": _is_encrypted(p.name),
             "modified_at": datetime.fromtimestamp(st.st_mtime, timezone.utc).isoformat(),
         })
     rows.sort(key=lambda r: r["modified_at"], reverse=True)
@@ -165,7 +245,7 @@ def resolve_backup(name: str, out_dir: Optional[str] = None) -> Optional[Path]:
     out = Path(out_dir) if out_dir else default_backup_dir()
     if not out.exists():
         return None
-    for p in out.glob(f"{_ARCHIVE_PREFIX}*.tar.gz"):
+    for p in _iter_archives(out):
         if p.name == name:
             return p
     return None
@@ -198,17 +278,20 @@ def _safe_extract(tar: tarfile.TarFile, dest: Path) -> int:
 
 
 # ── verify (the restore drill) ────────────────────────────────────
-def verify_backup(archive: str) -> dict:
+def verify_backup(archive: str, key: Optional[str] = None) -> dict:
     """Restore-drill: extract into a temp dir and integrity-check every DB.
 
-    Proves the archive is restorable without touching live data. Returns
+    Proves the archive is restorable without touching live data (decrypting first
+    if it is an encrypted ``.enc`` archive). Returns
     ``{ok, dbs:{rel: 'ok'|problem}, file_count, manifest}``.
     """
     arc = Path(archive)
     if not arc.exists():
         raise FileNotFoundError(f"backup not found: {arc}")
-    report = {"archive": str(arc), "ok": True, "dbs": {}, "file_count": 0, "manifest": None}
-    with tempfile.TemporaryDirectory() as tmp, tarfile.open(arc, "r:gz") as tar:
+    report = {"archive": str(arc), "ok": True, "encrypted": _is_encrypted(arc.name),
+              "dbs": {}, "file_count": 0, "manifest": None}
+    with _readable_archive(arc, key) as tarpath, \
+            tempfile.TemporaryDirectory() as tmp, tarfile.open(tarpath, "r:gz") as tar:
         tmpp = Path(tmp)
         report["file_count"] = _safe_extract(tar, tmpp)
         mf = tmpp / "backup_manifest.json"
@@ -226,12 +309,13 @@ def verify_backup(archive: str) -> dict:
 
 
 # ── restore ───────────────────────────────────────────────────────
-def restore_backup(archive: str, target_root: str, force: bool = False) -> dict:
+def restore_backup(archive: str, target_root: str, force: bool = False,
+                   key: Optional[str] = None) -> dict:
     """Extract a backup into ``target_root``. Refuses a non-empty target unless force.
 
     Deliberately requires an *explicit* target (never silently overwrites the live
     data root). Hot in-place restore is an operator action: pass the live root +
-    ``force=True`` with the server stopped.
+    ``force=True`` with the server stopped. Encrypted archives are decrypted first.
     """
     arc = Path(archive)
     if not arc.exists():
@@ -241,7 +325,7 @@ def restore_backup(archive: str, target_root: str, force: bool = False) -> dict:
         raise FileExistsError(
             f"target {target} is not empty — pass force=True to overwrite")
     target.mkdir(parents=True, exist_ok=True)
-    with tarfile.open(arc, "r:gz") as tar:
+    with _readable_archive(arc, key) as tarpath, tarfile.open(tarpath, "r:gz") as tar:
         count = _safe_extract(tar, target)
     # Post-restore drill on the live target so a corrupt restore is caught now.
     dbs = {str(p.relative_to(target)): _integrity_check(p) for p in sorted(target.rglob("*.db"))}
@@ -254,7 +338,9 @@ def _main(argv=None) -> int:
     ap = argparse.ArgumentParser(prog="python -m agents.core.backup",
                                  description="Jarvis local backup / restore")
     sub = ap.add_subparsers(dest="cmd", required=True)
-    sub.add_parser("create", help="snapshot the data root to a .tar.gz")
+    pc = sub.add_parser("create", help="snapshot the data root to a .tar.gz")
+    pc.add_argument("--encrypt", action="store_true",
+                    help="encrypt the archive at rest (uses $JARVIS_BACKUP_KEY, else a generated key in $JARVIS_KEY_DIR)")
     sub.add_parser("list", help="list existing backups")
     pv = sub.add_parser("verify", help="restore-drill a backup (integrity-check its DBs)")
     pv.add_argument("name", help="backup file name (see `list`)")
@@ -265,7 +351,7 @@ def _main(argv=None) -> int:
     args = ap.parse_args(argv)
 
     if args.cmd == "create":
-        print(json.dumps(create_backup(), indent=2))
+        print(json.dumps(create_backup(encrypt=True if args.encrypt else None), indent=2))
     elif args.cmd == "list":
         print(json.dumps(list_backups(), indent=2))
     elif args.cmd == "verify":
