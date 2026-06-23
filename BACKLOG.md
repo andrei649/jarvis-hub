@@ -209,6 +209,10 @@ the syscall table · budgets = the scheduler · kill-switch/quarantine = a sysca
 
 ### Track K — Action Kernel (the "operating" in operating system) (P0–P1)
 
+> **Design spec:** [`docs/superpowers/specs/2026-06-23-orizont24-action-kernel-design.md`](docs/superpowers/specs/2026-06-23-orizont24-action-kernel-design.md)
+> — grounded in the existing seeds it unifies (`security/capability.py:authorize()` nucleus, the autonomy
+> `TaskQueue`, `plugin_gate`/egress, route guards, `SecretBroker`) + the 3 verified bypass risks it closes.
+
 | # | Item | S | P | Dep | AC |
 |---|------|---|---|-----|----|
 | K1 | **Single mediation point** — every privileged action (tool call, plugin egress, write-back, payment, social, node dispatch) flows through `kernel.authorize(action, capability, budget)` → grant / deny / queue-for-approval. Unifies `plugin_gate` + capability broker + `signal_governance` + per-family approval queues. | 8 | P0 | Phase A | every privileged action routes through the kernel; no bypass path exists |
@@ -218,6 +222,10 @@ the syscall table · budgets = the scheduler · kill-switch/quarantine = a sysca
 | **Gate K** | **action-auth matrix** test (generalizes the SEC-2 route-auth matrix) fails CI if **any** privileged action bypasses the kernel. | — | P0 | K1–K4 | a new un-mediated privileged action fails CI |
 
 ### Track V — Verification Fabric (what makes fleet-breadth safe) (P0–P1)
+
+> **Design spec:** [`docs/superpowers/specs/2026-06-23-orizont24-verification-fabric-design.md`](docs/superpowers/specs/2026-06-23-orizont24-verification-fabric-design.md)
+> — extends the existing snapshot-introspection gates (`test_route_auth_matrix`) + registries
+> (`plugin_gate.BUILTIN_PLUGINS`, `component_registry`) + the ungated eval/north-star harness.
 
 | # | Item | S | P | Dep | AC |
 |---|------|---|---|-----|----|
@@ -242,8 +250,10 @@ the syscall table · budgets = the scheduler · kill-switch/quarantine = a sysca
 > **North-star alignment (by construction):** P1 drives *actions accepted/week*; K3 enforces the
 > *interrupt budget*; V4 guards *reject-rate, %-local, p95-latency* as merge gates — the program can't
 > drift off the metric without failing its own gates. **Totals:** 12 items + 3 gates, ~68 SP
-> (K ≈21 · V ≈21 · P ≈26). **Next concrete steps:** finish Phase A (AUD-\*) → **K1 + V1 in parallel**
-> (kernel skeleton + reality-harness scaffold) → K3/V2 → then **P1 first**.
+> (K ≈21 · V ≈21 · P ≈26). **Design specs written** for both substrate tracks (K + V, linked above) —
+> next is *implementation*, not design. **Next concrete steps:** finish Phase A (AUD-\*) → land the
+> default-off `kernel.authorize` facade (**K1**) + the capability-readiness registry/harness scaffold
+> (**V1/V2**) in parallel → wire the action-auth + readiness matrices → K3/V4 gates → then **P1 first**.
 
 ---
 
