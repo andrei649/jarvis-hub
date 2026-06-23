@@ -29,6 +29,7 @@ State handling (established CLN-3 unblock policy):
 """
 
 import asyncio
+import json
 import logging
 import os
 import statistics
@@ -112,6 +113,28 @@ async def admin_get_env():
     return out
 
 
+def _redact_audit_details(details: object) -> object:
+    """AUD-12: mask any raw ``matched_text`` in a findings JSON blob at the read
+    boundary. New rows are already redacted at write time (audit.py); this also
+    covers rows written before that fix so the admin page never exposes a secret."""
+    if not isinstance(details, str) or '"matched_text"' not in details:
+        return details
+    try:
+        findings = json.loads(details)
+    except (ValueError, TypeError):
+        return details
+    if not isinstance(findings, list):
+        return details
+    changed = False
+    for f in findings:
+        if isinstance(f, dict) and "matched_text" in f:
+            mt = f.get("matched_text")
+            if isinstance(mt, str) and not mt.startswith("[REDACTED:"):
+                f["matched_text"] = f"[REDACTED:{f.get('pattern_name', 'secret')}]"
+                changed = True
+    return json.dumps(findings) if changed else details
+
+
 @router.get("/api/admin/audit", dependencies=[Depends(admin_guard)])
 async def admin_get_audit(page: int = Query(1, ge=1), limit: int = Query(50, ge=1, le=200)):
     db = data_path("security/audit.db")
@@ -135,7 +158,13 @@ async def admin_get_audit(page: int = Query(1, ge=1), limit: int = Query(50, ge=
             total = conn.execute(count_q).fetchone()[0]
             offset = (page - 1) * limit
             rows = conn.execute(select_q, (limit, offset)).fetchall()
-            return total, [dict(r) for r in rows]
+            out = []
+            for r in rows:
+                d = dict(r)
+                if "details" in d:
+                    d["details"] = _redact_audit_details(d["details"])
+                out.append(d)
+            return total, out
         finally:
             conn.close()
 
