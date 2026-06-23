@@ -11,6 +11,7 @@ from fastapi.responses import JSONResponse
 
 from agents.core.app_state import get_orch
 from agents.core.routers._deps import user_guard
+from agents.core.validation import is_valid_session_id
 
 router = APIRouter(tags=["sessions"])
 
@@ -26,13 +27,17 @@ async def get_sessions():
 
 @router.post("/sessions/resume", dependencies=[Depends(user_guard)])
 async def resume_session(req: Request):
-    orch = get_orch()
-    if not orch:
-        return JSONResponse({"error": "not initialized"}, status_code=503)
     body = await req.json()
     sid = body.get("session_id")
     if not sid:
         return JSONResponse({"error": "session_id required"}, status_code=400)
+    # AUD-5: reject anything that isn't an inert identifier before it can reach a
+    # filesystem path (memory/persistence.py builds MEMORY_DIR / f"{sid}.json").
+    if not is_valid_session_id(sid):
+        return JSONResponse({"error": "invalid session_id"}, status_code=400)
+    orch = get_orch()
+    if not orch:
+        return JSONResponse({"error": "not initialized"}, status_code=503)
     ok = await orch.memory.resume_session(sid)
     if not ok:
         return JSONResponse({"error": f"session '{sid}' not found"}, status_code=404)
