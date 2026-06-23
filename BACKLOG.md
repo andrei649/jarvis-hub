@@ -14,7 +14,7 @@
 ```bash
 pip install -r requirements-beta.txt
 python -m uvicorn agents.web:app --host 127.0.0.1 --port 8080
-python -m pytest tests/ -v          # ~2,400 passed, 1 skipped
+python -m pytest tests/ -v          # ~2,653 passed, 2 skipped
 ```
 
 > Singurul skip rămas e heartbeat-ul opțional. (Vechiul `tests/test_spotify.py` cu 8 skip-uri a
@@ -57,7 +57,7 @@ python -m pytest tests/ -v          # ~2,400 passed, 1 skipped
 | **0.11.0** | 🟢 **Finish the refactor (done, #296)** | CLN-3 **complete** — `web.py` 4,636→1,282 LOC, 233→9 inline routes across 45 per-domain routers (304-route surface byte-identical, parity-guarded). CLN-2 substantially done — `PluginManager`+`llm_control`+`cognition_trace` extracted; orchestrator 1,620→1,456 LOC (remaining inline = the BUG-5 request pipeline, not safely extractable). |
 | **0.12.0** | **Harden what shipped (here now)** | ORIZONT-22 review fixes (#294, merged); #292 argus governed-facade wiring; #279 MCP route-tools harden/remove; TASK-3 cross-channel taint-tracking |
 | **0.13.0 ⚠️** | Agentic safety completeness | step/recursion + token/time **budgets + loop detection**; **model-version pinning & reproducibility**; **kill-switch in the HUD** + credential quarantine; eval/regression harness as a **release gate**; audit-log verify UI + secret redaction |
-| **0.14.0 ⚠️** | Upgrade & data durability | **backup/restore** + restore drill ✅ (#302); **data export** 🟢 (#303, export half); **DB schema-migration framework** (H23.7); **delete/forget** endpoint; retention defaults; rollback story |
+| **0.14.0 ⚠️** | Upgrade & data durability | **backup/restore** + restore drill ✅ (#302); **data export** ✅ (#303, CLI); **DB schema-migration framework** ✅ (#305, H23.7); **delete/forget** ✅ (#306, `/api/admin/forget`); retention defaults + rollback story (H23.10) + export HTTP surface still open |
 | **0.15.0 ⚠️** | Operability & distribution | health endpoint; signal handlers + graceful shutdown; log rotation; graceful **local-LLM-down** everywhere; systemd/service templates; **release artifacts** (tar/zip, optional PyPI + Docker publish); **semver compatibility contract** + supported-versions matrix + deprecation policy; platform matrix |
 | **0.16.0** | HUD depth + observability UI | TASK-2 ~37 surfaces incl. **north-star panel** + **network monitor** (watch LOCAL_ONLY make zero calls); LIVE/SEED indicators; OpenAPI types; plugin-gated modes |
 | **0.17.0** | Local ceiling + velocity | H22.4 concurrency, H22.5 model-manager LRU, H22.9 agent-native routes, constrained-decoding tail |
@@ -82,7 +82,7 @@ python -m pytest tests/ -v          # ~2,400 passed, 1 skipped
 | Theme | Status | What exists / the bounded gap | Maps to |
 |-------|--------|-------------------------------|---------|
 | 0.19 First-Run Command Center | 🟡 partial | `routers/onboarding.py`+`status.py`+demo mode / unified install-health+model+first-action screen | H23.20 |
-| 0.20 Jarvis Vault | ⬜ missing | `paths.py`,`secrets_vault.py` / 1 TB vault + retention (backup ✅ #302; export 🟢 #303) | H23.10 |
+| 0.20 Jarvis Vault | ⬜ missing | `paths.py`,`secrets_vault.py` / 1 TB vault + retention (backup ✅ #302; export ✅ #303; forget ✅ #306) | H23.10 |
 | 0.21 Offline Knowledge Packs | 🌱 seed | `local_docs.py` / Kiwix-style packs + installer | 0.21 |
 | 0.22 Appliance Install/Update | 🟡 partial | `install.sh`,`start.sh`,`docker-compose.yml` / uninstall, signed artifacts, no-telemetry proof | H23.13/15 |
 | 0.23 Hardware Benchmark & Profiles | 🟡 partial | `bench.py`,`llm/model_manager.py` (VRAM) / RTX scoring + mode profiles (GPU-gated) | 0.18 |
@@ -118,11 +118,11 @@ python -m pytest tests/ -v          # ~2,400 passed, 1 skipped
 | 0.53 Design System Manifest | 🟡 partial | `frontend/src/styles.css` tokens + `BRAND_BOOK.md` / inspectable component library | — |
 | 0.54 Skill Operating System | ✅ done | `skills/{loader,importer}.py`,`skill_drift.py`, SKILL.md manifests | — |
 | 0.55 Design Partner Kit | ⬜ missing | — / feedback/NPS widget, issue bundle, SLA | H23.21 |
-| 0.56 Trust Center | 🟢 in PR #300 | `security/audit.py`,`routers/security.py` (kill_switch, audit_verify), `LOCAL_ONLY_AGENTS` + HUD panel (#300) / cloud-hop log, consent | H23.3/5/16 |
+| 0.56 Trust Center | ✅ done (#300) | `security/audit.py`,`routers/security.py` (kill_switch, audit_verify), `LOCAL_ONLY_AGENTS` + HUD panel ✅ (#300) / cloud-hop log, consent still open | H23.3/5/16 |
 | 0.57 Release Packaging | ⬜ missing | `release.yml` basic / signed artifacts, SBOM/NOTICE, compat matrix | H23.13/14 |
 | 0.58 Pack Manager | 🟡 partial | `skills/marketplace.py` (registry) / model/domain/content packs, remove/rollback | — |
 | 0.59 Proof Assets | 🌱 seed | `marketing/` + `docs/marketing/` / landing, README hero, demo video | H23.22 |
-| 0.60 Local Analytics | 🟢 in PR #300 | `analytics_store.py`,`observability/north_star.py`,`/api/metrics/north-star` + HUD meter (#300) / activation funnel | H23.20 |
+| 0.60 Local Analytics | ✅ done (#300) | `analytics_store.py`,`observability/north_star.py`,`/api/metrics/north-star` + HUD meter ✅ (#300) / activation funnel still open | H23.20 |
 | 0.61 Database Future Check | 🌱 seed | `settings_db.py` (WAL) / Turso/libSQL eval, migration framework | H23.7 |
 | 0.62 System Profiles | ⬜ missing | VRAM mgmt only / Gaming/AI/Multimedia/Admin modes | 0.17 |
 | 0.63 Restore & Soak | 🟡 partial | backup/restore+drill ✅ (#302) + `resilience.py` / 72h soak, failure injection | H23.8/12 |
@@ -131,8 +131,9 @@ python -m pytest tests/ -v          # ~2,400 passed, 1 skipped
 > **The only 7 truly greenfield (⬜):** 0.20 Vault · 0.42 Security Skills · 0.48 Video Production ·
 > 0.52 Demo Factory · 0.55 Design Partner Kit · 0.57 Release Packaging · 0.62 System Profiles.
 > Everything else is ✅/🟢/🟡/🌱 — **finish-the-PARTIALs beats start-greenfield** (audit guidance).
-> Top remaining finish-firsts: **0.36 Action-Manifest unify**, **H23.9 delete/forget** (export half 🟢 #303),
-> **H23.7 DB migrations**, **H23.10 retention**.
+> Top remaining finish-firsts: **0.36 Action-Manifest unify**, **H23.10 retention defaults**,
+> **export HTTP surface** (`/api/admin/export`, sibling of backup/forget). *(Done: H23.7 DB migrations #305,
+> H23.8 backup #302, H23.9 export #303 + delete/forget #306, 0.56 Trust Center + 0.60 Analytics #300.)*
 
 ---
 
@@ -149,11 +150,11 @@ python -m pytest tests/ -v          # ~2,400 passed, 1 skipped
 | H23.2 | **Model-version pinning & reproducibility** — record id/quant per run; approved-model allowlist | MISSING | 0.13 |
 | H23.3 | **Kill-switch in the HUD** (one-tap) + credential quarantine on halt | EXISTS (code) / no UI | 0.13 |
 | H23.4 | Promote **eval/regression harness to a pre-release gate** | EXISTS / not a gate | 0.13 |
-| H23.5 | Audit-log **verify button** in HUD + secret redaction guarantee | EXISTS · UI **in PR #300** (Trust-mode live audit-verify badge) | 0.13 |
+| H23.5 | Audit-log **verify button** in HUD + secret redaction guarantee | ✅ UI **DONE (#300)** (Trust-mode live audit-verify badge) | 0.13 |
 | H23.6 | TASK-3 indirect-injection / cross-channel **taint-tracking** | open | 0.12 |
-| H23.7 | **DB schema-migration framework** (`_schema_version` + forward-only on startup) | MISSING | 0.14 |
+| H23.7 | **DB schema-migration framework** (`_schema_version` + forward-only on startup) | ✅ **DONE (#305)** — `agents/core/persistence/migrations.py` | 0.14 |
 | H23.8 | **Backup/restore** (one-command) + a tested **restore drill** | ✅ **DONE (#302)** — `agents/core/backup.py` + `/api/admin/backup` (consistent SQLite snapshots, restore-drill) | 0.14 |
-| H23.9 | **Data export + delete/forget** endpoints (finishes promised H8.2) | 🟢 export **in PR #303** (auto-merging) — `agents/core/data_export.py` (CLI); **delete/forget + HTTP surface still open** | 0.14 |
+| H23.9 | **Data export + delete/forget** endpoints (finishes promised H8.2) | ✅ **DONE** — export `agents/core/data_export.py` (CLI, #303) + delete/forget `agents/core/data_purge.py` + `POST /api/admin/forget` (#306, backup-first + confirm-gated). *Residual:* export HTTP surface (`/api/admin/export`) still open | 0.14 |
 | H23.10 | Data-**retention defaults** (conversations, audit log, memory) + rollback story | MISSING | 0.14 |
 | H23.11 | Health/readiness endpoint; signal handlers + graceful shutdown; **log rotation** | MISSING | 0.15 |
 | H23.12 | Graceful **local-LLM-down** handling everywhere (no hang/crash) | PARTIAL | 0.15 |
