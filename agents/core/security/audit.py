@@ -5,8 +5,10 @@ Port of OpenJarvis's Rust-backed audit logger to pure Python.
 """
 
 import hashlib
+import hmac
 import json
 import logging
+import os
 import sqlite3
 import threading
 from pathlib import Path
@@ -30,8 +32,17 @@ def _v1_hash_columns(conn: sqlite3.Connection) -> None:
         conn.execute("ALTER TABLE security_events ADD COLUMN prev_hash TEXT DEFAULT ''")
 
 
+def _v2_hash_algo(conn: sqlite3.Connection) -> None:
+    """v2 (AUD-9) — per-row hash algorithm marker. Legacy rows stay 'sha256'; rows
+    written with a key configured are 'hmac-sha256'. Lets verify_chain handle a DB
+    that spans the transition (key introduced mid-stream). Guarded + idempotent."""
+    cols = {row[1] for row in conn.execute("PRAGMA table_info(security_events)").fetchall()}
+    if "hash_algo" not in cols:
+        conn.execute("ALTER TABLE security_events ADD COLUMN hash_algo TEXT DEFAULT 'sha256'")
+
+
 # Forward-only, append-only. Never edit/reorder a shipped entry — only append.
-_MIGRATIONS = [_v1_hash_columns]
+_MIGRATIONS = [_v1_hash_columns, _v2_hash_algo]
 
 
 class AuditLogger:
@@ -41,6 +52,12 @@ class AuditLogger:
         # threading.Lock serialises all writes; check_same_thread=False allows
         # the connection to be used from asyncio thread-pool workers (H7.4).
         self._lock = threading.Lock()
+        # AUD-9: optional off-box HMAC key. When set, new rows are keyed
+        # (hmac-sha256) so an attacker with DB write access can't recompute a
+        # forged chain without the key. Default (unset) keeps the prior plain
+        # sha256 behavior — opt-in hardening per the default-off convention.
+        _key_raw = os.environ.get("JARVIS_AUDIT_KEY")
+        self._key: Optional[bytes] = _key_raw.encode() if _key_raw else None
         self._conn = sqlite3.connect(str(self._db_path), check_same_thread=False)
         # WAL + synchronous=NORMAL: every turn appends one hash-chained audit row
         # on the async hot path; this keeps the commit cheap (~36x in-bench) while
@@ -56,7 +73,8 @@ class AuditLogger:
                 content_preview TEXT,
                 action_taken    TEXT,
                 row_hash        TEXT DEFAULT '',
-                prev_hash       TEXT DEFAULT ''
+                prev_hash       TEXT DEFAULT '',
+                hash_algo       TEXT DEFAULT 'sha256'
             )
         """)
         # query() filters by event_type and a timestamp floor, ordering by
@@ -72,11 +90,26 @@ class AuditLogger:
         # ad-hoc _migrate_schema().
         apply_migrations(self._conn, _MIGRATIONS, name="audit")
 
+    def _digest(self, algo: str, hash_input: str) -> Optional[str]:
+        """Hash a chain row. ``hmac-sha256`` requires the key — returns None when
+        an hmac row must be verified but no key is configured (caller treats that
+        as 'cannot verify')."""
+        data = hash_input.encode()
+        if algo == "hmac-sha256":
+            if not self._key:
+                return None
+            return hmac.new(self._key, data, hashlib.sha256).hexdigest()
+        return hashlib.sha256(data).hexdigest()
+
     def log(self, event: SecurityEvent):
+        # AUD-12: never persist the raw matched secret. The scanner keeps the real
+        # value in-memory for redaction at the call site, but the durable audit row
+        # stores only a [REDACTED:<pattern>] marker — so a reader of audit.db (or
+        # the admin audit page) sees what was flagged, never the secret itself.
         findings_json = json.dumps([
             {
                 "pattern_name": f.pattern_name,
-                "matched_text": f.matched_text,
+                "matched_text": f"[REDACTED:{f.pattern_name}]",
                 "threat_level": f.threat_level.value,
                 "start": f.start,
                 "end": f.end,
@@ -85,14 +118,15 @@ class AuditLogger:
             for f in event.findings
         ])
 
+        algo = "hmac-sha256" if self._key else "sha256"
         with self._lock:
             prev_hash = self._tail_hash_unlocked()
             hash_input = f"{prev_hash}|{event.timestamp}|{event.event_type.value}|{findings_json}|{event.content_preview}|{event.action_taken}"
-            row_hash = hashlib.sha256(hash_input.encode()).hexdigest()
+            row_hash = self._digest(algo, hash_input)
 
             self._conn.execute(
-                "INSERT INTO security_events (timestamp, event_type, findings_json, content_preview, action_taken, row_hash, prev_hash) VALUES (?, ?, ?, ?, ?, ?, ?)",
-                (event.timestamp, event.event_type.value, findings_json, event.content_preview, event.action_taken, row_hash, prev_hash),
+                "INSERT INTO security_events (timestamp, event_type, findings_json, content_preview, action_taken, row_hash, prev_hash, hash_algo) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                (event.timestamp, event.event_type.value, findings_json, event.content_preview, event.action_taken, row_hash, prev_hash, algo),
             )
             self._conn.commit()
 
@@ -146,18 +180,20 @@ class AuditLogger:
     def verify_chain(self) -> tuple[bool, Optional[int]]:
         with self._lock:
             rows = self._conn.execute(
-                "SELECT id, timestamp, event_type, findings_json, content_preview, action_taken, row_hash, prev_hash FROM security_events ORDER BY id"
+                "SELECT id, timestamp, event_type, findings_json, content_preview, action_taken, row_hash, prev_hash, hash_algo FROM security_events ORDER BY id"
             ).fetchall()
         expected_prev = ""
         for row in rows:
-            rid, ts, etype, fj, preview, action, stored_hash, stored_prev = row
+            rid, ts, etype, fj, preview, action, stored_hash, stored_prev, algo = row
             if not stored_hash:
                 continue
             if stored_prev != expected_prev:
                 return False, rid
             hash_input = f"{stored_prev}|{ts}|{etype}|{fj}|{preview}|{action}"
-            computed = hashlib.sha256(hash_input.encode()).hexdigest()
-            if computed != stored_hash:
+            # Recompute with the row's own algorithm. An hmac-sha256 row can't be
+            # verified without the key (_digest → None) → the chain fails closed.
+            computed = self._digest(algo or "sha256", hash_input)
+            if computed is None or computed != stored_hash:
                 return False, rid
             expected_prev = stored_hash
         return True, None
