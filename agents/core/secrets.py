@@ -49,7 +49,8 @@ logger = logging.getLogger("jarvis.secrets")
 DEFAULT_STORE = data_path("security", "secrets.enc")
 
 _PBKDF2_ITERATIONS = 390_000
-_FALLBACK_PREFIX = b"xhmac1:"  # marks pure-Python fallback ciphertext
+_FALLBACK_PREFIX = b"xhmac1:"  # marks pure-Python fallback ciphertext (str API)
+_FALLBACK_PREFIX_BYTES = b"xhmacb1:"  # marks pure-Python fallback ciphertext (bytes API)
 
 
 # ── cryptography availability ──────────────────────────────────────
@@ -149,28 +150,65 @@ class SecretStore:
             "ciphertext requires the 'cryptography' package, which is not installed"
         )
 
-    def _fallback_encrypt(self, data: bytes) -> str:
-        """Pure-Python: HMAC-SHA256 keystream XOR + HMAC-SHA256 tag."""
+    def _fallback_encrypt_bytes(self, data: bytes) -> bytes:
+        """Pure-Python core: HMAC-SHA256 keystream XOR + HMAC-SHA256 tag → raw blob."""
         key = base64.urlsafe_b64decode(self._key_b64)
         nonce = _secrets.token_bytes(16)
         keystream = _hmac_keystream(key, nonce, len(data))
         cipher = bytes(a ^ b for a, b in zip(data, keystream))
         tag = hmac.new(key, nonce + cipher, hashlib.sha256).digest()
-        blob = nonce + tag + cipher
-        return (_FALLBACK_PREFIX + base64.urlsafe_b64encode(blob)).decode("ascii")
+        return nonce + tag + cipher
 
-    def _fallback_decrypt(self, token: bytes) -> str:
+    def _fallback_decrypt_bytes(self, blob: bytes) -> bytes:
         key = base64.urlsafe_b64decode(self._key_b64)
-        try:
-            blob = base64.urlsafe_b64decode(token[len(_FALLBACK_PREFIX):])
-        except (ValueError, binascii.Error) as e:
-            raise SecretStoreError("cannot decrypt secret (corrupted ciphertext)") from e
         nonce, tag, cipher = blob[:16], blob[16:48], blob[48:]
         expected = hmac.new(key, nonce + cipher, hashlib.sha256).digest()
         if not hmac.compare_digest(tag, expected):
             raise SecretStoreError("cannot decrypt secret (wrong key or corrupted)")
         keystream = _hmac_keystream(key, nonce, len(cipher))
-        return bytes(a ^ b for a, b in zip(cipher, keystream)).decode("utf-8")
+        return bytes(a ^ b for a, b in zip(cipher, keystream))
+
+    def _fallback_encrypt(self, data: bytes) -> str:
+        """Pure-Python: HMAC-SHA256 keystream XOR + HMAC-SHA256 tag (base64 str token)."""
+        blob = self._fallback_encrypt_bytes(data)
+        return (_FALLBACK_PREFIX + base64.urlsafe_b64encode(blob)).decode("ascii")
+
+    def _fallback_decrypt(self, token: bytes) -> str:
+        try:
+            blob = base64.urlsafe_b64decode(token[len(_FALLBACK_PREFIX):])
+        except (ValueError, binascii.Error) as e:
+            raise SecretStoreError("cannot decrypt secret (corrupted ciphertext)") from e
+        return self._fallback_decrypt_bytes(blob).decode("utf-8")
+
+    # ── public at-rest cipher (no persistence) ─────────────────────
+    # Exposed so other stores (settings_db secret columns, backup archives) can
+    # reuse this one key-managed cipher instead of re-implementing Fernet/fallback.
+    def encrypt_value(self, plaintext: str) -> str:
+        """Encrypt a single string value; returns a self-describing token."""
+        return self._encrypt(plaintext)
+
+    def decrypt_value(self, token: str) -> str:
+        """Inverse of :meth:`encrypt_value`."""
+        return self._decrypt(token)
+
+    def encrypt_bytes(self, data: bytes) -> bytes:
+        """Encrypt arbitrary bytes (e.g. a backup archive) → self-describing token."""
+        if _HAS_CRYPTOGRAPHY:
+            return Fernet(self._key_b64).encrypt(data)
+        return _FALLBACK_PREFIX_BYTES + self._fallback_encrypt_bytes(data)
+
+    def decrypt_bytes(self, token: bytes) -> bytes:
+        """Inverse of :meth:`encrypt_bytes`."""
+        if token.startswith(_FALLBACK_PREFIX_BYTES):
+            return self._fallback_decrypt_bytes(token[len(_FALLBACK_PREFIX_BYTES):])
+        if _HAS_CRYPTOGRAPHY:
+            try:
+                return Fernet(self._key_b64).decrypt(token)
+            except InvalidToken as e:
+                raise SecretStoreError("cannot decrypt (wrong key or corrupted)") from e
+        raise SecretStoreError(
+            "ciphertext requires the 'cryptography' package, which is not installed"
+        )
 
     # ── persistence ───────────────────────────────────────────────
     def _load(self) -> dict[str, str]:

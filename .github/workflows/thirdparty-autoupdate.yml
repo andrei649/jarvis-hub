@@ -98,7 +98,7 @@ jobs:
       # same branch, so no duplicate PRs for the same bump (idempotent).
       - name: Create or update pull request
         if: steps.bump.outputs.changed == 'true'
-        uses: peter-evans/create-pull-request@v7
+        uses: peter-evans/create-pull-request@v8
         with:
           token: ${{ github.token }}
           branch: chore/thirdparty-update-${{ matrix.name }}

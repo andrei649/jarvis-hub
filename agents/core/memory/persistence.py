@@ -6,6 +6,7 @@ import json
 import logging
 
 from agents.core.paths import data_root
+from agents.core.validation import is_valid_session_id
 
 MEMORY_DIR = data_root()
 
@@ -13,6 +14,12 @@ logger = logging.getLogger("jarvis.persistence")
 
 
 def save_memory(session_id: str, turns: list[dict]):
+    # AUD-5: never let an id that isn't an inert identifier reach the path — a
+    # second line of defense behind the router validation, so any internal caller
+    # is protected too.
+    if not is_valid_session_id(session_id):
+        logger.warning("refusing to save memory for invalid session_id")
+        return
     MEMORY_DIR.mkdir(parents=True, exist_ok=True)
     path = MEMORY_DIR / f"{session_id}.json"
     try:
@@ -24,6 +31,9 @@ def save_memory(session_id: str, turns: list[dict]):
 
 
 def load_memory(session_id: str) -> list[dict]:
+    if not is_valid_session_id(session_id):
+        logger.warning("refusing to load memory for invalid session_id")
+        return []
     path = MEMORY_DIR / f"{session_id}.json"
     if not path.exists():
         return []
@@ -58,6 +68,9 @@ def list_sessions() -> list[str]:
 
 
 def delete_memory(session_id: str):
+    if not is_valid_session_id(session_id):
+        logger.warning("refusing to delete memory for invalid session_id")
+        return
     path = MEMORY_DIR / f"{session_id}.json"
     if path.exists():
         path.unlink()
