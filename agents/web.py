@@ -400,6 +400,36 @@ async def _rate_limit(request: Request, call_next):
     return await call_next(request)
 
 
+# AUD-3: security headers (clickjacking, MIME-sniff, and a CSP as defense-in-depth
+# behind the HUD's output escaping). The HUD ships its own inline <script>/<style>,
+# so script/style-src must allow 'unsafe-inline'; the CSP still blocks external
+# scripts, plugins/objects and cross-origin framing. Override the policy with
+# $JARVIS_CSP, or set $JARVIS_DISABLE_CSP=1 to drop the CSP header if it ever
+# interferes with a deployment.
+_DEFAULT_CSP = (
+    "default-src 'self'; "
+    "script-src 'self' 'unsafe-inline'; "
+    "style-src 'self' 'unsafe-inline'; "
+    "img-src 'self' data: https:; "
+    "font-src 'self' data:; "
+    "connect-src 'self' ws: wss:; "
+    "object-src 'none'; base-uri 'self'; frame-ancestors 'self'"
+)
+_CSP_POLICY = os.environ.get("JARVIS_CSP", _DEFAULT_CSP)
+_CSP_ENABLED = os.environ.get("JARVIS_DISABLE_CSP", "").lower() not in ("1", "true", "yes")
+
+
+@app.middleware("http")
+async def _security_headers(request: Request, call_next):
+    response = await call_next(request)
+    response.headers.setdefault("X-Content-Type-Options", "nosniff")
+    response.headers.setdefault("X-Frame-Options", "SAMEORIGIN")
+    response.headers.setdefault("Referrer-Policy", "no-referrer")
+    if _CSP_ENABLED:
+        response.headers.setdefault("Content-Security-Policy", _CSP_POLICY)
+    return response
+
+
 def _uptime_str() -> str:
     s = int(time.time() - _start_time)
     return f"{s // 3600:02d}:{(s % 3600) // 60:02d}:{s % 60:02d}"

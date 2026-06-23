@@ -30,12 +30,14 @@ from __future__ import annotations
 import argparse
 import json
 import logging
+import shutil
 import sqlite3
 from pathlib import Path
-from typing import Optional
+from typing import Iterable, Optional
 
 from agents.core import backup as _backup
 from agents.core.paths import data_root
+from agents.core.validation import is_valid_session_id
 
 logger = logging.getLogger("jarvis.purge")
 
@@ -43,6 +45,19 @@ logger = logging.getLogger("jarvis.purge")
 PURGE_DBS: tuple[str, ...] = ("missions.db", "autonomy.db", "analytics.db")
 # User-content JSON stores — reset to an empty object (their top-level shape is a dict).
 PURGE_JSON: tuple[str, ...] = ("notes.json",)
+
+# AUD-2 — the memory subsystem at rest. These FIXED-name stores hold extracted
+# user content (the knowledge graph, named entities, decay activations); deleting
+# them by exact name is unambiguous. Conversation transcripts are session-keyed
+# (`<sid>.json` / `<sid>.jsonl`) and share the data root with config JSON, so they
+# are removed only for *confirmed* sessions (see _purge_memory_at_rest), never by
+# a blanket glob. The live in-memory stores are cleared first (clear_live_memory)
+# so a running orchestrator doesn't re-persist what we delete.
+PURGE_MEMORY_FILES: tuple[str, ...] = ("bitemporal_kg.json", "entities.json", "decay.json")
+# Directories removed wholesale (embedded recall cache derived from user content).
+PURGE_MEMORY_DIRS: tuple[str, ...] = ("embedding_cache",)
+# Top-level *.jsonl that are NOT conversation transcripts — never treated as sessions.
+_NON_SESSION_JSONL: frozenset[str] = frozenset({"autonomy_journal", "problems"})
 
 
 class PurgeError(RuntimeError):
@@ -72,6 +87,77 @@ def _purge_db(path: Path) -> dict:
     return deleted
 
 
+def _purge_memory_at_rest(root: Path, live_session_ids: Iterable[str] = ()) -> dict:
+    """Erase the memory subsystem's at-rest content under *root*.
+
+    Removes the fixed-name graph/entity/decay stores and the embedding cache, then
+    deletes conversation transcripts for *confirmed* sessions only: ids passed in
+    from the live manager, plus the stems of any top-level ``*.jsonl`` that look
+    like a session (validated id, not on the non-session denylist). Files like
+    ``notes.json`` / ``canvas.json`` — which have no ``.jsonl`` and aren't live
+    sessions — are never touched.
+    """
+    report: dict = {"files": [], "dirs": [], "sessions": []}
+
+    for name in PURGE_MEMORY_FILES:
+        p = root / name
+        if p.exists():
+            p.unlink()
+            report["files"].append(name)
+
+    for name in PURGE_MEMORY_DIRS:
+        d = root / name
+        if d.is_dir():
+            shutil.rmtree(d, ignore_errors=True)
+            report["dirs"].append(name)
+
+    sessions = {s for s in live_session_ids if is_valid_session_id(s)}
+    for jl in root.glob("*.jsonl"):
+        stem = jl.stem
+        if stem not in _NON_SESSION_JSONL and is_valid_session_id(stem):
+            sessions.add(stem)
+    for sid in sorted(sessions):
+        removed = False
+        for suffix in (".json", ".jsonl"):
+            p = root / f"{sid}{suffix}"
+            if p.exists():
+                p.unlink()
+                removed = True
+        if removed:
+            report["sessions"].append(sid)
+    return report
+
+
+async def clear_live_memory(orch) -> list[str]:
+    """Best-effort clear of the orchestrator's in-memory stores before a purge, so a
+    running process doesn't re-persist what the file purge removes. Never raises."""
+    cleared: list[str] = []
+    mem = getattr(orch, "memory", None)
+    if mem is not None and hasattr(mem, "clear"):
+        try:
+            await mem.clear()
+            cleared.append("conversation")
+        except Exception:  # pragma: no cover - defensive
+            logger.warning("clear_live_memory: conversation clear failed", exc_info=True)
+        for attr in ("graph", "vectors"):
+            store = getattr(mem, attr, None)
+            if store is not None and hasattr(store, "clear"):
+                try:
+                    store.clear()
+                    cleared.append(attr)
+                except Exception:  # pragma: no cover - defensive
+                    logger.warning("clear_live_memory: %s clear failed", attr, exc_info=True)
+    for attr in ("entities", "decay"):
+        store = getattr(orch, attr, None)
+        if store is not None and hasattr(store, "clear"):
+            try:
+                store.clear()
+                cleared.append(attr)
+            except Exception:  # pragma: no cover - defensive
+                logger.warning("clear_live_memory: %s clear failed", attr, exc_info=True)
+    return cleared
+
+
 def _json_entries(path: Path) -> int:
     """Best-effort count of top-level entries in a JSON store (for the report)."""
     try:
@@ -81,14 +167,21 @@ def _json_entries(path: Path) -> int:
         return 0
 
 
-def purge_data(source_root: Optional[str] = None, *, backup_first: bool = True) -> dict:
-    """Erase the user's structured content under the data root. Irreversible.
+def purge_data(source_root: Optional[str] = None, *, backup_first: bool = True,
+               memory: bool = False, session_ids: Optional[Iterable[str]] = None) -> dict:
+    """Erase the user's content under the data root. Irreversible.
 
     When ``backup_first`` (default), a snapshot is created **and verified** before any
     deletion; if it fails verification, ``PurgeError`` is raised and nothing is purged.
+    (The snapshot is encrypted at rest when a backup key is configured — see AUD-1.)
 
-    Returns ``{ok, backup, purged, total_rows}`` where ``backup`` is
-    ``{archive, verified}`` or ``None``, and ``purged`` maps each target to what it cleared.
+    When ``memory`` (AUD-2), the memory subsystem at rest is also erased: the fixed
+    graph/entity/decay stores, the embedding cache, and conversation transcripts for
+    ``session_ids`` (plus any session-shaped ``*.jsonl``). Callers that have a live
+    orchestrator should ``await clear_live_memory(orch)`` first so nothing is
+    re-persisted, and pass its known ``session_ids``.
+
+    Returns ``{ok, backup, purged, total_rows}``.
     """
     root = Path(source_root) if source_root else data_root()
     report: dict = {"ok": True, "backup": None, "purged": {}, "total_rows": 0}
@@ -118,8 +211,11 @@ def purge_data(source_root: Optional[str] = None, *, backup_first: bool = True) 
         p.write_text("{}", encoding="utf-8")
         report["purged"][name] = {"reset": before}
 
-    logger.info("forget purge complete: %s rows across %s targets (backup=%s)",
-                report["total_rows"], len(report["purged"]),
+    if memory:
+        report["purged"]["memory"] = _purge_memory_at_rest(root, session_ids or ())
+
+    logger.info("forget purge complete: %s rows across %s targets (memory=%s, backup=%s)",
+                report["total_rows"], len(report["purged"]), memory,
                 report["backup"]["archive"] if report["backup"] else "none")
     return report
 
