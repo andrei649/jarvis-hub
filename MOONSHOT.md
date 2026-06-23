@@ -76,6 +76,13 @@ a clear "done" gate; we do not skip gates.
 > design-partner users (the old "Phase 2 sellable" user-proof, pulled into the 1.0 bar). Manual
 > testing/audit is the *release step that tags a version*, not a gate item.
 
+> **The Phase-2 substrate program — ORIZONT 24 "AI-OS" (decided 2026-06-23):** productionization isn't
+> only a checklist of fixes; it's earning the word *operating*. The bridge from feature-complete (v0.10) to
+> a **provable** 1.0 is one **Action Kernel** (every agent action mediated, budgeted, revocable) + a
+> **Verification Fabric** (each capability proven against reality before it may claim "done"), with the four
+> live capability packs deepened on top. Full program, tracks (K/V/P) and gates:
+> [BACKLOG.md → ORIZONT 24](BACKLOG.md).
+
 ---
 
 ## 5. Non-Negotiable Principles (the guardrails)
