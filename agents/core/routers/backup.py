@@ -19,6 +19,7 @@ from fastapi.responses import JSONResponse
 
 from agents.core import backup as _backup
 from agents.core import data_purge as _purge
+from agents.core.app_state import get_orch
 from agents.core.routers._deps import admin_guard
 from agents.core.web_helpers import nocache_json
 
@@ -75,11 +76,15 @@ async def backup_verify(req: Request):
 
 @router.post("/api/admin/forget", dependencies=[Depends(admin_guard)])
 async def forget_data(req: Request):
-    """Irreversibly erase the user's structured content (backup-first). Body: {confirm}.
+    """Irreversibly erase the user's content (backup-first). Body: {confirm}.
 
     Requires an explicit ``{"confirm": "FORGET"}`` body in addition to the admin guard —
     a deliberate, hard-to-fat-finger acknowledgement. A snapshot is taken and verified
     before anything is deleted, so the purge is recoverable from the archive it just made.
+
+    AUD-2: the purge now also clears the memory subsystem at rest (knowledge graph,
+    entities, decay, embedding cache, conversation transcripts). Live in-memory stores
+    are cleared first so a running orchestrator doesn't re-persist what is deleted.
     """
     try:
         body = await req.json()
@@ -90,8 +95,19 @@ async def forget_data(req: Request):
             {"error": 'forget requires confirmation — send {"confirm": "FORGET"}'},
             status_code=400,
         )
+    # Capture known session ids and clear live memory before the file purge.
+    orch = get_orch()
+    session_ids: list[str] = []
+    if orch is not None:
+        conv = getattr(getattr(orch, "memory", None), "conversation", None)
+        if conv is not None:
+            try:
+                session_ids = list(getattr(conv, "sessions", {}).keys())
+            except Exception:
+                session_ids = []
+        await _purge.clear_live_memory(orch)
     try:
-        result = _purge.purge_data(backup_first=True)
+        result = _purge.purge_data(backup_first=True, memory=True, session_ids=session_ids)
     except (OSError, ValueError, _purge.PurgeError) as e:
         logger.warning("forget purge failed: %s", e)
         return JSONResponse({"error": "forget failed"}, status_code=500)
