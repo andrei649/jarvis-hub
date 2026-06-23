@@ -12,12 +12,14 @@ Also hosts the destructive sibling `POST /api/admin/forget` (H23.9): a confirm-g
 backup-first "forget me" purge of the user's structured content at rest.
 """
 
+import asyncio
 import logging
 
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import JSONResponse
 
 from agents.core import backup as _backup
+from agents.core import data_export as _export
 from agents.core import data_purge as _purge
 from agents.core.app_state import get_orch
 from agents.core.routers._deps import admin_guard
@@ -72,6 +74,23 @@ async def backup_verify(req: Request):
         logger.warning("backup verify failed: %s", e)
         return JSONResponse({"error": "verify failed"}, status_code=500)
     return nocache_json(report)
+
+
+@router.post("/api/admin/export", dependencies=[Depends(admin_guard)])
+async def export_data(req: Request):
+    """Write a portable JSON export of the user's content DBs (H23.9).
+
+    Admin-guarded sibling of backup/forget. The export covers only user-content
+    DBs (``data_export.EXPORT_DBS``) — never settings.db/secrets — so it is the
+    data-portability counterpart to the destructive forget. The dump does blocking
+    SQLite I/O, so it is offloaded off the event loop.
+    """
+    try:
+        result = await asyncio.to_thread(_export.export_data)
+    except (OSError, ValueError) as e:
+        logger.warning("export failed: %s", e)
+        return JSONResponse({"error": "export failed"}, status_code=500)
+    return nocache_json({"ok": True, **result})
 
 
 @router.post("/api/admin/forget", dependencies=[Depends(admin_guard)])
