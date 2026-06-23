@@ -356,31 +356,36 @@ function parseWeather(s) {
   return { loc, temp: t ? t[1] : rest.slice(0,10), desc: rest.replace(/[+-]?\d+[°]?[CF]\s*,\s*/, '').replace(/,?\s*\d+% humidity.*/, '').trim(), unit: '' };
 }
 
+// AUD-3: escape any value that comes from an API (weather/news/system/history)
+// before it is interpolated into innerHTML, so a hostile string (e.g. an RSS
+// headline like `<img src=x onerror=…>`) renders as inert text, not markup.
+const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+
 async function refreshDashboard() {
   try {
     const r = await fetch('/dashboard'); const d = await r.json();
     // Weather
     const w = parseWeather(d.weather);
     document.getElementById('w-loc').textContent = w.loc.toUpperCase();
-    document.getElementById('w-temp').innerHTML = w.temp + ' <span style="font-size:14px;color:rgba(0,212,255,0.3)">' + w.desc.slice(0,18) + '</span>';
+    document.getElementById('w-temp').innerHTML = esc(w.temp) + ' <span style="font-size:14px;color:rgba(0,212,255,0.3)">' + esc(w.desc.slice(0,18)) + '</span>';
     document.getElementById('w-desc').textContent = w.desc;
     // News
     const nl = document.getElementById('w-news-list');
-    nl.innerHTML = (d.news || []).map(h => `<div class="hl">${h}</div>`).join('') || '<div class="hl" style="color:rgba(200,214,229,0.15)">No data</div>';
+    nl.innerHTML = (d.news || []).map(h => `<div class="hl">${esc(h)}</div>`).join('') || '<div class="hl" style="color:rgba(200,214,229,0.15)">No data</div>';
     // System
     const sys = d.system || {};
     document.getElementById('w-sys-rows').innerHTML = `
-      <div class="row"><span class="key">Engine</span><span class="val">${sys.backend || '—'}</span></div>
-      <div class="row"><span class="key">Agents</span><span class="val">${sys.agents || 0}</span></div>
-      <div class="row"><span class="key">Turns</span><span class="val">${sys.turns || 0}</span></div>
-      <div class="row"><span class="key">Vectors</span><span class="val">${sys.vectors || 0}</span></div>
-      <div class="row"><span class="key">Session</span><span class="val" style="font-size:8px">${sys.session || '—'}</span></div>
+      <div class="row"><span class="key">Engine</span><span class="val">${esc(sys.backend || '—')}</span></div>
+      <div class="row"><span class="key">Agents</span><span class="val">${esc(sys.agents || 0)}</span></div>
+      <div class="row"><span class="key">Turns</span><span class="val">${esc(sys.turns || 0)}</span></div>
+      <div class="row"><span class="key">Vectors</span><span class="val">${esc(sys.vectors || 0)}</span></div>
+      <div class="row"><span class="key">Session</span><span class="val" style="font-size:8px">${esc(sys.session || '—')}</span></div>
     `;
     // Recent
     const cl = document.getElementById('w-conv-list');
     const turns = (d.conversation?.last_turns || []).slice(-3);
     cl.innerHTML = turns.length
-      ? turns.map(t => `<div class="turn"><span class="r">${(t.role||'?').toUpperCase()}</span> <span class="p">${(t.preview||'').slice(0,45)}</span></div>`).join('')
+      ? turns.map(t => `<div class="turn"><span class="r">${esc((t.role||'?').toUpperCase())}</span> <span class="p">${esc((t.preview||'').slice(0,45))}</span></div>`).join('')
       : '<div class="turn" style="color:rgba(200,214,229,0.1)">No conversation yet</div>';
   } catch {}
 }
