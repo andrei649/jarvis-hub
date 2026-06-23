@@ -238,6 +238,10 @@ the syscall table · budgets = the scheduler · kill-switch/quarantine = a sysca
 ### Track P — Live Capability Packs (breadth on the substrate, fleet-parallel) (P0–P2)
 
 > Each pack = drive its rails **SEAM→VERIFIED**, mediated by Track K, gated by Track V. (Maps = competitive-gap themes deepened.)
+> **P1 design spec:** [`docs/superpowers/specs/2026-06-23-orizont24-p1-proactive-autonomy-design.md`](docs/superpowers/specs/2026-06-23-orizont24-p1-proactive-autonomy-design.md)
+> — the loop is already wired end-to-end (`observer`/`watchers` → `policy` → Telegram inbox → `TaskExecutor`
+> → write-back/social/call → `north_star`); P1 = drive it SEAM→VERIFIED on the K/V substrate + close 3 proof
+> gaps (unified "Today" timeline · night-shift north-star split · proposal-funnel diagnostics).
 
 | # | Item | S | P | Dep | AC |
 |---|------|---|---|-----|----|
