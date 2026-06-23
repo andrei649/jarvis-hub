@@ -139,6 +139,11 @@ python -m pytest tests/ -v          # ~2,653 passed, 2 skipped
 > Top remaining finish-firsts: **0.36 Action-Manifest unify**, **H23.10 retention defaults**,
 > **export HTTP surface** (`/api/admin/export`, sibling of backup/forget). *(Done: H23.7 DB migrations #305,
 > H23.8 backup #302, H23.9 export #303 + delete/forget #306, 0.56 Trust Center + 0.60 Analytics #300.)*
+>
+> **Full per-theme execution specs** for every deferred theme above now live in **Phase E** of the
+> [remaining-backlog blueprint](docs/superpowers/specs/2026-06-23-orizont24-remaining-backlog-blueprint.md)
+> — each with grounded `file:line` seams, build steps, acceptance criteria, a test path, and its K/V
+> dependency. Load-bearing seams were re-verified against the codebase on 2026-06-23.
 
 ---
 
@@ -196,6 +201,12 @@ python -m pytest tests/ -v          # ~2,653 passed, 2 skipped
 > deepen competitive-gap themes **0.32/0.38/0.45** (P1), **0.40/0.41** (P2), **0.39** (P3), **0.47/0.50** (P4).
 > **Phase A = the AUD-\* hardening cluster** (see *Hardening audit (2026-06-23)* below) — the foundation;
 > skipping it is the OpenClaw failure mode.
+>
+> **📋 Cross-phase execution map:** [`docs/superpowers/specs/2026-06-23-orizont24-remaining-backlog-blueprint.md`](docs/superpowers/specs/2026-06-23-orizont24-remaining-backlog-blueprint.md)
+> — every remaining backlog item, **Phases A–E** (hardening · K/V substrate · the 4 packs · H23
+> productionization · all deferred competitive-gap themes), grounded with `file:line` seams to reuse,
+> approach, acceptance, and test paths. The context-cheap map sessions execute against instead of
+> re-reading the ~2M-token repo; each item ships as its own PR.
 
 **The OS metaphor, made literal:** agents = processes · capability tokens = permissions · the kernel =
 the syscall table · budgets = the scheduler · kill-switch/quarantine = a syscall · the verification fabric
