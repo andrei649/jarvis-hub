@@ -2,7 +2,7 @@ import { pathToFileURL } from "node:url";
 import Fastify, { type FastifyReply, type FastifyRequest } from "fastify";
 import cors from "@fastify/cors";
 import websocket from "@fastify/websocket";
-import { config } from "./config.js";
+import { assertSafeBind, config } from "./config.js";
 import { initTracing, shutdownTracing } from "./otel.js";
 import { httpRequestDuration, httpRequestsTotal } from "./metrics/registry.js";
 import { healthRoutes } from "./routes/health.js";
@@ -115,6 +115,13 @@ export async function buildServer() {
 }
 
 async function main() {
+  // AUD-4: fail closed before anything else — never bind network-exposed without auth.
+  try {
+    assertSafeBind();
+  } catch (err) {
+    console.error(err instanceof Error ? err.message : String(err));
+    process.exit(1);
+  }
   // Initialize OTLP tracing FIRST (before the app/instrumentations load) — strictly opt-in and no-op
   // unless OTEL_EXPORTER_OTLP_ENDPOINT is set, so this is safe to call unconditionally.
   await initTracing();

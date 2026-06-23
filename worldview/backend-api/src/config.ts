@@ -1,7 +1,9 @@
 // Environment-derived config for the 4D API. Kept tiny and dependency-free.
 export const config = {
   port: Number(process.env.PORT ?? 4000),
-  host: process.env.HOST ?? "0.0.0.0",
+  // AUD-4: default to loopback. Binding all interfaces (0.0.0.0) is opt-in and,
+  // when chosen, requires WORLDVIEW_AUTH_SECRET (enforced by assertSafeBind).
+  host: process.env.HOST ?? "127.0.0.1",
   databaseUrl:
     process.env.DATABASE_URL ?? "postgres://worldview:worldview@localhost:5432/worldview",
   redisUrl: process.env.REDIS_URL ?? "redis://localhost:6379",
@@ -34,3 +36,27 @@ export const config = {
   otelExporterOtlpEndpoint: process.env.OTEL_EXPORTER_OTLP_ENDPOINT ?? "",
   otelServiceName: process.env.OTEL_SERVICE_NAME ?? "worldview-api",
 };
+
+const LOOPBACK_HOSTS = new Set(["127.0.0.1", "localhost", "::1", "::ffff:127.0.0.1"]);
+
+export function isLoopbackHost(host: string): boolean {
+  return LOOPBACK_HOSTS.has(host);
+}
+
+/**
+ * AUD-4 — fail closed on an open-by-default deployment. Binding a non-loopback
+ * host (e.g. 0.0.0.0) with an empty authSecret would serve the API to the network
+ * with no RBAC/AOI scoping. Throw so the caller aborts the boot; the operator must
+ * either set WORLDVIEW_AUTH_SECRET or bind a loopback host.
+ */
+export function assertSafeBind(
+  cfg: { host: string; authSecret: string } = config,
+): void {
+  if (!isLoopbackHost(cfg.host) && cfg.authSecret.length === 0) {
+    throw new Error(
+      `Refusing to start: HOST=${cfg.host} is network-exposed but WORLDVIEW_AUTH_SECRET ` +
+        `is empty (authentication disabled). Set WORLDVIEW_AUTH_SECRET to enforce auth, ` +
+        `or bind HOST=127.0.0.1 for local-only use.`,
+    );
+  }
+}
