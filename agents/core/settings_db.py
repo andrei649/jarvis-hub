@@ -25,6 +25,70 @@ def _logsafe(value: object) -> str:
 
 DB_PATH = data_path("settings.db")
 
+# ── secret-field encryption at rest (AUD-1 / F2) ──────────────────
+# Credential-bearing settings must never sit in settings.db as plaintext. These
+# keys are envelope-encrypted at the write boundary (put_category) and decrypted
+# transparently on read (get_value / get_category / get_all), reusing the single
+# key-managed cipher in agents.core.secrets (Fernet, or its pure-Python fallback
+# when 'cryptography' is unavailable). The key lives outside settings.db.
+SECRET_KEYS: frozenset[str] = frozenset({
+    "twilio_auth_token",
+    "notion_integration_token",
+    "tuya_secret",
+    "gecko_ing_client_secret",
+    "gecko_libra_token",
+    "stark_ga4_service_account",
+})
+
+_ENC_PREFIX = "enc::v1::"  # marks an encrypted settings value (always a JSON string)
+
+_field_cipher = None
+_field_cipher_lock = threading.Lock()
+
+
+def _get_field_cipher():
+    """Lazily build the shared at-rest cipher.
+
+    Constructed only when a secret value is actually read or written, so the
+    common case (no secrets set) never touches the secret store or its keyfile.
+    """
+    global _field_cipher
+    if _field_cipher is None:
+        with _field_cipher_lock:
+            if _field_cipher is None:
+                from agents.core.secrets import SecretStore
+                # Re-resolve data_path at call time so $JARVIS_HOME is honored.
+                _field_cipher = SecretStore(path=data_path("security", "secrets.enc"))
+    return _field_cipher
+
+
+def _encrypt_if_secret(key: str, value: Any) -> Any:
+    """Encrypt secret-keyed, non-empty string values; pass everything else through.
+
+    Idempotent: an already-encrypted token is returned unchanged. Fails closed —
+    if encryption raises we refuse to fall back to storing plaintext.
+    """
+    if key in SECRET_KEYS and isinstance(value, str) and value:
+        if value.startswith(_ENC_PREFIX):
+            return value
+        return _ENC_PREFIX + _get_field_cipher().encrypt_value(value)
+    return value
+
+
+def _decrypt_if_secret(value: Any) -> Any:
+    """Decrypt an encrypted settings token; pass non-encrypted values through.
+
+    On decrypt failure (e.g. a rotated/lost key) returns "" rather than leaking
+    ciphertext or crashing the admin panel — the field then reads as unset.
+    """
+    if isinstance(value, str) and value.startswith(_ENC_PREFIX):
+        try:
+            return _get_field_cipher().decrypt_value(value[len(_ENC_PREFIX):])
+        except Exception:
+            logger.warning("Could not decrypt a secret setting (wrong/lost key); returning empty")
+            return ""
+    return value
+
 # ── schema ────────────────────────────────────────────────────────
 
 SCHEMA = """
@@ -208,7 +272,7 @@ def get_all() -> dict[str, list[dict]]:
             groups[cat] = []
         groups[cat].append({
             "key": r["key"],
-            "value": json.loads(r["value"]),
+            "value": _decrypt_if_secret(json.loads(r["value"])),
             "label": r["label"],
             "kind": r["kind"],
             "opts": json.loads(r["opts"]),
@@ -230,7 +294,7 @@ def get_value(category: str, key: str, default=None):
         conn.close()
         if row is None:
             return default
-        return json.loads(row["value"])
+        return _decrypt_if_secret(json.loads(row["value"]))
     except Exception:
         return default
 
@@ -245,7 +309,7 @@ def get_category(cat: str) -> list[dict]:
     conn.close()
     return [{
         "key": r["key"],
-        "value": json.loads(r["value"]),
+        "value": _decrypt_if_secret(json.loads(r["value"])),
         "label": r["label"],
         "kind": r["kind"],
         "opts": json.loads(r["opts"]),
@@ -259,7 +323,8 @@ def put_category(cat: str, data: dict[str, Any]) -> tuple[int, list[str]]:
     for key, value in data.items():
         cur = conn.execute("SELECT key FROM settings WHERE category=? AND key=?", (cat, key))
         if cur.fetchone():
-            conn.execute("UPDATE settings SET value=? WHERE category=? AND key=?", (json.dumps(value), cat, key))
+            stored = _encrypt_if_secret(key, value)
+            conn.execute("UPDATE settings SET value=? WHERE category=? AND key=?", (json.dumps(stored), cat, key))
             updated += 1
         else:
             skipped.append(key)

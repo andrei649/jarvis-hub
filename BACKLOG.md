@@ -14,7 +14,7 @@
 ```bash
 pip install -r requirements-beta.txt
 python -m uvicorn agents.web:app --host 127.0.0.1 --port 8080
-python -m pytest tests/ -v          # ~2,653 passed, 2 skipped
+python -m pytest tests/ -v          # ~2,666 passed, 2 skipped
 ```
 
 > Singurul skip rămas e heartbeat-ul opțional. (Vechiul `tests/test_spotify.py` cu 8 skip-uri a
@@ -87,7 +87,7 @@ python -m pytest tests/ -v          # ~2,653 passed, 2 skipped
 | Theme | Status | What exists / the bounded gap | Maps to |
 |-------|--------|-------------------------------|---------|
 | 0.19 First-Run Command Center | 🟡 partial | `routers/onboarding.py`+`status.py`+demo mode / unified install-health+model+first-action screen | H23.20 |
-| 0.20 Jarvis Vault | ⬜ missing | `paths.py`,`secrets_vault.py` / 1 TB vault + retention (backup ✅ #302 *but unencrypted → AUD-1*; export ✅ #303; forget 🟡 #306 *incomplete → AUD-2*) | H23.10 |
+| 0.20 Jarvis Vault | ⬜ missing | `paths.py`,`secrets_vault.py` / 1 TB vault + retention (backup ✅ #302, encryption ✅ AUD-1 #309; export ✅ #303; forget 🟡 #306 *incomplete → AUD-2*) | H23.10 |
 | 0.21 Offline Knowledge Packs | 🌱 seed | `local_docs.py` / Kiwix-style packs + installer | 0.21 |
 | 0.22 Appliance Install/Update | 🟡 partial | `install.sh`,`start.sh`,`docker-compose.yml` / uninstall, signed artifacts, no-telemetry proof | H23.13/15 |
 | 0.23 Hardware Benchmark & Profiles | 🟡 partial | `bench.py`,`llm/model_manager.py` (VRAM) / RTX scoring + mode profiles (GPU-gated) | 0.18 |
@@ -163,7 +163,7 @@ python -m pytest tests/ -v          # ~2,653 passed, 2 skipped
 | H23.5 | Audit-log **verify button** in HUD + secret redaction guarantee | ✅ UI **DONE (#300)** (Trust-mode live audit-verify badge). *Caveat (audit 2026-06-23):* the chain is **plain SHA-256 (not keyed)** and the scanner still stores raw `matched_text` → **AUD-9 / AUD-12** | 0.13 |
 | H23.6 | TASK-3 indirect-injection / cross-channel **taint-tracking** | open | 0.12 |
 | H23.7 | **DB schema-migration framework** (`_schema_version` + forward-only on startup) | ✅ **DONE (#305)** — `agents/core/persistence/migrations.py` | 0.14 |
-| H23.8 | **Backup/restore** (one-command) + a tested **restore drill** | ✅ **DONE (#302)** — `agents/core/backup.py` + `/api/admin/backup` (consistent SQLite snapshots, restore-drill). *Residual (audit 2026-06-23):* archives are **unencrypted and include secrets** (`settings.db`/`tokens/`/`secrets.enc`) → **AUD-1** | 0.14 |
+| H23.8 | **Backup/restore** (one-command) + a tested **restore drill** | ✅ **DONE (#302)** — `agents/core/backup.py` + `/api/admin/backup` (consistent SQLite snapshots, restore-drill). *Residual (audit 2026-06-23):* archives were **unencrypted** → **AUD-1 ✅ (#309)** (opt-in `.tar.gz.enc` + `settings.db` secret columns now encrypted at rest) | 0.14 |
 | H23.9 | **Data export + delete/forget** endpoints (finishes promised H8.2) | 🟡 **PARTIAL** — export `agents/core/data_export.py` (CLI, #303) + delete/forget `agents/core/data_purge.py` + `POST /api/admin/forget` (#306, backup-first + confirm-gated). *Residual (audit 2026-06-23):* the purge **excludes** `memory.db`/transcripts/embeddings/Qdrant/Neo4j and its backup-first step writes an **unencrypted full-PII** copy → **AUD-2**; export HTTP surface (`/api/admin/export`) still open | 0.14 |
 | H23.10 | Data-**retention defaults** (conversations, audit log, memory) + rollback story | MISSING | 0.14 |
 | H23.11 | Health/readiness endpoint; signal handlers + graceful shutdown; **log rotation** | MISSING | 0.15 |
@@ -342,7 +342,7 @@ Status keys as elsewhere (✅ done · 🟢 in PR · 🟡 partial · ⬜ open). `
 | # | Item | S | P | AC |
 |---|------|---|---|----|
 | AUD-0 | **Scope decision (breadth→depth)** — name the 5–6 product-defining features; flag-park the ~44 governed-but-`Null`-railed modules (gates Phase 2). Pairs with H23.23 single-user call. | 2 | DECISION | owner decision recorded in this file |
-| AUD-1 | **Secrets at rest** — envelope-encrypt `settings.db` credential columns (`twilio/notion/tuya/gecko/stark_ga4…`) via the existing Fernet/SecretBroker at write time; encrypt or exclude secret-bearing files from `backup.py` (F2). *Caveats H23.8.* | 5 | **P0** | `settings.db` dump shows opaque token values; a backup archive contains no plaintext secret |
+| AUD-1 | ✅ **done (#309)** — **Secrets at rest** — envelope-encrypt `settings.db` credential columns (`twilio/notion/tuya/gecko/stark_ga4…`) via the existing `SecretStore` (Fernet + pure-Python fallback) at the put/get boundary (`settings_db.SECRET_KEYS` → `_encrypt_if_secret`/`_decrypt_if_secret`); opt-in **encrypted backup archives** (`.tar.gz.enc`, key from `$JARVIS_BACKUP_KEY`/arg, stored outside the data root) in `backup.py` (F2). *Caveats H23.8.* | 5 | **P0** | ✅ `settings.db` dump shows opaque `enc::` token values; an encrypted backup archive is opaque (no plaintext); reads decrypt transparently |
 | AUD-2 | **"Forget me" completeness** — purge `memory.db`, conversation transcripts, embedding cache, Qdrant + Neo4j KG; stop the backup-first unencrypted PII copy; reconcile purge/export allow-lists (F1). *Corrects H23.9.* | 5 | **P0** | post-forget scan of the data root finds no user PII; no unencrypted snapshot left behind |
 | AUD-3 | **HUD XSS + CSP** — route HUD dynamic data (`index.html:365/369/372/382`) through the existing `esc()`; add a CSP + security-header middleware in `web.py`; set Tauri `csp` (F3). | 3 | **P0** | a crafted RSS headline renders inert; CSP + `X-Content-Type-Options`/`X-Frame-Options` present |
 | AUD-4 | **WorldView fail-closed** — refuse to start unauthenticated on a non-loopback bind; default `HOST=127.0.0.1`; DB creds → secrets; enable `sslmode`; non-root `USER` + `HEALTHCHECK` + `securityContext` (F4, F14). | 3 | **P0** | empty `WORLDVIEW_AUTH_SECRET` on `0.0.0.0` aborts boot; containers run non-root |
