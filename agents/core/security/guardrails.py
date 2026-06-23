@@ -67,7 +67,8 @@ class GuardrailsEngine:
 
         return text
 
-    async def generate(self, model: str, prompt: str, system: str = "") -> str:
+    async def generate(self, model: str, prompt: str, system: str = "",
+                       max_tokens: int = 1024, temperature: float = 0.7) -> str:
         if self._scan_input:
             result = self._scan_text(prompt)
             if not result.clean:
@@ -78,7 +79,10 @@ class GuardrailsEngine:
             if not result.clean:
                 system = self._handle_findings(system, result, "input")
 
-        response = await self._backend.generate(model=model, prompt=prompt, system=system)
+        response = await self._backend.generate(
+            model=model, prompt=prompt, system=system,
+            max_tokens=max_tokens, temperature=temperature,
+        )
 
         if self._scan_output and response:
             result = self._scan_text(response)
