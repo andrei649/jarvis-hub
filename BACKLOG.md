@@ -57,7 +57,7 @@ python -m pytest tests/ -v          # ~2,653 passed, 2 skipped
 | **0.11.0** | 🟢 **Finish the refactor (done, #296)** | CLN-3 **complete** — `web.py` 4,636→1,282 LOC, 233→9 inline routes across 45 per-domain routers (304-route surface byte-identical, parity-guarded). CLN-2 substantially done — `PluginManager`+`llm_control`+`cognition_trace` extracted; orchestrator 1,620→1,456 LOC (remaining inline = the BUG-5 request pipeline, not safely extractable). |
 | **0.12.0** | **Harden what shipped (here now)** | ORIZONT-22 review fixes (#294, merged); #292 argus governed-facade wiring; #279 MCP route-tools harden/remove; TASK-3 cross-channel taint-tracking |
 | **0.13.0 ⚠️** | Agentic safety completeness | step/recursion + token/time **budgets + loop detection**; **model-version pinning & reproducibility**; **kill-switch in the HUD** + credential quarantine; eval/regression harness as a **release gate**; audit-log verify UI + secret redaction |
-| **0.14.0 ⚠️** | Upgrade & data durability | **backup/restore** + restore drill ✅ (#302); **data export** ✅ (#303, CLI); **DB schema-migration framework** ✅ (#305, H23.7); **delete/forget** ✅ (#306, `/api/admin/forget`); retention defaults + rollback story (H23.10) + export HTTP surface still open |
+| **0.14.0 ⚠️** | Upgrade & data durability | **backup/restore** + restore drill ✅ (#302); **data export** ✅ (#303, CLI); **DB schema-migration framework** ✅ (#305, H23.7); **delete/forget** 🟡 (#306, `/api/admin/forget` — *purge incomplete + backup leaks PII, audit 2026-06-23 → AUD-2*); retention defaults + rollback story (H23.10) + export HTTP surface still open |
 | **0.15.0 ⚠️** | Operability & distribution | health endpoint; signal handlers + graceful shutdown; log rotation; graceful **local-LLM-down** everywhere; systemd/service templates; **release artifacts** (tar/zip, optional PyPI + Docker publish); **semver compatibility contract** + supported-versions matrix + deprecation policy; platform matrix |
 | **0.16.0** | HUD depth + observability UI | TASK-2 ~37 surfaces incl. **north-star panel** + **network monitor** (watch LOCAL_ONLY make zero calls); LIVE/SEED indicators; OpenAPI types; plugin-gated modes |
 | **0.17.0** | Local ceiling + velocity | H22.4 concurrency, H22.5 model-manager LRU, H22.9 agent-native routes, constrained-decoding tail |
@@ -65,6 +65,11 @@ python -m pytest tests/ -v          # ~2,653 passed, 2 skipped
 | **0.19.0 ⚠️** | Reach, quality & user docs | mobile parity tail (H18); **quality gates** (E2E, load/soak, a11y, i18n, browser+mobile matrix); **user docs** (USER_GUIDE, FAQ, UPGRADE, THREAT_MODEL, SECURITY disclosure, NOTICE/SBOM, privacy policy); **onboarding wizard** + activation funnel + cold-start error guidance |
 | **0.20.0 ⚠️** | Product-proof | design-partner program (recruit 1–3); in-app **feedback/NPS**; support channel + SLA; north-star **measured on real usage**; landing page + demo |
 | **1.0.0** | 🎯 **Owned & proven** | all dev complete **+ design-partner validation**; owner legal/brand done; manual-test/audit pass → tag |
+
+> **The program that organizes 0.11→1.0 is ORIZONT 24 — "AI-OS"** (decided 2026-06-23, section below): an
+> **Action Kernel** (every agent action mediated, budgeted, revocable) + a **Verification Fabric** (each
+> capability proven against reality before it may claim "done") + the four live capability packs, all on the
+> H23 spine. Phase A of it = the AUD-\* hardening cluster.
 
 ---
 
@@ -82,7 +87,7 @@ python -m pytest tests/ -v          # ~2,653 passed, 2 skipped
 | Theme | Status | What exists / the bounded gap | Maps to |
 |-------|--------|-------------------------------|---------|
 | 0.19 First-Run Command Center | 🟡 partial | `routers/onboarding.py`+`status.py`+demo mode / unified install-health+model+first-action screen | H23.20 |
-| 0.20 Jarvis Vault | ⬜ missing | `paths.py`,`secrets_vault.py` / 1 TB vault + retention (backup ✅ #302; export ✅ #303; forget ✅ #306) | H23.10 |
+| 0.20 Jarvis Vault | ⬜ missing | `paths.py`,`secrets_vault.py` / 1 TB vault + retention (backup ✅ #302 *but unencrypted → AUD-1*; export ✅ #303; forget 🟡 #306 *incomplete → AUD-2*) | H23.10 |
 | 0.21 Offline Knowledge Packs | 🌱 seed | `local_docs.py` / Kiwix-style packs + installer | 0.21 |
 | 0.22 Appliance Install/Update | 🟡 partial | `install.sh`,`start.sh`,`docker-compose.yml` / uninstall, signed artifacts, no-telemetry proof | H23.13/15 |
 | 0.23 Hardware Benchmark & Profiles | 🟡 partial | `bench.py`,`llm/model_manager.py` (VRAM) / RTX scoring + mode profiles (GPU-gated) | 0.18 |
@@ -134,6 +139,11 @@ python -m pytest tests/ -v          # ~2,653 passed, 2 skipped
 > Top remaining finish-firsts: **0.36 Action-Manifest unify**, **H23.10 retention defaults**,
 > **export HTTP surface** (`/api/admin/export`, sibling of backup/forget). *(Done: H23.7 DB migrations #305,
 > H23.8 backup #302, H23.9 export #303 + delete/forget #306, 0.56 Trust Center + 0.60 Analytics #300.)*
+>
+> **Full per-theme execution specs** for every deferred theme above now live in **Phase E** of the
+> [remaining-backlog blueprint](docs/superpowers/specs/2026-06-23-orizont24-remaining-backlog-blueprint.md)
+> — each with grounded `file:line` seams, build steps, acceptance criteria, a test path, and its K/V
+> dependency. Load-bearing seams were re-verified against the codebase on 2026-06-23.
 
 ---
 
@@ -150,11 +160,11 @@ python -m pytest tests/ -v          # ~2,653 passed, 2 skipped
 | H23.2 | **Model-version pinning & reproducibility** — record id/quant per run; approved-model allowlist | MISSING | 0.13 |
 | H23.3 | **Kill-switch in the HUD** (one-tap) + credential quarantine on halt | EXISTS (code) / no UI | 0.13 |
 | H23.4 | Promote **eval/regression harness to a pre-release gate** | EXISTS / not a gate | 0.13 |
-| H23.5 | Audit-log **verify button** in HUD + secret redaction guarantee | ✅ UI **DONE (#300)** (Trust-mode live audit-verify badge) | 0.13 |
+| H23.5 | Audit-log **verify button** in HUD + secret redaction guarantee | ✅ UI **DONE (#300)** (Trust-mode live audit-verify badge). *Caveat (audit 2026-06-23):* the chain is **plain SHA-256 (not keyed)** and the scanner still stores raw `matched_text` → **AUD-9 / AUD-12** | 0.13 |
 | H23.6 | TASK-3 indirect-injection / cross-channel **taint-tracking** | open | 0.12 |
 | H23.7 | **DB schema-migration framework** (`_schema_version` + forward-only on startup) | ✅ **DONE (#305)** — `agents/core/persistence/migrations.py` | 0.14 |
-| H23.8 | **Backup/restore** (one-command) + a tested **restore drill** | ✅ **DONE (#302)** — `agents/core/backup.py` + `/api/admin/backup` (consistent SQLite snapshots, restore-drill) | 0.14 |
-| H23.9 | **Data export + delete/forget** endpoints (finishes promised H8.2) | ✅ **DONE** — export `agents/core/data_export.py` (CLI, #303) + delete/forget `agents/core/data_purge.py` + `POST /api/admin/forget` (#306, backup-first + confirm-gated). *Residual:* export HTTP surface (`/api/admin/export`) still open | 0.14 |
+| H23.8 | **Backup/restore** (one-command) + a tested **restore drill** | ✅ **DONE (#302)** — `agents/core/backup.py` + `/api/admin/backup` (consistent SQLite snapshots, restore-drill). *Residual (audit 2026-06-23):* archives are **unencrypted and include secrets** (`settings.db`/`tokens/`/`secrets.enc`) → **AUD-1** | 0.14 |
+| H23.9 | **Data export + delete/forget** endpoints (finishes promised H8.2) | 🟡 **PARTIAL** — export `agents/core/data_export.py` (CLI, #303) + delete/forget `agents/core/data_purge.py` + `POST /api/admin/forget` (#306, backup-first + confirm-gated). *Residual (audit 2026-06-23):* the purge **excludes** `memory.db`/transcripts/embeddings/Qdrant/Neo4j and its backup-first step writes an **unencrypted full-PII** copy → **AUD-2**; export HTTP surface (`/api/admin/export`) still open | 0.14 |
 | H23.10 | Data-**retention defaults** (conversations, audit log, memory) + rollback story | MISSING | 0.14 |
 | H23.11 | Health/readiness endpoint; signal handlers + graceful shutdown; **log rotation** | MISSING | 0.15 |
 | H23.12 | Graceful **local-LLM-down** handling everywhere (no hang/crash) | PARTIAL | 0.15 |
@@ -169,6 +179,96 @@ python -m pytest tests/ -v          # ~2,653 passed, 2 skipped
 | H23.21 | **Design-partner program** — recruit 1–3, in-app feedback/NPS, support SLA, collect north-star from real usage | MISSING | 0.20 |
 | H23.22 | Landing page + demo recorded (owner-led; dev-supportable) | MISSING | 0.20 |
 | H23.23 | **Multi-user readiness call** — accept single-user for 1.0 & document it, OR scope per-user isolation (north-star is "per active user") | DECISION | 0.20 |
+
+---
+
+## 🧠 ORIZONT 24 — AI-OS: Action Kernel · Verification Fabric · Live Packs (direction 2026-06-23)
+
+> **Decision (owner, 2026-06-23):** primary bet = **OS kernel + Verification Fabric**; first capability
+> packs = **all four** (Proactive autonomy · OSINT/WorldView · Market Intel+Finance · Creative/Publishing).
+> This is the **substrate program for Phase 2** ([MOONSHOT.md §4](MOONSHOT.md)) — the bridge from
+> *feature-complete* (v0.10) to a **provable** 1.0. *(ORIZONT 23 ≡ the **H23** productionization layer
+> above; this horizon sits on top of it and reuses its items.)*
+>
+> **Thesis:** convert fleet throughput into a *trustworthy* operating system by (a) routing **every**
+> agent action through one kernel, and (b) making *"works end-to-end against reality"* a merge gate —
+> then deepen breadth (the 4 packs) in parallel on that substrate. This makes the moonshot's
+> "persistent, proactive, private **cortex**" operational.
+>
+> **Not net-new scope — it threads existing seeds into one program.** Most parts already exist, scattered;
+> ORIZONT 24 *promotes and unifies* them. Map: **K3 ⊇ H23.1** · **K4 ⊇ H23.3** · **V4 ⊇ H23.4** · the kernel
+> unifies `plugin_gate` / `signal_governance` / capability-broker / per-family approval queues · the packs
+> deepen competitive-gap themes **0.32/0.38/0.45** (P1), **0.40/0.41** (P2), **0.39** (P3), **0.47/0.50** (P4).
+> **Phase A = the AUD-\* hardening cluster** (see *Hardening audit (2026-06-23)* below) — the foundation;
+> skipping it is the OpenClaw failure mode.
+>
+> **📋 Cross-phase execution map:** [`docs/superpowers/specs/2026-06-23-orizont24-remaining-backlog-blueprint.md`](docs/superpowers/specs/2026-06-23-orizont24-remaining-backlog-blueprint.md)
+> — every remaining backlog item, **Phases A–E** (hardening · K/V substrate · the 4 packs · H23
+> productionization · all deferred competitive-gap themes), grounded with `file:line` seams to reuse,
+> approach, acceptance, and test paths. The context-cheap map sessions execute against instead of
+> re-reading the ~2M-token repo; each item ships as its own PR.
+
+**The OS metaphor, made literal:** agents = processes · capability tokens = permissions · the kernel =
+the syscall table · budgets = the scheduler · kill-switch/quarantine = a syscall · the verification fabric
+= the OS test-suite. These exist today but are **scattered**; ORIZONT 24 makes them **one system**.
+
+**Phasing & gates** (gate-discipline per MOONSHOT §4 — we do not skip gates):
+- **Phase A (now):** AUD-\* P0/P1 hardening — foundation; also advances H23.
+- **Phase B:** Track K + Track V core. **Gate:** action-auth matrix green · reality-harness live · readiness board shipped.
+- **Phase C:** the 4 packs, fleet-parallel, each driven SEAM→VERIFIED. **Gate (per pack):** VERIFIED via harness + north-star moving.
+- **Phase D:** 1.0 proof — 3–5 design partners (unchanged; **= the 1.0 gate**).
+
+### Track K — Action Kernel (the "operating" in operating system) (P0–P1)
+
+> **Design spec:** [`docs/superpowers/specs/2026-06-23-orizont24-action-kernel-design.md`](docs/superpowers/specs/2026-06-23-orizont24-action-kernel-design.md)
+> — grounded in the existing seeds it unifies (`security/capability.py:authorize()` nucleus, the autonomy
+> `TaskQueue`, `plugin_gate`/egress, route guards, `SecretBroker`) + the 3 verified bypass risks it closes.
+
+| # | Item | S | P | Dep | AC |
+|---|------|---|---|-----|----|
+| K1 | **Single mediation point** — every privileged action (tool call, plugin egress, write-back, payment, social, node dispatch) flows through `kernel.authorize(action, capability, budget)` → grant / deny / queue-for-approval. Unifies `plugin_gate` + capability broker + `signal_governance` + per-family approval queues. | 8 | P0 | Phase A | every privileged action routes through the kernel; no bypass path exists |
+| K2 | **Capabilities as process permissions** — generalize the seeded scoped/expiring/revocable tokens (`security/`, `node_mesh`) to **all** agents; least-privilege by default. | 5 | P1 | K1 | each agent runs a least-priv capability set; revoke takes effect immediately |
+| K3 | **The scheduler** — central token/time/money/**interrupt** budgets + loop detection (folds **H23.1**). The interrupt budget *is* the MOONSHOT §5.4 "≤4 push/day" guardrail, enforced in one place. | 5 | P0 | K1 | a runaway loop is halted by budget; the interrupt budget is enforced centrally |
+| K4 | **Kill-switch + credential quarantine as a syscall** (folds **H23.3**) with one-tap HUD control. | 3 | P1 | K1 | one-tap halt quarantines creds; resumable; audited |
+| **Gate K** | **action-auth matrix** test (generalizes the SEC-2 route-auth matrix) fails CI if **any** privileged action bypasses the kernel. | — | P0 | K1–K4 | a new un-mediated privileged action fails CI |
+
+### Track V — Verification Fabric (what makes fleet-breadth safe) (P0–P1)
+
+> **Design spec:** [`docs/superpowers/specs/2026-06-23-orizont24-verification-fabric-design.md`](docs/superpowers/specs/2026-06-23-orizont24-verification-fabric-design.md)
+> — extends the existing snapshot-introspection gates (`test_route_auth_matrix`) + registries
+> (`plugin_gate.BUILTIN_PLUGINS`, `component_registry`) + the ungated eval/north-star harness.
+
+| # | Item | S | P | Dep | AC |
+|---|------|---|---|-----|----|
+| V1 | **Reality harness** — each capability declares a contract + a live (or hermetically-sandboxed-but-real-protocol) integration test, run on a CI schedule. Null clients stay for unit speed; the harness proves the **rail**. | 8 | P0 | — | each rail has a harness proving end-to-end behavior |
+| V2 | **Capability registry + readiness levels** — every capability carries a state **SEAM → WIRED → VERIFIED → GA**, queryable, with a HUD board + `/api/metrics`. Kills the audit's "looks done, isn't wired" ambiguity. | 5 | P1 | V1 | every capability has a visible, queryable readiness state; board live in HUD |
+| V3 | **Fleet-coordination CI gates** — interface contracts + the action-auth matrix + a readiness gate (no VERIFIED without a green harness) + drift detection, so N parallel agents can't silently break each other. | 5 | P1 | V1, V2, K1 | a capability can't reach VERIFIED without a passing harness; cross-agent interface breakage fails CI |
+| V4 | **Promote eval → required release gate** (folds **H23.4**) with the north-star + counter-metrics as merge gates — quality can't regress at fleet speed. | 3 | P1 | V1 | merge is blocked on an eval regression / counter-metric breach |
+| **Gate V** | the readiness board is live; **nothing reaches VERIFIED** without a green reality-harness. | — | P0 | V1–V4 | VERIFIED claims are harness-backed, not asserted |
+
+### Track P — Live Capability Packs (breadth on the substrate, fleet-parallel) (P0–P2)
+
+> Each pack = drive its rails **SEAM→VERIFIED**, mediated by Track K, gated by Track V. (Maps = competitive-gap themes deepened.)
+> **P1 design spec:** [`docs/superpowers/specs/2026-06-23-orizont24-p1-proactive-autonomy-design.md`](docs/superpowers/specs/2026-06-23-orizont24-p1-proactive-autonomy-design.md)
+> — the loop is already wired end-to-end (`observer`/`watchers` → `policy` → Telegram inbox → `TaskExecutor`
+> → write-back/social/call → `north_star`); P1 = drive it SEAM→VERIFIED on the K/V substrate + close 3 proof
+> gaps (unified "Today" timeline · night-shift north-star split · proposal-funnel diagnostics).
+
+| # | Item | S | P | Dep | AC |
+|---|------|---|---|-----|----|
+| P1 | **Proactive autonomy core** — missions + watchers + digest + governed write-back (deepens 0.32/0.38/0.45). *Do first: the only pack that directly moves the north-star (actions accepted/week) and that stress-tests K3's interrupt budget.* | 8 | P0 | K1–K4, V1–V2 | "works while you sleep" demonstrated **and measured**; interrupt/reject within budget |
+| P2 | **OSINT / WorldView** — correlation, evidence drawer, world-brief routing (deepens 0.40/0.41). Most differentiated surface; forces the kernel to prove governance on **untrusted** data. | 8 | P1 | K1, V1 | pack VERIFIED; ingestion trust-boundary enforced (closes the F12/AUD ingestion finding) |
+| P3 | **Market Intel + Finance** — watchlists, balance/analytics, alerts with disclaimers (deepens 0.39). Concrete daily utility. | 5 | P1 | K1, V1 | pack VERIFIED; daily brief demoable |
+| P4 | **Creative / Publishing** — coordinated asset pipeline + export/render packs (deepens 0.47/0.50; also fuels **0.52 Product Demo Factory** / marketing). | 5 | P2 | K1, V1 | pack VERIFIED; export packs render (YouTube/IG/README) |
+| **Gate P** | per pack: **VERIFIED** via the reality-harness **and** the north-star is moving. | — | P0 | Gate V | no pack ships SEAM-only |
+
+> **North-star alignment (by construction):** P1 drives *actions accepted/week*; K3 enforces the
+> *interrupt budget*; V4 guards *reject-rate, %-local, p95-latency* as merge gates — the program can't
+> drift off the metric without failing its own gates. **Totals:** 12 items + 3 gates, ~68 SP
+> (K ≈21 · V ≈21 · P ≈26). **Design specs written** for both substrate tracks (K + V, linked above) —
+> next is *implementation*, not design. **Next concrete steps:** finish Phase A (AUD-\*) → land the
+> default-off `kernel.authorize` facade (**K1**) + the capability-readiness registry/harness scaffold
+> (**V1/V2**) in parallel → wire the action-auth + readiness matrices → K3/V4 gates → then **P1 first**.
 
 ---
 
@@ -224,6 +324,52 @@ GitHub scanning surfaced 25 CodeQL alerts + 1 secret-scanning alert. Of the 13 r
 | CQ-1 ✅ | **Fix the real findings** (merged #215, #216): calendar `create_event` kwargs (#248, was a runtime `TypeError`), heartbeat `except None` (#26), `strip_thinking` ReDoS (#1), possessive template regex (#302), `log_safe()` on two admin log lines (#311/#24), and the secret-scan fixture FP (#215). | 3 | P1 | ✅ all green in CI; merged |
 | CQ-2 | **Owner: dismiss FPs/won't-fix in the UI** — secret-scan #1 (test fixture), CodeQL path-injection #22/#23/#431 (agent-id regex blocks traversal), var-defined #299/#298/#247 (used defaults), docs #432. See [`docs/OWNER_TASKS.md`](docs/OWNER_TASKS.md) §GitHub settings. | 1 | P2 | owner GitHub action |
 | CQ-3 | **Triage the remaining ~12 alerts** — only 13 of 25 selected were captured (no MCP code-scanning-list tool); needs an owner paste to finish. | 2 | P2 | paste → triage → fix real ones |
+
+---
+
+## 🧪 Hardening audit (2026-06-23 — fresh-eyes review, findings + phased plan)
+
+Two independent fresh-eyes passes (Opus 6-dive + Sonnet 3-agent), merged, de-duplicated
+and **source-validated this session**. The codebase is unusually disciplined (real Docker
+sandbox, SSRF defense, Fernet/PBKDF2 crypto, ~2,550 meaningful tests); the findings are a
+short list of real bugs + a few features that don't fully do what they claim. Full write-up
+(38 findings `F1`–`F38` + strengths-to-protect + corrections appendix):
+[`docs/research/2026-06-23-independent-audit-merged.md`](docs/research/2026-06-23-independent-audit-merged.md).
+Status keys as elsewhere (✅ done · 🟢 in PR · 🟡 partial · ⬜ open). `Fn` = finding id in the report.
+
+**Phase 0 — pre-1.0 / pre-network blockers (exposed surfaces + data-at-rest)**
+
+| # | Item | S | P | AC |
+|---|------|---|---|----|
+| AUD-0 | **Scope decision (breadth→depth)** — name the 5–6 product-defining features; flag-park the ~44 governed-but-`Null`-railed modules (gates Phase 2). Pairs with H23.23 single-user call. | 2 | DECISION | owner decision recorded in this file |
+| AUD-1 | **Secrets at rest** — envelope-encrypt `settings.db` credential columns (`twilio/notion/tuya/gecko/stark_ga4…`) via the existing Fernet/SecretBroker at write time; encrypt or exclude secret-bearing files from `backup.py` (F2). *Caveats H23.8.* | 5 | **P0** | `settings.db` dump shows opaque token values; a backup archive contains no plaintext secret |
+| AUD-2 | **"Forget me" completeness** — purge `memory.db`, conversation transcripts, embedding cache, Qdrant + Neo4j KG; stop the backup-first unencrypted PII copy; reconcile purge/export allow-lists (F1). *Corrects H23.9.* | 5 | **P0** | post-forget scan of the data root finds no user PII; no unencrypted snapshot left behind |
+| AUD-3 | **HUD XSS + CSP** — route HUD dynamic data (`index.html:365/369/372/382`) through the existing `esc()`; add a CSP + security-header middleware in `web.py`; set Tauri `csp` (F3). | 3 | **P0** | a crafted RSS headline renders inert; CSP + `X-Content-Type-Options`/`X-Frame-Options` present |
+| AUD-4 | **WorldView fail-closed** — refuse to start unauthenticated on a non-loopback bind; default `HOST=127.0.0.1`; DB creds → secrets; enable `sslmode`; non-root `USER` + `HEALTHCHECK` + `securityContext` (F4, F14). | 3 | **P0** | empty `WORLDVIEW_AUTH_SECRET` on `0.0.0.0` aborts boot; containers run non-root |
+| AUD-5 | **Session path-traversal** — validate `session_id` (`^[A-Za-z0-9_-]+$`) at the persistence boundary (`sessions.py` / `memory/persistence.py`) (F7). | 1 | **P0** | `session_id=../../x` → 400; no file escapes the data root |
+
+**Phase 1 — next sprint (correctness + auth lifecycle + CI gates)**
+
+| # | Item | S | P | AC |
+|---|------|---|---|----|
+| AUD-6 | **Token lifecycle** — TTL + rotation + hashed-at-rest; `POST /api/admin/rotate-tokens`; consider read/write split; prefer httpOnly cookie over `localStorage` (F19). | 3 | P1 | an expired/rotated token is rejected; tokens not stored in plaintext |
+| AUD-7 | **SSE + async hot path** — cancellation-safe SSE producer (`web.py:606-647`, `try/finally`+await); move `add_turn` persistence off the loop (`to_thread`/debounce snapshot) (F8, F9). | 3 | P1 | client disconnect cancels the turn; no full-snapshot write on the event loop |
+| AUD-8 | **Settings integrity** — schema-validate `put_category` (type/range/enum → 422) + `audit.log("SETTINGS_CHANGE", …)` per write (F10). | 2 | P1 | bad value → 422; every settings change appears in the audit log |
+| AUD-9 | **Audit chain HMAC** — key the hash-chain with a secret stored outside the data root (F6). *Caveats H23.5.* | 2 | P1 | a tampered row fails chain verification without the off-box key |
+| AUD-10 | **Supply-chain / CI** — SHA-pin all Actions; Python lockfile+hashes; `pip-audit`; ruff blocking; blocking OSS SAST (semgrep/bandit); conftest loopback-only socket block; pre-commit + gitleaks (F32–F37). *Extends Dependency-upkeep + SEC-4 + CQ sections.* | 5 | P1 | every `uses:` is a SHA; CI fails on lint/CVE/secret; stray network in tests fails fast |
+| AUD-11 | **Sandbox containment tests** — Docker-enabled CI lane asserting no-escape / no-network / resource caps (F5). *Sub-item of H23.17.* | 3 | P1 | a containment test actually runs (not skipped) and proves isolation |
+| AUD-12 | **Injection hardening** — allow-list Cypher labels/rel-types (`graph.py`); coerce + bounds-check WorldView WKT coords; mask scanner `matched_text` at the boundary (F11, F12, F13). | 3 | P1 | crafted entity-type/coord/secret can't inject or persist raw |
+
+**Phase 2 — post-1.0 (structure, observability, scale, DX)**
+
+| # | Item | S | P | AC |
+|---|------|---|---|----|
+| AUD-13 | **Turn-pipeline de-dup + service container** — one `PromptBuilder` + `_preprocess_turn`; extract context/dispatch/persist; retire `orch` back-refs + `sys.modules` indirection (A1). *Continues CLN-2.* | 8 | P2 | prompt assembly lives in one place; collaborators take narrow interfaces |
+| AUD-14 | **Config consolidation** — one `Config` read once at boot (collapse 121 env reads / 3 bool conventions; centralize model names); derive agent-policy sets from `agents.yaml` (A3, F29). | 3 | P2 | a model swap is one edit; one truthy convention |
+| AUD-15 | **Client consolidation** — retire HUD v1, make v2 the Tauri target, extract a shared `@jarvis/client` (auth+SSE+fetch + timeouts); remove `@ts-nocheck`, move toward `strict` (A2, F17, F26). | 8 | P2 | one client lib across surfaces; v1 gone; fetches time out |
+| AUD-16 | **Type-safety codegen** — `response_model=` on routes → `openapi-typescript` generated types + CI diff gate (F18). | 3 | P2 | a backend field change fails the TS diff check |
+| AUD-17 | **Observability + real load tests** — Prometheus `/metrics` golden signals; real-path concurrency test with p95 budgets (F16, F23). *Folds under H23.16/17.* | 3 | P2 | `/metrics` exposes http/latency/error; load test asserts p95 on the real HTTP path |
+| AUD-18 | **Scale & DX polish** — Qdrant-by-default at scale; lazy plugin instantiation; Vite code-split; configurable scanner patterns; LLM retry/backoff via the existing `@resilient_call`; close leaked httpx clients; CORS/loaders polish (F20–F25, F27, F28, F30, F31). | 5 | P2 | recall indexed by default; transient LLM 503 retries; no client leak |
 
 ---
 
