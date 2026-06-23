@@ -14,7 +14,7 @@
 ```bash
 pip install -r requirements-beta.txt
 python -m uvicorn agents.web:app --host 127.0.0.1 --port 8080
-python -m pytest tests/ -v          # ~2,653 passed, 2 skipped
+python -m pytest tests/ -v          # ~2,666 passed, 2 skipped
 ```
 
 > Singurul skip rămas e heartbeat-ul opțional. (Vechiul `tests/test_spotify.py` cu 8 skip-uri a
@@ -87,7 +87,7 @@ python -m pytest tests/ -v          # ~2,653 passed, 2 skipped
 | Theme | Status | What exists / the bounded gap | Maps to |
 |-------|--------|-------------------------------|---------|
 | 0.19 First-Run Command Center | 🟡 partial | `routers/onboarding.py`+`status.py`+demo mode / unified install-health+model+first-action screen | H23.20 |
-| 0.20 Jarvis Vault | ⬜ missing | `paths.py`,`secrets_vault.py` / 1 TB vault + retention (backup ✅ #302 *but unencrypted → AUD-1*; export ✅ #303; forget 🟡 #306 *incomplete → AUD-2*) | H23.10 |
+| 0.20 Jarvis Vault | ⬜ missing | `paths.py`,`secrets_vault.py` / 1 TB vault + retention (backup ✅ #302, encryption ✅ AUD-1 #309; export ✅ #303; forget 🟡 #306 *incomplete → AUD-2*) | H23.10 |
 | 0.21 Offline Knowledge Packs | 🌱 seed | `local_docs.py` / Kiwix-style packs + installer | 0.21 |
 | 0.22 Appliance Install/Update | 🟡 partial | `install.sh`,`start.sh`,`docker-compose.yml` / uninstall, signed artifacts, no-telemetry proof | H23.13/15 |
 | 0.23 Hardware Benchmark & Profiles | 🟡 partial | `bench.py`,`llm/model_manager.py` (VRAM) / RTX scoring + mode profiles (GPU-gated) | 0.18 |
@@ -163,7 +163,7 @@ python -m pytest tests/ -v          # ~2,653 passed, 2 skipped
 | H23.5 | Audit-log **verify button** in HUD + secret redaction guarantee | ✅ UI **DONE (#300)** (Trust-mode live audit-verify badge). *Caveat (audit 2026-06-23):* the chain is **plain SHA-256 (not keyed)** and the scanner still stores raw `matched_text` → **AUD-9 / AUD-12** | 0.13 |
 | H23.6 | TASK-3 indirect-injection / cross-channel **taint-tracking** | open | 0.12 |
 | H23.7 | **DB schema-migration framework** (`_schema_version` + forward-only on startup) | ✅ **DONE (#305)** — `agents/core/persistence/migrations.py` | 0.14 |
-| H23.8 | **Backup/restore** (one-command) + a tested **restore drill** | ✅ **DONE (#302)** — `agents/core/backup.py` + `/api/admin/backup` (consistent SQLite snapshots, restore-drill). *Residual (audit 2026-06-23):* archives are **unencrypted and include secrets** (`settings.db`/`tokens/`/`secrets.enc`) → **AUD-1** | 0.14 |
+| H23.8 | **Backup/restore** (one-command) + a tested **restore drill** | ✅ **DONE (#302)** — `agents/core/backup.py` + `/api/admin/backup` (consistent SQLite snapshots, restore-drill). *Residual (audit 2026-06-23):* archives were **unencrypted** → **AUD-1 ✅ (#309)** (opt-in `.tar.gz.enc` + `settings.db` secret columns now encrypted at rest) | 0.14 |
 | H23.9 | **Data export + delete/forget** endpoints (finishes promised H8.2) | 🟢 **in PR** — export `agents/core/data_export.py` + now `POST /api/admin/export` (admin-guarded, secrets-free); delete/forget `data_purge.py` + `POST /api/admin/forget` now also erases memory at rest (**AUD-2**, this PR); backup-first copy encrypted with a key (**AUD-1** #309). *Done #303/#306; export HTTP surface + forget-completeness this PR.* | 0.14 |
 | H23.10 | Data-**retention defaults** (conversations, audit log, memory) + rollback story | MISSING | 0.14 |
 | H23.11 | Health/readiness endpoint; signal handlers + graceful shutdown; **log rotation** | MISSING | 0.15 |
@@ -342,7 +342,7 @@ Status keys as elsewhere (✅ done · 🟢 in PR · 🟡 partial · ⬜ open). `
 | # | Item | S | P | AC |
 |---|------|---|---|----|
 | AUD-0 | **Scope decision (breadth→depth)** — name the 5–6 product-defining features; flag-park the ~44 governed-but-`Null`-railed modules (gates Phase 2). Pairs with H23.23 single-user call. | 2 | DECISION | owner decision recorded in this file |
-| AUD-1 | **Secrets at rest** — envelope-encrypt `settings.db` credential columns (`twilio/notion/tuya/gecko/stark_ga4…`) via the existing Fernet/SecretBroker at write time; encrypt or exclude secret-bearing files from `backup.py` (F2). *Caveats H23.8.* | 5 | **P0** | `settings.db` dump shows opaque token values; a backup archive contains no plaintext secret |
+| AUD-1 | ✅ **done (#309)** — **Secrets at rest** — envelope-encrypt `settings.db` credential columns (`twilio/notion/tuya/gecko/stark_ga4…`) via the existing `SecretStore` (Fernet + pure-Python fallback) at the put/get boundary (`settings_db.SECRET_KEYS` → `_encrypt_if_secret`/`_decrypt_if_secret`); opt-in **encrypted backup archives** (`.tar.gz.enc`, key from `$JARVIS_BACKUP_KEY`/arg, stored outside the data root) in `backup.py` (F2). *Caveats H23.8.* | 5 | **P0** | ✅ `settings.db` dump shows opaque `enc::` token values; an encrypted backup archive is opaque (no plaintext); reads decrypt transparently |
 | AUD-2 | 🟢 **in PR** — **"Forget me" completeness** — forget now also erases the memory subsystem at rest (knowledge graph, entities, decay, embedding cache, conversation transcripts) via `data_purge.purge_data(memory=True)`, clearing the live in-memory stores first so a running orchestrator can't re-persist them; the backup-first snapshot is encrypted once a key is set (AUD-1 #309). *External Qdrant/Neo4j wiping is best-effort via each store's `clear()`.* (F1) | 5 | **P0** | ✅ post-forget the data root holds no memory PII (transcripts/KG/entities/embeddings); `tests/test_data_purge_memory.py` |
 | AUD-3 | 🟢 **in PR** — **HUD XSS + CSP** — HUD dynamic data (`index.html` weather/news/system/history) routed through a local `esc()`; a `_security_headers` middleware adds CSP + `X-Content-Type-Options`/`X-Frame-Options`/`Referrer-Policy`; Tauri `csp` set (F3). | 3 | **P0** | ✅ a crafted RSS headline renders inert; headers present; `tests/test_hud_security_headers.py` |
 | AUD-4 | 🟢 **in PR** — **WorldView fail-closed** — default `HOST=127.0.0.1`; `assertSafeBind()` aborts boot on a non-loopback bind with an empty `WORLDVIEW_AUTH_SECRET` (F4). *Container hardening (non-root `USER`/`HEALTHCHECK`/`securityContext`/`sslmode`, F14) still open.* | 3 | **P0** | ✅ empty secret on `0.0.0.0` aborts boot; `worldview/backend-api/test/configBootGuard.test.ts` |

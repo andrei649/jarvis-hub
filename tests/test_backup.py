@@ -5,6 +5,7 @@ exercises create → list → verify(drill) → restore. Asserts the safety/hone
 properties — consistent DB snapshots, integrity-checked drill, Zip-Slip-proof
 extraction, and that the backups dir isn't recursively swept into its own archive.
 """
+import base64
 import sqlite3
 import tarfile
 from pathlib import Path
@@ -12,6 +13,11 @@ from pathlib import Path
 import pytest
 
 from agents.core import backup as bk
+from agents.core.secrets import SecretStoreError
+
+# Raw 32-byte urlsafe-base64 key → hermetic (no keyfile), works with/without cryptography.
+_BK_KEY = base64.urlsafe_b64encode(b"backup-test-key-32bytes-padding!").decode()
+_BK_OTHER = base64.urlsafe_b64encode(b"backup-OTHER-key-32byte-paddng!!").decode()
 
 
 def _seed_db(path: Path, rows: int) -> None:
@@ -142,3 +148,62 @@ def test_verify_detects_corrupt_db(data_root):
     report = bk.verify_backup(str(corrupt))
     assert report["ok"] is False
     assert report["dbs"]["settings.db"] != "ok"
+
+
+# ── AUD-1 / F2: encrypted backups (carry no plaintext at rest) ─────
+def test_encrypted_archive_is_opaque(data_root):
+    res = bk.create_backup(source_root=str(data_root), key=_BK_KEY)
+    assert res["encrypted"] is True
+    assert res["archive"].endswith(".tar.gz.enc")
+    # The encrypted archive is not a readable gzip tar (opaque at rest)...
+    with pytest.raises(tarfile.TarError):
+        with tarfile.open(res["archive"], "r:gz"):
+            pass
+    # ...while an unencrypted control of the same data opens fine.
+    plain = bk.create_backup(source_root=str(data_root))
+    assert plain["encrypted"] is False
+    with tarfile.open(plain["archive"], "r:gz") as tar:
+        assert "settings.db" in tar.getnames()
+
+
+def test_encrypted_verify_drill_passes(data_root):
+    res = bk.create_backup(source_root=str(data_root), key=_BK_KEY)
+    report = bk.verify_backup(res["archive"], key=_BK_KEY)
+    assert report["ok"] is True
+    assert report["encrypted"] is True
+    assert report["dbs"]["settings.db"] == "ok"
+
+
+def test_encrypted_restore_roundtrip(data_root, tmp_path):
+    res = bk.create_backup(source_root=str(data_root), key=_BK_KEY)
+    target = tmp_path / "restored"
+    out = bk.restore_backup(res["archive"], str(target), key=_BK_KEY)
+    assert out["ok"] is True
+    conn = sqlite3.connect(str(target / "autonomy.db"))
+    n = conn.execute("SELECT COUNT(*) FROM t").fetchone()[0]
+    conn.close()
+    assert n == 5
+    assert (target / "tokens" / "note.txt").read_text() == "hello"
+
+
+def test_encrypt_via_env_key(data_root, monkeypatch):
+    monkeypatch.setenv("JARVIS_BACKUP_KEY", _BK_KEY)
+    res = bk.create_backup(source_root=str(data_root))   # no explicit key arg
+    assert res["encrypted"] is True
+    report = bk.verify_backup(res["archive"])            # env key picked up
+    assert report["ok"] is True
+
+
+def test_list_marks_encrypted(data_root):
+    bk.create_backup(source_root=str(data_root), key=_BK_KEY)
+    bk.create_backup(source_root=str(data_root))
+    listing = bk.list_backups(out_dir=str(bk.default_backup_dir(data_root)))
+    assert {r["encrypted"] for r in listing} == {True, False}
+    enc = [r for r in listing if r["encrypted"]][0]
+    assert bk.resolve_backup(enc["name"], out_dir=str(bk.default_backup_dir(data_root))) is not None
+
+
+def test_wrong_key_cannot_decrypt(data_root):
+    res = bk.create_backup(source_root=str(data_root), key=_BK_KEY)
+    with pytest.raises(SecretStoreError):
+        bk.verify_backup(res["archive"], key=_BK_OTHER)
