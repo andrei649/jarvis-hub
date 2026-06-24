@@ -34,6 +34,7 @@ import logging
 import os
 import statistics
 import sys
+import time
 from collections import defaultdict
 from datetime import date
 
@@ -49,7 +50,8 @@ from agents.core.web_helpers import mask_secret, nocache_json, safe_reflect
 logger = logging.getLogger("jarvis.web")
 
 # Settings-DB functions are leaf imports (no edge back into web.py).
-from agents.core.settings_db import get_all, get_category, init_db, put_category
+from agents.core.settings_db import get_all, get_category, init_db, put_category, validate_category
+from agents.core.security.types import SecurityEvent, SecurityEventType
 
 router = APIRouter(tags=["admin"])
 
@@ -83,9 +85,35 @@ class AdminPutBody(BaseModel):
     values: dict
 
 
+async def _audit_settings_change(category: str, keys: list) -> None:
+    """AUD-8: record a settings write in the audit log — the changed KEY NAMES only,
+    never their values, so the row can't leak a secret that was just set."""
+    orch = get_orch()
+    audit = getattr(orch, "audit", None) if orch else None
+    if audit is None:
+        return
+    try:
+        await asyncio.to_thread(audit.log, SecurityEvent(
+            event_type=SecurityEventType.SETTINGS_CHANGE,
+            timestamp=time.time(),
+            content_preview=f"settings.{category} updated: {sorted(keys)}",
+            action_taken="settings_update",
+        ))
+    except Exception:
+        logger.warning("failed to audit settings change for %s", safe_reflect(category))
+
+
 @router.put("/api/admin/settings/{category}", dependencies=[Depends(admin_guard)])
 async def admin_put_category(category: str, body: AdminPutBody):
+    # AUD-8: reject a malformed write (wrong type / off the select allow-list) with
+    # 422 before it can corrupt a setting the rest of the system reads back + trusts.
+    errors = validate_category(category, body.values)
+    if errors:
+        return JSONResponse({"error": "invalid settings", "details": errors}, status_code=422)
     updated, skipped = put_category(category, body.values)
+    changed = [k for k in body.values if k not in skipped]
+    if changed:
+        await _audit_settings_change(category, changed)
     resp = {"updated": updated, "category": category}
     if skipped:
         resp["skipped"] = skipped
