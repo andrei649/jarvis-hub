@@ -191,12 +191,13 @@ class SocialBroker:
     KIND_PREFIX = "social."
 
     def __init__(self, enqueue: Optional[Callable] = None, agent: str = "pepper",
-                 secret_broker=None, client=None, audit=None) -> None:
+                 secret_broker=None, client=None, audit=None, kernel=None) -> None:
         self._enqueue = enqueue
         self.agent = agent
         self._secrets = secret_broker
         self._client = client or NullSocialClient()
         self._audit = audit
+        self._kernel = kernel   # ORIZONT-24 K1: bound kernel.authorize (default-off)
 
     @staticmethod
     def supports(platform: str, action: str) -> bool:
@@ -245,12 +246,24 @@ class SocialBroker:
         preview = preview_task({"kind": kind, "title": title,
                                 "payload": payload, "risk_tier": _RISK_TIER})
 
+        # ORIZONT-24 K1: route through the Action Kernel when enabled (default-off →
+        # skipped, path below byte-identical to before).
+        autonomy_level = "ask"
+        if self._kernel is not None:
+            from .kernel import Action, Verdict, kernel_enabled
+            if kernel_enabled():
+                decision = self._kernel(Action(kind=kind, agent=agent or self.agent,
+                                               title=title, payload=payload, origin="generated"))
+                if decision.verdict is Verdict.DENY:
+                    return {"ok": False, "reason": decision.reason, "kind": kind}
+                if decision.verdict is Verdict.GRANT:
+                    autonomy_level = "act"
         if self._enqueue is None:
             return {"ok": True, "queued": False, "kind": kind, "title": title,
                     "payload": payload, "preview": preview}
         try:
             task_id = self._enqueue(agent or self.agent, kind, title, payload=payload,
-                                    risk_tier=_RISK_TIER, autonomy_level="ask",
+                                    risk_tier=_RISK_TIER, autonomy_level=autonomy_level,
                                     origin="generated")
         except Exception:
             logger.warning("social enqueue failed", exc_info=True)

@@ -38,7 +38,8 @@ class NodeMesh:
     """Registry of governed execution nodes + capability-gated dispatch."""
 
     def __init__(self, capability_broker=None, kill_switch=None, enqueue=None,
-                 agent: str = "jarvis", audit=None, token_ttl: float = 86_400.0) -> None:
+                 agent: str = "jarvis", audit=None, token_ttl: float = 86_400.0,
+                 kernel=None) -> None:
         self._broker = capability_broker
         self._kill = kill_switch
         self._enqueue = enqueue
@@ -47,6 +48,7 @@ class NodeMesh:
         self._ttl = float(token_ttl)
         self._nodes: dict[str, dict] = {}
         self._lock = threading.Lock()
+        self._kernel = kernel   # ORIZONT-24 K1: bound kernel.authorize (default-off)
 
     # ── registry ─────────────────────────────────────────────────────────────
 
@@ -90,13 +92,36 @@ class NodeMesh:
     def dispatch(self, node_id: str, capability: str, action: str = "",
                  payload: Optional[dict] = None) -> dict:
         node_id, capability = str(node_id), str(capability)
-        auth = self._authorize(node_id, capability)
-        if not auth.get("allowed"):
-            return {"ok": False, "reason": auth.get("reason", "denied")}
         title = f"Node {node_id}: {capability}"
         task_payload = {"node": node_id, "capability": capability,
                         "action": str(action or ""), "args": payload or {},
                         "target": node_id}
+        # ORIZONT-24 K1: when the kernel is enabled it composes the SAME capability
+        # nucleus (node presents its real token) + policy + audit; execute()-time
+        # re-authorization stays as defense-in-depth. Default-off → today's
+        # _authorize path runs, byte-identical to before.
+        autonomy_level = "ask"
+        use_kernel = False
+        if self._kernel is not None:
+            from .kernel import Action, Capability, Verdict, kernel_enabled
+            use_kernel = kernel_enabled()
+        if use_kernel:
+            with self._lock:
+                rec = self._nodes.get(node_id)
+            if rec is None:
+                return {"ok": False, "reason": "unknown_node"}
+            decision = self._kernel(
+                Action(kind=KIND, agent=self.agent, title=title, payload=task_payload,
+                       scope=f"node:{node_id}", origin="generated"),
+                Capability(token_id=rec.get("token_id", ""), name=capability))
+            if decision.verdict is Verdict.DENY:
+                return {"ok": False, "reason": decision.reason}
+            if decision.verdict is Verdict.GRANT:
+                autonomy_level = "act"
+        else:
+            auth = self._authorize(node_id, capability)
+            if not auth.get("allowed"):
+                return {"ok": False, "reason": auth.get("reason", "denied")}
         preview = preview_task({"kind": KIND, "title": title,
                                 "payload": task_payload, "risk_tier": _RISK_TIER})
         if self._enqueue is None:
@@ -104,7 +129,7 @@ class NodeMesh:
                     "payload": task_payload, "preview": preview}
         try:
             task_id = self._enqueue(self.agent, KIND, title, payload=task_payload,
-                                    risk_tier=_RISK_TIER, autonomy_level="ask",
+                                    risk_tier=_RISK_TIER, autonomy_level=autonomy_level,
                                     origin="generated")
         except Exception:
             logger.warning("node dispatch enqueue failed", exc_info=True)

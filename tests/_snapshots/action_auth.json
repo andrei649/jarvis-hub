@@ -1,0 +1,13 @@
+{
+  "admin.capability_issue": "pending",
+  "admin.kill_switch": "pending",
+  "call.outbound": "kernel",
+  "kg.write": "pending",
+  "mcp.mutating": "pending",
+  "node.dispatch": "kernel",
+  "payment": "pending",
+  "plugin.egress": "pending",
+  "social.*": "kernel",
+  "tool.rpc": "pending",
+  "writeback.*": "kernel"
+}
