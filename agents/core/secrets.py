@@ -127,6 +127,8 @@ class SecretStore:
         key = base64.urlsafe_b64encode(_secrets.token_bytes(32))
         kp.write_bytes(key)
         _chmod_600(kp)
+        # FP: logs the key file path (kp), not the key bytes; the rule matches the message text.
+        # nosemgrep: python.lang.security.audit.logging.logger-credential-leak.python-logger-credential-disclosure
         logger.info("Generated new secret-store key at %s (0600)", kp)
         return key
 
@@ -218,6 +220,8 @@ class SecretStore:
             try:
                 self._cache = json.loads(self.path.read_text(encoding="utf-8"))
             except (json.JSONDecodeError, OSError) as e:
+                # FP: logs the exception, not any stored secret; the rule matches the message text.
+                # nosemgrep: python.lang.security.audit.logging.logger-credential-leak.python-logger-credential-disclosure
                 logger.warning("Secret store unreadable (%s); starting empty", e)
                 self._cache = {}
         else:

@@ -1,5 +1,9 @@
 import logging
-import xml.etree.ElementTree as ET
+
+# defusedxml hardens parsing of the untrusted RSS/Atom feeds this plugin fetches
+# (Python's stdlib xml.etree is unsafe on hostile input — entity-expansion DoS).
+# Drop-in: exposes fromstring + ParseError; rejects DTD/entity attacks as ValueError.
+import defusedxml.ElementTree as ET
 
 from ..http_client import PluginHTTPClient
 
@@ -52,7 +56,9 @@ class NewsPlugin:
                     items.append({"title": title.strip(), "link": link})
                     if len(items) >= limit:
                         break
-        except ET.ParseError:
+        except (ET.ParseError, ValueError):
+            # ValueError covers defusedxml's DTD/entity-attack rejections (DefusedXmlException);
+            # a malformed or hostile feed degrades to a placeholder rather than raising.
             items = [{"title": "Failed to parse news feed", "link": ""}]
         return items
 

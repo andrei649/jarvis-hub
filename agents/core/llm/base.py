@@ -197,6 +197,8 @@ class LLMBackend(ABC):
         if answer:
             return answer
         if finish == "length":
+            # FP: "max_tokens" is a context-size note; only the model name is logged, no secret.
+            # nosemgrep: python.lang.security.audit.logging.logger-credential-leak.python-logger-credential-disclosure
             logger.warning(
                 "Stream truncated at max_tokens before an answer (model=%s); "
                 "the model filled its context before answering — load a larger-context "
@@ -264,6 +266,8 @@ class LMStudioBackend(LLMBackend):
             #    "length"): there is no answer yet, only chain-of-thought. Never
             #    surface that — it is exactly the leak we are guarding against.
             if finish == "length":
+                # FP: "max_tokens" is a context-size note; only the model name is logged, no secret.
+                # nosemgrep: python.lang.security.audit.logging.logger-credential-leak.python-logger-credential-disclosure
                 logger.warning(
                     "LM Studio truncated at max_tokens before an answer (model=%s); "
                     "the model filled its context before answering — load a larger-context "

@@ -17,9 +17,13 @@ from __future__ import annotations
 
 import logging
 import re
-import xml.etree.ElementTree as ET
 from typing import Awaitable, Callable, Optional
 from urllib.parse import quote_plus
+
+# defusedxml hardens parsing of the untrusted RSS/Atom feeds this module fetches
+# (Python's stdlib xml.etree is unsafe on hostile input — entity-expansion DoS).
+# Drop-in: exposes fromstring + ParseError; rejects DTD/entity attacks as ValueError.
+import defusedxml.ElementTree as ET
 
 logger = logging.getLogger("jarvis.digest")
 
@@ -53,7 +57,9 @@ def parse_feed(xml: str, limit: int = 20) -> list[dict]:
     out: list[dict] = []
     try:
         root = ET.fromstring(xml)
-    except ET.ParseError:
+    except (ET.ParseError, ValueError):
+        # ValueError covers defusedxml's DTD/entity-attack rejections (DefusedXmlException);
+        # a malformed or hostile feed is treated as empty rather than crashing the brief.
         return out
     # strip namespaces so Atom + RSS parse uniformly
     for el in root.iter():
