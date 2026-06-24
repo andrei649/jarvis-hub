@@ -118,7 +118,9 @@ def authorize(action: Action,
     from ..autonomy.policy import ACT, NOTIFY
 
     capability = capability or Capability()
-    budget = budget or Budget()
+    # `budget` is accepted but inert in K1 (money caps live in the policy, the
+    # interrupt budget is checked by the broker); K3 gives it teeth. Intentionally
+    # not normalized/read here.
 
     # 1) Kill-switch + capability — via the existing nucleus when a token is
     #    presented (node mesh), else kill-switch only (K1 brokers carry no token;

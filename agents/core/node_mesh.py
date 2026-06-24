@@ -101,24 +101,27 @@ class NodeMesh:
         # re-authorization stays as defense-in-depth. Default-off → today's
         # _authorize path runs, byte-identical to before.
         autonomy_level = "ask"
-        use_kernel = False
+        kernel_ran = False
+        # Keep the kernel import and its uses in ONE block so the names are always
+        # bound before use (a split import/use trips CodeQL's may-be-uninitialized).
         if self._kernel is not None:
             from .kernel import Action, Capability, Verdict, kernel_enabled
-            use_kernel = kernel_enabled()
-        if use_kernel:
-            with self._lock:
-                rec = self._nodes.get(node_id)
-            if rec is None:
-                return {"ok": False, "reason": "unknown_node"}
-            decision = self._kernel(
-                Action(kind=KIND, agent=self.agent, title=title, payload=task_payload,
-                       scope=f"node:{node_id}", origin="generated"),
-                Capability(token_id=rec.get("token_id", ""), name=capability))
-            if decision.verdict is Verdict.DENY:
-                return {"ok": False, "reason": decision.reason}
-            if decision.verdict is Verdict.GRANT:
-                autonomy_level = "act"
-        else:
+            if kernel_enabled():
+                kernel_ran = True
+                with self._lock:
+                    rec = self._nodes.get(node_id)
+                if rec is None:
+                    return {"ok": False, "reason": "unknown_node"}
+                decision = self._kernel(
+                    Action(kind=KIND, agent=self.agent, title=title, payload=task_payload,
+                           scope=f"node:{node_id}", origin="generated"),
+                    Capability(token_id=rec.get("token_id", ""), name=capability))
+                if decision.verdict is Verdict.DENY:
+                    return {"ok": False, "reason": decision.reason}
+                if decision.verdict is Verdict.GRANT:
+                    autonomy_level = "act"
+        if not kernel_ran:
+            # kernel disabled or not bound → today's capability check, unchanged.
             auth = self._authorize(node_id, capability)
             if not auth.get("allowed"):
                 return {"ok": False, "reason": auth.get("reason", "denied")}
