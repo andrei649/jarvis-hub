@@ -23,6 +23,9 @@ uvicorn>=0.49.0
 
 # Security
 cryptography>=48.0.1
+# defusedxml: hardened parsing of untrusted RSS/Atom feeds (news + digest plugins);
+# stdlib xml.etree is unsafe on hostile XML (entity-expansion DoS).
+defusedxml>=0.7.1
 
 # Voice (optional — install manually or use requirements-beta.txt)
 # openwakeword

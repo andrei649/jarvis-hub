@@ -83,6 +83,8 @@ def _resolve_token_key() -> bytes:
     except OSError:
         # chmod is best-effort (e.g. Windows) — the warning still stands.
         pass
+    # FP: logs the key file path (%s), never the key bytes; the rule matches the message text.
+    # nosemgrep: python.lang.security.audit.logging.logger-credential-leak.python-logger-credential-disclosure
     logger.warning(
         "Generated an on-disk token-encryption key (%s, perms 0600). For stronger "
         "hygiene set JARVIS_TOKEN_KEY (resolved from the secrets vault) so the key "
@@ -124,6 +126,8 @@ def load_token(service: str) -> Optional[dict]:
                 # file) would otherwise leave the still-encrypted value in place
                 # and the service fails mysteriously later. Surface it so the owner
                 # knows to re-authorize, instead of silent confusion.
+                # FP: logs the service name, not the token; the rule matches the message text.
+                # nosemgrep: python.lang.security.audit.logging.logger-credential-leak.python-logger-credential-disclosure
                 logger.warning(
                     "OAuth access_token decrypt failed for %s — re-authorize the "
                     "service (the secret key may have changed)", service)
@@ -131,6 +135,8 @@ def load_token(service: str) -> Optional[dict]:
             try:
                 data["refresh_token"] = f.decrypt(data["refresh_token"].encode()).decode()
             except Exception:
+                # FP: logs the service name, not the token; the rule matches the message text.
+                # nosemgrep: python.lang.security.audit.logging.logger-credential-leak.python-logger-credential-disclosure
                 logger.warning(
                     "OAuth refresh_token decrypt failed for %s — re-authorize the "
                     "service (the secret key may have changed)", service)
