@@ -31,6 +31,7 @@ from agents.core.routers._deps import user_guard
 
 from agents.core.web_helpers import nocache_json, error_json
 from agents.core.app_state import get_orch
+from agents.core.validation import is_safe_kg_label, is_safe_kg_rel_type
 
 
 router = APIRouter(tags=["memory"])
@@ -234,7 +235,12 @@ async def kg_upsert_entity(req: Request):
     name = (body or {}).get("name", "").strip()
     if not name:
         return JSONResponse({"error": "name required"}, status_code=400)
-    ok = g.add_entity(name, (body.get("type") or "unknown"), body.get("properties") or {})
+    entity_type = body.get("type") or "unknown"
+    # AUD-12 (F11): the label is interpolated into Cypher — reject a non-identifier
+    # type outright rather than let the graph coerce it (strict API contract).
+    if not is_safe_kg_label(entity_type):
+        return JSONResponse({"error": "invalid entity type"}, status_code=400)
+    ok = g.add_entity(name, entity_type, body.get("properties") or {})
     return nocache_json({"ok": bool(ok), "entity": g.get_entity(name)})
 
 
@@ -264,6 +270,10 @@ async def kg_add_relation(req: Request):
     target = (body or {}).get("target", "").strip()
     if not (source and relation and target):
         return JSONResponse({"error": "source, relation, target required"}, status_code=400)
+    # AUD-12 (F11): the relationship type is interpolated into Cypher — reject a
+    # non-identifier value outright (strict API contract).
+    if not is_safe_kg_rel_type(relation):
+        return JSONResponse({"error": "invalid relation type"}, status_code=400)
     ok = g.add_relation(source, relation, target, body.get("properties") or {})
     return nocache_json({"ok": bool(ok)})
 
@@ -274,6 +284,10 @@ async def kg_delete_relation(source: str, relation: str, target: str):
     g = _kg()
     if g is None:
         return JSONResponse({"error": "graph not available"}, status_code=503)
+    # AUD-12 (F11): the relationship type is interpolated into Cypher (strict
+    # API contract — reject rather than coerce a delete).
+    if not is_safe_kg_rel_type(relation):
+        return JSONResponse({"error": "invalid relation type"}, status_code=400)
     if not g.delete_relation(source, relation, target):
         return JSONResponse({"error": "not found"}, status_code=404)
     return nocache_json({"ok": True})

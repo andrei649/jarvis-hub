@@ -14,7 +14,7 @@
 ```bash
 pip install -r requirements-beta.txt
 python -m uvicorn agents.web:app --host 127.0.0.1 --port 8080
-python -m pytest tests/ -v          # ~2,751 passed, 6 skipped
+python -m pytest tests/ -v          # ~2,768 passed, 6 skipped
 ```
 
 > Singurul skip rămas e heartbeat-ul opțional. (Vechiul `tests/test_spotify.py` cu 8 skip-uri a
@@ -358,7 +358,7 @@ Status keys as elsewhere (✅ done · 🟢 in PR · 🟡 partial · ⬜ open). `
 | AUD-9 | ✅ **done (#315)** — **Audit chain HMAC** — optional off-box key (`JARVIS_AUDIT_KEY`): keyed rows are HMAC-SHA256 and need the key to verify; a per-row `hash_algo` marker lets a DB spanning the transition still verify; default (no key) keeps SHA-256 (F6). *Caveats H23.5.* | 2 | P1 | ✅ a tampered/forged row fails verification; hmac rows unverifiable without the key; `tests/test_audit_hardening.py` |
 | AUD-10 | 🟢 **in PR (A/3)** — **Supply-chain / CI**. **PR-A done:** all 36 `uses:` across the 8 workflows SHA-pinned (`@<40-hex>  # vX`, Dependabot-tracked, F32); pytest-socket loopback-only guard in `pytest.ini` (`--allow-hosts=127.0.0.1,::1,localhost`) so a stray *real* network call fails fast instead of hanging to the `--timeout` backstop (F37); `.pre-commit-config.yaml` (gitleaks/ruff/hygiene) + advisory gitleaks CI lane (`security.yml`, F36). *Remaining: Python lockfile + `--require-hashes` (PR-B, F33); `pip-audit` + ruff/bandit blocking + semgrep advisory + gitleaks→blocking, all baseline-then-block (PR-C, F34/F35).* *Extends Dependency-upkeep + SEC-4 + CQ sections.* | 5 | P1 | every `uses:` is a SHA ✅; stray network in tests fails fast ✅; CI fails on lint/CVE/secret (PR-C) |
 | AUD-11 | ✅ **done (#315)** — **Sandbox containment tests** — `tests/test_sandbox_isolation.py` runs in the real Docker backend (no-network + read-only FS) via a dedicated `sandbox-isolation` CI lane (`RUN_SANDBOX_ISOLATION=1`) so it can't be skipped away (F5). *Sub-item of H23.17.* | 3 | P1 | ✅ a containment test actually runs and proves isolation |
-| AUD-12 | 🟡 **partial (#315)** — **Injection hardening** — scanner `matched_text` no longer persisted raw: audit rows store `[REDACTED:<pattern>]` and `/api/admin/audit` redacts legacy rows (F13, with AUD-9, #315). *Cypher label/rel allow-list (F11) + WorldView WKT bounds (F12) still open.* | 3 | P1 | ✅ a flagged secret never lands in `audit.db`/the audit page; `tests/test_audit_hardening.py` |
+| AUD-12 | 🟡 **partial (#315, +F11 in PR)** — **Injection hardening** — (1) scanner `matched_text` no longer persisted raw (F13, with AUD-9, #315); (2) **F11 Cypher injection (in PR):** node labels / relationship types / property keys are interpolated into Cypher (Neo4j can't parameterise them) — `validation.coerce_kg_label`/`coerce_kg_rel_type` constrain them to safe identifiers at the `memory/graph.py` write chokepoint (a legit or free-form-but-safe value passes through unchanged; only a non-identifier collapses to `Entity`/`RELATED_TO`), hostile property keys are dropped, and the direct `/api/kg/*` writes hard-reject with **400**. *WorldView WKT bounds (F12) still open (PR-E).* | 3 | P1 | ✅ a flagged secret never lands in `audit.db`; a label/rel/key injection payload can't break out of the query and the direct API returns 400; `tests/test_audit_hardening.py`, `tests/test_kg_cypher_allowlist.py` |
 
 **Phase 2 — post-1.0 (structure, observability, scale, DX)**
 
@@ -437,7 +437,7 @@ chain-of-thought leak / mid-sentence truncation fixed. Kill-switch:
 
 **În afara totalului:** **Bugs & Hot Fixes** — **toate BUG-\* și HF-\* rezolvate** (BUG-1…17 + HF-1…7 + NTH-1; vezi re-baseline 2026-06-08 + tabelul de mai jos). ✅ **CLN-3 livrat + CLN-2 substanțial livrat (#293/#296, v0.11.0)** — `web.py` 4636→1282 LOC (45 routere, 9 rute inline), `orchestrator.py` 1620→1456 LOC; suprafața de rute byte-identică, parity-guarded. Rămân deschise: taskuri netrackuite ca buguri (**TASK-1** Howard backend, **TASK-2** HUD v2 depth, **TASK-3** taint-tracking canale, **BUG-2b** frontend E2E). *(Detalii audit cod 2026-06-04 în tabel.)*
 
-**Test count (backend pytest):** ~2,751 passed, 6 skipped — skip-urile sunt teste gated pe Docker/wasmtime (sandbox isolation) + heartbeat-ul opțional, absente în CI fără backend de sandbox. *(2026-06-09: backlog software **code-complete** — H10 30/30, H11 4/4, H12 24/25, frontiere H13–H17 19/20 (vezi „Status General" de mai sus); + WorldView O19 33/33 merged + Argus. Rămâne audit + testare manuală, vezi `docs/AUDIT.md`.)*
+**Test count (backend pytest):** ~2,768 passed, 6 skipped — skip-urile sunt teste gated pe Docker/wasmtime (sandbox isolation) + heartbeat-ul opțional, absente în CI fără backend de sandbox. *(2026-06-09: backlog software **code-complete** — H10 30/30, H11 4/4, H12 24/25, frontiere H13–H17 19/20 (vezi „Status General" de mai sus); + WorldView O19 33/33 merged + Argus. Rămâne audit + testare manuală, vezi `docs/AUDIT.md`.)*
 **Frontend (BUG-2):** 184 teste JS / 23 fișiere · ~67% line coverage — separat de suita pytest.
 **Observability (MOONSHOT §6):** north-star + counter-metrics (accepted/active user, interrupt rate, reject rate, %-local, p95) sunt acum calculate într-un singur loc (`agents/core/observability/north_star.py`) și expuse la `GET /api/metrics/north-star` — vezi [docs/METRICS.md](docs/METRICS.md).
 
