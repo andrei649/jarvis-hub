@@ -5,6 +5,13 @@ from typing import Optional
 
 import httpx
 
+from agents.core.validation import (
+    coerce_kg_label,
+    coerce_kg_rel_type,
+    is_safe_kg_rel_type,
+    is_safe_property_key,
+)
+
 logger = logging.getLogger("jarvis.memory.graph")
 
 NEO4J_URL = os.getenv("NEO4J_URL", "http://localhost:7474")
@@ -190,22 +197,36 @@ class Neo4jGraph(KnowledgeGraph):
         return rows
 
     def add_entity(self, name: str, entity_type: str, properties: dict = None) -> bool:
-        label = entity_type.capitalize()
+        # AUD-12 (F11): the label is interpolated into Cypher (Neo4j can't
+        # parameterise it), so coerce it to a safe identifier — a legitimate
+        # type passes through unchanged (mirrors the old ``capitalize()``); only
+        # a non-identifier value collapses to ``Entity`` and can't break out of
+        # the query. Property *keys* are interpolated as map keys too, so drop
+        # any that aren't bare identifiers.
+        label = coerce_kg_label(entity_type)
         props = properties or {}
-        all_props = {"name": name, **props}
+        all_props = {
+            k: v for k, v in {"name": name, **props}.items()
+            if k == "name" or is_safe_property_key(k)
+        }
         prop_pairs = ", ".join(f"{k}: ${k}" for k in all_props)
         cypher = f"MERGE (n:{label} {{name: $name}}) SET n += {{{prop_pairs}}} RETURN n"
         results = self._call_neo4j([{"statement": cypher, "parameters": all_props}])
         return len(results) > 0
 
     def add_relation(self, source: str, relation: str, target: str, properties: dict = None) -> bool:
-        props = properties or {}
+        # AUD-12 (F11): the relationship type is interpolated into Cypher, so
+        # coerce it to a safe identifier (a legitimate or free-form-but-safe type
+        # like WORKS_AT or DAUGHTER is kept; only a non-identifier collapses to
+        # RELATED_TO). Drop property keys that aren't bare identifiers.
+        rel = coerce_kg_rel_type(relation)
+        props = {k: v for k, v in (properties or {}).items() if is_safe_property_key(k)}
         prop_pairs = ", ".join(f"{k}: ${k}" for k in props)
         set_clause = f" SET r += {{{prop_pairs}}}" if props else ""
         cypher = (
             f"MERGE (a {{name: $source}}) "
             f"MERGE (b {{name: $target}}) "
-            f"MERGE (a)-[r:{relation.upper()} {{}}]->(b){set_clause} "
+            f"MERGE (a)-[r:{rel} {{}}]->(b){set_clause} "
             f"RETURN a, r, b"
         )
         params = {"source": source, "target": target, **props}
@@ -290,8 +311,15 @@ class Neo4jGraph(KnowledgeGraph):
         return len(results) > 0
 
     def delete_relation(self, source: str, relation: str, target: str) -> bool:
+        # AUD-12 (F11): refuse a non-identifier relationship type rather than
+        # coerce it — coercing a delete could remove the wrong (RELATED_TO) edge.
+        # The direct API rejects these with 400 before reaching here.
+        if not is_safe_kg_rel_type(relation):
+            logger.warning("delete_relation refused: %r is not a safe Cypher identifier", relation)
+            return False
+        rel = coerce_kg_rel_type(relation)  # guaranteed to pass through unchanged
         cypher = (
-            f"MATCH (a {{name: $source}})-[r:{relation.upper()}]->(b {{name: $target}}) "
+            f"MATCH (a {{name: $source}})-[r:{rel}]->(b {{name: $target}}) "
             "DELETE r RETURN count(r) AS deleted"
         )
         results = self._call_neo4j([{
