@@ -143,7 +143,7 @@ class CallBroker:
 
     def __init__(self, enqueue: Optional[Callable] = None, agent: str = "jarvis",
                  secret_broker=None, client=None, audit=None, budget=None,
-                 config: Optional[dict] = None) -> None:
+                 config: Optional[dict] = None, kernel=None) -> None:
         self._enqueue = enqueue
         self.agent = agent
         self._secrets = secret_broker
@@ -151,6 +151,7 @@ class CallBroker:
         self._audit = audit
         self._budget = budget   # InterruptBudget: .remaining() / .consume()
         self.config = config or {}
+        self._kernel = kernel   # ORIZONT-24 K1: bound kernel.authorize (default-off)
 
     @staticmethod
     def supports(provider: str) -> bool:
@@ -188,12 +189,24 @@ class CallBroker:
         }
         preview = preview_task({"kind": self.KIND, "title": title,
                                 "payload": payload, "risk_tier": _RISK_TIER})
+        # ORIZONT-24 K1: route through the Action Kernel when enabled (default-off →
+        # this block is skipped and the path below is byte-identical to before).
+        autonomy_level = "ask"
+        if self._kernel is not None:
+            from ..kernel import Action, Verdict, kernel_enabled
+            if kernel_enabled():
+                decision = self._kernel(Action(kind=self.KIND, agent=agent or self.agent,
+                                               title=title, payload=payload, origin="generated"))
+                if decision.verdict is Verdict.DENY:
+                    return {"ok": False, "reason": decision.reason, "kind": self.KIND}
+                if decision.verdict is Verdict.GRANT:
+                    autonomy_level = "act"
         if self._enqueue is None:
             return {"ok": True, "queued": False, "kind": self.KIND, "title": title,
                     "payload": payload, "preview": preview}
         try:
             task_id = self._enqueue(agent or self.agent, self.KIND, title, payload=payload,
-                                    risk_tier=_RISK_TIER, autonomy_level="ask",
+                                    risk_tier=_RISK_TIER, autonomy_level=autonomy_level,
                                     origin="generated")
         except Exception:
             logger.warning("call enqueue failed", exc_info=True)

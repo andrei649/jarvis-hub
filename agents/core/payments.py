@@ -49,6 +49,11 @@ class PaymentBroker(JsonStore):
     metadata=None)`` (e.g. core.security.anchor.IntentLog); when None, audit is
     skipped (unit tests inject a fake to assert it's called)."""
 
+    # ORIZONT-24 action kind (for the action-auth registry). Payment is wired in
+    # web.py with a no-enqueue flow, so its kernel hook is a follow-up micro-wave;
+    # classified PENDING_KERNEL until then.
+    KIND = "payment"
+
     def __init__(self, path: str | Path = DEFAULT_PATH, audit=None) -> None:
         self._audit = audit
         super().__init__(path)

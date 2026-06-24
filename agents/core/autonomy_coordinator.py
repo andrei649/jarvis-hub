@@ -141,11 +141,31 @@ class AutonomyCoordinator:
         # Approved `writeback.*` tasks resolve credentials at action time (behind
         # approval) and call an injectable client (offline NullWriteBackClient by
         # default; the live HTTP rail is a host-side seam).
+        # ORIZONT-24 K1: one bound kernel.authorize, injected into the wave-1 brokers
+        # (default-off behind JARVIS_ACTION_KERNEL). Audit → intent_log (IntentLog.record),
+        # not orch.audit. None if the policy isn't available → brokers stay kernel-less.
+        def _make_action_kernel():
+            import functools
+            from .kernel import authorize as _authorize_action
+            pol = (getattr(getattr(self._orch, "autonomy", None), "policy", None)
+                   or getattr(self._orch, "autonomy_policy", None))
+            if pol is None:
+                return None
+            return functools.partial(
+                _authorize_action,
+                kill_switch=getattr(self._orch, "kill_switch", None),
+                capabilities=getattr(self._orch, "capabilities", None),
+                policy=pol,
+                audit=getattr(self._orch, "intent_log", None),
+            )
+        _action_kernel = _make_action_kernel()
+
         from .writeback import WriteBackBroker
         self._orch.writeback = WriteBackBroker(
             enqueue=self._orch.autonomy_queue.enqueue,
             secret_broker=getattr(self._orch, "secret_broker", None),
             audit=getattr(self._orch, "audit", None),
+            kernel=_action_kernel,
         )
         executor.register("writeback", self._orch.writeback.execute)
 
@@ -157,6 +177,7 @@ class AutonomyCoordinator:
             enqueue=self._orch.autonomy_queue.enqueue,
             secret_broker=getattr(self._orch, "secret_broker", None),
             audit=getattr(self._orch, "audit", None),
+            kernel=_action_kernel,
         )
         executor.register("social", self._orch.social.execute)
 
@@ -175,6 +196,7 @@ class AutonomyCoordinator:
             audit=getattr(self._orch, "audit", None),
             budget=getattr(self._orch.autonomy, "budget", None),
             config=_call_cfg,
+            kernel=_action_kernel,
         )
         executor.register("call", self._orch.call_broker.execute)
 
@@ -187,6 +209,7 @@ class AutonomyCoordinator:
             kill_switch=getattr(self._orch, "kill_switch", None),
             enqueue=self._orch.autonomy_queue.enqueue,
             audit=getattr(self._orch, "audit", None),
+            kernel=_action_kernel,
         )
         executor.register("node", self._orch.node_mesh.execute)
 
