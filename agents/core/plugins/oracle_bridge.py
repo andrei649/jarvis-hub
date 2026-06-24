@@ -244,7 +244,9 @@ class OracleBridgePlugin:
                 path = Path(f)
                 rel = str(path.relative_to(REPO_DIR))
                 try:
-                    h = hashlib.md5(path.read_bytes()).hexdigest()
+                    # Content fingerprint for change-detection only (not security);
+                    # usedforsecurity=False keeps it FIPS-safe and silences B324.
+                    h = hashlib.md5(path.read_bytes(), usedforsecurity=False).hexdigest()
                     new_hashes[rel] = h
                     old = self.file_hashes.get(rel)
                     if old and old != h:

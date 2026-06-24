@@ -32,13 +32,13 @@ jobs:
           cache-dependency-path: requirements-beta.txt
       - run: pip install -r requirements-beta.txt
       - run: pip install -r requirements-dev.txt
-      - name: Lint (non-blocking)
-        # Rules/config come from pyproject.toml. Kept quiet here (--exit-zero):
-        # the full lint/dead-code/complexity digest is published by
-        # code-health.yml so this step doesn't double-report. Drop --exit-zero
-        # (and continue-on-error) later to make linting a required gate.
-        run: ruff check . --exit-zero
-        continue-on-error: true
+      - name: Lint (ruff — blocking gate)
+        # AUD-10 (F34/F35): blocking lint gate. Pre-existing findings are frozen
+        # in ruff-baseline.toml (per-file-ignores, extended from pyproject) so this
+        # passes today and fails only on NEW findings. Burn the baseline down with
+        # `python scripts/code_health.py --fix`, then trim cleared entries. The full
+        # advisory digest (format/dead-code/complexity) still lives in code-health.yml.
+        run: ruff check .
       - name: Test
         # -n auto: parallelize across runner cores (Windows full-suite goes from
         # ~15min to a few). --dist loadfile keeps each test file on one worker, and
