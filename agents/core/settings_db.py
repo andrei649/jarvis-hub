@@ -204,6 +204,12 @@ DEFAULTS: list[dict[str, Any]] = [
     dict(category="system",  key="observer_enabled", value=True,   label="Resource Observer enabled", kind="toggle"),
     dict(category="system",  key="watchers_enabled", value=True,   label="Event Watchers enabled", kind="toggle"),
     dict(category="system",  key="error_backlog_sync_enabled", value=True, label="Error backlog sync enabled", kind="toggle"),
+    # retention — data lifecycle (H23.10). A daily sweep prunes data older than the
+    # TTL. OFF by default so nothing is ever surprise-deleted; a TTL of 0 means keep
+    # forever even when enabled.
+    dict(category="retention", key="enabled",               value=False, label="Enable data-retention sweeps", kind="toggle"),
+    dict(category="retention", key="conversation_ttl_days", value=90,    label="Delete conversation transcripts older than (days; 0 = keep forever)", kind="number"),
+    dict(category="retention", key="audit_ttl_days",        value=365,   label="Prune audit-log rows older than (days; 0 = keep forever)", kind="number"),
 ]
 
 # ── lazy init — called on first use, not at import time ───────────
