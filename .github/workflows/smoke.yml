@@ -24,10 +24,12 @@ jobs:
         with:
           python-version: "3.12"
           cache: pip
-          cache-dependency-path: requirements-beta.txt
+          cache-dependency-path: requirements-beta.lock
 
       - name: Install dependencies
-        run: pip install -r requirements-beta.txt
+        # AUD-10 (F33): hash-pinned install — --require-hashes aborts on any sha
+        # mismatch. Regenerate with ./scripts/lock_deps.sh (lockfile.yml guards drift).
+        run: pip install --require-hashes -r requirements-beta.lock
 
       - name: Verify server starts
         run: |

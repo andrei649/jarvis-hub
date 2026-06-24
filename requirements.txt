@@ -1,4 +1,7 @@
 # Cabinet v0.1.0 — Python Dependencies
+#
+# AUD-10 (F33): editable source. The hash-pinned requirements.lock is generated
+# from this file by ./scripts/lock_deps.sh — regenerate and commit it after edits.
 # Core
 pyyaml>=6.0.3
 apscheduler>=3.11.2

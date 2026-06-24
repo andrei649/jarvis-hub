@@ -1,5 +1,10 @@
 # Cabinet Beta — dependency groups
 # Install all: pip install -r requirements-beta.txt
+#
+# AUD-10 (F33): this file is the editable source of truth. CI installs from the
+# hash-pinned requirements-beta.lock with `pip install --require-hashes`. After
+# editing here, run ./scripts/lock_deps.sh and commit the regenerated lock — the
+# Lockfiles workflow fails the PR otherwise.
 
 # === Core (always required) ===
 pyyaml>=6.0.3
