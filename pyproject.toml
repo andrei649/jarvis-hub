@@ -6,6 +6,8 @@
 # Run the whole pass locally with:  python scripts/code_health.py
 
 [tool.ruff]
+# AUD-10 (F35): lint baseline + per-file-ignores live in ruff-baseline.toml
+extend = "ruff-baseline.toml"
 target-version = "py312"
 line-length = 100
 # Keep the analysis scoped to source we own.
@@ -18,12 +20,6 @@ select = ["E", "F", "W", "I", "B", "UP", "SIM", "C4"]
 # E402 (import-not-at-top): the codebase deliberately does sys.path / env setup
 # before imports in entrypoints. E501 (line-too-long) is left to the formatter.
 ignore = ["E402", "E501"]
-
-[tool.ruff.lint.per-file-ignores]
-# __init__.py re-exports look like unused imports but are public API.
-"__init__.py" = ["F401"]
-# Tests favour readability over import hygiene and may redefine fixtures.
-"tests/**" = ["F401", "F811", "B011"]
 
 [tool.ruff.lint.mccabe]
 # Functions above this cyclomatic complexity are flagged as refactor candidates

@@ -7,6 +7,7 @@ and carry the hexagon polygon as geom_wkt. (For raw point observations, use `ew/
 
 from __future__ import annotations
 
+import logging
 from datetime import UTC, datetime
 from typing import Any
 
@@ -14,6 +15,9 @@ import h3
 
 from worldview_ingest.envelope import TelemetryEnvelope
 from worldview_ingest.wkt import geojson_geometry_to_wkt
+from worldview_ingest.wkt_guard import WktBoundsError
+
+logger = logging.getLogger(__name__)
 
 GPSJAM_RESOLUTION = 4  # GPSJam's heatmap is binned at H3 resolution 4
 
@@ -39,7 +43,14 @@ def parse_gpsjam(
         total = bad + good
         if total <= 0:
             continue  # no GPS observations contributing to this cell
-        lon, lat = _ring_centroid(geometry)
+        try:
+            # AUD-12/F12: validates every vertex; raises on a hostile/malformed
+            # coordinate so we drop the cell instead of emitting a bad envelope.
+            geom_wkt = geojson_geometry_to_wkt(geometry)
+        except WktBoundsError as exc:
+            logger.warning("gpsjam: dropping out-of-bounds cell: %s", exc)
+            continue
+        lon, lat = _ring_centroid(geometry)  # safe: geometry just validated
         h3_index = h3.latlng_to_cell(lat, lon, resolution)
         envelopes.append(
             TelemetryEnvelope(
@@ -47,7 +58,7 @@ def parse_gpsjam(
                 source="gpsjam",
                 entity_id=h3_index,
                 ts=ts,
-                geom_wkt=geojson_geometry_to_wkt(geometry),
+                geom_wkt=geom_wkt,
                 payload={
                     "intensity": round(bad / total, 4),
                     "sample_count": int(total),
