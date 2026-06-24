@@ -1,12 +1,13 @@
 name: Security
 
-# AUD-10 — security CI gates:
-#   gitleaks          (F36)      blocking secret scan, allowlist in .gitleaks.toml
-#   sast / semgrep    (F35)      advisory SAST (continue-on-error)
-#   dependency-audit  (F34)      advisory pip-audit (continue-on-error)
+# AUD-10 — security CI gates (all blocking; each fails only on NEW findings):
+#   gitleaks          (F36)  blocking secret scan, allowlist in .gitleaks.toml
+#   sast / semgrep    (F35)  blocking SAST; the 9 pre-existing findings were triaged —
+#                            2 real (xml.etree → defusedxml) fixed, 7 logger-credential
+#                            false positives suppressed inline with named `# nosemgrep`
+#   dependency-audit  (F34)  blocking pip-audit against the hashed lockfile (F33);
+#                            triaged/unfixable CVEs go in the --ignore-vuln list below
 #   bandit            (F34/F35)  blocking SAST, baseline in .bandit-baseline.json
-# The advisory lanes flip to blocking once their baselines/ignore-lists land in the
-# F33 lockfile follow-up; the blocking lanes already fail only on NEW findings.
 on:
   pull_request:
   push:
@@ -51,11 +52,12 @@ jobs:
       - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1  # v6.3.0
         with:
           python-version: '3.12'
-      - name: Semgrep scan (advisory)
-        # Advisory (continue-on-error swallows install/registry hiccups too): surfaces
-        # static-analysis findings without gating. Flips to blocking in the CI-gates
-        # follow-up, with a baselined ruleset so only *new* findings fail (F35).
-        continue-on-error: true
+      - name: Semgrep scan (blocking)
+        # AUD-10 (F35): blocking SAST gate. --error makes semgrep exit non-zero on any
+        # finding. The current tree is clean: the 2 real findings (stdlib xml.etree on
+        # untrusted feeds) were fixed with defusedxml, and the 7 logger-credential-leak
+        # false positives are suppressed at the call site with a named `# nosemgrep:`
+        # (so the rule still fires on genuinely new code). New findings fail the build.
         run: |
           python -m pip install --quiet 'semgrep==1.167.0'
           semgrep scan --config p/python --config p/security-audit \
@@ -70,14 +72,17 @@ jobs:
       - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1  # v6.3.0
         with:
           python-version: '3.12'
-      - name: pip-audit (advisory)
-        # Advisory (continue-on-error): reports known CVEs in the dependency set
-        # without gating. Flips to blocking in the CI-gates follow-up, against the
-        # hashed lockfile (F33) + a committed ignore-list of triaged advisories (F34).
-        continue-on-error: true
+      - name: pip-audit (blocking)
+        # AUD-10 (F34): blocking dependency-CVE gate against the hash-pinned lockfile
+        # (F33) — auditing the exact resolved versions, not the loose constraints. A
+        # newly-disclosed CVE in a pinned dependency fails the build, forcing an
+        # upgrade (regenerate with ./scripts/lock_deps.sh). If an advisory is triaged
+        # as not-applicable / unfixable, add it here, e.g.:
+        #   pip-audit -r requirements-beta.lock --desc --ignore-vuln GHSA-xxxx-xxxx-xxxx
+        # The ignore-list is intentionally empty today — the lockfile audits clean.
         run: |
           python -m pip install --quiet 'pip-audit==2.10.1'
-          pip-audit -r requirements-beta.txt --desc
+          pip-audit -r requirements-beta.lock --desc
 
   bandit:
     name: SAST (bandit — blocking gate)

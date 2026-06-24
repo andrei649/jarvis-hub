@@ -11,6 +11,7 @@ pyyaml>=6.0.3
 apscheduler>=3.11.2
 httpx>=0.28.1
 cryptography>=49.0.0
+defusedxml>=0.7.1  # hardened parsing of untrusted RSS/Atom feeds (news + digest)
 python-dotenv>=1.2.2
 ollama>=0.6.2
 # fastapi 0.137 wraps include_router results in an opaque _IncludedRouter instead of
