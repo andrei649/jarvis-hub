@@ -37,3 +37,39 @@ jobs:
         # gate (drop continue-on-error) once the .gitleaks.toml baseline lands.
         continue-on-error: true
         run: ./gitleaks dir . --redact --no-banner --verbose
+
+  sast:
+    name: SAST (semgrep)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1  # v6.3.0
+        with:
+          python-version: '3.12'
+      - name: Semgrep scan (advisory)
+        # Advisory (continue-on-error swallows install/registry hiccups too): surfaces
+        # static-analysis findings without gating. Flips to blocking in the CI-gates
+        # follow-up, with a baselined ruleset so only *new* findings fail (F35).
+        continue-on-error: true
+        run: |
+          python -m pip install --quiet 'semgrep==1.167.0'
+          semgrep scan --config p/python --config p/security-audit \
+            --error --quiet --metrics off --disable-version-check \
+            agents worldview
+
+  dependency-audit:
+    name: Dependency audit (pip-audit)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1  # v6.3.0
+        with:
+          python-version: '3.12'
+      - name: pip-audit (advisory)
+        # Advisory (continue-on-error): reports known CVEs in the dependency set
+        # without gating. Flips to blocking in the CI-gates follow-up, against the
+        # hashed lockfile (F33) + a committed ignore-list of triaged advisories (F34).
+        continue-on-error: true
+        run: |
+          python -m pip install --quiet 'pip-audit==2.10.1'
+          pip-audit -r requirements-beta.txt --desc
