@@ -628,46 +628,68 @@ async def chat(req: ChatRequest):
         return ChatResponse(reply=f"Internal error: {e}")
 
 
-@app.post("/chat/stream", dependencies=[Depends(_user_guard)])
-async def chat_stream(req: ChatRequest):
-    if not orch:
-        return JSONResponse({"error": "not initialized"}, status_code=503)
+async def _chat_event_stream(orch, message: str, agent: str, agent_override):
+    """SSE producer for /chat/stream — cancellation-safe (AUD-7 / F8).
 
-    async def event_stream():
-        queue = asyncio.Queue()
+    The model turn runs in a background ``runner`` task feeding a queue; this
+    generator consumes it. The consume loop is wrapped in try/finally so that ANY
+    exit cancels the runner and awaits its cancellation: a normal end, an error,
+    OR — the bug this fixes — the client disconnecting mid-stream, where Starlette
+    throws ``GeneratorExit`` into this generator. Previously ``task.cancel()`` sat
+    after the loop and was skipped on disconnect, leaving the LLM turn running
+    orphaned (burning the backend, never releasing resources)."""
+    queue: asyncio.Queue = asyncio.Queue()
 
-        async def on_token(token: str):
-            await queue.put(("token", token))
+    async def on_token(token: str):
+        await queue.put(("token", token))
 
-        async def runner():
-            try:
-                full = await orch.handle_input_stream(
-                    req.message, channel="web", on_token=on_token,
-                    agent_override=req.agent if req.agent != "jarvis" else None,
-                )
-                await queue.put(("end", full))
-            except Exception as e:
-                logger.exception("chat stream runner error")
-                await queue.put(("error", str(e)))
+    async def runner():
+        try:
+            full = await orch.handle_input_stream(
+                message, channel="web", on_token=on_token, agent_override=agent_override,
+            )
+            await queue.put(("end", full))
+        except asyncio.CancelledError:
+            raise  # client disconnected → propagate so the turn actually stops
+        except Exception as e:
+            logger.exception("chat stream runner error")
+            await queue.put(("error", str(e)))
 
-        task = asyncio.create_task(runner())
-        yield f"data: {json.dumps({'type': 'start', 'agent': req.agent})}\n\n"
-
+    task = asyncio.create_task(runner())
+    try:
+        yield f"data: {json.dumps({'type': 'start', 'agent': agent})}\n\n"
         while True:
             kind, data = await queue.get()
             if kind == "token":
                 yield f"data: {json.dumps({'type': 'token', 'text': data})}\n\n"
             elif kind == "end":
-                yield f"data: {json.dumps({'type': 'end', 'agent': req.agent, 'text': data})}\n\n"
+                yield f"data: {json.dumps({'type': 'end', 'agent': agent, 'text': data})}\n\n"
                 break
             elif kind == "error":
-                yield f"data: {json.dumps({'type': 'end', 'agent': req.agent, 'text': f'Eroare internă: {data}'})}\n\n"
+                yield f"data: {json.dumps({'type': 'end', 'agent': agent, 'text': f'Eroare internă: {data}'})}\n\n"
                 break
+    finally:
+        # Runs on normal completion AND on client disconnect (GeneratorExit). Awaiting
+        # a non-yielding coroutine here is allowed during generator close, so the model
+        # turn is always cancelled and reaped — never left running for a gone client.
+        if not task.done():
+            task.cancel()
+        try:
+            await task
+        except asyncio.CancelledError:
+            pass
+        except Exception:
+            logger.exception("chat stream runner cleanup failed")
 
-        task.cancel()
 
+@app.post("/chat/stream", dependencies=[Depends(_user_guard)])
+async def chat_stream(req: ChatRequest):
+    if not orch:
+        return JSONResponse({"error": "not initialized"}, status_code=503)
+
+    agent_override = req.agent if req.agent != "jarvis" else None
     return StreamingResponse(
-        event_stream(),
+        _chat_event_stream(orch, req.message, req.agent, agent_override),
         media_type="text/event-stream",
         headers={
             "Cache-Control": "no-cache",
