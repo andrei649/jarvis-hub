@@ -55,6 +55,11 @@ DEV_MODE = os.environ.get("DEV_MODE", "").lower() in ("1", "true", "yes")
 ADMIN_TOKEN = os.environ.get("JARVIS_ADMIN_TOKEN", "").strip()
 _LOCALHOSTS = {"127.0.0.1", "::1", "localhost"}
 
+# AUD-6: issued tokens (TTL / rotation / hash-at-rest) are accepted as an admin
+# credential in addition to the static env token. token_store is a leaf module
+# (imports only agents.core.paths), so there is no import edge back into web.
+from agents.core.security.token_store import get_token_store
+
 # HF-7 — by default the localhost-origin gate fails CLOSED behind a reverse proxy
 # (forwarding headers present → request.client.host is the proxy, untrustworthy →
 # require a token). Set JARVIS_TRUSTED_PROXY=1 ONLY when a trusted proxy populates
@@ -80,21 +85,34 @@ def _real_client_host(request: Request) -> str:
         return xff.split(",")[0].strip()
     return request.headers.get("x-real-ip", "").strip()
 
+def _admin_credential_ok(supplied: str) -> bool:
+    """True if *supplied* is a valid admin credential — the static env token
+    (constant-time) or a valid, unexpired issued admin token (AUD-6)."""
+    if not supplied:
+        return False
+    if ADMIN_TOKEN and secrets.compare_digest(supplied, ADMIN_TOKEN):
+        return True
+    return get_token_store().verify(supplied) == "admin"
+
+
 async def _admin_guard(request: Request):
     """Authorize an /api/admin/* request or raise 401/403."""
-    if ADMIN_TOKEN:
-        supplied = request.headers.get("x-admin-token", "")
-        if not supplied or not secrets.compare_digest(supplied, ADMIN_TOKEN):
-            raise HTTPException(status_code=401, detail="admin token required")
+    if _admin_credential_ok(request.headers.get("x-admin-token", "")):
         return
-    # No token configured → only localhost may reach admin. Behind an untrusted
-    # reverse proxy _real_client_host returns "" → fails closed (HF-7); set
-    # JARVIS_TRUSTED_PROXY=1 to trust X-Forwarded-For from a known proxy.
-    if _real_client_host(request) not in _LOCALHOSTS:
-        raise HTTPException(
-            status_code=403,
-            detail="admin disabled from network — set JARVIS_ADMIN_TOKEN to enable remote access",
-        )
+    # No env token configured → trust a direct-localhost origin (dev posture), so
+    # issuing a token never locks localhost out. Behind an untrusted reverse proxy
+    # _real_client_host returns "" → fails closed (HF-7); JARVIS_TRUSTED_PROXY=1
+    # trusts X-Forwarded-For from a known proxy.
+    if not ADMIN_TOKEN and _real_client_host(request) in _LOCALHOSTS:
+        return
+    # A credential is required (env token set, or issued admin tokens exist) but
+    # none/invalid was supplied; otherwise admin is simply disabled from the network.
+    if ADMIN_TOKEN or get_token_store().has_scope("admin"):
+        raise HTTPException(status_code=401, detail="admin token required")
+    raise HTTPException(
+        status_code=403,
+        detail="admin disabled from network — set JARVIS_ADMIN_TOKEN to enable remote access",
+    )
 
 
 # ── User authentication (HF-1) ────────────────────────────────────
@@ -134,8 +152,9 @@ def _user_credential_ok(user_supplied: str = "", admin_supplied: str = "") -> bo
     configured the localhost-trust posture applies and no credential is needed."""
     if USER_TOKEN and user_supplied and secrets.compare_digest(user_supplied, USER_TOKEN):
         return True
-    # An admin token is a superset of user access — accept it too.
-    if ADMIN_TOKEN and admin_supplied and secrets.compare_digest(admin_supplied, ADMIN_TOKEN):
+    # An admin credential is a superset of user access — the static env token OR a
+    # valid issued admin token (AUD-6) — so accept it too.
+    if _admin_credential_ok(admin_supplied):
         return True
     return False
 

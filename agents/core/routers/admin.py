@@ -34,6 +34,7 @@ import logging
 import os
 import statistics
 import sys
+import time
 from collections import defaultdict
 from datetime import date
 
@@ -50,6 +51,8 @@ logger = logging.getLogger("jarvis.web")
 
 # Settings-DB functions are leaf imports (no edge back into web.py).
 from agents.core.settings_db import get_all, get_category, init_db, put_category
+from agents.core.security.types import SecurityEvent, SecurityEventType
+from agents.core.security.token_store import SCOPES, get_token_store
 
 router = APIRouter(tags=["admin"])
 
@@ -96,6 +99,38 @@ async def admin_put_category(category: str, body: AdminPutBody):
 async def admin_reseed():
     init_db(force=True)
     return {"ok": True, "message": "Settings reseeded from defaults"}
+
+
+class RotateTokensBody(BaseModel):
+    scope: str = "admin"
+    ttl_days: float | None = None
+
+
+@router.post("/api/admin/rotate-tokens", dependencies=[Depends(admin_guard)])
+async def admin_rotate_tokens(body: RotateTokensBody):
+    """AUD-6: mint a fresh issued token (TTL, hashed at rest), revoking the prior
+    issued tokens of that scope. The raw token is returned **once** — only its hash
+    is stored. The caller is already admin (admin-guarded), and an old/expired token
+    is rejected afterwards. Audited (never the token value)."""
+    scope = body.scope if body.scope in SCOPES else "admin"
+    ttl = body.ttl_days if (body.ttl_days and body.ttl_days > 0) else None
+    token = await asyncio.to_thread(
+        get_token_store().rotate, scope, ttl, "rotated via /api/admin/rotate-tokens"
+    )
+    orch = get_orch()
+    audit = getattr(orch, "audit", None) if orch else None
+    if audit is not None:
+        try:
+            await asyncio.to_thread(audit.log, SecurityEvent(
+                event_type=SecurityEventType.AUDIT_LOG,
+                timestamp=time.time(),
+                content_preview=f"issued token rotated (scope={scope}, ttl_days={ttl})",
+                action_taken="token_rotated",
+            ))
+        except Exception:
+            logger.warning("failed to audit token rotation")
+    return {"scope": scope, "ttl_days": ttl, "token": token,
+            "note": "store this token now — it is shown only once"}
 
 
 @router.get("/api/admin/env", dependencies=[Depends(admin_guard)])

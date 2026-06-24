@@ -185,6 +185,7 @@
   "POST /api/admin/prompts/{agent_id}/commit",
   "POST /api/admin/prompts/{agent_id}/preview",
   "POST /api/admin/prompts/{agent_id}/rollback",
+  "POST /api/admin/rotate-tokens",
   "POST /api/admin/settings/reseed",
   "POST /api/admin/widgets",
   "POST /api/agent-templates/instantiate",
