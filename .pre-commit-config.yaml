@@ -1,0 +1,32 @@
+# AUD-10 (F36/F37): local pre-commit guardrails — secret scanning, lint, hygiene.
+# Catches problems before they reach CI. Optional but recommended for contributors.
+#
+#   pip install pre-commit && pre-commit install      # one-time, per clone
+#   pre-commit run --all-files                         # scan the whole tree
+#
+# Hook revs are pinned; `pre-commit autoupdate` (and Dependabot's pip/actions
+# coverage does not include these — bump them here) keep them current.
+minimum_pre_commit_version: "3.5.0"
+
+repos:
+  # Secret scanning — blocks a commit that would introduce a credential.
+  - repo: https://github.com/gitleaks/gitleaks
+    rev: v8.30.1
+    hooks:
+      - id: gitleaks
+
+  # Lint only — rules/config come from pyproject.toml (formatting stays advisory,
+  # matching code-health.yml). Runs against staged files, so it nudges fixes in
+  # the code you touch without re-flagging the whole baseline.
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.15.19
+    hooks:
+      - id: ruff
+
+  # Generic hygiene.
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v6.0.0
+    hooks:
+      - id: end-of-file-fixer
+      - id: check-added-large-files
+        args: ["--maxkb=1024"]

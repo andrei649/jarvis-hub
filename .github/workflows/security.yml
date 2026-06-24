@@ -1,0 +1,39 @@
+name: Security
+
+# AUD-10 (F36): secret scanning in CI. Advisory in this PR (continue-on-error so
+# it reports without gating); the CI-gates PR drops continue-on-error and commits
+# a .gitleaks.toml allowlist baseline so only *new* secrets fail the build.
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: security-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  gitleaks:
+    name: Secret scan (gitleaks)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
+
+      - name: Install gitleaks (pinned + checksum-verified)
+        run: |
+          set -euo pipefail
+          VERSION=8.30.1
+          SHA256=551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb
+          curl -fsSL "https://github.com/gitleaks/gitleaks/releases/download/v${VERSION}/gitleaks_${VERSION}_linux_x64.tar.gz" -o gitleaks.tar.gz
+          echo "${SHA256}  gitleaks.tar.gz" | sha256sum -c -
+          tar -xzf gitleaks.tar.gz gitleaks
+          ./gitleaks version
+
+      - name: Scan working tree (advisory)
+        # Advisory: surface findings without failing the build. Flips to a blocking
+        # gate (drop continue-on-error) once the .gitleaks.toml baseline lands.
+        continue-on-error: true
+        run: ./gitleaks dir . --redact --no-banner --verbose

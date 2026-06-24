@@ -59,3 +59,7 @@ pytest>=9.1.1
 pytest-asyncio>=1.4.0
 pytest-timeout>=2.4.0
 pytest-xdist>=3.8.0
+# AUD-10 (F37): fail fast on a stray real network call in a test instead of
+# hanging to the --timeout backstop. pytest.ini restricts connect() to loopback;
+# a real outbound connect raises SocketConnectBlockedError immediately.
+pytest-socket>=0.7.0
