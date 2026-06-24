@@ -48,12 +48,34 @@ DEV_MODE = os.environ.get("DEV_MODE", "").lower() in ("1", "true", "yes")
 
 # ── Admin authentication ──────────────────────────────────────────
 # The /api/admin/* routes can read settings, clear memory and expose env.
-# Guard them so they are never reachable from the network unprotected:
-#   - If JARVIS_ADMIN_TOKEN is set, require a matching X-Admin-Token header.
-#   - If it is NOT set, allow only requests originating from localhost, so
-#     local development keeps working but a Pi/LAN deployment is locked down.
+# AUD-6 (full-replace posture): the managed token store is the authoritative
+# credential system; the static JARVIS_ADMIN_TOKEN is only the *bootstrap*.
+#   - JARVIS_ADMIN_TOKEN, if set, is accepted (constant-time) — UNTIL a rotation
+#     through the store supersedes it, after which it is revoked for good
+#     (TokenStore.env_revoked), so adopting a managed token truly replaces it.
+#   - Issued tokens (TTL / rotation / hash-at-rest) are first-class admin creds.
+#   - With no admin credential configured at all, a direct-localhost origin is
+#     trusted (dev posture); a Pi/LAN deployment is locked down.
+#   - Lost every token? The offline CLI `python -m agents.core.security.token_store
+#     rotate admin` mints a fresh one from the machine itself — no HTTP, no lockout.
 ADMIN_TOKEN = os.environ.get("JARVIS_ADMIN_TOKEN", "").strip()
 _LOCALHOSTS = {"127.0.0.1", "::1", "localhost"}
+
+# token_store is a leaf module (imports only agents.core.paths), so there is no
+# import edge back into web.
+from agents.core.security.token_store import get_token_store
+
+
+def _env_admin_active() -> bool:
+    """True when the static admin env token is set AND not yet superseded by a
+    rotation (AUD-6). Once rotated, the env token is dead even if still exported."""
+    return bool(ADMIN_TOKEN) and not get_token_store().env_revoked("admin")
+
+
+def _admin_configured() -> bool:
+    """True when some admin credential exists: an un-revoked env token, or at
+    least one issued admin token in the store. Drives the localhost-fallback gate."""
+    return _env_admin_active() or get_token_store().has_scope("admin")
 
 # HF-7 — by default the localhost-origin gate fails CLOSED behind a reverse proxy
 # (forwarding headers present → request.client.host is the proxy, untrustworthy →
@@ -80,21 +102,35 @@ def _real_client_host(request: Request) -> str:
         return xff.split(",")[0].strip()
     return request.headers.get("x-real-ip", "").strip()
 
+def _admin_credential_ok(supplied: str) -> bool:
+    """True if *supplied* is a valid admin credential (AUD-6): a valid, unexpired
+    issued admin token in the store, OR the static env token while it is still
+    active (set and not yet superseded by a rotation — see _env_admin_active)."""
+    if not supplied:
+        return False
+    if get_token_store().verify(supplied) == "admin":
+        return True
+    return _env_admin_active() and secrets.compare_digest(supplied, ADMIN_TOKEN)
+
+
 async def _admin_guard(request: Request):
     """Authorize an /api/admin/* request or raise 401/403."""
-    if ADMIN_TOKEN:
-        supplied = request.headers.get("x-admin-token", "")
-        if not supplied or not secrets.compare_digest(supplied, ADMIN_TOKEN):
-            raise HTTPException(status_code=401, detail="admin token required")
+    if _admin_credential_ok(request.headers.get("x-admin-token", "")):
         return
-    # No token configured → only localhost may reach admin. Behind an untrusted
-    # reverse proxy _real_client_host returns "" → fails closed (HF-7); set
-    # JARVIS_TRUSTED_PROXY=1 to trust X-Forwarded-For from a known proxy.
-    if _real_client_host(request) not in _LOCALHOSTS:
+    # No admin credential configured at all → dev posture: trust a direct-localhost
+    # origin (so a fresh box can mint its first token), reject the network. Behind
+    # an untrusted reverse proxy _real_client_host returns "" → fails closed
+    # (HF-7); JARVIS_TRUSTED_PROXY=1 trusts X-Forwarded-For from a known proxy.
+    if not _admin_configured():
+        if _real_client_host(request) in _LOCALHOSTS:
+            return
         raise HTTPException(
             status_code=403,
             detail="admin disabled from network — set JARVIS_ADMIN_TOKEN to enable remote access",
         )
+    # A credential is configured but none/invalid was supplied. Recovery if every
+    # token is lost: the offline `token_store` CLI on the box.
+    raise HTTPException(status_code=401, detail="admin token required")
 
 
 # ── User authentication (HF-1) ────────────────────────────────────
@@ -110,14 +146,21 @@ async def _admin_guard(request: Request):
 USER_TOKEN = os.environ.get("JARVIS_USER_TOKEN", "").strip()
 
 
-def _user_token_required() -> bool:
-    """True when a JARVIS_USER_TOKEN is configured (network posture).
+def _env_user_active() -> bool:
+    """True when the static user env token is set AND not superseded by a rotation
+    (AUD-6) — the user-tier analog of _env_admin_active."""
+    return bool(USER_TOKEN) and not get_token_store().env_revoked("user")
 
-    When False the hub is in the localhost-only dev posture: the HTTP guard
-    trusts a localhost origin and requires no token (see ``_user_guard``). This
-    is the single source of truth reused by the MCP mutating-tool identity gate
-    so it can match the HTTP guard's unset-token behaviour exactly."""
-    return bool(USER_TOKEN)
+
+def _user_token_required() -> bool:
+    """True when a user credential exists (network posture).
+
+    AUD-6: True when the static user env token is active OR a user token has been
+    issued into the store. When False the hub is in the localhost-only dev
+    posture: the HTTP guard trusts a localhost origin and requires no token (see
+    ``_user_guard``). Single source of truth reused by the MCP mutating-tool
+    identity gate so it matches the guard exactly."""
+    return _env_user_active() or get_token_store().has_scope("user")
 
 
 def _user_credential_ok(user_supplied: str = "", admin_supplied: str = "") -> bool:
@@ -127,15 +170,20 @@ def _user_credential_ok(user_supplied: str = "", admin_supplied: str = "") -> bo
     in-process mutating-tool path, which has no ``Request``) can enforce the
     identical rule instead of forking it:
 
-      * a user token that matches ``JARVIS_USER_TOKEN`` (constant-time), OR
-      * an admin token that matches ``JARVIS_ADMIN_TOKEN`` (admin ⊇ user).
+      * a valid user-scope token in the managed store, OR
+      * a user token matching the active static env token, OR
+      * a valid admin credential (admin ⊇ user).
 
-    Only meaningful when ``_user_token_required()`` is True; with no token
-    configured the localhost-trust posture applies and no credential is needed."""
-    if USER_TOKEN and user_supplied and secrets.compare_digest(user_supplied, USER_TOKEN):
+    AUD-6 full-replace: managed tokens are first-class; the static env tokens are
+    the bootstrap, revoked once rotated. Only meaningful when
+    ``_user_token_required()`` is True; with no token configured the localhost
+    posture applies and no credential is needed."""
+    if user_supplied and get_token_store().verify(user_supplied) == "user":
         return True
-    # An admin token is a superset of user access — accept it too.
-    if ADMIN_TOKEN and admin_supplied and secrets.compare_digest(admin_supplied, ADMIN_TOKEN):
+    if _env_user_active() and user_supplied and secrets.compare_digest(user_supplied, USER_TOKEN):
+        return True
+    # An admin credential is a superset of user access — accept it too.
+    if _admin_credential_ok(admin_supplied):
         return True
     return False
 

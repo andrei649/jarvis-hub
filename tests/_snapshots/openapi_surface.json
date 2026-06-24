@@ -185,6 +185,7 @@
   "POST /api/admin/prompts/{agent_id}/commit": "admin_prompt_commit_api_admin_prompts__agent_id__commit_post",
   "POST /api/admin/prompts/{agent_id}/preview": "admin_prompt_preview_api_admin_prompts__agent_id__preview_post",
   "POST /api/admin/prompts/{agent_id}/rollback": "admin_prompt_rollback_api_admin_prompts__agent_id__rollback_post",
+  "POST /api/admin/rotate-tokens": "admin_rotate_tokens_api_admin_rotate_tokens_post",
   "POST /api/admin/settings/reseed": "admin_reseed_api_admin_settings_reseed_post",
   "POST /api/admin/widgets": "widgets_issue_api_admin_widgets_post",
   "POST /api/agent-templates/instantiate": "agent_templates_instantiate_api_agent_templates_instantiate_post",

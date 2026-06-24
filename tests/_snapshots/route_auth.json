@@ -189,6 +189,7 @@
   "POST /api/admin/prompts/{agent_id}/commit": "admin",
   "POST /api/admin/prompts/{agent_id}/preview": "admin",
   "POST /api/admin/prompts/{agent_id}/rollback": "admin",
+  "POST /api/admin/rotate-tokens": "admin",
   "POST /api/admin/settings/reseed": "admin",
   "POST /api/admin/widgets": "admin",
   "POST /api/agent-templates/instantiate": "user",
