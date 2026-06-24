@@ -1,9 +1,11 @@
-"""AUD-6 — issued token lifecycle: TTL, rotation, hash-at-rest, and guard wiring (F19).
+"""AUD-6 — managed token lifecycle: TTL, rotation, hash-at-rest, and guard wiring (F19).
 
-Issued tokens are an *additional* admin credential on top of the static env token.
-They are stored only as a SHA-256 hash, carry an optional expiry, and rotating
-revokes the prior ones — so an old or expired token is rejected. The static env
-token and the localhost dev fallback are unchanged.
+The managed store is the authoritative credential system. Issued tokens are stored
+only as a SHA-256 hash, carry an optional expiry, and rotating revokes the prior
+ones — so an old or expired token is rejected. The static ``JARVIS_*_TOKEN`` env
+vars are the *bootstrap* credential: accepted until a rotation supersedes them
+(``env_revoked``), after which the static token is dead for good. The localhost
+dev fallback (no credential configured) is unchanged.
 """
 import sys
 import time
@@ -57,6 +59,12 @@ def test_rotate_revokes_old(store):
     assert store.verify(new) == "admin"
 
 
+def test_rotate_marks_env_revoked(store):
+    assert store.env_revoked("admin") is False
+    store.rotate("admin")                       # adopting a managed token supersedes
+    assert store.env_revoked("admin") is True   # the static env token, persistently
+
+
 def test_has_scope_ignores_expired(store):
     assert store.has_scope("admin") is False
     store.issue("admin", ttl_days=1)
@@ -74,6 +82,20 @@ def test_purge_and_revoke(store):
 def test_unknown_scope_rejected(store):
     with pytest.raises(ValueError):
         store.issue("root")
+
+
+# ── CLI (offline owner recovery) ───────────────────────────────────
+def test_cli_issue_then_list(store, capsys):
+    assert ts_mod._main(["issue", "admin", "7"]) == 0
+    tok = capsys.readouterr().out.strip()
+    assert store.verify(tok) == "admin"          # the CLI-minted token is usable
+    assert ts_mod._main(["list"]) == 0
+    assert "admin" in capsys.readouterr().out
+
+
+def test_cli_rotate_supersedes_env(store, capsys):
+    assert ts_mod._main(["rotate", "admin"]) == 0
+    assert store.env_revoked("admin") is True    # CLI rotate kills the env token too
 
 
 # ── guard wiring ───────────────────────────────────────────────────
@@ -128,6 +150,15 @@ async def test_env_admin_token_still_required_even_on_localhost(store, monkeypat
     with pytest.raises(HTTPException):  # env token set → localhost must present it
         await web._admin_guard(_Req({}, host="127.0.0.1"))
     await web._admin_guard(_Req({"x-admin-token": "the-env-token"}, host="127.0.0.1"))
+
+
+def test_static_env_token_revoked_after_rotation(store, monkeypatch):
+    from agents import web
+    monkeypatch.setattr(web, "ADMIN_TOKEN", "the-env-token")
+    assert web._admin_credential_ok("the-env-token") is True   # bootstrap accepted
+    store.rotate("admin")                                       # adopt a managed token
+    assert web._admin_credential_ok("the-env-token") is False  # static token now dead
+    assert web._admin_configured() is True                     # the managed one stands in
 
 
 # ── rotate route ───────────────────────────────────────────────────

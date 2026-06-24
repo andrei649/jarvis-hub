@@ -109,9 +109,11 @@ class RotateTokensBody(BaseModel):
 @router.post("/api/admin/rotate-tokens", dependencies=[Depends(admin_guard)])
 async def admin_rotate_tokens(body: RotateTokensBody):
     """AUD-6: mint a fresh issued token (TTL, hashed at rest), revoking the prior
-    issued tokens of that scope. The raw token is returned **once** — only its hash
-    is stored. The caller is already admin (admin-guarded), and an old/expired token
-    is rejected afterwards. Audited (never the token value)."""
+    issued tokens of that scope **and** superseding the static env token for that
+    scope (full-replace: the env token stops working after the first rotation). The
+    raw token is returned **once** — only its hash is stored. The caller is already
+    admin (admin-guarded); old/expired/env tokens are rejected afterwards. Audited
+    (never the token value)."""
     scope = body.scope if body.scope in SCOPES else "admin"
     ttl = body.ttl_days if (body.ttl_days and body.ttl_days > 0) else None
     token = await asyncio.to_thread(
