@@ -327,6 +327,41 @@ GitHub scanning surfaced 25 CodeQL alerts + 1 secret-scanning alert. Of the 13 r
 
 ---
 
+## 🔎 Codex fresh-eyes review (2026-06-24 — external code + doc review)
+
+Independent fresh-eyes review (GitHub-connector read; no local build). Full write-up:
+[`docs/research/2026-06-24-codex-review.md`](docs/research/2026-06-24-codex-review.md). **Verdicts
+below source-validated against `main` (`e974069`) this session.** The strategic half largely
+**validates the current direction** rather than redirecting it: the "Action Kernel" = ORIZONT 24
+**Track K**; the trust/readiness board = #300 (partial) + **H23.11/H23.16**; onboarding = **H23.20**;
+"finish partials before greenfield" = standing BACKLOG guidance. New, concrete items (`CDX-*`):
+
+| ID | Item | Status | Maps to |
+|----|------|--------|---------|
+| CDX-1 | **`Agent.synthesize()` ignores the routed model** — `agent.py` unpacks `backend,_,route_name` (discards routed model) then generates with the *configured* model; `process()` correctly applies `routed_model`. Multi-agent fusion can run on the wrong local/cloud model/policy. | ⬜ real bug | — |
+| CDX-2 | **Interaction records hard-code `"channel":"web"`** (`orchestrator.py:1317`) — pass the real origin (web/telegram/discord/cli/autonomy); skews local/cloud ratio + analytics. | ⬜ real | [METRICS](docs/METRICS.md) |
+| CDX-3 | **One stale `last_n=6`** (`orchestrator.py:1143`) ignores `memory.context_window` — main path already honors the setting (`:850/859`); finish the tail. | 🟡 tail | — |
+| CDX-4 | **App version `0.5.0-beta`** in `web.py:372` (stale vs v0.11.0); source from one version module — leaks into OpenAPI metadata. | ⬜ real | CDX-5 |
+| CDX-5 | **Doc/version/test drift** — README v0.10.0/~2,400 vs STATUS v0.11.0/2,609 vs BACKLOG ~2,666 vs JARVIS.md ~299 routes. Point volatile counts at `STATUS.md` + a small status-sync script. | ⬜ real | H23.18 |
+| CDX-6 | **Per-agent timeout hard-coded 120s** (`orchestrator.py:1170`) — fold into per-task token/time budgets (don't share one invisible ceiling across chat/deep-research/autonomy/eval). | ⬜ | H23.1 / K3 |
+| CDX-7 | **Howard RAG provenance** — `agent.py` injects retrieved memory text into prompts; treat memory as untrusted: delimit as retrieved context (not instructions), add source/age/confidence, cap length, scan with the injection scanner. | ⬜ | TASK-3 / 0.37 |
+| CDX-8 | **Auto-generated skills are durable behavior** — `skills.auto_generate=true` + `[learn:…]`; ensure human review + sandbox + audit + provenance before a generated skill is reusable. | 🟡 | 0.54 / Track K |
+| CDX-9 | **Frontend live-wiring hides shape drift** — `frontend/src/api/live.ts` `@ts-nocheck` + seed fallbacks; add visible LIVE/SEED chips per panel + OpenAPI types, remove `@ts-nocheck` per-module. | 🟡 | H23.16 / AUD-16 / TASK-2 |
+| CDX-10 | **`_sys_info()` confident defaults** — returns a default host/GPU when probes fail; a trust/readiness screen should show "unknown", not a possibly-wrong fallback. | ⬜ | H23.11 |
+| CDX-11 | **Least-privilege plugins** — several `plugin_gate` entries serve `agents_served=["all"]` incl. external-write surfaces; for the hardened/design-partner profile, scope per-agent using existing agent identity. | ⬜ | 0.45 / Track K |
+| CDX-12 | **Hardened profile** — a "Design-Partner / Hardened" preset: guardrails→REDACT/BLOCK on sensitive routes, audit-HMAC required, strict egress on, mutating MCP off by default. | ⬜ | 0.56 / H23.20 |
+
+> **Verified NOT a bug (no action):** interrupt-budget is already wired to the setting
+> (`orchestrator.py:265` → `InterruptBudget(per_day=…autonomy.interrupt_budget…)`); the
+> `worker.py:27` constant is only the default. The review's "verify this" caveat is satisfied.
+>
+> **Review's own ranking** (all already tracked — confirms the plan): H23.11 readiness board ·
+> H23.18/19 docs · H23.20 onboarding · H23.1 budgets · H23.2 model pinning · HUD live/seed +
+> audit-verify surfacing · then **one design-partner proof loop**. Quick wins to bank first:
+> **CDX-1/2/3** (a small correctness PR) and **CDX-4/5** (doc/version sync).
+
+---
+
 ## 🧪 Hardening audit (2026-06-23 — fresh-eyes review, findings + phased plan)
 
 Two independent fresh-eyes passes (Opus 6-dive + Sonnet 3-agent), merged, de-duplicated
