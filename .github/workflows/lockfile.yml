@@ -1,0 +1,35 @@
+name: Lockfiles
+
+# AUD-10 (F33): guard that every requirements*.lock stays in sync with its
+# requirements*.txt source. The check is deterministic — it compares the source
+# sha256 that scripts/lock_deps.sh embeds in each lock, so it fails only when a
+# source .txt was edited without regenerating its lock, and never reds an
+# unrelated PR just because an upstream release appeared (version refreshes are
+# thirdparty-autoupdate.yml's job). The locks' integrity — that their pinned
+# hashes actually install — is proven separately by ci.yml + smoke.yml, which
+# install from them with `--require-hashes` across the ubuntu+windows matrix.
+on:
+  pull_request:
+    paths:
+      - "requirements*.txt"
+      - "requirements*.lock"
+      - "scripts/lock_deps.sh"
+      - ".github/workflows/lockfile.yml"
+  push:
+    branches: [main]
+    paths:
+      - "requirements*.txt"
+      - "requirements*.lock"
+      - "scripts/lock_deps.sh"
+      - ".github/workflows/lockfile.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  drift:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
+      - name: Locks in sync with their requirements*.txt sources
+        run: ./scripts/lock_deps.sh --check
