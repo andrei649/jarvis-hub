@@ -14,7 +14,7 @@
 ```bash
 pip install -r requirements-beta.txt
 python -m uvicorn agents.web:app --host 127.0.0.1 --port 8080
-python -m pytest tests/ -v          # ~2,716 passed, 6 skipped
+python -m pytest tests/ -v          # ~2,743 passed, 6 skipped
 ```
 
 > Singurul skip rămas e heartbeat-ul opțional. (Vechiul `tests/test_spotify.py` cu 8 skip-uri a
@@ -354,7 +354,7 @@ Status keys as elsewhere (✅ done · 🟢 in PR · 🟡 partial · ⬜ open). `
 |---|------|---|---|----|
 | AUD-6 | **Token lifecycle** — TTL + rotation + hashed-at-rest; `POST /api/admin/rotate-tokens`; consider read/write split; prefer httpOnly cookie over `localStorage` (F19). | 3 | P1 | an expired/rotated token is rejected; tokens not stored in plaintext |
 | AUD-7 | **SSE + async hot path** — cancellation-safe SSE producer (`web.py:606-647`, `try/finally`+await); move `add_turn` persistence off the loop (`to_thread`/debounce snapshot) (F8, F9). | 3 | P1 | client disconnect cancels the turn; no full-snapshot write on the event loop |
-| AUD-8 | **Settings integrity** — schema-validate `put_category` (type/range/enum → 422) + `audit.log("SETTINGS_CHANGE", …)` per write (F10). | 2 | P1 | bad value → 422; every settings change appears in the audit log |
+| AUD-8 | 🟢 **in PR** — **Settings integrity** — `settings_db.validate_category` checks each admin write against its DEFAULTS schema (type + select allow-list) → the route returns **422** on a bad value before it persists; every accepted write is audited (`SETTINGS_CHANGE`, changed **key names only**, no values) (F10). | 2 | P1 | ✅ bad value → 422; each settings change appears in the audit log; `tests/test_settings_integrity.py` |
 | AUD-9 | ✅ **done (#315)** — **Audit chain HMAC** — optional off-box key (`JARVIS_AUDIT_KEY`): keyed rows are HMAC-SHA256 and need the key to verify; a per-row `hash_algo` marker lets a DB spanning the transition still verify; default (no key) keeps SHA-256 (F6). *Caveats H23.5.* | 2 | P1 | ✅ a tampered/forged row fails verification; hmac rows unverifiable without the key; `tests/test_audit_hardening.py` |
 | AUD-10 | **Supply-chain / CI** — SHA-pin all Actions; Python lockfile+hashes; `pip-audit`; ruff blocking; blocking OSS SAST (semgrep/bandit); conftest loopback-only socket block; pre-commit + gitleaks (F32–F37). *Extends Dependency-upkeep + SEC-4 + CQ sections.* | 5 | P1 | every `uses:` is a SHA; CI fails on lint/CVE/secret; stray network in tests fails fast |
 | AUD-11 | ✅ **done (#315)** — **Sandbox containment tests** — `tests/test_sandbox_isolation.py` runs in the real Docker backend (no-network + read-only FS) via a dedicated `sandbox-isolation` CI lane (`RUN_SANDBOX_ISOLATION=1`) so it can't be skipped away (F5). *Sub-item of H23.17.* | 3 | P1 | ✅ a containment test actually runs and proves isolation |
