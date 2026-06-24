@@ -204,6 +204,12 @@ DEFAULTS: list[dict[str, Any]] = [
     dict(category="system",  key="observer_enabled", value=True,   label="Resource Observer enabled", kind="toggle"),
     dict(category="system",  key="watchers_enabled", value=True,   label="Event Watchers enabled", kind="toggle"),
     dict(category="system",  key="error_backlog_sync_enabled", value=True, label="Error backlog sync enabled", kind="toggle"),
+    # retention — data lifecycle (H23.10). A daily sweep prunes data older than the
+    # TTL. OFF by default so nothing is ever surprise-deleted; a TTL of 0 means keep
+    # forever even when enabled.
+    dict(category="retention", key="enabled",               value=False, label="Enable data-retention sweeps", kind="toggle"),
+    dict(category="retention", key="conversation_ttl_days", value=90,    label="Delete conversation transcripts older than (days; 0 = keep forever)", kind="number"),
+    dict(category="retention", key="audit_ttl_days",        value=365,   label="Prune audit-log rows older than (days; 0 = keep forever)", kind="number"),
 ]
 
 # ── lazy init — called on first use, not at import time ───────────
@@ -314,6 +320,60 @@ def get_category(cat: str) -> list[dict]:
         "kind": r["kind"],
         "opts": json.loads(r["opts"]),
     } for r in rows]
+
+
+# ── settings integrity (AUD-8 / F10) ──────────────────────────────
+# Validate an admin settings write against each key's declared schema (its
+# DEFAULTS entry) before it is persisted, so a malformed value (wrong type, or
+# off the select allow-list) is rejected with 422 instead of corrupting a setting
+# that the rest of the system then reads back and trusts. Unknown keys are not an
+# error here — put_category already ignores them.
+_SPEC: dict[tuple[str, str], dict[str, Any]] = {(d["category"], d["key"]): d for d in DEFAULTS}
+
+
+def _validate_value(key: str, value: Any, kind: str, opts: list) -> str | None:
+    """Return an error string if *value* violates the *kind*'s schema, else None."""
+    if kind == "toggle":
+        if not isinstance(value, bool):
+            return f"{key}: expected a boolean (toggle)"
+    elif kind in ("number", "slider"):
+        # bool is an int subclass — exclude it so a toggle value can't pass as a number.
+        if isinstance(value, bool) or not isinstance(value, (int, float)):
+            return f"{key}: expected a number"
+    elif kind == "select":
+        if value not in opts:
+            return f"{key}: {value!r} is not one of {opts}"
+    elif kind in ("text", "model-select"):
+        if not isinstance(value, str):
+            return f"{key}: expected a string"
+    elif kind == "tags":
+        if not isinstance(value, list) or not all(isinstance(v, str) for v in value):
+            return f"{key}: expected a list of strings (tags)"
+    # 'json' and any unknown kind accept any JSON-serializable value.
+    return None
+
+
+def validate_category(cat: str, data: dict[str, Any]) -> list[str]:
+    """Validate a settings write; return a list of human-readable errors (empty = ok).
+
+    Only keys known in DEFAULTS for *cat* are checked (unknown keys are ignored on
+    write). Values must be JSON-serializable so they can be stored.
+    """
+    errors: list[str] = []
+    for key, value in data.items():
+        spec = _SPEC.get((cat, key))
+        if spec is None:
+            continue
+        try:
+            json.dumps(value)
+        except (TypeError, ValueError):
+            errors.append(f"{key}: value is not JSON-serializable")
+            continue
+        err = _validate_value(key, value, spec.get("kind", "text"), spec.get("opts", []) or [])
+        if err:
+            errors.append(err)
+    return errors
+
 
 def put_category(cat: str, data: dict[str, Any]) -> tuple[int, list[str]]:
     _ensure_init()
