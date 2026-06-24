@@ -96,11 +96,27 @@ class ConversationMemory:
                 self.sessions[session_id].pop(0)
             self._dirty.add(session_id)
             if self.persist:
-                self._append_log(session_id, turn)
-                self._save_snapshot(session_id)
+                # AUD-7 / F9: both the append-log and the full-snapshot write are
+                # blocking disk I/O. On the SSE hot path that would stall the event
+                # loop (the snapshot rewrites the whole session every turn). Build the
+                # JSON-able data here (cheap, under the lock so it can't tear) and do
+                # the actual writes in a worker thread so streaming is never blocked.
+                turn_dict = turn.to_dict()
+                turns_data = [t.to_dict() for t in self.sessions[session_id]]
+                await asyncio.to_thread(self._persist_turn, session_id, turn_dict, turns_data)
+
+    def _persist_turn(self, session_id: str, turn_dict: dict, turns_data: list[dict]):
+        """Blocking persistence, run off the event loop (see add_turn). Per-turn
+        durability is unchanged: the snapshot is still written every turn — only the
+        thread it runs on differs."""
+        self._append_log_dict(session_id, turn_dict)
+        try:
+            save_memory(session_id, turns_data)
+        except Exception as e:
+            logger.warning(f"Snapshot save failed: {e}")
 
     def _save_snapshot(self, session_id: str):
-        """Full JSON save of the session."""
+        """Full JSON save of the session (kept for direct/synchronous callers)."""
         try:
             turns_data = [t.to_dict() for t in self.sessions.get(session_id, [])]
             save_memory(session_id, turns_data)
@@ -132,10 +148,13 @@ class ConversationMemory:
                 self.sessions.clear()
 
     def _append_log(self, session_id: str, turn: Turn):
+        self._append_log_dict(session_id, turn.to_dict())
+
+    def _append_log_dict(self, session_id: str, turn_dict: dict):
         try:
             MEMORY_DIR.mkdir(parents=True, exist_ok=True)
             log_path = MEMORY_DIR / f"{session_id}.jsonl"
             with open(log_path, "a", encoding="utf-8") as f:
-                f.write(json.dumps(turn.to_dict(), ensure_ascii=False) + "\n")
+                f.write(json.dumps(turn_dict, ensure_ascii=False) + "\n")
         except Exception as e:
             logger.warning(f"Failed to persist turn: {e}")
