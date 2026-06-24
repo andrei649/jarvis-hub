@@ -36,6 +36,7 @@ class SchedulerService:
         self.schedule_learning_loop()
         self.schedule_daily_budget_reset()
         self.schedule_worldview_kg_sync()
+        self.schedule_retention()
 
     # ── scheduling (registration) ─────────────────────────────────
     def schedule_daily_digests(self):
@@ -141,7 +142,38 @@ class SchedulerService:
         except Exception as e:
             logger.warning(f"Failed to schedule WorldView KG sync: {e}")
 
+    def schedule_retention(self):
+        """Daily data-retention sweep (H23.10) — prune transcripts/audit past their TTL.
+
+        Always registered, but a no-op at run time unless ``retention.enabled`` is
+        set, so the job is harmless by default. Runs at 03:30, off the busy hours.
+        """
+        sched = getattr(self._orch.heartbeat_scheduler, "scheduler", None)
+        if sched is None:
+            return
+        try:
+            sched.add_job(self.run_retention_purge, "cron", hour=3, minute=30,
+                          id="data-retention-sweep", replace_existing=True)
+            logger.info("Scheduled data-retention sweep: 03:30 daily (no-op unless retention.enabled)")
+        except Exception as e:
+            logger.warning(f"Failed to schedule retention sweep: {e}")
+
     # ── job bodies (no external callers) ──────────────────────────
+    async def run_retention_purge(self):
+        """Run the retention sweep off the event loop (file + SQLite I/O)."""
+        if not self._orch.get_setting("retention.enabled", False):
+            return
+        import asyncio
+
+        from agents.core import retention
+        try:
+            result = await asyncio.to_thread(
+                retention.run_retention, self._orch.get_setting, getattr(self._orch, "audit", None)
+            )
+            logger.info("Retention sweep complete: %s", result)
+        except Exception as e:
+            logger.warning(f"Retention sweep failed: {e}")
+
     async def run_log_quick_scan(self):
         """15-min scan: submit autonomy alert on spike or new error code."""
         if not self._orch.get_setting("system.log_scan_enabled", True):

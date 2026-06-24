@@ -203,5 +203,43 @@ class AuditLogger:
             row = self._conn.execute("SELECT COUNT(*) FROM security_events").fetchone()
         return row[0] if row else 0
 
+    def prune_before(self, cutoff_ts: float) -> int:
+        """Retention (H23.10): delete chain rows older than *cutoff_ts*, then
+        re-anchor the surviving rows so ``verify_chain`` still passes.
+
+        Pruning a Merkle chain orphans the new first row (its ``prev_hash`` points
+        at a deleted row), so the remaining rows are re-linked from a fresh anchor
+        and their hashes recomputed with each row's own algorithm. Tamper-evidence
+        across the pruned boundary is intentionally given up — those rows are gone.
+        If the surviving rows are HMAC-keyed but no key is available, the prune is
+        refused (it would leave an unverifiable chain). Returns rows deleted.
+        """
+        with self._lock:
+            survivors_algos = self._conn.execute(
+                "SELECT hash_algo FROM security_events WHERE timestamp >= ?", (cutoff_ts,)
+            ).fetchall()
+            if not self._key and any((a or "sha256") == "hmac-sha256" for (a,) in survivors_algos):
+                logger.warning("retention: refusing to prune audit (HMAC rows, no key to re-anchor)")
+                return 0
+            deleted = self._conn.execute(
+                "DELETE FROM security_events WHERE timestamp < ?", (cutoff_ts,)
+            ).rowcount or 0
+            if deleted:
+                rows = self._conn.execute(
+                    "SELECT id, timestamp, event_type, findings_json, content_preview, action_taken, hash_algo "
+                    "FROM security_events ORDER BY id"
+                ).fetchall()
+                prev = ""
+                for rid, ts, etype, fj, preview, action, algo in rows:
+                    rh = self._digest(algo or "sha256", f"{prev}|{ts}|{etype}|{fj}|{preview}|{action}")
+                    if rh is None:  # pragma: no cover - guarded above
+                        break
+                    self._conn.execute(
+                        "UPDATE security_events SET prev_hash=?, row_hash=? WHERE id=?", (prev, rh, rid)
+                    )
+                    prev = rh
+            self._conn.commit()
+        return deleted
+
     def close(self):
         self._conn.close()
