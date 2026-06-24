@@ -43,6 +43,7 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
 from agents.core.app_state import get_orch
+from agents.core.log_safe import log_safe
 from agents.core.paths import data_path
 from agents.core.routers._deps import admin_guard
 from agents.core.web_helpers import mask_secret, nocache_json, safe_reflect
@@ -100,7 +101,9 @@ async def _audit_settings_change(category: str, keys: list) -> None:
             action_taken="settings_update",
         ))
     except Exception:
-        logger.warning("failed to audit settings change for %s", safe_reflect(category))
+        # log_safe (not safe_reflect) is the recognized py/log-injection sanitizer:
+        # it strips CR/LF so a hostile category can't forge log lines.
+        logger.warning("failed to audit settings change for %s", log_safe(category))
 
 
 @router.put("/api/admin/settings/{category}", dependencies=[Depends(admin_guard)])
