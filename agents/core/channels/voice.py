@@ -50,7 +50,10 @@ class VoiceChannel(ChannelAdapter):
             return False
 
     async def handle_transcription(self, text: str) -> Optional[str]:
-        logger.info(f"Voice transcription: {text[:60]}")
+        # DEBUG, not INFO: the transcript is spoken user content. Keeping it below
+        # the default level keeps it out of the default-INFO sink (stderr and the
+        # opt-in rotating file log, H23.11) unless an operator explicitly enables DEBUG.
+        logger.debug(f"Voice transcription: {text[:60]}")
         return await self.receive(text)
 
     async def set_wake_words(self, words: list[str]):
