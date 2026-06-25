@@ -614,9 +614,51 @@ export function RoomsPanel() {
   </Card>;
 }
 
+// H23.16 — network monitor: reads the egress ledger (GET /api/admin/network/calls)
+// and proves LOCAL_ONLY plugins make zero outbound calls. `clean` is the headline:
+// green when no local-only plugin ever made an allowed external call.
+export function NetworkMonitorPanel() {
+  const { d, e, loading, reload } = useApi('/api/admin/network/calls', true, true);
+  const plugins = (d && d.plugins) || {};
+  const names = Object.keys(plugins);
+  const ext = d ? d.external_egress_total : 0;
+  const violations = (d && d.local_only_violations) || [];
+  const clean = d ? d.clean : true;
+  return (
+    <Card title="network monitor" sub={d ? (clean ? 'local-only ✓' : 'VIOLATION') : null} onReload={reload}>
+      <State e={e} loading={loading} n={names.length} />
+      {d && (
+        <Row>
+          <span style={mono}>egress</span>
+          <span style={{ marginLeft: 'auto', display: 'flex', gap: 5, alignItems: 'center' }}>
+            <Tag c={ext > 0 ? 'var(--amber)' : 'var(--green)'}>{ext} external</Tag>
+            <Tag c={clean ? 'var(--green)' : 'var(--red)'}>{clean ? 'clean' : 'violation'}</Tag>
+          </span>
+        </Row>
+      )}
+      {violations.length > 0 && (
+        <Row><span style={{ ...mono, color: 'var(--red)' }}>⚠ local-only egress: {violations.join(', ')}</span></Row>
+      )}
+      {names.map((name) => {
+        const p = plugins[name];
+        return (
+          <Row key={name}>
+            <span style={mono}>{name}</span>
+            <span style={{ marginLeft: 'auto', display: 'flex', gap: 5, alignItems: 'center' }}>
+              {p.external > 0 && <Tag c="var(--amber)">{p.external} ext</Tag>}
+              {p.blocked > 0 && <Tag c="var(--red)">{p.blocked} blocked</Tag>}
+              <Tag c="var(--green)">{p.allowed} ok</Tag>
+            </span>
+          </Row>
+        );
+      })}
+    </Card>
+  );
+}
+
 const SECTIONS = [
   ['Memory', [DataSpacesPanel, LocalDocsPanel, NotesPanel, ReflectionPanel]],
-  ['Trust', [KillSwitchPanel, SecretsPanel, CapabilitiesPanel, PairingPanel, InjectionScanPanel]],
+  ['Trust', [KillSwitchPanel, NetworkMonitorPanel, SecretsPanel, CapabilitiesPanel, PairingPanel, InjectionScanPanel]],
   ['Interop', [A2AInboxPanel, MarketplacePanel]],
   ['Observe', [EvalPanel, ReviewPanel, APMPanel]],
   ['Build', [StepGenPanel, SandboxPanel, TemplatesPanel]],
