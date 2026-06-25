@@ -153,6 +153,7 @@
   "GET /memory",
   "GET /memory/stats",
   "GET /memory/{agent_id}",
+  "GET /metrics",
   "GET /plugins",
   "GET /readyz",
   "GET /sandbox/status",

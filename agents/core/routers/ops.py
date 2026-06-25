@@ -19,8 +19,10 @@ web. Behavior is unchanged from the inline versions.
 import time
 
 from fastapi import APIRouter, Depends
+from fastapi.responses import PlainTextResponse
 
 from agents.core.app_state import get_orch
+from agents.core.observability.http_metrics import HTTP_METRICS, PROM_CONTENT_TYPE
 from agents.core.routers._deps import user_guard
 from agents.core.web_helpers import nocache_json
 
@@ -74,6 +76,15 @@ async def readyz():
         # 503 so a load balancer holds traffic back; never cache a readiness verdict.
         return nocache_json(body, status_code=503)
     return nocache_json(body)
+
+
+@router.get("/metrics", response_class=PlainTextResponse)
+async def metrics():
+    """AUD-17: Prometheus scrape — HTTP golden signals (rate/errors/duration) +
+    in-flight gauge. Unauthenticated like the probes (a monitor polls it from a
+    trusted network); expose it off-loopback only behind access control. The RED
+    signals are recorded by the `_golden_signals` middleware in web.py."""
+    return PlainTextResponse(HTTP_METRICS.render(), media_type=PROM_CONTENT_TYPE)
 
 
 @router.get("/api/resilience")

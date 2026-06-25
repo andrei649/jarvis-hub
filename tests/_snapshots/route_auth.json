@@ -155,6 +155,7 @@
   "GET /memory": "user",
   "GET /memory/stats": "open",
   "GET /memory/{agent_id}": "open",
+  "GET /metrics": "open",
   "GET /openapi.json": "open",
   "GET /plugins": "open",
   "GET /readyz": "open",
