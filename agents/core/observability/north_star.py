@@ -68,6 +68,35 @@ def _percentile(values: list[float], p: float) -> float | None:
     return float(s[f] + (s[c] - s[f]) * (k - f))
 
 
+# ── Counter-metric guardrails (V4 / MOONSHOT §6) ──────────────────────────────
+# The bounds the north-star must not be "gamed" past. These are the offline-computable
+# guardrails (the north-star itself needs real usage and is tracked on the live board).
+# A metric with no data yet (None) is **skipped, never failed** — we don't fabricate a
+# breach. Surfaced in the payload so the HUD board flags it and a real-usage merge gate
+# can act on it.
+GUARDRAILS: dict[str, dict] = {
+    "interrupt_rate_per_day": {"max": 4.0},    # MOONSHOT §5.4 — ≤4 proactive pushes/day
+    "reject_rate": {"max": 0.5},               # >half rejected ⇒ autonomy is annoying
+    "local_pct": {"min": 50.0},                # local-first floor (% of routed runs local)
+    "p95_latency_ms": {"max": 2000.0},         # p95 per-turn non-LLM latency < 2s
+}
+
+
+def check_guardrails(counter_metrics: dict) -> list[dict]:
+    """Return the list of breached guardrails (empty = healthy). None-valued metrics
+    (no data) are skipped, not failed."""
+    breaches = []
+    for metric, rule in GUARDRAILS.items():
+        val = counter_metrics.get(metric)
+        if val is None:
+            continue
+        if "max" in rule and val > rule["max"]:
+            breaches.append({"metric": metric, "value": val, "threshold": rule["max"], "direction": "max"})
+        if "min" in rule and val < rule["min"]:
+            breaches.append({"metric": metric, "value": val, "threshold": rule["min"], "direction": "min"})
+    return breaches
+
+
 def compute_north_star(
     queue,
     run_history=None,
@@ -156,6 +185,14 @@ def compute_north_star(
         except Exception:
             budget_block = None
 
+    counter_metrics = {
+        "interrupt_rate_per_day": round(pushed / days, 3),
+        "reject_rate": round(rejected / decisions, 4) if decisions else None,
+        "local_pct": local_pct,
+        "p95_latency_ms": round(_percentile(latencies, 95), 1) if latencies else None,
+    }
+    breaches = check_guardrails(counter_metrics)
+
     return {
         "period": "weekly",
         "days": days,
@@ -165,14 +202,11 @@ def compute_north_star(
             "total_accepted": done,
             "active_users": active_users,
         },
-        "counter_metrics": {
-            "interrupt_rate_per_day": round(pushed / days, 3),
-            "reject_rate": round(rejected / decisions, 4) if decisions else None,
-            "local_pct": local_pct,
-            "p95_latency_ms": (
-                round(_percentile(latencies, 95), 1) if latencies else None
-            ),
-        },
+        "counter_metrics": counter_metrics,
+        # V4 — MOONSHOT §6 guardrails: which counter-metrics are out of bounds (empty when
+        # healthy or when a metric has no data yet). `guardrails_ok` is the merge-gate bit.
+        "guardrail_breaches": breaches,
+        "guardrails_ok": not breaches,
         "interrupt_budget": budget_block,
         "raw": {
             "accepted": done,
