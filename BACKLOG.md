@@ -126,14 +126,17 @@ python -m pytest tests/ -v          # ~2,802 passed, 6 skipped
 | 0.56 Trust Center | ✅ done (#300) | `security/audit.py`,`routers/security.py` (kill_switch, audit_verify), `LOCAL_ONLY_AGENTS` + HUD panel ✅ (#300) / cloud-hop log, consent still open | H23.3/5/16 |
 | 0.57 Release Packaging | ⬜ missing | `release.yml` basic / signed artifacts, SBOM/NOTICE, compat matrix | H23.13/14 |
 | 0.58 Pack Manager | 🟡 partial | `skills/marketplace.py` (registry) / model/domain/content packs, remove/rollback | — |
-| 0.59 Proof Assets | 🌱 seed | `marketing/` + `docs/marketing/` / landing, README hero, demo video | H23.22 |
+| 0.59 Proof Assets | 🌱 seed | `marketing/` + `docs/marketing/` / landing, README hero, demo video + competitor-comparison & SEO landing pages | H23.22 |
 | 0.60 Local Analytics | ✅ done (#300) | `analytics_store.py`,`observability/north_star.py`,`/api/metrics/north-star` + HUD meter ✅ (#300) / activation funnel still open | H23.20 |
 | 0.61 Database Future Check | 🌱 seed | `settings_db.py` (WAL) / Turso/libSQL eval, migration framework | H23.7 |
 | 0.62 System Profiles | ⬜ missing | VRAM mgmt only / Gaming/AI/Multimedia/Admin modes | 0.17 |
 | 0.63 Restore & Soak | 🟡 partial | backup/restore+drill ✅ (#302) + `resilience.py` / 72h soak, failure injection | H23.8/12 |
+| 0.64 Floating Bar + Global Hotkey | ⬜ missing | `desktop/src-tauri/src/main.rs` is a setup stub (no `GlobalShortcutManager`); `frontend/src/app.tsx:714` hotkeys fire only when the browser tab is focused / a system-wide summon bar (Cmd+/ / Ctrl+/) as a thin always-on overlay — the competitor's signature UX | 0.15 / 0.29 |
+| 0.65 One-Hotkey Screen-Capture Reflex | 🌱 seed | VLM brain ✅ (`llm/vlm.py`, theme 0.27) + `screen_grounding.py` + `desktop_operator.py` exist but unwired / one keypress → screenshot current screen → VLM → answer with no copy-paste (depends on 0.64) | 0.16 |
+| 0.66 SaaS Connector Breadth | 🟡 partial | ~20 working integrations but a messaging/IoT-heavy mix; missing the white-collar suite: Linear · Asana · Trello · Todoist · ClickUp · Figma · Obsidian · Google Sheets · Microsoft 365 (Outlook/OneDrive/full Teams) · Apple Notes/Reminders/Calendar | — |
 | 0.90–1.0 gates (Freeze · RC · Partner · Burn-In · Owned) | ⬜ pending | `AUDIT.md`,`MANUAL_TESTING.md`,parity/auth gates, north-star eval / promote eval→required gate; design partners; landing+demo | 1.0.0 row + H23.21/22 |
 
-> **The only 7 truly greenfield (⬜):** 0.20 Vault · 0.42 Security Skills · 0.48 Video Production ·
+> **The only 7 truly greenfield (⬜) among 0.19–0.63:** 0.20 Vault · 0.42 Security Skills · 0.48 Video Production ·
 > 0.52 Demo Factory · 0.55 Design Partner Kit · 0.57 Release Packaging · 0.62 System Profiles.
 > Everything else is ✅/🟢/🟡/🌱 — **finish-the-PARTIALs beats start-greenfield** (audit guidance).
 > Top remaining finish-firsts: **0.36 Action-Manifest unify**, **H23.10 retention defaults**,
@@ -144,6 +147,13 @@ python -m pytest tests/ -v          # ~2,802 passed, 6 skipped
 > [remaining-backlog blueprint](docs/superpowers/specs/2026-06-23-orizont24-remaining-backlog-blueprint.md)
 > — each with grounded `file:line` seams, build steps, acceptance criteria, a test path, and its K/V
 > dependency. Load-bearing seams were re-verified against the codebase on 2026-06-23.
+>
+> **Addendum 2026-06-25 — getjarvis.eu gap delta:** A fresh competitive-gap pass against the shipped
+> consumer product **getjarvis.eu** (screen-aware floating-bar desktop AI, 30+ OAuth SaaS connectors,
+> freemium) is captured in [`docs/research/2026-06-25-getjarvis-competitive-gap.md`](docs/research/2026-06-25-getjarvis-competitive-gap.md).
+> Net-new buildable items folded in above as **0.64–0.66**. **Explicit non-goals** (conflict with the
+> local-first / single-user north star): managed-cloud freemium + billing, multi-tenant team features,
+> and uploading screenshots to a cloud VLM — we win these on privacy by *not* doing them.
 
 ---
 
