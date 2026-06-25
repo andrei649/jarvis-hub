@@ -1,0 +1,176 @@
+"""capability_registry.py — V2: one queryable readiness state per capability.
+
+ORIZONT 24 Track V (Verification Fabric). Today "is this capability real?" is answered
+ad hoc, per-caller, by API-key presence — there is no central state, which is exactly
+the "looks done, isn't wired" ambiguity the 2026-06-23 audit kept hitting. This module
+**derives** a single ``CapabilityRecord`` per capability from the registries that already
+exist — it does not add a parallel system:
+
+    plugin_gate.BUILTIN_PLUGINS   → kind="plugin"
+    orchestrator.components.status → kind="component"
+    orchestrator.skills           → kind="skill"
+
+Each record carries a readiness state on the lifecycle:
+
+    SEAM      declared / not wired (disabled plugin, failed component, stub skill)
+    WIRED     live path constructed and available (manual confidence)
+    VERIFIED  a green reality-harness proved the *rail* in CI   ← V1, pending
+    GA        VERIFIED and on the supported-version matrix
+
+**No capability is VERIFIED/GA yet** — the reality harness (V1) is what promotes a record,
+and it hasn't landed. That is intentional and honest: until then the board shows what is
+merely *wired* vs *seam*, never a fabricated "verified". A human may **demote** a record
+via an override (cap at WIRED); only the harness may promote to VERIFIED. Read-only at
+``GET /api/metrics/capabilities`` (sibling of ``/api/metrics/north-star``).
+"""
+
+from __future__ import annotations
+
+import logging
+from dataclasses import asdict, dataclass, field
+
+logger = logging.getLogger("jarvis.capabilities")
+
+# Readiness lifecycle, low → high. Ordering matters: overrides may only DEMOTE
+# (≤ WIRED), and the matrix gate (V3) keys off these names.
+SEAM, WIRED, VERIFIED, GA = "seam", "wired", "verified", "ga"
+_ORDER = (SEAM, WIRED, VERIFIED, GA)
+
+
+def _rank(state: str) -> int:
+    return _ORDER.index(state) if state in _ORDER else 0
+
+
+# Manual demotions: capability id → state. Only SEAM/WIRED are honored (a human can
+# demote, but only a green harness promotes to VERIFIED — Track V design §V2). Empty
+# today; the audit can pin a known-stub capability here without code surgery.
+_OVERRIDES: dict[str, str] = {}
+
+
+@dataclass
+class CapabilityRecord:
+    id: str
+    kind: str               # plugin | component | skill
+    state: str              # SEAM | WIRED | VERIFIED | GA
+    owner_agent: str = ""
+    contract_ref: str | None = None
+    harness_id: str | None = None   # set by the V1 reality harness (none yet)
+    last_verified: str | None = None
+    detail: dict = field(default_factory=dict)
+
+
+def set_override(cap_id: str, state: str) -> None:
+    """Manually demote a capability. Refuses to set VERIFIED/GA — only the harness promotes."""
+    if state not in (SEAM, WIRED):
+        logger.warning("capability override ignored: %s=%s (only seam/wired allowed)", cap_id, state)
+        return
+    _OVERRIDES[cap_id] = state
+
+
+def clear_override(cap_id: str) -> None:
+    _OVERRIDES.pop(cap_id, None)
+
+
+def _apply_override(rec: CapabilityRecord) -> CapabilityRecord:
+    ov = _OVERRIDES.get(rec.id)
+    if ov is not None and _rank(ov) <= _rank(WIRED):
+        rec.state = ov
+    return rec
+
+
+def _plugin_records() -> list[CapabilityRecord]:
+    """Derive plugin capabilities from the static manifest registry (no orch needed)."""
+    try:
+        from agents.core.plugin_gate import BUILTIN_PLUGINS
+    except Exception:
+        return []
+    out = []
+    for pid, m in sorted(BUILTIN_PLUGINS.items()):
+        out.append(
+            CapabilityRecord(
+                id=f"plugin:{pid}",
+                kind="plugin",
+                state=WIRED if getattr(m, "enabled", True) else SEAM,
+                owner_agent=(m.agents_served[0] if getattr(m, "agents_served", None) else ""),
+                detail={
+                    "network_access": getattr(m.network_access, "value", str(m.network_access)),
+                    "data_scope": getattr(m.data_scope, "value", str(m.data_scope)),
+                    "agents_served": list(getattr(m, "agents_served", []) or []),
+                },
+            )
+        )
+    return out
+
+
+def _component_records(orch) -> list[CapabilityRecord]:
+    """Derive component capabilities from the orchestrator's init-status registry."""
+    reg = getattr(orch, "components", None)
+    status = getattr(reg, "status", None) if reg is not None else None
+    if not status:
+        return []
+    return [
+        CapabilityRecord(
+            id=f"component:{name}",
+            kind="component",
+            state=WIRED if s == "ok" else SEAM,
+            detail={"init_status": s},
+        )
+        for name, s in sorted(status.items())
+    ]
+
+
+def _skill_records(orch) -> list[CapabilityRecord]:
+    """Derive skill capabilities from the loaded skill set (loaded module ⇒ WIRED)."""
+    loader = getattr(orch, "skills", None)
+    skills = getattr(loader, "skills", None) if loader is not None else None
+    if not skills:
+        return []
+    out = []
+    for name, sk in sorted(skills.items()):
+        agents = list(getattr(sk, "agents", []) or [])
+        out.append(
+            CapabilityRecord(
+                id=f"skill:{name}",
+                kind="skill",
+                state=WIRED if getattr(sk, "module", None) is not None else SEAM,
+                owner_agent=agents[0] if agents else "",
+                detail={"trusted": bool(getattr(sk, "trusted", False)), "agents": agents},
+            )
+        )
+    return out
+
+
+def build_records(orch=None) -> list[CapabilityRecord]:
+    """All capability records, overrides applied. Plugins derive statically; components
+    and skills need a live orchestrator (omitted when *orch* is None). Each source is
+    isolated so one failing registry can't blank the whole board."""
+    records: list[CapabilityRecord] = []
+    for source in (lambda: _plugin_records(),
+                   lambda: _component_records(orch) if orch is not None else [],
+                   lambda: _skill_records(orch) if orch is not None else []):
+        try:
+            records.extend(source())
+        except Exception:  # pragma: no cover - a broken registry must not 500 the board
+            logger.warning("capability source failed", exc_info=True)
+    return [_apply_override(r) for r in records]
+
+
+def snapshot(orch=None) -> dict:
+    """Board-ready view: records + roll-ups + the honest ``harness_pending`` flag.
+
+    ``by_state`` / ``by_kind`` are counts; ``harness_pending`` is True while no capability
+    is VERIFIED (i.e. the V1 reality harness has yet to promote anything) — the board renders
+    that as "wired, not yet proven" rather than implying verification we can't back."""
+    records = build_records(orch)
+    by_state: dict[str, int] = dict.fromkeys(_ORDER, 0)
+    by_kind: dict[str, int] = {}
+    for r in records:
+        by_state[r.state] = by_state.get(r.state, 0) + 1
+        by_kind[r.kind] = by_kind.get(r.kind, 0) + 1
+    return {
+        "capabilities": [asdict(r) for r in records],
+        "total": len(records),
+        "by_state": by_state,
+        "by_kind": by_kind,
+        "harness_pending": by_state.get(VERIFIED, 0) == 0 and by_state.get(GA, 0) == 0,
+    }
