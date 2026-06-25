@@ -29,6 +29,7 @@
   "GET /api/admin/backup": "backup_list_api_admin_backup_get",
   "GET /api/admin/env": "admin_get_env_api_admin_env_get",
   "GET /api/admin/mcp": "admin_mcp_list_api_admin_mcp_get",
+  "GET /api/admin/network/calls": "admin_network_calls_api_admin_network_calls_get",
   "GET /api/admin/prompts/{agent_id}/ab": "admin_prompt_ab_summary_api_admin_prompts__agent_id__ab_get",
   "GET /api/admin/prompts/{agent_id}/diff": "admin_prompt_diff_api_admin_prompts__agent_id__diff_get",
   "GET /api/admin/prompts/{agent_id}/history": "admin_prompt_history_api_admin_prompts__agent_id__history_get",
