@@ -164,6 +164,22 @@ async def metrics_north_star(days: int = Query(7, ge=1, le=90)):
     ))
 
 
+@router.get("/api/metrics/capabilities")
+async def metrics_capabilities():
+    """V2 — capability readiness registry: a SEAM/WIRED/VERIFIED/GA state per capability.
+
+    Derived from the plugin/component/skill registries (ORIZONT 24 Track V); makes
+    "looks done, isn't wired" a visible state instead of a per-caller guess. Open like
+    the sibling north-star meter (non-sensitive aggregate; the app is localhost-only
+    until a token is set). 503 until the orchestrator is up. Nothing is VERIFIED until
+    the reality harness (V1) lands — `harness_pending` reflects that honestly."""
+    orch = get_orch()
+    if not orch:
+        return nocache_json({"error": "not initialized"}, status_code=503)
+    from agents.core.observability.capability_registry import snapshot
+    return nocache_json(snapshot(orch))
+
+
 @router.get("/api/reflection/status")
 async def reflection_status():
     """Daily reflection status (H5.15)."""

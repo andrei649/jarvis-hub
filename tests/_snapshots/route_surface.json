@@ -89,6 +89,7 @@
   "GET /api/memory/search",
   "GET /api/memory/spaces",
   "GET /api/memory/tool-spec",
+  "GET /api/metrics/capabilities",
   "GET /api/metrics/north-star",
   "GET /api/missions",
   "GET /api/missions/{mission_id}",
