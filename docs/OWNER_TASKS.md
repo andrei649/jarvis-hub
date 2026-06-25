@@ -23,6 +23,11 @@
     real device (can't be validated headlessly). Python deps: clean (`pip-audit`).
 - [ ] **Relicense MIT → Apache-2.0 + `TRADEMARKS.md`** — decided 2026-06-04, deferred to pre-1.0
   ([`docs/LICENSE_DECISION.md`](LICENSE_DECISION.md)). 1 SP, but only you can sign off a license change.
+- [ ] **(optional) Signed release artifacts** — the release pipeline (H23.13) builds tar/zip + SBOM +
+  checksums automatically; to also emit GPG signatures, generate a signing key and add the repo
+  secrets `GPG_PRIVATE_KEY` (+ `GPG_PASSPHRASE` if set). Steps in [`docs/RELEASE.md`](RELEASE.md).
+  Optional too: publish a prebuilt Docker image to `ghcr.io` (compose already builds locally) — your
+  call, needs registry perms.
 
 ## 🟠 GitHub settings (5 minutes, Settings → …)
 
