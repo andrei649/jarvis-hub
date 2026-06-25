@@ -33,6 +33,7 @@ RULES = [
     ("/.well-known/", "NOT_IN_HUD"),
     ("/healthz", "NOT_IN_HUD"),  # H23.11 liveness probe (LB / systemd / Docker HEALTHCHECK)
     ("/readyz", "NOT_IN_HUD"),   # H23.11 readiness probe (503 until boot completes)
+    ("/metrics", "NOT_IN_HUD"),  # AUD-17 Prometheus golden-signals scrape (machine-facing)
     ("/api/mcp/server", "NOT_IN_HUD"),
     ("/api/memory/tool-spec", "NOT_IN_HUD"),
     ("/api/memory/search-tool", "NOT_IN_HUD"),
