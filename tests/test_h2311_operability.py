@@ -204,10 +204,16 @@ def test_log_to_file_via_setting_uses_data_root(monkeypatch, tmp_path, restore_l
     assert handlers[0].baseFilename.endswith("jarvis.log")
 
 
-def test_log_to_file_bad_path_does_not_crash(monkeypatch, restore_logging):
+def test_log_to_file_bad_path_does_not_crash(monkeypatch, tmp_path, restore_logging):
     """An unwritable log path degrades to stderr-only logging, never a crash."""
     import core.log as log
-    monkeypatch.setenv("JARVIS_LOG_FILE", "/proc/nonexistent-h2311/jarvis.log")
+    # Cross-platform "cannot create the parent dir": nest the log file UNDER an
+    # existing regular file, so os.makedirs() raises OSError on both POSIX and
+    # Windows. (A literal /proc path is unwritable on Linux but a writable D:\proc
+    # on Windows, so it can't be used as the portable bad path.)
+    blocker = tmp_path / "not-a-dir"
+    blocker.write_text("i am a file, not a directory")
+    monkeypatch.setenv("JARVIS_LOG_FILE", str(blocker / "sub" / "jarvis.log"))
     log.setup_logging(logging.INFO)          # must not raise
     assert _rotating_handlers() == []        # handler not attached; stderr remains
 
