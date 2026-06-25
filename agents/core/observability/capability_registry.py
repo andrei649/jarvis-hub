@@ -145,7 +145,7 @@ def build_records(orch=None) -> list[CapabilityRecord]:
     and skills need a live orchestrator (omitted when *orch* is None). Each source is
     isolated so one failing registry can't blank the whole board."""
     records: list[CapabilityRecord] = []
-    for source in (lambda: _plugin_records(),
+    for source in (_plugin_records,
                    lambda: _component_records(orch) if orch is not None else [],
                    lambda: _skill_records(orch) if orch is not None else []):
         try:
