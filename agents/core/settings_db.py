@@ -183,6 +183,11 @@ DEFAULTS: list[dict[str, Any]] = [
     # system
     dict(category="system",  key="log_level",        value="INFO",                label="Log level",          kind="select", opts=["DEBUG","INFO","WARNING","ERROR"]),
     dict(category="system",  key="poll_interval",    value=10,                    label="Poll interval (s)",  kind="number"),
+    # H23.11 — operability: opt-in rotating file log (default off; stderr only, so a
+    # supervisor like systemd/journald rotates). $JARVIS_LOG_FILE / *_MAX_MB / *_BACKUPS override.
+    dict(category="system",  key="log_to_file",      value=False,                 label="Log to rotating file", kind="toggle"),
+    dict(category="system",  key="log_max_mb",       value=10,                    label="Log file size cap (MB)", kind="number"),
+    dict(category="system",  key="log_backups",      value=5,                     label="Rotated log backups", kind="number"),
     # mcp
     dict(category="mcp",     key="servers",          value=[],                    label="MCP servers",        kind="json"),
     # autonomy — Proactive Cortex (ORIZONT 6)
