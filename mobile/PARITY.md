@@ -42,11 +42,14 @@ Legend — **mobile**: ✅ shipped · 🟡 partial · ⬜ not started · ➖ not
 | Chat rooms (multi-agent) | `GET/POST /api/rooms*` | ✅ | ⬜ | — |
 | Arena / review / quality | `GET /api/arena/*`, `/api/review/*` | ✅ | ➖ | — |
 | Security posture | `GET /api/security/*` | ✅ | ⬜ | — |
+| Health/readiness probes | `GET /healthz`, `GET /readyz` | ✅ | ➖ | — |
 | Auth (user token) | `X-User-Token` header | ✅ | ✅ | H18.1 |
 
 > Rows with an empty **Task** cell are tracked-but-unscheduled parity gaps. When one becomes
 > worth doing on mobile, give it an `H18.x` id in `BACKLOG.md` and fill the cell. Surfaces marked
-> ➖ are intentionally desktop-only (e.g. eval/benchmark dashboards) — note *why* if you add one.
+> ➖ are intentionally desktop-only (e.g. eval/benchmark dashboards) or machine-facing infra
+(e.g. the `/healthz`·`/readyz` probes a load balancer / systemd / Docker calls, not a phone) —
+note *why* if you add one.
 
 ## When you add a NEW hub endpoint
 

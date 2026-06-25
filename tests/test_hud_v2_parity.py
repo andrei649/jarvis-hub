@@ -31,6 +31,8 @@ RULES = [
     ("/admin", "admin"),
     # machine-facing — intentionally not a HUD surface
     ("/.well-known/", "NOT_IN_HUD"),
+    ("/healthz", "NOT_IN_HUD"),  # H23.11 liveness probe (LB / systemd / Docker HEALTHCHECK)
+    ("/readyz", "NOT_IN_HUD"),   # H23.11 readiness probe (503 until boot completes)
     ("/api/mcp/server", "NOT_IN_HUD"),
     ("/api/memory/tool-spec", "NOT_IN_HUD"),
     ("/api/memory/search-tool", "NOT_IN_HUD"),
