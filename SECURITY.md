@@ -6,6 +6,10 @@ Most of the threat surface is therefore local — but the project still ships re
 defenses (PII/secret scanning, SSRF-safe fetch, a containerized sandbox, an
 HMAC-able audit chain, encrypted secrets at rest) and takes vulnerabilities seriously.
 
+See also: [`docs/THREAT_MODEL.md`](docs/THREAT_MODEL.md) — what Jarvis defends against and
+the concrete mechanism for each threat — and [`docs/PRIVACY.md`](docs/PRIVACY.md) — the
+local-first data-handling and (no-)telemetry stance.
+
 ## Supported Versions
 
 This is a pre-1.0 (`0.x`) project; only the **latest minor release line** receives

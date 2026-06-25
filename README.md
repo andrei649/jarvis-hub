@@ -114,6 +114,7 @@ _Linux/macOS shortcut:_ `./install.sh` does all of the above (venv + install + t
 - **`docs/AI_CONTEXT.md`** — context-loading map for large-context AI (what to load, in which order, per-task bundles with token estimates).
 - **`docs/OWNER_TASKS.md`** — the human-gated queue: everything only the owner can do (hardware runs, GitHub settings, decisions).
 - **`docs/RELEASE.md`** — how a release is cut (tag → source bundle + SBOM + checksums + optional signatures) and how to verify a download.
+- **`SECURITY.md`** · **`docs/THREAT_MODEL.md`** · **`docs/PRIVACY.md`** — the trust trio: disclosure policy, what Jarvis defends against (with the mechanism for each threat), and the local-first data/telemetry stance.
 - **`JARVIS.md`** — architecture & directory structure · **`AGENTS.md`** — assistant conventions · **`BACKLOG.md`** — priorities & tasks.
 - **`GO_LIVE_PLAN.md`** — features + marketing brief + v1.0 launch checklist · **`docs/VALUATION_AND_PRICING.md`** — valuation, pricing & unit economics.
 - **`docs/MANUAL_TESTING.md`** — human pre-release checklist: everything the offline test suite can't verify (real LLMs, channels, services, HUD rendering).
