@@ -36,6 +36,58 @@ def cloud_cap(max_tokens: int) -> int:
     return max_tokens if (max_tokens and max_tokens > 0) else CLOUD_AUTO_MAX_TOKENS
 
 
+# ── Graceful local-LLM-down (H23.12) ──────────────────────────────────────────
+# A short *connect* budget makes a down/unreachable local server fail fast (~5s)
+# instead of blocking on the long *read* budget that real generation needs — so
+# the hub never hangs for minutes when LM Studio / Ollama is off. Mirrors the
+# connect=5s default in core/http_client.py.
+LOCAL_CONNECT_TIMEOUT = 5.0
+
+
+def local_read_timeout(read: float) -> httpx.Timeout:
+    """httpx timeout for a local backend: short connect, long read for generation."""
+    return httpx.Timeout(connect=LOCAL_CONNECT_TIMEOUT, read=read, write=read, pool=10.0)
+
+
+# Failures meaning "the local server isn't answering" (down / unreachable / stuck),
+# as opposed to a genuine application error from a server that *is* running.
+_LOCAL_UNREACHABLE = (
+    httpx.ConnectError, httpx.ConnectTimeout, httpx.ReadTimeout,
+    httpx.PoolTimeout, httpx.TimeoutException, ConnectionError,
+)
+
+
+def local_backend_degraded_reply(backend_name: str, server_hint: str, exc: Exception) -> str:
+    """Map a local-backend failure to a clean, user-facing degraded reply (H23.12).
+
+    Never raises and never leaks the raw exception — which used to land verbatim in
+    the chat bubble (``[LM Studio error: ...]``) and get persisted into conversation
+    memory. The detail is logged for operators instead.
+    """
+    if isinstance(exc, _LOCAL_UNREACHABLE):
+        logger.warning("%s unreachable — serving a degraded reply: %s", backend_name, exc)
+        return (
+            f"⚠️ I can't reach the local {backend_name} model right now. "
+            f"Start {server_hint} and try again — Jarvis runs local-first, so it "
+            "needs a local model server running."
+        )
+    logger.error("%s request failed — serving a degraded reply: %s", backend_name, exc)
+    return (
+        f"⚠️ The local {backend_name} model hit an error and couldn't answer. "
+        f"Check the {backend_name} server and try again."
+    )
+
+
+def is_degraded_reply(text: object) -> bool:
+    """True if *text* is a backend failure/degraded reply, not a real answer.
+
+    Covers the clean local degraded message (H23.12, ``⚠️`` prefix) and the legacy
+    bracketed ``[backend error: …]`` strings still emitted by the cloud backends —
+    so callers like ``warm_up`` detect a failed generation either way.
+    """
+    return isinstance(text, str) and text.startswith(("⚠️", "["))
+
+
 # ── Post-processing filter (used on non-stream responses) ─────────────────────
 
 def strip_thinking(text: str) -> str:
@@ -177,9 +229,10 @@ class LLMBackend(ABC):
         preload path (e.g. Ollama) override this."""
         try:
             out = await self.generate(model, ".", max_tokens=1, temperature=0.0)
-            # generate() reports failures as a "[backend error: …]" string, not
-            # an exception — treat those as a failed warm-up.
-            return not (isinstance(out, str) and out.startswith("["))
+            # generate() reports failures as a degraded reply string, not an
+            # exception (H23.12 ``⚠️ …`` or a legacy ``[backend error: …]``) —
+            # treat those as a failed warm-up.
+            return not is_degraded_reply(out)
         except Exception:
             return False
 
@@ -226,7 +279,8 @@ class LMStudioBackend(LLMBackend):
 
     def __init__(self, base_url: str = "http://localhost:1234"):
         self.base_url = base_url
-        self.client = httpx.AsyncClient(base_url=base_url, timeout=300.0)
+        # H23.12: short connect / long read so a down server fails fast (no hang).
+        self.client = httpx.AsyncClient(base_url=base_url, timeout=local_read_timeout(300.0))
 
     async def aclose(self):
         """Close the HTTP client's connection pool (BUG-7)."""
@@ -277,7 +331,7 @@ class LMStudioBackend(LLMBackend):
                 return ""
             return strip_thinking(msg.get("reasoning_content", "") or "")
         except Exception as e:
-            return f"[LM Studio error: {e}]"
+            return local_backend_degraded_reply("LM Studio", f"LM Studio ({self.base_url})", e)
 
     async def generate_stream(
         self, model: str, prompt: str, system: str = "",
@@ -328,7 +382,7 @@ class LMStudioBackend(LLMBackend):
                         except json.JSONDecodeError:
                             continue
         except Exception as e:
-            err = f"[LM Studio stream error: {e}]"
+            err = local_backend_degraded_reply("LM Studio", f"LM Studio ({self.base_url})", e)
             if on_token:
                 await _emit(on_token, err)
             return err
@@ -353,7 +407,8 @@ class OllamaBackend(LLMBackend):
 
     def __init__(self, base_url: str = "http://localhost:11434"):
         self.base_url = base_url
-        self.client = httpx.AsyncClient(base_url=base_url, timeout=120.0)
+        # H23.12: short connect / long read so a down server fails fast (no hang).
+        self.client = httpx.AsyncClient(base_url=base_url, timeout=local_read_timeout(120.0))
 
     async def aclose(self):
         """Close the HTTP client's connection pool (BUG-7)."""
@@ -405,7 +460,7 @@ class OllamaBackend(LLMBackend):
                 )
             return answer
         except Exception as e:
-            return f"[Ollama error: {e}]"
+            return local_backend_degraded_reply("Ollama", f"Ollama ({self.base_url})", e)
 
     async def generate_stream(
         self, model: str, prompt: str, system: str = "",
@@ -451,7 +506,7 @@ class OllamaBackend(LLMBackend):
                         except json.JSONDecodeError:
                             continue
         except Exception as e:
-            err = f"[Ollama stream error: {e}]"
+            err = local_backend_degraded_reply("Ollama", f"Ollama ({self.base_url})", e)
             if on_token:
                 await _emit(on_token, err)
             return err
