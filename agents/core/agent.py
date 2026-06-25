@@ -258,7 +258,13 @@ class Agent:
             res = self.llm_router.select_backend("jarvis", prompt)
             route_name = ""
             if isinstance(res, tuple) and len(res) == 3:
-                backend, _, route_name = res
+                backend, routed_model, route_name = res
+                # CDX-1: honor the routed model (local vs cloud, per policy) — same
+                # as process(). Previously the routed model was discarded and fusion
+                # always ran on the configured default, so a routed cloud/local swap
+                # silently didn't take effect for multi-agent synthesis.
+                if routed_model:
+                    model = routed_model
             else:
                 backend, _ = res
             if self.guardrails:

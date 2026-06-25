@@ -338,11 +338,11 @@ below source-validated against `main` (`e974069`) this session.** The strategic 
 
 | ID | Item | Status | Maps to |
 |----|------|--------|---------|
-| CDX-1 | **`Agent.synthesize()` ignores the routed model** — `agent.py` unpacks `backend,_,route_name` (discards routed model) then generates with the *configured* model; `process()` correctly applies `routed_model`. Multi-agent fusion can run on the wrong local/cloud model/policy. | ⬜ real bug | — |
-| CDX-2 | **Interaction records hard-code `"channel":"web"`** (`orchestrator.py:1317`) — pass the real origin (web/telegram/discord/cli/autonomy); skews local/cloud ratio + analytics. | ⬜ real | [METRICS](docs/METRICS.md) |
-| CDX-3 | **One stale `last_n=6`** (`orchestrator.py:1143`) ignores `memory.context_window` — main path already honors the setting (`:850/859`); finish the tail. | 🟡 tail | — |
-| CDX-4 | **App version `0.5.0-beta`** in `web.py:372` (stale vs v0.11.0); source from one version module — leaks into OpenAPI metadata. | ⬜ real | CDX-5 |
-| CDX-5 | **Doc/version/test drift** — README v0.10.0/~2,400 vs STATUS v0.11.0/2,609 vs BACKLOG ~2,666 vs JARVIS.md ~299 routes. Point volatile counts at `STATUS.md` + a small status-sync script. | ⬜ real | H23.18 |
+| CDX-1 | ✅ **done** — **`Agent.synthesize()` ignores the routed model** — now unpacks `backend, routed_model, route_name` and applies `routed_model` (same as `process()`), so multi-agent fusion runs on the routed local/cloud model/policy instead of the configured default. `tests/test_cdx_bugfix_batch.py`. | ✅ | — |
+| CDX-2 | ✅ **done** — **Interaction records hard-code `"channel":"web"`** — `_record_interactions` now takes the real `channel` (threaded from `process()`/`handle_input()`) into the learning metadata, so the %-local/cloud ratio + per-channel analytics reflect the true origin. `tests/test_orchestrator_process_record.py`. | ✅ | [METRICS](docs/METRICS.md) |
+| CDX-3 | ✅ **done** — **One stale `last_n=6`** (`_call_agents_parallel`) now honors `memory.context_window` like the main per-agent path (`:850/859`). | ✅ | — |
+| CDX-4 | ✅ **done** — **App version `0.5.0-beta`** retired; `web.py` `FastAPI(version=…)` (and `/status`, OpenAPI `info.version`) now read `agents.__version__` (= `0.11.0`), the single source. `tests/test_cdx_bugfix_batch.py`. | ✅ | CDX-5 |
+| CDX-5 | 🟡 **partial** — **Doc/version/test drift** — version single-sourced (CDX-4) + README badge/headline aligned to v0.11.0 + STATUS test counter refreshed. *Remaining:* a `scripts/status_sync.py` to auto-derive the volatile counts (routes/tests) from one source. | 🟡 | H23.18 |
 | CDX-6 | **Per-agent timeout hard-coded 120s** (`orchestrator.py:1170`) — fold into per-task token/time budgets (don't share one invisible ceiling across chat/deep-research/autonomy/eval). | ⬜ | H23.1 / K3 |
 | CDX-7 | **Howard RAG provenance** — `agent.py` injects retrieved memory text into prompts; treat memory as untrusted: delimit as retrieved context (not instructions), add source/age/confidence, cap length, scan with the injection scanner. | ⬜ | TASK-3 / 0.37 |
 | CDX-8 | **Auto-generated skills are durable behavior** — `skills.auto_generate=true` + `[learn:…]`; ensure human review + sandbox + audit + provenance before a generated skill is reusable. | 🟡 | 0.54 / Track K |

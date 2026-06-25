@@ -170,3 +170,33 @@ def test_record_marker_for_other_agent_is_success(orch):
 
 def test_record_plain_answer_is_success(orch):
     assert _record_and_capture(orch, "jarvis", "All good, sir.") is True
+
+
+# ── CDX-2: the real channel is recorded, not a hard-coded "web" ───────────────
+
+
+def _record_and_capture_meta(orch, channel=None):
+    """Run _record_interactions and return the metadata dict passed to
+    learning.record. Passes `channel` only when given, so the default is tested."""
+    orch.agents["friday"] = _StubAgent("friday")
+    captured = {}
+    orch.learning.record = lambda **kw: captured.update(kw)
+    orch.entities = None
+    orch.kg_updater = None
+    orch.run_history = None
+    args = ("a user question", {"friday": "an answer"}, "an answer", "local")
+    if channel is None:
+        orch._record_interactions(*args)
+    else:
+        orch._record_interactions(*args, channel=channel)
+    return captured.get("metadata", {})
+
+
+def test_record_threads_real_channel(orch):
+    # A telegram-origin turn must be recorded as telegram (was always "web").
+    assert _record_and_capture_meta(orch, channel="telegram")["channel"] == "telegram"
+
+
+def test_record_channel_defaults_to_web(orch):
+    # Back-compat: callers that don't pass a channel still get the prior default.
+    assert _record_and_capture_meta(orch)["channel"] == "web"

@@ -369,7 +369,8 @@ async def lifespan(application: FastAPI):
     gateway = None
 
 
-app = FastAPI(title="Jarvis", version="0.5.0-beta", lifespan=lifespan)
+from agents import __version__ as _APP_VERSION  # CDX-4: single-source the version
+app = FastAPI(title="Jarvis", version=_APP_VERSION, lifespan=lifespan)
 
 # CORS (HF-2): same-origin only by default — with no header the browser blocks
 # cross-origin reads, which is what we want. Set
