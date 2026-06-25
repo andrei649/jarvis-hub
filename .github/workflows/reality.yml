@@ -1,0 +1,39 @@
+name: Reality Harness
+
+# ORIZONT 24 Track V1 — run each capability's *reality* contract against the real rail
+# (not a mock) and fail if a contract regresses. Additive and OFF the PR critical path:
+# it runs only on a schedule + on demand, never on pull_request, so it can never block a
+# merge. JARVIS_REALITY_HARNESS=1 also enables the *live* (keyed/networked) cases; today's
+# seeded cases are hermetic (the egress-policy rail), so this is the scaffold the per-
+# capability live contracts plug into as Track V fills in.
+on:
+  workflow_dispatch:
+  schedule:
+    # 04:00 UTC daily — off-hours, offset from the third-party sweeps.
+    - cron: "0 4 * * *"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: reality-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  reality:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1  # v6.3.0
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: requirements-beta.lock
+      # Hash-pinned install (AUD-10/F33), same as ci.yml.
+      - run: pip install --require-hashes -r requirements-beta.lock
+      - run: pip install --require-hashes -r requirements-dev.lock
+      - name: Reality contracts (live mode on)
+        run: python -m pytest tests/test_reality_harness.py -q --timeout=90 --tb=short
+        env:
+          JARVIS_TESTING: "1"
+          JARVIS_REALITY_HARNESS: "1"

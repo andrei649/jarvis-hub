@@ -46,6 +46,25 @@ def _rank(state: str) -> int:
 # today; the audit can pin a known-stub capability here without code surgery.
 _OVERRIDES: dict[str, str] = {}
 
+# Harness verifications: capability id → {harness_id, last_verified}. Written ONLY by the
+# V1 reality harness (`reality_harness.record_verification` → here); a green run promotes
+# the derived state to VERIFIED. In-process (resets on boot) — durable cross-process
+# promotion is V3's committed readiness snapshot, not this layer.
+_VERIFICATIONS: dict[str, dict] = {}
+
+
+def record_verification(cap_id: str, harness_id: str, ts: str, *, passed: bool) -> None:
+    """Record a reality-harness verdict. A pass promotes to VERIFIED; a fail un-verifies.
+    This is the ONLY promotion path to VERIFIED (set by the harness, never by hand)."""
+    if passed:
+        _VERIFICATIONS[cap_id] = {"harness_id": harness_id, "last_verified": ts}
+    else:
+        _VERIFICATIONS.pop(cap_id, None)
+
+
+def clear_verifications() -> None:
+    _VERIFICATIONS.clear()
+
 
 @dataclass
 class CapabilityRecord:
@@ -71,7 +90,19 @@ def clear_override(cap_id: str) -> None:
     _OVERRIDES.pop(cap_id, None)
 
 
+def _apply_verification(rec: CapabilityRecord) -> CapabilityRecord:
+    """Promote to VERIFIED if a green harness verdict exists — but only for a rail that is
+    at least WIRED (you can't verify a seam/absent capability)."""
+    v = _VERIFICATIONS.get(rec.id)
+    if v is not None and rec.state != SEAM:
+        rec.state = VERIFIED
+        rec.harness_id = v["harness_id"]
+        rec.last_verified = v["last_verified"]
+    return rec
+
+
 def _apply_override(rec: CapabilityRecord) -> CapabilityRecord:
+    """Manual demotion (applied last, so a human can pull a VERIFIED rail back down)."""
     ov = _OVERRIDES.get(rec.id)
     if ov is not None and _rank(ov) <= _rank(WIRED):
         rec.state = ov
@@ -152,7 +183,8 @@ def build_records(orch=None) -> list[CapabilityRecord]:
             records.extend(source())
         except Exception:  # pragma: no cover - a broken registry must not 500 the board
             logger.warning("capability source failed", exc_info=True)
-    return [_apply_override(r) for r in records]
+    # Order matters: derive → promote-if-harness-verified → manual demote wins last.
+    return [_apply_override(_apply_verification(r)) for r in records]
 
 
 def snapshot(orch=None) -> dict:
