@@ -54,7 +54,7 @@ our local-first / single-user north star).
 
 | # | Gap | Verdict | Evidence in our code | Tracked in BACKLOG? |
 |---|-----|---------|----------------------|---------------------|
-| 1 | **Floating bar + system-wide hotkey** (the competitor's entire concept) | 🔴 | `frontend/src/app.tsx:714` hotkeys fire only when the browser tab is focused; `desktop/src-tauri/src/main.rs` is a setup stub with no `GlobalShortcutManager`; we ship a browser HUD at `127.0.0.1:8080` | New — **0.64** |
+| 1 | **Floating bar + system-wide hotkey** (the competitor's entire concept) | 🔴 | `frontend/src/app.tsx:126` hotkeys (`window.addEventListener('keydown')`) fire only when the browser tab is focused; `desktop/src-tauri/src/main.rs` is a setup stub with no `GlobalShortcutManager`; we ship a browser HUD at `127.0.0.1:8080` | New — **0.64** |
 | 2 | **One-hotkey screen-capture → VLM → answer reflex** | 🔴 | VLM brain done (`llm/vlm.py`, theme 0.27 ✅) + `screen_grounding.py` + `desktop_operator.py`, but **nothing wires them** into a capture→answer endpoint or hotkey | New — **0.65** (brain = 0.27) |
 | 3 | **Native app + distribution** (download page, signed Mac/Win installers, auto-update) | 🔴 | Tauri v2 **web-wrapper** only (unsigned, v0.9.2); install = `install.sh` / `install.ps1` (venv + pip) | 0.29, 0.57, H23.13 |
 | 4 | **SaaS connector breadth** (white-collar suite) | 🟡 | ~20 working integrations, but a messaging/IoT-heavy mix; missing the PM/design/MS/Apple suite (see matrix) | New — **0.66** |

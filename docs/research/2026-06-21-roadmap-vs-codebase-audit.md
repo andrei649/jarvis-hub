@@ -1,5 +1,10 @@
 # Roadmap-vs-Codebase Audit — the proposed 0.19→1.0 expansion against what's already built
 
+> ⚠️ **Superseded by the [2026-06-25 re-audit](2026-06-25-roadmap-vs-codebase-reaudit.md)** — all
+> statuses were re-verified against HEAD on 2026-06-25 (correcting a fabricated `app.tsx` citation and
+> the stale 0.52 / 0.61 statuses). This doc is retained as the historical baseline; see the re-audit
+> for current truth.
+
 > Date: 2026-06-21 · Method: 6 parallel code-exploration passes over `agents/core/**`, `frontend/`, `skills/`,
 > `.github/`, `docs/`. Verdicts are grounded in concrete `file:line` / module evidence (see each row).
 > Input roadmap: the uploaded `PLAN.md` ("Competitive Gap Plan: OSS Repos → Bigger Pre-1.0 Roadmap"),
