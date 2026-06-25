@@ -22,6 +22,7 @@ from dataclasses import dataclass, field
 from enum import StrEnum
 
 from ..security.capability import authorize as _capability_authorize
+from .budget import BudgetLedger, BudgetLimits, LoopDetector
 from .flags import kernel_enabled
 
 # NOTE: autonomy.policy / autonomy.dry_run are imported lazily inside authorize()
@@ -31,6 +32,7 @@ from .flags import kernel_enabled
 
 __all__ = [
     "Verdict", "Action", "Capability", "Budget", "Decision",
+    "BudgetLimits", "BudgetLedger", "LoopDetector",
     "authorize", "kernel_enabled",
 ]
 
@@ -108,11 +110,18 @@ def authorize(action: Action,
               capabilities=None,
               policy,
               audit=None,
+              budget_ledger: BudgetLedger | None = None,
+              loop_detector: LoopDetector | None = None,
               now: float | None = None) -> Decision:
     """Mediate a privileged *action*. Composes the existing nucleus + policy + audit.
 
-    Order (mirrors the design diagram): kill-switch + capability → policy → (budget,
-    inert in K1) → audit (always). Returns ``Decision ∈ grant | deny | queue``.
+    Order (mirrors the design diagram): kill-switch + capability → budget/loop
+    scheduler (K3) → policy → audit (always). Returns ``Decision ∈ grant | deny | queue``.
+
+    The K3 scheduler is **inert unless** a ``budget_ledger`` and/or ``loop_detector`` is
+    supplied: a runaway loop (breaker tripped) or an over-budget task (token/time/depth)
+    is denied *before* policy work, audited. K1 brokers pass neither, so behavior is
+    unchanged for them.
     """
     from ..autonomy.dry_run import preview_task
     from ..autonomy.policy import ACT, NOTIFY
@@ -140,7 +149,20 @@ def authorize(action: Action,
         _emit_audit(audit, action, decision)
         return decision
 
-    # 2) Policy — the single risk-classification + outcome evaluation for this action.
+    # 2) Budget + loop circuit breaker (K3, folds H23.1). Inert unless supplied — a
+    #    runaway loop or an over-budget task is halted at the front door before any work.
+    if loop_detector is not None and not loop_detector.record(action.kind, now):
+        decision = Decision(Verdict.DENY, reason="loop circuit breaker tripped (runaway)")
+        _emit_audit(audit, action, decision)
+        return decision
+    if budget_ledger is not None:
+        over = budget_ledger.exceeded(now)
+        if over:
+            decision = Decision(Verdict.DENY, reason=f"budget: {over}")
+            _emit_audit(audit, action, decision)
+            return decision
+
+    # 3) Policy — the single risk-classification + outcome evaluation for this action.
     pdec = policy.decide({"kind": action.kind, **(action.payload or {})})
     tier = int(pdec.tier)
     if pdec.outcome in (ACT, NOTIFY):
@@ -150,7 +172,6 @@ def authorize(action: Action,
                              "payload": action.payload, "risk_tier": tier})
         decision = Decision(Verdict.QUEUE, reason=pdec.reason, tier=tier, card=card)
 
-    # 3) Budget — inert in K1 (no new limits); threaded for K3.
     # 4) Audit — always.
     _emit_audit(audit, action, decision)
     return decision
