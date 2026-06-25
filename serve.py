@@ -40,6 +40,38 @@ def _env_int(name: str, default: int) -> int:
         return default
 
 
+_LOOPBACK_HOSTS = {"", "127.0.0.1", "::1", "localhost", "::ffff:127.0.0.1"}
+
+
+def assert_safe_bind(host: str) -> None:
+    """Fail-closed on an unauthenticated external bind (mirrors WorldView AUD-4).
+
+    The historical default was a hardcoded 127.0.0.1; ``JARVIS_HOST`` now lets an
+    operator bind elsewhere. Binding to a non-loopback address exposes the
+    unauthenticated public routes (``/status``, ``/dashboard``, …) on the network,
+    so we refuse to start unless the deployment is either authenticated (a
+    ``JARVIS_USER_TOKEN`` / ``JARVIS_ADMIN_TOKEN`` is configured — which a real
+    network deployment needs anyway for the user/admin guards to allow remote
+    access) or the insecure posture is explicitly acknowledged with
+    ``JARVIS_ALLOW_INSECURE_BIND=1``. Loopback binds are always allowed.
+    """
+    if host.strip().lower() in _LOOPBACK_HOSTS:
+        return
+    has_token = bool(os.environ.get("JARVIS_USER_TOKEN", "").strip()
+                     or os.environ.get("JARVIS_ADMIN_TOKEN", "").strip())
+    ack = os.environ.get("JARVIS_ALLOW_INSECURE_BIND", "").strip().lower() in ("1", "true", "yes")
+    if has_token or ack:
+        print(f"[SECURITY] binding to non-loopback host {host!r} — public routes are "
+              f"reachable from the network ({'authenticated' if has_token else 'INSECURE, acknowledged'}).")
+        return
+    raise SystemExit(
+        f"Refusing to bind to non-loopback host {host!r} without authentication.\n"
+        "Set JARVIS_USER_TOKEN (and/or JARVIS_ADMIN_TOKEN) to require a credential for "
+        "remote access, or set JARVIS_ALLOW_INSECURE_BIND=1 to accept an open bind. "
+        "The default 127.0.0.1 keeps the hub loopback-only."
+    )
+
+
 def server_config():
     """Build the uvicorn config from the environment (H23.11).
 
@@ -72,6 +104,7 @@ def server_config():
 def main():
     import uvicorn
     config = server_config()
+    assert_safe_bind(config.host)   # fail-closed on an unauthenticated external bind
     print(f"Jarvis Hub starting at http://{config.host}:{config.port}")
     print("Features: multi-agent cabinet, skills system, memory store, cost analytics, CI/CD")
     # uvicorn.Server installs SIGINT/SIGTERM handlers and triggers the lifespan

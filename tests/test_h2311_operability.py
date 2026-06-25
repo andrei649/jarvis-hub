@@ -210,3 +210,54 @@ def test_log_to_file_bad_path_does_not_crash(monkeypatch, restore_logging):
     monkeypatch.setenv("JARVIS_LOG_FILE", "/proc/nonexistent-h2311/jarvis.log")
     log.setup_logging(logging.INFO)          # must not raise
     assert _rotating_handlers() == []        # handler not attached; stderr remains
+
+
+# ── probes bypass the per-IP rate limiter ─────────────────────────────────────
+
+def test_probes_exempt_from_rate_limit(monkeypatch):
+    """A non-localhost LB / Docker healthcheck must never be 429'd — else the
+    supervisor evicts a healthy instance. /healthz and /readyz bypass the throttle
+    even when an unauthenticated source IP is over budget."""
+    monkeypatch.setattr(web, "RATE_LIMIT_PER_MIN", 2)
+    monkeypatch.setattr(web, "USER_TOKEN", "")
+    web._rate_hits.clear()
+    client = TestClient(web.app)  # host 'testclient' — non-localhost, unauthenticated
+    # /status (not a probe) hits the limit...
+    assert client.get("/status").status_code != 429
+    assert client.get("/status").status_code != 429
+    assert client.get("/status").status_code == 429
+    # ...but the probes keep answering 200/503, never 429, regardless of budget.
+    for _ in range(5):
+        assert client.get("/healthz").status_code == 200
+        assert client.get("/readyz").status_code in (200, 503)
+
+
+# ── serve.assert_safe_bind — fail-closed external bind (AUD-4 analog) ──────────
+
+def test_assert_safe_bind_loopback_ok(monkeypatch):
+    serve = _fresh_serve()
+    for h in ("127.0.0.1", "localhost", "::1", ""):
+        serve.assert_safe_bind(h)   # no raise
+
+
+def test_assert_safe_bind_refuses_open_bind_without_auth(monkeypatch):
+    serve = _fresh_serve()
+    for var in ("JARVIS_USER_TOKEN", "JARVIS_ADMIN_TOKEN", "JARVIS_ALLOW_INSECURE_BIND"):
+        monkeypatch.delenv(var, raising=False)
+    with pytest.raises(SystemExit):
+        serve.assert_safe_bind("0.0.0.0")
+
+
+def test_assert_safe_bind_allows_open_bind_with_token(monkeypatch):
+    serve = _fresh_serve()
+    monkeypatch.delenv("JARVIS_ALLOW_INSECURE_BIND", raising=False)
+    monkeypatch.setenv("JARVIS_USER_TOKEN", "secret")
+    serve.assert_safe_bind("0.0.0.0")   # authenticated deployment → allowed
+
+
+def test_assert_safe_bind_allows_open_bind_with_ack(monkeypatch):
+    serve = _fresh_serve()
+    monkeypatch.delenv("JARVIS_USER_TOKEN", raising=False)
+    monkeypatch.delenv("JARVIS_ADMIN_TOKEN", raising=False)
+    monkeypatch.setenv("JARVIS_ALLOW_INSECURE_BIND", "1")
+    serve.assert_safe_bind("0.0.0.0")   # explicit insecure acknowledgement → allowed

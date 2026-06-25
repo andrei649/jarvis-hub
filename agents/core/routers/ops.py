@@ -19,7 +19,6 @@ web. Behavior is unchanged from the inline versions.
 import time
 
 from fastapi import APIRouter, Depends
-from fastapi.responses import JSONResponse
 
 from agents.core.app_state import get_orch
 from agents.core.routers._deps import user_guard
@@ -72,7 +71,8 @@ async def readyz():
     body = {"ready": ready, "checks": checks}
     if not ready:
         body["reason"] = "starting" if orch is None else "agents-not-loaded"
-        return JSONResponse(body, status_code=503, headers={"Cache-Control": "no-store"})
+        # 503 so a load balancer holds traffic back; never cache a readiness verdict.
+        return nocache_json(body, status_code=503)
     return nocache_json(body)
 
 

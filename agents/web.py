@@ -431,10 +431,19 @@ async def _no_store_for_polling(request: Request, call_next):
     return response
 
 
+# H23.11: machine-facing liveness/readiness probes a supervisor (LB / systemd /
+# Docker HEALTHCHECK) polls. They are unauthenticated by design and frequently
+# arrive from a non-localhost peer (reverse-proxy / docker-bridge gateway IP), so
+# they must bypass the unauthenticated per-IP throttle — otherwise unrelated load
+# from that same source IP could 429 a probe and make a load balancer evict a
+# perfectly healthy instance (the opposite of the operability goal).
+_PROBE_PATHS = {"/healthz", "/readyz"}
+
+
 @app.middleware("http")
 async def _rate_limit(request: Request, call_next):
     """HF-2: throttle unauthenticated network clients (DoS / token brute-force)."""
-    if RATE_LIMIT_PER_MIN > 0:
+    if RATE_LIMIT_PER_MIN > 0 and request.url.path not in _PROBE_PATHS:
         ip = _client_ip(request)
         if ip not in _LOCALHOSTS and not _request_is_authed(request):
             if _rate_limited(ip, time.time()):

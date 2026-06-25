@@ -34,6 +34,13 @@ def _file_logging_config():
     rotating file handler is for bare-metal/no-supervisor runs. Enable via
     /admin → system.log_to_file, or force a path with $JARVIS_LOG_FILE. Env wins
     over settings so a deployment can pin it without a DB write.
+
+    Privacy note: root-logger records at the active level can include
+    request-derived content (e.g. a voice-transcript preview); this persists it to
+    disk, bounded only by ``max_bytes × backups`` (it is *not* covered by the
+    H23.10 retention sweep). The default path inherits the data-root, so an in-repo
+    data-root (the SEC-4/F-08 startup warning) puts the log in the checkout too —
+    set $JARVIS_HOME to relocate it. Prefer WARNING level for sensitive installs.
     """
     path = os.environ.get("JARVIS_LOG_FILE", "").strip()
     if not path:
