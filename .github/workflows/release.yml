@@ -4,6 +4,12 @@ on:
   push:
     tags:
       - "v*.*.*"
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Build artifacts only; do not create a GitHub Release"
+        type: boolean
+        default: true
 
 jobs:
   release:
@@ -14,7 +20,44 @@ jobs:
       - name: Checkout
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
 
+      - name: Verify tag matches agents.__version__
+        if: github.ref_type == 'tag'
+        run: |
+          VERSION="$(python3 -c 'import re,io; print(re.search(r"__version__\s*=\s*\"([^\"]+)\"", open("agents/__init__.py").read()).group(1))')"
+          if [ "refs/tags/v${VERSION}" != "${GITHUB_REF}" ]; then
+            echo "::error::tag ${GITHUB_REF} does not match agents.__version__ (v${VERSION}). Bump agents/__init__.py before tagging."
+            exit 1
+          fi
+          echo "tag matches v${VERSION}"
+
+      - name: Build release artifacts (tar/zip + SBOM + NOTICE + checksums)
+        run: bash scripts/build_release.sh dist
+
+      # Optional: detached GPG signatures. Skipped unless the owner has configured
+      # the GPG_PRIVATE_KEY secret (signing keys are owner-managed — see docs/RELEASE.md).
+      - name: Sign artifacts with GPG (optional)
+        env:
+          GPG_PRIVATE_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
+          GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
+        if: ${{ env.GPG_PRIVATE_KEY != '' }}
+        run: |
+          printf '%s' "$GPG_PRIVATE_KEY" | gpg --batch --import
+          for f in dist/jarvis-*.tar.gz dist/jarvis-*.zip dist/SHA256SUMS; do
+            gpg --batch --yes --pinentry-mode loopback \
+                ${GPG_PASSPHRASE:+--passphrase "$GPG_PASSPHRASE"} \
+                --armor --detach-sign "$f"
+          done
+          echo "signed: $(ls dist/*.asc)"
+
       - name: Create GitHub Release
+        if: github.event_name == 'push'
         uses: softprops/action-gh-release@718ea10b132b3b2eba29c1007bb80653f286566b  # v3.0.1
         with:
           generate_release_notes: true
+          files: |
+            dist/jarvis-*.tar.gz
+            dist/jarvis-*.zip
+            dist/SBOM.json
+            dist/NOTICE
+            dist/SHA256SUMS
+            dist/*.asc

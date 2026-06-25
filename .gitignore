@@ -32,3 +32,5 @@ repo_export.txt
 # Personalized agent souls — owner-specific, never committed (repo ships generic templates)
 agents/*/SOUL.local.md
 agents/*/HEARTBEAT.local.md
+/dist/
+*.tar.gz
