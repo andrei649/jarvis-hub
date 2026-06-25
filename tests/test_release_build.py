@@ -7,13 +7,23 @@ Exercises scripts/build_release.sh + scripts/gen_sbom.py against the real repo
 import hashlib
 import importlib.util
 import json
+import platform
 import re
+import shutil
 import subprocess
 import tarfile
 import zipfile
 from pathlib import Path
 
+import pytest
+
 REPO = Path(__file__).resolve().parents[1]
+
+# build_release.sh is a POSIX/bash release tool that only runs on the Linux release
+# runner (release.yml → ubuntu-latest). On Windows CI `bash` resolves to the WSL
+# launcher (no distro installed), so skip the end-to-end build there; the pure-Python
+# gen_sbom test below still runs on every platform.
+_CAN_BUILD = platform.system() != "Windows" and bool(shutil.which("bash") and shutil.which("git"))
 
 
 def _version() -> str:
@@ -28,6 +38,7 @@ def _load_gen_sbom():
     return mod
 
 
+@pytest.mark.skipif(not _CAN_BUILD, reason="release build script is a POSIX/bash tool (Linux/macOS)")
 def test_build_release_produces_complete_bundle(tmp_path):
     out = tmp_path / "dist"
     subprocess.run(["bash", "scripts/build_release.sh", str(out)], cwd=REPO, check=True)
