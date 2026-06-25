@@ -29,6 +29,7 @@
   "GET /api/admin/backup",
   "GET /api/admin/env",
   "GET /api/admin/mcp",
+  "GET /api/admin/network/calls",
   "GET /api/admin/prompts/{agent_id}/ab",
   "GET /api/admin/prompts/{agent_id}/diff",
   "GET /api/admin/prompts/{agent_id}/history",

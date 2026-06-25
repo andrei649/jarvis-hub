@@ -278,6 +278,18 @@ async def admin_apm():
     return nocache_json(apm)
 
 
+@router.get("/api/admin/network/calls", dependencies=[Depends(admin_guard)])
+async def admin_network_calls(plugin: str = Query(None), limit: int = Query(100)):
+    """H23.16 — network monitor: plugin egress ledger from the http_client choke point.
+
+    Returns per-plugin tallies (total/allowed/blocked/external) plus the most recent
+    attempts, and `local_only_violations` — the proof that local-only plugins made zero
+    outbound calls. Optional `plugin` filters to one; `limit` caps the recent list.
+    """
+    from agents.core.observability.egress_monitor import EGRESS_MONITOR
+    return nocache_json(EGRESS_MONITOR.snapshot(plugin=plugin, limit=limit))
+
+
 # ── H10.22 Prompt Version Control (SOUL.md history / diff / rollback / A/B) ──
 
 def _svs():

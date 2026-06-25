@@ -22,10 +22,10 @@ from typing import Optional
 
 import httpx
 
+from .observability.egress_monitor import EGRESS_MONITOR
 from .resilience import CircuitBreaker, get_circuit_breaker
 
 logger = logging.getLogger("jarvis.http_client")
-
 # Default timeouts applied to all plugin HTTP calls
 DEFAULT_CONNECT_TIMEOUT = 5.0
 DEFAULT_READ_TIMEOUT = 30.0
@@ -68,6 +68,23 @@ def _host_is_local(host: str) -> bool:
         if not (a.is_private or a.is_loopback or a.is_link_local):
             return False
     return True
+
+
+def _host_of(url: str) -> str:
+    """Best-effort hostname from a URL, lower-cased and trailing-dot-stripped."""
+    from urllib.parse import urlparse
+    try:
+        return (urlparse(url).hostname or "").lower().rstrip(".")
+    except Exception:
+        return ""
+
+
+def _record_egress(plugin: str, host: str, method: str, *, allowed: bool, local: bool, reason: str = "") -> None:
+    """Feed the H23.16 network monitor. Never raises — observability must not break egress."""
+    try:
+        EGRESS_MONITOR.record(plugin, host, method, allowed=allowed, local=local, reason=reason)
+    except Exception:  # pragma: no cover - defensive: monitoring is never load-bearing
+        logger.debug("egress monitor record failed", exc_info=True)
 
 
 @dataclass
@@ -195,6 +212,22 @@ class PluginHTTPClient:
             raise PluginEgressError(f"egress blocked: {violation}")
         logger.warning("egress policy violation (JARVIS_STRICT_EGRESS=0, allowing): %s", violation)
 
+    def _guard(self, method: str, url: str) -> None:
+        """Enforce egress policy AND record the attempt for the network monitor (H23.16).
+
+        Every verb funnels through here so blocked *and* allowed calls land in the
+        ledger — that's what lets the HUD prove a local-only plugin made zero outbound
+        calls. A blocked call is recorded before re-raising so the attempt is visible.
+        """
+        host = _host_of(url)
+        local = _host_is_local(host)
+        try:
+            self._enforce_egress(url)
+        except PluginEgressError as e:
+            _record_egress(self.plugin_name, host, method, allowed=False, local=local, reason=str(e))
+            raise
+        _record_egress(self.plugin_name, host, method, allowed=True, local=local)
+
     # ── HTTP methods ───────────────────────────────────────────────
 
     async def get(self, url: str, **kwargs) -> httpx.Response:
@@ -207,7 +240,7 @@ class PluginHTTPClient:
             raise RuntimeError(
                 f"Circuit breaker open: plugin={self.plugin_name}"
             )
-        self._enforce_egress(url)
+        self._guard("GET", url)
         kwargs.setdefault("timeout", self.timeouts.to_httpx_timeout())
         try:
             resp = await self._get_client().get(url, **kwargs)
@@ -227,7 +260,7 @@ class PluginHTTPClient:
             raise RuntimeError(
                 f"Circuit breaker open: plugin={self.plugin_name}"
             )
-        self._enforce_egress(url)
+        self._guard("POST", url)
         kwargs.setdefault("timeout", self.timeouts.to_httpx_timeout())
         try:
             resp = await self._get_client().post(url, **kwargs)
@@ -243,7 +276,7 @@ class PluginHTTPClient:
             raise RuntimeError(
                 f"Circuit breaker open: plugin={self.plugin_name}"
             )
-        self._enforce_egress(url)
+        self._guard("PUT", url)
         kwargs.setdefault("timeout", self.timeouts.to_httpx_timeout())
         try:
             resp = await self._get_client().put(url, **kwargs)
@@ -259,7 +292,7 @@ class PluginHTTPClient:
             raise RuntimeError(
                 f"Circuit breaker open: plugin={self.plugin_name}"
             )
-        self._enforce_egress(url)
+        self._guard("PATCH", url)
         kwargs.setdefault("timeout", self.timeouts.to_httpx_timeout())
         try:
             resp = await self._get_client().patch(url, **kwargs)
@@ -275,7 +308,7 @@ class PluginHTTPClient:
             raise RuntimeError(
                 f"Circuit breaker open: plugin={self.plugin_name}"
             )
-        self._enforce_egress(url)
+        self._guard("DELETE", url)
         kwargs.setdefault("timeout", self.timeouts.to_httpx_timeout())
         try:
             resp = await self._get_client().delete(url, **kwargs)
@@ -291,7 +324,7 @@ class PluginHTTPClient:
             raise RuntimeError(
                 f"Circuit breaker open: plugin={self.plugin_name}"
             )
-        self._enforce_egress(url)
+        self._guard(method, url)
         kwargs.setdefault("timeout", self.timeouts.to_httpx_timeout())
         try:
             resp = await self._get_client().request(method, url, **kwargs)
