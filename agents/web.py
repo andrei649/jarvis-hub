@@ -369,7 +369,8 @@ async def lifespan(application: FastAPI):
     gateway = None
 
 
-app = FastAPI(title="Jarvis", version="0.5.0-beta", lifespan=lifespan)
+from agents import __version__ as _APP_VERSION  # CDX-4: single-source the version
+app = FastAPI(title="Jarvis", version=_APP_VERSION, lifespan=lifespan)
 
 # CORS (HF-2): same-origin only by default — with no header the browser blocks
 # cross-origin reads, which is what we want. Set
@@ -431,13 +432,14 @@ async def _no_store_for_polling(request: Request, call_next):
     return response
 
 
-# H23.11: machine-facing liveness/readiness probes a supervisor (LB / systemd /
-# Docker HEALTHCHECK) polls. They are unauthenticated by design and frequently
-# arrive from a non-localhost peer (reverse-proxy / docker-bridge gateway IP), so
+# H23.11/AUD-17: machine-facing endpoints a supervisor or monitor polls — the
+# liveness/readiness probes (LB / systemd / Docker HEALTHCHECK) and the Prometheus
+# /metrics scrape. They are unauthenticated by design and frequently arrive from a
+# non-localhost peer (reverse-proxy / docker-bridge gateway / monitoring host), so
 # they must bypass the unauthenticated per-IP throttle — otherwise unrelated load
 # from that same source IP could 429 a probe and make a load balancer evict a
 # perfectly healthy instance (the opposite of the operability goal).
-_PROBE_PATHS = {"/healthz", "/readyz"}
+_PROBE_PATHS = {"/healthz", "/readyz", "/metrics"}
 
 
 @app.middleware("http")
@@ -485,6 +487,31 @@ async def _security_headers(request: Request, call_next):
     if _CSP_ENABLED:
         response.headers.setdefault("Content-Security-Policy", _CSP_POLICY)
     return response
+
+
+# AUD-17: HTTP golden signals (RED — rate/errors/duration) for every request,
+# exposed at GET /metrics. Registered last so it is the OUTERMOST middleware: the
+# duration spans the whole stack (incl. a rate-limit 429) — what a client sees —
+# and the in-flight gauge counts genuinely concurrent requests. Labels use the
+# matched route template (request.scope["route"].path) to bound cardinality.
+from agents.core.observability.http_metrics import HTTP_METRICS  # noqa: E402
+
+
+@app.middleware("http")
+async def _golden_signals(request: Request, call_next):
+    HTTP_METRICS.inc_in_flight()
+    start = time.perf_counter()
+    status = 500  # if call_next raises, the client sees a 500 — record it as such
+    try:
+        response = await call_next(request)
+        status = response.status_code
+        return response
+    finally:
+        duration = time.perf_counter() - start
+        route = request.scope.get("route")
+        template = getattr(route, "path", None) or "<unmatched>"
+        HTTP_METRICS.dec_in_flight()
+        HTTP_METRICS.record(request.method, template, status, duration)
 
 
 def _uptime_str() -> str:
