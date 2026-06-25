@@ -1,6 +1,9 @@
 """Jarvis Hub — agents package."""
 
-__version__ = "0.10.0"
+# CDX-4/5: the single source of truth for the app version. web.py's FastAPI(version=…),
+# /status and /api/status all read this (was a stale "0.5.0-beta" hard-coded in web.py
+# that leaked into the OpenAPI metadata). Keep aligned with STATUS.md on a release.
+__version__ = "0.11.0"
 
 
 def _count_active_agents() -> int:

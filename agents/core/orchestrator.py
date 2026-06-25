@@ -706,7 +706,7 @@ class Orchestrator:
             await self.memory.add_turn(self.session_id, "assistant", synthesized, agent_id=agent_override)
             await self._maybe_checkpoint()
             await asyncio.to_thread(self._log_session, text, intent, responses, synthesized)
-            await asyncio.to_thread(self._record_interactions, text, responses, synthesized, route_name)
+            await asyncio.to_thread(self._record_interactions, text, responses, synthesized, route_name, channel)
             _event_override = SecurityEvent(
                 event_type=SecurityEventType.LLM_CALL,
                 timestamp=time.time(),
@@ -770,7 +770,7 @@ class Orchestrator:
         await self.memory.add_turn(self.session_id, "assistant", synthesized, agent_id=responder_id)
         await self._maybe_checkpoint()
         await asyncio.to_thread(self._log_session, text, intent, responses, synthesized)
-        await asyncio.to_thread(self._record_interactions, text, responses, synthesized, route_name)
+        await asyncio.to_thread(self._record_interactions, text, responses, synthesized, route_name, channel)
 
         _event_main = SecurityEvent(
             event_type=SecurityEventType.LLM_CALL,
@@ -1140,7 +1140,10 @@ class Orchestrator:
     async def _call_agents_parallel(
         self, agent_ids: list[str], text: str, context: dict, plugin_data: dict = None
     ) -> dict[str, str]:
-        history = await self.memory.get_context(self.session_id, last_n=6)
+        # CDX-3: honor memory.context_window like the main per-agent path (:850);
+        # was a hard-coded 6, so changing the setting silently left this tail behind.
+        history = await self.memory.get_context(
+            self.session_id, last_n=self.get_setting("memory.context_window", 6))
         plugin_block = self._format_plugin_data(plugin_data or {})
         recall_block = await self._recall_block(text)
 
@@ -1290,7 +1293,7 @@ class Orchestrator:
         logger.info(f"promote_bench_agent: {bench_id} ({name}) is now active")
         return True
 
-    def _record_interactions(self, text: str, responses: dict, synthesized: str, route_name: str = ""):
+    def _record_interactions(self, text: str, responses: dict, synthesized: str, route_name: str = "", channel: str = "web"):
         # H8.1b: index named entities from the user's turn (best-effort, offline).
         if getattr(self, "entities", None) is not None and text:
             try:
@@ -1314,7 +1317,10 @@ class Orchestrator:
                 success = not failed
                 latency = getattr(self, "_last_latencies", {}).get(agent_id, 0.0)
                 metadata = {
-                    "channel": "web",
+                    # CDX-2: record the real origin (web/telegram/discord/voice/
+                    # autonomy/…) instead of always "web", so the %-local/cloud
+                    # ratio and per-channel analytics aren't silently skewed.
+                    "channel": channel,
                     "input_tokens": estimate_tokens(text),
                     "output_tokens": estimate_tokens(resp),
                     "cached_tokens": 0,

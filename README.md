@@ -2,8 +2,8 @@
 
 ![Python 3.12](https://img.shields.io/badge/python-3.12-blue?logo=python&logoColor=white)
 ![License: MIT](https://img.shields.io/badge/license-MIT-green)
-![Tests](https://img.shields.io/badge/tests-2400%2B%20passed-brightgreen?logo=pytest)
-![Version](https://img.shields.io/badge/version-0.10.0-orange)
+![Tests](https://img.shields.io/badge/tests-2800%2B%20passed-brightgreen?logo=pytest)
+![Version](https://img.shields.io/badge/version-0.11.0-orange)
 
 > 17 specialized AI agents orchestrated through Jarvis, running on Bonobo WS + Pi 5, controlled by voice and web.
 
@@ -122,7 +122,7 @@ _Linux/macOS shortcut:_ `./install.sh` does all of the above (venv + install + t
 
 ## Status
 
-**v0.10.0 — feature-complete, productionizing toward 1.0** (the version line is the roadmap — see [BACKLOG.md](BACKLOG.md#version-roadmap); 1.0 ships when the productionization layer is done **and** real design-partner users prove it). 17 specialist agents (incl. **Argus** for WorldView geoint and **Howard**, the emerging digital twin; + 17 bench) across 4 tiers; real-embeddings recall (LM Studio) + fused recall +
+**v0.11.0 — feature-complete + refactor done, productionizing toward 1.0** (the version line is the roadmap — see [BACKLOG.md](BACKLOG.md#version-roadmap); 1.0 ships when the productionization layer is done **and** real design-partner users prove it). 17 specialist agents (incl. **Argus** for WorldView geoint and **Howard**, the emerging digital twin; + 17 bench) across 4 tiers; real-embeddings recall (LM Studio) + fused recall +
 RAG injection; hot-path perf (SQLite WAL, event-loop offload, checkpoint debounce, query-embedding
 cache, complexity-based model tiering); autonomous proactive cortex (ORIZONT 6); security wedge (encrypted
 secrets, signed skills, reversible/irreversible approval split, quarantine/capability/kill-switch); competitive edge
