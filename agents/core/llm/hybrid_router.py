@@ -144,6 +144,32 @@ def _registry_policies() -> dict:
         return {}
 
 
+@lru_cache(maxsize=1)
+def _registry_approved_models() -> dict:
+    """Per-agent ``approved_models`` allowlist from the canonical registry (H23.2).
+
+    Mirrors ``_registry_policies``: cached for the process; any failure returns {} so
+    routing degrades to *unrestricted* (the pre-H23.2 behavior) rather than breaking.
+    An agent absent here (or with an empty list) is unrestricted.
+    """
+    try:
+        import yaml as _yaml
+        path = Path(__file__).resolve().parents[2] / "_system" / "agents.yaml"
+        data = _yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+        out = {}
+        for aid, cfg in (data.get("agents") or {}).items():
+            models = (cfg or {}).get("approved_models") or []
+            if isinstance(models, list) and models:
+                out[aid] = [str(m).strip() for m in models if str(m).strip()]
+        return out
+    except Exception:
+        return {}
+
+
+class ModelNotApprovedError(PermissionError):
+    """An agent was routed to a model outside its ``approved_models`` allowlist (H23.2)."""
+
+
 class HybridRouter(LLMRouter):
     def __init__(self, gemini_api_key: str = "", anthropic_api_key: str = ""):
         super().__init__()
@@ -285,8 +311,41 @@ class HybridRouter(LLMRouter):
             return POLICY_CLOUD
         return POLICY_AUTO
 
+    # ── H23.2 model pinning / reproducibility ─────────────────────────────────
+    def approved_models(self, agent_id: str) -> list[str]:
+        """The agent's approved-model allowlist (empty = unrestricted)."""
+        return list(_registry_approved_models().get(agent_id, []))
+
+    def is_model_approved(self, agent_id: str, model: str) -> bool:
+        """True if *model* is allowed for *agent_id* (an empty allowlist allows all)."""
+        allowed = self.approved_models(agent_id)
+        return (not allowed) or (model in allowed)
+
+    @staticmethod
+    def _models_strict() -> bool:
+        # Strict by default (mirrors JARVIS_STRICT_EGRESS); opt out with 0/false/no.
+        return os.environ.get("JARVIS_STRICT_MODELS", "1").strip().lower() not in ("0", "false", "no")
+
+    def _enforce_approved_models(self, agent_id: str, model: str, route: str) -> None:
+        """Block (or, opted-out, warn) when routing picks a model off the agent's allowlist."""
+        if self.is_model_approved(agent_id, model):
+            return
+        msg = (f"agent '{agent_id}' routed to unapproved model '{model}' "
+               f"(route={route}, approved={self.approved_models(agent_id)})")
+        if self._models_strict():
+            logger.error("model pin violation (blocked): %s", msg)
+            raise ModelNotApprovedError(msg)
+        logger.warning("model pin violation (JARVIS_STRICT_MODELS=0, allowing): %s", msg)
+
     def select_backend(self, agent_id: str, prompt: str) -> tuple[LLMBackend, str, str]:
-        """Select backend, model, and route name for a given agent.
+        """Select backend + model + route, then enforce the agent's approved-model
+        allowlist (H23.2). Returns: (backend, model_name, route_name)."""
+        backend, model, route = self._select_backend_inner(agent_id, prompt)
+        self._enforce_approved_models(agent_id, model, route)
+        return backend, model, route
+
+    def _select_backend_inner(self, agent_id: str, prompt: str) -> tuple[LLMBackend, str, str]:
+        """Core multi-factor routing; wrapped by select_backend for pin enforcement.
 
         Returns: (backend, model_name, route_name)
         """

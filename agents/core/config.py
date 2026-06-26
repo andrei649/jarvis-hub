@@ -44,6 +44,10 @@ class AgentConfig:
         self.has_heartbeat: bool = hb_raw is not False and hb_raw != "no"
         self.tier: str = data.get("tier", "foundation")
         self.llm_policy: str = data.get("llm_policy", "auto")
+        # H23.2 — optional per-agent approved-model allowlist (model pinning /
+        # reproducibility). Empty = unrestricted (today's behavior); when set, the
+        # router refuses to run this agent on a model not on the list.
+        self.approved_models: list[str] = data.get("approved_models", []) or []
 
         # Plugin permissions this agent needs
         self.plugins: list[str] = data.get("plugins", [])
