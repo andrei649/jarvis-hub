@@ -911,11 +911,13 @@ app.include_router(_cognition_router, dependencies=[Depends(_user_guard)])
 
 # Per-domain routers extracted from this god-object (CLN-3). These preserve the
 # original (ungated) behavior of their routes — mounted without extra deps.
+from agents.core.routers.feedback import router as _feedback_router  # noqa: E402
 from agents.core.routers.onboarding import router as _onboarding_router  # noqa: E402
 from agents.core.routers.wyoming import router as _wyoming_router  # noqa: E402
 
 app.include_router(_wyoming_router)
 app.include_router(_onboarding_router)
+app.include_router(_feedback_router)
 # These preserve each route's original per-route deps (gating lives on the routes
 # themselves, not the include), so behavior is unchanged.
 from agents.core.routers.a2a import router as _a2a_router  # noqa: E402
