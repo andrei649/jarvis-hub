@@ -44,6 +44,7 @@ RULES = [
     ("/ticker", "cockpit"), ("/tasks", "cockpit"), ("/api/cognition", "cockpit"),
     ("/tts", "cockpit"), ("/sessions", "cockpit"), ("/memory/clear", "cockpit"),
     ("/api/canvas", "cockpit"),
+    ("/api/onboarding", "cockpit"),  # H23.20 first-run wizard + activation funnel (lands in the cockpit)
     ("/api/trust/status", "topbar"),
     # memory & knowledge
     ("/api/kg/", "memory"), ("/api/memory/", "memory"), ("/memory/stats", "memory"),
