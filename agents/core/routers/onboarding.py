@@ -64,3 +64,73 @@ async def local_docs_index(body: LocalDocsIndexBody):
     if not summary.get("error"):
         _local_docs_last = summary
     return nocache_json(summary, status_code=status)
+
+
+# ── H23.20 first-run wizard + activation funnel ───────────────────────────────
+_WIZARD_STEPS = [
+    {"key": "intro", "title": "Welcome to Jarvis"},
+    {"key": "model", "title": "Connect a model"},
+    {"key": "test_chat", "title": "Say hello"},
+    {"key": "autonomy", "title": "Set your autonomy budget"},
+]
+_STEP_KEYS = {s["key"] for s in _WIZARD_STEPS}
+
+
+def _model_ready():
+    """Best-effort: is a model backend reachable (local or configured cloud)? None if unknown."""
+    orch = get_orch()
+    llm_router = getattr(orch, "llm_router", None) if orch else None
+    if llm_router is None:
+        return None
+    return bool(
+        getattr(llm_router, "_local_available", False)
+        or getattr(llm_router, "_claude_backend", None)
+        or getattr(llm_router, "_gemini_backend", None)
+    )
+
+
+def _completed_steps() -> list[str]:
+    """Steps finished, derived from recorded funnel events — so onboarding resumes across
+    reloads without a wizard-specific store."""
+    from agents.core import analytics_store
+    counts = analytics_store.event_counts(days=3650)
+    return [s["key"] for s in _WIZARD_STEPS if counts.get(f"funnel.{s['key']}.complete")]
+
+
+@router.get("/api/onboarding/wizard", dependencies=[Depends(user_guard)])
+async def onboarding_wizard():
+    """First-run wizard state (H23.20): ordered steps + which are complete + cold-start
+    guidance. Completion derives from the activation funnel, so the HUD can resume."""
+    done = _completed_steps()
+    ready = _model_ready()
+    hint = None
+    if ready is False:
+        hint = ("No model backend reachable — start LM Studio or Ollama, or add a cloud "
+                "API key in Admin → settings.")
+    return nocache_json({
+        "steps": _WIZARD_STEPS,
+        "completed": done,
+        "complete": len(done) >= len(_WIZARD_STEPS),
+        "model_ready": ready,
+        "hint": hint,
+    })
+
+
+class FunnelBody(BaseModel):
+    step: str = Field(..., max_length=64)
+    event: str = Field("complete", max_length=32)   # "start" | "complete" | …
+
+
+@router.post("/api/onboarding/funnel", dependencies=[Depends(user_guard)])
+async def onboarding_funnel(body: FunnelBody):
+    """Record one activation-funnel event (`funnel.<step>.<event>`) — first-party, local
+    (H23.20). Unknown steps are rejected so the funnel namespace stays bounded."""
+    if body.step not in _STEP_KEYS:
+        return nocache_json(
+            {"error": f"unknown step '{body.step}'", "steps": sorted(_STEP_KEYS)},
+            status_code=400,
+        )
+    from agents.core import analytics_store
+    name = f"funnel.{body.step}.{body.event}"
+    analytics_store.record_event(name, props={"step": body.step, "event": body.event})
+    return nocache_json({"ok": True, "recorded": name})
