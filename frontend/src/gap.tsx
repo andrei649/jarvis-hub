@@ -186,6 +186,52 @@ function CapabilitiesPanel() {
   </Card>;
 }
 
+export function KernelMetricsPanel() {
+  const { d, e, loading, reload } = useApi('/api/metrics/kernel');
+  const v = (d && d.by_verdict) || {};
+  const denials = (d && d.recent_denials) || [];
+  return (
+    <Card title="ACTION KERNEL" sub={d ? `${d.total} decisions` : null} onReload={reload}>
+      <State e={e} loading={loading} n={d ? d.total : 0} />
+      {d && (
+        <Row>
+          <span style={mono}>verdicts</span>
+          <span style={{ marginLeft: 'auto', display: 'flex', gap: 5, alignItems: 'center' }}>
+            <Tag c="var(--green)">{v.grant || 0} grant</Tag>
+            <Tag c="var(--amber)">{v.queue || 0} queue</Tag>
+            <Tag c={(v.deny || 0) > 0 ? 'var(--red)' : 'var(--ink-3)'}>{v.deny || 0} deny</Tag>
+          </span>
+        </Row>
+      )}
+      {denials.slice(0, 8).map((dn, i) => (
+        <Row key={i}>
+          <span style={{ ...mono, color: 'var(--red)' }}>{dn.kind}</span>
+          <span style={{ fontSize: 11, color: 'var(--ink-2)' }}>{(dn.reason || '').slice(0, 48)}</span>
+        </Row>
+      ))}
+      {d && d.total === 0 && <div style={{ fontSize: 10, color: 'var(--ink-3)', marginTop: 6 }}>empty until JARVIS_ACTION_KERNEL is on</div>}
+    </Card>
+  );
+}
+export function LoopBreakerPanel() {
+  const { d, e, loading, reload } = useApi('/api/security/loop-breaker');
+  const tripped = d?.tripped;
+  return (
+    <Card title="LOOP BREAKER" sub={d ? (tripped ? 'TRIPPED' : 'closed') : null} onReload={reload}>
+      <State e={e} loading={loading} n={1} />
+      {d && (
+        <Row>
+          <span style={{ color: tripped ? 'var(--red)' : 'var(--green)' }}>{tripped ? 'OPEN · runaway halted' : 'closed · normal'}</span>
+          <span style={{ marginLeft: 'auto', display: 'flex', gap: 5, alignItems: 'center' }}>
+            <Tag>{d.max_repeats}/{d.window_seconds}s</Tag>
+            {tripped && <button className="tool-btn" onClick={() => actA('/api/security/loop-breaker/reset', {}, reload)}>reset</button>}
+          </span>
+        </Row>
+      )}
+    </Card>
+  );
+}
+
 /* ── Interop ───────────────────────────────────────────── */
 function A2AInboxPanel() {
   const { d, e, loading, reload } = useApi('/api/a2a/inbox');
@@ -658,7 +704,7 @@ export function NetworkMonitorPanel() {
 
 const SECTIONS = [
   ['Memory', [DataSpacesPanel, LocalDocsPanel, NotesPanel, ReflectionPanel]],
-  ['Trust', [KillSwitchPanel, NetworkMonitorPanel, SecretsPanel, CapabilitiesPanel, PairingPanel, InjectionScanPanel]],
+  ['Trust', [KillSwitchPanel, KernelMetricsPanel, LoopBreakerPanel, NetworkMonitorPanel, SecretsPanel, CapabilitiesPanel, PairingPanel, InjectionScanPanel]],
   ['Interop', [A2AInboxPanel, MarketplacePanel]],
   ['Observe', [EvalPanel, ReviewPanel, APMPanel]],
   ['Build', [StepGenPanel, SandboxPanel, TemplatesPanel]],
