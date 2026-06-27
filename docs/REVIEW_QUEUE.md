@@ -31,6 +31,21 @@
 
 ## Items (newest first)
 
+### Security — pin the SSRF IPv6-mapped/embedded-IPv4 bypass defense (coverage hardening)
+- **What:** `security/ssrf.py` was the lowest-covered file in the safety-critical core (85%) — and the
+  uncovered branches were exactly the **IPv6-mapped / embedded-IPv4 unwrap** logic (`::ffff:a.b.c.d`,
+  `::a.b.c.d`), the notation attackers use to wrap `169.254.169.254` / `127.0.0.1` / RFC1918 in IPv6 and
+  slip past a naive host filter. I **scratch-simulated** every bypass first to confirm the filter actually
+  blocks them (it does — no bug; mapped-public still passes), then added tests that **pin** that property
+  so a future refactor can't silently reopen the hole.
+- **Verified (automated):** `tests/test_ssrf.py` (+5) — `is_private_ip` unwraps mapped loopback/metadata/
+  RFC1918 (and the deprecated `::a.b.c.d` form) → blocked, mapped-public → allowed, garbage → False;
+  `resolve_and_validate` + `check_ssrf` block bracketed-IPv6 metadata/private URLs; empty `getaddrinfo`
+  fails closed. Covers ssrf.py lines 38/41/47-48/52/80-82/98-99. Full suite **3,030 passed**; `ruff` +
+  `bandit` clean.
+- **⚠️ Needs you:** nothing — pure offline security-coverage hardening; behaviour unchanged (it was already
+  correct, just untested).
+
 ### HUD — visible LIVE/SEED chip per mode (CDX-9 slice)
 - **What:** the HUD modes stream real backend data when a source responds and fall back to a seeded mock
   otherwise — but nothing told you which, so live-wiring quietly hid shape drift. A new `LiveSourceChip`

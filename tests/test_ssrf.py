@@ -16,7 +16,7 @@ repo_root = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(repo_root))
 sys.path.insert(0, str(repo_root / "agents"))
 
-from core.security.ssrf import resolve_and_validate, check_ssrf  # noqa: E402
+from core.security.ssrf import check_ssrf, is_private_ip, resolve_and_validate  # noqa: E402
 from core.plugins import websearch as ws  # noqa: E402
 
 
@@ -131,3 +131,42 @@ async def test_fetch_blocks_redirect_loop(pin_resolver):
     out = await plugin.fetch_page("http://a.example/", _transport=httpx.MockTransport(handler))
     assert out is None
     assert calls["n"] == 6          # initial + 5 redirects, then give up
+
+
+# ── IPv6-mapped / embedded-IPv4 bypass surface (covers ssrf.py:38,41,52,80-82,98-99) ──
+# Attackers wrap a private/metadata IPv4 in IPv6 notation (::ffff:a.b.c.d) to slip past a
+# naive host filter; these pin that resolve unwraps and blocks it while a mapped PUBLIC
+# address still passes. Behaviour confirmed correct — these lock it against regression.
+
+def test_is_private_ip_unwraps_ipv4_mapped_ipv6():
+    assert is_private_ip("::ffff:127.0.0.1") is True        # mapped loopback
+    assert is_private_ip("::ffff:169.254.169.254") is True   # mapped cloud metadata
+    assert is_private_ip("::ffff:10.0.0.1") is True          # mapped RFC1918
+    assert is_private_ip("::127.0.0.1") is True              # IPv4-compatible (deprecated) form
+    assert is_private_ip("::ffff:8.8.8.8") is False          # mapped PUBLIC must pass
+
+
+def test_is_private_ip_is_false_on_garbage():
+    assert is_private_ip("not-an-ip") is False               # ssrf.py:47-48
+    assert is_private_ip("") is False
+
+
+def test_resolve_blocks_ipv6_mapped_metadata_and_private():
+    ips, err = resolve_and_validate("::ffff:169.254.169.254")  # embedded metadata → :80-82
+    assert ips == [] and "metadata" in err
+    ips, err = resolve_and_validate("::ffff:127.0.0.1")        # embedded private → :52 path
+    assert ips == [] and "private IP" in err
+    assert resolve_and_validate("::ffff:8.8.8.8") == (["::ffff:8.8.8.8"], None)  # public mapped ok
+
+
+def test_check_ssrf_blocks_bracketed_ipv6_mapped_urls():
+    assert "metadata" in check_ssrf("http://[::ffff:169.254.169.254]/latest/meta-data/")
+    assert "private IP" in check_ssrf("http://[::ffff:127.0.0.1]:8080/admin")
+    assert check_ssrf("http://[::ffff:8.8.8.8]/") is None
+
+
+def test_empty_getaddrinfo_is_dns_failure(monkeypatch):
+    # getaddrinfo returns zero records → fail closed (ssrf.py:98-99)
+    monkeypatch.setattr(socket, "getaddrinfo", lambda *a, **k: [])
+    ips, err = resolve_and_validate("empty.invalid")
+    assert ips == [] and "DNS resolution failed" in err
