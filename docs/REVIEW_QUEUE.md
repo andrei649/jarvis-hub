@@ -51,7 +51,9 @@
   conservative default. During testing with the kernel flag on, confirm your **legitimate**
   workloads (e.g. a pipeline dispatching many `node.dispatch` subtasks) don't hit it; if
   they do, that threshold should become configurable (a tracked follow-up). The breaker
-  stays open until reset — a HUD/admin "reset breaker" control is a natural future add.
+  stays open until reset — the API for that now exists: `GET /api/security/loop-breaker`
+  (status) + `POST /api/security/loop-breaker/reset` (admin; **not** kernel-mediated, so a
+  tripped breaker can't block its own reset). A HUD button for it is still a future add.
 
 ### V3 — cross-agent interface-contract drift gate
 - **What:** a new CI gate (`tests/test_interface_contract_drift.py`) snapshots the **shared

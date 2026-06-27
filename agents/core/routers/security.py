@@ -164,6 +164,34 @@ async def kill_switch_set(req: Request):
     return nocache_json({"ok": True, "disengaged": kill.disengage(scope)})
 
 
+# ── K3 loop circuit breaker — status + operator reset ─────────────────────────
+
+@router.get("/api/security/loop-breaker")
+async def loop_breaker_status():
+    """Kernel loop circuit-breaker status (read-only): tripped + threshold/window."""
+    orch = get_orch()
+    det = getattr(orch, "loop_detector", None) if orch else None
+    if det is None:
+        return JSONResponse({"error": "loop breaker not available"}, status_code=503)
+    return nocache_json(det.status())
+
+
+@router.post("/api/security/loop-breaker/reset", dependencies=[Depends(admin_guard)])
+async def loop_breaker_reset():
+    """Reset (close) the kernel loop circuit-breaker after a runaway trip (operator action).
+
+    Like the kill-switch *disengage*, this is a recovery action — admin-guard-only and
+    deliberately NOT kernel-mediated, so a tripped breaker (or an engaged halt) can never
+    block its own reset."""
+    orch = get_orch()
+    det = getattr(orch, "loop_detector", None) if orch else None
+    if det is None:
+        return JSONResponse({"error": "loop breaker not available"}, status_code=503)
+    was = det.tripped
+    det.reset()
+    return nocache_json({"ok": True, "was_tripped": was, "tripped": det.tripped})
+
+
 # ── H17.4 Externally-anchored audit + intent attribution ──────────────────────
 
 @router.post("/api/security/audit/action", dependencies=[Depends(admin_guard)])
