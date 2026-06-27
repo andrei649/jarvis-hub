@@ -9,6 +9,7 @@ import { Conversation, CognitionStream, InputBar, buildTrace, traceFromCognition
 import { useVoice } from './voice';
 import { loadJarvisData } from './api/loaders';
 import { useLiveModes } from './api/live';
+import { LiveSourceChip, liveSourceState } from './LiveSourceChip';
 import { postStream, apiGet } from './api/client';
 import { AgentsMode, Dossier, TrustMode, MemoryMode } from './modes';
 import { AutonomyMode, BuildMode, ObserveMode, InteropMode } from './modes2';
@@ -328,8 +329,11 @@ function App() {
                 <ChatMode messages={messages} thinking={thinking} onSubmit={submit} onProv={setProvModal} mic={voice.active} setMic={voice.toggle} lang={lang} t={t} />
               </div>
             ) : (
-              <div className="workzone full" style={{ flex: 1, minHeight: 0 }}>
-                {modeComponent(mode, t, { demo, live: liveModes.live, onDemo: () => setDemo(true), localPct, activeId, onOpen: (id) => { setActiveId(id); setDossier(id); } })}
+              <div className="workzone full" style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
+                <LiveSourceChip state={liveSourceState(mode, demo, liveModes.live, MODE_LIVE_KEYS)} />
+                <div style={{ flex: 1, minHeight: 0 }}>
+                  {modeComponent(mode, t, { demo, live: liveModes.live, onDemo: () => setDemo(true), localPct, activeId, onOpen: (id) => { setActiveId(id); setDossier(id); } })}
+                </div>
               </div>
             )}
           </div>
