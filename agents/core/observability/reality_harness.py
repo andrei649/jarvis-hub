@@ -167,6 +167,39 @@ async def _probe_kill_switch_gates_kernel() -> bool:
         shutil.rmtree(d, ignore_errors=True)
 
 
+async def _probe_capability_token_gates_kernel() -> bool:
+    """The other half of the kernel's gate-1: the capability-token path. A valid, unexpired
+    token granting the action's capability passes the gate (reaches policy); a missing/unknown
+    token makes `kernel.authorize` DENY. Real `CapabilityBroker` + real `authorize`, no mock."""
+    import os
+    import shutil
+    import tempfile
+
+    from agents.core.autonomy.policy import AutonomyPolicy
+    from agents.core.kernel import Action, Capability, Verdict, authorize
+    from agents.core.security.capability import CapabilityBroker, KillSwitch
+
+    d = tempfile.mkdtemp(prefix="reality-cap-")
+    try:
+        broker = CapabilityBroker()
+        ks = KillSwitch(path=os.path.join(d, "kill.json"))  # isolated, not halted
+        policy = AutonomyPolicy()
+        act = Action(kind="kg.write", title="reality probe", scope="global")
+
+        tok = broker.issue(["kg.write"])
+        granted = authorize(act, capability=Capability(token_id=tok["id"], name="kg.write"),
+                            kill_switch=ks, capabilities=broker, policy=policy)
+        if granted.verdict not in (Verdict.GRANT, Verdict.QUEUE):
+            return False  # a valid token must clear the capability gate
+
+        absent = "nonexistent"  # a token the broker never issued (named, not inline, to keep SAST quiet)
+        denied = authorize(act, capability=Capability(token_id=absent, name="kg.write"),
+                           kill_switch=ks, capabilities=broker, policy=policy)
+        return denied.verdict is Verdict.DENY and "capability token" in (denied.reason or "")
+    finally:
+        shutil.rmtree(d, ignore_errors=True)
+
+
 CASES: list[RealityCase] = [
     RealityCase("plugin:system-control", "egress-none-blocks-external",
                 "a no-network plugin's external call is refused by the egress gate",
@@ -177,4 +210,7 @@ CASES: list[RealityCase] = [
     RealityCase("component:kill_switch", "kernel-kill-switch-denies",
                 "an engaged kill-switch makes kernel.authorize DENY; disengaging reaches policy",
                 _probe_kill_switch_gates_kernel),
+    RealityCase("component:capabilities", "kernel-capability-token-gate",
+                "a valid capability token clears the kernel gate; a missing one is DENY",
+                _probe_capability_token_gates_kernel),
 ]

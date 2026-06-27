@@ -86,7 +86,7 @@ async def test_manual_demote_overrides_a_verification(monkeypatch):
 async def test_seeded_cases_prove_rails_and_promote():
     out = await run_reality(rh.CASES, now="2026-06-25T00:00:00+00:00")
     assert out["total"] == out["passed"] == len(rh.CASES)  # every hermetic contract holds
-    assert "component:kill_switch" in out["promoted"]
+    assert {"component:kill_switch", "component:capabilities"} <= set(out["promoted"])
     snap = cr.snapshot()  # plugins derive statically (no orch needed)
     states = {c["id"]: c["state"] for c in snap["capabilities"]}
     assert states["plugin:system-control"] == cr.VERIFIED
@@ -107,3 +107,15 @@ async def test_kill_switch_rail_is_a_real_hermetic_proof():
     assert out["promoted"] == ["component:kill_switch"]
     assert "component:kill_switch" in cr._VERIFICATIONS
     assert KillSwitch().is_halted("global") is False  # the probe's temp store stayed isolated
+
+
+async def test_capability_token_rail_is_a_real_hermetic_proof():
+    # The capability-token case proves the other half of the kernel gate-1 with a real
+    # CapabilityBroker (valid token clears, missing token DENYs) and promotes the record.
+    out = await run_reality(
+        [c for c in rh.CASES if c.capability_id == "component:capabilities"],
+        now="2026-06-25T00:00:00+00:00",
+    )
+    assert out["total"] == 1 and out["passed"] == 1
+    assert out["promoted"] == ["component:capabilities"]
+    assert "component:capabilities" in cr._VERIFICATIONS
