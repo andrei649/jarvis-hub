@@ -133,6 +133,40 @@ async def _probe_lan_allows_local() -> bool:
         await c.close()
 
 
+# ── The Action-Kernel kill-switch rail (hermetic, real KillSwitch + real authorize) ────
+# Proves the most safety-critical Track-K rail end-to-end with real primitives: an engaged
+# KillSwitch makes `kernel.authorize` DENY (the halt actually blocks), and disengaging lets
+# the same action past the kill-switch gate (it reaches policy). No mock, no socket — and the
+# probe runs against a throwaway KillSwitch store so it never touches the live halt state.
+
+async def _probe_kill_switch_gates_kernel() -> bool:
+    import os
+    import shutil
+    import tempfile
+
+    from agents.core.autonomy.policy import AutonomyPolicy
+    from agents.core.kernel import Action, Verdict, authorize
+    from agents.core.security.capability import KillSwitch
+
+    d = tempfile.mkdtemp(prefix="reality-ks-")
+    try:
+        ks = KillSwitch(path=os.path.join(d, "kill.json"))  # isolated store, not the live one
+        policy = AutonomyPolicy()
+        act = Action(kind="tool.rpc", title="reality probe", scope="global")
+
+        ks.engage("global", reason="reality probe")
+        denied = authorize(act, kill_switch=ks, policy=policy)
+        if denied.verdict is not Verdict.DENY or "kill-switch" not in (denied.reason or ""):
+            return False  # halt didn't block ⇒ rail broken
+
+        ks.disengage("global")
+        after = authorize(act, kill_switch=ks, policy=policy)
+        # Past the kill-switch gate now: policy decides (grant/queue) — never a kill-switch DENY.
+        return after.verdict is not Verdict.DENY or "kill-switch" not in (after.reason or "")
+    finally:
+        shutil.rmtree(d, ignore_errors=True)
+
+
 CASES: list[RealityCase] = [
     RealityCase("plugin:system-control", "egress-none-blocks-external",
                 "a no-network plugin's external call is refused by the egress gate",
@@ -140,4 +174,7 @@ CASES: list[RealityCase] = [
     RealityCase("plugin:worldview", "egress-lan-allows-local",
                 "a LAN plugin's localhost call is allowed by the egress gate",
                 _probe_lan_allows_local),
+    RealityCase("component:kill_switch", "kernel-kill-switch-denies",
+                "an engaged kill-switch makes kernel.authorize DENY; disengaging reaches policy",
+                _probe_kill_switch_gates_kernel),
 ]
