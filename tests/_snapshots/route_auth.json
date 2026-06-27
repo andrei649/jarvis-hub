@@ -91,6 +91,7 @@
   "GET /api/memory/spaces": "admin",
   "GET /api/memory/tool-spec": "open",
   "GET /api/metrics/capabilities": "open",
+  "GET /api/metrics/kernel": "open",
   "GET /api/metrics/north-star": "open",
   "GET /api/missions": "open",
   "GET /api/missions/{mission_id}": "open",

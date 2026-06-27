@@ -31,6 +31,23 @@
 
 ## Items (newest first)
 
+### Gate-K observability — `GET /api/metrics/kernel`
+- **What:** now that every privileged action crosses `kernel.authorize`, there's a single
+  place to see what the kernel is doing. An in-process meter tallies **grant/deny/queue per
+  action kind** + a deny-rate + the **recent denials with reasons** (so a halt / runaway /
+  over-budget is visible), served at `GET /api/metrics/kernel` (open, like the north-star /
+  capabilities meters). In-memory only (resets on restart; the IntentLog audit chain is the
+  durable record). **No runtime behavior change** — it only tallies what already happens, and
+  stays empty until `JARVIS_ACTION_KERNEL` is on (brokers/routes don't call `authorize` when off).
+- **Verified (automated):** `tests/test_kernel_metrics.py` (+5) — meter unit (record/snapshot/
+  reset, bounded denials ring, unknown-verdict ignored), the kernel tallies grant/queue/deny
+  through a real `authorize` (incl. a halted-kill-switch deny captured with its reason), and the
+  endpoint returns the snapshot. Full suite **2,987 passed**; ruff + bandit clean; route/auth/
+  OpenAPI parity snapshots reseeded (+1 open route).
+- **⚠️ Needs you:** nothing — pure observability. During manual testing with the kernel flag on,
+  `GET /api/metrics/kernel` is the quickest way to confirm the kill-switch/loop-breaker/budget
+  denials are firing as expected (and a HUD panel for it is a natural future add).
+
 ### K3 (loop-breaker slice) — loop circuit breaker bound to the agent-action path
 - **What:** the kernel's loop-wide circuit breaker (`LoopDetector`, an OWASP
   unbounded-consumption guard) is now wired in. The orchestrator owns one shared

@@ -180,6 +180,18 @@ async def metrics_capabilities():
     return nocache_json(snapshot(orch))
 
 
+@router.get("/api/metrics/kernel")
+async def metrics_kernel():
+    """Live tally of Action-Kernel decisions — grant/deny/queue per action kind, deny-rate,
+    and the recent denials (with reasons, so a halt / runaway / over-budget is visible).
+
+    In-memory observability (resets on restart; the IntentLog audit chain is the durable
+    record). Open like the sibling meters. Empty until `JARVIS_ACTION_KERNEL` is on and
+    actions are actually mediated — no orchestrator dependency (a module-level meter)."""
+    from agents.core.kernel.metrics import KERNEL_METRICS
+    return nocache_json(KERNEL_METRICS.snapshot())
+
+
 @router.get("/api/reflection/status")
 async def reflection_status():
     """Daily reflection status (H5.15)."""
