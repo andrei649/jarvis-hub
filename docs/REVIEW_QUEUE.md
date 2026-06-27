@@ -31,6 +31,28 @@
 
 ## Items (newest first)
 
+### K3 (loop-breaker slice) — loop circuit breaker bound to the agent-action path
+- **What:** the kernel's loop-wide circuit breaker (`LoopDetector`, an OWASP
+  unbounded-consumption guard) is now wired in. The orchestrator owns one shared
+  `self.loop_detector`, and the autonomy coordinator binds it into the **broker-mediated**
+  kernel — so with `JARVIS_ACTION_KERNEL=1`, a runaway agent that re-requests the **same**
+  governed action (call/social/writeback/node/payment) past the threshold (default 10 in
+  60s) is **denied** at the kernel front door. **Default-off.**
+- **The key design call:** it is bound **only** to the broker path, **not** routes/egress/
+  MCP/KG. The breaker keys on `action.kind`, and those paths legitimately repeat one kind
+  (many egress calls, many KG writes), so a fleet-wide binding would **false-trip** on
+  normal traffic. `make_action_kernel(orch)` (used by routes/egress) omits the detector;
+  only the autonomy coordinator passes it.
+- **Verified (automated):** `tests/test_kernel_loop_breaker_wave.py` (+5): trips on a
+  runaway · counts **per-signature, not total** · the route/egress kernel never carries it
+  (20 identical `kg.write` never trip) · a None detector is inert · a **real `CallBroker`
+  end-to-end** refuses the runaway. Full suite **2,978 passed**; ruff + bandit clean.
+- **⚠️ Needs you:** the breaker threshold is **10 identical governed actions in 60s** — a
+  conservative default. During testing with the kernel flag on, confirm your **legitimate**
+  workloads (e.g. a pipeline dispatching many `node.dispatch` subtasks) don't hit it; if
+  they do, that threshold should become configurable (a tracked follow-up). The breaker
+  stays open until reset — a HUD/admin "reset breaker" control is a natural future add.
+
 ### V3 — cross-agent interface-contract drift gate
 - **What:** a new CI gate (`tests/test_interface_contract_drift.py`) snapshots the **shared
   schemas that cross agent boundaries** — the kernel `Action`/`Decision`/`Capability`/`Budget`

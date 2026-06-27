@@ -21,9 +21,15 @@ from __future__ import annotations
 import functools
 
 
-def make_action_kernel(orch):
+def make_action_kernel(orch, *, loop_detector=None):
     """Return a bound ``kernel.authorize`` (a ``functools.partial``) for *orch*, or
     ``None`` if no autonomy policy is reachable (brokers then run kernel-less).
+
+    ``loop_detector`` (K3) is **opt-in** and bound only by callers that want the
+    loop-wide circuit breaker — today just the autonomy coordinator (the broker action
+    path). Route/egress callers omit it, because the breaker keys on ``action.kind`` and
+    those paths legitimately repeat the same kind (many egress calls / KG writes) and
+    would false-trip. ``None`` → the breaker is inert (K1 behavior).
 
     The import of ``authorize`` is local so this module stays cheap and cycle-free
     (a broker importing ``binding`` must not pull the whole kernel/autonomy graph).
@@ -40,6 +46,7 @@ def make_action_kernel(orch):
         capabilities=getattr(orch, "capabilities", None),
         policy=pol,
         audit=getattr(orch, "intent_log", None),
+        loop_detector=loop_detector,
     )
 
 

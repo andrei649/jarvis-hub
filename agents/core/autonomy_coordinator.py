@@ -146,8 +146,11 @@ class AutonomyCoordinator:
         # not orch.audit. None if the policy isn't available → brokers stay kernel-less.
         # The binding lives in kernel.binding (shared with web.py's payment broker), so
         # there's one definition of what the kernel front door is bound to.
+        # K3: the loop circuit breaker is bound ONLY here (the broker action path) — routes/
+        # egress omit it (they legitimately repeat the same action.kind and would false-trip).
         from .kernel.binding import make_action_kernel
-        _action_kernel = make_action_kernel(self._orch)
+        _action_kernel = make_action_kernel(
+            self._orch, loop_detector=getattr(self._orch, "loop_detector", None))
 
         from .writeback import WriteBackBroker
         self._orch.writeback = WriteBackBroker(
