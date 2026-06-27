@@ -26,6 +26,18 @@ from .observability.egress_monitor import EGRESS_MONITOR
 from .resilience import CircuitBreaker, get_circuit_breaker
 
 logger = logging.getLogger("jarvis.http_client")
+
+# B3 — durable audit of a strict-egress *downgrade* (JARVIS_STRICT_EGRESS=0 allowing a
+# policy violation). The orchestrator installs an AuditLogger adapter at boot; None = no-op
+# (the egress monitor still records the call live either way). Decoupled by design — this
+# low-level module never imports the security event types.
+_EGRESS_AUDIT_SINK = None
+
+
+def set_egress_audit_sink(sink) -> None:
+    """Install the durable audit sink for strict-egress downgrades. ``sink(plugin, violation)``."""
+    global _EGRESS_AUDIT_SINK
+    _EGRESS_AUDIT_SINK = sink
 # Default timeouts applied to all plugin HTTP calls
 DEFAULT_CONNECT_TIMEOUT = 5.0
 DEFAULT_READ_TIMEOUT = 30.0
@@ -211,6 +223,12 @@ class PluginHTTPClient:
         if strict:
             raise PluginEgressError(f"egress blocked: {violation}")
         logger.warning("egress policy violation (JARVIS_STRICT_EGRESS=0, allowing): %s", violation)
+        # B3: the downgrade is no longer silent — record a durable, alertable audit event.
+        if _EGRESS_AUDIT_SINK is not None:
+            try:
+                _EGRESS_AUDIT_SINK(self.plugin_name, violation)
+            except Exception:  # pragma: no cover - audit must never break egress
+                logger.debug("egress downgrade audit failed", exc_info=True)
 
     def _guard(self, method: str, url: str) -> None:
         """Enforce egress policy AND record the attempt for the network monitor (H23.16).

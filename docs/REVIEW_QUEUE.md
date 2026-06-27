@@ -31,6 +31,19 @@
 
 ## Items (newest first)
 
+### B3 — strict-egress downgrade is now durably audited
+- **What:** the `JARVIS_STRICT_EGRESS=0` escape hatch (allows a blocked-by-default egress
+  host) was a *silent* log line. Now a decoupled audit sink (`http_client.set_egress_audit_sink`,
+  wired by the orchestrator to an `AuditLogger` adapter) records a durable `EGRESS_DOWNGRADE`
+  security event. No-op in strict mode (the default) — so no behavior change unless you've
+  set `JARVIS_STRICT_EGRESS=0`.
+- **Verified (automated):** unit tests — downgrade audits, strict mode blocks (no audit),
+  no-sink no-op, a throwing sink never breaks egress, http_client stays decoupled from the
+  security types. **Scratch:** real `AuditLogger` — a downgrade lands a durable row and
+  `verify_chain()` returns valid (HMAC chain intact).
+- **⚠️ Needs you:** nothing specific — but during testing, set `JARVIS_STRICT_EGRESS=0`,
+  trigger a cross-host plugin call, and confirm the event shows in `GET /api/admin/audit`.
+
 ### K4 — kill-switch + credential-quarantine syscalls
 - **What:** `kernel/syscalls.py` — `halt()` / `release()` promote the existing `KillSwitch`
   to a kernel call, and `inject_guarded()` makes secret injection **quarantine-aware** (while
