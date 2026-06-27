@@ -410,6 +410,16 @@ class MutatingIdentityError(PermissionError):
     """
 
 
+class MutatingKernelError(PermissionError):
+    """Raised when the Action Kernel DENYs a mutating tool call (ORIZONT-24 wave-3).
+
+    Distinct from the identity error: identity proves *who*; the kernel decides
+    *whether the action may run now* (kill-switch engaged / over-budget / runaway
+    loop). Audited as ``refused-kernel`` before it propagates. Default-off, so this
+    only ever fires when ``JARVIS_ACTION_KERNEL`` is set and a kernel is bound.
+    """
+
+
 @dataclass(frozen=True)
 class MutatingRouteSpec:
     """Static description of an allow-listed MUTATING (write) route.
@@ -473,6 +483,10 @@ class MutatingRouteTool:
     # ``user_guard`` (see web.py). ``None`` → fail closed (every call refused),
     # so a write tool can never be reachable without an explicit identity policy.
     identity_check: Optional[IdentityCheck] = None
+    # ORIZONT-24 wave-3: bound ``kernel.authorize`` (default-off). Runs AFTER the
+    # identity gate — a DENY (kill-switch / budget / loop) refuses the write. ``None``
+    # → no kernel mediation (unchanged behavior), the default everywhere today.
+    kernel: Optional[Callable] = None
 
     @property
     def tool_name(self) -> str:
@@ -538,6 +552,27 @@ class MutatingRouteTool:
             )
             return False
 
+    def _kernel_denial(self, arguments: dict | None) -> Optional[str]:
+        """ORIZONT-24 wave-3: ask the Action Kernel whether this write may run now.
+
+        Returns a deny-reason string (block) or ``None`` (allow). Default-off: no
+        kernel bound, or ``JARVIS_ACTION_KERNEL`` unset → ``None`` (unchanged behavior).
+        The MCP write originates from an external client, so the action is tagged
+        ``origin="external"``. Only the written *keys* go in the payload, never values.
+        """
+        if self.kernel is None:
+            return None
+        from agents.core.kernel import Action, Verdict, kernel_enabled
+        if not kernel_enabled():
+            return None
+        decision = self.kernel(Action(
+            kind="mcp.mutating", agent="mcp",
+            title=f"mcp write {self.spec.name}",
+            payload={"tool": self.spec.name, "path": self.spec.path,
+                     "keys": sorted(self.filtered_kwargs(arguments).keys())},
+            origin="external"))
+        return decision.reason if decision.verdict is Verdict.DENY else None
+
     async def call(self, arguments: dict | None, token: Optional[str] = None) -> Any:
         """Run the write adapter with schema-filtered args, auditing the call.
 
@@ -554,6 +589,15 @@ class MutatingRouteTool:
             self._audit(arguments, outcome="refused-identity")
             raise MutatingIdentityError(
                 f"mutating tool {self.tool_name} requires a valid identity"
+            )
+        # ORIZONT-24 wave-3: kernel mediation (default-off). Identity proves *who*;
+        # the kernel decides *whether it may run now* (a halted kill-switch / over-budget
+        # / runaway loop blocks the write). Refusal is audited before it propagates.
+        denied = self._kernel_denial(arguments)
+        if denied is not None:
+            self._audit(arguments, outcome="refused-kernel")
+            raise MutatingKernelError(
+                f"mutating tool {self.tool_name} blocked by kernel: {denied}"
             )
         kwargs = self.filtered_kwargs(arguments)
         try:
@@ -573,6 +617,7 @@ def build_mutating_route_tools(
     read_only_enabled: bool | None = None,
     mutating_enabled: bool | None = None,
     identity_check: Optional[IdentityCheck] = None,
+    kernel: Optional[Callable] = None,
 ) -> list["MutatingRouteTool"]:
     """Bind allow-listed mutating specs to provided write adapters.
 
@@ -585,6 +630,10 @@ def build_mutating_route_tools(
     (the SAME rule the HTTP ``user_guard`` applies — see ``web.py``). When it is
     ``None`` each tool fails CLOSED: a mutating call is refused unless an explicit
     identity policy is bound, so a write tool is never reachable unauthenticated.
+
+    ``kernel`` is the optional bound ``kernel.authorize`` (ORIZONT-24 wave-3),
+    threaded onto every tool: after identity passes, a kernel DENY (kill-switch /
+    budget / loop) refuses the write. ``None`` → no kernel mediation (default-off).
     """
     if read_only_enabled is None:
         read_only_enabled = route_tools_enabled()
@@ -609,7 +658,8 @@ def build_mutating_route_tools(
             continue
         tools.append(
             MutatingRouteTool(
-                spec=spec, invoke=invoke, auditor=auditor, identity_check=identity_check
+                spec=spec, invoke=invoke, auditor=auditor,
+                identity_check=identity_check, kernel=kernel,
             )
         )
     return tools

@@ -43,10 +43,12 @@ ACTION_REGISTRY: dict[str, Mediation] = {
     # hook in http_client (a DENY blocks otherwise-allowed egress: kill-switch / budget /
     # loop). The B3 strict-egress-downgrade audit landed earlier; this is the routing half.
     "plugin.egress": Mediation.KERNEL,
+    # Wave 3 (in progress) — MCP mutating tools route through kernel.authorize after
+    # the per-identity gate (a DENY blocks the write: kill-switch / budget / loop).
+    "mcp.mutating": Mediation.KERNEL,
     # PENDING — privileged surfaces not yet routed through the kernel.
-    "mcp.mutating": Mediation.PENDING_KERNEL,     # wave 3
-    "kg.write": Mediation.PENDING_KERNEL,         # wave 3
-    "tool.rpc": Mediation.PENDING_KERNEL,         # wave 3
+    "kg.write": Mediation.PENDING_KERNEL,         # wave 3 (next)
+    "tool.rpc": Mediation.PENDING_KERNEL,         # wave 3 (next)
     "admin.kill_switch": Mediation.PENDING_KERNEL,        # wave 4 (closes B1)
     "admin.capability_issue": Mediation.PENDING_KERNEL,   # wave 4 (closes B1)
 }

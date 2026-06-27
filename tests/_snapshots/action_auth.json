@@ -3,7 +3,7 @@
   "admin.kill_switch": "pending",
   "call.outbound": "kernel",
   "kg.write": "pending",
-  "mcp.mutating": "pending",
+  "mcp.mutating": "kernel",
   "node.dispatch": "kernel",
   "payment": "kernel",
   "plugin.egress": "kernel",
