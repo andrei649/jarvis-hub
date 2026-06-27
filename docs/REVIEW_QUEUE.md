@@ -31,6 +31,34 @@
 
 ## Items (newest first)
 
+### K1 (wave-4a) — admin kill-switch + capability-issue route through the Action Kernel (B1 structural)
+- **What:** the two admin escalation routes — engaging the kill-switch and minting a
+  capability token — now pass `kernel.authorize` **in addition to** today's `admin_guard`.
+  With `JARVIS_ACTION_KERNEL=1`: a halted kill-switch (or a *presented* capability token
+  that lacks the named capability) → **403**; the clean path (unknown admin kind → policy
+  QUEUE) is treated as **allow-through** so there's no approval-UX regression. **Default-off.**
+- **Designed + adversarially verified by a workflow** (8 agents) that caught two real
+  blockers before any code:
+  - **Bootstrap lock-out:** if disengage were mediated, a halt would deny its own release
+    and the operator could never recover. **Fix shipped:** *disengage bypasses the kernel*
+    (stays `admin_guard`-only) — recovery always works. A test pins exactly this
+    (halt → engage/issue 403, but disengage 200 → released → mint works again).
+  - **Honest scope:** the `Capability` is K1-tolerant, so a *no-token* admin request still
+    falls through (QUEUE→allow). So this is the **structural** half of B1 (route through the
+    kernel + cross-check a *presented* token + kill-switch gate); making a token **mandatory**
+    is **wave-4b/K2**. The PR/BACKLOG say so explicitly — I did **not** overclaim "closes B1".
+- **Verified (automated + scratch):** `tests/test_admin_kernel_wave.py` drives the **real
+  handlers** over a real `KillSwitch`+`CapabilityBroker`+`AutonomyPolicy`+real
+  `make_action_kernel`: default-off byte-identical · clean→200 · halt→403 + disengage
+  recovers · presented-bad-token→403 · each handler emits its own kind. The action-auth
+  matrix proves both admin kinds route through the kernel when on / not when off. Full
+  suite green (2,961 passed; the last kernel xfail scaffold is now a real pass).
+- **⚠️ Needs you:** with `JARVIS_ACTION_KERNEL=1`, (1) confirm engaging the kill-switch and
+  minting a capability still work normally (200) on a clean system; (2) engage a halt, then
+  confirm a *second* engage and a capability-mint return 403 **but disengage still works**
+  (this is the safety-critical recovery path — please exercise it for real); (3) note that a
+  no-token admin request is still allowed today by design — wave-4b will make tokens mandatory.
+
 ### K1 (wave-3, Tool-RPC slice) — gated Tool-RPC calls route through the Action Kernel
 - **What:** a *gated* (external/mutating) Tool-RPC call — the path a sandboxed agent
   script uses to reach a mutating tool — now passes the **kernel** before it can even

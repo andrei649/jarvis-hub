@@ -19,6 +19,39 @@ from agents.core.app_state import get_orch
 router = APIRouter(tags=["security"])
 
 
+def _admin_kernel_denial(orch, kind: str, cap_name: str, payload: dict, token_id: str):
+    """ORIZONT-24 K1 wave-4a: mediate an admin write through the Action Kernel (default-off).
+
+    Returns a deny-reason (caller → HTTP 403) or ``None`` (allow). **DENY only** — GRANT
+    and QUEUE both allow through: an unknown ``admin.*`` kind classifies high-risk and the
+    policy returns ASK→QUEUE, but we do not gate the operator's admin UX on an approval
+    card, we only honor a hard **DENY** (a halted kill-switch, or a *presented* capability
+    token that lacks the named capability). Default-off: returns ``None`` unless
+    ``JARVIS_ACTION_KERNEL`` is set and a bound kernel is reachable.
+
+    Scope (wave-4a vs full B1): the kernel cross-checks a capability **only when a token is
+    presented** (the ``Capability`` is K1-tolerant — an empty token skips the nucleus and
+    falls to the kill-switch/policy gate). Making a valid token *mandatory* for these routes
+    (so a no-token admin request is refused) is wave-4b/K2; it needs a token-provisioning
+    story that doesn't strand the operator. ``make_action_kernel`` is imported lazily so the
+    router stays import-cheap and the exerciser can substitute a spy.
+    """
+    from agents.core.kernel import kernel_enabled
+    if not kernel_enabled():
+        return None
+    from agents.core.kernel.binding import make_action_kernel
+    kernel = make_action_kernel(orch)
+    if kernel is None:
+        return None
+    from agents.core.kernel import Action, Capability, Verdict
+    scope = (payload or {}).get("scope", "global")
+    decision = kernel(
+        Action(kind=kind, agent="operator", title=f"admin {kind}",
+               payload=payload, scope=scope, origin="external"),
+        capability=Capability(token_id=token_id or "", name=cap_name))
+    return decision.reason if decision.verdict is Verdict.DENY else None
+
+
 @router.post("/api/security/spotlight", dependencies=[Depends(user_guard)])
 async def security_spotlight(req: Request):
     """H17.1 — datamark untrusted content + flag prompt-injection attempts."""
@@ -68,6 +101,15 @@ async def capabilities_issue(req: Request):
     caps = (body or {}).get("capabilities") or []
     if not caps:
         return JSONResponse({"error": "capabilities required"}, status_code=400)
+    # wave-4a: minting a capability is a privileged escalation → kernel-mediated. While a
+    # halt is engaged this is denied; the operator's recovery path is to disengage the
+    # kill-switch (which bypasses the kernel — see kill_switch_set) and then re-credential.
+    denied = _admin_kernel_denial(
+        orch, "admin.capability_issue", "admin:capability_issue",
+        {"caps": sorted(str(c) for c in caps)},
+        req.headers.get("x-capability-token", ""))
+    if denied is not None:
+        return JSONResponse({"error": f"kernel denied: {denied}"}, status_code=403)
     token = broker.issue(caps, source=body.get("source", ""),
                          task_id=body.get("task_id", ""), ttl=float(body.get("ttl", 3600)))
     return nocache_json({"ok": True, "token": token})
@@ -108,6 +150,16 @@ async def kill_switch_set(req: Request):
         body = {}
     scope = (body or {}).get("scope", "global")
     if (body or {}).get("engage", True):
+        # wave-4a: engaging a halt is a privileged escalation → kernel-mediated.
+        # DISENGAGE is the safety-restoring action and is deliberately NOT mediated:
+        # a halted kill-switch would otherwise DENY its own release (is_halted → deny),
+        # bricking recovery. So disengage stays admin-guard-only and always works.
+        denied = _admin_kernel_denial(
+            orch, "admin.kill_switch", "admin:kill_switch",
+            {"scope": scope, "engage": True},
+            req.headers.get("x-capability-token", ""))
+        if denied is not None:
+            return JSONResponse({"error": f"kernel denied: {denied}"}, status_code=403)
         return nocache_json({"ok": True, "engaged": kill.engage(scope, body.get("reason", ""))})
     return nocache_json({"ok": True, "disengaged": kill.disengage(scope)})
 

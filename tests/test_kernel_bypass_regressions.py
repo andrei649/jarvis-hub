@@ -39,14 +39,17 @@ def test_mutating_tool_fails_closed_without_identity():
         asyncio.run(tool.call({}, token=None))
 
 
-# ── B1 — admin action must require a capability (enforced in K-wave 4) ──────────
+# ── B1 — admin action is kernel-mediated (wave-4a) ──────────────────────────────
 
-@pytest.mark.xfail(reason="B1: admin-route capability cross-check lands in K-wave 4",
-                   strict=False)
 def test_admin_action_requires_capability():
-    # /api/security/{kill-switch,capabilities/issue} are admin-guarded only today.
-    # Wave 4 routes them through kernel.authorize (a capability, not just a network
-    # origin). Contract: these admin actions are kernel-mediated.
+    # Wave-4a closed the structural half of B1: /api/security/{kill-switch (engage),
+    # capabilities/issue} now route through kernel.authorize (a capability cross-check +
+    # kill-switch gate), not just admin_guard's network origin. A *presented* capability
+    # token is enforced and a halted kill-switch denies them; see tests/test_admin_kernel_wave.py
+    # for the real DENY/allow behavior. Making a valid token *mandatory* for a no-token
+    # admin request (so missing-capability is refused) is the wave-4b/K2 follow-up — the
+    # Capability is K1-tolerant today. Contract pinned here: these admin actions are
+    # kernel-mediated.
     assert classify("admin.capability_issue") is Mediation.KERNEL
     assert classify("admin.kill_switch") is Mediation.KERNEL
 

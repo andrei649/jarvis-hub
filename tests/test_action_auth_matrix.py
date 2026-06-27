@@ -71,8 +71,8 @@ class _SpyKernel:
         return Decision(self._verdict, reason="spy", tier=(action.payload or {}).get("risk_tier"))
 
 
-def _exercise(kind, spy, tmp_path):
-    """Drive the broker that owns *kind* through its request entry-point."""
+def _exercise(kind, spy, tmp_path, monkeypatch=None):
+    """Drive the broker/route that owns *kind* through its real entry-point."""
     if kind == "call.outbound":
         from agents.core.autonomy.call_broker import CallBroker
         CallBroker(enqueue=lambda *a, **k: 1, kernel=spy).request(
@@ -135,6 +135,39 @@ def _exercise(kind, spy, tmp_path):
         srv = ToolRPCServer(enqueue=lambda *a, **k: 1, kernel=spy)
         srv.register_tool("danger", _gated, gated=True)
         asyncio.run(srv.handle({"tool": "danger", "args": {}}))
+    elif kind in ("admin.kill_switch", "admin.capability_issue"):
+        # HTTP routes (not brokers/hooks): drive the REAL handler with a stub Request +
+        # a tmp_path-backed orch, injecting the spy by monkeypatching the production
+        # binding (make_action_kernel) the helper calls — no test-only seam. Branch on the
+        # EXACT kind so each handler emits its own action kind (the two share the 'admin'
+        # prefix, which the matrix's prefix assertion can't otherwise distinguish).
+        import asyncio
+
+        import agents.web as web
+        from agents.core.autonomy.policy import AutonomyPolicy
+        from agents.core.routers import security as secmod
+        from agents.core.security.capability import CapabilityBroker, KillSwitch
+
+        class _Orch:
+            kill_switch = KillSwitch(tmp_path / "kill.json")
+            capabilities = CapabilityBroker()
+            autonomy_policy = AutonomyPolicy()
+            intent_log = None
+
+        class _Req:
+            def __init__(self, body):
+                self._b, self.headers = body, {}
+
+            async def json(self):
+                return self._b
+
+        monkeypatch.setattr(web, "orch", _Orch())
+        monkeypatch.setattr("agents.core.kernel.binding.make_action_kernel", lambda orch: spy)
+        assert secmod.get_orch() is not None, "stub orch not visible to the handler"
+        if kind == "admin.kill_switch":
+            asyncio.run(secmod.kill_switch_set(_Req({"engage": True, "scope": "global"})))
+        else:
+            asyncio.run(secmod.capabilities_issue(_Req({"capabilities": ["x"]})))
     else:  # pragma: no cover - a new KERNEL kind needs an exerciser added here
         raise AssertionError(f"no exerciser for kernel-classified kind {kind!r}")
 
@@ -145,7 +178,7 @@ def test_kernel_kinds_actually_invoke_kernel(kind, monkeypatch, tmp_path):
     a snapshot can't claim 'kernel' while the broker bypasses it."""
     monkeypatch.setenv("JARVIS_ACTION_KERNEL", "1")
     spy = _SpyKernel()
-    _exercise(kind, spy, tmp_path)
+    _exercise(kind, spy, tmp_path, monkeypatch)
     assert spy.calls, f"{kind} is classified KERNEL but request() did not invoke the kernel"
     assert spy.calls[-1].kind.split(".")[0] == kind.split(".")[0]
 
@@ -155,7 +188,7 @@ def test_kernel_off_does_not_invoke_kernel(monkeypatch, tmp_path):
     monkeypatch.delenv("JARVIS_ACTION_KERNEL", raising=False)
     for kind in _KERNEL_KINDS:
         spy = _SpyKernel()
-        _exercise(kind, spy, tmp_path)
+        _exercise(kind, spy, tmp_path, monkeypatch)
         assert not spy.calls, f"{kind} invoked the kernel with the flag OFF"
 
 

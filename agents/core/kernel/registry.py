@@ -49,10 +49,14 @@ ACTION_REGISTRY: dict[str, Mediation] = {
     # Wave 3 — a gated Tool-RPC call is mediated by the kernel before it can enqueue
     # an approval task (a DENY blocks it: kill-switch / budget / loop).
     "tool.rpc": Mediation.KERNEL,
+    # Wave 4a — admin escalations cross the kernel front door (in addition to admin_guard):
+    # engaging a halt and minting a capability are mediated; a presented capability token is
+    # cross-checked, and a halted kill-switch denies them. (Disengage is NOT mediated — it
+    # must always be able to release a halt.) Mandatory-token enforcement = wave-4b/K2.
+    "admin.kill_switch": Mediation.KERNEL,
+    "admin.capability_issue": Mediation.KERNEL,
     # PENDING — privileged surfaces not yet routed through the kernel.
     "kg.write": Mediation.PENDING_KERNEL,         # wave 3 (next)
-    "admin.kill_switch": Mediation.PENDING_KERNEL,        # wave 4 (closes B1)
-    "admin.capability_issue": Mediation.PENDING_KERNEL,   # wave 4 (closes B1)
 }
 
 

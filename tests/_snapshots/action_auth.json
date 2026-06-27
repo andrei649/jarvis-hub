@@ -1,6 +1,6 @@
 {
-  "admin.capability_issue": "pending",
-  "admin.kill_switch": "pending",
+  "admin.capability_issue": "kernel",
+  "admin.kill_switch": "kernel",
   "call.outbound": "kernel",
   "kg.write": "pending",
   "mcp.mutating": "kernel",
