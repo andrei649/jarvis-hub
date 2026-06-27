@@ -31,6 +31,16 @@
 
 ## Items (newest first)
 
+### Security — cover the audit-log query/read path (coverage hardening)
+- **What:** `security/audit.py` `query()` — the read path the admin audit page uses to reconstruct
+  `SecurityEvent`s (incl. findings) from the tamper-evident chain — was **untested** (81% file). Added a
+  round-trip test (log → query, newest-first, findings reconstructed with the right type/threat/offsets)
+  and a filter test (`event_type` / `since` / `limit`). The round-trip also **re-confirms AUD-12**: the
+  stored `matched_text` comes back as the `[REDACTED:<pattern>]` marker, never the raw secret.
+- **Verified (automated):** `tests/test_audit_hardening.py` (+2) — covers audit.py lines 134-169. Full
+  suite **3,036 passed**; `ruff` + `bandit` clean. No behaviour change.
+- **⚠️ Needs you:** nothing — offline coverage hardening of an already-correct read path.
+
 ### Security — cover the guardrails scan/redact/block + streaming path (coverage hardening)
 - **What:** `security/guardrails.py` (the LLM-call wrapper that scans prompts/responses for secrets &
   PII) was 77% covered — the **entire `generate_stream` path was untested**, along with the system-prompt
