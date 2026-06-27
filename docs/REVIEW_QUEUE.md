@@ -31,6 +31,19 @@
 
 ## Items (newest first)
 
+### V3 — cross-agent interface-contract drift gate
+- **What:** a new CI gate (`tests/test_interface_contract_drift.py`) snapshots the **shared
+  schemas that cross agent boundaries** — the kernel `Action`/`Decision`/`Capability`/`Budget`
+  dataclasses (the contract every Gate-K-mediated action is built as), the `Verdict`/`Mediation`
+  enums, and the A2A pydantic wire bodies — and fails CI if any field is added/removed/renamed/
+  retyped or an enum value changes. Pure test/guard addition; **no runtime behavior change**.
+- **Verified (automated):** the 3 guard tests pass; full suite **2,973 passed**; `ruff` + `bandit`
+  clean. I also confirmed it actually bites (a field rename would fail with a precise message and
+  the `--update` regenerate hint).
+- **⚠️ Needs you:** nothing — it's a fleet-coordination safety net. (Remaining V3 tail: extending
+  the readiness matrix to components/skills needs a booted fixture; subagent return-dict shapes
+  are ad-hoc dicts that aren't statically introspectable.)
+
 ### K1 (wave-3, kg.write slice) — externally-driven KG writes route through the Action Kernel — **Gate-K COMPLETE** 🎉
 - **What:** the 6 externally-driven `/api/kg/*` mutating HTTP handlers (entity upsert/delete,
   relation add/delete, fact add, ingest) now pass `kernel.authorize` (default-off). With
