@@ -762,13 +762,39 @@ export function OnboardingPanel() {
   );
 }
 
+export function TodayPanel() {
+  // P1 G1 — "Today in Jarvis": what Jarvis *did* (autonomy) + *learned* (memory) in one feed.
+  const { d, e, loading, reload } = useApi('/api/dashboard/today');
+  const items = (d && d.items) || [];
+  const c = (d && d.counts) || {};
+  const fmt = (ts) => {
+    if (!ts) return '—';
+    const t = new Date(String(ts).replace(' ', 'T'));
+    return isNaN(t.getTime()) ? String(ts) : t.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  };
+  return (
+    <Card title="TODAY" sub={d ? `${c.actions || 0} did · ${c.learnings || 0} learned` : null} onReload={reload}>
+      <State e={e} loading={loading} n={items.length} />
+      {items.slice(0, 12).map((it, i) => (
+        <Row key={i}>
+          <Tag c={it.kind === 'action' ? 'var(--green)' : 'var(--accent-light)'}>{it.kind === 'action' ? 'did' : 'learned'}</Tag>
+          <span style={{ fontSize: 11, color: 'var(--ink-2)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+            {it.kind === 'action' ? (it.title || `#${it.id}`) : `${it.key}: ${it.value}`}
+          </span>
+          <span style={{ marginLeft: 'auto', ...mono, fontSize: 9.5, color: 'var(--ink-3)' }}>{fmt(it.ts)}</span>
+        </Row>
+      ))}
+    </Card>
+  );
+}
+
 const SECTIONS = [
   ['Memory', [DataSpacesPanel, LocalDocsPanel, NotesPanel, ReflectionPanel]],
   ['Trust', [KillSwitchPanel, KernelMetricsPanel, LoopBreakerPanel, NetworkMonitorPanel, SecretsPanel, CapabilitiesPanel, PairingPanel, InjectionScanPanel]],
   ['Interop', [A2AInboxPanel, MarketplacePanel]],
   ['Observe', [OnboardingPanel, EvalPanel, ReviewPanel, APMPanel, FeedbackPanel]],
   ['Build', [StepGenPanel, SandboxPanel, TemplatesPanel]],
-  ['Autonomy & Agents', [SchedulePanel, LearningPanel, SessionsPanel, HeartbeatPanel, TranscriptPanel, EscalationPanel]],
+  ['Autonomy & Agents', [TodayPanel, SchedulePanel, LearningPanel, SessionsPanel, HeartbeatPanel, TranscriptPanel, EscalationPanel]],
   ['Admin', [OAuthPanel, SettingsPanel, PromptsPanel, RoomsPanel, LMStudioPanel, AuthProfilesPanel]],
 ];
 

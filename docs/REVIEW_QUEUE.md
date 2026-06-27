@@ -31,6 +31,18 @@
 
 ## Items (newest first)
 
+### HUD — "Today in Jarvis" cockpit panel (P1 G1 UI)
+- **What:** a Console *Autonomy & Agents* panel (`TodayPanel`) that renders the unified-timeline
+  endpoint (`GET /api/dashboard/today`): each row is a **did** (autonomy action, green) or **learned**
+  (memory fact, accent) tag + label + local time, newest-first, under a `"N did · M learned"` header.
+  Closes the UI half of P1 G1 (the backend feed shipped in the prior item).
+- **Verified (automated):** `frontend/src/test/today-panel.test.tsx` (+2, fetch-mocked) — did/learned
+  rows + summary render, and a clean empty state. Full frontend **vitest 64 passed**; `tsc --noEmit`
+  clean; backend HUD-v2 parity green; `agents/web/v2` rebuilt + committed (the `hud-v2-build` guard).
+- **⚠️ Needs you (live pixels — CDX-9):** open Console → *Autonomy & Agents* in a real browser after
+  some autonomy + a few remembered facts, and confirm the did/learned items interleave by time and the
+  header count matches.
+
 ### Dashboard — P1 unified "Today in Jarvis" timeline (proof-gap 3/3)
 - **What:** new `memory/timeline.py:build_unified_digest(queue, memory_entries, …)` fuses what Jarvis
   **did** (autonomy tasks that reached `done`) and what it **learned** (new / updated memory facts &
