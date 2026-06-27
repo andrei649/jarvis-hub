@@ -13,12 +13,14 @@ them, which is why streamed chat worked and CI missed it.
 import sys
 from pathlib import Path
 
+import pytest
+
 repo_root = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(repo_root))
 sys.path.insert(0, str(repo_root / "agents"))
 
 from agents.core.llm.base import LLMBackend
-from agents.core.security.guardrails import GuardrailsEngine
+from agents.core.security.guardrails import GuardrailsEngine, SecurityBlockError
 from agents.core.security.types import RedactionMode
 
 
@@ -59,3 +61,67 @@ async def test_generate_defaults_when_params_omitted():
     await engine.generate("m", "hi")
     assert backend.kwargs["max_tokens"] == 1024
     assert backend.kwargs["temperature"] == 0.7
+
+
+# ── scan / redact / block behaviour on findings (covers guardrails.py:68,80,99-120) ──
+# The kwarg tests above run in WARN mode (passthrough). These exercise the parts that
+# actually act on a finding: REDACT across input/system/output, the streaming path
+# (whole method was untested), BLOCK raising, and the defensive unknown-mode fall-through.
+
+_EMAIL = "alice@example.com"  # PII the scanners flag → result.clean is False
+
+
+class _EchoBackend(LLMBackend):
+    """Returns a fixed response and records the (post-scan) prompt/system it received."""
+
+    def __init__(self, response="ok"):
+        self.response = response
+        self.seen = {}
+
+    async def generate(self, model, prompt, system="", max_tokens=1024, temperature=0.7):
+        self.seen = {"prompt": prompt, "system": system}
+        return self.response
+
+    async def generate_stream(self, model, prompt, system="", max_tokens=1024,
+                              temperature=0.7, on_token=None):
+        self.seen = {"prompt": prompt, "system": system}
+        if on_token:
+            for ch in self.response:
+                on_token(ch)
+        return self.response
+
+
+async def test_generate_redacts_input_system_and_output():
+    be = _EchoBackend(response=f"leaked {_EMAIL}")
+    eng = GuardrailsEngine(be, mode=RedactionMode.REDACT)
+    out = await eng.generate("m", prompt=f"hi {_EMAIL}", system=f"sys {_EMAIL}")
+    assert _EMAIL not in out                  # output scanned + redacted (87-90)
+    assert _EMAIL not in be.seen["prompt"]    # input redacted before the backend
+    assert _EMAIL not in be.seen["system"]    # system redacted (guardrails.py:80)
+
+
+async def test_generate_stream_scans_input_system_and_output():
+    be = _EchoBackend(response=f"out {_EMAIL}")
+    eng = GuardrailsEngine(be, mode=RedactionMode.REDACT)
+    streamed = []
+    out = await eng.generate_stream("m", prompt=f"p {_EMAIL}", system=f"s {_EMAIL}",
+                                    on_token=streamed.append)
+    assert _EMAIL not in out                  # guardrails.py:115-118
+    assert _EMAIL not in be.seen["prompt"]    # :99-102
+    assert _EMAIL not in be.seen["system"]    # :104-107
+
+
+async def test_block_mode_raises_on_finding():
+    eng = GuardrailsEngine(_EchoBackend("clean"), mode=RedactionMode.BLOCK)
+    with pytest.raises(SecurityBlockError):
+        await eng.generate("m", prompt=f"secret {_EMAIL}")
+
+
+def test_handle_findings_passthrough_on_unknown_mode():
+    # Defensive fall-through (guardrails.py:68): a mode outside WARN/REDACT/BLOCK
+    # returns the text unchanged rather than crashing.
+    eng = GuardrailsEngine(_EchoBackend("x"), mode="monitor-only")
+    payload = f"keep {_EMAIL} intact"
+    r = eng._scan_text(payload)
+    assert not r.clean
+    assert eng._handle_findings(payload, r, "input") == payload

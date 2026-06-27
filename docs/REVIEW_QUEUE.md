@@ -31,6 +31,17 @@
 
 ## Items (newest first)
 
+### Security — cover the guardrails scan/redact/block + streaming path (coverage hardening)
+- **What:** `security/guardrails.py` (the LLM-call wrapper that scans prompts/responses for secrets &
+  PII) was 77% covered — the **entire `generate_stream` path was untested**, along with the system-prompt
+  scan and the redact/block-on-finding branches. Added tests that drive a real finding (an email PII)
+  through **REDACT** (input + system + output all scrubbed) on both `generate` and `generate_stream`,
+  assert **BLOCK** raises `SecurityBlockError`, and cover the defensive unknown-mode passthrough.
+- **Verified (automated):** `tests/test_guardrails_generate_kwargs.py` (+4) — covers guardrails.py lines
+  68/80/99-120. The existing kwarg tests only ran WARN-mode passthrough; these exercise the parts that
+  actually act on a finding. Full suite **3,034 passed**; `ruff` + `bandit` clean. No behaviour change.
+- **⚠️ Needs you:** nothing — offline coverage hardening of an already-correct redaction path.
+
 ### Security — pin the SSRF IPv6-mapped/embedded-IPv4 bypass defense (coverage hardening)
 - **What:** `security/ssrf.py` was the lowest-covered file in the safety-critical core (85%) — and the
   uncovered branches were exactly the **IPv6-mapped / embedded-IPv4 unwrap** logic (`::ffff:a.b.c.d`,
