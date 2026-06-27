@@ -702,11 +702,50 @@ export function NetworkMonitorPanel() {
   );
 }
 
+export function FeedbackPanel() {
+  const { d, e, loading, reload } = useApi('/api/feedback/summary', true, true);  // admin summary
+  const [score, setScore] = useState(9);
+  const [msg, setMsg] = useState('');
+  const [sent, setSent] = useState(false);
+  const submit = () => act('/api/feedback', { kind: 'nps', score, message: msg }, () => { setSent(true); setMsg(''); reload(); });
+  const nps = d ? d.nps : null;
+  const byKind = (d && d.by_kind) || {};
+  const recent = (d && d.recent) || [];
+  return (
+    <Card title="FEEDBACK · NPS" sub={d ? (nps == null ? 'no scores' : `NPS ${nps}`) : null} onReload={reload}>
+      <State e={e} loading={loading} n={recent.length} />
+      {d && (
+        <Row>
+          <span style={mono}>nps</span>
+          <span style={{ marginLeft: 'auto', display: 'flex', gap: 5, alignItems: 'center' }}>
+            <Tag c="var(--green)">{d.promoters || 0} prom</Tag>
+            <Tag c="var(--red)">{d.detractors || 0} detr</Tag>
+            <Tag c={nps == null ? 'var(--ink-3)' : (nps >= 0 ? 'var(--green)' : 'var(--red)')}>{nps == null ? '—' : nps}</Tag>
+          </span>
+        </Row>
+      )}
+      {Object.keys(byKind).length > 0 && (
+        <Row><span style={mono}>by kind</span><span style={{ marginLeft: 'auto', ...mono, fontSize: 10, color: 'var(--ink-2)' }}>{Object.entries(byKind).map(([k, v]) => `${k}:${v}`).join('  ')}</span></Row>
+      )}
+      {recent.slice(0, 6).map((r, i) => (
+        <Row key={i}><Tag>{r.kind}{r.score != null ? ` ${r.score}` : ''}</Tag><span style={{ fontSize: 11, color: 'var(--ink-2)' }}>{(r.message || '').slice(0, 40)}</span></Row>
+      ))}
+      <div style={{ display: 'flex', gap: 6, marginTop: 8, alignItems: 'center' }}>
+        <span style={{ ...mono, fontSize: 10 }}>NPS</span>
+        <input type="number" min={0} max={10} value={score} onChange={(ev) => setScore(Number(ev.target.value))} style={{ ...inpS, width: 48 }} />
+        <input value={msg} onChange={(ev) => setMsg(ev.target.value)} placeholder="comment…" style={{ ...inpS, flex: 1 }} />
+        <button className="tool-btn" onClick={submit}>send</button>
+      </div>
+      {sent && <div style={{ fontSize: 10, color: 'var(--green)', marginTop: 4 }}>thanks — recorded locally</div>}
+    </Card>
+  );
+}
+
 const SECTIONS = [
   ['Memory', [DataSpacesPanel, LocalDocsPanel, NotesPanel, ReflectionPanel]],
   ['Trust', [KillSwitchPanel, KernelMetricsPanel, LoopBreakerPanel, NetworkMonitorPanel, SecretsPanel, CapabilitiesPanel, PairingPanel, InjectionScanPanel]],
   ['Interop', [A2AInboxPanel, MarketplacePanel]],
-  ['Observe', [EvalPanel, ReviewPanel, APMPanel]],
+  ['Observe', [EvalPanel, ReviewPanel, APMPanel, FeedbackPanel]],
   ['Build', [StepGenPanel, SandboxPanel, TemplatesPanel]],
   ['Autonomy & Agents', [SchedulePanel, LearningPanel, SessionsPanel, HeartbeatPanel, TranscriptPanel, EscalationPanel]],
   ['Admin', [OAuthPanel, SettingsPanel, PromptsPanel, RoomsPanel, LMStudioPanel, AuthProfilesPanel]],
