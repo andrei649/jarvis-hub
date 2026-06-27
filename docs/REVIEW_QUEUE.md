@@ -31,6 +31,18 @@
 
 ## Items (newest first)
 
+### HUD — Feedback / NPS panel (H23.21 UI)
+- **What:** a Console *Observe* panel that surfaces the design-partner feedback loop: it reads
+  the **NPS summary** (`GET /api/feedback/summary`, admin — promoters/detractors + per-kind counts
+  + recent comments) and carries a **submit form** (score 0–10 + comment → `POST /api/feedback`).
+  Closes the UI half of H23.21 (the backend feedback store + endpoints already shipped).
+- **Verified (automated):** `frontend/src/test/feedback-panel.test.tsx` (+2, fetch-mocked) — the
+  NPS/promoters/detractors + a recent item render and the submit control is present; clean
+  empty-state. Full frontend **vitest 60 passed**; `tsc --noEmit` clean; backend HUD-v2 parity
+  green; `agents/web/v2` rebuilt + committed (the `hud-v2-build` guard).
+- **⚠️ Needs you (live pixels — CDX-9):** open Console *Observe* in a real browser, submit an NPS
+  score, and confirm it appears in the summary. (Recruiting the actual design partners is your call.)
+
 ### K3 (recursion-depth cap) — sub-agent delegation can't tower up unbounded
 - **What:** `SubAgentManager` already capped how *wide* an agent forks (concurrency); this caps
   how *deep* — a sub-agent that spawns a sub-agent that spawns a sub-agent now hits a
