@@ -265,6 +265,7 @@ class AutonomyCoordinator:
         self._orch.subagents = SubAgentManager(
             runner=_subagent_runner,
             max_concurrent=int(self._orch.get_setting("autonomy.max_subagents", 3) or 3),
+            max_depth=int(self._orch.get_setting("autonomy.max_subagent_depth", 8) or 8),
         )
 
         return executor
