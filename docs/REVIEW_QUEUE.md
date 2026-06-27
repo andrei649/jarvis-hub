@@ -31,6 +31,20 @@
 
 ## Items (newest first)
 
+### HUD — Onboarding panel (H23.20 UI)
+- **What:** a Console *Observe* panel that drives the first-run wizard: it reads
+  `GET /api/onboarding/wizard` and renders the ordered steps (intro → model → say-hello →
+  autonomy-budget) with **done/pending** state + progress + the **cold-start hint** (shown when
+  no model backend is reachable), and a per-step **done** button records the funnel event
+  (`POST /api/onboarding/funnel`) so completion **persists across reloads**. Closes the UI half
+  of H23.20 (backend already shipped).
+- **Verified (automated):** `frontend/src/test/onboarding-panel.test.tsx` (+2, fetch-mocked) —
+  steps render with completed-marking + the mark-done control, and the cold-start hint surfaces.
+  Full frontend **vitest 62 passed**; `tsc --noEmit` clean; backend HUD-v2 parity green;
+  `agents/web/v2` rebuilt + committed.
+- **⚠️ Needs you (live pixels — CDX-9):** on a fresh install, open Console *Observe* and confirm
+  the onboarding steps + cold-start hint render and that marking a step done sticks across reload.
+
 ### HUD — Feedback / NPS panel (H23.21 UI)
 - **What:** a Console *Observe* panel that surfaces the design-partner feedback loop: it reads
   the **NPS summary** (`GET /api/feedback/summary`, admin — promoters/detractors + per-kind counts
