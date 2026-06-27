@@ -31,6 +31,25 @@
 
 ## Items (newest first)
 
+### K1 (payment micro-wave) — payments route through the Action Kernel
+- **What:** an *admissible* `request_payment` (one the mandate's hard caps already
+  accept) now passes through `kernel.authorize`. A kernel **DENY** — kill-switch
+  engaged, over-budget, or a runaway loop — refuses the payment **before** it can
+  become `pending`; GRANT/QUEUE fall through to the existing always-approval flow.
+  The kernel can only *add* a hard deny; it can't relax the rule that every payment
+  needs explicit owner approval. The binding (`kernel/binding.py`) is now shared with
+  the wave-1 brokers, so there's one definition of what the kernel front door is bound
+  to. **Default-off** behind `JARVIS_ACTION_KERNEL` — zero behavior change until enabled.
+- **Verified (automated + scratch):** unit tests (deny-before-pending, flag-off skips
+  the kernel even when bound, inadmissible never reaches it, GRANT/QUEUE stay pending)
+  **plus a real-primitives integration test**: the production `kernel.authorize` bound
+  over a real `AutonomyPolicy` + real `KillSwitch` — halting the switch denies a
+  payment (nothing becomes pending), releasing it lets the admissible payment proceed.
+  Full suite green (2,928 passed).
+- **⚠️ Needs you:** during manual testing, set `JARVIS_ACTION_KERNEL=1`, engage the
+  kill-switch, and confirm a `request_payment` is refused (`kernel_denied`) and shows a
+  `deny_payment` row in the payments audit; then release and confirm it goes to pending.
+
 ### H23.17 (slice) — i18n completeness gate
 - **What:** `frontend/src/test/i18n-completeness.test.ts` fails CI if any locale (en/ro)
   is missing a key the reference has, has an extra key, or has a blank string. Runs in the

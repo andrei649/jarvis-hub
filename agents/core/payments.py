@@ -49,13 +49,16 @@ class PaymentBroker(JsonStore):
     metadata=None)`` (e.g. core.security.anchor.IntentLog); when None, audit is
     skipped (unit tests inject a fake to assert it's called)."""
 
-    # ORIZONT-24 action kind (for the action-auth registry). Payment is wired in
-    # web.py with a no-enqueue flow, so its kernel hook is a follow-up micro-wave;
-    # classified PENDING_KERNEL until then.
+    # ORIZONT-24 action kind (for the action-auth registry). The payment micro-wave
+    # routes an *admissible* request through kernel.authorize (default-off behind
+    # JARVIS_ACTION_KERNEL); classified KERNEL in agents/core/kernel/registry.py.
     KIND = "payment"
 
-    def __init__(self, path: str | Path = DEFAULT_PATH, audit=None) -> None:
+    def __init__(self, path: str | Path = DEFAULT_PATH, audit=None,
+                 *, kernel=None, agent: str = "jarvis") -> None:
         self._audit = audit
+        self._kernel = kernel   # ORIZONT-24 K1: bound kernel.authorize (default-off)
+        self._agent = agent
         super().__init__(path)
 
     def _serialize(self):
@@ -143,6 +146,27 @@ class PaymentBroker(JsonStore):
         if reason:
             self._record("deny_payment", reason, mandate_id=mandate_id, payee=payee, amount=amount)
             return {"ok": False, "reason": reason}
+        # ORIZONT-24 K1 (payment micro-wave): mediate the *admissible* request through
+        # the Action Kernel when enabled (default-off → this block is skipped and the
+        # path below is byte-identical to before). A DENY (kill-switch engaged /
+        # over-budget / runaway loop) refuses the request before it can become pending;
+        # GRANT/QUEUE fall through to the existing approval-gated pending flow — payments
+        # never auto-settle, so the kernel only adds a hard *deny* capability, it can't
+        # relax the always-approval rule.
+        if self._kernel is not None:
+            from agents.core.kernel import Action, Verdict, kernel_enabled
+            if kernel_enabled():
+                decision = self._kernel(Action(
+                    kind=self.KIND, agent=self._agent,
+                    title=f"Pay {payee} {amount} {currency}",
+                    payload={"mandate_id": mandate_id, "payee": payee,
+                             "amount": float(amount), "currency": currency.upper(),
+                             "memo": str(memo)[:280]},
+                    origin="generated"))
+                if decision.verdict is Verdict.DENY:
+                    self._record("deny_payment", f"kernel:{decision.reason}",
+                                 mandate_id=mandate_id, payee=payee, amount=amount)
+                    return {"ok": False, "reason": "kernel_denied", "detail": decision.reason}
         payment = {
             "id": secrets.token_urlsafe(8),
             "mandate_id": mandate_id,

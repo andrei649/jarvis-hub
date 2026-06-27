@@ -144,21 +144,10 @@ class AutonomyCoordinator:
         # ORIZONT-24 K1: one bound kernel.authorize, injected into the wave-1 brokers
         # (default-off behind JARVIS_ACTION_KERNEL). Audit → intent_log (IntentLog.record),
         # not orch.audit. None if the policy isn't available → brokers stay kernel-less.
-        def _make_action_kernel():
-            import functools
-            from .kernel import authorize as _authorize_action
-            pol = (getattr(getattr(self._orch, "autonomy", None), "policy", None)
-                   or getattr(self._orch, "autonomy_policy", None))
-            if pol is None:
-                return None
-            return functools.partial(
-                _authorize_action,
-                kill_switch=getattr(self._orch, "kill_switch", None),
-                capabilities=getattr(self._orch, "capabilities", None),
-                policy=pol,
-                audit=getattr(self._orch, "intent_log", None),
-            )
-        _action_kernel = _make_action_kernel()
+        # The binding lives in kernel.binding (shared with web.py's payment broker), so
+        # there's one definition of what the kernel front door is bound to.
+        from .kernel.binding import make_action_kernel
+        _action_kernel = make_action_kernel(self._orch)
 
         from .writeback import WriteBackBroker
         self._orch.writeback = WriteBackBroker(

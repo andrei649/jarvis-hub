@@ -30,13 +30,16 @@ class Mediation(StrEnum):
 # everything else is PENDING_KERNEL until its wave lands (see the design spec's
 # migration order: brokers → plugin egress → MCP+KG → admin routes).
 ACTION_REGISTRY: dict[str, Mediation] = {
-    # Wave 1 — kernel-mediated (this PR).
+    # Wave 1 — kernel-mediated.
     "node.dispatch": Mediation.KERNEL,
     "call.outbound": Mediation.KERNEL,
     "social.*": Mediation.KERNEL,
     "writeback.*": Mediation.KERNEL,
+    # Payment micro-wave — admissible requests routed through kernel.authorize
+    # (a DENY blocks before the payment becomes pending; PaymentBroker carries a
+    # `kernel` hook, bound in web.py via kernel.binding.make_action_kernel).
+    "payment": Mediation.KERNEL,
     # PENDING — privileged surfaces not yet routed through the kernel.
-    "payment": Mediation.PENDING_KERNEL,          # wired in web.py (no enqueue) — micro-wave follow-up
     "plugin.egress": Mediation.PENDING_KERNEL,    # wave 2 (closes B3: audited strict-egress downgrade)
     "mcp.mutating": Mediation.PENDING_KERNEL,     # wave 3
     "kg.write": Mediation.PENDING_KERNEL,         # wave 3
