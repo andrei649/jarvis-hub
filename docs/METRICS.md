@@ -31,9 +31,21 @@ the thing that turns "prove value to a user" from a slogan into a number.
     "p95_latency_ms": 48.0           // 95th pct of per-turn non-LLM total_ms; null if no traces
   },
   "interrupt_budget": { "per_day": 4, "remaining": 3 }, // null if the budget isn't wired
+  "proposal_funnel": {                  // P1 diagnostic — cohort over proposals CREATED in the window
+    "proposed": 4, "surfaced": 2,       // surfaced = a decision card reached the inbox (pushed)
+    "accepted": 2, "rejected": 1, "pending": 1,
+    "surface_rate": 0.5,                // surfaced / proposed  (null if none proposed)
+    "accept_rate": 0.6667               // accepted / (accepted + rejected)  (null if none resolved)
+  },                                     // null if no queue
   "raw": { "accepted": 4, "rejected": 1, "decisions": 5, "interrupts": 2, "latency_samples": 5 }
 }
 ```
+
+> **`proposal_funnel` localizes a low north-star.** The north-star counts *accepted* actions; the
+> funnel says **where proposals drop off** — too few proposed (watchers quiet), proposed-but-never-
+> surfaced (policy auto-handling / not pushed), or surfaced-but-rejected (proposals not useful). It is
+> a *created-in-window cohort* (so `proposed` uses `created_at`, unlike `raw.accepted` which is
+> resolved-in-window by `updated_at`).
 
 ## Sources (reused, not duplicated)
 

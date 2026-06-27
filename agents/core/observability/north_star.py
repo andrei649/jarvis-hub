@@ -97,6 +97,39 @@ def check_guardrails(counter_metrics: dict) -> list[dict]:
     return breaches
 
 
+def _proposal_funnel(queue, cutoff: float, fetch_limit: int):
+    """P1 diagnostic — where proactive proposals drop off. A *cohort* funnel over the
+    proposals **created** in the window: of those, how many surfaced (a decision card
+    reached the inbox), were accepted (``done``), rejected, or are still pending.
+    ``surface_rate``/``accept_rate`` localize the drop-off, so a low north-star is
+    diagnosable: not enough proposed? proposed but never surfaced? surfaced but rejected?
+    Returns ``None`` with no queue."""
+    if queue is None:
+        return None
+    proposed = surfaced = accepted = rejected = 0
+    for t in queue.list(limit=fetch_limit):
+        if not _in_window_iso(getattr(t, "created_at", None), cutoff):
+            continue
+        proposed += 1
+        if getattr(t, "pushed", 0):
+            surfaced += 1
+        st = str(getattr(t, "status", "")).lower()
+        if st == "done":
+            accepted += 1
+        elif st == "rejected":
+            rejected += 1
+    resolved = accepted + rejected
+    return {
+        "proposed": proposed,
+        "surfaced": surfaced,
+        "accepted": accepted,
+        "rejected": rejected,
+        "pending": proposed - accepted - rejected,   # still-open (or failed)
+        "surface_rate": round(surfaced / proposed, 4) if proposed else None,
+        "accept_rate": round(accepted / resolved, 4) if resolved else None,
+    }
+
+
 def compute_north_star(
     queue,
     run_history=None,
@@ -208,6 +241,8 @@ def compute_north_star(
         "guardrail_breaches": breaches,
         "guardrails_ok": not breaches,
         "interrupt_budget": budget_block,
+        # P1 proof-gap: the proposal funnel — diagnoses *where* proactive proposals drop off.
+        "proposal_funnel": _proposal_funnel(queue, cutoff, fetch_limit),
         "raw": {
             "accepted": done,
             "rejected": rejected,
