@@ -31,6 +31,20 @@
 
 ## Items (newest first)
 
+### HUD — north-star meter now surfaces the P1 proactive metrics
+- **What:** the ObserveMode **`NorthStarMeter`** (`modes2.tsx`) gained a third **PROACTIVE** row that
+  renders the metrics shipped in #369/#370 but previously invisible in the HUD: **done overnight** +
+  **night share** (`night_shift.done` / `.pct`) and **surfaced/proposed** + **accept rate**
+  (`proposal_funnel.surface_rate` / `.accept_rate`). Closes the value loop — the proof-gap numbers are
+  now *seen*, not just served on `/api/metrics/north-star`. Same single-user honesty as the rest of the
+  meter: a null block renders **"—"**, never a fabricated `0%`.
+- **Verified (automated):** `frontend/src/test/trust-analytics.test.tsx` (+2) — the proactive row
+  renders night-share 50% / surface 75% / accept 67% from a populated payload, and honest "—" when the
+  blocks are null. Full frontend **vitest 66 passed**; `tsc --noEmit` clean; `agents/web/v2` rebuilt +
+  committed (the `hud-v2-build` guard). Frontend-only — no backend/route change.
+- **⚠️ Needs you (live pixels — CDX-9):** open the HUD *Observe* mode and confirm the PROACTIVE row
+  shows the overnight count + night share + funnel rates once there's real autonomy activity.
+
 ### HUD — "Today in Jarvis" cockpit panel (P1 G1 UI)
 - **What:** a Console *Autonomy & Agents* panel (`TodayPanel`) that renders the unified-timeline
   endpoint (`GET /api/dashboard/today`): each row is a **did** (autonomy action, green) or **learned**
