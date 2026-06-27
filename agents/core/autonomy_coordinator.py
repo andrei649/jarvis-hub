@@ -120,7 +120,15 @@ class AutonomyCoordinator:
             out = await self._orch.process(prompt, channel="autonomy")
             return {"status": "ok", "kind": task.kind, "output": out}
 
-        executor = TaskExecutor(fallback=_llm)
+        # K3: optional per-task wall-time budget (JARVIS_TASK_MAX_SECONDS, unset = unbounded).
+        _tms = os.environ.get("JARVIS_TASK_MAX_SECONDS", "").strip()
+        try:
+            _task_budget = float(_tms) if _tms else None
+        except ValueError:
+            _task_budget = None
+        if _task_budget is not None and _task_budget <= 0:
+            _task_budget = None
+        executor = TaskExecutor(fallback=_llm, max_wall_seconds=_task_budget)
         for kw in ("research", "search", "monitor", "scan", "lookup", "check"):
             executor.register(kw, _research)
         for kw in ("summarize", "analyze", "review", "draft", "plan", "prepare"):

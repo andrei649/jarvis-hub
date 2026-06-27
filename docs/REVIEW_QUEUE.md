@@ -31,6 +31,19 @@
 
 ## Items (newest first)
 
+### K3 (per-task wall-time budget) — a task can't run forever
+- **What:** the autonomy worker's `TaskExecutor` now supports a per-task **wall-time budget**
+  (`JARVIS_TASK_MAX_SECONDS`). A task whose handler overruns is **cancelled** at the dispatch
+  point and returns a clean `{"status":"failed","reason":"wall_time_budget_exceeded"}` — an
+  OWASP unbounded-consumption guard. **Default-off** (unset / ≤0 = unbounded → byte-identical).
+- **Verified (automated):** `tests/test_executor_budget.py` (+5) — unbounded default runs
+  normally, a within-budget task completes, an **overrunning task is cancelled** (its handler
+  body provably does *not* finish) and returns the clean failed result, non-dict results still
+  wrap, and the env parsing handles blank/zero/garbage. Full suite **2,992 passed**; ruff + bandit clean.
+- **⚠️ Needs you:** if you enable `JARVIS_TASK_MAX_SECONDS`, pick a value above your **legitimate**
+  longest task (deep-research / long autonomy runs can be minutes) — too low will cancel real work.
+  The token + recursion-depth budget dimensions are still pending (they need handler-level hooks).
+
 ### HUD — Track-K safety panels (H23.3 + this session's backends)
 - **What:** the Console *Trust* section now surfaces the kernel safety controls so an operator
   doesn't need `curl`. The **kill-switch one-tap** (HALT-ALL / disengage) was already there;

@@ -12,6 +12,7 @@ dispatch pure makes it unit-testable offline.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from typing import Awaitable, Callable, Optional
 
@@ -21,9 +22,14 @@ Handler = Callable[[object], Awaitable[dict]]
 
 
 class TaskExecutor:
-    def __init__(self, fallback: Optional[Handler] = None):
+    def __init__(self, fallback: Optional[Handler] = None,
+                 max_wall_seconds: Optional[float] = None):
         self._handlers: dict[str, Handler] = {}
         self.fallback = fallback
+        # K3 (OWASP unbounded-consumption): a per-task wall-time budget. None = unbounded
+        # (the default → byte-identical behavior); set via JARVIS_TASK_MAX_SECONDS at the
+        # worker. A task that overruns is cancelled and returns a clean failed result.
+        self.max_wall_seconds = max_wall_seconds
 
     def register(self, prefix: str, handler: Handler) -> "TaskExecutor":
         """Register a handler for any task kind starting with `prefix`."""
@@ -43,5 +49,14 @@ class TaskExecutor:
         handler = self.resolve(getattr(task, "kind", ""))
         if handler is None:
             return {"status": "noop", "note": f"no handler for kind={getattr(task, 'kind', '?')}"}
-        result = await handler(task)
+        if self.max_wall_seconds is not None:
+            try:
+                result = await asyncio.wait_for(handler(task), timeout=self.max_wall_seconds)
+            except TimeoutError:
+                logger.warning("task wall-time budget exceeded (kind=%s, %.0fs)",
+                               getattr(task, "kind", "?"), self.max_wall_seconds)
+                return {"status": "failed", "reason": "wall_time_budget_exceeded",
+                        "budget_seconds": self.max_wall_seconds}
+        else:
+            result = await handler(task)
         return result if isinstance(result, dict) else {"status": "ok", "output": result}
