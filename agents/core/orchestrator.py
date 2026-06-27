@@ -131,6 +131,12 @@ class Orchestrator:
         self.components = ComponentRegistry(self, logger)
         reg = self.components
 
+        # K3: one process-wide loop circuit breaker (OWASP unbounded-consumption guard).
+        # Set eagerly (trivial in-memory) so it's present before autonomy wiring; bound
+        # ONLY into the broker-mediated kernel (the agent action path) — never routes/egress.
+        from .kernel.budget import LoopDetector
+        self.loop_detector = LoopDetector()
+
         def _capabilities():
             m = importlib.import_module(".security.capability", "agents.core")
             return m.CapabilityBroker(), m.KillSwitch()
