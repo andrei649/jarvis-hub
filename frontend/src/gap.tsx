@@ -741,11 +741,32 @@ export function FeedbackPanel() {
   );
 }
 
+export function OnboardingPanel() {
+  const { d, e, loading, reload } = useApi('/api/onboarding/wizard');
+  const steps = (d && d.steps) || [];
+  const done = new Set((d && d.completed) || []);
+  return (
+    <Card title="ONBOARDING" sub={d ? (d.complete ? 'complete ✓' : `${done.size}/${steps.length}`) : null} onReload={reload}>
+      <State e={e} loading={loading} n={steps.length} />
+      {d && d.hint && <Row><span style={{ color: 'var(--amber)', fontSize: 11 }}>⚠ {d.hint}</span></Row>}
+      {steps.map((s) => {
+        const ok = done.has(s.key);
+        return (
+          <Row key={s.key}>
+            <span style={{ color: ok ? 'var(--green)' : 'var(--ink-2)' }}>{ok ? '✓' : '○'} {s.title}</span>
+            {!ok && <button className="tool-btn" style={{ marginLeft: 'auto' }} onClick={() => act('/api/onboarding/funnel', { step: s.key, event: 'complete' }, reload)}>done</button>}
+          </Row>
+        );
+      })}
+    </Card>
+  );
+}
+
 const SECTIONS = [
   ['Memory', [DataSpacesPanel, LocalDocsPanel, NotesPanel, ReflectionPanel]],
   ['Trust', [KillSwitchPanel, KernelMetricsPanel, LoopBreakerPanel, NetworkMonitorPanel, SecretsPanel, CapabilitiesPanel, PairingPanel, InjectionScanPanel]],
   ['Interop', [A2AInboxPanel, MarketplacePanel]],
-  ['Observe', [EvalPanel, ReviewPanel, APMPanel, FeedbackPanel]],
+  ['Observe', [OnboardingPanel, EvalPanel, ReviewPanel, APMPanel, FeedbackPanel]],
   ['Build', [StepGenPanel, SandboxPanel, TemplatesPanel]],
   ['Autonomy & Agents', [SchedulePanel, LearningPanel, SessionsPanel, HeartbeatPanel, TranscriptPanel, EscalationPanel]],
   ['Admin', [OAuthPanel, SettingsPanel, PromptsPanel, RoomsPanel, LMStudioPanel, AuthProfilesPanel]],
