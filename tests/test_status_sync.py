@@ -25,7 +25,7 @@ status_sync = _load()
 
 def test_count_routes_matches_snapshot():
     n = status_sync.count_routes()
-    snap = json.loads((REPO / "tests" / "_snapshots" / "route_surface.json").read_text())
+    snap = json.loads((REPO / "tests" / "_snapshots" / "route_surface.json").read_text(encoding="utf-8"))
     assert n == len(snap)
     assert n > 300  # sanity: the app has hundreds of routes
 
@@ -64,5 +64,6 @@ def test_current_counts_missing_tokens_are_none():
 
 def test_live_status_md_tokens_are_parseable():
     # The real STATUS.md must carry both tokens so the tool can keep them in sync.
-    c = status_sync.current_counts((REPO / "STATUS.md").read_text())
+    # encoding pinned: STATUS.md is UTF-8 (→/✅/emoji); Windows' default cp1252 would raise.
+    c = status_sync.current_counts((REPO / "STATUS.md").read_text(encoding="utf-8"))
     assert c["tests"] is not None and c["routes"] is not None

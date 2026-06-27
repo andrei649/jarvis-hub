@@ -39,7 +39,7 @@ _ROUTES_RE = re.compile(r"(HTTP routes:\*\* )(\d+)")
 
 def count_routes() -> int:
     """Number of distinct METHOD+PATH routes, from the parity snapshot."""
-    return len(json.loads(ROUTE_SNAPSHOT.read_text()))
+    return len(json.loads(ROUTE_SNAPSHOT.read_text(encoding="utf-8")))
 
 
 def count_tests(repo: Path = REPO) -> int:
@@ -93,7 +93,9 @@ def main(argv: list[str]) -> int:
     routes = count_routes()
     tests = count_tests()
     derived = {"tests": tests, "routes": routes}
-    text = STATUS.read_text()
+    # Pin UTF-8 (STATUS.md has →/✅/emoji) — the platform default is cp1252 on Windows
+    # and would raise UnicodeDecodeError; newline="\n" on write keeps the repo's LF.
+    text = STATUS.read_text(encoding="utf-8")
     cur = current_counts(text)
 
     if check:
@@ -107,7 +109,7 @@ def main(argv: list[str]) -> int:
 
     new = apply_to_status(text, tests=tests, routes=routes)
     if new != text:
-        STATUS.write_text(new)
+        STATUS.write_text(new, encoding="utf-8", newline="\n")
         print(f"STATUS.md updated → tests={_fmt(tests)} routes={routes} (was {cur})")
     else:
         print("STATUS.md already in sync:", json.dumps(derived))
