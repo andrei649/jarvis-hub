@@ -212,6 +212,7 @@ class AutonomyCoordinator:
             secret_broker=getattr(self._orch, "secret_broker", None),
             enqueue=self._orch.autonomy_queue.enqueue,
             audit=getattr(self._orch, "audit", None),
+            kernel=_action_kernel,   # ORIZONT-24 wave-3: mediate gated tools (default-off)
         )
 
         async def _rpc_echo(args):

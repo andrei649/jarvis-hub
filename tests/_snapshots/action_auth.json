@@ -8,6 +8,6 @@
   "payment": "kernel",
   "plugin.egress": "kernel",
   "social.*": "kernel",
-  "tool.rpc": "pending",
+  "tool.rpc": "kernel",
   "writeback.*": "kernel"
 }

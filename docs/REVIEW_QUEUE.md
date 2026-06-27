@@ -31,6 +31,25 @@
 
 ## Items (newest first)
 
+### K1 (wave-3, Tool-RPC slice) — gated Tool-RPC calls route through the Action Kernel
+- **What:** a *gated* (external/mutating) Tool-RPC call — the path a sandboxed agent
+  script uses to reach a mutating tool — now passes the **kernel** before it can even
+  enqueue its approval task. With `JARVIS_ACTION_KERNEL=1`, a **halted kill-switch
+  blocks gated Tool-RPC calls** (plus over-budget / runaway-loop denials), returning
+  `kernel_denied`. Read-only inline tools are untouched (they run with no side effects).
+  **Default-off** — zero change until enabled.
+- **Verified (automated + scratch):** unit tests (flag-off skips the kernel even when
+  bound, DENY blocks before the enqueue + audited, GRANT still enqueues, **read-only
+  tools never consult the kernel**, args *keys* only in the payload — no values) **plus
+  a real-primitives integration**: the production `kernel.authorize` over a real
+  `AutonomyPolicy` + real `KillSwitch` — engage → not enqueued, release → enqueued. The
+  action-auth matrix proves `tool.rpc` routes through the kernel when on / not when off.
+  Full suite green (2,953 passed).
+- **⚠️ Needs you:** Tool-RPC gated tools are an internal sandbox surface (no gated tool
+  is registered by default beyond the `echo`/`time` read-only built-ins). When you wire
+  a real gated tool, enable the kernel flag, engage the kill-switch, and confirm the
+  gated call returns `kernel_denied` rather than enqueuing.
+
 ### K1 (wave-3, MCP slice) — MCP mutating tools route through the Action Kernel
 - **What:** the MCP write surface (`MutatingRouteTool` — today just
   `route_memory_remember`, double-kill-switched off by default) now also passes the

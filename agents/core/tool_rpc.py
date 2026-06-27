@@ -36,12 +36,13 @@ class ToolRPCServer:
     """Allowlisted, risk-gated, secret-scrubbed tool surface for sandboxed code."""
 
     def __init__(self, secret_broker=None, enqueue: Optional[Callable] = None,
-                 audit=None, agent: str = "jarvis") -> None:
+                 audit=None, agent: str = "jarvis", kernel=None) -> None:
         self._tools: dict[str, dict] = {}
         self._secrets = secret_broker
         self._enqueue = enqueue
         self._audit = audit
         self.agent = agent
+        self._kernel = kernel   # ORIZONT-24 K1 wave-3: bound kernel.authorize (default-off)
 
     # ── registration (the allowlist) ─────────────────────────────────────────
 
@@ -72,6 +73,13 @@ class ToolRPCServer:
         if spec["gated"]:
             # External/mutating tool: never runs from the sandbox. Enqueue an
             # ask-tier governed task; the script gets back "approval_required".
+            # ORIZONT-24 K1 wave-3: mediate the gated tool through the Action Kernel
+            # first (default-off). A DENY (halted kill-switch / over-budget / runaway
+            # loop) refuses it before it even reaches the approval queue.
+            denied = self._kernel_denial(name, args)
+            if denied is not None:
+                self._record("toolrpc.kernel_denied", f"{name}: {denied}")
+                return {"ok": False, "reason": "kernel_denied", "tool": name, "detail": denied}
             if self._enqueue is None:
                 return {"ok": False, "reason": "approval_required", "tool": name}
             try:
@@ -128,6 +136,25 @@ class ToolRPCServer:
         if isinstance(obj, list):
             return [self._scrub(v) for v in obj]
         return obj
+
+    def _kernel_denial(self, name: str, args: dict) -> Optional[str]:
+        """ORIZONT-24 K1 wave-3: ask the Action Kernel whether this gated tool may run.
+
+        Returns a deny-reason string (block) or ``None`` (allow). Default-off: no kernel
+        bound, or ``JARVIS_ACTION_KERNEL`` unset → ``None`` (unchanged behavior). Only the
+        arg *keys* go in the payload, never values (which may carry secrets/PII).
+        """
+        if self._kernel is None:
+            return None
+        from agents.core.kernel import Action, Verdict, kernel_enabled
+        if not kernel_enabled():
+            return None
+        decision = self._kernel(Action(
+            kind="tool.rpc", agent=self.agent,
+            title=f"tool-rpc {name}",
+            payload={"tool": name, "args_keys": sorted((args or {}).keys()), "target": name},
+            origin="generated"))
+        return decision.reason if decision.verdict is Verdict.DENY else None
 
     def _record(self, action: str, why: str, **meta) -> None:
         if self._audit is None:
