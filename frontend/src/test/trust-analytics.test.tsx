@@ -75,6 +75,48 @@ describe('ObserveMode — north-star meter is live', () => {
     expect(screen.getByText('25%')).toBeTruthy();
     expect(screen.getByText('100%')).toBeTruthy();
   });
+
+  it('surfaces the P1 proactive row — night-shift share + proposal funnel', async () => {
+    mockJson({
+      '/api/metrics/north-star': {
+        days: 7,
+        north_star: { accepted_per_active_user: 3, total_accepted: 6, active_users: 2 },
+        counter_metrics: { interrupt_rate_per_day: 1, reject_rate: 0.2, local_pct: 80, p95_latency_ms: 20 },
+        night_shift: { done: 4, pct: 0.5, window: [23, 6] },
+        proposal_funnel: { proposed: 8, surfaced: 6, accepted: 4, rejected: 2, pending: 2, surface_rate: 0.75, accept_rate: 0.6667 },
+        raw: { decisions: 8 },
+      },
+    });
+
+    render(<ObserveMode t={t} />);
+    await waitFor(() => expect(screen.getByText('done overnight')).toBeTruthy());
+    expect(screen.getByText('night share')).toBeTruthy();
+    expect(screen.getByText('4')).toBeTruthy();          // night_shift.done
+    expect(screen.getByText('50%')).toBeTruthy();         // night_shift.pct → 50%
+    expect(screen.getByText('75%')).toBeTruthy();         // surface_rate → 75%
+    expect(screen.getByText('67%')).toBeTruthy();         // accept_rate 0.6667 → 67%
+    expect(screen.getByText('surfaced / proposed')).toBeTruthy();
+    expect(screen.getByText('accept rate')).toBeTruthy();
+  });
+
+  it('renders the proactive row honestly as "—" when those blocks are absent', async () => {
+    mockJson({
+      '/api/metrics/north-star': {
+        days: 7,
+        north_star: { accepted_per_active_user: 0, total_accepted: 0, active_users: 0 },
+        counter_metrics: { interrupt_rate_per_day: 0, reject_rate: null, local_pct: null, p95_latency_ms: null },
+        night_shift: { done: 0, pct: null, window: [23, 6] },
+        proposal_funnel: null,
+        raw: { decisions: 0 },
+      },
+    });
+
+    render(<ObserveMode t={t} />);
+    await waitFor(() => expect(screen.getByText('night share')).toBeTruthy());
+    // pct null + funnel null → em-dash, never a fabricated 0%
+    expect(screen.getByText('surfaced / proposed')).toBeTruthy();
+    expect(screen.getAllByText('—').length).toBeGreaterThanOrEqual(3);
+  });
 });
 
 describe('TrustMode — audit chain is verified live', () => {

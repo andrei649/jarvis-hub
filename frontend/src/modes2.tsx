@@ -158,6 +158,8 @@ function NorthStarMeter(){
   },[]);
   const ns = (d && d.north_star) || {};
   const cm = (d && d.counter_metrics) || {};
+  const nsh = (d && d.night_shift) || {};        // P1 — "works while you sleep"
+  const pf = (d && d.proposal_funnel) || {};     // P1 — where proposals drop off
   const has = v => v !== null && v !== undefined;
   const n  = (v,suf='') => has(v) ? (v+suf) : '—';            // plain number
   const p1 = v => has(v) ? (Math.round(v)+'%') : '—';          // already 0–100
@@ -182,6 +184,13 @@ function NorthStarMeter(){
         <div className="stat-card"><div className="sv">{p1(cm.local_pct)}</div><div className="sl">% served local</div></div>
         <div className="stat-card"><div className="sv">{n(cm.p95_latency_ms,'ms')}</div><div className="sl">p95 turn latency</div></div>
         <div className="stat-card"><div className="sv">{has(ns.active_users)&&ns.active_users===0?'idle':n((d&&d.raw)?d.raw.decisions:undefined)}</div><div className="sl">decisions · window</div></div>
+      </div>
+      <SubH>PROACTIVE · works-while-you-sleep + proposal funnel</SubH>
+      <div className="mem-grid">
+        <div className="stat-card"><div className="sv">{n(nsh.done)}</div><div className="sl">done overnight</div></div>
+        <div className="stat-card"><div className="sv">{p100(nsh.pct)}</div><div className="sl">night share</div></div>
+        <div className="stat-card"><div className="sv">{p100(pf.surface_rate)}</div><div className="sl">surfaced / proposed</div></div>
+        <div className="stat-card"><div className="sv">{p100(pf.accept_rate)}</div><div className="sl">accept rate</div></div>
       </div>
     </div>
   );
