@@ -1175,6 +1175,19 @@ class Orchestrator:
             return ""
         return "Relevant long-term memory (recall):\n" + "\n".join(lines) + "\n\n"
 
+    def _agent_call_timeout(self) -> float:
+        """CDX-6: the per-agent LLM-call ceiling, in seconds.
+
+        Was a hard-coded ``120.0`` shared invisibly across chat / deep-research /
+        autonomy / eval; now a visible ``agents.agent_timeout_seconds`` setting,
+        clamped to ≥1s and falling back to 120 on a non-numeric value so a bad
+        config can never disable the timeout entirely.
+        """
+        try:
+            return max(1.0, float(self.get_setting("agents.agent_timeout_seconds", 120)))
+        except (TypeError, ValueError):
+            return 120.0
+
     async def _call_agents_parallel(
         self, agent_ids: list[str], text: str, context: dict, plugin_data: dict = None
     ) -> dict[str, str]:
@@ -1184,6 +1197,7 @@ class Orchestrator:
             self.session_id, last_n=self.get_setting("memory.context_window", 6))
         plugin_block = self._format_plugin_data(plugin_data or {})
         recall_block = await self._recall_block(text)
+        agent_timeout = self._agent_call_timeout()  # CDX-6: tunable, not a hard-coded 120s
 
         async def _run_agent(agent_id: str) -> tuple[str, str, float]:
             enriched_text = text
@@ -1208,12 +1222,12 @@ class Orchestrator:
             try:
                 resp = await asyncio.wait_for(
                     self.agents[agent_id].process(enriched_text, context),
-                    timeout=120.0,
+                    timeout=agent_timeout,
                 )
                 return agent_id, resp, self.agents[agent_id].last_latency
             except asyncio.TimeoutError:
                 self.agents[agent_id]._record_failure("timeout")
-                log_error(logger, E_LLM_TIMEOUT, timeout=120)
+                log_error(logger, E_LLM_TIMEOUT, timeout=int(agent_timeout))
                 return agent_id, f"[{agent_id} timeout]", 0.0
             except Exception as e:
                 self.agents[agent_id]._record_failure(str(e))

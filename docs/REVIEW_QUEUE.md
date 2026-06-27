@@ -31,6 +31,19 @@
 
 ## Items (newest first)
 
+### Cleanup — per-agent call timeout is now a tunable setting (CDX-6)
+- **What:** `_call_agents_parallel` hard-coded a `120.0`s per-agent LLM-call timeout — one invisible
+  ceiling shared across chat / deep-research / autonomy / eval. Extracted to
+  `Orchestrator._agent_call_timeout()`, which reads the **`agents.agent_timeout_seconds`** setting
+  (default 120), clamps it to **≥1s**, and falls back to 120 on a non-numeric value so a bad config can
+  never disable the timeout. The ceiling is now visible and per-context tunable.
+- **Verified (automated):** `tests/test_orchestrator_process_record.py` (+4) — default 120, honors a set
+  value, clamps 0/negative → 1s, and a non-numeric value → safe 120 (never raises). Full suite **3,025
+  passed**; `ruff` + `bandit` clean. Behavior-preserving by default (still 120s until you set it).
+- **⚠️ Needs you:** nothing. Optional: set `agents.agent_timeout_seconds` lower for snappy chat or higher
+  for long deep-research runs. *(Full per-task budget-object integration into the chat pipeline remains a
+  larger refactor — flagged, not attempted, since the request pipeline isn't safely extractable yet.)*
+
 ### Privacy — CLI "forget me" now erases memory at rest (AUD-2 completeness)
 - **What:** the **CLI** forget (`python -m agents.core.data_purge --confirm`) now defaults to
   `memory=True`, so it erases the memory subsystem at rest (knowledge graph / entities / decay stores,
