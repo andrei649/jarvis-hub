@@ -31,6 +31,15 @@
 
 ## Items (newest first)
 
+### H23.17 (slice) — i18n completeness gate
+- **What:** `frontend/src/test/i18n-completeness.test.ts` fails CI if any locale (en/ro)
+  is missing a key the reference has, has an extra key, or has a blank string. Runs in the
+  existing CI vitest job.
+- **Verified (automated):** ran the full frontend vitest suite locally — 54 tests pass
+  including the 5 new i18n checks; en/ro are complete today.
+- **⚠️ Needs you:** nothing. Remaining H23.17 slices (Playwright E2E, a11y, soak,
+  browser/mobile matrix) are pending — E2E is feasible to build + simulate here.
+
 ### K2 — least-privilege capability set per agent (issuance)
 - **What:** `kernel/capabilities.py` derives each agent's capability set from its declared
   config (plugins/channel/policy), and the orchestrator issues a scoped `CapabilityBroker`
