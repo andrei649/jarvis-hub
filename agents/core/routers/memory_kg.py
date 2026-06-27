@@ -37,6 +37,43 @@ from agents.core.validation import is_safe_kg_label, is_safe_kg_rel_type
 router = APIRouter(tags=["memory"])
 
 
+def _kg_kernel_denial(orch, payload: dict, token_id: str = "", scope: str = "global"):
+    """ORIZONT-24 K1 wave-3 (kg.write): mediate an *externally-driven* KG write through
+    the Action Kernel (default-off). Returns a deny-reason (caller → HTTP 403) or ``None``
+    (allow). **DENY only** — GRANT/QUEUE allow through (an unknown ``kg.write`` kind
+    classifies top-tier → policy QUEUE; we honor only a hard DENY: a halted kill-switch,
+    or a *presented* capability token that lacks ``kg:write``).
+
+    **Boundary (the whole point of this slice):** only the externally-driven ``/api/kg/*``
+    HTTP handlers call this. The high-frequency *internal* ingestion path — incremental
+    ``IncrementalKGUpdater.ingest`` from ``orchestrator._record_interactions``, ``seed_graph``,
+    reflection/worldview promotion — writes ``graph.add_entity``/``add_relation`` DIRECTLY and
+    never traverses these handlers, so it pays no per-write kernel cost and a halt never
+    freezes per-turn memory. (``POST /api/memory/remember`` is a vector-store write, and
+    ``/consolidate`` returns a plan with no mutation, and ``/decay/forget`` is an ACT-R decay
+    op — none are KG writes, so they are intentionally out of this ``kg.write`` slice.)
+
+    Payload carries keys/ids only (audit-PII hygiene — never property values). The
+    ``Capability`` is K1-tolerant (an empty token skips the nucleus and falls to the
+    kill-switch gate); making a token mandatory is wave-4b/K2. ``make_action_kernel`` is
+    imported lazily so the router stays import-cheap and the matrix exerciser can substitute
+    a spy.
+    """
+    from agents.core.kernel import kernel_enabled
+    if not kernel_enabled():
+        return None
+    from agents.core.kernel.binding import make_action_kernel
+    kernel = make_action_kernel(orch)
+    if kernel is None:
+        return None
+    from agents.core.kernel import Action, Capability, Verdict
+    decision = kernel(
+        Action(kind="kg.write", agent="external", title=f"kg write {payload.get('op', '')}",
+               payload=payload, scope=scope, origin="external"),
+        capability=Capability(token_id=token_id or "", name="kg:write"))
+    return decision.reason if decision.verdict is Verdict.DENY else None
+
+
 # ── H14.3 Sleep-time memory consolidation ─────────────────────────────────────
 
 @router.post("/api/memory/consolidate", dependencies=[Depends(user_guard)])
@@ -240,6 +277,10 @@ async def kg_upsert_entity(req: Request):
     # type outright rather than let the graph coerce it (strict API contract).
     if not is_safe_kg_label(entity_type):
         return JSONResponse({"error": "invalid entity type"}, status_code=400)
+    denied = _kg_kernel_denial(get_orch(), {"op": "add_entity", "name": name, "type": entity_type},
+                               req.headers.get("x-capability-token", ""))
+    if denied is not None:
+        return JSONResponse({"error": f"kernel denied: {denied}"}, status_code=403)
     ok = g.add_entity(name, entity_type, body.get("properties") or {})
     return nocache_json({"ok": bool(ok), "entity": g.get_entity(name)})
 
@@ -250,6 +291,11 @@ async def kg_delete_entity(name: str):
     g = _kg()
     if g is None:
         return JSONResponse({"error": "graph not available"}, status_code=503)
+    # No Request on this path → token_id="" (K1-tolerant; halt-gated, token-check is K2).
+    # Deny precedes the existence lookup so a halt doesn't leak whether the entity exists.
+    denied = _kg_kernel_denial(get_orch(), {"op": "delete_entity", "name": name})
+    if denied is not None:
+        return JSONResponse({"error": f"kernel denied: {denied}"}, status_code=403)
     if not g.delete_entity(name):
         return JSONResponse({"error": "not found"}, status_code=404)
     return nocache_json({"ok": True, "deleted": name})
@@ -274,6 +320,11 @@ async def kg_add_relation(req: Request):
     # non-identifier value outright (strict API contract).
     if not is_safe_kg_rel_type(relation):
         return JSONResponse({"error": "invalid relation type"}, status_code=400)
+    denied = _kg_kernel_denial(get_orch(),
+                               {"op": "add_relation", "source": source, "relation": relation, "target": target},
+                               req.headers.get("x-capability-token", ""))
+    if denied is not None:
+        return JSONResponse({"error": f"kernel denied: {denied}"}, status_code=403)
     ok = g.add_relation(source, relation, target, body.get("properties") or {})
     return nocache_json({"ok": bool(ok)})
 
@@ -288,6 +339,11 @@ async def kg_delete_relation(source: str, relation: str, target: str):
     # API contract — reject rather than coerce a delete).
     if not is_safe_kg_rel_type(relation):
         return JSONResponse({"error": "invalid relation type"}, status_code=400)
+    # No Request on this path → token_id="" (K1-tolerant). Deny precedes the lookup.
+    denied = _kg_kernel_denial(get_orch(),
+                               {"op": "delete_relation", "source": source, "relation": relation, "target": target})
+    if denied is not None:
+        return JSONResponse({"error": f"kernel denied: {denied}"}, status_code=403)
     if not g.delete_relation(source, relation, target):
         return JSONResponse({"error": "not found"}, status_code=404)
     return nocache_json({"ok": True})
@@ -311,6 +367,11 @@ async def kg_add_fact(req: Request):
     for k in ("subject", "predicate", "object"):
         if not (body or {}).get(k):
             return JSONResponse({"error": "subject, predicate, object required"}, status_code=400)
+    denied = _kg_kernel_denial(orch,
+                               {"op": "add_fact", "subject": body["subject"], "predicate": body["predicate"]},
+                               req.headers.get("x-capability-token", ""))
+    if denied is not None:
+        return JSONResponse({"error": f"kernel denied: {denied}"}, status_code=403)
     fact = bt.add_fact(
         body["subject"], body["predicate"], body["object"],
         valid_from=body.get("valid_from"), ingested_at=body.get("ingested_at"),
@@ -353,6 +414,10 @@ async def kg_ingest(req: Request):
     text = (body or {}).get("text", "")
     if not text:
         return JSONResponse({"error": "text required"}, status_code=400)
+    denied = _kg_kernel_denial(orch, {"op": "ingest", "text_len": len(text)},
+                               req.headers.get("x-capability-token", ""))
+    if denied is not None:
+        return JSONResponse({"error": f"kernel denied: {denied}"}, status_code=403)
     count = updater.ingest(text)
     return nocache_json({"ok": True, "added": count, "triples": updater.last_added})
 
