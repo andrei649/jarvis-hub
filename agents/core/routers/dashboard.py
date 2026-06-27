@@ -19,7 +19,7 @@ import edge back into `agents.web`.
 import sys
 import time
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
 from fastapi.responses import JSONResponse
 
 from agents.core.app_state import get_orch
@@ -146,6 +146,35 @@ async def get_tasks():
         result_tasks = []
 
     return nocache_json({"tasks": result_tasks})
+
+
+@router.get("/api/dashboard/today", dependencies=[Depends(user_guard)])
+async def dashboard_today(days: int = Query(1, ge=1, le=30)):
+    """P1 G1 — the unified "Today in Jarvis" feed.
+
+    Fuses what Jarvis *did* (completed autonomy actions) and what it *learned*
+    (new / updated memory facts) into one timestamp-ordered story — closing the
+    gap where the task recap (`autonomy/digest.py`) and learnings (`memory/digest.py`)
+    lived in separate places. Pure read over existing rows; `user_guard`'d because
+    it surfaces personal facts. `days` defaults to 1 ("today"), clamped 1–30."""
+    orch = get_orch()
+    if not orch:
+        return nocache_json({"error": "not initialized"}, status_code=503)
+    queue = getattr(orch, "autonomy_queue", None)
+
+    # Read the persistent fact store the same way memory_kg/data_spaces do — a
+    # fresh handle on the shared SQLite DB under JARVIS_HOME (no orch coupling).
+    memory_entries: list[dict] = []
+    try:
+        from agents.core.memory.store import MemoryStore
+        allmem = await MemoryStore().get_all()
+        for entries in (allmem or {}).values():
+            memory_entries.extend(entries)
+    except Exception:
+        memory_entries = []
+
+    from agents.core.memory.timeline import build_unified_digest
+    return nocache_json(build_unified_digest(queue, memory_entries, days=days))
 
 
 @router.get("/ticker", dependencies=[Depends(user_guard)])

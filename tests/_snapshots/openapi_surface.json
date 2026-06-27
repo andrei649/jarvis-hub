@@ -65,6 +65,7 @@
   "GET /api/cognition/status": "cognition_status_api_cognition_status_get",
   "GET /api/cognition/stream": "cognition_stream_api_cognition_stream_get",
   "GET /api/cost": "cost_breakdown_api_cost_get",
+  "GET /api/dashboard/today": "dashboard_today_api_dashboard_today_get",
   "GET /api/eval/datasets": "list_eval_datasets_api_eval_datasets_get",
   "GET /api/eval/datasets/{name}/compare": "compare_dataset_runs_api_eval_datasets__name__compare_get",
   "GET /api/eval/datasets/{name}/runs": "list_dataset_runs_api_eval_datasets__name__runs_get",

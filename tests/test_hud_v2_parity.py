@@ -41,6 +41,7 @@ RULES = [
     # cockpit / conversation
     ("/chat", "cockpit"), ("/api/status", "cockpit"), ("/status", "cockpit"),
     ("/api/agents", "agents"), ("/agents", "agents"), ("/dashboard", "cockpit"),
+    ("/api/dashboard", "cockpit"),  # P1 G1 unified "Today in Jarvis" feed (home narrative)
     ("/ticker", "cockpit"), ("/tasks", "cockpit"), ("/api/cognition", "cockpit"),
     ("/tts", "cockpit"), ("/sessions", "cockpit"), ("/memory/clear", "cockpit"),
     ("/api/canvas", "cockpit"),

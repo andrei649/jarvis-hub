@@ -31,6 +31,25 @@
 
 ## Items (newest first)
 
+### Dashboard — P1 unified "Today in Jarvis" timeline (proof-gap 3/3)
+- **What:** new `memory/timeline.py:build_unified_digest(queue, memory_entries, …)` fuses what Jarvis
+  **did** (autonomy tasks that reached `done`) and what it **learned** (new / updated memory facts &
+  preferences) into **one timestamp-ordered feed** — closing the gap where the task recap
+  (`autonomy/digest.py`) and learnings (`memory/digest.py`) lived in separate places. Served at
+  **`GET /api/dashboard/today?days=1`** (`user_guard`'d — it surfaces personal facts; `days` clamped
+  1–30). Pure builder over existing rows (a `TaskQueue` + the SQLite fact store via `MemoryStore()`):
+  no new capture, no schema. This closes the **third and last P1 proof-gap** — all three are now done.
+- **Verified (automated):** `tests/test_timeline.py` (+9) — fusion + newest-first ordering, window
+  exclusion, `days` widening, `limit` truncation (counts reflect the *full* in-window set), honest
+  empty/None state, unparseable-timestamp rows kept (never dropped), and the endpoint (fuse + 422
+  clamp + 503). Route-surface / OpenAPI / route-auth / HUD-v2 parity snapshots reseeded (one route
+  added: `GET /api/dashboard/today` → `user` guard, cockpit surface). **Full suite 3,011 passed**;
+  `ruff` + `bandit` clean.
+- **⚠️ Needs you (CDX-9 — live pixels, deferred):** this PR is **backend-only** — there's no HUD panel
+  yet (a *cockpit* "Today" panel reading this endpoint is the follow-up UI slice, same rhythm as the
+  feedback/onboarding panels). Eyeball the data now: `curl localhost:<port>/api/dashboard/today | jq`
+  after some autonomy + a few remembered facts, and confirm the did/learned items interleave by time.
+
 ### Metrics — P1 night-shift north-star split ("works while you sleep" as a number)
 - **What:** `compute_north_star` now returns a **`night_shift`** block — `{done, pct, window}` —
   measuring, of the accepted actions, how many **completed during the local night window**. It buckets
