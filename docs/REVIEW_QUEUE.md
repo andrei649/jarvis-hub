@@ -31,6 +31,22 @@
 
 ## Items (newest first)
 
+### HUD — Track-K safety panels (H23.3 + this session's backends)
+- **What:** the Console *Trust* section now surfaces the kernel safety controls so an operator
+  doesn't need `curl`. The **kill-switch one-tap** (HALT-ALL / disengage) was already there;
+  this adds **`KernelMetricsPanel`** (`GET /api/metrics/kernel` — grant/queue/deny tallies + the
+  recent denials with reasons; a default-off hint when the meter is empty) and **`LoopBreakerPanel`**
+  (`GET /api/security/loop-breaker` — tripped/closed + threshold/window, with a **reset** button shown
+  only when tripped). Frontend-only — all three endpoints already shipped this session.
+- **Verified (automated):** `frontend/src/test/kernel-safety-panels.test.tsx` (+4, fetch-mocked) —
+  verdict tallies + a denial render, the empty-meter hint, reset-only-when-tripped, no-reset-when-healthy.
+  Full frontend vitest **58 passed**; `tsc --noEmit` clean; backend HUD-v2 parity guard still green.
+- **⚠️ Needs you (live pixels — CDX-9):** open the Console *Trust* section in a real browser and
+  confirm the three panels render and the buttons work — with `JARVIS_ACTION_KERNEL=1`, engage the
+  kill-switch and watch the deny tally tick up on the kernel panel; trip the loop breaker (or its test
+  hook) and confirm **reset** closes it. This is the operator cockpit for everything Track-K — worth a
+  real look.
+
 ### Gate-K observability — `GET /api/metrics/kernel`
 - **What:** now that every privileged action crosses `kernel.authorize`, there's a single
   place to see what the kernel is doing. An in-process meter tallies **grant/deny/queue per
