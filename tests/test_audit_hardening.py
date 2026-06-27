@@ -172,3 +172,46 @@ def test_redact_audit_details_idempotent_and_passthrough():
     assert _redact_audit_details(already) == already      # unchanged
     assert _redact_audit_details(None) is None            # non-str passthrough
     assert _redact_audit_details("[]") == "[]"            # no findings
+
+
+# ── query() — the audit read path (was untested; covers audit.py:134-169) ──
+# Reconstructs SecurityEvents (incl. findings) from the chain; the round-trip also
+# re-confirms AUD-12 — the stored matched_text is the [REDACTED:..] marker, never raw.
+
+def test_query_round_trips_events_and_keeps_secrets_redacted(tmp_path):
+    audit = AuditLogger(db_path=str(tmp_path / "audit.db"))
+    t0 = 1_000_000.0
+    audit.log(SecurityEvent(
+        event_type=SecurityEventType.AUDIT_LOG, timestamp=t0,
+        content_preview="first", action_taken="logged",
+        findings=[ScanFinding(pattern_name="email", matched_text="alice@example.com",
+                              threat_level=ThreatLevel.MEDIUM, start=3, end=20, description="pii")],
+    ))
+    audit.log(SecurityEvent(
+        event_type=SecurityEventType.SSRF_BLOCKED, timestamp=t0 + 10,
+        content_preview="second", action_taken="blocked",
+    ))
+
+    evs = audit.query()
+    assert [e.content_preview for e in evs] == ["second", "first"]   # newest first
+    assert evs[0].event_type is SecurityEventType.SSRF_BLOCKED
+    f = evs[1].findings[0]                                            # findings reconstructed
+    assert f.pattern_name == "email" and f.threat_level is ThreatLevel.MEDIUM
+    assert (f.start, f.end) == (3, 20)
+    assert f.matched_text == "[REDACTED:email]"                       # AUD-12: raw secret never stored
+    assert "alice@example.com" not in f.matched_text
+
+
+def test_query_filters_by_type_since_and_limit(tmp_path):
+    audit = AuditLogger(db_path=str(tmp_path / "audit.db"))
+    t0 = 2_000_000.0
+    for i in range(5):
+        audit.log(SecurityEvent(event_type=SecurityEventType.AUDIT_LOG, timestamp=t0 + i,
+                                content_preview=f"a{i}", action_taken="x"))
+    audit.log(SecurityEvent(event_type=SecurityEventType.SSRF_BLOCKED, timestamp=t0 + 100,
+                            content_preview="ssrf", action_taken="x"))
+
+    assert [e.content_preview for e in audit.query(event_type="ssrf_blocked")] == ["ssrf"]
+    since = {e.content_preview for e in audit.query(since=t0 + 3)}
+    assert "ssrf" in since and "a0" not in since and "a4" in since
+    assert len(audit.query(limit=2)) == 2
