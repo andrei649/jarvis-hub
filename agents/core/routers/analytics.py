@@ -155,12 +155,23 @@ async def metrics_north_star(days: int = Query(7, ge=1, le=90)):
     if queue is None:
         return nocache_json({"error": "autonomy queue not available"}, status_code=503)
     from agents.core.observability.north_star import compute_north_star
+    # Mirror the worker's local-time night window (autonomy.night_start/end) so the
+    # night-shift split matches what actually gated the overnight tier caps.
+    get_setting = getattr(orch, "get_setting", None)
+    try:
+        night_window = (
+            int(get_setting("autonomy.night_start", 23) or 23),
+            int(get_setting("autonomy.night_end", 6) or 6),
+        ) if callable(get_setting) else (23, 6)
+    except (TypeError, ValueError):
+        night_window = (23, 6)
     return nocache_json(compute_north_star(
         queue,
         getattr(orch, "run_history", None),
         getattr(orch, "tracer", None),
         budget=getattr(getattr(orch, "autonomy", None), "budget", None),
         days=days,
+        night_window=night_window,
     ))
 
 

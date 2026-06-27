@@ -24,6 +24,11 @@ the thing that turns "prove value to a user" from a slogan into a number.
     "total_accepted": 4,             // autonomy tasks that reached `done` in the window
     "active_users": 1                // see the n=1 caveat below
   },
+  "night_shift": {                   // P1 — "works while you sleep" as a number
+    "done": 2,                       // accepted actions that COMPLETED in the night window
+    "pct": 0.5,                      // overnight share of accepted; null if none accepted
+    "window": [23, 6]                // local-time [start, end] used (autonomy.night_start/end)
+  },
   "counter_metrics": {
     "interrupt_rate_per_day": 0.286, // tasks pushed to the inbox / days  (budget ≤4/day)
     "reject_rate": 0.2,              // rejected / (done + rejected); null if no decisions
@@ -46,6 +51,13 @@ the thing that turns "prove value to a user" from a slogan into a number.
 > surfaced (policy auto-handling / not pushed), or surfaced-but-rejected (proposals not useful). It is
 > a *created-in-window cohort* (so `proposed` uses `created_at`, unlike `raw.accepted` which is
 > resolved-in-window by `updated_at`).
+
+> **`night_shift` makes "works while you sleep" a reported number.** Of the accepted actions, how many
+> *completed* during the local night window — the headline P1 claim, now backed by a count and a share
+> instead of a slogan. It buckets each `done` task by the **local** hour of its `updated_at` (the
+> stored UTC stamp converted to the server's zone — the user's clock on a single-user box), reusing the
+> worker's `is_night_window()` so the split matches the same window that gated the overnight tier caps.
+> `window` echoes the `[start, end]` applied (from `autonomy.night_start`/`night_end`, default 23→6).
 
 ## Sources (reused, not duplicated)
 

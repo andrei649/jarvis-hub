@@ -31,6 +31,24 @@
 
 ## Items (newest first)
 
+### Metrics — P1 night-shift north-star split ("works while you sleep" as a number)
+- **What:** `compute_north_star` now returns a **`night_shift`** block — `{done, pct, window}` —
+  measuring, of the accepted actions, how many **completed during the local night window**. It buckets
+  each `done` task by the *local* hour of its `updated_at` (the stored UTC stamp converted to the
+  server's zone — the user's clock on a single-user box), reusing the worker's **`is_night_window()`**
+  so the split matches the same window that gates the overnight tier caps. The endpoint threads the
+  configured `autonomy.night_start`/`night_end` (default 23→6). Turns the headline P1 claim into a
+  reported number. Auto-exposed via `GET /api/metrics/north-star`; docs in `docs/METRICS.md`. Second of
+  the three P1 proof-gaps.
+- **Verified (automated):** `tests/test_north_star.py` (+3) — a 3-accepted split (02:00 + 23:00 → night,
+  14:00 → day ⇒ `done`=2, `pct`=2/3), a custom-window case, and an empty `pct`=null honest case. The
+  helper writes each timestamp as today's local hour stored back as UTC, so the split is **TZ-robust**
+  (deterministic in CI's UTC and on a dev box alike). **Full suite 3,002 passed**; `ruff` + `bandit`
+  clean. Backend-only — no HUD build artifact touched.
+- **⚠️ Needs you:** nothing owner-only. The night window is the server's *local* clock — if you run the
+  box in a different TZ than you sleep in, set `autonomy.night_start`/`night_end` to match. Eyeball:
+  `curl localhost:<port>/api/metrics/north-star | jq .night_shift` after some overnight autonomy.
+
 ### Metrics — P1 proposal-funnel diagnostic on the north-star
 - **What:** `compute_north_star` now also returns a **`proposal_funnel`** block — a *cohort*
   over the proposals **created** in the window: `proposed → surfaced` (a decision card reached
