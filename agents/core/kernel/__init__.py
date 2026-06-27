@@ -25,6 +25,7 @@ from ..security.capability import authorize as _capability_authorize
 from ..security.taint import is_tainted
 from .budget import BudgetLedger, BudgetLimits, LoopDetector
 from .flags import kernel_enabled
+from .metrics import KERNEL_METRICS
 
 # NOTE: autonomy.policy / autonomy.dry_run are imported lazily inside authorize()
 # — importing them at module top would pull the whole autonomy package (observer,
@@ -88,7 +89,14 @@ class Decision:
 
 
 def _emit_audit(audit, action: Action, decision: Decision) -> None:
-    """Best-effort audit of every decision — never blocks the gate."""
+    """Best-effort audit of every decision — never blocks the gate.
+
+    This is the universal exit for *every* decision, so it's also where the in-process
+    metrics meter tallies (grant/deny/queue per kind), independent of whether a durable
+    ``audit`` sink is wired. Both are best-effort: observability must never break the gate.
+    """
+    with contextlib.suppress(Exception):  # observability tally — never blocks the gate
+        KERNEL_METRICS.record(action.kind, decision.verdict.value, decision.reason)
     if audit is None:
         return
     # best-effort: an audit hiccup must never block authorization

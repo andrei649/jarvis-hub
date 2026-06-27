@@ -91,6 +91,7 @@
   "GET /api/memory/spaces": "list_data_spaces_api_memory_spaces_get",
   "GET /api/memory/tool-spec": "memory_tool_spec_api_memory_tool_spec_get",
   "GET /api/metrics/capabilities": "metrics_capabilities_api_metrics_capabilities_get",
+  "GET /api/metrics/kernel": "metrics_kernel_api_metrics_kernel_get",
   "GET /api/metrics/north-star": "metrics_north_star_api_metrics_north_star_get",
   "GET /api/missions": "missions_list_api_missions_get",
   "GET /api/missions/{mission_id}": "mission_get_api_missions__mission_id__get",
