@@ -31,6 +31,20 @@
 
 ## Items (newest first)
 
+### HUD — visible LIVE/SEED chip per mode (CDX-9 slice)
+- **What:** the HUD modes stream real backend data when a source responds and fall back to a seeded mock
+  otherwise — but nothing told you which, so live-wiring quietly hid shape drift. A new `LiveSourceChip`
+  (driven by a pure `liveSourceState()` over the existing `useLiveModes()` live-map + the demo flag) now
+  labels each mode **LIVE** (green, real backend) / **SEED** (amber, demo/mock) / hidden (mode has no
+  backend source or nothing's showing). Rendered once at the workzone in `app.tsx`.
+- **Verified (automated):** `frontend/src/test/live-source-chip.test.tsx` (+7) — the state logic (live /
+  seed / null across the cases) and the chip render (LIVE / SEED / nothing). Full frontend **vitest 73
+  passed**; `tsc --noEmit` clean; HUD-v2 parity green; `agents/web/v2` rebuilt + committed.
+- **⚠️ Needs you (live pixels — CDX-9):** open each mode in a real browser and confirm the LIVE/SEED chip
+  reads correctly (LIVE when a backend source is up, SEED under DEMO) and sits well in the layout. *(The
+  larger CDX-9 half — OpenAPI-generated types + removing `@ts-nocheck` per module — is left as its own
+  slice, not attempted here.)*
+
 ### Cleanup — per-agent call timeout is now a tunable setting (CDX-6)
 - **What:** `_call_agents_parallel` hard-coded a `120.0`s per-agent LLM-call timeout — one invisible
   ceiling shared across chat / deep-research / autonomy / eval. Extracted to
