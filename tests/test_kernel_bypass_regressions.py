@@ -51,12 +51,11 @@ def test_admin_action_requires_capability():
     assert classify("admin.kill_switch") is Mediation.KERNEL
 
 
-# ── B3 — strict-egress downgrade must be audited (enforced in K-wave 2) ─────────
+# ── B3 — strict-egress downgrade is audited + egress is kernel-mediated (K-wave 2) ──
 
-@pytest.mark.xfail(reason="B3: egress-downgrade audit wiring lands in K-wave 2",
-                   strict=False)
 def test_egress_downgrade_is_audited():
-    # Today http_client._enforce_egress with JARVIS_STRICT_EGRESS=0 only logs a
-    # warning. Wave 2 routes egress through the kernel so the downgrade is audited
-    # and alertable. Contract: plugin egress is kernel-mediated.
+    # B3 closed: the JARVIS_STRICT_EGRESS=0 downgrade is durably audited (EGRESS_DOWNGRADE
+    # event), and K-wave 2 routes policy-passing egress through kernel.authorize so a
+    # halted kill-switch / over-budget / runaway loop blocks it. Contract: plugin egress
+    # is kernel-mediated.
     assert classify("plugin.egress") is Mediation.KERNEL

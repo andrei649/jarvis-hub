@@ -38,6 +38,23 @@ def set_egress_audit_sink(sink) -> None:
     """Install the durable audit sink for strict-egress downgrades. ``sink(plugin, violation)``."""
     global _EGRESS_AUDIT_SINK
     _EGRESS_AUDIT_SINK = sink
+
+
+# ORIZONT-24 K1 wave-2 — route policy-passing egress through the Action Kernel. The
+# orchestrator installs a hook ``(plugin, method, url, host) -> reason|None`` bound to
+# kernel.authorize; a non-empty reason BLOCKS the call (kill-switch engaged / over-budget /
+# runaway loop). None = no kernel (default). Decoupled by design — this low-level module
+# never imports the kernel; the hook itself no-ops unless JARVIS_ACTION_KERNEL is set.
+_EGRESS_KERNEL_HOOK = None
+
+
+def set_egress_kernel_hook(hook) -> None:
+    """Install the wave-2 egress→kernel authorization hook, or ``None`` to remove it.
+
+    ``hook(plugin, method, url, host)`` returns a deny-reason ``str`` (block) or a falsy
+    value (allow)."""
+    global _EGRESS_KERNEL_HOOK
+    _EGRESS_KERNEL_HOOK = hook
 # Default timeouts applied to all plugin HTTP calls
 DEFAULT_CONNECT_TIMEOUT = 5.0
 DEFAULT_READ_TIMEOUT = 30.0
@@ -230,6 +247,30 @@ class PluginHTTPClient:
             except Exception:  # pragma: no cover - audit must never break egress
                 logger.debug("egress downgrade audit failed", exc_info=True)
 
+    def _enforce_kernel(self, method: str, url: str, host: str) -> None:
+        """ORIZONT-24 K1 wave-2: mediate policy-passing egress through the Action Kernel.
+
+        The manifest policy (``_enforce_egress``) decides *where* a plugin may reach;
+        the kernel adds an orthogonal gate that can DENY otherwise-allowed egress
+        (kill-switch engaged → no outbound calls, over-budget, runaway loop). Default-off:
+        no hook installed → no-op; the hook itself no-ops unless ``JARVIS_ACTION_KERNEL``.
+
+        The experimental kernel gate must never *brick* egress on a bug — the manifest
+        policy already ran — so a hook that raises degrades to allow + a visible warning;
+        only an explicit deny-reason blocks.
+        """
+        hook = _EGRESS_KERNEL_HOOK
+        if hook is None:
+            return
+        try:
+            reason = hook(self.plugin_name, method, url, host)
+        except Exception:  # pragma: no cover - defensive; a kernel bug can't break egress
+            logger.warning("egress kernel hook errored; allowing (manifest policy already enforced)",
+                           exc_info=True)
+            return
+        if reason:
+            raise PluginEgressError(f"egress blocked by kernel: {reason}")
+
     def _guard(self, method: str, url: str) -> None:
         """Enforce egress policy AND record the attempt for the network monitor (H23.16).
 
@@ -241,6 +282,7 @@ class PluginHTTPClient:
         local = _host_is_local(host)
         try:
             self._enforce_egress(url)
+            self._enforce_kernel(method, url, host)   # wave-2: kernel mediation (default-off)
         except PluginEgressError as e:
             _record_egress(self.plugin_name, host, method, allowed=False, local=local, reason=str(e))
             raise

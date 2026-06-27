@@ -100,6 +100,18 @@ def _exercise(kind, spy, tmp_path):
         # first), so set up a mandate that permits the request.
         m = pb.create_mandate(["acme"], per_payment_cap=100, total_cap=100, currency="EUR")
         pb.request_payment(m["id"], "acme", 10, currency="EUR")
+    elif kind == "plugin.egress":
+        # Not broker-backed: egress is mediated in http_client via an injected hook bound
+        # to kernel.authorize. Drive the real _guard funnel with the production hook
+        # wrapping the spy, then restore the global hook so other tests are unaffected.
+        from agents.core import http_client as hc
+        from agents.core.kernel.binding import make_egress_kernel_hook
+        client = hc.PluginHTTPClient(plugin_name="egress_matrix_probe")
+        hc.set_egress_kernel_hook(make_egress_kernel_hook(lambda: spy))
+        try:
+            client._guard("GET", "https://example.com/x")
+        finally:
+            hc.set_egress_kernel_hook(None)
     else:  # pragma: no cover - a new KERNEL kind needs an exerciser added here
         raise AssertionError(f"no exerciser for kernel-classified kind {kind!r}")
 
