@@ -1335,8 +1335,13 @@ def _build_mcp_mutating_route_tools():
 
     invokers = {"memory_remember": _invoke_memory_remember}
     auditor = orch.audit if orch else None
+    # ORIZONT-24 wave-3: mediate MCP writes through the Action Kernel (default-off).
+    # A halted kill-switch / over-budget / runaway loop blocks the write after the
+    # identity gate. None if the policy isn't reachable → kernel-less, unchanged.
+    from agents.core.kernel.binding import make_action_kernel
     return build_mutating_route_tools(
-        invokers, auditor=auditor, identity_check=_mcp_identity_check
+        invokers, auditor=auditor, identity_check=_mcp_identity_check,
+        kernel=make_action_kernel(orch),
     )
 
 

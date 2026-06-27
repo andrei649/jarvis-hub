@@ -112,6 +112,18 @@ def _exercise(kind, spy, tmp_path):
             client._guard("GET", "https://example.com/x")
         finally:
             hc.set_egress_kernel_hook(None)
+    elif kind == "mcp.mutating":
+        # An MCP mutating tool routes through the kernel after the identity gate.
+        import asyncio
+
+        from agents.core.mcp.route_tools import MUTATING_ROUTE_ALLOWLIST, MutatingRouteTool
+
+        async def _invoke(_kwargs):
+            return {"ok": True}
+        tool = MutatingRouteTool(
+            spec=MUTATING_ROUTE_ALLOWLIST[0], invoke=_invoke,
+            auditor=None, identity_check=lambda _t: True, kernel=spy)
+        asyncio.run(tool.call({"text": "x"}, token="ok"))
     else:  # pragma: no cover - a new KERNEL kind needs an exerciser added here
         raise AssertionError(f"no exerciser for kernel-classified kind {kind!r}")
 

@@ -31,6 +31,26 @@
 
 ## Items (newest first)
 
+### K1 (wave-3, MCP slice) — MCP mutating tools route through the Action Kernel
+- **What:** the MCP write surface (`MutatingRouteTool` — today just
+  `route_memory_remember`, double-kill-switched off by default) now also passes the
+  **kernel** after the existing per-identity gate. With `JARVIS_ACTION_KERNEL=1`, a
+  **halted kill-switch blocks MCP writes** (plus over-budget / runaway-loop denials):
+  identity proves *who*, the kernel decides *whether the write may run now*. A denial
+  raises `MutatingKernelError`, is audited `refused-kernel`, and the write never runs.
+  **Default-off** — zero change until enabled.
+- **Verified (automated + scratch):** unit tests (flag-off skips the kernel even when
+  bound, no-kernel writes, DENY blocks + audits + no write, GRANT writes, **identity
+  failure precedes the kernel**, builder threads the kernel) **plus a real-primitives
+  integration**: the production `kernel.authorize` over a real `AutonomyPolicy` + real
+  `KillSwitch` — engage → write blocked, release → write runs. The action-auth matrix
+  now proves `mcp.mutating` really routes through the kernel when on / not when off.
+  Full suite green (2,947 passed).
+- **⚠️ Needs you:** this surface is reachable only with BOTH `JARVIS_MCP_ROUTE_TOOLS`
+  and `JARVIS_MCP_MUTATING_TOOLS` on (default off). During testing, with those + the
+  kernel flag on, drive `route_memory_remember` over MCP, engage the kill-switch, and
+  confirm the write is refused (`blocked by kernel`) with a `refused-kernel` audit row.
+
 ### K1 (wave-2) — plugin egress routes through the Action Kernel
 - **What:** policy-passing plugin egress (an HTTP call the plugin's manifest already
   allows) now also passes the **kernel**. With `JARVIS_ACTION_KERNEL=1`, a **halted
