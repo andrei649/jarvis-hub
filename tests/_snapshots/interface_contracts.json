@@ -1,0 +1,46 @@
+{
+  "a2a.A2ACardBody": {
+    "capabilities": "list",
+    "name": "str"
+  },
+  "a2a.A2ADecisionBody": {
+    "approve": "bool"
+  },
+  "a2a.A2APeerBody": {
+    "name": "str",
+    "peer_id": "str"
+  },
+  "kernel.Action": {
+    "agent": "str",
+    "kind": "str",
+    "origin": "str",
+    "payload": "dict",
+    "scope": "str",
+    "title": "str"
+  },
+  "kernel.Budget": {
+    "amount": "float",
+    "interrupt_remaining": "int | None"
+  },
+  "kernel.Capability": {
+    "name": "str",
+    "token_id": "str"
+  },
+  "kernel.Decision": {
+    "card": "dict | None",
+    "reason": "str",
+    "task_id": "int | None",
+    "tier": "int | None",
+    "verdict": "Verdict"
+  },
+  "kernel.Verdict": [
+    "deny",
+    "grant",
+    "queue"
+  ],
+  "kernel.registry.Mediation": [
+    "direct",
+    "kernel",
+    "pending"
+  ]
+}
