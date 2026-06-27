@@ -119,3 +119,33 @@ def test_cli_refuses_without_confirm(data_root, capsys):
 def test_forget_route_is_admin_guarded():
     snap = json.loads((Path(__file__).resolve().parent / "_snapshots" / "route_auth.json").read_text())
     assert snap.get("POST /api/admin/forget") == "admin"
+
+
+# ── AUD-2: the CLI must purge memory too (the endpoint did; the CLI was the gap) ──
+# Function-level memory purge is covered in test_data_purge_memory.py; this is the
+# CLI parity that #315 missed — `_main` now defaults to memory=True with a --no-memory escape.
+
+def _seed_memory(root: Path) -> None:
+    """Seed the at-rest memory subsystem: fixed graph/entity/decay stores, the embedding
+    cache dir, and a session transcript."""
+    for name in ("bitemporal_kg.json", "entities.json", "decay.json"):
+        (root / name).write_text('{"pii": "remember me"}', encoding="utf-8")
+    cache = root / "embedding_cache"
+    cache.mkdir(parents=True, exist_ok=True)
+    (cache / "vec.bin").write_bytes(b"\x00\x01")
+    (root / "sess-1.jsonl").write_text('{"role": "user", "content": "secret"}\n', encoding="utf-8")
+    (root / "sess-1.json").write_text('{"turns": 1}', encoding="utf-8")
+
+
+def test_cli_purges_memory_by_default_and_no_memory_opts_out(data_root):
+    _seed_memory(data_root)
+    rc = dp._main(["--source-root", str(data_root), "--confirm", "--no-backup"])
+    assert rc == 0
+    assert not (data_root / "bitemporal_kg.json").exists()   # memory erased by default
+    assert not (data_root / "sess-1.jsonl").exists()
+
+    _seed_memory(data_root)  # reseed, then opt out
+    rc = dp._main(["--source-root", str(data_root), "--confirm", "--no-backup", "--no-memory"])
+    assert rc == 0
+    assert (data_root / "bitemporal_kg.json").exists()        # memory left intact
+    assert (data_root / "sess-1.jsonl").exists()
