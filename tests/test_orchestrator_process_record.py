@@ -200,3 +200,27 @@ def test_record_threads_real_channel(orch):
 def test_record_channel_defaults_to_web(orch):
     # Back-compat: callers that don't pass a channel still get the prior default.
     assert _record_and_capture_meta(orch)["channel"] == "web"
+
+
+# ── CDX-6: per-agent call timeout is a tunable setting, not a hard-coded 120s ──
+
+def test_agent_call_timeout_defaults_to_120(orch):
+    assert orch._agent_call_timeout() == 120.0
+
+
+def test_agent_call_timeout_honors_setting(orch, monkeypatch):
+    monkeypatch.setattr(orch, "get_setting",
+                        lambda k, d=None: 7 if k == "agents.agent_timeout_seconds" else d)
+    assert orch._agent_call_timeout() == 7.0
+
+
+def test_agent_call_timeout_clamps_to_at_least_one(orch, monkeypatch):
+    monkeypatch.setattr(orch, "get_setting",
+                        lambda k, d=None: 0 if k == "agents.agent_timeout_seconds" else d)
+    assert orch._agent_call_timeout() == 1.0  # a 0/negative config can't disable the timeout
+
+
+def test_agent_call_timeout_falls_back_on_non_numeric(orch, monkeypatch):
+    monkeypatch.setattr(orch, "get_setting",
+                        lambda k, d=None: "banana" if k == "agents.agent_timeout_seconds" else d)
+    assert orch._agent_call_timeout() == 120.0  # bad config → safe default, never raises
