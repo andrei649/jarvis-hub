@@ -54,6 +54,26 @@ def _in_window_iso(value: str, cutoff: float) -> bool:
     return True if ep is None else ep >= cutoff
 
 
+def _local_hour(value: str) -> int | None:
+    """Local wall-clock hour (0–23) of an ISO timestamp, or None if unparseable.
+
+    The autonomy worker defines the night window in *local* time
+    (`autonomy_coordinator` calls `is_night_window(datetime.now().hour, …)`), so
+    the night-shift split converts the stored **UTC** stamp (`TaskQueue._now()`)
+    back to the server's local zone — which, on a single-user box, is the user's
+    own clock. A naive stamp (no tzinfo) is read as-is.
+    """
+    if not value:
+        return None
+    try:
+        dt = datetime.fromisoformat(value)
+    except (ValueError, TypeError):
+        return None
+    if dt.tzinfo is not None:
+        dt = dt.astimezone()  # → server local zone
+    return dt.hour
+
+
 def _percentile(values: list[float], p: float) -> float | None:
     """Linear-interpolation percentile (numpy 'linear' method). None if empty."""
     if not values:
@@ -139,6 +159,7 @@ def compute_north_star(
     days: int = 7,
     now: float | None = None,
     fetch_limit: int = 100_000,
+    night_window: tuple[int, int] = (23, 6),
 ) -> dict:
     """Compute the north-star + counter-metrics over the trailing `days` window.
 
@@ -157,21 +178,35 @@ def compute_north_star(
     days, now:
         Trailing window length and reference epoch (injectable for deterministic
         tests). Defaults: 7 days, ``time.time()``.
+    night_window:
+        ``(start_hour, end_hour)`` of the local-time night shift (default
+        ``(23, 6)`` — same as the worker's ``autonomy.night_start/end``). Drives
+        the ``night_shift`` split: how many *accepted* actions completed overnight
+        ("works while you sleep" as a reported number).
 
     Returns a JSON-safe dict; every metric is ``None`` rather than a fabricated
     value when its source has no data.
     """
+    from agents.core.autonomy.worker import (
+        is_night_window,  # lazy: no autonomy import at module load
+    )
+
     days = max(1, int(days))
     now = time.time() if now is None else float(now)
     cutoff = now - days * _DAY_SECONDS
 
     # ── autonomy decisions in window ────────────────────────────────────────
-    done = rejected = pushed = 0
+    done = rejected = pushed = night_done = 0
     if queue is not None:
-        done = sum(
-            1 for t in queue.list(status="done", limit=fetch_limit)
-            if _in_window_iso(t.updated_at, cutoff)
-        )
+        for t in queue.list(status="done", limit=fetch_limit):
+            if not _in_window_iso(t.updated_at, cutoff):
+                continue
+            done += 1
+            # "works while you sleep" — bucket the accepted action by the local
+            # hour it *completed* (`updated_at`, the terminal-state proxy).
+            h = _local_hour(t.updated_at)
+            if h is not None and is_night_window(h, *night_window):
+                night_done += 1
         rejected = sum(
             1 for t in queue.list(status="rejected", limit=fetch_limit)
             if _in_window_iso(t.updated_at, cutoff)
@@ -234,6 +269,14 @@ def compute_north_star(
             "accepted_per_active_user": accepted_per_active_user,
             "total_accepted": done,
             "active_users": active_users,
+        },
+        # P1 proof-gap: "works while you sleep" as a *number*. Of the accepted
+        # actions, how many completed during the local night window — and what
+        # share. `pct` is None when nothing was accepted (no fabrication).
+        "night_shift": {
+            "done": night_done,
+            "pct": round(night_done / done, 4) if done else None,
+            "window": list(night_window),  # [start, end] local hours, for transparency
         },
         "counter_metrics": counter_metrics,
         # V4 — MOONSHOT §6 guardrails: which counter-metrics are out of bounds (empty when

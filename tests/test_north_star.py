@@ -48,6 +48,17 @@ def _backdate(queue: TaskQueue, tid: int, days: int) -> None:
     queue._conn.commit()
 
 
+def _set_local_hour(queue: TaskQueue, tid: int, hour: int) -> None:
+    """Set a task's `updated_at` to today's *local* `hour:00`, stored as the UTC ISO
+    the queue uses. So `_local_hour()` recovers exactly `hour` regardless of the
+    runner's timezone — the night-shift split stays deterministic in CI (UTC) and
+    on a developer box alike."""
+    local_dt = datetime.now().astimezone().replace(hour=hour, minute=0, second=0, microsecond=0)
+    utc_iso = local_dt.astimezone(UTC).isoformat()
+    queue._conn.execute("UPDATE tasks SET updated_at=? WHERE id=?", (utc_iso, tid))
+    queue._conn.commit()
+
+
 class _FakeRunHistory:
     def __init__(self, local_pct):
         self._lp = local_pct
@@ -204,3 +215,29 @@ def test_proposal_funnel_empty(q):
 
 def test_proposal_funnel_none_queue():
     assert compute_north_star(None, None, None, days=7)["proposal_funnel"] is None
+
+
+# ── night-shift north-star split ("works while you sleep" as a number) ───────
+def test_night_shift_split(q):
+    _set_local_hour(q, _make_done(q), 2)    # 02:00 local → night (default 23–6)
+    _set_local_hour(q, _make_done(q), 23)   # 23:00 local → night (wraps midnight)
+    _set_local_hour(q, _make_done(q), 14)   # 14:00 local → day
+
+    out = compute_north_star(q, None, None, days=7)
+    assert out["north_star"]["total_accepted"] == 3
+    ns = out["night_shift"]
+    assert ns["done"] == 2                   # two completed overnight
+    assert ns["pct"] == round(2 / 3, 4)      # overnight share of accepted
+    assert ns["window"] == [23, 6]
+
+
+def test_night_shift_custom_window(q):
+    _set_local_hour(q, _make_done(q), 9)     # 09:00
+    _set_local_hour(q, _make_done(q), 15)    # 15:00
+    out = compute_north_star(q, None, None, days=7, night_window=(8, 16))  # "night" = 08–16
+    assert out["night_shift"] == {"done": 2, "pct": 1.0, "window": [8, 16]}
+
+
+def test_night_shift_empty_no_fabrication(q):
+    out = compute_north_star(q, None, None, days=7)
+    assert out["night_shift"] == {"done": 0, "pct": None, "window": [23, 6]}
