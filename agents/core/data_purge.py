@@ -10,15 +10,20 @@ Scope is the user's **structured content** at rest:
 
   * ``missions.db`` / ``autonomy.db`` / ``analytics.db`` — rows deleted, schema kept
   * ``notes.json``                                       — reset to an empty object
+  * the **memory subsystem** (when ``memory=True``, the CLI + ``/api/admin/forget`` default,
+    AUD-2) — the fixed graph/entity/decay stores, the embedding cache, and conversation
+    transcripts for confirmed sessions (see ``_purge_memory_at_rest``)
 
 Rows are ``DELETE``\\ d (not the files dropped) and JSON is rewritten to ``{}`` so live
 stores holding open handles read back empty rather than hitting a missing file — WAL keeps
 the deletes visible across connections.
 
 Excluded by design: ``settings.db`` (config + OAuth secrets — same boundary the export
-draws), ``memory.db`` + conversation session files (their own surfaces: ``/memory/clear``,
-``/api/admin/memory/clear``, ``/api/memory/decay/forget``), ``security/audit.db``
-(append-only compliance chain), and system stores (``checkpoints.db``/``marketplace.db``).
+draws), ``security/audit.db`` (append-only compliance chain), and system stores
+(``checkpoints.db``/``marketplace.db``). Note: the **backup-first** safety net snapshots the
+data root *before* deleting; that archive is encrypted only when a backup key is configured
+(AUD-1) — until then it holds full plaintext PII, so secure or remove it after a forget, or
+pass ``--no-backup``.
 
 This list mirrors the export's content set; when the export module lands on main its
 ``EXPORT_DBS`` and these allow-lists should be reconciled (the export branch migrated notes
@@ -228,6 +233,9 @@ def _main(argv=None) -> int:
                     help="required: acknowledge that this irreversibly erases user content")
     ap.add_argument("--no-backup", action="store_true",
                     help="skip the (default) backup-first safety net — NOT recommended")
+    ap.add_argument("--no-memory", action="store_true",
+                    help="leave the memory subsystem at rest (KG/entities/decay/embedding cache + "
+                         "session transcripts) intact; by default a forget erases it too (AUD-2)")
     ap.add_argument("--source-root", default=None,
                     help="data root to purge (defaults to $JARVIS_HOME / memory_logs)")
     args = ap.parse_args(argv)
@@ -236,7 +244,10 @@ def _main(argv=None) -> int:
         print("refusing to purge without --confirm (this irreversibly erases user content)")
         return 2
     try:
-        report = purge_data(source_root=args.source_root, backup_first=not args.no_backup)
+        # memory on by default so an offline CLI forget is as complete as the endpoint's
+        # (which also clears the *live* stores first — the CLI can only reach what's at rest).
+        report = purge_data(source_root=args.source_root, backup_first=not args.no_backup,
+                            memory=not args.no_memory)
     except PurgeError as e:
         print(f"purge aborted: {e}")
         return 1

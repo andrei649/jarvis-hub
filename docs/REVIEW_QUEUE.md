@@ -31,6 +31,22 @@
 
 ## Items (newest first)
 
+### Privacy — CLI "forget me" now erases memory at rest (AUD-2 completeness)
+- **What:** the **CLI** forget (`python -m agents.core.data_purge --confirm`) now defaults to
+  `memory=True`, so it erases the memory subsystem at rest (knowledge graph / entities / decay stores,
+  embedding cache, session transcripts) — closing a real **PII-retention gap**. AUD-2 (#315) had brought
+  only the `/api/admin/forget` *endpoint* to parity; the offline CLI still left memory behind. A
+  `--no-memory` escape mirrors the existing `--no-backup`. Also documents (in the module docstring) that
+  the backup-first snapshot is plaintext PII until a backup key is set (AUD-1) — secure/remove it after a
+  forget, or use `--no-backup`.
+- **Verified (automated):** `tests/test_data_purge.py` (+1) — the CLI erases the memory stores by default
+  and `--no-memory` leaves them; the function-level memory purge stays covered by
+  `tests/test_data_purge_memory.py` (I dropped the redundant duplicates). Full suite **3,027 passed**;
+  `ruff` + `bandit` clean.
+- **⚠️ Needs you:** nothing code-side. *Operational note:* the live Qdrant/Neo4j wipe is best-effort via
+  each store's `clear()` (the endpoint clears live stores first); a true external-service purge for those
+  remains an ops step on a real deployment.
+
 ### V-track — reality harness now proves the kernel capability-token rail
 - **What:** a fourth **hermetic** reality case completes the proof of the Action-Kernel's *gate-1*: the
   **capability-token path** (alongside the kill-switch rail from the prior PR). With a real
