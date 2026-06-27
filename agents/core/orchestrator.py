@@ -402,6 +402,18 @@ class Orchestrator:
                 self.agents[agent_id] = agent
                 logger.info(f"Loaded: {agent_id}")
 
+        # K2: issue a least-privilege capability token per agent, derived from its declared
+        # config (plugins/channel/policy). Inert until the per-action enforcement waves
+        # check it — populated here so every agent has a scoped capability set (generalizing
+        # the seeded broker tokens to the whole fleet). Best-effort: never breaks boot.
+        self.agent_capabilities: dict[str, str] = {}
+        try:
+            if getattr(self, "capabilities", None) is not None:
+                from .kernel.capabilities import issue_all
+                self.agent_capabilities = issue_all(self.capabilities, self.config.agents)
+        except Exception:
+            logger.warning("per-agent capability issuance failed", exc_info=True)
+
         # CLN-2: live-plugin registry build moved to PluginManager (byte-identical
         # construction order + env/settings reads; sets self.oracle_bridge + self.argus).
         self.plugin_manager.build(self)

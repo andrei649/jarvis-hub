@@ -31,6 +31,18 @@
 
 ## Items (newest first)
 
+### K2 — least-privilege capability set per agent (issuance)
+- **What:** `kernel/capabilities.py` derives each agent's capability set from its declared
+  config (plugins/channel/policy), and the orchestrator issues a scoped `CapabilityBroker`
+  token per agent at boot (`orch.agent_capabilities`). Strict-local agents (frigga/ultron/
+  howard) never get a cloud capability. **Inert** — nothing checks per-agent tokens yet
+  (the per-action enforcement waves do), so zero behavior change.
+- **Verified (automated + scratch):** unit tests (derivation least-privilege, real-broker
+  issuance) + a scratch run over the **real 17-agent roster** confirming every agent gets a
+  least-privilege token and the three local-only agents have no cloud cap.
+- **⚠️ Needs you:** nothing yet. The enforcement half (B1 — admin actions require a
+  capability; folding WorldView HMAC tokens) is a deliberate later wave.
+
 ### H23.6 — minimal taint flag + kernel escalation (indirect-injection guard)
 - **What:** `security/taint.py` marks content from untrusted sources (web/OSINT/RSS/inbound)
   as tainted; the action kernel **escalates a tainted action from GRANT → QUEUE** (approval),
