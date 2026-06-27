@@ -31,6 +31,22 @@
 
 ## Items (newest first)
 
+### V-track — reality harness now proves the kernel capability-token rail
+- **What:** a fourth **hermetic** reality case completes the proof of the Action-Kernel's *gate-1*: the
+  **capability-token path** (alongside the kill-switch rail from the prior PR). With a real
+  `CapabilityBroker`, a valid minted token clears the kernel gate (the action reaches policy), and a
+  missing/unknown token makes `kernel.authorize` return **DENY** ("no valid capability token"). A green
+  probe promotes `component:capabilities` to **VERIFIED**. Both halves of the kernel's first gate
+  (kill-switch + capability) are now harness-backed.
+- **Verified (automated):** scratch-simulated first (valid→queue, missing→deny). `tests/test_reality_harness.py`
+  (+1, now 8): the seeded-cases test asserts both `component:kill_switch` and `component:capabilities`
+  promote; a focused test runs the capability case in isolation. Full suite **3,020 passed**; `ruff` +
+  `bandit` clean — bandit flagged the deliberately-invalid token literal as a hardcoded-credential false
+  positive (B106), so it's bound to a named variable rather than growing the baseline (the trivial-refactor
+  fix, since it's avoidable unlike the status_sync subprocess findings).
+- **⚠️ Needs you:** nothing — hermetic, offline. (Live keyed per-capability cases remain the owner-gated
+  nightly-lane follow-up.)
+
 ### V-track — reality harness now proves the Action-Kernel kill-switch rail
 - **What:** a third **hermetic** reality case (`reality_harness.py:CASES`) proves the most safety-critical
   Track-K rail end-to-end with **real primitives** — not a mock: an engaged `KillSwitch` makes
