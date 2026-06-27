@@ -31,6 +31,19 @@
 
 ## Items (newest first)
 
+### K3 (recursion-depth cap) — sub-agent delegation can't tower up unbounded
+- **What:** `SubAgentManager` already capped how *wide* an agent forks (concurrency); this caps
+  how *deep* — a sub-agent that spawns a sub-agent that spawns a sub-agent now hits a
+  **recursion-depth cap** (OWASP unbounded-consumption). Depth is inferred from the recorded
+  parent-chain, so no runner change is needed. Default **8** (a real guard out of the box;
+  configurable via the `autonomy.max_subagent_depth` setting; `None`/≤0 = unbounded).
+- **Verified (automated):** `tests/test_subagent_depth.py` (+4) — a deep chain is rejected at the
+  cap with a clean `recursion_depth_cap` reason, flat (top-level) spawns never hit it, `None` is
+  unbounded, and the `≤0 → unbounded` normalization + default-8 hold. Existing subagent tests still
+  green. Full suite **2,996 passed**; ruff + bandit clean.
+- **⚠️ Needs you:** nothing urgent — the default 8 is deep enough for any real delegation. If you
+  build deeply-nested agent workflows, raise `autonomy.max_subagent_depth`.
+
 ### K3 (per-task wall-time budget) — a task can't run forever
 - **What:** the autonomy worker's `TaskExecutor` now supports a per-task **wall-time budget**
   (`JARVIS_TASK_MAX_SECONDS`). A task whose handler overruns is **cancelled** at the dispatch

@@ -29,10 +29,17 @@ class SubAgentManager:
     """Gated, isolated, concurrent sub-agent spawning."""
 
     def __init__(self, runner: Optional[Callable[..., Awaitable[dict]]] = None,
-                 max_concurrent: int = 3, parent_agent: str = "jarvis") -> None:
+                 max_concurrent: int = 3, parent_agent: str = "jarvis",
+                 max_depth: Optional[int] = 8) -> None:
         self._runner = runner or NullRunner()
         self.max_concurrent = max(1, int(max_concurrent))
         self.parent_agent = parent_agent
+        # K3 (OWASP unbounded-consumption): cap the recursion DEPTH of agent-initiated
+        # delegation — an agent spawning sub-agents that spawn sub-agents can't tower up
+        # forever. None = unbounded. Depth is inferred from the recorded parent-chain, so
+        # it needs no runner cooperation (the spawning sub-agent just passes its own id as
+        # `parent`, which it already does to attribute the spawn).
+        self.max_depth = max_depth if (max_depth is None or max_depth > 0) else None
         self._spawns: dict[str, dict] = {}
         self._active = 0
         self._counter = 0
@@ -40,13 +47,29 @@ class SubAgentManager:
     def _active_count(self) -> int:
         return self._active
 
+    def _depth_of(self, parent: str) -> int:
+        """How deep a spawn under *parent* would sit (0 = top-level, i.e. parent is the
+        root agent, not a recorded sub-agent). Walks the recorded parent links; the `seen`
+        guard makes a malformed cycle terminate instead of spinning."""
+        depth, cur, seen = 0, parent, set()
+        while cur in self._spawns and cur not in seen:
+            seen.add(cur)
+            depth += 1
+            cur = self._spawns[cur].get("parent", "")
+        return depth
+
     async def spawn(self, task: str, agent: str = "", parent: str = "") -> dict:
-        """Spawn an isolated sub-agent for `task`. Rejected if the cap is reached."""
+        """Spawn an isolated sub-agent for `task`. Rejected if the concurrency cap is
+        reached, or if the parent-chain is already `max_depth` deep (recursion guard)."""
+        parent = parent or self.parent_agent
+        depth = self._depth_of(parent)
+        if self.max_depth is not None and depth >= self.max_depth:
+            return {"ok": False, "reason": "recursion_depth_cap",
+                    "depth": depth, "max_depth": self.max_depth}
         if self._active >= self.max_concurrent:
             return {"ok": False, "reason": "concurrency_cap",
                     "active": self._active, "cap": self.max_concurrent}
         self._counter += 1
-        parent = parent or self.parent_agent
         spawn_id = f"sub-{parent}-{self._counter}"
         session_id = f"session::{spawn_id}"   # isolated session
         rec = {"id": spawn_id, "parent": parent, "agent": agent or "sub",
@@ -76,4 +99,4 @@ class SubAgentManager:
 
     def stats(self) -> dict:
         return {"total": len(self._spawns), "active": self._active,
-                "cap": self.max_concurrent}
+                "cap": self.max_concurrent, "max_depth": self.max_depth}
