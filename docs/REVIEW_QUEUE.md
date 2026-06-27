@@ -31,6 +31,34 @@
 
 ## Items (newest first)
 
+### K1 (wave-3, kg.write slice) — externally-driven KG writes route through the Action Kernel — **Gate-K COMPLETE** 🎉
+- **What:** the 6 externally-driven `/api/kg/*` mutating HTTP handlers (entity upsert/delete,
+  relation add/delete, fact add, ingest) now pass `kernel.authorize` (default-off). With
+  `JARVIS_ACTION_KERNEL=1`, a halted kill-switch → **403**. This is the **last** Track-K
+  slice: **every one of the 11 privileged action kinds is now KERNEL-mediated** — a halt
+  uniformly denies payments, plugin egress, MCP writes, gated Tool-RPC, admin escalations,
+  and external KG writes.
+- **The boundary is the whole point** (workflow-verified, 8 agents, no blockers): only the
+  *external* HTTP handlers are gated. The **internal, high-frequency** ingestion path
+  (`IncrementalKGUpdater.ingest` from `orchestrator._record_interactions`, `seed_graph`,
+  reflection) writes graph methods **directly** and is **never** gated — so **a halt does
+  NOT freeze per-turn memory**. A dedicated test pins this: while halted, external
+  `/api/kg/ingest` returns 403 *and* internal `kg_updater.ingest` / `graph.add_entity` still
+  write. `memory.remember` (vector write), `/consolidate` (plan-only), `/decay/forget`
+  (ACT-R op) are not KG writes → intentionally out of scope.
+- **Verified (automated + scratch):** `tests/test_kg_kernel_wave.py` (+9) over real
+  `InMemoryGraph`+`BiTemporalKG`+`IncrementalKGUpdater`+`KillSwitch`+`AutonomyPolicy`+real
+  `make_action_kernel`: default-off byte-identical · clean→200 · halt→403 on all 6 handlers
+  · **boundary proof** · disengage recovers · presented-bad-token→403 · deny-precedes-lookup
+  (403 not 404) · keys-only payload (no PII values). The action-auth matrix proves `kg.write`
+  routes through the kernel when on / not when off. Full suite green (2,970 passed).
+- **⚠️ Needs you:** with `JARVIS_ACTION_KERNEL=1`, engage the kill-switch and confirm an
+  `/api/kg/*` write (e.g. `POST /api/kg/entities`) returns 403 **while normal conversation
+  still builds memory** (the internal KG keeps updating per turn — this is the critical
+  boundary; please verify a real chat still remembers facts during a halt). Then disengage
+  and confirm external KG writes resume. Note no-token requests are still allowed by design
+  (wave-4b/K2 makes capability tokens mandatory).
+
 ### K1 (wave-4a) — admin kill-switch + capability-issue route through the Action Kernel (B1 structural)
 - **What:** the two admin escalation routes — engaging the kill-switch and minting a
   capability token — now pass `kernel.authorize` **in addition to** today's `admin_guard`.

@@ -168,6 +168,38 @@ def _exercise(kind, spy, tmp_path, monkeypatch=None):
             asyncio.run(secmod.kill_switch_set(_Req({"engage": True, "scope": "global"})))
         else:
             asyncio.run(secmod.capabilities_issue(_Req({"capabilities": ["x"]})))
+    elif kind == "kg.write":
+        # Externally-driven KG write (HTTP route): drive the REAL kg_upsert_entity handler.
+        # The stub orch must carry memory.graph so _kg() resolves (else 503 before the gate).
+        import asyncio
+
+        import agents.web as web
+        from agents.core.autonomy.policy import AutonomyPolicy
+        from agents.core.memory.graph import InMemoryGraph
+        from agents.core.routers import memory_kg as memkg
+        from agents.core.security.capability import CapabilityBroker, KillSwitch
+
+        class _Mem:
+            graph = InMemoryGraph()
+
+        class _Orch:
+            memory = _Mem()
+            kill_switch = KillSwitch(tmp_path / "kill.json")
+            capabilities = CapabilityBroker()
+            autonomy_policy = AutonomyPolicy()
+            intent_log = None
+
+        class _Req:
+            def __init__(self, body):
+                self._b, self.headers = body, {}
+
+            async def json(self):
+                return self._b
+
+        monkeypatch.setattr(web, "orch", _Orch())
+        monkeypatch.setattr("agents.core.kernel.binding.make_action_kernel", lambda o: spy)
+        assert memkg._kg() is not None, "stub graph not visible to the handler"
+        asyncio.run(memkg.kg_upsert_entity(_Req({"name": "Probe", "type": "person"})))
     else:  # pragma: no cover - a new KERNEL kind needs an exerciser added here
         raise AssertionError(f"no exerciser for kernel-classified kind {kind!r}")
 

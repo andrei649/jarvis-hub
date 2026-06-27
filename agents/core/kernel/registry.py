@@ -55,8 +55,12 @@ ACTION_REGISTRY: dict[str, Mediation] = {
     # must always be able to release a halt.) Mandatory-token enforcement = wave-4b/K2.
     "admin.kill_switch": Mediation.KERNEL,
     "admin.capability_issue": Mediation.KERNEL,
-    # PENDING — privileged surfaces not yet routed through the kernel.
-    "kg.write": Mediation.PENDING_KERNEL,         # wave 3 (next)
+    # Wave 3 — externally-driven KG writes (the /api/kg/* mutating HTTP handlers) are
+    # mediated; the high-frequency *internal* ingestion path (incremental.ingest from
+    # _record_interactions, seed_graph, reflection) writes graph methods directly and is
+    # NOT gated (a halt must not freeze per-turn memory). Memory.remember (vector write),
+    # /consolidate (plan-only) and /decay/forget (ACT-R op) are not KG writes → out of scope.
+    "kg.write": Mediation.KERNEL,
 }
 
 
