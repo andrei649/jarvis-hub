@@ -107,7 +107,7 @@ python -m pytest tests/ -v          # ~2,802 passed, 6 skipped
 | 0.35 Prompt Registry | ✅ done | `soul_versioning.py` (commit/diff/rollback + A/B) | — |
 | 0.36 Agent-Native Action Manifest | ✅ built · 🟡 unseamed | `mcp/route_tools.py` + web wiring works / **unify the allow-list with `route_auth.json`** (#1 refactor) | 0.12 (#279) |
 | 0.37 Memory Ingestion Lab | 🟡 partial | `ingestion/pipeline.py` (7-phase) + `data_spaces.py` / ontology, cross-agent sharing, provenance | — |
-| 0.38 Today In Jarvis | 🟡 partial | `autonomy/digest.py` + `memory/digest.py` / unified chronological timeline | — |
+| 0.38 Today In Jarvis | ✅ done | `memory/timeline.py` `build_unified_digest` fuses *did* (autonomy done-tasks) + *learned* (memory facts) → `GET /api/dashboard/today` (#371) + cockpit *Today* HUD panel (#372); proof-gap metrics (proposal-funnel #369 · night-shift #370) surfaced on the north-star meter (#373) | — |
 | 0.39 Market Intel Pack | 🌱 seed | `plugins/{balance,analytics,signal_layer}.py` / watchlists, alerts, disclaimers | — |
 | 0.40 OSINT Investigator Pack | 🌱 seed | `plugins/worldview.py` + `argus.py` / SpiderFoot modules, correlation, evidence drawer | — |
 | 0.41 World Signal Packs | 🌱 seed | `signal_layer.py` (`world_brief`,`country_assessment`) / per-domain signal routing | — |
@@ -355,7 +355,7 @@ below source-validated against `main` (`e974069`) this session.** The strategic 
 | CDX-2 | ✅ **done** — **Interaction records hard-code `"channel":"web"`** — `_record_interactions` now takes the real `channel` (threaded from `process()`/`handle_input()`) into the learning metadata, so the %-local/cloud ratio + per-channel analytics reflect the true origin. `tests/test_orchestrator_process_record.py`. | ✅ | [METRICS](docs/METRICS.md) |
 | CDX-3 | ✅ **done** — **One stale `last_n=6`** (`_call_agents_parallel`) now honors `memory.context_window` like the main per-agent path (`:850/859`). | ✅ | — |
 | CDX-4 | ✅ **done** — **App version `0.5.0-beta`** retired; `web.py` `FastAPI(version=…)` (and `/status`, OpenAPI `info.version`) now read `agents.__version__` (= `0.11.0`), the single source. `tests/test_cdx_bugfix_batch.py`. | ✅ | CDX-5 |
-| CDX-5 | 🟡 **partial** — **Doc/version/test drift** — version single-sourced (CDX-4) + README badge/headline aligned to v0.11.0 + STATUS test counter refreshed. *Remaining:* a `scripts/status_sync.py` to auto-derive the volatile counts (routes/tests) from one source. | 🟡 | H23.18 |
+| CDX-5 | ✅ **done** — **Doc/version/test drift** — version single-sourced (CDX-4) + README badge/headline aligned to v0.11.0. `scripts/status_sync.py` now **auto-derives** the volatile counts (tests from `pytest --collect-only`, routes from the parity snapshot) and `--check`/`--write` keeps STATUS.md in sync — no more hand-bumping (it had already drifted to 327/3,011). `tests/test_status_sync.py` (+7). | ✅ | H23.18 |
 | CDX-6 | **Per-agent timeout hard-coded 120s** (`orchestrator.py:1170`) — fold into per-task token/time budgets (don't share one invisible ceiling across chat/deep-research/autonomy/eval). | ⬜ | H23.1 / K3 |
 | CDX-7 | **Howard RAG provenance** — `agent.py` injects retrieved memory text into prompts; treat memory as untrusted: delimit as retrieved context (not instructions), add source/age/confidence, cap length, scan with the injection scanner. | ⬜ | TASK-3 / 0.37 |
 | CDX-8 | **Auto-generated skills are durable behavior** — `skills.auto_generate=true` + `[learn:…]`; ensure human review + sandbox + audit + provenance before a generated skill is reusable. | 🟡 | 0.54 / Track K |

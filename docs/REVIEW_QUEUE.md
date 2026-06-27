@@ -31,6 +31,21 @@
 
 ## Items (newest first)
 
+### Tooling — `scripts/status_sync.py` ends the STATUS.md count drift (CDX-5)
+- **What:** a small CLI that derives the two STATUS.md header numbers that drift on nearly every PR —
+  the **test count** (`pytest --collect-only`) and the **HTTP-route count** (the parity snapshot) — and
+  either `--check`s STATUS.md against them or `--write`s them in place. Replaces the hand-bumped "~N
+  passed" step (which had already silently drifted to **327 routes / 3,011 tests**; the tool corrected
+  it to **328 / 3,024**). Closes the "Remaining" half of CDX-5. Deliberately **not** a blocking CI gate
+  (the header `~` signals approximate) — `--check` is an optional nudge, not a merge wall.
+- **Verified (automated):** `tests/test_status_sync.py` (+7) — route count matches the snapshot, the
+  STATUS rewrite is anchored (touches only the two tokens, leaves version strings / "45 routers" prose
+  intact), each token rewrites independently, and the live STATUS.md parses. The heavy `count_tests()`
+  (shells out to a full collection) is left out of the unit tests on purpose. Dogfooded end-to-end
+  (`--write` then `--check` clean). Full suite + `ruff` + `bandit` clean.
+- **⚠️ Needs you:** nothing — pure dev tooling. Optionally run `python scripts/status_sync.py --check`
+  before a release to confirm STATUS.md isn't stale.
+
 ### HUD — north-star meter now surfaces the P1 proactive metrics
 - **What:** the ObserveMode **`NorthStarMeter`** (`modes2.tsx`) gained a third **PROACTIVE** row that
   renders the metrics shipped in #369/#370 but previously invisible in the HUD: **done overnight** +

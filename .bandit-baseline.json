@@ -6576,6 +6576,50 @@
       "more_info": "https://bandit.readthedocs.io/en/1.9.4/plugins/b603_subprocess_without_shell_equals_true.html",
       "test_id": "B603",
       "test_name": "subprocess_without_shell_equals_true"
+    },
+    {
+      "code": "26 import re\n27 import subprocess\n28 import sys\n",
+      "col_offset": 0,
+      "end_col_offset": 17,
+      "filename": "scripts/status_sync.py",
+      "issue_confidence": "HIGH",
+      "issue_cwe": {
+        "id": 78,
+        "link": "https://cwe.mitre.org/data/definitions/78.html"
+      },
+      "issue_severity": "LOW",
+      "issue_text": "Consider possible security implications associated with the subprocess module.",
+      "line_number": 27,
+      "line_range": [
+        27
+      ],
+      "more_info": "https://bandit.readthedocs.io/en/1.9.4/blacklists/blacklist_imports.html#b404-import-subprocess",
+      "test_id": "B404",
+      "test_name": "blacklist"
+    },
+    {
+      "code": "53     \"\"\"\n54     out = subprocess.run(  # noqa: S603 \u2014 fixed argv, no shell\n55         [sys.executable, \"-m\", \"pytest\", \"--collect-only\", \"-q\",\n56          \"-p\", \"no:xdist\", \"-o\", \"addopts=\"],\n57         cwd=str(repo), capture_output=True, text=True,\n58     ).stdout\n59     m = re.search(r\"(\\d+)\\s+tests?\\s+collected\", out)\n",
+      "col_offset": 10,
+      "end_col_offset": 5,
+      "filename": "scripts/status_sync.py",
+      "issue_confidence": "HIGH",
+      "issue_cwe": {
+        "id": 78,
+        "link": "https://cwe.mitre.org/data/definitions/78.html"
+      },
+      "issue_severity": "LOW",
+      "issue_text": "subprocess call - check for execution of untrusted input.",
+      "line_number": 54,
+      "line_range": [
+        54,
+        55,
+        56,
+        57,
+        58
+      ],
+      "more_info": "https://bandit.readthedocs.io/en/1.9.4/plugins/b603_subprocess_without_shell_equals_true.html",
+      "test_id": "B603",
+      "test_name": "subprocess_without_shell_equals_true"
     }
   ]
 }
