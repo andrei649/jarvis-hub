@@ -1232,8 +1232,14 @@ def _get_payment_broker():
     if _payment_broker is None:
         from agents.core.payments import PaymentBroker
         from agents.core.security.anchor import IntentLog
+        from agents.core.kernel.binding import make_action_kernel
+        # ORIZONT-24 K1 payment micro-wave: bind the same kernel.authorize the wave-1
+        # brokers use (kill-switch · capabilities · policy · audit). None if the live
+        # orchestrator/policy isn't reachable → kernel-less, unchanged behavior.
+        # Default-off at runtime regardless (JARVIS_ACTION_KERNEL).
         _payment_broker = PaymentBroker(
-            audit=IntentLog(path=str(data_path("security/payments_intent.json"))))
+            audit=IntentLog(path=str(data_path("security/payments_intent.json"))),
+            kernel=make_action_kernel(globals().get("orch")))
     return _payment_broker
 
 

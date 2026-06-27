@@ -5,7 +5,7 @@
   "kg.write": "pending",
   "mcp.mutating": "pending",
   "node.dispatch": "kernel",
-  "payment": "pending",
+  "payment": "kernel",
   "plugin.egress": "pending",
   "social.*": "kernel",
   "tool.rpc": "pending",

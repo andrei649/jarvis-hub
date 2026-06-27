@@ -93,6 +93,13 @@ def _exercise(kind, spy, tmp_path):
                       enqueue=lambda *a, **k: 1, kernel=spy)
         nm.register_node("n1", ["run"])
         nm.dispatch("n1", "run")
+    elif kind == "payment":
+        from agents.core.payments import PaymentBroker
+        pb = PaymentBroker(path=str(tmp_path / "pay.json"), kernel=spy)
+        # Only an *admissible* request reaches the kernel hook (mandate hard-caps gate
+        # first), so set up a mandate that permits the request.
+        m = pb.create_mandate(["acme"], per_payment_cap=100, total_cap=100, currency="EUR")
+        pb.request_payment(m["id"], "acme", 10, currency="EUR")
     else:  # pragma: no cover - a new KERNEL kind needs an exerciser added here
         raise AssertionError(f"no exerciser for kernel-classified kind {kind!r}")
 
@@ -117,9 +124,19 @@ def test_kernel_off_does_not_invoke_kernel(monkeypatch, tmp_path):
         assert not spy.calls, f"{kind} invoked the kernel with the flag OFF"
 
 
-def test_pending_broker_kinds_are_not_wired():
-    """Honest-pending: the only broker-backed PENDING kind (payment) must genuinely
-    not be kernel-wired yet (no `kernel` ctor param), so the snapshot doesn't lie."""
+def test_broker_kernel_wiring_matches_classification():
+    """Honest mapping (ground truth) for the broker-backed kinds that aren't covered by
+    the parametrized invoke test's exercisers: a KERNEL classification means the broker
+    really accepts a `kernel` hook; a PENDING one means it genuinely doesn't yet — so the
+    snapshot can never claim more (or less) migration than the code carries."""
     from agents.core.payments import PaymentBroker
-    assert classify("payment") is Mediation.PENDING_KERNEL
-    assert "kernel" not in inspect.signature(PaymentBroker.__init__).parameters
+
+    # kind → broker class (extend as more broker-backed kinds migrate).
+    brokers = {"payment": PaymentBroker}
+    for kind, cls in brokers.items():
+        has_hook = "kernel" in inspect.signature(cls.__init__).parameters
+        med = classify(kind)
+        if med is Mediation.KERNEL:
+            assert has_hook, f"{kind} is classified KERNEL but {cls.__name__} has no kernel hook"
+        elif med is Mediation.PENDING_KERNEL:
+            assert not has_hook, f"{kind} is PENDING_KERNEL but {cls.__name__} is already wired"
