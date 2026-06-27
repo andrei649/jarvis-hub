@@ -37,7 +37,7 @@ from agents.core.validation import is_safe_kg_label, is_safe_kg_rel_type
 router = APIRouter(tags=["memory"])
 
 
-def _kg_kernel_denial(orch, payload: dict, token_id: str = "", scope: str = "global"):
+def _kg_kernel_denial(orch, payload: dict, token_id: Optional[str] = None, scope: str = "global"):
     """ORIZONT-24 K1 wave-3 (kg.write): mediate an *externally-driven* KG write through
     the Action Kernel (default-off). Returns a deny-reason (caller → HTTP 403) or ``None``
     (allow). **DENY only** — GRANT/QUEUE allow through (an unknown ``kg.write`` kind
