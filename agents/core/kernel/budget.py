@@ -98,6 +98,15 @@ class LoopDetector:
     def tripped(self) -> bool:
         return self._tripped
 
+    def status(self) -> dict:
+        """Operability snapshot (mirrors ``KillSwitch.status``) for the admin endpoint."""
+        return {
+            "tripped": self._tripped,
+            "max_repeats": self.max_repeats,
+            "window_seconds": self.window_seconds,
+            "recent_events": len(self._events),
+        }
+
     def reset(self) -> None:
         self._tripped = False
         self._events.clear()
