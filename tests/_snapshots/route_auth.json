@@ -65,6 +65,7 @@
   "GET /api/cognition/status": "user",
   "GET /api/cognition/stream": "user",
   "GET /api/cost": "open",
+  "GET /api/dashboard/today": "user",
   "GET /api/eval/datasets": "open",
   "GET /api/eval/datasets/{name}/compare": "open",
   "GET /api/eval/datasets/{name}/runs": "open",
