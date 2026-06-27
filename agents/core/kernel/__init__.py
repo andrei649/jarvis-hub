@@ -22,6 +22,7 @@ from dataclasses import dataclass, field
 from enum import StrEnum
 
 from ..security.capability import authorize as _capability_authorize
+from ..security.taint import is_tainted
 from .budget import BudgetLedger, BudgetLimits, LoopDetector
 from .flags import kernel_enabled
 
@@ -171,6 +172,14 @@ def authorize(action: Action,
         card = preview_task({"kind": action.kind, "title": action.title,
                              "payload": action.payload, "risk_tier": tier})
         decision = Decision(Verdict.QUEUE, reason=pdec.reason, tier=tier, card=card)
+
+    # 3b) Taint (H23.6) — an action carrying content from an untrusted source can't
+    #     auto-execute; escalate a GRANT to approval (indirect-injection guard).
+    if decision.verdict is Verdict.GRANT and is_tainted(action.payload):
+        card = preview_task({"kind": action.kind, "title": action.title,
+                             "payload": action.payload, "risk_tier": tier})
+        decision = Decision(Verdict.QUEUE, reason=f"tainted-source escalation; {pdec.reason}",
+                            tier=tier, card=card)
 
     # 4) Audit — always.
     _emit_audit(audit, action, decision)

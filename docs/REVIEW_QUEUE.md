@@ -31,6 +31,18 @@
 
 ## Items (newest first)
 
+### H23.6 — minimal taint flag + kernel escalation (indirect-injection guard)
+- **What:** `security/taint.py` marks content from untrusted sources (web/OSINT/RSS/inbound)
+  as tainted; the action kernel **escalates a tainted action from GRANT → QUEUE** (approval),
+  so injected content can't auto-execute. Default-off effect: only fires for actions
+  explicitly carrying the taint flag (nothing marks them yet — see pending).
+- **Verified (automated + scratch):** unit tests (classifier, mark/is_tainted, kernel
+  escalation) + scratch run against the **real** `AutonomyPolicy` confirming clean→GRANT,
+  tainted→QUEUE.
+- **⚠️ Needs you:** nothing yet — but note the producer side (marking ingested web/OSINT
+  content tainted) and full data-flow propagation are a deliberate **deferred** follow-up,
+  so this guard is mechanism-only until those land.
+
 ### B3 — strict-egress downgrade is now durably audited
 - **What:** the `JARVIS_STRICT_EGRESS=0` escape hatch (allows a blocked-by-default egress
   host) was a *silent* log line. Now a decoupled audit sink (`http_client.set_egress_audit_sink`,
