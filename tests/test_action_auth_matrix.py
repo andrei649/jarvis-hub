@@ -124,6 +124,17 @@ def _exercise(kind, spy, tmp_path):
             spec=MUTATING_ROUTE_ALLOWLIST[0], invoke=_invoke,
             auditor=None, identity_check=lambda _t: True, kernel=spy)
         asyncio.run(tool.call({"text": "x"}, token="ok"))
+    elif kind == "tool.rpc":
+        # A gated Tool-RPC call is mediated by the kernel before it can enqueue.
+        import asyncio
+
+        from agents.core.tool_rpc import ToolRPCServer
+
+        async def _gated(_a):
+            return {"ok": True}
+        srv = ToolRPCServer(enqueue=lambda *a, **k: 1, kernel=spy)
+        srv.register_tool("danger", _gated, gated=True)
+        asyncio.run(srv.handle({"tool": "danger", "args": {}}))
     else:  # pragma: no cover - a new KERNEL kind needs an exerciser added here
         raise AssertionError(f"no exerciser for kernel-classified kind {kind!r}")
 

@@ -46,9 +46,11 @@ ACTION_REGISTRY: dict[str, Mediation] = {
     # Wave 3 (in progress) — MCP mutating tools route through kernel.authorize after
     # the per-identity gate (a DENY blocks the write: kill-switch / budget / loop).
     "mcp.mutating": Mediation.KERNEL,
+    # Wave 3 — a gated Tool-RPC call is mediated by the kernel before it can enqueue
+    # an approval task (a DENY blocks it: kill-switch / budget / loop).
+    "tool.rpc": Mediation.KERNEL,
     # PENDING — privileged surfaces not yet routed through the kernel.
     "kg.write": Mediation.PENDING_KERNEL,         # wave 3 (next)
-    "tool.rpc": Mediation.PENDING_KERNEL,         # wave 3 (next)
     "admin.kill_switch": Mediation.PENDING_KERNEL,        # wave 4 (closes B1)
     "admin.capability_issue": Mediation.PENDING_KERNEL,   # wave 4 (closes B1)
 }
