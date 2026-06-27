@@ -31,6 +31,21 @@
 
 ## Items (newest first)
 
+### V-track — reality harness now proves the Action-Kernel kill-switch rail
+- **What:** a third **hermetic** reality case (`reality_harness.py:CASES`) proves the most safety-critical
+  Track-K rail end-to-end with **real primitives** — not a mock: an engaged `KillSwitch` makes
+  `kernel.authorize` return **DENY**, and disengaging lets the same action past the kill-switch gate
+  (it reaches policy). A green probe promotes `component:kill_switch` to **VERIFIED** in the V2 registry.
+  Extends the harness beyond the egress rail to the kernel's deny path, advancing Gate-V ("nothing
+  VERIFIED without a green harness").
+- **Verified (automated):** scratch-simulated against the real `KillSwitch`/`authorize` first (engaged→deny,
+  disengaged→queue, and the **live kill-switch left untouched** — the probe uses a throwaway temp store).
+  `tests/test_reality_harness.py` (+1, now 7): the kill-switch case passes + promotes, and a guard asserts
+  `KillSwitch().is_halted("global")` stays False (isolation proof). Full suite **3,019 passed**; `ruff` +
+  `bandit` clean (mkdtemp is the safe-tmp pattern — no new findings).
+- **⚠️ Needs you:** nothing — it's a hermetic, offline proof. (The *live*, keyed per-capability cases remain
+  the owner-gated nightly-lane follow-up, as before.)
+
 ### Tooling — `scripts/status_sync.py` ends the STATUS.md count drift (CDX-5)
 - **What:** a small CLI that derives the two STATUS.md header numbers that drift on nearly every PR —
   the **test count** (`pytest --collect-only`) and the **HTTP-route count** (the parity snapshot) — and

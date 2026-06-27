@@ -82,12 +82,28 @@ async def test_manual_demote_overrides_a_verification(monkeypatch):
     assert cr.build_records()[0].state == cr.SEAM
 
 
-# ── the real seeded cases: prove the egress rail hermetically ───────────────────
-async def test_seeded_cases_prove_egress_rail_and_promote():
+# ── the real seeded cases: prove the egress + kernel kill-switch rails hermetically ──
+async def test_seeded_cases_prove_rails_and_promote():
     out = await run_reality(rh.CASES, now="2026-06-25T00:00:00+00:00")
-    assert out["total"] == 2 and out["passed"] == 2  # both hermetic egress contracts hold
+    assert out["total"] == out["passed"] == len(rh.CASES)  # every hermetic contract holds
+    assert "component:kill_switch" in out["promoted"]
     snap = cr.snapshot()  # plugins derive statically (no orch needed)
     states = {c["id"]: c["state"] for c in snap["capabilities"]}
     assert states["plugin:system-control"] == cr.VERIFIED
     assert states["plugin:worldview"] == cr.VERIFIED
     assert snap["harness_pending"] is False  # something is now genuinely verified
+
+
+async def test_kill_switch_rail_is_a_real_hermetic_proof():
+    # The kernel kill-switch case proves the deny rail with real primitives (no mock),
+    # promotes component:kill_switch, and — crucially — leaves the LIVE kill-switch untouched.
+    from agents.core.security.capability import KillSwitch
+
+    out = await run_reality(
+        [c for c in rh.CASES if c.capability_id == "component:kill_switch"],
+        now="2026-06-25T00:00:00+00:00",
+    )
+    assert out["total"] == 1 and out["passed"] == 1
+    assert out["promoted"] == ["component:kill_switch"]
+    assert "component:kill_switch" in cr._VERIFICATIONS
+    assert KillSwitch().is_halted("global") is False  # the probe's temp store stayed isolated
