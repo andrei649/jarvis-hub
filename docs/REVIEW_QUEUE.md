@@ -31,6 +31,28 @@
 
 ## Items (newest first)
 
+### K1 (wave-2) — plugin egress routes through the Action Kernel
+- **What:** policy-passing plugin egress (an HTTP call the plugin's manifest already
+  allows) now also passes the **kernel**. With `JARVIS_ACTION_KERNEL=1`, a **halted
+  kill-switch blocks all outbound plugin calls** (plus over-budget / runaway-loop
+  denials) — the manifest decides *where* a plugin may reach, the kernel can veto *that
+  it reaches at all right now*. `http_client` stays fully decoupled: the orchestrator
+  injects a plain `(plugin, method, url, host) → reason|None` hook bound to
+  `kernel.authorize`. A buggy hook **fails open** (the manifest policy already ran), so
+  the experimental gate can never brick egress. **Default-off** — zero change until enabled.
+- **Verified (automated + scratch):** unit tests for the hook contract (deny blocks,
+  allow passes, no-hook no-op, exception fails-open, **manifest block precedes the
+  kernel**) + the production hook (default-off, deny-when-on, none-kernel-allows) **plus
+  a real-primitives integration**: the production `kernel.authorize` over a real
+  `AutonomyPolicy` + real `KillSwitch` — engage → egress raises `PluginEgressError`,
+  release → egress allowed. The action-auth matrix now proves `plugin.egress` really
+  routes through the kernel when on / not when off. Full suite green (2,938 passed); the
+  old B3 xfail scaffold is now a real passing regression.
+- **⚠️ Needs you:** during manual testing, set `JARVIS_ACTION_KERNEL=1`, engage the
+  kill-switch from the HUD/API, and confirm a plugin that makes outbound calls (e.g. a
+  weather/news plugin) is blocked while halted, then released. Also confirm the
+  network-monitor panel records the blocked attempt (reason mentions the kernel).
+
 ### K1 (payment micro-wave) — payments route through the Action Kernel
 - **What:** an *admissible* `request_payment` (one the mandate's hard caps already
   accept) now passes through `kernel.authorize`. A kernel **DENY** — kill-switch

@@ -39,8 +39,11 @@ ACTION_REGISTRY: dict[str, Mediation] = {
     # (a DENY blocks before the payment becomes pending; PaymentBroker carries a
     # `kernel` hook, bound in web.py via kernel.binding.make_action_kernel).
     "payment": Mediation.KERNEL,
+    # Wave 2 — policy-passing plugin egress is mediated by the kernel via an injected
+    # hook in http_client (a DENY blocks otherwise-allowed egress: kill-switch / budget /
+    # loop). The B3 strict-egress-downgrade audit landed earlier; this is the routing half.
+    "plugin.egress": Mediation.KERNEL,
     # PENDING — privileged surfaces not yet routed through the kernel.
-    "plugin.egress": Mediation.PENDING_KERNEL,    # wave 2 (closes B3: audited strict-egress downgrade)
     "mcp.mutating": Mediation.PENDING_KERNEL,     # wave 3
     "kg.write": Mediation.PENDING_KERNEL,         # wave 3
     "tool.rpc": Mediation.PENDING_KERNEL,         # wave 3

@@ -6,7 +6,7 @@
   "mcp.mutating": "pending",
   "node.dispatch": "kernel",
   "payment": "kernel",
-  "plugin.egress": "pending",
+  "plugin.egress": "kernel",
   "social.*": "kernel",
   "tool.rpc": "pending",
   "writeback.*": "kernel"

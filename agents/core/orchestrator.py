@@ -226,6 +226,13 @@ class Orchestrator:
             ))
 
         _http_client.set_egress_audit_sink(_egress_downgrade_audit)
+        # ORIZONT-24 K1 wave-2: route policy-passing plugin egress through the Action
+        # Kernel (default-off behind JARVIS_ACTION_KERNEL). The kernel is rebuilt lazily
+        # per call so it reads live state (kill-switch engaged → egress denied). Decoupled:
+        # http_client never imports the kernel; we hand it a plain callable hook.
+        from .kernel.binding import make_action_kernel, make_egress_kernel_hook
+        _http_client.set_egress_kernel_hook(
+            make_egress_kernel_hook(lambda: make_action_kernel(self)))
         # LM Studio lifecycle control (start server / load / unload). Shares the
         # live router so a model change refreshes routing + reported state.
         from .llm.lmstudio_control import LMStudioController

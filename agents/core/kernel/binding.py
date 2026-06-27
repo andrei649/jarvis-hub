@@ -41,3 +41,32 @@ def make_action_kernel(orch):
         policy=pol,
         audit=getattr(orch, "intent_log", None),
     )
+
+
+def make_egress_kernel_hook(get_kernel):
+    """Adapt a bound ``kernel.authorize`` to the ``http_client`` egress-hook signature
+    ``(plugin, method, url, host) -> reason|None`` (wave-2 plugin-egress mediation).
+
+    *get_kernel* is the bound kernel.authorize, or a zero-arg callable returning it (or
+    ``None``) — evaluated **lazily** per call so it reads live orchestrator state
+    (kill-switch / policy may be wired after this hook is installed). Returns a
+    deny-reason string when the kernel DENYs an otherwise-allowed egress, else ``None``.
+    Default-off: returns ``None`` immediately unless ``JARVIS_ACTION_KERNEL`` is set, so
+    installing it changes nothing at runtime until enabled.
+    """
+    from . import Action, Verdict, kernel_enabled
+
+    def _hook(plugin, method, url, host):
+        if not kernel_enabled():
+            return None
+        k = get_kernel() if callable(get_kernel) else get_kernel
+        if k is None:
+            return None
+        decision = k(Action(
+            kind="plugin.egress", agent=plugin or "plugin",
+            title=f"egress {method} {host}",
+            payload={"plugin": plugin, "method": method, "host": host, "url": url},
+            origin="generated"))
+        return decision.reason if decision.verdict is Verdict.DENY else None
+
+    return _hook
