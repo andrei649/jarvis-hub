@@ -174,3 +174,33 @@ def test_endpoint_503_without_queue(monkeypatch):
     client = TestClient(web.app)
     resp = client.get("/api/metrics/north-star")
     assert resp.status_code == 503
+
+
+# ── P1 proposal-funnel diagnostic ───────────────────────────────────────────
+def test_proposal_funnel(q):
+    d1 = _make_done(q)
+    _make_done(q)                                     # 2 accepted
+    _make_rejected(q)                                 # 1 rejected
+    p1 = q.enqueue("jarvis", "draft_email", "pending", risk_tier=2)   # 1 pending (proposed)
+    q.mark_pushed(d1)                                 # an accepted one surfaced
+    q.mark_pushed(p1)                                 # a pending one surfaced
+    old = _make_done(q)                               # created OUTSIDE the window → excluded
+    q._conn.execute("UPDATE tasks SET created_at=? WHERE id=?",
+                    ((datetime.now(UTC) - timedelta(days=30)).isoformat(), old))
+    q._conn.commit()
+
+    f = compute_north_star(q, None, None, days=7)["proposal_funnel"]
+    assert f["proposed"] == 4 and f["accepted"] == 2 and f["rejected"] == 1
+    assert f["pending"] == 1 and f["surfaced"] == 2
+    assert f["accept_rate"] == round(2 / 3, 4)        # 2 accepted of 3 resolved
+    assert f["surface_rate"] == 0.5                   # 2 surfaced of 4 proposed
+
+
+def test_proposal_funnel_empty(q):
+    f = compute_north_star(q, None, None, days=7)["proposal_funnel"]
+    assert f == {"proposed": 0, "surfaced": 0, "accepted": 0, "rejected": 0,
+                 "pending": 0, "surface_rate": None, "accept_rate": None}
+
+
+def test_proposal_funnel_none_queue():
+    assert compute_north_star(None, None, None, days=7)["proposal_funnel"] is None

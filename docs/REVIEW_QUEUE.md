@@ -31,6 +31,24 @@
 
 ## Items (newest first)
 
+### Metrics — P1 proposal-funnel diagnostic on the north-star
+- **What:** `compute_north_star` now also returns a **`proposal_funnel`** block — a *cohort*
+  over the proposals **created** in the window: `proposed → surfaced` (a decision card reached
+  the inbox / `pushed`) `→ accepted` (`done`) / `rejected` / `pending`, plus `surface_rate` and
+  `accept_rate`. It localizes *where* a low north-star comes from (too few proposed? proposed
+  but never surfaced? surfaced but rejected?). Auto-exposed read-only via
+  `GET /api/metrics/north-star` — no new endpoint, no new storage, pure function over the
+  existing autonomy `TaskQueue`. First of the three P1 proof-gaps (the pack that moves the
+  north-star). Docs in `docs/METRICS.md`.
+- **Verified (automated):** `tests/test_north_star.py` (+3) — a 4-proposal cohort
+  (2 accepted / 1 rejected / 1 pending, 2 surfaced; `accept_rate`=2/3, `surface_rate`=0.5) with a
+  30-day-old proposal proving the created-in-window cohort excludes it; plus empty-honest and
+  None-queue cases. **Full suite 2,999 passed**, `ruff` + `bandit` clean. Backend-only — no HUD
+  build artifact touched.
+- **⚠️ Needs you:** nothing owner-only here — it's pure aggregate metrics over existing rows. If
+  you want to eyeball it, `curl localhost:<port>/api/metrics/north-star | jq .proposal_funnel`
+  after some real autonomy activity and sanity-check the drop-off story against what you saw.
+
 ### HUD — Onboarding panel (H23.20 UI)
 - **What:** a Console *Observe* panel that drives the first-run wizard: it reads
   `GET /api/onboarding/wizard` and renders the ordered steps (intro → model → say-hello →
