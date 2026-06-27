@@ -23,6 +23,7 @@ class SecurityEventType(str, Enum):
     SECRET_DETECTED = "secret_detected"
     PII_DETECTED = "pii_detected"
     SSRF_BLOCKED = "ssrf_blocked"
+    EGRESS_DOWNGRADE = "egress_downgrade"   # B3 — strict-egress escape hatch used (audited)
     AUDIT_LOG = "audit_log"
     LLM_CALL = "llm_call"
     SETTINGS_CHANGE = "settings_change"

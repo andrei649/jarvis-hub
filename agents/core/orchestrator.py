@@ -213,6 +213,19 @@ class Orchestrator:
         self.security: Optional[GuardrailsEngine] = None
         self.permission_gate = PermissionGate()
         self.audit = AuditLogger()
+        # B3: route the strict-egress downgrade (escape hatch) through a durable audit
+        # record so it's no longer a silent log line. No-op in strict mode (the default).
+        from . import http_client as _http_client
+
+        def _egress_downgrade_audit(plugin: str, violation: str) -> None:
+            self.audit.log(SecurityEvent(
+                event_type=SecurityEventType.EGRESS_DOWNGRADE,
+                timestamp=time.time(),
+                content_preview=f"{plugin}: {violation}"[:200],
+                action_taken="allowed (JARVIS_STRICT_EGRESS=0)",
+            ))
+
+        _http_client.set_egress_audit_sink(_egress_downgrade_audit)
         # LM Studio lifecycle control (start server / load / unload). Shares the
         # live router so a model change refreshes routing + reported state.
         from .llm.lmstudio_control import LMStudioController
