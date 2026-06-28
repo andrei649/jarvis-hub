@@ -172,7 +172,7 @@ def authorize(action: Action,
             return decision
 
     # 3) Policy — the single risk-classification + outcome evaluation for this action.
-    pdec = policy.decide({"kind": action.kind, **(action.payload or {})})
+    pdec = policy.decide({"kind": action.kind, "agent": action.agent, **(action.payload or {})})
     tier = int(pdec.tier)
     if pdec.outcome in (ACT, NOTIFY):
         decision = Decision(Verdict.GRANT, reason=pdec.reason, tier=tier)
