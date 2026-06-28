@@ -1,4 +1,3 @@
-// @ts-nocheck
 /* HUD v2 · COCKPIT — conversation + cognition trace + input */
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { Icon, ICONS, Glyph } from './primitives';
@@ -125,9 +124,9 @@ function buildTrace(text){
   const SC = V2.COGNITION_SCORING;
   const low = text.toLowerCase();
   const hits = SC.filter(s => low.includes(s.keyword));
-  const agentScore = {};
+  const agentScore: Record<string, number> = {};
   hits.forEach(h => h.agents.forEach(a => { agentScore[a]=Math.max(agentScore[a]||0, h.weight); }));
-  let scored = Object.entries(agentScore).map(([id,v])=>({id,v})).sort((a,b)=>b.v-a.v);
+  let scored = Object.entries(agentScore).map(([id,v])=>({id,v} as {id:string; v:number; win?:boolean})).sort((a,b)=>b.v-a.v);
   if (scored.length===0) scored=[{id:'jarvis',v:0.55}];
   scored = scored.slice(0,5);
   scored[0].win = true;

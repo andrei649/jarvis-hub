@@ -31,6 +31,19 @@
 
 ## Items (newest first)
 
+### HUD — type `cockpit.tsx` (CDX-9 typing pass)
+- **What:** removed `@ts-nocheck` from `cockpit.tsx` (the conversation + cognition-trace + input column).
+  A clean **root-cause** fix: `buildTrace()` built its per-agent routing scores into an untyped `{}`
+  accumulator, so `Object.entries(agentScore)` typed every value as `unknown` — which then broke the
+  `.sort((a,b)=>b.v-a.v)`, the `s.v>=0.6` / `conf<0.6` comparisons, and the `scored[0].win=true` flag
+  (5 errors, all the same origin). Typed the accumulator `Record<string, number>` and widened the
+  scored-element type to carry the optional `win`. Type-only; bundle byte-identical. 6 non-test source
+  modules remain on `@ts-nocheck`.
+- **Verified (automated):** `tsc --noEmit` clean; frontend **vitest 73 passed**; `agents/web/v2` bundle
+  **byte-identical**. No backend/route change.
+- **⚠️ Needs you:** nothing — compile-time only (the cognition trace is a deterministic client-side
+  demo built from the seeded `COGNITION_SCORING`; no behaviour change).
+
 ### HUD — type `modes2.tsx` + fix a dropped-style drift ⚠️ FIRST VISUAL CHANGE (CDX-9 typing pass)
 - **What:** removed `@ts-nocheck` from `modes2.tsx` (the Autonomy / Build / Observe / Interop modes).
   Stripping it exposed a real **dropped-style bug**: this file's *local* `SubH` was
