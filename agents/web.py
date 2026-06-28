@@ -1337,12 +1337,16 @@ def _build_mcp_route_tools():
 
     if not route_tools_enabled():
         return []
+    from agents.core.routers.codeintel import search_payload as codeintel_search
     from agents.core.routers.memory_kg import memory_search
 
     handlers = {
         "status": status,
         "memory_search": memory_search,
         "dashboard": dashboard,
+        # 0.31 — plain-signature shared helper (no fastapi Query default) so the
+        # in-process route-tool dispatch can reflect + call it cleanly.
+        "codeintel_search": codeintel_search,
     }
     return build_route_tools(handlers)
 
