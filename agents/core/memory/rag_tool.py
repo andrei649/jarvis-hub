@@ -12,6 +12,9 @@ from __future__ import annotations
 
 from typing import Callable
 
+from ..security import quarantine
+from ..security.rag_guard import REDACTION
+
 # Function-calling schema exposed to the model (Anthropic/OpenAI-style).
 TOOL_SPEC = {
     "name": "search_memory",
@@ -36,11 +39,42 @@ RecallFn = Callable[[str, int], list]
 PlannerFn = Callable[[str, list], dict]
 
 
+def _sanitize_hit(hit: dict) -> dict:
+    """CDX-7 follow-up: scan a retrieved hit and **redact** it if the injection
+    scanner flags it. Retrieved memory is untrusted data — a stored string (or one
+    synced from an untrusted feed into the graph) could carry "ignore previous
+    instructions…" that the model would otherwise read straight out of the
+    ``search_memory`` tool result. The prompt-string recall sites are fenced by
+    ``rag_guard.wrap_memory``; this is the dict-shaped tool path it deferred.
+
+    Clean hits pass through unchanged (same object). A flagged hit keeps its score
+    and metadata but its text is replaced by the redaction marker and tagged
+    ``injection_flagged`` so the model/UI sees *that* something matched without
+    reading the injected instructions.
+    """
+    if not isinstance(hit, dict):
+        return hit
+    field = "text" if "text" in hit else ("name" if "name" in hit else None)
+    text = (hit.get(field) if field else "") or ""
+    flags = quarantine.detect_injection(text) if text else []
+    if not flags:
+        return hit
+    out = dict(hit)
+    out[field or "text"] = REDACTION
+    out["injection_flagged"] = True
+    out["flags"] = flags
+    return out
+
+
 class MemorySearchTool:
     """Wraps a recall function as the callable `search_memory` tool."""
 
-    def __init__(self, recall_fn: RecallFn) -> None:
+    def __init__(self, recall_fn: RecallFn, *, scan: bool = True) -> None:
         self._recall = recall_fn
+        # CDX-7 follow-up: scan retrieved hits for injection and redact flagged
+        # ones before they reach the model. On by default; off only for callers
+        # that have already sanitized upstream.
+        self._scan = scan
         self.calls: list[dict] = []
 
     @property
@@ -57,6 +91,8 @@ class MemorySearchTool:
         except Exception:
             hits = []
         hits = hits[:top_k]
+        if self._scan:
+            hits = [_sanitize_hit(h) for h in hits]
         self.calls.append({"query": query, "count": len(hits)})
         return {"query": query, "hits": hits, "count": len(hits)}
 
