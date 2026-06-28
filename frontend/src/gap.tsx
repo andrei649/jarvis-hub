@@ -1067,21 +1067,38 @@ export function OnboardingPanel() {
 export function DecisionInboxPanel() {
   const { d, e, loading, reload } = useApi('/autonomy/tasks?status=blocked', true, true);  // admin
   const pending = arr(d, 'tasks');
-  const decide = (id, action) => actA('/autonomy/tasks/' + id + '/decision', { action }, reload);
+  const [editing, setEditing] = useState(null);   // task id whose payload is being edited
+  const [draft, setDraft] = useState('');
+  const decide = (id, action, payload?) => actA('/autonomy/tasks/' + id + '/decision',
+    payload !== undefined ? { action, payload } : { action }, () => { setEditing(null); reload(); });
+  const startEdit = (t) => { setEditing(t.id); setDraft(JSON.stringify(t.payload || {}, null, 2)); };
+  const saveEdit = (id) => { let p; try { p = JSON.parse(draft); } catch { return; } decide(id, 'edit', p); };
   const tierColor = (n) => n >= 3 ? 'var(--red)' : n === 2 ? 'var(--amber)' : 'var(--ink-3)';
   return (
     <Card title="DECISION INBOX" sub={d ? `${pending.length} awaiting you` : null} onReload={reload}>
       <State e={e} loading={loading} n={pending.length} />
       {pending.slice(0, 10).map((t, i) => (
-        <Row key={t.id ?? i}>
-          <span style={{ ...mono, color: 'var(--ink-2)' }}>{t.title || t.kind || ('task ' + t.id)}</span>
-          <span style={{ marginLeft: 'auto', display: 'flex', gap: 5, alignItems: 'center' }}>
-            {typeof t.risk_tier === 'number' && <Tag c={tierColor(t.risk_tier)}>tier {t.risk_tier}</Tag>}
-            <button className="tool-btn" title="accept" onClick={() => decide(t.id, 'accept')}>✓</button>
-            <button className="tool-btn" title="reject" onClick={() => decide(t.id, 'reject')}>✕</button>
-            <button className="tool-btn" title="defer" onClick={() => decide(t.id, 'defer')}>defer</button>
-          </span>
-        </Row>
+        <div key={t.id ?? i}>
+          <Row>
+            <span style={{ ...mono, color: 'var(--ink-2)' }}>{t.title || t.kind || ('task ' + t.id)}</span>
+            <span style={{ marginLeft: 'auto', display: 'flex', gap: 5, alignItems: 'center' }}>
+              {typeof t.risk_tier === 'number' && <Tag c={tierColor(t.risk_tier)}>tier {t.risk_tier}</Tag>}
+              <button className="tool-btn" title="accept" onClick={() => decide(t.id, 'accept')}>✓</button>
+              <button className="tool-btn" title="edit" onClick={() => startEdit(t)}>edit</button>
+              <button className="tool-btn" title="reject" onClick={() => decide(t.id, 'reject')}>✕</button>
+              <button className="tool-btn" title="defer" onClick={() => decide(t.id, 'defer')}>defer</button>
+            </span>
+          </Row>
+          {editing === t.id && (
+            <div style={{ margin: '6px 0' }}>
+              <textarea value={draft} onChange={(ev) => setDraft(ev.target.value)} style={{ ...taS, minHeight: 80 }} />
+              <div style={{ display: 'flex', gap: 6, marginTop: 4 }}>
+                <button className="tool-btn" onClick={() => saveEdit(t.id)}>save &amp; approve</button>
+                <button className="tool-btn" onClick={() => setEditing(null)}>cancel</button>
+              </div>
+            </div>
+          )}
+        </div>
       ))}
       {pending.length === 0 && <div style={{ fontSize: 10, color: 'var(--green)', marginTop: 6 }}>all clear · no decisions waiting</div>}
     </Card>
