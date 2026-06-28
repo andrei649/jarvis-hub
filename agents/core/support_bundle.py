@@ -89,22 +89,18 @@ def _audit(orch) -> dict:
         return {"error": "unavailable"}
 
 
-def _route_count() -> int | None:
-    try:
-        from agents.web import app
-        return len(app.routes)
-    except Exception:
-        return None
-
-
-def build_bundle(orch=None, *, now_iso: str = "") -> dict:
+def build_bundle(orch=None, *, now_iso: str = "", route_count: int | None = None) -> dict:
     """Assemble the diagnostic bundle. Pure aside from reading live diagnostics; every
-    section is defensive so the bundle is always well-formed."""
+    section is defensive so the bundle is always well-formed.
+
+    ``route_count`` is supplied by the caller (the router reads ``request.app.routes``)
+    so this core module never imports ``agents.web`` — keeping it out of an import cycle.
+    """
     return {
         "meta": _meta(now_iso),
         "posture": _posture(),
         "capabilities": _capabilities(orch),
         "egress": _egress(),
         "audit": _audit(orch),
-        "routes": _route_count(),
+        "routes": route_count,
     }

@@ -9,7 +9,7 @@ without a screen-share or a risky data dump. Safety is allow-list, not redaction
 
 from datetime import UTC, datetime
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Request
 
 from agents.core.app_state import get_orch
 from agents.core.routers._deps import admin_guard
@@ -19,8 +19,12 @@ router = APIRouter(tags=["support"])
 
 
 @router.get("/api/support/bundle", dependencies=[Depends(admin_guard)])
-async def support_bundle():
+async def support_bundle(request: Request):
     """A non-sensitive diagnostic bundle for support triage (admin-only)."""
     from agents.core import support_bundle as sb
     orch = get_orch()
-    return nocache_json(sb.build_bundle(orch, now_iso=datetime.now(UTC).isoformat()))
+    # Read the route count off the live app (request.app) rather than importing
+    # agents.web here — that keeps support_bundle out of an import cycle (CodeQL).
+    route_count = len(getattr(request.app, "routes", []))
+    return nocache_json(sb.build_bundle(orch, now_iso=datetime.now(UTC).isoformat(),
+                                        route_count=route_count))
