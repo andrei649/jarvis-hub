@@ -95,6 +95,13 @@ ROUTE_TOOL_ALLOWLIST: tuple[RouteToolSpec, ...] = (
         summary="HUD dashboard payload (weather, news, agent summary). Read-only.",
         guard="user",
     ),
+    RouteToolSpec(
+        name="codeintel_search",
+        path="/api/codeintel/search",
+        summary="Search the project's code symbols (functions/classes/methods) by name. "
+                "Args: q (substring), kind (function|async_function|class|method), limit. Read-only.",
+        guard="user",
+    ),
 )
 
 ALLOWLIST_BY_NAME: dict[str, RouteToolSpec] = {s.name: s for s in ROUTE_TOOL_ALLOWLIST}

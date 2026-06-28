@@ -340,12 +340,14 @@ def _real_route_handlers():
     handlers = {}
     try:
         from agents import web  # noqa: F401  (binds /status, /dashboard)
+        from agents.core.routers.codeintel import search_payload
         from agents.core.routers.memory_kg import memory_search
     except Exception:
         return None
     handlers["status"] = web.status
     handlers["dashboard"] = web.dashboard
     handlers["memory_search"] = memory_search
+    handlers["codeintel_search"] = search_payload
     return handlers
 
 

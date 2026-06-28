@@ -31,6 +31,18 @@
 
 ## Items (newest first)
 
+### 0.31 (cont.) — codeintel search is now an agent-callable MCP tool
+- **What:** `codeintel_search` joins the read-only MCP `ROUTE_TOOL_ALLOWLIST`, so an agent can call
+  `route_codeintel_search` to locate code symbols — completing the "Code Intelligence **MCP**" half. It rides
+  the existing default-off `JARVIS_MCP_ROUTE_TOOLS` kill-switch (so nothing is exposed over MCP unless you
+  turn route tools on), and its guard is pinned to `route_auth.json` by the 0.36 parity gate. A shared
+  module-level `routers/codeintel.search_payload` backs both the HTTP route and the tool.
+- **⚠️ Needs you:** nothing — opt-in (the MCP route-tools kill-switch is off by default) and read-only.
+- **Verified (automated):** `tests/test_codeintel_mcp_tool.py` 2 passed (the spec is an allow-listed GET/user
+  read tool; the tool reflects its schema and dispatches, filtering unknown args) + the existing
+  `test_mcp_route_tools.py` drift-guard (now covering the 4th handler) and `test_route_tools_auth_parity.py`
+  still green; ruff + bandit clean; no HTTP route change; STATUS at 3,186 tests.
+
 ### 0.31 — Code Intelligence: read-only AST symbol index over the source
 - **What:** a new `agents/core/codeintel/` indexing backend — it parses the project's own Python with the
   stdlib `ast` and builds a searchable map of **symbols** (module functions / classes / methods) with their
