@@ -31,6 +31,21 @@
 
 ## Items (newest first)
 
+### 0.36 — the agent-native route manifest is now pinned to route_auth.json (no more drift)
+- **What:** the MCP route tools (`mcp/route_tools.py`) expose a small curated set of HTTP routes to the
+  model — 3 read (`/status`, `/api/memory/search`, `/dashboard`) and 1 double-gated write
+  (`/api/memory/remember`). That allow-list declared nothing about each route's auth, so it could drift
+  from the route's real guard or (worse) silently expose an over-privileged route as an agent **read**
+  tool. Each spec now declares a `guard`, and a new parity gate pins it to `route_auth.json` (the SEC-2
+  source of truth): CI fails if the manifest drifts, names a non-existent path, exposes an **admin**
+  route as a read tool, or lists an **open** (unauthenticated) **write** tool.
+- **⚠️ Needs you:** nothing — pure CI hardening, no runtime/behavior change. Noted only so you know that
+  if you ever add a route to the agent allow-list, you'll also declare its `guard` and the gate will
+  hold it to the real auth snapshot.
+- **Verified (automated):** `tests/test_route_tools_auth_parity.py` 3 passed (read tools match + are
+  not admin; write tools match + are authenticated; read/write allow-lists are disjoint) + the existing
+  `test_mcp_route_tools.py` suite still green; ruff + bandit clean; no new routes; STATUS at 3,127 tests.
+
 ### CDX-7 follow-up — the agentic-RAG *tool* path now redacts injected memory too
 - **What:** CDX-7 fenced retrieved memory at the *prompt-string* sites, but the LLM-callable
   `search_memory` tool (`MemorySearchTool.search()`, behind `POST /api/memory/search-tool`) returns
