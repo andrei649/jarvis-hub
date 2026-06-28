@@ -84,7 +84,7 @@ construction).
 | C7 | Build: workflows · skills · sandbox · templates | `modes2.tsx` Build (exists) | `/api/workflows` · `/api/skills/marketplace*` · `/sandbox/execute` | |
 | C8 | Observe: quality-threshold · arena · evals · review | `modes2.tsx` Observe (exists) | `/api/quality/threshold` · `/api/arena/*` · eval/review routes | |
 | C9 | Backup / export / forget-me · onboarding | `modes4.tsx` Admin/Life + `shell.tsx` onboarding | `/api/admin/export` · `/api/admin/forget` · onboarding route | onboarding is a real 4-step wizard in the prototype |
-| C10 | Mesh devices / sync | `NEW` mesh view → interop | `GET /api/a2a/peers` · mesh routes | |
+| C10 ✅ | Mesh devices / sync | `gap.tsx` `MeshPeersPanel` (Interop cluster) | `GET·POST·DELETE /api/a2a/peers` (admin) | Allowlist + one-time shared secret; list/add/remove. **Shipped PR 4.** |
 
 ### Phase D — tail (P2)
 

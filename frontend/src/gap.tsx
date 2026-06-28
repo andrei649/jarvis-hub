@@ -266,6 +266,43 @@ export function LoopBreakerPanel() {
 }
 
 /* ── Interop ───────────────────────────────────────────── */
+/* HUD-v3 C10 — Mesh peers. The A2A peer registry (allowlist + one-time shared secret)
+   is admin-guarded and had no control surface (only the inbox did). Surfaces the
+   allowlisted peers (secret masked to a hint), a remove control, and an add-peer flow
+   that shows the shared secret ONCE (mirrors the backend's return-once contract). */
+export function MeshPeersPanel() {
+  const { d, e, loading, reload } = useApi('/api/a2a/peers', true, true);  // admin-guarded
+  const peers = arr(d, 'peers');
+  const [pid, setPid] = useState('');
+  const [name, setName] = useState('');
+  const [secret, setSecret] = useState(null);
+  const add = () => {
+    if (!pid.trim()) return;
+    actA('/api/a2a/peers', { peer_id: pid.trim(), name: name.trim() }, (r) => {
+      setSecret(r && r.secret ? r.secret : null); setPid(''); setName(''); reload();
+    });
+  };
+  return (
+    <Card title="MESH PEERS" sub={d ? `${peers.length} allowlisted` : null} onReload={reload}>
+      <State e={e} loading={loading} n={peers.length} />
+      {peers.slice(0, 12).map((p, i) => (
+        <Row key={p.peer_id ?? i}>
+          <span style={{ ...mono, color: 'var(--ink-2)' }}>{p.name || p.peer_id}</span>
+          <span style={{ marginLeft: 'auto', display: 'flex', gap: 5, alignItems: 'center' }}>
+            {p.secret_hint && <Tag>{p.secret_hint}</Tag>}
+            <button className="tool-btn" title="remove" onClick={() => apiDelete('/api/a2a/peers/' + encodeURIComponent(p.peer_id), { admin: true }).then(reload).catch(() => {})}>✕</button>
+          </span>
+        </Row>
+      ))}
+      <div style={{ display: 'flex', gap: 6, marginTop: 8 }}>
+        <input value={pid} onChange={(ev) => setPid(ev.target.value)} placeholder="peer_id" style={{ ...inpS, flex: 1 }} />
+        <input value={name} onChange={(ev) => setName(ev.target.value)} placeholder="name" style={{ ...inpS, flex: 1 }} />
+        <button className="tool-btn" onClick={add}>add</button>
+      </div>
+      {secret && <div style={{ fontSize: 10, color: 'var(--amber)', marginTop: 6 }}>shared secret (shown once): <span style={mono}>{secret}</span></div>}
+    </Card>
+  );
+}
 function A2AInboxPanel() {
   const { d, e, loading, reload } = useApi('/api/a2a/inbox');
   const items = arr(d, 'inbox', 'tasks');
@@ -853,7 +890,7 @@ export function TodayPanel() {
 const SECTIONS: Array<[string, Array<() => any>]> = [
   ['Memory', [DataSpacesPanel, LocalDocsPanel, NotesPanel, ReflectionPanel]],
   ['Trust', [KillSwitchPanel, KernelMetricsPanel, ReadinessPanel, LoopBreakerPanel, NetworkMonitorPanel, SecretsPanel, CapabilitiesPanel, PairingPanel, InjectionScanPanel]],
-  ['Interop', [A2AInboxPanel, MarketplacePanel]],
+  ['Interop', [A2AInboxPanel, MeshPeersPanel, MarketplacePanel]],
   ['Observe', [OnboardingPanel, EvalPanel, ReviewPanel, APMPanel, FeedbackPanel]],
   ['Build', [StepGenPanel, SandboxPanel, TemplatesPanel]],
   ['Autonomy & Agents', [MissionsPanel, TodayPanel, SchedulePanel, LearningPanel, SessionsPanel, HeartbeatPanel, TranscriptPanel, EscalationPanel]],
