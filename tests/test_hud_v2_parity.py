@@ -55,6 +55,7 @@ RULES = [
     # finance / market intel
     ("/api/market/", "finance"),  # P3 Market Intel pack — the Finance surface (modes4 "Gecko")
     # trust / security / payments
+    ("/api/security-skills/", "trust"),  # 0.42 Security Skills pack — curated ATT&CK/D3FEND/CSF knowledge
     ("/api/security/", "trust"), ("/security", "trust"), ("/api/secrets/", "trust"),
     ("/api/payments", "trust"),
     # autonomy

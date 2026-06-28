@@ -31,6 +31,26 @@
 
 ## Items (newest first)
 
+### 0.42 — Security Skills Pack (curated ATT&CK / D3FEND / NIST CSF knowledge, read-only)
+- **What:** a new offline knowledge pack (`agents/core/security_skills/`, separate from the `security/`
+  infra) over **public** taxonomies — MITRE ATT&CK (all 14 tactics + a curated subset of techniques with
+  real IDs), MITRE D3FEND (countermeasures mapped to the techniques they counter), and NIST CSF 2.0 (the 6
+  functions). It maps a free-text behavior to candidate ATT&CK techniques (an honest keyword heuristic that
+  returns the matched evidence — not a black-box classifier) and assembles a defensive playbook
+  (countermeasures + CSF coverage, with honest gaps + unknown-id reporting). Read-only at
+  `/api/security-skills/{frameworks,tactics,techniques,technique/{tid},map,playbook}`.
+- **⚠️ Needs you — eyeball the honesty + accuracy:** this is the kind of pack where *honesty* is the whole
+  point, so spot-check a couple of things: (1) `GET /api/security-skills/technique/T1486` should show the
+  ransomware technique mapped to **File Backup & Restore** → CSF **Recover**; (2) `POST
+  /api/security-skills/map` with `{"behavior":"attacker used powershell then exfiltrated data"}` should
+  surface **T1059** + **T1041** *with the matched keywords as evidence*; (3) every payload carries
+  `curated:true`, a `DISCLAIMER`, and `SOURCES` — confirm it reads as "curated educational subset", never
+  "complete control set". It never fabricates an ID and never acts (pure knowledge).
+- **Verified (automated):** `tests/test_security_skills_pack.py` 8 passed (tactics complete + provenance,
+  technique enrichment, the keyword heuristic + its evidence, honest playbook gaps/unknowns, framework
+  overview, no fabricated D3FEND buckets); ruff + bandit clean; route/openapi/hud-v2 parity reseeded for
+  the 6 new user-guarded routes; STATUS at 3,135 tests / 342 routes.
+
 ### 0.36 — the agent-native route manifest is now pinned to route_auth.json (no more drift)
 - **What:** the MCP route tools (`mcp/route_tools.py`) expose a small curated set of HTTP routes to the
   model — 3 read (`/status`, `/api/memory/search`, `/dashboard`) and 1 double-gated write
