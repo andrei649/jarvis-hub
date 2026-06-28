@@ -54,4 +54,37 @@ describe('DecisionInboxPanel — the north-star resolve action is live', () => {
     render(<DecisionInboxPanel />);
     await waitFor(() => expect(screen.getByText(/all clear/)).toBeTruthy());
   });
+
+  it('edit reveals the payload as JSON and saves an edited decision (POST {action:"edit",payload})', async () => {
+    const fn = mockFetch({ tasks: [
+      { id: 7, title: 'Wire $200', kind: 'payment', risk_tier: 3, status: 'blocked', payload: { amount: 200 } },
+    ], total: 1 });
+    render(<DecisionInboxPanel />);
+    await waitFor(() => expect(screen.getByTitle('edit')).toBeTruthy());
+    fireEvent.click(screen.getByTitle('edit'));
+    // the textarea is pre-filled with the task's payload
+    const ta = await screen.findByDisplayValue(/"amount": 200/);
+    fireEvent.change(ta, { target: { value: '{"amount": 50}' } });
+    fireEvent.click(screen.getByText('save & approve'));
+    await waitFor(() => expect(
+      fn.mock.calls.some((c) => String(c[0]).includes('/autonomy/tasks/7/decision')
+        && c[1]?.method === 'POST'
+        && String(c[1]?.body).includes('"action":"edit"')
+        && String(c[1]?.body).includes('"amount":50'))
+    ).toBe(true));
+  });
+
+  it('does NOT POST an edit when the payload JSON is invalid', async () => {
+    const fn = mockFetch({ tasks: [
+      { id: 8, title: 'X', kind: 'k', risk_tier: 1, status: 'blocked', payload: {} },
+    ], total: 1 });
+    render(<DecisionInboxPanel />);
+    await waitFor(() => expect(screen.getByTitle('edit')).toBeTruthy());
+    fireEvent.click(screen.getByTitle('edit'));
+    const ta = await screen.findByDisplayValue('{}');
+    fireEvent.change(ta, { target: { value: '{not valid json' } });
+    fireEvent.click(screen.getByText('save & approve'));
+    // invalid JSON is swallowed by the try/catch — no decision POST should fire
+    expect(fn.mock.calls.some((c) => String(c[0]).includes('/decision') && c[1]?.method === 'POST')).toBe(false);
+  });
 });

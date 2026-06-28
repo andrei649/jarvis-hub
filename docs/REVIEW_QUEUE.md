@@ -31,6 +31,23 @@
 
 ## Items (newest first)
 
+### HUD-v3 PR 15 (B1+) — Decision Inbox `edit` action (completes the 4 decision options)
+- **What:** the Decision Inbox (PR 12) shipped accept/reject/defer but not **edit** — the backend's 4th
+  action (`apply_decision`), which lets you *modify a proposed action's payload before approving* (e.g.
+  change a payment amount). Added an **edit** control to `DecisionInboxPanel`: it reveals an inline editor
+  pre-filled with the task's `payload` as JSON; **save & approve** → `POST /autonomy/tasks/{id}/decision
+  {action:"edit", payload}` (the backend re-gates the edited payload — BUG-11 — so a riskier edit stays
+  blocked for re-approval). Invalid JSON is a no-op (won't submit).
+- **Why:** completes the north-star's full decision vocabulary — you can now tune a risky proposal down to
+  something you'll accept instead of an all-or-nothing reject.
+- **Verified (automated, end-to-end in-env):** `tsc --noEmit` exit 0; `decision-inbox-panel.test.tsx` grew
+  +2 (now 6): edit reveals the payload JSON and **save POSTs `{action:"edit", payload}`** with the edited
+  value · **invalid JSON does not POST**. Full vitest **118/118** green; `npm run build` refreshed the
+  served bundle, stale-bundle guard reproducible. No backend/route change → parity untouched.
+- **⚠️ Needs you — live pixels:** queue a tier-2/3 decision, click **edit**, change a payload field, hit
+  save & approve, and confirm the edited action runs (or, if your edit raised the risk, that it correctly
+  stays blocked for re-approval — the BUG-11 re-gate).
+
 ### HUD-v3 PR 14 — Mic Satellites pairing flow (handover §4.4)
 - **What:** the H12.8 satellite hub ("pair a phone/device as a mic satellite" → shared-GPU inference) had
   no UI — pairing was a stub. New `SatellitesPanel` (in `gap.tsx`, Interop cluster) lists paired satellites
