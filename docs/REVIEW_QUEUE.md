@@ -31,6 +31,20 @@
 
 ## Items (newest first)
 
+### 0.34 — workflow run-history persistence (opt-in, default-off)
+- **What:** workflow **run history** (for the HUD's recent-runs overlay) lived only in an in-memory ring
+  (`deque`) and was lost on restart. New `workflows/run_store.py` — a bounded, atomically-written JSON store
+  the engine **seeds from** on startup and **records** each run into, so the overlay survives a restart.
+  Off by default; `JARVIS_WORKFLOW_PERSIST=1` turns it on.
+- **⚠️ Needs you — nothing unless you want durable run history:** with the env unset the engine attaches no
+  store (byte-identical behavior). Set `JARVIS_WORKFLOW_PERSIST=1` to persist runs under
+  `data/workflows/runs.json` (bounded to the most recent 200, oldest pruned). Noted in `docs/OWNER_TASKS.md`.
+- **Verified (automated):** `tests/test_workflow_run_store.py` 11 passed (record→list most-recent-first +
+  chronological `all()` for seeding; the cap prunes oldest; missing/corrupt files degrade to empty then stay
+  writable; the engine persists on `_stash_run` and seeds `recent()` from the store on init; default = no
+  store; env opt-in attaches one; falsey env stays off) + the existing workflow/concurrency suite green;
+  ruff + bandit clean; no new routes; STATUS at 3,197 tests.
+
 ### 0.31 (cont.) — codeintel search is now an agent-callable MCP tool
 - **What:** `codeintel_search` joins the read-only MCP `ROUTE_TOOL_ALLOWLIST`, so an agent can call
   `route_codeintel_search` to locate code symbols — completing the "Code Intelligence **MCP**" half. It rides

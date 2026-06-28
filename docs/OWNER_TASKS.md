@@ -94,6 +94,10 @@
   `JARVIS_AUDIT_KEY=<off-box secret>`, then declare `JARVIS_PLUGIN_GRANTS` (next item). Confirm via
   `GET /api/security/posture` → `hardened`.
 
+- [ ] **(optional) Persist workflow run history (0.34).** Set `JARVIS_WORKFLOW_PERSIST=1` so the HUD's
+  recent-workflow-runs overlay survives a restart (stored bounded under `data/workflows/runs.json`). Default
+  unset = in-memory only.
+
 - [ ] **(optional) System profile (0.62).** Set `JARVIS_SYSTEM_PROFILE=gaming|ai|multimedia|admin` to switch
   the assistant's usage mode (default `balanced`). `gaming`/`multimedia` pause proactive agent heartbeats to
   free local resources; `balanced`/`ai`/`admin` keep them on. Confirm via `GET /api/system/profiles`.
