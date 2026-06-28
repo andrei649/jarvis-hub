@@ -1,11 +1,10 @@
-// @ts-nocheck
 /* HUD v2 · SHELL — topbar, nav, ticker, right column, ambient, palette */
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { Icon, ICONS, Glyph, Reactor, Meter, statusClass, fmtTime, fmtTimeShort, fmtDate } from './primitives';
 import { renderRich } from './cockpit';
 import { V2 } from './data';
 
-const MODES = [
+const MODES: Array<{ id?: string; icon?: string; tkey?: string; live?: boolean; sep?: boolean; locked?: boolean }> = [
   { id:'cockpit', icon:'cockpit', tkey:'cockpit', live:true },
   { id:'chat', icon:'chat', tkey:'chat' },
   { id:'agents', icon:'agents', tkey:'agentsMode' },
