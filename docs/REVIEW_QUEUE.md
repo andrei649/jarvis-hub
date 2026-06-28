@@ -31,6 +31,28 @@
 
 ## Items (newest first)
 
+### CDX-7 (action-taint) — the kernel now escalates an action with an untrusted *origin*
+- **What:** completes the deferred CDX-7 follow-up at the **kernel** level. `kernel.authorize` already
+  escalated a GRANT→QUEUE on a tainted *payload*; it now also escalates when the action's **declared
+  `origin`** is an untrusted source (`external` / `inbound` / `channel` / `web` / `rss` / `osint` /
+  `worldview`). The real external-HTTP knowledge-graph write already declared `origin="external"` — that
+  declaration was previously inert; now the kernel honors it, so an external party's write can't silently
+  auto-execute, it's routed to the approval queue (and audited).
+- **The honest design call (why it's this and not "full data-flow taint"):** taint **cannot** be propagated
+  *through* an LLM — the model launders untrusted content into new text, so there's no reliable flow to
+  follow. Rather than ship a half-wired tracker that gives *false* security, the kernel trusts the caller's
+  **declared provenance** (`origin`). That's correct and complete for the provenance it's given; callers that
+  build actions from untrusted input set `origin` accordingly (the kg-write site does).
+- **⚠️ Needs you — nothing, default-safe:** the default `origin="generated"` (an in-house action) is
+  trusted, so every normal action is unaffected (the whole kernel suite confirms). This only changes behavior
+  for actions explicitly declared to originate from an untrusted source, and even then only when the
+  Action Kernel is enabled (`JARVIS_ACTION_KERNEL`, default-off).
+- **Verified (automated):** `tests/test_cdx7_action_origin_taint.py` 11 passed (generated→GRANT;
+  external/osint/worldview/inbound/channel/web/rss→QUEUE with an "untrusted origin" reason + an approval
+  card; tainted-payload regression still escalates and is labelled; taint never overrides a kill-switch
+  DENY; and a static guard that the kg-write site keeps declaring `origin="external"`) + the full
+  kernel/taint/reality/osint suite (137) green; ruff + bandit clean; no new routes; STATUS at 3,208 tests.
+
 ### 0.34 — workflow run-history persistence (opt-in, default-off)
 - **What:** workflow **run history** (for the HUD's recent-runs overlay) lived only in an in-memory ring
   (`deque`) and was lost on restart. New `workflows/run_store.py` — a bounded, atomically-written JSON store

@@ -22,7 +22,7 @@ from dataclasses import dataclass, field
 from enum import StrEnum
 
 from ..security.capability import authorize as _capability_authorize
-from ..security.taint import is_tainted
+from ..security.taint import is_tainted, is_untrusted_source
 from .budget import BudgetLedger, BudgetLimits, LoopDetector
 from .flags import kernel_enabled
 from .metrics import KERNEL_METRICS
@@ -181,12 +181,20 @@ def authorize(action: Action,
                              "payload": action.payload, "risk_tier": tier})
         decision = Decision(Verdict.QUEUE, reason=pdec.reason, tier=tier, card=card)
 
-    # 3b) Taint (H23.6) — an action carrying content from an untrusted source can't
-    #     auto-execute; escalate a GRANT to approval (indirect-injection guard).
-    if decision.verdict is Verdict.GRANT and is_tainted(action.payload):
+    # 3b) Taint (H23.6 / CDX-7) — an action carrying content from an untrusted source
+    #     can't auto-execute; escalate a GRANT to approval (indirect-injection guard).
+    #     Two signals: a tainted *payload* (marked by an upstream producer, e.g. osint),
+    #     OR a declared untrusted *origin* (e.g. an external HTTP write → origin="external",
+    #     an inbound channel, a web/rss/worldview feed). The default origin "generated"
+    #     (an in-house action) is trusted, so normal actions are unaffected. Origin is the
+    #     honest provenance signal: taint can't be propagated *through* an LLM (it launders
+    #     content), so the kernel trusts the caller's declared origin rather than guessing.
+    if decision.verdict is Verdict.GRANT and (
+            is_tainted(action.payload) or is_untrusted_source(action.origin)):
+        why = "tainted payload" if is_tainted(action.payload) else f"untrusted origin '{action.origin}'"
         card = preview_task({"kind": action.kind, "title": action.title,
                              "payload": action.payload, "risk_tier": tier})
-        decision = Decision(Verdict.QUEUE, reason=f"tainted-source escalation; {pdec.reason}",
+        decision = Decision(Verdict.QUEUE, reason=f"tainted-source escalation ({why}); {pdec.reason}",
                             tier=tier, card=card)
 
     # 4) Audit — always.
