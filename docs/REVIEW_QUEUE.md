@@ -31,6 +31,26 @@
 
 ## Items (newest first)
 
+### HUD-v3 PR 12 (B1) — the DECISION INBOX (the north-star resolve action)
+- **What:** the most important interaction in the product, and it was **genuinely missing a control**.
+  The HUD *read* the autonomy queue (`/tasks`, drawn as a network fan + a count) but had **no way to
+  resolve a blocked decision**. New `DecisionInboxPanel` (in `gap.tsx`, Autonomy & Agents cluster — placed
+  **first**) reads the blocked queue (`GET /autonomy/tasks?status=blocked`, admin) and resolves each via
+  **accept / reject / defer** → `POST /autonomy/tasks/{id}/decision {action}` (admin), with a per-decision
+  risk-tier chip (tier 3 = red) and an honest **"all clear · no decisions waiting"** empty state.
+- **Why it matters / how it was missed:** the blueprint had over-optimistically marked B1 "exists" because
+  the queue was visualized — but visualization ≠ the north-star *action*. A final sweep of every mutating
+  route against the frontend caught that `POST /autonomy/tasks/{id}/decision` was referenced **nowhere** in
+  `frontend/src`. This PR closes it.
+- **Verified (automated, end-to-end in-env):** `tsc --noEmit` exit 0; new `decision-inbox-panel.test.tsx`
+  (+4: shows a blocked decision with its risk tier · ✓ POSTs `{action:"accept"}` to `…/{id}/decision` · ✕
+  POSTs `{action:"reject"}` · honest all-clear empty state) — full vitest **109/109** green; `npm run build`
+  refreshed the served bundle, stale-bundle guard reproducible. No backend/route change → parity untouched.
+- **⚠️ Needs you — live pixels + a real decision (the key end-to-end test):** with autonomy in ASK mode,
+  trigger an action that queues a decision (e.g. a tier-2/3 task), open Console → Autonomy & Agents →
+  DECISION INBOX (admin token), and confirm accept actually runs it / reject cancels it / defer postpones —
+  this is the core proactive loop, worth exercising fully.
+
 ### HUD-v3 PR 11 (C3) — Knowledge-Graph entity controls + memory-forget in the Console
 - **What:** the Memory cluster had spaces/docs/notes panels but **no knowledge-graph control**. New
   `KgPanel` (in `gap.tsx`, Memory cluster) lists/searches KG entities (`GET /api/kg/entities`) with their
