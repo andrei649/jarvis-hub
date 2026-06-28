@@ -31,6 +31,20 @@
 
 ## Items (newest first)
 
+### HUD — type `modes.tsx` (CDX-9 typing pass)
+- **What:** removed `@ts-nocheck` from `modes.tsx` (Agents / Trust / Memory modes). 9 errors, all type-only:
+  - three **API-response boundaries** — `decidePayment`, `setKillSwitch`, `memorySearch` all return
+    `Promise<unknown>`; annotated their `.then`/`.map` callback params `: any` (the same arbitrary-backend-JSON
+    boundary `live.ts` uses).
+  - the **PAYMENTS-seed `.id` drift** (same shape as the plugin-registry case in #392): the payments ledger
+    seeds from `V2.PAYMENTS` with no `id`, but `live.ts` swaps in real broker payments *with* `id`, and the
+    approve/reject/settle lifecycle buttons render only when it's present (`{p.id && p.state==='pending' && …}`).
+    Typed the map element with optional `id?` so the seed/live duality is honest.
+  3 non-test source modules remain on `@ts-nocheck` (the last three: `app`/`shell`/`gap`).
+- **Verified (automated):** `tsc --noEmit` clean; frontend **vitest 73 passed**; `agents/web/v2` bundle
+  **byte-identical**. No backend/route change.
+- **⚠️ Needs you:** nothing — compile-time only, behaviour-identical.
+
 ### HUD — type `modes3.tsx` + relax the `InputBar` contract (CDX-9 typing pass)
 - **What:** removed `@ts-nocheck` from `modes3.tsx` (Chat / Comms / Admin modes) — the richest mix in the
   sweep so far, 8 errors across 4 distinct patterns, **all type-only** (bundle byte-identical):
