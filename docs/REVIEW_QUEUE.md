@@ -31,6 +31,27 @@
 
 ## Items (newest first)
 
+### HUD — type `voice.ts` (CDX-9 typing pass)
+- **What:** removed `@ts-nocheck` from `frontend/src/voice.ts` (the browser-side hands-free voice loop:
+  mic capture → VAD segmentation → `/api/voice/stt` → chat turn → server `/tts` playback with a
+  `speechSynthesis` fallback). First file in the sweep with **substantive** type errors rather than the
+  optional-prop pattern. Five fixes, **all type-only** (bundle byte-identical):
+  1. `useVoice({ … onTurn })` — the `onTurn` callback was destructured but missing from the inferred
+     options type; annotated the options shape.
+  2. `tok(extra?)` — header helper with an `extra||{}` fallback, called once with no args; marked optional.
+  3. `window.webkitAudioContext` — Safari/legacy `AudioContext` fallback; typed cast (not `any`).
+  4. `new Blob([frame.audio])` — the TS-5.7 `Uint8Array<ArrayBufferLike>` → `BlobPart` lib quirk; cast.
+  5. the `streamTts` `onFrame` callback returned `Promise<unknown>` vs the expected `Promise<void>|void`
+     — `streamTts` **awaits** `onFrame` to keep sentence-by-sentence playback **in order**, so I
+     cast-preserved the returned promise rather than dropping it (dropping it would desync playback).
+  8 non-test source modules remain on `@ts-nocheck`.
+- **Verified (automated):** `tsc --noEmit` clean; frontend **vitest 73 passed** (incl. `ttsStream.test`);
+  `agents/web/v2` bundle **byte-identical**. No backend/route change.
+- **⚠️ Needs you:** the voice loop is **typecheck/build-verified only** — live mic + audio playback need a
+  real browser + device a headless CI can't provide (this was already the file's documented stance). A
+  one-time hands-free smoke test on real hardware confirms the loop end-to-end; the typing change here is
+  purely compile-time and behaviour-identical (playback ordering explicitly preserved — see fix #5).
+
 ### HUD — type `world-intelligence.tsx` + `modes_world.tsx` (CDX-9 typing pass)
 - **What:** removed `@ts-nocheck` from the WorldView pair — `world-intelligence.tsx` (the Signal-Layer
   intelligence panel: brief, top signals, recommendations, provider health) and `modes_world.tsx` (the mode
