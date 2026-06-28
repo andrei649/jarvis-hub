@@ -52,4 +52,32 @@ describe('BackupPanel — data-sovereignty controls are live', () => {
     fireEvent.click(screen.getByText('export my data'));
     await waitFor(() => expect(screen.getByText(/export written/)).toBeTruthy());
   });
+
+  it('gates "forget me" behind a typed FORGET confirmation', async () => {
+    const fn = mockFetch({ backups: [] });
+    render(<BackupPanel />);
+    await waitFor(() => expect(screen.getByText('forget me…')).toBeTruthy());
+    fireEvent.click(screen.getByText('forget me…'));
+    const confirmBtn = await screen.findByText('confirm erase');
+    // empty token → confirm is disabled → no forget POST
+    fireEvent.click(confirmBtn);
+    expect(fn.mock.calls.some((c) => String(c[0]).includes('/api/admin/forget'))).toBe(false);
+    // wrong token → still blocked
+    fireEvent.change(screen.getByPlaceholderText('FORGET'), { target: { value: 'forget' } });
+    fireEvent.click(confirmBtn);
+    expect(fn.mock.calls.some((c) => String(c[0]).includes('/api/admin/forget'))).toBe(false);
+  });
+
+  it('POSTs {confirm:"FORGET"} only once the exact token is typed', async () => {
+    const fn = mockFetch({ backups: [], ok: true });
+    render(<BackupPanel />);
+    await waitFor(() => expect(screen.getByText('forget me…')).toBeTruthy());
+    fireEvent.click(screen.getByText('forget me…'));
+    fireEvent.change(await screen.findByPlaceholderText('FORGET'), { target: { value: 'FORGET' } });
+    fireEvent.click(screen.getByText('confirm erase'));
+    await waitFor(() => expect(
+      fn.mock.calls.some((c) => String(c[0]).includes('/api/admin/forget')
+        && c[1]?.method === 'POST' && String(c[1]?.body).includes('"confirm":"FORGET"'))
+    ).toBe(true));
+  });
 });
