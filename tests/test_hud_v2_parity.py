@@ -78,6 +78,7 @@ RULES = [
     ("/api/review", "observe"), ("/api/arena", "observe"), ("/api/resilience", "observe"),
     ("/bench", "observe"), ("/api/cost", "observe"), ("/api/analytics", "observe"),
     ("/api/feedback", "observe"),  # H23.21 design-partner NPS/feedback (owner reviews it here)
+    ("/api/support/", "observe"),  # 0.55 design-partner diagnostic bundle (triage surface)
     ("/api/metrics", "observe"),  # MOONSHOT §6 north-star meter (sibling of analytics/cost)
     ("/api/digest", "observe"),
     ("/brain", "observe"), ("/api/brain", "observe"),  # neural-mesh brain (live agents+models)
