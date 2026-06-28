@@ -31,6 +31,22 @@
 
 ## Items (newest first)
 
+### 0.31 — Code Intelligence: read-only AST symbol index over the source
+- **What:** a new `agents/core/codeintel/` indexing backend — it parses the project's own Python with the
+  stdlib `ast` and builds a searchable map of **symbols** (module functions / classes / methods) with their
+  kind, relative path, line number, and one-line doc. `GET /api/codeintel/search?q=&kind=` finds where
+  something is defined; `GET /api/codeintel/stats` reports the roll-ups; `POST /api/codeintel/reindex`
+  (admin) rebuilds the cache. On HEAD it indexes **772 files / ~7,830 symbols / 0 errors**.
+- **⚠️ Needs you — nothing, but know the scope:** it returns **structure, not contents** — symbol names,
+  kinds, file paths, line numbers, and the first docstring line — never file bodies. It indexes the hub's
+  own source (already on GitHub), not your data, and the search/stats routes are user-guarded (reindex is
+  admin). Try `GET /api/codeintel/search?q=run_heartbeat` and you should get its definition site.
+- **Verified (automated):** `tests/test_codeintel.py` 6 passed (extracts functions/classes/methods with the
+  right kinds; doc is only the first non-empty line; `__pycache__` skipped; a syntax-error file is recorded
+  under `errors` not fatal; substring + kind-filter search; exact-name-first ranking + limit) and a live
+  `project_index()` over the real repo builds with 0 errors; ruff + bandit clean; parity reseeded for the 3
+  new routes; STATUS at 3,184 tests / 351 routes.
+
 ### 0.55 — Design Partner Kit: diagnostic "issue bundle" (non-sensitive, admin-only)
 - **What:** `GET /api/support/bundle` assembles one snapshot a design partner can attach to a support
   request — app version + posture (hardened flags + active system profile) + capability-readiness roll-ups
