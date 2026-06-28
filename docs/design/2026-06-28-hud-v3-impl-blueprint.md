@@ -80,7 +80,7 @@ construction).
 | C3 | Memory: recall search · remember · forget · KG edit/delete · ingest · local-docs | `modes.tsx` Memory (exists) | `/api/memory/search` · `/remember` · `/decay/forget` · `/api/kg/*` · `/api/local-docs/index` | |
 | C4 | Cockpit streaming + feedback + voice + VLM | `cockpit.tsx` (exists) | `POST /chat/stream` · `/api/feedback` · `/api/voice/capabilities` · `/tts`(`/stream`) · `/api/vlm/describe` | streaming already partly wired |
 | C5 | A2A approval inbox · Rooms | `modes3.tsx` Interop (exists) | `/api/a2a/inbox*` · `/api/rooms` | |
-| C6 | Governance / posture / loop-breaker | `modes.tsx` Trust (exists) | `/api/security/governance` · `/api/security/posture` · `/api/security/loop-breaker`(`/reset`) | **renamed** (see §1) |
+| C6 ✅ | Governance / posture / loop-breaker | `gap.tsx` `GovernancePanel` + `PosturePanel` (Trust); loop-breaker `LoopBreakerPanel` (exists) | `/api/security/governance` · `/api/security/posture` · `/api/security/loop-breaker`(`/reset`) | **renamed** (see §1) — applied. Scorecard (suite scores + gate) + packaged posture. **Shipped PR 6.** |
 | C7 | Build: workflows · skills · sandbox · templates | `modes2.tsx` Build (exists) | `/api/workflows` · `/api/skills/marketplace*` · `/sandbox/execute` | |
 | C8 | Observe: quality-threshold · arena · evals · review | `modes2.tsx` Observe (exists) | `/api/quality/threshold` · `/api/arena/*` · eval/review routes | |
 | C9 | Backup / export / forget-me · onboarding | `modes4.tsx` Admin/Life + `shell.tsx` onboarding | `/api/admin/export` · `/api/admin/forget` · onboarding route | onboarding is a real 4-step wizard in the prototype |
