@@ -1,4 +1,3 @@
-// @ts-nocheck
 import React from 'react';
 import { V2, Conversation, InputBar } from './ui';
 import { Icon as Ic4, ICONS as IK4, Glyph as Gl4 } from './ui';
@@ -13,7 +12,7 @@ function MP({ icon, title, status, children }){
     </div>
   );
 }
-function SubH4({ children, style }){ return <div className="sub-h" style={style}>{children}</div>; }
+function SubH4({ children, style }: { children?: any; style?: any }){ return <div className="sub-h" style={style}>{children}</div>; }
 
 /* ============ FINANCE ============ */
 function FinanceMode({ t }){
