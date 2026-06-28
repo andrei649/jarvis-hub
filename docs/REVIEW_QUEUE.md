@@ -31,6 +31,20 @@
 
 ## Items (newest first)
 
+### HUD-v3 PR 10 (C7) — Workflow-runtime management panel in the Console
+- **What:** the existing `StepGenPanel` covers the AI step-*builder*, but the 0.34 workflow *runtime* had
+  no management surface. New `WorkflowsPanel` (in `gap.tsx`, Build cluster) lists registered pipelines
+  (built-in + user-defined merged) with a step count via `GET /api/workflows`, **runs** one
+  (`POST /api/workflows/run`, user-guard, surfaces a ran/ok message), and **deletes** a user-defined one
+  (`DELETE /api/workflows/{id}`, admin).
+- **Verified (automated, end-to-end in-env):** `tsc --noEmit` exit 0; new `workflows-panel.test.tsx` (+3:
+  lists a pipeline with its step count · run POSTs `{pipeline_id}` and shows the result · ✕ DELETEs the
+  pipeline) — full vitest **102/102** green; `npm run build` refreshed the served bundle, stale-bundle
+  guard reproducible. No backend/route change → parity untouched.
+- **⚠️ Needs you — live pixels + a real run:** Console → Build → WORKFLOWS against a running backend;
+  confirm the pipeline list matches `GET /api/workflows`, run one and confirm it executes, and (admin)
+  delete a user-defined pipeline and confirm it's gone. (Run fires a real workflow — pick a safe one.)
+
 ### HUD-v3 PR 9 (C8) — Model Arena leaderboard + Answer Quality gate in the Console
 - **What:** closes C8's two missing Observe surfaces (evals + review already had panels). `ArenaPanel`
   reads `GET /api/arena/leaderboard` and ranks models by **ELO** with win-rate + games (read-only; honest
