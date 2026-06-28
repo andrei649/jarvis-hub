@@ -200,6 +200,50 @@ async def _probe_capability_token_gates_kernel() -> bool:
         shutil.rmtree(d, ignore_errors=True)
 
 
+# ── The P2 OSINT governed-ingestion rail (hermetic, real correlate + taint + authorize) ─
+# Proves the trust boundary P2 exists for: a write-back derived from *untrusted* OSINT
+# evidence (a worldview/web source → tainted at ingestion by security.taint, propagated
+# onto the payload by osint.writeback_payload) is escalated GRANT→QUEUE by the real
+# kernel.authorize — while the same low-risk write from a trusted operator source is
+# GRANTed. Untrusted intel can never auto-execute. No mock, no socket; isolated KillSwitch.
+
+async def _probe_osint_untrusted_ingestion_queued() -> bool:
+    import os
+    import shutil
+    import tempfile
+
+    from agents.core.autonomy.policy import AutonomyPolicy, RiskTier
+    from agents.core.kernel import Action, Verdict, authorize
+    from agents.core.osint import correlate, writeback_payload
+    from agents.core.security.capability import KillSwitch
+
+    d = tempfile.mkdtemp(prefix="reality-osint-")
+    try:
+        ks = KillSwitch(path=os.path.join(d, "kill.json"))  # isolated store, not the live halt
+        policy = AutonomyPolicy()
+        base = {"risk_tier": int(RiskTier.REVERSIBLE)}  # a low-risk write the policy would GRANT
+
+        clean = writeback_payload(
+            correlate([{"source": "operator", "kind": "domain", "value": "ok.example"}])["findings"][0],
+            base=dict(base))
+        tainted = writeback_payload(
+            correlate([{"source": "worldview", "kind": "domain", "value": "evil.example"}])["findings"][0],
+            base=dict(base))
+
+        def _verdict(payload):
+            act = Action(kind="kg.write", title="osint writeback", scope="global", payload=payload)
+            return authorize(act, kill_switch=ks, policy=policy)
+
+        clean_dec = _verdict(clean)
+        taint_dec = _verdict(tainted)
+        # Contract: operator intel auto-acts (GRANT); untrusted OSINT is held (QUEUE, taint reason).
+        return (clean_dec.verdict is Verdict.GRANT
+                and taint_dec.verdict is Verdict.QUEUE
+                and "tainted" in (taint_dec.reason or ""))
+    finally:
+        shutil.rmtree(d, ignore_errors=True)
+
+
 CASES: list[RealityCase] = [
     RealityCase("plugin:system-control", "egress-none-blocks-external",
                 "a no-network plugin's external call is refused by the egress gate",
@@ -207,6 +251,9 @@ CASES: list[RealityCase] = [
     RealityCase("plugin:worldview", "egress-lan-allows-local",
                 "a LAN plugin's localhost call is allowed by the egress gate",
                 _probe_lan_allows_local),
+    RealityCase("plugin:worldview", "osint-untrusted-ingestion-queued",
+                "an OSINT write-back from an untrusted source is escalated GRANT→QUEUE by the kernel",
+                _probe_osint_untrusted_ingestion_queued),
     RealityCase("component:kill_switch", "kernel-kill-switch-denies",
                 "an engaged kill-switch makes kernel.authorize DENY; disengaging reaches policy",
                 _probe_kill_switch_gates_kernel),

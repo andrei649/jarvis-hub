@@ -31,6 +31,28 @@
 
 ## Items (newest first)
 
+### P2 — OSINT pack: governed correlation + a VERIFIED ingestion-trust rail (Track P)
+- **What:** the first slice of the **P2 OSINT Investigator pack** — `agents/core/osint/correlate.py`, a
+  pure/deterministic correlation engine over *provided* evidence (WorldView/Argus, web, RSS, manual). It
+  groups evidence by indicator into **findings** with a provenance chain + a transparent corroboration-based
+  confidence, **taints untrusted-source evidence at the ingestion boundary** (`security.taint`), and
+  propagates that taint onto any write-back payload (`writeback_payload`). Served at
+  `POST /api/osint/correlate` + `POST /api/osint/brief` (`user_guard`'d). `tests/test_osint_correlate.py`
+  (+11); route parity/auth/openapi snapshots reseeded.
+- **The governance contract is VERIFIED with real primitives** (a hermetic `reality_harness` case promoting
+  `plugin:worldview`): a low-risk OSINT write-back the autonomy policy *would* GRANT is escalated
+  **GRANT→QUEUE** by the real `kernel.authorize` when it carries untrusted-source taint — while the same
+  write from a trusted operator source is GRANTed. So **intel from an untrusted source can never
+  auto-execute** — it routes through approval. This closes P2's "ingestion trust-boundary enforced" AC.
+- **Verified (automated):** `tests/test_osint_correlate.py` 11 passed (engine + taint propagation + the
+  GRANT→QUEUE governance proof + the reality-case promotion); ruff + bandit clean; route/auth/openapi parity
+  reseeded (330 routes); reality-harness + status-sync suites green.
+- **⚠️ NEEDS YOU (owner-gated, live):** the engine *correlates* — it doesn't *collect*. Real OSINT
+  collection (SpiderFoot modules, the WorldView REST on `:4000`, news/RSS feeds) needs keys + network and is
+  owner-gated wiring (`docs/OWNER_TASKS.md`). Worth a manual smoke once wired: POST a batch of real evidence
+  to `/api/osint/correlate` and confirm the drawer + taint flags look right, and that a tainted write-back
+  shows up in the approval queue (not auto-applied).
+
 ### HUD — type `gap.tsx` → CDX-9 component sweep COMPLETE 🟢 (CDX-9 typing pass)
 - **What:** removed `@ts-nocheck` from `gap.tsx` (the big P4c "console" overlay — sessions, OAuth, settings
   DB, prompt versions, and ~20 other admin/data panels). 25 errors, all type-only:

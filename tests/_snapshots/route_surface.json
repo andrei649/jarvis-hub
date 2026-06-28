@@ -263,6 +263,8 @@
   "POST /api/onboarding/funnel",
   "POST /api/oracle/conflicts/resolve",
   "POST /api/oracle/sync",
+  "POST /api/osint/brief",
+  "POST /api/osint/correlate",
   "POST /api/payments/mandates",
   "POST /api/payments/request",
   "POST /api/payments/{payment_id}/approve",
