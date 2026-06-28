@@ -226,3 +226,32 @@ async def marketplace_review(body: ReviewSkillBody):
     except Exception:
         logger.exception("Failed to set skill review status")
         return JSONResponse({"error": "internal error", "code": 500}, status_code=500)
+
+
+_PENDING_REASON = "pending review (CDX-8 quarantine)"
+
+
+@router.get("/api/skills/pending", dependencies=[Depends(admin_guard)])
+async def list_pending_skills():
+    """CDX-8: auto-generated skills awaiting owner review — quarantined, NOT yet executable."""
+    orch = get_orch()
+    if not orch:
+        return JSONResponse({"error": "not initialized"}, status_code=503)
+    pending = [
+        {"name": name, "description": getattr(s, "description", ""), "agents": getattr(s, "agents", [])}
+        for name, s in orch.skills.skills.items()
+        if getattr(s, "signature_reason", "") == _PENDING_REASON
+    ]
+    return JSONResponse({"pending": pending, "count": len(pending)})
+
+
+@router.post("/api/skills/{name}/approve", dependencies=[Depends(admin_guard)])
+async def approve_generated_skill(name: str):
+    """CDX-8: owner-approve a quarantined auto-generated skill — sign + activate it. Only an
+    admin can promote LLM-authored code from pending to executable."""
+    orch = get_orch()
+    if not orch:
+        return JSONResponse({"error": "not initialized"}, status_code=503)
+    if orch.skills.approve_generated_skill(name):
+        return {"approved": True, "skill": name}
+    return JSONResponse({"error": f"no pending skill '{name}'"}, status_code=404)

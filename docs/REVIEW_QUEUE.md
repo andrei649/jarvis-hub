@@ -31,6 +31,28 @@
 
 ## Items (newest first)
 
+### CDX-8 — auto-generated skills are quarantined (owner-approve before they can run)
+- **What:** an agent that emitted `[learn: task | steps | cmd]` minted a brand-new skill **from untrusted LLM
+  output**, and the loader then **self-signed it and `exec`'d its Python module in-process on the spot** —
+  making a model-authored skill strictly *more* trusted than one you downloaded from the marketplace (which at
+  least passes the signature/moderation gate). That's a clean injection→code path. Now it's **fail-closed**:
+  the task/steps/command are scanned with the injection scanner **before anything touches disk** (flagged →
+  refused, nothing written); a clean skill is minted **`PENDING_REVIEW`** — registered so you can *see* it, but
+  its module is **never exec'd** (`sandboxed`, regardless of the signed-skills env); provenance (which agent,
+  what task, when) is recorded in the marker; and only an **owner** can promote it to runnable.
+- **⚠️ Needs you — this changes a behavior you may have relied on:** previously a `[learn:…]` skill became
+  usable *immediately*. Now an agent-generated skill sits **pending** until you approve it. To review + activate:
+  `GET /api/skills/pending` lists what's waiting (name, description, which agents), and
+  `POST /api/skills/{name}/approve` (admin-gated) signs + activates one. Until you approve, the auto-generated
+  command simply won't run in-process. If you *want* a generated skill, eyeball its `skills/<name>/main.py`
+  (it's a template stub by default) and approve it. Worth a quick check that this gate matches how you expect
+  self-improvement to feel — auto-*generation* is still on; only auto-*execution* is now gated.
+- **Verified (automated):** `tests/test_cdx8_skill_quarantine.py` 6 passed — a clean generated skill is
+  registered-but-not-exec'd, stays non-exec'd on a fresh `discover()`, injection-flagged content is refused
+  both in the **task** and in the **command-name**, owner-approve flips it to signed+active, and approve is
+  idempotent/safe on unknown names. ruff + bandit clean; route parity/auth/openapi snapshots reseeded for the
+  2 new admin routes; STATUS at 3,096 tests / 336 routes.
+
 ### CDX-7 — retrieved memory is now fenced as untrusted DATA before it hits the prompt
 - **What:** retrieved memory (vector/graph recall + the Howard archive RAG few-shots) was spliced **raw**
   into LLM prompts — a textbook indirect-injection surface (a string saved to memory, or synced from the
