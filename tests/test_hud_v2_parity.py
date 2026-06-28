@@ -62,7 +62,8 @@ RULES = [
     ("/api/missions", "autonomy"),  # Mission Workspaces (0.32) — long-horizon workspaces
     ("/api/reflection", "autonomy"), ("/api/schedule/parse", "autonomy"),
     ("/api/transcripts", "autonomy"),
-    # build (workflows / skills / sandbox / grammar)
+    # build (workflows / skills / sandbox / grammar / creative pipeline)
+    ("/api/creative/", "build"),  # P4 Creative pack — the Build surface (asset pipeline, modes2)
     ("/api/workflows", "build"), ("/api/skills", "build"), ("/skills", "build"),
     ("/sandbox", "build"), ("/api/llm/grammar", "build"), ("/api/browser", "build"),
     ("/api/toolrpc", "build"),  # governed Tool-RPC for sandboxed pipelines (H20.1)
