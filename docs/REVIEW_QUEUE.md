@@ -31,6 +31,30 @@
 
 ## Items (newest first)
 
+### HUD-v3 PR 1 — vendor the prototype (design source of truth) + the impl-blueprint doc
+- **What:** lands the two planning anchors for the hud-v3 port. (1) The **executable design spec** is
+  vendored into `docs/design/hud-v3/` (22 files: the `v3-*.jsx` prototype + `v3-style.css` + `index.html`
+  + the original `HANDOVER_CLAUDE_CODE.md`) — same convention as the existing `docs/design/worldview-mock/`,
+  so it sits **outside** the `frontend/` build (no tsc/vitest/eslint touches it). (2) The implementation
+  blueprint `docs/design/2026-06-28-hud-v3-impl-blueprint.md` — one row per surface → prototype file →
+  target `frontend/src` component → **real** endpoint(s) → acceptance → parity row, sequenced Phase B
+  (substrate) → C (~37 write-controls) → D (tail).
+- **Why it matters:** the production HUD (`frontend/src`, served at `/v2`) **already exists** — v3 is the
+  next design iteration, so the port is an *evolve-in-place*, not a rewrite. The blueprint nails the
+  **path-rename ledger**: of everything the prototype binds, only **4** routes need renaming
+  (`/autonomy/missions`→`/api/missions`, `/governance`→`/api/security/governance`,
+  `/posture`→`/api/security/posture`, `/loop-breaker`→`/api/security/loop-breaker`); every other route is
+  already exact (the 2 that weren't shipped in PR 0). Each prototype route already carries a v2 parity
+  surface, so the `hud-v2-parity` gate stays green by construction.
+- **Verified (automated):** doc-only PR — no code paths touched; full suite + parity unchanged. Reconciled
+  every prototype-declared path against the authoritative `tests/_snapshots/route_surface.json`.
+- **⚠️ Needs you — read the blueprint before the surface PRs land:** it's the execution contract for PRs
+  2…N. Skim `docs/design/2026-06-28-hud-v3-impl-blueprint.md` §2 (the surface table) and confirm the
+  Phase-B-first ordering matches what you want to see/test first (Decision Inbox → Kernel table →
+  Readiness → kill-switch → audit-verify → %-local). **Known limitation flagged in the doc:** the frontend
+  port can't be hermetically runtime/visually verified in this env — `tsc --noEmit` + vitest + the
+  stale-bundle guard + this manual checklist are the net.
+
 ### HUD-v3 PR 0 — per-agent autonomy policy + interrupt-budget endpoints (backend pre-work)
 - **What:** the 2 endpoints the hud-v3 prototype binds that didn't exist yet (the only true backend gap
   in the v3 compatibility review). `GET/POST /autonomy/policy` — per-agent **AUTO/ASK/OFF** overrides (the
