@@ -31,6 +31,28 @@
 
 ## Items (newest first)
 
+### P3 — Market Intel + Finance pack: offline intel + a VERIFIED money-safety rail (Track P)
+- **What:** `agents/core/market/analyze.py` — a pure/deterministic market-intel engine over *provided*
+  quotes/positions (no live fetch): `evaluate_watchlist` (band breaches → alerts; an absent quote is an
+  honest `no_quote`, never a fabricated price), `portfolio_snapshot` (net worth + per-position weight +
+  by-kind allocation; drops unpriced rows rather than guessing), and a demoable `daily_brief`. **Every alert
+  and brief carries a mandatory not-advice `DISCLAIMER`.** Served at `POST /api/market/watchlist` +
+  `POST /api/market/brief` (`user_guard`'d, offline). `tests/test_market_intel.py` (+10); route
+  parity/auth/openapi/hud-v2 reseeded.
+- **The money-safety contract is VERIFIED with real primitives** (a hermetic `reality_harness` case promoting
+  `plugin:balance`): a market-triggered **money action** (`trade.buy` / `transfer.funds`) is held by the real
+  `kernel.authorize` — classified `IRREVERSIBLE_OR_MONEY` → **QUEUE** (approval) — while read-only
+  `market.monitor` is **GRANT**ed. So **money never auto-moves**: the pack can watch the market freely but
+  can't act on your behalf without approval.
+- **Verified (automated):** `tests/test_market_intel.py` 10 passed (watchlist/portfolio/brief + disclaimer
+  enforcement + the money→QUEUE governance proof + the reality-case promotion); ruff + bandit clean; all
+  route/auth/openapi/hud-v2 parity gates green (332 routes); STATUS at 3,063 tests.
+- **⚠️ NEEDS YOU (owner-gated, live):** the engine *analyses* provided data — it doesn't *fetch*. Real quotes
+  (a broker/market-data API) and real balances (the `balance` plugin against ING/Libra) need keys + network
+  and are owner-gated wiring (`docs/OWNER_TASKS.md`). Worth a manual smoke once wired: POST a real watchlist +
+  positions to `/api/market/brief` and confirm the alerts/snapshot + disclaimer read right, and that a
+  money action proposed off an alert lands in the approval queue (never auto-applied).
+
 ### P2 — OSINT pack: governed correlation + a VERIFIED ingestion-trust rail (Track P)
 - **What:** the first slice of the **P2 OSINT Investigator pack** — `agents/core/osint/correlate.py`, a
   pure/deterministic correlation engine over *provided* evidence (WorldView/Argus, web, RSS, manual). It

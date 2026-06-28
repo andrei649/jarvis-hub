@@ -236,6 +236,8 @@
   "POST /api/llm/server/start",
   "POST /api/llm/unload",
   "POST /api/local-docs/index",
+  "POST /api/market/brief",
+  "POST /api/market/watchlist",
   "POST /api/mcp/server/rpc",
   "POST /api/mcp/token",
   "POST /api/media/generate",

@@ -240,6 +240,8 @@
   "POST /api/llm/server/start": "admin",
   "POST /api/llm/unload": "admin",
   "POST /api/local-docs/index": "user",
+  "POST /api/market/brief": "user",
+  "POST /api/market/watchlist": "user",
   "POST /api/mcp/server/rpc": "open",
   "POST /api/mcp/token": "admin",
   "POST /api/media/generate": "user",
