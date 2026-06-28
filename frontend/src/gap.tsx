@@ -59,6 +59,34 @@ function DiffView({ text }) {
 /* HUD-v3 C3 (KG edit/delete + memory forget). The Memory cluster had spaces/docs/notes
    but no knowledge-graph control: this lists/searches entities, deletes one, and forgets
    a memory item by id (ACT-R decay, transitive). All user-guarded. */
+/* HUD-v3 §4.3 — Ambient Capture, the privacy promise made visible. The opt-in passive
+   capture backend (redacted previews, local) had no UI: this shows the captured stream
+   with each item INDIVIDUALLY DELETABLE (DELETE /api/capture/{id}) + clear-all. All
+   user-guarded; the redacted `preview` is shown, never raw content. */
+export function CapturePanel() {
+  const { d, e, loading, reload } = useApi('/api/capture');
+  const status = useApi('/api/capture/status');
+  const recs = arr(d, 'records');
+  const enabled = status.d && status.d.enabled;
+  const del = (id) => apiDelete('/api/capture/' + encodeURIComponent(id)).then(reload).catch(() => {});
+  const clearAll = () => act('/api/capture/clear', {}, reload);
+  return (
+    <Card title="AMBIENT CAPTURE" sub={status.d ? (enabled ? 'on' : 'off') + ' · ' + recs.length : null} onReload={() => { reload(); status.reload(); }}>
+      <State e={e} loading={loading} n={recs.length} />
+      {recs.slice(0, 10).map((r, i) => (
+        <Row key={r.id ?? i}>
+          <span style={{ ...mono, color: 'var(--ink-2)' }}>{r.preview || r.surface}</span>
+          <span style={{ marginLeft: 'auto', display: 'flex', gap: 5, alignItems: 'center' }}>
+            {r.surface && <Tag>{r.surface}</Tag>}
+            <button className="tool-btn" title="delete" onClick={() => del(r.id)}>✕</button>
+          </span>
+        </Row>
+      ))}
+      {recs.length > 0 && <div style={{ marginTop: 8 }}><button className="tool-btn" onClick={clearAll}>clear all</button></div>}
+      {recs.length === 0 && <div style={{ fontSize: 10, color: 'var(--ink-3)', marginTop: 6 }}>nothing captured · opt-in surfaces stream here, each deletable</div>}
+    </Card>
+  );
+}
 export function KgPanel() {
   const { d, e, loading, reload } = useApi('/api/kg/entities');
   const ents = arr(d, 'entities');
@@ -1180,7 +1208,7 @@ export function TodayPanel() {
 }
 
 const SECTIONS: Array<[string, Array<() => any>]> = [
-  ['Memory', [DataSpacesPanel, LocalDocsPanel, NotesPanel, KgPanel, ReflectionPanel]],
+  ['Memory', [DataSpacesPanel, LocalDocsPanel, NotesPanel, KgPanel, CapturePanel, ReflectionPanel]],
   ['Trust', [KillSwitchPanel, KernelMetricsPanel, ReadinessPanel, LoopBreakerPanel, GovernancePanel, PosturePanel, NetworkMonitorPanel, SecretsPanel, CapabilitiesPanel, PairingPanel, InjectionScanPanel]],
   ['Interop', [A2AInboxPanel, MeshPeersPanel, MarketplacePanel]],
   ['Observe', [OnboardingPanel, EvalPanel, ReviewPanel, ArenaPanel, QualityPanel, APMPanel, FeedbackPanel]],

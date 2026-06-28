@@ -138,7 +138,7 @@ Every surface PR (B1…, C1…, D…) must:
    `/api/models/local`, capabilities to kernel issuance.
 2. **Local-model management** (Admin → Local Models: load/unload/set-default + pull-a-model) →
    `/api/models/local` + LM Studio.
-3. **Multi-surface ambient capture** (Memory → Capture opt-in stream, each item deletable).
+3. **Multi-surface ambient capture** ✅ **shipped PR 13** — `CapturePanel` (Memory): opt-in stream with each item's redacted preview shown + individually deletable (`DELETE /api/capture/{id}`) + clear-all.
 4. **Satellite-mic / Wyoming** (Mesh → Devices "pair a phone as a mic satellite" — make pairing real).
 5. **The "felt-value" loop** — one undeniable proactive loop (morning brief + one reversible
    remediation) end-to-end; cinema mode is the shareable artifact.
