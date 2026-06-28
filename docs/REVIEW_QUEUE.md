@@ -31,6 +31,24 @@
 
 ## Items (newest first)
 
+### HUD-v3 PR 6 (C6) — Governance scorecard + Security posture panels in the Console
+- **What:** two read-only Trust panels closing C6 (loop-breaker, the third leg, already had a panel).
+  `GovernancePanel` reads the **public** trust scorecard `GET /api/security/governance` — per-suite
+  scores (injection / harm / OWASP: `passed/n` + %) and the overall **pass/FAIL gate** vs threshold.
+  `PosturePanel` reads the admin `GET /api/security/posture` — secrets-at-rest (encrypted + backend),
+  skill signing (required? + trusted/total), sandbox isolation, and the guardrails mode. Neither had a
+  control surface before.
+- **Honesty:** every number is the real suite/registry result; a failing gate shows **"gate: FAIL"** in
+  red, not a softened state. No fabricated scores.
+- **Verified (automated, end-to-end in-env):** `tsc --noEmit` exit 0; new `governance-posture-panel.test.tsx`
+  (+3: governance shows the gate + per-suite scores incl. a partial pass · a FAILED gate is surfaced
+  honestly · posture shows secrets/signing/sandbox/guardrails state) — full vitest **89/89** green;
+  `npm run build` refreshed the served bundle, stale-bundle guard reproducible. No backend/route change →
+  parity untouched.
+- **⚠️ Needs you — live pixels:** open Console → Trust → GOVERNANCE SCORECARD + SECURITY POSTURE against a
+  running backend (admin token for posture); confirm the suite scores + gate match `GET /api/security/governance`
+  and the posture rows reflect your actual config (secrets backend, signing requirement, sandbox).
+
 ### HUD-v3 PR 5 (C2) — Per-agent autonomy dial in the Console (closes PR 0's loop)
 - **What:** PR 0 (#418) made per-agent **AUTO/ASK/OFF** *enforceable* (`AutonomyPolicy.agent_modes`, the
   kernel threads `action.agent`) but shipped **no UI**. This is that control surface. New

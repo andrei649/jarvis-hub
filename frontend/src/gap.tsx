@@ -265,6 +265,71 @@ export function LoopBreakerPanel() {
   );
 }
 
+/* HUD-v3 C6 (governance + posture half; loop-breaker already shipped). Two read-only
+   Trust panels surfacing the security scorecard + packaged posture — neither had a
+   control surface. Honesty: every number is the real suite/registry result. */
+export function GovernancePanel() {
+  const { d, e, loading, reload } = useApi('/api/security/governance');  // open (public scorecard)
+  const suites = d ? [['injection', d.injection], ['harm', d.harm], ['owasp', d.owasp]].filter((x) => x[1]) : [];
+  const pct = (s) => s && typeof s.score === 'number' ? Math.round(s.score * 100) + '%' : '—';
+  return (
+    <Card title="GOVERNANCE SCORECARD" sub={d ? (d.pass ? 'gate: pass' : 'gate: FAIL') : null} onReload={reload}>
+      <State e={e} loading={loading} n={suites.length} />
+      {d && (
+        <Row>
+          <span style={mono}>overall</span>
+          <span style={{ marginLeft: 'auto', display: 'flex', gap: 5, alignItems: 'center' }}>
+            <Tag c={d.pass ? 'var(--green)' : 'var(--red)'}>{typeof d.overall_score === 'number' ? Math.round(d.overall_score * 100) + '%' : '—'}</Tag>
+            <Tag>≥ {typeof d.threshold === 'number' ? Math.round(d.threshold * 100) + '%' : '—'}</Tag>
+          </span>
+        </Row>
+      )}
+      {suites.map((x) => (
+        <Row key={x[0]}>
+          <span style={{ ...mono, color: 'var(--ink-2)' }}>{x[0]}</span>
+          <span style={{ marginLeft: 'auto', display: 'flex', gap: 5, alignItems: 'center' }}>
+            <Tag c={(x[1].passed === x[1].n) ? 'var(--green)' : 'var(--amber)'}>{x[1].passed}/{x[1].n}</Tag>
+            <Tag>{pct(x[1])}</Tag>
+          </span>
+        </Row>
+      ))}
+    </Card>
+  );
+}
+export function PosturePanel() {
+  const { d, e, loading, reload } = useApi('/api/security/posture', true, true);  // admin-guarded
+  const sec = (d && d.secrets) || {};
+  const sk = (d && d.skills) || {};
+  const sb = (d && d.sandbox) || {};
+  return (
+    <Card title="SECURITY POSTURE" sub={d && d.guardrails ? `guardrails: ${d.guardrails.mode}` : null} onReload={reload}>
+      <State e={e} loading={loading} n={d ? 1 : 0} />
+      {d && (
+        <>
+          <Row><span style={mono}>secrets at rest</span>
+            <span style={{ marginLeft: 'auto', display: 'flex', gap: 5, alignItems: 'center' }}>
+              <Tag c={sec.encrypted_at_rest ? 'var(--green)' : 'var(--red)'}>{sec.encrypted_at_rest ? 'encrypted' : 'plain'}</Tag>
+              <Tag>{sec.backend || '—'}</Tag>
+            </span>
+          </Row>
+          <Row><span style={mono}>skill signing</span>
+            <span style={{ marginLeft: 'auto', display: 'flex', gap: 5, alignItems: 'center' }}>
+              <Tag c={sk.require_signed ? 'var(--green)' : 'var(--ink-3)'}>{sk.require_signed ? 'required' : 'optional'}</Tag>
+              <Tag c={(sk.untrusted ?? 0) > 0 ? 'var(--amber)' : 'var(--green)'}>{sk.trusted ?? 0}/{sk.total ?? 0} trusted</Tag>
+            </span>
+          </Row>
+          <Row><span style={mono}>sandbox</span>
+            <span style={{ marginLeft: 'auto', display: 'flex', gap: 5, alignItems: 'center' }}>
+              <Tag c={sb.isolated ? 'var(--green)' : 'var(--amber)'}>{sb.isolated ? 'isolated' : 'host'}</Tag>
+              {sb.docker_available && <Tag>docker</Tag>}
+            </span>
+          </Row>
+        </>
+      )}
+    </Card>
+  );
+}
+
 /* ── Interop ───────────────────────────────────────────── */
 /* HUD-v3 C10 — Mesh peers. The A2A peer registry (allowlist + one-time shared secret)
    is admin-guarded and had no control surface (only the inbox did). Surfaces the
@@ -927,7 +992,7 @@ export function TodayPanel() {
 
 const SECTIONS: Array<[string, Array<() => any>]> = [
   ['Memory', [DataSpacesPanel, LocalDocsPanel, NotesPanel, ReflectionPanel]],
-  ['Trust', [KillSwitchPanel, KernelMetricsPanel, ReadinessPanel, LoopBreakerPanel, NetworkMonitorPanel, SecretsPanel, CapabilitiesPanel, PairingPanel, InjectionScanPanel]],
+  ['Trust', [KillSwitchPanel, KernelMetricsPanel, ReadinessPanel, LoopBreakerPanel, GovernancePanel, PosturePanel, NetworkMonitorPanel, SecretsPanel, CapabilitiesPanel, PairingPanel, InjectionScanPanel]],
   ['Interop', [A2AInboxPanel, MeshPeersPanel, MarketplacePanel]],
   ['Observe', [OnboardingPanel, EvalPanel, ReviewPanel, APMPanel, FeedbackPanel]],
   ['Build', [StepGenPanel, SandboxPanel, TemplatesPanel]],
