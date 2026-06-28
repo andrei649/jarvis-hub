@@ -158,7 +158,7 @@ function Seg({ cur, opts, on }) {
 }
 
 /* input bar — text + voice (mic toggles the useVoice loop; ⚙ opens voice settings) */
-function InputBar({ onSubmit, mic, setMic, voice, cfg, onCfg, micMuted, t }) {
+function InputBar({ onSubmit, mic, setMic, voice, cfg, onCfg, micMuted, t }: { onSubmit?: any; mic?: any; setMic?: any; voice?: any; cfg?: any; onCfg?: any; micMuted?: any; t?: any }) {
   const [val,setVal]=useState('');
   const [cfgOpen,setCfgOpen]=useState(false);
   const submit=()=>{ if(!val.trim())return; onSubmit(val.trim()); setVal(''); };

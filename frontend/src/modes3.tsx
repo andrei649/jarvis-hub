@@ -1,4 +1,3 @@
-// @ts-nocheck
 import React, { useState as uS3, useEffect as uE3 } from 'react';
 import { V2, Conversation, InputBar } from './ui';
 import { Icon as Ic3, ICONS as IK3, Glyph as Gl3, statusClass as sc3 } from './ui';
@@ -6,7 +5,7 @@ import { togglePlugin } from './api/actions';
 import { RoomsPanel } from './gap';
 /* HUD v2 · MODES III — Chat (focus), Comms, Admin */
 
-function SubH3({ children, style }){ return <div className="sub-h" style={style}>{children}</div>; }
+function SubH3({ children, style }: { children?: any; style?: any }){ return <div className="sub-h" style={style}>{children}</div>; }
 
 /* ============ CHAT · distraction-free ============ */
 function ChatMode({ messages, thinking, onSubmit, onProv, mic, setMic, lang, t }){
@@ -87,7 +86,7 @@ function CommsMode({ t }){
 /* ============ ADMIN ============ */
 function AdminMode({ t }){
   const A = V2.ADMIN;
-  const [plugins,setPlugins]=uS3(A.plugins);
+  const [plugins,setPlugins]=uS3<Array<{ name: string; scope: string; net: string; on: boolean; id?: string }>>(A.plugins);
   // Keep local plugin list in sync if live.ts swaps in the real registry after mount.
   uE3(() => { setPlugins(A.plugins); }, [A.plugins]);
   // REAL toggle: PUT /plugins/{id}/toggle flips enabled on the backend. The seeded
@@ -99,7 +98,7 @@ function AdminMode({ t }){
     setPlugins(ps=>ps.map((x,j)=>j===i?{...x,on:next}:x)); // optimistic
     if (!p.id) return; // demo/seed row — no backend id, preview only
     togglePlugin(p.id)
-      .then((r) => { if (r && typeof r.enabled === 'boolean') setPlugins(ps=>ps.map((x,j)=>j===i?{...x,on:r.enabled}:x)); })
+      .then((r: any) => { if (r && typeof r.enabled === 'boolean') setPlugins(ps=>ps.map((x,j)=>j===i?{...x,on:r.enabled}:x)); })
       .catch(() => setPlugins(ps=>ps.map((x,j)=>j===i?{...x,on:!next}:x))); // revert on failure
   };
   return (
