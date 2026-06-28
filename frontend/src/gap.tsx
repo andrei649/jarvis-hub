@@ -976,8 +976,19 @@ export function BackupPanel() {
   const create = () => actA('/api/admin/backup', {}, (r) => { setMsg(r && r.bytes ? 'backup created · ' + sz(r.bytes) : 'backup created'); reload(); });
   const verify = () => actA('/api/admin/backup/verify', {}, (r) => setMsg(r && r.ok ? 'restore-drill OK · ' + (r.file_count || 0) + ' files' : 'verify failed'));
   const exportMe = () => actA('/api/admin/export', {}, (r) => setMsg(r && r.bytes ? 'export written · ' + sz(r.bytes) : 'export written'));
+  // forget-me (C9, destructive) — the backend requires {"confirm":"FORGET"}; the UI mirrors
+  // that hard-to-fat-finger acknowledgement with a typed-confirmation reveal. Backup-first.
+  const [armed, setArmed] = useState(false);
+  const [confirm, setConfirm] = useState('');
+  const forget = () => {
+    if (confirm !== 'FORGET') return;
+    actA('/api/admin/forget', { confirm: 'FORGET' }, (r) => {
+      setMsg(r && r.ok !== false ? 'forgotten · backup-first purge complete' : 'forget failed');
+      setArmed(false); setConfirm(''); reload();
+    });
+  };
   return (
-    <Card title="BACKUP & EXPORT" sub={d ? `${backups.length} snapshots` : null} onReload={reload}>
+    <Card title="BACKUP · EXPORT · FORGET" sub={d ? `${backups.length} snapshots` : null} onReload={reload}>
       <State e={e} loading={loading} n={backups.length} />
       {backups.slice(0, 8).map((b, i) => (
         <Row key={b.name ?? i}>
@@ -994,6 +1005,16 @@ export function BackupPanel() {
         <button className="tool-btn" onClick={exportMe}>export my data</button>
       </div>
       {msg && <div style={{ fontSize: 10, color: 'var(--accent-light)', marginTop: 6 }}>{msg}</div>}
+      {!armed
+        ? <button className="tool-btn" style={{ marginTop: 8, color: 'var(--red)' }} onClick={() => setArmed(true)}>forget me…</button>
+        : (
+          <div style={{ display: 'flex', gap: 6, marginTop: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+            <span style={{ fontSize: 10, color: 'var(--red)' }}>type FORGET to erase all content (backup-first):</span>
+            <input value={confirm} onChange={(ev) => setConfirm(ev.target.value)} placeholder="FORGET" style={{ ...inpS, width: 90 }} />
+            <button className="tool-btn" disabled={confirm !== 'FORGET'} style={{ color: confirm === 'FORGET' ? 'var(--red)' : 'var(--ink-3)' }} onClick={forget}>confirm erase</button>
+            <button className="tool-btn" onClick={() => { setArmed(false); setConfirm(''); }}>cancel</button>
+          </div>
+        )}
     </Card>
   );
 }

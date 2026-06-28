@@ -31,6 +31,23 @@
 
 ## Items (newest first)
 
+### HUD-v3 PR 8 (C9 forget-me) — destructive "forget me" completes the data triad
+- **What:** adds a **confirm-gated forget-me** control to the BackupPanel (now titled *BACKUP · EXPORT ·
+  FORGET*), so the data-sovereignty triad is whole. It mirrors the backend's hard-to-fat-finger design:
+  a red **"forget me…"** reveal → type the exact token **`FORGET`** → **"confirm erase"** (disabled until
+  the token matches) → `POST /api/admin/forget {confirm:"FORGET"}` (backup-first, recoverable from the
+  archive it just made), with a **cancel** path.
+- **Safety:** the irreversible action is double-gated — admin token *and* the typed acknowledgement; the
+  confirm button can't even fire until the input is exactly `FORGET`.
+- **Verified (automated, end-to-end in-env):** `tsc --noEmit` exit 0; backup-panel.test.tsx grew +2 (now
+  6): the gate blocks an empty **and** a wrong token (no `/api/admin/forget` call), and only the exact
+  `FORGET` token POSTs `{confirm:"FORGET"}`. Full vitest **95/95** green; `npm run build` refreshed the
+  served bundle, stale-bundle guard reproducible. No backend/route change → parity untouched.
+- **⚠️ Needs you — live pixels + the real purge (CAREFUL):** this erases your content at rest (backup-first).
+  On a throwaway/test profile: Console → Admin → BACKUP · EXPORT · FORGET → forget me… → type `FORGET` →
+  confirm; verify a fresh snapshot was taken first and the content is gone, then confirm you can restore
+  from that snapshot. **Do not run against real data unless you mean it.**
+
 ### HUD-v3 PR 7 (C9) — Backup & Export (data-sovereignty controls) in the Console
 - **What:** the 0.14/H23.8 backup + H23.9 export backend (consistent SQLite snapshots, restore-drill,
   portable JSON takeout) had **no control surface**. New `BackupPanel` (in `gap.tsx`, Admin cluster) is
