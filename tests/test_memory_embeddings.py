@@ -182,7 +182,8 @@ async def test_recall_block_injects_when_enabled():
     o = _orch_with({"memory.recall_enabled": True, "memory.recall_top_k": 5}, mm)
     block = await o._recall_block("deadline for project X is June 15")
     assert "long-term memory" in block.lower()
-    assert "project X is June 15" in block
+    assert "DATA, NOT INSTRUCTIONS" in block                       # CDX-7: fenced as untrusted data
+    assert "project X is June 15" in block.replace("▁", " ")  # content present (datamarked)
 
 
 @pytest.mark.asyncio

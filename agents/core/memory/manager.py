@@ -7,6 +7,7 @@ knowledge graph.
 import asyncio
 import logging
 import os
+import time
 import uuid
 from typing import Optional
 
@@ -131,6 +132,7 @@ class MemoryManager:
         rid = record_id or f"mem-{uuid.uuid4().hex[:12]}"
         meta = dict(metadata or {})
         meta.setdefault("text", text)
+        meta.setdefault("created_at", time.time())  # CDX-7: real age provenance on later recall
         await self.store_embedding(rid, vec, meta)
         return rid
 
