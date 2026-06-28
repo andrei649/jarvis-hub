@@ -28,8 +28,9 @@ async def list_plugins():
     orch = get_orch()
     if orch is None or orch.permission_gate is None:
         return nocache_json({"plugins": [], "total": 0})
+    gate = orch.permission_gate
     plugins = []
-    for _pid, manifest in orch.permission_gate.plugins.items():
+    for _pid, manifest in gate.plugins.items():
         plugins.append({
             "id": manifest.id,
             "name": manifest.name,
@@ -40,8 +41,17 @@ async def list_plugins():
             "allowed_domains": manifest.allowed_domains,
             "agents_served": manifest.agents_served,
             "enabled": manifest.enabled,
+            # CDX-11 — least-privilege posture: whether this plugin's "all" wildcard
+            # is currently withheld (external-write under hardening), plus any
+            # owner-declared per-agent grants.
+            "wildcard_restricted": gate.wildcard_restricted(manifest.id),
+            "grants": gate.grants(manifest.id),
         })
-    return nocache_json({"plugins": plugins, "total": len(plugins)})
+    return nocache_json({
+        "plugins": plugins,
+        "total": len(plugins),
+        "least_privilege": gate.least_privilege,
+    })
 
 
 @router.put("/plugins/{plugin_id}/toggle", dependencies=[Depends(admin_guard)])

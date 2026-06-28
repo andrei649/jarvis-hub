@@ -7,6 +7,7 @@ declared permissions.
 """
 
 import logging
+import os
 from dataclasses import dataclass, field
 from enum import Enum
 from urllib.parse import urlparse
@@ -436,14 +437,55 @@ def dynamic_domains(plugin_id: str) -> list[str]:
     return sorted(_DYNAMIC_DOMAINS.get(plugin_id, ()))
 
 
+# ── CDX-11: least-privilege plugin posture ───────────────────────────────────
+# By default a plugin that serves ``agents_served=["all"]`` is callable by every
+# agent. For the hardened / design-partner profile that wildcard is too broad on
+# **external-write** surfaces: 11 TRANSMITTED plugins (social_x, writeback_*,
+# call_*, channel_*) serve "all", so any agent persona — incl. one steered by an
+# injected prompt — can reach a third-party write. Under least-privilege
+# hardening the "all" wildcard is NOT honored for TRANSMITTED plugins; such a
+# plugin admits only an explicitly-served agent or an owner-declared grant
+# (JARVIS_PLUGIN_GRANTS / add_grant). Read/LAN/local plugins keep their wildcard.
+# Default is OFF — current behavior is unchanged unless the owner opts in.
+
+def least_privilege_from_env() -> bool:
+    """True when plugin least-privilege hardening is enabled via the environment.
+
+    Honors ``JARVIS_PLUGIN_LEAST_PRIVILEGE`` (this feature's own switch) and the
+    broader ``JARVIS_HARDENED`` preset (CDX-12), so the hardened profile flips
+    this on without a separate flag.
+    """
+    for var in ("JARVIS_PLUGIN_LEAST_PRIVILEGE", "JARVIS_HARDENED"):
+        if os.environ.get(var, "").strip().lower() in ("1", "true", "yes", "on"):
+            return True
+    return False
+
+
+def grants_from_env() -> "dict[str, set[str]]":
+    """Parse ``JARVIS_PLUGIN_GRANTS`` — a comma list of ``plugin_id:agent_id``
+    pairs the owner declares to keep external-write plugins usable under
+    hardening (e.g. ``social_x:veronica,writeback_github:stark``)."""
+    out: dict[str, set[str]] = {}
+    for pair in os.environ.get("JARVIS_PLUGIN_GRANTS", "").split(","):
+        pid, sep, agent = pair.strip().partition(":")
+        if sep and pid.strip() and agent.strip():
+            out.setdefault(pid.strip(), set()).add(agent.strip())
+    return out
+
+
 class PermissionGate:
     """
     Central gate that all agent-to-plugin calls pass through.
     Blocks any call that exceeds the plugin's declared permissions.
     """
 
-    def __init__(self):
+    def __init__(self, least_privilege: "bool | None" = None):
         self.plugins: dict[str, PluginManifest] = {}
+        # CDX-11 — resolve from env unless the caller pins it explicitly (tests).
+        self.least_privilege = (
+            least_privilege_from_env() if least_privilege is None else bool(least_privilege)
+        )
+        self._grants: dict[str, set[str]] = grants_from_env()
         self._load_builtins()
 
     def _load_builtins(self):
@@ -453,6 +495,48 @@ class PermissionGate:
     def register(self, manifest: PluginManifest):
         self.plugins[manifest.id] = manifest
         logger.info(f"Registered plugin: {manifest.id} ({manifest.network_access.value})")
+
+    # ── CDX-11: per-agent grants + least-privilege identity check ─────────────
+    def add_grant(self, plugin_id: str, agent_id: str) -> None:
+        """Owner-declared grant: let *agent_id* use *plugin_id* even when
+        least-privilege hardening withholds the ``"all"`` wildcard for it."""
+        if plugin_id and agent_id:
+            self._grants.setdefault(plugin_id, set()).add(agent_id)
+
+    def grants(self, plugin_id: str) -> list[str]:
+        """Agents the owner has explicitly granted for *plugin_id* (CDX-11)."""
+        return sorted(self._grants.get(plugin_id, ()))
+
+    def wildcard_restricted(self, plugin_id: str) -> bool:
+        """True when hardening is active AND this plugin's ``"all"`` wildcard is an
+        external-transmit surface that is therefore NOT honored — only explicitly
+        served or owner-granted agents may call it. (Surfaces the posture for the
+        HUD / `/plugins` listing.)"""
+        manifest = self.plugins.get(plugin_id)
+        return bool(
+            manifest is not None
+            and self.least_privilege
+            and manifest.data_scope == DataScope.TRANSMITTED
+            and "all" in manifest.agents_served
+        )
+
+    def _agent_permitted(self, manifest: PluginManifest, agent_id: str) -> bool:
+        """Identity check with the CDX-11 least-privilege overlay.
+
+        Served if explicitly listed or owner-granted. The ``"all"`` wildcard is
+        honored too — EXCEPT under least-privilege hardening for TRANSMITTED
+        (external-write) plugins, where the wildcard is withheld and only an
+        explicit grant admits the agent. Read/LAN/local plugins keep the wildcard.
+        """
+        if agent_id in manifest.agents_served:
+            return True
+        if agent_id in self._grants.get(manifest.id, set()):
+            return True
+        if "all" in manifest.agents_served:
+            if self.least_privilege and manifest.data_scope == DataScope.TRANSMITTED:
+                return False  # wildcard withheld for external-transmit; needs a grant
+            return True
+        return False
 
     def check_call(self, plugin_id: str, agent_id: str, target_domain: str = "") -> bool:
         """
@@ -468,7 +552,7 @@ class PermissionGate:
             logger.warning(f"Plugin {plugin_id} is disabled — blocked")
             return False
 
-        if agent_id not in manifest.agents_served and "all" not in manifest.agents_served:
+        if not self._agent_permitted(manifest, agent_id):
             logger.warning(f"Agent {agent_id} not served by plugin {plugin_id} — blocked")
             return False
 

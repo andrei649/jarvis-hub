@@ -31,6 +31,32 @@
 
 ## Items (newest first)
 
+### CDX-11 — least-privilege plugins (opt-in hardened profile; default-off, nothing changes yet)
+- **What:** 12 plugins that **transmit to a third party** ship `agents_served=["all"]` — the 11
+  external-write surfaces (`social_x`, `writeback_{notion,github,google_calendar}`,
+  `call_{twilio,telnyx}`, `channel_{whatsapp,google_chat,teams,signal,matrix}`) plus the `telegram`
+  comms bus. With `"all"`, *any* agent persona — including one steered by an injected prompt — can
+  reach those writes. New least-privilege overlay on the permission gate: under hardening the `"all"`
+  wildcard is **no longer honored for TRANSMITTED plugins**; each admits only an explicitly-served
+  agent or an **owner-declared grant**. Read/LAN/local plugins (weather, news, websearch, homebridge…)
+  keep their wildcard; already-scoped plugins (e.g. `cloud-llm`) are untouched.
+- **⚠️ Needs you — but only if you turn it on.** This ships **OFF by default**: with no env set,
+  behavior is byte-identical to before (every existing test confirms this). To harden, set
+  `JARVIS_PLUGIN_LEAST_PRIVILEGE=1` (or the `JARVIS_HARDENED` preset, which CDX-12 will flip), then
+  declare grants via `JARVIS_PLUGIN_GRANTS="social_x:veronica,writeback_github:stark,…"`. The code
+  **deliberately does not guess** which agent should own which write surface — that capability matrix
+  is yours to set (also noted in `docs/OWNER_TASKS.md`). Until you do, hardened mode is fail-closed:
+  the external-write plugins are denied for everyone, which is the correct hardened posture.
+- **How to eyeball it:** `GET /plugins` now reports `least_privilege` (top-level) and, per plugin,
+  `wildcard_restricted` (is its `"all"` currently withheld?) + `grants` (who you've allowed). Flip the
+  env on a scratch run and confirm the 12 transmit plugins show `wildcard_restricted:true` while reads
+  stay false.
+- **Verified (automated):** `tests/test_cdx11_least_privilege_plugins.py` 11 passed — default-off
+  serves everyone, hardened blocks the wildcard external-writes, a grant re-admits exactly one
+  plugin+agent, reads/LAN/explicit-scoped plugins are unaffected, the full 12-plugin target set is
+  restricted, and both env switches + the grant parser wire through. ruff + bandit clean; no new
+  routes (parity green); STATUS at 3,107 tests.
+
 ### CDX-8 — auto-generated skills are quarantined (owner-approve before they can run)
 - **What:** an agent that emitted `[learn: task | steps | cmd]` minted a brand-new skill **from untrusted LLM
   output**, and the loader then **self-signed it and `exec`'d its Python module in-process on the spot** —
