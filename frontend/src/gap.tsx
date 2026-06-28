@@ -586,6 +586,33 @@ function TemplatesPanel() {
 }
 
 /* ── Build ─────────────────────────────────────────────── */
+/* HUD-v3 C7 (workflow runtime management). StepGenPanel covers the AI step-BUILDER;
+   this is the missing management surface for the 0.34 runtime: list registered
+   pipelines (built-in + user-defined), run one, delete a user-defined one.
+   GET open · run user-guard · delete admin. */
+export function WorkflowsPanel() {
+  const { d, e, loading, reload } = useApi('/api/workflows');
+  const rows = arr(d, 'workflows');
+  const [out, setOut] = useState(null);
+  const run = (id) => { setOut('running ' + id + '…'); act('/api/workflows/run', { pipeline_id: id, input: '' }, (r) => setOut(r && r.ok !== false ? 'ran ' + id + ' · ok' : 'run failed')); };
+  const del = (id) => apiDelete('/api/workflows/' + encodeURIComponent(id), { admin: true }).then(reload).catch(() => {});
+  return (
+    <Card title="WORKFLOWS" sub={d ? `${rows.length} pipelines` : null} onReload={reload}>
+      <State e={e} loading={loading} n={rows.length} />
+      {rows.slice(0, 12).map((w, i) => (
+        <Row key={w.id ?? i}>
+          <span style={{ ...mono, color: 'var(--ink-2)' }}>{w.name || w.id}</span>
+          <span style={{ marginLeft: 'auto', display: 'flex', gap: 5, alignItems: 'center' }}>
+            <Tag>{(w.steps || []).length} steps</Tag>
+            <button className="tool-btn" onClick={() => run(w.id)}>run</button>
+            <button className="tool-btn" title="delete" onClick={() => del(w.id)}>✕</button>
+          </span>
+        </Row>
+      ))}
+      {out && <div style={{ fontSize: 10, color: 'var(--accent-light)', marginTop: 6 }}>{out}</div>}
+    </Card>
+  );
+}
 function StepGenPanel() {
   const [desc, setDesc] = useState('');
   const [out, setOut] = useState(null);
@@ -1098,7 +1125,7 @@ const SECTIONS: Array<[string, Array<() => any>]> = [
   ['Trust', [KillSwitchPanel, KernelMetricsPanel, ReadinessPanel, LoopBreakerPanel, GovernancePanel, PosturePanel, NetworkMonitorPanel, SecretsPanel, CapabilitiesPanel, PairingPanel, InjectionScanPanel]],
   ['Interop', [A2AInboxPanel, MeshPeersPanel, MarketplacePanel]],
   ['Observe', [OnboardingPanel, EvalPanel, ReviewPanel, ArenaPanel, QualityPanel, APMPanel, FeedbackPanel]],
-  ['Build', [StepGenPanel, SandboxPanel, TemplatesPanel]],
+  ['Build', [WorkflowsPanel, StepGenPanel, SandboxPanel, TemplatesPanel]],
   ['Autonomy & Agents', [MissionsPanel, AgentAutonomyPanel, TodayPanel, SchedulePanel, LearningPanel, SessionsPanel, HeartbeatPanel, TranscriptPanel, EscalationPanel]],
   ['Admin', [BackupPanel, OAuthPanel, SettingsPanel, PromptsPanel, RoomsPanel, LMStudioPanel, AuthProfilesPanel]],
 ];
