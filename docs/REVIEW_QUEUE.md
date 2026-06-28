@@ -31,6 +31,19 @@
 
 ## Items (newest first)
 
+### HUD — type the api/ data layer (CDX-9 typing pass, start)
+- **What:** removed `@ts-nocheck` from `api/actions.ts` and `api/signalLayer.ts` and gave them **real
+  types** — `actions.ts` now declares response interfaces (`NorthStarMetrics`, `KillSwitchState`,
+  `AuditVerifyResult`, `PluginList`, …) threaded through the client's existing `apiGet<T>` generic, so a
+  backend shape change is caught at the call boundary (the core CDX-9 "live-wiring hides shape drift"
+  complaint). `signalLayer.ts` got a typed `WorldIntelligence` return + a `PromiseRejectedResult` type
+  guard. First slice of the typing pass (22→20 source modules on `@ts-nocheck`).
+- **Verified (automated):** `tsc --noEmit` clean; full frontend **vitest 73 passed** (unchanged — types
+  erase, so it's behaviour-identical); `agents/web/v2` bundle is **byte-identical** (no rebuild needed —
+  the `hud-v2-build` guard matches). No backend/route change.
+- **⚠️ Needs you:** nothing — compile-time only. The big HUD components (`app.tsx`/`gap.tsx`/`modes*.tsx`)
+  remain on `@ts-nocheck`; those are the heavier, incremental follow-ups (each its own PR).
+
 ### Security — cover the audit-log query/read path (coverage hardening)
 - **What:** `security/audit.py` `query()` — the read path the admin audit page uses to reconstruct
   `SecurityEvent`s (incl. findings) from the tamper-evident chain — was **untested** (81% file). Added a
