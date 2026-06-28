@@ -1,4 +1,3 @@
-// @ts-nocheck
 import React, { useState, useMemo, useEffect } from 'react';
 import { V2, Conversation, InputBar } from './ui';
 import { Icon, ICONS, Glyph, statusClass } from './ui';
@@ -131,7 +130,7 @@ function TrustMode({ t, localPct = null }) {
   const payAct = (p, action) => {
     if (!p.id) return;
     decidePayment(p.id, action)
-      .then((r) => { p.state = (r && (r.state || r.status)) || (action === 'approve' ? 'approved' : action === 'reject' ? 'rejected' : 'cleared'); payTick((n) => n + 1); })
+      .then((r: any) => { p.state = (r && (r.state || r.status)) || (action === 'approve' ? 'approved' : action === 'reject' ? 'rejected' : 'cleared'); payTick((n) => n + 1); })
       .catch(() => {});
   };
   useEffect(() => {
@@ -144,7 +143,7 @@ function TrustMode({ t, localPct = null }) {
     const next = !killed;
     setBusy(true); setKilled(next); // optimistic
     setKillSwitch(next)
-      .then((r) => { if (r) setKilled(!!(r.engaged ?? next)); })
+      .then((r: any) => { if (r) setKilled(!!(r.engaged ?? next)); })
       .catch(() => { setKilled(!next); setKillErr(true); }) // revert on failure — honest
       .finally(() => setBusy(false));
   };
@@ -220,7 +219,7 @@ function TrustMode({ t, localPct = null }) {
 
             <div style={{border:'1px solid var(--panel-line)',borderRadius:'var(--radius)',padding:14,background:'var(--surface-2)'}}>
               <div className="dl" style={{fontFamily:'var(--font-mono)',fontSize:9.5,letterSpacing:'.16em',textTransform:'uppercase',color:'var(--ink-3)',marginBottom:6}}>{t.payTitle}</div>
-              {D.PAYMENTS.map((p,i)=>(
+              {D.PAYMENTS.map((p: { pcap: string; desc: string; amt: string; state: string; id?: string }, i)=>(
                 <div className="pay-row" key={i}><span className="pcap">{p.pcap}</span><span style={{color:'var(--ink-2)'}}>{p.desc}</span>
                   <span style={{textAlign:'right',color:p.state==='pending'?'var(--amber)':p.state==='cleared'?'var(--green)':'var(--ink-3)'}}>{p.amt}</span>
                   {/* Lifecycle controls only when the row carries a real broker id (live data). */}
@@ -264,7 +263,7 @@ function MemoryMode({ t }) {
     memorySearch('recent').then((r) => {
       const res = r && Array.isArray(r.results) ? r.results : [];
       if (!alive || !res.length) return;
-      setRecalls(res.slice(0,6).map((h) => {
+      setRecalls(res.slice(0,6).map((h: any) => {
         const p = h.payload || {};
         const text = p.text || p.content || p.summary || (typeof h.payload === 'string' ? h.payload : '') || h.id || '';
         const src = (Array.isArray(h.sources) ? h.sources.join('+') : (h.sources || '')) || 'memory';
