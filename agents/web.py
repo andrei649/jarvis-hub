@@ -980,6 +980,7 @@ from agents.core.routers.market import router as _market_router  # noqa: E402
 from agents.core.routers.creative import router as _creative_router  # noqa: E402
 from agents.core.routers.security_skills import router as _security_skills_router  # noqa: E402
 from agents.core.routers.coach import router as _coach_router  # noqa: E402
+from agents.core.routers.system_profiles import router as _system_profiles_router  # noqa: E402
 from agents.core.routers.pairing import router as _pairing_router  # noqa: E402
 from agents.core.routers.dashboard import router as _dashboard_router  # noqa: E402
 from agents.core.routers.agents_api import router as _agents_api_router  # noqa: E402
@@ -1018,6 +1019,7 @@ app.include_router(_market_router)
 app.include_router(_creative_router)
 app.include_router(_security_skills_router)
 app.include_router(_coach_router)
+app.include_router(_system_profiles_router)
 app.include_router(_actions_router)
 app.include_router(_arena_router)
 app.include_router(_review_router)

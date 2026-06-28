@@ -131,16 +131,16 @@ python -m pytest tests/ -v          # ~2,802 passed, 6 skipped
 | 0.59 Proof Assets | 🌱 seed | `marketing/` + `docs/marketing/` / landing, README hero, demo video + competitor-comparison & SEO landing pages | H23.22 |
 | 0.60 Local Analytics | ✅ done (#300) | `analytics_store.py`,`observability/north_star.py`,`/api/metrics/north-star` + HUD meter ✅ (#300) / activation funnel still open | H23.20 |
 | 0.61 Database Future Check | 🟡 partial | `settings_db.py` (WAL) + `persistence/migrations.py` (schema-migration framework ✅ #305) / Turso/libSQL eval | H23.7 |
-| 0.62 System Profiles | ⬜ missing | VRAM mgmt only / Gaming/AI/Multimedia/Admin modes | 0.17 |
+| 0.62 System Profiles | 🟢 **done** | new `agents/core/system_profiles.py` — usage-mode **posture presets** (Gaming / AI / Multimedia / Admin + **balanced** default), selected via `JARVIS_SYSTEM_PROFILE` (same env-driven-posture pattern as `JARVIS_HARDENED`/`JARVIS_PLUGIN_LEAST_PRIVILEGE`). Each profile declares posture knobs (`background_autonomy`, `heavy_features`, `max_parallel_agents`, `model_tier`) read via `active_posture()`. **First live consumer wired:** `Orchestrator.run_heartbeat` is paused under a `background_autonomy:False` profile (gaming/multimedia) to free local resources — and `balanced` (the default) keeps it on, so **behavior is unchanged unless the owner opts into a quieter mode**. Read-only `GET /api/system/profiles` (active + all profiles). `tests/test_system_profiles.py` (+9, incl. the heartbeat-pause consumer); parity reseeded (+1 route). *(More consumers — concurrency/model-tier hints — can read `active_posture()` next.)* | 0.17 |
 | 0.63 Restore & Soak | 🟡 partial | backup/restore+drill ✅ (#302) + `resilience.py` / 72h soak, failure injection | H23.8/12 |
 | 0.64 Floating Bar + Global Hotkey | ⬜ missing | `desktop/src-tauri/src/main.rs` is a setup stub (no `GlobalShortcutManager`); `frontend/src/app.tsx:126` hotkeys fire only when the browser tab is focused / a system-wide summon bar (Cmd+/ / Ctrl+/) as a thin always-on overlay — the competitor's signature UX | 0.15 / 0.29 |
 | 0.65 One-Hotkey Screen-Capture Reflex | 🌱 seed | VLM brain ✅ (`llm/vlm.py`, theme 0.27) + `screen_grounding.py` + `desktop_operator.py` exist but unwired / one keypress → screenshot current screen → VLM → answer with no copy-paste (depends on 0.64) | 0.16 |
 | 0.66 SaaS Connector Breadth | 🟡 partial | ~20 working integrations but a messaging/IoT-heavy mix; missing the white-collar suite: Linear · Asana · Trello · Todoist · ClickUp · Figma · Obsidian · Google Sheets · Microsoft 365 (Outlook/OneDrive/full Teams) · Apple Notes/Reminders/Calendar | — |
 | 0.90–1.0 gates (Freeze · RC · Partner · Burn-In · Owned) | ⬜ pending | `AUDIT.md`,`MANUAL_TESTING.md`,parity/auth gates, north-star eval / promote eval→required gate; design partners; landing+demo | 1.0.0 row + H23.21/22 |
 
-> **Remaining greenfield (⬜) among 0.19–0.63:** 0.20 Vault · 0.48 Video Production · 0.55 Design Partner Kit ·
-> 0.62 System Profiles. *(0.42 Security Skills → 🟢 **done**; 0.57 Release Packaging → ✅ done; 0.52 Demo Factory
-> → 🌱 seed and 0.61 DB Future Check → 🟡 partial on the 2026-06-25 re-audit.)*
+> **Remaining greenfield (⬜) among 0.19–0.63:** 0.20 Vault · 0.48 Video Production · 0.55 Design Partner Kit.
+> *(0.42 Security Skills + 0.62 System Profiles → 🟢 **done**; 0.57 Release Packaging → ✅ done; 0.52 Demo
+> Factory → 🌱 seed and 0.61 DB Future Check → 🟡 partial on the 2026-06-25 re-audit.)*
 > Everything else is ✅/🟢/🟡/🌱 — **finish-the-PARTIALs beats start-greenfield** (audit guidance).
 > Top remaining finish-firsts: **0.36 Action-Manifest unify**, **H23.10 retention defaults**,
 > **export HTTP surface** (`/api/admin/export`, sibling of backup/forget). *(Done: H23.7 DB migrations #305,
