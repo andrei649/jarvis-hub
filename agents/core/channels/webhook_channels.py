@@ -63,6 +63,14 @@ class WebhookChannel(ChannelAdapter):
                 logger.warning("%s transport close failed", self.channel_id, exc_info=True)
 
     async def send(self, message: str, **kwargs) -> bool:
+        # 0.44: opt-in per-channel outbound rate limit (default-off — unlimited
+        # unless JARVIS_CHANNEL_SEND_RATE[S] is set). Scoped to these external
+        # broadcast channels; the interactive reply path is never limited.
+        from .send_rate_limit import allow_send
+        if not allow_send(self.channel_id):
+            logger.warning("%s outbound send rate-limited — dropped (raise "
+                           "JARVIS_CHANNEL_SEND_RATE[S] to allow more)", self.channel_id)
+            return False
         try:
             spec = self.build_send(message, kwargs)
         except Exception:

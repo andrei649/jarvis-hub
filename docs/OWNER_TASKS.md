@@ -94,6 +94,11 @@
   `JARVIS_AUDIT_KEY=<off-box secret>`, then declare `JARVIS_PLUGIN_GRANTS` (next item). Confirm via
   `GET /api/security/posture` → `hardened`.
 
+- [ ] **(optional) Channel send rate limits (0.44).** To cap outbound broadcast volume on the external
+  webhook channels (WhatsApp/Signal/Matrix/Teams/Google Chat), set `JARVIS_CHANNEL_SEND_RATE=<per-minute>`
+  (global) and/or `JARVIS_CHANNEL_SEND_RATES="whatsapp:10,teams:30"` (per channel). Default unset =
+  unlimited. The interactive reply path (telegram/web/voice) is intentionally NOT limited.
+
 - [ ] **CDX-11 plugin grants (only if/when you enable the hardened profile).** Turning on
   least-privilege (`JARVIS_PLUGIN_LEAST_PRIVILEGE=1`, or the `JARVIS_HARDENED` preset) stops
   honoring the `agents_served=["all"]` wildcard for the 12 external-transmit plugins (social_x,
