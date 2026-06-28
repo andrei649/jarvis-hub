@@ -70,6 +70,7 @@ RULES = [
     ("/api/workflows", "build"), ("/api/skills", "build"), ("/skills", "build"),
     ("/sandbox", "build"), ("/api/llm/grammar", "build"), ("/api/browser", "build"),
     ("/api/toolrpc", "build"),  # governed Tool-RPC for sandboxed pipelines (H20.1)
+    ("/api/codeintel/", "build"),  # 0.31 Code Intelligence — AST symbol index over the source
     ("/api/vlm", "build"),  # vision-language model adapter (H13.1)
     ("/api/desktop", "build"),  # governed desktop operator (H15.3)
     ("/api/media", "build"),  # governed media generation (H12.24)
