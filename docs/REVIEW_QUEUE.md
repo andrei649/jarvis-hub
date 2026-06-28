@@ -31,6 +31,29 @@
 
 ## Items (newest first)
 
+### HUD — type `gap.tsx` → CDX-9 component sweep COMPLETE 🟢 (CDX-9 typing pass)
+- **What:** removed `@ts-nocheck` from `gap.tsx` (the big P4c "console" overlay — sessions, OAuth, settings
+  DB, prompt versions, and ~20 other admin/data panels). 25 errors, all type-only:
+  - the shared `Card`/`Tag` panel primitives required `sub`/`onReload`/`c` while most callers omit them
+    (all have runtime guards/fallbacks) → marked optional.
+  - `act()`'s 3rd callback arg is optional (`then || (()=>{})`) → `then?`.
+  - the `SECTIONS` panel-registry tuples were widened to `string | Component[]` unions → typed
+    `Array<[string, Array<() => any>]>`.
+  - `dirty`/settings state typed `Record<string, any>`, and the `useApi`/`apiGet`/`apiPut` `unknown`
+    responses narrowed `: any` at their `.then`/`.map` boundaries (live.ts-ingestion style).
+- **🟢 This completes the CDX-9 component sweep.** The **entire HUD source tree is now `@ts-nocheck`-free**
+  (22 modules typed across #379–#396; the only directives left are on `src/test/*` fixtures). `tsc --noEmit`
+  is clean, and the production bundle was **byte-identical at every step except one** — #389, the single
+  intentional drift-fix (the modes2 dropped-style, flagged below).
+- **Verified (automated):** `tsc --noEmit` clean; frontend **vitest 73 passed**; `agents/web/v2` bundle
+  **byte-identical**. No backend/route change.
+- **⚠️ Needs you — the consolidated CDX-9 review list** (each already detailed in its own entry below):
+  1. **modes2 header spacing** (#389) — the one *visual* change; eyeball the Autonomy/Observe/Interop panels.
+  2. **app.tsx tabs-IA is dead code** — `ia` pinned to `'rail'`; decide wire-back-or-delete later.
+  3. Everything else is compile-time-only and behaviour-identical — no action needed, but the sweep
+     surfaced real latent issues now fixed: a dead `_wrap` ref (network), the `Icon`/`SubH`/`Meter`
+     optional-prop contracts, and the plugin/payment seed-vs-live `id` drift.
+
 ### HUD — type `shell.tsx` (CDX-9 typing pass)
 - **What:** removed `@ts-nocheck` from `shell.tsx` (topbar, rail/tabs nav, ticker, right context column,
   ambient, palette). 9 errors, two patterns, both type-only:

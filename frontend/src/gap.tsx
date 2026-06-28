@@ -1,4 +1,3 @@
-// @ts-nocheck
 /* HUD v2 · P4c — the net-new gap surfaces from the §5b/§5c audit, hosted in a
    Console overlay (mirrors v1 tools.js). Each panel fetches its real endpoint and
    degrades to an offline/empty state — never blocks. Admin-guarded calls work on
@@ -20,7 +19,7 @@ function useApi(path, auto = true, admin = false) {
 const arr = (x, ...k) => (Array.isArray(x) ? x : (k.map((kk) => x && x[kk]).find(Array.isArray) || []));
 const mono = { fontFamily: 'var(--font-mono)', fontSize: 11 };
 
-function Card({ title, sub, onReload, children }) {
+function Card({ title, sub, onReload, children }: { title?: any; sub?: any; onReload?: any; children?: any }) {
   return (
     <div className="panel" style={{ marginBottom: 'var(--gap)', breakInside: 'avoid' }}>
       <span className="bk tl"></span><span className="bk tr"></span><span className="bk bl"></span><span className="bk br"></span>
@@ -37,9 +36,9 @@ const State = ({ e, loading, n }) => (loading ? <div style={{ color: 'var(--ink-
   : e ? <div style={{ color: 'var(--amber)', fontSize: 12 }}>offline · {e}</div>
   : n === 0 ? <div style={{ color: 'var(--ink-3)', fontSize: 12 }}>nothing yet</div> : null);
 const Row = ({ children }) => <div style={{ display: 'flex', gap: 8, alignItems: 'center', padding: '5px 0', borderBottom: '1px solid var(--panel-line)' }}>{children}</div>;
-const Tag = ({ c, children }) => <span style={{ ...mono, fontSize: 9.5, padding: '1px 5px', border: '1px solid var(--panel-line)', borderRadius: 3, color: c || 'var(--ink-3)' }}>{children}</span>;
+const Tag = ({ c, children }: { c?: any; children?: any }) => <span style={{ ...mono, fontSize: 9.5, padding: '1px 5px', border: '1px solid var(--panel-line)', borderRadius: 3, color: c || 'var(--ink-3)' }}>{children}</span>;
 const Btn = ({ onClick, children }) => <button className="tool-btn" onClick={onClick} style={{ marginLeft: 'auto' }}>{children}</button>;
-const act = (p, body, then) => apiPost(p, body).then(then || (() => {})).catch(() => {});
+const act = (p, body, then?) => apiPost(p, body).then(then || (() => {})).catch(() => {});
 const actA = (p, body, then) => apiPost(p, body, { admin: true }).then(then || (() => {})).catch(() => {});
 const inpS = { background: 'var(--surface)', color: 'var(--ink)', border: '1px solid var(--panel-line)', borderRadius: 4, padding: 5, ...mono, fontSize: 11 };
 const taS = { width: '100%', minHeight: 64, background: 'var(--surface)', color: 'var(--ink)', border: '1px solid var(--panel-line)', borderRadius: 4, padding: 6, ...mono };
@@ -514,7 +513,7 @@ function AuthProfilesPanel() {
 }
 function OAuthPanel() {
   const { d, e, loading, reload } = useApi('/api/oauth/status');
-  const svcs = arr(d, 'services') || Object.entries(d || {}).map(([k, v]) => ({ service: k, ...(v || {}) }));
+  const svcs = arr(d, 'services') || Object.entries(d || {}).map(([k, v]: [string, any]) => ({ service: k, ...(v || {}) }));
   return <Card title="OAUTH" sub={svcs.length} onReload={reload}>
     <State e={e} loading={loading} n={svcs.length} />
     {svcs.slice(0, 8).map((s, i) => <Row key={i}><span style={mono}>{s.service || s.label || s.key}</span>
@@ -537,7 +536,7 @@ function settingsField(it, val, on) {
 }
 function SettingsPanel() {
   const { d, e, loading, reload } = useApi('/api/admin/settings');
-  const [dirty, setDirty] = useState({});
+  const [dirty, setDirty] = useState<Record<string, any>>({});
   const [saved, setSaved] = useState(null);
   const cats = d && typeof d === 'object' ? d : {};
   const setVal = (cat, key, v) => setDirty((p) => ({ ...p, [cat]: { ...(p[cat] || {}), [key]: v } }));
@@ -546,14 +545,14 @@ function SettingsPanel() {
   const save = async () => {
     let n = 0;
     for (const cat of Object.keys(dirty)) {
-      try { const r = await apiPut('/api/admin/settings/' + cat, { values: dirty[cat] }, { admin: true }); n += (r && r.updated) || 0; } catch { /* offline */ }
+      try { const r: any = await apiPut('/api/admin/settings/' + cat, { values: dirty[cat] }, { admin: true }); n += (r && r.updated) || 0; } catch { /* offline */ }
     }
     setSaved(n); setDirty({}); reload();
   };
   return <Card title="SETTINGS DB" sub={Object.keys(cats).length + ' cat'} onReload={reload}>
     <State e={e} loading={loading} n={Object.keys(cats).length} />
     <div style={{ maxHeight: 300, overflow: 'auto' }}>
-      {Object.entries(cats).map(([cat, items]) => (
+      {Object.entries(cats).map(([cat, items]: [string, any]) => (
         <div key={cat} style={{ marginBottom: 6 }}>
           <div style={{ ...mono, fontSize: 9.5, letterSpacing: '.16em', color: 'var(--ink-3)', margin: '6px 0 2px' }}>{String(cat).toUpperCase()}</div>
           {(items || []).map((it) => (
@@ -585,13 +584,13 @@ function PromptsPanel() {
 
   const onAgent = (v) => { setAgent(v); setPick([]); setDiff(null); setAb(null); setEdit(null); setPreview(null); setNote(''); };
   const toggle = (vn) => setPick((p) => p.includes(vn) ? p.filter((x) => x !== vn) : [...p, vn].slice(-2));
-  const loadAB = () => apiGet(base + '/ab', { admin: true }).then((r) => setAb(r.ab || null)).catch(() => setAb(null));
-  const doDiff = () => { if (a == null || b == null) return; setDiff('…'); apiGet(`${base}/diff?a=${a}&b=${b}`, { admin: true }).then((r) => setDiff(r.diff ?? '')).catch(() => setDiff(null)); };
+  const loadAB = () => apiGet(base + '/ab', { admin: true }).then((r: any) => setAb(r.ab || null)).catch(() => setAb(null));
+  const doDiff = () => { if (a == null || b == null) return; setDiff('…'); apiGet(`${base}/diff?a=${a}&b=${b}`, { admin: true }).then((r: any) => setDiff(r.diff ?? '')).catch(() => setDiff(null)); };
   const doAB = () => { if (a == null || b == null) return; apiPost(`${base}/ab`, { a, b, split: 0.5 }, { admin: true }).then(loadAB).catch(() => {}); };
   const rollback = (vn) => apiPost(`${base}/rollback`, { version: vn }, { admin: true }).then(() => { setNote('rolled back to v' + vn); reload(); }).catch(() => {});
-  const loadEdit = (vn) => apiGet(`${base}/version/${vn}`, { admin: true }).then((v) => { setEdit({ version: vn, content: v.content || '', message: '' }); setPreview(null); }).catch(() => {});
+  const loadEdit = (vn) => apiGet(`${base}/version/${vn}`, { admin: true }).then((v: any) => { setEdit({ version: vn, content: v.content || '', message: '' }); setPreview(null); }).catch(() => {});
   const doPreview = () => { if (!edit) return; apiPost(`${base}/preview`, { proposed: edit.content }, { admin: true }).then(setPreview).catch(() => {}); };
-  const doCommit = () => { if (!edit) return; apiPost(`${base}/commit`, { content: edit.content, message: edit.message || ('edit of v' + edit.version) }, { admin: true }).then((r) => { setNote('committed v' + (r.version?.version ?? '?')); setEdit(null); setPreview(null); setPick([]); reload(); }).catch(() => {}); };
+  const doCommit = () => { if (!edit) return; apiPost(`${base}/commit`, { content: edit.content, message: edit.message || ('edit of v' + edit.version) }, { admin: true }).then((r: any) => { setNote('committed v' + (r.version?.version ?? '?')); setEdit(null); setPreview(null); setPick([]); reload(); }).catch(() => {}); };
 
   useEffect(() => { loadAB(); }, [agent]); // eslint-disable-line
 
@@ -788,7 +787,7 @@ export function TodayPanel() {
   );
 }
 
-const SECTIONS = [
+const SECTIONS: Array<[string, Array<() => any>]> = [
   ['Memory', [DataSpacesPanel, LocalDocsPanel, NotesPanel, ReflectionPanel]],
   ['Trust', [KillSwitchPanel, KernelMetricsPanel, LoopBreakerPanel, NetworkMonitorPanel, SecretsPanel, CapabilitiesPanel, PairingPanel, InjectionScanPanel]],
   ['Interop', [A2AInboxPanel, MarketplacePanel]],
