@@ -56,6 +56,37 @@ function DiffView({ text }) {
 }
 
 /* ── Memory / Knowledge ─────────────────────────────────── */
+/* HUD-v3 C3 (KG edit/delete + memory forget). The Memory cluster had spaces/docs/notes
+   but no knowledge-graph control: this lists/searches entities, deletes one, and forgets
+   a memory item by id (ACT-R decay, transitive). All user-guarded. */
+export function KgPanel() {
+  const { d, e, loading, reload } = useApi('/api/kg/entities');
+  const ents = arr(d, 'entities');
+  const [forgetId, setForgetId] = useState('');
+  const [msg, setMsg] = useState(null);
+  const del = (name) => apiDelete('/api/kg/entities/' + encodeURIComponent(name)).then(reload).catch(() => {});
+  const forget = () => { if (!forgetId.trim()) return; act('/api/memory/decay/forget', { id: forgetId.trim() }, (r) => { setMsg(r && r.error ? 'not found' : 'forgotten · ' + forgetId.trim()); setForgetId(''); reload(); }); };
+  return (
+    <Card title="KNOWLEDGE GRAPH" sub={d ? `${ents.length} entities` : null} onReload={reload}>
+      <State e={e} loading={loading} n={ents.length} />
+      {ents.slice(0, 12).map((en, i) => (
+        <Row key={en.name ?? i}>
+          <span style={{ ...mono, color: 'var(--ink-2)' }}>{en.name}</span>
+          <span style={{ marginLeft: 'auto', display: 'flex', gap: 5, alignItems: 'center' }}>
+            {en.type && <Tag>{en.type}</Tag>}
+            {typeof en.mentions === 'number' && <Tag>{en.mentions}×</Tag>}
+            <button className="tool-btn" title="delete entity" onClick={() => del(en.name)}>✕</button>
+          </span>
+        </Row>
+      ))}
+      <div style={{ display: 'flex', gap: 6, marginTop: 8 }}>
+        <input value={forgetId} onChange={(ev) => setForgetId(ev.target.value)} placeholder="memory item id to forget" style={{ ...inpS, flex: 1 }} />
+        <button className="tool-btn" onClick={forget}>forget</button>
+      </div>
+      {msg && <div style={{ fontSize: 10, color: 'var(--accent-light)', marginTop: 6 }}>{msg}</div>}
+    </Card>
+  );
+}
 function DataSpacesPanel() {
   const { d, e, loading, reload } = useApi('/api/memory/spaces');
   const spaces = arr(d, 'spaces');
@@ -1121,7 +1152,7 @@ export function TodayPanel() {
 }
 
 const SECTIONS: Array<[string, Array<() => any>]> = [
-  ['Memory', [DataSpacesPanel, LocalDocsPanel, NotesPanel, ReflectionPanel]],
+  ['Memory', [DataSpacesPanel, LocalDocsPanel, NotesPanel, KgPanel, ReflectionPanel]],
   ['Trust', [KillSwitchPanel, KernelMetricsPanel, ReadinessPanel, LoopBreakerPanel, GovernancePanel, PosturePanel, NetworkMonitorPanel, SecretsPanel, CapabilitiesPanel, PairingPanel, InjectionScanPanel]],
   ['Interop', [A2AInboxPanel, MeshPeersPanel, MarketplacePanel]],
   ['Observe', [OnboardingPanel, EvalPanel, ReviewPanel, ArenaPanel, QualityPanel, APMPanel, FeedbackPanel]],
