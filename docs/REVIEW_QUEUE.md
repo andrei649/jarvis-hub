@@ -31,6 +31,16 @@
 
 ## Items (newest first)
 
+### HUD — type `modes4.tsx` (CDX-9 typing pass)
+- **What:** removed `@ts-nocheck` from `modes4.tsx` (the Finance / Health / Knowledge / Family agent-home
+  modes). All 8 errors were the same optional-prop fix: the local `SubH4` **already renders `style={style}`
+  correctly** (no dropped-style drift, unlike modes2's `SubH`), it was merely inferred as *requiring*
+  `style` while 8 callers omit it. One-line `{ children?: any; style?: any }`. Type-only; bundle
+  byte-identical. 5 non-test source modules remain on `@ts-nocheck`.
+- **Verified (automated):** `tsc --noEmit` clean; frontend **vitest 73 passed**; `agents/web/v2` bundle
+  **byte-identical**. No backend/route change.
+- **⚠️ Needs you:** nothing — compile-time only, behaviour-identical.
+
 ### HUD — type `cockpit.tsx` (CDX-9 typing pass)
 - **What:** removed `@ts-nocheck` from `cockpit.tsx` (the conversation + cognition-trace + input column).
   A clean **root-cause** fix: `buildTrace()` built its per-agent routing scores into an untyped `{}`
