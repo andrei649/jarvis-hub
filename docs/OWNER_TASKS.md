@@ -85,3 +85,12 @@
 
 - [ ] Phase 2 design partners: who are the first 3–5 non-Andrei users? (MOONSHOT §4, Phase 2 gate)
 - [ ] Hosted-Pro appetite: build vs wait for pull (VALUATION_AND_PRICING §9).
+
+- [ ] **CDX-11 plugin grants (only if/when you enable the hardened profile).** Turning on
+  least-privilege (`JARVIS_PLUGIN_LEAST_PRIVILEGE=1`, or the `JARVIS_HARDENED` preset) stops
+  honoring the `agents_served=["all"]` wildcard for the 12 external-transmit plugins (social_x,
+  writeback_*, call_*, channel_*, telegram) — so each is **deny-by-default** until you declare
+  which agent may use it. Set `JARVIS_PLUGIN_GRANTS="social_x:veronica,writeback_github:stark,…"`
+  (comma list of `plugin_id:agent_id`). This is the deliberate **policy** decision the code does
+  *not* guess for you; pick grants that match how you actually want each write surface used.
+  Verify on `GET /plugins` (`least_privilege:true`, per-plugin `wildcard_restricted`/`grants`).
