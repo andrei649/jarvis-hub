@@ -233,6 +233,40 @@ function KillSwitchPanel() {
       <Btn onClick={() => actA('/api/security/kill-switch', { engage: !halted, scope: 'global', reason: 'hud' }, reload)}>{halted ? 'disengage' : 'HALT ALL'}</Btn></Row>
   </Card>;
 }
+/* HUD-v3 (0.42 Security Skills pack) — browse the curated, offline ATT&CK knowledge.
+   The pack (frameworks/tactics/techniques, all read-only + clearly curated) had no UI;
+   this is a Trust-surface knowledge browser: ATT&CK tactics, each expandable to its
+   curated techniques. Read-only, user-guarded; nothing is fabricated (the pack carries
+   its own DISCLAIMER + SOURCES). */
+export function SecuritySkillsPanel() {
+  const { d, e, loading, reload } = useApi('/api/security-skills/tactics');
+  const tactics = arr(d, 'tactics');
+  const [open, setOpen] = useState(null);   // expanded tactic id
+  const [techs, setTechs] = useState([]);
+  const toggle = (tid) => {
+    if (open === tid) { setOpen(null); return; }
+    setOpen(tid); setTechs([]);
+    apiGet('/api/security-skills/techniques?tactic=' + encodeURIComponent(tid))
+      .then((r) => setTechs(arr(r, 'techniques'))).catch(() => setTechs([]));
+  };
+  return (
+    <Card title="SECURITY SKILLS" sub={d ? `${tactics.length} ATT&CK tactics` : null} onReload={reload}>
+      <State e={e} loading={loading} n={tactics.length} />
+      {tactics.slice(0, 14).map((t, i) => (
+        <div key={t.id ?? i}>
+          <Row>
+            <span style={{ ...mono, color: 'var(--ink-2)', cursor: 'pointer' }} onClick={() => toggle(t.id)}>{t.id} · {t.name}</span>
+            <span style={{ marginLeft: 'auto' }}><Tag>{open === t.id ? '▾' : '▸'}</Tag></span>
+          </Row>
+          {open === t.id && techs.slice(0, 10).map((tech, j) => (
+            <div key={tech.id ?? j} style={{ ...mono, fontSize: 10, color: 'var(--ink-3)', padding: '2px 0 2px 14px' }}>{tech.id} · {tech.name}</div>
+          ))}
+          {open === t.id && techs.length === 0 && <div style={{ fontSize: 10, color: 'var(--ink-3)', padding: '2px 0 2px 14px' }}>no curated techniques for this tactic</div>}
+        </div>
+      ))}
+    </Card>
+  );
+}
 function CapabilitiesPanel() {
   const [caps, setCaps] = useState('fs.read,memory.write'); const [out, setOut] = useState(null);
   return <Card title="CAPABILITY TOKENS">
@@ -1255,7 +1289,7 @@ export function TodayPanel() {
 
 const SECTIONS: Array<[string, Array<() => any>]> = [
   ['Memory', [DataSpacesPanel, LocalDocsPanel, NotesPanel, KgPanel, CapturePanel, ReflectionPanel]],
-  ['Trust', [KillSwitchPanel, KernelMetricsPanel, ReadinessPanel, LoopBreakerPanel, GovernancePanel, PosturePanel, NetworkMonitorPanel, SecretsPanel, CapabilitiesPanel, PairingPanel, InjectionScanPanel]],
+  ['Trust', [KillSwitchPanel, KernelMetricsPanel, ReadinessPanel, LoopBreakerPanel, GovernancePanel, PosturePanel, SecuritySkillsPanel, NetworkMonitorPanel, SecretsPanel, CapabilitiesPanel, PairingPanel, InjectionScanPanel]],
   ['Interop', [A2AInboxPanel, MeshPeersPanel, SatellitesPanel, MarketplacePanel]],
   ['Observe', [OnboardingPanel, EvalPanel, ReviewPanel, ArenaPanel, QualityPanel, APMPanel, FeedbackPanel]],
   ['Build', [WorkflowsPanel, StepGenPanel, SandboxPanel, TemplatesPanel]],
