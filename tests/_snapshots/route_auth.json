@@ -134,6 +134,7 @@
   "GET /api/status": "open",
   "GET /api/subagents": "user",
   "GET /api/sync": "user",
+  "GET /api/system/profiles": "user",
   "GET /api/toolrpc/tools": "user",
   "GET /api/traces": "open",
   "GET /api/traces/{trace_id}": "open",

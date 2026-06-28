@@ -134,6 +134,7 @@
   "GET /api/status",
   "GET /api/subagents",
   "GET /api/sync",
+  "GET /api/system/profiles",
   "GET /api/toolrpc/tools",
   "GET /api/traces",
   "GET /api/traces/{trace_id}",

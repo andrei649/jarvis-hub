@@ -134,6 +134,7 @@
   "GET /api/status": "api_status_api_status_get",
   "GET /api/subagents": "subagents_list_api_subagents_get",
   "GET /api/sync": "sync_status_api_sync_get",
+  "GET /api/system/profiles": "system_profiles_api_system_profiles_get",
   "GET /api/toolrpc/tools": "toolrpc_tools_api_toolrpc_tools_get",
   "GET /api/traces": "list_traces_api_traces_get",
   "GET /api/traces/{trace_id}": "get_trace_api_traces__trace_id__get",

@@ -94,6 +94,10 @@
   `JARVIS_AUDIT_KEY=<off-box secret>`, then declare `JARVIS_PLUGIN_GRANTS` (next item). Confirm via
   `GET /api/security/posture` → `hardened`.
 
+- [ ] **(optional) System profile (0.62).** Set `JARVIS_SYSTEM_PROFILE=gaming|ai|multimedia|admin` to switch
+  the assistant's usage mode (default `balanced`). `gaming`/`multimedia` pause proactive agent heartbeats to
+  free local resources; `balanced`/`ai`/`admin` keep them on. Confirm via `GET /api/system/profiles`.
+
 - [ ] **(optional) Channel send rate limits (0.44).** To cap outbound broadcast volume on the external
   webhook channels (WhatsApp/Signal/Matrix/Teams/Google Chat), set `JARVIS_CHANNEL_SEND_RATE=<per-minute>`
   (global) and/or `JARVIS_CHANNEL_SEND_RATES="whatsapp:10,teams:30"` (per channel). Default unset =

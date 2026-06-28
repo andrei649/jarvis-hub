@@ -1278,6 +1278,13 @@ class Orchestrator:
         return await jarvis.synthesize(responses, intent, in_character=in_character)
 
     async def run_heartbeat(self, agent_id: str) -> Optional[str]:
+        # 0.62: a system profile with background_autonomy=False (gaming/multimedia)
+        # pauses proactive agent heartbeats to free local resources. The default
+        # 'balanced' profile keeps it True, so this is a no-op unless the owner
+        # selects a quieter profile via JARVIS_SYSTEM_PROFILE.
+        from .system_profiles import active_posture
+        if not active_posture().get("background_autonomy", True):
+            return None
         agent = self.agents.get(agent_id)
         if agent and agent.has_heartbeat:
             if agent._heartbeat_config is None:

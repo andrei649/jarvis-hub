@@ -31,6 +31,23 @@
 
 ## Items (newest first)
 
+### 0.62 — System Profiles (usage-mode posture presets; default 'balanced' = no change)
+- **What:** named usage modes — **balanced** (default) / **gaming** / **ai** / **multimedia** / **admin** —
+  like power plans for the assistant, selected with `JARVIS_SYSTEM_PROFILE` (same env-driven-posture pattern
+  as `JARVIS_HARDENED`). Each declares posture knobs (`background_autonomy`, `heavy_features`,
+  `max_parallel_agents`, `model_tier`); read-only at `GET /api/system/profiles`. The **first live consumer**
+  is wired: a profile with `background_autonomy:false` (gaming / multimedia) **pauses proactive agent
+  heartbeats** to free local resources.
+- **⚠️ Needs you — try it if you like, but nothing changes by default:** with the env unset the active
+  profile is **balanced**, which keeps `background_autonomy:true`, so heartbeats run exactly as before. To
+  see it bite: run with `JARVIS_SYSTEM_PROFILE=gaming` and confirm proactive heartbeats stop (and
+  `GET /api/system/profiles` shows `active: "gaming"`). Worth a glance to confirm the modes match how you'd
+  want the assistant to back off during games/media work. *(Config noted in `docs/OWNER_TASKS.md`.)*
+- **Verified (automated):** `tests/test_system_profiles.py` 9 passed (default balanced + autonomy on;
+  unknown → fallback; each mode's autonomy knob; `active_posture()` returns a copy; list shape; and the
+  **`run_heartbeat` consumer** — runs under balanced, skipped under gaming); ruff + bandit clean; parity
+  reseeded for the 1 new user-guarded route; STATUS at 3,172 tests / 347 routes.
+
 ### 0.58 — Pack Manager: uninstall an installed skill (safe remove + optional purge)
 - **What:** the skill marketplace could install but had no **uninstall** — new `uninstall_skill(name,
   purge=)` + `remove_from_registry(name)` on `skills/marketplace.py`, exposed at
