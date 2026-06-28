@@ -236,6 +236,49 @@ class SkillMarketplace:
 
         return self.install_from_zip(zip_data)
 
+    def uninstall_skill(self, skill_name: str, *, purge: bool = False) -> bool:
+        """Remove an INSTALLED skill from disk (0.58 Pack Manager).
+
+        Safe by construction: *skill_name* is the on-disk directory name and must
+        resolve **strictly inside** ``skills_dir`` — a name with a path separator,
+        ``..`` traversal, or a NUL is refused (mirrors the install-time zip-slip
+        guard). Returns True when a directory was removed, False when nothing was
+        installed under that name.
+
+        The published package is **retained** by default, so ``install_skill`` can
+        restore it (the recovery path, since the registry keeps one version). Pass
+        ``purge=True`` to also delete the marketplace registry row (full unpublish).
+        """
+        name = (skill_name or "").strip()
+        if not name or name in (".", "..") or "/" in name or "\\" in name or "\x00" in name:
+            raise ValueError(f"invalid skill name: {skill_name!r}")
+        base = self.skills_dir.resolve()
+        target = (self.skills_dir / name).resolve()
+        if target == base or base not in target.parents:
+            raise ValueError(f"refusing to remove outside the skills directory: {skill_name!r}")
+
+        removed = False
+        if target.exists() and target.is_dir():
+            import shutil
+            shutil.rmtree(target)
+            removed = True
+        if purge:
+            self.remove_from_registry(name)
+        logger.info("Uninstalled a marketplace skill (removed=%s, purged=%s)", removed, purge)
+        return removed
+
+    def remove_from_registry(self, skill_name: str) -> bool:
+        """Delete a skill's marketplace registry row (full unpublish). Returns True
+        when a row was deleted, False when no such skill was registered."""
+        conn = sqlite3.connect(str(self.db_path), check_same_thread=False)
+        try:
+            with self._lock:
+                cur = conn.execute("DELETE FROM marketplace_skills WHERE name = ?", (skill_name,))
+                conn.commit()
+                return cur.rowcount > 0
+        finally:
+            conn.close()
+
     @staticmethod
     def _safe_targets(zip_file: "zipfile.ZipFile", target_dir: Path) -> None:
         """Reject zip-slip / path-traversal entries before extraction (H12.12).

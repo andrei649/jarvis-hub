@@ -311,6 +311,7 @@
   "POST /api/skills/marketplace/install-zip": "admin",
   "POST /api/skills/marketplace/publish": "admin",
   "POST /api/skills/marketplace/review": "admin",
+  "POST /api/skills/marketplace/uninstall": "admin",
   "POST /api/skills/{name}/approve": "admin",
   "POST /api/subagents/spawn": "user",
   "POST /api/sync/pull": "user",

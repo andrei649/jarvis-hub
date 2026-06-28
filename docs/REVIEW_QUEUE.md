@@ -31,6 +31,23 @@
 
 ## Items (newest first)
 
+### 0.58 — Pack Manager: uninstall an installed skill (safe remove + optional purge)
+- **What:** the skill marketplace could install but had no **uninstall** — new `uninstall_skill(name,
+  purge=)` + `remove_from_registry(name)` on `skills/marketplace.py`, exposed at
+  `POST /api/skills/marketplace/uninstall` (admin). It deletes the installed skill directory and forgets it
+  in the live loader; with `purge:true` it also drops the marketplace registry row (full unpublish).
+- **⚠️ Needs you — sanity-check the safety + the recovery path:** removal is path-guarded (the target must
+  resolve strictly inside `skills/`; a name with `/`, `\`, `..`, or a NUL is refused with a 400), so it
+  can't be steered into deleting anything outside the skills dir. By default the published **package is
+  retained**, so a `POST /api/skills/marketplace/install` restores the skill — that's the intended
+  "undo". True multi-version **rollback** is deferred (the registry keeps one version per name today;
+  history needs a small schema change — noted in BACKLOG).
+- **Verified (automated):** `tests/test_marketplace_uninstall.py` 12 passed (removes the dir; missing →
+  False; refuses `../evil`/`a/b`/`..`/`.`/`x\y`/NUL/empty; refuses the skills dir itself; `purge` drops the
+  registry row while default retains it for reinstall) + the existing marketplace/skills suite (106) still
+  green; ruff + bandit clean; route/openapi/auth parity reseeded for the 1 new admin route; STATUS at 3,163
+  tests / 346 routes.
+
 ### 0.44 — per-channel outbound send rate limits (opt-in, default-off)
 - **What:** a new `channels/send_rate_limit.py` — a sliding-window limiter that bounds how *much* the
   external webhook channels (WhatsApp / Signal / Matrix / Teams / Google Chat) can broadcast, wired at
