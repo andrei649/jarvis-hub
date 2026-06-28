@@ -31,6 +31,21 @@
 
 ## Items (newest first)
 
+### HUD — type `network.tsx` + remove a dead `_wrap` write (CDX-9 typing pass)
+- **What:** removed `@ts-nocheck` from `frontend/src/network.tsx` (the agent-mesh "network brain"
+  visualizer). The one tsc error it surfaced was a real **dead write**: `NetworkBrain._wrap = el` — a
+  `ref` callback stashing the wrapper DOM node onto the component *function object*, never read anywhere
+  in the codebase (grep-confirmed across `src/`). Removed the whole dead `ref` callback rather than papering
+  over it with a cast — that dead-wiring is exactly the drift CDX-9 exists to catch. The production
+  minifier had **already** eliminated the write, so the bundle is byte-identical despite the source change.
+  12 non-test source modules remain on `@ts-nocheck`.
+- **Verified (automated):** `tsc --noEmit` clean; frontend **vitest 73 passed**; `agents/web/v2` bundle
+  **byte-identical** (`index-CwY1ye9O.js`, rebuilt to confirm — `hud-v2-build` guard matches). No
+  backend/route change.
+- **⚠️ Needs you:** glance at the agent-network panel once (it renders the orbiting agent mesh) to confirm
+  it still draws — purely to double-check the removed `ref` truly had no effect (it shouldn't; nothing read
+  it). Compile-time + behaviour-identical otherwise.
+
 ### HUD — type the `data.ts` keystone + leaf modules (CDX-9 typing pass)
 - **What:** removed `@ts-nocheck` from the **keystone** `frontend/src/data.ts` (the pure `V2` seed object
   every capability mode reads via `V2.<KEY>`) plus its barrel `ui.ts`, the shared `primitives.tsx` UI
