@@ -31,6 +31,25 @@
 
 ## Items (newest first)
 
+### HUD-v3 PR 4 (C10) — Mesh Peers registry control in the Console
+- **What:** the A2A **mesh peer registry** — allowlist a peer, get a one-time shared secret, remove a
+  peer — is admin-guarded and had **no control surface** (only the A2A approval *inbox* did). New
+  `MeshPeersPanel` (in `gap.tsx`, Interop cluster) lists allowlisted peers with the **masked** secret hint
+  (`GET /api/a2a/peers`), removes via `DELETE /api/a2a/peers/{id}`, and adds via `POST /api/a2a/peers` —
+  surfacing the shared secret **once** on add, mirroring the backend's return-once contract (the registry
+  never re-exposes it).
+- **Security-faithful:** the panel never shows a stored secret — only the backend-provided `secret_hint`
+  (first 4 chars) for existing peers, and the full secret exactly once at creation. All three calls are
+  admin-guarded (in-app token, not `window.prompt`, per the auth-tier rule).
+- **Verified (automated, end-to-end in-env):** `tsc --noEmit` exit 0; new `mesh-panel.test.tsx` (+3: lists
+  a peer with its masked hint · clicking remove fires a real `DELETE /api/a2a/peers/{id}` · add POSTs only
+  when a peer_id is given) — full vitest **82/82** green; `npm run build` refreshed the served bundle,
+  stale-bundle guard reproducible. No backend/route change → parity untouched.
+- **⚠️ Needs you — live pixels + a real pairing:** open Console → Interop → MESH PEERS against a running
+  backend; add a peer and confirm the one-time secret shows, then reload and confirm only the masked hint
+  remains; remove it and confirm it's gone. (The add/remove fire real admin routes — needs the admin
+  token set.)
+
 ### HUD-v3 PR 3 (C1) — Missions board with governed controls in the Console
 - **What:** the first **Phase-C write-control**. A new `MissionsPanel` (in `gap.tsx`, Autonomy & Agents
   cluster) surfaces the **0.32 Mission Workspaces** — long-horizon governed work — as a board:
