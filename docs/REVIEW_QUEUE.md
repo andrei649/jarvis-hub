@@ -31,6 +31,26 @@
 
 ## Items (newest first)
 
+### HUD-v3 PR 3 (C1) — Missions board with governed controls in the Console
+- **What:** the first **Phase-C write-control**. A new `MissionsPanel` (in `gap.tsx`, Autonomy & Agents
+  cluster) surfaces the **0.32 Mission Workspaces** — long-horizon governed work — as a board:
+  `GET /api/missions`, each workspace shown with its status (planned/active/paused/done/failed/cancelled),
+  step budget (`steps_used/max_steps`), and **contextual action buttons** matching the state machine
+  (planned→`start`; active→`pause`/`complete`/`cancel`; paused→`resume`/`cancel`; terminal→none), each
+  wired to the real **user-guarded** `POST /api/missions/{id}/{action}` route. The backend + the data-layer
+  fetch existed, but there was **no control surface** until now.
+- **Why this one:** Missions are the clearest "governed long-horizon work" surface and the endpoints were
+  fully built — a pure additive port, no reinterpretation.
+- **Verified (automated, end-to-end in-env):** `tsc --noEmit` exit 0; new `missions-panel.test.tsx` (+3:
+  lists a workspace with status + budget · the per-status controls are correct (active→pause/complete/
+  cancel, paused→resume, done→no buttons) · **clicking a control POSTs to the real `/api/missions/42/pause`
+  route**); full vitest **79/79** green; `npm run build` refreshed the served bundle, stale-bundle guard
+  reproducible. No backend/route change → parity untouched.
+- **⚠️ Needs you — live pixels + a real mission lifecycle:** open Console → Autonomy & Agents → MISSIONS
+  against a running backend with at least one mission; confirm the status colors + step budget read right
+  and that clicking pause/resume/complete/cancel actually transitions the mission (the buttons fire the
+  governed routes — worth confirming the optimistic reload reflects the new state).
+
 ### HUD-v3 PR 2 (B3) — Verification Fabric readiness board in the Console
 - **What:** the first genuine **frontend gap** from the blueprint's Phase B substrate. A new
   `ReadinessPanel` (in `gap.tsx`, Trust cluster, next to the Action-Kernel meter) renders the capability
