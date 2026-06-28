@@ -31,6 +31,20 @@
 
 ## Items (newest first)
 
+### HUD-v3 PR 11 (C3) — Knowledge-Graph entity controls + memory-forget in the Console
+- **What:** the Memory cluster had spaces/docs/notes panels but **no knowledge-graph control**. New
+  `KgPanel` (in `gap.tsx`, Memory cluster) lists/searches KG entities (`GET /api/kg/entities`) with their
+  type + mention count, **deletes** an entity (`DELETE /api/kg/entities/{name}`), and **forgets** a memory
+  item by id (`POST /api/memory/decay/forget` — ACT-R decay with transitive dependents). All user-guarded.
+- **Verified (automated, end-to-end in-env):** `tsc --noEmit` exit 0; new `kg-panel.test.tsx` (+3: lists
+  an entity with type + mention count · ✕ DELETEs the entity · forget POSTs `{id}` only when an id is
+  given) — full vitest **105/105** green; `npm run build` refreshed the served bundle, stale-bundle guard
+  reproducible. No backend/route change → parity untouched.
+- **⚠️ Needs you — live pixels + a real delete/forget:** Console → Memory → KNOWLEDGE GRAPH against a
+  running backend; confirm the entity list matches `GET /api/kg/entities`, delete a test entity and confirm
+  it's gone, and forget a known memory-item id and confirm it (and its dependents) are purged. (These
+  mutate your graph/memory — use a test item.)
+
 ### HUD-v3 PR 10 (C7) — Workflow-runtime management panel in the Console
 - **What:** the existing `StepGenPanel` covers the AI step-*builder*, but the 0.34 workflow *runtime* had
   no management surface. New `WorkflowsPanel` (in `gap.tsx`, Build cluster) lists registered pipelines
