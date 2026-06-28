@@ -1,4 +1,3 @@
-// @ts-nocheck
 /* HUD v2 · voice loop — browser-side, hands-free conversation.
 
    The engines (Whisper STT, edge-tts/XTTS) live on the server, but they were built
@@ -41,7 +40,7 @@ function browserSpeak(text, lang, cancelled) {
   });
 }
 
-export function useVoice({ lang = 'ro', mode = 'hands-free', ttsSource = 'server', micMuted = false, barge = false, onTurn } = {}) {
+export function useVoice({ lang = 'ro', mode = 'hands-free', ttsSource = 'server', micMuted = false, barge = false, onTurn }: { lang?: string; mode?: string; ttsSource?: string; micMuted?: boolean; barge?: boolean; onTurn?: (...args: any[]) => any } = {}) {
   const supported = typeof navigator !== 'undefined'
     && !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia)
     && typeof window !== 'undefined' && 'MediaRecorder' in window;
@@ -78,14 +77,14 @@ export function useVoice({ lang = 'ro', mode = 'hands-free', ttsSource = 'server
     return () => { alive = false; };
   }, []);
 
-  const tok = (extra) => { const h = extra || {}; const t = getToken(); if (t) h['X-User-Token'] = t; return h; };
+  const tok = (extra?: any) => { const h = extra || {}; const t = getToken(); if (t) h['X-User-Token'] = t; return h; };
 
   async function ensureStream() {
     if (streamRef.current) return streamRef.current;
     const stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true } });
     streamRef.current = stream;
     try {
-      const AC = window.AudioContext || window.webkitAudioContext;
+      const AC = window.AudioContext || (window as typeof window & { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
       const ac = new AC();
       try { ac.resume && ac.resume(); } catch { /* ignore */ }
       const src = ac.createMediaStreamSource(stream);
@@ -210,7 +209,7 @@ export function useVoice({ lang = 'ro', mode = 'hands-free', ttsSource = 'server
         // the whole-reply /tts path below. 'streamed' means we already played the audio.
         const streamed = await streamTts(
           text, langRef.current,
-          (frame) => playAudioBlob(new Blob([frame.audio], { type: 'audio/mpeg' }), () => cancelled),
+          (frame) => playAudioBlob(new Blob([frame.audio as BlobPart], { type: 'audio/mpeg' }), () => cancelled) as Promise<void>,
           { headers: tok(), cancelled: () => cancelled },
         );
         if (!cancelled && streamed !== 'streamed' && streamed !== 'cancelled') {
