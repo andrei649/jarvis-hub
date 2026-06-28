@@ -3,7 +3,7 @@ import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import { V2 } from './data';
 
 /* ---- line icons (stroke, currentColor) ---- */
-function Icon({ d, size, sw }) {
+function Icon({ d, size, sw }: { d?: any; size?: any; sw?: any }) {
   return (
     <svg width={size||16} height={size||16} viewBox="0 0 24 24" fill="none"
       stroke="currentColor" strokeWidth={sw||1.6} strokeLinecap="round" strokeLinejoin="round">

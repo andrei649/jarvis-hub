@@ -31,6 +31,21 @@
 
 ## Items (newest first)
 
+### HUD — type `world_app.tsx` + fix the `Icon` optional-props contract (CDX-9 typing pass)
+- **What:** removed `@ts-nocheck` from `frontend/src/world_app.tsx` (the "World Intelligence" overlay shell —
+  the `W`-key fullscreen panel that wraps `<App/>` and mounts `WorldIntelligenceMode`). The two tsc errors it
+  surfaced were a real **contract gap** in the shared `Icon` primitive (`primitives.tsx`): `Icon` is
+  `function Icon({ d, size, sw })` where `size`/`sw` both have runtime fallbacks (`size||16`, `sw||1.6`) —
+  genuinely optional — but once `primitives.tsx` was type-checked (PR #384), TS inferred all three params as
+  *required*, so any caller omitting `sw`/`size` (which is most of them) failed. Marked `size`/`sw` optional
+  in `Icon`'s signature — the honest contract. This is a **one-line fix that unblocks every `Icon` caller
+  across the HUD**, not just `world_app`. Type-only, so the bundle is byte-identical.
+  11 non-test source modules remain on `@ts-nocheck`.
+- **Verified (automated):** `tsc --noEmit` clean; frontend **vitest 73 passed**; `agents/web/v2` bundle
+  **byte-identical** (rebuilt to confirm — `hud-v2-build` guard matches). No backend/route change.
+- **⚠️ Needs you:** nothing — compile-time only. (`Icon` rendering is unchanged; the fix only relaxes the
+  *type*, the runtime already defaulted `size`/`sw`.)
+
 ### HUD — type `network.tsx` + remove a dead `_wrap` write (CDX-9 typing pass)
 - **What:** removed `@ts-nocheck` from `frontend/src/network.tsx` (the agent-mesh "network brain"
   visualizer). The one tsc error it surfaced was a real **dead write**: `NetworkBrain._wrap = el` — a
