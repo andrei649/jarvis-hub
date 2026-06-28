@@ -72,6 +72,23 @@ def assert_safe_bind(host: str) -> None:
     )
 
 
+def assert_hardened_posture() -> None:
+    """Fail-closed on a mis-configured hardened profile (CDX-12).
+
+    ``JARVIS_HARDENED=1`` requires its hard preconditions (today: a
+    ``JARVIS_AUDIT_KEY`` so the audit log is HMAC-keyed). A hardened deployment
+    that can't meet them is mis-configured, not merely suboptimal, so we refuse to
+    start rather than run a weaker posture than the operator asked for. No-op when
+    hardening is off.
+    """
+    from agents.core.security import hardened
+    problems = hardened.enforce()
+    if problems:
+        raise SystemExit(
+            "Refusing to start with JARVIS_HARDENED=1:\n  - " + "\n  - ".join(problems)
+        )
+
+
 def server_config():
     """Build the uvicorn config from the environment (H23.11).
 
@@ -105,6 +122,7 @@ def main():
     import uvicorn
     config = server_config()
     assert_safe_bind(config.host)   # fail-closed on an unauthenticated external bind
+    assert_hardened_posture()       # fail-closed on a mis-configured hardened profile (CDX-12)
     print(f"Jarvis Hub starting at http://{config.host}:{config.port}")
     print("Features: multi-agent cabinet, skills system, memory store, cost analytics, CI/CD")
     # uvicorn.Server installs SIGINT/SIGTERM handlers and triggers the lifespan

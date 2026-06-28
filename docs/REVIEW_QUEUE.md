@@ -31,6 +31,29 @@
 
 ## Items (newest first)
 
+### CDX-12 — the "Design-Partner / Hardened" profile (one switch, opt-in, default-off)
+- **What:** a single `JARVIS_HARDENED=1` preset that tightens four security toggles at once for a
+  design-partner / multi-tenant deployment, plus it turns on CDX-11 plugin least-privilege. The four:
+  **(1)** guardrails default `WARN → REDACT`; **(2)** the audit log **must** be HMAC-keyed
+  (`JARVIS_AUDIT_KEY`) or the server **refuses to start**; **(3)** strict egress is **forced** (the
+  `JARVIS_STRICT_EGRESS=0` downgrade is ignored); **(4)** mutating MCP route tools are **forced off**
+  (`JARVIS_MCP_MUTATING_TOOLS` can't re-open writes). New `agents/core/security/hardened.py` owns the
+  logic; four one-line wirings consult it; nothing else changed.
+- **⚠️ Needs you — only when you decide to run hardened.** Default is **OFF**: with the env unset, every
+  toggle is exactly its pre-CDX-12 value (the whole suite confirms). To enable: set `JARVIS_HARDENED=1`
+  **and** `JARVIS_AUDIT_KEY=<off-box secret>` (without the key, startup fails closed by design — a
+  hardened box whose audit chain can't be HMAC-keyed is mis-configured, not merely weaker). Turning it
+  on also makes the 12 external-write plugins deny-by-default (CDX-11) — so pair it with
+  `JARVIS_PLUGIN_GRANTS` (see the CDX-11 note). This is a **posture decision**, documented in
+  `docs/OWNER_TASKS.md`; the code picks no profile for you.
+- **How to eyeball it:** `GET /api/security/posture` now carries a `hardened` block reporting all toggles
+  (`enabled`, `guardrails_mode_default`, `audit_key_required`/`audit_key_present`, `strict_egress_forced`,
+  `mutating_mcp_blocked`, `plugin_least_privilege`). Flip the env on a scratch run and confirm it reads true.
+- **Verified (automated):** `tests/test_cdx12_hardened_profile.py` 11 passed — each toggle off-by-default,
+  each flips under the preset, fail-closed without the audit key (incl. the `serve.assert_hardened_posture`
+  startup guard), the posture-snapshot shape, the strict-egress + mutating-MCP overrides actually bite, and
+  the CDX-11 least-privilege cross-wire. ruff + bandit clean; no new routes (parity green); STATUS at 3,118 tests.
+
 ### CDX-11 — least-privilege plugins (opt-in hardened profile; default-off, nothing changes yet)
 - **What:** 12 plugins that **transmit to a third party** ship `agents_served=["all"]` — the 11
   external-write surfaces (`social_x`, `writeback_{notion,github,google_calendar}`,

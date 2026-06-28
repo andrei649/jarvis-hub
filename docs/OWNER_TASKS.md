@@ -86,6 +86,14 @@
 - [ ] Phase 2 design partners: who are the first 3–5 non-Andrei users? (MOONSHOT §4, Phase 2 gate)
 - [ ] Hosted-Pro appetite: build vs wait for pull (VALUATION_AND_PRICING §9).
 
+- [ ] **CDX-12 hardened profile (a posture decision — do you want it, and when).** `JARVIS_HARDENED=1`
+  is one switch that flips four toggles: guardrails→REDACT, **audit-HMAC required** (server won't start
+  without `JARVIS_AUDIT_KEY`), strict egress forced (no `JARVIS_STRICT_EGRESS=0` downgrade), and mutating
+  MCP route tools forced off — plus it enables CDX-11 plugin least-privilege. It's **OFF by default**;
+  enabling is your call for a design-partner / multi-tenant box. To turn on: set `JARVIS_HARDENED=1` **and**
+  `JARVIS_AUDIT_KEY=<off-box secret>`, then declare `JARVIS_PLUGIN_GRANTS` (next item). Confirm via
+  `GET /api/security/posture` → `hardened`.
+
 - [ ] **CDX-11 plugin grants (only if/when you enable the hardened profile).** Turning on
   least-privilege (`JARVIS_PLUGIN_LEAST_PRIVILEGE=1`, or the `JARVIS_HARDENED` preset) stops
   honoring the `agents_served=["all"]` wildcard for the 12 external-transmit plugins (social_x,

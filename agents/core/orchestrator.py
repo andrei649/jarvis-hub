@@ -385,7 +385,11 @@ class Orchestrator:
             # /admin → security.guardrails_mode / scan_input / scan_output. The
             # engine previously hardcoded WARN + both scans on, ignoring these.
             from .settings_db import get_value as _gv
-            _mode_raw = str(_gv("security", "guardrails_mode", "WARN")).upper()
+            from .security import hardened as _hardened
+            # CDX-12: the hardened profile tightens the *default* to REDACT; an
+            # explicit security.guardrails_mode setting still wins.
+            _mode_raw = str(_gv("security", "guardrails_mode",
+                                _hardened.guardrails_default())).upper()
             _mode = RedactionMode[_mode_raw] if _mode_raw in RedactionMode.__members__ else RedactionMode.WARN
             self.security = GuardrailsEngine(
                 backend=backend,
