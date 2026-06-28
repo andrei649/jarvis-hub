@@ -31,6 +31,27 @@
 
 ## Items (newest first)
 
+### HUD-v3 PR 0 — per-agent autonomy policy + interrupt-budget endpoints (backend pre-work)
+- **What:** the 2 endpoints the hud-v3 prototype binds that didn't exist yet (the only true backend gap
+  in the v3 compatibility review). `GET/POST /autonomy/policy` — per-agent **AUTO/ASK/OFF** overrides (the
+  HUD's per-agent autonomy control), and `GET /autonomy/interrupts` — the "calm-by-the-numbers" interrupt
+  budget. Per-agent policy is **actually enforced**, not just stored: `AutonomyPolicy` gained
+  `agent_modes` + `effective_mode(agent)`, `decide()` resolves the mode per-agent, the kernel threads
+  `action.agent` into the policy, and the coordinator resyncs the overrides live each tick.
+- **⚠️ Needs you — default-safe, but it's a real control:** with no per-agent override set, **every agent
+  behaves exactly as the global mode** (the whole autonomy/kernel suite confirms — zero behavior change).
+  Setting e.g. `vision → off` makes only that agent's side-effecting actions wait for approval; `default`
+  clears the override. Worth a click-through once the HUD surface lands to confirm the per-agent toggle
+  matches your mental model.
+- **Verified (automated):** `tests/test_autonomy_per_agent_policy.py` 7 passed (effective_mode fallback;
+  per-agent decide; empty-overrides == pure-global; the **kernel threads the agent** so a per-agent `off`
+  escalates GRANT→QUEUE while another agent grants; the GET/POST roundtrip + clear; bad-mode 422) + the
+  full autonomy/kernel/policy suite (298) green; ruff + bandit clean; route/openapi/auth parity reseeded
+  for the 3 new admin routes (hud-v2 already maps `/autonomy/`); STATUS at 3,215 tests / 354 routes.
+- **Context:** this is **PR 0** of the hud-v3 port (compatibility review delivered separately). Everything
+  else the prototype binds already exists; the remaining v3 work is the frontend port itself (one PR per
+  surface, gated by tsc + vitest + the stale-bundle guard) — which needs the runtime/visual env, not this one.
+
 ### CDX-7 (action-taint) — the kernel now escalates an action with an untrusted *origin*
 - **What:** completes the deferred CDX-7 follow-up at the **kernel** level. `kernel.authorize` already
   escalated a GRANT→QUEUE on a tainted *payload*; it now also escalates when the action's **declared

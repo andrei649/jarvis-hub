@@ -88,6 +88,10 @@ class AutonomyPolicy:
     #   "off"  — nothing auto-executes (every decision → ASK); the proactive loop is
     #            also paused upstream (orchestrator skips the observe pass).
     mode: str = "auto"
+    # Per-agent mode overrides (HUD v3 per-agent AUTO/ASK/OFF). An agent listed here
+    # uses its own mode; everyone else uses the global ``mode``. Empty by default ⇒
+    # every agent behaves exactly as the global mode (zero behavior change).
+    agent_modes: dict = field(default_factory=dict)
     # Money guardrails (same currency as the action's `amount`).
     cap_per_action: float = 50.0
     daily_ceiling: float = 200.0
@@ -168,14 +172,22 @@ class AutonomyPolicy:
         return tier
 
     # ── decision ──────────────────────────────────────────────────
+    def effective_mode(self, agent: str | None = None) -> str:
+        """The mode that applies to *agent* — its per-agent override, else the global
+        ``mode``. ``agent=None`` (or an agent with no override) ⇒ the global mode."""
+        override = self.agent_modes.get(agent) if agent else None
+        return str(override or self.mode).lower()
+
     def decide(self, action: dict) -> Decision:
         tier = self.classify(action)
-        # Global mode gate (HUD AUTO/ASK/OFF). OFF makes everything wait; ASK makes
-        # everything with a side-effect wait (pure READ_ONLY still auto-acts). AUTO
-        # falls through to the balanced per-tier logic below.
-        if self.mode == "off":
+        # Mode gate (HUD AUTO/ASK/OFF), resolved per-agent: an agent with its own
+        # override uses it; everyone else uses the global mode. OFF makes everything
+        # wait; ASK makes everything with a side-effect wait (pure READ_ONLY still
+        # auto-acts). AUTO falls through to the balanced per-tier logic below.
+        mode = self.effective_mode(action.get("agent"))
+        if mode == "off":
             return Decision(ASK, tier, "autonomy mode=off → ask", urgent=False)
-        if self.mode == "ask" and tier != RiskTier.READ_ONLY:
+        if mode == "ask" and tier != RiskTier.READ_ONLY:
             return Decision(ASK, tier, "autonomy mode=ask → ask", urgent=False)
         # Money special-case: auto-act if within per-action cap AND daily budget.
         amount = _num(action.get("amount"))

@@ -264,6 +264,68 @@ async def autonomy_set_mode(body: AutonomyModeBody):
     return nocache_json({"mode": mode, "ok": True})
 
 
+@router.get("/autonomy/policy", dependencies=[Depends(admin_guard)])
+async def autonomy_get_policy():
+    """Per-agent autonomy modes (HUD v3) — the global default + any per-agent overrides.
+
+    An agent absent from ``agents`` runs at the global mode; one present runs at its
+    own AUTO/ASK/OFF."""
+    orch = get_orch()
+    if not orch:
+        return JSONResponse({"error": "not initialized"}, status_code=503)
+    pol = getattr(orch.autonomy, "policy", None)
+    global_mode = str(getattr(pol, "mode", None) or orch.get_setting("autonomy.mode", "auto")).lower()
+    agents = dict(getattr(pol, "agent_modes", None) or orch.get_setting("autonomy.agent_modes", {}) or {})
+    return nocache_json({"global": global_mode, "agents": agents})
+
+
+class AutonomyPolicyBody(BaseModel):
+    agent: str = Field(..., min_length=1, max_length=64)
+    mode: str   # auto | ask | off | default (clears the override → falls back to global)
+
+
+@router.post("/autonomy/policy", dependencies=[Depends(admin_guard)])
+async def autonomy_set_policy(body: AutonomyPolicyBody):
+    """Set (or clear) one agent's autonomy mode. ``mode=default`` removes the override
+    so the agent falls back to the global mode. Persists + applies live."""
+    orch = get_orch()
+    if not orch:
+        return JSONResponse({"error": "not initialized"}, status_code=503)
+    agent = body.agent.strip()
+    mode = str(body.mode or "").lower()
+    if mode not in ("auto", "ask", "off", "default"):
+        return JSONResponse({"error": "mode must be auto|ask|off|default"}, status_code=422)
+
+    # Start from the persisted map, apply the change, persist + apply live.
+    agents = dict(orch.get_setting("autonomy.agent_modes", {}) or {})
+    if mode == "default":
+        agents.pop(agent, None)
+    else:
+        agents[agent] = mode
+    from core.settings_db import put_category
+    put_category("autonomy", {"agent_modes": agents})   # persist (resynced by the loop)
+    pol = getattr(orch.autonomy, "policy", None)
+    if pol is not None:
+        pol.agent_modes = dict(agents)                  # apply immediately
+    return nocache_json({"ok": True, "agent": agent,
+                         "mode": (mode if mode != "default" else None), "agents": agents})
+
+
+@router.get("/autonomy/interrupts", dependencies=[Depends(admin_guard)])
+async def autonomy_interrupts():
+    """Interrupt budget — the "calm-by-the-numbers" surface (HUD v3). How many
+    proactive interruptions remain today vs. the daily ceiling."""
+    orch = get_orch()
+    if not orch:
+        return JSONResponse({"error": "not initialized"}, status_code=503)
+    bud = getattr(orch.autonomy, "budget", None)
+    if bud is None:
+        return nocache_json({"remaining": None, "per_day": None, "used": None})
+    remaining, per_day = bud.remaining(), bud.per_day
+    return nocache_json({"remaining": remaining, "per_day": per_day,
+                         "used": max(0, per_day - remaining)})
+
+
 @router.get("/autonomy/preferences/suggestions", dependencies=[Depends(admin_guard)])
 async def autonomy_pref_suggestions():
     """Classes consistently approved → autonomy-raise suggestions (H6.5)."""
