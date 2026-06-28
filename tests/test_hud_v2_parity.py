@@ -52,6 +52,8 @@ RULES = [
     ("/api/kg/", "memory"), ("/api/memory/", "memory"), ("/memory/stats", "memory"),
     ("/memory", "memory"), ("/api/local-docs", "memory"), ("/api/capture", "memory"),
     ("/api/context", "memory"),  # runtime context compression (H20.3)
+    # finance / market intel
+    ("/api/market/", "finance"),  # P3 Market Intel pack — the Finance surface (modes4 "Gecko")
     # trust / security / payments
     ("/api/security/", "trust"), ("/security", "trust"), ("/api/secrets/", "trust"),
     ("/api/payments", "trust"),

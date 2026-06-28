@@ -236,6 +236,8 @@
   "POST /api/llm/server/start": "llm_server_start_api_llm_server_start_post",
   "POST /api/llm/unload": "llm_unload_api_llm_unload_post",
   "POST /api/local-docs/index": "local_docs_index_api_local_docs_index_post",
+  "POST /api/market/brief": "market_brief_api_market_brief_post",
+  "POST /api/market/watchlist": "market_watchlist_api_market_watchlist_post",
   "POST /api/mcp/server/rpc": "mcp_server_rpc_api_mcp_server_rpc_post",
   "POST /api/mcp/token": "mcp_issue_token_api_mcp_token_post",
   "POST /api/media/generate": "media_generate_api_media_generate_post",

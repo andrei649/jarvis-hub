@@ -244,6 +244,40 @@ async def _probe_osint_untrusted_ingestion_queued() -> bool:
         shutil.rmtree(d, ignore_errors=True)
 
 
+# ── The P3 Market-Intel money-safety rail (hermetic, real policy + authorize) ──────────
+# Proves the finance-safety property: a money action (a trade/transfer triggered off a
+# market signal) is held by the real kernel — classified IRREVERSIBLE_OR_MONEY → QUEUE
+# (approval) — while read-only market monitoring is GRANTed. Money never auto-moves; the
+# pack can watch the market freely but can't act on your behalf. No mock, isolated KillSwitch.
+
+async def _probe_market_money_action_queued() -> bool:
+    import os
+    import shutil
+    import tempfile
+
+    from agents.core.autonomy.policy import AutonomyPolicy
+    from agents.core.kernel import Action, Verdict, authorize
+    from agents.core.security.capability import KillSwitch
+
+    d = tempfile.mkdtemp(prefix="reality-market-")
+    try:
+        ks = KillSwitch(path=os.path.join(d, "kill.json"))  # isolated, not the live halt
+        policy = AutonomyPolicy()
+
+        def _v(kind, title):
+            return authorize(Action(kind=kind, title=title, scope="global"),
+                             kill_switch=ks, policy=policy)
+
+        scan = _v("market.monitor", "monitor watchlist")          # read-only intel
+        trade = _v("trade.buy", "buy BTC at market")              # money → must be held
+        # Contract: monitoring auto-runs (GRANT); a money action is QUEUED for approval.
+        return (scan.verdict is Verdict.GRANT
+                and trade.verdict is Verdict.QUEUE
+                and "IRREVERSIBLE_OR_MONEY" in (trade.reason or ""))
+    finally:
+        shutil.rmtree(d, ignore_errors=True)
+
+
 CASES: list[RealityCase] = [
     RealityCase("plugin:system-control", "egress-none-blocks-external",
                 "a no-network plugin's external call is refused by the egress gate",
@@ -254,6 +288,9 @@ CASES: list[RealityCase] = [
     RealityCase("plugin:worldview", "osint-untrusted-ingestion-queued",
                 "an OSINT write-back from an untrusted source is escalated GRANT→QUEUE by the kernel",
                 _probe_osint_untrusted_ingestion_queued),
+    RealityCase("plugin:balance", "market-money-action-queued",
+                "a market-triggered money action is QUEUED by the kernel; read-only monitoring is GRANTed",
+                _probe_market_money_action_queued),
     RealityCase("component:kill_switch", "kernel-kill-switch-denies",
                 "an engaged kill-switch makes kernel.authorize DENY; disengaging reaches policy",
                 _probe_kill_switch_gates_kernel),
