@@ -142,6 +142,17 @@ class SkillLoader:
         name = manifest.get("name", path.name)
         skill = Skill(name, path, manifest)
 
+        # CDX-8: a quarantined auto-generated skill (pending owner review) is registered so
+        # it's visible/reviewable, but its module is NEVER exec'd in-process until approved —
+        # fail-closed regardless of the signature-enforcement env.
+        if (path / "PENDING_REVIEW").exists():
+            skill.trusted = False
+            skill.sandboxed = True
+            skill.signature_reason = "pending review (CDX-8 quarantine)"
+            self.skills[name] = skill
+            logger.info("Skill '%s' is PENDING REVIEW — NOT loaded in-process (quarantined)", name)
+            return
+
         # H12.1 — verify signature (advisory). Unsigned/invalid skills load but
         # are flagged untrusted; when JARVIS_REQUIRE_SIGNED_SKILLS=1 their Python
         # module is not exec'd in-process (sandboxed/flagged instead).
@@ -318,9 +329,19 @@ class SkillLoader:
         if skill_dir.exists():
             logger.info(f"Skill '{skill_name}' already exists, skipping generation")
             return None
+        cmd = command_name or skill_name
+
+        # CDX-8: the [learn:…] task/steps/command are UNTRUSTED LLM output (an injected
+        # response could mint an attacker-named, attacker-described skill). Scan before we
+        # create anything; never write injection-flagged content to disk as a skill.
+        from ..security import quarantine
+        flags = quarantine.detect_injection(" ".join([task_description, *solution_steps, str(cmd)]))
+        if flags:
+            logger.warning("Skill generation blocked — injection-flagged content from %s: %s",
+                           agent_id, flags)
+            return None
 
         skill_dir.mkdir(parents=True, exist_ok=True)
-        cmd = command_name or skill_name
 
         steps_text = "\n".join(f"{i+1}. {s}" for i, s in enumerate(solution_steps))
 
@@ -381,12 +402,35 @@ def register(skill):
         )
         (skill_dir / "main.py").write_text(main_py, encoding="utf-8")
 
-        # H12.1 — self-sign locally generated skills so they load as trusted.
-        signing.sign_skill(skill_dir)
-
+        # CDX-8: quarantine by default. An agent-emitted [learn:…] is untrusted LLM output
+        # that becomes executable code — strictly more dangerous than a downloaded skill, so
+        # it must not be MORE trusted than one. Do NOT self-sign and do NOT exec it
+        # in-process; mint it PENDING_REVIEW. `_load_skill` registers it (so it's visible for
+        # review) but never runs its module until `approve_generated_skill()` (owner-gated)
+        # signs + activates it. Auto-generation stays on; only promotion-to-reusable is gated.
+        (skill_dir / "PENDING_REVIEW").write_text(
+            f"agent={agent_id}\ntask={task_description}\n"
+            f"generated={datetime.now(timezone.utc).isoformat()}\n", encoding="utf-8")
         self._load_skill(skill_dir)
-        logger.info(f"Generated new skill: {skill_name} from {agent_id}")
+        logger.info("Generated skill '%s' from %s — quarantined PENDING REVIEW (not active)",
+                    skill_name, agent_id)
         return skill_name
+
+    def approve_generated_skill(self, name: str) -> bool:
+        """CDX-8: owner-approve a quarantined auto-generated skill — sign it, clear the
+        PENDING_REVIEW marker, and load it in-process. Returns True if a pending skill was
+        promoted, False if there was no such pending skill (idempotent / safe)."""
+        # Resolve to the skill dir: accept the registry name (manifest title, what the
+        # pending-list endpoint exposes) OR the on-disk dir slug.
+        reg = self.skills.get(name)
+        skill_dir = Path(reg.path) if reg is not None and getattr(reg, "path", None) else SKILLS_DIR / name
+        if not (skill_dir / "PENDING_REVIEW").exists():
+            return False
+        signing.sign_skill(skill_dir)
+        (skill_dir / "PENDING_REVIEW").unlink()
+        self._load_skill(skill_dir)
+        logger.info("Generated skill '%s' approved + activated", name)
+        return True
 
     def sign_skill(self, name: str) -> Optional[str]:
         """Sign an already-discovered skill in place; re-verify it. (H12.1)"""
