@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 import re
 import time
 from collections import deque
@@ -33,10 +34,26 @@ _MAX_PARALLEL_STEPS = 8
 class WorkflowEngine:
     """Run a Pipeline against the live orchestrator, sharing results between steps."""
 
-    def __init__(self, orchestrator: Orchestrator):
+    def __init__(self, orchestrator: Orchestrator, run_store=None):
         self._orch = orchestrator
         # H10.2: ring of recent run traces for the visual overlay.
         self.recent_runs: deque = deque(maxlen=_MAX_RECENT_RUNS)
+        # 0.34: optional run-history persistence so the overlay survives a restart.
+        # Opt-in: a store is attached only when one is passed (tests) or
+        # JARVIS_WORKFLOW_PERSIST is set — default None keeps behavior unchanged.
+        if run_store is None and os.environ.get(
+                "JARVIS_WORKFLOW_PERSIST", "").strip().lower() in ("1", "true", "yes", "on"):
+            try:
+                from .run_store import WorkflowRunStore
+                run_store = WorkflowRunStore()
+            except Exception:
+                logger.warning("workflow run-store init failed — persistence off", exc_info=True)
+        self._run_store = run_store
+        if self._run_store is not None:
+            try:
+                self.recent_runs.extend(self._run_store.all())   # seed from disk (deque caps to last N)
+            except Exception:
+                logger.warning("workflow run-store seed failed", exc_info=True)
 
     async def run(self, pipeline: Pipeline, initial_input: str, _depth: int = 0) -> dict:
         """Execute *pipeline* and return {step_id: response, ..., _elapsed, _ok}."""
@@ -95,7 +112,7 @@ class WorkflowEngine:
         ctx["_terminated"] = bool(terminated_by)
         ctx["_terminated_by"] = terminated_by
         # H10.2: stash the run so the HUD can render an overlay of recent runs.
-        self.recent_runs.append({
+        self._stash_run({
             "pipeline_id": pipeline.id,
             "pipeline_name": pipeline.name,
             "ts": time.time(),
@@ -105,6 +122,17 @@ class WorkflowEngine:
             "steps": list(ctx["_trace"]),
         })
         return ctx
+
+    def _stash_run(self, record: dict) -> None:
+        """Append a run record to the in-memory ring and (0.34, opt-in) persist it."""
+        self.recent_runs.append(record)
+        # getattr: some tests build the engine via __new__ (bypassing __init__).
+        store = getattr(self, "_run_store", None)
+        if store is not None:
+            try:
+                store.record(record)
+            except Exception:
+                logger.warning("workflow run-store record failed", exc_info=True)
 
     async def _traced_execute(self, step: WorkflowStep, ctx: dict, step_map: dict) -> str:
         """H10.2 — time a step and append a trace entry (input/output/status)."""
