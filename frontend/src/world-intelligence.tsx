@@ -1,8 +1,7 @@
-// @ts-nocheck
 import React, { useEffect, useMemo, useState } from 'react';
 import { loadWorldIntelligence } from './api/signalLayer';
 
-function SubH({ children, style }) { return <div className="sub-h" style={style}>{children}</div>; }
+function SubH({ children, style }: { children?: any; style?: any }) { return <div className="sub-h" style={style}>{children}</div>; }
 function Stat({ value, label }) { return <div className="stat-card"><div className="sv">{value}</div><div className="sl">{label}</div></div>; }
 function Cap({ title, detail, tag = 'INFO', kind = 'scoped' }) {
   return <div className="cap-row"><div><div className="cn">{title}</div>{detail && <div className="cd">{detail}</div>}</div><span className={'cap-tag ' + kind}>{tag}</span></div>;

@@ -31,6 +31,20 @@
 
 ## Items (newest first)
 
+### HUD — type `world-intelligence.tsx` + `modes_world.tsx` (CDX-9 typing pass)
+- **What:** removed `@ts-nocheck` from the WorldView pair — `world-intelligence.tsx` (the Signal-Layer
+  intelligence panel: brief, top signals, recommendations, provider health) and `modes_world.tsx` (the mode
+  wrapper that mounts it). Batched because they're one feature. `world-intelligence.tsx` hit the **same
+  optional-prop pattern** as the `Icon` fix: a local `SubH({ children, style })` renders `style={style}`
+  (an `undefined` style is a no-op in React), so `style` is optional — two call sites omit it. Marked it
+  optional. `modes_world.tsx` needed **zero** changes — its earlier errors were all downstream of the
+  `Icon` contract gap fixed in #386, so stripping the directive was enough. 9 non-test source modules remain.
+- **Verified (automated):** `tsc --noEmit` clean; frontend **vitest 73 passed**; `agents/web/v2` bundle
+  **byte-identical** (rebuilt to confirm — `hud-v2-build` guard matches). No backend/route change.
+- **⚠️ Needs you:** the World Intelligence overlay (press `W` in the HUD) reads the optional external
+  Signal-Layer service on `:8787` — its live data path is owner-runtime-gated like every panel, but the
+  typing change here is compile-time only and behaviour-identical.
+
 ### HUD — type `world_app.tsx` + fix the `Icon` optional-props contract (CDX-9 typing pass)
 - **What:** removed `@ts-nocheck` from `frontend/src/world_app.tsx` (the "World Intelligence" overlay shell —
   the `W`-key fullscreen panel that wraps `<App/>` and mounts `WorldIntelligenceMode`). The two tsc errors it
