@@ -1,4 +1,3 @@
-// @ts-nocheck
 /* HUD v2 · NETWORK BRAIN — signature visualizer
    nodes orbit a core; collab edges; live packets; click=focus */
 import React, { useState, useEffect, useRef, useMemo } from 'react';
@@ -111,7 +110,7 @@ function NetworkBrain({ agents, tasks = [], activeId, onSelect, focusId, setFocu
   const busyCount = agents.filter(a=>a.status==='busy').length;
 
   return (
-    <div className="net-wrap" ref={el=>{ if(el) NetworkBrain._wrap=el; }}>
+    <div className="net-wrap">
       <svg className="net-svg" viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="xMidYMid meet"
         onMouseLeave={()=>{setHover(null);setTip(null);}}>
         <defs>
