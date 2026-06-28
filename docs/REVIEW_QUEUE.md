@@ -31,6 +31,26 @@
 
 ## Items (newest first)
 
+### 0.44 — per-channel outbound send rate limits (opt-in, default-off)
+- **What:** a new `channels/send_rate_limit.py` — a sliding-window limiter that bounds how *much* the
+  external webhook channels (WhatsApp / Signal / Matrix / Teams / Google Chat) can broadcast, wired at
+  `WebhookChannel.send()`. It's the third leg of the comms-safety stool: CDX-11 governs *who* may use a
+  channel, the H23.16 egress monitor *observes* the volume, and this *bounds* it. **Off by default**
+  (unlimited) — set `JARVIS_CHANNEL_SEND_RATE=<per-min>` globally and/or
+  `JARVIS_CHANNEL_SEND_RATES="whatsapp:10,teams:30"` per channel to turn it on. Over the cap → the send is
+  dropped (returns False) and logged.
+- **⚠️ Needs you — only the policy, and only if you want it on.** Default changes nothing. I made one
+  deliberate scoping call you should be aware of: the limiter covers the **external broadcast channels
+  only**, NOT the interactive reply path (telegram / web / voice). That's intentional — rate-limiting a
+  reply could silently swallow a legitimate answer to you, which is worse than the flood it would prevent.
+  If you ever *do* want the reply path bounded too, that's a different design we should talk through.
+  (Config noted in `docs/OWNER_TASKS.md`.)
+- **Verified (automated):** `tests/test_channel_send_rate_limit.py` 10 passed (default-unlimited; global +
+  per-channel cap parsing with junk entries ignored; the sliding window expiring old hits; independent
+  per-channel budgets; and the `WhatsAppChannel.send` integration where the over-cap send never reaches the
+  transport) + the existing webhook-channel suite still green; ruff + bandit clean; no new routes; STATUS at
+  3,151 tests.
+
 ### 0.43 — Learning Coach Pack (SM-2 spaced repetition + curriculum, stateless)
 - **What:** a new offline study-coach pack (`agents/core/coach/`, separate from the agent-promotion
   `learning/scheduler.py`). Three stateless capabilities — **SM-2 spaced repetition**
