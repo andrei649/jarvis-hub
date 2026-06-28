@@ -111,7 +111,7 @@ python -m pytest tests/ -v          # ~2,802 passed, 6 skipped
 | 0.39 Market Intel Pack | 🌱 seed | `plugins/{balance,analytics,signal_layer}.py` / watchlists, alerts, disclaimers | — |
 | 0.40 OSINT Investigator Pack | 🌱 seed | `plugins/worldview.py` + `argus.py` / SpiderFoot modules, correlation, evidence drawer | — |
 | 0.41 World Signal Packs | 🌱 seed | `signal_layer.py` (`world_brief`,`country_assessment`) / per-domain signal routing | — |
-| 0.42 Security Skills Pack | ⬜ missing | `security/` is infra, not curated skills / ATT&CK/ATLAS/D3FEND/NIST taxonomy | — |
+| 0.42 Security Skills Pack | 🟢 **done** | new `agents/core/security_skills/` (separate from the `security/` infra) — a pure, offline, read-only knowledge pack over **public** taxonomies: MITRE **ATT&CK** (all 14 enterprise tactics + a curated, clearly-subset set of representative techniques with real IDs), MITRE **D3FEND** (defensive tactics + an ATT&CK→countermeasure mapping), and **NIST CSF 2.0** (the 6 functions). Pure functions: `tactics()`/`techniques(tactic)`/`technique(tid)` (enriched with D3FEND + CSF), `map_behavior(text)` (an **honest keyword heuristic** that returns candidates *with the matched evidence* — never a black-box attribution), `frameworks()`, and `build_playbook(ids)` (per-technique countermeasures + CSF coverage, reporting **gaps + unknown ids honestly**, `generated:false`). Every payload carries `curated:true` + `DISCLAIMER` + authoritative `SOURCES`; nothing is fabricated and it never acts. Served read-only at `/api/security-skills/{frameworks,tactics,techniques,technique/{tid},map,playbook}` (user-guarded, Trust surface). `tests/test_security_skills_pack.py` (+8); route/openapi/hud-v2 parity reseeded (+6 routes). | — |
 | 0.43 Learning Coach Pack | 🌱 seed | `learning/scheduler.py` (not tutoring) / curriculum, spaced review | — |
 | 0.44 Safe Comms Pack | 🟡 partial | `channels/{telegram,email}.py`,`whatsapp_bridge.py`,`action_approvals.py` / draft-before-send UI, per-channel rate limits | — |
 | 0.45 High-Risk Automation Contracts | 🟡 partial | `plugin_gate.py`,`signal_governance.py`,`routers/payments.py` / reusable contract-template abstraction | H23.1 |
@@ -138,9 +138,9 @@ python -m pytest tests/ -v          # ~2,802 passed, 6 skipped
 | 0.66 SaaS Connector Breadth | 🟡 partial | ~20 working integrations but a messaging/IoT-heavy mix; missing the white-collar suite: Linear · Asana · Trello · Todoist · ClickUp · Figma · Obsidian · Google Sheets · Microsoft 365 (Outlook/OneDrive/full Teams) · Apple Notes/Reminders/Calendar | — |
 | 0.90–1.0 gates (Freeze · RC · Partner · Burn-In · Owned) | ⬜ pending | `AUDIT.md`,`MANUAL_TESTING.md`,parity/auth gates, north-star eval / promote eval→required gate; design partners; landing+demo | 1.0.0 row + H23.21/22 |
 
-> **The only 6 truly greenfield (⬜) among 0.19–0.63:** 0.20 Vault · 0.42 Security Skills · 0.48 Video Production ·
-> 0.55 Design Partner Kit · 0.57 Release Packaging · 0.62 System Profiles. *(0.52 Demo Factory → 🌱 seed and
-> 0.61 DB Future Check → 🟡 partial on the 2026-06-25 re-audit.)*
+> **Remaining greenfield (⬜) among 0.19–0.63:** 0.20 Vault · 0.48 Video Production · 0.55 Design Partner Kit ·
+> 0.62 System Profiles. *(0.42 Security Skills → 🟢 **done**; 0.57 Release Packaging → ✅ done; 0.52 Demo Factory
+> → 🌱 seed and 0.61 DB Future Check → 🟡 partial on the 2026-06-25 re-audit.)*
 > Everything else is ✅/🟢/🟡/🌱 — **finish-the-PARTIALs beats start-greenfield** (audit guidance).
 > Top remaining finish-firsts: **0.36 Action-Manifest unify**, **H23.10 retention defaults**,
 > **export HTTP surface** (`/api/admin/export`, sibling of backup/forget). *(Done: H23.7 DB migrations #305,
