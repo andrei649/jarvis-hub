@@ -228,6 +228,42 @@ async def marketplace_review(body: ReviewSkillBody):
         return JSONResponse({"error": "internal error", "code": 500}, status_code=500)
 
 
+class UninstallSkillBody(BaseModel):
+    name: str
+    purge: bool = False
+
+
+@router.post("/api/skills/marketplace/uninstall", dependencies=[Depends(admin_guard)])
+async def marketplace_uninstall(body: UninstallSkillBody):
+    """0.58 — uninstall an installed skill (remove its directory). With `purge`,
+    also drop the marketplace registry row. The package is retained by default so
+    `install` can restore it."""
+    orch = get_orch()
+    if not orch:
+        return JSONResponse({"error": "not initialized"}, status_code=503)
+    try:
+        # Resolve the on-disk dir up front so we can drop it from the live loader
+        # by path (the loader keys by manifest title, which may differ from the dir).
+        removed_dir = (orch.marketplace.skills_dir / body.name).resolve()
+        removed = orch.marketplace.uninstall_skill(body.name, purge=body.purge)
+    except ValueError:
+        return JSONResponse({"error": f"invalid skill name '{body.name}'"}, status_code=400)
+    except Exception:
+        logger.exception("Failed to uninstall skill")
+        return JSONResponse({"error": "internal error", "code": 500}, status_code=500)
+    if not removed and not body.purge:
+        return JSONResponse({"error": f"skill '{body.name}' is not installed"}, status_code=404)
+    if removed:
+        # Forget the skill in the live loader (match by on-disk path, not name).
+        import contextlib
+        from pathlib import Path
+        for key in [k for k, s in list(orch.skills.skills.items())
+                    if Path(getattr(s, "path", "")).resolve() == removed_dir]:
+            with contextlib.suppress(Exception):
+                del orch.skills.skills[key]
+    return {"ok": True, "uninstalled": body.name, "removed": removed, "purged": body.purge}
+
+
 _PENDING_REASON = "pending review (CDX-8 quarantine)"
 
 
