@@ -31,6 +31,29 @@
 
 ## Items (newest first)
 
+### HUD-v3 PR 2 (B3) — Verification Fabric readiness board in the Console
+- **What:** the first genuine **frontend gap** from the blueprint's Phase B substrate. A new
+  `ReadinessPanel` (in `gap.tsx`, Trust cluster, next to the Action-Kernel meter) renders the capability
+  registry — `GET /api/metrics/capabilities` — as the **SEAM→WIRED→VERIFIED→GA** readiness ladder
+  (roll-up tags + per-capability state), so "looks done, isn't wired" is a *visible* state. Most of Phase
+  B already existed in the production HUD (Decision Inbox, kernel meter, kill-switch, audit-verify,
+  %-local); the readiness board was the one substrate surface genuinely **absent**, and it binds an
+  endpoint that already ships (V2).
+- **Honesty contract enforced:** while no capability is harness-proven (`harness_pending:true`) the panel
+  shows an amber **"wired, not yet proven — nothing is VERIFIED until a green reality-harness promotes
+  it"** banner instead of implying verification we can't back. The banner disappears the moment a real
+  VERIFIED state exists.
+- **Verified (automated, end-to-end in this env):** `tsc --noEmit` exit 0; new `readiness-panel.test.tsx`
+  (+3: GETs the endpoint + shows the ladder + a capability · the harness-pending banner · the banner is
+  **absent** once something is VERIFIED) — full vitest suite **76/76** green; `npm run build` refreshed
+  the served `agents/web/v2` bundle and the **stale-bundle guard is reproducible** (a second build is a
+  no-op diff). No backend/route change → parity untouched.
+- **⚠️ Needs you — the live-pixel render only:** as for every HUD panel (CDX-9), I can prove the wiring +
+  the conditional display logic headlessly but **not** the actual rendered pixels. Open the Console → Trust
+  section and eyeball the VERIFICATION FABRIC panel against a running backend: confirm the ladder counts
+  match `GET /api/metrics/capabilities` and the "not yet proven" banner shows until the reality harness
+  promotes something.
+
 ### HUD-v3 PR 1 — vendor the prototype (design source of truth) + the impl-blueprint doc
 - **What:** lands the two planning anchors for the hud-v3 port. (1) The **executable design spec** is
   vendored into `docs/design/hud-v3/` (22 files: the `v3-*.jsx` prototype + `v3-style.css` + `index.html`

@@ -212,6 +212,40 @@ export function KernelMetricsPanel() {
     </Card>
   );
 }
+/* HUD-v3 B3 — Verification Fabric readiness board. Reads the real capability registry
+   (GET /api/metrics/capabilities): the SEAM→WIRED→VERIFIED→GA ladder. Honesty contract —
+   nothing is VERIFIED until a green reality-harness promotes it, so `harness_pending`
+   renders "wired, not yet proven" rather than implying verification we can't back. */
+export function ReadinessPanel() {
+  const { d, e, loading, reload } = useApi('/api/metrics/capabilities');
+  const bs = (d && d.by_state) || {};
+  const caps = (d && d.capabilities) || [];
+  const pending = d && d.harness_pending;
+  const stateColor = (s) => (s === 'verified' || s === 'ga') ? 'var(--green)' : s === 'wired' ? 'var(--accent-light)' : 'var(--ink-3)';
+  return (
+    <Card title="VERIFICATION FABRIC" sub={d ? `${d.total} capabilities` : null} onReload={reload}>
+      <State e={e} loading={loading} n={d ? d.total : 0} />
+      {d && (
+        <Row>
+          <span style={mono}>readiness</span>
+          <span style={{ marginLeft: 'auto', display: 'flex', gap: 5, alignItems: 'center' }}>
+            <Tag c="var(--ink-3)">{bs.seam || 0} seam</Tag>
+            <Tag c="var(--accent-light)">{bs.wired || 0} wired</Tag>
+            <Tag c={(bs.verified || 0) > 0 ? 'var(--green)' : 'var(--ink-3)'}>{bs.verified || 0} verified</Tag>
+            <Tag c={(bs.ga || 0) > 0 ? 'var(--green)' : 'var(--ink-3)'}>{bs.ga || 0} ga</Tag>
+          </span>
+        </Row>
+      )}
+      {pending && <div style={{ fontSize: 10, color: 'var(--amber)', marginTop: 6 }}>harness pending · wired, not yet proven — nothing is VERIFIED until a green reality-harness promotes it</div>}
+      {caps.slice(0, 8).map((c, i) => (
+        <Row key={i}>
+          <span style={{ ...mono, color: 'var(--ink-2)' }}>{c.id}</span>
+          <span style={{ marginLeft: 'auto' }}><Tag c={stateColor(c.state)}>{c.state}</Tag></span>
+        </Row>
+      ))}
+    </Card>
+  );
+}
 export function LoopBreakerPanel() {
   const { d, e, loading, reload } = useApi('/api/security/loop-breaker');
   const tripped = d?.tripped;
@@ -789,7 +823,7 @@ export function TodayPanel() {
 
 const SECTIONS: Array<[string, Array<() => any>]> = [
   ['Memory', [DataSpacesPanel, LocalDocsPanel, NotesPanel, ReflectionPanel]],
-  ['Trust', [KillSwitchPanel, KernelMetricsPanel, LoopBreakerPanel, NetworkMonitorPanel, SecretsPanel, CapabilitiesPanel, PairingPanel, InjectionScanPanel]],
+  ['Trust', [KillSwitchPanel, KernelMetricsPanel, ReadinessPanel, LoopBreakerPanel, NetworkMonitorPanel, SecretsPanel, CapabilitiesPanel, PairingPanel, InjectionScanPanel]],
   ['Interop', [A2AInboxPanel, MarketplacePanel]],
   ['Observe', [OnboardingPanel, EvalPanel, ReviewPanel, APMPanel, FeedbackPanel]],
   ['Build', [StepGenPanel, SandboxPanel, TemplatesPanel]],
