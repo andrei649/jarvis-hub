@@ -520,42 +520,74 @@ def _uptime_str() -> str:
 
 
 def _sys_info() -> dict:
+    """Host/CPU/GPU readiness — honest (CDX-10).
+
+    Every value is *probed*; when a probe fails we surface ``unknown`` / ``none`` / ``0``,
+    never a plausible-but-fabricated host, CPU brand or GPU. The trust/readiness screen
+    must never imply hardware (or a loaded model) that isn't actually there.
+    """
+    import contextlib
+    import platform
+    import shutil
+    import socket
+
     base = {
-        "host": "BONOBO-WS",
-        "cpu": "Intel Core Ultra 9 · 32c",
-        "ram_used": 0, "ram_total": 192,
-        "gpu": "RTX 5090 · 24GB",
-        "vram_used": 0, "vram_total": 24, "gpu_load": 0,
-        "backend": "LM Studio · 1234",
-        "model": "google/gemma-4-31b-a4b",
+        "host": "unknown",
+        "cpu": "unknown",
+        "ram_used": 0, "ram_total": 0,
+        "gpu": "unknown",
+        "vram_used": 0, "vram_total": 0, "gpu_load": 0,
+        "backend": "unknown",
+        "model": "unknown",
         "latency": 0,
         "uptime": _uptime_str(),
         "sessions": 0,
     }
-    try:
+    with contextlib.suppress(Exception):
+        base["host"] = socket.gethostname() or "unknown"
+    # CPU — the real model string, no fabricated brand. platform.processor() is often blank
+    # on Linux, so fall back to the /proc/cpuinfo model name, then to a bare thread count.
+    with contextlib.suppress(Exception):
         import psutil
+        cpu = (platform.processor() or "").strip()
+        if not cpu:
+            with contextlib.suppress(OSError), open("/proc/cpuinfo", encoding="utf-8") as fh:
+                for line in fh:
+                    if line.lower().startswith("model name"):
+                        cpu = line.split(":", 1)[1].strip()
+                        break
+        n = psutil.cpu_count(logical=True)
+        if cpu and n:
+            base["cpu"] = f"{cpu} · {n} thr"
+        elif cpu:
+            base["cpu"] = cpu
+        elif n:
+            base["cpu"] = f"{n} threads"
         vm = psutil.virtual_memory()
         base["ram_used"] = round(vm.used / 1e9, 1)
         base["ram_total"] = round(vm.total / 1e9, 1)
-        cpu_count = psutil.cpu_count(logical=True)
-        if cpu_count:
-            base["cpu"] = f"Intel Core Ultra 9 · {cpu_count} thr"
-    except Exception:
-        pass
-    try:
-        import subprocess
-        r = subprocess.run(
-            ["nvidia-smi", "--query-gpu=memory.used,memory.total,utilization.gpu", "--format=csv,noheader,nounits"],
-            capture_output=True, text=True, timeout=5
-        )
-        if r.returncode == 0:
-            parts = r.stdout.strip().split(", ")
-            if len(parts) == 3:
-                base["vram_used"] = int(float(parts[0])) // 1024
-                base["vram_total"] = int(float(parts[1])) // 1024
-                base["gpu_load"] = int(float(parts[2]))
-    except Exception:
-        pass
+    # GPU — the real card name + VRAM via nvidia-smi; an honest "none" when there is no
+    # NVIDIA GPU (binary absent / non-zero exit), never a fabricated card. A present-but-
+    # erroring probe leaves the honest "unknown" default.
+    if shutil.which("nvidia-smi") is None:
+        base["gpu"] = "none"
+    else:
+        with contextlib.suppress(Exception):
+            import subprocess
+            r = subprocess.run(
+                ["nvidia-smi", "--query-gpu=name,memory.used,memory.total,utilization.gpu",
+                 "--format=csv,noheader,nounits"],
+                capture_output=True, text=True, timeout=5,
+            )
+            if r.returncode == 0 and r.stdout.strip():
+                parts = [p.strip() for p in r.stdout.strip().splitlines()[0].split(",")]
+                if len(parts) == 4:
+                    base["gpu"] = parts[0] or "unknown"
+                    base["vram_used"] = int(float(parts[1])) // 1024
+                    base["vram_total"] = int(float(parts[2])) // 1024
+                    base["gpu_load"] = int(float(parts[3]))
+            else:
+                base["gpu"] = "none"
     return base
 
 
