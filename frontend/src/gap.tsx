@@ -795,6 +795,35 @@ export function OnboardingPanel() {
   );
 }
 
+/* HUD-v3 C1 — Missions board. The 0.32 Mission Workspaces backend (long-horizon
+   governed work) + its data-layer fetch existed, but no control surface did. Surfaces
+   the board with contextual governed-action controls (start/pause/resume/complete/
+   cancel) wired to the real user-guarded /api/missions/{id}/{action} routes. */
+export function MissionsPanel() {
+  const { d, e, loading, reload } = useApi('/api/missions');
+  const missions = arr(d, 'missions');
+  const statusColor = (s) => s === 'active' ? 'var(--green)' : s === 'paused' ? 'var(--amber)' : s === 'failed' ? 'var(--red)' : s === 'done' ? 'var(--accent-light)' : 'var(--ink-3)';
+  // contextual transitions, matching the missions state machine (planned→active→paused→done)
+  const actionsFor = (s) => s === 'planned' ? ['start'] : s === 'active' ? ['pause', 'complete', 'cancel'] : s === 'paused' ? ['resume', 'cancel'] : [];
+  return (
+    <Card title="MISSIONS" sub={d ? `${missions.length} workspaces` : null} onReload={reload}>
+      <State e={e} loading={loading} n={missions.length} />
+      {missions.slice(0, 12).map((m, i) => (
+        <Row key={m.id ?? i}>
+          <span style={{ ...mono, color: 'var(--ink-2)' }}>{m.title || '(untitled)'}</span>
+          <span style={{ marginLeft: 'auto', display: 'flex', gap: 5, alignItems: 'center' }}>
+            <Tag c={statusColor(m.status)}>{m.status}</Tag>
+            <Tag>{m.steps_used ?? 0}/{m.max_steps ?? '—'}</Tag>
+            {actionsFor(m.status).map((a) => (
+              <button key={a} className="tool-btn" onClick={() => act('/api/missions/' + m.id + '/' + a, {}, reload)}>{a}</button>
+            ))}
+          </span>
+        </Row>
+      ))}
+    </Card>
+  );
+}
+
 export function TodayPanel() {
   // P1 G1 — "Today in Jarvis": what Jarvis *did* (autonomy) + *learned* (memory) in one feed.
   const { d, e, loading, reload } = useApi('/api/dashboard/today');
@@ -827,7 +856,7 @@ const SECTIONS: Array<[string, Array<() => any>]> = [
   ['Interop', [A2AInboxPanel, MarketplacePanel]],
   ['Observe', [OnboardingPanel, EvalPanel, ReviewPanel, APMPanel, FeedbackPanel]],
   ['Build', [StepGenPanel, SandboxPanel, TemplatesPanel]],
-  ['Autonomy & Agents', [TodayPanel, SchedulePanel, LearningPanel, SessionsPanel, HeartbeatPanel, TranscriptPanel, EscalationPanel]],
+  ['Autonomy & Agents', [MissionsPanel, TodayPanel, SchedulePanel, LearningPanel, SessionsPanel, HeartbeatPanel, TranscriptPanel, EscalationPanel]],
   ['Admin', [OAuthPanel, SettingsPanel, PromptsPanel, RoomsPanel, LMStudioPanel, AuthProfilesPanel]],
 ];
 
