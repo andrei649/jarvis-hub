@@ -31,6 +31,27 @@
 
 ## Items (newest first)
 
+### CDX-7 follow-up — the agentic-RAG *tool* path now redacts injected memory too
+- **What:** CDX-7 fenced retrieved memory at the *prompt-string* sites, but the LLM-callable
+  `search_memory` tool (`MemorySearchTool.search()`, behind `POST /api/memory/search-tool`) returns
+  hit-*dicts* straight to the model — a path it explicitly deferred because `wrap_memory` is
+  string-shaped. Now each hit is run through the injection scanner; a flagged hit is **redacted**
+  (its text → `[REDACTED: injection-flagged memory]`, tagged `injection_flagged`, with `flags`), while
+  its score/provenance are kept so ranking + explainability still work. Clean hits are byte-identical.
+  On by default; a `scan=False` constructor opt-out exists for callers that sanitized upstream.
+- **⚠️ Needs you:** nothing — this is a transparent safety scan with no behavior change for clean
+  memory. Only a stored entry that actually looks like an injection (e.g. "ignore previous
+  instructions…") is masked in the tool result. Mentioned only so you know why such an entry would
+  show `[REDACTED…]` if you ever inspect `/api/memory/search-tool` output.
+- **Verified (automated):** `tests/test_cdx7_rag_tool_scan.py` 6 passed (clean passthrough, redaction +
+  metadata preservation, the `name`-field variant, a mixed batch redacting only the flagged hit, the
+  `scan=False` opt-out, and the agentic loop inheriting the scan) + the 8 existing H8.3b agentic-RAG
+  tests still green; ruff + bandit clean; no route change; STATUS at 3,124 tests.
+- **Still deferred (the genuinely hard one — flagging for your call):** carrying taint *through* a
+  memory-derived **action** to the Action Kernel (so a GRANT escalates to QUEUE) is full data-flow
+  propagation — `taint.py`'s own docstring documents it as deferred, and the naive hook broke with a
+  NameError last time. That one wants a design decision, not a blind attempt.
+
 ### CDX-12 — the "Design-Partner / Hardened" profile (one switch, opt-in, default-off)
 - **What:** a single `JARVIS_HARDENED=1` preset that tightens four security toggles at once for a
   design-partner / multi-tenant deployment, plus it turns on CDX-11 plugin least-privilege. The four:
