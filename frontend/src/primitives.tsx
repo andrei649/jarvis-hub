@@ -1,4 +1,3 @@
-// @ts-nocheck
 /* HUD v2 · PRIMITIVES — icons, glyph, hooks */
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { V2 } from './data';

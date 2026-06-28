@@ -31,6 +31,19 @@
 
 ## Items (newest first)
 
+### HUD — type the `data.ts` keystone + leaf modules (CDX-9 typing pass)
+- **What:** removed `@ts-nocheck` from the **keystone** `frontend/src/data.ts` (the pure `V2` seed object
+  every capability mode reads via `V2.<KEY>`) plus its barrel `ui.ts`, the shared `primitives.tsx` UI
+  symbols, and `LiveSourceChip.tsx`. Typing `data.ts` is the unblock: the big components read off `V2`, so
+  they couldn't be type-checked until the seed's own shape compiled clean. These 4 came off with **zero**
+  added annotations — the literals/JSX already inferred correctly. 17→13 non-test source modules on
+  `@ts-nocheck` (remaining: `app`/`shell`/`gap`/`cockpit`/`modes`/`modes2-4`/`modes_world`/`voice`/
+  `network`/`world-intelligence`/`world_app`, to be done smallest-tsc-error-first, each its own PR).
+- **Verified (automated):** `tsc --noEmit` clean; full frontend **vitest 73 passed** (unchanged — types
+  erase, behaviour-identical); `agents/web/v2` bundle **byte-identical** (`index-CwY1ye9O.js`, rebuilt to
+  confirm — the `hud-v2-build` guard matches). No backend/route change.
+- **⚠️ Needs you:** nothing — compile-time only.
+
 ### HUD — type the whole api/ data layer (CDX-9 typing pass)
 - **What:** removed `@ts-nocheck` from **all** of `frontend/src/api/` — `actions.ts`, `signalLayer.ts`,
   and `live.ts` — so the entire HUD data layer is now type-checked. `actions.ts` declares response
