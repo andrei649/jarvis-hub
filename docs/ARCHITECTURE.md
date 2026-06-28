@@ -139,6 +139,10 @@ When on: embeds the query, runs fused recall (vector ⊕ graph), injects top-k a
 | `agents/core/security/audit.py` | SQLite audit + Merkle chain | `AuditLogger.log` |
 | `agents/core/security/ssrf.py` | Private-IP SSRF protection | `SSRFProtector` |
 | `agents/core/security/types.py` | Enums + data classes | `ScanFinding`, `ThreatLevel`, `RedactionMode`, `SecurityEvent` |
+| `agents/core/security/quarantine.py` | Prompt-injection scanner + datamark/spotlight for untrusted text | `detect_injection`, `datamark`, `spotlight` |
+| `agents/core/security/taint.py` | Untrusted-source taint flag (the kernel escalates a tainted action GRANT→QUEUE) | `mark`, `is_tainted`, `is_untrusted_source`, `UNTRUSTED_SOURCES` |
+| `agents/core/security/rag_guard.py` | CDX-7 choke point: fence retrieved memory as untrusted DATA before a prompt (scan/redact/datamark/provenance) | `wrap_memory`, `provenance_from_hit`, `REDACTION` |
+| `agents/core/security/hardened.py` | CDX-12 "Design-Partner / Hardened" preset (`JARVIS_HARDENED`): guardrails→REDACT, audit-key required, strict egress, mutating-MCP off | `enabled`, `posture`, `enforce`, `guardrails_default` |
 
 ### Channels
 
@@ -151,7 +155,9 @@ When on: embeds the query, runs fused recall (vector ⊕ graph), injects top-k a
 | `agents/core/channels/discord.py` | Discord bot | `DiscordChannel` |
 | `agents/core/channels/email.py` | SMTP + IMAP | `EmailChannel` |
 | `agents/core/channels/slack.py` | Slack bot | `SlackChannel` |
-| `agents/core/channels/gateway.py` | Message routing gateway | `Gateway.route` |
+| `agents/core/channels/gateway.py` | Message routing gateway (incl. inbound rate limit) | `Gateway.route` |
+| `agents/core/channels/webhook_channels.py` | HTTP webhook channels (WhatsApp/Signal/Matrix/Teams/Google Chat) | `WebhookChannel`, `build_send`, `parse_inbound` |
+| `agents/core/channels/send_rate_limit.py` | 0.44 opt-in per-channel **outbound** send rate limit (`JARVIS_CHANNEL_SEND_RATE[S]`) | `allow_send`, `SendRateLimiter`, `limit_for` |
 
 ### Plugins
 
@@ -182,13 +188,34 @@ When on: embeds the query, runs fused recall (vector ⊕ graph), injects top-k a
 
 | Path | Purpose | Key symbols |
 |------|---------|-------------|
-| `agents/core/skills/loader.py` | Skill discovery + execution | `SkillLoader.discover`, `Skill.execute`, `parse_command`, `generate_skill` |
+| `agents/core/skills/loader.py` | Skill discovery + execution; CDX-8: auto-generated skills are quarantined `PENDING_REVIEW` (not exec'd) until `approve_generated_skill` | `SkillLoader.discover`, `Skill.execute`, `parse_command`, `generate_skill`, `approve_generated_skill` |
 | `agents/core/skills/importer.py` | Import from Hermes/OpenClaw/GitHub | `SkillImporter.import_from_hermes` |
-| `agents/core/skills/marketplace.py` | Local marketplace (install/publish/zip) | `SkillMarketplace` |
+| `agents/core/skills/marketplace.py` | Local marketplace (install/publish/zip + 0.58 uninstall/remove) | `SkillMarketplace`, `uninstall_skill`, `remove_from_registry` |
+| `agents/core/skills/signing.py` | Skill signature (SKILL.sig) — sign/verify, `JARVIS_REQUIRE_SIGNED_SKILLS` | `sign_skill`, `verify_skill`, `require_signed` |
 | `skills/<name>/SKILL.md` | Skill manifest (version, agents, commands) | — |
 | `skills/<name>/main.py` | Skill logic; must expose `handle(cmd, args, ctx)` or `get_commands()` | — |
 
 Built-in skills: `brief`, `calendar`, `content`, `email_triage`, `family_store`, `health`, `pm`, `security_monitor`, `spotify`, `system_monitor`, `weather`, `web_research`.
+
+### Capability packs & system modules
+
+Pure, offline, deterministic capability packs (ORIZONT-24 Track P + the 0.4x roadmap) and
+cross-cutting system modules. Each pack is honest (carries a disclaimer / `generated:false` /
+`curated:true`, never fabricates) and read-only unless a governance rail is named; routers live
+under `agents/core/routers/<name>.py`.
+
+| Path | Purpose | Key symbols |
+|------|---------|-------------|
+| `agents/core/osint/correlate.py` | P2 OSINT — governed correlation over provided evidence | `correlate`, `build_brief`, `writeback_payload` |
+| `agents/core/market/analyze.py` | P3 Market Intel — watchlist alerts + portfolio snapshot + daily brief (honest `no_quote`) | `evaluate_watchlist`, `portfolio_snapshot`, `daily_brief`, `DISCLAIMER` |
+| `agents/core/creative/pipeline.py` | P4 Creative — pipeline planner + export packs; release held by the kernel | `plan_pipeline`, `build_export_packs`, `release_action_payload` |
+| `agents/core/security_skills/pack.py` | 0.42 Security Skills — curated ATT&CK/D3FEND/NIST taxonomy + behavior→technique heuristic + playbook | `tactics`, `techniques`, `map_behavior`, `build_playbook` |
+| `agents/core/coach/pack.py` | 0.43 Learning Coach — SM-2 spaced repetition + session builder + curriculum planner (stateless) | `review`, `build_session`, `plan_curriculum` |
+| `agents/core/codeintel/index.py` | 0.31 Code Intelligence — AST symbol index over the source (also an MCP route tool) | `build_index`, `search_symbols`, `project_index` |
+| `agents/core/system_profiles.py` | 0.62 usage-mode posture presets (`JARVIS_SYSTEM_PROFILE`); gates proactive heartbeats | `active_posture`, `list_profiles`, `PROFILES` |
+| `agents/core/support_bundle.py` | 0.55 design-partner diagnostic bundle (non-sensitive, allow-list) | `build_bundle` |
+| `agents/core/workflows/run_store.py` | 0.34 opt-in workflow run-history persistence (`JARVIS_WORKFLOW_PERSIST`) | `WorkflowRunStore` |
+| `agents/core/plugin_gate.py` | Per-agent plugin permission gate + CDX-11 least-privilege (`agents_served` wildcard withheld for external-write under hardening) | `PermissionGate.check_call`, `add_grant`, `least_privilege_from_env` |
 
 ### Voice
 
