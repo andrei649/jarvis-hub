@@ -64,7 +64,7 @@ construction).
 
 | # | Surface (prototype) | Target (`frontend/src`) | Endpoint(s) — real | Acceptance | Parity row |
 |---|---|---|---|---|---|
-| B1 | Decision Inbox (`v3-decisions.jsx`) | `modes.tsx` (Decisions) + `shell.tsx` rail badge; data via `api/actions.ts` | `GET /tasks` · `POST /autonomy/tasks/{id}/decision` `{action,patch,idempotency_key}` | Optimistic resolve + rollback on error; dry-run preflight via `GET /api/autonomy/tasks/{id}/preview`; empty queue = honest "all clear", never seed | `cockpit` / `autonomy` |
+| B1 ✅ | Decision Inbox (`v3-decisions.jsx`) | `gap.tsx` `DecisionInboxPanel` (Autonomy cluster, first) | `GET /autonomy/tasks?status=blocked` · `POST /autonomy/tasks/{id}/decision` `{action}` | **The resolve action was genuinely missing** — the queue was *read* (network fan) but never resolvable. Now accept/reject/defer on the blocked queue; empty = honest "all clear". **Shipped PR 12.** | `cockpit` / `autonomy` |
 | B2 | Action Kernel syscall table (`v3-modes2.jsx` AI-OS) | `gap.tsx` Kernel tile (exists) → Observe | `GET /api/metrics/kernel` | grant/deny/queue counts per kind from real meter; 0-state shows "no decisions yet", not fabricated rows | `observe` |
 | B3 ✅ | Verification Fabric readiness (`v3-modes2.jsx` AI-OS) | `gap.tsx` `ReadinessPanel` (Trust cluster) | `GET /api/metrics/capabilities` | SEAM→WIRED→VERIFIED→GA ladder from registry; **never fake VERIFIED** (honesty contract #4) — `harness_pending` renders "wired, not yet proven". **Shipped PR 2.** | `observe` |
 | B4 | Kill-switch (live + halts) | `gap.tsx` / `modes.tsx` Trust STOP (exists) | `GET·POST /api/security/kill-switch` (POST admin) | Engage is admin-guarded (in-app token, not `window.prompt`); engaged ⇒ writes blocked, surface honest 423 | `trust` |

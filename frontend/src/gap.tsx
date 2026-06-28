@@ -1003,6 +1003,34 @@ export function OnboardingPanel() {
   );
 }
 
+/* HUD-v3 B1 — the DECISION INBOX (the product north-star). The frontend READ /tasks (the
+   autonomy queue, drawn as a network fan) but had NO control to resolve a blocked
+   decision. This is it: the blocked queue (GET /autonomy/tasks?status=blocked) with
+   accept / reject / defer, each → POST /autonomy/tasks/{id}/decision {action} (admin). */
+export function DecisionInboxPanel() {
+  const { d, e, loading, reload } = useApi('/autonomy/tasks?status=blocked', true, true);  // admin
+  const pending = arr(d, 'tasks');
+  const decide = (id, action) => actA('/autonomy/tasks/' + id + '/decision', { action }, reload);
+  const tierColor = (n) => n >= 3 ? 'var(--red)' : n === 2 ? 'var(--amber)' : 'var(--ink-3)';
+  return (
+    <Card title="DECISION INBOX" sub={d ? `${pending.length} awaiting you` : null} onReload={reload}>
+      <State e={e} loading={loading} n={pending.length} />
+      {pending.slice(0, 10).map((t, i) => (
+        <Row key={t.id ?? i}>
+          <span style={{ ...mono, color: 'var(--ink-2)' }}>{t.title || t.kind || ('task ' + t.id)}</span>
+          <span style={{ marginLeft: 'auto', display: 'flex', gap: 5, alignItems: 'center' }}>
+            {typeof t.risk_tier === 'number' && <Tag c={tierColor(t.risk_tier)}>tier {t.risk_tier}</Tag>}
+            <button className="tool-btn" title="accept" onClick={() => decide(t.id, 'accept')}>✓</button>
+            <button className="tool-btn" title="reject" onClick={() => decide(t.id, 'reject')}>✕</button>
+            <button className="tool-btn" title="defer" onClick={() => decide(t.id, 'defer')}>defer</button>
+          </span>
+        </Row>
+      ))}
+      {pending.length === 0 && <div style={{ fontSize: 10, color: 'var(--green)', marginTop: 6 }}>all clear · no decisions waiting</div>}
+    </Card>
+  );
+}
+
 /* HUD-v3 C1 — Missions board. The 0.32 Mission Workspaces backend (long-horizon
    governed work) + its data-layer fetch existed, but no control surface did. Surfaces
    the board with contextual governed-action controls (start/pause/resume/complete/
@@ -1157,7 +1185,7 @@ const SECTIONS: Array<[string, Array<() => any>]> = [
   ['Interop', [A2AInboxPanel, MeshPeersPanel, MarketplacePanel]],
   ['Observe', [OnboardingPanel, EvalPanel, ReviewPanel, ArenaPanel, QualityPanel, APMPanel, FeedbackPanel]],
   ['Build', [WorkflowsPanel, StepGenPanel, SandboxPanel, TemplatesPanel]],
-  ['Autonomy & Agents', [MissionsPanel, AgentAutonomyPanel, TodayPanel, SchedulePanel, LearningPanel, SessionsPanel, HeartbeatPanel, TranscriptPanel, EscalationPanel]],
+  ['Autonomy & Agents', [DecisionInboxPanel, MissionsPanel, AgentAutonomyPanel, TodayPanel, SchedulePanel, LearningPanel, SessionsPanel, HeartbeatPanel, TranscriptPanel, EscalationPanel]],
   ['Admin', [BackupPanel, OAuthPanel, SettingsPanel, PromptsPanel, RoomsPanel, LMStudioPanel, AuthProfilesPanel]],
 ];
 
