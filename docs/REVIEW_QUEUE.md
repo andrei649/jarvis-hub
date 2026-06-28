@@ -31,6 +31,24 @@
 
 ## Items (newest first)
 
+### HUD — type `modes3.tsx` + relax the `InputBar` contract (CDX-9 typing pass)
+- **What:** removed `@ts-nocheck` from `modes3.tsx` (Chat / Comms / Admin modes) — the richest mix in the
+  sweep so far, 8 errors across 4 distinct patterns, **all type-only** (bundle byte-identical):
+  1. `SubH3` — the recurring local-header optional-`style` fix.
+  2. **`InputBar` contract** — modes3's distraction-free `ChatMode` renders `<InputBar>` *without*
+     `voice/cfg/onCfg/micMuted`, which `InputBar` already guards (`voice && …`) but were inferred as
+     required. Relaxed them to optional at `InputBar`'s definition in **`cockpit.tsx`** (one cross-file
+     follow-up that unblocks any minimal InputBar caller).
+  3. **plugin-registry `id` drift** — the Admin plugin list seeds from `V2.ADMIN.plugins` (no `id`), but
+     `live.ts` swaps in the real registry *with* `id`, and the toggle handler keys off it
+     (`if(!p.id) return` → demo rows flip locally; real rows POST `/plugins/{id}/toggle`). Typed the state
+     with optional `id?` so the seed/live duality is honest.
+  4. `togglePlugin`'s `Promise<unknown>` response → `: any` at the read boundary (codebase-consistent).
+  4 non-test source modules remain on `@ts-nocheck`.
+- **Verified (automated):** `tsc --noEmit` clean; frontend **vitest 73 passed**; `agents/web/v2` bundle
+  **byte-identical**. No backend/route change.
+- **⚠️ Needs you:** nothing — compile-time only, behaviour-identical.
+
 ### HUD — type `modes4.tsx` (CDX-9 typing pass)
 - **What:** removed `@ts-nocheck` from `modes4.tsx` (the Finance / Health / Knowledge / Family agent-home
   modes). All 8 errors were the same optional-prop fix: the local `SubH4` **already renders `style={style}`
