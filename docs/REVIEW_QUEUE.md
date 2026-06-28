@@ -31,6 +31,20 @@
 
 ## Items (newest first)
 
+### HUD-v3 PR 13 — Ambient Capture stream (the privacy promise made visible)
+- **What:** the opt-in passive-capture backend (clipboard/browser/screenshot → KG, redacted, local) had
+  no UI. New `CapturePanel` (in `gap.tsx`, Memory cluster) shows the capture status (on/off + count) and
+  the captured stream — each item rendered as its **redacted `preview`** (never raw content), **individually
+  deletable** (`DELETE /api/capture/{id}`), with a **clear all** (`POST /api/capture/clear`). This is the
+  on-brand "the privacy promise made visible" surface from the handover's competitive backlog (§4.3).
+- **Verified (automated, end-to-end in-env):** `tsc --noEmit` exit 0; new `capture-panel.test.tsx` (+4:
+  shows a redacted preview + its surface · ✕ DELETEs a single item · clear-all POSTs · honest empty-state) —
+  full vitest **113/113** green; `npm run build` refreshed the served bundle, stale-bundle guard
+  reproducible. No backend/route change → parity untouched.
+- **⚠️ Needs you — live pixels + the privacy loop:** enable a capture surface, let it capture something,
+  open Console → Memory → AMBIENT CAPTURE, confirm only the redacted preview shows (not raw content), then
+  delete one item and clear-all and confirm they're gone (the deletable-privacy promise).
+
 ### HUD-v3 PR 12 (B1) — the DECISION INBOX (the north-star resolve action)
 - **What:** the most important interaction in the product, and it was **genuinely missing a control**.
   The HUD *read* the autonomy queue (`/tasks`, drawn as a network fan + a count) but had **no way to
