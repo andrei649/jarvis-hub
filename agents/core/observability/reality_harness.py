@@ -278,6 +278,42 @@ async def _probe_market_money_action_queued() -> bool:
         shutil.rmtree(d, ignore_errors=True)
 
 
+# ── The P4 Creative publish-is-held rail (hermetic, real policy + authorize) ───────────
+# Proves the publishing-safety property: the creative pipeline plans/drafts freely (a
+# reversible draft → GRANT), but the terminal release — publishing a finished campaign to
+# the world — is an irreversible side-effect the real kernel QUEUEs for approval. Nothing
+# is auto-published on the user's behalf. No mock, isolated KillSwitch.
+
+async def _probe_creative_release_queued() -> bool:
+    import os
+    import shutil
+    import tempfile
+
+    from agents.core.autonomy.policy import AutonomyPolicy
+    from agents.core.creative import plan_pipeline, release_action_payload
+    from agents.core.kernel import Action, Verdict, authorize
+    from agents.core.security.capability import KillSwitch
+
+    d = tempfile.mkdtemp(prefix="reality-creative-")
+    try:
+        ks = KillSwitch(path=os.path.join(d, "kill.json"))  # isolated, not the live halt
+        policy = AutonomyPolicy()
+        plan = plan_pipeline({"goal": "launch teaser", "platforms": ["youtube"]})
+
+        draft = authorize(Action(kind="creative.draft", title="draft script", scope="global"),
+                          kill_switch=ks, policy=policy)
+        release = authorize(
+            Action(kind="release.publish", title="release campaign to youtube", scope="global",
+                   payload=release_action_payload(plan["exports"][0])),
+            kill_switch=ks, policy=policy)
+        # Contract: drafting auto-runs (GRANT); publishing to the world is held (QUEUE).
+        return (draft.verdict is Verdict.GRANT
+                and release.verdict is Verdict.QUEUE
+                and "IRREVERSIBLE_OR_MONEY" in (release.reason or ""))
+    finally:
+        shutil.rmtree(d, ignore_errors=True)
+
+
 CASES: list[RealityCase] = [
     RealityCase("plugin:system-control", "egress-none-blocks-external",
                 "a no-network plugin's external call is refused by the egress gate",
@@ -291,6 +327,9 @@ CASES: list[RealityCase] = [
     RealityCase("plugin:balance", "market-money-action-queued",
                 "a market-triggered money action is QUEUED by the kernel; read-only monitoring is GRANTed",
                 _probe_market_money_action_queued),
+    RealityCase("plugin:social_x", "creative-release-queued",
+                "a creative release (publish-to-world) is QUEUED by the kernel; drafting is GRANTed",
+                _probe_creative_release_queued),
     RealityCase("component:kill_switch", "kernel-kill-switch-denies",
                 "an engaged kill-switch makes kernel.authorize DENY; disengaging reaches policy",
                 _probe_kill_switch_gates_kernel),

@@ -218,6 +218,8 @@
   "POST /api/channels/pairing/request": "pairing_request_api_channels_pairing_request_post",
   "POST /api/channels/{channel_id}/inbound": "channel_inbound_api_channels__channel_id__inbound_post",
   "POST /api/context/compress": "context_compress_api_context_compress_post",
+  "POST /api/creative/export-packs": "creative_export_packs_api_creative_export_packs_post",
+  "POST /api/creative/plan": "creative_plan_api_creative_plan_post",
   "POST /api/desktop/preview": "desktop_preview_api_desktop_preview_post",
   "POST /api/digest/run": "digest_run_api_digest_run_post",
   "POST /api/eval/datasets/run": "run_eval_dataset_api_eval_datasets_run_post",

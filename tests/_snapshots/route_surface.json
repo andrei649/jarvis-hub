@@ -218,6 +218,8 @@
   "POST /api/channels/pairing/request",
   "POST /api/channels/{channel_id}/inbound",
   "POST /api/context/compress",
+  "POST /api/creative/export-packs",
+  "POST /api/creative/plan",
   "POST /api/desktop/preview",
   "POST /api/digest/run",
   "POST /api/eval/datasets/run",

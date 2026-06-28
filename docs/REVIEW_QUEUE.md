@@ -31,6 +31,29 @@
 
 ## Items (newest first)
 
+### P4 — Creative / Publishing pack: a planner with provenance + a VERIFIED publish-safety rail (Track P)
+- **What:** `agents/core/creative/pipeline.py` — a pure/deterministic creative-pipeline **planner** over a
+  brief (no media-gen): `plan_pipeline` lays out the ordered stages (script → image_prompts → render →
+  assemble → export), each carrying **provenance** (its inputs + the null generator it *would* call) and
+  `generated: false` — nothing is ever faked as a finished asset. `build_export_packs` produces per-platform
+  delivery **specs** for **YouTube / Instagram / README** (aspect/size/format/caption-kind); an unmodeled
+  platform is dropped, never invented. Served at `POST /api/creative/plan` + `POST /api/creative/export-packs`
+  (`user_guard`'d, offline). `tests/test_creative_pipeline.py` (+7); parity gates reseeded.
+- **The publish-safety contract is VERIFIED with real primitives** (a hermetic `reality_harness` case
+  promoting `plugin:social_x`): the pipeline drafts/plans freely (`creative.draft` → **GRANT**), but the
+  terminal **release** — publishing a finished campaign to the world (an irreversible side-effect) — is held
+  by the real `kernel.authorize` (`IRREVERSIBLE_OR_MONEY` → **QUEUE**). So **nothing is auto-published on
+  your behalf**: you approve every release.
+- **Verified (automated):** `tests/test_creative_pipeline.py` 7 passed (plan stages + provenance, export
+  specs for the 3 platforms, honest empty-brief + dropped-unknown-target, the release→QUEUE governance
+  proof, and the reality-case promotion); ruff + bandit clean; all parity gates green (334 routes); STATUS
+  at 3,070 tests.
+- **⚠️ NEEDS YOU (owner-gated, live):** the engine *plans* — it doesn't *render or publish*. Real media
+  generation (image/video models) and the platform upload APIs need keys + network and are owner-gated
+  wiring (`docs/OWNER_TASKS.md`). Worth a manual smoke once wired: POST a brief to `/api/creative/plan`,
+  confirm the stages/export specs read right, and verify a release lands in the approval queue (never
+  auto-published).
+
 ### P3 — Market Intel + Finance pack: offline intel + a VERIFIED money-safety rail (Track P)
 - **What:** `agents/core/market/analyze.py` — a pure/deterministic market-intel engine over *provided*
   quotes/positions (no live fetch): `evaluate_watchlist` (band breaches → alerts; an absent quote is an
