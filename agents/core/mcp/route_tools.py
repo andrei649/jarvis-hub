@@ -57,12 +57,19 @@ class RouteToolSpec:
     Note: the input schema is **not** declared here — it is reflected from the
     bound handler's signature at build time (see ``derive_input_schema``), so it
     cannot drift from the route's real parameters.
+
+    ``guard`` (0.36) declares the route's auth posture — ``open`` / ``user`` /
+    ``admin`` — and is **pinned to ``tests/_snapshots/route_auth.json``** (the
+    single source of truth) by a parity guard, so the allow-list can't drift from
+    the route's real guard nor silently expose an over-privileged route as an
+    agent read-tool.
     """
 
     name: str
     path: str
     summary: str
     method: str = "GET"
+    guard: str = "user"
 
 
 # ── The allow-list: curated, READ-ONLY routes only ──────────────────────────────
@@ -74,16 +81,19 @@ ROUTE_TOOL_ALLOWLIST: tuple[RouteToolSpec, ...] = (
         name="status",
         path="/status",
         summary="Hub health: version, system info, LLM/model state, agent roster.",
+        guard="open",
     ),
     RouteToolSpec(
         name="memory_search",
         path="/api/memory/search",
         summary="Fused recall over memory (vector + knowledge-graph). Read-only.",
+        guard="user",
     ),
     RouteToolSpec(
         name="dashboard",
         path="/dashboard",
         summary="HUD dashboard payload (weather, news, agent summary). Read-only.",
+        guard="user",
     ),
 )
 
@@ -441,6 +451,7 @@ class MutatingRouteSpec:
     summary: str
     input_schema: dict
     method: str = "POST"
+    guard: str = "user"   # 0.36: pinned to route_auth.json; a write tool is never "open"
 
 
 # ── The MUTATING allow-list: curated, WRITE routes only ─────────────────────────
