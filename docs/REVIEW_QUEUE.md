@@ -31,6 +31,23 @@
 
 ## Items (newest first)
 
+### 0.43 — Learning Coach Pack (SM-2 spaced repetition + curriculum, stateless)
+- **What:** a new offline study-coach pack (`agents/core/coach/`, separate from the agent-promotion
+  `learning/scheduler.py`). Three stateless capabilities — **SM-2 spaced repetition**
+  (`POST /api/coach/review` → a card's next interval/ease/due-day), a **review-session builder**
+  (`POST /api/coach/session` → today's due cards + capped new cards, with honest deferred-counts), and a
+  **curriculum planner** (`POST /api/coach/curriculum` → topics ordered by prerequisites, split into
+  sessions). The caller holds card state; the server only computes the schedule.
+- **⚠️ Needs you — nothing, but worth a sanity-check on the algorithm:** it's the textbook SM-2 (Anki's
+  lineage), so `review` on a fresh card with quality 5 → interval **1 day**, again → **6 days**, then it
+  scales by the ease factor; a poor grade (<3) **resets** repetitions and floors ease at 1.3. The planner
+  surfaces prerequisite **cycles** and **unknown prereqs** rather than silently dropping topics. It plans
+  and schedules only — it never invents lesson content and never persists.
+- **Verified (automated):** `tests/test_coach_pack.py` 8 passed (the 1-day/6-day/ease-scaled SM-2 steps,
+  lapse-reset + ease floor, input-not-mutated, due/new split with honest counts, never-reviewed-is-new,
+  prereq ordering, and honest cycle/unknown reporting); ruff + bandit clean; parity reseeded for the 3 new
+  user-guarded routes; STATUS at 3,143 tests / 345 routes.
+
 ### 0.42 — Security Skills Pack (curated ATT&CK / D3FEND / NIST CSF knowledge, read-only)
 - **What:** a new offline knowledge pack (`agents/core/security_skills/`, separate from the `security/`
   infra) over **public** taxonomies — MITRE ATT&CK (all 14 tactics + a curated subset of techniques with
