@@ -76,7 +76,7 @@ construction).
 | # | Surface | Target | Endpoint(s) — real | Notes |
 |---|---|---|---|---|
 | C1 ✅ | Missions board/drawer (pause/resume/accept) | `gap.tsx` `MissionsPanel` (Autonomy cluster) | `GET /api/missions` · `POST /api/missions/{id}/{start\|pause\|resume\|complete\|cancel}` | **renamed** (see §1) — applied. Contextual governed-action controls per status. **Shipped PR 3.** |
-| C2 | Autonomy AUTO/ASK/OFF + per-agent policies | `modes.tsx` Autonomy (exists) | `GET·POST /autonomy/mode` · `GET·POST /autonomy/policy` | per-agent policy shipped PR #418; wire the per-agent control |
+| C2 ✅ | Autonomy AUTO/ASK/OFF + per-agent policies | global: `modes2.tsx` `AutonomyMode` (exists); **per-agent: `gap.tsx` `AgentAutonomyPanel`** | `GET·POST /autonomy/mode` · `GET·POST /autonomy/policy` | per-agent policy shipped PR #418; **the per-agent control surface shipped PR 5** (set/clear AUTO·ASK·OFF per agent; `default` clears) |
 | C3 | Memory: recall search · remember · forget · KG edit/delete · ingest · local-docs | `modes.tsx` Memory (exists) | `/api/memory/search` · `/remember` · `/decay/forget` · `/api/kg/*` · `/api/local-docs/index` | |
 | C4 | Cockpit streaming + feedback + voice + VLM | `cockpit.tsx` (exists) | `POST /chat/stream` · `/api/feedback` · `/api/voice/capabilities` · `/tts`(`/stream`) · `/api/vlm/describe` | streaming already partly wired |
 | C5 | A2A approval inbox · Rooms | `modes3.tsx` Interop (exists) | `/api/a2a/inbox*` · `/api/rooms` | |

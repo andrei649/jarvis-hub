@@ -31,6 +31,28 @@
 
 ## Items (newest first)
 
+### HUD-v3 PR 5 (C2) — Per-agent autonomy dial in the Console (closes PR 0's loop)
+- **What:** PR 0 (#418) made per-agent **AUTO/ASK/OFF** *enforceable* (`AutonomyPolicy.agent_modes`, the
+  kernel threads `action.agent`) but shipped **no UI**. This is that control surface. New
+  `AgentAutonomyPanel` (in `gap.tsx`, Autonomy & Agents cluster) reads `GET /autonomy/policy`
+  (`{global, agents}`), shows the global mode + each per-agent override (color-coded auto/ask/off), lets
+  you **set** an override (agent name + mode select → `POST {agent, mode}`) and **clear** one (✕ →
+  `POST {agent, mode:"default"}`, which falls back to global). Admin-guarded; complements the existing
+  global `AutonomyMode` in `modes2.tsx`.
+- **Why this one:** it completes the story I started this thread with — the backend capability had no
+  front door. Now an owner can quiet a single noisy agent (e.g. `vision → off`) while the rest keep
+  acting, straight from the Console.
+- **Honest empty-state:** with no overrides the panel says *"every agent follows the global mode (<mode>)"*
+  rather than implying per-agent config that isn't there.
+- **Verified (automated, end-to-end in-env):** `tsc --noEmit` exit 0; new `agent-autonomy-panel.test.tsx`
+  (+4: shows global + an override · ✕ clears with `mode=default` · honest empty-state · set POSTs only
+  when an agent is named) — full vitest **86/86** green; `npm run build` refreshed the served bundle,
+  stale-bundle guard reproducible. No backend/route change → parity untouched.
+- **⚠️ Needs you — live pixels + a real effect:** open Console → Autonomy & Agents → PER-AGENT AUTONOMY
+  against a running backend (admin token set); set one agent to `off`, confirm it shows, then confirm that
+  agent's actions actually escalate to the approval queue while others still act (the PR 0 enforcement),
+  and that ✕ returns it to the global mode.
+
 ### HUD-v3 PR 4 (C10) — Mesh Peers registry control in the Console
 - **What:** the A2A **mesh peer registry** — allowlist a peer, get a one-time shared secret, remove a
   peer — is admin-guarded and had **no control surface** (only the A2A approval *inbox* did). New
