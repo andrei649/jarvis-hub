@@ -83,7 +83,7 @@ construction).
 | C6 ✅ | Governance / posture / loop-breaker | `gap.tsx` `GovernancePanel` + `PosturePanel` (Trust); loop-breaker `LoopBreakerPanel` (exists) | `/api/security/governance` · `/api/security/posture` · `/api/security/loop-breaker`(`/reset`) | **renamed** (see §1) — applied. Scorecard (suite scores + gate) + packaged posture. **Shipped PR 6.** |
 | C7 | Build: workflows · skills · sandbox · templates | `modes2.tsx` Build (exists) | `/api/workflows` · `/api/skills/marketplace*` · `/sandbox/execute` | |
 | C8 | Observe: quality-threshold · arena · evals · review | `modes2.tsx` Observe (exists) | `/api/quality/threshold` · `/api/arena/*` · eval/review routes | |
-| C9 | Backup / export / forget-me · onboarding | `modes4.tsx` Admin/Life + `shell.tsx` onboarding | `/api/admin/export` · `/api/admin/forget` · onboarding route | onboarding is a real 4-step wizard in the prototype |
+| C9 ◑ | Backup / export / forget-me · onboarding | **backup+export: `gap.tsx` `BackupPanel`** (Admin); onboarding: `OnboardingPanel` (exists) | `GET·POST /api/admin/backup` · `POST /api/admin/backup/verify` · `POST /api/admin/export` · `/api/admin/forget` · onboarding route | **backup + restore-drill + export shipped PR 7**; forget-me + onboarding-port remain |
 | C10 ✅ | Mesh devices / sync | `gap.tsx` `MeshPeersPanel` (Interop cluster) | `GET·POST·DELETE /api/a2a/peers` (admin) | Allowlist + one-time shared secret; list/add/remove. **Shipped PR 4.** |
 
 ### Phase D — tail (P2)

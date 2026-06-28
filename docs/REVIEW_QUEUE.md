@@ -31,6 +31,24 @@
 
 ## Items (newest first)
 
+### HUD-v3 PR 7 (C9) — Backup & Export (data-sovereignty controls) in the Console
+- **What:** the 0.14/H23.8 backup + H23.9 export backend (consistent SQLite snapshots, restore-drill,
+  portable JSON takeout) had **no control surface**. New `BackupPanel` (in `gap.tsx`, Admin cluster) is
+  the data-sovereignty front door: lists snapshots (size + `enc` tag for encrypted archives via
+  `GET /api/admin/backup`), **back up now** (`POST /api/admin/backup`), **restore-drill verify**
+  (`POST /api/admin/backup/verify` → surfaces the OK + file count), and **export my data**
+  (`POST /api/admin/export` → reports the written size). All admin-guarded.
+- **Why this one:** north-star aligned — "your data, on your machine, yours to take." It makes the backup
+  *and the proof it restores* a one-tap operation instead of a CLI-only feature.
+- **Verified (automated, end-to-end in-env):** `tsc --noEmit` exit 0; new `backup-panel.test.tsx` (+4:
+  lists a snapshot with size + enc tag · back-up-now POSTs · restore-drill POSTs verify and shows the OK ·
+  export-me POSTs and reports the size) — full vitest **93/93** green; `npm run build` refreshed the served
+  bundle, stale-bundle guard reproducible. No backend/route change → parity untouched.
+- **⚠️ Needs you — live pixels + a real backup/restore:** open Console → Admin → BACKUP & EXPORT against a
+  running backend (admin token); click **back up now**, confirm a snapshot appears; click **verify**,
+  confirm the restore-drill reports OK; click **export my data**, confirm the export is written and the
+  size is plausible. (These fire real admin operations on your data root.)
+
 ### HUD-v3 PR 6 (C6) — Governance scorecard + Security posture panels in the Console
 - **What:** two read-only Trust panels closing C6 (loop-breaker, the third leg, already had a panel).
   `GovernancePanel` reads the **public** trust scorecard `GET /api/security/governance` — per-suite
