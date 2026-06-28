@@ -48,6 +48,7 @@ RULES = [
     ("/api/onboarding", "cockpit"),  # H23.20 first-run wizard + activation funnel (lands in the cockpit)
     ("/api/trust/status", "topbar"),
     # memory & knowledge
+    ("/api/osint/", "knowledge"),  # P2 OSINT pack — the Knowledge/"Vision · OSINT" surface (modes4)
     ("/api/kg/", "memory"), ("/api/memory/", "memory"), ("/memory/stats", "memory"),
     ("/memory", "memory"), ("/api/local-docs", "memory"), ("/api/capture", "memory"),
     ("/api/context", "memory"),  # runtime context compression (H20.3)

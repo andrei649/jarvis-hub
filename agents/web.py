@@ -943,6 +943,7 @@ from agents.core.routers.models_llm import router as _models_llm_router  # noqa:
 from agents.core.routers.multimodal import router as _multimodal_router  # noqa: E402
 from agents.core.routers.notes import router as _notes_router  # noqa: E402
 from agents.core.routers.oauth import router as _oauth_router  # noqa: E402
+from agents.core.routers.osint import router as _osint_router  # noqa: E402
 from agents.core.routers.pairing import router as _pairing_router  # noqa: E402
 from agents.core.routers.dashboard import router as _dashboard_router  # noqa: E402
 from agents.core.routers.agents_api import router as _agents_api_router  # noqa: E402
@@ -976,6 +977,7 @@ app.include_router(_browser_router)
 app.include_router(_capture_router)
 app.include_router(_rooms_router)
 app.include_router(_notes_router)
+app.include_router(_osint_router)
 app.include_router(_actions_router)
 app.include_router(_arena_router)
 app.include_router(_review_router)

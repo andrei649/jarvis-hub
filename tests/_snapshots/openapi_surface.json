@@ -263,6 +263,8 @@
   "POST /api/onboarding/funnel": "onboarding_funnel_api_onboarding_funnel_post",
   "POST /api/oracle/conflicts/resolve": "oracle_resolve_conflicts_api_oracle_conflicts_resolve_post",
   "POST /api/oracle/sync": "oracle_sync_api_oracle_sync_post",
+  "POST /api/osint/brief": "osint_brief_api_osint_brief_post",
+  "POST /api/osint/correlate": "osint_correlate_api_osint_correlate_post",
   "POST /api/payments/mandates": "create_payment_mandate_api_payments_mandates_post",
   "POST /api/payments/request": "request_payment_api_payments_request_post",
   "POST /api/payments/{payment_id}/approve": "approve_payment_api_payments__payment_id__approve_post",

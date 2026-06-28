@@ -267,6 +267,8 @@
   "POST /api/onboarding/funnel": "user",
   "POST /api/oracle/conflicts/resolve": "admin",
   "POST /api/oracle/sync": "admin",
+  "POST /api/osint/brief": "user",
+  "POST /api/osint/correlate": "user",
   "POST /api/payments/mandates": "admin",
   "POST /api/payments/request": "admin",
   "POST /api/payments/{payment_id}/approve": "admin",
