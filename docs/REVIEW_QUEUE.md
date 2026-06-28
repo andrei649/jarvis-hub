@@ -31,6 +31,26 @@
 
 ## Items (newest first)
 
+### HUD — type `modes2.tsx` + fix a dropped-style drift ⚠️ FIRST VISUAL CHANGE (CDX-9 typing pass)
+- **What:** removed `@ts-nocheck` from `modes2.tsx` (the Autonomy / Build / Observe / Interop modes).
+  Stripping it exposed a real **dropped-style bug**: this file's *local* `SubH` was
+  `function SubH({ children })` rendering `<div className="sub-h">{children}</div>` — it accepted **no**
+  `style` prop, yet **6 secondary section headers** pass `style={{marginTop:16}}` (or `14`):
+  OBSERVER LOG, PER-AGENT SCOPE, MODEL ARENA, RESILIENCE, MCP SERVERS, WEBHOOKS. The margin was silently
+  discarded. The **sibling `SubH` in `world-intelligence.tsx` renders `style={style}`** and applies the
+  identical `marginTop:16` for the identical purpose — so modes2's headers have been missing the app-wide
+  spacing the rest of the HUD uses. I made modes2's `SubH` match (`{ children, style }` → `style={style}`).
+  Also narrowed `setAutonomyMode(m)`'s `Promise<unknown>` result where `.mode` is read (type-only).
+- **⚠️ NEEDS YOU — this is the FIRST slice that changes the rendered bundle.** It adds ~16px top-margin to
+  those 6 section headers in the Autonomy/Observe/Interop panels. **Eyeball those panels** to confirm the
+  extra spacing looks right (it should — it matches how the same headers already render in the World
+  Intelligence panel). If you'd rather keep them tight, it's a one-line revert (drop `style={style}` from
+  modes2's `SubH`). Low-risk: the change brings modes2 *into consistency* with the rest of the app, it
+  doesn't invent new styling.
+- **Verified (automated):** `tsc --noEmit` clean; frontend **vitest 73 passed**; `npm run build` rebuilt the
+  bundle (new hash `index-C6ME69L3.js`, deterministic) — committed so the `hud-v2-build` parity guard
+  matches. No backend/route change.
+
 ### HUD — type `voice.ts` (CDX-9 typing pass)
 - **What:** removed `@ts-nocheck` from `frontend/src/voice.ts` (the browser-side hands-free voice loop:
   mic capture → VAD segmentation → `/api/voice/stt` → chat turn → server `/tts` playback with a
