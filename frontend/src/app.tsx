@@ -1,4 +1,3 @@
-// @ts-nocheck
 /* HUD v2 · APP ROOT — P0: shell + cockpit are live; the other modes render an
    honest placeholder and get ported from the prototype in the next phase. */
 import React, { useState, useEffect, useRef, useCallback } from 'react';
@@ -48,7 +47,7 @@ function App() {
   const [dotgrid, setDotgrid] = useState(() => loadPref('dotgrid', UI_PREFS.dotgrid));
   // P5 — honor the OS reduced-motion preference (gates packets/ambient animation)
   const motion = (typeof window !== 'undefined' && window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches) ? 'calm' : 'lively';
-  const ia = 'rail';
+  const ia = 'rail' as 'rail' | 'tabs';
   const [accent, setAccent] = useState(() => { try { return localStorage.getItem('hud.accent') || 'cyan'; } catch { return 'cyan'; } });
   const [lang, setLang] = useState(() => { try { return localStorage.getItem('hud.lang') || 'en'; } catch { return 'en'; } });
   // DEMO mode (opt-in, watermarked): OFF by default → the HUD shows ONLY real
@@ -63,7 +62,7 @@ function App() {
   const [agents, setAgents] = useState(demo ? V2.AGENTS : []);
   const [activeId, setActiveId] = useState('jarvis');
   const [focusId, setFocusId] = useState(null);
-  const [messages, setMessages] = useState(demo ? V2.SEED_MESSAGES : []);
+  const [messages, setMessages] = useState<any[]>(demo ? V2.SEED_MESSAGES : []);
   const [thinking, setThinking] = useState(null);
   const [trace, setTrace] = useState(null);
   const [centerTab, setCenterTab] = useState('conversation');
@@ -174,7 +173,7 @@ function App() {
     setCenterTab('cognition');
     setAgents((prev) => prev.map((a) => (tr.selected.includes(a.id) ? { ...a, status: 'busy' } : a)));
     setThinking({ label: t.think + ' · classify', route: null });
-    const seq = [
+    const seq: Array<[number, () => void]> = [
       [250, () => setTrace((p) => mark(p, 0, 'on'))],
       [700, () => { setTrace((p) => mark(p, 0, 'done', 1, 'on')); setThinking({ label: t.think + ' · route', route: tr.selected.map((s) => s.toUpperCase()) }); }],
       [1400, () => { setTrace((p) => mark(p, 1, 'done', 2, 'on')); setThinking({ label: t.think + ' · gather', route: tr.selected.map((s) => s.toUpperCase()) }); }],
@@ -212,7 +211,7 @@ function App() {
         setMessages((m) => { const c = [...m]; if (idx >= 0 && c[idx]) c[idx] = { ...c[idx], text: finalText, who: evt.agent || activeId }; else c.push({ role: 'agent', who: evt.agent || activeId, ts: fmtTimeShort(new Date()), text: finalText }); return c; });
         setThinking(null);
         resolve(finalText);
-        apiGet('/api/cognition').then((cog) => {
+        apiGet('/api/cognition').then((cog: any) => {
           const tr = traceFromCognition(cog, text);
           setTrace({ stages: tr.stages.map((s) => ({ ...s, state: 'done' })) });
           // HONESTY: real plugin reads + locality from the cognition snapshot — never a
@@ -353,7 +352,7 @@ function App() {
   );
 }
 
-function mark(trace, i, state, j, jstate) {
+function mark(trace, i, state, j?, jstate?) {
   if (!trace) return trace;
   const stages = trace.stages.map((s, k) => (k === i ? { ...s, state } : (j !== undefined && k === j) ? { ...s, state: jstate } : s));
   return { ...trace, stages };

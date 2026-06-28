@@ -31,6 +31,27 @@
 
 ## Items (newest first)
 
+### HUD — type `app.tsx` (CDX-9 typing pass)
+- **What:** removed `@ts-nocheck` from `app.tsx` (the root composition — state, the streaming-turn loop,
+  the layout). The most complex slice; 11 errors → 5 root type-only fixes (bundle byte-identical):
+  - `messages` state was inferred as a narrow 2-shape literal union, so the optimistic-update callbacks
+    didn't type-match → `useState<any[]>` (clears 3 cascading `SetStateAction` errors at the source).
+  - the `seq` staged-timer array was widened from `[number, fn]` tuples to a union, breaking `setTimeout` →
+    annotated `Array<[number, () => void]>`.
+  - `mark()`'s trailing `j, jstate` are optional (the body guards `j !== undefined`) → `j?, jstate?`.
+  - `cog` from `apiGet('/api/cognition')` → `: any` boundary.
+  - **a small dead-code find:** `const ia = 'rail'` is hardcoded, so the `ia === 'tabs'` (Tabs-layout)
+    branch is unreachable. Typed it `'rail' as 'rail' | 'tabs'` so the comparison is valid **without
+    changing behaviour** — Tabs stays unrendered exactly as today.
+  2 non-test source modules remain on `@ts-nocheck` (the last two: `shell`/`gap`).
+- **Verified (automated):** `tsc --noEmit` clean; frontend **vitest 73 passed**; `agents/web/v2` bundle
+  **byte-identical**. No backend/route change.
+- **⚠️ Needs you (informational, not a bug):** the **tabs information-architecture** is dead code — `ia`
+  is pinned to `'rail'`, so the alternative `<Tabs>` top-nav layout (imported from `shell.tsx`) never
+  renders. It was evidently an A/B layout that got fixed to the rail. No action needed for the typing pass;
+  flagging in case you want to either wire `ia` to a real preference (and offer tabs again) or delete the
+  dead `<Tabs>` path in a future cleanup.
+
 ### HUD — type `modes.tsx` (CDX-9 typing pass)
 - **What:** removed `@ts-nocheck` from `modes.tsx` (Agents / Trust / Memory modes). 9 errors, all type-only:
   - three **API-response boundaries** — `decidePayment`, `setKillSwitch`, `memorySearch` all return
