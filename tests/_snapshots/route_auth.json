@@ -133,6 +133,7 @@
   "GET /api/skills/pending": "admin",
   "GET /api/status": "open",
   "GET /api/subagents": "user",
+  "GET /api/support/bundle": "admin",
   "GET /api/sync": "user",
   "GET /api/system/profiles": "user",
   "GET /api/toolrpc/tools": "user",

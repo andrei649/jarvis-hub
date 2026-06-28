@@ -31,6 +31,25 @@
 
 ## Items (newest first)
 
+### 0.55 — Design Partner Kit: diagnostic "issue bundle" (non-sensitive, admin-only)
+- **What:** `GET /api/support/bundle` assembles one snapshot a design partner can attach to a support
+  request — app version + posture (hardened flags + active system profile) + capability-readiness roll-ups
+  + per-plugin egress tallies + recent audit **event counts** & hash-chain integrity + route count — so an
+  issue is triagable without a screen-share or a risky data dump. Pairs with the H23.21 feedback/NPS widget
+  to round out the kit.
+- **⚠️ Needs you — confirm it's safe to hand to a partner (it's designed to be):** safety is by
+  **allow-list, not redaction** — the bundle only ever includes the specific aggregates above, never raw
+  config, secrets, tokens, message content, audit *previews*, or PII. The audit section is **counts by
+  event type only** (e.g. `{"scan": 12, "kernel_grant": 3}`), never the events themselves. A test asserts no
+  `token`/`secret`/`password`/`api_key`/`authorization`/`private_key` substring appears anywhere in the
+  output. Still worth one real eyeball of `GET /api/support/bundle` on your machine to confirm you're
+  comfortable sharing it.
+- **Verified (automated):** `tests/test_support_bundle.py` 6 passed (all sections present + JSON-serializable;
+  meta carries version + stamp; posture reflects default-off hardened + balanced profile; audit counts-by-
+  type from a fake orch with no content leak; a failing source degrades to `{"error":"unavailable"}` instead
+  of crashing; and the no-sensitive-keys scan); ruff + bandit clean; parity reseeded for the 1 new admin
+  route; STATUS at 3,178 tests / 348 routes.
+
 ### 0.62 — System Profiles (usage-mode posture presets; default 'balanced' = no change)
 - **What:** named usage modes — **balanced** (default) / **gaming** / **ai** / **multimedia** / **admin** —
   like power plans for the assistant, selected with `JARVIS_SYSTEM_PROFILE` (same env-driven-posture pattern

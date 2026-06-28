@@ -133,6 +133,7 @@
   "GET /api/skills/pending",
   "GET /api/status",
   "GET /api/subagents",
+  "GET /api/support/bundle",
   "GET /api/sync",
   "GET /api/system/profiles",
   "GET /api/toolrpc/tools",
