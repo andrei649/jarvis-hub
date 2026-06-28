@@ -31,6 +31,19 @@
 
 ## Items (newest first)
 
+### HUD-v3 PR 16 — Security Skills browser (the 0.42 ATT&CK pack, now visible)
+- **What:** the 0.42 Security Skills pack (curated, offline ATT&CK / D3FEND / NIST CSF knowledge) had a
+  full read-only API but **no UI**. New `SecuritySkillsPanel` (in `gap.tsx`, Trust cluster) browses the
+  **ATT&CK tactics** (`GET /api/security-skills/tactics`), each expandable to its **curated techniques**
+  (`GET /api/security-skills/techniques?tactic=`). Read-only, user-guarded; nothing fabricated (the pack
+  carries its own DISCLAIMER + SOURCES).
+- **Verified (automated, end-to-end in-env):** `tsc --noEmit` exit 0; new `security-skills-panel.test.tsx`
+  (+2: lists a tactic · expanding it GETs `…/techniques?tactic=TA0001` and shows the technique) — full
+  vitest **120/120** green; `npm run build` refreshed the served bundle, stale-bundle guard reproducible.
+  No backend/route change → parity untouched.
+- **⚠️ Needs you — live pixels:** Console → Trust → SECURITY SKILLS; confirm the tactic list renders and
+  expanding one shows its techniques (it's a reference browser — low-risk, read-only).
+
 ### HUD-v3 PR 15 (B1+) — Decision Inbox `edit` action (completes the 4 decision options)
 - **What:** the Decision Inbox (PR 12) shipped accept/reject/defer but not **edit** — the backend's 4th
   action (`apply_decision`), which lets you *modify a proposed action's payload before approving* (e.g.
