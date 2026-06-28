@@ -235,8 +235,11 @@ class PluginHTTPClient:
         else:
             return
         import os
+        from .security import hardened
         # SEC-5: strict by default; opt out with JARVIS_STRICT_EGRESS=0/false/no.
-        strict = os.environ.get("JARVIS_STRICT_EGRESS", "1").strip().lower() not in ("0", "false", "no")
+        # CDX-12: the hardened profile forces strict and ignores the =0 downgrade.
+        strict = (hardened.strict_egress_forced()
+                  or os.environ.get("JARVIS_STRICT_EGRESS", "1").strip().lower() not in ("0", "false", "no"))
         if strict:
             raise PluginEgressError(f"egress blocked: {violation}")
         logger.warning("egress policy violation (JARVIS_STRICT_EGRESS=0, allowing): %s", violation)

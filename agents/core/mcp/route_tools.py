@@ -254,7 +254,13 @@ def mutating_tools_enabled() -> bool:
     Independent of ``route_tools_enabled()``. Mutating route tools are exposed
     only when BOTH switches are on (see ``build_mutating_route_tools``), so a
     single flag can never widen the write surface by itself.
+
+    CDX-12: the hardened profile forces this off — ``JARVIS_MCP_MUTATING_TOOLS``
+    cannot re-open the write surface while ``JARVIS_HARDENED`` is on.
     """
+    from ..security import hardened
+    if hardened.mutating_mcp_blocked():
+        return False
     val = os.environ.get(MUTATING_TOOL_ENV, "").strip().lower()
     return val in ("1", "true", "yes", "on")
 

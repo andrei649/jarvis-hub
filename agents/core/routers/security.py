@@ -286,6 +286,7 @@ async def security_posture():
 
     # Skill signing posture.
     from core.skills import signing as _signing
+    from agents.core.security import hardened as _hardened
     skills = list(getattr(orch.skills, "skills", {}).values()) if getattr(orch, "skills", None) else []
     skill_rows = [s.to_dict() for s in skills]
     untrusted = [s for s in skill_rows if not s.get("trusted")]
@@ -312,4 +313,6 @@ async def security_posture():
         },
         "sandbox": {"docker_available": sandbox_sec.get("docker", False), **sandbox_sec},
         "guardrails": {"mode": orch.get_setting("security.guardrails_mode", "WARN")},
+        # CDX-12: the Design-Partner / Hardened profile posture (opt-in, default-off).
+        "hardened": _hardened.posture(),
     })
