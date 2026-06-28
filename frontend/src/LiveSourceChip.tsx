@@ -1,4 +1,3 @@
-// @ts-nocheck
 /* CDX-9 — make LIVE vs SEED visible.
 
    The HUD modes stream real backend data when a source responds (useLiveModes() marks the

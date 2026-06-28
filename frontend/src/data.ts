@@ -1,4 +1,3 @@
-// @ts-nocheck
 /* ============================================================
    HUD v2 · DATA  (self-contained — real roster/glyphs/dossiers
    lifted from product data.js, plus prototype-only mock streams)
