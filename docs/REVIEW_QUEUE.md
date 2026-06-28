@@ -31,6 +31,21 @@
 
 ## Items (newest first)
 
+### CDX-10 — `_sys_info()` is now honest (no fabricated host/CPU/GPU on the readiness screen)
+- **What:** `/status` (the trust/readiness screen) used to show plausible-but-**fabricated** hardware when
+  probes failed — `host="BONOBO-WS"`, `gpu="RTX 5090 · 24GB"`, a hardcoded "Intel Core Ultra 9" CPU brand,
+  and a `model`/`backend` it never actually probed. `_sys_info()` now probes every value (real hostname,
+  real CPU model via `platform.processor()`→`/proc/cpuinfo`→thread count, real RAM via psutil, real GPU
+  name+VRAM via `nvidia-smi` guarded by `shutil.which`) and degrades to **`unknown` / `none` / `0`** on
+  failure — never a guessed card or model. Same "never fake" ethos as the packs' `no_quote` / `generated:false`.
+- **⚠️ Needs you (cosmetic, expected):** on your real hardware the screen will now show your *actual*
+  host/CPU/GPU; on a box without an NVIDIA GPU it shows `gpu: none` (not a fake card), and `model`/`backend`
+  read `unknown` here (the live model is shown by the LLM-state panels, not this hardware probe). Glance at
+  the readiness screen once to confirm the real values populate as you'd expect.
+- **Verified (automated):** `tests/test_sys_info_honest.py` 5 passed (shape stable; the old fabrications are
+  gone; host is the real hostname or `unknown`; GPU is honest when absent); ruff + bandit clean (bandit
+  baseline regenerated 125→119 as the `contextlib.suppress` refactor removed stale `try/except/pass` entries).
+
 ### P4 — Creative / Publishing pack: a planner with provenance + a VERIFIED publish-safety rail (Track P)
 - **What:** `agents/core/creative/pipeline.py` — a pure/deterministic creative-pipeline **planner** over a
   brief (no media-gen): `plan_pipeline` lays out the ordered stages (script → image_prompts → render →

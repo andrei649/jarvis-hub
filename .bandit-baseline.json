@@ -1,17 +1,17 @@
 {
   "errors": [],
-  "generated_at": "2026-06-24T14:10:02Z",
+  "generated_at": "2026-06-28T09:41:47Z",
   "metrics": {
     "_totals": {
-      "CONFIDENCE.HIGH": 82,
+      "CONFIDENCE.HIGH": 78,
       "CONFIDENCE.LOW": 0,
       "CONFIDENCE.MEDIUM": 41,
       "CONFIDENCE.UNDEFINED": 0,
       "SEVERITY.HIGH": 0,
-      "SEVERITY.LOW": 102,
-      "SEVERITY.MEDIUM": 21,
+      "SEVERITY.LOW": 100,
+      "SEVERITY.MEDIUM": 19,
       "SEVERITY.UNDEFINED": 0,
-      "loc": 37795,
+      "loc": 40827,
       "nosec": 0,
       "skipped_tests": 0
     },
@@ -63,7 +63,7 @@
       "SEVERITY.LOW": 0,
       "SEVERITY.MEDIUM": 0,
       "SEVERITY.UNDEFINED": 0,
-      "loc": 287,
+      "loc": 289,
       "nosec": 0,
       "skipped_tests": 0
     },
@@ -167,7 +167,7 @@
       "SEVERITY.LOW": 2,
       "SEVERITY.MEDIUM": 0,
       "SEVERITY.UNDEFINED": 0,
-      "loc": 192,
+      "loc": 203,
       "nosec": 0,
       "skipped_tests": 0
     },
@@ -232,7 +232,7 @@
       "SEVERITY.LOW": 0,
       "SEVERITY.MEDIUM": 0,
       "SEVERITY.UNDEFINED": 0,
-      "loc": 36,
+      "loc": 48,
       "nosec": 0,
       "skipped_tests": 0
     },
@@ -414,7 +414,7 @@
       "SEVERITY.LOW": 0,
       "SEVERITY.MEDIUM": 0,
       "SEVERITY.UNDEFINED": 0,
-      "loc": 184,
+      "loc": 200,
       "nosec": 0,
       "skipped_tests": 0
     },
@@ -856,7 +856,7 @@
       "SEVERITY.LOW": 0,
       "SEVERITY.MEDIUM": 0,
       "SEVERITY.UNDEFINED": 0,
-      "loc": 72,
+      "loc": 73,
       "nosec": 0,
       "skipped_tests": 0
     },
@@ -899,6 +899,32 @@
       "nosec": 0,
       "skipped_tests": 0
     },
+    "agents/core/creative/__init__.py": {
+      "CONFIDENCE.HIGH": 0,
+      "CONFIDENCE.LOW": 0,
+      "CONFIDENCE.MEDIUM": 0,
+      "CONFIDENCE.UNDEFINED": 0,
+      "SEVERITY.HIGH": 0,
+      "SEVERITY.LOW": 0,
+      "SEVERITY.MEDIUM": 0,
+      "SEVERITY.UNDEFINED": 0,
+      "loc": 12,
+      "nosec": 0,
+      "skipped_tests": 0
+    },
+    "agents/core/creative/pipeline.py": {
+      "CONFIDENCE.HIGH": 0,
+      "CONFIDENCE.LOW": 0,
+      "CONFIDENCE.MEDIUM": 0,
+      "CONFIDENCE.UNDEFINED": 0,
+      "SEVERITY.HIGH": 0,
+      "SEVERITY.LOW": 0,
+      "SEVERITY.MEDIUM": 0,
+      "SEVERITY.UNDEFINED": 0,
+      "loc": 102,
+      "nosec": 0,
+      "skipped_tests": 0
+    },
     "agents/core/data_export.py": {
       "CONFIDENCE.HIGH": 0,
       "CONFIDENCE.LOW": 0,
@@ -921,7 +947,7 @@
       "SEVERITY.LOW": 0,
       "SEVERITY.MEDIUM": 1,
       "SEVERITY.UNDEFINED": 0,
-      "loc": 193,
+      "loc": 202,
       "nosec": 0,
       "skipped_tests": 0
     },
@@ -952,13 +978,13 @@
       "skipped_tests": 0
     },
     "agents/core/digest.py": {
-      "CONFIDENCE.HIGH": 2,
+      "CONFIDENCE.HIGH": 0,
       "CONFIDENCE.LOW": 0,
       "CONFIDENCE.MEDIUM": 0,
       "CONFIDENCE.UNDEFINED": 0,
       "SEVERITY.HIGH": 0,
-      "SEVERITY.LOW": 1,
-      "SEVERITY.MEDIUM": 1,
+      "SEVERITY.LOW": 0,
+      "SEVERITY.MEDIUM": 0,
       "SEVERITY.UNDEFINED": 0,
       "loc": 129,
       "nosec": 0,
@@ -990,6 +1016,19 @@
       "nosec": 0,
       "skipped_tests": 0
     },
+    "agents/core/feedback_store.py": {
+      "CONFIDENCE.HIGH": 0,
+      "CONFIDENCE.LOW": 0,
+      "CONFIDENCE.MEDIUM": 0,
+      "CONFIDENCE.UNDEFINED": 0,
+      "SEVERITY.HIGH": 0,
+      "SEVERITY.LOW": 0,
+      "SEVERITY.MEDIUM": 0,
+      "SEVERITY.UNDEFINED": 0,
+      "loc": 105,
+      "nosec": 0,
+      "skipped_tests": 0
+    },
     "agents/core/heartbeat.py": {
       "CONFIDENCE.HIGH": 4,
       "CONFIDENCE.LOW": 0,
@@ -1012,7 +1051,7 @@
       "SEVERITY.LOW": 0,
       "SEVERITY.MEDIUM": 0,
       "SEVERITY.UNDEFINED": 0,
-      "loc": 277,
+      "loc": 344,
       "nosec": 0,
       "skipped_tests": 0
     },
@@ -1159,6 +1198,110 @@
       "nosec": 0,
       "skipped_tests": 0
     },
+    "agents/core/kernel/__init__.py": {
+      "CONFIDENCE.HIGH": 0,
+      "CONFIDENCE.LOW": 0,
+      "CONFIDENCE.MEDIUM": 0,
+      "CONFIDENCE.UNDEFINED": 0,
+      "SEVERITY.HIGH": 0,
+      "SEVERITY.LOW": 0,
+      "SEVERITY.MEDIUM": 0,
+      "SEVERITY.UNDEFINED": 0,
+      "loc": 145,
+      "nosec": 0,
+      "skipped_tests": 0
+    },
+    "agents/core/kernel/binding.py": {
+      "CONFIDENCE.HIGH": 0,
+      "CONFIDENCE.LOW": 0,
+      "CONFIDENCE.MEDIUM": 0,
+      "CONFIDENCE.UNDEFINED": 0,
+      "SEVERITY.HIGH": 0,
+      "SEVERITY.LOW": 0,
+      "SEVERITY.MEDIUM": 0,
+      "SEVERITY.UNDEFINED": 0,
+      "loc": 64,
+      "nosec": 0,
+      "skipped_tests": 0
+    },
+    "agents/core/kernel/budget.py": {
+      "CONFIDENCE.HIGH": 0,
+      "CONFIDENCE.LOW": 0,
+      "CONFIDENCE.MEDIUM": 0,
+      "CONFIDENCE.UNDEFINED": 0,
+      "SEVERITY.HIGH": 0,
+      "SEVERITY.LOW": 0,
+      "SEVERITY.MEDIUM": 0,
+      "SEVERITY.UNDEFINED": 0,
+      "loc": 93,
+      "nosec": 0,
+      "skipped_tests": 0
+    },
+    "agents/core/kernel/capabilities.py": {
+      "CONFIDENCE.HIGH": 0,
+      "CONFIDENCE.LOW": 0,
+      "CONFIDENCE.MEDIUM": 0,
+      "CONFIDENCE.UNDEFINED": 0,
+      "SEVERITY.HIGH": 0,
+      "SEVERITY.LOW": 0,
+      "SEVERITY.MEDIUM": 0,
+      "SEVERITY.UNDEFINED": 0,
+      "loc": 44,
+      "nosec": 0,
+      "skipped_tests": 0
+    },
+    "agents/core/kernel/flags.py": {
+      "CONFIDENCE.HIGH": 0,
+      "CONFIDENCE.LOW": 0,
+      "CONFIDENCE.MEDIUM": 0,
+      "CONFIDENCE.UNDEFINED": 0,
+      "SEVERITY.HIGH": 0,
+      "SEVERITY.LOW": 0,
+      "SEVERITY.MEDIUM": 0,
+      "SEVERITY.UNDEFINED": 0,
+      "loc": 15,
+      "nosec": 0,
+      "skipped_tests": 0
+    },
+    "agents/core/kernel/metrics.py": {
+      "CONFIDENCE.HIGH": 0,
+      "CONFIDENCE.LOW": 0,
+      "CONFIDENCE.MEDIUM": 0,
+      "CONFIDENCE.UNDEFINED": 0,
+      "SEVERITY.HIGH": 0,
+      "SEVERITY.LOW": 0,
+      "SEVERITY.MEDIUM": 0,
+      "SEVERITY.UNDEFINED": 0,
+      "loc": 55,
+      "nosec": 0,
+      "skipped_tests": 0
+    },
+    "agents/core/kernel/registry.py": {
+      "CONFIDENCE.HIGH": 0,
+      "CONFIDENCE.LOW": 0,
+      "CONFIDENCE.MEDIUM": 0,
+      "CONFIDENCE.UNDEFINED": 0,
+      "SEVERITY.HIGH": 0,
+      "SEVERITY.LOW": 0,
+      "SEVERITY.MEDIUM": 0,
+      "SEVERITY.UNDEFINED": 0,
+      "loc": 58,
+      "nosec": 0,
+      "skipped_tests": 0
+    },
+    "agents/core/kernel/syscalls.py": {
+      "CONFIDENCE.HIGH": 0,
+      "CONFIDENCE.LOW": 0,
+      "CONFIDENCE.MEDIUM": 0,
+      "CONFIDENCE.UNDEFINED": 0,
+      "SEVERITY.HIGH": 0,
+      "SEVERITY.LOW": 0,
+      "SEVERITY.MEDIUM": 0,
+      "SEVERITY.UNDEFINED": 0,
+      "loc": 52,
+      "nosec": 0,
+      "skipped_tests": 0
+    },
     "agents/core/learning/__init__.py": {
       "CONFIDENCE.HIGH": 0,
       "CONFIDENCE.LOW": 0,
@@ -1259,7 +1402,7 @@
       "SEVERITY.LOW": 0,
       "SEVERITY.MEDIUM": 0,
       "SEVERITY.UNDEFINED": 0,
-      "loc": 354,
+      "loc": 387,
       "nosec": 0,
       "skipped_tests": 0
     },
@@ -1324,7 +1467,7 @@
       "SEVERITY.LOW": 0,
       "SEVERITY.MEDIUM": 0,
       "SEVERITY.UNDEFINED": 0,
-      "loc": 351,
+      "loc": 398,
       "nosec": 0,
       "skipped_tests": 0
     },
@@ -1454,7 +1597,7 @@
       "SEVERITY.LOW": 0,
       "SEVERITY.MEDIUM": 0,
       "SEVERITY.UNDEFINED": 0,
-      "loc": 59,
+      "loc": 111,
       "nosec": 0,
       "skipped_tests": 0
     },
@@ -1468,6 +1611,32 @@
       "SEVERITY.MEDIUM": 0,
       "SEVERITY.UNDEFINED": 0,
       "loc": 10,
+      "nosec": 0,
+      "skipped_tests": 0
+    },
+    "agents/core/market/__init__.py": {
+      "CONFIDENCE.HIGH": 0,
+      "CONFIDENCE.LOW": 0,
+      "CONFIDENCE.MEDIUM": 0,
+      "CONFIDENCE.UNDEFINED": 0,
+      "SEVERITY.HIGH": 0,
+      "SEVERITY.LOW": 0,
+      "SEVERITY.MEDIUM": 0,
+      "SEVERITY.UNDEFINED": 0,
+      "loc": 12,
+      "nosec": 0,
+      "skipped_tests": 0
+    },
+    "agents/core/market/analyze.py": {
+      "CONFIDENCE.HIGH": 0,
+      "CONFIDENCE.LOW": 0,
+      "CONFIDENCE.MEDIUM": 0,
+      "CONFIDENCE.UNDEFINED": 0,
+      "SEVERITY.HIGH": 0,
+      "SEVERITY.LOW": 0,
+      "SEVERITY.MEDIUM": 0,
+      "SEVERITY.UNDEFINED": 0,
+      "loc": 127,
       "nosec": 0,
       "skipped_tests": 0
     },
@@ -1519,7 +1688,7 @@
       "SEVERITY.LOW": 0,
       "SEVERITY.MEDIUM": 0,
       "SEVERITY.UNDEFINED": 0,
-      "loc": 411,
+      "loc": 449,
       "nosec": 0,
       "skipped_tests": 0
     },
@@ -1796,6 +1965,19 @@
       "nosec": 0,
       "skipped_tests": 0
     },
+    "agents/core/memory/timeline.py": {
+      "CONFIDENCE.HIGH": 0,
+      "CONFIDENCE.LOW": 0,
+      "CONFIDENCE.MEDIUM": 0,
+      "CONFIDENCE.UNDEFINED": 0,
+      "SEVERITY.HIGH": 0,
+      "SEVERITY.LOW": 0,
+      "SEVERITY.MEDIUM": 0,
+      "SEVERITY.UNDEFINED": 0,
+      "loc": 96,
+      "nosec": 0,
+      "skipped_tests": 0
+    },
     "agents/core/memory/worldview_sync.py": {
       "CONFIDENCE.HIGH": 0,
       "CONFIDENCE.LOW": 0,
@@ -1831,7 +2013,7 @@
       "SEVERITY.LOW": 2,
       "SEVERITY.MEDIUM": 0,
       "SEVERITY.UNDEFINED": 0,
-      "loc": 130,
+      "loc": 151,
       "nosec": 0,
       "skipped_tests": 0
     },
@@ -1874,6 +2056,19 @@
       "nosec": 0,
       "skipped_tests": 0
     },
+    "agents/core/observability/capability_registry.py": {
+      "CONFIDENCE.HIGH": 0,
+      "CONFIDENCE.LOW": 0,
+      "CONFIDENCE.MEDIUM": 0,
+      "CONFIDENCE.UNDEFINED": 0,
+      "SEVERITY.HIGH": 0,
+      "SEVERITY.LOW": 0,
+      "SEVERITY.MEDIUM": 0,
+      "SEVERITY.UNDEFINED": 0,
+      "loc": 159,
+      "nosec": 0,
+      "skipped_tests": 0
+    },
     "agents/core/observability/datasets.py": {
       "CONFIDENCE.HIGH": 0,
       "CONFIDENCE.LOW": 0,
@@ -1884,6 +2079,19 @@
       "SEVERITY.MEDIUM": 0,
       "SEVERITY.UNDEFINED": 0,
       "loc": 188,
+      "nosec": 0,
+      "skipped_tests": 0
+    },
+    "agents/core/observability/egress_monitor.py": {
+      "CONFIDENCE.HIGH": 0,
+      "CONFIDENCE.LOW": 0,
+      "CONFIDENCE.MEDIUM": 0,
+      "CONFIDENCE.UNDEFINED": 0,
+      "SEVERITY.HIGH": 0,
+      "SEVERITY.LOW": 0,
+      "SEVERITY.MEDIUM": 0,
+      "SEVERITY.UNDEFINED": 0,
+      "loc": 135,
       "nosec": 0,
       "skipped_tests": 0
     },
@@ -1900,6 +2108,19 @@
       "nosec": 0,
       "skipped_tests": 0
     },
+    "agents/core/observability/http_metrics.py": {
+      "CONFIDENCE.HIGH": 0,
+      "CONFIDENCE.LOW": 0,
+      "CONFIDENCE.MEDIUM": 0,
+      "CONFIDENCE.UNDEFINED": 0,
+      "SEVERITY.HIGH": 0,
+      "SEVERITY.LOW": 0,
+      "SEVERITY.MEDIUM": 0,
+      "SEVERITY.UNDEFINED": 0,
+      "loc": 128,
+      "nosec": 0,
+      "skipped_tests": 0
+    },
     "agents/core/observability/north_star.py": {
       "CONFIDENCE.HIGH": 0,
       "CONFIDENCE.LOW": 0,
@@ -1909,7 +2130,7 @@
       "SEVERITY.LOW": 0,
       "SEVERITY.MEDIUM": 0,
       "SEVERITY.UNDEFINED": 0,
-      "loc": 153,
+      "loc": 240,
       "nosec": 0,
       "skipped_tests": 0
     },
@@ -1923,6 +2144,19 @@
       "SEVERITY.MEDIUM": 0,
       "SEVERITY.UNDEFINED": 0,
       "loc": 96,
+      "nosec": 0,
+      "skipped_tests": 0
+    },
+    "agents/core/observability/reality_harness.py": {
+      "CONFIDENCE.HIGH": 0,
+      "CONFIDENCE.LOW": 0,
+      "CONFIDENCE.MEDIUM": 0,
+      "CONFIDENCE.UNDEFINED": 0,
+      "SEVERITY.HIGH": 0,
+      "SEVERITY.LOW": 0,
+      "SEVERITY.MEDIUM": 0,
+      "SEVERITY.UNDEFINED": 0,
+      "loc": 247,
       "nosec": 0,
       "skipped_tests": 0
     },
@@ -1961,7 +2195,33 @@
       "SEVERITY.LOW": 0,
       "SEVERITY.MEDIUM": 0,
       "SEVERITY.UNDEFINED": 0,
-      "loc": 1167,
+      "loc": 1201,
+      "nosec": 0,
+      "skipped_tests": 0
+    },
+    "agents/core/osint/__init__.py": {
+      "CONFIDENCE.HIGH": 0,
+      "CONFIDENCE.LOW": 0,
+      "CONFIDENCE.MEDIUM": 0,
+      "CONFIDENCE.UNDEFINED": 0,
+      "SEVERITY.HIGH": 0,
+      "SEVERITY.LOW": 0,
+      "SEVERITY.MEDIUM": 0,
+      "SEVERITY.UNDEFINED": 0,
+      "loc": 11,
+      "nosec": 0,
+      "skipped_tests": 0
+    },
+    "agents/core/osint/correlate.py": {
+      "CONFIDENCE.HIGH": 0,
+      "CONFIDENCE.LOW": 0,
+      "CONFIDENCE.MEDIUM": 0,
+      "CONFIDENCE.UNDEFINED": 0,
+      "SEVERITY.HIGH": 0,
+      "SEVERITY.LOW": 0,
+      "SEVERITY.MEDIUM": 0,
+      "SEVERITY.UNDEFINED": 0,
+      "loc": 167,
       "nosec": 0,
       "skipped_tests": 0
     },
@@ -2000,7 +2260,7 @@
       "SEVERITY.LOW": 1,
       "SEVERITY.MEDIUM": 0,
       "SEVERITY.UNDEFINED": 0,
-      "loc": 197,
+      "loc": 215,
       "nosec": 0,
       "skipped_tests": 0
     },
@@ -2226,13 +2486,13 @@
       "skipped_tests": 0
     },
     "agents/core/plugins/news.py": {
-      "CONFIDENCE.HIGH": 2,
+      "CONFIDENCE.HIGH": 0,
       "CONFIDENCE.LOW": 0,
       "CONFIDENCE.MEDIUM": 0,
       "CONFIDENCE.UNDEFINED": 0,
       "SEVERITY.HIGH": 0,
-      "SEVERITY.LOW": 1,
-      "SEVERITY.MEDIUM": 1,
+      "SEVERITY.LOW": 0,
+      "SEVERITY.MEDIUM": 0,
       "SEVERITY.UNDEFINED": 0,
       "loc": 55,
       "nosec": 0,
@@ -2481,7 +2741,7 @@
       "SEVERITY.LOW": 0,
       "SEVERITY.MEDIUM": 0,
       "SEVERITY.UNDEFINED": 0,
-      "loc": 452,
+      "loc": 461,
       "nosec": 0,
       "skipped_tests": 0
     },
@@ -2507,7 +2767,7 @@
       "SEVERITY.LOW": 0,
       "SEVERITY.MEDIUM": 0,
       "SEVERITY.UNDEFINED": 0,
-      "loc": 205,
+      "loc": 236,
       "nosec": 0,
       "skipped_tests": 0
     },
@@ -2615,6 +2875,19 @@
       "nosec": 0,
       "skipped_tests": 0
     },
+    "agents/core/routers/creative.py": {
+      "CONFIDENCE.HIGH": 0,
+      "CONFIDENCE.LOW": 0,
+      "CONFIDENCE.MEDIUM": 0,
+      "CONFIDENCE.UNDEFINED": 0,
+      "SEVERITY.HIGH": 0,
+      "SEVERITY.LOW": 0,
+      "SEVERITY.MEDIUM": 0,
+      "SEVERITY.UNDEFINED": 0,
+      "loc": 33,
+      "nosec": 0,
+      "skipped_tests": 0
+    },
     "agents/core/routers/dashboard.py": {
       "CONFIDENCE.HIGH": 3,
       "CONFIDENCE.LOW": 0,
@@ -2624,7 +2897,7 @@
       "SEVERITY.LOW": 3,
       "SEVERITY.MEDIUM": 0,
       "SEVERITY.UNDEFINED": 0,
-      "loc": 165,
+      "loc": 187,
       "nosec": 0,
       "skipped_tests": 0
     },
@@ -2651,6 +2924,19 @@
       "SEVERITY.MEDIUM": 0,
       "SEVERITY.UNDEFINED": 0,
       "loc": 48,
+      "nosec": 0,
+      "skipped_tests": 0
+    },
+    "agents/core/routers/feedback.py": {
+      "CONFIDENCE.HIGH": 0,
+      "CONFIDENCE.LOW": 0,
+      "CONFIDENCE.MEDIUM": 0,
+      "CONFIDENCE.UNDEFINED": 0,
+      "SEVERITY.HIGH": 0,
+      "SEVERITY.LOW": 0,
+      "SEVERITY.MEDIUM": 0,
+      "SEVERITY.UNDEFINED": 0,
+      "loc": 27,
       "nosec": 0,
       "skipped_tests": 0
     },
@@ -2693,6 +2979,19 @@
       "nosec": 0,
       "skipped_tests": 0
     },
+    "agents/core/routers/market.py": {
+      "CONFIDENCE.HIGH": 0,
+      "CONFIDENCE.LOW": 0,
+      "CONFIDENCE.MEDIUM": 0,
+      "CONFIDENCE.UNDEFINED": 0,
+      "SEVERITY.HIGH": 0,
+      "SEVERITY.LOW": 0,
+      "SEVERITY.MEDIUM": 0,
+      "SEVERITY.UNDEFINED": 0,
+      "loc": 45,
+      "nosec": 0,
+      "skipped_tests": 0
+    },
     "agents/core/routers/mcp.py": {
       "CONFIDENCE.HIGH": 0,
       "CONFIDENCE.LOW": 0,
@@ -2728,7 +3027,7 @@
       "SEVERITY.LOW": 1,
       "SEVERITY.MEDIUM": 0,
       "SEVERITY.UNDEFINED": 0,
-      "loc": 329,
+      "loc": 387,
       "nosec": 0,
       "skipped_tests": 0
     },
@@ -2819,7 +3118,7 @@
       "SEVERITY.LOW": 0,
       "SEVERITY.MEDIUM": 0,
       "SEVERITY.UNDEFINED": 0,
-      "loc": 45,
+      "loc": 102,
       "nosec": 0,
       "skipped_tests": 0
     },
@@ -2832,7 +3131,20 @@
       "SEVERITY.LOW": 0,
       "SEVERITY.MEDIUM": 0,
       "SEVERITY.UNDEFINED": 0,
-      "loc": 54,
+      "loc": 108,
+      "nosec": 0,
+      "skipped_tests": 0
+    },
+    "agents/core/routers/osint.py": {
+      "CONFIDENCE.HIGH": 0,
+      "CONFIDENCE.LOW": 0,
+      "CONFIDENCE.MEDIUM": 0,
+      "CONFIDENCE.UNDEFINED": 0,
+      "SEVERITY.HIGH": 0,
+      "SEVERITY.LOW": 0,
+      "SEVERITY.MEDIUM": 0,
+      "SEVERITY.UNDEFINED": 0,
+      "loc": 38,
       "nosec": 0,
       "skipped_tests": 0
     },
@@ -2936,7 +3248,7 @@
       "SEVERITY.LOW": 1,
       "SEVERITY.MEDIUM": 0,
       "SEVERITY.UNDEFINED": 0,
-      "loc": 187,
+      "loc": 249,
       "nosec": 0,
       "skipped_tests": 0
     },
@@ -3278,6 +3590,19 @@
       "nosec": 0,
       "skipped_tests": 0
     },
+    "agents/core/security/taint.py": {
+      "CONFIDENCE.HIGH": 0,
+      "CONFIDENCE.LOW": 0,
+      "CONFIDENCE.MEDIUM": 0,
+      "CONFIDENCE.UNDEFINED": 0,
+      "SEVERITY.HIGH": 0,
+      "SEVERITY.LOW": 0,
+      "SEVERITY.MEDIUM": 0,
+      "SEVERITY.UNDEFINED": 0,
+      "loc": 30,
+      "nosec": 0,
+      "skipped_tests": 0
+    },
     "agents/core/security/token_store.py": {
       "CONFIDENCE.HIGH": 0,
       "CONFIDENCE.LOW": 0,
@@ -3300,7 +3625,7 @@
       "SEVERITY.LOW": 1,
       "SEVERITY.MEDIUM": 0,
       "SEVERITY.UNDEFINED": 0,
-      "loc": 45,
+      "loc": 46,
       "nosec": 0,
       "skipped_tests": 0
     },
@@ -3339,7 +3664,7 @@
       "SEVERITY.LOW": 0,
       "SEVERITY.MEDIUM": 0,
       "SEVERITY.UNDEFINED": 0,
-      "loc": 306,
+      "loc": 309,
       "nosec": 0,
       "skipped_tests": 0
     },
@@ -3443,7 +3768,7 @@
       "SEVERITY.LOW": 3,
       "SEVERITY.MEDIUM": 0,
       "SEVERITY.UNDEFINED": 0,
-      "loc": 231,
+      "loc": 242,
       "nosec": 0,
       "skipped_tests": 0
     },
@@ -3469,7 +3794,7 @@
       "SEVERITY.LOW": 0,
       "SEVERITY.MEDIUM": 0,
       "SEVERITY.UNDEFINED": 0,
-      "loc": 64,
+      "loc": 81,
       "nosec": 0,
       "skipped_tests": 0
     },
@@ -3482,7 +3807,7 @@
       "SEVERITY.LOW": 1,
       "SEVERITY.MEDIUM": 0,
       "SEVERITY.UNDEFINED": 0,
-      "loc": 109,
+      "loc": 131,
       "nosec": 0,
       "skipped_tests": 0
     },
@@ -3794,7 +4119,7 @@
       "SEVERITY.LOW": 3,
       "SEVERITY.MEDIUM": 0,
       "SEVERITY.UNDEFINED": 0,
-      "loc": 317,
+      "loc": 328,
       "nosec": 0,
       "skipped_tests": 0
     },
@@ -3812,15 +4137,15 @@
       "skipped_tests": 0
     },
     "agents/web.py": {
-      "CONFIDENCE.HIGH": 5,
+      "CONFIDENCE.HIGH": 3,
       "CONFIDENCE.LOW": 0,
       "CONFIDENCE.MEDIUM": 0,
       "CONFIDENCE.UNDEFINED": 0,
       "SEVERITY.HIGH": 0,
-      "SEVERITY.LOW": 5,
+      "SEVERITY.LOW": 3,
       "SEVERITY.MEDIUM": 0,
       "SEVERITY.UNDEFINED": 0,
-      "loc": 879,
+      "loc": 934,
       "nosec": 0,
       "skipped_tests": 0
     },
@@ -3863,6 +4188,19 @@
       "nosec": 0,
       "skipped_tests": 0
     },
+    "scripts/gen_sbom.py": {
+      "CONFIDENCE.HIGH": 0,
+      "CONFIDENCE.LOW": 0,
+      "CONFIDENCE.MEDIUM": 0,
+      "CONFIDENCE.UNDEFINED": 0,
+      "SEVERITY.HIGH": 0,
+      "SEVERITY.LOW": 0,
+      "SEVERITY.MEDIUM": 0,
+      "SEVERITY.UNDEFINED": 0,
+      "loc": 81,
+      "nosec": 0,
+      "skipped_tests": 0
+    },
     "scripts/import_drive_ai.py": {
       "CONFIDENCE.HIGH": 0,
       "CONFIDENCE.LOW": 0,
@@ -3889,6 +4227,19 @@
       "nosec": 0,
       "skipped_tests": 0
     },
+    "scripts/status_sync.py": {
+      "CONFIDENCE.HIGH": 2,
+      "CONFIDENCE.LOW": 0,
+      "CONFIDENCE.MEDIUM": 0,
+      "CONFIDENCE.UNDEFINED": 0,
+      "SEVERITY.HIGH": 0,
+      "SEVERITY.LOW": 2,
+      "SEVERITY.MEDIUM": 0,
+      "SEVERITY.UNDEFINED": 0,
+      "loc": 90,
+      "nosec": 0,
+      "skipped_tests": 0
+    },
     "scripts/update_thirdparty.py": {
       "CONFIDENCE.HIGH": 5,
       "CONFIDENCE.LOW": 0,
@@ -3906,8 +4257,8 @@
   "results": [
     {
       "code": "226         rows = conn.execute(\n227             f\"SELECT path, COUNT(*) AS views FROM events \"\n228             f\"{where} {'AND' if where else 'WHERE'} path IS NOT NULL \"\n229             f\"GROUP BY path ORDER BY views DESC, path ASC LIMIT ?\",\n230             (*params, int(limit)),\n",
-      "col_offset": 12,
-      "end_col_offset": 66,
+      "col_offset": 14,
+      "end_col_offset": 57,
       "filename": "agents/core/analytics_store.py",
       "issue_confidence": "MEDIUM",
       "issue_cwe": {
@@ -3928,8 +4279,8 @@
     },
     {
       "code": "240         rows = conn.execute(\n241             f\"SELECT name, COUNT(*) AS n FROM events {where} GROUP BY name\",\n242             params,\n",
-      "col_offset": 12,
-      "end_col_offset": 75,
+      "col_offset": 14,
+      "end_col_offset": 53,
       "filename": "agents/core/analytics_store.py",
       "issue_confidence": "MEDIUM",
       "issue_cwe": {
@@ -3948,8 +4299,8 @@
     },
     {
       "code": "251         row = conn.execute(\n252             f\"SELECT COUNT(*) AS n FROM events {where}\", params\n253         ).fetchone()\n",
-      "col_offset": 12,
-      "end_col_offset": 55,
+      "col_offset": 14,
+      "end_col_offset": 47,
       "filename": "agents/core/analytics_store.py",
       "issue_confidence": "MEDIUM",
       "issue_cwe": {
@@ -3968,8 +4319,8 @@
     },
     {
       "code": "261         row = conn.execute(\n262             f\"SELECT COUNT(DISTINCT session_id) AS n FROM events \"\n263             f\"{where} {'AND' if where else 'WHERE'} session_id IS NOT NULL\",\n264             params,\n",
-      "col_offset": 12,
-      "end_col_offset": 75,
+      "col_offset": 14,
+      "end_col_offset": 65,
       "filename": "agents/core/analytics_store.py",
       "issue_confidence": "MEDIUM",
       "issue_cwe": {
@@ -3989,8 +4340,8 @@
     },
     {
       "code": "274         rows = conn.execute(\n275             f\"SELECT substr(ts, 1, 10) AS day, COUNT(*) AS n FROM events \"\n276             f\"{where} GROUP BY day ORDER BY day ASC\",\n277             params,\n",
-      "col_offset": 12,
-      "end_col_offset": 52,
+      "col_offset": 14,
+      "end_col_offset": 73,
       "filename": "agents/core/analytics_store.py",
       "issue_confidence": "MEDIUM",
       "issue_cwe": {
@@ -4029,7 +4380,7 @@
       "test_name": "blacklist"
     },
     {
-      "code": "226         ref = payload.get(\"credential_ref\") or \"\"\n227         token = \"\"\n228         if ref and self._secrets is not None:\n",
+      "code": "239         ref = payload.get(\"credential_ref\") or \"\"\n240         token = \"\"\n241         if ref and self._secrets is not None:\n",
       "col_offset": 16,
       "end_col_offset": 18,
       "filename": "agents/core/autonomy/call_broker.py",
@@ -4040,16 +4391,16 @@
       },
       "issue_severity": "LOW",
       "issue_text": "Possible hardcoded password: ''",
-      "line_number": 227,
+      "line_number": 240,
       "line_range": [
-        227
+        240
       ],
       "more_info": "https://bandit.readthedocs.io/en/1.9.4/plugins/b105_hardcoded_password_string.html",
       "test_id": "B105",
       "test_name": "hardcoded_password_string"
     },
     {
-      "code": "241                 self._audit.log({\"event\": action, \"why\": why, **meta})\n242         except Exception:  # pragma: no cover - best-effort\n243             pass\n",
+      "code": "254                 self._audit.log({\"event\": action, \"why\": why, **meta})\n255         except Exception:  # pragma: no cover - best-effort\n256             pass\n",
       "col_offset": 8,
       "end_col_offset": 16,
       "filename": "agents/core/autonomy/call_broker.py",
@@ -4060,10 +4411,10 @@
       },
       "issue_severity": "LOW",
       "issue_text": "Try, Except, Pass detected.",
-      "line_number": 242,
+      "line_number": 255,
       "line_range": [
-        242,
-        243
+        255,
+        256
       ],
       "more_info": "https://bandit.readthedocs.io/en/1.9.4/plugins/b110_try_except_pass.html",
       "test_id": "B110",
@@ -4176,8 +4527,8 @@
     },
     {
       "code": "208         with self._lock:\n209             self._conn.execute(f\"UPDATE missions SET {', '.join(sets)} WHERE id=?\", params)\n210             self._conn.commit()\n",
-      "col_offset": 31,
-      "end_col_offset": 82,
+      "col_offset": 33,
+      "end_col_offset": 53,
       "filename": "agents/core/autonomy/missions.py",
       "issue_confidence": "MEDIUM",
       "issue_cwe": {
@@ -4196,8 +4547,8 @@
     },
     {
       "code": "312             rows = self._conn.execute(\n313                 f\"SELECT * FROM missions {clause} ORDER BY id DESC LIMIT ?\", params\n314             ).fetchall()\n",
-      "col_offset": 16,
-      "end_col_offset": 75,
+      "col_offset": 18,
+      "end_col_offset": 41,
       "filename": "agents/core/autonomy/missions.py",
       "issue_confidence": "MEDIUM",
       "issue_cwe": {
@@ -4216,8 +4567,8 @@
     },
     {
       "code": "185         with self._lock:\n186             self._conn.execute(f\"UPDATE tasks SET {', '.join(sets)} WHERE id=?\", params)\n187             self._conn.commit()\n",
-      "col_offset": 31,
-      "end_col_offset": 79,
+      "col_offset": 33,
+      "end_col_offset": 50,
       "filename": "agents/core/autonomy/queue.py",
       "issue_confidence": "MEDIUM",
       "issue_cwe": {
@@ -4236,8 +4587,8 @@
     },
     {
       "code": "230             rows = self._conn.execute(\n231                 f\"SELECT * FROM tasks {where} ORDER BY id DESC LIMIT ?\", params\n232             ).fetchall()\n",
-      "col_offset": 16,
-      "end_col_offset": 71,
+      "col_offset": 18,
+      "end_col_offset": 38,
       "filename": "agents/core/autonomy/queue.py",
       "issue_confidence": "MEDIUM",
       "issue_cwe": {
@@ -4256,8 +4607,8 @@
     },
     {
       "code": "248             rows = self._conn.execute(\n249                 f\"SELECT * FROM tasks WHERE {clause} ORDER BY id ASC LIMIT ?\", params\n250             ).fetchall()\n",
-      "col_offset": 16,
-      "end_col_offset": 77,
+      "col_offset": 18,
+      "end_col_offset": 44,
       "filename": "agents/core/autonomy/queue.py",
       "issue_confidence": "MEDIUM",
       "issue_cwe": {
@@ -4276,8 +4627,8 @@
     },
     {
       "code": "258             rows = self._conn.execute(\n259                 f\"SELECT * FROM tasks WHERE {clause} ORDER BY id ASC LIMIT ?\", (limit,)\n260             ).fetchall()\n",
-      "col_offset": 16,
-      "end_col_offset": 77,
+      "col_offset": 18,
+      "end_col_offset": 44,
       "filename": "agents/core/autonomy/queue.py",
       "issue_confidence": "MEDIUM",
       "issue_cwe": {
@@ -4342,8 +4693,8 @@
     },
     {
       "code": "252             with self._lock:\n253                 self._conn.execute(f\"UPDATE sessions SET {', '.join(updates)} WHERE id=?\", params)\n254                 self._conn.commit()\n",
-      "col_offset": 35,
-      "end_col_offset": 89,
+      "col_offset": 37,
+      "end_col_offset": 57,
       "filename": "agents/core/checkpoint.py",
       "issue_confidence": "MEDIUM",
       "issue_cwe": {
@@ -4424,8 +4775,8 @@
     },
     {
       "code": "60             # from user input, so this identifier is trusted.\n61             rows = conn.execute(f\"SELECT * FROM {table}\").fetchall()\n62             out[table] = [dict(r) for r in rows]\n",
-      "col_offset": 32,
-      "end_col_offset": 56,
+      "col_offset": 34,
+      "end_col_offset": 48,
       "filename": "agents/core/data_export.py",
       "issue_confidence": "MEDIUM",
       "issue_cwe": {
@@ -4443,9 +4794,9 @@
       "test_name": "hardcoded_sql_expressions"
     },
     {
-      "code": "81             # Identifier quoted from the catalog name \u2014 not a request value.\n82             conn.execute(f'DELETE FROM \"{table}\"')\n83             deleted[table] = conn.total_changes - before\n",
-      "col_offset": 25,
-      "end_col_offset": 49,
+      "code": "86             # Identifier quoted from the catalog name \u2014 not a request value.\n87             conn.execute(f'DELETE FROM \"{table}\"')\n88             deleted[table] = conn.total_changes - before\n",
+      "col_offset": 27,
+      "end_col_offset": 40,
       "filename": "agents/core/data_purge.py",
       "issue_confidence": "MEDIUM",
       "issue_cwe": {
@@ -4454,53 +4805,13 @@
       },
       "issue_severity": "MEDIUM",
       "issue_text": "Possible SQL injection vector through string-based query construction.",
-      "line_number": 82,
+      "line_number": 87,
       "line_range": [
-        82
+        87
       ],
       "more_info": "https://bandit.readthedocs.io/en/1.9.4/plugins/b608_hardcoded_sql_expressions.html",
       "test_id": "B608",
       "test_name": "hardcoded_sql_expressions"
-    },
-    {
-      "code": "19 import re\n20 import xml.etree.ElementTree as ET\n21 from typing import Awaitable, Callable, Optional\n",
-      "col_offset": 0,
-      "end_col_offset": 34,
-      "filename": "agents/core/digest.py",
-      "issue_confidence": "HIGH",
-      "issue_cwe": {
-        "id": 20,
-        "link": "https://cwe.mitre.org/data/definitions/20.html"
-      },
-      "issue_severity": "LOW",
-      "issue_text": "Using xml.etree.ElementTree to parse untrusted XML data is known to be vulnerable to XML attacks. Replace xml.etree.ElementTree with the equivalent defusedxml package, or make sure defusedxml.defuse_stdlib() is called.",
-      "line_number": 20,
-      "line_range": [
-        20
-      ],
-      "more_info": "https://bandit.readthedocs.io/en/1.9.4/blacklists/blacklist_imports.html#b405-import-xml-etree",
-      "test_id": "B405",
-      "test_name": "blacklist"
-    },
-    {
-      "code": "54     try:\n55         root = ET.fromstring(xml)\n56     except ET.ParseError:\n",
-      "col_offset": 15,
-      "end_col_offset": 33,
-      "filename": "agents/core/digest.py",
-      "issue_confidence": "HIGH",
-      "issue_cwe": {
-        "id": 20,
-        "link": "https://cwe.mitre.org/data/definitions/20.html"
-      },
-      "issue_severity": "MEDIUM",
-      "issue_text": "Using xml.etree.ElementTree.fromstring to parse untrusted XML data is known to be vulnerable to XML attacks. Replace xml.etree.ElementTree.fromstring with its defusedxml equivalent function or make sure defusedxml.defuse_stdlib() is called",
-      "line_number": 55,
-      "line_range": [
-        55
-      ],
-      "more_info": "https://bandit.readthedocs.io/en/1.9.4/blacklists/blacklist_calls.html#b313-b320-xml-bad-elementtree",
-      "test_id": "B314",
-      "test_name": "blacklist"
     },
     {
       "code": "173                 seconds = int(cadence.split(\":\")[1])\n174                 jitter = random.randint(JITTER_MIN, JITTER_MAX)\n175                 self.scheduler.add_job(\n",
@@ -4798,7 +5109,7 @@
       "test_name": "try_except_pass"
     },
     {
-      "code": "55         caps = sorted({str(c) for c in (capabilities or []) if str(c).strip()})\n56         token_id = \"\"\n57         if self._broker is not None:\n",
+      "code": "57         caps = sorted({str(c) for c in (capabilities or []) if str(c).strip()})\n58         token_id = \"\"\n59         if self._broker is not None:\n",
       "col_offset": 19,
       "end_col_offset": 21,
       "filename": "agents/core/node_mesh.py",
@@ -4809,16 +5120,16 @@
       },
       "issue_severity": "LOW",
       "issue_text": "Possible hardcoded password: ''",
-      "line_number": 56,
+      "line_number": 58,
       "line_range": [
-        56
+        58
       ],
       "more_info": "https://bandit.readthedocs.io/en/1.9.4/plugins/b105_hardcoded_password_string.html",
       "test_id": "B105",
       "test_name": "hardcoded_password_string"
     },
     {
-      "code": "156                 self._audit.log({\"event\": action, \"why\": why, **meta})\n157         except Exception:  # pragma: no cover - best-effort\n158             pass\n",
+      "code": "184                 self._audit.log({\"event\": action, \"why\": why, **meta})\n185         except Exception:  # pragma: no cover - best-effort\n186             pass\n",
       "col_offset": 8,
       "end_col_offset": 16,
       "filename": "agents/core/node_mesh.py",
@@ -4829,10 +5140,10 @@
       },
       "issue_severity": "LOW",
       "issue_text": "Try, Except, Pass detected.",
-      "line_number": 157,
+      "line_number": 185,
       "line_range": [
-        157,
-        158
+        185,
+        186
       ],
       "more_info": "https://bandit.readthedocs.io/en/1.9.4/plugins/b110_try_except_pass.html",
       "test_id": "B110",
@@ -4840,8 +5151,8 @@
     },
     {
       "code": "267             cur = self._conn.execute(\n268                 f\"UPDATE blocks SET {', '.join(sets)} WHERE id=?\", params\n269             )\n",
-      "col_offset": 16,
-      "end_col_offset": 65,
+      "col_offset": 18,
+      "end_col_offset": 36,
       "filename": "agents/core/notes_store.py",
       "issue_confidence": "MEDIUM",
       "issue_cwe": {
@@ -4860,8 +5171,8 @@
     },
     {
       "code": "335             self._conn.execute(\n336                 f\"DELETE FROM blocks WHERE id IN ({placeholders})\", ids\n337             )\n",
-      "col_offset": 16,
-      "end_col_offset": 66,
+      "col_offset": 18,
+      "end_col_offset": 50,
       "filename": "agents/core/notes_store.py",
       "issue_confidence": "MEDIUM",
       "issue_cwe": {
@@ -4880,8 +5191,8 @@
     },
     {
       "code": "471             rows = self._conn.execute(\n472                 f\"SELECT id FROM blocks WHERE parent_id IN ({placeholders})\", frontier\n473             ).fetchall()\n",
-      "col_offset": 16,
-      "end_col_offset": 76,
+      "col_offset": 18,
+      "end_col_offset": 60,
       "filename": "agents/core/notes_store.py",
       "issue_confidence": "MEDIUM",
       "issue_cwe": {
@@ -4899,7 +5210,7 @@
       "test_name": "hardcoded_sql_expressions"
     },
     {
-      "code": "67                 self._audit.record(actor=\"payments\", action=action, why=why, metadata=meta)\n68             except Exception:\n69                 # Audit is best-effort; never let a logging hiccup block the gate.\n70                 pass\n71 \n",
+      "code": "75                 self._audit.record(actor=\"payments\", action=action, why=why, metadata=meta)\n76             except Exception:\n77                 # Audit is best-effort; never let a logging hiccup block the gate.\n78                 pass\n79 \n",
       "col_offset": 12,
       "end_col_offset": 20,
       "filename": "agents/core/payments.py",
@@ -4910,11 +5221,11 @@
       },
       "issue_severity": "LOW",
       "issue_text": "Try, Except, Pass detected.",
-      "line_number": 68,
+      "line_number": 76,
       "line_range": [
-        68,
-        69,
-        70
+        76,
+        77,
+        78
       ],
       "more_info": "https://bandit.readthedocs.io/en/1.9.4/plugins/b110_try_except_pass.html",
       "test_id": "B110",
@@ -5066,47 +5377,7 @@
       "test_name": "hardcoded_password_default"
     },
     {
-      "code": "1 import logging\n2 import xml.etree.ElementTree as ET\n3 \n",
-      "col_offset": 0,
-      "end_col_offset": 34,
-      "filename": "agents/core/plugins/news.py",
-      "issue_confidence": "HIGH",
-      "issue_cwe": {
-        "id": 20,
-        "link": "https://cwe.mitre.org/data/definitions/20.html"
-      },
-      "issue_severity": "LOW",
-      "issue_text": "Using xml.etree.ElementTree to parse untrusted XML data is known to be vulnerable to XML attacks. Replace xml.etree.ElementTree with the equivalent defusedxml package, or make sure defusedxml.defuse_stdlib() is called.",
-      "line_number": 2,
-      "line_range": [
-        2
-      ],
-      "more_info": "https://bandit.readthedocs.io/en/1.9.4/blacklists/blacklist_imports.html#b405-import-xml-etree",
-      "test_id": "B405",
-      "test_name": "blacklist"
-    },
-    {
-      "code": "35         try:\n36             root = ET.fromstring(xml)\n37             ns = {\"\": \"http://www.w3.org/2005/Atom\"}\n",
-      "col_offset": 19,
-      "end_col_offset": 37,
-      "filename": "agents/core/plugins/news.py",
-      "issue_confidence": "HIGH",
-      "issue_cwe": {
-        "id": 20,
-        "link": "https://cwe.mitre.org/data/definitions/20.html"
-      },
-      "issue_severity": "MEDIUM",
-      "issue_text": "Using xml.etree.ElementTree.fromstring to parse untrusted XML data is known to be vulnerable to XML attacks. Replace xml.etree.ElementTree.fromstring with its defusedxml equivalent function or make sure defusedxml.defuse_stdlib() is called",
-      "line_number": 36,
-      "line_range": [
-        36
-      ],
-      "more_info": "https://bandit.readthedocs.io/en/1.9.4/blacklists/blacklist_calls.html#b313-b320-xml-bad-elementtree",
-      "test_id": "B314",
-      "test_name": "blacklist"
-    },
-    {
-      "code": "140 GOOGLE_CLIENT_ID = \"\"\n141 GOOGLE_CLIENT_SECRET = \"\"\n142 SPOTIFY_CLIENT_ID = \"\"\n",
+      "code": "146 GOOGLE_CLIENT_ID = \"\"\n147 GOOGLE_CLIENT_SECRET = \"\"\n148 SPOTIFY_CLIENT_ID = \"\"\n",
       "col_offset": 23,
       "end_col_offset": 25,
       "filename": "agents/core/plugins/oauth.py",
@@ -5117,16 +5388,16 @@
       },
       "issue_severity": "LOW",
       "issue_text": "Possible hardcoded password: ''",
-      "line_number": 141,
+      "line_number": 147,
       "line_range": [
-        141
+        147
       ],
       "more_info": "https://bandit.readthedocs.io/en/1.9.4/plugins/b105_hardcoded_password_string.html",
       "test_id": "B105",
       "test_name": "hardcoded_password_string"
     },
     {
-      "code": "142 SPOTIFY_CLIENT_ID = \"\"\n143 SPOTIFY_CLIENT_SECRET = \"\"\n144 REDIRECT_URI = \"http://127.0.0.1:8080/api/oauth/callback\"\n",
+      "code": "148 SPOTIFY_CLIENT_ID = \"\"\n149 SPOTIFY_CLIENT_SECRET = \"\"\n150 REDIRECT_URI = \"http://127.0.0.1:8080/api/oauth/callback\"\n",
       "col_offset": 24,
       "end_col_offset": 26,
       "filename": "agents/core/plugins/oauth.py",
@@ -5137,9 +5408,9 @@
       },
       "issue_severity": "LOW",
       "issue_text": "Possible hardcoded password: ''",
-      "line_number": 143,
+      "line_number": 149,
       "line_range": [
-        143
+        149
       ],
       "more_info": "https://bandit.readthedocs.io/en/1.9.4/plugins/b105_hardcoded_password_string.html",
       "test_id": "B105",
@@ -5479,7 +5750,7 @@
       "test_name": "try_except_pass"
     },
     {
-      "code": "170                     })\n171         except Exception:\n172             pass\n173 \n",
+      "code": "199                     })\n200         except Exception:\n201             pass\n202 \n",
       "col_offset": 8,
       "end_col_offset": 16,
       "filename": "agents/core/routers/dashboard.py",
@@ -5490,17 +5761,17 @@
       },
       "issue_severity": "LOW",
       "issue_text": "Try, Except, Pass detected.",
-      "line_number": 171,
+      "line_number": 200,
       "line_range": [
-        171,
-        172
+        200,
+        201
       ],
       "more_info": "https://bandit.readthedocs.io/en/1.9.4/plugins/b110_try_except_pass.html",
       "test_id": "B110",
       "test_name": "try_except_pass"
     },
     {
-      "code": "187                     })\n188         except Exception:\n189             pass\n190 \n",
+      "code": "216                     })\n217         except Exception:\n218             pass\n219 \n",
       "col_offset": 8,
       "end_col_offset": 16,
       "filename": "agents/core/routers/dashboard.py",
@@ -5511,10 +5782,10 @@
       },
       "issue_severity": "LOW",
       "issue_text": "Try, Except, Pass detected.",
-      "line_number": 188,
+      "line_number": 217,
       "line_range": [
-        188,
-        189
+        217,
+        218
       ],
       "more_info": "https://bandit.readthedocs.io/en/1.9.4/plugins/b110_try_except_pass.html",
       "test_id": "B110",
@@ -5542,7 +5813,7 @@
       "test_name": "try_except_pass"
     },
     {
-      "code": "123                              \"type\": node.get(\"type\", \"\"), \"score\": 1})\n124         except Exception:\n125             pass  # best-effort recall: a graph-search failure must not break the response\n126     return hits[:top_k]\n",
+      "code": "160                              \"type\": node.get(\"type\", \"\"), \"score\": 1})\n161         except Exception:\n162             pass  # best-effort recall: a graph-search failure must not break the response\n163     return hits[:top_k]\n",
       "col_offset": 8,
       "end_col_offset": 16,
       "filename": "agents/core/routers/memory_kg.py",
@@ -5553,10 +5824,10 @@
       },
       "issue_severity": "LOW",
       "issue_text": "Try, Except, Pass detected.",
-      "line_number": 124,
+      "line_number": 161,
       "line_range": [
-        124,
-        125
+        161,
+        162
       ],
       "more_info": "https://bandit.readthedocs.io/en/1.9.4/plugins/b110_try_except_pass.html",
       "test_id": "B110",
@@ -5606,7 +5877,7 @@
       "test_name": "try_except_pass"
     },
     {
-      "code": "204     except Exception:\n205         secret_backend = \"unavailable\"\n206 \n",
+      "code": "284     except Exception:\n285         secret_backend = \"unavailable\"\n286 \n",
       "col_offset": 25,
       "end_col_offset": 38,
       "filename": "agents/core/routers/security.py",
@@ -5617,9 +5888,9 @@
       },
       "issue_severity": "LOW",
       "issue_text": "Possible hardcoded password: 'unavailable'",
-      "line_number": 205,
+      "line_number": 285,
       "line_range": [
-        205
+        285
       ],
       "more_info": "https://bandit.readthedocs.io/en/1.9.4/plugins/b105_hardcoded_password_string.html",
       "test_id": "B105",
@@ -5974,7 +6245,7 @@
       "test_name": "try_except_pass"
     },
     {
-      "code": "282         ref = payload.get(\"credential_ref\") or \"\"\n283         token = \"\"\n284         if ref and self._secrets is not None:\n",
+      "code": "295         ref = payload.get(\"credential_ref\") or \"\"\n296         token = \"\"\n297         if ref and self._secrets is not None:\n",
       "col_offset": 16,
       "end_col_offset": 18,
       "filename": "agents/core/social.py",
@@ -5985,16 +6256,16 @@
       },
       "issue_severity": "LOW",
       "issue_text": "Possible hardcoded password: ''",
-      "line_number": 283,
+      "line_number": 296,
       "line_range": [
-        283
+        296
       ],
       "more_info": "https://bandit.readthedocs.io/en/1.9.4/plugins/b105_hardcoded_password_string.html",
       "test_id": "B105",
       "test_name": "hardcoded_password_string"
     },
     {
-      "code": "297                 self._audit.log({\"event\": action, \"why\": why, **meta})\n298         except Exception:  # pragma: no cover - audit is best-effort\n299             pass\n",
+      "code": "310                 self._audit.log({\"event\": action, \"why\": why, **meta})\n311         except Exception:  # pragma: no cover - audit is best-effort\n312             pass\n",
       "col_offset": 8,
       "end_col_offset": 16,
       "filename": "agents/core/social.py",
@@ -6005,10 +6276,10 @@
       },
       "issue_severity": "LOW",
       "issue_text": "Try, Except, Pass detected.",
-      "line_number": 298,
+      "line_number": 311,
       "line_range": [
-        298,
-        299
+        311,
+        312
       ],
       "more_info": "https://bandit.readthedocs.io/en/1.9.4/plugins/b110_try_except_pass.html",
       "test_id": "B110",
@@ -6035,7 +6306,7 @@
       "test_name": "blacklist"
     },
     {
-      "code": "139                 self._audit.log({\"event\": action, \"why\": why, **meta})\n140         except Exception:  # pragma: no cover - best-effort\n141             pass\n",
+      "code": "166                 self._audit.log({\"event\": action, \"why\": why, **meta})\n167         except Exception:  # pragma: no cover - best-effort\n168             pass\n",
       "col_offset": 8,
       "end_col_offset": 16,
       "filename": "agents/core/tool_rpc.py",
@@ -6046,10 +6317,10 @@
       },
       "issue_severity": "LOW",
       "issue_text": "Try, Except, Pass detected.",
-      "line_number": 140,
+      "line_number": 167,
       "line_range": [
-        140,
-        141
+        167,
+        168
       ],
       "more_info": "https://bandit.readthedocs.io/en/1.9.4/plugins/b110_try_except_pass.html",
       "test_id": "B110",
@@ -6185,7 +6456,7 @@
       "test_name": "try_except_pass"
     },
     {
-      "code": "397         ref = payload.get(\"credential_ref\") or \"\"\n398         token = \"\"\n399         if ref and self._secrets is not None:\n",
+      "code": "410         ref = payload.get(\"credential_ref\") or \"\"\n411         token = \"\"\n412         if ref and self._secrets is not None:\n",
       "col_offset": 16,
       "end_col_offset": 18,
       "filename": "agents/core/writeback.py",
@@ -6196,16 +6467,16 @@
       },
       "issue_severity": "LOW",
       "issue_text": "Possible hardcoded password: ''",
-      "line_number": 398,
+      "line_number": 411,
       "line_range": [
-        398
+        411
       ],
       "more_info": "https://bandit.readthedocs.io/en/1.9.4/plugins/b105_hardcoded_password_string.html",
       "test_id": "B105",
       "test_name": "hardcoded_password_string"
     },
     {
-      "code": "412                 self._audit.log({\"event\": action, \"why\": why, **meta})\n413         except Exception:  # pragma: no cover - audit is best-effort\n414             pass\n",
+      "code": "425                 self._audit.log({\"event\": action, \"why\": why, **meta})\n426         except Exception:  # pragma: no cover - audit is best-effort\n427             pass\n",
       "col_offset": 8,
       "end_col_offset": 16,
       "filename": "agents/core/writeback.py",
@@ -6216,40 +6487,19 @@
       },
       "issue_severity": "LOW",
       "issue_text": "Try, Except, Pass detected.",
-      "line_number": 413,
+      "line_number": 426,
       "line_range": [
-        413,
-        414
+        426,
+        427
       ],
       "more_info": "https://bandit.readthedocs.io/en/1.9.4/plugins/b110_try_except_pass.html",
       "test_id": "B110",
       "test_name": "try_except_pass"
     },
     {
-      "code": "506             base[\"cpu\"] = f\"Intel Core Ultra 9 \u00b7 {cpu_count} thr\"\n507     except Exception:\n508         pass\n509     try:\n",
-      "col_offset": 4,
-      "end_col_offset": 12,
-      "filename": "agents/web.py",
-      "issue_confidence": "HIGH",
-      "issue_cwe": {
-        "id": 703,
-        "link": "https://cwe.mitre.org/data/definitions/703.html"
-      },
-      "issue_severity": "LOW",
-      "issue_text": "Try, Except, Pass detected.",
-      "line_number": 507,
-      "line_range": [
-        507,
-        508
-      ],
-      "more_info": "https://bandit.readthedocs.io/en/1.9.4/plugins/b110_try_except_pass.html",
-      "test_id": "B110",
-      "test_name": "try_except_pass"
-    },
-    {
-      "code": "509     try:\n510         import subprocess\n511         r = subprocess.run(\n",
-      "col_offset": 8,
-      "end_col_offset": 25,
+      "code": "575         with contextlib.suppress(Exception):\n576             import subprocess\n577             r = subprocess.run(\n",
+      "col_offset": 12,
+      "end_col_offset": 29,
       "filename": "agents/web.py",
       "issue_confidence": "HIGH",
       "issue_cwe": {
@@ -6258,18 +6508,18 @@
       },
       "issue_severity": "LOW",
       "issue_text": "Consider possible security implications associated with the subprocess module.",
-      "line_number": 510,
+      "line_number": 576,
       "line_range": [
-        510
+        576
       ],
       "more_info": "https://bandit.readthedocs.io/en/1.9.4/blacklists/blacklist_imports.html#b404-import-subprocess",
       "test_id": "B404",
       "test_name": "blacklist"
     },
     {
-      "code": "510         import subprocess\n511         r = subprocess.run(\n512             [\"nvidia-smi\", \"--query-gpu=memory.used,memory.total,utilization.gpu\", \"--format=csv,noheader,nounits\"],\n513             capture_output=True, text=True, timeout=5\n514         )\n515         if r.returncode == 0:\n",
-      "col_offset": 12,
-      "end_col_offset": 9,
+      "code": "576             import subprocess\n577             r = subprocess.run(\n578                 [\"nvidia-smi\", \"--query-gpu=name,memory.used,memory.total,utilization.gpu\",\n579                  \"--format=csv,noheader,nounits\"],\n580                 capture_output=True, text=True, timeout=5,\n581             )\n582             if r.returncode == 0 and r.stdout.strip():\n",
+      "col_offset": 16,
+      "end_col_offset": 13,
       "filename": "agents/web.py",
       "issue_confidence": "HIGH",
       "issue_cwe": {
@@ -6278,21 +6528,22 @@
       },
       "issue_severity": "LOW",
       "issue_text": "Starting a process with a partial executable path",
-      "line_number": 511,
+      "line_number": 577,
       "line_range": [
-        511,
-        512,
-        513,
-        514
+        577,
+        578,
+        579,
+        580,
+        581
       ],
       "more_info": "https://bandit.readthedocs.io/en/1.9.4/plugins/b607_start_process_with_partial_path.html",
       "test_id": "B607",
       "test_name": "start_process_with_partial_path"
     },
     {
-      "code": "510         import subprocess\n511         r = subprocess.run(\n512             [\"nvidia-smi\", \"--query-gpu=memory.used,memory.total,utilization.gpu\", \"--format=csv,noheader,nounits\"],\n513             capture_output=True, text=True, timeout=5\n514         )\n515         if r.returncode == 0:\n",
-      "col_offset": 12,
-      "end_col_offset": 9,
+      "code": "576             import subprocess\n577             r = subprocess.run(\n578                 [\"nvidia-smi\", \"--query-gpu=name,memory.used,memory.total,utilization.gpu\",\n579                  \"--format=csv,noheader,nounits\"],\n580                 capture_output=True, text=True, timeout=5,\n581             )\n582             if r.returncode == 0 and r.stdout.strip():\n",
+      "col_offset": 16,
+      "end_col_offset": 13,
       "filename": "agents/web.py",
       "issue_confidence": "HIGH",
       "issue_cwe": {
@@ -6301,37 +6552,17 @@
       },
       "issue_severity": "LOW",
       "issue_text": "subprocess call - check for execution of untrusted input.",
-      "line_number": 511,
+      "line_number": 577,
       "line_range": [
-        511,
-        512,
-        513,
-        514
+        577,
+        578,
+        579,
+        580,
+        581
       ],
       "more_info": "https://bandit.readthedocs.io/en/1.9.4/plugins/b603_subprocess_without_shell_equals_true.html",
       "test_id": "B603",
       "test_name": "subprocess_without_shell_equals_true"
-    },
-    {
-      "code": "520                 base[\"gpu_load\"] = int(float(parts[2]))\n521     except Exception:\n522         pass\n523     return base\n",
-      "col_offset": 4,
-      "end_col_offset": 12,
-      "filename": "agents/web.py",
-      "issue_confidence": "HIGH",
-      "issue_cwe": {
-        "id": 703,
-        "link": "https://cwe.mitre.org/data/definitions/703.html"
-      },
-      "issue_severity": "LOW",
-      "issue_text": "Try, Except, Pass detected.",
-      "line_number": 521,
-      "line_range": [
-        521,
-        522
-      ],
-      "more_info": "https://bandit.readthedocs.io/en/1.9.4/plugins/b110_try_except_pass.html",
-      "test_id": "B110",
-      "test_name": "try_except_pass"
     },
     {
       "code": "94             req = urllib.request.Request(url, headers=headers)\n95             with urllib.request.urlopen(req, timeout=15) as r:\n96                 data = json.loads(r.read().decode())\n",
@@ -6466,6 +6697,50 @@
       "test_name": "subprocess_without_shell_equals_true"
     },
     {
+      "code": "26 import re\n27 import subprocess\n28 import sys\n",
+      "col_offset": 0,
+      "end_col_offset": 17,
+      "filename": "scripts/status_sync.py",
+      "issue_confidence": "HIGH",
+      "issue_cwe": {
+        "id": 78,
+        "link": "https://cwe.mitre.org/data/definitions/78.html"
+      },
+      "issue_severity": "LOW",
+      "issue_text": "Consider possible security implications associated with the subprocess module.",
+      "line_number": 27,
+      "line_range": [
+        27
+      ],
+      "more_info": "https://bandit.readthedocs.io/en/1.9.4/blacklists/blacklist_imports.html#b404-import-subprocess",
+      "test_id": "B404",
+      "test_name": "blacklist"
+    },
+    {
+      "code": "53     \"\"\"\n54     out = subprocess.run(  # noqa: S603 \u2014 fixed argv, no shell\n55         [sys.executable, \"-m\", \"pytest\", \"--collect-only\", \"-q\",\n56          \"-p\", \"no:xdist\", \"-o\", \"addopts=\"],\n57         cwd=str(repo), capture_output=True, text=True,\n58     ).stdout\n59     m = re.search(r\"(\\d+)\\s+tests?\\s+collected\", out)\n",
+      "col_offset": 10,
+      "end_col_offset": 5,
+      "filename": "scripts/status_sync.py",
+      "issue_confidence": "HIGH",
+      "issue_cwe": {
+        "id": 78,
+        "link": "https://cwe.mitre.org/data/definitions/78.html"
+      },
+      "issue_severity": "LOW",
+      "issue_text": "subprocess call - check for execution of untrusted input.",
+      "line_number": 54,
+      "line_range": [
+        54,
+        55,
+        56,
+        57,
+        58
+      ],
+      "more_info": "https://bandit.readthedocs.io/en/1.9.4/plugins/b603_subprocess_without_shell_equals_true.html",
+      "test_id": "B603",
+      "test_name": "subprocess_without_shell_equals_true"
+    },
+    {
       "code": "35 import shutil\n36 import subprocess\n37 import sys\n",
       "col_offset": 0,
       "end_col_offset": 17,
@@ -6572,50 +6847,6 @@
         88,
         89,
         90
-      ],
-      "more_info": "https://bandit.readthedocs.io/en/1.9.4/plugins/b603_subprocess_without_shell_equals_true.html",
-      "test_id": "B603",
-      "test_name": "subprocess_without_shell_equals_true"
-    },
-    {
-      "code": "26 import re\n27 import subprocess\n28 import sys\n",
-      "col_offset": 0,
-      "end_col_offset": 17,
-      "filename": "scripts/status_sync.py",
-      "issue_confidence": "HIGH",
-      "issue_cwe": {
-        "id": 78,
-        "link": "https://cwe.mitre.org/data/definitions/78.html"
-      },
-      "issue_severity": "LOW",
-      "issue_text": "Consider possible security implications associated with the subprocess module.",
-      "line_number": 27,
-      "line_range": [
-        27
-      ],
-      "more_info": "https://bandit.readthedocs.io/en/1.9.4/blacklists/blacklist_imports.html#b404-import-subprocess",
-      "test_id": "B404",
-      "test_name": "blacklist"
-    },
-    {
-      "code": "53     \"\"\"\n54     out = subprocess.run(  # noqa: S603 \u2014 fixed argv, no shell\n55         [sys.executable, \"-m\", \"pytest\", \"--collect-only\", \"-q\",\n56          \"-p\", \"no:xdist\", \"-o\", \"addopts=\"],\n57         cwd=str(repo), capture_output=True, text=True,\n58     ).stdout\n59     m = re.search(r\"(\\d+)\\s+tests?\\s+collected\", out)\n",
-      "col_offset": 10,
-      "end_col_offset": 5,
-      "filename": "scripts/status_sync.py",
-      "issue_confidence": "HIGH",
-      "issue_cwe": {
-        "id": 78,
-        "link": "https://cwe.mitre.org/data/definitions/78.html"
-      },
-      "issue_severity": "LOW",
-      "issue_text": "subprocess call - check for execution of untrusted input.",
-      "line_number": 54,
-      "line_range": [
-        54,
-        55,
-        56,
-        57,
-        58
       ],
       "more_info": "https://bandit.readthedocs.io/en/1.9.4/plugins/b603_subprocess_without_shell_equals_true.html",
       "test_id": "B603",
