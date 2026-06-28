@@ -31,6 +31,20 @@
 
 ## Items (newest first)
 
+### HUD — type `shell.tsx` (CDX-9 typing pass)
+- **What:** removed `@ts-nocheck` from `shell.tsx` (topbar, rail/tabs nav, ticker, right context column,
+  ambient, palette). 9 errors, two patterns, both type-only:
+  - the `MODES` nav array reads `m.locked` — a **forward-looking "soon"-disable flag** (the rail/tabs gray
+    out and block locked modes) that **no MODES item currently sets**. Annotated the array element type with
+    optional `locked?` (plus the other optional `id/icon/tkey/live/sep`) so the defensive read is honest.
+  - the shared `Meter` primitive required `unit`, but 3 callers (the topbar gauges) omit it — and `Meter`
+    renders `{unit||'%'}`, so it's optional. Marked it optional at `Meter`'s def in `primitives.tsx` (one
+    cross-file fix, same shape as the `Icon` fix in #384).
+  1 non-test source module remains on `@ts-nocheck` (the last one: `gap.tsx`).
+- **Verified (automated):** `tsc --noEmit` clean; frontend **vitest 73 passed**; `agents/web/v2` bundle
+  **byte-identical**. No backend/route change.
+- **⚠️ Needs you:** nothing — compile-time only, behaviour-identical.
+
 ### HUD — type `app.tsx` (CDX-9 typing pass)
 - **What:** removed `@ts-nocheck` from `app.tsx` (the root composition — state, the streaming-turn loop,
   the layout). The most complex slice; 11 errors → 5 root type-only fixes (bundle byte-identical):

@@ -68,7 +68,7 @@ function fmtDate(d,lang){
 }
 
 /* Meter */
-function Meter({ label, val, unit }){
+function Meter({ label, val, unit }: { label?: any; val?: any; unit?: any }){
   return (
     <div className="meter">
       <div className="ml"><span>{label}</span><span>{val}{unit||'%'}</span></div>
