@@ -861,6 +861,44 @@ export function MissionsPanel() {
   );
 }
 
+/* HUD-v3 C2 (per-agent half) — the per-agent autonomy dial. PR 0 (#418) made
+   AutonomyPolicy.agent_modes enforceable (one agent AUTO/ASK/OFF while the rest follow
+   the global mode) but there was no control surface. This is it: GET /autonomy/policy
+   shows the global mode + each per-agent override; POST sets one; mode=default clears it
+   (falls back to global). Admin-guarded. Complements the global AutonomyMode in modes2. */
+export function AgentAutonomyPanel() {
+  const { d, e, loading, reload } = useApi('/autonomy/policy', true, true);  // admin-guarded
+  const globalMode = (d && d.global) || '—';
+  const agents = (d && d.agents) || {};
+  const entries = Object.keys(agents).map((k) => [k, agents[k]]);
+  const [agent, setAgent] = useState('');
+  const [mode, setMode] = useState('ask');
+  const setPolicy = (ag, m) => actA('/autonomy/policy', { agent: ag, mode: m }, reload);
+  const modeColor = (m) => m === 'auto' ? 'var(--green)' : m === 'ask' ? 'var(--amber)' : m === 'off' ? 'var(--red)' : 'var(--ink-3)';
+  return (
+    <Card title="PER-AGENT AUTONOMY" sub={d ? `global: ${globalMode}` : null} onReload={reload}>
+      <State e={e} loading={loading} n={entries.length} />
+      {entries.map(([ag, m]) => (
+        <Row key={ag}>
+          <span style={{ ...mono, color: 'var(--ink-2)' }}>{ag}</span>
+          <span style={{ marginLeft: 'auto', display: 'flex', gap: 5, alignItems: 'center' }}>
+            <Tag c={modeColor(m)}>{m}</Tag>
+            <button className="tool-btn" title="clear (follow global)" onClick={() => setPolicy(ag, 'default')}>✕</button>
+          </span>
+        </Row>
+      ))}
+      {entries.length === 0 && <div style={{ fontSize: 10, color: 'var(--ink-3)', marginTop: 6 }}>no overrides · every agent follows the global mode ({globalMode})</div>}
+      <div style={{ display: 'flex', gap: 6, marginTop: 8 }}>
+        <input value={agent} onChange={(ev) => setAgent(ev.target.value)} placeholder="agent" style={{ ...inpS, flex: 1 }} />
+        <select value={mode} onChange={(ev) => setMode(ev.target.value)} style={{ ...inpS }}>
+          <option value="auto">auto</option><option value="ask">ask</option><option value="off">off</option>
+        </select>
+        <button className="tool-btn" onClick={() => { if (agent.trim()) { setPolicy(agent.trim(), mode); setAgent(''); } }}>set</button>
+      </div>
+    </Card>
+  );
+}
+
 export function TodayPanel() {
   // P1 G1 — "Today in Jarvis": what Jarvis *did* (autonomy) + *learned* (memory) in one feed.
   const { d, e, loading, reload } = useApi('/api/dashboard/today');
@@ -893,7 +931,7 @@ const SECTIONS: Array<[string, Array<() => any>]> = [
   ['Interop', [A2AInboxPanel, MeshPeersPanel, MarketplacePanel]],
   ['Observe', [OnboardingPanel, EvalPanel, ReviewPanel, APMPanel, FeedbackPanel]],
   ['Build', [StepGenPanel, SandboxPanel, TemplatesPanel]],
-  ['Autonomy & Agents', [MissionsPanel, TodayPanel, SchedulePanel, LearningPanel, SessionsPanel, HeartbeatPanel, TranscriptPanel, EscalationPanel]],
+  ['Autonomy & Agents', [MissionsPanel, AgentAutonomyPanel, TodayPanel, SchedulePanel, LearningPanel, SessionsPanel, HeartbeatPanel, TranscriptPanel, EscalationPanel]],
   ['Admin', [OAuthPanel, SettingsPanel, PromptsPanel, RoomsPanel, LMStudioPanel, AuthProfilesPanel]],
 ];
 
