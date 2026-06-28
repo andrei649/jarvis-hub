@@ -31,6 +31,19 @@
 
 ## Items (newest first)
 
+### HUD-v3 PR 14 — Mic Satellites pairing flow (handover §4.4)
+- **What:** the H12.8 satellite hub ("pair a phone/device as a mic satellite" → shared-GPU inference) had
+  no UI — pairing was a stub. New `SatellitesPanel` (in `gap.tsx`, Interop cluster) lists paired satellites
+  (id + kind) via `GET /api/satellites`, **pairs** a device (`POST /api/satellites/register {satellite_id}`),
+  and **unpairs** one (`DELETE /api/satellites/{id}`). All user-guarded.
+- **Verified (automated, end-to-end in-env):** `tsc --noEmit` exit 0; new `satellites-panel.test.tsx` (+3:
+  lists a paired device with its kind · pair POSTs `{satellite_id}` only when an id is given · unpair
+  DELETEs) — full vitest **116/116** green; `npm run build` refreshed the served bundle, stale-bundle guard
+  reproducible. No backend/route change → parity untouched.
+- **⚠️ Needs you — live pixels + a real device:** Console → Interop → MIC SATELLITES; pair a phone/device
+  (needs the companion satellite client) and confirm it registers + can dispatch to the shared inference
+  rail, then unpair it.
+
 ### HUD-v3 PR 13 — Ambient Capture stream (the privacy promise made visible)
 - **What:** the opt-in passive-capture backend (clipboard/browser/screenshot → KG, redacted, local) had
   no UI. New `CapturePanel` (in `gap.tsx`, Memory cluster) shows the capture status (on/off + count) and

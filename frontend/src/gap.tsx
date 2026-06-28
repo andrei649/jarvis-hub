@@ -475,6 +475,35 @@ export function MeshPeersPanel() {
     </Card>
   );
 }
+/* HUD-v3 §4.4 — Mic Satellites. The H12.8 satellite hub ("pair a phone/device as a mic
+   satellite", shared-GPU inference) had no UI — pairing was a stub. This is the real
+   flow: list paired satellites, pair a new one, unpair. All user-guarded. */
+export function SatellitesPanel() {
+  const { d, e, loading, reload } = useApi('/api/satellites');  // user-guard
+  const sats = arr(d, 'satellites');
+  const [sid, setSid] = useState('');
+  const pair = () => { if (!sid.trim()) return; act('/api/satellites/register', { satellite_id: sid.trim(), meta: {} }, () => { setSid(''); reload(); }); };
+  const unpair = (id) => apiDelete('/api/satellites/' + encodeURIComponent(id)).then(reload).catch(() => {});
+  return (
+    <Card title="MIC SATELLITES" sub={d ? `${sats.length} paired` : null} onReload={reload}>
+      <State e={e} loading={loading} n={sats.length} />
+      {sats.slice(0, 10).map((s, i) => (
+        <Row key={s.id ?? i}>
+          <span style={{ ...mono, color: 'var(--ink-2)' }}>{s.id}</span>
+          <span style={{ marginLeft: 'auto', display: 'flex', gap: 5, alignItems: 'center' }}>
+            {s.kind && <Tag>{s.kind}</Tag>}
+            <button className="tool-btn" title="unpair" onClick={() => unpair(s.id)}>✕</button>
+          </span>
+        </Row>
+      ))}
+      <div style={{ display: 'flex', gap: 6, marginTop: 8 }}>
+        <input value={sid} onChange={(ev) => setSid(ev.target.value)} placeholder="device id (pair a phone as a mic)" style={{ ...inpS, flex: 1 }} />
+        <button className="tool-btn" onClick={pair}>pair</button>
+      </div>
+      {sats.length === 0 && <div style={{ fontSize: 10, color: 'var(--ink-3)', marginTop: 6 }}>no satellites · pair a phone/device to use it as a mic</div>}
+    </Card>
+  );
+}
 function A2AInboxPanel() {
   const { d, e, loading, reload } = useApi('/api/a2a/inbox');
   const items = arr(d, 'inbox', 'tasks');
@@ -1210,7 +1239,7 @@ export function TodayPanel() {
 const SECTIONS: Array<[string, Array<() => any>]> = [
   ['Memory', [DataSpacesPanel, LocalDocsPanel, NotesPanel, KgPanel, CapturePanel, ReflectionPanel]],
   ['Trust', [KillSwitchPanel, KernelMetricsPanel, ReadinessPanel, LoopBreakerPanel, GovernancePanel, PosturePanel, NetworkMonitorPanel, SecretsPanel, CapabilitiesPanel, PairingPanel, InjectionScanPanel]],
-  ['Interop', [A2AInboxPanel, MeshPeersPanel, MarketplacePanel]],
+  ['Interop', [A2AInboxPanel, MeshPeersPanel, SatellitesPanel, MarketplacePanel]],
   ['Observe', [OnboardingPanel, EvalPanel, ReviewPanel, ArenaPanel, QualityPanel, APMPanel, FeedbackPanel]],
   ['Build', [WorkflowsPanel, StepGenPanel, SandboxPanel, TemplatesPanel]],
   ['Autonomy & Agents', [DecisionInboxPanel, MissionsPanel, AgentAutonomyPanel, TodayPanel, SchedulePanel, LearningPanel, SessionsPanel, HeartbeatPanel, TranscriptPanel, EscalationPanel]],

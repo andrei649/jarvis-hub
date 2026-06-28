@@ -139,7 +139,7 @@ Every surface PR (B1…, C1…, D…) must:
 2. **Local-model management** (Admin → Local Models: load/unload/set-default + pull-a-model) →
    `/api/models/local` + LM Studio.
 3. **Multi-surface ambient capture** ✅ **shipped PR 13** — `CapturePanel` (Memory): opt-in stream with each item's redacted preview shown + individually deletable (`DELETE /api/capture/{id}`) + clear-all.
-4. **Satellite-mic / Wyoming** (Mesh → Devices "pair a phone as a mic satellite" — make pairing real).
+4. **Satellite-mic / Wyoming** ✅ **shipped PR 14** — `SatellitesPanel` (Interop): the H12.8 mic-satellite hub pairing made real (list/pair/unpair via `/api/satellites` + `/register` + `DELETE`).
 5. **The "felt-value" loop** — one undeniable proactive loop (morning brief + one reversible
    remediation) end-to-end; cinema mode is the shareable artifact.
 
