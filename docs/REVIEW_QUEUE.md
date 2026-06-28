@@ -31,13 +31,15 @@
 
 ## Items (newest first)
 
-### HUD — type the api/ data layer (CDX-9 typing pass, start)
-- **What:** removed `@ts-nocheck` from `api/actions.ts` and `api/signalLayer.ts` and gave them **real
-  types** — `actions.ts` now declares response interfaces (`NorthStarMetrics`, `KillSwitchState`,
-  `AuditVerifyResult`, `PluginList`, …) threaded through the client's existing `apiGet<T>` generic, so a
-  backend shape change is caught at the call boundary (the core CDX-9 "live-wiring hides shape drift"
-  complaint). `signalLayer.ts` got a typed `WorldIntelligence` return + a `PromiseRejectedResult` type
-  guard. First slice of the typing pass (22→20 source modules on `@ts-nocheck`).
+### HUD — type the whole api/ data layer (CDX-9 typing pass)
+- **What:** removed `@ts-nocheck` from **all** of `frontend/src/api/` — `actions.ts`, `signalLayer.ts`,
+  and `live.ts` — so the entire HUD data layer is now type-checked. `actions.ts` declares response
+  interfaces (`NorthStarMetrics`, `KillSwitchState`, `AuditVerifyResult`, `PluginList`, …) threaded
+  through the client's existing `apiGet<T>` generic, so a backend shape change is caught at the call
+  boundary (the core CDX-9 "live-wiring hides shape drift" complaint). `signalLayer.ts` got a typed
+  `WorldIntelligence` return + a `PromiseRejectedResult` guard. `live.ts` keeps `any` only at its genuine
+  heterogeneous ingestion points (varied backend shapes normalized onto `V2` before render — tightening
+  those wants `data.ts` typed first). 22→19 source modules on `@ts-nocheck`.
 - **Verified (automated):** `tsc --noEmit` clean; full frontend **vitest 73 passed** (unchanged — types
   erase, so it's behaviour-identical); `agents/web/v2` bundle is **byte-identical** (no rebuild needed —
   the `hud-v2-build` guard matches). No backend/route change.

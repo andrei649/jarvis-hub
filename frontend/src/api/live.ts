@@ -1,14 +1,21 @@
-// @ts-nocheck
 /* HUD v2 · P4 live data for the capability modes. The ported modes read V2.<KEY>
    directly; rather than rewrite each, we fetch the real endpoints (shapes verified
    against the v1 HUD), assign onto the shared V2 object, and bump a version to
    re-render. Every fetch is independent and only overwrites V2 on success, so an
-   absent/partial backend leaves the seeded mock intact (never breaks a panel). */
+   absent/partial backend leaves the seeded mock intact (never breaks a panel).
+
+   CDX-9: off @ts-nocheck (completes the api/ layer). The `: any` at each fetch is the
+   real ingestion boundary — heterogeneous backend shapes are normalized here before
+   landing on V2; tightening those into per-endpoint response types is a follow-up that
+   wants V2 (data.ts) typed first. */
 import { useState, useEffect } from 'react';
 import { apiGet } from './client';
 import { V2 } from '../data';
 
-const SIGNAL_LAYER_URL = import.meta.env?.VITE_SIGNAL_LAYER_URL || 'http://localhost:8787';
+// No vite/client types wired in this project, so read the build-time env via a cast.
+const SIGNAL_LAYER_URL =
+  (import.meta as { env?: Record<string, string | undefined> }).env?.VITE_SIGNAL_LAYER_URL
+  || 'http://localhost:8787';
 
 const arr = (x: any, ...keys: string[]) => {
   if (Array.isArray(x)) return x;
