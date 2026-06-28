@@ -1,4 +1,3 @@
-// @ts-nocheck
 import React, { useState as uS2, useEffect as uE2 } from 'react';
 import { V2, Conversation, InputBar } from './ui';
 import { Icon as Ic, ICONS as IK, Glyph as Gl } from './ui';
@@ -15,7 +14,7 @@ function ModePanel({ icon, title, status, children }){
     </div>
   );
 }
-function SubH({ children }){ return <div className="sub-h">{children}</div>; }
+function SubH({ children, style }: { children?: any; style?: any }){ return <div className="sub-h" style={style}>{children}</div>; }
 
 /* ============ AUTONOMY ============ */
 function AutonomyMode({ t }){
@@ -30,7 +29,7 @@ function AutonomyMode({ t }){
   const choose = async (m)=>{
     if(busy||m===mode) return;
     const prev = mode; setMode(m); setBusy(true);
-    try { const r = await setAutonomyMode(m); if(r&&r.mode) setMode(String(r.mode).toLowerCase()); }
+    try { const r = await setAutonomyMode(m) as { mode?: string } | null; if(r&&r.mode) setMode(String(r.mode).toLowerCase()); }
     catch { setMode(prev); }   // revert on failure (e.g. needs admin token)
     finally { setBusy(false); }
   };
