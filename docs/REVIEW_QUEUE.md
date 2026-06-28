@@ -31,6 +31,19 @@
 
 ## Items (newest first)
 
+### HUD-v3 PR 9 (C8) — Model Arena leaderboard + Answer Quality gate in the Console
+- **What:** closes C8's two missing Observe surfaces (evals + review already had panels). `ArenaPanel`
+  reads `GET /api/arena/leaderboard` and ranks models by **ELO** with win-rate + games (read-only; honest
+  "no matches yet" empty-state). `QualityPanel` reads `GET /api/quality` (rolling **avg_score** + alert
+  **threshold** + an ALERTING/ok chip) and lets an admin retune the gate via `POST /api/quality/threshold`.
+- **Verified (automated, end-to-end in-env):** `tsc --noEmit` exit 0; new `arena-quality-panel.test.tsx`
+  (+4: arena ranks models with ELO + win-rate · honest empty-state · quality shows avg/threshold/alert ·
+  set-threshold POSTs the new value) — full vitest **99/99** green; `npm run build` refreshed the served
+  bundle, stale-bundle guard reproducible. No backend/route change → parity untouched.
+- **⚠️ Needs you — live pixels:** Console → Observe → MODEL ARENA + ANSWER QUALITY against a running
+  backend; confirm the leaderboard matches `GET /api/arena/leaderboard` and the quality avg/threshold read
+  right, and that setting a new threshold takes (admin token).
+
 ### HUD-v3 PR 8 (C9 forget-me) — destructive "forget me" completes the data triad
 - **What:** adds a **confirm-gated forget-me** control to the BackupPanel (now titled *BACKUP · EXPORT ·
   FORGET*), so the data-sovereignty triad is whole. It mirrors the backend's hard-to-fat-finger design:

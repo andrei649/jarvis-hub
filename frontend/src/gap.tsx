@@ -330,6 +330,54 @@ export function PosturePanel() {
   );
 }
 
+/* HUD-v3 C8 (arena + quality-threshold; evals/review already shipped). Two Observe
+   panels: the model arena leaderboard (read-only) + the answer-quality gate (read +
+   admin set-threshold). Honesty: real ELO/scores; empty-state when no matches yet. */
+export function ArenaPanel() {
+  const { d, e, loading, reload } = useApi('/api/arena/leaderboard');  // open
+  const rows = arr(d, 'leaderboard');
+  return (
+    <Card title="MODEL ARENA" sub={d ? `${rows.length} models` : null} onReload={reload}>
+      <State e={e} loading={loading} n={rows.length} />
+      {rows.slice(0, 10).map((m, i) => (
+        <Row key={m.model ?? i}>
+          <span style={{ ...mono, color: 'var(--ink-2)' }}>{i + 1}. {m.model}</span>
+          <span style={{ marginLeft: 'auto', display: 'flex', gap: 5, alignItems: 'center' }}>
+            <Tag c="var(--accent-light)">{Math.round(m.elo)} elo</Tag>
+            <Tag c={(m.win_rate ?? 0) >= 0.5 ? 'var(--green)' : 'var(--ink-3)'}>{Math.round((m.win_rate || 0) * 100)}%</Tag>
+            <Tag>{m.games ?? ((m.wins || 0) + (m.losses || 0))} games</Tag>
+          </span>
+        </Row>
+      ))}
+      {rows.length === 0 && <div style={{ fontSize: 10, color: 'var(--ink-3)', marginTop: 6 }}>no matches yet · run an arena comparison to rank models</div>}
+    </Card>
+  );
+}
+export function QualityPanel() {
+  const { d, e, loading, reload } = useApi('/api/quality');  // open
+  const st = (d && d.stats) || {};
+  const [thr, setThr] = useState('');
+  const apply = () => { const v = parseFloat(thr); if (!isNaN(v)) actA('/api/quality/threshold', { threshold: v }, () => { setThr(''); reload(); }); };
+  return (
+    <Card title="ANSWER QUALITY" sub={typeof st.avg_score === 'number' ? `avg ${st.avg_score.toFixed(2)}` : null} onReload={reload}>
+      <State e={e} loading={loading} n={typeof st.n === 'number' ? st.n : (d ? 1 : 0)} />
+      {d && (
+        <Row>
+          <span style={mono}>alert threshold</span>
+          <span style={{ marginLeft: 'auto', display: 'flex', gap: 5, alignItems: 'center' }}>
+            <Tag c={st.alerting ? 'var(--red)' : 'var(--green)'}>{st.alerting ? 'ALERTING' : 'ok'}</Tag>
+            <Tag>{typeof st.threshold === 'number' ? st.threshold.toFixed(2) : '—'}</Tag>
+          </span>
+        </Row>
+      )}
+      <div style={{ display: 'flex', gap: 6, marginTop: 8 }}>
+        <input value={thr} onChange={(ev) => setThr(ev.target.value)} placeholder="0.0–1.0" style={{ ...inpS, flex: 1 }} />
+        <button className="tool-btn" onClick={apply}>set threshold</button>
+      </div>
+    </Card>
+  );
+}
+
 /* ── Interop ───────────────────────────────────────────── */
 /* HUD-v3 C10 — Mesh peers. The A2A peer registry (allowlist + one-time shared secret)
    is admin-guarded and had no control surface (only the inbox did). Surfaces the
@@ -1049,7 +1097,7 @@ const SECTIONS: Array<[string, Array<() => any>]> = [
   ['Memory', [DataSpacesPanel, LocalDocsPanel, NotesPanel, ReflectionPanel]],
   ['Trust', [KillSwitchPanel, KernelMetricsPanel, ReadinessPanel, LoopBreakerPanel, GovernancePanel, PosturePanel, NetworkMonitorPanel, SecretsPanel, CapabilitiesPanel, PairingPanel, InjectionScanPanel]],
   ['Interop', [A2AInboxPanel, MeshPeersPanel, MarketplacePanel]],
-  ['Observe', [OnboardingPanel, EvalPanel, ReviewPanel, APMPanel, FeedbackPanel]],
+  ['Observe', [OnboardingPanel, EvalPanel, ReviewPanel, ArenaPanel, QualityPanel, APMPanel, FeedbackPanel]],
   ['Build', [StepGenPanel, SandboxPanel, TemplatesPanel]],
   ['Autonomy & Agents', [MissionsPanel, AgentAutonomyPanel, TodayPanel, SchedulePanel, LearningPanel, SessionsPanel, HeartbeatPanel, TranscriptPanel, EscalationPanel]],
   ['Admin', [BackupPanel, OAuthPanel, SettingsPanel, PromptsPanel, RoomsPanel, LMStudioPanel, AuthProfilesPanel]],
