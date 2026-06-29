@@ -31,6 +31,25 @@
 
 ## Items (newest first)
 
+### H23.17 — Playwright E2E harness — and it PROVED the Neural Mesh renders ✅ (closes the pixel gap)
+- **What:** a real-browser E2E lane for the HUD. `frontend/playwright.config.ts` boots the **real backend**
+  (`serve.py` on a loopback test port) and `frontend/e2e/hud.spec.ts` drives the served `/v2` bundle in
+  headless Chromium. Two specs: (1) the HUD mounts, the **Neural-Mesh canvas paints non-blank pixels**
+  (read from the canvas backing store — the proof jsdom/vitest *cannot* give), and no uncaught page error;
+  (2) cinema mode (`m`) opens the full-bleed mesh and **Esc** closes it. Screenshots saved as artifacts.
+- **🎉 This resolves the two ⚠️PIXELS items below (PR 20 mesh + PR 21 cinema).** I ran it here and reviewed
+  the screenshots: **the mesh renders correctly** — arc-reactor core, the tier-coloured agent constellation
+  (Friday/Pepper/Frigga/Hercules/Gecko/Gemini/Ultron/Vision…), the model shell (GEMMA/GEMINI/CLAUDE), comet
+  token-flow — and **cinema mode** shows the full-bleed brain with the real footer **"13 agents live · 100%
+  on-device"** (the honesty contract working — real %-local, not the prototype's fabricated 87%). You can
+  still eyeball it live, but it's no longer unverified.
+- **Verified (automated, in-env):** `npm run e2e` → **2/2 passed** booting the real backend (24/24
+  components, 17 agents) + real Chromium; `tsc --noEmit` clean (e2e specs typecheck; vitest scope
+  unaffected — `.spec.ts` ≠ vitest's `src/**/*.test.tsx`). Non-blocking CI lane added
+  (`.github/workflows/e2e.yml`, installs Chromium + boots the backend) so it can stabilise before gating.
+- **⚠️ Needs you — nothing blocking:** if you want, download the `hud-e2e-artifacts` from the CI run to see
+  the cockpit + cinema screenshots. Otherwise this is done.
+
 ### HUD-v3 PR 21 (Phase D) — Cinema mode (the shareable mesh demo) ⚠️ PIXELS
 - **What:** the handover §4 "shareable artifact." `CinemaMesh` (in `shell.tsx`) is a **full-bleed
   presentation of the Neural Mesh** (reuses `NeuralMesh` with `cinema=true`) with brand chrome (reactor +
