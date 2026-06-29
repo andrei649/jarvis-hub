@@ -509,6 +509,33 @@ export function MeshPeersPanel() {
     </Card>
   );
 }
+/* HUD-v3 (Oracle bridge) — truth-sync reconciler. The Oracle keeps the repo's "truth"
+   docs synced from GitHub and flags local/remote conflicts; it had no UI. This shows the
+   watcher status + conflict list, with sync-now and clear-resolved. GET status/conflicts
+   open · sync + resolve admin. */
+export function OraclePanel() {
+  const { d, e, loading, reload } = useApi('/api/oracle/status');
+  const conflicts = arr(d, 'conflicts');
+  const syncNow = () => actA('/api/oracle/sync', {}, reload);
+  const clearResolved = () => actA('/api/oracle/conflicts/resolve', {}, reload);
+  return (
+    <Card title="ORACLE SYNC" sub={d ? (d.watcher_running ? 'watching' : 'idle') + (d.last_checked ? ' · ' + d.last_checked : '') : null} onReload={reload}>
+      <State e={e} loading={loading} n={conflicts.length} />
+      {conflicts.slice(0, 10).map((c, i) => (
+        <Row key={c.file_path ?? i}>
+          <span style={{ ...mono, color: 'var(--ink-2)' }}>{c.file_path}</span>
+          <span style={{ marginLeft: 'auto' }}><Tag c={c.resolved ? 'var(--green)' : 'var(--amber)'}>{c.resolved ? 'resolved' : 'conflict'}</Tag></span>
+        </Row>
+      ))}
+      {conflicts.length === 0 && <div style={{ fontSize: 10, color: 'var(--green)', marginTop: 6 }}>in sync · no conflicts</div>}
+      <div style={{ display: 'flex', gap: 6, marginTop: 8 }}>
+        <button className="tool-btn" onClick={syncNow}>sync now</button>
+        {conflicts.length > 0 && <button className="tool-btn" onClick={clearResolved}>clear resolved</button>}
+      </div>
+    </Card>
+  );
+}
+
 /* HUD-v3 §4.4 — Mic Satellites. The H12.8 satellite hub ("pair a phone/device as a mic
    satellite", shared-GPU inference) had no UI — pairing was a stub. This is the real
    flow: list paired satellites, pair a new one, unpair. All user-guarded. */
@@ -1322,7 +1349,7 @@ export function TodayPanel() {
 const SECTIONS: Array<[string, Array<() => any>]> = [
   ['Memory', [DataSpacesPanel, LocalDocsPanel, NotesPanel, KgPanel, CapturePanel, ReflectionPanel]],
   ['Trust', [KillSwitchPanel, KernelMetricsPanel, ReadinessPanel, LoopBreakerPanel, GovernancePanel, PosturePanel, SecuritySkillsPanel, NetworkMonitorPanel, SecretsPanel, CapabilitiesPanel, PairingPanel, InjectionScanPanel]],
-  ['Interop', [A2AInboxPanel, MeshPeersPanel, SatellitesPanel, MarketplacePanel]],
+  ['Interop', [A2AInboxPanel, MeshPeersPanel, SatellitesPanel, OraclePanel, MarketplacePanel]],
   ['Observe', [OnboardingPanel, EvalPanel, ReviewPanel, ArenaPanel, QualityPanel, APMPanel, FeedbackPanel]],
   ['Build', [WorkflowsPanel, StepGenPanel, SandboxPanel, TemplatesPanel]],
   ['Autonomy & Agents', [DecisionInboxPanel, MissionsPanel, AgentAutonomyPanel, TodayPanel, SchedulePanel, LearningPanel, SessionsPanel, HeartbeatPanel, TranscriptPanel, EscalationPanel]],
