@@ -2,3 +2,9 @@ node_modules
 .vite
 *.local
 dist
+
+# Playwright E2E artifacts (H23.17)
+e2e/artifacts/
+e2e/.results/
+test-results/
+playwright-report/
