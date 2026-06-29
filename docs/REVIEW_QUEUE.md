@@ -31,6 +31,24 @@
 
 ## Items (newest first)
 
+### 0.46 — searchable catalog/timeline of generated media ✅ (library; nothing wired yet)
+- **What:** `agents/core/media_catalog.py` — an **opt-in, default-off** catalog over generated media. `media_gen.py`
+  *generates* image/thumbnail/video but kept no record, so there was no way to browse, search, or build a timeline.
+  `MediaCatalog` records each generation (`kind`, `prompt`, `path`, `backend`, `cloud`, `created_at`, `tags`, …) in a
+  bounded, atomically-written, corrupt-safe JSON array (mirrors the 0.34/0.37 stores). `all` is a newest-first
+  gallery; `timeline` is oldest-first + time-bounded; `search` filters by prompt substring / kind / tag / time
+  (all AND-ed); `stats` counts per kind + cloud-backend usage. `kind` is validated against `media_gen.KINDS` so the
+  catalog can't drift from what the generator actually produces.
+- **Why it's safe to land dark:** the default generation path is **byte-identical** — nothing records to a catalog
+  unless a caller wires one. Wiring it into the live `media_gen` path + a HUD gallery surface (and export bundles)
+  is the next wave.
+- **Verified (automated, in-env):** `tests/test_media_catalog.py` **12/12** — add shape + kind validation, get/remove,
+  all-newest-first vs timeline-oldest-first + inclusive bounds, search filters AND-ed + time-bounds, cross-instance
+  persistence, corrupt-file-safe, oldest-first pruning, stats. `ruff` + `bandit` clean.
+- **⚠️ Needs you — nothing blocking:** when we wire the catalog into `media_gen` + a HUD gallery (next wave), confirm
+  what you want surfaced (prompt history is sensitive — same redaction posture as the capture inbox?). The library
+  changes no runtime behavior today.
+
 ### 0.37 — auditable provenance ledger for ingested memory ✅ (library; nothing wired yet)
 - **What:** `agents/core/ingestion/provenance.py` — an **opt-in, default-off** ledger answering *"where did this
   memory come from, and has it been altered?"* Today an ingested `NormalizedMessage` carries only `source` +
