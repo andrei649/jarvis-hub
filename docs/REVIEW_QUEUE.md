@@ -31,6 +31,22 @@
 
 ## Items (newest first)
 
+### HUD-v3 PR 19 — Oracle truth-sync panel (the last cleanly-surfaceable endpoint)
+- **What:** the Oracle bridge keeps the repo's "truth" docs synced from GitHub and flags local/remote
+  conflicts, but had no UI. New `OraclePanel` (in `gap.tsx`, Interop cluster) shows the watcher status +
+  last-checked SHA (`GET /api/oracle/status`), lists conflicts (file + resolved/conflict state), and offers
+  **sync now** (`POST /api/oracle/sync`) + **clear resolved** (`POST /api/oracle/conflicts/resolve`).
+  Honest "in sync · no conflicts" empty state.
+- **Verified (automated, end-to-end in-env):** `tsc --noEmit` exit 0; new `oracle-panel.test.tsx` (+3:
+  lists a conflict + watcher status · sync-now POSTs · in-sync empty state) — full vitest **125/125** green;
+  `npm run build` refreshed the served bundle, stale-bundle guard reproducible. No backend/route change →
+  parity untouched.
+- **⚠️ Needs you — live pixels:** Console → Interop → ORACLE SYNC; confirm the status + any conflicts read
+  right and sync-now triggers a real check (niche dev/ops surface — low-risk, read + sync).
+- **Note:** with this, **every cleanly-surfaceable backend endpoint now has a Console UI**. What remains is
+  visual-only (Neural-Mesh canvas), secrets/hardware-gated (SaaS connectors, GPU), needs-a-richer-UI (coach
+  study mode), or a greenfield product-steer — none of which is a clean autonomous wire-up.
+
 ### HUD-v3 PR 18 (B1+++) — interrupt budget in the Decision Inbox (calm by the numbers)
 - **What:** surfaces the **interrupt budget** (`GET /autonomy/interrupts` — the MOONSHOT §5.4 "≤N proactive
   pushes/day" guardrail) right in the Decision Inbox header: *"N awaiting you · used/per_day interrupts
