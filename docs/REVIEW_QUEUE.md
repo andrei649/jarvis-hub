@@ -31,6 +31,18 @@
 
 ## Items (newest first)
 
+### 0.26 — capture inbox export ✅ (portable, already-redacted snapshot)
+- **What:** `PassiveCapture.export()` / `write_export(dest)` — the data half of "phone export." Produces a portable,
+  JSON-safe snapshot of the capture inbox (`{version, exported_at, surface, count, surfaces, records}`), optionally
+  filtered by surface; `write_export` dumps it to a file you can move off-device.
+- **Why it's privacy-safe:** records carry **only already-redacted previews + metadata** — secrets are scrubbed by
+  the scanner at `ingest` time and raw content is never stored, so the export is the same data the inbox already
+  exposes via `list`, just packaged. A test asserts a captured `SECRET` never appears in the exported JSON.
+- **Verified (automated, in-env):** `tests/test_h12_7_capture.py` 15/15 (**+4**: packages redacted records, surface
+  filter, empty-inbox, write-to-file with the secret provably absent). `ruff` + `bandit` clean.
+- **⚠️ Needs you — nothing blocking:** the actual host-side transfer to a phone (and transcript sync) remains a host
+  seam; this is just the export payload + file writer.
+
 ### 0.46 — media export bundles ✅ (completes the catalog → portable-zip path)
 - **What:** `agents/core/media_export.py` packages a selection of cataloged media into a portable bundle.
   `build_manifest(items, now=)` describes the selection (per-item existence + size, `present`/`total_bytes`, and a
