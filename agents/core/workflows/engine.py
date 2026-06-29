@@ -7,6 +7,7 @@ so downstream steps can reference upstream outputs.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import logging
 import os
 import re
@@ -122,6 +123,39 @@ class WorkflowEngine:
             "steps": list(ctx["_trace"]),
         })
         return ctx
+
+    async def drain_pending(self, queue, resolve, *, now: float | None = None,
+                            max_runs: int = 25) -> dict:
+        """0.34 (opt-in): execute due runs from a :class:`WorkflowPendingQueue`, completing
+        or retrying each. ``resolve(pipeline_id) -> Pipeline | None`` keeps the engine
+        decoupled from the registry/store. Returns a summary; **nothing calls this on the
+        default path** — a caller (e.g. the autonomy coordinator, a deliberate later wave)
+        opts in by passing a queue. A run that raises or returns ``_ok=False`` is retried
+        with backoff until its attempt cap, then parked ``dead`` (never silently dropped)."""
+        now = float(now if now is not None else time.time())
+        summary = {"ran": 0, "done": 0, "retried": 0, "dead": 0, "skipped": 0}
+        for item in queue.due(now)[:max(1, int(max_runs))]:
+            pipeline = None
+            with contextlib.suppress(Exception):
+                pipeline = resolve(item.get("pipeline_id"))
+            if pipeline is None:
+                res = queue.fail(item["id"], "pipeline not found", now=now)
+                summary["dead" if (res or {}).get("status") == "dead" else "retried"] += 1
+                continue
+            summary["ran"] += 1
+            try:
+                result = await self.run(pipeline, item.get("input", ""))
+                ok = bool(result.get("_ok"))
+                err = "" if ok else "; ".join(result.get("_errors", []) or []) or "workflow reported failure"
+            except Exception as e:  # a crashing run must retry, not vanish
+                ok, err = False, f"{type(e).__name__}: {e}"
+            if ok:
+                queue.complete(item["id"])
+                summary["done"] += 1
+            else:
+                res = queue.fail(item["id"], err, now=now)
+                summary["dead" if (res or {}).get("status") == "dead" else "retried"] += 1
+        return summary
 
     def _stash_run(self, record: dict) -> None:
         """Append a run record to the in-memory ring and (0.34, opt-in) persist it."""
