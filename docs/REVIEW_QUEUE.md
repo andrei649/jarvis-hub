@@ -31,6 +31,20 @@
 
 ## Items (newest first)
 
+### 0.46 — media export bundles ✅ (completes the catalog → portable-zip path)
+- **What:** `agents/core/media_export.py` packages a selection of cataloged media into a portable bundle.
+  `build_manifest(items, now=)` describes the selection (per-item existence + size, `present`/`total_bytes`, and a
+  `missing` list); `write_bundle(items, dest, now=)` writes a `.zip` — each existing file under
+  `media/<id>__<name>` (namespaced by id so same-basename items can't collide) plus an embedded `manifest.json`.
+- **Honest about gaps:** a selected item whose `path` no longer exists on disk is **reported in `missing`**, not
+  silently dropped or faked — a bundle never *looks* complete when a source file vanished. Decoupled from
+  `MediaCatalog` (takes plain item dicts from `search`/`all`) → no import, no cycle.
+- **Verified (automated, in-env):** `tests/test_media_export.py` **6/6** with real temp files — manifest
+  counts/sizes, missing-reported, empty-selection, bundle-contains-files+manifest, bundle-skips-but-records-missing,
+  same-basename-namespaced-by-id. `ruff` + `bandit` clean.
+- **⚠️ Needs you — nothing blocking:** purely a backend capability; no live caller builds bundles yet. When a HUD
+  "export" button is added, this is the function it calls.
+
 ### 0.37 — provenance ledger **wired into the ingestion pipeline** ✅ (opt-in)
 - **What:** `IngestionPipeline` now accepts an optional `ledger=` (+ injectable `clock=`). Each `run()` stamps a
   per-run `run_id` (surfaced in the summary) and, after each parse phase, records **one provenance entry per parsed
