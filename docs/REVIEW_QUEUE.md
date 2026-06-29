@@ -31,6 +31,25 @@
 
 ## Items (newest first)
 
+### 0.37 — auditable provenance ledger for ingested memory ✅ (library; nothing wired yet)
+- **What:** `agents/core/ingestion/provenance.py` — an **opt-in, default-off** ledger answering *"where did this
+  memory come from, and has it been altered?"* Today an ingested `NormalizedMessage` carries only `source` +
+  free-form `metadata`. `ProvenanceLedger` records one entry per artifact (`run_id`, `source`, `origin`, `phase`,
+  `content_hash`, `parent_id`, …) in a bounded, atomically-written, corrupt-safe JSON array (mirrors the 0.34
+  stores). The SHA-256 `content_hash` gives **tamper-evidence** — `verify(id, content)` returns False if a
+  persisted memory was changed after ingestion — *without storing the content itself*; `parent_id` links a derived
+  artifact to its source so a chain (embedding ← message ← file) is walkable with `lineage(id)` (cycle-guarded).
+- **Why it's safe to land dark:** the default ingestion path is **byte-identical** — nothing writes provenance
+  unless a caller wires a ledger. Attaching it across the 7 pipeline phases (and the ontology / cross-agent-sharing
+  pieces) is the next wave.
+- **Verified (automated, in-env):** `tests/test_ingestion_provenance.py` **12/12** — fingerprint stability +
+  str/bytes equivalence (pinned to the known SHA-256 of "hello"), record shape + required fields, by_run/by_source,
+  lineage chain / unknown-id / **cycle-safe**, **verify tamper-detection**, cross-instance persistence,
+  corrupt-file-safe, oldest-first pruning, stats. `ruff` + `bandit` clean.
+- **⚠️ Needs you — nothing blocking:** when we wire provenance into the live pipeline (next wave), confirm what
+  counts as an `origin` you'd want auditable (file path vs. conversation id vs. both). The library changes no
+  runtime behavior today.
+
 ### 0.45 — reusable high-risk-automation contract templates ✅ (library; nothing wired yet)
 - **What:** `agents/core/automation_contracts.py` — a **pure, fail-closed, opt-in** decision layer that
   generalizes the mandate→gate pattern hand-rolled in `payments.py`. A high-risk automation declares its
