@@ -31,6 +31,21 @@
 
 ## Items (newest first)
 
+### 0.58 — skill version-history ledger ✅ (the rollback-target foundation)
+- **What:** `agents/core/skills/skill_history.py` — the version-history schema the backlog flags as a prerequisite
+  for pack rollback. The marketplace registry keeps **one row per skill** (`INSERT OR REPLACE`), so an upgrade loses
+  the prior version — nothing a rollback could target. `SkillHistory` is a bounded, corrupt-safe JSON ledger of
+  `publish`/`install`/`uninstall` events from which it derives `current_version(name)` and **`rollback_target(name)`**
+  (the distinct version present right before the current one — what a downgrade restores).
+- **Why it's safe:** **opt-in / default-off** — nothing records unless a caller wires it. Binding it into the
+  marketplace install flow is the next wave; this PR is the schema + the rollback-target logic.
+- **Verified (automated, in-env):** `tests/test_skill_history.py` **9/9** — record/required-fields, history
+  order+filter, current+rollback over an upgrade chain, single-version→no-target, unknown→None,
+  **uninstall-ignored-for-version**, **reinstall-of-older-moves-current**, persistence+corrupt-safe+stats, oldest-first
+  pruning. `ruff` + `bandit` clean.
+- **⚠️ Needs you — nothing blocking:** full package *rollback* (restoring the actual bytes) also needs prior packages
+  retained, not just the version record — a larger follow-up. This delivers the history/target half.
+
 ### 0.51 — reference-grounded planning ✅ (honest-grounding enforcement, no fabrication)
 - **What:** `agents/core/grounded_plan.py` — the honest-grounding core of the Reference-Driven Creation flow. The
   model drafts steps that cite fetched sources; `ground_plan(goal, references, steps)` is a **pure validator** that
