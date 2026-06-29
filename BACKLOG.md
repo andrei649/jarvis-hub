@@ -95,7 +95,7 @@ python -m pytest tests/ -v          # ~2,802 passed, 6 skipped
 | 0.23 Hardware Benchmark & Profiles | 🟡 partial | `bench.py`,`llm/model_manager.py` (VRAM) / RTX scoring + mode profiles (GPU-gated) | 0.18 |
 | 0.24 Voice Hotkey & Dictation | 🟡 partial | `voice/{wake_word,stt,pipeline}.py` / hold-to-talk hotkey, filler removal | — |
 | 0.25 Desktop Control Pack | 🌱 seed | `desktop_operator.py`,`screen_grounding.py`,`browser_agent.py` / recording, app launch, OS control | — |
-| 0.26 Capture Inbox | 🟡 partial | `passive_capture.py`+`routers/capture.py` / phone export, transcript sync, inbox view | — |
+| 0.26 Capture Inbox | 🟡 partial → **inbox view ✅** | `passive_capture.py`+`routers/capture.py` + **HUD `CapturePanel`** (HUD-v3: the captured stream, each item's redacted preview shown + individually deletable + clear-all — the privacy promise made visible) / remaining: phone export, transcript sync | — |
 | 0.27 Local VLM Eyes | ✅ done | `llm/vlm.py` + `/api/vlm/describe` | — |
 | 0.28 Voice Persona Studio | 🟡 partial | `cognition/persona.py`,`voice/tts.py`,`ttsStream.ts` / consent, barge-in→HUD (BUG-2b.3) | TASK-4 |
 | 0.29 Native Launcher | 🟡 partial | `desktop/src-tauri/tauri.conf.json` (Tauri shell) / PWA, signed installers | 0.15 |

@@ -3,7 +3,7 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { V2 } from './data';
 import { useClock, fmtTimeShort, Icon, ICONS, Glyph } from './primitives';
-import { TopBar, Ticker, Rail, Tabs, RosterColumn, ContextColumn, Palette, Ambient } from './shell';
+import { TopBar, Ticker, Rail, Tabs, RosterColumn, ContextColumn, Palette, Ambient, CinemaMesh } from './shell';
 import { Conversation, CognitionStream, InputBar, buildTrace, traceFromCognition } from './cockpit';
 import { useVoice } from './voice';
 import { loadJarvisData } from './api/loaders';
@@ -70,6 +70,7 @@ function App() {
   // mic/voice state is owned by the useVoice loop (defined below), not a bare flag
   const [palette, setPalette] = useState(false);
   const [ambient, setAmbient] = useState(false);
+  const [cinema, setCinema] = useState(false);
   const [provModal, setProvModal] = useState(null);
   const [dossier, setDossier] = useState(null);
   const [consoleOpen, setConsoleOpen] = useState(false);
@@ -128,17 +129,18 @@ function App() {
   useEffect(() => {
     function onKey(e) {
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') { e.preventDefault(); setPalette((p) => !p); return; }
-      if (ambient) return;
+      if (ambient || cinema) return;   // overlays own the keyboard (Esc exits them)
       const tag = (e.target && e.target.tagName ? e.target.tagName : '').toLowerCase();
       if (tag === 'input' || tag === 'textarea') return;
       const m = { '1': 'cockpit', '2': 'agents', '3': 'trust', '4': 'memory', '5': 'autonomy', '6': 'build', '7': 'observe', '8': 'interop', '9': 'chat', '0': 'comms' };
       if (m[e.key]) setMode(m[e.key]);
       else if (e.key.toLowerCase() === 'a') setAmbient(true);
+      else if (e.key.toLowerCase() === 'm') setCinema(true);   // HUD-v3 cinema mode (full-bleed mesh)
       else if (e.key === '`') { e.preventDefault(); setConsoleOpen((c) => !c); }
     }
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [ambient]);
+  }, [ambient, cinema]);
 
   // NTH-1 — live cognition scoring over SSE (/api/cognition/stream). EventSource
   // can't send the user token, so this only attaches where the guard is
@@ -348,6 +350,7 @@ function App() {
         setAccent={setAccent} setLang={setLang} onAmbient={() => { setPalette(false); setAmbient(true); }}
         ui={{ density, setDensity, scanline, setScanline, dotgrid, setDotgrid }} t={t} />
       {ambient && <Ambient onExit={() => setAmbient(false)} clock={clock} lang={lang} agents={agents} decisions={decisions} motion={motion} localPct={localPct} t={t} />}
+      {cinema && <CinemaMesh agents={agents} localPct={localPct} onExit={() => setCinema(false)} t={t} />}
     </div>
   );
 }

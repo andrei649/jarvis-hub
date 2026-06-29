@@ -2,6 +2,7 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { Icon, ICONS, Glyph, Reactor, Meter, statusClass, fmtTime, fmtTimeShort, fmtDate } from './primitives';
 import { renderRich } from './cockpit';
+import { NeuralMesh } from './mesh';
 import { V2 } from './data';
 
 const MODES: Array<{ id?: string; icon?: string; tkey?: string; live?: boolean; sep?: boolean; locked?: boolean }> = [
@@ -344,5 +345,39 @@ function Ambient({ onExit, clock, lang, agents, decisions, motion, localPct, t }
   );
 }
 function stripTags(s){ return String(s).replace(/<[^>]+>/g,'').replace(/\*\*/g,''); }
+
+/* HUD v3 · CINEMA MODE — full-bleed Neural Mesh framed as a shareable demo (handover §4).
+   Port of v3-shell.jsx CinemaMesh; reuses the native NeuralMesh (cinema=true). Esc exits.
+   Honesty contract: the prototype hardcoded "87% on-device / 0 cloud leaks" — we show only
+   REAL figures (live agent count from the roster, %-local from /api/analytics/locality),
+   never a fabricated split. */
+export function CinemaMesh({ agents = [], localPct, onExit, t }: any) {
+  const [tag, setTag] = useState(0);
+  useEffect(() => { const iv = setInterval(() => setTag((x) => x + 1), 4200); return () => clearInterval(iv); }, []);
+  useEffect(() => {
+    const h = (e) => { if (e.key === 'Escape') onExit(); };
+    window.addEventListener('keydown', h);
+    return () => window.removeEventListener('keydown', h);
+  }, [onExit]);
+  const TAGS = ['Your governed AI cabinet', 'On-device · always-on', 'Proactive. Private. Provable.'];
+  const live = agents.filter((a) => a.status && a.status !== 'idle').length;
+  return (
+    <div className="cinema">
+      <div className="cin-top">
+        <div className="cin-mark"><Reactor /><span className="cin-word">JARVIS</span></div>
+        <div className="cin-tag" key={tag}>{TAGS[tag % TAGS.length]}</div>
+      </div>
+      <div className="cin-stage"><NeuralMesh agents={agents} cinema={true} motion="lively" onSelect={() => {}} t={t} /></div>
+      <div className="cin-bottom">
+        <div className="cin-feed"><div className="cin-frow"><span className="cin-dot"></span>the Cabinet is working…</div></div>
+        <div className="cin-stats">
+          <span><b>{live}</b> agents live</span>
+          {localPct != null && <span><b>{localPct}%</b> on-device</span>}
+        </div>
+      </div>
+      <button className="cin-exit" onClick={onExit}>Esc</button>
+    </div>
+  );
+}
 
 export { MODES, TopBar, Ticker, Rail, Tabs, ContextColumn, RosterColumn, Palette, Ambient };

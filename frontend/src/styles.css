@@ -589,3 +589,21 @@ input { font-family: inherit; }
 .nmesh-legend i.nm-dot { display:inline-block; width:7px; height:7px; border-radius:50%; margin-right:5px; vertical-align:middle; }
 .nm-dot.core { background:#2bb8f0; box-shadow:0 0 6px rgba(43,184,240,.6); } .nm-dot.local { background:#41f59b; } .nm-dot.cloud { background:#a78bfa; }
 .nmesh-legend .nm-hint { margin-left:auto; color:var(--ink-4); }
+
+/* ── HUD v3 · CINEMA MODE (full-bleed mesh, framed for a shareable demo) ── */
+.cinema { position:fixed; inset:0; z-index:90; background:radial-gradient(circle at 50% 42%, #081421, #04070d 72%); display:flex; flex-direction:column; align-items:center; animation:msg-in .4s ease; }
+.cin-top { padding:26px 20px 4px; text-align:center; flex:none; }
+.cin-mark { display:flex; align-items:center; justify-content:center; gap:12px; }
+.cin-word { font-size:26px; font-weight:700; letter-spacing:.28em; color:var(--ink); padding-left:.28em; }
+.cin-tag { margin-top:9px; font-family:var(--font-mono); font-size:13px; letter-spacing:.1em; color:var(--accent-light); animation:cin-fade .5s ease; }
+@keyframes cin-fade { from{ opacity:0; transform:translateY(6px); } to{ opacity:1; transform:none; } }
+.cin-stage { flex:1; width:100%; min-height:0; position:relative; display:flex; }
+.cin-stage .nmesh { background:transparent; }
+.cin-bottom { flex:none; width:100%; max-width:680px; padding:8px 22px 28px; }
+.cin-feed { min-height:64px; display:flex; flex-direction:column; gap:6px; justify-content:flex-end; }
+.cin-frow { font-size:13px; color:var(--ink-2); animation:cin-fade .4s ease; } .cin-frow b { color:var(--accent-light); }
+.cin-dot { display:inline-block; width:7px; height:7px; border-radius:50%; background:var(--green); box-shadow:0 0 8px var(--green); margin-right:9px; vertical-align:middle; }
+.cin-stats { display:flex; flex-wrap:wrap; gap:18px; justify-content:center; margin-top:14px; padding-top:14px; border-top:1px solid var(--panel-line); font-family:var(--font-mono); font-size:11px; color:var(--ink-3); letter-spacing:.04em; }
+.cin-stats b { color:var(--ink); } .cin-stats .cin-ok { color:var(--green); }
+.cin-exit { position:fixed; top:20px; right:22px; background:var(--surface); border:1px solid var(--panel-line); color:var(--ink-3); font-family:var(--font-mono); font-size:11px; padding:6px 13px; border-radius:6px; cursor:pointer; }
+@media (max-width:560px){ .cin-word { font-size:22px; letter-spacing:.2em; } .cin-stats { gap:12px; font-size:10px; } }
