@@ -31,6 +31,22 @@
 
 ## Items (newest first)
 
+### 0.46 — media catalog **wired into the live generator** ✅ (opt-in; first wiring of a "dark" library)
+- **What:** `MediaGenManager` now accepts an optional `catalog=` (+ injectable `clock=`). On each **successful local**
+  generation it records the item (kind / prompt / path-from-result / backend / tags) and returns a `catalog_id`.
+  This is the first of the recent default-off libraries to be *activated* on a real path — generated media now
+  actually lands in the searchable catalog instead of vanishing.
+- **Why it's still safe:** **opt-in** — an unattached manager (`catalog=None`, the default) is **byte-identical** to
+  before (a test asserts exact output equality). **Best-effort** — a catalog write hiccup is swallowed so it can
+  never fail a generation that already produced an artifact. **Scoped** — cloud-approval requests and failed
+  generations are deliberately *not* cataloged (no artifact exists). Circular-import-safe (TYPE_CHECKING-only ref).
+- **Verified (automated, in-env):** `tests/test_media_gen_h12_24.py` **9/9** (4 new: cataloged-when-attached,
+  no-catalog-unchanged-output, cloud/failed-not-cataloged, catalog-failure-never-breaks-generation) +
+  `tests/test_media_catalog.py` 12/12. `ruff` + `bandit` clean.
+- **⚠️ Needs you — when you wire a real diffusion/cloud backend + attach a catalog:** confirm prompt history in the
+  catalog matches your privacy posture (prompts can be sensitive — same redaction stance as the capture inbox?).
+  Nothing is cataloged today because no live backend is attached in the default build.
+
 ### 0.46 — searchable catalog/timeline of generated media ✅ (library; nothing wired yet)
 - **What:** `agents/core/media_catalog.py` — an **opt-in, default-off** catalog over generated media. `media_gen.py`
   *generates* image/thumbnail/video but kept no record, so there was no way to browse, search, or build a timeline.

@@ -11,7 +11,13 @@ from __future__ import annotations
 
 import inspect
 import logging
-from typing import Callable, Optional
+import time
+from typing import TYPE_CHECKING, Callable, Optional
+
+if TYPE_CHECKING:
+    # Annotation only — importing MediaCatalog at runtime would be circular
+    # (media_catalog imports KINDS from here). The manager only duck-calls .add().
+    from agents.core.media_catalog import MediaCatalog
 
 logger = logging.getLogger("jarvis.media_gen")
 
@@ -24,10 +30,26 @@ async def _maybe_await(v):
 
 class MediaGenManager:
     def __init__(self, backends: Optional[dict] = None, enqueue: Optional[Callable] = None,
-                 agent: str = "pepper") -> None:
+                 agent: str = "pepper", *, catalog: Optional[MediaCatalog] = None,
+                 clock: Optional[Callable[[], float]] = None) -> None:
         self._backends = backends or {}     # kind -> async backend(prompt, opts) -> result
         self._enqueue = enqueue
         self.agent = agent
+        # 0.46 wiring: when a catalog is attached, each successful *local* generation
+        # is recorded (opt-in; None → behaviour is byte-identical to before).
+        self._catalog = catalog
+        self._clock = clock or time.time
+
+    @staticmethod
+    def _result_path(result) -> str:
+        """Best-effort extraction of the produced artifact's path/url from a
+        backend result (dicts vary by backend; a plain str is taken as the path)."""
+        if isinstance(result, dict):
+            for key in ("path", "file", "url", "uri"):
+                if result.get(key):
+                    return str(result[key])
+            return ""
+        return result if isinstance(result, str) else ""
 
     @staticmethod
     def supports(kind: str) -> bool:
@@ -59,7 +81,20 @@ class MediaGenManager:
         except Exception:
             logger.warning("media generation failed", exc_info=True)
             return {"ok": False, "reason": "generation_error"}
-        return {"ok": True, "kind": kind, "result": result}
+        out = {"ok": True, "kind": kind, "result": result}
+        # Catalog the successful local generation (opt-in, best-effort: a catalog
+        # hiccup must never fail a generation that already produced an artifact).
+        if self._catalog is not None:
+            try:
+                rec = self._catalog.add(
+                    kind=kind, prompt=prompt, path=self._result_path(result),
+                    now=self._clock(), backend=getattr(backend, "__name__", "local"),
+                    cloud=False, tags=list((opts or {}).get("tags") or []),
+                )
+                out["catalog_id"] = rec["id"]
+            except Exception:
+                logger.warning("media catalog record failed", exc_info=True)
+        return out
 
     def kinds(self) -> dict:
         return {k: self.available(k) for k in KINDS}

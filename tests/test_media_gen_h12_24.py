@@ -56,3 +56,67 @@ async def test_cloud_generation_is_gated():
 async def test_no_backend_unavailable():
     out = await MediaGenManager().generate("image", "x")
     assert out["reason"] == "backend_unavailable"
+
+
+# ── 0.46 catalog wiring (opt-in) ──────────────────────────────────────────────
+
+@pytest.mark.asyncio
+async def test_successful_local_gen_is_cataloged_when_attached(tmp_path):
+    from agents.core.media_catalog import MediaCatalog
+
+    async def img(prompt, opts):
+        return {"path": "/tmp/cat.png", "prompt": prompt}
+
+    cat = MediaCatalog(tmp_path / "c.json")
+    m = MediaGenManager(backends={"image": img}, catalog=cat, clock=lambda: 1234.0)
+    out = await m.generate("image", "a cat", opts={"tags": ["pet"]})
+
+    assert out["ok"] is True and "catalog_id" in out
+    rec = cat.get(out["catalog_id"])
+    assert rec is not None
+    assert rec["kind"] == "image" and rec["prompt"] == "a cat"
+    assert rec["path"] == "/tmp/cat.png" and rec["created_at"] == 1234.0
+    assert rec["tags"] == ["pet"] and rec["cloud"] is False
+
+
+@pytest.mark.asyncio
+async def test_no_catalog_means_no_recording_and_unchanged_output(tmp_path):
+    async def img(prompt, opts):
+        return {"path": "/tmp/x.png"}
+
+    m = MediaGenManager(backends={"image": img})  # no catalog attached
+    out = await m.generate("image", "a cat")
+    # default path is byte-identical: no catalog_id key added
+    assert out == {"ok": True, "kind": "image", "result": {"path": "/tmp/x.png"}}
+
+
+@pytest.mark.asyncio
+async def test_cloud_and_failed_gen_are_not_cataloged(tmp_path):
+    from agents.core.media_catalog import MediaCatalog
+
+    async def boom(prompt, opts):
+        raise RuntimeError("backend down")
+
+    q = _FakeQueue()
+    cat = MediaCatalog(tmp_path / "c.json")
+    m = MediaGenManager(backends={"image": boom}, enqueue=q.enqueue, catalog=cat)
+    # cloud → only enqueues an approval, produces no artifact
+    assert (await m.generate("video", "x", cloud=True))["reason"] == "approval_required"
+    # local backend that errors → no artifact
+    assert (await m.generate("image", "x"))["reason"] == "generation_error"
+    assert cat.stats()["total"] == 0   # nothing cataloged in either case
+
+
+@pytest.mark.asyncio
+async def test_catalog_failure_never_breaks_generation(tmp_path):
+    async def img(prompt, opts):
+        return {"path": "/tmp/x.png"}
+
+    class _BrokenCatalog:
+        def add(self, **kw):
+            raise RuntimeError("disk full")
+
+    m = MediaGenManager(backends={"image": img}, catalog=_BrokenCatalog())
+    out = await m.generate("image", "a cat")
+    # generation still succeeds; the catalog hiccup is swallowed (no catalog_id)
+    assert out["ok"] is True and "catalog_id" not in out
