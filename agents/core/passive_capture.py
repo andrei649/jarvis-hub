@@ -20,6 +20,7 @@ inspectable store — is pure-Python and offline-testable.
 
 from __future__ import annotations
 
+import json
 import logging
 import os
 import secrets
@@ -149,3 +150,32 @@ class PassiveCapture(JsonStore):
             with self._lock:
                 self._save()
         return removed
+
+    # ── export (0.26: the data half of "phone export") ────────────────────────
+
+    def export(self, *, surface: Optional[str] = None, now: Optional[float] = None) -> dict:
+        """A portable, JSON-safe snapshot of the capture inbox.
+
+        Records carry only **already-redacted** previews + metadata (secrets are
+        scrubbed at ``ingest`` time and raw content is never stored), so nothing
+        here can leak a secret — it's the same data the inbox already exposes via
+        ``list``, packaged for off-device transfer. ``now`` is injectable for tests.
+        """
+        records = self.list(surface)   # newest-first dict copies
+        return {
+            "version": 1,
+            "exported_at": time.time() if now is None else float(now),
+            "surface": surface,
+            "count": len(records),
+            "surfaces": dict(self._surfaces),
+            "records": records,
+        }
+
+    def write_export(self, dest: "str | Path", *, surface: Optional[str] = None,
+                     now: Optional[float] = None) -> dict:
+        """Write :meth:`export` as pretty JSON to *dest*. Returns ``{path, count}``."""
+        payload = self.export(surface=surface, now=now)
+        dest = Path(dest)
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        dest.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+        return {"path": str(dest), "count": payload["count"]}

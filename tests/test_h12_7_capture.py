@@ -145,3 +145,46 @@ def test_endpoint_unknown_surface_422(monkeypatch, tmp_path, on):
     client = _client(monkeypatch, tmp_path)
     assert client.post("/api/capture/ingest",
                        json={"surface": "mic", "content": "x"}).status_code == 422
+
+
+# ── 0.26 export (portable, already-redacted) ──────────────────────────────────
+
+def test_export_packages_redacted_records(cap, on):
+    cap.set_surfaces({"clipboard": True, "browser": True})
+    cap.ingest("clipboard", "note SECRET here")
+    cap.ingest("browser", "a normal page")
+
+    exp = cap.export(now=4242.0)
+    assert exp["version"] == 1 and exp["exported_at"] == 4242.0
+    assert exp["surface"] is None and exp["count"] == 2
+    assert exp["surfaces"]["clipboard"] is True
+    # the secret was redacted at ingest, so the export can't leak it
+    blob = " ".join(r["preview"] for r in exp["records"])
+    assert "SECRET" not in blob and "[REDACTED]" in blob
+
+
+def test_export_filters_by_surface(cap, on):
+    cap.set_surfaces({"clipboard": True, "browser": True})
+    cap.ingest("clipboard", "clip one")
+    cap.ingest("browser", "browse one")
+    exp = cap.export(surface="browser")
+    assert exp["surface"] == "browser" and exp["count"] == 1
+    assert exp["records"][0]["surface"] == "browser"
+
+
+def test_export_empty_when_nothing_captured(cap):
+    exp = cap.export(now=1.0)
+    assert exp["count"] == 0 and exp["records"] == []
+
+
+def test_write_export_writes_json_file(cap, on, tmp_path):
+    cap.set_surfaces({"clipboard": True})
+    cap.ingest("clipboard", "secret token SECRET")
+    dest = tmp_path / "out" / "capture-export.json"
+
+    res = cap.write_export(dest, now=7.0)
+    assert res["path"] == str(dest) and res["count"] == 1
+    import json as _json
+    loaded = _json.loads(dest.read_text(encoding="utf-8"))
+    assert loaded["exported_at"] == 7.0 and loaded["count"] == 1
+    assert "SECRET" not in _json.dumps(loaded)   # redacted before storage → safe export
