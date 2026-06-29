@@ -31,6 +31,21 @@
 
 ## Items (newest first)
 
+### H23.17 — a11y (WCAG) gate on the live HUD ✅ (axe-core, 0 violations baseline)
+- **What:** `frontend/e2e/a11y.spec.ts` runs **`@axe-core/playwright`** against the *live* cockpit **and** the
+  cinema overlay in real Chromium (the same lane as the E2E harness). It checks the WCAG 2.0/2.1 A/AA rules
+  jsdom can't — **real computed colour-contrast, ARIA/role correctness, focus-order, landmark structure** on the
+  actually-painted DOM. The gate fails on the unambiguous-bug impacts (**critical/serious**); the full per-impact
+  violation list (incl. moderate/minor advisories) is written to `e2e/artifacts/a11y-{cockpit,cinema}.json` as the
+  audit trail, so the advisory backlog stays visible without blocking the lane.
+- **Result:** the hand-ported HUD is **clean — 0 violations at *every* impact level** (critical/serious/moderate/
+  minor) on both the cockpit and the cinema overlay. The gate now guards against an a11y regression slipping in.
+- **Verified (automated, in-env):** `npm run e2e` a11y specs → **2/2 passed** booting the real backend + real
+  Chromium; `tsc --noEmit` clean; `npm run build` bundle unchanged (purely additive — new spec + axe devDep).
+  Joins the existing non-blocking `e2e.yml` CI lane automatically (no workflow change).
+- **⚠️ Needs you — nothing blocking:** if you want a deeper pass, a screen-reader walkthrough (NVDA/VoiceOver) of
+  the Console panels is the human-only check axe can't do. Otherwise this is done.
+
 ### H23.17 — Playwright E2E harness — and it PROVED the Neural Mesh renders ✅ (closes the pixel gap)
 - **What:** a real-browser E2E lane for the HUD. `frontend/playwright.config.ts` boots the **real backend**
   (`serve.py` on a loopback test port) and `frontend/e2e/hud.spec.ts` drives the served `/v2` bundle in
