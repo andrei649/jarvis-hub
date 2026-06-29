@@ -93,9 +93,13 @@ port of `v3-mesh.jsx`, rendered in the cockpit in place of the `/brain?embed=1` 
 handover §3.5). Arc-reactor core + cost-sized model shell + tier-coloured agent constellation + comet
 token-flow + auto-choreography; reacts to live agent statuses (active agents emit ambient flow). The
 `.nmesh*` CSS ported into `styles.css`. Headless-safe (null-context guard) + vitest-mounted; **visual
-fidelity is owner-verified (CDX-9)**. WorldView / Argus (`v3-worldview.jsx` → `modes_world.tsx` /
-`world_app.tsx`, exists); Life packs as plugins land. *(Follow-up: pulse the mesh on a real SSE event
-stream once such an endpoint exists — today it's choreography + agent-status driven.)*
+fidelity is owner-verified (CDX-9)**. **Cinema mode** ✅ **shipped PR 21** — `shell.tsx` `CinemaMesh` (the §4 shareable artifact): a full-bleed
+`NeuralMesh` (cinema=true) with brand chrome + rotating taglines, toggled by the `m` hotkey, Esc to exit.
+**Honesty contract applied:** the prototype hardcoded "87% on-device / 0 cloud leaks"; the port shows
+only the **real** live-agent count + the **real** %-local (omitted entirely when unknown) — never a
+fabricated split. WorldView / Argus (`v3-worldview.jsx` → `modes_world.tsx` / `world_app.tsx`, exists);
+Life packs as plugins land. *(Follow-up: pulse the mesh on a real SSE event stream once such an endpoint
+exists — today it's choreography + agent-status driven.)*
 
 ---
 

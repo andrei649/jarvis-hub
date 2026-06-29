@@ -31,6 +31,25 @@
 
 ## Items (newest first)
 
+### HUD-v3 PR 21 (Phase D) — Cinema mode (the shareable mesh demo) ⚠️ PIXELS
+- **What:** the handover §4 "shareable artifact." `CinemaMesh` (in `shell.tsx`) is a **full-bleed
+  presentation of the Neural Mesh** (reuses `NeuralMesh` with `cinema=true`) with brand chrome (reactor +
+  JARVIS wordmark + rotating taglines) and a live status footer. Toggled by the **`m`** hotkey (overlays
+  own the keyboard while open); **Esc** or the corner button exits. Built on PR 20's mesh, so it adds no
+  new canvas risk.
+- **Honesty contract enforced (notable):** the prototype hardcoded **"87% on-device / 0 cloud leaks /
+  EGRESS SEALED"** — the port shows **only real figures**: the live-agent count (from the roster) and the
+  **real %-local** (from `/api/analytics/locality`, passed as `localPct`), and **omits the %-local line
+  entirely when it's unknown**. No fabricated split makes it onto the shareable artifact.
+- **Verified (automated, in-env):** `tsc --noEmit` exit 0; new `cinema.test.tsx` (+4: chrome + embedded
+  mesh mount · shows real live-count & %-local and **asserts the fabricated "0 cloud leaks / EGRESS SEALED"
+  are absent** · %-local omitted when null · Esc **and** the exit button both fire `onExit`). Full vitest
+  **132/132** green; `npm run build` refreshed the served bundle, stale-bundle guard reproducible. No
+  backend/route change → parity untouched.
+- **⚠️ NEEDS YOU — pixels (with the mesh):** press **`m`** in the HUD; confirm the cinema overlay fills the
+  screen, the mesh animates centered, the taglines rotate, the footer shows your real live-count/%-local,
+  and Esc exits cleanly. (Same canvas as PR 20 — if the mesh pixels are right, cinema is too.)
+
 ### HUD-v3 PR 20 (Phase D) — native Neural Mesh canvas (drops the /brain iframe) ⚠️ PIXELS
 - **What:** the signature visual. `frontend/src/mesh.tsx` (`NeuralMesh`) is a **faithful TS port** of the
   designer's `docs/design/hud-v3/v3-mesh.jsx`, now rendered in the cockpit **in place of the
