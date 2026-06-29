@@ -31,6 +31,25 @@
 
 ## Items (newest first)
 
+### 0.45 — reusable high-risk-automation contract templates ✅ (library; nothing wired yet)
+- **What:** `agents/core/automation_contracts.py` — a **pure, fail-closed, opt-in** decision layer that
+  generalizes the mandate→gate pattern hand-rolled in `payments.py`. A high-risk automation declares its
+  policy as a `ContractTemplate` of composable `Constraint`s (`at_most`/`one_of`/`not_expired`/
+  `cumulative_at_most`/…, where a cap/allowlist can be a constant **or** a runtime value from an injected
+  `context` mandate). `evaluate()` short-circuits on the first violation with a stable `reason` code,
+  **never executes**, and always carries `requires_approval` (defaults True → routes to the approval queue).
+  `ContractRegistry` keys templates by action kind; unknown kind **fails closed**.
+- **Why it's safe to land dark:** default path is **byte-identical** — nothing builds a registry or evaluates
+  a contract until a caller adopts it. This is the abstraction; wiring it into `plugin_gate`/`payments` (so the
+  existing gates *use* templates instead of bespoke code) is the deliberate next wave.
+- **Verified (automated, in-env):** `tests/test_automation_contracts.py` **30/30** — every factory (incl.
+  fail-closed-on-crash), template order/short-circuit/audit-hook/now-injection/payload-wins-over-context,
+  registry duplicate-guard + unknown-kind fail-closed, and a **payment template that reproduces every
+  `payments.py` denial code end-to-end** (proves the abstraction genuinely generalizes the real gate, not a toy).
+  `ruff` + `bandit` clean.
+- **⚠️ Needs you — nothing blocking:** when we wire a real gate onto this (next wave), confirm the policy
+  matches your intent (caps, allowlists, what counts as high-risk). The library itself changes no runtime behavior.
+
 ### H23.17 — a11y (WCAG) gate on the live HUD ✅ (axe-core, 0 violations baseline)
 - **What:** `frontend/e2e/a11y.spec.ts` runs **`@axe-core/playwright`** against the *live* cockpit **and** the
   cinema overlay in real Chromium (the same lane as the E2E harness). It checks the WCAG 2.0/2.1 A/AA rules
@@ -38,8 +57,13 @@
   actually-painted DOM. The gate fails on the unambiguous-bug impacts (**critical/serious**); the full per-impact
   violation list (incl. moderate/minor advisories) is written to `e2e/artifacts/a11y-{cockpit,cinema}.json` as the
   audit trail, so the advisory backlog stays visible without blocking the lane.
-- **Result:** the hand-ported HUD is **clean — 0 violations at *every* impact level** (critical/serious/moderate/
-  minor) on both the cockpit and the cinema overlay. The gate now guards against an a11y regression slipping in.
+- **Result:** the hand-ported HUD is now **clean — 0 violations at *every* impact level** on both the cockpit and
+  the cinema overlay — but it earned that the honest way: on first CI run the gate **caught a real *serious*
+  violation** my local run missed. CI font metrics made the cockpit roster (and the other clickable-`<div>` list
+  panels) overflow, turning each `.panel-body` (`overflow-y:auto`) into a **scrollable region a keyboard user
+  couldn't reach/scroll** (WCAG 2.1.1/2.1.3 `scrollable-region-focusable`). Fixed the *bug*, not the gate: added
+  `tabIndex={0}` to the cockpit scroll regions (shared `Card` in `gap.tsx` + the `shell.tsx` columns) so they're
+  keyboard-focusable. So the gate has already proven it catches regressions, not just decorates the lane.
 - **Verified (automated, in-env):** `npm run e2e` a11y specs → **2/2 passed** booting the real backend + real
   Chromium; `tsc --noEmit` clean; `npm run build` bundle unchanged (purely additive — new spec + axe devDep).
   Joins the existing non-blocking `e2e.yml` CI lane automatically (no workflow change).
