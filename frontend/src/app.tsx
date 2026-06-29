@@ -15,6 +15,7 @@ import { AutonomyMode, BuildMode, ObserveMode, InteropMode } from './modes2';
 import { ChatMode, CommsMode, AdminMode } from './modes3';
 import { FinanceMode, HealthMode, KnowledgeMode, FamilyMode } from './modes4';
 import { ConsoleOverlay } from './gap';
+import { NeuralMesh } from './mesh';
 import { initAnalytics, trackPageview } from './analytics';
 
 function ModeStub({ label }) {
@@ -299,10 +300,9 @@ function App() {
                   <div className="panel" style={{ flex: '1.3 1 0', minHeight: 0 }}>
                     <span className="bk tl"></span><span className="bk tr"></span><span className="bk bl"></span><span className="bk br"></span>
                     <div className="panel-head"><Icon d={ICONS.brain} size={14} /><span className="ttl">{t.network}</span><span className="st">focus mode</span></div>
-                    {/* Neural Mesh — live canvas brain of agents + models firing
-                        (chrome-less /brain?embed=1; replaces the legacy SVG ring). */}
-                    <iframe title={t.network} src="/brain?embed=1" loading="lazy"
-                      style={{ flex: 1, minHeight: 0, width: '100%', border: 'none', borderRadius: '0 0 var(--radius) var(--radius)', background: '#05080a' }} />
+                    {/* Neural Mesh — native canvas brain of agents + models firing
+                        (HUD-v3 port of v3-mesh.jsx; replaces the /brain?embed=1 iframe). */}
+                    <NeuralMesh agents={agents} activeId={activeId} onSelect={(id) => { setActiveId(id); setDossier(id); }} motion={motion} t={t} />
                   </div>
                   <div className="panel" style={{ flex: '1 1 0', minHeight: 0 }}>
                     <span className="bk tl"></span><span className="bk tr"></span><span className="bk bl"></span><span className="bk br"></span>
