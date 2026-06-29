@@ -31,6 +31,29 @@
 
 ## Items (newest first)
 
+### HUD-v3 PR 20 (Phase D) — native Neural Mesh canvas (drops the /brain iframe) ⚠️ PIXELS
+- **What:** the signature visual. `frontend/src/mesh.tsx` (`NeuralMesh`) is a **faithful TS port** of the
+  designer's `docs/design/hud-v3/v3-mesh.jsx`, now rendered in the cockpit **in place of the
+  `/brain?embed=1` iframe** (dropped, per handover §3.5). Arc-reactor core · cost-sized model shell ·
+  tier-coloured agent constellation that slowly rotates · comet token-flow on attribution edges ·
+  auto-choreographed cascades so it's alive on camera. It reacts to **live agent statuses** (active agents
+  emit ambient comet-flow). The `.nmesh*` CSS was ported into `styles.css`.
+- **Behaviour-preserving changes from the prototype:** added a **null-2D-context guard** + a
+  ResizeObserver guard so it degrades cleanly headless and never throws; dropped the mock
+  `window.JarvisMock.streamSub` pulse hook (production has no mock — the mesh stays alive via choreography
+  + agent-status). *Wiring explicit pulses to a real SSE stream is a follow-up for when such an endpoint
+  exists.*
+- **Verified (automated, in-env):** `tsc --noEmit` exit 0; new `mesh.test.tsx` (+3: mounts and renders the
+  `.nmesh` wrapper/canvas/legend · **runs a real draw frame against a stubbed 2D context** (setTransform +
+  arc called) · degrades cleanly when `getContext` returns null). Full vitest **128/128** green;
+  `npm run build` succeeds and refreshed the served bundle (the iframe→canvas swap compiles clean),
+  stale-bundle guard reproducible. The `/brain` backend route is untouched → parity green.
+- **⚠️⚠️ NEEDS YOU — THE PIXELS (this is the one you offered to check):** open the cockpit and look at the
+  NEURAL MESH panel against a running backend. Confirm: the brain renders (not a blank/black panel), the
+  core + agent nodes + comet flow animate, hovering a node shows its tooltip, clicking an agent focuses it,
+  and `prefers-reduced-motion` calms it. Headless tests prove it *mounts and draws without crashing* — only
+  your eyes can confirm it *looks right*. If anything's off, tell me what and I'll fix it fast.
+
 ### HUD-v3 PR 19 — Oracle truth-sync panel (the last cleanly-surfaceable endpoint)
 - **What:** the Oracle bridge keeps the repo's "truth" docs synced from GitHub and flags local/remote
   conflicts, but had no UI. New `OraclePanel` (in `gap.tsx`, Interop cluster) shows the watcher status +

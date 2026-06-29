@@ -578,3 +578,14 @@ input { font-family: inherit; }
   outline-offset: 2px;
   border-radius: 4px;
 }
+
+/* ── HUD v3 · NEURAL MESH (native canvas brain — replaces the /brain iframe) ── */
+.nmesh { position:relative; flex:1; min-height:0; overflow:hidden; cursor:crosshair; border-radius:0 0 var(--radius) var(--radius); background:radial-gradient(circle at 50% 46%, rgba(20,46,68,0.28), transparent 72%); }
+.nmesh canvas { display:block; width:100%; height:100%; }
+.nmesh-tip { position:absolute; transform:translate(-50%,-128%); background:var(--void-2); border:1px solid var(--accent-dim); border-radius:6px; padding:5px 9px; pointer-events:none; white-space:nowrap; z-index:3; box-shadow:var(--shadow); }
+.nmesh-tip .nm-name { font-size:11px; color:var(--ink); font-weight:600; }
+.nmesh-tip .nm-role { font-family:var(--font-mono); font-size:9px; color:var(--ink-3); margin-top:1px; }
+.nmesh-legend { position:absolute; left:12px; bottom:10px; right:12px; display:flex; gap:13px; align-items:center; font-family:var(--font-mono); font-size:8.5px; color:var(--ink-3); pointer-events:none; }
+.nmesh-legend i.nm-dot { display:inline-block; width:7px; height:7px; border-radius:50%; margin-right:5px; vertical-align:middle; }
+.nm-dot.core { background:#2bb8f0; box-shadow:0 0 6px rgba(43,184,240,.6); } .nm-dot.local { background:#41f59b; } .nm-dot.cloud { background:#a78bfa; }
+.nmesh-legend .nm-hint { margin-left:auto; color:var(--ink-4); }

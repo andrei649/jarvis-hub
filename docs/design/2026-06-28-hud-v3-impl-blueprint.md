@@ -88,9 +88,14 @@ construction).
 
 ### Phase D — tail (P2)
 
-Native canvas **Neural Mesh** (`v3-mesh.jsx`) ported as a `<canvas>` component sharing the data layer
-(drop the `/brain?embed=1` iframe — handover §3.5); WorldView / Argus (`v3-worldview.jsx` →
-`modes_world.tsx` / `world_app.tsx`, exists); Life packs as plugins land.
+Native canvas **Neural Mesh** ✅ **shipped PR 20** — `frontend/src/mesh.tsx` (`NeuralMesh`), a faithful TS
+port of `v3-mesh.jsx`, rendered in the cockpit in place of the `/brain?embed=1` **iframe** (now dropped;
+handover §3.5). Arc-reactor core + cost-sized model shell + tier-coloured agent constellation + comet
+token-flow + auto-choreography; reacts to live agent statuses (active agents emit ambient flow). The
+`.nmesh*` CSS ported into `styles.css`. Headless-safe (null-context guard) + vitest-mounted; **visual
+fidelity is owner-verified (CDX-9)**. WorldView / Argus (`v3-worldview.jsx` → `modes_world.tsx` /
+`world_app.tsx`, exists); Life packs as plugins land. *(Follow-up: pulse the mesh on a real SSE event
+stream once such an endpoint exists — today it's choreography + agent-status driven.)*
 
 ---
 
