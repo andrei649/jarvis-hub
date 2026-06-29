@@ -15,6 +15,9 @@ import json
 import logging
 import math
 import sqlite3
+import time
+import uuid
+from collections.abc import Callable
 from dataclasses import asdict
 from pathlib import Path
 from typing import Optional
@@ -26,6 +29,7 @@ from .knowledge import KnowledgeExtractor
 from .normalizer import NormalizedMessage
 from .parser_facebook import FacebookParser
 from .parser_whatsapp import WhatsAppParser
+from .provenance import ProvenanceLedger
 from .stylometry import StylometryAnalyzer
 
 logger = logging.getLogger("jarvis.ingestion.pipeline")
@@ -40,6 +44,9 @@ class IngestionPipeline:
         output_root: str = None,
         my_name: str = "Andrei Tarcomnicu",
         my_short_name: str = "Andrei",
+        *,
+        ledger: Optional[ProvenanceLedger] = None,
+        clock: Optional[Callable[[], float]] = None,
     ):
         self.data_root = Path(data_root)
         self.output_root = Path(output_root) if output_root is not None else data_path("archive")
@@ -54,17 +61,50 @@ class IngestionPipeline:
         self.messages: list[NormalizedMessage] = []
         self.my_messages: list[NormalizedMessage] = []
 
+        # 0.37 wiring: when a provenance ledger is attached, each parsed message
+        # gets an auditable origin record (opt-in; None → behaviour unchanged).
+        self._ledger = ledger
+        self._clock = clock or time.time
+
+    def _record_provenance(self, messages, *, source: str, phase: str,
+                           run_id: str, now: float) -> int:
+        """Best-effort: record one provenance entry per message into the attached
+        ledger. A no-op when no ledger is wired; a ledger hiccup never breaks
+        ingestion. Returns how many records were written."""
+        if self._ledger is None:
+            return 0
+        recorded = 0
+        for m in messages:
+            try:
+                self._ledger.record(
+                    source=getattr(m, "source", "") or source,
+                    origin=str(getattr(m, "conversation_id", "") or ""),
+                    phase=phase,
+                    content=getattr(m, "text", "") or "",
+                    run_id=run_id,
+                    now=now,
+                    meta={"sender": getattr(m, "sender", ""),
+                          "is_me": bool(getattr(m, "is_me", False))},
+                )
+                recorded += 1
+            except Exception:
+                logger.debug("provenance record failed", exc_info=True)
+        return recorded
+
     def run(self, fb_dir: Optional[str] = None, wa_dir: Optional[str] = None) -> dict:
         logger.info("=" * 50)
         logger.info("Ingestion pipeline started")
         logger.info("=" * 50)
 
         phases = []
+        run_id = uuid.uuid4().hex[:12]
+        now = self._clock()
 
         # Phase 1: Parse Facebook
         fb_path = Path(fb_dir) if fb_dir else self.data_root / "facebook" / "messages" / "inbox"
         fb_messages = list(self.fb_parser.parse_directory(fb_path))
         self.messages.extend(fb_messages)
+        self._record_provenance(fb_messages, source="facebook", phase="parse", run_id=run_id, now=now)
         phases.append({"phase": "facebook", "messages": len(fb_messages)})
         logger.info(f"Phase 1 complete: {len(fb_messages)} Facebook messages")
 
@@ -72,6 +112,7 @@ class IngestionPipeline:
         wa_path = Path(wa_dir) if wa_dir else self.data_root / "whatsapp"
         wa_messages = list(self.wa_parser.parse_directory(wa_path))
         self.messages.extend(wa_messages)
+        self._record_provenance(wa_messages, source="whatsapp", phase="parse", run_id=run_id, now=now)
         phases.append({"phase": "whatsapp", "messages": len(wa_messages)})
         logger.info(f"Phase 2 complete: {len(wa_messages)} WhatsApp messages")
 
@@ -116,6 +157,7 @@ class IngestionPipeline:
         phases.append({"phase": "jsonl", "path": str(json_path)})
 
         summary = {
+            "run_id": run_id,
             "total_messages": len(self.messages),
             "my_messages": len(self.my_messages),
             "facebook_messages": len(fb_messages),

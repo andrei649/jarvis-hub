@@ -31,6 +31,22 @@
 
 ## Items (newest first)
 
+### 0.37 — provenance ledger **wired into the ingestion pipeline** ✅ (opt-in)
+- **What:** `IngestionPipeline` now accepts an optional `ledger=` (+ injectable `clock=`). Each `run()` stamps a
+  per-run `run_id` (surfaced in the summary) and, after each parse phase, records **one provenance entry per parsed
+  message** (source / origin=conversation / SHA-256 content-hash / sender·is-me). So ingested memory now carries an
+  auditable "where did this come from" trail you can later `verify()` for tamper-evidence and walk with `lineage()`.
+- **Why it's still safe:** **opt-in** — no ledger attached (the default, and all 3 existing callers) → byte-identical,
+  the `_record_provenance` helper just returns 0. **Best-effort** — a ledger write hiccup is swallowed so it can
+  never break an ingestion run. The new constructor params are keyword-only. No import cycle (provenance doesn't
+  import the pipeline).
+- **Verified (automated, in-env):** `tests/test_ingestion_pipeline_provenance.py` **4/4** (per-message records carry
+  the right source/origin/hash/meta, no-ledger no-op, message-source-overrides-batch-label, ledger-hiccup-never-
+  breaks-ingestion) + the 12 `test_ingestion_provenance.py` + `test_howard_rag.py` still green. `ruff` + `bandit` clean.
+- **⚠️ Needs you — note on scale:** provenance is per-message, bounded by the ledger's oldest-first pruning
+  (default 50k). For a large Howard ingest you'd raise `max_keep` or move to per-conversation granularity — flagged
+  as a follow-up. Default build records nothing (no ledger wired into the live ingestion call yet).
+
 ### 0.46 — media catalog **wired into the live generator** ✅ (opt-in; first wiring of a "dark" library)
 - **What:** `MediaGenManager` now accepts an optional `catalog=` (+ injectable `clock=`). On each **successful local**
   generation it records the item (kind / prompt / path-from-result / backend / tags) and returns a `catalog_id`.
