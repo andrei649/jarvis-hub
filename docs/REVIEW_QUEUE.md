@@ -31,6 +31,22 @@
 
 ## Items (newest first)
 
+### 0.51 — reference-grounded planning ✅ (honest-grounding enforcement, no fabrication)
+- **What:** `agents/core/grounded_plan.py` — the honest-grounding core of the Reference-Driven Creation flow. The
+  model drafts steps that cite fetched sources; `ground_plan(goal, references, steps)` is a **pure validator** that
+  makes the grounding auditable. A step is *grounded* only if it cites a **known** reference id; a citation to an
+  **unknown** id is surfaced in `unknown_cites` (never silently dropped); an uncited / only-phantom-cited step lands
+  in `ungrounded_steps`. It reports per-step `grounded`/`cited_titles` and plan-level `coverage`,
+  `unused_references`, `unknown_citations`, and `fully_grounded` (true only when every step is grounded *and* no
+  phantom citation exists anywhere).
+- **Why it matters:** directly encodes the project's "nothing is fabricated" invariant — it never *generates*, it
+  refuses to let an unsupported step pass as grounded. The LLM proposes; this layer keeps it honest.
+- **Verified (automated, in-env):** `tests/test_grounded_plan.py` **8/8**: fully-grounded, ungrounded-flagged,
+  unknown-surfaced-not-dropped, only-phantom→ungrounded, coverage+unused+dedup, empty-plan vacuously-clean,
+  no-references no-crash, reference-without-id raises. `ruff` + `bandit` clean.
+- **⚠️ Needs you — nothing blocking:** the model-side draft generation + the SSRF-safe fetch choreography that feeds
+  this validator is the remaining half (host/LLM seam). This is the enforcement gate the generated plan passes through.
+
 ### 0.26 — capture inbox export ✅ (portable, already-redacted snapshot)
 - **What:** `PassiveCapture.export()` / `write_export(dest)` — the data half of "phone export." Produces a portable,
   JSON-safe snapshot of the capture inbox (`{version, exported_at, surface, count, surfaces, records}`), optionally
