@@ -87,4 +87,23 @@ describe('DecisionInboxPanel — the north-star resolve action is live', () => {
     // invalid JSON is swallowed by the try/catch — no decision POST should fire
     expect(fn.mock.calls.some((c) => String(c[0]).includes('/decision') && c[1]?.method === 'POST')).toBe(false);
   });
+
+  it('preview GETs the dry-run and shows the consequences (effects + irreversible + would-execute)', async () => {
+    const fn = mockFetch({
+      // GET blocked queue AND the dry-run share one mock payload
+      tasks: [{ id: 5, title: 'Wire $200', kind: 'payment', risk_tier: 3, status: 'blocked' }],
+      summary: 'Send $200 to ACME', irreversible: true, would_execute: false,
+      effects: ['debit 200', 'notify payee'],
+    });
+    render(<DecisionInboxPanel />);
+    await waitFor(() => expect(screen.getByTitle('dry-run preview')).toBeTruthy());
+    fireEvent.click(screen.getByTitle('dry-run preview'));
+    await waitFor(() => expect(
+      fn.mock.calls.some((c) => String(c[0]).includes('/api/autonomy/tasks/5/preview'))
+    ).toBe(true));
+    await waitFor(() => expect(screen.getByText('Send $200 to ACME')).toBeTruthy());
+    expect(screen.getByText('irreversible')).toBeTruthy();
+    expect(screen.getByText('would queue')).toBeTruthy();   // would_execute:false
+    expect(screen.getByText('debit 200')).toBeTruthy();
+  });
 });
