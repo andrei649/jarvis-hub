@@ -30,6 +30,7 @@ may be a literal or a ``callable(view) -> value`` for the runtime case.
 from __future__ import annotations
 
 import contextlib
+import math
 import time
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
@@ -88,7 +89,7 @@ def positive(field_name: str) -> Constraint:
         v = view.get(field_name)
         if isinstance(v, bool) or not isinstance(v, (int, float)):
             return f"invalid_number:{field_name}"
-        if v != v or v <= 0:  # NaN or non-positive
+        if math.isnan(v) or v <= 0:  # reject NaN (math.isnan is clearer than v != v) + non-positive
             return f"non_positive:{field_name}"
         return None
 
