@@ -108,6 +108,17 @@ def test_persistence_corrupt_safety_and_stats(tmp_path):
     assert h2.record("c", "1", "install", now=4.0)["name"] == "c"
 
 
+def test_equal_timestamps_use_insertion_order(tmp_path):
+    # rapid events sharing a time.time() value must still resolve current/rollback
+    # by record order (latest recorded wins) — not invert it
+    h = _h(tmp_path)
+    h.record("pkg", "1.0.0", "install", now=5.0)
+    h.record("pkg", "2.0.0", "install", now=5.0)   # same timestamp, recorded later
+    assert h.current_version("pkg") == "2.0.0"
+    assert h.rollback_target("pkg") == "1.0.0"
+    assert [e["version"] for e in h.history("pkg")] == ["2.0.0", "1.0.0"]
+
+
 def test_bounded_prunes_oldest_first(tmp_path):
     h = _h(tmp_path, max_keep=3)
     for i in range(5):

@@ -8,6 +8,7 @@ import logging
 import os
 import sqlite3
 import threading
+import time
 import zipfile
 from datetime import datetime, timezone
 from pathlib import Path
@@ -18,6 +19,7 @@ from agents.core.persistence.migrations import apply_migrations
 
 from . import signing
 from .loader import SkillLoader
+from .skill_history import SkillHistory
 
 logger = logging.getLogger("jarvis.skills.marketplace")
 
@@ -50,14 +52,43 @@ def _require_reviewed() -> bool:
 
 
 class SkillMarketplace:
-    def __init__(self, skills_dir: str = "skills", db_path: Optional[str] = None):
+    def __init__(self, skills_dir: str = "skills", db_path: Optional[str] = None,
+                 *, history: Optional[SkillHistory] = None, clock=None):
         self.skills_dir = Path(skills_dir)
         self.skills_dir.mkdir(parents=True, exist_ok=True)
         self.db_path = Path(db_path) if db_path else DB_PATH
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
         # Guard concurrent publish/install from async task runners (H7.4).
         self._lock = threading.Lock()
+        # 0.58 wiring: when a version-history ledger is attached, publish/install/
+        # uninstall are recorded so a rollback target can be derived. Opt-in;
+        # None → behaviour is byte-identical to before.
+        self._history = history
+        self._clock = clock or time.time
         self._init_db()
+
+    def _record_history(self, name: str, version: str, action: str) -> None:
+        """Best-effort version-history record (no-op without a ledger; a ledger
+        hiccup never breaks the publish/install/uninstall it accompanies)."""
+        if self._history is None or not name or not version:
+            return
+        try:
+            self._history.record(str(name), str(version), action, now=self._clock())
+        except Exception:
+            logger.debug("skill history record failed", exc_info=True)
+
+    def _registry_version(self, name: str) -> Optional[str]:
+        """The version a skill is registered at, or None if not registered."""
+        conn = sqlite3.connect(str(self.db_path), check_same_thread=False)
+        try:
+            conn.row_factory = sqlite3.Row
+            with self._lock:
+                row = conn.execute(
+                    "SELECT version FROM marketplace_skills WHERE name = ?", (name,)
+                ).fetchone()
+            return row["version"] if row else None
+        finally:
+            conn.close()
 
     def _init_db(self):
         # check_same_thread=False: marketplace methods may be called from
@@ -145,6 +176,8 @@ class SkillMarketplace:
             conn.close()
 
         logger.info(f"Published skill '{skill_name}' to marketplace registry.")
+        self._record_history(manifest.get("name", skill_name),
+                             manifest.get("version", "0.1.0"), "publish")
         return {
             "name": manifest.get("name", skill_name),
             "version": manifest.get("version", "0.1.0"),
@@ -219,12 +252,14 @@ class SkillMarketplace:
             conn.row_factory = sqlite3.Row
             with self._lock:
                 row = conn.execute(
-                    "SELECT package_zip, review_status FROM marketplace_skills WHERE name = ?", (skill_name,)
+                    "SELECT package_zip, review_status, version FROM marketplace_skills WHERE name = ?",
+                    (skill_name,),
                 ).fetchone()
             if not row:
                 raise ValueError(f"Skill '{skill_name}' not found in registry database.")
             zip_data = row["package_zip"]
             status = row["review_status"] or REVIEW_PENDING
+            version = row["version"]
         finally:
             conn.close()
 
@@ -234,7 +269,10 @@ class SkillMarketplace:
                 "Moderate it to 'approved' before installing (JARVIS_REQUIRE_REVIEWED_SKILLS)."
             )
 
-        return self.install_from_zip(zip_data)
+        installed = self.install_from_zip(zip_data)
+        if installed:
+            self._record_history(skill_name, version, "install")
+        return installed
 
     def uninstall_skill(self, skill_name: str, *, purge: bool = False) -> bool:
         """Remove an INSTALLED skill from disk (0.58 Pack Manager).
@@ -257,6 +295,9 @@ class SkillMarketplace:
         if target == base or base not in target.parents:
             raise ValueError(f"refusing to remove outside the skills directory: {skill_name!r}")
 
+        # capture the version before a purge drops the registry row
+        version = self._registry_version(name) if self._history is not None else None
+
         removed = False
         if target.exists() and target.is_dir():
             import shutil
@@ -264,6 +305,8 @@ class SkillMarketplace:
             removed = True
         if purge:
             self.remove_from_registry(name)
+        if removed and version:
+            self._record_history(name, version, "uninstall")
         logger.info("Uninstalled a marketplace skill (removed=%s, purged=%s)", removed, purge)
         return removed
 

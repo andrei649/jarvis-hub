@@ -88,9 +88,17 @@ class SkillHistory:
         return dict(item)
 
     def history(self, name: str | None = None) -> list[dict]:
-        """Events (optionally for one skill), newest-first."""
+        """Events (optionally for one skill), newest-first.
+
+        Ordering is robust to equal timestamps: a stable **ascending** sort keeps
+        insertion order among ties, then the list is reversed — so the
+        latest-*recorded* event wins a tie. (Two events sharing a ``time.time()``
+        value — e.g. a publish immediately followed by an install — would otherwise
+        invert ``current_version``/``rollback_target``.)
+        """
         items = [dict(r) for r in self._read() if name is None or r.get("name") == name]
-        items.sort(key=lambda r: float(r.get("at", 0)), reverse=True)
+        items.sort(key=lambda r: float(r.get("at", 0)))   # stable → insertion order on ties
+        items.reverse()
         return items
 
     def _present_versions(self, name: str) -> list[str]:

@@ -31,6 +31,22 @@
 
 ## Items (newest first)
 
+### 0.58 — version-history ledger **wired into the marketplace** ✅ (opt-in) + an ordering-robustness fix
+- **What:** `SkillMarketplace(history=…, clock=…)` now records a `publish`/`install`/`uninstall` event to the ledger
+  on each op, so `current_version` / `rollback_target` are derived from real marketplace activity. The install path
+  also reads the registry `version`; uninstall captures it before a purge drops the row.
+- **Plus a correctness fix it surfaced:** `SkillHistory.history()` ordered by timestamp with `reverse=True`, which
+  for **equal** `time.time()` values (a publish immediately followed by an install) kept insertion order instead of
+  reversing it — inverting the rollback target. Now: stable ascending sort then reverse, so the latest *recorded*
+  event wins a tie. Regression-tested.
+- **Why it's safe:** **opt-in / best-effort** — `history=None` (the default, and every existing caller) is
+  byte-identical; a ledger hiccup never breaks the publish/install/uninstall it accompanies. No import cycle.
+- **Verified (automated, in-env):** `tests/test_marketplace_history.py` **4/4** (publish+install recorded, **upgrade
+  chain → rollback target**, uninstall audited, no-ledger-unchanged) + `tests/test_skill_history.py` 10/10 (incl. the
+  equal-timestamp regression) + the 3 existing marketplace suites still green. `ruff` + `bandit` clean.
+- **⚠️ Needs you — nothing blocking:** full package *rollback* (restoring the actual prior bytes) still needs prior
+  packages retained; the app doesn't attach a ledger by default yet. This makes the marketplace *able* to record history.
+
 ### 0.58 — skill version-history ledger ✅ (the rollback-target foundation)
 - **What:** `agents/core/skills/skill_history.py` — the version-history schema the backlog flags as a prerequisite
   for pack rollback. The marketplace registry keeps **one row per skill** (`INSERT OR REPLACE`), so an upgrade loses
