@@ -12,16 +12,22 @@ from __future__ import annotations
 import inspect
 import logging
 import time
-from typing import TYPE_CHECKING, Callable, Optional
-
-if TYPE_CHECKING:
-    # Annotation only — importing MediaCatalog at runtime would be circular
-    # (media_catalog imports KINDS from here). The manager only duck-calls .add().
-    from agents.core.media_catalog import MediaCatalog
+from typing import Any, Callable, Optional, Protocol
 
 logger = logging.getLogger("jarvis.media_gen")
 
 KINDS = ("image", "thumbnail", "video")
+
+
+class _CatalogLike(Protocol):
+    """Structural type for the one method this manager uses on a media catalog.
+
+    Kept as a Protocol rather than importing ``MediaCatalog`` so ``media_gen``
+    holds *no* reference to ``media_catalog`` (which imports ``KINDS`` from here)
+    — there is no import cycle, static or runtime, in either direction."""
+
+    def add(self, **kwargs: Any) -> dict:
+        ...
 
 
 async def _maybe_await(v):
@@ -30,7 +36,7 @@ async def _maybe_await(v):
 
 class MediaGenManager:
     def __init__(self, backends: Optional[dict] = None, enqueue: Optional[Callable] = None,
-                 agent: str = "pepper", *, catalog: Optional[MediaCatalog] = None,
+                 agent: str = "pepper", *, catalog: Optional[_CatalogLike] = None,
                  clock: Optional[Callable[[], float]] = None) -> None:
         self._backends = backends or {}     # kind -> async backend(prompt, opts) -> result
         self._enqueue = enqueue
