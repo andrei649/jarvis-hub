@@ -28,7 +28,7 @@ function Card({ title, sub, onReload, children }: { title?: any; sub?: any; onRe
         {sub != null && <span className="st">{sub}</span>}
         {onReload && <button className="tool-btn" style={{ marginLeft: 'auto' }} onClick={onReload} title="reload">↻</button>}
       </div>
-      <div className="panel-body tight">{children}</div>
+      <div className="panel-body tight" tabIndex={0}>{children}</div>
     </div>
   );
 }

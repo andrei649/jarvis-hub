@@ -130,7 +130,7 @@ function ContextColumn({ decisions, onDecision, weather, calendar, heartbeat, de
       <div className="panel">
         <span className="bk tl"></span><span className="bk tr"></span><span className="bk bl"></span><span className="bk br"></span>
         <div className="panel-head"><Icon d={ICONS.bolt} size={14}/><span className="ttl">{t.decisions}</span><span className="st">{decisions.length}</span></div>
-        <div className="panel-body tight">
+        <div className="panel-body tight" tabIndex={0}>
           {decisions.length===0 && empty('queue clear ✓')}
           {decisions.map((d,i)=>(
             <div className="dcard" key={d._id}>
@@ -145,7 +145,7 @@ function ContextColumn({ decisions, onDecision, weather, calendar, heartbeat, de
       <div className="panel">
         <span className="bk tl"></span><span className="bk tr"></span><span className="bk bl"></span><span className="bk br"></span>
         <div className="panel-head"><Icon d={ICONS.observe} size={14}/><span className="ttl">{t.weather}</span>{W && <span className="st">{W.city}</span>}</div>
-        <div className="panel-body wcard">
+        <div className="panel-body wcard" tabIndex={0}>
           {W ? (<>
             <div style={{display:'flex',alignItems:'flex-end',gap:14}}>
               <div className="temp">{W.temp}°</div>
@@ -165,7 +165,7 @@ function ContextColumn({ decisions, onDecision, weather, calendar, heartbeat, de
       <div className="panel">
         <span className="bk tl"></span><span className="bk tr"></span><span className="bk bl"></span><span className="bk br"></span>
         <div className="panel-head"><Icon d={ICONS.cockpit} size={14}/><span className="ttl">{t.schedule}</span><span className="st">{CAL.length}</span></div>
-        <div className="panel-body tight">
+        <div className="panel-body tight" tabIndex={0}>
           {CAL.length===0 && empty('calendar not connected')}
           {CAL.map((c,i)=>(
             <div className={'cal-row '+(c.state||'')} key={i}>
@@ -179,7 +179,7 @@ function ContextColumn({ decisions, onDecision, weather, calendar, heartbeat, de
       <div className="panel">
         <span className="bk tl"></span><span className="bk tr"></span><span className="bk bl"></span><span className="bk br"></span>
         <div className="panel-head"><Icon d={ICONS.autonomy} size={14}/><span className="ttl">{t.heartbeat}</span></div>
-        <div className="panel-body tight">
+        <div className="panel-body tight" tabIndex={0}>
           {HB.length===0 && empty('no activity yet')}
           {HB.map((h,i)=>(
             <div className="hbrow" key={i}><div className={'sev '+h.sev}></div><div><div className="ht"><span className="ag">{h.ag}</span><span>{h.t}</span></div><div className="hx">{h.x}</div></div></div>
@@ -198,7 +198,7 @@ function RosterColumn({ agents, activeId, onSelect, sys, llm, demo, t }){
       <div className="panel scroll" style={{flex:'1 1 auto'}}>
         <span className="bk tl"></span><span className="bk tr"></span><span className="bk bl"></span><span className="bk br"></span>
         <div className="panel-head"><Icon d={ICONS.agents} size={14}/><span className="ttl">{t.roster}</span><span className="st">{agents.length} enabled</span></div>
-        <div className="panel-body tight">
+        <div className="panel-body tight" tabIndex={0}>
           {agents.length===0 && <div style={{color:'var(--ink-3)',fontSize:11,textAlign:'center',padding:'16px 0',fontFamily:'var(--font-mono)'}}>roster offline — server unreachable</div>}
           {TIERS.map(tier=>{
             const list=agents.filter(a=>a.tier===tier.id); if(!list.length)return null;
@@ -218,7 +218,7 @@ function RosterColumn({ agents, activeId, onSelect, sys, llm, demo, t }){
       <div className="panel" style={{flex:'none'}}>
         <span className="bk tl"></span><span className="bk tr"></span><span className="bk bl"></span><span className="bk br"></span>
         <div className="panel-head"><Icon d={ICONS.admin} size={14}/><span className="ttl">{t.system}</span></div>
-        <div className="panel-body tight">
+        <div className="panel-body tight" tabIndex={0}>
           {(() => { const S = sys || {}; const lm = llm || {}; const pct = (u, tot) => (tot ? Math.round((u / tot) * 100) : 0);
             const model = lm.state==='ready' ? (lm.model || 'loaded') : lm.state==='no_model' ? 'no model loaded' : lm.state==='offline' ? 'backend offline' : '—';
             const mcol = lm.state==='ready' ? 'var(--accent-light)' : (lm.state==='no_model' || lm.state==='offline') ? 'var(--amber)' : 'var(--ink-3)';
