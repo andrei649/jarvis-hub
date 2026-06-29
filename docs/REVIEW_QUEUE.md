@@ -31,6 +31,21 @@
 
 ## Items (newest first)
 
+### HUD-v3 PR 17 (B1++) — Decision Inbox dry-run preview (see consequences before approving)
+- **What:** the safest possible north-star affordance — a **preview** button on each blocked decision that
+  fetches the **dry-run** (`GET /api/autonomy/tasks/{id}/preview`, H12.5) and renders the consequences
+  inline *before* you accept: the **summary**, an **irreversible** flag (red), **would-execute / would-queue**,
+  and the first few **effects**. The blueprint's B1 acceptance always called for this preflight; now it's
+  there. Toggling it again hides it; it never blocks the accept/edit/reject/defer controls.
+- **Why:** completes the north-star's safety story — you can *look before you leap* on a tier-3 irreversible
+  action (e.g. a payment) instead of approving blind.
+- **Verified (automated, end-to-end in-env):** `tsc --noEmit` exit 0; `decision-inbox-panel.test.tsx` grew
+  +1 (now 7): preview GETs `…/{id}/preview` and shows the summary + `irreversible` + `would queue` + an
+  effect. Full vitest **121/121** green; `npm run build` refreshed the served bundle, stale-bundle guard
+  reproducible. No backend/route change → parity untouched.
+- **⚠️ Needs you — live pixels:** queue a tier-3 (e.g. payment) decision, click **preview**, and confirm
+  the dry-run consequences match what the action would actually do before you accept.
+
 ### HUD-v3 PR 16 — Security Skills browser (the 0.42 ATT&CK pack, now visible)
 - **What:** the 0.42 Security Skills pack (curated, offline ATT&CK / D3FEND / NIST CSF knowledge) had a
   full read-only API but **no UI**. New `SecuritySkillsPanel` (in `gap.tsx`, Trust cluster) browses the

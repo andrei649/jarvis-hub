@@ -1107,6 +1107,15 @@ export function DecisionInboxPanel() {
     payload !== undefined ? { action, payload } : { action }, () => { setEditing(null); reload(); });
   const startEdit = (t) => { setEditing(t.id); setDraft(JSON.stringify(t.payload || {}, null, 2)); };
   const saveEdit = (id) => { let p; try { p = JSON.parse(draft); } catch { return; } decide(id, 'edit', p); };
+  // dry-run preview (H12.5) — "see what it'll do before you approve" (the open preview endpoint)
+  const [preview, setPreview] = useState(null);   // { id, data }
+  const loadPreview = (id) => {
+    if (preview && preview.id === id) { setPreview(null); return; }
+    setPreview({ id, data: null });
+    apiGet('/api/autonomy/tasks/' + id + '/preview')
+      .then((r) => setPreview({ id, data: r || {} }))
+      .catch(() => setPreview({ id, data: { error: 'preview unavailable' } }));
+  };
   const tierColor = (n) => n >= 3 ? 'var(--red)' : n === 2 ? 'var(--amber)' : 'var(--ink-3)';
   return (
     <Card title="DECISION INBOX" sub={d ? `${pending.length} awaiting you` : null} onReload={reload}>
@@ -1117,12 +1126,31 @@ export function DecisionInboxPanel() {
             <span style={{ ...mono, color: 'var(--ink-2)' }}>{t.title || t.kind || ('task ' + t.id)}</span>
             <span style={{ marginLeft: 'auto', display: 'flex', gap: 5, alignItems: 'center' }}>
               {typeof t.risk_tier === 'number' && <Tag c={tierColor(t.risk_tier)}>tier {t.risk_tier}</Tag>}
+              <button className="tool-btn" title="dry-run preview" onClick={() => loadPreview(t.id)}>preview</button>
               <button className="tool-btn" title="accept" onClick={() => decide(t.id, 'accept')}>✓</button>
               <button className="tool-btn" title="edit" onClick={() => startEdit(t)}>edit</button>
               <button className="tool-btn" title="reject" onClick={() => decide(t.id, 'reject')}>✕</button>
               <button className="tool-btn" title="defer" onClick={() => decide(t.id, 'defer')}>defer</button>
             </span>
           </Row>
+          {preview && preview.id === t.id && (
+            <div style={{ margin: '4px 0 8px 12px', fontSize: 10 }}>
+              {preview.data === null ? <span style={{ color: 'var(--ink-3)' }}>previewing…</span>
+                : preview.data.error ? <span style={{ color: 'var(--amber)' }}>{preview.data.error}</span>
+                : (
+                  <>
+                    <div style={{ color: 'var(--ink-2)' }}>{preview.data.summary || preview.data.title || 'dry run'}</div>
+                    <div style={{ display: 'flex', gap: 5, marginTop: 3, flexWrap: 'wrap', alignItems: 'center' }}>
+                      {preview.data.irreversible && <Tag c="var(--red)">irreversible</Tag>}
+                      <Tag c={preview.data.would_execute ? 'var(--green)' : 'var(--ink-3)'}>{preview.data.would_execute ? 'would execute' : 'would queue'}</Tag>
+                      {(preview.data.effects || []).slice(0, 4).map((ef, k) => (
+                        <Tag key={k}>{typeof ef === 'string' ? ef : (ef.field || ef.summary || 'effect')}</Tag>
+                      ))}
+                    </div>
+                  </>
+                )}
+            </div>
+          )}
           {editing === t.id && (
             <div style={{ margin: '6px 0' }}>
               <textarea value={draft} onChange={(ev) => setDraft(ev.target.value)} style={{ ...taS, minHeight: 80 }} />
