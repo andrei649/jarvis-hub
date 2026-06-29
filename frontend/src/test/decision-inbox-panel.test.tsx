@@ -106,4 +106,14 @@ describe('DecisionInboxPanel — the north-star resolve action is live', () => {
     expect(screen.getByText('would queue')).toBeTruthy();   // would_execute:false
     expect(screen.getByText('debit 200')).toBeTruthy();
   });
+
+  it('shows the interrupt budget (used/per_day) in the header — calm by the numbers', async () => {
+    // one payload serves both GETs: /autonomy/tasks?status=blocked AND /autonomy/interrupts
+    mockFetch({
+      tasks: [{ id: 1, title: 'x', kind: 'k', risk_tier: 1, status: 'blocked' }],
+      remaining: 3, per_day: 4, used: 1,
+    });
+    render(<DecisionInboxPanel />);
+    await waitFor(() => expect(screen.getByText(/1\/4 interrupts today/)).toBeTruthy());
+  });
 });

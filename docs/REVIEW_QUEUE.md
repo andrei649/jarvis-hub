@@ -31,6 +31,21 @@
 
 ## Items (newest first)
 
+### HUD-v3 PR 18 (B1+++) — interrupt budget in the Decision Inbox (calm by the numbers)
+- **What:** surfaces the **interrupt budget** (`GET /autonomy/interrupts` — the MOONSHOT §5.4 "≤N proactive
+  pushes/day" guardrail) right in the Decision Inbox header: *"N awaiting you · used/per_day interrupts
+  today."* PR 0 shipped this endpoint with no UI; the Observe meter shows an aggregate, but this puts the
+  *live remaining headroom* where you actually triage decisions. Default-safe: if no budget is configured
+  (`per_day` null) the header just omits it.
+- **Why:** the calm-by-the-numbers promise made visible at the point of use — you see both the decisions
+  waiting *and* how many more times Jarvis may interrupt you today before it batches the rest.
+- **Verified (automated, end-to-end in-env):** `tsc --noEmit` exit 0; `decision-inbox-panel.test.tsx` grew
+  +1 (now 8): the header renders `used/per_day interrupts today`. Full vitest **122/122** green;
+  `npm run build` refreshed the served bundle, stale-bundle guard reproducible. No backend/route change →
+  parity untouched.
+- **⚠️ Needs you — live pixels:** confirm the Decision Inbox header shows the budget and that it decrements
+  as Jarvis pushes proactive decisions through the day (needs `autonomy.budget` configured).
+
 ### HUD-v3 PR 17 (B1++) — Decision Inbox dry-run preview (see consequences before approving)
 - **What:** the safest possible north-star affordance — a **preview** button on each blocked decision that
   fetches the **dry-run** (`GET /api/autonomy/tasks/{id}/preview`, H12.5) and renders the consequences

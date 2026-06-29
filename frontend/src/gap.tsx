@@ -1101,6 +1101,8 @@ export function OnboardingPanel() {
 export function DecisionInboxPanel() {
   const { d, e, loading, reload } = useApi('/autonomy/tasks?status=blocked', true, true);  // admin
   const pending = arr(d, 'tasks');
+  const interrupts = useApi('/autonomy/interrupts', true, true);   // admin — the calm-by-the-numbers budget
+  const ib = interrupts.d;
   const [editing, setEditing] = useState(null);   // task id whose payload is being edited
   const [draft, setDraft] = useState('');
   const decide = (id, action, payload?) => actA('/autonomy/tasks/' + id + '/decision',
@@ -1118,7 +1120,9 @@ export function DecisionInboxPanel() {
   };
   const tierColor = (n) => n >= 3 ? 'var(--red)' : n === 2 ? 'var(--amber)' : 'var(--ink-3)';
   return (
-    <Card title="DECISION INBOX" sub={d ? `${pending.length} awaiting you` : null} onReload={reload}>
+    <Card title="DECISION INBOX"
+      sub={d ? `${pending.length} awaiting you` + (ib && ib.per_day != null ? ` · ${ib.used ?? 0}/${ib.per_day} interrupts today` : '') : null}
+      onReload={() => { reload(); interrupts.reload(); }}>
       <State e={e} loading={loading} n={pending.length} />
       {pending.slice(0, 10).map((t, i) => (
         <div key={t.id ?? i}>
