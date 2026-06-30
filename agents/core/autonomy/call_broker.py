@@ -143,7 +143,7 @@ class CallBroker:
 
     def __init__(self, enqueue: Optional[Callable] = None, agent: str = "jarvis",
                  secret_broker=None, client=None, audit=None, budget=None,
-                 config: Optional[dict] = None, kernel=None) -> None:
+                 config: Optional[dict] = None, kernel=None, ledger=None) -> None:
         self._enqueue = enqueue
         self.agent = agent
         self._secrets = secret_broker
@@ -152,6 +152,10 @@ class CallBroker:
         self._budget = budget   # InterruptBudget: .remaining() / .consume()
         self.config = config or {}
         self._kernel = kernel   # ORIZONT-24 K1: bound kernel.authorize (default-off)
+        # H23.1 (opt-in): kernel BudgetLedger (token/wall-time/recursion). None →
+        # no enforcement, execute() stays byte-identical. Build via
+        # kernel.binding.make_budget_ledger(...) when a limit is configured.
+        self._ledger = ledger
 
     @staticmethod
     def supports(provider: str) -> bool:
@@ -222,18 +226,35 @@ class CallBroker:
         message = payload.get("message", "")
         if not self.supports(provider) or not to:
             return {"status": "failed", "reason": "invalid_call", "provider": provider}
-        # Draw an interrupt-budget slot at the moment the call is actually placed.
-        if self._budget is not None and not self._budget.consume():
-            return {"status": "failed", "reason": "interrupt_budget_exhausted"}
-        credentials = self._resolve_credentials(payload)
-        config = self.config.get(provider, {}) if isinstance(self.config, dict) else {}
+        # H23.1 (opt-in): enter the budget ledger; the try/finally below guarantees a
+        # single matching leave(). When no ledger is attached this is a no-op wrapper
+        # and the path is byte-identical to before.
+        if self._ledger is not None:
+            self._ledger.start()
+            self._ledger.enter()
         try:
-            result = await self._client.call(provider, to, message, credentials, config)
-        except Exception:
-            logger.warning("call execute failed", exc_info=True)
-            return {"status": "failed", "reason": "client_error"}
-        self._record("call.execute", f"{provider}:{to}", to=to)
-        return {"status": "ok", "provider": provider, "to": to, "call": result}
+            if self._ledger is not None:
+                reason = self._ledger.exceeded()
+                if reason is not None:   # token / wall-time / recursion-depth breach
+                    self._record("call.budget_denied", reason, to=to)
+                    return {"status": "failed", "reason": "budget_exceeded", "detail": reason}
+            # Draw an interrupt-budget slot at the moment the call is actually placed.
+            if self._budget is not None and not self._budget.consume():
+                return {"status": "failed", "reason": "interrupt_budget_exhausted"}
+            credentials = self._resolve_credentials(payload)
+            config = self.config.get(provider, {}) if isinstance(self.config, dict) else {}
+            try:
+                result = await self._client.call(provider, to, message, credentials, config)
+            except Exception:
+                logger.warning("call execute failed", exc_info=True)
+                return {"status": "failed", "reason": "client_error"}
+            if self._ledger is not None:
+                self._ledger.add_tokens(len(message))   # coarse per-call usage signal
+            self._record("call.execute", f"{provider}:{to}", to=to)
+            return {"status": "ok", "provider": provider, "to": to, "call": result}
+        finally:
+            if self._ledger is not None:
+                self._ledger.leave()
 
     def _resolve_credentials(self, payload: dict) -> dict:
         ref = payload.get("credential_ref") or ""
