@@ -101,6 +101,7 @@
   "GET /api/metrics/north-star",
   "GET /api/missions",
   "GET /api/missions/{mission_id}",
+  "GET /api/models/info",
   "GET /api/models/local",
   "GET /api/nodes",
   "GET /api/notes",

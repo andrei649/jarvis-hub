@@ -34,6 +34,27 @@
 > **Autonomous backlog run (Phase 4 dev loop)** — items below are from a workflow-planned task list (5 parallel
 > surveyors → synthesis planner → 16 prioritized PR-sized tasks). Each ships as one verified PR.
 
+### H23.2 — model-fingerprint **reproducibility rail** ✅ (opt-in tracer hook + read surface)
+- **What:** closes H23.2's named *Pending* half. New `observability/model_info.py` — an opt-in (`JARVIS_MODEL_INFO`)
+  `ModelInfoRegistry` + a pure parser that turns an LM Studio/Ollama `/v1/models` listing into
+  `{id, version, quant, sha256}` (quant parsed from the GGUF id when the backend omits it). The `Tracer` gained an
+  optional `model_info=` resolver that **stamps each trace with the model fingerprint** (flows through the existing
+  `/api/traces`). `GET /api/models/info` (admin) is the read surface; `ModelInfoPanel` (Observe cluster) renders it.
+- **Why it's safe:** default-off — unset flag → the resolver is `None`, every trace's `model_info` stays `{}`
+  (**byte-identical**), and the endpoint reports `enabled:false` (panel shows *"empty until JARVIS_MODEL_INFO is on"*).
+  Enrichment lives at the tracer layer, so **`generate()`'s return contract is unchanged** (the reason it was
+  originally deferred). Best-effort: a resolver hiccup never breaks tracing. Admin-guarded read.
+- **Verified (automated, in-env):** `tests/test_model_info.py` (**+13**: quant parse, OpenAI/Ollama entry shapes,
+  explicit-fields-win, garbage-tolerant, registry register/get/callable-resolver/ingest-wrappers/sorted+stats/bounded
+  eviction, opt-in helper, tracer stamps-from-resolver / empty-without-resolver / hiccup-safe) +
+  `frontend/src/test/model-info-panel.test.tsx` (**+2**). `tsc` clean; vitest **142/142**; `npm run build` (bundle
+  committed); all **4 route gates** pass (auth=admin; `/api/models` already maps to the `admin` HUD surface); `ruff` +
+  CI bandit clean; `agents.web` imports cleanly; existing `test_model_reproducibility.py` still green.
+- **⚠️ Needs you — to see real fingerprints:** the **live `/v1/models` fetch is the host seam** — set
+  `JARVIS_MODEL_INFO=1` and point at a running LM Studio/Ollama; the registry then learns each model's
+  id/version/quant/sha (and digests, for Ollama) when you list local models or run traced requests. Offline the rail
+  records whatever a listing reports (tested with sample payloads).
+
 ### 0.44 — send rate-limit **status surfaced** ✅ (CommsRatePanel; same flag-gated template)
 - **What:** the per-channel OUTBOUND send limiter (`channels/send_rate_limit.py`) gained a read-only `snapshot()`
   (live in-window count per channel — a pure view that prunes/records nothing) + `status_snapshot()` (configured

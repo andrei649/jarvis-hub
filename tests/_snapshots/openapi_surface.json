@@ -101,6 +101,7 @@
   "GET /api/metrics/north-star": "metrics_north_star_api_metrics_north_star_get",
   "GET /api/missions": "missions_list_api_missions_get",
   "GET /api/missions/{mission_id}": "mission_get_api_missions__mission_id__get",
+  "GET /api/models/info": "models_info_api_models_info_get",
   "GET /api/models/local": "models_local_list_api_models_local_get",
   "GET /api/nodes": "nodes_list_api_nodes_get",
   "GET /api/notes": "notes_get_api_notes_get",

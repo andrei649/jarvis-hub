@@ -101,6 +101,7 @@
   "GET /api/metrics/north-star": "open",
   "GET /api/missions": "open",
   "GET /api/missions/{mission_id}": "open",
+  "GET /api/models/info": "admin",
   "GET /api/models/local": "admin",
   "GET /api/nodes": "user",
   "GET /api/notes": "user",

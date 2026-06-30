@@ -314,10 +314,15 @@ class Orchestrator:
         self.ingestion_watcher = None
         # H7.3: debounce checkpoint — counts turns since last full save
         self._turns_since_checkpoint: int = 0
-        # H9.2: trace explorer — in-memory ring buffer
+        # H9.2: trace explorer — in-memory ring buffer.
+        # H23.2 (opt-in): when JARVIS_MODEL_INFO is set, attach a model-fingerprint
+        # registry as the tracer's resolver so each trace records {id,version,quant,
+        # sha256}; unset → registry is None and behavior is byte-identical.
+        from .observability.model_info import default_registry_if_enabled
+        self.model_info = default_registry_if_enabled()
         try:
             from .observability.tracer import Tracer
-            self.tracer = Tracer(maxlen=500)
+            self.tracer = Tracer(maxlen=500, model_info=self.model_info)
         except Exception:
             logger.warning("Tracer initialisation failed — tracing disabled", exc_info=True)
             self.tracer = None
