@@ -175,3 +175,12 @@ class MediaCatalog:
             if r.get("cloud"):
                 cloud += 1
         return {"total": len(items), "cloud": cloud, "by_kind": by_kind}
+
+
+def default_catalog_if_enabled(env=None) -> MediaCatalog | None:
+    """Return a default-path :class:`MediaCatalog` when ``JARVIS_MEDIA_CATALOG`` is
+    set, else ``None`` — the opt-in switch for cataloging generated media. Prompts
+    are sensitive, so recording (and the read surface) stay off unless the owner
+    enables it; the generation path is byte-identical when this returns ``None``."""
+    e = os.environ if env is None else env
+    return MediaCatalog() if e.get("JARVIS_MEDIA_CATALOG") else None

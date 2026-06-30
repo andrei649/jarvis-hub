@@ -150,3 +150,14 @@ def test_stats(tmp_path):
     assert s["total"] == 3
     assert s["cloud"] == 2
     assert s["by_kind"] == {"image": 2, "video": 1}
+
+
+def test_default_catalog_if_enabled_is_opt_in(monkeypatch):
+    import agents.core.media_catalog as mc
+    # default-off: no flag → None (and no file I/O at all)
+    assert mc.default_catalog_if_enabled(env={}) is None
+    assert mc.default_catalog_if_enabled(env={"JARVIS_MEDIA_CATALOG": ""}) is None
+    # flag set → a MediaCatalog (monkeypatched to avoid touching the real data dir)
+    sentinel = object()
+    monkeypatch.setattr(mc, "MediaCatalog", lambda: sentinel)
+    assert mc.default_catalog_if_enabled(env={"JARVIS_MEDIA_CATALOG": "1"}) is sentinel

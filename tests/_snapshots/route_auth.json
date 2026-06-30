@@ -357,5 +357,6 @@
   "PUT /api/notes": "user",
   "PUT /api/workflows/{pipeline_id}": "admin",
   "PUT /plugins/{plugin_id}/toggle": "admin",
-  "GET /api/skills/marketplace/history": "admin"
+  "GET /api/skills/marketplace/history": "admin",
+  "GET /api/media/catalog": "user"
 }
