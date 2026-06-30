@@ -32,7 +32,7 @@ from core.settings_db import put_category
 
 from agents.core.routers._deps import admin_guard, user_guard
 
-from agents.core.web_helpers import nocache_json
+from agents.core.web_helpers import logger, nocache_json
 from agents.core.app_state import get_orch
 
 
@@ -102,7 +102,35 @@ async def llm_moe_route(body: MoERouteBody):
 @router.get("/api/models/local", dependencies=[Depends(admin_guard)])
 async def models_local_list():
     """List local models from LM Studio / Ollama and mark the active one."""
-    return nocache_json(await _web()._list_local_models())
+    catalog = await _web()._list_local_models()
+    # H23.2 (opt-in): teach the model-info registry the fingerprints of whatever the
+    # local backends currently report, so traces can be stamped with {id, version,
+    # quant, sha256}. Best-effort; a no-op when JARVIS_MODEL_INFO is unset (registry
+    # is None) and never fatal to the listing.
+    orch = get_orch()
+    reg = getattr(orch, "model_info", None) if orch else None
+    if reg is not None:
+        try:
+            reg.ingest_listing(catalog)
+        except Exception:
+            logger.debug("model_info ingest_listing failed", exc_info=True)
+    return nocache_json(catalog)
+
+
+@router.get("/api/models/info", dependencies=[Depends(admin_guard)])
+async def models_info():
+    """H23.2 read surface: recorded model fingerprints ``{id, version, quant, sha256}``
+    for reproducibility — which exact model build produced each run.
+
+    A pure read of the in-memory registry (populated as a side effect of listing local
+    models / running traced requests). Reports ``enabled: false`` with empty data when
+    JARVIS_MODEL_INFO is unset."""
+    orch = get_orch()
+    reg = getattr(orch, "model_info", None) if orch else None
+    if reg is None:
+        return nocache_json({"enabled": False, "models": [],
+                             "stats": {"total": 0, "with_sha256": 0, "with_quant": 0}})
+    return nocache_json({"enabled": True, "models": reg.all(), "stats": reg.stats()})
 
 
 class LocalModelSwitch(BaseModel):

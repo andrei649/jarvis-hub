@@ -7,11 +7,14 @@ and exposes list/get/clear.  Thread-safe via threading.Lock.
 
 from __future__ import annotations
 
+import logging
 import threading
 import time
 import uuid
 from collections import deque
 from typing import Optional
+
+logger = logging.getLogger("jarvis.tracer")
 
 try:
     from ..llm.tokenizer import estimate_tokens
@@ -30,9 +33,13 @@ class Tracer:
         oldest entry is evicted automatically (collections.deque semantics).
     """
 
-    def __init__(self, maxlen: int = 500) -> None:
+    def __init__(self, maxlen: int = 500, *, model_info=None) -> None:
         self._buf: deque[dict] = deque(maxlen=maxlen)
         self._lock = threading.Lock()
+        # H23.2 (opt-in): a resolver ``(model_id) -> fingerprint dict | None`` used to
+        # stamp each trace's ``model_info``. ``None`` (the default) → no enrichment,
+        # so ``model_info`` stays ``{}`` and behavior is byte-identical.
+        self._model_info = model_info
 
     # ── write ──────────────────────────────────────────────────────────────
 
@@ -55,6 +62,17 @@ class Tracer:
         entry.setdefault("timings", {})
         entry.setdefault("ok", True)
         entry.setdefault("text_preview", "")
+        entry.setdefault("model_info", {})
+        # H23.2: stamp the model fingerprint when a resolver is wired (opt-in) and the
+        # caller didn't already supply one. Best-effort — a resolver hiccup never
+        # breaks tracing.
+        if self._model_info is not None and entry.get("model") and not entry["model_info"]:
+            try:
+                info = self._model_info(entry["model"])
+                if info:
+                    entry["model_info"] = dict(info)
+            except Exception:
+                logger.debug("model_info resolver failed", exc_info=True)
         with self._lock:
             self._buf.append(entry)
         return trace_id
@@ -108,6 +126,7 @@ class Tracer:
             "cost": t.get("cost", 0.0),
             "total_ms": total_ms,
             "ok": t.get("ok", True),
+            "model_info": t.get("model_info", {}),
         }
 
     # ── H10.24 cost rollups (derived from per-trace `cost`) ─────────────────
