@@ -89,8 +89,26 @@ async def media_status():
 async def media_generate(body: MediaGenBody):
     """H12.24 — governed media generation (cloud generation is approval-gated)."""
     orch = get_orch()
+    from agents.core.media_catalog import default_catalog_if_enabled
     from agents.core.media_gen import MediaGenManager
     q = getattr(orch, "autonomy_queue", None) if orch else None
-    m = MediaGenManager(enqueue=q.enqueue if q is not None else None)
+    # 0.46 (opt-in): catalog the generation when JARVIS_MEDIA_CATALOG is set; else
+    # catalog=None → byte-identical (no prompt history written).
+    m = MediaGenManager(enqueue=q.enqueue if q is not None else None,
+                        catalog=default_catalog_if_enabled())
     result = await m.generate(body.kind, body.prompt, cloud=body.cloud)
     return nocache_json(result, status_code=200 if result.get("ok") else 422)
+
+
+@router.get("/api/media/catalog", dependencies=[Depends(user_guard)])
+async def media_catalog(q: str | None = None, kind: str | None = None):
+    """0.46 read surface: the generated-media catalog (newest-first, optionally
+    filtered by prompt substring ``q`` / ``kind``) + stats. Reports
+    ``enabled: false`` with empty data when JARVIS_MEDIA_CATALOG is unset."""
+    from agents.core.media_catalog import default_catalog_if_enabled
+    cat = default_catalog_if_enabled()
+    if cat is None:
+        return nocache_json({"enabled": False, "items": [],
+                             "stats": {"total": 0, "cloud": 0, "by_kind": {}}})
+    items = cat.search(q, kind=kind) if (q or kind) else cat.all()
+    return nocache_json({"enabled": True, "items": items[:200], "stats": cat.stats()})

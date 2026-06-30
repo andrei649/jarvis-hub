@@ -84,6 +84,7 @@
   "GET /api/local-docs",
   "GET /api/mcp/server",
   "GET /api/media",
+  "GET /api/media/catalog",
   "GET /api/memory/decay/candidates",
   "GET /api/memory/decay/ranking",
   "GET /api/memory/entities",

@@ -34,6 +34,21 @@
 > **Autonomous backlog run (Phase 4 dev loop)** — items below are from a workflow-planned task list (5 parallel
 > surveyors → synthesis planner → 16 prioritized PR-sized tasks). Each ships as one verified PR.
 
+### 0.46 — media catalog **surfaced end-to-end** ✅ (2nd dark store, same flag-gated template)
+- **What:** `default_catalog_if_enabled()` (opt-in via **`JARVIS_MEDIA_CATALOG`**) wired into `media_generate` so a
+  generation is cataloged when enabled; **`GET /api/media/catalog`** (user-guarded, `q`/`kind` filters) reads it; and
+  a HUD **`MediaGalleryPanel`** (Build cluster) renders items + per-kind stats. The same store→app→endpoint→panel
+  slice as skill-history, applied to the media catalog.
+- **Why it's safe:** prompts are sensitive, so recording is **default-off** — unset flag → generation byte-identical
+  (no prompt history) and the endpoint reports `enabled:false`; the panel shows *"empty until JARVIS_MEDIA_CATALOG is
+  on."* The read route is user-guarded (personal data, HF-1).
+- **Verified (automated, in-env):** `tests/test_media_catalog.py` (+1 helper: opt-in returns None vs MediaCatalog,
+  no real I/O) + `frontend/src/test/media-gallery-panel.test.tsx` (+2: live items+stats hitting the right endpoint;
+  disabled-flag banner). `tsc` clean; vitest **136/136**; `npm run build` (bundle committed); all **3 route snapshots
+  reseeded** (route-surface, auth-matrix, openapi); `ruff` + CI bandit clean.
+- **⚠️ Needs you — to see data:** set `JARVIS_MEDIA_CATALOG=1` and generate media (needs a real diffusion backend,
+  a host seam). Provenance is the remaining dark store; it carries conversation ids, so same default-off posture.
+
 ### 0.58 — skill-history **HUD panel** ✅ (renders the read endpoint; first surfaced dark store)
 - **What:** `SkillHistoryPanel` in the Console (Interop cluster) renders `GET /api/skills/marketplace/history` —
   publish/install/uninstall events + per-action stat tags. This completes the vertical slice: dark store → app

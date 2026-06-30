@@ -1377,12 +1377,43 @@ export function SkillHistoryPanel() {
   );
 }
 
+/* 0.46 — the generated-media catalog read surface (GET /api/media/catalog). Renders
+   recent items + per-kind stats. Honesty contract: when JARVIS_MEDIA_CATALOG is off the
+   endpoint reports enabled:false and the panel says so (prompts are sensitive, so nothing
+   is recorded by default). */
+export function MediaGalleryPanel() {
+  const { d, e, loading, reload } = useApi('/api/media/catalog');
+  const enabled = !!(d && d.enabled);
+  const items = arr(d && d.items);
+  const byKind = (d && d.stats && d.stats.by_kind) || {};
+  return (
+    <Card title="MEDIA GALLERY" sub={d ? (enabled ? `${(d.stats && d.stats.total) || 0} items` : 'disabled') : null} onReload={reload}>
+      <State e={e} loading={loading} n={items.length} />
+      {d && !enabled && <div style={{ fontSize: 10, color: 'var(--ink-3)', marginTop: 6 }}>empty until JARVIS_MEDIA_CATALOG is on</div>}
+      {enabled && Object.keys(byKind).length > 0 && (
+        <Row>
+          <span style={mono}>kinds</span>
+          <span style={{ marginLeft: 'auto', display: 'flex', gap: 5, flexWrap: 'wrap' }}>
+            {Object.entries(byKind).map(([k, n]) => <Tag key={k}>{String(n)} {k}</Tag>)}
+          </span>
+        </Row>
+      )}
+      {items.slice(0, 8).map((it, i) => (
+        <Row key={it.id || i}>
+          <span style={{ ...mono, color: 'var(--accent-light)' }}>{it.kind}</span>
+          <span style={{ marginLeft: 'auto', fontSize: 10, color: 'var(--ink-3)' }}>{(it.prompt || '').slice(0, 40)}</span>
+        </Row>
+      ))}
+    </Card>
+  );
+}
+
 const SECTIONS: Array<[string, Array<() => any>]> = [
   ['Memory', [DataSpacesPanel, LocalDocsPanel, NotesPanel, KgPanel, CapturePanel, ReflectionPanel]],
   ['Trust', [KillSwitchPanel, KernelMetricsPanel, ReadinessPanel, LoopBreakerPanel, GovernancePanel, PosturePanel, SecuritySkillsPanel, NetworkMonitorPanel, SecretsPanel, CapabilitiesPanel, PairingPanel, InjectionScanPanel]],
   ['Interop', [A2AInboxPanel, MeshPeersPanel, SatellitesPanel, OraclePanel, MarketplacePanel, SkillHistoryPanel]],
   ['Observe', [OnboardingPanel, EvalPanel, ReviewPanel, ArenaPanel, QualityPanel, APMPanel, FeedbackPanel]],
-  ['Build', [WorkflowsPanel, StepGenPanel, SandboxPanel, TemplatesPanel]],
+  ['Build', [WorkflowsPanel, StepGenPanel, SandboxPanel, TemplatesPanel, MediaGalleryPanel]],
   ['Autonomy & Agents', [DecisionInboxPanel, MissionsPanel, AgentAutonomyPanel, TodayPanel, SchedulePanel, LearningPanel, SessionsPanel, HeartbeatPanel, TranscriptPanel, EscalationPanel]],
   ['Admin', [BackupPanel, OAuthPanel, SettingsPanel, PromptsPanel, RoomsPanel, LMStudioPanel, AuthProfilesPanel]],
 ];
