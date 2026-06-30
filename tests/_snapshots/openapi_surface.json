@@ -132,6 +132,7 @@
   "GET /api/security/loop-breaker": "loop_breaker_status_api_security_loop_breaker_get",
   "GET /api/security/posture": "security_posture_api_security_posture_get",
   "GET /api/skills/marketplace": "marketplace_list_api_skills_marketplace_get",
+  "GET /api/skills/marketplace/history": "marketplace_history_api_skills_marketplace_history_get",
   "GET /api/skills/pending": "list_pending_skills_api_skills_pending_get",
   "GET /api/status": "api_status_api_status_get",
   "GET /api/subagents": "subagents_list_api_subagents_get",
