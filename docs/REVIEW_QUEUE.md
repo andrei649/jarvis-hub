@@ -34,6 +34,19 @@
 > **Autonomous backlog run (Phase 4 dev loop)** — items below are from a workflow-planned task list (5 parallel
 > surveyors → synthesis planner → 16 prioritized PR-sized tasks). Each ships as one verified PR.
 
+### 0.45 — payment-gate parity proven against the contract framework ✅ (test-only, no live change)
+- **What:** `tests/test_payments_contracts_parity.py` builds a `ContractTemplate` that reproduces, **code-for-code
+  and in the same short-circuit order**, every outcome of `PaymentBroker._deny_reason` — using the **broker itself
+  as the oracle** (no hardcoded expectations; clocks aligned for the expiry case). Proves the 0.45 abstraction is
+  expressive enough to host the hand-rolled payment gate with identical denials.
+- **Why it matters:** makes a future swap of the live gate onto a template **behaviour-preserving and trivially
+  reviewable**. `payments.py` is untouched — zero live change in this PR. A guard test fails if a new broker denial
+  branch is added without updating the parity template.
+- **Verified (automated, in-env):** `tests/test_payments_contracts_parity.py` **10/10** (admissible + all 7 denial
+  branches + the coverage guard). `ruff` clean.
+- **⚠️ Needs you — nothing blocking:** the actual swap (route payments through the template) is the deliberate
+  follow-up; this de-risks it by proving parity first.
+
 ### 0.34 — durable workflow pending-queue **drained from the autonomy tick** ✅ (opt-in)
 - **What:** `AutonomyCoordinator._drain_workflow_pending()` now runs once per autonomy tick — the "deliberate next
   wave" the 0.34 PR flagged. It drains due items from the durable `WorkflowPendingQueue` via
