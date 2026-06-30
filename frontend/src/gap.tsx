@@ -1346,10 +1346,41 @@ export function TodayPanel() {
   );
 }
 
+/* 0.58 — the skill version-history read surface (GET /api/skills/marketplace/history,
+   admin). Renders publish/install/uninstall events + per-action stats. Honesty contract:
+   when JARVIS_SKILL_HISTORY is off the endpoint reports enabled:false and the panel says
+   so plainly rather than implying history is being kept. */
+export function SkillHistoryPanel() {
+  const { d, e, loading, reload } = useApi('/api/skills/marketplace/history', true, true);
+  const enabled = !!(d && d.enabled);
+  const events = arr(d && d.events);
+  const byAction = (d && d.stats && d.stats.by_action) || {};
+  return (
+    <Card title="SKILL HISTORY" sub={d ? (enabled ? `${(d.stats && d.stats.total) || 0} events` : 'disabled') : null} onReload={reload}>
+      <State e={e} loading={loading} n={events.length} />
+      {d && !enabled && <div style={{ fontSize: 10, color: 'var(--ink-3)', marginTop: 6 }}>empty until JARVIS_SKILL_HISTORY is on</div>}
+      {enabled && Object.keys(byAction).length > 0 && (
+        <Row>
+          <span style={mono}>actions</span>
+          <span style={{ marginLeft: 'auto', display: 'flex', gap: 5, flexWrap: 'wrap' }}>
+            {Object.entries(byAction).map(([a, n]) => <Tag key={a}>{String(n)} {a}</Tag>)}
+          </span>
+        </Row>
+      )}
+      {events.slice(0, 8).map((ev, i) => (
+        <Row key={ev.id || i}>
+          <span style={{ ...mono, color: 'var(--accent-light)' }}>{ev.name}</span>
+          <span style={{ marginLeft: 'auto', fontSize: 10, color: 'var(--ink-3)' }}>{ev.action} · {ev.version}</span>
+        </Row>
+      ))}
+    </Card>
+  );
+}
+
 const SECTIONS: Array<[string, Array<() => any>]> = [
   ['Memory', [DataSpacesPanel, LocalDocsPanel, NotesPanel, KgPanel, CapturePanel, ReflectionPanel]],
   ['Trust', [KillSwitchPanel, KernelMetricsPanel, ReadinessPanel, LoopBreakerPanel, GovernancePanel, PosturePanel, SecuritySkillsPanel, NetworkMonitorPanel, SecretsPanel, CapabilitiesPanel, PairingPanel, InjectionScanPanel]],
-  ['Interop', [A2AInboxPanel, MeshPeersPanel, SatellitesPanel, OraclePanel, MarketplacePanel]],
+  ['Interop', [A2AInboxPanel, MeshPeersPanel, SatellitesPanel, OraclePanel, MarketplacePanel, SkillHistoryPanel]],
   ['Observe', [OnboardingPanel, EvalPanel, ReviewPanel, ArenaPanel, QualityPanel, APMPanel, FeedbackPanel]],
   ['Build', [WorkflowsPanel, StepGenPanel, SandboxPanel, TemplatesPanel]],
   ['Autonomy & Agents', [DecisionInboxPanel, MissionsPanel, AgentAutonomyPanel, TodayPanel, SchedulePanel, LearningPanel, SessionsPanel, HeartbeatPanel, TranscriptPanel, EscalationPanel]],
