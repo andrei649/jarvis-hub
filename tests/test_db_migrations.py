@@ -126,7 +126,9 @@ def test_marketplace_adopter_upgrades_legacy_db(tmp_path):
     store = mp.SkillMarketplace(db_path=str(db))
     check = sqlite3.connect(str(db))
     cols = {r[1] for r in check.execute("PRAGMA table_info(marketplace_skills)").fetchall()}
+    tables = {r[0] for r in check.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()}
     ver = check.execute("PRAGMA user_version").fetchone()[0]
     check.close()
-    assert {"review_status", "signature"} <= cols
-    assert ver == 1
+    assert {"review_status", "signature"} <= cols      # v1 moderation/signature columns
+    assert "marketplace_skill_versions" in tables       # v2 rollback archive table
+    assert ver == 2                                      # both forward-only migrations applied
