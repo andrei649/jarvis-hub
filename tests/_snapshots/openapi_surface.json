@@ -55,6 +55,7 @@
   "GET /api/capture": "capture_list_api_capture_get",
   "GET /api/capture/status": "capture_status_api_capture_status_get",
   "GET /api/channels/pairing": "pairing_list_api_channels_pairing_get",
+  "GET /api/channels/send-rate-limit": "channels_send_rate_limit_api_channels_send_rate_limit_get",
   "GET /api/channels/webhook": "channels_webhook_list_api_channels_webhook_get",
   "GET /api/codeintel/search": "codeintel_search_api_codeintel_search_get",
   "GET /api/codeintel/stats": "codeintel_stats_api_codeintel_stats_get",

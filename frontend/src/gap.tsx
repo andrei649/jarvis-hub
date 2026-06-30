@@ -1439,9 +1439,31 @@ export function ProvenancePanel() {
   );
 }
 
+/* 0.44 — the per-channel OUTBOUND send rate-limiter status (GET /api/channels/send-rate-limit,
+   admin). Renders configured caps + current in-window usage. Honesty contract: when no cap is
+   set (the default) the endpoint reports enabled:false and the panel says so (sends are
+   unlimited and nothing is recorded until an operator opts in). Sibling of the egress monitor. */
+export function CommsRatePanel() {
+  const { d, e, loading, reload } = useApi('/api/channels/send-rate-limit', true, true);
+  const enabled = !!(d && d.enabled);
+  const channels = arr(d && d.channels);
+  return (
+    <Card title="SEND RATE LIMITS" sub={d ? (enabled ? `cap ${(d && d.global_cap) || 0}/${(d && d.window_seconds) || 60}s` : 'unlimited') : null} onReload={reload}>
+      <State e={e} loading={loading} n={channels.length} />
+      {d && !enabled && <div style={{ fontSize: 10, color: 'var(--ink-3)', marginTop: 6 }}>unlimited until JARVIS_CHANNEL_SEND_RATE(S) is set</div>}
+      {channels.slice(0, 10).map((c, i) => (
+        <Row key={c.channel || i}>
+          <span style={{ ...mono, color: 'var(--accent-light)' }}>{c.channel}</span>
+          <span style={{ marginLeft: 'auto', fontSize: 10, color: 'var(--ink-3)' }}>{c.used}/{c.cap > 0 ? c.cap : '∞'}</span>
+        </Row>
+      ))}
+    </Card>
+  );
+}
+
 const SECTIONS: Array<[string, Array<() => any>]> = [
   ['Memory', [DataSpacesPanel, LocalDocsPanel, NotesPanel, KgPanel, CapturePanel, ReflectionPanel, ProvenancePanel]],
-  ['Trust', [KillSwitchPanel, KernelMetricsPanel, ReadinessPanel, LoopBreakerPanel, GovernancePanel, PosturePanel, SecuritySkillsPanel, NetworkMonitorPanel, SecretsPanel, CapabilitiesPanel, PairingPanel, InjectionScanPanel]],
+  ['Trust', [KillSwitchPanel, KernelMetricsPanel, ReadinessPanel, LoopBreakerPanel, GovernancePanel, PosturePanel, SecuritySkillsPanel, NetworkMonitorPanel, CommsRatePanel, SecretsPanel, CapabilitiesPanel, PairingPanel, InjectionScanPanel]],
   ['Interop', [A2AInboxPanel, MeshPeersPanel, SatellitesPanel, OraclePanel, MarketplacePanel, SkillHistoryPanel]],
   ['Observe', [OnboardingPanel, EvalPanel, ReviewPanel, ArenaPanel, QualityPanel, APMPanel, FeedbackPanel]],
   ['Build', [WorkflowsPanel, StepGenPanel, SandboxPanel, TemplatesPanel, MediaGalleryPanel]],

@@ -55,6 +55,7 @@
   "GET /api/capture",
   "GET /api/capture/status",
   "GET /api/channels/pairing",
+  "GET /api/channels/send-rate-limit",
   "GET /api/channels/webhook",
   "GET /api/codeintel/search",
   "GET /api/codeintel/stats",

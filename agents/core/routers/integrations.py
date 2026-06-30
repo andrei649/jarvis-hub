@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
-from agents.core.routers._deps import user_guard
+from agents.core.routers._deps import admin_guard, user_guard
 
 from agents.core.web_helpers import nocache_json, safe_reflect
 from agents.core.app_state import get_orch
@@ -115,6 +115,17 @@ async def channels_webhook_list():
     if orch and hasattr(orch, "channels"):
         live = [cid for cid, ch in orch.channels.items() if isinstance(ch, WebhookChannel)]
     return nocache_json({"supported": list(SUPPORTED_CHANNELS), "live": live})
+
+
+@router.get("/api/channels/send-rate-limit", dependencies=[Depends(admin_guard)])
+async def channels_send_rate_limit():
+    """0.44 read surface: the per-channel OUTBOUND send rate-limiter status —
+    configured caps (global + per-channel) and current in-window usage. Reports
+    ``enabled: false`` (the default) when no cap is set: sends are unlimited and
+    nothing is recorded, so the limiter is byte-identical until an operator opts in
+    via JARVIS_CHANNEL_SEND_RATE / JARVIS_CHANNEL_SEND_RATES."""
+    from agents.core.channels.send_rate_limit import status_snapshot
+    return nocache_json(status_snapshot())
 
 
 @router.post("/api/channels/{channel_id}/inbound", dependencies=[Depends(user_guard)])

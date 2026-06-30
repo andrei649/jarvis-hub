@@ -90,6 +90,21 @@ class SendRateLimiter:
             else:
                 self._hits.pop(channel_id, None)
 
+    def snapshot(self, *, now: float | None = None) -> dict[str, int]:
+        """In-window send count per channel that has recent activity (read-only).
+
+        A pure view — prunes nothing and records nothing, so calling it never
+        affects what ``allow`` will permit. Channels with no live hits are omitted.
+        """
+        now = time.monotonic() if now is None else now
+        out: dict[str, int] = {}
+        with self._lock:
+            for cid, hits in self._hits.items():
+                live = sum(1 for t in hits if now - t < self._window)
+                if live:
+                    out[cid] = live
+        return out
+
 
 # Process-wide limiter shared across all webhook-channel instances (state is keyed
 # by channel_id, so the cap is genuinely per-channel, not per-instance).
@@ -103,3 +118,42 @@ def allow_send(channel_id: str) -> bool:
 def reset(channel_id: str | None = None) -> None:
     """Clear recorded send history (used by tests; harmless in production)."""
     _LIMITER.reset(channel_id)
+
+
+def configured_rates() -> tuple[int, dict[str, int]]:
+    """``(global_cap, per_channel_caps)`` from the environment. 0 = unlimited."""
+    try:
+        global_cap = max(0, int(os.environ.get("JARVIS_CHANNEL_SEND_RATE", "0")))
+    except ValueError:
+        global_cap = 0
+    return global_cap, _parse_rates(os.environ.get("JARVIS_CHANNEL_SEND_RATES", ""))
+
+
+def status_snapshot() -> dict:
+    """Read surface for the outbound send-rate limiter: configured caps + live usage.
+
+    ``enabled`` is False (the default) when no cap is set anywhere — in that case
+    sends are unlimited and nothing is recorded, so the limiter is byte-identical.
+    Each listed channel reports its effective ``cap`` (0 = unlimited → ``remaining``
+    is null), the current in-window ``used`` count, and the ``remaining`` headroom.
+    Channels appear when they have a per-channel cap configured or recent activity.
+    """
+    global_cap, per = configured_rates()
+    used = _LIMITER.snapshot()
+    enabled = global_cap > 0 or any(v > 0 for v in per.values())
+    channels = []
+    for cid in sorted(set(per) | set(used)):
+        cap = limit_for(cid)
+        u = used.get(cid, 0)
+        channels.append({
+            "channel": cid,
+            "cap": cap,
+            "used": u,
+            "remaining": (max(0, cap - u) if cap > 0 else None),
+        })
+    return {
+        "enabled": enabled,
+        "global_cap": global_cap,
+        "window_seconds": int(WINDOW_SECONDS),
+        "channels": channels,
+    }
