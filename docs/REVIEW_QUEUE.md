@@ -34,6 +34,26 @@
 > **Autonomous backlog run (Phase 4 dev loop)** — items below are from a workflow-planned task list (5 parallel
 > surveyors → synthesis planner → 16 prioritized PR-sized tasks). Each ships as one verified PR.
 
+### AUD-18 — `resilient_call(timeout=None)` un-clips long calls; fixes cloud-LLM 30s clip ✅
+- **What:** `resilient_call` gained `timeout=None` — it then `await`s the wrapped call directly instead of wrapping
+  it in a 30s `asyncio.wait_for`, so the call's *own* timeout governs. This fixed a **real latent bug**: `cloud_llm.py`
+  deliberately sets a **120s** httpx read/total timeout for slow cloud generations, but its three call methods were
+  decorated `@resilient_call(timeout=30.0)` — the 30s outer deadline clipped any legitimate 30–120s response and then
+  burned 2 retries (~another 60s) before failing. Switched those three to `timeout=None` so the 120s httpx budget
+  governs; retry/backoff/circuit-breaker still fire on transport exceptions (httpx ReadTimeout etc.).
+- **Why it's safe:** the default stays `timeout=30.0`, so **every other `@resilient_call` site is byte-identical**
+  (weather/spotify/calendar/etc. keep their short, correct deadlines). Only the three cloud-LLM generation methods —
+  which already had a 120s transport budget — change. This also makes the primitive safe to wrap any long-running
+  call (the reason the broader "wrap LLM `generate()`" idea was originally deferred).
+- **Verified (automated, in-env):** `tests/test_resilience.py` (**+2**: `timeout=None` completes a call that a tight
+  `wait_for` control clips; `timeout=None` still retries+succeeds on a transport exception) — full resilience +
+  integration suites green. Full `ruff check .` clean; **bandit (pinned 1.9.4) exit 0**, no new `except: pass`;
+  `agents.web` + `cloud_llm` import cleanly. No routes/frontend touched.
+- **⚠️ Needs you — to feel it:** only visible with a real cloud key + a genuinely slow (30–120s) generation, where
+  the response previously died at 30s and now completes. A deliberate scoping note: I did **not** wrap the local LLM
+  `generate()` with retry — it already returns degraded reply strings rather than raising, so retry-on-exception
+  would rarely fire and it sits on the hottest path. The primitive is now ready if that's ever wanted.
+
 ### AUD-18 — close **leaked httpx client pools** on shutdown ✅ (no flag; pure hygiene)
 - **What:** `Orchestrator.aclose()` (the graceful-shutdown path) now also drains three long-lived `httpx.AsyncClient`
   pools that previously leaked on every shutdown/restart: (1) the **Gemini context-cache** client

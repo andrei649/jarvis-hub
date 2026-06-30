@@ -50,7 +50,9 @@ class CloudLLMPlugin:
 
     @resilient_call(
         max_retries=2,
-        timeout=30.0,
+        # None: let the 120s httpx read/total timeout (above) govern — a 30s
+        # asyncio.wait_for would clip a legitimate slow cloud-LLM response.
+        timeout=None,
         backoff_base=1.0,
         backoff_max=5.0,
         circuit_breaker_key="plugin:anthropic",
@@ -80,7 +82,9 @@ class CloudLLMPlugin:
 
     @resilient_call(
         max_retries=2,
-        timeout=30.0,
+        # None: let the 120s httpx read/total timeout (above) govern — a 30s
+        # asyncio.wait_for would clip a legitimate slow cloud-LLM response.
+        timeout=None,
         backoff_base=1.0,
         backoff_max=5.0,
         circuit_breaker_key="plugin:gemini",
@@ -109,7 +113,9 @@ class CloudLLMPlugin:
 
     @resilient_call(
         max_retries=2,
-        timeout=30.0,
+        # None: let the 120s httpx read/total timeout (above) govern — a 30s
+        # asyncio.wait_for would clip a legitimate slow cloud-LLM response.
+        timeout=None,
         backoff_base=1.0,
         backoff_max=5.0,
         circuit_breaker_key="plugin:openai",
