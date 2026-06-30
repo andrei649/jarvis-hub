@@ -150,7 +150,8 @@ async def test_orchestrator_aclose_drains_plugin_http_clients():
     # Register a couple of pooled per-plugin clients, then prove shutdown drains them.
     a = http_client.PluginHTTPClient.for_plugin("plug_a")
     b = http_client.PluginHTTPClient.for_plugin("plug_b")
-    a._get_client(); b._get_client()          # force the lazy httpx clients to exist
+    a._get_client()          # force the lazy httpx clients to exist
+    b._get_client()
     assert "plug_a" in http_client._clients and "plug_b" in http_client._clients
 
     orch = Orchestrator(JarvisConfig())
