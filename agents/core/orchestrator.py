@@ -1526,6 +1526,32 @@ class Orchestrator:
                 queue_close()
             except Exception as e:
                 logger.warning(f"Error closing autonomy queue: {e}")
+        # AUD-18: close the Gemini context-cache httpx client (created only when a
+        # Gemini key is set — leaked its pool on shutdown otherwise).
+        cache = getattr(self, "context_cache", None)
+        cache_close = getattr(cache, "close", None)
+        if cache_close is not None:
+            try:
+                await cache_close()
+            except Exception as e:
+                logger.warning(f"Error closing context cache: {e}")
+        # AUD-18: drain the pooled per-plugin HTTP clients (PluginHTTPClient registry).
+        try:
+            from . import http_client as _http_client
+            await _http_client.close_all()
+        except Exception as e:
+            logger.warning(f"Error closing plugin HTTP clients: {e}")
+        # AUD-18: close channel transports that hold a long-lived client (e.g. the
+        # Telegram httpx client). Only the async `aclose` convention is honored;
+        # best-effort so one channel can't abort the rest of shutdown.
+        for cid, ch in list(getattr(self, "channels", {}).items()):
+            closer = getattr(ch, "aclose", None)
+            if closer is None:
+                continue
+            try:
+                await closer()
+            except Exception as e:
+                logger.warning(f"Error closing channel '{cid}': {e}")
 
     async def get_status(self) -> dict:
         return {
