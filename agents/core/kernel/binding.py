@@ -19,6 +19,48 @@ the brokers only *call* the hook when ``JARVIS_ACTION_KERNEL`` is set
 from __future__ import annotations
 
 import functools
+import os
+
+from .budget import BudgetLedger, BudgetLimits
+
+_BUDGET_ENV = {
+    "max_tokens": "JARVIS_BUDGET_MAX_TOKENS",
+    "max_wall_seconds": "JARVIS_BUDGET_MAX_WALL_SECONDS",
+    "max_depth": "JARVIS_BUDGET_MAX_DEPTH",
+}
+
+
+def make_budget_ledger(config: dict | None = None, *, env=None) -> BudgetLedger | None:
+    """Build a per-task :class:`BudgetLedger` from limits, or ``None`` if none set.
+
+    Limits are read from *config* (a dict with any of ``max_tokens`` /
+    ``max_wall_seconds`` / ``max_depth``) first, then from the environment
+    (``JARVIS_BUDGET_MAX_TOKENS`` / ``_MAX_WALL_SECONDS`` / ``_MAX_DEPTH``). A
+    missing/blank/unparseable value leaves that dimension unlimited. When **all
+    three** are unset the function returns ``None`` — the caller then enforces
+    nothing, preserving the default-off contract (no budget enforcement unless a
+    limit is explicitly configured)."""
+    env = os.environ if env is None else env
+    cfg = config if isinstance(config, dict) else {}
+
+    def _read(key, cast):
+        v = cfg.get(key)
+        if v is None:
+            v = env.get(_BUDGET_ENV[key])
+        if v is None or v == "":
+            return None
+        try:
+            return cast(v)
+        except (TypeError, ValueError):
+            return None
+
+    max_tokens = _read("max_tokens", int)
+    max_wall = _read("max_wall_seconds", float)
+    max_depth = _read("max_depth", int)
+    if max_tokens is None and max_wall is None and max_depth is None:
+        return None
+    return BudgetLedger(limits=BudgetLimits(
+        max_tokens=max_tokens, max_wall_seconds=max_wall, max_depth=max_depth))
 
 
 def make_action_kernel(orch, *, loop_detector=None):

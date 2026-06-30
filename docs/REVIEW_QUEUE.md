@@ -34,6 +34,23 @@
 > **Autonomous backlog run (Phase 4 dev loop)** — items below are from a workflow-planned task list (5 parallel
 > surveyors → synthesis planner → 16 prioritized PR-sized tasks). Each ships as one verified PR.
 
+### H23.1 — kernel BudgetLedger wired into CallBroker (opt-in token/time/recursion guard) ✅
+- **What:** `kernel/binding.py` gains `make_budget_ledger(config, env=)` — builds a `BudgetLedger` from
+  `max_tokens` / `max_wall_seconds` / `max_depth` (config first, then env `JARVIS_BUDGET_MAX_*`), and **returns
+  `None` when none are set** (no enforcement). `CallBroker` takes an opt-in `ledger=`: `execute()` enters the ledger,
+  **denies** the call (`budget_exceeded` + the breached-dimension reason) if `exceeded()` trips on token/wall-time/
+  recursion *before* placing it, accrues a coarse per-call usage signal on success, and always `leave()`s via a
+  `finally`.
+- **Why it's safe:** `ledger=None` (the default) → `execute()` is a no-op wrapper, **byte-identical**. The new
+  param is keyword-tail; existing callers unaffected. The H23.1 "first broker wired" slice — only `call_broker`
+  exists under `autonomy/` today (the survey's "5 brokers" was wrong; verified).
+- **Verified (automated, in-env):** `tests/test_kernel_budget_binding.py` **8/8** (factory none/config/env/bad-value;
+  default-no-ledger-ok; token/depth/wall-time deny with depth restored; admissible accrues+restores) + the kernel
+  budget + 15 call-broker tests still green. `ruff` clean; the **exact CI bandit-baseline command passes (exit 0)** —
+  the line shift doesn't re-surface the two frozen pre-existing `call_broker` findings.
+- **⚠️ Needs you — nothing blocking:** no budget limit is configured by default, so nothing enforces until you set
+  one; wiring the ledger through the remaining executor call sites (K3 unification) is the follow-up.
+
 ### 0.45 — payment-gate parity proven against the contract framework ✅ (test-only, no live change)
 - **What:** `tests/test_payments_contracts_parity.py` builds a `ContractTemplate` that reproduces, **code-for-code
   and in the same short-circuit order**, every outcome of `PaymentBroker._deny_reason` — using the **broker itself
