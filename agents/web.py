@@ -978,6 +978,7 @@ from agents.core.routers.provenance import router as _provenance_router  # noqa:
 from agents.core.routers.oauth import router as _oauth_router  # noqa: E402
 from agents.core.routers.osint import router as _osint_router  # noqa: E402
 from agents.core.routers.market import router as _market_router  # noqa: E402
+from agents.core.routers.market_watchlist import router as _market_watchlist_router  # noqa: E402
 from agents.core.routers.creative import router as _creative_router  # noqa: E402
 from agents.core.routers.security_skills import router as _security_skills_router  # noqa: E402
 from agents.core.routers.coach import router as _coach_router  # noqa: E402
@@ -1019,6 +1020,7 @@ app.include_router(_rooms_router)
 app.include_router(_notes_router)
 app.include_router(_osint_router)
 app.include_router(_market_router)
+app.include_router(_market_watchlist_router)
 app.include_router(_creative_router)
 app.include_router(_security_skills_router)
 app.include_router(_coach_router)
