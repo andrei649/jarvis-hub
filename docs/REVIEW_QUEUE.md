@@ -31,6 +31,23 @@
 
 ## Items (newest first)
 
+> **Autonomous backlog run (Phase 4 dev loop)** — items below are from a workflow-planned task list (5 parallel
+> surveyors → synthesis planner → 16 prioritized PR-sized tasks). Each ships as one verified PR.
+
+### 0.34 — durable workflow pending-queue **drained from the autonomy tick** ✅ (opt-in)
+- **What:** `AutonomyCoordinator._drain_workflow_pending()` now runs once per autonomy tick — the "deliberate next
+  wave" the 0.34 PR flagged. It drains due items from the durable `WorkflowPendingQueue` via
+  `WorkflowEngine.drain_pending`, resolving pipeline ids through the live `workflow_registry.get`, so deferred/failed
+  workflow runs actually retry (bounded backoff → `dead` at the cap) instead of being lost.
+- **Why it's safe:** **opt-in / default-off** behind `JARVIS_WORKFLOW_PERSIST` — unset (the default) → the tick is
+  **byte-identical**, no queue is even constructed. A drain hiccup is swallowed so it can never break the tick. The
+  queue is cached across ticks.
+- **Verified (automated, in-env):** `tests/test_autonomy_coordinator_pending_drain.py` **4/4** (noop-when-unset,
+  drains+caches-when-set, noop-when-engine-absent, hiccup-swallowed) + the 12 pending-queue tests still green
+  (run/retry/dead/backoff mechanics). `ruff` + `bandit` clean; no import cycle.
+- **⚠️ Needs you — nothing blocking:** nothing *enqueues* to the durable queue by default yet, so with the flag set
+  the drain is a correct no-op until a caller enqueues — the wiring + retry loop is what this delivers.
+
 ### 0.58 — version-history ledger **wired into the marketplace** ✅ (opt-in) + an ordering-robustness fix
 - **What:** `SkillMarketplace(history=…, clock=…)` now records a `publish`/`install`/`uninstall` event to the ledger
   on each op, so `current_version` / `rollback_target` are derived from real marketplace activity. The install path
