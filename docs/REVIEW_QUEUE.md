@@ -34,6 +34,18 @@
 > **Autonomous backlog run (Phase 4 dev loop)** — items below are from a workflow-planned task list (5 parallel
 > surveyors → synthesis planner → 16 prioritized PR-sized tasks). Each ships as one verified PR.
 
+### 0.62 — system-profile posture consumed by subagent concurrency ✅ (opt-in via profile)
+- **What:** `AutonomyCoordinator._subagent_concurrency()` now caps the `autonomy.max_subagents` setting by the active
+  system profile's `max_parallel_agents` hint (`min(setting, hint)` when the profile sets one). So selecting a
+  constrained profile — e.g. **gaming** (cap 1, "free the GPU for games") — actually throttles background-agent
+  throughput, not just the heartbeat. The profiles were data; now they steer concurrency.
+- **Why it's safe:** the default **balanced** profile leaves the hint `None` → the cap is the setting **unchanged**
+  (byte-identical). A non-positive / bool / float / string hint, or a profile-read error, falls back to the setting.
+- **Verified (automated, in-env):** `tests/test_coordinator_profile_concurrency.py` **10/10** (default-balanced
+  transparent, caps-below-setting, hint-above-keeps-setting, bad-read-falls-back, invalid-hints-ignored) + the
+  pending-drain coordinator tests still green. `ruff` clean; CI bandit-baseline clean; no import cycle.
+- **⚠️ Needs you — nothing blocking:** the `model_tier` hint → routing is the fuzzier remaining consumer (deferred).
+
 ### AUD-18 — configurable extra redaction patterns for the secret scanner ✅ (opt-in)
 - **What:** `SecretScanner(extra_patterns={name: regex})` and `JARVIS_SCANNER_EXTRA_PATTERNS` (a JSON `{name: regex}`
   map) let a deployment scrub its *own* secret formats (an internal token shape, a vendor key not in the built-in

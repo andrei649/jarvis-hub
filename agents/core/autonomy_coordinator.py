@@ -23,6 +23,7 @@ from datetime import datetime
 from .autonomy import TaskExecutor
 from .autonomy.inbox import build_decision_card
 from .autonomy.worker import is_night_window
+from .system_profiles import active_posture
 from .workflows.pending_queue import WorkflowPendingQueue
 
 logger = logging.getLogger("jarvis.orchestrator")
@@ -297,8 +298,27 @@ class AutonomyCoordinator:
 
         self._orch.subagents = SubAgentManager(
             runner=_subagent_runner,
-            max_concurrent=int(self._orch.get_setting("autonomy.max_subagents", 3) or 3),
+            max_concurrent=self._subagent_concurrency(),
             max_depth=int(self._orch.get_setting("autonomy.max_subagent_depth", 8) or 8),
         )
 
         return executor
+
+    def _subagent_concurrency(self) -> int:
+        """Effective subagent concurrency cap (0.62 system-profile consumer).
+
+        The ``autonomy.max_subagents`` setting, **further capped** by the active
+        system profile's ``max_parallel_agents`` posture hint when it sets one — so
+        a constrained profile (e.g. a low-power box) can't be overridden upward by
+        the setting. The default profile leaves the hint ``None`` → the cap is the
+        setting unchanged (byte-identical). A bad profile read falls back to the
+        setting, never raising."""
+        base = int(self._orch.get_setting("autonomy.max_subagents", 3) or 3)
+        hint = None
+        try:
+            hint = active_posture().get("max_parallel_agents")
+        except Exception:
+            logger.debug("system-profile concurrency hint unavailable", exc_info=True)
+        if isinstance(hint, int) and not isinstance(hint, bool) and hint > 0:
+            return min(base, hint)
+        return base
