@@ -73,6 +73,7 @@
   "GET /api/eval/datasets/{name}/runs": "open",
   "GET /api/feedback/summary": "admin",
   "GET /api/health/components": "open",
+  "GET /api/ingestion/provenance": "admin",
   "GET /api/integrations/social": "user",
   "GET /api/integrations/writeback": "user",
   "GET /api/kg/entities": "open",
@@ -84,6 +85,7 @@
   "GET /api/local-docs": "open",
   "GET /api/mcp/server": "open",
   "GET /api/media": "user",
+  "GET /api/media/catalog": "user",
   "GET /api/memory/decay/candidates": "user",
   "GET /api/memory/decay/ranking": "user",
   "GET /api/memory/entities": "user",
@@ -132,6 +134,7 @@
   "GET /api/security/loop-breaker": "open",
   "GET /api/security/posture": "admin",
   "GET /api/skills/marketplace": "admin",
+  "GET /api/skills/marketplace/history": "admin",
   "GET /api/skills/pending": "admin",
   "GET /api/status": "open",
   "GET /api/subagents": "user",
@@ -356,7 +359,5 @@
   "PUT /api/admin/settings/{category}": "admin",
   "PUT /api/notes": "user",
   "PUT /api/workflows/{pipeline_id}": "admin",
-  "PUT /plugins/{plugin_id}/toggle": "admin",
-  "GET /api/skills/marketplace/history": "admin",
-  "GET /api/media/catalog": "user"
+  "PUT /plugins/{plugin_id}/toggle": "admin"
 }

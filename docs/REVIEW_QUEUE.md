@@ -34,6 +34,25 @@
 > **Autonomous backlog run (Phase 4 dev loop)** — items below are from a workflow-planned task list (5 parallel
 > surveyors → synthesis planner → 16 prioritized PR-sized tasks). Each ships as one verified PR.
 
+### 0.37 — ingestion provenance **surfaced end-to-end** ✅ (3rd / last dark store, same flag-gated template)
+- **What:** `default_ledger_if_enabled()` (opt-in via **`JARVIS_PROVENANCE`**) wired into the `IngestionWatcher`'s
+  pipeline so each watcher-triggered ingestion run stamps an auditable provenance record per parsed message;
+  **`GET /api/ingestion/provenance`** (admin-guarded, `run`/`source` filters) reads the ledger newest-first + stats;
+  and a HUD **`ProvenancePanel`** (Memory cluster) renders recent records + by-source stats. Same store→app→endpoint→
+  panel slice as skill-history / media-catalog, applied to the ingestion provenance ledger.
+- **Why it's safe:** a record's `origin` carries conversation ids, so recording is **default-off** — unset flag →
+  ingestion byte-identical (no conversation ids at rest) and the endpoint reports `enabled:false`; the panel shows
+  *"empty until JARVIS_PROVENANCE is on."* The read route is **admin-guarded** (a forensic/lineage view of how
+  personal memory was ingested — stricter than the media catalog).
+- **Verified (automated, in-env):** `tests/test_ingestion_provenance.py` (+2: `recent` newest-first/limited, opt-in
+  helper returns None vs ProvenanceLedger with no real I/O) + `frontend/src/test/provenance-panel.test.tsx` (+2: live
+  records+by-source stats hitting the right admin endpoint; disabled-flag banner). `tsc` clean; vitest **138/138**;
+  `npm run build` (bundle committed); all **3 route snapshots reseeded** (route-surface, auth-matrix=admin, openapi);
+  `ruff` + CI bandit clean; `agents.web` imports cleanly.
+- **⚠️ Needs you — to see data:** set `JARVIS_PROVENANCE=1` and drop a Facebook/WhatsApp export so the watcher runs an
+  ingestion (origins are real conversation ids). This was the **last** dark store; all three (skill-history, media
+  catalog, provenance) are now surfaced the same default-off, honest-empty-state way.
+
 ### 0.46 — media catalog **surfaced end-to-end** ✅ (2nd dark store, same flag-gated template)
 - **What:** `default_catalog_if_enabled()` (opt-in via **`JARVIS_MEDIA_CATALOG`**) wired into `media_generate` so a
   generation is cataloged when enabled; **`GET /api/media/catalog`** (user-guarded, `q`/`kind` filters) reads it; and

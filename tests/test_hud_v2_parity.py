@@ -53,6 +53,7 @@ RULES = [
     ("/api/kg/", "memory"), ("/api/memory/", "memory"), ("/memory/stats", "memory"),
     ("/memory", "memory"), ("/api/local-docs", "memory"), ("/api/capture", "memory"),
     ("/api/context", "memory"),  # runtime context compression (H20.3)
+    ("/api/ingestion/", "memory"),  # 0.37 ingestion-provenance audit ledger (Memory cluster panel)
     ("/api/coach/", "knowledge"),  # 0.43 Learning Coach pack — spaced repetition + curriculum
     # finance / market intel
     ("/api/market/", "finance"),  # P3 Market Intel pack — the Finance surface (modes4 "Gecko")

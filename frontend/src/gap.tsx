@@ -1408,8 +1408,39 @@ export function MediaGalleryPanel() {
   );
 }
 
+/* 0.37 — the ingestion-provenance read surface (GET /api/ingestion/provenance, admin).
+   Renders recent provenance records + by-source stats. Honesty contract: when
+   JARVIS_PROVENANCE is off the endpoint reports enabled:false and the panel says so
+   (records carry conversation ids, so nothing is recorded by default). */
+export function ProvenancePanel() {
+  const { d, e, loading, reload } = useApi('/api/ingestion/provenance', true, true);
+  const enabled = !!(d && d.enabled);
+  const records = arr(d && d.records);
+  const bySource = (d && d.stats && d.stats.by_source) || {};
+  return (
+    <Card title="PROVENANCE" sub={d ? (enabled ? `${(d.stats && d.stats.total) || 0} recs · ${(d.stats && d.stats.runs) || 0} runs` : 'disabled') : null} onReload={reload}>
+      <State e={e} loading={loading} n={records.length} />
+      {d && !enabled && <div style={{ fontSize: 10, color: 'var(--ink-3)', marginTop: 6 }}>empty until JARVIS_PROVENANCE is on</div>}
+      {enabled && Object.keys(bySource).length > 0 && (
+        <Row>
+          <span style={mono}>sources</span>
+          <span style={{ marginLeft: 'auto', display: 'flex', gap: 5, flexWrap: 'wrap' }}>
+            {Object.entries(bySource).map(([s, n]) => <Tag key={s}>{String(n)} {s}</Tag>)}
+          </span>
+        </Row>
+      )}
+      {records.slice(0, 8).map((r, i) => (
+        <Row key={r.id || i}>
+          <span style={{ ...mono, color: 'var(--accent-light)' }}>{r.source}</span>
+          <span style={{ marginLeft: 'auto', fontSize: 10, color: 'var(--ink-3)' }}>{r.phase} · {(r.content_hash || '').slice(0, 8)}</span>
+        </Row>
+      ))}
+    </Card>
+  );
+}
+
 const SECTIONS: Array<[string, Array<() => any>]> = [
-  ['Memory', [DataSpacesPanel, LocalDocsPanel, NotesPanel, KgPanel, CapturePanel, ReflectionPanel]],
+  ['Memory', [DataSpacesPanel, LocalDocsPanel, NotesPanel, KgPanel, CapturePanel, ReflectionPanel, ProvenancePanel]],
   ['Trust', [KillSwitchPanel, KernelMetricsPanel, ReadinessPanel, LoopBreakerPanel, GovernancePanel, PosturePanel, SecuritySkillsPanel, NetworkMonitorPanel, SecretsPanel, CapabilitiesPanel, PairingPanel, InjectionScanPanel]],
   ['Interop', [A2AInboxPanel, MeshPeersPanel, SatellitesPanel, OraclePanel, MarketplacePanel, SkillHistoryPanel]],
   ['Observe', [OnboardingPanel, EvalPanel, ReviewPanel, ArenaPanel, QualityPanel, APMPanel, FeedbackPanel]],

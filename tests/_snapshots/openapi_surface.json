@@ -73,6 +73,7 @@
   "GET /api/eval/datasets/{name}/runs": "list_dataset_runs_api_eval_datasets__name__runs_get",
   "GET /api/feedback/summary": "feedback_summary_api_feedback_summary_get",
   "GET /api/health/components": "component_health_api_health_components_get",
+  "GET /api/ingestion/provenance": "ingestion_provenance_api_ingestion_provenance_get",
   "GET /api/integrations/social": "social_targets_api_integrations_social_get",
   "GET /api/integrations/writeback": "writeback_targets_api_integrations_writeback_get",
   "GET /api/kg/entities": "kg_entities_api_kg_entities_get",

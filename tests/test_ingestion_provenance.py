@@ -160,3 +160,26 @@ def test_stats(tmp_path):
     assert s["total"] == 3
     assert s["runs"] == 2
     assert s["by_source"] == {"facebook": 2, "whatsapp": 1}
+
+
+# ── recent (newest-first audit view) ────────────────────────────────────────────
+
+def test_recent_is_newest_first_and_limited(tmp_path):
+    led = _ledger(tmp_path)
+    ids = [_rec(led, content=str(i), now=float(i))["id"] for i in range(5)]
+    assert [r["id"] for r in led.recent()] == list(reversed(ids))
+    assert [r["id"] for r in led.recent(limit=2)] == [ids[4], ids[3]]
+    assert led.recent(limit=0) == []
+
+
+# ── opt-in default helper (the read surface's flag gate) ────────────────────────
+
+def test_default_ledger_if_enabled_is_opt_in(monkeypatch):
+    import agents.core.ingestion.provenance as pv
+    # default-off: no flag → None (and no file I/O at all)
+    assert pv.default_ledger_if_enabled(env={}) is None
+    assert pv.default_ledger_if_enabled(env={"JARVIS_PROVENANCE": ""}) is None
+    # flag set → a ProvenanceLedger (monkeypatched to avoid touching the real data dir)
+    sentinel = object()
+    monkeypatch.setattr(pv, "ProvenanceLedger", lambda: sentinel)
+    assert pv.default_ledger_if_enabled(env={"JARVIS_PROVENANCE": "1"}) is sentinel
