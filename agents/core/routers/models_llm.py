@@ -32,7 +32,7 @@ from core.settings_db import put_category
 
 from agents.core.routers._deps import admin_guard, user_guard
 
-from agents.core.web_helpers import nocache_json
+from agents.core.web_helpers import logger, nocache_json
 from agents.core.app_state import get_orch
 
 
@@ -113,7 +113,7 @@ async def models_local_list():
         try:
             reg.ingest_listing(catalog)
         except Exception:
-            pass
+            logger.debug("model_info ingest_listing failed", exc_info=True)
     return nocache_json(catalog)
 
 

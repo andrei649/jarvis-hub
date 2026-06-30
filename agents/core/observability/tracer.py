@@ -7,11 +7,14 @@ and exposes list/get/clear.  Thread-safe via threading.Lock.
 
 from __future__ import annotations
 
+import logging
 import threading
 import time
 import uuid
 from collections import deque
 from typing import Optional
+
+logger = logging.getLogger("jarvis.tracer")
 
 try:
     from ..llm.tokenizer import estimate_tokens
@@ -69,7 +72,7 @@ class Tracer:
                 if info:
                     entry["model_info"] = dict(info)
             except Exception:
-                pass
+                logger.debug("model_info resolver failed", exc_info=True)
         with self._lock:
             self._buf.append(entry)
         return trace_id
