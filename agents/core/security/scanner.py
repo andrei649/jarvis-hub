@@ -12,11 +12,34 @@ reported: this keeps false positives near zero on arbitrary 13-digit numbers
 or IBAN-shaped strings.
 """
 
+import json
+import logging
 import math
+import os
 import re
 from typing import Callable
 
 from .types import ScanFinding, ScanResult, ThreatLevel
+
+logger = logging.getLogger("jarvis.scanner")
+
+_EXTRA_PATTERNS_ENV = "JARVIS_SCANNER_EXTRA_PATTERNS"
+
+
+def _extra_patterns_from_env(env=None) -> dict:
+    """User-supplied extra redaction patterns from ``JARVIS_SCANNER_EXTRA_PATTERNS``
+    — a JSON object ``{name: regex}``. A missing/blank/non-JSON/non-object value
+    yields ``{}`` so a bad config can never break scanning (AUD-18)."""
+    raw = (os.environ if env is None else env).get(_EXTRA_PATTERNS_ENV, "")
+    if not str(raw).strip():
+        return {}
+    try:
+        data = json.loads(raw)
+    except (ValueError, TypeError):
+        return {}
+    if not isinstance(data, dict):
+        return {}
+    return {str(k): str(v) for k, v in data.items() if str(k) and str(v)}
 
 
 # ── Generic secret heuristics ─────────────────────────────────────────────────
@@ -177,7 +200,7 @@ class SecretScanner(BaseScanner):
         "high_entropy_secret": looks_like_high_entropy_secret,
     }
 
-    def __init__(self):
+    def __init__(self, extra_patterns: dict | None = None):
         self._compiled: list[tuple[str, re.Pattern, ThreatLevel, str]] = []
         for name, (pattern, threat, desc) in self.PATTERNS.items():
             flags = 0 if name in self.CASE_SENSITIVE else re.IGNORECASE
@@ -185,6 +208,18 @@ class SecretScanner(BaseScanner):
                 self._compiled.append((name, re.compile(pattern, flags), threat, desc))
             except re.error:
                 pass
+        # AUD-18 (opt-in): user-supplied extra redaction patterns so a deployment
+        # can scrub its own secret formats. The constructor arg wins (tests); else
+        # read JARVIS_SCANNER_EXTRA_PATTERNS (JSON {name: regex}). Compiled
+        # IGNORECASE at HIGH threat; an invalid regex is skipped so a bad pattern
+        # can't break scanning. No config → no change (default path unaffected).
+        extras = extra_patterns if extra_patterns is not None else _extra_patterns_from_env()
+        for name, pattern in extras.items():
+            try:
+                self._compiled.append((str(name), re.compile(str(pattern), re.IGNORECASE),
+                                       ThreatLevel.HIGH, f"custom pattern: {name}"))
+            except re.error:
+                logger.debug("ignoring invalid custom scanner pattern %r", name)
 
     def scan(self, text: str) -> ScanResult:
         result = ScanResult()
