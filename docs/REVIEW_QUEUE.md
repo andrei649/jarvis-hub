@@ -34,6 +34,19 @@
 > **Autonomous backlog run (Phase 4 dev loop)** — items below are from a workflow-planned task list (5 parallel
 > surveyors → synthesis planner → 16 prioritized PR-sized tasks). Each ships as one verified PR.
 
+### 0.58 — skill-history **HUD panel** ✅ (renders the read endpoint; first surfaced dark store)
+- **What:** `SkillHistoryPanel` in the Console (Interop cluster) renders `GET /api/skills/marketplace/history` —
+  publish/install/uninstall events + per-action stat tags. This completes the vertical slice: dark store → app
+  activation (flag) → read endpoint → **visible panel**.
+- **Honesty contract:** when `JARVIS_SKILL_HISTORY` is off the panel shows *"empty until JARVIS_SKILL_HISTORY is on"*
+  rather than implying history is being kept — same posture as the kernel-metrics/readiness panels.
+- **Verified (automated, in-env):** `tsc --noEmit` clean; vitest **134/134** (incl. +2 panel tests: live events +
+  per-action stats hitting the right admin endpoint, and the disabled-flag honesty banner); `npm run build` rebuilt
+  the bundle (committed); stale-bundle guard reproducible.
+- **⚠️ Needs you — to actually see data:** set `JARVIS_SKILL_HISTORY=1` and install/publish a skill; otherwise the
+  panel renders its honest empty state. This is the template for surfacing the other dark stores (media catalog,
+  provenance) the same way once you decide their default-off posture.
+
 ### 0.58 — skill version-history **activated in the app + read endpoint** ✅ (flag-gated)
 - **What:** the orchestrator now attaches a `SkillHistory` ledger to its `SkillMarketplace`, and
   `GET /api/skills/marketplace/history` (admin-guarded) exposes the publish/install/uninstall events + stats (and a
