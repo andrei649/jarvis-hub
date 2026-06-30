@@ -87,7 +87,18 @@ async def media_status():
 
 @router.post("/api/media/generate", dependencies=[Depends(user_guard)])
 async def media_generate(body: MediaGenBody):
-    """H12.24 — governed media generation (cloud generation is approval-gated)."""
+    """H12.24 — governed media generation (cloud generation is approval-gated).
+
+    0.62: paused when the active system profile turns heavy features off (e.g. the
+    *gaming* profile frees the GPU). Default ``balanced`` leaves them on → unchanged."""
+    from agents.core.system_profiles import active_name, heavy_features_enabled
+    if not heavy_features_enabled():
+        return nocache_json(
+            {"ok": False, "paused": True, "profile": active_name(),
+             "error": f"media generation paused by the '{active_name()}' system profile "
+                      "(heavy_features off — set JARVIS_SYSTEM_PROFILE=balanced to re-enable)"},
+            status_code=200,
+        )
     orch = get_orch()
     from agents.core.media_catalog import default_catalog_if_enabled
     from agents.core.media_gen import MediaGenManager
