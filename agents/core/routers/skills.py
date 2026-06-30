@@ -141,6 +141,21 @@ async def marketplace_list():
         return JSONResponse({"error": "internal error", "code": 500}, status_code=500)
 
 
+@router.get("/api/skills/marketplace/history", dependencies=[Depends(admin_guard)])
+async def marketplace_history(name: str | None = None):
+    """0.58 read surface: the version-history ledger (publish/install/uninstall
+    events + stats, and current/rollback-target for a given ``name``). Reports
+    ``enabled: False`` when no ledger is attached (JARVIS_SKILL_HISTORY unset)."""
+    orch = get_orch()
+    if not orch:
+        return JSONResponse({"error": "not initialized"}, status_code=503)
+    try:
+        return orch.marketplace.history_view(name)
+    except Exception:
+        logger.exception("Failed to read marketplace history")
+        return JSONResponse({"error": "internal error", "code": 500}, status_code=500)
+
+
 @router.post("/api/skills/marketplace/publish", dependencies=[Depends(admin_guard)])
 async def marketplace_publish(body: PublishSkillBody):
     orch = get_orch()

@@ -91,3 +91,38 @@ def test_no_history_attached_is_silent_and_unchanged(tmp_path):
     assert pub["version"] == "1.0.0"
     assert m.install_skill(pub["name"]) is True
     assert m.uninstall_skill("foo") is True
+
+
+# ── history_view() read surface (powers GET /api/skills/marketplace/history) ──
+
+def test_history_view_reports_disabled_without_ledger(tmp_path):
+    m, _ = _market(tmp_path, with_history=False)
+    v = m.history_view()
+    assert v["enabled"] is False
+    assert v["events"] == [] and v["stats"]["total"] == 0
+
+
+def test_history_view_returns_events_stats_and_rollback_target(tmp_path):
+    m, _ = _market(tmp_path)
+    _make_skill(m, "foo", "1.0.0")
+    p1 = m.publish_skill("foo")
+    m.install_skill(p1["name"])
+    (m.skills_dir / "foo" / "SKILL.md").write_text(
+        "# foo\n> a skill\n**Version:** 2.0.0\n", encoding="utf-8")
+    p2 = m.publish_skill("foo")
+    m.install_skill(p2["name"])
+    name = p2["name"]
+
+    v = m.history_view(name)
+    assert v["enabled"] is True
+    assert v["stats"]["total"] >= 4
+    assert v["current_version"] == "2.0.0" and v["rollback_target"] == "1.0.0"
+    assert v["events"] and all(e["name"] == name for e in v["events"])  # filtered by name
+
+
+def test_history_view_without_name_omits_version_fields(tmp_path):
+    m, _ = _market(tmp_path)
+    _make_skill(m, "foo", "1.0.0")
+    m.publish_skill("foo")
+    v = m.history_view()
+    assert v["enabled"] is True and "current_version" not in v

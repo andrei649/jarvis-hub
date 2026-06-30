@@ -132,6 +132,7 @@
   "GET /api/security/loop-breaker",
   "GET /api/security/posture",
   "GET /api/skills/marketplace",
+  "GET /api/skills/marketplace/history",
   "GET /api/skills/pending",
   "GET /api/status",
   "GET /api/subagents",
