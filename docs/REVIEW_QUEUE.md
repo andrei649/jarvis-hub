@@ -34,6 +34,24 @@
 > **Autonomous backlog run (Phase 4 dev loop)** — items below are from a workflow-planned task list (5 parallel
 > surveyors → synthesis planner → 16 prioritized PR-sized tasks). Each ships as one verified PR.
 
+### AUD-18 — close **leaked httpx client pools** on shutdown ✅ (no flag; pure hygiene)
+- **What:** `Orchestrator.aclose()` (the graceful-shutdown path) now also drains three long-lived `httpx.AsyncClient`
+  pools that previously leaked on every shutdown/restart: (1) the **Gemini context-cache** client
+  (`context_cache.close()`, present only when a Gemini key is set), (2) the **per-plugin `PluginHTTPClient` registry**
+  via a new `http_client.close_all()`, and (3) **channel transports** that follow the async `aclose` convention
+  (e.g. the Telegram client). The LLM backends were already closed via `HybridRouter.aclose()` → `_close_backend`
+  (handles both `aclose`/`close`); these three were the gaps.
+- **Why it's safe:** shutdown-only, no flag, no behavior change at runtime. Defensive throughout — each close is
+  guarded so one failure can't abort the rest, a channel without `aclose` is skipped, and `close_all()` iterates a
+  **snapshot** of the registry (each `close()` pops from it). `generate()`/request paths untouched.
+- **Verified (automated, in-env):** `tests/test_shutdown_cleanup.py` (**+4**: context-cache + channel `aclose`
+  closed and a no-`aclose` channel skipped; plugin registry drained + clients `is_closed`; `close_all` snapshot-safe
+  and defensive when a client's `close()` raises) — full file green. `ruff` clean; **bandit (pinned 1.9.4) exit 0**,
+  and the diff carries **no new `except: pass`**; `agents.web` imports cleanly. No routes touched (no snapshot/HUD
+  change), no frontend change.
+- **⚠️ Needs you — nothing:** this is invisible at runtime; it just stops fd/connection-pool growth across restarts
+  (matters for long-lived appliance deployments and repeated soak/restart cycles).
+
 ### H23.2 — model-fingerprint **reproducibility rail** ✅ (opt-in tracer hook + read surface)
 - **What:** closes H23.2's named *Pending* half. New `observability/model_info.py` — an opt-in (`JARVIS_MODEL_INFO`)
   `ModelInfoRegistry` + a pure parser that turns an LM Studio/Ollama `/v1/models` listing into

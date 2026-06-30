@@ -115,3 +115,64 @@ async def test_orchestrator_aclose_is_defensive():
     # queue close.
     await orch.aclose()
     assert queue_closed["v"] is True
+
+
+# ── AUD-18: context cache + plugin HTTP clients + channel transports ────────────
+
+@pytest.mark.asyncio
+async def test_orchestrator_aclose_closes_context_cache_and_channels():
+    orch = Orchestrator(JarvisConfig())
+    closed = {"cache": False, "chan": False}
+
+    class _Cache:
+        async def close(self):
+            closed["cache"] = True
+
+    class _Channel:        # mirrors TelegramChannel.aclose()
+        async def aclose(self):
+            closed["chan"] = True
+
+    class _NoCloseChannel:  # a channel without aclose must be skipped, not crash
+        pass
+
+    orch.context_cache = _Cache()
+    orch.channels = {"telegram": _Channel(), "web": _NoCloseChannel()}
+
+    await orch.aclose()
+
+    assert closed == {"cache": True, "chan": True}
+
+
+@pytest.mark.asyncio
+async def test_orchestrator_aclose_drains_plugin_http_clients():
+    from agents.core import http_client
+
+    # Register a couple of pooled per-plugin clients, then prove shutdown drains them.
+    a = http_client.PluginHTTPClient.for_plugin("plug_a")
+    b = http_client.PluginHTTPClient.for_plugin("plug_b")
+    a._get_client(); b._get_client()          # force the lazy httpx clients to exist
+    assert "plug_a" in http_client._clients and "plug_b" in http_client._clients
+
+    orch = Orchestrator(JarvisConfig())
+    await orch.aclose()
+
+    # close_all() closed each client and emptied the registry.
+    assert a._client.is_closed and b._client.is_closed
+    assert "plug_a" not in http_client._clients and "plug_b" not in http_client._clients
+
+
+@pytest.mark.asyncio
+async def test_close_all_is_defensive_and_snapshot_safe():
+    from agents.core import http_client
+
+    c = http_client.PluginHTTPClient.for_plugin("plug_boom")
+    c._get_client()
+
+    # A client whose close() raises must not abort draining the rest.
+    async def _boom():
+        http_client._clients.pop("plug_boom", None)   # still mutates the registry
+        raise RuntimeError("close boom")
+    c.close = _boom
+
+    await http_client.close_all()                     # must not raise
+    assert "plug_boom" not in http_client._clients

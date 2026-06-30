@@ -425,3 +425,18 @@ class PluginHTTPClient:
             f"PluginHTTPClient(plugin={self.plugin_name!r}, "
             f"timeouts={self.timeouts}, cb_state={cb_state!r})"
         )
+
+
+async def close_all() -> None:
+    """Close every registered per-plugin HTTP client (AUD-18 leak closure).
+
+    Each pooled :class:`PluginHTTPClient` holds a long-lived ``httpx.AsyncClient``;
+    on graceful shutdown the orchestrator calls this to drain them all. Best-effort
+    and order-independent: iterate a snapshot (each ``close()`` mutates ``_clients``)
+    and swallow per-client errors so shutdown never raises.
+    """
+    for client in list(_clients.values()):
+        try:
+            await client.close()
+        except Exception:
+            logger.debug("plugin http client close failed", exc_info=True)
