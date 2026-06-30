@@ -34,6 +34,20 @@
 > **Autonomous backlog run (Phase 4 dev loop)** — items below are from a workflow-planned task list (5 parallel
 > surveyors → synthesis planner → 16 prioritized PR-sized tasks). Each ships as one verified PR.
 
+### AUD-18 — configurable extra redaction patterns for the secret scanner ✅ (opt-in)
+- **What:** `SecretScanner(extra_patterns={name: regex})` and `JARVIS_SCANNER_EXTRA_PATTERNS` (a JSON `{name: regex}`
+  map) let a deployment scrub its *own* secret formats (an internal token shape, a vendor key not in the built-in
+  set) — the patterns compile IGNORECASE at HIGH threat and flow through both `scan()` and `redact()`.
+- **Why it's safe:** the constructor arg wins (testability), else the env is read; **no config → byte-identical**
+  (default scan unchanged). An invalid regex or non-JSON/non-object env value is **skipped, never fatal** — a bad
+  config can't break scanning (which the capture inbox + KG ingest depend on).
+- **Verified (automated, in-env):** `tests/test_scanner_extra_patterns.py` **9/9** (default-unchanged, via-constructor,
+  via-env, constructor-wins-over-env, invalid-regex-skipped, built-ins-still-fire-with-extras, env-parse
+  empty/non-json/non-object/valid) + the existing scanner/redact/secret suites (130) still green. `ruff` clean; CI
+  bandit-baseline clean.
+- **⚠️ Needs you — nothing blocking:** purely additive; set `JARVIS_SCANNER_EXTRA_PATTERNS` only if you have custom
+  secret formats to redact.
+
 ### H23.1 — kernel BudgetLedger wired into CallBroker (opt-in token/time/recursion guard) ✅
 - **What:** `kernel/binding.py` gains `make_budget_ledger(config, env=)` — builds a `BudgetLedger` from
   `max_tokens` / `max_wall_seconds` / `max_depth` (config first, then env `JARVIS_BUDGET_MAX_*`), and **returns
