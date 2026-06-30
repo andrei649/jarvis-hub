@@ -190,6 +190,40 @@ async def test_resilient_call_records_metrics():
     assert stats[key]["avg_latency"] > 0
 
 
+@pytest.mark.asyncio
+async def test_resilient_call_timeout_none_does_not_clip_long_call():
+    # A call that outlasts a short asyncio.wait_for must still complete when
+    # timeout=None — the wrapper is bypassed so the call's own budget governs.
+    async def slow():
+        await asyncio.sleep(0.2)
+        return "done"
+
+    # Control: a tight outer timeout clips it.
+    with pytest.raises(asyncio.TimeoutError):
+        await resilient_call(max_retries=0, timeout=0.05)(slow)()
+
+    # timeout=None: no clip, the call finishes.
+    assert await resilient_call(max_retries=0, timeout=None)(slow)() == "done"
+
+
+@pytest.mark.asyncio
+async def test_resilient_call_timeout_none_still_retries_on_exception():
+    # Retry/backoff keeps working without the asyncio.wait_for wrapper: a transport
+    # error (an ordinary exception, like httpx.ReadTimeout) is retried.
+    calls = 0
+
+    async def flaky():
+        nonlocal calls
+        calls += 1
+        if calls < 3:
+            raise ConnectionError("transient")
+        return "ok"
+
+    wrapped = resilient_call(max_retries=3, timeout=None, backoff_base=0.01, backoff_max=0.02)(flaky)
+    assert await wrapped() == "ok"
+    assert calls == 3
+
+
 def test_resilience_public_endpoint():
     """Test that /api/resilience returns expected structure without auth."""
     from fastapi.testclient import TestClient

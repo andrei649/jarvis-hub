@@ -13,7 +13,7 @@ logger = logging.getLogger("jarvis.resilience")
 
 def resilient_call(
     max_retries: int = 3,
-    timeout: float = 30.0,
+    timeout: Optional[float] = 30.0,
     backoff_base: float = 1.0,
     backoff_max: float = 10.0,
     circuit_breaker_key: Optional[str] = None,
@@ -24,6 +24,14 @@ def resilient_call(
 ):
     """
     Decorator that adds retry logic with exponential backoff, circuit breaker, and metrics.
+
+    ``timeout`` is the per-attempt deadline enforced via ``asyncio.wait_for``. Pass
+    ``timeout=None`` to disable that wrapper and ``await`` the call directly, letting
+    the wrapped call's own timeout govern. This is required for long-running calls
+    whose real budget exceeds the default 30s — e.g. cloud-LLM generation behind a
+    120s httpx timeout, which a 30s ``wait_for`` would otherwise clip and retry
+    needlessly. (Transport timeouts still surface as ordinary exceptions, so retry +
+    backoff + circuit-breaker keep working; only the redundant outer deadline is gone.)
     """
     def decorator(func: Callable) -> Callable:
         @functools.wraps(func)
@@ -48,10 +56,15 @@ def resilient_call(
             
             for attempt in range(max_retries + 1):
                 try:
-                    result = await asyncio.wait_for(
-                        func(*args, **kwargs),
-                        timeout=timeout
-                    )
+                    if timeout is None:
+                        # No outer deadline — await directly so the wrapped call's own
+                        # timeout governs (long LLM calls, streaming-adjacent work).
+                        result = await func(*args, **kwargs)
+                    else:
+                        result = await asyncio.wait_for(
+                            func(*args, **kwargs),
+                            timeout=timeout
+                        )
                     if cb:
                         cb.record_success()
                     if metrics:
