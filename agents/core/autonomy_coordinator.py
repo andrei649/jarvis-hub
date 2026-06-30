@@ -23,6 +23,7 @@ from datetime import datetime
 from .autonomy import TaskExecutor
 from .autonomy.inbox import build_decision_card
 from .autonomy.worker import is_night_window
+from .workflows.pending_queue import WorkflowPendingQueue
 
 logger = logging.getLogger("jarvis.orchestrator")
 
@@ -30,6 +31,32 @@ logger = logging.getLogger("jarvis.orchestrator")
 class AutonomyCoordinator:
     def __init__(self, orchestrator):
         self._orch = orchestrator
+        # 0.34 (opt-in): lazily-built durable workflow pending-queue, drained each
+        # tick only when JARVIS_WORKFLOW_PERSIST is set (else stays None, no drain).
+        self._pending_queue = None
+
+    async def _drain_workflow_pending(self) -> None:
+        """Drain due durable workflow runs once per tick (0.34 wiring).
+
+        **Opt-in / default-off:** gated on ``JARVIS_WORKFLOW_PERSIST`` — when unset
+        this returns immediately having touched nothing (the tick is byte-identical
+        to before). When set, due items from the persistent queue are run via
+        ``WorkflowEngine.drain_pending`` (resolving pipeline ids through the live
+        registry); a failed run retries with backoff until its cap, then parks
+        ``dead`` — the queue/engine mechanics are covered by the 0.34 tests. A
+        drain hiccup is swallowed so it can never break the autonomy tick."""
+        if not os.environ.get("JARVIS_WORKFLOW_PERSIST"):
+            return
+        engine = getattr(self._orch, "workflow_engine", None)
+        registry = getattr(self._orch, "workflow_registry", None)
+        if engine is None or registry is None:
+            return
+        if self._pending_queue is None:
+            self._pending_queue = WorkflowPendingQueue()
+        try:
+            await engine.drain_pending(self._pending_queue, registry.get)
+        except Exception as e:
+            logger.warning(f"Workflow pending-drain failed: {e}")
 
     # ── Autonomy / Proactive Cortex (H6.1–H6.3) ────────────────────
     def wire(self):
@@ -106,6 +133,9 @@ class AutonomyCoordinator:
                 if self._orch.get_setting("system.error_backlog_sync_enabled", True):
                     from .autonomy.error_logger import sync_problems_to_diagnostics
                     sync_problems_to_diagnostics()
+                # 0.34: drain any due durable workflow runs (opt-in; no-op unless
+                # JARVIS_WORKFLOW_PERSIST is set).
+                await self._drain_workflow_pending()
             except Exception as e:
                 logger.warning(f"Autonomy tick failed: {e}")
 
