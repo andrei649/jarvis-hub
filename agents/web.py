@@ -974,6 +974,7 @@ from agents.core.routers.mesh import router as _mesh_router  # noqa: E402
 from agents.core.routers.models_llm import router as _models_llm_router  # noqa: E402
 from agents.core.routers.multimodal import router as _multimodal_router  # noqa: E402
 from agents.core.routers.notes import router as _notes_router  # noqa: E402
+from agents.core.routers.provenance import router as _provenance_router  # noqa: E402
 from agents.core.routers.oauth import router as _oauth_router  # noqa: E402
 from agents.core.routers.osint import router as _osint_router  # noqa: E402
 from agents.core.routers.market import router as _market_router  # noqa: E402
@@ -1051,6 +1052,7 @@ app.include_router(_mcp_router)
 app.include_router(_agents_api_router)
 app.include_router(_voice_router)
 app.include_router(_multimodal_router)
+app.include_router(_provenance_router)
 app.include_router(_eval_router)
 app.include_router(_heartbeat_router)
 app.include_router(_learning_router)

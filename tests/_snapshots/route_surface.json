@@ -73,6 +73,7 @@
   "GET /api/eval/datasets/{name}/runs",
   "GET /api/feedback/summary",
   "GET /api/health/components",
+  "GET /api/ingestion/provenance",
   "GET /api/integrations/social",
   "GET /api/integrations/writeback",
   "GET /api/kg/entities",

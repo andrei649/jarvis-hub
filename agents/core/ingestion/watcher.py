@@ -15,6 +15,7 @@ from typing import Optional
 from agents.core.paths import data_path
 
 from .pipeline import IngestionPipeline
+from .provenance import default_ledger_if_enabled
 
 logger = logging.getLogger("jarvis.ingestion.watcher")
 
@@ -30,7 +31,11 @@ class IngestionWatcher:
     ):
         self.data_root = Path(data_root)
         self.state_path = Path(state_path) if state_path is not None else data_path("archive", "watcher_state.json")
-        self.pipeline = pipeline or IngestionPipeline(data_root=data_root)
+        # 0.37 (opt-in): attach a provenance ledger when JARVIS_PROVENANCE is set so
+        # each watcher-triggered run stamps an auditable origin record; else None →
+        # ingestion byte-identical (no conversation ids written at rest).
+        self.pipeline = pipeline or IngestionPipeline(
+            data_root=data_root, ledger=default_ledger_if_enabled())
         self.state_path.parent.mkdir(parents=True, exist_ok=True)
 
     def _get_current_files(self) -> dict[str, float]:

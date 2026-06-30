@@ -173,3 +173,19 @@ class ProvenanceLedger:
             if r.get("run_id"):
                 runs.add(r["run_id"])
         return {"total": len(items), "runs": len(runs), "by_source": by_source}
+
+    def recent(self, limit: int = 200) -> list[dict]:
+        """The most recently produced records, newest-first (the default audit view)."""
+        items = [dict(r) for r in self._read()]
+        items.sort(key=lambda r: float(r.get("produced_at", 0)), reverse=True)
+        return items[: max(0, int(limit))]
+
+
+def default_ledger_if_enabled(env=None) -> ProvenanceLedger | None:
+    """Return a default-path :class:`ProvenanceLedger` when ``JARVIS_PROVENANCE`` is
+    set, else ``None`` — the opt-in switch for recording ingestion provenance. The
+    ledger's ``origin`` carries conversation ids, so recording (and the read
+    surface) stay off unless the owner enables it; the ingestion path is
+    byte-identical when this returns ``None``."""
+    e = os.environ if env is None else env
+    return ProvenanceLedger() if e.get("JARVIS_PROVENANCE") else None
