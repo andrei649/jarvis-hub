@@ -156,6 +156,23 @@ async def marketplace_history(name: str | None = None):
         return JSONResponse({"error": "internal error", "code": 500}, status_code=500)
 
 
+@router.post("/api/skills/marketplace/{name}/rollback", dependencies=[Depends(admin_guard)])
+async def marketplace_rollback(name: str):
+    """0.58 — roll a marketplace skill's package back to its most recent prior version
+    (reversible; the current package is archived first). The restored package replaces
+    the registry row but is not installed — ``install_skill`` re-deploys it through the
+    moderation gate. 422 when there's nothing to restore."""
+    orch = get_orch()
+    if not orch:
+        return JSONResponse({"error": "not initialized"}, status_code=503)
+    try:
+        result = orch.marketplace.restore_prior_package(name)
+        return JSONResponse(result, status_code=200 if result.get("ok") else 422)
+    except Exception:
+        logger.exception("Failed to roll back marketplace skill")
+        return JSONResponse({"error": "internal error", "code": 500}, status_code=500)
+
+
 @router.post("/api/skills/marketplace/publish", dependencies=[Depends(admin_guard)])
 async def marketplace_publish(body: PublishSkillBody):
     orch = get_orch()

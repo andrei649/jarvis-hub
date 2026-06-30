@@ -320,6 +320,7 @@
   "POST /api/skills/marketplace/publish",
   "POST /api/skills/marketplace/review",
   "POST /api/skills/marketplace/uninstall",
+  "POST /api/skills/marketplace/{name}/rollback",
   "POST /api/skills/{name}/approve",
   "POST /api/subagents/spawn",
   "POST /api/sync/pull",

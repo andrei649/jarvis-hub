@@ -34,6 +34,27 @@
 > **Autonomous backlog run (Phase 4 dev loop)** — items below are from a workflow-planned task list (5 parallel
 > surveyors → synthesis planner → 16 prioritized PR-sized tasks). Each ships as one verified PR.
 
+### 0.58 — marketplace **package rollback** ✅ (additive version-archive schema + reversible restore)
+- **What:** the marketplace registry kept one row per skill (`INSERT OR REPLACE`), so a publish **lost the prior
+  version's bytes** and a rollback had nothing to restore. New **additive** migration `_v2_version_archive` adds a
+  `marketplace_skill_versions` snapshot table (`marketplace_skills` untouched). `publish_skill` now archives the row
+  it's replacing (bounded to the last 20 per skill); **`restore_prior_package(name)`** rolls back to the most recent
+  snapshot and is **reversible** (it archives the current package first, so calling again rolls forward). New
+  **`POST /api/skills/marketplace/{name}/rollback`** (admin). This is the schema the 0.58 "Remaining" note called for.
+- **Why it's safe:** the migration is purely additive (new table only) — existing rows + the publish/install flow are
+  byte-identical until a rollback is requested. The restored package **replaces the registry row but is not installed**,
+  so `install_skill` re-deploys it through the moderation/signature gate (a rollback can't bypass review). Atomic
+  (archive + delete + replace commit in one transaction under the existing lock). 422 when there's nothing to restore.
+- **Verified (automated, in-env):** `tests/test_marketplace_rollback.py` (**+6**: archive-on-publish then restore
+  brings back the **real package bytes** (proved via install), reversible toggle, no-prior / unknown-skill / blank-name
+  guards, bounded archive) + `tests/test_db_migrations.py` (updated: v2 table present + `user_version==2`); existing
+  marketplace/governance/history suites green (no publish-path regression). All **4 route gates** pass
+  (auth=admin; `/api/skills` already maps to the `build` HUD surface); full `ruff check .` clean; **bandit (pinned
+  1.9.4) exit 0**, no new `except: pass`; `agents.web` imports.
+- **⚠️ Needs you — to exercise it:** publish a skill twice (v1 then v2), then `POST /api/skills/marketplace/<name>/rollback`
+  → the registry returns to v1; install it to deploy. Endpoint-only (no HUD button yet — the `SkillHistoryPanel`
+  already surfaces the `rollback_target`); a one-click rollback action in that panel is a natural follow-up.
+
 ### AUD-18 — `resilient_call(timeout=None)` un-clips long calls; fixes cloud-LLM 30s clip ✅
 - **What:** `resilient_call` gained `timeout=None` — it then `await`s the wrapped call directly instead of wrapping
   it in a 30s `asyncio.wait_for`, so the call's *own* timeout governs. This fixed a **real latent bug**: `cloud_llm.py`

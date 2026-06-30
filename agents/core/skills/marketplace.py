@@ -34,8 +34,33 @@ def _v1_moderation_columns(conn: sqlite3.Connection) -> None:
         conn.execute("ALTER TABLE marketplace_skills ADD COLUMN signature TEXT DEFAULT ''")
 
 
+def _v2_version_archive(conn: sqlite3.Connection) -> None:
+    """v2 — retain prior package snapshots so a publish can be rolled back. Purely
+    additive: a new table only (``marketplace_skills`` is untouched), so existing
+    rows and the publish/install flow are unchanged until a rollback is requested."""
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS marketplace_skill_versions (
+            name TEXT NOT NULL,
+            version TEXT NOT NULL,
+            description TEXT,
+            author TEXT,
+            agents TEXT,
+            requires TEXT,
+            package_zip BLOB NOT NULL,
+            published_at TEXT NOT NULL,
+            review_status TEXT NOT NULL DEFAULT 'pending',
+            signature TEXT DEFAULT '',
+            archived_at TEXT NOT NULL
+        )
+    """)
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_skill_versions_name ON marketplace_skill_versions(name)")
+
+
 # Forward-only, append-only. Never edit/reorder a shipped entry — only append.
-_MIGRATIONS = [_v1_moderation_columns]
+_MIGRATIONS = [_v1_moderation_columns, _v2_version_archive]
+
+# Prior package snapshots retained per skill (oldest pruned on archive).
+_VERSION_KEEP = 20
 
 # Locate the DB under memory_logs/
 DB_PATH = data_path("marketplace.db")
@@ -109,6 +134,91 @@ class SkillMarketplace:
         finally:
             conn.close()
 
+    def _archive_current(self, conn: sqlite3.Connection, name: str) -> None:
+        """Snapshot the current ``marketplace_skills`` row for *name* into the version
+        archive so a later publish/rollback can restore it. A no-op when the skill has
+        no current row (e.g. a first publish). Bounded: only the most recent
+        ``_VERSION_KEEP`` snapshots per skill survive (oldest pruned).
+
+        Operates on the caller's already-open *conn*, inside the caller's lock and
+        transaction, so the archive + replace commit atomically."""
+        conn.row_factory = sqlite3.Row
+        cur = conn.execute(
+            "SELECT name, version, description, author, agents, requires, package_zip, "
+            "published_at, review_status, signature FROM marketplace_skills WHERE name = ?",
+            (name,),
+        ).fetchone()
+        if cur is None:
+            return
+        conn.execute(
+            "INSERT INTO marketplace_skill_versions "
+            "(name, version, description, author, agents, requires, package_zip, "
+            "published_at, review_status, signature, archived_at) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (cur["name"], cur["version"], cur["description"], cur["author"], cur["agents"],
+             cur["requires"], cur["package_zip"], cur["published_at"], cur["review_status"],
+             cur["signature"], datetime.now(timezone.utc).isoformat()),
+        )
+        # Bound the archive: keep the most recent _VERSION_KEEP for this skill. rowid
+        # breaks ties when two snapshots share an archived_at (sub-second republish).
+        conn.execute(
+            "DELETE FROM marketplace_skill_versions WHERE name = ? AND rowid NOT IN ("
+            "SELECT rowid FROM marketplace_skill_versions WHERE name = ? "
+            "ORDER BY archived_at DESC, rowid DESC LIMIT ?)",
+            (name, name, _VERSION_KEEP),
+        )
+
+    def restore_prior_package(self, skill_name: str) -> dict:
+        """Roll a skill's marketplace package back to its most recently archived prior
+        version (0.58 Pack Manager). The *current* package is archived first, so a
+        rollback is **reversible** — calling again rolls forward. The restored package
+        replaces the registry row but is **not** installed; ``install_skill`` re-deploys
+        it, so the moderation/signature gate still applies on the way back.
+
+        Returns ``{ok: True, name, restored_version, previous_version}``; ``ok: False``
+        with a ``reason`` when the skill isn't registered or has no archived prior."""
+        name = (skill_name or "").strip()
+        if not name:
+            return {"ok": False, "error": "skill name required"}
+        restored_version = previous_version = None
+        conn = sqlite3.connect(str(self.db_path), check_same_thread=False)
+        try:
+            conn.row_factory = sqlite3.Row
+            with self._lock:
+                current = conn.execute(
+                    "SELECT version FROM marketplace_skills WHERE name = ?", (name,)
+                ).fetchone()
+                if current is None:
+                    return {"ok": False, "error": f"skill '{name}' not in registry"}
+                prior = conn.execute(
+                    "SELECT rowid, * FROM marketplace_skill_versions WHERE name = ? "
+                    "ORDER BY archived_at DESC, rowid DESC LIMIT 1",
+                    (name,),
+                ).fetchone()
+                if prior is None:
+                    return {"ok": False, "error": f"no prior version archived for '{name}'"}
+                # Archive the current row (so this rollback is itself reversible), drop
+                # the snapshot we're restoring from the archive, then make it current.
+                self._archive_current(conn, name)
+                conn.execute("DELETE FROM marketplace_skill_versions WHERE rowid = ?", (prior["rowid"],))
+                conn.execute(
+                    "INSERT OR REPLACE INTO marketplace_skills "
+                    "(name, version, description, author, agents, requires, package_zip, "
+                    "published_at, review_status, signature) "
+                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    (prior["name"], prior["version"], prior["description"], prior["author"],
+                     prior["agents"], prior["requires"], prior["package_zip"],
+                     prior["published_at"], prior["review_status"], prior["signature"]),
+                )
+                conn.commit()
+                restored_version = prior["version"]
+                previous_version = current["version"]
+        finally:
+            conn.close()
+        self._record_history(name, restored_version, "rollback")
+        return {"ok": True, "name": name, "restored_version": restored_version,
+                "previous_version": previous_version}
+
     def _init_db(self):
         # check_same_thread=False: marketplace methods may be called from
         # asyncio.to_thread; the threading.Lock serialises all access (H7.4).
@@ -169,6 +279,9 @@ class SkillMarketplace:
         conn = sqlite3.connect(str(self.db_path), check_same_thread=False)
         try:
             with self._lock:
+                # 0.58 rollback: snapshot the version about to be replaced so
+                # restore_prior_package can bring it back. No-op on a first publish.
+                self._archive_current(conn, manifest.get("name", skill_name))
                 # Re-publishing resets the skill to 'pending' so a changed package
                 # must be re-reviewed before it can be installed.
                 conn.execute(
