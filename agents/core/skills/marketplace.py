@@ -77,6 +77,25 @@ class SkillMarketplace:
         except Exception:
             logger.debug("skill history record failed", exc_info=True)
 
+    def history_view(self, name: Optional[str] = None) -> dict:
+        """Read the 0.58 version-history ledger: events + stats (and, for one skill,
+        its current/rollback-target version). When no ledger is attached
+        (``JARVIS_SKILL_HISTORY`` unset) this reports ``enabled: False`` with empty
+        data — the read surface degrades cleanly rather than erroring."""
+        if self._history is None:
+            return {"enabled": False, "events": [],
+                    "stats": {"total": 0, "skills": 0, "by_action": {}}}
+        out = {
+            "enabled": True,
+            "events": self._history.history(name),
+            "stats": self._history.stats(),
+        }
+        if name:
+            out["name"] = name
+            out["current_version"] = self._history.current_version(name)
+            out["rollback_target"] = self._history.rollback_target(name)
+        return out
+
     def _registry_version(self, name: str) -> Optional[str]:
         """The version a skill is registered at, or None if not registered."""
         conn = sqlite3.connect(str(self.db_path), check_same_thread=False)

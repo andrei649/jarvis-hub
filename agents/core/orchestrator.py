@@ -34,6 +34,7 @@ from .learning.loop import LearningLoop
 from .skills.loader import SkillLoader
 from .skills.importer import SkillImporter
 from .skills.marketplace import SkillMarketplace
+from .skills.skill_history import SkillHistory
 from .mcp.client import MCPManager
 from .autonomy import AutonomyWorker, TaskQueue, AutonomyPolicy, PreferenceStore, InterruptBudget, MissionStore
 from .autonomy import ProactiveObserver, default_probes
@@ -197,7 +198,11 @@ class Orchestrator:
         self.plugin_manager = PluginManager()  # CLN-2: owns the live-plugin registry + I/O
         self.skills = SkillLoader()
         self.skill_importer = SkillImporter()
-        self.marketplace = SkillMarketplace()
+        # 0.58 (opt-in): attach a version-history ledger so publish/install/uninstall
+        # are recorded (enables rollback_target + the read surface). Default-off via
+        # JARVIS_SKILL_HISTORY → history=None → marketplace behaviour byte-identical.
+        self.marketplace = SkillMarketplace(
+            history=SkillHistory() if os.environ.get("JARVIS_SKILL_HISTORY") else None)
         self.mcp = MCPManager()
         self.channel_manager = ChannelManager()  # CLN-2: owns the channel registry + I/O
         self.checkpoints = CheckpointManager()

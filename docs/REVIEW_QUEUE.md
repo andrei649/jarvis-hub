@@ -34,6 +34,22 @@
 > **Autonomous backlog run (Phase 4 dev loop)** — items below are from a workflow-planned task list (5 parallel
 > surveyors → synthesis planner → 16 prioritized PR-sized tasks). Each ships as one verified PR.
 
+### 0.58 — skill version-history **activated in the app + read endpoint** ✅ (flag-gated)
+- **What:** the orchestrator now attaches a `SkillHistory` ledger to its `SkillMarketplace`, and
+  `GET /api/skills/marketplace/history` (admin-guarded) exposes the publish/install/uninstall events + stats (and a
+  skill's `current_version` / `rollback_target`). This is the first **surfacing** of a previously-dark store — the
+  read API a future HUD panel will call.
+- **Why it's safe:** gated behind **`JARVIS_SKILL_HISTORY`** — unset (the default) → `history=None` → the marketplace
+  is **byte-identical** and the endpoint reports `enabled: false` with empty data (no error). Admin-guarded like its
+  marketplace siblings. No PII (skill names/versions only). Route **parity + auth-matrix snapshots reseeded** in the
+  same change (the repo's required gate).
+- **Verified (automated, in-env):** `tests/test_marketplace_history.py` 34 (+3: view-disabled, view-events+rollback-
+  target, view-without-name) + the parity (`route_parity_guard`) and auth-matrix gates pass (359 routes). `ruff` +
+  CI bandit-baseline clean; orchestrator imports cleanly.
+- **⚠️ Needs you — the privacy pattern, confirmed:** I surfaced this **behind a default-off flag** (the codebase's
+  privacy-first convention) rather than recording by default. Set `JARVIS_SKILL_HISTORY=1` to populate it. The HUD
+  *panel* that renders this endpoint is the remaining frontend follow-up.
+
 ### 0.62 — system-profile posture consumed by subagent concurrency ✅ (opt-in via profile)
 - **What:** `AutonomyCoordinator._subagent_concurrency()` now caps the `autonomy.max_subagents` setting by the active
   system profile's `max_parallel_agents` hint (`min(setting, hint)` when the profile sets one). So selecting a
