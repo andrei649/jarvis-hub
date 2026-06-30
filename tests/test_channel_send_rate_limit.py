@@ -100,3 +100,48 @@ async def test_webhook_send_unlimited_by_default(monkeypatch):
     for _ in range(10):
         assert await ch.send("x", to="15551112222") is True
     assert transport.calls == 10                        # default: nothing dropped
+
+
+# ── read surface: snapshot / status_snapshot ───────────────────────────────────
+def test_snapshot_is_a_pure_view(monkeypatch):
+    monkeypatch.setenv("JARVIS_CHANNEL_SEND_RATES", "whatsapp:5")
+    lim = SendRateLimiter(window=60.0)
+    # snapshot counts only live hits and never mutates state / affects allow()
+    assert lim.snapshot(now=0.0) == {}
+    lim.allow("whatsapp", now=0.0)
+    lim.allow("whatsapp", now=1.0)
+    assert lim.snapshot(now=2.0) == {"whatsapp": 2}
+    assert lim.snapshot(now=61.0) == {}            # both aged out of the 60s window
+    # a pure view: calling it didn't consume budget
+    assert lim.allow("whatsapp", now=2.0) is True
+
+
+def test_status_snapshot_disabled_by_default():
+    s = srl.status_snapshot()
+    assert s["enabled"] is False
+    assert s["global_cap"] == 0
+    assert s["channels"] == []
+    assert s["window_seconds"] == 60
+
+
+def test_status_snapshot_reports_caps_and_usage(monkeypatch):
+    monkeypatch.setenv("JARVIS_CHANNEL_SEND_RATE", "20")
+    monkeypatch.setenv("JARVIS_CHANNEL_SEND_RATES", "whatsapp:3")
+    srl.reset()
+    assert srl.allow_send("whatsapp") is True
+    assert srl.allow_send("whatsapp") is True
+    s = srl.status_snapshot()
+    assert s["enabled"] is True and s["global_cap"] == 20
+    wa = next(c for c in s["channels"] if c["channel"] == "whatsapp")
+    assert wa["cap"] == 3 and wa["used"] == 2 and wa["remaining"] == 1
+
+
+def test_status_snapshot_unlimited_channel_has_null_remaining(monkeypatch):
+    # a per-channel entry of 0 = unlimited for that channel → remaining is null,
+    # but a positive global cap still makes the surface "enabled".
+    monkeypatch.setenv("JARVIS_CHANNEL_SEND_RATE", "10")
+    monkeypatch.setenv("JARVIS_CHANNEL_SEND_RATES", "teams:0")
+    srl.reset()
+    s = srl.status_snapshot()
+    teams = next(c for c in s["channels"] if c["channel"] == "teams")
+    assert teams["cap"] == 0 and teams["remaining"] is None

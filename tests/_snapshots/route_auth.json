@@ -55,6 +55,7 @@
   "GET /api/capture": "user",
   "GET /api/capture/status": "user",
   "GET /api/channels/pairing": "admin",
+  "GET /api/channels/send-rate-limit": "admin",
   "GET /api/channels/webhook": "user",
   "GET /api/codeintel/search": "user",
   "GET /api/codeintel/stats": "user",

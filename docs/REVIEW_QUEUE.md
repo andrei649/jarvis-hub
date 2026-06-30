@@ -34,6 +34,23 @@
 > **Autonomous backlog run (Phase 4 dev loop)** — items below are from a workflow-planned task list (5 parallel
 > surveyors → synthesis planner → 16 prioritized PR-sized tasks). Each ships as one verified PR.
 
+### 0.44 — send rate-limit **status surfaced** ✅ (CommsRatePanel; same flag-gated template)
+- **What:** the per-channel OUTBOUND send limiter (`channels/send_rate_limit.py`) gained a read-only `snapshot()`
+  (live in-window count per channel — a pure view that prunes/records nothing) + `status_snapshot()` (configured
+  caps + usage); **`GET /api/channels/send-rate-limit`** (admin-guarded, sibling of the egress monitor) reads it;
+  and a HUD **`CommsRatePanel`** (Trust cluster) renders per-channel `used/cap`. The limiter could *enforce* but
+  couldn't be *observed* — now it can.
+- **Why it's safe:** read-only, and the limiter itself stays default-off — with no `JARVIS_CHANNEL_SEND_RATE(S)`
+  set, the endpoint reports `enabled:false` (sends unlimited, nothing recorded → byte-identical) and the panel
+  shows *"unlimited until JARVIS_CHANNEL_SEND_RATE(S) is set."* Admin-guarded (operational/security volume surface).
+- **Verified (automated, in-env):** `tests/test_channel_send_rate_limit.py` (**+4**: snapshot pure-view + window
+  ageing, status disabled-by-default, caps+usage, unlimited-channel null-remaining) + `frontend/src/test/comms-
+  rate-panel.test.tsx` (**+2**: live per-channel rows incl. `∞` for uncapped; disabled banner). `tsc` clean; vitest
+  **140/140**; `npm run build` (bundle committed); all **4 route gates** pass (route-surface, auth-matrix=admin,
+  openapi; `/api/channels/` already maps to the `comms` HUD surface); `ruff` + CI bandit clean; `agents.web` imports.
+- **⚠️ Needs you — to see data:** set e.g. `JARVIS_CHANNEL_SEND_RATES="whatsapp:10"` and broadcast on a webhook
+  channel; otherwise the panel renders its honest "unlimited" state.
+
 ### 0.37 — ingestion provenance **surfaced end-to-end** ✅ (3rd / last dark store, same flag-gated template)
 - **What:** `default_ledger_if_enabled()` (opt-in via **`JARVIS_PROVENANCE`**) wired into the `IngestionWatcher`'s
   pipeline so each watcher-triggered ingestion run stamps an auditable provenance record per parsed message;
