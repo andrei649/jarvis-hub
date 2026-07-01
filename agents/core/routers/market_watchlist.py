@@ -15,7 +15,7 @@ from fastapi import APIRouter, Depends
 from pydantic import BaseModel, Field
 
 from agents.core.routers._deps import user_guard
-from agents.core.web_helpers import nocache_json
+from agents.core.web_helpers import error_json, nocache_json
 
 router = APIRouter(tags=["market"])
 
@@ -43,7 +43,13 @@ async def market_watchlist_save(body: SaveWatchBody):
         item = WatchlistStore().add(symbol=body.symbol, low=body.low, high=body.high,
                                     note=body.note, now=time.time())
     except ValueError as e:
-        return nocache_json({"ok": False, "error": str(e)}, status_code=422)
+        # CWE-209: never echo the raw exception text back to the client. error_json
+        # logs the full detail server-side and returns only this static message.
+        return error_json(
+            e, 422,
+            "invalid watch: symbol is required and low must not exceed high",
+            extra={"ok": False},
+        )
     return nocache_json({"ok": True, "watch": item})
 
 
