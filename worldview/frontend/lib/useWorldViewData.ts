@@ -49,15 +49,20 @@ export function useWorldViewData(): LayerData {
       void Promise.all(
         visible.map((id) => fetchHistoryResult(id, masterTime, undefined, lodFor(id, lowZoom))),
       ).then((results) => {
+        // The setData updater must stay PURE — it only computes the next layer data.
         setData((prev) => {
           const next = { ...prev };
           visible.forEach((id, i) => {
-            const result = results[i];
-            next[id] = result?.data ?? emptyCollection();
-            // Surface per-layer status so the HUD can tell empty apart from a backend failure.
-            setLayerStatus(id, result?.outcome ?? "error");
+            next[id] = results[i]?.data ?? emptyCollection();
           });
           return next;
+        });
+        // Surface per-layer status separately, in this async continuation — never
+        // inside the setData updater. React runs updaters during render, so updating
+        // another store (StatsHud subscribes to layerStatus) from there throws
+        // "Cannot update a component while rendering a different component".
+        visible.forEach((id, i) => {
+          setLayerStatus(id, results[i]?.outcome ?? "error");
         });
       });
     }, 150);

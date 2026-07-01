@@ -3,7 +3,16 @@ import logging
 # defusedxml hardens parsing of the untrusted RSS/Atom feeds this plugin fetches
 # (Python's stdlib xml.etree is unsafe on hostile input — entity-expansion DoS).
 # Drop-in: exposes fromstring + ParseError; rejects DTD/entity attacks as ValueError.
-import defusedxml.ElementTree as ET
+# The dep is OPTIONAL at import time: if it's missing we disable feed parsing (a
+# clear placeholder) rather than crash the whole server at startup — and we never
+# fall back to the unsafe stdlib parser on this untrusted input.
+try:
+    import defusedxml.ElementTree as ET
+
+    _XML_OK = True
+except ImportError:  # pragma: no cover - only when the optional dep is uninstalled
+    ET = None
+    _XML_OK = False
 
 from ..http_client import PluginHTTPClient
 
@@ -25,6 +34,9 @@ class NewsPlugin:
         self.client = PluginHTTPClient.for_plugin("news")
 
     async def get_headlines(self, category: str = "general", limit: int = 5) -> list[dict]:
+        if not _XML_OK:
+            logger.warning("News feed parsing disabled: defusedxml is not installed.")
+            return [{"title": "News feed disabled — install defusedxml to enable.", "link": ""}]
         feed_url = FEEDS.get(category, FEEDS["general"])
         try:
             resp = await self.client.get(feed_url)
