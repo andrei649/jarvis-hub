@@ -38,6 +38,26 @@
 > they're committed + pushed to the branch but **PRs aren't opened yet**. When the connector is re-authorized they
 > become PRs immediately. Each is its own commit so they can be split into separate PRs.
 
+### Stability — resilient optional-dep startup + WorldView render-safe layer status ✅ (fixes reported runtime errors)
+- **What:** two fixes for errors surfaced during a debug session.
+  **(1) defusedxml startup hardening** (`plugins/news.py`, `digest.py`): the RSS/Atom feed parsers imported `defusedxml`
+  at module top, so a *missing* optional dep crashed the **whole** server at startup (`ModuleNotFoundError` →
+  `plugin_manager` import → boot failure → `ERR_CONNECTION_REFUSED`). The import is now guarded (`_XML_OK`): if defusedxml
+  is absent, feed parsing **disables itself** (news returns a clear "install defusedxml" placeholder; `digest.parse_feed`
+  returns empty) and the rest of the server boots normally. It **never** falls back to the unsafe stdlib `xml.etree`
+  parser on this untrusted RSS input.
+  **(2) WorldView render-safe layer status** (`worldview/frontend/lib/useWorldViewData.ts`): `setLayerStatus` was called
+  inside the `setData` updater, which React runs *during render* → "Cannot update a component (StatsHud) while rendering a
+  different component (Home)". The per-layer status writes moved into the async continuation, keeping the updater pure.
+- **Why it's safe:** the defusedxml change only adds a fallback on the (rare) missing-dep case; the normal dep-present
+  path is unchanged. The WorldView change is a pure refactor of *when* a store setter fires — no behavior change on the
+  normal data-load path.
+- **Verified (automated, in-env):** `tests/test_defusedxml_optional.py` (**+3**: digest parse disabled when dep missing /
+  works when present, news placeholder when missing); full `ruff check .` clean; bandit (pinned baseline) exit 0;
+  `agents.web` imports.
+- **⚠️ Needs you — live HUD pixels:** confirm the WorldView globe (`:3000`) no longer logs the setState-in-render warning
+  and layers still load/animate. The defusedxml path is best confirmed by booting once with the dep uninstalled (optional).
+
 ### 0.39 — persistent **market watchlist** ✅ (the band-alert engine was already there; this saves it)
 - **What:** the market pack could already evaluate band-breach alerts (with not-advice disclaimers) against quotes you
   pass in, but the watchlist itself was stateless. New `market/watchlist_store.py` (`WatchlistStore`) persists a curated

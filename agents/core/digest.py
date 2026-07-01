@@ -23,7 +23,15 @@ from urllib.parse import quote_plus
 # defusedxml hardens parsing of the untrusted RSS/Atom feeds this module fetches
 # (Python's stdlib xml.etree is unsafe on hostile input — entity-expansion DoS).
 # Drop-in: exposes fromstring + ParseError; rejects DTD/entity attacks as ValueError.
-import defusedxml.ElementTree as ET
+# Optional at import time: if it's missing we disable feed parsing (parse to empty)
+# rather than crash the whole server — and never fall back to the unsafe stdlib parser.
+try:
+    import defusedxml.ElementTree as ET
+
+    _XML_OK = True
+except ImportError:  # pragma: no cover - only when the optional dep is uninstalled
+    ET = None
+    _XML_OK = False
 
 logger = logging.getLogger("jarvis.digest")
 
@@ -55,6 +63,9 @@ def idea_reality_score(text: str) -> float:
 def parse_feed(xml: str, limit: int = 20) -> list[dict]:
     """Parse an RSS ``<item>`` or Atom ``<entry>`` feed → [{title, link, summary}]."""
     out: list[dict] = []
+    if not _XML_OK:
+        logger.warning("Digest feed parsing disabled: defusedxml is not installed.")
+        return out
     try:
         root = ET.fromstring(xml)
     except (ET.ParseError, ValueError):
