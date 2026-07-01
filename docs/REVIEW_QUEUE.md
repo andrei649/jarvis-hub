@@ -38,6 +38,25 @@
 > they're committed + pushed to the branch but **PRs aren't opened yet**. When the connector is re-authorized they
 > become PRs immediately. Each is its own commit so they can be split into separate PRs.
 
+### 0.39 — persistent **market watchlist** ✅ (the band-alert engine was already there; this saves it)
+- **What:** the market pack could already evaluate band-breach alerts (with not-advice disclaimers) against quotes you
+  pass in, but the watchlist itself was stateless. New `market/watchlist_store.py` (`WatchlistStore`) persists a curated
+  `{symbol, low, high, note}` list (bounded, atomic, corrupt-safe; one entry per symbol, upsert, symbol upper-cased;
+  rejects an inverted `low>high` band). `GET/POST /api/market/watchlist/saved` + `DELETE …/{symbol}` (user-guarded), in a
+  dedicated **`routers/market_watchlist.py`**. *(HUD `WatchlistPanel` deferred to a frontend follow-up — see note below.)*
+- **Why it's safe:** purely additive — a new store + new routes; the existing stateless evaluate/brief endpoints are
+  untouched. No quotes are fetched and no trade is ever proposed (acting on a signal stays kernel-gated → QUEUE). Empty
+  by default.
+- **Verified (automated, in-env):** `tests/test_watchlist_store.py` (**+9**: add/upsert + symbol-normalize, inverted-band
+  reject, get/remove, alphabetical list, clear+stats, cross-instance persistence, corrupt-safe, bounded pruning). All 4
+  route gates pass (auth=user; `/api/market/` maps to the `finance` HUD surface); full `ruff check .` clean; bandit
+  (pinned 1.9.4) exit 0, no new `except: pass`.
+- **⚠️ CodeQL merge-rule note:** shipped **backend-only** — the HUD `WatchlistPanel` was dropped from this PR because
+  rebuilding the HUD bundle trips a repo CodeQL merge-protection rule (surfaces a *pre-existing* alert via a "diff too
+  large" fallback). Any PR that rebuilds `agents/web/v2` hits it until the pre-existing alert is dismissed (owner CQ-3).
+- **⚠️ Needs you — to see alerts fire:** the **live quotes feed** (a quotes API) and the `balance` plugin against a real
+  broker/bank are owner-gated wiring. Curate the watchlist now; alerts evaluate against quotes you (or a future feed) provide.
+
 ### 0.62 — system-profile knobs **now bite** + HUD panel ✅ (heavy_features gate, model_tier→local-only)
 - **What:** the two previously declared-but-unconsumed posture knobs are wired. **`heavy_features`** gates the heavy
   media-generation entry point — the *gaming* profile (heavy_features off) pauses GPU-hungry generation with an honest
