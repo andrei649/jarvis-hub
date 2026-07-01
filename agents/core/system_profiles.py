@@ -64,6 +64,25 @@ def active_posture() -> dict:
     return dict(PROFILES[active_name()])
 
 
+def heavy_features_enabled() -> bool:
+    """Whether the active profile permits heavy/expensive local work — media
+    generation, deep research, and similar GPU/CPU-hungry operations.
+
+    ``balanced``/``ai``/``admin`` → True (unchanged default); ``gaming`` → False
+    ("free the GPU for games"). Consumers gate their heavy entry points on this so a
+    constrained profile genuinely stops contending for local resources, rather than
+    the knob being advisory-only."""
+    return bool(active_posture().get("heavy_features", True))
+
+
+def preferred_model_tier() -> str:
+    """The active profile's preferred model weight: ``"local-light"`` / ``"local"`` /
+    ``"auto"`` (the default). Advisory — a router/selector reads it to bias toward a
+    lighter local model under a constrained profile; ``"auto"`` imposes no preference."""
+    tier = active_posture().get("model_tier", "auto")
+    return tier if tier in ("local-light", "local", "auto") else "auto"
+
+
 def list_profiles() -> dict:
     """Everything the HUD/owner needs: the active name, the default, and all profiles."""
     return {"active": active_name(), "default": DEFAULT, "profiles": PROFILES}

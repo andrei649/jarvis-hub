@@ -34,6 +34,29 @@
 > **Autonomous backlog run (Phase 4 dev loop)** — items below are from a workflow-planned task list (5 parallel
 > surveyors → synthesis planner → 16 prioritized PR-sized tasks). Each ships as one verified PR.
 
+> **Note (GitHub MCP offline):** the items below this note were built while the GitHub connector was disconnected, so
+> they're committed + pushed to the branch but **PRs aren't opened yet**. When the connector is re-authorized they
+> become PRs immediately. Each is its own commit so they can be split into separate PRs.
+
+### 0.62 — system-profile knobs **now bite** + HUD panel ✅ (heavy_features gate, model_tier→local-only)
+- **What:** the two previously declared-but-unconsumed posture knobs are wired. **`heavy_features`** gates the heavy
+  media-generation entry point — the *gaming* profile (heavy_features off) pauses GPU-hungry generation with an honest
+  `{ok:False, paused:true, profile}` reply. **`model_tier`** is consumed in `load_runtime_settings`: a constrained
+  tier (*gaming* `local-light` / *multimedia* `local`) forces cloud escalation **off** (`cloud_fallback="never"`) so
+  inference stays local; `auto` (balanced/ai/admin) honors the existing `llm.cloud_fallback` setting. New HUD
+  **`SystemProfilePanel`** (Admin cluster) over the existing `GET /api/system/profiles` shows the active profile +
+  each profile's knobs.
+- **Why it's safe:** **default-safe** — `balanced` keeps `heavy_features:True` + `model_tier:auto`, so with the env
+  unset everything is byte-identical. Only an explicitly-selected constrained profile changes behavior. No new routes
+  (the read route already existed) → no snapshot/auth-matrix change; the media-gen gate runs before any orch/backend work.
+- **Verified (automated, in-env):** `tests/test_system_profiles.py` (**+4**: heavy_features/model_tier helpers,
+  media-gen paused under gaming, constrained-tier forces local-only — all via `monkeypatch`, no real generation) +
+  `frontend/src/test/system-profile-panel.test.tsx` (**+1**). All 4 route gates unchanged-and-green; full `ruff check .`
+  clean; bandit (pinned 1.9.4) exit 0, no new `except: pass`; tsc clean; **vitest 143/143**; build committed.
+- **⚠️ Needs you — to feel it:** set `JARVIS_SYSTEM_PROFILE=gaming`, then media-gen returns "paused" and cloud
+  escalation is forced off. This **completes 0.62** — all four posture knobs (background_autonomy, max_parallel_agents,
+  heavy_features, model_tier) now steer real behavior.
+
 ### 0.58 — marketplace **package rollback** ✅ (additive version-archive schema + reversible restore)
 - **What:** the marketplace registry kept one row per skill (`INSERT OR REPLACE`), so a publish **lost the prior
   version's bytes** and a rollback had nothing to restore. New **additive** migration `_v2_version_archive` adds a
