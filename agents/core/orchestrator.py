@@ -525,7 +525,14 @@ class Orchestrator:
             # so the /admin privacy knob actually governs cloud escalation live.
             router = getattr(self, "llm_router", None)
             if router is not None and hasattr(router, "set_cloud_fallback_mode"):
-                router.set_cloud_fallback_mode(flat.get("llm.cloud_fallback", "on-demand"))
+                mode = flat.get("llm.cloud_fallback", "on-demand")
+                # 0.62: a constrained system-profile model_tier (gaming → local-light,
+                # multimedia → local) keeps inference local — never escalate to cloud,
+                # regardless of the setting. "auto" (balanced/ai/admin) imposes nothing.
+                from .system_profiles import preferred_model_tier
+                if preferred_model_tier() != "auto":
+                    mode = "never"
+                router.set_cloud_fallback_mode(mode)
             # Propagate the prompt-size routing thresholds (local vs cloud-flash)
             # so the /admin knobs actually govern routing live. 0 = unlimited.
             if router is not None and hasattr(router, "set_local_max"):

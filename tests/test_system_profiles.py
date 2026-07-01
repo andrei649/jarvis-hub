@@ -61,3 +61,59 @@ async def test_run_heartbeat_paused_when_profile_disables_autonomy(monkeypatch):
     # gaming → background autonomy off → heartbeat is skipped
     monkeypatch.setenv("JARVIS_SYSTEM_PROFILE", "gaming")
     assert await o.run_heartbeat("jarvis") is None
+
+
+# ── new consumers (0.62): heavy_features + model_tier actually bite ─────────────
+def test_heavy_features_enabled(monkeypatch):
+    assert sp.heavy_features_enabled() is True            # balanced default
+    monkeypatch.setenv("JARVIS_SYSTEM_PROFILE", "gaming")
+    assert sp.heavy_features_enabled() is False           # gaming frees the GPU
+
+
+def test_preferred_model_tier(monkeypatch):
+    assert sp.preferred_model_tier() == "auto"            # balanced default
+    monkeypatch.setenv("JARVIS_SYSTEM_PROFILE", "gaming")
+    assert sp.preferred_model_tier() == "local-light"
+    monkeypatch.setenv("JARVIS_SYSTEM_PROFILE", "multimedia")
+    assert sp.preferred_model_tier() == "local"
+
+
+@pytest.mark.asyncio
+async def test_media_generate_paused_under_gaming_profile(monkeypatch):
+    """The media-gen entry point is gated on heavy_features — gaming pauses it
+    before any backend/orch work (so the GPU stays free)."""
+    monkeypatch.setenv("JARVIS_SYSTEM_PROFILE", "gaming")
+    import json
+
+    from agents.core.routers.multimodal import MediaGenBody, media_generate
+    resp = await media_generate(MediaGenBody(kind="image", prompt="a cat"))
+    body = json.loads(bytes(resp.body))
+    assert body["ok"] is False and body["paused"] is True and body["profile"] == "gaming"
+
+
+def test_constrained_model_tier_forces_cloud_fallback_never(monkeypatch):
+    """A constrained model_tier (gaming/multimedia) forces cloud escalation OFF in
+    load_runtime_settings, regardless of the llm.cloud_fallback setting; 'auto'
+    (balanced) honors the setting."""
+    import agents.core.orchestrator as orch_mod
+    monkeypatch.setattr(orch_mod, "_get_settings",
+                        lambda: {"llm": [{"key": "cloud_fallback", "value": "always"}]})
+    o = orch_mod.Orchestrator.__new__(orch_mod.Orchestrator)
+    captured = {}
+
+    class _Router:
+        def set_cloud_fallback_mode(self, m):
+            captured["mode"] = m
+
+        def set_local_max(self, v):
+            pass
+
+        def set_flash_max(self, v):
+            pass
+
+    o.llm_router = _Router()
+    o.load_runtime_settings()                       # balanced → honors the setting
+    assert captured["mode"] == "always"
+    monkeypatch.setenv("JARVIS_SYSTEM_PROFILE", "gaming")
+    o.load_runtime_settings()                       # gaming → forced local-only
+    assert captured["mode"] == "never"

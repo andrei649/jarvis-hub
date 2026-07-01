@@ -1483,6 +1483,36 @@ export function ModelInfoPanel() {
   );
 }
 
+/* 0.62 — the usage-mode system profile (GET /api/system/profiles): which posture is
+   active (balanced/gaming/ai/multimedia/admin) and each profile's knobs. The active
+   profile actually bites now — heavy_features gates media-gen, model_tier governs
+   cloud escalation. Read-only (selected via JARVIS_SYSTEM_PROFILE). */
+export function SystemProfilePanel() {
+  const { d, e, loading, reload } = useApi('/api/system/profiles');
+  const active = d && d.active;
+  const profiles = (d && d.profiles) || {};
+  const names = Object.keys(profiles);
+  return (
+    <Card title="SYSTEM PROFILE" sub={d ? `${active || '—'}${active === (d && d.default) ? ' (default)' : ''}` : null} onReload={reload}>
+      <State e={e} loading={loading} n={names.length} />
+      {names.map((name) => {
+        const p = profiles[name] || {};
+        const isActive = name === active;
+        return (
+          <Row key={name}>
+            <span style={{ ...mono, color: isActive ? 'var(--accent-light)' : 'var(--ink-2)' }}>{isActive ? '▸ ' : ''}{name}</span>
+            <span style={{ marginLeft: 'auto', display: 'flex', gap: 5, flexWrap: 'wrap' }}>
+              <Tag>{p.model_tier}</Tag>
+              {!p.heavy_features && <Tag>no-heavy</Tag>}
+              {!p.background_autonomy && <Tag>no-bg</Tag>}
+            </span>
+          </Row>
+        );
+      })}
+    </Card>
+  );
+}
+
 const SECTIONS: Array<[string, Array<() => any>]> = [
   ['Memory', [DataSpacesPanel, LocalDocsPanel, NotesPanel, KgPanel, CapturePanel, ReflectionPanel, ProvenancePanel]],
   ['Trust', [KillSwitchPanel, KernelMetricsPanel, ReadinessPanel, LoopBreakerPanel, GovernancePanel, PosturePanel, SecuritySkillsPanel, NetworkMonitorPanel, CommsRatePanel, SecretsPanel, CapabilitiesPanel, PairingPanel, InjectionScanPanel]],
@@ -1490,7 +1520,7 @@ const SECTIONS: Array<[string, Array<() => any>]> = [
   ['Observe', [OnboardingPanel, EvalPanel, ReviewPanel, ArenaPanel, QualityPanel, APMPanel, ModelInfoPanel, FeedbackPanel]],
   ['Build', [WorkflowsPanel, StepGenPanel, SandboxPanel, TemplatesPanel, MediaGalleryPanel]],
   ['Autonomy & Agents', [DecisionInboxPanel, MissionsPanel, AgentAutonomyPanel, TodayPanel, SchedulePanel, LearningPanel, SessionsPanel, HeartbeatPanel, TranscriptPanel, EscalationPanel]],
-  ['Admin', [BackupPanel, OAuthPanel, SettingsPanel, PromptsPanel, RoomsPanel, LMStudioPanel, AuthProfilesPanel]],
+  ['Admin', [BackupPanel, OAuthPanel, SettingsPanel, PromptsPanel, RoomsPanel, LMStudioPanel, AuthProfilesPanel, SystemProfilePanel]],
 ];
 
 export function ConsoleOverlay({ onClose }) {
