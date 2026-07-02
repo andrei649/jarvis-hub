@@ -30,9 +30,9 @@ async function request(
   method: string,
   path: string,
   body?: unknown,
-  opts: { admin?: boolean; _retried?: boolean } = {},
+  opts: { admin?: boolean; signal?: AbortSignal; _retried?: boolean } = {},
 ): Promise<Response> {
-  const init: RequestInit = { method, headers: buildHeaders(opts.admin) };
+  const init: RequestInit = { method, headers: buildHeaders(opts.admin), signal: opts.signal };
   if (body !== undefined) {
     (init.headers as Record<string, string>)['Content-Type'] = 'application/json';
     init.body = JSON.stringify(body);
@@ -66,7 +66,7 @@ export async function postStream(
   path: string,
   body: unknown,
   onEvent: (evt: any) => void,
-  opts: { admin?: boolean } = {},
+  opts: { admin?: boolean; signal?: AbortSignal } = {},
 ): Promise<void> {
   const res = await request('POST', path, body, opts);
   if (!res.ok || !res.body) throw Object.assign(new Error(`stream ${path} -> ${res.status}`), { status: res.status });
@@ -78,13 +78,20 @@ export async function postStream(
     if (!s.startsWith('data:')) return;
     try { onEvent(JSON.parse(s.slice(s.indexOf(':') + 1).trim())); } catch { /* ignore */ }
   };
-  for (;;) {
-    const { value, done } = await reader.read();
-    if (value) buf += dec.decode(value, { stream: true });
-    if (done) break;
-    const parts = buf.split('\n');
-    buf = parts.pop() || '';
-    for (const p of parts) flush(p);
+  try {
+    for (;;) {
+      const { value, done } = await reader.read();
+      if (value) buf += dec.decode(value, { stream: true });
+      if (done) break;
+      const parts = buf.split('\n');
+      buf = parts.pop() || '';
+      for (const p of parts) flush(p);
+    }
+  } catch (err) {
+    // Aborting the signal rejects the in-flight read; close the reader and
+    // rethrow so the caller can tell a user stop (AbortError) from a failure.
+    try { await reader.cancel(); } catch { /* already closed */ }
+    throw err;
   }
   if (buf) flush(buf);
 }

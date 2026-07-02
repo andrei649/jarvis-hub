@@ -44,9 +44,10 @@ Still on mock (wire to endpoints; some need plugins configured):
   add the task layer + live collab edges.
 - **Per‑message TTS** (🔊 → `/tts`) + **browser mic / SpeechRecognition** input + voice auto‑speak
   (v1 had these; dropped in the port).
-- **Sentence-level TTS streaming** (H5.16): backend `POST /tts/stream` exists (opt-in
-  `voice.sentence_streaming`, default off) — wire `frontend/src/voice.ts` to consume the framed
-  chunk stream and play sentences back-to-back so audio starts after sentence #1.
+- ~~**Sentence-level TTS streaming** (H5.16)~~ ✅ **DONE (verified 2026‑07‑02)** — `voice.ts`
+  `speak()` tries `streamTts` first (framed chunks played back-to-back, `voice.ts:206`) and falls
+  back to whole-reply `/tts` on 409 when the server opt-in is off. *Remaining H5.16 tail lives in
+  BACKLOG (synthesize mid-stream; browser wake-word).*
 - **Streaming cognition**: P2 pulls the `/api/cognition` snapshot after the turn; upgrade to a real
   **SSE** stream (`/api/cognition/stream`, a backend addition) with live scores + redactions.
 - **Strict‑local / mic trust badge** (H12.10): wire `/api/trust/status` into the top bar (endpoint
@@ -116,11 +117,14 @@ AI step builder (H10.7) · sandbox execute (DEV_MODE‑gated, honest 403) · age
 (H10.29) · LM Studio server/load/unload · cloud auth profiles (H12.20). Admin‑guarded calls now
 send the admin token (`actA`). +7 frontend tests (19 total).
 
-**Still open (the tail of TASK‑2):** §3 plugin‑gated mode wiring (Finance/Health/Knowledge/
-Family, Comms Discord/Slack threads), per‑panel LIVE/SEED chips (§1 — global badge exists),
-§6 toolchain (CI stale‑bundle guard, OpenAPI types, self‑hosted fonts), §7 locality endpoint,
-and `GET /api/security/audit/verify` (BUG‑17, added 2026‑06‑10) — surface the chain‑integrity
-verdict as a Trust‑mode chip next to the audit feed. Estimated 1–2 PRs.
+**Still open (the tail of TASK‑2, re‑verified 2026‑07‑02):** §3 plugin‑gated mode wiring
+(Finance/Health/Knowledge/Family, Comms Discord/Slack threads), per‑panel LIVE/SEED chips
+(§1 — global badge exists), §6 toolchain remainder (OpenAPI types, self‑hosted fonts), and the
+0.39 saved‑watchlist `WatchlistPanel`. Estimated 1–2 PRs.
+*Since‑closed items previously listed here:* CI stale‑bundle guard ✅ (`hud-v2-build` in `ci.yml`),
+§7 locality endpoint ✅ (`GET /api/analytics/locality`, consumed in `app.tsx`/`shell.tsx`), and the
+BUG‑17 audit‑verify Trust chip ✅ (`modes.tsx:117-165` renders the live
+`GET /api/security/audit/verify` verdict).
 
 ---
 *Parity gate (`tests/test_hud_v2_parity.py`) tracks all routes → every one is mapped to a v2
