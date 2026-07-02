@@ -30,11 +30,13 @@ describe('MediaGalleryPanel — the media catalog read surface is live', () => {
     await waitFor(() => expect(screen.getByText('a red bicycle')).toBeTruthy());
     expect(fn.mock.calls.some((c) => String(c[0]).includes('/api/media/catalog'))).toBe(true);
     expect(screen.getByText('1 image')).toBeTruthy();
+    expect(screen.getByText('LIVE')).toBeTruthy(); // TASK-2 tail: per-panel honesty chip
   });
 
   it('shows the honesty banner when the catalog is disabled (flag off)', async () => {
     mockFetch({ enabled: false, items: [], stats: { total: 0, cloud: 0, by_kind: {} } });
     render(<MediaGalleryPanel />);
     await waitFor(() => expect(screen.getByText(/JARVIS_MEDIA_CATALOG is on/)).toBeTruthy());
+    expect(screen.getByText('SEED')).toBeTruthy();
   });
 });

@@ -1,11 +1,14 @@
-"""ORIZONT-24 K1 wave-3 (kg.write slice) — externally-driven KG writes route through the
-Action Kernel; the high-frequency *internal* ingestion path does NOT.
+"""ORIZONT-24 K1 wave-3/4b (kg.write slice) — externally-driven KG writes route through
+the Action Kernel with a MANDATORY capability token; the high-frequency *internal*
+ingestion path does NOT.
 
 The whole point of this slice is the boundary: the `/api/kg/*` mutating HTTP handlers are
 mediated (a halt blocks them), while the internal per-turn path (`IncrementalKGUpdater.ingest`
 called from `orchestrator._record_interactions`, `seed_graph`, reflection) writes the graph
 methods DIRECTLY and is never frozen. `test_boundary_internal_ingestion_alive_while_halted`
-pins exactly that. Default-off behind `JARVIS_ACTION_KERNEL`.
+pins exactly that. Since wave-4b, a clean/no-token call mints its own short-lived operator
+token (the caller already passed user_guard) so the real capability nucleus runs instead of
+tolerating an empty token. Default-off behind `JARVIS_ACTION_KERNEL`.
 """
 import asyncio
 
@@ -66,13 +69,18 @@ def test_flag_off_kg_writes_unmediated(tmp_path, monkeypatch):
     assert graph.get_entity("Probe") is not None
 
 
-# ── flag on, clean: QUEUE allows through (no approval-UX regression) ─────────────────
+# ── flag on, clean: mints its own operator token → real cross-check → allow ──────────
 def test_flag_on_clean_allows_through(tmp_path, monkeypatch):
     monkeypatch.setenv("JARVIS_ACTION_KERNEL", "1")
     orch, graph = _orch(tmp_path)
     monkeypatch.setattr(web, "orch", orch)        # real bound kernel over the stub orch
+    assert not orch.capabilities.list()
     assert _status(_run(memkg.kg_upsert_entity(_Req({"name": "Probe", "type": "person"})))) == 200
     assert graph.get_entity("Probe") is not None
+    # wave-4b: the router minted its own kg:write operator token (no token was
+    # presented) — proves the real capability nucleus ran, not a tolerated-empty skip.
+    minted = orch.capabilities.list()
+    assert len(minted) == 1 and minted[0]["capabilities"] == ["kg:write"]
 
 
 # ── flag on, halted: every external KG-write handler is denied ──────────────────────
@@ -126,6 +134,44 @@ def test_invalid_capability_token_denied(tmp_path, monkeypatch):
     r = _run(memkg.kg_upsert_entity(
         _Req({"name": "Probe", "type": "person"}, headers={"x-capability-token": "bogus"})))
     assert _status(r) == 403   # nucleus: "no valid capability token for this action"
+
+
+def test_explicitly_presented_valid_token_is_accepted_no_extra_mint(tmp_path, monkeypatch):
+    monkeypatch.setenv("JARVIS_ACTION_KERNEL", "1")
+    orch, graph = _orch(tmp_path)
+    monkeypatch.setattr(web, "orch", orch)
+    tok = orch.capabilities.issue(["kg:write"])["id"]
+    r = _run(memkg.kg_upsert_entity(
+        _Req({"name": "Probe", "type": "person"}, headers={"x-capability-token": tok})))
+    assert _status(r) == 200
+    # the presented token wins — no operator token was minted for this call.
+    assert [t["id"] for t in orch.capabilities.list()] == [tok]
+
+
+# ── wave-4b closed the structural gap: delete_entity/delete_relation now carry Request ──
+def test_delete_entity_and_delete_relation_accept_request_and_mint(tmp_path, monkeypatch):
+    monkeypatch.setenv("JARVIS_ACTION_KERNEL", "1")
+    orch, graph = _orch(tmp_path)
+    monkeypatch.setattr(web, "orch", orch)
+    graph.add_entity("X", "person")
+    graph.add_entity("A", "person")
+    graph.add_entity("B", "person")
+    graph.add_relation("A", "KNOWS", "B")   # independent of X, so deleting X leaves it intact
+
+    # called with no Request at all (direct/non-HTTP call, e.g. this test) — still
+    # works: the kernel helper mints its own operator token when none is presented.
+    assert _status(_run(memkg.kg_delete_entity("X"))) == 200
+    assert graph.get_entity("X") is None
+    assert _status(_run(memkg.kg_delete_relation("A", "KNOWS", "B"))) == 200
+    minted = orch.capabilities.list()
+    assert len(minted) == 2 and all(t["capabilities"] == ["kg:write"] for t in minted)
+
+    # called WITH a Request carrying an explicit token — that token wins.
+    graph.add_entity("Z", "person")
+    tok = orch.capabilities.issue(["kg:write"])["id"]
+    r = _run(memkg.kg_delete_entity("Z", req=_Req({}, headers={"x-capability-token": tok})))
+    assert _status(r) == 200
+    assert graph.get_entity("Z") is None
 
 
 # ── deny precedes the existence lookup (don't leak existence while halted) ──────────

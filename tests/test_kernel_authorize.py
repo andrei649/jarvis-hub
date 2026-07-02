@@ -7,7 +7,7 @@ xfail in test_kernel_bypass_regressions.py).
 """
 
 from agents.core.autonomy.policy import AutonomyPolicy
-from agents.core.kernel import Action, Budget, Capability, Verdict, authorize
+from agents.core.kernel import Action, Budget, Capability, TOKEN_MANDATORY_KINDS, Verdict, authorize
 from agents.core.security.capability import GLOBAL, CapabilityBroker, KillSwitch
 
 
@@ -122,5 +122,70 @@ def test_budget_is_inert_in_k1(tmp_path):
         Action(kind="organize", payload={"risk_tier": 1}),
         budget=Budget(amount=999_999.0),
         kill_switch=_kill(tmp_path), policy=AutonomyPolicy(), audit=FakeAudit(),
+    )
+    assert d.verdict is Verdict.GRANT
+
+
+# ── K2 wave-4b: TOKEN_MANDATORY_KINDS ─────────────────────────────────────────
+
+def test_token_mandatory_kinds_are_the_admin_and_kg_write_kinds():
+    assert TOKEN_MANDATORY_KINDS == {"admin.kill_switch", "admin.capability_issue", "kg.write"}
+
+
+def test_mandatory_kind_denies_with_no_token_even_clean(tmp_path):
+    """Unlike K1, a mandatory kind with NO presented token is refused even with a
+    clean kill-switch and a live broker — the capability nucleus is no longer
+    skippable for these kinds by simply not sending a token."""
+    audit = FakeAudit()
+    d = authorize(
+        Action(kind="kg.write", payload={"risk_tier": 1}),
+        Capability(),  # empty token
+        kill_switch=_kill(tmp_path), capabilities=CapabilityBroker(),
+        policy=AutonomyPolicy(), audit=audit,
+    )
+    assert d.verdict is Verdict.DENY
+    assert "token required" in d.reason
+    assert len(audit.records) == 1
+
+
+def test_mandatory_kind_halted_reports_kill_switch_reason_not_missing_token(tmp_path):
+    """When both are true (halted AND no token), the kill-switch reason wins —
+    matches the presented-token path, where the nucleus checks the kill-switch
+    before the capability."""
+    kill = _kill(tmp_path)
+    kill.engage(GLOBAL, "halt")
+    d = authorize(
+        Action(kind="admin.kill_switch", payload={}),
+        Capability(),
+        kill_switch=kill, capabilities=CapabilityBroker(),
+        policy=AutonomyPolicy(), audit=FakeAudit(),
+    )
+    assert d.verdict is Verdict.DENY
+    assert "kill-switch" in d.reason
+
+
+def test_non_mandatory_kind_stays_k1_tolerant_without_token(tmp_path):
+    """Every other KERNEL-mediated kind is unaffected by wave-4b — no token still
+    falls through to kill-switch-only gating (the K1 contract), so wave-4b can't
+    silently widen beyond admin.*/kg.write."""
+    d = authorize(
+        Action(kind="call.outbound", payload={"risk_tier": 1}),
+        Capability(),
+        kill_switch=_kill(tmp_path), capabilities=CapabilityBroker(),
+        policy=AutonomyPolicy(), audit=FakeAudit(),
+    )
+    assert d.verdict is Verdict.GRANT
+
+
+def test_mandatory_kind_with_no_broker_at_all_stays_k1_tolerant(tmp_path):
+    """capabilities=None (no broker wired at all — the capability system itself is
+    absent, not just an unminted token) falls all the way back to kill-switch-only
+    gating, same as any other kind — wave-4b only bites when a broker exists but
+    no token reached the nucleus."""
+    d = authorize(
+        Action(kind="kg.write", payload={"risk_tier": 1}),
+        Capability(),
+        kill_switch=_kill(tmp_path), capabilities=None,
+        policy=AutonomyPolicy(), audit=FakeAudit(),
     )
     assert d.verdict is Verdict.GRANT

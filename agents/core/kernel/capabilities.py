@@ -54,3 +54,28 @@ def issue_all(broker, agents: dict, *, ttl: float = 86400.0, now=None) -> dict:
         aid: issue_for_agent(broker, aid, cfg, ttl=ttl, now=now)["id"]
         for aid, cfg in (agents or {}).items()
     }
+
+
+def issue_operator_capability(broker, capability: str, *, ttl: float = 30.0, now=None) -> str:
+    """K2 wave-4b: mint a short-lived, single-capability token for an already
+    HTTP-authenticated operator (``admin_guard``/``user_guard`` already ran).
+
+    The admin/kg-write handlers that call this reach it only through a route
+    already gated by ``admin_guard``/``user_guard`` — this doesn't grant new
+    trust, it just lets the caller's already-proven identity flow through the
+    kernel's *same* capability nucleus every other privileged action uses,
+    instead of the kernel tolerating an empty token. Minted on demand (only
+    when the handler has no explicitly *presented* ``x-capability-token``) so
+    the broker isn't touched by the ~130 admin/user routes that never reach a
+    kernel-mediated action — only the handful that do.
+
+    Best-effort: returns ``""`` on any hiccup (no broker, a broker error),
+    which the kernel then treats as a missing token — fail-closed for the
+    token-mandatory kinds, never fail-open.
+    """
+    if broker is None:
+        return ""
+    try:
+        return broker.issue([capability], source="operator:http", ttl=ttl, now=now)["id"]
+    except Exception:
+        return ""

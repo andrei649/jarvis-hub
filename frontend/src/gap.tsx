@@ -19,12 +19,38 @@ function useApi(path, auto = true, admin = false) {
 const arr = (x, ...k) => (Array.isArray(x) ? x : (k.map((kk) => x && x[kk]).find(Array.isArray) || []));
 const mono = { fontFamily: 'var(--font-mono)', fontSize: 11 };
 
-function Card({ title, sub, onReload, children }: { title?: any; sub?: any; onReload?: any; children?: any }) {
+/* Per-panel LIVE/SEED honesty chip (TASK-2 tail). Distinct from LiveSourceChip
+   (mode-level, block-positioned under a header) — this is inline-sized for the
+   panel-head flex row. Same color/wording convention: green LIVE = the panel's
+   `enabled`-style flag is on (or the surface has no such flag and simply loaded
+   real data), amber SEED = present but not collecting yet. Renders nothing until
+   the panel has actually loaded (`live` undefined) so it never guesses. */
+function PanelChip({ live }: { live?: 'live' | 'seed' | null }) {
+  if (live !== 'live' && live !== 'seed') return null;
+  const isLive = live === 'live';
+  const c = isLive ? 'var(--green)' : 'var(--amber)';
+  return (
+    <span
+      title={isLive ? 'Live data from the backend' : 'Seeded/disabled — not live'}
+      style={{
+        display: 'inline-flex', alignItems: 'center', gap: 4,
+        fontFamily: 'var(--font-mono)', fontSize: 9, letterSpacing: '.06em',
+        color: c, border: `1px solid ${c}`, borderRadius: 3, padding: '0 5px',
+      }}
+    >
+      <span style={{ width: 5, height: 5, borderRadius: '50%', background: c }} />
+      {isLive ? 'LIVE' : 'SEED'}
+    </span>
+  );
+}
+
+function Card({ title, sub, live, onReload, children }: { title?: any; sub?: any; live?: any; onReload?: any; children?: any }) {
   return (
     <div className="panel" style={{ marginBottom: 'var(--gap)', breakInside: 'avoid' }}>
       <span className="bk tl"></span><span className="bk tr"></span><span className="bk bl"></span><span className="bk br"></span>
       <div className="panel-head">
         <span className="ttl">{title}</span>
+        <PanelChip live={live} />
         {sub != null && <span className="st">{sub}</span>}
         {onReload && <button className="tool-btn" style={{ marginLeft: 'auto' }} onClick={onReload} title="reload">↻</button>}
       </div>
@@ -1356,7 +1382,7 @@ export function SkillHistoryPanel() {
   const events = arr(d && d.events);
   const byAction = (d && d.stats && d.stats.by_action) || {};
   return (
-    <Card title="SKILL HISTORY" sub={d ? (enabled ? `${(d.stats && d.stats.total) || 0} events` : 'disabled') : null} onReload={reload}>
+    <Card title="SKILL HISTORY" live={d ? (enabled ? 'live' : 'seed') : undefined} sub={d ? (enabled ? `${(d.stats && d.stats.total) || 0} events` : 'disabled') : null} onReload={reload}>
       <State e={e} loading={loading} n={events.length} />
       {d && !enabled && <div style={{ fontSize: 10, color: 'var(--ink-3)', marginTop: 6 }}>empty until JARVIS_SKILL_HISTORY is on</div>}
       {enabled && Object.keys(byAction).length > 0 && (
@@ -1387,7 +1413,7 @@ export function MediaGalleryPanel() {
   const items = arr(d && d.items);
   const byKind = (d && d.stats && d.stats.by_kind) || {};
   return (
-    <Card title="MEDIA GALLERY" sub={d ? (enabled ? `${(d.stats && d.stats.total) || 0} items` : 'disabled') : null} onReload={reload}>
+    <Card title="MEDIA GALLERY" live={d ? (enabled ? 'live' : 'seed') : undefined} sub={d ? (enabled ? `${(d.stats && d.stats.total) || 0} items` : 'disabled') : null} onReload={reload}>
       <State e={e} loading={loading} n={items.length} />
       {d && !enabled && <div style={{ fontSize: 10, color: 'var(--ink-3)', marginTop: 6 }}>empty until JARVIS_MEDIA_CATALOG is on</div>}
       {enabled && Object.keys(byKind).length > 0 && (
@@ -1418,7 +1444,7 @@ export function ProvenancePanel() {
   const records = arr(d && d.records);
   const bySource = (d && d.stats && d.stats.by_source) || {};
   return (
-    <Card title="PROVENANCE" sub={d ? (enabled ? `${(d.stats && d.stats.total) || 0} recs · ${(d.stats && d.stats.runs) || 0} runs` : 'disabled') : null} onReload={reload}>
+    <Card title="PROVENANCE" live={d ? (enabled ? 'live' : 'seed') : undefined} sub={d ? (enabled ? `${(d.stats && d.stats.total) || 0} recs · ${(d.stats && d.stats.runs) || 0} runs` : 'disabled') : null} onReload={reload}>
       <State e={e} loading={loading} n={records.length} />
       {d && !enabled && <div style={{ fontSize: 10, color: 'var(--ink-3)', marginTop: 6 }}>empty until JARVIS_PROVENANCE is on</div>}
       {enabled && Object.keys(bySource).length > 0 && (
@@ -1448,7 +1474,7 @@ export function CommsRatePanel() {
   const enabled = !!(d && d.enabled);
   const channels = arr(d && d.channels);
   return (
-    <Card title="SEND RATE LIMITS" sub={d ? (enabled ? `cap ${(d && d.global_cap) || 0}/${(d && d.window_seconds) || 60}s` : 'unlimited') : null} onReload={reload}>
+    <Card title="SEND RATE LIMITS" live={d ? (enabled ? 'live' : 'seed') : undefined} sub={d ? (enabled ? `cap ${(d && d.global_cap) || 0}/${(d && d.window_seconds) || 60}s` : 'unlimited') : null} onReload={reload}>
       <State e={e} loading={loading} n={channels.length} />
       {d && !enabled && <div style={{ fontSize: 10, color: 'var(--ink-3)', marginTop: 6 }}>unlimited until JARVIS_CHANNEL_SEND_RATE(S) is set</div>}
       {channels.slice(0, 10).map((c, i) => (
@@ -1479,6 +1505,63 @@ export function ModelInfoPanel() {
           <span style={{ marginLeft: 'auto', fontSize: 10, color: 'var(--ink-3)' }}>{[m.quant, (m.sha256 || '').slice(0, 8)].filter(Boolean).join(' · ')}</span>
         </Row>
       ))}
+    </Card>
+  );
+}
+
+/* 0.39 — the curated market watchlist (GET/POST/DELETE /api/market/watchlist/saved,
+   user-guarded). The owner curates a small {symbol, low, high, note} list once;
+   routers/market.py's alert/brief evaluators run against it. Read/write, but pure
+   storage — no quotes are fetched and no trade is ever proposed here (acting on a
+   signal stays a kernel-gated, approval-held action). */
+export function WatchlistPanel() {
+  const { d, e, loading, reload } = useApi('/api/market/watchlist/saved');
+  const watches = arr(d, 'watches');
+  const stats = (d && d.stats) || {};
+  const [symbol, setSymbol] = useState('');
+  const [low, setLow] = useState('');
+  const [high, setHigh] = useState('');
+  const [note, setNote] = useState('');
+  const add = () => {
+    if (!symbol.trim()) return;
+    const body = {
+      symbol: symbol.trim(),
+      low: low.trim() === '' ? null : Number(low),
+      high: high.trim() === '' ? null : Number(high),
+      note: note.trim(),
+    };
+    act('/api/market/watchlist/saved', body, () => { setSymbol(''); setLow(''); setHigh(''); setNote(''); reload(); });
+  };
+  const del = (sym) => apiDelete('/api/market/watchlist/saved/' + encodeURIComponent(sym)).then(reload).catch(() => {});
+  return (
+    <Card title="MARKET WATCHLIST" live={d ? 'live' : undefined} sub={d ? `${stats.total || 0} watched` : null} onReload={reload}>
+      <State e={e} loading={loading} n={watches.length} />
+      {watches.length > 0 && (
+        <Row>
+          <span style={mono}>bands</span>
+          <span style={{ marginLeft: 'auto', display: 'flex', gap: 5, flexWrap: 'wrap' }}>
+            <Tag>{stats.with_low || 0} low</Tag>
+            <Tag>{stats.with_high || 0} high</Tag>
+          </span>
+        </Row>
+      )}
+      {watches.slice(0, 12).map((w, i) => (
+        <Row key={w.symbol || i}>
+          <span style={{ ...mono, color: 'var(--accent-light)' }}>{w.symbol}</span>
+          <span style={{ marginLeft: 'auto', display: 'flex', gap: 5, alignItems: 'center' }}>
+            {(w.low != null || w.high != null) && <Tag>{w.low ?? '−∞'}–{w.high ?? '+∞'}</Tag>}
+            {w.note && <span style={{ fontSize: 10, color: 'var(--ink-3)' }}>{String(w.note).slice(0, 24)}</span>}
+            <button className="tool-btn" title="remove" onClick={() => del(w.symbol)}>✕</button>
+          </span>
+        </Row>
+      ))}
+      <div style={{ display: 'flex', gap: 6, marginTop: 8, flexWrap: 'wrap' }}>
+        <input value={symbol} onChange={(ev) => setSymbol(ev.target.value)} placeholder="symbol" style={{ ...inpS, flex: '0 0 70px' }} />
+        <input value={low} onChange={(ev) => setLow(ev.target.value)} placeholder="low" style={{ ...inpS, width: 56 }} />
+        <input value={high} onChange={(ev) => setHigh(ev.target.value)} placeholder="high" style={{ ...inpS, width: 56 }} />
+        <input value={note} onChange={(ev) => setNote(ev.target.value)} placeholder="note (optional)" style={{ ...inpS, flex: 1, minWidth: 90 }} />
+        <button className="tool-btn" onClick={add}>watch</button>
+      </div>
     </Card>
   );
 }
@@ -1516,7 +1599,7 @@ export function SystemProfilePanel() {
 const SECTIONS: Array<[string, Array<() => any>]> = [
   ['Memory', [DataSpacesPanel, LocalDocsPanel, NotesPanel, KgPanel, CapturePanel, ReflectionPanel, ProvenancePanel]],
   ['Trust', [KillSwitchPanel, KernelMetricsPanel, ReadinessPanel, LoopBreakerPanel, GovernancePanel, PosturePanel, SecuritySkillsPanel, NetworkMonitorPanel, CommsRatePanel, SecretsPanel, CapabilitiesPanel, PairingPanel, InjectionScanPanel]],
-  ['Interop', [A2AInboxPanel, MeshPeersPanel, SatellitesPanel, OraclePanel, MarketplacePanel, SkillHistoryPanel]],
+  ['Interop', [A2AInboxPanel, MeshPeersPanel, SatellitesPanel, OraclePanel, MarketplacePanel, SkillHistoryPanel, WatchlistPanel]],
   ['Observe', [OnboardingPanel, EvalPanel, ReviewPanel, ArenaPanel, QualityPanel, APMPanel, ModelInfoPanel, FeedbackPanel]],
   ['Build', [WorkflowsPanel, StepGenPanel, SandboxPanel, TemplatesPanel, MediaGalleryPanel]],
   ['Autonomy & Agents', [DecisionInboxPanel, MissionsPanel, AgentAutonomyPanel, TodayPanel, SchedulePanel, LearningPanel, SessionsPanel, HeartbeatPanel, TranscriptPanel, EscalationPanel]],

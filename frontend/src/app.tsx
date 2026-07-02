@@ -197,6 +197,12 @@ function App() {
   // P2 — real streaming turn. Resolves with the FINAL reply text so the voice loop can
   // speak it. On /chat/stream failure: honest system notice (or the DEMO staged mock).
   const runTurn = useCallback((text) => new Promise((resolve) => {
+    // TASK-4 P1 — double-submit guard: `thinking` is non-null for the whole
+    // duration of an in-flight /chat/stream turn (cleared on end/abort/error).
+    // Ignore a second submit (rapid double Enter/click, or voice firing while
+    // text input is also mid-turn) instead of racing two streams into the
+    // same abortRef/message index.
+    if (thinking) { resolve(''); return; }
     timers.current.forEach(clearTimeout); timers.current = [];
     setMessages((m) => [...m, { role: 'user', text, ts: fmtTimeShort(new Date()) }]);
     setCenterTab('conversation');
@@ -242,7 +248,7 @@ function App() {
       setMessages((m) => [...m, { role: 'agent', who: 'system', role_label: '', ts: fmtTimeShort(new Date()), text: '⚠ No reply — the model backend is unreachable or no model is loaded. Load a model in LM Studio, or enable ◐ DEMO to preview the interface.' }]);
       resolve('');
     });
-  }), [t, activeId, runMock, demo]);
+  }), [t, activeId, runMock, demo, thinking]);
 
   // Stop generating: abort the in-flight stream; harmless no-op once the turn ended.
   const stopTurn = useCallback(() => { abortRef.current?.abort(); }, []);

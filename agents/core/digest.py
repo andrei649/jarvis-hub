@@ -20,6 +20,8 @@ import re
 from typing import Awaitable, Callable, Optional
 from urllib.parse import quote_plus
 
+from .security import taint
+
 # defusedxml hardens parsing of the untrusted RSS/Atom feeds this module fetches
 # (Python's stdlib xml.etree is unsafe on hostile input — entity-expansion DoS).
 # Drop-in: exposes fromstring + ParseError; rejects DTD/entity attacks as ValueError.
@@ -115,7 +117,10 @@ class DigestSource:
         for it in items:
             it["source"] = self.name
             it["weight"] = self.weight
-        return items
+        # TASK-3/H23.6: every digest source is an external RSS/Atom feed — mark
+        # each item so any action later built from it escalates through the
+        # kernel instead of auto-executing.
+        return [taint.mark(it, source=self.name) for it in items]
 
 
 # Built-in source templates (RSS/Atom). The fetcher is supplied at build time.
@@ -154,7 +159,11 @@ class DigestAggregator:
             "topic": topic,
             "count": len(top),
             "sources": [s.name for s in self.sources],
-            "items": [{k: it[k] for k in ("title", "link", "source", "reality", "score")}
+            # TASK-3/H23.6: carry the taint mark through to the ranked output —
+            # every item is external feed content, so downstream consumers that
+            # build an action from a digest item need to see it.
+            "items": [{k: it[k] for k in ("title", "link", "source", "reality", "score",
+                                           "tainted", "taint_source") if k in it}
                       for it in top],
         }
 
