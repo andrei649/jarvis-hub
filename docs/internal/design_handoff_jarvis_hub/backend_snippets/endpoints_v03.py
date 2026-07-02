@@ -116,8 +116,9 @@ async def cognition_stream(request: Request, message: str):
             yield f"data: {json.dumps({'type': 'done'})}\n\n"
 
         except Exception as e:
+            # CWE-209: log the detail; the SSE event carries a static message only.
             logger.error(f"Cognition stream error: {e}")
-            yield f"data: {json.dumps({'type': 'error', 'message': str(e)})}\n\n"
+            yield f"data: {json.dumps({'type': 'error', 'message': 'stream error - see server logs'})}\n\n"
 
     return StreamingResponse(
         event_generator(),

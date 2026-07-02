@@ -396,9 +396,12 @@ async def jarvis_error_handler(request: Request, exc: JarvisError):
 
 @app.exception_handler(SecurityBlockError)
 async def security_block_handler(request: Request, exc: SecurityBlockError):
+    # CWE-209: the block reason (already logged above with full detail) can name
+    # the matched scanner rule / redacted content — never echo it to the client.
     log_error(logger, E_SECURITY_BLOCKED, reason=str(exc))
     return _nocache_json(
-        {"code": "JARVIS-SECURITY-001", "category": "security", "severity": "warning", "message": str(exc)},
+        {"code": "JARVIS-SECURITY-001", "category": "security", "severity": "warning",
+         "message": "Security policy blocked this request"},
         status_code=403,
     )
 
