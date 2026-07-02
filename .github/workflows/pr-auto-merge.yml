@@ -1,0 +1,83 @@
+name: Hourly PR Auto-Merge
+
+# Conductor-agent automation (AGENTS.md "Pattern conductor agent" /
+# docs/AGENT_WORKFLOW.md): an hourly sweep of open PRs that merges only the
+# ones GitHub itself already reports as fully ready. It never makes that
+# judgement call itself — it trusts `mergeStateStatus` (computed server-side
+# from branch protection: required checks, conflicts, required reviews).
+#
+# Safety rules (do not weaken without updating AGENTS.md too):
+#   - draft PRs are a file lock owned by their author — never touched.
+#   - only mergeStateStatus == CLEAN is merged. BLOCKED/DIRTY/BEHIND/UNSTABLE
+#     are left for the next hourly run — no force-push, no conflict
+#     resolution, no rebasing someone else's branch.
+#   - re-checked immediately before merging (a same-run earlier merge can
+#     turn a CLEAN PR into BEHIND/DIRTY if it touched the same files).
+#   - --match-head-commit guards against a push landing between list and
+#     merge.
+#   - branches are never deleted post-merge (matches this repo's existing
+#     convention of keeping merged feature branches around).
+#   - squash merge, one commit per PR — matches this repo's existing history.
+
+on:
+  workflow_dispatch: {}
+  schedule:
+    # :13 past the hour — off the round-number mark so this doesn't land on
+    # GitHub's scheduler at the same instant as everyone else's "hourly" jobs.
+    - cron: "13 * * * *"
+
+concurrency:
+  group: pr-auto-merge
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  auto-merge:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Merge PRs that are fully green
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+
+          prs="$(gh pr list --repo "$REPO" --state open --limit 100 \
+            --json number,title,isDraft,mergeStateStatus,headRefOid \
+            | jq -c 'sort_by(.number)[]')"
+
+          if [ -z "$prs" ]; then
+            echo "No open PRs."
+            exit 0
+          fi
+
+          echo "$prs" | while read -r pr; do
+            number="$(jq -r '.number' <<<"$pr")"
+            title="$(jq -r '.title' <<<"$pr")"
+            draft="$(jq -r '.isDraft' <<<"$pr")"
+            state="$(jq -r '.mergeStateStatus' <<<"$pr")"
+            sha="$(jq -r '.headRefOid' <<<"$pr")"
+
+            if [ "$draft" = "true" ]; then
+              echo "#$number ($title): draft — skipped"
+              continue
+            fi
+            if [ "$state" != "CLEAN" ]; then
+              echo "#$number ($title): mergeStateStatus=$state — not ready, skipped"
+              continue
+            fi
+
+            # Re-check right before merging: an earlier merge in this same
+            # run may have turned this PR's overlapping-file state stale.
+            recheck="$(gh pr view "$number" --repo "$REPO" --json mergeStateStatus -q .mergeStateStatus)"
+            if [ "$recheck" != "CLEAN" ]; then
+              echo "#$number ($title): re-check now shows mergeStateStatus=$recheck — skipped"
+              continue
+            fi
+
+            echo "#$number ($title): CLEAN at $sha — merging (squash)"
+            gh pr merge "$number" --repo "$REPO" --squash --match-head-commit "$sha"
+          done
