@@ -114,10 +114,12 @@ async def create_workflow(body: WorkflowSaveBody):
     try:
         saved = _wf_store().save(raw)
     except (ValueError, KeyError) as e:
-        raise HTTPException(status_code=422, detail=str(e))
+        # CWE-209: log the validation detail, return a static message only.
+        logger.warning(f"workflow/save rejected: {e}")
+        raise HTTPException(status_code=422, detail="invalid workflow definition")
     except Exception as e:
         logger.warning(f"workflow/save error: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="workflow save failed")
     # Register into live registry so it is immediately runnable.
     try:
         from core.workflows.pipeline import Pipeline as _Pipeline
@@ -138,10 +140,12 @@ async def update_workflow(pipeline_id: str, body: WorkflowSaveBody):
     try:
         saved = _wf_store().save(raw)
     except (ValueError, KeyError) as e:
-        raise HTTPException(status_code=422, detail=str(e))
+        # CWE-209: log the validation detail, return a static message only.
+        logger.warning(f"workflow/update rejected: {e}")
+        raise HTTPException(status_code=422, detail="invalid workflow definition")
     except Exception as e:
         logger.warning(f"workflow/update error: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="workflow update failed")
     try:
         from core.workflows.pipeline import Pipeline as _Pipeline
         orch.workflow_registry.register(_Pipeline.from_dict(saved))
