@@ -340,6 +340,31 @@ GitHub scanning surfaced 25 CodeQL alerts + 1 secret-scanning alert. Of the 13 r
 
 ---
 
+## 🔎 Fresh-eyes re-verification (2026-07-02 — code-verified backlog truth + July plan)
+
+Five parallel verification agents re-checked every claimed-open item against HEAD (`file:line`
+evidence, not status labels). Full report + July sequencing:
+[`docs/research/2026-07-02-fresh-eyes-backlog-reverification.md`](docs/research/2026-07-02-fresh-eyes-backlog-reverification.md).
+**Verdict:** the backlog is honest (12/16 spot-checks exact); 8 rows were stale in the *pessimistic*
+direction and were refreshed in the same PR (#479). Top verified-open engineering, by leverage:
+
+| Rank | Item | Size | Where tracked |
+|------|------|------|---------------|
+| 1 | **K2 wave-4b** — capability-token *enforcement* (issued at boot, never read back; `kernel/__init__.py:61-64`) + fold WorldView HMAC → truly closes B1 | L | O24 Track K |
+| 2 | **K3** — unify InterruptBudget / mission / payment caps into `BudgetLedger` + handler token hooks | M | O24 Track K |
+| 3 | **TASK-3** — taint marking at ingestion choke points (only `osint/correlate.py:204` marks today) | M | H23.6 |
+| 4 | **TASK-2 tail** — plugin-gated modes · per-panel LIVE/SEED · 0.39 `WatchlistPanel` · OpenAPI types (AUD-16) | M | TASK-2 |
+| 5 | **H23.17** — chat/voice E2E flows · nightly soak · browser matrix (harness exists, specs don't) | M–L | H23.17 |
+| 6 | V1 live contracts · V3 components/skills coverage · V4 blocking eval gate | M–L | O24 Track V |
+
+Owner-lane critical path unchanged: ⭐B0 manual run → design partners; plus 2 unrecorded
+one-paragraph decisions (**AUD-0**, **H23.23**), the GitHub-settings batch (SEC-4/CQ-2/CQ-3/#242)
+and H13.3 (config-only) next time at the GPU box. **July non-goals:** 0.20 Vault · 0.48 video ·
+0.64/0.65 desktop overlay · multi-user (Phase E / post-1.0). *(Notă:* AUD-14 se agravează — env
+reads ~121 → **161** de la audit; de programat înainte să doară.*)*
+
+---
+
 ## 🔎 Codex fresh-eyes review (2026-06-24 — external code + doc review)
 
 Independent fresh-eyes review (GitHub-connector read; no local build). Full write-up:
