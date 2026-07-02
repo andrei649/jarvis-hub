@@ -38,6 +38,19 @@
 > they're committed + pushed to the branch but **PRs aren't opened yet**. When the connector is re-authorized they
 > become PRs immediately. Each is its own commit so they can be split into separate PRs.
 
+### LLM — cloud backends now strip chain-of-thought too ✅ (defense-in-depth, fury-sprint 1/4)
+- **What:** the local backends (LM Studio/Ollama) always ran `strip_thinking`/`ThinkingStreamFilter`, but the cloud
+  backends returned their text fields raw — `gemini.py` (`generate`/`generate_stream`) and `anthropic.py` applied no
+  stripping at all. New shared `LLMBackend._finalize_cloud()` (mirrors the `_finalize_stream` helper pattern) now wraps
+  all four cloud return paths, so a `<think>…</think>` block landing in a cloud text field can never leak into chat/memory.
+- **Why it's safe:** cloud reasoning normally arrives as *structured* fields we never read (Gemini `thought` parts,
+  Claude `thinking` blocks), so this is defense-in-depth — a no-op on every well-formed answer and on the
+  `[… error: …]` sentinels (verified by test). No API/payload changes; return values only.
+- **Verified (automated, in-env):** `tests/test_llm_thinking_leak.py` **+6** (helper passthrough/sentinels, Gemini
+  generate+stream strip, Claude generate+stream strip; all offline via the existing fake httpx clients). 185 llm-adjacent
+  tests green; full `ruff check .` clean; bandit (pinned baseline) exit 0.
+- **⚠️ Needs you:** nothing — pure hardening, no behavior change on well-formed cloud replies.
+
 ### Stability — resilient optional-dep startup + WorldView render-safe layer status ✅ (fixes reported runtime errors)
 - **What:** two fixes for errors surfaced during a debug session.
   **(1) defusedxml startup hardening** (`plugins/news.py`, `digest.py`): the RSS/Atom feed parsers imported `defusedxml`

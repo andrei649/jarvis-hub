@@ -68,11 +68,11 @@ class ClaudeBackend(LLMBackend):
                 if self.auth_pool is not None:
                     self.auth_pool.report_success(key)
                 if data.get("content"):
-                    return "".join(
+                    return self._finalize_cloud("".join(
                         block.get("text", "")
                         for block in data["content"]
                         if block.get("type") == "text"
-                    )
+                    ))
                 return ""
             except httpx.HTTPStatusError as e:
                 last_err = str(e)
@@ -135,7 +135,7 @@ class ClaudeBackend(LLMBackend):
             full = f"[Claude API stream error: {e}]"
         except Exception as e:
             full = f"[Claude API stream error: {e}]"
-        return full
+        return self._finalize_cloud(full)
 
     async def aclose(self):
         """Close the pooled httpx client (BUG-7)."""
