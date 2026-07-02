@@ -38,6 +38,36 @@
 > they're committed + pushed to the branch but **PRs aren't opened yet**. When the connector is re-authorized they
 > become PRs immediately. Each is its own commit so they can be split into separate PRs.
 
+### Memory — ContextCompressor wired into the prompt hot path ✅ (default-off, fury-sprint 2/4)
+- **What:** the H20.3 `ContextCompressor` existed but was orphaned — both prompt-build sites (`orchestrator.py`
+  main loop + `_call_agents_parallel`) sliced history by turn count only (`memory.context_window`, default 6), with no
+  token budget. New `Orchestrator._history_for_prompt()` helper now feeds both sites: with the new **default-off**
+  `memory.context_compression` toggle on, raw turns go through `ContextCompressor(summarizer=None)` — under the
+  `memory.compression_max_tokens` budget (default 2000) everything stays verbatim; over budget the older turns collapse
+  into the deterministic `[summary of earlier conversation]` digest while the recent 4 stay verbatim.
+- **Why it's safe:** flag **off (default) is byte-identical to before** — the helper just calls `memory.get_context`.
+  Flag on: `summarizer=None` means the digest is pure/offline (**zero LLM calls / zero egress** — safe even for
+  LOCAL_ONLY agents frigga/ultron/howard), and output keeps the exact `[speaker]: content` shape, so prompt assembly
+  downstream is unchanged.
+- **Verified (automated, in-env):** `tests/test_context_compression_hotpath.py` (**+5**: off-is-get_context + never reads
+  history, on+under-budget parity, over-budget digest w/ recent verbatim, summarizer-stays-None rail, empty history);
+  216 orchestrator/memory/context tests green; full `ruff check .` clean; bandit exit 0; `agents.web` imports.
+- **⚠️ Needs you — to feel it:** toggle `memory.context_compression` on in `/admin`, run a long session, and check the
+  `[summary of earlier conversation]` block appears in prompts (and that local-only agents still make zero cloud calls).
+
+### LLM — cloud backends now strip chain-of-thought too ✅ (defense-in-depth, fury-sprint 1/4)
+- **What:** the local backends (LM Studio/Ollama) always ran `strip_thinking`/`ThinkingStreamFilter`, but the cloud
+  backends returned their text fields raw — `gemini.py` (`generate`/`generate_stream`) and `anthropic.py` applied no
+  stripping at all. New shared `LLMBackend._finalize_cloud()` (mirrors the `_finalize_stream` helper pattern) now wraps
+  all four cloud return paths, so a `<think>…</think>` block landing in a cloud text field can never leak into chat/memory.
+- **Why it's safe:** cloud reasoning normally arrives as *structured* fields we never read (Gemini `thought` parts,
+  Claude `thinking` blocks), so this is defense-in-depth — a no-op on every well-formed answer and on the
+  `[… error: …]` sentinels (verified by test). No API/payload changes; return values only.
+- **Verified (automated, in-env):** `tests/test_llm_thinking_leak.py` **+6** (helper passthrough/sentinels, Gemini
+  generate+stream strip, Claude generate+stream strip; all offline via the existing fake httpx clients). 185 llm-adjacent
+  tests green; full `ruff check .` clean; bandit (pinned baseline) exit 0.
+- **⚠️ Needs you:** nothing — pure hardening, no behavior change on well-formed cloud replies.
+
 ### Stability — resilient optional-dep startup + WorldView render-safe layer status ✅ (fixes reported runtime errors)
 - **What:** two fixes for errors surfaced during a debug session.
   **(1) defusedxml startup hardening** (`plugins/news.py`, `digest.py`): the RSS/Atom feed parsers imported `defusedxml`
