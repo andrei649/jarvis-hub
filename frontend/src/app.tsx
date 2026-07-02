@@ -167,6 +167,7 @@ function App() {
 
   // submit → cognition flow (mock timeline; real SSE arrives in P2)
   const timers = useRef([]);
+  const abortRef = useRef(null);   // AbortController of the in-flight /chat/stream turn
 
   // offline fallback — the prototype's staged timeline so the cockpit still demos
   const runMock = useCallback((text) => {
@@ -202,6 +203,10 @@ function App() {
     setThinking({ label: t.think + ' · routing', route: null });
     let streamed = '';
     let idx = -1;
+    // Stop button: aborting the fetch rides the server's existing disconnect →
+    // cancel path (web.py _chat_event_stream), which never persists a partial.
+    const ctl = new AbortController();
+    abortRef.current = ctl;
     postStream('/chat/stream', { message: text, agent: activeId }, (evt) => {
       if (evt.type === 'start') {
         setThinking({ label: t.think, route: [String(evt.agent || activeId).toUpperCase()] });
@@ -225,7 +230,11 @@ function App() {
           setMessages((m) => { const c = [...m]; const j = idx >= 0 ? idx : c.length - 1; if (c[j]) c[j] = { ...c[j], prov: { agents: tr.selected, plugins: reads, local: localKnown, conf: +(tr.conf || 0).toFixed(2) } }; return c; });
         }).catch(() => {});
       }
-    }).catch(() => {
+    }, { signal: ctl.signal }).catch((err) => {
+      // A user Stop (AbortError) is a clean outcome, not a failure: the partial
+      // text already streamed into the bubble stays, no error notice — and the
+      // server's disconnect path guarantees no partial is persisted to memory.
+      if (err && err.name === 'AbortError') { setThinking(null); resolve(streamed); return; }
       // HONESTY: never fabricate a reply. The staged mock is for DEMO only; otherwise
       // surface the real failure (e.g. no model loaded / backend offline).
       if (demo) { runMock(text); resolve(''); return; }
@@ -234,6 +243,9 @@ function App() {
       resolve('');
     });
   }), [t, activeId, runMock, demo]);
+
+  // Stop generating: abort the in-flight stream; harmless no-op once the turn ended.
+  const stopTurn = useCallback(() => { abortRef.current?.abort(); }, []);
 
   const submit = useCallback((text) => { runTurn(text); }, [runTurn]);
   // Hands-free voice loop: mic → local Whisper → runTurn → speak the reply, repeat.
@@ -313,7 +325,7 @@ function App() {
                       <button className={'center-tab' + (centerTab === 'cognition' ? ' active' : '')} onClick={() => setCenterTab('cognition')}>{t.cognition}{trace && !thinking && <span className="pip"></span>}</button>
                     </div>
                     {centerTab === 'conversation'
-                      ? <Conversation messages={messages} thinking={thinking} onProv={setProvModal} lang={lang} t={t} />
+                      ? <Conversation messages={messages} thinking={thinking} onStop={stopTurn} onProv={setProvModal} lang={lang} t={t} />
                       : <CognitionStream trace={trace} t={t} />}
                     <InputBar onSubmit={submit} mic={voice.active} setMic={voice.toggle} voice={voice} cfg={voiceCfg} onCfg={setVoice} micMuted={trust.mic === 'off'} t={t} />
                   </div>
@@ -327,7 +339,7 @@ function App() {
               </div>
             ) : mode === 'chat' ? (
               <div className="workzone full" style={{ flex: 1, minHeight: 0 }}>
-                <ChatMode messages={messages} thinking={thinking} onSubmit={submit} onProv={setProvModal} mic={voice.active} setMic={voice.toggle} lang={lang} t={t} />
+                <ChatMode messages={messages} thinking={thinking} onStop={stopTurn} onSubmit={submit} onProv={setProvModal} mic={voice.active} setMic={voice.toggle} lang={lang} t={t} />
               </div>
             ) : (
               <div className="workzone full" style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>

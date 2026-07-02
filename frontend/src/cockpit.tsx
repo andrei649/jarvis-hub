@@ -23,7 +23,7 @@ function TtsButton({ text, lang }) {
   );
 }
 
-function Conversation({ messages, thinking, onProv, lang, t }) {
+function Conversation({ messages, thinking, onStop, onProv, lang, t }: any) {
   const endRef = useRef(null);
   useEffect(()=>{ if(endRef.current) endRef.current.scrollTop = endRef.current.scrollHeight; }, [messages, thinking]);
   return (
@@ -56,6 +56,10 @@ function Conversation({ messages, thinking, onProv, lang, t }) {
           <div className="tl"><span className="ar">▸</span> {thinking.label}
             {thinking.route && <span className="route-pill">→ {thinking.route.join(' · ')}</span>}
             <span className="dots"><span></span><span></span><span></span></span>
+            {onStop && (
+              <button className="route-pill stop-gen" style={{ marginLeft: 'auto', cursor: 'pointer' }}
+                      onClick={onStop} title="Stop generating" aria-label="Stop generating">■ stop</button>
+            )}
           </div>
         </div>
       )}

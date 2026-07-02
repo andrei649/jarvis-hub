@@ -38,6 +38,21 @@
 > they're committed + pushed to the branch but **PRs aren't opened yet**. When the connector is re-authorized they
 > become PRs immediately. Each is its own commit so they can be split into separate PRs.
 
+### HUD — "■ stop" button: abort a running generation ✅ (fury-sprint 4/4, client-only)
+- **What:** the HUD had no way to stop a runaway generation. The thinking indicator (cockpit + Chat mode) now shows a
+  **■ stop** button while streaming: it aborts the `/chat/stream` fetch via an `AbortController` (`postStream`/`request`
+  now accept an `AbortSignal`). The partial text that already streamed **stays in the bubble**; no error notice.
+- **Why it's safe (client-only by design):** aborting the fetch rides the server's *existing* disconnect path
+  (`web.py _chat_event_stream` finally-block cancels the runner task). The assistant turn is persisted only *after*
+  `generate_stream` returns — so a stopped turn persists the **user turn only, never a partial reply** (can't poison
+  memory/recall). No new backend route, no auth/parity surface change.
+- **Verified (automated, in-env):** `tests/test_stream_abort_no_persist.py` (**+1**: real orchestrator, fake blocking
+  backend, cancel mid-stream → user turn kept, no assistant turn, tokens had streamed);
+  `frontend/src/test/chatStreamAbort.test.ts` (**+2**: signal threaded into fetch; mid-stream abort → AbortError +
+  reader cancelled + partial delivered). `tsc` clean; vitest 145/145; `npm run build` (bundle committed); ruff clean.
+- **⚠️ Needs you — live HUD pixels:** start a long turn at `/v2`, click **■ stop** mid-stream → generation halts, the
+  partial reply stays, no error banner; then confirm the conversation history holds no assistant turn for that exchange.
+
 ### Security — CWE-209 hygiene: error responses never echo exception text ✅ (fury-sprint 3/4)
 - **What:** closed the remaining "Information exposure through an exception" flows (CodeQL alert **#433**, plus **#432**
   in a docs snippet): the `SecurityBlockError` handler (`web.py`) echoed `str(exc)` — which can name the matched
