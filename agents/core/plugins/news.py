@@ -15,6 +15,7 @@ except ImportError:  # pragma: no cover - only when the optional dep is uninstal
     _XML_OK = False
 
 from ..http_client import PluginHTTPClient
+from ..security import taint
 
 logger = logging.getLogger("jarvis.plugins.news")
 
@@ -41,7 +42,10 @@ class NewsPlugin:
         try:
             resp = await self.client.get(feed_url)
             resp.raise_for_status()
-            return self._parse_rss(resp.text, limit)
+            # TASK-3/H23.6: RSS feed content is untrusted external input — mark
+            # each item so any action later built from it escalates through the
+            # kernel instead of auto-executing.
+            return [taint.mark(item, source="news") for item in self._parse_rss(resp.text, limit)]
         except Exception as e:
             logger.warning(f"News feed '{category}' error: {e}")
             return [{"title": f"News unavailable: {e}", "link": ""}]

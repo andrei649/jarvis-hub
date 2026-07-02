@@ -78,6 +78,52 @@ class TestInMemoryVectorStore:
         with pytest.raises(TypeError):
             VectorStore()
 
+    def test_has_lock(self):
+        """BUG-12 residual: every public method must be guarded by a lock."""
+        import threading
+
+        store = InMemoryVectorStore(dimension=3)
+        assert hasattr(store, "_lock")
+        assert isinstance(store._lock, type(threading.Lock()))
+
+    def test_concurrent_add_and_search_is_safe(self):
+        """Hammer add/search/remove from many threads; without a lock, list
+        append + dict mutation under concurrent access can corrupt _id_index
+        (stale/duplicate indices) or raise on a torn read during iteration."""
+        import threading
+
+        store = InMemoryVectorStore(dimension=3)
+        errors = []
+
+        def writer(n):
+            try:
+                for i in range(200):
+                    store.add(f"t{n}-{i}", [float(n), float(i), 0.0], {"sender": f"s{n}"})
+            except Exception as e:  # pragma: no cover - only on a regression
+                errors.append(e)
+
+        def reader(n):
+            try:
+                for _ in range(200):
+                    store.search([1.0, 0.0, 0.0], k=5)
+                    store.search_by_sender(f"s{n}", k=5)
+                    len(store)
+            except Exception as e:  # pragma: no cover - only on a regression
+                errors.append(e)
+
+        threads = [threading.Thread(target=writer, args=(n,)) for n in range(4)]
+        threads += [threading.Thread(target=reader, args=(n,)) for n in range(4)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+
+        assert not errors, f"concurrent store access raised: {errors[:3]}"
+        assert len(store) == 800
+        # _id_index must stay consistent with records after concurrent mutation.
+        for record_id, idx in store._id_index.items():
+            assert store.records[idx].id == record_id
+
 
 class TestQdrantVectorStore:
     @pytest.fixture

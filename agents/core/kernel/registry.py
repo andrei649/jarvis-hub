@@ -49,14 +49,17 @@ ACTION_REGISTRY: dict[str, Mediation] = {
     # Wave 3 — a gated Tool-RPC call is mediated by the kernel before it can enqueue
     # an approval task (a DENY blocks it: kill-switch / budget / loop).
     "tool.rpc": Mediation.KERNEL,
-    # Wave 4a — admin escalations cross the kernel front door (in addition to admin_guard):
-    # engaging a halt and minting a capability are mediated; a presented capability token is
-    # cross-checked, and a halted kill-switch denies them. (Disengage is NOT mediated — it
-    # must always be able to release a halt.) Mandatory-token enforcement = wave-4b/K2.
+    # Wave 4a/4b — admin escalations cross the kernel front door (in addition to admin_guard):
+    # engaging a halt and minting a capability are mediated; a capability token is now
+    # MANDATORY (kernel.TOKEN_MANDATORY_KINDS) — the router mints one for an already-
+    # admin_guard-authenticated caller when none is presented, so the kernel's real
+    # capability nucleus runs instead of tolerating an empty token. (Disengage is NOT
+    # mediated — it must always be able to release a halt.)
     "admin.kill_switch": Mediation.KERNEL,
     "admin.capability_issue": Mediation.KERNEL,
-    # Wave 3 — externally-driven KG writes (the /api/kg/* mutating HTTP handlers) are
-    # mediated; the high-frequency *internal* ingestion path (incremental.ingest from
+    # Wave 3/4b — externally-driven KG writes (the /api/kg/* mutating HTTP handlers) are
+    # mediated with a MANDATORY capability token (kernel.TOKEN_MANDATORY_KINDS); the
+    # high-frequency *internal* ingestion path (incremental.ingest from
     # _record_interactions, seed_graph, reflection) writes graph methods directly and is
     # NOT gated (a halt must not freeze per-turn memory). Memory.remember (vector write),
     # /consolidate (plan-only) and /decay/forget (ACT-R op) are not KG writes → out of scope.

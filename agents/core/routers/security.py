@@ -20,21 +20,24 @@ router = APIRouter(tags=["security"])
 
 
 def _admin_kernel_denial(orch, kind: str, cap_name: str, payload: dict, token_id: str):
-    """ORIZONT-24 K1 wave-4a: mediate an admin write through the Action Kernel (default-off).
+    """ORIZONT-24 K1 wave-4a/4b: mediate an admin write through the Action Kernel
+    (default-off).
 
     Returns a deny-reason (caller → HTTP 403) or ``None`` (allow). **DENY only** — GRANT
     and QUEUE both allow through: an unknown ``admin.*`` kind classifies high-risk and the
     policy returns ASK→QUEUE, but we do not gate the operator's admin UX on an approval
-    card, we only honor a hard **DENY** (a halted kill-switch, or a *presented* capability
-    token that lacks the named capability). Default-off: returns ``None`` unless
-    ``JARVIS_ACTION_KERNEL`` is set and a bound kernel is reachable.
+    card, we only honor a hard **DENY** (a halted kill-switch, a missing capability token,
+    or a *presented* token that lacks the named capability). Default-off: returns ``None``
+    unless ``JARVIS_ACTION_KERNEL`` is set and a bound kernel is reachable.
 
-    Scope (wave-4a vs full B1): the kernel cross-checks a capability **only when a token is
-    presented** (the ``Capability`` is K1-tolerant — an empty token skips the nucleus and
-    falls to the kill-switch/policy gate). Making a valid token *mandatory* for these routes
-    (so a no-token admin request is refused) is wave-4b/K2; it needs a token-provisioning
-    story that doesn't strand the operator. ``make_action_kernel`` is imported lazily so the
-    router stays import-cheap and the exerciser can substitute a spy.
+    wave-4b: a token is now MANDATORY for this kind (``kernel.TOKEN_MANDATORY_KINDS``).
+    Every route that calls this already sits behind ``admin_guard`` — the caller is
+    already proven — so when nothing was *presented* via ``x-capability-token`` we mint
+    a short-lived, single-capability operator token ourselves and present that instead
+    of an empty one, letting the kernel's real capability nucleus run rather than
+    tolerating an absent token. An explicitly presented token still wins (a future
+    finer-grained caller can supply its own). ``make_action_kernel`` is imported lazily
+    so the router stays import-cheap and the exerciser can substitute a spy.
     """
     from agents.core.kernel import kernel_enabled
     if not kernel_enabled():
@@ -44,6 +47,9 @@ def _admin_kernel_denial(orch, kind: str, cap_name: str, payload: dict, token_id
     if kernel is None:
         return None
     from agents.core.kernel import Action, Capability, Verdict
+    from agents.core.kernel.capabilities import issue_operator_capability
+    if not token_id:
+        token_id = issue_operator_capability(getattr(orch, "capabilities", None), cap_name)
     scope = (payload or {}).get("scope", "global")
     decision = kernel(
         Action(kind=kind, agent="operator", title=f"admin {kind}",

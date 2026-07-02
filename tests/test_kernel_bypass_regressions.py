@@ -4,17 +4,18 @@
   B2 — MCP mutating tools fail OPEN if no identity check is bound.
   B3 — JARVIS_STRICT_EGRESS=0 downgrades an egress violation with no audit.
 
-B2 is *already* fail-closed today; this pins the contract so a future regression
-fails CI. B1/B3 enforcement lands in later K-waves (4 and 2), so their tests are
-xfail scaffolds that flip green when the wave lands — keeping acceptance
-criterion 6 ("each has a regression test") honest about migration state.
+B1 and B2 are closed (B1 as of wave-4b/K2: a capability token is now MANDATORY,
+not just cross-checked when presented). B3 closed with the plugin.egress kernel
+wave. Contract pinned here so a future regression fails CI.
 """
 
 import asyncio
 
 import pytest
 
+from agents.core.kernel import Action, Capability, Verdict, authorize
 from agents.core.kernel.registry import Mediation, classify
+from agents.core.security.capability import CapabilityBroker, KillSwitch
 
 # ── B2 — MCP mutating tool fails closed without an identity check (true today) ──
 
@@ -39,19 +40,40 @@ def test_mutating_tool_fails_closed_without_identity():
         asyncio.run(tool.call({}, token=None))
 
 
-# ── B1 — admin action is kernel-mediated (wave-4a) ──────────────────────────────
+# ── B1 — admin/kg-write actions are kernel-mediated with a MANDATORY token ──────
 
 def test_admin_action_requires_capability():
-    # Wave-4a closed the structural half of B1: /api/security/{kill-switch (engage),
-    # capabilities/issue} now route through kernel.authorize (a capability cross-check +
-    # kill-switch gate), not just admin_guard's network origin. A *presented* capability
-    # token is enforced and a halted kill-switch denies them; see tests/test_admin_kernel_wave.py
-    # for the real DENY/allow behavior. Making a valid token *mandatory* for a no-token
-    # admin request (so missing-capability is refused) is the wave-4b/K2 follow-up — the
-    # Capability is K1-tolerant today. Contract pinned here: these admin actions are
-    # kernel-mediated.
+    # Wave-4a: /api/security/{kill-switch (engage), capabilities/issue} and
+    # /api/kg/* mutating routes route through kernel.authorize (a capability
+    # cross-check + kill-switch gate), not just admin_guard/user_guard's network
+    # origin. Contract pinned here: these actions are kernel-mediated.
     assert classify("admin.capability_issue") is Mediation.KERNEL
     assert classify("admin.kill_switch") is Mediation.KERNEL
+    assert classify("kg.write") is Mediation.KERNEL
+
+
+def test_admin_and_kg_actions_fail_closed_without_a_capability_token(tmp_path):
+    # Wave-4b: B1 is closed for REAL now, not just structurally — a caller that
+    # reaches the kernel for one of these three kinds with no token at all is
+    # refused, even with a clean kill-switch and a live broker (mirrors B2's
+    # fail-closed-without-identity contract above). The real HTTP routers never
+    # hit this path for an already-authenticated operator (they mint their own
+    # token — see tests/test_admin_kernel_wave.py / test_kg_kernel_wave.py); this
+    # pins the kernel-level backstop that makes the mandate real.
+    kill = KillSwitch(tmp_path / "kill.json")
+    broker = CapabilityBroker()
+    for kind in ("admin.kill_switch", "admin.capability_issue", "kg.write"):
+        d = authorize(Action(kind=kind, payload={"risk_tier": 1}), Capability(),
+                      kill_switch=kill, capabilities=broker, policy=_GrantEverything())
+        assert d.verdict is Verdict.DENY, f"{kind} should deny with no token"
+
+
+class _GrantEverything:
+    def decide(self, action):
+        from types import SimpleNamespace
+
+        from agents.core.autonomy.policy import ACT
+        return SimpleNamespace(tier=0, outcome=ACT, reason="ok")
 
 
 # ── B3 — strict-egress downgrade is audited + egress is kernel-mediated (K-wave 2) ──

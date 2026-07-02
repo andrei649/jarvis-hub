@@ -26,6 +26,8 @@ import logging
 from pathlib import Path
 from typing import Generator
 
+from agents.core.security import taint
+
 from .normalizer import NormalizedMessage
 
 logger = logging.getLogger("jarvis.ingestion.facebook")
@@ -68,19 +70,27 @@ class FacebookParser:
                 continue
 
             sender = msg.get("sender_name", "Unknown")
+            is_me = self._is_me(sender)
+            metadata = {
+                "type": msg.get("type", "Generic"),
+                "photos": len(msg.get("photos", [])),
+                "sticker": msg.get("sticker", None) is not None,
+            }
+            if not is_me:
+                # TASK-3/H23.6: another person's message from an external archive
+                # export — mark it so any action later built from it escalates
+                # through the kernel instead of auto-executing (H23.6). The
+                # owner's own messages stay untainted.
+                metadata = taint.mark(metadata, source="facebook")
             messages.append(
                 NormalizedMessage(
                     source="facebook",
                     conversation_id=conversation_id,
                     sender=sender,
-                    is_me=self._is_me(sender),
+                    is_me=is_me,
                     text=text,
                     timestamp=msg.get("timestamp_ms", 0) / 1000.0,
-                    metadata={
-                        "type": msg.get("type", "Generic"),
-                        "photos": len(msg.get("photos", [])),
-                        "sticker": msg.get("sticker", None) is not None,
-                    },
+                    metadata=metadata,
                 )
             )
 
