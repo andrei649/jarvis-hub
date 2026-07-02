@@ -15,6 +15,8 @@ sys.path.insert(0, str(repo_root / "agents"))
 from core.llm.base import (
     LLMBackend, LMStudioBackend, OllamaBackend, strip_thinking,
 )
+from core.llm.anthropic import ClaudeBackend
+from core.llm.gemini import GeminiBackend
 
 
 # ── Fake httpx clients (offline) ─────────────────────────────────────────
@@ -208,3 +210,57 @@ async def test_ollama_stream_drops_truncated_reasoning():
     b.client = _FakeStreamClient(lines)
     out = await b.generate_stream("m", "hi")
     assert out == ""
+
+
+# ── Cloud backends (Gemini / Claude) parity ──────────────────────────────
+# Cloud APIs surface reasoning as structured fields we never read (Gemini
+# `thought` parts, Claude `thinking` blocks), so a <think> block in the text
+# field is unexpected — but if one lands there it must be stripped, same as
+# the local backends (defense-in-depth via LLMBackend._finalize_cloud).
+
+def test_finalize_cloud_passthrough_and_sentinels():
+    assert LLMBackend._finalize_cloud("Just a reply.") == "Just a reply."
+    assert LLMBackend._finalize_cloud("") == ""
+    # error sentinels carry no think-markup and pass through unchanged
+    sentinel = "[Gemini stream error: boom]"
+    assert LLMBackend._finalize_cloud(sentinel) == sentinel
+
+
+async def test_gemini_generate_strips_think():
+    b = GeminiBackend(api_key="k")
+    b.client = _FakePostClient({"candidates": [{"content": {"parts": [
+        {"text": "<think>plan it</think>Hello, sir."},
+    ]}}]})
+    assert await b.generate("m", "hi") == "Hello, sir."
+
+
+async def test_gemini_stream_strips_think():
+    lines = [
+        'data: {"candidates":[{"content":{"parts":[{"text":"<think>plan"}]}}]}',
+        'data: {"candidates":[{"content":{"parts":[{"text":"</think>Hello, sir."}]}}]}',
+        'data: [DONE]',
+    ]
+    b = GeminiBackend(api_key="k")
+    b.client = _FakeStreamClient(lines)
+    out = await b.generate_stream("m", "hi")
+    assert out == "Hello, sir."
+
+
+async def test_claude_generate_strips_think():
+    b = ClaudeBackend(api_key="k")
+    b.client = _FakePostClient({"content": [
+        {"type": "text", "text": "<think>hmm</think>Done."},
+    ]})
+    assert await b.generate("m", "hi") == "Done."
+
+
+async def test_claude_stream_strips_think():
+    lines = [
+        'data: {"type":"content_block_delta","delta":{"text":"<think>x</think>Done"}}',
+        'data: {"type":"content_block_delta","delta":{"text":", sir."}}',
+        'data: {"type":"message_stop"}',
+    ]
+    b = ClaudeBackend(api_key="k")
+    b.client = _FakeStreamClient(lines)
+    out = await b.generate_stream("m", "hi")
+    assert out == "Done, sir."

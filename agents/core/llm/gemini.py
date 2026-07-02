@@ -75,7 +75,7 @@ class GeminiBackend(LLMBackend):
                 resp.raise_for_status()
                 if self.auth_pool is not None:
                     self.auth_pool.report_success(key)
-                return self._extract_text(resp.json())
+                return self._finalize_cloud(self._extract_text(resp.json()))
             except httpx.HTTPStatusError as e:
                 last_err = str(e)
                 if self.auth_pool is not None and is_rotatable_status(e.response.status_code) and self.auth_pool.size > 1:
@@ -118,7 +118,7 @@ class GeminiBackend(LLMBackend):
             full = f"[Gemini stream error: {e}]"
         except Exception as e:
             full = f"[Gemini stream error: {e}]"
-        return full
+        return self._finalize_cloud(full)
 
     async def close(self):
         await self.client.aclose()

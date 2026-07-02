@@ -261,6 +261,18 @@ class LLMBackend(ABC):
             return ""
         return strip_thinking(reasoning_full)
 
+    @staticmethod
+    def _finalize_cloud(text: str) -> str:
+        """Strip chain-of-thought from a cloud backend's final answer.
+
+        Cloud APIs surface reasoning as structured fields this client never
+        reads (Gemini ``thought`` parts, Claude ``thinking`` blocks), so inline
+        ``<think>`` tags are not expected in the text field — this is
+        defense-in-depth so a reasoning block that *does* land there can never
+        leak. A no-op on error sentinels (``[… error: …]``) and plain answers.
+        """
+        return strip_thinking(text or "")
+
     async def generate_stream(
         self, model: str, prompt: str, system: str = "",
         max_tokens: int = 1024, temperature: float = 0.7,
