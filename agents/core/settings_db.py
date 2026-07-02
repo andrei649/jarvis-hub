@@ -138,6 +138,8 @@ DEFAULTS: list[dict[str, Any]] = [
     # memory
     dict(category="memory",  key="max_turns",        value=100,                   label="Max turns per session",kind="number"),
     dict(category="memory",  key="context_window",   value=6,                     label="Context window (turns)",kind="number"),
+    dict(category="memory",  key="context_compression", value=False,              label="Compress long context (hot path)", kind="toggle"),
+    dict(category="memory",  key="compression_max_tokens", value=2000,            label="Context compression budget (tokens)", kind="number"),
     dict(category="memory",  key="persist",          value=True,                  label="Persist to disk",    kind="toggle"),
     # channels
     dict(category="channels",key="rate_limit",       value=10,                    label="Gateway rate limit (msg/min)", kind="number"),
