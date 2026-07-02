@@ -8,7 +8,7 @@ import { RoomsPanel } from './gap';
 function SubH3({ children, style }: { children?: any; style?: any }){ return <div className="sub-h" style={style}>{children}</div>; }
 
 /* ============ CHAT · distraction-free ============ */
-function ChatMode({ messages, thinking, onSubmit, onProv, mic, setMic, lang, t }){
+function ChatMode({ messages, thinking, onStop, onSubmit, onProv, mic, setMic, lang, t }: any){
   return (
     <div className="chat-wrap">
       <div className="chat-col">
@@ -17,7 +17,7 @@ function ChatMode({ messages, thinking, onSubmit, onProv, mic, setMic, lang, t }
           <div><div className="chat-title">{t.directLine} · JARVIS</div><div className="chat-sub">{t.focusHintChat}</div></div>
           <span className="chat-live"><span className="sdot active"></span>local</span>
         </div>
-        <Conversation messages={messages} thinking={thinking} onProv={onProv} lang={lang} t={t}/>
+        <Conversation messages={messages} thinking={thinking} onStop={onStop} onProv={onProv} lang={lang} t={t}/>
         <InputBar onSubmit={onSubmit} mic={mic} setMic={setMic} t={t}/>
       </div>
     </div>
