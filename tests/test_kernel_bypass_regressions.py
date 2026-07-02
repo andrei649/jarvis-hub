@@ -71,6 +71,7 @@ def test_admin_and_kg_actions_fail_closed_without_a_capability_token(tmp_path):
 class _GrantEverything:
     def decide(self, action):
         from types import SimpleNamespace
+
         from agents.core.autonomy.policy import ACT
         return SimpleNamespace(tier=0, outcome=ACT, reason="ok")
 

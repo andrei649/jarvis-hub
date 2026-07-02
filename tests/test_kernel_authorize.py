@@ -7,7 +7,7 @@ xfail in test_kernel_bypass_regressions.py).
 """
 
 from agents.core.autonomy.policy import AutonomyPolicy
-from agents.core.kernel import Action, Budget, Capability, TOKEN_MANDATORY_KINDS, Verdict, authorize
+from agents.core.kernel import TOKEN_MANDATORY_KINDS, Action, Budget, Capability, Verdict, authorize
 from agents.core.security.capability import GLOBAL, CapabilityBroker, KillSwitch
 
 
@@ -129,7 +129,7 @@ def test_budget_is_inert_in_k1(tmp_path):
 # ── K2 wave-4b: TOKEN_MANDATORY_KINDS ─────────────────────────────────────────
 
 def test_token_mandatory_kinds_are_the_admin_and_kg_write_kinds():
-    assert TOKEN_MANDATORY_KINDS == {"admin.kill_switch", "admin.capability_issue", "kg.write"}
+    assert {"admin.kill_switch", "admin.capability_issue", "kg.write"} == TOKEN_MANDATORY_KINDS
 
 
 def test_mandatory_kind_denies_with_no_token_even_clean(tmp_path):
