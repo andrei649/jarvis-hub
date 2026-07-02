@@ -32,11 +32,13 @@ describe('CommsRatePanel — the send rate-limit status surface is live', () => 
     expect(fn.mock.calls.some((c) => String(c[0]).includes('/api/channels/send-rate-limit'))).toBe(true);
     expect(screen.getByText('2/3')).toBeTruthy();      // capped channel: used/cap
     expect(screen.getByText('5/∞')).toBeTruthy();       // unlimited channel: used/∞
+    expect(screen.getByText('LIVE')).toBeTruthy();      // TASK-2 tail: per-panel honesty chip
   });
 
   it('shows the honesty banner when no cap is configured (limiter disabled)', async () => {
     mockFetch({ enabled: false, global_cap: 0, window_seconds: 60, channels: [] });
     render(<CommsRatePanel />);
     await waitFor(() => expect(screen.getByText(/JARVIS_CHANNEL_SEND_RATE/)).toBeTruthy());
+    expect(screen.getByText('SEED')).toBeTruthy();
   });
 });

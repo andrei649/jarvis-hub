@@ -18,6 +18,8 @@ from datetime import datetime
 from pathlib import Path
 from typing import Generator, Optional
 
+from agents.core.security import taint
+
 from .normalizer import NormalizedMessage
 
 logger = logging.getLogger("jarvis.ingestion.whatsapp")
@@ -135,15 +137,21 @@ class WhatsAppParser:
             if _is_system_message(msg_text):
                 continue
 
+            is_me = self._is_me(sender)
+            # TASK-3/H23.6: another person's message from an external chat export —
+            # mark it so any action later built from it escalates through the
+            # kernel instead of auto-executing. The owner's own messages stay
+            # untainted.
+            metadata = taint.mark({}, source="whatsapp") if not is_me else {}
             messages.append(
                 NormalizedMessage(
                     source="whatsapp",
                     conversation_id=conversation_id,
                     sender=sender,
-                    is_me=self._is_me(sender),
+                    is_me=is_me,
                     text=msg_text,
                     timestamp=ts,
-                    metadata={},
+                    metadata=metadata,
                 )
             )
 

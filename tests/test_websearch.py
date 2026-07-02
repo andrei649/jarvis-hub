@@ -10,6 +10,7 @@ sys.path.insert(0, str(repo_root))
 sys.path.insert(0, str(repo_root / "agents"))
 
 from core.plugins.websearch import WebSearchPlugin
+from core.security import taint
 
 
 def test_plugin_instantiates():
@@ -88,3 +89,15 @@ async def test_close_is_noop():
     wp = WebSearchPlugin()
     result = await wp.close()
     assert result is None
+
+
+# ── TASK-3/H23.6: search results are untrusted external content ─────────────
+
+@pytest.mark.asyncio
+async def test_search_results_are_tainted(monkeypatch):
+    async def fake_tavily(self, q, m):
+        return [{"title": "result", "url": "http://x", "snippet": "s"}]
+    monkeypatch.setattr("core.plugins.websearch.WebSearchPlugin._search_tavily", fake_tavily)
+    wp = WebSearchPlugin(tavily_api_key="test-key")
+    results = await wp.search("test", 3)
+    assert results and all(taint.is_tainted(r) and r["taint_source"] == "websearch" for r in results)

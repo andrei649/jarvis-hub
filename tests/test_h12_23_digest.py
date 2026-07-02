@@ -18,6 +18,7 @@ from core.digest import (  # noqa: E402
     idea_reality_score, parse_feed, DigestSource, DigestAggregator,
     build_default_aggregator, SOURCE_TEMPLATES,
 )
+from core.security import taint  # noqa: E402
 import agents.web as web  # noqa: E402
 
 
@@ -113,7 +114,21 @@ async def test_aggregator_limit_and_shape():
     s = DigestSource("a", "a/{topic}", fetcher=_fetcher({"a/": _RSS}))
     out = await DigestAggregator([s]).run("ai", limit=1)
     assert out["count"] == 1 and out["sources"] == ["a"]
-    assert set(out["items"][0]) == {"title", "link", "source", "reality", "score"}
+    assert set(out["items"][0]) == {"title", "link", "source", "reality", "score", "tainted", "taint_source"}
+
+
+# ── TASK-3/H23.6: every digest item is external feed content — must be tainted ──
+
+async def test_source_fetch_taints_every_item():
+    src = DigestSource("hn", "http://h/?q={topic}", fetcher=_fetcher({"h/": _RSS}))
+    items = await src.fetch("ai")
+    assert items and all(taint.is_tainted(it) and it["taint_source"] == "hn" for it in items)
+
+
+async def test_aggregator_output_carries_taint_mark():
+    s = DigestSource("a", "a/{topic}", fetcher=_fetcher({"a/": _RSS}))
+    out = await DigestAggregator([s]).run("ai", limit=10)
+    assert out["items"] and all(taint.is_tainted(it) for it in out["items"])
 
 
 def test_build_default_aggregator_uses_templates():

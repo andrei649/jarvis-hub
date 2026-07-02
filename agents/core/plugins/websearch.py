@@ -9,6 +9,7 @@ from typing import Optional
 import httpx
 
 from ..http_client import PluginHTTPClient
+from ..security import taint
 from ..security.ssrf import resolve_and_validate
 
 logger = logging.getLogger("jarvis.plugins.websearch")
@@ -26,10 +27,15 @@ class WebSearchPlugin:
 
     async def search(self, query: str, max_results: int = 5) -> list[dict]:
         if self.tavily_api_key:
-            return await self._search_tavily(query, max_results)
-        if self.searxng_url:
-            return await self._search_searxng(query, max_results)
-        return await self._search_duckduckgo(query, max_results)
+            results = await self._search_tavily(query, max_results)
+        elif self.searxng_url:
+            results = await self._search_searxng(query, max_results)
+        else:
+            results = await self._search_duckduckgo(query, max_results)
+        # TASK-3/H23.6: web search results are untrusted external content — mark
+        # each result so any action later built from it escalates through the
+        # kernel instead of auto-executing.
+        return [taint.mark(r, source="websearch") for r in results]
 
     async def _search_tavily(self, query: str, max_results: int) -> list[dict]:
         try:

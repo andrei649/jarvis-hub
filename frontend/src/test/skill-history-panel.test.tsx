@@ -34,11 +34,13 @@ describe('SkillHistoryPanel — the version-history read surface is live', () =>
     // per-action stat tags + an event detail (the 2.0.0 row is unique)
     expect(screen.getByText('2 install')).toBeTruthy();
     expect(screen.getByText(/install · 2\.0\.0/)).toBeTruthy();
+    expect(screen.getByText('LIVE')).toBeTruthy(); // TASK-2 tail: per-panel honesty chip
   });
 
   it('shows the honesty banner when the ledger is disabled (flag off)', async () => {
     mockFetch({ enabled: false, events: [], stats: { total: 0, skills: 0, by_action: {} } });
     render(<SkillHistoryPanel />);
     await waitFor(() => expect(screen.getByText(/JARVIS_SKILL_HISTORY is on/)).toBeTruthy());
+    expect(screen.getByText('SEED')).toBeTruthy();
   });
 });

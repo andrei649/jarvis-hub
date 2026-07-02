@@ -35,7 +35,7 @@ from .metrics import KERNEL_METRICS
 __all__ = [
     "Verdict", "Action", "Capability", "Budget", "Decision",
     "BudgetLimits", "BudgetLedger", "LoopDetector",
-    "authorize", "kernel_enabled",
+    "authorize", "kernel_enabled", "TOKEN_MANDATORY_KINDS",
 ]
 
 
@@ -60,9 +60,23 @@ class Action:
 @dataclass(frozen=True)
 class Capability:
     """The capability a caller presents. K1 tolerates an empty token (brokers do
-    not yet carry one); K2 makes a valid token mandatory for privileged actions."""
+    not yet carry one); K2 makes a valid token mandatory for privileged actions
+    — starting with :data:`TOKEN_MANDATORY_KINDS` (wave-4b), other KERNEL kinds
+    stay K1-tolerant until their own wave flips them."""
     token_id: str = ""
     name: str = ""
+
+
+# K2 wave-4b: for these action kinds a capability token is MANDATORY — an absent
+# token no longer falls through to kill-switch-only gating (unlike every other
+# KERNEL-mediated kind, still K1-tolerant). The two callers of these kinds
+# (routers/security.py, routers/memory_kg.py) already mint an operator token
+# themselves when the caller didn't present one explicitly (see
+# kernel.capabilities.issue_operator_capability), so a legitimate
+# already-authenticated request is unaffected; this only refuses a call that
+# genuinely reaches the kernel with no token at all (a mint failure, or a
+# caller that bypasses the router helpers).
+TOKEN_MANDATORY_KINDS = frozenset({"admin.kill_switch", "admin.capability_issue", "kg.write"})
 
 
 @dataclass(frozen=True)
@@ -141,8 +155,8 @@ def authorize(action: Action,
     # not normalized/read here.
 
     # 1) Kill-switch + capability — via the existing nucleus when a token is
-    #    presented (node mesh), else kill-switch only (K1 brokers carry no token;
-    #    K2 flips the empty-token case to DENY — tracked in PENDING_KERNEL).
+    #    presented, else kill-switch only for most kinds (K1-tolerant); wave-4b
+    #    makes a token mandatory for TOKEN_MANDATORY_KINDS specifically.
     if capability.token_id and capabilities is not None:
         gate = _capability_authorize(
             capabilities, kill_switch, capability.token_id, capability.name,
@@ -152,6 +166,18 @@ def authorize(action: Action,
             decision = Decision(Verdict.DENY, reason=gate.get("reason", "denied"))
             _emit_audit(audit, action, decision)
             return decision
+    elif capabilities is not None and action.kind in TOKEN_MANDATORY_KINDS:
+        # K2 wave-4b: no token presented for a token-mandatory kind. Surface a
+        # halted kill-switch with its own reason first (matches the presented-
+        # token path, where the nucleus checks the kill-switch before the
+        # capability), then fail closed on the missing token.
+        if kill_switch is not None and kill_switch.is_halted(action.scope):
+            decision = Decision(Verdict.DENY,
+                                reason=f"kill-switch engaged for scope '{action.scope}'")
+        else:
+            decision = Decision(Verdict.DENY, reason="capability token required for this action")
+        _emit_audit(audit, action, decision)
+        return decision
     elif kill_switch is not None and kill_switch.is_halted(action.scope):
         decision = Decision(Verdict.DENY,
                             reason=f"kill-switch engaged for scope '{action.scope}'")

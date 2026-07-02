@@ -38,11 +38,11 @@ router = APIRouter(tags=["memory"])
 
 
 def _kg_kernel_denial(orch, payload: dict, token_id: Optional[str] = None, scope: str = "global"):
-    """ORIZONT-24 K1 wave-3 (kg.write): mediate an *externally-driven* KG write through
+    """ORIZONT-24 K1 wave-3/4b (kg.write): mediate an *externally-driven* KG write through
     the Action Kernel (default-off). Returns a deny-reason (caller → HTTP 403) or ``None``
     (allow). **DENY only** — GRANT/QUEUE allow through (an unknown ``kg.write`` kind
     classifies top-tier → policy QUEUE; we honor only a hard DENY: a halted kill-switch,
-    or a *presented* capability token that lacks ``kg:write``).
+    a missing capability token, or a *presented* token that lacks ``kg:write``).
 
     **Boundary (the whole point of this slice):** only the externally-driven ``/api/kg/*``
     HTTP handlers call this. The high-frequency *internal* ingestion path — incremental
@@ -53,11 +53,14 @@ def _kg_kernel_denial(orch, payload: dict, token_id: Optional[str] = None, scope
     ``/consolidate`` returns a plan with no mutation, and ``/decay/forget`` is an ACT-R decay
     op — none are KG writes, so they are intentionally out of this ``kg.write`` slice.)
 
-    Payload carries keys/ids only (audit-PII hygiene — never property values). The
-    ``Capability`` is K1-tolerant (an empty token skips the nucleus and falls to the
-    kill-switch gate); making a token mandatory is wave-4b/K2. ``make_action_kernel`` is
-    imported lazily so the router stays import-cheap and the matrix exerciser can substitute
-    a spy.
+    Payload carries keys/ids only (audit-PII hygiene — never property values).
+
+    wave-4b: a token is now MANDATORY (``kernel.TOKEN_MANDATORY_KINDS``). Every route that
+    calls this already sits behind ``user_guard`` — the caller is already proven — so when
+    nothing was *presented* via ``x-capability-token`` we mint a short-lived, single-
+    capability operator token ourselves rather than presenting an empty one, letting the
+    kernel's real capability nucleus run. ``make_action_kernel`` is imported lazily so the
+    router stays import-cheap and the matrix exerciser can substitute a spy.
     """
     from agents.core.kernel import kernel_enabled
     if not kernel_enabled():
@@ -67,6 +70,9 @@ def _kg_kernel_denial(orch, payload: dict, token_id: Optional[str] = None, scope
     if kernel is None:
         return None
     from agents.core.kernel import Action, Capability, Verdict
+    from agents.core.kernel.capabilities import issue_operator_capability
+    if not token_id:
+        token_id = issue_operator_capability(getattr(orch, "capabilities", None), "kg:write")
     decision = kernel(
         Action(kind="kg.write", agent="external", title=f"kg write {payload.get('op', '')}",
                payload=payload, scope=scope, origin="external"),
@@ -286,14 +292,16 @@ async def kg_upsert_entity(req: Request):
 
 
 @router.delete("/api/kg/entities/{name}", dependencies=[Depends(user_guard)])
-async def kg_delete_entity(name: str):
+async def kg_delete_entity(name: str, req: Request = None):
     """Delete an entity and any relations that touch it."""
     g = _kg()
     if g is None:
         return JSONResponse({"error": "graph not available"}, status_code=503)
-    # No Request on this path → token_id="" (K1-tolerant; halt-gated, token-check is K2).
+    # req is None only for a direct (non-HTTP) call, e.g. a test — the kernel
+    # helper mints its own operator token when none is presented (wave-4b).
     # Deny precedes the existence lookup so a halt doesn't leak whether the entity exists.
-    denied = _kg_kernel_denial(get_orch(), {"op": "delete_entity", "name": name})
+    token_id = req.headers.get("x-capability-token", "") if req is not None else ""
+    denied = _kg_kernel_denial(get_orch(), {"op": "delete_entity", "name": name}, token_id)
     if denied is not None:
         return JSONResponse({"error": f"kernel denied: {denied}"}, status_code=403)
     if not g.delete_entity(name):
@@ -330,7 +338,7 @@ async def kg_add_relation(req: Request):
 
 
 @router.delete("/api/kg/relations", dependencies=[Depends(user_guard)])
-async def kg_delete_relation(source: str, relation: str, target: str):
+async def kg_delete_relation(source: str, relation: str, target: str, req: Request = None):
     """Delete a specific relation (by source/relation/target)."""
     g = _kg()
     if g is None:
@@ -339,9 +347,12 @@ async def kg_delete_relation(source: str, relation: str, target: str):
     # API contract — reject rather than coerce a delete).
     if not is_safe_kg_rel_type(relation):
         return JSONResponse({"error": "invalid relation type"}, status_code=400)
-    # No Request on this path → token_id="" (K1-tolerant). Deny precedes the lookup.
+    # req is None only for a direct (non-HTTP) call — see kg_delete_entity above.
+    # Deny precedes the lookup so a halt doesn't leak whether the relation exists.
+    token_id = req.headers.get("x-capability-token", "") if req is not None else ""
     denied = _kg_kernel_denial(get_orch(),
-                               {"op": "delete_relation", "source": source, "relation": relation, "target": target})
+                               {"op": "delete_relation", "source": source, "relation": relation, "target": target},
+                               token_id)
     if denied is not None:
         return JSONResponse({"error": f"kernel denied: {denied}"}, status_code=403)
     if not g.delete_relation(source, relation, target):

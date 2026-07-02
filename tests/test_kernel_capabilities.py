@@ -58,3 +58,26 @@ def test_issue_all_is_per_agent_and_least_privilege():
     assert broker.check(tokens["frigga"], "model:cloud") is False
     assert broker.check(tokens["frigga"], "plugin:gmail") is False
     assert broker.check(tokens["stark"], "plugin:gmail") is True
+
+
+# ── K2 wave-4b: issue_operator_capability (mint-on-demand for HTTP operators) ────
+
+def test_issue_operator_capability_grants_only_the_named_capability():
+    broker = CapabilityBroker()
+    token_id = caps.issue_operator_capability(broker, "kg:write")
+    assert token_id
+    assert broker.check(token_id, "kg:write") is True
+    assert broker.check(token_id, "admin:kill_switch") is False   # least-privilege
+
+
+def test_issue_operator_capability_no_broker_returns_empty():
+    assert caps.issue_operator_capability(None, "kg:write") == ""
+
+
+def test_issue_operator_capability_broker_hiccup_fails_closed_to_empty():
+    class _BoomBroker:
+        def issue(self, *a, **kw):
+            raise RuntimeError("boom")
+    # never raises — a broker error must degrade to an empty (fail-closed) token,
+    # not propagate and break the request the guard already authorized.
+    assert caps.issue_operator_capability(_BoomBroker(), "kg:write") == ""
