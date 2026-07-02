@@ -38,6 +38,23 @@
 > they're committed + pushed to the branch but **PRs aren't opened yet**. When the connector is re-authorized they
 > become PRs immediately. Each is its own commit so they can be split into separate PRs.
 
+### Security — CWE-209 hygiene: error responses never echo exception text ✅ (fury-sprint 3/4)
+- **What:** closed the remaining "Information exposure through an exception" flows (CodeQL alert **#433**, plus **#432**
+  in a docs snippet): the `SecurityBlockError` handler (`web.py`) echoed `str(exc)` — which can name the matched
+  scanner rule or redacted content — into the 403 body; the workflow save/update routes raised
+  `HTTPException(detail=str(e))` on 422/500; the design-handoff SSE snippet echoed `str(e)` in its error event. All now
+  log the full detail server-side and return **static** public messages ("Security policy blocked this request",
+  "invalid workflow definition", "workflow save/update failed").
+- **Why it matters beyond hygiene:** the CodeQL merge-protection ruleset blocks on this alert whenever a PR's diff gets
+  large (it's what stalled #472 — the HUD-bundle rebuild). With the root sinks gone, the alert can auto-close and
+  bundle-rebuild PRs (like the upcoming Stop-button PR) can't be re-blocked by it.
+- **Verified (automated, in-env):** `tests/test_cwe209_static_errors.py` (**+4**: 403 static + no leak, workflow 422/500
+  static details, update-path static). 325 workflow/security/guard tests green (1 pre-existing local-state flake in
+  `test_security_approvals_api` fails on clean main too — not from this change; CI is the arbiter). `ruff` clean;
+  bandit exit 0.
+- **⚠️ Needs you:** after merge, check Security → Code scanning: alerts #433/#432 should auto-close on the next
+  main scan. If any *other* CWE-209 alert remains, paste it to me.
+
 ### Memory — ContextCompressor wired into the prompt hot path ✅ (default-off, fury-sprint 2/4)
 - **What:** the H20.3 `ContextCompressor` existed but was orphaned — both prompt-build sites (`orchestrator.py`
   main loop + `_call_agents_parallel`) sliced history by turn count only (`memory.context_window`, default 6), with no
