@@ -915,7 +915,7 @@ class Orchestrator:
         for agent_id in target:
             if agent_id in self.agents:
                 agent = self.agents[agent_id]
-                history = await self.memory.get_context(self.session_id, last_n=context_window)
+                history = await self._history_for_prompt(context_window)
                 system_prompt = agent.soul.get("content", "")
                 plugin_block = self._format_plugin_data(plugin_data)
                 agent_context = await self.memory.get_agent_context(agent_id)
@@ -1210,13 +1210,43 @@ class Orchestrator:
         except (TypeError, ValueError):
             return 120.0
 
+    async def _history_for_prompt(self, last_n: int) -> str:
+        """Conversation history for a prompt, optionally token-budget compressed.
+
+        Default (``memory.context_compression`` off): byte-identical to
+        ``memory.get_context`` — the flag guards the whole path. When on, the
+        raw turns go through ``ContextCompressor(summarizer=None)``: within
+        budget it keeps every turn verbatim; over budget the older turns
+        collapse into a deterministic, offline digest (H20.3). ``summarizer``
+        stays ``None`` on the hot path — zero LLM/egress, so the flag is safe
+        even for LOCAL_ONLY agents. Output is formatted exactly like
+        ``get_context`` (``[speaker]: content`` lines) so prompt assembly
+        downstream is unchanged.
+        """
+        if not self.get_setting("memory.context_compression", False):
+            return await self.memory.get_context(self.session_id, last_n=last_n)
+        turns = await self.memory.get_history(self.session_id, last_n)
+        if not turns:
+            return ""
+        from .context_compressor import ContextCompressor
+        compressor = ContextCompressor(
+            summarizer=None,
+            max_tokens=int(self.get_setting("memory.compression_max_tokens", 2000)),
+        )
+        result = await compressor.compress(turns)
+        lines = [f"[{t.get('agent_id') or t.get('role', '')}]: {t.get('content', '')}"
+                 for t in result["kept"]]
+        if result["compressed"] and result["summary"]:
+            return result["summary"] + "\n" + "\n".join(lines)
+        return "\n".join(lines)
+
     async def _call_agents_parallel(
         self, agent_ids: list[str], text: str, context: dict, plugin_data: dict = None
     ) -> dict[str, str]:
         # CDX-3: honor memory.context_window like the main per-agent path (:850);
         # was a hard-coded 6, so changing the setting silently left this tail behind.
-        history = await self.memory.get_context(
-            self.session_id, last_n=self.get_setting("memory.context_window", 6))
+        history = await self._history_for_prompt(
+            self.get_setting("memory.context_window", 6))
         plugin_block = self._format_plugin_data(plugin_data or {})
         recall_block = await self._recall_block(text)
         agent_timeout = self._agent_call_timeout()  # CDX-6: tunable, not a hard-coded 120s
