@@ -14,7 +14,7 @@
 ```bash
 pip install -r requirements-beta.txt
 python -m uvicorn agents.web:app --host 127.0.0.1 --port 8080
-python -m pytest tests/ -v          # ~3,466 passed, 6 skipped (counter synced via scripts/status_sync.py)
+python -m pytest tests/ -v          # ~3,471 passed, 6 skipped (counter synced via scripts/status_sync.py)
 ```
 
 > Singurul skip rămas e heartbeat-ul opțional. (Vechiul `tests/test_spotify.py` cu 8 skip-uri a
@@ -316,7 +316,7 @@ the syscall table · budgets = the scheduler · kill-switch/quarantine = a sysca
 | # | Item | S | Status |
 |---|------|---|--------|
 | M1.1 | **K3 budget unification** — named dimensions on `kernel/budget.py:BudgetLedger`; `InterruptBudget` becomes a view; payment/mission caps registered as observed dimensions; handler `tokens_used` hook | 5 | open |
-| M1.2 | **`Action.origin` channel threading** — `Gateway.route → channel_handler →` per-turn ContextVar → brokers; inbound channels = `origin="inbound"` → kernel GRANT→QUEUE (the honest TASK-3 channel backstop) | 5 | open |
+| M1.2 | **`Action.origin` channel threading** — `Gateway.route → channel_handler →` per-turn ContextVar → brokers; inbound channels = `origin="inbound"` → kernel GRANT→QUEUE (the honest TASK-3 channel backstop) | 5 | ✅ done (2026-07-03) — `Gateway.route` classifies trusted HUD/voice turns as `generated` and external channels as `inbound`; `channel_handler` binds the origin in a per-request ContextVar; governed-action brokers read that context for kernel `Action.origin`, so inbound-channel actions that policy would GRANT are escalated to QUEUE while kernel-off behavior stays byte-identical. `tests/test_m12_origin_threading.py` (+5). |
 | M1.3 | **V3 components/skills readiness coverage** — booted-fixture records in `test_capability_readiness_matrix` (today: plugins only, 33 records) | 3 | ✅ done (2026-07-03) — matrix now boots the real orchestrator + skill loader, snapshots 70 capability records (33 plugin / 24 component / 13 skill), and explicitly classifies the manifest-only `skill:Weather Intel` SEAM row. |
 | M1.4 | **LIVE/SEED chip rollout** — `PanelChip` (`gap.tsx:28`) onto the ~25 remaining Console panels (mechanical) | 2 | ✅ done (2026-07-03) — every Console `Card` now declares a `live`/`seed` signal (58/58), guarded by `panel-chip-coverage.test.ts`; opt-in surfaces use SEED when disabled. |
 | M1.5 | **Q4 voice-persona consent gate** (0.28) — persisted owner consent before cloned/persona voice; default voice + honest banner otherwise | 2 | ✅ done (2026-07-03) — `voice.persona_voice_consent` seeds default-off; `TTSEngine` blocks XTTS/ElevenLabs persona voices before consent and falls back to safe Edge defaults with `last_consent_status`; `/api/voice/capabilities` and `PersonaModule.status()` expose the honest banner/status; covered by `tests/test_q4_voice_consent.py`. |

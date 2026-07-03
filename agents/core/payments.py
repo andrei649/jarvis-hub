@@ -155,6 +155,7 @@ class PaymentBroker(JsonStore):
         # relax the always-approval rule.
         if self._kernel is not None:
             from agents.core.kernel import Action, Verdict, kernel_enabled
+            from agents.core.action_origin import current_action_origin
             if kernel_enabled():
                 decision = self._kernel(Action(
                     kind=self.KIND, agent=self._agent,
@@ -162,7 +163,7 @@ class PaymentBroker(JsonStore):
                     payload={"mandate_id": mandate_id, "payee": payee,
                              "amount": float(amount), "currency": currency.upper(),
                              "memo": str(memo)[:280]},
-                    origin="generated"))
+                    origin=current_action_origin()))
                 if decision.verdict is Verdict.DENY:
                     self._record("deny_payment", f"kernel:{decision.reason}",
                                  mandate_id=mandate_id, payee=payee, amount=amount)

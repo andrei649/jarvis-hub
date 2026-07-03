@@ -147,13 +147,14 @@ class ToolRPCServer:
         if self._kernel is None:
             return None
         from agents.core.kernel import Action, Verdict, kernel_enabled
+        from agents.core.action_origin import current_action_origin
         if not kernel_enabled():
             return None
         decision = self._kernel(Action(
             kind="tool.rpc", agent=self.agent,
             title=f"tool-rpc {name}",
             payload={"tool": name, "args_keys": sorted((args or {}).keys()), "target": name},
-            origin="generated"))
+            origin=current_action_origin()))
         return decision.reason if decision.verdict is Verdict.DENY else None
 
     def _record(self, action: str, why: str, **meta) -> None:
