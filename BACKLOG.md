@@ -363,7 +363,84 @@ MANUAL_TESTING signs off **and** real-usage data exists. Details: blueprint §5 
 > foundation and outranks every other clause.* Q1/Q2 make it regression-guarded, not aspirational.
 >
 > **Non-goals until 1.0** (re-affirmed): 0.20 Vault · 0.48 video · 0.64/0.65 desktop overlay ·
-> 0.66 connector breadth · AUD-13/AUD-15 refactors · multi-user. MOONSHOT §4: we don't skip gates.
+> 0.66 connector breadth · ~~AUD-13~~ (promoted into O26 P1.1) / AUD-15 refactor · multi-user.
+> MOONSHOT §4: we don't skip gates.
+
+---
+
+## 🚂 ORIZONT 26 — «Bolt the train to the rails» (deep-dive plan, owner-approved 2026-07-03)
+
+> **The active plan superseding ORIZONT 25's sequencing** (O25's engineering table is complete except
+> M2.4's tail — its protocol + charter stay in force). Source: a 3-lens full-code deep dive
+> (runtime intelligence · safety substrate · product surface), every finding `file:line`-verified
+> twice. **Thesis: the rails are magnificent, but the train isn't bolted to them** — the flagship
+> promises («knows you», «every action governed», «one inbox», «works while you sleep») are dormant
+> or bypassed in a default install for specific, fixable reasons. Full plan with findings, decisions,
+> ACs and seams: [`docs/superpowers/specs/2026-07-03-orizont26-bolt-the-train.md`](docs/superpowers/specs/2026-07-03-orizont26-bolt-the-train.md).
+>
+> **Owner decisions (2026-07-03):** D1 Product Posture ✅ (onboarding consent switch, 2 waves,
+> default-off exception recorded) · D4 WorldView **stays active** (issues #254–259/#265 + #169 + #170
+> sequenced as Phase 4) · D7 HUD **finish the design** (wire all 6 preview modes + the
+> HUD_V2_REMAINING punch-list; blockers → BACKLOG rows, not silent stubs).
+
+### Phase 0 — Truth & Correctness (verified findings F1–F6)
+
+| # | Item | S | Status |
+|---|------|---|--------|
+| O26-P0.1 | Golden-loop harness (fake LLM at `generate()` seam only) + loop #1 skeleton | 3 | open |
+| O26-P0.2 | **F1**: stream path calls `_record_interactions` (web chat finally feeds KG/learning/run-history; %-local re-baselined) | 2 | open |
+| O26-P0.3 | **F2**: seed `cognition.*` + `memory.recall_enabled/top_k` in DEFAULTS; `put_category` upserts known-spec keys | 2 | open |
+| O26-P0.4 | **F4**: sycophancy axis scores the assistant reply, not the user input (`cognition_trace.py:93,124`) | 1 | open |
+| O26-P0.5 | **F5**: deep-model escalation only when the deep model is probed present (no reroute-to-missing-model on «analyze») | 2 | open |
+| O26-P0.6 | **F6**: hardened/bind boot guards run from the app lifespan (uvicorn entry included); Run-block docs point at `serve.py` | 2 | open |
+| O26-P0.7 | **F3**: broker proposals run `policy.decide`; `pending_decisions()` includes broker-`proposed`; kill-switch enforced at the executor seam kernel-independently; golden loops #2+#4 | 5 | open |
+
+### Phase 1 — One Turn Pipeline
+
+| # | Item | S | Status |
+|---|------|---|--------|
+| O26-P1.1 | **AUD-13 promoted pre-1.0**: unify `handle_input`/`handle_input_stream`; ONE prompt builder (persona + runtime-state in both); one record seam; `PersonaModule.nudge` per turn; preserve #492's `action_origin` ContextVar. Oracle: golden loops ×2 postures + M2.1 E2E | 8 | open |
+
+### Phase 2 — Wake the Intelligence
+
+| # | Item | S | Status |
+|---|------|---|--------|
+| O26-P2.1 | AUD-14 config consolidation (posture prerequisite; 161 env reads, ≥3 truthy conventions; LOCAL_ONLY floor kept) | 3 | open |
+| O26-P2.2 | Nightly consolidation/decay job in `scheduler_service` + LivingMemory wired at the turn seam | 3 | open |
+| O26-P2.3 | Dormant-module disposition: wire-or-park `ensemble`/`learning`; park `profile_extractor` (zero callers) | 2 | open |
+| O26-P2.4 | **Product Posture (D1 ✅)**: settings-backed named posture composing `JARVIS_HARDENED`; wave 1 memory/persona → wave 2 kernel/budgets/REDACT; consent screen = final onboarding step; p95 AC | 3 | open |
+| O26-P2.5 | Install smoke path (~30s boot+`/readyz`+faked turn; full suite behind `--dev`) | 2 | open |
+
+### Phase 3 — Finish the Designed Surface (D7)
+
+| # | Item | S | Status |
+|---|------|---|--------|
+| O26-P3.1 | Wire the 6 preview modes live (Build/Comms/Finance/Health/Knowledge/Family; honest plugin-gated empty states; owner-key blockers → BACKLOG rows); ghost-manifest cleanup (~22 real modules); `balance` mock → honest SEED | 8 | open |
+| O26-P3.2 | HUD_V2_REMAINING punch-list: §2 Console depth (Settings editor, Prompt A/B UI, Data Spaces CRUD, Secrets form, Rooms) · §4 cockpit (task-fan, per-message TTS+mic, cognition SSE) · §5 TweaksPanel · §6 fonts | 8 | open |
+| O26-P3.3 | M2.4 completion: persist the eval-store baseline across nightly runs so baseline-compare bites | 2 | open |
+| O26-P3.4 | M3.1 mobile approval queue over the *unified* funnel (dep: P0.7) | 5 | open |
+| O26-P3.5 | Q2 persona rail (now scoring the right text; dep P0.4) + Q3 caring follow-ups in the brief (golden loop #3) | 3 | open |
+| O26-P3.6 | Landing page, dev half (M3.3) | 3 | open |
+
+### Phase 4 — WorldView active workstream (D4, owner call; parallel lane)
+
+#258 startup parity → #255 live MCP contract test → #254 Signal-Layer cockpit in the real HUD →
+#256 SignalLayerPlugin for Jarvis/Argus → #257 governance-safe recommendations (pairs with P0.7) →
+#259/#265 demo polish → **#169 MCP write transport** (unblocks the last K2 slice: WorldView HMAC →
+kernel Capability) → #170 live Neo4j validation. Stays runtime-opt-in for partners.
+
+### Phase 5 — Proof (owner-led, parallel from day 1 — the true critical path)
+
+⭐B0 + record AUD-0/H23.23 → GitHub settings + license flip → **partner release channel** (partners
+pin tagged releases + upgrade drill) → recruit 1–3 partners; north-star on a non-owner install ≥2
+weeks, **re-baselined post-P0.2** (pre-fix data excludes all web-chat activity) → 72h soak → tag 1.0.
+
+### Phase 6 — Guard rails (continuous)
+
+Park-list CI guard (`image_gen`, `media_gen/media_skill`, `desktop_operator`, `browser_agent`,
+`screen_grounding`, `satellite_hub`, `node_mesh`, `e2e_sync`, `wyoming`, `training/`, `rust/` —
+frozen pre-1.0 unless a PR carries an `unpark:` tag; WorldView explicitly NOT on this list per D4) ·
+new-test policy: golden-loop behavioral by default, wiring/parity only for new route surfaces.
 
 ---
 
