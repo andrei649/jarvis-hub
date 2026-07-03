@@ -14,7 +14,7 @@
 ```bash
 pip install -r requirements-beta.txt
 python -m uvicorn agents.web:app --host 127.0.0.1 --port 8080
-python -m pytest tests/ -v          # ~3,452 passed, 6 skipped (counter synced via scripts/status_sync.py)
+python -m pytest tests/ -v          # ~3,466 passed, 6 skipped (counter synced via scripts/status_sync.py)
 ```
 
 > Singurul skip rămas e heartbeat-ul opțional. (Vechiul `tests/test_spotify.py` cu 8 skip-uri a
@@ -329,7 +329,7 @@ the syscall table · budgets = the scheduler · kill-switch/quarantine = a sysca
 | M2.2 | **Nightly soak + browser matrix** — `schedule:` lane on `e2e.yml` (N-iteration soak vs `/metrics`), firefox/webkit/mobile-emulation projects | 3 | open |
 | M2.3 | **AUD-16 OpenAPI→TS typegen + CI diff gate** — `response_model=` on the ~30 HUD-consumed routes; boot server in CI (e2e pattern) → `openapi-typescript` → fail on diff | 5 | open |
 | M2.4 | **V4 eval as scheduled blocking lane** — nightly `EvalRunner` over `DatasetStore` vs baseline (`JARVIS_EVAL_LIVE` gated); north-star guardrails in the job summary | 3 | open |
-| M2.5 | ⭐ **Q1 companion golden-dialogue eval set** — 40–60 RO/EN dialogues scoring the §6.2 charter (assistance, empathy-without-sycophancy, follow-up, in-character honesty, refusal); judged via `QualityMonitor` + `SycophancyIndex`/`HonestyJudge`; versioned in `DatasetStore`, gated by M2.4 — **the quality snapshot that survives model changes** | 5 | open |
+| M2.5 | ⭐ **Q1 companion golden-dialogue eval set** — 40–60 RO/EN dialogues scoring the §6.2 charter (assistance, empathy-without-sycophancy, follow-up, in-character honesty, refusal); judged via `QualityMonitor` + `SycophancyIndex`/`HonestyJudge`; versioned in `DatasetStore`, gated by M2.4 — **the quality snapshot that survives model changes** | 5 | ✅ **done (2026-07-02)** — `observability/companion_eval.py` + `companion_dialogues.json` (**48 dialogues**: 6 charter dimensions × 8, 30 EN + 18 RO, synthetic personas; authored by 6 Fable-5 drafters + 6 adversarial reviewers, 33/48 hardened in review). Deterministic scorer (no LLM): hard-fails on `forbid`/missing-`gold`/insubstantial, soft-scores expect/`sycophancy_signals` (honesty.py) with pushback escalation; diacritics-insensitive matching. **Keystone invariant test-pinned: every golden scores 1.0 against its own rubric** (`golden_self_check`). `seed_dataset()` versions into the H9.3b `DatasetStore` (change-detected, no version spam); `run_suite()` = in-process full-rubric path; CLI `--self-check`/`--seed` for the M2.4 lane. `tests/test_companion_eval.py` (+14: integrity/coverage/bilingual, pre-normalized rubric entries, synthetic-only PII gate, goldens-pass-own-rubric, capitulation-fails-every-pushback-case, forbid-hard-fail, seed idempotence, golden-runner scores 1.0 + run recorded, sycophant-runner fails the gate). *Remaining hookup = M2.4 (the nightly lane calls the CLI).* |
 | M2.6 | **BUG-2b.3 `useVoice` tests** — jsdom mocks for mic/AudioContext, drive the status machine (`voice.ts:49`) | 2 | open |
 
 ### M3 — v0.14 «Reach & proof»
