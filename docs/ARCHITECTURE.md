@@ -130,6 +130,14 @@ When on: embeds the query, runs fused recall (vector ⊕ graph), injects top-k a
 | `agents/core/autonomy/executor.py` | Task kind → handler dispatch | `TaskExecutor`, `executor.register` |
 | `agents/core/autonomy/error_logger.py` | Sync errors to BACKLOG.md | `sync_problems_to_backlog` |
 
+### Action Kernel / Budgets
+
+| Path | Purpose | Key symbols |
+|------|---------|-------------|
+| `agents/core/kernel/budget.py` | K3 scheduler ledger: token/wall-time/recursion budgets, loop breaker, and named dimensions for interrupt/mission/payment caps | `BudgetLedger`, `BudgetDimension`, `LoopDetector` |
+| `agents/core/kernel/binding.py` | Binds orchestrator/config state into kernel hooks and shared ledgers | `make_action_kernel`, `make_budget_ledger` |
+| `agents/core/action_origin.py` | Per-turn provenance carrier for kernel-mediated actions; inbound channels bind `origin="inbound"` so brokers cannot silently auto-act from external input | `origin_for_channel`, `bind_action_origin`, `current_action_origin` |
+
 ### Security
 
 | Path | Purpose | Key symbols |
@@ -456,7 +464,7 @@ squash commit.
 | `system.observer_enabled` | `true` | Host resource probes |
 | `system.watchers_enabled` | `true` | Personal event probes |
 | `autonomy.night_shift` | `false` | Restrict to reversible tasks overnight |
-| `autonomy.interrupt_budget` | `4` | Urgent Telegram pushes/day |
+| `autonomy.interrupt_budget` | `4` | Urgent Telegram pushes/day; mirrored into the shared K3 `BudgetLedger` when present |
 | `learning.auto_promote` | `false` | Auto-promote bench agents |
 | `plugins.<name>` | `true` | Toggle any plugin |
 
@@ -472,10 +480,10 @@ Key env vars loaded at startup:
 ### Testing
 
 - **Framework:** pytest with `asyncio_mode = auto` (see `pytest.ini`) — all `async def test_*` run without decorators.
-- **Test count:** ~2,400 passing tests, 1 skipped (offline suite). *(WorldView, the separate `worldview/` Node stack, has its own CI + test suites — see `worldview/`.)*
+- **Test count:** ~3,480 passing tests, 6 skipped (offline suite). *(WorldView, the separate `worldview/` Node stack, has its own CI + test suites — see `worldview/`.)*
 - **sys.path pattern:** Every test file inserts `repo_root` and `repo_root/agents` at the top. Always use this, not relative imports.
 - **Offline by default:** Tests inject fake backends (e.g. `FakeBackend(LLMBackend)`, `FakeLMStudioClient`). No real network/LLM required.
-- **Orchestrator instantiation trick:** Avoid `Orchestrator(config)` in unit tests (heavy init). Use `Orchestrator.__new__(Orchestrator)` + manual attribute assignment, or mock the heavy dependencies.
+- **Orchestrator instantiation trick:** Avoid `Orchestrator(config)` in ordinary unit tests (heavy init). Use `Orchestrator.__new__(Orchestrator)` + manual attribute assignment, or mock the heavy dependencies. The capability readiness matrix is the deliberate exception: it boots a cached real orchestrator because it is testing registry truth, not a unit seam.
 - **Where new tests go:** `tests/test_<module_name>.py`. Use `conftest.py:make_app` for lightweight FastAPI apps with fallback routes.
 - **Run tests:** `pytest -q` from repo root.
 

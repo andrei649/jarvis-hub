@@ -12,7 +12,10 @@ import { defineConfig, devices } from '@playwright/test';
 const PORT = Number(process.env.E2E_PORT || 8123);
 const BASE = `http://127.0.0.1:${PORT}`;
 // local dev runs the repo venv; CI installs into the system python → override with E2E_PYTHON
-const PY = process.env.E2E_PYTHON || '.venv/bin/python';
+const DEFAULT_PY = process.platform === 'win32'
+  ? '.venv\\Scripts\\python.exe'
+  : '.venv/bin/python';
+const PY = process.env.E2E_PYTHON || DEFAULT_PY;
 const ENV_PREFIX = process.platform === 'win32'
   ? `set JARVIS_PORT=${PORT}&& set JARVIS_LOG_LEVEL=warning&& `
   : `JARVIS_PORT=${PORT} JARVIS_LOG_LEVEL=warning `;

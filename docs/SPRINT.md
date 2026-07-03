@@ -7,16 +7,17 @@
 
 ## Sesiune curentă
 
-**Data:** 2026-06-03 (sesiune docs/roadmap)
-**Lead agent / Conductor:** claude
-**Obiectiv sesiune:** formalizare ORIZONT 13–17 + reconciliere docs roadmap (PR #60)
-**Branch:** `claude/project-status-report-rosXA` (PR #60, ready for review, CI verde)
+**Data:** 2026-07-03 (ORIZONT 25 M1/M2 integration)
+**Lead agent / Conductor:** Codex
+**Obiectiv sesiune:** integrate verified Codex developments toward `main`, then update docs with done vs WIP truth.
+**Branch:** `codex-integrate-verified-developments` (local integration branch; source draft PRs #487–#491)
 
-**Decizie de scope (2026-06-03):** **v1.0.0 = tot backlogul terminat** — H10 + H11 + H12 + H13–H17.
-Frontierele H13–17 sunt formalizate în BACKLOG + MOONSHOT §4; docs reconciliate (README, GO_LIVE_PLAN, STATUS,
-gap-analysis). Fără grabă pe tag, dar nimic nu se sare din gate.
+**Scope decision (2026-07-03):** integrate the already-reviewed local Codex branches in dependency order
+instead of widening backlog scope. M1.1/M1.2/M2.1/M2.3 are treated as verified done once the combined
+targeted suite passes; M2.4 remains **partial** until baseline persistence/live runner exists.
 
-**Sesiune anterioară:** Wave 0 H12 — Securitate P0 + trust indicator + local model UX (`main` @ `050f88a`).
+**Previous session:** ORIZONT 25 current-batch stabilization (`main` @ `e1f1de8`) plus one corrective
+status PR (#491) documenting the six-item batch as a protocol exception.
 
 ---
 
@@ -24,9 +25,11 @@ gap-analysis). Fără grabă pe tag, dar nimic nu se sare din gate.
 
 | Wave | Branch | PR | Status | Agenți | Note |
 |------|--------|----|--------|--------|------|
-| Wave 0 / H12.1 | `claude/h12.1-security` | #55 | ✅ merged | agent-a49c480c3b715fddb | P0 securitate: SecretStore + skill signing + approval split |
-| Wave 0 / H12.10 | `claude/h12.10-mute-indicator` | #53 | ✅ merged | agent-a526fc8bd13e13073 | TrustIndicator HUD (mic + strict-local chips) |
-| Wave 0 / H12.9 | `claude/h12.9-local-model-ux` | #54 | ✅ merged | agent-a227a1aaab3eda740 | Local model browse/switch (LM Studio + Ollama) |
+| M1.1 / K3 budget unification | `codex-m1-1-k3-budget-unification` | #487 | ✅ integrated locally | Codex | Shared `BudgetLedger` dimensions + handler token hook |
+| M1.2 / Action origin threading | `codex-m1-2-action-origin-threading` | #488 | ✅ integrated locally | Codex | Inbound channels bind `Action.origin="inbound"` |
+| M2.3 / OpenAPI type truth | `codex-m2-3-openapi-ts-typegen` | #489 | ✅ integrated locally | Codex | Generated TS schema + CI diff gate |
+| M2.1 / Flow E2E | `codex-m2-1-flow-e2e` | #490 | ✅ integrated locally | Codex | Chat SSE/stop + voice PTT Playwright specs |
+| Status correction | `codex-batch-status-corrections` | #491 | ✅ integrated locally | Codex | M2.4 downgraded to partial; protocol exception recorded |
 
 Status legend: ⏳ in progress · 🟡 draft PR · 🟢 CI green · ✅ merged · 🔴 conflict
 
@@ -34,7 +37,8 @@ Status legend: ⏳ in progress · 🟡 draft PR · 🟢 CI green · ✅ merged �
 
 ## Fișiere blocate (în PR draft activ)
 
-_Niciun PR draft activ. Wave 1 neînceput._
+`codex-integrate-verified-developments` temporarily owns the files touched by #487–#491 until the
+integration PR lands. The source draft PRs should be treated as superseded by this integration pass.
 
 Un fișier blocat nu se atinge de alt agent fără confirmare utilizator.
 
@@ -43,20 +47,16 @@ Un fișier blocat nu se atinge de alt agent fără confirmare utilizator.
 ## Ordine de merge (Wave 1 — de venit)
 
 ```
-Wave 1 (6 agenți, ~27 SP):
-  H10.24 Cost per Trace (5 SP)
-  H9.3b  Dataset Regression (5 SP)
-  H10.5  MCP Server Mode (8 SP)
-  H10.8  Inbound Webhooks (3 SP)
-  H12.2  Onboarding drop-folder (3 SP)
-  H12.4  Wyoming protocol (5 SP)
+Executed order:
+  1. M1.1 K3 budget unification
+  2. M1.2 Action.origin threading
+  3. M2.3 OpenAPI -> TS typegen/diff gate
+  4. M2.1 chat/voice flow E2E
+  5. Status correction / M2.4 honesty note
 ```
 
-Dependențe Wave 1: toate independente față de Wave 0 (pot rula în paralel).
-Merge order recomandat: H12.2 → H12.4 → H10.24 → H9.3b → H10.8 → H10.5
-
-> Wave 1 e încă valid (P1/P2, independent), dar vezi recomandarea de mai jos: dacă deschidem un thread nou
-> de valoare mai mare, **H17 + H14** întrec ca prioritate items-ele de observabilitate din Wave 1.
+Next backlog item after this integration lands: **M3.1 mobile approval queue** unless the owner chooses
+to finish M2.4 persistence/live-runner first.
 
 ---
 
@@ -82,6 +82,15 @@ Generalizează reflecția nocturnă din *rezumă-ziua* în *pre-raționează-pen
 
 ## Checklist post-merge (conductor)
 
+### ORIZONT 25 integration — ÎN CURS
+
+- [x] `main` fetched and integration branch created from `origin/main`
+- [x] Source branches #487–#491 merged locally in dependency order
+- [x] `BACKLOG.md` reconciled: M1.1/M1.2/M2.1/M2.3 ✅, M2.4 🟡 partial
+- [x] `STATUS.md`, `docs/ARCHITECTURE.md`, `docs/design/HUD_V2_REMAINING.md` updated from verified scope
+- [x] Combined targeted verification complete
+- [ ] Integration branch pushed / PR opened or protected-main path completed
+
 ### Wave 0 — COMPLET ✅
 
 - [x] `BACKLOG.md` actualizat (H12.1 ✅, H12.9 ✅, H12.10 ✅)
@@ -103,6 +112,11 @@ Generalizează reflecția nocturnă din *rezumă-ziua* în *pre-raționează-pen
 ## Log sesiune
 
 ```
+[ORIZONT 25] 2026-07-03 — created `codex-integrate-verified-developments` from `origin/main`
+[ORIZONT 25] merged #487 M1.1, #488 M1.2, #489 M2.3, #490 M2.1, #491 status correction locally
+[Docs]        BACKLOG/STATUS/ARCHITECTURE/HUD remaining/SPRINT refreshed: M1.1,M1.2,M2.1,M2.3 done; M2.4 partial
+[Verify]      backend targeted pytest 22 passed; companion eval gate passed 48/48; py_compile passed with cache redirected
+[Verify]      frontend typecheck passed; vitest 155 passed; Playwright Chromium HUD/flow 6 passed after fixing Windows venv path
 [Wave 0] H12.1 dispatched (P0 securitate — anti-OpenClaw differentiator)
 [Wave 0] H12.10 dispatched (trust indicator HUD)
 [Wave 0] H12.9 dispatched (local model UX)
