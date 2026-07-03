@@ -16,8 +16,10 @@ but not yet reality-verified — the shrinking backlog). Both are kept honest by
 they can't go stale.
 
 Scope: this slice covers the static plugin set plus booted component/skill registries.
-The booted fixture is intentionally lightweight for CI, but uses the real Orchestrator
-registrations so a silently-broken component or missing skill row becomes matrix drift.
+The booted fixture is a deliberate exception to the usual lightweight-fixture / __new__
+test convention. It uses the real Orchestrator registrations, cached once per process,
+so a silently-broken component or missing skill row becomes matrix drift. Do not copy
+this pattern into ordinary unit tests.
 
 Re-seed on an intentional change, reviewed in the same PR:
 
@@ -64,7 +66,7 @@ PENDING_VERIFY: set[str] = set()
 
 @lru_cache(maxsize=1)
 def _booted_orchestrator():
-    """Build the minimal real fixture needed for component + skill readiness rows."""
+    """Build the real, cached fixture needed for component + skill readiness rows."""
     from agents.core.config import JarvisConfig
     from agents.core.orchestrator import Orchestrator
 
