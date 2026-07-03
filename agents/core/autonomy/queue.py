@@ -251,7 +251,11 @@ class TaskQueue:
         return [_row_to_task(r) for r in rows]
 
     def pending_decisions(self, only_unpushed: bool = False, limit: int = 100) -> list[Task]:
-        clause = "status='blocked'"
+        # O26-P0.7 (F3): a 'proposed' task also awaits a human decision
+        # (PROPOSED -> APPROVED is a legal apply_decision transition) — before
+        # this, broker-originated proposals never appeared in the decision
+        # inbox (Telegram or HUD), only in the raw task list.
+        clause = "status IN ('blocked','proposed')"
         if only_unpushed:
             clause += " AND pushed=0"
         with self._lock:

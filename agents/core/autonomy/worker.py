@@ -90,7 +90,8 @@ class InterruptBudget:
 class AutonomyWorker:
     def __init__(self, queue: TaskQueue, policy: Optional[AutonomyPolicy] = None,
                  executor: Optional[Executor] = None, notifier: Optional[Notifier] = None,
-                 budget: Optional[InterruptBudget] = None, audit=None, prefs=None):
+                 budget: Optional[InterruptBudget] = None, audit=None, prefs=None,
+                 kill_switch=None):
         self.queue = queue
         self.policy = policy or AutonomyPolicy()
         self.executor = executor
@@ -98,6 +99,68 @@ class AutonomyWorker:
         self.budget = budget or InterruptBudget()
         self.audit = audit
         self.prefs = prefs
+        # O26-P0.7 (F3): the executor seam honors the global kill-switch
+        # KERNEL-INDEPENDENTLY — before this, engaging the halt did not stop an
+        # already-approved broker task from executing on a default install.
+        self._kill_switch = kill_switch
+
+    def _halted(self) -> bool:
+        if self._kill_switch is None:
+            try:
+                from ..security.capability import KillSwitch
+                self._kill_switch = KillSwitch()
+            except Exception:
+                return False
+        try:
+            return bool(self._kill_switch.is_halted())
+        except Exception:
+            return False
+
+    # O26-P0.7 (F3): the governed intake brokers use as their enqueue sink.
+    # Before this, social/writeback/call/node/tool-rpc proposals went straight
+    # to TaskQueue.enqueue as status='proposed' — bypassing the risk policy
+    # (AUTO/ASK/OFF dial + money caps) AND invisible to the decision inbox
+    # (pending_decisions filtered status='blocked' only).
+    _LEVEL_RANK = {ACT: 0, NOTIFY: 1, ASK: 2}
+
+    def govern_enqueue(self, agent: str, kind: str, title: str, payload: dict = None,
+                       risk_tier: int = 2, autonomy_level: str = ASK,
+                       origin: str = "generated") -> int:
+        """Sync governed intake (drop-in for ``TaskQueue.enqueue``).
+
+        Runs ``policy.decide`` and applies the STRICTER of the caller's
+        requested level and the policy outcome (a broker's always-ask can
+        never be weakened; a kernel-granted ``act`` can still be tightened
+        by the policy's money caps). ``ask`` tasks land BLOCKED so they enter
+        the decision inbox; the Telegram push is best-effort (scheduled when
+        an event loop is running, else the card waits in the inbox).
+        """
+        payload = payload or {}
+        decision = self.policy.decide({"kind": kind, **payload})
+        rank = self._LEVEL_RANK
+        effective = autonomy_level if rank.get(autonomy_level, 2) >= rank.get(
+            decision.outcome, 2) else decision.outcome
+        tier = max(int(risk_tier), int(decision.tier))
+        task_id = self.queue.enqueue(
+            agent=agent, kind=kind, title=title, payload=payload,
+            risk_tier=tier, autonomy_level=effective, origin=origin,
+        )
+        if effective in (ACT, NOTIFY):
+            task = self.queue.transition(
+                task_id, TaskStatus.APPROVED,
+                decided_by="policy", decision=f"auto-{effective}",
+            )
+            self._audit("autonomy.auto_approve", task, decision.reason)
+            return task_id
+        task = self.queue.transition(
+            task_id, TaskStatus.BLOCKED, decided_by="policy", decision="needs-approval",
+        )
+        try:
+            import asyncio
+            asyncio.get_running_loop().create_task(self._maybe_push(task))
+        except RuntimeError:
+            logger.debug("no running loop — decision card waits in the inbox")
+        return task_id
 
     # ── intake ────────────────────────────────────────────────────
     async def submit(self, agent: str, kind: str, title: str,
@@ -150,6 +213,12 @@ class AutonomyWorker:
         to batch only reversible/read-only work (max_tier=1).
         """
         ran = done = failed = 0
+        # O26-P0.7 (F3): an engaged kill-switch stops execution at THIS seam,
+        # kernel-independently — approved tasks stay approved (nothing is lost)
+        # and run on the first tick after release.
+        if self._halted():
+            logger.warning("kill-switch engaged — autonomy tick skipped (tasks held)")
+            return {"ran": 0, "done": 0, "failed": 0, "halted": True}
         for task in self.queue.runnable(limit=limit, max_tier=max_tier):
             ran += 1
             self.queue.transition(task.id, TaskStatus.RUNNING)
