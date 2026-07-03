@@ -140,6 +140,16 @@ class AutonomyCoordinator:
             except Exception as e:
                 logger.warning(f"Autonomy tick failed: {e}")
 
+    def _governed_enqueue(self, *args, **kwargs) -> int:
+        """O26-P0.7 (F3): broker proposals go through the worker's governed
+        intake (risk policy + decision inbox + best-effort push) instead of
+        raw TaskQueue.enqueue. Falls back to the raw queue only if the worker
+        is somehow absent (fail-safe: the task is still persisted)."""
+        worker = getattr(self._orch, "autonomy", None)
+        if worker is not None and hasattr(worker, "govern_enqueue"):
+            return worker.govern_enqueue(*args, **kwargs)
+        return self._orch.autonomy_queue.enqueue(*args, **kwargs)
+
     def build_executor(self) -> TaskExecutor:
         """Wire task kinds to real capabilities, degrading gracefully."""
         async def _research(task):
@@ -204,7 +214,7 @@ class AutonomyCoordinator:
 
         from .writeback import WriteBackBroker
         self._orch.writeback = WriteBackBroker(
-            enqueue=self._orch.autonomy_queue.enqueue,
+            enqueue=self._governed_enqueue,  # O26-P0.7 (F3): policy + inbox
             secret_broker=getattr(self._orch, "secret_broker", None),
             audit=getattr(self._orch, "audit", None),
             kernel=_action_kernel,
@@ -216,7 +226,7 @@ class AutonomyCoordinator:
         # at action time (behind approval) and post via an injectable client.
         from .social import SocialBroker
         self._orch.social = SocialBroker(
-            enqueue=self._orch.autonomy_queue.enqueue,
+            enqueue=self._governed_enqueue,  # O26-P0.7 (F3): policy + inbox
             secret_broker=getattr(self._orch, "secret_broker", None),
             audit=getattr(self._orch, "audit", None),
             kernel=_action_kernel,
@@ -233,7 +243,7 @@ class AutonomyCoordinator:
         except Exception:
             _call_cfg = {}
         self._orch.call_broker = CallBroker(
-            enqueue=self._orch.autonomy_queue.enqueue,
+            enqueue=self._governed_enqueue,  # O26-P0.7 (F3): policy + inbox
             secret_broker=getattr(self._orch, "secret_broker", None),
             audit=getattr(self._orch, "audit", None),
             budget=getattr(self._orch.autonomy, "budget", None),
@@ -250,7 +260,7 @@ class AutonomyCoordinator:
         self._orch.node_mesh = NodeMesh(
             capability_broker=getattr(self._orch, "capabilities", None),
             kill_switch=getattr(self._orch, "kill_switch", None),
-            enqueue=self._orch.autonomy_queue.enqueue,
+            enqueue=self._governed_enqueue,  # O26-P0.7 (F3): policy + inbox
             audit=getattr(self._orch, "audit", None),
             kernel=_action_kernel,
         )
@@ -264,7 +274,7 @@ class AutonomyCoordinator:
         import time as _t
         self._orch.tool_rpc = ToolRPCServer(
             secret_broker=getattr(self._orch, "secret_broker", None),
-            enqueue=self._orch.autonomy_queue.enqueue,
+            enqueue=self._governed_enqueue,  # O26-P0.7 (F3): policy + inbox
             audit=getattr(self._orch, "audit", None),
             kernel=_action_kernel,   # ORIZONT-24 wave-3: mediate gated tools (default-off)
         )
