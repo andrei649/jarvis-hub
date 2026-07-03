@@ -37,11 +37,18 @@ _SENTINEL = _FakeBackend()
 
 
 def _make_router() -> HybridRouter:
-    """Return a HybridRouter pre-configured as if local backend was detected."""
+    """Return a HybridRouter pre-configured as if local backend was detected.
+
+    O26-P0.5 (F5): the deep slot now requires EVIDENCE the deep model is
+    actually served — these tests exercise the escalation LOGIC, so the
+    fixture supplies that evidence; the no-evidence fall-through is pinned
+    by tests/test_o26_f5_deep_probe.py.
+    """
     r = HybridRouter()
     r._local_available = True
     r._backend = _SENTINEL
     r._local_model = "fast-model"
+    r._served_models = {DEFAULT_DEEP_MODEL}
     return r
 
 
