@@ -142,6 +142,22 @@ DEFAULTS: list[dict[str, Any]] = [
     dict(category="memory",  key="context_compression", value=False,              label="Compress long context (hot path)", kind="toggle"),
     dict(category="memory",  key="compression_max_tokens", value=2000,            label="Context compression budget (tokens)", kind="number"),
     dict(category="memory",  key="persist",          value=True,                  label="Persist to disk",    kind="toggle"),
+    # O26-P0.3 (F2): long-term recall was read via get_setting but never seeded,
+    # so it could not be enabled from the admin UI at all (put_category refuses
+    # unknown keys). Default stays OFF — the Product Posture / onboarding
+    # consent step (O26-P2.4) is what flips it deliberately.
+    dict(category="memory",  key="recall_enabled",   value=False,                 label="Long-term recall in prompts", kind="toggle"),
+    dict(category="memory",  key="recall_top_k",     value=5,                     label="Recall hits per prompt", kind="number"),
+    # O26-P0.3 (F2): the H21 cognition subsystem read cognition.* flags that were
+    # never seeded — un-toggleable from the product. Master OFF (default-off
+    # discipline); sub-flags ON so flipping the single master wakes the layer
+    # (sub_enabled = master AND sub, agents/core/cognition/facade.py).
+    dict(category="cognition", key="enabled",             value=False, label="Cognition master switch (H21)", kind="toggle"),
+    dict(category="cognition", key="honesty_enabled",     value=True,  label="Honesty / anti-sycophancy axis", kind="toggle"),
+    dict(category="cognition", key="affect_enabled",      value=True,  label="Persona mood (affect)",          kind="toggle"),
+    dict(category="cognition", key="memory_enabled",      value=True,  label="Living memory",                  kind="toggle"),
+    dict(category="cognition", key="learning_enabled",    value=True,  label="Cognition learning loop",        kind="toggle"),
+    dict(category="cognition", key="personality_enabled", value=True,  label="Personality ensemble",           kind="toggle"),
     # channels
     dict(category="channels",key="rate_limit",       value=10,                    label="Gateway rate limit (msg/min)", kind="number"),
     dict(category="channels",key="web_enabled",      value=True,                  label="Web channel",        kind="toggle"),
@@ -396,6 +412,20 @@ def put_category(cat: str, data: dict[str, Any]) -> tuple[int, list[str]]:
         if cur.fetchone():
             stored = _encrypt_if_secret(key, value)
             conn.execute("UPDATE settings SET value=? WHERE category=? AND key=?", (json.dumps(stored), cat, key))
+            updated += 1
+            continue
+        # O26-P0.3 (F2): a key that is part of the shipped DEFAULTS spec but has
+        # no row yet (e.g. a DB created before the key existed and not re-inited)
+        # is UPSERTED with the spec's kind/label — never lost. Keys outside the
+        # spec stay rejected (no arbitrary-row injection through the admin API).
+        spec = next((r for r in DEFAULTS if r["category"] == cat and r["key"] == key), None)
+        if spec is not None:
+            stored = _encrypt_if_secret(key, value)
+            conn.execute(
+                "INSERT INTO settings (category, key, value, label, kind, opts) VALUES (?,?,?,?,?,?)",
+                (cat, key, json.dumps(stored), spec["label"], spec["kind"],
+                 json.dumps(spec.get("opts", []))),
+            )
             updated += 1
         else:
             skipped.append(key)

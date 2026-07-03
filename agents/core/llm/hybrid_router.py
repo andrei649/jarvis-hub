@@ -249,6 +249,23 @@ class HybridRouter(LLMRouter):
         except Exception:
             return default
 
+    def _deep_model_available(self) -> bool:
+        """Evidence that the deep slot is real (O26-P0.5 / finding F5).
+
+        Before this gate, ANY prompt containing a heavy keyword ("analyze",
+        "strategy", ...) rerouted an auto agent to the hardcoded deep model —
+        which a default one-model install doesn't have loaded, turning common
+        words into invisible latency/failures. Escalate only on evidence:
+        (1) the owner explicitly pinned a deep model via JARVIS_DEEP_MODEL
+        (deliberate intent — honored even if the listing hasn't refreshed), or
+        (2) the live backend's served-model listing contains the deep model.
+        """
+        if os.environ.get("JARVIS_DEEP_MODEL"):
+            return True
+        served = getattr(self, "_served_models", None) or set()
+        deep = DEFAULT_DEEP_MODEL.lower()
+        return any(deep in m.lower() or m.lower() in deep for m in served)
+
     async def detect(self):
         # Resolve the connectivity knobs (/admin) before probing so the base
         # detect() honors them: backend pin + URLs.
@@ -356,8 +373,10 @@ class HybridRouter(LLMRouter):
             return backend, model, route
 
         # Deep-think agents: same LM Studio backend, different model slot (DDR5).
-        # Only when local is available; falls through to normal routing otherwise.
-        if agent_id in DEEP_THINK_AGENTS and self._local_available:
+        # Only when local is available AND the deep model is actually there
+        # (O26-P0.5/F5); falls through to normal routing otherwise.
+        if (agent_id in DEEP_THINK_AGENTS and self._local_available
+                and self._deep_model_available()):
             return self._backend, DEFAULT_DEEP_MODEL, "local-deep"
 
         policy = self.get_agent_policy(agent_id)
@@ -410,7 +429,7 @@ class HybridRouter(LLMRouter):
         # This only applies here (token_count <= local threshold path) because
         # oversized prompts already spill to cloud via the branches below.
         if token_count <= self._local_max and self._local_available:
-            if AUTO_DEEP_ENABLED and is_heavy_request(prompt):
+            if AUTO_DEEP_ENABLED and self._deep_model_available() and is_heavy_request(prompt):
                 logger.debug(
                     "Complexity escalation: routing %s to deep slot (local-deep)", agent_id
                 )

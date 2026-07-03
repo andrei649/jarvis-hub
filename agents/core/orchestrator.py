@@ -922,6 +922,7 @@ class Orchestrator:
         # Pre-bind so the post-loop persist/audit never hit UnboundLocalError when
         # `target` is empty (e.g. _route_candidates returns nothing).
         agent_id = None
+        route_name = ""
         t_s0 = time.perf_counter()
         for agent_id in target:
             if agent_id in self.agents:
@@ -1039,6 +1040,15 @@ class Orchestrator:
                 on_token(synthesized)
         await self.memory.add_turn(self.session_id, "assistant", synthesized, agent_id=agent_id)
         await self._maybe_checkpoint()
+        # O26-P0.2 (F1): the streaming path — the HUD's primary surface — must feed
+        # the same per-turn record seam as handle_input, or web chat produces no KG
+        # ingest, entity extraction, learning/bench records, or run-history (and the
+        # %-local metric silently excludes the main channel).
+        _stream_responses = {agent_id: synthesized} if agent_id else {}
+        await asyncio.to_thread(self._log_session, text, intent, _stream_responses, synthesized)
+        await asyncio.to_thread(
+            self._record_interactions, text, _stream_responses, synthesized, route_name, channel
+        )
         _event_stream = SecurityEvent(
             event_type=SecurityEventType.LLM_CALL,
             timestamp=time.time(),

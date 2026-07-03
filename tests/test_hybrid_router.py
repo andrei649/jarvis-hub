@@ -11,7 +11,7 @@ sys.path.insert(0, str(repo_root / "agents"))
 
 from core.llm.tokenizer import estimate_tokens, estimate_messages
 from core.llm.hybrid_router import (
-    HybridRouter, POLICY_LOCAL, POLICY_CLOUD, POLICY_CLAUDE, POLICY_AUTO,
+    DEFAULT_DEEP_MODEL, HybridRouter, POLICY_LOCAL, POLICY_CLOUD, POLICY_CLAUDE, POLICY_AUTO,
     LOCAL_ONLY_AGENTS, CLOUD_ONLY_AGENTS, CLAUDE_AGENTS, LOCAL_MAX_TOKENS,
     FLASH_MAX_TOKENS,
 )
@@ -187,8 +187,11 @@ def test_select_backend_local_only_policy_local(monkeypatch):
     router = HybridRouter()
     router._local_available = True
     router._backend = FakeBackend()
+    # O26-P0.5 (F5): the deep slot needs EVIDENCE the model is actually served —
+    # a deep-think agent on a box without it falls through to normal routing.
+    router._served_models = {DEFAULT_DEEP_MODEL}
     backend, model, route = router.select_backend("frigga", "hello")
-    # frigga is a deep-think agent — routes to local-deep slot
+    # frigga is a deep-think agent — routes to local-deep slot (model present)
     assert route == "local-deep"
 
 

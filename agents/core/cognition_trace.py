@@ -91,6 +91,9 @@ def update_cognition(orch, text, intent, plugin_data, synthesized,
             trace_dict = {
                 "channel": getattr(orch, "_last_channel", "unknown"),
                 "text_preview": (text or "")[:120],
+                # O26-P0.4 (F4): the assistant reply, so response-quality axes
+                # (honesty/sycophancy, non-empty, no-error) score the OUTPUT.
+                "output_preview": (synthesized or "")[:240],
                 "intent": decision.get("source", ""),
                 "route": agents_selected[0] if agents_selected else "",
                 "agents": agents_selected,
@@ -121,8 +124,15 @@ def update_cognition(orch, text, intent, plugin_data, synthesized,
                     if cog is not None and cog.sub_enabled("honesty_enabled"):
                         hm = cog.module("honesty")
                         if hm is not None:
-                            _txt = trace_dict.get("text_preview") or trace_dict.get("output_preview") or ""
-                            trace_dict["honesty"] = hm.score_response(_txt, trace_id=trace_dict.get("id", ""))
+                            # O26-P0.4 (F4): sycophancy is a property of the REPLY,
+                            # not the user's message — score output, pass input as
+                            # context. (Was scoring text_preview = the user's text.)
+                            _reply = trace_dict.get("output_preview") or ""
+                            trace_dict["honesty"] = hm.score_response(
+                                _reply,
+                                user_msg=trace_dict.get("text_preview", ""),
+                                trace_id=trace_dict.get("id", ""),
+                            )
                     # H10.25: auto-flag low-scoring traces for human review.
                     if getattr(orch, "review_queue", None) is not None:
                         orch.review_queue.auto_flag(trace_dict, q.get("score"), orch.quality.threshold)
