@@ -162,7 +162,12 @@ class AutonomyCoordinator:
             _task_budget = None
         if _task_budget is not None and _task_budget <= 0:
             _task_budget = None
-        executor = TaskExecutor(fallback=_llm, max_wall_seconds=_task_budget)
+        _budget_ledger = getattr(self._orch, "budget_ledger", None)
+        executor = TaskExecutor(
+            fallback=_llm,
+            max_wall_seconds=_task_budget,
+            budget_ledger=_budget_ledger,
+        )
         for kw in ("research", "search", "monitor", "scan", "lookup", "check"):
             executor.register(kw, _research)
         for kw in ("summarize", "analyze", "review", "draft", "plan", "prepare"):
@@ -192,7 +197,10 @@ class AutonomyCoordinator:
         # egress omit it (they legitimately repeat the same action.kind and would false-trip).
         from .kernel.binding import make_action_kernel
         _action_kernel = make_action_kernel(
-            self._orch, loop_detector=getattr(self._orch, "loop_detector", None))
+            self._orch,
+            loop_detector=getattr(self._orch, "loop_detector", None),
+            budget_ledger=_budget_ledger,
+        )
 
         from .writeback import WriteBackBroker
         self._orch.writeback = WriteBackBroker(
@@ -231,6 +239,7 @@ class AutonomyCoordinator:
             budget=getattr(self._orch.autonomy, "budget", None),
             config=_call_cfg,
             kernel=_action_kernel,
+            ledger=_budget_ledger,
         )
         executor.register("call", self._orch.call_broker.execute)
 

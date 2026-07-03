@@ -63,7 +63,7 @@ def make_budget_ledger(config: dict | None = None, *, env=None) -> BudgetLedger 
         max_tokens=max_tokens, max_wall_seconds=max_wall, max_depth=max_depth))
 
 
-def make_action_kernel(orch, *, loop_detector=None):
+def make_action_kernel(orch, *, loop_detector=None, budget_ledger=None):
     """Return a bound ``kernel.authorize`` (a ``functools.partial``) for *orch*, or
     ``None`` if no autonomy policy is reachable (brokers then run kernel-less).
 
@@ -72,6 +72,9 @@ def make_action_kernel(orch, *, loop_detector=None):
     path). Route/egress callers omit it, because the breaker keys on ``action.kind`` and
     those paths legitimately repeat the same kind (many egress calls / KG writes) and
     would false-trip. ``None`` → the breaker is inert (K1 behavior).
+
+    ``budget_ledger`` is likewise optional; callers that supply it share one K3 budget
+    view across brokers/executors while callers that omit it remain byte-identical.
 
     The import of ``authorize`` is local so this module stays cheap and cycle-free
     (a broker importing ``binding`` must not pull the whole kernel/autonomy graph).
@@ -89,6 +92,7 @@ def make_action_kernel(orch, *, loop_detector=None):
         policy=pol,
         audit=getattr(orch, "intent_log", None),
         loop_detector=loop_detector,
+        budget_ledger=budget_ledger,
     )
 
 

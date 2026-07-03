@@ -114,12 +114,14 @@ class MissionEvent:
 
 
 class MissionStore:
-    def __init__(self, db_path: Optional[str] = None, artifact_root: Optional[str] = None):
+    def __init__(self, db_path: Optional[str] = None, artifact_root: Optional[str] = None,
+                 *, ledger=None):
         if db_path is None:
             DEFAULT_DB.parent.mkdir(parents=True, exist_ok=True)
             db_path = str(DEFAULT_DB)
         self.db_path = db_path
         self._artifact_root = Path(artifact_root) if artifact_root else _ARTIFACT_ROOT
+        self._ledger = ledger
         self._conn: Optional[sqlite3.Connection] = None
         self._lock = threading.Lock()
 
@@ -164,6 +166,21 @@ class MissionStore:
         if self._conn:
             self._conn.close()
             self._conn = None
+
+    def _sync_budget_dimension(self, mission: Mission) -> None:
+        if self._ledger is None:
+            return
+        setter = getattr(self._ledger, "set_dimension_usage", None)
+        if setter is None:
+            return
+        setter(
+            "mission.steps",
+            mission.steps_used,
+            limit=mission.max_steps,
+            unit="steps",
+            enforced=False,
+            metadata={"mission_id": mission.id, "status": mission.status},
+        )
 
     # ── writes ────────────────────────────────────────────────────
     def create(self, title: str, goal: str = "", plan: Optional[list[str]] = None,
@@ -301,7 +318,10 @@ class MissionStore:
     def get(self, mission_id: int) -> Optional[Mission]:
         with self._lock:
             row = self._conn.execute("SELECT * FROM missions WHERE id=?", (mission_id,)).fetchone()
-        return _row_to_mission(row) if row else None
+        mission = _row_to_mission(row) if row else None
+        if mission is not None:
+            self._sync_budget_dimension(mission)
+        return mission
 
     def list(self, status: Optional[str] = None, limit: int = 100) -> list[Mission]:
         clause, params = "", []
@@ -312,7 +332,10 @@ class MissionStore:
             rows = self._conn.execute(
                 f"SELECT * FROM missions {clause} ORDER BY id DESC LIMIT ?", params
             ).fetchall()
-        return [_row_to_mission(r) for r in rows]
+        missions = [_row_to_mission(r) for r in rows]
+        for mission in missions:
+            self._sync_budget_dimension(mission)
+        return missions
 
     def events(self, mission_id: int, limit: int = 200) -> list[MissionEvent]:
         with self._lock:

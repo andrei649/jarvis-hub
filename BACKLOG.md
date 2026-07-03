@@ -14,7 +14,7 @@
 ```bash
 pip install -r requirements-beta.txt
 python -m uvicorn agents.web:app --host 127.0.0.1 --port 8080
-python -m pytest tests/ -v          # ~3,466 passed, 6 skipped (counter synced via scripts/status_sync.py)
+python -m pytest tests/ -v          # ~3,472 passed, 6 skipped (counter synced via scripts/status_sync.py)
 ```
 
 > Singurul skip rămas e heartbeat-ul opțional. (Vechiul `tests/test_spotify.py` cu 8 skip-uri a
@@ -315,7 +315,7 @@ the syscall table · budgets = the scheduler · kill-switch/quarantine = a sysca
 
 | # | Item | S | Status |
 |---|------|---|--------|
-| M1.1 | **K3 budget unification** — named dimensions on `kernel/budget.py:BudgetLedger`; `InterruptBudget` becomes a view; payment/mission caps registered as observed dimensions; handler `tokens_used` hook | 5 | open |
+| M1.1 | **K3 budget unification** — named dimensions on `kernel/budget.py:BudgetLedger`; `InterruptBudget` becomes a view; payment/mission caps registered as observed dimensions; handler `tokens_used` hook | 5 | ✅ done (2026-07-03) — `BudgetLedger` now exposes named dimensions/status and kernel denial for enforced overages; `InterruptBudget` is a ledger-backed view; payments/mission caps publish observed dimensions without replacing their existing denials; `TaskExecutor` reports handler `tokens_used`; action-kernel binding can carry the shared ledger. `tests/test_k3_budget_unification.py` (+6). |
 | M1.2 | **`Action.origin` channel threading** — `Gateway.route → channel_handler →` per-turn ContextVar → brokers; inbound channels = `origin="inbound"` → kernel GRANT→QUEUE (the honest TASK-3 channel backstop) | 5 | open |
 | M1.3 | **V3 components/skills readiness coverage** — booted-fixture records in `test_capability_readiness_matrix` (today: plugins only, 33 records) | 3 | ✅ done (2026-07-03) — matrix now boots the real orchestrator + skill loader, snapshots 70 capability records (33 plugin / 24 component / 13 skill), and explicitly classifies the manifest-only `skill:Weather Intel` SEAM row. |
 | M1.4 | **LIVE/SEED chip rollout** — `PanelChip` (`gap.tsx:28`) onto the ~25 remaining Console panels (mechanical) | 2 | ✅ done (2026-07-03) — every Console `Card` now declares a `live`/`seed` signal (58/58), guarded by `panel-chip-coverage.test.ts`; opt-in surfaces use SEED when disabled. |

@@ -23,13 +23,15 @@ Handler = Callable[[object], Awaitable[dict]]
 
 class TaskExecutor:
     def __init__(self, fallback: Optional[Handler] = None,
-                 max_wall_seconds: Optional[float] = None):
+                 max_wall_seconds: Optional[float] = None,
+                 budget_ledger=None):
         self._handlers: dict[str, Handler] = {}
         self.fallback = fallback
         # K3 (OWASP unbounded-consumption): a per-task wall-time budget. None = unbounded
         # (the default → byte-identical behavior); set via JARVIS_TASK_MAX_SECONDS at the
         # worker. A task that overruns is cancelled and returns a clean failed result.
         self.max_wall_seconds = max_wall_seconds
+        self.budget_ledger = budget_ledger
 
     def register(self, prefix: str, handler: Handler) -> "TaskExecutor":
         """Register a handler for any task kind starting with `prefix`."""
@@ -59,4 +61,14 @@ class TaskExecutor:
                         "budget_seconds": self.max_wall_seconds}
         else:
             result = await handler(task)
-        return result if isinstance(result, dict) else {"status": "ok", "output": result}
+        result = result if isinstance(result, dict) else {"status": "ok", "output": result}
+        self._record_tokens(result)
+        return result
+
+    def _record_tokens(self, result: dict) -> None:
+        if self.budget_ledger is None or "tokens_used" not in result:
+            return
+        try:
+            self.budget_ledger.add_tokens(result["tokens_used"])
+        except (TypeError, ValueError):
+            logger.debug("task token usage was not numeric: %r", result.get("tokens_used"))

@@ -136,7 +136,9 @@ class Orchestrator:
         # Set eagerly (trivial in-memory) so it's present before autonomy wiring; bound
         # ONLY into the broker-mediated kernel (the agent action path) — never routes/egress.
         from .kernel.budget import LoopDetector
+        from .kernel.binding import make_budget_ledger
         self.loop_detector = LoopDetector()
+        self.budget_ledger = make_budget_ledger()
 
         def _capabilities():
             m = importlib.import_module(".security.capability", "agents.core")
@@ -281,7 +283,7 @@ class Orchestrator:
         # plan, budget, pause/resume, on-disk artifacts + an append-only event
         # audit trail. Independent of the task queue (a mission can span many
         # tasks/turns and survive restarts).
-        self.missions = MissionStore()
+        self.missions = MissionStore(ledger=self.budget_ledger)
         # /admin → autonomy.cap_per_action / daily_ceiling / interrupt_budget.
         # These were dataclass defaults (50/200/4); live-resynced each tick by the
         # autonomy coordinator (like autonomy.mode).
@@ -293,7 +295,10 @@ class Orchestrator:
                 daily_ceiling=float(_gv("autonomy", "daily_ceiling", 200.0)),
             ),
             prefs=self.autonomy_prefs,
-            budget=InterruptBudget(per_day=int(_gv("autonomy", "interrupt_budget", 4))),
+            budget=InterruptBudget(
+                per_day=int(_gv("autonomy", "interrupt_budget", 4)),
+                ledger=self.budget_ledger,
+            ),
         )
         # Proactive OS Observer — the trigger layer that feeds the queue.
         self.observer: Optional[ProactiveObserver] = None
