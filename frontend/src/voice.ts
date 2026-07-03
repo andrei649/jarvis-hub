@@ -10,10 +10,10 @@
    HONESTY: it degrades loudly, never fakes. No mic permission, no local STT installed,
    or an unsupported browser → a clear status/error, not a pretend transcript.
 
-   Verified by typecheck/build only — live mic/audio needs a real browser + device,
-   which a headless CI container can't provide. Auto barge-in (interrupt the spoken
-   reply by talking over it) is OPT-IN and default-off (EXPERIMENTAL): it relies on the
-   mic's echo cancellation, so it needs on-device tuning to avoid the assistant cutting
+   Covered by jsdom state-machine tests with mocked browser audio APIs; live mic/audio
+   still needs a real browser + device. Auto barge-in (interrupt the spoken reply by
+   talking over it) is OPT-IN and default-off (EXPERIMENTAL): it relies on the mic's
+   echo cancellation, so it needs on-device tuning to avoid the assistant cutting
    itself off. With it off, tap the mic to cut a reply short. */
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { getToken } from './api/client';

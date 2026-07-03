@@ -55,7 +55,7 @@ async def test_tts_engine_cloning_fallbacks():
     import agents.core.voice.tts as tts_module
     from agents.core.voice.tts import TTSEngine
 
-    engine = TTSEngine()
+    engine = TTSEngine(consent_getter=lambda: True)
 
     # HAS_EDGE must be True so speak() reaches _speak_edge after xtts returns None
     with patch.object(tts_module, "HAS_EDGE", True), \
@@ -85,7 +85,7 @@ async def test_tts_engine_elevenlabs_no_key_fallback():
         mock_edge.assert_called_once()
 
 
-# ── Sentence-level streaming (H5.16) ─────────────────────────────
+# ── Sentence-level streaming (H5.16) ────────────────────────────
 
 @pytest.mark.asyncio
 async def test_speak_stream_yields_per_sentence():
