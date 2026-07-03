@@ -55,7 +55,7 @@ async def test_tts_engine_cloning_fallbacks():
     import agents.core.voice.tts as tts_module
     from agents.core.voice.tts import TTSEngine
 
-    engine = TTSEngine()
+    engine = TTSEngine(consent_getter=lambda: True)
 
     # HAS_EDGE must be True so speak() reaches _speak_edge after xtts returns None
     with patch.object(tts_module, "HAS_EDGE", True), \
