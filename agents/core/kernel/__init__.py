@@ -23,7 +23,7 @@ from enum import StrEnum
 
 from ..security.capability import authorize as _capability_authorize
 from ..security.taint import is_tainted, is_untrusted_source
-from .budget import BudgetLedger, BudgetLimits, LoopDetector
+from .budget import BudgetDimension, BudgetLedger, BudgetLimits, LoopDetector
 from .flags import kernel_enabled
 from .metrics import KERNEL_METRICS
 
@@ -34,7 +34,7 @@ from .metrics import KERNEL_METRICS
 
 __all__ = [
     "Verdict", "Action", "Capability", "Budget", "Decision",
-    "BudgetLimits", "BudgetLedger", "LoopDetector",
+    "BudgetLimits", "BudgetDimension", "BudgetLedger", "LoopDetector",
     "authorize", "kernel_enabled", "TOKEN_MANDATORY_KINDS",
 ]
 
