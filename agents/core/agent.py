@@ -94,15 +94,13 @@ class Agent:
             max_tokens, deep_max, temperature = 2048, 8192, 0.7
         return (deep_max if route_name == "local-deep" else max_tokens), temperature
 
-    async def process(self, text: str, context: dict) -> str:
-        system_prompt = self.soul.get("content", "")
+    def default_model(self) -> str:
         model = self.config.get("model", "google/gemma-4-31b-a4b")
         if self.id == "howard" and hasattr(self.llm_router, 'get_howard_model'):
             model = self.llm_router.get_howard_model()
+        return model
 
-        if not self.llm_router:
-            return f"[{self.name} no LLM backend]"
-
+    def build_prompt(self, text: str, context: dict) -> str:
         agent_context = context.get("agent_context", {})
         agent_block = ""
         if agent_context:
@@ -133,7 +131,7 @@ class Agent:
             except Exception as e:
                 logger.warning(f"Howard RAG lookup failed: {e}")
 
-        prompt = (
+        return (
             f"{skills_block}{agent_block}{rag_block}"
             f"User said: {text}\n"
             f"Respond as {self.name}.\n\n"
@@ -142,6 +140,15 @@ class Agent:
             f"to save it as a reusable skill. "
             f"You can also hand off to another agent with '[handoff:agent_id]'."
         )
+
+    async def process(self, text: str, context: dict) -> str:
+        system_prompt = self.soul.get("content", "")
+        model = self.default_model()
+
+        if not self.llm_router:
+            return f"[{self.name} no LLM backend]"
+
+        prompt = self.build_prompt(text, context)
 
         res = self.llm_router.select_backend(self.id, prompt)
         route_name = ""

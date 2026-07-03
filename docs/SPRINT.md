@@ -7,17 +7,17 @@
 
 ## Sesiune curentă
 
-**Data:** 2026-07-03 (ORIZONT 25 M1/M2 integration)
+**Data:** 2026-07-04 (ORIZONT 26 P1.1 one-turn pipeline)
 **Lead agent / Conductor:** Codex
-**Obiectiv sesiune:** integrate verified Codex developments toward `main`, then update docs with done vs WIP truth.
-**Branch:** `codex-integrate-verified-developments` (local integration branch; source draft PRs #487–#491)
+**Obiectiv sesiune:** continue the ORIZONT 26 plan autonomously after P0 completion; deliver P1.1 as one focused PR with docs/status kept current.
+**Branch:** `codex-o26-p1-1-one-turn-pipeline`
 
-**Scope decision (2026-07-03):** integrate the already-reviewed local Codex branches in dependency order
-instead of widening backlog scope. M1.1/M1.2/M2.1/M2.3 are treated as verified done once the combined
-targeted suite passes; M2.4 remains **partial** until baseline persistence/live runner exists.
+**Scope decision (2026-07-04):** O26-P0.7 was already done on `main`, so the next unblocked plan item is
+O26-P1.1. Keep it one item = one PR: no mobile approval queue, posture, HUD breadth, or config
+consolidation in this branch.
 
-**Previous session:** ORIZONT 25 current-batch stabilization (`main` @ `e1f1de8`) plus one corrective
-status PR (#491) documenting the six-item batch as a protocol exception.
+**Previous session:** O26-P0.1 golden harness was merged via #496, with P0.2–P0.7 already completed on
+main by parallel agents.
 
 ---
 
@@ -25,11 +25,7 @@ status PR (#491) documenting the six-item batch as a protocol exception.
 
 | Wave | Branch | PR | Status | Agenți | Note |
 |------|--------|----|--------|--------|------|
-| M1.1 / K3 budget unification | `codex-m1-1-k3-budget-unification` | #487 | ✅ integrated locally | Codex | Shared `BudgetLedger` dimensions + handler token hook |
-| M1.2 / Action origin threading | `codex-m1-2-action-origin-threading` | #488 | ✅ integrated locally | Codex | Inbound channels bind `Action.origin="inbound"` |
-| M2.3 / OpenAPI type truth | `codex-m2-3-openapi-ts-typegen` | #489 | ✅ integrated locally | Codex | Generated TS schema + CI diff gate |
-| M2.1 / Flow E2E | `codex-m2-1-flow-e2e` | #490 | ✅ integrated locally | Codex | Chat SSE/stop + voice PTT Playwright specs |
-| Status correction | `codex-batch-status-corrections` | #491 | ✅ integrated locally | Codex | M2.4 downgraded to partial; protocol exception recorded |
+| O26-P1.1 / one-turn pipeline | `codex-o26-p1-1-one-turn-pipeline` | draft pending | ⏳ local verification | Codex | Shared prompt wrapper + shared post-turn record seam |
 
 Status legend: ⏳ in progress · 🟡 draft PR · 🟢 CI green · ✅ merged · 🔴 conflict
 
@@ -37,8 +33,14 @@ Status legend: ⏳ in progress · 🟡 draft PR · 🟢 CI green · ✅ merged �
 
 ## Fișiere blocate (în PR draft activ)
 
-`codex-integrate-verified-developments` temporarily owns the files touched by #487–#491 until the
-integration PR lands. The source draft PRs should be treated as superseded by this integration pass.
+`codex-o26-p1-1-one-turn-pipeline` owns:
+
+- `agents/core/agent.py`
+- `agents/core/orchestrator.py`
+- `tests/test_o26_p1_one_turn_pipeline.py`
+- `BACKLOG.md`
+- `STATUS.md`
+- `docs/SPRINT.md`
 
 Un fișier blocat nu se atinge de alt agent fără confirmare utilizator.
 
@@ -47,16 +49,13 @@ Un fișier blocat nu se atinge de alt agent fără confirmare utilizator.
 ## Ordine de merge (Wave 1 — de venit)
 
 ```
-Executed order:
-  1. M1.1 K3 budget unification
-  2. M1.2 Action.origin threading
-  3. M2.3 OpenAPI -> TS typegen/diff gate
-  4. M2.1 chat/voice flow E2E
-  5. Status correction / M2.4 honesty note
+Current order:
+  1. O26-P1.1 one-turn pipeline
+  2. O26-P2.1 config consolidation or O26-P2.2 living-memory turn seam, after P1.1 lands
 ```
 
-Next backlog item after this integration lands: **M3.1 mobile approval queue** unless the owner chooses
-to finish M2.4 persistence/live-runner first.
+Next backlog item after this PR lands: choose from O26 Phase 2. My engineering recommendation is
+**O26-P2.1 config consolidation** before waking more behavior, because it lowers env/settings drift.
 
 ---
 
@@ -82,14 +81,17 @@ Generalizează reflecția nocturnă din *rezumă-ziua* în *pre-raționează-pen
 
 ## Checklist post-merge (conductor)
 
-### ORIZONT 25 integration — ÎN CURS
+### ORIZONT 26 P1.1 — ÎN CURS
 
-- [x] `main` fetched and integration branch created from `origin/main`
-- [x] Source branches #487–#491 merged locally in dependency order
-- [x] `BACKLOG.md` reconciled: M1.1/M1.2/M2.1/M2.3 ✅, M2.4 🟡 partial
-- [x] `STATUS.md`, `docs/ARCHITECTURE.md`, `docs/design/HUD_V2_REMAINING.md` updated from verified scope
-- [x] Combined targeted verification complete
-- [ ] Integration branch pushed / PR opened or protected-main path completed
+- [x] `main` fetched/rebased from `origin/main`
+- [x] Branch created from current main
+- [x] Red tests added for prompt parity + persona nudge
+- [x] `Agent.build_prompt()` extracted and stream wired through it
+- [x] Shared `_build_agent_turn_text()` + `_complete_llm_turn()` added
+- [x] `BACKLOG.md` + `STATUS.md` updated from verified scope
+- [x] Focused backend verification green
+- [ ] Ruff / final compile pass
+- [ ] Branch pushed / draft PR opened
 
 ### Wave 0 — COMPLET ✅
 
@@ -132,6 +134,10 @@ Generalizează reflecția nocturnă din *rezumă-ziua* în *pre-raționează-pen
 [Docs]   PR #60 ready for review, CI verde (CI #94 ✅ + CodeQL #72 ✅)
 [Docs]   Audit branches: 2 fully-merged (lm-studio-setup, v1.0-release-prep) — ștergere blocată de proxy git
 [Next]   Recomandare thread: H17 (trust scorecard) + H14 (living memory) — vezi secțiunea de mai sus
+[ORIZONT 26] 2026-07-04 — P0.7 confirmed already done on main; started O26-P1.1 on `codex-o26-p1-1-one-turn-pipeline`
+[O26-P1.1] Red tests: plain path lacked runtime truth, stream path lacked persona, completed turns did not nudge affect
+[O26-P1.1] Implemented shared Agent prompt wrapper, shared turn enrichment, shared post-LLM record/audit/cognition seam
+[Verify]   P1.1/golden chat/stream abort/concurrent stream/chat HTTP/prompt guard/agent integration/token budget/bench/persona/cognition targeted suites green
 ```
 
 ---

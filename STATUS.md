@@ -1,12 +1,25 @@
 # Jarvis Hub — Status Snapshot
 
-> **Current version:** v0.11.0 (feature-complete + refactor done; productionizing toward 1.0) · **Tests:** ~3,538 passed (6 skipped) + frontend **155 vitest** + Playwright HUD/flow suites (HUD-v3 Console port complete: every blueprint surface + the north-star Decision Inbox + native Neural-Mesh canvas + cinema mode) · **Agents:** 17 active (16 cabinet incl. Howard + Argus, the WorldView bridge; + 17 bench) · **HTTP routes:** 363 (+ feedback widget/summary, H23.21; + onboarding, H23.20; +`/api/metrics/capabilities`, V2; + `/api/security/loop-breaker` status/reset, K3; + `/api/metrics/kernel`, Gate-K observability) — `web.py` decomposed into **45 per-domain routers** (CLN-3, #296); only 9 app-shell/chat/admin routes remain inline (4,636→1,282 LOC)
+> **Current version:** v0.11.0 (feature-complete + refactor done; productionizing toward 1.0) · **Tests:** ~3,541 passed (6 skipped) + frontend **155 vitest** + Playwright HUD/flow suites (HUD-v3 Console port complete: every blueprint surface + the north-star Decision Inbox + native Neural-Mesh canvas + cinema mode) · **Agents:** 17 active (16 cabinet incl. Howard + Argus, the WorldView bridge; + 17 bench) · **HTTP routes:** 363 (+ feedback widget/summary, H23.21; + onboarding, H23.20; +`/api/metrics/capabilities`, V2; + `/api/security/loop-breaker` status/reset, K3; + `/api/metrics/kernel`, Gate-K observability) — `web.py` decomposed into **45 per-domain routers** (CLN-3, #296); only 9 app-shell/chat/admin routes remain inline (4,636→1,282 LOC)
 > **The version is the roadmap.** Every feature horizon (H1–H22 + WorldView O19) is delivered — that's **0.10.0**; the **0.11.0** refactor (CLN-3 `web.py` split + CLN-2 `orchestrator.py` managers) is done (#293/#296). There is no "audit gate" version: 1.0 is a real destination reached by finishing the productionization layer (**H23**: agentic-safety budgets, DB migrations, backup/restore + export-delete, operability, quality + user docs) **and** proving it with real design-partner users. The plan is the version line in [BACKLOG.md](BACKLOG.md#version-roadmap); strategy in [MOONSHOT.md](MOONSHOT.md) §4. Manual testing/audit ([docs/MANUAL_TESTING.md](docs/MANUAL_TESTING.md), [docs/AUDIT.md](docs/AUDIT.md)) is the release step that tags a version. GPU-gated dev (H12.14, H13.3, Howard) is its own minor (0.18). HUD deep write-controls tracked in [docs/design/HUD_V2_REMAINING.md](docs/design/HUD_V2_REMAINING.md).
 >
 > The version labels in the feature tables below (`v0.2.0`, `v0.2.1`) record *when* each capability first
 > landed (provenance), not the current release. For live priorities and the version roadmap, BACKLOG.md is the source of truth.
 >
 > **Year-one review (candid, owner-facing):** [docs/REVIEW_YEAR_ONE.md](docs/REVIEW_YEAR_ONE.md) — status, the 12 learnings, the gap between *code-complete* and *desirable product*, and the next-90-days plan.
+
+---
+
+## ORIZONT 26 Update — 2026-07-04
+
+O26 Phase 0 is complete on `main` (P0.1–P0.7). This session delivered O26-P1.1 on branch
+`codex-o26-p1-1-one-turn-pipeline`: plain chat and streaming chat now use the same agent prompt
+wrapper and the same post-turn record seam.
+
+| Item | Status | Verified result |
+|------|--------|-----------------|
+| O26-P1.1 one-turn pipeline | ✅ done locally | `Agent.build_prompt()` is shared by plain/stream paths; `_build_agent_turn_text()` injects persona + runtime truth + history/plugins/recall for both; `_complete_llm_turn()` centralizes memory/checkpoint/log/learning+bench/run-history/audit/cognition; `PersonaModule.nudge()` runs once per completed LLM turn when affect is enabled. |
+| Local verification | ✅ targeted green | New red/green P1.1 tests (+3), golden chat loops, stream abort/no-partial-persist, concurrent stream session isolation, chat HTTP, CDX-7 prompt guard, agent integration, token-budget, bench/record, persona and cognition suites. Full PR CI still remains the merge gate. |
 
 ---
 

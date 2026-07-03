@@ -400,7 +400,7 @@ MANUAL_TESTING signs off **and** real-usage data exists. Details: blueprint §5 
 
 | # | Item | S | Status |
 |---|------|---|--------|
-| O26-P1.1 | **AUD-13 promoted pre-1.0**: unify `handle_input`/`handle_input_stream`; ONE prompt builder (persona + runtime-state in both); one record seam; `PersonaModule.nudge` per turn; preserve #492's `action_origin` ContextVar. Oracle: golden loops ×2 postures + M2.1 E2E | 8 | open |
+| O26-P1.1 | **AUD-13 promoted pre-1.0**: unify `handle_input`/`handle_input_stream`; ONE prompt builder (persona + runtime-state in both); one record seam; `PersonaModule.nudge` per turn; preserve #492's `action_origin` ContextVar. Oracle: golden loops ×2 postures + M2.1 E2E | 8 | ✅ done (2026-07-04) — `Agent.build_prompt()` is now the reusable agent prompt wrapper; both plain chat and stream feed it through shared `_build_agent_turn_text()` so persona, runtime truth, history, plugins and recall no longer diverge by surface. Post-LLM memory/checkpoint/session log/learning+bench/run-history/audit/cognition now share `_complete_llm_turn()`; `PersonaModule.nudge()` fires once per completed LLM turn when cognition affect is enabled; `action_origin` binding remains untouched and the record seam still runs through `asyncio.to_thread` with context propagation. `tests/test_o26_p1_one_turn_pipeline.py` (+3) red-proved the old split (plain lacked runtime, stream lacked persona, no affect nudge). Local targeted sweep green across P1.1, golden chat loops, stream abort, concurrent stream isolation, chat HTTP, prompt-injection guard, agent integration, token budgets, bench/record, persona and cognition suites. |
 
 ### Phase 2 — Wake the Intelligence
 
