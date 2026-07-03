@@ -260,6 +260,12 @@ gateway: Gateway = None
 @asynccontextmanager
 async def lifespan(application: FastAPI):
     global orch, gateway
+    # O26-P0.6 (F6): the fail-closed boot guards (unauthenticated external
+    # bind, hardened-profile preconditions) used to run only in serve.py — a
+    # raw `python -m uvicorn agents.web:app` start silently skipped them.
+    # They run here so every entry point enforces the same posture.
+    from core.boot_guards import enforce_boot_posture
+    enforce_boot_posture()
     setup_logging()
     # SEC-4 / audit F-08: warn when private runtime state lives inside the git
     # checkout (accidental commit/zip/share risk). Set JARVIS_HOME to relocate it.

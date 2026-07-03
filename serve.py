@@ -40,53 +40,15 @@ def _env_int(name: str, default: int) -> int:
         return default
 
 
-_LOOPBACK_HOSTS = {"", "127.0.0.1", "::1", "localhost", "::ffff:127.0.0.1"}
-
-
-def assert_safe_bind(host: str) -> None:
-    """Fail-closed on an unauthenticated external bind (mirrors WorldView AUD-4).
-
-    The historical default was a hardcoded 127.0.0.1; ``JARVIS_HOST`` now lets an
-    operator bind elsewhere. Binding to a non-loopback address exposes the
-    unauthenticated public routes (``/status``, ``/dashboard``, …) on the network,
-    so we refuse to start unless the deployment is either authenticated (a
-    ``JARVIS_USER_TOKEN`` / ``JARVIS_ADMIN_TOKEN`` is configured — which a real
-    network deployment needs anyway for the user/admin guards to allow remote
-    access) or the insecure posture is explicitly acknowledged with
-    ``JARVIS_ALLOW_INSECURE_BIND=1``. Loopback binds are always allowed.
-    """
-    if host.strip().lower() in _LOOPBACK_HOSTS:
-        return
-    has_token = bool(os.environ.get("JARVIS_USER_TOKEN", "").strip()
-                     or os.environ.get("JARVIS_ADMIN_TOKEN", "").strip())
-    ack = os.environ.get("JARVIS_ALLOW_INSECURE_BIND", "").strip().lower() in ("1", "true", "yes")
-    if has_token or ack:
-        print(f"[SECURITY] binding to non-loopback host {host!r} — public routes are "
-              f"reachable from the network ({'authenticated' if has_token else 'INSECURE, acknowledged'}).")
-        return
-    raise SystemExit(
-        f"Refusing to bind to non-loopback host {host!r} without authentication.\n"
-        "Set JARVIS_USER_TOKEN (and/or JARVIS_ADMIN_TOKEN) to require a credential for "
-        "remote access, or set JARVIS_ALLOW_INSECURE_BIND=1 to accept an open bind. "
-        "The default 127.0.0.1 keeps the hub loopback-only."
-    )
-
-
-def assert_hardened_posture() -> None:
-    """Fail-closed on a mis-configured hardened profile (CDX-12).
-
-    ``JARVIS_HARDENED=1`` requires its hard preconditions (today: a
-    ``JARVIS_AUDIT_KEY`` so the audit log is HMAC-keyed). A hardened deployment
-    that can't meet them is mis-configured, not merely suboptimal, so we refuse to
-    start rather than run a weaker posture than the operator asked for. No-op when
-    hardening is off.
-    """
-    from agents.core.security import hardened
-    problems = hardened.enforce()
-    if problems:
-        raise SystemExit(
-            "Refusing to start with JARVIS_HARDENED=1:\n  - " + "\n  - ".join(problems)
-        )
+# O26-P0.6 (F6): the boot guards moved to agents/core/boot_guards.py so the
+# raw-uvicorn entry (`python -m uvicorn agents.web:app`) enforces the same
+# posture via the app lifespan. Re-exported here — serve.py stays the
+# canonical entry and existing imports keep working.
+from agents.core.boot_guards import (  # noqa: E402,F401
+    _LOOPBACK_HOSTS,
+    assert_hardened_posture,
+    assert_safe_bind,
+)
 
 
 def server_config():

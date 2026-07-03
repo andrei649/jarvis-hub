@@ -13,8 +13,9 @@
 
 ```bash
 pip install -r requirements-beta.txt
-python -m uvicorn agents.web:app --host 127.0.0.1 --port 8080
-python -m pytest tests/ -v          # ~3,503 passed, 6 skipped (counter synced via scripts/status_sync.py)
+python serve.py   # canonical entry (boot guards + graceful shutdown; O26-P0.6: the raw
+#   uvicorn entry `python -m uvicorn agents.web:app` now runs the same guards via the lifespan)
+python -m pytest tests/ -v          # ~3,513 passed, 6 skipped (counter synced via scripts/status_sync.py)
 ```
 
 > Singurul skip rămas e heartbeat-ul opțional. (Vechiul `tests/test_spotify.py` cu 8 skip-uri a
@@ -392,7 +393,7 @@ MANUAL_TESTING signs off **and** real-usage data exists. Details: blueprint §5 
 | O26-P0.3 | **F2**: seed `cognition.*` + `memory.recall_enabled/top_k` in DEFAULTS; `put_category` upserts known-spec keys | 2 | ✅ done (2026-07-03) — 13th settings category `cognition` (master OFF, 5 sub-flags ON so one switch wakes the layer) + `memory.recall_enabled/recall_top_k`; `put_category` upserts spec-known keys, still rejects arbitrary rows; facade wakes via the settings path (+9 tests) |
 | O26-P0.4 | **F4**: sycophancy axis scores the assistant reply, not the user input (`cognition_trace.py:93,124`) | 1 | ✅ done (2026-07-03) — traces carry `output_preview`; honesty scores the reply (user text passed as context); same mis-aim fixed in `quality.evaluate_heuristics` (empty reply now scores `non_empty=0`; legacy key-absent traces keep the fallback) (+5 tests) |
 | O26-P0.5 | **F5**: deep-model escalation only when the deep model is probed present (no reroute-to-missing-model on «analyze») | 2 | ✅ done (2026-07-03) — `LLMRouter` captures the full served-model listing on detect/refresh; `_deep_model_available()` gates BOTH deep sites (auto heavy-keyword + DEEP_THINK_AGENTS, which now fall through to normal routing on a one-model box); explicit `JARVIS_DEEP_MODEL` = owner intent, honored (+6 tests) |
-| O26-P0.6 | **F6**: hardened/bind boot guards run from the app lifespan (uvicorn entry included); Run-block docs point at `serve.py` | 2 | open |
+| O26-P0.6 | **F6**: hardened/bind boot guards run from the app lifespan (uvicorn entry included); Run-block docs point at `serve.py` | 2 | ✅ done (2026-07-03) — guards moved to `agents/core/boot_guards.py` (serve.py re-exports, existing imports intact); `web.py` lifespan runs `enforce_boot_posture()` so a raw-uvicorn start enforces the same posture; honest residual documented: a bind host passed only as a raw `--host` CLI flag (without `JARVIS_HOST`) is invisible to the app — deploy templates use the env knob and serve.py stays canonical (+10 tests) |
 | O26-P0.7 | **F3**: broker proposals run `policy.decide`; `pending_decisions()` includes broker-`proposed`; kill-switch enforced at the executor seam kernel-independently; golden loops #2+#4 | 5 | open |
 
 ### Phase 1 — One Turn Pipeline
