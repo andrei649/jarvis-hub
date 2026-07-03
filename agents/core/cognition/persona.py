@@ -92,5 +92,4 @@ class PersonaModule:
         return {
             "available": True,
             "agents": sorted(self._p.keys()),
-            "voice_persona": self.voice_consent_status(),
         }

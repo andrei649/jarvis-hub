@@ -1,8 +1,9 @@
 // @ts-nocheck
 import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 
-const source = readFileSync(new URL('../gap.tsx', import.meta.url), 'utf8');
+const source = readFileSync(join(process.cwd(), 'src', 'gap.tsx'), 'utf8');
 
 function cardTitle(tag: string): string {
   const m = tag.match(/\btitle=(?:"([^"]+)"|{`([^`]+)`}|{([^}]+)})/);

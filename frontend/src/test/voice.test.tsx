@@ -184,6 +184,17 @@ describe('useVoice state machine', () => {
     const media = installMediaMocks();
     const onTurn = vi.fn(async () => 'reply ignored because tts is off');
     const states: any[] = [];
+    let resolveStt: (value: any) => void = () => {};
+    const sttResponse = new Promise((resolve) => {
+      resolveStt = resolve;
+    });
+    global.fetch = vi.fn(async (url: string) => {
+      const path = String(url);
+      if (path === '/api/voice/capabilities') return jsonResponse({ stt: true, tts: true });
+      if (path.startsWith('/api/voice/stt')) return sttResponse;
+      throw new Error('unexpected fetch ' + path);
+    }) as any;
+
     render(
       <VoiceHarness
         opts={{ mode: 'ptt', ttsSource: 'off', lang: 'en', onTurn }}
@@ -193,6 +204,9 @@ describe('useVoice state machine', () => {
 
     await waitFor(() => expect(states.at(-1).caps).toMatchObject({ stt: true }));
     fireEvent.click(screen.getByText('start'));
+
+    await waitFor(() => expect(screen.getByTestId('status').textContent).toBe('transcribing'));
+    resolveStt(jsonResponse({ text: 'hello jarvis' }));
 
     await waitFor(() => expect(onTurn).toHaveBeenCalledWith('hello jarvis'));
     await waitFor(() => expect(screen.getByTestId('status').textContent).toBe('off'));
