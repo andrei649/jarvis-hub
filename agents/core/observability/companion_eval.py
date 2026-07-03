@@ -29,7 +29,9 @@ CLI (for CI lanes)::
 
 from __future__ import annotations
 
+import asyncio
 import json
+import os
 import unicodedata
 from collections.abc import Awaitable, Callable
 from pathlib import Path
@@ -247,9 +249,145 @@ async def run_suite(
     return out
 
 
+def _summary_lines(result: dict) -> list[str]:
+    compare = result.get("baseline_compare")
+    guardrails = result.get("north_star_guardrails", {})
+    lines = [
+        "## Companion Eval Gate",
+        f"- Dataset: `{result['dataset']}` v{result.get('version', 'n/a')}",
+        f"- Run: `{result.get('run_id', 'n/a')}`",
+        f"- Score: {result['score']:.4f} ({result['passed']}/{result['total']} passed)",
+        f"- Minimum score: {result['min_score']:.4f}",
+        f"- Self-check failures: {result['self_check_failures']}",
+    ]
+    if compare:
+        lines.append(
+            f"- Baseline compare: delta {compare.get('score_delta', 0):+.4f}, "
+            f"regressions {len(compare.get('regressed', []))}"
+        )
+    else:
+        lines.append("- Baseline compare: first run for this store")
+    lines.extend(
+        [
+            "",
+            "## North-Star Guardrails",
+            f"- Mode: {guardrails.get('mode', 'unknown')}",
+            f"- Breaches: {len(guardrails.get('breaches', []))}",
+            "- Offline scheduled CI has no live usage stores; None-valued metrics are skipped, not fabricated.",
+            f"- Live eval requested: {result.get('live_eval_requested', False)}",
+        ]
+    )
+    if result.get("failed_cases"):
+        lines.append("")
+        lines.append("## Failed Cases")
+        lines.extend(f"- `{name}`" for name in result["failed_cases"][:20])
+    return lines
+
+
+def _write_summary(path: str | Path, result: dict) -> None:
+    if not path:
+        return
+    p = Path(path)
+    p.parent.mkdir(parents=True, exist_ok=True)
+    with p.open("a", encoding="utf-8") as fh:
+        fh.write("\n".join(_summary_lines(result)) + "\n")
+
+
+def run_ci_gate(
+    *,
+    store: DatasetStore | None = None,
+    runner: Callable[[str], Awaitable[str]] | None = None,
+    dialogues: list[dict] | None = None,
+    min_score: float = 1.0,
+    summary_path: str | Path | None = None,
+) -> dict:
+    """Run the deterministic scheduled gate used by the M2.4 CI lane.
+
+    Default runner = every prompt receives its curated golden reply, so this lane
+    catches dataset/rubric drift offline. A live model runner can be injected by a
+    future opt-in lane; ``JARVIS_EVAL_LIVE`` is reported but never implied.
+    """
+    store = store or DatasetStore()
+    dialogues = dialogues if dialogues is not None else load_dialogues()
+    failures = golden_self_check(dialogues)
+    previous = store.runs(DATASET_NAME, 1)
+
+    if runner is None:
+        golden_by_prompt = {build_prompt(d): d["golden"] for d in dialogues}
+
+        async def runner(prompt: str) -> str:
+            return golden_by_prompt[prompt]
+
+    result = asyncio.run(run_suite(runner, store=store, dialogues=dialogues))
+    comparison = None
+    if previous and result.get("run_id"):
+        comparison = store.compare(DATASET_NAME, previous[0]["run_id"], result["run_id"])
+
+    from .north_star import check_guardrails
+
+    offline_metrics = {
+        "interrupt_rate_per_day": None,
+        "reject_rate": None,
+        "local_pct": None,
+        "p95_latency_ms": None,
+    }
+    breaches = check_guardrails(offline_metrics)
+    failed_cases = [r["name"] for r in result.get("results", []) if not r.get("passed")]
+    baseline_ok = not (comparison and comparison.get("regression"))
+    ok = (
+        not failures
+        and result["score"] >= min_score
+        and result["passed"] == result["total"]
+        and baseline_ok
+        and not breaches
+    )
+    out = {
+        "ok": ok,
+        "dataset": DATASET_NAME,
+        "version": result.get("version"),
+        "run_id": result.get("run_id"),
+        "score": round(result["score"], 4),
+        "passed": result["passed"],
+        "total": result["total"],
+        "min_score": float(min_score),
+        "failed_cases": failed_cases,
+        "self_check_failures": len(failures),
+        "baseline_compare": comparison,
+        "north_star_guardrails": {
+            "mode": "offline-scheduled",
+            "metrics": offline_metrics,
+            "breaches": breaches,
+            "ok": not breaches,
+        },
+        "live_eval_requested": os.getenv("JARVIS_EVAL_LIVE", "").lower() in {"1", "true", "yes"},
+    }
+    if summary_path:
+        _write_summary(summary_path, out)
+    return out
+
+
 # ── CLI (CI lanes) ───────────────────────────────────────────────────────────
 
+def _arg_value(argv: list[str], name: str, default: str | None = None) -> str | None:
+    if name not in argv:
+        return default
+    idx = argv.index(name)
+    if idx + 1 >= len(argv):
+        return default
+    return argv[idx + 1]
+
+
 def _main(argv: list[str]) -> int:
+    if "--ci-gate" in argv:
+        try:
+            min_score = float(_arg_value(argv, "--min-score", "1.0"))
+        except (TypeError, ValueError):
+            print(json.dumps({"ok": False, "error": "invalid --min-score"}, ensure_ascii=False))
+            return 2
+        summary_path = _arg_value(argv, "--summary", os.getenv("GITHUB_STEP_SUMMARY"))
+        result = run_ci_gate(min_score=min_score, summary_path=summary_path)
+        print(json.dumps(result, ensure_ascii=False, indent=2))
+        return 0 if result["ok"] else 1
     if "--self-check" in argv:
         failures = golden_self_check()
         if failures:
@@ -260,7 +398,7 @@ def _main(argv: list[str]) -> int:
     if "--seed" in argv:
         print(json.dumps(seed_dataset(), ensure_ascii=False))
         return 0
-    print("usage: companion_eval [--self-check | --seed]")
+    print("usage: companion_eval [--self-check | --seed | --ci-gate [--min-score N] [--summary PATH]]")
     return 2
 
 

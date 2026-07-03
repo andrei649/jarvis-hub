@@ -8,6 +8,10 @@
 name: HUD E2E
 
 on:
+  schedule:
+    # Nightly 03:15 UTC: browser matrix + repeated soak against /metrics.
+    - cron: "15 3 * * *"
+  workflow_dispatch:
   push:
     branches: [main]
   pull_request:
@@ -16,6 +20,7 @@ on:
       - "agents/web/v2/**"
       - "serve.py"
       - "agents/web.py"
+      - "frontend/playwright.config.ts"
       - ".github/workflows/e2e.yml"
 
 permissions:
@@ -24,7 +29,13 @@ permissions:
 jobs:
   e2e:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 45
+    env:
+      # PR/push stays lightweight (Chromium x1). Scheduled runs become the M2.2 soak:
+      # Chromium + Firefox + WebKit + mobile emulation, with every spec repeated.
+      E2E_BROWSER_MATRIX: ${{ github.event_name == 'schedule' && '1' || '0' }}
+      E2E_SOAK_ITERATIONS: ${{ github.event_name == 'schedule' && '3' || '1' }}
+      PLAYWRIGHT_BROWSERS: ${{ github.event_name == 'schedule' && 'chromium firefox webkit' || 'chromium' }}
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
 
@@ -43,9 +54,18 @@ jobs:
       - run: npm ci
         working-directory: frontend
 
-      - name: Install Playwright Chromium
-        run: npx playwright install --with-deps chromium
+      - name: Install Playwright browsers
+        run: npx playwright install --with-deps $PLAYWRIGHT_BROWSERS
         working-directory: frontend
+
+      - name: Publish soak plan
+        run: |
+          {
+            echo "## HUD E2E soak"
+            echo "- Browser matrix: $E2E_BROWSER_MATRIX"
+            echo "- Repeat count: $E2E_SOAK_ITERATIONS"
+            echo "- Installed browsers: $PLAYWRIGHT_BROWSERS"
+          } >> "$GITHUB_STEP_SUMMARY"
 
       - name: E2E (boots serve.py, drives /v2)
         run: npm run e2e

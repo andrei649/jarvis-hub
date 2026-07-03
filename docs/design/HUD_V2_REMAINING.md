@@ -117,14 +117,14 @@ AI step builder (H10.7) · sandbox execute (DEV_MODE‑gated, honest 403) · age
 (H10.29) · LM Studio server/load/unload · cloud auth profiles (H12.20). Admin‑guarded calls now
 send the admin token (`actA`). +7 frontend tests (19 total).
 
-**Still open (the tail of TASK‑2, re‑verified 2026‑07‑02):** §3 plugin‑gated mode wiring
-(Finance/Health/Knowledge/Family, Comms Discord/Slack threads), per‑panel LIVE/SEED chips
-(§1 — global badge exists), §6 toolchain remainder (OpenAPI types, self‑hosted fonts), and the
-0.39 saved‑watchlist `WatchlistPanel`. Estimated 1–2 PRs.
+**Still open (the tail of TASK‑2, re‑verified 2026‑07‑03):** §3 plugin‑gated mode wiring
+(Finance/Health/Knowledge/Family, Comms Discord/Slack threads) and §6 toolchain remainder
+(OpenAPI types, self‑hosted fonts). Estimated 1–2 PRs.
 *Since‑closed items previously listed here:* CI stale‑bundle guard ✅ (`hud-v2-build` in `ci.yml`),
 §7 locality endpoint ✅ (`GET /api/analytics/locality`, consumed in `app.tsx`/`shell.tsx`), and the
 BUG‑17 audit‑verify Trust chip ✅ (`modes.tsx:117-165` renders the live
-`GET /api/security/audit/verify` verdict).
+`GET /api/security/audit/verify` verdict), the 0.39 saved‑watchlist `WatchlistPanel` ✅, and
+per-panel LIVE/SEED chips ✅ (58/58 Console cards declare a `PanelChip` signal).
 
 ---
 *Parity gate (`tests/test_hud_v2_parity.py`) tracks all routes → every one is mapped to a v2

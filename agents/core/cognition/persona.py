@@ -83,5 +83,14 @@ class PersonaModule:
             "cache_suffix": f"v{aff['valence']}a{aff['arousal']}",
         }
 
+    def voice_consent_status(self, consent_getter=None) -> dict:
+        """Expose the voice-persona consent gate alongside persona state."""
+        from ..voice.tts import voice_persona_consent_status
+        return voice_persona_consent_status(consent_getter)
+
     def status(self) -> dict:
-        return {"available": True, "agents": sorted(self._p.keys())}
+        return {
+            "available": True,
+            "agents": sorted(self._p.keys()),
+            "voice_persona": self.voice_consent_status(),
+        }
