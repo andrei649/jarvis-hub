@@ -66,6 +66,11 @@ python -m pytest tests/ -v          # ~3,452 passed, 6 skipped (counter synced v
 | **0.20.0 ⚠️** | Product-proof | design-partner program (recruit 1–3) — *in-app **feedback/NPS** + program doc ✅ H23.21*; support channel + SLA; north-star **measured on real usage**; landing page + demo |
 | **1.0.0** | 🎯 **Owned & proven** | all dev complete **+ design-partner validation**; owner legal/brand done; manual-test/audit pass → tag |
 
+> **The active execution ORDER for what remains is ORIZONT 25 — M1→1.0** (2026-07-02, section below):
+> milestone tables + a model-agnostic execution protocol + the companion-quality charter, backed by the
+> [execution blueprint](docs/superpowers/specs/2026-07-02-orizont25-execution-blueprint.md). It sequences
+> the remaining slices of the versions above (0.12–0.20) — it does not renumber them.
+>
 > **The program that organizes 0.11→1.0 is ORIZONT 24 — "AI-OS"** (decided 2026-06-23, section below): an
 > **Action Kernel** (every agent action mediated, budgeted, revocable) + a **Verification Fabric** (each
 > capability proven against reality before it may claim "done") + the four live capability packs, all on the
@@ -282,6 +287,79 @@ the syscall table · budgets = the scheduler · kill-switch/quarantine = a sysca
 > next is *implementation*, not design. **Next concrete steps:** finish Phase A (AUD-\*) → land the
 > default-off `kernel.authorize` facade (**K1**) + the capability-readiness registry/harness scaffold
 > (**V1/V2**) in parallel → wire the action-auth + readiness matrices → K3/V4 gates → then **P1 first**.
+
+---
+
+## 🗺️ ORIZONT 25 — M1→1.0 Execution Plan (Fable-5 snapshot, 2026-07-02)
+
+> **The active execution order for everything that remains before 1.0** — written to be followed
+> by ANY AI session (any model tier, cold start, mid-session handoff) without deviating.
+> **Full blueprint (per-item Intent / verified seams / Approach / AC / tests / do-NOTs + the
+> execution protocol + quality charter):**
+> [`docs/superpowers/specs/2026-07-02-orizont25-execution-blueprint.md`](docs/superpowers/specs/2026-07-02-orizont25-execution-blueprint.md).
+> Ground truth it stands on: the [2026-07-02 fresh-eyes re-verification](docs/research/2026-07-02-fresh-eyes-backlog-reverification.md).
+> Not net-new scope — it sequences the existing tracked items (K3, TASK-3 tail, V3/V4, H23.17,
+> AUD-16, AUD-14, H18.x, H23.22, #169) + a small owner-sanctioned **Track Q** (companion quality).
+>
+> **Protocol digest (the blueprint's §0, read it in full before your first PR):** verify before
+> you claim (evidence = test run or code read) · grep the symbol, not the line — if a seam is gone,
+> STOP and re-read the item's Intent, never improvise architecture · one item = one PR, rebase-first,
+> BACKLOG status ticked in the same PR · behavior changes default-off + byte-identical default path ·
+> honesty contract on every surface (no fabrication, honest empty states) · offline injectable tests,
+> re-seed parity snapshots via `--update` in the same PR · when two readings are valid, pick the
+> reversible/default-off one and record the fork in the PR body · red truth beats green lie ·
+> never touch: LOCAL_ONLY fail-closed paths, shipped migrations, recovery paths (disengage/reset),
+> snapshots by hand, another agent's draft-PR files, an agent's voice without owner consent.
+
+### M1 — v0.12 «Substrate sealed»
+
+| # | Item | S | Status |
+|---|------|---|--------|
+| M1.1 | **K3 budget unification** — named dimensions on `kernel/budget.py:BudgetLedger`; `InterruptBudget` becomes a view; payment/mission caps registered as observed dimensions; handler `tokens_used` hook | 5 | open |
+| M1.2 | **`Action.origin` channel threading** — `Gateway.route → channel_handler →` per-turn ContextVar → brokers; inbound channels = `origin="inbound"` → kernel GRANT→QUEUE (the honest TASK-3 channel backstop) | 5 | open |
+| M1.3 | **V3 components/skills readiness coverage** — booted-fixture records in `test_capability_readiness_matrix` (today: plugins only, 33 records) | 3 | open |
+| M1.4 | **LIVE/SEED chip rollout** — `PanelChip` (`gap.tsx:28`) onto the ~25 remaining Console panels (mechanical) | 2 | open |
+| M1.5 | **Q4 voice-persona consent gate** (0.28) — persisted owner consent before cloned/persona voice; default voice + honest banner otherwise | 2 | open |
+
+### M2 — v0.13 «Quality gates & type truth»
+
+| # | Item | S | Status |
+|---|------|---|--------|
+| M2.1 | **H23.17 flow E2E** — chat send→SSE→stop + voice state machine on the existing Playwright harness (degraded-reply assertions, no model needed) | 3 | open |
+| M2.2 | **Nightly soak + browser matrix** — `schedule:` lane on `e2e.yml` (N-iteration soak vs `/metrics`), firefox/webkit/mobile-emulation projects | 3 | open |
+| M2.3 | **AUD-16 OpenAPI→TS typegen + CI diff gate** — `response_model=` on the ~30 HUD-consumed routes; boot server in CI (e2e pattern) → `openapi-typescript` → fail on diff | 5 | open |
+| M2.4 | **V4 eval as scheduled blocking lane** — nightly `EvalRunner` over `DatasetStore` vs baseline (`JARVIS_EVAL_LIVE` gated); north-star guardrails in the job summary | 3 | open |
+| M2.5 | ⭐ **Q1 companion golden-dialogue eval set** — 40–60 RO/EN dialogues scoring the §6.2 charter (assistance, empathy-without-sycophancy, follow-up, in-character honesty, refusal); judged via `QualityMonitor` + `SycophancyIndex`/`HonestyJudge`; versioned in `DatasetStore`, gated by M2.4 — **the quality snapshot that survives model changes** | 5 | open |
+| M2.6 | **BUG-2b.3 `useVoice` tests** — jsdom mocks for mic/AudioContext, drive the status machine (`voice.ts:49`) | 2 | open |
+
+### M3 — v0.14 «Reach & proof»
+
+| # | Item | S | Status |
+|---|------|---|--------|
+| M3.1 | **Mobile approval queue** (then Dashboard, Tasks) — `GET /autonomy/approvals` + `POST /autonomy/tasks/{id}/decision` (`routers/autonomy.py:362,208`) from the phone; PARITY.md row in same PR — *the north-star surface* | 5 | open |
+| M3.2 | **Plugin-gated HUD modes honest wiring** — Finance/Health/Knowledge/Family + Comms threads via the `live.ts` swap pattern; honest empty state when unconfigured (closes TASK-2) | 3 | open |
+| M3.3 | **H23.22 landing page (dev half)** — static, self-contained, from `docs/marketing/` + BRAND_BOOK tokens; demo shot-list support (0.52) | 3 | open |
+| M3.4 | **AUD-14 config consolidation** (pulled forward — 161 env reads and climbing) — one `env_config` module + one `truthy()`; policy sets derived from `agents.yaml` **keeping the code-enforced LOCAL_ONLY floor** (BUG-14 lesson) | 3 | open |
+| M3.5 | **#169 WorldView MCP write transport** — stdio client path for `watch_aoi`/`reconstruct_event` behind plugin-gate+kernel; then fold the HMAC token as a kernel Capability (last K2 slice) | 5 | open |
+| M3.6 | **Q2 persona-consistency rail** — persona dimension on the live `QualityMonitor` judged vs the SOUL's current version (`soul_versioning`); drift alert like quality-decline | 3 | open |
+| M3.7 | **Q3 caring follow-ups in the morning brief** — `build_morning_brief` + `build_unified_digest` recomposition: yesterday's failed/blocked tasks, open-concern facts, upcoming KG dates; zero new capture, rides the existing brief slot | 3 | open |
+
+### M4 — v1.0-rc «Proof» (owner-led, runs in PARALLEL from day one — the true critical path)
+
+⭐B0 manual run + 72h soak → record **AUD-0** + **H23.23** → GitHub-settings batch → license flip →
+**recruit 1–3 design partners** (north-star on a non-owner install ≥2 weeks — calendar-bound!) →
+GPU-opportunistic (H13.3 config-only · H22.4 · H12.14/TASK-1) → tag **1.0.0** only when
+MANUAL_TESTING signs off **and** real-usage data exists. Details: blueprint §5 + `docs/OWNER_TASKS.md`.
+
+> **Track Q = the companion charter** (blueprint §6.2, owner-sanctioned 2026-07-02): *caring is
+> behavior, not adjectives · smart is honest (sycophancy is a measured defect) · personality is
+> designed and it's a promise (in-character always, mask drops for a sincere "am I talking to an
+> AI?") · a friend respects your attention (≤4/day as character trait) · problems get the
+> diagnose→preview→act-reversibly→verify→report loop, not vibes · privacy is the friendship's
+> foundation and outranks every other clause.* Q1/Q2 make it regression-guarded, not aspirational.
+>
+> **Non-goals until 1.0** (re-affirmed): 0.20 Vault · 0.48 video · 0.64/0.65 desktop overlay ·
+> 0.66 connector breadth · AUD-13/AUD-15 refactors · multi-user. MOONSHOT §4: we don't skip gates.
 
 ---
 
