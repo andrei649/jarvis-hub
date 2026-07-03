@@ -130,5 +130,3 @@ per-panel LIVE/SEED chips ✅ (58/58 Console cards declare a `PanelChip` signal)
 *Parity gate (`tests/test_hud_v2_parity.py`) tracks all routes → every one is mapped to a v2
 surface or `NOT_IN_HUD`, so nothing above can silently disappear — these items are about depth, not
 coverage.*
-
-<!-- ci trigger: hud bundle refreshed -->
