@@ -45,7 +45,6 @@ def _env_int(name: str, default: int) -> int:
 # posture via the app lifespan. Re-exported here — serve.py stays the
 # canonical entry and existing imports keep working.
 from agents.core.boot_guards import (  # noqa: E402,F401
-    _LOOPBACK_HOSTS,
     assert_hardened_posture,
     assert_safe_bind,
 )
