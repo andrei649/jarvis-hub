@@ -25,7 +25,8 @@ Când utilizatorul menționează **"backlog"**, **"ce urmează"**, **"next"**, *
 ## Rulare & teste
 ```bash
 pip install -r requirements-beta.txt
-python -m uvicorn agents.web:app --host 127.0.0.1 --port 8080   # HUD: http://127.0.0.1:8080/
+python serve.py   # canonical entry (boot guards + graceful shutdown; O26-P0.6: the raw
+#   uvicorn entry `python -m uvicorn agents.web:app` now runs the same guards via the lifespan)   # HUD: http://127.0.0.1:8080/
 python -m pytest tests/ -v
 ```
 - După modificări JS/CSS: Ctrl+F5 (cache bust). După Python: repornește serverul uvicorn.
