@@ -250,8 +250,8 @@ class SocialBroker:
         # skipped, path below byte-identical to before).
         autonomy_level = "ask"
         if self._kernel is not None:
-            from .kernel import Action, Verdict, kernel_enabled
             from .action_origin import current_action_origin
+            from .kernel import Action, Verdict, kernel_enabled
             if kernel_enabled():
                 decision = self._kernel(Action(kind=kind, agent=agent or self.agent,
                                                title=title, payload=payload,

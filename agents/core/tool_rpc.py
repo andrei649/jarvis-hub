@@ -146,8 +146,8 @@ class ToolRPCServer:
         """
         if self._kernel is None:
             return None
-        from agents.core.kernel import Action, Verdict, kernel_enabled
         from agents.core.action_origin import current_action_origin
+        from agents.core.kernel import Action, Verdict, kernel_enabled
         if not kernel_enabled():
             return None
         decision = self._kernel(Action(

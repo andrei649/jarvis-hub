@@ -176,8 +176,8 @@ class PaymentBroker(JsonStore):
         # never auto-settle, so the kernel only adds a hard *deny* capability, it can't
         # relax the always-approval rule.
         if self._kernel is not None:
-            from agents.core.kernel import Action, Verdict, kernel_enabled
             from agents.core.action_origin import current_action_origin
+            from agents.core.kernel import Action, Verdict, kernel_enabled
             if kernel_enabled():
                 decision = self._kernel(Action(
                     kind=self.KIND, agent=self._agent,

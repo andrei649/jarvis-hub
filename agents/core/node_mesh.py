@@ -105,8 +105,8 @@ class NodeMesh:
         # Keep the kernel import and its uses in ONE block so the names are always
         # bound before use (a split import/use trips CodeQL's may-be-uninitialized).
         if self._kernel is not None:
-            from .kernel import Action, Capability, Verdict, kernel_enabled
             from .action_origin import current_action_origin
+            from .kernel import Action, Capability, Verdict, kernel_enabled
             if kernel_enabled():
                 kernel_ran = True
                 with self._lock:
