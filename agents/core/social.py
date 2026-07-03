@@ -251,9 +251,11 @@ class SocialBroker:
         autonomy_level = "ask"
         if self._kernel is not None:
             from .kernel import Action, Verdict, kernel_enabled
+            from .action_origin import current_action_origin
             if kernel_enabled():
                 decision = self._kernel(Action(kind=kind, agent=agent or self.agent,
-                                               title=title, payload=payload, origin="generated"))
+                                               title=title, payload=payload,
+                                               origin=current_action_origin()))
                 if decision.verdict is Verdict.DENY:
                     return {"ok": False, "reason": decision.reason, "kind": kind}
                 if decision.verdict is Verdict.GRANT:
