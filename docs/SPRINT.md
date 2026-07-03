@@ -25,13 +25,13 @@ main by parallel agents.
 
 | Wave | Branch | PR | Status | Agenți | Note |
 |------|--------|----|--------|--------|------|
-| O26-P1.1 / one-turn pipeline | `codex-o26-p1-1-one-turn-pipeline` | draft pending | ⏳ local verification | Codex | Shared prompt wrapper + shared post-turn record seam |
+| O26-P1.1 / one-turn pipeline | `codex-o26-p1-1-one-turn-pipeline` | #498 | 🟢 CI green / ready | Codex | Shared prompt wrapper + shared post-turn record seam |
 
 Status legend: ⏳ in progress · 🟡 draft PR · 🟢 CI green · ✅ merged · 🔴 conflict
 
 ---
 
-## Fișiere blocate (în PR draft activ)
+## Fișiere blocate (în PR activ)
 
 `codex-o26-p1-1-one-turn-pipeline` owns:
 
@@ -90,8 +90,9 @@ Generalizează reflecția nocturnă din *rezumă-ziua* în *pre-raționează-pen
 - [x] Shared `_build_agent_turn_text()` + `_complete_llm_turn()` added
 - [x] `BACKLOG.md` + `STATUS.md` updated from verified scope
 - [x] Focused backend verification green
-- [ ] Ruff / final compile pass
-- [ ] Branch pushed / draft PR opened
+- [x] Ruff / final compile pass
+- [x] Branch pushed / PR #498 opened
+- [x] GitHub Actions green; PR marked ready
 
 ### Wave 0 — COMPLET ✅
 
@@ -138,6 +139,7 @@ Generalizează reflecția nocturnă din *rezumă-ziua* în *pre-raționează-pen
 [O26-P1.1] Red tests: plain path lacked runtime truth, stream path lacked persona, completed turns did not nudge affect
 [O26-P1.1] Implemented shared Agent prompt wrapper, shared turn enrichment, shared post-LLM record/audit/cognition seam
 [Verify]   P1.1/golden chat/stream abort/concurrent stream/chat HTTP/prompt guard/agent integration/token budget/bench/persona/cognition targeted suites green
+[PR]       #498 opened, full GitHub Actions green, marked ready for review
 ```
 
 ---
