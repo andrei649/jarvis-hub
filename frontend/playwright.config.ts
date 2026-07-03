@@ -13,6 +13,9 @@ const PORT = Number(process.env.E2E_PORT || 8123);
 const BASE = `http://127.0.0.1:${PORT}`;
 // local dev runs the repo venv; CI installs into the system python → override with E2E_PYTHON
 const PY = process.env.E2E_PYTHON || '.venv/bin/python';
+const ENV_PREFIX = process.platform === 'win32'
+  ? `set JARVIS_PORT=${PORT}&& set JARVIS_LOG_LEVEL=warning&& `
+  : `JARVIS_PORT=${PORT} JARVIS_LOG_LEVEL=warning `;
 const BROWSER_MATRIX = process.env.E2E_BROWSER_MATRIX === '1';
 const SOAK_ITERATIONS = Math.max(1, Number(process.env.E2E_SOAK_ITERATIONS || 1));
 
@@ -45,7 +48,7 @@ export default defineConfig({
   webServer: {
     // run from the repo root (cwd) — serve.py + config.py resolve agents/_system/
     // agents.yaml relative to CWD, not to this config's frontend/ dir.
-    command: `JARVIS_PORT=${PORT} JARVIS_LOG_LEVEL=warning ${PY} serve.py`,
+    command: `${ENV_PREFIX}${PY} serve.py`,
     cwd: '..',
     url: `${BASE}/status`,
     timeout: 120_000,
