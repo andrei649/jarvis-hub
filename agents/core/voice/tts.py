@@ -6,7 +6,7 @@ Falls back to Kokoro or pyttsx3 if available.
 import logging
 import tempfile
 from pathlib import Path
-from typing import AsyncIterator, Optional
+from typing import AsyncIterator, Callable, Optional
 
 from .sentence_stream import split_sentences
 
@@ -26,6 +26,49 @@ except ImportError:
 
 TEMP_DIR = Path(tempfile.gettempdir()) / "cabinet_tts"
 
+PERSONA_VOICE_CONSENT_CATEGORY = "voice"
+PERSONA_VOICE_CONSENT_KEY = "persona_voice_consent"
+PERSONA_VOICE_CONSENT_MESSAGE = (
+    "Cloned/persona voice playback requires recorded owner consent; using default voice."
+)
+PERSONA_VOICE_MARKERS = ("xtts", "elevenlabs")
+
+
+def is_persona_or_cloned_voice(voice: str | None) -> bool:
+    """Whether a requested voice can represent a cloned/persona voice."""
+    if not isinstance(voice, str):
+        return False
+    normalized = voice.lower()
+    return any(marker in normalized for marker in PERSONA_VOICE_MARKERS)
+
+
+def voice_persona_consent_granted(consent_getter: Optional[Callable[[], bool]] = None) -> bool:
+    """Read persisted owner consent; fail closed when settings are unavailable."""
+    if consent_getter is not None:
+        return bool(consent_getter())
+    try:
+        try:
+            from core.settings_db import get_value
+        except Exception:
+            from agents.core.settings_db import get_value
+        return bool(get_value(PERSONA_VOICE_CONSENT_CATEGORY, PERSONA_VOICE_CONSENT_KEY, False))
+    except Exception:
+        logger.warning("Could not read voice persona consent; defaulting to off", exc_info=True)
+        return False
+
+
+def voice_persona_consent_status(
+    consent_getter: Optional[Callable[[], bool]] = None,
+) -> dict[str, object]:
+    granted = voice_persona_consent_granted(consent_getter)
+    return {
+        "required": True,
+        "granted": granted,
+        "allowed": granted,
+        "setting": f"{PERSONA_VOICE_CONSENT_CATEGORY}.{PERSONA_VOICE_CONSENT_KEY}",
+        "message": None if granted else PERSONA_VOICE_CONSENT_MESSAGE,
+    }
+
 
 class TTSEngine:
     VOICE_MAP = {
@@ -34,28 +77,80 @@ class TTSEngine:
         "en-us": "en-US-GuyNeural",
     }
 
-    def __init__(self, default_voice: str = "en-GB-RyanNeural", default_lang: str = "en"):
+    def __init__(
+        self,
+        default_voice: str = "en-GB-RyanNeural",
+        default_lang: str = "en",
+        consent_getter: Optional[Callable[[], bool]] = None,
+    ):
         self.default_voice = default_voice
         self.default_lang = default_lang
+        self._consent_getter = consent_getter
+        self.last_consent_status: dict[str, object] = {
+            "required": False,
+            "granted": True,
+            "allowed": True,
+            "message": None,
+        }
         TEMP_DIR.mkdir(parents=True, exist_ok=True)
         logger.info(f"TTS Engine ready (edge={HAS_EDGE}, kokoro={HAS_KOKORO})")
+
+    def _safe_default_voice(self, lang: str = None) -> str:
+        candidate = self.VOICE_MAP.get(lang) or self.default_voice
+        if not is_persona_or_cloned_voice(candidate):
+            return candidate
+        fallback = self.VOICE_MAP.get(lang) or self.VOICE_MAP.get(self.default_lang)
+        if fallback and not is_persona_or_cloned_voice(fallback):
+            return fallback
+        return "en-GB-RyanNeural"
+
+    def _persona_voice_allowed(self, requested_voice: str, lang: str = None) -> bool:
+        fallback = self._safe_default_voice(lang)
+        granted = voice_persona_consent_granted(self._consent_getter)
+        self.last_consent_status = {
+            "required": True,
+            "granted": granted,
+            "allowed": granted,
+            "requested_voice": requested_voice,
+            "fallback_voice": fallback,
+            "setting": f"{PERSONA_VOICE_CONSENT_CATEGORY}.{PERSONA_VOICE_CONSENT_KEY}",
+            "message": None if granted else PERSONA_VOICE_CONSENT_MESSAGE,
+        }
+        if not granted:
+            logger.warning(
+                "Blocked cloned/persona voice %r without owner consent; using %r",
+                requested_voice,
+                fallback,
+            )
+        return granted
 
     async def speak(self, text: str, voice: str = None, lang: str = None) -> Optional[str]:
         """Synthesize speech, return path to audio file, or None."""
         v = voice or self.VOICE_MAP.get(lang, self.default_voice)
+        self.last_consent_status = {
+            "required": False,
+            "granted": True,
+            "allowed": True,
+            "requested_voice": v,
+            "fallback_voice": None,
+            "message": None,
+        }
+
+        if is_persona_or_cloned_voice(v) and not self._persona_voice_allowed(v, lang):
+            v = self._safe_default_voice(lang)
 
         # H5.1 Local XTTS / ElevenLabs voice cloning integrations
         if v == "xtts" or (isinstance(v, str) and v.startswith("xtts:")) or (isinstance(v, str) and "xtts" in v.lower()):
             res = await self._speak_xtts(text, v)
             if res:
                 return res
-            v = "ro-RO-EmilNeural" if lang == "ro" else self.default_voice
+            v = self._safe_default_voice(lang)
 
         if v == "elevenlabs" or (isinstance(v, str) and v.startswith("elevenlabs:")) or (isinstance(v, str) and "elevenlabs" in v.lower()):
             res = await self._speak_elevenlabs(text, v)
             if res:
                 return res
-            v = "ro-RO-EmilNeural" if lang == "ro" else self.default_voice
+            v = self._safe_default_voice(lang)
 
         if HAS_EDGE:
             return await self._speak_edge(text, v)

@@ -56,3 +56,17 @@ test('Cinema mode (m) opens the full-bleed mesh and Esc closes it', async ({ pag
   await page.keyboard.press('Escape');                  // Esc → exit
   await expect(page.locator('.cinema')).toHaveCount(0);
 });
+
+test('golden-signals /metrics stays available during the HUD soak', async ({ request }) => {
+  const resp = await request.get('/metrics');
+  expect(resp.status()).toBe(200);
+  const body = await resp.text();
+  for (const family of [
+    'jarvis_http_requests_total',
+    'jarvis_http_request_duration_seconds',
+    'jarvis_http_errors_total',
+    'jarvis_http_requests_in_flight',
+  ]) {
+    expect(body).toContain(family);
+  }
+});

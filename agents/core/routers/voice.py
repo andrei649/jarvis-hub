@@ -206,9 +206,10 @@ async def voice_capabilities():
     """
     from core.voice.stt import HAS_WHISPER
     try:
-        from core.voice.tts import HAS_EDGE
+        from core.voice.tts import HAS_EDGE, voice_persona_consent_status
     except Exception:
         HAS_EDGE = False
+        voice_persona_consent_status = None
     try:
         from core.voice.tts import HAS_KOKORO
     except Exception:
@@ -219,6 +220,11 @@ async def voice_capabilities():
         "stt": bool(HAS_WHISPER),                       # local Whisper available
         "tts": bool(HAS_EDGE or HAS_KOKORO or xtts or eleven),
         "tts_local": bool(xtts or HAS_KOKORO),          # an on-device TTS path exists
+        "persona_voice": (
+            voice_persona_consent_status()
+            if voice_persona_consent_status else
+            {"required": True, "granted": False, "allowed": False, "message": "voice consent status unavailable"}
+        ),
         "providers": {
             "stt": "faster-whisper" if HAS_WHISPER else None,
             "xtts": xtts, "elevenlabs": eleven, "edge_tts": bool(HAS_EDGE), "kokoro": bool(HAS_KOKORO),
