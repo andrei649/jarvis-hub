@@ -1,12 +1,28 @@
 # Jarvis Hub — Status Snapshot
 
-> **Current version:** v0.11.0 (feature-complete + refactor done; productionizing toward 1.0) · **Tests:** ~3,466 passed (6 skipped) + frontend **132 vitest** (HUD-v3 Console port complete: every blueprint surface + the north-star Decision Inbox + native Neural-Mesh canvas + cinema mode) · **Agents:** 17 active (16 cabinet incl. Howard + Argus, the WorldView bridge; + 17 bench) · **HTTP routes:** 363 (+ feedback widget/summary, H23.21; + onboarding, H23.20; +`/api/metrics/capabilities`, V2; + `/api/security/loop-breaker` status/reset, K3; + `/api/metrics/kernel`, Gate-K observability) — `web.py` decomposed into **45 per-domain routers** (CLN-3, #296); only 9 app-shell/chat/admin routes remain inline (4,636→1,282 LOC)
+> **Current version:** v0.11.0 (feature-complete + refactor done; productionizing toward 1.0) · **Tests:** ~3,480 passed (6 skipped) + frontend **155 vitest** + Playwright HUD/flow suites (HUD-v3 Console port complete: every blueprint surface + the north-star Decision Inbox + native Neural-Mesh canvas + cinema mode) · **Agents:** 17 active (16 cabinet incl. Howard + Argus, the WorldView bridge; + 17 bench) · **HTTP routes:** 363 (+ feedback widget/summary, H23.21; + onboarding, H23.20; +`/api/metrics/capabilities`, V2; + `/api/security/loop-breaker` status/reset, K3; + `/api/metrics/kernel`, Gate-K observability) — `web.py` decomposed into **45 per-domain routers** (CLN-3, #296); only 9 app-shell/chat/admin routes remain inline (4,636→1,282 LOC)
 > **The version is the roadmap.** Every feature horizon (H1–H22 + WorldView O19) is delivered — that's **0.10.0**; the **0.11.0** refactor (CLN-3 `web.py` split + CLN-2 `orchestrator.py` managers) is done (#293/#296). There is no "audit gate" version: 1.0 is a real destination reached by finishing the productionization layer (**H23**: agentic-safety budgets, DB migrations, backup/restore + export-delete, operability, quality + user docs) **and** proving it with real design-partner users. The plan is the version line in [BACKLOG.md](BACKLOG.md#version-roadmap); strategy in [MOONSHOT.md](MOONSHOT.md) §4. Manual testing/audit ([docs/MANUAL_TESTING.md](docs/MANUAL_TESTING.md), [docs/AUDIT.md](docs/AUDIT.md)) is the release step that tags a version. GPU-gated dev (H12.14, H13.3, Howard) is its own minor (0.18). HUD deep write-controls tracked in [docs/design/HUD_V2_REMAINING.md](docs/design/HUD_V2_REMAINING.md).
 >
 > The version labels in the feature tables below (`v0.2.0`, `v0.2.1`) record *when* each capability first
 > landed (provenance), not the current release. For live priorities and the version roadmap, BACKLOG.md is the source of truth.
 >
 > **Year-one review (candid, owner-facing):** [docs/REVIEW_YEAR_ONE.md](docs/REVIEW_YEAR_ONE.md) — status, the 12 learnings, the gap between *code-complete* and *desirable product*, and the next-90-days plan.
+
+---
+
+## ORIZONT 25 Update — 2026-07-03
+
+Integrated Codex development batch for the M1/M2 substrate and truth gates:
+
+| Item | Status | Verified result |
+|------|--------|-----------------|
+| M1.1 K3 budget unification | ✅ done | Shared `BudgetLedger` now reports named dimensions; interrupt, mission, payment, and handler token usage feed the kernel view. |
+| M1.2 `Action.origin` threading | ✅ done | `Gateway.route` classifies trusted web/voice vs inbound channels; brokers carry the current origin so inbound actions escalate through the kernel. |
+| M2.1 chat/voice flow E2E | ✅ done | Playwright covers chat send→SSE→stop plus mocked voice push-to-talk into a chat turn. |
+| M2.3 OpenAPI→TS typegen | ✅ done | Generated `frontend/src/api/schema.gen.ts`; CI regenerates from live `/openapi.json` and fails on diff. |
+| M2.4 scheduled eval gate | 🟡 partial | Deterministic `companion_eval --ci-gate` and schedule are wired; baseline compare needs persistent eval storage and live-model mode needs a persistent/live runner. |
+
+The 2026-07-03 local batch that bundled M1.3/M1.4/M1.5/M2.2/M2.4/M2.6 is recorded in `BACKLOG.md` as a protocol exception, not a precedent. Future ORIZONT 25 work returns to one item = one PR.
 
 ---
 

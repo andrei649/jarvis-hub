@@ -43,16 +43,36 @@ def is_night_window(hour: int, start: int = 23, end: int = 6) -> bool:
 class InterruptBudget:
     """Caps urgent push notifications per day to protect the user's attention."""
 
-    def __init__(self, per_day: int = INTERRUPT_BUDGET_PER_DAY):
+    def __init__(self, per_day: int = INTERRUPT_BUDGET_PER_DAY, *,
+                 ledger=None, dimension: str = "interrupts/day"):
         self.per_day = per_day
         self._day = date.today()
         self._used = 0
+        self._ledger = ledger
+        self._dimension = dimension
+        self._sync_dimension()
+
+    def _sync_dimension(self) -> None:
+        if self._ledger is None:
+            return
+        setter = getattr(self._ledger, "set_dimension_usage", None)
+        if setter is None:
+            return
+        setter(
+            self._dimension,
+            self._used,
+            limit=self.per_day,
+            unit="interrupts",
+            enforced=True,
+            metadata={"period": "day", "day": self._day.isoformat()},
+        )
 
     def _roll(self) -> None:
         today = date.today()
         if today != self._day:
             self._day = today
             self._used = 0
+        self._sync_dimension()
 
     def remaining(self) -> int:
         self._roll()
@@ -63,6 +83,7 @@ class InterruptBudget:
         if self._used >= self.per_day:
             return False
         self._used += 1
+        self._sync_dimension()
         return True
 
 

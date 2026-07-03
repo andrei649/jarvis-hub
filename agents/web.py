@@ -1292,9 +1292,13 @@ def _get_payment_broker():
         # brokers use (kill-switch · capabilities · policy · audit). None if the live
         # orchestrator/policy isn't reachable → kernel-less, unchanged behavior.
         # Default-off at runtime regardless (JARVIS_ACTION_KERNEL).
+        orch_obj = globals().get("orch")
+        budget_ledger = getattr(orch_obj, "budget_ledger", None)
         _payment_broker = PaymentBroker(
             audit=IntentLog(path=str(data_path("security/payments_intent.json"))),
-            kernel=make_action_kernel(globals().get("orch")))
+            kernel=make_action_kernel(orch_obj, budget_ledger=budget_ledger),
+            ledger=budget_ledger,
+        )
     return _payment_broker
 
 
@@ -1491,4 +1495,3 @@ def _wf_store():
 
 
 # ... /api/status extracted to routers/status.py (CLN-3)
-

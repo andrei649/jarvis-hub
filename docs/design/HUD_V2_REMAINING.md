@@ -63,9 +63,9 @@ Still on mock (wire to endpoints; some need plugins configured):
   `.github/workflows/ci.yml` runs `npm ci` → `tsc --noEmit` → vitest → `vite build` and fails
   if the committed `agents/web/v2` differs from a fresh build. *(This line was stale — noticed
   2026‑06‑10 while re‑checking the punch‑list.)*
-- **OpenAPI types**: generate `src/api/schema.ts` from `/openapi.json` (`openapi-typescript`) + add a
-  `tsc` gate; optionally backfill `response_model=` on the ~30 consumed endpoints. (Most ported files
-  are `// @ts-nocheck` — drop that as types land.)
+- ~~**OpenAPI types**~~ ✅ **DONE 2026-07-03** — `frontend/src/api/schema.gen.ts` is generated from
+  the live FastAPI `/openapi.json` via pinned `openapi-typescript`; CI boots the backend,
+  regenerates, and fails on a schema diff. Consumer migration remains gradual by design.
 - **Self‑host fonts**: vendor Space Grotesk + JetBrains Mono as woff2 (currently system‑font
   fallback — offline‑clean but off‑brand).
 - **ESM cleanup**: the ported prototype files keep an `import { … } from './ui'` barrel + loose types;
@@ -118,8 +118,8 @@ AI step builder (H10.7) · sandbox execute (DEV_MODE‑gated, honest 403) · age
 send the admin token (`actA`). +7 frontend tests (19 total).
 
 **Still open (the tail of TASK‑2, re‑verified 2026‑07‑03):** §3 plugin‑gated mode wiring
-(Finance/Health/Knowledge/Family, Comms Discord/Slack threads) and §6 toolchain remainder
-(OpenAPI types, self‑hosted fonts). Estimated 1–2 PRs.
+(Finance/Health/Knowledge/Family, Comms Discord/Slack threads) and §6 self‑hosted fonts.
+Estimated 1–2 PRs.
 *Since‑closed items previously listed here:* CI stale‑bundle guard ✅ (`hud-v2-build` in `ci.yml`),
 §7 locality endpoint ✅ (`GET /api/analytics/locality`, consumed in `app.tsx`/`shell.tsx`), and the
 BUG‑17 audit‑verify Trust chip ✅ (`modes.tsx:117-165` renders the live

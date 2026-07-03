@@ -8,6 +8,7 @@ import logging
 import time
 from typing import Any, Callable, Optional
 
+from ..action_origin import origin_for_channel
 from ..log_safe import log_safe
 
 logger = logging.getLogger("jarvis.gateway")
@@ -81,6 +82,7 @@ class Gateway:
             return None
 
         try:
+            kwargs.setdefault("origin", origin_for_channel(channel))
             result = await self.handler(text, channel=channel, **kwargs)
             self._channels[channel]["last_activity"] = time.time()
             return result

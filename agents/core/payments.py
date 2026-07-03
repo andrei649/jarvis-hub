@@ -55,10 +55,11 @@ class PaymentBroker(JsonStore):
     KIND = "payment"
 
     def __init__(self, path: str | Path = DEFAULT_PATH, audit=None,
-                 *, kernel=None, agent: str = "jarvis") -> None:
+                 *, kernel=None, agent: str = "jarvis", ledger=None) -> None:
         self._audit = audit
         self._kernel = kernel   # ORIZONT-24 K1: bound kernel.authorize (default-off)
         self._agent = agent
+        self._ledger = ledger
         super().__init__(path)
 
     def _serialize(self):
@@ -76,6 +77,25 @@ class PaymentBroker(JsonStore):
             except Exception:
                 # Audit is best-effort; never let a logging hiccup block the gate.
                 pass
+
+    def _sync_mandate_dimension(self, mandate: Optional[dict]) -> None:
+        if self._ledger is None or mandate is None:
+            return
+        setter = getattr(self._ledger, "set_dimension_usage", None)
+        if setter is None:
+            return
+        setter(
+            "money.total",
+            float(mandate.get("spent") or 0.0),
+            limit=float(mandate.get("total_cap") or 0.0),
+            unit=str(mandate.get("currency") or ""),
+            enforced=False,
+            metadata={
+                "mandate_id": mandate.get("id"),
+                "payees": list(mandate.get("payees") or []),
+                "per_payment_cap": mandate.get("per_payment_cap"),
+            },
+        )
 
     # ── mandates ─────────────────────────────────────────────────────────────
 
@@ -100,6 +120,7 @@ class PaymentBroker(JsonStore):
         self._mandates[mandate_id] = rec
         with self._lock:
             self._save()
+        self._sync_mandate_dimension(rec)
         self._record("create_mandate", f"budget {total_cap} {rec['currency']} for {len(allowlist)} payee(s)",
                      mandate_id=mandate_id)
         return dict(rec)
@@ -141,6 +162,7 @@ class PaymentBroker(JsonStore):
         ``pending`` payment. Returns ``{"ok": False, "reason": <code>}`` on denial
         or ``{"ok": True, "payment": {...}}`` — denial is never pending."""
         mandate = self._mandates.get(mandate_id)
+        self._sync_mandate_dimension(mandate)
         payee = str(payee).strip()
         reason = self._deny_reason(mandate, payee, amount, currency)
         if reason:
@@ -154,6 +176,7 @@ class PaymentBroker(JsonStore):
         # never auto-settle, so the kernel only adds a hard *deny* capability, it can't
         # relax the always-approval rule.
         if self._kernel is not None:
+            from agents.core.action_origin import current_action_origin
             from agents.core.kernel import Action, Verdict, kernel_enabled
             if kernel_enabled():
                 decision = self._kernel(Action(
@@ -162,7 +185,7 @@ class PaymentBroker(JsonStore):
                     payload={"mandate_id": mandate_id, "payee": payee,
                              "amount": float(amount), "currency": currency.upper(),
                              "memo": str(memo)[:280]},
-                    origin="generated"))
+                    origin=current_action_origin()))
                 if decision.verdict is Verdict.DENY:
                     self._record("deny_payment", f"kernel:{decision.reason}",
                                  mandate_id=mandate_id, payee=payee, amount=amount)
@@ -180,6 +203,7 @@ class PaymentBroker(JsonStore):
         self._payments.append(payment)
         with self._lock:
             self._save()
+        self._sync_mandate_dimension(mandate)
         self._record("request_payment", "within mandate; awaiting approval",
                      payment_id=payment["id"], payee=payee, amount=amount)
         return {"ok": True, "payment": dict(payment)}
@@ -210,6 +234,7 @@ class PaymentBroker(JsonStore):
         p["approved_at"] = time.time()
         with self._lock:
             self._save()
+        self._sync_mandate_dimension(mandate)
         self._record("approve_payment", "owner approved", payment_id=payment_id, amount=p["amount"])
         return dict(p)
 
@@ -251,6 +276,7 @@ class PaymentBroker(JsonStore):
         p["settled_at"] = time.time()
         with self._lock:
             self._save()
+        self._sync_mandate_dimension(mandate)
         self._record("settle_payment", "settled (no real rail)", payment_id=payment_id,
                      amount=p["amount"], mandate_spent=mandate["spent"])
         return dict(p)

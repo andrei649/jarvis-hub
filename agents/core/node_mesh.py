@@ -105,6 +105,7 @@ class NodeMesh:
         # Keep the kernel import and its uses in ONE block so the names are always
         # bound before use (a split import/use trips CodeQL's may-be-uninitialized).
         if self._kernel is not None:
+            from .action_origin import current_action_origin
             from .kernel import Action, Capability, Verdict, kernel_enabled
             if kernel_enabled():
                 kernel_ran = True
@@ -114,7 +115,7 @@ class NodeMesh:
                     return {"ok": False, "reason": "unknown_node"}
                 decision = self._kernel(
                     Action(kind=KIND, agent=self.agent, title=title, payload=task_payload,
-                           scope=f"node:{node_id}", origin="generated"),
+                           scope=f"node:{node_id}", origin=current_action_origin()),
                     Capability(token_id=rec.get("token_id", ""), name=capability))
                 if decision.verdict is Verdict.DENY:
                     return {"ok": False, "reason": decision.reason}

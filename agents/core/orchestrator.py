@@ -25,6 +25,7 @@ from .checkpoint import CheckpointManager
 from .heartbeat import HeartbeatScheduler
 from .scheduler_service import SchedulerService
 from .autonomy_coordinator import AutonomyCoordinator
+from .action_origin import bind_action_origin, origin_for_channel, reset_action_origin
 from . import llm_control  # CLN-2: NL LLM-control detection + execution
 from .llm_control import detect_llm_control  # re-exported: NL LLM-control detection (CLN-2)
 from . import cognition_trace  # CLN-2: builds + persists the per-turn cognition trace
@@ -136,7 +137,9 @@ class Orchestrator:
         # Set eagerly (trivial in-memory) so it's present before autonomy wiring; bound
         # ONLY into the broker-mediated kernel (the agent action path) — never routes/egress.
         from .kernel.budget import LoopDetector
+        from .kernel.binding import make_budget_ledger
         self.loop_detector = LoopDetector()
+        self.budget_ledger = make_budget_ledger()
 
         def _capabilities():
             m = importlib.import_module(".security.capability", "agents.core")
@@ -281,7 +284,7 @@ class Orchestrator:
         # plan, budget, pause/resume, on-disk artifacts + an append-only event
         # audit trail. Independent of the task queue (a mission can span many
         # tasks/turns and survive restarts).
-        self.missions = MissionStore()
+        self.missions = MissionStore(ledger=self.budget_ledger)
         # /admin → autonomy.cap_per_action / daily_ceiling / interrupt_budget.
         # These were dataclass defaults (50/200/4); live-resynced each tick by the
         # autonomy coordinator (like autonomy.mode).
@@ -293,7 +296,10 @@ class Orchestrator:
                 daily_ceiling=float(_gv("autonomy", "daily_ceiling", 200.0)),
             ),
             prefs=self.autonomy_prefs,
-            budget=InterruptBudget(per_day=int(_gv("autonomy", "interrupt_budget", 4))),
+            budget=InterruptBudget(
+                per_day=int(_gv("autonomy", "interrupt_budget", 4)),
+                ledger=self.budget_ledger,
+            ),
         )
         # Proactive OS Observer — the trigger layer that feeds the queue.
         self.observer: Optional[ProactiveObserver] = None
@@ -607,33 +613,38 @@ class Orchestrator:
         logger.info("Channels stopped")
 
     async def channel_handler(self, text: str, channel: str = "voice", **kwargs) -> Optional[str]:
+        action_origin = kwargs.pop("origin", origin_for_channel(channel))
+        origin_token = bind_action_origin(action_origin)
         chat_id = kwargs.get("chat_id")
-        # H3.3: cross-channel context is opt-in. When enabled, every channel
-        # shares self.session_id (web<->telegram continuity). When off (default),
-        # telegram keeps per-chat_id isolation (H1.2).
-        cross_channel = self.get_setting("memory.cross_channel_sessions", False)
-        if not cross_channel and channel == "telegram" and chat_id:
-            ck = f"tg:{chat_id}"
-            if ck not in self._channel_sessions:
-                self._channel_sessions[ck] = await self.memory.new_session()
-            # BUG-5: bind this telegram chat's session into the per-request async
-            # context instead of mutating shared `self.session_id` and restoring
-            # it in a finally. The old save/restore-on-self clobbered concurrent
-            # turns (the finally reset the *shared* attribute another in-flight
-            # request was reading). Here we set a *context-local* token and reset
-            # it in finally, so the binding is scoped to this request's async
-            # context only and never touches the shared default. `_resolve_session`
-            # inside handle_input keeps the value we set here.
-            token = _active_session.set(self._channel_sessions[ck])
-            try:
+        try:
+            # H3.3: cross-channel context is opt-in. When enabled, every channel
+            # shares self.session_id (web<->telegram continuity). When off (default),
+            # telegram keeps per-chat_id isolation (H1.2).
+            cross_channel = self.get_setting("memory.cross_channel_sessions", False)
+            if not cross_channel and channel == "telegram" and chat_id:
+                ck = f"tg:{chat_id}"
+                if ck not in self._channel_sessions:
+                    self._channel_sessions[ck] = await self.memory.new_session()
+                # BUG-5: bind this telegram chat's session into the per-request async
+                # context instead of mutating shared `self.session_id` and restoring
+                # it in a finally. The old save/restore-on-self clobbered concurrent
+                # turns (the finally reset the *shared* attribute another in-flight
+                # request was reading). Here we set a *context-local* token and reset
+                # it in finally, so the binding is scoped to this request's async
+                # context only and never touches the shared default. `_resolve_session`
+                # inside handle_input keeps the value we set here.
+                token = _active_session.set(self._channel_sessions[ck])
+                try:
+                    response = await self.handle_input(text, channel)
+                finally:
+                    _active_session.reset(token)
+            else:
                 response = await self.handle_input(text, channel)
-            finally:
-                _active_session.reset(token)
-        else:
-            response = await self.handle_input(text, channel)
 
-        await self.channel_manager.send(channel, response, **kwargs)
-        return response
+            await self.channel_manager.send(channel, response, **kwargs)
+            return response
+        finally:
+            reset_action_origin(origin_token)
 
     def _resolve_session(self, session_id: Optional[str]) -> str:
         """BUG-5: bind the active session into the per-request async context.
