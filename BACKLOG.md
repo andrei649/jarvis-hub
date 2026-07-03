@@ -15,7 +15,7 @@
 pip install -r requirements-beta.txt
 python serve.py   # canonical entry (boot guards + graceful shutdown; O26-P0.6: the raw
 #   uvicorn entry `python -m uvicorn agents.web:app` now runs the same guards via the lifespan)
-python -m pytest tests/ -v          # ~3,522 passed, 6 skipped (counter synced via scripts/status_sync.py)
+python -m pytest tests/ -v          # ~3,538 passed, 6 skipped (counter synced via scripts/status_sync.py)
 ```
 
 > Singurul skip rămas e heartbeat-ul opțional. (Vechiul `tests/test_spotify.py` cu 8 skip-uri a
@@ -388,7 +388,7 @@ MANUAL_TESTING signs off **and** real-usage data exists. Details: blueprint §5 
 
 | # | Item | S | Status |
 |---|------|---|--------|
-| O26-P0.1 | Golden-loop harness (fake LLM at `generate()` seam only) + loop #1 skeleton | 3 | ✅ done (2026-07-03) — `tests/test_o26_golden_loop_chat.py`: real 17-agent `Orchestrator(JarvisConfig())` boot, `FakeBackend` injected only at `select_backend`, offline |
+| O26-P0.1 | Golden-loop harness (fake LLM at `generate()` seam only) + loop #1 skeleton | 3 | ✅ done (2026-07-03) — `tests/test_o26_golden_loop_chat.py`: real 17-agent `Orchestrator(JarvisConfig())` boot, `FakeBackend` injected only at `select_backend`, offline. **+ harness-ul partajat** `tests/golden_harness.py` (fake instalat prin seam-ul `detect()`, izolare `JARVIS_HOME`; biblioteca de fixture pentru loops #2–#5) + `tests/test_golden_loop_chat.py` (+3: non-stream `handle_input` → reply rutat local + memoria sesiunii + learning/bench/run-history + entități/KG (`lives_in`) + istoricul turei 1 în promptul turei 2 la seam-ul LLM; stream: tokeni + memorie + record-seam post-F1) |
 | O26-P0.2 | **F1**: stream path calls `_record_interactions` (web chat finally feeds KG/learning/run-history; %-local re-baselined) | 2 | ✅ done (2026-07-03) — `handle_input_stream` now runs `_log_session` + `_record_interactions` (route_name/agent_id pre-bound); **red-proven** (loop #1 fails on pre-fix code); stream/non-stream symmetry + empty-target guards pinned (+3 tests) |
 | O26-P0.3 | **F2**: seed `cognition.*` + `memory.recall_enabled/top_k` in DEFAULTS; `put_category` upserts known-spec keys | 2 | ✅ done (2026-07-03) — 13th settings category `cognition` (master OFF, 5 sub-flags ON so one switch wakes the layer) + `memory.recall_enabled/recall_top_k`; `put_category` upserts spec-known keys, still rejects arbitrary rows; facade wakes via the settings path (+9 tests) |
 | O26-P0.4 | **F4**: sycophancy axis scores the assistant reply, not the user input (`cognition_trace.py:93,124`) | 1 | ✅ done (2026-07-03) — traces carry `output_preview`; honesty scores the reply (user text passed as context); same mis-aim fixed in `quality.evaluate_heuristics` (empty reply now scores `non_empty=0`; legacy key-absent traces keep the fallback) (+5 tests) |
