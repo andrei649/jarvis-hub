@@ -60,7 +60,12 @@ async def test_faked_web_turn_runs_the_whole_loop(golden):
     # zero-latency samples, and Windows' coarse monotonic tick measures a
     # faked instant generate as exactly 0.0.
     bench0 = sum(1 for s in orch.bench.samples if s.agent_id == "jarvis")
-    run0 = len(orch.run_history.list("jarvis"))
+    # Run-history shares the suite-wide store (its module binds DEFAULT_PATH at
+    # import — see the harness docstring) and list() caps at 50, so a length
+    # delta stops growing once the shared ring passes the cap. Mark the newest
+    # pre-turn entry and assert a NEWER one appears instead.
+    _pre = orch.run_history.list("jarvis", limit=1)
+    run_ts0 = _pre[0]["ts"] if _pre else 0.0
 
     reply = await orch.handle_input(TURN_1, channel="web", session_id=sid)
 
@@ -81,7 +86,8 @@ async def test_faked_web_turn_runs_the_whole_loop(golden):
     assert rec.agent_id == "jarvis"
     assert rec.metadata.get("channel") == "web"
     assert sum(1 for s in orch.bench.samples if s.agent_id == "jarvis") == bench0 + 1
-    assert len(orch.run_history.list("jarvis")) == run0 + 1
+    newest = orch.run_history.list("jarvis", limit=1)[0]
+    assert newest["ts"] > run_ts0 and TURN_1[:40] in newest.get("input_preview", "")
 
     # 4 — the user's turn fed the knowledge layer: entity store + KG triple.
     assert orch.entities.get("Andrei Popescu") is not None
@@ -121,11 +127,13 @@ async def test_stream_turn_feeds_learning_and_knowledge(golden):
     sid = await orch.memory.new_session("golden_loop1_stream_f1")
 
     learn0 = len(orch.learning.interactions)
-    run0 = len(orch.run_history.list("jarvis"))
+    _pre = orch.run_history.list("jarvis", limit=1)
+    run_ts0 = _pre[0]["ts"] if _pre else 0.0
 
     await orch.handle_input_stream(TURN_1, channel="web",
                                    on_token=lambda _t: None, session_id=sid)
 
     assert len(orch.learning.interactions) > learn0
-    assert len(orch.run_history.list("jarvis")) > run0
+    newest = orch.run_history.list("jarvis", limit=1)[0]
+    assert newest["ts"] > run_ts0 and TURN_1[:40] in newest.get("input_preview", "")
     assert orch.entities.get("Andrei Popescu") is not None

@@ -141,7 +141,6 @@ async def _probe_lan_allows_local() -> bool:
 # probe runs against a throwaway KillSwitch store so it never touches the live halt state.
 
 async def _probe_kill_switch_gates_kernel() -> bool:
-    import os
     import shutil
     import tempfile
 
@@ -172,7 +171,6 @@ async def _probe_capability_token_gates_kernel() -> bool:
     """The other half of the kernel's gate-1: the capability-token path. A valid, unexpired
     token granting the action's capability passes the gate (reaches policy); a missing/unknown
     token makes `kernel.authorize` DENY. Real `CapabilityBroker` + real `authorize`, no mock."""
-    import os
     import shutil
     import tempfile
 
@@ -209,7 +207,6 @@ async def _probe_capability_token_gates_kernel() -> bool:
 # GRANTed. Untrusted intel can never auto-execute. No mock, no socket; isolated KillSwitch.
 
 async def _probe_osint_untrusted_ingestion_queued() -> bool:
-    import os
     import shutil
     import tempfile
 
@@ -252,7 +249,6 @@ async def _probe_osint_untrusted_ingestion_queued() -> bool:
 # pack can watch the market freely but can't act on your behalf. No mock, isolated KillSwitch.
 
 async def _probe_market_money_action_queued() -> bool:
-    import os
     import shutil
     import tempfile
 
@@ -286,7 +282,6 @@ async def _probe_market_money_action_queued() -> bool:
 # is auto-published on the user's behalf. No mock, isolated KillSwitch.
 
 async def _probe_creative_release_queued() -> bool:
-    import os
     import shutil
     import tempfile
 
