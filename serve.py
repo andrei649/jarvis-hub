@@ -29,17 +29,6 @@ if missing:
 if importlib.util.find_spec("numpy") is None:
     warnings.warn("numpy not installed — vector store will be slower")
 
-from agents.web import app
-
-
-def _env_int(name: str, default: int) -> int:
-    """Best-effort int env read (falls back to default on missing/garbage)."""
-    try:
-        return int(os.environ.get(name, "").strip() or default)
-    except (TypeError, ValueError):
-        return default
-
-
 # O26-P0.6 (F6): the boot guards moved to agents/core/boot_guards.py so the
 # raw-uvicorn entry (`python -m uvicorn agents.web:app`) enforces the same
 # posture via the app lifespan. Re-exported here — serve.py stays the
@@ -48,6 +37,8 @@ from agents.core.boot_guards import (  # noqa: E402,F401
     assert_hardened_posture,
     assert_safe_bind,
 )
+from agents.core.env_config import env_int  # noqa: E402  (O26-P2.1: was a local _env_int)
+from agents.web import app
 
 
 def server_config():
@@ -73,9 +64,9 @@ def server_config():
     return uvicorn.Config(
         app,
         host=os.environ.get("JARVIS_HOST", "127.0.0.1"),
-        port=_env_int("JARVIS_PORT", 8080),
+        port=env_int("JARVIS_PORT", 8080),
         log_level=os.environ.get("JARVIS_LOG_LEVEL", "info"),
-        timeout_graceful_shutdown=_env_int("JARVIS_SHUTDOWN_TIMEOUT", 10),
+        timeout_graceful_shutdown=env_int("JARVIS_SHUTDOWN_TIMEOUT", 10),
     )
 
 

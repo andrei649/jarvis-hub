@@ -96,4 +96,5 @@ def verify_skill(skill_dir: Path) -> tuple[bool, str]:
 
 
 def require_signed() -> bool:
-    return os.environ.get("JARVIS_REQUIRE_SIGNED_SKILLS", "").lower() in ("1", "true", "yes")
+    from agents.core.env_config import env_flag
+    return env_flag("JARVIS_REQUIRE_SIGNED_SKILLS")

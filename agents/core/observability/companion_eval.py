@@ -37,6 +37,7 @@ from collections.abc import Awaitable, Callable
 from pathlib import Path
 
 from agents.core.cognition.honesty import sycophancy_signals
+from agents.core.env_config import env_flag
 
 from .datasets import DatasetStore
 from .eval import EvalCase, EvalHarness
@@ -359,7 +360,7 @@ def run_ci_gate(
             "breaches": breaches,
             "ok": not breaches,
         },
-        "live_eval_requested": os.getenv("JARVIS_EVAL_LIVE", "").lower() in {"1", "true", "yes"},
+        "live_eval_requested": env_flag("JARVIS_EVAL_LIVE"),
     }
     if summary_path:
         _write_summary(summary_path, out)

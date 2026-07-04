@@ -28,7 +28,6 @@ the tests — need no live app or orchestrator.
 from __future__ import annotations
 
 import inspect
-import os
 import types
 import typing
 from dataclasses import dataclass
@@ -261,8 +260,8 @@ def route_tools_enabled() -> bool:
 
     Default OFF. Accepts ``1/true/yes/on`` (case-insensitive).
     """
-    val = os.environ.get(ROUTE_TOOL_ENV, "").strip().lower()
-    return val in ("1", "true", "yes", "on")
+    from agents.core.env_config import env_flag
+    return env_flag(ROUTE_TOOL_ENV)
 
 
 def mutating_tools_enabled() -> bool:
@@ -278,8 +277,8 @@ def mutating_tools_enabled() -> bool:
     from ..security import hardened
     if hardened.mutating_mcp_blocked():
         return False
-    val = os.environ.get(MUTATING_TOOL_ENV, "").strip().lower()
-    return val in ("1", "true", "yes", "on")
+    from agents.core.env_config import env_flag
+    return env_flag(MUTATING_TOOL_ENV)
 
 
 def route_tool_name(name: str) -> str:

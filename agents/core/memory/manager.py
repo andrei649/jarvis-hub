@@ -38,7 +38,8 @@ class MemoryManager:
         self._lock = asyncio.Lock()
         # Real-embeddings recall (lazy: no network/import until first use).
         self._embedder = None
-        self.embed_turns = os.getenv("MEMORY_EMBED_TURNS", "false").lower() in ("1", "true", "yes")
+        from agents.core.env_config import env_flag
+        self.embed_turns = env_flag("MEMORY_EMBED_TURNS")
         seed_graph(self.graph)
 
     def _init_qdrant(self) -> VectorStore:

@@ -24,7 +24,6 @@ offline-testable.
 
 from __future__ import annotations
 
-import os
 import time
 from pathlib import Path
 from typing import Optional
@@ -51,7 +50,8 @@ def pairing_enabled() -> bool:
     Mirrors ``a2a_enabled``: the network/channel surface is closed by default so
     a fresh single-user deployment keeps its current ``allowed_users`` behavior.
     """
-    return os.environ.get("JARVIS_CHANNEL_PAIRING", "").lower() in ("1", "true", "yes")
+    from agents.core.env_config import env_flag
+    return env_flag("JARVIS_CHANNEL_PAIRING")
 
 
 def _key(channel: str, sender_id: str) -> str:

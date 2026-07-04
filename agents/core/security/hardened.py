@@ -24,12 +24,12 @@ from __future__ import annotations
 
 import os
 
-_TRUTHY = ("1", "true", "yes", "on")
+from agents.core.env_config import env_flag
 
 
 def enabled() -> bool:
     """True when the hardened profile is on (``JARVIS_HARDENED``)."""
-    return os.environ.get("JARVIS_HARDENED", "").strip().lower() in _TRUTHY
+    return env_flag("JARVIS_HARDENED")
 
 
 def guardrails_default(base: str = "WARN") -> str:

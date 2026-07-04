@@ -116,6 +116,15 @@ def _record_egress(plugin: str, host: str, method: str, *, allowed: bool, local:
         logger.debug("egress monitor record failed", exc_info=True)
 
 
+def strict_egress_enabled() -> bool:
+    """SEC-5: egress is strict by default; opt out only with an explicit falsy
+    ``JARVIS_STRICT_EGRESS``. CDX-12: the hardened profile forces strict and
+    ignores the downgrade — that layering stays here, not in env_config."""
+    from agents.core.env_config import env_flag
+    from .security import hardened
+    return hardened.strict_egress_forced() or env_flag("JARVIS_STRICT_EGRESS", True)
+
+
 @dataclass
 class PluginTimeouts:
     """Timeout configuration for a PluginHTTPClient."""
@@ -234,12 +243,7 @@ class PluginHTTPClient:
                          f"(allowed: {allowed})")
         else:
             return
-        import os
-        from .security import hardened
-        # SEC-5: strict by default; opt out with JARVIS_STRICT_EGRESS=0/false/no.
-        # CDX-12: the hardened profile forces strict and ignores the =0 downgrade.
-        strict = (hardened.strict_egress_forced()
-                  or os.environ.get("JARVIS_STRICT_EGRESS", "1").strip().lower() not in ("0", "false", "no"))
+        strict = strict_egress_enabled()
         if strict:
             raise PluginEgressError(f"egress blocked: {violation}")
         logger.warning("egress policy violation (JARVIS_STRICT_EGRESS=0, allowing): %s", violation)

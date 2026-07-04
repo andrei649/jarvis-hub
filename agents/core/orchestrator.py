@@ -48,6 +48,7 @@ from .plugin_gate import PermissionGate
 from .security.guardrails import GuardrailsEngine
 from .security.audit import AuditLogger
 from .security.types import RedactionMode, SecurityEvent, SecurityEventType
+from .env_config import env_flag, truthy
 from .log import log_error
 from .errors import (
     E_LLM_BACKEND_MISSING, E_LLM_TIMEOUT,
@@ -76,22 +77,20 @@ HANDOFF_PREFIX = "[handoff:"
 SKILL_PREFIX = "[learn:"
 
 
-def _env_flag(name: str, default: bool = True) -> bool:
-    raw = os.environ.get(name)
-    if raw is None or raw.strip() == "":
-        return default
-    return raw.strip().lower() not in ("0", "false", "no", "off", "disable", "disabled")
-
-
 def _as_bool(value, default: bool = True) -> bool:
-    """Coerce a runtime-settings value (bool / int / "true" / "off" / ...) to bool."""
+    """Coerce a runtime-settings value (bool / int / "true" / "off" / ...) to bool.
+
+    Settings-plane semantics (unchanged in O26-P2.1): empty string → False,
+    an unrecognized word → True — a stored setting is an explicit opt-in,
+    unlike an env flag where junk falls back to the default."""
     if value is None:
         return default
     if isinstance(value, bool):
         return value
     if isinstance(value, (int, float)):
         return value != 0
-    return str(value).strip().lower() not in ("0", "false", "no", "off", "disable", "disabled", "")
+    text = str(value).strip()
+    return bool(text) and truthy(text, default=True)
 
 
 
@@ -254,7 +253,7 @@ class Orchestrator:
         # env var is the boot-time default and a hard kill-switch (see docs).
         self.lmstudio = LMStudioController(
             router=self.llm_router,
-            enabled=_env_flag("JARVIS_LMSTUDIO_CONTROL", True),
+            enabled=env_flag("JARVIS_LMSTUDIO_CONTROL", True),
         )
         # H22.5 — attach the LRU residency manager, backed by the LM Studio
         # controller above. Default-off via JARVIS_MODEL_MANAGER (GPU-unvalidated):
@@ -385,14 +384,14 @@ class Orchestrator:
         # command) skips the cold-load cost. Fire-and-forget — the model load
         # can take seconds and must not delay startup. Gate with
         # JARVIS_LLM_WARMUP=0 for environments where preloading is unwanted.
-        if os.environ.get("JARVIS_LLM_WARMUP", "1") not in ("0", "false", "False"):
+        if env_flag("JARVIS_LLM_WARMUP", True):
             self._warmup_task = asyncio.create_task(self.llm_router.warm_up())
             self._warmup_task.add_done_callback(_log_task_result)
 
         # Personalization (PRIVATE) — import the owner's Drive "AI" folder via
         # rclone into a gitignored local dir and ingest it into memory. Opt-in
         # (JARVIS_DRIVE_AI_SYNC=1) and fire-and-forget so it never blocks startup.
-        if os.environ.get("JARVIS_DRIVE_AI_SYNC") in ("1", "true", "True"):
+        if env_flag("JARVIS_DRIVE_AI_SYNC"):
             self._drive_ai_task = asyncio.create_task(self._drive_ai_startup())
             self._drive_ai_task.add_done_callback(_log_task_result)
 
@@ -593,10 +592,10 @@ class Orchestrator:
         # which a privacy-first local product should not do unsolicited. It's a
         # dev/dogfooding feature — enable with JARVIS_ORACLE_WATCH=1 or the
         # `oracle.watch_enabled` setting.
-        _oracle_watch = os.getenv("JARVIS_ORACLE_WATCH") == "1" or self.get_setting("oracle.watch_enabled", False)
-        if hasattr(self, 'oracle_bridge') and os.getenv("JARVIS_TESTING") != "1" and _oracle_watch:
+        _oracle_watch = env_flag("JARVIS_ORACLE_WATCH") or self.get_setting("oracle.watch_enabled", False)
+        if hasattr(self, 'oracle_bridge') and not env_flag("JARVIS_TESTING") and _oracle_watch:
             self.oracle_bridge.start_watcher()
-        if os.getenv("JARVIS_TESTING") != "1":
+        if not env_flag("JARVIS_TESTING"):
             from agents.core.learning_loop import run_learning_loop
             _ll = asyncio.create_task(run_learning_loop(self))
             _ll.add_done_callback(_log_task_result)
@@ -1117,7 +1116,7 @@ class Orchestrator:
             return
         logger.info("Drive AI synced → %s", summary.get("dest"))
         # Ingest into memory unless disabled (JARVIS_DRIVE_AI_INDEX=0 = sync only).
-        if os.environ.get("JARVIS_DRIVE_AI_INDEX", "1") in ("0", "false", "False"):
+        if not env_flag("JARVIS_DRIVE_AI_INDEX", True):
             return
         try:
             from agents.core.local_docs import LocalDocsIndexer
@@ -1151,7 +1150,7 @@ class Orchestrator:
         """Master switch for LM Studio lifecycle control (chat + admin API + HUD).
         Off if EITHER the env var or the live ``llm.control_enabled`` setting is
         off, so any single kill signal wins. Both default on."""
-        return (_env_flag("JARVIS_LMSTUDIO_CONTROL", True)
+        return (env_flag("JARVIS_LMSTUDIO_CONTROL", True)
                 and _as_bool(self.get_setting("llm.control_enabled", True)))
 
     def _chat_control_enabled(self) -> bool:
@@ -1160,7 +1159,7 @@ class Orchestrator:
         ``llm.chat_control`` setting — lets you mute ambient detection while
         keeping the explicit admin buttons live."""
         return (self._control_master_enabled()
-                and _env_flag("JARVIS_LMSTUDIO_CHAT_CONTROL", True)
+                and env_flag("JARVIS_LMSTUDIO_CHAT_CONTROL", True)
                 and _as_bool(self.get_setting("llm.chat_control", True)))
 
     def _control_cognition(self, action: str) -> dict:

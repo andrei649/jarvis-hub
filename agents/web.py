@@ -14,6 +14,7 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Optional
 
+from agents.core.env_config import env_flag, env_int
 from agents.core.paths import data_path
 
 sys.path.insert(0, str(Path(__file__).parent))
@@ -44,7 +45,7 @@ from pydantic import BaseModel, Field, field_validator
 
 logger = logging.getLogger("jarvis.web")
 
-DEV_MODE = os.environ.get("DEV_MODE", "").lower() in ("1", "true", "yes")
+DEV_MODE = env_flag("DEV_MODE")
 
 # ── Admin authentication ──────────────────────────────────────────
 # The /api/admin/* routes can read settings, clear memory and expose env.
@@ -81,7 +82,7 @@ def _admin_configured() -> bool:
 # (forwarding headers present → request.client.host is the proxy, untrustworthy →
 # require a token). Set JARVIS_TRUSTED_PROXY=1 ONLY when a trusted proxy populates
 # X-Forwarded-For; we then read the first hop as the real client IP for the gate.
-TRUSTED_PROXY = os.environ.get("JARVIS_TRUSTED_PROXY", "").strip().lower() in ("1", "true", "yes")
+TRUSTED_PROXY = env_flag("JARVIS_TRUSTED_PROXY")
 
 
 def _real_client_host(request: Request) -> str:
@@ -214,10 +215,7 @@ async def _user_guard(request: Request):
 # *validly* authenticated requests are exempt, so the single-user HUD is never
 # throttled — but a wrong-token attempt is NOT exempt, so token guessing is
 # rate-limited. Fixed 60s window; JARVIS_RATE_LIMIT=0 disables it.
-try:
-    RATE_LIMIT_PER_MIN = int(os.environ.get("JARVIS_RATE_LIMIT", "120"))
-except ValueError:
-    RATE_LIMIT_PER_MIN = 120
+RATE_LIMIT_PER_MIN = env_int("JARVIS_RATE_LIMIT", 120)
 _RATE_WINDOW = 60.0
 _RATE_MAX_IPS = 4096
 _rate_hits: dict[str, list[float]] = {}
@@ -484,7 +482,7 @@ _DEFAULT_CSP = (
     "object-src 'none'; base-uri 'self'; frame-ancestors 'self'"
 )
 _CSP_POLICY = os.environ.get("JARVIS_CSP", _DEFAULT_CSP)
-_CSP_ENABLED = os.environ.get("JARVIS_DISABLE_CSP", "").lower() not in ("1", "true", "yes")
+_CSP_ENABLED = not env_flag("JARVIS_DISABLE_CSP")
 
 
 @app.middleware("http")

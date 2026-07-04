@@ -28,6 +28,7 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Optional
 
+from ..env_config import env_flag
 from .base import LLMBackend, OllamaBackend
 from .router import LLMRouter
 from .tokenizer import estimate_tokens
@@ -71,8 +72,9 @@ HEAVY_KEYWORDS: frozenset[str] = frozenset({
 })
 
 # Feature flag: set JARVIS_AUTO_DEEP=0 or JARVIS_AUTO_DEEP=false to disable.
-# Default is ON (complexity-based escalation active).
-AUTO_DEEP_ENABLED: bool = os.environ.get("JARVIS_AUTO_DEEP", "1") not in ("0", "false", "False")
+# Default is ON (complexity-based escalation active). Import-time constant on
+# purpose — tests pin behavior via monkeypatch.setattr on this name.
+AUTO_DEEP_ENABLED: bool = env_flag("JARVIS_AUTO_DEEP", True)
 
 # Agent policy constants
 POLICY_LOCAL = "local"
@@ -340,8 +342,8 @@ class HybridRouter(LLMRouter):
 
     @staticmethod
     def _models_strict() -> bool:
-        # Strict by default (mirrors JARVIS_STRICT_EGRESS); opt out with 0/false/no.
-        return os.environ.get("JARVIS_STRICT_MODELS", "1").strip().lower() not in ("0", "false", "no")
+        # Strict by default (mirrors JARVIS_STRICT_EGRESS); opt out only explicitly.
+        return env_flag("JARVIS_STRICT_MODELS", True)
 
     def _enforce_approved_models(self, agent_id: str, model: str, route: str) -> None:
         """Block (or, opted-out, warn) when routing picks a model off the agent's allowlist."""

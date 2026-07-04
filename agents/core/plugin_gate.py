@@ -455,10 +455,8 @@ def least_privilege_from_env() -> bool:
     broader ``JARVIS_HARDENED`` preset (CDX-12), so the hardened profile flips
     this on without a separate flag.
     """
-    for var in ("JARVIS_PLUGIN_LEAST_PRIVILEGE", "JARVIS_HARDENED"):
-        if os.environ.get(var, "").strip().lower() in ("1", "true", "yes", "on"):
-            return True
-    return False
+    from agents.core.env_config import env_flag
+    return any(env_flag(var) for var in ("JARVIS_PLUGIN_LEAST_PRIVILEGE", "JARVIS_HARDENED"))
 
 
 def grants_from_env() -> "dict[str, set[str]]":
