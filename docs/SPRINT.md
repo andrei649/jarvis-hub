@@ -7,13 +7,13 @@
 
 ## Sesiune curentă
 
-**Data:** 2026-07-04 (ORIZONT 26 P3.6 Landing Page Dev Half)
+**Data:** 2026-07-04 (ORIZONT 26 P3.6 delivered; next slice selection)
 **Lead agent / Conductor:** Codex
-**Obiectiv sesiune:** continue the ORIZONT 26 plan after P3.5; ship the static, self-contained landing page dev half and demo shot-list support without recording owner video.
-**Branch:** `codex-o26-p3-6-landing-dev-half`
+**Obiectiv sesiune:** keep ORIZONT 26 moving after P3.6; select the next unblocked slice without reopening delivered P3.6 scope.
+**Branch:** `main` (no active feature branch)
 
-**Scope decision (2026-07-04):** O26-P0, P1.1, P2.1, P2.2, P2.3, P2.4, P2.5, P3.1, P3.2, P3.3, P3.4, and P3.5 are merged.
-The current branch takes O26-P3.6 only: offline-safe landing page + demo capture checklist, based on `docs/marketing/` and `docs/BRAND_BOOK.md`.
+**Scope decision (2026-07-04):** O26-P0, P1.1, P2.1, P2.2, P2.3, P2.4, P2.5, P3.1, P3.2, P3.3, P3.4, P3.5, and P3.6 are merged.
+No active feature branch owns files right now.
 
 **Previous session:** O26-P0.1 golden harness was merged via #496, with P0.2–P0.7 already completed on
 main by parallel agents.
@@ -43,8 +43,7 @@ Status legend: ⏳ in progress · 🟡 draft PR · 🟢 CI green · ✅ merged �
 
 ## Fișiere blocate (în PR activ)
 
-Current O26-P3.6 status-doc follow-up branch owns only `BACKLOG.md`, `STATUS.md`, and
-`docs/SPRINT.md`.
+No active PR owns files right now.
 
 Un fișier blocat nu se atinge de alt agent fără confirmare utilizator.
 
