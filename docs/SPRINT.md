@@ -7,14 +7,14 @@
 
 ## Sesiune curentă
 
-**Data:** 2026-07-04 (ORIZONT 26 P2.3 dormant-module disposition)
+**Data:** 2026-07-04 (ORIZONT 26 P2.4 Product Posture)
 **Lead agent / Conductor:** Codex
-**Obiectiv sesiune:** continue the ORIZONT 26 plan after P2.2; deliver P2.3 as one focused PR with docs/status kept current.
-**Branch:** `codex-o26-p2-3-dormant-disposition`
+**Obiectiv sesiune:** continue the ORIZONT 26 plan after P2.3; start P2.4 Product Posture as one focused PR with docs/status kept current.
+**Branch:** `main` (next branch: `codex-o26-p2-4-product-posture`)
 
-**Scope decision (2026-07-04):** O26-P0, P1.1, P2.1, and P2.2 are the substrate for this branch, so the
-next unblocked plan item is O26-P2.3. Keep it one item = one PR: no posture, HUD breadth, or install-smoke
-work in this branch.
+**Scope decision (2026-07-04):** O26-P0, P1.1, P2.1, P2.2, and P2.3 are now merged. The
+next unblocked plan item is O26-P2.4 Product Posture. Keep it one item = one PR: no HUD breadth or
+install-smoke work in that branch.
 
 **Previous session:** O26-P0.1 golden harness was merged via #496, with P0.2–P0.7 already completed on
 main by parallel agents.
@@ -28,7 +28,8 @@ main by parallel agents.
 | O26-P1.1 / one-turn pipeline | `codex-o26-p1-1-one-turn-pipeline` | #498 | ✅ merged | Codex | Shared prompt wrapper + shared post-turn record seam |
 | O26-P2.1 / env config consolidation | `claude/jarvis-hub-backlog-review-jx87gz` | #500 | ✅ merged | Claude/Fable | One `env_config.truthy()` and env parse ratchet |
 | O26-P2.2 / memory consolidation | `codex-o26-p2-2-memory-consolidation` | #501 | ✅ merged | Codex | LivingMemory seam + nightly maintenance |
-| O26-P2.3 / dormant disposition | `codex-o26-p2-3-dormant-disposition` | #502 | 🟡 ready PR | Codex | Ensemble roster + learning proof + profile extractor parked |
+| O26-P2.3 / dormant disposition | `codex-o26-p2-3-dormant-disposition` | #502 | ✅ merged | Codex | Ensemble roster + learning proof + profile extractor parked |
+| O26-P2.4 / Product Posture | `codex-o26-p2-4-product-posture` | TBD | ⏳ next | Codex | Settings-backed named posture |
 
 Status legend: ⏳ in progress · 🟡 draft PR · 🟢 CI green · ✅ merged · 🔴 conflict
 
@@ -36,15 +37,7 @@ Status legend: ⏳ in progress · 🟡 draft PR · 🟢 CI green · ✅ merged �
 
 ## Fișiere blocate (în PR activ)
 
-`codex-o26-p2-3-dormant-disposition` owns:
-
-- `agents/core/orchestrator.py`
-- `agents/core/memory/profile_extractor.py`
-- `tests/test_o26_p2_dormant_disposition.py`
-- `BACKLOG.md`
-- `STATUS.md`
-- `docs/SPRINT.md`
-- `docs/COGNITION.md`
+No active file locks on `main`. The next branch will claim P2.4 files after branch creation.
 
 Un fișier blocat nu se atinge de alt agent fără confirmare utilizator.
 
@@ -54,13 +47,12 @@ Un fișier blocat nu se atinge de alt agent fără confirmare utilizator.
 
 ```
 Current order:
-  1. O26-P2.2 living-memory turn seam + nightly maintenance (#501)
-  2. O26-P2.3 dormant-module disposition (this branch)
-  3. O26-P2.4 Product Posture
+  1. O26-P2.2 living-memory turn seam + nightly maintenance (#501) ✅
+  2. O26-P2.3 dormant-module disposition (#502) ✅
+  3. O26-P2.4 Product Posture (next)
 ```
 
-Next backlog item after this PR lands: **O26-P2.4 Product Posture** once the woken memory and cognition
-substrates are sealed.
+Next backlog item: **O26-P2.4 Product Posture** now that the woken memory and cognition substrates are sealed.
 
 ---
 
@@ -99,7 +91,7 @@ Generalizează reflecția nocturnă din *rezumă-ziua* în *pre-raționează-pen
 - [x] Branch pushed / PR #501 opened
 - [x] GitHub Actions green; PR merged
 
-### ORIZONT 26 P2.3 — ÎN CURS
+### ORIZONT 26 P2.3 — COMPLET
 
 - [x] `main` synced after #501 merge
 - [x] Branch rebased onto current `origin/main`
@@ -111,6 +103,17 @@ Generalizează reflecția nocturnă din *rezumă-ziua* în *pre-raționează-pen
 - [x] Focused backend verification green
 - [x] Ruff / final compile pass
 - [x] Branch pushed / PR #502 opened
+- [x] GitHub Actions green; PR merged
+
+### ORIZONT 26 P2.4 — ÎN CURS
+
+- [x] `main` synced after #502 merge
+- [ ] Branch created from current main
+- [ ] Design/tests for settings-backed named posture
+- [ ] Product posture implementation
+- [ ] `BACKLOG.md` + `STATUS.md` updated from verified scope
+- [ ] Focused backend verification green
+- [ ] Branch pushed / PR opened
 - [ ] GitHub Actions green; PR merged
 
 ### Wave 0 — COMPLET ✅

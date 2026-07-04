@@ -12,18 +12,16 @@
 
 ## ORIZONT 26 Update — 2026-07-04
 
-O26 Phase 0, P1.1, P2.1, and P2.2 are complete on `main`. This branch continues Phase 2 with
-O26-P2.3: the dormant ensemble/persona roster is now
-populated from live active agents, governed learning is verified at the autonomy hook, and the legacy
-profile extractor is explicitly parked.
+O26 Phase 0, P1.1, P2.1, P2.2, and P2.3 are complete on `main`. The next Phase 2 item is
+O26-P2.4 Product Posture: settings-backed named posture composing hardened defaults with consent UX.
 
 | Item | Status | Verified result |
 |------|--------|-----------------|
 | O26-P1.1 one-turn pipeline | ✅ merged | `Agent.build_prompt()` is shared by plain/stream paths; `_build_agent_turn_text()` injects persona + runtime truth + history/plugins/recall for both; `_complete_llm_turn()` centralizes memory/checkpoint/log/learning+bench/run-history/audit/cognition; `PersonaModule.nudge()` runs once per completed LLM turn when affect is enabled. |
 | O26-P2.1 config consolidation | ✅ merged | `agents/core/env_config.py` is now the single boolean/env parsing leaf; ad-hoc env truthiness is ratcheted by tests. |
 | O26-P2.2 memory consolidation | ✅ merged (#501) | `_complete_llm_turn()` records LivingMemory + decay entries only when `cognition.enabled && cognition.memory_enabled`; LivingMemory stores session/agent/channel, a turn reference, text digest, and size counters rather than duplicating raw transcript text. `SchedulerService` registers `memory-consolidation-decay` and `run_memory_maintenance()` performs NREM/REM consolidation plus decay candidate inspection without auto-deletion. |
-| O26-P2.3 dormant disposition | ✅ done locally | `load_agents()` now registers active agents into `PersonaModule` + `EnsembleModule`; `cognition.learning_enabled` is proven live through the autonomy calibration hook; `profile_extractor.legacy_status()` marks the old regex extractor parked with no production callers. |
-| Local verification | ✅ targeted green | P2.2 focused sweep was 33 passed before #501 merge; P2.3 red/green tests (+4) plus ensemble, governed learning, persona, and memory-store suites are 48 passed. Full PR CI remains the merge gate for P2.3. |
+| O26-P2.3 dormant disposition | ✅ merged (#502) | `load_agents()` now registers active agents into `PersonaModule` + `EnsembleModule`; `cognition.learning_enabled` is proven live through the autonomy calibration hook; `profile_extractor.legacy_status()` marks the old regex extractor parked with no production callers. |
+| Local verification | ✅ targeted green | P2.2 focused sweep was 33 passed before #501 merge; P2.3 red/green tests (+4) plus ensemble, governed learning, persona, and memory-store suites are 48 passed before #502 merge. |
 
 ---
 
