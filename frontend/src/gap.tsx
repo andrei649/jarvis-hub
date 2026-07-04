@@ -1069,9 +1069,16 @@ export function RoomsPanel() {
   const { d, e, loading, reload } = useApi('/api/rooms');
   const rooms = arr(d, 'rooms');
   const [name, setName] = useState(''); const [sel, setSel] = useState(''); const [msg, setMsg] = useState('');
+  const hist = useApi(sel ? '/api/rooms/' + encodeURIComponent(sel) + '/history' : '/api/rooms', Boolean(sel));
+  const turns = arr(hist.d, 'history');
   const inp = { background: 'var(--surface)', color: 'var(--ink)', border: '1px solid var(--panel-line)', borderRadius: 4, padding: 5, ...mono, fontSize: 11, flex: 1 };
   const create = () => { if (!name.trim()) return; apiPost('/api/rooms', { name: name.trim() }).then(() => { setName(''); reload(); }).catch(() => {}); };
-  const send = () => { if (!sel || !msg.trim()) return; apiPost('/api/rooms/' + sel + '/message', { message: msg.trim() }).then(() => setMsg('')).catch(() => {}); };
+  const send = () => {
+    if (!sel || !msg.trim()) return;
+    apiPost('/api/rooms/' + encodeURIComponent(sel) + '/message', { message: msg.trim() })
+      .then(() => { setMsg(''); hist.reload(); })
+      .catch(() => {});
+  };
   return <Card title="ROOMS" live={asLive(d)} sub={rooms.length} onReload={reload}>
     <State e={e} loading={loading} n={rooms.length} />
     {rooms.slice(0, 10).map((r, i) => <Row key={i}><span style={{ ...mono, color: sel === (r.id || r.name) ? 'var(--accent)' : 'var(--accent-light)', cursor: 'pointer' }} onClick={() => setSel(r.id || r.name)}>{r.name || r.id}</span><span style={{ marginLeft: 'auto', fontSize: 10, color: 'var(--ink-3)' }}>{(r.agents || []).join(', ')}</span></Row>)}
@@ -1082,6 +1089,23 @@ export function RoomsPanel() {
     {sel && <div style={{ display: 'flex', gap: 6, marginTop: 6 }}>
       <input value={msg} onChange={(ev) => setMsg(ev.target.value)} placeholder={'message ' + sel + ' (@agent)'} onKeyDown={(ev) => { if (ev.key === 'Enter') send(); }} style={inp} />
       <button className="tool-btn" onClick={send}>send</button>
+    </div>}
+    {sel && <div style={{ marginTop: 8, padding: 8, background: 'var(--surface)', border: '1px solid var(--panel-line)', borderRadius: 4 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4 }}>
+        <span style={{ ...mono, fontSize: 9.5, letterSpacing: '.14em', color: 'var(--ink-3)' }}>HISTORY · {sel}</span>
+        <button className="tool-btn" style={{ marginLeft: 'auto' }} title="reload room history" onClick={hist.reload}>↻</button>
+      </div>
+      <State e={hist.e} loading={hist.loading} n={turns.length} />
+      {turns.slice(-8).map((t, i) => {
+        const label = t.agent || t.role || 'turn';
+        const text = t.content || t.message || t.text || '';
+        const ts = t.at || t.created_at || t.ts || '';
+        return <Row key={i}>
+          <Tag c={t.role === 'assistant' ? 'var(--accent-light)' : 'var(--ink-3)'}>{label}</Tag>
+          <span style={{ ...mono, color: 'var(--ink-2)', flex: 1, whiteSpace: 'normal', overflowWrap: 'anywhere' }}>{text}</span>
+          {ts && <span style={{ ...mono, marginLeft: 'auto', fontSize: 9.5, color: 'var(--ink-3)' }}>{String(ts).slice(0, 19)}</span>}
+        </Row>;
+      })}
     </div>}
   </Card>;
 }
