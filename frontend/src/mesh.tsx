@@ -10,7 +10,7 @@
      the mesh stays alive via its own choreography + reacts to live agent statuses (active
      agents emit ambient comet-flow). Wiring explicit pulses to a real SSE stream is a
      follow-up for when such an endpoint exists. */
-import React, { useRef, useEffect, useState } from 'react';
+import React, { useRef, useEffect, useMemo, useState } from 'react';
 
 const MESH_MODELS = [
   { id: 'gemma', label: 'gemma-4-26b', cloud: false, cost: 0.66 },
@@ -23,14 +23,33 @@ const TIER_COLOR: Record<string, string> = {
 };
 const agentColor = (a) => (a && (TIER_COLOR[a.tier] || TIER_COLOR[String((a && a.tier) || '').toLowerCase()])) || '#5fa8d8';
 
-export function NeuralMesh({ agents = [], activeId, onSelect, motion, cinema = false, t }: any) {
+function taskOwner(t) {
+  return String((t && (t.owner || t.agent_id || t.agent || t.assignee)) || 'jarvis').toLowerCase();
+}
+function taskTitle(t) {
+  return String((t && (t.title || t.label || t.kind || t.id)) || 'task');
+}
+function taskColor(t) {
+  const s = String((t && (t.state || t.status)) || '').toLowerCase();
+  if (s === 'running' || s === 'active') return '#41f59b';
+  if (s === 'blocked' || s === 'held' || s === 'pending') return '#ffb23f';
+  if (s === 'error' || s === 'failed' || s === 'denied') return '#ff6b6b';
+  return '#8aa8be';
+}
+
+export function NeuralMesh({ agents = [], tasks = [], activeId, onSelect, motion, cinema = false, t }: any) {
   const wrapRef = useRef<any>(null), canvasRef = useRef<any>(null);
   const S = useRef<any>({
-    nodes: [], edges: [], particles: [], rings: [], stars: [], hover: null,
+    nodes: [], edges: [], particles: [], rings: [], stars: [], hover: null, tasks: [],
     w: 640, h: 460, cx: 320, cy: 230, dpr: 1, raf: 0, tick: 0, lastPulse: 0, lastCascade: 0, cascadeI: -1, focus: null,
   });
   const [tip, setTip] = useState<any>(null);
   const calm = motion === 'calm';
+  const taskList = useMemo(() => (Array.isArray(tasks) ? tasks : []), [tasks]);
+  const visibleTaskCount = useMemo(() => {
+    const known = new Set(['jarvis', ...agents.map((a) => String(a.id).toLowerCase())]);
+    return taskList.filter((tk) => known.has(taskOwner(tk))).length;
+  }, [agents, taskList]);
 
   function colorFor(n) {
     if (n.kind === 'core') return '#7fd6ff';
@@ -95,6 +114,7 @@ export function NeuralMesh({ agents = [], activeId, onSelect, motion, cinema = f
   }, []);
   useEffect(() => { build(); /* eslint-disable-next-line */ }, [agents]);
   useEffect(() => { S.current.focus = activeId; }, [activeId]);
+  useEffect(() => { S.current.tasks = taskList; }, [taskList]);
 
   function draw() {
     const st = S.current, cv = canvasRef.current; if (!cv) return; const ctx = cv.getContext('2d'); if (!ctx) return;
@@ -122,6 +142,8 @@ export function NeuralMesh({ agents = [], activeId, onSelect, motion, cinema = f
       ctx.strokeStyle = dim ? 'rgba(90,120,150,0.05)' : act ? 'rgba(80,190,255,0.22)' : 'rgba(110,140,170,0.09)';
       ctx.lineWidth = e.kind === 'mc' ? 1.2 : 0.7; ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke();
     });
+    drawTaskFan(ctx, st, foc);
+    ctx.globalCompositeOperation = 'lighter';
     if (!calm) {
       if (st.tick % 46 === 0) { const ags = st.nodes.filter((n) => n.kind === 'agent'); const n = ags[Math.floor(Math.random() * ags.length)]; if (n) fire(n.id); }
       if (st.tick - st.lastPulse > (cinema ? 150 : 185)) { st.lastPulse = st.tick; corePulse(); }
@@ -169,6 +191,53 @@ export function NeuralMesh({ agents = [], activeId, onSelect, motion, cinema = f
     });
   }
 
+  function drawTaskFan(ctx, st, foc) {
+    const raw = Array.isArray(st.tasks) ? st.tasks : [];
+    if (!raw.length) return;
+    const byOwner = new Map();
+    raw.forEach((tk) => {
+      const owner = taskOwner(tk);
+      if (!node(owner)) return;
+      const list = byOwner.get(owner) || [];
+      list.push(tk);
+      byOwner.set(owner, list);
+    });
+    if (!byOwner.size) return;
+    const W = st.w, H = st.h, cx = st.cx, cy = st.cy;
+    const outer = Math.min(W, H) * (cinema ? 0.48 : 0.46);
+    ctx.globalCompositeOperation = 'source-over';
+    byOwner.forEach((list, owner) => {
+      const origin = node(owner);
+      if (!origin) return;
+      const focused = foc === owner;
+      const base = Math.atan2(origin.y - cy, origin.x - cx);
+      const span = focused ? Math.PI * 0.42 : Math.min(0.5, list.length * 0.13);
+      list.forEach((tk, i) => {
+        const frac = list.length === 1 ? 0.5 : i / (list.length - 1);
+        const ang = base + (frac - 0.5) * span;
+        const r = focused ? origin._r + 44 : outer;
+        const x = focused ? origin.x + Math.cos(ang) * r : cx + Math.cos(ang) * r;
+        const y = focused ? origin.y + Math.sin(ang) * r : cy + Math.sin(ang) * r;
+        const dim = foc && !focused && owner !== 'jarvis';
+        ctx.globalAlpha = dim ? 0.25 : 0.92;
+        ctx.strokeStyle = 'rgba(130,170,200,0.18)';
+        ctx.lineWidth = focused ? 0.9 : 0.6;
+        ctx.beginPath(); ctx.moveTo(origin.x, origin.y); ctx.lineTo(x, y); ctx.stroke();
+        ctx.fillStyle = 'rgba(4,7,13,0.92)';
+        ctx.strokeStyle = taskColor(tk);
+        ctx.lineWidth = focused ? 1.7 : 1.2;
+        ctx.beginPath(); ctx.arc(x, y, focused ? 4.6 : 3.1, 0, 7); ctx.fill(); ctx.stroke();
+        if (focused) {
+          ctx.fillStyle = 'rgba(225,240,255,0.82)';
+          ctx.font = '800 8px "JetBrains Mono",monospace';
+          ctx.textAlign = 'center';
+          ctx.fillText(taskTitle(tk).slice(0, 18).toUpperCase(), x, y - 8);
+        }
+      });
+    });
+    ctx.globalAlpha = 1;
+  }
+
   function onMove(e) {
     const st = S.current, r = canvasRef.current.getBoundingClientRect(), mx = e.clientX - r.left, my = e.clientY - r.top;
     let hit: any = null, hd = 15; st.nodes.forEach((n) => { const d = Math.hypot(n.x - mx, n.y - my); if (d < hd) { hd = d; hit = n; } });
@@ -185,7 +254,7 @@ export function NeuralMesh({ agents = [], activeId, onSelect, motion, cinema = f
     <div className="nmesh" ref={wrapRef} onMouseMove={onMove} onMouseLeave={onLeave} onClick={onClick}>
       <canvas ref={canvasRef}></canvas>
       {tip && <div className="nmesh-tip" style={{ left: tip.x, top: tip.y }}><div className="nm-name">{tip.name}</div><div className="nm-role">{tip.role}</div></div>}
-      <div className="nmesh-legend"><span><i className="nm-dot core"></i>orchestrator</span><span><i className="nm-dot local"></i>local</span><span><i className="nm-dot cloud"></i>cloud</span><span className="nm-hint">live · click an agent</span></div>
+      <div className="nmesh-legend"><span><i className="nm-dot core"></i>orchestrator</span><span><i className="nm-dot local"></i>local</span><span><i className="nm-dot cloud"></i>cloud</span>{visibleTaskCount > 0 && <span><i className="nm-dot task"></i>{visibleTaskCount} tasks</span>}<span className="nm-hint">live · click an agent</span></div>
     </div>
   );
 }

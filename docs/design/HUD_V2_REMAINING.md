@@ -51,9 +51,12 @@ with plugin-configured checks instead of seeded success. Still open:
   (currently reads the `DOSSIER` mock).
 
 ## 4. Cockpit / signature interactions
-- **Network task‑fan**: v2 `NetworkBrain` doesn't render per‑agent task dots from `/tasks` (v1 did) —
+- ~~**Network task‑fan**: v2 `NetworkBrain` doesn't render per‑agent task dots from `/tasks` (v1 did) —
   the old task fan exists in `network.tsx`, but the current cockpit renders `NeuralMesh`; integrate
-  live `/tasks` dots into the current mesh or retire the stale `NetworkBrain`.
+  live `/tasks` dots into the current mesh or retire the stale `NetworkBrain`.~~
+  ✅ **DONE (2026-07-04, #521):** `app.tsx` passes the existing live `/tasks` state into
+  `NeuralMesh`, which renders honest task spokes/dots plus a visible task count; empty or
+  unknown-owner queues render no invented fan.
 - ~~**Per‑message TTS** (🔊 → `/tts`) + **browser mic / SpeechRecognition** input + voice auto‑speak.~~
   ✅ **DONE (verified 2026-07-04):** `cockpit.tsx` renders per-message replay via `playTts`,
   `InputBar` toggles the `useVoice` loop, and `app.tsx` wires mic → local STT → turn → speak.
@@ -113,7 +116,6 @@ the still‑open depth items above. Snapshot: backend ≈299 routes; HUD v2 acti
 - A2A approval inbox (H16.2 `/api/a2a/inbox*`), payments lifecycle actions (H16.3
   approve/reject/settle), marketplace review (H12.12) — read‑only or absent in Trust/Build.
 - Still missing interactive controls (carried from §2–§5): preference-learning suggestions,
-  current-mesh task fan,
   in-app look/density/motion/texture tweaks, and self-hosted fonts.
 
 **Conclusion:** coverage gate still green (nothing silently dropped), but the *depth* gap regrew.
@@ -134,8 +136,7 @@ send the admin token (`actA`). +7 frontend tests (19 total).
 **Still open (the tail of TASK‑2, re‑verified 2026‑07‑04):** O26-P3.1 closes the §3 plugin-gated
 base wiring in #505 (Build/Comms/Finance/Health/Knowledge/Family). Remaining:
 owner live-data/plugin setup (bank/broker/quotes, Apple Health bridge, websearch backend, WhatsApp
-bridge/frigga live data), channel inbox transport, current-mesh task fan,
-preferences/tweaks UI, and §6 self-hosted fonts.
+bridge/frigga live data), channel inbox transport, preferences/tweaks UI, and §6 self-hosted fonts.
 Estimated 1–2 PRs after #505 for owner-gated/plugin work, plus one small frontend-depth PR for the
 remaining local controls above.
 *Since‑closed items previously listed here:* CI stale‑bundle guard ✅ (`hud-v2-build` in `ci.yml`),
@@ -143,7 +144,7 @@ remaining local controls above.
 BUG‑17 audit‑verify Trust chip ✅ (`modes.tsx:117-165` renders the live
 `GET /api/security/audit/verify` verdict), the 0.39 saved‑watchlist `WatchlistPanel` ✅, and
 per-panel LIVE/SEED chips ✅ (58/58 Console cards declare a `PanelChip` signal). Data Spaces
-assign/unassign controls ✅. Rooms selected-history drawer ✅. Capability issue/check UI ✅. O26-P3.2 adds a Vitest reconciliation guard so this document cannot
+assign/unassign controls ✅. Rooms selected-history drawer ✅. Capability issue/check UI ✅. Current-mesh task fan ✅. O26-P3.2 adds a Vitest reconciliation guard so this document cannot
 re-list shipped TTS/mic/cognition/trust or Console controls as missing.
 
 ---

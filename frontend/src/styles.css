@@ -587,7 +587,7 @@ input { font-family: inherit; }
 .nmesh-tip .nm-role { font-family:var(--font-mono); font-size:9px; color:var(--ink-3); margin-top:1px; }
 .nmesh-legend { position:absolute; left:12px; bottom:10px; right:12px; display:flex; gap:13px; align-items:center; font-family:var(--font-mono); font-size:8.5px; color:var(--ink-3); pointer-events:none; }
 .nmesh-legend i.nm-dot { display:inline-block; width:7px; height:7px; border-radius:50%; margin-right:5px; vertical-align:middle; }
-.nm-dot.core { background:#2bb8f0; box-shadow:0 0 6px rgba(43,184,240,.6); } .nm-dot.local { background:#41f59b; } .nm-dot.cloud { background:#a78bfa; }
+.nm-dot.core { background:#2bb8f0; box-shadow:0 0 6px rgba(43,184,240,.6); } .nm-dot.local { background:#41f59b; } .nm-dot.cloud { background:#a78bfa; } .nm-dot.task { background:#ffb23f; box-shadow:0 0 6px rgba(255,178,63,.45); }
 .nmesh-legend .nm-hint { margin-left:auto; color:var(--ink-4); }
 
 /* ── HUD v3 · CINEMA MODE (full-bleed mesh, framed for a shareable demo) ── */

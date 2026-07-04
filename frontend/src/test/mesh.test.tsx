@@ -36,6 +36,10 @@ const AGENTS = [
   { id: 'frigga', name: 'Frigga', tier: 'FND', status: 'idle' },
   { id: 'howard', name: 'Howard', tier: 'BUS', status: 'busy' },
 ];
+const TASKS = [
+  { id: 1, owner: 'howard', title: 'draft payment plan', status: 'blocked' },
+  { id: 2, agent_id: 'frigga', title: 'sync family digest', state: 'running' },
+];
 
 describe('NeuralMesh — the native canvas brain mounts + draws without throwing', () => {
   it('renders the wrapper, canvas and legend', () => {
@@ -43,6 +47,11 @@ describe('NeuralMesh — the native canvas brain mounts + draws without throwing
     expect(container.querySelector('.nmesh')).toBeTruthy();
     expect(container.querySelector('.nmesh canvas')).toBeTruthy();
     expect(container.querySelector('.nmesh-legend')).toBeTruthy();
+  });
+
+  it('surfaces live /tasks in the active mesh legend', () => {
+    const { container } = render(<NeuralMesh agents={AGENTS} tasks={TASKS} activeId="jarvis" onSelect={() => {}} motion="lively" t={{}} />);
+    expect(container.querySelector('.nmesh-legend')?.textContent).toContain('2 tasks');
   });
 
   it('acquires a 2D context and runs a draw frame (drives the stub)', () => {
