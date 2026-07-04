@@ -22,6 +22,37 @@ router = APIRouter(tags=["plugins"])
 logger = logging.getLogger("jarvis.web")
 
 
+def _plugin_runtime_configuration(plugin) -> tuple[bool, str]:
+    """Return whether a live plugin is actually owner-configured.
+
+    The manifest says a plugin exists and is allowed; preview-mode HUD surfaces
+    need the next bit of truth: whether the owner supplied keys / a LAN bridge /
+    a local data file. Prefer each plugin's own ``available`` / ``_configured``
+    contract when it has one; otherwise a constructed plugin is considered
+    configured because there is no known extra setup signal.
+    """
+    if plugin is None:
+        return False, "not-loaded"
+    for attr_name in ("available", "_configured"):
+        if not hasattr(plugin, attr_name):
+            continue
+        attr = getattr(plugin, attr_name)
+        try:
+            value = attr() if callable(attr) else attr
+        except Exception:
+            return False, f"{attr_name}-error"
+        return bool(value), f"{attr_name}()"
+    return True, "loaded"
+
+
+def _live_plugin_for(orch, plugin_id: str):
+    live_plugins = getattr(orch, "plugins", {}) or {}
+    aliases = {
+        "whatsapp-bridge": "whatsapp",
+    }
+    return live_plugins.get(plugin_id) or live_plugins.get(aliases.get(plugin_id, ""))
+
+
 @router.get("/plugins")
 async def list_plugins():
     """Return all registered plugins with status."""
@@ -31,6 +62,8 @@ async def list_plugins():
     gate = orch.permission_gate
     plugins = []
     for _pid, manifest in gate.plugins.items():
+        live_plugin = _live_plugin_for(orch, manifest.id)
+        configured, configuration_source = _plugin_runtime_configuration(live_plugin)
         plugins.append({
             "id": manifest.id,
             "name": manifest.name,
@@ -41,6 +74,8 @@ async def list_plugins():
             "allowed_domains": manifest.allowed_domains,
             "agents_served": manifest.agents_served,
             "enabled": manifest.enabled,
+            "configured": configured,
+            "configuration_source": configuration_source,
             # CDX-11 — least-privilege posture: whether this plugin's "all" wildcard
             # is currently withheld (external-write under hardening), plus any
             # owner-declared per-agent grants.

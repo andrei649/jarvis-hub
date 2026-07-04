@@ -80,6 +80,7 @@ class PluginManager:
         )
         self.plugins["whatsapp"] = WhatsAppBridgePlugin(
             bridge_url=os.environ.get("WHATSAPP_BRIDGE_URL", "http://192.168.1.100:3000"),
+            configured=bool(os.environ.get("WHATSAPP_BRIDGE_URL", "")),
         )
         _spotify_token = os.environ.get("SPOTIFY_ACCESS_TOKEN", "") or (_load_token("spotify") or {}).get("access_token", "")
         _spotify_refresh = os.environ.get("SPOTIFY_REFRESH_TOKEN", "") or (_load_token("spotify") or {}).get("refresh_token", "")
@@ -95,6 +96,7 @@ class PluginManager:
         )
         self.plugins["apple-health"] = AppleHealthPlugin(
             bridge_url=os.environ.get("APPLE_HEALTH_BRIDGE_URL", "http://192.168.1.100:8081"),
+            configured=bool(os.environ.get("APPLE_HEALTH_BRIDGE_URL", "")),
         )
         self.plugins["homebridge"] = HomebridgePlugin(
             bridge_url=os.environ.get("HOMEBRIDGE_URL", "http://192.168.1.100:8581"),

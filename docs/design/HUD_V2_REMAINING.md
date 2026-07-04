@@ -28,14 +28,20 @@
 
 ## 3. Per‑mode live‑wiring depth
 `api/live.ts` wires the headline data for Memory / Observe / Interop / Autonomy / Trust / Admin.
-Still on mock (wire to endpoints; some need plugins configured):
-- **Build**: workflow DAG + skills marketplace + sandbox → `/api/workflows`, `/api/skills/marketplace`.
+PR #505 adds base LIVE/SEED gates for Build / Comms / Finance / Health / Knowledge / Family,
+with plugin-configured checks instead of seeded success. Still open:
+- **Build**: base live wiring reads workflow DAG + skills marketplace + sandbox from
+  `/api/workflows`, `/api/skills/marketplace`, and `/sandbox/status`; deeper create/edit affordances
+  remain in the Console panels.
 - **Memory**: `RECALLS` / `TOPICS` / `KG` live (recall search, decay ranking, bitemporal KG as‑of).
 - **Trust**: capability grants list; real `%‑local` meter (needs a locality/cost summary endpoint, §6).
 - **Autonomy**: per‑agent AUTO/ASK/OFF **policies** (settings‑backed).
-- **Comms**: live threads + **Discord + Slack** channels (exist in backend; not in the inbox yet).
-- **Finance / Health / Knowledge / Family**: plugin‑backed (balance / apple‑health / websearch /
-  frigga) — wire when those plugins are configured.
+- **Comms**: rooms + registered **Discord/Slack** channel status now feed the mode; actual channel
+  inbox threads/reply transport remain separate plugin work.
+- **Finance / Health / Knowledge / Family**: base mode switching is plugin-gated. Finance reads saved
+  watchlist/payments and keeps `balance` mock payloads as SEED; Health waits for the Apple Health LAN
+  bridge; Knowledge waits for configured websearch backend; Family waits for WhatsApp bridge/frigga
+  live data.
 - **Dossier**: wire to `/api/agents/{id}/soul` + `/memory/{id}` + run history `/api/agents/{id}/history`
   (currently reads the `DOSSIER` mock).
 
@@ -117,9 +123,11 @@ AI step builder (H10.7) · sandbox execute (DEV_MODE‑gated, honest 403) · age
 (H10.29) · LM Studio server/load/unload · cloud auth profiles (H12.20). Admin‑guarded calls now
 send the admin token (`actA`). +7 frontend tests (19 total).
 
-**Still open (the tail of TASK‑2, re‑verified 2026‑07‑03):** §3 plugin‑gated mode wiring
-(Finance/Health/Knowledge/Family, Comms Discord/Slack threads) and §6 self‑hosted fonts.
-Estimated 1–2 PRs.
+**Still open (the tail of TASK‑2, re‑verified 2026‑07‑04):** O26-P3.1 closes the §3 plugin-gated
+base wiring in #505 (Build/Comms/Finance/Health/Knowledge/Family). Remaining:
+owner live-data/plugin setup (bank/broker/quotes, Apple Health bridge, websearch backend, WhatsApp
+bridge/frigga live data), channel inbox transport, and §6 self-hosted fonts.
+Estimated 1–2 PRs after #505, depending on owner credential/hardware readiness.
 *Since‑closed items previously listed here:* CI stale‑bundle guard ✅ (`hud-v2-build` in `ci.yml`),
 §7 locality endpoint ✅ (`GET /api/analytics/locality`, consumed in `app.tsx`/`shell.tsx`), and the
 BUG‑17 audit‑verify Trust chip ✅ (`modes.tsx:117-165` renders the live

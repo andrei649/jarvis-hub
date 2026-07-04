@@ -14,11 +14,18 @@ from ..http_client import PluginHTTPClient
 
 logger = logging.getLogger("jarvis.plugins.apple_health")
 
+DEFAULT_BRIDGE_URL = "http://192.168.1.100:8081"
+
 
 class AppleHealthPlugin:
-    def __init__(self, bridge_url: str = "http://192.168.1.100:8081"):
+    def __init__(self, bridge_url: str = DEFAULT_BRIDGE_URL, configured: bool | None = None):
         self.bridge_url = bridge_url.rstrip("/")
         self.client = PluginHTTPClient.for_plugin("apple-health")
+        self._configured = bool(configured) if configured is not None else self.bridge_url != DEFAULT_BRIDGE_URL
+
+    def available(self) -> bool:
+        """True only when the owner explicitly configured the LAN health bridge."""
+        return self._configured
 
     async def get_sleep(self, days: int = 1) -> list[dict]:
         try:

@@ -7,14 +7,14 @@
 
 ## Sesiune curentă
 
-**Data:** 2026-07-04 (ORIZONT 26 P2.5 Install Smoke Path)
+**Data:** 2026-07-04 (ORIZONT 26 P3.1 Preview Modes)
 **Lead agent / Conductor:** Codex
-**Obiectiv sesiune:** continue the ORIZONT 26 plan after P2.4; start P2.5 Install Smoke Path as one focused PR with docs/status kept current.
-**Branch:** `main` (next branch: `codex-o26-p2-5-install-smoke`)
+**Obiectiv sesiune:** continue the ORIZONT 26 plan after P2.5; deliver P3.1 live preview modes as one focused PR with docs/status kept current.
+**Branch:** `codex-o26-p3-1-preview-modes`
 
-**Scope decision (2026-07-04):** O26-P0, P1.1, P2.1, P2.2, P2.3, and P2.4 are now merged. The
-next unblocked plan item is O26-P2.5 Install Smoke Path. Keep it one item = one PR: no HUD breadth or
-product-posture wave 2 work in that branch.
+**Scope decision (2026-07-04):** O26-P0, P1.1, P2.1, P2.2, P2.3, P2.4, and P2.5 are now merged. The
+next unblocked plan item is O26-P3.1 live preview modes. Keep it one item = one PR: wire the designed
+preview surfaces honestly, and record owner-key/plugin blockers instead of stubbing success.
 
 **Previous session:** O26-P0.1 golden harness was merged via #496, with P0.2–P0.7 already completed on
 main by parallel agents.
@@ -30,7 +30,8 @@ main by parallel agents.
 | O26-P2.2 / memory consolidation | `codex-o26-p2-2-memory-consolidation` | #501 | ✅ merged | Codex | LivingMemory seam + nightly maintenance |
 | O26-P2.3 / dormant disposition | `codex-o26-p2-3-dormant-disposition` | #502 | ✅ merged | Codex | Ensemble roster + learning proof + profile extractor parked |
 | O26-P2.4 / Product Posture | `codex-o26-p2-4-product-posture` | #503 | ✅ merged | Codex | Settings-backed named posture, wave 1 only |
-| O26-P2.5 / Install Smoke Path | `codex-o26-p2-5-install-smoke` | #504 | 🟡 draft PR | Codex | ~30s boot + `/readyz` + faked turn |
+| O26-P2.5 / Install Smoke Path | `codex-o26-p2-5-install-smoke` | #504 | ✅ merged | Codex | ~30s boot + `/readyz` + faked turn |
+| O26-P3.1 / Preview Modes | `codex-o26-p3-1-preview-modes` | #505 | 🟢 CI green | Codex | 6 live preview modes + honest blockers |
 
 Status legend: ⏳ in progress · 🟡 draft PR · 🟢 CI green · ✅ merged · 🔴 conflict
 
@@ -38,8 +39,7 @@ Status legend: ⏳ in progress · 🟡 draft PR · 🟢 CI green · ✅ merged �
 
 ## Fișiere blocate (în PR activ)
 
-`codex-o26-p2-5-install-smoke` currently owns the P2.5 files:
-`scripts/install_smoke.py`, `tests/test_o26_p2_install_smoke.py`, and status docs.
+Current P3.1 branch owns only the preview-mode files plus status/docs touched for verified scope.
 
 Un fișier blocat nu se atinge de alt agent fără confirmare utilizator.
 
@@ -52,10 +52,11 @@ Current order:
   1. O26-P2.2 living-memory turn seam + nightly maintenance (#501) ✅
   2. O26-P2.3 dormant-module disposition (#502) ✅
   3. O26-P2.4 Product Posture (#503) ✅
-  4. O26-P2.5 Install Smoke Path (in progress)
+  4. O26-P2.5 Install Smoke Path (#504) ✅
+  5. O26-P3.1 Preview Modes (#505)
 ```
 
-Next backlog item: **O26-P2.5 Install Smoke Path** now that the wave-1 product posture is merged.
+Current backlog item: **O26-P3.1 live preview modes** is implemented in #505; next up after merge is the P3.3 eval baseline store branch or P3.2 docs/tests reconciliation.
 
 ---
 
@@ -120,7 +121,7 @@ Generalizează reflecția nocturnă din *rezumă-ziua* în *pre-raționează-pen
 - [x] Branch pushed / PR #503 opened
 - [x] GitHub Actions green; PR merged
 
-### ORIZONT 26 P2.5 — URMĂTOR
+### ORIZONT 26 P2.5 — COMPLET
 
 - [x] `main` synced after #503 merge
 - [x] Branch created from current main
@@ -129,7 +130,19 @@ Generalizează reflecția nocturnă din *rezumă-ziua* în *pre-raționează-pen
 - [x] `BACKLOG.md` + `STATUS.md` updated from verified scope
 - [x] Focused backend verification green
 - [x] Branch pushed / PR #504 opened
-- [ ] GitHub Actions green; PR merged
+- [x] GitHub Actions green; PR merged
+
+### ORIZONT 26 P3.1 — DELIVERED IN #505
+
+- [x] `main` synced after #504 merge
+- [x] Branch created from current main
+- [x] Design/tests for live preview modes
+- [x] Preview-mode implementation
+- [x] `BACKLOG.md` + `STATUS.md` updated from verified scope
+- [x] Focused verification green
+- [x] Branch pushed / PR #505 opened
+- [x] GitHub Actions green, including HUD bundle freshness and Windows test lanes
+- [ ] PR merged
 
 ### Wave 0 — COMPLET ✅
 
@@ -191,6 +204,13 @@ Generalizează reflecția nocturnă din *rezumă-ziua* în *pre-raționează-pen
 [O26-P2.3] Red tests: active-agent cognition roster was empty; legacy profile extractor had no explicit parked status
 [O26-P2.3] Implemented active roster configuration for PersonaModule + EnsembleModule; governed learning proven live at the autonomy calibration hook; profile_extractor parked via legacy_status()
 [Verify]   P2.3/ensemble/persona/governed-learning/profile targeted sweep green: 48 passed; STATUS count synced to ~3,588
+[O26-P2.4] #503 merged: settings-backed Product Posture with OFF/companion_wave1/design_partner overlays and wave-2 hardening explicitly deferred
+[O26-P2.5] #504 merged: fast install smoke path (`scripts/install_smoke.py --json`) with real boot, `/readyz`, and one faked local turn
+[ORIZONT 26] 2026-07-04 — started O26-P3.1 on `codex-o26-p3-1-preview-modes`
+[O26-P3.1] Red tests: six preview modes lacked LIVE key coverage; plugin `enabled` alone looked live; `balance` mock payloads could be mistaken for live; empty Comms channels crashed
+[O26-P3.1] Implemented six-mode live gates, `/plugins.configured`, `/status.channels`, Build/Comms/Finance data ingestion, and plugin-gated Health/Knowledge/Family empty states
+[Verify]   P3.1 focused `/plugins` + `/status` backend checks green; preview-mode Vitest suite green (5 passed)
+[Verify]   P3.1 CI green after refreshing the committed HUD V2 bundle and matching Linux Vite output
 ```
 
 ---
