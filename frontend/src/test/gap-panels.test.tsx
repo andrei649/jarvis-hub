@@ -5,7 +5,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import React from 'react';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
-import { DataSpacesPanel, PairingPanel, SandboxPanel } from '../gap';
+import { DataSpacesPanel, PairingPanel, RoomsPanel, SandboxPanel } from '../gap';
 
 beforeEach(() => { try { localStorage.clear(); } catch { /* ignore */ } });
 
@@ -67,6 +67,33 @@ describe('DataSpacesPanel (H10.26) — per-agent scope controls are live', () =>
       const post = fn.mock.calls.find((c) => String(c[0]).includes('/api/memory/spaces/unassign') && c[1]?.method === 'POST');
       expect(post).toBeTruthy();
       expect(JSON.parse(post[1].body)).toEqual({ agent: 'frigga', space: 'family' });
+    });
+  });
+});
+
+describe('RoomsPanel (H10.20) — saved room history is visible', () => {
+  it('opens the selected room history drawer from the real history endpoint', async () => {
+    const fn = mockFetch({
+      '/api/rooms/room-1/history': {
+        history: [
+          { role: 'user', content: '@jarvis plan the launch', at: '2026-07-04T12:00:00Z' },
+          { role: 'assistant', agent: 'jarvis', content: 'Launch plan ready.', at: '2026-07-04T12:00:01Z' },
+        ],
+      },
+      '/api/rooms': {
+        rooms: [{ id: 'room-1', name: 'project-alpha', agents: ['jarvis'] }],
+      },
+    });
+    render(<RoomsPanel />);
+
+    await waitFor(() => expect(screen.getByText('project-alpha')).toBeTruthy());
+    fireEvent.click(screen.getByText('project-alpha'));
+
+    await waitFor(() => {
+      const get = fn.mock.calls.find((c) => String(c[0]).includes('/api/rooms/room-1/history'));
+      expect(get).toBeTruthy();
+      expect(screen.getByText('@jarvis plan the launch')).toBeTruthy();
+      expect(screen.getByText('Launch plan ready.')).toBeTruthy();
     });
   });
 });
