@@ -34,6 +34,7 @@ export function ServerProvider({ children }: { children: React.ReactNode }) {
     const normalized: ServerConfig = {
       baseUrl: normalizeBaseUrl(next.baseUrl),
       token: next.token.trim(),
+      adminToken: next.adminToken.trim(),
     };
     setConfig(normalized);
     await saveConfig(normalized);

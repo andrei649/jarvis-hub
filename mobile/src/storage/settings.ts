@@ -6,11 +6,13 @@ export type ServerConfig = {
   baseUrl: string;
   /** Optional JARVIS_USER_TOKEN sent as the X-User-Token header. */
   token: string;
+  /** Optional JARVIS_ADMIN_TOKEN sent as the X-Admin-Token header for approval actions. */
+  adminToken: string;
 };
 
 const KEY = 'jarvis.server.config.v1';
 
-export const DEFAULT_CONFIG: ServerConfig = { baseUrl: '', token: '' };
+export const DEFAULT_CONFIG: ServerConfig = { baseUrl: '', token: '', adminToken: '' };
 
 export async function loadConfig(): Promise<ServerConfig> {
   try {

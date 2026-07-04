@@ -7,14 +7,13 @@
 
 ## Sesiune curentă
 
-**Data:** 2026-07-04 (ORIZONT 26 P3.2 HUD Punch-List Reconciliation)
+**Data:** 2026-07-04 (ORIZONT 26 P3.4 Mobile Approval Queue)
 **Lead agent / Conductor:** Codex
-**Obiectiv sesiune:** continue the ORIZONT 26 plan after P3.3; reconcile HUD_V2_REMAINING against shipped HUD controls and pin the remaining honest tail.
-**Branch:** `codex-o26-p3-2-hud-reconciliation`
+**Obiectiv sesiune:** continue the ORIZONT 26 plan after P3.2/P3.3; ship the phone-native approval queue over the unified autonomy funnel.
+**Branch:** `codex-o26-p3-4-mobile-approval-queue`
 
-**Scope decision (2026-07-04):** O26-P0, P1.1, P2.1, P2.2, P2.3, P2.4, P2.5, P3.1, and P3.3 are merged.
-The current branch takes O26-P3.2 reconciliation only: update stale HUD remaining-work claims,
-add a Vitest guard, and leave real local/owner blockers open.
+**Scope decision (2026-07-04):** O26-P0, P1.1, P2.1, P2.2, P2.3, P2.4, P2.5, P3.1, P3.2, and P3.3 are merged.
+The current branch takes O26-P3.4 only: mobile Approvals tab + admin-token settings + parity/docs.
 
 **Previous session:** O26-P0.1 golden harness was merged via #496, with P0.2–P0.7 already completed on
 main by parallel agents.
@@ -34,6 +33,7 @@ main by parallel agents.
 | O26-P3.1 / Preview Modes | `codex-o26-p3-1-preview-modes` | #505 | ✅ merged | Codex | 6 live preview modes + honest blockers |
 | O26-P3.3 / Eval Baseline Store | `codex-o26-p3-3-eval-baseline-store` | #506 | ✅ merged | Codex | Cache-backed companion eval DatasetStore |
 | O26-P3.2 / HUD Reconciliation | `codex-o26-p3-2-hud-reconciliation` | #507 | ✅ merged | Codex | Stale punch-list claims guarded by Vitest |
+| O26-P3.4 / Mobile Approval Queue | `codex-o26-p3-4-mobile-approval-queue` | #509 | ✅ merged | Codex | Phone-native unified approval funnel |
 
 Status legend: ⏳ in progress · 🟡 draft PR · 🟢 CI green · ✅ merged · 🔴 conflict
 
@@ -41,9 +41,8 @@ Status legend: ⏳ in progress · 🟡 draft PR · 🟢 CI green · ✅ merged �
 
 ## Fișiere blocate (în PR activ)
 
-`codex-o26-p3-2-hud-reconciliation` currently owns only:
-`docs/design/HUD_V2_REMAINING.md`, `frontend/src/test/hud-p3-2-reconciliation.test.ts`,
-and status docs.
+`codex-o26-p3-4-mobile-approval-queue` currently owns only:
+`mobile/`, `BACKLOG.md`, `STATUS.md`, and `docs/SPRINT.md`.
 
 Un fișier blocat nu se atinge de alt agent fără confirmare utilizator.
 
@@ -59,12 +58,12 @@ Current order:
   4. O26-P2.5 Install Smoke Path (#504) ✅
   5. O26-P3.1 Preview Modes (#505) ✅
   6. O26-P3.3 Eval Baseline Store (#506) ✅
-  7. O26-P3.2 HUD Punch-List Reconciliation (#507)
+  7. O26-P3.2 HUD Punch-List Reconciliation (#507) ✅
+  8. O26-P3.4 Mobile Approval Queue (#509) ✅
 ```
 
-Current backlog item: **O26-P3.2 HUD punch-list reconciliation** is merged in #507. This was the
-docs/tests slice only; remaining local UI controls stay in BACKLOG instead of being silently treated
-as complete.
+Current backlog item: **O26-P3.4 mobile approval queue** is delivered in #509. P0.7 was already
+done, so the unified approval funnel is now available from the phone UI.
 
 ---
 
@@ -165,7 +164,7 @@ Generalizează reflecția nocturnă din *rezumă-ziua* în *pre-raționează-pen
 - [x] Rebased after #505 merge and pushed
 - [x] GitHub Actions green; PR merged
 
-### ORIZONT 26 P3.2 — ÎN PROGRES
+### ORIZONT 26 P3.2 — COMPLET ✅
 
 - [x] `main` synced after #506 merge
 - [x] Branch created from current main
@@ -173,6 +172,18 @@ Generalizează reflecția nocturnă din *rezumă-ziua* în *pre-raționează-pen
 - [x] HUD_V2_REMAINING reconciled against actual shipped controls
 - [x] `BACKLOG.md` + `STATUS.md` updated from verified scope
 - [x] Focused frontend verification green
+- [x] Branch pushed / PR opened
+- [x] GitHub Actions green; PR merged
+
+### ORIZONT 26 P3.4 — COMPLET ✅
+
+- [x] `main` synced after #508 merge
+- [x] Branch created from current main
+- [x] Red mobile API contract test for approvals/admin auth
+- [x] Mobile API client + admin-token settings support
+- [x] Mobile Approvals tab over `/autonomy/approvals`
+- [x] `mobile/PARITY.md`, `BACKLOG.md`, `STATUS.md`, and README updated
+- [x] Mobile focused verification green (`npm test`, `npx tsc --noEmit`)
 - [x] Branch pushed / PR opened
 - [x] GitHub Actions green; PR merged
 
@@ -256,6 +267,13 @@ Generalizează reflecția nocturnă din *rezumă-ziua* în *pre-raționează-pen
 [Verify]   P3.2 focused frontend checks green: 19 passed; typecheck, diff-check, and status-sync clean
 [PR]       #507 opened as draft
 [PR]       #507 full GitHub Actions green; PR marked ready and squash-merged
+[PR]       #508 status-sync follow-up merged after protected-main direct push was rejected
+[ORIZONT 26] 2026-07-04 — started O26-P3.4 on `codex-o26-p3-4-mobile-approval-queue`
+[O26-P3.4] Red test: mobile client had no approval API and no admin-token path for admin-gated decisions
+[O26-P3.4] Implemented mobile Approvals tab, `X-Admin-Token` settings, unified queue fetch, approve/reject/defer posts, README + PARITY updates
+[Verify]   P3.4 mobile Jest suite green: 22 passed; mobile typecheck clean
+[PR]       #509 opened as draft
+[PR]       #509 full GitHub Actions green; PR marked ready and prepared for squash merge
 ```
 
 ---

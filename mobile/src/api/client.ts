@@ -24,10 +24,11 @@ export function normalizeBaseUrl(raw: string): string {
   return url.replace(/\/+$/, '');
 }
 
-function authHeaders(config: ServerConfig, json: boolean): Record<string, string> {
+function authHeaders(config: ServerConfig, json: boolean, admin = false): Record<string, string> {
   const headers: Record<string, string> = { Accept: 'application/json' };
   if (json) headers['Content-Type'] = 'application/json';
   if (config.token.trim()) headers['X-User-Token'] = config.token.trim();
+  if (admin && config.adminToken.trim()) headers['X-Admin-Token'] = config.adminToken.trim();
   return headers;
 }
 
@@ -39,7 +40,7 @@ function isRetryable(err: unknown): boolean {
 
 const delay = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 
-type RequestOpts = { timeoutMs?: number; retries?: number };
+type RequestOpts = { timeoutMs?: number; retries?: number; admin?: boolean };
 
 async function request<T>(
   config: ServerConfig,
@@ -62,7 +63,7 @@ async function request<T>(
     try {
       const res = await fetch(base + path, {
         method,
-        headers: authHeaders(config, body !== undefined),
+        headers: authHeaders(config, body !== undefined, opts.admin === true),
         body: body !== undefined ? JSON.stringify(body) : undefined,
         signal: controller.signal,
       });
@@ -122,6 +123,87 @@ export type StatusResponse = {
 
 export function fetchStatus(config: ServerConfig): Promise<StatusResponse> {
   return request<StatusResponse>(config, 'GET', '/status', undefined, { retries: 2 });
+}
+
+// ── Approvals ────────────────────────────────────────────────────
+
+export type ApprovalAction = 'accept' | 'reject' | 'defer';
+
+export type ApprovalTask = {
+  id: number;
+  agent?: string;
+  kind?: string;
+  title?: string;
+  payload?: Record<string, unknown>;
+  risk_tier?: number;
+  status?: string;
+  autonomy_level?: string;
+  origin?: string;
+  reversible?: boolean;
+  reversibility?: string;
+  tier_name?: string;
+  created_at?: string;
+  updated_at?: string;
+};
+
+export type ApprovalCounts = {
+  total: number;
+  reversible: number;
+  irreversible: number;
+};
+
+export type ApprovalsResponse = {
+  pending: ApprovalTask[];
+  reversible: ApprovalTask[];
+  irreversible: ApprovalTask[];
+  counts: ApprovalCounts;
+};
+
+function taskArray(value: unknown): ApprovalTask[] {
+  return Array.isArray(value) ? (value as ApprovalTask[]) : [];
+}
+
+function normalizeApprovals(raw: Partial<ApprovalsResponse>): ApprovalsResponse {
+  const pending = taskArray(raw.pending);
+  const reversible = taskArray(raw.reversible);
+  const irreversible = taskArray(raw.irreversible);
+  return {
+    pending,
+    reversible,
+    irreversible,
+    counts: {
+      total: Number(raw.counts?.total ?? pending.length),
+      reversible: Number(raw.counts?.reversible ?? reversible.length),
+      irreversible: Number(raw.counts?.irreversible ?? irreversible.length),
+    },
+  };
+}
+
+export async function fetchApprovals(config: ServerConfig): Promise<ApprovalsResponse> {
+  const res = await request<Partial<ApprovalsResponse>>(config, 'GET', '/autonomy/approvals', undefined, {
+    retries: 2,
+    admin: true,
+  });
+  return normalizeApprovals(res || {});
+}
+
+export type ApprovalDecisionResponse = {
+  ok?: boolean;
+  task?: ApprovalTask;
+};
+
+export function decideApproval(
+  config: ServerConfig,
+  taskId: number,
+  action: ApprovalAction,
+): Promise<ApprovalDecisionResponse> {
+  return request<ApprovalDecisionResponse>(
+    config,
+    'POST',
+    `/autonomy/tasks/${encodeURIComponent(String(taskId))}/decision`,
+    { action },
+    { admin: true },
+  );
 }
 
 // ── Agents ────────────────────────────────────────────────────────
