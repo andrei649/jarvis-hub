@@ -21,7 +21,10 @@ from __future__ import annotations
 
 import logging
 import os
+import time
 from typing import Any, Callable, Optional
+
+from agents.core.automation_contracts import ContractTemplate, predicate
 
 from .autonomy.queue import TaskQueue, TaskStatus
 
@@ -32,6 +35,23 @@ TASK_KIND = "signal_recommendation"
 # EXTERNAL tier: a human must decide. We also force BLOCKED regardless, so this is
 # defense-in-depth, not the only guard.
 RISK_TIER_EXTERNAL = 2
+
+
+def _signal_recommendation_contract_template() -> ContractTemplate:
+    """Contract form of the existing actionable-recommendation gate."""
+    def is_recommendation(view, now):
+        return isinstance(view.get("recommendation"), dict)
+
+    def requires_approval(view, now):
+        return bool(view["recommendation"].get("requiresApproval"))
+
+    return ContractTemplate(kind=TASK_KIND, constraints=(
+        predicate("recommendation_dict", is_recommendation, reason="invalid_recommendation"),
+        predicate("requires_approval", requires_approval, reason="not_actionable"),
+    ))
+
+
+SIGNAL_RECOMMENDATION_CONTRACT = _signal_recommendation_contract_template()
 
 
 class SignalGovernanceBridge:
@@ -89,6 +109,15 @@ class SignalGovernanceBridge:
                 "source": "signal-layer",
             }
             try:
+                decision = SIGNAL_RECOMMENDATION_CONTRACT.evaluate(payload, now=time.time())
+                if not decision.admissible:
+                    skipped += 1
+                    self._audit(
+                        "signal_governance.denied",
+                        {"label": label, "reason": decision.reason},
+                    )
+                    continue
+
                 task_id = self.queue.enqueue(
                     agent=self.agent,
                     kind=TASK_KIND,
