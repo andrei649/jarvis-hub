@@ -5,7 +5,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import React from 'react';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
-import { DataSpacesPanel, PairingPanel, RoomsPanel, SandboxPanel } from '../gap';
+import { CapabilitiesPanel, DataSpacesPanel, PairingPanel, RoomsPanel, SandboxPanel } from '../gap';
 
 beforeEach(() => { try { localStorage.clear(); } catch { /* ignore */ } });
 
@@ -94,6 +94,49 @@ describe('RoomsPanel (H10.20) — saved room history is visible', () => {
       expect(get).toBeTruthy();
       expect(screen.getByText('@jarvis plan the launch')).toBeTruthy();
       expect(screen.getByText('Launch plan ready.')).toBeTruthy();
+    });
+  });
+});
+
+describe('CapabilitiesPanel (H17.3) — grants can be issued and checked', () => {
+  it('POSTs capability issue requests, lists the issued grant, and checks a token/capability pair', async () => {
+    const fn = mockFetch({
+      '/api/security/capabilities/issue': {
+        ok: true,
+        token: {
+          id: 'tok-123',
+          capabilities: ['memory.write'],
+          expires_at: 1783180800,
+        },
+      },
+      '/api/security/capabilities/check': {
+        allowed: true,
+        reason: '',
+      },
+    });
+    render(<CapabilitiesPanel />);
+
+    fireEvent.change(screen.getByPlaceholderText('capabilities csv'), { target: { value: 'memory.write' } });
+    fireEvent.click(screen.getByText('issue'));
+
+    await waitFor(() => {
+      const post = fn.mock.calls.find((c) => String(c[0]).includes('/api/security/capabilities/issue') && c[1]?.method === 'POST');
+      expect(post).toBeTruthy();
+      expect(JSON.parse(post[1].body)).toEqual({ capabilities: ['memory.write'] });
+      expect(screen.getByText('tok-123')).toBeTruthy();
+      expect(screen.getByText('memory.write')).toBeTruthy();
+    });
+
+    fireEvent.change(screen.getByPlaceholderText('token id'), { target: { value: 'tok-123' } });
+    fireEvent.change(screen.getByPlaceholderText('capability to check'), { target: { value: 'memory.write' } });
+    fireEvent.click(screen.getByText('check'));
+
+    await waitFor(() => {
+      const get = fn.mock.calls.find((c) => String(c[0]).includes('/api/security/capabilities/check'));
+      expect(get).toBeTruthy();
+      expect(String(get[0])).toContain('token=tok-123');
+      expect(String(get[0])).toContain('capability=memory.write');
+      expect(screen.getByText('allowed')).toBeTruthy();
     });
   });
 });

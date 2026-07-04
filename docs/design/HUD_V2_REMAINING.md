@@ -25,8 +25,9 @@
   over `/api/admin/prompts/{id}/*`.
 - ✅ **Data Spaces**: list/create/delete plus assign/unassign controls are live in `DataSpacesPanel`
   over `/api/memory/spaces` and `/api/memory/spaces/{assign,unassign}`.
-- 🟡 **Secrets / Capabilities**: the secret store form is live in `SecretsPanel`, and capability
-  token issue is live in `CapabilitiesPanel`; a grants list/check UI remains open.
+- ✅ **Secrets / Capabilities**: the secret store form is live in `SecretsPanel`, and
+  `CapabilitiesPanel` can issue tokens, keep recent grants visible, and check a
+  token/capability pair through `GET /api/security/capabilities/check`.
 - ✅ **Rooms**: create + send with `@mentions` are live in `RoomsPanel`, and the selected-room
   history drawer reads `GET /api/rooms/{id}/history`.
 
@@ -38,7 +39,7 @@ with plugin-configured checks instead of seeded success. Still open:
   `/api/workflows`, `/api/skills/marketplace`, and `/sandbox/status`; deeper create/edit affordances
   remain in the Console panels.
 - **Memory**: `RECALLS` / `TOPICS` / `KG` live (recall search, decay ranking, bitemporal KG as‑of).
-- **Trust**: capability grants list; real `%‑local` meter (needs a locality/cost summary endpoint, §6).
+- **Trust**: real `%‑local` meter (needs a locality/cost summary endpoint, §6).
 - **Autonomy**: per‑agent AUTO/ASK/OFF **policies** (settings‑backed).
 - **Comms**: rooms + registered **Discord/Slack** channel status now feed the mode; actual channel
   inbox threads/reply transport remain separate plugin work.
@@ -112,7 +113,7 @@ the still‑open depth items above. Snapshot: backend ≈299 routes; HUD v2 acti
 - A2A approval inbox (H16.2 `/api/a2a/inbox*`), payments lifecycle actions (H16.3
   approve/reject/settle), marketplace review (H12.12) — read‑only or absent in Trust/Build.
 - Still missing interactive controls (carried from §2–§5): preference-learning suggestions,
-  capability grants/check UI, current-mesh task fan,
+  current-mesh task fan,
   in-app look/density/motion/texture tweaks, and self-hosted fonts.
 
 **Conclusion:** coverage gate still green (nothing silently dropped), but the *depth* gap regrew.
@@ -142,7 +143,7 @@ remaining local controls above.
 BUG‑17 audit‑verify Trust chip ✅ (`modes.tsx:117-165` renders the live
 `GET /api/security/audit/verify` verdict), the 0.39 saved‑watchlist `WatchlistPanel` ✅, and
 per-panel LIVE/SEED chips ✅ (58/58 Console cards declare a `PanelChip` signal). Data Spaces
-assign/unassign controls ✅. Rooms selected-history drawer ✅. O26-P3.2 adds a Vitest reconciliation guard so this document cannot
+assign/unassign controls ✅. Rooms selected-history drawer ✅. Capability issue/check UI ✅. O26-P3.2 adds a Vitest reconciliation guard so this document cannot
 re-list shipped TTS/mic/cognition/trust or Console controls as missing.
 
 ---
