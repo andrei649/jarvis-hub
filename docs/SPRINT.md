@@ -7,13 +7,13 @@
 
 ## Sesiune curentă
 
-**Data:** 2026-07-04 (ORIZONT 26 P3.2 tail after Capability issue/check UI)
+**Data:** 2026-07-04 (ORIZONT 26 P3.2 current-mesh task fan in progress)
 **Lead agent / Conductor:** Codex
-**Obiectiv sesiune:** keep O26-P3.2 moving after the Capability issue/check UI merge; prepare the next local-control slice.
-**Branch:** `main` (no active feature branch after #519 merge)
+**Obiectiv sesiune:** keep O26-P3.2 moving after #519/#520; deliver current-mesh `/tasks` task-fan parity.
+**Branch:** `codex-o26-p3-2-mesh-task-fan`
 
 **Scope decision (2026-07-04):** O26-P0, P1.1, P2.1, P2.2, P2.3, P2.4, P2.5, P3.1, P3.3, P3.4, P3.5, P3.6, the O26-P3.2 Data Spaces depth slice, the O26-P3.2 Rooms history drawer slice, and the O26-P3.2 Capability issue/check UI slice are merged.
-No active feature branch is declared. Next candidate slices: current-mesh task fan, preferences/tweaks UI, or self-hosted fonts.
+Current active branch owns only the current-mesh task-fan slice. Next candidate slices after it: preferences/tweaks UI or self-hosted fonts.
 
 **Previous session:** O26-P0.1 golden harness was merged via #496, with P0.2–P0.7 already completed on
 main by parallel agents.
@@ -39,6 +39,7 @@ main by parallel agents.
 | O26-P3.2 / Data Spaces Depth | `codex-o26-p3-2-data-spaces-depth` | #515 | ✅ merged | Codex | Data Spaces assign/unassign controls + reconciliation guard |
 | O26-P3.2 / Rooms History Drawer | `codex-o26-p3-2-rooms-history-drawer` | #517 | ✅ merged | Codex | Selected room opens `GET /api/rooms/{id}/history` drawer |
 | O26-P3.2 / Capability Issue/Check UI | `codex-o26-p3-2-capability-check-ui` | #519 | ✅ merged | Codex | Capability token issue + recent grants + check endpoint |
+| O26-P3.2 / Current Mesh Task Fan | `codex-o26-p3-2-mesh-task-fan` | #521 | 🟡 draft PR | Codex | `NeuralMesh` renders live `/tasks` spokes + count |
 
 Status legend: ⏳ in progress · 🟡 draft PR · 🟢 CI green · ✅ merged · 🔴 conflict
 
@@ -46,7 +47,17 @@ Status legend: ⏳ in progress · 🟡 draft PR · 🟢 CI green · ✅ merged �
 
 ## Fișiere blocate (în PR activ)
 
-No active feature branch is declared; no files are currently locked by Codex.
+`codex-o26-p3-2-mesh-task-fan` owns:
+- `frontend/src/mesh.tsx`
+- `frontend/src/app.tsx`
+- `frontend/src/styles.css`
+- `frontend/src/test/mesh.test.tsx`
+- `BACKLOG.md`
+- `STATUS.md`
+- `docs/SPRINT.md`
+- `docs/design/HUD_V2_REMAINING.md`
+
+Un fișier blocat nu se atinge de alt agent fără confirmare utilizator.
 
 ---
 
@@ -66,8 +77,8 @@ Current order:
   10. O26-P3.6 Landing Page Dev Half (#512) ✅
 ```
 
-Current backlog item: **O26-P3.2 HUD punch-list depth follow-up** is still partial; Data Spaces assign/unassign is delivered in #515, Rooms history drawer is delivered in #517, and Capability issue/check UI is delivered in #519.
-The next local-control tail is current-mesh task fan, preferences/tweaks UI, or self-hosted fonts.
+Current backlog item: **O26-P3.2 HUD punch-list depth follow-up** is still partial; Data Spaces assign/unassign is delivered in #515, Rooms history drawer is delivered in #517, Capability issue/check UI is delivered in #519, and current-mesh task fan is active on this branch.
+The next local-control tail after this branch is preferences/tweaks UI or self-hosted fonts.
 
 ---
 
@@ -306,6 +317,10 @@ Generalizează reflecția nocturnă din *rezumă-ziua* în *pre-raționează-pen
 [O26-P3.2] Implemented recent issued grants plus `GET /api/security/capabilities/check` controls in `CapabilitiesPanel`
 [Verify]   P3.2 Capability issue/check UI: focused HUD panel test green (6 passed)
 [PR]       #519 full GitHub Actions green; PR marked ready and squash-merged
+[ORIZONT 26] 2026-07-04 — started O26-P3.2 Current Mesh Task Fan on `codex-o26-p3-2-mesh-task-fan`
+[O26-P3.2] Red test: `NeuralMesh` accepted task data but did not surface any live `/tasks` count in the active mesh legend
+[O26-P3.2] Implemented live task spokes/dots in `NeuralMesh` and passed already-loaded `/tasks` state from `app.tsx`
+[Verify]   P3.2 mesh task fan: focused mesh test green (4 passed); adjacent mesh/cinema sweep green (8 passed); full frontend Vitest green (167 passed); typecheck/build/status-sync/diff-check clean
 ```
 
 ---
