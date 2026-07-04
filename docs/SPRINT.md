@@ -7,13 +7,13 @@
 
 ## Sesiune curentă
 
-**Data:** 2026-07-04 (post-0.45 signal governance contract gate)
+**Data:** 2026-07-04 (0.45 plugin permission contract gate)
 **Lead agent / Conductor:** Codex
-**Obiectiv sesiune:** keep main/docs synced after #531; pick the next unblocked non-owner-gated slice.
-**Branch:** `main` (no active feature branch after #531 merge)
+**Obiectiv sesiune:** apply the reusable high-risk automation contract layer to plugin permission checks.
+**Branch:** `codex-o45-plugin-gate-contract`
 
 **Scope decision (2026-07-04):** O26-P0, P1.1, P2.1, P2.2, P2.3, P2.4, P2.5, P3.1, P3.3, P3.4, P3.5, P3.6, the O26-P3.2 Data Spaces depth slice, the O26-P3.2 Rooms history drawer slice, the O26-P3.2 Capability issue/check UI slice, and the O26-P3.2 Current Mesh Task Fan slice are merged.
-The O26-P3.2 Preferences Tweaks UI slice is merged. The O26-P3.2 Self-hosted Fonts slice is merged in #525. The 0.44 Safe Comms draft-before-send UI slice is merged in #527: frontend draft composition over existing governed social endpoints only; no backend/channel transport scope. The 0.45 payment live-gate adoption is merged in #529: the existing mandate denial gate now evaluates `PAYMENT_CONTRACT` while preserving denial codes/order. The 0.45 signal governance live-gate adoption is merged in #531: actionable Signal Layer recommendations evaluate `SIGNAL_RECOMMENDATION_CONTRACT` before they can enter the preview-only approval queue.
+The O26-P3.2 Preferences Tweaks UI slice is merged. The O26-P3.2 Self-hosted Fonts slice is merged in #525. The 0.44 Safe Comms draft-before-send UI slice is merged in #527: frontend draft composition over existing governed social endpoints only; no backend/channel transport scope. The 0.45 payment live-gate adoption is merged in #529: the existing mandate denial gate now evaluates `PAYMENT_CONTRACT` while preserving denial codes/order. The 0.45 signal governance live-gate adoption is merged in #531: actionable Signal Layer recommendations evaluate `SIGNAL_RECOMMENDATION_CONTRACT` before they can enter the preview-only approval queue. Current branch extends 0.45 to plugin permission calls: `PermissionGate.check_call()` evaluates `PLUGIN_CALL_CONTRACT` while preserving boolean outcomes and warning reasons.
 
 **Previous session:** O26-P0.1 golden harness was merged via #496, with P0.2–P0.7 already completed on
 main by parallel agents.
@@ -45,6 +45,7 @@ main by parallel agents.
 | 0.44 / Safe Comms Draft UI | `codex-o44-safe-comms-draft-ui` | #527 | ✅ merged | Codex | Console panel queues X post/reply/DM drafts through `/api/integrations/social`; channel inbox transport remains open |
 | 0.45 / Payment Contract Live Gate | `codex-o45-payment-contract-live-gate` | #529 | ✅ merged | Codex | `PaymentBroker` request/approve gates evaluate `PAYMENT_CONTRACT`; denial codes stay stable |
 | 0.45 / Signal Governance Contract Gate | `codex-o45-signal-governance-contract-gate` | #531 | ✅ merged | Codex | `SignalGovernanceBridge` evaluates `SIGNAL_RECOMMENDATION_CONTRACT` before queueing preview-only approvals |
+| 0.45 / Plugin Permission Contract Gate | `codex-o45-plugin-gate-contract` | #533 | 🟡 draft PR | Codex | `PermissionGate.check_call()` evaluates `PLUGIN_CALL_CONTRACT`; existing allow/deny behavior stays stable |
 
 Status legend: ⏳ in progress · 🟡 draft PR · 🟢 CI green · ✅ merged · 🔴 conflict
 
@@ -52,7 +53,7 @@ Status legend: ⏳ in progress · 🟡 draft PR · 🟢 CI green · ✅ merged �
 
 ## Fișiere blocate (în PR activ)
 
-No active feature branch is declared; no files are currently locked by Codex.
+Codex is editing `agents/core/plugin_gate.py`, `tests/test_plugin_contract_live_gate.py`, `BACKLOG.md`, `STATUS.md`, and `docs/SPRINT.md` on `codex-o45-plugin-gate-contract`.
 
 ---
 
@@ -72,7 +73,7 @@ Current order:
   10. O26-P3.6 Landing Page Dev Half (#512) ✅
 ```
 
-Current backlog state: **0.45 High-Risk Automation Contracts — payment + signal live gate adoption** is merged in #529/#531. Remaining 0.45 work is applying contract templates to the next high-risk live gates / richer draft-before-send contracts beyond payments and signal recommendations. The broader TASK-2/O26 tail remains owner live-data/plugin setup plus actual channel inbox transport.
+Current backlog item: **0.45 High-Risk Automation Contracts — plugin permission live gate adoption**. Payment and signal live-gate adoption are merged in #529/#531; this branch moves plugin-known/enabled/agent/network permission checks onto `PLUGIN_CALL_CONTRACT` without changing default allow/deny behavior. The broader TASK-2/O26 tail remains owner live-data/plugin setup plus actual channel inbox transport.
 
 ---
 
@@ -346,6 +347,12 @@ Generalizează reflecția nocturnă din *rezumă-ziua* în *pre-raționează-pen
 [Verify]   0.45 signal governance sweep green: 48 passed across signal/contract/payment parity suites; ruff + py_compile clean
 [PR]       #531 opened as draft
 [PR]       #531 full GitHub Actions green (17/17); marked ready and squash-merged @ c2e828c
+[Docs]     #532 marked #531 merged in STATUS/SPRINT; full GitHub Actions green (15/15) and squash-merged @ b66c39d
+[0.45]     Started plugin permission contract gate on `codex-o45-plugin-gate-contract`
+[0.45]     Red test: `PermissionGate` had no live plugin-call contract seam, so a patched contract could not deny an otherwise allowed plugin call
+[0.45]     Implemented `PLUGIN_CALL_CONTRACT`; `check_call()` delegates plugin-known/enabled/agent/network admissibility while preserving warning reasons
+[Verify]   0.45 plugin gate sweep green: 186 passed across plugin/startup/integration/contract suites; ruff + py_compile clean
+[PR]       #533 opened as draft
 ```
 
 ---
