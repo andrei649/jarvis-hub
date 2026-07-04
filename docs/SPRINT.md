@@ -7,14 +7,14 @@
 
 ## Sesiune curentă
 
-**Data:** 2026-07-04 (ORIZONT 26 P2.2 memory consolidation)
+**Data:** 2026-07-04 (ORIZONT 26 P2.3 dormant-module disposition)
 **Lead agent / Conductor:** Codex
-**Obiectiv sesiune:** continue the ORIZONT 26 plan after Claude/Fable P2.1; deliver P2.2 as one focused PR with docs/status kept current.
-**Branch:** `codex-o26-p2-2-memory-consolidation`
+**Obiectiv sesiune:** continue the ORIZONT 26 plan after P2.2; deliver P2.3 as one focused PR with docs/status kept current.
+**Branch:** `codex-o26-p2-3-dormant-disposition`
 
-**Scope decision (2026-07-04):** O26-P0, P1.1, and P2.1 are already done on `main`, so the next unblocked
-plan item is O26-P2.2. Keep it one item = one PR: no dormant-module disposition, posture, HUD breadth,
-or install-smoke work in this branch.
+**Scope decision (2026-07-04):** O26-P0, P1.1, P2.1, and P2.2 are the substrate for this branch, so the
+next unblocked plan item is O26-P2.3. Keep it one item = one PR: no posture, HUD breadth, or install-smoke
+work in this branch.
 
 **Previous session:** O26-P0.1 golden harness was merged via #496, with P0.2–P0.7 already completed on
 main by parallel agents.
@@ -27,7 +27,8 @@ main by parallel agents.
 |------|--------|----|--------|--------|------|
 | O26-P1.1 / one-turn pipeline | `codex-o26-p1-1-one-turn-pipeline` | #498 | ✅ merged | Codex | Shared prompt wrapper + shared post-turn record seam |
 | O26-P2.1 / env config consolidation | `claude/jarvis-hub-backlog-review-jx87gz` | #500 | ✅ merged | Claude/Fable | One `env_config.truthy()` and env parse ratchet |
-| O26-P2.2 / memory consolidation | `codex-o26-p2-2-memory-consolidation` | #501 | 🟡 draft PR | Codex | LivingMemory turn seam + nightly maintenance |
+| O26-P2.2 / memory consolidation | `codex-o26-p2-2-memory-consolidation` | #501 | ✅ merged | Codex | LivingMemory seam + nightly maintenance |
+| O26-P2.3 / dormant disposition | `codex-o26-p2-3-dormant-disposition` | #502 | 🟡 ready PR | Codex | Ensemble roster + learning proof + profile extractor parked |
 
 Status legend: ⏳ in progress · 🟡 draft PR · 🟢 CI green · ✅ merged · 🔴 conflict
 
@@ -35,15 +36,15 @@ Status legend: ⏳ in progress · 🟡 draft PR · 🟢 CI green · ✅ merged �
 
 ## Fișiere blocate (în PR activ)
 
-`codex-o26-p2-2-memory-consolidation` owns:
+`codex-o26-p2-3-dormant-disposition` owns:
 
 - `agents/core/orchestrator.py`
-- `agents/core/scheduler_service.py`
-- `agents/core/cognition/memory.py`
-- `tests/test_o26_p2_memory_consolidation.py`
+- `agents/core/memory/profile_extractor.py`
+- `tests/test_o26_p2_dormant_disposition.py`
 - `BACKLOG.md`
 - `STATUS.md`
 - `docs/SPRINT.md`
+- `docs/COGNITION.md`
 
 Un fișier blocat nu se atinge de alt agent fără confirmare utilizator.
 
@@ -53,13 +54,13 @@ Un fișier blocat nu se atinge de alt agent fără confirmare utilizator.
 
 ```
 Current order:
-  1. O26-P2.2 living-memory turn seam + nightly maintenance
-  2. O26-P2.3 dormant-module disposition
+  1. O26-P2.2 living-memory turn seam + nightly maintenance (#501)
+  2. O26-P2.3 dormant-module disposition (this branch)
   3. O26-P2.4 Product Posture
 ```
 
-Next backlog item after this PR lands: **O26-P2.3 dormant-module disposition**, then O26-P2.4 Product
-Posture once the woken memory substrate is sealed.
+Next backlog item after this PR lands: **O26-P2.4 Product Posture** once the woken memory and cognition
+substrates are sealed.
 
 ---
 
@@ -85,7 +86,7 @@ Generalizează reflecția nocturnă din *rezumă-ziua* în *pre-raționează-pen
 
 ## Checklist post-merge (conductor)
 
-### ORIZONT 26 P2.2 — ÎN CURS
+### ORIZONT 26 P2.2 — COMPLET
 
 - [x] `main` fetched/rebased from `origin/main`
 - [x] Branch created from current main
@@ -96,7 +97,21 @@ Generalizează reflecția nocturnă din *rezumă-ziua* în *pre-raționează-pen
 - [x] Focused backend verification green
 - [x] Ruff / final compile pass
 - [x] Branch pushed / PR #501 opened
-- [ ] GitHub Actions green; PR marked ready
+- [x] GitHub Actions green; PR merged
+
+### ORIZONT 26 P2.3 — ÎN CURS
+
+- [x] `main` synced after #501 merge
+- [x] Branch rebased onto current `origin/main`
+- [x] Red tests added for active roster disposition and parked legacy extractor
+- [x] PersonaModule + EnsembleModule populated from active agents after `load_agents()`
+- [x] Governed learning verified through the autonomy calibration hook
+- [x] `profile_extractor.legacy_status()` marks the legacy extractor parked
+- [x] `BACKLOG.md` + `STATUS.md` updated from verified scope
+- [x] Focused backend verification green
+- [x] Ruff / final compile pass
+- [x] Branch pushed / PR #502 opened
+- [ ] GitHub Actions green; PR merged
 
 ### Wave 0 — COMPLET ✅
 
@@ -154,6 +169,10 @@ Generalizează reflecția nocturnă din *rezumă-ziua* în *pre-raționează-pen
 [Verify]   P2.2/LivingMemory/decay/P1.1/lifespan targeted suites green: 33 passed; STATUS count synced to ~3,584
 [O26-P2.2] CodeQL merge blockers addressed: memory-maintenance warnings avoid exception text, completion logging emits counters instead of the whole result payload, and LivingMemory/decay records avoid duplicating raw transcript text
 [PR]       #501 opened as draft
+[ORIZONT 26] 2026-07-04 — started O26-P2.3 on stacked `codex-o26-p2-3-dormant-disposition` while #501 CI finished
+[O26-P2.3] Red tests: active-agent cognition roster was empty; legacy profile extractor had no explicit parked status
+[O26-P2.3] Implemented active roster configuration for PersonaModule + EnsembleModule; governed learning proven live at the autonomy calibration hook; profile_extractor parked via legacy_status()
+[Verify]   P2.3/ensemble/persona/governed-learning/profile targeted sweep green: 48 passed; STATUS count synced to ~3,588
 ```
 
 ---

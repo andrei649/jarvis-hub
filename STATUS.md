@@ -1,6 +1,6 @@
 # Jarvis Hub — Status Snapshot
 
-> **Current version:** v0.11.0 (feature-complete + refactor done; productionizing toward 1.0) · **Tests:** ~3,584 passed (6 skipped) + frontend **155 vitest** + Playwright HUD/flow suites (HUD-v3 Console port complete: every blueprint surface + the north-star Decision Inbox + native Neural-Mesh canvas + cinema mode) · **Agents:** 17 active (16 cabinet incl. Howard + Argus, the WorldView bridge; + 17 bench) · **HTTP routes:** 363 (+ feedback widget/summary, H23.21; + onboarding, H23.20; +`/api/metrics/capabilities`, V2; + `/api/security/loop-breaker` status/reset, K3; + `/api/metrics/kernel`, Gate-K observability) — `web.py` decomposed into **45 per-domain routers** (CLN-3, #296); only 9 app-shell/chat/admin routes remain inline (4,636→1,282 LOC)
+> **Current version:** v0.11.0 (feature-complete + refactor done; productionizing toward 1.0) · **Tests:** ~3,588 passed (6 skipped) + frontend **155 vitest** + Playwright HUD/flow suites (HUD-v3 Console port complete: every blueprint surface + the north-star Decision Inbox + native Neural-Mesh canvas + cinema mode) · **Agents:** 17 active (16 cabinet incl. Howard + Argus, the WorldView bridge; + 17 bench) · **HTTP routes:** 363 (+ feedback widget/summary, H23.21; + onboarding, H23.20; +`/api/metrics/capabilities`, V2; + `/api/security/loop-breaker` status/reset, K3; + `/api/metrics/kernel`, Gate-K observability) — `web.py` decomposed into **45 per-domain routers** (CLN-3, #296); only 9 app-shell/chat/admin routes remain inline (4,636→1,282 LOC)
 > **The version is the roadmap.** Every feature horizon (H1–H22 + WorldView O19) is delivered — that's **0.10.0**; the **0.11.0** refactor (CLN-3 `web.py` split + CLN-2 `orchestrator.py` managers) is done (#293/#296). There is no "audit gate" version: 1.0 is a real destination reached by finishing the productionization layer (**H23**: agentic-safety budgets, DB migrations, backup/restore + export-delete, operability, quality + user docs) **and** proving it with real design-partner users. The plan is the version line in [BACKLOG.md](BACKLOG.md#version-roadmap); strategy in [MOONSHOT.md](MOONSHOT.md) §4. Manual testing/audit ([docs/MANUAL_TESTING.md](docs/MANUAL_TESTING.md), [docs/AUDIT.md](docs/AUDIT.md)) is the release step that tags a version. GPU-gated dev (H12.14, H13.3, Howard) is its own minor (0.18). HUD deep write-controls tracked in [docs/design/HUD_V2_REMAINING.md](docs/design/HUD_V2_REMAINING.md).
 >
 > The version labels in the feature tables below (`v0.2.0`, `v0.2.1`) record *when* each capability first
@@ -12,16 +12,18 @@
 
 ## ORIZONT 26 Update — 2026-07-04
 
-O26 Phase 0, P1.1, and P2.1 are complete on `main`. This branch continues Phase 2 with O26-P2.2:
-the dormant LivingMemory module now receives completed LLM-turn references through the shared P1.1 seam, and
-the scheduler has a nightly maintenance pass for NREM/REM consolidation plus decay inspection.
+O26 Phase 0, P1.1, P2.1, and P2.2 are complete on `main`. This branch continues Phase 2 with
+O26-P2.3: the dormant ensemble/persona roster is now
+populated from live active agents, governed learning is verified at the autonomy hook, and the legacy
+profile extractor is explicitly parked.
 
 | Item | Status | Verified result |
 |------|--------|-----------------|
 | O26-P1.1 one-turn pipeline | ✅ merged | `Agent.build_prompt()` is shared by plain/stream paths; `_build_agent_turn_text()` injects persona + runtime truth + history/plugins/recall for both; `_complete_llm_turn()` centralizes memory/checkpoint/log/learning+bench/run-history/audit/cognition; `PersonaModule.nudge()` runs once per completed LLM turn when affect is enabled. |
 | O26-P2.1 config consolidation | ✅ merged | `agents/core/env_config.py` is now the single boolean/env parsing leaf; ad-hoc env truthiness is ratcheted by tests. |
-| O26-P2.2 memory consolidation | ✅ done locally | `_complete_llm_turn()` records LivingMemory + decay entries only when `cognition.enabled && cognition.memory_enabled`; LivingMemory stores session/agent/channel, a turn reference, text digest, and size counters rather than duplicating raw transcript text. `SchedulerService` registers `memory-consolidation-decay` and `run_memory_maintenance()` performs NREM/REM consolidation plus decay candidate inspection without auto-deletion. |
-| Local verification | ✅ targeted green | P2.2 red/green tests (+7) plus LivingMemory, decay, P1.1 pipeline, and lifespan smoke suites: 33 passed. Full PR CI still remains the merge gate. |
+| O26-P2.2 memory consolidation | ✅ merged (#501) | `_complete_llm_turn()` records LivingMemory + decay entries only when `cognition.enabled && cognition.memory_enabled`; LivingMemory stores session/agent/channel, a turn reference, text digest, and size counters rather than duplicating raw transcript text. `SchedulerService` registers `memory-consolidation-decay` and `run_memory_maintenance()` performs NREM/REM consolidation plus decay candidate inspection without auto-deletion. |
+| O26-P2.3 dormant disposition | ✅ done locally | `load_agents()` now registers active agents into `PersonaModule` + `EnsembleModule`; `cognition.learning_enabled` is proven live through the autonomy calibration hook; `profile_extractor.legacy_status()` marks the old regex extractor parked with no production callers. |
+| Local verification | ✅ targeted green | P2.2 focused sweep was 33 passed before #501 merge; P2.3 red/green tests (+4) plus ensemble, governed learning, persona, and memory-store suites are 48 passed. Full PR CI remains the merge gate for P2.3. |
 
 ---
 

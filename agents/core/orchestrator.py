@@ -436,6 +436,8 @@ class Orchestrator:
                 self.agents[agent_id] = agent
                 logger.info(f"Loaded: {agent_id}")
 
+        self._configure_cognition_roster()
+
         # K2: issue a least-privilege capability token per agent, derived from its declared
         # config (plugins/channel/policy). Inert until the per-action enforcement waves
         # check it — populated here so every agent has a scoped capability set (generalizing
@@ -513,6 +515,77 @@ class Orchestrator:
         for agent_id, hb_config in self.heartbeat_scheduler._heartbeat_configs.items():
             if agent_id in self.agents:
                 self.agents[agent_id]._heartbeat_config = hb_config
+
+    @staticmethod
+    def _normalize_trait_config(raw) -> Optional[dict]:
+        """Normalize SOUL front-matter traits into Personality distributions."""
+        if not isinstance(raw, dict):
+            return None
+        out = {}
+        for name, spec in raw.items():
+            try:
+                if isinstance(spec, dict):
+                    mu = float(spec.get("mu", spec.get("mean", 0.5)))
+                    sigma = float(spec.get("sigma", 0.0))
+                    skew = float(spec.get("skew", 0.0))
+                else:
+                    mu = float(spec)
+                    sigma = 0.0
+                    skew = 0.0
+            except (TypeError, ValueError):
+                continue
+            out[str(name)] = {
+                "mu": max(0.0, min(1.0, mu)),
+                "sigma": max(0.0, sigma),
+                "skew": skew,
+            }
+        return out or None
+
+    @staticmethod
+    def _trait_mu(traits: Optional[dict]) -> dict:
+        if not traits:
+            return {}
+        out = {}
+        for name, spec in traits.items():
+            if isinstance(spec, dict):
+                out[str(name)] = round(float(spec.get("mu", 0.5)), 4)
+        return out
+
+    def _configure_cognition_roster(self) -> None:
+        """Give cognition modules the real active-agent roster once agents load."""
+        cog = getattr(self, "cognition", None)
+        if cog is None:
+            return
+        persona = cog.module("persona")
+        ensemble = cog.module("ensemble")
+        if persona is None and ensemble is None:
+            return
+
+        for agent_id, agent in sorted(self.agents.items()):
+            meta = dict((getattr(agent, "soul", {}) or {}).get("meta") or {})
+            personality_meta = meta.get("personality") if isinstance(meta.get("personality"), dict) else {}
+            raw_traits = meta.get("traits") or personality_meta.get("traits")
+            traits = self._normalize_trait_config(raw_traits)
+
+            affect_meta = meta.get("affect") if isinstance(meta.get("affect"), dict) else {}
+            try:
+                valence = float(affect_meta.get("valence_setpoint", affect_meta.get("valence", 0.0)))
+                arousal = float(affect_meta.get("arousal_setpoint", affect_meta.get("arousal", 0.0)))
+            except (TypeError, ValueError):
+                valence, arousal = 0.0, 0.0
+
+            baseline = self._trait_mu(traits)
+            if persona is not None:
+                persona.configure(
+                    agent_id,
+                    traits=traits,
+                    valence_setpoint=valence,
+                    arousal_setpoint=arousal,
+                )
+                if not baseline:
+                    baseline = persona.traits(agent_id)
+            if ensemble is not None and baseline:
+                ensemble.register_persona(agent_id, baseline)
 
     def load_runtime_settings(self):
         try:
