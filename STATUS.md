@@ -13,7 +13,7 @@
 ## ORIZONT 26 Update — 2026-07-04
 
 O26 Phase 0, P1.1, P2.1, P2.2, P2.3, P2.4, and P2.5 are complete on `main`.
-P3.1 live preview modes is in progress on `codex-o26-p3-1-preview-modes`.
+P3.1 live preview modes is delivered in PR #505 and awaiting merge after final checks.
 
 | Item | Status | Verified result |
 |------|--------|-----------------|
@@ -23,8 +23,8 @@ P3.1 live preview modes is in progress on `codex-o26-p3-1-preview-modes`.
 | O26-P2.3 dormant disposition | ✅ merged (#502) | `load_agents()` now registers active agents into `PersonaModule` + `EnsembleModule`; `cognition.learning_enabled` is proven live through the autonomy calibration hook; `profile_extractor.legacy_status()` marks the old regex extractor parked with no production callers. |
 | O26-P2.4 product posture | ✅ merged (#503) | `product.posture` defaults OFF; selecting `companion_wave1` or `design_partner` overlays wave-1 memory/cognition flags at runtime and surfaces provenance in security posture, onboarding wizard, and support bundle. Wave 2 kernel/budget/REDACT hardening remains future scope. |
 | O26-P2.5 install smoke | ✅ merged (#504) | `scripts/install_smoke.py` provides the fast install path: real orchestrator boot with one fake local LLM backend, `/readyz` check, deterministic chat turn; `--dev` runs the full pytest suite after the smoke succeeds. |
-| O26-P3.1 live preview modes | 🟡 in progress | Current branch wires the six preview modes into LIVE/SEED mode keys: Build reads workflows/marketplace/sandbox; Comms reads rooms plus registered Discord/Slack channel status and renders an honest empty state; Finance reads saved watchlist/payments while refusing mock balances; Health/Knowledge/Family require configured Apple Health/websearch/WhatsApp plugins. `/plugins` now reports runtime `configured`; `/status` reports channels. Owner live-data/plugin setup and self-hosted fonts remain. |
-| Local verification | ✅ targeted green | P2.2 focused sweep was 33 passed before #501 merge; P2.3 red/green tests (+4) plus ensemble, governed learning, persona, and memory-store suites are 48 passed before #502 merge. P2.4 focused posture/onboarding/security/support/lifespan/settings sweep was 39 passed locally; PR #503 full CI matrix green before merge. P2.5 smoke tests were green, `python scripts/install_smoke.py --json` exited 0 locally, and PR #504 full CI matrix was green before merge. P3.1 focused red/green checks are green for `/plugins.configured`, `/status.channels`, and preview-mode live/empty-state coverage. |
+| O26-P3.1 live preview modes | 🟢 PR #505 green | The six preview modes now feed LIVE/SEED mode keys: Build reads workflows/marketplace/sandbox; Comms reads rooms plus registered Discord/Slack channel status and renders an honest empty state; Finance reads saved watchlist/payments while refusing mock balances; Health/Knowledge/Family require configured Apple Health/websearch/WhatsApp plugins. `/plugins` now reports runtime `configured`; `/status` reports channels. Owner live-data/plugin setup and self-hosted fonts remain. |
+| Local verification | ✅ targeted green | P2.2 focused sweep was 33 passed before #501 merge; P2.3 red/green tests (+4) plus ensemble, governed learning, persona, and memory-store suites are 48 passed before #502 merge. P2.4 focused posture/onboarding/security/support/lifespan/settings sweep was 39 passed locally; PR #503 full CI matrix green before merge. P2.5 smoke tests were green, `python scripts/install_smoke.py --json` exited 0 locally, and PR #504 full CI matrix was green before merge. P3.1 focused red/green checks are green for `/plugins.configured`, `/status.channels`, preview-mode live/empty-state coverage, typecheck, and the HUD bundle freshness gate in CI. |
 
 ---
 

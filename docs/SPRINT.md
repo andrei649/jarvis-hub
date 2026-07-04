@@ -9,7 +9,7 @@
 
 **Data:** 2026-07-04 (ORIZONT 26 P3.1 Preview Modes)
 **Lead agent / Conductor:** Codex
-**Obiectiv sesiune:** continue the ORIZONT 26 plan after P2.5; start P3.1 live preview modes as one focused PR with docs/status kept current.
+**Obiectiv sesiune:** continue the ORIZONT 26 plan after P2.5; deliver P3.1 live preview modes as one focused PR with docs/status kept current.
 **Branch:** `codex-o26-p3-1-preview-modes`
 
 **Scope decision (2026-07-04):** O26-P0, P1.1, P2.1, P2.2, P2.3, P2.4, and P2.5 are now merged. The
@@ -31,7 +31,7 @@ main by parallel agents.
 | O26-P2.3 / dormant disposition | `codex-o26-p2-3-dormant-disposition` | #502 | ✅ merged | Codex | Ensemble roster + learning proof + profile extractor parked |
 | O26-P2.4 / Product Posture | `codex-o26-p2-4-product-posture` | #503 | ✅ merged | Codex | Settings-backed named posture, wave 1 only |
 | O26-P2.5 / Install Smoke Path | `codex-o26-p2-5-install-smoke` | #504 | ✅ merged | Codex | ~30s boot + `/readyz` + faked turn |
-| O26-P3.1 / Preview Modes | `codex-o26-p3-1-preview-modes` | TBD | ⏳ in progress | Codex | 6 live preview modes + honest blockers |
+| O26-P3.1 / Preview Modes | `codex-o26-p3-1-preview-modes` | #505 | 🟢 CI green | Codex | 6 live preview modes + honest blockers |
 
 Status legend: ⏳ in progress · 🟡 draft PR · 🟢 CI green · ✅ merged · 🔴 conflict
 
@@ -53,10 +53,10 @@ Current order:
   2. O26-P2.3 dormant-module disposition (#502) ✅
   3. O26-P2.4 Product Posture (#503) ✅
   4. O26-P2.5 Install Smoke Path (#504) ✅
-  5. O26-P3.1 Preview Modes (current branch)
+  5. O26-P3.1 Preview Modes (#505)
 ```
 
-Current backlog item: **O26-P3.1 live preview modes** now that the Phase 2 wake-up work is sealed.
+Current backlog item: **O26-P3.1 live preview modes** is implemented in #505; next up after merge is the P3.3 eval baseline store branch or P3.2 docs/tests reconciliation.
 
 ---
 
@@ -132,7 +132,7 @@ Generalizează reflecția nocturnă din *rezumă-ziua* în *pre-raționează-pen
 - [x] Branch pushed / PR #504 opened
 - [x] GitHub Actions green; PR merged
 
-### ORIZONT 26 P3.1 — ÎN PROGRES
+### ORIZONT 26 P3.1 — DELIVERED IN #505
 
 - [x] `main` synced after #504 merge
 - [x] Branch created from current main
@@ -140,8 +140,9 @@ Generalizează reflecția nocturnă din *rezumă-ziua* în *pre-raționează-pen
 - [x] Preview-mode implementation
 - [x] `BACKLOG.md` + `STATUS.md` updated from verified scope
 - [x] Focused verification green
-- [ ] Branch pushed / PR opened
-- [ ] GitHub Actions green; PR merged
+- [x] Branch pushed / PR #505 opened
+- [x] GitHub Actions green, including HUD bundle freshness and Windows test lanes
+- [ ] PR merged
 
 ### Wave 0 — COMPLET ✅
 
@@ -209,6 +210,7 @@ Generalizează reflecția nocturnă din *rezumă-ziua* în *pre-raționează-pen
 [O26-P3.1] Red tests: six preview modes lacked LIVE key coverage; plugin `enabled` alone looked live; `balance` mock payloads could be mistaken for live; empty Comms channels crashed
 [O26-P3.1] Implemented six-mode live gates, `/plugins.configured`, `/status.channels`, Build/Comms/Finance data ingestion, and plugin-gated Health/Knowledge/Family empty states
 [Verify]   P3.1 focused `/plugins` + `/status` backend checks green; preview-mode Vitest suite green (5 passed)
+[Verify]   P3.1 CI green after refreshing the committed HUD V2 bundle and matching Linux Vite output
 ```
 
 ---

@@ -28,8 +28,8 @@
 
 ## 3. Per‑mode live‑wiring depth
 `api/live.ts` wires the headline data for Memory / Observe / Interop / Autonomy / Trust / Admin.
-Current O26-P3.1 branch also adds base LIVE/SEED gates for Build / Comms / Finance / Health /
-Knowledge / Family, with plugin-configured checks instead of seeded success. Still open:
+PR #505 adds base LIVE/SEED gates for Build / Comms / Finance / Health / Knowledge / Family,
+with plugin-configured checks instead of seeded success. Still open:
 - **Build**: base live wiring reads workflow DAG + skills marketplace + sandbox from
   `/api/workflows`, `/api/skills/marketplace`, and `/sandbox/status`; deeper create/edit affordances
   remain in the Console panels.
@@ -123,11 +123,11 @@ AI step builder (H10.7) · sandbox execute (DEV_MODE‑gated, honest 403) · age
 (H10.29) · LM Studio server/load/unload · cloud auth profiles (H12.20). Admin‑guarded calls now
 send the admin token (`actA`). +7 frontend tests (19 total).
 
-**Still open (the tail of TASK‑2, re‑verified 2026‑07‑04):** O26-P3.1 has the §3 plugin-gated
-base wiring in progress (Build/Comms/Finance/Health/Knowledge/Family). Remaining after that branch:
+**Still open (the tail of TASK‑2, re‑verified 2026‑07‑04):** O26-P3.1 closes the §3 plugin-gated
+base wiring in #505 (Build/Comms/Finance/Health/Knowledge/Family). Remaining:
 owner live-data/plugin setup (bank/broker/quotes, Apple Health bridge, websearch backend, WhatsApp
 bridge/frigga live data), channel inbox transport, and §6 self-hosted fonts.
-Estimated 1–2 PRs after P3.1, depending on owner credential/hardware readiness.
+Estimated 1–2 PRs after #505, depending on owner credential/hardware readiness.
 *Since‑closed items previously listed here:* CI stale‑bundle guard ✅ (`hud-v2-build` in `ci.yml`),
 §7 locality endpoint ✅ (`GET /api/analytics/locality`, consumed in `app.tsx`/`shell.tsx`), and the
 BUG‑17 audit‑verify Trust chip ✅ (`modes.tsx:117-165` renders the live
