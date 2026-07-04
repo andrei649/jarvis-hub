@@ -334,13 +334,53 @@ export function SecuritySkillsPanel() {
     </Card>
   );
 }
-function CapabilitiesPanel() {
+export function CapabilitiesPanel() {
   const [caps, setCaps] = useState('fs.read,memory.write'); const [out, setOut] = useState(null);
+  const [issued, setIssued] = useState([]);
+  const [checkToken, setCheckToken] = useState(''); const [checkCap, setCheckCap] = useState('memory.write');
+  const [checkOut, setCheckOut] = useState(null);
+  const issue = () => {
+    const parsed = caps.split(',').map((s) => s.trim()).filter(Boolean);
+    if (!parsed.length) return;
+    actA('/api/security/capabilities/issue', { capabilities: parsed }, (r) => {
+      setOut(JSON.stringify(r));
+      if (r?.token) {
+        setIssued((prev) => [r.token, ...prev.filter((t) => t.id !== r.token.id)].slice(0, 5));
+        setCheckToken(r.token.id || '');
+        setCheckCap((r.token.capabilities || [checkCap])[0] || checkCap);
+      }
+    });
+  };
+  const check = () => {
+    const token = checkToken.trim(); const cap = checkCap.trim();
+    if (!token || !cap) return;
+    apiGet('/api/security/capabilities/check?token=' + encodeURIComponent(token) + '&capability=' + encodeURIComponent(cap))
+      .then(setCheckOut)
+      .catch((err) => setCheckOut({ allowed: false, reason: err?.message || 'check failed' }));
+  };
   return <Card title="CAPABILITY TOKENS" live={'live'}>
-    <input value={caps} onChange={(e) => setCaps(e.target.value)} style={{ width: '100%', background: 'var(--surface)', color: 'var(--ink)', border: '1px solid var(--panel-line)', borderRadius: 4, padding: 6, ...mono }} />
+    <input value={caps} onChange={(e) => setCaps(e.target.value)} placeholder="capabilities csv" style={{ width: '100%', background: 'var(--surface)', color: 'var(--ink)', border: '1px solid var(--panel-line)', borderRadius: 4, padding: 6, ...mono }} />
     <div style={{ display: 'flex', gap: 8, marginTop: 6 }}>
-      <button className="tool-btn" onClick={() => actA('/api/security/capabilities/issue', { capabilities: caps.split(',').map((s) => s.trim()) }, (r) => setOut(JSON.stringify(r)))}>issue</button>
+      <button className="tool-btn" onClick={issue}>issue</button>
     </div>
+    {issued.length > 0 && <div style={{ marginTop: 8 }}>
+      <div style={{ ...mono, color: 'var(--ink-3)', fontSize: 10, marginBottom: 4 }}>RECENT GRANTS</div>
+      {issued.map((t, i) => <Row key={t.id || i}>
+        <span style={{ ...mono, color: 'var(--ink-2)' }}>{t.id}</span>
+        <span style={{ marginLeft: 'auto', display: 'flex', gap: 5, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+          {(t.capabilities || []).map((c) => <Tag key={c} c="var(--accent-light)">{c}</Tag>)}
+        </span>
+      </Row>)}
+    </div>}
+    <div style={{ display: 'flex', gap: 6, marginTop: 8, flexWrap: 'wrap' }}>
+      <input value={checkToken} onChange={(e) => setCheckToken(e.target.value)} placeholder="token id" style={{ ...inpS, flex: 1, minWidth: 120 }} />
+      <input value={checkCap} onChange={(e) => setCheckCap(e.target.value)} placeholder="capability to check" style={{ ...inpS, flex: 1, minWidth: 120 }} />
+      <button className="tool-btn" onClick={check}>check</button>
+    </div>
+    {checkOut && <div style={{ display: 'flex', gap: 6, alignItems: 'center', marginTop: 6 }}>
+      <Tag c={checkOut.allowed ? 'var(--green)' : 'var(--red)'}>{checkOut.allowed ? 'allowed' : 'blocked'}</Tag>
+      <span style={{ ...mono, fontSize: 10, color: 'var(--ink-3)' }}>{checkOut.reason || 'token grants capability'}</span>
+    </div>}
     {out && <pre style={{ ...mono, fontSize: 10, color: 'var(--ink-3)', whiteSpace: 'pre-wrap', marginTop: 6 }}>{out.slice(0, 200)}</pre>}
   </Card>;
 }
