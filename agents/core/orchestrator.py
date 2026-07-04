@@ -594,8 +594,14 @@ class Orchestrator:
             for cat, items in all_s.items():
                 for item in items:
                     flat[f"{cat}.{item['key']}"] = item["value"]
+            from .product_posture import apply_to_runtime_settings
+            flat = apply_to_runtime_settings(flat)
             self._runtime_settings = flat
             logger.debug(f"Runtime settings loaded: {len(flat)} keys")
+            # Product Posture wave 1 can wake turn embeddings without replacing
+            # the legacy MEMORY_EMBED_TURNS env default; off/no key preserves it.
+            if getattr(self, "memory", None) is not None and "memory.embed_turns" in flat:
+                self.memory.embed_turns = bool(flat["memory.embed_turns"])
             # Propagate the live kill-switch to the controller (≤30s to take
             # effect via the settings watcher) — no restart needed to disable.
             ctrl = getattr(self, "lmstudio", None)

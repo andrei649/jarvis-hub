@@ -72,6 +72,7 @@ _WIZARD_STEPS = [
     {"key": "model", "title": "Connect a model"},
     {"key": "test_chat", "title": "Say hello"},
     {"key": "autonomy", "title": "Set your autonomy budget"},
+    {"key": "product_posture", "title": "Choose product posture"},
 ]
 _STEP_KEYS = {s["key"] for s in _WIZARD_STEPS}
 
@@ -107,12 +108,16 @@ async def onboarding_wizard():
     if ready is False:
         hint = ("No model backend reachable — start LM Studio or Ollama, or add a cloud "
                 "API key in Admin → settings.")
+    from agents.core import product_posture
+    orch = get_orch()
+    posture = product_posture.snapshot(getattr(orch, "_runtime_settings", {}) if orch else {})
     return nocache_json({
         "steps": _WIZARD_STEPS,
         "completed": done,
         "complete": len(done) >= len(_WIZARD_STEPS),
         "model_ready": ready,
         "hint": hint,
+        "product_posture": posture,
     })
 
 
