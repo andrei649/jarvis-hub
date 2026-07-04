@@ -7,13 +7,13 @@
 
 ## Sesiune curentă
 
-**Data:** 2026-07-04 (ORIZONT 26 P3.5 Persona Rail + Caring Follow-ups)
+**Data:** 2026-07-04 (ORIZONT 26 P3.6 Landing Page Dev Half)
 **Lead agent / Conductor:** Codex
-**Obiectiv sesiune:** continue the ORIZONT 26 plan after P3.4; ship the Q2 persona-consistency rail and Q3 caring follow-ups without adding new capture.
-**Branch:** `codex-o26-p3-5-persona-caring-brief`
+**Obiectiv sesiune:** continue the ORIZONT 26 plan after P3.5; ship the static, self-contained landing page dev half and demo shot-list support without recording owner video.
+**Branch:** `codex-o26-p3-6-landing-dev-half`
 
-**Scope decision (2026-07-04):** O26-P0, P1.1, P2.1, P2.2, P2.3, P2.4, P2.5, P3.1, P3.2, P3.3, and P3.4 are merged.
-The current branch takes O26-P3.5 only: persona scoring at the live quality seam + caring follow-ups in existing brief/today surfaces.
+**Scope decision (2026-07-04):** O26-P0, P1.1, P2.1, P2.2, P2.3, P2.4, P2.5, P3.1, P3.2, P3.3, P3.4, and P3.5 are merged.
+The current branch takes O26-P3.6 only: offline-safe landing page + demo capture checklist, based on `docs/marketing/` and `docs/BRAND_BOOK.md`.
 
 **Previous session:** O26-P0.1 golden harness was merged via #496, with P0.2–P0.7 already completed on
 main by parallel agents.
@@ -35,6 +35,7 @@ main by parallel agents.
 | O26-P3.2 / HUD Reconciliation | `codex-o26-p3-2-hud-reconciliation` | #507 | ✅ merged | Codex | Stale punch-list claims guarded by Vitest |
 | O26-P3.4 / Mobile Approval Queue | `codex-o26-p3-4-mobile-approval-queue` | #509 | ✅ merged | Codex | Phone-native unified approval funnel |
 | O26-P3.5 / Persona Rail + Caring Follow-ups | `codex-o26-p3-5-persona-caring-brief` | #510 | ✅ merged | Codex | Versioned persona signal + brief follow-up recomposition |
+| O26-P3.6 / Landing Page Dev Half | `codex-o26-p3-6-landing-dev-half` | #512 | 🟡 draft PR | Codex | Static self-contained landing + owner demo shot-list support |
 
 Status legend: ⏳ in progress · 🟡 draft PR · 🟢 CI green · ✅ merged · 🔴 conflict
 
@@ -42,8 +43,8 @@ Status legend: ⏳ in progress · 🟡 draft PR · 🟢 CI green · ✅ merged �
 
 ## Fișiere blocate (în PR activ)
 
-No active PR owns code files right now. The P3.5 status-doc follow-up branch owns only
-`BACKLOG.md`, `STATUS.md`, and `docs/SPRINT.md`.
+Draft PR #512 owns `marketing/landing/`, `marketing/README.md`,
+`tests/test_o26_p3_6_landing_page.py`, `BACKLOG.md`, `STATUS.md`, and `docs/SPRINT.md`.
 
 Un fișier blocat nu se atinge de alt agent fără confirmare utilizator.
 
@@ -62,11 +63,12 @@ Current order:
   7. O26-P3.2 HUD Punch-List Reconciliation (#507) ✅
   8. O26-P3.4 Mobile Approval Queue (#509) ✅
   9. O26-P3.5 Persona Rail + Caring Follow-ups (#510) ✅
+  10. O26-P3.6 Landing Page Dev Half (#512) 🟡
 ```
 
-Current backlog item: **O26-P3.5 persona rail + caring follow-ups** is delivered in #510.
-The next unblocked ORIZONT 26 item is **O26-P3.6 landing page, dev half (M3.3)** unless the
-owner pulls a different Phase 3 item forward.
+Current backlog item: **O26-P3.6 landing page, dev half (M3.3)** is in draft PR #512.
+After it lands, the next unblocked ORIZONT 26 item is **O26-P3.2 HUD punch-list depth follow-up**
+or **M3.4 AUD-14 config consolidation tail**, depending on owner/agent collision risk.
 
 ---
 
@@ -284,6 +286,11 @@ Generalizează reflecția nocturnă din *rezumă-ziua* în *pre-raționează-pen
 [Verify]   P3.5 local suite green: 6 passed; adjacent quality/digest/timeline/autonomy endpoint suites green: 41 + 37 passed; touched-file ruff + py_compile clean; STATUS counter synced to ~3,606
 [PR]       #510 opened as draft
 [PR]       #510 full GitHub Actions green; PR marked ready and squash-merged
+[ORIZONT 26] 2026-07-04 — started O26-P3.6 on `codex-o26-p3-6-landing-dev-half`
+[O26-P3.6] Red test: no static landing surface, no owner demo checklist, and no self-contained marketing contract existed
+[O26-P3.6] Implemented `marketing/landing/index.html`, `demo-shot-list.md`, and README wiring from `docs/marketing/` + Brand Book tokens
+[Verify]   P3.6 landing contract green: 4 passed locally; full branch verification pending
+[PR]       #512 opened as draft
 ```
 
 ---

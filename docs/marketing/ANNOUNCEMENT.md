@@ -1,7 +1,7 @@
 # Jarvis Hub — Launch Announcement
 
 > Ready-to-adapt release copy for a launch blog post, Product Hunt, Show HN, or a press note.
-> All numbers are verified against the codebase as of 2026-06-10 (v9.9.9, pre-1.0 audit gate).
+> All numbers are verified against the codebase as of 2026-07-04 (v0.11.0 productionizing toward 1.0).
 > Voice: calm competence, butler not hype-man (see `docs/BRAND_BOOK.md` §6). Pick the length you
 > need; they share the same spine.
 
@@ -80,8 +80,8 @@ opt-in — never the default.
 This isn't a demo. As of the pre-1.0 audit gate:
 
 - **17 specialist agents** across 4 tiers, plus a bench of 17 more, promotable at runtime.
-- **2,150+ automated tests** on the Python core, plus frontend and OSINT-stack suites — green in CI.
-- **~250 API endpoints**, a real-time cockpit HUD, and 7 channels.
+- **3,600+ automated Python tests**, plus frontend Vitest, mobile Jest, and Playwright HUD/flow suites.
+- **363 HTTP routes**, a real-time cockpit HUD, and 7 channels.
 - **$0/month** to run for the vast majority of tasks — local inference, no metered cloud.
 - A **tamper-evident audit log** with a one-call integrity check, a reversible/irreversible
   **approval queue**, signed skills, and a kill-switch.

@@ -17,12 +17,14 @@ inherits from [`../docs/BRAND_BOOK.md`](../docs/BRAND_BOOK.md).
 | [`campaign-plan/`](campaign-plan/) | `CAMPAIGN_PLAN.md` | The executable launch playbook — audiences, message ladder, channel plan, T-minus timeline, metrics, pre-mortem | You / a growth lead |
 | [`competitive-brief/`](competitive-brief/) | `COMPETITIVE_BRIEF.md` | The honest, sourced field map — vs OpenClaw / Bee / Khoj / big-tech; objection handling; lines not to cross | Sales / positioning / comment threads |
 | [`content/`](content/) | `CONTENT_CALENDAR.md` | Ready-to-schedule copy bank — teaser arc, launch posts, the 7-tweet thread, long-form outline, evergreen cadence | Social scheduler / a writer |
+| [`landing/`](landing/) | `index.html` + `demo-shot-list.md` | Static, self-contained landing page dev half plus owner-facing demo capture checklist | Static host / owner recording pass |
 
 ## Companion assets (in `docs/marketing/`)
 
 - [`ANNOUNCEMENT.md`](../docs/marketing/ANNOUNCEMENT.md) — the release post (TL;DR → long-form + boilerplate).
 - [`TEASER_PACK.md`](../docs/marketing/TEASER_PACK.md) — taglines, social posts, 60s video script, landing snippets.
 - [`DESIGN_BRIEF.md`](../docs/marketing/DESIGN_BRIEF.md) — creative brief with exact specs + the **approved-proof-points allowlist** (§5).
+- [`landing/index.html`](landing/index.html) — offline-safe landing page built from the same copy spine and Brand Book tokens.
 
 ## Three rules everyone using this suite follows
 
