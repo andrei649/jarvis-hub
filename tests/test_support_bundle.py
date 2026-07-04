@@ -22,6 +22,8 @@ def test_posture_reflects_default_off_hardened_and_balanced_profile(monkeypatch)
     monkeypatch.delenv("JARVIS_SYSTEM_PROFILE", raising=False)
     p = support_bundle.build_bundle()["posture"]
     assert p["hardened"]["enabled"] is False
+    assert p["product_posture"]["name"] == "off"
+    assert "memory.recall_enabled" in p["product_posture"]["flags"]
     assert p["system_profile"]["active"] == "balanced"
 
 

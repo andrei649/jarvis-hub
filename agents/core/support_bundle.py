@@ -41,6 +41,11 @@ def _posture() -> dict:
     except Exception:
         out["hardened"] = {"error": "unavailable"}
     try:
+        from agents.core import product_posture
+        out["product_posture"] = product_posture.snapshot()
+    except Exception:
+        out["product_posture"] = {"error": "unavailable"}
+    try:
         from agents.core import system_profiles
         out["system_profile"] = system_profiles.list_profiles()
     except Exception:

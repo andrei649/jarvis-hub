@@ -30,10 +30,17 @@ def client():
 
 def test_wizard_starts_incomplete(client):
     body = client.get("/api/onboarding/wizard").json()
-    assert [s["key"] for s in body["steps"]] == ["intro", "model", "test_chat", "autonomy"]
+    assert [s["key"] for s in body["steps"]] == [
+        "intro",
+        "model",
+        "test_chat",
+        "autonomy",
+        "product_posture",
+    ]
     assert body["completed"] == []
     assert body["complete"] is False
     assert "model_ready" in body          # bool or None (best-effort)
+    assert body["product_posture"]["name"] in ("off", "companion_wave1", "design_partner")
 
 
 def test_funnel_event_marks_step_complete(client):
@@ -44,10 +51,10 @@ def test_funnel_event_marks_step_complete(client):
 
 
 def test_all_steps_complete(client):
-    for step in ("intro", "model", "test_chat", "autonomy"):
+    for step in ("intro", "model", "test_chat", "autonomy", "product_posture"):
         client.post("/api/onboarding/funnel", json={"step": step})
     body = client.get("/api/onboarding/wizard").json()
-    assert set(body["completed"]) == {"intro", "model", "test_chat", "autonomy"}
+    assert set(body["completed"]) == {"intro", "model", "test_chat", "autonomy", "product_posture"}
     assert body["complete"] is True
 
 
