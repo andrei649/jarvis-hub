@@ -54,19 +54,19 @@ diagnostic anchor: if a *function* misbehaves, this is the *module/store/flag* t
 | 7 | **Amygdala** | Emotional salience tagging; strengthens memory | Affect-weighted salience on encode (NE channel) | `cognition/affect` 🟢 → memory encode | `salience` in metadata | `cognition.affect_enabled` |
 | 8 | **Basal ganglia / striatum** | Procedural memory, habit, RL action-selection | Skills + self-writing skill loop + learning RL | `skills/loader.py` ✅, `learning/loop.py` 🟡 | `skills/`, `learning/kc.db` 🟢 | `learning.auto_promote` |
 | 9 | **Cerebellum** | Forward models; error-correction timing | Predictive-coding encode gate + calibration | `cognition/mastery` 🟢, memory encode | `kc.db` | `cognition.predictive_gate_enabled` |
-| 10 | **Default Mode Network** | Self-reflection, autobiography, future simulation, "rest" activity | **Idle/night cortex**: consolidation, narrative, prospective planning | `autonomy/reflection.py` 🟡, `cognition/jobs` 🟢 | — | `system.reflection_enabled`, `cognition.idle_*` |
+| 10 | **Default Mode Network** | Self-reflection, autobiography, future simulation, "rest" activity | **Idle/night cortex**: consolidation, narrative, prospective planning | `autonomy/reflection.py` 🟡, `scheduler_service.run_memory_maintenance` ✅ | — | `system.reflection_enabled`, `cognition.memory_enabled` |
 | 11 | **Dopamine** | Novelty / reward / **prediction error** | DA salience channel + reinforcement signal | `cognition/affect` 🟢 | salience vec | — |
 | 12 | **Norepinephrine** | Arousal / urgency salience | NE channel from watchers (deadlines, alerts) | `autonomy/watchers.py` ✅ + affect | — | — |
-| 13 | **Acetylcholine** | Encode-vs-consolidate mode; attention | Day/night operating-mode switch | `cognition/jobs`, `is_night_window` ✅ | — | `autonomy.night_shift` |
+| 13 | **Acetylcholine** | Encode-vs-consolidate mode; attention | Day/night operating-mode switch | `scheduler_service` cron ✅, `is_night_window` ✅ | — | `autonomy.night_shift`, `cognition.memory_enabled` |
 | 14 | **Serotonin** | Mood, patience, risk tolerance | Mood valence → modulates risk/verbosity | `cognition/affect/mood` 🟢 | mood store | `cognition.affect_enabled` |
 | 15 | **Oxytocin** | Social bonding / trust | Per-(agent,user) relational/attachment layer | `cognition/relational` 🟢 | relational store | `cognition.relational_enabled` |
 | 16 | **Synaptic plasticity** (LTP/LTD, Hebbian, STDP) | Strengthen co-active, weaken unused | Associative links + retrieval-strength decay (ACT-R) | `memory/decay.py` ✅, link graph | decay store | — |
 | 17 | **Synaptic tagging & capture** | Weak memory rescued if strong one lands nearby in time | Tag-and-capture nightly pass within an event window | `cognition/jobs` 🟢 | — | `cognition.idle_consolidation_enabled` |
 | 18 | **Metaplasticity** | Learning rate adapts to history | Adaptive consolidation thresholds per domain | `cognition/mastery` 🟢 | `kc.db` | — |
-| 19 | **Sleep — NREM slow-wave** | Systems consolidation + replay | NREM pass: episodic→semantic abstraction + replay | `reflection._nrem` 🟡 | — | `cognition.idle_consolidation_enabled` |
-| 20 | **Sleep — REM** | Integration, emotional processing, creative recombination | REM pass: cross-memory link discovery + emotional residue | `reflection._rem` 🟡 | — | `cognition.idle_consolidation_enabled` |
-| 21 | **Synaptic homeostasis (SHY)** | Nightly **downscaling** keeps signal-to-noise | Retrieval-strength **renormalization** pass (keeps store navigable at any size) | `cognition/jobs` 🟢 | decay store | `cognition.idle_homeostasis_enabled` |
-| 22 | **Microglia / astrocytes** | Pruning & housekeeping (no memory loss) | Index compaction, gist compression, **tier demotion** (never delete) | `cognition/jobs` 🟢, memory tiers | archival store | `cognition.idle_maintenance_enabled` |
+| 19 | **Sleep — NREM slow-wave** | Systems consolidation + replay | NREM pass: episodic→semantic abstraction + replay | `scheduler_service.run_memory_maintenance` + `LivingMemory.consolidate("nrem")` ✅ | LivingMemory tiers | `cognition.memory_enabled` |
+| 20 | **Sleep — REM** | Integration, emotional processing, creative recombination | REM pass: cross-memory link discovery + emotional residue | `scheduler_service.run_memory_maintenance` + `LivingMemory.consolidate("rem")` ✅ | LivingMemory tiers | `cognition.memory_enabled` |
+| 21 | **Synaptic homeostasis (SHY)** | Nightly **downscaling** keeps signal-to-noise | Retrieval-strength inspection (keeps store navigable at any size) | `scheduler_service.run_memory_maintenance` ✅ | decay store | `cognition.memory_enabled` |
+| 22 | **Microglia / astrocytes** | Pruning & housekeeping (no memory loss) | Index compaction, gist compression, **tier demotion** (never delete) | `LivingMemory` tier maintenance ✅ | memory tiers | `cognition.memory_enabled` |
 | 23 | **Neurogenesis (dentate gyrus)** | New neurons aid pattern separation | New index shards as the store grows | `memory/store` sharding 🟡 | — | — |
 | 24 | **Neuroplasticity / cortical remapping** | Reorganization, relearning | **Re-embed / re-index** cold memories when a better model arrives (future-proofing) | `cognition/jobs` re-projection 🟢 | `embed_version` in metadata | `cognition.reembed_enabled` |
 | 25 | **Memory reconsolidation** | Recalled memory becomes labile → updatable | Update-on-recall + belief revision | `memory/bitemporal.py` ✅ + consolidation | bitemporal store | — |
@@ -160,11 +160,11 @@ handle_input / handle_input_stream
 
 ### Nightly (idle cortex — the DMN / sleep cycle)
 ```
-_autonomy_loop  (night window, tier ≤ 1, gated, asyncio.to_thread)
-  • NREM  → abstract episodic → semantic schemas; replay; synaptic tag-&-capture
-  • REM   → cross-memory link discovery; emotional processing; narrative-identity update
-  • SHY   → renormalize retrieval strengths (signal-to-noise at any scale)
-  • MAINT → compaction, gist compression, tier demotion (NEVER delete)
+SchedulerService.run_memory_maintenance  (02:40 cron, gated by cognition.memory_enabled)
+  • NREM  → LivingMemory tier maintenance/demotion (NEVER delete)
+  • REM   → LivingMemory recombination pass
+  • SHY   → inspect decay ranking + candidates (NEVER auto-forget)
+  • MAINT → record last_memory_maintenance for operators/tests
   • RE-EMBED → re-project cold memories onto newest embedding model (neuroplasticity)
   • LEARN → deliberate practice on weakest KCs; stale/contradicted-fact retirement
   • SELF  → psychometric self-test (drift tripwire); slow bounded personality drift
@@ -197,10 +197,10 @@ _autonomy_loop  (night window, tier ≤ 1, gated, asyncio.to_thread)
 | **Relational** | Oxytocin / ToM | `cognition/relational/` | relational store `(agent,user)` | `cognition.relational_enabled` | Over-adaptation (mirroring) → delta norm cap exceeded; reset delta |
 | **Mastery / calibration** | Cerebellum + metacognition | `cognition/mastery/` | `learning/kc.db` | `cognition.calibration_enabled` | Overconfident → too few samples (Wilson bound); recompute |
 | **Judge (anti-sycophancy)** | PFC inhibition | `cognition/judge/` | — | `cognition.anti_sycophancy_enabled` | Flattery slipping through → judge unwired at registration; Sycophancy Index rising |
-| **Encode gate** | Predictive coding | `memory/manager.add_turn` 🟡 | vector metadata | `cognition.predictive_gate_enabled` | Junk residuals → embed backend on **hash fallback** (backend down) |
-| **Consolidation (NREM/REM)** | Sleep | `autonomy/reflection.py` 🟡 | graph + stores | `cognition.idle_consolidation_enabled` | Didn't run → `_last_run` stuck / night window / tz; force via `/api/reflection/run` |
-| **Homeostasis (SHY)** | Sleep downscaling | `cognition/jobs/` | decay store | `cognition.idle_homeostasis_enabled` | Recall noisy at scale → renormalization not running |
-| **Maintenance** | Glial pruning | `cognition/jobs/` | archival | `cognition.idle_maintenance_enabled` | Slow/large hot tier → compaction/demotion not running (NOT a delete) |
+| **Encode gate** | Predictive coding | `_complete_llm_turn → LivingMemory.encode` ✅ | LivingMemory tier records with turn refs/digests + decay ids | `cognition.enabled` + `cognition.memory_enabled` | No records → cognition master/sub-flag off, or the turn bypassed `_complete_llm_turn` |
+| **Consolidation (NREM/REM)** | Sleep | `scheduler_service.run_memory_maintenance` ✅ | LivingMemory tiers | `cognition.enabled` + `cognition.memory_enabled` | Didn't run → APScheduler job `memory-consolidation-decay` missing, flags off, or job exception |
+| **Homeostasis (SHY)** | Sleep downscaling | `scheduler_service.run_memory_maintenance` ✅ | decay store | `cognition.enabled` + `cognition.memory_enabled` | Recall noisy at scale → decay ranking/candidate inspection not running |
+| **Maintenance** | Glial pruning | `LivingMemory.consolidate("nrem")` ✅ | LivingMemory tiers | `cognition.enabled` + `cognition.memory_enabled` | Slow/large hot tier → maintenance job not running (NOT a delete) |
 | **Re-projection** | Neuroplasticity | `cognition/jobs/` | `embed_version` | `cognition.reembed_enabled` | Old memories poorly recalled after model upgrade → re-embed pending |
 | **Skill loop** | Basal ganglia | `skills/loader.py` 🟡 | `skills/` (versioned) | `learning.auto_promote` | Self-edit broke things → regression gate skipped / no Docker → auto-revert to last green |
 
@@ -212,7 +212,7 @@ _autonomy_loop  (night window, tier ≤ 1, gated, asyncio.to_thread)
 |---|---|---|---|
 | Recall returns irrelevant / garbage | Embedding backend down → deterministic **hash fallback** corrupts vectors | logs for "hash fallback"; `EMBED_BACKEND`; `/api/memory/search` | restore embed backend; the encode gate should **flag** fallback mode and skip salience scoring |
 | "Forgets" something it should know | Retrieval strength decayed without reinforcement, or demoted to cold tier and not reactivated | `decay` store activation; spaced-reinforcement job ran?; tier of the trace | run `reinforce` job; verify cold→hot **reactivation on cue** is wired; lower decay rate |
-| Nightly consolidation didn't happen | `_last_run` idempotency stuck (non-durable), night window/flag off, or wrong tz | `system.reflection_enabled`, `cognition.idle_consolidation_enabled`, `general.timezone`, persisted `_last_run` | `/api/reflection/run` (resets `_last_run`); fix tz; confirm durable idempotency landed |
+| Nightly consolidation didn't happen | Scheduler job missing, cognition flags off, or job exception | APScheduler job `memory-consolidation-decay`; `/api/cognition/status`; `last_memory_maintenance` | enable cognition master + memory sub-flag; confirm the job is registered; rerun the scheduler body in tests |
 | Personality feels flat / robotic | `cognition.enabled` or `affect_enabled` off; `σ`=0 in SOUL `meta` | `/api/cognition/status`; SOUL front-matter | enable flags; set non-zero per-facet `σ` |
 | Mood "stuck" (sulking / over-warm) | Attractor not decaying; clamp/τ misconfigured | mood store valence; `τ`, clamp bounds | `/api/personality/mood/reset`; check asymmetric clamp |
 | Personality drifted / inconsistent | Drift job over-applied, or relational delta too large | `/api/personality/diff` (anchor vs current); SOUL git history; delta norm | revert SOUL version; reset relational delta; psychometric self-test should have tripped |

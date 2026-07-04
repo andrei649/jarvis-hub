@@ -7,14 +7,14 @@
 
 ## Sesiune curentă
 
-**Data:** 2026-07-04 (ORIZONT 26 P1.1 one-turn pipeline)
+**Data:** 2026-07-04 (ORIZONT 26 P2.2 memory consolidation)
 **Lead agent / Conductor:** Codex
-**Obiectiv sesiune:** continue the ORIZONT 26 plan autonomously after P0 completion; deliver P1.1 as one focused PR with docs/status kept current.
-**Branch:** `codex-o26-p1-1-one-turn-pipeline`
+**Obiectiv sesiune:** continue the ORIZONT 26 plan after Claude/Fable P2.1; deliver P2.2 as one focused PR with docs/status kept current.
+**Branch:** `codex-o26-p2-2-memory-consolidation`
 
-**Scope decision (2026-07-04):** O26-P0.7 was already done on `main`, so the next unblocked plan item is
-O26-P1.1. Keep it one item = one PR: no mobile approval queue, posture, HUD breadth, or config
-consolidation in this branch.
+**Scope decision (2026-07-04):** O26-P0, P1.1, and P2.1 are already done on `main`, so the next unblocked
+plan item is O26-P2.2. Keep it one item = one PR: no dormant-module disposition, posture, HUD breadth,
+or install-smoke work in this branch.
 
 **Previous session:** O26-P0.1 golden harness was merged via #496, with P0.2–P0.7 already completed on
 main by parallel agents.
@@ -25,7 +25,9 @@ main by parallel agents.
 
 | Wave | Branch | PR | Status | Agenți | Note |
 |------|--------|----|--------|--------|------|
-| O26-P1.1 / one-turn pipeline | `codex-o26-p1-1-one-turn-pipeline` | #498 | 🟢 CI green / ready | Codex | Shared prompt wrapper + shared post-turn record seam |
+| O26-P1.1 / one-turn pipeline | `codex-o26-p1-1-one-turn-pipeline` | #498 | ✅ merged | Codex | Shared prompt wrapper + shared post-turn record seam |
+| O26-P2.1 / env config consolidation | `claude/jarvis-hub-backlog-review-jx87gz` | #500 | ✅ merged | Claude/Fable | One `env_config.truthy()` and env parse ratchet |
+| O26-P2.2 / memory consolidation | `codex-o26-p2-2-memory-consolidation` | #501 | 🟡 draft PR | Codex | LivingMemory turn seam + nightly maintenance |
 
 Status legend: ⏳ in progress · 🟡 draft PR · 🟢 CI green · ✅ merged · 🔴 conflict
 
@@ -33,11 +35,12 @@ Status legend: ⏳ in progress · 🟡 draft PR · 🟢 CI green · ✅ merged �
 
 ## Fișiere blocate (în PR activ)
 
-`codex-o26-p1-1-one-turn-pipeline` owns:
+`codex-o26-p2-2-memory-consolidation` owns:
 
-- `agents/core/agent.py`
 - `agents/core/orchestrator.py`
-- `tests/test_o26_p1_one_turn_pipeline.py`
+- `agents/core/scheduler_service.py`
+- `agents/core/cognition/memory.py`
+- `tests/test_o26_p2_memory_consolidation.py`
 - `BACKLOG.md`
 - `STATUS.md`
 - `docs/SPRINT.md`
@@ -50,12 +53,13 @@ Un fișier blocat nu se atinge de alt agent fără confirmare utilizator.
 
 ```
 Current order:
-  1. O26-P1.1 one-turn pipeline
-  2. O26-P2.1 config consolidation or O26-P2.2 living-memory turn seam, after P1.1 lands
+  1. O26-P2.2 living-memory turn seam + nightly maintenance
+  2. O26-P2.3 dormant-module disposition
+  3. O26-P2.4 Product Posture
 ```
 
-Next backlog item after this PR lands: choose from O26 Phase 2. My engineering recommendation is
-**O26-P2.1 config consolidation** before waking more behavior, because it lowers env/settings drift.
+Next backlog item after this PR lands: **O26-P2.3 dormant-module disposition**, then O26-P2.4 Product
+Posture once the woken memory substrate is sealed.
 
 ---
 
@@ -81,18 +85,18 @@ Generalizează reflecția nocturnă din *rezumă-ziua* în *pre-raționează-pen
 
 ## Checklist post-merge (conductor)
 
-### ORIZONT 26 P1.1 — ÎN CURS
+### ORIZONT 26 P2.2 — ÎN CURS
 
 - [x] `main` fetched/rebased from `origin/main`
 - [x] Branch created from current main
-- [x] Red tests added for prompt parity + persona nudge
-- [x] `Agent.build_prompt()` extracted and stream wired through it
-- [x] Shared `_build_agent_turn_text()` + `_complete_llm_turn()` added
+- [x] Red tests added for default-off seam, enabled turn records, scheduler registration, disabled job no-op
+- [x] `_complete_llm_turn()` feeds LivingMemory + decay records when cognition memory is enabled
+- [x] `SchedulerService` registers and runs nightly memory maintenance
 - [x] `BACKLOG.md` + `STATUS.md` updated from verified scope
 - [x] Focused backend verification green
 - [x] Ruff / final compile pass
-- [x] Branch pushed / PR #498 opened
-- [x] GitHub Actions green; PR marked ready
+- [x] Branch pushed / PR #501 opened
+- [ ] GitHub Actions green; PR marked ready
 
 ### Wave 0 — COMPLET ✅
 
@@ -144,6 +148,12 @@ Generalizează reflecția nocturnă din *rezumă-ziua* în *pre-raționează-pen
 [ORIZONT 26] 2026-07-04 — Phase 2 started; O26-P2.1 (AUD-14 env consolidation) claimed on `claude/jarvis-hub-backlog-review-jx87gz`
 [O26-P2.1] Workflow inventory: 163 env-read sites / 55 files / 122 vars / EIGHT truthy conventions (not 3) incl. the JARVIS_WORKFLOW_PERSIST=0-enables-the-drain footgun
 [O26-P2.1] agents/core/env_config.py (stdlib leaf, one truthy(), unknown->declared-default) + 29 bool sites migrated + ratchet test (red-proved 35 hits); LOCAL_ONLY floor + hardened layering untouched
+[ORIZONT 26] 2026-07-04 — main synced at #500; started O26-P2.2 on `codex-o26-p2-2-memory-consolidation`
+[O26-P2.2] Red tests: enabled LivingMemory received zero turn records; scheduler had no memory-maintenance registration/body
+[O26-P2.2] Implemented default-off LivingMemory turn references at `_complete_llm_turn()` plus decay tracking and 02:40 NREM/REM maintenance with no auto-delete
+[Verify]   P2.2/LivingMemory/decay/P1.1/lifespan targeted suites green: 33 passed; STATUS count synced to ~3,584
+[O26-P2.2] CodeQL merge blockers addressed: memory-maintenance warnings avoid exception text, completion logging emits counters instead of the whole result payload, and LivingMemory/decay records avoid duplicating raw transcript text
+[PR]       #501 opened as draft
 ```
 
 ---

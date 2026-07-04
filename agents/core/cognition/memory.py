@@ -251,6 +251,13 @@ class LivingMemory:
             return {"phase": "nrem", **self.tiers.maintain()}
         return {"phase": "rem", "recombined": len(self.tiers.by_tier())}
 
+    def records(self, prefix: str = "", limit: int = 50) -> "list[dict]":
+        """Inspectable records for integration tests/API callers; no mutation."""
+        keys = sorted(self.tiers._items.keys())
+        if prefix:
+            keys = [k for k in keys if k.startswith(prefix)]
+        return [self.tiers.get(k) for k in keys[:max(1, limit)]]
+
     def status(self) -> dict:
         return {"available": True, "tiers": self.tiers.by_tier(),
                 "core": len(self.core.list()), "embed_version": self.embed_version}

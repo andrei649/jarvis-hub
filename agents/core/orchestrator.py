@@ -6,11 +6,13 @@ skills system, checkpointing, agent handoff, promotion/demotion.
 
 import asyncio
 import contextvars
+import hashlib
 import logging
 import importlib
 import os
 import re
 import time
+import uuid
 from pathlib import Path
 from typing import Callable, Optional
 
@@ -1286,6 +1288,59 @@ class Orchestrator:
         except Exception:
             logger.debug("persona nudge skipped for %s", agent_id, exc_info=True)
 
+    async def _record_living_memory_after_turn(
+        self,
+        *,
+        user_text: str,
+        assistant_text: str,
+        responder_id: Optional[str],
+        channel: str,
+    ) -> None:
+        """Feed completed LLM turns into LivingMemory + decay when cognition is on."""
+        cog = getattr(self, "cognition", None)
+        if cog is None or not cog.sub_enabled("memory_enabled"):
+            return
+        living = cog.module("memory")
+        if living is None:
+            return
+        session_id = self.session_id or "default"
+        mem_id = f"turn:{session_id}:{int(time.time() * 1000)}:{uuid.uuid4().hex[:8]}"
+        input_text = user_text or ""
+        output_text = assistant_text or ""
+        turn_text = "\n".join(part for part in (input_text, output_text) if part)
+        text_sha256 = hashlib.sha256(turn_text.encode("utf-8", errors="ignore")).hexdigest()
+        content = {
+            "session": session_id,
+            "agent": responder_id or "",
+            "channel": channel,
+            "turn_ref": mem_id,
+            "text_sha256": text_sha256,
+            "chars": {"input": len(input_text), "output": len(output_text)},
+            "ts": time.time(),
+        }
+        try:
+            from .cognition.memory import neuromodulators
+            failed = bool(
+                responder_id
+                and re.match(rf"^\[{re.escape(responder_id)} (error|timeout)\b", assistant_text or "")
+            )
+            result = living.encode(
+                mem_id,
+                content,
+                surprise=1.0,
+                nm=neuromodulators(
+                    reward=0.0 if failed else 1.0,
+                    surprise=1.0,
+                    novelty=1.0,
+                ),
+            )
+            if result.get("encoded") and getattr(self, "decay", None) is not None:
+                label = f"turn:{session_id}:{responder_id or 'unknown'}:{channel}"
+                await asyncio.to_thread(self.decay.add, mem_id, label=label)
+            self.last_living_memory_record = {"id": mem_id, **result}
+        except Exception:
+            logger.debug("LivingMemory turn record skipped", exc_info=True)
+
     async def _complete_llm_turn(
         self,
         *,
@@ -1319,6 +1374,12 @@ class Orchestrator:
         )
         await asyncio.to_thread(self.audit.log, event)
         self._nudge_persona_after_turn(responder_id, synthesized)
+        await self._record_living_memory_after_turn(
+            user_text=text,
+            assistant_text=synthesized,
+            responder_id=responder_id,
+            channel=channel,
+        )
         self._update_cognition(
             text, intent, plugin_data, synthesized,
             t_classify, t_route, t_plugin, t_synthesize,
