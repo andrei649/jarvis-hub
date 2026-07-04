@@ -8,6 +8,18 @@ from dataclasses import dataclass
 
 logger = logging.getLogger(__name__)
 
+
+def legacy_status() -> dict:
+    """O26-P2.3 disposition: kept for compatibility, not on a live turn seam."""
+    return {
+        "active": False,
+        "disposition": "parked",
+        "production_callers": [],
+        "replacement": "MemoryStore + LivingMemory turn seam",
+        "kept_for": "legacy tests and direct compatibility imports",
+    }
+
+
 @dataclass
 class ProfileFact:
     category: str        # e.g. "preference", "fact", "habit", "goal"

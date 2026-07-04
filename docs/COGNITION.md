@@ -242,6 +242,14 @@ SchedulerService.run_memory_maintenance  (02:40 cron, gated by cognition.memory_
 
 ---
 
+## 9.1. O26-P2.3 Dormant-Module Disposition
+
+- `cognition/ensemble.py` is live as an inspectable roster: `load_agents()` now registers every active agent into both `PersonaModule` and `EnsembleModule`, so the status endpoints no longer advertise empty modules. Drift still stays proposal-only and human-gated.
+- `cognition/learning.py` is live through the autonomy calibration hook when `cognition.enabled && cognition.learning_enabled`; it only bumps risk upward and never relaxes approval.
+- `memory/profile_extractor.py` is parked legacy compatibility code. `legacy_status()` reports `active=false`, no production callers, and the live replacement path is MemoryStore + LivingMemory turn recording.
+
+---
+
 ## 10. Safe mode / kill-switches
 
 - **Full off:** `cognition.enabled=false` → facade is a no-op (zero hot-path cost).
