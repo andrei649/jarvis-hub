@@ -41,8 +41,10 @@ with plugin-configured checks instead of seeded success. Still open:
 - **Memory**: `RECALLS` / `TOPICS` / `KG` live (recall search, decay ranking, bitemporal KG as‑of).
 - **Trust**: real `%‑local` meter (needs a locality/cost summary endpoint, §6).
 - **Autonomy**: per‑agent AUTO/ASK/OFF **policies** (settings‑backed).
-- **Comms**: rooms + registered **Discord/Slack** channel status now feed the mode; actual channel
-  inbox threads/reply transport remain separate plugin work.
+- **Comms**: rooms + registered **Discord/Slack** channel status now feed the mode. The Console now
+  has a Safe Comms draft surface over `GET/POST /api/integrations/social`, so X post/reply/DM drafts
+  enter the existing approval queue/preview path instead of sending directly. Actual channel inbox
+  threads/reply transport remain separate plugin work.
 - **Finance / Health / Knowledge / Family**: base mode switching is plugin-gated. Finance reads saved
   watchlist/payments and keeps `balance` mock payloads as SEED; Health waits for the Apple Health LAN
   bridge; Knowledge waits for configured websearch backend; Family waits for WhatsApp bridge/frigga
@@ -137,7 +139,8 @@ AI step builder (H10.7) · sandbox execute (DEV_MODE‑gated, honest 403) · age
 send the admin token (`actA`). +7 frontend tests (19 total).
 
 **Still open (the tail of TASK‑2, re‑verified 2026‑07‑04):** O26-P3.1 closes the §3 plugin-gated
-base wiring in #505 (Build/Comms/Finance/Health/Knowledge/Family). Remaining:
+base wiring in #505 (Build/Comms/Finance/Health/Knowledge/Family), and the Safe Comms draft panel
+closes the draft-before-send UI over existing governed social actions. Remaining:
 owner live-data/plugin setup (bank/broker/quotes, Apple Health bridge, websearch backend, WhatsApp
 bridge/frigga live data) and channel inbox transport.
 Estimated 1–2 PRs after #505 for owner-gated/plugin work.
@@ -146,9 +149,10 @@ Estimated 1–2 PRs after #505 for owner-gated/plugin work.
 BUG‑17 audit‑verify Trust chip ✅ (`modes.tsx:117-165` renders the live
 `GET /api/security/audit/verify` verdict), the 0.39 saved‑watchlist `WatchlistPanel` ✅, and
 per-panel LIVE/SEED chips ✅ (58/58 Console cards declare a `PanelChip` signal). Data Spaces
-assign/unassign controls ✅. Rooms selected-history drawer ✅. Capability issue/check UI ✅. Current-mesh task fan ✅. Preferences/tweaks UI ✅. O26-P3.2 adds a Vitest reconciliation guard so this document cannot
-Self-hosted fonts ✅. O26-P3.2 adds a Vitest reconciliation guard so this document cannot
-re-list shipped TTS/mic/cognition/trust or Console controls as missing.
+assign/unassign controls ✅. Rooms selected-history drawer ✅. Capability issue/check UI ✅.
+Current-mesh task fan ✅. Preferences/tweaks UI ✅. Self-hosted fonts ✅. Safe Comms draft UI ✅.
+O26-P3.2 adds a Vitest reconciliation guard so this document cannot re-list shipped
+TTS/mic/cognition/trust or Console controls as missing.
 
 ---
 *Parity gate (`tests/test_hud_v2_parity.py`) tracks all routes → every one is mapped to a v2

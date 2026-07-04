@@ -1592,6 +1592,72 @@ export function CommsRatePanel() {
   );
 }
 
+/* 0.44 — draft-before-send UI for governed social writes. This is deliberately
+   a queue/preview surface over /api/integrations/social; actual per-channel inbox
+   reply transport remains a separate plugin/channel bridge. */
+export function SafeCommsDraftPanel() {
+  const { d, e, loading, reload } = useApi('/api/integrations/social');
+  const targets = arr(d, 'targets');
+  const [choice, setChoice] = useState('');
+  const [text, setText] = useState('');
+  const [dest, setDest] = useState('');
+  const [agent, setAgent] = useState('pepper');
+  const [out, setOut] = useState(null);
+  const selectedKey = choice || (targets[0] ? `${targets[0].platform}:${targets[0].action}` : '');
+  const selected = targets.find((t) => `${t.platform}:${t.action}` === selectedKey) || targets[0];
+  const queue = () => {
+    if (!selected || !text.trim()) return;
+    const fields: Record<string, any> = { text: text.trim() };
+    if (selected.required?.includes?.('reply_to')) fields.reply_to = dest.trim();
+    if (selected.required?.includes?.('recipient')) fields.recipient = dest.trim();
+    apiPost('/api/integrations/social', {
+      platform: selected.platform,
+      action: selected.action,
+      fields,
+      agent: agent.trim() || 'pepper',
+      source: 'hud.safe_comms_draft',
+    }).then((r: any) => {
+      setOut(r);
+      if (r && r.ok !== false) { setText(''); setDest(''); }
+      reload();
+    }).catch((err) => setOut({ ok: false, reason: err?.message || 'request failed' }));
+  };
+  const note = out
+    ? out.ok === false
+      ? `held: ${out.reason || 'validation failed'}`
+      : out.task_id
+        ? `queued for approval · ${out.task_id}`
+        : (out.status || 'preview ready')
+    : null;
+  return (
+    <Card title="SAFE COMMS DRAFTS" live={asLive(d)} sub={d ? `${targets.length} actions` : null} onReload={reload}>
+      <State e={e} loading={loading} n={targets.length} />
+      {targets.slice(0, 6).map((t, i) => (
+        <Row key={t.kind || i}>
+          <span style={{ ...mono, color: 'var(--accent-light)' }}>{t.label || `${t.platform}.${t.action}`}</span>
+          <span style={{ marginLeft: 'auto', display: 'flex', gap: 5, alignItems: 'center' }}>
+            <Tag>{t.kind || `${t.platform}.${t.action}`}</Tag>
+            {t.credential && <Tag c="var(--ink-3)">{t.credential}</Tag>}
+          </span>
+        </Row>
+      ))}
+      <div style={{ display: 'grid', gridTemplateColumns: 'minmax(120px,1fr) minmax(100px,1fr) minmax(70px,.6fr)', gap: 6, marginTop: 8 }}>
+        <select aria-label="social action" value={selectedKey} onChange={(ev) => setChoice(ev.target.value)} style={inpS}>
+          {targets.map((t) => <option key={t.kind || `${t.platform}:${t.action}`} value={`${t.platform}:${t.action}`}>{t.label || `${t.platform}.${t.action}`}</option>)}
+        </select>
+        <input value={dest} onChange={(ev) => setDest(ev.target.value)} placeholder="reply_to / recipient" style={inpS} />
+        <input value={agent} onChange={(ev) => setAgent(ev.target.value)} placeholder="agent" style={inpS} />
+      </div>
+      <textarea value={text} onChange={(ev) => setText(ev.target.value)} placeholder="draft text" style={{ ...taS, marginTop: 6, minHeight: 58 }} />
+      <div style={{ display: 'flex', gap: 6, alignItems: 'center', marginTop: 6 }}>
+        <button className="tool-btn" disabled={!selected || !text.trim()} onClick={queue}>queue draft</button>
+        <span style={{ fontSize: 10, color: 'var(--ink-3)' }}>approval queue · no direct send</span>
+      </div>
+      {note && <div style={{ ...mono, fontSize: 10.5, color: out?.ok === false ? 'var(--amber)' : 'var(--green)', marginTop: 6 }}>{note}</div>}
+    </Card>
+  );
+}
+
 /* H23.2 — recorded model fingerprints (GET /api/models/info, admin): the {id, version,
    quant, sha256} of each model build seen, so a run is reproducible to the exact model.
    Honesty contract: when JARVIS_MODEL_INFO is off the endpoint reports enabled:false and
@@ -1703,7 +1769,7 @@ export function SystemProfilePanel() {
 
 const SECTIONS: Array<[string, Array<() => any>]> = [
   ['Memory', [DataSpacesPanel, LocalDocsPanel, NotesPanel, KgPanel, CapturePanel, ReflectionPanel, ProvenancePanel]],
-  ['Trust', [KillSwitchPanel, KernelMetricsPanel, ReadinessPanel, LoopBreakerPanel, GovernancePanel, PosturePanel, SecuritySkillsPanel, NetworkMonitorPanel, CommsRatePanel, SecretsPanel, CapabilitiesPanel, PairingPanel, InjectionScanPanel]],
+  ['Trust', [KillSwitchPanel, KernelMetricsPanel, ReadinessPanel, LoopBreakerPanel, GovernancePanel, PosturePanel, SecuritySkillsPanel, NetworkMonitorPanel, CommsRatePanel, SafeCommsDraftPanel, SecretsPanel, CapabilitiesPanel, PairingPanel, InjectionScanPanel]],
   ['Interop', [A2AInboxPanel, MeshPeersPanel, SatellitesPanel, OraclePanel, MarketplacePanel, SkillHistoryPanel, WatchlistPanel]],
   ['Observe', [OnboardingPanel, EvalPanel, ReviewPanel, ArenaPanel, QualityPanel, APMPanel, ModelInfoPanel, FeedbackPanel]],
   ['Build', [WorkflowsPanel, StepGenPanel, SandboxPanel, TemplatesPanel, MediaGalleryPanel]],
