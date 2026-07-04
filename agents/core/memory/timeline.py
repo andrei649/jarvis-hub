@@ -17,6 +17,8 @@ from __future__ import annotations
 import time
 from datetime import UTC, datetime
 
+from agents.core.autonomy.followups import build_caring_followups
+
 _DAY_SECONDS = 86_400
 
 
@@ -103,15 +105,34 @@ def build_unified_digest(queue, memory_entries=None, *, now=None, days=1, limit=
             "value": e.get("value"),
         })
 
+    for f in build_caring_followups(queue, memory_entries, now=now, days=days, limit=500):
+        items.append({
+            "ts": f.get("ts"),
+            "epoch": f.get("epoch"),
+            "kind": "followup",
+            "reason": f.get("kind"),
+            "source": f.get("source"),
+            "title": f.get("title"),
+            "detail": f.get("detail"),
+            "id": f.get("id"),
+            "category": f.get("category"),
+            "key": f.get("key"),
+        })
+
     # Newest first. Unparseable timestamps (epoch None) sink to the bottom but are
     # never dropped — a real row with a bad stamp still shows (honesty over tidiness).
     items.sort(key=lambda it: (it["epoch"] is not None, it["epoch"] or 0.0), reverse=True)
 
     actions = sum(1 for it in items if it["kind"] == "action")
+    learnings = sum(1 for it in items if it["kind"] == "learning")
+    followups = sum(1 for it in items if it["kind"] == "followup")
+    counts = {"actions": actions, "learnings": learnings, "total": len(items)}
+    if followups:
+        counts["followups"] = followups
     return {
         "period": "today" if days == 1 else f"{days}d",
         "days": days,
         "generated_at": datetime.fromtimestamp(now, tz=UTC).isoformat(),
-        "counts": {"actions": actions, "learnings": len(items) - actions, "total": len(items)},
+        "counts": counts,
         "items": items[:limit],
     }

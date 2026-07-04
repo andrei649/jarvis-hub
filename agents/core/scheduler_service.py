@@ -339,7 +339,11 @@ class SchedulerService:
         """Build and ship the morning brief / evening retro to the owner."""
         try:
             if kind == "morning":
-                text = build_morning_brief(self._orch.autonomy_queue)
+                memory_entries = await self._memory_entries_for_brief()
+                text = build_morning_brief(
+                    self._orch.autonomy_queue,
+                    memory_entries=memory_entries,
+                )
             else:
                 text = build_evening_retro(self._orch.autonomy_queue)
         except Exception as e:
@@ -355,3 +359,14 @@ class SchedulerService:
             except Exception as e:
                 logger.warning(f"Digest send failed ({kind}): {e}")
         logger.info(f"Daily digest ready: {kind}")
+
+    async def _memory_entries_for_brief(self) -> list[dict]:
+        try:
+            from agents.core.memory.store import MemoryStore
+            allmem = await MemoryStore().get_all()
+            rows: list[dict] = []
+            for entries in (allmem or {}).values():
+                rows.extend(entries)
+            return rows
+        except Exception:
+            return []

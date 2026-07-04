@@ -11,6 +11,7 @@ from __future__ import annotations
 
 from typing import List
 
+from .followups import build_caring_followups
 from .queue import Task, TaskQueue
 
 _TIER = {0: "read-only", 1: "reversibil", 2: "extern", 3: "ireversibil/bani"}
@@ -25,12 +26,13 @@ def _titles(tasks: List[Task], limit: int = 8) -> str:
     return "\n".join(lines)
 
 
-def build_morning_brief(queue: TaskQueue) -> str:
+def build_morning_brief(queue: TaskQueue, memory_entries=None, *, now=None) -> str:
     """What Jarvis did overnight, what it proposes today, and open decisions."""
     done = queue.list(status="done", limit=50)
     approved = queue.list(status="approved", limit=50)
     proposed = queue.list(status="proposed", limit=50)
     pending = queue.pending_decisions(limit=50)
+    followups = build_caring_followups(queue, memory_entries, now=now, limit=8)
 
     parts = [
         "☀️ *Morning brief*",
@@ -48,6 +50,12 @@ def build_morning_brief(queue: TaskQueue) -> str:
             "",
             f"🔔 *Așteaptă decizia ta* ({len(pending)}):",
             _decisions(pending),
+        ]
+    if followups:
+        parts += [
+            "",
+            f"🤝 *Follow-ups* ({len(followups)}):",
+            _followups(followups),
         ]
     return "\n".join(parts)
 
@@ -85,4 +93,21 @@ def _decisions(tasks: List[Task], limit: int = 12) -> str:
         lines.append(f"  • `#{t.id}` {t.title} — *{_TIER.get(t.risk_tier, t.risk_tier)}*")
     if len(tasks) > limit:
         lines.append(f"  • …și încă {len(tasks) - limit}")
+    return "\n".join(lines)
+
+
+def _followups(items: list[dict], limit: int = 8) -> str:
+    lines = []
+    for item in items[:limit]:
+        title = item.get("title") or "Follow-up"
+        detail = item.get("detail") or ""
+        if item.get("source") == "task":
+            ident = f" `#{item.get('id')}`" if item.get("id") is not None else ""
+            lines.append(f"  • {title}{ident} — {detail}")
+        elif detail:
+            lines.append(f"  • {title}: {detail}")
+        else:
+            lines.append(f"  • {title}")
+    if len(items) > limit:
+        lines.append(f"  • …și încă {len(items) - limit}")
     return "\n".join(lines)
