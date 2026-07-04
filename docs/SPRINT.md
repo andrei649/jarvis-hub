@@ -30,7 +30,7 @@ main by parallel agents.
 | O26-P2.2 / memory consolidation | `codex-o26-p2-2-memory-consolidation` | #501 | ✅ merged | Codex | LivingMemory seam + nightly maintenance |
 | O26-P2.3 / dormant disposition | `codex-o26-p2-3-dormant-disposition` | #502 | ✅ merged | Codex | Ensemble roster + learning proof + profile extractor parked |
 | O26-P2.4 / Product Posture | `codex-o26-p2-4-product-posture` | #503 | ✅ merged | Codex | Settings-backed named posture, wave 1 only |
-| O26-P2.5 / Install Smoke Path | `codex-o26-p2-5-install-smoke` | TBD | ⏳ next | Codex | ~30s boot + `/readyz` + faked turn |
+| O26-P2.5 / Install Smoke Path | `codex-o26-p2-5-install-smoke` | #504 | 🟡 draft PR | Codex | ~30s boot + `/readyz` + faked turn |
 
 Status legend: ⏳ in progress · 🟡 draft PR · 🟢 CI green · ✅ merged · 🔴 conflict
 
@@ -38,7 +38,8 @@ Status legend: ⏳ in progress · 🟡 draft PR · 🟢 CI green · ✅ merged �
 
 ## Fișiere blocate (în PR activ)
 
-No active file locks on `main`. The next branch will claim only the P2.5 install-smoke files.
+`codex-o26-p2-5-install-smoke` currently owns the P2.5 files:
+`scripts/install_smoke.py`, `tests/test_o26_p2_install_smoke.py`, and status docs.
 
 Un fișier blocat nu se atinge de alt agent fără confirmare utilizator.
 
@@ -51,7 +52,7 @@ Current order:
   1. O26-P2.2 living-memory turn seam + nightly maintenance (#501) ✅
   2. O26-P2.3 dormant-module disposition (#502) ✅
   3. O26-P2.4 Product Posture (#503) ✅
-  4. O26-P2.5 Install Smoke Path (next)
+  4. O26-P2.5 Install Smoke Path (in progress)
 ```
 
 Next backlog item: **O26-P2.5 Install Smoke Path** now that the wave-1 product posture is merged.
@@ -122,12 +123,12 @@ Generalizează reflecția nocturnă din *rezumă-ziua* în *pre-raționează-pen
 ### ORIZONT 26 P2.5 — URMĂTOR
 
 - [x] `main` synced after #503 merge
-- [ ] Branch created from current main
-- [ ] Design/tests for install smoke path
-- [ ] Install smoke implementation
-- [ ] `BACKLOG.md` + `STATUS.md` updated from verified scope
-- [ ] Focused backend verification green
-- [ ] Branch pushed / PR opened
+- [x] Branch created from current main
+- [x] Design/tests for install smoke path
+- [x] Install smoke implementation
+- [x] `BACKLOG.md` + `STATUS.md` updated from verified scope
+- [x] Focused backend verification green
+- [x] Branch pushed / PR #504 opened
 - [ ] GitHub Actions green; PR merged
 
 ### Wave 0 — COMPLET ✅
