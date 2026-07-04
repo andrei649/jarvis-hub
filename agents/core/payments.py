@@ -30,6 +30,7 @@ import time
 from pathlib import Path
 from typing import Optional
 
+from agents.core.automation_contracts import ContractTemplate, predicate
 from agents.core.paths import data_path
 
 from .persistence import JsonStore
@@ -40,6 +41,50 @@ PENDING = "pending"
 APPROVED = "approved"
 REJECTED = "rejected"
 SETTLED = "settled"
+
+
+def _payment_contract_template() -> ContractTemplate:
+    """Contract form of the existing mandate gate.
+
+    The predicates intentionally preserve PaymentBroker's current reason codes
+    and ordering so adopting the reusable contract layer is behavior-preserving
+    for ordinary payment requests.
+    """
+    def has_mandate(view, now):
+        return view.get("mandate") is not None
+
+    def not_expired(view, now):
+        exp = view["mandate"].get("expires_at")
+        return not (exp and now > exp)
+
+    def valid_amount(view, now):
+        amount = view["amount"]
+        return isinstance(amount, (int, float)) and amount > 0
+
+    def currency_ok(view, now):
+        return view["currency"].upper() == view["mandate"]["currency"]
+
+    def payee_ok(view, now):
+        return view["payee"] in view["mandate"]["payees"]
+
+    def under_per_payment(view, now):
+        return view["amount"] <= view["mandate"]["per_payment_cap"]
+
+    def under_total(view, now):
+        return round(view["mandate"]["spent"] + view["amount"], 2) <= view["mandate"]["total_cap"]
+
+    return ContractTemplate(kind="payment", constraints=(
+        predicate("mandate_present", has_mandate, reason="unknown_mandate"),
+        predicate("mandate_not_expired", not_expired, reason="mandate_expired"),
+        predicate("amount_valid", valid_amount, reason="invalid_amount"),
+        predicate("currency_match", currency_ok, reason="currency_mismatch"),
+        predicate("payee_allowed", payee_ok, reason="payee_not_allowed"),
+        predicate("under_per_payment_cap", under_per_payment, reason="over_per_payment_cap"),
+        predicate("under_total_cap", under_total, reason="over_total_cap"),
+    ))
+
+
+PAYMENT_CONTRACT = _payment_contract_template()
 
 
 class PaymentBroker(JsonStore):
@@ -138,23 +183,17 @@ class PaymentBroker(JsonStore):
 
     # ── the gate ─────────────────────────────────────────────────────────────
 
+    def _contract_decision(self, mandate: Optional[dict], payee: str, amount: float, currency: str):
+        return PAYMENT_CONTRACT.evaluate({
+            "mandate": mandate,
+            "payee": payee,
+            "amount": amount,
+            "currency": currency,
+        }, now=time.time())
+
     def _deny_reason(self, mandate: Optional[dict], payee: str, amount: float, currency: str) -> Optional[str]:
         """Return a controlled denial code, or None if the request is admissible."""
-        if mandate is None:
-            return "unknown_mandate"
-        if self._mandate_expired(mandate):
-            return "mandate_expired"
-        if not isinstance(amount, (int, float)) or amount <= 0:
-            return "invalid_amount"
-        if currency.upper() != mandate["currency"]:
-            return "currency_mismatch"
-        if payee not in mandate["payees"]:
-            return "payee_not_allowed"
-        if amount > mandate["per_payment_cap"]:
-            return "over_per_payment_cap"
-        if round(mandate["spent"] + amount, 2) > mandate["total_cap"]:
-            return "over_total_cap"
-        return None
+        return self._contract_decision(mandate, payee, amount, currency).reason
 
     def request_payment(self, mandate_id: str, payee: str, amount: float,
                         currency: str = "EUR", memo: str = "") -> dict:
