@@ -33,7 +33,7 @@ main by parallel agents.
 | O26-P2.5 / Install Smoke Path | `codex-o26-p2-5-install-smoke` | #504 | ✅ merged | Codex | ~30s boot + `/readyz` + faked turn |
 | O26-P3.1 / Preview Modes | `codex-o26-p3-1-preview-modes` | #505 | ✅ merged | Codex | 6 live preview modes + honest blockers |
 | O26-P3.3 / Eval Baseline Store | `codex-o26-p3-3-eval-baseline-store` | #506 | ✅ merged | Codex | Cache-backed companion eval DatasetStore |
-| O26-P3.2 / HUD Reconciliation | `codex-o26-p3-2-hud-reconciliation` | #507 | 🟡 draft PR | Codex | Stale punch-list claims guarded by Vitest |
+| O26-P3.2 / HUD Reconciliation | `codex-o26-p3-2-hud-reconciliation` | #507 | ✅ merged | Codex | Stale punch-list claims guarded by Vitest |
 
 Status legend: ⏳ in progress · 🟡 draft PR · 🟢 CI green · ✅ merged · 🔴 conflict
 
@@ -62,8 +62,9 @@ Current order:
   7. O26-P3.2 HUD Punch-List Reconciliation (#507)
 ```
 
-Current backlog item: **O26-P3.2 HUD punch-list reconciliation**. This is the docs/tests slice only;
-remaining local UI controls stay in BACKLOG instead of being silently treated as complete.
+Current backlog item: **O26-P3.2 HUD punch-list reconciliation** is merged in #507. This was the
+docs/tests slice only; remaining local UI controls stay in BACKLOG instead of being silently treated
+as complete.
 
 ---
 
@@ -173,7 +174,7 @@ Generalizează reflecția nocturnă din *rezumă-ziua* în *pre-raționează-pen
 - [x] `BACKLOG.md` + `STATUS.md` updated from verified scope
 - [x] Focused frontend verification green
 - [x] Branch pushed / PR opened
-- [ ] GitHub Actions green; PR merged
+- [x] GitHub Actions green; PR merged
 
 ### Wave 0 — COMPLET ✅
 
@@ -254,6 +255,7 @@ Generalizează reflecția nocturnă din *rezumă-ziua* în *pre-raționează-pen
 [O26-P3.2] Reconciled HUD_V2_REMAINING; remaining tail is Data Spaces assign/unassign, capability grants/check UI, room history drawer, current-mesh task fan, preferences/tweaks UI, fonts, and owner live-data/plugin setup
 [Verify]   P3.2 focused frontend checks green: 19 passed; typecheck, diff-check, and status-sync clean
 [PR]       #507 opened as draft
+[PR]       #507 full GitHub Actions green; PR marked ready and squash-merged
 ```
 
 ---
