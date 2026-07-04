@@ -10,10 +10,10 @@
 **Data:** 2026-07-04 (ORIZONT 26 P3.2 tail after Preferences Tweaks UI)
 **Lead agent / Conductor:** Codex
 **Obiectiv sesiune:** keep O26-P3.2 moving after the preferences/tweaks UI merge; deliver the final local-control slice.
-**Branch:** `codex-o26-p3-2-self-hosted-fonts`
+**Branch:** `main` (no active feature branch after #525 merge)
 
 **Scope decision (2026-07-04):** O26-P0, P1.1, P2.1, P2.2, P2.3, P2.4, P2.5, P3.1, P3.3, P3.4, P3.5, P3.6, the O26-P3.2 Data Spaces depth slice, the O26-P3.2 Rooms history drawer slice, the O26-P3.2 Capability issue/check UI slice, and the O26-P3.2 Current Mesh Task Fan slice are merged.
-The O26-P3.2 Preferences Tweaks UI slice is merged. Active feature branch: self-hosted fonts.
+The O26-P3.2 Preferences Tweaks UI slice is merged. The O26-P3.2 Self-hosted Fonts slice is merged in #525. No active feature branch is declared.
 
 **Previous session:** O26-P0.1 golden harness was merged via #496, with P0.2–P0.7 already completed on
 main by parallel agents.
@@ -41,7 +41,7 @@ main by parallel agents.
 | O26-P3.2 / Capability Issue/Check UI | `codex-o26-p3-2-capability-check-ui` | #519 | ✅ merged | Codex | Capability token issue + recent grants + check endpoint |
 | O26-P3.2 / Current Mesh Task Fan | `codex-o26-p3-2-mesh-task-fan` | #521 | ✅ merged | Codex | `NeuralMesh` renders live `/tasks` spokes + count |
 | O26-P3.2 / Preferences Tweaks UI | `codex-o26-p3-2-preferences-tweaks` | #523 | ✅ merged | Codex | Command palette controls look/density/motion/texture prefs |
-| O26-P3.2 / Self-hosted Fonts | `codex-o26-p3-2-self-hosted-fonts` | #525 | 🟡 draft PR | Codex | Local Space Grotesk + JetBrains Mono WOFF2 assets |
+| O26-P3.2 / Self-hosted Fonts | `codex-o26-p3-2-self-hosted-fonts` | #525 | ✅ merged | Codex | Local Space Grotesk + JetBrains Mono WOFF2 assets |
 
 Status legend: ⏳ in progress · 🟡 draft PR · 🟢 CI green · ✅ merged · 🔴 conflict
 
@@ -49,11 +49,7 @@ Status legend: ⏳ in progress · 🟡 draft PR · 🟢 CI green · ✅ merged �
 
 ## Fișiere blocate (în PR activ)
 
-Codex current PR locks:
-- `frontend/src/styles.css`
-- `frontend/src/assets/fonts/*`
-- `frontend/src/test/self-hosted-fonts.test.ts`
-- `BACKLOG.md`, `STATUS.md`, `docs/SPRINT.md`, `docs/design/HUD_V2_REMAINING.md`
+No active feature branch is declared; no files are currently locked by Codex.
 
 ---
 
@@ -73,8 +69,8 @@ Current order:
   10. O26-P3.6 Landing Page Dev Half (#512) ✅
 ```
 
-Current backlog item: **O26-P3.2 HUD punch-list depth follow-up** is still partial; Data Spaces assign/unassign is delivered in #515, Rooms history drawer is delivered in #517, Capability issue/check UI is delivered in #519, current-mesh task fan is delivered in #521, and preferences/tweaks UI is delivered in #523.
-The final local-control tail is self-hosted fonts, active on `codex-o26-p3-2-self-hosted-fonts`.
+Current backlog item: **O26-P3.2 HUD punch-list depth follow-up** is still partial; Data Spaces assign/unassign is delivered in #515, Rooms history drawer is delivered in #517, Capability issue/check UI is delivered in #519, current-mesh task fan is delivered in #521, preferences/tweaks UI is delivered in #523, and self-hosted fonts are delivered in #525.
+The remaining tail is owner live-data/plugin setup plus channel inbox transport.
 
 ---
 
@@ -327,6 +323,7 @@ Generalizează reflecția nocturnă din *rezumă-ziua* în *pre-raționează-pen
 [O26-P3.2] Red test: HUD v2 stylesheet had no local `@font-face` declarations and no committed WOFF2 assets
 [O26-P3.2] Implemented local Space Grotesk + JetBrains Mono WOFF2 assets and CSS font-face wiring
 [Verify]   P3.2 self-hosted fonts: focused font guard green (2 passed); full frontend Vitest green (170 passed); typecheck/build clean
+[PR]       #525 full GitHub Actions green; PR marked ready and squash-merged
 ```
 
 ---
