@@ -7,13 +7,13 @@
 
 ## Sesiune curentă
 
-**Data:** 2026-07-04 (ORIZONT 26 P3.2 tail after Current Mesh Task Fan)
+**Data:** 2026-07-04 (ORIZONT 26 P3.2 preferences/tweaks UI in progress)
 **Lead agent / Conductor:** Codex
-**Obiectiv sesiune:** keep O26-P3.2 moving after the current-mesh task fan merge; prepare the next local-control slice.
-**Branch:** `main` (no active feature branch after #521 merge)
+**Obiectiv sesiune:** keep O26-P3.2 moving after #521/#522; finish the in-app preferences/tweaks UI.
+**Branch:** `codex-o26-p3-2-preferences-tweaks`
 
 **Scope decision (2026-07-04):** O26-P0, P1.1, P2.1, P2.2, P2.3, P2.4, P2.5, P3.1, P3.3, P3.4, P3.5, P3.6, the O26-P3.2 Data Spaces depth slice, the O26-P3.2 Rooms history drawer slice, the O26-P3.2 Capability issue/check UI slice, and the O26-P3.2 Current Mesh Task Fan slice are merged.
-No active feature branch is declared. Next candidate slices: preferences/tweaks UI or self-hosted fonts.
+Current active branch owns only the preferences/tweaks UI slice. Next candidate slice after it: self-hosted fonts.
 
 **Previous session:** O26-P0.1 golden harness was merged via #496, with P0.2–P0.7 already completed on
 main by parallel agents.
@@ -40,6 +40,7 @@ main by parallel agents.
 | O26-P3.2 / Rooms History Drawer | `codex-o26-p3-2-rooms-history-drawer` | #517 | ✅ merged | Codex | Selected room opens `GET /api/rooms/{id}/history` drawer |
 | O26-P3.2 / Capability Issue/Check UI | `codex-o26-p3-2-capability-check-ui` | #519 | ✅ merged | Codex | Capability token issue + recent grants + check endpoint |
 | O26-P3.2 / Current Mesh Task Fan | `codex-o26-p3-2-mesh-task-fan` | #521 | ✅ merged | Codex | `NeuralMesh` renders live `/tasks` spokes + count |
+| O26-P3.2 / Preferences Tweaks UI | `codex-o26-p3-2-preferences-tweaks` | #523 | 🟡 draft PR | Codex | Command palette controls look/density/motion/texture prefs |
 
 Status legend: ⏳ in progress · 🟡 draft PR · 🟢 CI green · ✅ merged · 🔴 conflict
 
@@ -47,7 +48,16 @@ Status legend: ⏳ in progress · 🟡 draft PR · 🟢 CI green · ✅ merged �
 
 ## Fișiere blocate (în PR activ)
 
-No active feature branch is declared; no files are currently locked by Codex.
+`codex-o26-p3-2-preferences-tweaks` owns:
+- `frontend/src/app.tsx`
+- `frontend/src/shell.tsx`
+- `frontend/src/test/palette-tweaks.test.tsx`
+- `BACKLOG.md`
+- `STATUS.md`
+- `docs/SPRINT.md`
+- `docs/design/HUD_V2_REMAINING.md`
+
+Un fișier blocat nu se atinge de alt agent fără confirmare utilizator.
 
 ---
 
@@ -67,8 +77,8 @@ Current order:
   10. O26-P3.6 Landing Page Dev Half (#512) ✅
 ```
 
-Current backlog item: **O26-P3.2 HUD punch-list depth follow-up** is still partial; Data Spaces assign/unassign is delivered in #515, Rooms history drawer is delivered in #517, Capability issue/check UI is delivered in #519, and current-mesh task fan is delivered in #521.
-The next local-control tail is preferences/tweaks UI or self-hosted fonts.
+Current backlog item: **O26-P3.2 HUD punch-list depth follow-up** is still partial; Data Spaces assign/unassign is delivered in #515, Rooms history drawer is delivered in #517, Capability issue/check UI is delivered in #519, current-mesh task fan is delivered in #521, and preferences/tweaks UI is active on this branch.
+The next local-control tail after this branch is self-hosted fonts.
 
 ---
 
@@ -312,6 +322,10 @@ Generalizează reflecția nocturnă din *rezumă-ziua* în *pre-raționează-pen
 [O26-P3.2] Implemented live task spokes/dots in `NeuralMesh` and passed already-loaded `/tasks` state from `app.tsx`
 [Verify]   P3.2 mesh task fan: focused mesh test green (4 passed); adjacent mesh/cinema sweep green (8 passed); full frontend Vitest green (167 passed); typecheck/build/status-sync/diff-check clean
 [PR]       #521 full GitHub Actions green; PR marked ready and squash-merged
+[ORIZONT 26] 2026-07-04 — started O26-P3.2 Preferences Tweaks UI on `codex-o26-p3-2-preferences-tweaks`
+[O26-P3.2] Red test: command palette did not expose Look, Motion, or Comfy density controls for the dropped TweaksPanel surface
+[O26-P3.2] Implemented command-palette controls for look, density, motion, scanline, and dotgrid; motion now persists as `hud.motion`
+[Verify]   P3.2 preferences/tweaks UI: focused palette test green (1 passed); full frontend Vitest green (168 passed); frontend typecheck clean
 ```
 
 ---
