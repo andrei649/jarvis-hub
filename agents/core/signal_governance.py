@@ -53,7 +53,8 @@ class SignalGovernanceBridge:
     @classmethod
     def from_env(cls, queue: TaskQueue, env=None, **kwargs) -> "SignalGovernanceBridge":
         env = env if env is not None else os.environ
-        enabled = str(env.get(GOVERNANCE_FLAG, "")).strip().lower() in ("1", "true", "yes", "on")
+        from agents.core.env_config import truthy
+        enabled = truthy(env.get(GOVERNANCE_FLAG))
         return cls(queue, enabled=enabled, **kwargs)
 
     def _audit(self, event: str, detail: dict) -> None:

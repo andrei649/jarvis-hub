@@ -138,3 +138,70 @@ jobs:
         run: |
           git diff --exit-code -- agents/web/v2 \
             || { echo "::error::agents/web/v2 is stale — run 'cd frontend && npm run build' and commit."; exit 1; }
+
+  openapi-types:
+    # M2.3 / AUD-16: generated TypeScript must match the live FastAPI OpenAPI
+    # schema. This is intentionally a separate lane because it boots the backend
+    # plus the frontend toolchain, and reports a readable git diff on drift.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1  # v6.3.0
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: requirements-beta.lock
+      - run: pip install --require-hashes -r requirements-beta.lock
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e  # v6.4.0
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm ci
+        working-directory: frontend
+
+      - name: Start API server
+        run: |
+          python -m uvicorn agents.web:app --host 127.0.0.1 --port 8765 > openapi-server.log 2>&1 &
+          echo $! > openapi-server.pid
+          python - <<'PY'
+          import sys
+          import time
+          import urllib.request
+
+          url = "http://127.0.0.1:8765/openapi.json"
+          for _ in range(90):
+              try:
+                  with urllib.request.urlopen(url, timeout=2) as response:
+                      if response.status == 200:
+                          sys.exit(0)
+              except Exception:
+                  time.sleep(1)
+          print("OpenAPI server did not become ready", file=sys.stderr)
+          sys.exit(1)
+          PY
+        env:
+          JARVIS_TESTING: "1"
+
+      - name: Generate OpenAPI TypeScript
+        run: npm run typegen:openapi
+        working-directory: frontend
+
+      - name: Generated OpenAPI types are current
+        run: |
+          git diff --exit-code -- frontend/src/api/schema.gen.ts \
+            || { echo "::error::frontend/src/api/schema.gen.ts is stale — run 'cd frontend && npm run typegen:openapi' with the API server on port 8765."; exit 1; }
+
+      - name: Stop API server
+        if: ${{ always() }}
+        run: |
+          if [ -f openapi-server.pid ]; then kill "$(cat openapi-server.pid)" || true; fi
+
+      - name: Upload OpenAPI server log
+        if: ${{ failure() }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        with:
+          name: openapi-server-log
+          path: openapi-server.log
+          if-no-files-found: ignore
+          retention-days: 7

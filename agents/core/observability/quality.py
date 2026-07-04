@@ -29,7 +29,13 @@ DEFAULT_WINDOW = 50
 
 def evaluate_heuristics(trace: dict) -> dict:
     """Return {signal: score in [0,1]} for a trace (no LLM)."""
-    text = trace.get("text_preview") or trace.get("output_preview") or ""
+    # O26-P0.4 (F4): non_empty / no_error judge the RESPONSE. Fall back to the
+    # request text only for legacy traces that carry no output_preview KEY at
+    # all — an empty reply must score non_empty=0, not borrow the user's text.
+    if "output_preview" in trace:
+        text = trace.get("output_preview") or ""
+    else:
+        text = trace.get("text_preview") or ""
     timings = trace.get("timings", {}) or {}
     total_ms = timings.get("total_ms", 0) or 0
     signals = {

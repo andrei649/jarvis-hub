@@ -46,7 +46,11 @@ class AutonomyCoordinator:
         registry); a failed run retries with backoff until its cap, then parks
         ``dead`` — the queue/engine mechanics are covered by the 0.34 tests. A
         drain hiccup is swallowed so it can never break the autonomy tick."""
-        if not os.environ.get("JARVIS_WORKFLOW_PERSIST"):
+        # O26-P2.1: same parse as the engine's persist_enabled() — pre-P2.1 this
+        # was a presence check, so JARVIS_WORKFLOW_PERSIST=0 ENABLED the drain
+        # while the engine read the same var as off.
+        from .workflows.engine import persist_enabled
+        if not persist_enabled():
             return
         engine = getattr(self._orch, "workflow_engine", None)
         registry = getattr(self._orch, "workflow_registry", None)
@@ -140,6 +144,16 @@ class AutonomyCoordinator:
             except Exception as e:
                 logger.warning(f"Autonomy tick failed: {e}")
 
+    def _governed_enqueue(self, *args, **kwargs) -> int:
+        """O26-P0.7 (F3): broker proposals go through the worker's governed
+        intake (risk policy + decision inbox + best-effort push) instead of
+        raw TaskQueue.enqueue. Falls back to the raw queue only if the worker
+        is somehow absent (fail-safe: the task is still persisted)."""
+        worker = getattr(self._orch, "autonomy", None)
+        if worker is not None and hasattr(worker, "govern_enqueue"):
+            return worker.govern_enqueue(*args, **kwargs)
+        return self._orch.autonomy_queue.enqueue(*args, **kwargs)
+
     def build_executor(self) -> TaskExecutor:
         """Wire task kinds to real capabilities, degrading gracefully."""
         async def _research(task):
@@ -162,7 +176,12 @@ class AutonomyCoordinator:
             _task_budget = None
         if _task_budget is not None and _task_budget <= 0:
             _task_budget = None
-        executor = TaskExecutor(fallback=_llm, max_wall_seconds=_task_budget)
+        _budget_ledger = getattr(self._orch, "budget_ledger", None)
+        executor = TaskExecutor(
+            fallback=_llm,
+            max_wall_seconds=_task_budget,
+            budget_ledger=_budget_ledger,
+        )
         for kw in ("research", "search", "monitor", "scan", "lookup", "check"):
             executor.register(kw, _research)
         for kw in ("summarize", "analyze", "review", "draft", "plan", "prepare"):
@@ -192,11 +211,14 @@ class AutonomyCoordinator:
         # egress omit it (they legitimately repeat the same action.kind and would false-trip).
         from .kernel.binding import make_action_kernel
         _action_kernel = make_action_kernel(
-            self._orch, loop_detector=getattr(self._orch, "loop_detector", None))
+            self._orch,
+            loop_detector=getattr(self._orch, "loop_detector", None),
+            budget_ledger=_budget_ledger,
+        )
 
         from .writeback import WriteBackBroker
         self._orch.writeback = WriteBackBroker(
-            enqueue=self._orch.autonomy_queue.enqueue,
+            enqueue=self._governed_enqueue,  # O26-P0.7 (F3): policy + inbox
             secret_broker=getattr(self._orch, "secret_broker", None),
             audit=getattr(self._orch, "audit", None),
             kernel=_action_kernel,
@@ -208,7 +230,7 @@ class AutonomyCoordinator:
         # at action time (behind approval) and post via an injectable client.
         from .social import SocialBroker
         self._orch.social = SocialBroker(
-            enqueue=self._orch.autonomy_queue.enqueue,
+            enqueue=self._governed_enqueue,  # O26-P0.7 (F3): policy + inbox
             secret_broker=getattr(self._orch, "secret_broker", None),
             audit=getattr(self._orch, "audit", None),
             kernel=_action_kernel,
@@ -225,12 +247,13 @@ class AutonomyCoordinator:
         except Exception:
             _call_cfg = {}
         self._orch.call_broker = CallBroker(
-            enqueue=self._orch.autonomy_queue.enqueue,
+            enqueue=self._governed_enqueue,  # O26-P0.7 (F3): policy + inbox
             secret_broker=getattr(self._orch, "secret_broker", None),
             audit=getattr(self._orch, "audit", None),
             budget=getattr(self._orch.autonomy, "budget", None),
             config=_call_cfg,
             kernel=_action_kernel,
+            ledger=_budget_ledger,
         )
         executor.register("call", self._orch.call_broker.execute)
 
@@ -241,7 +264,7 @@ class AutonomyCoordinator:
         self._orch.node_mesh = NodeMesh(
             capability_broker=getattr(self._orch, "capabilities", None),
             kill_switch=getattr(self._orch, "kill_switch", None),
-            enqueue=self._orch.autonomy_queue.enqueue,
+            enqueue=self._governed_enqueue,  # O26-P0.7 (F3): policy + inbox
             audit=getattr(self._orch, "audit", None),
             kernel=_action_kernel,
         )
@@ -255,7 +278,7 @@ class AutonomyCoordinator:
         import time as _t
         self._orch.tool_rpc = ToolRPCServer(
             secret_broker=getattr(self._orch, "secret_broker", None),
-            enqueue=self._orch.autonomy_queue.enqueue,
+            enqueue=self._governed_enqueue,  # O26-P0.7 (F3): policy + inbox
             audit=getattr(self._orch, "audit", None),
             kernel=_action_kernel,   # ORIZONT-24 wave-3: mediate gated tools (default-off)
         )

@@ -4,9 +4,10 @@ The OWASP *unbounded-consumption* guards that were missing (design spec §6): a 
 **token + wall-time + recursion-depth** ledger, and a **loop-wide circuit breaker** that
 trips on a runaway (the same action repeating past a threshold in a window). The kernel's
 ``authorize`` consults these at the single front door; when no ledger/detector is supplied
-the gate is **inert** (K1 behavior preserved). Unifying the *existing* budgets
-(``InterruptBudget`` ≤4/day, mission step/time caps, payment caps) into this one object is
-a later K3 slice — this adds the three limits that did not exist anywhere yet.
+the gate is **inert** (K1 behavior preserved). The same ledger now exposes named dimensions
+for existing budgets (``InterruptBudget`` <=4/day, mission step caps, payment mandate caps),
+so callers can share one kernel-readable view without replacing the legacy gates that
+already own those semantics.
 """
 
 from __future__ import annotations
@@ -25,6 +26,17 @@ class BudgetLimits:
 
 
 @dataclass
+class BudgetDimension:
+    """Named usage/cap pair surfaced through the shared K3 ledger."""
+    name: str
+    used: float = 0.0
+    limit: float | None = None
+    unit: str = ""
+    enforced: bool = True
+    metadata: dict = field(default_factory=dict)
+
+
+@dataclass
 class BudgetLedger:
     """Mutable running usage for one task, checked against its :class:`BudgetLimits`.
 
@@ -35,6 +47,7 @@ class BudgetLedger:
     tokens_used: int = 0
     depth: int = 0
     started_at: float | None = None
+    dimensions: dict[str, BudgetDimension] = field(default_factory=dict)
 
     def start(self, now: float | None = None) -> None:
         """Mark the wall-clock start (idempotent — first call wins)."""
@@ -51,6 +64,82 @@ class BudgetLedger:
         if self.depth > 0:
             self.depth -= 1
 
+    def register_dimension(self, name: str, *, limit: float | None = None,
+                           used: float = 0.0, unit: str = "",
+                           enforced: bool = True,
+                           metadata: dict | None = None) -> BudgetDimension:
+        """Register or replace a named budget dimension."""
+        dimension = BudgetDimension(
+            name=str(name),
+            used=max(0.0, float(used)),
+            limit=None if limit is None else float(limit),
+            unit=str(unit or ""),
+            enforced=bool(enforced),
+            metadata=dict(metadata or {}),
+        )
+        self.dimensions[dimension.name] = dimension
+        return dimension
+
+    def set_dimension_usage(self, name: str, used: float, *,
+                            limit: float | None = None, unit: str = "",
+                            enforced: bool = True,
+                            metadata: dict | None = None) -> BudgetDimension:
+        """Set current usage for a named budget dimension.
+
+        Existing dimensions keep their limit unless a new one is supplied.
+        """
+        key = str(name)
+        dimension = self.dimensions.get(key)
+        if dimension is None:
+            return self.register_dimension(
+                key, limit=limit, used=used, unit=unit,
+                enforced=enforced, metadata=metadata,
+            )
+        dimension.used = max(0.0, float(used))
+        if limit is not None:
+            dimension.limit = float(limit)
+        if unit:
+            dimension.unit = str(unit)
+        dimension.enforced = bool(enforced)
+        if metadata is not None:
+            dimension.metadata = dict(metadata)
+        return dimension
+
+    def add_dimension_usage(self, name: str, amount: float = 1.0) -> BudgetDimension:
+        """Accrue usage against a named budget dimension."""
+        key = str(name)
+        dimension = self.dimensions.get(key)
+        if dimension is None:
+            dimension = self.register_dimension(key)
+        dimension.used += max(0.0, float(amount))
+        return dimension
+
+    @staticmethod
+    def _display_number(value: float | None) -> float | int | None:
+        if value is None:
+            return None
+        return int(value) if float(value).is_integer() else value
+
+    def dimension_status(self, name: str) -> dict:
+        """Return a stable status dict for one named dimension."""
+        dimension = self.dimensions[str(name)]
+        remaining = None
+        if dimension.limit is not None:
+            remaining = max(0.0, dimension.limit - dimension.used)
+        return {
+            "name": dimension.name,
+            "used": self._display_number(dimension.used),
+            "limit": self._display_number(dimension.limit),
+            "remaining": self._display_number(remaining),
+            "unit": dimension.unit,
+            "enforced": dimension.enforced,
+            "metadata": dict(dimension.metadata),
+        }
+
+    def dimensions_status(self) -> dict[str, dict]:
+        """Return status for all named dimensions, keyed by name."""
+        return {name: self.dimension_status(name) for name in sorted(self.dimensions)}
+
     def exceeded(self, now: float | None = None) -> str | None:
         """Return a human reason for the first breached limit, else None."""
         lim = self.limits
@@ -63,6 +152,12 @@ class BudgetLedger:
             elapsed = now - self.started_at
             if elapsed > lim.max_wall_seconds:
                 return f"wall-time budget exceeded ({elapsed:.1f}s > {lim.max_wall_seconds}s)"
+        for dimension in self.dimensions.values():
+            if (dimension.enforced and dimension.limit is not None
+                    and dimension.used > dimension.limit):
+                used = self._display_number(dimension.used)
+                limit = self._display_number(dimension.limit)
+                return f"{dimension.name} budget exceeded ({used} > {limit})"
         return None
 
 

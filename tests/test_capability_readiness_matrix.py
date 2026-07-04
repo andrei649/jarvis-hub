@@ -5,7 +5,7 @@ is honestly stated". Snapshots the deterministic capability set (the static plug
 manifests) into `_snapshots/capability_readiness.json` and fails CI on:
 
   * **drift** — a capability added / removed / silently state-changed (e.g. a plugin
-    disabled WIRED→SEAM) vs the committed snapshot;
+    disabled WIRED→SEAM, or a component failing to boot) vs the committed snapshot;
   * **fabricated VERIFIED** — a record at VERIFIED/GA without a harness_id (only the V1
     reality harness may promote — this guards the registry invariant);
   * **unclassified SEAM** — a capability left a stub that isn't in INTENTIONALLY_SEAM.
@@ -15,9 +15,11 @@ SEC-3 drove to empty): INTENTIONALLY_SEAM (by-design stubs) and PENDING_VERIFY (
 but not yet reality-verified — the shrinking backlog). Both are kept honest by a test so
 they can't go stale.
 
-Scope: this slice covers the **plugin** capability set, which is enumerable statically
-(no orchestrator boot). Components/skills (need a booted fixture) and cross-agent
-interface-contract drift fold in as Track V tightens.
+Scope: this slice covers the static plugin set plus booted component/skill registries.
+The booted fixture is a deliberate exception to the usual lightweight-fixture / __new__
+test convention. It uses the real Orchestrator registrations, cached once per process,
+so a silently-broken component or missing skill row becomes matrix drift. Do not copy
+this pattern into ordinary unit tests.
 
 Re-seed on an intentional change, reviewed in the same PR:
 
@@ -26,6 +28,7 @@ Re-seed on an intentional change, reviewed in the same PR:
 
 import json
 import sys
+from functools import lru_cache
 from pathlib import Path
 
 import pytest
@@ -50,18 +53,32 @@ def _isolate_registry_state():
     cr.clear_verifications()
     cr._OVERRIDES.clear()
 
-# By-design stubs that are allowed to stay SEAM (none today — all plugins are enabled).
-INTENTIONALLY_SEAM: set[str] = set()
+# By-design stubs that are allowed to stay SEAM.
+INTENTIONALLY_SEAM: set[str] = {
+    # Manifest-only command spec; live weather is provided by the weather plugin path.
+    "skill:Weather Intel",
+}
 # WIRED capabilities not yet promoted by a reality harness — the shrinking backlog.
 # (Today's hard gate only forbids SEAM; this set is forward-looking for when the gate
 # tightens to "user-facing must be VERIFIED".) Kept honest by test below.
 PENDING_VERIFY: set[str] = set()
 
 
+@lru_cache(maxsize=1)
+def _booted_orchestrator():
+    """Build the real, cached fixture needed for component + skill readiness rows."""
+    from agents.core.config import JarvisConfig
+    from agents.core.orchestrator import Orchestrator
+
+    orch = Orchestrator(JarvisConfig())
+    orch.skills.discover()
+    return orch
+
+
 def _records():
-    """Deterministic capability records — plugins only (static manifest registry)."""
+    """Deterministic capability records — plugins + booted components + skills."""
     from agents.core.observability import capability_registry as cr
-    return cr.build_records(orch=None)
+    return cr.build_records(orch=_booted_orchestrator())
 
 
 def _state_map() -> dict:
@@ -83,6 +100,11 @@ def test_readiness_matrix_no_drift():
         f"  ADDED:   {added}\n  REMOVED: {removed}\n"
         f"  CHANGED: {[(k, expected[k], current[k]) for k in changed]}"
     )
+
+
+def test_matrix_covers_components_and_skills():
+    kinds = {r.kind for r in _records()}
+    assert {"plugin", "component", "skill"}.issubset(kinds)
 
 
 def test_no_fabricated_verified():

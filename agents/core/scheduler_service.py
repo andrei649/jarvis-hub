@@ -124,9 +124,10 @@ class SchedulerService:
         is unreachable (the plugin fails closed), so an enabled-but-offline deployment is
         harmless. Skipped under JARVIS_TESTING.
         """
-        if os.getenv("JARVIS_TESTING") == "1":
+        from agents.core.env_config import env_flag
+        if env_flag("JARVIS_TESTING"):
             return
-        enabled = os.getenv("JARVIS_WORLDVIEW_KG_SYNC") == "1" or self._orch.get_setting(
+        enabled = env_flag("JARVIS_WORLDVIEW_KG_SYNC") or self._orch.get_setting(
             "worldview.kg_sync_enabled", False
         )
         if not enabled:

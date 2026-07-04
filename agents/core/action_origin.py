@@ -1,0 +1,41 @@
+"""Per-turn provenance for kernel-mediated actions.
+
+The Action Kernel cannot infer whether an LLM-produced action came from trusted
+operator input or an inbound external channel after the model has processed the
+text. This module carries that declared provenance in a ContextVar so brokers
+can tag ``Action.origin`` without importing the orchestrator.
+"""
+
+from __future__ import annotations
+
+from contextvars import ContextVar
+
+TRUSTED_TURN_CHANNELS = frozenset({"web", "voice"})
+DEFAULT_ACTION_ORIGIN = "generated"
+INBOUND_ACTION_ORIGIN = "inbound"
+
+_active_action_origin: ContextVar[str] = ContextVar(
+    "jarvis_action_origin",
+    default=DEFAULT_ACTION_ORIGIN,
+)
+
+
+def origin_for_channel(channel: str | None) -> str:
+    """Classify the inbound turn's channel into a kernel Action.origin value."""
+    channel_id = str(channel or "").strip().lower()
+    if channel_id in TRUSTED_TURN_CHANNELS:
+        return DEFAULT_ACTION_ORIGIN
+    return INBOUND_ACTION_ORIGIN
+
+
+def bind_action_origin(origin: str | None):
+    """Bind origin for the current async context; return the reset token."""
+    return _active_action_origin.set(str(origin or DEFAULT_ACTION_ORIGIN))
+
+
+def reset_action_origin(token) -> None:
+    _active_action_origin.reset(token)
+
+
+def current_action_origin(default: str = DEFAULT_ACTION_ORIGIN) -> str:
+    return _active_action_origin.get() or default

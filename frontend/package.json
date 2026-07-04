@@ -10,6 +10,7 @@
     "preview": "vite preview",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
+    "typegen:openapi": "npx --yes openapi-typescript@7.13.0 http://127.0.0.1:8765/openapi.json -o src/api/schema.gen.ts",
     "e2e": "playwright test"
   },
   "dependencies": {

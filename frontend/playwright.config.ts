@@ -1,7 +1,8 @@
 /* HUD v2 · Playwright E2E (H23.17 quality gate). Boots the REAL FastAPI backend
    (serve.py) on a loopback test port and drives the served /v2 bundle in a real
-   Chromium — the one thing jsdom/vitest can't do: prove the canvas Neural Mesh
-   actually paints pixels and the HUD mounts without an uncaught exception.
+   Chromium by default, with an opt-in browser matrix for the scheduled soak —
+   the one thing jsdom/vitest can't do: prove the canvas Neural Mesh actually
+   paints pixels and the HUD mounts without an uncaught exception.
 
    Browser: uses the environment's pre-installed Chromium (PLAYWRIGHT_BROWSERS_PATH
    = /opt/pw-browsers, chromium-1194 matches @playwright/test 1.56.1) — never
@@ -11,7 +12,15 @@ import { defineConfig, devices } from '@playwright/test';
 const PORT = Number(process.env.E2E_PORT || 8123);
 const BASE = `http://127.0.0.1:${PORT}`;
 // local dev runs the repo venv; CI installs into the system python → override with E2E_PYTHON
-const PY = process.env.E2E_PYTHON || '.venv/bin/python';
+const DEFAULT_PY = process.platform === 'win32'
+  ? '.venv\\Scripts\\python.exe'
+  : '.venv/bin/python';
+const PY = process.env.E2E_PYTHON || DEFAULT_PY;
+const ENV_PREFIX = process.platform === 'win32'
+  ? `set JARVIS_PORT=${PORT}&& set JARVIS_LOG_LEVEL=warning&& `
+  : `JARVIS_PORT=${PORT} JARVIS_LOG_LEVEL=warning `;
+const BROWSER_MATRIX = process.env.E2E_BROWSER_MATRIX === '1';
+const SOAK_ITERATIONS = Math.max(1, Number(process.env.E2E_SOAK_ITERATIONS || 1));
 
 export default defineConfig({
   testDir: './e2e',
@@ -21,6 +30,7 @@ export default defineConfig({
   fullyParallel: false,
   workers: 1,
   retries: 0,
+  repeatEach: SOAK_ITERATIONS,
   reporter: [['list']],
   use: {
     baseURL: BASE,
@@ -28,13 +38,20 @@ export default defineConfig({
     screenshot: 'only-on-failure',
     trace: 'retain-on-failure',
   },
-  projects: [{ name: 'chromium', use: { ...devices['Desktop Chrome'] } }],
+  projects: BROWSER_MATRIX ? [
+    { name: 'chromium', use: { ...devices['Desktop Chrome'] } },
+    { name: 'firefox', use: { ...devices['Desktop Firefox'] } },
+    { name: 'webkit', use: { ...devices['Desktop Safari'] } },
+    { name: 'mobile-chrome', use: { ...devices['Pixel 5'] } },
+  ] : [
+    { name: 'chromium', use: { ...devices['Desktop Chrome'] } },
+  ],
   // Boot the real backend from the repo root; /status flips ready once the
   // orchestrator + agents are loaded. Loopback bind → assert_safe_bind allows it.
   webServer: {
     // run from the repo root (cwd) — serve.py + config.py resolve agents/_system/
     // agents.yaml relative to CWD, not to this config's frontend/ dir.
-    command: `JARVIS_PORT=${PORT} JARVIS_LOG_LEVEL=warning ${PY} serve.py`,
+    command: `${ENV_PREFIX}${PY} serve.py`,
     cwd: '..',
     url: `${BASE}/status`,
     timeout: 120_000,

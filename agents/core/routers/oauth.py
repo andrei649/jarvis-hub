@@ -152,9 +152,9 @@ async def oracle_resolve_conflicts():
 # ── Trust indicator (H12.10): hardware-mute / strict-local ───────
 
 
-def _env_truthy(value: str | None) -> bool:
-    """Treat the usual on/off spellings as booleans for env-driven toggles."""
-    return (value or "").strip().lower() in ("1", "true", "yes", "on")
+# O26-P2.1: the boolean convention lives in env_config now. The old private
+# name stays importable — tests/test_trust_api.py pins its spellings.
+from agents.core.env_config import truthy as _env_truthy  # noqa: E402
 
 
 def _trust_status() -> dict:

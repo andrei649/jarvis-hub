@@ -22,7 +22,6 @@ from __future__ import annotations
 
 import json
 import logging
-import os
 import secrets
 import time
 from pathlib import Path
@@ -42,7 +41,8 @@ _PREVIEW_LEN = 500
 
 def capture_enabled() -> bool:
     """Master kill-switch — off by default (privacy-first)."""
-    return os.environ.get("JARVIS_PASSIVE_CAPTURE", "").lower() in ("1", "true", "yes")
+    from agents.core.env_config import env_flag
+    return env_flag("JARVIS_PASSIVE_CAPTURE")
 
 
 class PassiveCapture(JsonStore):

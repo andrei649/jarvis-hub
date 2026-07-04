@@ -1,0 +1,44 @@
+name: Eval Nightly
+
+on:
+  workflow_dispatch:
+  schedule:
+    # Daily 02:30 UTC: cheap deterministic quality gate before the day starts.
+    - cron: "30 2 * * *"
+  pull_request:
+    paths:
+      - "agents/core/observability/**"
+      - "tests/test_companion_eval*.py"
+      - ".github/workflows/eval-nightly.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: eval-nightly-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  companion-gate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      # Default-off: live model evals are opt-in for owner-controlled runners.
+      JARVIS_EVAL_LIVE: ${{ vars.JARVIS_EVAL_LIVE || '0' }}
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1  # v6.3.0
+        with:
+          python-version: "3.12"
+
+      - name: Companion eval gate
+        run: python -m agents.core.observability.companion_eval --ci-gate --summary "$GITHUB_STEP_SUMMARY"
+
+      - name: Live eval opt-in status
+        if: ${{ always() }}
+        run: |
+          if [ "$JARVIS_EVAL_LIVE" = "1" ]; then
+            echo "Live eval requested for this runner; companion gate reports the request and remains deterministic unless a live runner is injected." >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "Live eval is off (JARVIS_EVAL_LIVE=0); deterministic companion gate only." >> "$GITHUB_STEP_SUMMARY"
+          fi

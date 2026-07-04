@@ -21,6 +21,11 @@ class LLMRouter:
         # Name of the model actually loaded in the live backend (auto-detected in
         # detect()). None until detected / when no backend is up.
         self._detected_model: Optional[str] = None
+        # O26-P0.5 (F5): every model id the live backend reported as servable,
+        # refreshed by the same fetches that detect the active model. Routing
+        # decisions that name a SPECIFIC model (the deep slot) consult this so
+        # a one-model box is never routed to a model that isn't there.
+        self._served_models: set = set()
         # /admin → llm.backend_type / llm.lm_studio_url / llm.ollama_url. Resolved
         # from settings before detect() (subclasses set these); defaults preserve
         # the original hardcoded behavior.
@@ -85,8 +90,12 @@ class LLMRouter:
                 data = resp.json()
                 if kind == "lmstudio":
                     items = data.get("data") or []
+                    self._served_models = {
+                        i.get("id") for i in items if i.get("id")}  # O26-P0.5
                     return items[0].get("id") if items else None
                 items = data.get("models") or []
+                self._served_models = {
+                    i.get("name") for i in items if i.get("name")}  # O26-P0.5
                 return items[0].get("name") if items else None
         except Exception:
             return None

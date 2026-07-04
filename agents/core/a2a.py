@@ -45,7 +45,8 @@ _MAX_INBOX = 500  # bound the on-disk inbox
 
 def a2a_enabled() -> bool:
     """A2A is a network surface — off unless explicitly enabled."""
-    return os.environ.get("JARVIS_A2A_ENABLED", "").lower() in ("1", "true", "yes")
+    from agents.core.env_config import env_flag
+    return env_flag("JARVIS_A2A_ENABLED")
 
 
 def _hmac(secret: str, body: Union[bytes, str]) -> str:

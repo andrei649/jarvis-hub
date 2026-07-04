@@ -9,7 +9,6 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import logging
-import os
 import re
 import time
 from collections import deque
@@ -32,6 +31,17 @@ _MAX_DEPTH = 5  # H10.14 — max nested sub-workflow recursion depth
 _MAX_PARALLEL_STEPS = 8
 
 
+def persist_enabled() -> bool:
+    """``JARVIS_WORKFLOW_PERSIST`` — ONE parse for engine and coordinator (O26-P2.1).
+
+    Pre-P2.1 the autonomy coordinator presence-checked this var (so ``=0``
+    *enabled* the pending-queue drain) while this module truthy-checked it;
+    the same deployment could have the store off and the drain on.
+    """
+    from agents.core.env_config import env_flag
+    return env_flag("JARVIS_WORKFLOW_PERSIST")
+
+
 class WorkflowEngine:
     """Run a Pipeline against the live orchestrator, sharing results between steps."""
 
@@ -42,8 +52,7 @@ class WorkflowEngine:
         # 0.34: optional run-history persistence so the overlay survives a restart.
         # Opt-in: a store is attached only when one is passed (tests) or
         # JARVIS_WORKFLOW_PERSIST is set — default None keeps behavior unchanged.
-        if run_store is None and os.environ.get(
-                "JARVIS_WORKFLOW_PERSIST", "").strip().lower() in ("1", "true", "yes", "on"):
+        if run_store is None and persist_enabled():
             try:
                 from .run_store import WorkflowRunStore
                 run_store = WorkflowRunStore()

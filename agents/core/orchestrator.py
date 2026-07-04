@@ -25,6 +25,7 @@ from .checkpoint import CheckpointManager
 from .heartbeat import HeartbeatScheduler
 from .scheduler_service import SchedulerService
 from .autonomy_coordinator import AutonomyCoordinator
+from .action_origin import bind_action_origin, origin_for_channel, reset_action_origin
 from . import llm_control  # CLN-2: NL LLM-control detection + execution
 from .llm_control import detect_llm_control  # re-exported: NL LLM-control detection (CLN-2)
 from . import cognition_trace  # CLN-2: builds + persists the per-turn cognition trace
@@ -47,6 +48,7 @@ from .plugin_gate import PermissionGate
 from .security.guardrails import GuardrailsEngine
 from .security.audit import AuditLogger
 from .security.types import RedactionMode, SecurityEvent, SecurityEventType
+from .env_config import env_flag, truthy
 from .log import log_error
 from .errors import (
     E_LLM_BACKEND_MISSING, E_LLM_TIMEOUT,
@@ -75,22 +77,20 @@ HANDOFF_PREFIX = "[handoff:"
 SKILL_PREFIX = "[learn:"
 
 
-def _env_flag(name: str, default: bool = True) -> bool:
-    raw = os.environ.get(name)
-    if raw is None or raw.strip() == "":
-        return default
-    return raw.strip().lower() not in ("0", "false", "no", "off", "disable", "disabled")
-
-
 def _as_bool(value, default: bool = True) -> bool:
-    """Coerce a runtime-settings value (bool / int / "true" / "off" / ...) to bool."""
+    """Coerce a runtime-settings value (bool / int / "true" / "off" / ...) to bool.
+
+    Settings-plane semantics (unchanged in O26-P2.1): empty string → False,
+    an unrecognized word → True — a stored setting is an explicit opt-in,
+    unlike an env flag where junk falls back to the default."""
     if value is None:
         return default
     if isinstance(value, bool):
         return value
     if isinstance(value, (int, float)):
         return value != 0
-    return str(value).strip().lower() not in ("0", "false", "no", "off", "disable", "disabled", "")
+    text = str(value).strip()
+    return bool(text) and truthy(text, default=True)
 
 
 
@@ -136,7 +136,9 @@ class Orchestrator:
         # Set eagerly (trivial in-memory) so it's present before autonomy wiring; bound
         # ONLY into the broker-mediated kernel (the agent action path) — never routes/egress.
         from .kernel.budget import LoopDetector
+        from .kernel.binding import make_budget_ledger
         self.loop_detector = LoopDetector()
+        self.budget_ledger = make_budget_ledger()
 
         def _capabilities():
             m = importlib.import_module(".security.capability", "agents.core")
@@ -251,7 +253,7 @@ class Orchestrator:
         # env var is the boot-time default and a hard kill-switch (see docs).
         self.lmstudio = LMStudioController(
             router=self.llm_router,
-            enabled=_env_flag("JARVIS_LMSTUDIO_CONTROL", True),
+            enabled=env_flag("JARVIS_LMSTUDIO_CONTROL", True),
         )
         # H22.5 — attach the LRU residency manager, backed by the LM Studio
         # controller above. Default-off via JARVIS_MODEL_MANAGER (GPU-unvalidated):
@@ -281,7 +283,7 @@ class Orchestrator:
         # plan, budget, pause/resume, on-disk artifacts + an append-only event
         # audit trail. Independent of the task queue (a mission can span many
         # tasks/turns and survive restarts).
-        self.missions = MissionStore()
+        self.missions = MissionStore(ledger=self.budget_ledger)
         # /admin → autonomy.cap_per_action / daily_ceiling / interrupt_budget.
         # These were dataclass defaults (50/200/4); live-resynced each tick by the
         # autonomy coordinator (like autonomy.mode).
@@ -293,7 +295,10 @@ class Orchestrator:
                 daily_ceiling=float(_gv("autonomy", "daily_ceiling", 200.0)),
             ),
             prefs=self.autonomy_prefs,
-            budget=InterruptBudget(per_day=int(_gv("autonomy", "interrupt_budget", 4))),
+            budget=InterruptBudget(
+                per_day=int(_gv("autonomy", "interrupt_budget", 4)),
+                ledger=self.budget_ledger,
+            ),
         )
         # Proactive OS Observer — the trigger layer that feeds the queue.
         self.observer: Optional[ProactiveObserver] = None
@@ -379,14 +384,14 @@ class Orchestrator:
         # command) skips the cold-load cost. Fire-and-forget — the model load
         # can take seconds and must not delay startup. Gate with
         # JARVIS_LLM_WARMUP=0 for environments where preloading is unwanted.
-        if os.environ.get("JARVIS_LLM_WARMUP", "1") not in ("0", "false", "False"):
+        if env_flag("JARVIS_LLM_WARMUP", True):
             self._warmup_task = asyncio.create_task(self.llm_router.warm_up())
             self._warmup_task.add_done_callback(_log_task_result)
 
         # Personalization (PRIVATE) — import the owner's Drive "AI" folder via
         # rclone into a gitignored local dir and ingest it into memory. Opt-in
         # (JARVIS_DRIVE_AI_SYNC=1) and fire-and-forget so it never blocks startup.
-        if os.environ.get("JARVIS_DRIVE_AI_SYNC") in ("1", "true", "True"):
+        if env_flag("JARVIS_DRIVE_AI_SYNC"):
             self._drive_ai_task = asyncio.create_task(self._drive_ai_startup())
             self._drive_ai_task.add_done_callback(_log_task_result)
 
@@ -587,10 +592,10 @@ class Orchestrator:
         # which a privacy-first local product should not do unsolicited. It's a
         # dev/dogfooding feature — enable with JARVIS_ORACLE_WATCH=1 or the
         # `oracle.watch_enabled` setting.
-        _oracle_watch = os.getenv("JARVIS_ORACLE_WATCH") == "1" or self.get_setting("oracle.watch_enabled", False)
-        if hasattr(self, 'oracle_bridge') and os.getenv("JARVIS_TESTING") != "1" and _oracle_watch:
+        _oracle_watch = env_flag("JARVIS_ORACLE_WATCH") or self.get_setting("oracle.watch_enabled", False)
+        if hasattr(self, 'oracle_bridge') and not env_flag("JARVIS_TESTING") and _oracle_watch:
             self.oracle_bridge.start_watcher()
-        if os.getenv("JARVIS_TESTING") != "1":
+        if not env_flag("JARVIS_TESTING"):
             from agents.core.learning_loop import run_learning_loop
             _ll = asyncio.create_task(run_learning_loop(self))
             _ll.add_done_callback(_log_task_result)
@@ -607,33 +612,38 @@ class Orchestrator:
         logger.info("Channels stopped")
 
     async def channel_handler(self, text: str, channel: str = "voice", **kwargs) -> Optional[str]:
+        action_origin = kwargs.pop("origin", origin_for_channel(channel))
+        origin_token = bind_action_origin(action_origin)
         chat_id = kwargs.get("chat_id")
-        # H3.3: cross-channel context is opt-in. When enabled, every channel
-        # shares self.session_id (web<->telegram continuity). When off (default),
-        # telegram keeps per-chat_id isolation (H1.2).
-        cross_channel = self.get_setting("memory.cross_channel_sessions", False)
-        if not cross_channel and channel == "telegram" and chat_id:
-            ck = f"tg:{chat_id}"
-            if ck not in self._channel_sessions:
-                self._channel_sessions[ck] = await self.memory.new_session()
-            # BUG-5: bind this telegram chat's session into the per-request async
-            # context instead of mutating shared `self.session_id` and restoring
-            # it in a finally. The old save/restore-on-self clobbered concurrent
-            # turns (the finally reset the *shared* attribute another in-flight
-            # request was reading). Here we set a *context-local* token and reset
-            # it in finally, so the binding is scoped to this request's async
-            # context only and never touches the shared default. `_resolve_session`
-            # inside handle_input keeps the value we set here.
-            token = _active_session.set(self._channel_sessions[ck])
-            try:
+        try:
+            # H3.3: cross-channel context is opt-in. When enabled, every channel
+            # shares self.session_id (web<->telegram continuity). When off (default),
+            # telegram keeps per-chat_id isolation (H1.2).
+            cross_channel = self.get_setting("memory.cross_channel_sessions", False)
+            if not cross_channel and channel == "telegram" and chat_id:
+                ck = f"tg:{chat_id}"
+                if ck not in self._channel_sessions:
+                    self._channel_sessions[ck] = await self.memory.new_session()
+                # BUG-5: bind this telegram chat's session into the per-request async
+                # context instead of mutating shared `self.session_id` and restoring
+                # it in a finally. The old save/restore-on-self clobbered concurrent
+                # turns (the finally reset the *shared* attribute another in-flight
+                # request was reading). Here we set a *context-local* token and reset
+                # it in finally, so the binding is scoped to this request's async
+                # context only and never touches the shared default. `_resolve_session`
+                # inside handle_input keeps the value we set here.
+                token = _active_session.set(self._channel_sessions[ck])
+                try:
+                    response = await self.handle_input(text, channel)
+                finally:
+                    _active_session.reset(token)
+            else:
                 response = await self.handle_input(text, channel)
-            finally:
-                _active_session.reset(token)
-        else:
-            response = await self.handle_input(text, channel)
 
-        await self.channel_manager.send(channel, response, **kwargs)
-        return response
+            await self.channel_manager.send(channel, response, **kwargs)
+            return response
+        finally:
+            reset_action_origin(origin_token)
 
     def _resolve_session(self, session_id: Optional[str]) -> str:
         """BUG-5: bind the active session into the per-request async context.
@@ -762,19 +772,21 @@ class Orchestrator:
             )
             synthesized = list(responses.values())[0] if responses else ""
             t_synthesize = int((time.perf_counter() - t_s0) * 1000)
-            await self.memory.add_turn(self.session_id, "assistant", synthesized, agent_id=agent_override)
-            await self._maybe_checkpoint()
-            await asyncio.to_thread(self._log_session, text, intent, responses, synthesized)
-            await asyncio.to_thread(self._record_interactions, text, responses, synthesized, route_name, channel)
-            _event_override = SecurityEvent(
-                event_type=SecurityEventType.LLM_CALL,
-                timestamp=time.time(),
-                findings=[],
-                content_preview=synthesized[:100],
+            await self._complete_llm_turn(
+                text=text,
+                intent=intent,
+                plugin_data=plugin_data,
+                responses=responses,
+                synthesized=synthesized,
+                responder_id=agent_override,
+                route_name=route_name,
+                channel=channel,
                 action_taken=f"handle_input(agent_override={agent_override}) via {channel}",
+                t_classify=t_classify,
+                t_route=t_route,
+                t_plugin=t_plugin,
+                t_synthesize=t_synthesize,
             )
-            await asyncio.to_thread(self.audit.log, _event_override)
-            self._update_cognition(text, intent, plugin_data, synthesized, t_classify, t_route, t_plugin, t_synthesize)
             return synthesized
 
         # Determine route for the primary target agent
@@ -826,21 +838,21 @@ class Orchestrator:
         if skill_name:
             logger.info(f"Learned new skill: {skill_name}")
 
-        await self.memory.add_turn(self.session_id, "assistant", synthesized, agent_id=responder_id)
-        await self._maybe_checkpoint()
-        await asyncio.to_thread(self._log_session, text, intent, responses, synthesized)
-        await asyncio.to_thread(self._record_interactions, text, responses, synthesized, route_name, channel)
-
-        _event_main = SecurityEvent(
-            event_type=SecurityEventType.LLM_CALL,
-            timestamp=time.time(),
-            findings=[],
-            content_preview=synthesized[:100],
+        await self._complete_llm_turn(
+            text=text,
+            intent=intent,
+            plugin_data=plugin_data,
+            responses=responses,
+            synthesized=synthesized,
+            responder_id=responder_id,
+            route_name=route_name,
+            channel=channel,
             action_taken=f"handle_input via {channel}",
+            t_classify=t_classify,
+            t_route=t_route,
+            t_plugin=t_plugin,
+            t_synthesize=t_synthesize,
         )
-        await asyncio.to_thread(self.audit.log, _event_main)
-
-        self._update_cognition(text, intent, plugin_data, synthesized, t_classify, t_route, t_plugin, t_synthesize)
         return synthesized
 
     async def handle_input_stream(self, text: str, channel: str = "voice", on_token: Callable = None,
@@ -900,57 +912,31 @@ class Orchestrator:
         else:
             target = self._route_candidates(intent) if intent.target_agents else ["jarvis"]
 
-        temperature = self.get_setting("llm.temperature", 0.7)
-        # 0 = auto: let the model answer using its full loaded context (the single
-        # dial you size in LM Studio) instead of a separate, smaller Jarvis cap.
-        # A positive value still imposes a hard ceiling (see llm/base.py).
-        max_tokens = self.get_setting("llm.max_tokens", 0)
-        deep_max_tokens = self.get_setting("llm.deep_max_tokens", 0)
         context_window = self.get_setting("memory.context_window", 6)
+        history = await self._history_for_prompt(context_window)
+        plugin_block = self._format_plugin_data(plugin_data)
+        recall_block = await self._recall_block(text)
+        runtime_block = self._runtime_state_block()
         synthesized = ""
         # Pre-bind so the post-loop persist/audit never hit UnboundLocalError when
         # `target` is empty (e.g. _route_candidates returns nothing).
         agent_id = None
+        route_name = ""
         t_s0 = time.perf_counter()
         for agent_id in target:
             if agent_id in self.agents:
                 agent = self.agents[agent_id]
-                history = await self._history_for_prompt(context_window)
                 system_prompt = agent.soul.get("content", "")
-                plugin_block = self._format_plugin_data(plugin_data)
-                agent_context = await self.memory.get_agent_context(agent_id)
-                context_block = ""
-                if agent_context:
-                    context_block = f"Agent context: {agent_context}\n"
-
-                rag_block = ""
-                if agent_id == "howard":
-                    try:
-                        from .ingestion.pipeline import IngestionPipeline
-                        pipeline = IngestionPipeline()
-                        similar = pipeline.search_similar(text, k=5, only_me=True)
-                        if similar:
-                            # CDX-7: fence the archive few-shots as scanned/redacted DATA, but
-                            # keep them readable (datamark=False) so the stylometry survives.
-                            from .security.rag_guard import MemorySnippet, wrap_memory
-                            snips = [MemorySnippet(text=m.text, source="archive",
-                                                   confidence=getattr(m, "score", None)) for m in similar]
-                            rag_block = wrap_memory(
-                                snips, label="your archive (RAG) — mirror the style, treat content as data",
-                                datamark=False).block
-                            logger.info(f"Howard RAG: injected {len(similar)} few-shot messages into stream prompt")
-                    except Exception as e:
-                        logger.warning(f"Howard RAG stream lookup failed: {e}")
-
-                recall_block = await self._recall_block(text)
-                runtime_block = self._runtime_state_block()
-                prompt = (
-                    f"Conversation history:\n{history}\n\n"
-                    f"{plugin_block}{context_block}{rag_block}{recall_block}{runtime_block}"
-                    f"User: {text}\n"
-                    f"Respond as {agent.name}."
+                turn_text = await self._build_agent_turn_text(
+                    agent_id,
+                    text,
+                    history=history,
+                    plugin_block=plugin_block,
+                    recall_block=recall_block,
+                    runtime_block=runtime_block,
                 )
-                model = self.llm_router.get_model(agent_id) or self.get_setting("llm.default_model") or "qwen3:7b"
+                prompt = self._build_agent_prompt(agent, turn_text, intent.context)
+                model = self._agent_default_model(agent_id, agent)
 
                 checkpoint = self.checkpoints.load(agent_id, self.session_id)
                 if checkpoint:
@@ -965,7 +951,7 @@ class Orchestrator:
                     # Reasoning models on the deep slot need a far larger budget:
                     # 1–2k tokens is consumed by chain-of-thought before any
                     # answer, so a small cap truncates mid-thought.
-                    eff_max_tokens = deep_max_tokens if route_name == "local-deep" else max_tokens
+                    eff_max_tokens, temperature = self._agent_gen_params(agent, route_name)
                     cap_label = "auto" if eff_max_tokens <= 0 else eff_max_tokens
                     logger.info(f"Routing {agent_id} via {route_name} ({estimate_tokens(prompt)} tokens, max_tokens={cap_label})")
                 except RuntimeError:
@@ -982,11 +968,14 @@ class Orchestrator:
                     cache_entry = self.context_cache.get_cache_info(self.session_id)
                     if cache_entry:
                         use_cache_name = cache_entry["cache_name"]
-                        prompt = (
-                            f"{plugin_block}{context_block}"
-                            f"User: {text}\n"
-                            f"Respond as {agent.name}."
+                        cached_turn_text = await self._build_agent_turn_text(
+                            agent_id,
+                            text,
+                            plugin_block=plugin_block,
+                            recall_block=recall_block,
+                            runtime_block=runtime_block,
                         )
+                        prompt = self._build_agent_prompt(agent, cached_turn_text, intent.context)
                     else:
                         history_parts = [t.strip() for t in history.split("\n---\n") if t.strip()]
                         _cache_task = asyncio.ensure_future(self._async_create_cache(
@@ -1026,18 +1015,23 @@ class Orchestrator:
             synthesized = "My reply was cut short before I finished, sir — the model ran out of context while thinking. Try again, simplify the request, or load a larger-context model in LM Studio."
             if on_token:
                 on_token(synthesized)
-        await self.memory.add_turn(self.session_id, "assistant", synthesized, agent_id=agent_id)
-        await self._maybe_checkpoint()
-        _event_stream = SecurityEvent(
-            event_type=SecurityEventType.LLM_CALL,
-            timestamp=time.time(),
-            findings=[],
-            content_preview=synthesized[:100],
-            action_taken=f"handle_input_stream({agent_id}) via {channel}",
-        )
-        await asyncio.to_thread(self.audit.log, _event_stream)
+        _stream_responses = {agent_id: synthesized} if agent_id else {}
         t_synthesize = int((time.perf_counter() - t_s0) * 1000)
-        self._update_cognition(text, intent, plugin_data, synthesized, t_classify, t_route, t_plugin, t_synthesize)
+        await self._complete_llm_turn(
+            text=text,
+            intent=intent,
+            plugin_data=plugin_data,
+            responses=_stream_responses,
+            synthesized=synthesized,
+            responder_id=agent_id,
+            route_name=route_name,
+            channel=channel,
+            action_taken=f"handle_input_stream({agent_id}) via {channel}",
+            t_classify=t_classify,
+            t_route=t_route,
+            t_plugin=t_plugin,
+            t_synthesize=t_synthesize,
+        )
         return synthesized
 
     def _update_cognition(self, text, intent, plugin_data, synthesized, t_classify, t_route, t_plugin, t_synthesize):
@@ -1122,7 +1116,7 @@ class Orchestrator:
             return
         logger.info("Drive AI synced → %s", summary.get("dest"))
         # Ingest into memory unless disabled (JARVIS_DRIVE_AI_INDEX=0 = sync only).
-        if os.environ.get("JARVIS_DRIVE_AI_INDEX", "1") in ("0", "false", "False"):
+        if not env_flag("JARVIS_DRIVE_AI_INDEX", True):
             return
         try:
             from agents.core.local_docs import LocalDocsIndexer
@@ -1156,7 +1150,7 @@ class Orchestrator:
         """Master switch for LM Studio lifecycle control (chat + admin API + HUD).
         Off if EITHER the env var or the live ``llm.control_enabled`` setting is
         off, so any single kill signal wins. Both default on."""
-        return (_env_flag("JARVIS_LMSTUDIO_CONTROL", True)
+        return (env_flag("JARVIS_LMSTUDIO_CONTROL", True)
                 and _as_bool(self.get_setting("llm.control_enabled", True)))
 
     def _chat_control_enabled(self) -> bool:
@@ -1165,7 +1159,7 @@ class Orchestrator:
         ``llm.chat_control`` setting — lets you mute ambient detection while
         keeping the explicit admin buttons live."""
         return (self._control_master_enabled()
-                and _env_flag("JARVIS_LMSTUDIO_CHAT_CONTROL", True)
+                and env_flag("JARVIS_LMSTUDIO_CHAT_CONTROL", True)
                 and _as_bool(self.get_setting("llm.chat_control", True)))
 
     def _control_cognition(self, action: str) -> dict:
@@ -1196,6 +1190,139 @@ class Orchestrator:
         wrapped = wrap_memory([provenance_from_hit(h) for h in (hits or [])],
                               label="long-term memory (recall)")
         return wrapped.block
+
+    def _persona_prompt_block(self, agent_id: str) -> str:
+        """Persona prompt block for a single agent, gated by cognition settings."""
+        cog = getattr(self, "cognition", None)
+        if cog is None or not cog.sub_enabled("affect_enabled"):
+            return ""
+        module = cog.module("persona")
+        if module is None:
+            return ""
+        try:
+            return module.prompt_block(agent_id) or ""
+        except Exception:
+            logger.debug("persona prompt block skipped for %s", agent_id, exc_info=True)
+            return ""
+
+    async def _build_agent_turn_text(
+        self,
+        agent_id: str,
+        text: str,
+        *,
+        history: str = "",
+        plugin_block: str = "",
+        recall_block: str = "",
+        runtime_block: str = "",
+    ) -> str:
+        """Shared per-turn prompt ingredients before the agent prompt wrapper.
+
+        Both non-stream and stream turns feed this text into ``Agent.build_prompt``.
+        That keeps persona, memory context, plugin data, long-term recall and
+        runtime truth aligned across the two surfaces.
+        """
+        base = text
+        if history:
+            base = f"Context:\n{history}\n\nUser: {text}"
+
+        parts = []
+        persona_block = self._persona_prompt_block(agent_id)
+        if persona_block:
+            parts.append(persona_block)
+
+        agent_context = await self.memory.get_agent_context(agent_id)
+        if agent_context:
+            parts.append(f"Agent context: {agent_context}")
+
+        for block in (plugin_block, recall_block, runtime_block):
+            block = (block or "").strip()
+            if block:
+                parts.append(block)
+        parts.append(base)
+        return "\n\n".join(parts)
+
+    def _build_agent_prompt(self, agent, text: str, context: dict) -> str:
+        build_prompt = getattr(agent, "build_prompt", None)
+        if callable(build_prompt):
+            return build_prompt(text, context)
+        name = getattr(agent, "name", "agent")
+        return f"User said: {text}\nRespond as {name}."
+
+    def _agent_default_model(self, agent_id: str, agent) -> str:
+        default_model = getattr(agent, "default_model", None)
+        if callable(default_model):
+            return default_model()
+        if agent_id == "howard" and hasattr(self.llm_router, "get_howard_model"):
+            return self.llm_router.get_howard_model()
+        config = getattr(agent, "config", {}) or {}
+        return config.get("model", "google/gemma-4-31b-a4b")
+
+    def _agent_gen_params(self, agent, route_name: str) -> tuple[int, float]:
+        gen_params = getattr(agent, "_gen_params", None)
+        if callable(gen_params):
+            return gen_params(route_name)
+        max_tokens = self.get_setting("llm.max_tokens", 0)
+        if route_name == "local-deep":
+            max_tokens = self.get_setting("llm.deep_max_tokens", max_tokens)
+        return int(max_tokens or 0), float(self.get_setting("llm.temperature", 0.7))
+
+    def _nudge_persona_after_turn(self, agent_id: Optional[str], response: str) -> None:
+        """Small affect nudge after a completed LLM turn, gated by cognition."""
+        if not agent_id:
+            return
+        cog = getattr(self, "cognition", None)
+        if cog is None or not cog.sub_enabled("affect_enabled"):
+            return
+        module = cog.module("persona")
+        if module is None:
+            return
+        failed = bool(re.match(rf"^\[{re.escape(agent_id)} (error|timeout)\b", response or ""))
+        try:
+            module.nudge(
+                agent_id,
+                valence=-0.04 if failed else 0.03,
+                arousal=0.02,
+            )
+        except Exception:
+            logger.debug("persona nudge skipped for %s", agent_id, exc_info=True)
+
+    async def _complete_llm_turn(
+        self,
+        *,
+        text: str,
+        intent,
+        plugin_data: dict,
+        responses: dict,
+        synthesized: str,
+        responder_id: Optional[str],
+        route_name: str,
+        channel: str,
+        action_taken: str,
+        t_classify: int,
+        t_route: int,
+        t_plugin: int,
+        t_synthesize: int,
+    ) -> None:
+        """Single post-LLM seam: memory, checkpoint, logs, learning and trace."""
+        await self.memory.add_turn(self.session_id, "assistant", synthesized, agent_id=responder_id)
+        await self._maybe_checkpoint()
+        await asyncio.to_thread(self._log_session, text, intent, responses, synthesized)
+        await asyncio.to_thread(
+            self._record_interactions, text, responses, synthesized, route_name, channel
+        )
+        event = SecurityEvent(
+            event_type=SecurityEventType.LLM_CALL,
+            timestamp=time.time(),
+            findings=[],
+            content_preview=synthesized[:100],
+            action_taken=action_taken,
+        )
+        await asyncio.to_thread(self.audit.log, event)
+        self._nudge_persona_after_turn(responder_id, synthesized)
+        self._update_cognition(
+            text, intent, plugin_data, synthesized,
+            t_classify, t_route, t_plugin, t_synthesize,
+        )
 
     def _agent_call_timeout(self) -> float:
         """CDX-6: the per-agent LLM-call ceiling, in seconds.
@@ -1250,27 +1377,17 @@ class Orchestrator:
         plugin_block = self._format_plugin_data(plugin_data or {})
         recall_block = await self._recall_block(text)
         agent_timeout = self._agent_call_timeout()  # CDX-6: tunable, not a hard-coded 120s
+        runtime_block = self._runtime_state_block()
 
         async def _run_agent(agent_id: str) -> tuple[str, str, float]:
-            enriched_text = text
-            if history:
-                enriched_text = f"Context:\n{history}\n\nUser: {text}"
-            if plugin_block:
-                enriched_text = f"{plugin_block}{enriched_text}"
-            if recall_block:
-                enriched_text = f"{recall_block}{enriched_text}"
-            agent_context = await self.memory.get_agent_context(agent_id)
-            if agent_context:
-                enriched_text = f"Agent context: {agent_context}\n\n{enriched_text}"
-            # H21.2: prepend the persona block (gated; master OFF = no-op). Both
-            # prompt builders funnel through here (process() → _call_agents_parallel).
-            _cog = getattr(self, "cognition", None)
-            if _cog is not None and _cog.sub_enabled("affect_enabled"):
-                _pm = _cog.module("persona")
-                if _pm is not None:
-                    _pb = _pm.prompt_block(agent_id)
-                    if _pb:
-                        enriched_text = f"{_pb}\n\n{enriched_text}"
+            enriched_text = await self._build_agent_turn_text(
+                agent_id,
+                text,
+                history=history,
+                plugin_block=plugin_block,
+                recall_block=recall_block,
+                runtime_block=runtime_block,
+            )
             try:
                 resp = await asyncio.wait_for(
                     self.agents[agent_id].process(enriched_text, context),

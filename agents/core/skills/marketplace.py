@@ -5,7 +5,6 @@ Provides SQLite DB persistence, ZIP packaging/unpacking, and dynamic loader inte
 
 import io
 import logging
-import os
 import sqlite3
 import threading
 import time
@@ -73,7 +72,8 @@ REVIEW_REJECTED = "rejected"
 
 def _require_reviewed() -> bool:
     """When set, only skills moderated to 'approved' may be installed."""
-    return os.environ.get("JARVIS_REQUIRE_REVIEWED_SKILLS", "").lower() in ("1", "true", "yes")
+    from agents.core.env_config import env_flag
+    return env_flag("JARVIS_REQUIRE_REVIEWED_SKILLS")
 
 
 class SkillMarketplace:
