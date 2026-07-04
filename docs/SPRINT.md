@@ -7,14 +7,14 @@
 
 ## Sesiune curentă
 
-**Data:** 2026-07-04 (ORIZONT 26 P3.1 Preview Modes)
+**Data:** 2026-07-04 (ORIZONT 26 P3.3 Eval Baseline Persistence)
 **Lead agent / Conductor:** Codex
-**Obiectiv sesiune:** continue the ORIZONT 26 plan after P2.5; deliver P3.1 live preview modes as one focused PR with docs/status kept current.
-**Branch:** `codex-o26-p3-1-preview-modes`
+**Obiectiv sesiune:** continue the ORIZONT 26 plan after P2.5; keep P3.1 merged and deliver the independent P3.3 eval-baseline persistence branch.
+**Branch:** `codex-o26-p3-3-eval-baseline-store`
 
-**Scope decision (2026-07-04):** O26-P0, P1.1, P2.1, P2.2, P2.3, P2.4, and P2.5 are now merged. The
-next unblocked plan item is O26-P3.1 live preview modes. Keep it one item = one PR: wire the designed
-preview surfaces honestly, and record owner-key/plugin blockers instead of stubbing success.
+**Scope decision (2026-07-04):** O26-P0, P1.1, P2.1, P2.2, P2.3, P2.4, P2.5, and P3.1 are merged.
+The current branch takes O26-P3.3 only: make the scheduled
+companion eval baseline compare real by persisting the DatasetStore through GitHub Actions cache.
 
 **Previous session:** O26-P0.1 golden harness was merged via #496, with P0.2–P0.7 already completed on
 main by parallel agents.
@@ -31,7 +31,8 @@ main by parallel agents.
 | O26-P2.3 / dormant disposition | `codex-o26-p2-3-dormant-disposition` | #502 | ✅ merged | Codex | Ensemble roster + learning proof + profile extractor parked |
 | O26-P2.4 / Product Posture | `codex-o26-p2-4-product-posture` | #503 | ✅ merged | Codex | Settings-backed named posture, wave 1 only |
 | O26-P2.5 / Install Smoke Path | `codex-o26-p2-5-install-smoke` | #504 | ✅ merged | Codex | ~30s boot + `/readyz` + faked turn |
-| O26-P3.1 / Preview Modes | `codex-o26-p3-1-preview-modes` | #505 | 🟢 CI green | Codex | 6 live preview modes + honest blockers |
+| O26-P3.1 / Preview Modes | `codex-o26-p3-1-preview-modes` | #505 | ✅ merged | Codex | 6 live preview modes + honest blockers |
+| O26-P3.3 / Eval Baseline Store | `codex-o26-p3-3-eval-baseline-store` | #506 | ✅ merged | Codex | Cache-backed companion eval DatasetStore |
 
 Status legend: ⏳ in progress · 🟡 draft PR · 🟢 CI green · ✅ merged · 🔴 conflict
 
@@ -39,7 +40,9 @@ Status legend: ⏳ in progress · 🟡 draft PR · 🟢 CI green · ✅ merged �
 
 ## Fișiere blocate (în PR activ)
 
-Current P3.1 branch owns only the preview-mode files plus status/docs touched for verified scope.
+`codex-o26-p3-3-eval-baseline-store` currently owns only:
+`.github/workflows/eval-nightly.yml`, `agents/core/observability/companion_eval.py`,
+`tests/test_companion_eval_ci_gate.py`, and status docs.
 
 Un fișier blocat nu se atinge de alt agent fără confirmare utilizator.
 
@@ -53,10 +56,11 @@ Current order:
   2. O26-P2.3 dormant-module disposition (#502) ✅
   3. O26-P2.4 Product Posture (#503) ✅
   4. O26-P2.5 Install Smoke Path (#504) ✅
-  5. O26-P3.1 Preview Modes (#505)
+  5. O26-P3.1 Preview Modes (#505) ✅
+  6. O26-P3.3 Eval Baseline Store (#506) ✅
 ```
 
-Current backlog item: **O26-P3.1 live preview modes** is implemented in #505; next up after merge is the P3.3 eval baseline store branch or P3.2 docs/tests reconciliation.
+Current backlog item: **O26-P3.3 eval baseline persistence** is delivered in #506; next unblocked slice after merge is P3.2 docs/tests reconciliation or the next visible product-proof item.
 
 ---
 
@@ -132,7 +136,7 @@ Generalizează reflecția nocturnă din *rezumă-ziua* în *pre-raționează-pen
 - [x] Branch pushed / PR #504 opened
 - [x] GitHub Actions green; PR merged
 
-### ORIZONT 26 P3.1 — DELIVERED IN #505
+### ORIZONT 26 P3.1 — MERGED IN #505
 
 - [x] `main` synced after #504 merge
 - [x] Branch created from current main
@@ -142,7 +146,20 @@ Generalizează reflecția nocturnă din *rezumă-ziua* în *pre-raționează-pen
 - [x] Focused verification green
 - [x] Branch pushed / PR #505 opened
 - [x] GitHub Actions green, including HUD bundle freshness and Windows test lanes
-- [ ] PR merged
+- [x] PR merged
+
+### ORIZONT 26 P3.3 — DELIVERED IN #506
+
+- [x] `main` synced after #505 merge
+- [x] Branch created from current main
+- [x] Red tests for explicit eval store root + workflow cache wiring
+- [x] `companion_eval --ci-gate --store-root` writes to an explicit DatasetStore
+- [x] Eval nightly restores/saves the DatasetStore through pinned `actions/cache`
+- [x] `BACKLOG.md` + `STATUS.md` updated from verified scope
+- [x] Focused companion eval verification green
+- [x] Branch pushed / PR #506 opened
+- [x] Rebased after #505 merge and pushed
+- [x] GitHub Actions green; PR merged
 
 ### Wave 0 — COMPLET ✅
 
@@ -211,6 +228,12 @@ Generalizează reflecția nocturnă din *rezumă-ziua* în *pre-raționează-pen
 [O26-P3.1] Implemented six-mode live gates, `/plugins.configured`, `/status.channels`, Build/Comms/Finance data ingestion, and plugin-gated Health/Knowledge/Family empty states
 [Verify]   P3.1 focused `/plugins` + `/status` backend checks green; preview-mode Vitest suite green (5 passed)
 [Verify]   P3.1 CI green after refreshing the committed HUD V2 bundle and matching Linux Vite output
+[PR]       #505 merged
+[ORIZONT 26] 2026-07-04 — started O26-P3.3 on `codex-o26-p3-3-eval-baseline-store`
+[O26-P3.3] Red tests: CLI ignored explicit eval-store root; nightly workflow had no cache-backed baseline persistence
+[O26-P3.3] Implemented `--store-root` / `JARVIS_EVAL_STORE`, summary store-root reporting, and pinned `actions/cache/restore` + `save` with run-id keys and dataset/source restore prefix
+[Verify]   P3.3 companion eval suites green: 19 passed; CLI store-root gate exits 0; ruff + py_compile clean
+[Verify]   P3.3 rebased cleanly after #505; STATUS counter synced to ~3,600
 ```
 
 ---

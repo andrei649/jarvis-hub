@@ -257,6 +257,7 @@ def _summary_lines(result: dict) -> list[str]:
         "## Companion Eval Gate",
         f"- Dataset: `{result['dataset']}` v{result.get('version', 'n/a')}",
         f"- Run: `{result.get('run_id', 'n/a')}`",
+        f"- Store: `{result.get('store_root', 'n/a')}`",
         f"- Score: {result['score']:.4f} ({result['passed']}/{result['total']} passed)",
         f"- Minimum score: {result['min_score']:.4f}",
         f"- Self-check failures: {result['self_check_failures']}",
@@ -351,6 +352,7 @@ def run_ci_gate(
         "passed": result["passed"],
         "total": result["total"],
         "min_score": float(min_score),
+        "store_root": str(store.root),
         "failed_cases": failed_cases,
         "self_check_failures": len(failures),
         "baseline_compare": comparison,
@@ -385,8 +387,10 @@ def _main(argv: list[str]) -> int:
         except (TypeError, ValueError):
             print(json.dumps({"ok": False, "error": "invalid --min-score"}, ensure_ascii=False))
             return 2
+        store_root = _arg_value(argv, "--store-root", os.getenv("JARVIS_EVAL_STORE"))
+        store = DatasetStore(root=store_root) if store_root else None
         summary_path = _arg_value(argv, "--summary", os.getenv("GITHUB_STEP_SUMMARY"))
-        result = run_ci_gate(min_score=min_score, summary_path=summary_path)
+        result = run_ci_gate(store=store, min_score=min_score, summary_path=summary_path)
         print(json.dumps(result, ensure_ascii=False, indent=2))
         return 0 if result["ok"] else 1
     if "--self-check" in argv:
@@ -399,7 +403,10 @@ def _main(argv: list[str]) -> int:
     if "--seed" in argv:
         print(json.dumps(seed_dataset(), ensure_ascii=False))
         return 0
-    print("usage: companion_eval [--self-check | --seed | --ci-gate [--min-score N] [--summary PATH]]")
+    print(
+        "usage: companion_eval "
+        "[--self-check | --seed | --ci-gate [--min-score N] [--store-root PATH] [--summary PATH]]"
+    )
     return 2
 
 
