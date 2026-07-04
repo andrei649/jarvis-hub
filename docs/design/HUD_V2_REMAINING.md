@@ -70,9 +70,12 @@ with plugin-configured checks instead of seeded success. Still open:
   2026-07-04):** `shell.tsx` renders strict-local and mic-muted badges from the live trust payload.
 
 ## 5. Settings / preferences UI
-- The design‑only `TweaksPanel` was dropped. Accent + language persist (palette toggles), but
+- ~~The design‑only `TweaksPanel` was dropped. Accent + language persist (palette toggles), but
   **look / density / motion / scanline / dotgrid** aren't user‑changeable in‑app (defaults only) —
-  add a small settings menu (or a gated tweaks panel) that changes + persists them.
+  add a small settings menu (or a gated tweaks panel) that changes + persists them.~~
+  ✅ **DONE (2026-07-04, #523):** the command palette now exposes look, density
+  (compact/normal/comfy), motion (lively/calm), scanline, and dotgrid controls; all are
+  client-side HUD preferences persisted by `App`.
 
 ## 6. Toolchain / CI hardening
 - ~~**CI frontend‑build + stale‑bundle guard**~~ ✅ **EXISTS** — the `hud-v2-build` job in
@@ -136,7 +139,7 @@ send the admin token (`actA`). +7 frontend tests (19 total).
 **Still open (the tail of TASK‑2, re‑verified 2026‑07‑04):** O26-P3.1 closes the §3 plugin-gated
 base wiring in #505 (Build/Comms/Finance/Health/Knowledge/Family). Remaining:
 owner live-data/plugin setup (bank/broker/quotes, Apple Health bridge, websearch backend, WhatsApp
-bridge/frigga live data), channel inbox transport, preferences/tweaks UI, and §6 self-hosted fonts.
+bridge/frigga live data), channel inbox transport, and §6 self-hosted fonts.
 Estimated 1–2 PRs after #505 for owner-gated/plugin work, plus one small frontend-depth PR for the
 remaining local controls above.
 *Since‑closed items previously listed here:* CI stale‑bundle guard ✅ (`hud-v2-build` in `ci.yml`),
@@ -144,7 +147,7 @@ remaining local controls above.
 BUG‑17 audit‑verify Trust chip ✅ (`modes.tsx:117-165` renders the live
 `GET /api/security/audit/verify` verdict), the 0.39 saved‑watchlist `WatchlistPanel` ✅, and
 per-panel LIVE/SEED chips ✅ (58/58 Console cards declare a `PanelChip` signal). Data Spaces
-assign/unassign controls ✅. Rooms selected-history drawer ✅. Capability issue/check UI ✅. Current-mesh task fan ✅. O26-P3.2 adds a Vitest reconciliation guard so this document cannot
+assign/unassign controls ✅. Rooms selected-history drawer ✅. Capability issue/check UI ✅. Current-mesh task fan ✅. Preferences/tweaks UI ✅. O26-P3.2 adds a Vitest reconciliation guard so this document cannot
 re-list shipped TTS/mic/cognition/trust or Console controls as missing.
 
 ---

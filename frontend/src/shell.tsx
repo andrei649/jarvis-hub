@@ -242,7 +242,7 @@ function Palette({ open, onClose, onMode, setAccent, setLang, onAmbient, ui, t }
   const [sel,setSel]=useState(0);
   const inputRef=useRef(null);
   useEffect(()=>{ if(open){ setQ(''); setSel(0); setTimeout(()=>inputRef.current&&inputRef.current.focus(),30);} },[open]);
-  // ui = { density, setDensity, scanline, setScanline, dotgrid, setDotgrid }
+  // ui = { look, setLook, density, setDensity, motion, setMotion, scanline, setScanline, dotgrid, setDotgrid }
   // Client-only display prefs (persisted to localStorage by App); toggled here.
   const u = ui || {};
   const cmds = useMemo(()=>[
@@ -272,12 +272,17 @@ function Palette({ open, onClose, onMode, setAccent, setLang, onAmbient, ui, t }
       { name:'Toggle language EN / RO', act:()=>setLang(l=>l==='en'?'ro':'en'), icon:'globe' },
     ]},
     { g:'Display', items:[
+      { name:'Look · '+(u.look==='obsidian'||!u.look?'Obsidian ✓':'Obsidian'), act:()=>u.setLook&&u.setLook('obsidian'), icon:'bolt' },
+      { name:'Look · '+(u.look==='graphite'?'Graphite ✓':'Graphite'), act:()=>u.setLook&&u.setLook('graphite'), icon:'bolt' },
       { name:'Density · '+(u.density==='compact'?'Compact ✓':'Compact'), act:()=>u.setDensity&&u.setDensity('compact'), icon:'bolt' },
       { name:'Density · '+(u.density==='normal'||!u.density?'Normal ✓':'Normal'), act:()=>u.setDensity&&u.setDensity('normal'), icon:'bolt' },
+      { name:'Density · '+(u.density==='comfy'?'Comfy ✓':'Comfy'), act:()=>u.setDensity&&u.setDensity('comfy'), icon:'bolt' },
+      { name:'Motion · '+(u.motion==='lively'||!u.motion?'Lively ✓':'Lively'), act:()=>u.setMotion&&u.setMotion('lively'), icon:'bolt' },
+      { name:'Motion · '+(u.motion==='calm'?'Calm ✓':'Calm'), act:()=>u.setMotion&&u.setMotion('calm'), icon:'bolt' },
       { name:'Scanline · '+(u.scanline==='off'?'On':'Off'), act:()=>u.setScanline&&u.setScanline(u.scanline==='off'?'on':'off'), icon:'bolt' },
       { name:'Dot grid · '+(u.dotgrid==='on'?'Off':'On'), act:()=>u.setDotgrid&&u.setDotgrid(u.dotgrid==='on'?'off':'on'), icon:'bolt' },
     ]},
-  ],[onMode,setAccent,setLang,onAmbient,u.density,u.scanline,u.dotgrid]);
+  ],[onMode,setAccent,setLang,onAmbient,u.look,u.density,u.motion,u.scanline,u.dotgrid]);
   const flat = useMemo(()=>{
     const f=[]; cmds.forEach(grp=>grp.items.forEach(it=>{ if(!q||it.name.toLowerCase().includes(q.toLowerCase())) f.push({...it,g:grp.g}); })); return f;
   },[cmds,q]);
