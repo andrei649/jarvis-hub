@@ -25,6 +25,7 @@ describe('O26-P3.2 HUD remaining-work reconciliation', () => {
     expect(missingControls).not.toMatch(/LM Studio model controls/i);
     expect(missingControls).not.toMatch(/heartbeat start\/stop\/run/i);
     expect(missingControls).not.toMatch(/sandbox\s+execute/i);
+    expect(missingControls).not.toMatch(/Data Spaces assign\/unassign/i);
   });
 
   it('pins the source wiring that makes those doc closures true', () => {
@@ -38,6 +39,8 @@ describe('O26-P3.2 HUD remaining-work reconciliation', () => {
     expect(gap).toContain("apiPost(`${base}/rollback`");
     expect(gap).toContain("apiPost(`${base}/commit`");
     expect(gap).toContain("apiPost('/api/secrets/broker'");
+    expect(gap).toContain("apiPost('/api/memory/spaces/assign'");
+    expect(gap).toContain("apiPost('/api/memory/spaces/unassign'");
     expect(gap).toContain("apiPost('/sandbox/execute'");
     expect(gap).toContain("act('/heartbeat/' + encodeURIComponent(id) + '/' + op");
     expect(gap).toContain("actA('/api/llm/load'");
