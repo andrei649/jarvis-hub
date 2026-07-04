@@ -14,7 +14,7 @@
 
 O26 Phase 0, P1.1, P2.1, P2.2, P2.3, P2.4, and P2.5 are complete on `main`.
 O26-P3.1 preview modes is merged in #505; O26-P3.3 eval-baseline persistence is delivered in #506.
-O26-P3.2 HUD punch-list reconciliation is in progress on `codex-o26-p3-2-hud-reconciliation`.
+O26-P3.2 HUD punch-list reconciliation is open as draft PR #507.
 
 | Item | Status | Verified result |
 |------|--------|-----------------|
@@ -26,7 +26,7 @@ O26-P3.2 HUD punch-list reconciliation is in progress on `codex-o26-p3-2-hud-rec
 | O26-P2.5 install smoke | ✅ merged (#504) | `scripts/install_smoke.py` provides the fast install path: real orchestrator boot with one fake local LLM backend, `/readyz` check, deterministic chat turn; `--dev` runs the full pytest suite after the smoke succeeds. |
 | O26-P3.1 live preview modes | ✅ merged (#505) | The six preview modes now feed LIVE/SEED mode keys: Build reads workflows/marketplace/sandbox; Comms reads rooms plus registered Discord/Slack channel status and renders an honest empty state; Finance reads saved watchlist/payments while refusing mock balances; Health/Knowledge/Family require configured Apple Health/websearch/WhatsApp plugins. `/plugins` now reports runtime `configured`; `/status` reports channels. Owner live-data/plugin setup and self-hosted fonts remain. |
 | O26-P3.3 eval baseline persistence | ✅ delivered (#506) | `.github/workflows/eval-nightly.yml` restores/saves the companion eval `DatasetStore` via pinned `actions/cache/{restore,save}` and an explicit `JARVIS_EVAL_STORE`; `companion_eval --ci-gate --store-root` records to that store, so baseline compare is no longer inert after the first successful scheduled/manual run. |
-| O26-P3.2 HUD punch-list reconciliation | 🟡 current branch | `docs/design/HUD_V2_REMAINING.md` now distinguishes shipped controls from real remaining work, and `hud-p3-2-reconciliation.test.ts` pins that shipped TTS/mic/cognition/trust and Console controls are not re-listed as missing. |
+| O26-P3.2 HUD punch-list reconciliation | 🟡 draft PR #507 | `docs/design/HUD_V2_REMAINING.md` now distinguishes shipped controls from real remaining work, and `hud-p3-2-reconciliation.test.ts` pins that shipped TTS/mic/cognition/trust and Console controls are not re-listed as missing. |
 | Local verification | ✅ targeted green | P2.2 focused sweep was 33 passed before #501 merge; P2.3 red/green tests (+4) plus ensemble, governed learning, persona, and memory-store suites are 48 passed before #502 merge. P2.4 focused posture/onboarding/security/support/lifespan/settings sweep was 39 passed locally; PR #503 full CI matrix green before merge. P2.5 smoke tests were green, `python scripts/install_smoke.py --json` exited 0 locally, and PR #504 full CI matrix was green before merge. P3.1 focused checks and full PR CI were green. P3.3 companion eval suites are green (19 passed), CLI store-root gate exits 0, and ruff/py_compile are clean. P3.2 red doc-guard is now green locally. |
 
 ---
