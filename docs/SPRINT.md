@@ -7,14 +7,14 @@
 
 ## Sesiune curentă
 
-**Data:** 2026-07-04 (ORIZONT 26 P3.3 Eval Baseline Persistence)
+**Data:** 2026-07-04 (ORIZONT 26 P3.2 HUD Punch-List Reconciliation)
 **Lead agent / Conductor:** Codex
-**Obiectiv sesiune:** continue the ORIZONT 26 plan after P2.5; keep P3.1 merged and deliver the independent P3.3 eval-baseline persistence branch.
-**Branch:** `codex-o26-p3-3-eval-baseline-store`
+**Obiectiv sesiune:** continue the ORIZONT 26 plan after P3.3; reconcile HUD_V2_REMAINING against shipped HUD controls and pin the remaining honest tail.
+**Branch:** `codex-o26-p3-2-hud-reconciliation`
 
-**Scope decision (2026-07-04):** O26-P0, P1.1, P2.1, P2.2, P2.3, P2.4, P2.5, and P3.1 are merged.
-The current branch takes O26-P3.3 only: make the scheduled
-companion eval baseline compare real by persisting the DatasetStore through GitHub Actions cache.
+**Scope decision (2026-07-04):** O26-P0, P1.1, P2.1, P2.2, P2.3, P2.4, P2.5, P3.1, and P3.3 are merged.
+The current branch takes O26-P3.2 reconciliation only: update stale HUD remaining-work claims,
+add a Vitest guard, and leave real local/owner blockers open.
 
 **Previous session:** O26-P0.1 golden harness was merged via #496, with P0.2–P0.7 already completed on
 main by parallel agents.
@@ -33,6 +33,7 @@ main by parallel agents.
 | O26-P2.5 / Install Smoke Path | `codex-o26-p2-5-install-smoke` | #504 | ✅ merged | Codex | ~30s boot + `/readyz` + faked turn |
 | O26-P3.1 / Preview Modes | `codex-o26-p3-1-preview-modes` | #505 | ✅ merged | Codex | 6 live preview modes + honest blockers |
 | O26-P3.3 / Eval Baseline Store | `codex-o26-p3-3-eval-baseline-store` | #506 | ✅ merged | Codex | Cache-backed companion eval DatasetStore |
+| O26-P3.2 / HUD Reconciliation | `codex-o26-p3-2-hud-reconciliation` | #507 | 🟡 draft PR | Codex | Stale punch-list claims guarded by Vitest |
 
 Status legend: ⏳ in progress · 🟡 draft PR · 🟢 CI green · ✅ merged · 🔴 conflict
 
@@ -40,9 +41,9 @@ Status legend: ⏳ in progress · 🟡 draft PR · 🟢 CI green · ✅ merged �
 
 ## Fișiere blocate (în PR activ)
 
-`codex-o26-p3-3-eval-baseline-store` currently owns only:
-`.github/workflows/eval-nightly.yml`, `agents/core/observability/companion_eval.py`,
-`tests/test_companion_eval_ci_gate.py`, and status docs.
+`codex-o26-p3-2-hud-reconciliation` currently owns only:
+`docs/design/HUD_V2_REMAINING.md`, `frontend/src/test/hud-p3-2-reconciliation.test.ts`,
+and status docs.
 
 Un fișier blocat nu se atinge de alt agent fără confirmare utilizator.
 
@@ -58,9 +59,11 @@ Current order:
   4. O26-P2.5 Install Smoke Path (#504) ✅
   5. O26-P3.1 Preview Modes (#505) ✅
   6. O26-P3.3 Eval Baseline Store (#506) ✅
+  7. O26-P3.2 HUD Punch-List Reconciliation (#507)
 ```
 
-Current backlog item: **O26-P3.3 eval baseline persistence** is delivered in #506; next unblocked slice after merge is P3.2 docs/tests reconciliation or the next visible product-proof item.
+Current backlog item: **O26-P3.2 HUD punch-list reconciliation**. This is the docs/tests slice only;
+remaining local UI controls stay in BACKLOG instead of being silently treated as complete.
 
 ---
 
@@ -161,6 +164,17 @@ Generalizează reflecția nocturnă din *rezumă-ziua* în *pre-raționează-pen
 - [x] Rebased after #505 merge and pushed
 - [x] GitHub Actions green; PR merged
 
+### ORIZONT 26 P3.2 — ÎN PROGRES
+
+- [x] `main` synced after #506 merge
+- [x] Branch created from current main
+- [x] Red Vitest guard for stale HUD remaining-work claims
+- [x] HUD_V2_REMAINING reconciled against actual shipped controls
+- [x] `BACKLOG.md` + `STATUS.md` updated from verified scope
+- [x] Focused frontend verification green
+- [x] Branch pushed / PR opened
+- [ ] GitHub Actions green; PR merged
+
 ### Wave 0 — COMPLET ✅
 
 - [x] `BACKLOG.md` actualizat (H12.1 ✅, H12.9 ✅, H12.10 ✅)
@@ -234,6 +248,12 @@ Generalizează reflecția nocturnă din *rezumă-ziua* în *pre-raționează-pen
 [O26-P3.3] Implemented `--store-root` / `JARVIS_EVAL_STORE`, summary store-root reporting, and pinned `actions/cache/restore` + `save` with run-id keys and dataset/source restore prefix
 [Verify]   P3.3 companion eval suites green: 19 passed; CLI store-root gate exits 0; ruff + py_compile clean
 [Verify]   P3.3 rebased cleanly after #505; STATUS counter synced to ~3,600
+[PR]       #506 merged
+[ORIZONT 26] 2026-07-04 — started O26-P3.2 on `codex-o26-p3-2-hud-reconciliation`
+[O26-P3.2] Red test: HUD_V2_REMAINING still claimed shipped TTS/mic/cognition/trust and Console controls were missing
+[O26-P3.2] Reconciled HUD_V2_REMAINING; remaining tail is Data Spaces assign/unassign, capability grants/check UI, room history drawer, current-mesh task fan, preferences/tweaks UI, fonts, and owner live-data/plugin setup
+[Verify]   P3.2 focused frontend checks green: 19 passed; typecheck, diff-check, and status-sync clean
+[PR]       #507 opened as draft
 ```
 
 ---

@@ -14,17 +14,21 @@
   shape‑mismatch fixes as found.
 
 ## 1. Make real‑vs‑mock visible
-- Surface the loader's existing `live` flag as a **● LIVE / ○ SEED** indicator (top bar + per‑panel),
-  so it's obvious when a panel is showing seed data because its fetch failed.
+- ~~Surface the loader's existing `live` flag as a **● LIVE / ○ SEED** indicator (top bar + per‑panel).~~
+  ✅ **DONE (verified 2026-07-04):** mode-level `LiveSourceChip` plus per-panel `PanelChip`
+  make LIVE/SEED visible, and `panel-chip-coverage.test.ts` pins every Console card.
 
 ## 2. Deepen the P4c Console panels (read/basic → full)
-- **Settings DB**: read‑only category tree → full inline editor (toggle/slider/select/text per key,
-  save `PUT /api/admin/settings/{cat}`). Reference: v1 `admin.js` `GlobalConfigPage`.
-- **Prompt versions**: history list → full **A/B + diff + rollback + commit + preview** UI
-  (`/api/admin/prompts/{id}/*`).
-- **Data Spaces**: list → create / assign / unassign CRUD (`/api/memory/spaces*`).
-- **Secrets**: list + delete → add a store form. **Capabilities**: add a grants list + check UI.
-- **Rooms**: list → create + open history + send with `@mentions`.
+- ✅ **Settings DB**: full inline editor (toggle/slider/select/text per key) saves through
+  `PUT /api/admin/settings/{cat}` in `SettingsPanel`.
+- ✅ **Prompt versions**: `PromptsPanel` has A/B, diff, rollback, edit, preview, and commit controls
+  over `/api/admin/prompts/{id}/*`.
+- 🟡 **Data Spaces**: list/create/delete are live in `DataSpacesPanel`; assign/unassign controls
+  for `/api/memory/spaces/{assign,unassign}` remain open.
+- 🟡 **Secrets / Capabilities**: the secret store form is live in `SecretsPanel`, and capability
+  token issue is live in `CapabilitiesPanel`; a grants list/check UI remains open.
+- 🟡 **Rooms**: create + send with `@mentions` are live in `RoomsPanel`; an open history drawer over
+  `GET /api/rooms/{id}/history` remains open.
 
 ## 3. Per‑mode live‑wiring depth
 `api/live.ts` wires the headline data for Memory / Observe / Interop / Autonomy / Trust / Admin.
@@ -47,17 +51,19 @@ with plugin-configured checks instead of seeded success. Still open:
 
 ## 4. Cockpit / signature interactions
 - **Network task‑fan**: v2 `NetworkBrain` doesn't render per‑agent task dots from `/tasks` (v1 did) —
-  add the task layer + live collab edges.
-- **Per‑message TTS** (🔊 → `/tts`) + **browser mic / SpeechRecognition** input + voice auto‑speak
-  (v1 had these; dropped in the port).
+  the old task fan exists in `network.tsx`, but the current cockpit renders `NeuralMesh`; integrate
+  live `/tasks` dots into the current mesh or retire the stale `NetworkBrain`.
+- ~~**Per‑message TTS** (🔊 → `/tts`) + **browser mic / SpeechRecognition** input + voice auto‑speak.~~
+  ✅ **DONE (verified 2026-07-04):** `cockpit.tsx` renders per-message replay via `playTts`,
+  `InputBar` toggles the `useVoice` loop, and `app.tsx` wires mic → local STT → turn → speak.
 - ~~**Sentence-level TTS streaming** (H5.16)~~ ✅ **DONE (verified 2026‑07‑02)** — `voice.ts`
   `speak()` tries `streamTts` first (framed chunks played back-to-back, `voice.ts:206`) and falls
   back to whole-reply `/tts` on 409 when the server opt-in is off. *Remaining H5.16 tail lives in
   BACKLOG (synthesize mid-stream; browser wake-word).*
-- **Streaming cognition**: P2 pulls the `/api/cognition` snapshot after the turn; upgrade to a real
-  **SSE** stream (`/api/cognition/stream`, a backend addition) with live scores + redactions.
-- **Strict‑local / mic trust badge** (H12.10): wire `/api/trust/status` into the top bar (endpoint
-  exists; topbar edit deferred).
+- ~~**Streaming cognition**: upgrade to a real SSE stream.~~ ✅ **DONE (verified 2026-07-04):**
+  `app.tsx` subscribes to `/api/cognition/stream` and maps cognition frames into the cockpit trace.
+- ~~**Strict-local / mic trust badge** (H12.10).~~ ✅ **DONE (verified
+  2026-07-04):** `shell.tsx` renders strict-local and mic-muted badges from the live trust payload.
 
 ## 5. Settings / preferences UI
 - The design‑only `TweaksPanel` was dropped. Accent + language persist (palette toggles), but
@@ -78,7 +84,8 @@ with plugin-configured checks instead of seeded success. Still open:
   tighten to real per‑module imports + TS types over time.
 
 ## 7. Backend additions (from the plan §6)
-- `GET /api/cognition/stream` (SSE) + provenance on the chat stream.
+- ~~`GET /api/cognition/stream` (SSE)~~ ✅ **DONE** and consumed by the cockpit. Provenance on the
+  chat stream is already surfaced via the existing provenance chip/modal.
 - ~~`GET /api/analytics/locality`~~ ✅ **DONE 2026‑06‑10** — computes %‑local from the run‑history route field; HUD Trust meter prefers it, falls back to strict‑local proof, never fabricates a split (`local_pct` null until real routed runs exist).
 - Howard ingestion API — only if we ever surface the digital twin (currently `NOT_IN_HUD`).
 
@@ -98,15 +105,15 @@ The 2026‑06‑09 backend waves (PR #178/#180) shipped new surfaces **with no H
 the still‑open depth items above. Snapshot: backend ≈299 routes; HUD v2 actively calls ~50, partially
 ~10; **~37 write/recent endpoints lack any UI control**. New since the 2026‑06‑05 plan:
 
-- `GET /api/cognition/stream` (SSE, NTH‑1 ✅ backend) — cockpit still polls the static snapshot (§4).
+- `GET /api/cognition/stream` (SSE, NTH‑1 ✅ backend) — ✅ consumed by the cockpit trace.
 - Sender pairing gate (H12.19, 4 routes) — not in Comms.
 - Cloud auth‑profile rotation (H12.20, `GET /api/llm/auth-profiles`) — not in Admin.
 - Transcript → governed tasks (H12.25, `POST /api/transcripts/ingest`) — no surface.
 - A2A approval inbox (H16.2 `/api/a2a/inbox*`), payments lifecycle actions (H16.3
   approve/reject/settle), marketplace review (H12.12) — read‑only or absent in Trust/Build.
-- Still missing interactive controls (carried from §2–§4): preference‑learning suggestions,
-  reflection run/status, bench promotion (`/learning/promote`), heartbeat start/stop/run, sandbox
-  execute, prompt rollback/commit, Data Spaces CRUD, secrets store form, LM Studio model controls.
+- Still missing interactive controls (carried from §2–§5): preference-learning suggestions,
+  Data Spaces assign/unassign, capability grants/check UI, room history drawer, current-mesh task fan,
+  in-app look/density/motion/texture tweaks, and self-hosted fonts.
 
 **Conclusion:** coverage gate still green (nothing silently dropped), but the *depth* gap regrew.
 Tracked as **TASK‑2** in `BACKLOG.md`; estimated 3–5 PRs (~2–3 weeks part‑time) to "nothing missed".
@@ -126,13 +133,17 @@ send the admin token (`actA`). +7 frontend tests (19 total).
 **Still open (the tail of TASK‑2, re‑verified 2026‑07‑04):** O26-P3.1 closes the §3 plugin-gated
 base wiring in #505 (Build/Comms/Finance/Health/Knowledge/Family). Remaining:
 owner live-data/plugin setup (bank/broker/quotes, Apple Health bridge, websearch backend, WhatsApp
-bridge/frigga live data), channel inbox transport, and §6 self-hosted fonts.
-Estimated 1–2 PRs after #505, depending on owner credential/hardware readiness.
+bridge/frigga live data), channel inbox transport, Data Spaces assign/unassign, room history drawer,
+current-mesh task fan, preferences/tweaks UI, and §6 self-hosted fonts.
+Estimated 1–2 PRs after #505 for owner-gated/plugin work, plus one small frontend-depth PR for the
+remaining local controls above.
 *Since‑closed items previously listed here:* CI stale‑bundle guard ✅ (`hud-v2-build` in `ci.yml`),
 §7 locality endpoint ✅ (`GET /api/analytics/locality`, consumed in `app.tsx`/`shell.tsx`), and the
 BUG‑17 audit‑verify Trust chip ✅ (`modes.tsx:117-165` renders the live
 `GET /api/security/audit/verify` verdict), the 0.39 saved‑watchlist `WatchlistPanel` ✅, and
-per-panel LIVE/SEED chips ✅ (58/58 Console cards declare a `PanelChip` signal).
+per-panel LIVE/SEED chips ✅ (58/58 Console cards declare a `PanelChip` signal). O26-P3.2 adds a
+Vitest reconciliation guard so this document cannot re-list shipped TTS/mic/cognition/trust or
+Console controls as missing.
 
 ---
 *Parity gate (`tests/test_hud_v2_parity.py`) tracks all routes → every one is mapped to a v2
