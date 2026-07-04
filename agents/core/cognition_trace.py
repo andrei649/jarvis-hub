@@ -112,6 +112,32 @@ def update_cognition(orch, text, intent, plugin_data, synthesized,
                 "scoring": scoring,
                 "full_trace": trace,
             }
+            try:
+                first_agent = agents_selected[0] if agents_selected else ""
+                agent_obj = orch.agents.get(first_agent) if first_agent else None
+                soul_entry = None
+                soul_versions = getattr(orch, "soul_versions", None)
+                if soul_versions is not None and first_agent:
+                    try:
+                        soul_entry = soul_versions.current(first_agent)
+                    except Exception:
+                        soul_entry = None
+                soul_text = ""
+                if soul_entry:
+                    soul_text = soul_entry.get("content", "") or ""
+                    trace_dict["soul_version"] = soul_entry.get("version")
+                    trace_dict["soul_hash"] = soul_entry.get("hash")
+                elif agent_obj is not None:
+                    soul_text = (getattr(agent_obj, "soul", {}) or {}).get("content", "")
+                    trace_dict["soul_version"] = "file"
+                if soul_text:
+                    from .observability.quality import persona_profile_from_soul
+                    trace_dict["persona_profile"] = persona_profile_from_soul(
+                        soul_text,
+                        version=trace_dict.get("soul_version"),
+                    )
+            except Exception:
+                logger.debug("persona profile extraction skipped", exc_info=True)
             # H10.23: score the request live and attach it to the trace.
             if getattr(orch, "quality", None) is not None:
                 try:

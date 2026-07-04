@@ -7,13 +7,13 @@
 
 ## Sesiune curentă
 
-**Data:** 2026-07-04 (ORIZONT 26 P3.4 Mobile Approval Queue)
+**Data:** 2026-07-04 (ORIZONT 26 P3.5 Persona Rail + Caring Follow-ups)
 **Lead agent / Conductor:** Codex
-**Obiectiv sesiune:** continue the ORIZONT 26 plan after P3.2/P3.3; ship the phone-native approval queue over the unified autonomy funnel.
-**Branch:** `codex-o26-p3-4-mobile-approval-queue`
+**Obiectiv sesiune:** continue the ORIZONT 26 plan after P3.4; ship the Q2 persona-consistency rail and Q3 caring follow-ups without adding new capture.
+**Branch:** `codex-o26-p3-5-persona-caring-brief`
 
-**Scope decision (2026-07-04):** O26-P0, P1.1, P2.1, P2.2, P2.3, P2.4, P2.5, P3.1, P3.2, and P3.3 are merged.
-The current branch takes O26-P3.4 only: mobile Approvals tab + admin-token settings + parity/docs.
+**Scope decision (2026-07-04):** O26-P0, P1.1, P2.1, P2.2, P2.3, P2.4, P2.5, P3.1, P3.2, P3.3, and P3.4 are merged.
+The current branch takes O26-P3.5 only: persona scoring at the live quality seam + caring follow-ups in existing brief/today surfaces.
 
 **Previous session:** O26-P0.1 golden harness was merged via #496, with P0.2–P0.7 already completed on
 main by parallel agents.
@@ -34,6 +34,7 @@ main by parallel agents.
 | O26-P3.3 / Eval Baseline Store | `codex-o26-p3-3-eval-baseline-store` | #506 | ✅ merged | Codex | Cache-backed companion eval DatasetStore |
 | O26-P3.2 / HUD Reconciliation | `codex-o26-p3-2-hud-reconciliation` | #507 | ✅ merged | Codex | Stale punch-list claims guarded by Vitest |
 | O26-P3.4 / Mobile Approval Queue | `codex-o26-p3-4-mobile-approval-queue` | #509 | ✅ merged | Codex | Phone-native unified approval funnel |
+| O26-P3.5 / Persona Rail + Caring Follow-ups | `codex-o26-p3-5-persona-caring-brief` | #510 | 🟡 draft PR | Codex | Versioned persona signal + brief follow-up recomposition |
 
 Status legend: ⏳ in progress · 🟡 draft PR · 🟢 CI green · ✅ merged · 🔴 conflict
 
@@ -41,8 +42,11 @@ Status legend: ⏳ in progress · 🟡 draft PR · 🟢 CI green · ✅ merged �
 
 ## Fișiere blocate (în PR activ)
 
-`codex-o26-p3-4-mobile-approval-queue` currently owns only:
-`mobile/`, `BACKLOG.md`, `STATUS.md`, and `docs/SPRINT.md`.
+`codex-o26-p3-5-persona-caring-brief` currently owns only:
+`agents/core/observability/quality.py`, `agents/core/cognition_trace.py`, `agents/core/autonomy/digest.py`,
+`agents/core/autonomy/followups.py`, `agents/core/memory/timeline.py`, `agents/core/routers/autonomy.py`,
+`agents/core/scheduler_service.py`, `tests/test_o26_p3_5_persona_caring.py`, `BACKLOG.md`, `STATUS.md`,
+and `docs/SPRINT.md`.
 
 Un fișier blocat nu se atinge de alt agent fără confirmare utilizator.
 
@@ -60,10 +64,12 @@ Current order:
   6. O26-P3.3 Eval Baseline Store (#506) ✅
   7. O26-P3.2 HUD Punch-List Reconciliation (#507) ✅
   8. O26-P3.4 Mobile Approval Queue (#509) ✅
+  9. O26-P3.5 Persona Rail + Caring Follow-ups (#510) 🟡
 ```
 
-Current backlog item: **O26-P3.4 mobile approval queue** is delivered in #509. P0.7 was already
-done, so the unified approval funnel is now available from the phone UI.
+Current backlog item: **O26-P3.5 persona rail + caring follow-ups** is implemented on branch and
+awaiting PR CI/merge. Scope is limited to deterministic persona scoring against assistant output
+and read-only recomposition of existing task/memory rows.
 
 ---
 
@@ -274,6 +280,12 @@ Generalizează reflecția nocturnă din *rezumă-ziua* în *pre-raționează-pen
 [Verify]   P3.4 mobile Jest suite green: 22 passed; mobile typecheck clean
 [PR]       #509 opened as draft
 [PR]       #509 full GitHub Actions green; PR marked ready and prepared for squash merge
+[PR]       #509 merged
+[ORIZONT 26] 2026-07-04 — started O26-P3.5 on `codex-o26-p3-5-persona-caring-brief`
+[O26-P3.5] Red tests: persona rail lacked SOUL-derived profile scoring and drift stats; cognition trace did not pass versioned persona metadata; morning/today digests had no caring follow-ups from failed/blocked tasks or memory facts
+[O26-P3.5] Implemented compact SOUL persona profiles at the live quality seam, `signals.persona` + persona drift stats, and shared caring follow-up extraction for morning brief + unified digest
+[Verify]   P3.5 local suite green: 6 passed; adjacent quality/digest/timeline/autonomy endpoint suites green: 41 + 37 passed; touched-file ruff + py_compile clean; STATUS counter synced to ~3,606
+[PR]       #510 opened as draft
 ```
 
 ---
