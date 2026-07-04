@@ -34,7 +34,7 @@ main by parallel agents.
 | O26-P3.3 / Eval Baseline Store | `codex-o26-p3-3-eval-baseline-store` | #506 | ✅ merged | Codex | Cache-backed companion eval DatasetStore |
 | O26-P3.2 / HUD Reconciliation | `codex-o26-p3-2-hud-reconciliation` | #507 | ✅ merged | Codex | Stale punch-list claims guarded by Vitest |
 | O26-P3.4 / Mobile Approval Queue | `codex-o26-p3-4-mobile-approval-queue` | #509 | ✅ merged | Codex | Phone-native unified approval funnel |
-| O26-P3.5 / Persona Rail + Caring Follow-ups | `codex-o26-p3-5-persona-caring-brief` | #510 | 🟡 draft PR | Codex | Versioned persona signal + brief follow-up recomposition |
+| O26-P3.5 / Persona Rail + Caring Follow-ups | `codex-o26-p3-5-persona-caring-brief` | #510 | ✅ merged | Codex | Versioned persona signal + brief follow-up recomposition |
 
 Status legend: ⏳ in progress · 🟡 draft PR · 🟢 CI green · ✅ merged · 🔴 conflict
 
@@ -42,11 +42,8 @@ Status legend: ⏳ in progress · 🟡 draft PR · 🟢 CI green · ✅ merged �
 
 ## Fișiere blocate (în PR activ)
 
-`codex-o26-p3-5-persona-caring-brief` currently owns only:
-`agents/core/observability/quality.py`, `agents/core/cognition_trace.py`, `agents/core/autonomy/digest.py`,
-`agents/core/autonomy/followups.py`, `agents/core/memory/timeline.py`, `agents/core/routers/autonomy.py`,
-`agents/core/scheduler_service.py`, `tests/test_o26_p3_5_persona_caring.py`, `BACKLOG.md`, `STATUS.md`,
-and `docs/SPRINT.md`.
+No active PR owns code files right now. The P3.5 status-doc follow-up branch owns only
+`BACKLOG.md`, `STATUS.md`, and `docs/SPRINT.md`.
 
 Un fișier blocat nu se atinge de alt agent fără confirmare utilizator.
 
@@ -64,12 +61,12 @@ Current order:
   6. O26-P3.3 Eval Baseline Store (#506) ✅
   7. O26-P3.2 HUD Punch-List Reconciliation (#507) ✅
   8. O26-P3.4 Mobile Approval Queue (#509) ✅
-  9. O26-P3.5 Persona Rail + Caring Follow-ups (#510) 🟡
+  9. O26-P3.5 Persona Rail + Caring Follow-ups (#510) ✅
 ```
 
-Current backlog item: **O26-P3.5 persona rail + caring follow-ups** is implemented on branch and
-awaiting PR CI/merge. Scope is limited to deterministic persona scoring against assistant output
-and read-only recomposition of existing task/memory rows.
+Current backlog item: **O26-P3.5 persona rail + caring follow-ups** is delivered in #510.
+The next unblocked ORIZONT 26 item is **O26-P3.6 landing page, dev half (M3.3)** unless the
+owner pulls a different Phase 3 item forward.
 
 ---
 
@@ -286,6 +283,7 @@ Generalizează reflecția nocturnă din *rezumă-ziua* în *pre-raționează-pen
 [O26-P3.5] Implemented compact SOUL persona profiles at the live quality seam, `signals.persona` + persona drift stats, and shared caring follow-up extraction for morning brief + unified digest
 [Verify]   P3.5 local suite green: 6 passed; adjacent quality/digest/timeline/autonomy endpoint suites green: 41 + 37 passed; touched-file ruff + py_compile clean; STATUS counter synced to ~3,606
 [PR]       #510 opened as draft
+[PR]       #510 full GitHub Actions green; PR marked ready and squash-merged
 ```
 
 ---
