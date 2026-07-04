@@ -12,8 +12,12 @@ It talks to the same HTTP API the web HUD uses (`agents/web.py`):
   The thread is **persisted on-device** and survives restarts.
 - **Status** — live view of `GET /status`: model state, backend, agents
   online, and host/GPU telemetry, with pull-to-refresh.
+- **Approvals** — mobile Decision Inbox over `GET /autonomy/approvals`
+  with approve / reject / defer actions posted to
+  `POST /autonomy/tasks/{id}/decision`. This uses the same unified approval
+  funnel as the browser HUD and requires the hub admin token.
 - **Settings** — point the app at any hub (`http://<host>:<port>`), set an
-  optional `JARVIS_USER_TOKEN`, and test the connection. Persisted via
+  optional `JARVIS_USER_TOKEN` plus `JARVIS_ADMIN_TOKEN`, and test the connection. Persisted via
   AsyncStorage.
 - **History** — resume a previous hub session (`/sessions` → `/sessions/resume`)
   back into the chat thread.
@@ -32,7 +36,9 @@ npx expo start          # then press i / a, or scan the QR code with Expo Go
 On a phone you'll need the hub reachable on your network. In **Settings**
 enter the hub address (e.g. `192.168.1.20:8000`) — the `http://` scheme is
 added automatically. If the hub has `JARVIS_USER_TOKEN` set, enter the same
-value as the user token; it is sent as the `X-User-Token` header.
+value as the user token; it is sent as the `X-User-Token` header. To approve
+actions from the phone, also enter `JARVIS_ADMIN_TOKEN`; it is sent only as
+`X-Admin-Token` for admin-gated routes.
 
 > Cleartext HTTP to a LAN hub is enabled (`NSAllowsLocalNetworking` on iOS,
 > `usesCleartextTraffic` on Android) so a local, unsecured hub works out of
@@ -59,7 +65,7 @@ src/api/sse.ts              pure SSE decoder (unit-tested)
 src/audio/tts.ts            /tts → cache file → expo-audio playback
 src/markdown/               pure Markdown parser (unit-tested) + RN renderer
 src/components/             MessageBubble, AgentPicker, SessionsModal
-src/screens/                Chat / Status / Settings
+src/screens/                Chat / Approvals / Status / Settings
 scripts/gen-icons.js        icon/splash generator
 ```
 

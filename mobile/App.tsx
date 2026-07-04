@@ -2,21 +2,24 @@ import { StatusBar } from 'expo-status-bar';
 import React, { useState } from 'react';
 import { Platform, Pressable, SafeAreaView, StyleSheet, Text, View } from 'react-native';
 import { ServerProvider } from './src/context/ServerContext';
+import { ApprovalsScreen } from './src/screens/ApprovalsScreen';
 import { ChatScreen } from './src/screens/ChatScreen';
 import { SettingsScreen } from './src/screens/SettingsScreen';
 import { StatusScreen } from './src/screens/StatusScreen';
 import { theme } from './src/theme';
 
-type Tab = 'chat' | 'status' | 'settings';
+type Tab = 'chat' | 'approvals' | 'status' | 'settings';
 
 const TABS: { key: Tab; label: string; icon: string }[] = [
   { key: 'chat', label: 'Chat', icon: '◉' },
+  { key: 'approvals', label: 'Approve', icon: '✓' },
   { key: 'status', label: 'Status', icon: '▤' },
   { key: 'settings', label: 'Settings', icon: '⚙' },
 ];
 
 const TITLES: Record<Tab, string> = {
   chat: 'Jarvis',
+  approvals: 'Approvals',
   status: 'Status',
   settings: 'Settings',
 };
@@ -32,6 +35,7 @@ function AppShell() {
 
       <View style={styles.body}>
         {tab === 'chat' && <ChatScreen onGoToSettings={() => setTab('settings')} />}
+        {tab === 'approvals' && <ApprovalsScreen onGoToSettings={() => setTab('settings')} />}
         {tab === 'status' && <StatusScreen onGoToSettings={() => setTab('settings')} />}
         {tab === 'settings' && <SettingsScreen />}
       </View>
