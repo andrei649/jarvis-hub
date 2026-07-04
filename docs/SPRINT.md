@@ -7,13 +7,13 @@
 
 ## Sesiune curentă
 
-**Data:** 2026-07-04 (ORIZONT 26 P3.2 Data Spaces depth)
+**Data:** 2026-07-04 (ORIZONT 26 P3.2 Data Spaces depth delivered)
 **Lead agent / Conductor:** Codex
-**Obiectiv sesiune:** continue the O26-P3.2 HUD depth tail with a narrow Data Spaces assign/unassign control slice.
-**Branch:** `codex-o26-p3-2-data-spaces-depth`
+**Obiectiv sesiune:** keep O26-P3.2 moving after the Data Spaces control slice; select the next local HUD depth tail.
+**Branch:** `main` (no active feature branch)
 
-**Scope decision (2026-07-04):** O26-P0, P1.1, P2.1, P2.2, P2.3, P2.4, P2.5, P3.1, P3.3, P3.4, P3.5, and P3.6 are merged.
-The current branch takes one O26-P3.2 tail item only: Data Spaces assign/unassign controls in the HUD Console.
+**Scope decision (2026-07-04):** O26-P0, P1.1, P2.1, P2.2, P2.3, P2.4, P2.5, P3.1, P3.3, P3.4, P3.5, P3.6, and the O26-P3.2 Data Spaces depth slice are merged.
+No active feature branch owns files right now.
 
 **Previous session:** O26-P0.1 golden harness was merged via #496, with P0.2–P0.7 already completed on
 main by parallel agents.
@@ -36,7 +36,7 @@ main by parallel agents.
 | O26-P3.4 / Mobile Approval Queue | `codex-o26-p3-4-mobile-approval-queue` | #509 | ✅ merged | Codex | Phone-native unified approval funnel |
 | O26-P3.5 / Persona Rail + Caring Follow-ups | `codex-o26-p3-5-persona-caring-brief` | #510 | ✅ merged | Codex | Versioned persona signal + brief follow-up recomposition |
 | O26-P3.6 / Landing Page Dev Half | `codex-o26-p3-6-landing-dev-half` | #512 | ✅ merged | Codex | Static self-contained landing + owner demo shot-list support |
-| O26-P3.2 / Data Spaces Depth | `codex-o26-p3-2-data-spaces-depth` | — | ⏳ in progress | Codex | Data Spaces assign/unassign controls + reconciliation guard |
+| O26-P3.2 / Data Spaces Depth | `codex-o26-p3-2-data-spaces-depth` | #515 | ✅ merged | Codex | Data Spaces assign/unassign controls + reconciliation guard |
 
 Status legend: ⏳ in progress · 🟡 draft PR · 🟢 CI green · ✅ merged · 🔴 conflict
 
@@ -44,9 +44,7 @@ Status legend: ⏳ in progress · 🟡 draft PR · 🟢 CI green · ✅ merged �
 
 ## Fișiere blocate (în PR activ)
 
-Current active branch owns `frontend/src/gap.tsx`, `frontend/src/test/gap-panels.test.tsx`,
-`frontend/src/test/hud-p3-2-reconciliation.test.ts`, `docs/design/HUD_V2_REMAINING.md`,
-`BACKLOG.md`, `STATUS.md`, and `docs/SPRINT.md`.
+No active PR owns files right now.
 
 Un fișier blocat nu se atinge de alt agent fără confirmare utilizator.
 
@@ -68,9 +66,9 @@ Current order:
   10. O26-P3.6 Landing Page Dev Half (#512) ✅
 ```
 
-Current backlog item: **O26-P3.2 HUD punch-list depth follow-up** is in progress, scoped to Data Spaces assign/unassign.
-After it lands, the next O26-P3.2 local-control tail is capability grants/check UI, room history drawer,
-current-mesh task fan, preferences/tweaks UI, or self-hosted fonts.
+Current backlog item: **O26-P3.2 HUD punch-list depth follow-up** is still partial; Data Spaces assign/unassign is delivered in #515.
+The next local-control tail is capability grants/check UI, room history drawer, current-mesh task fan,
+preferences/tweaks UI, or self-hosted fonts.
 
 ---
 
@@ -298,6 +296,7 @@ Generalizează reflecția nocturnă din *rezumă-ziua* în *pre-raționează-pen
 [O26-P3.2] Red test: `DataSpacesPanel` listed/created/deleted spaces but had no agent assignment UI and was not exported for focused testing
 [O26-P3.2] Implemented Data Spaces assignment rows, agent→space assign control, row-level unassign, and a reconciliation guard so the HUD punch-list cannot re-list it as missing
 [Verify]   P3.2 Data Spaces depth: focused HUD tests green (8 passed); full frontend Vitest green (164 passed); typecheck/status-sync/diff-check clean
+[PR]       #515 full GitHub Actions green; PR marked ready and squash-merged
 ```
 
 ---
