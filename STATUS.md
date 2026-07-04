@@ -16,7 +16,7 @@ O26 Phase 0, P1.1, P2.1, P2.2, P2.3, P2.4, and P2.5 are complete on `main`.
 O26-P3.1 preview modes is merged in #505; O26-P3.3 eval-baseline persistence is delivered in #506.
 O26-P3.2 HUD punch-list reconciliation is merged in #507.
 O26-P3.4 mobile approval queue is delivered in #509.
-O26-P3.5 persona rail + caring follow-ups is implemented on `codex-o26-p3-5-persona-caring-brief` and awaiting PR CI/merge.
+O26-P3.5 persona rail + caring follow-ups is implemented in draft PR #510 and awaiting PR CI/merge.
 
 | Item | Status | Verified result |
 |------|--------|-----------------|
