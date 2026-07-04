@@ -1,0 +1,663 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Jarvis Hub - The AI that works while you sleep</title>
+  <meta name="description" content="Jarvis Hub is a local-first personal AI operating system: 17 specialist agents, governed autonomy, living memory, and $0/month on your own hardware.">
+  <style>
+    :root {
+      --void: #04070E;
+      --ink: #EEF1F5;
+      --ink-2: #B9C5D4;
+      --ink-3: #728096;
+      --panel: #09111F;
+      --line: #18304A;
+      --accent: #2BB8F0;
+      --accent-light: #8FE0FF;
+      --green: #41F59B;
+      --amber: #FFB23F;
+      --red: #FF5A52;
+      --violet: #A78BFA;
+      color-scheme: dark;
+      font-family: "Space Grotesk", "Segoe UI", system-ui, sans-serif;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    html {
+      scroll-behavior: smooth;
+    }
+
+    body {
+      margin: 0;
+      background:
+        linear-gradient(90deg, rgba(43, 184, 240, 0.04) 1px, transparent 1px),
+        linear-gradient(180deg, rgba(43, 184, 240, 0.035) 1px, transparent 1px),
+        var(--void);
+      background-size: 56px 56px, 56px 56px, auto;
+      color: var(--ink);
+      min-height: 100vh;
+    }
+
+    a {
+      color: inherit;
+      text-decoration: none;
+    }
+
+    .topbar {
+      position: fixed;
+      z-index: 20;
+      top: 0;
+      left: 0;
+      right: 0;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      min-height: 64px;
+      padding: 16px 32px;
+      background: rgba(4, 7, 14, 0.84);
+      border-bottom: 1px solid rgba(143, 224, 255, 0.14);
+      backdrop-filter: blur(14px);
+    }
+
+    .brand {
+      display: grid;
+      gap: 2px;
+      color: var(--accent-light);
+      font-weight: 700;
+      text-transform: uppercase;
+    }
+
+    .brand small,
+    .eyebrow,
+    .mono,
+    .metric span,
+    .shot-label {
+      font-family: "JetBrains Mono", "Cascadia Mono", Consolas, monospace;
+      letter-spacing: 0;
+    }
+
+    .brand small {
+      color: var(--ink-3);
+      font-size: 0.7rem;
+      font-weight: 500;
+    }
+
+    .nav {
+      display: flex;
+      align-items: center;
+      gap: 20px;
+      color: var(--ink-2);
+      font-size: 0.92rem;
+    }
+
+    .nav a:focus-visible,
+    .button:focus-visible {
+      outline: 2px solid var(--accent-light);
+      outline-offset: 4px;
+    }
+
+    .hero {
+      position: relative;
+      min-height: 92svh;
+      overflow: hidden;
+      padding: 128px 32px 72px;
+      isolation: isolate;
+    }
+
+    .cockpit-layer {
+      position: absolute;
+      inset: 0;
+      z-index: -1;
+      opacity: 0.76;
+    }
+
+    .cockpit-layer::before {
+      content: "";
+      position: absolute;
+      inset: 72px 24px 40px;
+      border: 1px solid rgba(143, 224, 255, 0.18);
+      background:
+        linear-gradient(90deg, rgba(4, 7, 14, 0.88), rgba(4, 7, 14, 0.42) 56%, rgba(4, 7, 14, 0.9)),
+        repeating-linear-gradient(0deg, rgba(143, 224, 255, 0.06), rgba(143, 224, 255, 0.06) 1px, transparent 1px, transparent 22px);
+    }
+
+    .mesh {
+      position: absolute;
+      right: 7vw;
+      top: 110px;
+      width: 520px;
+      height: 520px;
+      border: 1px solid rgba(43, 184, 240, 0.22);
+      border-radius: 50%;
+    }
+
+    .mesh::before,
+    .mesh::after {
+      content: "";
+      position: absolute;
+      border-radius: 50%;
+      border: 1px solid rgba(143, 224, 255, 0.18);
+    }
+
+    .mesh::before {
+      inset: 74px;
+    }
+
+    .mesh::after {
+      inset: 154px;
+      background: rgba(43, 184, 240, 0.08);
+      box-shadow: 0 0 0 1px rgba(65, 245, 155, 0.16);
+    }
+
+    .node {
+      position: absolute;
+      display: grid;
+      place-items: center;
+      width: 92px;
+      min-height: 32px;
+      border: 1px solid rgba(143, 224, 255, 0.32);
+      background: rgba(9, 17, 31, 0.86);
+      color: var(--ink);
+      font-size: 0.78rem;
+      font-weight: 600;
+    }
+
+    .node.command {
+      color: var(--accent-light);
+      border-color: rgba(43, 184, 240, 0.72);
+    }
+
+    .node.local {
+      color: var(--green);
+      border-color: rgba(65, 245, 155, 0.56);
+    }
+
+    .n1 { left: 214px; top: 20px; }
+    .n2 { right: -8px; top: 180px; }
+    .n3 { left: 26px; top: 190px; }
+    .n4 { right: 88px; bottom: 38px; }
+    .n5 { left: 132px; bottom: 56px; }
+
+    .rail {
+      position: absolute;
+      height: 1px;
+      background: rgba(143, 224, 255, 0.28);
+      transform-origin: left center;
+    }
+
+    .r1 { left: 260px; top: 82px; width: 200px; transform: rotate(34deg); }
+    .r2 { left: 150px; top: 252px; width: 286px; transform: rotate(-5deg); }
+    .r3 { left: 260px; top: 360px; width: 180px; transform: rotate(-34deg); }
+    .r4 { left: 210px; top: 355px; width: 156px; transform: rotate(54deg); }
+
+    .hud-panel {
+      position: absolute;
+      display: grid;
+      gap: 14px;
+      min-width: 260px;
+      padding: 16px;
+      border: 1px solid rgba(143, 224, 255, 0.2);
+      background: rgba(9, 17, 31, 0.82);
+    }
+
+    .hud-panel strong {
+      color: var(--accent-light);
+      font-size: 0.84rem;
+    }
+
+    .hud-panel p {
+      margin: 0;
+      color: var(--ink-2);
+      font-size: 0.82rem;
+      line-height: 1.5;
+    }
+
+    .audit {
+      right: 11vw;
+      bottom: 92px;
+    }
+
+    .brief {
+      right: 36vw;
+      bottom: 64px;
+      max-width: 292px;
+    }
+
+    .meter {
+      height: 8px;
+      overflow: hidden;
+      border: 1px solid rgba(65, 245, 155, 0.3);
+      background: rgba(65, 245, 155, 0.08);
+    }
+
+    .meter div {
+      height: 100%;
+      width: 92%;
+      background: var(--green);
+    }
+
+    .hero-copy {
+      width: min(720px, 100%);
+      padding-top: 28px;
+    }
+
+    .eyebrow {
+      margin: 0 0 18px;
+      color: var(--accent-light);
+      font-size: 0.82rem;
+      text-transform: uppercase;
+    }
+
+    h1 {
+      margin: 0;
+      max-width: 700px;
+      font-size: 4rem;
+      line-height: 0.98;
+      font-weight: 700;
+    }
+
+    .tagline {
+      margin: 22px 0 0;
+      color: var(--ink);
+      font-size: 1.45rem;
+      line-height: 1.35;
+      font-weight: 600;
+    }
+
+    .lede {
+      margin: 18px 0 0;
+      max-width: 640px;
+      color: var(--ink-2);
+      font-size: 1.05rem;
+      line-height: 1.75;
+    }
+
+    .buttons {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+      margin-top: 30px;
+    }
+
+    .button {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 46px;
+      padding: 0 18px;
+      border: 1px solid rgba(143, 224, 255, 0.28);
+      background: rgba(9, 17, 31, 0.86);
+      color: var(--ink);
+      font-weight: 650;
+    }
+
+    .button.primary {
+      border-color: rgba(43, 184, 240, 0.8);
+      background: #08324A;
+      color: var(--accent-light);
+    }
+
+    .hero-points {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      margin: 28px 0 0;
+      padding: 0;
+      list-style: none;
+      color: var(--ink-2);
+    }
+
+    .hero-points li {
+      border: 1px solid rgba(143, 224, 255, 0.16);
+      background: rgba(9, 17, 31, 0.62);
+      padding: 8px 10px;
+      font-size: 0.88rem;
+    }
+
+    .proof-strip {
+      display: grid;
+      grid-template-columns: repeat(5, minmax(132px, 1fr));
+      gap: 1px;
+      border-block: 1px solid rgba(143, 224, 255, 0.15);
+      background: rgba(143, 224, 255, 0.15);
+    }
+
+    .metric {
+      min-height: 104px;
+      display: grid;
+      align-content: center;
+      gap: 8px;
+      padding: 20px 24px;
+      background: rgba(4, 7, 14, 0.96);
+    }
+
+    .metric strong {
+      color: var(--ink);
+      font-size: 1.6rem;
+      line-height: 1;
+    }
+
+    .metric span {
+      color: var(--ink-3);
+      font-size: 0.74rem;
+      text-transform: uppercase;
+    }
+
+    .section {
+      padding: 78px 32px;
+    }
+
+    .section-inner {
+      width: min(1120px, 100%);
+      margin: 0 auto;
+    }
+
+    .section h2 {
+      margin: 0;
+      font-size: 2rem;
+      line-height: 1.15;
+    }
+
+    .section-intro {
+      margin: 16px 0 0;
+      max-width: 720px;
+      color: var(--ink-2);
+      font-size: 1rem;
+      line-height: 1.7;
+    }
+
+    .pillars {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 18px;
+      margin-top: 32px;
+    }
+
+    .pillar,
+    .demo-step,
+    .install-box {
+      border: 1px solid rgba(143, 224, 255, 0.18);
+      background: rgba(9, 17, 31, 0.58);
+      padding: 22px;
+    }
+
+    .pillar h3,
+    .demo-step h3 {
+      margin: 0;
+      color: var(--accent-light);
+      font-size: 1rem;
+    }
+
+    .pillar p,
+    .demo-step p,
+    .install-box p {
+      margin: 12px 0 0;
+      color: var(--ink-2);
+      line-height: 1.65;
+    }
+
+    .demo-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 14px;
+      margin-top: 28px;
+    }
+
+    .shot-label {
+      color: var(--amber);
+      font-size: 0.72rem;
+      text-transform: uppercase;
+    }
+
+    .install {
+      background: #060B14;
+      border-top: 1px solid rgba(143, 224, 255, 0.14);
+    }
+
+    .install-grid {
+      display: grid;
+      grid-template-columns: 1.2fr 0.8fr;
+      gap: 24px;
+      align-items: stretch;
+      margin-top: 30px;
+    }
+
+    .command-line {
+      margin: 0;
+      overflow-x: auto;
+      color: var(--green);
+      font-family: "JetBrains Mono", "Cascadia Mono", Consolas, monospace;
+      font-size: 0.9rem;
+      line-height: 1.7;
+      white-space: pre;
+    }
+
+    .footer {
+      padding: 28px 32px 42px;
+      color: var(--ink-3);
+      border-top: 1px solid rgba(143, 224, 255, 0.14);
+    }
+
+    .footer-inner {
+      width: min(1120px, 100%);
+      margin: 0 auto;
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: space-between;
+      gap: 14px;
+    }
+
+    .accent {
+      color: var(--accent-light);
+    }
+
+    .green {
+      color: var(--green);
+    }
+
+    .violet {
+      color: var(--violet);
+    }
+
+    @media (max-width: 960px) {
+      .topbar {
+        position: sticky;
+        padding: 14px 18px;
+      }
+
+      .nav {
+        display: none;
+      }
+
+      .hero {
+        min-height: auto;
+        padding: 74px 20px 48px;
+      }
+
+      h1 {
+        font-size: 2.8rem;
+      }
+
+      .tagline {
+        font-size: 1.2rem;
+      }
+
+      .cockpit-layer {
+        opacity: 0.38;
+      }
+
+      .mesh {
+        right: -210px;
+        top: 118px;
+      }
+
+      .hud-panel {
+        display: none;
+      }
+
+      .proof-strip,
+      .pillars,
+      .demo-grid,
+      .install-grid {
+        grid-template-columns: 1fr;
+      }
+
+      .section {
+        padding: 58px 20px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <header class="topbar" aria-label="Jarvis Hub landing navigation">
+    <a class="brand" href="#top" aria-label="Jarvis Hub home">
+      <span>Jarvis Hub</span>
+      <small>Personal AI OS</small>
+    </a>
+    <nav class="nav" aria-label="Page sections">
+      <a href="#proof">Proof</a>
+      <a href="#pillars">Pillars</a>
+      <a href="#demo">Demo</a>
+      <a href="#self-host">Self-host</a>
+    </nav>
+  </header>
+
+  <main id="top">
+    <section class="hero" aria-label="Jarvis Hub overview">
+      <div class="cockpit-layer" aria-hidden="true">
+        <div class="mesh">
+          <div class="rail r1"></div>
+          <div class="rail r2"></div>
+          <div class="rail r3"></div>
+          <div class="rail r4"></div>
+          <div class="node command n1">Jarvis</div>
+          <div class="node n2">Friday</div>
+          <div class="node local n3">Frigga</div>
+          <div class="node n4">Vision</div>
+          <div class="node n5">Argus</div>
+        </div>
+        <aside class="hud-panel audit">
+          <strong>Trust Center</strong>
+          <p>chain verified - no tampering detected</p>
+          <div class="meter"><div></div></div>
+          <p><span class="green">local-first</span> by default, cloud opt-in by agent.</p>
+        </aside>
+        <aside class="hud-panel brief">
+          <strong>Morning Brief</strong>
+          <p>3 follow-ups, 1 approval, 0 silent irreversible actions.</p>
+          <p><span class="violet">living memory</span> feeds tomorrow from what happened today.</p>
+        </aside>
+      </div>
+
+      <div class="hero-copy">
+        <p class="eyebrow">Local-first - governed - owned by you</p>
+        <h1>Jarvis Hub</h1>
+        <p class="tagline">The AI that works while you sleep.</p>
+        <p class="lede">
+          A local-first personal AI operating system with 17 specialist agents, governed autonomy,
+          living memory, an approval queue, and a tamper-evident audit log. It runs on your own
+          hardware for $0/month; your data stays home unless you explicitly opt an agent into the
+          cloud.
+        </p>
+        <div class="buttons" aria-label="Primary actions">
+          <a class="button primary" href="../../README.md">Self-host now</a>
+          <a class="button" href="demo-shot-list.md">Watch the 60s teaser plan</a>
+        </div>
+        <ul class="hero-points" aria-label="Key proof points">
+          <li>17 agents</li>
+          <li>Governed autonomy</li>
+          <li>Living memory</li>
+          <li>Zero cloud by default</li>
+          <li>Tamper-evident audit</li>
+          <li>$0 / month</li>
+        </ul>
+      </div>
+    </section>
+
+    <section id="proof" class="proof-strip" aria-label="Verified product proof">
+      <div class="metric"><strong>17</strong><span>specialist agents</span></div>
+      <div class="metric"><strong>3,600+</strong><span>automated tests</span></div>
+      <div class="metric"><strong>363</strong><span>HTTP routes</span></div>
+      <div class="metric"><strong>7</strong><span>channels</span></div>
+      <div class="metric"><strong>$0</strong><span>monthly runtime meter</span></div>
+    </section>
+
+    <section id="pillars" class="section" aria-labelledby="pillars-title">
+      <div class="section-inner">
+        <p class="eyebrow">The wedge</p>
+        <h2 id="pillars-title">Private, proactive, and governed in one system.</h2>
+        <p class="section-intro">
+          The promise is not "AI magic." The promise is that useful autonomy is safer when the
+          person it serves owns the machine, the data, the approvals, and the audit trail.
+        </p>
+        <div class="pillars">
+          <article class="pillar">
+            <h3>Private by architecture</h3>
+            <p>Local inference through LM Studio or Ollama. Cloud access is opt-in per agent, and strict-local agents are code-enforced to stay on the machine.</p>
+          </article>
+          <article class="pillar">
+            <h3>Proactive, not reactive</h3>
+            <p>A self-tasking queue can work around the clock, escalate what needs a decision, and learn which repeat approvals no longer deserve an interruption.</p>
+          </article>
+          <article class="pillar">
+            <h3>Governed, provably</h3>
+            <p>Every meaningful action passes the risk policy, approval queue, and tamper-evident audit log. The visible product is the control surface, not a staged demo.</p>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <section id="demo" class="section" aria-labelledby="demo-title">
+      <div class="section-inner">
+        <p class="eyebrow">Demo capture support</p>
+        <h2 id="demo-title">Record the real HUD. Keep the footage honest.</h2>
+        <p class="section-intro">
+          The dev half supplies the landing page and a capture checklist. Owner-recorded video stays
+          in M4, using real HUD data or clearly badged demo mode.
+        </p>
+        <div class="demo-grid">
+          <article class="demo-step"><span class="shot-label">Shot 01</span><h3>Hero cockpit</h3><p>Agent network brain alive in the void/cyan HUD.</p></article>
+          <article class="demo-step"><span class="shot-label">Shot 02</span><h3>Trust Center</h3><p>Audit chain verified plus the locality meter.</p></article>
+          <article class="demo-step"><span class="shot-label">Shot 03</span><h3>Governed action</h3><p>Approval queue decision paired with the task it gates.</p></article>
+          <article class="demo-step"><span class="shot-label">Shot 04</span><h3>Morning brief</h3><p>Prioritized digest and caring follow-ups.</p></article>
+          <article class="demo-step"><span class="shot-label">Shot 05</span><h3>Frigga proof</h3><p>The strict-local family badge as the privacy proof point.</p></article>
+          <article class="demo-step"><span class="shot-label">Shot 06</span><h3>WorldView</h3><p>Optional 4D OSINT companion beat, clearly separate from core claims.</p></article>
+        </div>
+        <p class="section-intro"><a class="accent" href="demo-shot-list.md">Open the full demo-shot-list.md checklist</a></p>
+      </div>
+    </section>
+
+    <section id="self-host" class="section install" aria-labelledby="self-host-title">
+      <div class="section-inner">
+        <p class="eyebrow">Owned by the person it serves</p>
+        <h2 id="self-host-title">Self-host it. Inspect it. Govern it.</h2>
+        <div class="install-grid">
+          <article class="install-box">
+            <p>
+              Jarvis Hub is built for a local machine first: Python, FastAPI, LM Studio/Ollama, and
+              the HUD served from the repo. The business-model honesty check is simple: the core
+              system must be useful before it asks for a metered cloud dependency.
+            </p>
+          </article>
+          <article class="install-box">
+            <pre class="command-line">Windows: INSTALL.bat
+macOS/Linux: ./install.sh
+HUD: python serve.py</pre>
+          </article>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer class="footer">
+    <div class="footer-inner">
+      <span>Jarvis Hub - local-first, governed personal AI OS.</span>
+      <span class="mono">LOCAL-FIRST - 17 AGENTS - GOVERNED AUTONOMY - $0/MONTH</span>
+    </div>
+  </footer>
+</body>
+</html>

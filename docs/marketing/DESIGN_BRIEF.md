@@ -43,7 +43,7 @@ thin and tight, never neon-soaked.
 ## 2. Voice rules for any copy on an asset
 
 - Calm, specific, declarative. Butler, not hype-man.
-- Numbers over adjectives ("2,150+ tests, $0/month" beats "powerful").
+- Numbers over adjectives ("3,600+ tests, $0/month" beats "powerful").
 - Never: "revolutionary", "magic", "superhuman", "AI employee", "set and forget".
 - Always-true: every claim must trace to the repo (see the proof list in §5).
 
@@ -94,13 +94,13 @@ emoji-heavy headlines · more than one accent color competing · fabricated/stat
 
 ---
 
-## 5. Approved proof points (verified 2026-06-10 — safe to put on an asset)
+## 5. Approved proof points (verified 2026-07-04 — safe to put on an asset)
 
 Use these exact, conservative framings:
 - **17 specialist agents** (4 tiers) + 17 promotable bench agents.
-- **2,150+ automated tests** (Python core) passing in CI, plus frontend + OSINT-stack suites.
-- **~250 API endpoints**; a real-time cockpit HUD; **7 channels** (web, voice, Telegram, Discord, Slack, email, sandbox).
-- **$0 / month** — local inference for ~99% of tasks; cloud is per-agent opt-in.
+- **3,600+ automated Python tests** tracked in `STATUS.md`, plus frontend Vitest, mobile Jest, and Playwright HUD/flow suites.
+- **363 HTTP routes**; a real-time cockpit HUD; **7 channels** (web, voice, Telegram, Discord, Slack, email, sandbox).
+- **$0 / month** — local-first inference on owner hardware; cloud is per-agent opt-in.
 - **Tamper-evident audit log** (hash-chained, one-call integrity verify) · reversible/irreversible
   **approval queue** · signed skills · kill-switch.
 - **Strict-local agents** (family, security, digital twin) — code-enforced to never reach the cloud.
