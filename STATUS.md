@@ -12,8 +12,8 @@
 
 ## ORIZONT 26 Update — 2026-07-04
 
-O26 Phase 0, P1.1, P2.1, P2.2, and P2.3 are complete on `main`. O26-P2.4 Product Posture is
-in draft PR #503: settings-backed named posture composing hardened defaults with consent UX.
+O26 Phase 0, P1.1, P2.1, P2.2, P2.3, and P2.4 are complete on `main`. The next Phase 2 item is
+O26-P2.5 Install Smoke Path.
 
 | Item | Status | Verified result |
 |------|--------|-----------------|
@@ -21,8 +21,8 @@ in draft PR #503: settings-backed named posture composing hardened defaults with
 | O26-P2.1 config consolidation | ✅ merged | `agents/core/env_config.py` is now the single boolean/env parsing leaf; ad-hoc env truthiness is ratcheted by tests. |
 | O26-P2.2 memory consolidation | ✅ merged (#501) | `_complete_llm_turn()` records LivingMemory + decay entries only when `cognition.enabled && cognition.memory_enabled`; LivingMemory stores session/agent/channel, a turn reference, text digest, and size counters rather than duplicating raw transcript text. `SchedulerService` registers `memory-consolidation-decay` and `run_memory_maintenance()` performs NREM/REM consolidation plus decay candidate inspection without auto-deletion. |
 | O26-P2.3 dormant disposition | ✅ merged (#502) | `load_agents()` now registers active agents into `PersonaModule` + `EnsembleModule`; `cognition.learning_enabled` is proven live through the autonomy calibration hook; `profile_extractor.legacy_status()` marks the old regex extractor parked with no production callers. |
-| O26-P2.4 product posture | 🟡 draft PR #503 | `product.posture` defaults OFF; selecting `companion_wave1` or `design_partner` overlays wave-1 memory/cognition flags at runtime and surfaces provenance in security posture, onboarding wizard, and support bundle. Wave 2 kernel/budget/REDACT hardening remains future scope. |
-| Local verification | ✅ targeted green | P2.2 focused sweep was 33 passed before #501 merge; P2.3 red/green tests (+4) plus ensemble, governed learning, persona, and memory-store suites are 48 passed before #502 merge. P2.4 focused posture/onboarding/security/support/memory/lifespan sweep is green locally (38 passed). |
+| O26-P2.4 product posture | ✅ merged (#503) | `product.posture` defaults OFF; selecting `companion_wave1` or `design_partner` overlays wave-1 memory/cognition flags at runtime and surfaces provenance in security posture, onboarding wizard, and support bundle. Wave 2 kernel/budget/REDACT hardening remains future scope. |
+| Local verification | ✅ targeted green | P2.2 focused sweep was 33 passed before #501 merge; P2.3 red/green tests (+4) plus ensemble, governed learning, persona, and memory-store suites are 48 passed before #502 merge. P2.4 focused posture/onboarding/security/support/lifespan/settings sweep was 39 passed locally; PR #503 full CI matrix green before merge. |
 
 ---
 

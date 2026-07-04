@@ -7,14 +7,14 @@
 
 ## Sesiune curentă
 
-**Data:** 2026-07-04 (ORIZONT 26 P2.4 Product Posture)
+**Data:** 2026-07-04 (ORIZONT 26 P2.5 Install Smoke Path)
 **Lead agent / Conductor:** Codex
-**Obiectiv sesiune:** continue the ORIZONT 26 plan after P2.3; start P2.4 Product Posture as one focused PR with docs/status kept current.
-**Branch:** `codex-o26-p2-4-product-posture`
+**Obiectiv sesiune:** continue the ORIZONT 26 plan after P2.4; start P2.5 Install Smoke Path as one focused PR with docs/status kept current.
+**Branch:** `main` (next branch: `codex-o26-p2-5-install-smoke`)
 
-**Scope decision (2026-07-04):** O26-P0, P1.1, P2.1, P2.2, and P2.3 are now merged. The
-next unblocked plan item is O26-P2.4 Product Posture. Keep it one item = one PR: no HUD breadth or
-install-smoke work in that branch.
+**Scope decision (2026-07-04):** O26-P0, P1.1, P2.1, P2.2, P2.3, and P2.4 are now merged. The
+next unblocked plan item is O26-P2.5 Install Smoke Path. Keep it one item = one PR: no HUD breadth or
+product-posture wave 2 work in that branch.
 
 **Previous session:** O26-P0.1 golden harness was merged via #496, with P0.2–P0.7 already completed on
 main by parallel agents.
@@ -29,7 +29,8 @@ main by parallel agents.
 | O26-P2.1 / env config consolidation | `claude/jarvis-hub-backlog-review-jx87gz` | #500 | ✅ merged | Claude/Fable | One `env_config.truthy()` and env parse ratchet |
 | O26-P2.2 / memory consolidation | `codex-o26-p2-2-memory-consolidation` | #501 | ✅ merged | Codex | LivingMemory seam + nightly maintenance |
 | O26-P2.3 / dormant disposition | `codex-o26-p2-3-dormant-disposition` | #502 | ✅ merged | Codex | Ensemble roster + learning proof + profile extractor parked |
-| O26-P2.4 / Product Posture | `codex-o26-p2-4-product-posture` | #503 | 🟡 draft PR | Codex | Settings-backed named posture, wave 1 only |
+| O26-P2.4 / Product Posture | `codex-o26-p2-4-product-posture` | #503 | ✅ merged | Codex | Settings-backed named posture, wave 1 only |
+| O26-P2.5 / Install Smoke Path | `codex-o26-p2-5-install-smoke` | TBD | ⏳ next | Codex | ~30s boot + `/readyz` + faked turn |
 
 Status legend: ⏳ in progress · 🟡 draft PR · 🟢 CI green · ✅ merged · 🔴 conflict
 
@@ -37,9 +38,7 @@ Status legend: ⏳ in progress · 🟡 draft PR · 🟢 CI green · ✅ merged �
 
 ## Fișiere blocate (în PR activ)
 
-`codex-o26-p2-4-product-posture` currently owns the P2.4 files:
-`agents/core/product_posture.py`, settings/orchestrator posture wiring, onboarding/security/support posture surfaces,
-and their focused tests/docs.
+No active file locks on `main`. The next branch will claim only the P2.5 install-smoke files.
 
 Un fișier blocat nu se atinge de alt agent fără confirmare utilizator.
 
@@ -51,10 +50,11 @@ Un fișier blocat nu se atinge de alt agent fără confirmare utilizator.
 Current order:
   1. O26-P2.2 living-memory turn seam + nightly maintenance (#501) ✅
   2. O26-P2.3 dormant-module disposition (#502) ✅
-  3. O26-P2.4 Product Posture (in progress)
+  3. O26-P2.4 Product Posture (#503) ✅
+  4. O26-P2.5 Install Smoke Path (next)
 ```
 
-Next backlog item: **O26-P2.4 Product Posture** now that the woken memory and cognition substrates are sealed.
+Next backlog item: **O26-P2.5 Install Smoke Path** now that the wave-1 product posture is merged.
 
 ---
 
@@ -107,7 +107,7 @@ Generalizează reflecția nocturnă din *rezumă-ziua* în *pre-raționează-pen
 - [x] Branch pushed / PR #502 opened
 - [x] GitHub Actions green; PR merged
 
-### ORIZONT 26 P2.4 — ÎN CURS
+### ORIZONT 26 P2.4 — COMPLET
 
 - [x] `main` synced after #502 merge
 - [x] Branch created from current main
@@ -117,6 +117,17 @@ Generalizează reflecția nocturnă din *rezumă-ziua* în *pre-raționează-pen
 - [x] Focused posture/onboarding/security slice green
 - [x] Full focused backend verification green
 - [x] Branch pushed / PR #503 opened
+- [x] GitHub Actions green; PR merged
+
+### ORIZONT 26 P2.5 — URMĂTOR
+
+- [x] `main` synced after #503 merge
+- [ ] Branch created from current main
+- [ ] Design/tests for install smoke path
+- [ ] Install smoke implementation
+- [ ] `BACKLOG.md` + `STATUS.md` updated from verified scope
+- [ ] Focused backend verification green
+- [ ] Branch pushed / PR opened
 - [ ] GitHub Actions green; PR merged
 
 ### Wave 0 — COMPLET ✅
