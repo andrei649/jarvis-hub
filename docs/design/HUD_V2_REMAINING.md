@@ -139,7 +139,7 @@ AI step builder (H10.7) · sandbox execute (DEV_MODE‑gated, honest 403) · age
 send the admin token (`actA`). +7 frontend tests (19 total).
 
 **Still open (the tail of TASK‑2, re‑verified 2026‑07‑04):** O26-P3.1 closes the §3 plugin-gated
-base wiring in #505 (Build/Comms/Finance/Health/Knowledge/Family), and the Safe Comms draft panel
+base wiring in #505 (Build/Comms/Finance/Health/Knowledge/Family), and the Safe Comms draft panel (#527)
 closes the draft-before-send UI over existing governed social actions. Remaining:
 owner live-data/plugin setup (bank/broker/quotes, Apple Health bridge, websearch backend, WhatsApp
 bridge/frigga live data) and channel inbox transport.
@@ -150,7 +150,7 @@ BUG‑17 audit‑verify Trust chip ✅ (`modes.tsx:117-165` renders the live
 `GET /api/security/audit/verify` verdict), the 0.39 saved‑watchlist `WatchlistPanel` ✅, and
 per-panel LIVE/SEED chips ✅ (58/58 Console cards declare a `PanelChip` signal). Data Spaces
 assign/unassign controls ✅. Rooms selected-history drawer ✅. Capability issue/check UI ✅.
-Current-mesh task fan ✅. Preferences/tweaks UI ✅. Self-hosted fonts ✅. Safe Comms draft UI ✅.
+Current-mesh task fan ✅. Preferences/tweaks UI ✅. Self-hosted fonts ✅. Safe Comms draft UI ✅ (#527).
 O26-P3.2 adds a Vitest reconciliation guard so this document cannot re-list shipped
 TTS/mic/cognition/trust or Console controls as missing.
 
