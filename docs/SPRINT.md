@@ -33,7 +33,7 @@ main by parallel agents.
 | O26-P3.1 / Preview Modes | `codex-o26-p3-1-preview-modes` | #505 | ✅ merged | Codex | 6 live preview modes + honest blockers |
 | O26-P3.3 / Eval Baseline Store | `codex-o26-p3-3-eval-baseline-store` | #506 | ✅ merged | Codex | Cache-backed companion eval DatasetStore |
 | O26-P3.2 / HUD Reconciliation | `codex-o26-p3-2-hud-reconciliation` | #507 | ✅ merged | Codex | Stale punch-list claims guarded by Vitest |
-| O26-P3.4 / Mobile Approval Queue | `codex-o26-p3-4-mobile-approval-queue` | #509 | 🟡 draft PR | Codex | Phone-native unified approval funnel |
+| O26-P3.4 / Mobile Approval Queue | `codex-o26-p3-4-mobile-approval-queue` | #509 | ✅ merged | Codex | Phone-native unified approval funnel |
 
 Status legend: ⏳ in progress · 🟡 draft PR · 🟢 CI green · ✅ merged · 🔴 conflict
 
@@ -59,11 +59,11 @@ Current order:
   5. O26-P3.1 Preview Modes (#505) ✅
   6. O26-P3.3 Eval Baseline Store (#506) ✅
   7. O26-P3.2 HUD Punch-List Reconciliation (#507) ✅
-  8. O26-P3.4 Mobile Approval Queue (#509)
+  8. O26-P3.4 Mobile Approval Queue (#509) ✅
 ```
 
-Current backlog item: **O26-P3.4 mobile approval queue**. P0.7 is already done, so the unified
-approval funnel is ready for the phone UI.
+Current backlog item: **O26-P3.4 mobile approval queue** is delivered in #509. P0.7 was already
+done, so the unified approval funnel is now available from the phone UI.
 
 ---
 
@@ -175,7 +175,7 @@ Generalizează reflecția nocturnă din *rezumă-ziua* în *pre-raționează-pen
 - [x] Branch pushed / PR opened
 - [x] GitHub Actions green; PR merged
 
-### ORIZONT 26 P3.4 — ÎN PROGRES
+### ORIZONT 26 P3.4 — COMPLET ✅
 
 - [x] `main` synced after #508 merge
 - [x] Branch created from current main
@@ -185,7 +185,7 @@ Generalizează reflecția nocturnă din *rezumă-ziua* în *pre-raționează-pen
 - [x] `mobile/PARITY.md`, `BACKLOG.md`, `STATUS.md`, and README updated
 - [x] Mobile focused verification green (`npm test`, `npx tsc --noEmit`)
 - [x] Branch pushed / PR opened
-- [ ] GitHub Actions green; PR merged
+- [x] GitHub Actions green; PR merged
 
 ### Wave 0 — COMPLET ✅
 
@@ -273,6 +273,7 @@ Generalizează reflecția nocturnă din *rezumă-ziua* în *pre-raționează-pen
 [O26-P3.4] Implemented mobile Approvals tab, `X-Admin-Token` settings, unified queue fetch, approve/reject/defer posts, README + PARITY updates
 [Verify]   P3.4 mobile Jest suite green: 22 passed; mobile typecheck clean
 [PR]       #509 opened as draft
+[PR]       #509 full GitHub Actions green; PR marked ready and prepared for squash merge
 ```
 
 ---
