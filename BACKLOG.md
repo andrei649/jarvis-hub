@@ -441,7 +441,10 @@ weeks, **re-baselined post-P0.2** (pre-fix data excludes all web-chat activity) 
 Park-list CI guard (`image_gen`, `media_gen/media_skill`, `desktop_operator`, `browser_agent`,
 `screen_grounding`, `satellite_hub`, `node_mesh`, `e2e_sync`, `wyoming`, `training/`, `rust/` —
 frozen pre-1.0 unless a PR carries an `unpark:` tag; WorldView explicitly NOT on this list per D4) ·
-new-test policy: golden-loop behavioral by default, wiring/parity only for new route surfaces.
+new-test policy: golden-loop behavioral by default, wiring/parity only for new route surfaces ·
+✅ HUD-E2E lane now triggers on `agents/core/**` (oracle gap found reviewing #498: the lane boots
+the real backend, but the pipeline-rewiring PR never ran it because the path filter stopped at
+`agents/web.py`).
 
 ---
 
