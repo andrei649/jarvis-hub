@@ -85,8 +85,9 @@ with plugin-configured checks instead of seeded success. Still open:
 - ~~**OpenAPI types**~~ ✅ **DONE 2026-07-03** — `frontend/src/api/schema.gen.ts` is generated from
   the live FastAPI `/openapi.json` via pinned `openapi-typescript`; CI boots the backend,
   regenerates, and fails on a schema diff. Consumer migration remains gradual by design.
-- **Self‑host fonts**: vendor Space Grotesk + JetBrains Mono as woff2 (currently system‑font
-  fallback — offline‑clean but off‑brand).
+- ~~**Self‑host fonts**~~ ✅ **DONE (2026-07-04, #525):** HUD v2 now vendors
+  local Latin-variable WOFF2 assets for Space Grotesk + JetBrains Mono and loads them
+  through `@font-face` in `frontend/src/styles.css`; runtime font-network dependency is removed.
 - **ESM cleanup**: the ported prototype files keep an `import { … } from './ui'` barrel + loose types;
   tighten to real per‑module imports + TS types over time.
 
@@ -118,8 +119,7 @@ the still‑open depth items above. Snapshot: backend ≈299 routes; HUD v2 acti
 - Transcript → governed tasks (H12.25, `POST /api/transcripts/ingest`) — no surface.
 - A2A approval inbox (H16.2 `/api/a2a/inbox*`), payments lifecycle actions (H16.3
   approve/reject/settle), marketplace review (H12.12) — read‑only or absent in Trust/Build.
-- Still missing interactive controls (carried from §2–§5): preference-learning suggestions,
-  in-app look/density/motion/texture tweaks, and self-hosted fonts.
+- Still missing interactive controls (carried from §2–§5): preference-learning suggestions.
 
 **Conclusion:** coverage gate still green (nothing silently dropped), but the *depth* gap regrew.
 Tracked as **TASK‑2** in `BACKLOG.md`; estimated 3–5 PRs (~2–3 weeks part‑time) to "nothing missed".
@@ -139,15 +139,15 @@ send the admin token (`actA`). +7 frontend tests (19 total).
 **Still open (the tail of TASK‑2, re‑verified 2026‑07‑04):** O26-P3.1 closes the §3 plugin-gated
 base wiring in #505 (Build/Comms/Finance/Health/Knowledge/Family). Remaining:
 owner live-data/plugin setup (bank/broker/quotes, Apple Health bridge, websearch backend, WhatsApp
-bridge/frigga live data), channel inbox transport, and §6 self-hosted fonts.
-Estimated 1–2 PRs after #505 for owner-gated/plugin work, plus one small frontend-depth PR for the
-remaining local controls above.
+bridge/frigga live data) and channel inbox transport.
+Estimated 1–2 PRs after #505 for owner-gated/plugin work.
 *Since‑closed items previously listed here:* CI stale‑bundle guard ✅ (`hud-v2-build` in `ci.yml`),
 §7 locality endpoint ✅ (`GET /api/analytics/locality`, consumed in `app.tsx`/`shell.tsx`), and the
 BUG‑17 audit‑verify Trust chip ✅ (`modes.tsx:117-165` renders the live
 `GET /api/security/audit/verify` verdict), the 0.39 saved‑watchlist `WatchlistPanel` ✅, and
 per-panel LIVE/SEED chips ✅ (58/58 Console cards declare a `PanelChip` signal). Data Spaces
 assign/unassign controls ✅. Rooms selected-history drawer ✅. Capability issue/check UI ✅. Current-mesh task fan ✅. Preferences/tweaks UI ✅. O26-P3.2 adds a Vitest reconciliation guard so this document cannot
+Self-hosted fonts ✅. O26-P3.2 adds a Vitest reconciliation guard so this document cannot
 re-list shipped TTS/mic/cognition/trust or Console controls as missing.
 
 ---
