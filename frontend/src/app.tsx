@@ -7,7 +7,7 @@ import { TopBar, Ticker, Rail, Tabs, RosterColumn, ContextColumn, Palette, Ambie
 import { Conversation, CognitionStream, InputBar, buildTrace, traceFromCognition } from './cockpit';
 import { useVoice } from './voice';
 import { loadJarvisData } from './api/loaders';
-import { useLiveModes } from './api/live';
+import { PREVIEW_MODE_LIVE_KEYS, useLiveModes } from './api/live';
 import { LiveSourceChip, liveSourceState } from './LiveSourceChip';
 import { postStream, apiGet } from './api/client';
 import { AgentsMode, Dossier, TrustMode, MemoryMode } from './modes';
@@ -454,11 +454,10 @@ function ProvModal({ prov, onClose }) {
 }
 
 // Which V2 keys must carry REAL backend data for a capability mode to be "live".
-// Modes absent here (build/comms/finance/health/knowledge/family) have no backend
-// wired yet, so they are demo-only previews until one exists.
-const MODE_LIVE_KEYS = {
+export const MODE_LIVE_KEYS = {
   trust: ['AUDIT_CHAIN', 'PAYMENTS'], memory: ['MEMORY_STATS'], autonomy: ['AUTONOMY'],
   observe: ['OBSERVE'], interop: ['INTEROP'], admin: ['ADMIN'],
+  ...PREVIEW_MODE_LIVE_KEYS,
 };
 const MODE_LABELS = {
   trust: 'Trust & Governance', memory: 'Memory', autonomy: 'Autonomy', build: 'Builds',

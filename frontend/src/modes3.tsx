@@ -28,8 +28,8 @@ function ChatMode({ messages, thinking, onStop, onSubmit, onProv, mic, setMic, l
 function CommsMode({ t }){
   const C = V2.COMMS;
   const [filter,setFilter]=uS3('all');
-  const [sel,setSel]=uS3(C.threads[0].id);
-  const chIcon = ch => ch==='telegram'?'send':ch==='email'?'comms':ch==='whatsapp'?'chat':'mic';
+  const [sel,setSel]=uS3(C.threads[0]?.id || '');
+  const chIcon = ch => ch==='telegram'?'send':ch==='email'?'comms':ch==='whatsapp'?'chat':ch==='discord'?'chat':'mic';
   const list = C.threads.filter(th=>filter==='all'||th.channel===filter);
   const active = C.threads.find(th=>th.id===sel) || list[0];
   return (
@@ -57,7 +57,7 @@ function CommsMode({ t }){
           ))}
         </div>
         <div className="comms-read">
-          {active && (<>
+          {active ? (<>
             <div className="cr-head"><span className="cr-ch"><Ic3 d={IK3[chIcon(active.channel)]} size={14}/>{active.channel}</span>
               <span className="cr-handled"><Gl3 id={active.agent} size={13}/>handled by {active.agent}</span></div>
             <div className="cr-subj">{active.subj}</div>
@@ -76,7 +76,7 @@ function CommsMode({ t }){
               <div className="sub-h" style={{marginBottom:8}}>LIVE ROOMS · multi-agent messaging (real backend)</div>
               <RoomsPanel />
             </div>
-          </>)}
+          </>) : <div className="empty-note" style={{padding:16}}>No live comms threads yet</div>}
         </div>
       </div>
     </div>

@@ -50,7 +50,9 @@ function FinanceMode({ t }){
             <div className="pay-row" key={i}><span className="pcap">{p.who}</span><span style={{color:'var(--ink-2)'}}>{p.desc}</span>
               <span style={{textAlign:'right',color:p.state==='approve'?'var(--amber)':'var(--ink-3)'}}>{p.amt}</span></div>
           ))}
-          <div className="pay-pending"><span style={{color:'var(--amber)',fontFamily:'var(--font-mono)',fontSize:11}}>⏳ 1 sweep awaiting approval — €4,200</span></div>
+          {F.pending.length > 0 && (
+            <div className="pay-pending"><span style={{color:'var(--amber)',fontFamily:'var(--font-mono)',fontSize:11}}>pending approval · {F.pending.filter(p=>p.state==='approve').length}</span></div>
+          )}
         </div>
       </div>
     </MP>
