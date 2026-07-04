@@ -7,13 +7,13 @@
 
 ## Sesiune curentă
 
-**Data:** 2026-07-04 (0.44 Safe Comms draft-before-send after O26-P3.2 local controls)
+**Data:** 2026-07-04 (post-0.44 Safe Comms draft UI)
 **Lead agent / Conductor:** Codex
-**Obiectiv sesiune:** close the unblocked Safe Comms draft-before-send UI without claiming actual channel inbox transport.
-**Branch:** `codex-o44-safe-comms-draft-ui`
+**Obiectiv sesiune:** keep main/docs synced after #527; pick the next unblocked non-owner-gated slice.
+**Branch:** `main` (no active feature branch after #527 merge)
 
 **Scope decision (2026-07-04):** O26-P0, P1.1, P2.1, P2.2, P2.3, P2.4, P2.5, P3.1, P3.3, P3.4, P3.5, P3.6, the O26-P3.2 Data Spaces depth slice, the O26-P3.2 Rooms history drawer slice, the O26-P3.2 Capability issue/check UI slice, and the O26-P3.2 Current Mesh Task Fan slice are merged.
-The O26-P3.2 Preferences Tweaks UI slice is merged. The O26-P3.2 Self-hosted Fonts slice is merged in #525. Current branch is a separate 0.44 Safe Comms UI slice: frontend draft composition over existing governed social endpoints only; no backend/channel transport scope.
+The O26-P3.2 Preferences Tweaks UI slice is merged. The O26-P3.2 Self-hosted Fonts slice is merged in #525. The 0.44 Safe Comms draft-before-send UI slice is merged in #527: frontend draft composition over existing governed social endpoints only; no backend/channel transport scope.
 
 **Previous session:** O26-P0.1 golden harness was merged via #496, with P0.2–P0.7 already completed on
 main by parallel agents.
@@ -42,7 +42,7 @@ main by parallel agents.
 | O26-P3.2 / Current Mesh Task Fan | `codex-o26-p3-2-mesh-task-fan` | #521 | ✅ merged | Codex | `NeuralMesh` renders live `/tasks` spokes + count |
 | O26-P3.2 / Preferences Tweaks UI | `codex-o26-p3-2-preferences-tweaks` | #523 | ✅ merged | Codex | Command palette controls look/density/motion/texture prefs |
 | O26-P3.2 / Self-hosted Fonts | `codex-o26-p3-2-self-hosted-fonts` | #525 | ✅ merged | Codex | Local Space Grotesk + JetBrains Mono WOFF2 assets |
-| 0.44 / Safe Comms Draft UI | `codex-o44-safe-comms-draft-ui` | #527 | 🟡 draft PR | Codex | Console panel queues X post/reply/DM drafts through `/api/integrations/social`; channel inbox transport remains open |
+| 0.44 / Safe Comms Draft UI | `codex-o44-safe-comms-draft-ui` | #527 | ✅ merged | Codex | Console panel queues X post/reply/DM drafts through `/api/integrations/social`; channel inbox transport remains open |
 
 Status legend: ⏳ in progress · 🟡 draft PR · 🟢 CI green · ✅ merged · 🔴 conflict
 
@@ -50,7 +50,7 @@ Status legend: ⏳ in progress · 🟡 draft PR · 🟢 CI green · ✅ merged �
 
 ## Fișiere blocate (în PR activ)
 
-Codex is editing `frontend/src/gap.tsx`, `frontend/src/test/safe-comms-draft-panel.test.tsx`, `BACKLOG.md`, `STATUS.md`, `docs/SPRINT.md`, and `docs/design/HUD_V2_REMAINING.md` on `codex-o44-safe-comms-draft-ui`.
+No active feature branch is declared; no files are currently locked by Codex.
 
 ---
 
@@ -70,7 +70,7 @@ Current order:
   10. O26-P3.6 Landing Page Dev Half (#512) ✅
 ```
 
-Current backlog item: **0.44 Safe Comms draft-before-send UI**. The implementation is frontend-only over the existing governed social endpoint. The broader TASK-2/O26 tail remains owner live-data/plugin setup plus actual channel inbox transport.
+Current backlog state: **0.44 Safe Comms draft-before-send UI** is merged in #527. The broader TASK-2/O26 tail remains owner live-data/plugin setup plus actual channel inbox transport. Next unblocked candidate: 0.45 live contract-template adoption for high-risk automation gates.
 
 ---
 
@@ -329,6 +329,7 @@ Generalizează reflecția nocturnă din *rezumă-ziua* în *pre-raționează-pen
 [0.44]     Implemented `SafeCommsDraftPanel` over `/api/integrations/social`; drafts queue for approval and do not send directly
 [Verify]   Safe Comms draft UI focused Vitest green (1 passed); full frontend Vitest green (171 passed); typecheck/build/status-sync/diff-check clean
 [PR]       #527 opened as draft
+[PR]       #527 full GitHub Actions green (16/16); PR marked ready and squash-merged @ ef088c4
 ```
 
 ---
