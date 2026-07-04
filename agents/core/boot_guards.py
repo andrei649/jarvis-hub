@@ -35,7 +35,8 @@ def assert_safe_bind(host: str) -> None:
         return
     has_token = bool(os.environ.get("JARVIS_USER_TOKEN", "").strip()
                      or os.environ.get("JARVIS_ADMIN_TOKEN", "").strip())
-    ack = os.environ.get("JARVIS_ALLOW_INSECURE_BIND", "").strip().lower() in ("1", "true", "yes")
+    from agents.core.env_config import env_flag
+    ack = env_flag("JARVIS_ALLOW_INSECURE_BIND")
     if has_token or ack:
         print(f"[SECURITY] binding to non-loopback host {host!r} — public routes are "
               f"reachable from the network ({'authenticated' if has_token else 'INSECURE, acknowledged'}).")

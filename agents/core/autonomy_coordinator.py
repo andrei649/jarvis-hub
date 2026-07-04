@@ -46,7 +46,11 @@ class AutonomyCoordinator:
         registry); a failed run retries with backoff until its cap, then parks
         ``dead`` — the queue/engine mechanics are covered by the 0.34 tests. A
         drain hiccup is swallowed so it can never break the autonomy tick."""
-        if not os.environ.get("JARVIS_WORKFLOW_PERSIST"):
+        # O26-P2.1: same parse as the engine's persist_enabled() — pre-P2.1 this
+        # was a presence check, so JARVIS_WORKFLOW_PERSIST=0 ENABLED the drain
+        # while the engine read the same var as off.
+        from .workflows.engine import persist_enabled
+        if not persist_enabled():
             return
         engine = getattr(self._orch, "workflow_engine", None)
         registry = getattr(self._orch, "workflow_registry", None)

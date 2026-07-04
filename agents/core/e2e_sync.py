@@ -72,7 +72,8 @@ def _derive_key(passphrase: str) -> bytes:
 
 
 def sync_enabled() -> bool:
-    return os.environ.get(_ENV_FLAG, "").strip().lower() in ("1", "true", "yes", "on")
+    from agents.core.env_config import env_flag
+    return env_flag(_ENV_FLAG)
 
 
 class E2ESync:

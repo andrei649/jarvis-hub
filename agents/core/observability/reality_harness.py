@@ -40,7 +40,8 @@ def _now_iso() -> str:
 
 def reality_enabled() -> bool:
     """True when live (keyed/networked) reality cases may run (opt-in, default off)."""
-    return os.environ.get("JARVIS_REALITY_HARNESS", "").strip().lower() in ("1", "true", "yes")
+    from agents.core.env_config import env_flag
+    return env_flag("JARVIS_REALITY_HARNESS")
 
 
 @dataclass

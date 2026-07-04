@@ -140,6 +140,10 @@ Generalizează reflecția nocturnă din *rezumă-ziua* în *pre-raționează-pen
 [O26-P1.1] Implemented shared Agent prompt wrapper, shared turn enrichment, shared post-LLM record/audit/cognition seam
 [Verify]   P1.1/golden chat/stream abort/concurrent stream/chat HTTP/prompt guard/agent integration/token budget/bench/persona/cognition targeted suites green
 [PR]       #498 opened, full GitHub Actions green, marked ready for review
+[O26-P1.1] #498 independently reviewed (truncation + CDX-7 suspicions cleared, 154 tests re-run on Linux) and MERGED @ 766d15e; e2e path-filter oracle gap -> #499 merged @ 644ace3
+[ORIZONT 26] 2026-07-04 — Phase 2 started; O26-P2.1 (AUD-14 env consolidation) claimed on `claude/jarvis-hub-backlog-review-jx87gz`
+[O26-P2.1] Workflow inventory: 163 env-read sites / 55 files / 122 vars / EIGHT truthy conventions (not 3) incl. the JARVIS_WORKFLOW_PERSIST=0-enables-the-drain footgun
+[O26-P2.1] agents/core/env_config.py (stdlib leaf, one truthy(), unknown->declared-default) + 29 bool sites migrated + ratchet test (red-proved 35 hits); LOCAL_ONLY floor + hardened layering untouched
 ```
 
 ---

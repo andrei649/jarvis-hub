@@ -30,7 +30,6 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import os
 import time
 from typing import Callable, Optional, Protocol
 
@@ -45,20 +44,10 @@ DEFAULT_VRAM_RESERVE_MB = 2_048
 DEFAULT_MODEL_SIZE_MB = 8_192
 
 
-def _env_int(name: str, default: int) -> int:
-    """Read a non-negative int from the environment, falling back on junk."""
-    try:
-        v = int(os.environ.get(name, "").strip())
-        return v if v >= 0 else default
-    except (TypeError, ValueError):
-        return default
-
-
 def _manager_enabled() -> bool:
     """`JARVIS_MODEL_MANAGER` kill-switch. Default OFF (unset / 0 / false)."""
-    return os.environ.get("JARVIS_MODEL_MANAGER", "0").strip().lower() in (
-        "1", "true", "yes", "on",
-    )
+    from agents.core.env_config import env_flag
+    return env_flag("JARVIS_MODEL_MANAGER")
 
 
 class ModelController(Protocol):
@@ -181,13 +170,14 @@ class ModelManager:
         clock: Callable[[], float] = time.monotonic,
     ):
         self._controller = controller
+        from agents.core.env_config import env_int
         self.vram_total_mb = (
             vram_total_mb if vram_total_mb is not None
-            else _env_int("JARVIS_VRAM_TOTAL_MB", DEFAULT_VRAM_TOTAL_MB)
+            else env_int("JARVIS_VRAM_TOTAL_MB", DEFAULT_VRAM_TOTAL_MB, minimum=0)
         )
         self.vram_reserve_mb = (
             vram_reserve_mb if vram_reserve_mb is not None
-            else _env_int("JARVIS_VRAM_RESERVE_MB", DEFAULT_VRAM_RESERVE_MB)
+            else env_int("JARVIS_VRAM_RESERVE_MB", DEFAULT_VRAM_RESERVE_MB, minimum=0)
         )
         self._size_hints = dict(size_hints or {})
         self._default_size_mb = default_size_mb
