@@ -23,8 +23,8 @@
   `PUT /api/admin/settings/{cat}` in `SettingsPanel`.
 - ✅ **Prompt versions**: `PromptsPanel` has A/B, diff, rollback, edit, preview, and commit controls
   over `/api/admin/prompts/{id}/*`.
-- 🟡 **Data Spaces**: list/create/delete are live in `DataSpacesPanel`; assign/unassign controls
-  for `/api/memory/spaces/{assign,unassign}` remain open.
+- ✅ **Data Spaces**: list/create/delete plus assign/unassign controls are live in `DataSpacesPanel`
+  over `/api/memory/spaces` and `/api/memory/spaces/{assign,unassign}`.
 - 🟡 **Secrets / Capabilities**: the secret store form is live in `SecretsPanel`, and capability
   token issue is live in `CapabilitiesPanel`; a grants list/check UI remains open.
 - 🟡 **Rooms**: create + send with `@mentions` are live in `RoomsPanel`; an open history drawer over
@@ -112,7 +112,7 @@ the still‑open depth items above. Snapshot: backend ≈299 routes; HUD v2 acti
 - A2A approval inbox (H16.2 `/api/a2a/inbox*`), payments lifecycle actions (H16.3
   approve/reject/settle), marketplace review (H12.12) — read‑only or absent in Trust/Build.
 - Still missing interactive controls (carried from §2–§5): preference-learning suggestions,
-  Data Spaces assign/unassign, capability grants/check UI, room history drawer, current-mesh task fan,
+  capability grants/check UI, room history drawer, current-mesh task fan,
   in-app look/density/motion/texture tweaks, and self-hosted fonts.
 
 **Conclusion:** coverage gate still green (nothing silently dropped), but the *depth* gap regrew.
@@ -133,17 +133,17 @@ send the admin token (`actA`). +7 frontend tests (19 total).
 **Still open (the tail of TASK‑2, re‑verified 2026‑07‑04):** O26-P3.1 closes the §3 plugin-gated
 base wiring in #505 (Build/Comms/Finance/Health/Knowledge/Family). Remaining:
 owner live-data/plugin setup (bank/broker/quotes, Apple Health bridge, websearch backend, WhatsApp
-bridge/frigga live data), channel inbox transport, Data Spaces assign/unassign, room history drawer,
-current-mesh task fan, preferences/tweaks UI, and §6 self-hosted fonts.
+bridge/frigga live data), channel inbox transport, room history drawer, current-mesh task fan,
+preferences/tweaks UI, and §6 self-hosted fonts.
 Estimated 1–2 PRs after #505 for owner-gated/plugin work, plus one small frontend-depth PR for the
 remaining local controls above.
 *Since‑closed items previously listed here:* CI stale‑bundle guard ✅ (`hud-v2-build` in `ci.yml`),
 §7 locality endpoint ✅ (`GET /api/analytics/locality`, consumed in `app.tsx`/`shell.tsx`), and the
 BUG‑17 audit‑verify Trust chip ✅ (`modes.tsx:117-165` renders the live
 `GET /api/security/audit/verify` verdict), the 0.39 saved‑watchlist `WatchlistPanel` ✅, and
-per-panel LIVE/SEED chips ✅ (58/58 Console cards declare a `PanelChip` signal). O26-P3.2 adds a
-Vitest reconciliation guard so this document cannot re-list shipped TTS/mic/cognition/trust or
-Console controls as missing.
+per-panel LIVE/SEED chips ✅ (58/58 Console cards declare a `PanelChip` signal). Data Spaces
+assign/unassign controls ✅. O26-P3.2 adds a Vitest reconciliation guard so this document cannot
+re-list shipped TTS/mic/cognition/trust or Console controls as missing.
 
 ---
 *Parity gate (`tests/test_hud_v2_parity.py`) tracks all routes → every one is mapped to a v2

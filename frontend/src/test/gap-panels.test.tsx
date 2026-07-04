@@ -5,7 +5,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import React from 'react';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
-import { PairingPanel, SandboxPanel } from '../gap';
+import { DataSpacesPanel, PairingPanel, SandboxPanel } from '../gap';
 
 beforeEach(() => { try { localStorage.clear(); } catch { /* ignore */ } });
 
@@ -33,6 +33,40 @@ describe('PairingPanel (H12.19) — sender approvals are live', () => {
       const post = fn.mock.calls.find((c) => String(c[0]).includes('/api/channels/pairing/decide') && c[1]?.method === 'POST');
       expect(post).toBeTruthy();
       expect(JSON.parse(post[1].body)).toMatchObject({ channel: 'telegram', sender_id: '12345', action: 'approve' });
+    });
+  });
+});
+
+describe('DataSpacesPanel (H10.26) — per-agent scope controls are live', () => {
+  it('renders current assignments and POSTs assign/unassign decisions', async () => {
+    const fn = mockFetch({
+      '/api/memory/spaces': {
+        spaces: [{ space: 'family', sources: ['family_facts'] }],
+        assignments: { frigga: ['family'] },
+      },
+      '/api/memory/spaces/assign': { ok: true },
+      '/api/memory/spaces/unassign': { ok: true },
+    });
+    render(<DataSpacesPanel />);
+
+    await waitFor(() => expect(screen.getByText('frigga')).toBeTruthy());
+    expect(screen.getAllByText('family').length).toBeGreaterThan(0);
+
+    fireEvent.change(screen.getByPlaceholderText('agent id'), { target: { value: 'jarvis' } });
+    fireEvent.change(screen.getByLabelText('space to assign'), { target: { value: 'family' } });
+    fireEvent.click(screen.getByText('assign'));
+
+    await waitFor(() => {
+      const post = fn.mock.calls.find((c) => String(c[0]).includes('/api/memory/spaces/assign') && c[1]?.method === 'POST');
+      expect(post).toBeTruthy();
+      expect(JSON.parse(post[1].body)).toEqual({ agent: 'jarvis', space: 'family' });
+    });
+
+    fireEvent.click(screen.getByTitle('unassign frigga from family'));
+    await waitFor(() => {
+      const post = fn.mock.calls.find((c) => String(c[0]).includes('/api/memory/spaces/unassign') && c[1]?.method === 'POST');
+      expect(post).toBeTruthy();
+      expect(JSON.parse(post[1].body)).toEqual({ agent: 'frigga', space: 'family' });
     });
   });
 });

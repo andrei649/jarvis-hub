@@ -147,20 +147,55 @@ export function KgPanel() {
     </Card>
   );
 }
-function DataSpacesPanel() {
+export function DataSpacesPanel() {
   const { d, e, loading, reload } = useApi('/api/memory/spaces');
   const spaces = arr(d, 'spaces');
+  const assignments = d?.assignments || {};
+  const assignmentRows = Object.entries(assignments).flatMap(([agent, names]: any) =>
+    (Array.isArray(names) ? names : []).map((space) => ({ agent, space })),
+  );
+  const spaceName = (s) => s?.name || s?.space || s;
   const [name, setName] = useState(''); const [src, setSrc] = useState('');
+  const [agent, setAgent] = useState(''); const [assignSpace, setAssignSpace] = useState('');
+  const [msg, setMsg] = useState('');
   const inp = { background: 'var(--surface)', color: 'var(--ink)', border: '1px solid var(--panel-line)', borderRadius: 4, padding: 5, ...mono, fontSize: 11, flex: 1 };
   const create = () => { if (!name.trim()) return; apiPost('/api/memory/spaces', { name: name.trim(), sources: src.split(',').map((s) => s.trim()).filter(Boolean) }, { admin: true }).then(() => { setName(''); setSrc(''); reload(); }).catch(() => {}); };
+  const assign = () => {
+    const a = agent.trim(); const sp = assignSpace.trim();
+    if (!a || !sp) return;
+    apiPost('/api/memory/spaces/assign', { agent: a, space: sp }, { admin: true })
+      .then(() => { setMsg(`${a} -> ${sp}`); reload(); })
+      .catch(() => setMsg('assign failed'));
+  };
+  const unassign = (a, sp) => apiPost('/api/memory/spaces/unassign', { agent: a, space: sp }, { admin: true })
+    .then(() => { setMsg(`${a} unrestricted from ${sp}`); reload(); })
+    .catch(() => setMsg('unassign failed'));
+  const optionSpaces = spaces.map(spaceName).filter(Boolean);
   return <Card title="DATA SPACES" live={asLive(d)} sub={spaces.length} onReload={reload}>
     <State e={e} loading={loading} n={spaces.length} />
-    {spaces.slice(0, 12).map((s, i) => <Row key={i}><span style={{ ...mono, color: 'var(--accent-light)' }}>{s.name || s}</span><span style={{ fontSize: 10, color: 'var(--ink-3)' }}>{(s.sources || s.categories || []).join?.(', ')}</span><Btn onClick={() => apiDelete('/api/memory/spaces/' + (s.name || s), { admin: true }).then(reload).catch(() => {})}>✕</Btn></Row>)}
+    {spaces.slice(0, 12).map((s, i) => <Row key={i}><span style={{ ...mono, color: 'var(--accent-light)' }}>{spaceName(s)}</span><span style={{ fontSize: 10, color: 'var(--ink-3)' }}>{(s.sources || s.categories || []).join?.(', ')}</span><Btn onClick={() => apiDelete('/api/memory/spaces/' + spaceName(s), { admin: true }).then(reload).catch(() => {})}>✕</Btn></Row>)}
+    {assignmentRows.length > 0 && <div style={{ marginTop: 8 }}>
+      <div style={{ ...mono, color: 'var(--ink-3)', fontSize: 10, marginBottom: 4 }}>ASSIGNMENTS</div>
+      {assignmentRows.slice(0, 16).map((r, i) => <Row key={`${r.agent}:${r.space}:${i}`}>
+        <span style={{ ...mono, color: 'var(--ink-2)' }}>{r.agent}</span>
+        <Tag c="var(--accent-light)">{r.space}</Tag>
+        <button className="tool-btn" title={`unassign ${r.agent} from ${r.space}`} onClick={() => unassign(r.agent, r.space)}>unassign</button>
+      </Row>)}
+    </div>}
     <div style={{ display: 'flex', gap: 6, marginTop: 8 }}>
       <input value={name} onChange={(ev) => setName(ev.target.value)} placeholder="space name" style={inp} />
       <input value={src} onChange={(ev) => setSrc(ev.target.value)} placeholder="sources, csv" style={inp} />
       <button className="tool-btn" onClick={create}>+ add</button>
     </div>
+    <div style={{ display: 'flex', gap: 6, marginTop: 8 }}>
+      <input value={agent} onChange={(ev) => setAgent(ev.target.value)} placeholder="agent id" style={inp} />
+      <select aria-label="space to assign" value={assignSpace} onChange={(ev) => setAssignSpace(ev.target.value)} style={{ ...inp, minWidth: 120 }}>
+        <option value="">choose space</option>
+        {optionSpaces.map((sp) => <option key={sp} value={sp}>{sp}</option>)}
+      </select>
+      <button className="tool-btn" onClick={assign}>assign</button>
+    </div>
+    {msg && <div style={{ fontSize: 10, color: 'var(--accent-light)', marginTop: 6 }}>{msg}</div>}
     <div style={{ fontSize: 10, color: 'var(--ink-3)', marginTop: 6 }}>per-agent read scope (H10.26) · default-open</div>
   </Card>;
 }
