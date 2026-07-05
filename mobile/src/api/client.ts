@@ -332,6 +332,192 @@ export async function fetchNotes(config: ServerConfig): Promise<NotesResponse> {
   return normalizeNotes(res || {});
 }
 
+// ── Knowledge Graph ──────────────────────────────────────────────
+
+export type KnowledgeEntity = {
+  name: string;
+  type: string;
+  properties: Record<string, unknown>;
+  [key: string]: unknown;
+};
+
+export type KnowledgeRelation = {
+  source: string;
+  relation: string;
+  target: string;
+  properties: Record<string, unknown>;
+  [key: string]: unknown;
+};
+
+export type KnowledgeFact = {
+  id?: number | string;
+  subject: string;
+  predicate: string;
+  object: string;
+  valid_from?: number;
+  valid_to?: number | null;
+  ingested_at?: number;
+  invalidated_at?: number | null;
+  [key: string]: unknown;
+};
+
+export type KgEntitiesResponse = {
+  entities: KnowledgeEntity[];
+  total: number;
+};
+
+export type KgEntityResponse = {
+  entity?: KnowledgeEntity;
+  relations: KnowledgeRelation[];
+};
+
+export type KgFactsResponse = {
+  at?: number | string | null;
+  facts: KnowledgeFact[];
+};
+
+export type KgFactHistoryResponse = {
+  subject?: string;
+  history: KnowledgeFact[];
+};
+
+export type KgEntityQuery = {
+  query?: string;
+  limit?: number;
+};
+
+export type KgFactQuery = {
+  at?: number;
+  subject?: string;
+  predicate?: string;
+};
+
+function recordValue(value: unknown): Record<string, unknown> {
+  return isRecord(value) ? value : {};
+}
+
+function buildQuery(params: Record<string, string | number | undefined>): string {
+  const query = Object.entries(params)
+    .filter(([, value]) => value !== undefined && value !== '')
+    .map(([key, value]) => `${encodeURIComponent(key)}=${encodeURIComponent(String(value))}`)
+    .join('&');
+  return query ? `?${query}` : '';
+}
+
+function normalizeKnowledgeEntity(value: unknown): KnowledgeEntity | null {
+  if (!isRecord(value)) return null;
+  const name = String(value.name ?? '').trim();
+  if (!name) return null;
+  return {
+    ...value,
+    name,
+    type: String(value.type ?? 'unknown'),
+    properties: recordValue(value.properties),
+  };
+}
+
+function normalizeKnowledgeRelation(value: unknown): KnowledgeRelation | null {
+  if (!isRecord(value)) return null;
+  return {
+    ...value,
+    source: String(value.source ?? ''),
+    relation: String(value.relation ?? ''),
+    target: String(value.target ?? ''),
+    properties: recordValue(value.properties),
+  };
+}
+
+function normalizeKnowledgeFact(value: unknown): KnowledgeFact | null {
+  if (!isRecord(value)) return null;
+  const subject = String(value.subject ?? '').trim();
+  const predicate = String(value.predicate ?? '').trim();
+  const object = String(value.object ?? '').trim();
+  if (!subject && !predicate && !object) return null;
+  return {
+    ...value,
+    subject,
+    predicate,
+    object,
+  } as KnowledgeFact;
+}
+
+function normalizeKgEntities(raw: Record<string, unknown>): KgEntitiesResponse {
+  const entities = Array.isArray(raw.entities)
+    ? raw.entities
+        .map(normalizeKnowledgeEntity)
+        .filter((entity): entity is KnowledgeEntity => entity !== null)
+    : [];
+  const rawTotal = typeof raw.total === 'number' && Number.isFinite(raw.total) ? raw.total : entities.length;
+  return { entities, total: rawTotal };
+}
+
+function normalizeKgEntity(raw: Record<string, unknown>): KgEntityResponse {
+  const entity = normalizeKnowledgeEntity(raw.entity);
+  const relations = Array.isArray(raw.relations)
+    ? raw.relations
+        .map(normalizeKnowledgeRelation)
+        .filter((relation): relation is KnowledgeRelation => relation !== null)
+    : [];
+  return entity ? { entity, relations } : { relations };
+}
+
+function normalizeKgFacts(raw: Record<string, unknown>): KgFactsResponse {
+  const facts = Array.isArray(raw.facts)
+    ? raw.facts.map(normalizeKnowledgeFact).filter((fact): fact is KnowledgeFact => fact !== null)
+    : [];
+  return raw.at === undefined ? { facts } : { at: raw.at as number | string | null, facts };
+}
+
+function normalizeKgFactHistory(raw: Record<string, unknown>): KgFactHistoryResponse {
+  const history = Array.isArray(raw.history)
+    ? raw.history.map(normalizeKnowledgeFact).filter((fact): fact is KnowledgeFact => fact !== null)
+    : [];
+  const subject = raw.subject === undefined || raw.subject === null ? undefined : String(raw.subject);
+  return subject === undefined ? { history } : { subject, history };
+}
+
+export async function fetchKgEntities(
+  config: ServerConfig,
+  query: KgEntityQuery = {},
+): Promise<KgEntitiesResponse> {
+  const qs = buildQuery({ q: query.query, limit: query.limit ?? 50 });
+  const res = await request<Record<string, unknown>>(config, 'GET', `/api/kg/entities${qs}`, undefined, {
+    retries: 2,
+  });
+  return normalizeKgEntities(res || {});
+}
+
+export async function fetchKgEntity(config: ServerConfig, name: string): Promise<KgEntityResponse> {
+  const res = await request<Record<string, unknown>>(
+    config,
+    'GET',
+    `/api/kg/entities/${encodeURIComponent(name)}`,
+    undefined,
+    { retries: 2 },
+  );
+  return normalizeKgEntity(res || {});
+}
+
+export async function fetchKgFacts(config: ServerConfig, query: KgFactQuery = {}): Promise<KgFactsResponse> {
+  const qs = buildQuery({ at: query.at, subject: query.subject, predicate: query.predicate });
+  const res = await request<Record<string, unknown>>(config, 'GET', `/api/kg/facts/as-of${qs}`, undefined, {
+    retries: 2,
+  });
+  return normalizeKgFacts(res || {});
+}
+
+export async function fetchKgFactHistory(
+  config: ServerConfig,
+  subject: string,
+  predicate = '',
+): Promise<KgFactHistoryResponse> {
+  const qs = buildQuery({ subject, predicate });
+  const res = await request<Record<string, unknown>>(config, 'GET', `/api/kg/facts/history${qs}`, undefined, {
+    retries: 2,
+  });
+  return normalizeKgFactHistory(res || {});
+}
+
 // ── Tasks ────────────────────────────────────────────────────────
 
 export type HubTask = {
