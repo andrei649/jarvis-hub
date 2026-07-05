@@ -55,5 +55,5 @@
 - [x] Add H18.13 backlog row and sync the ORIZONT 18 count.
 - [x] Record verified mobile test/typecheck results.
 - [x] Run final hygiene checks.
-- [ ] Commit, push, and open draft PR.
-- [ ] Monitor CI and mark ready after checks pass.
+- [x] Commit, push, and open draft PR #566.
+- [x] Monitor CI, mark ready after checks pass, and merge #566.
