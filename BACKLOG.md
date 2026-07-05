@@ -50,7 +50,7 @@ python -m pytest tests/ -v          # ~3,669 passed, 6 skipped (counter synced v
 > cognition stores live and at rest. #559 wires the default-off re-projection
 > maintenance hook. #560 passes the existing local memory embedder into
 > that hook so old tier records can be upgraded during maintenance. Current
-> WIP reactivates matched LivingMemory recall hits, refreshing both tier
+> WIP (#561) reactivates matched LivingMemory recall hits, refreshing both tier
 > activation and the H14 decay access ledger.
 
 ---
