@@ -206,6 +206,108 @@ export function decideApproval(
   );
 }
 
+// ── Channel Inbox ────────────────────────────────────────────────
+
+export type ChannelInboxThread = {
+  id?: string;
+  thread_id: string;
+  channel?: string;
+  sender?: string;
+  from?: string;
+  subj?: string;
+  preview?: string;
+  ts?: number;
+  count?: number;
+  unread?: boolean;
+  reply?: Record<string, unknown>;
+  last_message_id?: string;
+};
+
+export type ChannelInboxMessage = {
+  id: string;
+  thread_id?: string;
+  channel?: string;
+  direction?: 'in' | 'out' | string;
+  sender?: string;
+  text?: string;
+  preview?: string;
+  reply?: Record<string, unknown>;
+  reply_to?: string;
+  ts?: number;
+};
+
+export type ChannelInboxResponse = {
+  threads: ChannelInboxThread[];
+};
+
+export type ChannelThreadResponse = {
+  thread?: ChannelInboxThread;
+  messages: ChannelInboxMessage[];
+};
+
+export type ChannelReplyResponse = {
+  ok?: boolean;
+  queued?: boolean;
+  task_id?: number | string;
+  reason?: string;
+  error?: string;
+};
+
+function channelThreadArray(value: unknown): ChannelInboxThread[] {
+  return Array.isArray(value) ? (value as ChannelInboxThread[]) : [];
+}
+
+function channelMessageArray(value: unknown): ChannelInboxMessage[] {
+  return Array.isArray(value) ? (value as ChannelInboxMessage[]) : [];
+}
+
+function normalizeChannelInbox(raw: Partial<ChannelInboxResponse>): ChannelInboxResponse {
+  return { threads: channelThreadArray(raw.threads) };
+}
+
+function normalizeChannelThread(raw: Partial<ChannelThreadResponse>): ChannelThreadResponse {
+  return {
+    thread: raw.thread,
+    messages: channelMessageArray(raw.messages),
+  };
+}
+
+export async function fetchChannelInbox(config: ServerConfig): Promise<ChannelInboxResponse> {
+  const res = await request<Partial<ChannelInboxResponse>>(config, 'GET', '/api/channels/inbox', undefined, {
+    retries: 2,
+  });
+  return normalizeChannelInbox(res || {});
+}
+
+export async function fetchChannelThread(
+  config: ServerConfig,
+  threadId: string,
+): Promise<ChannelThreadResponse> {
+  const encoded = encodeURIComponent(threadId);
+  const res = await request<Partial<ChannelThreadResponse>>(
+    config,
+    'GET',
+    `/api/channels/inbox/${encoded}`,
+    undefined,
+    { retries: 2 },
+  );
+  return normalizeChannelThread(res || {});
+}
+
+export function sendChannelReply(
+  config: ServerConfig,
+  threadId: string,
+  text: string,
+  agent = 'jarvis',
+): Promise<ChannelReplyResponse> {
+  return request<ChannelReplyResponse>(
+    config,
+    'POST',
+    `/api/channels/inbox/${encodeURIComponent(threadId)}/reply`,
+    { text, agent, source: 'mobile' },
+  );
+}
+
 // ── Agents ────────────────────────────────────────────────────────
 
 export type AgentInfo = {
