@@ -52,8 +52,8 @@ python -m pytest tests/ -v          # ~3,678 passed, 6 skipped (counter synced v
 > that hook so old tier records can be upgraded during maintenance. #561
 > reactivates matched LivingMemory recall hits, refreshing both tier activation
 > and the H14 decay access ledger. #562 rejects exact duplicate LivingMemory
-> turn digests before they create another tier/decay record. R1/R4 draft PR #578
-> gates Oracle's external commit pull/test loop behind a live
+> turn digests before they create another tier/decay record. #578 gates
+> Oracle's external commit pull/test loop behind a live
 > repo-sync contract plus the Action Kernel, default-refuses when the kernel is
 > off, and removes shell execution from MCP stdio startup while gating outbound
 > MCP tool calls through a live contract.
