@@ -28,16 +28,11 @@ python -m pytest tests/ -v          # ~3,600 passed, 6 skipped (counter synced v
 **Server curent** (dacă e pornit): PID vezi `netstat -ano | findstr ":8080 "`.
 **Stack:** Python 3.12 + FastAPI + vanilla React (createElement, no JSX).
 
-> **Recent merge (2026-07-05):** #545 (`codex-o45-media-gen-contract-gate`)
+> **Recent merge (2026-07-05):** #547 (`codex-o45-desktop-step-contract-gate`)
 > continues 0.45 High-Risk Automation Contracts by adding
-> `MEDIA_GENERATION_CONTRACT` to cloud media-generation
-> requests before they can enter the approval queue. Local red/green and focused
-> media/contracts/funnel verification, and full GitHub Actions passed before merge.
-
-> **Active WIP (2026-07-05):** #547 (`codex-o45-desktop-step-contract-gate`)
-> continues 0.45 by adding `DESKTOP_STEP_CONTRACT` to mutating desktop operator
+> `DESKTOP_STEP_CONTRACT` to mutating desktop operator
 > steps before the approver/driver path. Local red/green and focused
-> desktop/contracts/funnel verification are green.
+> desktop/contracts/funnel verification, and full GitHub Actions passed before merge.
 
 ---
 
