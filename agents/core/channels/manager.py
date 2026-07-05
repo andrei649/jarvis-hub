@@ -8,12 +8,66 @@ Orchestrator keeps a `channels` property that delegates here, so existing
 """
 
 import logging
+import re
+import time
+from typing import Any
 
+from ..automation_contracts import ContractTemplate, contract_denial, predicate
 from .base import ChannelAdapter
 from ..errors import E_CHANNEL_START_FAIL
 from ..log import log_error
 
 logger = logging.getLogger("jarvis.channels.manager")
+
+CHANNEL_SEND_CONTRACT_KIND = "channel.send"
+_SAFE_CONTRACT_TOKEN = re.compile(r"^[A-Za-z0-9_.:/@\-]{1,200}$")
+_SUPPORTED_SEND_CHANNELS = frozenset({"telegram", "web", "voice"})
+
+
+def _safe_contract_token(value: Any) -> bool:
+    return bool(_SAFE_CONTRACT_TOKEN.match(str(value or "")))
+
+
+def _safe_kwarg_keys(view, now) -> bool:
+    keys = view.get("kwarg_keys")
+    if not isinstance(keys, list) or not all(isinstance(k, str) for k in keys):
+        return False
+    return keys == sorted(keys) and all(_safe_contract_token(k) for k in keys)
+
+
+def _send_shape_valid(view, now) -> bool:
+    return (
+        view.get("kind") == CHANNEL_SEND_CONTRACT_KIND
+        and view.get("channel") in _SUPPORTED_SEND_CHANNELS
+        and _safe_contract_token(view.get("channel"))
+    )
+
+
+def _message_len_valid(view, now) -> bool:
+    length = view.get("message_len")
+    return isinstance(length, int) and not isinstance(length, bool) and length >= 0
+
+
+def _kwarg_count_valid(view, now) -> bool:
+    count = view.get("kwarg_count")
+    return isinstance(count, int) and not isinstance(count, bool) and 0 <= count <= 32
+
+
+def _channel_send_contract_template() -> ContractTemplate:
+    return ContractTemplate(
+        kind=CHANNEL_SEND_CONTRACT_KIND,
+        description="Generic channel-send transport gate.",
+        constraints=(
+            predicate("send_shape_valid", _send_shape_valid, reason="invalid_shape"),
+            predicate("kwarg_keys_safe", _safe_kwarg_keys, reason="bad_kwarg_keys"),
+            predicate("message_len_valid", _message_len_valid, reason="bad_message_len"),
+            predicate("kwarg_count_valid", _kwarg_count_valid, reason="bad_kwarg_count"),
+        ),
+        requires_approval=False,
+    )
+
+
+CHANNEL_SEND_CONTRACT = _channel_send_contract_template()
 
 
 class ChannelManager:
@@ -43,6 +97,8 @@ class ChannelManager:
         ch = self.channels.get(channel)
         if not ch:
             return False
+        if self._contract_denial(channel, response, kwargs) is not None:
+            return False
         if channel == "telegram":
             return bool(await ch.send(response, **kwargs))
         elif channel == "web":
@@ -50,3 +106,28 @@ class ChannelManager:
         elif channel == "voice":
             return bool(await ch.send(response))
         return False
+
+    def _contract_payload(self, channel: str, response, kwargs: dict) -> dict:
+        keys = sorted(str(k) for k in kwargs)
+        return {
+            "kind": CHANNEL_SEND_CONTRACT_KIND,
+            "channel": channel,
+            "message_len": len(str(response or "")),
+            "kwarg_keys": keys,
+            "kwarg_count": len(keys),
+        }
+
+    def _contract_denial(self, channel: str, response, kwargs: dict) -> str | None:
+        try:
+            decision = CHANNEL_SEND_CONTRACT.evaluate(
+                self._contract_payload(channel, response, kwargs),
+                now=time.time(),
+            )
+        except Exception:
+            logger.warning(
+                "channel-send contract evaluation failed for %s",
+                channel,
+                exc_info=True,
+            )
+            return "contract_error"
+        return contract_denial(decision)
