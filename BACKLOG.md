@@ -16,7 +16,7 @@ pip install -r requirements-beta.txt
 python serve.py   # canonical entry (boot guards + graceful shutdown; O26-P0.6: the raw
 #   uvicorn entry `python -m uvicorn agents.web:app` now runs the same guards via the lifespan)
 python scripts/install_smoke.py --json  # fast install smoke: boot + /readyz + fake local turn
-python -m pytest tests/ -v          # ~3,671 passed, 6 skipped (counter synced via scripts/status_sync.py)
+python -m pytest tests/ -v          # ~3,678 passed, 6 skipped (counter synced via scripts/status_sync.py)
 ```
 
 > Singurul skip rămas e heartbeat-ul opțional. (Vechiul `tests/test_spotify.py` cu 8 skip-uri a
@@ -52,7 +52,11 @@ python -m pytest tests/ -v          # ~3,671 passed, 6 skipped (counter synced v
 > that hook so old tier records can be upgraded during maintenance. #561
 > reactivates matched LivingMemory recall hits, refreshing both tier activation
 > and the H14 decay access ledger. #562 rejects exact duplicate LivingMemory
-> turn digests before they create another tier/decay record.
+> turn digests before they create another tier/decay record. R1/R4 draft PR #578
+> gates Oracle's external commit pull/test loop behind a live
+> repo-sync contract plus the Action Kernel, default-refuses when the kernel is
+> off, and removes shell execution from MCP stdio startup while gating outbound
+> MCP tool calls through a live contract.
 
 ---
 
