@@ -13,7 +13,8 @@ repo_root = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(repo_root))
 sys.path.insert(0, str(repo_root / "agents"))
 
-from agents.core.autonomy.reflection import DailyReflector
+from agents.core.autonomy.reflection import DailyReflector, ReflectionRunStore
+from agents.core.cognition.memory import LivingMemory
 from agents.core.memory.manager import MemoryManager
 
 
@@ -173,3 +174,81 @@ async def test_status_after_run():
     s = r.status()
     assert s["last_run"] == date.today().isoformat()
     assert s["last_result"] is not None
+
+
+# ── Task 5: durable idempotency + LivingMemory handoff ───────────────────────
+
+@pytest.mark.asyncio
+async def test_reflection_durable_store_skips_after_restart(tmp_path):
+    m = await _mem_with_turns(("user", "Andrei wants durable reflection state"))
+    calls = []
+    store_path = tmp_path / "reflection.json"
+
+    async def _llm(prompt: str) -> str:
+        calls.append(prompt)
+        return json.dumps({"entities": [], "relations": [], "lessons": []})
+
+    await DailyReflector(m, _llm, run_store=ReflectionRunStore(store_path)).run()
+    restarted = DailyReflector(m, _llm, run_store=ReflectionRunStore(store_path))
+    result = await restarted.run()
+
+    assert result == {"skipped": True, "reason": "already_ran_today"}
+    assert len(calls) == 1
+    assert restarted.status()["last_run"] == date.today().isoformat()
+
+
+@pytest.mark.asyncio
+async def test_reflection_force_bypasses_durable_store(tmp_path):
+    m = await _mem_with_turns(("user", "Andrei manually reruns reflection"))
+    calls = []
+    store_path = tmp_path / "reflection.json"
+
+    async def _llm(prompt: str) -> str:
+        calls.append(prompt)
+        return json.dumps({"entities": [], "relations": [], "lessons": []})
+
+    await DailyReflector(m, _llm, run_store=ReflectionRunStore(store_path)).run()
+    restarted = DailyReflector(m, _llm, run_store=ReflectionRunStore(store_path))
+    result = await restarted.run(force=True)
+
+    assert result["date"] == date.today().isoformat()
+    assert len(calls) == 2
+
+
+@pytest.mark.asyncio
+async def test_reflection_writes_lessons_to_living_memory_without_raw_context():
+    raw_turn = "Andrei said the unpersisted phrase BLUE-MOON-TRACE."
+    lesson = "Andrei wants Jarvis to remember safe comms follow-ups."
+    m = await _mem_with_turns(("user", raw_turn))
+    living = LivingMemory()
+    r = DailyReflector(
+        m,
+        _llm_returning({"entities": [], "relations": [], "lessons": [lesson]}),
+        living_memory=living,
+    )
+
+    result = await r.run()
+
+    assert result["living_memory"]["encoded"] == 1
+    records = living.records(prefix=f"reflection:{date.today().isoformat()}:")
+    assert len(records) == 1
+    content = records[0]["content"]
+    assert content["kind"] == "daily_reflection_lesson"
+    assert content["lesson_sha256"]
+    assert lesson not in json.dumps(content)
+    assert raw_turn not in json.dumps(content)
+    assert any(lesson in fact for fact in living.core.list())
+
+
+@pytest.mark.asyncio
+async def test_reflection_living_memory_provider_can_gate_default_off():
+    m = await _mem_with_turns(("user", "A lesson exists but cognition memory is off"))
+    r = DailyReflector(
+        m,
+        _llm_returning({"entities": [], "relations": [], "lessons": ["keep this only in graph reflection"]}),
+        living_memory=lambda: None,
+    )
+
+    result = await r.run()
+
+    assert result["living_memory"] == {"available": False, "encoded": 0, "core": 0}

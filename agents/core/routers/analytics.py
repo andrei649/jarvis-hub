@@ -219,10 +219,9 @@ async def reflection_run():
     if not orch or not hasattr(orch, "reflector") or not orch.reflector:
         return nocache_json({"ok": False, "error": "reflector not initialized"})
     try:
-        # Force re-run by temporarily clearing last_run
-        orch.reflector._last_run = None
         result = await orch.reflector.run(
-            enabled=orch.get_setting("system.reflection_enabled", True)
+            enabled=orch.get_setting("system.reflection_enabled", True),
+            force=True,
         )
         return nocache_json({"ok": True, "result": result})
     except Exception as e:

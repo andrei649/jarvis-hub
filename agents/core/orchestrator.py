@@ -46,7 +46,7 @@ from .skills.skill_history import SkillHistory
 from .mcp.client import MCPManager
 from .autonomy import AutonomyWorker, TaskQueue, AutonomyPolicy, PreferenceStore, InterruptBudget, MissionStore
 from .autonomy import ProactiveObserver, default_probes
-from .autonomy.reflection import DailyReflector
+from .autonomy.reflection import DailyReflector, ReflectionRunStore
 from .autonomy.log_scanner import LogBugScanner
 from .workflows import WorkflowEngine, WorkflowRegistry
 from .sandbox import Sandbox
@@ -488,7 +488,19 @@ class Orchestrator:
             async def _reflect_llm(prompt: str) -> str:
                 return await self.process(prompt, agent="jarvis", channel="reflection")
 
-            self.reflector = DailyReflector(self.memory, _reflect_llm)
+            def _reflection_living_memory():
+                cog = getattr(self, "cognition", None)
+                if cog is None or not cog.sub_enabled("memory_enabled"):
+                    return None
+                return cog.module("memory")
+
+            from .paths import data_path
+            self.reflector = DailyReflector(
+                self.memory,
+                _reflect_llm,
+                run_store=ReflectionRunStore(data_path("reflection", "daily_reflector.json")),
+                living_memory=_reflection_living_memory,
+            )
 
             # Continuous Ingestion Watcher (H5.1)
             from .ingestion.watcher import IngestionWatcher
