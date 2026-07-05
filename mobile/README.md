@@ -16,6 +16,9 @@ It talks to the same HTTP API the web HUD uses (`agents/web.py`):
   with approve / reject / defer actions posted to
   `POST /autonomy/tasks/{id}/decision`. This uses the same unified approval
   funnel as the browser HUD and requires the hub admin token.
+- **Tasks** — read-only mobile task board over `GET /tasks`, showing active,
+  waiting, and completed autonomy work with pull-to-refresh. Empty means the
+  hub has no current task work; no demo rows are invented.
 - **Comms** — live Safe Comms channel inbox over `GET /api/channels/inbox*`.
   Read telegram/web threads, refresh messages, and queue governed replies to
   `POST /api/channels/inbox/{thread_id}/reply`; the server still sends only
@@ -69,7 +72,7 @@ src/api/sse.ts              pure SSE decoder (unit-tested)
 src/audio/tts.ts            /tts → cache file → expo-audio playback
 src/markdown/               pure Markdown parser (unit-tested) + RN renderer
 src/components/             MessageBubble, AgentPicker, SessionsModal
-src/screens/                Chat / Approvals / Comms / Status / Settings
+src/screens/                Chat / Approvals / Tasks / Comms / Status / Settings
 scripts/gen-icons.js        icon/splash generator
 ```
 

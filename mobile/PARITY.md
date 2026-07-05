@@ -33,7 +33,7 @@ Legend — **mobile**: ✅ shipped · 🟡 partial · ⬜ not started · ➖ not
 | Voice / TTS | `POST /tts` | ✅ | ✅ | H18.5 |
 | Stream timeout / reconnect | — (client-side) | ✅ | ✅ | H18.6 |
 | Dashboard (weather/news) | `GET /dashboard` | ✅ | ⬜ | — |
-| Tasks board | `GET /tasks` | ✅ | ⬜ | — |
+| Tasks board | `GET /tasks` | ✅ | ✅ | H18.13 |
 | Ticker | `GET /ticker` | ✅ | ⬜ | — |
 | Skills browser | `GET /skills` | ✅ | ⬜ | — |
 | Memory / notes | `GET /memory`, `GET /api/notes` | ✅ | ⬜ | — |

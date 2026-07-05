@@ -7,13 +7,15 @@ import { ChatScreen } from './src/screens/ChatScreen';
 import { CommsScreen } from './src/screens/CommsScreen';
 import { SettingsScreen } from './src/screens/SettingsScreen';
 import { StatusScreen } from './src/screens/StatusScreen';
+import { TasksScreen } from './src/screens/TasksScreen';
 import { theme } from './src/theme';
 
-type Tab = 'chat' | 'approvals' | 'comms' | 'status' | 'settings';
+type Tab = 'chat' | 'approvals' | 'tasks' | 'comms' | 'status' | 'settings';
 
 const TABS: { key: Tab; label: string; icon: string }[] = [
   { key: 'chat', label: 'Chat', icon: '◉' },
   { key: 'approvals', label: 'Approve', icon: '✓' },
+  { key: 'tasks', label: 'Tasks', icon: '▦' },
   { key: 'comms', label: 'Comms', icon: '✉' },
   { key: 'status', label: 'Status', icon: '▤' },
   { key: 'settings', label: 'Settings', icon: '⚙' },
@@ -22,6 +24,7 @@ const TABS: { key: Tab; label: string; icon: string }[] = [
 const TITLES: Record<Tab, string> = {
   chat: 'Jarvis',
   approvals: 'Approvals',
+  tasks: 'Tasks',
   comms: 'Comms',
   status: 'Status',
   settings: 'Settings',
@@ -39,6 +42,7 @@ function AppShell() {
       <View style={styles.body}>
         {tab === 'chat' && <ChatScreen onGoToSettings={() => setTab('settings')} />}
         {tab === 'approvals' && <ApprovalsScreen onGoToSettings={() => setTab('settings')} />}
+        {tab === 'tasks' && <TasksScreen onGoToSettings={() => setTab('settings')} />}
         {tab === 'comms' && <CommsScreen onGoToSettings={() => setTab('settings')} />}
         {tab === 'status' && <StatusScreen onGoToSettings={() => setTab('settings')} />}
         {tab === 'settings' && <SettingsScreen />}
