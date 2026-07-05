@@ -10,6 +10,8 @@ from typing import Any, Callable, Optional
 
 from ..action_origin import origin_for_channel
 from ..log_safe import log_safe
+from ..security import taint
+from ..security.quarantine import detect_injection
 
 logger = logging.getLogger("jarvis.gateway")
 
@@ -84,8 +86,13 @@ class Gateway:
             return None
 
         try:
-            kwargs.setdefault("origin", origin_for_channel(channel))
-            self._record_inbox(channel, text, sender=sender, metadata=kwargs)
+            origin = origin_for_channel(channel)
+            kwargs.setdefault("origin", origin)
+            inbound_meta = self._inbound_meta(channel, text, origin=origin)
+            if inbound_meta:
+                kwargs.setdefault("_inbound_meta", dict(inbound_meta))
+            metadata = {**kwargs, **inbound_meta}
+            self._record_inbox(channel, text, sender=sender, metadata=metadata)
             result = await self.handler(text, channel=channel, **kwargs)
             self._channels[channel]["last_activity"] = time.time()
             return result
@@ -121,6 +128,15 @@ class Gateway:
 
     def set_rate_limit(self, max_per_minute: int):
         self._max_rate = max_per_minute
+
+    @staticmethod
+    def _inbound_meta(channel: str, text: str, *, origin: str) -> dict:
+        if origin != "inbound":
+            return {}
+        source = f"inbound:{str(channel or '').strip().lower() or 'unknown'}"
+        meta = taint.mark({}, source=source)
+        meta["injection_flags"] = detect_injection(str(text or ""))
+        return meta
 
     def _record_inbox(self, channel: str, text: str, *, sender: Any = None,
                       metadata: dict | None = None) -> None:

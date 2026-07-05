@@ -718,6 +718,7 @@ class Orchestrator:
 
     async def channel_handler(self, text: str, channel: str = "voice", **kwargs) -> Optional[str]:
         action_origin = kwargs.pop("origin", origin_for_channel(channel))
+        kwargs.pop("_inbound_meta", None)
         origin_token = bind_action_origin(action_origin)
         chat_id = kwargs.get("chat_id")
         try:
