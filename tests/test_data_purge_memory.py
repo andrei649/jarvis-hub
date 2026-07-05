@@ -19,6 +19,15 @@ def _seed_memory_root(tmp_path) -> Path:
     (root / "bitemporal_kg.json").write_text('{"facts": [{"subject": "Alice"}]}', encoding="utf-8")
     (root / "entities.json").write_text('{"Alice": {"type": "person"}}', encoding="utf-8")
     (root / "decay.json").write_text('{"items": {"x": 1}}', encoding="utf-8")
+    (root / "cognition").mkdir(parents=True, exist_ok=True)
+    (root / "cognition" / "core_memory.json").write_text(
+        '{"facts": ["Alice lives in Bucharest"]}',
+        encoding="utf-8",
+    )
+    (root / "cognition" / "living_tiers.json").write_text(
+        '{"items": {"turn:1": {"content": "Alice secret", "activation": 1.0}}}',
+        encoding="utf-8",
+    )
     (root / "embedding_cache" / "recall").mkdir(parents=True, exist_ok=True)
     (root / "embedding_cache" / "recall" / "v.json").write_text("[1,2,3]", encoding="utf-8")
     # Conversation transcripts (session-keyed) — must be erased.
@@ -42,8 +51,16 @@ def test_memory_at_rest_is_erased(tmp_path):
     assert not (root / "bitemporal_kg.json").exists()
     assert not (root / "entities.json").exists()
     assert not (root / "decay.json").exists()
+    assert not (root / "cognition" / "core_memory.json").exists()
+    assert not (root / "cognition" / "living_tiers.json").exists()
     assert not (root / "embedding_cache").exists()
-    assert set(mem["files"]) == {"bitemporal_kg.json", "entities.json", "decay.json"}
+    assert set(mem["files"]) == {
+        "bitemporal_kg.json",
+        "entities.json",
+        "decay.json",
+        "cognition/core_memory.json",
+        "cognition/living_tiers.json",
+    }
     assert mem["dirs"] == ["embedding_cache"]
     # conversation transcripts gone (both the glob-discovered and the live one)
     assert not (root / "convo-1.jsonl").exists()
@@ -96,21 +113,44 @@ class _FakeMem:
 
 
 class _FakeOrch:
-    def __init__(self):
+    def __init__(self, cognition=None):
         self.memory = _FakeMem()
         self.entities = _Spy()
         self.decay = _Spy()
+        self.cognition = cognition
+
+
+class _FakeCognition:
+    def __init__(self, living_memory):
+        self._living_memory = living_memory
+
+    def module(self, name):
+        return self._living_memory if name == "memory" else None
 
 
 async def test_clear_live_memory_clears_all_stores():
-    orch = _FakeOrch()
+    from agents.core.cognition.memory import LivingMemory
+
+    living = LivingMemory()
+    living.core.put("Alice lives in Bucharest")
+    living.encode("turn:1", {"summary": "Alice secret"}, surprise=1.0)
+    orch = _FakeOrch(cognition=_FakeCognition(living))
     cleared = await dp.clear_live_memory(orch)
     assert orch.memory.cleared is True
     assert orch.memory.graph.cleared is True
     assert orch.memory.vectors.cleared is True
     assert orch.entities.cleared is True
     assert orch.decay.cleared is True
-    assert set(cleared) == {"conversation", "graph", "vectors", "entities", "decay"}
+    assert living.core.list() == []
+    assert living.records() == []
+    assert set(cleared) == {
+        "conversation",
+        "graph",
+        "vectors",
+        "entities",
+        "decay",
+        "cognition_memory",
+    }
 
 
 async def test_clear_live_memory_is_defensive_on_missing_stores():
