@@ -35,6 +35,14 @@ import socket
 from dataclasses import dataclass
 from typing import Awaitable, Callable, Optional
 
+from ..automation_contracts import (
+    ContractTemplate,
+    contract_denial,
+    field_present,
+    one_of,
+    predicate,
+)
+
 logger = logging.getLogger("jarvis.autonomy.remediation")
 
 
@@ -76,6 +84,32 @@ DEFAULT_ALLOWLIST: dict[str, ServiceCommand] = {
     "docker": ServiceCommand(["systemctl", "restart", "docker"]),  # the daemon itself
 }
 
+
+def _host_target_safe(view, now) -> bool:
+    target = str(view.get("target") or view.get("service") or view.get("model") or "").strip()
+    return "\x00" not in target and len(target) <= 240
+
+
+def _host_control_contract_template() -> ContractTemplate:
+    return ContractTemplate(
+        kind="host.control",
+        description="Host subprocess control gate for remediation and local model control.",
+        constraints=(
+            field_present("action", "agent"),
+            one_of("action", {
+                "restart_service",
+                "lmstudio.start",
+                "lmstudio.load",
+                "lmstudio.unload",
+            }),
+            predicate("host_target_safe", _host_target_safe, reason="invalid_host_target"),
+        ),
+    )
+
+
+HOST_CONTROL_CONTRACT_KIND = "host.control"
+HOST_CONTROL_CONTRACT = _host_control_contract_template()
+
 ExecFn = Callable[[list[str], float, bool], Awaitable[ExecResult]]
 ProbeFn = Callable[[str, int], bool]
 
@@ -104,6 +138,10 @@ class RemediationRunner:
 
         if self.permission_gate is not None and not self.permission_gate.check_call("system-control", agent):
             return self._done("blocked", service, reason=f"agent '{agent}' not permitted for system-control")
+
+        blocked = self._contract_blocked("restart_service", agent=agent, service=service)
+        if blocked:
+            return blocked
 
         cmd = self.allowlist.get(service)
         if cmd is None:
@@ -157,6 +195,23 @@ class RemediationRunner:
         log = logger.info if status == "ok" else logger.warning
         log(f"restart_service {service}: {status} ({extra.get('reason', '')})".rstrip())
         return result
+
+    def _contract_blocked(self, action: str, *, agent: str, service: str) -> Optional[dict]:
+        try:
+            decision = HOST_CONTROL_CONTRACT.evaluate({
+                "kind": HOST_CONTROL_CONTRACT_KIND,
+                "action": action,
+                "agent": agent,
+                "service": service,
+                "target": service,
+            })
+        except Exception:
+            logger.warning("host-control contract evaluation failed", exc_info=True)
+            return self._done("blocked", service, reason="contract_error")
+        reason = contract_denial(decision)
+        if reason:
+            return self._done("blocked", service, reason=reason)
+        return None
 
 
 # ── default real implementations ────────────────────────────────────

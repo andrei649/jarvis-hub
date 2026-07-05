@@ -16,7 +16,7 @@ pip install -r requirements-beta.txt
 python serve.py   # canonical entry (boot guards + graceful shutdown; O26-P0.6: the raw
 #   uvicorn entry `python -m uvicorn agents.web:app` now runs the same guards via the lifespan)
 python scripts/install_smoke.py --json  # fast install smoke: boot + /readyz + fake local turn
-python -m pytest tests/ -v          # ~3,629 passed, 6 skipped (counter synced via scripts/status_sync.py)
+python -m pytest tests/ -v          # ~3,637 passed, 6 skipped (counter synced via scripts/status_sync.py)
 ```
 
 > Singurul skip rămas e heartbeat-ul opțional. (Vechiul `tests/test_spotify.py` cu 8 skip-uri a
@@ -28,11 +28,14 @@ python -m pytest tests/ -v          # ~3,629 passed, 6 skipped (counter synced v
 **Server curent** (dacă e pornit): PID vezi `netstat -ano | findstr ":8080 "`.
 **Stack:** Python 3.12 + FastAPI + vanilla React (createElement, no JSX).
 
-> **Recent hardening (2026-07-05):** H17.1a closes the inbound-origin bypass
-> noted in the frontier audit: `handle_input` and `handle_input_stream` now bind
-> turn origin by construction, internal orchestrator channels stay trusted, an
-> upstream inbound context cannot be downgraded, and plugin-egress actions carry
-> the current origin instead of hard-coding `generated`.
+> **Recent hardening (2026-07-05):** #549 closes the H17.1a inbound-origin
+> bypass noted in the frontier audit: `handle_input` and `handle_input_stream`
+> now bind turn origin by construction, internal orchestrator channels stay
+> trusted, an upstream inbound context cannot be downgraded, and plugin-egress
+> actions carry the current origin instead of hard-coding `generated`.
+> Current branch continues 0.45 Batch B1: skill marketplace/generation and
+> host-control seams now evaluate live reusable contracts before package,
+> promotion, restart, or LM Studio subprocess control.
 
 ---
 
@@ -870,7 +873,7 @@ chain-of-thought leak / mid-sentence truncation fixed. Kill-switch:
 | H5.9 ✅ | **Resilience Tab in Main HUD** — tab live în SystemsPanel cu retry metrics + circuit breaker states, endpoint public `/api/resilience` | 3 | H5.5 | 0.8 ✅ |
 | H5.10 ✅ | **Live Data Wiring** — Memory, Plugins, Learning, Security tabs trec de la mock static la endpoint-uri live (`/memory/stats`, `/api/plugins`, `/learning/stats`, `/security/status`, `/bench/stats`) | 5 | H5.9 | 0.8 ✅ |
 | H5.11 ✅ | **Missing Widgets** — Ticker feed live, OAuth status tab, Oracle tab, Tasks widget; CognitionPanel live | 5 | H5.10 | 0.8 ✅ |
-| H5.12 ✅ | **Secured Shell Task Executor** — `RemediationRunner` (allowlist, permission gate, no-shell `exec`, audited) wired ca handler `restart_service` în executor. `core/autonomy/remediation.py` | 5 | H6.7 | 0.8 ✅ |
+| H5.12 ✅ | **Secured Shell Task Executor** — `RemediationRunner` (allowlist, permission gate, no-shell `exec`, audited) wired ca handler `restart_service` în executor. 0.45 B1 branch adds shared `HOST_CONTROL_CONTRACT` coverage for `restart_service` and LM Studio host subprocess control before execution. `core/autonomy/remediation.py` | 5 | H6.7 | 0.8 ✅ |
 | H5.13 ✅ | **Proactive Event Watchers** — `EventWatcher` + Email/Calendar/Finance/Health probes, eșantionate în bucla de autonomie (gated `system.watchers_enabled`). `core/autonomy/watchers.py` | 8 | H6.7 | 0.8 ✅ |
 | H5.14 ✅ | **Retrieval Fusion Engine** — `reciprocal_rank_fusion()` + `HybridRetriever` (vector⊕graph RRF, weight-tunable, injectabil) + `MemoryManager.hybrid_search()`. `core/memory/fusion.py`, 9 teste offline. **Task4 ✅:** `GET /api/memory/search` + `FusedRecallBox` în MemoryTab. | 5 | H3.1, H3.2 | 0.8 ✅ |
 | H5.15 ✅ | **Daily Reflection & Graph Consolidation** — `DailyReflector` (`core/autonomy/reflection.py`): gather context → LLM reflection → JSON entities/relations/lessons → promote to Neo4j graph; idempotent per zi; hookuit în `_autonomy_loop` (fereastră 22:00–07:00, gated `system.reflection_enabled`). Endpoint `/api/reflection/status` + `/api/reflection/run`. 10 teste offline. | 8 | H6.6, H3.2 | 0.8 ✅ |
@@ -1059,7 +1062,7 @@ chain-of-thought leak / mid-sentence truncation fixed. Kill-switch:
 
 | # | Item | S | P | Dep | Sursă |
 |---|------|---|---|-----|-------|
-| H12.12 ✅ | **Marketplace de skills curat & semnat** (anti-ClawHub moderat) — extinde skills importer cu semnături + review. **Done:** `marketplace.py` — **poartă de review** (`review_status` pending/approved/rejected; publish→pending; `approve/reject/set_review_status`; install blocat dacă nu-i approved sub `JARVIS_REQUIRE_REVIEWED_SKILLS`), **semnătură** la publish (`signing.sign_skill`) + verificare la install (refuz sub `JARVIS_REQUIRE_SIGNED_SKILLS`), și **fix zip-slip** (path-traversal blocat înainte de extract — vuln reală în `extractall`). Endpoint `POST /api/skills/marketplace/review`; gate-urile opt-in (default backward-compatible), zip-slip mereu blocat. +6 teste offline. | 8 | P3 | Skills | OpenClaw ClawHub (sigur) |
+| H12.12 ✅ | **Marketplace de skills curat & semnat** (anti-ClawHub moderat) — extinde skills importer cu semnături + review. **Done:** `marketplace.py` — **poartă de review** (`review_status` pending/approved/rejected; publish→pending; `approve/reject/set_review_status`; install blocat dacă nu-i approved sub `JARVIS_REQUIRE_REVIEWED_SKILLS`), **semnătură** la publish (`signing.sign_skill`) + verificare la install (refuz sub `JARVIS_REQUIRE_SIGNED_SKILLS`), și **fix zip-slip** (path-traversal blocat înainte de extract — vuln reală în `extractall`). Endpoint `POST /api/skills/marketplace/review`; gate-urile opt-in (default backward-compatible), zip-slip mereu blocat. 0.45 B1 branch adds `SKILL_INSTALL_CONTRACT` for publish/install/uninstall plus `SKILL_GENERATION_CONTRACT` for LLM-authored skill creation/promotion before any package or generated code becomes executable. +14 teste offline total across original marketplace governance and B1. | 8 | P3 | Skills | OpenClaw ClawHub (sigur) |
 | H12.13 ✅ | **Sync E2E opt-in între device-uri** (GPU acasă ↔ telefon) — ⚠️ obligatoriu E2E + opt-in; nu sparge local-first. **Done 2026-06-09 (E2E real, fail‑closed):** `core/e2e_sync.py` `E2ESync` — plic E2E cu **Fernet real** (`cryptography`, AES‑128‑CBC+HMAC autentificat → tamper/cheie greșită **detectate**, nu acceptate tacit), cheie derivată dintr‑un **passphrase partajat** (PBKDF2‑SHA256 390k, salt fix → două device‑uri cu același passphrase derivă aceeași cheie) sau cheie Fernet; **opt‑in** (`JARVIS_E2E_SYNC`) și **fail‑closed** (fără cripto/secret → dezactivat, **fără fallback slab**). `encrypt_record`/`decrypt_record` (plaintextul nu părăsește niciodată device‑ul), `build_push`/`apply_pull` (manifest cu digest; sare propriul device + intrările neverificabile). Endpoints `GET /api/sync`, `POST /api/sync/push|pull`. +12 teste offline (round‑trip, tamper, cheie greșită, cross‑device, opt‑in, fail‑closed). *(Transportul device‑la‑device = poartă host.)* | 13 | P3 | — | Reflect / Limitless |
 | H12.14 | **Model agentic mic, fine-tuned** (task-uri router/tool) — overlap cu H11.3 (pipeline SFT/GRPO); $0 COGS. **🖥️ GPU host — runbook turnkey: `docs/GPU_RUNBOOK.md`** (pipeline + `prepare_data` citește direct `memory_logs/learning/*.jsonl`). | 8 | P3 | H11.3 | Jan-nano |
 | H12.15 ✅ | **Backup & restore date personale** — `agents/data/` + `memory_logs/` (memoria H8, sesiuni, workflow-uri create, corpus ingerat) sunt **singura stare cu date reale și sunt git-ignored** → fără asta, pierdere totală la orice `clean`/reinstalare (incidentul 2026-06-02). **Done 2026-06-02:** `scripts/backup-data.sh` + `scripts/backup-data.ps1` — arhivă timestamped (tar.gz / zip), restore cu confirmare, retenție ultimele 14, override `BACKUP_DIR` (drive extern/cloud); `backups/` gitignored; păstrează local-first (opt-in cloud). *(Schedule automat = opțional, neimplementat.)* | 3 | P2 | H8.2 | durabilitate local-first |
