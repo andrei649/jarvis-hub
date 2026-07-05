@@ -89,6 +89,37 @@ def test_living_memory_rerank_does_not_boost_unmatched_hits():
     assert "living_memory" not in ranked[1].payload
 
 
+def test_living_memory_rerank_reactivates_matched_records_and_decay():
+    from agents.core.memory.living_recall import rerank_with_living_memory
+
+    class _Decay:
+        def __init__(self):
+            self.accessed = []
+
+        def access(self, item_id):
+            self.accessed.append(item_id)
+            return True
+
+    living = LivingMemory()
+    living.encode(
+        "turn:match",
+        {"turn_ref": "turn:match", "ts": 2_000.0, "session": "s1"},
+        surprise=1.0,
+    )
+    living.tiers.maintain()
+    before = living.records(prefix="turn:match")[0]
+    decay = _Decay()
+    hits = [FusedHit(id="turn:match", score=0.5, sources=["vector"], payload={})]
+
+    rerank_with_living_memory(hits, living, context_ts=2_000.0, decay_memory=decay)
+
+    after = living.records(prefix="turn:match")[0]
+    assert after["accesses"] == before["accesses"] + 1
+    assert after["activation"] > before["activation"]
+    assert decay.accessed == ["turn:match"]
+    assert hits[0].payload["living_memory"]["activation"] == after["activation"]
+
+
 class _FakeMemory:
     async def recall(self, _text, top_k=5):
         return [
@@ -146,6 +177,26 @@ async def test_recall_block_reranks_with_living_memory_before_rag_guard():
 
     assert "DATA, NOT INSTRUCTIONS" in block
     assert readable.index("recent project note") < readable.index("old project note")
+
+
+def test_orchestrator_living_recall_passes_decay_store():
+    class _Decay:
+        def __init__(self):
+            self.accessed = []
+
+        def access(self, item_id):
+            self.accessed.append(item_id)
+            return True
+
+    now = time.time()
+    living = _living_memory_with_turns(now)
+    orch = _orch_with_living_recall({}, _FakeMemory(), living)
+    orch.decay = _Decay()
+    hits = [FusedHit(id="turn:recent", score=0.5, sources=["vector"], payload={})]
+
+    orch._living_memory_rerank_hits(hits)
+
+    assert orch.decay.accessed == ["turn:recent"]
 
 
 @pytest.mark.asyncio

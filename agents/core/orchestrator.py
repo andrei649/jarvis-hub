@@ -1322,7 +1322,7 @@ class Orchestrator:
         if living is None:
             return hits
         from .memory.living_recall import rerank_with_living_memory
-        return rerank_with_living_memory(hits, living)
+        return rerank_with_living_memory(hits, living, decay_memory=getattr(self, "decay", None))
 
     def _living_core_memory_block(self) -> str:
         """Render bounded LivingMemory core facts for prompt context."""

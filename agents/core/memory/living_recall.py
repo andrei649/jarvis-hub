@@ -9,6 +9,7 @@ wraps the text before it enters a prompt.
 from __future__ import annotations
 
 from collections.abc import Iterable
+from contextlib import suppress
 from typing import Any
 
 from agents.core.cognition.memory import tcm_rerank
@@ -69,6 +70,27 @@ def _annotate_hit(hit: Any, record: dict) -> None:
     }
 
 
+def _access_record(living_memory: Any, record: dict, decay_memory: Any | None = None) -> dict:
+    mem_id = str(record.get("id") or "")
+    if not mem_id:
+        return record
+
+    updated = None
+    access = getattr(living_memory, "access", None)
+    if callable(access):
+        try:
+            updated = access(mem_id)
+        except Exception:
+            updated = None
+
+    decay_access = getattr(decay_memory, "access", None) if decay_memory is not None else None
+    if callable(decay_access):
+        with suppress(Exception):
+            decay_access(mem_id)
+
+    return updated if isinstance(updated, dict) else record
+
+
 def rerank_with_living_memory(
     hits: Iterable[Any],
     living_memory: Any,
@@ -76,6 +98,7 @@ def rerank_with_living_memory(
     context_ts: float | None = None,
     half_life: float = 86_400.0,
     weight: float = 0.3,
+    decay_memory: Any | None = None,
 ) -> list[Any]:
     """Re-rank already-fused hits using LivingMemory temporal context.
 
@@ -89,11 +112,16 @@ def rerank_with_living_memory(
 
     rows: list[dict] = []
     matched = False
+    accessed_records: dict[str, dict] = {}
     for index, hit in enumerate(original):
         hit_id = _hit_id(hit)
         record = records_by_turn.get(hit_id)
         if record is not None:
             matched = True
+            mem_id = str(record.get("id") or hit_id)
+            if mem_id not in accessed_records:
+                accessed_records[mem_id] = _access_record(living_memory, record, decay_memory)
+            record = accessed_records[mem_id]
             _annotate_hit(hit, record)
         content = record.get("content") if isinstance(record, dict) else {}
         content = content if isinstance(content, dict) else {}
