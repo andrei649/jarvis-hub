@@ -277,6 +277,61 @@ export async function fetchSkills(config: ServerConfig): Promise<SkillsResponse>
   return normalizeSkills(res || {});
 }
 
+// ── Memory + Notes ───────────────────────────────────────────────
+
+export type MemoryTurn = {
+  role: string;
+  content: string;
+  agent_id?: string;
+  timestamp?: string;
+  [key: string]: unknown;
+};
+
+export type MemoryResponse = {
+  session?: string;
+  turns: MemoryTurn[];
+};
+
+export type NotesResponse = {
+  session?: string;
+  content: string;
+};
+
+function normalizeMemoryTurn(value: unknown): MemoryTurn | null {
+  if (!isRecord(value)) return null;
+  return {
+    ...value,
+    role: String(value.role ?? ''),
+    content: String(value.content ?? ''),
+    agent_id: typeof value.agent_id === 'string' ? value.agent_id : undefined,
+    timestamp: typeof value.timestamp === 'string' ? value.timestamp : undefined,
+  };
+}
+
+function normalizeMemory(raw: Record<string, unknown>): MemoryResponse {
+  const turns = Array.isArray(raw.turns)
+    ? raw.turns.map(normalizeMemoryTurn).filter((turn): turn is MemoryTurn => turn !== null)
+    : [];
+  const session = raw.session === undefined || raw.session === null ? undefined : String(raw.session);
+  return session === undefined ? { turns } : { session, turns };
+}
+
+function normalizeNotes(raw: Record<string, unknown>): NotesResponse {
+  const session = raw.session === undefined || raw.session === null ? undefined : String(raw.session);
+  const content = typeof raw.content === 'string' ? raw.content : '';
+  return session === undefined ? { content } : { session, content };
+}
+
+export async function fetchMemory(config: ServerConfig): Promise<MemoryResponse> {
+  const res = await request<Record<string, unknown>>(config, 'GET', '/memory', undefined, { retries: 2 });
+  return normalizeMemory(res || {});
+}
+
+export async function fetchNotes(config: ServerConfig): Promise<NotesResponse> {
+  const res = await request<Record<string, unknown>>(config, 'GET', '/api/notes', undefined, { retries: 2 });
+  return normalizeNotes(res || {});
+}
+
 // ── Tasks ────────────────────────────────────────────────────────
 
 export type HubTask = {
