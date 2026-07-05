@@ -106,6 +106,83 @@ async def social_request(body: SocialActionBody):
     return nocache_json(result, status_code=200 if result.get("ok") else 422)
 
 
+class ChannelReplyBody(BaseModel):
+    text: str = Field(..., min_length=1, max_length=4_000)
+    agent: str | None = Field(None, max_length=40)
+    source: str = Field("", max_length=120)
+
+
+def _channel_inbox(orch=None):
+    orch = get_orch() if orch is None else orch
+    return getattr(orch, "channel_inbox", None) if orch else None
+
+
+@router.get("/api/channels/inbox/status", dependencies=[Depends(user_guard)])
+async def channels_inbox_status():
+    """Safe Comms v0: status for the bounded live channel inbox.
+
+    Only telegram/web are considered live reply transports in this wave.
+    """
+    inbox = _channel_inbox()
+    if inbox is None:
+        from agents.core.channel_inbox import SUPPORTED_INBOX_CHANNELS
+        return nocache_json({"enabled": False, "stats": {
+            "enabled": False,
+            "channels": sorted(SUPPORTED_INBOX_CHANNELS),
+            "threads": 0,
+            "messages": 0,
+        }})
+    return nocache_json({"enabled": True, "stats": inbox.stats()})
+
+
+@router.get("/api/channels/inbox", dependencies=[Depends(user_guard)])
+async def channels_inbox_list(limit: int = 50):
+    """Safe Comms v0: list persisted telegram/web inbox threads."""
+    inbox = _channel_inbox()
+    if inbox is None:
+        return nocache_json({"threads": []})
+    return nocache_json({"threads": inbox.threads(limit=max(1, min(int(limit or 50), 200)))})
+
+
+@router.get("/api/channels/inbox/{thread_id}", dependencies=[Depends(user_guard)])
+async def channels_inbox_thread(thread_id: str, limit: int = 50):
+    """Safe Comms v0: read messages in one persisted inbox thread."""
+    inbox = _channel_inbox()
+    if inbox is None:
+        return JSONResponse({"error": "channel inbox unavailable"}, status_code=503)
+    thread = inbox.thread(thread_id)
+    if thread is None:
+        return JSONResponse({"error": "thread not found"}, status_code=404)
+    return nocache_json({
+        "thread": thread,
+        "messages": inbox.messages(thread_id, limit=max(1, min(int(limit or 50), 200))),
+    })
+
+
+@router.post("/api/channels/inbox/{thread_id}/reply", dependencies=[Depends(user_guard)])
+async def channels_inbox_reply(thread_id: str, body: ChannelReplyBody):
+    """Safe Comms v0: queue a governed reply to a live telegram/web thread.
+
+    Nothing sends here. The reply is executed only if the owner approves the
+    task in the existing autonomy decision inbox.
+    """
+    orch = get_orch()
+    if orch is None:
+        return JSONResponse({"error": "not initialized"}, status_code=503)
+    broker = getattr(orch, "channel_replies", None)
+    if broker is None:
+        from agents.core.channel_reply import ChannelReplyBroker
+        worker = getattr(orch, "autonomy_worker", None)
+        enqueue = getattr(worker, "govern_enqueue", None)
+        broker = ChannelReplyBroker(
+            inbox=_channel_inbox(orch),
+            enqueue=enqueue,
+            channel_manager=getattr(orch, "channel_manager", None),
+        )
+    result = broker.request(thread_id, body.text, agent=body.agent, source=body.source)
+    return nocache_json(result, status_code=200 if result.get("ok") else 422)
+
+
 @router.get("/api/channels/webhook", dependencies=[Depends(user_guard)])
 async def channels_webhook_list():
     """H12.16 — supported governed webhook channels + which are live."""

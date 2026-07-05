@@ -237,6 +237,20 @@ class AutonomyCoordinator:
         )
         executor.register("social", self._orch.social.execute)
 
+        # Safe Comms v0 — governed replies to live telegram/web inbox threads.
+        # Request time only queues a draft; approved tasks send through the
+        # already-registered ChannelManager and record the outbound message in
+        # the same bounded inbox thread.
+        from .channel_reply import ChannelReplyBroker
+        self._orch.channel_replies = ChannelReplyBroker(
+            inbox=getattr(self._orch, "channel_inbox", None),
+            enqueue=self._governed_enqueue,
+            channel_manager=getattr(self._orch, "channel_manager", None),
+            audit=getattr(self._orch, "audit", None),
+            kernel=_action_kernel,
+        )
+        executor.register("channel.reply", self._orch.channel_replies.execute)
+
         # H12.22 — governed outbound voice / call-back. A call is an interruption,
         # so it's gated by BOTH the approval queue and the daily interrupt budget;
         # live telephony (Twilio/Telnyx) is deferred to a host-side client.

@@ -22,12 +22,14 @@ class Gateway:
     channel health tracking.
     """
 
-    def __init__(self, handler: Optional[Callable] = None, pairing: Any = None):
+    def __init__(self, handler: Optional[Callable] = None, pairing: Any = None,
+                 inbox_store: Any = None):
         self.handler = handler
         # H12.19 — optional inbound sender-pairing gate. When set (and pairing is
         # enabled), unknown senders are held for approval instead of reaching the
         # handler. None → unchanged behavior.
         self.pairing = pairing
+        self.inbox_store = inbox_store
         self._channels: dict[str, dict] = {}
         self._rate_limits: dict[str, list[float]] = {}
         self._max_rate = 10
@@ -83,6 +85,7 @@ class Gateway:
 
         try:
             kwargs.setdefault("origin", origin_for_channel(channel))
+            self._record_inbox(channel, text, sender=sender, metadata=kwargs)
             result = await self.handler(text, channel=channel, **kwargs)
             self._channels[channel]["last_activity"] = time.time()
             return result
@@ -118,3 +121,17 @@ class Gateway:
 
     def set_rate_limit(self, max_per_minute: int):
         self._max_rate = max_per_minute
+
+    def _record_inbox(self, channel: str, text: str, *, sender: Any = None,
+                      metadata: dict | None = None) -> None:
+        if self.inbox_store is None or not hasattr(self.inbox_store, "record_inbound"):
+            return
+        try:
+            self.inbox_store.record_inbound(
+                channel,
+                text,
+                sender="" if sender is None else str(sender),
+                metadata=metadata or {},
+            )
+        except Exception:
+            logger.debug("Gateway: channel inbox record failed", exc_info=True)
