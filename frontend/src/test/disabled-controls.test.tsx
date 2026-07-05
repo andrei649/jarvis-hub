@@ -1,8 +1,8 @@
 // @ts-nocheck
 /* HONESTY tests: controls whose backend genuinely doesn't exist must render DISABLED
-   (never a no-op button that looks live). The comms channel Reply/Hand/Archive actions
-   have no per-channel backend, so they stay disabled (the live path is the embedded
-   Rooms panel). (The autonomy AUTO/ASK/OFF mode IS wired now — see wired-controls.) */
+   (never a no-op button that looks live). Seeded Comms preview rows have no real
+   thread id, so Reply/Hand/Archive stay disabled. Live channel inbox rows are
+   tested separately. (The autonomy AUTO/ASK/OFF mode IS wired now — see wired-controls.) */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import React from 'react';
 import { render, screen, waitFor } from '@testing-library/react';
@@ -16,7 +16,7 @@ beforeEach(() => {
   global.fetch = vi.fn(() => Promise.reject(new Error('no network in disabled-control tests'))) as any;
 });
 
-describe('CommsMode — channel inbox actions have no backend', () => {
+describe('CommsMode — seeded channel inbox rows stay disabled', () => {
   it('renders Reply / Hand / Archive disabled', async () => {
     render(<CommsMode t={t} />);
     expect((screen.getByText(/^Reply via/) as HTMLButtonElement).disabled).toBe(true);

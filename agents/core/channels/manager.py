@@ -38,14 +38,15 @@ class ChannelManager:
         for cid, ch in self.channels.items():
             await ch.stop()
 
-    async def send(self, channel: str, response, **kwargs) -> None:
+    async def send(self, channel: str, response, **kwargs) -> bool:
         """Dispatch a reply back out on its channel (no-op if not registered)."""
         ch = self.channels.get(channel)
         if not ch:
-            return
+            return False
         if channel == "telegram":
-            await ch.send(response, **kwargs)
+            return bool(await ch.send(response, **kwargs))
         elif channel == "web":
-            await ch.send(response, **kwargs)
+            return bool(await ch.send(response, **kwargs))
         elif channel == "voice":
-            await ch.send(response)
+            return bool(await ch.send(response))
+        return False

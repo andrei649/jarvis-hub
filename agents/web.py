@@ -274,8 +274,14 @@ async def lifespan(application: FastAPI):
     config = JarvisConfig()
     orch = Orchestrator(config)
 
+    from core.channel_inbox import ChannelInboxStore
     from core.settings_db import get_value
-    gateway = Gateway(handler=orch.channel_handler, pairing=getattr(orch, "sender_pairing", None))
+    orch.channel_inbox = ChannelInboxStore()
+    gateway = Gateway(
+        handler=orch.channel_handler,
+        pairing=getattr(orch, "sender_pairing", None),
+        inbox_store=orch.channel_inbox,
+    )
     gateway.set_rate_limit(int(get_value("channels", "rate_limit", 10)))  # /admin → channels.rate_limit
     web_enabled = bool(get_value("channels", "web_enabled", True))        # /admin → channels.web_enabled
     if web_enabled:

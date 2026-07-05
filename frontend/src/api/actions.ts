@@ -84,6 +84,18 @@ export async function togglePlugin(id: string): Promise<unknown> {
   return apiPut('/plugins/' + encodeURIComponent(id) + '/toggle');
 }
 
+/* ── Comms · live channel inbox governed reply (modes3.tsx) ──────
+   POST /api/channels/inbox/{thread_id}/reply {text,agent,source}
+   Queues a reply draft into the existing approval funnel; it does not send
+   until approved. */
+export async function queueChannelReply(threadId: string, text: string, agent = 'veronica'): Promise<unknown> {
+  return apiPost('/api/channels/inbox/' + encodeURIComponent(threadId) + '/reply', {
+    text,
+    agent,
+    source: 'hud.comms',
+  });
+}
+
 /* ── Dossier · agent soul + history (modes.tsx) ──────────────────
    GET /api/agents/{id}/soul             → { agent_id, soul }
    GET /api/agents/{id}/history          → { agent_id, runs:[...] } */

@@ -43,8 +43,11 @@ with plugin-configured checks instead of seeded success. Still open:
 - **Autonomy**: per‑agent AUTO/ASK/OFF **policies** (settings‑backed).
 - **Comms**: rooms + registered **Discord/Slack** channel status now feed the mode. The Console now
   has a Safe Comms draft surface over `GET/POST /api/integrations/social`, so X post/reply/DM drafts
-  enter the existing approval queue/preview path instead of sending directly. Actual channel inbox
-  threads/reply transport remain separate plugin work.
+  enter the existing approval queue/preview path instead of sending directly. #551 adds
+  channel inbox transport v0 for telegram/web: inbound threads persist through
+  `GET /api/channels/inbox*`, live rows show a governed reply composer, and replies queue through
+  `POST /api/channels/inbox/{thread_id}/reply` before approved sends use the live channel manager.
+  Email/WhatsApp inbox transport remains deferred until their live send seams are proven.
 - **Finance / Health / Knowledge / Family**: base mode switching is plugin-gated. Finance reads saved
   watchlist/payments and keeps `balance` mock payloads as SEED; Health waits for the Apple Health LAN
   bridge; Knowledge waits for configured websearch backend; Family waits for WhatsApp bridge/frigga
@@ -138,11 +141,12 @@ AI step builder (H10.7) · sandbox execute (DEV_MODE‑gated, honest 403) · age
 (H10.29) · LM Studio server/load/unload · cloud auth profiles (H12.20). Admin‑guarded calls now
 send the admin token (`actA`). +7 frontend tests (19 total).
 
-**Still open (the tail of TASK‑2, re‑verified 2026‑07‑04):** O26-P3.1 closes the §3 plugin-gated
+**Still open (the tail of TASK‑2, re‑verified 2026‑07‑05):** O26-P3.1 closes the §3 plugin-gated
 base wiring in #505 (Build/Comms/Finance/Health/Knowledge/Family), and the Safe Comms draft panel (#527)
-closes the draft-before-send UI over existing governed social actions. Remaining:
+closes the draft-before-send UI over existing governed social actions. #551 adds
+channel inbox transport v0 for telegram/web. Remaining:
 owner live-data/plugin setup (bank/broker/quotes, Apple Health bridge, websearch backend, WhatsApp
-bridge/frigga live data) and channel inbox transport.
+bridge/frigga live data) and non-v0 inbox channels.
 Estimated 1–2 PRs after #505 for owner-gated/plugin work.
 *Since‑closed items previously listed here:* CI stale‑bundle guard ✅ (`hud-v2-build` in `ci.yml`),
 §7 locality endpoint ✅ (`GET /api/analytics/locality`, consumed in `app.tsx`/`shell.tsx`), and the
@@ -151,6 +155,7 @@ BUG‑17 audit‑verify Trust chip ✅ (`modes.tsx:117-165` renders the live
 per-panel LIVE/SEED chips ✅ (58/58 Console cards declare a `PanelChip` signal). Data Spaces
 assign/unassign controls ✅. Rooms selected-history drawer ✅. Capability issue/check UI ✅.
 Current-mesh task fan ✅. Preferences/tweaks UI ✅. Self-hosted fonts ✅. Safe Comms draft UI ✅ (#527).
+Safe Comms channel inbox transport v0 ✅ (#551).
 O26-P3.2 adds a Vitest reconciliation guard so this document cannot re-list shipped
 TTS/mic/cognition/trust or Console controls as missing.
 

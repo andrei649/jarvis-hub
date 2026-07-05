@@ -96,8 +96,32 @@ function marketplaceSkills(raw: any[]) {
   }));
 }
 
-function roomsToComms(rooms: any[], channels: any[] = []) {
-  const threads = rooms.slice(0, 12).map((room: any, i: number) => ({
+function formatCommsTs(value: any): string {
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return new Date(value * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  }
+  return text(value, 'live');
+}
+
+function roomsToComms(rooms: any[], channels: any[] = [], inboxThreads: any[] = []) {
+  const liveInbox = inboxThreads.slice(0, 12).map((thread: any, i: number) => {
+    const channel = text(thread.channel, 'telegram').toLowerCase();
+    return {
+      id: text(thread.thread_id || thread.id, `inbox-${i}`),
+      thread_id: text(thread.thread_id || thread.id, `inbox-${i}`),
+      channel,
+      from: text(thread.from || thread.sender, channel),
+      agent: text(thread.agent, 'veronica'),
+      subj: text(thread.subj, `${channel} thread`),
+      preview: text(thread.preview, 'Live channel message'),
+      ts: formatCommsTs(thread.ts),
+      unread: thread.unread !== false,
+      dir: 'in',
+      local: true,
+      replyable: ['telegram', 'web'].includes(channel),
+    };
+  });
+  const roomThreads = rooms.slice(0, 12).map((room: any, i: number) => ({
     id: text(room.id, `room-${i}`),
     channel: 'room',
     from: text(room.name, 'Room'),
@@ -109,16 +133,22 @@ function roomsToComms(rooms: any[], channels: any[] = []) {
     dir: 'in',
     local: true,
   }));
+  const threads = [...liveInbox, ...roomThreads].slice(0, 12);
   const channelRows = channels
     .filter((channel: any) => ['discord', 'slack'].includes(text(channel?.id).toLowerCase()))
     .map((channel: any) => {
       const id = text(channel.id).toLowerCase();
       return { id, label: id === 'discord' ? 'Discord' : 'Slack', count: 0 };
     });
+  const inboxRows = Array.from(new Set(liveInbox.map((thread: any) => thread.channel))).map((id: any) => ({
+    id,
+    label: id === 'web' ? 'Web' : id.charAt(0).toUpperCase() + id.slice(1),
+    count: liveInbox.filter((thread: any) => thread.channel === id).length,
+  }));
   return {
     ...V2.COMMS,
     threads,
-    channels: [{ id: 'room', label: 'Rooms', count: threads.length }, ...channelRows],
+    channels: [...inboxRows, { id: 'room', label: 'Rooms', count: roomThreads.length }, ...channelRows],
   };
 }
 
@@ -292,11 +322,16 @@ export function useLiveModes(): LiveModes {
       await Promise.all([
         apiGet('/api/rooms').catch(() => null),
         apiGet('/status').catch(() => null),
-      ]).then(([rooms, status]: any[]) => {
+        apiGet('/api/channels/inbox').catch(() => null),
+      ]).then(([rooms, status, inbox]: any[]) => {
         const list = firstArr(rooms, 'rooms');
         const channels = firstArr(status, 'channels')
           .filter((channel: any) => ['discord', 'slack'].includes(text(channel?.id).toLowerCase()));
-        if (list.length || channels.length) { set('COMMS', roomsToComms(list, channels)); mark('COMMS'); }
+        const inboxThreads = firstArr(inbox, 'threads');
+        if (list.length || channels.length || inboxThreads.length) {
+          set('COMMS', roomsToComms(list, channels, inboxThreads));
+          mark('COMMS');
+        }
       }).catch(() => {});
 
       await Promise.all([
