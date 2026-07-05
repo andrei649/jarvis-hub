@@ -1483,6 +1483,10 @@ class Orchestrator:
         }
         try:
             from .cognition.memory import neuromodulators
+            has_digest = getattr(living, "has_text_digest", None)
+            duplicate_digest = bool(has_digest(text_sha256)) if callable(has_digest) else False
+            surprise = 0.0 if duplicate_digest else 1.0
+            novelty = 0.0 if duplicate_digest else 1.0
             failed = bool(
                 responder_id
                 and re.match(rf"^\[{re.escape(responder_id)} (error|timeout)\b", assistant_text or "")
@@ -1490,13 +1494,15 @@ class Orchestrator:
             result = living.encode(
                 mem_id,
                 content,
-                surprise=1.0,
+                surprise=surprise,
                 nm=neuromodulators(
                     reward=0.0 if failed else 1.0,
-                    surprise=1.0,
-                    novelty=1.0,
+                    surprise=surprise,
+                    novelty=novelty,
                 ),
             )
+            if duplicate_digest and not result.get("encoded"):
+                result = {**result, "reason": "duplicate_turn_digest"}
             if result.get("encoded") and getattr(self, "decay", None) is not None:
                 label = f"turn:{session_id}:{responder_id or 'unknown'}:{channel}"
                 await asyncio.to_thread(self.decay.add, mem_id, label=label)

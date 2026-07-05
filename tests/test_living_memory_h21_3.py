@@ -197,6 +197,14 @@ def test_encode_respects_surprise_gate():
     assert out["encoded"] is True and out["tier"] == HOT
 
 
+def test_living_memory_detects_existing_text_digest():
+    lm = LivingMemory()
+    lm.encode("turn:1", {"turn_ref": "turn:1", "text_sha256": "abc"}, surprise=0.9)
+
+    assert lm.has_text_digest("abc") is True
+    assert lm.has_text_digest("missing") is False
+
+
 @pytest.mark.asyncio
 async def test_consolidate_phases():
     lm = LivingMemory()
