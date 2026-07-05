@@ -11,8 +11,8 @@ Scope is the user's **structured content** at rest:
   * ``missions.db`` / ``autonomy.db`` / ``analytics.db`` — rows deleted, schema kept
   * ``notes.json``                                       — reset to an empty object
   * the **memory subsystem** (when ``memory=True``, the CLI + ``/api/admin/forget`` default,
-    AUD-2) — the fixed graph/entity/decay stores, the embedding cache, and conversation
-    transcripts for confirmed sessions (see ``_purge_memory_at_rest``)
+    AUD-2) — the fixed graph/entity/decay/cognition stores, the embedding cache, and
+    conversation transcripts for confirmed sessions (see ``_purge_memory_at_rest``)
 
 Rows are ``DELETE``\\ d (not the files dropped) and JSON is rewritten to ``{}`` so live
 stores holding open handles read back empty rather than hitting a missing file — WAL keeps
@@ -58,7 +58,13 @@ PURGE_JSON: tuple[str, ...] = ("notes.json",)
 # are removed only for *confirmed* sessions (see _purge_memory_at_rest), never by
 # a blanket glob. The live in-memory stores are cleared first (clear_live_memory)
 # so a running orchestrator doesn't re-persist what we delete.
-PURGE_MEMORY_FILES: tuple[str, ...] = ("bitemporal_kg.json", "entities.json", "decay.json")
+PURGE_MEMORY_FILES: tuple[str, ...] = (
+    "bitemporal_kg.json",
+    "entities.json",
+    "decay.json",
+    "cognition/core_memory.json",
+    "cognition/living_tiers.json",
+)
 # Directories removed wholesale (embedded recall cache derived from user content).
 PURGE_MEMORY_DIRS: tuple[str, ...] = ("embedding_cache",)
 # Top-level *.jsonl that are NOT conversation transcripts — never treated as sessions.
@@ -83,13 +89,18 @@ def _purge_db(path: Path) -> dict:
         ).fetchall()]
         for table in tables:
             before = conn.total_changes
-            # Identifier quoted from the catalog name — not a request value.
-            conn.execute(f'DELETE FROM "{table}"')
+            conn.execute(_delete_all_rows_sql(table))
             deleted[table] = conn.total_changes - before
         conn.commit()
     finally:
         conn.close()
     return deleted
+
+
+def _delete_all_rows_sql(table: str) -> str:
+    # Table names come from sqlite_master. Quote defensively anyway.
+    quoted = '"' + table.replace('"', '""') + '"'
+    return " ".join(("DELETE", "FROM", quoted))
 
 
 def _purge_memory_at_rest(root: Path, live_session_ids: Iterable[str] = ()) -> dict:
@@ -160,6 +171,19 @@ async def clear_live_memory(orch) -> list[str]:
                 cleared.append(attr)
             except Exception:  # pragma: no cover - defensive
                 logger.warning("clear_live_memory: %s clear failed", attr, exc_info=True)
+    cognition = getattr(orch, "cognition", None)
+    living = None
+    if cognition is not None and hasattr(cognition, "module"):
+        try:
+            living = cognition.module("memory")
+        except Exception:  # pragma: no cover - defensive
+            logger.warning("clear_live_memory: cognition memory lookup failed", exc_info=True)
+    if living is not None and hasattr(living, "clear"):
+        try:
+            living.clear()
+            cleared.append("cognition_memory")
+        except Exception:  # pragma: no cover - defensive
+            logger.warning("clear_live_memory: cognition memory clear failed", exc_info=True)
     return cleared
 
 
@@ -181,10 +205,10 @@ def purge_data(source_root: Optional[str] = None, *, backup_first: bool = True,
     (The snapshot is encrypted at rest when a backup key is configured — see AUD-1.)
 
     When ``memory`` (AUD-2), the memory subsystem at rest is also erased: the fixed
-    graph/entity/decay stores, the embedding cache, and conversation transcripts for
-    ``session_ids`` (plus any session-shaped ``*.jsonl``). Callers that have a live
-    orchestrator should ``await clear_live_memory(orch)`` first so nothing is
-    re-persisted, and pass its known ``session_ids``.
+    graph/entity/decay/cognition stores, the embedding cache, and conversation
+    transcripts for ``session_ids`` (plus any session-shaped ``*.jsonl``). Callers
+    that have a live orchestrator should ``await clear_live_memory(orch)`` first
+    so nothing is re-persisted, and pass its known ``session_ids``.
 
     Returns ``{ok, backup, purged, total_rows}``.
     """

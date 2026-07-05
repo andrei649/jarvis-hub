@@ -198,6 +198,14 @@ class TieredMemory(JsonStore):
                 self._save()
             return deleted
 
+    def clear(self) -> int:
+        """Explicit user-forget path: remove all tiered records and persist empty state."""
+        with self._lock:
+            count = len(self._items)
+            self._items = {}
+            self._save()
+            return count
+
     def by_tier(self) -> dict:
         out = {HOT: 0, WARM: 0, COLD: 0}
         with self._lock:
@@ -285,6 +293,14 @@ class CoreMemory(JsonStore):
         facts = self.list()
         return "" if not facts else "[core memory]\n" + "\n".join(f"- {f}" for f in facts)
 
+    def clear(self) -> int:
+        """Explicit user-forget path: remove all core facts and persist empty state."""
+        with self._lock:
+            count = len(self._facts)
+            self._facts = []
+            self._save()
+            return count
+
 
 # ── the module ────────────────────────────────────────────────────────────────
 
@@ -320,6 +336,10 @@ class LivingMemory:
     def records(self, prefix: str = "", limit: int = 50) -> "list[dict]":
         """Inspectable records for integration tests/API callers; no mutation."""
         return self.tiers.records(prefix=prefix, limit=limit)
+
+    def clear(self) -> dict:
+        """Explicit user-forget path for live cognition memory."""
+        return {"core": self.core.clear(), "tiers": self.tiers.clear()}
 
     def status(self) -> dict:
         return {"available": True, "tiers": self.tiers.by_tier(),

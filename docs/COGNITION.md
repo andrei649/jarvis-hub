@@ -108,8 +108,10 @@ flowchart LR
 ```
 
 **Key rule:** demotion ⬇ is **never deletion** — it lowers accessibility and moves the
-trace to cheaper storage. A strong retrieval cue pulls a cold memory back to hot (human
-recall of an old memory). The store grows forever; only the *user* can truly erase.
+   trace to cheaper storage. A strong retrieval cue pulls a cold memory back to hot (human
+   recall of an old memory). The store grows forever; only the *user* can truly erase.
+   The explicit forget path clears both live `LivingMemory` state and the durable
+   `memory_logs/cognition/core_memory.json` / `living_tiers.json` stores.
 
 ---
 
@@ -207,7 +209,7 @@ DailyReflector.run  (night window 22:00-07:00, gated by system.reflection_enable
 | **Mastery / calibration** | Cerebellum + metacognition | `cognition/mastery/` | `learning/kc.db` | `cognition.calibration_enabled` | Overconfident → too few samples (Wilson bound); recompute |
 | **Judge (anti-sycophancy)** | PFC inhibition | `cognition/judge/` | — | `cognition.anti_sycophancy_enabled` | Flattery slipping through → judge unwired at registration; Sycophancy Index rising |
 | **Encode gate** | Predictive coding | `_complete_llm_turn → LivingMemory.encode` ✅ | LivingMemory tier records with turn refs/digests + decay ids | `cognition.enabled` + `cognition.memory_enabled` | No records → cognition master/sub-flag off, or the turn bypassed `_complete_llm_turn` |
-| **Core prompt** | PFC working memory | `_build_agent_turn_text → _living_core_memory_block` 🟡 | `LivingMemory.core` bounded facts in `memory_logs/cognition/core_memory.json` | `cognition.enabled` + `cognition.memory_enabled` | Core facts absent → memory sub-flag off, empty core, missing/corrupt core store, or prompt path bypassed shared builder |
+| **Core prompt** | PFC working memory | `_build_agent_turn_text → _living_core_memory_block` ✅ | `LivingMemory.core` bounded facts in `memory_logs/cognition/core_memory.json` | `cognition.enabled` + `cognition.memory_enabled` | Core facts absent → memory sub-flag off, empty core, missing/corrupt core store, or prompt path bypassed shared builder |
 | **Daily reflection** | Default Mode Network | `DailyReflector.run` ✅ | graph + `ReflectionRunStore` + optional LivingMemory/core lesson handoff | `system.reflection_enabled`; LivingMemory half additionally needs `cognition.enabled` + `cognition.memory_enabled` | Reruns after restart → missing/corrupt reflection ledger; no lesson records → cognition memory flag off or LLM returned no lessons |
 | **Consolidation (NREM/REM)** | Sleep | `scheduler_service.run_memory_maintenance` ✅ | `memory_logs/cognition/living_tiers.json` | `cognition.enabled` + `cognition.memory_enabled` | Didn't run → APScheduler job `memory-consolidation-decay` missing, flags off, missing/corrupt tier store, or job exception |
 | **Homeostasis (SHY)** | Sleep downscaling | `scheduler_service.run_memory_maintenance` ✅ | decay store | `cognition.enabled` + `cognition.memory_enabled` | Recall noisy at scale → decay ranking/candidate inspection not running |
@@ -231,6 +233,7 @@ DailyReflector.run  (night window 22:00-07:00, gated by system.reflection_enable
 | High per-turn latency | Judge running inline; `pre_turn` doing heavy/LLM work | tracer stage timings; judge execution path | defer judge off the ring; keep `pre_turn` deterministic; `to_thread` the writes |
 | Wrong conversation gets a reply | **BUG-5** session_id race (instance mutation) | is `TurnContext` used instead of `self.session_id`? | route session id through `TurnContext`; never mutate on the shared instance |
 | Store huge / slow (expected at scale) | Unbounded growth without maintenance/tiering | compaction + demotion jobs ran?; ANN index health | run maintenance; ensure demotion (never delete); add index shard |
+| User-forget left cognition facts behind | New durable cognition store was not added to the AUD-2 purge inventory, or the live `LivingMemory` clear seam was bypassed | `agents/core/data_purge.py` `PURGE_MEMORY_FILES` + `clear_live_memory()`; `memory_logs/cognition/` | add exact-path purge coverage and clear the live module before deleting files; never blanket-delete unrelated runtime state |
 | Poor recall after a model upgrade | Re-projection (re-embed) hasn't run | `embed_version` distribution | run `cognition.reembed`; old + new generations should re-rank together meanwhile |
 | Skill self-edit regressed behavior | Regression gate skipped or sandbox not Dockerized (HF-6) | `DatasetStore.compare()` result; sandbox path; skill version copy-aside | auto-revert to last green; force Docker; re-gate edited payload (BUG-11) |
 | Concurrent/partial-state weirdness | State stored as instance attrs instead of locked keyed store (BUG-6/12 class) | grep cognition for instance-attr mutation | move to locked `JsonStore`; snapshot-in / atomic-RMW-out |
