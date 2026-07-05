@@ -1283,6 +1283,7 @@ class Orchestrator:
         try:
             k = self.get_setting("memory.recall_top_k", 5)
             hits = await self.memory.recall(text, top_k=k)
+            hits = self._living_memory_rerank_hits(hits)
         except Exception as e:
             logger.warning(f"recall failed: {e}")
             return ""
@@ -1292,6 +1293,17 @@ class Orchestrator:
         wrapped = wrap_memory([provenance_from_hit(h) for h in (hits or [])],
                               label="long-term memory (recall)")
         return wrapped.block
+
+    def _living_memory_rerank_hits(self, hits: list) -> list:
+        """Use cognition LivingMemory metadata as a post-fusion recall hint."""
+        cog = getattr(self, "cognition", None)
+        if cog is None or not cog.sub_enabled("memory_enabled"):
+            return hits
+        living = cog.module("memory")
+        if living is None:
+            return hits
+        from .memory.living_recall import rerank_with_living_memory
+        return rerank_with_living_memory(hits, living)
 
     def _persona_prompt_block(self, agent_id: str) -> str:
         """Persona prompt block for a single agent, gated by cognition settings."""

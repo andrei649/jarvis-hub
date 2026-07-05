@@ -7,13 +7,13 @@
 
 ## Sesiune curentă
 
-**Data:** 2026-07-05 (post-#550)
+**Data:** 2026-07-05 (post-#552)
 **Lead agent / Conductor:** Codex
-**Obiectiv sesiune:** execute Fable audit safety hardening, then Safe Comms product-proof transport.
-**Branch:** `codex-safe-comms-channel-inbox`
+**Obiectiv sesiune:** execute Fable audit safety hardening, fix eval workflow fallout, then wire LivingMemory into live recall.
+**Branch:** `codex-living-memory-recall-eval`
 
 **Scope decision (2026-07-04):** O26-P0, P1.1, P2.1, P2.2, P2.3, P2.4, P2.5, P3.1, P3.3, P3.4, P3.5, P3.6, the O26-P3.2 Data Spaces depth slice, the O26-P3.2 Rooms history drawer slice, the O26-P3.2 Capability issue/check UI slice, and the O26-P3.2 Current Mesh Task Fan slice are merged.
-The O26-P3.2 Preferences Tweaks UI slice is merged. The O26-P3.2 Self-hosted Fonts slice is merged in #525. The 0.44 Safe Comms draft-before-send UI slice is merged in #527: frontend draft composition over existing governed social endpoints only. The 0.45 payment live-gate adoption is merged in #529: the existing mandate denial gate now evaluates `PAYMENT_CONTRACT` while preserving denial codes/order. The 0.45 signal governance live-gate adoption is merged in #531: actionable Signal Layer recommendations evaluate `SIGNAL_RECOMMENDATION_CONTRACT` before they can enter the preview-only approval queue. The 0.45 plugin permission live-gate adoption is merged in #533: `PermissionGate.check_call()` evaluates `PLUGIN_CALL_CONTRACT` while preserving boolean outcomes and warning reasons. The 0.45 social draft live-gate adoption is merged in #535: governed X post/reply/DM drafts evaluate `SOCIAL_DRAFT_CONTRACT` before preview/enqueue. The 0.45 write-back draft live-gate adoption is merged in #537: governed Notion/GitHub/Calendar drafts evaluate `WRITEBACK_DRAFT_CONTRACT` before preview/enqueue. The 0.45 outbound call live-gate adoption is merged in #539: Twilio/Telnyx outbound-call requests evaluate `CALL_REQUEST_CONTRACT` before preview/enqueue, after provider/field/interrupt-budget checks. The 0.45 Tool-RPC live-gate adoption is merged in #541: gated Tool-RPC calls evaluate `TOOL_RPC_CALL_CONTRACT` before kernel mediation and approval enqueue. The 0.45 NodeMesh dispatch live-gate adoption is merged in #543: governed node dispatch evaluates `NODE_DISPATCH_CONTRACT` before preview/enqueue. The 0.45 media-generation live-gate adoption is merged in #545: cloud image/thumbnail/video requests evaluate `MEDIA_GENERATION_CONTRACT` before approval enqueue. The 0.45 desktop-step live-gate adoption is merged in #547: mutating desktop operator steps evaluate `DESKTOP_STEP_CONTRACT` before approver callback or driver execution. H17.1a inbound-origin construction is merged in #549. 0.45 Batch B1 skill + host-control contracts are merged in #550. #551 adds Safe Comms channel inbox transport v0 for telegram/web.
+The O26-P3.2 Preferences Tweaks UI slice is merged. The O26-P3.2 Self-hosted Fonts slice is merged in #525. The 0.44 Safe Comms draft-before-send UI slice is merged in #527: frontend draft composition over existing governed social endpoints only. The 0.45 payment live-gate adoption is merged in #529: the existing mandate denial gate now evaluates `PAYMENT_CONTRACT` while preserving denial codes/order. The 0.45 signal governance live-gate adoption is merged in #531: actionable Signal Layer recommendations evaluate `SIGNAL_RECOMMENDATION_CONTRACT` before they can enter the preview-only approval queue. The 0.45 plugin permission live-gate adoption is merged in #533: `PermissionGate.check_call()` evaluates `PLUGIN_CALL_CONTRACT` while preserving boolean outcomes and warning reasons. The 0.45 social draft live-gate adoption is merged in #535: governed X post/reply/DM drafts evaluate `SOCIAL_DRAFT_CONTRACT` before preview/enqueue. The 0.45 write-back draft live-gate adoption is merged in #537: governed Notion/GitHub/Calendar drafts evaluate `WRITEBACK_DRAFT_CONTRACT` before preview/enqueue. The 0.45 outbound call live-gate adoption is merged in #539: Twilio/Telnyx outbound-call requests evaluate `CALL_REQUEST_CONTRACT` before preview/enqueue, after provider/field/interrupt-budget checks. The 0.45 Tool-RPC live-gate adoption is merged in #541: gated Tool-RPC calls evaluate `TOOL_RPC_CALL_CONTRACT` before kernel mediation and approval enqueue. The 0.45 NodeMesh dispatch live-gate adoption is merged in #543: governed node dispatch evaluates `NODE_DISPATCH_CONTRACT` before preview/enqueue. The 0.45 media-generation live-gate adoption is merged in #545: cloud image/thumbnail/video requests evaluate `MEDIA_GENERATION_CONTRACT` before approval enqueue. The 0.45 desktop-step live-gate adoption is merged in #547: mutating desktop operator steps evaluate `DESKTOP_STEP_CONTRACT` before approver callback or driver execution. H17.1a inbound-origin construction is merged in #549. 0.45 Batch B1 skill + host-control contracts are merged in #550. #551 adds Safe Comms channel inbox transport v0 for telegram/web. #552 fixes eval-nightly workflow validation by moving cache-hash expressions out of job-level `env`.
 
 **Previous session:** O26-P0.1 golden harness was merged via #496, with P0.2–P0.7 already completed on
 main by parallel agents.
@@ -56,6 +56,8 @@ main by parallel agents.
 | H17.1a / Origin By Construction | `codex-h17-origin-by-construction` | #549 | ✅ merged | Codex | Public turn entrypoints bind origin; plugin egress uses current origin |
 | 0.45 / Skill + Host-Control Contract Gates | `codex-o45-b1-contracts` | #550 | ✅ merged | Codex | `SKILL_INSTALL_CONTRACT`, `SKILL_GENERATION_CONTRACT`, shared `HOST_CONTROL_CONTRACT` |
 | 0.44 / Safe Comms Channel Inbox Transport v0 | `codex-safe-comms-channel-inbox` | #551 | ✅ merged | Codex | Bounded telegram/web inbox + governed `channel.reply` approval/send loop |
+| Eval Nightly Cache-Key Parser Hotfix | `codex-fix-eval-nightly-cache-context` | #552 | ✅ merged | Codex | `hashFiles()` moved from job `env` into cache action keys; Eval Nightly green |
+| H21.3 / LivingMemory Live Recall + Eval Mode | `codex-living-memory-recall-eval` | — | ⏳ in progress | Codex | Post-fusion LivingMemory TCM re-rank + `/api/memory/eval/run?mode=recall` |
 
 Status legend: ⏳ in progress · 🟡 draft PR · 🟢 CI green · ✅ merged · 🔴 conflict
 
@@ -63,9 +65,11 @@ Status legend: ⏳ in progress · 🟡 draft PR · 🟢 CI green · ✅ merged �
 
 ## Fișiere blocate (în PR activ)
 
-#551 owned the Safe Comms transport files plus `BACKLOG.md`, `STATUS.md`,
-`docs/SPRINT.md`, `docs/design/HUD_V2_REMAINING.md`, and `mobile/PARITY.md`;
-after merge, those files are released for the next rebased branch.
+`codex-living-memory-recall-eval` currently owns `agents/core/memory/eval.py`,
+`agents/core/memory/living_recall.py`, `agents/core/orchestrator.py`,
+`agents/core/routers/memory_kg.py`, `frontend/src/api/schema.gen.ts`,
+`tests/test_living_memory_recall_eval.py`, `BACKLOG.md`, `STATUS.md`, and
+`docs/SPRINT.md`.
 
 ---
 
@@ -85,7 +89,7 @@ Current order:
   10. O26-P3.6 Landing Page Dev Half (#512) ✅
 ```
 
-Current backlog state: **0.45 High-Risk Automation Contracts — payment + signal + plugin + social + write-back + outbound call + Tool-RPC + NodeMesh + media-generation + desktop-step + B1 skill/host-control live gate adoption** is merged in #529/#531/#533/#535/#537/#539/#541/#543/#545/#547/#550. Safe Comms channel inbox transport v0 is delivered in #551; remaining TASK-2/O26 tail is owner live-data/plugin setup plus non-v0 inbox channels.
+Current backlog state: **0.45 High-Risk Automation Contracts — payment + signal + plugin + social + write-back + outbound call + Tool-RPC + NodeMesh + media-generation + desktop-step + B1 skill/host-control live gate adoption** is merged in #529/#531/#533/#535/#537/#539/#541/#543/#545/#547/#550. Safe Comms channel inbox transport v0 is delivered in #551; eval-nightly parser hotfix #552 is merged; remaining TASK-2/O26 tail is owner live-data/plugin setup plus non-v0 inbox channels. Active WIP is H21.3 live recall integration.
 
 ---
 
@@ -239,6 +243,11 @@ Generalizează reflecția nocturnă din *rezumă-ziua* în *pre-raționează-pen
 [0.45-B1] Red tests: marketplace publish/install/uninstall, generated-skill create/approve, remediation restart, and LM Studio start ignored patched contracts
 [0.45-B1] Implemented `contract_denial()`, `SKILL_INSTALL_CONTRACT`, `SKILL_GENERATION_CONTRACT`, and shared `HOST_CONTROL_CONTRACT`
 [Verify]  B1 focused/adjacent sweep green: 121 passed; ruff and py_compile clean
+[CI]      #552 merged: eval-nightly workflow validation fixed by moving cache hash expressions from job env into cache action keys
+[H21.3]   Started LivingMemory live recall + real recall eval mode on `codex-living-memory-recall-eval`
+[H21.3]   Red tests: no `memory.living_recall` helper, `_recall_block()` rendered old fused order, eval endpoint ignored `mode=recall`
+[H21.3]   Implemented post-fusion LivingMemory TCM re-rank before `rag_guard`, plus async `run_recall_eval()` over real `MemoryManager.remember()`/`recall()`
+[Verify]  LivingMemory focused suite green: 6 passed; adjacent memory/eval/recall sweep green: 44 passed; OpenAPI TS regenerated
 [ORIZONT 25] 2026-07-03 — created `codex-integrate-verified-developments` from `origin/main`
 [ORIZONT 25] merged #487 M1.1, #488 M1.2, #489 M2.3, #490 M2.1, #491 status correction locally
 [Docs]        BACKLOG/STATUS/ARCHITECTURE/HUD remaining/SPRINT refreshed: M1.1,M1.2,M2.1,M2.3 done; M2.4 partial

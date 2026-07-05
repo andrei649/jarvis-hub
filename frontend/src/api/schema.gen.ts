@@ -4328,7 +4328,7 @@ export interface paths {
         put?: never;
         /**
          * Memory Eval Run
-         * @description H14.2 — run the harness with the offline keyword baseline answerer.
+         * @description H14.2 — run the memory eval harness.
          */
         post: operations["memory_eval_run_api_memory_eval_run_post"];
         delete?: never;
@@ -14021,7 +14021,9 @@ export interface operations {
     };
     memory_eval_run_api_memory_eval_run_post: {
         parameters: {
-            query?: never;
+            query?: {
+                mode?: string;
+            };
             header?: never;
             path?: never;
             cookie?: never;
@@ -14035,6 +14037,15 @@ export interface operations {
                 };
                 content: {
                     "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };

@@ -444,10 +444,15 @@ async def memory_eval_corpus():
 
 
 @router.post("/api/memory/eval/run", dependencies=[Depends(user_guard)])
-async def memory_eval_run():
-    """H14.2 — run the harness with the offline keyword baseline answerer."""
-    from agents.core.memory.eval import run_eval, keyword_answer
-    return nocache_json(run_eval(keyword_answer))
+async def memory_eval_run(mode: str = "keyword"):
+    """H14.2 — run the memory eval harness."""
+    from agents.core.memory.eval import run_eval, keyword_answer, run_recall_eval
+    mode = (mode or "keyword").strip().lower()
+    if mode == "keyword":
+        return nocache_json(run_eval(keyword_answer))
+    if mode == "recall":
+        return nocache_json(await run_recall_eval())
+    return JSONResponse({"error": "mode must be keyword or recall"}, status_code=400)
 
 
 @router.post("/api/memory/remember", dependencies=[Depends(user_guard)])
