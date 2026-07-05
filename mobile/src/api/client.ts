@@ -125,6 +125,97 @@ export function fetchStatus(config: ServerConfig): Promise<StatusResponse> {
   return request<StatusResponse>(config, 'GET', '/status', undefined, { retries: 2 });
 }
 
+// ── Ambient dashboard + ticker ───────────────────────────────────
+
+export type DashboardWeather = {
+  city?: string;
+  temp?: string;
+  desc?: string;
+  wind?: string;
+  humidity?: string;
+  feels?: string;
+  updated?: string;
+  forecast: Record<string, unknown>[];
+  [key: string]: unknown;
+};
+
+export type DashboardResponse = {
+  weather?: DashboardWeather;
+  calendar: Record<string, unknown>[];
+  notifications: Record<string, unknown>[];
+};
+
+export type TickerItem = {
+  agent?: string;
+  verb?: string;
+  obj?: string;
+  text: string;
+  pct?: number;
+  pri?: string;
+  bar: number;
+  cls: string;
+  [key: string]: unknown;
+};
+
+export type TickerResponse = {
+  ticker: TickerItem[];
+};
+
+function recordArray(value: unknown): Record<string, unknown>[] {
+  return Array.isArray(value) ? (value as Record<string, unknown>[]) : [];
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function normalizeWeather(value: unknown): DashboardWeather | undefined {
+  if (!isRecord(value)) return undefined;
+  return {
+    ...value,
+    forecast: recordArray(value.forecast),
+  } as DashboardWeather;
+}
+
+function normalizeDashboard(raw: Partial<DashboardResponse>): DashboardResponse {
+  return {
+    weather: normalizeWeather(raw.weather),
+    calendar: recordArray(raw.calendar),
+    notifications: recordArray(raw.notifications),
+  };
+}
+
+function normalizeTickerItem(value: unknown): TickerItem | null {
+  if (!isRecord(value)) return null;
+  const rawBar = value.bar ?? value.pct ?? 0;
+  const bar = typeof rawBar === 'number' && Number.isFinite(rawBar) ? rawBar : 0;
+  return {
+    ...value,
+    text: String(value.text ?? value.obj ?? ''),
+    bar,
+    cls: String(value.cls ?? value.pri ?? ''),
+  } as TickerItem;
+}
+
+function normalizeTicker(raw: Partial<TickerResponse>): TickerResponse {
+  const ticker = Array.isArray(raw.ticker)
+    ? raw.ticker.map(normalizeTickerItem).filter((item): item is TickerItem => item !== null)
+    : [];
+  return { ticker };
+}
+
+export async function fetchDashboard(config: ServerConfig): Promise<DashboardResponse> {
+  const res = await request<Partial<DashboardResponse>>(config, 'GET', '/dashboard', undefined, {
+    retries: 2,
+  });
+  return normalizeDashboard(res || {});
+}
+
+export async function fetchTicker(config: ServerConfig): Promise<TickerResponse> {
+  const res = await request<Partial<TickerResponse>>(config, 'GET', '/ticker', undefined, { retries: 2 });
+  return normalizeTicker(res || {});
+}
+
 // ── Tasks ────────────────────────────────────────────────────────
 
 export type HubTask = {

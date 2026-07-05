@@ -32,9 +32,9 @@ Legend — **mobile**: ✅ shipped · 🟡 partial · ⬜ not started · ➖ not
 | Sessions (resume) | `GET /sessions`, `POST /sessions/resume` | ✅ | ✅ | H18.5 |
 | Voice / TTS | `POST /tts` | ✅ | ✅ | H18.5 |
 | Stream timeout / reconnect | — (client-side) | ✅ | ✅ | H18.6 |
-| Dashboard (weather/news) | `GET /dashboard` | ✅ | ⬜ | — |
+| Dashboard (weather/news) | `GET /dashboard` | ✅ | ✅ | H18.14 |
 | Tasks board | `GET /tasks` | ✅ | ✅ | H18.13 |
-| Ticker | `GET /ticker` | ✅ | ⬜ | — |
+| Ticker | `GET /ticker` | ✅ | ✅ | H18.14 |
 | Skills browser | `GET /skills` | ✅ | ⬜ | — |
 | Memory / notes | `GET /memory`, `GET /api/notes` | ✅ | ⬜ | — |
 | Knowledge graph | `GET /api/kg/*` | ✅ | ⬜ | — |
