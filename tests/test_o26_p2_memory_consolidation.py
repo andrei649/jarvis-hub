@@ -67,6 +67,19 @@ async def test_enabled_living_memory_records_turns_and_nightly_tick(monkeypatch,
     assert living_memory.records(prefix=recorded_ids[0])[0]["content"]["session"] == sid
 
 
+async def test_orchestrator_living_core_uses_runtime_data_root(monkeypatch, tmp_path):
+    orch, _fake = await make_golden_orchestrator(monkeypatch, tmp_path)
+    living_memory = orch.cognition.module("memory")
+    living_memory.core.put("Andrei wants durable core facts.")
+
+    core_path = tmp_path / "cognition" / "core_memory.json"
+    assert core_path.exists()
+
+    from agents.core.cognition.memory import LivingMemory
+    reloaded = LivingMemory(core_path=core_path)
+    assert reloaded.core.list() == ["Andrei wants durable core facts."]
+
+
 def test_scheduler_registers_memory_maintenance_job():
     calls = []
 

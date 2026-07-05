@@ -23,11 +23,16 @@ the live MemoryManager / recall fusion / DailyReflector is the integration seam.
 
 from __future__ import annotations
 
+import logging
 import math
 import time
+from pathlib import Path
 from typing import Callable, Optional
 
+from agents.core.persistence import JsonStore
+
 HOT, WARM, COLD = "hot", "warm", "cold"
+logger = logging.getLogger("jarvis.cognition.memory")
 
 
 def _clamp01(x: float) -> float:
@@ -195,35 +200,52 @@ async def reproject(records: "list[dict]", current_version: int, embedder: Calla
             r["embed_version"] = current_version
             done += 1
         except Exception:
-            # best-effort migration: skip a row that fails to re-embed
-            pass
+            logger.debug("LivingMemory reproject skipped a stale record", exc_info=True)
     return {"reprojected": done, "version": current_version}
 
 
 # ── core (always-injected, bounded) ──────────────────────────────────────────
 
-class CoreMemory:
+class CoreMemory(JsonStore):
     """A small set of always-injected core facts (bounded ring)."""
 
-    def __init__(self, cap: int = 20) -> None:
+    def __init__(self, cap: int = 20, path: str | Path | None = None) -> None:
         self.cap = cap
-        self._facts: list[str] = []
+        super().__init__(path)
+
+    def _serialize(self):
+        return {"facts": self._facts[-self.cap:]}
+
+    def _deserialize(self, raw) -> None:
+        facts = raw.get("facts", []) if isinstance(raw, dict) else raw
+        self._facts = []
+        if not isinstance(facts, list):
+            return
+        for fact in facts:
+            f = str(fact or "").strip()
+            if f and f not in self._facts:
+                self._facts.append(f)
+        self._facts = self._facts[-self.cap:]
 
     def put(self, fact: str) -> None:
         f = (fact or "").strip()
         if not f:
             return
-        if f in self._facts:
-            return
-        self._facts.append(f)
-        if len(self._facts) > self.cap:
-            self._facts.pop(0)
+        with self._lock:
+            if f in self._facts:
+                return
+            self._facts.append(f)
+            if len(self._facts) > self.cap:
+                self._facts.pop(0)
+            self._save()
 
     def list(self) -> "list[str]":
-        return list(self._facts)
+        with self._lock:
+            return list(self._facts)
 
     def render(self) -> str:
-        return "" if not self._facts else "[core memory]\n" + "\n".join(f"- {f}" for f in self._facts)
+        facts = self.list()
+        return "" if not facts else "[core memory]\n" + "\n".join(f"- {f}" for f in facts)
 
 
 # ── the module ────────────────────────────────────────────────────────────────
@@ -231,9 +253,14 @@ class CoreMemory:
 class LivingMemory:
     """Ties encoding, tiering, core and consolidation into one cognition module."""
 
-    def __init__(self, embed_version: int = 1, encode_threshold: float = 0.3) -> None:
+    def __init__(
+        self,
+        embed_version: int = 1,
+        encode_threshold: float = 0.3,
+        core_path: str | Path | None = None,
+    ) -> None:
         self.tiers = TieredMemory()
-        self.core = CoreMemory()
+        self.core = CoreMemory(path=core_path)
         self.embed_version = embed_version
         self.encode_threshold = encode_threshold
 
