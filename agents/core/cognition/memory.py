@@ -359,6 +359,10 @@ class LivingMemory:
         """Inspectable records for integration tests/API callers; no mutation."""
         return self.tiers.records(prefix=prefix, limit=limit)
 
+    def access(self, mem_id: str) -> Optional[dict]:
+        """Reactivate a remembered trace when recall uses it."""
+        return self.tiers.access(mem_id)
+
     async def reproject_stale(
         self,
         embedder: Optional[Callable] = None,
