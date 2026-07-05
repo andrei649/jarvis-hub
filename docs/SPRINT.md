@@ -226,6 +226,10 @@ Generalizează reflecția nocturnă din *rezumă-ziua* în *pre-raționează-pen
 ## Log sesiune
 
 ```
+[H17.1a] 2026-07-05 — started inbound-origin-by-construction hardening on `codex-h17-origin-by-construction`
+[H17.1a] Red tests: internal turn channels were misclassified inbound; direct `handle_input`/stream callers bypassed turn-origin binding; plugin egress hard-coded `generated`
+[H17.1a] Implemented monotone turn-origin binding at public orchestrator entrypoints plus current-origin plugin egress
+[Verify]  H17.1a/origin/taint/kernel/chat-stream targeted sweeps green; ruff and py_compile clean
 [ORIZONT 25] 2026-07-03 — created `codex-integrate-verified-developments` from `origin/main`
 [ORIZONT 25] merged #487 M1.1, #488 M1.2, #489 M2.3, #490 M2.1, #491 status correction locally
 [Docs]        BACKLOG/STATUS/ARCHITECTURE/HUD remaining/SPRINT refreshed: M1.1,M1.2,M2.1,M2.3 done; M2.4 partial
