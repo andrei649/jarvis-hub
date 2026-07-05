@@ -27,7 +27,7 @@ jobs:
       JARVIS_EVAL_LIVE: ${{ vars.JARVIS_EVAL_LIVE || '0' }}
       # Cache this exact DatasetStore root so scheduled run N+1 compares against run N.
       JARVIS_EVAL_STORE: ${{ github.workspace }}/.jarvis-eval-cache/eval
-      JARVIS_EVAL_CACHE_PREFIX: eval-nightly-${{ runner.os }}-companion-v1-${{ hashFiles('agents/core/observability/companion_dialogues.json', 'agents/core/observability/companion_eval.py') }}
+      JARVIS_EVAL_CACHE_PREFIX: eval-nightly-ubuntu-companion-v1
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
       - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1  # v6.3.0
@@ -38,9 +38,9 @@ jobs:
         uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830  # v4.3.0
         with:
           path: ${{ env.JARVIS_EVAL_STORE }}
-          key: ${{ env.JARVIS_EVAL_CACHE_PREFIX }}-${{ github.run_id }}
+          key: ${{ env.JARVIS_EVAL_CACHE_PREFIX }}-${{ hashFiles('agents/core/observability/companion_dialogues.json', 'agents/core/observability/companion_eval.py') }}-${{ github.run_id }}
           restore-keys: |
-            ${{ env.JARVIS_EVAL_CACHE_PREFIX }}-
+            ${{ env.JARVIS_EVAL_CACHE_PREFIX }}-${{ hashFiles('agents/core/observability/companion_dialogues.json', 'agents/core/observability/companion_eval.py') }}-
 
       - name: Companion eval gate
         run: python -m agents.core.observability.companion_eval --ci-gate --store-root "$JARVIS_EVAL_STORE" --summary "$GITHUB_STEP_SUMMARY"
@@ -59,4 +59,4 @@ jobs:
         uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830  # v4.3.0
         with:
           path: ${{ env.JARVIS_EVAL_STORE }}
-          key: ${{ env.JARVIS_EVAL_CACHE_PREFIX }}-${{ github.run_id }}
+          key: ${{ env.JARVIS_EVAL_CACHE_PREFIX }}-${{ hashFiles('agents/core/observability/companion_dialogues.json', 'agents/core/observability/companion_eval.py') }}-${{ github.run_id }}
