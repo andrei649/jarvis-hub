@@ -5,6 +5,8 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'agents'))
 
 import pytest
 
+from agents.core.automation_contracts import ContractDecision
+import agents.core.node_mesh as node_mesh
 from agents.core.node_mesh import NodeMesh, KIND
 from agents.core.security.capability import CapabilityBroker, KillSwitch
 
@@ -56,6 +58,41 @@ def test_dispatch_within_capability_enqueues_governed_task(tmp_path):
     call = q.calls[0]
     assert call["autonomy_level"] == "ask" and call["risk_tier"] == 2
     assert call["payload"]["node"] == "phone" and call["payload"]["capability"] == "notify"
+
+
+def test_dispatch_obeys_live_node_dispatch_contract(tmp_path, monkeypatch):
+    q = _FakeQueue()
+    mesh = _mesh(tmp_path, enqueue=q.enqueue)
+    mesh.register_node("phone", ["notify"])
+
+    class _Contract:
+        def __init__(self):
+            self.calls = []
+
+        def evaluate(self, payload=None, **kwargs):
+            self.calls.append((payload, kwargs))
+            return ContractDecision(
+                kind="node_dispatch",
+                admissible=False,
+                requires_approval=True,
+                reason="contract_blocked",
+            )
+
+    contract = _Contract()
+    monkeypatch.setattr(node_mesh, "NODE_DISPATCH_CONTRACT", contract, raising=False)
+
+    out = mesh.dispatch("phone", "notify", action="ping", payload={"urgency": "low"})
+
+    assert out == {"ok": False, "reason": "contract_blocked", "kind": KIND}
+    assert q.calls == []
+    assert contract.calls
+    payload, kwargs = contract.calls[-1]
+    assert payload["kind"] == KIND
+    assert payload["node"] == "phone"
+    assert payload["capability"] == "notify"
+    assert payload["action"] == "ping"
+    assert payload["args_keys"] == ["urgency"]
+    assert kwargs.get("now") is not None
 
 
 def test_dispatch_outside_capability_is_blocked(tmp_path):
