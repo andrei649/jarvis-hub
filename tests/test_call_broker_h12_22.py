@@ -5,6 +5,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'agents'))
 
 import pytest
 
+from agents.core.automation_contracts import ContractDecision
 from agents.core.autonomy.call_broker import (
     CallBroker, NullCallClient, HttpCallClient, build_call_request,
 )
@@ -70,6 +71,50 @@ def test_request_enqueues_governed_task():
     p = call["payload"]
     assert p["provider"] == "twilio" and p["to"] == "+15551234"
     assert p["credential_ref"] == "{{secret:twilio_auth_token}}"
+
+
+def test_request_obeys_live_call_request_contract(monkeypatch):
+    import agents.core.autonomy.call_broker as call_broker
+
+    class _FakeCallRequestContract:
+        def __init__(self):
+            self.calls = []
+
+        def evaluate(self, payload=None, **kwargs):
+            payload = payload or {}
+            self.calls.append((payload, kwargs))
+            return ContractDecision(
+                kind="call_request",
+                admissible=False,
+                requires_approval=True,
+                reason="contract_denied",
+                checked=("fake",),
+            )
+
+    q = _FakeQueue()
+    contract = _FakeCallRequestContract()
+    monkeypatch.setattr(call_broker, "CALL_REQUEST_CONTRACT", contract, raising=False)
+
+    out = call_broker.CallBroker(enqueue=q.enqueue).request(
+        "+15551234",
+        "deploy finished",
+        provider="twilio",
+        reason="night-shift",
+        agent="jarvis",
+    )
+
+    assert out == {"ok": False, "reason": "contract_denied", "kind": "call.outbound"}
+    assert q.calls == []
+    assert len(contract.calls) == 1
+    payload, kwargs = contract.calls[0]
+    assert payload["kind"] == "call.outbound"
+    assert payload["provider"] == "twilio"
+    assert payload["action"] == "call"
+    assert payload["to"] == "+15551234"
+    assert payload["message"] == "deploy finished"
+    assert payload["reason"] == "night-shift"
+    assert payload["agent"] == "jarvis"
+    assert "now" in kwargs
 
 
 def test_build_call_request_twilio():

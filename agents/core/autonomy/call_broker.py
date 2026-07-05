@@ -22,9 +22,11 @@ all injected.
 from __future__ import annotations
 
 import logging
+import time
 from typing import Callable, Optional
 from urllib.parse import urlparse
 
+from ..automation_contracts import ContractTemplate, predicate
 from .dry_run import preview_task
 from ..security.secret_broker import SecretBroker
 
@@ -44,6 +46,7 @@ def _assert_allowed_host(url: str, allowed=_ALLOWED_HOSTS) -> str:
 # consistent with the write-back/social brokers); it additionally spends an
 # interrupt-budget slot, so calls are doubly gated.
 _RISK_TIER = 2
+_KIND = "call.outbound"
 
 # provider → the secret name whose value is injected at call time.
 _CREDENTIAL: dict[str, str] = {
@@ -62,6 +65,40 @@ def _present(v) -> bool:
 def _xml_escape(s: str) -> str:
     return (s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
             .replace('"', "&quot;"))
+
+
+def _call_request_contract_template() -> ContractTemplate:
+    """Contract form of the existing governed outbound-call request gate."""
+    def call_kind(view, now):
+        return view.get("kind") == _KIND
+
+    def provider_allowed(view, now):
+        return view.get("provider") in _CREDENTIAL
+
+    def action_is_call(view, now):
+        return view.get("action") == "call"
+
+    def required_fields_present(view, now):
+        return _present(view.get("to")) and _present(view.get("message"))
+
+    def credential_ref_matches(view, now):
+        provider = view.get("provider")
+        cred_name = _CREDENTIAL.get(provider, "")
+        expected = SecretBroker.reference(cred_name) if cred_name else ""
+        return view.get("credential_ref") == expected
+
+    return ContractTemplate(kind="call_request", constraints=(
+        predicate("call_kind", call_kind, reason="invalid_kind"),
+        predicate("provider_allowed", provider_allowed, reason="unknown_provider"),
+        predicate("action_is_call", action_is_call, reason="invalid_action"),
+        predicate("required_fields_present", required_fields_present,
+                  reason="missing_fields"),
+        predicate("credential_ref_matches", credential_ref_matches,
+                  reason="credential_ref_mismatch"),
+    ), description="Admissibility for governed outbound-call requests.")
+
+
+CALL_REQUEST_CONTRACT = _call_request_contract_template()
 
 
 def build_call_request(provider: str, to: str, message: str,
@@ -139,7 +176,7 @@ class HttpCallClient:
 class CallBroker:
     """Governs outbound calls: request → budget-gate + approve → execute."""
 
-    KIND = "call.outbound"
+    KIND = _KIND
 
     def __init__(self, enqueue: Optional[Callable] = None, agent: str = "jarvis",
                  secret_broker=None, client=None, audit=None, budget=None,
@@ -191,6 +228,21 @@ class CallBroker:
             "credential_ref": cred_ref,
             "target": to,
         }
+        contract_payload = {
+            **payload,
+            "kind": self.KIND,
+            "agent": agent or self.agent,
+            "risk_tier": _RISK_TIER,
+        }
+        try:
+            decision = CALL_REQUEST_CONTRACT.evaluate(contract_payload, now=time.time())
+        except Exception:
+            logger.warning("call request contract evaluation failed", exc_info=True)
+            return {"ok": False, "reason": "contract_error", "kind": self.KIND}
+        if not decision.admissible:
+            reason = decision.reason or "contract_denied"
+            self._record("call.deny", reason, to=to)
+            return {"ok": False, "reason": reason, "kind": self.KIND}
         preview = preview_task({"kind": self.KIND, "title": title,
                                 "payload": payload, "risk_tier": _RISK_TIER})
         # ORIZONT-24 K1: route through the Action Kernel when enabled (default-off →
