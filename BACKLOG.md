@@ -34,7 +34,7 @@ python -m pytest tests/ -v          # ~3,600 passed, 6 skipped (counter synced v
 > requests before they can enter the approval queue. Local red/green and focused
 > media/contracts/funnel verification, and full GitHub Actions passed before merge.
 
-> **Active WIP (2026-07-05):** `codex-o45-desktop-step-contract-gate`
+> **Active WIP (2026-07-05):** #547 (`codex-o45-desktop-step-contract-gate`)
 > continues 0.45 by adding `DESKTOP_STEP_CONTRACT` to mutating desktop operator
 > steps before the approver/driver path. Local red/green and focused
 > desktop/contracts/funnel verification are green.

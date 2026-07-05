@@ -52,7 +52,7 @@ main by parallel agents.
 | 0.45 / Tool-RPC Contract Gate | `codex-o45-tool-rpc-contract-gate` | #541 | ✅ merged | Codex | `ToolRPCServer.handle()` evaluates `TOOL_RPC_CALL_CONTRACT` before kernel mediation and approval enqueue |
 | 0.45 / NodeMesh Dispatch Contract Gate | `codex-o45-node-dispatch-contract-gate` | #543 | ✅ merged | Codex | `NodeMesh.dispatch()` evaluates `NODE_DISPATCH_CONTRACT` before preview/enqueue |
 | 0.45 / Media Generation Contract Gate | `codex-o45-media-gen-contract-gate` | #545 | ✅ merged | Codex | `MediaGenManager.generate(cloud=True)` evaluates `MEDIA_GENERATION_CONTRACT` before approval enqueue |
-| 0.45 / Desktop Step Contract Gate | `codex-o45-desktop-step-contract-gate` | TBD | ⏳ in progress | Codex | `GovernedDesktop.run()` evaluates `DESKTOP_STEP_CONTRACT` before approver callback/driver execution |
+| 0.45 / Desktop Step Contract Gate | `codex-o45-desktop-step-contract-gate` | #547 | 🟡 draft PR | Codex | `GovernedDesktop.run()` evaluates `DESKTOP_STEP_CONTRACT` before approver callback/driver execution |
 
 Status legend: ⏳ in progress · 🟡 draft PR · 🟢 CI green · ✅ merged · 🔴 conflict
 
@@ -409,6 +409,7 @@ Generalizează reflecția nocturnă din *rezumă-ziua* în *pre-raționează-pen
 [0.45]     Red test: mutating `GovernedDesktop.run()` ignored a patched desktop-step contract, so an approved click could still reach the driver
 [0.45]     Implemented `DESKTOP_STEP_CONTRACT`; mutating desktop steps now evaluate it before approver callback or driver execution
 [Verify]   Desktop-step contract sweep green: focused desktop/contracts/funnel sweep, ruff, py_compile, and status-sync clean
+[PR]       #547 opened as draft
 ```
 
 ---
