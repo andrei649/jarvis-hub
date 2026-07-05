@@ -5,16 +5,18 @@ import { ServerProvider } from './src/context/ServerContext';
 import { ApprovalsScreen } from './src/screens/ApprovalsScreen';
 import { ChatScreen } from './src/screens/ChatScreen';
 import { CommsScreen } from './src/screens/CommsScreen';
+import { MemoryScreen } from './src/screens/MemoryScreen';
 import { SettingsScreen } from './src/screens/SettingsScreen';
 import { SkillsScreen } from './src/screens/SkillsScreen';
 import { StatusScreen } from './src/screens/StatusScreen';
 import { TasksScreen } from './src/screens/TasksScreen';
 import { theme } from './src/theme';
 
-type Tab = 'chat' | 'approvals' | 'tasks' | 'comms' | 'skills' | 'status' | 'settings';
+type Tab = 'chat' | 'memory' | 'approvals' | 'tasks' | 'comms' | 'skills' | 'status' | 'settings';
 
 const TABS: { key: Tab; label: string; icon: string }[] = [
   { key: 'chat', label: 'Chat', icon: '◉' },
+  { key: 'memory', label: 'Memory', icon: '◎' },
   { key: 'approvals', label: 'Approve', icon: '✓' },
   { key: 'tasks', label: 'Tasks', icon: '▦' },
   { key: 'comms', label: 'Comms', icon: '✉' },
@@ -25,6 +27,7 @@ const TABS: { key: Tab; label: string; icon: string }[] = [
 
 const TITLES: Record<Tab, string> = {
   chat: 'Jarvis',
+  memory: 'Memory',
   approvals: 'Approvals',
   tasks: 'Tasks',
   comms: 'Comms',
@@ -44,6 +47,7 @@ function AppShell() {
 
       <View style={styles.body}>
         {tab === 'chat' && <ChatScreen onGoToSettings={() => setTab('settings')} />}
+        {tab === 'memory' && <MemoryScreen onGoToSettings={() => setTab('settings')} />}
         {tab === 'approvals' && <ApprovalsScreen onGoToSettings={() => setTab('settings')} />}
         {tab === 'tasks' && <TasksScreen onGoToSettings={() => setTab('settings')} />}
         {tab === 'comms' && <CommsScreen onGoToSettings={() => setTab('settings')} />}
@@ -105,7 +109,7 @@ const styles = StyleSheet.create({
     paddingTop: 6,
   },
   tab: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingVertical: 4 },
-  tabIcon: { color: theme.textDim, fontSize: 20, marginBottom: 2 },
-  tabLabel: { color: theme.textDim, fontSize: 11, fontWeight: '600' },
+  tabIcon: { color: theme.textDim, fontSize: 18, marginBottom: 2 },
+  tabLabel: { color: theme.textDim, fontSize: 10, fontWeight: '600' },
   tabActive: { color: theme.accent },
 });

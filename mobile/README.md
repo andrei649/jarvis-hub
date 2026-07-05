@@ -10,6 +10,9 @@ It talks to the same HTTP API the web HUD uses (`agents/web.py`):
   (code blocks, lists, bold/italic, links). Pick the **agent** (`GET /api/agents`),
   tap 🔊 to hear a reply via **TTS** (`POST /tts`), and **Stop** mid-stream.
   The thread is **persisted on-device** and survives restarts.
+- **Memory** — read-only session memory and notes over `GET /memory` and
+  `GET /api/notes`, showing recent turns and current session notes without
+  exposing clear/save/rewrite controls from the phone.
 - **Status** — live view of `GET /status`, `GET /dashboard`, and
   `GET /ticker`: model state, backend, agents online, host/GPU telemetry,
   ambient dashboard counts, and live ticker rows, with pull-to-refresh.
@@ -76,7 +79,7 @@ src/api/sse.ts              pure SSE decoder (unit-tested)
 src/audio/tts.ts            /tts → cache file → expo-audio playback
 src/markdown/               pure Markdown parser (unit-tested) + RN renderer
 src/components/             MessageBubble, AgentPicker, SessionsModal
-src/screens/                Chat / Approvals / Tasks / Comms / Skills / Status / Settings
+src/screens/                Chat / Memory / Approvals / Tasks / Comms / Skills / Status / Settings
 scripts/gen-icons.js        icon/splash generator
 ```
 
