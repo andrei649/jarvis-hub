@@ -225,6 +225,19 @@ class TieredMemory(JsonStore):
                 keys = [k for k in keys if k.startswith(prefix)]
             return [dict(self._items[k]) for k in keys[:max(1, limit)]]
 
+    def update_records(self, records: "list[dict]") -> int:
+        """Persist updated records by id. Used by explicit re-projection only."""
+        updated = 0
+        with self._lock:
+            for rec in records or []:
+                mem_id = rec.get("id") if isinstance(rec, dict) else None
+                if mem_id in self._items:
+                    self._items[mem_id].update(rec)
+                    updated += 1
+            if updated:
+                self._save()
+            return updated
+
 
 # ── re-projection (re-embed onto a better model) ─────────────────────────────
 
@@ -336,6 +349,38 @@ class LivingMemory:
     def records(self, prefix: str = "", limit: int = 50) -> "list[dict]":
         """Inspectable records for integration tests/API callers; no mutation."""
         return self.tiers.records(prefix=prefix, limit=limit)
+
+    async def reproject_stale(
+        self,
+        embedder: Optional[Callable] = None,
+        current_version: Optional[int] = None,
+        limit: int = 100,
+    ) -> dict:
+        """Re-embed stale tier records when an embedder is explicitly supplied."""
+        target_version = int(current_version or self.embed_version)
+        if embedder is None:
+            return {
+                "available": False,
+                "reason": "embedder_unavailable",
+                "checked": 0,
+                "reprojected": 0,
+                "updated": 0,
+                "version": target_version,
+            }
+        records = self.tiers.records(limit=limit)
+        stale = [dict(r) for r in records if needs_reprojection(r, target_version)]
+        if not stale:
+            return {
+                "available": True,
+                "checked": len(records),
+                "reprojected": 0,
+                "updated": 0,
+                "version": target_version,
+            }
+        result = await reproject(stale, current_version=target_version, embedder=embedder)
+        changed = [r for r in stale if not needs_reprojection(r, target_version)]
+        updated = self.tiers.update_records(changed)
+        return {"available": True, "checked": len(records), "updated": updated, **result}
 
     def clear(self) -> dict:
         """Explicit user-forget path for live cognition memory."""

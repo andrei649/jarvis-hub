@@ -161,3 +161,48 @@ async def test_memory_maintenance_noops_when_cognition_memory_disabled():
     result = await SchedulerService(_Orch()).run_memory_maintenance()
 
     assert result == {"skipped": True, "reason": "cognition_memory_disabled"}
+
+
+@pytest.mark.asyncio
+async def test_memory_maintenance_runs_reprojection_hook():
+    class _Living:
+        def __init__(self):
+            self.reprojected = False
+
+        async def consolidate(self, phase):
+            return {"phase": phase, "total": 1} if phase == "nrem" else {"phase": phase}
+
+        async def reproject_stale(self):
+            self.reprojected = True
+            return {"available": True, "checked": 1, "reprojected": 1, "version": 2}
+
+    class _Cognition:
+        def __init__(self, living):
+            self.living = living
+
+        def sub_enabled(self, name):
+            assert name == "memory_enabled"
+            return True
+
+        def module(self, name):
+            assert name == "memory"
+            return self.living
+
+    class _Orch:
+        def __init__(self, living):
+            self.cognition = _Cognition(living)
+            self.decay = None
+
+        def get_setting(self, _key, default=None):
+            return default
+
+    living = _Living()
+    result = await SchedulerService(_Orch(living)).run_memory_maintenance()
+
+    assert living.reprojected is True
+    assert result["reprojection"] == {
+        "available": True,
+        "checked": 1,
+        "reprojected": 1,
+        "version": 2,
+    }

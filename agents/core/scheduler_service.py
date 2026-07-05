@@ -199,6 +199,14 @@ class SchedulerService:
             logger.warning("LivingMemory consolidation failed", exc_info=True)
             return {"skipped": True, "reason": "living_memory_failed"}
 
+        reprojection = {"available": False, "reason": "reprojection_unavailable"}
+        if hasattr(living, "reproject_stale"):
+            try:
+                reprojection = await living.reproject_stale()
+            except Exception:
+                logger.warning("LivingMemory re-projection failed", exc_info=True)
+                reprojection = {"available": False, "reason": "reprojection_failed"}
+
         decay_summary = {"available": False, "ranked": 0, "candidates": 0}
         decay = getattr(self._orch, "decay", None)
         if decay is not None:
@@ -222,14 +230,16 @@ class SchedulerService:
         result = {
             "skipped": False,
             "living_memory": {"nrem": nrem, "rem": rem},
+            "reprojection": reprojection,
             "decay": decay_summary,
         }
         self._orch.last_memory_maintenance = result
         logger.info(
             "Memory maintenance complete: nrem_total=%s rem_recombined=%s "
-            "decay_ranked=%s decay_candidates=%s",
+            "reprojected=%s decay_ranked=%s decay_candidates=%s",
             nrem.get("total") if isinstance(nrem, dict) else None,
             rem.get("recombined") if isinstance(rem, dict) else None,
+            reprojection.get("reprojected") if isinstance(reprojection, dict) else None,
             decay_summary.get("ranked"),
             decay_summary.get("candidates"),
         )

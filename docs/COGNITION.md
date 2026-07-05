@@ -26,8 +26,9 @@
 3. **Future-proof / neuroplastic — improves as technology improves.** The architecture
    is storage- and model-agnostic so it *automatically exploits* better embeddings,
    bigger context windows, cheaper storage, and faster hardware as they arrive. Every
-   trace records its **embedding-model version**; a background **re-projection** job
-   (cortical remapping / neuroplasticity) upgrades old memories to new models during idle.
+   trace records its **embedding-model version**; the background maintenance path has a
+   default-off **re-projection** hook (cortical remapping / neuroplasticity) that upgrades
+   old memories to new models during idle once a real embedder is supplied.
    Working memory is **context-window-elastic**. See §6.
 4. **Local-first & honesty-anchored.** Everything runs on owned hardware; honesty
    (HEXACO Honesty-Humility) is structurally protected (§7 anti-sycophancy).
@@ -68,7 +69,7 @@ diagnostic anchor: if a *function* misbehaves, this is the *module/store/flag* t
 | 21 | **Synaptic homeostasis (SHY)** | Nightly **downscaling** keeps signal-to-noise | Retrieval-strength inspection (keeps store navigable at any size) | `scheduler_service.run_memory_maintenance` ✅ | decay store | `cognition.memory_enabled` |
 | 22 | **Microglia / astrocytes** | Pruning & housekeeping (no memory loss) | Index compaction, gist compression, **tier demotion** (never delete) | `LivingMemory` tier maintenance ✅ | memory tiers | `cognition.memory_enabled` |
 | 23 | **Neurogenesis (dentate gyrus)** | New neurons aid pattern separation | New index shards as the store grows | `memory/store` sharding 🟡 | — | — |
-| 24 | **Neuroplasticity / cortical remapping** | Reorganization, relearning | **Re-embed / re-index** cold memories when a better model arrives (future-proofing) | `cognition/jobs` re-projection 🟢 | `embed_version` in metadata | `cognition.reembed_enabled` |
+| 24 | **Neuroplasticity / cortical remapping** | Reorganization, relearning | **Re-embed / re-index** cold memories when a better model arrives (future-proofing) | `LivingMemory.reproject_stale` + scheduler hook 🟡 | `embed_version` + optional `vector` in tier metadata | `cognition.memory_enabled` |
 | 25 | **Memory reconsolidation** | Recalled memory becomes labile → updatable | Update-on-recall + belief revision | `memory/bitemporal.py` ✅ + consolidation | bitemporal store | — |
 | 26 | **Gist vs verbatim** (fuzzy-trace) | Meaning trace vs detail trace | Tiered detail: gist hot, verbatim cold (both kept) | memory tiers 🟢 | tiered stores | — |
 | 27 | **Sparse distributed coding / engrams** | Efficient trace at scale | ANN sparse vector indices | `memory/qdrant_store.py` ✅ | vector backend | `VECTOR_BACKEND` |
@@ -170,7 +171,7 @@ SchedulerService.run_memory_maintenance  (02:40 cron, gated by cognition.memory_
   • REM   → LivingMemory recombination pass
   • SHY   → inspect decay ranking + candidates (NEVER auto-forget)
   • MAINT → record last_memory_maintenance for operators/tests
-  • RE-EMBED → re-project cold memories onto newest embedding model (neuroplasticity)
+  • RE-EMBED → default-off hook can re-project stale tier records when supplied an embedder
   • LEARN → deliberate practice on weakest KCs; stale/contradicted-fact retirement
   • SELF  → psychometric self-test (drift tripwire); slow bounded personality drift
 
@@ -187,7 +188,7 @@ DailyReflector.run  (night window 22:00-07:00, gated by system.reflection_enable
 
 | Tech improves… | Brain analogy | Mechanism | Diagnostic |
 |---|---|---|---|
-| Better embedding model | Cortical remapping | Each trace stores `embed_version`; nightly **re-projection** upgrades old vectors; mixed generations coexist and are re-ranked compatibly | check `embed_version` distribution; run `cognition.reembed` |
+| Better embedding model | Cortical remapping | Each trace stores `embed_version`; nightly **re-projection** hook upgrades old vectors only when an embedder is explicitly supplied; mixed generations coexist meanwhile | check `embed_version` distribution; `run_memory_maintenance()["reprojection"]` |
 | Bigger context window | Larger working memory | Working-memory manager is **elastic** — uses as much context as the model exposes (caps from settings, not hard-coded) | check `cognition.working_set_tokens` vs model limit |
 | Cheaper / faster storage | More cortex | Tiering thresholds are settings; cold tier can be any backend (local SSD → object store) | check tier backend config |
 | Faster / bigger local model | Faster cortex | Existing hybrid router auto-detects loaded model; deep-slot escalation already present | `/api/llm/...` model report |
@@ -214,7 +215,7 @@ DailyReflector.run  (night window 22:00-07:00, gated by system.reflection_enable
 | **Consolidation (NREM/REM)** | Sleep | `scheduler_service.run_memory_maintenance` ✅ | `memory_logs/cognition/living_tiers.json` | `cognition.enabled` + `cognition.memory_enabled` | Didn't run → APScheduler job `memory-consolidation-decay` missing, flags off, missing/corrupt tier store, or job exception |
 | **Homeostasis (SHY)** | Sleep downscaling | `scheduler_service.run_memory_maintenance` ✅ | decay store | `cognition.enabled` + `cognition.memory_enabled` | Recall noisy at scale → decay ranking/candidate inspection not running |
 | **Maintenance** | Glial pruning | `LivingMemory.consolidate("nrem")` ✅ | `memory_logs/cognition/living_tiers.json` | `cognition.enabled` + `cognition.memory_enabled` | Slow/large hot tier → maintenance job not running (NOT a delete) |
-| **Re-projection** | Neuroplasticity | `cognition/jobs/` | `embed_version` | `cognition.reembed_enabled` | Old memories poorly recalled after model upgrade → re-embed pending |
+| **Re-projection** | Neuroplasticity | `LivingMemory.reproject_stale` + `SchedulerService.run_memory_maintenance` 🟡 | `embed_version` + optional `vector` in `memory_logs/cognition/living_tiers.json` | `cognition.enabled` + `cognition.memory_enabled` | Old memories poorly recalled after model upgrade → embedder not wired; maintenance reports `embedder_unavailable` |
 | **Skill loop** | Basal ganglia | `skills/loader.py` 🟡 | `skills/` (versioned) | `learning.auto_promote` | Self-edit broke things → regression gate skipped / no Docker → auto-revert to last green |
 
 ---
@@ -234,7 +235,7 @@ DailyReflector.run  (night window 22:00-07:00, gated by system.reflection_enable
 | Wrong conversation gets a reply | **BUG-5** session_id race (instance mutation) | is `TurnContext` used instead of `self.session_id`? | route session id through `TurnContext`; never mutate on the shared instance |
 | Store huge / slow (expected at scale) | Unbounded growth without maintenance/tiering | compaction + demotion jobs ran?; ANN index health | run maintenance; ensure demotion (never delete); add index shard |
 | User-forget left cognition facts behind | New durable cognition store was not added to the AUD-2 purge inventory, or the live `LivingMemory` clear seam was bypassed | `agents/core/data_purge.py` `PURGE_MEMORY_FILES` + `clear_live_memory()`; `memory_logs/cognition/` | add exact-path purge coverage and clear the live module before deleting files; never blanket-delete unrelated runtime state |
-| Poor recall after a model upgrade | Re-projection (re-embed) hasn't run | `embed_version` distribution | run `cognition.reembed`; old + new generations should re-rank together meanwhile |
+| Poor recall after a model upgrade | Re-projection (re-embed) hook has no live embedder or stale records were not upgraded | `embed_version` distribution; `last_memory_maintenance.reprojection` | wire an embedder into the re-projection hook; old + new generations should coexist meanwhile |
 | Skill self-edit regressed behavior | Regression gate skipped or sandbox not Dockerized (HF-6) | `DatasetStore.compare()` result; sandbox path; skill version copy-aside | auto-revert to last green; force Docker; re-gate edited payload (BUG-11) |
 | Concurrent/partial-state weirdness | State stored as instance attrs instead of locked keyed store (BUG-6/12 class) | grep cognition for instance-attr mutation | move to locked `JsonStore`; snapshot-in / atomic-RMW-out |
 

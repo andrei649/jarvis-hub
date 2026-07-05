@@ -124,6 +124,29 @@ async def test_reproject_reembeds_stale():
     assert "vector" not in recs[1]       # already current → untouched
 
 
+@pytest.mark.asyncio
+async def test_living_memory_reproject_stale_persists_updates(tmp_path):
+    path = tmp_path / "tiers.json"
+    lm = LivingMemory(embed_version=2, tiers_path=path)
+    lm.tiers.add("old", "abc", activation=1.0, embed_version=1)
+    lm.tiers.add("fresh", "abcd", activation=1.0, embed_version=2)
+
+    def embedder(content):
+        return [float(len(content))]
+
+    out = await lm.reproject_stale(embedder=embedder)
+
+    assert out["available"] is True
+    assert out["checked"] == 2
+    assert out["reprojected"] == 1
+    reloaded = LivingMemory(tiers_path=path)
+    old = reloaded.records(prefix="old")[0]
+    fresh = reloaded.records(prefix="fresh")[0]
+    assert old["embed_version"] == 2
+    assert old["vector"] == [3.0]
+    assert "vector" not in fresh
+
+
 # ── core memory ───────────────────────────────────────────────────────────────
 
 def test_core_memory_bounded_and_deduped():
