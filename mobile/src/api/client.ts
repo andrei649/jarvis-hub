@@ -216,6 +216,67 @@ export async function fetchTicker(config: ServerConfig): Promise<TickerResponse>
   return normalizeTicker(res || {});
 }
 
+// ── Skills ───────────────────────────────────────────────────────
+
+export type HubSkill = {
+  key: string;
+  name: string;
+  version: string;
+  description: string;
+  agents: string[];
+  commands: unknown[];
+};
+
+export type SkillsResponse = {
+  skills: HubSkill[];
+};
+
+function stringValue(value: unknown): string {
+  return typeof value === 'string' ? value : '';
+}
+
+function stringArray(value: unknown): string[] {
+  return Array.isArray(value) ? value.map((item) => String(item)).filter(Boolean) : [];
+}
+
+function unknownArray(value: unknown): unknown[] {
+  return Array.isArray(value) ? value : [];
+}
+
+function normalizeSkill(key: string, value: unknown): HubSkill {
+  if (!isRecord(value)) {
+    return { key, name: key, version: '', description: '', agents: [], commands: [] };
+  }
+  const name = stringValue(value.name) || key || stringValue(value.id);
+  return {
+    key: key || name,
+    name,
+    version: stringValue(value.version),
+    description: stringValue(value.description),
+    agents: stringArray(value.agents),
+    commands: unknownArray(value.commands),
+  };
+}
+
+function normalizeSkills(raw: Partial<SkillsResponse> | Record<string, unknown>): SkillsResponse {
+  const source = (raw as { skills?: unknown }).skills;
+  if (Array.isArray(source)) {
+    const skills = source.map((item, index) => {
+      const key = isRecord(item) ? stringValue(item.key) || stringValue(item.id) || stringValue(item.name) : '';
+      return normalizeSkill(key || String(index), item);
+    });
+    return { skills: skills.sort((a, b) => a.name.localeCompare(b.name)) };
+  }
+  if (!isRecord(source)) return { skills: [] };
+  const skills = Object.entries(source).map(([key, value]) => normalizeSkill(key, value));
+  return { skills: skills.sort((a, b) => a.name.localeCompare(b.name)) };
+}
+
+export async function fetchSkills(config: ServerConfig): Promise<SkillsResponse> {
+  const res = await request<Record<string, unknown>>(config, 'GET', '/skills', undefined, { retries: 2 });
+  return normalizeSkills(res || {});
+}
+
 // ── Tasks ────────────────────────────────────────────────────────
 
 export type HubTask = {

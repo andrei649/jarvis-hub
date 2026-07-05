@@ -35,7 +35,7 @@ Legend — **mobile**: ✅ shipped · 🟡 partial · ⬜ not started · ➖ not
 | Dashboard (weather/news) | `GET /dashboard` | ✅ | ✅ | H18.14 |
 | Tasks board | `GET /tasks` | ✅ | ✅ | H18.13 |
 | Ticker | `GET /ticker` | ✅ | ✅ | H18.14 |
-| Skills browser | `GET /skills` | ✅ | ⬜ | — |
+| Skills browser | `GET /skills` | ✅ | ✅ | H18.15 |
 | Memory / notes | `GET /memory`, `GET /api/notes` | ✅ | ⬜ | — |
 | Knowledge graph | `GET /api/kg/*` | ✅ | ⬜ | — |
 | Action approval queue | `GET /autonomy/approvals`, `POST /autonomy/tasks/{id}/decision` | ✅ | ✅ | H18.11 / O26-P3.4 |
