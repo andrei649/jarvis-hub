@@ -1182,7 +1182,7 @@ chain-of-thought leak / mid-sentence truncation fixed. Kill-switch:
 
 ---
 
-## ORIZONT 18 — Aplicații Native iOS/Android & Paritate cu Browser (P2–P3) — 9/11
+## ORIZONT 18 — Aplicații Native iOS/Android & Paritate cu Browser (P2–P3) — 12/13
 
 > Client mobil nativ (Expo SDK 56 / RN 0.85) sub `mobile/`, peste **același API HTTP** (`agents/web.py`)
 > ca HUD-ul browser — niciun backend nou. Fundația livrată în **PR #161**. Restul = paritate progresivă
@@ -1208,6 +1208,7 @@ chain-of-thought leak / mid-sentence truncation fixed. Kill-switch:
 | H18.10 | **Paritate continuă (bridge)** — menține `mobile/PARITY.md` la zi: pentru fiecare feature browser nou cu suprafață user-facing, adaugă rândul de paritate + (dacă e cazul) task `H18.x`. Task umbrelă, mereu deschis. | — | P2 | H18.1 | bridge |
 | H18.11 | **Mobile approval queue** — phone-native Decision Inbox over the unified autonomy funnel. `ApprovalsScreen` reads `GET /autonomy/approvals`, posts approve/reject/defer to `POST /autonomy/tasks/{id}/decision`, and settings persist an optional `JARVIS_ADMIN_TOKEN` as `X-Admin-Token` for admin-gated routes. | 5 | ✅ done (2026-07-04, #509) | H18.1, O26-P0.7 | O26-P3.4 / M3.1 |
 | H18.12 ✅ | **Mobile channel inbox + governed replies** — native Comms tab now catches the app up to Safe Comms transport v0: lists `GET /api/channels/inbox`, reads `GET /api/channels/inbox/{thread_id}`, and queues `POST /api/channels/inbox/{thread_id}/reply` drafts into the same approval funnel with `source:"mobile"`. Browser HUD support shipped in #551; mobile parity is verified with 26 Jest tests + clean `tsc --noEmit`. | 4 | ✅ done (2026-07-05, #564) | H18.1, H18.11 | Safe Comms v0 parity |
+| H18.13 ✅ | **Mobile tasks board** — native Tasks tab now catches the app up to the read-only HUD task fan: `GET /tasks` renders active/waiting/done counts plus owner/project/state cards, uses the existing user-token path, and preserves the H7.7 honest empty state when the queue has no work. Verified with 28 mobile Jest tests + clean `tsc --noEmit`. | 3 | ✅ done (2026-07-05) | H18.1 | mobile parity |
 
 ---
 

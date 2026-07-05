@@ -125,6 +125,37 @@ export function fetchStatus(config: ServerConfig): Promise<StatusResponse> {
   return request<StatusResponse>(config, 'GET', '/status', undefined, { retries: 2 });
 }
 
+// ── Tasks ────────────────────────────────────────────────────────
+
+export type HubTask = {
+  id?: number | string;
+  owner?: string;
+  agent_id?: string;
+  agent?: string;
+  kind?: string;
+  title?: string;
+  label?: string;
+  project?: string;
+  status?: string;
+  state?: string;
+  created_at?: string;
+  updated_at?: string;
+  [key: string]: unknown;
+};
+
+export type TasksResponse = {
+  tasks: HubTask[];
+};
+
+function hubTaskArray(value: unknown): HubTask[] {
+  return Array.isArray(value) ? (value as HubTask[]) : [];
+}
+
+export async function fetchTasks(config: ServerConfig): Promise<TasksResponse> {
+  const res = await request<Partial<TasksResponse>>(config, 'GET', '/tasks', undefined, { retries: 2 });
+  return { tasks: hubTaskArray(res?.tasks) };
+}
+
 // ── Approvals ────────────────────────────────────────────────────
 
 export type ApprovalAction = 'accept' | 'reject' | 'defer';
