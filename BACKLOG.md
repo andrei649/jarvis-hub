@@ -56,9 +56,10 @@ python -m pytest tests/ -v          # ~3,683 passed, 6 skipped (counter synced v
 > Oracle's external commit pull/test loop behind a live
 > repo-sync contract plus the Action Kernel, default-refuses when the kernel is
 > off, and removes shell execution from MCP stdio startup while gating outbound
-> MCP tool calls through a live contract. Current R2 branch gives inbound taint
-> kernel-independent teeth at the autonomy queue, re-marks edited inbound tasks,
-> and keeps inbound memory embeddings visibly tainted through recall provenance.
+> MCP tool calls through a live contract. R2 is merged in #580: inbound taint
+> now has kernel-independent teeth at the autonomy queue, edited inbound tasks
+> are re-marked before policy re-evaluation, and inbound memory embeddings stay
+> visibly tainted through recall provenance.
 
 ---
 
