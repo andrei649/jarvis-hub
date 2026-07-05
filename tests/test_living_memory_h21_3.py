@@ -120,6 +120,19 @@ def test_core_memory_bounded_and_deduped():
     assert "[core memory]" in c.render()
 
 
+def test_core_memory_persists_when_path_is_provided(tmp_path):
+    path = tmp_path / "core.json"
+    c = CoreMemory(cap=2, path=path)
+    c.put("a")
+    c.put("b")
+
+    reloaded = CoreMemory(cap=2, path=path)
+    assert reloaded.list() == ["a", "b"]
+
+    reloaded.put("c")
+    assert CoreMemory(cap=2, path=path).list() == ["b", "c"]
+
+
 # ── living memory module ──────────────────────────────────────────────────────
 
 def test_encode_respects_surprise_gate():
@@ -144,3 +157,13 @@ def test_status_shape():
     lm.encode("m1", "x", surprise=0.9)
     st = lm.status()
     assert st["available"] is True and st["tiers"][HOT] == 1 and st["embed_version"] == 1
+
+
+def test_living_memory_accepts_persistent_core_path(tmp_path):
+    path = tmp_path / "core.json"
+    lm = LivingMemory(core_path=path)
+    lm.core.put("Andrei wants durable core memory.")
+
+    reloaded = LivingMemory(core_path=path)
+    assert reloaded.core.list() == ["Andrei wants durable core memory."]
+    assert reloaded.status()["core"] == 1

@@ -198,7 +198,11 @@ class Orchestrator:
             from .cognition.persona import PersonaModule                                          # H21.2
             self.cognition.register_module("persona", PersonaModule())
             from .cognition.memory import LivingMemory                                            # H21.3
-            self.cognition.register_module("memory", LivingMemory())
+            from .paths import data_path
+            self.cognition.register_module(
+                "memory",
+                LivingMemory(core_path=data_path("cognition", "core_memory.json")),
+            )
             from .cognition.learning import LearningModule                                        # H21.4
             self.cognition.register_module("learning", LearningModule())
             from .cognition.ensemble import EnsembleModule                                        # H21.5
