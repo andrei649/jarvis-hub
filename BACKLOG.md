@@ -65,10 +65,9 @@ python -m pytest tests/ -v          # ~3,693 passed, 6 skipped (counter synced v
 > escalation fan-out now have contract-denial teeth before inbox writes or
 > channel sends. R3-B4 is merged in #586: mutating MCP route tools now have a
 > reusable contract gate after identity and before kernel mediation or adapter
-> writes; full PR CI was green before merge. R3-B5 is active on
-> `codex-r3-b5-channel-send-contracts`: the generic ChannelManager send boundary
-> has a local-green shape-only contract gate before adapter I/O; draft PR #588
-> has CI pending.
+> writes; full PR CI was green before merge. R3-B5 is merged in #588: the
+> generic ChannelManager send boundary has a shape-only contract gate before
+> adapter I/O; full PR CI was green before merge.
 
 ---
 
