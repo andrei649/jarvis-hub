@@ -28,16 +28,11 @@ python -m pytest tests/ -v          # ~3,600 passed, 6 skipped (counter synced v
 **Server curent** (dacă e pornit): PID vezi `netstat -ano | findstr ":8080 "`.
 **Stack:** Python 3.12 + FastAPI + vanilla React (createElement, no JSX).
 
-> **Recent merge (2026-07-05):** #541 (`codex-o45-tool-rpc-contract-gate`)
+> **Recent merge (2026-07-05):** #543 (`codex-o45-node-dispatch-contract-gate`)
 > continues 0.45 High-Risk Automation Contracts by adding
-> `TOOL_RPC_CALL_CONTRACT` to the gated Tool-RPC approval path. Local red/green,
-> focused Tool-RPC/kernel/contracts/action-auth verification, and full GitHub
-> Actions passed before merge.
-
-> **Active WIP (2026-07-05):** #543 (`codex-o45-node-dispatch-contract-gate`)
-> continues 0.45 by adding `NODE_DISPATCH_CONTRACT` to the governed NodeMesh
-> dispatch path. Local red/green and focused NodeMesh/action-auth/contracts/kernel
-> verification are green; PR CI is pending.
+> `NODE_DISPATCH_CONTRACT` to governed NodeMesh dispatch before preview/enqueue.
+> Local red/green, focused NodeMesh/action-auth/contracts/kernel verification,
+> and full GitHub Actions passed before merge.
 
 ---
 
