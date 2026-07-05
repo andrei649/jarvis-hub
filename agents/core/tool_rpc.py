@@ -25,11 +25,51 @@ and offline-testable. The injected sink/secret-broker keep it decoupled.
 from __future__ import annotations
 
 import logging
+import time
 from typing import Awaitable, Callable, Optional
+
+from .automation_contracts import ContractTemplate, predicate
 
 logger = logging.getLogger("jarvis.tool_rpc")
 
 Handler = Callable[[dict], Awaitable]
+
+_KIND_PREFIX = "toolrpc."
+_RISK_TIER = 2
+
+
+def _tool_rpc_call_contract_template() -> ContractTemplate:
+    """Contract form of the existing gated Tool-RPC approval path."""
+    def tool_kind(view, now):
+        tool = view.get("tool")
+        kind = view.get("kind")
+        return isinstance(tool, str) and bool(tool) and kind == f"{_KIND_PREFIX}{tool}"
+
+    def gated_tool(view, now):
+        return view.get("gated") is True
+
+    def target_matches_tool(view, now):
+        return view.get("target") == view.get("tool")
+
+    def args_keys_are_safe(view, now):
+        keys = view.get("args_keys")
+        return (
+            isinstance(keys, list)
+            and all(isinstance(k, str) for k in keys)
+            and keys == sorted(keys)
+        )
+
+    return ContractTemplate(kind="tool_rpc_call", constraints=(
+        predicate("tool_kind", tool_kind, reason="invalid_kind"),
+        predicate("gated_tool", gated_tool, reason="not_gated"),
+        predicate("target_matches_tool", target_matches_tool,
+                  reason="target_mismatch"),
+        predicate("args_keys_are_safe", args_keys_are_safe,
+                  reason="bad_args_keys"),
+    ), description="Admissibility for governed gated Tool-RPC calls.")
+
+
+TOOL_RPC_CALL_CONTRACT = _tool_rpc_call_contract_template()
 
 
 class ToolRPCServer:
@@ -73,6 +113,26 @@ class ToolRPCServer:
         if spec["gated"]:
             # External/mutating tool: never runs from the sandbox. Enqueue an
             # ask-tier governed task; the script gets back "approval_required".
+            contract_payload = {
+                "kind": f"{_KIND_PREFIX}{name}",
+                "tool": name,
+                "target": name,
+                "agent": self.agent,
+                "risk_tier": _RISK_TIER,
+                "gated": True,
+                "args_keys": sorted(args.keys()),
+            }
+            try:
+                decision = TOOL_RPC_CALL_CONTRACT.evaluate(
+                    contract_payload, now=time.time())
+            except Exception:
+                logger.warning("tool-rpc contract evaluation failed", exc_info=True)
+                return {"ok": False, "reason": "contract_error", "tool": name}
+            if not decision.admissible:
+                reason = decision.reason or "contract_denied"
+                self._record("toolrpc.contract_denied", f"{name}: {reason}")
+                return {"ok": False, "reason": reason, "tool": name}
+
             # ORIZONT-24 K1 wave-3: mediate the gated tool through the Action Kernel
             # first (default-off). A DENY (halted kill-switch / over-budget / runaway
             # loop) refuses it before it even reaches the approval queue.
@@ -86,7 +146,7 @@ class ToolRPCServer:
                 task_id = self._enqueue(
                     self.agent, f"toolrpc.{name}", f"Tool '{name}' via RPC",
                     payload={"tool": name, "args": args, "target": name},
-                    risk_tier=2, autonomy_level="ask", origin="generated")
+                    risk_tier=_RISK_TIER, autonomy_level="ask", origin="generated")
             except Exception:
                 logger.warning("tool-rpc gated enqueue failed", exc_info=True)
                 return {"ok": False, "reason": "enqueue_failed", "tool": name}
