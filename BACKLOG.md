@@ -16,7 +16,7 @@ pip install -r requirements-beta.txt
 python serve.py   # canonical entry (boot guards + graceful shutdown; O26-P0.6: the raw
 #   uvicorn entry `python -m uvicorn agents.web:app` now runs the same guards via the lifespan)
 python scripts/install_smoke.py --json  # fast install smoke: boot + /readyz + fake local turn
-python -m pytest tests/ -v          # ~3,683 passed, 6 skipped (counter synced via scripts/status_sync.py)
+python -m pytest tests/ -v          # ~3,687 passed, 6 skipped (counter synced via scripts/status_sync.py)
 ```
 
 > Singurul skip rămas e heartbeat-ul opțional. (Vechiul `tests/test_spotify.py` cu 8 skip-uri a
@@ -59,7 +59,9 @@ python -m pytest tests/ -v          # ~3,683 passed, 6 skipped (counter synced v
 > MCP tool calls through a live contract. R2 is merged in #580: inbound taint
 > now has kernel-independent teeth at the autonomy queue, edited inbound tasks
 > are re-marked before policy re-evaluation, and inbound memory embeddings stay
-> visibly tainted through recall provenance.
+> visibly tainted through recall provenance. Draft PR #582 adds live
+> contract gates to external KG writes and destructive forget purge before state
+> mutation.
 
 ---
 
