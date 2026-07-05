@@ -16,7 +16,7 @@ pip install -r requirements-beta.txt
 python serve.py   # canonical entry (boot guards + graceful shutdown; O26-P0.6: the raw
 #   uvicorn entry `python -m uvicorn agents.web:app` now runs the same guards via the lifespan)
 python scripts/install_smoke.py --json  # fast install smoke: boot + /readyz + fake local turn
-python -m pytest tests/ -v          # ~3,691 passed, 6 skipped (counter synced via scripts/status_sync.py)
+python -m pytest tests/ -v          # ~3,693 passed, 6 skipped (counter synced via scripts/status_sync.py)
 ```
 
 > Singurul skip rămas e heartbeat-ul opțional. (Vechiul `tests/test_spotify.py` cu 8 skip-uri a
@@ -65,7 +65,10 @@ python -m pytest tests/ -v          # ~3,691 passed, 6 skipped (counter synced v
 > escalation fan-out now have contract-denial teeth before inbox writes or
 > channel sends. R3-B4 is merged in #586: mutating MCP route tools now have a
 > reusable contract gate after identity and before kernel mediation or adapter
-> writes; full PR CI was green before merge.
+> writes; full PR CI was green before merge. R3-B5 is active on
+> `codex-r3-b5-channel-send-contracts`: the generic ChannelManager send boundary
+> has a local-green shape-only contract gate before adapter I/O; draft PR #588
+> has CI pending.
 
 ---
 
