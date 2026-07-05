@@ -7,13 +7,13 @@
 
 ## Sesiune curentă
 
-**Data:** 2026-07-05 (0.45 social draft contract gate in progress)
+**Data:** 2026-07-05 (post-0.45 social draft contract gate)
 **Lead agent / Conductor:** Codex
-**Obiectiv sesiune:** continue the unblocked 0.45 contract-adoption tail without widening into channel transport.
-**Branch:** `codex-o45-social-draft-contract`
+**Obiectiv sesiune:** keep main/docs synced after #535; continue with the next unblocked 0.45 contract-adoption slice.
+**Branch:** `codex-docs-social-draft-merged`
 
 **Scope decision (2026-07-04):** O26-P0, P1.1, P2.1, P2.2, P2.3, P2.4, P2.5, P3.1, P3.3, P3.4, P3.5, P3.6, the O26-P3.2 Data Spaces depth slice, the O26-P3.2 Rooms history drawer slice, the O26-P3.2 Capability issue/check UI slice, and the O26-P3.2 Current Mesh Task Fan slice are merged.
-The O26-P3.2 Preferences Tweaks UI slice is merged. The O26-P3.2 Self-hosted Fonts slice is merged in #525. The 0.44 Safe Comms draft-before-send UI slice is merged in #527: frontend draft composition over existing governed social endpoints only; no backend/channel transport scope. The 0.45 payment live-gate adoption is merged in #529: the existing mandate denial gate now evaluates `PAYMENT_CONTRACT` while preserving denial codes/order. The 0.45 signal governance live-gate adoption is merged in #531: actionable Signal Layer recommendations evaluate `SIGNAL_RECOMMENDATION_CONTRACT` before they can enter the preview-only approval queue. The 0.45 plugin permission live-gate adoption is merged in #533: `PermissionGate.check_call()` evaluates `PLUGIN_CALL_CONTRACT` while preserving boolean outcomes and warning reasons. Current branch continues the same track by moving governed social drafts onto `SOCIAL_DRAFT_CONTRACT` before preview/enqueue.
+The O26-P3.2 Preferences Tweaks UI slice is merged. The O26-P3.2 Self-hosted Fonts slice is merged in #525. The 0.44 Safe Comms draft-before-send UI slice is merged in #527: frontend draft composition over existing governed social endpoints only; no backend/channel transport scope. The 0.45 payment live-gate adoption is merged in #529: the existing mandate denial gate now evaluates `PAYMENT_CONTRACT` while preserving denial codes/order. The 0.45 signal governance live-gate adoption is merged in #531: actionable Signal Layer recommendations evaluate `SIGNAL_RECOMMENDATION_CONTRACT` before they can enter the preview-only approval queue. The 0.45 plugin permission live-gate adoption is merged in #533: `PermissionGate.check_call()` evaluates `PLUGIN_CALL_CONTRACT` while preserving boolean outcomes and warning reasons. The 0.45 social draft live-gate adoption is merged in #535: governed X post/reply/DM drafts evaluate `SOCIAL_DRAFT_CONTRACT` before preview/enqueue.
 
 **Previous session:** O26-P0.1 golden harness was merged via #496, with P0.2–P0.7 already completed on
 main by parallel agents.
@@ -46,7 +46,7 @@ main by parallel agents.
 | 0.45 / Payment Contract Live Gate | `codex-o45-payment-contract-live-gate` | #529 | ✅ merged | Codex | `PaymentBroker` request/approve gates evaluate `PAYMENT_CONTRACT`; denial codes stay stable |
 | 0.45 / Signal Governance Contract Gate | `codex-o45-signal-governance-contract-gate` | #531 | ✅ merged | Codex | `SignalGovernanceBridge` evaluates `SIGNAL_RECOMMENDATION_CONTRACT` before queueing preview-only approvals |
 | 0.45 / Plugin Permission Contract Gate | `codex-o45-plugin-gate-contract` | #533 | ✅ merged | Codex | `PermissionGate.check_call()` evaluates `PLUGIN_CALL_CONTRACT`; existing allow/deny behavior stays stable |
-| 0.45 / Social Draft Contract Gate | `codex-o45-social-draft-contract` | #535 | 🟡 draft PR | Codex | `SocialBroker.request()` evaluates `SOCIAL_DRAFT_CONTRACT` before preview/enqueue; no channel inbox transport scope |
+| 0.45 / Social Draft Contract Gate | `codex-o45-social-draft-contract` | #535 | ✅ merged | Codex | `SocialBroker.request()` evaluates `SOCIAL_DRAFT_CONTRACT` before preview/enqueue; no channel inbox transport scope |
 
 Status legend: ⏳ in progress · 🟡 draft PR · 🟢 CI green · ✅ merged · 🔴 conflict
 
@@ -54,7 +54,7 @@ Status legend: ⏳ in progress · 🟡 draft PR · 🟢 CI green · ✅ merged �
 
 ## Fișiere blocate (în PR activ)
 
-Active Codex branch locks `agents/core/social.py`, `tests/test_social_h12_21.py`, `BACKLOG.md`, `STATUS.md`, and `docs/SPRINT.md`.
+Active docs-sync branch locks `BACKLOG.md`, `STATUS.md`, and `docs/SPRINT.md`.
 
 ---
 
@@ -74,7 +74,7 @@ Current order:
   10. O26-P3.6 Landing Page Dev Half (#512) ✅
 ```
 
-Current backlog state: **0.45 High-Risk Automation Contracts — payment + signal + plugin live gate adoption** is merged in #529/#531/#533; social draft live-gate adoption is draft PR #535 on `codex-o45-social-draft-contract`. Remaining 0.45 work after this slice is richer draft-before-send coverage for other external-write families. The broader TASK-2/O26 tail remains owner live-data/plugin setup plus actual channel inbox transport.
+Current backlog state: **0.45 High-Risk Automation Contracts — payment + signal + plugin + social draft live gate adoption** is merged in #529/#531/#533/#535. Remaining 0.45 work after this slice is richer draft-before-send coverage for other external-write families. The broader TASK-2/O26 tail remains owner live-data/plugin setup plus actual channel inbox transport.
 
 ---
 
@@ -360,6 +360,7 @@ Generalizează reflecția nocturnă din *rezumă-ziua* în *pre-raționează-pen
 [0.45]     Implemented `SOCIAL_DRAFT_CONTRACT`; valid X post/reply/DM drafts still queue ask-tier, denied contract decisions return before preview/enqueue
 [Verify]   Focused social governance suite green: 16 passed in `tests/test_social_h12_21.py`
 [PR]       #535 opened as draft
+[PR]       #535 full GitHub Actions green (16/16); marked ready and squash-merged @ 543e729
 ```
 
 ---
