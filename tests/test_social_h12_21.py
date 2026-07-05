@@ -10,6 +10,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'agents'))
 
 import pytest
 
+from agents.core.automation_contracts import ContractDecision
 from agents.core.social import (
     SocialBroker, NullSocialClient, HttpSocialClient, build_social_request, _CATALOG,
 )
@@ -80,6 +81,49 @@ def test_request_enqueues_governed_task():
     assert p["platform"] == "x" and p["action"] == "post"
     assert p["credential_ref"] == "{{secret:x_api_token}}"
     assert p["fields"]["text"] == "shipping H12.21"
+
+
+def test_request_obeys_live_social_draft_contract(monkeypatch):
+    import agents.core.social as social
+
+    class _FakeSocialDraftContract:
+        def __init__(self):
+            self.calls = []
+
+        def evaluate(self, payload=None, **kwargs):
+            payload = payload or {}
+            self.calls.append((payload, kwargs))
+            return ContractDecision(
+                kind="social_draft",
+                admissible=False,
+                requires_approval=True,
+                reason="contract_denied",
+                checked=("fake",),
+            )
+
+    q = _FakeQueue()
+    contract = _FakeSocialDraftContract()
+    monkeypatch.setattr(social, "SOCIAL_DRAFT_CONTRACT", contract, raising=False)
+
+    out = social.SocialBroker(enqueue=q.enqueue).request(
+        "x",
+        "post",
+        {"text": "ship through the contract"},
+        agent="pepper",
+        source="safe-comms",
+    )
+
+    assert out == {"ok": False, "reason": "contract_denied", "kind": "social.x.post"}
+    assert q.calls == []
+    assert len(contract.calls) == 1
+    payload, kwargs = contract.calls[0]
+    assert payload["kind"] == "social.x.post"
+    assert payload["platform"] == "x"
+    assert payload["action"] == "post"
+    assert payload["agent"] == "pepper"
+    assert payload["source"] == "safe-comms"
+    assert payload["fields"]["text"] == "ship through the contract"
+    assert "now" in kwargs
 
 
 def test_request_caps_text_length():
