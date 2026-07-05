@@ -359,6 +359,17 @@ class LivingMemory:
         """Inspectable records for integration tests/API callers; no mutation."""
         return self.tiers.records(prefix=prefix, limit=limit)
 
+    def has_text_digest(self, text_sha256: str, prefix: str = "turn:", limit: int = 1000) -> bool:
+        """Return whether a recent metadata record already carries this digest."""
+        needle = str(text_sha256 or "")
+        if not needle:
+            return False
+        for record in self.records(prefix=prefix, limit=limit):
+            content = record.get("content") if isinstance(record, dict) else None
+            if isinstance(content, dict) and str(content.get("text_sha256") or "") == needle:
+                return True
+        return False
+
     def access(self, mem_id: str) -> Optional[dict]:
         """Reactivate a remembered trace when recall uses it."""
         return self.tiers.access(mem_id)

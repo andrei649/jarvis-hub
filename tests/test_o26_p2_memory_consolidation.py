@@ -1,6 +1,7 @@
 """O26-P2.2 — LivingMemory gets a real turn seam and nightly maintenance."""
 
 import sys
+import uuid
 from pathlib import Path
 
 import pytest
@@ -17,6 +18,10 @@ from agents.core.scheduler_service import SchedulerService  # noqa: E402
 TURN = "Andrei Popescu lives in Bucharest and works at Innoveo."
 
 
+def _session_name(prefix: str) -> str:
+    return f"{prefix}_{uuid.uuid4().hex[:8]}"
+
+
 def _enable_living_memory(orch) -> None:
     orch._runtime_settings.update({
         "cognition.enabled": True,
@@ -30,7 +35,7 @@ def _tier_total(living_memory) -> int:
 
 async def test_living_memory_turn_seam_is_default_off(monkeypatch, tmp_path):
     orch, _fake = await make_golden_orchestrator(monkeypatch, tmp_path)
-    sid = await orch.memory.new_session("o26_p2_default_off")
+    sid = await orch.memory.new_session(_session_name("o26_p2_default_off"))
     living_memory = orch.cognition.module("memory")
 
     await orch.handle_input(TURN, channel="web", session_id=sid)
@@ -42,7 +47,7 @@ async def test_living_memory_turn_seam_is_default_off(monkeypatch, tmp_path):
 async def test_enabled_living_memory_records_turns_and_nightly_tick(monkeypatch, tmp_path):
     orch, _fake = await make_golden_orchestrator(monkeypatch, tmp_path)
     _enable_living_memory(orch)
-    sid = await orch.memory.new_session("o26_p2_live_memory")
+    sid = await orch.memory.new_session(_session_name("o26_p2_live_memory"))
     living_memory = orch.cognition.module("memory")
 
     for idx in range(3):
@@ -67,6 +72,23 @@ async def test_enabled_living_memory_records_turns_and_nightly_tick(monkeypatch,
     assert living_memory.records(prefix=recorded_ids[0])[0]["content"]["session"] == sid
 
 
+async def test_duplicate_turn_digest_is_gated_before_decay(monkeypatch, tmp_path):
+    orch, _fake = await make_golden_orchestrator(monkeypatch, tmp_path)
+    _enable_living_memory(orch)
+    sid = await orch.memory.new_session(_session_name("o26_p2_duplicate_gate"))
+    living_memory = orch.cognition.module("memory")
+
+    await orch.handle_input(TURN, channel="web", session_id=sid)
+    await orch.handle_input(TURN, channel="web", session_id=sid)
+
+    records = living_memory.records(prefix=f"turn:{sid}:")
+    decay_ids = [r["id"] for r in orch.decay.ranking(limit=1000) if r["id"].startswith(f"turn:{sid}:")]
+    assert len(records) == 1
+    assert len(decay_ids) == 1
+    assert orch.last_living_memory_record["encoded"] is False
+    assert orch.last_living_memory_record["reason"] == "duplicate_turn_digest"
+
+
 async def test_orchestrator_living_core_uses_runtime_data_root(monkeypatch, tmp_path):
     orch, _fake = await make_golden_orchestrator(monkeypatch, tmp_path)
     living_memory = orch.cognition.module("memory")
@@ -83,7 +105,7 @@ async def test_orchestrator_living_core_uses_runtime_data_root(monkeypatch, tmp_
 async def test_orchestrator_living_tiers_use_runtime_data_root(monkeypatch, tmp_path):
     orch, _fake = await make_golden_orchestrator(monkeypatch, tmp_path)
     _enable_living_memory(orch)
-    sid = await orch.memory.new_session("o26_p2_tier_persist")
+    sid = await orch.memory.new_session(_session_name("o26_p2_tier_persist"))
 
     await orch.handle_input(TURN, channel="web", session_id=sid)
 
