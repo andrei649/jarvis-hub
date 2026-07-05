@@ -7,13 +7,13 @@
 
 ## Sesiune curentă
 
-**Data:** 2026-07-05 (post-0.45 Tool-RPC contract gate)
+**Data:** 2026-07-05 (0.45 NodeMesh dispatch contract gate)
 **Lead agent / Conductor:** Codex
-**Obiectiv sesiune:** keep main/docs synced after #541; continue with the next unblocked contract-adoption slice when clear.
-**Branch:** `codex-docs-tool-rpc-contract-merged`
+**Obiectiv sesiune:** continue the unblocked 0.45 contract-adoption tail with governed NodeMesh dispatch.
+**Branch:** `codex-o45-node-dispatch-contract-gate`
 
 **Scope decision (2026-07-04):** O26-P0, P1.1, P2.1, P2.2, P2.3, P2.4, P2.5, P3.1, P3.3, P3.4, P3.5, P3.6, the O26-P3.2 Data Spaces depth slice, the O26-P3.2 Rooms history drawer slice, the O26-P3.2 Capability issue/check UI slice, and the O26-P3.2 Current Mesh Task Fan slice are merged.
-The O26-P3.2 Preferences Tweaks UI slice is merged. The O26-P3.2 Self-hosted Fonts slice is merged in #525. The 0.44 Safe Comms draft-before-send UI slice is merged in #527: frontend draft composition over existing governed social endpoints only; no backend/channel transport scope. The 0.45 payment live-gate adoption is merged in #529: the existing mandate denial gate now evaluates `PAYMENT_CONTRACT` while preserving denial codes/order. The 0.45 signal governance live-gate adoption is merged in #531: actionable Signal Layer recommendations evaluate `SIGNAL_RECOMMENDATION_CONTRACT` before they can enter the preview-only approval queue. The 0.45 plugin permission live-gate adoption is merged in #533: `PermissionGate.check_call()` evaluates `PLUGIN_CALL_CONTRACT` while preserving boolean outcomes and warning reasons. The 0.45 social draft live-gate adoption is merged in #535: governed X post/reply/DM drafts evaluate `SOCIAL_DRAFT_CONTRACT` before preview/enqueue. The 0.45 write-back draft live-gate adoption is merged in #537: governed Notion/GitHub/Calendar drafts evaluate `WRITEBACK_DRAFT_CONTRACT` before preview/enqueue. The 0.45 outbound call live-gate adoption is merged in #539: Twilio/Telnyx outbound-call requests evaluate `CALL_REQUEST_CONTRACT` before preview/enqueue, after provider/field/interrupt-budget checks. The 0.45 Tool-RPC live-gate adoption is merged in #541: gated Tool-RPC calls evaluate `TOOL_RPC_CALL_CONTRACT` before kernel mediation and approval enqueue.
+The O26-P3.2 Preferences Tweaks UI slice is merged. The O26-P3.2 Self-hosted Fonts slice is merged in #525. The 0.44 Safe Comms draft-before-send UI slice is merged in #527: frontend draft composition over existing governed social endpoints only; no backend/channel transport scope. The 0.45 payment live-gate adoption is merged in #529: the existing mandate denial gate now evaluates `PAYMENT_CONTRACT` while preserving denial codes/order. The 0.45 signal governance live-gate adoption is merged in #531: actionable Signal Layer recommendations evaluate `SIGNAL_RECOMMENDATION_CONTRACT` before they can enter the preview-only approval queue. The 0.45 plugin permission live-gate adoption is merged in #533: `PermissionGate.check_call()` evaluates `PLUGIN_CALL_CONTRACT` while preserving boolean outcomes and warning reasons. The 0.45 social draft live-gate adoption is merged in #535: governed X post/reply/DM drafts evaluate `SOCIAL_DRAFT_CONTRACT` before preview/enqueue. The 0.45 write-back draft live-gate adoption is merged in #537: governed Notion/GitHub/Calendar drafts evaluate `WRITEBACK_DRAFT_CONTRACT` before preview/enqueue. The 0.45 outbound call live-gate adoption is merged in #539: Twilio/Telnyx outbound-call requests evaluate `CALL_REQUEST_CONTRACT` before preview/enqueue, after provider/field/interrupt-budget checks. The 0.45 Tool-RPC live-gate adoption is merged in #541: gated Tool-RPC calls evaluate `TOOL_RPC_CALL_CONTRACT` before kernel mediation and approval enqueue. The active #543 NodeMesh slice adds `NODE_DISPATCH_CONTRACT` before preview/enqueue for governed node dispatch.
 
 **Previous session:** O26-P0.1 golden harness was merged via #496, with P0.2–P0.7 already completed on
 main by parallel agents.
@@ -50,6 +50,7 @@ main by parallel agents.
 | 0.45 / Write-Back Draft Contract Gate | `codex-o45-writeback-contract-gate` | #537 | ✅ merged | Codex | `WriteBackBroker.request()` evaluates `WRITEBACK_DRAFT_CONTRACT` before preview/enqueue; no live host-write scope |
 | 0.45 / Outbound Call Contract Gate | `codex-o45-call-contract-gate` | #539 | ✅ merged | Codex | `CallBroker.request()` evaluates `CALL_REQUEST_CONTRACT` before preview/enqueue; no live telephony scope |
 | 0.45 / Tool-RPC Contract Gate | `codex-o45-tool-rpc-contract-gate` | #541 | ✅ merged | Codex | `ToolRPCServer.handle()` evaluates `TOOL_RPC_CALL_CONTRACT` before kernel mediation and approval enqueue |
+| 0.45 / NodeMesh Dispatch Contract Gate | `codex-o45-node-dispatch-contract-gate` | #543 | 🟡 draft PR | Codex | `NodeMesh.dispatch()` evaluates `NODE_DISPATCH_CONTRACT` before preview/enqueue |
 
 Status legend: ⏳ in progress · 🟡 draft PR · 🟢 CI green · ✅ merged · 🔴 conflict
 
@@ -57,7 +58,8 @@ Status legend: ⏳ in progress · 🟡 draft PR · 🟢 CI green · ✅ merged �
 
 ## Fișiere blocate (în PR activ)
 
-Active docs-sync branch locks `BACKLOG.md`, `STATUS.md`, and `docs/SPRINT.md`.
+Active #543 locks `agents/core/node_mesh.py`, `tests/test_node_mesh_h12_17.py`,
+`BACKLOG.md`, `STATUS.md`, and `docs/SPRINT.md`.
 
 ---
 
@@ -77,7 +79,7 @@ Current order:
   10. O26-P3.6 Landing Page Dev Half (#512) ✅
 ```
 
-Current backlog state: **0.45 High-Risk Automation Contracts — payment + signal + plugin + social + write-back + outbound call + Tool-RPC live gate adoption** is merged in #529/#531/#533/#535/#537/#539/#541. Remaining 0.45 work after this slice is richer contract coverage for any other external-write families that already have an approval seam. The broader TASK-2/O26 tail remains owner live-data/plugin setup plus actual channel inbox transport.
+Current backlog state: **0.45 High-Risk Automation Contracts — payment + signal + plugin + social + write-back + outbound call + Tool-RPC live gate adoption** is merged in #529/#531/#533/#535/#537/#539/#541. #543 is the active NodeMesh dispatch contract slice. Remaining 0.45 work after this slice is richer contract coverage for any other external-write families that already have an approval seam. The broader TASK-2/O26 tail remains owner live-data/plugin setup plus actual channel inbox transport.
 
 ---
 
@@ -385,6 +387,12 @@ Generalizează reflecția nocturnă din *rezumă-ziua* în *pre-raționează-pen
 [Verify]   Tool-RPC contract sweep green: focused Tool-RPC/kernel/contracts/action-auth sweep, ruff, py_compile, and status-sync clean
 [PR]       #541 opened as draft
 [PR]       #541 full GitHub Actions green (17/17); marked ready and squash-merged @ 16c0acd
+[Docs]     #542 marked #541 merged in BACKLOG/STATUS/SPRINT; full GitHub Actions green and squash-merged @ d34dea8
+[0.45]     Started NodeMesh dispatch contract gate on `codex-o45-node-dispatch-contract-gate`
+[0.45]     Red test: `NodeMesh.dispatch()` ignored a patched node-dispatch contract, so a denied dispatch could still enqueue
+[0.45]     Implemented `NODE_DISPATCH_CONTRACT`; valid governed node dispatches still ask-tier, denied contract decisions return before preview/enqueue
+[Verify]   NodeMesh contract sweep green: focused NodeMesh/action-auth/contracts/kernel/tool-rpc sweep, ruff, py_compile, and status-sync clean
+[PR]       #543 opened as draft
 ```
 
 ---
