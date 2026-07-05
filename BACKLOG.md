@@ -16,7 +16,7 @@ pip install -r requirements-beta.txt
 python serve.py   # canonical entry (boot guards + graceful shutdown; O26-P0.6: the raw
 #   uvicorn entry `python -m uvicorn agents.web:app` now runs the same guards via the lifespan)
 python scripts/install_smoke.py --json  # fast install smoke: boot + /readyz + fake local turn
-python -m pytest tests/ -v          # ~3,689 passed, 6 skipped (counter synced via scripts/status_sync.py)
+python -m pytest tests/ -v          # ~3,691 passed, 6 skipped (counter synced via scripts/status_sync.py)
 ```
 
 > Singurul skip rămas e heartbeat-ul opțional. (Vechiul `tests/test_spotify.py` cu 8 skip-uri a
@@ -63,7 +63,10 @@ python -m pytest tests/ -v          # ~3,689 passed, 6 skipped (counter synced v
 > contract gates to external KG writes and destructive forget purge before state
 > mutation. R3-B3 is merged in #584: inbound A2A task intake and autonomy
 > escalation fan-out now have contract-denial teeth before inbox writes or
-> channel sends.
+> channel sends. R3-B4 is active on `codex-r3-b4-mcp-route-tool-contracts`:
+> mutating MCP route tools now have a local-green reusable contract gate after
+> identity and before kernel mediation or adapter writes; draft PR #586 has CI
+> pending.
 
 ---
 
