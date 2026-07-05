@@ -62,5 +62,5 @@
 - [x] Flip channel inbox mobile parity to shipped.
 - [x] Mark H18.12 done with verified mobile test/typecheck results.
 - [x] Run final hygiene checks.
-- [ ] Commit, push, and open draft PR.
-- [ ] Monitor CI and mark ready after checks pass.
+- [x] Commit, push, and open draft PR #564.
+- [x] Monitor CI, mark ready after checks pass, and merge #564.
