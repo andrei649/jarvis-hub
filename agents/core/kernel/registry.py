@@ -49,6 +49,10 @@ ACTION_REGISTRY: dict[str, Mediation] = {
     # Wave 3 — a gated Tool-RPC call is mediated by the kernel before it can enqueue
     # an approval task (a DENY blocks it: kill-switch / budget / loop).
     "tool.rpc": Mediation.KERNEL,
+    # R1 residual hardening — an external GitHub trigger asking Oracle to pull/rebase
+    # and run tests is host execution. It is default-refused when the kernel is off,
+    # and when enabled it crosses kernel.authorize before any git/pytest subprocess.
+    "repo.sync": Mediation.KERNEL,
     # Wave 4a/4b — admin escalations cross the kernel front door (in addition to admin_guard):
     # engaging a halt and minting a capability are mediated; a capability token is now
     # MANDATORY (kernel.TOKEN_MANDATORY_KINDS) — the router mints one for an already-

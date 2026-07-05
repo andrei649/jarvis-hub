@@ -135,6 +135,27 @@ def _exercise(kind, spy, tmp_path, monkeypatch=None):
         srv = ToolRPCServer(enqueue=lambda *a, **k: 1, kernel=spy)
         srv.register_tool("danger", _gated, gated=True)
         asyncio.run(srv.handle({"tool": "danger", "args": {}}))
+    elif kind == "repo.sync":
+        # Oracle external repo sync is an external-triggered host action. Use the real
+        # bridge entry point, with git/test subprocess seams faked so the matrix stays
+        # hermetic.
+        import asyncio
+
+        from agents.core.plugins import oracle_bridge
+        from agents.core.plugins.oracle_bridge import OracleBridgePlugin
+
+        monkeypatch.setattr(oracle_bridge, "SESSION_FILE", tmp_path / "oracle-sessions.json")
+        monkeypatch.setattr(oracle_bridge, "FILE_HASH_FILE", tmp_path / "oracle-file-hashes.json")
+        bridge = OracleBridgePlugin(github_token="", kernel=spy)
+        bridge._git_pull = lambda: (True, "")
+        bridge._scan_file_hashes = lambda: None
+        bridge._run_tests = lambda: (1, 1, 0, "")
+        asyncio.run(bridge._process_claude_commit(
+            "c" * 40,
+            "feat: external repo sync",
+            author_login="claude",
+            trigger_verified=True,
+        ))
     elif kind in ("admin.kill_switch", "admin.capability_issue"):
         # HTTP routes (not brokers/hooks): drive the REAL handler with a stub Request +
         # a tmp_path-backed orch, injecting the spy by monkeypatching the production

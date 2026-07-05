@@ -15,6 +15,13 @@ from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Optional
 
+from agents.core.automation_contracts import (
+    ContractTemplate,
+    contract_denial,
+    field_present,
+    one_of,
+    predicate,
+)
 from agents.core.paths import data_path
 
 from ..http_client import PluginHTTPClient
@@ -28,6 +35,31 @@ SESSION_FILE = CONFLICT_DIR / "sessions.json"
 FILE_HASH_FILE = CONFLICT_DIR / "file_hashes.json"
 
 GITHUB_API = "https://api.github.com/repos/andrei649/jarvis-hub"
+
+
+def _sha_safe(view, now) -> bool:
+    sha = str(view.get("sha") or "")
+    return len(sha) in (40, 64) and all(c in "0123456789abcdefABCDEF" for c in sha)
+
+
+def _trigger_verified(view, now) -> bool:
+    return view.get("trigger_verified") is True
+
+
+def _repo_sync_contract_template() -> ContractTemplate:
+    return ContractTemplate(
+        kind="repo.sync",
+        description="External-triggered repository sync and test execution.",
+        constraints=(
+            field_present("action", "agent", "sha", "author_login"),
+            one_of("action", {"pull_test"}),
+            predicate("sha_safe", _sha_safe, reason="invalid_sha"),
+            predicate("trigger_verified", _trigger_verified, reason="unverified_trigger"),
+        ),
+    )
+
+
+REPO_SYNC_CONTRACT = _repo_sync_contract_template()
 
 
 @dataclass
@@ -55,8 +87,19 @@ class Conflict:
 
 
 class OracleBridgePlugin:
-    def __init__(self, github_token: str = ""):
+    def __init__(
+        self,
+        github_token: str = "",
+        *,
+        kernel=None,
+        enqueue=None,
+        owner_logins: Optional[set[str]] = None,
+    ):
         self.github_token = github_token
+        self._kernel = kernel
+        self._enqueue = enqueue
+        owners = {"andrei649"} if owner_logins is None else owner_logins
+        self.owner_logins = {str(v).lower() for v in owners}
         self.last_checked_sha: str = ""
         self.sessions: list[ClaudeSession] = []
         self.current_session: Optional[ClaudeSession] = None
@@ -130,19 +173,35 @@ class OracleBridgePlugin:
         msg = data[0]["commit"]["message"].split("\n")[0]
         author = data[0].get("author", {})
         author_name = (author or {}).get("login", "unknown")
+        verified = bool(((data[0].get("commit") or {}).get("verification") or {}).get("verified"))
 
         if sha == self.last_checked_sha:
             return {"ok": True, "new": False, "sha": sha[:8]}
 
         self.last_checked_sha = sha
 
-        if author_name != "andrei649":
-            result = await self._process_claude_commit(sha, msg)
+        if not self._is_owner_commit(author_name, verified):
+            result = await self._process_claude_commit(
+                sha,
+                msg,
+                author_login=author_name,
+                trigger_verified=verified,
+            )
             return {"ok": True, "new": True, "sha": sha[:8], "author": author_name, **result}
 
         return {"ok": True, "new": True, "sha": sha[:8], "author": author_name, "note": "own commit, skipped"}
 
-    async def _process_claude_commit(self, sha: str, msg: str) -> dict:
+    def _is_owner_commit(self, author_login: str, verified: bool) -> bool:
+        return bool(verified and str(author_login or "").lower() in self.owner_logins)
+
+    async def _process_claude_commit(
+        self,
+        sha: str,
+        msg: str,
+        *,
+        author_login: str = "unknown",
+        trigger_verified: bool = False,
+    ) -> dict:
         sid = f"claude-{sha[:8]}-{int(time.time())}"
         session = ClaudeSession(
             session_id=sid,
@@ -154,6 +213,19 @@ class OracleBridgePlugin:
         self.current_session = session
         self.sessions.append(session)
         self._save_state()
+
+        blocked = self._repo_sync_block(
+            sha=sha,
+            msg=msg,
+            author_login=author_login,
+            trigger_verified=trigger_verified,
+        )
+        if blocked is not None:
+            session.status = "failed"
+            session.error = f"repo sync blocked: {blocked.get('reason', 'blocked')}"
+            session.completed_at = time.time()
+            self._save_state()
+            return {"pull": False, **blocked}
 
         pull_ok, pull_err = self._git_pull()
         if not pull_ok:
@@ -181,6 +253,69 @@ class OracleBridgePlugin:
             "tests": {"passed": passed, "total": total, "failed": failed},
             "tasks": session.tasks_completed,
         }
+
+    def _repo_sync_block(
+        self,
+        *,
+        sha: str,
+        msg: str,
+        author_login: str,
+        trigger_verified: bool,
+    ) -> dict | None:
+        payload = {
+            "kind": "repo.sync",
+            "action": "pull_test",
+            "agent": "oracle",
+            "sha": sha,
+            "author_login": author_login,
+            "trigger_verified": bool(trigger_verified),
+            "message": (msg or "")[:240],
+            "risk_tier": 3,
+        }
+        try:
+            decision = REPO_SYNC_CONTRACT.evaluate(payload)
+        except Exception:
+            logger.warning("repo-sync contract evaluation failed", exc_info=True)
+            return {"blocked": True, "reason": "contract_error"}
+        reason = contract_denial(decision)
+        if reason:
+            return {"blocked": True, "reason": reason}
+
+        from agents.core.kernel import Action, Verdict, kernel_enabled
+
+        if not kernel_enabled():
+            return {"blocked": True, "reason": "kernel_required"}
+        if self._kernel is None:
+            return {"blocked": True, "reason": "kernel_unavailable"}
+
+        kdec = self._kernel(Action(
+            kind="repo.sync",
+            agent="oracle",
+            title="Review external repo sync",
+            payload=payload,
+            origin="external",
+        ))
+        if kdec.verdict is Verdict.DENY:
+            return {"blocked": True, "reason": kdec.reason or "kernel_denied"}
+        if kdec.verdict is Verdict.QUEUE:
+            out = {"blocked": True, "reason": "approval_required"}
+            if self._enqueue is not None:
+                try:
+                    task_id = self._enqueue(
+                        "oracle",
+                        "repo.sync",
+                        "Review external repo sync",
+                        payload=payload,
+                        risk_tier=3,
+                        autonomy_level="ask",
+                        origin="external",
+                    )
+                    out["task_id"] = task_id
+                except Exception:
+                    logger.warning("repo-sync enqueue failed", exc_info=True)
+                    out["reason"] = "enqueue_failed"
+            return out
+        return None
 
     # ── Git operations ────────────────────────────────────────────
 
