@@ -202,7 +202,12 @@ class SchedulerService:
         reprojection = {"available": False, "reason": "reprojection_unavailable"}
         if hasattr(living, "reproject_stale"):
             try:
-                reprojection = await living.reproject_stale()
+                memory = getattr(self._orch, "memory", None)
+                embedder = getattr(memory, "embed", None)
+                if callable(embedder):
+                    reprojection = await living.reproject_stale(embedder=embedder)
+                else:
+                    reprojection = await living.reproject_stale()
             except Exception:
                 logger.warning("LivingMemory re-projection failed", exc_info=True)
                 reprojection = {"available": False, "reason": "reprojection_failed"}

@@ -125,6 +125,22 @@ async def test_reproject_reembeds_stale():
 
 
 @pytest.mark.asyncio
+async def test_reproject_serializes_structured_content_for_embedder():
+    recs = [{"content": {"turn_ref": "turn:1", "text_sha256": "abc"}, "embed_version": 1}]
+    calls = []
+
+    def embedder(text):
+        calls.append(text)
+        return [float(len(text))]
+
+    out = await reproject(recs, current_version=2, embedder=embedder)
+
+    assert out["reprojected"] == 1
+    assert calls == ['{"text_sha256": "abc", "turn_ref": "turn:1"}']
+    assert recs[0]["embed_version"] == 2
+
+
+@pytest.mark.asyncio
 async def test_living_memory_reproject_stale_persists_updates(tmp_path):
     path = tmp_path / "tiers.json"
     lm = LivingMemory(embed_version=2, tiers_path=path)

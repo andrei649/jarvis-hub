@@ -206,3 +206,57 @@ async def test_memory_maintenance_runs_reprojection_hook():
         "reprojected": 1,
         "version": 2,
     }
+
+
+@pytest.mark.asyncio
+async def test_memory_maintenance_passes_memory_embedder_to_reprojection():
+    class _Memory:
+        def __init__(self):
+            self.embedded = []
+
+        async def embed(self, text):
+            self.embedded.append(text)
+            return [float(len(text))]
+
+    class _Living:
+        async def consolidate(self, phase):
+            return {"phase": phase, "total": 1} if phase == "nrem" else {"phase": phase}
+
+        async def reproject_stale(self, embedder=None):
+            assert embedder is not None
+            vector = await embedder("abc")
+            return {
+                "available": True,
+                "checked": 1,
+                "reprojected": 1,
+                "updated": 1,
+                "version": 2,
+                "vector": vector,
+            }
+
+    class _Cognition:
+        def __init__(self, living):
+            self.living = living
+
+        def sub_enabled(self, name):
+            assert name == "memory_enabled"
+            return True
+
+        def module(self, name):
+            assert name == "memory"
+            return self.living
+
+    class _Orch:
+        def __init__(self, living, memory):
+            self.cognition = _Cognition(living)
+            self.decay = None
+            self.memory = memory
+
+        def get_setting(self, _key, default=None):
+            return default
+
+    memory = _Memory()
+    result = await SchedulerService(_Orch(_Living(), memory)).run_memory_maintenance()
+
+    assert memory.embedded == ["abc"]
+    assert result["reprojection"]["vector"] == [3.0]

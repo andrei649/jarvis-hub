@@ -23,6 +23,7 @@ the live MemoryManager / recall fusion / DailyReflector is the integration seam.
 
 from __future__ import annotations
 
+import json
 import logging
 import math
 import time
@@ -245,6 +246,14 @@ def needs_reprojection(record: dict, current_version: int) -> bool:
     return int(record.get("embed_version", 0)) < int(current_version)
 
 
+def _embedding_text(content) -> str:
+    if content is None:
+        return ""
+    if isinstance(content, str):
+        return content
+    return json.dumps(content, sort_keys=True, ensure_ascii=False, default=str)
+
+
 async def reproject(records: "list[dict]", current_version: int, embedder: Callable) -> dict:
     """Re-embed stale records via an injectable embedder; bump embed_version."""
     done = 0
@@ -252,7 +261,7 @@ async def reproject(records: "list[dict]", current_version: int, embedder: Calla
         if not needs_reprojection(r, current_version):
             continue
         try:
-            vec = embedder(r.get("content", ""))
+            vec = embedder(_embedding_text(r.get("content", "")))
             if hasattr(vec, "__await__"):
                 vec = await vec
             r["vector"] = vec
