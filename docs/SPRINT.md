@@ -7,13 +7,13 @@
 
 ## Sesiune curentă
 
-**Data:** 2026-07-05 (post-#545 docs sync)
+**Data:** 2026-07-05 (0.45 desktop step contract gate)
 **Lead agent / Conductor:** Codex
-**Obiectiv sesiune:** keep the shared plan/status current after the governed media-generation contract gate merged.
-**Branch:** `codex-docs-media-gen-contract-merged`
+**Obiectiv sesiune:** continue the unblocked 0.45 contract-adoption tail with governed desktop operator steps.
+**Branch:** `codex-o45-desktop-step-contract-gate`
 
 **Scope decision (2026-07-04):** O26-P0, P1.1, P2.1, P2.2, P2.3, P2.4, P2.5, P3.1, P3.3, P3.4, P3.5, P3.6, the O26-P3.2 Data Spaces depth slice, the O26-P3.2 Rooms history drawer slice, the O26-P3.2 Capability issue/check UI slice, and the O26-P3.2 Current Mesh Task Fan slice are merged.
-The O26-P3.2 Preferences Tweaks UI slice is merged. The O26-P3.2 Self-hosted Fonts slice is merged in #525. The 0.44 Safe Comms draft-before-send UI slice is merged in #527: frontend draft composition over existing governed social endpoints only; no backend/channel transport scope. The 0.45 payment live-gate adoption is merged in #529: the existing mandate denial gate now evaluates `PAYMENT_CONTRACT` while preserving denial codes/order. The 0.45 signal governance live-gate adoption is merged in #531: actionable Signal Layer recommendations evaluate `SIGNAL_RECOMMENDATION_CONTRACT` before they can enter the preview-only approval queue. The 0.45 plugin permission live-gate adoption is merged in #533: `PermissionGate.check_call()` evaluates `PLUGIN_CALL_CONTRACT` while preserving boolean outcomes and warning reasons. The 0.45 social draft live-gate adoption is merged in #535: governed X post/reply/DM drafts evaluate `SOCIAL_DRAFT_CONTRACT` before preview/enqueue. The 0.45 write-back draft live-gate adoption is merged in #537: governed Notion/GitHub/Calendar drafts evaluate `WRITEBACK_DRAFT_CONTRACT` before preview/enqueue. The 0.45 outbound call live-gate adoption is merged in #539: Twilio/Telnyx outbound-call requests evaluate `CALL_REQUEST_CONTRACT` before preview/enqueue, after provider/field/interrupt-budget checks. The 0.45 Tool-RPC live-gate adoption is merged in #541: gated Tool-RPC calls evaluate `TOOL_RPC_CALL_CONTRACT` before kernel mediation and approval enqueue. The 0.45 NodeMesh dispatch live-gate adoption is merged in #543: governed node dispatch evaluates `NODE_DISPATCH_CONTRACT` before preview/enqueue. The 0.45 media-generation live-gate adoption is merged in #545: cloud image/thumbnail/video requests evaluate `MEDIA_GENERATION_CONTRACT` before approval enqueue.
+The O26-P3.2 Preferences Tweaks UI slice is merged. The O26-P3.2 Self-hosted Fonts slice is merged in #525. The 0.44 Safe Comms draft-before-send UI slice is merged in #527: frontend draft composition over existing governed social endpoints only; no backend/channel transport scope. The 0.45 payment live-gate adoption is merged in #529: the existing mandate denial gate now evaluates `PAYMENT_CONTRACT` while preserving denial codes/order. The 0.45 signal governance live-gate adoption is merged in #531: actionable Signal Layer recommendations evaluate `SIGNAL_RECOMMENDATION_CONTRACT` before they can enter the preview-only approval queue. The 0.45 plugin permission live-gate adoption is merged in #533: `PermissionGate.check_call()` evaluates `PLUGIN_CALL_CONTRACT` while preserving boolean outcomes and warning reasons. The 0.45 social draft live-gate adoption is merged in #535: governed X post/reply/DM drafts evaluate `SOCIAL_DRAFT_CONTRACT` before preview/enqueue. The 0.45 write-back draft live-gate adoption is merged in #537: governed Notion/GitHub/Calendar drafts evaluate `WRITEBACK_DRAFT_CONTRACT` before preview/enqueue. The 0.45 outbound call live-gate adoption is merged in #539: Twilio/Telnyx outbound-call requests evaluate `CALL_REQUEST_CONTRACT` before preview/enqueue, after provider/field/interrupt-budget checks. The 0.45 Tool-RPC live-gate adoption is merged in #541: gated Tool-RPC calls evaluate `TOOL_RPC_CALL_CONTRACT` before kernel mediation and approval enqueue. The 0.45 NodeMesh dispatch live-gate adoption is merged in #543: governed node dispatch evaluates `NODE_DISPATCH_CONTRACT` before preview/enqueue. The 0.45 media-generation live-gate adoption is merged in #545: cloud image/thumbnail/video requests evaluate `MEDIA_GENERATION_CONTRACT` before approval enqueue. The active desktop-step slice adds `DESKTOP_STEP_CONTRACT` before approver callback or driver execution for mutating desktop operator steps.
 
 **Previous session:** O26-P0.1 golden harness was merged via #496, with P0.2–P0.7 already completed on
 main by parallel agents.
@@ -52,6 +52,7 @@ main by parallel agents.
 | 0.45 / Tool-RPC Contract Gate | `codex-o45-tool-rpc-contract-gate` | #541 | ✅ merged | Codex | `ToolRPCServer.handle()` evaluates `TOOL_RPC_CALL_CONTRACT` before kernel mediation and approval enqueue |
 | 0.45 / NodeMesh Dispatch Contract Gate | `codex-o45-node-dispatch-contract-gate` | #543 | ✅ merged | Codex | `NodeMesh.dispatch()` evaluates `NODE_DISPATCH_CONTRACT` before preview/enqueue |
 | 0.45 / Media Generation Contract Gate | `codex-o45-media-gen-contract-gate` | #545 | ✅ merged | Codex | `MediaGenManager.generate(cloud=True)` evaluates `MEDIA_GENERATION_CONTRACT` before approval enqueue |
+| 0.45 / Desktop Step Contract Gate | `codex-o45-desktop-step-contract-gate` | #547 | 🟡 draft PR | Codex | `GovernedDesktop.run()` evaluates `DESKTOP_STEP_CONTRACT` before approver callback/driver execution |
 
 Status legend: ⏳ in progress · 🟡 draft PR · 🟢 CI green · ✅ merged · 🔴 conflict
 
@@ -59,8 +60,9 @@ Status legend: ⏳ in progress · 🟡 draft PR · 🟢 CI green · ✅ merged �
 
 ## Fișiere blocate (în PR activ)
 
-Active docs-sync branch locks `BACKLOG.md`, `STATUS.md`, and `docs/SPRINT.md`
-only while #545's merged state is reflected.
+Active desktop-step branch locks `agents/core/desktop_operator.py`,
+`tests/test_desktop_operator_h15_3.py`, `BACKLOG.md`, `STATUS.md`, and
+`docs/SPRINT.md`.
 
 ---
 
@@ -80,7 +82,7 @@ Current order:
   10. O26-P3.6 Landing Page Dev Half (#512) ✅
 ```
 
-Current backlog state: **0.45 High-Risk Automation Contracts — payment + signal + plugin + social + write-back + outbound call + Tool-RPC + NodeMesh + media-generation live gate adoption** is merged in #529/#531/#533/#535/#537/#539/#541/#543/#545. Remaining 0.45 work is richer contract coverage for any other external-write families that already have an approval seam. The broader TASK-2/O26 tail remains owner live-data/plugin setup plus actual channel inbox transport.
+Current backlog state: **0.45 High-Risk Automation Contracts — payment + signal + plugin + social + write-back + outbound call + Tool-RPC + NodeMesh + media-generation live gate adoption** is merged in #529/#531/#533/#535/#537/#539/#541/#543/#545. The active desktop-step slice applies the same live-contract pattern to mutating desktop operator steps. Remaining 0.45 work after this slice is richer contract coverage for any other approval seams. The broader TASK-2/O26 tail remains owner live-data/plugin setup plus actual channel inbox transport.
 
 ---
 
@@ -402,6 +404,12 @@ Generalizează reflecția nocturnă din *rezumă-ziua* în *pre-raționează-pen
 [Verify]   Media-generation contract sweep green: focused media/contracts/funnel sweep, ruff, py_compile, and status-sync clean
 [PR]       #545 opened as draft
 [PR]       #545 full GitHub Actions green (17/17); marked ready and squash-merged @ fdc8246
+[Docs]     #546 marked #545 merged in BACKLOG/STATUS/SPRINT; full GitHub Actions green (15/15) and squash-merged @ cf37e75
+[0.45]     Started desktop step contract gate on `codex-o45-desktop-step-contract-gate`
+[0.45]     Red test: mutating `GovernedDesktop.run()` ignored a patched desktop-step contract, so an approved click could still reach the driver
+[0.45]     Implemented `DESKTOP_STEP_CONTRACT`; mutating desktop steps now evaluate it before approver callback or driver execution
+[Verify]   Desktop-step contract sweep green: focused desktop/contracts/funnel sweep, ruff, py_compile, and status-sync clean
+[PR]       #547 opened as draft
 ```
 
 ---

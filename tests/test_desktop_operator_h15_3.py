@@ -5,6 +5,8 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'agents'))
 
 import pytest
 
+from agents.core.automation_contracts import ContractDecision
+import agents.core.desktop_operator as desktop_operator
 from agents.core.desktop_operator import GovernedDesktop, NullDesktopDriver
 
 
@@ -49,6 +51,45 @@ async def test_run_mutating_with_approver():
         [{"action": "type", "args": {"text": "hi"}}, {"action": "delete"}], approver=approver)
     assert out["ran"][0]["status"] == "ran"            # approved
     assert out["ran"][1]["status"] == "blocked"         # not approved
+
+
+@pytest.mark.asyncio
+async def test_mutating_step_obeys_live_desktop_step_contract(monkeypatch):
+    drv = NullDesktopDriver()
+
+    class _Contract:
+        def __init__(self):
+            self.calls = []
+
+        def evaluate(self, payload=None, **kwargs):
+            self.calls.append((payload, kwargs))
+            return ContractDecision(
+                kind="desktop_step",
+                admissible=False,
+                requires_approval=True,
+                reason="contract_blocked",
+            )
+
+    async def approver(action, args):
+        return True
+
+    contract = _Contract()
+    monkeypatch.setattr(desktop_operator, "DESKTOP_STEP_CONTRACT", contract, raising=False)
+    out = await GovernedDesktop(driver=drv).run(
+        [{"action": "click", "args": {"x": 1, "y": 2}}],
+        approver=approver,
+    )
+
+    assert out["ran"] == [{"action": "click", "status": "blocked", "reason": "contract_blocked"}]
+    assert drv.calls == []
+    assert contract.calls
+    payload, kwargs = contract.calls[-1]
+    assert payload["kind"] == "desktop.click"
+    assert payload["action"] == "click"
+    assert payload["target"] == "desktop"
+    assert payload["mutating"] is True
+    assert payload["args_keys"] == ["x", "y"]
+    assert kwargs.get("now") is not None
 
 
 @pytest.mark.asyncio
