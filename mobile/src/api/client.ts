@@ -216,6 +216,187 @@ export async function fetchTicker(config: ServerConfig): Promise<TickerResponse>
   return normalizeTicker(res || {});
 }
 
+// ── Security / Trust ─────────────────────────────────────────────
+
+export type SecurityScoreBlock = {
+  score: number;
+  passed: number;
+  n: number;
+};
+
+export type SecurityOwaspBlock = {
+  score: number;
+  covered: number;
+  total: number;
+};
+
+export type SecurityGovernanceResponse = {
+  pass: boolean;
+  overall_score: number;
+  threshold: number;
+  injection: SecurityScoreBlock;
+  harm: SecurityScoreBlock;
+  owasp: SecurityOwaspBlock;
+};
+
+export type SecurityPostureResponse = {
+  secrets: {
+    encrypted_at_rest: boolean;
+    backend: string;
+  };
+  skills: {
+    require_signed: boolean;
+    total: number;
+    trusted: number;
+    untrusted: number;
+    untrusted_names: string[];
+  };
+  sandbox: {
+    backend: string;
+    isolated: boolean;
+    docker_available: boolean;
+    insecure_host_exec: boolean;
+  };
+  guardrails: {
+    mode: string;
+  };
+};
+
+export type SecurityKillSwitchResponse = {
+  global: boolean;
+  halted: Record<string, unknown>;
+};
+
+export type SecurityLoopBreakerResponse = {
+  tripped: boolean;
+  threshold?: number;
+  window_seconds?: number;
+  [key: string]: unknown;
+};
+
+function securityNumber(value: unknown): number {
+  return typeof value === 'number' && Number.isFinite(value) ? value : 0;
+}
+
+function securityBool(value: unknown): boolean {
+  return typeof value === 'boolean' ? value : false;
+}
+
+function securityString(value: unknown): string {
+  return typeof value === 'string' ? value : '';
+}
+
+function securityRecord(value: unknown): Record<string, unknown> {
+  return isRecord(value) ? value : {};
+}
+
+function securityStringArray(value: unknown): string[] {
+  return Array.isArray(value) ? value.map((item) => String(item)).filter(Boolean) : [];
+}
+
+function normalizeSecurityScore(value: unknown): SecurityScoreBlock {
+  const raw = securityRecord(value);
+  return {
+    score: securityNumber(raw.score),
+    passed: securityNumber(raw.passed),
+    n: securityNumber(raw.n),
+  };
+}
+
+function normalizeSecurityOwasp(value: unknown): SecurityOwaspBlock {
+  const raw = securityRecord(value);
+  return {
+    score: securityNumber(raw.score),
+    covered: securityNumber(raw.covered),
+    total: securityNumber(raw.total),
+  };
+}
+
+function normalizeSecurityGovernance(raw: Record<string, unknown>): SecurityGovernanceResponse {
+  return {
+    pass: securityBool(raw.pass),
+    overall_score: securityNumber(raw.overall_score),
+    threshold: securityNumber(raw.threshold),
+    injection: normalizeSecurityScore(raw.injection),
+    harm: normalizeSecurityScore(raw.harm),
+    owasp: normalizeSecurityOwasp(raw.owasp),
+  };
+}
+
+function normalizeSecurityPosture(raw: Record<string, unknown>): SecurityPostureResponse {
+  const secrets = securityRecord(raw.secrets);
+  const skills = securityRecord(raw.skills);
+  const sandbox = securityRecord(raw.sandbox);
+  const guardrails = securityRecord(raw.guardrails);
+  return {
+    secrets: {
+      encrypted_at_rest: securityBool(secrets.encrypted_at_rest),
+      backend: securityString(secrets.backend),
+    },
+    skills: {
+      require_signed: securityBool(skills.require_signed),
+      total: securityNumber(skills.total),
+      trusted: securityNumber(skills.trusted),
+      untrusted: securityNumber(skills.untrusted),
+      untrusted_names: securityStringArray(skills.untrusted_names),
+    },
+    sandbox: {
+      backend: securityString(sandbox.backend),
+      isolated: securityBool(sandbox.isolated),
+      docker_available: securityBool(sandbox.docker_available),
+      insecure_host_exec: securityBool(sandbox.insecure_host_exec),
+    },
+    guardrails: {
+      mode: securityString(guardrails.mode),
+    },
+  };
+}
+
+function normalizeSecurityKillSwitch(raw: Record<string, unknown>): SecurityKillSwitchResponse {
+  return {
+    global: securityBool(raw.global),
+    halted: securityRecord(raw.halted),
+  };
+}
+
+function normalizeSecurityLoopBreaker(raw: Record<string, unknown>): SecurityLoopBreakerResponse {
+  const out: SecurityLoopBreakerResponse = { tripped: securityBool(raw.tripped) };
+  if (typeof raw.threshold === 'number' && Number.isFinite(raw.threshold)) out.threshold = raw.threshold;
+  if (typeof raw.window_seconds === 'number' && Number.isFinite(raw.window_seconds)) {
+    out.window_seconds = raw.window_seconds;
+  }
+  return out;
+}
+
+export async function fetchSecurityGovernance(config: ServerConfig): Promise<SecurityGovernanceResponse> {
+  const res = await request<Record<string, unknown>>(config, 'GET', '/api/security/governance', undefined, {
+    retries: 2,
+  });
+  return normalizeSecurityGovernance(res || {});
+}
+
+export async function fetchSecurityPosture(config: ServerConfig): Promise<SecurityPostureResponse> {
+  const res = await request<Record<string, unknown>>(config, 'GET', '/api/security/posture', undefined, {
+    retries: 2,
+    admin: true,
+  });
+  return normalizeSecurityPosture(res || {});
+}
+
+export async function fetchSecurityKillSwitch(config: ServerConfig): Promise<SecurityKillSwitchResponse> {
+  const res = await request<Record<string, unknown>>(config, 'GET', '/api/security/kill-switch', undefined, {
+    retries: 2,
+  });
+  return normalizeSecurityKillSwitch(res || {});
+}
+
+export async function fetchSecurityLoopBreaker(config: ServerConfig): Promise<SecurityLoopBreakerResponse> {
+  const res = await request<Record<string, unknown>>(config, 'GET', '/api/security/loop-breaker', undefined, {
+    retries: 2,
+  });
+  return normalizeSecurityLoopBreaker(res || {});
+}
+
 // ── Skills ───────────────────────────────────────────────────────
 
 export type HubSkill = {

@@ -707,7 +707,7 @@ chain-of-thought leak / mid-sentence truncation fixed. Kill-switch:
 | **H18 Mobile Native & Browser Parity** (P2–P3) | 16 | **15** | 51 | **51** | **100%** |
 | **H19 WorldView (4D OSINT)** — standalone product, merged 2026-06-08 | 33 | **33** | 208 | **208** | **100%** ✅ |
 
-> `%` = procent pe **story points**. Sub-total **H1–H11** = 821/823 (≈100% SP; 151/151 iteme). Grand-total **H1–H17** = 1104/1119 (≈99% SP; 194/196 iteme). **Toate orizonturile de features sunt livrate = v0.10.0** (H18 mobil 16/17, cu H18.10 umbrelă continuă mereu deschisă + H19 WorldView 33/33 standalone — livrate). **Nu mai există un "audit gate" ca versiune**; restul drumului până la 1.0 e *productionizarea* (vezi **H23** + roadmap-ul de versiuni mai sus), iar **1.0 = totul livrat + validat de useri reali (design partners)**.
+> `%` = procent pe **story points**. Sub-total **H1–H11** = 821/823 (≈100% SP; 151/151 iteme). Grand-total **H1–H17** = 1104/1119 (≈99% SP; 194/196 iteme). **Toate orizonturile de features sunt livrate = v0.10.0** (H18 mobil 17/18, cu H18.10 umbrelă continuă mereu deschisă + H19 WorldView 33/33 standalone — livrate). **Nu mai există un "audit gate" ca versiune**; restul drumului până la 1.0 e *productionizarea* (vezi **H23** + roadmap-ul de versiuni mai sus), iar **1.0 = totul livrat + validat de useri reali (design partners)**.
 
 **În afara totalului:** **Bugs & Hot Fixes** — **toate BUG-\* și HF-\* rezolvate** (BUG-1…17 + HF-1…7 + NTH-1; vezi re-baseline 2026-06-08 + tabelul de mai jos). ✅ **CLN-3 livrat + CLN-2 substanțial livrat (#293/#296, v0.11.0)** — `web.py` 4636→1282 LOC (45 routere, 9 rute inline), `orchestrator.py` 1620→1456 LOC; suprafața de rute byte-identică, parity-guarded. Rămân deschise: taskuri netrackuite ca buguri (**TASK-1** Howard backend, **TASK-2** HUD v2 depth, **TASK-3** taint-tracking canale, **BUG-2b** frontend E2E). *(Detalii audit cod 2026-06-04 în tabel.)*
 
@@ -1182,7 +1182,7 @@ chain-of-thought leak / mid-sentence truncation fixed. Kill-switch:
 
 ---
 
-## ORIZONT 18 — Aplicații Native iOS/Android & Paritate cu Browser (P2–P3) — 16/17
+## ORIZONT 18 — Aplicații Native iOS/Android & Paritate cu Browser (P2–P3) — 17/18
 
 > Client mobil nativ (Expo SDK 56 / RN 0.85) sub `mobile/`, peste **același API HTTP** (`agents/web.py`)
 > ca HUD-ul browser — niciun backend nou. Fundația livrată în **PR #161**. Restul = paritate progresivă
@@ -1213,6 +1213,7 @@ chain-of-thought leak / mid-sentence truncation fixed. Kill-switch:
 | H18.15 ✅ | **Mobile skills browser** — native Skills tab catches the app up to the read-only HUD skills catalog: `GET /skills` normalizes the backend map into a sorted catalog, renders versions/agents/command counts, and deliberately excludes install/import/admin actions from the phone. Verified with 35 mobile Jest tests + clean `tsc --noEmit`. | 2 | ✅ done (2026-07-05, #570) | H18.1 | mobile parity |
 | H18.16 ✅ | **Mobile memory + notes** — native Memory tab catches the app up to the read-only HUD memory/notes surfaces: `GET /memory` renders recent session turns and `GET /api/notes` renders current session notes, deliberately excluding clear/save/rewrite controls from the phone. Merged in #572 with full PR CI green; verified locally with 38 mobile Jest tests + clean `tsc --noEmit`. | 3 | ✅ done (2026-07-05, #572) | H18.1 | mobile parity |
 | H18.17 ✅ | **Mobile knowledge graph** — native Memory tab gains a Graph view over the read-only KG surfaces: `GET /api/kg/entities`, `GET /api/kg/entities/{name}`, `GET /api/kg/facts/as-of`, and `GET /api/kg/facts/history`. It renders entity search/list, selected-entity relations, current facts, and subject history without mobile entity/relation/fact write/delete controls. Merged in #574 with full PR CI green; verified locally with 42 mobile Jest tests + clean `tsc --noEmit`. | 3 | ✅ done (2026-07-05, #574) | H18.1, H18.16 | mobile parity |
+| H18.18 ✅ | **Mobile security posture** — native Status tab gains a read-only Trust card over `GET /api/security/governance`, `GET /api/security/posture`, `GET /api/security/kill-switch`, and `GET /api/security/loop-breaker`, using the existing admin-token setting for posture and deliberately excluding halt/reset/capability-write controls from the phone. Draft PR #576; verified locally with 46 mobile Jest tests + clean `tsc --noEmit`. | 3 | ✅ done (2026-07-05) | H18.1 | mobile parity |
 
 ---
 
