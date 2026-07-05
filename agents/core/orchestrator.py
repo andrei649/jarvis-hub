@@ -832,7 +832,7 @@ class Orchestrator:
         # `channel_handler` already pinned in this context).
         self._resolve_session(session_id)
         self._last_channel = channel  # captured for H9.2 tracer
-        await self.memory.add_turn(self.session_id, "user", text)
+        await self.memory.add_turn(self.session_id, "user", text, channel=channel)
 
         skill_cmd = self.skills.parse_command(text)
         if skill_cmd:
@@ -982,7 +982,7 @@ class Orchestrator:
         # never read or write another concurrent request's conversation.
         self._resolve_session(session_id)
         self._last_channel = channel  # captured for H9.2 tracer
-        await self.memory.add_turn(self.session_id, "user", text)
+        await self.memory.add_turn(self.session_id, "user", text, channel=channel)
 
         skill_cmd = self.skills.parse_command(text)
         if skill_cmd:

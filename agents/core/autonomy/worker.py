@@ -19,6 +19,8 @@ import logging
 from datetime import date
 from typing import Awaitable, Callable, Optional
 
+from ..action_origin import current_action_origin
+from ..security import taint
 from .policy import ACT, ASK, NOTIFY, AutonomyPolicy
 from .queue import MAX_ATTEMPTS, Task, TaskQueue, TaskStatus
 
@@ -123,6 +125,25 @@ class AutonomyWorker:
     # (pending_decisions filtered status='blocked' only).
     _LEVEL_RANK = {ACT: 0, NOTIFY: 1, ASK: 2}
 
+    def _effective_origin(self, origin: str | None) -> str:
+        explicit = str(origin or "generated")
+        try:
+            active = current_action_origin()
+        except Exception:
+            active = explicit
+        if taint.is_untrusted_source(active):
+            return active
+        if taint.is_untrusted_source(explicit):
+            return explicit
+        return explicit or "generated"
+
+    def _mark_payload_for_origin(self, payload: dict | None, origin: str) -> tuple[dict, bool]:
+        marked = taint.mark_if_untrusted(payload or {}, origin)
+        return marked, taint.is_tainted(marked)
+
+    def _force_ask_for_taint(self, level: str, tainted: bool) -> str:
+        return ASK if tainted and level in (ACT, NOTIFY) else level
+
     def govern_enqueue(self, agent: str, kind: str, title: str, payload: dict = None,
                        risk_tier: int = 2, autonomy_level: str = ASK,
                        origin: str = "generated") -> int:
@@ -135,11 +156,13 @@ class AutonomyWorker:
         the decision inbox; the Telegram push is best-effort (scheduled when
         an event loop is running, else the card waits in the inbox).
         """
-        payload = payload or {}
+        origin = self._effective_origin(origin)
+        payload, tainted = self._mark_payload_for_origin(payload, origin)
         decision = self.policy.decide({"kind": kind, **payload})
         rank = self._LEVEL_RANK
         effective = autonomy_level if rank.get(autonomy_level, 2) >= rank.get(
             decision.outcome, 2) else decision.outcome
+        effective = self._force_ask_for_taint(effective, tainted)
         tier = max(int(risk_tier), int(decision.tier))
         task_id = self.queue.enqueue(
             agent=agent, kind=kind, title=title, payload=payload,
@@ -166,18 +189,20 @@ class AutonomyWorker:
     async def submit(self, agent: str, kind: str, title: str,
                      payload: dict = None, origin: str = "generated") -> Task:
         """Propose a task, gate it through the policy, and route it."""
-        payload = payload or {}
+        origin = self._effective_origin(origin)
+        payload, tainted = self._mark_payload_for_origin(payload, origin)
         action = {"kind": kind, **payload}
         decision = self.policy.decide(action)
+        effective = self._force_ask_for_taint(decision.outcome, tainted)
         task_id = self.queue.enqueue(
             agent=agent, kind=kind, title=title, payload=payload,
-            risk_tier=int(decision.tier), autonomy_level=decision.outcome, origin=origin,
+            risk_tier=int(decision.tier), autonomy_level=effective, origin=origin,
         )
 
-        if decision.outcome in (ACT, NOTIFY):
+        if effective in (ACT, NOTIFY):
             task = self.queue.transition(
                 task_id, TaskStatus.APPROVED,
-                decided_by="policy", decision=f"auto-{decision.outcome}",
+                decided_by="policy", decision=f"auto-{effective}",
             )
             self._audit("autonomy.auto_approve", task, decision.reason)
             return task
@@ -271,9 +296,15 @@ class AutonomyWorker:
                 # (e.g. READ_ONLY → an irreversible kind), or an amount under the
                 # per-action cap but over the remaining daily ceiling, is caught.
                 edited = self.queue.get(task_id)
+                edited_origin = self._effective_origin(edited.origin)
+                marked_payload, tainted = self._mark_payload_for_origin(edited.payload or {}, edited_origin)
+                if marked_payload != (edited.payload or {}):
+                    self.queue.update_payload(task_id, marked_payload)
+                    edited = self.queue.get(task_id)
                 action_payload = {"kind": edited.kind, **(edited.payload or {})}
                 decision = self.policy.decide(action_payload)
-                if decision.outcome == ASK:
+                effective = self._force_ask_for_taint(decision.outcome, tainted)
+                if effective == ASK:
                     # Edited payload still needs explicit approval — keep the task
                     # in its current BLOCKED state (no transition: BLOCKED→BLOCKED
                     # is illegal) and re-push a fresh decision card to the inbox.
