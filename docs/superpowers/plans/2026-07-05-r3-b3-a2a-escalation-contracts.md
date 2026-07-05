@@ -66,4 +66,4 @@
 - [x] Run touched-file ruff and py_compile.
 - [x] Run `python scripts/status_sync.py --check`.
 - [x] Run `git diff --check`.
-- [ ] Commit, push, and open a draft PR.
+- [x] Commit, push, and open draft PR #584.
