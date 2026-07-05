@@ -13,6 +13,13 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import List, Optional
 
+from agents.core.automation_contracts import (
+    ContractTemplate,
+    contract_denial,
+    field_present,
+    one_of,
+    predicate,
+)
 from agents.core.paths import data_path
 from agents.core.persistence.migrations import apply_migrations
 
@@ -70,6 +77,28 @@ REVIEW_APPROVED = "approved"
 REVIEW_REJECTED = "rejected"
 
 
+def _skill_name_safe(view, now) -> bool:
+    name = str(view.get("name") or "").strip()
+    return bool(name and name not in (".", "..")
+                and "/" not in name and "\\" not in name and "\x00" not in name)
+
+
+def _skill_install_contract_template() -> ContractTemplate:
+    return ContractTemplate(
+        kind="skill.install",
+        description="Skill marketplace publish/install/uninstall supply-chain gate.",
+        constraints=(
+            field_present("action", "name"),
+            one_of("action", {"publish", "install", "uninstall"}),
+            predicate("skill_name_safe", _skill_name_safe, reason="invalid_skill_name"),
+        ),
+    )
+
+
+SKILL_INSTALL_CONTRACT_KIND = "skill.install"
+SKILL_INSTALL_CONTRACT = _skill_install_contract_template()
+
+
 def _require_reviewed() -> bool:
     """When set, only skills moderated to 'approved' may be installed."""
     from agents.core.env_config import env_flag
@@ -101,6 +130,22 @@ class SkillMarketplace:
             self._history.record(str(name), str(version), action, now=self._clock())
         except Exception:
             logger.debug("skill history record failed", exc_info=True)
+
+    def _enforce_skill_contract(self, action: str, name: str, **payload) -> None:
+        contract_payload = {
+            "kind": SKILL_INSTALL_CONTRACT_KIND,
+            "action": action,
+            "name": name,
+            **payload,
+        }
+        try:
+            decision = SKILL_INSTALL_CONTRACT.evaluate(contract_payload, now=self._clock())
+        except Exception as exc:
+            logger.warning("skill marketplace contract evaluation failed", exc_info=True)
+            raise PermissionError("contract_error") from exc
+        reason = contract_denial(decision)
+        if reason:
+            raise PermissionError(reason)
 
     def history_view(self, name: Optional[str] = None) -> dict:
         """Read the 0.58 version-history ledger: events + stats (and, for one skill,
@@ -250,6 +295,7 @@ class SkillMarketplace:
         """
         Pack a skill directory into a zip blob and save it in the marketplace DB.
         """
+        self._enforce_skill_contract("publish", skill_name, source="local")
         skill_path = self.skills_dir / skill_name
         if not skill_path.exists() or not skill_path.is_dir():
             raise FileNotFoundError(f"Skill directory not found: {skill_path}")
@@ -395,6 +441,8 @@ class SkillMarketplace:
         finally:
             conn.close()
 
+        self._enforce_skill_contract("install", skill_name, review_status=status, version=version)
+
         if _require_reviewed() and status != REVIEW_APPROVED:
             raise PermissionError(
                 f"Skill '{skill_name}' is not approved (review status: {status}). "
@@ -426,6 +474,7 @@ class SkillMarketplace:
         target = (self.skills_dir / name).resolve()
         if target == base or base not in target.parents:
             raise ValueError(f"refusing to remove outside the skills directory: {skill_name!r}")
+        self._enforce_skill_contract("uninstall", name, purge=bool(purge), installed=target.exists())
 
         # capture the version before a purge drops the registry row
         version = self._registry_version(name) if self._history is not None else None

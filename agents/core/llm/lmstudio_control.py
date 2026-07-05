@@ -33,7 +33,14 @@ import re
 from typing import Awaitable, Callable, Optional
 from urllib.parse import urlparse
 
-from ..autonomy.remediation import ExecResult, _default_exec, _default_probe
+from ..automation_contracts import contract_denial
+from ..autonomy.remediation import (
+    HOST_CONTROL_CONTRACT,
+    HOST_CONTROL_CONTRACT_KIND,
+    ExecResult,
+    _default_exec,
+    _default_probe,
+)
 
 logger = logging.getLogger("jarvis.llm.lmstudio_control")
 
@@ -126,6 +133,9 @@ class LMStudioController:
             return blocked
         if self._probe():
             return self._done("ok", "start_server", already_running=True, online=True)
+        blocked = self._contract_blocked("lmstudio.start", "start_server", agent=agent)
+        if blocked:
+            return blocked
         try:
             result = await self._exec_fn([self.lms_bin, "server", "start"], self.timeout, False)
         except Exception as e:  # never let host control raise into the caller
@@ -142,6 +152,9 @@ class LMStudioController:
             return blocked
         if not _MODEL_RE.match(model or ""):
             return self._done("rejected", "load_model", reason=f"invalid model id: {model!r}")
+        blocked = self._contract_blocked("lmstudio.load", "load_model", agent=agent, model=model)
+        if blocked:
+            return blocked
         if not self._probe():
             started = await self.start_server(agent=agent)
             if started.get("status") != "ok":
@@ -178,6 +191,9 @@ class LMStudioController:
             return blocked
         if model and not _MODEL_RE.match(model):
             return self._done("rejected", "unload_model", reason=f"invalid model id: {model!r}")
+        blocked = self._contract_blocked("lmstudio.unload", "unload_model", agent=agent, model=model or "")
+        if blocked:
+            return blocked
         argv = [self.lms_bin, "unload", model] if model else [self.lms_bin, "unload", "--all"]
         try:
             result = await self._exec_fn(argv, self.timeout, False)
@@ -231,6 +247,25 @@ class LMStudioController:
     def _gate(self, agent: str, action: str) -> Optional[dict]:
         if self.permission_gate is not None and not self.permission_gate.check_call("system-control", agent):
             return self._done("blocked", action, reason=f"agent '{agent}' not permitted for system-control")
+        return None
+
+    def _contract_blocked(self, contract_action: str, action: str, *,
+                          agent: str, model: str = "") -> Optional[dict]:
+        try:
+            decision = HOST_CONTROL_CONTRACT.evaluate({
+                "kind": HOST_CONTROL_CONTRACT_KIND,
+                "action": contract_action,
+                "agent": agent,
+                "model": model,
+                "target": model or self.server_url,
+                "server_url": self.server_url,
+            })
+        except Exception:
+            logger.warning("host-control contract evaluation failed", exc_info=True)
+            return self._done("blocked", action, reason="contract_error")
+        reason = contract_denial(decision)
+        if reason:
+            return self._done("blocked", action, reason=reason)
         return None
 
     def _probe(self) -> bool:

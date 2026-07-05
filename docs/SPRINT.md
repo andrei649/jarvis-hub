@@ -7,13 +7,13 @@
 
 ## Sesiune curentă
 
-**Data:** 2026-07-05 (post-#547 docs sync)
+**Data:** 2026-07-05 (post-#549)
 **Lead agent / Conductor:** Codex
-**Obiectiv sesiune:** keep the shared plan/status current after the governed desktop-step contract gate merged.
-**Branch:** `codex-docs-desktop-step-contract-merged`
+**Obiectiv sesiune:** execute Fable audit safety hardening: H17.1a origin construction, then 0.45 Batch B1 contracts.
+**Branch:** `codex-o45-b1-contracts`
 
 **Scope decision (2026-07-04):** O26-P0, P1.1, P2.1, P2.2, P2.3, P2.4, P2.5, P3.1, P3.3, P3.4, P3.5, P3.6, the O26-P3.2 Data Spaces depth slice, the O26-P3.2 Rooms history drawer slice, the O26-P3.2 Capability issue/check UI slice, and the O26-P3.2 Current Mesh Task Fan slice are merged.
-The O26-P3.2 Preferences Tweaks UI slice is merged. The O26-P3.2 Self-hosted Fonts slice is merged in #525. The 0.44 Safe Comms draft-before-send UI slice is merged in #527: frontend draft composition over existing governed social endpoints only; no backend/channel transport scope. The 0.45 payment live-gate adoption is merged in #529: the existing mandate denial gate now evaluates `PAYMENT_CONTRACT` while preserving denial codes/order. The 0.45 signal governance live-gate adoption is merged in #531: actionable Signal Layer recommendations evaluate `SIGNAL_RECOMMENDATION_CONTRACT` before they can enter the preview-only approval queue. The 0.45 plugin permission live-gate adoption is merged in #533: `PermissionGate.check_call()` evaluates `PLUGIN_CALL_CONTRACT` while preserving boolean outcomes and warning reasons. The 0.45 social draft live-gate adoption is merged in #535: governed X post/reply/DM drafts evaluate `SOCIAL_DRAFT_CONTRACT` before preview/enqueue. The 0.45 write-back draft live-gate adoption is merged in #537: governed Notion/GitHub/Calendar drafts evaluate `WRITEBACK_DRAFT_CONTRACT` before preview/enqueue. The 0.45 outbound call live-gate adoption is merged in #539: Twilio/Telnyx outbound-call requests evaluate `CALL_REQUEST_CONTRACT` before preview/enqueue, after provider/field/interrupt-budget checks. The 0.45 Tool-RPC live-gate adoption is merged in #541: gated Tool-RPC calls evaluate `TOOL_RPC_CALL_CONTRACT` before kernel mediation and approval enqueue. The 0.45 NodeMesh dispatch live-gate adoption is merged in #543: governed node dispatch evaluates `NODE_DISPATCH_CONTRACT` before preview/enqueue. The 0.45 media-generation live-gate adoption is merged in #545: cloud image/thumbnail/video requests evaluate `MEDIA_GENERATION_CONTRACT` before approval enqueue. The 0.45 desktop-step live-gate adoption is merged in #547: mutating desktop operator steps evaluate `DESKTOP_STEP_CONTRACT` before approver callback or driver execution.
+The O26-P3.2 Preferences Tweaks UI slice is merged. The O26-P3.2 Self-hosted Fonts slice is merged in #525. The 0.44 Safe Comms draft-before-send UI slice is merged in #527: frontend draft composition over existing governed social endpoints only; no backend/channel transport scope. The 0.45 payment live-gate adoption is merged in #529: the existing mandate denial gate now evaluates `PAYMENT_CONTRACT` while preserving denial codes/order. The 0.45 signal governance live-gate adoption is merged in #531: actionable Signal Layer recommendations evaluate `SIGNAL_RECOMMENDATION_CONTRACT` before they can enter the preview-only approval queue. The 0.45 plugin permission live-gate adoption is merged in #533: `PermissionGate.check_call()` evaluates `PLUGIN_CALL_CONTRACT` while preserving boolean outcomes and warning reasons. The 0.45 social draft live-gate adoption is merged in #535: governed X post/reply/DM drafts evaluate `SOCIAL_DRAFT_CONTRACT` before preview/enqueue. The 0.45 write-back draft live-gate adoption is merged in #537: governed Notion/GitHub/Calendar drafts evaluate `WRITEBACK_DRAFT_CONTRACT` before preview/enqueue. The 0.45 outbound call live-gate adoption is merged in #539: Twilio/Telnyx outbound-call requests evaluate `CALL_REQUEST_CONTRACT` before preview/enqueue, after provider/field/interrupt-budget checks. The 0.45 Tool-RPC live-gate adoption is merged in #541: gated Tool-RPC calls evaluate `TOOL_RPC_CALL_CONTRACT` before kernel mediation and approval enqueue. The 0.45 NodeMesh dispatch live-gate adoption is merged in #543: governed node dispatch evaluates `NODE_DISPATCH_CONTRACT` before preview/enqueue. The 0.45 media-generation live-gate adoption is merged in #545: cloud image/thumbnail/video requests evaluate `MEDIA_GENERATION_CONTRACT` before approval enqueue. The 0.45 desktop-step live-gate adoption is merged in #547: mutating desktop operator steps evaluate `DESKTOP_STEP_CONTRACT` before approver callback or driver execution. H17.1a inbound-origin construction is merged in #549. 0.45 Batch B1 skill + host-control contracts are branch-verified on `codex-o45-b1-contracts`.
 
 **Previous session:** O26-P0.1 golden harness was merged via #496, with P0.2–P0.7 already completed on
 main by parallel agents.
@@ -53,6 +53,8 @@ main by parallel agents.
 | 0.45 / NodeMesh Dispatch Contract Gate | `codex-o45-node-dispatch-contract-gate` | #543 | ✅ merged | Codex | `NodeMesh.dispatch()` evaluates `NODE_DISPATCH_CONTRACT` before preview/enqueue |
 | 0.45 / Media Generation Contract Gate | `codex-o45-media-gen-contract-gate` | #545 | ✅ merged | Codex | `MediaGenManager.generate(cloud=True)` evaluates `MEDIA_GENERATION_CONTRACT` before approval enqueue |
 | 0.45 / Desktop Step Contract Gate | `codex-o45-desktop-step-contract-gate` | #547 | ✅ merged | Codex | `GovernedDesktop.run()` evaluates `DESKTOP_STEP_CONTRACT` before approver callback/driver execution |
+| H17.1a / Origin By Construction | `codex-h17-origin-by-construction` | #549 | ✅ merged | Codex | Public turn entrypoints bind origin; plugin egress uses current origin |
+| 0.45 / Skill + Host-Control Contract Gates | `codex-o45-b1-contracts` | — | ⏳ in progress | Codex | `SKILL_INSTALL_CONTRACT`, `SKILL_GENERATION_CONTRACT`, shared `HOST_CONTROL_CONTRACT` branch-verified |
 
 Status legend: ⏳ in progress · 🟡 draft PR · 🟢 CI green · ✅ merged · 🔴 conflict
 
@@ -81,7 +83,7 @@ Current order:
   10. O26-P3.6 Landing Page Dev Half (#512) ✅
 ```
 
-Current backlog state: **0.45 High-Risk Automation Contracts — payment + signal + plugin + social + write-back + outbound call + Tool-RPC + NodeMesh + media-generation + desktop-step live gate adoption** is merged in #529/#531/#533/#535/#537/#539/#541/#543/#545/#547. Remaining 0.45 work is richer contract coverage for any other approval seams. The broader TASK-2/O26 tail remains owner live-data/plugin setup plus actual channel inbox transport.
+Current backlog state: **0.45 High-Risk Automation Contracts — payment + signal + plugin + social + write-back + outbound call + Tool-RPC + NodeMesh + media-generation + desktop-step live gate adoption** is merged in #529/#531/#533/#535/#537/#539/#541/#543/#545/#547. B1 skill/host-control contracts are implemented locally and ready for PR verification. The broader TASK-2/O26 tail remains owner live-data/plugin setup plus actual channel inbox transport.
 
 ---
 
@@ -230,6 +232,11 @@ Generalizează reflecția nocturnă din *rezumă-ziua* în *pre-raționează-pen
 [H17.1a] Red tests: internal turn channels were misclassified inbound; direct `handle_input`/stream callers bypassed turn-origin binding; plugin egress hard-coded `generated`
 [H17.1a] Implemented monotone turn-origin binding at public orchestrator entrypoints plus current-origin plugin egress
 [Verify]  H17.1a/origin/taint/kernel/chat-stream targeted sweeps green; ruff and py_compile clean
+[PR]      #549 full GitHub Actions green and squash-merged
+[0.45-B1] Started skill + host-control contract gates on `codex-o45-b1-contracts`
+[0.45-B1] Red tests: marketplace publish/install/uninstall, generated-skill create/approve, remediation restart, and LM Studio start ignored patched contracts
+[0.45-B1] Implemented `contract_denial()`, `SKILL_INSTALL_CONTRACT`, `SKILL_GENERATION_CONTRACT`, and shared `HOST_CONTROL_CONTRACT`
+[Verify]  B1 focused/adjacent sweep green: 121 passed; ruff and py_compile clean
 [ORIZONT 25] 2026-07-03 — created `codex-integrate-verified-developments` from `origin/main`
 [ORIZONT 25] merged #487 M1.1, #488 M1.2, #489 M2.3, #490 M2.1, #491 status correction locally
 [Docs]        BACKLOG/STATUS/ARCHITECTURE/HUD remaining/SPRINT refreshed: M1.1,M1.2,M2.1,M2.3 done; M2.4 partial
