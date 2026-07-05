@@ -106,6 +106,9 @@ class _FakeMemory:
             ),
         ][:top_k]
 
+    async def get_agent_context(self, _agent_id):
+        return ""
+
 
 class _FakeCognition:
     def __init__(self, living_memory):
@@ -143,6 +146,37 @@ async def test_recall_block_reranks_with_living_memory_before_rag_guard():
 
     assert "DATA, NOT INSTRUCTIONS" in block
     assert readable.index("recent project note") < readable.index("old project note")
+
+
+@pytest.mark.asyncio
+async def test_agent_turn_text_injects_living_core_memory_when_enabled():
+    living = LivingMemory()
+    living.core.put("Andrei wants Jarvis to remember safe comms follow-ups.")
+    orch = _orch_with_living_recall({}, _FakeMemory(), living)
+
+    turn_text = await orch._build_agent_turn_text("jarvis", "What should we follow up on?")
+
+    assert "[core memory]" in turn_text
+    assert "Stable background facts only" in turn_text
+    assert "safe comms follow-ups" in turn_text
+    assert turn_text.index("[core memory]") < turn_text.index("What should we follow up on?")
+
+
+@pytest.mark.asyncio
+async def test_agent_turn_text_omits_living_core_when_memory_disabled():
+    class _DisabledCognition(_FakeCognition):
+        def sub_enabled(self, name):
+            return False
+
+    living = LivingMemory()
+    living.core.put("This fact should stay out while disabled.")
+    orch = _orch_with_living_recall({}, _FakeMemory(), living)
+    orch.cognition = _DisabledCognition(living)
+
+    turn_text = await orch._build_agent_turn_text("jarvis", "Hello")
+
+    assert "[core memory]" not in turn_text
+    assert "This fact should stay out while disabled." not in turn_text
 
 
 @pytest.mark.asyncio
