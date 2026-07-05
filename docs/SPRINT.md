@@ -64,7 +64,7 @@ main by parallel agents.
 | H21.3 / LivingMemory Tier Persistence | `codex-living-tier-persistence` | #557 | ✅ merged | Codex | JsonStore-backed tier metadata under runtime data root |
 | H21.3 / Cognition Forget Purge | `codex-cognition-forget-purge` | #558 | ✅ merged | Codex | Explicit user-forget clears durable LivingMemory core/tier state live and at rest |
 | H21.3 / Re-projection Maintenance | `codex-living-reprojection-maintenance` | #559 | ✅ merged | Codex | Nightly memory maintenance reports and runs default-off stale tier re-projection |
-| H21.3 / Re-projection Embedder Wiring | `codex-living-reprojection-embedder` | — | ⏳ in progress | Codex | Nightly maintenance passes `MemoryManager.embed` when available and serializes structured tier content |
+| H21.3 / Re-projection Embedder Wiring | `codex-living-reprojection-embedder` | #560 | 🟡 draft PR | Codex | Nightly maintenance passes `MemoryManager.embed` when available and serializes structured tier content |
 
 Status legend: ⏳ in progress · 🟡 draft PR · 🟢 CI green · ✅ merged · 🔴 conflict
 
@@ -97,7 +97,7 @@ Current order:
   10. O26-P3.6 Landing Page Dev Half (#512) ✅
 ```
 
-Current backlog state: **0.45 High-Risk Automation Contracts — payment + signal + plugin + social + write-back + outbound call + Tool-RPC + NodeMesh + media-generation + desktop-step + B1 skill/host-control live gate adoption** is merged in #529/#531/#533/#535/#537/#539/#541/#543/#545/#547/#550. Safe Comms channel inbox transport v0 is delivered in #551; eval-nightly parser hotfix #552 is merged; H21.3 live recall integration is merged in #553; H21.3 DailyReflector durable LivingMemory handoff is merged in #554; H21.3 core prompt injection is merged in #555; H21.3 core persistence is merged in #556; H21.3 tier persistence is merged in #557; H21.3 forget-purge completeness is merged in #558; H21.3 re-projection maintenance is merged in #559. Remaining TASK-2/O26 tail is owner live-data/plugin setup plus non-v0 inbox channels. Active WIP is H21.3 re-projection embedder wiring.
+Current backlog state: **0.45 High-Risk Automation Contracts — payment + signal + plugin + social + write-back + outbound call + Tool-RPC + NodeMesh + media-generation + desktop-step + B1 skill/host-control live gate adoption** is merged in #529/#531/#533/#535/#537/#539/#541/#543/#545/#547/#550. Safe Comms channel inbox transport v0 is delivered in #551; eval-nightly parser hotfix #552 is merged; H21.3 live recall integration is merged in #553; H21.3 DailyReflector durable LivingMemory handoff is merged in #554; H21.3 core prompt injection is merged in #555; H21.3 core persistence is merged in #556; H21.3 tier persistence is merged in #557; H21.3 forget-purge completeness is merged in #558; H21.3 re-projection maintenance is merged in #559. Remaining TASK-2/O26 tail is owner live-data/plugin setup plus non-v0 inbox channels. Active WIP is H21.3 re-projection embedder wiring in #560.
 
 ---
 
@@ -291,6 +291,7 @@ Generalizează reflecția nocturnă din *rezumă-ziua* în *pre-raționează-pen
 [H21.3]   Started LivingMemory re-projection embedder wiring on `codex-living-reprojection-embedder`
 [H21.3]   Red tests: nightly maintenance did not pass `orch.memory.embed`, and structured tier content reached embedders as raw dictionaries
 [H21.3]   Implemented scheduler embedder handoff plus deterministic JSON serialization for structured re-projection content
+[PR]      #560 opened as draft
 [ORIZONT 25] 2026-07-03 — created `codex-integrate-verified-developments` from `origin/main`
 [ORIZONT 25] merged #487 M1.1, #488 M1.2, #489 M2.3, #490 M2.1, #491 status correction locally
 [Docs]        BACKLOG/STATUS/ARCHITECTURE/HUD remaining/SPRINT refreshed: M1.1,M1.2,M2.1,M2.3 done; M2.4 partial
