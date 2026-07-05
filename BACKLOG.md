@@ -34,6 +34,11 @@ python -m pytest tests/ -v          # ~3,600 passed, 6 skipped (counter synced v
 > focused Tool-RPC/kernel/contracts/action-auth verification, and full GitHub
 > Actions passed before merge.
 
+> **Active WIP (2026-07-05):** #543 (`codex-o45-node-dispatch-contract-gate`)
+> continues 0.45 by adding `NODE_DISPATCH_CONTRACT` to the governed NodeMesh
+> dispatch path. Local red/green and focused NodeMesh/action-auth/contracts/kernel
+> verification are green; PR CI is pending.
+
 ---
 
 ## Version Roadmap
