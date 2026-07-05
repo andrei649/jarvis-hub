@@ -5,6 +5,8 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'agents'))
 
 import pytest
 
+from agents.core.automation_contracts import ContractDecision
+import agents.core.media_gen as media_gen
 from agents.core.media_gen import MediaGenManager, KINDS
 
 
@@ -50,6 +52,41 @@ async def test_cloud_generation_is_gated():
     out = await m.generate("video", "a sunset", cloud=True)
     assert out["ok"] is False and out["reason"] == "approval_required" and out["task_id"] == 1
     assert q.calls[0]["kind"] == "media.video" and q.calls[0]["autonomy_level"] == "ask"
+
+
+@pytest.mark.asyncio
+async def test_cloud_generation_obeys_live_media_generation_contract(monkeypatch):
+    q = _FakeQueue()
+
+    class _Contract:
+        def __init__(self):
+            self.calls = []
+
+        def evaluate(self, payload=None, **kwargs):
+            self.calls.append((payload, kwargs))
+            return ContractDecision(
+                kind="media_generation",
+                admissible=False,
+                requires_approval=True,
+                reason="contract_blocked",
+            )
+
+    contract = _Contract()
+    monkeypatch.setattr(media_gen, "MEDIA_GENERATION_CONTRACT", contract, raising=False)
+    m = MediaGenManager(enqueue=q.enqueue)
+
+    out = await m.generate("image", "a cat in a space suit", cloud=True, opts={"size": "1024"})
+
+    assert out == {"ok": False, "reason": "contract_blocked", "kind": "media.image"}
+    assert q.calls == []
+    assert contract.calls
+    payload, kwargs = contract.calls[-1]
+    assert payload["kind"] == "media.image"
+    assert payload["media_kind"] == "image"
+    assert payload["target"] == "image"
+    assert payload["prompt_length"] == len("a cat in a space suit")
+    assert payload["opts_keys"] == ["size"]
+    assert kwargs.get("now") is not None
 
 
 @pytest.mark.asyncio

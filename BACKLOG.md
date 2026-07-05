@@ -34,6 +34,11 @@ python -m pytest tests/ -v          # ~3,600 passed, 6 skipped (counter synced v
 > Local red/green, focused NodeMesh/action-auth/contracts/kernel verification,
 > and full GitHub Actions passed before merge.
 
+> **Active WIP (2026-07-05):** #545 (`codex-o45-media-gen-contract-gate`)
+> continues 0.45 by adding `MEDIA_GENERATION_CONTRACT` to cloud media-generation
+> requests before they can enter the approval queue. Local red/green and focused
+> media/contracts/funnel verification are green.
+
 ---
 
 ## Version Roadmap

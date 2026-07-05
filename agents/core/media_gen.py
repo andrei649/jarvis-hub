@@ -14,9 +14,47 @@ import logging
 import time
 from typing import Any, Callable, Optional, Protocol
 
+from .automation_contracts import ContractTemplate, predicate
+
 logger = logging.getLogger("jarvis.media_gen")
 
 KINDS = ("image", "thumbnail", "video")
+
+
+def _media_generation_contract_template() -> ContractTemplate:
+    allowed = set(KINDS)
+
+    return ContractTemplate(
+        kind="media_generation",
+        description="Cloud media generation must be an explicit, supported, ask-tier request.",
+        constraints=(
+            predicate(
+                "supported-kind",
+                lambda view, _now: view.get("kind") in {f"media.{k}" for k in allowed}
+                and view.get("media_kind") in allowed,
+                reason="unsupported_kind",
+            ),
+            predicate(
+                "cloud-only",
+                lambda view, _now: view.get("cloud") is True,
+                reason="cloud_required",
+            ),
+            predicate(
+                "target-matches-kind",
+                lambda view, _now: view.get("target") == view.get("media_kind"),
+                reason="target_mismatch",
+            ),
+            predicate(
+                "has-prompt",
+                lambda view, _now: int(view.get("prompt_length") or 0) > 0,
+                reason="no_prompt",
+            ),
+        ),
+        requires_approval=True,
+    )
+
+
+MEDIA_GENERATION_CONTRACT = _media_generation_contract_template()
 
 
 class _CatalogLike(Protocol):
@@ -72,11 +110,33 @@ class MediaGenManager:
             return {"ok": False, "reason": "no_prompt"}
         if cloud:
             # Paid/external generation is gated through the approval queue.
+            opts_payload = opts or {}
+            contract_kind = f"media.{kind}"
+            contract_payload = {
+                "kind": contract_kind,
+                "media_kind": kind,
+                "target": kind,
+                "cloud": True,
+                "prompt_length": len(prompt),
+                "opts_keys": sorted(str(k) for k in opts_payload)
+                if isinstance(opts_payload, dict) else [],
+            }
+            try:
+                decision = MEDIA_GENERATION_CONTRACT.evaluate(contract_payload, now=time.time())
+            except Exception:
+                logger.warning("media generation contract evaluation failed", exc_info=True)
+                return {"ok": False, "reason": "contract_error", "kind": contract_kind}
+            if not decision.admissible:
+                return {
+                    "ok": False,
+                    "reason": decision.reason or "contract_denied",
+                    "kind": contract_kind,
+                }
             if self._enqueue is None:
                 return {"ok": False, "reason": "approval_required"}
             task_id = self._enqueue(self.agent, f"media.{kind}", f"Generate {kind}: {prompt[:60]}",
                                     payload={"kind": kind, "prompt": prompt, "cloud": True,
-                                             "target": kind, "opts": opts or {}},
+                                             "target": kind, "opts": opts_payload},
                                     risk_tier=2, autonomy_level="ask", origin="generated")
             return {"ok": False, "reason": "approval_required", "task_id": task_id}
         backend = self._backends.get(kind)
