@@ -136,7 +136,7 @@ When on: embeds the query, runs fused recall (vector ⊕ graph), injects top-k a
 |------|---------|-------------|
 | `agents/core/kernel/budget.py` | K3 scheduler ledger: token/wall-time/recursion budgets, loop breaker, and named dimensions for interrupt/mission/payment caps | `BudgetLedger`, `BudgetDimension`, `LoopDetector` |
 | `agents/core/kernel/binding.py` | Binds orchestrator/config state into kernel hooks and shared ledgers | `make_action_kernel`, `make_budget_ledger` |
-| `agents/core/action_origin.py` | Per-turn provenance carrier for kernel-mediated actions; inbound channels bind `origin="inbound"` so brokers cannot silently auto-act from external input | `origin_for_channel`, `bind_action_origin`, `current_action_origin` |
+| `agents/core/action_origin.py` | Per-turn provenance carrier for kernel-mediated actions; public turn entrypoints bind origin by construction, inbound channels stay `origin="inbound"`, and an inbound parent context cannot be downgraded | `origin_for_channel`, `bind_turn_action_origin`, `current_action_origin` |
 
 ### Security
 

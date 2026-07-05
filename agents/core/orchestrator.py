@@ -27,7 +27,12 @@ from .checkpoint import CheckpointManager
 from .heartbeat import HeartbeatScheduler
 from .scheduler_service import SchedulerService
 from .autonomy_coordinator import AutonomyCoordinator
-from .action_origin import bind_action_origin, origin_for_channel, reset_action_origin
+from .action_origin import (
+    bind_action_origin,
+    bind_turn_action_origin,
+    origin_for_channel,
+    reset_action_origin,
+)
 from . import llm_control  # CLN-2: NL LLM-control detection + execution
 from .llm_control import detect_llm_control  # re-exported: NL LLM-control detection (CLN-2)
 from . import cognition_trace  # CLN-2: builds + persists the per-turn cognition trace
@@ -789,6 +794,14 @@ class Orchestrator:
 
     async def handle_input(self, text: str, channel: str = "voice", agent_override: str = None,
                            session_id: str = None) -> str:
+        origin_token = bind_turn_action_origin(channel)
+        try:
+            return await self._handle_input(text, channel, agent_override, session_id)
+        finally:
+            reset_action_origin(origin_token)
+
+    async def _handle_input(self, text: str, channel: str = "voice", agent_override: str = None,
+                            session_id: str = None) -> str:
         # BUG-5: pin this turn to its own session for the whole call. Resolving
         # the session into the async-context-local `_active_session` here means
         # every downstream `self.session_id` read (memory, recall, checkpoint,
@@ -938,6 +951,14 @@ class Orchestrator:
 
     async def handle_input_stream(self, text: str, channel: str = "voice", on_token: Callable = None,
                                   agent_override: str = None, session_id: str = None) -> str:
+        origin_token = bind_turn_action_origin(channel)
+        try:
+            return await self._handle_input_stream(text, channel, on_token, agent_override, session_id)
+        finally:
+            reset_action_origin(origin_token)
+
+    async def _handle_input_stream(self, text: str, channel: str = "voice", on_token: Callable = None,
+                                   agent_override: str = None, session_id: str = None) -> str:
         # BUG-5: see handle_input — pin this turn to its own session so it can
         # never read or write another concurrent request's conversation.
         self._resolve_session(session_id)

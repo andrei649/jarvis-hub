@@ -21,6 +21,7 @@ from __future__ import annotations
 import functools
 import os
 
+from ..action_origin import current_action_origin
 from .budget import BudgetLedger, BudgetLimits
 
 _BUDGET_ENV = {
@@ -119,7 +120,7 @@ def make_egress_kernel_hook(get_kernel):
             kind="plugin.egress", agent=plugin or "plugin",
             title=f"egress {method} {host}",
             payload={"plugin": plugin, "method": method, "host": host, "url": url},
-            origin="generated"))
+            origin=current_action_origin()))
         return decision.reason if decision.verdict is Verdict.DENY else None
 
     return _hook
