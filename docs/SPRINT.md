@@ -51,7 +51,7 @@ main by parallel agents.
 | 0.45 / Outbound Call Contract Gate | `codex-o45-call-contract-gate` | #539 | ✅ merged | Codex | `CallBroker.request()` evaluates `CALL_REQUEST_CONTRACT` before preview/enqueue; no live telephony scope |
 | 0.45 / Tool-RPC Contract Gate | `codex-o45-tool-rpc-contract-gate` | #541 | ✅ merged | Codex | `ToolRPCServer.handle()` evaluates `TOOL_RPC_CALL_CONTRACT` before kernel mediation and approval enqueue |
 | 0.45 / NodeMesh Dispatch Contract Gate | `codex-o45-node-dispatch-contract-gate` | #543 | ✅ merged | Codex | `NodeMesh.dispatch()` evaluates `NODE_DISPATCH_CONTRACT` before preview/enqueue |
-| 0.45 / Media Generation Contract Gate | `codex-o45-media-gen-contract-gate` | TBD | ⏳ in progress | Codex | `MediaGenManager.generate(cloud=True)` evaluates `MEDIA_GENERATION_CONTRACT` before approval enqueue |
+| 0.45 / Media Generation Contract Gate | `codex-o45-media-gen-contract-gate` | #545 | 🟡 draft PR | Codex | `MediaGenManager.generate(cloud=True)` evaluates `MEDIA_GENERATION_CONTRACT` before approval enqueue |
 
 Status legend: ⏳ in progress · 🟡 draft PR · 🟢 CI green · ✅ merged · 🔴 conflict
 
@@ -401,6 +401,7 @@ Generalizează reflecția nocturnă din *rezumă-ziua* în *pre-raționează-pen
 [0.45]     Red test: cloud `MediaGenManager.generate()` ignored a patched media-generation contract, so a denied cloud request could still enqueue
 [0.45]     Implemented `MEDIA_GENERATION_CONTRACT`; cloud image/thumbnail/video requests now evaluate it before approval enqueue
 [Verify]   Media-generation contract sweep green: focused media/contracts/funnel sweep, ruff, py_compile, and status-sync clean
+[PR]       #545 opened as draft
 ```
 
 ---
