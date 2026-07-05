@@ -16,7 +16,8 @@ It talks to the same HTTP API the web HUD uses (`agents/web.py`):
   KG facts/history without exposing clear/save/rewrite/delete controls from the phone.
 - **Status** — live view of `GET /status`, `GET /dashboard`, and
   `GET /ticker`: model state, backend, agents online, host/GPU telemetry,
-  ambient dashboard counts, and live ticker rows, with pull-to-refresh.
+  ambient dashboard counts, live ticker rows, and a read-only Trust card over
+  `GET /api/security/{governance,posture,kill-switch,loop-breaker}`, with pull-to-refresh.
 - **Approvals** — mobile Decision Inbox over `GET /autonomy/approvals`
   with approve / reject / defer actions posted to
   `POST /autonomy/tasks/{id}/decision`. This uses the same unified approval

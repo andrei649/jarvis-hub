@@ -3,9 +3,17 @@ import { Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from 'r
 import {
   ApiError,
   fetchDashboard,
+  fetchSecurityGovernance,
+  fetchSecurityKillSwitch,
+  fetchSecurityLoopBreaker,
+  fetchSecurityPosture,
   fetchStatus,
   fetchTicker,
   type DashboardResponse,
+  type SecurityGovernanceResponse,
+  type SecurityKillSwitchResponse,
+  type SecurityLoopBreakerResponse,
+  type SecurityPostureResponse,
   type StatusResponse,
   type TickerResponse,
 } from '../api/client';
@@ -48,11 +56,20 @@ function plural(count: number, noun: string): string {
   return `${count} ${noun}${count === 1 ? '' : 's'}`;
 }
 
+function scoreLabel(value: number | undefined): string {
+  if (value === undefined) return '—';
+  return `${Math.round(value * 100)}%`;
+}
+
 export function StatusScreen({ onGoToSettings }: { onGoToSettings: () => void }) {
   const { config, configured } = useServer();
   const [status, setStatus] = useState<StatusResponse | null>(null);
   const [dashboard, setDashboard] = useState<DashboardResponse | null>(null);
   const [ticker, setTicker] = useState<TickerResponse | null>(null);
+  const [governance, setGovernance] = useState<SecurityGovernanceResponse | null>(null);
+  const [posture, setPosture] = useState<SecurityPostureResponse | null>(null);
+  const [killSwitch, setKillSwitch] = useState<SecurityKillSwitchResponse | null>(null);
+  const [loopBreaker, setLoopBreaker] = useState<SecurityLoopBreakerResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
@@ -69,11 +86,25 @@ export function StatusScreen({ onGoToSettings }: { onGoToSettings: () => void })
       setStatus(statusOut);
       setDashboard(dashboardOut);
       setTicker(tickerOut);
+      const [governanceOut, postureOut, killOut, loopOut] = await Promise.all([
+        fetchSecurityGovernance(config).catch(() => null),
+        fetchSecurityPosture(config).catch(() => null),
+        fetchSecurityKillSwitch(config).catch(() => null),
+        fetchSecurityLoopBreaker(config).catch(() => null),
+      ]);
+      setGovernance(governanceOut);
+      setPosture(postureOut);
+      setKillSwitch(killOut);
+      setLoopBreaker(loopOut);
     } catch (e) {
       setError(e instanceof ApiError ? e.message : 'Failed to load status');
       setStatus(null);
       setDashboard(null);
       setTicker(null);
+      setGovernance(null);
+      setPosture(null);
+      setKillSwitch(null);
+      setLoopBreaker(null);
     } finally {
       setLoading(false);
     }
@@ -122,6 +153,45 @@ export function StatusScreen({ onGoToSettings }: { onGoToSettings: () => void })
         <Row label="Loaded" value={status?.loaded_model} />
         <Row label="Configured" value={status?.active_model} />
         <Row label="Reachable" value={status?.lm_online ? 'yes' : 'no'} />
+      </Card>
+
+      <Card title="Trust">
+        {governance || posture || killSwitch || loopBreaker ? (
+          <>
+            <View style={styles.stateRow}>
+              <View
+                style={[
+                  styles.dot,
+                  { backgroundColor: governance?.pass === false ? theme.danger : theme.ok },
+                ]}
+              />
+              <Text style={[styles.stateText, { color: governance?.pass === false ? theme.danger : theme.ok }]}>
+                {governance ? (governance.pass ? 'GATE PASS' : 'GATE REVIEW') : 'TRUST READ'}
+              </Text>
+            </View>
+            <Row label="Score" value={governance ? scoreLabel(governance.overall_score) : undefined} />
+            <Row label="Injection" value={governance ? scoreLabel(governance.injection.score) : undefined} />
+            <Row label="Harm" value={governance ? scoreLabel(governance.harm.score) : undefined} />
+            <Row label="OWASP" value={governance ? scoreLabel(governance.owasp.score) : undefined} />
+            <Row label="Secrets" value={posture?.secrets.encrypted_at_rest ? posture.secrets.backend || 'encrypted' : posture ? 'not encrypted' : undefined} />
+            <Row
+              label="Skills"
+              value={posture ? `${posture.skills.trusted}/${posture.skills.total} trusted` : undefined}
+            />
+            <Row
+              label="Sandbox"
+              value={posture ? `${posture.sandbox.backend || 'unknown'} · ${posture.sandbox.isolated ? 'isolated' : 'not isolated'}` : undefined}
+            />
+            <Row label="Guardrails" value={posture?.guardrails.mode} />
+            <Row label="Kill-switch" value={killSwitch?.global ? 'engaged' : killSwitch ? 'armed' : undefined} />
+            <Row
+              label="Loop breaker"
+              value={loopBreaker?.tripped ? 'tripped' : loopBreaker ? 'clear' : undefined}
+            />
+          </>
+        ) : (
+          <Text style={styles.emptyText}>No trust data</Text>
+        )}
       </Card>
 
       <Card title="Today">
