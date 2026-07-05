@@ -10,8 +10,9 @@ It talks to the same HTTP API the web HUD uses (`agents/web.py`):
   (code blocks, lists, bold/italic, links). Pick the **agent** (`GET /api/agents`),
   tap 🔊 to hear a reply via **TTS** (`POST /tts`), and **Stop** mid-stream.
   The thread is **persisted on-device** and survives restarts.
-- **Status** — live view of `GET /status`: model state, backend, agents
-  online, and host/GPU telemetry, with pull-to-refresh.
+- **Status** — live view of `GET /status`, `GET /dashboard`, and
+  `GET /ticker`: model state, backend, agents online, host/GPU telemetry,
+  ambient dashboard counts, and live ticker rows, with pull-to-refresh.
 - **Approvals** — mobile Decision Inbox over `GET /autonomy/approvals`
   with approve / reject / defer actions posted to
   `POST /autonomy/tasks/{id}/decision`. This uses the same unified approval
