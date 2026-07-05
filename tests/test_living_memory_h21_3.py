@@ -88,6 +88,22 @@ def test_only_user_forget_deletes():
     assert t.forget("m1") is True and t.get("m1") is None
 
 
+def test_tiered_memory_persists_when_path_is_provided(tmp_path):
+    path = tmp_path / "tiers.json"
+    t = TieredMemory(path=path)
+    t.add("m1", {"kind": "turn"}, activation=1.0)
+
+    reloaded = TieredMemory(path=path)
+    assert reloaded.get("m1")["content"] == {"kind": "turn"}
+
+    reloaded.maintain()
+    maintained = TieredMemory(path=path)
+    assert maintained.get("m1")["activation"] == 0.5
+
+    assert maintained.forget("m1") is True
+    assert TieredMemory(path=path).get("m1") is None
+
+
 # ── re-projection ─────────────────────────────────────────────────────────────
 
 def test_needs_reprojection():
@@ -167,3 +183,13 @@ def test_living_memory_accepts_persistent_core_path(tmp_path):
     reloaded = LivingMemory(core_path=path)
     assert reloaded.core.list() == ["Andrei wants durable core memory."]
     assert reloaded.status()["core"] == 1
+
+
+def test_living_memory_accepts_persistent_tier_path(tmp_path):
+    path = tmp_path / "tiers.json"
+    lm = LivingMemory(tiers_path=path)
+    lm.encode("m1", {"kind": "reflection"}, surprise=0.9)
+
+    reloaded = LivingMemory(tiers_path=path)
+    assert reloaded.records(prefix="m1")[0]["content"] == {"kind": "reflection"}
+    assert reloaded.status()["tiers"][HOT] == 1

@@ -7,13 +7,13 @@
 
 ## Sesiune curentă
 
-**Data:** 2026-07-05 (post-#555)
+**Data:** 2026-07-05 (post-#556)
 **Lead agent / Conductor:** Codex
-**Obiectiv sesiune:** execute Fable audit safety hardening, fix eval workflow fallout, wire LivingMemory into live recall, finish the DailyReflector sleep-time memory seam, make bounded core memory visible to agents, then persist core memory across restart.
-**Branch:** `codex-living-core-persistence`
+**Obiectiv sesiune:** execute Fable audit safety hardening, fix eval workflow fallout, wire LivingMemory into live recall, finish the DailyReflector sleep-time memory seam, make bounded core memory visible to agents, persist core memory, then persist LivingMemory tier metadata across restart.
+**Branch:** `codex-living-tier-persistence`
 
 **Scope decision (2026-07-04):** O26-P0, P1.1, P2.1, P2.2, P2.3, P2.4, P2.5, P3.1, P3.3, P3.4, P3.5, P3.6, the O26-P3.2 Data Spaces depth slice, the O26-P3.2 Rooms history drawer slice, the O26-P3.2 Capability issue/check UI slice, and the O26-P3.2 Current Mesh Task Fan slice are merged.
-The O26-P3.2 Preferences Tweaks UI slice is merged. The O26-P3.2 Self-hosted Fonts slice is merged in #525. The 0.44 Safe Comms draft-before-send UI slice is merged in #527: frontend draft composition over existing governed social endpoints only. The 0.45 payment live-gate adoption is merged in #529: the existing mandate denial gate now evaluates `PAYMENT_CONTRACT` while preserving denial codes/order. The 0.45 signal governance live-gate adoption is merged in #531: actionable Signal Layer recommendations evaluate `SIGNAL_RECOMMENDATION_CONTRACT` before they can enter the preview-only approval queue. The 0.45 plugin permission live-gate adoption is merged in #533: `PermissionGate.check_call()` evaluates `PLUGIN_CALL_CONTRACT` while preserving boolean outcomes and warning reasons. The 0.45 social draft live-gate adoption is merged in #535: governed X post/reply/DM drafts evaluate `SOCIAL_DRAFT_CONTRACT` before preview/enqueue. The 0.45 write-back draft live-gate adoption is merged in #537: governed Notion/GitHub/Calendar drafts evaluate `WRITEBACK_DRAFT_CONTRACT` before preview/enqueue. The 0.45 outbound call live-gate adoption is merged in #539: Twilio/Telnyx outbound-call requests evaluate `CALL_REQUEST_CONTRACT` before preview/enqueue, after provider/field/interrupt-budget checks. The 0.45 Tool-RPC live-gate adoption is merged in #541: gated Tool-RPC calls evaluate `TOOL_RPC_CALL_CONTRACT` before kernel mediation and approval enqueue. The 0.45 NodeMesh dispatch live-gate adoption is merged in #543: governed node dispatch evaluates `NODE_DISPATCH_CONTRACT` before preview/enqueue. The 0.45 media-generation live-gate adoption is merged in #545: cloud image/thumbnail/video requests evaluate `MEDIA_GENERATION_CONTRACT` before approval enqueue. The 0.45 desktop-step live-gate adoption is merged in #547: mutating desktop operator steps evaluate `DESKTOP_STEP_CONTRACT` before approver callback or driver execution. H17.1a inbound-origin construction is merged in #549. 0.45 Batch B1 skill + host-control contracts are merged in #550. #551 adds Safe Comms channel inbox transport v0 for telegram/web. #552 fixes eval-nightly workflow validation by moving cache-hash expressions out of job-level `env`. #553 merges LivingMemory live recall ordering plus `/api/memory/eval/run?mode=recall`. #554 merges durable DailyReflector idempotency plus gated LivingMemory lesson handoff. #555 merges gated LivingMemory core prompt injection.
+The O26-P3.2 Preferences Tweaks UI slice is merged. The O26-P3.2 Self-hosted Fonts slice is merged in #525. The 0.44 Safe Comms draft-before-send UI slice is merged in #527: frontend draft composition over existing governed social endpoints only. The 0.45 payment live-gate adoption is merged in #529: the existing mandate denial gate now evaluates `PAYMENT_CONTRACT` while preserving denial codes/order. The 0.45 signal governance live-gate adoption is merged in #531: actionable Signal Layer recommendations evaluate `SIGNAL_RECOMMENDATION_CONTRACT` before they can enter the preview-only approval queue. The 0.45 plugin permission live-gate adoption is merged in #533: `PermissionGate.check_call()` evaluates `PLUGIN_CALL_CONTRACT` while preserving boolean outcomes and warning reasons. The 0.45 social draft live-gate adoption is merged in #535: governed X post/reply/DM drafts evaluate `SOCIAL_DRAFT_CONTRACT` before preview/enqueue. The 0.45 write-back draft live-gate adoption is merged in #537: governed Notion/GitHub/Calendar drafts evaluate `WRITEBACK_DRAFT_CONTRACT` before preview/enqueue. The 0.45 outbound call live-gate adoption is merged in #539: Twilio/Telnyx outbound-call requests evaluate `CALL_REQUEST_CONTRACT` before preview/enqueue, after provider/field/interrupt-budget checks. The 0.45 Tool-RPC live-gate adoption is merged in #541: gated Tool-RPC calls evaluate `TOOL_RPC_CALL_CONTRACT` before kernel mediation and approval enqueue. The 0.45 NodeMesh dispatch live-gate adoption is merged in #543: governed node dispatch evaluates `NODE_DISPATCH_CONTRACT` before preview/enqueue. The 0.45 media-generation live-gate adoption is merged in #545: cloud image/thumbnail/video requests evaluate `MEDIA_GENERATION_CONTRACT` before approval enqueue. The 0.45 desktop-step live-gate adoption is merged in #547: mutating desktop operator steps evaluate `DESKTOP_STEP_CONTRACT` before approver callback or driver execution. H17.1a inbound-origin construction is merged in #549. 0.45 Batch B1 skill + host-control contracts are merged in #550. #551 adds Safe Comms channel inbox transport v0 for telegram/web. #552 fixes eval-nightly workflow validation by moving cache-hash expressions out of job-level `env`. #553 merges LivingMemory live recall ordering plus `/api/memory/eval/run?mode=recall`. #554 merges durable DailyReflector idempotency plus gated LivingMemory lesson handoff. #555 merges gated LivingMemory core prompt injection. #556 merges JsonStore-backed LivingMemory core persistence.
 
 **Previous session:** O26-P0.1 golden harness was merged via #496, with P0.2–P0.7 already completed on
 main by parallel agents.
@@ -60,7 +60,8 @@ main by parallel agents.
 | H21.3 / LivingMemory Live Recall + Eval Mode | `codex-living-memory-recall-eval` | #553 | ✅ merged | Codex | Post-fusion LivingMemory TCM re-rank + `/api/memory/eval/run?mode=recall` |
 | H21.3 / DailyReflector LivingMemory Handoff | `codex-living-memory-daily-reflector` | #554 | ✅ merged | Codex | Durable reflection idempotency + gated lesson handoff to LivingMemory/core |
 | H21.3 / LivingMemory Core Prompt Injection | `codex-living-core-prompt-injection` | #555 | ✅ merged | Codex | Gated bounded `living.core` facts in shared plain/stream prompt path |
-| H21.3 / LivingMemory Core Persistence | `codex-living-core-persistence` | — | ⏳ in progress | Codex | JsonStore-backed bounded `living.core` under runtime data root |
+| H21.3 / LivingMemory Core Persistence | `codex-living-core-persistence` | #556 | ✅ merged | Codex | JsonStore-backed bounded `living.core` under runtime data root |
+| H21.3 / LivingMemory Tier Persistence | `codex-living-tier-persistence` | — | ⏳ in progress | Codex | JsonStore-backed tier metadata under runtime data root |
 
 Status legend: ⏳ in progress · 🟡 draft PR · 🟢 CI green · ✅ merged · 🔴 conflict
 
@@ -68,11 +69,11 @@ Status legend: ⏳ in progress · 🟡 draft PR · 🟢 CI green · ✅ merged �
 
 ## Fișiere blocate (în PR activ)
 
-`codex-living-core-persistence` currently owns
+`codex-living-tier-persistence` currently owns
 `agents/core/cognition/memory.py`, `agents/core/orchestrator.py`,
 `tests/test_living_memory_h21_3.py`, `tests/test_o26_p2_memory_consolidation.py`,
-`docs/superpowers/specs/2026-07-05-living-core-persistence-design.md`,
-`docs/superpowers/plans/2026-07-05-living-core-persistence.md`,
+`docs/superpowers/specs/2026-07-05-living-tier-persistence-design.md`,
+`docs/superpowers/plans/2026-07-05-living-tier-persistence.md`,
 `BACKLOG.md`, `STATUS.md`, `docs/COGNITION.md`, and `docs/SPRINT.md`.
 
 ---
@@ -93,7 +94,7 @@ Current order:
   10. O26-P3.6 Landing Page Dev Half (#512) ✅
 ```
 
-Current backlog state: **0.45 High-Risk Automation Contracts — payment + signal + plugin + social + write-back + outbound call + Tool-RPC + NodeMesh + media-generation + desktop-step + B1 skill/host-control live gate adoption** is merged in #529/#531/#533/#535/#537/#539/#541/#543/#545/#547/#550. Safe Comms channel inbox transport v0 is delivered in #551; eval-nightly parser hotfix #552 is merged; H21.3 live recall integration is merged in #553; H21.3 DailyReflector durable LivingMemory handoff is merged in #554; H21.3 core prompt injection is merged in #555. Remaining TASK-2/O26 tail is owner live-data/plugin setup plus non-v0 inbox channels. Active WIP is H21.3 LivingMemory core persistence.
+Current backlog state: **0.45 High-Risk Automation Contracts — payment + signal + plugin + social + write-back + outbound call + Tool-RPC + NodeMesh + media-generation + desktop-step + B1 skill/host-control live gate adoption** is merged in #529/#531/#533/#535/#537/#539/#541/#543/#545/#547/#550. Safe Comms channel inbox transport v0 is delivered in #551; eval-nightly parser hotfix #552 is merged; H21.3 live recall integration is merged in #553; H21.3 DailyReflector durable LivingMemory handoff is merged in #554; H21.3 core prompt injection is merged in #555; H21.3 core persistence is merged in #556. Remaining TASK-2/O26 tail is owner live-data/plugin setup plus non-v0 inbox channels. Active WIP is H21.3 LivingMemory tier persistence.
 
 ---
 
@@ -267,6 +268,11 @@ Generalizează reflecția nocturnă din *rezumă-ziua* în *pre-raționează-pen
 [H21.3]   Red tests: `CoreMemory(path=...)` and `LivingMemory(core_path=...)` were unsupported; Orchestrator core facts stayed process-local
 [H21.3]   Implemented JsonStore-backed bounded `CoreMemory`, `LivingMemory(core_path=...)`, and production `memory_logs/cognition/core_memory.json` wiring
 [Verify]  LivingMemory/core persistence focused suite green: 26 passed
+[PR]      #556 full GitHub Actions green and squash-merged
+[H21.3]   Started LivingMemory tier persistence on `codex-living-tier-persistence`
+[H21.3]   Red tests: `TieredMemory(path=...)` and `LivingMemory(tiers_path=...)` were unsupported; Orchestrator tier metadata stayed process-local
+[H21.3]   Implemented JsonStore-backed tier records, persistence on add/access/maintain/forget, and production `memory_logs/cognition/living_tiers.json` wiring
+[Verify]  LivingMemory/tier persistence focused suite green: 29 passed
 [ORIZONT 25] 2026-07-03 — created `codex-integrate-verified-developments` from `origin/main`
 [ORIZONT 25] merged #487 M1.1, #488 M1.2, #489 M2.3, #490 M2.1, #491 status correction locally
 [Docs]        BACKLOG/STATUS/ARCHITECTURE/HUD remaining/SPRINT refreshed: M1.1,M1.2,M2.1,M2.3 done; M2.4 partial

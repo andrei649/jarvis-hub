@@ -201,7 +201,10 @@ class Orchestrator:
             from .paths import data_path
             self.cognition.register_module(
                 "memory",
-                LivingMemory(core_path=data_path("cognition", "core_memory.json")),
+                LivingMemory(
+                    core_path=data_path("cognition", "core_memory.json"),
+                    tiers_path=data_path("cognition", "living_tiers.json"),
+                ),
             )
             from .cognition.learning import LearningModule                                        # H21.4
             self.cognition.register_module("learning", LearningModule())
