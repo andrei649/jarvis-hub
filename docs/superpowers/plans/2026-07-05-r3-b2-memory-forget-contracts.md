@@ -70,4 +70,4 @@
 - [x] Run `python scripts/status_sync.py --check`.
 - [x] Run `git diff --check`.
 - [x] Commit, push, and open draft PR #582.
-- [ ] Wait for CI, mark ready, then merge when green.
+- [x] Wait for CI, mark ready, then merge when green.

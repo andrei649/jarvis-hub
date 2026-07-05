@@ -59,7 +59,7 @@ python -m pytest tests/ -v          # ~3,687 passed, 6 skipped (counter synced v
 > MCP tool calls through a live contract. R2 is merged in #580: inbound taint
 > now has kernel-independent teeth at the autonomy queue, edited inbound tasks
 > are re-marked before policy re-evaluation, and inbound memory embeddings stay
-> visibly tainted through recall provenance. Draft PR #582 adds live
+> visibly tainted through recall provenance. R3-B2 is merged in #582: live
 > contract gates to external KG writes and destructive forget purge before state
 > mutation.
 
