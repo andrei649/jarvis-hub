@@ -63,10 +63,9 @@ python -m pytest tests/ -v          # ~3,691 passed, 6 skipped (counter synced v
 > contract gates to external KG writes and destructive forget purge before state
 > mutation. R3-B3 is merged in #584: inbound A2A task intake and autonomy
 > escalation fan-out now have contract-denial teeth before inbox writes or
-> channel sends. R3-B4 is active on `codex-r3-b4-mcp-route-tool-contracts`:
-> mutating MCP route tools now have a local-green reusable contract gate after
-> identity and before kernel mediation or adapter writes; draft PR #586 has CI
-> pending.
+> channel sends. R3-B4 is merged in #586: mutating MCP route tools now have a
+> reusable contract gate after identity and before kernel mediation or adapter
+> writes; full PR CI was green before merge.
 
 ---
 
