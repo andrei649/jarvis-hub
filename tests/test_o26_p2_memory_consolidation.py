@@ -80,6 +80,23 @@ async def test_orchestrator_living_core_uses_runtime_data_root(monkeypatch, tmp_
     assert reloaded.core.list() == ["Andrei wants durable core facts."]
 
 
+async def test_orchestrator_living_tiers_use_runtime_data_root(monkeypatch, tmp_path):
+    orch, _fake = await make_golden_orchestrator(monkeypatch, tmp_path)
+    _enable_living_memory(orch)
+    sid = await orch.memory.new_session("o26_p2_tier_persist")
+
+    await orch.handle_input(TURN, channel="web", session_id=sid)
+
+    tiers_path = tmp_path / "cognition" / "living_tiers.json"
+    assert tiers_path.exists()
+
+    from agents.core.cognition.memory import LivingMemory
+    reloaded = LivingMemory(tiers_path=tiers_path)
+    records = reloaded.records(prefix=f"turn:{sid}:")
+    assert len(records) == 1
+    assert records[0]["content"]["turn_ref"] == records[0]["id"]
+
+
 def test_scheduler_registers_memory_maintenance_job():
     calls = []
 

@@ -131,53 +131,91 @@ def tier_for(activation: float, hot: float = 0.5, warm: float = 0.2) -> str:
     return HOT if activation >= hot else (WARM if activation >= warm else COLD)
 
 
-class TieredMemory:
+class TieredMemory(JsonStore):
     """Hot/warm/cold tiering by activation. Maintenance demotes; only the user deletes."""
 
-    def __init__(self, decay: float = 0.5) -> None:
+    def __init__(self, decay: float = 0.5, path: str | Path | None = None) -> None:
         self.decay = decay
-        self._items: dict[str, dict] = {}
+        super().__init__(path)
+
+    def _serialize(self):
+        return {"items": self._items}
+
+    def _deserialize(self, raw) -> None:
+        items = raw.get("items", {}) if isinstance(raw, dict) else {}
+        self._items = {}
+        if not isinstance(items, dict):
+            return
+        for key, value in items.items():
+            if isinstance(value, dict):
+                rec = dict(value)
+                rec["id"] = str(rec.get("id") or key)
+                rec["activation"] = round(float(rec.get("activation", 0.0) or 0.0), 3)
+                rec["tier"] = rec.get("tier") or tier_for(rec["activation"])
+                rec["accesses"] = int(rec.get("accesses", 0) or 0)
+                rec["ts"] = float(rec.get("ts", 0.0) or 0.0)
+                rec["embed_version"] = int(rec.get("embed_version", 1) or 1)
+                self._items[str(key)] = rec
 
     def add(self, mem_id: str, content, activation: float = 1.0, embed_version: int = 1) -> dict:
         rec = {"id": mem_id, "content": content, "activation": round(activation, 3),
                "tier": tier_for(activation), "accesses": 0,
                "ts": time.time(), "embed_version": embed_version}
-        self._items[mem_id] = rec
+        with self._lock:
+            self._items[mem_id] = rec
+            self._save()
         return dict(rec)
 
     def access(self, mem_id: str) -> Optional[dict]:
-        r = self._items.get(mem_id)
-        if r is None:
-            return None
-        r["accesses"] += 1
-        r["activation"] = round(min(1.0, r["activation"] + 0.2), 3)   # reactivate
-        r["tier"] = tier_for(r["activation"])
-        return dict(r)
+        with self._lock:
+            r = self._items.get(mem_id)
+            if r is None:
+                return None
+            r["accesses"] += 1
+            r["activation"] = round(min(1.0, r["activation"] + 0.2), 3)   # reactivate
+            r["tier"] = tier_for(r["activation"])
+            self._save()
+            return dict(r)
 
     def maintain(self) -> dict:
         """Decay activation and re-tier. NEVER deletes — cold is the floor."""
         demoted = 0
-        for r in self._items.values():
-            r["activation"] = round(r["activation"] * self.decay, 3)
-            new_tier = tier_for(r["activation"])
-            if new_tier != r["tier"]:
-                demoted += 1
-            r["tier"] = new_tier
-        return {"demoted": demoted, "total": len(self._items)}
+        with self._lock:
+            for r in self._items.values():
+                r["activation"] = round(r["activation"] * self.decay, 3)
+                new_tier = tier_for(r["activation"])
+                if new_tier != r["tier"]:
+                    demoted += 1
+                r["tier"] = new_tier
+            self._save()
+            return {"demoted": demoted, "total": len(self._items)}
 
     def forget(self, mem_id: str) -> bool:
         """The ONLY deletion path — an explicit user action."""
-        return self._items.pop(mem_id, None) is not None
+        with self._lock:
+            deleted = self._items.pop(mem_id, None) is not None
+            if deleted:
+                self._save()
+            return deleted
 
     def by_tier(self) -> dict:
         out = {HOT: 0, WARM: 0, COLD: 0}
-        for r in self._items.values():
-            out[r["tier"]] += 1
+        with self._lock:
+            for r in self._items.values():
+                out[r["tier"]] += 1
         return out
 
     def get(self, mem_id: str) -> Optional[dict]:
-        r = self._items.get(mem_id)
-        return dict(r) if r else None
+        with self._lock:
+            r = self._items.get(mem_id)
+            return dict(r) if r else None
+
+    def records(self, prefix: str = "", limit: int = 50) -> list[dict]:
+        with self._lock:
+            keys = sorted(self._items.keys())
+            if prefix:
+                keys = [k for k in keys if k.startswith(prefix)]
+            return [dict(self._items[k]) for k in keys[:max(1, limit)]]
 
 
 # ── re-projection (re-embed onto a better model) ─────────────────────────────
@@ -258,8 +296,9 @@ class LivingMemory:
         embed_version: int = 1,
         encode_threshold: float = 0.3,
         core_path: str | Path | None = None,
+        tiers_path: str | Path | None = None,
     ) -> None:
-        self.tiers = TieredMemory()
+        self.tiers = TieredMemory(path=tiers_path)
         self.core = CoreMemory(path=core_path)
         self.embed_version = embed_version
         self.encode_threshold = encode_threshold
@@ -280,10 +319,7 @@ class LivingMemory:
 
     def records(self, prefix: str = "", limit: int = 50) -> "list[dict]":
         """Inspectable records for integration tests/API callers; no mutation."""
-        keys = sorted(self.tiers._items.keys())
-        if prefix:
-            keys = [k for k in keys if k.startswith(prefix)]
-        return [self.tiers.get(k) for k in keys[:max(1, limit)]]
+        return self.tiers.records(prefix=prefix, limit=limit)
 
     def status(self) -> dict:
         return {"available": True, "tiers": self.tiers.by_tier(),
