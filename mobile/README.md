@@ -16,6 +16,10 @@ It talks to the same HTTP API the web HUD uses (`agents/web.py`):
   with approve / reject / defer actions posted to
   `POST /autonomy/tasks/{id}/decision`. This uses the same unified approval
   funnel as the browser HUD and requires the hub admin token.
+- **Comms** — live Safe Comms channel inbox over `GET /api/channels/inbox*`.
+  Read telegram/web threads, refresh messages, and queue governed replies to
+  `POST /api/channels/inbox/{thread_id}/reply`; the server still sends only
+  after the existing approval funnel accepts the task.
 - **Settings** — point the app at any hub (`http://<host>:<port>`), set an
   optional `JARVIS_USER_TOKEN` plus `JARVIS_ADMIN_TOKEN`, and test the connection. Persisted via
   AsyncStorage.
@@ -65,7 +69,7 @@ src/api/sse.ts              pure SSE decoder (unit-tested)
 src/audio/tts.ts            /tts → cache file → expo-audio playback
 src/markdown/               pure Markdown parser (unit-tested) + RN renderer
 src/components/             MessageBubble, AgentPicker, SessionsModal
-src/screens/                Chat / Approvals / Status / Settings
+src/screens/                Chat / Approvals / Comms / Status / Settings
 scripts/gen-icons.js        icon/splash generator
 ```
 
