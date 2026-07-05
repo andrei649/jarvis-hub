@@ -149,9 +149,12 @@ handle_input / handle_input_stream
        • sample personality STATE from {μ,σ,skew} shifted by current MOOD
        • read affect snapshot, status, Objective·Obstacle·Tactic
        • return a deterministic prompt BLOCK  (spliced like _recall_block)   [BOTH prompt builders]
-  3. LLM generate  (+ optional in-character rehearsal draft→critique)
-  4. deliver (+ trait/affect → prosody; affect folded into TTS cache key)
-  5. facade.post_turn(ctx, response):   ── offloaded via asyncio.to_thread ──
+  3. _build_agent_turn_text:
+       • inject bounded LivingMemory core facts when cognition.memory_enabled
+       • normalize each line and label it as background facts, not instructions
+  4. LLM generate  (+ optional in-character rehearsal draft→critique)
+  5. deliver (+ trait/affect → prosody; affect folded into TTS cache key)
+  6. facade.post_turn(ctx, response):   ── offloaded via asyncio.to_thread ──
        • write emotional residue (session-scoped)
        • update mood (attractor relax toward setpoint)
        • salience-tag + encode memory (predictive-coding gate: store the surprise)
@@ -204,6 +207,7 @@ DailyReflector.run  (night window 22:00-07:00, gated by system.reflection_enable
 | **Mastery / calibration** | Cerebellum + metacognition | `cognition/mastery/` | `learning/kc.db` | `cognition.calibration_enabled` | Overconfident → too few samples (Wilson bound); recompute |
 | **Judge (anti-sycophancy)** | PFC inhibition | `cognition/judge/` | — | `cognition.anti_sycophancy_enabled` | Flattery slipping through → judge unwired at registration; Sycophancy Index rising |
 | **Encode gate** | Predictive coding | `_complete_llm_turn → LivingMemory.encode` ✅ | LivingMemory tier records with turn refs/digests + decay ids | `cognition.enabled` + `cognition.memory_enabled` | No records → cognition master/sub-flag off, or the turn bypassed `_complete_llm_turn` |
+| **Core prompt** | PFC working memory | `_build_agent_turn_text → _living_core_memory_block` 🟡 | `LivingMemory.core` bounded facts | `cognition.enabled` + `cognition.memory_enabled` | Core facts absent → memory sub-flag off, empty core, or prompt path bypassed shared builder |
 | **Daily reflection** | Default Mode Network | `DailyReflector.run` ✅ | graph + `ReflectionRunStore` + optional LivingMemory/core lesson handoff | `system.reflection_enabled`; LivingMemory half additionally needs `cognition.enabled` + `cognition.memory_enabled` | Reruns after restart → missing/corrupt reflection ledger; no lesson records → cognition memory flag off or LLM returned no lessons |
 | **Consolidation (NREM/REM)** | Sleep | `scheduler_service.run_memory_maintenance` ✅ | LivingMemory tiers | `cognition.enabled` + `cognition.memory_enabled` | Didn't run → APScheduler job `memory-consolidation-decay` missing, flags off, or job exception |
 | **Homeostasis (SHY)** | Sleep downscaling | `scheduler_service.run_memory_maintenance` ✅ | decay store | `cognition.enabled` + `cognition.memory_enabled` | Recall noisy at scale → decay ranking/candidate inspection not running |

@@ -7,13 +7,13 @@
 
 ## Sesiune curentă
 
-**Data:** 2026-07-05 (post-#553)
+**Data:** 2026-07-05 (post-#554)
 **Lead agent / Conductor:** Codex
-**Obiectiv sesiune:** execute Fable audit safety hardening, fix eval workflow fallout, wire LivingMemory into live recall, then finish the DailyReflector sleep-time memory seam.
-**Branch:** `codex-living-memory-daily-reflector`
+**Obiectiv sesiune:** execute Fable audit safety hardening, fix eval workflow fallout, wire LivingMemory into live recall, finish the DailyReflector sleep-time memory seam, then make bounded core memory visible to agents.
+**Branch:** `codex-living-core-prompt-injection`
 
 **Scope decision (2026-07-04):** O26-P0, P1.1, P2.1, P2.2, P2.3, P2.4, P2.5, P3.1, P3.3, P3.4, P3.5, P3.6, the O26-P3.2 Data Spaces depth slice, the O26-P3.2 Rooms history drawer slice, the O26-P3.2 Capability issue/check UI slice, and the O26-P3.2 Current Mesh Task Fan slice are merged.
-The O26-P3.2 Preferences Tweaks UI slice is merged. The O26-P3.2 Self-hosted Fonts slice is merged in #525. The 0.44 Safe Comms draft-before-send UI slice is merged in #527: frontend draft composition over existing governed social endpoints only. The 0.45 payment live-gate adoption is merged in #529: the existing mandate denial gate now evaluates `PAYMENT_CONTRACT` while preserving denial codes/order. The 0.45 signal governance live-gate adoption is merged in #531: actionable Signal Layer recommendations evaluate `SIGNAL_RECOMMENDATION_CONTRACT` before they can enter the preview-only approval queue. The 0.45 plugin permission live-gate adoption is merged in #533: `PermissionGate.check_call()` evaluates `PLUGIN_CALL_CONTRACT` while preserving boolean outcomes and warning reasons. The 0.45 social draft live-gate adoption is merged in #535: governed X post/reply/DM drafts evaluate `SOCIAL_DRAFT_CONTRACT` before preview/enqueue. The 0.45 write-back draft live-gate adoption is merged in #537: governed Notion/GitHub/Calendar drafts evaluate `WRITEBACK_DRAFT_CONTRACT` before preview/enqueue. The 0.45 outbound call live-gate adoption is merged in #539: Twilio/Telnyx outbound-call requests evaluate `CALL_REQUEST_CONTRACT` before preview/enqueue, after provider/field/interrupt-budget checks. The 0.45 Tool-RPC live-gate adoption is merged in #541: gated Tool-RPC calls evaluate `TOOL_RPC_CALL_CONTRACT` before kernel mediation and approval enqueue. The 0.45 NodeMesh dispatch live-gate adoption is merged in #543: governed node dispatch evaluates `NODE_DISPATCH_CONTRACT` before preview/enqueue. The 0.45 media-generation live-gate adoption is merged in #545: cloud image/thumbnail/video requests evaluate `MEDIA_GENERATION_CONTRACT` before approval enqueue. The 0.45 desktop-step live-gate adoption is merged in #547: mutating desktop operator steps evaluate `DESKTOP_STEP_CONTRACT` before approver callback or driver execution. H17.1a inbound-origin construction is merged in #549. 0.45 Batch B1 skill + host-control contracts are merged in #550. #551 adds Safe Comms channel inbox transport v0 for telegram/web. #552 fixes eval-nightly workflow validation by moving cache-hash expressions out of job-level `env`. #553 merges LivingMemory live recall ordering plus `/api/memory/eval/run?mode=recall`.
+The O26-P3.2 Preferences Tweaks UI slice is merged. The O26-P3.2 Self-hosted Fonts slice is merged in #525. The 0.44 Safe Comms draft-before-send UI slice is merged in #527: frontend draft composition over existing governed social endpoints only. The 0.45 payment live-gate adoption is merged in #529: the existing mandate denial gate now evaluates `PAYMENT_CONTRACT` while preserving denial codes/order. The 0.45 signal governance live-gate adoption is merged in #531: actionable Signal Layer recommendations evaluate `SIGNAL_RECOMMENDATION_CONTRACT` before they can enter the preview-only approval queue. The 0.45 plugin permission live-gate adoption is merged in #533: `PermissionGate.check_call()` evaluates `PLUGIN_CALL_CONTRACT` while preserving boolean outcomes and warning reasons. The 0.45 social draft live-gate adoption is merged in #535: governed X post/reply/DM drafts evaluate `SOCIAL_DRAFT_CONTRACT` before preview/enqueue. The 0.45 write-back draft live-gate adoption is merged in #537: governed Notion/GitHub/Calendar drafts evaluate `WRITEBACK_DRAFT_CONTRACT` before preview/enqueue. The 0.45 outbound call live-gate adoption is merged in #539: Twilio/Telnyx outbound-call requests evaluate `CALL_REQUEST_CONTRACT` before preview/enqueue, after provider/field/interrupt-budget checks. The 0.45 Tool-RPC live-gate adoption is merged in #541: gated Tool-RPC calls evaluate `TOOL_RPC_CALL_CONTRACT` before kernel mediation and approval enqueue. The 0.45 NodeMesh dispatch live-gate adoption is merged in #543: governed node dispatch evaluates `NODE_DISPATCH_CONTRACT` before preview/enqueue. The 0.45 media-generation live-gate adoption is merged in #545: cloud image/thumbnail/video requests evaluate `MEDIA_GENERATION_CONTRACT` before approval enqueue. The 0.45 desktop-step live-gate adoption is merged in #547: mutating desktop operator steps evaluate `DESKTOP_STEP_CONTRACT` before approver callback or driver execution. H17.1a inbound-origin construction is merged in #549. 0.45 Batch B1 skill + host-control contracts are merged in #550. #551 adds Safe Comms channel inbox transport v0 for telegram/web. #552 fixes eval-nightly workflow validation by moving cache-hash expressions out of job-level `env`. #553 merges LivingMemory live recall ordering plus `/api/memory/eval/run?mode=recall`. #554 merges durable DailyReflector idempotency plus gated LivingMemory lesson handoff.
 
 **Previous session:** O26-P0.1 golden harness was merged via #496, with P0.2–P0.7 already completed on
 main by parallel agents.
@@ -58,7 +58,8 @@ main by parallel agents.
 | 0.44 / Safe Comms Channel Inbox Transport v0 | `codex-safe-comms-channel-inbox` | #551 | ✅ merged | Codex | Bounded telegram/web inbox + governed `channel.reply` approval/send loop |
 | Eval Nightly Cache-Key Parser Hotfix | `codex-fix-eval-nightly-cache-context` | #552 | ✅ merged | Codex | `hashFiles()` moved from job `env` into cache action keys; Eval Nightly green |
 | H21.3 / LivingMemory Live Recall + Eval Mode | `codex-living-memory-recall-eval` | #553 | ✅ merged | Codex | Post-fusion LivingMemory TCM re-rank + `/api/memory/eval/run?mode=recall` |
-| H21.3 / DailyReflector LivingMemory Handoff | `codex-living-memory-daily-reflector` | — | ⏳ in progress | Codex | Durable reflection idempotency + gated lesson handoff to LivingMemory/core |
+| H21.3 / DailyReflector LivingMemory Handoff | `codex-living-memory-daily-reflector` | #554 | ✅ merged | Codex | Durable reflection idempotency + gated lesson handoff to LivingMemory/core |
+| H21.3 / LivingMemory Core Prompt Injection | `codex-living-core-prompt-injection` | — | ⏳ in progress | Codex | Gated bounded `living.core` facts in shared plain/stream prompt path |
 
 Status legend: ⏳ in progress · 🟡 draft PR · 🟢 CI green · ✅ merged · 🔴 conflict
 
@@ -66,11 +67,10 @@ Status legend: ⏳ in progress · 🟡 draft PR · 🟢 CI green · ✅ merged �
 
 ## Fișiere blocate (în PR activ)
 
-`codex-living-memory-daily-reflector` currently owns
-`agents/core/autonomy/reflection.py`, `agents/core/orchestrator.py`,
-`agents/core/routers/analytics.py`, `tests/test_daily_reflection.py`,
-`docs/superpowers/specs/2026-07-05-daily-reflector-living-memory-design.md`,
-`docs/superpowers/plans/2026-07-05-daily-reflector-living-memory.md`,
+`codex-living-core-prompt-injection` currently owns
+`agents/core/orchestrator.py`, `tests/test_living_memory_recall_eval.py`,
+`docs/superpowers/specs/2026-07-05-living-core-prompt-design.md`,
+`docs/superpowers/plans/2026-07-05-living-core-prompt.md`,
 `BACKLOG.md`, `STATUS.md`, `docs/COGNITION.md`, and `docs/SPRINT.md`.
 
 ---
@@ -91,7 +91,7 @@ Current order:
   10. O26-P3.6 Landing Page Dev Half (#512) ✅
 ```
 
-Current backlog state: **0.45 High-Risk Automation Contracts — payment + signal + plugin + social + write-back + outbound call + Tool-RPC + NodeMesh + media-generation + desktop-step + B1 skill/host-control live gate adoption** is merged in #529/#531/#533/#535/#537/#539/#541/#543/#545/#547/#550. Safe Comms channel inbox transport v0 is delivered in #551; eval-nightly parser hotfix #552 is merged; H21.3 live recall integration is merged in #553. Remaining TASK-2/O26 tail is owner live-data/plugin setup plus non-v0 inbox channels. Active WIP is H21.3 DailyReflector durable LivingMemory handoff.
+Current backlog state: **0.45 High-Risk Automation Contracts — payment + signal + plugin + social + write-back + outbound call + Tool-RPC + NodeMesh + media-generation + desktop-step + B1 skill/host-control live gate adoption** is merged in #529/#531/#533/#535/#537/#539/#541/#543/#545/#547/#550. Safe Comms channel inbox transport v0 is delivered in #551; eval-nightly parser hotfix #552 is merged; H21.3 live recall integration is merged in #553; H21.3 DailyReflector durable LivingMemory handoff is merged in #554. Remaining TASK-2/O26 tail is owner live-data/plugin setup plus non-v0 inbox channels. Active WIP is H21.3 LivingMemory core prompt injection.
 
 ---
 
@@ -255,6 +255,11 @@ Generalizează reflecția nocturnă din *rezumă-ziua* în *pre-raționează-pen
 [H21.3]   Red tests: reflection idempotency vanished after restart; manual rerun had no durable force path; lessons never reached LivingMemory; cognition-memory off had no explicit no-op proof
 [H21.3]   Implemented `ReflectionRunStore`, `run(force=True)`, Orchestrator gated LivingMemory provider, and metadata-only lesson tier records plus bounded core-memory lessons
 [Verify]  DailyReflector focused suite green: 14 passed
+[PR]      #554 full GitHub Actions green and squash-merged
+[H21.3]   Started LivingMemory core prompt injection on `codex-living-core-prompt-injection`
+[H21.3]   Red tests: `living.core` facts stayed out of `_build_agent_turn_text()` even with cognition memory enabled
+[H21.3]   Implemented gated `[core memory]` block in the shared plain/stream prompt path, with line normalization and background-facts label
+[Verify]  LivingMemory recall/core focused suite green: 8 passed
 [ORIZONT 25] 2026-07-03 — created `codex-integrate-verified-developments` from `origin/main`
 [ORIZONT 25] merged #487 M1.1, #488 M1.2, #489 M2.3, #490 M2.1, #491 status correction locally
 [Docs]        BACKLOG/STATUS/ARCHITECTURE/HUD remaining/SPRINT refreshed: M1.1,M1.2,M2.1,M2.3 done; M2.4 partial
