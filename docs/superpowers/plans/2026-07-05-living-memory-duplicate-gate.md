@@ -60,4 +60,4 @@
 - [x] Update status docs to mark #561 merged and describe the duplicate gate.
 - [x] Run focused cognition/memory suites, py_compile, ruff, bandit, status sync, and diff check.
 - [x] Commit, push, and open draft PR #562.
-- [ ] Monitor CI.
+- [x] Monitor CI and merge #562 after full GitHub Actions passed.

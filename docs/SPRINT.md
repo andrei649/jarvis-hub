@@ -66,7 +66,7 @@ main by parallel agents.
 | H21.3 / Re-projection Maintenance | `codex-living-reprojection-maintenance` | #559 | ✅ merged | Codex | Nightly memory maintenance reports and runs default-off stale tier re-projection |
 | H21.3 / Re-projection Embedder Wiring | `codex-living-reprojection-embedder` | #560 | ✅ merged | Codex | Nightly maintenance passes `MemoryManager.embed` when available and serializes structured tier content |
 | H21.3 / Recall Reactivation | `codex-living-recall-reactivation` | #561 | ✅ merged | Codex | Matched recall hits refresh LivingMemory tier activation + decay access ledger |
-| H21.3 / Duplicate Encoding Gate | `codex-living-memory-duplicate-gate` | #562 | 🟡 draft PR | Codex | Exact duplicate turn digests skip another LivingMemory tier/decay write |
+| H21.3 / Duplicate Encoding Gate | `codex-living-memory-duplicate-gate` | #562 | ✅ merged | Codex | Exact duplicate turn digests skip another LivingMemory tier/decay write |
 
 Status legend: ⏳ in progress · 🟡 draft PR · 🟢 CI green · ✅ merged · 🔴 conflict
 
@@ -74,12 +74,7 @@ Status legend: ⏳ in progress · 🟡 draft PR · 🟢 CI green · ✅ merged �
 
 ## Fișiere blocate (în PR activ)
 
-`codex-living-memory-duplicate-gate` / #562 currently owns
-`agents/core/cognition/memory.py`, `agents/core/orchestrator.py`,
-`tests/test_living_memory_h21_3.py`, `tests/test_o26_p2_memory_consolidation.py`,
-`docs/superpowers/specs/2026-07-05-living-memory-duplicate-gate-design.md`,
-`docs/superpowers/plans/2026-07-05-living-memory-duplicate-gate.md`,
-`BACKLOG.md`, `STATUS.md`, `docs/COGNITION.md`, and `docs/SPRINT.md`.
+No active PR file locks from this session. #562 is merged.
 
 ---
 
@@ -99,7 +94,7 @@ Current order:
   10. O26-P3.6 Landing Page Dev Half (#512) ✅
 ```
 
-Current backlog state: **0.45 High-Risk Automation Contracts — payment + signal + plugin + social + write-back + outbound call + Tool-RPC + NodeMesh + media-generation + desktop-step + B1 skill/host-control live gate adoption** is merged in #529/#531/#533/#535/#537/#539/#541/#543/#545/#547/#550. Safe Comms channel inbox transport v0 is delivered in #551; eval-nightly parser hotfix #552 is merged; H21.3 live recall integration is merged in #553; H21.3 DailyReflector durable LivingMemory handoff is merged in #554; H21.3 core prompt injection is merged in #555; H21.3 core persistence is merged in #556; H21.3 tier persistence is merged in #557; H21.3 forget-purge completeness is merged in #558; H21.3 re-projection maintenance is merged in #559; H21.3 re-projection embedder wiring is merged in #560; H21.3 recall reactivation is merged in #561. Remaining TASK-2/O26 tail is owner live-data/plugin setup plus non-v0 inbox channels. Active WIP is H21.3 duplicate encoding gate in #562.
+Current backlog state: **0.45 High-Risk Automation Contracts — payment + signal + plugin + social + write-back + outbound call + Tool-RPC + NodeMesh + media-generation + desktop-step + B1 skill/host-control live gate adoption** is merged in #529/#531/#533/#535/#537/#539/#541/#543/#545/#547/#550. Safe Comms channel inbox transport v0 is delivered in #551; eval-nightly parser hotfix #552 is merged; H21.3 live recall integration is merged in #553; H21.3 DailyReflector durable LivingMemory handoff is merged in #554; H21.3 core prompt injection is merged in #555; H21.3 core persistence is merged in #556; H21.3 tier persistence is merged in #557; H21.3 forget-purge completeness is merged in #558; H21.3 re-projection maintenance is merged in #559; H21.3 re-projection embedder wiring is merged in #560; H21.3 recall reactivation is merged in #561; H21.3 duplicate encoding gate is merged in #562. Remaining TASK-2/O26 tail is owner live-data/plugin setup plus non-v0 inbox channels.
 
 ---
 
@@ -305,6 +300,7 @@ Generalizează reflecția nocturnă din *rezumă-ziua* în *pre-raționează-pen
 [H21.3]   Implemented bounded `LivingMemory.has_text_digest()` and maps exact duplicate turn digests to zero surprise before encoding
 [Verify]  LivingMemory duplicate gate adjacent suite green: 51 passed; py_compile, ruff, bandit, status-sync, and diff-check clean
 [PR]      #562 opened as draft
+[PR]      #562 merged after full GitHub Actions passed
 [ORIZONT 25] 2026-07-03 — created `codex-integrate-verified-developments` from `origin/main`
 [ORIZONT 25] merged #487 M1.1, #488 M1.2, #489 M2.3, #490 M2.1, #491 status correction locally
 [Docs]        BACKLOG/STATUS/ARCHITECTURE/HUD remaining/SPRINT refreshed: M1.1,M1.2,M2.1,M2.3 done; M2.4 partial
