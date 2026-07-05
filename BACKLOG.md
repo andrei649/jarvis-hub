@@ -28,16 +28,11 @@ python -m pytest tests/ -v          # ~3,600 passed, 6 skipped (counter synced v
 **Server curent** (dacă e pornit): PID vezi `netstat -ano | findstr ":8080 "`.
 **Stack:** Python 3.12 + FastAPI + vanilla React (createElement, no JSX).
 
-> **Recent merge (2026-07-05):** #543 (`codex-o45-node-dispatch-contract-gate`)
+> **Recent merge (2026-07-05):** #545 (`codex-o45-media-gen-contract-gate`)
 > continues 0.45 High-Risk Automation Contracts by adding
-> `NODE_DISPATCH_CONTRACT` to governed NodeMesh dispatch before preview/enqueue.
-> Local red/green, focused NodeMesh/action-auth/contracts/kernel verification,
-> and full GitHub Actions passed before merge.
-
-> **Active WIP (2026-07-05):** #545 (`codex-o45-media-gen-contract-gate`)
-> continues 0.45 by adding `MEDIA_GENERATION_CONTRACT` to cloud media-generation
+> `MEDIA_GENERATION_CONTRACT` to cloud media-generation
 > requests before they can enter the approval queue. Local red/green and focused
-> media/contracts/funnel verification are green.
+> media/contracts/funnel verification, and full GitHub Actions passed before merge.
 
 ---
 
