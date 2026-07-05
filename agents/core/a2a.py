@@ -28,8 +28,9 @@ import os
 import secrets
 import time
 from pathlib import Path
-from typing import Optional, Union
+from typing import Any, Optional, Union
 
+from agents.core.automation_contracts import ContractTemplate, contract_denial, predicate
 from agents.core.paths import data_path
 
 from .persistence import JsonStore
@@ -41,6 +42,44 @@ INBOUND_APPROVED = "approved"
 INBOUND_REJECTED = "rejected"
 
 _MAX_INBOX = 500  # bound the on-disk inbox
+_MAX_CONTRACT_BODY_BYTES = 64_000
+A2A_INBOUND_CONTRACT_KIND = "a2a.inbound"
+
+
+def _a2a_inbound_contract_template() -> ContractTemplate:
+    def _kind_ok(view, now) -> bool:
+        return view.get("kind") == A2A_INBOUND_CONTRACT_KIND
+
+    def _peer_ok(view, now) -> bool:
+        peer_id = view.get("peer_id")
+        return isinstance(peer_id, str) and 0 < len(peer_id) <= 128
+
+    def _task_shape_ok(view, now) -> bool:
+        return view.get("task_type") in {"dict", "list", "scalar", "null"}
+
+    def _body_size_ok(view, now) -> bool:
+        body_len = view.get("body_len")
+        return isinstance(body_len, int) and 0 <= body_len <= _MAX_CONTRACT_BODY_BYTES
+
+    def _keys_ok(view, now) -> bool:
+        keys = view.get("task_keys", ())
+        return isinstance(keys, (list, tuple)) and all(isinstance(k, str) and len(k) <= 128 for k in keys)
+
+    return ContractTemplate(
+        kind=A2A_INBOUND_CONTRACT_KIND,
+        constraints=(
+            predicate("kind_matches", _kind_ok, reason="wrong_kind"),
+            predicate("peer_id_valid", _peer_ok, reason="invalid_peer_id"),
+            predicate("task_shape_valid", _task_shape_ok, reason="invalid_task_shape"),
+            predicate("body_size_bounded", _body_size_ok, reason="body_too_large"),
+            predicate("task_keys_safe", _keys_ok, reason="invalid_task_keys"),
+        ),
+        requires_approval=True,
+        description="A2A inbound tasks must be authenticated, bounded, and land in owner approval.",
+    )
+
+
+A2A_INBOUND_CONTRACT = _a2a_inbound_contract_template()
 
 
 def a2a_enabled() -> bool:
@@ -63,6 +102,48 @@ def _canonical(card: dict) -> bytes:
 
 def sign_card(card: dict, secret: str) -> str:
     return _hmac(secret, _canonical(card))
+
+
+def _body_len(raw_body: Union[bytes, str]) -> int:
+    if isinstance(raw_body, bytes):
+        return len(raw_body)
+    return len(raw_body.encode("utf-8", errors="replace"))
+
+
+def _task_type(value: Any) -> str:
+    if value is None:
+        return "null"
+    if isinstance(value, dict):
+        return "dict"
+    if isinstance(value, list):
+        return "list"
+    return "scalar"
+
+
+def _task_keys(value: Any) -> list[str]:
+    if not isinstance(value, dict):
+        return []
+    keys = [str(k) for k in value]
+    return sorted(k[:128] for k in keys)[:40]
+
+
+def _a2a_contract_denial(peer_id: str, payload: Any, *, raw_body_len: int = 0) -> str | None:
+    has_task_field = isinstance(payload, dict) and "task" in payload
+    task = payload.get("task") if has_task_field else payload
+    contract_payload = {
+        "kind": A2A_INBOUND_CONTRACT_KIND,
+        "peer_id": peer_id,
+        "has_task_field": has_task_field,
+        "task_type": _task_type(task),
+        "task_keys": _task_keys(task),
+        "task_key_count": len(task.keys()) if isinstance(task, dict) else 0,
+        "body_len": raw_body_len,
+    }
+    try:
+        decision = A2A_INBOUND_CONTRACT.evaluate(contract_payload, now=time.time())
+    except Exception:
+        return "contract_error"
+    return contract_denial(decision)
 
 
 class A2ARegistry(JsonStore):
@@ -156,6 +237,9 @@ class A2ARegistry(JsonStore):
             payload = json.loads(raw_body if isinstance(raw_body, str) else raw_body.decode("utf-8"))
         except (ValueError, TypeError, AttributeError) as exc:
             raise ValueError("invalid JSON body") from exc
+        denied = _a2a_contract_denial(peer_id, payload, raw_body_len=_body_len(raw_body))
+        if denied:
+            raise PermissionError(f"contract denied: {denied}")
 
         task_id = secrets.token_urlsafe(8)
         record = {
