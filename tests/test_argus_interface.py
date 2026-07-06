@@ -32,6 +32,19 @@ class _WorldViewStub:
         return {"status": "ok", "lead": lead}
 
 
+class _WorldViewWriteStub:
+    def __init__(self):
+        self.calls = []
+
+    async def watch_aoi(self, aoi_id, rule, *, lead=None, origin="generated"):
+        self.calls.append(("watch_aoi", aoi_id, rule, lead, origin))
+        return {"status": "ok", "tool": "watch_aoi"}
+
+    async def reconstruct_event(self, from_t, to_t, *, bbox="", layers=None, origin="generated"):
+        self.calls.append(("reconstruct_event", from_t, to_t, bbox, layers, origin))
+        return {"status": "ok", "tool": "reconstruct_event"}
+
+
 async def test_argus_routes_signal_layer_when_permitted():
     sig = _SignalStub()
     argus = ArgusInterface(PermissionGate(), signal_layer=sig, worldview=_WorldViewStub())
@@ -51,6 +64,26 @@ async def test_argus_routes_worldview():
     assert state["status"] == "ok" and state["layer"] == "aircraft"
     recon = await argus.recon_overview(lead=30)
     assert recon["lead"] == 30
+
+
+async def test_argus_routes_worldview_write_when_wired():
+    writer = _WorldViewWriteStub()
+    argus = ArgusInterface(
+        PermissionGate(),
+        signal_layer=_SignalStub(),
+        worldview=_WorldViewStub(),
+        worldview_write=writer,
+    )
+
+    watch = await argus.watch_aoi("hormuz", "recon_due", lead=900, origin="generated")
+    replay = await argus.reconstruct_event(100.0, 200.0, bbox="20,40,30,45", layers=["ais"])
+
+    assert watch["tool"] == "watch_aoi"
+    assert replay["tool"] == "reconstruct_event"
+    assert writer.calls == [
+        ("watch_aoi", "hormuz", "recon_due", 900, "generated"),
+        ("reconstruct_event", 100.0, 200.0, "20,40,30,45", ["ais"], "generated"),
+    ]
 
 
 async def test_argus_forbids_unpermitted_agent():
@@ -88,10 +121,18 @@ def test_argus_gate_failure_fails_closed():
 
 
 def test_argus_capabilities_reflects_gate_and_wiring():
-    argus = ArgusInterface(PermissionGate(), signal_layer=_SignalStub(), worldview=None)
+    argus = ArgusInterface(
+        PermissionGate(),
+        signal_layer=_SignalStub(),
+        worldview=None,
+        worldview_write=_WorldViewWriteStub(),
+    )
     caps = argus.capabilities()
     assert caps["agent"] == "argus"
     assert caps["signal_layer"]["permitted"] is True
     assert caps["signal_layer"]["wired"] is True
     assert caps["worldview"]["permitted"] is True
     assert caps["worldview"]["wired"] is False
+    assert caps["worldview_write"]["permitted"] is True
+    assert caps["worldview_write"]["wired"] is True
+    assert caps["worldview_write"]["methods"] == ["watch_aoi", "reconstruct_event"]

@@ -16,7 +16,7 @@ pip install -r requirements-beta.txt
 python serve.py   # canonical entry (boot guards + graceful shutdown; O26-P0.6: the raw
 #   uvicorn entry `python -m uvicorn agents.web:app` now runs the same guards via the lifespan)
 python scripts/install_smoke.py --json  # fast install smoke: boot + /readyz + fake local turn
-python -m pytest tests/ -v          # ~3,693 passed, 6 skipped (counter synced via scripts/status_sync.py)
+python -m pytest tests/ -v          # ~3,707 passed, 6 skipped (counter synced via scripts/status_sync.py)
 ```
 
 > Singurul skip rămas e heartbeat-ul opțional. (Vechiul `tests/test_spotify.py` cu 8 skip-uri a
@@ -74,7 +74,10 @@ python -m pytest tests/ -v          # ~3,693 passed, 6 skipped (counter synced v
 > PR CI was green before merge. AUD-14 channel send-rate env-int is merged in
 > #592: the global `JARVIS_CHANNEL_SEND_RATE` cap now uses shared `env_int()`
 > parsing with malformed/negative values pinned as unlimited; full PR CI was
-> green before merge.
+> green before merge. M3.5/#169 WorldView MCP write transport is active on
+> `codex-m35-worldview-mcp-write-transport`: Argus can reach `watch_aoi` and
+> `reconstruct_event` only through plugin-gate + Action Kernel + scoped HMAC MCP
+> token; local red/green and adjacent WorldView/MCP sweeps are green.
 
 ---
 
@@ -402,7 +405,7 @@ the syscall table · budgets = the scheduler · kill-switch/quarantine = a sysca
 | M3.2 | **Plugin-gated HUD modes honest wiring** — Finance/Health/Knowledge/Family + Comms threads via the `live.ts` swap pattern; honest empty state when unconfigured. ✅ Done 2026-07-04 (#505): Build/Comms/Finance/Health/Knowledge/Family now feed LIVE/SEED mode keys, `/plugins.configured` prevents enabled-but-unconfigured plugins from looking live, `balance` mock payloads stay SEED, and empty Comms channels render without seeded inbox threads. Remaining owner blockers: live bank/broker/quotes keys, Apple Health LAN bridge, websearch backend, WhatsApp bridge URL/hardware, and self-hosted fonts. | 3 | ✅ done |
 | M3.3 | **H23.22 landing page (dev half)** — static, self-contained, from `docs/marketing/` + BRAND_BOOK tokens; demo shot-list support (0.52) | 3 | ✅ done (2026-07-04, #512) — `marketing/landing/index.html` + `demo-shot-list.md`; owner video remains M4 |
 | M3.4 | **AUD-14 config consolidation** (pulled forward — 161 env reads and climbing) — one `env_config` module + one `truthy()`; policy sets derived from `agents.yaml` **keeping the code-enforced LOCAL_ONLY floor** (BUG-14 lesson) | 3 | 🟡 partial / latest slice merged (#592) — O26-P2.1 delivered `env_config` + the boolean ratchet; #592 closes the `JARVIS_CHANNEL_SEND_RATE` numeric-env seam by routing the global outbound channel send cap through `env_int()`. Local red/green + AUD-14 adjacent checks were green, and full PR CI passed before merge. |
-| M3.5 | **#169 WorldView MCP write transport** — stdio client path for `watch_aoi`/`reconstruct_event` behind plugin-gate+kernel; then fold the HMAC token as a kernel Capability (last K2 slice) | 5 | open |
+| M3.5 | **#169 WorldView MCP write transport** — stdio client path for `watch_aoi`/`reconstruct_event` behind plugin-gate+kernel; then fold the HMAC token as a kernel Capability (last K2 slice) | 5 | 🟢 active/local-green — `WorldViewMCPWriteClient` gates writes through `PermissionGate`, Action Kernel, per-agent `plugin:worldview` broker capability, and a scoped `WORLDVIEW_MCP_SECRET` HMAC token before calling the stdio MCP tools. `ArgusInterface` exposes `watch_aoi`/`reconstruct_event` only through that governed path. Local red/green + adjacent WorldView/MCP sweeps are green; PR CI/merge pending. |
 | M3.6 | **Q2 persona-consistency rail** — persona dimension on the live `QualityMonitor` judged vs the SOUL's current version (`soul_versioning`); drift alert like quality-decline | 3 | ✅ done (2026-07-04, #510) — `QualityMonitor` now accepts versioned persona profiles derived from the current SOUL, scores the assistant `output_preview`, stores `persona_score`/`soul_version`, and exposes a separate persona drift alert. Full PR CI green before merge. |
 | M3.7 | **Q3 caring follow-ups in the morning brief** — `build_morning_brief` + `build_unified_digest` recomposition: yesterday's failed/blocked tasks, open-concern facts, upcoming KG dates; zero new capture, rides the existing brief slot | 3 | ✅ done (2026-07-04, #510) — morning brief + unified digest now reuse a read-only caring-followup extractor over failed/blocked tasks, open-concern memory facts, and upcoming/date facts; `/autonomy/brief` and the scheduled morning digest read the existing `MemoryStore`. Full PR CI green before merge. |
 
