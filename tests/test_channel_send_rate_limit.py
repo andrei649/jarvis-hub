@@ -5,6 +5,8 @@ Bounds how much an external webhook channel can broadcast. Off by default
 path is intentionally out of scope (never drop a user reply).
 """
 
+from pathlib import Path
+
 import pytest
 
 from agents.core.channels import send_rate_limit as srl
@@ -37,6 +39,27 @@ def test_per_channel_override_beats_global(monkeypatch):
     assert limit_for("teams") == 30       # override
     assert limit_for("signal") == 5       # falls back to global
     assert limit_for("bad") == 5          # unparseable entry ignored → global
+
+
+def test_malformed_global_cap_is_unlimited(monkeypatch):
+    monkeypatch.setenv("JARVIS_CHANNEL_SEND_RATE", "banana")
+    assert limit_for("whatsapp") == 0
+    assert srl.configured_rates()[0] == 0
+    assert srl.status_snapshot()["enabled"] is False
+
+
+def test_negative_global_cap_is_unlimited(monkeypatch):
+    monkeypatch.setenv("JARVIS_CHANNEL_SEND_RATE", "-4")
+    assert limit_for("whatsapp") == 0
+    assert srl.configured_rates()[0] == 0
+    assert srl.status_snapshot()["enabled"] is False
+
+
+def test_global_channel_send_rate_uses_env_int():
+    src = (Path(__file__).resolve().parents[1]
+           / "agents/core/channels/send_rate_limit.py").read_text(encoding="utf-8")
+    assert 'env_int("JARVIS_CHANNEL_SEND_RATE"' in src
+    assert 'int(os.environ.get("JARVIS_CHANNEL_SEND_RATE"' not in src
 
 
 # ── limiter mechanics ─────────────────────────────────────────────────────────
