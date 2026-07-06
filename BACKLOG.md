@@ -94,8 +94,8 @@ python -m pytest tests/ -v          # ~3,722 passed, 6 skipped (counter synced v
 > #610: `SMTP_PORT` and `IMAP_PORT` now use shared `env_int()` parsing.
 > AUD-14 vector-dimension env-int is merged in #612: `VECTOR_DIMENSION` now
 > uses shared `env_int(..., minimum=1)` parsing. AUD-14 skill-history env-flag
-> is active on `codex-aud14-skill-history-env-flag`:
-> `JARVIS_SKILL_HISTORY` is moving to shared `env_flag()` parsing.
+> is merged in #614: `JARVIS_SKILL_HISTORY` now uses shared `env_flag()`
+> parsing.
 
 ---
 
