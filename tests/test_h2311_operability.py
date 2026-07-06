@@ -11,6 +11,7 @@ These are the productionization pieces a credible 1.0 needs so a supervisor
 - ``core.log.setup_logging`` — attaches a ``RotatingFileHandler`` only when
   opted in (``$JARVIS_LOG_FILE`` or ``system.log_to_file``); never crashes boot.
 """
+import inspect
 import logging
 import os
 import sys
@@ -187,6 +188,33 @@ def test_log_to_file_via_env_rotates(monkeypatch, tmp_path, restore_logging):
     logging.getLogger("jarvis.test.h2311").warning("rotating-marker-h2311")
     h.flush()
     assert "rotating-marker-h2311" in logfile.read_text(encoding="utf-8")
+
+
+def test_log_rotation_sizes_use_shared_env_int(monkeypatch, tmp_path, restore_logging):
+    import core.log as log
+
+    logfile = tmp_path / "logs" / "jarvis.log"
+    monkeypatch.setenv("JARVIS_LOG_FILE", str(logfile))
+    monkeypatch.setenv("JARVIS_LOG_MAX_MB", "not-an-int")
+    monkeypatch.setenv("JARVIS_LOG_BACKUPS", "not-an-int")
+
+    def fake_setting(_cat, key, default):
+        if key == "log_max_mb":
+            return 7
+        if key == "log_backups":
+            return 2
+        return default
+
+    monkeypatch.setattr(log, "_setting", fake_setting)
+    path, max_bytes, backups = log._file_logging_config()
+    assert path == str(logfile)
+    assert max_bytes == 7 * 1024 * 1024
+    assert backups == 2
+
+    src = inspect.getsource(log._file_logging_config)
+    assert 'env_int("JARVIS_LOG_MAX_MB"' in src
+    assert 'env_int("JARVIS_LOG_BACKUPS"' in src
+    assert "os.environ.get(env" not in src
 
 
 def test_log_to_file_via_setting_uses_data_root(monkeypatch, tmp_path, restore_logging):
