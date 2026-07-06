@@ -6,6 +6,7 @@
 > **North Star (vision, principles, phase gates):** [MOONSHOT.md](MOONSHOT.md) — re-rank this backlog against it
 > **Go-Live Plan (features, roadmap, marketing brief):** [GO_LIVE_PLAN.md](GO_LIVE_PLAN.md)
 > **Delivery History (H1–H8 completed sprints):** [docs/HISTORY.md](docs/HISTORY.md)
+> **Hermes migration v3 plan (candidate, pending Fable review):** [docs/research/2026-07-06-hermes-agent-migration-plan.md](docs/research/2026-07-06-hermes-agent-migration-plan.md)
 
 **S = story points (1 = ~jumătate de zi) · P = prioritate (P0–P3)**
 
@@ -100,8 +101,8 @@ python -m pytest tests/ -v          # ~3,727 passed, 6 skipped (counter synced v
 > AUD-14 CORS-origins env-list is merged in #618: `JARVIS_CORS_ORIGINS` now
 > uses shared `env_list()` parsing. AUD-14 plugin-grants env-list is merged in
 > #620: `JARVIS_PLUGIN_GRANTS` now uses shared `env_list()` parsing. AUD-14
-> trust env-flags is active on `codex-aud14-trust-env-flags`: trust-status
-> mic/strict-local env reads are moving to shared `env_flag()` parsing.
+> trust env-flags is merged in #622: trust-status mic/strict-local env reads
+> now use shared `env_flag()` parsing.
 
 ---
 
@@ -1366,6 +1367,9 @@ chain-of-thought leak / mid-sentence truncation fixed. Kill-switch:
 ## ORIZONT 20 — Hermes Mining (capabilități nete din `hermes-agent`, post-1.0) — 6/6 ✅
 
 > Sursă: research [docs/research/2026-06-07-hermes-agent.md](docs/research/2026-06-07-hermes-agent.md) §7.
+> Follow-up plan: [docs/research/2026-07-06-hermes-agent-migration-plan.md](docs/research/2026-07-06-hermes-agent-migration-plan.md)
+> captures the v3 expert replication plan as candidate scope pending Fable review; it does not reopen the
+> delivered 6/6 ORIZONT 20 rows by itself.
 > `hermes-agent` (NousResearch, MIT, ~185.7k★, activ) se suprapune masiv cu OpenClaw (are chiar
 > `hermes claw migrate`), așa că **gap-urile de reach/UX sunt deja trackuite** din
 > `2026-06-05-openclaw-feature-analysis.md`: canale (H12.16), node mesh (H12.17), canvas (H12.18),
