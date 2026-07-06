@@ -1423,6 +1423,28 @@ chain-of-thought leak / mid-sentence truncation fixed. Kill-switch:
 > nu-l vedea; (4) `channel="subagent"` lipsea din skip-set (review per spawn). +8 teste regresie
 > (`test_review_strict_local.py`, `test_review_findings_regressions.py`).
 
+### H20 migration-plan Phase 3–4–5 primitive (Codex, 2026-07-06)
+
+> Livrat de Codex în paralel cu valul de mai sus (agenți diferiți, fișiere disjuncte —
+> zero coliziune), executând fazele rămase din planul „Migrate hermes-agent's best
+> features" (`docs/research/2026-07-06-hermes-agent-migration-plan.md`). Acestea sunt
+> **primitive pure, offline-testabile** — două dintre ele (H20.M3b/M3c) sunt deja
+> **cablate live** în `Sandbox`; restul așteaptă integrarea runtime (execute_code prin
+> Docker/SSH file-RPC, session model live în gateway).
+
+| # | Item | S | P | Dep | Sursă |
+|---|------|---|---|-----|-------|
+| H20.M1 ✅ | **Provider registry declarativ (Phase 4, lite)** — `core/llm/providers/` `ProviderProfile`/`ProviderRegistry`: metadate statice per provider (auth type/env, base URL + env override, capabilities, fallback models) + `status()` care raportează `configured` fără să expună secrete. 6 profile built-in (lm-studio, ollama, gemini, anthropic, openrouter, openai-compatible). `HybridRouter.provider_catalog()` e un accessor READ-ONLY — nu schimbă deciziile de rutare (acelea rămân la `HybridRouter`/backend-urile existente). **Merged #625.** | 3 | P3 | — | hermes `providers/base.py` (ProviderProfile) |
+| H20.M2 ✅ | **Channel session primitives (Phase 5, preliminar)** — `channels/session.py`: `SessionSource`/`DeliveryTarget`/`DeliveryDecision` (dataclass-uri pure) + `build_session_key()` (id determinist, filesystem-safe, din thread/sender/client) + `DeliveryRouter.resolve()` (decide send/skip pt. mesaje goale, surse silent/local-only, target explicit vs. home-channel). **Nu schimbă rutarea live a gateway-ului încă** — e fundația pt. continuitatea de sesiune cross-canal din plan. **Merged #626.** | 3 | P3 | — | hermes `gateway/session.py` (SessionSource) |
+| H20.M3a ✅ | **Execution environment primitives (Phase 3, preliminar)** — `environments/__init__.py`: `EnvironmentProfile` pt. backend-urile suportate (local/docker/ssh — isolated/remote/supports_file_rpc), `build_cwd_marker`/`extract_cwd_marker` (protocolul de marcaj CWD pt. backend-uri remote), `scrub_child_env`/`prepare_python_child_env` (filtrare nume-secrete + allowlist prefixe sigure + `WINDOWS_ESSENTIAL_ENV_VARS` — jarvis e Windows-primary). **Merged #627.** | 5 | P2 | — | hermes `tools/environments/*`, `_scrub_child_env` |
+| H20.M3b ✅ | **File-RPC primitives (Phase 3)** — `environments/file_rpc.py` `FileRPCStore`: store JSON UTF-8 request/response pe disc (scriere atomică tmp+replace), buget de tool-calls (`ToolCallLimitExceeded`), validare strictă a request-urilor. Fundația transportului remote (Docker/SSH) pt. `execute_code` — încă neconectat la `tool_rpc.py` live. **Merged #628.** | 5 | P2 | H20.M3a | hermes `code_execution_tool.py` (file-based RPC) |
+| H20.M3c ✅ | **Output-limit helpers + wiring LIVE în Sandbox (Phase 3)** — `environments/output_limits.py` `truncate_text()` (buget pe bytes, head+tail, notă de trunchiere explicită, non-ascunsă). **#629** adaugă helper-ul; **#630** cablează `prepare_python_child_env` LIVE în `Sandbox._run_python`/`_run_shell` (child-ul de subprocess/Docker nu mai moștenește mediul host brut); **#631** cablează `truncate_text` LIVE în `Sandbox` (`max_output_bytes`, default 50_000) — stdout/stderr trec prin `_decode_output()` înainte de a ajunge în `SandboxResult`, închizând vectorul DoS-prin-output. **Merged #629, #630, #631.** | 5 | P2 | H20.M3a | hermes env-scrub + resource caps |
+
+> **Total H20.M:** ~21 SP. Secvențiere spre integrare completă: H20.M3a/b → conectare la
+> `tool_rpc.py`/`sandbox.py` pentru un backend SSH remote real (Phase 3 completă) →
+> H20.M2 → cablare live în `gateway`/`channel_manager` (Phase 5 completă) → H20.M1 →
+> extindere `/model` cu catalogul de provideri (Phase 4 completă).
+
 
 ---
 
