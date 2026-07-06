@@ -25,6 +25,8 @@ import os
 import threading
 import time
 
+from agents.core.env_config import env_int
+
 WINDOW_SECONDS = 60.0
 
 
@@ -40,6 +42,10 @@ def _parse_rates(raw: str) -> dict[str, int]:
     return out
 
 
+def _global_cap() -> int:
+    return env_int("JARVIS_CHANNEL_SEND_RATE", 0, minimum=0)
+
+
 def limit_for(channel_id: str) -> int:
     """Per-minute cap for *channel_id* from the environment. 0 = unlimited (default).
 
@@ -49,10 +55,7 @@ def limit_for(channel_id: str) -> int:
     rates = _parse_rates(os.environ.get("JARVIS_CHANNEL_SEND_RATES", ""))
     if channel_id in rates:
         return max(0, rates[channel_id])
-    try:
-        return max(0, int(os.environ.get("JARVIS_CHANNEL_SEND_RATE", "0")))
-    except ValueError:
-        return 0
+    return _global_cap()
 
 
 class SendRateLimiter:
@@ -122,11 +125,7 @@ def reset(channel_id: str | None = None) -> None:
 
 def configured_rates() -> tuple[int, dict[str, int]]:
     """``(global_cap, per_channel_caps)`` from the environment. 0 = unlimited."""
-    try:
-        global_cap = max(0, int(os.environ.get("JARVIS_CHANNEL_SEND_RATE", "0")))
-    except ValueError:
-        global_cap = 0
-    return global_cap, _parse_rates(os.environ.get("JARVIS_CHANNEL_SEND_RATES", ""))
+    return _global_cap(), _parse_rates(os.environ.get("JARVIS_CHANNEL_SEND_RATES", ""))
 
 
 def status_snapshot() -> dict:
