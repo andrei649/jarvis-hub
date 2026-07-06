@@ -59,15 +59,11 @@ def test_non_dict_result_still_wrapped_under_budget():
 def test_coordinator_parses_env_budget(monkeypatch):
     """The coordinator turns JARVIS_TASK_MAX_SECONDS into the executor's budget; a blank or
     non-positive value means unbounded (mirrors the parsing in autonomy_coordinator)."""
-    import os
+    from agents.core.env_config import env_float
 
     def parse():
-        raw = os.environ.get("JARVIS_TASK_MAX_SECONDS", "").strip()
-        try:
-            v = float(raw) if raw else None
-        except ValueError:
-            v = None
-        return v if (v is None or v > 0) else None
+        v = env_float("JARVIS_TASK_MAX_SECONDS", 0.0, minimum=0.0)
+        return v if v > 0 else None
 
     monkeypatch.delenv("JARVIS_TASK_MAX_SECONDS", raising=False)
     assert parse() is None
@@ -77,3 +73,13 @@ def test_coordinator_parses_env_budget(monkeypatch):
     assert parse() is None
     monkeypatch.setenv("JARVIS_TASK_MAX_SECONDS", "nonsense")
     assert parse() is None
+
+
+def test_coordinator_task_budget_uses_shared_env_float():
+    import inspect
+
+    import agents.core.autonomy_coordinator as coordinator
+
+    src = inspect.getsource(coordinator.AutonomyCoordinator.build_executor)
+    assert 'env_float("JARVIS_TASK_MAX_SECONDS"' in src
+    assert 'os.environ.get("JARVIS_TASK_MAX_SECONDS"' not in src

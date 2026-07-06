@@ -109,12 +109,15 @@ def env_int(name: str, default: int, minimum: int | None = None) -> int:
     return value
 
 
-def env_float(name: str, default: float) -> float:
-    """Best-effort float: unset, blank, or non-numeric → *default* (never raises)."""
+def env_float(name: str, default: float, minimum: float | None = None) -> float:
+    """Best-effort float: unset, blank, non-numeric, or out-of-range → *default*."""
     raw = os.environ.get(name, "").strip()
     if not raw:
         return default
     try:
-        return float(raw)
+        value = float(raw)
     except ValueError:
         return default
+    if minimum is not None and value < minimum:
+        return default
+    return value

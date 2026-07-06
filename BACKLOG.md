@@ -16,7 +16,7 @@ pip install -r requirements-beta.txt
 python serve.py   # canonical entry (boot guards + graceful shutdown; O26-P0.6: the raw
 #   uvicorn entry `python -m uvicorn agents.web:app` now runs the same guards via the lifespan)
 python scripts/install_smoke.py --json  # fast install smoke: boot + /readyz + fake local turn
-python -m pytest tests/ -v          # ~3,710 passed, 6 skipped (counter synced via scripts/status_sync.py)
+python -m pytest tests/ -v          # ~3,711 passed, 6 skipped (counter synced via scripts/status_sync.py)
 ```
 
 > Singurul skip rămas e heartbeat-ul opțional. (Vechiul `tests/test_spotify.py` cu 8 skip-uri a
@@ -79,7 +79,9 @@ python -m pytest tests/ -v          # ~3,710 passed, 6 skipped (counter synced v
 > plugin-gate + Action Kernel + scoped HMAC MCP token; full PR CI was green
 > before merge. AUD-14 LLM model-name config is merged in #596: LLM
 > model-name defaults and the `JARVIS_DEEP_MODEL` override now live in one
-> shared config module.
+> shared config module. AUD-14 task-budget env-float is in progress in #598
+> (`codex-aud14-task-budget-env-float`): `JARVIS_TASK_MAX_SECONDS` is moving
+> from local try/except parsing onto shared `env_float()`.
 
 ---
 
