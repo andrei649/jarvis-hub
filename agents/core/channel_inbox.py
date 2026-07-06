@@ -145,6 +145,7 @@ class ChannelInboxStore(JsonStore):
         sender = str(sender or _sender_from_metadata(channel, metadata or ""))
         thread_id = thread_id or _thread_id(channel, sender, reply)
         message_id = _message_id(channel, thread_id, direction, clean_text, ts)
+        taint_fields = _taint_metadata(metadata or {})
         rec = self._public({
             "id": message_id,
             "thread_id": thread_id,
@@ -156,6 +157,7 @@ class ChannelInboxStore(JsonStore):
             "reply": reply,
             "reply_to": reply_to,
             "ts": ts,
+            **taint_fields,
         })
         with self._lock:
             self._messages.append(rec)
@@ -176,6 +178,9 @@ class ChannelInboxStore(JsonStore):
             "reply": dict(message.get("reply") or {}),
             "reply_to": str(message.get("reply_to", "")),
             "ts": float(message.get("ts") or 0.0),
+            "tainted": bool(message.get("tainted")),
+            "taint_source": str(message.get("taint_source", "")),
+            "injection_flags": _injection_flags(message.get("injection_flags")),
         }
         return out
 
@@ -197,6 +202,22 @@ def _sender_from_metadata(channel: str, metadata: dict | str) -> str:
         if isinstance(value, (str, int)) and str(value):
             return str(value)
     return channel
+
+
+def _taint_metadata(metadata: dict) -> dict:
+    if not isinstance(metadata, dict):
+        return {"tainted": False, "taint_source": "", "injection_flags": []}
+    return {
+        "tainted": bool(metadata.get("tainted")),
+        "taint_source": str(metadata.get("taint_source", "")),
+        "injection_flags": _injection_flags(metadata.get("injection_flags")),
+    }
+
+
+def _injection_flags(value: Any) -> list[str]:
+    if not isinstance(value, list):
+        return []
+    return [str(item) for item in value if isinstance(item, str)][:20]
 
 
 def _thread_id(channel: str, sender: str, reply: dict) -> str:
