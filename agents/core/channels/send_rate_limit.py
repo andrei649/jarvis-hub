@@ -21,29 +21,20 @@ Config (read at check time, so it's live-tunable and test-friendly):
 
 from __future__ import annotations
 
-import os
 import threading
 import time
 
-from agents.core.env_config import env_int
+from agents.core.env_config import env_int, env_int_map
 
 WINDOW_SECONDS = 60.0
 
 
-def _parse_rates(raw: str) -> dict[str, int]:
-    out: dict[str, int] = {}
-    for pair in (raw or "").split(","):
-        cid, sep, val = pair.strip().partition(":")
-        if sep and cid.strip():
-            try:
-                out[cid.strip()] = int(val)
-            except ValueError:
-                continue
-    return out
-
-
 def _global_cap() -> int:
     return env_int("JARVIS_CHANNEL_SEND_RATE", 0, minimum=0)
+
+
+def _per_channel_caps() -> dict[str, int]:
+    return env_int_map("JARVIS_CHANNEL_SEND_RATES", {})
 
 
 def limit_for(channel_id: str) -> int:
@@ -52,7 +43,7 @@ def limit_for(channel_id: str) -> int:
     A per-channel ``JARVIS_CHANNEL_SEND_RATES`` entry wins over the global
     ``JARVIS_CHANNEL_SEND_RATE``.
     """
-    rates = _parse_rates(os.environ.get("JARVIS_CHANNEL_SEND_RATES", ""))
+    rates = _per_channel_caps()
     if channel_id in rates:
         return max(0, rates[channel_id])
     return _global_cap()
@@ -125,7 +116,7 @@ def reset(channel_id: str | None = None) -> None:
 
 def configured_rates() -> tuple[int, dict[str, int]]:
     """``(global_cap, per_channel_caps)`` from the environment. 0 = unlimited."""
-    return _global_cap(), _parse_rates(os.environ.get("JARVIS_CHANNEL_SEND_RATES", ""))
+    return _global_cap(), _per_channel_caps()
 
 
 def status_snapshot() -> dict:

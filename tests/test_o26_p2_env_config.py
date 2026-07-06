@@ -26,6 +26,7 @@ from agents.core.env_config import (  # noqa: E402
     env_flag,
     env_float,
     env_int,
+    env_int_map,
     env_json_object,
     env_str,
     truthy,
@@ -109,6 +110,17 @@ def test_env_json_object_never_raises_and_requires_object(monkeypatch):
     assert env_json_object(VAR, default) == default
     monkeypatch.setenv(VAR, '{"telnyx":{"connection_id":"abc"}}')
     assert env_json_object(VAR, default) == {"telnyx": {"connection_id": "abc"}}
+
+
+def test_env_int_map_never_raises_and_skips_bad_entries(monkeypatch):
+    default = {"fallback": 9}
+
+    monkeypatch.delenv(VAR, raising=False)
+    assert env_int_map(VAR, default) == default
+    monkeypatch.setenv(VAR, "")
+    assert env_int_map(VAR, default) == default
+    monkeypatch.setenv(VAR, "whatsapp:2, teams:30 ,junk,bad:x, negative:-1")
+    assert env_int_map(VAR) == {"whatsapp": 2, "teams": 30, "negative": -1}
 
 
 # ── layer 2: the convention guard (the ratchet) ──────────────────────────────
