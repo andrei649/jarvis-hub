@@ -16,7 +16,7 @@ pip install -r requirements-beta.txt
 python serve.py   # canonical entry (boot guards + graceful shutdown; O26-P0.6: the raw
 #   uvicorn entry `python -m uvicorn agents.web:app` now runs the same guards via the lifespan)
 python scripts/install_smoke.py --json  # fast install smoke: boot + /readyz + fake local turn
-python -m pytest tests/ -v          # ~3,722 passed, 6 skipped (counter synced via scripts/status_sync.py)
+python -m pytest tests/ -v          # ~3,723 passed, 6 skipped (counter synced via scripts/status_sync.py)
 ```
 
 > Singurul skip rămas e heartbeat-ul opțional. (Vechiul `tests/test_spotify.py` cu 8 skip-uri a
@@ -95,7 +95,9 @@ python -m pytest tests/ -v          # ~3,722 passed, 6 skipped (counter synced v
 > AUD-14 vector-dimension env-int is merged in #612: `VECTOR_DIMENSION` now
 > uses shared `env_int(..., minimum=1)` parsing. AUD-14 skill-history env-flag
 > is merged in #614: `JARVIS_SKILL_HISTORY` now uses shared `env_flag()`
-> parsing.
+> parsing. AUD-14 webhook-channels env-json is active on
+> `codex-aud14-webhook-channels-env-json`: `JARVIS_WEBHOOK_CHANNELS` is moving
+> to shared `env_json_object()` parsing.
 
 ---
 

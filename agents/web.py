@@ -14,7 +14,7 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Optional
 
-from agents.core.env_config import env_flag, env_int
+from agents.core.env_config import env_flag, env_int, env_json_object
 from agents.core.paths import data_path
 
 sys.path.insert(0, str(Path(__file__).parent))
@@ -345,13 +345,8 @@ async def lifespan(application: FastAPI):
     # H12.16 — broaden governed channels (WhatsApp/Signal/Matrix/Teams/Google
     # Chat). Configured via JARVIS_WEBHOOK_CHANNELS = {"<kind>": {<config>}}.
     # Default-off; each adapter routes inbound through the same governed gateway.
-    wh_raw = os.environ.get("JARVIS_WEBHOOK_CHANNELS", "")
-    if wh_raw:
-        try:
-            wh_cfg = json.loads(wh_raw)
-        except Exception:
-            wh_cfg = {}
-            logger.warning("JARVIS_WEBHOOK_CHANNELS is not valid JSON — ignored")
+    wh_cfg = env_json_object("JARVIS_WEBHOOK_CHANNELS", {})
+    if wh_cfg:
         from core.channels.webhook_channels import channels_from_config
         for ch in channels_from_config(wh_cfg, gateway.route):
             gateway.register_channel(ch.channel_id)
