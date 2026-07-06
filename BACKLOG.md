@@ -83,9 +83,8 @@ python -m pytest tests/ -v          # ~3,714 passed, 6 skipped (counter synced v
 > `JARVIS_TASK_MAX_SECONDS` now uses shared `env_float(..., minimum=0.0)`
 > instead of local try/except parsing. AUD-14 analytics max-events env-int is
 > merged in #600: malformed `JARVIS_ANALYTICS_MAX_EVENTS` no longer crashes
-> analytics import. AUD-14 STT beam-size env-int is in progress in #602
-> (`codex-aud14-stt-beam-env-int`): `JARVIS_STT_BEAM_SIZE` is moving onto
-> shared `env_int(..., minimum=1)` parsing.
+> analytics import. AUD-14 STT beam-size env-int is merged in #602:
+> `JARVIS_STT_BEAM_SIZE` now uses shared `env_int(..., minimum=1)` parsing.
 
 ---
 
