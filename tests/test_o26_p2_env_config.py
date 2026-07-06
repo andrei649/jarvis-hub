@@ -28,6 +28,7 @@ from agents.core.env_config import (  # noqa: E402
     env_int,
     env_int_map,
     env_json_object,
+    env_list,
     env_str,
     truthy,
 )
@@ -95,6 +96,17 @@ def test_env_str_raw(monkeypatch):
     assert env_str(VAR) == "  padded  "   # no strip: callers that trim, trim
     monkeypatch.delenv(VAR)
     assert env_str(VAR, "fallback") == "fallback"
+
+
+def test_env_list_strips_and_skips_blank_entries(monkeypatch):
+    default = ["https://fallback.example"]
+
+    monkeypatch.delenv(VAR, raising=False)
+    assert env_list(VAR, default) == default
+    monkeypatch.setenv(VAR, "")
+    assert env_list(VAR, default) == default
+    monkeypatch.setenv(VAR, " https://a.example, ,https://b.example ,, ")
+    assert env_list(VAR) == ["https://a.example", "https://b.example"]
 
 
 def test_env_json_object_never_raises_and_requires_object(monkeypatch):
@@ -203,6 +215,13 @@ def test_webhook_channels_use_shared_env_json_object():
     assert 'os.environ.get("JARVIS_WEBHOOK_CHANNELS"' not in src
     assert 'json.loads(wh_raw)' not in src
     assert 'env_json_object("JARVIS_WEBHOOK_CHANNELS", {})' in src
+
+
+def test_web_cors_origins_use_shared_env_list():
+    """Comma-separated CORS origins should use the shared list parser."""
+    src = (repo_root / "agents/web.py").read_text(encoding="utf-8")
+    assert 'os.environ.get("JARVIS_CORS_ORIGINS"' not in src
+    assert 'env_list("JARVIS_CORS_ORIGINS")' in src
 
 
 # ── layer 3: pins for the deliberate flips ───────────────────────────────────

@@ -91,6 +91,15 @@ def env_str(name: str, default: str = "") -> str:
     return default if value is None else value
 
 
+def env_list(name: str, default: list[str] | None = None, sep: str = ",") -> list[str]:
+    """Best-effort separated string list: trims entries and skips blanks."""
+    fallback = list(default or [])
+    raw = os.environ.get(name, "").strip()
+    if not raw:
+        return fallback
+    return [entry for entry in (part.strip() for part in raw.split(sep)) if entry]
+
+
 def env_int(name: str, default: int, minimum: int | None = None) -> int:
     """Best-effort int: unset, blank, or non-numeric → *default* (never raises).
 
