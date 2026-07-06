@@ -169,13 +169,9 @@ class AutonomyCoordinator:
             return {"status": "ok", "kind": task.kind, "output": out}
 
         # K3: optional per-task wall-time budget (JARVIS_TASK_MAX_SECONDS, unset = unbounded).
-        _tms = os.environ.get("JARVIS_TASK_MAX_SECONDS", "").strip()
-        try:
-            _task_budget = float(_tms) if _tms else None
-        except ValueError:
-            _task_budget = None
-        if _task_budget is not None and _task_budget <= 0:
-            _task_budget = None
+        from .env_config import env_float
+        _task_budget_value = env_float("JARVIS_TASK_MAX_SECONDS", 0.0, minimum=0.0)
+        _task_budget = _task_budget_value if _task_budget_value > 0 else None
         _budget_ledger = getattr(self._orch, "budget_ledger", None)
         executor = TaskExecutor(
             fallback=_llm,

@@ -82,6 +82,8 @@ def test_env_int_and_float_never_raise(monkeypatch):
     monkeypatch.setenv(VAR, "2.5")
     assert env_int(VAR, 9) == 9          # int() rejects it → default
     assert env_float(VAR, 0.0) == 2.5
+    monkeypatch.setenv(VAR, "-1.5")
+    assert env_float(VAR, 4.0, minimum=0.0) == 4.0
     monkeypatch.delenv(VAR)
     assert env_float(VAR, 1.25) == 1.25
 
