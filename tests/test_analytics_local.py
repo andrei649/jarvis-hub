@@ -4,6 +4,7 @@ Covers the store (`core.analytics_store`), the public beacon route
 (`POST /api/analytics/event`), and the plugin interface re-implemented over the
 local table (`get_kpis` / `get_summary` shape-compat). Offline, no network.
 """
+import importlib
 import sys
 from pathlib import Path
 
@@ -15,6 +16,19 @@ import pytest
 from fastapi.testclient import TestClient
 
 from agents.core import analytics_store
+
+
+def test_max_events_env_uses_shared_int_parser(monkeypatch):
+    monkeypatch.setenv("JARVIS_ANALYTICS_MAX_EVENTS", "not-an-int")
+    try:
+        mod = importlib.reload(analytics_store)
+        assert mod._MAX_EVENTS == 200000
+        src = Path(mod.__file__).read_text(encoding="utf-8")
+        assert 'env_int("JARVIS_ANALYTICS_MAX_EVENTS"' in src
+        assert 'int(os.environ.get("JARVIS_ANALYTICS_MAX_EVENTS"' not in src
+    finally:
+        monkeypatch.delenv("JARVIS_ANALYTICS_MAX_EVENTS", raising=False)
+        importlib.reload(analytics_store)
 
 
 @pytest.fixture
