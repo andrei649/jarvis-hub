@@ -79,9 +79,9 @@ python -m pytest tests/ -v          # ~3,711 passed, 6 skipped (counter synced v
 > plugin-gate + Action Kernel + scoped HMAC MCP token; full PR CI was green
 > before merge. AUD-14 LLM model-name config is merged in #596: LLM
 > model-name defaults and the `JARVIS_DEEP_MODEL` override now live in one
-> shared config module. AUD-14 task-budget env-float is in progress in #598
-> (`codex-aud14-task-budget-env-float`): `JARVIS_TASK_MAX_SECONDS` is moving
-> from local try/except parsing onto shared `env_float()`.
+> shared config module. AUD-14 task-budget env-float is merged in #598:
+> `JARVIS_TASK_MAX_SECONDS` now uses shared `env_float(..., minimum=0.0)`
+> instead of local try/except parsing.
 
 ---
 
