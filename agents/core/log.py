@@ -4,6 +4,7 @@ from datetime import datetime, timezone
 from logging.handlers import RotatingFileHandler
 from typing import Optional
 
+from .env_config import env_int
 from .errors import ErrorSeverity, ErrorLog
 
 
@@ -49,15 +50,14 @@ def _file_logging_config():
         from .paths import data_path
         path = str(data_path("logs", "jarvis.log"))
 
-    def _int(env, cat_key, default):
-        raw = os.environ.get(env, "").strip()
+    def _setting_int(cat_key, default):
         try:
-            return int(raw) if raw else int(_setting("system", cat_key, default))
+            return int(_setting("system", cat_key, default))
         except (TypeError, ValueError):
             return default
 
-    max_mb = max(1, _int("JARVIS_LOG_MAX_MB", "log_max_mb", 10))
-    backups = max(0, _int("JARVIS_LOG_BACKUPS", "log_backups", 5))
+    max_mb = max(1, env_int("JARVIS_LOG_MAX_MB", _setting_int("log_max_mb", 10)))
+    backups = max(0, env_int("JARVIS_LOG_BACKUPS", _setting_int("log_backups", 5)))
     return path, max_mb * 1024 * 1024, backups
 
 
