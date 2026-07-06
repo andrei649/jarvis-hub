@@ -42,6 +42,14 @@ class _FakeProc:
         self.stdout = _FakeStdout(response)
 
 
+class _FakeConnectProc:
+    def __init__(self):
+        self.stdin = _FakeStdin()
+        self.stdout = _FakeStdout(b'{"jsonrpc":"2.0","id":1,"result":{}}\n')
+        self.stderr = None
+        self.returncode = None
+
+
 async def test_send_roundtrips_response_without_nameerror():
     # Before the fix `asyncio.wait_for` raised NameError (asyncio unimported on
     # this path); the broad except turned it into {}. A real response must come
@@ -56,3 +64,26 @@ async def test_send_returns_empty_when_not_connected():
     # Existing fast-fail path is preserved: no proc → warn + {}.
     srv = MCPServer("test", transport="stdio", command="echo")
     assert await srv._send({"jsonrpc": "2.0", "id": 1}) == {}
+
+
+async def test_stdio_connect_passes_cwd_and_env_without_shell(monkeypatch):
+    exec_calls = []
+
+    async def fake_exec(*argv, **kwargs):
+        exec_calls.append((argv, kwargs))
+        return _FakeConnectProc()
+
+    monkeypatch.setattr("agents.core.mcp.client.asyncio.create_subprocess_exec", fake_exec)
+
+    srv = MCPServer(
+        "worldview",
+        transport="stdio",
+        command="node dist/server.js",
+        cwd="worldview/mcp",
+        env={"WORLDVIEW_MCP_SECRET": "shared-secret"},
+    )
+    await srv.connect()
+
+    assert exec_calls[0][0] == ("node", "dist/server.js")
+    assert exec_calls[0][1]["cwd"] == "worldview/mcp"
+    assert exec_calls[0][1]["env"]["WORLDVIEW_MCP_SECRET"] == "shared-secret"

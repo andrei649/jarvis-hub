@@ -14,8 +14,9 @@ through this plugin.
 Read-only and fail-safe: if the backend is unreachable the methods return a
 structured ``{"status": "unavailable", ...}`` instead of raising or fabricating
 intel (this is an OSINT surface — no invented data). Mutating operations
-(``watch_aoi`` / ``reconstruct_event``) deliberately live only behind the
-capability-token-gated MCP server, not here.
+(``watch_aoi`` / ``reconstruct_event``) deliberately live in
+``agents.core.mcp.worldview_write.WorldViewMCPWriteClient`` behind the plugin gate,
+Action Kernel, and capability-token-gated MCP server, not here.
 """
 
 import asyncio

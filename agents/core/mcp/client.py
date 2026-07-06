@@ -6,6 +6,7 @@ Connects to MCP servers via stdio or SSE transport.
 import asyncio
 import json
 import logging
+import os
 import re
 import shlex
 from typing import Any
@@ -67,11 +68,22 @@ class MCPTool:
 
 
 class MCPServer:
-    def __init__(self, name: str, transport: str = "stdio", command: str = None, url: str = None):
+    def __init__(
+        self,
+        name: str,
+        transport: str = "stdio",
+        command: str = None,
+        url: str = None,
+        *,
+        cwd: str | None = None,
+        env: dict[str, str] | None = None,
+    ):
         self.name = name
         self.transport = transport
         self.command = command
         self.url = url
+        self.cwd = cwd
+        self.env = dict(env or {})
         self.tools: list[MCPTool] = []
         self._proc = None
 
@@ -86,6 +98,8 @@ class MCPServer:
                 stdin=asyncio.subprocess.PIPE,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
+                cwd=self.cwd or None,
+                env=self._merged_env(),
             )
             await self._initialize()
         elif self.transport == "sse" and self.url:
@@ -104,6 +118,13 @@ class MCPServer:
         if not argv or any("\x00" in part for part in argv):
             return None
         return argv
+
+    def _merged_env(self) -> dict[str, str] | None:
+        if not self.env:
+            return None
+        merged = os.environ.copy()
+        merged.update({str(k): str(v) for k, v in self.env.items()})
+        return merged
 
     async def _initialize(self):
         resp = await self._send({"jsonrpc": "2.0", "method": "initialize", "params": {}, "id": 1})
@@ -226,6 +247,7 @@ class MCPManager:
                 "transport": srv.transport,
                 "command": srv.command,
                 "url": srv.url,
+                "cwd": srv.cwd,
             }
             for srv in self.servers.values()
         ]
@@ -239,5 +261,6 @@ class MCPManager:
                 transport=cfg.get("transport", "stdio"),
                 command=cfg.get("command"),
                 url=cfg.get("url"),
+                cwd=cfg.get("cwd"),
             )
             self.servers[srv.name] = srv
