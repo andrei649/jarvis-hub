@@ -241,6 +241,12 @@ async def clear_live_memory(orch) -> list[str]:
             cleared.append("cognition_memory")
         except Exception:  # pragma: no cover - defensive
             logger.warning("clear_live_memory: cognition memory clear failed", exc_info=True)
+    # H20: drop the frozen core-block prompt snapshot — a purge is exactly the
+    # case where snapshot staleness is unacceptable (forgotten facts must not
+    # keep being injected until the session/day cache key rolls).
+    if getattr(orch, "_core_block_cache", None) is not None:
+        orch._core_block_cache = None
+        cleared.append("core_block_cache")
     return cleared
 
 

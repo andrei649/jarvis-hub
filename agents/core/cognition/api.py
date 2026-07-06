@@ -65,12 +65,26 @@ async def cognition_memory():
 
 @router.get("/learning")
 async def cognition_learning():
-    """H21.4 — governed-learning status (KC count, corrections)."""
+    """H21.4 — governed-learning status (KC count, corrections) + the H20
+    per-turn review loop's last pass and the skill curator/proposal state."""
     f = _facade()
     m = f.module("learning") if f is not None else None
     if m is None:
         return {"available": False}
-    return m.status()
+    out = m.status()
+    from agents import web
+    orch = getattr(web, "orch", None)
+    if orch is not None:
+        reviewer = getattr(orch, "reviewer", None)
+        if reviewer is not None and hasattr(reviewer, "status"):
+            out["review"] = reviewer.status()
+        curator = getattr(orch, "curator", None)
+        if curator is not None and hasattr(curator, "status"):
+            out["curator"] = curator.status()
+        proposals = getattr(orch, "skill_proposals", None)
+        if proposals is not None and hasattr(proposals, "stats"):
+            out["skill_proposals"] = proposals.stats()
+    return out
 
 
 @router.get("/ensemble")

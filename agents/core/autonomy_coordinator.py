@@ -130,6 +130,14 @@ class AutonomyCoordinator:
                 if self._orch.reflector and self._orch.get_setting("system.reflection_enabled", True):
                     if is_night_window(datetime.now().hour, start=22, end=7):
                         await self._orch.reflector.run(enabled=True)
+                # Nightly skill curator (H20.5) — same night window as reflection,
+                # additionally gated by the learning-loop master flag (default OFF).
+                _cur = getattr(self._orch, "curator", None)
+                _cog = getattr(self._orch, "cognition", None)
+                if (_cur is not None and _cog is not None
+                        and _cog.sub_enabled("review_enabled")
+                        and is_night_window(datetime.now().hour, start=22, end=7)):
+                    await _cur.run()
                 # Continuous Ingestion Watcher (H5.1)
                 if self._orch.ingestion_watcher and self._orch.get_setting("system.ingestion_watcher_enabled", True):
                     await asyncio.to_thread(self._orch.ingestion_watcher.check_and_run)

@@ -11,11 +11,24 @@ prod; a stub offline), so the governance/isolation layer is offline-testable.
 
 from __future__ import annotations
 
+import inspect
 import logging
 import time
 from typing import Awaitable, Callable, Optional
 
+from .iteration_budget import IterationBudget
+
 logger = logging.getLogger("jarvis.subagents")
+
+# Capabilities a sub-agent must NOT exercise, regardless of what the runner can
+# do. Adapted from hermes-agent `DELEGATE_BLOCKED_TOOLS` (Nous Research, MIT):
+# no recursive delegation, no writes to shared memory cores, no outbound
+# channel sends, no skill authoring, no user clarification round-trips. The
+# list is recorded on every spawn and handed to runners that accept a
+# `blocked` kwarg; runners that don't are unchanged (additive contract).
+DELEGATE_BLOCKED_CAPABILITIES = frozenset({
+    "delegate", "memory_write", "channel_send", "skill_manage", "clarify",
+})
 
 
 class NullRunner:
@@ -25,15 +38,34 @@ class NullRunner:
         return {"output": f"[stub:{agent or 'sub'}] {task}", "session_id": session_id}
 
 
+def _runner_accepts_blocked(runner) -> bool:
+    """Whether the injected runner declares a `blocked` kwarg (additive opt-in)."""
+    try:
+        target = runner if inspect.isfunction(runner) or inspect.ismethod(runner) else getattr(runner, "__call__", runner)
+        params = inspect.signature(target).parameters
+        return "blocked" in params or any(
+            p.kind is inspect.Parameter.VAR_KEYWORD for p in params.values())
+    except (TypeError, ValueError):
+        return False
+
+
 class SubAgentManager:
     """Gated, isolated, concurrent sub-agent spawning."""
 
     def __init__(self, runner: Optional[Callable[..., Awaitable[dict]]] = None,
                  max_concurrent: int = 3, parent_agent: str = "jarvis",
-                 max_depth: Optional[int] = 8) -> None:
+                 max_depth: Optional[int] = 8,
+                 budget: Optional["IterationBudget"] = None,
+                 blocked: Optional[frozenset] = None) -> None:
         self._runner = runner or NullRunner()
         self.max_concurrent = max(1, int(max_concurrent))
         self.parent_agent = parent_agent
+        # H20.6 hardening: total-spawn budget (refundable IterationBudget) on top
+        # of the concurrency cap — None keeps today's unbounded-total behavior.
+        self.budget = budget
+        # Capability scoping for children (hermes DELEGATE_BLOCKED_TOOLS analog).
+        self.blocked = frozenset(blocked) if blocked is not None else DELEGATE_BLOCKED_CAPABILITIES
+        self._runner_takes_blocked = _runner_accepts_blocked(self._runner)
         # K3 (OWASP unbounded-consumption): cap the recursion DEPTH of agent-initiated
         # delegation — an agent spawning sub-agents that spawn sub-agents can't tower up
         # forever. None = unbounded. Depth is inferred from the recorded parent-chain, so
@@ -69,16 +101,24 @@ class SubAgentManager:
         if self._active >= self.max_concurrent:
             return {"ok": False, "reason": "concurrency_cap",
                     "active": self._active, "cap": self.max_concurrent}
+        if self.budget is not None and not self.budget.consume():
+            return {"ok": False, "reason": "spawn_budget_exhausted",
+                    "used": self.budget.used, "max_total": self.budget.max_total}
         self._counter += 1
         spawn_id = f"sub-{parent}-{self._counter}"
         session_id = f"session::{spawn_id}"   # isolated session
         rec = {"id": spawn_id, "parent": parent, "agent": agent or "sub",
                "task": task, "session_id": session_id, "status": "running",
-               "created_at": time.time(), "result": None}
+               "created_at": time.time(), "result": None,
+               "blocked": sorted(self.blocked)}
         self._spawns[spawn_id] = rec
         self._active += 1
         try:
-            result = await self._runner(task, session_id, agent or "sub")
+            if self._runner_takes_blocked:
+                result = await self._runner(task, session_id, agent or "sub",
+                                            blocked=self.blocked)
+            else:
+                result = await self._runner(task, session_id, agent or "sub")
             rec["status"] = "done"
             rec["result"] = result
         except Exception:
@@ -98,5 +138,9 @@ class SubAgentManager:
         return dict(r) if r else None
 
     def stats(self) -> dict:
-        return {"total": len(self._spawns), "active": self._active,
-                "cap": self.max_concurrent, "max_depth": self.max_depth}
+        out = {"total": len(self._spawns), "active": self._active,
+               "cap": self.max_concurrent, "max_depth": self.max_depth,
+               "blocked": sorted(self.blocked)}
+        if self.budget is not None:
+            out["budget"] = self.budget.status()
+        return out
