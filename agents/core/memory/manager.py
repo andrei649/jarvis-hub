@@ -45,10 +45,11 @@ class MemoryManager:
         seed_graph(self.graph)
 
     def _init_qdrant(self) -> VectorStore:
+        from ..env_config import env_int
         from .qdrant_store import QdrantVectorStore
 
         url = os.getenv("QDRANT_URL", "http://localhost:6333")
-        dimension = int(os.getenv("VECTOR_DIMENSION", "768"))
+        dimension = env_int("VECTOR_DIMENSION", 768, minimum=1)
         return QdrantVectorStore(url=url, dimension=dimension)
 
     def set_checkpoint_manager(self, mgr):
