@@ -85,9 +85,8 @@ python -m pytest tests/ -v          # ~3,715 passed, 6 skipped (counter synced v
 > merged in #600: malformed `JARVIS_ANALYTICS_MAX_EVENTS` no longer crashes
 > analytics import. AUD-14 STT beam-size env-int is merged in #602:
 > `JARVIS_STT_BEAM_SIZE` now uses shared `env_int(..., minimum=1)` parsing.
-> AUD-14 log rotation env-int is in progress in #604
-> (`codex-aud14-log-rotation-env-int`): `JARVIS_LOG_MAX_MB` and
-> `JARVIS_LOG_BACKUPS` are moving onto shared `env_int()` parsing while keeping
+> AUD-14 log rotation env-int is merged in #604: `JARVIS_LOG_MAX_MB` and
+> `JARVIS_LOG_BACKUPS` now use shared `env_int()` parsing while keeping
 > settings-DB fallback intact.
 
 ---
