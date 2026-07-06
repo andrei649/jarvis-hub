@@ -267,3 +267,13 @@ def test_oauth_env_truthy_stays_importable():
     from agents.core.routers.oauth import _env_truthy
 
     assert _env_truthy("on") is True and _env_truthy("nope") is False
+
+
+def test_trust_status_env_reads_use_shared_env_flag():
+    src = (repo_root / "agents" / "core" / "routers" / "oauth.py").read_text(encoding="utf-8")
+
+    assert 'os.environ.get("JARVIS_MIC_MUTED"' not in src
+    assert 'os.environ.get("JARVIS_STRICT_LOCAL"' not in src
+    assert "_env_truthy = truthy" not in src
+    assert 'env_flag("JARVIS_MIC_MUTED")' in src
+    assert 'env_flag("JARVIS_STRICT_LOCAL")' in src
