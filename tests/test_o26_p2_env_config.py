@@ -197,6 +197,14 @@ def test_web_email_ports_use_shared_env_int():
     assert 'env_int("IMAP_PORT", 993' in src
 
 
+def test_webhook_channels_use_shared_env_json_object():
+    """Malformed webhook-channel JSON env must fall back, not hand-roll parsing."""
+    src = (repo_root / "agents/web.py").read_text(encoding="utf-8")
+    assert 'os.environ.get("JARVIS_WEBHOOK_CHANNELS"' not in src
+    assert 'json.loads(wh_raw)' not in src
+    assert 'env_json_object("JARVIS_WEBHOOK_CHANNELS", {})' in src
+
+
 # ── layer 3: pins for the deliberate flips ───────────────────────────────────
 
 def test_a2a_gate_accepts_on(monkeypatch):
