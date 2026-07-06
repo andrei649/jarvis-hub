@@ -95,9 +95,8 @@ python -m pytest tests/ -v          # ~3,723 passed, 6 skipped (counter synced v
 > AUD-14 vector-dimension env-int is merged in #612: `VECTOR_DIMENSION` now
 > uses shared `env_int(..., minimum=1)` parsing. AUD-14 skill-history env-flag
 > is merged in #614: `JARVIS_SKILL_HISTORY` now uses shared `env_flag()`
-> parsing. AUD-14 webhook-channels env-json is active on
-> `codex-aud14-webhook-channels-env-json`: `JARVIS_WEBHOOK_CHANNELS` is moving
-> to shared `env_json_object()` parsing.
+> parsing. AUD-14 webhook-channels env-json is merged in #616:
+> `JARVIS_WEBHOOK_CHANNELS` now uses shared `env_json_object()` parsing.
 
 ---
 
