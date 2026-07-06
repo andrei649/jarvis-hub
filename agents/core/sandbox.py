@@ -291,12 +291,14 @@ class Sandbox:
         fpath.write_text(code, encoding="utf-8")
 
         try:
+            from agents.core.environments import prepare_python_child_env
             proc = await asyncio.create_subprocess_exec(
                 sys.executable if platform.system() == "Windows" else "python3",
                 str(fpath),
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
                 cwd=str(self.work_dir),
+                env=prepare_python_child_env(os.environ),
             )
             try:
                 stdout, stderr = await asyncio.wait_for(
@@ -329,11 +331,13 @@ class Sandbox:
         shell_cmd = ["cmd", "/c", command] if platform.system() == "Windows" else ["sh", "-c", command]
 
         try:
+            from agents.core.environments import prepare_python_child_env
             proc = await asyncio.create_subprocess_exec(
                 *shell_cmd,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
                 cwd=str(self.work_dir),
+                env=prepare_python_child_env(os.environ),
             )
             try:
                 stdout, stderr = await asyncio.wait_for(
