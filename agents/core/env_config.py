@@ -141,3 +141,27 @@ def env_json_object(name: str, default: dict | None = None) -> dict:
     if not isinstance(value, dict):
         return fallback
     return dict(value)
+
+
+def env_int_map(name: str, default: dict[str, int] | None = None) -> dict[str, int]:
+    """Best-effort ``key:int`` map: bad entries are skipped, never raised.
+
+    Format is a comma-separated list such as ``"whatsapp:10,teams:30"``.
+    Whitespace is ignored around keys and values; blank keys, missing separators,
+    and non-integer values are omitted. A fresh dict is returned every time.
+    """
+    fallback = dict(default or {})
+    raw = os.environ.get(name, "").strip()
+    if not raw:
+        return fallback
+    out: dict[str, int] = {}
+    for pair in raw.split(","):
+        key, sep, value = pair.strip().partition(":")
+        key = key.strip()
+        if not sep or not key:
+            continue
+        try:
+            out[key] = int(value)
+        except ValueError:
+            continue
+    return out

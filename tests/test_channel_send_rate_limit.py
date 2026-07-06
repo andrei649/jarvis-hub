@@ -62,6 +62,14 @@ def test_global_channel_send_rate_uses_env_int():
     assert 'int(os.environ.get("JARVIS_CHANNEL_SEND_RATE"' not in src
 
 
+def test_channel_send_rate_overrides_use_shared_env_int_map():
+    src = (Path(__file__).resolve().parents[1]
+           / "agents/core/channels/send_rate_limit.py").read_text(encoding="utf-8")
+    assert 'env_int_map("JARVIS_CHANNEL_SEND_RATES"' in src
+    assert 'os.environ.get("JARVIS_CHANNEL_SEND_RATES"' not in src
+    assert "def _parse_rates" not in src
+
+
 # ── limiter mechanics ─────────────────────────────────────────────────────────
 def test_unlimited_never_blocks_and_records_nothing():
     lim = SendRateLimiter()
