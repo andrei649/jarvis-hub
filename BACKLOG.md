@@ -97,9 +97,8 @@ python -m pytest tests/ -v          # ~3,725 passed, 6 skipped (counter synced v
 > is merged in #614: `JARVIS_SKILL_HISTORY` now uses shared `env_flag()`
 > parsing. AUD-14 webhook-channels env-json is merged in #616:
 > `JARVIS_WEBHOOK_CHANNELS` now uses shared `env_json_object()` parsing.
-> AUD-14 CORS-origins env-list is active on
-> `codex-aud14-cors-origins-env-list`: `JARVIS_CORS_ORIGINS` is moving to
-> shared `env_list()` parsing.
+> AUD-14 CORS-origins env-list is merged in #618: `JARVIS_CORS_ORIGINS` now
+> uses shared `env_list()` parsing.
 
 ---
 
