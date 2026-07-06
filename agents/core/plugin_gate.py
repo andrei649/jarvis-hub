@@ -7,7 +7,6 @@ declared permissions.
 """
 
 import logging
-import os
 import time
 from dataclasses import dataclass, field
 from enum import Enum
@@ -503,8 +502,10 @@ def grants_from_env() -> "dict[str, set[str]]":
     """Parse ``JARVIS_PLUGIN_GRANTS`` — a comma list of ``plugin_id:agent_id``
     pairs the owner declares to keep external-write plugins usable under
     hardening (e.g. ``social_x:veronica,writeback_github:stark``)."""
+    from agents.core.env_config import env_list
+
     out: dict[str, set[str]] = {}
-    for pair in os.environ.get("JARVIS_PLUGIN_GRANTS", "").split(","):
+    for pair in env_list("JARVIS_PLUGIN_GRANTS"):
         pid, sep, agent = pair.strip().partition(":")
         if sep and pid.strip() and agent.strip():
             out.setdefault(pid.strip(), set()).add(agent.strip())

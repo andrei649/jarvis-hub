@@ -8,6 +8,8 @@ explicitly-served agent or an owner-declared grant. Read/LAN/local plugins keep
 their wildcard, and the default (hardening off) is byte-for-byte the old behavior.
 """
 
+from pathlib import Path
+
 from agents.core.plugin_gate import (
     DataScope,
     PermissionGate,
@@ -132,3 +134,10 @@ def test_grants_env_is_parsed(monkeypatch):
     assert gate.check_call("social_x", "veronica") is True
     assert gate.check_call("writeback_github", "stark") is True
     assert gate.check_call("social_x", "stark") is False
+
+
+def test_plugin_grants_env_uses_shared_env_list():
+    repo = Path(__file__).resolve().parents[1]
+    src = (repo / "agents" / "core" / "plugin_gate.py").read_text(encoding="utf-8")
+    assert 'os.environ.get("JARVIS_PLUGIN_GRANTS"' not in src
+    assert 'env_list("JARVIS_PLUGIN_GRANTS")' in src
