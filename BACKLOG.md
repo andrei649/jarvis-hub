@@ -16,7 +16,7 @@ pip install -r requirements-beta.txt
 python serve.py   # canonical entry (boot guards + graceful shutdown; O26-P0.6: the raw
 #   uvicorn entry `python -m uvicorn agents.web:app` now runs the same guards via the lifespan)
 python scripts/install_smoke.py --json  # fast install smoke: boot + /readyz + fake local turn
-python -m pytest tests/ -v          # ~3,712 passed, 6 skipped (counter synced via scripts/status_sync.py)
+python -m pytest tests/ -v          # ~3,714 passed, 6 skipped (counter synced via scripts/status_sync.py)
 ```
 
 > Singurul skip rămas e heartbeat-ul opțional. (Vechiul `tests/test_spotify.py` cu 8 skip-uri a
@@ -83,7 +83,9 @@ python -m pytest tests/ -v          # ~3,712 passed, 6 skipped (counter synced v
 > `JARVIS_TASK_MAX_SECONDS` now uses shared `env_float(..., minimum=0.0)`
 > instead of local try/except parsing. AUD-14 analytics max-events env-int is
 > merged in #600: malformed `JARVIS_ANALYTICS_MAX_EVENTS` no longer crashes
-> analytics import.
+> analytics import. AUD-14 STT beam-size env-int is in progress in #602
+> (`codex-aud14-stt-beam-env-int`): `JARVIS_STT_BEAM_SIZE` is moving onto
+> shared `env_int(..., minimum=1)` parsing.
 
 ---
 

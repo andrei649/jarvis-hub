@@ -7,6 +7,7 @@ configured beam_size. The defaults bias the live HUD loop toward latency
 """
 
 import sys
+import inspect
 from pathlib import Path
 
 repo_root = Path(__file__).resolve().parent.parent
@@ -19,6 +20,7 @@ from agents.core.voice.stt import (
     _resolve_compute_type,
     DEFAULT_BEAM_SIZE,
 )
+from agents.core.voice import stt as stt_module
 
 
 def test_beam_size_defaults_to_greedy():
@@ -38,6 +40,19 @@ def test_beam_size_env_override(monkeypatch):
 def test_beam_size_bad_env_falls_back(monkeypatch):
     monkeypatch.setenv("JARVIS_STT_BEAM_SIZE", "not-an-int")
     assert _resolve_beam_size(None) == DEFAULT_BEAM_SIZE
+
+
+def test_beam_size_non_positive_env_falls_back(monkeypatch):
+    monkeypatch.setenv("JARVIS_STT_BEAM_SIZE", "0")
+    assert _resolve_beam_size(None) == DEFAULT_BEAM_SIZE
+    monkeypatch.setenv("JARVIS_STT_BEAM_SIZE", "-2")
+    assert _resolve_beam_size(None) == DEFAULT_BEAM_SIZE
+
+
+def test_beam_size_uses_shared_env_int_parser():
+    src = inspect.getsource(stt_module._resolve_beam_size)
+    assert 'env_int("JARVIS_STT_BEAM_SIZE"' in src
+    assert 'int(os.environ.get("JARVIS_STT_BEAM_SIZE"' not in src
 
 
 def test_compute_type_cuda_vs_cpu():
