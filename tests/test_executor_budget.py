@@ -83,3 +83,14 @@ def test_coordinator_task_budget_uses_shared_env_float():
     src = inspect.getsource(coordinator.AutonomyCoordinator.build_executor)
     assert 'env_float("JARVIS_TASK_MAX_SECONDS"' in src
     assert 'os.environ.get("JARVIS_TASK_MAX_SECONDS"' not in src
+
+
+def test_coordinator_call_config_uses_shared_env_json_object():
+    import inspect
+
+    import agents.core.autonomy_coordinator as coordinator
+
+    src = inspect.getsource(coordinator.AutonomyCoordinator.build_executor)
+    assert 'env_json_object("JARVIS_CALL_CONFIG"' in src
+    assert 'os.environ.get("JARVIS_CALL_CONFIG"' not in src
+    assert ".loads(" not in src

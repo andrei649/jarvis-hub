@@ -250,12 +250,9 @@ class AutonomyCoordinator:
         # H12.22 — governed outbound voice / call-back. A call is an interruption,
         # so it's gated by BOTH the approval queue and the daily interrupt budget;
         # live telephony (Twilio/Telnyx) is deferred to a host-side client.
-        import json as _json
         from .autonomy.call_broker import CallBroker
-        try:
-            _call_cfg = _json.loads(os.environ.get("JARVIS_CALL_CONFIG", "") or "{}")
-        except Exception:
-            _call_cfg = {}
+        from .env_config import env_json_object
+        _call_cfg = env_json_object("JARVIS_CALL_CONFIG", {})
         self._orch.call_broker = CallBroker(
             enqueue=self._governed_enqueue,  # O26-P0.7 (F3): policy + inbox
             secret_broker=getattr(self._orch, "secret_broker", None),
