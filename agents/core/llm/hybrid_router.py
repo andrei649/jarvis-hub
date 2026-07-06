@@ -548,6 +548,11 @@ class HybridRouter(LLMRouter):
         _, _, route = self.select_backend(agent_id, prompt)
         return route
 
+    def provider_catalog(self) -> list[dict]:
+        """Return declared provider profiles without probing network backends."""
+        from .providers import provider_catalog
+        return provider_catalog()
+
     async def aclose(self) -> None:
         """Close every backend's HTTP client pool (BUG-7).
 
