@@ -14,7 +14,7 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Optional
 
-from agents.core.env_config import env_flag, env_int, env_json_object
+from agents.core.env_config import env_flag, env_int, env_json_object, env_list
 from agents.core.paths import data_path
 
 sys.path.insert(0, str(Path(__file__).parent))
@@ -381,7 +381,7 @@ app = FastAPI(title="Jarvis", version=_APP_VERSION, lifespan=lifespan)
 # cross-origin reads, which is what we want. Set
 # JARVIS_CORS_ORIGINS=https://a.example,https://b.example to allow specific
 # origins (e.g. a site hosting an embedded widget). Empty = unchanged behaviour.
-_cors_origins = [o.strip() for o in os.environ.get("JARVIS_CORS_ORIGINS", "").split(",") if o.strip()]
+_cors_origins = env_list("JARVIS_CORS_ORIGINS")
 if _cors_origins:
     from fastapi.middleware.cors import CORSMiddleware
     app.add_middleware(

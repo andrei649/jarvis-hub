@@ -16,7 +16,7 @@ pip install -r requirements-beta.txt
 python serve.py   # canonical entry (boot guards + graceful shutdown; O26-P0.6: the raw
 #   uvicorn entry `python -m uvicorn agents.web:app` now runs the same guards via the lifespan)
 python scripts/install_smoke.py --json  # fast install smoke: boot + /readyz + fake local turn
-python -m pytest tests/ -v          # ~3,723 passed, 6 skipped (counter synced via scripts/status_sync.py)
+python -m pytest tests/ -v          # ~3,725 passed, 6 skipped (counter synced via scripts/status_sync.py)
 ```
 
 > Singurul skip rămas e heartbeat-ul opțional. (Vechiul `tests/test_spotify.py` cu 8 skip-uri a
@@ -97,6 +97,9 @@ python -m pytest tests/ -v          # ~3,723 passed, 6 skipped (counter synced v
 > is merged in #614: `JARVIS_SKILL_HISTORY` now uses shared `env_flag()`
 > parsing. AUD-14 webhook-channels env-json is merged in #616:
 > `JARVIS_WEBHOOK_CHANNELS` now uses shared `env_json_object()` parsing.
+> AUD-14 CORS-origins env-list is active on
+> `codex-aud14-cors-origins-env-list`: `JARVIS_CORS_ORIGINS` is moving to
+> shared `env_list()` parsing.
 
 ---
 
