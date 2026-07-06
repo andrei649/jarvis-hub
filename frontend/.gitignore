@@ -8,3 +8,12 @@ e2e/artifacts/
 e2e/.results/
 test-results/
 playwright-report/
+
+# design-sync (Claude Design HUD import) — machine-local/regenerated only.
+# The durable set (config.json, NOTES.md, conventions.md, previews/, overrides/)
+# IS committed; see .design-sync/NOTES.md for the campaign log.
+.ds-sync/
+ds-bundle/
+.design-sync/.cache/
+.design-sync/learnings/
+.design-sync/node_modules
