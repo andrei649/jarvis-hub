@@ -18,15 +18,14 @@ router. The Oracle handlers reach state only through `get_orch()`, so no web-own
 singleton remains.
 """
 
-import os
-
 from fastapi import APIRouter, Depends
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
-from agents.core.web_helpers import nocache_json
 from agents.core.app_state import get_orch
+from agents.core.env_config import env_flag, truthy as _env_truthy
 from agents.core.routers._deps import admin_guard
+from agents.core.web_helpers import nocache_json
 
 from core.plugins.oauth import (
     init_from_env, get_google_auth_url, get_spotify_auth_url,
@@ -36,6 +35,8 @@ from core.plugins.oauth import (
 )
 
 init_from_env()
+
+__all__ = ["_env_truthy"]
 
 OAUTH_SERVICES = {
     "gmail": {"label": "Gmail", "url": lambda: get_google_auth_url("gmail")},
@@ -152,11 +153,6 @@ async def oracle_resolve_conflicts():
 # ── Trust indicator (H12.10): hardware-mute / strict-local ───────
 
 
-# O26-P2.1: the boolean convention lives in env_config now. The old private
-# name stays importable — tests/test_trust_api.py pins its spellings.
-from agents.core.env_config import truthy as _env_truthy  # noqa: E402
-
-
 def _trust_status() -> dict:
     """Compute the two visible, auditable trust states for the HUD.
 
@@ -170,7 +166,7 @@ def _trust_status() -> dict:
       can only *tighten* (never loosen) the guarantee.
     """
     orch = get_orch()
-    mic_muted = _env_truthy(os.environ.get("JARVIS_MIC_MUTED"))
+    mic_muted = env_flag("JARVIS_MIC_MUTED")
 
     cloud_available = False
     claude_available = False
@@ -182,9 +178,7 @@ def _trust_status() -> dict:
     # Strict-local when no cloud path exists at all; env flag can force it on.
     # Single unconditional assignment (De Morgan of `not (cloud or claude)`)
     # so the value is provably initialized before use.
-    strict_local = (not cloud_available and not claude_available) or _env_truthy(
-        os.environ.get("JARVIS_STRICT_LOCAL")
-    )
+    strict_local = (not cloud_available and not claude_available) or env_flag("JARVIS_STRICT_LOCAL")
 
     return {
         "mic": "off" if mic_muted else "on",
