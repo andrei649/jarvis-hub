@@ -49,10 +49,12 @@ class Sandbox:
         allow_subprocess: bool = False,
         allow_wasm: bool = True,
         wasm_runtime: str = "",
+        max_output_bytes: int = 50_000,
     ):
         self.docker_image = docker_image
         self.timeout = timeout
         self.max_memory_mb = max_memory_mb
+        self.max_output_bytes = max(8, int(max_output_bytes))
         self.work_dir = Path(work_dir) if work_dir else Path(tempfile.mkdtemp())
         self._has_docker = self._check_docker()
         self.allow_subprocess = allow_subprocess
@@ -114,6 +116,15 @@ class Sandbox:
         """True only if the active backend isolates code from the host."""
         return self.active_backend() in ("docker", "wasm")
 
+    def _decode_output(self, data: bytes, label: str = "OUTPUT") -> str:
+        text = data.decode("utf-8", errors="replace")
+        from agents.core.environments.output_limits import truncate_text
+        return truncate_text(
+            text,
+            max_content_bytes=self.max_output_bytes,
+            label=label,
+        ).text
+
     def security_status(self) -> dict:
         """HF-6 — explicit isolation posture so the HUD / ``/status`` can surface
         when code would run on the HOST with no isolation. ``insecure_host_exec`` is
@@ -167,8 +178,8 @@ class Sandbox:
             try:
                 stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=self.timeout)
                 return SandboxResult(
-                    stdout=stdout.decode("utf-8", errors="replace"),
-                    stderr=stderr.decode("utf-8", errors="replace"),
+                    stdout=self._decode_output(stdout),
+                    stderr=self._decode_output(stderr, label="ERROR"),
                     exit_code=proc.returncode or 0,
                     duration=time.monotonic() - start,
                 )
@@ -249,8 +260,8 @@ class Sandbox:
                 )
                 duration = time.monotonic() - start
                 return SandboxResult(
-                    stdout=stdout.decode("utf-8", errors="replace"),
-                    stderr=stderr.decode("utf-8", errors="replace"),
+                    stdout=self._decode_output(stdout),
+                    stderr=self._decode_output(stderr, label="ERROR"),
                     exit_code=proc.returncode or 0,
                     duration=duration,
                 )
@@ -306,8 +317,8 @@ class Sandbox:
                 )
                 duration = time.monotonic() - start
                 return SandboxResult(
-                    stdout=stdout.decode("utf-8", errors="replace"),
-                    stderr=stderr.decode("utf-8", errors="replace"),
+                    stdout=self._decode_output(stdout),
+                    stderr=self._decode_output(stderr, label="ERROR"),
                     exit_code=proc.returncode or 0,
                     duration=duration,
                 )
@@ -345,8 +356,8 @@ class Sandbox:
                 )
                 duration = time.monotonic() - start
                 return SandboxResult(
-                    stdout=stdout.decode("utf-8", errors="replace"),
-                    stderr=stderr.decode("utf-8", errors="replace"),
+                    stdout=self._decode_output(stdout),
+                    stderr=self._decode_output(stderr, label="ERROR"),
                     exit_code=proc.returncode or 0,
                     duration=duration,
                 )
