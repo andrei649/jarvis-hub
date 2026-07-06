@@ -126,3 +126,16 @@ def test_history_view_without_name_omits_version_fields(tmp_path):
     m.publish_skill("foo")
     v = m.history_view()
     assert v["enabled"] is True and "current_version" not in v
+
+
+def test_orchestrator_skill_history_uses_shared_env_flag(monkeypatch):
+    from agents.core import orchestrator
+
+    src = (repo_root / "agents/core/orchestrator.py").read_text(encoding="utf-8")
+    assert 'os.environ.get("JARVIS_SKILL_HISTORY"' not in src
+    assert 'env_flag("JARVIS_SKILL_HISTORY")' in src
+
+    monkeypatch.setenv("JARVIS_SKILL_HISTORY", "0")
+    assert orchestrator.skill_history_enabled() is False
+    monkeypatch.setenv("JARVIS_SKILL_HISTORY", "on")
+    assert orchestrator.skill_history_enabled() is True

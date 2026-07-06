@@ -100,6 +100,11 @@ def _as_bool(value, default: bool = True) -> bool:
     return bool(text) and truthy(text, default=True)
 
 
+def skill_history_enabled() -> bool:
+    """Opt-in version-history ledger flag using the shared env convention."""
+    return env_flag("JARVIS_SKILL_HISTORY")
+
+
 
 
 
@@ -218,7 +223,7 @@ class Orchestrator:
         # are recorded (enables rollback_target + the read surface). Default-off via
         # JARVIS_SKILL_HISTORY → history=None → marketplace behaviour byte-identical.
         self.marketplace = SkillMarketplace(
-            history=SkillHistory() if os.environ.get("JARVIS_SKILL_HISTORY") else None)
+            history=SkillHistory() if skill_history_enabled() else None)
         self.mcp = MCPManager()
         self.channel_manager = ChannelManager()  # CLN-2: owns the channel registry + I/O
         self.checkpoints = CheckpointManager()
