@@ -87,9 +87,8 @@ python -m pytest tests/ -v          # ~3,717 passed, 6 skipped (counter synced v
 > `JARVIS_STT_BEAM_SIZE` now uses shared `env_int(..., minimum=1)` parsing.
 > AUD-14 log rotation env-int is merged in #604: `JARVIS_LOG_MAX_MB` and
 > `JARVIS_LOG_BACKUPS` now use shared `env_int()` parsing while keeping
-> settings-DB fallback intact. AUD-14 call-config env-json is active on
-> `codex-aud14-call-config-env-json`: `JARVIS_CALL_CONFIG` is moving to shared
-> `env_json_object()` parsing.
+> settings-DB fallback intact. AUD-14 call-config env-json is merged in #606:
+> `JARVIS_CALL_CONFIG` now uses shared `env_json_object()` parsing.
 
 ---
 
