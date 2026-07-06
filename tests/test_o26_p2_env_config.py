@@ -26,6 +26,7 @@ from agents.core.env_config import (  # noqa: E402
     env_flag,
     env_float,
     env_int,
+    env_json_object,
     env_str,
     truthy,
 )
@@ -95,6 +96,21 @@ def test_env_str_raw(monkeypatch):
     assert env_str(VAR, "fallback") == "fallback"
 
 
+def test_env_json_object_never_raises_and_requires_object(monkeypatch):
+    default = {"twilio": {"from": "+1000"}}
+
+    monkeypatch.delenv(VAR, raising=False)
+    assert env_json_object(VAR, default) == default
+    monkeypatch.setenv(VAR, "")
+    assert env_json_object(VAR, default) == default
+    monkeypatch.setenv(VAR, "{bad-json")
+    assert env_json_object(VAR, default) == default
+    monkeypatch.setenv(VAR, "[]")
+    assert env_json_object(VAR, default) == default
+    monkeypatch.setenv(VAR, '{"telnyx":{"connection_id":"abc"}}')
+    assert env_json_object(VAR, default) == {"telnyx": {"connection_id": "abc"}}
+
+
 # ── layer 2: the convention guard (the ratchet) ──────────────────────────────
 
 # A literal boolean-spellings set ('"1", "true"' / '"0", "false"' in any
@@ -156,7 +172,7 @@ def test_env_config_is_a_stdlib_leaf():
         stripped = line.strip()
         if stripped.startswith(("import ", "from ")) and "__future__" not in stripped:
             root_mod = stripped.split()[1].split(".")[0]
-            assert root_mod == "os", f"env_config imports non-stdlib-leaf module: {stripped}"
+            assert root_mod in {"json", "os"}, f"env_config imports non-stdlib-leaf module: {stripped}"
     assert "load_dotenv" not in src, "env_config must never load .env (posture change)"
 
 

@@ -46,6 +46,7 @@ that no env var — through this module or otherwise — can weaken).
 
 from __future__ import annotations
 
+import json
 import os
 
 TRUTHY_SPELLINGS = frozenset({"1", "true", "yes", "on"})
@@ -121,3 +122,22 @@ def env_float(name: str, default: float, minimum: float | None = None) -> float:
     if minimum is not None and value < minimum:
         return default
     return value
+
+
+def env_json_object(name: str, default: dict | None = None) -> dict:
+    """Best-effort JSON object: unset, invalid, or non-object → *default*.
+
+    This is for structured env knobs such as provider config maps. It never
+    raises and returns a fresh dict so callers cannot mutate a shared fallback.
+    """
+    fallback = dict(default or {})
+    raw = os.environ.get(name, "").strip()
+    if not raw:
+        return fallback
+    try:
+        value = json.loads(raw)
+    except ValueError:
+        return fallback
+    if not isinstance(value, dict):
+        return fallback
+    return dict(value)
