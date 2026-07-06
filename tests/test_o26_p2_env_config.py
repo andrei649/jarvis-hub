@@ -188,6 +188,15 @@ def test_env_config_is_a_stdlib_leaf():
     assert "load_dotenv" not in src, "env_config must never load .env (posture change)"
 
 
+def test_web_email_ports_use_shared_env_int():
+    """Malformed SMTP/IMAP port env values must fall back, not crash startup."""
+    src = (repo_root / "agents/web.py").read_text(encoding="utf-8")
+    assert 'int(os.environ.get("SMTP_PORT"' not in src
+    assert 'int(os.environ.get("IMAP_PORT"' not in src
+    assert 'env_int("SMTP_PORT", 587' in src
+    assert 'env_int("IMAP_PORT", 993' in src
+
+
 # ── layer 3: pins for the deliberate flips ───────────────────────────────────
 
 def test_a2a_gate_accepts_on(monkeypatch):

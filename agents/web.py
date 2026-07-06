@@ -327,9 +327,9 @@ async def lifespan(application: FastAPI):
     imap_host = os.environ.get("IMAP_HOST", "")
     if smtp_host and imap_host:
         email_ch = EmailChannel(
-            smtp_host=smtp_host, smtp_port=int(os.environ.get("SMTP_PORT", "587")),
+            smtp_host=smtp_host, smtp_port=env_int("SMTP_PORT", 587),
             smtp_user=os.environ.get("SMTP_USER", ""), smtp_pass=os.environ.get("SMTP_PASS", ""),
-            imap_host=imap_host, imap_port=int(os.environ.get("IMAP_PORT", "993")),
+            imap_host=imap_host, imap_port=env_int("IMAP_PORT", 993),
             imap_user=os.environ.get("IMAP_USER", ""), imap_pass=os.environ.get("IMAP_PASS", ""),
             handler=gateway.route,
         )
