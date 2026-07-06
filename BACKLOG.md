@@ -82,8 +82,8 @@ python -m pytest tests/ -v          # ~3,712 passed, 6 skipped (counter synced v
 > shared config module. AUD-14 task-budget env-float is merged in #598:
 > `JARVIS_TASK_MAX_SECONDS` now uses shared `env_float(..., minimum=0.0)`
 > instead of local try/except parsing. AUD-14 analytics max-events env-int is
-> in progress in #600 (`codex-aud14-analytics-max-events-env-int`): malformed
-> `JARVIS_ANALYTICS_MAX_EVENTS` no longer crashes analytics import.
+> merged in #600: malformed `JARVIS_ANALYTICS_MAX_EVENTS` no longer crashes
+> analytics import.
 
 ---
 
