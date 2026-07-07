@@ -18,6 +18,7 @@ inherits from [`../docs/BRAND_BOOK.md`](../docs/BRAND_BOOK.md).
 | [`competitive-brief/`](competitive-brief/) | `COMPETITIVE_BRIEF.md` | The honest, sourced field map — vs OpenClaw / Bee / Khoj / big-tech; objection handling; lines not to cross | Sales / positioning / comment threads |
 | [`content/`](content/) | `CONTENT_CALENDAR.md` | Ready-to-schedule copy bank — teaser arc, launch posts, the 7-tweet thread, long-form outline, evergreen cadence | Social scheduler / a writer |
 | [`landing/`](landing/) | `index.html` + `demo-shot-list.md` | Static, self-contained landing page dev half plus owner-facing demo capture checklist | Static host / owner recording pass |
+| [`alpha-testing/`](alpha-testing/) | `jarvis-alpha-hook-vertical.mp4` + `INVITE_MESSAGE.md` | Private alpha tester recruiting hook video and paste-ready invite copy | Personal-network outreach |
 
 ## Companion assets (in `docs/marketing/`)
 
