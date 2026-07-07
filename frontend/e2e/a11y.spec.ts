@@ -10,6 +10,15 @@
    to e2e/artifacts/a11y-*.json as the human-reviewable audit trail, so the
    moderate/minor backlog stays visible without blocking the lane. */
 import { test, expect } from '@playwright/test';
+
+// The e2e backend boots with no model loaded, which (correctly) raises the
+// first-run gate. These specs drive the cockpit as an already-onboarded user,
+// so pre-seed the dismissal exactly as a returning user's browser carries it.
+test.beforeEach(async ({ page }) => {
+  await page.addInitScript(() => {
+    try { localStorage.setItem('hud.firstrun.dismissed', '1'); } catch { /* ignore */ }
+  });
+});
 import AxeBuilder from '@axe-core/playwright';
 import { mkdirSync, writeFileSync } from 'node:fs';
 

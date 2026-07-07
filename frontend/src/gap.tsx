@@ -1811,19 +1811,19 @@ export function CommandCenterPanel() {
       {steps.length > 0 && (
         <Row>
           <span style={mono}>onboarding</span>
-          <span style={{ marginLeft: 'auto', fontSize: 10, color: 'var(--ink-3)' }}>
+          <span style={{ marginLeft: 'auto', fontSize: 11, color: 'var(--ink-2)' }}>
             {steps.map((s) => (done.has(s.key) ? '●' : '○')).join(' ')} {done.size}/{steps.length}
           </span>
         </Row>
       )}
       {actions.map((a) => (
         <Row key={a.key}>
-          <span style={{ color: a.ready ? 'var(--ink-1)' : 'var(--ink-3)' }}>{a.title}</span>
+          <span style={{ color: a.ready ? 'var(--ink-1)' : 'var(--ink-2)' }}>{a.title}</span>
           <span style={{ marginLeft: 'auto', display: 'flex', gap: 5, alignItems: 'center' }}>
             {a.ready && a.key === 'say_hello'
               && <button className="tool-btn" onClick={sayHello}>run</button>}
             {!a.ready && a.reason
-              && <span style={{ fontSize: 10, color: 'var(--ink-3)' }}>{a.reason}</span>}
+              && <span style={{ fontSize: 11, color: 'var(--ink-2)' }}>{a.reason}</span>}
           </span>
         </Row>
       ))}
