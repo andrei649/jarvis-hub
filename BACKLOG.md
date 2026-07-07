@@ -6,7 +6,8 @@
 > **North Star (vision, principles, phase gates):** [MOONSHOT.md](MOONSHOT.md) — re-rank this backlog against it
 > **Go-Live Plan (features, roadmap, marketing brief):** [GO_LIVE_PLAN.md](GO_LIVE_PLAN.md)
 > **Delivery History (H1–H8 completed sprints):** [docs/HISTORY.md](docs/HISTORY.md)
-> **Hermes migration v3 plan (candidate, pending Fable review):** [docs/research/2026-07-06-hermes-agent-migration-plan.md](docs/research/2026-07-06-hermes-agent-migration-plan.md)
+> **Hermes migration v3 plan (reviewed by Fable 2026-07-07 — APPROVED with notes):** [docs/research/2026-07-06-hermes-agent-migration-plan.md](docs/research/2026-07-06-hermes-agent-migration-plan.md) · review verdict + remaining-phase order in [docs/handoff-fable-2026-07-07.md](docs/handoff-fable-2026-07-07.md) §5
+> **Last-day Fable handoff (2026-07-07 — ordered owner/AI task lanes, risk register):** [docs/handoff-fable-2026-07-07.md](docs/handoff-fable-2026-07-07.md)
 
 **S = story points (1 = ~jumătate de zi) · P = prioritate (P0–P3)**
 
@@ -17,7 +18,7 @@ pip install -r requirements-beta.txt
 python serve.py   # canonical entry (boot guards + graceful shutdown; O26-P0.6: the raw
 #   uvicorn entry `python -m uvicorn agents.web:app` now runs the same guards via the lifespan)
 python scripts/install_smoke.py --json  # fast install smoke: boot + /readyz + fake local turn
-python -m pytest tests/ -v          # ~3,727 passed, 6 skipped (counter synced via scripts/status_sync.py)
+python -m pytest tests/ -v          # ~3,820 passed, 6 skipped (counter synced via scripts/status_sync.py)
 ```
 
 > Singurul skip rămas e heartbeat-ul opțional. (Vechiul `tests/test_spotify.py` cu 8 skip-uri a
@@ -1368,7 +1369,7 @@ chain-of-thought leak / mid-sentence truncation fixed. Kill-switch:
 
 > Sursă: research [docs/research/2026-06-07-hermes-agent.md](docs/research/2026-06-07-hermes-agent.md) §7.
 > Follow-up plan: [docs/research/2026-07-06-hermes-agent-migration-plan.md](docs/research/2026-07-06-hermes-agent-migration-plan.md)
-> captures the v3 expert replication plan as candidate scope pending Fable review; the H20 live-wave
+> captures the v3 expert replication plan — reviewed by Fable 2026-07-07, APPROVED with notes (docs/handoff-fable-2026-07-07.md §5); the H20 live-wave
 > below delivers its Phase 0–1 (the per-turn learning loop) — the remaining phases stay candidate scope.
 > `hermes-agent` (NousResearch, MIT, ~185.7k★, activ) se suprapune masiv cu OpenClaw (are chiar
 > `hermes claw migrate`), așa că **gap-urile de reach/UX sunt deja trackuite** din
