@@ -14,13 +14,14 @@ import json
 from fastapi import APIRouter
 from fastapi.responses import StreamingResponse
 
+from agents.core.app_state import get_orch
+
 router = APIRouter(prefix="/api/cognition", tags=["cognition"])
 
 
 def _facade():
     # Lazy access to the orchestrator's facade (avoids an import cycle at load).
-    from agents import web
-    orch = getattr(web, "orch", None)
+    orch = get_orch()
     return getattr(orch, "cognition", None) if orch else None
 
 
@@ -72,8 +73,7 @@ async def cognition_learning():
     if m is None:
         return {"available": False}
     out = m.status()
-    from agents import web
-    orch = getattr(web, "orch", None)
+    orch = get_orch()
     if orch is not None:
         reviewer = getattr(orch, "reviewer", None)
         if reviewer is not None and hasattr(reviewer, "status"):
@@ -125,8 +125,7 @@ async def _cognition_events(get_cog, *, sleep=asyncio.sleep, interval=1.0,
 
 def _live_cognition():
     """Current ``last_cognition`` snapshot from the live orchestrator (or None)."""
-    from agents import web
-    orch = getattr(web, "orch", None)
+    orch = get_orch()
     return getattr(orch, "last_cognition", None) if orch else None
 
 
