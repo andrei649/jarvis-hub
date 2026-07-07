@@ -229,7 +229,8 @@ export interface paths {
         };
         /**
          * Cognition Learning
-         * @description H21.4 — governed-learning status (KC count, corrections).
+         * @description H21.4 — governed-learning status (KC count, corrections) + the H20
+         *     per-turn review loop's last pass and the skill curator/proposal state.
          */
         get: operations["cognition_learning_api_cognition_learning_get"];
         put?: never;

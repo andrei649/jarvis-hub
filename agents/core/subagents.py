@@ -41,7 +41,12 @@ class NullRunner:
 def _runner_accepts_blocked(runner) -> bool:
     """Whether the injected runner declares a `blocked` kwarg (additive opt-in)."""
     try:
-        target = runner if inspect.isfunction(runner) or inspect.ismethod(runner) else getattr(runner, "__call__", runner)
+        if inspect.isfunction(runner) or inspect.ismethod(runner):
+            target = runner
+        elif callable(runner):
+            target = runner.__call__
+        else:
+            target = runner
         params = inspect.signature(target).parameters
         return "blocked" in params or any(
             p.kind is inspect.Parameter.VAR_KEYWORD for p in params.values())
