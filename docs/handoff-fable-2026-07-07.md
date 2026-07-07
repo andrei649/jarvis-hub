@@ -63,8 +63,11 @@ Mirrors `docs/OWNER_TASKS.md` + BACKLOG M4/Phase 5 — consolidated and ordered:
    (BRAND_BOOK §9) · enable code scanning or unrequire the CodeQL check · dismiss the
    7 triaged FP alerts (CQ-2) · paste the remaining ~12 CodeQL alerts to an agent
    (CQ-3) · promote route-parity/auth-matrix to required checks (SEC-4/F-10).
-5. **License flip** MIT → Apache-2.0 + `TRADEMARKS.md` (decision already recorded,
-   `docs/LICENSE_DECISION.md`). 1 SP, owner-only.
+5. **License flip** MIT → Apache-2.0 — 🟢 **fully prepared in this PR**:
+   `TRADEMARKS.md` live, CONTRIBUTING relicense grant in place (before any partner
+   contribution lands), canonical Apache-2.0 staged in `docs/legal/`. The flip is
+   3 owner commands (exact steps in OWNER_TASKS); timing per LICENSE_DECISION =
+   just before v1.0. Only the sign-off is yours.
 6. **Demo video (60s) + publish the landing page** — dev half is done
    (`marketing/landing/index.html` + `demo-shot-list.md`); the recording is yours.
 7. **Recruit 1–3 design partners** and run the north-star on a non-owner install
@@ -98,11 +101,15 @@ rebase-first, verify-before-claim, byte-identical default path, honest empty sta
    `int()`/`float()`/`json.loads()` on raw env, no ad-hoc boolean truthiness; the
    ratchet test is green). The ~104 remaining plain string reads are cosmetic —
    migrate opportunistically in files you already touch, don't sweep.
-4. **M2.4 live-eval lane** — the deterministic gate + persistent baseline are done;
-   the live-model lane needs the owner's runner. Prepare the workflow so it lights up
-   the day a self-hosted runner appears (owner-gated, code-ready).
-5. **Non-v0 inbox channels** (email/WhatsApp Safe Comms transport) — only *after*
-   their live send seams are proven on real hardware; don't build ahead of B0.
+4. **M2.4 live-eval lane** — ✅ **ci-small-model lane shipped in this PR** (owner
+   go-ahead): `companion_eval --live-model` + the opt-in `live-small-model` nightly
+   job (repo var `JARVIS_EVAL_CI_SMALL_MODEL=1` activates it — flip it to start the
+   advisory trend lane). The owner-box fidelity lane (`JARVIS_EVAL_LIVE`) stays
+   separate and owner-gated.
+5. **Non-v0 inbox channels** — ✅ **email half shipped in this PR** (owner
+   go-ahead): inbound email → inbox threads with SMTP reply metadata, contract
+   branch, pairing-gated senders — all against test doubles; your live SMTP/IMAP
+   round-trip validates it. WhatsApp stays parked (bridge hardware).
 6. **Maintenance runbook** (`REVIEW_YEAR_ONE` §9.7) — ✅ **drafted in this PR**:
    [`docs/MAINTENANCE_RUNBOOK.md`](MAINTENANCE_RUNBOOK.md). Bus factor 1 is the top
    risk in the risk register and the cheapest to mitigate. Owner: correct the

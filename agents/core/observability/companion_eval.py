@@ -380,7 +380,101 @@ def _arg_value(argv: list[str], name: str, default: str | None = None) -> str | 
     return argv[idx + 1]
 
 
+# ── B4: the ci-small-model live lane ─────────────────────────────────────────
+# Live *generation* through any OpenAI-compatible /chat/completions endpoint
+# (Ollama and LM Studio both serve one), deterministic *scoring* via the same
+# rubric as everything else — no LLM judge, no fabrication. Honestly labeled
+# ``lane: ci-small-model``: this is the advisory trend lane a CI runner can
+# drive with a tiny OSS model; the owner-box fidelity lane (JARVIS_EVAL_LIVE
+# on real hardware) is a separate, still-owner-gated concern. stdlib-only
+# client so the lane adds zero dependencies.
+
+def _openai_chat_runner(base_url: str, model: str,
+                        timeout: float = 60.0) -> Callable[[str], Awaitable[str]]:
+    import urllib.request
+
+    url = base_url.rstrip("/") + "/chat/completions"
+
+    def _call(prompt: str) -> str:
+        body = json.dumps({
+            "model": model,
+            "messages": [{"role": "user", "content": prompt}],
+            "temperature": 0.2,
+        }).encode()
+        req = urllib.request.Request(
+            url, data=body, headers={"Content-Type": "application/json"})
+        with urllib.request.urlopen(req, timeout=timeout) as resp:  # noqa: S310 - caller-supplied local endpoint
+            data = json.loads(resp.read().decode("utf-8", "replace"))
+        choices = data.get("choices") or []
+        message = (choices[0].get("message") or {}) if choices else {}
+        return str(message.get("content") or "")
+
+    async def runner(prompt: str) -> str:
+        return await asyncio.to_thread(_call, prompt)
+
+    return runner
+
+
+def run_live_model(*, base_url: str, model: str, store_root: str | None = None,
+                   dialogues: list[dict] | None = None,
+                   timeout: float = 60.0) -> dict:
+    """Run the golden suite through a real model endpoint; score deterministically.
+
+    Returns the ``run_suite`` result plus the honest lane label. An unreachable
+    endpoint returns ``{"ok": False, "error": ...}`` — a reason, never a
+    traceback — so the CI job can report cleanly.
+    """
+    dialogues = dialogues if dialogues is not None else load_dialogues()
+    store = DatasetStore(root=store_root) if store_root else None
+    runner = _openai_chat_runner(base_url, model, timeout=timeout)
+    try:
+        # Preflight: EvalHarness converts per-case runner errors into scored-0
+        # responses, which would let an unreachable endpoint masquerade as
+        # "the model scored 0". One real call up front separates infra failure
+        # (ok:False + reason) from honest model performance.
+        asyncio.run(runner("ping"))
+        result = asyncio.run(run_suite(runner, store=store, dialogues=dialogues))
+    except Exception as exc:  # noqa: BLE001 - the lane reports, it doesn't crash CI
+        return {"ok": False, "lane": "ci-small-model", "model": model,
+                "error": f"{type(exc).__name__}: {exc}"}
+    result.update({"ok": True, "lane": "ci-small-model", "model": model,
+                   "base_url": base_url})
+    result.pop("results", None)   # per-case detail stays in the store, not stdout
+    return result
+
+
 def _main(argv: list[str]) -> int:
+    if "--live-model" in argv:
+        base_url = _arg_value(argv, "--base-url", "http://127.0.0.1:11434/v1")
+        model = _arg_value(argv, "--model", "qwen2.5:0.5b")
+        store_root = _arg_value(argv, "--store-root", os.getenv("JARVIS_EVAL_STORE"))
+        dialogues = load_dialogues()
+        limit_raw = _arg_value(argv, "--limit")
+        if limit_raw:
+            try:
+                dialogues = dialogues[:max(1, int(limit_raw))]
+            except ValueError:
+                print(json.dumps({"ok": False, "error": "invalid --limit"}))
+                return 2
+        result = run_live_model(base_url=base_url, model=model,
+                                store_root=store_root, dialogues=dialogues)
+        summary_path = _arg_value(argv, "--summary", os.getenv("GITHUB_STEP_SUMMARY"))
+        if summary_path and result.get("ok"):
+            lines = [
+                "## Companion Eval — ci-small-model lane (advisory)",
+                f"- Model: `{result['model']}` @ `{result['base_url']}`",
+                f"- Score: {result['score']:.4f} ({result['passed']}/{result['total']} passed)",
+                "- Semantics: live small-model generation, deterministic rubric scoring.",
+                "- This lane tracks the trend; it is NOT the owner-box fidelity lane.",
+            ]
+            try:
+                with open(summary_path, "a", encoding="utf-8") as fh:
+                    fh.write("\n".join(lines) + "\n")
+            except OSError:
+                pass
+        print(json.dumps(result, ensure_ascii=False, indent=2))
+        # Advisory lane: infra failure (unreachable endpoint) is the only red.
+        return 0 if result.get("ok") else 1
     if "--ci-gate" in argv:
         try:
             min_score = float(_arg_value(argv, "--min-score", "1.0"))

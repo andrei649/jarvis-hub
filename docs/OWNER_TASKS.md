@@ -26,8 +26,14 @@
     bump broke `tsc` in the audio path (`expo-audio` AudioPlayer.addListener), so it truly
     needs the SDK upgrade + real-device validation; (c) dismiss the stale alerts in the
     GitHub UI once #634 merges. Python deps: clean (`pip-audit`, CI).
-- [ ] **Relicense MIT → Apache-2.0 + `TRADEMARKS.md`** — decided 2026-06-04, deferred to pre-1.0
-  ([`docs/LICENSE_DECISION.md`](LICENSE_DECISION.md)). 1 SP, but only you can sign off a license change.
+- [ ] **Relicense MIT → Apache-2.0** — decided 2026-06-04, deferred to pre-1.0
+  ([`docs/LICENSE_DECISION.md`](LICENSE_DECISION.md)). **Fully prepared in #634 (2026-07-07):**
+  `TRADEMARKS.md` is live, `CONTRIBUTING.md` carries the relicense grant (in place BEFORE any
+  design-partner contribution lands), and the canonical Apache-2.0 text is staged at
+  `docs/legal/LICENSE-APACHE-2.0-staged.txt`. The flip is now 3 commands, only you may run them:
+  `git mv docs/legal/LICENSE-APACHE-2.0-staged.txt LICENSE` (replacing the MIT file) · update the
+  README badge `license-MIT-green` → `license-Apache--2.0-blue` · commit as its own PR titled
+  "relicense: MIT → Apache-2.0 (pre-1.0, per LICENSE_DECISION)".
 - [ ] **(optional) Signed release artifacts** — the release pipeline (H23.13) builds tar/zip + SBOM +
   checksums automatically; to also emit GPG signatures, generate a signing key and add the repo
   secrets `GPG_PRIVATE_KEY` (+ `GPG_PASSPHRASE` if set). Steps in [`docs/RELEASE.md`](RELEASE.md).

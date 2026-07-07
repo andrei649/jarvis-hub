@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useState } from 'react';
 import { Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
 import {
   ApiError,
+  fetchCommandCenter,
   fetchDashboard,
   fetchSecurityGovernance,
   fetchSecurityKillSwitch,
@@ -9,6 +10,7 @@ import {
   fetchSecurityPosture,
   fetchStatus,
   fetchTicker,
+  type CommandCenterResponse,
   type DashboardResponse,
   type SecurityGovernanceResponse,
   type SecurityKillSwitchResponse,
@@ -70,6 +72,7 @@ export function StatusScreen({ onGoToSettings }: { onGoToSettings: () => void })
   const [posture, setPosture] = useState<SecurityPostureResponse | null>(null);
   const [killSwitch, setKillSwitch] = useState<SecurityKillSwitchResponse | null>(null);
   const [loopBreaker, setLoopBreaker] = useState<SecurityLoopBreakerResponse | null>(null);
+  const [commandCenter, setCommandCenter] = useState<CommandCenterResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
@@ -86,16 +89,18 @@ export function StatusScreen({ onGoToSettings }: { onGoToSettings: () => void })
       setStatus(statusOut);
       setDashboard(dashboardOut);
       setTicker(tickerOut);
-      const [governanceOut, postureOut, killOut, loopOut] = await Promise.all([
+      const [governanceOut, postureOut, killOut, loopOut, ccOut] = await Promise.all([
         fetchSecurityGovernance(config).catch(() => null),
         fetchSecurityPosture(config).catch(() => null),
         fetchSecurityKillSwitch(config).catch(() => null),
         fetchSecurityLoopBreaker(config).catch(() => null),
+        fetchCommandCenter(config).catch(() => null),
       ]);
       setGovernance(governanceOut);
       setPosture(postureOut);
       setKillSwitch(killOut);
       setLoopBreaker(loopOut);
+      setCommandCenter(ccOut);
     } catch (e) {
       setError(e instanceof ApiError ? e.message : 'Failed to load status');
       setStatus(null);
@@ -105,6 +110,7 @@ export function StatusScreen({ onGoToSettings }: { onGoToSettings: () => void })
       setPosture(null);
       setKillSwitch(null);
       setLoopBreaker(null);
+      setCommandCenter(null);
     } finally {
       setLoading(false);
     }
@@ -153,6 +159,33 @@ export function StatusScreen({ onGoToSettings }: { onGoToSettings: () => void })
         <Row label="Loaded" value={status?.loaded_model} />
         <Row label="Configured" value={status?.active_model} />
         <Row label="Reachable" value={status?.lm_online ? 'yes' : 'no'} />
+      </Card>
+
+      <Card title="First-run">
+        {commandCenter ? (
+          <>
+            <Row
+              label="Install"
+              value={`${commandCenter.install.ready ? 'ready' : 'starting'}${commandCenter.install.version ? ` · v${commandCenter.install.version}` : ''}`}
+            />
+            <Row
+              label="Model"
+              value={commandCenter.model.active_model || commandCenter.model.backend}
+            />
+            <Row
+              label="Onboarding"
+              value={`${commandCenter.wizard.completed.length}/${commandCenter.wizard.steps.length}${commandCenter.wizard.complete ? ' ✓' : ''}`}
+            />
+            {commandCenter.wizard.hint ? (
+              <Text style={styles.emptyText}>{commandCenter.wizard.hint}</Text>
+            ) : null}
+            {commandCenter.first_actions.map((a) => (
+              <Row key={a.key} label={a.title} value={a.ready ? 'ready' : a.reason || 'held'} />
+            ))}
+          </>
+        ) : (
+          <Text style={styles.emptyText}>No first-run data</Text>
+        )}
       </Card>
 
       <Card title="Trust">

@@ -60,3 +60,50 @@ jobs:
         with:
           path: ${{ env.JARVIS_EVAL_STORE }}
           key: ${{ env.JARVIS_EVAL_CACHE_PREFIX }}-${{ hashFiles('agents/core/observability/companion_dialogues.json', 'agents/core/observability/companion_eval.py') }}-${{ github.run_id }}
+
+  # B4 (handoff 2026-07-07) — the ci-small-model ADVISORY lane: live generation
+  # through a tiny OSS model on the GitHub runner, deterministic rubric scoring.
+  # Opt-in via the repo variable JARVIS_EVAL_CI_SMALL_MODEL=1 (zero cost until the
+  # owner flips it). This is the trend lane — NOT the owner-box fidelity lane
+  # (JARVIS_EVAL_LIVE), which stays owner-gated on real hardware.
+  live-small-model:
+    if: ${{ vars.JARVIS_EVAL_CI_SMALL_MODEL == '1' && github.event_name != 'pull_request' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      JARVIS_EVAL_STORE: ${{ github.workspace }}/.jarvis-eval-cache/eval-small
+      SMALL_MODEL: ${{ vars.JARVIS_EVAL_CI_SMALL_MODEL_ID || 'qwen2.5:0.5b' }}
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1  # v6.3.0
+        with:
+          python-version: "3.12"
+      - name: Install runtime deps
+        run: pip install -r requirements-beta.txt
+      - name: Install and serve Ollama + pull the small model
+        run: |
+          curl -fsSL https://ollama.com/install.sh | sh
+          ollama serve &
+          for i in $(seq 1 30); do
+            curl -sf http://127.0.0.1:11434/api/tags >/dev/null && break
+            sleep 1
+          done
+          ollama pull "$SMALL_MODEL"
+      - name: Restore small-model eval baseline
+        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830  # v4.3.0
+        with:
+          path: ${{ env.JARVIS_EVAL_STORE }}
+          key: eval-nightly-small-model-v1-${{ github.run_id }}
+          restore-keys: |
+            eval-nightly-small-model-v1-
+      - name: Run the ci-small-model lane (advisory)
+        run: |
+          python -m agents.core.observability.companion_eval --live-model \
+            --base-url http://127.0.0.1:11434/v1 --model "$SMALL_MODEL" \
+            --store-root "$JARVIS_EVAL_STORE" --summary "$GITHUB_STEP_SUMMARY"
+      - name: Save small-model eval baseline
+        if: ${{ success() }}
+        uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830  # v4.3.0
+        with:
+          path: ${{ env.JARVIS_EVAL_STORE }}
+          key: eval-nightly-small-model-v1-${{ github.run_id }}
