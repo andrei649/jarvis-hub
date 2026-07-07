@@ -78,19 +78,22 @@ Mirrors `docs/OWNER_TASKS.md` + BACKLOG M4/Phase 5 — consolidated and ordered:
 Ordered by leverage. The ORIZONT 25 protocol digest (BACKLOG) stays in force:
 rebase-first, verify-before-claim, byte-identical default path, honest empty states.
 
-1. **Hermes migration v3 — reviewed, verdict below (§5).** Remaining phases in order:
-   Phase 2 (context compression auto-trigger), Phase 3 live wiring (file-RPC transport
-   for Docker/SSH — primitives merged in #628/#630/#631, and #632's
-   `ToolRPCSandboxRuntime` is tested but has zero production callers yet), Phase 5
-   live wiring (gateway
-   session/delivery model into `Gateway.route` — primitives in #626), Phase 6 cron
-   tick + file lock. Keep the skip-list sacred (no Modal/Daytona, no Tool Gateway).
+1. **Hermes migration v3 — reviewed, verdict below (§5).** ✅ **Phase 2 delivered in
+   this PR** (context compression maturity: `keep_first`, structured template,
+   iterative summary-merge, opt-in strict-local summarizer — defaults byte-identical,
+   +12 tests). Remaining: Phase 3 live wiring (file-RPC transport for Docker/SSH —
+   primitives merged in #628/#630/#631, and #632's `ToolRPCSandboxRuntime` is tested
+   but has zero production callers yet), Phase 5 live wiring (gateway session/delivery
+   model into `Gateway.route` — primitives in #626), Phase 6 cron tick + file lock —
+   all **on-demand only** (§5). Keep the skip-list sacred (no Modal/Daytona, no Tool
+   Gateway).
 2. **0.19 First-Run Command Center** — the one HUD item that directly serves design
    partners (install-health + model + first-action in one screen). Activation beats
    depth now; H23.20 has the seams.
-3. **AUD-14 tail** — continue the env-read consolidation slices (the pattern is
-   established; #592–#622 are the template). Grep for surviving raw `os.environ`
-   parses outside `env_config.py`.
+3. **AUD-14 tail** — ✅ re-audited in this PR: zero unsafe parses remain (no typed
+   `int()`/`float()`/`json.loads()` on raw env, no ad-hoc boolean truthiness; the
+   ratchet test is green). The ~104 remaining plain string reads are cosmetic —
+   migrate opportunistically in files you already touch, don't sweep.
 4. **M2.4 live-eval lane** — the deterministic gate + persistent baseline are done;
    the live-model lane needs the owner's runner. Prepare the workflow so it lights up
    the day a self-hosted runner appears (owner-gated, code-ready).

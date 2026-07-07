@@ -18,7 +18,7 @@ pip install -r requirements-beta.txt
 python serve.py   # canonical entry (boot guards + graceful shutdown; O26-P0.6: the raw
 #   uvicorn entry `python -m uvicorn agents.web:app` now runs the same guards via the lifespan)
 python scripts/install_smoke.py --json  # fast install smoke: boot + /readyz + fake local turn
-python -m pytest tests/ -v          # ~3,820 passed, 6 skipped (counter synced via scripts/status_sync.py)
+python -m pytest tests/ -v          # ~3,832 passed, 6 skipped (counter synced via scripts/status_sync.py)
 ```
 
 > Singurul skip rămas e heartbeat-ul opțional. (Vechiul `tests/test_spotify.py` cu 8 skip-uri a
@@ -131,9 +131,9 @@ python -m pytest tests/ -v          # ~3,820 passed, 6 skipped (counter synced v
 
 | # | Item | Status |
 |---|------|--------|
-| B1 | Hermes v3 Phase 2 — context compression auto-trigger (do BEFORE 3/5/6) | ⬜ next AI task |
+| B1 | Hermes v3 Phase 2 — context compression maturity | ✅ done in #634 (2026-07-07) — `keep_first` leading-turn protection, hermes structured summary template, iterative summary-merge (`prior`/`covered`), and an opt-in **strict-local** LLM summarizer (`memory.compression_summarizer`, uses `LLMRouter.local_backend` only, degrades to the deterministic digest). Defaults byte-identical; `tests/test_context_compression_phase2.py` (+12) |
 | B2 | 0.19 First-Run Command Center (activation for design partners; seams in H23.20) | ⬜ |
-| B3 | AUD-14 tail — remaining raw env-read slices (template: #592–#622) | ⬜ ongoing |
+| B3 | AUD-14 tail — remaining raw env-read slices (template: #592–#622) | 🟢 re-audited 2026-07-07 (in #634): **zero** unsafe parses remain — no `int()`/`float()`/`json.loads()` on raw env, no ad-hoc boolean truthiness (ratchet `test_o26_p2_env_config.py` green); ~104 plain `env_str`-equivalent string reads left = cosmetic, migrate opportunistically in files you already touch |
 | B4 | M2.4 live-eval lane prep (code-ready, lights up when owner runner exists) | ⬜ owner-gated |
 | B5 | Non-v0 inbox channels (email/WhatsApp) — only after live send seams proven post-B0 | ⬜ parked |
 | B6 | Maintenance runbook ("if the owner disappears a month", REVIEW_YEAR_ONE §9.7) | ✅ drafted in #634 — [docs/MAINTENANCE_RUNBOOK.md](docs/MAINTENANCE_RUNBOOK.md), owner to verify the `[owner: verify]` marks |

@@ -1694,17 +1694,50 @@ class Orchestrator:
         except (TypeError, ValueError):
             return 120.0
 
+    def _compression_summarizer(self):
+        """Strict-local LLM summarizer for context compression, or ``None``.
+
+        Only built when ``memory.compression_summarizer`` is on (default OFF).
+        Mirrors the H20 background-review rail: the summarizer reads raw
+        conversation content, so it uses ``LLMRouter.local_backend`` ONLY —
+        the fail-closed accessor that never falls through to a cloud backend.
+        No local backend ⇒ the call raises inside the compressor, which
+        degrades to its deterministic offline digest. Never cloud, never raises
+        into the turn.
+        """
+        router = getattr(self, "llm_router", None)
+        if router is None:
+            return None
+
+        async def _summarize(prompt: str) -> str:
+            from .llm.model_config import DEFAULT_LOCAL_MODEL
+            backend = router.local_backend      # strict-local; raises if none
+            model = router.active_model or DEFAULT_LOCAL_MODEL
+            max_tokens = int(self.get_setting(
+                "memory.compression_summary_max_tokens", 256) or 256)
+            return await backend.generate(
+                model=model, prompt=prompt,
+                system="You compress conversation context. Output only the summary.",
+                max_tokens=max_tokens, temperature=0.2)
+
+        return _summarize
+
     async def _history_for_prompt(self, last_n: int) -> str:
         """Conversation history for a prompt, optionally token-budget compressed.
 
         Default (``memory.context_compression`` off): byte-identical to
         ``memory.get_context`` — the flag guards the whole path. When on, the
-        raw turns go through ``ContextCompressor(summarizer=None)``: within
-        budget it keeps every turn verbatim; over budget the older turns
-        collapse into a deterministic, offline digest (H20.3). ``summarizer``
-        stays ``None`` on the hot path — zero LLM/egress, so the flag is safe
-        even for LOCAL_ONLY agents. Output is formatted exactly like
-        ``get_context`` (``[speaker]: content`` lines) so prompt assembly
+        raw turns go through ``ContextCompressor``: within budget it keeps
+        every turn verbatim; over budget the older turns collapse into a
+        summary (H20.3). By default ``summarizer`` is ``None`` — zero
+        LLM/egress, deterministic digest, safe even for LOCAL_ONLY agents.
+
+        Hermes Phase 2 (all opt-in): ``memory.compression_summarizer`` swaps
+        in a STRICT-LOCAL LLM summarizer with hermes's structured template and
+        an iterative per-session summary-merge (only unseen turns are re-read);
+        ``memory.compression_keep_first`` protects the leading N turns verbatim
+        so the session's original ask survives eviction. Output stays formatted
+        like ``get_context`` (``[speaker]: content`` lines) so prompt assembly
         downstream is unchanged.
         """
         if not self.get_setting("memory.context_compression", False):
@@ -1713,16 +1746,32 @@ class Orchestrator:
         if not turns:
             return ""
         from .context_compressor import ContextCompressor
+        summarizer = None
+        if self.get_setting("memory.compression_summarizer", False):
+            summarizer = self._compression_summarizer()
         compressor = ContextCompressor(
-            summarizer=None,
+            summarizer=summarizer,
             max_tokens=int(self.get_setting("memory.compression_max_tokens", 2000)),
+            keep_first=int(self.get_setting("memory.compression_keep_first", 0) or 0),
+            structured=summarizer is not None,
         )
-        result = await compressor.compress(turns)
-        lines = [f"[{t.get('agent_id') or t.get('role', '')}]: {t.get('content', '')}"
-                 for t in result["kept"]]
+        cache = getattr(self, "_ctx_summary_cache", None)
+        if cache is None:
+            cache = self._ctx_summary_cache = {}
+        prior = cache.get(self.session_id) if summarizer is not None else None
+        result = await compressor.compress(turns, prior=prior)
+        if summarizer is not None and result["compressed"]:
+            # Iterative merge state (bounded: one entry per live session key).
+            cache[self.session_id] = {"summary": result["summary"],
+                                      "covered": result["covered"]}
+        def _fmt(ts):
+            return [f"[{t.get('agent_id') or t.get('role', '')}]: {t.get('content', '')}"
+                    for t in ts]
+
         if result["compressed"] and result["summary"]:
-            return result["summary"] + "\n" + "\n".join(lines)
-        return "\n".join(lines)
+            return "\n".join(_fmt(result.get("kept_first", []))
+                             + [result["summary"]] + _fmt(result["kept"]))
+        return "\n".join(_fmt(result["kept"]))
 
     async def _call_agents_parallel(
         self, agent_ids: list[str], text: str, context: dict, plugin_data: dict = None

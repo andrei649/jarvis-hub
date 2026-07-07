@@ -480,7 +480,7 @@ Key env vars loaded at startup:
 ### Testing
 
 - **Framework:** pytest with `asyncio_mode = auto` (see `pytest.ini`) — all `async def test_*` run without decorators.
-- **Test count:** ~3,820 passing tests, 6 skipped (offline suite; counter synced via `scripts/status_sync.py`). *(WorldView, the separate `worldview/` Node stack, has its own CI + test suites — see `worldview/`.)*
+- **Test count:** ~3,832 passing tests, 6 skipped (offline suite; counter synced via `scripts/status_sync.py`). *(WorldView, the separate `worldview/` Node stack, has its own CI + test suites — see `worldview/`.)*
 - **sys.path pattern:** Every test file inserts `repo_root` and `repo_root/agents` at the top. Always use this, not relative imports.
 - **Offline by default:** Tests inject fake backends (e.g. `FakeBackend(LLMBackend)`, `FakeLMStudioClient`). No real network/LLM required.
 - **Orchestrator instantiation trick:** Avoid `Orchestrator(config)` in ordinary unit tests (heavy init). Use `Orchestrator.__new__(Orchestrator)` + manual attribute assignment, or mock the heavy dependencies. The capability readiness matrix is the deliberate exception: it boots a cached real orchestrator because it is testing registry truth, not a unit seam.
