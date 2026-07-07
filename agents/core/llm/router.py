@@ -107,6 +107,19 @@ class LLMRouter:
         return self._backend
 
     @property
+    def local_backend(self) -> LLMBackend:
+        """The detected LOCAL backend only — fail-closed, never a cloud fallback.
+
+        Unlike ``backend`` (which HybridRouter overrides to prefer cloud when
+        keys are configured), this accessor is the strict-local contract used by
+        privacy-sensitive paths (e.g. the H20 background review, which embeds
+        raw conversation content): no local backend ⇒ RuntimeError ⇒ the caller
+        skips, nothing egresses."""
+        if self._backend is None:
+            raise RuntimeError("No local LLM backend available (strict-local path).")
+        return self._backend
+
+    @property
     def name(self) -> str:
         return self._backend_name
 

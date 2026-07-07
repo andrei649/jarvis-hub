@@ -14,13 +14,14 @@ import json
 from fastapi import APIRouter
 from fastapi.responses import StreamingResponse
 
+from agents.core.app_state import get_orch
+
 router = APIRouter(prefix="/api/cognition", tags=["cognition"])
 
 
 def _facade():
     # Lazy access to the orchestrator's facade (avoids an import cycle at load).
-    from agents import web
-    orch = getattr(web, "orch", None)
+    orch = get_orch()
     return getattr(orch, "cognition", None) if orch else None
 
 
@@ -65,12 +66,25 @@ async def cognition_memory():
 
 @router.get("/learning")
 async def cognition_learning():
-    """H21.4 — governed-learning status (KC count, corrections)."""
+    """H21.4 — governed-learning status (KC count, corrections) + the H20
+    per-turn review loop's last pass and the skill curator/proposal state."""
     f = _facade()
     m = f.module("learning") if f is not None else None
     if m is None:
         return {"available": False}
-    return m.status()
+    out = m.status()
+    orch = get_orch()
+    if orch is not None:
+        reviewer = getattr(orch, "reviewer", None)
+        if reviewer is not None and hasattr(reviewer, "status"):
+            out["review"] = reviewer.status()
+        curator = getattr(orch, "curator", None)
+        if curator is not None and hasattr(curator, "status"):
+            out["curator"] = curator.status()
+        proposals = getattr(orch, "skill_proposals", None)
+        if proposals is not None and hasattr(proposals, "stats"):
+            out["skill_proposals"] = proposals.stats()
+    return out
 
 
 @router.get("/ensemble")
@@ -111,8 +125,7 @@ async def _cognition_events(get_cog, *, sleep=asyncio.sleep, interval=1.0,
 
 def _live_cognition():
     """Current ``last_cognition`` snapshot from the live orchestrator (or None)."""
-    from agents import web
-    orch = getattr(web, "orch", None)
+    orch = get_orch()
     return getattr(orch, "last_cognition", None) if orch else None
 
 

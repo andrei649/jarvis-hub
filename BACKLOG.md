@@ -429,7 +429,7 @@ the syscall table · budgets = the scheduler · kill-switch/quarantine = a sysca
 | M3.1 | **Mobile approval queue** (then Dashboard, Tasks) — `GET /autonomy/approvals` + `POST /autonomy/tasks/{id}/decision` (`routers/autonomy.py:362,208`) from the phone; PARITY.md row in same PR — *the north-star surface* | 5 | ✅ done (2026-07-04, #509) |
 | M3.2 | **Plugin-gated HUD modes honest wiring** — Finance/Health/Knowledge/Family + Comms threads via the `live.ts` swap pattern; honest empty state when unconfigured. ✅ Done 2026-07-04 (#505): Build/Comms/Finance/Health/Knowledge/Family now feed LIVE/SEED mode keys, `/plugins.configured` prevents enabled-but-unconfigured plugins from looking live, `balance` mock payloads stay SEED, and empty Comms channels render without seeded inbox threads. Remaining owner blockers: live bank/broker/quotes keys, Apple Health LAN bridge, websearch backend, WhatsApp bridge URL/hardware, and self-hosted fonts. | 3 | ✅ done |
 | M3.3 | **H23.22 landing page (dev half)** — static, self-contained, from `docs/marketing/` + BRAND_BOOK tokens; demo shot-list support (0.52) | 3 | ✅ done (2026-07-04, #512) — `marketing/landing/index.html` + `demo-shot-list.md`; owner video remains M4 |
-| M3.4 | **AUD-14 config consolidation** (pulled forward — 161 env reads and climbing) — one `env_config` module + one `truthy()`; policy sets derived from `agents.yaml` **keeping the code-enforced LOCAL_ONLY floor** (BUG-14 lesson) | 3 | 🟡 partial / latest merged slice (#620), trust env-flags active — O26-P2.1 delivered `env_config` + the boolean ratchet; #592 closes the `JARVIS_CHANNEL_SEND_RATE` numeric-env seam through `env_int()`. #596 adds `agents/core/llm/model_config.py` as the shared home for model-name defaults and `JARVIS_DEEP_MODEL`. #620 moves `JARVIS_PLUGIN_GRANTS` to shared `env_list()` parsing. `codex-aud14-trust-env-flags` is moving trust-status mic/strict-local reads to shared `env_flag()`. |
+| M3.4 | **AUD-14 config consolidation** (pulled forward — 161 env reads and climbing) — one `env_config` module + one `truthy()`; policy sets derived from `agents.yaml` **keeping the code-enforced LOCAL_ONLY floor** (BUG-14 lesson) | 3 | 🟡 partial / latest slice merged (#622) — O26-P2.1 delivered `env_config` + the boolean ratchet; #592 closes the `JARVIS_CHANNEL_SEND_RATE` numeric-env seam through `env_int()`. #596 adds `agents/core/llm/model_config.py` as the shared home for model-name defaults and `JARVIS_DEEP_MODEL`. #620 moves `JARVIS_PLUGIN_GRANTS` to shared `env_list()` parsing. #622 moves trust-status mic/strict-local reads to shared `env_flag()`. |
 | M3.5 | **#169 WorldView MCP write transport** — stdio client path for `watch_aoi`/`reconstruct_event` behind plugin-gate+kernel, with the HMAC token folded into the governed capability path (last K2 slice) | 5 | ✅ done (2026-07-06, #594) — `WorldViewMCPWriteClient` gates writes through `PermissionGate`, Action Kernel, per-agent `plugin:worldview` broker capability, and a scoped `WORLDVIEW_MCP_SECRET` HMAC token before calling the stdio MCP tools. `ArgusInterface` exposes `watch_aoi`/`reconstruct_event` only through that governed path while `WorldViewPlugin` stays read-only. Full PR CI was green before merge. |
 | M3.6 | **Q2 persona-consistency rail** — persona dimension on the live `QualityMonitor` judged vs the SOUL's current version (`soul_versioning`); drift alert like quality-decline | 3 | ✅ done (2026-07-04, #510) — `QualityMonitor` now accepts versioned persona profiles derived from the current SOUL, scores the assistant `output_preview`, stores `persona_score`/`soul_version`, and exposes a separate persona drift alert. Full PR CI green before merge. |
 | M3.7 | **Q3 caring follow-ups in the morning brief** — `build_morning_brief` + `build_unified_digest` recomposition: yesterday's failed/blocked tasks, open-concern facts, upcoming KG dates; zero new capture, rides the existing brief slot | 3 | ✅ done (2026-07-04, #510) — morning brief + unified digest now reuse a read-only caring-followup extractor over failed/blocked tasks, open-concern memory facts, and upcoming/date facts; `/autonomy/brief` and the scheduled morning digest read the existing `MemoryStore`. Full PR CI green before merge. |
@@ -691,7 +691,7 @@ Status keys as elsewhere (✅ done · 🟢 in PR · 🟡 partial · ⬜ open). `
 | # | Item | S | P | AC |
 |---|------|---|---|----|
 | AUD-13 | **Turn-pipeline de-dup + service container** — one `PromptBuilder` + `_preprocess_turn`; extract context/dispatch/persist; retire `orch` back-refs + `sys.modules` indirection (A1). *Continues CLN-2.* | 8 | P2 | prompt assembly lives in one place; collaborators take narrow interfaces |
-| AUD-14 | **Config consolidation** — one `Config` read once at boot (collapse 121 env reads / 3 bool conventions; centralize model names); derive agent-policy sets from `agents.yaml` (A3, F29). **Progress:** O26-P2.1 unified boolean/env parsing; #592 moved channel send-rate numeric parsing to `env_int()`; #596 centralizes LLM model-name defaults/`JARVIS_DEEP_MODEL` in `llm/model_config.py`; #620 moves plugin grants to shared `env_list()`; trust status env flags are active on `codex-aud14-trust-env-flags`. | 3 | P2 | a model swap is one edit; one truthy convention |
+| AUD-14 | **Config consolidation** — one `Config` read once at boot (collapse 121 env reads / 3 bool conventions; centralize model names); derive agent-policy sets from `agents.yaml` (A3, F29). **Progress:** O26-P2.1 unified boolean/env parsing; #592 moved channel send-rate numeric parsing to `env_int()`; #596 centralizes LLM model-name defaults/`JARVIS_DEEP_MODEL` in `llm/model_config.py`; #620 moves plugin grants to shared `env_list()`; #622 moves trust-status env flags to shared `env_flag()`. | 3 | P2 | a model swap is one edit; one truthy convention |
 | AUD-15 | **Client consolidation** — retire HUD v1, make v2 the Tauri target, extract a shared `@jarvis/client` (auth+SSE+fetch + timeouts); remove `@ts-nocheck`, move toward `strict` (A2, F17, F26). | 8 | P2 | one client lib across surfaces; v1 gone; fetches time out |
 | AUD-16 | ✅ **done (2026-07-03)** — `frontend/src/api/schema.gen.ts` is generated from the live FastAPI `/openapi.json`; `npm run typegen:openapi` pins `openapi-typescript@7.13.0`; CI boots the backend, regenerates the schema, and fails on `git diff --exit-code -- frontend/src/api/schema.gen.ts`. Consumer migration remains gradual. | 3 | P2 | a backend field change fails the TS diff check |
 | AUD-17 | ✅ **done** — Prometheus `GET /metrics` golden signals (RED): `jarvis_http_requests_total` (rate, by method/route-template/status), `jarvis_http_request_duration_seconds` summary (p50/p95/p99 + sum/count), `jarvis_http_errors_total` (5xx), `jarvis_http_requests_in_flight` gauge — recorded by a `_golden_signals` middleware in `web.py`, dependency-free exposition in `observability/http_metrics.py` (route-**template** labels → bounded cardinality; reuses `north_star._percentile`). Scrape is unauth + rate-limit-bypassed like the probes. Real-path **concurrency/p95 test** drives 60 concurrent requests, asserts p95 under budget with no in-flight leak. (F16, F23) | 3 | P2 | `/metrics` exposes http/latency/error; load test asserts p95 on the real HTTP path |
@@ -1368,8 +1368,8 @@ chain-of-thought leak / mid-sentence truncation fixed. Kill-switch:
 
 > Sursă: research [docs/research/2026-06-07-hermes-agent.md](docs/research/2026-06-07-hermes-agent.md) §7.
 > Follow-up plan: [docs/research/2026-07-06-hermes-agent-migration-plan.md](docs/research/2026-07-06-hermes-agent-migration-plan.md)
-> captures the v3 expert replication plan as candidate scope pending Fable review; it does not reopen the
-> delivered 6/6 ORIZONT 20 rows by itself.
+> captures the v3 expert replication plan as candidate scope pending Fable review; the H20 live-wave
+> below delivers its Phase 0–1 (the per-turn learning loop) — the remaining phases stay candidate scope.
 > `hermes-agent` (NousResearch, MIT, ~185.7k★, activ) se suprapune masiv cu OpenClaw (are chiar
 > `hermes claw migrate`), așa că **gap-urile de reach/UX sunt deja trackuite** din
 > `2026-06-05-openclaw-feature-analysis.md`: canale (H12.16), node mesh (H12.17), canvas (H12.18),
@@ -1393,6 +1393,57 @@ chain-of-thought leak / mid-sentence truncation fixed. Kill-switch:
 
 > **Total Orizont 20:** ~47 SP, **post-1.0** (NU în gate-ul 1.0.0). Headline: **H20.1**.
 > Secvențiere: H20.1 → H20.2 → H20.3 → (H20.4 ∥ H20.5 ∥ H20.6).
+
+### H20 live-wave — bucla de învățare per-tură (2026-07-06)
+
+> **Truth-in-docs (H7.8):** itemii H20.5/H20.6 de mai sus au livrat *suprafețe guvernate*
+> (primitive pure + endpoints), dar **esența hermes-agent — bucla de învățare per-tură — nu era
+> cablată live**: `refine_proposal` era apelat doar din teste, nimic nu distila fapte în CoreMemory
+> per-tură, niciun ciclu de viață pentru skill-uri. Valul de mai jos o cablează, sub guvernare
+> (deep-dive sursă hermes-agent + jarvis; adaptare MIT cu atribuire: `LICENSES/hermes-agent-MIT.txt`).
+> **Default-OFF** (Product Posture O26-P2.4): totul e gated `cognition.enabled` + `cognition.review_enabled`.
+
+| # | Item | S | P | Dep | Sursă |
+|---|------|---|---|-----|-------|
+| H20.L1 ✅ | **IterationBudget + scoping sub-agenți** — `core/iteration_budget.py` (contor consume/refund thread-safe) + `subagents.py`: `DELEGATE_BLOCKED_CAPABILITIES` (delegate/memory_write/channel_send/skill_manage/clarify) înregistrat pe fiecare spawn și pasat runner-elor care acceptă `blocked`; buget total de spawn-uri opțional. **Done 2026-07-06**, +12 teste offline. | 2 | P2 | H20.6 | hermes `iteration_budget.py`, `delegate_tool.py` |
+| H20.L2 ✅ | **Bounded core injectat + scanat + user profile** — `LivingMemory` primește `user_core` (inel CoreMemory separat pt. fapte despre user, `user_core.json`); blocul `[core memory]`/`[user profile]` e redat de `learning/core_block.py` (pur): fiecare intrare trece prin `detect_injection` (H17) → intrările flagged devin placeholder `[BLOCKED …]`, niciodată injectate; **frozen-snapshot per sesiune** în orchestrator (scrierile mid-session ating discul, nu prefixul promptului → prefix-cache stabil pe LM Studio/llama.cpp). **Done 2026-07-06**, +8 teste offline. | 3 | P2 | H21.3 | hermes `memory_tool.py` (MemoryStore) |
+| H20.L3 ✅ | **Background review per-tură (distilatorul)** — `learning/background_review.py`: după fiecare tură (`_complete_llm_turn`), un task fire-and-forget face UN apel LLM structurat-JSON (**strict-local** by construction: `router.backend`) care propune fapte user/agent, corecții și update-uri de skill; **codul** (nu modelul) dispecerizează: fapte → inele bounded (scanate, deduplicate, cap `learning.review_max_facts`), corecții → `LearningModule.record_correction` (H21.4 își primește în sfârșit semnalele), skill nou → `generate_skill` → carantină CDX-8, patch → `skills/proposals.py` (pending) + `ActionApprovalQueue`. Cadență + buget zilnic (`learning.review_cadence` every_turn/every_n_turns/idle_gap, `learning.review_daily_budget`) — politica de cost pt. GPU local, pe care hermes nu o avea. Anti-capture rules portate (fără eșecuri de mediu / claim-uri negative / erori tranziente). Status pe `/api/cognition/learning` (fără rute noi). **Done 2026-07-06**, +14 teste offline. | 8 | P2 | H20.L2, H21.4 | hermes `background_review.py` |
+| H20.L4 ✅ | **Ciclu de viață skill-uri + curator nocturn** — `skills/usage.py` (telemetrie sidecar în data-root: use/view/patch + provenance agent/import/bundled + pin + stare; hook best-effort în `Skill.execute`/`generate_skill`) + `skills/curator.py`: pass nocturn (fereastra reflector-ului, idempotent pe zi) — active → stale (30d) → **arhivat** (90d, directorul MUTAT în arhiva din data-root, niciodată șters); doar skill-urile **agent-created, ne-pinned** sunt curatabile (bundled/import/pinned intangibile); aplică patch-urile **aprobate de owner** hash-checked contra drift (`skill_drift`) cu backup reversibil; deciziile din ActionApprovalQueue se sincronizează în ledger. `refine_proposal`/manifest-ul H20.5 sunt acum consumate live. **Done 2026-07-06**, +19 teste offline. | 8 | P3 | H20.L3, H20.5, H10.18 | hermes `curator.py`, `skill_usage.py` |
+
+> **Neportat intenționat (anti-teză):** Modal/Daytona/Singularity (exec serverless în cloud ≠ local-first),
+> Nous Tool Gateway (pass-through-uri hosted ≠ privacy-first), lățimea de 20+ canale (H12.16 rămâne
+> on-demand), paritatea desktop (post-1.0). Detalii: planul „Migrate hermes-agent's best features".
+>
+> **Review adversarial pre-merge (2026-07-06, 3 lentile × verify):** a prins și s-au reparat —
+> (1) **CRITIC:** `HybridRouter.backend` preferă cloud-ul (Claude/Gemini) când există chei → review-ul
+> ar fi trimis conversația în cloud; fix: `LLMRouter.local_backend` (fail-closed, strict-local);
+> (2) purge-ul explicit (`clear_live_memory`) nu invalida snapshot-ul înghețat al core-block-ului →
+> faptele uitate rămâneau injectate până la miezul nopții; fix: cache-ul e golit la purge;
+> (3) provenance-ul skill-urilor generate era înregistrat pe slug, nu pe numele din registru → curatorul
+> nu-l vedea; (4) `channel="subagent"` lipsea din skip-set (review per spawn). +8 teste regresie
+> (`test_review_strict_local.py`, `test_review_findings_regressions.py`).
+
+### H20 migration-plan Phase 3–4–5 primitive (Codex, 2026-07-06)
+
+> Livrat de Codex în paralel cu valul de mai sus (agenți diferiți, fișiere disjuncte —
+> zero coliziune), executând fazele rămase din planul „Migrate hermes-agent's best
+> features" (`docs/research/2026-07-06-hermes-agent-migration-plan.md`). Acestea sunt
+> **primitive pure, offline-testabile** — două dintre ele (H20.M3b/M3c) sunt deja
+> **cablate live** în `Sandbox`; restul așteaptă integrarea runtime (execute_code prin
+> Docker/SSH file-RPC, session model live în gateway).
+
+| # | Item | S | P | Dep | Sursă |
+|---|------|---|---|-----|-------|
+| H20.M1 ✅ | **Provider registry declarativ (Phase 4, lite)** — `core/llm/providers/` `ProviderProfile`/`ProviderRegistry`: metadate statice per provider (auth type/env, base URL + env override, capabilities, fallback models) + `status()` care raportează `configured` fără să expună secrete. 6 profile built-in (lm-studio, ollama, gemini, anthropic, openrouter, openai-compatible). `HybridRouter.provider_catalog()` e un accessor READ-ONLY — nu schimbă deciziile de rutare (acelea rămân la `HybridRouter`/backend-urile existente). **Merged #625.** | 3 | P3 | — | hermes `providers/base.py` (ProviderProfile) |
+| H20.M2 ✅ | **Channel session primitives (Phase 5, preliminar)** — `channels/session.py`: `SessionSource`/`DeliveryTarget`/`DeliveryDecision` (dataclass-uri pure) + `build_session_key()` (id determinist, filesystem-safe, din thread/sender/client) + `DeliveryRouter.resolve()` (decide send/skip pt. mesaje goale, surse silent/local-only, target explicit vs. home-channel). **Nu schimbă rutarea live a gateway-ului încă** — e fundația pt. continuitatea de sesiune cross-canal din plan. **Merged #626.** | 3 | P3 | — | hermes `gateway/session.py` (SessionSource) |
+| H20.M3a ✅ | **Execution environment primitives (Phase 3, preliminar)** — `environments/__init__.py`: `EnvironmentProfile` pt. backend-urile suportate (local/docker/ssh — isolated/remote/supports_file_rpc), `build_cwd_marker`/`extract_cwd_marker` (protocolul de marcaj CWD pt. backend-uri remote), `scrub_child_env`/`prepare_python_child_env` (filtrare nume-secrete + allowlist prefixe sigure + `WINDOWS_ESSENTIAL_ENV_VARS` — jarvis e Windows-primary). **Merged #627.** | 5 | P2 | — | hermes `tools/environments/*`, `_scrub_child_env` |
+| H20.M3b ✅ | **File-RPC primitives (Phase 3)** — `environments/file_rpc.py` `FileRPCStore`: store JSON UTF-8 request/response pe disc (scriere atomică tmp+replace), buget de tool-calls (`ToolCallLimitExceeded`), validare strictă a request-urilor. Fundația transportului remote (Docker/SSH) pt. `execute_code` — încă neconectat la `tool_rpc.py` live. **Merged #628.** | 5 | P2 | H20.M3a | hermes `code_execution_tool.py` (file-based RPC) |
+| H20.M3c ✅ | **Output-limit helpers + wiring LIVE în Sandbox (Phase 3)** — `environments/output_limits.py` `truncate_text()` (buget pe bytes, head+tail, notă de trunchiere explicită, non-ascunsă). **#629** adaugă helper-ul; **#630** cablează `prepare_python_child_env` LIVE în `Sandbox._run_python`/`_run_shell` (child-ul de subprocess/Docker nu mai moștenește mediul host brut); **#631** cablează `truncate_text` LIVE în `Sandbox` (`max_output_bytes`, default 50_000) — stdout/stderr trec prin `_decode_output()` înainte de a ajunge în `SandboxResult`, închizând vectorul DoS-prin-output. **Merged #629, #630, #631.** | 5 | P2 | H20.M3a | hermes env-scrub + resource caps |
+
+> **Total H20.M:** ~21 SP. Secvențiere spre integrare completă: H20.M3a/b → conectare la
+> `tool_rpc.py`/`sandbox.py` pentru un backend SSH remote real (Phase 3 completă) →
+> H20.M2 → cablare live în `gateway`/`channel_manager` (Phase 5 completă) → H20.M1 →
+> extindere `/model` cu catalogul de provideri (Phase 4 completă).
 
 
 ---

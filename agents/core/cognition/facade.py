@@ -17,8 +17,10 @@ logger = logging.getLogger("jarvis.cognition")
 
 # Sub-capabilities, all master-gated. Each defaults OFF → master OFF = no-op.
 # Later H21 items implement the modules behind these flags.
+# review_enabled (H20 learning loop): the per-turn background review distiller
+# + nightly skill curator — requires memory_enabled to be useful.
 _SUB_FLAGS = ("honesty_enabled", "affect_enabled", "memory_enabled",
-              "learning_enabled", "personality_enabled")
+              "learning_enabled", "personality_enabled", "review_enabled")
 
 
 class CognitionFacade:

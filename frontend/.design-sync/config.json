@@ -1,0 +1,37 @@
+{
+  "pkg": "jarvis-hud-v2",
+  "globalName": "JarvisHUD",
+  "shape": "package",
+  "srcDir": "src",
+  "tsconfig": "tsconfig.json",
+  "cssEntry": "src/styles.css",
+  "extraEntries": ["./src/data.ts"],
+  "componentSrcMap": {
+    "MODE_LIVE_KEYS": null,
+    "ICONS": null,
+    "App": null,
+    "WorldAwareApp": null,
+    "WorldIntelligenceMode": null
+  },
+  "libOverrides": {
+    "source-kit.mjs": "exclude src/main.tsx (Vite bootstrap with createRoot side effect) from the synth entry"
+  },
+  "readmeHeader": ".design-sync/conventions.md",
+  "overrides": {
+    "ContextColumn": {"viewport": "1280x720"},
+    "TopBar": {"viewport": "1280x720", "cardMode": "column"},
+    "Rail": {"viewport": "1280x720"},
+    "Tabs": {"viewport": "1280x720"},
+    "Ticker": {"cardMode": "column"},
+    "AutonomyMode": {"viewport": "1440x810"},
+    "BuildMode": {"viewport": "1440x810"},
+    "AdminMode": {"viewport": "1440x810"},
+    "ObserveMode": {"viewport": "1440x810"},
+    "InteropMode": {"viewport": "1440x810"},
+    "FinanceMode": {"viewport": "1440x810"},
+    "HealthMode": {"viewport": "1440x810"},
+    "KnowledgeMode": {"viewport": "1440x810"},
+    "CommsMode": {"viewport": "1440x810"},
+    "WorldIntelligencePanel": {"viewport": "1440x810"}
+  }
+}

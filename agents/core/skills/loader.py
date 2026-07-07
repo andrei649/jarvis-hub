@@ -97,6 +97,9 @@ class Skill:
         self.signature_reason: str = "unsigned"
         # Sandboxed = untrusted code whose Python module was NOT exec'd in-process.
         self.sandboxed: bool = False
+        # H20.5 — best-effort usage-telemetry hook (set by SkillLoader.attach_usage);
+        # None keeps execute() byte-identical to today's behavior.
+        self.usage_hook: Optional[Callable] = None
 
     def to_dict(self) -> dict:
         return {
@@ -138,6 +141,11 @@ class Skill:
         self.commands[name] = fn
 
     async def execute(self, command: str, args: str = "", context: dict = None) -> str:
+        if self.usage_hook is not None:
+            try:
+                self.usage_hook(self.name, "use")
+            except Exception:
+                logger.debug("usage hook failed for %s", self.name, exc_info=True)
         cmd_fn = self.commands.get(command)
         if cmd_fn:
             try:
@@ -168,6 +176,19 @@ class Skill:
 class SkillLoader:
     def __init__(self):
         self.skills: dict[str, Skill] = {}
+        # H20.5 — optional usage-telemetry sidecar (SkillUsageStore); attached by
+        # the orchestrator. None → zero behavior change.
+        self._usage = None
+
+    def attach_usage(self, store) -> None:
+        """Attach a SkillUsageStore; hooks existing and future skills."""
+        self._usage = store
+
+        def _hook(name: str, kind: str) -> None:
+            store.bump(name, kind)
+
+        for skill in self.skills.values():
+            skill.usage_hook = _hook
 
     def discover(self):
         SKILLS_DIR.mkdir(parents=True, exist_ok=True)
@@ -185,6 +206,9 @@ class SkillLoader:
         manifest = self._parse_manifest(skill_file)
         name = manifest.get("name", path.name)
         skill = Skill(name, path, manifest)
+        if self._usage is not None:
+            store = self._usage
+            skill.usage_hook = lambda n, kind: store.bump(n, kind)
 
         # CDX-8: a quarantined auto-generated skill (pending owner review) is registered so
         # it's visible/reviewable, but its module is NEVER exec'd in-process until approved —
@@ -467,6 +491,18 @@ def register(skill):
             f"agent={agent_id}\ntask={task_description}\n"
             f"generated={datetime.now(timezone.utc).isoformat()}\n", encoding="utf-8")
         self._load_skill(skill_dir)
+        # H20.5 — provenance: agent-created skills are the only curatable ones.
+        # Record under the REGISTERED name (the manifest title, which is what
+        # loader.skills is keyed by and what the curator iterates), not the
+        # on-disk slug — they differ (`# {slug.title()}` heading).
+        if self._usage is not None:
+            try:
+                registered = next(
+                    (n for n, s in self.skills.items()
+                     if Path(getattr(s, "path", "")) == skill_dir), skill_name)
+                self._usage.note_created(registered, "agent")
+            except Exception:
+                logger.debug("usage provenance note skipped", exc_info=True)
         logger.info("Generated skill '%s' from %s — quarantined PENDING REVIEW (not active)",
                     skill_name, agent_id)
         return skill_name

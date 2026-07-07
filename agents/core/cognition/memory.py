@@ -335,9 +335,14 @@ class LivingMemory:
         encode_threshold: float = 0.3,
         core_path: str | Path | None = None,
         tiers_path: str | Path | None = None,
+        user_path: str | Path | None = None,
     ) -> None:
         self.tiers = TieredMemory(path=tiers_path)
         self.core = CoreMemory(path=core_path)
+        # H20/H21 bridge: a second bounded core for *user* facts (who the user
+        # is — hermes USER.md analog), distinct from agent-learned facts. Same
+        # ring semantics; rendered as its own prompt section.
+        self.user_core = CoreMemory(path=user_path)
         self.embed_version = embed_version
         self.encode_threshold = encode_threshold
 
@@ -408,8 +413,11 @@ class LivingMemory:
 
     def clear(self) -> dict:
         """Explicit user-forget path for live cognition memory."""
-        return {"core": self.core.clear(), "tiers": self.tiers.clear()}
+        return {"core": self.core.clear(), "tiers": self.tiers.clear(),
+                "user_core": self.user_core.clear()}
 
     def status(self) -> dict:
         return {"available": True, "tiers": self.tiers.by_tier(),
-                "core": len(self.core.list()), "embed_version": self.embed_version}
+                "core": len(self.core.list()),
+                "user_core": len(self.user_core.list()),
+                "embed_version": self.embed_version}
