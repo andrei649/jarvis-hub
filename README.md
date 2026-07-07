@@ -2,10 +2,10 @@
 
 ![Python 3.12](https://img.shields.io/badge/python-3.12-blue?logo=python&logoColor=white)
 ![License: MIT](https://img.shields.io/badge/license-MIT-green)
-![Tests](https://img.shields.io/badge/tests-2800%2B%20passed-brightgreen?logo=pytest)
+![Tests](https://img.shields.io/badge/tests-3800%2B%20passed-brightgreen?logo=pytest)
 ![Version](https://img.shields.io/badge/version-0.11.0-orange)
 
-> 17 specialized AI agents orchestrated through Jarvis, running on Bonobo WS + Pi 5, controlled by voice and web.
+> 17 specialized AI agents orchestrated through Jarvis, running on **your own hardware**, controlled by voice and web.
 
 **A local-first, _governed_ personal AI — the always-on agent the 2026 "OpenClaw" wave proved people want, with the governance, audit, and privacy it's missing.** Runs entirely on your own hardware (LM Studio / Ollama on your GPU) — **$0/month, no cloud by default**. Every autonomous action passes through a reversible/irreversible **approval queue** and a tamper-evident **audit log**, with full observability — and a **family agent that never touches the internet**.
 
@@ -54,6 +54,17 @@ A personal AI mesh that handles the cross-section of *your* life: the day job an
 
 ## Hardware
 
+**What model should I run?** Jarvis works with any LM Studio / Ollama model — pick by VRAM:
+
+| Your GPU | Recommended local model | Expectation |
+|----------|------------------------|-------------|
+| 8–12 GB (3060/3080) | `qwen2.5:7b` / `llama3.1:8b` (Q4) | solid daily chat; deep-think slot off |
+| 16 GB (4080/4070Ti S) | `qwen2.5:14b` / `gemma2:27b` (Q4) | good quality, one model slot |
+| 24 GB+ (3090/4090/5090) | `gemma-4-31b-a4b` (MoE) + a deep slot | the full reference experience |
+| CPU-only | `qwen2.5:3b` | it works; expect slow replies |
+
+No GPU rule is enforced — the model picker (`/api/onboarding/command-center`, HUD → Start) tells you honestly whether a model is reachable. The reference rig below is what the project is developed on, **not a requirement**:
+
 - **Bonobo WS** (Pop!_OS) — Intel Core Ultra 9, 192GB DDR5, RTX 5090 24GB, 4× NVMe + 18TB HDD
 - **Pi 5** — always-on services (Qdrant, Neo4j, n8n, Homebridge)
 
@@ -69,7 +80,7 @@ A personal AI mesh that handles the cross-section of *your* life: the day job an
 
 ### WorldView (4D OSINT) + Signal Layer
 
-A separate, self-contained **Next.js + Deck.gl + Fastify** stack under [`worldview/`](worldview/) (frontend `:3000`, API `:4000`, infra via Docker: Redpanda/TimescaleDB/Redis) — a time-scrubbable 3D globe fusing air/sea/space/cyber OSINT. It shares no runtime with `agents/`. `INSTALL.bat`/`START.bat` (and `install.sh`/`start.sh`) set it up and auto-start it alongside JARVIS; opt out with `JARVIS_WORLDVIEW=0`. The **Argus** agent queries it read-only and governed. No Mapbox token or API keys are needed for the demo (`npm run db:seed`). See [`worldview/README.md`](worldview/README.md).
+A separate, self-contained **Next.js + Deck.gl + Fastify** stack under [`worldview/`](worldview/) (frontend `:3000`, API `:4000`, infra via Docker: Redpanda/TimescaleDB/Redis) — a time-scrubbable 3D globe fusing air/sea/space/cyber OSINT. It shares no runtime with `agents/` and is **opt-in**: install with `JARVIS_WORLDVIEW=1 ./install.sh` and start with `JARVIS_WORLDVIEW=1` (same variable for `START.bat`). Out of the box it has **no live feeds** — run `npm run db:seed` for clearly-badged demo data; live providers are owner-configured. The **Argus** agent queries it read-only and governed. No Mapbox token or API keys are needed for the demo (`npm run db:seed`). See [`worldview/README.md`](worldview/README.md).
 
 The **Jarvis Signal Layer** is the provider-neutral situational-awareness API at `:8787`. It turns provider data into evidence, signals, relevance, assessments, briefs, and approval-gated recommendations. It starts in deterministic replay mode by default and can later use a WorldMonitor sidecar as provider #1. Keep WorldMonitor off `:3000`; Jarvis convention is `:3100` because WorldView already owns `:3000`. See [`docs/worldview/worldview-worldmonitor-fusion.md`](docs/worldview/worldview-worldmonitor-fusion.md).
 
@@ -84,11 +95,10 @@ The **Jarvis Signal Layer** is the provider-neutral situational-awareness API at
    double-click, no winget; it assumes Python/Node are already present.)*
 2. **`UPDATE.bat`** — double-click to pull the latest from GitHub, install
    dependencies, and run the tests. Run this whenever you want the newest version.
-3. **`START.bat`** — double-click to launch JARVIS (`:8080`), WorldView
-   (the 4D OSINT globe at `:3000`, when installed), and the Signal Layer (`:8787`,
-   replay mode by default), then open the HUD. Keep its window open; close it to
-   stop the server. WorldView opt-out: `set JARVIS_WORLDVIEW=0`. Signal Layer
-   opt-out: `set JARVIS_SIGNAL_LAYER=0`.
+3. **`START.bat`** — double-click to launch JARVIS (`:8080`) and open the HUD.
+   Keep its window open; close it to stop the server. The optional companions are
+   **opt-in**: `set JARVIS_WORLDVIEW=1` also starts the 4D OSINT globe (`:3000`),
+   `set JARVIS_SIGNAL_LAYER=1` also starts the Signal Layer (`:8787`).
 
 ### Manual (any OS)
 

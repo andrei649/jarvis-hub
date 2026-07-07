@@ -1832,6 +1832,38 @@ export function CommandCenterPanel() {
   );
 }
 
+/* Owner B0 finding: onboarding you have to FIND is not onboarding. The gate makes
+   the Command Center the LANDING surface on first run — shown whenever the install
+   isn't usable yet (no reachable model, or the wizard incomplete) and not yet
+   dismissed. Dismiss persists; a data error never blocks the cockpit. */
+export const FIRST_RUN_DISMISS_KEY = 'hud.firstrun.dismissed';
+
+export function shouldShowFirstRun(cc: any): boolean {
+  if (!cc || !cc.model || !cc.wizard) return false;
+  return cc.model.ready !== true || cc.wizard.complete !== true;
+}
+
+export function FirstRunGate({ onClose }) {
+  const dismiss = () => {
+    try { localStorage.setItem(FIRST_RUN_DISMISS_KEY, '1'); } catch { /* ignore */ }
+    onClose();
+  };
+  return (
+    <div className="pal-scrim" style={{ alignItems: 'flex-start', paddingTop: '8vh' }}>
+      <div onClick={(e) => e.stopPropagation()} style={{ width: 'min(560px,95vw)', maxHeight: '84vh', overflow: 'auto', background: 'var(--void-2)', border: '1px solid var(--border-active, var(--panel-line))', borderRadius: 'var(--radius)', padding: 18 }}>
+        <div style={{ display: 'flex', alignItems: 'center', marginBottom: 12, gap: 12 }}>
+          <span style={{ fontFamily: 'var(--font-mono)', letterSpacing: '.14em', color: 'var(--accent-light)' }}>FIRST RUN</span>
+          <span style={{ fontSize: 11, color: 'var(--ink-3)' }}>let's get you to a working assistant</span>
+        </div>
+        <CommandCenterPanel />
+        <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 10 }}>
+          <button className="tool-btn" onClick={dismiss}>continue to cockpit →</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 const SECTIONS: Array<[string, Array<() => any>]> = [
   ['Start', [CommandCenterPanel]],
   ['Memory', [DataSpacesPanel, LocalDocsPanel, NotesPanel, KgPanel, CapturePanel, ReflectionPanel, ProvenancePanel]],
