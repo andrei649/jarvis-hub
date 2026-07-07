@@ -87,9 +87,11 @@ rebase-first, verify-before-claim, byte-identical default path, honest empty sta
    model into `Gateway.route` — primitives in #626), Phase 6 cron tick + file lock —
    all **on-demand only** (§5). Keep the skip-list sacred (no Modal/Daytona, no Tool
    Gateway).
-2. **0.19 First-Run Command Center** — the one HUD item that directly serves design
-   partners (install-health + model + first-action in one screen). Activation beats
-   depth now; H23.20 has the seams.
+2. **0.19 First-Run Command Center** — ✅ **delivered in this PR** (owner go-ahead
+   2026-07-07): `GET /api/onboarding/command-center` + the HUD `CommandCenterPanel`
+   (new Start Console cluster) — install health, model truth, wizard state, and
+   honest first actions in one read; "say hello" drives a real `/chat` turn.
+   Mobile catch-up tracked as **H18.19** (PARITY.md row added).
 3. **AUD-14 tail** — ✅ re-audited in this PR: zero unsafe parses remain (no typed
    `int()`/`float()`/`json.loads()` on raw env, no ad-hoc boolean truthiness; the
    ratchet test is green). The ~104 remaining plain string reads are cosmetic —

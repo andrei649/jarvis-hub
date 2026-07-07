@@ -44,6 +44,7 @@ Legend — **mobile**: ✅ shipped · 🟡 partial · ⬜ not started · ➖ not
 | Arena / review / quality | `GET /api/arena/*`, `/api/review/*` | ✅ | ➖ | — |
 | Security posture | `GET /api/security/*` | ✅ | ✅ | H18.18 |
 | Health/readiness probes | `GET /healthz`, `GET /readyz` | ✅ | ➖ | — |
+| First-run command center (0.19) | `GET /api/onboarding/command-center` | ✅ | ⬜ | H18.19 |
 | Auth (user/admin tokens) | `X-User-Token`, `X-Admin-Token` headers | ✅ | ✅ | H18.1 / H18.11 |
 
 > Rows with an empty **Task** cell are tracked-but-unscheduled parity gaps. When one becomes

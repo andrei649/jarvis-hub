@@ -1767,7 +1767,73 @@ export function SystemProfilePanel() {
   );
 }
 
+/* 0.19 — the FIRST-RUN COMMAND CENTER: install health + model + first actions in ONE
+   surface (GET /api/onboarding/command-center — the screen's single fetch). Honesty
+   contract: every first action carries a backend-derived `ready` flag with the reason
+   when held — nothing is presented runnable that can't actually run. "Say hello" drives
+   a real /chat turn and records the wizard's test_chat funnel step on success. */
+export function CommandCenterPanel() {
+  const { d, e, loading, reload } = useApi('/api/onboarding/command-center');
+  const install = (d && d.install) || {};
+  const model = (d && d.model) || {};
+  const wizard = (d && d.wizard) || {};
+  const actions = arr(d && d.first_actions);
+  const [hello, setHello] = useState(null);
+  const sayHello = () => {
+    setHello('…');
+    apiPost('/chat', { message: 'Hello Jarvis — first-run check.' })
+      .then((r: any) => {
+        setHello((r && r.reply) ? String(r.reply).slice(0, 120) : 'ok');
+        act('/api/onboarding/funnel', { step: 'test_chat', event: 'complete' }, reload);
+      })
+      .catch(() => setHello('chat failed — is a model running?'));
+  };
+  const done = new Set((wizard.completed) || []);
+  const steps = wizard.steps || [];
+  return (
+    <Card title="COMMAND CENTER" live={asLive(d)}
+      sub={d ? `${install.ready ? 'ready' : 'starting'} · ${model.backend || 'none'}${wizard.complete ? ' · onboarded ✓' : ''}` : null}
+      onReload={reload}>
+      <State e={e} loading={loading} n={actions.length} />
+      <Row>
+        <span style={mono}>install</span>
+        <span style={{ marginLeft: 'auto', color: install.ready ? 'var(--green)' : 'var(--amber)' }}>
+          {install.ready ? '✓ ready' : '○ starting'}{install.version ? ` · v${install.version}` : ''}
+        </span>
+      </Row>
+      <Row>
+        <span style={mono}>model</span>
+        <span style={{ marginLeft: 'auto', color: model.ready ? 'var(--green)' : 'var(--amber)' }}>
+          {model.active_model || model.backend || 'none'}{model.ready === false ? ' · unreachable' : ''}
+        </span>
+      </Row>
+      {d && wizard.hint && <Row><span style={{ color: 'var(--amber)', fontSize: 11 }}>⚠ {wizard.hint}</span></Row>}
+      {steps.length > 0 && (
+        <Row>
+          <span style={mono}>onboarding</span>
+          <span style={{ marginLeft: 'auto', fontSize: 10, color: 'var(--ink-3)' }}>
+            {steps.map((s) => (done.has(s.key) ? '●' : '○')).join(' ')} {done.size}/{steps.length}
+          </span>
+        </Row>
+      )}
+      {actions.map((a) => (
+        <Row key={a.key}>
+          <span style={{ color: a.ready ? 'var(--ink-1)' : 'var(--ink-3)' }}>{a.title}</span>
+          <span style={{ marginLeft: 'auto', display: 'flex', gap: 5, alignItems: 'center' }}>
+            {a.ready && a.key === 'say_hello'
+              && <button className="tool-btn" onClick={sayHello}>run</button>}
+            {!a.ready && a.reason
+              && <span style={{ fontSize: 10, color: 'var(--ink-3)' }}>{a.reason}</span>}
+          </span>
+        </Row>
+      ))}
+      {hello && <Row><span style={{ fontSize: 11, color: 'var(--accent-light)' }}>↳ {hello}</span></Row>}
+    </Card>
+  );
+}
+
 const SECTIONS: Array<[string, Array<() => any>]> = [
+  ['Start', [CommandCenterPanel]],
   ['Memory', [DataSpacesPanel, LocalDocsPanel, NotesPanel, KgPanel, CapturePanel, ReflectionPanel, ProvenancePanel]],
   ['Trust', [KillSwitchPanel, KernelMetricsPanel, ReadinessPanel, LoopBreakerPanel, GovernancePanel, PosturePanel, SecuritySkillsPanel, NetworkMonitorPanel, CommsRatePanel, SafeCommsDraftPanel, SecretsPanel, CapabilitiesPanel, PairingPanel, InjectionScanPanel]],
   ['Interop', [A2AInboxPanel, MeshPeersPanel, SatellitesPanel, OraclePanel, MarketplacePanel, SkillHistoryPanel, WatchlistPanel]],

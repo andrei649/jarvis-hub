@@ -18,7 +18,7 @@ pip install -r requirements-beta.txt
 python serve.py   # canonical entry (boot guards + graceful shutdown; O26-P0.6: the raw
 #   uvicorn entry `python -m uvicorn agents.web:app` now runs the same guards via the lifespan)
 python scripts/install_smoke.py --json  # fast install smoke: boot + /readyz + fake local turn
-python -m pytest tests/ -v          # ~3,832 passed, 6 skipped (counter synced via scripts/status_sync.py)
+python -m pytest tests/ -v          # ~3,836 passed, 6 skipped (counter synced via scripts/status_sync.py)
 ```
 
 > Singurul skip rămas e heartbeat-ul opțional. (Vechiul `tests/test_spotify.py` cu 8 skip-uri a
@@ -132,7 +132,7 @@ python -m pytest tests/ -v          # ~3,832 passed, 6 skipped (counter synced v
 | # | Item | Status |
 |---|------|--------|
 | B1 | Hermes v3 Phase 2 — context compression maturity | ✅ done in #634 (2026-07-07) — `keep_first` leading-turn protection, hermes structured summary template, iterative summary-merge (`prior`/`covered`), and an opt-in **strict-local** LLM summarizer (`memory.compression_summarizer`, uses `LLMRouter.local_backend` only, degrades to the deterministic digest). Defaults byte-identical; `tests/test_context_compression_phase2.py` (+12) |
-| B2 | 0.19 First-Run Command Center (activation for design partners; seams in H23.20) | ⬜ |
+| B2 | 0.19 First-Run Command Center (activation for design partners; seams in H23.20) | ✅ done in #634 (2026-07-07) — `GET /api/onboarding/command-center` (user-guarded, one fetch: `/readyz` snapshot + version, model backend truth, H23.20 wizard state, honest `first_actions` with backend-derived `ready`/`reason`) + HUD `CommandCenterPanel` (new **Start** Console cluster; "say hello" drives a real `/chat` turn and records the `test_chat` funnel step). Red/green: `tests/test_first_run_command_center.py` (+4) + `command-center-panel.test.tsx` (+4); parity/openapi/auth snapshots reseeded; typegen schema regenerated |
 | B3 | AUD-14 tail — remaining raw env-read slices (template: #592–#622) | 🟢 re-audited 2026-07-07 (in #634): **zero** unsafe parses remain — no `int()`/`float()`/`json.loads()` on raw env, no ad-hoc boolean truthiness (ratchet `test_o26_p2_env_config.py` green); ~104 plain `env_str`-equivalent string reads left = cosmetic, migrate opportunistically in files you already touch |
 | B4 | M2.4 live-eval lane prep (code-ready, lights up when owner runner exists) | ⬜ owner-gated |
 | B5 | Non-v0 inbox channels (email/WhatsApp) — only after live send seams proven post-B0 | ⬜ parked |
@@ -206,7 +206,7 @@ python -m pytest tests/ -v          # ~3,832 passed, 6 skipped (counter synced v
 
 | Theme | Status | What exists / the bounded gap | Maps to |
 |-------|--------|-------------------------------|---------|
-| 0.19 First-Run Command Center | 🟡 partial | `routers/onboarding.py`+`status.py`+demo mode / unified install-health+model+first-action screen | H23.20 |
+| 0.19 First-Run Command Center | ✅ done (#634, 2026-07-07) | `GET /api/onboarding/command-center` + HUD `CommandCenterPanel` (Start cluster): install health (`/readyz` snapshot + version) + model truth + wizard state + honest first actions in one read; "say hello" drives a real `/chat` turn and records the funnel step | H23.20 |
 | 0.20 Jarvis Vault | ⬜ missing | `secrets_vault.py` is a resolver skeleton / the vault surface itself (1 TB store + retention controls) is unstarted — *adjacent* data-mgmt pieces shipped under their own H-items: backup ✅ #302, at-rest encryption ✅ AUD-1, export ✅ #303, forget ✅ #306 (AUD-2: endpoint + CLI erase memory at rest) | H23.10 |
 | 0.21 Offline Knowledge Packs | 🌱 seed | `local_docs.py` / Kiwix-style packs + installer | 0.21 |
 | 0.22 Appliance Install/Update | 🟡 partial | `install.sh`,`start.sh`,`docker-compose.yml`, **release bundles + SBOM + checksums + optional sign** ✅ (H23.13) / uninstall, no-telemetry proof | H23.13/15 |
@@ -1301,6 +1301,7 @@ chain-of-thought leak / mid-sentence truncation fixed. Kill-switch:
 | H18.16 ✅ | **Mobile memory + notes** — native Memory tab catches the app up to the read-only HUD memory/notes surfaces: `GET /memory` renders recent session turns and `GET /api/notes` renders current session notes, deliberately excluding clear/save/rewrite controls from the phone. Merged in #572 with full PR CI green; verified locally with 38 mobile Jest tests + clean `tsc --noEmit`. | 3 | ✅ done (2026-07-05, #572) | H18.1 | mobile parity |
 | H18.17 ✅ | **Mobile knowledge graph** — native Memory tab gains a Graph view over the read-only KG surfaces: `GET /api/kg/entities`, `GET /api/kg/entities/{name}`, `GET /api/kg/facts/as-of`, and `GET /api/kg/facts/history`. It renders entity search/list, selected-entity relations, current facts, and subject history without mobile entity/relation/fact write/delete controls. Merged in #574 with full PR CI green; verified locally with 42 mobile Jest tests + clean `tsc --noEmit`. | 3 | ✅ done (2026-07-05, #574) | H18.1, H18.16 | mobile parity |
 | H18.18 ✅ | **Mobile security posture** — native Status tab gains a read-only Trust card over `GET /api/security/governance`, `GET /api/security/posture`, `GET /api/security/kill-switch`, and `GET /api/security/loop-breaker`, using the existing admin-token setting for posture and deliberately excluding halt/reset/capability-write controls from the phone. Merged in #576 with full PR CI green; verified locally with 46 mobile Jest tests + clean `tsc --noEmit`. | 3 | ✅ done (2026-07-05, #576) | H18.1 | mobile parity |
+| H18.19 ⬜ | **Mobile first-run command center** — read the 0.19 `GET /api/onboarding/command-center` surface (install health + model truth + wizard state + honest first actions) from the native app, read-only like the other H18 parity tabs; "say hello" may reuse the existing mobile chat path. Browser half shipped in #634. | 2 | ⬜ open | H18.1 | mobile parity |
 
 ---
 
