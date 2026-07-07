@@ -16,9 +16,8 @@ from __future__ import annotations
 import logging
 import time
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
-from typing import Optional
 
 from agents.core.persistence import JsonStore
 from agents.core.skill_drift import manifest_hash
@@ -36,7 +35,7 @@ _VALID = {STATUS_PENDING, STATUS_APPROVED, STATUS_APPLIED, STATUS_REJECTED, STAT
 class SkillProposalStore(JsonStore):
     """Durable ledger of skill-patch proposals."""
 
-    def __init__(self, path: "str | Path | None" = None) -> None:
+    def __init__(self, path: str | Path | None = None) -> None:
         super().__init__(path)
 
     def _serialize(self):
@@ -47,7 +46,7 @@ class SkillProposalStore(JsonStore):
         self._items = items if isinstance(items, dict) else {}
 
     def propose(self, skill: str, current_content: str, proposed_content: str,
-                origin: str = "background_review") -> Optional[dict]:
+                origin: str = "background_review") -> dict | None:
         """Record a pending proposal; dedupe identical pending ones."""
         skill = str(skill or "").strip()
         proposed = str(proposed_content or "").strip()
@@ -71,18 +70,18 @@ class SkillProposalStore(JsonStore):
             self._save()
             return dict(rec)
 
-    def get(self, proposal_id: str) -> Optional[dict]:
+    def get(self, proposal_id: str) -> dict | None:
         with self._lock:
             rec = self._items.get(proposal_id)
             return dict(rec) if rec else None
 
-    def list(self, status: Optional[str] = None) -> "list[dict]":
+    def list(self, status: str | None = None) -> list[dict]:
         with self._lock:
             out = [dict(r) for r in self._items.values()
                    if status is None or r.get("status") == status]
         return sorted(out, key=lambda r: r.get("ts", 0.0))
 
-    def mark(self, proposal_id: str, status: str) -> Optional[dict]:
+    def mark(self, proposal_id: str, status: str) -> dict | None:
         if status not in _VALID:
             return None
         with self._lock:
@@ -96,7 +95,7 @@ class SkillProposalStore(JsonStore):
 
     # ── apply (curator-driven, owner-approved) ───────────────────────────────
 
-    def apply(self, proposal_id: str, loader, backup_dir: "str | Path") -> dict:
+    def apply(self, proposal_id: str, loader, backup_dir: str | Path) -> dict:
         """Apply an APPROVED proposal to its skill's SKILL.md.
 
         Hash-checked (drift ⇒ ``stale``), backed up (reversible), then the
@@ -124,7 +123,7 @@ class SkillProposalStore(JsonStore):
         try:
             backup_root = Path(backup_dir)
             backup_root.mkdir(parents=True, exist_ok=True)
-            stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+            stamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
             backup = backup_root / f"{rec['skill']}-{stamp}.SKILL.md"
             backup.write_text(current, encoding="utf-8")
             skill_md.write_text(rec["proposed"], encoding="utf-8")

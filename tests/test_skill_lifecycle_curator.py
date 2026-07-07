@@ -1,17 +1,19 @@
 """H20.5 live wave — skill usage telemetry, lifecycle + nightly curator. Offline."""
-import sys, os
+import os
+import sys
+
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'agents'))
 
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta, timezone
 
 from agents.core.skills.curator import SkillCurator
 from agents.core.skills.proposals import (
-    SkillProposalStore,
     STATUS_APPLIED,
     STATUS_APPROVED,
     STATUS_PENDING,
     STATUS_STALE,
+    SkillProposalStore,
 )
 from agents.core.skills.usage import (
     ORIGIN_AGENT,
@@ -83,7 +85,7 @@ async def test_idle_agent_skill_goes_stale_then_archived(tmp_path):
     usage = _store(tmp_path)
     usage.note_created("old_skill", ORIGIN_AGENT)
 
-    base = datetime.now(timezone.utc)
+    base = datetime.now(UTC)
     # 40 days idle → stale
     cur = _curator(loader, usage, tmp_path, base + timedelta(days=40))
     out = await cur.run()
@@ -108,7 +110,7 @@ async def test_bundled_and_pinned_skills_never_touched(tmp_path):
     usage.pin("pinned_agent")
 
     cur = _curator(loader, usage, tmp_path,
-                   datetime.now(timezone.utc) + timedelta(days=365))
+                   datetime.now(UTC) + timedelta(days=365))
     out = await cur.run()
     assert out["lifecycle"]["archived"] == [] and out["lifecycle"]["stale"] == []
     assert "bundled" in loader.skills and "pinned_agent" in loader.skills
@@ -121,7 +123,7 @@ async def test_recent_activity_keeps_skill_active(tmp_path):
     usage.note_created("fresh", ORIGIN_AGENT)
     usage.bump("fresh", "use")
     cur = _curator(loader, usage, tmp_path,
-                   datetime.now(timezone.utc) + timedelta(days=10))
+                   datetime.now(UTC) + timedelta(days=10))
     out = await cur.run()
     assert out["lifecycle"]["stale"] == [] and out["lifecycle"]["archived"] == []
 
@@ -129,7 +131,7 @@ async def test_recent_activity_keeps_skill_active(tmp_path):
 async def test_curator_idempotent_per_day(tmp_path):
     loader = _FakeLoader(tmp_path)
     usage = _store(tmp_path)
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     cur = _curator(loader, usage, tmp_path, now)
     first = await cur.run()
     assert "lifecycle" in first
@@ -148,7 +150,7 @@ async def test_approved_proposal_applied_with_backup(tmp_path):
     rec = props.propose("weather", "# Weather\nv1", "# Weather\nv2 improved")
     props.mark(rec["id"], STATUS_APPROVED)
 
-    cur = _curator(loader, usage, tmp_path, datetime.now(timezone.utc),
+    cur = _curator(loader, usage, tmp_path, datetime.now(UTC),
                    proposals=props)
     out = await cur.run()
     assert out["proposals"]["applied"] == ["weather"]
@@ -170,7 +172,7 @@ async def test_drifted_proposal_marked_stale_not_applied(tmp_path):
         "# Weather\nsomeone edited this", encoding="utf-8")
 
     cur = _curator(loader, _store(tmp_path), tmp_path,
-                   datetime.now(timezone.utc), proposals=props)
+                   datetime.now(UTC), proposals=props)
     out = await cur.run()
     assert out["proposals"]["applied"] == []
     assert props.get(rec["id"])["status"] == STATUS_STALE
@@ -192,7 +194,7 @@ async def test_approval_queue_decisions_sync_to_ledger(tmp_path):
             return []
 
     cur = _curator(loader, _store(tmp_path), tmp_path,
-                   datetime.now(timezone.utc), proposals=props,
+                   datetime.now(UTC), proposals=props,
                    approvals=_Approvals())
     out = await cur.run()
     assert out["proposals"]["applied"] == ["s"]

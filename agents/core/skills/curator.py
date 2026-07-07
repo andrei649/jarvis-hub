@@ -22,9 +22,9 @@ from __future__ import annotations
 
 import logging
 import shutil
-from datetime import date, datetime, timezone
+from collections.abc import Callable
+from datetime import UTC, date, datetime
 from pathlib import Path
-from typing import Callable, Optional
 
 from .proposals import STATUS_APPROVED, STATUS_PENDING, STATUS_REJECTED
 from .usage import STATE_ACTIVE, STATE_ARCHIVED, STATE_STALE, latest_activity_at
@@ -36,9 +36,9 @@ class SkillCurator:
     """Nightly lifecycle + proposal-application pass over the skill library."""
 
     def __init__(self, loader, usage, *, proposals=None, approvals=None,
-                 get_setting: Optional[Callable] = None,
-                 run_store=None, archive_dir: "str | Path | None" = None,
-                 now: Callable[[], datetime] = lambda: datetime.now(timezone.utc)):
+                 get_setting: Callable | None = None,
+                 run_store=None, archive_dir: str | Path | None = None,
+                 now: Callable[[], datetime] = lambda: datetime.now(UTC)):
         self._loader = loader
         self._usage = usage
         self._proposals = proposals
@@ -47,8 +47,8 @@ class SkillCurator:
         self._run_store = run_store          # ReflectionRunStore-compatible
         self._archive_dir = Path(archive_dir) if archive_dir else None
         self._now = now
-        self._last_run: Optional[date] = None
-        self._last_result: Optional[dict] = None
+        self._last_run: date | None = None
+        self._last_result: dict | None = None
 
     async def run(self, *, force: bool = False) -> dict:
         """One curator pass. Idempotent per calendar day; never raises."""
@@ -97,7 +97,7 @@ class SkillCurator:
                     try:
                         anchor = datetime.fromisoformat(str(created))
                         if anchor.tzinfo is None:
-                            anchor = anchor.replace(tzinfo=timezone.utc)
+                            anchor = anchor.replace(tzinfo=UTC)
                     except (TypeError, ValueError):
                         continue           # no usable anchor → leave alone
                 idle_days = (now - anchor).days

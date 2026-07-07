@@ -4,7 +4,9 @@ Golden-transcript style: a fake LLM returns a fixed review JSON and the test
 asserts exactly which governed writes happen (core facts, corrections, skill
 proposals) — including the negative cases that must NOT write.
 """
-import sys, os
+import os
+import sys
+
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'agents'))
 
@@ -18,7 +20,7 @@ from agents.core.learning.background_review import (
     BackgroundReviewer,
     parse_review_json,
 )
-from agents.core.skills.proposals import SkillProposalStore, STATUS_PENDING
+from agents.core.skills.proposals import STATUS_PENDING, SkillProposalStore
 
 
 def _llm_returning(payload):

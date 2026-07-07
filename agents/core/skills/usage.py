@@ -14,9 +14,9 @@ atomic persistence) instead of hermes's cross-process fcntl/msvcrt locking.
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 from agents.core.persistence import JsonStore
 
@@ -37,20 +37,20 @@ _BUMP_KEYS = {"use": ("use_count", "last_used_at"),
 
 
 def _now_iso() -> str:
-    return datetime.now(timezone.utc).isoformat()
+    return datetime.now(UTC).isoformat()
 
 
-def _parse_iso(value: Any) -> Optional[datetime]:
+def _parse_iso(value: Any) -> datetime | None:
     if not value:
         return None
     try:
         parsed = datetime.fromisoformat(str(value))
     except (TypeError, ValueError):
         return None
-    return parsed.replace(tzinfo=timezone.utc) if parsed.tzinfo is None else parsed
+    return parsed.replace(tzinfo=UTC) if parsed.tzinfo is None else parsed
 
 
-def latest_activity_at(record: dict) -> Optional[datetime]:
+def latest_activity_at(record: dict) -> datetime | None:
     """Newest use/view/patch timestamp (creation intentionally excluded)."""
     latest = None
     for key in ("last_used_at", "last_viewed_at", "last_patched_at"):
@@ -63,7 +63,7 @@ def latest_activity_at(record: dict) -> Optional[datetime]:
 class SkillUsageStore(JsonStore):
     """Per-skill telemetry: counters, provenance, pin flag, lifecycle state."""
 
-    def __init__(self, path: "str | Path | None" = None) -> None:
+    def __init__(self, path: str | Path | None = None) -> None:
         super().__init__(path)
 
     def _serialize(self):
@@ -107,14 +107,14 @@ class SkillUsageStore(JsonStore):
         except Exception:
             logger.debug("usage bump skipped for %s/%s", name, kind, exc_info=True)
 
-    def pin(self, name: str, pinned: bool = True) -> Optional[dict]:
+    def pin(self, name: str, pinned: bool = True) -> dict | None:
         with self._lock:
             rec = self._rec(str(name))
             rec["pinned"] = bool(pinned)
             self._save()
             return dict(rec)
 
-    def set_state(self, name: str, state: str) -> Optional[dict]:
+    def set_state(self, name: str, state: str) -> dict | None:
         if state not in _VALID_STATES:
             return None
         with self._lock:
@@ -123,7 +123,7 @@ class SkillUsageStore(JsonStore):
             self._save()
             return dict(rec)
 
-    def get(self, name: str) -> Optional[dict]:
+    def get(self, name: str) -> dict | None:
         with self._lock:
             rec = self._items.get(name)
             return dict(rec) if rec else None

@@ -32,8 +32,8 @@ from __future__ import annotations
 import json
 import logging
 import time
+from collections.abc import Awaitable, Callable
 from datetime import date
-from typing import Awaitable, Callable, Optional
 
 logger = logging.getLogger("jarvis.learning.review")
 
@@ -150,8 +150,8 @@ class BackgroundReviewer:
     def __init__(self, llm_call: Callable[[str], Awaitable[str]],
                  living=None, skills=None, learning=None,
                  proposals=None, approvals=None,
-                 get_setting: Optional[Callable] = None,
-                 detect: Optional[Callable[[str], list]] = None,
+                 get_setting: Callable | None = None,
+                 detect: Callable[[str], list] | None = None,
                  now: Callable[[], float] = time.monotonic):
         self._llm = llm_call
         self._living = living
@@ -163,10 +163,10 @@ class BackgroundReviewer:
         self._detect = detect or _default_detect
         self._now = now
         self._turns_since = 0
-        self._last_run_ts: Optional[float] = None
+        self._last_run_ts: float | None = None
         self._day = ""
         self._day_count = 0
-        self.last_result: Optional[dict] = None
+        self.last_result: dict | None = None
 
     # ── cadence / budget gate ────────────────────────────────────────────────
 

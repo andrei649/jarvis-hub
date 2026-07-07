@@ -16,7 +16,7 @@ prefix caches (and any cloud prompt cache) warm.
 from __future__ import annotations
 
 import logging
-from typing import Callable, Optional
+from collections.abc import Callable
 
 logger = logging.getLogger("jarvis.learning.core_block")
 
@@ -35,7 +35,7 @@ def _default_detect(text: str) -> list:
         return []
 
 
-def _clean_facts(facts: list, detect: Callable[[str], list]) -> "list[str]":
+def _clean_facts(facts: list, detect: Callable[[str], list]) -> list[str]:
     """Normalize, truncate and injection-scan a fact list."""
     out: list[str] = []
     for idx, fact in enumerate(facts or []):
@@ -51,7 +51,7 @@ def _clean_facts(facts: list, detect: Callable[[str], list]) -> "list[str]":
     return out
 
 
-def render_core_block(living, detect: Optional[Callable[[str], list]] = None) -> str:
+def render_core_block(living, detect: Callable[[str], list] | None = None) -> str:
     """Render the always-injected core block ('' when there is nothing to say).
 
     ``living`` is any object with a ``core`` (and optionally ``user_core``)

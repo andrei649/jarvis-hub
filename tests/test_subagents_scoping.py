@@ -1,5 +1,7 @@
 """H20.6 hardening — sub-agent blocked-capability scoping + spawn budget. Offline."""
-import sys, os
+import os
+import sys
+
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'agents'))
 
