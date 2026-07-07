@@ -391,8 +391,15 @@ def _arg_value(argv: list[str], name: str, default: str | None = None) -> str | 
 
 def _openai_chat_runner(base_url: str, model: str,
                         timeout: float = 60.0) -> Callable[[str], Awaitable[str]]:
+    import urllib.parse
     import urllib.request
 
+    # The urlopen blacklist concern is file:// / custom schemes reaching the
+    # opener; the lane only ever talks to an operator-configured HTTP endpoint
+    # (Ollama / LM Studio), so anything else is rejected before a request exists.
+    scheme = urllib.parse.urlsplit(base_url).scheme
+    if scheme not in ("http", "https"):
+        raise ValueError(f"live-model base_url must be http(s), got {scheme!r}")
     url = base_url.rstrip("/") + "/chat/completions"
 
     def _call(prompt: str) -> str:
@@ -403,7 +410,8 @@ def _openai_chat_runner(base_url: str, model: str,
         }).encode()
         req = urllib.request.Request(
             url, data=body, headers={"Content-Type": "application/json"})
-        with urllib.request.urlopen(req, timeout=timeout) as resp:  # noqa: S310 - caller-supplied local endpoint
+        with urllib.request.urlopen(  # noqa: S310  # nosec B310  # nosemgrep: python.lang.security.audit.dynamic-urllib-use-detected.dynamic-urllib-use-detected — scheme allow-listed to http(s) above; operator-configured local endpoint
+                req, timeout=timeout) as resp:
             data = json.loads(resp.read().decode("utf-8", "replace"))
         choices = data.get("choices") or []
         message = (choices[0].get("message") or {}) if choices else {}
@@ -426,8 +434,8 @@ def run_live_model(*, base_url: str, model: str, store_root: str | None = None,
     """
     dialogues = dialogues if dialogues is not None else load_dialogues()
     store = DatasetStore(root=store_root) if store_root else None
-    runner = _openai_chat_runner(base_url, model, timeout=timeout)
     try:
+        runner = _openai_chat_runner(base_url, model, timeout=timeout)
         # Preflight: EvalHarness converts per-case runner errors into scored-0
         # responses, which would let an unreachable endpoint masquerade as
         # "the model scored 0". One real call up front separates infra failure

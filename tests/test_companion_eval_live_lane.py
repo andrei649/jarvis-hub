@@ -85,6 +85,17 @@ def test_live_model_lane_generates_scores_and_labels_honestly(tmp_path):
     assert dialogues[0]["id"] not in ("",) and len(sent) > 100
 
 
+def test_non_http_scheme_is_rejected_before_any_request(tmp_path):
+    result = run_live_model(
+        base_url="file:///etc",   # the B310/semgrep concern — must never reach urlopen
+        model="fake-small",
+        store_root=str(tmp_path / "store"),
+        dialogues=load_dialogues()[:1],
+    )
+    assert result["ok"] is False
+    assert "http" in result["error"]
+
+
 def test_live_model_lane_fails_cleanly_when_endpoint_unreachable(tmp_path):
     result = run_live_model(
         base_url="http://127.0.0.1:9",   # discard port — nothing listens
