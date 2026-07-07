@@ -1,7 +1,7 @@
 import React, { useState as uS3, useEffect as uE3 } from 'react';
 import { V2, Conversation, InputBar } from './ui';
 import { Icon as Ic3, ICONS as IK3, Glyph as Gl3, statusClass as sc3 } from './ui';
-import { togglePlugin } from './api/actions';
+import { queueChannelReply, togglePlugin } from './api/actions';
 import { RoomsPanel } from './gap';
 /* HUD v2 · MODES III — Chat (focus), Comms, Admin */
 
@@ -28,10 +28,27 @@ function ChatMode({ messages, thinking, onStop, onSubmit, onProv, mic, setMic, l
 function CommsMode({ t }){
   const C = V2.COMMS;
   const [filter,setFilter]=uS3('all');
-  const [sel,setSel]=uS3(C.threads[0].id);
-  const chIcon = ch => ch==='telegram'?'send':ch==='email'?'comms':ch==='whatsapp'?'chat':'mic';
+  const [sel,setSel]=uS3(C.threads[0]?.id || '');
+  const chIcon = ch => ch==='telegram'?'send':ch==='email'?'comms':ch==='whatsapp'?'chat':ch==='discord'?'chat':'mic';
   const list = C.threads.filter(th=>filter==='all'||th.channel===filter);
   const active = C.threads.find(th=>th.id===sel) || list[0];
+  const [reply,setReply]=uS3('');
+  const [replyState,setReplyState]=uS3('');
+  const activeAny = active as any;
+  const activeThread = activeAny?.thread_id || activeAny?.id || '';
+  const canReply = !!activeAny?.replyable && !!activeThread && ['telegram','web'].includes(activeAny.channel);
+  uE3(()=>{ setReply(''); setReplyState(''); }, [activeThread]);
+  const queueReply = () => {
+    const text = reply.trim();
+    if (!canReply || !text) return;
+    setReplyState('queueing…');
+    queueChannelReply(activeThread, text, active.agent || 'veronica')
+      .then((r: any) => {
+        setReply('');
+        setReplyState(r?.queued ? 'queued for approval' : 'reply drafted');
+      })
+      .catch(() => setReplyState('queue failed'));
+  };
   return (
     <div className="panel scroll" style={{flex:1}}>
       <span className="bk tl"></span><span className="bk tr"></span><span className="bk bl"></span><span className="bk br"></span>
@@ -57,18 +74,32 @@ function CommsMode({ t }){
           ))}
         </div>
         <div className="comms-read">
-          {active && (<>
+          {active ? (<>
             <div className="cr-head"><span className="cr-ch"><Ic3 d={IK3[chIcon(active.channel)]} size={14}/>{active.channel}</span>
               <span className="cr-handled"><Gl3 id={active.agent} size={13}/>handled by {active.agent}</span></div>
             <div className="cr-subj">{active.subj}</div>
             <div className="cr-from">{active.from} · {active.ts}</div>
             <div className="cr-body">{active.preview}</div>
-            {/* The unified inbox threads (email/telegram/whatsapp) are a seeded preview —
-                no backend wires per-channel Reply/Hand/Archive yet, so these are DISABLED
-                (never no-op buttons that look live). Real multi-agent messaging lives in
-                the Rooms backend below (/api/rooms/*), reused from the live Console. */}
+            {canReply ? (
+              <div className="cr-actions" style={{alignItems:'stretch', flexDirection:'column'}}>
+                <textarea
+                  value={reply}
+                  onChange={e=>setReply(e.target.value)}
+                  placeholder="Write a governed reply"
+                  rows={3}
+                  style={{width:'100%', resize:'vertical', background:'var(--surface)', color:'var(--ink)', border:'1px solid var(--panel-line)', borderRadius:4, padding:8, fontFamily:'var(--font-ui)', fontSize:12}}
+                />
+                <div style={{display:'flex', gap:8, alignItems:'center'}}>
+                  <button className="cr-btn primary" disabled={!reply.trim()} onClick={queueReply}>Queue reply</button>
+                  {replyState && <span className="cr-from">{replyState}</span>}
+                </div>
+              </div>
+            ) : (
+              <div className="cr-actions">
+                <button className="cr-btn primary" disabled title="not connected — no live channel thread id" style={{opacity:.5,cursor:'not-allowed'}}>Reply via {active.channel}</button>
+              </div>
+            )}
             <div className="cr-actions">
-              <button className="cr-btn primary" disabled title="not connected — no per-channel reply backend yet" style={{opacity:.5,cursor:'not-allowed'}}>Reply via {active.channel}</button>
               <button className="cr-btn" disabled title="not connected — channel inbox is a preview" style={{opacity:.5,cursor:'not-allowed'}}>Hand to agent</button>
               <button className="cr-btn" disabled title="not connected — channel inbox is a preview" style={{opacity:.5,cursor:'not-allowed'}}>Archive</button>
             </div>
@@ -76,7 +107,7 @@ function CommsMode({ t }){
               <div className="sub-h" style={{marginBottom:8}}>LIVE ROOMS · multi-agent messaging (real backend)</div>
               <RoomsPanel />
             </div>
-          </>)}
+          </>) : <div className="empty-note" style={{padding:16}}>No live comms threads yet</div>}
         </div>
       </div>
     </div>

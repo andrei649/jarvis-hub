@@ -1,11 +1,10 @@
 """0.45 — parity: an automation_contracts ContractTemplate reproduces, code-for-code,
 every denial PaymentBroker._deny_reason emits today.
 
-This proves the reusable contract abstraction (0.45) is expressive enough to host the
-hand-rolled payment gate with **identical** outcomes, so a future swap of the live
-gate onto a template is behaviour-preserving and trivially reviewable. The broker's
-own ``_deny_reason`` is the oracle — no hardcoded expected codes — and no live
-behaviour changes here (payments.py is untouched).
+This proves the reusable contract abstraction (0.45) hosts the payment gate with
+**identical** outcomes. The broker's own ``_deny_reason`` stays the oracle — no
+hardcoded expected codes — while the live reason-code literals now live in the
+contract template.
 """
 
 import sys
@@ -132,9 +131,11 @@ def test_over_total_cap_matches(broker):
 
 
 def test_every_broker_reason_branch_is_covered():
-    # guard: if a new denial branch is added to the broker, this list should grow too
+    # guard: if a new denial branch is added to the live contract, this list should grow too
     import inspect
-    src = inspect.getsource(PaymentBroker._deny_reason)
+
+    import agents.core.payments as payments
+    src = inspect.getsource(payments._payment_contract_template)
     for code in ("unknown_mandate", "mandate_expired", "invalid_amount", "currency_mismatch",
                  "payee_not_allowed", "over_per_payment_cap", "over_total_cap"):
-        assert code in src, f"broker no longer emits {code!r} — update the parity template"
+        assert code in src, f"live payment contract no longer emits {code!r} — update parity cases"

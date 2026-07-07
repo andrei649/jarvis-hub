@@ -4328,7 +4328,7 @@ export interface paths {
         put?: never;
         /**
          * Memory Eval Run
-         * @description H14.2 — run the harness with the offline keyword baseline answerer.
+         * @description H14.2 — run the memory eval harness.
          */
         post: operations["memory_eval_run_api_memory_eval_run_post"];
         delete?: never;
@@ -5109,6 +5109,91 @@ export interface paths {
          *     cookies). Without a live queue, returns a validation-only preview.
          */
         post: operations["social_request_api_integrations_social_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/channels/inbox/status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Channels Inbox Status
+         * @description Safe Comms v0: status for the bounded live channel inbox.
+         *
+         *     Only telegram/web are considered live reply transports in this wave.
+         */
+        get: operations["channels_inbox_status_api_channels_inbox_status_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/channels/inbox": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Channels Inbox List
+         * @description Safe Comms v0: list persisted telegram/web inbox threads.
+         */
+        get: operations["channels_inbox_list_api_channels_inbox_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/channels/inbox/{thread_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Channels Inbox Thread
+         * @description Safe Comms v0: read messages in one persisted inbox thread.
+         */
+        get: operations["channels_inbox_thread_api_channels_inbox__thread_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/channels/inbox/{thread_id}/reply": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Channels Inbox Reply
+         * @description Safe Comms v0: queue a governed reply to a live telegram/web thread.
+         *
+         *     Nothing sends here. The reply is executed only if the owner approves the
+         *     task in the existing autonomy decision inbox.
+         */
+        post: operations["channels_inbox_reply_api_channels_inbox__thread_id__reply_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -6864,6 +6949,18 @@ export interface components {
             surfaces?: {
                 [key: string]: unknown;
             };
+        };
+        /** ChannelReplyBody */
+        ChannelReplyBody: {
+            /** Text */
+            text: string;
+            /** Agent */
+            agent?: string | null;
+            /**
+             * Source
+             * @default
+             */
+            source: string;
         };
         /** ChatRequest */
         ChatRequest: {
@@ -13924,7 +14021,9 @@ export interface operations {
     };
     memory_eval_run_api_memory_eval_run_post: {
         parameters: {
-            query?: never;
+            query?: {
+                mode?: string;
+            };
             header?: never;
             path?: never;
             cookie?: never;
@@ -13938,6 +14037,15 @@ export interface operations {
                 };
                 content: {
                     "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };
@@ -15025,6 +15133,125 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": components["schemas"]["SocialActionBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    channels_inbox_status_api_channels_inbox_status_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    channels_inbox_list_api_channels_inbox_get: {
+        parameters: {
+            query?: {
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    channels_inbox_thread_api_channels_inbox__thread_id__get: {
+        parameters: {
+            query?: {
+                limit?: number;
+            };
+            header?: never;
+            path: {
+                thread_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    channels_inbox_reply_api_channels_inbox__thread_id__reply_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                thread_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ChannelReplyBody"];
             };
         };
         responses: {

@@ -22,13 +22,13 @@ Set JARVIS_AUTO_DEEP=0 to disable complexity-based escalation.
 """
 
 import logging
-import os
 import sys
 from functools import lru_cache
 from pathlib import Path
 from typing import Optional
 
 from ..env_config import env_flag
+from . import model_config
 from .base import LLMBackend, OllamaBackend
 from .router import LLMRouter
 from .tokenizer import estimate_tokens
@@ -108,21 +108,18 @@ def is_heavy_request(prompt: str, *, token_threshold: int = HEAVY_TOKEN_THRESHOL
     return any(kw in lower for kw in HEAVY_KEYWORDS)
 
 
-# Howard's dedicated Ollama model
-HOWARD_OLLAMA_MODEL = "howard-lora-qwen-14b"
-HOWARD_OLLAMA_URL = "http://localhost:11434"
-
 # Agents that should use Ollama instead of LM Studio
 OLLAMA_PREFERRED_AGENTS = {"howard"}
 
-# Default model names per tier
-DEFAULT_LOCAL_MODEL = "qwen3:7b"
-DEFAULT_CLAUDE_MODEL = "claude-sonnet-4-20250514"
-# Deep-slot model: loaded by LM Studio in slot 2, runs on DDR5.
-# Override via JARVIS_DEEP_MODEL env var.
-DEFAULT_DEEP_MODEL = os.environ.get(
-    "JARVIS_DEEP_MODEL", "deepseek-r1-distill-qwen-32b"
-)
+# Public constants kept here for existing callers/tests; values live in model_config.
+DEFAULT_LOCAL_MODEL = model_config.DEFAULT_LOCAL_MODEL
+DEFAULT_CLAUDE_MODEL = model_config.DEFAULT_CLAUDE_MODEL
+DEFAULT_GEMINI_FLASH_MODEL = model_config.DEFAULT_GEMINI_FLASH_MODEL
+DEFAULT_GEMINI_PRO_MODEL = model_config.DEFAULT_GEMINI_PRO_MODEL
+DEFAULT_DEEP_MODEL = model_config.DEFAULT_DEEP_MODEL
+HOWARD_OLLAMA_MODEL = model_config.HOWARD_OLLAMA_MODEL
+HOWARD_OLLAMA_URL = model_config.HOWARD_OLLAMA_URL
+HOWARD_FALLBACK_MODEL = model_config.HOWARD_FALLBACK_MODEL
 
 
 @lru_cache(maxsize=1)
@@ -190,6 +187,7 @@ class HybridRouter(LLMRouter):
         # Resolved in detect(): Claude model from /admin config (settings_db);
         # local model prefers the real model loaded in the live backend.
         self._claude_model = DEFAULT_CLAUDE_MODEL
+        self._deep_model = model_config.deep_model_name()
         # /admin → llm.cloud_fallback: never | on-demand | always. Governs the
         # FALLBACK/escalation cloud hops for auto-policy agents (explicit cloud
         # policies like athena are policy, not fallback). Re-synced live by the
@@ -206,7 +204,7 @@ class HybridRouter(LLMRouter):
         # /admin → llm.gemini_model: the Gemini model used for cloud (flash-tier)
         # routes; oversized prompts still escalate to gemini-2.5-pro. Resolved in
         # detect() from settings_db.
-        self._gemini_model = "gemini-2.5-flash"
+        self._gemini_model = DEFAULT_GEMINI_FLASH_MODEL
 
         # H22.5 — LRU residency manager for the local fast↔deep model swap.
         # Default-off via JARVIS_MODEL_MANAGER; the orchestrator injects the real
@@ -262,11 +260,15 @@ class HybridRouter(LLMRouter):
         (deliberate intent — honored even if the listing hasn't refreshed), or
         (2) the live backend's served-model listing contains the deep model.
         """
-        if os.environ.get("JARVIS_DEEP_MODEL"):
+        if model_config.deep_model_override_configured():
             return True
         served = getattr(self, "_served_models", None) or set()
-        deep = DEFAULT_DEEP_MODEL.lower()
+        deep = self._configured_deep_model().lower()
         return any(deep in m.lower() or m.lower() in deep for m in served)
+
+    def _configured_deep_model(self) -> str:
+        """Deep-slot model for this router, compatible with __new__ test fixtures."""
+        return getattr(self, "_deep_model", None) or model_config.deep_model_name() or DEFAULT_DEEP_MODEL
 
     async def detect(self):
         # Resolve the connectivity knobs (/admin) before probing so the base
@@ -274,7 +276,8 @@ class HybridRouter(LLMRouter):
         self.backend_type = self._admin_setting("backend_type", "auto")
         self.lm_studio_url = self._admin_setting("lm_studio_url", "http://localhost:1234")
         self.ollama_url = self._admin_setting("ollama_url", "http://localhost:11434")
-        self._gemini_model = self._admin_setting("gemini_model", "gemini-2.5-flash")
+        self._deep_model = model_config.deep_model_name()
+        self._gemini_model = self._admin_setting("gemini_model", DEFAULT_GEMINI_FLASH_MODEL)
         await super().detect()
         self._local_available = self._backend is not None
         # Use the real model loaded in the live backend; fall back to the /admin
@@ -379,7 +382,7 @@ class HybridRouter(LLMRouter):
         # (O26-P0.5/F5); falls through to normal routing otherwise.
         if (agent_id in DEEP_THINK_AGENTS and self._local_available
                 and self._deep_model_available()):
-            return self._backend, DEFAULT_DEEP_MODEL, "local-deep"
+            return self._backend, self._configured_deep_model(), "local-deep"
 
         policy = self.get_agent_policy(agent_id)
         token_count = estimate_tokens(prompt)
@@ -417,7 +420,7 @@ class HybridRouter(LLMRouter):
         if agent_id in CLAUDE_AGENTS and self._claude_available:
             if token_count > self._local_max:
                 return self._claude_backend, self._claude_model, "claude"
-            return self._claude_backend, DEFAULT_CLAUDE_MODEL, "claude"
+            return self._claude_backend, self._claude_model, "claude"
 
         # Default: local first, cloud if context too big — governed by the
         # /admin llm.cloud_fallback knob (never | on-demand | always):
@@ -435,13 +438,13 @@ class HybridRouter(LLMRouter):
                 logger.debug(
                     "Complexity escalation: routing %s to deep slot (local-deep)", agent_id
                 )
-                return self._backend, DEFAULT_DEEP_MODEL, "local-deep"
+                return self._backend, self._configured_deep_model(), "local-deep"
             return self._backend, self._local_model, "local"
         if self._cloud_fallback_mode != "never":
             if token_count <= self._flash_max and self._cloud_available:
                 return self._gemini_backend, self._gemini_model, "cloud-flash"
             if self._cloud_available:
-                return self._gemini_backend, "gemini-2.5-pro", "cloud-pro"
+                return self._gemini_backend, DEFAULT_GEMINI_PRO_MODEL, "cloud-pro"
 
         if self._local_available:
             logger.warning("Cloud unavailable, falling back to local (context may be truncated)")
@@ -510,7 +513,7 @@ class HybridRouter(LLMRouter):
         self._local_model = model
 
     def get_howard_model(self) -> str:
-        return HOWARD_OLLAMA_MODEL if self._ollama_available else "google/gemma-4-26b-a4b"
+        return HOWARD_OLLAMA_MODEL if self._ollama_available else HOWARD_FALLBACK_MODEL
 
     def get_model(self, agent_id: str) -> str:
         """Return the appropriate model name for this agent."""
@@ -519,7 +522,7 @@ class HybridRouter(LLMRouter):
         if agent_id in CLAUDE_AGENTS and self._claude_available:
             return self._claude_model
         if agent_id in DEEP_THINK_AGENTS and self._local_available:
-            return DEFAULT_DEEP_MODEL
+            return self._configured_deep_model()
         return self._local_model
 
     @property
@@ -544,6 +547,11 @@ class HybridRouter(LLMRouter):
     def get_route_name(self, agent_id: str, prompt: str) -> str:
         _, _, route = self.select_backend(agent_id, prompt)
         return route
+
+    def provider_catalog(self) -> list[dict]:
+        """Return declared provider profiles without probing network backends."""
+        from .providers import provider_catalog
+        return provider_catalog()
 
     async def aclose(self) -> None:
         """Close every backend's HTTP client pool (BUG-7).

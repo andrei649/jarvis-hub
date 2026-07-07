@@ -15,6 +15,7 @@ those via the orchestrator back-ref.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import os
 
@@ -37,6 +38,7 @@ class SchedulerService:
         self.schedule_daily_budget_reset()
         self.schedule_worldview_kg_sync()
         self.schedule_retention()
+        self.schedule_memory_maintenance()
 
     # ── scheduling (registration) ─────────────────────────────────
     def schedule_daily_digests(self):
@@ -159,12 +161,99 @@ class SchedulerService:
         except Exception as e:
             logger.warning(f"Failed to schedule retention sweep: {e}")
 
+    def schedule_memory_maintenance(self):
+        """Nightly LivingMemory consolidation + decay inspection (O26-P2.2).
+
+        Always registered, but the body is gated by ``cognition.memory_enabled``.
+        The decay half only ranks/candidates low-activation items; it never
+        deletes without an explicit user forget action.
+        """
+        sched = getattr(self._orch.heartbeat_scheduler, "scheduler", None)
+        if sched is None:
+            return
+        try:
+            sched.add_job(self.run_memory_maintenance, "cron", hour=2, minute=40,
+                          id="memory-consolidation-decay", replace_existing=True)
+            logger.info("Scheduled memory maintenance: 02:40 daily")
+        except Exception:
+            logger.warning("Failed to schedule memory maintenance", exc_info=True)
+
     # ── job bodies (no external callers) ──────────────────────────
+    async def run_memory_maintenance(self):
+        """Run the nightly memory maintenance pass.
+
+        LivingMemory does the NREM/REM tier maintenance; the H14 decay store is
+        inspected for low-activation candidates but never auto-forgotten.
+        """
+        cog = getattr(self._orch, "cognition", None)
+        if cog is None or not cog.sub_enabled("memory_enabled"):
+            return {"skipped": True, "reason": "cognition_memory_disabled"}
+        living = cog.module("memory")
+        if living is None:
+            return {"skipped": True, "reason": "living_memory_unavailable"}
+
+        try:
+            nrem = await living.consolidate("nrem")
+            rem = await living.consolidate("rem")
+        except Exception:
+            logger.warning("LivingMemory consolidation failed", exc_info=True)
+            return {"skipped": True, "reason": "living_memory_failed"}
+
+        reprojection = {"available": False, "reason": "reprojection_unavailable"}
+        if hasattr(living, "reproject_stale"):
+            try:
+                memory = getattr(self._orch, "memory", None)
+                embedder = getattr(memory, "embed", None)
+                if callable(embedder):
+                    reprojection = await living.reproject_stale(embedder=embedder)
+                else:
+                    reprojection = await living.reproject_stale()
+            except Exception:
+                logger.warning("LivingMemory re-projection failed", exc_info=True)
+                reprojection = {"available": False, "reason": "reprojection_failed"}
+
+        decay_summary = {"available": False, "ranked": 0, "candidates": 0}
+        decay = getattr(self._orch, "decay", None)
+        if decay is not None:
+            try:
+                threshold = float(self._orch.get_setting("memory.decay_candidate_threshold", 0.0))
+            except Exception:
+                threshold = 0.0
+            try:
+                ranking = await asyncio.to_thread(decay.ranking, limit=1000)
+                candidates = await asyncio.to_thread(decay.forget_candidates, threshold)
+                decay_summary = {
+                    "available": True,
+                    "ranked": len(ranking or []),
+                    "candidates": len(candidates or []),
+                    "threshold": threshold,
+                }
+            except Exception:
+                logger.warning("Decay inspection failed", exc_info=True)
+                decay_summary = {"available": False, "ranked": 0, "candidates": 0}
+
+        result = {
+            "skipped": False,
+            "living_memory": {"nrem": nrem, "rem": rem},
+            "reprojection": reprojection,
+            "decay": decay_summary,
+        }
+        self._orch.last_memory_maintenance = result
+        logger.info(
+            "Memory maintenance complete: nrem_total=%s rem_recombined=%s "
+            "reprojected=%s decay_ranked=%s decay_candidates=%s",
+            nrem.get("total") if isinstance(nrem, dict) else None,
+            rem.get("recombined") if isinstance(rem, dict) else None,
+            reprojection.get("reprojected") if isinstance(reprojection, dict) else None,
+            decay_summary.get("ranked"),
+            decay_summary.get("candidates"),
+        )
+        return result
+
     async def run_retention_purge(self):
         """Run the retention sweep off the event loop (file + SQLite I/O)."""
         if not self._orch.get_setting("retention.enabled", False):
             return
-        import asyncio
 
         from agents.core import retention
         try:
@@ -265,7 +354,11 @@ class SchedulerService:
         """Build and ship the morning brief / evening retro to the owner."""
         try:
             if kind == "morning":
-                text = build_morning_brief(self._orch.autonomy_queue)
+                memory_entries = await self._memory_entries_for_brief()
+                text = build_morning_brief(
+                    self._orch.autonomy_queue,
+                    memory_entries=memory_entries,
+                )
             else:
                 text = build_evening_retro(self._orch.autonomy_queue)
         except Exception as e:
@@ -281,3 +374,14 @@ class SchedulerService:
             except Exception as e:
                 logger.warning(f"Digest send failed ({kind}): {e}")
         logger.info(f"Daily digest ready: {kind}")
+
+    async def _memory_entries_for_brief(self) -> list[dict]:
+        try:
+            from agents.core.memory.store import MemoryStore
+            allmem = await MemoryStore().get_all()
+            rows: list[dict] = []
+            for entries in (allmem or {}).values():
+                rows.extend(entries)
+            return rows
+        except Exception:
+            return []

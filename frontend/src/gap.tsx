@@ -147,20 +147,55 @@ export function KgPanel() {
     </Card>
   );
 }
-function DataSpacesPanel() {
+export function DataSpacesPanel() {
   const { d, e, loading, reload } = useApi('/api/memory/spaces');
   const spaces = arr(d, 'spaces');
+  const assignments = d?.assignments || {};
+  const assignmentRows = Object.entries(assignments).flatMap(([agent, names]: any) =>
+    (Array.isArray(names) ? names : []).map((space) => ({ agent, space })),
+  );
+  const spaceName = (s) => s?.name || s?.space || s;
   const [name, setName] = useState(''); const [src, setSrc] = useState('');
+  const [agent, setAgent] = useState(''); const [assignSpace, setAssignSpace] = useState('');
+  const [msg, setMsg] = useState('');
   const inp = { background: 'var(--surface)', color: 'var(--ink)', border: '1px solid var(--panel-line)', borderRadius: 4, padding: 5, ...mono, fontSize: 11, flex: 1 };
   const create = () => { if (!name.trim()) return; apiPost('/api/memory/spaces', { name: name.trim(), sources: src.split(',').map((s) => s.trim()).filter(Boolean) }, { admin: true }).then(() => { setName(''); setSrc(''); reload(); }).catch(() => {}); };
+  const assign = () => {
+    const a = agent.trim(); const sp = assignSpace.trim();
+    if (!a || !sp) return;
+    apiPost('/api/memory/spaces/assign', { agent: a, space: sp }, { admin: true })
+      .then(() => { setMsg(`${a} -> ${sp}`); reload(); })
+      .catch(() => setMsg('assign failed'));
+  };
+  const unassign = (a, sp) => apiPost('/api/memory/spaces/unassign', { agent: a, space: sp }, { admin: true })
+    .then(() => { setMsg(`${a} unrestricted from ${sp}`); reload(); })
+    .catch(() => setMsg('unassign failed'));
+  const optionSpaces = spaces.map(spaceName).filter(Boolean);
   return <Card title="DATA SPACES" live={asLive(d)} sub={spaces.length} onReload={reload}>
     <State e={e} loading={loading} n={spaces.length} />
-    {spaces.slice(0, 12).map((s, i) => <Row key={i}><span style={{ ...mono, color: 'var(--accent-light)' }}>{s.name || s}</span><span style={{ fontSize: 10, color: 'var(--ink-3)' }}>{(s.sources || s.categories || []).join?.(', ')}</span><Btn onClick={() => apiDelete('/api/memory/spaces/' + (s.name || s), { admin: true }).then(reload).catch(() => {})}>✕</Btn></Row>)}
+    {spaces.slice(0, 12).map((s, i) => <Row key={i}><span style={{ ...mono, color: 'var(--accent-light)' }}>{spaceName(s)}</span><span style={{ fontSize: 10, color: 'var(--ink-3)' }}>{(s.sources || s.categories || []).join?.(', ')}</span><Btn onClick={() => apiDelete('/api/memory/spaces/' + spaceName(s), { admin: true }).then(reload).catch(() => {})}>✕</Btn></Row>)}
+    {assignmentRows.length > 0 && <div style={{ marginTop: 8 }}>
+      <div style={{ ...mono, color: 'var(--ink-3)', fontSize: 10, marginBottom: 4 }}>ASSIGNMENTS</div>
+      {assignmentRows.slice(0, 16).map((r, i) => <Row key={`${r.agent}:${r.space}:${i}`}>
+        <span style={{ ...mono, color: 'var(--ink-2)' }}>{r.agent}</span>
+        <Tag c="var(--accent-light)">{r.space}</Tag>
+        <button className="tool-btn" title={`unassign ${r.agent} from ${r.space}`} onClick={() => unassign(r.agent, r.space)}>unassign</button>
+      </Row>)}
+    </div>}
     <div style={{ display: 'flex', gap: 6, marginTop: 8 }}>
       <input value={name} onChange={(ev) => setName(ev.target.value)} placeholder="space name" style={inp} />
       <input value={src} onChange={(ev) => setSrc(ev.target.value)} placeholder="sources, csv" style={inp} />
       <button className="tool-btn" onClick={create}>+ add</button>
     </div>
+    <div style={{ display: 'flex', gap: 6, marginTop: 8 }}>
+      <input value={agent} onChange={(ev) => setAgent(ev.target.value)} placeholder="agent id" style={inp} />
+      <select aria-label="space to assign" value={assignSpace} onChange={(ev) => setAssignSpace(ev.target.value)} style={{ ...inp, minWidth: 120 }}>
+        <option value="">choose space</option>
+        {optionSpaces.map((sp) => <option key={sp} value={sp}>{sp}</option>)}
+      </select>
+      <button className="tool-btn" onClick={assign}>assign</button>
+    </div>
+    {msg && <div style={{ fontSize: 10, color: 'var(--accent-light)', marginTop: 6 }}>{msg}</div>}
     <div style={{ fontSize: 10, color: 'var(--ink-3)', marginTop: 6 }}>per-agent read scope (H10.26) · default-open</div>
   </Card>;
 }
@@ -299,13 +334,53 @@ export function SecuritySkillsPanel() {
     </Card>
   );
 }
-function CapabilitiesPanel() {
+export function CapabilitiesPanel() {
   const [caps, setCaps] = useState('fs.read,memory.write'); const [out, setOut] = useState(null);
+  const [issued, setIssued] = useState([]);
+  const [checkToken, setCheckToken] = useState(''); const [checkCap, setCheckCap] = useState('memory.write');
+  const [checkOut, setCheckOut] = useState(null);
+  const issue = () => {
+    const parsed = caps.split(',').map((s) => s.trim()).filter(Boolean);
+    if (!parsed.length) return;
+    actA('/api/security/capabilities/issue', { capabilities: parsed }, (r) => {
+      setOut(JSON.stringify(r));
+      if (r?.token) {
+        setIssued((prev) => [r.token, ...prev.filter((t) => t.id !== r.token.id)].slice(0, 5));
+        setCheckToken(r.token.id || '');
+        setCheckCap((r.token.capabilities || [checkCap])[0] || checkCap);
+      }
+    });
+  };
+  const check = () => {
+    const token = checkToken.trim(); const cap = checkCap.trim();
+    if (!token || !cap) return;
+    apiGet('/api/security/capabilities/check?token=' + encodeURIComponent(token) + '&capability=' + encodeURIComponent(cap))
+      .then(setCheckOut)
+      .catch((err) => setCheckOut({ allowed: false, reason: err?.message || 'check failed' }));
+  };
   return <Card title="CAPABILITY TOKENS" live={'live'}>
-    <input value={caps} onChange={(e) => setCaps(e.target.value)} style={{ width: '100%', background: 'var(--surface)', color: 'var(--ink)', border: '1px solid var(--panel-line)', borderRadius: 4, padding: 6, ...mono }} />
+    <input value={caps} onChange={(e) => setCaps(e.target.value)} placeholder="capabilities csv" style={{ width: '100%', background: 'var(--surface)', color: 'var(--ink)', border: '1px solid var(--panel-line)', borderRadius: 4, padding: 6, ...mono }} />
     <div style={{ display: 'flex', gap: 8, marginTop: 6 }}>
-      <button className="tool-btn" onClick={() => actA('/api/security/capabilities/issue', { capabilities: caps.split(',').map((s) => s.trim()) }, (r) => setOut(JSON.stringify(r)))}>issue</button>
+      <button className="tool-btn" onClick={issue}>issue</button>
     </div>
+    {issued.length > 0 && <div style={{ marginTop: 8 }}>
+      <div style={{ ...mono, color: 'var(--ink-3)', fontSize: 10, marginBottom: 4 }}>RECENT GRANTS</div>
+      {issued.map((t, i) => <Row key={t.id || i}>
+        <span style={{ ...mono, color: 'var(--ink-2)' }}>{t.id}</span>
+        <span style={{ marginLeft: 'auto', display: 'flex', gap: 5, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+          {(t.capabilities || []).map((c) => <Tag key={c} c="var(--accent-light)">{c}</Tag>)}
+        </span>
+      </Row>)}
+    </div>}
+    <div style={{ display: 'flex', gap: 6, marginTop: 8, flexWrap: 'wrap' }}>
+      <input value={checkToken} onChange={(e) => setCheckToken(e.target.value)} placeholder="token id" style={{ ...inpS, flex: 1, minWidth: 120 }} />
+      <input value={checkCap} onChange={(e) => setCheckCap(e.target.value)} placeholder="capability to check" style={{ ...inpS, flex: 1, minWidth: 120 }} />
+      <button className="tool-btn" onClick={check}>check</button>
+    </div>
+    {checkOut && <div style={{ display: 'flex', gap: 6, alignItems: 'center', marginTop: 6 }}>
+      <Tag c={checkOut.allowed ? 'var(--green)' : 'var(--red)'}>{checkOut.allowed ? 'allowed' : 'blocked'}</Tag>
+      <span style={{ ...mono, fontSize: 10, color: 'var(--ink-3)' }}>{checkOut.reason || 'token grants capability'}</span>
+    </div>}
     {out && <pre style={{ ...mono, fontSize: 10, color: 'var(--ink-3)', whiteSpace: 'pre-wrap', marginTop: 6 }}>{out.slice(0, 200)}</pre>}
   </Card>;
 }
@@ -1034,9 +1109,16 @@ export function RoomsPanel() {
   const { d, e, loading, reload } = useApi('/api/rooms');
   const rooms = arr(d, 'rooms');
   const [name, setName] = useState(''); const [sel, setSel] = useState(''); const [msg, setMsg] = useState('');
+  const hist = useApi(sel ? '/api/rooms/' + encodeURIComponent(sel) + '/history' : '/api/rooms', Boolean(sel));
+  const turns = arr(hist.d, 'history');
   const inp = { background: 'var(--surface)', color: 'var(--ink)', border: '1px solid var(--panel-line)', borderRadius: 4, padding: 5, ...mono, fontSize: 11, flex: 1 };
   const create = () => { if (!name.trim()) return; apiPost('/api/rooms', { name: name.trim() }).then(() => { setName(''); reload(); }).catch(() => {}); };
-  const send = () => { if (!sel || !msg.trim()) return; apiPost('/api/rooms/' + sel + '/message', { message: msg.trim() }).then(() => setMsg('')).catch(() => {}); };
+  const send = () => {
+    if (!sel || !msg.trim()) return;
+    apiPost('/api/rooms/' + encodeURIComponent(sel) + '/message', { message: msg.trim() })
+      .then(() => { setMsg(''); hist.reload(); })
+      .catch(() => {});
+  };
   return <Card title="ROOMS" live={asLive(d)} sub={rooms.length} onReload={reload}>
     <State e={e} loading={loading} n={rooms.length} />
     {rooms.slice(0, 10).map((r, i) => <Row key={i}><span style={{ ...mono, color: sel === (r.id || r.name) ? 'var(--accent)' : 'var(--accent-light)', cursor: 'pointer' }} onClick={() => setSel(r.id || r.name)}>{r.name || r.id}</span><span style={{ marginLeft: 'auto', fontSize: 10, color: 'var(--ink-3)' }}>{(r.agents || []).join(', ')}</span></Row>)}
@@ -1047,6 +1129,23 @@ export function RoomsPanel() {
     {sel && <div style={{ display: 'flex', gap: 6, marginTop: 6 }}>
       <input value={msg} onChange={(ev) => setMsg(ev.target.value)} placeholder={'message ' + sel + ' (@agent)'} onKeyDown={(ev) => { if (ev.key === 'Enter') send(); }} style={inp} />
       <button className="tool-btn" onClick={send}>send</button>
+    </div>}
+    {sel && <div style={{ marginTop: 8, padding: 8, background: 'var(--surface)', border: '1px solid var(--panel-line)', borderRadius: 4 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4 }}>
+        <span style={{ ...mono, fontSize: 9.5, letterSpacing: '.14em', color: 'var(--ink-3)' }}>HISTORY · {sel}</span>
+        <button className="tool-btn" style={{ marginLeft: 'auto' }} title="reload room history" onClick={hist.reload}>↻</button>
+      </div>
+      <State e={hist.e} loading={hist.loading} n={turns.length} />
+      {turns.slice(-8).map((t, i) => {
+        const label = t.agent || t.role || 'turn';
+        const text = t.content || t.message || t.text || '';
+        const ts = t.at || t.created_at || t.ts || '';
+        return <Row key={i}>
+          <Tag c={t.role === 'assistant' ? 'var(--accent-light)' : 'var(--ink-3)'}>{label}</Tag>
+          <span style={{ ...mono, color: 'var(--ink-2)', flex: 1, whiteSpace: 'normal', overflowWrap: 'anywhere' }}>{text}</span>
+          {ts && <span style={{ ...mono, marginLeft: 'auto', fontSize: 9.5, color: 'var(--ink-3)' }}>{String(ts).slice(0, 19)}</span>}
+        </Row>;
+      })}
     </div>}
   </Card>;
 }
@@ -1493,6 +1592,72 @@ export function CommsRatePanel() {
   );
 }
 
+/* 0.44 — draft-before-send UI for governed social writes. This is deliberately
+   a queue/preview surface over /api/integrations/social; actual per-channel inbox
+   reply transport remains a separate plugin/channel bridge. */
+export function SafeCommsDraftPanel() {
+  const { d, e, loading, reload } = useApi('/api/integrations/social');
+  const targets = arr(d, 'targets');
+  const [choice, setChoice] = useState('');
+  const [text, setText] = useState('');
+  const [dest, setDest] = useState('');
+  const [agent, setAgent] = useState('pepper');
+  const [out, setOut] = useState(null);
+  const selectedKey = choice || (targets[0] ? `${targets[0].platform}:${targets[0].action}` : '');
+  const selected = targets.find((t) => `${t.platform}:${t.action}` === selectedKey) || targets[0];
+  const queue = () => {
+    if (!selected || !text.trim()) return;
+    const fields: Record<string, any> = { text: text.trim() };
+    if (selected.required?.includes?.('reply_to')) fields.reply_to = dest.trim();
+    if (selected.required?.includes?.('recipient')) fields.recipient = dest.trim();
+    apiPost('/api/integrations/social', {
+      platform: selected.platform,
+      action: selected.action,
+      fields,
+      agent: agent.trim() || 'pepper',
+      source: 'hud.safe_comms_draft',
+    }).then((r: any) => {
+      setOut(r);
+      if (r && r.ok !== false) { setText(''); setDest(''); }
+      reload();
+    }).catch((err) => setOut({ ok: false, reason: err?.message || 'request failed' }));
+  };
+  const note = out
+    ? out.ok === false
+      ? `held: ${out.reason || 'validation failed'}`
+      : out.task_id
+        ? `queued for approval · ${out.task_id}`
+        : (out.status || 'preview ready')
+    : null;
+  return (
+    <Card title="SAFE COMMS DRAFTS" live={asLive(d)} sub={d ? `${targets.length} actions` : null} onReload={reload}>
+      <State e={e} loading={loading} n={targets.length} />
+      {targets.slice(0, 6).map((t, i) => (
+        <Row key={t.kind || i}>
+          <span style={{ ...mono, color: 'var(--accent-light)' }}>{t.label || `${t.platform}.${t.action}`}</span>
+          <span style={{ marginLeft: 'auto', display: 'flex', gap: 5, alignItems: 'center' }}>
+            <Tag>{t.kind || `${t.platform}.${t.action}`}</Tag>
+            {t.credential && <Tag c="var(--ink-3)">{t.credential}</Tag>}
+          </span>
+        </Row>
+      ))}
+      <div style={{ display: 'grid', gridTemplateColumns: 'minmax(120px,1fr) minmax(100px,1fr) minmax(70px,.6fr)', gap: 6, marginTop: 8 }}>
+        <select aria-label="social action" value={selectedKey} onChange={(ev) => setChoice(ev.target.value)} style={inpS}>
+          {targets.map((t) => <option key={t.kind || `${t.platform}:${t.action}`} value={`${t.platform}:${t.action}`}>{t.label || `${t.platform}.${t.action}`}</option>)}
+        </select>
+        <input value={dest} onChange={(ev) => setDest(ev.target.value)} placeholder="reply_to / recipient" style={inpS} />
+        <input value={agent} onChange={(ev) => setAgent(ev.target.value)} placeholder="agent" style={inpS} />
+      </div>
+      <textarea value={text} onChange={(ev) => setText(ev.target.value)} placeholder="draft text" style={{ ...taS, marginTop: 6, minHeight: 58 }} />
+      <div style={{ display: 'flex', gap: 6, alignItems: 'center', marginTop: 6 }}>
+        <button className="tool-btn" disabled={!selected || !text.trim()} onClick={queue}>queue draft</button>
+        <span style={{ fontSize: 10, color: 'var(--ink-3)' }}>approval queue · no direct send</span>
+      </div>
+      {note && <div style={{ ...mono, fontSize: 10.5, color: out?.ok === false ? 'var(--amber)' : 'var(--green)', marginTop: 6 }}>{note}</div>}
+    </Card>
+  );
+}
+
 /* H23.2 — recorded model fingerprints (GET /api/models/info, admin): the {id, version,
    quant, sha256} of each model build seen, so a run is reproducible to the exact model.
    Honesty contract: when JARVIS_MODEL_INFO is off the endpoint reports enabled:false and
@@ -1604,7 +1769,7 @@ export function SystemProfilePanel() {
 
 const SECTIONS: Array<[string, Array<() => any>]> = [
   ['Memory', [DataSpacesPanel, LocalDocsPanel, NotesPanel, KgPanel, CapturePanel, ReflectionPanel, ProvenancePanel]],
-  ['Trust', [KillSwitchPanel, KernelMetricsPanel, ReadinessPanel, LoopBreakerPanel, GovernancePanel, PosturePanel, SecuritySkillsPanel, NetworkMonitorPanel, CommsRatePanel, SecretsPanel, CapabilitiesPanel, PairingPanel, InjectionScanPanel]],
+  ['Trust', [KillSwitchPanel, KernelMetricsPanel, ReadinessPanel, LoopBreakerPanel, GovernancePanel, PosturePanel, SecuritySkillsPanel, NetworkMonitorPanel, CommsRatePanel, SafeCommsDraftPanel, SecretsPanel, CapabilitiesPanel, PairingPanel, InjectionScanPanel]],
   ['Interop', [A2AInboxPanel, MeshPeersPanel, SatellitesPanel, OraclePanel, MarketplacePanel, SkillHistoryPanel, WatchlistPanel]],
   ['Observe', [OnboardingPanel, EvalPanel, ReviewPanel, ArenaPanel, QualityPanel, APMPanel, ModelInfoPanel, FeedbackPanel]],
   ['Build', [WorkflowsPanel, StepGenPanel, SandboxPanel, TemplatesPanel, MediaGalleryPanel]],

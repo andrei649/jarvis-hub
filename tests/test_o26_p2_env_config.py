@@ -26,6 +26,9 @@ from agents.core.env_config import (  # noqa: E402
     env_flag,
     env_float,
     env_int,
+    env_int_map,
+    env_json_object,
+    env_list,
     env_str,
     truthy,
 )
@@ -82,6 +85,8 @@ def test_env_int_and_float_never_raise(monkeypatch):
     monkeypatch.setenv(VAR, "2.5")
     assert env_int(VAR, 9) == 9          # int() rejects it → default
     assert env_float(VAR, 0.0) == 2.5
+    monkeypatch.setenv(VAR, "-1.5")
+    assert env_float(VAR, 4.0, minimum=0.0) == 4.0
     monkeypatch.delenv(VAR)
     assert env_float(VAR, 1.25) == 1.25
 
@@ -91,6 +96,43 @@ def test_env_str_raw(monkeypatch):
     assert env_str(VAR) == "  padded  "   # no strip: callers that trim, trim
     monkeypatch.delenv(VAR)
     assert env_str(VAR, "fallback") == "fallback"
+
+
+def test_env_list_strips_and_skips_blank_entries(monkeypatch):
+    default = ["https://fallback.example"]
+
+    monkeypatch.delenv(VAR, raising=False)
+    assert env_list(VAR, default) == default
+    monkeypatch.setenv(VAR, "")
+    assert env_list(VAR, default) == default
+    monkeypatch.setenv(VAR, " https://a.example, ,https://b.example ,, ")
+    assert env_list(VAR) == ["https://a.example", "https://b.example"]
+
+
+def test_env_json_object_never_raises_and_requires_object(monkeypatch):
+    default = {"twilio": {"from": "+1000"}}
+
+    monkeypatch.delenv(VAR, raising=False)
+    assert env_json_object(VAR, default) == default
+    monkeypatch.setenv(VAR, "")
+    assert env_json_object(VAR, default) == default
+    monkeypatch.setenv(VAR, "{bad-json")
+    assert env_json_object(VAR, default) == default
+    monkeypatch.setenv(VAR, "[]")
+    assert env_json_object(VAR, default) == default
+    monkeypatch.setenv(VAR, '{"telnyx":{"connection_id":"abc"}}')
+    assert env_json_object(VAR, default) == {"telnyx": {"connection_id": "abc"}}
+
+
+def test_env_int_map_never_raises_and_skips_bad_entries(monkeypatch):
+    default = {"fallback": 9}
+
+    monkeypatch.delenv(VAR, raising=False)
+    assert env_int_map(VAR, default) == default
+    monkeypatch.setenv(VAR, "")
+    assert env_int_map(VAR, default) == default
+    monkeypatch.setenv(VAR, "whatsapp:2, teams:30 ,junk,bad:x, negative:-1")
+    assert env_int_map(VAR) == {"whatsapp": 2, "teams": 30, "negative": -1}
 
 
 # ── layer 2: the convention guard (the ratchet) ──────────────────────────────
@@ -154,8 +196,32 @@ def test_env_config_is_a_stdlib_leaf():
         stripped = line.strip()
         if stripped.startswith(("import ", "from ")) and "__future__" not in stripped:
             root_mod = stripped.split()[1].split(".")[0]
-            assert root_mod == "os", f"env_config imports non-stdlib-leaf module: {stripped}"
+            assert root_mod in {"json", "os"}, f"env_config imports non-stdlib-leaf module: {stripped}"
     assert "load_dotenv" not in src, "env_config must never load .env (posture change)"
+
+
+def test_web_email_ports_use_shared_env_int():
+    """Malformed SMTP/IMAP port env values must fall back, not crash startup."""
+    src = (repo_root / "agents/web.py").read_text(encoding="utf-8")
+    assert 'int(os.environ.get("SMTP_PORT"' not in src
+    assert 'int(os.environ.get("IMAP_PORT"' not in src
+    assert 'env_int("SMTP_PORT", 587' in src
+    assert 'env_int("IMAP_PORT", 993' in src
+
+
+def test_webhook_channels_use_shared_env_json_object():
+    """Malformed webhook-channel JSON env must fall back, not hand-roll parsing."""
+    src = (repo_root / "agents/web.py").read_text(encoding="utf-8")
+    assert 'os.environ.get("JARVIS_WEBHOOK_CHANNELS"' not in src
+    assert 'json.loads(wh_raw)' not in src
+    assert 'env_json_object("JARVIS_WEBHOOK_CHANNELS", {})' in src
+
+
+def test_web_cors_origins_use_shared_env_list():
+    """Comma-separated CORS origins should use the shared list parser."""
+    src = (repo_root / "agents/web.py").read_text(encoding="utf-8")
+    assert 'os.environ.get("JARVIS_CORS_ORIGINS"' not in src
+    assert 'env_list("JARVIS_CORS_ORIGINS")' in src
 
 
 # ── layer 3: pins for the deliberate flips ───────────────────────────────────
@@ -201,3 +267,13 @@ def test_oauth_env_truthy_stays_importable():
     from agents.core.routers.oauth import _env_truthy
 
     assert _env_truthy("on") is True and _env_truthy("nope") is False
+
+
+def test_trust_status_env_reads_use_shared_env_flag():
+    src = (repo_root / "agents" / "core" / "routers" / "oauth.py").read_text(encoding="utf-8")
+
+    assert 'os.environ.get("JARVIS_MIC_MUTED"' not in src
+    assert 'os.environ.get("JARVIS_STRICT_LOCAL"' not in src
+    assert "_env_truthy = truthy" not in src
+    assert 'env_flag("JARVIS_MIC_MUTED")' in src
+    assert 'env_flag("JARVIS_STRICT_LOCAL")' in src

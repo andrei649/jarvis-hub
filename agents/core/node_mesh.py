@@ -25,6 +25,7 @@ import threading
 import time
 from typing import Optional
 
+from .automation_contracts import ContractTemplate, predicate
 from .autonomy.dry_run import preview_task
 from .security.capability import authorize as _authorize
 
@@ -32,6 +33,47 @@ logger = logging.getLogger("jarvis.node_mesh")
 
 KIND = "node.dispatch"
 _RISK_TIER = 2   # remote on-device action → external → ASK
+
+
+def _present(v) -> bool:
+    return bool(v.strip()) if isinstance(v, str) else bool(v)
+
+
+def _node_dispatch_contract_template() -> ContractTemplate:
+    """Contract form of the existing governed node-dispatch approval path."""
+    def dispatch_kind(view, now):
+        return view.get("kind") == KIND
+
+    def node_present(view, now):
+        return _present(view.get("node"))
+
+    def capability_present(view, now):
+        return _present(view.get("capability"))
+
+    def target_matches_node(view, now):
+        return view.get("target") == view.get("node")
+
+    def args_keys_are_safe(view, now):
+        keys = view.get("args_keys")
+        return (
+            isinstance(keys, list)
+            and all(isinstance(k, str) for k in keys)
+            and keys == sorted(keys)
+        )
+
+    return ContractTemplate(kind="node_dispatch", constraints=(
+        predicate("dispatch_kind", dispatch_kind, reason="invalid_kind"),
+        predicate("node_present", node_present, reason="missing_node"),
+        predicate("capability_present", capability_present,
+                  reason="missing_capability"),
+        predicate("target_matches_node", target_matches_node,
+                  reason="target_mismatch"),
+        predicate("args_keys_are_safe", args_keys_are_safe,
+                  reason="bad_args_keys"),
+    ), description="Admissibility for governed node-dispatch requests.")
+
+
+NODE_DISPATCH_CONTRACT = _node_dispatch_contract_template()
 
 
 class NodeMesh:
@@ -126,6 +168,27 @@ class NodeMesh:
             auth = self._authorize(node_id, capability)
             if not auth.get("allowed"):
                 return {"ok": False, "reason": auth.get("reason", "denied")}
+        contract_payload = {
+            "kind": KIND,
+            "node": node_id,
+            "capability": capability,
+            "action": task_payload["action"],
+            "target": node_id,
+            "agent": self.agent,
+            "risk_tier": _RISK_TIER,
+            "args_keys": sorted((payload or {}).keys()),
+        }
+        try:
+            decision = NODE_DISPATCH_CONTRACT.evaluate(
+                contract_payload, now=time.time())
+        except Exception:
+            logger.warning("node dispatch contract evaluation failed", exc_info=True)
+            return {"ok": False, "reason": "contract_error", "kind": KIND}
+        if not decision.admissible:
+            reason = decision.reason or "contract_denied"
+            self._record("node.dispatch_deny", node_id, capability=capability,
+                         reason=reason)
+            return {"ok": False, "reason": reason, "kind": KIND}
         preview = preview_task({"kind": KIND, "title": title,
                                 "payload": task_payload, "risk_tier": _RISK_TIER})
         if self._enqueue is None:

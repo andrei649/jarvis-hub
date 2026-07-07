@@ -23,11 +23,17 @@ the live MemoryManager / recall fusion / DailyReflector is the integration seam.
 
 from __future__ import annotations
 
+import json
+import logging
 import math
 import time
+from pathlib import Path
 from typing import Callable, Optional
 
+from agents.core.persistence import JsonStore
+
 HOT, WARM, COLD = "hot", "warm", "cold"
+logger = logging.getLogger("jarvis.cognition.memory")
 
 
 def _clamp01(x: float) -> float:
@@ -126,59 +132,126 @@ def tier_for(activation: float, hot: float = 0.5, warm: float = 0.2) -> str:
     return HOT if activation >= hot else (WARM if activation >= warm else COLD)
 
 
-class TieredMemory:
+class TieredMemory(JsonStore):
     """Hot/warm/cold tiering by activation. Maintenance demotes; only the user deletes."""
 
-    def __init__(self, decay: float = 0.5) -> None:
+    def __init__(self, decay: float = 0.5, path: str | Path | None = None) -> None:
         self.decay = decay
-        self._items: dict[str, dict] = {}
+        super().__init__(path)
+
+    def _serialize(self):
+        return {"items": self._items}
+
+    def _deserialize(self, raw) -> None:
+        items = raw.get("items", {}) if isinstance(raw, dict) else {}
+        self._items = {}
+        if not isinstance(items, dict):
+            return
+        for key, value in items.items():
+            if isinstance(value, dict):
+                rec = dict(value)
+                rec["id"] = str(rec.get("id") or key)
+                rec["activation"] = round(float(rec.get("activation", 0.0) or 0.0), 3)
+                rec["tier"] = rec.get("tier") or tier_for(rec["activation"])
+                rec["accesses"] = int(rec.get("accesses", 0) or 0)
+                rec["ts"] = float(rec.get("ts", 0.0) or 0.0)
+                rec["embed_version"] = int(rec.get("embed_version", 1) or 1)
+                self._items[str(key)] = rec
 
     def add(self, mem_id: str, content, activation: float = 1.0, embed_version: int = 1) -> dict:
         rec = {"id": mem_id, "content": content, "activation": round(activation, 3),
                "tier": tier_for(activation), "accesses": 0,
                "ts": time.time(), "embed_version": embed_version}
-        self._items[mem_id] = rec
+        with self._lock:
+            self._items[mem_id] = rec
+            self._save()
         return dict(rec)
 
     def access(self, mem_id: str) -> Optional[dict]:
-        r = self._items.get(mem_id)
-        if r is None:
-            return None
-        r["accesses"] += 1
-        r["activation"] = round(min(1.0, r["activation"] + 0.2), 3)   # reactivate
-        r["tier"] = tier_for(r["activation"])
-        return dict(r)
+        with self._lock:
+            r = self._items.get(mem_id)
+            if r is None:
+                return None
+            r["accesses"] += 1
+            r["activation"] = round(min(1.0, r["activation"] + 0.2), 3)   # reactivate
+            r["tier"] = tier_for(r["activation"])
+            self._save()
+            return dict(r)
 
     def maintain(self) -> dict:
         """Decay activation and re-tier. NEVER deletes — cold is the floor."""
         demoted = 0
-        for r in self._items.values():
-            r["activation"] = round(r["activation"] * self.decay, 3)
-            new_tier = tier_for(r["activation"])
-            if new_tier != r["tier"]:
-                demoted += 1
-            r["tier"] = new_tier
-        return {"demoted": demoted, "total": len(self._items)}
+        with self._lock:
+            for r in self._items.values():
+                r["activation"] = round(r["activation"] * self.decay, 3)
+                new_tier = tier_for(r["activation"])
+                if new_tier != r["tier"]:
+                    demoted += 1
+                r["tier"] = new_tier
+            self._save()
+            return {"demoted": demoted, "total": len(self._items)}
 
     def forget(self, mem_id: str) -> bool:
         """The ONLY deletion path — an explicit user action."""
-        return self._items.pop(mem_id, None) is not None
+        with self._lock:
+            deleted = self._items.pop(mem_id, None) is not None
+            if deleted:
+                self._save()
+            return deleted
+
+    def clear(self) -> int:
+        """Explicit user-forget path: remove all tiered records and persist empty state."""
+        with self._lock:
+            count = len(self._items)
+            self._items = {}
+            self._save()
+            return count
 
     def by_tier(self) -> dict:
         out = {HOT: 0, WARM: 0, COLD: 0}
-        for r in self._items.values():
-            out[r["tier"]] += 1
+        with self._lock:
+            for r in self._items.values():
+                out[r["tier"]] += 1
         return out
 
     def get(self, mem_id: str) -> Optional[dict]:
-        r = self._items.get(mem_id)
-        return dict(r) if r else None
+        with self._lock:
+            r = self._items.get(mem_id)
+            return dict(r) if r else None
+
+    def records(self, prefix: str = "", limit: int = 50) -> list[dict]:
+        with self._lock:
+            keys = sorted(self._items.keys())
+            if prefix:
+                keys = [k for k in keys if k.startswith(prefix)]
+            return [dict(self._items[k]) for k in keys[:max(1, limit)]]
+
+    def update_records(self, records: "list[dict]") -> int:
+        """Persist updated records by id. Used by explicit re-projection only."""
+        updated = 0
+        with self._lock:
+            for rec in records or []:
+                mem_id = rec.get("id") if isinstance(rec, dict) else None
+                if mem_id in self._items:
+                    self._items[mem_id].update(rec)
+                    updated += 1
+            if updated:
+                self._save()
+            return updated
 
 
 # ── re-projection (re-embed onto a better model) ─────────────────────────────
 
 def needs_reprojection(record: dict, current_version: int) -> bool:
     return int(record.get("embed_version", 0)) < int(current_version)
+
+
+def _embedding_text(content) -> str:
+    if content is None:
+        return ""
+    if isinstance(content, str):
+        return content
+    return json.dumps(content, sort_keys=True, ensure_ascii=False, default=str)
 
 
 async def reproject(records: "list[dict]", current_version: int, embedder: Callable) -> dict:
@@ -188,42 +261,67 @@ async def reproject(records: "list[dict]", current_version: int, embedder: Calla
         if not needs_reprojection(r, current_version):
             continue
         try:
-            vec = embedder(r.get("content", ""))
+            vec = embedder(_embedding_text(r.get("content", "")))
             if hasattr(vec, "__await__"):
                 vec = await vec
             r["vector"] = vec
             r["embed_version"] = current_version
             done += 1
         except Exception:
-            # best-effort migration: skip a row that fails to re-embed
-            pass
+            logger.debug("LivingMemory reproject skipped a stale record", exc_info=True)
     return {"reprojected": done, "version": current_version}
 
 
 # ── core (always-injected, bounded) ──────────────────────────────────────────
 
-class CoreMemory:
+class CoreMemory(JsonStore):
     """A small set of always-injected core facts (bounded ring)."""
 
-    def __init__(self, cap: int = 20) -> None:
+    def __init__(self, cap: int = 20, path: str | Path | None = None) -> None:
         self.cap = cap
-        self._facts: list[str] = []
+        super().__init__(path)
+
+    def _serialize(self):
+        return {"facts": self._facts[-self.cap:]}
+
+    def _deserialize(self, raw) -> None:
+        facts = raw.get("facts", []) if isinstance(raw, dict) else raw
+        self._facts = []
+        if not isinstance(facts, list):
+            return
+        for fact in facts:
+            f = str(fact or "").strip()
+            if f and f not in self._facts:
+                self._facts.append(f)
+        self._facts = self._facts[-self.cap:]
 
     def put(self, fact: str) -> None:
         f = (fact or "").strip()
         if not f:
             return
-        if f in self._facts:
-            return
-        self._facts.append(f)
-        if len(self._facts) > self.cap:
-            self._facts.pop(0)
+        with self._lock:
+            if f in self._facts:
+                return
+            self._facts.append(f)
+            if len(self._facts) > self.cap:
+                self._facts.pop(0)
+            self._save()
 
     def list(self) -> "list[str]":
-        return list(self._facts)
+        with self._lock:
+            return list(self._facts)
 
     def render(self) -> str:
-        return "" if not self._facts else "[core memory]\n" + "\n".join(f"- {f}" for f in self._facts)
+        facts = self.list()
+        return "" if not facts else "[core memory]\n" + "\n".join(f"- {f}" for f in facts)
+
+    def clear(self) -> int:
+        """Explicit user-forget path: remove all core facts and persist empty state."""
+        with self._lock:
+            count = len(self._facts)
+            self._facts = []
+            self._save()
+            return count
 
 
 # ── the module ────────────────────────────────────────────────────────────────
@@ -231,9 +329,15 @@ class CoreMemory:
 class LivingMemory:
     """Ties encoding, tiering, core and consolidation into one cognition module."""
 
-    def __init__(self, embed_version: int = 1, encode_threshold: float = 0.3) -> None:
-        self.tiers = TieredMemory()
-        self.core = CoreMemory()
+    def __init__(
+        self,
+        embed_version: int = 1,
+        encode_threshold: float = 0.3,
+        core_path: str | Path | None = None,
+        tiers_path: str | Path | None = None,
+    ) -> None:
+        self.tiers = TieredMemory(path=tiers_path)
+        self.core = CoreMemory(path=core_path)
         self.embed_version = embed_version
         self.encode_threshold = encode_threshold
 
@@ -250,6 +354,61 @@ class LivingMemory:
         if phase == "nrem":
             return {"phase": "nrem", **self.tiers.maintain()}
         return {"phase": "rem", "recombined": len(self.tiers.by_tier())}
+
+    def records(self, prefix: str = "", limit: int = 50) -> "list[dict]":
+        """Inspectable records for integration tests/API callers; no mutation."""
+        return self.tiers.records(prefix=prefix, limit=limit)
+
+    def has_text_digest(self, text_sha256: str, prefix: str = "turn:", limit: int = 1000) -> bool:
+        """Return whether a recent metadata record already carries this digest."""
+        needle = str(text_sha256 or "")
+        if not needle:
+            return False
+        for record in self.records(prefix=prefix, limit=limit):
+            content = record.get("content") if isinstance(record, dict) else None
+            if isinstance(content, dict) and str(content.get("text_sha256") or "") == needle:
+                return True
+        return False
+
+    def access(self, mem_id: str) -> Optional[dict]:
+        """Reactivate a remembered trace when recall uses it."""
+        return self.tiers.access(mem_id)
+
+    async def reproject_stale(
+        self,
+        embedder: Optional[Callable] = None,
+        current_version: Optional[int] = None,
+        limit: int = 100,
+    ) -> dict:
+        """Re-embed stale tier records when an embedder is explicitly supplied."""
+        target_version = int(current_version or self.embed_version)
+        if embedder is None:
+            return {
+                "available": False,
+                "reason": "embedder_unavailable",
+                "checked": 0,
+                "reprojected": 0,
+                "updated": 0,
+                "version": target_version,
+            }
+        records = self.tiers.records(limit=limit)
+        stale = [dict(r) for r in records if needs_reprojection(r, target_version)]
+        if not stale:
+            return {
+                "available": True,
+                "checked": len(records),
+                "reprojected": 0,
+                "updated": 0,
+                "version": target_version,
+            }
+        result = await reproject(stale, current_version=target_version, embedder=embedder)
+        changed = [r for r in stale if not needs_reprojection(r, target_version)]
+        updated = self.tiers.update_records(changed)
+        return {"available": True, "checked": len(records), "updated": updated, **result}
+
+    def clear(self) -> dict:
+        """Explicit user-forget path for live cognition memory."""
+        return {"core": self.core.clear(), "tiers": self.tiers.clear()}
 
     def status(self) -> dict:
         return {"available": True, "tiers": self.tiers.by_tier(),

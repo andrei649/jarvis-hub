@@ -1,6 +1,22 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
-import { ApiError, fetchStatus, type StatusResponse } from '../api/client';
+import {
+  ApiError,
+  fetchDashboard,
+  fetchSecurityGovernance,
+  fetchSecurityKillSwitch,
+  fetchSecurityLoopBreaker,
+  fetchSecurityPosture,
+  fetchStatus,
+  fetchTicker,
+  type DashboardResponse,
+  type SecurityGovernanceResponse,
+  type SecurityKillSwitchResponse,
+  type SecurityLoopBreakerResponse,
+  type SecurityPostureResponse,
+  type StatusResponse,
+  type TickerResponse,
+} from '../api/client';
 import { useServer } from '../context/ServerContext';
 import { theme } from '../theme';
 
@@ -28,9 +44,32 @@ const STATE_COLOR: Record<string, string> = {
   offline: theme.danger,
 };
 
+const TICKER_COLOR: Record<string, string> = {
+  high: theme.danger,
+  critical: theme.danger,
+  mid: theme.warn,
+  elevated: theme.warn,
+  low: theme.ok,
+};
+
+function plural(count: number, noun: string): string {
+  return `${count} ${noun}${count === 1 ? '' : 's'}`;
+}
+
+function scoreLabel(value: number | undefined): string {
+  if (value === undefined) return '—';
+  return `${Math.round(value * 100)}%`;
+}
+
 export function StatusScreen({ onGoToSettings }: { onGoToSettings: () => void }) {
   const { config, configured } = useServer();
   const [status, setStatus] = useState<StatusResponse | null>(null);
+  const [dashboard, setDashboard] = useState<DashboardResponse | null>(null);
+  const [ticker, setTicker] = useState<TickerResponse | null>(null);
+  const [governance, setGovernance] = useState<SecurityGovernanceResponse | null>(null);
+  const [posture, setPosture] = useState<SecurityPostureResponse | null>(null);
+  const [killSwitch, setKillSwitch] = useState<SecurityKillSwitchResponse | null>(null);
+  const [loopBreaker, setLoopBreaker] = useState<SecurityLoopBreakerResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
@@ -39,10 +78,33 @@ export function StatusScreen({ onGoToSettings }: { onGoToSettings: () => void })
     setLoading(true);
     setError(null);
     try {
-      setStatus(await fetchStatus(config));
+      const [statusOut, dashboardOut, tickerOut] = await Promise.all([
+        fetchStatus(config),
+        fetchDashboard(config).catch(() => ({ calendar: [], notifications: [] })),
+        fetchTicker(config).catch(() => ({ ticker: [] })),
+      ]);
+      setStatus(statusOut);
+      setDashboard(dashboardOut);
+      setTicker(tickerOut);
+      const [governanceOut, postureOut, killOut, loopOut] = await Promise.all([
+        fetchSecurityGovernance(config).catch(() => null),
+        fetchSecurityPosture(config).catch(() => null),
+        fetchSecurityKillSwitch(config).catch(() => null),
+        fetchSecurityLoopBreaker(config).catch(() => null),
+      ]);
+      setGovernance(governanceOut);
+      setPosture(postureOut);
+      setKillSwitch(killOut);
+      setLoopBreaker(loopOut);
     } catch (e) {
       setError(e instanceof ApiError ? e.message : 'Failed to load status');
       setStatus(null);
+      setDashboard(null);
+      setTicker(null);
+      setGovernance(null);
+      setPosture(null);
+      setKillSwitch(null);
+      setLoopBreaker(null);
     } finally {
       setLoading(false);
     }
@@ -65,6 +127,8 @@ export function StatusScreen({ onGoToSettings }: { onGoToSettings: () => void })
 
   const sys = status?.sys;
   const stateColor = STATE_COLOR[status?.model_state ?? ''] ?? theme.textDim;
+  const weather = dashboard?.weather;
+  const tickerRows = ticker?.ticker ?? [];
 
   return (
     <ScrollView
@@ -89,6 +153,82 @@ export function StatusScreen({ onGoToSettings }: { onGoToSettings: () => void })
         <Row label="Loaded" value={status?.loaded_model} />
         <Row label="Configured" value={status?.active_model} />
         <Row label="Reachable" value={status?.lm_online ? 'yes' : 'no'} />
+      </Card>
+
+      <Card title="Trust">
+        {governance || posture || killSwitch || loopBreaker ? (
+          <>
+            <View style={styles.stateRow}>
+              <View
+                style={[
+                  styles.dot,
+                  { backgroundColor: governance?.pass === false ? theme.danger : theme.ok },
+                ]}
+              />
+              <Text style={[styles.stateText, { color: governance?.pass === false ? theme.danger : theme.ok }]}>
+                {governance ? (governance.pass ? 'GATE PASS' : 'GATE REVIEW') : 'TRUST READ'}
+              </Text>
+            </View>
+            <Row label="Score" value={governance ? scoreLabel(governance.overall_score) : undefined} />
+            <Row label="Injection" value={governance ? scoreLabel(governance.injection.score) : undefined} />
+            <Row label="Harm" value={governance ? scoreLabel(governance.harm.score) : undefined} />
+            <Row label="OWASP" value={governance ? scoreLabel(governance.owasp.score) : undefined} />
+            <Row label="Secrets" value={posture?.secrets.encrypted_at_rest ? posture.secrets.backend || 'encrypted' : posture ? 'not encrypted' : undefined} />
+            <Row
+              label="Skills"
+              value={posture ? `${posture.skills.trusted}/${posture.skills.total} trusted` : undefined}
+            />
+            <Row
+              label="Sandbox"
+              value={posture ? `${posture.sandbox.backend || 'unknown'} · ${posture.sandbox.isolated ? 'isolated' : 'not isolated'}` : undefined}
+            />
+            <Row label="Guardrails" value={posture?.guardrails.mode} />
+            <Row label="Kill-switch" value={killSwitch?.global ? 'engaged' : killSwitch ? 'armed' : undefined} />
+            <Row
+              label="Loop breaker"
+              value={loopBreaker?.tripped ? 'tripped' : loopBreaker ? 'clear' : undefined}
+            />
+          </>
+        ) : (
+          <Text style={styles.emptyText}>No trust data</Text>
+        )}
+      </Card>
+
+      <Card title="Today">
+        {weather ? (
+          <>
+            <Row label="Weather" value={[weather.temp, weather.desc].filter(Boolean).join(' · ')} />
+            <Row label="City" value={weather.city} />
+            <Row label="Wind" value={weather.wind} />
+            <Row label="Humidity" value={weather.humidity} />
+          </>
+        ) : (
+          <Text style={styles.emptyText}>No dashboard data</Text>
+        )}
+        <Row label="Calendar" value={plural(dashboard?.calendar.length ?? 0, 'event')} />
+        <Row label="Notifications" value={plural(dashboard?.notifications.length ?? 0, 'item')} />
+      </Card>
+
+      <Card title="Ticker">
+        {tickerRows.length === 0 ? (
+          <Text style={styles.emptyText}>No live ticker items</Text>
+        ) : (
+          tickerRows.slice(0, 8).map((item, index) => {
+            const tone = TICKER_COLOR[item.cls.toLowerCase()] ?? theme.accent;
+            return (
+              <View style={styles.tickerRow} key={`${item.agent || 'agent'}-${item.verb || 'tick'}-${index}`}>
+                <View style={styles.tickerHeader}>
+                  <Text style={styles.tickerAgent}>{item.agent || 'jarvis'}</Text>
+                  <Text style={[styles.tickerVerb, { color: tone }]}>{item.verb || 'monitoring'}</Text>
+                </View>
+                <Text style={styles.tickerText}>{item.text || 'Activity update'}</Text>
+                <View style={styles.progressTrack}>
+                  <View style={[styles.progressFill, { width: `${Math.max(0, Math.min(100, item.bar))}%` }]} />
+                </View>
+              </View>
+            );
+          })
+        )}
       </Card>
 
       <Card title="Agents">
@@ -147,6 +287,25 @@ const styles = StyleSheet.create({
   stateRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 8 },
   dot: { width: 10, height: 10, borderRadius: 5, marginRight: 8 },
   stateText: { fontSize: 16, fontWeight: '700', letterSpacing: 1 },
+  emptyText: { color: theme.textDim, fontSize: 14, paddingVertical: 5 },
+  tickerRow: {
+    borderTopWidth: 1,
+    borderTopColor: theme.border,
+    paddingTop: 10,
+    marginTop: 10,
+  },
+  tickerHeader: { flexDirection: 'row', justifyContent: 'space-between', gap: 12 },
+  tickerAgent: { color: theme.text, fontSize: 13, fontWeight: '700', textTransform: 'uppercase' },
+  tickerVerb: { fontSize: 12, fontWeight: '700', textTransform: 'uppercase' },
+  tickerText: { color: theme.textDim, fontSize: 13, marginTop: 4 },
+  progressTrack: {
+    height: 4,
+    backgroundColor: theme.surfaceAlt,
+    borderRadius: 2,
+    overflow: 'hidden',
+    marginTop: 8,
+  },
+  progressFill: { height: 4, backgroundColor: theme.accent },
   errorBox: {
     backgroundColor: '#2a0d16',
     borderColor: theme.danger,

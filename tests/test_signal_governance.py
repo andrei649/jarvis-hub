@@ -6,6 +6,7 @@ them as preview-only (BLOCKED, awaiting human) and never as approved/running.
 
 import pytest
 
+from agents.core.automation_contracts import ContractDecision
 from agents.core.autonomy.queue import TaskQueue, TaskStatus
 from agents.core.signal_governance import SignalGovernanceBridge
 
@@ -66,6 +67,47 @@ def test_enabled_queues_only_actionable_as_blocked(queue):
 
     # Audit fired once per queued item.
     assert sum(1 for e, _ in audited if e == "signal_governance.queued") == 2
+
+
+def test_enabled_bridge_obeys_live_contract_decision(queue, monkeypatch):
+    import agents.core.signal_governance as signal_governance
+
+    class FakeSignalContract:
+        def __init__(self):
+            self.calls = []
+
+        def evaluate(self, payload=None, **kwargs):
+            payload = payload or {}
+            self.calls.append((payload, kwargs))
+            label = payload["recommendation"].get("label")
+            reason = "contract_denied" if "Review cyber" in label else None
+            return ContractDecision(
+                kind="signal_recommendation",
+                admissible=reason is None,
+                requires_approval=True,
+                reason=reason,
+                checked=("fake",),
+            )
+
+    contract = FakeSignalContract()
+    monkeypatch.setattr(signal_governance, "SIGNAL_RECOMMENDATION_CONTRACT", contract)
+
+    audited = []
+    bridge = SignalGovernanceBridge(queue, enabled=True, audit=lambda e, d: audited.append((e, d)))
+    out = bridge.submit_recommendations(RECS, context={"scope": "world"})
+
+    assert out["queued"] == 1
+    assert out["skipped"] == 2
+    assert len(out["task_ids"]) == 1
+    queued = queue.get(out["task_ids"][0])
+    assert queued.title == "Monitor watched airports again within 24h."
+    assert "Review cyber" not in queued.payload["recommendation"]["label"]
+    assert len(contract.calls) == 2
+    payload, kwargs = contract.calls[0]
+    assert payload["recommendation"] == RECS[0]
+    assert payload["context"] == {"scope": "world"}
+    assert "now" in kwargs
+    assert ("signal_governance.denied", {"label": RECS[1]["label"], "reason": "contract_denied"}) in audited
 
 
 def test_submit_from_brief_extracts_recommendations(queue):

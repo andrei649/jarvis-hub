@@ -32,18 +32,19 @@ Legend — **mobile**: ✅ shipped · 🟡 partial · ⬜ not started · ➖ not
 | Sessions (resume) | `GET /sessions`, `POST /sessions/resume` | ✅ | ✅ | H18.5 |
 | Voice / TTS | `POST /tts` | ✅ | ✅ | H18.5 |
 | Stream timeout / reconnect | — (client-side) | ✅ | ✅ | H18.6 |
-| Dashboard (weather/news) | `GET /dashboard` | ✅ | ⬜ | — |
-| Tasks board | `GET /tasks` | ✅ | ⬜ | — |
-| Ticker | `GET /ticker` | ✅ | ⬜ | — |
-| Skills browser | `GET /skills` | ✅ | ⬜ | — |
-| Memory / notes | `GET /memory`, `GET /api/notes` | ✅ | ⬜ | — |
-| Knowledge graph | `GET /api/kg/*` | ✅ | ⬜ | — |
-| Action approval queue | `GET /api/actions/pending`, `/decide` | ✅ | ⬜ | — |
+| Dashboard (weather/news) | `GET /dashboard` | ✅ | ✅ | H18.14 |
+| Tasks board | `GET /tasks` | ✅ | ✅ | H18.13 |
+| Ticker | `GET /ticker` | ✅ | ✅ | H18.14 |
+| Skills browser | `GET /skills` | ✅ | ✅ | H18.15 |
+| Memory / notes | `GET /memory`, `GET /api/notes` | ✅ | ✅ | H18.16 |
+| Knowledge graph | `GET /api/kg/*` | ✅ | ✅ | H18.17 |
+| Action approval queue | `GET /autonomy/approvals`, `POST /autonomy/tasks/{id}/decision` | ✅ | ✅ | H18.11 / O26-P3.4 |
+| Channel inbox + governed replies | `GET /api/channels/inbox*`, `POST /api/channels/inbox/{thread_id}/reply` | ✅ | ✅ | H18.12 |
 | Chat rooms (multi-agent) | `GET/POST /api/rooms*` | ✅ | ⬜ | — |
 | Arena / review / quality | `GET /api/arena/*`, `/api/review/*` | ✅ | ➖ | — |
-| Security posture | `GET /api/security/*` | ✅ | ⬜ | — |
+| Security posture | `GET /api/security/*` | ✅ | ✅ | H18.18 |
 | Health/readiness probes | `GET /healthz`, `GET /readyz` | ✅ | ➖ | — |
-| Auth (user token) | `X-User-Token` header | ✅ | ✅ | H18.1 |
+| Auth (user/admin tokens) | `X-User-Token`, `X-Admin-Token` headers | ✅ | ✅ | H18.1 / H18.11 |
 
 > Rows with an empty **Task** cell are tracked-but-unscheduled parity gaps. When one becomes
 > worth doing on mobile, give it an `H18.x` id in `BACKLOG.md` and fill the cell. Surfaces marked

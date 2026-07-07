@@ -11,8 +11,8 @@ Scope is the user's **structured content** at rest:
   * ``missions.db`` / ``autonomy.db`` / ``analytics.db`` — rows deleted, schema kept
   * ``notes.json``                                       — reset to an empty object
   * the **memory subsystem** (when ``memory=True``, the CLI + ``/api/admin/forget`` default,
-    AUD-2) — the fixed graph/entity/decay stores, the embedding cache, and conversation
-    transcripts for confirmed sessions (see ``_purge_memory_at_rest``)
+    AUD-2) — the fixed graph/entity/decay/cognition stores, the embedding cache, and
+    conversation transcripts for confirmed sessions (see ``_purge_memory_at_rest``)
 
 Rows are ``DELETE``\\ d (not the files dropped) and JSON is rewritten to ``{}`` so live
 stores holding open handles read back empty rather than hitting a missing file — WAL keeps
@@ -37,10 +37,12 @@ import json
 import logging
 import shutil
 import sqlite3
+import time
 from pathlib import Path
 from typing import Iterable, Optional
 
 from agents.core import backup as _backup
+from agents.core.automation_contracts import ContractTemplate, contract_denial, predicate
 from agents.core.paths import data_root
 from agents.core.validation import is_valid_session_id
 
@@ -58,7 +60,13 @@ PURGE_JSON: tuple[str, ...] = ("notes.json",)
 # are removed only for *confirmed* sessions (see _purge_memory_at_rest), never by
 # a blanket glob. The live in-memory stores are cleared first (clear_live_memory)
 # so a running orchestrator doesn't re-persist what we delete.
-PURGE_MEMORY_FILES: tuple[str, ...] = ("bitemporal_kg.json", "entities.json", "decay.json")
+PURGE_MEMORY_FILES: tuple[str, ...] = (
+    "bitemporal_kg.json",
+    "entities.json",
+    "decay.json",
+    "cognition/core_memory.json",
+    "cognition/living_tiers.json",
+)
 # Directories removed wholesale (embedded recall cache derived from user content).
 PURGE_MEMORY_DIRS: tuple[str, ...] = ("embedding_cache",)
 # Top-level *.jsonl that are NOT conversation transcripts — never treated as sessions.
@@ -67,6 +75,61 @@ _NON_SESSION_JSONL: frozenset[str] = frozenset({"autonomy_journal", "problems"})
 
 class PurgeError(RuntimeError):
     """Raised when a purge cannot proceed safely (e.g. the pre-forget backup won't verify)."""
+
+
+DATA_PURGE_CONTRACT_KIND = "data.purge"
+
+
+def _data_purge_contract_template() -> ContractTemplate:
+    """Contract form of the destructive user-content purge gate."""
+
+    def data_purge_kind(view, now):
+        return view.get("kind") == DATA_PURGE_CONTRACT_KIND
+
+    def action_matches(view, now):
+        return view.get("action") == "purge_data"
+
+    def source_known(view, now):
+        return view.get("source") in {"function", "api.admin.forget"}
+
+    def flags_are_bool(view, now):
+        return isinstance(view.get("backup_first"), bool) and isinstance(view.get("memory"), bool)
+
+    def session_count_valid(view, now):
+        value = view.get("session_count")
+        return isinstance(value, int) and not isinstance(value, bool) and value >= 0
+
+    return ContractTemplate(kind=DATA_PURGE_CONTRACT_KIND, constraints=(
+        predicate("data_purge_kind", data_purge_kind, reason="invalid_kind"),
+        predicate("action_matches", action_matches, reason="invalid_action"),
+        predicate("source_known", source_known, reason="unknown_source"),
+        predicate("flags_are_bool", flags_are_bool, reason="invalid_flags"),
+        predicate("session_count_valid", session_count_valid, reason="invalid_session_count"),
+    ), requires_approval=False, description="Admissibility for destructive user-content purge.")
+
+
+DATA_PURGE_CONTRACT = _data_purge_contract_template()
+
+
+def purge_contract_denial(*, source: str = "function", backup_first: bool = True,
+                          memory: bool = False, session_count: int = 0,
+                          source_root: Optional[str] = None) -> str | None:
+    """Return a stable contract denial for a purge request, or None."""
+    payload = {
+        "kind": DATA_PURGE_CONTRACT_KIND,
+        "action": "purge_data",
+        "source": source,
+        "backup_first": bool(backup_first),
+        "memory": bool(memory),
+        "session_count": int(session_count),
+        "source_root": "custom" if source_root else "default",
+    }
+    try:
+        decision = DATA_PURGE_CONTRACT.evaluate(payload, now=time.time())
+    except Exception:
+        logger.warning("data purge contract evaluation failed", exc_info=True)
+        return "contract_error"
+    return contract_denial(decision)
 
 
 def _purge_db(path: Path) -> dict:
@@ -83,13 +146,18 @@ def _purge_db(path: Path) -> dict:
         ).fetchall()]
         for table in tables:
             before = conn.total_changes
-            # Identifier quoted from the catalog name — not a request value.
-            conn.execute(f'DELETE FROM "{table}"')
+            conn.execute(_delete_all_rows_sql(table))
             deleted[table] = conn.total_changes - before
         conn.commit()
     finally:
         conn.close()
     return deleted
+
+
+def _delete_all_rows_sql(table: str) -> str:
+    # Table names come from sqlite_master. Quote defensively anyway.
+    quoted = '"' + table.replace('"', '""') + '"'
+    return " ".join(("DELETE", "FROM", quoted))
 
 
 def _purge_memory_at_rest(root: Path, live_session_ids: Iterable[str] = ()) -> dict:
@@ -160,6 +228,19 @@ async def clear_live_memory(orch) -> list[str]:
                 cleared.append(attr)
             except Exception:  # pragma: no cover - defensive
                 logger.warning("clear_live_memory: %s clear failed", attr, exc_info=True)
+    cognition = getattr(orch, "cognition", None)
+    living = None
+    if cognition is not None and hasattr(cognition, "module"):
+        try:
+            living = cognition.module("memory")
+        except Exception:  # pragma: no cover - defensive
+            logger.warning("clear_live_memory: cognition memory lookup failed", exc_info=True)
+    if living is not None and hasattr(living, "clear"):
+        try:
+            living.clear()
+            cleared.append("cognition_memory")
+        except Exception:  # pragma: no cover - defensive
+            logger.warning("clear_live_memory: cognition memory clear failed", exc_info=True)
     return cleared
 
 
@@ -181,13 +262,24 @@ def purge_data(source_root: Optional[str] = None, *, backup_first: bool = True,
     (The snapshot is encrypted at rest when a backup key is configured — see AUD-1.)
 
     When ``memory`` (AUD-2), the memory subsystem at rest is also erased: the fixed
-    graph/entity/decay stores, the embedding cache, and conversation transcripts for
-    ``session_ids`` (plus any session-shaped ``*.jsonl``). Callers that have a live
-    orchestrator should ``await clear_live_memory(orch)`` first so nothing is
-    re-persisted, and pass its known ``session_ids``.
+    graph/entity/decay/cognition stores, the embedding cache, and conversation
+    transcripts for ``session_ids`` (plus any session-shaped ``*.jsonl``). Callers
+    that have a live orchestrator should ``await clear_live_memory(orch)`` first
+    so nothing is re-persisted, and pass its known ``session_ids``.
 
     Returns ``{ok, backup, purged, total_rows}``.
     """
+    sessions = tuple(session_ids or ())
+    denial = purge_contract_denial(
+        source="function",
+        backup_first=backup_first,
+        memory=memory,
+        session_count=len(sessions),
+        source_root=source_root,
+    )
+    if denial is not None:
+        raise PurgeError(f"contract denied: {denial}")
+
     root = Path(source_root) if source_root else data_root()
     report: dict = {"ok": True, "backup": None, "purged": {}, "total_rows": 0}
 
@@ -217,7 +309,7 @@ def purge_data(source_root: Optional[str] = None, *, backup_first: bool = True,
         report["purged"][name] = {"reset": before}
 
     if memory:
-        report["purged"]["memory"] = _purge_memory_at_rest(root, session_ids or ())
+        report["purged"]["memory"] = _purge_memory_at_rest(root, sessions)
 
     logger.info("forget purge complete: %s rows across %s targets (memory=%s, backup=%s)",
                 report["total_rows"], len(report["purged"]), memory,

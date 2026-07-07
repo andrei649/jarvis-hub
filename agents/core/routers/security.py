@@ -292,6 +292,7 @@ async def security_posture():
 
     # Skill signing posture.
     from core.skills import signing as _signing
+    from agents.core import product_posture
     from agents.core.security import hardened as _hardened
     skills = list(getattr(orch.skills, "skills", {}).values()) if getattr(orch, "skills", None) else []
     skill_rows = [s.to_dict() for s in skills]
@@ -321,4 +322,5 @@ async def security_posture():
         "guardrails": {"mode": orch.get_setting("security.guardrails_mode", "WARN")},
         # CDX-12: the Design-Partner / Hardened profile posture (opt-in, default-off).
         "hardened": _hardened.posture(),
+        "product_posture": product_posture.snapshot(getattr(orch, "_runtime_settings", {})),
     })

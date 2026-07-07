@@ -29,6 +29,25 @@ def _web():
     return sys.modules.get("agents.web")
 
 
+def _channel_rows(orch):
+    manager = getattr(orch, "channel_manager", None)
+    channels = getattr(manager, "channels", None) or getattr(orch, "channels", None) or {}
+    running = set(getattr(orch, "running_channels", []) or [])
+    rows = []
+    for channel_id, channel in channels.items():
+        is_running = bool(
+            channel_id in running
+            or getattr(channel, "_running", False)
+            or getattr(channel, "running", False)
+        )
+        rows.append({
+            "id": str(channel_id),
+            "running": is_running,
+            "ready": is_running or channel_id in {"web", "voice"},
+        })
+    return rows
+
+
 # ── Status (HUD-compatible) ──────────────────────────────────────
 
 @router.get("/api/health/components")
@@ -67,6 +86,7 @@ async def status():
         "agents": [{"id": a["id"], "status": a["status"]} for a in enriched],
         "agents_online": sum(1 for a in enriched if a["status"] != "idle"),
         "agents_total": len(enriched),
+        "channels": _channel_rows(orch),
     })
 
 

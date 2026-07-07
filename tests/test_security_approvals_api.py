@@ -65,6 +65,8 @@ def test_security_posture_shape(token_client):
     assert "total" in data["skills"]
     assert "docker_available" in data["sandbox"]
     assert "mode" in data["guardrails"]
+    assert data["product_posture"]["name"] in ("off", "companion_wave1", "design_partner")
+    assert "memory.recall_enabled" in data["product_posture"]["flags"]
 
 
 def test_security_posture_requires_admin(token_client):

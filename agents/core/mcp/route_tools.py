@@ -28,10 +28,14 @@ the tests — need no live app or orchestrator.
 from __future__ import annotations
 
 import inspect
+import re
+import time
 import types
 import typing
 from dataclasses import dataclass
 from typing import Any, Awaitable, Callable, Optional
+
+from agents.core.automation_contracts import ContractTemplate, contract_denial, predicate
 
 ROUTE_TOOL_ENV = "JARVIS_MCP_ROUTE_TOOLS"
 ROUTE_TOOL_PREFIX = "route_"
@@ -407,6 +411,8 @@ def normalize_result(result: Any) -> Any:
 # anything reachable beyond localhost/LAN unless a real per-identity token is set.
 
 MUTATING_ROUTE_PREFIX = ROUTE_TOOL_PREFIX  # mutating tools share the route_ prefix
+MCP_MUTATING_ROUTE_CONTRACT_KIND = "mcp.route.mutating"
+_SAFE_CONTRACT_TOKEN = re.compile(r"^[A-Za-z0-9_.:/@\-]{1,200}$")
 
 
 # An ``invoke`` adapter: ``async (arguments: dict) -> Any``. It performs the same
@@ -422,6 +428,47 @@ MutatingInvoke = Callable[[dict], Awaitable[Any]]
 # no check is provided a mutating tool fails CLOSED (refuses) — a write tool is
 # never reachable without an explicit identity policy bound to it.
 IdentityCheck = Callable[[Optional[str]], bool]
+
+
+def _safe_contract_token(value: Any) -> bool:
+    return bool(_SAFE_CONTRACT_TOKEN.match(str(value or "")))
+
+
+def _safe_arg_keys(view, now) -> bool:
+    keys = view.get("arg_keys")
+    if not isinstance(keys, list) or not all(isinstance(k, str) for k in keys):
+        return False
+    return keys == sorted(keys) and all(_safe_contract_token(k) for k in keys)
+
+
+def _safe_mutating_route_shape(view, now) -> bool:
+    return (
+        view.get("kind") == MCP_MUTATING_ROUTE_CONTRACT_KIND
+        and view.get("method") in {"POST", "PUT", "PATCH", "DELETE"}
+        and _safe_contract_token(view.get("tool"))
+        and _safe_contract_token(view.get("path"))
+    )
+
+
+def _valid_arg_count(view, now) -> bool:
+    count = view.get("arg_count")
+    return isinstance(count, int) and not isinstance(count, bool) and 0 <= count <= 32
+
+
+def _mcp_mutating_route_contract_template() -> ContractTemplate:
+    return ContractTemplate(
+        kind=MCP_MUTATING_ROUTE_CONTRACT_KIND,
+        description="Inbound MCP mutating route-tool gate.",
+        constraints=(
+            predicate("mutating_route_shape", _safe_mutating_route_shape, reason="invalid_shape"),
+            predicate("arg_keys_safe", _safe_arg_keys, reason="bad_arg_keys"),
+            predicate("arg_count_valid", _valid_arg_count, reason="bad_arg_count"),
+        ),
+        requires_approval=False,
+    )
+
+
+MCP_MUTATING_ROUTE_CONTRACT = _mcp_mutating_route_contract_template()
 
 
 class MutatingIdentityError(PermissionError):
@@ -440,6 +487,10 @@ class MutatingKernelError(PermissionError):
     loop). Audited as ``refused-kernel`` before it propagates. Default-off, so this
     only ever fires when ``JARVIS_ACTION_KERNEL`` is set and a kernel is bound.
     """
+
+
+class MutatingContractError(PermissionError):
+    """Raised when the reusable contract layer refuses a mutating route call."""
 
 
 @dataclass(frozen=True)
@@ -596,6 +647,35 @@ class MutatingRouteTool:
             origin="external"))
         return decision.reason if decision.verdict is Verdict.DENY else None
 
+    def _contract_payload(self, arguments: dict | None) -> dict:
+        keys = sorted(self.filtered_kwargs(arguments).keys())
+        return {
+            "kind": MCP_MUTATING_ROUTE_CONTRACT_KIND,
+            "tool": self.spec.name,
+            "path": self.spec.path,
+            "method": self.spec.method,
+            "arg_keys": keys,
+            "arg_count": len(keys),
+            "guard": self.spec.guard,
+        }
+
+    def _contract_denial(self, arguments: dict | None) -> str | None:
+        try:
+            decision = MCP_MUTATING_ROUTE_CONTRACT.evaluate(
+                self._contract_payload(arguments),
+                now=time.time(),
+            )
+        except Exception:
+            import logging
+
+            logging.getLogger(__name__).warning(
+                "contract evaluation failed for mutating tool %s",
+                self.tool_name,
+                exc_info=True,
+            )
+            return "contract_error"
+        return contract_denial(decision)
+
     async def call(self, arguments: dict | None, token: Optional[str] = None) -> Any:
         """Run the write adapter with schema-filtered args, auditing the call.
 
@@ -613,6 +693,10 @@ class MutatingRouteTool:
             raise MutatingIdentityError(
                 f"mutating tool {self.tool_name} requires a valid identity"
             )
+        contract_blocked = self._contract_denial(arguments)
+        if contract_blocked is not None:
+            self._audit(arguments, outcome="refused-contract")
+            raise MutatingContractError(f"contract denied: {contract_blocked}")
         # ORIZONT-24 wave-3: kernel mediation (default-off). Identity proves *who*;
         # the kernel decides *whether it may run now* (a halted kill-switch / over-budget
         # / runaway loop blocks the write). Refusal is audited before it propagates.

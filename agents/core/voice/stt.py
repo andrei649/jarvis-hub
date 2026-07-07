@@ -19,6 +19,8 @@ import logging
 import os
 from typing import Optional
 
+from agents.core.env_config import env_int
+
 logger = logging.getLogger("jarvis.voice.stt")
 
 try:
@@ -34,10 +36,7 @@ DEFAULT_BEAM_SIZE = 1
 def _resolve_beam_size(override: Optional[int]) -> int:
     if override is not None:
         return override
-    try:
-        return int(os.environ.get("JARVIS_STT_BEAM_SIZE", DEFAULT_BEAM_SIZE))
-    except (TypeError, ValueError):
-        return DEFAULT_BEAM_SIZE
+    return env_int("JARVIS_STT_BEAM_SIZE", DEFAULT_BEAM_SIZE, minimum=1)
 
 
 def _resolve_compute_type(device: str, override: Optional[str]) -> str:

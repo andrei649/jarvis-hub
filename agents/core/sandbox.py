@@ -8,13 +8,14 @@ Supports:
 """
 
 import asyncio
+import contextlib
 import logging
 import os
 import platform
 import sys
 import tempfile
 import time
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
 logger = logging.getLogger("jarvis.sandbox")
 
@@ -49,10 +50,12 @@ class Sandbox:
         allow_subprocess: bool = False,
         allow_wasm: bool = True,
         wasm_runtime: str = "",
+        max_output_bytes: int = 50_000,
     ):
         self.docker_image = docker_image
         self.timeout = timeout
         self.max_memory_mb = max_memory_mb
+        self.max_output_bytes = max(8, int(max_output_bytes))
         self.work_dir = Path(work_dir) if work_dir else Path(tempfile.mkdtemp())
         self._has_docker = self._check_docker()
         self.allow_subprocess = allow_subprocess
@@ -114,6 +117,15 @@ class Sandbox:
         """True only if the active backend isolates code from the host."""
         return self.active_backend() in ("docker", "wasm")
 
+    def _decode_output(self, data: bytes, label: str = "OUTPUT") -> str:
+        text = data.decode("utf-8", errors="replace")
+        from agents.core.environments.output_limits import truncate_text
+        return truncate_text(
+            text,
+            max_content_bytes=self.max_output_bytes,
+            label=label,
+        ).text
+
     def security_status(self) -> dict:
         """HF-6 — explicit isolation posture so the HUD / ``/status`` can surface
         when code would run on the HOST with no isolation. ``insecure_host_exec`` is
@@ -140,9 +152,18 @@ class Sandbox:
         return ["wasmtime", "run", "--dir", str(self.work_dir),
                 self.wasm_runtime, f"/workspace/{script_rel}"]
 
-    async def execute_python(self, code: str, filename: str = "script.py") -> SandboxResult:
+    async def execute_python(
+        self,
+        code: str,
+        filename: str = "script.py",
+        writable_paths: list[str | Path] | None = None,
+    ) -> SandboxResult:
         if self._has_docker:
-            return await self._execute_docker_python(code, filename)
+            return await self._execute_docker_python(
+                code,
+                filename,
+                writable_paths=writable_paths,
+            )
         if self.wasm_available():
             return await self._execute_wasm_python(code, filename)
         if not self.allow_subprocess:
@@ -167,8 +188,8 @@ class Sandbox:
             try:
                 stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=self.timeout)
                 return SandboxResult(
-                    stdout=stdout.decode("utf-8", errors="replace"),
-                    stderr=stderr.decode("utf-8", errors="replace"),
+                    stdout=self._decode_output(stdout),
+                    stderr=self._decode_output(stderr, label="ERROR"),
                     exit_code=proc.returncode or 0,
                     duration=time.monotonic() - start,
                 )
@@ -202,17 +223,27 @@ class Sandbox:
             )
         return await self._execute_subprocess_shell(command)
 
-    async def _execute_docker_python(self, code: str, filename: str) -> SandboxResult:
+    async def _execute_docker_python(
+        self,
+        code: str,
+        filename: str,
+        writable_paths: list[str | Path] | None = None,
+    ) -> SandboxResult:
         return await self._run_docker([
             "python", f"/workspace/{filename}",
-        ], {filename: code})
+        ], {filename: code}, writable_paths=writable_paths)
 
     async def _execute_docker_shell(self, command: str) -> SandboxResult:
         return await self._run_docker([
             "sh", "-c", command,
         ])
 
-    async def _run_docker(self, cmd: list[str], files: dict[str, str] = None) -> SandboxResult:
+    async def _run_docker(
+        self,
+        cmd: list[str],
+        files: dict[str, str] = None,
+        writable_paths: list[str | Path] | None = None,
+    ) -> SandboxResult:
         start = time.monotonic()
 
         container_name = f"cabinet-sandbox-{int(time.time())}"
@@ -233,6 +264,7 @@ class Sandbox:
             "--pids-limit", "50",
             "--read-only",
             "-v", f"{workdir_path}:/workspace:ro",
+            *self._docker_writable_mount_args(writable_paths),
             "-w", "/workspace",
             self.docker_image,
         ] + cmd
@@ -249,8 +281,8 @@ class Sandbox:
                 )
                 duration = time.monotonic() - start
                 return SandboxResult(
-                    stdout=stdout.decode("utf-8", errors="replace"),
-                    stderr=stderr.decode("utf-8", errors="replace"),
+                    stdout=self._decode_output(stdout),
+                    stderr=self._decode_output(stderr, label="ERROR"),
                     exit_code=proc.returncode or 0,
                     duration=duration,
                 )
@@ -264,6 +296,23 @@ class Sandbox:
                     exit_code=-1,
                     duration=duration,
                 )
+            except asyncio.CancelledError:
+                # A caller (e.g. the file-RPC runtime's outer service window)
+                # cancelled us. Kill the child AND the named container so neither
+                # is orphaned, then propagate the cancellation. (contextlib.suppress
+                # does not swallow BaseException, so a nested cancel still surfaces.)
+                with contextlib.suppress(Exception):
+                    proc.kill()
+                with contextlib.suppress(Exception):
+                    await proc.wait()
+                with contextlib.suppress(Exception):
+                    killer = await asyncio.create_subprocess_exec(
+                        "docker", "kill", container_name,
+                        stdout=asyncio.subprocess.DEVNULL,
+                        stderr=asyncio.subprocess.DEVNULL,
+                    )
+                    await killer.wait()
+                raise
         except FileNotFoundError:
             logger.warning("Docker not found")
             self._has_docker = False
@@ -282,6 +331,25 @@ class Sandbox:
                 stderr=str(e), exit_code=-1, duration=duration
             )
 
+    def _docker_writable_mount_args(self, paths: list[str | Path] | None) -> list[str]:
+        args: list[str] = []
+        workdir = self.work_dir.resolve()
+
+        for raw_path in paths or []:
+            host_path = Path(raw_path).resolve()
+            try:
+                rel = host_path.relative_to(workdir)
+            except ValueError as exc:
+                raise SandboxError(
+                    "Docker writable paths must be inside the sandbox work_dir"
+                ) from exc
+
+            host_path.mkdir(parents=True, exist_ok=True)
+            target = PurePosixPath("/workspace", *rel.parts).as_posix()
+            args.extend(["-v", f"{host_path}:{target}:rw"])
+
+        return args
+
     async def _execute_subprocess_python(self, code: str, filename: str) -> SandboxResult:
         logger.warning("Sandbox: running Python on the HOST with no Docker isolation "
                        "(allow_subprocess=True) — do not enable in production (HF-6)")
@@ -291,12 +359,14 @@ class Sandbox:
         fpath.write_text(code, encoding="utf-8")
 
         try:
+            from agents.core.environments import prepare_python_child_env
             proc = await asyncio.create_subprocess_exec(
                 sys.executable if platform.system() == "Windows" else "python3",
                 str(fpath),
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
                 cwd=str(self.work_dir),
+                env=prepare_python_child_env(os.environ),
             )
             try:
                 stdout, stderr = await asyncio.wait_for(
@@ -304,8 +374,8 @@ class Sandbox:
                 )
                 duration = time.monotonic() - start
                 return SandboxResult(
-                    stdout=stdout.decode("utf-8", errors="replace"),
-                    stderr=stderr.decode("utf-8", errors="replace"),
+                    stdout=self._decode_output(stdout),
+                    stderr=self._decode_output(stderr, label="ERROR"),
                     exit_code=proc.returncode or 0,
                     duration=duration,
                 )
@@ -329,11 +399,13 @@ class Sandbox:
         shell_cmd = ["cmd", "/c", command] if platform.system() == "Windows" else ["sh", "-c", command]
 
         try:
+            from agents.core.environments import prepare_python_child_env
             proc = await asyncio.create_subprocess_exec(
                 *shell_cmd,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
                 cwd=str(self.work_dir),
+                env=prepare_python_child_env(os.environ),
             )
             try:
                 stdout, stderr = await asyncio.wait_for(
@@ -341,8 +413,8 @@ class Sandbox:
                 )
                 duration = time.monotonic() - start
                 return SandboxResult(
-                    stdout=stdout.decode("utf-8", errors="replace"),
-                    stderr=stderr.decode("utf-8", errors="replace"),
+                    stdout=self._decode_output(stdout),
+                    stderr=self._decode_output(stderr, label="ERROR"),
                     exit_code=proc.returncode or 0,
                     duration=duration,
                 )

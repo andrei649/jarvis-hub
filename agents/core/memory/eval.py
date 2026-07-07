@@ -18,6 +18,8 @@ import re
 from dataclasses import dataclass, field
 from typing import Callable, Optional
 
+from .manager import MemoryManager
+
 ABILITIES = ["extraction", "multi_session", "temporal", "update", "abstention"]
 
 # Markers that count as a (correct) abstention.
@@ -139,6 +141,78 @@ def run_eval(answer_fn: AnswerFn, corpus: Optional[list[MemoryEvalCase]] = None)
     return {
         "overall": {"n": total, "passed": passed,
                     "score": round(passed / total, 3) if total else None},
+        "by_ability": per_ability,
+        "results": results,
+    }
+
+
+def _hit_text(hit) -> str:
+    payload = getattr(hit, "payload", None)
+    if payload is None and isinstance(hit, dict):
+        payload = hit.get("payload", hit)
+    payload = payload if isinstance(payload, dict) else {}
+    metadata = payload.get("metadata") or payload.get("properties") or {}
+    metadata = metadata if isinstance(metadata, dict) else {}
+    return str(payload.get("text") or metadata.get("text") or payload.get("name") or "")
+
+
+async def _recall_answer(question: str, facts: list[str], *, case_id: str, top_k: int) -> tuple[str, list[str]]:
+    manager = MemoryManager()
+    from agents.core.ingestion.embedder import Embedder
+    manager._embedder = Embedder(backend="hash")
+
+    for idx, fact in enumerate(facts or []):
+        await manager.remember(
+            fact,
+            record_id=f"{case_id}:{idx}",
+            metadata={"case_id": case_id},
+        )
+
+    hits = await manager.recall(question, top_k=top_k)
+    retrieved = [text for text in (_hit_text(hit) for hit in hits or []) if text]
+    return keyword_answer(question, retrieved), retrieved
+
+
+async def run_recall_eval(
+    corpus: Optional[list[MemoryEvalCase]] = None,
+    *,
+    top_k: int = 5,
+) -> dict:
+    """Run the eval through real MemoryManager remember/recall.
+
+    This deterministic mode is a recall-path gate, not an LLM-quality claim: it
+    stores each case's facts, recalls against the question, then uses the
+    keyword answerer only over retrieved snippets.
+    """
+    corpus = corpus if corpus is not None else DEFAULT_CORPUS
+    per_ability: dict[str, dict] = {a: {"n": 0, "passed": 0} for a in ABILITIES}
+    results = []
+    for case in corpus:
+        answer, retrieved = await _recall_answer(case.question, case.facts, case_id=case.id, top_k=top_k)
+        ok = score_answer(case, answer)
+        bucket = per_ability.setdefault(case.ability, {"n": 0, "passed": 0})
+        bucket["n"] += 1
+        bucket["passed"] += int(ok)
+        results.append({
+            "id": case.id,
+            "ability": case.ability,
+            "passed": ok,
+            "answer": answer,
+            "retrieved": retrieved,
+        })
+
+    for ability, bucket in per_ability.items():
+        bucket["score"] = round(bucket["passed"] / bucket["n"], 3) if bucket["n"] else None
+    total = len(results)
+    passed = sum(1 for result in results if result["passed"])
+    return {
+        "mode": "recall",
+        "top_k": top_k,
+        "overall": {
+            "n": total,
+            "passed": passed,
+            "score": round(passed / total, 3) if total else None,
+        },
         "by_ability": per_ability,
         "results": results,
     }

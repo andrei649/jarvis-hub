@@ -22,11 +22,14 @@ domain and are moved here verbatim (they now resolve the orchestrator through
 `get_orch()` instead of the web module global).
 """
 
+import logging
+import time
 from typing import Optional
 
 from fastapi import APIRouter, Depends, Request, Query
 from fastapi.responses import JSONResponse
 
+from agents.core.automation_contracts import ContractTemplate, contract_denial, predicate
 from agents.core.routers._deps import user_guard
 
 from agents.core.web_helpers import nocache_json, error_json
@@ -35,6 +38,46 @@ from agents.core.validation import is_safe_kg_label, is_safe_kg_rel_type
 
 
 router = APIRouter(tags=["memory"])
+logger = logging.getLogger("jarvis.memory_kg")
+
+KG_WRITE_CONTRACT_KIND = "kg.write"
+_KG_WRITE_OPS = frozenset({
+    "add_entity",
+    "delete_entity",
+    "add_relation",
+    "delete_relation",
+    "add_fact",
+    "ingest",
+})
+
+
+def _kg_write_contract_template() -> ContractTemplate:
+    """Contract form of the external KG-write admissibility gate."""
+
+    def kg_write_kind(view, now):
+        return view.get("kind") == KG_WRITE_CONTRACT_KIND
+
+    def known_operation(view, now):
+        return view.get("op") in _KG_WRITE_OPS
+
+    return ContractTemplate(kind=KG_WRITE_CONTRACT_KIND, constraints=(
+        predicate("kg_write_kind", kg_write_kind, reason="invalid_kind"),
+        predicate("known_kg_operation", known_operation, reason="unknown_operation"),
+    ), requires_approval=False, description="Admissibility for external knowledge-graph writes.")
+
+
+KG_WRITE_CONTRACT = _kg_write_contract_template()
+
+
+def _kg_contract_denial(payload: dict) -> str | None:
+    """Return a stable contract denial for an external KG write, or None."""
+    contract_payload = {"kind": KG_WRITE_CONTRACT_KIND, **(payload or {})}
+    try:
+        decision = KG_WRITE_CONTRACT.evaluate(contract_payload, now=time.time())
+    except Exception:
+        logger.warning("KG write contract evaluation failed", exc_info=True)
+        return "contract_error"
+    return contract_denial(decision)
 
 
 def _kg_kernel_denial(orch, payload: dict, token_id: Optional[str] = None, scope: str = "global"):
@@ -283,8 +326,11 @@ async def kg_upsert_entity(req: Request):
     # type outright rather than let the graph coerce it (strict API contract).
     if not is_safe_kg_label(entity_type):
         return JSONResponse({"error": "invalid entity type"}, status_code=400)
-    denied = _kg_kernel_denial(get_orch(), {"op": "add_entity", "name": name, "type": entity_type},
-                               req.headers.get("x-capability-token", ""))
+    payload = {"op": "add_entity", "name": name, "type": entity_type}
+    denied = _kg_contract_denial(payload)
+    if denied is not None:
+        return JSONResponse({"error": f"contract denied: {denied}"}, status_code=403)
+    denied = _kg_kernel_denial(get_orch(), payload, req.headers.get("x-capability-token", ""))
     if denied is not None:
         return JSONResponse({"error": f"kernel denied: {denied}"}, status_code=403)
     ok = g.add_entity(name, entity_type, body.get("properties") or {})
@@ -301,7 +347,11 @@ async def kg_delete_entity(name: str, req: Request = None):
     # helper mints its own operator token when none is presented (wave-4b).
     # Deny precedes the existence lookup so a halt doesn't leak whether the entity exists.
     token_id = req.headers.get("x-capability-token", "") if req is not None else ""
-    denied = _kg_kernel_denial(get_orch(), {"op": "delete_entity", "name": name}, token_id)
+    payload = {"op": "delete_entity", "name": name}
+    denied = _kg_contract_denial(payload)
+    if denied is not None:
+        return JSONResponse({"error": f"contract denied: {denied}"}, status_code=403)
+    denied = _kg_kernel_denial(get_orch(), payload, token_id)
     if denied is not None:
         return JSONResponse({"error": f"kernel denied: {denied}"}, status_code=403)
     if not g.delete_entity(name):
@@ -328,9 +378,11 @@ async def kg_add_relation(req: Request):
     # non-identifier value outright (strict API contract).
     if not is_safe_kg_rel_type(relation):
         return JSONResponse({"error": "invalid relation type"}, status_code=400)
-    denied = _kg_kernel_denial(get_orch(),
-                               {"op": "add_relation", "source": source, "relation": relation, "target": target},
-                               req.headers.get("x-capability-token", ""))
+    payload = {"op": "add_relation", "source": source, "relation": relation, "target": target}
+    denied = _kg_contract_denial(payload)
+    if denied is not None:
+        return JSONResponse({"error": f"contract denied: {denied}"}, status_code=403)
+    denied = _kg_kernel_denial(get_orch(), payload, req.headers.get("x-capability-token", ""))
     if denied is not None:
         return JSONResponse({"error": f"kernel denied: {denied}"}, status_code=403)
     ok = g.add_relation(source, relation, target, body.get("properties") or {})
@@ -350,9 +402,11 @@ async def kg_delete_relation(source: str, relation: str, target: str, req: Reque
     # req is None only for a direct (non-HTTP) call — see kg_delete_entity above.
     # Deny precedes the lookup so a halt doesn't leak whether the relation exists.
     token_id = req.headers.get("x-capability-token", "") if req is not None else ""
-    denied = _kg_kernel_denial(get_orch(),
-                               {"op": "delete_relation", "source": source, "relation": relation, "target": target},
-                               token_id)
+    payload = {"op": "delete_relation", "source": source, "relation": relation, "target": target}
+    denied = _kg_contract_denial(payload)
+    if denied is not None:
+        return JSONResponse({"error": f"contract denied: {denied}"}, status_code=403)
+    denied = _kg_kernel_denial(get_orch(), payload, token_id)
     if denied is not None:
         return JSONResponse({"error": f"kernel denied: {denied}"}, status_code=403)
     if not g.delete_relation(source, relation, target):
@@ -378,9 +432,11 @@ async def kg_add_fact(req: Request):
     for k in ("subject", "predicate", "object"):
         if not (body or {}).get(k):
             return JSONResponse({"error": "subject, predicate, object required"}, status_code=400)
-    denied = _kg_kernel_denial(orch,
-                               {"op": "add_fact", "subject": body["subject"], "predicate": body["predicate"]},
-                               req.headers.get("x-capability-token", ""))
+    payload = {"op": "add_fact", "subject": body["subject"], "predicate": body["predicate"]}
+    denied = _kg_contract_denial(payload)
+    if denied is not None:
+        return JSONResponse({"error": f"contract denied: {denied}"}, status_code=403)
+    denied = _kg_kernel_denial(orch, payload, req.headers.get("x-capability-token", ""))
     if denied is not None:
         return JSONResponse({"error": f"kernel denied: {denied}"}, status_code=403)
     fact = bt.add_fact(
@@ -425,8 +481,11 @@ async def kg_ingest(req: Request):
     text = (body or {}).get("text", "")
     if not text:
         return JSONResponse({"error": "text required"}, status_code=400)
-    denied = _kg_kernel_denial(orch, {"op": "ingest", "text_len": len(text)},
-                               req.headers.get("x-capability-token", ""))
+    payload = {"op": "ingest", "text_len": len(text)}
+    denied = _kg_contract_denial(payload)
+    if denied is not None:
+        return JSONResponse({"error": f"contract denied: {denied}"}, status_code=403)
+    denied = _kg_kernel_denial(orch, payload, req.headers.get("x-capability-token", ""))
     if denied is not None:
         return JSONResponse({"error": f"kernel denied: {denied}"}, status_code=403)
     count = updater.ingest(text)
@@ -444,10 +503,15 @@ async def memory_eval_corpus():
 
 
 @router.post("/api/memory/eval/run", dependencies=[Depends(user_guard)])
-async def memory_eval_run():
-    """H14.2 — run the harness with the offline keyword baseline answerer."""
-    from agents.core.memory.eval import run_eval, keyword_answer
-    return nocache_json(run_eval(keyword_answer))
+async def memory_eval_run(mode: str = "keyword"):
+    """H14.2 — run the memory eval harness."""
+    from agents.core.memory.eval import run_eval, keyword_answer, run_recall_eval
+    mode = (mode or "keyword").strip().lower()
+    if mode == "keyword":
+        return nocache_json(run_eval(keyword_answer))
+    if mode == "recall":
+        return nocache_json(await run_recall_eval())
+    return JSONResponse({"error": "mode must be keyword or recall"}, status_code=400)
 
 
 @router.post("/api/memory/remember", dependencies=[Depends(user_guard)])

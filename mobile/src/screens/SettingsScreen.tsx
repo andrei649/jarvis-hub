@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   ActivityIndicator,
   KeyboardAvoidingView,
@@ -24,11 +24,18 @@ export function SettingsScreen() {
   const { config, updateConfig } = useServer();
   const [baseUrl, setBaseUrl] = useState(config.baseUrl);
   const [token, setToken] = useState(config.token);
+  const [adminToken, setAdminToken] = useState(config.adminToken);
   const [saved, setSaved] = useState(false);
   const [test, setTest] = useState<TestState>({ kind: 'idle' });
 
+  useEffect(() => {
+    setBaseUrl(config.baseUrl);
+    setToken(config.token);
+    setAdminToken(config.adminToken);
+  }, [config.adminToken, config.baseUrl, config.token]);
+
   const onSave = async () => {
-    await updateConfig({ baseUrl, token });
+    await updateConfig({ baseUrl, token, adminToken });
     setBaseUrl(normalizeBaseUrl(baseUrl));
     setSaved(true);
     setTimeout(() => setSaved(false), 1800);
@@ -37,7 +44,11 @@ export function SettingsScreen() {
   const onTest = async () => {
     setTest({ kind: 'testing' });
     try {
-      const status = await fetchStatus({ baseUrl: normalizeBaseUrl(baseUrl), token: token.trim() });
+      const status = await fetchStatus({
+        baseUrl: normalizeBaseUrl(baseUrl),
+        token: token.trim(),
+        adminToken: adminToken.trim(),
+      });
       const model = status.loaded_model || status.active_model || status.llm_backend || 'connected';
       setTest({ kind: 'ok', detail: `Connected · ${model}` });
     } catch (e) {
@@ -78,6 +89,21 @@ export function SettingsScreen() {
         />
         <Text style={styles.help}>
           Sent as the X-User-Token header. Leave blank for an unsecured local hub.
+        </Text>
+
+        <Text style={styles.label}>Admin token</Text>
+        <TextInput
+          style={styles.input}
+          value={adminToken}
+          onChangeText={setAdminToken}
+          placeholder="Optional — JARVIS_ADMIN_TOKEN"
+          placeholderTextColor={theme.textDim}
+          autoCapitalize="none"
+          autoCorrect={false}
+          secureTextEntry
+        />
+        <Text style={styles.help}>
+          Sent only to admin-gated routes, including the mobile approval queue.
         </Text>
 
         <View style={styles.buttons}>

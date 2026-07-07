@@ -228,7 +228,18 @@ async def autonomy_brief(kind: str = "morning"):
     if not orch:
         return JSONResponse({"error": "not initialized"}, status_code=503)
     from core.autonomy.digest import build_morning_brief, build_evening_retro
-    text = (build_evening_retro if kind == "evening" else build_morning_brief)(orch.autonomy_queue)
+    if kind == "evening":
+        text = build_evening_retro(orch.autonomy_queue)
+    else:
+        memory_entries = []
+        try:
+            from agents.core.memory.store import MemoryStore
+            allmem = await MemoryStore().get_all()
+            for entries in (allmem or {}).values():
+                memory_entries.extend(entries)
+        except Exception:
+            memory_entries = []
+        text = build_morning_brief(orch.autonomy_queue, memory_entries=memory_entries)
     return nocache_json({"kind": kind, "text": text})
 
 

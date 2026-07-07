@@ -124,6 +124,15 @@ async def forget_data(req: Request):
                 session_ids = list(getattr(conv, "sessions", {}).keys())
             except Exception:
                 session_ids = []
+    denied = _purge.purge_contract_denial(
+        source="api.admin.forget",
+        backup_first=True,
+        memory=True,
+        session_count=len(session_ids),
+    )
+    if denied is not None:
+        return JSONResponse({"error": f"contract denied: {denied}"}, status_code=403)
+    if orch is not None:
         await _purge.clear_live_memory(orch)
     try:
         result = _purge.purge_data(backup_first=True, memory=True, session_ids=session_ids)

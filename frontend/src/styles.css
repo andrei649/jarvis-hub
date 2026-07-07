@@ -3,6 +3,22 @@
    Two looks (Obsidian / Graphite) × 4 accents × density × motion
    driven by data-* on .hud-root
    ============================================================ */
+@font-face {
+  font-family: 'Space Grotesk';
+  font-style: normal;
+  font-weight: 300 700;
+  font-display: swap;
+  src: url('./assets/fonts/space-grotesk-latin-var.woff2') format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+@font-face {
+  font-family: 'JetBrains Mono';
+  font-style: normal;
+  font-weight: 100 800;
+  font-display: swap;
+  src: url('./assets/fonts/jetbrains-mono-latin-var.woff2') format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
 *, *::before, *::after { box-sizing: border-box; }
 html, body { margin: 0; padding: 0; height: 100%; }
 #root { height: 100%; }
@@ -587,7 +603,7 @@ input { font-family: inherit; }
 .nmesh-tip .nm-role { font-family:var(--font-mono); font-size:9px; color:var(--ink-3); margin-top:1px; }
 .nmesh-legend { position:absolute; left:12px; bottom:10px; right:12px; display:flex; gap:13px; align-items:center; font-family:var(--font-mono); font-size:8.5px; color:var(--ink-3); pointer-events:none; }
 .nmesh-legend i.nm-dot { display:inline-block; width:7px; height:7px; border-radius:50%; margin-right:5px; vertical-align:middle; }
-.nm-dot.core { background:#2bb8f0; box-shadow:0 0 6px rgba(43,184,240,.6); } .nm-dot.local { background:#41f59b; } .nm-dot.cloud { background:#a78bfa; }
+.nm-dot.core { background:#2bb8f0; box-shadow:0 0 6px rgba(43,184,240,.6); } .nm-dot.local { background:#41f59b; } .nm-dot.cloud { background:#a78bfa; } .nm-dot.task { background:#ffb23f; box-shadow:0 0 6px rgba(255,178,63,.45); }
 .nmesh-legend .nm-hint { margin-left:auto; color:var(--ink-4); }
 
 /* ── HUD v3 · CINEMA MODE (full-bleed mesh, framed for a shareable demo) ── */

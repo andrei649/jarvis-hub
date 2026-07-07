@@ -30,10 +30,12 @@ client are all injected.
 from __future__ import annotations
 
 import logging
+import time
 from dataclasses import dataclass
 from typing import Callable, Optional
 from urllib.parse import urlparse
 
+from .automation_contracts import ContractTemplate, predicate
 from .autonomy.dry_run import preview_task
 from .security.secret_broker import SecretBroker
 
@@ -54,6 +56,7 @@ def _assert_allowed_host(url: str, allowed=_ALLOWED_HOSTS) -> str:
 # External writes always ask. Tier 2 = "external" in the 4-tier policy, which
 # maps to ASK; `autonomy_level="ask"` is also passed explicitly to the queue.
 _RISK_TIER = 2
+_KIND_PREFIX = "writeback."
 
 # target → the secret name whose value is injected at execution time.
 _CREDENTIAL: dict[str, str] = {
@@ -146,6 +149,42 @@ def _human_target(target: str, fields: dict) -> str:
     if target == "google_calendar":
         return fields.get("summary") or "calendar event"
     return target or "external"
+
+
+def _writeback_draft_contract_template() -> ContractTemplate:
+    """Contract form of the existing governed write-back draft gate."""
+    def writeback_kind(view, now):
+        kind = view.get("kind")
+        return isinstance(kind, str) and kind.startswith(_KIND_PREFIX)
+
+    def system_action_allowed(view, now):
+        return (view.get("system"), view.get("action")) in _CATALOG
+
+    def required_fields_present(view, now):
+        spec = _CATALOG.get((view.get("system"), view.get("action")))
+        fields = view.get("fields")
+        if spec is None or not isinstance(fields, dict):
+            return False
+        return all(_present(fields.get(k)) for k in spec.required)
+
+    def credential_ref_matches(view, now):
+        system = view.get("system")
+        cred_name = _CREDENTIAL.get(system, "")
+        expected = SecretBroker.reference(cred_name) if cred_name else ""
+        return view.get("credential_ref") == expected
+
+    return ContractTemplate(kind="writeback_draft", constraints=(
+        predicate("writeback_kind", writeback_kind, reason="invalid_kind"),
+        predicate("system_action_allowed", system_action_allowed,
+                  reason="unknown_target_action"),
+        predicate("required_fields_present", required_fields_present,
+                  reason="missing_fields"),
+        predicate("credential_ref_matches", credential_ref_matches,
+                  reason="credential_ref_mismatch"),
+    ), description="Admissibility for governed write-back draft requests.")
+
+
+WRITEBACK_DRAFT_CONTRACT = _writeback_draft_contract_template()
 
 
 # ── concrete HTTP request building (pure, offline-testable) ──────────────────
@@ -291,7 +330,7 @@ class HttpWriteBackClient:
 class WriteBackBroker:
     """Governs external write-backs: request → gated task → approve → execute."""
 
-    KIND_PREFIX = "writeback."
+    KIND_PREFIX = _KIND_PREFIX
 
     def __init__(self, enqueue: Optional[Callable] = None, agent: str = "pepper",
                  secret_broker=None, client=None, audit=None, kernel=None) -> None:
@@ -351,6 +390,21 @@ class WriteBackBroker:
             "source": source,
             "target": human,         # readable target for preview / inbox card
         }
+        contract_payload = {
+            **payload,
+            "kind": kind,
+            "agent": agent or self.agent,
+            "risk_tier": _RISK_TIER,
+        }
+        try:
+            decision = WRITEBACK_DRAFT_CONTRACT.evaluate(contract_payload, now=time.time())
+        except Exception:
+            logger.warning("write-back draft contract evaluation failed", exc_info=True)
+            return {"ok": False, "reason": "contract_error", "kind": kind}
+        if not decision.admissible:
+            reason = decision.reason or "contract_denied"
+            self._record("writeback.deny", reason, target=human)
+            return {"ok": False, "reason": reason, "kind": kind}
         preview = preview_task({"kind": kind, "title": title,
                                 "payload": payload, "risk_tier": _RISK_TIER})
 

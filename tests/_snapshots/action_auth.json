@@ -7,6 +7,7 @@
   "node.dispatch": "kernel",
   "payment": "kernel",
   "plugin.egress": "kernel",
+  "repo.sync": "kernel",
   "social.*": "kernel",
   "tool.rpc": "kernel",
   "writeback.*": "kernel"

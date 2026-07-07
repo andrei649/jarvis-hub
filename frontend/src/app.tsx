@@ -7,7 +7,7 @@ import { TopBar, Ticker, Rail, Tabs, RosterColumn, ContextColumn, Palette, Ambie
 import { Conversation, CognitionStream, InputBar, buildTrace, traceFromCognition } from './cockpit';
 import { useVoice } from './voice';
 import { loadJarvisData } from './api/loaders';
-import { useLiveModes } from './api/live';
+import { PREVIEW_MODE_LIVE_KEYS, useLiveModes } from './api/live';
 import { LiveSourceChip, liveSourceState } from './LiveSourceChip';
 import { postStream, apiGet } from './api/client';
 import { AgentsMode, Dossier, TrustMode, MemoryMode } from './modes';
@@ -38,6 +38,11 @@ function ModeStub({ label }) {
 // reloads. Each is read lazily with a safe default and written back on change.
 const UI_PREFS = { look: 'obsidian', density: 'normal', scanline: 'on', dotgrid: 'off' };
 function loadPref(key, def) { try { return localStorage.getItem('hud.' + key) || def; } catch { return def; } }
+function defaultMotion() {
+  try {
+    return window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'calm' : 'lively';
+  } catch { return 'lively'; }
+}
 
 function App() {
   // tweak axes — persisted client-side prefs (restored regression: v1 remembered
@@ -46,8 +51,8 @@ function App() {
   const [density, setDensity] = useState(() => loadPref('density', UI_PREFS.density));
   const [scanline, setScanline] = useState(() => loadPref('scanline', UI_PREFS.scanline));
   const [dotgrid, setDotgrid] = useState(() => loadPref('dotgrid', UI_PREFS.dotgrid));
-  // P5 — honor the OS reduced-motion preference (gates packets/ambient animation)
-  const motion = (typeof window !== 'undefined' && window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches) ? 'calm' : 'lively';
+  // P5 — default to OS reduced-motion, but let the user override it in the palette.
+  const [motion, setMotion] = useState(() => loadPref('motion', defaultMotion()));
   const ia = 'rail' as 'rail' | 'tabs';
   const [accent, setAccent] = useState(() => { try { return localStorage.getItem('hud.accent') || 'cyan'; } catch { return 'cyan'; } });
   const [lang, setLang] = useState(() => { try { return localStorage.getItem('hud.lang') || 'en'; } catch { return 'en'; } });
@@ -115,6 +120,7 @@ function App() {
   useEffect(() => { try { localStorage.setItem('hud.lang', lang); } catch { /* ignore */ } }, [lang]);
   useEffect(() => { try { localStorage.setItem('hud.look', look); } catch { /* ignore */ } }, [look]); // client-only UI prefs
   useEffect(() => { try { localStorage.setItem('hud.density', density); } catch { /* ignore */ } }, [density]);
+  useEffect(() => { try { localStorage.setItem('hud.motion', motion); } catch { /* ignore */ } }, [motion]);
   useEffect(() => { try { localStorage.setItem('hud.scanline', scanline); } catch { /* ignore */ } }, [scanline]);
   useEffect(() => { try { localStorage.setItem('hud.dotgrid', dotgrid); } catch { /* ignore */ } }, [dotgrid]);
   useEffect(() => { try { localStorage.setItem('hud.demo', demo ? '1' : '0'); } catch { /* ignore */ } }, [demo]);
@@ -322,7 +328,7 @@ function App() {
                     <div className="panel-head"><Icon d={ICONS.brain} size={14} /><span className="ttl">{t.network}</span><span className="st">focus mode</span></div>
                     {/* Neural Mesh — native canvas brain of agents + models firing
                         (HUD-v3 port of v3-mesh.jsx; replaces the /brain?embed=1 iframe). */}
-                    <NeuralMesh agents={agents} activeId={activeId} onSelect={(id) => { setActiveId(id); setDossier(id); }} motion={motion} t={t} />
+                    <NeuralMesh agents={agents} tasks={tasks} activeId={activeId} onSelect={(id) => { setActiveId(id); setDossier(id); }} motion={motion} t={t} />
                   </div>
                   <div className="panel" style={{ flex: '1 1 0', minHeight: 0 }}>
                     <span className="bk tl"></span><span className="bk tr"></span><span className="bk bl"></span><span className="bk br"></span>
@@ -366,7 +372,7 @@ function App() {
         style={{ position: 'fixed', right: 16, bottom: 16, zIndex: 50 }}>▦ CONSOLE</button>
       <Palette open={palette} onClose={() => setPalette(false)} onMode={setMode}
         setAccent={setAccent} setLang={setLang} onAmbient={() => { setPalette(false); setAmbient(true); }}
-        ui={{ density, setDensity, scanline, setScanline, dotgrid, setDotgrid }} t={t} />
+        ui={{ look, setLook, density, setDensity, motion, setMotion, scanline, setScanline, dotgrid, setDotgrid }} t={t} />
       {ambient && <Ambient onExit={() => setAmbient(false)} clock={clock} lang={lang} agents={agents} decisions={decisions} motion={motion} localPct={localPct} t={t} />}
       {cinema && <CinemaMesh agents={agents} localPct={localPct} onExit={() => setCinema(false)} t={t} />}
     </div>
@@ -454,11 +460,10 @@ function ProvModal({ prov, onClose }) {
 }
 
 // Which V2 keys must carry REAL backend data for a capability mode to be "live".
-// Modes absent here (build/comms/finance/health/knowledge/family) have no backend
-// wired yet, so they are demo-only previews until one exists.
-const MODE_LIVE_KEYS = {
+export const MODE_LIVE_KEYS = {
   trust: ['AUDIT_CHAIN', 'PAYMENTS'], memory: ['MEMORY_STATS'], autonomy: ['AUTONOMY'],
   observe: ['OBSERVE'], interop: ['INTEROP'], admin: ['ADMIN'],
+  ...PREVIEW_MODE_LIVE_KEYS,
 };
 const MODE_LABELS = {
   trust: 'Trust & Governance', memory: 'Memory', autonomy: 'Autonomy', build: 'Builds',

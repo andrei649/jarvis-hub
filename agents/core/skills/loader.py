@@ -11,11 +11,55 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Callable, Optional
 
+from agents.core.automation_contracts import (
+    ContractTemplate,
+    contract_denial,
+    field_present,
+    one_of,
+    predicate,
+)
+
 from . import signing
 
 logger = logging.getLogger("jarvis.skills")
 
 SKILLS_DIR = Path("skills")
+
+
+def _generated_skill_name_safe(view, now) -> bool:
+    name = str(view.get("name") or view.get("command_name") or "").strip()
+    return bool(name and name not in (".", "..")
+                and "/" not in name and "\\" not in name and "\x00" not in name)
+
+
+def _skill_generation_contract_template() -> ContractTemplate:
+    return ContractTemplate(
+        kind="skill.generation",
+        description="LLM-authored skill creation and owner-promotion gate.",
+        constraints=(
+            field_present("action", "agent"),
+            one_of("action", {"generate", "approve"}),
+            predicate("generated_skill_name_safe", _generated_skill_name_safe,
+                      reason="invalid_skill_name"),
+        ),
+    )
+
+
+SKILL_GENERATION_CONTRACT_KIND = "skill.generation"
+SKILL_GENERATION_CONTRACT = _skill_generation_contract_template()
+
+
+def _skill_generation_allowed(payload: dict) -> bool:
+    try:
+        decision = SKILL_GENERATION_CONTRACT.evaluate(payload)
+    except Exception:
+        logger.warning("skill generation contract evaluation failed", exc_info=True)
+        return False
+    reason = contract_denial(decision)
+    if reason:
+        logger.warning("Skill generation blocked by contract: %s", reason)
+        return False
+    return True
 
 
 def _split_frontmatter(content: str) -> tuple[Optional[dict], str]:
@@ -331,6 +375,17 @@ class SkillLoader:
             return None
         cmd = command_name or skill_name
 
+        if not _skill_generation_allowed({
+            "kind": SKILL_GENERATION_CONTRACT_KIND,
+            "action": "generate",
+            "agent": agent_id,
+            "name": skill_name,
+            "command_name": cmd,
+            "steps_count": len(solution_steps or []),
+            "has_output": bool(output),
+        }):
+            return None
+
         # CDX-8: the [learn:…] task/steps/command are UNTRUSTED LLM output (an injected
         # response could mint an attacker-named, attacker-described skill). Scan before we
         # create anything; never write injection-flagged content to disk as a skill.
@@ -425,6 +480,14 @@ def register(skill):
         reg = self.skills.get(name)
         skill_dir = Path(reg.path) if reg is not None and getattr(reg, "path", None) else SKILLS_DIR / name
         if not (skill_dir / "PENDING_REVIEW").exists():
+            return False
+        if not _skill_generation_allowed({
+            "kind": SKILL_GENERATION_CONTRACT_KIND,
+            "action": "approve",
+            "agent": "owner",
+            "name": skill_dir.name,
+            "command_name": name,
+        }):
             return False
         signing.sign_skill(skill_dir)
         (skill_dir / "PENDING_REVIEW").unlink()

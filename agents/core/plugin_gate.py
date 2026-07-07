@@ -7,10 +7,12 @@ declared permissions.
 """
 
 import logging
-import os
+import time
 from dataclasses import dataclass, field
 from enum import Enum
 from urllib.parse import urlparse
+
+from agents.core.automation_contracts import ContractTemplate, predicate
 
 logger = logging.getLogger("jarvis.plugins")
 
@@ -437,6 +439,43 @@ def dynamic_domains(plugin_id: str) -> list[str]:
     return sorted(_DYNAMIC_DOMAINS.get(plugin_id, ()))
 
 
+def _plugin_call_contract_template() -> ContractTemplate:
+    """Contract form of the existing plugin permission gate."""
+    def plugin_known(view, now):
+        return view.get("manifest") is not None
+
+    def plugin_enabled(view, now):
+        return bool(view["manifest"].enabled)
+
+    def agent_permitted(view, now):
+        return bool(view["gate"]._agent_permitted(view["manifest"], view.get("agent_id", "")))
+
+    def network_allowed(view, now):
+        manifest = view["manifest"]
+        target_domain = view.get("target_domain") or ""
+        if manifest.network_access == NetworkAccess.NONE:
+            return True
+        if manifest.network_access == NetworkAccess.LAN:
+            return True
+        if manifest.network_access == NetworkAccess.RESTRICTED:
+            if not target_domain:
+                return True
+            return host_in_allowlist(target_domain, manifest.allowed_domains)
+        if manifest.network_access == NetworkAccess.FULL:
+            return True
+        return False
+
+    return ContractTemplate(kind="plugin_call", constraints=(
+        predicate("plugin_known", plugin_known, reason="unknown_plugin"),
+        predicate("plugin_enabled", plugin_enabled, reason="plugin_disabled"),
+        predicate("agent_permitted", agent_permitted, reason="agent_not_served"),
+        predicate("network_allowed", network_allowed, reason="network_not_allowed"),
+    ), requires_approval=False)
+
+
+PLUGIN_CALL_CONTRACT = _plugin_call_contract_template()
+
+
 # ── CDX-11: least-privilege plugin posture ───────────────────────────────────
 # By default a plugin that serves ``agents_served=["all"]`` is callable by every
 # agent. For the hardened / design-partner profile that wildcard is too broad on
@@ -463,8 +502,10 @@ def grants_from_env() -> "dict[str, set[str]]":
     """Parse ``JARVIS_PLUGIN_GRANTS`` — a comma list of ``plugin_id:agent_id``
     pairs the owner declares to keep external-write plugins usable under
     hardening (e.g. ``social_x:veronica,writeback_github:stark``)."""
+    from agents.core.env_config import env_list
+
     out: dict[str, set[str]] = {}
-    for pair in os.environ.get("JARVIS_PLUGIN_GRANTS", "").split(","):
+    for pair in env_list("JARVIS_PLUGIN_GRANTS"):
         pid, sep, agent = pair.strip().partition(":")
         if sep and pid.strip() and agent.strip():
             out.setdefault(pid.strip(), set()).add(agent.strip())
@@ -542,36 +583,33 @@ class PermissionGate:
         Returns True if allowed, False if blocked.
         """
         manifest = self.plugins.get(plugin_id)
-        if not manifest:
+        decision = PLUGIN_CALL_CONTRACT.evaluate({
+            "gate": self,
+            "plugin_id": plugin_id,
+            "agent_id": agent_id,
+            "target_domain": target_domain,
+            "manifest": manifest,
+        }, now=time.time())
+        if decision.admissible:
+            return True
+
+        if decision.reason == "unknown_plugin":
             logger.warning(f"Plugin {plugin_id} not found — blocked")
             return False
 
-        if not manifest.enabled:
+        if decision.reason == "plugin_disabled":
             logger.warning(f"Plugin {plugin_id} is disabled — blocked")
             return False
 
-        if not self._agent_permitted(manifest, agent_id):
+        if decision.reason == "agent_not_served":
             logger.warning(f"Agent {agent_id} not served by plugin {plugin_id} — blocked")
             return False
 
-        if manifest.network_access == NetworkAccess.NONE:
-            return True  # local-only, always allowed
+        if decision.reason == "network_not_allowed":
+            logger.warning(f"Domain {target_domain} not allowed by plugin {plugin_id} — blocked")
+            return False
 
-        if manifest.network_access == NetworkAccess.LAN:
-            # In production: check if target is a LAN IP
-            return True
-
-        if manifest.network_access == NetworkAccess.RESTRICTED:
-            if not target_domain:
-                return True  # No domain specified = internal processing (URL-level egress is enforced in PluginHTTPClient)
-            allowed = host_in_allowlist(target_domain, manifest.allowed_domains)
-            if not allowed:
-                logger.warning(f"Domain {target_domain} not allowed by plugin {plugin_id} — blocked")
-            return allowed
-
-        if manifest.network_access == NetworkAccess.FULL:
-            return True  # Unrestricted (use with extreme caution)
-
+        logger.warning(f"Plugin call {plugin_id} denied by contract ({decision.reason})")
         return False
 
     def enable(self, plugin_id: str):

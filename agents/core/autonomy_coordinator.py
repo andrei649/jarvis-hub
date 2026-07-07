@@ -169,13 +169,9 @@ class AutonomyCoordinator:
             return {"status": "ok", "kind": task.kind, "output": out}
 
         # K3: optional per-task wall-time budget (JARVIS_TASK_MAX_SECONDS, unset = unbounded).
-        _tms = os.environ.get("JARVIS_TASK_MAX_SECONDS", "").strip()
-        try:
-            _task_budget = float(_tms) if _tms else None
-        except ValueError:
-            _task_budget = None
-        if _task_budget is not None and _task_budget <= 0:
-            _task_budget = None
+        from .env_config import env_float
+        _task_budget_value = env_float("JARVIS_TASK_MAX_SECONDS", 0.0, minimum=0.0)
+        _task_budget = _task_budget_value if _task_budget_value > 0 else None
         _budget_ledger = getattr(self._orch, "budget_ledger", None)
         executor = TaskExecutor(
             fallback=_llm,
@@ -237,15 +233,26 @@ class AutonomyCoordinator:
         )
         executor.register("social", self._orch.social.execute)
 
+        # Safe Comms v0 — governed replies to live telegram/web inbox threads.
+        # Request time only queues a draft; approved tasks send through the
+        # already-registered ChannelManager and record the outbound message in
+        # the same bounded inbox thread.
+        from .channel_reply import ChannelReplyBroker
+        self._orch.channel_replies = ChannelReplyBroker(
+            inbox=getattr(self._orch, "channel_inbox", None),
+            enqueue=self._governed_enqueue,
+            channel_manager=getattr(self._orch, "channel_manager", None),
+            audit=getattr(self._orch, "audit", None),
+            kernel=_action_kernel,
+        )
+        executor.register("channel.reply", self._orch.channel_replies.execute)
+
         # H12.22 — governed outbound voice / call-back. A call is an interruption,
         # so it's gated by BOTH the approval queue and the daily interrupt budget;
         # live telephony (Twilio/Telnyx) is deferred to a host-side client.
-        import json as _json
         from .autonomy.call_broker import CallBroker
-        try:
-            _call_cfg = _json.loads(os.environ.get("JARVIS_CALL_CONFIG", "") or "{}")
-        except Exception:
-            _call_cfg = {}
+        from .env_config import env_json_object
+        _call_cfg = env_json_object("JARVIS_CALL_CONFIG", {})
         self._orch.call_broker = CallBroker(
             enqueue=self._governed_enqueue,  # O26-P0.7 (F3): policy + inbox
             secret_broker=getattr(self._orch, "secret_broker", None),

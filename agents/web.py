@@ -14,7 +14,7 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Optional
 
-from agents.core.env_config import env_flag, env_int
+from agents.core.env_config import env_flag, env_int, env_json_object, env_list
 from agents.core.paths import data_path
 
 sys.path.insert(0, str(Path(__file__).parent))
@@ -274,8 +274,14 @@ async def lifespan(application: FastAPI):
     config = JarvisConfig()
     orch = Orchestrator(config)
 
+    from core.channel_inbox import ChannelInboxStore
     from core.settings_db import get_value
-    gateway = Gateway(handler=orch.channel_handler, pairing=getattr(orch, "sender_pairing", None))
+    orch.channel_inbox = ChannelInboxStore()
+    gateway = Gateway(
+        handler=orch.channel_handler,
+        pairing=getattr(orch, "sender_pairing", None),
+        inbox_store=orch.channel_inbox,
+    )
     gateway.set_rate_limit(int(get_value("channels", "rate_limit", 10)))  # /admin → channels.rate_limit
     web_enabled = bool(get_value("channels", "web_enabled", True))        # /admin → channels.web_enabled
     if web_enabled:
@@ -321,9 +327,9 @@ async def lifespan(application: FastAPI):
     imap_host = os.environ.get("IMAP_HOST", "")
     if smtp_host and imap_host:
         email_ch = EmailChannel(
-            smtp_host=smtp_host, smtp_port=int(os.environ.get("SMTP_PORT", "587")),
+            smtp_host=smtp_host, smtp_port=env_int("SMTP_PORT", 587),
             smtp_user=os.environ.get("SMTP_USER", ""), smtp_pass=os.environ.get("SMTP_PASS", ""),
-            imap_host=imap_host, imap_port=int(os.environ.get("IMAP_PORT", "993")),
+            imap_host=imap_host, imap_port=env_int("IMAP_PORT", 993),
             imap_user=os.environ.get("IMAP_USER", ""), imap_pass=os.environ.get("IMAP_PASS", ""),
             handler=gateway.route,
         )
@@ -339,13 +345,8 @@ async def lifespan(application: FastAPI):
     # H12.16 — broaden governed channels (WhatsApp/Signal/Matrix/Teams/Google
     # Chat). Configured via JARVIS_WEBHOOK_CHANNELS = {"<kind>": {<config>}}.
     # Default-off; each adapter routes inbound through the same governed gateway.
-    wh_raw = os.environ.get("JARVIS_WEBHOOK_CHANNELS", "")
-    if wh_raw:
-        try:
-            wh_cfg = json.loads(wh_raw)
-        except Exception:
-            wh_cfg = {}
-            logger.warning("JARVIS_WEBHOOK_CHANNELS is not valid JSON — ignored")
+    wh_cfg = env_json_object("JARVIS_WEBHOOK_CHANNELS", {})
+    if wh_cfg:
         from core.channels.webhook_channels import channels_from_config
         for ch in channels_from_config(wh_cfg, gateway.route):
             gateway.register_channel(ch.channel_id)
@@ -380,7 +381,7 @@ app = FastAPI(title="Jarvis", version=_APP_VERSION, lifespan=lifespan)
 # cross-origin reads, which is what we want. Set
 # JARVIS_CORS_ORIGINS=https://a.example,https://b.example to allow specific
 # origins (e.g. a site hosting an embedded widget). Empty = unchanged behaviour.
-_cors_origins = [o.strip() for o in os.environ.get("JARVIS_CORS_ORIGINS", "").split(",") if o.strip()]
+_cors_origins = env_list("JARVIS_CORS_ORIGINS")
 if _cors_origins:
     from fastapi.middleware.cors import CORSMiddleware
     app.add_middleware(

@@ -181,6 +181,10 @@ async def marketplace_publish(body: PublishSkillBody):
     try:
         res = orch.marketplace.publish_skill(body.name)
         return {"ok": True, "published": res}
+    except PermissionError:
+        logger.warning("Skill publish blocked by supply-chain contract")
+        return JSONResponse({"error": f"skill '{body.name}' blocked by supply-chain contract"},
+                            status_code=403)
     except FileNotFoundError as e:
         return error_json(e, 404, "skill not found")
     except Exception:
@@ -278,6 +282,10 @@ async def marketplace_uninstall(body: UninstallSkillBody):
         # by path (the loader keys by manifest title, which may differ from the dir).
         removed_dir = (orch.marketplace.skills_dir / body.name).resolve()
         removed = orch.marketplace.uninstall_skill(body.name, purge=body.purge)
+    except PermissionError:
+        logger.warning("Skill uninstall blocked by supply-chain contract")
+        return JSONResponse({"error": f"skill '{body.name}' blocked by supply-chain contract"},
+                            status_code=403)
     except ValueError:
         return JSONResponse({"error": f"invalid skill name '{body.name}'"}, status_code=400)
     except Exception:

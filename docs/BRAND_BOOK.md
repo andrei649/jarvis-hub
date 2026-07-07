@@ -3,7 +3,7 @@
 > The main marketing brand reference. Positioning, naming, messaging, voice, and visual identity —
 > all downstream of [MOONSHOT.md](../MOONSHOT.md) (the *why*) and consistent with
 > [GO_LIVE_PLAN.md](../GO_LIVE_PLAN.md) §3 (the launch brief).
-> Generated: 2026-06-10 · Owner: Andrei · Status: **v0.10.0** (feature-complete, productionizing toward 1.0)
+> Generated: 2026-07-04 · Owner: Andrei · Status: **v0.11.0** (feature-complete + refactor done; productionizing toward 1.0)
 
 ---
 
@@ -75,14 +75,14 @@ open-source personal project; **revisit before Phase 2 (Sellable)** — the plan
 
 ---
 
-## 5. Messaging Pillars (with proof points — updated 2026-06-10)
+## 5. Messaging Pillars (with proof points — updated 2026-07-04)
 
 | Pillar | Claim | Proof |
 |---|---|---|
 | **Private by architecture** | Your life never leaves your machine by default | Local LM Studio/Ollama inference; every cloud hop is per-agent opt-in; Frigga/Ultron/Howard are hard-coded `LOCAL_ONLY_AGENTS`; data trains no one's model |
 | **Governed autonomy** | It acts alone only where it's safe — and proves it | 4-tier risk policy (read-only → irreversible/money); approval inbox with one-tap Telegram decisions; tamper-evident Merkle audit log; signed skills, quarantine, kill-switch |
 | **It compounds** | More useful every week you use it | Nightly reflection → bi-temporal knowledge graph; fused recall (vector ⊕ graph RRF); preference learning ("learns to stop asking"); sleep-time consolidation |
-| **Production-grade** | Not a demo | **~2,400 backend tests + 184 frontend tests**; 36× SQLite hot-path speedup; circuit breakers; CI + CodeQL; ~299 API routes; **194/196 backlog items (≈99% SP) code-complete** |
+| **Production-grade** | Not a demo | **3,600+ automated Python tests** plus frontend Vitest, mobile Jest, and Playwright HUD/flow suites; 36× SQLite hot-path speedup; circuit breakers; CI + CodeQL; 363 HTTP routes; HUD/mobile approval queue and O26 quality gates merged |
 | **Yours, economically** | $0/month, no meter running | Runs on your GPU (~4B-active MoE); cloud only for explicitly approved agents; free self-host = the business model's honesty check |
 
 **North-star metric (internal, keeps marketing honest):** weekly autonomous actions *accepted* per
@@ -93,7 +93,7 @@ active user. Counter-metrics: interrupt rate ≤4/day, reject rate, %-local, p95
 ## 6. Voice & Tone
 
 - **Calm competence, butler not hype-man.** Jarvis says "Done, sir" — the brand never shouts.
-- **Specific over superlative.** "~2,400 tests, 36× speedup, ≤4 interrupts/day" beats "blazingly
+- **Specific over superlative.** "3,600+ tests, 36× speedup, ≤4 interrupts/day" beats "blazingly
   powerful". Every claim must trace to the repo or a dated research doc.
 - **Honest about trade-offs.** We publish our gap lists (`BACKLOG.md`, `HUD_V2_REMAINING.md`).
   Saying "the HUD's deep controls are 3–5 PRs behind the backend, here's the punch-list" *is*
@@ -154,7 +154,7 @@ is canonical.
 > its own work: it monitors your world, consolidates every conversation into a knowledge graph
 > nightly, and delivers a prioritized brief each morning. Every autonomous action passes a
 > reversible/irreversible approval queue and a tamper-evident audit log; every cloud hop is
-> per-agent opt-in, and the family agent never touches the internet. ~2,400 tests, ~299 API routes,
+> per-agent opt-in, and the family agent never touches the internet. 3,600+ tests, 363 HTTP routes,
 > $0/month. The AI that works while you sleep — owned by you.
 
 **Ready-to-use launch assets** built from this brand: [`docs/marketing/`](marketing/) —
@@ -183,8 +183,9 @@ tagline; same asset doubles as the README hero until the demo GIF lands.
 2. **It also proved the failure mode** — ungoverned autonomy + cloud memory = the #1 infostealer
    target. The "knows-you device" graveyard (Humane, Dot, Rewind, Pi) was uniformly cloud-bound.
 3. **The durable position is local + governed** — privacy promise *and* $0 COGS, in one move.
-4. **Jarvis Hub is that position, shipped** — 99% of a 1,119-SP backlog code-complete, audit gate
-   in progress, every principle (local-first, opt-in cloud, inspectable, budgeted interrupts)
+4. **Jarvis Hub is that position, shipped** — the H1-H22 core is complete and the H23/O26
+   productionization layer is actively landing, with every principle (local-first, opt-in cloud,
+   inspectable, budgeted interrupts)
    enforced in code, not in a values page.
 5. **The ask:** self-host it (one `INSTALL.bat` / `install.sh`), watch it earn autonomy one
    approved action at a time.

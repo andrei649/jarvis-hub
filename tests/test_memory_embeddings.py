@@ -95,6 +95,21 @@ def test_from_env_defaults_to_lmstudio(monkeypatch):
     assert emb.max_retries == 1  # short retries on the interactive path
 
 
+def test_qdrant_vector_dimension_uses_shared_env_int(monkeypatch):
+    """Malformed VECTOR_DIMENSION falls back instead of crashing MemoryManager."""
+    src = (repo_root / "agents/core/memory/manager.py").read_text(encoding="utf-8")
+    assert 'int(os.getenv("VECTOR_DIMENSION"' not in src
+    assert 'env_int("VECTOR_DIMENSION", 768, minimum=1)' in src
+
+    monkeypatch.setenv("VECTOR_DIMENSION", "bad")
+    bad = MemoryManager(graph_backend="memory", vector_backend="qdrant")
+    assert bad.vectors.dimension == 768
+
+    monkeypatch.setenv("VECTOR_DIMENSION", "1536")
+    custom = MemoryManager(graph_backend="memory", vector_backend="qdrant")
+    assert custom.vectors.dimension == 1536
+
+
 # ── MemoryManager: remember / recall round trip ───────────────────────────────
 
 def _hash_manager() -> MemoryManager:

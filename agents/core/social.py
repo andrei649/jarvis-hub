@@ -22,10 +22,12 @@ client are all injected.
 from __future__ import annotations
 
 import logging
+import time
 from dataclasses import dataclass
 from typing import Callable, Optional
 from urllib.parse import urlparse
 
+from .automation_contracts import ContractTemplate, predicate
 from .autonomy.dry_run import preview_task
 from .security.secret_broker import SecretBroker
 
@@ -43,6 +45,7 @@ def _assert_allowed_host(url: str, allowed=_ALLOWED_HOSTS) -> str:
 
 # Social writes reach people publicly/directly — external tier, always ASK.
 _RISK_TIER = 2
+_KIND_PREFIX = "social."
 
 # platform → the secret name whose value is injected at execution time.
 _CREDENTIAL: dict[str, str] = {"x": "x_api_token"}
@@ -104,6 +107,42 @@ def _human_target(platform: str, action: str, fields: dict) -> str:
         return f"DM {fields.get('recipient', '?')}"
     text = fields.get("text", "")
     return (text[:40] + "…") if len(text) > 40 else (text or platform)
+
+
+def _social_draft_contract_template() -> ContractTemplate:
+    """Contract form of the existing social draft-before-send gate."""
+    def social_kind(view, now):
+        kind = view.get("kind")
+        return isinstance(kind, str) and kind.startswith(_KIND_PREFIX)
+
+    def platform_action_allowed(view, now):
+        return (view.get("platform"), view.get("action")) in _CATALOG
+
+    def required_fields_present(view, now):
+        spec = _CATALOG.get((view.get("platform"), view.get("action")))
+        fields = view.get("fields")
+        if spec is None or not isinstance(fields, dict):
+            return False
+        return all(_present(fields.get(k)) for k in spec.required)
+
+    def credential_ref_matches(view, now):
+        platform = view.get("platform")
+        cred_name = _CREDENTIAL.get(platform, "")
+        expected = SecretBroker.reference(cred_name) if cred_name else ""
+        return view.get("credential_ref") == expected
+
+    return ContractTemplate(kind="social_draft", constraints=(
+        predicate("social_kind", social_kind, reason="invalid_kind"),
+        predicate("platform_action_allowed", platform_action_allowed,
+                  reason="unknown_platform_action"),
+        predicate("required_fields_present", required_fields_present,
+                  reason="missing_fields"),
+        predicate("credential_ref_matches", credential_ref_matches,
+                  reason="credential_ref_mismatch"),
+    ), description="Admissibility for governed social draft-before-send requests.")
+
+
+SOCIAL_DRAFT_CONTRACT = _social_draft_contract_template()
 
 
 # ── concrete HTTP request building (pure, offline-testable) ──────────────────
@@ -188,7 +227,7 @@ class HttpSocialClient:
 class SocialBroker:
     """Governs social writes: request → gated task → approve → execute."""
 
-    KIND_PREFIX = "social."
+    KIND_PREFIX = _KIND_PREFIX
 
     def __init__(self, enqueue: Optional[Callable] = None, agent: str = "pepper",
                  secret_broker=None, client=None, audit=None, kernel=None) -> None:
@@ -243,6 +282,21 @@ class SocialBroker:
             "source": source,
             "target": human,
         }
+        contract_payload = {
+            **payload,
+            "kind": kind,
+            "agent": agent or self.agent,
+            "risk_tier": _RISK_TIER,
+        }
+        try:
+            decision = SOCIAL_DRAFT_CONTRACT.evaluate(contract_payload, now=time.time())
+        except Exception:
+            logger.warning("social draft contract evaluation failed", exc_info=True)
+            return {"ok": False, "reason": "contract_error", "kind": kind}
+        if not decision.admissible:
+            reason = decision.reason or "contract_denied"
+            self._record("social.deny", reason, target=human)
+            return {"ok": False, "reason": reason, "kind": kind}
         preview = preview_task({"kind": kind, "title": title,
                                 "payload": payload, "risk_tier": _RISK_TIER})
 

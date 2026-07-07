@@ -23,6 +23,175 @@ const arr = (x: any, ...keys: string[]) => {
   return null;
 };
 
+export const PREVIEW_MODE_LIVE_KEYS = {
+  build: ['BUILD'],
+  comms: ['COMMS'],
+  finance: ['FINANCE'],
+  health: ['HEALTH'],
+  knowledge: ['KNOWLEDGE'],
+  family: ['FAMILY'],
+};
+
+const firstArr = (x: any, ...keys: string[]) => arr(x, ...keys) || [];
+const text = (x: any, fallback = '') => String(x ?? fallback);
+
+export function pluginIsConfigured(plugin: any): boolean {
+  return !!plugin && plugin.enabled !== false && (plugin.configured === true || plugin.available === true);
+}
+
+export function balancePayloadIsLive(payload: any): boolean {
+  if (!payload || payload.mock === true) return false;
+  return Object.entries(payload).some(([key, value]) => key !== 'mock' && Array.isArray(value) && value.length > 0);
+}
+
+function pluginById(plugins: any[] | null | undefined, id: string) {
+  return (plugins || []).find((p) => (p && (p.id === id || p.name === id)));
+}
+
+function pluginReady(plugins: any[] | null | undefined, id: string): boolean {
+  return pluginIsConfigured(pluginById(plugins, id));
+}
+
+function workflowToCanvas(workflow: any) {
+  const steps = firstArr(workflow, 'steps').slice(0, 8);
+  if (!steps.length) {
+    return {
+      ...V2.BUILD.workflow,
+      name: text(workflow?.name, workflow?.id || 'Workflow'),
+      status: 'live',
+      nodes: [],
+      edges: [],
+    };
+  }
+  const nodes = steps.map((step: any, i: number) => ({
+    id: text(step.id, `step-${i + 1}`),
+    label: text(step.id || step.agent_id || `step ${i + 1}`).slice(0, 18),
+    kind: step.kind || 'agent',
+    x: 70 + (i % 4) * 190,
+    y: 40 + Math.floor(i / 4) * 82,
+  }));
+  const nodeIds = new Set(nodes.map((n: any) => n.id));
+  let edges = steps.flatMap((step: any) => firstArr(step, 'depends_on')
+    .filter((dep: any) => nodeIds.has(text(dep)) && nodeIds.has(text(step.id)))
+    .map((dep: any) => [text(dep), text(step.id)]));
+  if (!edges.length && nodes.length > 1) {
+    edges = nodes.slice(1).map((n: any, i: number) => [nodes[i].id, n.id]);
+  }
+  return {
+    ...V2.BUILD.workflow,
+    name: text(workflow?.name, workflow?.id || 'Workflow'),
+    status: 'live',
+    nodes,
+    edges,
+  };
+}
+
+function marketplaceSkills(raw: any[]) {
+  return raw.slice(0, 8).map((skill: any) => ({
+    name: text(skill.name || skill.id, 'Skill'),
+    author: text(skill.author || skill.agent || 'jarvis').toLowerCase(),
+    desc: text(skill.description || skill.review_status || skill.version || 'Marketplace skill'),
+    installed: skill.installed === true || skill.enabled === true,
+    runs: Number(skill.runs || 0),
+  }));
+}
+
+function formatCommsTs(value: any): string {
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return new Date(value * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  }
+  return text(value, 'live');
+}
+
+function roomsToComms(rooms: any[], channels: any[] = [], inboxThreads: any[] = []) {
+  const liveInbox = inboxThreads.slice(0, 12).map((thread: any, i: number) => {
+    const channel = text(thread.channel, 'telegram').toLowerCase();
+    return {
+      id: text(thread.thread_id || thread.id, `inbox-${i}`),
+      thread_id: text(thread.thread_id || thread.id, `inbox-${i}`),
+      channel,
+      from: text(thread.from || thread.sender, channel),
+      agent: text(thread.agent, 'veronica'),
+      subj: text(thread.subj, `${channel} thread`),
+      preview: text(thread.preview, 'Live channel message'),
+      ts: formatCommsTs(thread.ts),
+      unread: thread.unread !== false,
+      dir: 'in',
+      local: true,
+      replyable: ['telegram', 'web'].includes(channel),
+    };
+  });
+  const roomThreads = rooms.slice(0, 12).map((room: any, i: number) => ({
+    id: text(room.id, `room-${i}`),
+    channel: 'room',
+    from: text(room.name, 'Room'),
+    agent: text(room.default_agent, 'jarvis'),
+    subj: text(room.name, 'Room'),
+    preview: text(room.description, 'Live multi-agent room'),
+    ts: room.created_at ? new Date(room.created_at * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'live',
+    unread: false,
+    dir: 'in',
+    local: true,
+  }));
+  const threads = [...liveInbox, ...roomThreads].slice(0, 12);
+  const channelRows = channels
+    .filter((channel: any) => ['discord', 'slack'].includes(text(channel?.id).toLowerCase()))
+    .map((channel: any) => {
+      const id = text(channel.id).toLowerCase();
+      return { id, label: id === 'discord' ? 'Discord' : 'Slack', count: 0 };
+    });
+  const inboxRows = Array.from(new Set(liveInbox.map((thread: any) => thread.channel))).map((id: any) => ({
+    id,
+    label: id === 'web' ? 'Web' : id.charAt(0).toUpperCase() + id.slice(1),
+    count: liveInbox.filter((thread: any) => thread.channel === id).length,
+  }));
+  return {
+    ...V2.COMMS,
+    threads,
+    channels: [...inboxRows, { id: 'room', label: 'Rooms', count: roomThreads.length }, ...channelRows],
+  };
+}
+
+function watchesToFinance(watches: any[]) {
+  return {
+    ...V2.FINANCE,
+    net_worth: '—',
+    mom: 'owner data',
+    accounts: [],
+    budgets: [],
+    watches: watches.slice(0, 8).map((w: any) => ({
+      pair: text(w.symbol || w.pair, 'watch'),
+      val: '—',
+      band: [w.low, w.high].filter((v) => v !== null && v !== undefined && v !== '').join('–') || text(w.note, 'saved'),
+      state: 'ok',
+    })),
+    pending: [],
+  };
+}
+
+function paymentsToFinancePending(payments: any[]) {
+  return payments.slice(0, 8).map((p: any) => ({
+    who: text(p.mandate_id || p.payee || p.agent || 'payment'),
+    desc: text(p.memo || p.desc || p.description || 'Payment request'),
+    amt: `${text(p.currency || '')}${p.amount != null ? p.amount : ''}`,
+    state: text(p.state || p.status || 'pending'),
+  }));
+}
+
+function kgToKnowledge(entities: any[]) {
+  return {
+    ...V2.KNOWLEDGE,
+    queue: [],
+    saved: entities.slice(0, 8).map((e: any) => ({
+      title: text(e.name || e.id || e.label, 'Entity'),
+      src: text(e.type || e.entity_type || 'knowledge graph'),
+      tag: text(e.source || 'KG'),
+      cites: Number(e.citations || e.edges || 0),
+    })),
+    digest: [],
+  };
+}
+
 const signalLayerHealth = () => {
   if (typeof fetch !== 'function') return Promise.resolve(null);
   return fetch(`${SIGNAL_LAYER_URL}/healthz`, { cache: 'no-store' })
@@ -41,6 +210,7 @@ export function useLiveModes(): LiveModes {
   useEffect(() => {
     let alive = true;
     let changed = false;
+    let pluginList: any[] = [];
     const mark = (key: string) => { if (alive) setLive((p) => (p[key] ? p : { ...p, [key]: true })); };
     const set = (key: string, val: any) => { if (val !== undefined && val !== null) { (V2 as any)[key] = val; changed = true; } };
 
@@ -121,15 +291,76 @@ export function useLiveModes(): LiveModes {
       }).catch(() => {});
 
       // ADMIN — local models + plugin registry
+      await apiGet('/plugins').then((p: any) => {
+        pluginList = firstArr(p, 'plugins');
+        // Preserve the backend plugin `id` so AdminMode can PUT /plugins/{id}/toggle.
+        if (pluginList.length) { set('ADMIN', { ...V2.ADMIN, plugins: pluginList.map((x: any) => ({ id: x.id || x.name, name: x.name || x.id, scope: (x.allowed_domains && x.allowed_domains[0]) || x.scope || x.network_access || '', net: String(x.network_access || x.net || '').toLowerCase(), on: x.enabled !== false })) }); mark('ADMIN'); }
+      }).catch(() => { pluginList = []; });
       await apiGet('/api/models/local').then((m: any) => {
         const models = arr(m, 'models');
         if (models && models.length) { set('ADMIN', { ...V2.ADMIN, models: models.map((x: any) => ({ name: x.name || x.id, type: x.type || (x.local ? 'local' : 'cloud'), backend: x.backend || x.provider || '', ctx: x.ctx || '—', status: x.status || (x.active ? 'loaded' : 'ready'), use: x.use || '' })) }); mark('ADMIN'); }
       }).catch(() => {});
-      await apiGet('/plugins').then((p: any) => {
-        const plugins = arr(p, 'plugins');
-        // Preserve the backend plugin `id` so AdminMode can PUT /plugins/{id}/toggle.
-        if (plugins && plugins.length) { set('ADMIN', { ...V2.ADMIN, plugins: plugins.map((x: any) => ({ id: x.id || x.name, name: x.name || x.id, scope: (x.allowed_domains && x.allowed_domains[0]) || x.scope || x.network_access || '', net: String(x.network_access || x.net || '').toLowerCase(), on: x.enabled !== false })) }); mark('ADMIN'); }
+
+      // P3.1 PREVIEW MODES — real endpoints or honest plugin-gated empty states.
+      await Promise.all([
+        apiGet('/api/workflows').catch(() => null),
+        apiGet('/api/skills/marketplace', { admin: true }).catch(() => null),
+        apiGet('/sandbox/status').catch(() => null),
+      ]).then(([workflows, marketplace, sandbox]: any[]) => {
+        const wf = firstArr(workflows, 'workflows');
+        const ms = firstArr(marketplace, 'skills');
+        if (!wf.length && !ms.length && !sandbox) return;
+        set('BUILD', {
+          ...V2.BUILD,
+          workflow: wf.length ? workflowToCanvas(wf[0]) : V2.BUILD.workflow,
+          skills: ms.length ? marketplaceSkills(ms) : V2.BUILD.skills,
+          sandbox: sandbox ? [{ in: 'sandbox.status()', out: sandbox.available ? `Docker · ${sandbox.docker_image || 'ready'}` : 'sandbox unavailable' }] : V2.BUILD.sandbox,
+        });
+        mark('BUILD');
       }).catch(() => {});
+
+      await Promise.all([
+        apiGet('/api/rooms').catch(() => null),
+        apiGet('/status').catch(() => null),
+        apiGet('/api/channels/inbox').catch(() => null),
+      ]).then(([rooms, status, inbox]: any[]) => {
+        const list = firstArr(rooms, 'rooms');
+        const channels = firstArr(status, 'channels')
+          .filter((channel: any) => ['discord', 'slack'].includes(text(channel?.id).toLowerCase()));
+        const inboxThreads = firstArr(inbox, 'threads');
+        if (list.length || channels.length || inboxThreads.length) {
+          set('COMMS', roomsToComms(list, channels, inboxThreads));
+          mark('COMMS');
+        }
+      }).catch(() => {});
+
+      await Promise.all([
+        apiGet('/api/market/watchlist/saved').catch(() => null),
+        apiGet('/api/payments').catch(() => null),
+      ]).then(([saved, payments]: any[]) => {
+        const watches = firstArr(saved, 'watches');
+        const pay = firstArr(payments, 'payments');
+        if (!watches.length && !pay.length && !pluginReady(pluginList, 'balance')) return;
+        set('FINANCE', {
+          ...(watches.length ? watchesToFinance(watches) : { ...V2.FINANCE, accounts: [], budgets: [], watches: [] }),
+          pending: paymentsToFinancePending(pay),
+        });
+        if (watches.length || pay.length) mark('FINANCE');
+      }).catch(() => {});
+
+      await apiGet('/api/kg/entities?limit=8').then((kg: any) => {
+        const entities = firstArr(kg, 'entities');
+        if (entities.length && pluginReady(pluginList, 'websearch')) { set('KNOWLEDGE', kgToKnowledge(entities)); mark('KNOWLEDGE'); }
+      }).catch(() => {});
+
+      if (pluginReady(pluginList, 'apple-health')) {
+        set('HEALTH', { ...V2.HEALTH, rings: [], metrics: [], week: [], plan: [], sync: 'Apple Health · configured LAN bridge' });
+        mark('HEALTH');
+      }
+      if (pluginReady(pluginList, 'whatsapp-bridge')) {
+        set('FAMILY', { ...V2.FAMILY, members: [], events: [], reminders: [] });
+        mark('FAMILY');
+      }
 
       if (alive && changed) setVer((v) => v + 1);
     }

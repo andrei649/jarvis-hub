@@ -25,6 +25,15 @@ class WebSearchPlugin:
             from ..plugin_gate import register_dynamic_domain
             register_dynamic_domain("websearch", self.searxng_url)
 
+    def available(self) -> bool:
+        """True when an owner-provided search backend/key is configured.
+
+        The DuckDuckGo fallback can still be attempted by direct calls, but the
+        HUD should not treat that implicit network fallback as a configured
+        Knowledge source.
+        """
+        return bool(self.tavily_api_key or self.searxng_url)
+
     async def search(self, query: str, max_results: int = 5) -> list[dict]:
         if self.tavily_api_key:
             results = await self._search_tavily(query, max_results)

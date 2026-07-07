@@ -88,6 +88,22 @@ def test_only_user_forget_deletes():
     assert t.forget("m1") is True and t.get("m1") is None
 
 
+def test_tiered_memory_persists_when_path_is_provided(tmp_path):
+    path = tmp_path / "tiers.json"
+    t = TieredMemory(path=path)
+    t.add("m1", {"kind": "turn"}, activation=1.0)
+
+    reloaded = TieredMemory(path=path)
+    assert reloaded.get("m1")["content"] == {"kind": "turn"}
+
+    reloaded.maintain()
+    maintained = TieredMemory(path=path)
+    assert maintained.get("m1")["activation"] == 0.5
+
+    assert maintained.forget("m1") is True
+    assert TieredMemory(path=path).get("m1") is None
+
+
 # ── re-projection ─────────────────────────────────────────────────────────────
 
 def test_needs_reprojection():
@@ -108,6 +124,45 @@ async def test_reproject_reembeds_stale():
     assert "vector" not in recs[1]       # already current → untouched
 
 
+@pytest.mark.asyncio
+async def test_reproject_serializes_structured_content_for_embedder():
+    recs = [{"content": {"turn_ref": "turn:1", "text_sha256": "abc"}, "embed_version": 1}]
+    calls = []
+
+    def embedder(text):
+        calls.append(text)
+        return [float(len(text))]
+
+    out = await reproject(recs, current_version=2, embedder=embedder)
+
+    assert out["reprojected"] == 1
+    assert calls == ['{"text_sha256": "abc", "turn_ref": "turn:1"}']
+    assert recs[0]["embed_version"] == 2
+
+
+@pytest.mark.asyncio
+async def test_living_memory_reproject_stale_persists_updates(tmp_path):
+    path = tmp_path / "tiers.json"
+    lm = LivingMemory(embed_version=2, tiers_path=path)
+    lm.tiers.add("old", "abc", activation=1.0, embed_version=1)
+    lm.tiers.add("fresh", "abcd", activation=1.0, embed_version=2)
+
+    def embedder(content):
+        return [float(len(content))]
+
+    out = await lm.reproject_stale(embedder=embedder)
+
+    assert out["available"] is True
+    assert out["checked"] == 2
+    assert out["reprojected"] == 1
+    reloaded = LivingMemory(tiers_path=path)
+    old = reloaded.records(prefix="old")[0]
+    fresh = reloaded.records(prefix="fresh")[0]
+    assert old["embed_version"] == 2
+    assert old["vector"] == [3.0]
+    assert "vector" not in fresh
+
+
 # ── core memory ───────────────────────────────────────────────────────────────
 
 def test_core_memory_bounded_and_deduped():
@@ -120,6 +175,19 @@ def test_core_memory_bounded_and_deduped():
     assert "[core memory]" in c.render()
 
 
+def test_core_memory_persists_when_path_is_provided(tmp_path):
+    path = tmp_path / "core.json"
+    c = CoreMemory(cap=2, path=path)
+    c.put("a")
+    c.put("b")
+
+    reloaded = CoreMemory(cap=2, path=path)
+    assert reloaded.list() == ["a", "b"]
+
+    reloaded.put("c")
+    assert CoreMemory(cap=2, path=path).list() == ["b", "c"]
+
+
 # ── living memory module ──────────────────────────────────────────────────────
 
 def test_encode_respects_surprise_gate():
@@ -127,6 +195,14 @@ def test_encode_respects_surprise_gate():
     assert lm.encode("m1", "x", surprise=0.1)["encoded"] is False
     out = lm.encode("m2", "y", surprise=0.8)
     assert out["encoded"] is True and out["tier"] == HOT
+
+
+def test_living_memory_detects_existing_text_digest():
+    lm = LivingMemory()
+    lm.encode("turn:1", {"turn_ref": "turn:1", "text_sha256": "abc"}, surprise=0.9)
+
+    assert lm.has_text_digest("abc") is True
+    assert lm.has_text_digest("missing") is False
 
 
 @pytest.mark.asyncio
@@ -144,3 +220,23 @@ def test_status_shape():
     lm.encode("m1", "x", surprise=0.9)
     st = lm.status()
     assert st["available"] is True and st["tiers"][HOT] == 1 and st["embed_version"] == 1
+
+
+def test_living_memory_accepts_persistent_core_path(tmp_path):
+    path = tmp_path / "core.json"
+    lm = LivingMemory(core_path=path)
+    lm.core.put("Andrei wants durable core memory.")
+
+    reloaded = LivingMemory(core_path=path)
+    assert reloaded.core.list() == ["Andrei wants durable core memory."]
+    assert reloaded.status()["core"] == 1
+
+
+def test_living_memory_accepts_persistent_tier_path(tmp_path):
+    path = tmp_path / "tiers.json"
+    lm = LivingMemory(tiers_path=path)
+    lm.encode("m1", {"kind": "reflection"}, surprise=0.9)
+
+    reloaded = LivingMemory(tiers_path=path)
+    assert reloaded.records(prefix="m1")[0]["content"] == {"kind": "reflection"}
+    assert reloaded.status()["tiers"][HOT] == 1

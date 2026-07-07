@@ -5,6 +5,8 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'agents'))
 
 import pytest
 
+from agents.core.automation_contracts import ContractDecision
+import agents.core.tool_rpc as tool_rpc
 from agents.core.tool_rpc import ToolRPCServer
 from agents.core.security.secret_broker import SecretBroker
 
@@ -71,6 +73,43 @@ async def test_gated_tool_requires_approval_and_enqueues():
     # the gated tool did NOT run; it was enqueued ask-tier instead
     call = q.calls[0]
     assert call["kind"] == "toolrpc.send_email" and call["autonomy_level"] == "ask"
+
+
+@pytest.mark.asyncio
+async def test_gated_tool_obeys_live_tool_rpc_contract(monkeypatch):
+    q = _FakeQueue()
+
+    class _Contract:
+        def __init__(self):
+            self.calls = []
+
+        def evaluate(self, payload=None, **kwargs):
+            self.calls.append((payload, kwargs))
+            return ContractDecision(
+                kind="tool_rpc_call",
+                admissible=False,
+                requires_approval=True,
+                reason="contract_blocked",
+            )
+
+    contract = _Contract()
+    monkeypatch.setattr(tool_rpc, "TOOL_RPC_CALL_CONTRACT", contract, raising=False)
+    s = ToolRPCServer(enqueue=q.enqueue)
+
+    async def send(args):
+        return {"sent": True}
+
+    s.register_tool("send_email", send, gated=True)
+    out = await s.handle({"tool": "send_email", "args": {"to": "x"}})
+
+    assert out == {"ok": False, "reason": "contract_blocked", "tool": "send_email"}
+    assert q.calls == []
+    assert contract.calls
+    payload, kwargs = contract.calls[-1]
+    assert payload["kind"] == "toolrpc.send_email"
+    assert payload["tool"] == "send_email"
+    assert payload["args_keys"] == ["to"]
+    assert kwargs.get("now") is not None
 
 
 @pytest.mark.asyncio

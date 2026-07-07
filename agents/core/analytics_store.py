@@ -26,12 +26,12 @@ from __future__ import annotations
 
 import json
 import logging
-import os
 import sqlite3
 import threading
 from datetime import datetime, timezone
 from typing import Optional
 
+from agents.core.env_config import env_int
 from agents.core.paths import data_path
 
 logger = logging.getLogger("jarvis.analytics.store")
@@ -47,7 +47,7 @@ _MAX_PROPS_BYTES = 2048
 # ingest can't grow the table without bound (slow disk-fill DoS). 0 disables it.
 # Pruned lazily (off the hot path) whenever a row id is a multiple of _PRUNE_EVERY
 # — stateless, so no shared counter to race or carry across reopens.
-_MAX_EVENTS = int(os.environ.get("JARVIS_ANALYTICS_MAX_EVENTS", "200000") or 0)
+_MAX_EVENTS = env_int("JARVIS_ANALYTICS_MAX_EVENTS", 200000, minimum=0)
 _PRUNE_EVERY = 1000
 
 

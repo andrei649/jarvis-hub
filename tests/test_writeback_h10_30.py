@@ -10,6 +10,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'agents'))
 
 import pytest
 
+from agents.core.automation_contracts import ContractDecision
 from agents.core.writeback import (
     WriteBackBroker, NullWriteBackClient, HttpWriteBackClient, build_request, _CATALOG,
 )
@@ -99,6 +100,54 @@ def test_request_enqueues_governed_task():
     assert p["credential_ref"] == "{{secret:github_token}}"  # handle, never a value
     assert p["fields"]["repo"] == "andrei/jarvis-hub"
     assert p["fields"]["labels"] == ["bug"]
+
+
+def test_request_obeys_live_writeback_draft_contract(monkeypatch):
+    import agents.core.writeback as writeback
+
+    class _FakeWriteBackDraftContract:
+        def __init__(self):
+            self.calls = []
+
+        def evaluate(self, payload=None, **kwargs):
+            payload = payload or {}
+            self.calls.append((payload, kwargs))
+            return ContractDecision(
+                kind="writeback_draft",
+                admissible=False,
+                requires_approval=True,
+                reason="contract_denied",
+                checked=("fake",),
+            )
+
+    q = _FakeQueue()
+    contract = _FakeWriteBackDraftContract()
+    monkeypatch.setattr(writeback, "WRITEBACK_DRAFT_CONTRACT", contract, raising=False)
+
+    out = writeback.WriteBackBroker(enqueue=q.enqueue).request(
+        "github",
+        "create_issue",
+        {"repo": "andrei/jarvis-hub", "title": "Hold for contract"},
+        agent="hephaestus",
+        source="night-shift",
+    )
+
+    assert out == {
+        "ok": False,
+        "reason": "contract_denied",
+        "kind": "writeback.github.create_issue",
+    }
+    assert q.calls == []
+    assert len(contract.calls) == 1
+    payload, kwargs = contract.calls[0]
+    assert payload["kind"] == "writeback.github.create_issue"
+    assert payload["system"] == "github"
+    assert payload["action"] == "create_issue"
+    assert payload["agent"] == "hephaestus"
+    assert payload["source"] == "night-shift"
+    assert payload["fields"]["repo"] == "andrei/jarvis-hub"
+    assert payload["fields"]["title"] == "Hold for contract"
+    assert "now" in kwargs
 
 
 def test_request_sanitizes_fields():

@@ -46,6 +46,7 @@ that no env var — through this module or otherwise — can weaken).
 
 from __future__ import annotations
 
+import json
 import os
 
 TRUTHY_SPELLINGS = frozenset({"1", "true", "yes", "on"})
@@ -90,6 +91,15 @@ def env_str(name: str, default: str = "") -> str:
     return default if value is None else value
 
 
+def env_list(name: str, default: list[str] | None = None, sep: str = ",") -> list[str]:
+    """Best-effort separated string list: trims entries and skips blanks."""
+    fallback = list(default or [])
+    raw = os.environ.get(name, "").strip()
+    if not raw:
+        return fallback
+    return [entry for entry in (part.strip() for part in raw.split(sep)) if entry]
+
+
 def env_int(name: str, default: int, minimum: int | None = None) -> int:
     """Best-effort int: unset, blank, or non-numeric → *default* (never raises).
 
@@ -109,12 +119,58 @@ def env_int(name: str, default: int, minimum: int | None = None) -> int:
     return value
 
 
-def env_float(name: str, default: float) -> float:
-    """Best-effort float: unset, blank, or non-numeric → *default* (never raises)."""
+def env_float(name: str, default: float, minimum: float | None = None) -> float:
+    """Best-effort float: unset, blank, non-numeric, or out-of-range → *default*."""
     raw = os.environ.get(name, "").strip()
     if not raw:
         return default
     try:
-        return float(raw)
+        value = float(raw)
     except ValueError:
         return default
+    if minimum is not None and value < minimum:
+        return default
+    return value
+
+
+def env_json_object(name: str, default: dict | None = None) -> dict:
+    """Best-effort JSON object: unset, invalid, or non-object → *default*.
+
+    This is for structured env knobs such as provider config maps. It never
+    raises and returns a fresh dict so callers cannot mutate a shared fallback.
+    """
+    fallback = dict(default or {})
+    raw = os.environ.get(name, "").strip()
+    if not raw:
+        return fallback
+    try:
+        value = json.loads(raw)
+    except ValueError:
+        return fallback
+    if not isinstance(value, dict):
+        return fallback
+    return dict(value)
+
+
+def env_int_map(name: str, default: dict[str, int] | None = None) -> dict[str, int]:
+    """Best-effort ``key:int`` map: bad entries are skipped, never raised.
+
+    Format is a comma-separated list such as ``"whatsapp:10,teams:30"``.
+    Whitespace is ignored around keys and values; blank keys, missing separators,
+    and non-integer values are omitted. A fresh dict is returned every time.
+    """
+    fallback = dict(default or {})
+    raw = os.environ.get(name, "").strip()
+    if not raw:
+        return fallback
+    out: dict[str, int] = {}
+    for pair in raw.split(","):
+        key, sep, value = pair.strip().partition(":")
+        key = key.strip()
+        if not sep or not key:
+            continue
+        try:
+            out[key] = int(value)
+        except ValueError:
+            continue
+    return out

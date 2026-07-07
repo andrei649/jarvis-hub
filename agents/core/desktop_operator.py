@@ -16,6 +16,9 @@ is the host seam), so the whole governance layer is offline-testable.
 from __future__ import annotations
 
 import logging
+import time
+
+from .automation_contracts import ContractTemplate, predicate
 
 logger = logging.getLogger("jarvis.desktop_operator")
 
@@ -27,6 +30,39 @@ except Exception:  # pragma: no cover - security module always present
 
 # Everything NOT explicitly read-only is treated as mutating (safe default).
 _READ_ONLY = {"screenshot", "read", "wait", "locate", "observe"}
+
+
+def _desktop_step_contract_template() -> ContractTemplate:
+    return ContractTemplate(
+        kind="desktop_step",
+        description="Mutating desktop steps must be explicit desktop actions held for approval.",
+        constraints=(
+            predicate(
+                "desktop-kind",
+                lambda view, _now: str(view.get("kind") or "").startswith("desktop."),
+                reason="invalid_kind",
+            ),
+            predicate(
+                "has-action",
+                lambda view, _now: bool(str(view.get("action") or "").strip()),
+                reason="no_action",
+            ),
+            predicate(
+                "target-desktop",
+                lambda view, _now: view.get("target") == "desktop",
+                reason="target_mismatch",
+            ),
+            predicate(
+                "mutating-only",
+                lambda view, _now: view.get("mutating") is True,
+                reason="not_mutating",
+            ),
+        ),
+        requires_approval=True,
+    )
+
+
+DESKTOP_STEP_CONTRACT = _desktop_step_contract_template()
 
 
 async def _maybe_await(v):
@@ -76,6 +112,26 @@ class GovernedDesktop:
             action = s.get("action", "")
             args = s.get("args", {})
             if self.is_mutating(action):
+                contract_payload = {
+                    "kind": f"desktop.{action}",
+                    "action": action,
+                    "target": "desktop",
+                    "mutating": True,
+                    "args_keys": sorted(str(k) for k in args) if isinstance(args, dict) else [],
+                }
+                try:
+                    decision = DESKTOP_STEP_CONTRACT.evaluate(contract_payload, now=time.time())
+                except Exception:
+                    logger.warning("desktop step contract evaluation failed", exc_info=True)
+                    ran.append({"action": action, "status": "blocked", "reason": "contract_error"})
+                    continue
+                if not decision.admissible:
+                    ran.append({
+                        "action": action,
+                        "status": "blocked",
+                        "reason": decision.reason or "contract_denied",
+                    })
+                    continue
                 approved = False
                 if approver is not None:
                     try:

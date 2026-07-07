@@ -1,7 +1,10 @@
 """Tests for SystemsPanel live data endpoints."""
+from types import SimpleNamespace
+
 import pytest
 from fastapi.testclient import TestClient
 from agents import web
+from agents.core.plugin_gate import PermissionGate
 
 
 @pytest.fixture
@@ -47,6 +50,36 @@ def test_plugins_endpoint(client):
     assert isinstance(data["plugins"], list)
 
 
+def test_plugins_endpoint_reports_runtime_configuration(monkeypatch):
+    """Preview-mode honesty: manifest presence is not the same as owner wiring."""
+    class UnconfiguredPlugin:
+        def available(self):
+            return False
+
+    class ConfiguredPlugin:
+        def available(self):
+            return True
+
+    gate = PermissionGate()
+    fake_orch = SimpleNamespace(
+        permission_gate=gate,
+        plugins={
+            "balance": UnconfiguredPlugin(),
+            "websearch": ConfiguredPlugin(),
+        },
+    )
+    monkeypatch.setattr(web, "orch", fake_orch)
+
+    client = TestClient(web.app)
+    resp = client.get("/plugins")
+    assert resp.status_code == 200
+    plugins = {p["id"]: p for p in resp.json()["plugins"]}
+
+    assert plugins["balance"]["configured"] is False
+    assert plugins["websearch"]["configured"] is True
+    assert plugins["balance"]["configuration_source"] == "available()"
+
+
 def test_bench_stats_endpoint(client):
     resp = client.get("/bench/stats")
     assert resp.status_code == 200
@@ -63,6 +96,14 @@ def test_security_status_endpoint(client):
     assert "guardrails" in data
     assert "scanners" in data
     assert "ssrf" in data
+
+
+def test_status_reports_registered_channels_for_comms_preview(client):
+    resp = client.get("/status")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert "channels" in data
+    assert isinstance(data["channels"], list)
 
 
 def test_agent_soul_endpoint(client):

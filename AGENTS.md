@@ -45,6 +45,7 @@ python -m pytest tests/ -v
 - **Skills:** pattern loader în `skills/<name>/{SKILL.md,main.py}`, descoperite de `agents/core/skills/loader.py`.
 - **Limbă:** docs și personalitățile agenților (`agents/*/SOUL.md`) sunt în RO/EN după context; nu schimba tonul unui agent fără acordul utilizatorului.
 - **Souls = template-uri publice.** Detaliile personale NU intră niciodată în `SOUL.md`/`HEARTBEAT.md` (sunt publice) — merg în `agents/<id>/SOUL.local.md`/`HEARTBEAT.local.md` (gitignored, suprascriu template-ul la încărcare). Vezi `docs/ARCHITECTURE.md` §8.
+- **Product Posture (O26-P2.4/D1).** Codul rămâne default-off; singura excepție aprobată este setarea owner-consented `product.posture`, care poate trezi explicit stack-ul wave-1 memory/persona. Orice flag trezit de postură trebuie să apară cu provenance în `/api/security/posture`, onboarding și support bundle.
 
 ## Stil de lucru
 Verde devreme peste perfecțiune · teste peste documentație · livrare peste analiză.

@@ -88,6 +88,8 @@ def provenance_from_hit(hit, *, now: float | None = None) -> MemorySnippet:
         if sources is None and isinstance(hit, dict):
             sources = hit.get("sources")
         source = (sources or ["memory"])[0] or "memory"
+        if taint.is_tainted(md) and md.get("taint_source"):
+            source = md.get("taint_source")
         score = getattr(hit, "score", None)
         if score is None and isinstance(hit, dict):
             score = hit.get("score")

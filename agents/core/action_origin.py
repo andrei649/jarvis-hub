@@ -10,7 +10,18 @@ from __future__ import annotations
 
 from contextvars import ContextVar
 
-TRUSTED_TURN_CHANNELS = frozenset({"web", "voice"})
+OPERATOR_TURN_CHANNELS = frozenset({"web", "voice"})
+INTERNAL_TURN_CHANNELS = frozenset({
+    "eval",
+    "notes",
+    "builder",
+    "room",
+    "arena",
+    "widget",
+    "workflow",
+    "internal",
+})
+TRUSTED_TURN_CHANNELS = OPERATOR_TURN_CHANNELS | INTERNAL_TURN_CHANNELS
 DEFAULT_ACTION_ORIGIN = "generated"
 INBOUND_ACTION_ORIGIN = "inbound"
 
@@ -31,6 +42,14 @@ def origin_for_channel(channel: str | None) -> str:
 def bind_action_origin(origin: str | None):
     """Bind origin for the current async context; return the reset token."""
     return _active_action_origin.set(str(origin or DEFAULT_ACTION_ORIGIN))
+
+
+def bind_turn_action_origin(channel: str | None):
+    """Bind the declared turn origin without downgrading an inbound parent context."""
+    origin = origin_for_channel(channel)
+    if current_action_origin() == INBOUND_ACTION_ORIGIN:
+        origin = INBOUND_ACTION_ORIGIN
+    return bind_action_origin(origin)
 
 
 def reset_action_origin(token) -> None:

@@ -11,6 +11,8 @@ import time
 import uuid
 from typing import Optional
 
+from ..action_origin import INBOUND_ACTION_ORIGIN, origin_for_channel
+from ..security import taint
 from .conversation import ConversationMemory
 from .graph import KnowledgeGraph, create_graph
 from .seed_graph import seed_graph
@@ -43,10 +45,11 @@ class MemoryManager:
         seed_graph(self.graph)
 
     def _init_qdrant(self) -> VectorStore:
+        from ..env_config import env_int
         from .qdrant_store import QdrantVectorStore
 
         url = os.getenv("QDRANT_URL", "http://localhost:6333")
-        dimension = int(os.getenv("VECTOR_DIMENSION", "768"))
+        dimension = env_int("VECTOR_DIMENSION", 768, minimum=1)
         return QdrantVectorStore(url=url, dimension=dimension)
 
     def set_checkpoint_manager(self, mgr):
@@ -63,7 +66,8 @@ class MemoryManager:
         async with self._lock:
             return await self.conversation.resume_session(session_id)
 
-    async def add_turn(self, session_id: str, role: str, content: str, agent_id: str = None):
+    async def add_turn(self, session_id: str, role: str, content: str, agent_id: str = None,
+                       channel: str = None):
         async with self._lock:
             await self.conversation.add_turn(session_id, role, content, agent_id)
 
@@ -75,9 +79,15 @@ class MemoryManager:
         # retrieved later via fused recall. Opt-in (MEMORY_EMBED_TURNS) and never
         # allowed to break the turn — remember() degrades to a no-op on failure.
         if self.embed_turns and content and content.strip():
-            await self.remember(content, metadata={
+            metadata = {
                 "role": role, "agent": agent_id, "session": session_id,
-            })
+            }
+            if channel:
+                origin = origin_for_channel(channel)
+                metadata.update({"channel": channel, "origin": origin})
+                if role == "user" and origin == INBOUND_ACTION_ORIGIN:
+                    metadata = taint.mark(metadata, source=f"inbound:{channel}")
+            await self.remember(content, metadata=metadata)
 
     async def get_context(self, session_id: str, last_n: int = 10) -> str:
         async with self._lock:

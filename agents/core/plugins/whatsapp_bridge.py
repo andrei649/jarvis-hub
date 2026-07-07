@@ -12,11 +12,18 @@ from ..http_client import PluginHTTPClient
 
 logger = logging.getLogger("jarvis.plugins.whatsapp")
 
+DEFAULT_BRIDGE_URL = "http://192.168.1.100:3000"
+
 
 class WhatsAppBridgePlugin:
-    def __init__(self, bridge_url: str = "http://192.168.1.100:3000"):
+    def __init__(self, bridge_url: str = DEFAULT_BRIDGE_URL, configured: bool | None = None):
         self.bridge_url = bridge_url
         self.client = PluginHTTPClient.for_plugin("whatsapp-bridge")
+        self._configured = bool(configured) if configured is not None else self.bridge_url != DEFAULT_BRIDGE_URL
+
+    def available(self) -> bool:
+        """True only when the owner explicitly configured the local bridge."""
+        return self._configured
 
     async def send_message(self, to: str, message: str) -> bool:
         try:

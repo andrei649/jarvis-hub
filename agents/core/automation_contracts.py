@@ -222,6 +222,13 @@ class ContractDecision:
         }
 
 
+def contract_denial(decision: ContractDecision, default: str = "contract_denied") -> str | None:
+    """Return a stable denial reason for a contract decision, or None when allowed."""
+    if decision.admissible:
+        return None
+    return decision.reason or default
+
+
 @dataclass(frozen=True)
 class ContractTemplate:
     """A declarative policy for one high-risk automation *kind*.

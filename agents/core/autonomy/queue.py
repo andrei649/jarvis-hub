@@ -73,7 +73,7 @@ class Task:
     risk_tier: int
     status: str
     autonomy_level: str
-    origin: str            # "manual" (user-curated) | "generated" (self-proposed)
+    origin: str            # "manual" (user-curated) | "generated" (self-proposed) | "inbound"
     attempts: int
     result: Optional[dict]
     decided_by: Optional[str]
