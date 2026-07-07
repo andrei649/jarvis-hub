@@ -164,7 +164,6 @@ class ToolRPCSandboxRuntime:
             while not task.done():
                 tool_calls = await self._service_pending(store, processed, tool_calls)
                 if loop.time() >= deadline:
-                    timed_out = True
                     task.cancel()
                     with suppress(asyncio.CancelledError):
                         await task
