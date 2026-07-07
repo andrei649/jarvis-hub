@@ -8,13 +8,14 @@ Supports:
 """
 
 import asyncio
+import contextlib
 import logging
 import os
 import platform
 import sys
 import tempfile
 import time
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
 logger = logging.getLogger("jarvis.sandbox")
 
@@ -151,9 +152,18 @@ class Sandbox:
         return ["wasmtime", "run", "--dir", str(self.work_dir),
                 self.wasm_runtime, f"/workspace/{script_rel}"]
 
-    async def execute_python(self, code: str, filename: str = "script.py") -> SandboxResult:
+    async def execute_python(
+        self,
+        code: str,
+        filename: str = "script.py",
+        writable_paths: list[str | Path] | None = None,
+    ) -> SandboxResult:
         if self._has_docker:
-            return await self._execute_docker_python(code, filename)
+            return await self._execute_docker_python(
+                code,
+                filename,
+                writable_paths=writable_paths,
+            )
         if self.wasm_available():
             return await self._execute_wasm_python(code, filename)
         if not self.allow_subprocess:
@@ -213,17 +223,27 @@ class Sandbox:
             )
         return await self._execute_subprocess_shell(command)
 
-    async def _execute_docker_python(self, code: str, filename: str) -> SandboxResult:
+    async def _execute_docker_python(
+        self,
+        code: str,
+        filename: str,
+        writable_paths: list[str | Path] | None = None,
+    ) -> SandboxResult:
         return await self._run_docker([
             "python", f"/workspace/{filename}",
-        ], {filename: code})
+        ], {filename: code}, writable_paths=writable_paths)
 
     async def _execute_docker_shell(self, command: str) -> SandboxResult:
         return await self._run_docker([
             "sh", "-c", command,
         ])
 
-    async def _run_docker(self, cmd: list[str], files: dict[str, str] = None) -> SandboxResult:
+    async def _run_docker(
+        self,
+        cmd: list[str],
+        files: dict[str, str] = None,
+        writable_paths: list[str | Path] | None = None,
+    ) -> SandboxResult:
         start = time.monotonic()
 
         container_name = f"cabinet-sandbox-{int(time.time())}"
@@ -244,6 +264,7 @@ class Sandbox:
             "--pids-limit", "50",
             "--read-only",
             "-v", f"{workdir_path}:/workspace:ro",
+            *self._docker_writable_mount_args(writable_paths),
             "-w", "/workspace",
             self.docker_image,
         ] + cmd
@@ -275,6 +296,23 @@ class Sandbox:
                     exit_code=-1,
                     duration=duration,
                 )
+            except asyncio.CancelledError:
+                # A caller (e.g. the file-RPC runtime's outer service window)
+                # cancelled us. Kill the child AND the named container so neither
+                # is orphaned, then propagate the cancellation. (contextlib.suppress
+                # does not swallow BaseException, so a nested cancel still surfaces.)
+                with contextlib.suppress(Exception):
+                    proc.kill()
+                with contextlib.suppress(Exception):
+                    await proc.wait()
+                with contextlib.suppress(Exception):
+                    killer = await asyncio.create_subprocess_exec(
+                        "docker", "kill", container_name,
+                        stdout=asyncio.subprocess.DEVNULL,
+                        stderr=asyncio.subprocess.DEVNULL,
+                    )
+                    await killer.wait()
+                raise
         except FileNotFoundError:
             logger.warning("Docker not found")
             self._has_docker = False
@@ -292,6 +330,25 @@ class Sandbox:
             return SandboxResult(
                 stderr=str(e), exit_code=-1, duration=duration
             )
+
+    def _docker_writable_mount_args(self, paths: list[str | Path] | None) -> list[str]:
+        args: list[str] = []
+        workdir = self.work_dir.resolve()
+
+        for raw_path in paths or []:
+            host_path = Path(raw_path).resolve()
+            try:
+                rel = host_path.relative_to(workdir)
+            except ValueError as exc:
+                raise SandboxError(
+                    "Docker writable paths must be inside the sandbox work_dir"
+                ) from exc
+
+            host_path.mkdir(parents=True, exist_ok=True)
+            target = PurePosixPath("/workspace", *rel.parts).as_posix()
+            args.extend(["-v", f"{host_path}:{target}:rw"])
+
+        return args
 
     async def _execute_subprocess_python(self, code: str, filename: str) -> SandboxResult:
         logger.warning("Sandbox: running Python on the HOST with no Docker isolation "
