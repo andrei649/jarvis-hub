@@ -8,6 +8,7 @@
 > **Delivery History (H1–H8 completed sprints):** [docs/HISTORY.md](docs/HISTORY.md)
 > **Hermes migration v3 plan (reviewed by Fable 2026-07-07 — APPROVED with notes):** [docs/research/2026-07-06-hermes-agent-migration-plan.md](docs/research/2026-07-06-hermes-agent-migration-plan.md) · review verdict + remaining-phase order in [docs/handoff-fable-2026-07-07.md](docs/handoff-fable-2026-07-07.md) §5
 > **Last-day Fable handoff (2026-07-07 — ordered owner/AI task lanes, risk register):** [docs/handoff-fable-2026-07-07.md](docs/handoff-fable-2026-07-07.md)
+> **Pre-go-live stakeholder sync (2026-07-07 — 5-seat agent panel, conditional GO, Gate-2 checklist):** [docs/meetings/2026-07-07-pre-go-live-sync.md](docs/meetings/2026-07-07-pre-go-live-sync.md)
 
 **S = story points (1 = ~jumătate de zi) · P = prioritate (P0–P3)**
 
