@@ -4,7 +4,9 @@
 > project in a state where **any** successor — owner, Claude, opencode, Gemini, Codex —
 > can pick the next task without re-deriving strategy. This is a *review + ordered
 > to-do*, not new scope. When this doc disagrees with `BACKLOG.md`, BACKLOG wins
-> (per `AGENTS.md`); fix the stale one.
+> (per `AGENTS.md`); fix the stale one. The task lanes below are mirrored as tick-able
+> tables in **BACKLOG.md → "🤝 Handoff — Fable last-day review (2026-07-07)"** — tick
+> both places.
 
 ---
 
@@ -94,10 +96,10 @@ rebase-first, verify-before-claim, byte-identical default path, honest empty sta
    the day a self-hosted runner appears (owner-gated, code-ready).
 5. **Non-v0 inbox channels** (email/WhatsApp Safe Comms transport) — only *after*
    their live send seams are proven on real hardware; don't build ahead of B0.
-6. **Maintenance runbook** (`REVIEW_YEAR_ONE` §9.7, still missing) — the
-   "if the owner disappears for a month" one-pager. Bus factor 1 is the top risk in
-   the risk register and the cheapest to mitigate; a successor session should draft
-   it from STATUS + deploy/ + serve.py and have the owner correct it.
+6. **Maintenance runbook** (`REVIEW_YEAR_ONE` §9.7) — ✅ **drafted in this PR**:
+   [`docs/MAINTENANCE_RUNBOOK.md`](MAINTENANCE_RUNBOOK.md). Bus factor 1 is the top
+   risk in the risk register and the cheapest to mitigate. Owner: correct the
+   `[owner: verify]` marks (box-specific facts I couldn't check), then delete them.
 7. **Doc-counter hygiene** — `scripts/status_sync.py --check` in CI is deliberately
    non-blocking, but BACKLOG.md and ARCHITECTURE.md counters are hand-maintained.
    When touching them, sync all three (they had three different values today).

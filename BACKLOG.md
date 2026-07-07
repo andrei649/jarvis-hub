@@ -107,6 +107,40 @@ python -m pytest tests/ -v          # ~3,820 passed, 6 skipped (counter synced v
 
 ---
 
+## 🤝 Handoff — Fable last-day review (2026-07-07)
+
+> Full review, verdict, and rationale: **[docs/handoff-fable-2026-07-07.md](docs/handoff-fable-2026-07-07.md)**
+> (ground truth verified: CI green on main, 0 open PRs, 3,820-test suite green; Hermes v3 plan
+> **APPROVED with notes** — §5 of the handoff). The two lanes below are the same items, tracked
+> here so they surface in any "what's next" conversation. Tick them here AND in the handoff doc.
+
+**Lane A — owner critical path (ordered; delivered via PR #634):**
+
+| # | Item | Status |
+|---|------|--------|
+| A1 | ⭐B0 governed-autonomy demo + full `docs/MANUAL_TESTING.md` pass on the RTX box | ⬜ **the gate** |
+| A2 | 72h soak (0.63) + record AUD-0 / H23.23 | ⬜ |
+| A3 | Dependabot re-triage — 19 open alerts on main (4 high, 2026-07-07) | ⬜ |
+| A4 | GitHub settings batch (SEC-4 required checks · CQ-2 dismissals · CQ-3 paste · repo metadata) | ⬜ |
+| A5 | License flip MIT→Apache-2.0 + TRADEMARKS.md | ⬜ |
+| A6 | Demo video (60s) + publish landing (dev half ✅ #512) | ⬜ |
+| A7 | Recruit 1–3 design partners; north-star on a non-owner install ≥2 weeks | ⬜ |
+| A8 | Tag 1.0.0 (only after A1 + A7) | ⬜ |
+
+**Lane B — engineering tail (any AI session; one item = one PR, default-off):**
+
+| # | Item | Status |
+|---|------|--------|
+| B1 | Hermes v3 Phase 2 — context compression auto-trigger (do BEFORE 3/5/6) | ⬜ next AI task |
+| B2 | 0.19 First-Run Command Center (activation for design partners; seams in H23.20) | ⬜ |
+| B3 | AUD-14 tail — remaining raw env-read slices (template: #592–#622) | ⬜ ongoing |
+| B4 | M2.4 live-eval lane prep (code-ready, lights up when owner runner exists) | ⬜ owner-gated |
+| B5 | Non-v0 inbox channels (email/WhatsApp) — only after live send seams proven post-B0 | ⬜ parked |
+| B6 | Maintenance runbook ("if the owner disappears a month", REVIEW_YEAR_ONE §9.7) | ✅ drafted in #634 — [docs/MAINTENANCE_RUNBOOK.md](docs/MAINTENANCE_RUNBOOK.md), owner to verify the `[owner: verify]` marks |
+| B7 | Hermes v3 Phases 3/5/6 live wiring (file-RPC exec · gateway sessions · cron) | ⬜ on-demand only — primitives merged, wire behind real pull |
+
+---
+
 ## Version Roadmap
 
 | Version | Target | Milestone | Items |
