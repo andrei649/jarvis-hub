@@ -49,18 +49,24 @@ Mirrors `docs/OWNER_TASKS.md` + BACKLOG M4/Phase 5 — consolidated and ordered:
    5090 box. This *is* the audit gate; no tag ships without it.
 2. **72h soak** (0.63) right after B0 — same hardware, unattended, zero trust
    violations. Record **AUD-0** and **H23.23** (two one-paragraph decisions).
-3. **GitHub settings batch** (~15 min total): repo description/topics/social preview
+3. **Dependabot re-triage** — the push on 2026-07-07 reported **19 open
+   vulnerabilities on `main` (4 high, 11 moderate, 4 low)**; the 2026-06-10 cleanup
+   has drifted. Check https://github.com/andrei649/jarvis-hub/security/dependabot;
+   the 11 mobile/Expo moderates were already known owner-gated, but 4 *high* is new
+   since then — triage the highs first (an AI session can prepare the bumps once you
+   paste the alert list).
+4. **GitHub settings batch** (~15 min total): repo description/topics/social preview
    (BRAND_BOOK §9) · enable code scanning or unrequire the CodeQL check · dismiss the
    7 triaged FP alerts (CQ-2) · paste the remaining ~12 CodeQL alerts to an agent
    (CQ-3) · promote route-parity/auth-matrix to required checks (SEC-4/F-10).
-4. **License flip** MIT → Apache-2.0 + `TRADEMARKS.md` (decision already recorded,
+5. **License flip** MIT → Apache-2.0 + `TRADEMARKS.md` (decision already recorded,
    `docs/LICENSE_DECISION.md`). 1 SP, owner-only.
-5. **Demo video (60s) + publish the landing page** — dev half is done
+6. **Demo video (60s) + publish the landing page** — dev half is done
    (`marketing/landing/index.html` + `demo-shot-list.md`); the recording is yours.
-6. **Recruit 1–3 design partners** and run the north-star on a non-owner install
+7. **Recruit 1–3 design partners** and run the north-star on a non-owner install
    ≥2 weeks (calendar-bound — start recruiting *before* the soak finishes).
-7. **Tag 1.0.0** only when MANUAL_TESTING signs off *and* real-usage data exists.
-8. *GPU-opportunistic, next time at the box:* H13.3 speculative decoding
+8. **Tag 1.0.0** only when MANUAL_TESTING signs off *and* real-usage data exists.
+9. *GPU-opportunistic, next time at the box:* H13.3 speculative decoding
    (config-only) · H22.4 `OLLAMA_NUM_PARALLEL` · H12.14/TASK-1 Howard first real run ·
    LM Studio `lms` end-to-end · live-mic/barge-in tuning · mobile Expo SDK upgrade
    (11 audit moderates, needs a real device).
