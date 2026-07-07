@@ -1,12 +1,12 @@
 {
-  "_comment": "Third-party sources NOT covered by Dependabot (vendored copies + doc-pinned tools). Drift is checked by scripts/check_thirdparty_drift.py and .github/workflows/thirdparty-drift.yml. Dependabot already handles pip/npm/github-actions — see .github/dependabot.yml.",
+  "_comment": "Third-party sources NOT covered by Dependabot (vendored copies + doc-pinned tools). Drift is checked by scripts/check_thirdparty_drift.py and .github/workflows/thirdparty-drift.yml. Dependabot already handles pip/npm/github-actions \u2014 see .github/dependabot.yml.",
   "sources": [
     {
       "name": "superpowers",
       "repo": "obra/superpowers",
       "kind": "vendored",
       "path": ".claude/plugins/superpowers/",
-      "pinned_version": "6.0.3",
+      "pinned_version": "6.1.1",
       "license": "LICENSES/superpowers-MIT.txt",
       "version_source": {
         "file": ".claude/plugins/superpowers/.claude-plugin/plugin.json",
@@ -31,7 +31,7 @@
       "kind": "adapted (not vendored verbatim)",
       "path": "agents/core/routers/brain.py",
       "license": "LICENSES/axon-MIT.txt",
-      "note": "One-time visualization adaptation, not a tracked dependency — review manually if Axon changes; no version to pin."
+      "note": "One-time visualization adaptation, not a tracked dependency \u2014 review manually if Axon changes; no version to pin."
     }
   ]
 }
