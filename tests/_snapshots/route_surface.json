@@ -112,6 +112,7 @@
   "GET /api/notes",
   "GET /api/oauth/auth-url",
   "GET /api/oauth/status",
+  "GET /api/onboarding/command-center",
   "GET /api/onboarding/wizard",
   "GET /api/oracle/conflicts",
   "GET /api/oracle/status",

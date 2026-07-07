@@ -17,12 +17,15 @@ from agents.core.paths import data_path
 from .persistence import JsonStore
 
 DEFAULT_PATH = data_path("channel_inbox.json")
-SUPPORTED_INBOX_CHANNELS = frozenset({"telegram", "web"})
+SUPPORTED_INBOX_CHANNELS = frozenset({"telegram", "web", "email"})
 _MAX_TEXT = 4_000
 _PREVIEW = 240
 _REPLY_KEYS = {
     "telegram": ("chat_id",),
     "web": ("client_id",),
+    # EmailChannel.send() kwargs; `to` is aliased from the inbound `from_addr`
+    # in _reply_metadata (the reply target IS the inbound sender).
+    "email": ("to", "subject"),
 }
 
 
@@ -187,8 +190,11 @@ class ChannelInboxStore(JsonStore):
 
 def _reply_metadata(channel: str, metadata: dict[str, Any]) -> dict:
     out = {}
+    meta = dict(metadata)
+    if channel == "email" and not meta.get("to") and meta.get("from_addr"):
+        meta["to"] = meta["from_addr"]
     for key in _REPLY_KEYS.get(channel, ()):
-        value = metadata.get(key)
+        value = meta.get(key)
         if isinstance(value, (str, int)) and str(value):
             out[key] = value
     return out
@@ -197,7 +203,7 @@ def _reply_metadata(channel: str, metadata: dict[str, Any]) -> dict:
 def _sender_from_metadata(channel: str, metadata: dict | str) -> str:
     if not isinstance(metadata, dict):
         return ""
-    for key in ("sender", "sender_id", "user_id", "client_id", "chat_id"):
+    for key in ("sender", "sender_id", "user_id", "client_id", "chat_id", "from_addr"):
         value = metadata.get(key)
         if isinstance(value, (str, int)) and str(value):
             return str(value)

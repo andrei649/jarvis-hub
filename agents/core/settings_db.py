@@ -144,6 +144,9 @@ DEFAULTS: list[dict[str, Any]] = [
     dict(category="memory",  key="context_window",   value=6,                     label="Context window (turns)",kind="number"),
     dict(category="memory",  key="context_compression", value=False,              label="Compress long context (hot path)", kind="toggle"),
     dict(category="memory",  key="compression_max_tokens", value=2000,            label="Context compression budget (tokens)", kind="number"),
+    dict(category="memory",  key="compression_summarizer", value=False,           label="LLM summarizer for evicted context (strict-local only)", kind="toggle"),
+    dict(category="memory",  key="compression_keep_first", value=0,               label="Protect first N turns from compression", kind="number"),
+    dict(category="memory",  key="compression_summary_max_tokens", value=256,     label="Compression summary budget (tokens)", kind="number"),
     dict(category="memory",  key="persist",          value=True,                  label="Persist to disk",    kind="toggle"),
     # O26-P0.3 (F2): long-term recall was read via get_setting but never seeded,
     # so it could not be enabled from the admin UI at all (put_category refuses

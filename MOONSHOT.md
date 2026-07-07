@@ -1,7 +1,7 @@
 # Jarvis Hub — Moonshot
 
 > The north-star document. Everything else (roadmap, architecture, pricing) serves this.
-> Generated: 2026-06-02 · Stage: **v0.10.0** (feature-complete; productionizing toward 1.0 — see §4 + [version roadmap](BACKLOG.md#version-roadmap)) · Owner: Andrei
+> Generated: 2026-06-02 · Stage: **v0.11.0** (feature-complete + refactor done; productionizing toward 1.0 — see §4 + [version roadmap](BACKLOG.md#version-roadmap)) · Owner: Andrei
 >
 > **How to use this doc:** read §1–§4 to know *where we're going*, §7 to know *how we stay on
 > track*. When a decision feels off-mission, check it against §5 (principles) and §1 (the bet).
@@ -70,7 +70,7 @@ a clear "done" gate; we do not skip gates.
 | **2 — Productionized & proven** 🎯 | **H23** productionization + design partners → **v0.11 … v1.0.0** | From "code-complete" to a product a stranger can install, trust, upgrade — and that real users keep running | Per the [version roadmap](BACKLOG.md#version-roadmap): agentic-safety + upgrade/data-durability + operability + quality/docs **done**, **and** validated by 3–5 design partners. **This is the 1.0 gate.** |
 | **3 — Sellable / ecosystem** | Hosted Pro + multi-user + moderated marketplace → post-1.0 (v1.x → v2.0) | Hosted tier, first revenue; others build *on* Jarvis; households/teams not just Andrei | Paid conversion measured; multi-user + signed marketplace + 3rd-party A2A/widget adoption |
 
-> Phase boundaries are **release gates**, not suggestions. We are at **v0.10.0** (Phase 1 done). The
+> Phase boundaries are **release gates**, not suggestions. We are at **v0.11.0** (Phase 1 done + the CLN-2/CLN-3 refactor). The
 > version number *is* the roadmap: **1.0 is a real destination**, not the current state — it ships only
 > when the productionization layer (H23) is finished **and** the system is proven with real
 > design-partner users (the old "Phase 2 sellable" user-proof, pulled into the 1.0 bar). Manual
