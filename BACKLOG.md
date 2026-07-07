@@ -120,7 +120,7 @@ python -m pytest tests/ -v          # ~3,836 passed, 6 skipped (counter synced v
 |---|------|--------|
 | A1 | ⭐B0 governed-autonomy demo + full `docs/MANUAL_TESTING.md` pass on the RTX box | ⬜ **the gate** |
 | A2 | 72h soak (0.63) + record AUD-0 / H23.23 | ⬜ |
-| A3 | Dependabot re-triage — 19 open alerts on main (4 high, 2026-07-07) | ⬜ |
+| A3 | Dependabot re-triage — 19 open alerts on main (4 high, 2026-07-07) | 🟢 agent half done in #634 — local re-audit enumerated everything without the UI: fixed frontend `undici` (high, dev-chain) and worldview/mcp `hono`+`esbuild` (high+moderate), both trees now 0 vulns with suites green; mobile attempt reverted after it broke `tsc` (expo-audio type surface — the device gate is real). Owner tail: worldview 2 moderates (in-next postcss, wait for next 16.3), mobile Expo SDK upgrade on a device, dismiss stale alerts in UI |
 | A4 | GitHub settings batch (SEC-4 required checks · CQ-2 dismissals · CQ-3 paste · repo metadata) | ⬜ |
 | A5 | License flip MIT→Apache-2.0 + TRADEMARKS.md | ⬜ |
 | A6 | Demo video (60s) + publish landing (dev half ✅ #512) | ⬜ |
@@ -134,8 +134,8 @@ python -m pytest tests/ -v          # ~3,836 passed, 6 skipped (counter synced v
 | B1 | Hermes v3 Phase 2 — context compression maturity | ✅ done in #634 (2026-07-07) — `keep_first` leading-turn protection, hermes structured summary template, iterative summary-merge (`prior`/`covered`), and an opt-in **strict-local** LLM summarizer (`memory.compression_summarizer`, uses `LLMRouter.local_backend` only, degrades to the deterministic digest). Defaults byte-identical; `tests/test_context_compression_phase2.py` (+12) |
 | B2 | 0.19 First-Run Command Center (activation for design partners; seams in H23.20) | ✅ done in #634 (2026-07-07) — `GET /api/onboarding/command-center` (user-guarded, one fetch: `/readyz` snapshot + version, model backend truth, H23.20 wizard state, honest `first_actions` with backend-derived `ready`/`reason`) + HUD `CommandCenterPanel` (new **Start** Console cluster; "say hello" drives a real `/chat` turn and records the `test_chat` funnel step). Red/green: `tests/test_first_run_command_center.py` (+4) + `command-center-panel.test.tsx` (+4); parity/openapi/auth snapshots reseeded; typegen schema regenerated |
 | B3 | AUD-14 tail — remaining raw env-read slices (template: #592–#622) | 🟢 re-audited 2026-07-07 (in #634): **zero** unsafe parses remain — no `int()`/`float()`/`json.loads()` on raw env, no ad-hoc boolean truthiness (ratchet `test_o26_p2_env_config.py` green); ~104 plain `env_str`-equivalent string reads left = cosmetic, migrate opportunistically in files you already touch |
-| B4 | M2.4 live-eval lane prep (code-ready, lights up when owner runner exists) | ⬜ owner-gated |
-| B5 | Non-v0 inbox channels (email/WhatsApp) — only after live send seams proven post-B0 | ⬜ parked |
+| B4 | M2.4 live-eval lane prep (code-ready, lights up when owner runner exists) | ⬜ owner-gated · **challenged 2026-07-07**: a `ci-small-model` lane (tiny OSS model, e.g. Qwen-0.5B via llama.cpp, on GitHub runners) would make the live-judged lane real without the owner box — honestly labeled, fidelity lane stays owner. Needs owner OK on the semantics |
+| B5 | Non-v0 inbox channels (email/WhatsApp) — only after live send seams proven post-B0 | ⬜ parked · **challenged 2026-07-07**: email transport v0 against local SMTP/IMAP test doubles (aiosmtpd), default-off, is buildable now — owner's live validation flips it on. WhatsApp stays fully gated (bridge hardware) |
 | B6 | Maintenance runbook ("if the owner disappears a month", REVIEW_YEAR_ONE §9.7) | ✅ drafted in #634 — [docs/MAINTENANCE_RUNBOOK.md](docs/MAINTENANCE_RUNBOOK.md), owner to verify the `[owner: verify]` marks |
 | B7 | Hermes v3 Phases 3/5/6 live wiring (file-RPC exec · gateway sessions · cron) | ⬜ on-demand only — primitives merged, wire behind real pull |
 

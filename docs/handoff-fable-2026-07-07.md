@@ -51,12 +51,14 @@ Mirrors `docs/OWNER_TASKS.md` + BACKLOG M4/Phase 5 — consolidated and ordered:
    5090 box. This *is* the audit gate; no tag ships without it.
 2. **72h soak** (0.63) right after B0 — same hardware, unattended, zero trust
    violations. Record **AUD-0** and **H23.23** (two one-paragraph decisions).
-3. **Dependabot re-triage** — the push on 2026-07-07 reported **19 open
-   vulnerabilities on `main` (4 high, 11 moderate, 4 low)**; the 2026-06-10 cleanup
-   has drifted. Check https://github.com/andrei649/jarvis-hub/security/dependabot;
-   the 11 mobile/Expo moderates were already known owner-gated, but 4 *high* is new
-   since then — triage the highs first (an AI session can prepare the bumps once you
-   paste the alert list).
+3. **Dependabot re-triage** — ✅ **agent half done in this PR** (gate challenged
+   2026-07-07: `npm audit`/`pip-audit` enumerate the alerts locally, no UI paste
+   needed). Fixed: frontend `undici` high (dev-chain) + worldview/mcp `hono` high
+   ×5 advisories + `esbuild` — both trees now 0 vulnerabilities, suites green.
+   Your tail: worldview's 2 moderates (postcss bundled *inside* next — re-run
+   `npm audit` when next 16.3 ships), the mobile Expo SDK upgrade on a real
+   device (gate *proven*: a non-forced bump broke `tsc` in the audio path), and
+   dismissing the stale alerts in the GitHub UI after merge.
 4. **GitHub settings batch** (~15 min total): repo description/topics/social preview
    (BRAND_BOOK §9) · enable code scanning or unrequire the CodeQL check · dismiss the
    7 triaged FP alerts (CQ-2) · paste the remaining ~12 CodeQL alerts to an agent
@@ -134,6 +136,29 @@ cleanly through them). Notes for whoever executes the tail:
 - **Turn on the loop for yourself now** (`product.posture=companion_wave1`). It's
   merged, tested, and OFF. The north-star needs it *experienced*, not just shipped —
   and you are design partner #0.
+
+## 5b. Gate challenge (2026-07-07, owner-requested): every "gated" label re-tested
+
+Each gate was attacked, not assumed. Results:
+
+| Gate | Verdict after testing | Autonomous path found |
+|------|----------------------|----------------------|
+| A3 Dependabot | **BROKEN** — local `npm audit`/`pip-audit` = same data as the UI | Fixed the 2 fixable highs in this PR; only UI dismissals + upstream waits remain |
+| Mobile Expo moderates | **CONFIRMED by experiment** — non-forced bump broke `tsc` (expo-audio `AudioPlayer.addListener`); reverted | None headless; needs SDK upgrade + device |
+| A5 license flip | **HALF-OPEN** — the *decision* is already recorded (`docs/LICENSE_DECISION.md`, 2026-06-04); only sign-off is owner's | An agent can prepare the full Apache-2.0 + TRADEMARKS.md diff on request; owner just merges |
+| B4 live-eval runner | **HALF-OPEN** — "live model" needn't mean *your* model | Proposal: CI live lane against a small OSS model (e.g. Qwen-0.5B via llama.cpp) on GitHub runners — real LLM-judged lane, semantics honestly labeled `ci-small-model`; the owner-box lane stays for fidelity |
+| B5 email inbox transport | **HALF-OPEN** — "send seam unproven" applies to *live* delivery, not the code | Proposal: implement email transport v0 against local SMTP/IMAP test doubles (aiosmtpd), default-off; owner's live validation flips it on. WhatsApp stays fully gated (bridge hardware) |
+| B7 Hermes 3/5/6 | **CONFIRMED** — no consumer exists (no Pi 5 / remote target / cron job unserved by SchedulerService); wiring now = attack surface with no gate progress | None until a real consumer appears |
+| A1/A2 ⭐B0 + soak | **CONFIRMED** — the human gate is the point (MANUAL_TESTING is *your* sign-off) | Agent can pre-run the automatable runbook steps headlessly to shorten your session |
+| A4 GitHub settings | **CONFIRMED** — repo settings/branch protection have no agent-accessible API here | None |
+| A6/A7/A8, GPU items | **CONFIRMED** — recording, recruiting, tagging, hardware | Support materials only |
+
+Doc-staleness sweep ran alongside (same PR): MOONSHOT's current-stage line said
+v0.10.0 (→ v0.11.0), AGENTS.md still framed `web.py` as a live god-object with 255
+inline routes (fixed in #296 — reworded to past tense), ARCHITECTURE.md said
+"304-route surface" twice (now points at STATUS.md's synced live count), JARVIS.md
+said ~299 routes (→ live-count pointer). Counter drift is systemic: prefer pointing
+at `scripts/status_sync.py`-synced STATUS.md over hand-written numbers in prose.
 
 ## 6. What NOT to do (reaffirmed non-goals until 1.0)
 
