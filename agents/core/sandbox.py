@@ -8,6 +8,7 @@ Supports:
 """
 
 import asyncio
+import contextlib
 import logging
 import os
 import platform
@@ -295,6 +296,23 @@ class Sandbox:
                     exit_code=-1,
                     duration=duration,
                 )
+            except asyncio.CancelledError:
+                # A caller (e.g. the file-RPC runtime's outer service window)
+                # cancelled us. Kill the child AND the named container so neither
+                # is orphaned, then propagate the cancellation. (contextlib.suppress
+                # does not swallow BaseException, so a nested cancel still surfaces.)
+                with contextlib.suppress(Exception):
+                    proc.kill()
+                with contextlib.suppress(Exception):
+                    await proc.wait()
+                with contextlib.suppress(Exception):
+                    killer = await asyncio.create_subprocess_exec(
+                        "docker", "kill", container_name,
+                        stdout=asyncio.subprocess.DEVNULL,
+                        stderr=asyncio.subprocess.DEVNULL,
+                    )
+                    await killer.wait()
+                raise
         except FileNotFoundError:
             logger.warning("Docker not found")
             self._has_docker = False

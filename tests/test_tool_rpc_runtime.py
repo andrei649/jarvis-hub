@@ -4,6 +4,7 @@ import json
 
 import pytest
 
+from agents.core.environments.file_rpc import FileRPCRequest, FileRPCStore
 from agents.core.sandbox import Sandbox
 from agents.core.tool_rpc import ToolRPCServer
 from agents.core.tool_rpc_runtime import ToolRPCSandboxRuntime
@@ -176,3 +177,51 @@ async def test_docker_python_mounts_file_rpc_dir_as_writable(tmp_path, monkeypat
     assert "--read-only" in docker_cmd
     assert f"{tmp_path}:/workspace:ro" in docker_cmd
     assert f"{rpc_dir}:/workspace/.jarvis_file_rpc/run:rw" in docker_cmd
+
+
+@pytest.mark.asyncio
+async def test_service_pending_deletes_request_files_after_servicing(tmp_path):
+    # Serviced request files must be deleted so the host loop does not re-read and
+    # re-glob them on every poll (host CPU/IO exhaustion from untrusted code).
+    server = ToolRPCServer()
+
+    async def echo(args):
+        return {"echo": args}
+
+    server.register_tool("echo", echo)
+    runtime = ToolRPCSandboxRuntime(server, _host_sandbox(tmp_path))
+
+    store = FileRPCStore(tmp_path / "rpc")
+    store.write_request(FileRPCRequest(seq=1, tool="echo", args={"a": 1}))
+
+    processed: set[int] = set()
+    serviced = await runtime._service_pending(store, processed, 0)
+
+    assert serviced == 1
+    assert store.read_response(1) == {"ok": True, "tool": "echo", "result": {"echo": {"a": 1}}}
+    # request file gone → nothing re-serviced on a second pass
+    assert not (tmp_path / "rpc" / "req_000001.json").exists()
+    assert store.pending_requests() == []
+    assert await runtime._service_pending(store, processed, serviced) == 1
+
+
+@pytest.mark.asyncio
+async def test_service_pending_drops_duplicate_already_processed_requests(tmp_path):
+    # A duplicate request the sandbox re-writes for an already-serviced seq must be
+    # dropped (deleted), not re-executed and not left to re-glob forever.
+    calls = {"count": 0}
+    server = ToolRPCServer()
+
+    async def echo(args):
+        calls["count"] += 1
+        return {"echo": args}
+
+    server.register_tool("echo", echo)
+    runtime = ToolRPCSandboxRuntime(server, _host_sandbox(tmp_path))
+    store = FileRPCStore(tmp_path / "rpc")
+
+    store.write_request(FileRPCRequest(seq=1, tool="echo", args={}))
+    await runtime._service_pending(store, {1}, 0)  # seq 1 already processed
+
+    assert calls["count"] == 0
+    assert not (tmp_path / "rpc" / "req_000001.json").exists()

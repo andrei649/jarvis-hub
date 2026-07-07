@@ -118,6 +118,9 @@ class ToolRPCSandboxRuntime:
         self.max_tool_calls = max(0, int(max_tool_calls))
         self.poll_interval = max(0.001, float(poll_interval))
         self.service_timeout = service_timeout
+        # Cap how many request files one poll examines — the RPC dir is written
+        # by untrusted sandbox code, so a burst must not make a poll read them all.
+        self._pending_read_limit = max(64, self.max_tool_calls * 2)
 
     async def run_python(
         self,
@@ -146,15 +149,21 @@ class ToolRPCSandboxRuntime:
         processed: set[int] = set()
         tool_calls = 0
         timed_out = False
-        deadline = (
-            asyncio.get_running_loop().time()
-            + (self.service_timeout or (float(self.sandbox.timeout) + 5.0))
+        loop = asyncio.get_running_loop()
+        # Never let the outer service loop fire before the sandbox's OWN timeout
+        # has had a chance to kill the process — otherwise task.cancel() below
+        # could orphan a still-running container/subprocess. Bind the monotonic
+        # clock once (rather than re-reading it each iteration).
+        service_window = max(
+            float(self.service_timeout or 0.0),
+            float(self.sandbox.timeout) + 5.0,
         )
+        deadline = loop.time() + service_window
 
         try:
             while not task.done():
                 tool_calls = await self._service_pending(store, processed, tool_calls)
-                if asyncio.get_running_loop().time() >= deadline:
+                if loop.time() >= deadline:
                     timed_out = True
                     task.cancel()
                     with suppress(asyncio.CancelledError):
@@ -185,8 +194,11 @@ class ToolRPCSandboxRuntime:
         processed: set[int],
         tool_calls: int,
     ) -> int:
-        for request in store.pending_requests():
+        for request in store.pending_requests(limit=self._pending_read_limit):
             if request.seq in processed:
+                # Already serviced (or a duplicate the sandbox re-wrote): drop the
+                # file so it is not re-globbed and re-read on every future poll.
+                self._consume_request(store, request.seq)
                 continue
             processed.add(request.seq)
 
@@ -196,13 +208,24 @@ class ToolRPCSandboxRuntime:
                     "reason": "tool_call_limit_exceeded",
                     "tool": request.tool,
                 })
+                self._consume_request(store, request.seq)
                 continue
 
             response = await self._handle_request(request.tool, request.args)
             store.write_response(request.seq, response)
+            self._consume_request(store, request.seq)
             tool_calls += 1
 
         return tool_calls
+
+    @staticmethod
+    def _consume_request(store: FileRPCStore, seq: int) -> None:
+        # Delete a serviced/refused request file so pending_requests() does not
+        # re-read and re-glob it forever (host CPU/IO exhaustion). Canonical
+        # filenames (enforced by the store) make request_path(seq) exactly this
+        # file, so cleanup can never miss it or hit the wrong path.
+        with suppress(OSError):
+            store.request_path(seq).unlink(missing_ok=True)
 
     async def _handle_request(self, tool: str, args: dict[str, Any]) -> dict[str, Any]:
         try:

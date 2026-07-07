@@ -8,10 +8,22 @@ validation, UTF-8 JSON handling, and call-limit behavior testable offline.
 from __future__ import annotations
 
 import json
+import re
 from contextlib import suppress
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
+
+# Hard cap on the size of a single RPC file the HOST will read into memory. The
+# request directory is a writable bind-mount handed to UNTRUSTED sandbox code, so
+# a request (or response) file could be attacker-sized; refuse to load anything
+# larger than a generous tool-call payload rather than OOM the host process.
+MAX_RPC_FILE_BYTES = 1_000_000
+
+# Canonical request filename: ``req_<zero-padded-seq>.json``. The sequence is
+# taken from the FILENAME, never the untrusted file body, so a request can never
+# desync from the response/cleanup path derived from that same sequence.
+_REQ_NAME_RE = re.compile(r"req_(\d+)\.json")
 
 
 class ToolCallLimitExceeded(RuntimeError):
@@ -70,10 +82,17 @@ class FileRPCStore:
     def read_request(self, seq: int) -> FileRPCRequest | None:
         return self._read_request_file(self.request_path(seq))
 
-    def pending_requests(self) -> list[FileRPCRequest]:
+    def pending_requests(self, limit: int | None = None) -> list[FileRPCRequest]:
+        # Bound the number of files examined per call: the request directory is
+        # attacker-writable, so a burst of files must not make a single poll read
+        # an unbounded number of them. Live callers pass a limit; the unbounded
+        # default preserves the offline-primitive API used by tests.
+        names = sorted(self.root.glob("req_*.json"))
+        if limit is not None:
+            names = names[: max(0, int(limit))]
         requests = [
             request
-            for path in self.root.glob("req_*.json")
+            for path in names
             if (request := self._read_request_file(path)) is not None
         ]
         return sorted(requests, key=lambda request: request.seq)
@@ -89,24 +108,37 @@ class FileRPCStore:
             return None
         try:
             payload = json.loads(path.read_text(encoding="utf-8"))
-        except (OSError, json.JSONDecodeError):
+        except (OSError, ValueError):
+            # ValueError covers json.JSONDecodeError AND UnicodeDecodeError, so a
+            # non-UTF-8 / garbage file is skipped instead of raising. (No size cap
+            # here: responses are host-written and bounded by the tool; the size
+            # guard belongs on the attacker-controlled request read path only.)
             return None
         with suppress(OSError):
             path.unlink()
         return payload if isinstance(payload, dict) else None
 
     def _read_request_file(self, path: Path) -> FileRPCRequest | None:
+        # Sequence is authoritative from the canonical filename, not the untrusted
+        # file body: this keeps request_path(seq) == this file so response writes
+        # and cleanup can never target the wrong path, and it rejects non-canonical
+        # names an attacker might craft to evade deletion.
+        match = _REQ_NAME_RE.fullmatch(path.name)
+        if match is None:
+            return None
+        seq = int(match.group(1))
+        if seq < 1 or path.name != f"req_{format_sequence(seq)}.json":
+            return None
         try:
+            if path.stat().st_size > MAX_RPC_FILE_BYTES:
+                return None
             payload = json.loads(path.read_text(encoding="utf-8"))
-        except (OSError, json.JSONDecodeError):
+        except (OSError, ValueError):
             return None
         if not isinstance(payload, dict):
             return None
-        seq = payload.get("seq")
         tool = payload.get("tool")
         args = payload.get("args")
-        if not isinstance(seq, int) or seq < 1:
-            return None
         if not isinstance(tool, str) or not tool:
             return None
         if not isinstance(args, dict):
