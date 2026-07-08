@@ -364,6 +364,33 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/onboarding/command-center": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Command Center
+         * @description 0.19 First-Run Command Center — install health + model + first actions, one read.
+         *
+         *     The unified first-run screen's single fetch: the /readyz verdict (shared
+         *     ``readiness_snapshot``), the model backend truth, the H23.20 wizard state,
+         *     and honest FIRST ACTIONS whose ``ready`` flags derive from live state — a
+         *     chat action is never presented ready without a model, and the local-docs
+         *     action stays not-ready (with the reason) until the owner configures a
+         *     folder. Read-only; the actions point at existing governed endpoints.
+         */
+        get: operations["command_center_api_onboarding_command_center_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/onboarding/funnel": {
         parameters: {
             query?: never;
@@ -6574,11 +6601,6 @@ export interface paths {
         /**
          * Readyz
          * @description Readiness probe — 200 once boot finished, **503** while still starting.
-         *
-         *     Ready = the orchestrator exists and has loaded its agents. The LLM backend is
-         *     reported for observability but intentionally does NOT gate readiness: the hub
-         *     answers with a graceful fallback when the local model is down, so flipping to
-         *     not-ready there would needlessly drain a healthy instance.
          */
         get: operations["readyz_readyz_get"];
         put?: never;
@@ -8120,6 +8142,26 @@ export interface operations {
         };
     };
     onboarding_wizard_api_onboarding_wizard_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    command_center_api_onboarding_command_center_get: {
         parameters: {
             query?: never;
             header?: never;

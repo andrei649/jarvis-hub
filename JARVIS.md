@@ -88,7 +88,7 @@ agents/
 │   │   └── wake_word.py     # Wake word detection (openWakeWord)
 │   └── mcp/
 │       └── client.py        # MCP client
-├── web.py                   # FastAPI web app (~299 HTTP routes — see docs/ARCHITECTURE.md)
+├── web.py                   # FastAPI web app (route surface counted live in STATUS.md — see docs/ARCHITECTURE.md)
 ├── run.py                   # CLI REPL entry point
 ├── jarvis/
 │   └── SOUL.md              # Jarvis agent soul (identity prompt)
@@ -202,7 +202,7 @@ curl.exe http://127.0.0.1:8080/status
 
 - 17 active agents (incl. Argus, the WorldView geoint bridge), bench reserved
 - 34 models downloaded (1.24 TB total)
-- ~299 HTTP routes (full index in docs/ARCHITECTURE.md)
+- ~368 HTTP routes (live count synced in STATUS.md; full index in docs/ARCHITECTURE.md)
 - 7 ported features from OpenJarvis (security, skills, sandbox, multi-channel, bench, learning, streaming)
 - VRAM: ~17 GB used by primary model, ~7 GB free
 - Response time: ~4-5s per query (fast slot); deep slot trades latency for reasoning depth

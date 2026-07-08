@@ -48,6 +48,17 @@ def _raise_read_timeout(request):
     raise httpx.ReadTimeout("timed out", request=request)
 
 
+def _respond_400(request):
+    """A local server rejecting the request (e.g. a model-template mismatch) —
+    real-world observed 2026-07-08: LM Studio 400s on some chat completions
+    while /v1/models stays reachable. The JSON body is the server's own
+    diagnostic (its author's text, not the caller's secret)."""
+    return httpx.Response(
+        400, json={"error": {"message": "This model does not support the given sampler settings."}},
+        request=request,
+    )
+
+
 # ── split timeouts: down-detection is bounded (no multi-minute hang) ─────────
 
 @pytest.mark.parametrize("backend,read", [(LMStudioBackend(), 300.0), (OllamaBackend(), 120.0)])
@@ -119,6 +130,34 @@ async def test_ollama_generate_degrades(handler):
 
 
 # ── generate_stream(): emits the clean reply via on_token, returns it ────────
+
+# ── a real server error (400) must still log its OWN diagnostic ──────────────
+# Root-cause finding from a real test-drive session (2026-07-08): the server
+# reachably rejected a request (400) and the degraded-reply path swallowed the
+# response body entirely — only the generic "Client error '400 Bad Request'"
+# string reached the log, so neither the user nor the operator could ever learn
+# *why* it failed. The user-facing reply stays identical; only the log detail
+# changes, so this is additive/observability-only.
+
+@pytest.mark.asyncio
+async def test_lmstudio_generate_400_logs_the_server_error_body(caplog):
+    b = _with_transport(LMStudioBackend(), _respond_400)
+    with caplog.at_level("ERROR", logger="jarvis.llm.base"):
+        reply = await b.generate("model", "hello")
+    assert "hit an error" in reply  # user-facing text unchanged
+    assert "sampler settings" in caplog.text  # but the real reason is now logged
+    await b.aclose()
+
+
+@pytest.mark.asyncio
+async def test_ollama_generate_400_logs_the_server_error_body(caplog):
+    b = _with_transport(OllamaBackend(), _respond_400)
+    with caplog.at_level("ERROR", logger="jarvis.llm.base"):
+        reply = await b.generate("model", "hello")
+    assert "hit an error" in reply
+    assert "sampler settings" in caplog.text
+    await b.aclose()
+
 
 @pytest.mark.asyncio
 async def test_lmstudio_stream_degrades_and_emits():

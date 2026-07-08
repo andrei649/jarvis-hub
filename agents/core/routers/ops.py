@@ -49,9 +49,8 @@ async def healthz():
     })
 
 
-@router.get("/readyz")
-async def readyz():
-    """Readiness probe — 200 once boot finished, **503** while still starting.
+def readiness_snapshot() -> dict:
+    """The /readyz verdict as pure data — shared with the first-run command center.
 
     Ready = the orchestrator exists and has loaded its agents. The LLM backend is
     reported for observability but intentionally does NOT gate readiness: the hub
@@ -73,6 +72,14 @@ async def readyz():
     body = {"ready": ready, "checks": checks}
     if not ready:
         body["reason"] = "starting" if orch is None else "agents-not-loaded"
+    return body
+
+
+@router.get("/readyz")
+async def readyz():
+    """Readiness probe — 200 once boot finished, **503** while still starting."""
+    body = readiness_snapshot()
+    if not body["ready"]:
         # 503 so a load balancer holds traffic back; never cache a readiness verdict.
         return nocache_json(body, status_code=503)
     return nocache_json(body)

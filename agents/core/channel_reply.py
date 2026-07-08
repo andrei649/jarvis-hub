@@ -37,6 +37,8 @@ def _contract_template() -> ContractTemplate:
             return "chat_id" in reply
         if channel == "web":
             return "client_id" in reply
+        if channel == "email":
+            return "to" in reply
         return False
 
     return ContractTemplate(kind=CHANNEL_REPLY_CONTRACT_KIND, constraints=(

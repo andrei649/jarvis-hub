@@ -52,5 +52,6 @@ give a reasonable window to ship a fix before any public write-up.
   token is refused at boot unless explicitly overridden (`JARVIS_ALLOW_INSECURE_BIND=1`).
   For remote access, put it behind a reverse proxy with TLS.
 - Run it as an unprivileged service — see the hardened templates in [`deploy/`](deploy/).
-- A deeper `THREAT_MODEL.md` + NOTICE/SBOM + telemetry/privacy disclosures are
-  tracked under H23.19 and ship before 1.0.
+- The full trust docs already ship: [`docs/THREAT_MODEL.md`](docs/THREAT_MODEL.md) and
+  [`docs/PRIVACY.md`](docs/PRIVACY.md) in the repo; `NOTICE` + the SBOM are generated
+  into every release bundle (`scripts/build_release.sh`, H23.19 ✅).
