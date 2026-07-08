@@ -17,12 +17,23 @@
 - [x] **Dependabot: 54 vulnerabilities on main** — ✅ fixed 2026-06-10 (agent wave): HUD
   frontend 5→0 (vite 7/vitest 4), worldview 13→2 (fastify 5, next 16.2.9 + react 19,
   vitest 4, tsx), mcp 2→0; all suites green (HUD 19, WV frontend 101, backend 218).
-  - [ ] **Remaining, needs you:** the 2 worldview moderates are a postcss XSS *bundled inside
-    next itself* — clears when Vercel ships next 16.3 stable (re-run `npm audit` then).
-    **mobile/: 11 moderates** are the Expo SDK chain — needs an Expo SDK upgrade verified on a
-    real device (can't be validated headlessly). Python deps: clean (`pip-audit`).
-- [ ] **Relicense MIT → Apache-2.0 + `TRADEMARKS.md`** — decided 2026-06-04, deferred to pre-1.0
-  ([`docs/LICENSE_DECISION.md`](LICENSE_DECISION.md)). 1 SP, but only you can sign off a license change.
+  - [ ] **Remaining, needs you (re-audited 2026-07-07, agent-side fixes shipped in #634):**
+    the agent fixed the 2 fixable highs (frontend `undici` dev-chain; worldview/mcp `hono`
+    ×5 advisories + `esbuild`) with suites green (176 vitest · 51 mcp tests). Still yours:
+    (a) the 2 worldview moderates — postcss XSS *bundled inside next itself*, clears when
+    Vercel ships next 16.3 stable (re-run `npm audit` then); (b) **mobile/: 11 moderates**
+    — the Expo SDK chain. The gate was *tested* 2026-07-07: a non-forced `npm audit fix`
+    bump broke `tsc` in the audio path (`expo-audio` AudioPlayer.addListener), so it truly
+    needs the SDK upgrade + real-device validation; (c) dismiss the stale alerts in the
+    GitHub UI once #634 merges. Python deps: clean (`pip-audit`, CI).
+- [ ] **Relicense MIT → Apache-2.0** — decided 2026-06-04, deferred to pre-1.0
+  ([`docs/LICENSE_DECISION.md`](LICENSE_DECISION.md)). **Fully prepared in #634 (2026-07-07):**
+  `TRADEMARKS.md` is live, `CONTRIBUTING.md` carries the relicense grant (in place BEFORE any
+  design-partner contribution lands), and the canonical Apache-2.0 text is staged at
+  `docs/legal/LICENSE-APACHE-2.0-staged.txt`. The flip is now 3 commands, only you may run them:
+  `git mv docs/legal/LICENSE-APACHE-2.0-staged.txt LICENSE` (replacing the MIT file) · update the
+  README badge `license-MIT-green` → `license-Apache--2.0-blue` · commit as its own PR titled
+  "relicense: MIT → Apache-2.0 (pre-1.0, per LICENSE_DECISION)".
 - [ ] **(optional) Signed release artifacts** — the release pipeline (H23.13) builds tar/zip + SBOM +
   checksums automatically; to also emit GPG signatures, generate a signing key and add the repo
   secrets `GPG_PRIVATE_KEY` (+ `GPG_PASSPHRASE` if set). Steps in [`docs/RELEASE.md`](RELEASE.md).

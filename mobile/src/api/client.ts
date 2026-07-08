@@ -397,6 +397,89 @@ export async function fetchSecurityLoopBreaker(config: ServerConfig): Promise<Se
   return normalizeSecurityLoopBreaker(res || {});
 }
 
+// ── First-run command center (0.19 / H18.19) ─────────────────────
+
+export interface CommandCenterWizardStep {
+  key: string;
+  title: string;
+}
+
+export interface CommandCenterAction {
+  key: string;
+  title: string;
+  kind: string;
+  path: string;
+  ready: boolean;
+  reason: string | null;
+  folders?: string[];
+}
+
+export interface CommandCenterResponse {
+  install: { ready: boolean; version: string; checks: Record<string, unknown> };
+  model: {
+    backend: string;
+    active_model: string | null;
+    ready: boolean | null;
+    cloud_configured: boolean;
+  };
+  wizard: {
+    steps: CommandCenterWizardStep[];
+    completed: string[];
+    complete: boolean;
+    hint: string | null;
+  };
+  first_actions: CommandCenterAction[];
+}
+
+function normalizeCommandCenter(raw: Record<string, unknown>): CommandCenterResponse {
+  const install = securityRecord(raw.install);
+  const model = securityRecord(raw.model);
+  const wizard = securityRecord(raw.wizard);
+  const steps = Array.isArray(wizard.steps) ? wizard.steps : [];
+  const actions = Array.isArray(raw.first_actions) ? raw.first_actions : [];
+  return {
+    install: {
+      ready: securityBool(install.ready),
+      version: securityString(install.version),
+      checks: securityRecord(install.checks),
+    },
+    model: {
+      backend: securityString(model.backend) || 'none',
+      active_model: typeof model.active_model === 'string' ? model.active_model : null,
+      ready: typeof model.ready === 'boolean' ? model.ready : null,
+      cloud_configured: securityBool(model.cloud_configured),
+    },
+    wizard: {
+      steps: steps
+        .map((s) => securityRecord(s))
+        .map((s) => ({ key: securityString(s.key), title: securityString(s.title) }))
+        .filter((s) => s.key),
+      completed: securityStringArray(wizard.completed),
+      complete: securityBool(wizard.complete),
+      hint: typeof wizard.hint === 'string' ? wizard.hint : null,
+    },
+    first_actions: actions
+      .map((a) => securityRecord(a))
+      .map((a) => ({
+        key: securityString(a.key),
+        title: securityString(a.title),
+        kind: securityString(a.kind),
+        path: securityString(a.path),
+        ready: securityBool(a.ready),
+        reason: typeof a.reason === 'string' ? a.reason : null,
+        ...(Array.isArray(a.folders) ? { folders: securityStringArray(a.folders) } : {}),
+      }))
+      .filter((a) => a.key),
+  };
+}
+
+export async function fetchCommandCenter(config: ServerConfig): Promise<CommandCenterResponse> {
+  const res = await request<Record<string, unknown>>(config, 'GET', '/api/onboarding/command-center', undefined, {
+    retries: 2,
+  });
+  return normalizeCommandCenter(res || {});
+}
+
 // ── Skills ───────────────────────────────────────────────────────
 
 export type HubSkill = {

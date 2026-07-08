@@ -2,14 +2,14 @@
 REM ============================================================
 REM  JARVIS HUB - START  (Windows 11, double-click)
 REM  Starts the server and opens the HUD in your browser.
-REM  Also auto-starts WorldView (4D OSINT) and the Jarvis
-REM  Signal Layer if they are set up.
+REM  WorldView (4D OSINT) and the Jarvis Signal Layer are
+REM  OPT-IN companions - they no longer auto-start.
 REM  Run UPDATE.bat first if you want the latest version.
 REM
-REM  WorldView is OPT-OUT: to start JARVIS only, run with
-REM    set JARVIS_WORLDVIEW=0
-REM  Signal Layer is OPT-OUT: to skip the WorldView/Signal API, run with
-REM    set JARVIS_SIGNAL_LAYER=0
+REM  WorldView is OPT-IN: to also start it, run with
+REM    set JARVIS_WORLDVIEW=1
+REM  Signal Layer is OPT-IN: to also start it, run with
+REM    set JARVIS_SIGNAL_LAYER=1
 REM  Signal Layer live mode is OPT-IN:
 REM    set JARVIS_SIGNAL_LAYER_MODE=live
 REM    set WORLDMONITOR_BASE_URL=http://localhost:3100
@@ -36,17 +36,13 @@ if exist ".venv\Scripts\python.exe" (
   echo        Recommended: run UPDATE.bat first.
 )
 
-REM --- WorldView (4D OSINT) - auto-start (optional, opt-out with JARVIS_WORLDVIEW=0) ---
-if /I "%JARVIS_WORLDVIEW%"=="0" (
-  echo [INFO] WorldView disabled ^(JARVIS_WORLDVIEW=0^) - skipping WorldView.
-) else (
+REM --- WorldView (4D OSINT) - opt-IN with JARVIS_WORLDVIEW=1 ---
+if /I "%JARVIS_WORLDVIEW%"=="1" (
   call :start_worldview
 )
 
-REM --- Jarvis Signal Layer - auto-start (optional, opt-out with JARVIS_SIGNAL_LAYER=0) ---
-if /I "%JARVIS_SIGNAL_LAYER%"=="0" (
-  echo [INFO] Signal Layer disabled ^(JARVIS_SIGNAL_LAYER=0^) - skipping Signal Layer.
-) else (
+REM --- Jarvis Signal Layer - opt-IN with JARVIS_SIGNAL_LAYER=1 ---
+if /I "%JARVIS_SIGNAL_LAYER%"=="1" (
   call :start_signal_layer
 )
 

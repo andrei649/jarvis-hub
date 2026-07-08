@@ -121,6 +121,71 @@ async def onboarding_wizard():
     })
 
 
+@router.get("/api/onboarding/command-center", dependencies=[Depends(user_guard)])
+async def command_center():
+    """0.19 First-Run Command Center — install health + model + first actions, one read.
+
+    The unified first-run screen's single fetch: the /readyz verdict (shared
+    ``readiness_snapshot``), the model backend truth, the H23.20 wizard state,
+    and honest FIRST ACTIONS whose ``ready`` flags derive from live state — a
+    chat action is never presented ready without a model, and the local-docs
+    action stays not-ready (with the reason) until the owner configures a
+    folder. Read-only; the actions point at existing governed endpoints.
+    """
+    from agents import __version__
+    from agents.core.routers.ops import readiness_snapshot
+
+    install = {**readiness_snapshot(), "version": __version__}
+
+    orch = get_orch()
+    llm = getattr(orch, "llm_router", None) if orch else None
+    model_ready = _model_ready()
+    model = {
+        "backend": getattr(llm, "name", "none") if llm is not None else "none",
+        "active_model": getattr(llm, "active_model", None) if llm is not None else None,
+        "ready": model_ready,
+        "cloud_configured": bool(
+            getattr(llm, "_claude_backend", None) or getattr(llm, "_gemini_backend", None)
+        ) if llm is not None else False,
+    }
+
+    done = _completed_steps()
+    hint = None
+    if model_ready is False:
+        hint = ("No model backend reachable — start LM Studio or Ollama, or add a "
+                "cloud API key in Admin → settings.")
+    wizard = {
+        "steps": _WIZARD_STEPS,
+        "completed": done,
+        "complete": len(done) >= len(_WIZARD_STEPS),
+        "hint": hint,
+    }
+
+    chat_ready = bool(install["ready"] and model_ready)
+    chat_reason = None if chat_ready else (
+        "model not reachable" if install["ready"] else "still starting")
+    folders = sorted(_configured_doc_folders())
+    first_actions = [
+        {"key": "say_hello", "title": "Say hello", "kind": "chat",
+         "path": "/chat", "ready": chat_ready, "reason": chat_reason},
+        {"key": "morning_brief", "title": "Get your morning brief", "kind": "get",
+         "path": "/autonomy/brief", "admin": True,
+         "ready": bool(install["ready"]),
+         "reason": None if install["ready"] else "still starting"},
+        {"key": "index_docs", "title": "Chat with a folder of your docs",
+         "kind": "post", "path": "/api/local-docs/index",
+         "ready": bool(folders), "folders": folders,
+         "reason": None if folders else
+         "no folder configured — set local_docs.folders in Admin → settings"},
+    ]
+    return nocache_json({
+        "install": install,
+        "model": model,
+        "wizard": wizard,
+        "first_actions": first_actions,
+    })
+
+
 class FunnelBody(BaseModel):
     step: str = Field(..., max_length=64)
     event: str = Field("complete", max_length=32)   # "start" | "complete" | …

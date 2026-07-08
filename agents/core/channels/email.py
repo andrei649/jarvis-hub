@@ -87,7 +87,8 @@ class EmailChannel(ChannelAdapter):
         for sender, subject, body in messages:
             if self.handler:
                 text = body or subject
-                await self.handler(text, channel="email", from_addr=sender, subject=subject)
+                await self.handler(text, channel="email", sender=sender,
+                                   from_addr=sender, subject=subject)
 
     def _imap_fetch(self) -> list[tuple[str, str, str]]:
 
