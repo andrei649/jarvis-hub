@@ -11,6 +11,6 @@
     "istanbul-lib-instrument": "^6.0.3",
     "jsdom": "^29.1.1",
     "nyc": "^18.0.0",
-    "vitest": "^4.1.9"
+    "vitest": "^4.1.10"
   }
 }
