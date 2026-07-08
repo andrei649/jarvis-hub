@@ -44,13 +44,13 @@ def test_landing_page_uses_brand_tokens_and_verified_copy():
         "tamper-evident audit log",
         "living memory",
         "$0/month",
-        "demo-shot-list.md",
     ]
 
     for needle in required:
         assert needle in html
 
-    stale_claims = ("2,150", "2,400", "99% SP", "1,119-SP")
+    stale_claims = ("2,150", "2,400", "99% SP", "1,119-SP", "3,600+",
+                    "Demo capture support", "demo-shot-list.md")
     for stale in stale_claims:
         assert stale not in html
 

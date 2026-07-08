@@ -108,7 +108,7 @@ Gate-ul de *coverage* (`tests/test_hud_v2_parity.py`) clasifică fiecare rută, 
   în gate-ul de paritate, cu motivul notat.
 
 ### Rute noi → routere per-domeniu (anti-god-object CLN-3)
-`agents/web.py` e un god-object (255 rute inline). Ca să nu-l creștem: **rutele noi se adaugă
+`agents/web.py` a fost un god-object (255 rute inline, rezolvat în CLN-3 #296 — azi doar 9 rute app-shell inline). Ca să nu regresăm: **rutele noi se adaugă
 într-un router per-domeniu** `agents/core/routers/<domeniu>.py` (pattern: `APIRouter`, guard-uri din
 `_deps.py`, stare partajată lazy via `from agents import web`), montat în `web.py` cu
 `app.include_router(...)`. **Nu adăuga `@app.*` inline noi.** Plasă de siguranță (rulează înainte de

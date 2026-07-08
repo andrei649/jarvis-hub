@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
 # start.sh — launch Jarvis Hub (Linux/macOS). Mirrors START.bat.
-# Also auto-starts WorldView (4D OSINT) unless JARVIS_WORLDVIEW=0 and
-# the Jarvis Signal Layer unless JARVIS_SIGNAL_LAYER=0.
+# WorldView (4D OSINT) and the Signal Layer are OPT-IN companions:
+# start them with JARVIS_WORLDVIEW=1 / JARVIS_SIGNAL_LAYER=1.
 # Serves the V2 cockpit HUD by default (set JARVIS_HUD=v1 for the legacy HUD).
 set -uo pipefail
 cd "$(dirname "$0")"
 
-# --- WorldView (4D OSINT) — optional, opt-out with JARVIS_WORLDVIEW=0 ---
-if [ "${JARVIS_WORLDVIEW:-1}" != "0" ] && [ -f worldview/package.json ]; then
+# --- WorldView (4D OSINT) — opt-IN with JARVIS_WORLDVIEW=1 ---
+if [ "${JARVIS_WORLDVIEW:-0}" = "1" ] && [ -f worldview/package.json ]; then
   if command -v docker >/dev/null 2>&1 && command -v npm >/dev/null 2>&1 && [ -d worldview/node_modules ]; then
     echo "[WorldView] starting infra (TimescaleDB + Redis + Redpanda)…"
     if ( cd worldview && docker compose up -d ); then
@@ -24,8 +24,8 @@ if [ "${JARVIS_WORLDVIEW:-1}" != "0" ] && [ -f worldview/package.json ]; then
   fi
 fi
 
-# --- Jarvis Signal Layer — optional, opt-out with JARVIS_SIGNAL_LAYER=0 ---
-if [ "${JARVIS_SIGNAL_LAYER:-1}" != "0" ] && [ -f services/signal-layer/src/index.mjs ]; then
+# --- Jarvis Signal Layer — opt-IN with JARVIS_SIGNAL_LAYER=1 ---
+if [ "${JARVIS_SIGNAL_LAYER:-0}" = "1" ] && [ -f services/signal-layer/src/index.mjs ]; then
   if command -v node >/dev/null 2>&1; then
     export JARVIS_SIGNAL_LAYER_MODE="${JARVIS_SIGNAL_LAYER_MODE:-${JARVIS_WORLDVIEW_MODE:-replay}}"
     export SIGNAL_LAYER_HOST="${SIGNAL_LAYER_HOST:-127.0.0.1}"

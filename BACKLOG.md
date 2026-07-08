@@ -6,7 +6,9 @@
 > **North Star (vision, principles, phase gates):** [MOONSHOT.md](MOONSHOT.md) — re-rank this backlog against it
 > **Go-Live Plan (features, roadmap, marketing brief):** [GO_LIVE_PLAN.md](GO_LIVE_PLAN.md)
 > **Delivery History (H1–H8 completed sprints):** [docs/HISTORY.md](docs/HISTORY.md)
-> **Hermes migration v3 plan (candidate, pending Fable review):** [docs/research/2026-07-06-hermes-agent-migration-plan.md](docs/research/2026-07-06-hermes-agent-migration-plan.md)
+> **Hermes migration v3 plan (reviewed by Fable 2026-07-07 — APPROVED with notes):** [docs/research/2026-07-06-hermes-agent-migration-plan.md](docs/research/2026-07-06-hermes-agent-migration-plan.md) · review verdict + remaining-phase order in [docs/handoff-fable-2026-07-07.md](docs/handoff-fable-2026-07-07.md) §5
+> **Last-day Fable handoff (2026-07-07 — ordered owner/AI task lanes, risk register):** [docs/handoff-fable-2026-07-07.md](docs/handoff-fable-2026-07-07.md)
+> **Pre-go-live stakeholder sync (2026-07-07 — 5-seat agent panel, conditional GO, Gate-2 checklist):** [docs/meetings/2026-07-07-pre-go-live-sync.md](docs/meetings/2026-07-07-pre-go-live-sync.md)
 
 **S = story points (1 = ~jumătate de zi) · P = prioritate (P0–P3)**
 
@@ -17,7 +19,7 @@ pip install -r requirements-beta.txt
 python serve.py   # canonical entry (boot guards + graceful shutdown; O26-P0.6: the raw
 #   uvicorn entry `python -m uvicorn agents.web:app` now runs the same guards via the lifespan)
 python scripts/install_smoke.py --json  # fast install smoke: boot + /readyz + fake local turn
-python -m pytest tests/ -v          # ~3,727 passed, 6 skipped (counter synced via scripts/status_sync.py)
+python -m pytest tests/ -v          # ~3,845 passed, 6 skipped (counter synced via scripts/status_sync.py)
 ```
 
 > Singurul skip rămas e heartbeat-ul opțional. (Vechiul `tests/test_spotify.py` cu 8 skip-uri a
@@ -106,6 +108,40 @@ python -m pytest tests/ -v          # ~3,727 passed, 6 skipped (counter synced v
 
 ---
 
+## 🤝 Handoff — Fable last-day review (2026-07-07)
+
+> Full review, verdict, and rationale: **[docs/handoff-fable-2026-07-07.md](docs/handoff-fable-2026-07-07.md)**
+> (ground truth verified: CI green on main, 0 open PRs, 3,820-test suite green; Hermes v3 plan
+> **APPROVED with notes** — §5 of the handoff). The two lanes below are the same items, tracked
+> here so they surface in any "what's next" conversation. Tick them here AND in the handoff doc.
+
+**Lane A — owner critical path (ordered; delivered via PR #634):**
+
+| # | Item | Status |
+|---|------|--------|
+| A1 | ⭐B0 governed-autonomy demo + full `docs/MANUAL_TESTING.md` pass on the RTX box | ⬜ **the gate** |
+| A2 | 72h soak (0.63) + record AUD-0 / H23.23 | ⬜ |
+| A3 | Dependabot re-triage — 19 open alerts on main (4 high, 2026-07-07) | 🟢 agent half done in #634 — local re-audit enumerated everything without the UI: fixed frontend `undici` (high, dev-chain) and worldview/mcp `hono`+`esbuild` (high+moderate), both trees now 0 vulns with suites green; mobile attempt reverted after it broke `tsc` (expo-audio type surface — the device gate is real). Owner tail: worldview 2 moderates (in-next postcss, wait for next 16.3), mobile Expo SDK upgrade on a device, dismiss stale alerts in UI |
+| A4 | GitHub settings batch (SEC-4 required checks · CQ-2 dismissals · CQ-3 paste · repo metadata) | ⬜ |
+| A5 | License flip MIT→Apache-2.0 + TRADEMARKS.md | 🟢 prep done in #634 — `TRADEMARKS.md` live, CONTRIBUTING relicense grant added, canonical Apache-2.0 staged in `docs/legal/`; the flip itself is 3 owner commands (steps in OWNER_TASKS), timing per LICENSE_DECISION = just before v1.0 |
+| A6 | Demo video (60s) + publish landing (dev half ✅ #512) | ⬜ |
+| A7 | Recruit 1–3 design partners; north-star on a non-owner install ≥2 weeks | ⬜ |
+| A8 | Tag 1.0.0 (only after A1 + A7) | ⬜ |
+
+**Lane B — engineering tail (any AI session; one item = one PR, default-off):**
+
+| # | Item | Status |
+|---|------|--------|
+| B1 | Hermes v3 Phase 2 — context compression maturity | ✅ done in #634 (2026-07-07) — `keep_first` leading-turn protection, hermes structured summary template, iterative summary-merge (`prior`/`covered`), and an opt-in **strict-local** LLM summarizer (`memory.compression_summarizer`, uses `LLMRouter.local_backend` only, degrades to the deterministic digest). Defaults byte-identical; `tests/test_context_compression_phase2.py` (+12) |
+| B2 | 0.19 First-Run Command Center (activation for design partners; seams in H23.20) | ✅ done in #634 (2026-07-07) — `GET /api/onboarding/command-center` (user-guarded, one fetch: `/readyz` snapshot + version, model backend truth, H23.20 wizard state, honest `first_actions` with backend-derived `ready`/`reason`) + HUD `CommandCenterPanel` (new **Start** Console cluster; "say hello" drives a real `/chat` turn and records the `test_chat` funnel step). Red/green: `tests/test_first_run_command_center.py` (+4) + `command-center-panel.test.tsx` (+4); parity/openapi/auth snapshots reseeded; typegen schema regenerated |
+| B3 | AUD-14 tail — remaining raw env-read slices (template: #592–#622) | 🟢 re-audited 2026-07-07 (in #634): **zero** unsafe parses remain — no `int()`/`float()`/`json.loads()` on raw env, no ad-hoc boolean truthiness (ratchet `test_o26_p2_env_config.py` green); ~104 plain `env_str`-equivalent string reads left = cosmetic, migrate opportunistically in files you already touch |
+| B4 | M2.4 live-eval lane | 🟢 **ci-small-model lane shipped in #634 (2026-07-07, owner-approved)** — `companion_eval --live-model` runs the golden suite through any OpenAI-compatible endpoint (live generation, deterministic rubric scoring, preflight probe so infra failure ≠ score 0, results recorded to the DatasetStore) + an opt-in `live-small-model` job in `eval-nightly.yml` gated on repo var `JARVIS_EVAL_CI_SMALL_MODEL=1` (Ollama + qwen2.5:0.5b on the runner; advisory, honestly labeled). `tests/test_companion_eval_live_lane.py` (+3, in-process endpoint double). Owner: flip the repo variable to activate; the owner-box fidelity lane (`JARVIS_EVAL_LIVE`) stays separate |
+| B5 | Non-v0 inbox channels (email/WhatsApp) | 🟢 **email half done in #634 (2026-07-07)** — `email` joins `SUPPORTED_INBOX_CHANNELS`: inbound IMAP messages become inbox threads whose reply metadata carries the SMTP kwargs (`to` aliased from `from_addr`, `subject`), the `CHANNEL_REPLY_CONTRACT` gains the email reply-target branch, and `EmailChannel` now passes `sender=` so the H12.19 pairing gate applies to inbound email. All against test doubles (`tests/test_email_inbox_transport.py`, +6); owner live SMTP/IMAP validation remains. **WhatsApp stays parked** (bridge hardware) |
+| B6 | Maintenance runbook ("if the owner disappears a month", REVIEW_YEAR_ONE §9.7) | ✅ drafted in #634 — [docs/MAINTENANCE_RUNBOOK.md](docs/MAINTENANCE_RUNBOOK.md), owner to verify the `[owner: verify]` marks |
+| B7 | Hermes v3 Phases 3/5/6 live wiring (file-RPC exec · gateway sessions · cron) | ⬜ on-demand only — primitives merged, wire behind real pull |
+
+---
+
 ## Version Roadmap
 
 | Version | Target | Milestone | Items |
@@ -171,7 +207,7 @@ python -m pytest tests/ -v          # ~3,727 passed, 6 skipped (counter synced v
 
 | Theme | Status | What exists / the bounded gap | Maps to |
 |-------|--------|-------------------------------|---------|
-| 0.19 First-Run Command Center | 🟡 partial | `routers/onboarding.py`+`status.py`+demo mode / unified install-health+model+first-action screen | H23.20 |
+| 0.19 First-Run Command Center | ✅ done (#634, 2026-07-07) | `GET /api/onboarding/command-center` + HUD `CommandCenterPanel` (Start cluster): install health (`/readyz` snapshot + version) + model truth + wizard state + honest first actions in one read; "say hello" drives a real `/chat` turn and records the funnel step | H23.20 |
 | 0.20 Jarvis Vault | ⬜ missing | `secrets_vault.py` is a resolver skeleton / the vault surface itself (1 TB store + retention controls) is unstarted — *adjacent* data-mgmt pieces shipped under their own H-items: backup ✅ #302, at-rest encryption ✅ AUD-1, export ✅ #303, forget ✅ #306 (AUD-2: endpoint + CLI erase memory at rest) | H23.10 |
 | 0.21 Offline Knowledge Packs | 🌱 seed | `local_docs.py` / Kiwix-style packs + installer | 0.21 |
 | 0.22 Appliance Install/Update | 🟡 partial | `install.sh`,`start.sh`,`docker-compose.yml`, **release bundles + SBOM + checksums + optional sign** ✅ (H23.13) / uninstall, no-telemetry proof | H23.13/15 |
@@ -1266,6 +1302,7 @@ chain-of-thought leak / mid-sentence truncation fixed. Kill-switch:
 | H18.16 ✅ | **Mobile memory + notes** — native Memory tab catches the app up to the read-only HUD memory/notes surfaces: `GET /memory` renders recent session turns and `GET /api/notes` renders current session notes, deliberately excluding clear/save/rewrite controls from the phone. Merged in #572 with full PR CI green; verified locally with 38 mobile Jest tests + clean `tsc --noEmit`. | 3 | ✅ done (2026-07-05, #572) | H18.1 | mobile parity |
 | H18.17 ✅ | **Mobile knowledge graph** — native Memory tab gains a Graph view over the read-only KG surfaces: `GET /api/kg/entities`, `GET /api/kg/entities/{name}`, `GET /api/kg/facts/as-of`, and `GET /api/kg/facts/history`. It renders entity search/list, selected-entity relations, current facts, and subject history without mobile entity/relation/fact write/delete controls. Merged in #574 with full PR CI green; verified locally with 42 mobile Jest tests + clean `tsc --noEmit`. | 3 | ✅ done (2026-07-05, #574) | H18.1, H18.16 | mobile parity |
 | H18.18 ✅ | **Mobile security posture** — native Status tab gains a read-only Trust card over `GET /api/security/governance`, `GET /api/security/posture`, `GET /api/security/kill-switch`, and `GET /api/security/loop-breaker`, using the existing admin-token setting for posture and deliberately excluding halt/reset/capability-write controls from the phone. Merged in #576 with full PR CI green; verified locally with 46 mobile Jest tests + clean `tsc --noEmit`. | 3 | ✅ done (2026-07-05, #576) | H18.1 | mobile parity |
+| H18.19 ✅ | **Mobile first-run command center** — native Status tab gains a read-only First-run card over `GET /api/onboarding/command-center`: install ready/version, model truth, wizard progress, and honest per-action ready/reason rows (run affordances stay browser-side). Red/green: `commandCenter.test.ts` first failed on missing `fetchCommandCenter`, then mobile Jest passed (49) + `tsc --noEmit` clean. | 2 | ✅ done (2026-07-07, #634) | H18.1 | mobile parity |
 
 ---
 
@@ -1368,7 +1405,7 @@ chain-of-thought leak / mid-sentence truncation fixed. Kill-switch:
 
 > Sursă: research [docs/research/2026-06-07-hermes-agent.md](docs/research/2026-06-07-hermes-agent.md) §7.
 > Follow-up plan: [docs/research/2026-07-06-hermes-agent-migration-plan.md](docs/research/2026-07-06-hermes-agent-migration-plan.md)
-> captures the v3 expert replication plan as candidate scope pending Fable review; the H20 live-wave
+> captures the v3 expert replication plan — reviewed by Fable 2026-07-07, APPROVED with notes (docs/handoff-fable-2026-07-07.md §5); the H20 live-wave
 > below delivers its Phase 0–1 (the per-turn learning loop) — the remaining phases stay candidate scope.
 > `hermes-agent` (NousResearch, MIT, ~185.7k★, activ) se suprapune masiv cu OpenClaw (are chiar
 > `hermes claw migrate`), așa că **gap-urile de reach/UX sunt deja trackuite** din

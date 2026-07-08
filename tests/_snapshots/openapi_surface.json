@@ -112,6 +112,7 @@
   "GET /api/notes": "notes_get_api_notes_get",
   "GET /api/oauth/auth-url": "oauth_auth_url_api_oauth_auth_url_get",
   "GET /api/oauth/status": "oauth_status_api_oauth_status_get",
+  "GET /api/onboarding/command-center": "command_center_api_onboarding_command_center_get",
   "GET /api/onboarding/wizard": "onboarding_wizard_api_onboarding_wizard_get",
   "GET /api/oracle/conflicts": "oracle_conflicts_api_oracle_conflicts_get",
   "GET /api/oracle/status": "oracle_status_api_oracle_status_get",

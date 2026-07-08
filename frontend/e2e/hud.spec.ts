@@ -3,6 +3,15 @@
    PAINTS pixels (the v3 port that replaced the /brain iframe), and nothing throws an
    uncaught exception. A screenshot is captured as the human-reviewable artifact. */
 import { test, expect } from '@playwright/test';
+
+// The e2e backend boots with no model loaded, which (correctly) raises the
+// first-run gate. These specs drive the cockpit as an already-onboarded user,
+// so pre-seed the dismissal exactly as a returning user's browser carries it.
+test.beforeEach(async ({ page }) => {
+  await page.addInitScript(() => {
+    try { localStorage.setItem('hud.firstrun.dismissed', '1'); } catch { /* ignore */ }
+  });
+});
 import { mkdirSync } from 'node:fs';
 
 function sse(events: object[]): string {

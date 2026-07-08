@@ -14,7 +14,7 @@ import { AgentsMode, Dossier, TrustMode, MemoryMode } from './modes';
 import { AutonomyMode, BuildMode, ObserveMode, InteropMode } from './modes2';
 import { ChatMode, CommsMode, AdminMode } from './modes3';
 import { FinanceMode, HealthMode, KnowledgeMode, FamilyMode } from './modes4';
-import { ConsoleOverlay } from './gap';
+import { ConsoleOverlay, FirstRunGate, shouldShowFirstRun, FIRST_RUN_DISMISS_KEY } from './gap';
 import { NeuralMesh } from './mesh';
 import { initAnalytics, trackPageview } from './analytics';
 
@@ -79,6 +79,17 @@ function App() {
   const [provModal, setProvModal] = useState(null);
   const [dossier, setDossier] = useState(null);
   const [consoleOpen, setConsoleOpen] = useState(false);
+  // Owner B0 finding: onboarding must find the user, not vice-versa. On boot
+  // (never in demo mode, never after a dismiss) ask the command center whether
+  // the install is usable; if not, land on it. An API error never blocks the HUD.
+  const [firstRun, setFirstRun] = useState(false);
+  useEffect(() => {
+    if (demo) return;
+    try { if (localStorage.getItem(FIRST_RUN_DISMISS_KEY) === '1') return; } catch { /* ignore */ }
+    apiGet('/api/onboarding/command-center')
+      .then((cc: any) => { if (shouldShowFirstRun(cc)) setFirstRun(true); })
+      .catch(() => {});
+  }, [demo]);
   const [decisions, setDecisions] = useState(() => demo ? V2.DECISIONS.map((d, i) => ({ ...d, _id: 'd' + i })) : []);
   // P1 live-data state — empty by default (honest); demo pre-seeds, backend overwrites
   const [ticker, setTicker] = useState(demo ? V2.TICKER : []);
@@ -368,6 +379,7 @@ function App() {
       {provModal && <ProvModal prov={provModal} onClose={() => setProvModal(null)} />}
       {dossier && <Dossier id={dossier} onClose={() => setDossier(null)} onOpen={setDossier} />}
       {consoleOpen && <ConsoleOverlay onClose={() => setConsoleOpen(false)} />}
+      {firstRun && <FirstRunGate onClose={() => setFirstRun(false)} />}
       <button className="tool-btn" onClick={() => setConsoleOpen(true)} title="console (`)"
         style={{ position: 'fixed', right: 16, bottom: 16, zIndex: 50 }}>▦ CONSOLE</button>
       <Palette open={palette} onClose={() => setPalette(false)} onMode={setMode}

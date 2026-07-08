@@ -25,9 +25,10 @@ python -m pip install --quiet --upgrade pip
 python -m pip install --quiet -r requirements-beta.txt
 echo "      dependencies installed."
 
-# 3. WorldView (4D OSINT) — optional; soft-skip if tooling is absent so JARVIS still installs
-echo "[3/5] WorldView setup (optional)…"
-if [ -f worldview/package.json ]; then
+# 3. WorldView (4D OSINT) — a separate companion stack, OPT-IN: set JARVIS_WORLDVIEW=1
+#    to include it. Default install is the assistant only (smaller, faster, clearer).
+echo "[3/5] WorldView setup (opt-in via JARVIS_WORLDVIEW=1)…"
+if [ "${JARVIS_WORLDVIEW:-0}" = "1" ] && [ -f worldview/package.json ]; then
   if command -v node >/dev/null 2>&1 && command -v npm >/dev/null 2>&1; then
     node_major="$(node -p 'process.versions.node.split(".")[0]' 2>/dev/null || echo 0)"
     if [ "${node_major:-0}" -lt 20 ]; then
@@ -45,23 +46,26 @@ if [ -f worldview/package.json ]; then
   fi
   command -v docker >/dev/null 2>&1 || echo "      [NOTE] Docker not found — WorldView infra needs it; install Docker to run WorldView."
 else
-  echo "      [SKIP] worldview/ not present in this checkout."
+  echo "      [SKIP] WorldView not requested (set JARVIS_WORLDVIEW=1 to include it)."
 fi
 
-# 4. Verify JARVIS with the offline test suite
-echo "[4/5] Running the JARVIS offline test suite…"
-if python -m pytest -q; then
-  TESTS_OK=1
+# 4. Verify the install — fast smoke by default (~30s: real boot + /readyz + one
+#    deterministic chat turn). The full ~3,800-test offline suite runs with --dev.
+if [ "${1:-}" = "--dev" ]; then
+  echo "[4/5] Running the FULL offline test suite (--dev)…"
+  if python -m pytest -q; then TESTS_OK=1; else TESTS_OK=0;
+    echo "[WARN] some tests failed — you can still try: ./start.sh" >&2; fi
 else
-  TESTS_OK=0
-  echo "[WARN] some tests failed — you can still try: ./start.sh" >&2
+  echo "[4/5] Running the install smoke (fast; full suite: ./install.sh --dev)…"
+  if python scripts/install_smoke.py --json; then TESTS_OK=1; else TESTS_OK=0;
+    echo "[WARN] install smoke failed — check the output above." >&2; fi
 fi
 
 # 5. Done
 echo "[5/5] Done. (tests ok: ${TESTS_OK})"
 echo "============================================================"
-echo "  Start everything:    ./start.sh                 (JARVIS :8080 + WorldView :3000)"
-echo "  JARVIS only:         JARVIS_WORLDVIEW=0 ./start.sh"
+echo "  Start JARVIS:        ./start.sh                 (assistant on :8080)"
+echo "  + WorldView too:     JARVIS_WORLDVIEW=1 ./start.sh  (companion OSINT stack, :3000)"
 echo "  WorldView demo data: cd worldview && npm run db:seed"
 echo "  then open  http://127.0.0.1:8080/   (V2 cockpit; legacy HUD at /v1)"
 echo "============================================================"

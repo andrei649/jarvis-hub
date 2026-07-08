@@ -2,6 +2,17 @@
 
 Thank you for your interest in contributing. This guide covers prerequisites, local setup, running the server and tests, and the branch/PR workflow.
 
+## Licensing of contributions
+
+By submitting a contribution you agree that it is your own work (or you have
+the right to submit it) and that it is licensed under this repository's
+license — **and you additionally grant the project maintainer the right to
+relicense your contribution under Apache-2.0**, per the recorded pre-1.0
+relicensing decision ([docs/LICENSE_DECISION.md](docs/LICENSE_DECISION.md)).
+This lightweight in-repo grant is what lets the planned MIT → Apache-2.0 flip
+happen without chasing every past contributor. The project name and brand are
+covered separately by [TRADEMARKS.md](TRADEMARKS.md).
+
 ---
 
 ## Prerequisites
