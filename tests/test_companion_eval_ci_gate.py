@@ -73,8 +73,8 @@ def test_eval_nightly_workflow_persists_companion_eval_store():
     workflow = (repo_root / ".github" / "workflows" / "eval-nightly.yml").read_text(encoding="utf-8")
 
     assert "JARVIS_EVAL_STORE:" in workflow
-    assert "actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830  # v4.3.0" in workflow
-    assert "actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830  # v4.3.0" in workflow
+    assert "actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0" in workflow
+    assert "actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0" in workflow
     assert "path: ${{ env.JARVIS_EVAL_STORE }}" in workflow
     assert "restore-keys:" in workflow
     assert "--store-root \"$JARVIS_EVAL_STORE\"" in workflow
