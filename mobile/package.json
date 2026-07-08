@@ -4,11 +4,11 @@
   "main": "index.ts",
   "dependencies": {
     "@react-native-async-storage/async-storage": "^3.1.1",
-    "expo": "~56.0.12",
-    "expo-audio": "~56.0.12",
-    "expo-file-system": "~56.0.8",
-    "expo-splash-screen": "~56.0.10",
-    "expo-status-bar": "~56.0.4",
+    "expo": "~57.0.4",
+    "expo-audio": "~57.0.0",
+    "expo-file-system": "~57.0.0",
+    "expo-splash-screen": "~57.0.2",
+    "expo-status-bar": "~57.0.0",
     "react": "19.2.7",
     "react-native": "0.86.0"
   },
