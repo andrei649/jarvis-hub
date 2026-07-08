@@ -71,11 +71,35 @@ def local_backend_degraded_reply(backend_name: str, server_hint: str, exc: Excep
             f"Start {server_hint} and try again — Jarvis runs local-first, so it "
             "needs a local model server running."
         )
-    logger.error("%s request failed — serving a degraded reply: %s", backend_name, exc)
+    detail = _server_error_detail(exc)
+    logger.error(
+        "%s request failed — serving a degraded reply: %s%s",
+        backend_name, exc, f" | server said: {detail}" if detail else "",
+    )
     return (
         f"⚠️ The local {backend_name} model hit an error and couldn't answer. "
         f"Check the {backend_name} server and try again."
     )
+
+
+def _server_error_detail(exc: Exception, limit: int = 300) -> str:
+    """Best-effort extraction of a reachable-but-rejecting server's own error text.
+
+    ``resp.raise_for_status()`` raises ``httpx.HTTPStatusError`` whose default
+    str() is just "Client error '400 Bad Request' for url ..." — it drops the
+    response body, which is usually the ONLY place a local model server explains
+    *why* (bad sampler params, context overflow, template mismatch, ...). That
+    detail is the server's own diagnostic text, not caller input — safe to log.
+    Never raises; returns "" if there's nothing to extract.
+    """
+    response = getattr(exc, "response", None)
+    if response is None:
+        return ""
+    try:
+        body = response.text
+    except Exception:
+        return ""
+    return body.strip()[:limit]
 
 
 def is_degraded_reply(text: object) -> bool:

@@ -70,4 +70,23 @@ describe('NeuralMesh — the native canvas brain mounts + draws without throwing
     // running a frame must not throw even though getContext returns null
     expect(() => act(() => { rafCb && rafCb(0); })).not.toThrow();
   });
+
+  // Real-world finding (2026-07-08 test-drive): a focused agent's task fan had no
+  // render cap. Every task under the focused owner draws into a fixed-size arc
+  // (44px radius, ~24deg span) regardless of count — with dozens of tasks (a
+  // realistic outcome after hours of autonomy/heartbeat activity) the labels
+  // overlap into an unreadable dense block. The fan must stay bounded no matter
+  // how many tasks a single owner accumulates.
+  it('caps the focused task fan so label count never grows unbounded', () => {
+    const ctx = stubCtx();
+    HTMLCanvasElement.prototype.getContext = vi.fn(() => ctx);
+    const manyTasks = Array.from({ length: 40 }, (_, i) => ({
+      id: i, owner: 'howard', title: `retry attempt ${i}`, status: 'blocked',
+    }));
+    render(<NeuralMesh agents={AGENTS} tasks={manyTasks} activeId="howard" onSelect={() => {}} motion="lively" t={{}} />);
+    act(() => { rafCb(0); });
+    // one fillText per agent label (howard is focused) + up to the fan cap for
+    // its tasks — never anywhere close to the full 40.
+    expect(ctx.fillText.mock.calls.length).toBeLessThan(20);
+  });
 });
