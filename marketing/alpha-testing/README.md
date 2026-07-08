@@ -5,12 +5,16 @@ outreach, not a broad public launch.
 
 ## Assets
 
-- `jarvis-alpha-hook-vertical.mp4` - 22s vertical hook video for Facebook, LinkedIn,
-  Stories/Reels, or direct messages.
-- `jarvis-alpha-hook-thumbnail.png` - still frame for previews.
+- `screenshots/` - real HUD captures (demo mode, clearly badged) for Facebook, LinkedIn,
+  or direct messages:
+  - `jarvis-alpha-cockpit.png` - the cockpit at rest: neural network, roster, decision queue.
+  - `jarvis-alpha-trust-center.png` - audit chain "chain verified · no tampering detected"
+    plus the on-device/cloud locality meter.
+  - `jarvis-alpha-autonomy-brief.png` - the morning brief and per-agent AUTO/ASK scope.
+  - `jarvis-alpha-family-local.png` - the family surface's local-only badge (privacy proof
+    point).
 - `INVITE_MESSAGE.md` - paste-ready invite copy, caption, DM reply, and screening
   questions.
-- `render_alpha_hook.py` - deterministic local renderer for the MP4 and thumbnail.
 
 ## Positioning
 

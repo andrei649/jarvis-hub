@@ -1,6 +1,9 @@
 # Alpha Testing Invite Copy
 
-## Video Caption
+Attach 1-2 images from `screenshots/` to whichever post you use (the cockpit or trust-center
+shot reads best as the lead image; demo-mode badge stays visible, which is the point).
+
+## Post Caption
 
 Caut 2-3 oameni care vor sa testeze Jarvis Hub pe bune, 2-4 saptamani.
 
