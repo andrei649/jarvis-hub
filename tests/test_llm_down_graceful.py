@@ -11,6 +11,7 @@ Two guarantees, proven offline with httpx.MockTransport (no real server):
   conversation memory.
 """
 
+import json
 import sys
 from pathlib import Path
 
@@ -156,6 +157,64 @@ async def test_ollama_generate_400_logs_the_server_error_body(caplog):
         reply = await b.generate("model", "hello")
     assert "hit an error" in reply
     assert "sampler settings" in caplog.text
+    await b.aclose()
+
+
+# ── empty system message is a 400 trigger on strict chat templates ───────────
+# Real-world finding (2026-07-08 test-drive): LM Studio 400'd /v1/chat/completions
+# for a loaded minimax model while /v1/models stayed reachable. The one
+# non-standard thing in our payload is an always-present system turn — a
+# `{"role": "system", "content": ""}` entry that some models' chat templates
+# reject. The warm-up path (generate(model, ".", ...)) always sends an empty
+# system, so it 400s on those templates. Omit the system turn when it's blank.
+
+def _capture_ok(store):
+    """A 200 handler that records the request JSON body into *store*."""
+    def handler(request):
+        store["body"] = json.loads(request.content)
+        return httpx.Response(
+            200,
+            json={"choices": [{"message": {"content": "hi"}, "finish_reason": "stop"}]},
+            request=request,
+        )
+    return handler
+
+
+@pytest.mark.asyncio
+async def test_lmstudio_omits_empty_system_message():
+    store = {}
+    b = _with_transport(LMStudioBackend(), _capture_ok(store))
+    await b.generate("m", "hello")  # system="" (the warm-up / no-persona path)
+    roles = [msg["role"] for msg in store["body"]["messages"]]
+    assert roles == ["user"], "an empty system turn must not be sent (strict templates 400)"
+    await b.aclose()
+
+
+@pytest.mark.asyncio
+async def test_lmstudio_keeps_nonempty_system_message():
+    store = {}
+    b = _with_transport(LMStudioBackend(), _capture_ok(store))
+    await b.generate("m", "hello", system="You are Jarvis.")
+    msgs = store["body"]["messages"]
+    assert msgs[0] == {"role": "system", "content": "You are Jarvis."}
+    assert msgs[1]["role"] == "user"
+    await b.aclose()
+
+
+@pytest.mark.asyncio
+async def test_lmstudio_stream_omits_empty_system_message():
+    store = {}
+
+    def handler(request):
+        store["body"] = json.loads(request.content)
+        # minimal SSE stream: one content delta then [DONE]
+        body = 'data: {"choices":[{"delta":{"content":"hi"},"finish_reason":"stop"}]}\n\ndata: [DONE]\n\n'
+        return httpx.Response(200, text=body, request=request)
+
+    b = _with_transport(LMStudioBackend(), handler)
+    await b.generate_stream("m", "hello")  # system="" default
+    roles = [msg["role"] for msg in store["body"]["messages"]]
+    assert roles == ["user"]
     await b.aclose()
 
 
