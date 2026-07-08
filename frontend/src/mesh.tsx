@@ -12,6 +12,9 @@
      follow-up for when such an endpoint exists. */
 import React, { useRef, useEffect, useMemo, useState } from 'react';
 
+// A fixed-size arc can only label so many tasks legibly regardless of focus —
+// this bounds the per-owner task fan (see the byOwner.forEach draw below).
+const MAX_FAN_TASKS = 12;
 const MESH_MODELS = [
   { id: 'gemma', label: 'gemma-4-26b', cloud: false, cost: 0.66 },
   { id: 'claude', label: 'claude', cloud: true, cost: 0.22 },
@@ -206,10 +209,15 @@ export function NeuralMesh({ agents = [], tasks = [], activeId, onSelect, motion
     const W = st.w, H = st.h, cx = st.cx, cy = st.cy;
     const outer = Math.min(W, H) * (cinema ? 0.48 : 0.46);
     ctx.globalCompositeOperation = 'source-over';
-    byOwner.forEach((list, owner) => {
+    // Bounded fan (real-world finding, 2026-07-08): an owner can accumulate far
+    // more tasks than a fixed-size arc can label legibly — cap what's drawn so
+    // the fan never degrades into an unreadable overlapping block, no matter
+    // how many tasks pile up under one owner.
+    byOwner.forEach((fullList, owner) => {
       const origin = node(owner);
       if (!origin) return;
       const focused = foc === owner;
+      const list = fullList.slice(0, MAX_FAN_TASKS);
       const base = Math.atan2(origin.y - cy, origin.x - cx);
       const span = focused ? Math.PI * 0.42 : Math.min(0.5, list.length * 0.13);
       list.forEach((tk, i) => {
