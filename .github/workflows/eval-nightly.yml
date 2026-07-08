@@ -35,7 +35,7 @@ jobs:
           python-version: "3.12"
 
       - name: Restore companion eval baseline
-        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830  # v4.3.0
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0
         with:
           path: ${{ env.JARVIS_EVAL_STORE }}
           key: ${{ env.JARVIS_EVAL_CACHE_PREFIX }}-${{ hashFiles('agents/core/observability/companion_dialogues.json', 'agents/core/observability/companion_eval.py') }}-${{ github.run_id }}
@@ -56,7 +56,7 @@ jobs:
 
       - name: Save companion eval baseline
         if: ${{ success() && github.event_name != 'pull_request' }}
-        uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830  # v4.3.0
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0
         with:
           path: ${{ env.JARVIS_EVAL_STORE }}
           key: ${{ env.JARVIS_EVAL_CACHE_PREFIX }}-${{ hashFiles('agents/core/observability/companion_dialogues.json', 'agents/core/observability/companion_eval.py') }}-${{ github.run_id }}
@@ -90,7 +90,7 @@ jobs:
           done
           ollama pull "$SMALL_MODEL"
       - name: Restore small-model eval baseline
-        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830  # v4.3.0
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0
         with:
           path: ${{ env.JARVIS_EVAL_STORE }}
           key: eval-nightly-small-model-v1-${{ github.run_id }}
@@ -103,7 +103,7 @@ jobs:
             --store-root "$JARVIS_EVAL_STORE" --summary "$GITHUB_STEP_SUMMARY"
       - name: Save small-model eval baseline
         if: ${{ success() }}
-        uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830  # v4.3.0
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0
         with:
           path: ${{ env.JARVIS_EVAL_STORE }}
           key: eval-nightly-small-model-v1-${{ github.run_id }}
