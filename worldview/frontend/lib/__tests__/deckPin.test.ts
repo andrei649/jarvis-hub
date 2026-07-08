@@ -25,6 +25,6 @@ test("@deck.gl/mesh-layers resolves to the same version as @deck.gl/core", () =>
   expect(resolvedVersion("@deck.gl/mesh-layers")).toBe(resolvedVersion("@deck.gl/core"));
 });
 
-test("@deck.gl/core is pinned to 9.3.5", () => {
-  expect(resolvedVersion("@deck.gl/core")).toBe("9.3.5");
+test("@deck.gl/core is pinned to 9.3.6", () => {
+  expect(resolvedVersion("@deck.gl/core")).toBe("9.3.6");
 });
