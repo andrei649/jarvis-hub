@@ -24,8 +24,8 @@
   },
   "//overrides": "deck.gl 9.3.x resolves its own consistent @deck.gl/core + @luma.gl stack, so the whole graph shares one Layer class without manual pins. Re-add an override here only if a transitive consumer drags in a second @deck.gl/core copy.",
   "overrides": {
-    "@deck.gl/core": "9.3.5",
-    "@deck.gl/extensions": "9.3.5",
-    "@deck.gl/mesh-layers": "9.3.5"
+    "@deck.gl/core": "9.3.6",
+    "@deck.gl/extensions": "9.3.6",
+    "@deck.gl/mesh-layers": "9.3.6"
   }
 }
