@@ -87,7 +87,15 @@ def resilient_call(
                         )
                         await asyncio.sleep(delay)
                     else:
-                        logger.error(f"All {max_retries + 1} attempts timed out")
+                        # Expected/handled by the caller (which logs anything
+                        # user-facing), and the breaker already WARNs the
+                        # closed->open transition once + exposes state via
+                        # /api/resilience — so keep this quiet and named, not a
+                        # bare context-free ERROR that floods a fresh install.
+                        logger.debug(
+                            "All %s attempts timed out for %s",
+                            max_retries + 1, getattr(func, "__name__", "call"),
+                        )
                         
                 except Exception as e:
                     last_exception = e
