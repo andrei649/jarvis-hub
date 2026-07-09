@@ -1,8 +1,33 @@
 # tests/test_resilience.py
+import logging
 import pytest
 import asyncio
 import time
 from agents.core.resilience import resilient_call
+
+
+@pytest.mark.asyncio
+async def test_timeout_exhaustion_logs_quietly_with_context(caplog):
+    """A fully-timed-out call is expected-and-handled plumbing (the circuit
+    breaker WARNs the closed->open transition once, and state is exposed via
+    /api/resilience). The final exhaustion must not add a bare context-free
+    ERROR on top — real-world 2026-07-08, embedding/plugin timeouts on a fresh
+    install spammed `ERROR: All 3 attempts timed out` and looked broken. It
+    should log quietly and name the wrapped call so it stays diagnosable."""
+    async def always_times_out():
+        raise asyncio.TimeoutError("nope")
+
+    wrapped = resilient_call(max_retries=1, backoff_base=0.0)(always_times_out)
+    with caplog.at_level(logging.DEBUG, logger="jarvis.resilience"), \
+            pytest.raises(asyncio.TimeoutError):
+        await wrapped()
+
+    assert not [r for r in caplog.records if r.levelno >= logging.ERROR], \
+        "timeout exhaustion must not log at ERROR"
+    assert any(
+        "timed out" in r.getMessage() and "always_times_out" in r.getMessage()
+        for r in caplog.records
+    ), "exhaustion should be logged with the wrapped function name for diagnosis"
 
 @pytest.mark.asyncio
 async def test_resilient_call_retries_on_timeout():
