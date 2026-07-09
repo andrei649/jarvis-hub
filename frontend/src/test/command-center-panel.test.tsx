@@ -70,6 +70,25 @@ describe('CommandCenterPanel — one screen: install health + model + first acti
     expect(posts.some((u) => u.includes('/api/onboarding/funnel'))).toBe(true);
   });
 
+  it('a degraded "say hello" reply does NOT tick the test_chat step (honest wizard)', async () => {
+    // Real-world finding (2026-07-08 test-drive): a fresh install where the model
+    // 400s/is-unreachable returns a degraded "⚠️ can't reach the model" reply.
+    // The panel used to record test_chat.complete anyway, so the wizard ticked
+    // "Say hello ✓" on a hello that never actually reached a model.
+    const fn = mockFetch({
+      '/api/onboarding/command-center': WARM,
+      '/chat': { reply: '⚠️ The local LM Studio model hit an error and couldn\'t answer.' },
+      '/api/onboarding/funnel': { ok: true, recorded: 'funnel.test_chat.complete' },
+    });
+    render(<CommandCenterPanel />);
+    await waitFor(() => expect(screen.getByText('run')).toBeTruthy());
+    fireEvent.click(screen.getByText('run'));
+    await waitFor(() => expect(screen.getByText(/hit an error/)).toBeTruthy());  // shows the failure
+    const posts = fn.mock.calls.filter((c) => c[1] && c[1].method === 'POST').map((c) => String(c[0]));
+    expect(posts.some((u) => u.includes('/chat'))).toBe(true);                    // the hello was attempted
+    expect(posts.some((u) => u.includes('/api/onboarding/funnel'))).toBe(false);  // but NOT recorded complete
+  });
+
   it('cold start renders honestly (starting, no model, actions held)', async () => {
     mockFetch({
       '/api/onboarding/command-center': {

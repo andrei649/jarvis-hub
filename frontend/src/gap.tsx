@@ -1783,8 +1783,16 @@ export function CommandCenterPanel() {
     setHello('…');
     apiPost('/chat', { message: 'Hello Jarvis — first-run check.' })
       .then((r: any) => {
-        setHello((r && r.reply) ? String(r.reply).slice(0, 120) : 'ok');
-        act('/api/onboarding/funnel', { step: 'test_chat', event: 'complete' }, reload);
+        const reply = (r && r.reply) ? String(r.reply) : '';
+        // A degraded reply (⚠ / ⚠️ prefix from the local-backend-down path) is a
+        // FAILED hello, not a completed step — show it, but don't tick test_chat,
+        // or the wizard would claim "Say hello ✓" on a hello that never reached a
+        // model (real-world 2026-07-08: model 400s while the server is reachable).
+        const degraded = reply.trim().startsWith('⚠');
+        setHello(reply ? reply.slice(0, 140) : 'ok');
+        if (!degraded) {
+          act('/api/onboarding/funnel', { step: 'test_chat', event: 'complete' }, reload);
+        }
       })
       .catch(() => setHello('chat failed — is a model running?'));
   };
