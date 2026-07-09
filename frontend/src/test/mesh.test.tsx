@@ -71,6 +71,33 @@ describe('NeuralMesh — the native canvas brain mounts + draws without throwing
     expect(() => act(() => { rafCb && rafCb(0); })).not.toThrow();
   });
 
+  // Real-world finding (2026-07-08 test-drive): the mesh drew a hardcoded
+  // gemma/claude/gemini model constellation regardless of the actually-loaded
+  // model — so an owner running e.g. minimax locally saw "GEMMA-4-26B" labelled
+  // as if real (Session-2 Q8: "what model are you running" must be the truth,
+  // not a guess). In live mode the model shell must reflect llm.model; demo
+  // (badged) keeps the cinematic default.
+  it('labels the model node with the real loaded model in live mode (honesty)', () => {
+    const ctx = stubCtx();
+    HTMLCanvasElement.prototype.getContext = vi.fn(() => ctx);
+    render(<NeuralMesh agents={AGENTS} activeId="jarvis" onSelect={() => {}} motion="lively"
+      llm={{ state: 'ready', model: 'minimax/minimax-m2.7' }} trust={{}} demo={false} t={{}} />);
+    act(() => { rafCb(0); });
+    const labels = ctx.fillText.mock.calls.map((c) => String(c[0]));
+    expect(labels.some((l) => l.includes('MINIMAX-M2.7'))).toBe(true);   // real model surfaced
+    expect(labels.some((l) => l.includes('GEMMA-4-26B'))).toBe(false);   // no fabricated model
+  });
+
+  it('keeps the cinematic default model constellation in demo mode (badged)', () => {
+    const ctx = stubCtx();
+    HTMLCanvasElement.prototype.getContext = vi.fn(() => ctx);
+    render(<NeuralMesh agents={AGENTS} activeId="jarvis" onSelect={() => {}} motion="lively"
+      llm={{ state: 'ready', model: 'minimax/minimax-m2.7' }} trust={{}} demo={true} t={{}} />);
+    act(() => { rafCb(0); });
+    const labels = ctx.fillText.mock.calls.map((c) => String(c[0]));
+    expect(labels.some((l) => l.includes('GEMMA-4-26B'))).toBe(true);    // demo constellation intact
+  });
+
   // Real-world finding (2026-07-08 test-drive): a focused agent's task fan had no
   // render cap. Every task under the focused owner draws into a fixed-size arc
   // (44px radius, ~24deg span) regardless of count — with dozens of tasks (a
