@@ -112,6 +112,24 @@ def is_degraded_reply(text: object) -> bool:
     return isinstance(text, str) and text.startswith(("⚠️", "["))
 
 
+# ── OpenAI-style chat message assembly ────────────────────────────────────────
+
+def _chat_messages(system: str, prompt: str) -> list:
+    """Build the OpenAI-style messages array, omitting an empty system turn.
+
+    A ``{"role": "system", "content": ""}`` entry is not harmless: some models'
+    chat templates reject an empty (or unexpected) system turn with a 400 while
+    ``/v1/models`` stays reachable — real-world 2026-07-08, a minimax model on
+    LM Studio 400'd chat completions, and the warm-up path always sends an empty
+    system. Only include the system turn when it actually carries text.
+    """
+    messages = []
+    if system and system.strip():
+        messages.append({"role": "system", "content": system})
+    messages.append({"role": "user", "content": prompt})
+    return messages
+
+
 # ── Post-processing filter (used on non-stream responses) ─────────────────────
 
 def strip_thinking(text: str) -> str:
@@ -328,10 +346,7 @@ class LMStudioBackend(LLMBackend):
     ) -> str:
         payload = {
             "model": model,
-            "messages": [
-                {"role": "system", "content": system},
-                {"role": "user", "content": prompt},
-            ],
+            "messages": _chat_messages(system, prompt),
             "temperature": temperature,
             "stream": False,
         }
@@ -376,10 +391,7 @@ class LMStudioBackend(LLMBackend):
     ) -> str:
         payload = {
             "model": model,
-            "messages": [
-                {"role": "system", "content": system},
-                {"role": "user", "content": prompt},
-            ],
+            "messages": _chat_messages(system, prompt),
             "temperature": temperature,
             "stream": True,
         }
