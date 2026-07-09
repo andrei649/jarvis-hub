@@ -157,6 +157,12 @@ class Embedder:
         self.max_workers = max(1, max_workers)
         self._client = None          # ollama module
         self._http_client = http_client  # injectable httpx-like client (lmstudio)
+        # Degraded-state latch (log-noise discipline): once the primary backend
+        # exhausts retries and we fall back to hash embeddings, warn ONCE with
+        # guidance, then stay quiet until it recovers — a fresh install with no
+        # embedding model would otherwise flood the log on every embed and look
+        # broken when it's actually degrading gracefully.
+        self._degraded = False
         self._setup()
         # Namespace the cache by the backend that actually produces vectors, so
         # ollama and hash embeddings are never mixed under one key.
@@ -313,22 +319,46 @@ class Embedder:
             return list(pool.map(self._embed_resilient, texts))
 
     def _embed_resilient(self, text: str) -> list[float]:
-        """Call the primary backend with retry+backoff; degrade to hash on failure."""
+        """Call the primary backend with retry+backoff; degrade to hash on failure.
+
+        Log-noise discipline: retry attempts log at DEBUG (transient plumbing);
+        the *first* fall-through to hash logs ONE actionable WARNING and latches
+        the degraded state; while degraded, further fall-throughs log at DEBUG;
+        a later success logs a single recovery INFO and clears the latch. This
+        keeps a healthy-but-embedding-less install from flooding the log while
+        still surfacing the condition once, with guidance.
+        """
         last_exc: Optional[Exception] = None
         for attempt in range(self.max_retries + 1):
             try:
-                return self._embed_primary(text)
+                vec = self._embed_primary(text)
+                if self._degraded:
+                    logger.info(
+                        "embedding backend recovered (%s/%s); resuming semantic embeddings",
+                        self.backend, self.model,
+                    )
+                    self._degraded = False
+                return vec
             except Exception as e:  # rate limit, transient network, model busy…
                 last_exc = e
                 if attempt < self.max_retries:
                     delay = min(self.backoff_base * (2 ** attempt), self.backoff_max)
-                    logger.warning(
-                        f"embed attempt {attempt + 1}/{self.max_retries + 1} failed "
-                        f"({type(e).__name__}), retrying in {delay:.2f}s"
+                    logger.debug(
+                        "embed attempt %s/%s failed (%s), retrying in %.2fs",
+                        attempt + 1, self.max_retries + 1, type(e).__name__, delay,
                     )
                     if delay > 0:
                         time.sleep(delay)
-        logger.warning(f"embed exhausted retries ({last_exc}); using hash fallback")
+        if not self._degraded:
+            self._degraded = True
+            logger.warning(
+                "no embedding model reachable (%s/%s: %s) — using hash fallback; "
+                "load an embedding model in LM Studio/Ollama for semantic recall "
+                "(further failures in this state log at DEBUG)",
+                self.backend, self.model, last_exc,
+            )
+        else:
+            logger.debug("embed still degraded (%s); using hash fallback", last_exc)
         return self._embed_hash(text)
 
     def _embed_primary(self, text: str) -> list[float]:
