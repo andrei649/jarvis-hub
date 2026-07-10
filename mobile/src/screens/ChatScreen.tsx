@@ -9,9 +9,9 @@ import {
   TextInput,
   View,
 } from 'react-native';
-import { streamChat, type HistoryTurn } from '../api/client';
+import { saveCanvasArtifact, streamChat, type HistoryTurn } from '../api/client';
 import { speak, stopSpeaking } from '../audio/tts';
-import type { ChatMessage } from '../chat/types';
+import type { ChatMessage, SaveState } from '../chat/types';
 import { AgentPicker } from '../components/AgentPicker';
 import { MessageBubble } from '../components/MessageBubble';
 import { SessionsModal } from '../components/SessionsModal';
@@ -86,6 +86,9 @@ export function ChatScreen({ onGoToSettings }: { onGoToSettings: () => void }) {
     scrollToEnd();
 
     cancelRef.current = streamChat(config, text, agent, {
+      // remember which agent ACTUALLY answered, so an explicit save attributes
+      // the artifact to the real responder (not just the selected agent)
+      onStart: (a) => patch(botId, (m) => ({ ...m, agent: a || agent })),
       onToken: (t) => {
         patch(botId, (m) => ({ ...m, text: m.text + t, pending: true }));
         scrollToEnd();
@@ -97,7 +100,9 @@ export function ChatScreen({ onGoToSettings }: { onGoToSettings: () => void }) {
         scrollToEnd();
       },
       onError: (err) => {
-        patch(botId, (m) => ({ ...m, text: m.text || `⚠ ${err}`, pending: false }));
+        // an empty bubble becomes an error placeholder (never saveable);
+        // partial streamed text stays as a real (kept) reply
+        patch(botId, (m) => ({ ...m, text: m.text || `⚠ ${err}`, pending: false, error: !m.text }));
         setSending(false);
         cancelRef.current = null;
       },
@@ -129,6 +134,26 @@ export function ChatScreen({ onGoToSettings }: { onGoToSettings: () => void }) {
       speak(config, toPlain(m.text), 'ro', () => setSpeakingId(null)).catch(() => setSpeakingId(null));
     },
     [config, speakingId],
+  );
+
+  // Explicit save-to-artifacts (H18.20): idle → saving (click-locked) → saved /
+  // saved·truncated / error (retryable). Never fires automatically.
+  const [saveStates, setSaveStates] = useState<Record<string, SaveState>>({});
+  const saveStatesRef = useRef(saveStates);
+  useEffect(() => {
+    saveStatesRef.current = saveStates;
+  }, [saveStates]);
+  const handleSave = useCallback(
+    (m: ChatMessage) => {
+      const cur = saveStatesRef.current[m.id];
+      if (cur === 'saving' || cur === 'saved' || cur === 'saved-trunc') return;
+      if (!m.text) return;
+      setSaveStates((s) => ({ ...s, [m.id]: 'saving' }));
+      saveCanvasArtifact(config, { agent: m.agent || agent, body: m.text })
+        .then((r) => setSaveStates((s) => ({ ...s, [m.id]: r.truncated ? 'saved-trunc' : 'saved' })))
+        .catch(() => setSaveStates((s) => ({ ...s, [m.id]: 'error' })));
+    },
+    [agent, config],
   );
 
   const onResumed = useCallback(
@@ -180,7 +205,8 @@ export function ChatScreen({ onGoToSettings }: { onGoToSettings: () => void }) {
         data={messages}
         keyExtractor={(m) => m.id}
         renderItem={({ item }) => (
-          <MessageBubble message={item} onSpeak={() => handleSpeak(item)} speaking={speakingId === item.id} />
+          <MessageBubble message={item} onSpeak={() => handleSpeak(item)} speaking={speakingId === item.id}
+            onSave={() => handleSave(item)} saveState={saveStates[item.id]} />
         )}
         contentContainerStyle={styles.listContent}
         onContentSizeChange={scrollToEnd}

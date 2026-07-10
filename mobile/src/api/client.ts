@@ -44,7 +44,7 @@ type RequestOpts = { timeoutMs?: number; retries?: number; admin?: boolean };
 
 async function request<T>(
   config: ServerConfig,
-  method: 'GET' | 'POST',
+  method: 'GET' | 'POST' | 'DELETE',
   path: string,
   body?: unknown,
   opts: RequestOpts = {},
@@ -780,6 +780,96 @@ export async function fetchKgFactHistory(
     retries: 2,
   });
   return normalizeKgFactHistory(res || {});
+}
+
+// ── Canvas artifacts (H18.20 — governed Agent Canvas parity) ─────
+
+/** Canvas bounds Markdown bodies to 4,000 chars (agents/core/canvas.py). */
+export const CANVAS_MARKDOWN_LIMIT = 4000;
+
+export type CanvasArtifact = {
+  id: string;
+  agent: string;
+  type: string;
+  payload: Record<string, unknown>;
+  pinned: boolean;
+  created_at?: number;
+};
+
+export type CanvasListResponse = { elements: CanvasArtifact[] };
+
+function normalizeCanvasArtifact(raw: unknown): CanvasArtifact | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const el = raw as Record<string, unknown>;
+  if (typeof el.id !== 'string' || !el.id) return null;
+  return {
+    id: el.id,
+    agent: typeof el.agent === 'string' ? el.agent : 'agent',
+    type: typeof el.type === 'string' ? el.type : 'unknown',
+    payload: el.payload && typeof el.payload === 'object' ? (el.payload as Record<string, unknown>) : {},
+    pinned: el.pinned === true,
+    created_at: typeof el.created_at === 'number' ? el.created_at : undefined,
+  };
+}
+
+export async function fetchCanvasArtifacts(config: ServerConfig): Promise<CanvasListResponse> {
+  const res = await request<Record<string, unknown>>(config, 'GET', '/api/canvas', undefined, { retries: 2 });
+  const rawElements = Array.isArray(res?.elements) ? res.elements : [];
+  const elements: CanvasArtifact[] = [];
+  for (const raw of rawElements) {
+    const el = normalizeCanvasArtifact(raw);
+    if (el) elements.push(el);
+  }
+  return { elements };
+}
+
+export type SaveCanvasResult = { element: CanvasArtifact | null; truncated: boolean };
+
+/**
+ * Explicitly save a completed assistant reply as a governed markdown artifact —
+ * the exact unchanged POST /api/canvas/post contract the browser cockpit uses.
+ * Truncates at the canvas bound on a CODE-POINT boundary so an astral char at
+ * the limit is never split into a lone UTF-16 surrogate.
+ */
+export async function saveCanvasArtifact(
+  config: ServerConfig,
+  args: { agent: string; body: string },
+): Promise<SaveCanvasResult> {
+  const cps = Array.from(args.body || '');
+  const truncated = cps.length > CANVAS_MARKDOWN_LIMIT;
+  const body = truncated ? cps.slice(0, CANVAS_MARKDOWN_LIMIT).join('') : args.body;
+  const res = await request<Record<string, unknown>>(config, 'POST', '/api/canvas/post', {
+    agent: args.agent || 'jarvis',
+    type: 'markdown',
+    payload: { title: 'Saved response', body },
+    pinned: false,
+  });
+  return { element: normalizeCanvasArtifact(res), truncated };
+}
+
+export async function pinCanvasArtifact(
+  config: ServerConfig,
+  id: string,
+  pinned: boolean,
+): Promise<CanvasArtifact | null> {
+  const res = await request<Record<string, unknown>>(
+    config,
+    'POST',
+    `/api/canvas/${encodeURIComponent(id)}/pin?pinned=${pinned}`,
+  );
+  return normalizeCanvasArtifact(res);
+}
+
+export async function deleteCanvasArtifact(
+  config: ServerConfig,
+  id: string,
+): Promise<{ removed: boolean }> {
+  const res = await request<Record<string, unknown>>(
+    config,
+    'DELETE',
+    `/api/canvas/${encodeURIComponent(id)}`,
+  );
+  return { removed: res?.removed === true };
 }
 
 // ── Tasks ────────────────────────────────────────────────────────
