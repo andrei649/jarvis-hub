@@ -54,6 +54,9 @@ publicul pentru care privatul-local contează.
 > abonamentul ChatGPT Plus NU e totuna cu o cheie API). Plus Windows 11 sau
 > Linux și răbdare de early-adopter.
 >
+> Ca să fie clar din start: cheia API (dacă folosești una) rămâne pe mașina ta, nu trece
+> prin serverul nimănui; software-ul e gratuit — plătești doar curentul sau consumul tău de API.
+>
 > Dacă te tentează (sau știi pe cineva), lasă un comentariu sau dă-mi un mesaj. 🙏
 
 ## Varianta LinkedIn (ton profesional)
@@ -78,6 +81,27 @@ publicul pentru care privatul-local contează.
 > lucrați cu date sensibile — pentru voi există modul strict-local.
 >
 > Interesați? Un mesaj aici e de ajuns. Detalii tehnice: github.com/andrei649/jarvis-hub
+
+---
+
+## FAQ rapid — pre-întâmpină întrebările reale (din firul FB 2026-07)
+
+> Toate au apărut la prima postare. Include 2–3 din ele direct în copy sau ține-le gata
+> pentru reply-uri. Versiunea completă, cu formulări copy-paste: [`../alpha-testing/FAQ.md`](../alpha-testing/FAQ.md)
+> + kitul de răspuns per-comentariu în [`../alpha-testing/2026-07-10-fb-response-triage.md`](../alpha-testing/2026-07-10-fb-response-triage.md).
+
+- **Cheia API rămâne locală?** Da — stă în `.env` la tine, aplicația vorbește direct cu
+  furnizorul, nu trece prin niciun server de-al meu. Open-source, verificabil. (întrebat de mai mulți)
+- **Merge cu abonamentul ChatGPT/Claude?** Nu — abonamentul de chat ≠ acces API. Ai nevoie de
+  cheie de platformă cu billing, sau mergi complet local.
+- **macOS / Apple Silicon?** `install.sh` acoperă macOS; M-series e o gazdă bună local. Nu e încă
+  în matricea oficială de suport, dar caut și un tester pe Mac.
+- **Windows 10?** Nu — EOL din oct. 2025. Matrice: Win 11 / Linux (macOS best-effort).
+- **OpenRouter / OpenAI-compatible / local?** Deja integrat (OpenRouter + `/model <id>`, LM Studio,
+  Ollama, `base_url` custom).
+- **Local-only pe 8GB e utilizabil?** Da pentru bucla guvernată + voce + memorie; pentru raționament
+  frontier recomand **hybrid**. Pragul exact e ce testăm.
+- **Cost?** Software gratuit/open-source; plătești doar curentul (local) sau consumul API (câțiva $/lună).
 
 ---
 
