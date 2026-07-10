@@ -1204,7 +1204,7 @@ class Orchestrator:
         # so an empty string here means "no answer was produced".
         if not (synthesized or "").strip():
             synthesized = "My reply was cut short before I finished, sir — the model ran out of context while thinking. Try again, simplify the request, or load a larger-context model in LM Studio."
-            if on_token is not None:
+            if on_token:
                 emitted = on_token(synthesized)
                 if inspect.isawaitable(emitted):
                     await emitted

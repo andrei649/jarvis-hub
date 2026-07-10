@@ -1157,6 +1157,64 @@ async def test_agent_generate_response_disabled_preserves_stream_callback_identi
     assert backend.calls[0]["on_token"] is on_token
 
 
+class _FalseyAsyncSink:
+    def __init__(self):
+        self.values = []
+
+    def __bool__(self):
+        return False
+
+    async def __call__(self, value):
+        await asyncio.sleep(0)
+        self.values.append(value)
+
+
+class _AsyncSink:
+    def __init__(self):
+        self.values = []
+
+    async def __call__(self, value):
+        await asyncio.sleep(0)
+        self.values.append(value)
+
+
+class _LegacyDualBackend:
+    def __init__(self, response):
+        self.response = response
+        self.generate_calls = 0
+        self.stream_calls = 0
+
+    async def generate(self, **kwargs):
+        self.generate_calls += 1
+        return self.response
+
+    async def generate_stream(self, **kwargs):
+        self.stream_calls += 1
+        return self.response
+
+
+@pytest.mark.asyncio
+async def test_agent_disabled_mode_preserves_falsey_callback_legacy_behavior():
+    agent = Agent("jarvis", {"name": "Jarvis"})
+    backend = _LegacyDualBackend("legacy answer")
+    on_token = _FalseyAsyncSink()
+
+    answer = await agent.generate_response(
+        backend=backend,
+        model="legacy-model",
+        prompt="answer",
+        system="system",
+        max_tokens=100,
+        temperature=0.4,
+        on_token=on_token,
+    )
+
+    assert answer == "legacy answer"
+    assert backend.generate_calls == 1
+    assert backend.stream_calls == 0
+    assert on_token.values == []
+
+
 @pytest.mark.asyncio
 async def test_agent_generate_response_streamless_fallback_emits_once_and_awaits_sink():
     class _TextBackend:
@@ -1190,7 +1248,7 @@ async def test_agent_generate_response_streamless_fallback_emits_once_and_awaits
     assert len(backend.calls) == 1
 
 
-def _streamed_orchestrator_for(agent):
+def _streamed_orchestrator_for(agent, backend=None):
     orchestrator = Orchestrator(JarvisConfig())
     completion_calls = []
     turns = []
@@ -1210,7 +1268,8 @@ def _streamed_orchestrator_for(agent):
         async def generate_stream(self, **kwargs):
             raise AssertionError("orchestrator bypassed Agent.generate_response")
 
-    backend = _Backend()
+    if backend is None:
+        backend = _Backend()
 
     class _Intent:
         target_agents = ["jarvis"]
@@ -1313,22 +1372,11 @@ async def test_streamed_orchestrator_replaces_blank_tool_answer_once_and_awaits_
         async def run(self, **kwargs):
             return runtime_response
 
-    class _FalseyAsyncSink:
-        def __init__(self):
-            self.values = []
-
-        def __bool__(self):
-            return False
-
-        async def __call__(self, value):
-            await asyncio.sleep(0)
-            self.values.append(value)
-
     agent = Agent("jarvis", {"name": "Jarvis", "model": "configured-model"})
     agent.soul = {"content": "agent system"}
     agent.tool_runtime = _BlankRuntime()
     orchestrator, _backend, completion_calls, turns = _streamed_orchestrator_for(agent)
-    on_token = _FalseyAsyncSink()
+    on_token = _AsyncSink()
 
     answer = await orchestrator.handle_input_stream(
         "question", channel="web", on_token=on_token, session_id="blank-seam-session"
@@ -1341,6 +1389,32 @@ async def test_streamed_orchestrator_replaces_blank_tool_answer_once_and_awaits_
     )
     assert answer == fallback
     assert on_token.values == [fallback]
+    assert len(completion_calls) == 1
+    assert [turn["role"] for turn in turns] == ["user", "assistant"]
+    assert turns[-1]["content"] == fallback
+
+
+@pytest.mark.asyncio
+async def test_streamed_orchestrator_preserves_falsey_callback_for_blank_legacy_answer():
+    agent = Agent("jarvis", {"name": "Jarvis", "model": "configured-model"})
+    agent.soul = {"content": "agent system"}
+    backend = _LegacyDualBackend("")
+    orchestrator, _backend, completion_calls, turns = _streamed_orchestrator_for(agent, backend)
+    on_token = _FalseyAsyncSink()
+
+    answer = await orchestrator.handle_input_stream(
+        "question", channel="web", on_token=on_token, session_id="legacy-blank-session"
+    )
+
+    fallback = (
+        "My reply was cut short before I finished, sir — the model ran out of context "
+        "while thinking. Try again, simplify the request, or load a larger-context model "
+        "in LM Studio."
+    )
+    assert answer == fallback
+    assert backend.generate_calls == 1
+    assert backend.stream_calls == 0
+    assert on_token.values == []
     assert len(completion_calls) == 1
     assert [turn["role"] for turn in turns] == ["user", "assistant"]
     assert turns[-1]["content"] == fallback
