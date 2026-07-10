@@ -117,14 +117,54 @@ class Sandbox:
         """True only if the active backend isolates code from the host."""
         return self.active_backend() in ("docker", "wasm")
 
-    def _decode_output(self, data: bytes, label: str = "OUTPUT") -> str:
-        text = data.decode("utf-8", errors="replace")
-        from agents.core.environments.output_limits import truncate_text
-        return truncate_text(
-            text,
-            max_content_bytes=self.max_output_bytes,
-            label=label,
-        ).text
+    async def _read_output_capped(self, proc) -> tuple[str, str]:
+        """Drain a child's stdout/stderr with bounded peak host memory.
+
+        Replaces ``proc.communicate()``, which reads the child to EOF into host
+        memory before truncating — so a runaway/hostile sandboxed child (this
+        runs agent-generated code) could balloon host RSS for the whole timeout
+        window. Here only head+tail within ``max_output_bytes`` are retained per
+        stream, so peak memory is bounded while the returned (truncated) output
+        and its honest byte-omission notice are unchanged.
+        """
+        from agents.core.environments.output_limits import (
+            read_capped_stream,
+            render_capped,
+            truncate_text,
+        )
+
+        out_stream = getattr(proc, "stdout", None)
+        err_stream = getattr(proc, "stderr", None)
+        if out_stream is None and err_stream is None:
+            # The process exposes no pipe streams to read incrementally (a test
+            # double, or a non-PIPE spawn). Fall back to communicate(); the
+            # sandbox always spawns with stdout/stderr=PIPE, so real children
+            # take the memory-bounded streaming path below.
+            stdout_b, stderr_b = await proc.communicate()
+            return (
+                truncate_text(stdout_b.decode("utf-8", errors="replace"),
+                              max_content_bytes=self.max_output_bytes, label="OUTPUT").text,
+                truncate_text(stderr_b.decode("utf-8", errors="replace"),
+                              max_content_bytes=self.max_output_bytes, label="ERROR").text,
+            )
+
+        async def _drain(stream) -> tuple[bytes, bytes, int]:
+            if stream is None:
+                return b"", b"", 0
+            return await read_capped_stream(
+                stream, max_content_bytes=self.max_output_bytes
+            )
+
+        (h_out, t_out, tot_out), (h_err, t_err, tot_err) = await asyncio.gather(
+            _drain(out_stream), _drain(err_stream)
+        )
+        await proc.wait()
+        return (
+            render_capped(h_out, t_out, tot_out,
+                          max_content_bytes=self.max_output_bytes, label="OUTPUT").text,
+            render_capped(h_err, t_err, tot_err,
+                          max_content_bytes=self.max_output_bytes, label="ERROR").text,
+        )
 
     def security_status(self) -> dict:
         """HF-6 — explicit isolation posture so the HUD / ``/status`` can surface
@@ -186,10 +226,11 @@ class Sandbox:
                 stderr=asyncio.subprocess.PIPE,
             )
             try:
-                stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=self.timeout)
+                out_text, err_text = await asyncio.wait_for(
+                    self._read_output_capped(proc), timeout=self.timeout)
                 return SandboxResult(
-                    stdout=self._decode_output(stdout),
-                    stderr=self._decode_output(stderr, label="ERROR"),
+                    stdout=out_text,
+                    stderr=err_text,
                     exit_code=proc.returncode or 0,
                     duration=time.monotonic() - start,
                 )
@@ -276,13 +317,13 @@ class Sandbox:
                 stderr=asyncio.subprocess.PIPE,
             )
             try:
-                stdout, stderr = await asyncio.wait_for(
-                    proc.communicate(), timeout=self.timeout
+                out_text, err_text = await asyncio.wait_for(
+                    self._read_output_capped(proc), timeout=self.timeout
                 )
                 duration = time.monotonic() - start
                 return SandboxResult(
-                    stdout=self._decode_output(stdout),
-                    stderr=self._decode_output(stderr, label="ERROR"),
+                    stdout=out_text,
+                    stderr=err_text,
                     exit_code=proc.returncode or 0,
                     duration=duration,
                 )
@@ -369,13 +410,13 @@ class Sandbox:
                 env=prepare_python_child_env(os.environ),
             )
             try:
-                stdout, stderr = await asyncio.wait_for(
-                    proc.communicate(), timeout=self.timeout
+                out_text, err_text = await asyncio.wait_for(
+                    self._read_output_capped(proc), timeout=self.timeout
                 )
                 duration = time.monotonic() - start
                 return SandboxResult(
-                    stdout=self._decode_output(stdout),
-                    stderr=self._decode_output(stderr, label="ERROR"),
+                    stdout=out_text,
+                    stderr=err_text,
                     exit_code=proc.returncode or 0,
                     duration=duration,
                 )
@@ -408,13 +449,13 @@ class Sandbox:
                 env=prepare_python_child_env(os.environ),
             )
             try:
-                stdout, stderr = await asyncio.wait_for(
-                    proc.communicate(), timeout=self.timeout
+                out_text, err_text = await asyncio.wait_for(
+                    self._read_output_capped(proc), timeout=self.timeout
                 )
                 duration = time.monotonic() - start
                 return SandboxResult(
-                    stdout=self._decode_output(stdout),
-                    stderr=self._decode_output(stderr, label="ERROR"),
+                    stdout=out_text,
+                    stderr=err_text,
                     exit_code=proc.returncode or 0,
                     duration=duration,
                 )
