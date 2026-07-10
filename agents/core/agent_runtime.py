@@ -6,7 +6,10 @@ import asyncio
 import inspect
 import json
 import logging
-from collections.abc import Callable
+import math
+from collections.abc import Callable, Coroutine
+from contextlib import suppress
+from functools import partial
 from typing import Any
 
 from .environments.output_limits import truncate_text
@@ -23,6 +26,16 @@ _DEADLINE_REPLY = "I stopped the tool loop because it reached the safety deadlin
 _DEFAULT_ITERATIONS = 8
 _MAX_ITERATIONS = 32
 _EVENT_IDENTITY_BYTES = 256
+_EVENT_TIMEOUT_SECONDS = 0.1
+_MAX_JSON_DEPTH = 64
+
+
+class _OwnedTimeout(Exception):
+    """An owned coroutine exceeded its response-time deadline."""
+
+    def __init__(self, task: asyncio.Task[Any]) -> None:
+        super().__init__("owned coroutine exceeded its response-time deadline")
+        self.task = task
 
 
 class AgentToolRuntime:
@@ -46,12 +59,17 @@ class AgentToolRuntime:
         self._max_result_bytes = _safe_int(max_result_bytes, default=50_000, minimum=8)
         self._tool_timeout_seconds = _safe_float(tool_timeout_seconds, default=30.0)
         self._max_wall_seconds = _safe_float(max_wall_seconds, default=120.0)
+        self._stragglers: set[asyncio.Task[Any]] = set()
+        self._blocked_event_sinks: dict[int, asyncio.Task[Any]] = {}
+        self._event_lock = asyncio.Lock()
 
     def can_run(self, backend: Any) -> bool:
         """Fail closed unless the setting, backend, and allowlist are all live."""
         try:
+            self._prune_stragglers()
             return bool(
-                self._enabled()
+                not self._stragglers
+                and self._enabled()
                 and getattr(backend, "supports_tools", False)
                 and self._server.tools()
             )
@@ -71,7 +89,12 @@ class AgentToolRuntime:
         temperature: float = 0.7,
         event_sink: ToolEventSink | None = None,
     ) -> str:
-        """Run one bounded tool-enabled model turn to a final answer."""
+        """Run one bounded tool-enabled model turn to a final answer.
+
+        Deadlines bound response latency, not in-process coroutine lifetime. A coroutine
+        that suppresses cancellation is detached and blocks ``can_run`` until it exits,
+        preventing repeated turns from accumulating unbounded orphan work.
+        """
         loop = self._run_loop(
             agent_id=agent_id,
             backend=backend,
@@ -83,8 +106,8 @@ class AgentToolRuntime:
             event_sink=event_sink,
         )
         try:
-            return await asyncio.wait_for(loop, timeout=self._max_wall_seconds)
-        except TimeoutError:
+            return await self._await_owned(loop, timeout=self._max_wall_seconds)
+        except _OwnedTimeout:
             return _DEADLINE_REPLY
 
     async def _run_loop(
@@ -251,14 +274,14 @@ class AgentToolRuntime:
             self._event(call, agent_id, "tool_started", "running"),
         )
         try:
-            raw_result = await asyncio.wait_for(
+            raw_result = await self._await_owned(
                 self._server.handle(
                     {"tool": call.name, "args": call.arguments},
                     actor=agent_id,
                 ),
                 timeout=self._tool_timeout_seconds,
             )
-        except TimeoutError:
+        except _OwnedTimeout:
             raw_result = {
                 "ok": False,
                 "reason": "tool_timeout",
@@ -290,12 +313,12 @@ class AgentToolRuntime:
         return prepared, content
 
     def _prepare_result(self, raw_result: Any, tool_name: str) -> tuple[dict[str, Any], str]:
-        result = raw_result if isinstance(raw_result, dict) else _non_json(tool_name)
+        result = raw_result if _is_strict_json(raw_result) else _non_json(tool_name)
         try:
-            encoded = json.dumps(result, ensure_ascii=False)
+            encoded = json.dumps(result, ensure_ascii=False, allow_nan=False)
         except (TypeError, ValueError):
             result = _non_json(tool_name)
-            encoded = json.dumps(result, ensure_ascii=False)
+            encoded = json.dumps(result, ensure_ascii=False, allow_nan=False)
         bounded = truncate_text(
             encoded,
             max_content_bytes=self._max_result_bytes,
@@ -333,16 +356,45 @@ class AgentToolRuntime:
             "status": _bounded_identity(status),
         }
 
-    @staticmethod
-    async def _emit(event_sink: ToolEventSink | None, event: dict[str, Any]) -> None:
+    async def _emit(self, event_sink: ToolEventSink | None, event: dict[str, Any]) -> None:
         if event_sink is None:
             return
+        sink_id = id(event_sink)
+        async with self._event_lock:
+            blocked = self._blocked_event_sinks.get(sink_id)
+            if blocked is not None and not blocked.done():
+                return
+            if blocked is not None:
+                self._blocked_event_sinks.pop(sink_id, None)
+            try:
+                await self._await_owned(
+                    self._invoke_event_sink(event_sink, event),
+                    timeout=_EVENT_TIMEOUT_SECONDS,
+                )
+            except _OwnedTimeout as exc:
+                self._blocked_event_sinks[sink_id] = exc.task
+                exc.task.add_done_callback(partial(self._clear_blocked_sink, sink_id))
+                logger.warning("agent tool event sink timed out; continuing")
+            except Exception:
+                logger.warning("agent tool event sink failed; continuing")
+
+    @staticmethod
+    async def _invoke_event_sink(event_sink: ToolEventSink, event: dict[str, Any]) -> None:
+        thread_task = asyncio.create_task(asyncio.to_thread(event_sink, dict(event)))
+        cancelled = False
         try:
-            outcome = event_sink(dict(event))
-            if inspect.isawaitable(outcome):
-                await outcome
-        except Exception:
-            logger.warning("agent tool event sink failed; continuing")
+            outcome = await asyncio.shield(thread_task)
+        except asyncio.CancelledError:
+            cancelled = True
+            outcome = await asyncio.shield(thread_task)
+        if inspect.isawaitable(outcome):
+            await outcome
+        if cancelled:
+            raise asyncio.CancelledError
+
+    def _clear_blocked_sink(self, sink_id: int, task: asyncio.Task[Any]) -> None:
+        if self._blocked_event_sinks.get(sink_id) is task:
+            self._blocked_event_sinks.pop(sink_id, None)
 
     def _iteration_limit(self) -> int:
         try:
@@ -351,9 +403,77 @@ class AgentToolRuntime:
             configured = _DEFAULT_ITERATIONS
         return max(1, min(_MAX_ITERATIONS, configured))
 
+    async def _await_owned(
+        self,
+        coroutine: Coroutine[Any, Any, Any],
+        *,
+        timeout: float,
+    ) -> Any:
+        task = asyncio.create_task(coroutine)
+        try:
+            done, _ = await asyncio.wait({task}, timeout=timeout)
+        except BaseException:
+            self._detach(task)
+            raise
+        if task in done:
+            return task.result()
+        self._detach(task)
+        raise _OwnedTimeout(task)
+
+    def _detach(self, task: asyncio.Task[Any]) -> None:
+        if task.done():
+            self._drain_straggler(task)
+            return
+        self._stragglers.add(task)
+        task.add_done_callback(self._drain_straggler)
+        task.cancel()
+
+    def _prune_stragglers(self) -> None:
+        for task in tuple(self._stragglers):
+            if task.done():
+                self._drain_straggler(task)
+
+    def _drain_straggler(self, task: asyncio.Task[Any]) -> None:
+        self._stragglers.discard(task)
+        with suppress(BaseException):
+            task.exception()
+
 
 def _non_json(tool_name: str) -> dict[str, Any]:
     return {"ok": False, "reason": "non_json_result", "tool": tool_name}
+
+
+def _is_strict_json(
+    value: Any,
+    *,
+    _depth: int = 0,
+    _active: set[int] | None = None,
+) -> bool:
+    """Accept only finite, recursively JSON-native values without cycles."""
+    if _depth > _MAX_JSON_DEPTH:
+        return False
+    value_type = type(value)
+    if value is None or value_type in {bool, str, int}:
+        return True
+    if value_type is float:
+        return math.isfinite(value)
+    if value_type not in {list, dict}:
+        return False
+
+    active = _active if _active is not None else set()
+    identity = id(value)
+    if identity in active:
+        return False
+    active.add(identity)
+    try:
+        if value_type is list:
+            return all(_is_strict_json(item, _depth=_depth + 1, _active=active) for item in value)
+        return all(
+            type(key) is str and _is_strict_json(item, _depth=_depth + 1, _active=active)
+            for key, item in value.items()
+        )
+    finally:
+        active.remove(identity)
 
 
 def _safe_int(value: Any, *, default: int, minimum: int) -> int:
@@ -369,7 +489,7 @@ def _safe_float(value: Any, *, default: float) -> float:
         parsed = float(value)
     except (TypeError, ValueError, OverflowError):
         return default
-    return parsed if parsed > 0 else default
+    return parsed if math.isfinite(parsed) and parsed > 0 else default
 
 
 def _bounded_identity(value: Any) -> str:

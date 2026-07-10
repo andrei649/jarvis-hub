@@ -159,6 +159,49 @@ async def test_secrets_scrubbed_from_results():
 
 
 @pytest.mark.asyncio
+async def test_secrets_scrubbed_from_tuple_set_and_frozenset_results():
+    secret = "sk-NESTED-SECRET"
+    sb = SecretBroker()
+    sb.put("nested", secret)
+    s = ToolRPCServer(secret_broker=sb)
+
+    async def leaky(args):
+        return (secret, {secret}, frozenset({secret}))
+
+    s.register_tool("leaky", leaky)
+    out = await s.handle({"tool": "leaky", "args": {}})
+
+    result = out["result"]
+    assert isinstance(result, tuple)
+    assert isinstance(result[1], set)
+    assert isinstance(result[2], frozenset)
+    assert secret not in str(result)
+    assert result == (
+        "[REDACTED:nested]",
+        {"[REDACTED:nested]"},
+        frozenset({"[REDACTED:nested]"}),
+    )
+
+
+@pytest.mark.asyncio
+async def test_secrets_scrubbed_from_dictionary_keys_and_values():
+    secret = "sk-KEY-SECRET"
+    sb = SecretBroker()
+    sb.put("dict_key", secret)
+    s = ToolRPCServer(secret_broker=sb)
+
+    async def leaky(args):
+        return {f"header-{secret}": f"value-{secret}"}
+
+    s.register_tool("leaky", leaky)
+    out = await s.handle({"tool": "leaky", "args": {}})
+
+    assert out["result"] == {
+        "header-[REDACTED:dict_key]": "value-[REDACTED:dict_key]"
+    }
+
+
+@pytest.mark.asyncio
 async def test_handler_error_is_caught():
     s = ToolRPCServer()
 

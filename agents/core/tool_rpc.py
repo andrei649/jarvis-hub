@@ -249,9 +249,15 @@ class ToolRPCServer:
         if isinstance(obj, str):
             return self._secrets.redact(obj)
         if isinstance(obj, dict):
-            return {k: self._scrub(v) for k, v in obj.items()}
+            return {self._scrub(k): self._scrub(v) for k, v in obj.items()}
         if isinstance(obj, list):
             return [self._scrub(v) for v in obj]
+        if isinstance(obj, tuple):
+            return tuple(self._scrub(v) for v in obj)
+        if isinstance(obj, set):
+            return {self._scrub(v) for v in obj}
+        if isinstance(obj, frozenset):
+            return frozenset(self._scrub(v) for v in obj)
         return obj
 
     def _kernel_denial(self, name: str, args: dict, actor: str) -> Optional[str]:

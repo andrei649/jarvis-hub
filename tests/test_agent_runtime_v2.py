@@ -2,11 +2,13 @@
 
 import asyncio
 import json
+import threading
 
 import pytest
 
 from agents.core.agent_runtime import AgentToolRuntime
 from agents.core.llm.tool_protocol import ToolCall, ToolTurn
+from agents.core.security.secret_broker import SecretBroker
 from agents.core.tool_rpc import ToolRPCServer
 
 
@@ -68,6 +70,14 @@ async def _run(runtime, backend, *, agent_id="jarvis", event_sink=None):
         temperature=0.2,
         event_sink=event_sink,
     )
+
+
+async def _wait_until_can_run(runtime, backend):
+    for _ in range(100):
+        if runtime.can_run(backend):
+            return
+        await asyncio.sleep(0.005)
+    pytest.fail("runtime remained blocked after its straggler completed")
 
 
 def _tool_result_from_second_provider_call(backend, index=-1):
@@ -188,6 +198,18 @@ def test_can_run_fails_closed_when_runtime_checks_raise():
     runtime = AgentToolRuntime(server, enabled=lambda: True)
     server.tools = explode
     assert runtime.can_run(backend) is False
+
+
+@pytest.mark.parametrize("non_finite", [float("nan"), float("inf"), float("-inf")])
+def test_non_finite_timeout_configuration_falls_back_to_finite_defaults(non_finite):
+    runtime = AgentToolRuntime(
+        ToolRPCServer(),
+        tool_timeout_seconds=non_finite,
+        max_wall_seconds=non_finite,
+    )
+
+    assert runtime._tool_timeout_seconds == 30.0
+    assert runtime._max_wall_seconds == 120.0
 
 
 @pytest.mark.asyncio
@@ -370,6 +392,146 @@ async def test_whole_loop_timeout_returns_honest_deadline_message():
 
 
 @pytest.mark.asyncio
+async def test_cancellation_resistant_provider_is_detached_and_blocks_new_turns_until_done():
+    server = ToolRPCServer()
+
+    async def echo(args):
+        return args
+
+    server.register_tool("echo", echo)
+    cancelled = asyncio.Event()
+    release = asyncio.Event()
+
+    class _CancellationResistantBackend:
+        supports_tools = True
+
+        async def generate_tool_turn(self, **kwargs):
+            try:
+                await asyncio.Event().wait()
+            except asyncio.CancelledError:
+                cancelled.set()
+                await release.wait()
+                return ToolTurn(content="too late")
+
+    backend = _CancellationResistantBackend()
+    runtime = AgentToolRuntime(server, enabled=lambda: True, max_wall_seconds=0.01)
+    started = asyncio.get_running_loop().time()
+    run_task = asyncio.create_task(_run(runtime, backend))
+
+    try:
+        done, _ = await asyncio.wait({run_task}, timeout=0.25)
+        elapsed = asyncio.get_running_loop().time() - started
+        assert run_task in done
+        answer = run_task.result()
+        assert cancelled.is_set()
+        assert elapsed < 0.1
+        assert answer == "I stopped the tool loop because it reached the safety deadline."
+        assert runtime.can_run(backend) is False
+    finally:
+        release.set()
+        if not run_task.done():
+            run_task.cancel()
+        await asyncio.gather(run_task, return_exceptions=True)
+
+    await asyncio.wait_for(_wait_until_can_run(runtime, backend), timeout=0.5)
+
+
+@pytest.mark.asyncio
+async def test_cancellation_resistant_tool_is_detached_and_returns_tool_timeout_promptly():
+    server = ToolRPCServer()
+    cancelled = asyncio.Event()
+    release = asyncio.Event()
+
+    async def resistant(args):
+        try:
+            await asyncio.Event().wait()
+        except asyncio.CancelledError:
+            cancelled.set()
+            await release.wait()
+            return {"late": True}
+
+    server.register_tool("resistant", resistant)
+    backend = _ScriptedBackend(
+        [
+            ToolTurn(tool_calls=(_call("resistant"),)),
+            ToolTurn(content="continued safely"),
+        ]
+    )
+    runtime = AgentToolRuntime(
+        server,
+        enabled=lambda: True,
+        tool_timeout_seconds=0.01,
+        max_wall_seconds=1.0,
+    )
+    started = asyncio.get_running_loop().time()
+    run_task = asyncio.create_task(_run(runtime, backend))
+
+    try:
+        done, _ = await asyncio.wait({run_task}, timeout=0.25)
+        elapsed = asyncio.get_running_loop().time() - started
+        assert run_task in done
+        answer = run_task.result()
+        assert cancelled.is_set()
+        assert answer == "continued safely"
+        assert elapsed < 0.1
+        assert _tool_result_from_second_provider_call(backend)["reason"] == "tool_timeout"
+        assert runtime.can_run(backend) is False
+    finally:
+        release.set()
+        if not run_task.done():
+            run_task.cancel()
+        await asyncio.gather(run_task, return_exceptions=True)
+
+    await asyncio.wait_for(_wait_until_can_run(runtime, backend), timeout=0.5)
+
+
+@pytest.mark.asyncio
+async def test_caller_cancellation_propagates_while_owned_provider_is_detached():
+    server = ToolRPCServer()
+
+    async def echo(args):
+        return args
+
+    server.register_tool("echo", echo)
+    entered = asyncio.Event()
+    cancelled = asyncio.Event()
+    release = asyncio.Event()
+
+    class _CancellationResistantBackend:
+        supports_tools = True
+
+        async def generate_tool_turn(self, **kwargs):
+            entered.set()
+            try:
+                await asyncio.Event().wait()
+            except asyncio.CancelledError:
+                cancelled.set()
+                await release.wait()
+                return ToolTurn(content="too late")
+
+    backend = _CancellationResistantBackend()
+    runtime = AgentToolRuntime(server, enabled=lambda: True, max_wall_seconds=10.0)
+    run_task = asyncio.create_task(_run(runtime, backend))
+    await asyncio.wait_for(entered.wait(), timeout=0.1)
+    run_task.cancel()
+
+    try:
+        done, _ = await asyncio.wait({run_task}, timeout=0.1)
+        assert run_task in done
+        with pytest.raises(asyncio.CancelledError):
+            run_task.result()
+        assert cancelled.is_set()
+        assert runtime.can_run(backend) is False
+    finally:
+        release.set()
+        if not run_task.done():
+            run_task.cancel()
+        await asyncio.gather(run_task, return_exceptions=True)
+
+    await asyncio.wait_for(_wait_until_can_run(runtime, backend), timeout=0.5)
+
+
+@pytest.mark.asyncio
 async def test_read_only_calls_run_concurrently_and_results_keep_provider_order():
     server = ToolRPCServer()
     released = asyncio.Event()
@@ -467,6 +629,88 @@ async def test_non_json_tool_result_returns_non_json_result_without_repr():
         "tool": "opaque",
     }
     assert "object at" not in content
+
+
+def _cyclic_result():
+    value = []
+    value.append(value)
+    return value
+
+
+def _overdeep_result():
+    value = None
+    for _ in range(70):
+        value = [value]
+    return value
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "result_factory",
+    [
+        lambda: ("tuple",),
+        lambda: {"set"},
+        lambda: object(),
+        lambda: float("nan"),
+        lambda: float("inf"),
+        lambda: {1: "non-string-key"},
+        _cyclic_result,
+        _overdeep_result,
+    ],
+    ids=[
+        "tuple",
+        "set",
+        "custom-object",
+        "nan",
+        "infinity",
+        "non-string-key",
+        "cycle",
+        "depth",
+    ],
+)
+async def test_runtime_rejects_every_non_strict_json_result(result_factory):
+    server = ToolRPCServer()
+
+    async def invalid(args):
+        return result_factory()
+
+    server.register_tool("invalid", invalid)
+    backend = _ScriptedBackend(
+        [ToolTurn(tool_calls=(_call("invalid"),)), ToolTurn(content="recovered")]
+    )
+
+    answer = await _run(AgentToolRuntime(server, enabled=lambda: True), backend)
+
+    assert answer == "recovered"
+    assert json.loads(backend.calls[1]["messages"][-1]["content"]) == {
+        "ok": False,
+        "reason": "non_json_result",
+        "tool": "invalid",
+    }
+
+
+@pytest.mark.asyncio
+async def test_real_secret_broker_never_leaks_tuple_secret_or_nan_to_provider():
+    secret = "sk-VERY-SECRET"
+    broker = SecretBroker()
+    broker.put("runtime_test", secret)
+    server = ToolRPCServer(secret_broker=broker)
+
+    async def invalid(args):
+        return {"nested": (secret, float("nan"))}
+
+    server.register_tool("invalid", invalid)
+    backend = _ScriptedBackend(
+        [ToolTurn(tool_calls=(_call("invalid"),)), ToolTurn(content="safe answer")]
+    )
+
+    answer = await _run(AgentToolRuntime(server, enabled=lambda: True), backend)
+
+    provider_content = backend.calls[1]["messages"][-1]["content"]
+    assert answer == "safe answer"
+    assert secret not in provider_content
+    assert "NaN" not in provider_content
+    assert json.loads(provider_content)["reason"] == "non_json_result"
 
 
 @pytest.mark.asyncio
@@ -596,6 +840,82 @@ async def test_awaitable_event_sink_receives_lifecycle_events():
         "tool_started",
         "tool_result",
     ]
+
+
+@pytest.mark.asyncio
+async def test_callable_object_sink_runs_sync_entry_off_loop_and_awaits_result():
+    server = ToolRPCServer()
+
+    async def echo(args):
+        return args
+
+    server.register_tool("echo", echo)
+    backend = _ScriptedBackend([ToolTurn(tool_calls=(_call(),)), ToolTurn(content="done")])
+    loop_thread = threading.get_ident()
+    entry_threads = []
+    events = []
+
+    class _AwaitableSink:
+        def __call__(self, event):
+            entry_threads.append(threading.get_ident())
+
+            async def record():
+                events.append(event)
+
+            return record()
+
+    answer = await _run(
+        AgentToolRuntime(server, enabled=lambda: True),
+        backend,
+        event_sink=_AwaitableSink(),
+    )
+
+    assert answer == "done"
+    assert entry_threads and all(thread != loop_thread for thread in entry_threads)
+    assert [event["event"] for event in events] == [
+        "tool_requested",
+        "tool_started",
+        "tool_result",
+    ]
+
+
+@pytest.mark.asyncio
+async def test_blocking_sync_sink_has_independent_deadline_and_is_tracked_until_release():
+    server = ToolRPCServer()
+
+    async def echo(args):
+        return args
+
+    server.register_tool("echo", echo)
+    backend = _ScriptedBackend(
+        [ToolTurn(tool_calls=(_call(),)), ToolTurn(content="answer was not blocked")]
+    )
+    entered = threading.Event()
+    release = threading.Event()
+
+    def blocking_sink(event):
+        entered.set()
+        release.wait()
+
+    runtime = AgentToolRuntime(server, enabled=lambda: True, max_wall_seconds=1.0)
+    failsafe = threading.Timer(0.5, release.set)
+    failsafe.daemon = True
+    failsafe.start()
+    started = asyncio.get_running_loop().time()
+
+    try:
+        answer = await _run(runtime, backend, event_sink=blocking_sink)
+        elapsed = asyncio.get_running_loop().time() - started
+
+        assert entered.is_set()
+        assert answer == "answer was not blocked"
+        assert elapsed < 0.3
+        assert runtime.can_run(backend) is False
+    finally:
+        release.set()
+        failsafe.cancel()
+
+    await asyncio.wait_for(_wait_until_can_run(runtime, backend), timeout=0.5)
 
 
 @pytest.mark.asyncio
