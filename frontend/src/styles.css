@@ -623,3 +623,47 @@ input { font-family: inherit; }
 .cin-stats b { color:var(--ink); } .cin-stats .cin-ok { color:var(--green); }
 .cin-exit { position:fixed; top:20px; right:22px; background:var(--surface); border:1px solid var(--panel-line); color:var(--ink-3); font-family:var(--font-mono); font-size:11px; padding:6px 13px; border-radius:6px; cursor:pointer; }
 @media (max-width:560px){ .cin-word { font-size:22px; letter-spacing:.2em; } .cin-stats { gap:12px; font-size:10px; } }
+
+/* ── ARTIFACTS · saved-response workspace over the governed Canvas ── */
+.artifacts { flex:1; min-height:0; overflow-y:auto; padding:12px 14px; display:flex; flex-direction:column; gap:10px; }
+.art-toolbar { display:flex; align-items:center; gap:10px; flex:none; }
+.art-count { font-family:var(--font-mono); font-size:9.5px; letter-spacing:.14em; text-transform:uppercase; color:var(--ink-3); }
+.art-toolbar .tool-btn { margin-left:auto; }
+.art-note { font-size:12.5px; color:var(--ink-2); text-align:center; padding:20px 8px; display:flex; align-items:center; justify-content:center; gap:10px; flex-wrap:wrap; }
+.art-note.err { color:var(--amber); }
+.art-list { display:flex; flex-direction:column; gap:10px; }
+.art-card { position:relative; border:1px solid var(--panel-line); border-radius:var(--radius); background:var(--surface-2); padding:11px 13px; }
+.art-head { display:flex; align-items:center; gap:9px; font-family:var(--font-mono); font-size:9.5px; }
+.art-agent { color:var(--accent-light); letter-spacing:.08em; }
+.art-type { color:var(--ink-3); border:1px solid var(--panel-line); border-radius:8px; padding:0 6px; font-size:8.5px; letter-spacing:.06em; }
+.art-pin-badge { color:var(--amber); font-size:8.5px; letter-spacing:.06em; }
+.art-ts { margin-left:auto; color:var(--ink-4); }
+.art-body { margin-top:8px; font-size:12.5px; line-height:1.55; color:var(--ink); overflow-wrap:anywhere; min-width:0; }
+.art-title { font-weight:600; color:var(--ink); margin-bottom:4px; }
+.art-plain { white-space:pre-wrap; }
+.art-md .art-h { font-weight:600; color:var(--accent-light); margin:6px 0 3px; }
+.art-md .art-h1 { font-size:14px; } .art-md .art-h2 { font-size:13px; } .art-md .art-h3 { font-size:12.5px; }
+.art-md ul, ul.art-md { margin:4px 0; padding-left:18px; } .art-md li { margin:2px 0; }
+.art-md code { font-family:var(--font-mono); font-size:11px; background:var(--void); border:1px solid var(--panel-line); border-radius:3px; padding:0 4px; }
+.art-md b { color:var(--accent-light); }
+.art-line { margin:2px 0; }
+.art-link { color:var(--accent-light); }
+.art-metric { display:flex; align-items:baseline; gap:10px; }
+.art-metric .art-mlabel { font-family:var(--font-mono); font-size:10px; letter-spacing:.1em; text-transform:uppercase; color:var(--ink-3); }
+.art-metric .art-mvalue { font-family:var(--font-mono); font-size:22px; color:var(--accent-light); text-shadow:var(--glow-text); }
+.art-metric .art-mdelta { font-family:var(--font-mono); font-size:10px; color:var(--green); }
+.art-table-wrap { overflow-x:auto; }
+.art-table { border-collapse:collapse; font-size:11.5px; width:100%; }
+.art-table th, .art-table td { border:1px solid var(--panel-line-2); padding:4px 8px; text-align:left; }
+.art-table th { font-family:var(--font-mono); font-size:9px; letter-spacing:.1em; text-transform:uppercase; color:var(--ink-3); }
+.art-img { max-width:100%; max-height:260px; border:1px solid var(--panel-line); border-radius:var(--radius); display:block; }
+.art-consent { display:block; width:100%; padding:14px; border:1px dashed var(--panel-line); border-radius:var(--radius); background:var(--void); color:var(--ink-2); font-size:11.5px; transition:all .15s; }
+.art-consent:hover { border-color:var(--accent-dim); color:var(--accent-light); }
+.art-actions { display:flex; gap:7px; margin-top:10px; }
+.art-actions .tool-btn.danger { color:var(--red); border-color:rgba(255,90,82,.35); }
+.art-actions .tool-btn.danger:hover { color:var(--red); border-color:var(--red); }
+.art-save { background:transparent; border:1px solid var(--panel-line); color:var(--ink-3); font-family:var(--font-mono); font-size:8.5px; letter-spacing:.06em; padding:2px 7px; border-radius:9px; transition:all .15s; white-space:nowrap; }
+.art-save:hover { color:var(--accent-light); border-color:var(--accent-dim); }
+.art-save.ok { color:var(--green); border-color:var(--green-dim); }
+.art-save.err { color:var(--amber); border-color:rgba(255,194,77,.4); }
+.art-save:disabled { cursor:wait; opacity:.7; }

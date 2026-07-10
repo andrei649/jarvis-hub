@@ -73,10 +73,21 @@ def test_memory_at_rest_is_erased(tmp_path):
 def test_non_memory_files_survive(tmp_path):
     root = _seed_memory_root(tmp_path)
     dp.purge_data(source_root=str(root), backup_first=False, memory=True)
-    # config JSON and the non-session journals are NOT memory → untouched
-    assert json.loads((root / "canvas.json").read_text()) == {"elements": ["keep me"]}
+    # the non-session journals are NOT user memory → untouched
     assert (root / "autonomy_journal.jsonl").exists()
     assert (root / "problems.jsonl").exists()
+
+
+def test_forget_me_resets_canvas(tmp_path):
+    """Saved assistant replies (Canvas artifacts) are user content: a forget must
+    reset canvas.json, and the post-purge file must load as an EMPTY CanvasStore."""
+    from agents.core.canvas import CanvasStore
+
+    root = _seed_memory_root(tmp_path)
+    report = dp.purge_data(source_root=str(root), backup_first=False)  # base purge
+    assert "canvas.json" in report["purged"]
+    assert (root / "canvas.json").exists()          # reset, not unlinked (live handles)
+    assert CanvasStore(path=str(root / "canvas.json")).list() == []
 
 
 def test_memory_flag_off_leaves_memory_intact(tmp_path):
@@ -112,11 +123,27 @@ class _FakeMem:
         self.cleared = True
 
 
+class _CanvasSpy:
+    def __init__(self):
+        self.memory_cleared = False
+        self.persisting_clear_called = False
+
+    def clear_memory(self):
+        self.memory_cleared = True
+
+    def clear(self, agent=None, *, keep_pinned=True):
+        # must NOT be used by the forget flow: it persists canvas.json before
+        # the pre-forget backup, dropping artifacts from the recovery archive
+        self.persisting_clear_called = True
+        return 1
+
+
 class _FakeOrch:
     def __init__(self, cognition=None):
         self.memory = _FakeMem()
         self.entities = _Spy()
         self.decay = _Spy()
+        self.canvas = _CanvasSpy()
         self.cognition = cognition
 
 
@@ -143,12 +170,18 @@ async def test_clear_live_memory_clears_all_stores():
     assert orch.decay.cleared is True
     assert living.core.list() == []
     assert living.records() == []
+    # the live canvas store is cleared too (in-memory only — the persisting
+    # clear would empty canvas.json before the pre-forget backup captures it),
+    # so a running orchestrator can't re-save forgotten replies
+    assert orch.canvas.memory_cleared is True
+    assert orch.canvas.persisting_clear_called is False
     assert set(cleared) == {
         "conversation",
         "graph",
         "vectors",
         "entities",
         "decay",
+        "canvas",
         "cognition_memory",
     }
 

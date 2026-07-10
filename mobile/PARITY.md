@@ -45,7 +45,12 @@ Legend — **mobile**: ✅ shipped · 🟡 partial · ⬜ not started · ➖ not
 | Security posture | `GET /api/security/*` | ✅ | ✅ | H18.18 |
 | Health/readiness probes | `GET /healthz`, `GET /readyz` | ✅ | ➖ | — |
 | First-run command center (0.19) | `GET /api/onboarding/command-center` | ✅ | ✅ | H18.19 |
+| Artifacts workspace (Canvas) | `GET /api/canvas`, `POST /api/canvas/post`, `POST /api/canvas/{id}/pin`, `DELETE /api/canvas/{id}` | ✅ | ⬜ | H18.20 |
 | Auth (user/admin tokens) | `X-User-Token`, `X-Admin-Token` headers | ✅ | ✅ | H18.1 / H18.11 |
+
+> **H18.20 (follow-up, not started):** native artifact workspace parity — browse Canvas
+> artifacts, safe typed rendering, explicit response save, pin/unpin, and delete on mobile.
+> The browser cockpit shipped this in the visual-artifact lane wave 1; the phone has none of it yet.
 
 > Rows with an empty **Task** cell are tracked-but-unscheduled parity gaps. When one becomes
 > worth doing on mobile, give it an `H18.x` id in `BACKLOG.md` and fill the cell. Surfaces marked
