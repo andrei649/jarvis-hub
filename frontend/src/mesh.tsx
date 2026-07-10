@@ -12,11 +12,42 @@
      follow-up for when such an endpoint exists. */
 import React, { useRef, useEffect, useMemo, useState } from 'react';
 
-const MESH_MODELS = [
+// A fixed-size arc can only label so many tasks legibly regardless of focus —
+// this bounds the per-owner task fan (see the byOwner.forEach draw below).
+const MAX_FAN_TASKS = 12;
+// The cinematic default constellation — used in demo mode (clearly badged) and
+// during boot before any real model signal arrives, where it reads as a
+// constellation, not a claim.
+const DEMO_MESH_MODELS = [
   { id: 'gemma', label: 'gemma-4-26b', cloud: false, cost: 0.66 },
   { id: 'claude', label: 'claude', cloud: true, cost: 0.22 },
   { id: 'gemini', label: 'gemini', cloud: true, cost: 0.13 },
 ];
+
+// "minimax/minimax-m2.7" → "minimax-m2.7"; keep the mesh label legible.
+function shortModelName(raw) {
+  const s = String(raw || '').trim();
+  if (!s) return '';
+  const base = s.includes('/') ? s.split('/').pop() : s;
+  return base.length > 18 ? base.slice(0, 17) + '…' : base;
+}
+
+// The mesh's model shells. Honesty rule (real-world 2026-07-08: a minimax local
+// model was drawn as "gemma-4-26b"): in live mode reflect the REAL loaded model
+// and only the cloud lanes that are actually configured — never invent a model
+// the backend isn't running. Demo (badged) and the pre-signal boot window keep
+// the cinematic default so the brain is never empty.
+function deriveMeshModels(llm, trust, demo) {
+  if (demo) return DEMO_MESH_MODELS;
+  const realLocal = llm && llm.state === 'ready' && llm.model ? shortModelName(llm.model) : '';
+  const claude = !!(trust && trust.claude_available);
+  const cloud = !!(trust && trust.cloud_available);
+  if (!realLocal && !claude && !cloud) return DEMO_MESH_MODELS;  // no trustworthy signal yet
+  const models: any[] = [{ id: 'local', label: realLocal || 'local', cloud: false, cost: 0.66 }];
+  if (claude) models.push({ id: 'claude', label: 'claude', cloud: true, cost: 0.22 });
+  if (cloud && !claude) models.push({ id: 'cloud', label: 'cloud', cloud: true, cost: 0.18 });
+  return models;
+}
 const TIER_COLOR: Record<string, string> = {
   CNS: '#2bb8f0', command: '#2bb8f0', BUS: '#ffb23f', business: '#ffb23f',
   TEC: '#a78bfa', tech: '#a78bfa', FND: '#41f59b', foundation: '#41f59b',
@@ -37,15 +68,17 @@ function taskColor(t) {
   return '#8aa8be';
 }
 
-export function NeuralMesh({ agents = [], tasks = [], activeId, onSelect, motion, cinema = false, t }: any) {
+export function NeuralMesh({ agents = [], tasks = [], activeId, onSelect, motion, cinema = false, llm, trust, demo = false, t }: any) {
   const wrapRef = useRef<any>(null), canvasRef = useRef<any>(null);
   const S = useRef<any>({
-    nodes: [], edges: [], particles: [], rings: [], stars: [], hover: null, tasks: [],
+    nodes: [], edges: [], particles: [], rings: [], stars: [], hover: null, tasks: [], models: DEMO_MESH_MODELS,
     w: 640, h: 460, cx: 320, cy: 230, dpr: 1, raf: 0, tick: 0, lastPulse: 0, lastCascade: 0, cascadeI: -1, focus: null,
   });
   const [tip, setTip] = useState<any>(null);
   const calm = motion === 'calm';
   const taskList = useMemo(() => (Array.isArray(tasks) ? tasks : []), [tasks]);
+  const models = useMemo(() => deriveMeshModels(llm, trust, demo), [llm && llm.state, llm && llm.model, trust && trust.claude_available, trust && trust.cloud_available, demo]);
+  S.current.models = models;
   const visibleTaskCount = useMemo(() => {
     const known = new Set(['jarvis', ...agents.map((a) => String(a.id).toLowerCase())]);
     return taskList.filter((tk) => known.has(taskOwner(tk))).length;
@@ -65,19 +98,24 @@ export function NeuralMesh({ agents = [], tasks = [], activeId, onSelect, motion
     const st = S.current, W = st.w, H = st.h, cx = W / 2, cy = H / 2; st.cx = cx; st.cy = cy;
     const nodes: any[] = [], edges: any[] = []; const R = Math.min(W, H);
     nodes.push({ id: 'jarvis', kind: 'core', baseAng: 0, baseRad: 0, r: Math.max(15, R * (cinema ? 0.058 : 0.05)), label: 'JARVIS', agent: agents.find((a) => a.id === 'jarvis'), i: 0 });
+    const meshModels = (st.models && st.models.length ? st.models : DEMO_MESH_MODELS);
     const mR = R * 0.20;
-    MESH_MODELS.forEach((m, i) => {
-      const ang = -Math.PI / 2 + i * (2 * Math.PI / MESH_MODELS.length);
+    meshModels.forEach((m, i) => {
+      const ang = -Math.PI / 2 + i * (2 * Math.PI / meshModels.length);
       nodes.push({ id: 'model:' + m.id, kind: 'model', baseAng: ang, baseRad: mR, r: 6 + m.cost * 10, model: m, label: m.label, i });
       edges.push({ a: 'jarvis', b: 'model:' + m.id, kind: 'mc' });
     });
+    // Pick edge targets from whatever models actually exist, so agent→model
+    // wiring survives a live roster of just one local model (or a cloud lane).
+    const localModel = meshModels.find((m) => !m.cloud) || meshModels[0];
+    const cloudModels = meshModels.filter((m) => m.cloud);
     const list = agents.filter((a) => a.id !== 'jarvis'); const aR = R * 0.44;
     list.forEach((a, i) => {
       const ang = -Math.PI / 2 + i * (2 * Math.PI / Math.max(1, list.length));
       nodes.push({ id: a.id, kind: 'agent', baseAng: ang, baseRad: aR, r: cinema ? 7 : 5.5, agent: a, label: a.name, i });
-      const local = a.tier === 'FND' || a.id === 'frigga' || a.id === 'ultron' || a.id === 'hephaestus';
-      const mid = local ? 'gemma' : (i % 3 === 0 ? 'claude' : i % 3 === 1 ? 'gemini' : 'gemma');
-      edges.push({ a: a.id, b: 'model:' + mid, kind: 'am' });
+      const preferLocal = a.tier === 'FND' || a.id === 'frigga' || a.id === 'ultron' || a.id === 'hephaestus';
+      const target = (preferLocal || !cloudModels.length) ? localModel : cloudModels[i % cloudModels.length];
+      if (target) edges.push({ a: a.id, b: 'model:' + target.id, kind: 'am' });
       edges.push({ a: a.id, b: 'jarvis', kind: 'ac' });
     });
     st.nodes = nodes; st.edges = edges;
@@ -112,7 +150,7 @@ export function NeuralMesh({ agents = [], tasks = [], activeId, onSelect, motion
     return () => { cancelAnimationFrame(S.current.raf); if (ro) ro.disconnect(); };
     // eslint-disable-next-line
   }, []);
-  useEffect(() => { build(); /* eslint-disable-next-line */ }, [agents]);
+  useEffect(() => { build(); /* eslint-disable-next-line */ }, [agents, models]);
   useEffect(() => { S.current.focus = activeId; }, [activeId]);
   useEffect(() => { S.current.tasks = taskList; }, [taskList]);
 
@@ -206,10 +244,15 @@ export function NeuralMesh({ agents = [], tasks = [], activeId, onSelect, motion
     const W = st.w, H = st.h, cx = st.cx, cy = st.cy;
     const outer = Math.min(W, H) * (cinema ? 0.48 : 0.46);
     ctx.globalCompositeOperation = 'source-over';
-    byOwner.forEach((list, owner) => {
+    // Bounded fan (real-world finding, 2026-07-08): an owner can accumulate far
+    // more tasks than a fixed-size arc can label legibly — cap what's drawn so
+    // the fan never degrades into an unreadable overlapping block, no matter
+    // how many tasks pile up under one owner.
+    byOwner.forEach((fullList, owner) => {
       const origin = node(owner);
       if (!origin) return;
       const focused = foc === owner;
+      const list = fullList.slice(0, MAX_FAN_TASKS);
       const base = Math.atan2(origin.y - cy, origin.x - cx);
       const span = focused ? Math.PI * 0.42 : Math.min(0.5, list.length * 0.13);
       list.forEach((tk, i) => {

@@ -71,11 +71,35 @@ def local_backend_degraded_reply(backend_name: str, server_hint: str, exc: Excep
             f"Start {server_hint} and try again — Jarvis runs local-first, so it "
             "needs a local model server running."
         )
-    logger.error("%s request failed — serving a degraded reply: %s", backend_name, exc)
+    detail = _server_error_detail(exc)
+    logger.error(
+        "%s request failed — serving a degraded reply: %s%s",
+        backend_name, exc, f" | server said: {detail}" if detail else "",
+    )
     return (
         f"⚠️ The local {backend_name} model hit an error and couldn't answer. "
         f"Check the {backend_name} server and try again."
     )
+
+
+def _server_error_detail(exc: Exception, limit: int = 300) -> str:
+    """Best-effort extraction of a reachable-but-rejecting server's own error text.
+
+    ``resp.raise_for_status()`` raises ``httpx.HTTPStatusError`` whose default
+    str() is just "Client error '400 Bad Request' for url ..." — it drops the
+    response body, which is usually the ONLY place a local model server explains
+    *why* (bad sampler params, context overflow, template mismatch, ...). That
+    detail is the server's own diagnostic text, not caller input — safe to log.
+    Never raises; returns "" if there's nothing to extract.
+    """
+    response = getattr(exc, "response", None)
+    if response is None:
+        return ""
+    try:
+        body = response.text
+    except Exception:
+        return ""
+    return body.strip()[:limit]
 
 
 def is_degraded_reply(text: object) -> bool:
@@ -86,6 +110,24 @@ def is_degraded_reply(text: object) -> bool:
     so callers like ``warm_up`` detect a failed generation either way.
     """
     return isinstance(text, str) and text.startswith(("⚠️", "["))
+
+
+# ── OpenAI-style chat message assembly ────────────────────────────────────────
+
+def _chat_messages(system: str, prompt: str) -> list:
+    """Build the OpenAI-style messages array, omitting an empty system turn.
+
+    A ``{"role": "system", "content": ""}`` entry is not harmless: some models'
+    chat templates reject an empty (or unexpected) system turn with a 400 while
+    ``/v1/models`` stays reachable — real-world 2026-07-08, a minimax model on
+    LM Studio 400'd chat completions, and the warm-up path always sends an empty
+    system. Only include the system turn when it actually carries text.
+    """
+    messages = []
+    if system and system.strip():
+        messages.append({"role": "system", "content": system})
+    messages.append({"role": "user", "content": prompt})
+    return messages
 
 
 # ── Post-processing filter (used on non-stream responses) ─────────────────────
@@ -304,10 +346,7 @@ class LMStudioBackend(LLMBackend):
     ) -> str:
         payload = {
             "model": model,
-            "messages": [
-                {"role": "system", "content": system},
-                {"role": "user", "content": prompt},
-            ],
+            "messages": _chat_messages(system, prompt),
             "temperature": temperature,
             "stream": False,
         }
@@ -352,10 +391,7 @@ class LMStudioBackend(LLMBackend):
     ) -> str:
         payload = {
             "model": model,
-            "messages": [
-                {"role": "system", "content": system},
-                {"role": "user", "content": prompt},
-            ],
+            "messages": _chat_messages(system, prompt),
             "temperature": temperature,
             "stream": True,
         }

@@ -4,6 +4,7 @@ Offline: uses the deterministic `hash` backend (no Ollama / network) and a
 temp cache dir. Covers disk caching, persistence, batch alignment + de-dup,
 rate-limit retry/backoff, and graceful degradation.
 """
+import logging
 import sys
 from pathlib import Path
 
@@ -113,6 +114,45 @@ def test_exhausted_retries_degrade_to_hash(tmp_path):
     vec = e.embed("never works")
     # degrades to the deterministic hash embedding instead of crashing the ingest
     assert vec == e._embed_hash("never works")
+
+
+# ── log-noise discipline: warn once on entering the degraded state ───────────
+# Real-world finding (2026-07-08 test-drive): a fresh install with no embedding
+# model loaded gracefully degrades to hash embeddings — correct — but re-warned
+# on EVERY embed, flooding the log so a healthy install looked broken. The fix
+# warns once on entering the degraded state (with actionable guidance), logs
+# further failures at DEBUG, and logs a recovery once when the backend returns.
+
+def test_degraded_embedding_warns_once_then_quiets(tmp_path, caplog):
+    e = _embedder(tmp_path, max_retries=0)
+    e._embed_primary = lambda text: (_ for _ in ()).throw(RuntimeError("no embed model"))
+    with caplog.at_level(logging.DEBUG, logger="jarvis.ingestion.embedder"):
+        for txt in ("alpha", "beta", "gamma"):  # distinct texts avoid cache hits
+            e.embed(txt)
+    fallback_warnings = [
+        r for r in caplog.records
+        if r.levelno == logging.WARNING and "hash fallback" in r.getMessage()
+    ]
+    assert len(fallback_warnings) == 1, "must warn once on entering degraded state, not per embed"
+
+
+def test_embedding_recovery_is_logged_and_rearms(tmp_path, caplog):
+    e = _embedder(tmp_path, max_retries=0)
+    real_hash = e._embed_hash
+    e._embed_primary = lambda text: (_ for _ in ()).throw(RuntimeError("down"))
+    e.embed("x")                       # enters degraded state (warns once)
+
+    e._embed_primary = real_hash       # backend "recovers"
+    with caplog.at_level(logging.INFO, logger="jarvis.ingestion.embedder"):
+        e.embed("y")
+    assert any("recovered" in r.getMessage() for r in caplog.records), "recovery must be logged once"
+
+    # re-arm: a fresh outage after recovery warns again (not permanently silenced)
+    e._embed_primary = lambda text: (_ for _ in ()).throw(RuntimeError("down again"))
+    caplog.clear()
+    with caplog.at_level(logging.WARNING, logger="jarvis.ingestion.embedder"):
+        e.embed("z")
+    assert any("hash fallback" in r.getMessage() for r in caplog.records), "re-entering degraded state must warn again"
 
 
 # ── H8.4 — EMBED_MODEL env var + mxbai-embed-large ───────────────────────────
