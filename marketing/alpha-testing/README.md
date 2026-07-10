@@ -15,6 +15,12 @@ outreach, not a broad public launch.
     point).
 - `INVITE_MESSAGE.md` - paste-ready invite copy, caption, DM reply, and screening
   questions.
+- `FAQ.md` - honest answers to the recurring tester questions (API-key locality, macOS,
+  Win10, subscription-vs-API, 8 GB local limits, cost, safety). Single source for DMs,
+  public replies, and the recruiting copy.
+- `2026-07-10-fb-response-triage.md` - owner-internal triage of the first FB tester call:
+  post metrics, lead buckets (qualified / warm / collaborator / questions / noise), and a
+  copy-paste reply kit. Not for publication.
 
 ## Positioning
 
