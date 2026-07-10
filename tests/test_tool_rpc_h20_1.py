@@ -6,6 +6,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'agents'))
 import pytest
 
 from agents.core.automation_contracts import ContractDecision
+from agents.core.kernel import Decision, Verdict
 import agents.core.tool_rpc as tool_rpc
 from agents.core.tool_rpc import ToolRPCServer
 from agents.core.security.secret_broker import SecretBroker
@@ -17,15 +18,36 @@ class _FakeQueue:
 
     def enqueue(self, agent, kind, title, payload=None, risk_tier=3,
                 autonomy_level="ask", origin="generated"):
-        self.calls.append(dict(kind=kind, payload=payload, autonomy_level=autonomy_level,
-                               risk_tier=risk_tier))
+        self.calls.append(dict(agent=agent, kind=kind, payload=payload,
+                               autonomy_level=autonomy_level, risk_tier=risk_tier))
         return len(self.calls)
 
 
 class _Task:
-    def __init__(self, payload):
+    def __init__(self, payload, agent=None):
         self.kind = "toolrpc.x"
         self.payload = payload
+        if agent is not None:
+            self.agent = agent
+
+
+class _SpyKernel:
+    def __init__(self, verdict=Verdict.GRANT, reason="spy"):
+        self.calls = []
+        self.verdict = verdict
+        self.reason = reason
+
+    def __call__(self, action, capability=None, budget=None):
+        self.calls.append(action)
+        return Decision(self.verdict, reason=self.reason)
+
+
+class _Audit:
+    def __init__(self):
+        self.calls = []
+
+    def record(self, **kwargs):
+        self.calls.append(kwargs)
 
 
 def _server(**kw):
@@ -167,6 +189,142 @@ def test_tools_lists_allowlist_with_gating():
     assert names == {"read": False, "write": True}
 
 
+def test_tools_expose_sorted_descriptions_and_input_schemas():
+    s = ToolRPCServer()
+    schema = {
+        "type": "object",
+        "properties": {"value": {"type": "string"}},
+        "required": ["value"],
+        "additionalProperties": False,
+    }
+    s.register_tool(
+        "echo",
+        lambda a: None,
+        description="Return the provided values.",
+        input_schema=schema,
+    )
+    s.register_tool("alpha", lambda a: None, gated=True)
+
+    assert s.tools() == [
+        {
+            "name": "alpha",
+            "gated": True,
+            "description": "",
+            "input_schema": {"type": "object", "properties": {}},
+        },
+        {
+            "name": "echo",
+            "gated": False,
+            "description": "Return the provided values.",
+            "input_schema": schema,
+        },
+    ]
+
+
+def test_tool_input_schema_is_copied_on_registration_and_projection():
+    s = ToolRPCServer()
+    schema = {
+        "type": "object",
+        "properties": {"value": {"type": "string"}},
+        "required": ["value"],
+    }
+    s.register_tool("echo", lambda a: None, input_schema=schema)
+
+    schema["properties"]["value"]["type"] = "integer"
+    first_projection = s.tools()
+    first_projection[0]["input_schema"]["properties"]["value"]["type"] = "boolean"
+
+    assert s.tools()[0]["input_schema"] == {
+        "type": "object",
+        "properties": {"value": {"type": "string"}},
+        "required": ["value"],
+    }
+
+
+@pytest.mark.asyncio
+async def test_trusted_actor_controls_contract_kernel_enqueue_and_audit(monkeypatch):
+    monkeypatch.setenv("JARVIS_ACTION_KERNEL", "1")
+    q = _FakeQueue()
+    kernel = _SpyKernel()
+    audit = _Audit()
+
+    class _Contract:
+        def __init__(self):
+            self.payloads = []
+
+        def evaluate(self, payload=None, **kwargs):
+            self.payloads.append(payload)
+            return ContractDecision(
+                kind="tool_rpc_call",
+                admissible=True,
+                requires_approval=True,
+            )
+
+    contract = _Contract()
+    monkeypatch.setattr(tool_rpc, "TOOL_RPC_CALL_CONTRACT", contract)
+    s = ToolRPCServer(
+        enqueue=q.enqueue,
+        audit=audit,
+        agent="server-default",
+        kernel=kernel,
+    )
+    s.register_tool("send_email", lambda a: None, gated=True)
+
+    out = await s.handle(
+        {
+            "tool": "send_email",
+            "args": {"token": "secret-value"},
+            "agent": "model-spoof",
+            "actor": "model-spoof",
+        },
+        actor="trusted-agent",
+    )
+
+    assert out["reason"] == "approval_required"
+    assert contract.payloads[-1]["agent"] == "trusted-agent"
+    assert contract.payloads[-1]["args_keys"] == ["token"]
+    assert q.calls[-1]["agent"] == "trusted-agent"
+    assert kernel.calls[-1].agent == "trusted-agent"
+    assert kernel.calls[-1].payload["args_keys"] == ["token"]
+    assert "secret-value" not in str(kernel.calls[-1].payload)
+    assert audit.calls[-1]["metadata"]["agent"] == "trusted-agent"
+    assert "model-spoof" not in str(contract.payloads + kernel.calls + audit.calls)
+
+
+@pytest.mark.asyncio
+async def test_request_actor_fields_cannot_override_server_actor():
+    q = _FakeQueue()
+    s = ToolRPCServer(enqueue=q.enqueue, agent="server-default")
+    s.register_tool("send_email", lambda a: None, gated=True)
+
+    out = await s.handle(
+        {"tool": "send_email", "args": {}, "agent": "spoof", "actor": "spoof"}
+    )
+
+    assert out["reason"] == "approval_required"
+    assert q.calls[-1]["agent"] == "server-default"
+
+
+@pytest.mark.asyncio
+async def test_inline_and_approved_execute_audits_use_trusted_actor():
+    audit = _Audit()
+    s = ToolRPCServer(audit=audit, agent="server-default")
+
+    async def echo(args):
+        return {"echo": args}
+
+    s.register_tool("echo", echo)
+    s.register_tool("send_email", echo, gated=True)
+
+    await s.handle({"tool": "echo", "args": {}}, actor="inline-agent")
+    await s.execute(_Task({"tool": "send_email", "args": {}}, agent="approved-agent"))
+
+    assert [call["metadata"]["agent"] for call in audit.calls] == [
+        "inline-agent",
+        "approved-agent",
+    ]
+
+
 @pytest.mark.asyncio
 async def test_approved_gated_tool_executes_via_executor():
     ran = {}
@@ -181,3 +339,34 @@ async def test_approved_gated_tool_executes_via_executor():
     out = await s.execute(_Task({"tool": "send_email", "args": {"to": "y"}}))
     assert out["status"] == "ok" and out["result"] == {"sent": True}
     assert ran["args"] == {"to": "y"}
+
+
+@pytest.mark.asyncio
+async def test_approved_execute_rechecks_kernel_with_task_actor(monkeypatch):
+    monkeypatch.setenv("JARVIS_ACTION_KERNEL", "1")
+    ran = []
+    kernel = _SpyKernel(verdict=Verdict.DENY, reason="approval revoked")
+
+    async def send(args):
+        ran.append(args)
+        return {"sent": True}
+
+    s = ToolRPCServer(agent="server-default", kernel=kernel)
+    s.register_tool("send_email", send, gated=True)
+    task = _Task(
+        {"tool": "send_email", "args": {"token": "secret-value"}},
+        agent="approved-agent",
+    )
+
+    out = await s.execute(task)
+
+    assert out == {
+        "status": "failed",
+        "reason": "kernel_denied",
+        "tool": "send_email",
+        "detail": "approval revoked",
+    }
+    assert ran == []
+    assert kernel.calls[-1].agent == "approved-agent"
+    assert kernel.calls[-1].payload["args_keys"] == ["token"]
+    assert "secret-value" not in str(kernel.calls[-1].payload)
