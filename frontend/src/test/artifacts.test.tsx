@@ -112,6 +112,20 @@ describe('ArtifactsPanel — governed Canvas rendering', () => {
     expect(container.querySelector('img')).toBeNull();
   });
 
+  it('never renders a control-char (tab/newline) URL as a same-origin image', async () => {
+    // browsers strip TAB/LF/CR → "/\t/host" resolves to "//host" (cross-origin)
+    for (const ctl of ['\t', '\n', '\r']) {
+      mockCanvas([{
+        id: 't1', agent: 'friday', type: 'image_ref', pinned: false, created_at: 1770000000,
+        payload: { title: 'Ctl', src: `/${ctl}/attacker.example/pixel.png`, alt: 'ctl' },
+      }]);
+      const { container, unmount } = render(<ArtifactsPanel refreshKey={0} lang="en" />);
+      await screen.findByText(/attacker\.example/);
+      expect(container.querySelector('img')).toBeNull();
+      unmount();
+    }
+  });
+
   it('pin and unpin call the existing endpoint with the right pinned flag', async () => {
     const el = ELS[0];
     global.fetch = vi.fn((url, init) => {
@@ -217,6 +231,20 @@ describe('SaveArtifactButton — explicit response saving', () => {
     const parsed = JSON.parse(call[1].body);
     expect(parsed.payload.body.length).toBe(MARKDOWN_LIMIT);
     expect(MARKDOWN_LIMIT).toBe(4000);
+  });
+
+  it('truncates on a code-point boundary — never splits an astral char', async () => {
+    global.fetch = vi.fn(() => ok({ id: 'new3' }));
+    // an emoji straddling the 4,000th UTF-16 unit: a naive slice(0,4000) would
+    // leave a lone high surrogate, poisoning the store on the UTF-8 write
+    const text = 'x'.repeat(MARKDOWN_LIMIT - 1) + '😀' + 'y'.repeat(50);
+    render(<SaveArtifactButton message={{ role: 'agent', who: 'jarvis', text }} onSaved={() => {}} lang="en" />);
+    fireEvent.click(screen.getByTitle('save to artifacts'));
+    expect(await screen.findByText(/truncated/i)).toBeTruthy();
+    const call = global.fetch.mock.calls.find((c) => String(c[0]) === '/api/canvas/post');
+    const cps = Array.from(JSON.parse(call[1].body).payload.body);
+    expect(cps.length).toBe(MARKDOWN_LIMIT);
+    expect(cps[cps.length - 1]).toBe('😀');   // kept whole, not split into a surrogate
   });
 
   it('prevents duplicate clicks while a save is in flight', async () => {

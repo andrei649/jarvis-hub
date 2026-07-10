@@ -55,12 +55,18 @@ const I18N = {
 const labels = (lang) => I18N[lang === 'ro' ? 'ro' : 'en'];
 export function artifactsTabLabel(lang) { return labels(lang).tab; }
 
-/* ── URL classification (mirrors the backend _safe_url discipline) ────────── */
+/* ── URL classification (mirrors the backend _safe_url discipline) ──────────
+   Browsers strip ASCII TAB/LF/CR from a URL before parsing, so "/<TAB>/host"
+   resolves to "//host" (protocol-relative, cross-origin). Normalize the same
+   way before classifying AND before rendering, so a control-char URL can't be
+   smuggled past the same-origin branch into an ungated <img>/<a>. New backend
+   data is already clean; this also covers elements posted before the fix. */
+function cleanUrl(u) { return String(u || '').replace(/[\t\n\r]/g, ''); }
 function isSameOriginPath(u) {
-  const s = String(u || '');
+  const s = cleanUrl(u);
   return s.startsWith('/') && !s.startsWith('//') && !s.startsWith('/\\');
 }
-function isRemoteHttp(u) { return /^https?:\/\//i.test(String(u || '')); }
+function isRemoteHttp(u) { return /^https?:\/\//i.test(cleanUrl(u)); }
 
 /* ── tiny React-only Markdown renderer (headings, bold, inline code, lists) ──
    Anything else — raw HTML included — stays literal text, which is the safety
@@ -98,7 +104,7 @@ function MarkdownBody({ body }) {
    no-referrer so the page URL never leaks to the remote host. */
 function ImageRefBody({ payload, L }) {
   const [consented, setConsented] = useState(false);
-  const src = String(payload.src || '');
+  const src = cleanUrl(payload.src);
   const alt = String(payload.alt || payload.title || 'artifact image');
   if (isSameOriginPath(src)) return <img className="art-img" src={src} alt={alt} loading="lazy" />;
   if (!isRemoteHttp(src)) return <div className="art-plain">{src}</div>;  // inert (e.g. //host)
@@ -114,7 +120,7 @@ function ImageRefBody({ payload, L }) {
 }
 
 function LinkBody({ payload }) {
-  const url = String(payload.url || '');
+  const url = cleanUrl(payload.url);
   const label = String(payload.label || payload.title || url);
   if (!isSameOriginPath(url) && !isRemoteHttp(url)) {
     return <div className="art-plain">{label}{label !== url ? ` · ${url}` : ''}</div>;
@@ -272,12 +278,17 @@ function SaveArtifactButton({ message, onSaved, lang }: { message: any; onSaved?
     if (state === 'saving' || state === 'saved' || state === 'saved-trunc') return;
     const full = String((message && message.text) || '');
     if (!full) return;
-    const truncated = full.length > MARKDOWN_LIMIT;
+    // Truncate on a code-point boundary so an astral char at the limit is never
+    // split into a lone UTF-16 surrogate (which would poison the canvas store on
+    // its UTF-8 write). Matches the backend's code-point [:4000] bound.
+    const cps = Array.from(full);
+    const truncated = cps.length > MARKDOWN_LIMIT;
+    const body = truncated ? cps.slice(0, MARKDOWN_LIMIT).join('') : full;
     setState('saving');
     apiPost('/api/canvas/post', {
       agent: String((message && message.who) || 'jarvis'),
       type: 'markdown',
-      payload: { title: 'Saved response', body: full.slice(0, MARKDOWN_LIMIT) },
+      payload: { title: 'Saved response', body },
       pinned: false,
     }).then(() => {
       setState(truncated ? 'saved-trunc' : 'saved');

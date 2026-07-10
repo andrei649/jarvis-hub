@@ -353,7 +353,7 @@ function App() {
                       <button className={'center-tab' + (centerTab === 'artifacts' ? ' active' : '')} onClick={() => setCenterTab('artifacts')}>{artifactsTabLabel(lang)}</button>
                     </div>
                     {centerTab === 'conversation'
-                      ? <Conversation messages={messages} thinking={thinking} onStop={stopTurn} onProv={setProvModal} onArtifactSaved={bumpArtifacts} lang={lang} t={t} />
+                      ? <Conversation messages={messages} thinking={thinking} onStop={stopTurn} onProv={setProvModal} onArtifactSaved={demo ? undefined : bumpArtifacts} lang={lang} t={t} />
                       : centerTab === 'cognition'
                         ? <CognitionStream trace={trace} t={t} />
                         : <ArtifactsPanel refreshKey={artifactsRefresh} lang={lang} />}
