@@ -2,7 +2,7 @@
 
 import pytest
 
-from agents.core.llm.base import LLMBackend
+from agents.core.llm.base import LLMBackend, LMStudioBackend
 from agents.core.llm.tool_protocol import (
     ToolCall,
     ToolSpec,
@@ -176,3 +176,180 @@ async def test_generate_tool_turn_joins_systems_and_uses_last_user_or_tool():
 
     assert backend.generate_kwargs["system"] == "first system\n\nsecond system"
     assert backend.generate_kwargs["prompt"] == "latest tool content"
+
+
+class _FakeResponse:
+    def __init__(self, data):
+        self.data = data
+
+    def raise_for_status(self):
+        pass
+
+    def json(self):
+        return self.data
+
+
+class _RecordingAsyncClient:
+    def __init__(self, response_data):
+        self.response_data = response_data
+        self.posts = []
+
+    async def post(self, path, json):
+        self.posts.append({"path": path, "json": json})
+        return _FakeResponse(self.response_data)
+
+
+class _FailingAsyncClient:
+    async def post(self, path, json):
+        raise ConnectionError("LM Studio is down")
+
+
+def _lmstudio_backend(response_data):
+    backend = LMStudioBackend.__new__(LMStudioBackend)
+    backend.base_url = "http://lmstudio.test"
+    backend.client = _RecordingAsyncClient(response_data)
+    return backend
+
+
+async def test_lmstudio_tool_turn_sends_tools_and_parses_tool_calls():
+    response_data = {
+        "choices": [
+            {
+                "finish_reason": "tool_calls",
+                "message": {
+                    "content": "",
+                    "tool_calls": [
+                        {
+                            "id": "call-echo",
+                            "type": "function",
+                            "function": {
+                                "name": "echo",
+                                "arguments": '{"value":"hi"}',
+                            },
+                        }
+                    ],
+                },
+            }
+        ]
+    }
+    backend = _lmstudio_backend(response_data)
+    messages = [{"role": "user", "content": "Say hi through echo"}]
+    original_messages = [message.copy() for message in messages]
+    tool = ToolSpec(
+        "echo",
+        "Echo a value",
+        {
+            "type": "object",
+            "properties": {"value": {"type": "string"}},
+            "required": ["value"],
+        },
+    )
+
+    turn = await backend.generate_tool_turn(
+        model="local-model",
+        messages=messages,
+        tools=[tool],
+        max_tokens=0,
+        temperature=0.2,
+    )
+
+    assert backend.supports_tools is True
+    assert backend.client.posts == [
+        {
+            "path": "/v1/chat/completions",
+            "json": {
+                "model": "local-model",
+                "messages": original_messages,
+                "temperature": 0.2,
+                "stream": False,
+                "tools": [tool.as_openai()],
+                "tool_choice": "auto",
+            },
+        }
+    ]
+    assert messages == original_messages
+    assert turn == ToolTurn(
+        tool_calls=(
+            ToolCall(
+                id="call-echo",
+                name="echo",
+                raw_arguments='{"value":"hi"}',
+                arguments={"value": "hi"},
+            ),
+        ),
+        finish_reason="tool_calls",
+    )
+
+
+async def test_lmstudio_content_only_response_becomes_final_tool_turn():
+    backend = _lmstudio_backend(
+        {
+            "choices": [
+                {
+                    "finish_reason": "stop",
+                    "message": {"content": "Final answer"},
+                }
+            ]
+        }
+    )
+
+    turn = await backend.generate_tool_turn(
+        model="local-model",
+        messages=[{"role": "user", "content": "Answer directly"}],
+        tools=[],
+        max_tokens=123,
+    )
+
+    assert turn == ToolTurn(content="Final answer", finish_reason="stop")
+    assert backend.client.posts[0]["json"]["max_tokens"] == 123
+
+
+async def test_lmstudio_malformed_tool_arguments_return_parse_error():
+    backend = _lmstudio_backend(
+        {
+            "choices": [
+                {
+                    "finish_reason": "tool_calls",
+                    "message": {
+                        "content": "",
+                        "tool_calls": [
+                            {
+                                "id": "call-broken",
+                                "type": "function",
+                                "function": {
+                                    "name": "echo",
+                                    "arguments": "{broken",
+                                },
+                            }
+                        ],
+                    },
+                }
+            ]
+        }
+    )
+
+    turn = await backend.generate_tool_turn(
+        model="local-model",
+        messages=[{"role": "user", "content": "Echo this"}],
+        tools=[ToolSpec("echo")],
+    )
+
+    assert turn.tool_calls[0].arguments is None
+    assert turn.tool_calls[0].parse_error == "invalid_json"
+    assert turn.tool_calls[0].raw_arguments == "{broken"
+
+
+async def test_lmstudio_tool_turn_returns_degraded_reply_when_request_fails():
+    backend = LMStudioBackend.__new__(LMStudioBackend)
+    backend.base_url = "http://lmstudio.test"
+    backend.client = _FailingAsyncClient()
+
+    turn = await backend.generate_tool_turn(
+        model="local-model",
+        messages=[{"role": "user", "content": "Hello"}],
+        tools=[ToolSpec("echo")],
+    )
+
+    assert "can't reach the local LM Studio model" in turn.content
+    assert turn.tool_calls == ()
+    assert turn.finish_reason is None

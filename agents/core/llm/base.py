@@ -12,7 +12,7 @@ from typing import Any, Callable
 
 import httpx
 
-from .tool_protocol import ToolSpec, ToolTurn
+from .tool_protocol import ToolSpec, ToolTurn, parse_openai_tool_calls
 
 logger = logging.getLogger("jarvis.llm.base")
 
@@ -368,6 +368,8 @@ class LLMBackend(ABC):
 class LMStudioBackend(LLMBackend):
     """LM Studio local server (GPU-accelerated on Windows)."""
 
+    supports_tools = True
+
     def __init__(self, base_url: str = "http://localhost:1234"):
         self.base_url = base_url
         # H23.12: short connect / long read so a down server fails fast (no hang).
@@ -420,6 +422,41 @@ class LMStudioBackend(LLMBackend):
             return strip_thinking(msg.get("reasoning_content", "") or "")
         except Exception as e:
             return local_backend_degraded_reply("LM Studio", f"LM Studio ({self.base_url})", e)
+
+    async def generate_tool_turn(
+        self,
+        model: str,
+        messages: list[dict[str, Any]],
+        tools: list[ToolSpec],
+        max_tokens: int = 1024,
+        temperature: float = 0.7,
+    ) -> ToolTurn:
+        payload = {
+            "model": model,
+            "messages": messages,
+            "temperature": temperature,
+            "stream": False,
+            "tools": [tool.as_openai() for tool in tools],
+            "tool_choice": "auto",
+        }
+        if not is_auto_max_tokens(max_tokens):
+            payload["max_tokens"] = max_tokens
+        try:
+            resp = await self.client.post("/v1/chat/completions", json=payload)
+            resp.raise_for_status()
+            choice = resp.json()["choices"][0]
+            message = choice.get("message", {})
+            return ToolTurn(
+                content=strip_thinking(message.get("content", "") or ""),
+                tool_calls=parse_openai_tool_calls(message.get("tool_calls", []) or []),
+                finish_reason=choice.get("finish_reason"),
+            )
+        except Exception as e:
+            return ToolTurn(
+                content=local_backend_degraded_reply(
+                    "LM Studio", f"LM Studio ({self.base_url})", e
+                )
+            )
 
     async def generate_stream(
         self, model: str, prompt: str, system: str = "",
