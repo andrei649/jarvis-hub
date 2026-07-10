@@ -26,6 +26,7 @@ from __future__ import annotations
 
 import logging
 import time
+from collections.abc import Mapping
 from copy import deepcopy
 from typing import Awaitable, Callable, Optional
 
@@ -204,9 +205,16 @@ class ToolRPCServer:
     async def execute(self, task) -> dict:
         """Executor handler: run a gated tool AFTER its approval task is approved."""
         effective_actor = getattr(task, "agent", None) or self.agent
-        payload = getattr(task, "payload", None) or {}
+        payload = getattr(task, "payload", None)
+        if not isinstance(payload, Mapping):
+            return {"status": "failed", "reason": "bad_args", "tool": ""}
         name = payload.get("tool")
-        args = payload.get("args") or {}
+        if not isinstance(name, str):
+            return {"status": "failed", "reason": "bad_args", "tool": ""}
+        raw_args = payload.get("args", {})
+        if not isinstance(raw_args, Mapping):
+            return {"status": "failed", "reason": "bad_args", "tool": name}
+        args = dict(raw_args)
         spec = self._tools.get(name)
         if spec is None:
             return {"status": "failed", "reason": "tool_not_allowed", "tool": name}

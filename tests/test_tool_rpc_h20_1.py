@@ -1,5 +1,6 @@
 """H20.1 — Governed Tool-RPC surface (allowlist + gating + secret scrub)."""
 import sys, os
+from types import MappingProxyType
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'agents'))
 
@@ -370,3 +371,140 @@ async def test_approved_execute_rechecks_kernel_with_task_actor(monkeypatch):
     assert kernel.calls[-1].agent == "approved-agent"
     assert kernel.calls[-1].payload["args_keys"] == ["token"]
     assert "secret-value" not in str(kernel.calls[-1].payload)
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [None, [], ["bad"], "bad", 7],
+    ids=["none", "empty-list", "nonempty-list", "string", "scalar"],
+)
+@pytest.mark.asyncio
+async def test_approved_execute_rejects_non_mapping_payload_before_side_effects(
+    payload, monkeypatch
+):
+    monkeypatch.setenv("JARVIS_ACTION_KERNEL", "1")
+    kernel = _SpyKernel()
+    ran = []
+
+    async def send(args):
+        ran.append(args)
+        return {"sent": True}
+
+    s = ToolRPCServer(kernel=kernel)
+    s.register_tool("send_email", send, gated=True)
+
+    out = await s.execute(_Task(payload, agent="approved-agent"))
+
+    assert out == {"status": "failed", "reason": "bad_args", "tool": ""}
+    assert kernel.calls == []
+    assert ran == []
+
+
+@pytest.mark.parametrize(
+    "tool",
+    [None, [], {"bad": True}, 7],
+    ids=["none", "list", "mapping", "scalar"],
+)
+@pytest.mark.asyncio
+async def test_approved_execute_rejects_unsafe_tool_identifier_before_lookup(
+    tool, monkeypatch
+):
+    monkeypatch.setenv("JARVIS_ACTION_KERNEL", "1")
+    kernel = _SpyKernel()
+    ran = []
+
+    async def send(args):
+        ran.append(args)
+        return {"sent": True}
+
+    s = ToolRPCServer(kernel=kernel)
+    s.register_tool("send_email", send, gated=True)
+
+    out = await s.execute(
+        _Task({"tool": tool, "args": {}}, agent="approved-agent")
+    )
+
+    assert out == {"status": "failed", "reason": "bad_args", "tool": ""}
+    assert kernel.calls == []
+    assert ran == []
+
+
+@pytest.mark.parametrize(
+    "args",
+    [None, [], ["bad"], "bad", 7],
+    ids=["none", "empty-list", "nonempty-list", "string", "scalar"],
+)
+@pytest.mark.asyncio
+async def test_approved_execute_rejects_explicit_non_mapping_args_before_side_effects(
+    args, monkeypatch
+):
+    monkeypatch.setenv("JARVIS_ACTION_KERNEL", "1")
+    kernel = _SpyKernel()
+    ran = []
+
+    async def send(handler_args):
+        ran.append(handler_args)
+        return {"sent": True}
+
+    s = ToolRPCServer(kernel=kernel)
+    s.register_tool("send_email", send, gated=True)
+
+    out = await s.execute(
+        _Task({"tool": "send_email", "args": args}, agent="approved-agent")
+    )
+
+    assert out == {
+        "status": "failed",
+        "reason": "bad_args",
+        "tool": "send_email",
+    }
+    assert kernel.calls == []
+    assert ran == []
+
+
+@pytest.mark.asyncio
+async def test_approved_execute_normalizes_mapping_args_to_real_dict():
+    seen = []
+
+    async def send(args):
+        seen.append(args)
+        return {"sent": True}
+
+    s = ToolRPCServer()
+    s.register_tool("send_email", send, gated=True)
+    task = _Task(
+        MappingProxyType(
+            {
+                "tool": "send_email",
+                "args": MappingProxyType({"to": "y"}),
+            }
+        )
+    )
+
+    out = await s.execute(task)
+
+    assert out["status"] == "ok"
+    assert seen == [{"to": "y"}]
+    assert type(seen[0]) is dict
+
+
+@pytest.mark.asyncio
+async def test_approved_execute_kernel_grant_uses_server_actor_and_omitted_args(
+    monkeypatch,
+):
+    monkeypatch.setenv("JARVIS_ACTION_KERNEL", "1")
+    kernel = _SpyKernel(verdict=Verdict.GRANT)
+    seen = []
+
+    async def send(args):
+        seen.append(args)
+        return {"sent": True}
+
+    s = ToolRPCServer(agent="server-default", kernel=kernel)
+    s.register_tool("send_email", send, gated=True)
+
+    out = await s.execute(_Task({"tool": "send_email"}))
+
+    assert out["status"] == "ok"
+    assert seen == [{}]
+    assert kernel.calls[-1].agent == "server-default"
