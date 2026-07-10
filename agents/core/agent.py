@@ -168,7 +168,7 @@ class Agent:
                 max_tokens=max_tokens,
                 temperature=temperature,
             )
-            if on_token is not None:
+            if on_token is not None and (response or "").strip():
                 emitted = on_token(response)
                 if inspect.isawaitable(emitted):
                     await emitted

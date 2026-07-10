@@ -1087,6 +1087,40 @@ async def test_agent_generate_response_tool_mode_emits_only_final_answer_and_awa
     }
 
 
+@pytest.mark.parametrize("runtime_response", ["", " \t "])
+@pytest.mark.asyncio
+async def test_agent_generate_response_tool_mode_does_not_emit_blank_final_answer(
+    runtime_response,
+):
+    class _EnabledRuntime:
+        def can_run(self, backend):
+            return True
+
+        async def run(self, **kwargs):
+            return runtime_response
+
+    agent = Agent("jarvis", {"name": "Jarvis"})
+    agent.tool_runtime = _EnabledRuntime()
+    emitted = []
+
+    async def on_token(token):
+        await asyncio.sleep(0)
+        emitted.append(token)
+
+    answer = await agent.generate_response(
+        backend=object(),
+        model="tool-model",
+        prompt="use tools",
+        system="system",
+        max_tokens=400,
+        temperature=0.1,
+        on_token=on_token,
+    )
+
+    assert answer == runtime_response
+    assert emitted == []
+
+
 @pytest.mark.asyncio
 async def test_agent_generate_response_disabled_preserves_stream_callback_identity():
     class _StreamingBackend:
@@ -1156,10 +1190,8 @@ async def test_agent_generate_response_streamless_fallback_emits_once_and_awaits
     assert len(backend.calls) == 1
 
 
-@pytest.mark.asyncio
-async def test_streamed_orchestrator_uses_agent_generation_seam_and_persists_once():
+def _streamed_orchestrator_for(agent):
     orchestrator = Orchestrator(JarvisConfig())
-    seam_calls = []
     completion_calls = []
     turns = []
 
@@ -1179,16 +1211,6 @@ async def test_streamed_orchestrator_uses_agent_generation_seam_and_persists_onc
             raise AssertionError("orchestrator bypassed Agent.generate_response")
 
     backend = _Backend()
-
-    class _SeamAgent:
-        name = "Jarvis"
-        soul = {"content": "agent system"}
-        config = {"model": "configured-model"}
-
-        async def generate_response(self, **kwargs):
-            seam_calls.append(kwargs)
-            kwargs["on_token"]("seam answer")
-            return "seam answer"
 
     class _Intent:
         target_agents = ["jarvis"]
@@ -1227,7 +1249,7 @@ async def test_streamed_orchestrator_uses_agent_generation_seam_and_persists_onc
     orchestrator._runtime_state_block = lambda: ""
     orchestrator._build_agent_turn_text = turn_text
     orchestrator._route_candidates = lambda intent: intent.target_agents
-    orchestrator.agents["jarvis"] = _SeamAgent()
+    orchestrator.agents["jarvis"] = agent
     orchestrator.llm_router.select_backend = lambda agent_id, prompt: (
         backend,
         "selected-model",
@@ -1237,6 +1259,24 @@ async def test_streamed_orchestrator_uses_agent_generation_seam_and_persists_onc
     orchestrator.security = None
     orchestrator._agent_gen_params = lambda agent, route_name: (777, 0.15)
     orchestrator._complete_llm_turn = complete
+    return orchestrator, backend, completion_calls, turns
+
+
+@pytest.mark.asyncio
+async def test_streamed_orchestrator_uses_agent_generation_seam_and_persists_once():
+    seam_calls = []
+
+    class _SeamAgent:
+        name = "Jarvis"
+        soul = {"content": "agent system"}
+        config = {"model": "configured-model"}
+
+        async def generate_response(self, **kwargs):
+            seam_calls.append(kwargs)
+            kwargs["on_token"]("seam answer")
+            return "seam answer"
+
+    orchestrator, backend, completion_calls, turns = _streamed_orchestrator_for(_SeamAgent())
     emitted = []
     on_token = emitted.append
 
@@ -1259,3 +1299,48 @@ async def test_streamed_orchestrator_uses_agent_generation_seam_and_persists_onc
     assert len(completion_calls) == 1
     assert [turn["role"] for turn in turns] == ["user", "assistant"]
     assert turns[-1]["content"] == "seam answer"
+
+
+@pytest.mark.parametrize("runtime_response", ["", " \t "])
+@pytest.mark.asyncio
+async def test_streamed_orchestrator_replaces_blank_tool_answer_once_and_awaits_sink(
+    runtime_response,
+):
+    class _BlankRuntime:
+        def can_run(self, backend):
+            return True
+
+        async def run(self, **kwargs):
+            return runtime_response
+
+    class _FalseyAsyncSink:
+        def __init__(self):
+            self.values = []
+
+        def __bool__(self):
+            return False
+
+        async def __call__(self, value):
+            await asyncio.sleep(0)
+            self.values.append(value)
+
+    agent = Agent("jarvis", {"name": "Jarvis", "model": "configured-model"})
+    agent.soul = {"content": "agent system"}
+    agent.tool_runtime = _BlankRuntime()
+    orchestrator, _backend, completion_calls, turns = _streamed_orchestrator_for(agent)
+    on_token = _FalseyAsyncSink()
+
+    answer = await orchestrator.handle_input_stream(
+        "question", channel="web", on_token=on_token, session_id="blank-seam-session"
+    )
+
+    fallback = (
+        "My reply was cut short before I finished, sir — the model ran out of context "
+        "while thinking. Try again, simplify the request, or load a larger-context model "
+        "in LM Studio."
+    )
+    assert answer == fallback
+    assert on_token.values == [fallback]
+    assert len(completion_calls) == 1
+    assert [turn["role"] for turn in turns] == ["user", "assistant"]
+    assert turns[-1]["content"] == fallback

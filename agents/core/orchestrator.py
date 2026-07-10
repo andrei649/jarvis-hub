@@ -7,6 +7,7 @@ skills system, checkpointing, agent handoff, promotion/demotion.
 import asyncio
 import contextvars
 import hashlib
+import inspect
 import logging
 import importlib
 import os
@@ -1203,8 +1204,10 @@ class Orchestrator:
         # so an empty string here means "no answer was produced".
         if not (synthesized or "").strip():
             synthesized = "My reply was cut short before I finished, sir — the model ran out of context while thinking. Try again, simplify the request, or load a larger-context model in LM Studio."
-            if on_token:
-                on_token(synthesized)
+            if on_token is not None:
+                emitted = on_token(synthesized)
+                if inspect.isawaitable(emitted):
+                    await emitted
         _stream_responses = {agent_id: synthesized} if agent_id else {}
         t_synthesize = int((time.perf_counter() - t_s0) * 1000)
         await self._complete_llm_turn(
