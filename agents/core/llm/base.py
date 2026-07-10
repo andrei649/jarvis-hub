@@ -8,9 +8,11 @@ import json
 import logging
 import re
 from abc import ABC, abstractmethod
-from typing import Callable
+from typing import Any, Callable
 
 import httpx
+
+from .tool_protocol import ToolSpec, ToolTurn
 
 logger = logging.getLogger("jarvis.llm.base")
 
@@ -255,12 +257,47 @@ async def _emit(on_token: Callable, text: str) -> None:
 # ── Abstract base ─────────────────────────────────────────────────────────────
 
 class LLMBackend(ABC):
+    supports_tools = False
+
     @abstractmethod
     async def generate(
         self, model: str, prompt: str, system: str = "",
         max_tokens: int = 1024, temperature: float = 0.7
     ) -> str:
         ...
+
+    async def generate_tool_turn(
+        self,
+        model: str,
+        messages: list[dict[str, Any]],
+        tools: list[ToolSpec],
+        max_tokens: int = 1024,
+        temperature: float = 0.7,
+    ) -> ToolTurn:
+        """Fall back to text generation for backends without tool support."""
+        system = "\n\n".join(
+            message["content"]
+            for message in messages
+            if message.get("role") == "system"
+            and isinstance(message.get("content"), str)
+        )
+        prompt = next(
+            (
+                message["content"]
+                for message in reversed(messages)
+                if message.get("role") in {"user", "tool"}
+                and isinstance(message.get("content"), str)
+            ),
+            "",
+        )
+        content = await self.generate(
+            model=model,
+            prompt=prompt,
+            system=system,
+            max_tokens=max_tokens,
+            temperature=temperature,
+        )
+        return ToolTurn(content=content)
 
     async def warm_up(self, model: str) -> bool:
         """Preload *model* with a minimal generation so the first real request
