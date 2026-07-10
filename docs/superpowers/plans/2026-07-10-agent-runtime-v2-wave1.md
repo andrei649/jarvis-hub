@@ -20,7 +20,12 @@ exposes one generation seam used by both Agent.process and streamed orchestratio
 - Unknown or malformed calls never reach a handler.
 - Gated tools retain contract, Action Kernel, approval, secret-scrub, and audit behavior.
 - Tool results re-entering model context are explicitly bounded to 50,000 UTF-8 bytes.
+- Handler results must be JSON values; arbitrary Python objects are rejected.
 - Tool model turns are capped to 1–32 iterations; default is 8.
+- Each tool handler is capped at 30 seconds and each whole loop at 120 seconds.
+- Agent identity is trusted runtime context, never a model-controlled argument.
+- approval_required stops the loop after one enqueue; approved execution rechecks the kernel.
+- ToolRPC lifecycle events use the IntentLog-compatible audit sink.
 - No new routes, files/shell/browser tools, cloud tool calling, or artifact integration.
 - Follow TDD: each behavior test must fail for the expected missing-feature reason before implementation.
 
@@ -270,6 +275,7 @@ Expected: all pass.
 
 **Interfaces:**
 - Produces: ToolRPCServer.register_tool(name, handler, gated=False, description="", input_schema=None).
+- Produces: ToolRPCServer.handle(request, *, actor=None).
 - Produces: ToolRPCServer.tools() records with name, gated, description, input_schema.
 
 - [ ] **Step 1: Add failing schema metadata tests**
@@ -292,6 +298,10 @@ Assert tools()[0] includes the exact description and schema. Assert an omitted s
 defaults to an object with empty properties and existing name/gated projections remain
 unchanged.
 
+Add tests proving a trusted actor keyword, not any request field, controls the agent used
+for approval enqueue and kernel authorization. Add a regression proving
+ToolRPCServer.execute rechecks the kernel immediately before an approved handler runs.
+
 - [ ] **Step 2: Run ToolRPC tests and verify RED**
 
 Run:
@@ -303,8 +313,10 @@ Expected: schema test fails because register_tool rejects the new keywords.
 - [ ] **Step 3: Extend registration metadata only**
 
 Copy input_schema on registration and return a new copy from tools so callers cannot
-mutate the allowlist metadata. Do not change handle, execute, gating, kernel, scrub, or
-audit logic.
+mutate the allowlist metadata. Add actor as a keyword-only trusted argument to handle;
+use actor or self.agent consistently in contract, kernel, enqueue, and audit metadata.
+Make execute derive the trusted actor from task.agent and repeat the kernel check before
+the handler. Request payload fields must never override actor.
 
 - [ ] **Step 4: Run the full ToolRPC and kernel slice**
 
@@ -364,12 +376,15 @@ Create AgentToolRuntime with constructor:
         max_iterations: Callable[[], int] = lambda: 8,
         max_tool_calls_per_turn: int = 8,
         max_result_bytes: int = 50_000,
+        tool_timeout_seconds: float = 30.0,
+        max_wall_seconds: float = 120.0,
     ) -> None
 
 can_run returns true only when enabled(), backend.supports_tools, and server.tools() are
-all truthy. run builds messages, converts ToolRPC metadata to ToolSpec, consumes an
-IterationBudget, calls generate_tool_turn, executes through server.handle, appends the
-assistant/tool messages, and returns final content.
+all truthy. run accepts a trusted agent_id, builds messages, converts ToolRPC metadata
+to ToolSpec, consumes an IterationBudget, calls generate_tool_turn, executes through
+server.handle(request, actor=agent_id), appends the assistant/tool messages, and returns
+final content.
 
 - [ ] **Step 4: Run the echo test and verify GREEN**
 
@@ -381,10 +396,14 @@ Add one behavior per test:
 
 - invalid arguments produce bad_tool_arguments and never invoke the handler;
 - unknown tool produces tool_not_allowed and returns to the model;
-- gated tool produces approval_required and never invokes the handler;
+- gated tool produces approval_required, never invokes the handler, stops the loop, and
+  enqueues only once;
 - handler exception produces tool_error without exception text;
+- hanging handler produces tool_timeout after the injected short test deadline;
+- hanging provider/loop produces the whole-loop deadline message;
 - two read-only handlers block on a shared asyncio.Event, proving concurrent execution;
 - tool result larger than 50,000 bytes contains the explicit truncation note;
+- non-JSON handler result produces non_json_result rather than repr output;
 - repeating tool requests stop at the configured iteration cap;
 - more than eight calls in one turn receive too_many_tool_calls for overflow calls;
 - a raising event sink is swallowed and the final answer still returns.
@@ -400,9 +419,11 @@ Expected: the newly added behaviors fail until implemented.
 - [ ] **Step 7: Complete bounded parallel execution**
 
 Use asyncio.gather for accepted calls from one turn and preserve input order in appended
-tool messages. For parse errors and overflow calls, construct local failure dictionaries
-without calling ToolRPC. Serialize with json.dumps(ensure_ascii=False, default=str) and
-truncate_text. Clamp the live iteration setting to 1–32.
+tool messages. Wrap each ToolRPC call in asyncio.wait_for. For parse errors and overflow
+calls, construct local failure dictionaries without calling ToolRPC. Serialize with
+json.dumps(ensure_ascii=False); catch TypeError and substitute non_json_result.
+Wrap the complete internal loop in asyncio.wait_for and return an honest deadline
+message on timeout. Clamp the live iteration setting to 1–32.
 
 Use this exact exhausted reply shape:
 
@@ -443,7 +464,7 @@ Disabled case: attach a runtime whose enabled callable returns false and assert 
 existing fake backend generate method is called exactly once.
 
 Enabled case: attach a scripted tool runtime/backend and assert Agent.process completes
-the tool loop.
+the tool loop and passes self.id as the trusted agent_id.
 
 Streaming case: call Agent.generate_response with on_token and assert tool mode calls the
 sink once with only the final answer, while disabled mode retains backend.generate_stream.
@@ -540,8 +561,9 @@ Add:
     dict(category="llm", key="tool_loop_max_iterations", value=8,
          label="Agent tool-loop model-turn cap", kind="number"),
 
-In AutonomyCoordinator, register echo and time with exact descriptions and schemas, build
-one AgentToolRuntime with live get_setting callables, assign it to
+In AutonomyCoordinator, register echo and time with exact descriptions and schemas, pass
+getattr(self._orch, "intent_log", None) as the ToolRPC audit sink, build one
+AgentToolRuntime with live get_setting callables, assign it to
 self._orch.agent_tool_runtime and every self._orch.agents value.
 
 - [ ] **Step 4: Run runtime/settings/autonomy regressions**

@@ -89,7 +89,18 @@ New AgentToolRuntime receives a ToolRPCServer plus live setting callables. On ea
 8. Continues until a final answer or the configured cap.
 
 Tool results are JSON encoded and bounded with the existing 50 KB output helper before
-they re-enter model context. Secret values are already scrubbed by ToolRPCServer.
+they re-enter model context. Non-JSON handler results become an explicit
+non_json_result failure instead of leaking a Python representation. Secret values are
+already scrubbed by ToolRPCServer.
+
+The trusted caller supplies agent_id directly to the runtime; model-produced arguments
+cannot select or override identity. ToolRPC uses that identity for the contract, Action
+Kernel, approval task, and audit record. A shared process-wide ToolRPC server therefore
+does not collapse every tool call to agent="jarvis".
+
+Each handler has a 30-second timeout and the whole loop has a 120-second wall deadline.
+The existing process-wide kernel loop detector remains a separate fleet safety net; the
+new IterationBudget is per turn.
 
 The runtime emits structured best-effort lifecycle events:
 
@@ -143,7 +154,14 @@ to a safe range of 1 through 32.
 - Unknown tool: feed tool_not_allowed to the model; never improvise an execution path.
 - Invalid arguments: feed bad_tool_arguments; never call the handler.
 - Gated tool: feed approval_required with the task id when available; never run inline.
+- Approval required: stop the loop immediately after one enqueue so a retry cannot
+  create duplicate approval tasks.
+- Approved gated execution: re-check the Action Kernel/kill switch immediately before
+  invoking the handler, not only before enqueue.
 - Handler failure: feed tool_error without raw exception details.
+- Handler timeout: feed tool_timeout; never wait forever.
+- Whole-loop timeout: return an honest bounded-stop message.
+- Non-JSON result: feed non_json_result; never stringify arbitrary objects into context.
 - Output too large: truncate explicitly with the existing head/tail marker.
 - Iteration cap: return an honest bounded-stop message and emit tool_loop_exhausted.
 - Event callback failure: log and continue; observability cannot break execution.
@@ -151,6 +169,7 @@ to a safe range of 1 through 32.
 ## Security invariants
 
 - Model tool names are untrusted input and must match the ToolRPC allowlist exactly.
+- Agent identity comes from the selected Agent object, never from model output.
 - Tool arguments never bypass ToolRPC.
 - Mutating/external tools remain gated and Action-Kernel mediated.
 - Tool results are secret-scrubbed and output-bounded before returning to the model.
@@ -158,6 +177,8 @@ to a safe range of 1 through 32.
 - Strict-local agent routing remains unchanged.
 - No tool-call content is persisted as a fake user or assistant turn; only the final
   answer follows the current conversation persistence path.
+- ToolRPC events use the durable IntentLog-compatible audit sink; the SQLite scanner
+  AuditLogger is not used as a generic tool event sink.
 
 ## Tests
 
@@ -169,19 +190,23 @@ TDD coverage must prove:
 4. A scripted model can call echo, receive the result, and produce a final answer.
 5. Multiple read-only calls in one turn execute concurrently and results retain order.
 6. Unknown, failed, and approval-required tool results are fed back honestly.
-7. The iteration cap terminates a repeating model.
-8. Tool result text is output-bounded.
-9. Disabled runtime preserves the exact existing generate/generate_stream path.
-10. Enabled normal Agent.process and streamed orchestrator generation use the same seam.
-11. Guardrails still scan provider input/output while tool mode is active.
-12. Existing Agent, LLM, ToolRPC, kernel, stream, route, and full offline suites remain
+7. Approval-required stops after one enqueue and approved execution rechecks the kernel.
+8. Trusted agent identity reaches contract, approval, kernel, and audit context.
+9. Per-tool and whole-loop deadlines terminate hanging work.
+10. The iteration/call caps terminate a repeating or fan-out model.
+11. Tool result text is JSON-only and output-bounded.
+12. Disabled runtime preserves the exact existing generate/generate_stream path.
+13. Enabled normal Agent.process and streamed orchestrator generation use the same seam.
+14. Guardrails still scan provider input/output while tool mode is active.
+15. Existing Agent, LLM, ToolRPC, kernel, stream, route, and full offline suites remain
     green.
 
 ## Risk and rollback
 
-Primary risks are provider-format drift, guardrail bypass, accidental default enablement,
-and divergent streamed/non-streamed behavior. Tests target each boundary and the runtime
-is default-off.
+Primary risks are provider-format drift, guardrail bypass, untrusted identity,
+unbounded waits, duplicate approvals, accidental default enablement, and divergent
+streamed/non-streamed behavior. Tests target each boundary and the runtime is
+default-off.
 
 Rollback is a single feature-branch revert. Operational rollback requires only setting
 llm.tool_loop_enabled=false; the original generation path remains in place.
