@@ -64,11 +64,17 @@ def parse_openai_tool_calls(
         function = raw_call.get("function", {})
         raw_arguments = function.get("arguments", "{}")
         try:
-            arguments = json.loads(raw_arguments)
-            parse_error = None
+            parsed_arguments = json.loads(raw_arguments)
         except (json.JSONDecodeError, TypeError):
             arguments = None
             parse_error = "invalid_json"
+        else:
+            if isinstance(parsed_arguments, dict):
+                arguments = parsed_arguments
+                parse_error = None
+            else:
+                arguments = None
+                parse_error = "arguments_not_object"
         calls.append(
             ToolCall(
                 id=raw_call.get("id", ""),

@@ -1,5 +1,7 @@
 """Contract tests for provider-neutral LLM tool turns."""
 
+import pytest
+
 from agents.core.llm.base import LLMBackend
 from agents.core.llm.tool_protocol import (
     ToolCall,
@@ -97,6 +99,22 @@ def test_parse_openai_tool_calls_marks_invalid_json_without_raising():
     assert calls[0].raw_arguments == "{broken"
 
 
+@pytest.mark.parametrize("raw_arguments", ["[]", "42", "null"])
+def test_parse_openai_tool_calls_rejects_non_object_json(raw_arguments):
+    calls = parse_openai_tool_calls(
+        [
+            {
+                "id": "call-1",
+                "function": {"name": "echo", "arguments": raw_arguments},
+            }
+        ]
+    )
+
+    assert calls[0].arguments is None
+    assert calls[0].parse_error == "arguments_not_object"
+    assert calls[0].raw_arguments == raw_arguments
+
+
 class _TextBackend(LLMBackend):
     def __init__(self):
         self.generate_kwargs = None
@@ -138,3 +156,23 @@ async def test_generate_tool_turn_falls_back_to_generate_for_text_backends():
         "max_tokens": 321,
         "temperature": 0.2,
     }
+
+
+async def test_generate_tool_turn_joins_systems_and_uses_last_user_or_tool():
+    backend = _TextBackend()
+
+    await backend.generate_tool_turn(
+        model="m",
+        messages=[
+            {"role": "system", "content": "first system"},
+            {"role": "system", "content": "second system"},
+            {"role": "user", "content": "older user content"},
+            {"role": "assistant", "content": "ignored assistant content"},
+            {"role": "tool", "content": "latest tool content"},
+            {"role": "assistant", "content": "also ignored"},
+        ],
+        tools=[],
+    )
+
+    assert backend.generate_kwargs["system"] == "first system\n\nsecond system"
+    assert backend.generate_kwargs["prompt"] == "latest tool content"
