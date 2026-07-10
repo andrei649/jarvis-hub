@@ -39,7 +39,11 @@ def _safe_url(v) -> str:
     u = _s(v, 500)
     if not u:
         return ""
-    if u.startswith("/static/") or u.startswith("/"):   # same-origin asset
+    if u.startswith("//") or u.startswith("/\\"):
+        # protocol-relative: //host (and its /\host browser-normalized twin)
+        # resolves against the page scheme → cross-origin, NOT same-origin
+        return ""
+    if u.startswith("/"):                               # same-origin asset (/static/, ...)
         return u
     try:
         return u if urlparse(u).scheme in _SAFE_SCHEMES else ""

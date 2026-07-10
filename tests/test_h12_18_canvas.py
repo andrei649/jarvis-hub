@@ -43,6 +43,31 @@ def test_link_requires_safe_scheme():
     assert _sanitize("link", {"url": "/static/a.png"})["url"] == "/static/a.png"
 
 
+def test_link_rejects_protocol_relative_url():
+    # //host resolves against the page scheme → cross-origin, NOT same-origin.
+    with pytest.raises(ValueError):
+        _sanitize("link", {"url": "//attacker.example/pixel"})
+    # browsers normalize \ to / in special URLs, so /\host is the same trick
+    with pytest.raises(ValueError):
+        _sanitize("link", {"url": "/\\attacker.example/pixel"})
+
+
+def test_image_rejects_protocol_relative_src():
+    with pytest.raises(ValueError):
+        _sanitize("image_ref", {"src": "//attacker.example/pixel.png"})
+    with pytest.raises(ValueError):
+        _sanitize("image_ref", {"src": "/\\attacker.example/pixel.png"})
+
+
+def test_safe_urls_still_accepted_after_protocol_relative_fix():
+    assert _sanitize("link", {"url": "/static/report.png"})["url"] == "/static/report.png"
+    assert _sanitize("link", {"url": "/api/media/thumb/1"})["url"] == "/api/media/thumb/1"
+    assert _sanitize("link", {"url": "https://example.com/a"})["url"] == "https://example.com/a"
+    assert _sanitize("link", {"url": "http://example.com/a"})["url"] == "http://example.com/a"
+    assert _sanitize("image_ref", {"src": "/static/a.png"})["src"] == "/static/a.png"
+    assert _sanitize("image_ref", {"src": "https://x.io/a.png"})["src"] == "https://x.io/a.png"
+
+
 def test_list_and_table_bound_counts():
     lst = _sanitize("list", {"items": [str(i) for i in range(100)]})
     assert len(lst["items"]) == 50

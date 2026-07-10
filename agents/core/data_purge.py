@@ -9,7 +9,7 @@ just made (``PurgeError`` aborts the purge if that snapshot fails verification).
 Scope is the user's **structured content** at rest:
 
   * ``missions.db`` / ``autonomy.db`` / ``analytics.db`` — rows deleted, schema kept
-  * ``notes.json``                                       — reset to an empty object
+  * ``notes.json`` / ``canvas.json``                     — reset to an empty object
   * the **memory subsystem** (when ``memory=True``, the CLI + ``/api/admin/forget`` default,
     AUD-2) — the fixed graph/entity/decay/cognition stores, the embedding cache, and
     conversation transcripts for confirmed sessions (see ``_purge_memory_at_rest``)
@@ -51,7 +51,9 @@ logger = logging.getLogger("jarvis.purge")
 # User-content SQLite DBs — every row in every (non-internal) table is deleted, schema kept.
 PURGE_DBS: tuple[str, ...] = ("missions.db", "autonomy.db", "analytics.db")
 # User-content JSON stores — reset to an empty object (their top-level shape is a dict).
-PURGE_JSON: tuple[str, ...] = ("notes.json",)
+# canvas.json holds explicitly saved assistant replies (Canvas artifacts) — user content;
+# CanvasStore._deserialize({}) loads the reset file as an empty store.
+PURGE_JSON: tuple[str, ...] = ("notes.json", "canvas.json")
 
 # AUD-2 — the memory subsystem at rest. These FIXED-name stores hold extracted
 # user content (the knowledge graph, named entities, decay activations); deleting
@@ -168,7 +170,7 @@ def _purge_memory_at_rest(root: Path, live_session_ids: Iterable[str] = ()) -> d
     from the live manager, plus the stems of any top-level ``*.jsonl`` that look
     like a session (validated id, not on the non-session denylist). Files like
     ``notes.json`` / ``canvas.json`` — which have no ``.jsonl`` and aren't live
-    sessions — are never touched.
+    sessions — are never touched *here*; the ``PURGE_JSON`` pass resets them.
     """
     report: dict = {"files": [], "dirs": [], "sessions": []}
 
@@ -228,6 +230,16 @@ async def clear_live_memory(orch) -> list[str]:
                 cleared.append(attr)
             except Exception:  # pragma: no cover - defensive
                 logger.warning("clear_live_memory: %s clear failed", attr, exc_info=True)
+    # Canvas artifacts are explicitly saved user replies: clear the LIVE store too
+    # (pinned included — a forget forgets everything), so a running orchestrator
+    # can't re-persist forgotten elements over the PURGE_JSON reset on its next save.
+    canvas = getattr(orch, "canvas", None)
+    if canvas is not None and hasattr(canvas, "clear"):
+        try:
+            canvas.clear(keep_pinned=False)
+            cleared.append("canvas")
+        except Exception:  # pragma: no cover - defensive
+            logger.warning("clear_live_memory: canvas clear failed", exc_info=True)
     cognition = getattr(orch, "cognition", None)
     living = None
     if cognition is not None and hasattr(cognition, "module"):
