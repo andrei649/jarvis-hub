@@ -59,6 +59,40 @@ def test_image_rejects_protocol_relative_src():
         _sanitize("image_ref", {"src": "/\\attacker.example/pixel.png"})
 
 
+def test_url_control_chars_cannot_smuggle_protocol_relative():
+    # Browsers strip TAB/LF/CR before parsing, so "/<ctl>/host" resolves to
+    # "//host" (cross-origin). The single-slash same-origin branch must not be
+    # fooled by an interior control char.
+    for ctl in ("\t", "\n", "\r"):
+        with pytest.raises(ValueError):
+            _sanitize("link", {"url": f"/{ctl}/attacker.example/x"})
+        with pytest.raises(ValueError):
+            _sanitize("image_ref", {"src": f"/{ctl}/attacker.example/pixel.png"})
+
+
+def test_lone_surrogate_is_dropped_so_the_store_can_save(tmp_path):
+    # A lone UTF-16 surrogate (truncated astral char / crafted \udXXX escape)
+    # parses fine but breaks a UTF-8 write; _s must drop it so post() persists
+    # and the store is not poisoned for later saves.
+    store = CanvasStore(path=str(tmp_path / "c.json"))
+    el = store.post("jarvis", "markdown", {"body": "ok\ud83dend"})
+    assert "\ud83d" not in el["payload"]["body"] and el["payload"]["body"] == "okend"
+    # reloadable (the write did not raise) + a subsequent save still works
+    assert CanvasStore(path=str(tmp_path / "c.json")).list()[0]["payload"]["body"] == "okend"
+    assert store.post("jarvis", "text", {"body": "next"})
+
+
+def test_clear_memory_does_not_persist(tmp_path):
+    # The forget flow needs an in-memory-only clear so canvas.json survives until
+    # the pre-forget backup captures it (purge_data resets the file afterwards).
+    p = str(tmp_path / "c.json")
+    store = CanvasStore(path=p)
+    store.post("friday", "text", {"body": "on disk"})
+    store.clear_memory()
+    assert store.list() == []                                  # live store emptied
+    assert CanvasStore(path=p).list()[0]["payload"]["body"] == "on disk"  # file intact
+
+
 def test_safe_urls_still_accepted_after_protocol_relative_fix():
     assert _sanitize("link", {"url": "/static/report.png"})["url"] == "/static/report.png"
     assert _sanitize("link", {"url": "/api/media/thumb/1"})["url"] == "/api/media/thumb/1"

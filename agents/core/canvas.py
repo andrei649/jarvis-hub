@@ -31,12 +31,27 @@ _SAFE_SCHEMES = ("http", "https")
 
 
 def _s(v, limit: int) -> str:
-    """Coerce to a length-bounded, stripped string."""
-    return str(v if v is not None else "").strip()[:limit]
+    """Coerce to a length-bounded, stripped string.
+
+    Also drops unpaired UTF-16 surrogates: they survive JSON parsing but make a
+    UTF-8 write (JsonStore._save) raise *after* the element is already appended,
+    which poisons the live store (every later save fails) until restart. The
+    trigger is a truncated astral char or a crafted ``\\udXXX`` JSON escape.
+    """
+    s = str(v if v is not None else "").strip()[:limit]
+    if any("\ud800" <= c <= "\udfff" for c in s):
+        s = s.encode("utf-8", "ignore").decode("utf-8")
+    return s
+
+
+# Browsers strip these ASCII control chars from a URL *before* parsing, so
+# "/<TAB>/host" normalizes to "//host" (protocol-relative → cross-origin). Drop
+# them here too, so the classification below sees what the browser will resolve.
+_URL_STRIP = {0x09: None, 0x0A: None, 0x0D: None}
 
 
 def _safe_url(v) -> str:
-    u = _s(v, 500)
+    u = _s(v, 500).translate(_URL_STRIP)
     if not u:
         return ""
     if u.startswith("//") or u.startswith("/\\"):
@@ -164,6 +179,19 @@ class CanvasStore(JsonStore):
                 self._save()
             return True
         return False
+
+    def clear_memory(self) -> None:
+        """Drop all in-memory elements WITHOUT persisting.
+
+        The forget flow snapshots + resets ``canvas.json`` on its own (backup
+        first, then the PURGE_JSON reset). If a live-store clear persisted here,
+        it would empty the file *before* the pre-forget backup captures it — so
+        the saved artifacts would be missing from the recovery archive. Clearing
+        only the in-memory ring still stops a running orchestrator from
+        re-persisting forgotten elements on its next save.
+        """
+        with self._lock:
+            self._elements = []
 
     def clear(self, agent: Optional[str] = None, *, keep_pinned: bool = True) -> int:
         """Clear elements (optionally only one agent's); pinned kept by default."""

@@ -230,14 +230,20 @@ async def clear_live_memory(orch) -> list[str]:
                 cleared.append(attr)
             except Exception:  # pragma: no cover - defensive
                 logger.warning("clear_live_memory: %s clear failed", attr, exc_info=True)
-    # Canvas artifacts are explicitly saved user replies: clear the LIVE store too
-    # (pinned included — a forget forgets everything), so a running orchestrator
-    # can't re-persist forgotten elements over the PURGE_JSON reset on its next save.
+    # Canvas artifacts are explicitly saved user replies: clear the LIVE store
+    # too, so a running orchestrator can't re-persist forgotten elements over the
+    # PURGE_JSON reset on its next save. Use the in-memory-only clear so this does
+    # NOT rewrite canvas.json before purge_data's pre-forget backup snapshots it
+    # (a persisting clear here would drop the artifacts from the recovery archive).
     canvas = getattr(orch, "canvas", None)
-    if canvas is not None and hasattr(canvas, "clear"):
+    if canvas is not None:
         try:
-            canvas.clear(keep_pinned=False)
-            cleared.append("canvas")
+            if hasattr(canvas, "clear_memory"):
+                canvas.clear_memory()
+                cleared.append("canvas")
+            elif hasattr(canvas, "clear"):
+                canvas.clear(keep_pinned=False)
+                cleared.append("canvas")
         except Exception:  # pragma: no cover - defensive
             logger.warning("clear_live_memory: canvas clear failed", exc_info=True)
     cognition = getattr(orch, "cognition", None)

@@ -125,10 +125,16 @@ class _FakeMem:
 
 class _CanvasSpy:
     def __init__(self):
-        self.cleared_keep_pinned = None
+        self.memory_cleared = False
+        self.persisting_clear_called = False
+
+    def clear_memory(self):
+        self.memory_cleared = True
 
     def clear(self, agent=None, *, keep_pinned=True):
-        self.cleared_keep_pinned = keep_pinned
+        # must NOT be used by the forget flow: it persists canvas.json before
+        # the pre-forget backup, dropping artifacts from the recovery archive
+        self.persisting_clear_called = True
         return 1
 
 
@@ -164,9 +170,11 @@ async def test_clear_live_memory_clears_all_stores():
     assert orch.decay.cleared is True
     assert living.core.list() == []
     assert living.records() == []
-    # the live canvas store is cleared too (pinned included — a forget forgets
-    # everything), so a running orchestrator can't re-save forgotten replies
-    assert orch.canvas.cleared_keep_pinned is False
+    # the live canvas store is cleared too (in-memory only — the persisting
+    # clear would empty canvas.json before the pre-forget backup captures it),
+    # so a running orchestrator can't re-save forgotten replies
+    assert orch.canvas.memory_cleared is True
+    assert orch.canvas.persisting_clear_called is False
     assert set(cleared) == {
         "conversation",
         "graph",
