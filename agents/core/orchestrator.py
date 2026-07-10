@@ -1186,20 +1186,15 @@ class Orchestrator:
                     backend._use_cache = ""
 
                 t_s0 = time.perf_counter()
-                if on_token and hasattr(backend, "generate_stream"):
-                    response = await backend.generate_stream(
-                        model=model, prompt=prompt,
-                        system=system_prompt,
-                        max_tokens=eff_max_tokens, temperature=temperature,
-                        on_token=on_token,
-                    )
-                else:
-                    response = await backend.generate(
-                        model=model, prompt=prompt, system=system_prompt,
-                        max_tokens=eff_max_tokens, temperature=temperature,
-                    )
-                    if on_token:
-                        on_token(response)
+                response = await agent.generate_response(
+                    backend=backend,
+                    model=model,
+                    prompt=prompt,
+                    system=system_prompt,
+                    max_tokens=eff_max_tokens,
+                    temperature=temperature,
+                    on_token=on_token,
+                )
                 synthesized = response
                 break
 

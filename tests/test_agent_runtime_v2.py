@@ -6,8 +6,11 @@ import threading
 
 import pytest
 
+from agents.core.agent import Agent
 from agents.core.agent_runtime import AgentToolRuntime
+from agents.core.config import JarvisConfig
 from agents.core.llm.tool_protocol import ToolCall, ToolTurn
+from agents.core.orchestrator import Orchestrator
 from agents.core.security.secret_broker import SecretBroker
 from agents.core.tool_rpc import ToolRPCServer
 
@@ -941,3 +944,318 @@ async def test_event_payloads_do_not_include_raw_arguments_or_results():
     )
 
     assert "event-secret-value" not in json.dumps(events)
+
+
+class _DisabledRuntime:
+    def __init__(self):
+        self.backends = []
+
+    def can_run(self, backend):
+        self.backends.append(backend)
+        return False
+
+    async def run(self, **kwargs):
+        raise AssertionError("disabled runtime must not run")
+
+
+class _RecordingRuntime(AgentToolRuntime):
+    def __init__(self, server):
+        super().__init__(server, enabled=lambda: True)
+        self.run_calls = []
+
+    async def run(self, **kwargs):
+        self.run_calls.append(dict(kwargs))
+        return await super().run(**kwargs)
+
+
+@pytest.mark.asyncio
+async def test_agent_generate_response_disabled_uses_legacy_generate_once():
+    class _TextBackend:
+        def __init__(self):
+            self.calls = []
+
+        async def generate(self, **kwargs):
+            self.calls.append(kwargs)
+            return "legacy answer"
+
+    agent = Agent("jarvis", {"name": "Jarvis"})
+    backend = _TextBackend()
+    runtime = _DisabledRuntime()
+    agent.tool_runtime = runtime
+
+    answer = await agent.generate_response(
+        backend=backend,
+        model="legacy-model",
+        prompt="hello",
+        system="system",
+        max_tokens=321,
+        temperature=0.25,
+    )
+
+    assert answer == "legacy answer"
+    assert runtime.backends == [backend]
+    assert backend.calls == [
+        {
+            "model": "legacy-model",
+            "prompt": "hello",
+            "system": "system",
+            "max_tokens": 321,
+            "temperature": 0.25,
+        }
+    ]
+
+
+@pytest.mark.asyncio
+async def test_agent_process_runs_tools_inside_shared_seam_with_trusted_agent_id():
+    handled = []
+    server = ToolRPCServer()
+
+    async def echo(args):
+        handled.append(args)
+        return {"echo": args["value"]}
+
+    server.register_tool("echo", echo)
+    backend = _ScriptedBackend(
+        [ToolTurn(tool_calls=(_call(),)), ToolTurn(content="tool-backed answer")]
+    )
+
+    class _Router:
+        model_manager = None
+
+        def select_backend(self, agent_id, prompt):
+            return backend, "runtime-model", "local-fast"
+
+    agent = Agent("athena", {"name": "Athena"}, _Router())
+    agent._gen_params = lambda route_name: (256, 0.2)
+    runtime = _RecordingRuntime(server)
+    agent.tool_runtime = runtime
+
+    answer = await agent.process("echo hi", {"session_id": "runtime-seam"})
+
+    assert answer == "tool-backed answer"
+    assert handled == [{"value": "hi"}]
+    assert len(runtime.run_calls) == 1
+    assert runtime.run_calls[0]["agent_id"] == "athena"
+    assert runtime.run_calls[0]["backend"] is backend
+    assert runtime.run_calls[0]["model"] == "runtime-model"
+
+
+@pytest.mark.asyncio
+async def test_agent_generate_response_tool_mode_emits_only_final_answer_and_awaits_sink():
+    class _EnabledRuntime:
+        def __init__(self):
+            self.calls = []
+
+        def can_run(self, backend):
+            return True
+
+        async def run(self, **kwargs):
+            self.calls.append(kwargs)
+            return "final answer only"
+
+    agent = Agent("jarvis", {"name": "Jarvis"})
+    runtime = _EnabledRuntime()
+    agent.tool_runtime = runtime
+    backend = object()
+    emitted = []
+
+    async def on_token(token):
+        await asyncio.sleep(0)
+        emitted.append(token)
+
+    answer = await agent.generate_response(
+        backend=backend,
+        model="tool-model",
+        prompt="use tools",
+        system="system",
+        max_tokens=400,
+        temperature=0.1,
+        on_token=on_token,
+    )
+
+    assert answer == "final answer only"
+    assert emitted == ["final answer only"]
+    assert len(runtime.calls) == 1
+    assert runtime.calls[0] == {
+        "agent_id": "jarvis",
+        "backend": backend,
+        "model": "tool-model",
+        "prompt": "use tools",
+        "system": "system",
+        "max_tokens": 400,
+        "temperature": 0.1,
+    }
+
+
+@pytest.mark.asyncio
+async def test_agent_generate_response_disabled_preserves_stream_callback_identity():
+    class _StreamingBackend:
+        def __init__(self):
+            self.calls = []
+
+        async def generate_stream(self, **kwargs):
+            self.calls.append(kwargs)
+            kwargs["on_token"]("legacy token")
+            return "legacy streamed answer"
+
+        async def generate(self, **kwargs):
+            raise AssertionError("stream-capable backend must not use generate")
+
+    agent = Agent("jarvis", {"name": "Jarvis"})
+    agent.tool_runtime = _DisabledRuntime()
+    backend = _StreamingBackend()
+    emitted = []
+    on_token = emitted.append
+
+    answer = await agent.generate_response(
+        backend=backend,
+        model="legacy-model",
+        prompt="stream this",
+        system="system",
+        max_tokens=200,
+        temperature=0.3,
+        on_token=on_token,
+    )
+
+    assert answer == "legacy streamed answer"
+    assert emitted == ["legacy token"]
+    assert len(backend.calls) == 1
+    assert backend.calls[0]["on_token"] is on_token
+
+
+@pytest.mark.asyncio
+async def test_agent_generate_response_streamless_fallback_emits_once_and_awaits_sink():
+    class _TextBackend:
+        def __init__(self):
+            self.calls = []
+
+        async def generate(self, **kwargs):
+            self.calls.append(kwargs)
+            return "fallback answer"
+
+    agent = Agent("jarvis", {"name": "Jarvis"})
+    backend = _TextBackend()
+    emitted = []
+
+    async def on_token(token):
+        await asyncio.sleep(0)
+        emitted.append(token)
+
+    answer = await agent.generate_response(
+        backend=backend,
+        model="text-model",
+        prompt="answer",
+        system="system",
+        max_tokens=100,
+        temperature=0.4,
+        on_token=on_token,
+    )
+
+    assert answer == "fallback answer"
+    assert emitted == ["fallback answer"]
+    assert len(backend.calls) == 1
+
+
+@pytest.mark.asyncio
+async def test_streamed_orchestrator_uses_agent_generation_seam_and_persists_once():
+    orchestrator = Orchestrator(JarvisConfig())
+    seam_calls = []
+    completion_calls = []
+    turns = []
+
+    class _Memory:
+        async def add_turn(self, session_id, role, content, agent_id=None, channel=None):
+            turns.append(
+                {
+                    "session_id": session_id,
+                    "role": role,
+                    "content": content,
+                    "agent_id": agent_id,
+                }
+            )
+
+    class _Backend:
+        async def generate_stream(self, **kwargs):
+            raise AssertionError("orchestrator bypassed Agent.generate_response")
+
+    backend = _Backend()
+
+    class _SeamAgent:
+        name = "Jarvis"
+        soul = {"content": "agent system"}
+        config = {"model": "configured-model"}
+
+        async def generate_response(self, **kwargs):
+            seam_calls.append(kwargs)
+            kwargs["on_token"]("seam answer")
+            return "seam answer"
+
+    class _Intent:
+        target_agents = ["jarvis"]
+        is_general = True
+        confidence = 1.0
+        context = {"keywords_found": [], "scores": {}, "source": "test"}
+
+    async def classify(text, agents):
+        return _Intent()
+
+    async def empty_async(*args, **kwargs):
+        return {}
+
+    async def no_text(*args, **kwargs):
+        return ""
+
+    async def turn_text(*args, **kwargs):
+        return "prepared turn"
+
+    async def complete(**kwargs):
+        completion_calls.append(kwargs)
+        await orchestrator.memory.add_turn(
+            orchestrator.session_id,
+            "assistant",
+            kwargs["synthesized"],
+            agent_id=kwargs["responder_id"],
+        )
+
+    orchestrator.memory = _Memory()
+    orchestrator.skills.parse_command = lambda text: None
+    orchestrator._chat_control_enabled = lambda: False
+    orchestrator.router.classify = classify
+    orchestrator._gather_plugin_data = empty_async
+    orchestrator._history_for_prompt = no_text
+    orchestrator._recall_block = no_text
+    orchestrator._runtime_state_block = lambda: ""
+    orchestrator._build_agent_turn_text = turn_text
+    orchestrator._route_candidates = lambda intent: intent.target_agents
+    orchestrator.agents["jarvis"] = _SeamAgent()
+    orchestrator.llm_router.select_backend = lambda agent_id, prompt: (
+        backend,
+        "selected-model",
+        "local-fast",
+    )
+    orchestrator.checkpoints.load = lambda agent_id, session_id: None
+    orchestrator.security = None
+    orchestrator._agent_gen_params = lambda agent, route_name: (777, 0.15)
+    orchestrator._complete_llm_turn = complete
+    emitted = []
+    on_token = emitted.append
+
+    answer = await orchestrator.handle_input_stream(
+        "question", channel="web", on_token=on_token, session_id="seam-session"
+    )
+
+    assert answer == "seam answer"
+    assert emitted == ["seam answer"]
+    assert len(seam_calls) == 1
+    assert seam_calls[0] == {
+        "backend": backend,
+        "model": "selected-model",
+        "prompt": "User said: prepared turn\nRespond as Jarvis.",
+        "system": "agent system",
+        "max_tokens": 777,
+        "temperature": 0.15,
+        "on_token": on_token,
+    }
+    assert len(completion_calls) == 1
+    assert [turn["role"] for turn in turns] == ["user", "assistant"]
+    assert turns[-1]["content"] == "seam answer"
