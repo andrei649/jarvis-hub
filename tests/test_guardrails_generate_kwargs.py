@@ -20,6 +20,7 @@ sys.path.insert(0, str(repo_root))
 sys.path.insert(0, str(repo_root / "agents"))
 
 from agents.core.llm.base import LLMBackend
+from agents.core.llm.tool_protocol import ToolCall, ToolSpec, ToolTurn
 from agents.core.security.guardrails import GuardrailsEngine, SecurityBlockError
 from agents.core.security.types import RedactionMode
 
@@ -125,3 +126,90 @@ def test_handle_findings_passthrough_on_unknown_mode():
     r = eng._scan_text(payload)
     assert not r.clean
     assert eng._handle_findings(payload, r, "input") == payload
+
+
+class _RecordingToolBackend(_RecordingBackend):
+    """Records guarded tool-turn input and returns a fixed structured turn."""
+
+    supports_tools = True
+
+    def __init__(self):
+        super().__init__()
+        self.messages = None
+        self.tools = None
+        self.turn = ToolTurn(
+            content=f"leaked {_EMAIL}",
+            tool_calls=(
+                ToolCall(
+                    id="call-echo",
+                    name="echo",
+                    raw_arguments='{"value":"alice@example.com"}',
+                    arguments={"value": _EMAIL},
+                ),
+            ),
+            finish_reason="tool_calls",
+        )
+
+    async def generate_tool_turn(
+        self,
+        model,
+        messages,
+        tools,
+        max_tokens=1024,
+        temperature=0.7,
+    ):
+        self.kwargs = {
+            "model": model,
+            "max_tokens": max_tokens,
+            "temperature": temperature,
+        }
+        self.messages = messages
+        self.tools = tools
+        return self.turn
+
+
+def test_supports_tools_proxies_wrapped_backend():
+    assert GuardrailsEngine(_RecordingToolBackend()).supports_tools is True
+    assert GuardrailsEngine(_RecordingBackend()).supports_tools is False
+
+
+async def test_generate_tool_turn_redacts_string_content_without_mutating_messages():
+    backend = _RecordingToolBackend()
+    engine = GuardrailsEngine(backend, mode=RedactionMode.REDACT)
+    structured_content = [{"type": "text", "text": "leave structured content alone"}]
+    messages = [
+        {"role": "system", "content": f"system {_EMAIL}"},
+        {"role": "user", "content": f"user {_EMAIL}"},
+        {"role": "assistant", "content": structured_content},
+    ]
+    original_messages = [message.copy() for message in messages]
+    tool = ToolSpec("echo")
+
+    turn = await engine.generate_tool_turn(
+        model="local-model",
+        messages=messages,
+        tools=[tool],
+        max_tokens=321,
+        temperature=0.2,
+    )
+
+    assert messages == original_messages
+    assert all(
+        guarded is not original
+        for guarded, original in zip(backend.messages, messages, strict=True)
+    )
+    assert _EMAIL not in backend.messages[0]["content"]
+    assert _EMAIL not in backend.messages[1]["content"]
+    assert backend.messages[2]["content"] is structured_content
+    assert backend.tools == [tool]
+    assert backend.kwargs == {
+        "model": "local-model",
+        "max_tokens": 321,
+        "temperature": 0.2,
+    }
+    assert _EMAIL not in turn.content
+    assert turn.tool_calls is backend.turn.tool_calls
+    assert turn.tool_calls[0].id == "call-echo"
+    assert turn.tool_calls[0].name == "echo"
+    assert turn.tool_calls[0].raw_arguments == '{"value":"alice@example.com"}'
+    assert turn.finish_reason == "tool_calls"
