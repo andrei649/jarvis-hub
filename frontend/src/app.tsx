@@ -15,6 +15,7 @@ import { AutonomyMode, BuildMode, ObserveMode, InteropMode } from './modes2';
 import { ChatMode, CommsMode, AdminMode } from './modes3';
 import { FinanceMode, HealthMode, KnowledgeMode, FamilyMode } from './modes4';
 import { ConsoleOverlay, FirstRunGate, shouldShowFirstRun, FIRST_RUN_DISMISS_KEY } from './gap';
+import { ArtifactsPanel, artifactsTabLabel } from './artifacts';
 import { NeuralMesh } from './mesh';
 import { initAnalytics, trackPageview } from './analytics';
 
@@ -72,6 +73,9 @@ function App() {
   const [thinking, setThinking] = useState(null);
   const [trace, setTrace] = useState(null);
   const [centerTab, setCenterTab] = useState('conversation');
+  // bumped after every successful explicit save so the Artifacts tab refetches
+  const [artifactsRefresh, setArtifactsRefresh] = useState(0);
+  const bumpArtifacts = useCallback(() => setArtifactsRefresh((n) => n + 1), []);
   // mic/voice state is owned by the useVoice loop (defined below), not a bare flag
   const [palette, setPalette] = useState(false);
   const [ambient, setAmbient] = useState(false);
@@ -346,10 +350,13 @@ function App() {
                     <div className="center-tabs">
                       <button className={'center-tab' + (centerTab === 'conversation' ? ' active' : '')} onClick={() => setCenterTab('conversation')}>{t.conversation}{thinking && <span className="pip"></span>}</button>
                       <button className={'center-tab' + (centerTab === 'cognition' ? ' active' : '')} onClick={() => setCenterTab('cognition')}>{t.cognition}{trace && !thinking && <span className="pip"></span>}</button>
+                      <button className={'center-tab' + (centerTab === 'artifacts' ? ' active' : '')} onClick={() => setCenterTab('artifacts')}>{artifactsTabLabel(lang)}</button>
                     </div>
                     {centerTab === 'conversation'
-                      ? <Conversation messages={messages} thinking={thinking} onStop={stopTurn} onProv={setProvModal} lang={lang} t={t} />
-                      : <CognitionStream trace={trace} t={t} />}
+                      ? <Conversation messages={messages} thinking={thinking} onStop={stopTurn} onProv={setProvModal} onArtifactSaved={bumpArtifacts} lang={lang} t={t} />
+                      : centerTab === 'cognition'
+                        ? <CognitionStream trace={trace} t={t} />
+                        : <ArtifactsPanel refreshKey={artifactsRefresh} lang={lang} />}
                     <InputBar onSubmit={submit} mic={voice.active} setMic={voice.toggle} voice={voice} cfg={voiceCfg} onCfg={setVoice} micMuted={trust.mic === 'off'} t={t} />
                   </div>
                 </div>

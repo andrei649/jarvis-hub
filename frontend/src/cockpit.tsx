@@ -3,6 +3,7 @@ import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { Icon, ICONS, Glyph } from './primitives';
 import { V2 } from './data';
 import { playTts } from './api/actions';
+import { SaveArtifactButton } from './artifacts';
 
 /* Per-message TTS replay (🔊) — POST /tts {text,lang} → audio. Honest states: while
    speaking shows ◼ (stop is best-effort via re-click), errors fall back silently to
@@ -23,9 +24,15 @@ function TtsButton({ text, lang }) {
   );
 }
 
-function Conversation({ messages, thinking, onStop, onProv, lang, t }: any) {
+function Conversation({ messages, thinking, onStop, onProv, onArtifactSaved, lang, t }: any) {
   const endRef = useRef(null);
   useEffect(()=>{ if(endRef.current) endRef.current.scrollTop = endRef.current.scrollHeight; }, [messages, thinking]);
+  // Explicit save-to-artifacts (never auto): only completed, non-system, non-empty
+  // assistant replies get the control — while a turn streams, its (last) message is
+  // still in flight — and only on surfaces that opt in by passing onArtifactSaved
+  // (the cockpit does; ChatMode doesn't).
+  const canSave = (m, i) => !!onArtifactSaved && !!m.text && m.who !== 'system'
+    && !(thinking && i === messages.length - 1);
   return (
     <div className="convo" ref={endRef}>
       {messages.map((m,i)=> m.role==='user'
@@ -39,7 +46,12 @@ function Conversation({ messages, thinking, onStop, onProv, lang, t }: any) {
               <span className="who">{(m.who||'jarvis').toUpperCase()}</span>
               <span className="role">{m.role_label||''}</span>
               <span className="ts">{m.ts||''}</span>
-              {m.text && m.who!=='system' && <span style={{marginLeft:'auto'}}><TtsButton text={m.text} lang={lang} /></span>}
+              {m.text && m.who!=='system' && (
+                <span style={{marginLeft:'auto',display:'inline-flex',alignItems:'center',gap:5}}>
+                  {canSave(m, i) && <SaveArtifactButton message={m} onSaved={onArtifactSaved} lang={lang} />}
+                  <TtsButton text={m.text} lang={lang} />
+                </span>
+              )}
             </div>
             <div className="bubble">{renderRich(m.text)}</div>
             {m.prov && (
