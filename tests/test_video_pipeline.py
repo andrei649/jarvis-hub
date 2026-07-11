@@ -158,3 +158,10 @@ def test_effect_parameters_are_scalar_and_bounded():
     assert "intensity" not in effect["params"]
     assert plan["invalid_params"] == ["color_grade.intensity"]
 
+def test_effect_parameter_overflow_is_surfaced_not_raised():
+    plan = vp.plan_effects([
+        {"name": "speed_ramp", "factor": 10 ** 10000},
+    ])
+    assert plan["effects"][0]["params"] == {}
+    assert plan["invalid_params"] == ["speed_ramp.factor"]
+
