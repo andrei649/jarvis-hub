@@ -365,6 +365,28 @@ class LLMBackend(ABC):
 
 # ── LM Studio ─────────────────────────────────────────────────────────────────
 
+def _finalize_lmstudio_message(
+    message: dict[str, Any],
+    finish_reason: Any,
+    model: str,
+) -> str:
+    """Prefer visible content, then a cleanly finished reasoning-only answer."""
+    answer = strip_thinking(message.get("content", "") or "")
+    if answer:
+        return answer
+    if finish_reason == "length":
+        # FP: "max_tokens" is a context-size note; only the model name is logged, no secret.
+        # nosemgrep: python.lang.security.audit.logging.logger-credential-leak.python-logger-credential-disclosure
+        logger.warning(
+            "LM Studio truncated at max_tokens before an answer (model=%s); "
+            "the model filled its context before answering — load a larger-context "
+            "model in LM Studio (or, if llm.max_tokens is set to a manual cap, raise it)",
+            model,
+        )
+        return ""
+    return strip_thinking(message.get("reasoning_content", "") or "")
+
+
 class LMStudioBackend(LLMBackend):
     """LM Studio local server (GPU-accelerated on Windows)."""
 
@@ -400,26 +422,7 @@ class LMStudioBackend(LLMBackend):
             choice = data["choices"][0]
             msg = choice.get("message", {})
             finish = choice.get("finish_reason")
-            answer = strip_thinking(msg.get("content", "") or "")
-            if answer:
-                return answer
-            # No answer in `content`. This happens two ways:
-            #  - The model puts its whole reply in `reasoning_content` (legit) —
-            #    surface it only when generation actually finished.
-            #  - Generation was truncated at max_tokens mid-thought (finish ==
-            #    "length"): there is no answer yet, only chain-of-thought. Never
-            #    surface that — it is exactly the leak we are guarding against.
-            if finish == "length":
-                # FP: "max_tokens" is a context-size note; only the model name is logged, no secret.
-                # nosemgrep: python.lang.security.audit.logging.logger-credential-leak.python-logger-credential-disclosure
-                logger.warning(
-                    "LM Studio truncated at max_tokens before an answer (model=%s); "
-                    "the model filled its context before answering — load a larger-context "
-                "model in LM Studio (or, if llm.max_tokens is set to a manual cap, raise it)",
-                    model,
-                )
-                return ""
-            return strip_thinking(msg.get("reasoning_content", "") or "")
+            return _finalize_lmstudio_message(msg, finish, model)
         except Exception as e:
             return local_backend_degraded_reply("LM Studio", f"LM Studio ({self.base_url})", e)
 
@@ -446,10 +449,17 @@ class LMStudioBackend(LLMBackend):
             resp.raise_for_status()
             choice = resp.json()["choices"][0]
             message = choice.get("message", {})
+            finish = choice.get("finish_reason")
+            tool_calls = parse_openai_tool_calls(message.get("tool_calls", []) or [])
+            content = (
+                strip_thinking(message.get("content", "") or "")
+                if tool_calls
+                else _finalize_lmstudio_message(message, finish, model)
+            )
             return ToolTurn(
-                content=strip_thinking(message.get("content", "") or ""),
-                tool_calls=parse_openai_tool_calls(message.get("tool_calls", []) or []),
-                finish_reason=choice.get("finish_reason"),
+                content=content,
+                tool_calls=tool_calls,
+                finish_reason=finish,
             )
         except Exception as e:
             return ToolTurn(
