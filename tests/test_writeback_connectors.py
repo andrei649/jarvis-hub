@@ -12,8 +12,7 @@ repo_root = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(repo_root))
 sys.path.insert(0, str(repo_root / "agents"))
 
-from core import writeback_connectors as wc  # noqa: E402
-
+from core import writeback_connectors as wc  # noqa: E402, I001
 
 
 def test_catalog_covers_the_white_collar_suite():
@@ -21,13 +20,11 @@ def test_catalog_covers_the_white_collar_suite():
     assert {"linear", "asana", "trello", "todoist", "clickup", "gsheets", "m365"} <= targets
 
 
-
 def test_draft_carries_secret_handle_never_a_token():
     d = wc.draft_task_payload("linear", "create_issue",
                               {"team_id": "T1", "title": "Fix bug"})
     assert d["ok"] is True and d["kind"] == "connector.linear.create_issue"
     assert d["credential_ref"] == "{{secret:linear_token}}"     # handle, not a credential
-
 
 
 def test_unknown_action_and_missing_fields_are_refused_with_reason():
@@ -55,7 +52,6 @@ def test_every_builder_targets_its_allowlisted_host(target, action, fields, host
     assert "json" in req
 
 
-
 def test_linear_builds_graphql_mutation_with_variables():
     req = wc.build_connector_request("linear", "create_issue",
                                      {"team_id": "T9", "title": "Ship it",
@@ -64,7 +60,6 @@ def test_linear_builds_graphql_mutation_with_variables():
     assert req["json"]["variables"]["input"] == {"teamId": "T9", "title": "Ship it",
                                                  "description": "detail"}
     assert req["headers"]["Authorization"] == "lin_x"
-
 
 
 def test_trello_auth_uses_structured_params_not_a_loggable_url():
@@ -76,14 +71,12 @@ def test_trello_auth_uses_structured_params_not_a_loggable_url():
     assert "tt" not in req["url"] and "kk" not in req["url"]
 
 
-
 def test_sheets_appends_a_single_sanitized_row():
     req = wc.build_connector_request("gsheets", "append_row",
                                      {"spreadsheet_id": "S1", "range": "Sheet1!A1",
                                       "values": ["a", 2, None]}, {"token": "g"})
     assert req["json"] == {"values": [["a", "2", ""]]}
     assert ":append?valueInputOption=RAW" in req["url"]
-
 
 
 def test_m365_draft_builds_recipients_from_str_or_list():
@@ -95,7 +88,6 @@ def test_m365_draft_builds_recipients_from_str_or_list():
                                       {"subject": "s", "body": "b",
                                        "to": ["a@b.c", "d@e.f"]}, {"token": "m"})
     assert len(many["json"]["toRecipients"]) == 2
-
 
 
 def test_builder_refuses_invalid_draft():
@@ -113,7 +105,6 @@ def test_raw_secret_override_is_refused():
     assert d == {"ok": False, "reason": "invalid credential reference"}
 
 
-
 def test_draft_descriptor_is_explicitly_ask_tier_but_not_enqueued():
     d = wc.draft_task_payload(
         "linear", "create_issue", {"team_id": "T1", "title": "Fix bug"}
@@ -122,7 +113,6 @@ def test_draft_descriptor_is_explicitly_ask_tier_but_not_enqueued():
     assert d["autonomy_level"] == "ask"
     assert d["requires_approval"] is True
     assert d["queued"] is False
-
 
 
 def test_required_text_fields_reject_false_and_zero():
@@ -142,7 +132,6 @@ def test_required_text_fields_reject_false_and_zero():
     assert empty_values["ok"] is False
 
 
-
 def test_draft_fields_are_bounded_before_entering_approval_queue():
     d = wc.draft_task_payload(
         "linear",
@@ -159,7 +148,6 @@ class _StopsAfterHundred(list):
         raise AssertionError("connector copied past its field bound")
 
 
-
 def test_draft_sanitization_consumes_only_bounded_row_values():
     values = _StopsAfterHundred(range(101))
     d = wc.draft_task_payload(
@@ -168,7 +156,6 @@ def test_draft_sanitization_consumes_only_bounded_row_values():
         {"spreadsheet_id": "S", "range": "A1", "values": values},
     )
     assert len(d["fields"]["values"]) == 100
-
 
 
 def test_trello_descriptor_names_both_execute_time_credentials():
