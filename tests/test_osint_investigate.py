@@ -62,3 +62,28 @@ def test_deterministic():
     a = inv.build_investigation(_evidence())
     b = inv.build_investigation(_evidence())
     assert a == b
+
+def test_missing_or_unknown_source_fails_closed_as_tainted():
+    for evidence in (
+        {"kind": "domain", "value": "unknown.example"},
+        {"kind": "domain", "value": "unknown.example", "source": "mystery-feed"},
+    ):
+        plan = inv.build_investigation([evidence])
+        assert plan["untrusted_ingestion"] is True
+        assert plan["leads"][0]["tainted"] is True
+        assert all(pivot["tainted"] for pivot in plan["pivots"])
+        assert any("untrusted" in caveat for caveat in plan["caveats"])
+
+
+def test_explicit_manual_source_remains_trusted():
+    plan = inv.build_investigation([
+        {"kind": "domain", "value": "operator.example", "source": "manual"}
+    ])
+    assert plan["untrusted_ingestion"] is False
+    assert plan["leads"][0]["tainted"] is False
+
+
+def test_bad_top_value_degrades_to_default_instead_of_crashing():
+    plan = inv.build_investigation(_evidence(), top="not-a-number")
+    assert plan["leads"]
+
