@@ -13,7 +13,7 @@ from functools import partial
 from typing import Any
 
 from .iteration_budget import IterationBudget
-from .llm.tool_protocol import ToolCall, ToolSpec
+from .llm.tool_protocol import MAX_PARSED_TOOL_CALLS, ToolCall, ToolSpec
 from .tool_rpc import ToolRPCServer
 
 logger = logging.getLogger("jarvis.agent_runtime")
@@ -24,7 +24,7 @@ _APPROVAL_REPLY = "I paused the tool loop because this action requires approval.
 _DEADLINE_REPLY = "I stopped the tool loop because it reached the safety deadline."
 _DEFAULT_ITERATIONS = 8
 _MAX_ITERATIONS = 32
-_MAX_TOOL_CALLS_PER_TURN = 32
+_MAX_TOOL_CALLS_PER_TURN = MAX_PARSED_TOOL_CALLS - 1
 _EVENT_IDENTITY_BYTES = 256
 _EVENT_TIMEOUT_SECONDS = 0.1
 _MAX_JSON_DEPTH = 64
