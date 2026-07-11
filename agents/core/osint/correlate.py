@@ -231,7 +231,26 @@ def writeback_payload(finding: dict | Finding, *, base: dict | None = None) -> d
         "sources": f.get("sources", []),
     })
     if f.get("tainted"):
-        # Record the originating untrusted source so the audit trail is honest.
-        src = next(iter(f.get("sources") or []), "osint")
+        # Record an actually untrusted origin, not merely the first sorted source.
+        provenance = f.get("provenance") or []
+        src = next(
+            (
+                _source_label(item.get("source"))
+                for item in provenance
+                if isinstance(item, dict)
+                and item.get("tainted")
+                and item.get("source")
+            ),
+            None,
+        )
+        if src is None:
+            src = next(
+                (
+                    _source_label(source)
+                    for source in f.get("sources") or []
+                    if _is_untrusted_evidence_source(source)
+                ),
+                "osint:unknown",
+            )
         payload = taint.mark(payload, source=src)
     return payload
