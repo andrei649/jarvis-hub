@@ -30,6 +30,13 @@ PIVOTS: dict[str, tuple[str, ...]] = {
 _MAX_PIVOTS = 50
 
 
+def _limit(value, default: int = 8) -> int:
+    try:
+        return max(0, int(value))
+    except (TypeError, ValueError, OverflowError):
+        return default
+
+
 def suggest_pivots(findings) -> list[dict]:
     """From correlated *findings*, suggest next-lookup pivots (deterministic, deduped, bounded).
 
@@ -68,7 +75,7 @@ def build_investigation(evidence, *, top: int = 8) -> dict:
     """
     drawer = correlate(evidence)
     findings = drawer["findings"]
-    leads = findings[: max(0, int(top))]
+    leads = findings[:_limit(top)]
     pivots = suggest_pivots(findings)
     c = drawer["counts"]
     caveats = ["No live lookup/enrichment was performed — pivots are suggestions for an "

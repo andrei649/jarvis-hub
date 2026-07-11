@@ -21,6 +21,9 @@ Pure, deterministic, offline-testable — no clocks, no randomness, no network.
 
 from __future__ import annotations
 
+import math
+from itertools import islice
+
 # Transition allowlist: name → default duration (seconds) between two scenes. A transition not
 # on this list is surfaced in ``unknown_transitions`` and downgraded to a hard ``cut`` (safe
 # default), never silently accepted or invented.
@@ -42,18 +45,46 @@ EFFECTS: dict[str, tuple[str, ...]] = {
 _MAX_SCENES = 200
 _MAX_EFFECTS = 12
 _MAX_CUES = 2000
+_MAX_LANGUAGES = 20
+_MAX_PARAM_TEXT = 200
 
 
 def _num(v, default: float = 0.0) -> float:
     try:
         n = float(v)
-    except (TypeError, ValueError):
+    except (TypeError, ValueError, OverflowError):
         return default
-    return n if n >= 0 else default
+    return n if math.isfinite(n) and n >= 0 else default
 
 
 def _s(v, limit: int = 200) -> str:
     return str(v if v is not None else "").strip()[:limit]
+
+
+def _take(values, limit: int) -> list:
+    if values is None:
+        return []
+    if isinstance(values, (str, bytes)):
+        values = [values]
+    try:
+        return list(islice(iter(values), limit))
+    except TypeError:
+        return []
+
+
+def _safe_param(value):
+    if isinstance(value, str):
+        return True, _s(value, _MAX_PARAM_TEXT)
+    if isinstance(value, bool):
+        return True, value
+    if isinstance(value, (int, float)):
+        try:
+            finite = math.isfinite(float(value))
+        except (OverflowError, TypeError, ValueError):
+            finite = False
+        if finite:
+            return True, value
+    return False, None
 
 
 def plan_assembly(scenes, *, default_transition: str = "cut") -> dict:
@@ -64,7 +95,7 @@ def plan_assembly(scenes, *, default_transition: str = "cut") -> dict:
     the total runtime, and ``generated: False`` — this describes a cut, it does not render one.
     """
     dt = default_transition if default_transition in TRANSITIONS else "cut"
-    items = list(scenes or [])[:_MAX_SCENES]
+    items = _take(scenes, _MAX_SCENES)
     timeline: list[dict] = []
     unknown: list[str] = []
     t = 0.0
@@ -109,16 +140,31 @@ def plan_effects(effects) -> dict:
     """
     out: list[dict] = []
     unknown: list[str] = []
-    for e in list(effects or [])[:_MAX_EFFECTS]:
+    invalid: list[str] = []
+    for e in _take(effects, _MAX_EFFECTS):
         e = e if isinstance(e, dict) else {}
         name = _s(e.get("name"), 40)
         if name not in EFFECTS:
             if name:
                 unknown.append(name)
             continue
-        params = {k: e[k] for k in EFFECTS[name] if k in e}
+        params: dict = {}
+        for key in EFFECTS[name]:
+            if key not in e:
+                continue
+            ok, value = _safe_param(e[key])
+            if ok:
+                params[key] = value
+            else:
+                invalid.append(f"{name}.{key}")
         out.append({"name": name, "params": params, "generator": "null", "generated": False})
-    return {"kind": "effects", "effects": out, "unknown_effects": unknown, "generated": False}
+    return {
+        "kind": "effects",
+        "effects": out,
+        "unknown_effects": unknown,
+        "invalid_params": invalid,
+        "generated": False,
+    }
 
 
 def plan_localization(base_lang: str, target_langs, cues) -> dict:
@@ -130,7 +176,7 @@ def plan_localization(base_lang: str, target_langs, cues) -> dict:
     """
     base = _s(base_lang, 12) or "en"
     src_cues = []
-    for c in list(cues or [])[:_MAX_CUES]:
+    for c in _take(cues, _MAX_CUES):
         c = c if isinstance(c, dict) else {}
         src_cues.append({
             "start": round(_num(c.get("start")), 3),
@@ -139,7 +185,8 @@ def plan_localization(base_lang: str, target_langs, cues) -> dict:
         })
     tracks: list[dict] = []
     seen: set[str] = set()
-    for lang in [base] + list(target_langs or []):
+    targets = _take(target_langs, _MAX_LANGUAGES)
+    for lang in [base, *targets]:
         lang = _s(lang, 12)
         if not lang or lang in seen:
             continue

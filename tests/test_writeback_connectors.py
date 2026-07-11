@@ -12,7 +12,7 @@ repo_root = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(repo_root))
 sys.path.insert(0, str(repo_root / "agents"))
 
-from core import writeback_connectors as wc  # noqa: E402
+from core import writeback_connectors as wc  # noqa: E402, I001
 
 
 def test_catalog_covers_the_white_collar_suite():
@@ -62,11 +62,13 @@ def test_linear_builds_graphql_mutation_with_variables():
     assert req["headers"]["Authorization"] == "lin_x"
 
 
-def test_trello_auth_rides_query_params_built_at_execute_time():
+def test_trello_auth_uses_structured_params_not_a_loggable_url():
     req = wc.build_connector_request("trello", "create_card",
                                      {"list_id": "L1", "name": "card"},
                                      {"token": "tt", "api_key": "kk"})
-    assert "key=kk" in req["url"] and "token=tt" in req["url"] and "idList=L1" in req["url"]
+    assert req["url"] == "https://api.trello.com/1/cards"
+    assert req["params"] == {"idList": "L1", "key": "kk", "token": "tt"}
+    assert "?" not in req["url"]
 
 
 def test_sheets_appends_a_single_sanitized_row():
@@ -91,3 +93,77 @@ def test_m365_draft_builds_recipients_from_str_or_list():
 def test_builder_refuses_invalid_draft():
     with pytest.raises(ValueError):
         wc.build_connector_request("linear", "create_issue", {"title": "no team"}, {})
+
+
+def test_raw_secret_override_is_refused():
+    d = wc.draft_task_payload(
+        "linear",
+        "create_issue",
+        {"team_id": "T1", "title": "Fix bug"},
+        secret_handle="sk-live-raw",
+    )
+    assert d == {"ok": False, "reason": "invalid credential reference"}
+
+
+def test_draft_descriptor_is_explicitly_ask_tier_but_not_enqueued():
+    d = wc.draft_task_payload(
+        "linear", "create_issue", {"team_id": "T1", "title": "Fix bug"}
+    )
+    assert d["risk_tier"] == 2
+    assert d["autonomy_level"] == "ask"
+    assert d["requires_approval"] is True
+    assert d["queued"] is False
+
+
+def test_required_text_fields_reject_false_and_zero():
+    false_title = wc.validate_draft(
+        "linear", "create_issue", {"team_id": "T", "title": False}
+    )
+    zero_title = wc.validate_draft(
+        "linear", "create_issue", {"team_id": "T", "title": 0}
+    )
+    empty_values = wc.validate_draft(
+        "gsheets",
+        "append_row",
+        {"spreadsheet_id": "S", "range": "A1", "values": []},
+    )
+    assert false_title["ok"] is False
+    assert zero_title["ok"] is False
+    assert empty_values["ok"] is False
+
+
+def test_draft_fields_are_bounded_before_entering_approval_queue():
+    d = wc.draft_task_payload(
+        "linear",
+        "create_issue",
+        {"team_id": "T", "title": "x" * 5000, "description": "d" * 50000},
+    )
+    assert len(d["fields"]["title"]) == wc._STR_CAP
+    assert len(d["fields"]["description"]) == wc._LONG_CAP
+
+
+class _StopsAfterHundred(list):
+    def __iter__(self):
+        yield from range(100)
+        raise AssertionError("connector copied past its field bound")
+
+
+def test_draft_sanitization_consumes_only_bounded_row_values():
+    values = _StopsAfterHundred(range(101))
+    d = wc.draft_task_payload(
+        "gsheets",
+        "append_row",
+        {"spreadsheet_id": "S", "range": "A1", "values": values},
+    )
+    assert len(d["fields"]["values"]) == 100
+
+
+def test_trello_descriptor_names_both_execute_time_credentials():
+    d = wc.draft_task_payload(
+        "trello", "create_card", {"list_id": "L", "name": "card"}
+    )
+    assert d["credential_refs"] == {
+        "token": "{{secret:trello_token}}",
+        "api_key": "{{secret:trello_api_key}}",
+    }
+
