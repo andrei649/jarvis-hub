@@ -15,6 +15,7 @@ from core.creative import video_pipeline as vp  # noqa: E402
 
 # ── assembly ──────────────────────────────────────────────────────
 
+
 def test_assembly_orders_scenes_and_sums_duration():
     plan = vp.plan_assembly([
         {"id": "a", "seconds": 5},
@@ -27,6 +28,7 @@ def test_assembly_orders_scenes_and_sums_duration():
     assert all(s["generated"] is False for s in plan["scenes"])
 
 
+
 def test_assembly_transition_overlap_pulls_duration_in():
     # a 1.0s fade overlaps the previous clip's tail → total < naive sum
     plan = vp.plan_assembly([
@@ -35,6 +37,7 @@ def test_assembly_transition_overlap_pulls_duration_in():
     ])
     assert plan["scenes"][1]["transition"] == "fade"
     assert plan["total_seconds"] == 9.0                   # 10 - 1.0 overlap
+
 
 
 def test_assembly_unknown_transition_surfaced_and_downgraded_to_cut():
@@ -46,12 +49,14 @@ def test_assembly_unknown_transition_surfaced_and_downgraded_to_cut():
     assert plan["scenes"][1]["transition"] == "cut"       # safe default, not invented
 
 
+
 def test_assembly_is_bounded():
     plan = vp.plan_assembly([{"seconds": 1}] * (vp._MAX_SCENES + 50))
     assert len(plan["scenes"]) == vp._MAX_SCENES
 
 
 # ── effects ───────────────────────────────────────────────────────
+
 
 def test_effects_keep_known_drop_unknown_and_filter_params():
     out = vp.plan_effects([
@@ -66,12 +71,14 @@ def test_effects_keep_known_drop_unknown_and_filter_params():
     assert fx["generated"] is False
 
 
+
 def test_effects_bounded():
     out = vp.plan_effects([{"name": "denoise", "strength": 1}] * (vp._MAX_EFFECTS + 5))
     assert len(out["effects"]) == vp._MAX_EFFECTS
 
 
 # ── localization ──────────────────────────────────────────────────
+
 
 def test_localization_base_plus_targets_never_autotranslates():
     cues = [{"start": 0, "end": 2, "text": "hello"}, {"start": 2, "end": 4, "text": "world"}]
@@ -85,6 +92,7 @@ def test_localization_base_plus_targets_never_autotranslates():
     assert [c["text"] for c in ro["cues"]] == ["hello", "world"]   # source text carried, flagged
 
 
+
 def test_localization_dedupes_and_defaults_base():
     loc = vp.plan_localization("", ["en", "en", "ro"], [])
     assert loc["base_lang"] == "en"
@@ -92,6 +100,7 @@ def test_localization_dedupes_and_defaults_base():
 
 
 # ── top-level plan ────────────────────────────────────────────────
+
 
 def test_build_video_plan_is_a_plan_never_a_render():
     plan = vp.build_video_plan({
@@ -110,16 +119,19 @@ def test_build_video_plan_is_a_plan_never_a_render():
     assert "no media is rendered or published" in plan["disclaimer"]
 
 
+
 def test_build_video_plan_tolerates_empty_brief():
     plan = vp.build_video_plan({})
     assert plan["runtime_seconds"] == 0.0
     assert plan["assembly"]["scenes"] == []
     assert plan["localization"]["tracks"][0]["lang"] == "en"   # default base track
 
+
 def _raises_after(limit, factory):
     for index in range(limit):
         yield factory(index)
     raise AssertionError("planner consumed past its declared bound")
+
 
 
 def test_assembly_does_not_materialize_past_scene_bound():
@@ -128,12 +140,14 @@ def test_assembly_does_not_materialize_past_scene_bound():
     assert len(plan["scenes"]) == vp._MAX_SCENES
 
 
+
 def test_effects_do_not_materialize_past_effect_bound():
     effects = _raises_after(
         vp._MAX_EFFECTS, lambda _i: {"name": "denoise", "strength": 1}
     )
     plan = vp.plan_effects(effects)
     assert len(plan["effects"]) == vp._MAX_EFFECTS
+
 
 
 def test_localization_bounds_cues_and_languages_before_copying():
@@ -148,6 +162,7 @@ def test_localization_bounds_cues_and_languages_before_copying():
     assert all(len(track["cues"]) == vp._MAX_CUES for track in plan["tracks"])
 
 
+
 def test_effect_parameters_are_scalar_and_bounded():
     plan = vp.plan_effects([
         {"name": "color_grade", "look": "x" * 1000, "intensity": {"huge": [1] * 1000}},
@@ -157,6 +172,7 @@ def test_effect_parameters_are_scalar_and_bounded():
     assert len(effect["params"]["look"]) == vp._MAX_PARAM_TEXT
     assert "intensity" not in effect["params"]
     assert plan["invalid_params"] == ["color_grade.intensity"]
+
 
 def test_effect_parameter_overflow_is_surfaced_not_raised():
     plan = vp.plan_effects([
