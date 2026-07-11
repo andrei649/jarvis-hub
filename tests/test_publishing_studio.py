@@ -14,8 +14,7 @@ sys.path.insert(0, str(repo_root))
 sys.path.insert(0, str(repo_root / "agents"))
 
 from agents.core.autonomy.policy import RiskTier  # noqa: E402
-from core.creative import build_publish_package  # noqa: E402
-from core.creative import publishing as pub  # noqa: E402
+from core.creative import build_publish_package, publishing as pub  # noqa: E402
 
 
 ASSET = {
