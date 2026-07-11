@@ -51,8 +51,11 @@ def _required_present(spec: ConnectorAction, key: str, value) -> bool:
             return bool(value.strip())
         return (
             isinstance(value, (list, tuple))
-            and bool(value)
-            and all(isinstance(item, str) and item.strip() for item in value)
+            and 0 < len(value) <= 100
+            and all(
+                isinstance(item, str) and item.strip()
+                for item in islice(value, 100)
+            )
         )
     return isinstance(value, str) and bool(value.strip())
 
@@ -148,6 +151,11 @@ def draft_task_payload(target: str, action: str, fields: dict,
         "autonomy_level": "ask",
         "requires_approval": True,
         "queued": False,
+        "truncated_fields": [
+            key for key in ("values", "to")
+            if isinstance(fields.get(key), (list, tuple))
+            and len(fields[key]) > 100
+        ],
     }
 
 
@@ -221,16 +229,18 @@ def build_connector_request(target: str, action: str, fields: dict, credentials:
         sid = quote(_s(f.get("spreadsheet_id")), safe="")
         rng = quote(_s(f.get("range")), safe="")
         values = f.get("values") if isinstance(f.get("values"), (list, tuple)) else []
-        row = [_s(v) for v in list(values)[:100]]
+        row = [_s(v) for v in islice(values, 100)]
         return {"method": "POST",
                 "url": _assert_allowed_host(
                     f"https://sheets.googleapis.com/v4/spreadsheets/{sid}/values/{rng}"
                     ":append?valueInputOption=RAW"),
-                "headers": _bearer(token), "json": {"values": [row]}}
+                "headers": _bearer(token), "json": {"values": [row]},
+                "truncated_fields": ["values"] if len(values) > 100 else []}
 
     if target == "m365":
         to = f.get("to")
-        addrs = [_s(a) for a in (to if isinstance(to, (list, tuple)) else [to]) if _s(a)]
+        raw_addrs = to if isinstance(to, (list, tuple)) else [to]
+        addrs = [_s(a) for a in islice(raw_addrs, 100) if _s(a)]
         return {"method": "POST",
                 "url": _assert_allowed_host("https://graph.microsoft.com/v1.0/me/messages"),
                 "headers": _bearer(token),
