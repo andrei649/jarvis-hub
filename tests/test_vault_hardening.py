@@ -267,6 +267,36 @@ def test_index_temp_symlink_cannot_overwrite_file_outside_vault(tmp_path, monkey
     assert list(vault.root.glob("*.blob")) == []
 
 
+def test_lock_symlink_is_rejected_without_touching_target(tmp_path):
+    root = tmp_path / "vault"
+    root.mkdir()
+    outside = tmp_path / "outside-lock.txt"
+    outside.write_bytes(b"")
+    try:
+        (root / "vault.lock").symlink_to(outside)
+    except OSError as exc:
+        pytest.skip(f"symlinks unavailable: {exc}")
+
+    with pytest.raises(VaultError, match="unsafe vault lock"):
+        Vault(root, key=KEY)
+
+    assert outside.read_bytes() == b""
+
+
+def test_index_symlink_is_rejected_even_when_target_is_authentic(tmp_path):
+    vault = _vault(tmp_path)
+    vault.put(b"data", now=1.0)
+    outside = tmp_path / "outside-index.enc"
+    (vault.root / "index.enc").replace(outside)
+    try:
+        (vault.root / "index.enc").symlink_to(outside)
+    except OSError as exc:
+        pytest.skip(f"symlinks unavailable: {exc}")
+
+    with pytest.raises(VaultError, match="unsafe vault index"):
+        _vault(tmp_path)
+
+
 @pytest.mark.skipif(
     os.name == "nt", reason="POSIX permission bits are not authoritative on Windows"
 )
