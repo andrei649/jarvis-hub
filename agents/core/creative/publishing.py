@@ -94,14 +94,21 @@ def validate_metadata(platform: str, meta: dict | None) -> list[str]:
     if not isinstance(hashtags, (list, tuple)):
         violations.append("hashtags must be a list")
     else:
-        present = [tag for tag in hashtags if _text(tag)]
+        present: list[tuple[int, str]] = []
+        for index, tag in enumerate(hashtags):
+            if tag is None or (isinstance(tag, str) and not tag.strip()):
+                continue
+            if not isinstance(tag, str):
+                violations.append(f"hashtag {index} must be text")
+                continue
+            present.append((index, tag.strip()))
+
         cap = rules["hashtags_max"]
         if cap == 0 and present:
             violations.append("this platform takes no hashtags")
         elif len(present) > cap:
             violations.append(f"too many hashtags: {len(present)} > {cap}")
-        for index, tag in enumerate(present):
-            text = _text(tag)
+        for index, text in present:
             if len(text) > 100:
                 violations.append(f"hashtag {index} exceeds 100 chars")
             if any(char.isspace() for char in text):
@@ -216,7 +223,9 @@ def prepublish_checklist(
     provided = confirmations if isinstance(confirmations, dict) else {}
 
     required_ok = bool(rules) and all(
-        _text(metadata.get(field)) for field in rules.get("needs", ())
+        isinstance(metadata.get(field), str)
+        and bool(metadata.get(field).strip())
+        for field in rules.get("needs", ())
     )
     limit_prefixes = (
         "title exceeds",
@@ -305,7 +314,9 @@ def _warnings(
         if unknown:
             warnings.append(f"ignored metadata fields: {', '.join(unknown)}")
     if isinstance(asset, dict):
-        unknown_asset = sorted(set(asset) - _ASSET_FIELDS)
+        unknown_asset = sorted(
+            str(key) for key in set(asset) - _ASSET_FIELDS
+        )
         if unknown_asset:
             warnings.append(f"ignored asset fields: {', '.join(unknown_asset)}")
     return warnings
