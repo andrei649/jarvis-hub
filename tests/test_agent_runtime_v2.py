@@ -644,7 +644,10 @@ async def test_large_json_tool_result_is_explicitly_truncated_at_default_limit()
     content = backend.calls[1]["messages"][-1]["content"]
     assert answer == "summarized"
     assert "TOOL RESULT TRUNCATED" in content
-    assert len(content.encode("utf-8")) < 50_500
+    assert len(content.encode("utf-8")) <= 50_000
+    observation = json.loads(content)
+    assert observation["truncated"] is True
+    assert observation["original_bytes"] > 50_000
 
 
 @pytest.mark.asyncio
@@ -693,6 +696,7 @@ def _overdeep_result():
         lambda: object(),
         lambda: float("nan"),
         lambda: float("inf"),
+        lambda: "\ud800",
         lambda: {1: "non-string-key"},
         _cyclic_result,
         _overdeep_result,
@@ -703,6 +707,7 @@ def _overdeep_result():
         "custom-object",
         "nan",
         "infinity",
+        "lone-surrogate",
         "non-string-key",
         "cycle",
         "depth",
@@ -813,21 +818,23 @@ async def test_calls_over_per_turn_cap_get_local_failure_without_toolrpc_executi
         return args
 
     server.register_tool("echo", echo)
-    calls = tuple(_call(call_id=f"call-{index}", arguments={"value": index}) for index in range(10))
+    calls = tuple(
+        _call(call_id=f"call-{index}", arguments={"value": index})
+        for index in range(10_000)
+    )
     backend = _ScriptedBackend([ToolTurn(tool_calls=calls), ToolTurn(content="fan-out bounded")])
 
     answer = await _run(AgentToolRuntime(server, enabled=lambda: True), backend)
 
     assert answer == "fan-out bounded"
     assert sorted(handled) == list(range(8))
-    tool_messages = backend.calls[1]["messages"][-10:]
+    assistant_message = backend.calls[1]["messages"][-10]
+    tool_messages = backend.calls[1]["messages"][-9:]
+    assert len(assistant_message["tool_calls"]) == 9
     assert [message["tool_call_id"] for message in tool_messages] == [
-        f"call-{index}" for index in range(10)
+        f"call-{index}" for index in range(9)
     ]
-    assert [json.loads(message["content"])["reason"] for message in tool_messages[-2:]] == [
-        "too_many_tool_calls",
-        "too_many_tool_calls",
-    ]
+    assert json.loads(tool_messages[-1]["content"])["reason"] == "too_many_tool_calls"
 
 
 @pytest.mark.asyncio

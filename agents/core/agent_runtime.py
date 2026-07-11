@@ -12,7 +12,6 @@ from contextlib import suppress
 from functools import partial
 from typing import Any
 
-from .environments.output_limits import truncate_text
 from .iteration_budget import IterationBudget
 from .llm.tool_protocol import ToolCall, ToolSpec
 from .tool_rpc import ToolRPCServer
@@ -25,6 +24,7 @@ _APPROVAL_REPLY = "I paused the tool loop because this action requires approval.
 _DEADLINE_REPLY = "I stopped the tool loop because it reached the safety deadline."
 _DEFAULT_ITERATIONS = 8
 _MAX_ITERATIONS = 32
+_MAX_TOOL_CALLS_PER_TURN = 32
 _EVENT_IDENTITY_BYTES = 256
 _EVENT_TIMEOUT_SECONDS = 0.1
 _MAX_JSON_DEPTH = 64
@@ -55,7 +55,10 @@ class AgentToolRuntime:
         self._server = server
         self._enabled = enabled
         self._max_iterations = max_iterations
-        self._max_tool_calls_per_turn = _safe_int(max_tool_calls_per_turn, default=0, minimum=0)
+        self._max_tool_calls_per_turn = min(
+            _MAX_TOOL_CALLS_PER_TURN,
+            _safe_int(max_tool_calls_per_turn, default=0, minimum=0),
+        )
         self._max_result_bytes = _safe_int(max_result_bytes, default=50_000, minimum=8)
         self._tool_timeout_seconds = _safe_float(tool_timeout_seconds, default=30.0)
         self._max_wall_seconds = _safe_float(max_wall_seconds, default=120.0)
@@ -150,14 +153,24 @@ class AgentToolRuntime:
             if not turn.tool_calls:
                 return turn.content
 
-            messages.append(turn.as_assistant_message())
+            # A provider response is untrusted input. Keep at most the executable
+            # fan-out plus one representative overflow call so both scheduling
+            # and the next-turn context stay O(configured cap), not O(provider N).
+            bounded_calls = turn.tool_calls[: self._max_tool_calls_per_turn + 1]
+            messages.append(
+                {
+                    "role": "assistant",
+                    "content": turn.content,
+                    "tool_calls": [call.as_openai() for call in bounded_calls],
+                }
+            )
             observations = await self._execute_turn_calls(
-                turn.tool_calls,
+                bounded_calls,
                 agent_id=agent_id,
                 gated_tools=gated_tools,
                 event_sink=event_sink,
             )
-            for call, (_result, content) in zip(turn.tool_calls, observations, strict=True):
+            for call, (_result, content) in zip(bounded_calls, observations, strict=True):
                 messages.append(
                     {
                         "role": "tool",
@@ -319,12 +332,15 @@ class AgentToolRuntime:
         except (TypeError, ValueError):
             result = _non_json(tool_name)
             encoded = json.dumps(result, ensure_ascii=False, allow_nan=False)
-        bounded = truncate_text(
+        if len(encoded.encode("utf-8")) <= self._max_result_bytes:
+            return result, encoded
+        return result, _bounded_result_envelope(
             encoded,
-            max_content_bytes=self._max_result_bytes,
-            label="TOOL RESULT",
+            tool_name=tool_name,
+            ok=isinstance(result, dict) and result.get("ok") is True,
+            reason=result.get("reason") if isinstance(result, dict) else None,
+            max_bytes=self._max_result_bytes,
         )
-        return result, bounded.text
 
     async def _emit_result(
         self,
@@ -440,7 +456,68 @@ class AgentToolRuntime:
 
 
 def _non_json(tool_name: str) -> dict[str, Any]:
-    return {"ok": False, "reason": "non_json_result", "tool": tool_name}
+    return {"ok": False, "reason": "non_json_result", "tool": _bounded_identity(tool_name)}
+
+
+def _bounded_result_envelope(
+    encoded: str,
+    *,
+    tool_name: str,
+    ok: bool,
+    reason: Any,
+    max_bytes: int,
+) -> str:
+    """Return a complete JSON truncation envelope within ``max_bytes``."""
+    raw = encoded.encode("utf-8")
+    envelope: dict[str, Any] = {
+        "ok": ok,
+        "tool": _bounded_identity(tool_name),
+        "truncated": True,
+        "notice": "TOOL RESULT TRUNCATED",
+        "original_bytes": len(raw),
+    }
+    if not ok and isinstance(reason, str):
+        envelope["reason"] = _bounded_identity(reason)
+
+    def render(kept_bytes: int | None = None) -> str:
+        payload = dict(envelope)
+        if kept_bytes is not None:
+            head_bytes = kept_bytes // 2
+            tail_bytes = kept_bytes - head_bytes
+            payload["preview"] = {
+                "head": raw[:head_bytes].decode("utf-8", errors="ignore"),
+                "tail": raw[-tail_bytes:].decode("utf-8", errors="ignore") if tail_bytes else "",
+            }
+        return json.dumps(
+            payload,
+            ensure_ascii=False,
+            allow_nan=False,
+            separators=(",", ":"),
+        )
+
+    base = render()
+    if len(base.encode("utf-8")) > max_bytes:
+        for fallback in (
+            '{"truncated":true,"notice":"TOOL RESULT TRUNCATED"}',
+            '{"truncated":true}',
+            "null",
+        ):
+            if len(fallback.encode("utf-8")) <= max_bytes:
+                return fallback
+        return "null"[:max_bytes]
+
+    best = base
+    low = 0
+    high = min(len(raw), max_bytes)
+    while low <= high:
+        kept = (low + high) // 2
+        candidate = render(kept)
+        if len(candidate.encode("utf-8")) <= max_bytes:
+            best = candidate
+            low = kept + 1
+        else:
+            high = kept - 1
+    return best
 
 
 def _is_strict_json(
@@ -453,8 +530,10 @@ def _is_strict_json(
     if _depth > _MAX_JSON_DEPTH:
         return False
     value_type = type(value)
-    if value is None or value_type in {bool, str, int}:
+    if value is None or value_type in {bool, int}:
         return True
+    if value_type is str:
+        return _is_valid_unicode(value)
     if value_type is float:
         return math.isfinite(value)
     if value_type not in {list, dict}:
@@ -469,7 +548,9 @@ def _is_strict_json(
         if value_type is list:
             return all(_is_strict_json(item, _depth=_depth + 1, _active=active) for item in value)
         return all(
-            type(key) is str and _is_strict_json(item, _depth=_depth + 1, _active=active)
+            type(key) is str
+            and _is_valid_unicode(key)
+            and _is_strict_json(item, _depth=_depth + 1, _active=active)
             for key, item in value.items()
         )
     finally:
@@ -495,10 +576,18 @@ def _safe_float(value: Any, *, default: float) -> float:
 def _bounded_identity(value: Any) -> str:
     if not isinstance(value, str):
         return ""
-    raw = value.encode("utf-8")
+    raw = value.encode("utf-8", errors="replace")
     if len(raw) <= _EVENT_IDENTITY_BYTES:
-        return value
+        return raw.decode("utf-8")
     return raw[:_EVENT_IDENTITY_BYTES].decode("utf-8", errors="ignore") + "..."
+
+
+def _is_valid_unicode(value: str) -> bool:
+    try:
+        value.encode("utf-8")
+    except UnicodeEncodeError:
+        return False
+    return True
 
 
 __all__ = ["AgentToolRuntime", "ToolEventSink"]
