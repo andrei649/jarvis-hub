@@ -33,7 +33,7 @@ _MAX_PIVOTS = 50
 def _limit(value, default: int = 8) -> int:
     try:
         return max(0, int(value))
-    except (TypeError, ValueError):
+    except (TypeError, ValueError, OverflowError):
         return default
 
 
