@@ -107,7 +107,7 @@ def _coerce(item) -> Evidence | None:
         )
     else:
         return None
-    if not ev.source:
+    if ev.source != _source_label(ev.source):
         ev = Evidence(
             source=_source_label(ev.source),
             kind=ev.kind,
@@ -158,7 +158,7 @@ def correlate(evidence) -> dict:
     findings: list[Finding] = []
     for (kind, _key), evs in groups.items():
         prov = [e.as_dict() for e in evs]
-        sources = sorted({e.source for e in evs if e.source})
+        sources = sorted({_source_label(e.source) for e in evs})
         any_untrusted = any(_is_untrusted_evidence_source(e.source) for e in evs)
         any_trusted = any(
             not _is_untrusted_evidence_source(e.source) for e in evs
