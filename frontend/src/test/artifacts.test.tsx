@@ -198,12 +198,15 @@ describe('ArtifactsPanel — governed Canvas rendering', () => {
 });
 
 describe('SaveArtifactButton — explicit response saving', () => {
-  const msg = { role: 'agent', who: 'vision', text: 'the completed answer', ts: '09:02' };
+  // fresh object per test: the dedupe WeakSet is keyed by message identity and
+  // module-level, so a shared literal saved by one test reads as "already saved"
+  // in the next.
+  const mkMsg = () => ({ role: 'agent', who: 'vision', text: 'the completed answer', ts: '09:02' });
 
   it('posts the exact governed Markdown artifact payload and reports saved', async () => {
     global.fetch = vi.fn(() => ok({ id: 'new1' }));
     const onSaved = vi.fn();
-    render(<SaveArtifactButton message={msg} onSaved={onSaved} lang="en" />);
+    render(<SaveArtifactButton message={mkMsg()} onSaved={onSaved} lang="en" />);
     fireEvent.click(screen.getByTitle('save to artifacts'));
     await waitFor(() => expect(global.fetch).toHaveBeenCalledWith(
       '/api/canvas/post',
@@ -223,7 +226,7 @@ describe('SaveArtifactButton — explicit response saving', () => {
 
   it('truncates long replies to 4,000 chars and visibly discloses it', async () => {
     global.fetch = vi.fn(() => ok({ id: 'new2' }));
-    const long = { ...msg, text: 'x'.repeat(MARKDOWN_LIMIT + 200) };
+    const long = { ...mkMsg(), text: 'x'.repeat(MARKDOWN_LIMIT + 200) };
     render(<SaveArtifactButton message={long} onSaved={() => {}} lang="en" />);
     fireEvent.click(screen.getByTitle('save to artifacts'));
     expect(await screen.findByText(/truncated/i)).toBeTruthy();
@@ -250,7 +253,7 @@ describe('SaveArtifactButton — explicit response saving', () => {
   it('prevents duplicate clicks while a save is in flight', async () => {
     let release;
     global.fetch = vi.fn(() => new Promise((res) => { release = res; }));
-    render(<SaveArtifactButton message={msg} onSaved={() => {}} lang="en" />);
+    render(<SaveArtifactButton message={mkMsg()} onSaved={() => {}} lang="en" />);
     const btn = screen.getByTitle('save to artifacts');
     fireEvent.click(btn);
     fireEvent.click(btn);
@@ -263,12 +266,26 @@ describe('SaveArtifactButton — explicit response saving', () => {
   it('shows an honest failure state and allows a retry', async () => {
     let first = true;
     global.fetch = vi.fn(() => { const r = first ? fail(500) : ok({ id: 'n' }); first = false; return r; });
-    render(<SaveArtifactButton message={msg} onSaved={() => {}} lang="en" />);
+    render(<SaveArtifactButton message={mkMsg()} onSaved={() => {}} lang="en" />);
     fireEvent.click(screen.getByTitle('save to artifacts'));
     expect(await screen.findByText(/save failed/i)).toBeTruthy();
     fireEvent.click(screen.getByTitle('save to artifacts'));   // retry
     expect(await screen.findByText(/✓ saved/i)).toBeTruthy();
     expect(global.fetch).toHaveBeenCalledTimes(2);
+  });
+
+  it('stays saved across an unmount/remount of the same reply (no duplicate save)', async () => {
+    const once = { role: 'agent', who: 'vision', text: 'a one-time answer', ts: '09:09' };
+    global.fetch = vi.fn(() => ok({ id: 'dedupe1' }));
+    const { unmount } = render(<SaveArtifactButton message={once} onSaved={() => {}} lang="en" />);
+    fireEvent.click(screen.getByTitle('save to artifacts'));
+    await screen.findByText(/saved/i);
+    expect(global.fetch).toHaveBeenCalledTimes(1);
+    unmount();                                     // e.g. user switches the center tab away and back
+    render(<SaveArtifactButton message={once} onSaved={() => {}} lang="en" />);
+    expect(screen.getByText(/saved/i)).toBeTruthy();    // remembered — not back to '⬒ save'
+    fireEvent.click(screen.getByTitle('save to artifacts'));
+    expect(global.fetch).toHaveBeenCalledTimes(1);       // no duplicate POST
   });
 });
 
