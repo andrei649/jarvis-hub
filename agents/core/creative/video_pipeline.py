@@ -77,8 +77,13 @@ def _safe_param(value):
         return True, _s(value, _MAX_PARAM_TEXT)
     if isinstance(value, bool):
         return True, value
-    if isinstance(value, (int, float)) and math.isfinite(float(value)):
-        return True, value
+    if isinstance(value, (int, float)):
+        try:
+            finite = math.isfinite(float(value))
+        except (OverflowError, TypeError, ValueError):
+            finite = False
+        if finite:
+            return True, value
     return False, None
 
 
