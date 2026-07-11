@@ -1,8 +1,11 @@
-"""0.50 Publishing Studio — offline publish packager.
+"""0.50 Publishing Studio — finished-asset packaging without direct publishing.
 
-Validates platform metadata + builds a pre-publish checklist; never publishes (release is
-kernel-held). Violations are surfaced, never silently trimmed into a false pass.
+The studio validates the asset manifest and platform metadata, emits an explicit
+pre-publish checklist, and only prepares a kernel-held release payload after every
+required check passes. It has no transport or publish side effect.
 """
+
+import copy
 import sys
 from pathlib import Path
 
@@ -10,49 +13,146 @@ repo_root = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(repo_root))
 sys.path.insert(0, str(repo_root / "agents"))
 
+from agents.core.autonomy.policy import RiskTier  # noqa: E402
+from core.creative import build_publish_package  # noqa: E402
 from core.creative import publishing as pub  # noqa: E402
 
 
-def test_clean_youtube_package_is_ready():
-    pkg = pub.build_publish_package("youtube", {
-        "title": "Meet Jarvis", "description": "a governed local AI cabinet",
-        "thumbnail": "thumb.png", "disclosed": True,
-    }, title="meet-jarvis")
+ASSET = {
+    "artifact_id": "artifact_01",
+    "filename": "meet-jarvis-youtube.mp4",
+    "media_type": "video/mp4",
+    "bytes": 12_345,
+    "duration_seconds": 42,
+}
+META = {
+    "title": "Meet Jarvis",
+    "description": "A governed local AI cabinet.",
+    "thumbnail": "artifact_thumb_01",
+    "hashtags": ["#localai", "#jarvis"],
+}
+CONFIRMED = {"disclosure": True, "rights": True, "preview": True}
+
+
+def test_clean_youtube_package_is_ready_for_kernel_approval():
+    pkg = build_publish_package(
+        "youtube", META, asset=ASSET, confirmations=CONFIRMED
+    )
+
     assert pkg["violations"] == []
     assert pkg["ready"] is True
+    assert pkg["ready_for_approval"] is True
     assert pkg["generated"] is False
+    assert pkg["publish_state"] == "kernel-held"
     assert pkg["export_spec"]["format"] == "mp4"
-    # publish is held by the kernel (irreversible risk tier on the payload)
-    assert "risk_tier" in pkg["release_payload"]
+    assert pkg["release_payload"]["filename"] == ASSET["filename"]
+    assert pkg["release_payload"]["risk_tier"] == int(
+        RiskTier.IRREVERSIBLE_OR_MONEY
+    )
+    assert len(pkg["package_id"]) == 64
 
 
-def test_missing_required_field_is_surfaced_not_passed():
-    pkg = pub.build_publish_package("youtube", {"title": "x", "description": "y", "disclosed": True})
+def test_finished_asset_is_required_before_package_can_be_ready():
+    pkg = build_publish_package(
+        "youtube", META, confirmations=CONFIRMED
+    )
+
+    assert "missing finished asset" in pkg["violations"]
+    assert pkg["ready_for_approval"] is False
+    assert pkg["release_payload"] is None
+
+
+def test_asset_format_and_filename_are_validated():
+    bad = {**ASSET, "filename": "../escape.mov", "media_type": "video/quicktime"}
+    violations = pub.validate_asset("youtube", bad)
+
+    assert "asset filename must be a basename" in violations
+    assert any("expected .mp4" in item for item in violations)
+    assert any("media type" in item for item in violations)
+
+
+def test_video_duration_must_fit_the_target_contract():
+    long_asset = {**ASSET, "duration_seconds": 601}
+    violations = pub.validate_asset("youtube", long_asset)
+
+    assert any("duration exceeds 600 seconds" in item for item in violations)
+
+
+def test_missing_required_metadata_is_surfaced_not_passed():
+    pkg = build_publish_package(
+        "youtube",
+        {"title": "x", "description": "y"},
+        asset=ASSET,
+        confirmations=CONFIRMED,
+    )
+
     assert "missing required field: thumbnail" in pkg["violations"]
-    assert pkg["ready"] is False
+    assert pkg["ready_for_approval"] is False
 
 
-def test_title_over_limit_is_a_violation():
-    v = pub.validate_metadata("youtube", {"title": "T" * 101, "description": "d", "thumbnail": "t"})
-    assert any("title exceeds 100" in x for x in v)
+def test_length_validation_uses_the_real_value_and_never_hides_truncation():
+    violations = pub.validate_metadata(
+        "readme",
+        {"title": "t", "body": "b" * 100_001, "alt_text": "Jarvis HUD"},
+    )
+
+    assert "body exceeds 100000 chars (100001)" in violations
 
 
-def test_instagram_hashtag_cap_and_readme_takes_none():
-    ig = pub.validate_metadata("instagram", {"caption": "hi", "hashtags": ["#a"] * 31})
-    assert any("too many hashtags" in x for x in ig)
-    rd = pub.validate_metadata("readme", {"title": "t", "body": "b", "hashtags": ["#a"]})
-    assert any("no hashtags" in x for x in rd)
+def test_hashtags_must_be_a_list_and_respect_platform_cap():
+    wrong_type = pub.validate_metadata("instagram", {"caption": "hi", "hashtags": "#one"})
+    too_many = pub.validate_metadata(
+        "instagram", {"caption": "hi", "hashtags": ["#a"] * 31}
+    )
+
+    assert "hashtags must be a list" in wrong_type
+    assert "too many hashtags: 31 > 30" in too_many
 
 
-def test_unknown_platform_is_honest():
-    assert pub.validate_metadata("tiktok", {"title": "x"}) == ["unknown platform: tiktok"]
-    pkg = pub.build_publish_package("tiktok", {"title": "x"})
-    assert pkg["ready"] is False and pkg["export_spec"] is None
+def test_unknown_platform_is_honest_and_cannot_prepare_release():
+    pkg = build_publish_package(
+        "tiktok",
+        {"title": "x"},
+        asset=ASSET,
+        confirmations=CONFIRMED,
+    )
+
+    assert "unknown platform: tiktok" in pkg["violations"]
+    assert pkg["export_spec"] is None
+    assert pkg["ready_for_approval"] is False
+    assert pkg["release_payload"] is None
 
 
-def test_checklist_requires_disclosure():
-    pkg = pub.build_publish_package("youtube", {
-        "title": "t", "description": "d", "thumbnail": "th", "disclosed": False,
-    })
-    disclosure = next(c for c in pkg["checklist"] if "disclosure" in c["check"])
-    assert disclosure["ok"] is False and pkg["ready"] is False
+def test_manual_disclosure_rights_and_preview_checks_are_explicit():
+    pkg = build_publish_package(
+        "youtube",
+        META,
+        asset=ASSET,
+        confirmations={"disclosure": True},
+    )
+    by_id = {item["id"]: item for item in pkg["checklist"]}
+
+    assert by_id["disclosure.confirmed"]["ok"] is True
+    assert by_id["rights.confirmed"]["status"] == "manual"
+    assert by_id["preview.confirmed"]["status"] == "manual"
+    assert pkg["ready_for_approval"] is False
+
+
+def test_packaging_is_deterministic_and_does_not_mutate_inputs():
+    asset = copy.deepcopy(ASSET)
+    meta = copy.deepcopy(META)
+    first = build_publish_package(
+        "youtube", meta, asset=asset, confirmations=CONFIRMED
+    )
+    second = build_publish_package(
+        "youtube", meta, asset=asset, confirmations=CONFIRMED
+    )
+
+    assert first == second
+    assert asset == ASSET
+    assert meta == META
+
+
+def test_no_direct_publish_api_exists():
+    assert not hasattr(pub, "publish")
+    assert not hasattr(pub, "upload")
