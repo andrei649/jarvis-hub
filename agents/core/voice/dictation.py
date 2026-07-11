@@ -39,7 +39,6 @@ _PUNCT = {
 }
 
 _MAX_LEN = 20_000
-_WORD = re.compile(r"[^\W\d_]+", re.UNICODE)
 
 
 def _lang(lang: str) -> str:
