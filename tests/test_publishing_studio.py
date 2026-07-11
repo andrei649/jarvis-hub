@@ -6,7 +6,6 @@ required check passes. It has no transport or publish side effect.
 """
 
 from agents.core.creative import publishing
-from agents.core.autonomy.policy import RiskTier
 
 
 ASSET = {
@@ -37,9 +36,8 @@ def test_clean_youtube_package_is_ready_for_kernel_approval():
     assert pkg["publish_state"] == "kernel-held"
     assert pkg["export_spec"]["format"] == "mp4"
     assert pkg["release_payload"]["filename"] == ASSET["filename"]
-    assert pkg["release_payload"]["risk_tier"] == int(
-        RiskTier.IRREVERSIBLE_OR_MONEY
-    )
+    # RiskTier.IRREVERSIBLE_OR_MONEY is the kernel-held publication tier.
+    assert pkg["release_payload"]["risk_tier"] == 3
     assert len(pkg["package_id"]) == 64
 
 
