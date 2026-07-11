@@ -22,6 +22,7 @@ def _evidence():
     ]
 
 
+
 def test_investigation_prioritizes_leads_and_suggests_pivots():
     plan = inv.build_investigation(_evidence())
     assert plan["live_lookups_performed"] is False        # never enriches
@@ -34,6 +35,7 @@ def test_investigation_prioritizes_leads_and_suggests_pivots():
     assert "No live lookup" in plan["caveats"][0]
 
 
+
 def test_pivots_are_deduped_and_bounded():
     # many repeats of the same domain → pivots dedupe by (from,value,to)
     ev = [{"kind": "domain", "value": "x.example", "source": f"s{i}"} for i in range(30)]
@@ -41,6 +43,7 @@ def test_pivots_are_deduped_and_bounded():
     pv = plan["pivots"]
     assert len(pv) == len({(p["from_kind"], p["from_value"], p["to_kind"]) for p in pv})
     assert len(pv) <= inv._MAX_PIVOTS
+
 
 
 def test_tainted_source_flags_leads_pivots_and_caveats():
@@ -51,6 +54,7 @@ def test_tainted_source_flags_leads_pivots_and_caveats():
     assert any("untrusted" in cav for cav in plan["caveats"])
 
 
+
 def test_empty_evidence_is_honest():
     plan = inv.build_investigation([])
     assert plan["leads"] == [] and plan["pivots"] == []
@@ -58,10 +62,12 @@ def test_empty_evidence_is_honest():
     assert plan["live_lookups_performed"] is False
 
 
+
 def test_deterministic():
     a = inv.build_investigation(_evidence())
     b = inv.build_investigation(_evidence())
     assert a == b
+
 
 def test_missing_or_unknown_source_fails_closed_as_tainted():
     for evidence in (
@@ -75,6 +81,7 @@ def test_missing_or_unknown_source_fails_closed_as_tainted():
         assert any("untrusted" in caveat for caveat in plan["caveats"])
 
 
+
 def test_explicit_manual_source_remains_trusted():
     plan = inv.build_investigation([
         {"kind": "domain", "value": "operator.example", "source": "manual"}
@@ -83,13 +90,16 @@ def test_explicit_manual_source_remains_trusted():
     assert plan["leads"][0]["tainted"] is False
 
 
+
 def test_bad_top_value_degrades_to_default_instead_of_crashing():
     plan = inv.build_investigation(_evidence(), top="not-a-number")
     assert plan["leads"]
 
+
 def test_non_finite_top_value_degrades_safely():
     plan = inv.build_investigation(_evidence(), top=float("inf"))
     assert plan["leads"]
+
 
 
 def test_source_labels_are_canonical_for_corroboration():
@@ -102,9 +112,10 @@ def test_source_labels_are_canonical_for_corroboration():
     assert plan["counts"]["corroborated"] == 0
 
 
-def test_base_brief_also_degrades_bad_top_values():
-    from core.osint import correlate as corr
 
-    brief = corr.build_brief(_evidence(), top="bad")
+def test_base_brief_also_degrades_bad_top_values():
+    from core.osint.correlate import build_brief
+
+    brief = build_brief(_evidence(), top="bad")
     assert brief["top"]
 
