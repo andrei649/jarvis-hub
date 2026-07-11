@@ -6,15 +6,9 @@ required check passes. It has no transport or publish side effect.
 """
 
 import copy
-import sys
-from pathlib import Path
 
-repo_root = Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(repo_root))
-sys.path.insert(0, str(repo_root / "agents"))
-
-from agents.core.autonomy.policy import RiskTier  # noqa: E402
-from core.creative import build_publish_package, publishing as pub  # noqa: E402
+from agents.core.autonomy.policy import RiskTier
+from agents.core.creative import build_publish_package, publishing as pub
 
 
 ASSET = {
@@ -218,4 +212,40 @@ def test_unknown_metadata_keys_never_crash_warning_sort():
 
     assert pkg["ready_for_approval"] is True
     assert pkg["warnings"] == ["ignored metadata fields: 1"]
+
+def test_hashtag_entries_must_be_text():
+    violations = pub.validate_metadata(
+        "instagram", {"caption": "hi", "hashtags": [1]}
+    )
+
+    assert "hashtag 0 must be text" in violations
+
+
+def test_unknown_asset_keys_never_crash_warning_sort():
+    pkg = build_publish_package(
+        "youtube",
+        META,
+        asset={**ASSET, 1: "ignored"},
+        confirmations=CONFIRMED,
+    )
+
+    assert pkg["ready_for_approval"] is True
+    assert pkg["warnings"] == ["ignored asset fields: 1"]
+
+
+def test_required_metadata_checklist_agrees_with_type_validation():
+    pkg = build_publish_package(
+        "youtube",
+        {
+            "title": {"not": "text"},
+            "description": "description",
+            "thumbnail": "artifact_thumb_01",
+        },
+        asset=ASSET,
+        confirmations=CONFIRMED,
+    )
+    by_id = {item["id"]: item for item in pkg["checklist"]}
+
+    assert by_id["metadata.required"]["ok"] is False
+    assert pkg["ready_for_approval"] is False
 
