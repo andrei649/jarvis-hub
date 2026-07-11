@@ -5,8 +5,6 @@ pre-publish checklist, and only prepares a kernel-held release payload after eve
 required check passes. It has no transport or publish side effect.
 """
 
-import copy
-
 from agents.core.autonomy.policy import RiskTier
 from agents.core.creative import publishing
 
@@ -132,8 +130,8 @@ def test_manual_disclosure_rights_and_preview_checks_are_explicit():
 
 
 def test_packaging_is_deterministic_and_does_not_mutate_inputs():
-    asset = copy.deepcopy(ASSET)
-    meta = copy.deepcopy(META)
+    asset = dict(ASSET)
+    meta = {**META, "hashtags": list(META["hashtags"])}
     first = publishing.build_publish_package(
         "youtube", meta, asset=asset, confirmations=CONFIRMED
     )
