@@ -42,7 +42,7 @@ def _s(v, cap: int = _STR_CAP) -> str:
     return str(v if v is not None else "").strip()[:cap]
 
 
-def _required_present(spec: "ConnectorAction", key: str, value) -> bool:
+def _required_present(spec: ConnectorAction, key: str, value) -> bool:
     if (spec.target, spec.action, key) == ("gsheets", "append_row", "values"):
         return isinstance(value, (list, tuple)) and bool(value)
     if (spec.target, spec.action, key) == ("m365", "create_draft", "to"):
@@ -56,7 +56,7 @@ def _required_present(spec: "ConnectorAction", key: str, value) -> bool:
     return isinstance(value, str) and bool(value.strip())
 
 
-def _sanitize_fields(spec: "ConnectorAction", fields: dict) -> dict:
+def _sanitize_fields(spec: ConnectorAction, fields: dict) -> dict:
     clean: dict = {}
     long_fields = {"description", "notes", "desc", "body"}
     for key in (*spec.required, *spec.optional):
