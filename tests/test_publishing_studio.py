@@ -8,7 +8,7 @@ required check passes. It has no transport or publish side effect.
 import copy
 
 from agents.core.autonomy.policy import RiskTier
-from agents.core.creative import build_publish_package, publishing as pub
+from agents.core.creative import build_publish_package, publishing
 
 
 ASSET = {
@@ -57,7 +57,7 @@ def test_finished_asset_is_required_before_package_can_be_ready():
 
 def test_asset_format_and_filename_are_validated():
     bad = {**ASSET, "filename": "../escape.mov", "media_type": "video/quicktime"}
-    violations = pub.validate_asset("youtube", bad)
+    violations = publishing.validate_asset("youtube", bad)
 
     assert "asset filename must be a basename" in violations
     assert any("expected .mp4" in item for item in violations)
@@ -66,7 +66,7 @@ def test_asset_format_and_filename_are_validated():
 
 def test_video_duration_must_fit_the_target_contract():
     long_asset = {**ASSET, "duration_seconds": 601}
-    violations = pub.validate_asset("youtube", long_asset)
+    violations = publishing.validate_asset("youtube", long_asset)
 
     assert any("duration exceeds 600 seconds" in item for item in violations)
 
@@ -84,7 +84,7 @@ def test_missing_required_metadata_is_surfaced_not_passed():
 
 
 def test_length_validation_uses_the_real_value_and_never_hides_truncation():
-    violations = pub.validate_metadata(
+    violations = publishing.validate_metadata(
         "readme",
         {"title": "t", "body": "b" * 100_001, "alt_text": "Jarvis HUD"},
     )
@@ -93,8 +93,8 @@ def test_length_validation_uses_the_real_value_and_never_hides_truncation():
 
 
 def test_hashtags_must_be_a_list_and_respect_platform_cap():
-    wrong_type = pub.validate_metadata("instagram", {"caption": "hi", "hashtags": "#one"})
-    too_many = pub.validate_metadata(
+    wrong_type = publishing.validate_metadata("instagram", {"caption": "hi", "hashtags": "#one"})
+    too_many = publishing.validate_metadata(
         "instagram", {"caption": "hi", "hashtags": ["#a"] * 31}
     )
 
@@ -176,8 +176,8 @@ def test_asset_manifest_requires_positive_size_and_video_duration():
         key: value for key, value in ASSET.items() if key != "duration_seconds"
     }
 
-    assert "missing asset bytes" in pub.validate_asset("youtube", no_size)
-    assert "missing asset duration_seconds" in pub.validate_asset(
+    assert "missing asset bytes" in publishing.validate_asset("youtube", no_size)
+    assert "missing asset duration_seconds" in publishing.validate_asset(
         "youtube", no_duration
     )
 
@@ -185,12 +185,12 @@ def test_asset_manifest_requires_positive_size_and_video_duration():
 def test_asset_duration_must_be_finite():
     for value in (float("nan"), float("inf"), float("-inf")):
         bad = {**ASSET, "duration_seconds": value}
-        violations = pub.validate_asset("youtube", bad)
+        violations = publishing.validate_asset("youtube", bad)
         assert "asset duration_seconds must be finite" in violations
 
 
 def test_required_metadata_fields_must_be_text():
-    violations = pub.validate_metadata(
+    violations = publishing.validate_metadata(
         "youtube",
         {
             "title": {"not": "text"},
@@ -214,7 +214,7 @@ def test_unknown_metadata_keys_never_crash_warning_sort():
     assert pkg["warnings"] == ["ignored metadata fields: 1"]
 
 def test_hashtag_entries_must_be_text():
-    violations = pub.validate_metadata(
+    violations = publishing.validate_metadata(
         "instagram", {"caption": "hi", "hashtags": [1]}
     )
 
