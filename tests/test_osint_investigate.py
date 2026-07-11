@@ -87,3 +87,24 @@ def test_bad_top_value_degrades_to_default_instead_of_crashing():
     plan = inv.build_investigation(_evidence(), top="not-a-number")
     assert plan["leads"]
 
+def test_non_finite_top_value_degrades_safely():
+    plan = inv.build_investigation(_evidence(), top=float("inf"))
+    assert plan["leads"]
+
+
+def test_source_labels_are_canonical_for_corroboration():
+    plan = inv.build_investigation([
+        {"kind": "domain", "value": "same.example", "source": " Manual "},
+        {"kind": "domain", "value": "same.example", "source": "manual"},
+    ])
+    lead = plan["leads"][0]
+    assert lead["sources"] == ["manual"]
+    assert plan["counts"]["corroborated"] == 0
+
+
+def test_base_brief_also_degrades_bad_top_values():
+    from core.osint import correlate as corr
+
+    brief = corr.build_brief(_evidence(), top="bad")
+    assert brief["top"]
+
