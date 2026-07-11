@@ -9,6 +9,7 @@
 > **Hermes migration v3 plan (reviewed by Fable 2026-07-07 — APPROVED with notes):** [docs/research/2026-07-06-hermes-agent-migration-plan.md](docs/research/2026-07-06-hermes-agent-migration-plan.md) · review verdict + remaining-phase order in [docs/handoff-fable-2026-07-07.md](docs/handoff-fable-2026-07-07.md) §5
 > **Last-day Fable handoff (2026-07-07 — ordered owner/AI task lanes, risk register):** [docs/handoff-fable-2026-07-07.md](docs/handoff-fable-2026-07-07.md)
 > **Pre-go-live stakeholder sync (2026-07-07 — 5-seat agent panel, conditional GO, Gate-2 checklist):** [docs/meetings/2026-07-07-pre-go-live-sync.md](docs/meetings/2026-07-07-pre-go-live-sync.md)
+> **AI-OS capability vision (the 1.0 gate expanded 2026-07-11):** [AI_OS_VISION.md](AI_OS_VISION.md) — six pillars, target architecture, capability registry, the Hermes superiority bar; horizons ORIZONT 27–33 below · provenance: [docs/research/2026-07-11-ai-os-vision-and-hermes-strategy.md](docs/research/2026-07-11-ai-os-vision-and-hermes-strategy.md)
 
 **S = story points (1 = ~jumătate de zi) · P = prioritate (P0–P3)**
 
@@ -122,6 +123,10 @@ python -m pytest tests/ -v          # ~3,868 passed, 6 skipped (counter synced v
 > (ground truth verified: CI green on main, 0 open PRs, 3,820-test suite green; Hermes v3 plan
 > **APPROVED with notes** — §5 of the handoff). The two lanes below are the same items, tracked
 > here so they surface in any "what's next" conversation. Tick them here AND in the handoff doc.
+>
+> **2026-07-11 update:** A8 "tag 1.0.0" now sits behind the **expanded** 1.0 gate — the proof
+> track (A1–A7, unchanged) **plus** the AI-OS capability program (ORIZONT 27–33 below /
+> [AI_OS_VISION.md](AI_OS_VISION.md)). A1–A7 remain the critical path and are NOT displaced.
 
 **Lane A — owner critical path (ordered; delivered via PR #634):**
 
@@ -190,12 +195,20 @@ instalați** (restul pe listă de așteptare). Candidați contributor din fir (I
 
 > The `0.5-beta…0.9.2-beta` rows above are **provenance** (when each capability first landed).
 > The line below is the **forward plan** — there is no separate "audit gate" version; the version
-> number *is* the roadmap. **1.0 is a real destination**, not the current near-done state: it ships
-> only when all planned development is finished **and** the system is proven with real
-> design-partner users. Manual testing/audit is the *release step that tags a version*, not a
-> roadmap item; owner-only items (license, naming, GitHub settings) live in [docs/OWNER_TASKS.md](docs/OWNER_TASKS.md).
+> number *is* the roadmap. **1.0 is a real destination**, not the current near-done state.
+> **Gate expanded 2026-07-11 (owner decision):** 1.0 ships only when **both** halves are done —
+> **(a) the proof track** (the 0.13–0.20 themes + ⭐B0 + 72h soak + design partners) **and (b) the
+> AI-OS capability program** (v0.21–v0.27 / ORIZONT 27–33, six pillars at their v1 bar —
+> [AI_OS_VISION.md](AI_OS_VISION.md) §9). Manual testing/audit is the *release step that tags a
+> version*, not a roadmap item; owner-only items (license, naming, GitHub settings) live in
+> [docs/OWNER_TASKS.md](docs/OWNER_TASKS.md).
 
 ### Forward roadmap — the version is the plan (theme-per-minor)
+
+> **Version labels vs theme IDs:** rows in this table are **release versions**, always written
+> three-part (`0.16.0`, `v0.21.0`). The Competitive-Gap section below uses bare two-part
+> **theme-IDs** (`0.21`, `0.46`) which are NOT versions — when citing a theme in new text, write
+> **`T-0.21`** to disambiguate. Existing text is not mass-renamed.
 
 `⚠️` = surfaced by the 2026-06-21 productionization research (was not previously tracked); now in **H23** below.
 
@@ -212,12 +225,21 @@ instalați** (restul pe listă de așteptare). Candidați contributor din fir (I
 | **0.18.0 🖥️** | Digital twin & fine-tune (**GPU-gated**) | H12.14 fine-tuned model, H13.3 speculative decoding, TASK-1 Howard first real run |
 | **0.19.0 ⚠️** | Reach, quality & user docs | mobile parity tail (H18); **quality gates** (E2E, load/soak, a11y, i18n, browser+mobile matrix); **user docs ✅** (USER_GUIDE/FAQ/UPGRADE — H23.18; trust docs THREAT_MODEL/PRIVACY/SECURITY/NOTICE/SBOM — H23.19); **onboarding wizard** + activation funnel + cold-start error guidance |
 | **0.20.0 ⚠️** | Product-proof | design-partner program (recruit 1–3) — *in-app **feedback/NPS** + program doc ✅ H23.21*; support channel + SLA; north-star **measured on real usage**; landing page + demo |
-| **1.0.0** | 🎯 **Owned & proven** | all dev complete **+ design-partner validation**; owner legal/brand done; manual-test/audit pass → tag |
+| **v0.21.0** 🧠 | **Capability plane** (AI-OS Phase 1) | ORIZONT 27 — Capability Registry v1 + unified Action API (`perform()`) + verification hooks + earned autonomy; extends O24 K/V, no parallel system |
+| **v0.22.0** 🖱️ | **Operator** (AI-OS Phase 2a) | ORIZONT 28 — real browser driver (Playwright behind GovernedBrowser) + desktop actuation + terminal-target abstraction + the API→CLI→UI→visual router; **unpark wave 1** |
+| **v0.23.0** 📺 | **Media Director** (AI-OS Phase 2b) | ORIZONT 29 — `media_player` abstraction + Chromecast + the `present()` fabric + session etiquette; **unpark wave 2** |
+| **v0.24.0** 🏠 | **House Brain** (AI-OS Phase 3) | ORIZONT 30 — Home Assistant state adapter + device/room/occupant graph + presence + governed actuation; **unpark wave 3** |
+| **v0.25.0** 📷 | **Camera Intelligence** (AI-OS Phase 4) | ORIZONT 31 — privacy contract first, then RTSP/ONVIF ingest + local detection + event index + NL clip retrieval |
+| **v0.26.0** 🌱 | **Capability Acquisition** (AI-OS Phase 5) | ORIZONT 32 — the gap→search→research→generate→sandbox→approve→register→reuse loop |
+| **v0.27.0** 👁️ | **Ambient Intelligence** (AI-OS Phase 6) | ORIZONT 33 — monitor framework + the ignore/remember/monitor/act-silently/ask/interrupt ladder |
+| **1.0.0** | 🎯 **The governed Personal AI OS — owned & proven** | **proof track done** (H23 spine + ⭐B0 + 72h soak + 1–3 partners ≥2 weeks) **+ six pillars at their v1 bar** ([AI_OS_VISION.md](AI_OS_VISION.md) §9) **+** owner legal/brand; manual-test/audit pass → tag |
 
 > **The active execution ORDER for what remains is ORIZONT 25 — M1→1.0** (2026-07-02, section below):
 > milestone tables + a model-agnostic execution protocol + the companion-quality charter, backed by the
 > [execution blueprint](docs/superpowers/specs/2026-07-02-orizont25-execution-blueprint.md). It sequences
-> the remaining slices of the versions above (0.12–0.20) — it does not renumber them.
+> the remaining slices of the versions above (0.12–0.20) — it does not renumber them. The capability
+> minors **v0.21+** may interleave with the proof-track tail — order can adapt, **gates cannot be
+> skipped** (MOONSHOT §4).
 >
 > **The program that organizes 0.11→1.0 is ORIZONT 24 — "AI-OS"** (decided 2026-06-23, section below): an
 > **Action Kernel** (every agent action mediated, budgeted, revocable) + a **Verification Fabric** (each
@@ -238,6 +260,8 @@ instalați** (restul pe listă de așteptare). Candidați contributor din fir (I
 > (supersedes the [2026-06-21 baseline](docs/research/2026-06-21-roadmap-vs-codebase-audit.md)).
 > **Headline: ~85% already seeded; only 6 are truly greenfield.** Status keys: ✅ done · 🟢 in open PR ·
 > 🟡 partial · 🌱 seed (module exists, feature mostly unbuilt) · ⬜ missing.
+> **Citation convention (2026-07-11):** these are **theme-IDs, not versions** — in new text cite
+> them as `T-0.21`, `T-0.46` etc.; release versions in the roadmap table above are always three-part.
 
 | Theme | Status | What exists / the bounded gap | Maps to |
 |-------|--------|-------------------------------|---------|
@@ -354,6 +378,11 @@ instalați** (restul pe listă de așteptare). Candidați contributor din fir (I
 | H23.21 | **Design-partner program** — recruit 1–3, in-app feedback/NPS, support SLA, collect north-star from real usage | 🟢 **feedback loop + program doc done** — `feedback_store.py` (first-party local SQLite: nps/comment/bug, bounded) + `routers/feedback.py`: `POST /api/feedback` (user-guarded footer widget) + `GET /api/feedback/summary` (admin — **NPS** %promoters−%detractors + per-kind counts + recent); `docs/DESIGN_PARTNER_PROGRAM.md` (recruit 1–3, 48 h SLA, what-to-measure tied to north-star/guardrails, privacy). `tests/test_feedback_widget.py` (+4); snapshots reseeded (HUD home = observe). **HUD `FeedbackPanel` ✅** — Console *Observe* panel renders the NPS summary (promoters/detractors + per-kind + recent) and carries the submit form (score + comment → `POST /api/feedback`); `frontend/src/test/feedback-panel.test.tsx` (+2, fetch-mocked; vitest + tsc green). **Pending:** only the live-pixel render (owner-runtime-gated, CDX-9) + actually recruiting partners (owner). | 0.20 |
 | H23.22 | Landing page + demo recorded (owner-led; dev-supportable) | 🟡 DEV HALF DONE (#512) — static offline landing page + demo shot-list support delivered; owner-recorded video remains M4 | 0.20 |
 | H23.23 | **Multi-user readiness call** — accept single-user for 1.0 & document it, OR scope per-user isolation (north-star is "per active user"). **🟢 decision recorded 2026-07-11 (awaiting owner ratification):** ship 1.0 **single-user per install** and document the boundary; per-user isolation is a post-1.0 horizon (each design partner runs their own isolated install, so the "per active user" north-star is measured across installs, not multi-tenant). Rationale + the post-1.0 trigger for option B: [`docs/decisions/2026-07-11-single-user-1.0.md`](docs/decisions/2026-07-11-single-user-1.0.md). Unblocks A2 (soak the single-user install). Owner ratifies (or picks B) in OWNER_TASKS. | DECISION | 0.20 |
+| H23.24 | **72h-soak evidence collector** — `scripts/soak_report.py`: samples `/healthz`+`/readyz`, `/api/metrics/north-star` (guardrails + funnel), `/api/metrics/kernel`, queue depth/age, SQLite sizes + WAL behavior, process memory, audit `verify_chain`, plugin/circuit-breaker failures and error-log signatures on an interval for the soak window; emits a dated evidence bundle (`docs/research/YYYY-MM-DD-soak-report.md` shape) that A2/AUD-0 can attach. Offline-testable with injected readers (the 0.34/0.37 store discipline). *From the 2026-07-11 audit (P0).* | ⬜ MISSING | 0.20 |
+| H23.25 | **Release-gate command** — `scripts/release_gate.py`: one command answers "is this RC mechanically ready?" — offline suite green + `status_sync.py --check` + route/auth/action-auth/readiness snapshots clean + doc-link check + tag↔`agents.__version__` match + park-list guard status — and prints a PASS/WARN/FAIL table that separates **code-complete / machine-verified / owner-verified / market-verified** (the owner rows — B0 sign-off, partner evidence — are listed and honestly marked, never auto-passed). *From the 2026-07-11 audit (P1).* | ⬜ MISSING | 1.0.0 |
+| H23.26 | **Generated project status → kill doc-counter drift** — extend `scripts/status_sync.py` to emit `project-status.json` (version, backend/frontend/mobile test counts, route count, active agents, horizon roll-ups, latest CI commit, open release gates) and inject synced snippets into README (badge + Run block + Status §), JARVIS.md and GO_LIVE_PLAN header — one machine-readable truth, satellites generated (the ~3,848/~3,868/~4,068 drift of 2026-07-11 becomes structurally impossible). *From the 2026-07-11 audit (P1); generalizes the existing STATUS.md sync.* | ⬜ MISSING | 0.19 |
+| H23.27 | **Design-partner feedback export** — `scripts/export_partner_feedback.py`: a portable, locally-generated JSON/MD packet the partner explicitly chooses to share — install environment, onboarding-funnel completion, accepted/rejected autonomous actions, failure/latency percentiles, NPS + written feedback (from `feedback_store.py`), north-star snapshot; **no conversation content unless separately selected**. Sibling of H23.21 + the T-0.55 support bundle. *From the 2026-07-11 audit (P1).* | ⬜ MISSING | 0.20 |
+| H23.28 | **Park-list CI guard, actually implemented** — the O26 Phase 6 guard exists only as prose (verified absent from CI 2026-07-11): implement it — CI fails when a PR touches a parked module without an `unpark:` tag in the PR title/body; the guard reads the **phased unpark policy** (O26 Phase 6, revised 2026-07-11) so each AI-OS wave legitimately unfreezes its modules without weakening the freeze for everything else. *From the 2026-07-11 audit (P1: "freeze expansion with an automated gate").* | ⬜ MISSING | 0.13-tail |
 
 ---
 
@@ -382,6 +411,11 @@ instalați** (restul pe listă de așteptare). Candidați contributor din fir (I
 > productionization · all deferred competitive-gap themes), grounded with `file:line` seams to reuse,
 > approach, acceptance, and test paths. The context-cheap map sessions execute against instead of
 > re-reading the ~2M-token repo; each item ships as its own PR.
+>
+> **2026-07-11 note:** Phase D below ("3–5 design partners = the 1.0 gate") is now the **proof
+> half** of the *expanded* 1.0 gate (Version Roadmap above + [AI_OS_VISION.md](AI_OS_VISION.md) §9).
+> The **V2 capability registry is the substrate the ORIZONT 27 Capability Registry v1 extends** —
+> one system, not two.
 
 **The OS metaphor, made literal:** agents = processes · capability tokens = permissions · the kernel =
 the syscall table · budgets = the scheduler · kill-switch/quarantine = a syscall · the verification fabric
@@ -594,13 +628,166 @@ weeks, **re-baselined post-P0.2** (pre-fix data excludes all web-chat activity) 
 
 ### Phase 6 — Guard rails (continuous)
 
-Park-list CI guard (`image_gen`, `media_gen/media_skill`, `desktop_operator`, `browser_agent`,
-`screen_grounding`, `satellite_hub`, `node_mesh`, `e2e_sync`, `wyoming`, `training/`, `rust/` —
-frozen pre-1.0 unless a PR carries an `unpark:` tag; WorldView explicitly NOT on this list per D4) ·
+Park-list guard (**revised 2026-07-11** for the expanded 1.0 gate; implementation = **H23.28**):
+`image_gen`, `media_gen/media_skill`, `desktop_operator`, `browser_agent`, `screen_grounding`,
+`satellite_hub`, `node_mesh`, `e2e_sync`, `wyoming`, `training/`, `rust/` stay frozen **until the
+proof-track milestones are recorded (A1 ⭐B0 + A2 72h soak) and partner recruitment has started
+(A7 in progress)** — then they unfreeze **in phases, as the substrate of the AI-OS horizons**:
+**wave 1** with ORIZONT 28 (`browser_agent`, `desktop_operator`, `screen_grounding`) · **wave 2**
+with ORIZONT 29 (`image_gen`, `media_gen`, `media_skill`) · **wave 3** with ORIZONT 30/33
+(`wyoming`, `satellite_hub`, `node_mesh`, `e2e_sync`). `training/` and `rust/` remain frozen until
+explicitly pulled by an owner decision. A PR carrying `unpark:` remains the per-PR escape hatch;
+WorldView explicitly NOT on this list per D4 ·
 new-test policy: golden-loop behavioral by default, wiring/parity only for new route surfaces ·
 ✅ HUD-E2E lane now triggers on `agents/core/**` (oracle gap found reviewing #498: the lane boots
 the real backend, but the pipeline-rewiring PR never ran it because the path filter stopped at
 `agents/web.py`).
+
+---
+
+## 🧩 ORIZONT 27 — Capability Registry & Unified Action API (AI-OS Phase 1, direction 2026-07-11)
+
+> **Mission:** agents reason over a machine-readable capability inventory instead of hardcoding
+> actions; one call path (`perform()`); every capability carries risk, contract, verification,
+> rollback and earned confidence. **Builds ON (do not rebuild):** the O24 V2 registry
+> (`observability/capability_registry.py`, SEAM→WIRED→VERIFIED→GA), `automation_contracts.py`,
+> the action-auth matrix (`tests/test_action_auth_matrix.py` + `_snapshots/action_auth.json`),
+> the H20.R1 model-directed loop (`agent_runtime.py`). Vision: [AI_OS_VISION.md](AI_OS_VISION.md) §5
+> · provenance: [2026-07-11 archive](docs/research/2026-07-11-ai-os-vision-and-hermes-strategy.md).
+> → Version **v0.21.0**.
+
+| # | Item | S | P | Dep | Sursă |
+|---|------|---|---|-----|-------|
+| H27.1 🟡 | **Registry schema v1** — extend `CapabilityRecord` with `description/inputs/risk/requires/supports/verification/rollback/confidence/implementation`; derivation from plugins/components/skills stays, manifests add the new fields | 5 | P0 | O24-V2 | AI_OS_VISION §5 |
+| H27.2 ⬜ | **Capability manifests** for the 11 kernel-mediated action kinds + governed plugins (risk tier, contract ref, verification ref, rollback ref) | 5 | P0 | H27.1 | `action_auth.json` |
+| H27.3 ⬜ | **Unified Action API** — `perform(capability_id, params, ctx)` facade over `kernel.authorize` + brokers + ToolRPC; default-off flag; agents call *capabilities*, not tools | 8 | P0 | H27.1, O24-K1 | AI_OS_VISION §5 |
+| H27.4 ⬜ | **Registry-aware planning** — the model-directed loop (`agent_runtime`, default-OFF) selects from registry descriptions/inputs/confidence; honest refusal when nothing matches | 5 | P1 | H27.3 | H20.R1 |
+| H27.5 ⬜ | **Verification field live** — each capability's `verification` points at a V1 reality-harness case; no VERIFIED without it (extends the V3 gate) | 3 | P1 | O24-V1/V3 | — |
+| H27.6 ⬜ | **Rollback contracts** — machine-readable rollback per capability; the approval UI shows the rollback story on QUEUE | 3 | P2 | H27.2 | — |
+| H27.7 ⬜ | **Confidence & earned autonomy** — per-capability outcome stats feed `confidence`; policy may lower the approval tier per the graduated ladder (**never** for `IRREVERSIBLE_OR_MONEY`) | 5 | P1 | H27.1 | AI_OS_VISION §6 |
+| H27.8 ⬜ | **Registry read surface** — `GET /api/capabilities` (extends `/api/metrics/capabilities`) + HUD board columns (risk/supports/confidence) | 2 | P2 | H27.1 | V2 panel |
+
+> **Total ORIZONT 27:** ~36 SP
+
+## 🖱️ ORIZONT 28 — Computer & Browser Operator (AI-OS Phase 2a, direction 2026-07-11)
+
+> **Mission:** turn H15's complete-but-stubbed governance into real actuation; the action
+> hierarchy **API → CLI → structured UI → visual** becomes an explicit router that always picks
+> the lowest-risk implementation. **Builds ON:** `browser_agent.py` (GovernedBrowser — egress
+> allowlist + approval queue stay byte-identical), `desktop_operator.py`, `screen_grounding.py`,
+> `llm/vlm.py`, `core/environments/` (local/docker/ssh). Hermes catch-up items S1/S3 live here.
+> → Version **v0.22.0** · unpark wave 1.
+
+| # | Item | S | P | Dep | Sursă |
+|---|------|---|---|-----|-------|
+| H28.1 🟡 | **Real Playwright driver** behind `GovernedBrowser` (host seam; the Null driver stays the test default; governance layer untouched) | 8 | P0 | H15, H27.3 | AI_OS_VISION §3-P3 |
+| H28.2 ⬜ | **Action-hierarchy router** — given a goal, prefer API → CLI → structured UI automation → visual computer use; visual is the audited fallback, never the default | 5 | P1 | H27.3 | AI_OS_VISION §3-P3 |
+| H28.3 🟡 | **Terminal-target abstraction** over `core/environments` — named execution targets (`bonobo-windows`, `pi-house`, `isolated-sandbox`) with per-target capability policy + audit chain (Hermes has backends, not the audit — superiority S3) | 5 | P1 | H27.2 | AI_OS_VISION §7 |
+| H28.4 🟡 | **Desktop actuation** behind `GovernedDesktop` — accessibility-tree first, VLM/screen-grounding fallback; mutating steps stay approval-gated | 8 | P1 | H28.1 | H15.3 |
+| H28.5 ⬜ | **Operator reality-harness pack** — the S1 benchmark (defined browser/computer task set, kernel ON, zero ungoverned actions in the trace) | 3 | P1 | O24-V1 | AI_OS_VISION §7-S1 |
+| H28.6 ⬜ | **Unpark wave 1** — `browser_agent`/`desktop_operator`/`screen_grounding` off the park list; guard table updated (H23.28) | 1 | P2 | H23.28 | O26 Phase 6 |
+
+> **Total ORIZONT 28:** ~30 SP
+
+## 📺 ORIZONT 29 — Multimedia Director (AI-OS Phase 2b, direction 2026-07-11)
+
+> **Mission:** one verb — `present(content, target_device, mode, urgency, duration)` — on every
+> screen and speaker in the house; play the right thing on the right device. **Builds ON:**
+> `plugins/spotify_plugin.py` (real playback control), `media_catalog.py`/`media_export.py`,
+> interrupt budgets. **Verified missing today:** any Chromecast/`media_player` abstraction.
+> → Version **v0.23.0** · unpark wave 2.
+
+| # | Item | S | P | Dep | Sursă |
+|---|------|---|---|-----|-------|
+| H29.1 ⬜ | **`media_player` abstraction + device registry** — Chromecast (pychromecast), Spotify Connect, browser-tab kiosk, local player; discovery + capability per device | 5 | P0 | — | AI_OS_VISION §3-P5 |
+| H29.2 ⬜ | **The `present()` capability** — content × device × mode × urgency × duration, kernel-mediated (reversible tier), registered in the O27 registry | 5 | P0 | H29.1, H27.3 | AI_OS_VISION §5 |
+| H29.3 ⬜ | **Content resolvers** — local/NAS media, the T-0.46 media catalog, URLs via the governed browser; honest "can't resolve" states | 3 | P1 | H29.2 | — |
+| H29.4 ⬜ | **Media session state + interrupt etiquette** — don't break a movie for a P3 nudge; rides the K3 interrupt budgets | 3 | P1 | H29.2 | MOONSHOT §5.4 |
+| H29.5 ⬜ | **Media reality-harness pack** + honest degraded modes (device offline ≠ crash) | 2 | P2 | O24-V1 | — |
+| H29.6 ⬜ | **Unpark wave 2** — `image_gen`/`media_gen`/`media_skill` off the park list | 1 | P2 | H23.28 | O26 Phase 6 |
+
+> **Total ORIZONT 29:** ~19 SP
+
+## 🏠 ORIZONT 30 — House Brain (AI-OS Phase 3, direction 2026-07-11)
+
+> **Mission:** a live model of the home — devices, rooms, occupants, presence, policies — with
+> governed actuation. Home Assistant is the device abstraction layer; Jarvis sits above it as the
+> reasoning and authority layer. **Builds ON:** `plugins/homebridge.py` (LOCAL_ONLY),
+> `plugins/iot_control.py`, `voice/wyoming.py`, the bi-temporal KG (H14). **Verified missing
+> today:** any HA REST/WebSocket state integration; the house graph. → Version **v0.24.0** ·
+> unpark wave 3 (with O33).
+
+| # | Item | S | P | Dep | Sursă |
+|---|------|---|---|-----|-------|
+| H30.1 ⬜ | **Home Assistant adapter, read-first** — REST/WebSocket state (entities, areas, sensors), LOCAL_ONLY, honest empty state without HA | 5 | P0 | — | AI_OS_VISION §3-P4 |
+| H30.2 ⬜ | **Device/room/occupant graph** on the bi-temporal KG — rooms contain devices, observed_by cameras, occupied_by people; queryable | 5 | P0 | H30.1, H14 | AI_OS_VISION §4 |
+| H30.3 ⬜ | **Presence & context inference** (local-only) — who is home, which room is occupied, privacy context per room | 5 | P1 | H30.2 | — |
+| H30.4 ⬜ | **Governed actuation** — HA service calls through the kernel per the graduated ladder; lights/climate earn auto-within-bounds; **locks/doors/security never below strong confirmation** (hard floor) | 5 | P0 | H30.1, H27.7 | AI_OS_VISION §6 |
+| H30.5 ⬜ | **`GET /api/house/state` + HUD panel** — the house graph visible, honest empty state | 3 | P2 | H30.2 | — |
+| H30.6 ⬜ | **Room-aware voice** — wyoming/satellite unpark; a satellite's room becomes the default output device for `present()` | 3 | P2 | O29, H23.28 | H12.4 |
+| H30.7 ⬜ | **House reality-harness pack** — hermetic HA simulator proves the rail; live = owner-gated | 3 | P1 | O24-V1 | — |
+
+> **Total ORIZONT 30:** ~29 SP
+
+## 📷 ORIZONT 31 — Camera Intelligence (AI-OS Phase 4, direction 2026-07-11)
+
+> **Mission:** local-only camera perception — structured events, not continuous footage into a
+> model; the LLM inspects a frame/clip only when an event warrants it; natural-language retrieval
+> over an event index. **Greenfield** (verified 2026-07-11: no RTSP/ONVIF/Frigate code exists);
+> `llm/vlm.py` is the description seam. **Privacy-critical: H31.1 precedes any frame processing.**
+> → Version **v0.25.0**.
+
+| # | Item | S | P | Dep | Sursă |
+|---|------|---|---|-----|-------|
+| H31.1 ⬜ | **Privacy contract FIRST** — frames never leave the box; household consent doc; kill-switch coverage; retention per H23.10; privacy masks/zones; face recognition only where explicitly enabled | 2 | P0 | — | AI_OS_VISION §10 |
+| H31.2 ⬜ | **RTSP/ONVIF ingest** — camera discovery + stream/snapshot handling; **or Frigate as detector backend** (decide by spike: build vs integrate) | 5 | P0 | H31.1 | AI_OS_VISION §3-P1 |
+| H31.3 ⬜ | **Local detection pipeline** — person/vehicle/animal/package events with zone + line-crossing rules; VLM description on demand only | 8 | P1 | H31.2 | — |
+| H31.4 ⬜ | **Event indexing into memory** — bounded, redacted camera events with snapshots; camera health monitoring | 5 | P1 | H31.3 | — |
+| H31.5 ⬜ | **NL clip retrieval** — "when did the courier come yesterday?" → temporal search over the event index | 5 | P2 | H31.4 | AI_OS_VISION §3-P1 |
+| H31.6 ⬜ | **Feeds** — camera events flow into the O30 house state + O33 monitors (a camera is a sensor of the house, not a silo) | 3 | P2 | H30.2, H33.1 | — |
+
+> **Total ORIZONT 31:** ~28 SP
+
+## 🌱 ORIZONT 32 — Capability Acquisition (AI-OS Phase 5, direction 2026-07-11)
+
+> **Mission:** instead of "I can't" → "I don't know **yet**" — understand the gap → search
+> existing skills → research docs/APIs → generate → sandbox test → approval → registry → reuse
+> forever. **Builds ON:** the full skill lifecycle (`skills/{loader,importer,usage,curator,
+> proposals,signing,marketplace}.py`, `skill_drift.py`), `self_evolution.py`, the O20 governed
+> learning loop, sandbox + quarantine, `grounded_plan.py`. Governed per MOONSHOT §5.7 — the two
+> O20 invariants hold in every item (strict-local review model; self-modifications land in
+> quarantine/approval, never direct). → Version **v0.26.0**.
+
+| # | Item | S | P | Dep | Sursă |
+|---|------|---|---|-----|-------|
+| H32.1 🟡 | **Gap detection → capability request** — a failed/unmatched intent becomes a registry entry in state `missing`, with the goal captured | 3 | P1 | H27.1 | AI_OS_VISION §3-P6 |
+| H32.2 🟡 | **Reuse-first search** — marketplace + local skills + registry before any generation; reuse-before-generate rate measured | 3 | P1 | H32.1 | AI_OS_VISION §7-S2 |
+| H32.3 ⬜ | **Doc-research step** — governed websearch → `ground_plan()` validation (every implementation step cites a fetched source; phantom citations refused) | 3 | P2 | H32.2 | T-0.51 |
+| H32.4 🟡 | **Generate + sandbox-test harness** — the generated skill must ship with a verification test that passes in the sandbox *before* it may be proposed | 8 | P0 | H32.3 | AI_OS_VISION §3-P6 |
+| H32.5 ⬜ | **Approval → signing → registry** — approved skills enter the O27 registry at low `confidence`; autonomy earned via H27.7; quarantine before promotion | 5 | P0 | H32.4, H27.7 | MOONSHOT §5.7 |
+| H32.6 ⬜ | **Acquisition audit trail + rollback** — every acquired capability is uninstallable/rollbackable via the marketplace path (T-0.58) | 2 | P1 | H32.5 | — |
+| H32.7 ⬜ | **Hermes-parity eval for the loop** — the S2 superiority benchmark: acquire a net-new skill end-to-end under governance | 3 | P2 | H32.5 | AI_OS_VISION §7-S2 |
+
+> **Total ORIZONT 32:** ~27 SP
+
+## 👁️ ORIZONT 33 — Ambient Intelligence (AI-OS Phase 6, direction 2026-07-11)
+
+> **Mission:** long-running monitors over house/camera/digital feeds + the decision ladder —
+> **ignore · remember · monitor · act silently · ask · interrupt** — so proactivity scales without
+> noise. **Builds ON:** `core/autonomy/observer.py` (ProactiveObserver — the seed), watchers,
+> `autonomy/policy.py`, interrupt budgets (K3), night-shift, the P1 pack's measured funnel.
+> → Version **v0.27.0** · unpark wave 3 (with O30).
+
+| # | Item | S | P | Dep | Sursă |
+|---|------|---|---|-----|-------|
+| H33.1 🟡 | **Declarative monitor framework** — named monitors over house/camera/digital feeds (NAS temp, UPS, baby-room, backups, cameras, family schedule), debounce-on-state-change like the observer | 5 | P0 | H30.1 | AI_OS_VISION §3-P1 |
+| H33.2 ⬜ | **The decision ladder as policy** — every event classified ignore/remember/monitor/act-silently/ask/interrupt; interrupts stay ≤4/day *by construction* (K3 budget, not convention) | 5 | P0 | H33.1, K3 | AI_OS_VISION §6 |
+| H33.3 ⬜ | **Situation memory** — observations land in the KG with provenance + decay, so "the same unknown person twice this evening" is answerable | 3 | P1 | H33.1, H14 | — |
+| H33.4 ⬜ | **Ambient reality-harness pack** + counter-metric guards (interrupt/reject rates must not degrade as monitors multiply) | 3 | P1 | O24-V1/V4 | MOONSHOT §6 |
+| H33.5 ⬜ | **Night-shift v2** — overnight monitor work measured on the north-star night split (P1 proof-gap 2/3 seam) | 3 | P2 | H33.2 | P1 pack |
+| H33.6 ⬜ | **"What is Jarvis watching right now"** — HUD transparency surface listing live monitors + their last decisions | 3 | P2 | H33.1 | — |
+
+> **Total ORIZONT 33:** ~22 SP
 
 ---
 
@@ -830,7 +1017,7 @@ chain-of-thought leak / mid-sentence truncation fixed. Kill-switch:
 | **H18 Mobile Native & Browser Parity** (P2–P3) | 16 | **15** | 51 | **51** | **100%** |
 | **H19 WorldView (4D OSINT)** — standalone product, merged 2026-06-08 | 33 | **33** | 208 | **208** | **100%** ✅ |
 
-> `%` = procent pe **story points**. Sub-total **H1–H11** = 821/823 (≈100% SP; 151/151 iteme). Grand-total **H1–H17** = 1104/1119 (≈99% SP; 194/196 iteme). **Toate orizonturile de features sunt livrate = v0.10.0** (H18 mobil 17/18, cu H18.10 umbrelă continuă mereu deschisă + H19 WorldView 33/33 standalone — livrate). **Nu mai există un "audit gate" ca versiune**; restul drumului până la 1.0 e *productionizarea* (vezi **H23** + roadmap-ul de versiuni mai sus), iar **1.0 = totul livrat + validat de useri reali (design partners)**.
+> `%` = procent pe **story points**. Sub-total **H1–H11** = 821/823 (≈100% SP; 151/151 iteme). Grand-total **H1–H17** = 1104/1119 (≈99% SP; 194/196 iteme). **Toate orizonturile de features sunt livrate = v0.10.0** (H18 mobil 17/18, cu H18.10 umbrelă continuă mereu deschisă + H19 WorldView 33/33 standalone — livrate). **Nu mai există un "audit gate" ca versiune**; restul drumului până la 1.0 e *productionizarea* (vezi **H23** + roadmap-ul de versiuni mai sus) **plus, din 2026-07-11, programul de capabilități AI-OS** — gate-ul 1.0 s-a extins (decizie owner): **1.0 = proof track (H23/O24–O26 + ⭐B0 + soak + design partners) ȘI cei șase piloni la bara v1** (ORIZONT 27–33, ~191 SP; [AI_OS_VISION.md](AI_OS_VISION.md) §9).
 
 **În afara totalului:** **Bugs & Hot Fixes** — **toate BUG-\* și HF-\* rezolvate** (BUG-1…17 + HF-1…7 + NTH-1; vezi re-baseline 2026-06-08 + tabelul de mai jos). ✅ **CLN-3 livrat + CLN-2 substanțial livrat (#293/#296, v0.11.0)** — `web.py` 4636→1282 LOC (45 routere, 9 rute inline), `orchestrator.py` 1620→1456 LOC; suprafața de rute byte-identică, parity-guarded. Rămân deschise: taskuri netrackuite ca buguri (**TASK-1** Howard backend, **TASK-2** HUD v2 depth, **TASK-3** taint-tracking canale, **BUG-2b** frontend E2E). *(Detalii audit cod 2026-06-04 în tabel.)*
 
