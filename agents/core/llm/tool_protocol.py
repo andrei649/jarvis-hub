@@ -157,7 +157,7 @@ def parse_openai_tool_calls(
         except _NonFiniteNumber:
             arguments = None
             parse_error = "non_finite_number"
-        except (json.JSONDecodeError, TypeError, RecursionError):
+        except (TypeError, RecursionError, ValueError):
             arguments = None
             parse_error = "invalid_json"
         else:

@@ -237,6 +237,22 @@ def test_parse_openai_tool_calls_rejects_lone_surrogate_in_raw_arguments():
     assert call.parse_error == "arguments_invalid_unicode"
 
 
+def test_parse_openai_tool_calls_rejects_integer_over_interpreter_digit_limit():
+    raw_arguments = '{"value":' + ("9" * 5_000) + "}"
+
+    call = parse_openai_tool_calls(
+        [
+            {
+                "id": "call-1",
+                "function": {"name": "echo", "arguments": raw_arguments},
+            }
+        ]
+    )[0]
+
+    assert call.arguments is None
+    assert call.parse_error == "invalid_json"
+
+
 @pytest.mark.parametrize(
     ("raw_calls", "error"),
     [
