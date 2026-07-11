@@ -266,13 +266,22 @@ function ArtifactsPanel({ refreshKey = 0, lang }: { refreshKey?: number; lang?: 
   );
 }
 
+/* Replies already saved this session, keyed by the message OBJECT (a stable
+   reference in the cockpit's `messages` state across center-tab / mode switches).
+   A WeakSet so it can't leak, and so a SaveArtifactButton that remounts (e.g. the
+   user switches the center tab away and back) restores its 'saved' state instead
+   of offering a second save that would duplicate the canvas element. */
+const _savedMessages = new WeakSet<object>();
+
 /* ── explicit save-response control (rendered per completed assistant reply) ──
    Never auto-fires: state machine idle → saving (click-locked) → saved /
    saved·truncated / error (retryable). Posts the exact unchanged canvas
    contract with the ACTUAL responding agent. */
 function SaveArtifactButton({ message, onSaved, lang }: { message: any; onSaved?: () => void; lang?: string }) {
   const L = labels(lang);
-  const [state, setState] = useState('idle'); // idle | saving | saved | saved-trunc | error
+  const [state, setState] = useState(() =>
+    message && typeof message === 'object' && _savedMessages.has(message) ? 'saved' : 'idle');
+  // idle | saving | saved | saved-trunc | error
 
   const save = () => {
     if (state === 'saving' || state === 'saved' || state === 'saved-trunc') return;
@@ -291,6 +300,7 @@ function SaveArtifactButton({ message, onSaved, lang }: { message: any; onSaved?
       payload: { title: 'Saved response', body },
       pinned: false,
     }).then(() => {
+      if (message && typeof message === 'object') _savedMessages.add(message);
       setState(truncated ? 'saved-trunc' : 'saved');
       if (onSaved) onSaved();
     }).catch(() => setState('error'));
