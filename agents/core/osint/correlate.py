@@ -34,7 +34,7 @@ _TRUSTED_EVIDENCE_SOURCES = frozenset({"manual", "operator"})
 
 
 def _source_label(source: str | None) -> str:
-    return str(source or "").strip() or "osint:unknown"
+    return (str(source or "").strip() or "osint:unknown").lower()
 
 
 def _is_untrusted_evidence_source(source: str | None) -> bool:
@@ -186,6 +186,13 @@ def correlate(evidence) -> dict:
     }
 
 
+def _limit(value, default: int = 8) -> int:
+    try:
+        return max(0, int(value))
+    except (TypeError, ValueError, OverflowError):
+        return default
+
+
 def build_brief(evidence, *, top: int = 8) -> dict:
     """A compact "world brief" view of the drawer — the top-N findings by confidence.
 
@@ -193,7 +200,7 @@ def build_brief(evidence, *, top: int = 8) -> dict:
     whether any of it is untrusted (so the reader knows it is approval-gated, not actioned).
     """
     drawer = correlate(evidence)
-    findings = drawer["findings"][: max(0, int(top))]
+    findings = drawer["findings"][:_limit(top)]
     c = drawer["counts"]
     headline = (
         f"{c['findings']} indicator(s) · {c['corroborated']} corroborated · "
