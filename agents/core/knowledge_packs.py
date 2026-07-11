@@ -105,8 +105,8 @@ def verify_pack(folder: str | Path, manifest: dict) -> dict:
             modified.append(rel)
     on_disk = {p.relative_to(root).as_posix() for p in _pack_files(root)}
     unexpected = sorted(on_disk - set(wanted))
-    ok = not (missing or modified or unexpected)
-    return {"ok": ok, "missing": missing, "modified": modified,
+    return {"ok": not (missing or modified or unexpected),
+            "missing": missing, "modified": modified,
             "unexpected": unexpected, "checked": len(wanted)}
 
 
