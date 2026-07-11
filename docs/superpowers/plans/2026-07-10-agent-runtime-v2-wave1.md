@@ -613,13 +613,19 @@ Run:
 
 Expected: ruff exits 0; all selected tests pass with zero failures.
 
-- [ ] **Step 3: Run the full offline suite**
+- [x] **Step 3: Run the full offline suite**
 
 Run:
 
     python -m pytest tests/ -q
 
 Expected: exit 0. Record exact passed/skipped counts and any warnings.
+
+Result (2026-07-11): the isolated serial run completed with 3,991 passed, 7 skipped,
+5 warnings, and one environment-sensitive baseline failure. `test_sys_info_honest.py`
+rejects the literal `RTX 5090`, while this workstation truthfully reports an
+`NVIDIA GeForce RTX 5090 Laptop GPU`; the same test fails identically on detached clean
+`origin/main` (`c588d0cf`). No runtime-v2 test failed.
 
 - [x] **Step 4: Verify default-off behavior with a focused reality harness**
 
@@ -653,3 +659,7 @@ Use superpowers:requesting-code-review before publishing. Push the feature branc
 a draft PR to main, include exact verification results, security invariants, default-off
 rollback, and note the independent Claude artifact PR plus the merge-independent file
 ownership.
+
+Independent adversarial review is complete and reports Ready: Yes with no Critical or
+Important findings. Publication remains unchecked because the required GitHub CLI is not
+installed in this environment; do not bypass the repository publish workflow.
