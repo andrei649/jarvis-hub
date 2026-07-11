@@ -11,6 +11,7 @@ from __future__ import annotations
 import copy
 import hashlib
 import json
+import math
 from typing import Any
 
 from .pipeline import EXPORT_TARGETS, release_action_payload
@@ -70,14 +71,22 @@ def validate_metadata(platform: str, meta: dict | None) -> list[str]:
         return ["metadata must be an object"]
 
     violations: list[str] = []
+    text_fields = set(rules["needs"]) | set(rules["field_limits"])
+    for field in sorted(text_fields):
+        value = meta.get(field)
+        if value is not None and not isinstance(value, str):
+            violations.append(f"{field} must be text")
+
     for field in rules["needs"]:
-        if not _text(meta.get(field)):
+        value = meta.get(field)
+        if not isinstance(value, str) or not value.strip():
             violations.append(f"missing required field: {field}")
 
     for field, limit in rules["field_limits"].items():
-        value = _text(meta.get(field))
-        if len(value) > limit:
-            violations.append(f"{field} exceeds {limit} chars ({len(value)})")
+        value = meta.get(field)
+        if isinstance(value, str) and len(value.strip()) > limit:
+            length = len(value.strip())
+            violations.append(f"{field} exceeds {limit} chars ({length})")
 
     hashtags = meta.get("hashtags", [])
     if hashtags is None:
@@ -139,22 +148,26 @@ def validate_asset(platform: str, asset: dict | None) -> list[str]:
         violations.append(f"asset media type must be one of: {expected}")
 
     size = asset.get("bytes")
-    if size is not None and (
-        isinstance(size, bool) or not isinstance(size, int) or size <= 0
-    ):
+    if size is None:
+        violations.append("missing asset bytes")
+    elif isinstance(size, bool) or not isinstance(size, int) or size <= 0:
         violations.append("asset bytes must be a positive integer")
 
     duration = asset.get("duration_seconds")
-    if duration is not None:
+    max_seconds = spec.get("max_seconds", 0)
+    if duration is None and max_seconds:
+        violations.append("missing asset duration_seconds")
+    elif duration is not None:
         try:
             seconds = float(duration)
         except (TypeError, ValueError):
             violations.append("asset duration_seconds must be a non-negative number")
         else:
-            if isinstance(duration, bool) or seconds < 0:
+            if not math.isfinite(seconds):
+                violations.append("asset duration_seconds must be finite")
+            elif isinstance(duration, bool) or seconds < 0:
                 violations.append("asset duration_seconds must be a non-negative number")
-            max_seconds = spec.get("max_seconds", 0)
-            if max_seconds and seconds > max_seconds:
+            elif max_seconds and seconds > max_seconds:
                 violations.append(
                     f"asset duration exceeds {max_seconds} seconds ({seconds:g})"
                 )
@@ -221,11 +234,11 @@ def prepublish_checklist(
     )
 
     confirmed = {
-        "disclosure": bool(
-            provided.get("disclosure", metadata.get("disclosed", False))
+        "disclosure": (
+            provided.get("disclosure", metadata.get("disclosed", False)) is True
         ),
-        "rights": bool(provided.get("rights")),
-        "preview": bool(provided.get("preview")),
+        "rights": provided.get("rights") is True,
+        "preview": provided.get("preview") is True,
     }
 
     return [
@@ -237,7 +250,7 @@ def prepublish_checklist(
         _automatic_check(
             "asset.valid",
             "Finished asset matches the target contract",
-            bool(asset) and not asset_violations,
+            bool(rules) and bool(asset) and not asset_violations,
             detail="; ".join(asset_violations),
         ),
         _automatic_check(
@@ -286,7 +299,9 @@ def _warnings(
 ) -> list[str]:
     warnings: list[str] = []
     if rules and isinstance(meta, dict):
-        unknown = sorted(set(meta) - _known_metadata_fields(rules))
+        unknown = sorted(
+            str(key) for key in set(meta) - _known_metadata_fields(rules)
+        )
         if unknown:
             warnings.append(f"ignored metadata fields: {', '.join(unknown)}")
     if isinstance(asset, dict):
@@ -337,9 +352,12 @@ def build_publish_package(
     }
     provided = confirmations if isinstance(confirmations, dict) else {}
     canonical_confirmations = {
-        key: bool(provided.get(key)) for key in _CONFIRMATIONS
+        key: provided.get(key) is True for key in _CONFIRMATIONS
     }
-    if metadata.get("disclosed") and not canonical_confirmations["disclosure"]:
+    if (
+        metadata.get("disclosed") is True
+        and not canonical_confirmations["disclosure"]
+    ):
         canonical_confirmations["disclosure"] = True
 
     identity = {
