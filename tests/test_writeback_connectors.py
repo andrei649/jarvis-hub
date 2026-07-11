@@ -68,7 +68,7 @@ def test_trello_auth_uses_structured_params_not_a_loggable_url():
                                      {"token": "tt", "api_key": "kk"})
     assert req["url"] == "https://api.trello.com/1/cards"
     assert req["params"] == {"idList": "L1", "key": "kk", "token": "tt"}
-    assert "tt" not in req["url"] and "kk" not in req["url"]
+    assert "?" not in req["url"]
 
 
 def test_sheets_appends_a_single_sanitized_row():
