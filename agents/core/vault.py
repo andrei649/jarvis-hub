@@ -108,7 +108,26 @@ def _thread_lock_for(path: Path) -> threading.RLock:
 def _file_lock(path: Path, timeout: float = _LOCK_TIMEOUT_SECONDS) -> Iterator[None]:
     """Portable advisory exclusive lock over the first byte of *path*."""
     path.parent.mkdir(parents=True, exist_ok=True)
-    handle = path.open("a+b")
+    flags = os.O_RDWR | os.O_CREAT | getattr(os, "O_BINARY", 0) | getattr(os, "O_NOFOLLOW", 0)
+    descriptor: int | None = None
+    try:
+        descriptor = os.open(path, flags, stat.S_IRUSR | stat.S_IWUSR)
+        opened = os.fstat(descriptor)
+        linked = os.stat(path, follow_symlinks=False)
+        if not stat.S_ISREG(linked.st_mode) or (opened.st_dev, opened.st_ino) != (
+            linked.st_dev,
+            linked.st_ino,
+        ):
+            raise VaultError("unsafe vault lock path")
+        handle = os.fdopen(descriptor, "r+b")
+        descriptor = None
+    except (OSError, VaultError) as exc:
+        if descriptor is not None:
+            with suppress(OSError):
+                os.close(descriptor)
+        if isinstance(exc, VaultError):
+            raise
+        raise VaultError(f"unsafe vault lock path: {exc}") from exc
     _chmod_private(path)
     try:
         handle.seek(0, os.SEEK_END)
@@ -242,6 +261,8 @@ class Vault:
         return validated
 
     def _load_index(self, *, reconcile: bool) -> dict[str, dict]:
+        if self._index_path.is_symlink():
+            raise VaultError("unsafe vault index path")
         if not self._index_path.exists():
             index: dict[str, dict] = {}
         else:
