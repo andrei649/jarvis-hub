@@ -5,6 +5,8 @@ pre-publish checklist, and only prepares a kernel-held release payload after eve
 required check passes. It has no transport or publish side effect.
 """
 
+# ruff: noqa: I001 -- keep direct package imports explicit for API coverage.
+
 import copy
 
 from agents.core.autonomy.policy import RiskTier
