@@ -5,7 +5,7 @@ pre-publish checklist, and only prepares a kernel-held release payload after eve
 required check passes. It has no transport or publish side effect.
 """
 
-from agents.core.creative import publishing
+import agents.core.creative.publishing as publishing
 
 
 ASSET = {
