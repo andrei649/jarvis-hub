@@ -50,6 +50,12 @@ PROFILES: dict[str, dict] = {
         "background_autonomy": True, "heavy_features": True,
         "max_parallel_agents": 2, "model_tier": "auto",
     },
+    "headless": {
+        "description": "No heavy UI — lean footprint for a server / TUI / low-VRAM (8GB) box: "
+                       "background autonomy stays on, heavy media features off, local-light models.",
+        "background_autonomy": True, "heavy_features": False,
+        "max_parallel_agents": 1, "model_tier": "local-light",
+    },
 }
 
 
