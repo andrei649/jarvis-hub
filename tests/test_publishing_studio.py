@@ -5,12 +5,10 @@ pre-publish checklist, and only prepares a kernel-held release payload after eve
 required check passes. It has no transport or publish side effect.
 """
 
-# ruff: noqa: I001 -- keep direct package imports explicit for API coverage.
-
 import copy
 
 from agents.core.autonomy.policy import RiskTier
-from agents.core.creative import build_publish_package, publishing
+from agents.core.creative import publishing
 
 
 ASSET = {
@@ -30,7 +28,7 @@ CONFIRMED = {"disclosure": True, "rights": True, "preview": True}
 
 
 def test_clean_youtube_package_is_ready_for_kernel_approval():
-    pkg = build_publish_package(
+    pkg = publishing.build_publish_package(
         "youtube", META, asset=ASSET, confirmations=CONFIRMED
     )
 
@@ -48,7 +46,7 @@ def test_clean_youtube_package_is_ready_for_kernel_approval():
 
 
 def test_finished_asset_is_required_before_package_can_be_ready():
-    pkg = build_publish_package(
+    pkg = publishing.build_publish_package(
         "youtube", META, confirmations=CONFIRMED
     )
 
@@ -74,7 +72,7 @@ def test_video_duration_must_fit_the_target_contract():
 
 
 def test_missing_required_metadata_is_surfaced_not_passed():
-    pkg = build_publish_package(
+    pkg = publishing.build_publish_package(
         "youtube",
         {"title": "x", "description": "y"},
         asset=ASSET,
@@ -105,7 +103,7 @@ def test_hashtags_must_be_a_list_and_respect_platform_cap():
 
 
 def test_unknown_platform_is_honest_and_cannot_prepare_release():
-    pkg = build_publish_package(
+    pkg = publishing.build_publish_package(
         "tiktok",
         {"title": "x"},
         asset=ASSET,
@@ -119,7 +117,7 @@ def test_unknown_platform_is_honest_and_cannot_prepare_release():
 
 
 def test_manual_disclosure_rights_and_preview_checks_are_explicit():
-    pkg = build_publish_package(
+    pkg = publishing.build_publish_package(
         "youtube",
         META,
         asset=ASSET,
@@ -136,10 +134,10 @@ def test_manual_disclosure_rights_and_preview_checks_are_explicit():
 def test_packaging_is_deterministic_and_does_not_mutate_inputs():
     asset = copy.deepcopy(ASSET)
     meta = copy.deepcopy(META)
-    first = build_publish_package(
+    first = publishing.build_publish_package(
         "youtube", meta, asset=asset, confirmations=CONFIRMED
     )
-    second = build_publish_package(
+    second = publishing.build_publish_package(
         "youtube", meta, asset=asset, confirmations=CONFIRMED
     )
 
@@ -153,7 +151,7 @@ def test_no_direct_publish_api_exists():
     assert not hasattr(publishing, "upload")
 
 def test_truthy_non_boolean_confirmations_do_not_unlock_release():
-    pkg = build_publish_package(
+    pkg = publishing.build_publish_package(
         "youtube",
         META,
         asset=ASSET,
@@ -205,7 +203,7 @@ def test_required_metadata_fields_must_be_text():
 
 
 def test_unknown_metadata_keys_never_crash_warning_sort():
-    pkg = build_publish_package(
+    pkg = publishing.build_publish_package(
         "youtube",
         {**META, 1: "ignored"},
         asset=ASSET,
@@ -224,7 +222,7 @@ def test_hashtag_entries_must_be_text():
 
 
 def test_unknown_asset_keys_never_crash_warning_sort():
-    pkg = build_publish_package(
+    pkg = publishing.build_publish_package(
         "youtube",
         META,
         asset={**ASSET, 1: "ignored"},
@@ -236,7 +234,7 @@ def test_unknown_asset_keys_never_crash_warning_sort():
 
 
 def test_required_metadata_checklist_agrees_with_type_validation():
-    pkg = build_publish_package(
+    pkg = publishing.build_publish_package(
         "youtube",
         {
             "title": {"not": "text"},
