@@ -155,8 +155,7 @@ def test_draft_fields_are_bounded_before_entering_approval_queue():
 
 class _StopsAfterHundred(list):
     def __iter__(self):
-        for index in range(100):
-            yield index
+        yield from range(100)
         raise AssertionError("connector copied past its field bound")
 
 
