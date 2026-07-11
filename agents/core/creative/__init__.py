@@ -1,8 +1,8 @@
-"""creative — P4 Creative / Publishing pack (ORIZONT 24 Track P).
+"""Creative and publishing capability pack.
 
-Offline, deterministic creative-pipeline *planner* + export-pack builder with provenance,
-and a publish-is-held governance rail. Plans and drafts freely; never generates media nor
-publishes on its own. See :mod:`.pipeline`.
+Offline, deterministic planners and validators with provenance and a
+publish-is-held governance rail. The package never generates media or publishes
+on its own.
 """
 
 from .pipeline import (
@@ -11,5 +11,22 @@ from .pipeline import (
     plan_pipeline,
     release_action_payload,
 )
+from .publishing import (
+    PLATFORM_RULES,
+    build_publish_package,
+    prepublish_checklist,
+    validate_asset,
+    validate_metadata,
+)
 
-__all__ = ["EXPORT_TARGETS", "plan_pipeline", "build_export_packs", "release_action_payload"]
+__all__ = [
+    "EXPORT_TARGETS",
+    "PLATFORM_RULES",
+    "build_export_packs",
+    "build_publish_package",
+    "plan_pipeline",
+    "prepublish_checklist",
+    "release_action_payload",
+    "validate_asset",
+    "validate_metadata",
+]
