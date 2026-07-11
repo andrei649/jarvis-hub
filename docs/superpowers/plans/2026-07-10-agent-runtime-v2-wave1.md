@@ -45,7 +45,7 @@ exposes one generation seam used by both Agent.process and streamed orchestratio
 - Produces: parse_openai_tool_calls(raw_calls) -> tuple[ToolCall, ...]
 - Produces: LLMBackend.generate_tool_turn(...) -> ToolTurn
 
-- [ ] **Step 1: Write failing value-object and fallback tests**
+- [x] **Step 1: Write failing value-object and fallback tests**
 
 Add tests that import the new module, assert the exact OpenAI schema shape, preserve the
 provider's raw argument string, mark invalid JSON without raising, and verify a minimal
@@ -74,7 +74,7 @@ For invalid arguments:
     assert calls[0].parse_error == "invalid_json"
     assert calls[0].raw_arguments == "{broken"
 
-- [ ] **Step 2: Run the focused test and verify RED**
+- [x] **Step 2: Run the focused test and verify RED**
 
 Run:
 
@@ -82,7 +82,7 @@ Run:
 
 Expected: collection fails because agents.core.llm.tool_protocol does not exist.
 
-- [ ] **Step 3: Implement the immutable protocol values**
+- [x] **Step 3: Implement the immutable protocol values**
 
 Create dataclasses with these exact public fields:
 
@@ -122,14 +122,14 @@ ToolSpec.as_openai must return:
 ToolCall.as_openai must preserve raw_arguments. ToolTurn.as_assistant_message must include
 content and tool_calls only when calls exist.
 
-- [ ] **Step 4: Add the source-compatible LLMBackend fallback**
+- [x] **Step 4: Add the source-compatible LLMBackend fallback**
 
 Set supports_tools = False on LLMBackend. Add a non-abstract generate_tool_turn method
 whose signature accepts model, messages, tools, max_tokens, and temperature. It extracts
 the joined system content plus the last user/tool content, calls generate, and wraps the
 string in ToolTurn. Do not add a new abstract method.
 
-- [ ] **Step 5: Run focused and compatibility tests**
+- [x] **Step 5: Run focused and compatibility tests**
 
 Run:
 
@@ -137,7 +137,7 @@ Run:
 
 Expected: all pass.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
     git add agents/core/llm/tool_protocol.py agents/core/llm/base.py tests/test_llm_tool_protocol.py
     git commit -m "feat(runtime): add provider-neutral tool protocol"
@@ -155,7 +155,7 @@ Expected: all pass.
 - Produces: LMStudioBackend.supports_tools = True.
 - Produces: LMStudioBackend.generate_tool_turn(...) -> ToolTurn.
 
-- [ ] **Step 1: Add failing LM Studio request/parse tests**
+- [x] **Step 1: Add failing LM Studio request/parse tests**
 
 Inject a fake async client that records POST JSON and returns:
 
@@ -182,7 +182,7 @@ payload.tool_choice == "auto", and the returned ToolCall has parsed arguments.
 Add a second test proving a content-only response becomes a final ToolTurn and a third
 proving malformed tool arguments are returned as parse_error rather than executed.
 
-- [ ] **Step 2: Run the LM Studio tests and verify RED**
+- [x] **Step 2: Run the LM Studio tests and verify RED**
 
 Run:
 
@@ -190,14 +190,14 @@ Run:
 
 Expected: fails because LMStudioBackend does not advertise or implement tool turns.
 
-- [ ] **Step 3: Implement LM Studio generate_tool_turn**
+- [x] **Step 3: Implement LM Studio generate_tool_turn**
 
 Build the existing chat-completions payload with messages, temperature, stream=False,
 tools, and tool_choice="auto". Omit max_tokens in auto mode exactly like generate.
 Parse choices[0].message.content, message.tool_calls, and finish_reason into ToolTurn.
 On request failure, return ToolTurn(content=local_backend_degraded_reply(...)).
 
-- [ ] **Step 4: Run protocol, thinking, and graceful-down tests**
+- [x] **Step 4: Run protocol, thinking, and graceful-down tests**
 
 Run:
 
@@ -205,7 +205,7 @@ Run:
 
 Expected: all pass.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
     git add agents/core/llm/base.py tests/test_llm_tool_protocol.py
     git commit -m "feat(runtime): add LM Studio tool-call transport"
@@ -224,7 +224,7 @@ Expected: all pass.
 - Produces: GuardrailsEngine.supports_tools property.
 - Produces: GuardrailsEngine.generate_tool_turn(...) -> ToolTurn.
 
-- [ ] **Step 1: Add failing guardrail tool-mode tests**
+- [x] **Step 1: Add failing guardrail tool-mode tests**
 
 Use a recording tool backend with supports_tools=True. In REDACT mode, send system and
 user message content containing alice@example.com. Assert the backend never sees the
@@ -236,7 +236,7 @@ Add a proxy test:
     assert GuardrailsEngine(_ToolBackend()).supports_tools is True
     assert GuardrailsEngine(_TextBackend()).supports_tools is False
 
-- [ ] **Step 2: Run the tests and verify RED**
+- [x] **Step 2: Run the tests and verify RED**
 
 Run:
 
@@ -244,14 +244,14 @@ Run:
 
 Expected: fails because GuardrailsEngine has no supports_tools/generate_tool_turn.
 
-- [ ] **Step 3: Implement guarded tool turns**
+- [x] **Step 3: Implement guarded tool turns**
 
 Add a supports_tools property that reads the wrapped backend. Clone each message before
 scanning; apply the existing input policy only when content is a string. Delegate to the
 backend. Apply the existing output policy to ToolTurn.content and return a dataclasses
 replace result so tool calls are unchanged.
 
-- [ ] **Step 4: Run all guardrail tests**
+- [x] **Step 4: Run all guardrail tests**
 
 Run:
 
@@ -259,7 +259,7 @@ Run:
 
 Expected: all pass.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
     git add agents/core/security/guardrails.py tests/test_llm_tool_protocol.py tests/test_guardrails_generate_kwargs.py
     git commit -m "feat(runtime): guard tool-enabled model turns"
@@ -278,7 +278,7 @@ Expected: all pass.
 - Produces: ToolRPCServer.handle(request, *, actor=None).
 - Produces: ToolRPCServer.tools() records with name, gated, description, input_schema.
 
-- [ ] **Step 1: Add failing schema metadata tests**
+- [x] **Step 1: Add failing schema metadata tests**
 
 Register:
 
@@ -302,7 +302,7 @@ Add tests proving a trusted actor keyword, not any request field, controls the a
 for approval enqueue and kernel authorization. Add a regression proving
 ToolRPCServer.execute rechecks the kernel immediately before an approved handler runs.
 
-- [ ] **Step 2: Run ToolRPC tests and verify RED**
+- [x] **Step 2: Run ToolRPC tests and verify RED**
 
 Run:
 
@@ -310,7 +310,7 @@ Run:
 
 Expected: schema test fails because register_tool rejects the new keywords.
 
-- [ ] **Step 3: Extend registration metadata only**
+- [x] **Step 3: Extend registration metadata only**
 
 Copy input_schema on registration and return a new copy from tools so callers cannot
 mutate the allowlist metadata. Add actor as a keyword-only trusted argument to handle;
@@ -318,7 +318,7 @@ use actor or self.agent consistently in contract, kernel, enqueue, and audit met
 Make execute derive the trusted actor from task.agent and repeat the kernel check before
 the handler. Request payload fields must never override actor.
 
-- [ ] **Step 4: Run the full ToolRPC and kernel slice**
+- [x] **Step 4: Run the full ToolRPC and kernel slice**
 
 Run:
 
@@ -326,7 +326,7 @@ Run:
 
 Expected: all pass.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
     git add agents/core/tool_rpc.py tests/test_tool_rpc_h20_1.py
     git commit -m "feat(runtime): describe ToolRPC model tools"
@@ -345,7 +345,7 @@ Expected: all pass.
 - Produces: AgentToolRuntime.run(...) -> str.
 - Produces: ToolEventSink callback receiving dict lifecycle events.
 
-- [ ] **Step 1: Write the failing echo-loop test**
+- [x] **Step 1: Write the failing echo-loop test**
 
 Create a scripted backend whose first ToolTurn requests echo and whose second returns
 "Echo completed". Register a real async ToolRPC echo handler. Assert:
@@ -356,7 +356,7 @@ Create a scripted backend whose first ToolTurn requests echo and whose second re
 - runtime returns "Echo completed";
 - events include tool_requested, tool_started, and tool_result.
 
-- [ ] **Step 2: Run the single test and verify RED**
+- [x] **Step 2: Run the single test and verify RED**
 
 Run:
 
@@ -364,7 +364,7 @@ Run:
 
 Expected: collection fails because agents.core.agent_runtime does not exist.
 
-- [ ] **Step 3: Implement the minimal sequential loop**
+- [x] **Step 3: Implement the minimal sequential loop**
 
 Create AgentToolRuntime with constructor:
 
@@ -386,11 +386,11 @@ to ToolSpec, consumes an IterationBudget, calls generate_tool_turn, executes thr
 server.handle(request, actor=agent_id), appends the assistant/tool messages, and returns
 final content.
 
-- [ ] **Step 4: Run the echo test and verify GREEN**
+- [x] **Step 4: Run the echo test and verify GREEN**
 
 Run the same test. Expected: pass.
 
-- [ ] **Step 5: Add failing safety and concurrency tests**
+- [x] **Step 5: Add failing safety and concurrency tests**
 
 Add one behavior per test:
 
@@ -408,7 +408,7 @@ Add one behavior per test:
 - more than eight calls in one turn receive too_many_tool_calls for overflow calls;
 - a raising event sink is swallowed and the final answer still returns.
 
-- [ ] **Step 6: Run safety tests and verify RED**
+- [x] **Step 6: Run safety tests and verify RED**
 
 Run:
 
@@ -416,7 +416,7 @@ Run:
 
 Expected: the newly added behaviors fail until implemented.
 
-- [ ] **Step 7: Complete bounded parallel execution**
+- [x] **Step 7: Complete bounded parallel execution**
 
 Use asyncio.gather for accepted calls from one turn and preserve input order in appended
 tool messages. Wrap each ToolRPC call in asyncio.wait_for. For parse errors and overflow
@@ -431,7 +431,7 @@ Use this exact exhausted reply shape:
 
 Event callback results may be synchronous or awaitable and must never break execution.
 
-- [ ] **Step 8: Run runtime and ToolRPC tests**
+- [x] **Step 8: Run runtime and ToolRPC tests**
 
 Run:
 
@@ -439,7 +439,7 @@ Run:
 
 Expected: all pass.
 
-- [ ] **Step 9: Commit**
+- [x] **Step 9: Commit**
 
     git add agents/core/agent_runtime.py tests/test_agent_runtime_v2.py
     git commit -m "feat(runtime): add bounded governed tool loop"
@@ -458,7 +458,7 @@ Expected: all pass.
 - Consumes: optional Agent.tool_runtime.
 - Produces: Agent.generate_response(backend, model, prompt, system, max_tokens, temperature, on_token=None) -> str.
 
-- [ ] **Step 1: Add failing disabled/enabled Agent tests**
+- [x] **Step 1: Add failing disabled/enabled Agent tests**
 
 Disabled case: attach a runtime whose enabled callable returns false and assert the
 existing fake backend generate method is called exactly once.
@@ -469,7 +469,7 @@ the tool loop and passes self.id as the trusted agent_id.
 Streaming case: call Agent.generate_response with on_token and assert tool mode calls the
 sink once with only the final answer, while disabled mode retains backend.generate_stream.
 
-- [ ] **Step 2: Run Agent tests and verify RED**
+- [x] **Step 2: Run Agent tests and verify RED**
 
 Run:
 
@@ -477,7 +477,7 @@ Run:
 
 Expected: fails because Agent has no tool_runtime/generate_response seam.
 
-- [ ] **Step 3: Implement Agent.generate_response**
+- [x] **Step 3: Implement Agent.generate_response**
 
 Initialize self.tool_runtime = None. If runtime.can_run(backend), call runtime.run and
 emit the final answer to on_token, awaiting it when needed. Otherwise retain the current
@@ -486,7 +486,7 @@ generate_stream when on_token exists and generate when it does not.
 Replace Agent.process's direct backend.generate call with generate_response inside the
 existing residency/checkpoint/timing block.
 
-- [ ] **Step 4: Route streamed orchestration through the same seam**
+- [x] **Step 4: Route streamed orchestration through the same seam**
 
 Replace only the current direct generate/generate_stream branch in
 Orchestrator._handle_input_stream with:
@@ -503,7 +503,7 @@ Orchestrator._handle_input_stream with:
 
 Do not change routing, context caching, persistence, cognition, or SSE framing.
 
-- [ ] **Step 5: Run Agent and stream regression tests**
+- [x] **Step 5: Run Agent and stream regression tests**
 
 Run:
 
@@ -511,7 +511,7 @@ Run:
 
 Expected: all pass.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
     git add agents/core/agent.py agents/core/orchestrator.py tests/test_agent_runtime_v2.py tests/test_agents_integration.py
     git commit -m "feat(runtime): share tool generation across agent paths"
@@ -532,7 +532,7 @@ Expected: all pass.
 - Produces: llm.tool_loop_max_iterations default 8.
 - Produces: every loaded agent receives the same AgentToolRuntime instance.
 
-- [ ] **Step 1: Add failing settings and wiring tests**
+- [x] **Step 1: Add failing settings and wiring tests**
 
 Assert the seeded settings values are false and 8. Build the smallest fake orchestrator
 accepted by AutonomyCoordinator.build_executor, or extract a focused private
@@ -544,7 +544,7 @@ Assert:
 - every fake agent receives one shared runtime;
 - changing fake get_setting from false to true changes runtime.can_run without rebuilding.
 
-- [ ] **Step 2: Run focused tests and verify RED**
+- [x] **Step 2: Run focused tests and verify RED**
 
 Run:
 
@@ -552,7 +552,7 @@ Run:
 
 Expected: new settings/wiring assertions fail.
 
-- [ ] **Step 3: Seed settings and wire the runtime**
+- [x] **Step 3: Seed settings and wire the runtime**
 
 Add:
 
@@ -566,7 +566,7 @@ getattr(self._orch, "intent_log", None) as the ToolRPC audit sink, build one
 AgentToolRuntime with live get_setting callables, assign it to
 self._orch.agent_tool_runtime and every self._orch.agents value.
 
-- [ ] **Step 4: Run runtime/settings/autonomy regressions**
+- [x] **Step 4: Run runtime/settings/autonomy regressions**
 
 Run:
 
@@ -574,7 +574,7 @@ Run:
 
 Expected: all pass.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
     git add agents/core/settings_db.py agents/core/autonomy_coordinator.py tests/test_agent_runtime_v2.py tests/test_settings_db.py
     git commit -m "feat(runtime): wire default-off agent tool loop"
@@ -592,7 +592,7 @@ Expected: all pass.
 - Produces: honest tracker state that distinguishes the runtime foundation from future
   file/process/browser/artifact tools.
 
-- [ ] **Step 1: Update BACKLOG without claiming full Hermes parity**
+- [x] **Step 1: Update BACKLOG without claiming full Hermes parity**
 
 Add a new approved P0 item for Agent Runtime v2 Wave 1. Mark only the shipped slice:
 provider-neutral protocol, LM Studio tool transport, governed echo/time loop, shared
@@ -601,7 +601,7 @@ normal/stream seam, default-off setting, and tests.
 Explicitly leave file/process/browser/build/media tools and browser SSE tool events open.
 Do not re-mark H20.1–H20.6 as fully end-to-end.
 
-- [ ] **Step 2: Run formatting and targeted verification**
+- [x] **Step 2: Run formatting and targeted verification**
 
 Run:
 
@@ -621,7 +621,7 @@ Run:
 
 Expected: exit 0. Record exact passed/skipped counts and any warnings.
 
-- [ ] **Step 4: Verify default-off behavior with a focused reality harness**
+- [x] **Step 4: Verify default-off behavior with a focused reality harness**
 
 Use an in-process fake LM Studio HTTP transport rather than a network model:
 
@@ -632,7 +632,7 @@ Use an in-process fake LM Studio HTTP transport rather than a network model:
 
 Add this to tests/test_agent_runtime_v2.py if not already covered and run that file fresh.
 
-- [ ] **Step 5: Review the complete diff and ownership**
+- [x] **Step 5: Review the complete diff and ownership**
 
 Run:
 
@@ -642,7 +642,7 @@ Run:
 
 Confirm no Claude-owned artifact/frontend/mobile file is changed.
 
-- [ ] **Step 6: Commit tracker updates**
+- [x] **Step 6: Commit tracker updates**
 
     git add BACKLOG.md STATUS.md docs/superpowers/plans/2026-07-10-agent-runtime-v2-wave1.md
     git commit -m "docs: track Agent Runtime v2 wave 1"

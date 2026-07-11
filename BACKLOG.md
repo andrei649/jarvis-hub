@@ -1516,6 +1516,15 @@ chain-of-thought leak / mid-sentence truncation fixed. Kill-switch:
 > H20.M2 → cablare live în `gateway`/`channel_manager` (Phase 5 completă) → H20.M1 →
 > extindere `/model` cu catalogul de provideri (Phase 4 completă).
 
+### H20 Agent Runtime v2 — model-directed ToolRPC loop (2026-07-10)
+
+> Owner-approved P0 execution slice from the Jarvis↔Hermes capability audit.
+> The original 6/6 above counts its scoped primitives, not end-to-end Hermes parity.
+
+| # | Item | S | P | Dep | Sursă |
+|---|------|---|---|-----|-------|
+| H20.R1 ✅ | **Agent Runtime v2 Wave 1 — LM Studio, default-OFF** — provider-neutral `ToolSpec`/`ToolCall`/`ToolTurn` protocol with source-compatible fallback; OpenAI-compatible LM Studio tool transport; Guardrails mediation; bounded model→ToolRPC→model loop over allow-listed `echo`/`time`, preserving trusted selected-agent identity plus contract, Action Kernel, approval and audit checks; JSON-only bounded results, iteration/fan-out limits and per-call/whole-loop deadlines; one shared `Agent.generate_response()` seam for normal and streamed turns; live `llm.tool_loop_enabled=false` and `llm.tool_loop_max_iterations=8` settings; regression and fake-LM-Studio reality-harness coverage. **Still open:** governed file/process tools; browser control and build launch/inspection; multimedia/binary artifact tools; browser SSE rendering for tool lifecycle events; cloud-provider tool-call transports; model-directed MCP discovery/execution and subagent delegation. **This is the execution spine, not a Hermes-parity claim.** | 13 | P0 | H20.1, O26-P1.1 | Hermes tool loop + owner audit 2026-07-10 |
+
 
 ---
 

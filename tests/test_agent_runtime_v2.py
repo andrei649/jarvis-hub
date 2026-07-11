@@ -5,12 +5,14 @@ import json
 import threading
 from types import SimpleNamespace
 
+import httpx
 import pytest
 
 from agents.core.agent import Agent
 from agents.core.agent_runtime import AgentToolRuntime
 from agents.core.autonomy_coordinator import AutonomyCoordinator
 from agents.core.config import JarvisConfig
+from agents.core.llm.base import LMStudioBackend
 from agents.core.llm.tool_protocol import ToolCall, ToolTurn
 from agents.core.orchestrator import Orchestrator
 from agents.core.security.secret_broker import SecretBroker
@@ -45,6 +47,35 @@ class _RepeatingBackend:
     async def generate_tool_turn(self, **kwargs):
         self.calls.append(kwargs)
         return ToolTurn(tool_calls=(self.call,), finish_reason="tool_calls")
+
+
+class _FakeLMStudioTransport:
+    """Scripted in-process HTTP transport for end-to-end LM Studio requests."""
+
+    def __init__(self, responses):
+        self.responses = list(responses)
+        self.requests = []
+
+    def __call__(self, request):
+        payload = json.loads(request.content)
+        self.requests.append(payload)
+        if not self.responses:
+            raise AssertionError("LM Studio received an unexpected extra request")
+        response = self.responses.pop(0)
+        if callable(response):
+            response = response(payload)
+        return httpx.Response(200, json=response, request=request)
+
+
+def _fake_lmstudio(*responses):
+    transport = _FakeLMStudioTransport(responses)
+    backend = LMStudioBackend.__new__(LMStudioBackend)
+    backend.base_url = "http://lm-studio.test"
+    backend.client = httpx.AsyncClient(
+        base_url=backend.base_url,
+        transport=httpx.MockTransport(transport),
+    )
+    return backend, transport
 
 
 def _call(
@@ -1009,6 +1040,235 @@ async def test_agent_generate_response_disabled_uses_legacy_generate_once():
             "temperature": 0.25,
         }
     ]
+
+
+@pytest.mark.asyncio
+async def test_reality_harness_disabled_lmstudio_uses_one_legacy_request_without_tools():
+    backend, transport = _fake_lmstudio(
+        {
+            "choices": [
+                {
+                    "finish_reason": "stop",
+                    "message": {"content": "legacy HTTP answer"},
+                }
+            ]
+        }
+    )
+    server = ToolRPCServer()
+
+    async def echo(args):
+        raise AssertionError("disabled mode must not execute ToolRPC")
+
+    server.register_tool("echo", echo)
+    agent = Agent("jarvis", {"name": "Jarvis"})
+    agent.tool_runtime = AgentToolRuntime(server, enabled=lambda: False)
+
+    try:
+        answer = await agent.generate_response(
+            backend=backend,
+            model="local-model",
+            prompt="hello over HTTP",
+            system="You are Jarvis.",
+            max_tokens=321,
+            temperature=0.25,
+        )
+    finally:
+        await backend.aclose()
+
+    assert answer == "legacy HTTP answer"
+    assert transport.responses == []
+    assert transport.requests == [
+        {
+            "model": "local-model",
+            "messages": [
+                {"role": "system", "content": "You are Jarvis."},
+                {"role": "user", "content": "hello over HTTP"},
+            ],
+            "temperature": 0.25,
+            "stream": False,
+            "max_tokens": 321,
+        }
+    ]
+
+
+@pytest.mark.asyncio
+async def test_reality_harness_enabled_lmstudio_executes_echo_and_persists_final_once():
+    def tool_turn(payload):
+        assert [tool["function"]["name"] for tool in payload["tools"]] == [
+            "echo",
+            "gated_write",
+        ]
+        return {
+            "choices": [
+                {
+                    "finish_reason": "tool_calls",
+                    "message": {
+                        "content": "",
+                        "tool_calls": [
+                            {
+                                "id": "call-echo",
+                                "type": "function",
+                                "function": {
+                                    "name": "echo",
+                                    "arguments": '{"value":"hi"}',
+                                },
+                            }
+                        ],
+                    },
+                }
+            ]
+        }
+
+    def final_turn(payload):
+        observation = json.loads(payload["messages"][-1]["content"])
+        assert observation == {
+            "ok": True,
+            "tool": "echo",
+            "result": {"echo": "hi"},
+        }
+        return {
+            "choices": [
+                {
+                    "finish_reason": "stop",
+                    "message": {"content": "echo completed"},
+                }
+            ]
+        }
+
+    backend, transport = _fake_lmstudio(tool_turn, final_turn)
+    server = ToolRPCServer()
+    handled = []
+    gated_handled = []
+
+    async def echo(args):
+        handled.append(args)
+        return {"echo": args["value"]}
+
+    async def gated_write(args):
+        gated_handled.append(args)
+        return {"written": True}
+
+    server.register_tool(
+        "echo",
+        echo,
+        description="Return one value.",
+        input_schema={
+            "type": "object",
+            "properties": {"value": {"type": "string"}},
+            "required": ["value"],
+            "additionalProperties": False,
+        },
+    )
+    server.register_tool("gated_write", gated_write, gated=True)
+    agent = Agent("jarvis", {"name": "Jarvis", "model": "local-model"})
+    agent.soul = {"content": "agent system"}
+    agent.tool_runtime = AgentToolRuntime(server, enabled=lambda: True)
+    orchestrator, _backend, completion_calls, turns = _streamed_orchestrator_for(
+        agent, backend
+    )
+    emitted = []
+
+    try:
+        answer = await orchestrator.handle_input_stream(
+            "question",
+            channel="web",
+            on_token=emitted.append,
+            session_id="runtime-reality",
+        )
+    finally:
+        await backend.aclose()
+
+    assert answer == "echo completed"
+    assert emitted == ["echo completed"]
+    assert handled == [{"value": "hi"}]
+    assert gated_handled == []
+    assert len(transport.requests) == 2
+    assert all(request["stream"] is False for request in transport.requests)
+    assert all(request["tool_choice"] == "auto" for request in transport.requests)
+    assert transport.responses == []
+    assert len(completion_calls) == 1
+    assert [turn["role"] for turn in turns] == ["user", "assistant"]
+    assert [turn["content"] for turn in turns if turn["role"] == "assistant"] == [
+        "echo completed"
+    ]
+
+
+@pytest.mark.parametrize(
+    ("tool_name", "expected_requests", "expected_answer"),
+    [
+        ("unknown_tool", 2, "unknown was blocked"),
+        (
+            "gated_write",
+            1,
+            "I paused the tool loop because this action requires approval.",
+        ),
+    ],
+)
+@pytest.mark.asyncio
+async def test_reality_harness_unknown_and_gated_tool_handlers_never_execute(
+    tool_name,
+    expected_requests,
+    expected_answer,
+):
+    first_response = {
+        "choices": [
+            {
+                "finish_reason": "tool_calls",
+                "message": {
+                    "content": "",
+                    "tool_calls": [
+                        {
+                            "id": f"call-{tool_name}",
+                            "type": "function",
+                            "function": {
+                                "name": tool_name,
+                                "arguments": '{"value":"must-not-run"}',
+                            },
+                        }
+                    ],
+                },
+            }
+        ]
+    }
+    final_response = {
+        "choices": [
+            {
+                "finish_reason": "stop",
+                "message": {"content": "unknown was blocked"},
+            }
+        ]
+    }
+    responses = [first_response]
+    if tool_name == "unknown_tool":
+        responses.append(final_response)
+    backend, transport = _fake_lmstudio(*responses)
+    handled = []
+    server = ToolRPCServer()
+
+    async def gated_write(args):
+        handled.append(args)
+        return {"written": True}
+
+    server.register_tool("gated_write", gated_write, gated=True)
+    runtime = AgentToolRuntime(server, enabled=lambda: True)
+
+    try:
+        answer = await _run(runtime, backend)
+    finally:
+        await backend.aclose()
+
+    assert answer == expected_answer
+    assert handled == []
+    assert server.allows("unknown_tool") is False
+    assert len(transport.requests) == expected_requests
+    assert transport.responses == []
+    if tool_name == "unknown_tool":
+        observation = json.loads(transport.requests[1]["messages"][-1]["content"])
+        assert observation == {
+            "ok": False,
+            "reason": "tool_not_allowed",
+            "tool": "unknown_tool",
+        }
 
 
 @pytest.mark.asyncio
