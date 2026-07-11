@@ -162,6 +162,71 @@ class AutonomyCoordinator:
             return worker.govern_enqueue(*args, **kwargs)
         return self._orch.autonomy_queue.enqueue(*args, **kwargs)
 
+    def _wire_agent_tool_runtime(self, action_kernel=None):
+        """Build the shared, default-off governed tool loop for loaded agents."""
+        # Keep imports local: AgentToolRuntime imports ToolRPCServer, while the
+        # orchestrator imports this coordinator during boot.
+        import time as _t
+
+        from .agent_runtime import AgentToolRuntime
+        from .tool_rpc import ToolRPCServer
+
+        def _get_setting(key, default):
+            getter = getattr(self._orch, "get_setting", None)
+            if not callable(getter):
+                return default
+            try:
+                return getter(key, default)
+            except Exception:
+                logger.warning("agent tool runtime setting read failed closed")
+                return default
+
+        server = ToolRPCServer(
+            secret_broker=getattr(self._orch, "secret_broker", None),
+            enqueue=self._governed_enqueue,
+            audit=getattr(self._orch, "intent_log", None),
+            kernel=action_kernel,
+        )
+
+        async def _rpc_echo(args):
+            return {"echo": args}
+
+        async def _rpc_time(args):
+            return {"now": _t.time()}
+
+        server.register_tool(
+            "echo",
+            _rpc_echo,
+            description="Return the provided values.",
+            input_schema={
+                "type": "object",
+                "properties": {"value": {"type": "string"}},
+                "required": ["value"],
+                "additionalProperties": False,
+            },
+        )
+        server.register_tool(
+            "time",
+            _rpc_time,
+            description="Return the current Unix timestamp.",
+            input_schema={
+                "type": "object",
+                "properties": {},
+                "additionalProperties": False,
+            },
+        )
+
+        runtime = AgentToolRuntime(
+            server,
+            enabled=lambda: _get_setting("llm.tool_loop_enabled", False) is True,
+            max_iterations=lambda: _get_setting("llm.tool_loop_max_iterations", 8),
+        )
+        self._orch.tool_rpc = server
+        self._orch.agent_tool_runtime = runtime
+        for agent in getattr(self._orch, "agents", {}).values():
+            agent.tool_runtime = runtime
+        return runtime
+
     def build_executor(self) -> TaskExecutor:
         """Wire task kinds to real capabilities, degrading gracefully."""
         async def _research(task):
@@ -289,23 +354,7 @@ class AutonomyCoordinator:
         # Read-only tools run inline; gated tools enqueue an ask-tier task (and
         # run via this executor only after approval). Starter allowlist is safe
         # built-ins; integrations register more (incl. gated) over time.
-        from .tool_rpc import ToolRPCServer
-        import time as _t
-        self._orch.tool_rpc = ToolRPCServer(
-            secret_broker=getattr(self._orch, "secret_broker", None),
-            enqueue=self._governed_enqueue,  # O26-P0.7 (F3): policy + inbox
-            audit=getattr(self._orch, "audit", None),
-            kernel=_action_kernel,   # ORIZONT-24 wave-3: mediate gated tools (default-off)
-        )
-
-        async def _rpc_echo(args):
-            return {"echo": args}
-
-        async def _rpc_time(args):
-            return {"now": _t.time()}
-
-        self._orch.tool_rpc.register_tool("echo", _rpc_echo)
-        self._orch.tool_rpc.register_tool("time", _rpc_time)
+        self._wire_agent_tool_runtime(action_kernel=_action_kernel)
         executor.register("toolrpc", self._orch.tool_rpc.execute)
 
         # H21.4: wire the calibration-gated autonomy hook (gated; no-op unless

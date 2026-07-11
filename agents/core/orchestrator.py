@@ -1914,6 +1914,9 @@ class Orchestrator:
         agent = Agent(bench_id, agent_dict, self.llm_router, permission_gate=self.permission_gate)
         # Propagate guardrails if available (same pattern as load_agents).
         agent.guardrails = self.security  # may be None — Agent checks truthiness
+        # Bench agents are loaded after autonomy wiring; inherit the same governed
+        # default-off runtime as agents that were present at boot.
+        agent.tool_runtime = getattr(self, "agent_tool_runtime", None)
 
         self.agents[bench_id] = agent
 

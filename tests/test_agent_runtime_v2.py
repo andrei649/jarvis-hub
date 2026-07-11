@@ -3,11 +3,13 @@
 import asyncio
 import json
 import threading
+from types import SimpleNamespace
 
 import pytest
 
 from agents.core.agent import Agent
 from agents.core.agent_runtime import AgentToolRuntime
+from agents.core.autonomy_coordinator import AutonomyCoordinator
 from agents.core.config import JarvisConfig
 from agents.core.llm.tool_protocol import ToolCall, ToolTurn
 from agents.core.orchestrator import Orchestrator
@@ -27,6 +29,10 @@ class _ScriptedBackend:
         recorded["messages"] = [dict(message) for message in kwargs["messages"]]
         self.calls.append(recorded)
         return self.turns.pop(0)
+
+
+class _ToolCapableBackend:
+    supports_tools = True
 
 
 class _RepeatingBackend:
@@ -1418,3 +1424,115 @@ async def test_streamed_orchestrator_preserves_falsey_callback_for_blank_legacy_
     assert len(completion_calls) == 1
     assert [turn["role"] for turn in turns] == ["user", "assistant"]
     assert turns[-1]["content"] == fallback
+
+
+@pytest.mark.asyncio
+async def test_autonomy_coordinator_wires_one_live_governed_agent_tool_runtime():
+    settings = {
+        "llm.tool_loop_enabled": False,
+        "llm.tool_loop_max_iterations": 8,
+    }
+    agents = {
+        "jarvis": SimpleNamespace(tool_runtime=None),
+        "athena": SimpleNamespace(tool_runtime=None),
+    }
+    class _SecretBroker:
+        @staticmethod
+        def redact(value):
+            return value
+
+    secret_broker = _SecretBroker()
+    intent_log = object()
+    action_kernel = object()
+
+    class _Orchestrator:
+        def __init__(self):
+            self.agents = agents
+            self.secret_broker = secret_broker
+            self.intent_log = intent_log
+
+        def get_setting(self, key, default=None):
+            return settings.get(key, default)
+
+    orch = _Orchestrator()
+    runtime = AutonomyCoordinator(orch)._wire_agent_tool_runtime(
+        action_kernel=action_kernel
+    )
+
+    assert runtime is orch.agent_tool_runtime
+    assert runtime._server is orch.tool_rpc
+    assert all(agent.tool_runtime is runtime for agent in orch.agents.values())
+    assert orch.tool_rpc._secrets is secret_broker
+    assert orch.tool_rpc._audit is intent_log
+    assert orch.tool_rpc._kernel is action_kernel
+    assert orch.tool_rpc.tools() == [
+        {
+            "name": "echo",
+            "gated": False,
+            "description": "Return the provided values.",
+            "input_schema": {
+                "type": "object",
+                "properties": {"value": {"type": "string"}},
+                "required": ["value"],
+                "additionalProperties": False,
+            },
+        },
+        {
+            "name": "time",
+            "gated": False,
+            "description": "Return the current Unix timestamp.",
+            "input_schema": {
+                "type": "object",
+                "properties": {},
+                "additionalProperties": False,
+            },
+        },
+    ]
+
+    assert await orch.tool_rpc.handle(
+        {"tool": "echo", "args": {"value": "hello"}}, actor="jarvis"
+    ) == {
+        "ok": True,
+        "tool": "echo",
+        "result": {"echo": {"value": "hello"}},
+    }
+    time_result = await orch.tool_rpc.handle({"tool": "time", "args": {}})
+    assert time_result["ok"] is True
+    assert isinstance(time_result["result"]["now"], float)
+
+    backend = _ToolCapableBackend()
+    assert runtime.can_run(backend) is False
+    settings["llm.tool_loop_enabled"] = True
+    assert runtime.can_run(backend) is True
+    settings["llm.tool_loop_enabled"] = "false"
+    assert runtime.can_run(backend) is False
+
+    settings["llm.tool_loop_enabled"] = True
+    settings["llm.tool_loop_max_iterations"] = 0
+    assert runtime._max_iterations() == 0
+    assert runtime._iteration_limit() == 1
+
+
+def test_agent_tool_runtime_wiring_defaults_safely_without_get_setting():
+    orch = SimpleNamespace(agents={})
+
+    runtime = AutonomyCoordinator(orch)._wire_agent_tool_runtime()
+
+    assert runtime is orch.agent_tool_runtime
+    assert runtime.can_run(_ToolCapableBackend()) is False
+    assert runtime._max_iterations() == 8
+    assert runtime._iteration_limit() == 8
+
+
+def test_agent_tool_runtime_wiring_can_be_rebuilt_without_stale_agent_references():
+    agent = SimpleNamespace(tool_runtime=None)
+    orch = SimpleNamespace(agents={"jarvis": agent})
+    coordinator = AutonomyCoordinator(orch)
+
+    first_runtime = coordinator._wire_agent_tool_runtime()
+    second_runtime = coordinator._wire_agent_tool_runtime()
+
+    assert second_runtime is not first_runtime
+    assert orch.agent_tool_runtime is second_runtime
+    assert agent.tool_runtime is second_runtime
+    assert orch.tool_rpc is second_runtime._server
