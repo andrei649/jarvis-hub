@@ -140,3 +140,29 @@ def test_draft_fields_are_bounded_before_entering_approval_queue():
     assert len(d["fields"]["title"]) == wc._STR_CAP
     assert len(d["fields"]["description"]) == wc._LONG_CAP
 
+class _StopsAfterHundred(list):
+    def __iter__(self):
+        for index in range(100):
+            yield index
+        raise AssertionError("connector copied past its field bound")
+
+
+def test_draft_sanitization_consumes_only_bounded_row_values():
+    values = _StopsAfterHundred(range(101))
+    d = wc.draft_task_payload(
+        "gsheets",
+        "append_row",
+        {"spreadsheet_id": "S", "range": "A1", "values": values},
+    )
+    assert len(d["fields"]["values"]) == 100
+
+
+def test_trello_descriptor_names_both_execute_time_credentials():
+    d = wc.draft_task_payload(
+        "trello", "create_card", {"list_id": "L", "name": "card"}
+    )
+    assert d["credential_refs"] == {
+        "token": "{{secret:trello_token}}",
+        "api_key": "{{secret:trello_api_key}}",
+    }
+
