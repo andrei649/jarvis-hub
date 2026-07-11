@@ -55,3 +55,25 @@ give a reasonable window to ship a fix before any public write-up.
 - The full trust docs already ship: [`docs/THREAT_MODEL.md`](docs/THREAT_MODEL.md) and
   [`docs/PRIVACY.md`](docs/PRIVACY.md) in the repo; `NOTICE` + the SBOM are generated
   into every release bundle (`scripts/build_release.sh`, H23.19 ✅).
+
+## API keys & cloud calls (data locality)
+
+The most common question from testers: *"does my API key — and my data — go through your
+servers?"* **No.** There is no owner-operated backend or relay:
+
+- **Your keys stay on your machine.** Cloud provider keys live only in your local `.env`
+  (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `GEMINI_API_KEY`, `OPENROUTER_API_KEY`, …). They are
+  read at process start and used to call the provider **directly** from your box. They are
+  never sent to us, logged to a remote service, or proxied through any third party.
+- **Local-first by default.** Out of the box Jarvis routes to your local LM Studio / Ollama;
+  cloud is **opt-in, per-agent**. The strict-local agents (`frigga`, `ultron`, `howard`) never
+  leave the machine and fail closed rather than fall back to cloud.
+- **Verify it yourself.** `grep -rn "api_key\|API_KEY" agents/core/llm/` shows every key read is
+  a direct provider call; the network-egress panel (`GET /api/admin/network/calls`, HUD →
+  Console → Network) records outbound calls so you can watch a `LOCAL_ONLY` agent make **zero**.
+- **What can leave the machine** (only for cloud-routed agents, and only their prompt/response)
+  is documented in [`docs/PRIVACY.md`](docs/PRIVACY.md); first-party analytics are cookieless and
+  local (Plausible-style), never third-party.
+- **Subscriptions ≠ API keys.** A ChatGPT Plus / Claude Pro subscription is **not** an API key
+  and cannot be used here — Jarvis needs a provider **API key** (or a local model). See the
+  [alpha FAQ](marketing/alpha-testing/FAQ.md) for the plain-language version.

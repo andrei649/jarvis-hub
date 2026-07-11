@@ -39,7 +39,11 @@ def test_active_posture_is_a_copy():
 def test_list_profiles_shape():
     out = sp.list_profiles()
     assert out["active"] == "balanced" and out["default"] == "balanced"
-    assert set(out["profiles"]) == {"balanced", "gaming", "ai", "multimedia", "admin"}
+    assert set(out["profiles"]) == {"balanced", "gaming", "ai", "multimedia", "admin", "headless"}
+    # headless = lean server/TUI/low-VRAM posture: autonomy on, heavy UI features off
+    hp = out["profiles"]["headless"]
+    assert hp["heavy_features"] is False and hp["background_autonomy"] is True
+    assert hp["model_tier"] == "local-light"
 
 
 # ── the live consumer: run_heartbeat is paused under a no-autonomy profile ──────
