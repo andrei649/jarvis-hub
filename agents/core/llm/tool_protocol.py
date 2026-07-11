@@ -2,7 +2,7 @@
 
 import json
 from dataclasses import dataclass, field
-from typing import Any, Optional
+from typing import Any
 
 
 @dataclass(frozen=True)
@@ -29,8 +29,8 @@ class ToolCall:
     id: str
     name: str
     raw_arguments: str = "{}"
-    arguments: Optional[dict[str, Any]] = field(default_factory=dict)
-    parse_error: Optional[str] = None
+    arguments: dict[str, Any] | None = field(default_factory=dict)
+    parse_error: str | None = None
 
     def as_openai(self) -> dict[str, Any]:
         return {
@@ -47,7 +47,7 @@ class ToolCall:
 class ToolTurn:
     content: str = ""
     tool_calls: tuple[ToolCall, ...] = ()
-    finish_reason: Optional[str] = None
+    finish_reason: str | None = None
 
     def as_assistant_message(self) -> dict[str, Any]:
         message: dict[str, Any] = {"role": "assistant", "content": self.content}
