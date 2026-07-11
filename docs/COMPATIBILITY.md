@@ -74,11 +74,13 @@ pre-upgrade backup (H23.8) is your rollback.
 | Component | Supported | Notes |
 |-----------|-----------|-------|
 | **Python** | **3.12+** | Hard floor: a core dependency (`numpy >= 2.5`) requires Python ≥ 3.12. 3.11 and older are **not** supported. |
-| **OS (hub)** | Linux · macOS · Windows | Pure-Python + FastAPI. Service templates: [`deploy/`](../deploy/). The CI matrix runs Ubuntu + Windows. |
+| **OS (hub)** | Linux · macOS (incl. **Apple Silicon M1–M4**) · Windows 11 | Pure-Python + FastAPI. `install.sh` covers macOS/Linux; Windows has a one-click launcher. On Apple Silicon, run local models via LM Studio/Ollama on unified memory (owner M-series smoke = FB1). The CI matrix runs Ubuntu + Windows; macOS is community-validated. Windows 10 is untested (Win 11 is the supported baseline). Service templates: [`deploy/`](../deploy/). |
 | **Local LLM** | LM Studio or Ollama | Local-first; cloud is opt-in, per-agent. |
+| **Model providers** | LM Studio · Ollama · Anthropic · OpenAI · Gemini · **OpenRouter** · any **OpenAI-compatible** endpoint | Keys stay local (`.env`), called directly — no owner relay (see [`SECURITY.md`](../SECURITY.md)). Switch with `/model`; OpenRouter via `agents/core/llm/openrouter.py`. A **subscription (ChatGPT Plus / Claude Pro) is not an API key** and cannot be used. |
+| **Usage profile** | `balanced` (default) · `gaming` · `ai` · `multimedia` · `admin` · **`headless`** | `JARVIS_SYSTEM_PROFILE=…`. `headless` = lean server/TUI/low-VRAM (8GB) posture: heavy media features off, autonomy on, local-light models. |
 | **Node.js** | 20+ | Only for the optional WorldView (4D OSINT) sub-app. The hub runs without it. |
 | **Docker** | optional | Required only for the containerized code **sandbox** and the WorldView infra. |
-| **GPU** | optional | CPU/quantized models work; GPU-gated features (fine-tune, speculative decoding) are a separate track (0.18). |
+| **GPU** | optional | CPU/quantized models work; GPU-gated features (fine-tune, speculative decoding) are a separate track (0.18). Measured per-tier throughput: [`HARDWARE_BENCHMARKS.md`](HARDWARE_BENCHMARKS.md). |
 
 ## See also
 
