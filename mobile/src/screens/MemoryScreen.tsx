@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
+  Image,
   Pressable,
   RefreshControl,
   ScrollView,
@@ -11,12 +12,17 @@ import {
 } from 'react-native';
 import {
   ApiError,
+  deleteCanvasArtifact,
+  fetchCanvasArtifacts,
   fetchKgEntities,
   fetchKgEntity,
   fetchKgFactHistory,
   fetchKgFacts,
   fetchMemory,
   fetchNotes,
+  normalizeBaseUrl,
+  pinCanvasArtifact,
+  type CanvasArtifact,
   type KgEntityResponse,
   type KnowledgeEntity,
   type KnowledgeFact,
@@ -25,6 +31,7 @@ import {
   type MemoryTurn,
   type NotesResponse,
 } from '../api/client';
+import { Markdown } from '../markdown/Markdown';
 import { useServer } from '../context/ServerContext';
 import { theme } from '../theme';
 
@@ -64,7 +71,7 @@ function SummaryCell({ label, value }: { label: string; value: string | number }
   );
 }
 
-type ViewMode = 'turns' | 'graph';
+type ViewMode = 'turns' | 'graph' | 'artifacts';
 
 function SegmentButton({
   label,
@@ -302,6 +309,158 @@ function GraphView({
   );
 }
 
+/* ── Artifacts (H18.20) — governed Canvas browsing, same safety discipline as
+   the browser Artifacts tab: React Native Text nodes are inert by construction;
+   same-origin image paths resolve against the configured hub; remote http(s)
+   images sit behind an explicit consent tap; anything else stays plain text. */
+
+function cleanUrl(u: unknown): string {
+  // browsers strip TAB/LF/CR before URL parsing — normalize identically before classifying
+  return String(u ?? '').replace(/[\t\n\r]/g, '');
+}
+function isSameOriginPath(u: unknown): boolean {
+  const s = cleanUrl(u);
+  return s.startsWith('/') && !s.startsWith('//') && !s.startsWith('/\\');
+}
+function isRemoteHttp(u: unknown): boolean {
+  return /^https?:\/\//i.test(cleanUrl(u));
+}
+
+function artifactTime(ts?: number): string {
+  if (!ts || !Number.isFinite(ts)) return '';
+  const date = new Date(ts * 1000);
+  if (Number.isNaN(date.getTime())) return '';
+  return date.toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+}
+
+function ArtifactImage({ src, alt, baseUrl }: { src: string; alt: string; baseUrl: string }) {
+  const [consented, setConsented] = useState(false);
+  const url = cleanUrl(src);
+  if (isSameOriginPath(url)) {
+    return <Image style={styles.artifactImage} source={{ uri: baseUrl + url }} accessibilityLabel={alt} />;
+  }
+  if (!isRemoteHttp(url)) return <Text style={styles.contentText}>{url}</Text>;
+  if (!consented) {
+    return (
+      <Pressable style={styles.artifactConsent} onPress={() => setConsented(true)}>
+        <Text style={styles.artifactConsentText}>Remote image — tap to load</Text>
+        <Text style={styles.kgRowMeta}>{url}</Text>
+      </Pressable>
+    );
+  }
+  return <Image style={styles.artifactImage} source={{ uri: url }} accessibilityLabel={alt} />;
+}
+
+function ArtifactBody({ artifact, baseUrl }: { artifact: CanvasArtifact; baseUrl: string }) {
+  const p = artifact.payload || {};
+  const title = typeof p.title === 'string' && p.title ? p.title : '';
+  const titleNode = title ? <Text style={styles.artifactTitle}>{title}</Text> : null;
+  switch (artifact.type) {
+    case 'text':
+      return (
+        <>
+          {titleNode}
+          <Text style={styles.contentText}>{String(p.body ?? '')}</Text>
+        </>
+      );
+    case 'markdown':
+      return (
+        <>
+          {titleNode}
+          <Markdown text={String(p.body ?? '')} />
+        </>
+      );
+    case 'list': {
+      const items = Array.isArray(p.items) ? p.items : [];
+      return (
+        <>
+          {titleNode}
+          {items.map((it, i) => (
+            <Text key={i} style={styles.contentText}>• {String(it)}</Text>
+          ))}
+        </>
+      );
+    }
+    case 'link': {
+      // display-only on mobile: the label + URL as inert text (no auto-open)
+      const label = String(p.label || p.title || p.url || '');
+      const url = cleanUrl(p.url);
+      return (
+        <>
+          <Text style={styles.contentText}>{label}</Text>
+          {url && url !== label ? <Text style={styles.kgRowMeta}>{url}</Text> : null}
+        </>
+      );
+    }
+    case 'metric':
+      return (
+        <View style={styles.artifactMetric}>
+          <Text style={styles.kgRowMeta}>{String(p.label ?? '')}</Text>
+          <Text style={styles.artifactMetricValue}>{String(p.value ?? '')}</Text>
+          {p.delta ? <Text style={styles.artifactMetricDelta}>{String(p.delta)}</Text> : null}
+        </View>
+      );
+    case 'table': {
+      const cols = Array.isArray(p.columns) ? p.columns.map(String) : [];
+      const rows = Array.isArray(p.rows) ? p.rows : [];
+      return (
+        <>
+          {titleNode}
+          {cols.length ? <Text style={styles.artifactTableHead}>{cols.join(' · ')}</Text> : null}
+          {rows.map((row, i) => (
+            <Text key={i} style={styles.contentText}>
+              {(Array.isArray(row) ? row : []).map(String).join(' · ')}
+            </Text>
+          ))}
+        </>
+      );
+    }
+    case 'image_ref':
+      return (
+        <>
+          {titleNode}
+          <ArtifactImage src={String(p.src ?? '')} alt={String(p.alt || title || 'artifact image')} baseUrl={baseUrl} />
+        </>
+      );
+    default:
+      // future/unknown types stay inert: a JSON snapshot as plain text
+      return <Text style={styles.contentText}>{JSON.stringify(p)}</Text>;
+  }
+}
+
+function ArtifactCard({
+  artifact,
+  baseUrl,
+  onPin,
+  onDelete,
+}: {
+  artifact: CanvasArtifact;
+  baseUrl: string;
+  onPin: () => void;
+  onDelete: () => void;
+}) {
+  const stamp = artifactTime(artifact.created_at);
+  return (
+    <View style={styles.card}>
+      <View style={styles.cardTop}>
+        <Text style={[styles.role, { color: theme.accent }]}>{artifact.agent.toUpperCase()}</Text>
+        <Text style={styles.meta}>{artifact.type}</Text>
+        {artifact.pinned ? <Text style={styles.artifactPinned}>◆ pinned</Text> : null}
+        {stamp ? <Text style={styles.stamp}>{stamp}</Text> : null}
+      </View>
+      <ArtifactBody artifact={artifact} baseUrl={baseUrl} />
+      <View style={styles.artifactActions}>
+        <Pressable style={styles.artifactBtn} onPress={onPin} hitSlop={6}>
+          <Text style={styles.artifactBtnText}>{artifact.pinned ? 'unpin' : 'pin'}</Text>
+        </Pressable>
+        <Pressable style={styles.artifactBtn} onPress={onDelete} hitSlop={6}>
+          <Text style={[styles.artifactBtnText, styles.artifactBtnDanger]}>delete</Text>
+        </Pressable>
+      </View>
+    </View>
+  );
+}
+
 export function MemoryScreen({ onGoToSettings }: { onGoToSettings: () => void }) {
   const { config, configured } = useServer();
   const [mode, setMode] = useState<ViewMode>('turns');
@@ -318,6 +477,52 @@ export function MemoryScreen({ onGoToSettings }: { onGoToSettings: () => void })
   const [kgHistory, setKgHistory] = useState<KnowledgeFact[]>([]);
   const [kgError, setKgError] = useState<string | null>(null);
   const [kgLoading, setKgLoading] = useState(false);
+  const [artifacts, setArtifacts] = useState<CanvasArtifact[]>([]);
+  const [artifactsError, setArtifactsError] = useState<string | null>(null);
+  const [artifactsLoading, setArtifactsLoading] = useState(false);
+  const [artifactsLoaded, setArtifactsLoaded] = useState(false);
+
+  const loadArtifacts = useCallback(async () => {
+    if (!configured) return;
+    setArtifactsLoading(true);
+    setArtifactsError(null);
+    try {
+      const res = await fetchCanvasArtifacts(config);
+      setArtifacts(res.elements);
+      setArtifactsLoaded(true);
+    } catch (err) {
+      setArtifactsError(err instanceof ApiError ? err.message : 'Failed to load artifacts');
+    } finally {
+      setArtifactsLoading(false);
+    }
+  }, [config, configured]);
+
+  const togglePinArtifact = useCallback(
+    async (artifact: CanvasArtifact) => {
+      try {
+        const updated = await pinCanvasArtifact(config, artifact.id, !artifact.pinned);
+        const pinned = updated ? updated.pinned : !artifact.pinned;
+        setArtifacts((prev) => prev.map((a) => (a.id === artifact.id ? { ...a, pinned } : a)));
+        setArtifactsError(null);
+      } catch {
+        setArtifactsError('Pin change failed — refresh and try again.');
+      }
+    },
+    [config],
+  );
+
+  const removeArtifact = useCallback(
+    async (artifact: CanvasArtifact) => {
+      try {
+        await deleteCanvasArtifact(config, artifact.id);
+        setArtifacts((prev) => prev.filter((a) => a.id !== artifact.id));
+        setArtifactsError(null);
+      } catch {
+        setArtifactsError('Delete failed — refresh and try again.');
+      }
+    },
+    [config],
+  );
 
   const loadTurns = useCallback(async () => {
     if (!configured) return;
@@ -412,6 +617,10 @@ export function MemoryScreen({ onGoToSettings }: { onGoToSettings: () => void })
     if (mode === 'graph') void loadGraph();
   }, [loadGraph, mode]);
 
+  useEffect(() => {
+    if (mode === 'artifacts') void loadArtifacts();
+  }, [loadArtifacts, mode]);
+
   const turns = memory?.turns ?? [];
   const summary = useMemo(() => {
     const noteChars = notes?.content?.length ?? 0;
@@ -421,8 +630,9 @@ export function MemoryScreen({ onGoToSettings }: { onGoToSettings: () => void })
 
   if (!configured) return <EmptyState onGoToSettings={onGoToSettings} />;
 
-  const refreshing = mode === 'graph' ? kgLoading : loading;
-  const refresh = mode === 'graph' ? loadGraph : loadTurns;
+  const refreshing = mode === 'graph' ? kgLoading : mode === 'artifacts' ? artifactsLoading : loading;
+  const refresh = mode === 'graph' ? loadGraph : mode === 'artifacts' ? loadArtifacts : loadTurns;
+  const hubBase = normalizeBaseUrl(config.baseUrl);
 
   return (
     <ScrollView
@@ -433,9 +643,48 @@ export function MemoryScreen({ onGoToSettings }: { onGoToSettings: () => void })
       <View style={styles.segments}>
         <SegmentButton label="Turns" active={mode === 'turns'} onPress={() => setMode('turns')} />
         <SegmentButton label="Graph" active={mode === 'graph'} onPress={() => setMode('graph')} />
+        <SegmentButton label="Artifacts" active={mode === 'artifacts'} onPress={() => setMode('artifacts')} />
       </View>
 
-      {mode === 'turns' ? (
+      {mode === 'artifacts' ? (
+        <>
+          <View style={styles.summary}>
+            <SummaryCell label="artifacts" value={artifacts.length} />
+            <SummaryCell label="pinned" value={artifacts.filter((a) => a.pinned).length} />
+          </View>
+
+          {artifactsError && (
+            <View style={styles.errorBox}>
+              <Text style={styles.errorText}>{artifactsError}</Text>
+            </View>
+          )}
+
+          {artifactsLoading && artifacts.length === 0 && (
+            <View style={styles.loading}>
+              <ActivityIndicator color={theme.accent} />
+            </View>
+          )}
+
+          {artifacts.map((artifact) => (
+            <ArtifactCard
+              key={artifact.id}
+              artifact={artifact}
+              baseUrl={hubBase}
+              onPin={() => void togglePinArtifact(artifact)}
+              onDelete={() => void removeArtifact(artifact)}
+            />
+          ))}
+
+          {!artifactsLoading && artifactsLoaded && artifacts.length === 0 && !artifactsError && (
+            <View style={styles.clearBox}>
+              <Text style={styles.clearTitle}>No artifacts yet</Text>
+              <Text style={styles.clearText}>
+                Save an assistant reply from Chat, or let an agent post to the canvas.
+              </Text>
+            </View>
+          )}
+        </>
+      ) : mode === 'turns' ? (
         <>
           <View style={styles.summary}>
             <SummaryCell label="turns" value={turns.length} />
@@ -609,4 +858,32 @@ const styles = StyleSheet.create({
   emptyBody: { color: theme.textDim, fontSize: 15, textAlign: 'center', marginBottom: 24 },
   cta: { paddingHorizontal: 24, paddingVertical: 12, borderRadius: 24, backgroundColor: theme.accent },
   ctaText: { color: '#02121b', fontWeight: '700', fontSize: 15 },
+  artifactTitle: { color: theme.text, fontSize: 14, fontWeight: '700', marginBottom: 4 },
+  artifactPinned: { color: theme.warn, fontSize: 11, marginLeft: 8 },
+  artifactMetric: { flexDirection: 'row', alignItems: 'baseline', gap: 8 },
+  artifactMetricValue: { color: theme.accent, fontSize: 22, fontWeight: '700' },
+  artifactMetricDelta: { color: theme.ok, fontSize: 12 },
+  artifactTableHead: { color: theme.textDim, fontSize: 12, fontWeight: '700', textTransform: 'uppercase', marginBottom: 2 },
+  artifactImage: { width: '100%', height: 180, borderRadius: 8, marginTop: 6, resizeMode: 'contain', backgroundColor: '#02070d' },
+  artifactConsent: {
+    borderWidth: 1,
+    borderColor: theme.border,
+    borderStyle: 'dashed',
+    borderRadius: 8,
+    padding: 14,
+    marginTop: 6,
+    alignItems: 'center',
+    gap: 4,
+  },
+  artifactConsentText: { color: theme.textDim, fontSize: 13 },
+  artifactActions: { flexDirection: 'row', gap: 10, marginTop: 10 },
+  artifactBtn: {
+    borderWidth: 1,
+    borderColor: theme.border,
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 5,
+  },
+  artifactBtnText: { color: theme.textDim, fontSize: 12, fontWeight: '600' },
+  artifactBtnDanger: { color: theme.danger },
 });
