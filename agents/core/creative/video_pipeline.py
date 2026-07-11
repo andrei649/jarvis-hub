@@ -52,9 +52,9 @@ _MAX_PARAM_TEXT = 200
 def _num(v, default: float = 0.0) -> float:
     try:
         n = float(v)
-    except (TypeError, ValueError):
+    except (TypeError, ValueError, OverflowError):
         return default
-    return n if n >= 0 else default
+    return n if math.isfinite(n) and n >= 0 else default
 
 
 def _s(v, limit: int = 200) -> str:
