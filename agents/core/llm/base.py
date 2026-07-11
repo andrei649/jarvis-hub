@@ -8,9 +8,11 @@ import json
 import logging
 import re
 from abc import ABC, abstractmethod
-from typing import Callable
+from typing import Any, Callable
 
 import httpx
+
+from .tool_protocol import ToolSpec, ToolTurn, parse_openai_tool_calls
 
 logger = logging.getLogger("jarvis.llm.base")
 
@@ -255,12 +257,47 @@ async def _emit(on_token: Callable, text: str) -> None:
 # ── Abstract base ─────────────────────────────────────────────────────────────
 
 class LLMBackend(ABC):
+    supports_tools = False
+
     @abstractmethod
     async def generate(
         self, model: str, prompt: str, system: str = "",
         max_tokens: int = 1024, temperature: float = 0.7
     ) -> str:
         ...
+
+    async def generate_tool_turn(
+        self,
+        model: str,
+        messages: list[dict[str, Any]],
+        tools: list[ToolSpec],
+        max_tokens: int = 1024,
+        temperature: float = 0.7,
+    ) -> ToolTurn:
+        """Fall back to text generation for backends without tool support."""
+        system = "\n\n".join(
+            message["content"]
+            for message in messages
+            if message.get("role") == "system"
+            and isinstance(message.get("content"), str)
+        )
+        prompt = next(
+            (
+                message["content"]
+                for message in reversed(messages)
+                if message.get("role") in {"user", "tool"}
+                and isinstance(message.get("content"), str)
+            ),
+            "",
+        )
+        content = await self.generate(
+            model=model,
+            prompt=prompt,
+            system=system,
+            max_tokens=max_tokens,
+            temperature=temperature,
+        )
+        return ToolTurn(content=content)
 
     async def warm_up(self, model: str) -> bool:
         """Preload *model* with a minimal generation so the first real request
@@ -328,8 +365,32 @@ class LLMBackend(ABC):
 
 # ── LM Studio ─────────────────────────────────────────────────────────────────
 
+def _finalize_lmstudio_message(
+    message: dict[str, Any],
+    finish_reason: Any,
+    model: str,
+) -> str:
+    """Prefer visible content, then a cleanly finished reasoning-only answer."""
+    answer = strip_thinking(message.get("content", "") or "")
+    if answer:
+        return answer
+    if finish_reason == "length":
+        # FP: "max_tokens" is a context-size note; only the model name is logged, no secret.
+        # nosemgrep: python.lang.security.audit.logging.logger-credential-leak.python-logger-credential-disclosure
+        logger.warning(
+            "LM Studio truncated at max_tokens before an answer (model=%s); "
+            "the model filled its context before answering — load a larger-context "
+            "model in LM Studio (or, if llm.max_tokens is set to a manual cap, raise it)",
+            model,
+        )
+        return ""
+    return strip_thinking(message.get("reasoning_content", "") or "")
+
+
 class LMStudioBackend(LLMBackend):
     """LM Studio local server (GPU-accelerated on Windows)."""
+
+    supports_tools = True
 
     def __init__(self, base_url: str = "http://localhost:1234"):
         self.base_url = base_url
@@ -361,28 +422,51 @@ class LMStudioBackend(LLMBackend):
             choice = data["choices"][0]
             msg = choice.get("message", {})
             finish = choice.get("finish_reason")
-            answer = strip_thinking(msg.get("content", "") or "")
-            if answer:
-                return answer
-            # No answer in `content`. This happens two ways:
-            #  - The model puts its whole reply in `reasoning_content` (legit) —
-            #    surface it only when generation actually finished.
-            #  - Generation was truncated at max_tokens mid-thought (finish ==
-            #    "length"): there is no answer yet, only chain-of-thought. Never
-            #    surface that — it is exactly the leak we are guarding against.
-            if finish == "length":
-                # FP: "max_tokens" is a context-size note; only the model name is logged, no secret.
-                # nosemgrep: python.lang.security.audit.logging.logger-credential-leak.python-logger-credential-disclosure
-                logger.warning(
-                    "LM Studio truncated at max_tokens before an answer (model=%s); "
-                    "the model filled its context before answering — load a larger-context "
-                "model in LM Studio (or, if llm.max_tokens is set to a manual cap, raise it)",
-                    model,
-                )
-                return ""
-            return strip_thinking(msg.get("reasoning_content", "") or "")
+            return _finalize_lmstudio_message(msg, finish, model)
         except Exception as e:
             return local_backend_degraded_reply("LM Studio", f"LM Studio ({self.base_url})", e)
+
+    async def generate_tool_turn(
+        self,
+        model: str,
+        messages: list[dict[str, Any]],
+        tools: list[ToolSpec],
+        max_tokens: int = 1024,
+        temperature: float = 0.7,
+    ) -> ToolTurn:
+        payload = {
+            "model": model,
+            "messages": messages,
+            "temperature": temperature,
+            "stream": False,
+            "tools": [tool.as_openai() for tool in tools],
+            "tool_choice": "auto",
+        }
+        if not is_auto_max_tokens(max_tokens):
+            payload["max_tokens"] = max_tokens
+        try:
+            resp = await self.client.post("/v1/chat/completions", json=payload)
+            resp.raise_for_status()
+            choice = resp.json()["choices"][0]
+            message = choice.get("message", {})
+            finish = choice.get("finish_reason")
+            tool_calls = parse_openai_tool_calls(message.get("tool_calls", []) or [])
+            content = (
+                strip_thinking(message.get("content", "") or "")
+                if tool_calls
+                else _finalize_lmstudio_message(message, finish, model)
+            )
+            return ToolTurn(
+                content=content,
+                tool_calls=tool_calls,
+                finish_reason=finish,
+            )
+        except Exception as e:
+            return ToolTurn(
+                content=local_backend_degraded_reply(
+                    "LM Studio", f"LM Studio ({self.base_url})", e
+                )
+            )
 
     async def generate_stream(
         self, model: str, prompt: str, system: str = "",

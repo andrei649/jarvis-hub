@@ -71,6 +71,25 @@ def test_promote_bench_agent_returns_true_and_registers(tmp_path, monkeypatch):
     assert agent.name == "Bruce"
 
 
+def test_promote_bench_agent_inherits_shared_agent_tool_runtime(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("JARVIS_HOME", str(tmp_path / "memory_logs"))
+    (tmp_path / "agents" / "_system").mkdir(parents=True)
+    import shutil
+    shutil.copy(
+        str(repo_root / "agents" / "_system" / "agents.yaml"),
+        str(tmp_path / "agents" / "_system" / "agents.yaml"),
+    )
+    cfg = JarvisConfig(path=str(tmp_path / "agents" / "_system" / "agents.yaml"))
+    orch = Orchestrator(cfg)
+    shared_runtime = object()
+    orch.agent_tool_runtime = shared_runtime
+
+    assert orch.promote_bench_agent("bruce") is True
+
+    assert orch.agents["bruce"].tool_runtime is shared_runtime
+
+
 def test_promote_bench_agent_rejects_path_traversal(tmp_path, monkeypatch):
     """BUG-9: a bench_id that isn't a plain identifier is rejected (no path escape)."""
     monkeypatch.chdir(tmp_path)

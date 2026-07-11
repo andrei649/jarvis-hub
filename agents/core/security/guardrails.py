@@ -2,12 +2,14 @@
 guardrails.py — Security-aware LLM call wrapper with scan/redact/block.
 """
 
+from dataclasses import replace
 import logging
-from typing import Callable
+from typing import Any, Callable
 
+from ..llm.base import LLMBackend
+from ..llm.tool_protocol import ToolSpec, ToolTurn
 from .scanner import PIIScanner, SecretScanner
 from .types import RedactionMode, ScanResult
-from ..llm.base import LLMBackend
 
 logger = logging.getLogger("jarvis.security")
 
@@ -29,6 +31,10 @@ class GuardrailsEngine:
         self._mode = mode
         self._scan_input = scan_input
         self._scan_output = scan_output
+
+    @property
+    def supports_tools(self) -> bool:
+        return self._backend.supports_tools
 
     def _scan_text(self, text: str) -> ScanResult:
         merged = ScanResult()
@@ -66,6 +72,41 @@ class GuardrailsEngine:
             )
 
         return text
+
+    async def generate_tool_turn(
+        self,
+        model: str,
+        messages: list[dict[str, Any]],
+        tools: list[ToolSpec],
+        max_tokens: int = 1024,
+        temperature: float = 0.7,
+    ) -> ToolTurn:
+        guarded_messages = [dict(message) for message in messages]
+        if self._scan_input:
+            for message in guarded_messages:
+                content = message.get("content")
+                if isinstance(content, str):
+                    result = self._scan_text(content)
+                    if not result.clean:
+                        message["content"] = self._handle_findings(
+                            content, result, "input"
+                        )
+
+        turn = await self._backend.generate_tool_turn(
+            model=model,
+            messages=guarded_messages,
+            tools=tools,
+            max_tokens=max_tokens,
+            temperature=temperature,
+        )
+
+        content = turn.content
+        if self._scan_output and content:
+            result = self._scan_text(content)
+            if not result.clean:
+                content = self._handle_findings(content, result, "output")
+
+        return replace(turn, content=content)
 
     async def generate(self, model: str, prompt: str, system: str = "",
                        max_tokens: int = 1024, temperature: float = 0.7) -> str:

@@ -114,6 +114,11 @@ def test_agent_guardrails_defaults_to_none():
     assert agent.guardrails is None
 
 
+def test_agent_tool_runtime_defaults_to_none():
+    agent = Agent("jarvis", {"name": "Jarvis"}, _FakeRouter())
+    assert agent.tool_runtime is None
+
+
 class _RaisingBackend:
     async def generate(self, model="", prompt="", system="", **kwargs):
         raise RuntimeError("backend down")

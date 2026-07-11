@@ -7,6 +7,7 @@ skills system, checkpointing, agent handoff, promotion/demotion.
 import asyncio
 import contextvars
 import hashlib
+import inspect
 import logging
 import importlib
 import os
@@ -1186,20 +1187,15 @@ class Orchestrator:
                     backend._use_cache = ""
 
                 t_s0 = time.perf_counter()
-                if on_token and hasattr(backend, "generate_stream"):
-                    response = await backend.generate_stream(
-                        model=model, prompt=prompt,
-                        system=system_prompt,
-                        max_tokens=eff_max_tokens, temperature=temperature,
-                        on_token=on_token,
-                    )
-                else:
-                    response = await backend.generate(
-                        model=model, prompt=prompt, system=system_prompt,
-                        max_tokens=eff_max_tokens, temperature=temperature,
-                    )
-                    if on_token:
-                        on_token(response)
+                response = await agent.generate_response(
+                    backend=backend,
+                    model=model,
+                    prompt=prompt,
+                    system=system_prompt,
+                    max_tokens=eff_max_tokens,
+                    temperature=temperature,
+                    on_token=on_token,
+                )
                 synthesized = response
                 break
 
@@ -1209,7 +1205,9 @@ class Orchestrator:
         if not (synthesized or "").strip():
             synthesized = "My reply was cut short before I finished, sir — the model ran out of context while thinking. Try again, simplify the request, or load a larger-context model in LM Studio."
             if on_token:
-                on_token(synthesized)
+                emitted = on_token(synthesized)
+                if inspect.isawaitable(emitted):
+                    await emitted
         _stream_responses = {agent_id: synthesized} if agent_id else {}
         t_synthesize = int((time.perf_counter() - t_s0) * 1000)
         await self._complete_llm_turn(
@@ -1916,6 +1914,9 @@ class Orchestrator:
         agent = Agent(bench_id, agent_dict, self.llm_router, permission_gate=self.permission_gate)
         # Propagate guardrails if available (same pattern as load_agents).
         agent.guardrails = self.security  # may be None — Agent checks truthiness
+        # Bench agents are loaded after autonomy wiring; inherit the same governed
+        # default-off runtime as agents that were present at boot.
+        agent.tool_runtime = getattr(self, "agent_tool_runtime", None)
 
         self.agents[bench_id] = agent
 

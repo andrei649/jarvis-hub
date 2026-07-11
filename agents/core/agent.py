@@ -3,6 +3,7 @@ agent.py — Single agent runtime. Loads SOUL.md, manages model calls,
 heartbeat, checkpointing, skill generation, and promotion/demotion tracking.
 """
 
+import inspect
 import logging
 import time
 from pathlib import Path
@@ -46,6 +47,10 @@ class Agent:
         # Optional guardrails wrapper; set by Orchestrator.load_agents when
         # security is enabled. Default None so process() works without it.
         self.guardrails = None
+        # Optional governed tool loop; wired centrally when the default-off
+        # runtime setting is enabled. ``None`` preserves legacy duck-typed
+        # backends without probing for tool capabilities.
+        self.tool_runtime = None
         self._failures = 0
         self._last_latency = 0.0
         self._checkpoint_manager = None
@@ -141,6 +146,57 @@ class Agent:
             f"You can also hand off to another agent with '[handoff:agent_id]'."
         )
 
+    async def generate_response(
+        self,
+        backend,
+        model,
+        prompt,
+        system,
+        max_tokens,
+        temperature,
+        on_token=None,
+    ) -> str:
+        """Generate through the optional tool loop or the legacy backend path."""
+        runtime = self.tool_runtime
+        if runtime is not None and runtime.can_run(backend):
+            response = await runtime.run(
+                agent_id=self.id,
+                backend=backend,
+                model=model,
+                prompt=prompt,
+                system=system,
+                max_tokens=max_tokens,
+                temperature=temperature,
+            )
+            if on_token is not None and (response or "").strip():
+                emitted = on_token(response)
+                if inspect.isawaitable(emitted):
+                    await emitted
+            return response
+
+        if on_token and hasattr(backend, "generate_stream"):
+            return await backend.generate_stream(
+                model=model,
+                prompt=prompt,
+                system=system,
+                max_tokens=max_tokens,
+                temperature=temperature,
+                on_token=on_token,
+            )
+
+        response = await backend.generate(
+            model=model,
+            prompt=prompt,
+            system=system,
+            max_tokens=max_tokens,
+            temperature=temperature,
+        )
+        if on_token:
+            emitted = on_token(response)
+            if inspect.isawaitable(emitted):
+                await emitted
+        return response
+
     async def process(self, text: str, context: dict) -> str:
         system_prompt = self.soul.get("content", "")
         model = self.default_model()
@@ -178,7 +234,8 @@ class Agent:
         start = time.monotonic()
         try:
             async with residency:
-                response = await backend.generate(
+                response = await self.generate_response(
+                    backend=backend,
                     model=model,
                     prompt=prompt,
                     system=system_prompt,

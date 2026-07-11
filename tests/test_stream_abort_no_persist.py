@@ -22,6 +22,7 @@ repo_root = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(repo_root))
 sys.path.insert(0, str(repo_root / "agents"))
 
+from agents.core.agent import Agent
 from agents.core.config import JarvisConfig
 from agents.core.orchestrator import Orchestrator
 
@@ -38,6 +39,8 @@ class _FakeAgent:
     name = "Jarvis"
     soul = {"content": ""}
     config = {"model": "stub"}
+    tool_runtime = None
+    generate_response = Agent.generate_response
 
 
 @pytest.fixture

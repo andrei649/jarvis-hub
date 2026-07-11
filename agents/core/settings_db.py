@@ -127,6 +127,8 @@ DEFAULTS: list[dict[str, Any]] = [
     dict(category="llm",     key="chat_control",     value=True,                  label="LM Studio control via chat",            kind="toggle"),
     dict(category="llm",     key="hybrid_local_max", value=131072,                 label="Local routing threshold — prompts up to N input tokens stay local (0 = unlimited)", kind="number"),
     dict(category="llm",     key="hybrid_flash_max", value=1000000,                label="Cloud Flash routing threshold — above N input tokens escalates to Pro (0 = unlimited)", kind="number"),
+    dict(category="llm",     key="tool_loop_enabled", value=False,                  label="Agent tool loop (experimental)", kind="toggle"),
+    dict(category="llm",     key="tool_loop_max_iterations", value=8,               label="Agent tool-loop model-turn cap", kind="number"),
     # voice
     dict(category="voice",   key="stt_model_size",   value="medium",              label="STT model size",     kind="select",  opts=["tiny","base","small","medium","large"]),
     dict(category="voice",   key="stt_language",     value="ro",                  label="STT language",       kind="text"),

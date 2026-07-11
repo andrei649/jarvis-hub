@@ -38,6 +38,51 @@ def test_get_category_returns_typed_values(temp_db):
     assert isinstance(by_key["backend_type"]["opts"], list)
 
 
+def test_agent_tool_loop_defaults_are_seeded_default_off(temp_db):
+    llm = {row["key"]: row for row in temp_db.get_category("llm")}
+
+    assert llm["tool_loop_enabled"] == {
+        "key": "tool_loop_enabled",
+        "value": False,
+        "label": "Agent tool loop (experimental)",
+        "kind": "toggle",
+        "opts": [],
+    }
+    assert llm["tool_loop_max_iterations"] == {
+        "key": "tool_loop_max_iterations",
+        "value": 8,
+        "label": "Agent tool-loop model-turn cap",
+        "kind": "number",
+        "opts": [],
+    }
+
+
+def test_agent_tool_loop_defaults_upgrade_existing_db_without_overwriting_values(temp_db):
+    temp_db.init_db()
+    count, skipped = temp_db.put_category(
+        "llm",
+        {"tool_loop_enabled": True, "tool_loop_max_iterations": 0},
+    )
+
+    assert count == 2
+    assert skipped == []
+
+    # Simulate an older DB where one newly shipped row does not exist yet while
+    # another already has an owner-selected value.
+    conn = temp_db.get_conn()
+    conn.execute(
+        "DELETE FROM settings WHERE category=? AND key=?",
+        ("llm", "tool_loop_max_iterations"),
+    )
+    conn.commit()
+    conn.close()
+
+    temp_db.init_db()
+    llm = {row["key"]: row for row in temp_db.get_category("llm")}
+    assert llm["tool_loop_enabled"]["value"] is True
+    assert llm["tool_loop_max_iterations"]["value"] == 8
+
+
 def test_put_category_updates_known_key(temp_db):
     count, skipped = temp_db.put_category("llm", {"max_tokens": 2048})
     assert count == 1

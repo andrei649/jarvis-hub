@@ -26,6 +26,8 @@ from __future__ import annotations
 
 import logging
 import time
+from collections.abc import Mapping
+from copy import deepcopy
 from typing import Awaitable, Callable, Optional
 
 from .automation_contracts import ContractTemplate, predicate
@@ -86,20 +88,45 @@ class ToolRPCServer:
 
     # ── registration (the allowlist) ─────────────────────────────────────────
 
-    def register_tool(self, name: str, handler: Handler, gated: bool = False) -> "ToolRPCServer":
+    def register_tool(
+        self,
+        name: str,
+        handler: Handler,
+        gated: bool = False,
+        description: str = "",
+        input_schema: Optional[dict] = None,
+    ) -> "ToolRPCServer":
         """Expose one tool. ``gated=True`` ⇒ external/mutating ⇒ needs approval."""
-        self._tools[name] = {"handler": handler, "gated": bool(gated)}
+        schema = input_schema if input_schema is not None else {
+            "type": "object",
+            "properties": {},
+        }
+        self._tools[name] = {
+            "handler": handler,
+            "gated": bool(gated),
+            "description": description,
+            "input_schema": deepcopy(schema),
+        }
         return self
 
     def tools(self) -> "list[dict]":
-        return [{"name": n, "gated": t["gated"]} for n, t in sorted(self._tools.items())]
+        return [
+            {
+                "name": name,
+                "gated": spec["gated"],
+                "description": spec["description"],
+                "input_schema": deepcopy(spec["input_schema"]),
+            }
+            for name, spec in sorted(self._tools.items())
+        ]
 
     def allows(self, name: str) -> bool:
         return name in self._tools
 
     # ── the RPC entry point ──────────────────────────────────────────────────
 
-    async def handle(self, request: dict) -> dict:
+    async def handle(self, request: dict, *, actor: Optional[str] = None) -> dict:
+        effective_actor = actor or self.agent
         name = str((request or {}).get("tool", ""))
         args = (request or {}).get("args") or {}
         if not isinstance(args, dict):
@@ -117,7 +144,7 @@ class ToolRPCServer:
                 "kind": f"{_KIND_PREFIX}{name}",
                 "tool": name,
                 "target": name,
-                "agent": self.agent,
+                "agent": effective_actor,
                 "risk_tier": _RISK_TIER,
                 "gated": True,
                 "args_keys": sorted(args.keys()),
@@ -130,27 +157,35 @@ class ToolRPCServer:
                 return {"ok": False, "reason": "contract_error", "tool": name}
             if not decision.admissible:
                 reason = decision.reason or "contract_denied"
-                self._record("toolrpc.contract_denied", f"{name}: {reason}")
+                self._record(
+                    "toolrpc.contract_denied",
+                    f"{name}: {reason}",
+                    agent=effective_actor,
+                )
                 return {"ok": False, "reason": reason, "tool": name}
 
             # ORIZONT-24 K1 wave-3: mediate the gated tool through the Action Kernel
             # first (default-off). A DENY (halted kill-switch / over-budget / runaway
             # loop) refuses it before it even reaches the approval queue.
-            denied = self._kernel_denial(name, args)
+            denied = self._kernel_denial(name, args, effective_actor)
             if denied is not None:
-                self._record("toolrpc.kernel_denied", f"{name}: {denied}")
+                self._record(
+                    "toolrpc.kernel_denied",
+                    f"{name}: {denied}",
+                    agent=effective_actor,
+                )
                 return {"ok": False, "reason": "kernel_denied", "tool": name, "detail": denied}
             if self._enqueue is None:
                 return {"ok": False, "reason": "approval_required", "tool": name}
             try:
                 task_id = self._enqueue(
-                    self.agent, f"toolrpc.{name}", f"Tool '{name}' via RPC",
+                    effective_actor, f"toolrpc.{name}", f"Tool '{name}' via RPC",
                     payload={"tool": name, "args": args, "target": name},
                     risk_tier=_RISK_TIER, autonomy_level="ask", origin="generated")
             except Exception:
                 logger.warning("tool-rpc gated enqueue failed", exc_info=True)
                 return {"ok": False, "reason": "enqueue_failed", "tool": name}
-            self._record("toolrpc.gated", name)
+            self._record("toolrpc.gated", name, agent=effective_actor)
             return {"ok": False, "reason": "approval_required", "tool": name, "task_id": task_id}
 
         try:
@@ -159,7 +194,7 @@ class ToolRPCServer:
             logger.warning("tool-rpc handler failed: %s", name, exc_info=True)
             return {"ok": False, "reason": "tool_error", "tool": name}
 
-        self._record("toolrpc.call", name)
+        self._record("toolrpc.call", name, agent=effective_actor)
         return {"ok": True, "tool": name, "result": self._scrub(result)}
 
     async def run_pipeline(self, requests: "list[dict]") -> "list[dict]":
@@ -169,18 +204,40 @@ class ToolRPCServer:
 
     async def execute(self, task) -> dict:
         """Executor handler: run a gated tool AFTER its approval task is approved."""
-        payload = getattr(task, "payload", None) or {}
+        effective_actor = getattr(task, "agent", None) or self.agent
+        payload = getattr(task, "payload", None)
+        if not isinstance(payload, Mapping):
+            return {"status": "failed", "reason": "bad_args", "tool": ""}
         name = payload.get("tool")
-        args = payload.get("args") or {}
+        if not isinstance(name, str):
+            return {"status": "failed", "reason": "bad_args", "tool": ""}
+        raw_args = payload.get("args", {})
+        if not isinstance(raw_args, Mapping):
+            return {"status": "failed", "reason": "bad_args", "tool": name}
+        args = dict(raw_args)
         spec = self._tools.get(name)
         if spec is None:
             return {"status": "failed", "reason": "tool_not_allowed", "tool": name}
+        if spec["gated"]:
+            denied = self._kernel_denial(name, args, effective_actor)
+            if denied is not None:
+                self._record(
+                    "toolrpc.kernel_denied",
+                    f"{name}: {denied}",
+                    agent=effective_actor,
+                )
+                return {
+                    "status": "failed",
+                    "reason": "kernel_denied",
+                    "tool": name,
+                    "detail": denied,
+                }
         try:
             result = await spec["handler"](args)
         except Exception:
             logger.warning("tool-rpc approved execute failed: %s", name, exc_info=True)
             return {"status": "failed", "reason": "tool_error", "tool": name}
-        self._record("toolrpc.execute", name)
+        self._record("toolrpc.execute", name, agent=effective_actor)
         return {"status": "ok", "tool": name, "result": self._scrub(result)}
 
     # ── internals ────────────────────────────────────────────────────────────
@@ -192,12 +249,18 @@ class ToolRPCServer:
         if isinstance(obj, str):
             return self._secrets.redact(obj)
         if isinstance(obj, dict):
-            return {k: self._scrub(v) for k, v in obj.items()}
+            return {self._scrub(k): self._scrub(v) for k, v in obj.items()}
         if isinstance(obj, list):
             return [self._scrub(v) for v in obj]
+        if isinstance(obj, tuple):
+            return tuple(self._scrub(v) for v in obj)
+        if isinstance(obj, set):
+            return {self._scrub(v) for v in obj}
+        if isinstance(obj, frozenset):
+            return frozenset(self._scrub(v) for v in obj)
         return obj
 
-    def _kernel_denial(self, name: str, args: dict) -> Optional[str]:
+    def _kernel_denial(self, name: str, args: dict, actor: str) -> Optional[str]:
         """ORIZONT-24 K1 wave-3: ask the Action Kernel whether this gated tool may run.
 
         Returns a deny-reason string (block) or ``None`` (allow). Default-off: no kernel
@@ -211,7 +274,7 @@ class ToolRPCServer:
         if not kernel_enabled():
             return None
         decision = self._kernel(Action(
-            kind="tool.rpc", agent=self.agent,
+            kind="tool.rpc", agent=actor,
             title=f"tool-rpc {name}",
             payload={"tool": name, "args_keys": sorted((args or {}).keys()), "target": name},
             origin=current_action_origin()))
