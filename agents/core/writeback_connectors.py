@@ -42,6 +42,36 @@ def _s(v, cap: int = _STR_CAP) -> str:
     return str(v if v is not None else "").strip()[:cap]
 
 
+def _required_present(spec: "ConnectorAction", key: str, value) -> bool:
+    if (spec.target, spec.action, key) == ("gsheets", "append_row", "values"):
+        return isinstance(value, (list, tuple)) and bool(value)
+    if (spec.target, spec.action, key) == ("m365", "create_draft", "to"):
+        if isinstance(value, str):
+            return bool(value.strip())
+        return (
+            isinstance(value, (list, tuple))
+            and bool(value)
+            and all(isinstance(item, str) and item.strip() for item in value)
+        )
+    return isinstance(value, str) and bool(value.strip())
+
+
+def _sanitize_fields(spec: "ConnectorAction", fields: dict) -> dict:
+    clean: dict = {}
+    long_fields = {"description", "notes", "desc", "body"}
+    for key in (*spec.required, *spec.optional):
+        if key not in fields:
+            continue
+        value = fields[key]
+        if key == "values":
+            clean[key] = [_s(item) for item in list(value)[:100]]
+        elif key == "to" and isinstance(value, (list, tuple)):
+            clean[key] = [_s(item) for item in list(value)[:100] if _s(item)]
+        else:
+            clean[key] = _s(value, _LONG_CAP if key in long_fields else _STR_CAP)
+    return clean
+
+
 @dataclass(frozen=True)
 class ConnectorAction:
     target: str
@@ -78,10 +108,10 @@ def validate_draft(target: str, action: str, fields: dict) -> dict:
     if spec is None:
         return {"ok": False, "reason": f"unknown connector action: {target}.{action}"}
     f = fields if isinstance(fields, dict) else {}
-    missing = [k for k in spec.required if not str(f.get(k) or "").strip()
-               and f.get(k) not in (0, False) and not isinstance(f.get(k), (list, tuple))]
-    # list-typed required fields (e.g. sheets values) count as present when non-empty lists
-    missing = [k for k in missing if not (isinstance(f.get(k), (list, tuple)) and f.get(k))]
+    missing = [
+        key for key in spec.required
+        if not _required_present(spec, key, f.get(key))
+    ]
     if missing:
         return {"ok": False, "reason": f"missing required field(s): {', '.join(missing)}"}
     return {"ok": True, "spec": spec}
@@ -89,23 +119,30 @@ def validate_draft(target: str, action: str, fields: dict) -> dict:
 
 def draft_task_payload(target: str, action: str, fields: dict,
                        *, secret_handle: str | None = None) -> dict:
-    """Build the ask-tier task payload for the approval queue (parallel to writeback.py).
+    """Build a bounded ask-tier descriptor for the approval queue.
 
-    Carries a ``{{secret:<target>_token}}`` handle by default — never a raw credential; the
-    executor resolves it behind the approval.
+    This pure function does not enqueue or execute. It marks that state explicitly and
+    carries only the target-specific SecretBroker reference. A caller-provided raw token
+    or a reference for another connector is refused.
     """
     v = validate_draft(target, action, fields)
     if not v["ok"]:
         return {"ok": False, "reason": v["reason"]}
+    expected_ref = f"{{{{secret:{target}_token}}}}"
+    if secret_handle is not None and secret_handle != expected_ref:
+        return {"ok": False, "reason": "invalid credential reference"}
     return {
         "ok": True,
         "kind": f"connector.{target}.{action}",
         "target": target,
         "action": action,
-        "fields": {k: fields[k] for k in (*v["spec"].required, *v["spec"].optional)
-                   if k in (fields or {})},
-        "credential_ref": secret_handle or f"{{{{secret:{target}_token}}}}",
+        "fields": _sanitize_fields(v["spec"], fields),
+        "credential_ref": expected_ref,
         "label": v["spec"].label,
+        "risk_tier": 2,
+        "autonomy_level": "ask",
+        "requires_approval": True,
+        "queued": False,
     }
 
 
@@ -146,15 +183,16 @@ def build_connector_request(target: str, action: str, fields: dict, credentials:
                                   "notes": _s(f.get("notes"), _LONG_CAP)}}}
 
     if target == "trello":
-        # Trello auths via query params (key+token) — still built here, never in the draft.
-        key = quote(str(creds.get("api_key") or ""), safe="")
-        tok = quote(token, safe="")
-        lid = quote(_s(f.get("list_id")), safe="")
+        # Keep credentials out of the URL string so ordinary URL logging cannot expose them.
         return {"method": "POST",
-                "url": _assert_allowed_host(
-                    f"https://api.trello.com/1/cards?idList={lid}&key={key}&token={tok}"),
+                "url": _assert_allowed_host("https://api.trello.com/1/cards"),
+                "params": {"idList": _s(f.get("list_id")),
+                           "key": str(creds.get("api_key") or ""),
+                           "token": token},
                 "headers": {"Content-Type": "application/json"},
-                "json": {"name": _s(f.get("name")), "desc": _s(f.get("desc"), _LONG_CAP)}}
+                "json": {"name": _s(f.get("name")),
+                         "desc": _s(f.get("desc"), _LONG_CAP)}}
+
 
     if target == "todoist":
         body = {"content": _s(f.get("content"))}
