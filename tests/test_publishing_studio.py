@@ -155,3 +155,67 @@ def test_packaging_is_deterministic_and_does_not_mutate_inputs():
 def test_no_direct_publish_api_exists():
     assert not hasattr(pub, "publish")
     assert not hasattr(pub, "upload")
+
+def test_truthy_non_boolean_confirmations_do_not_unlock_release():
+    pkg = build_publish_package(
+        "youtube",
+        META,
+        asset=ASSET,
+        confirmations={
+            "disclosure": "false",
+            "rights": "no",
+            "preview": 1,
+        },
+    )
+    by_id = {item["id"]: item for item in pkg["checklist"]}
+
+    assert by_id["disclosure.confirmed"]["ok"] is False
+    assert by_id["rights.confirmed"]["ok"] is False
+    assert by_id["preview.confirmed"]["ok"] is False
+    assert pkg["ready_for_approval"] is False
+    assert pkg["release_payload"] is None
+
+
+def test_asset_manifest_requires_positive_size_and_video_duration():
+    no_size = {key: value for key, value in ASSET.items() if key != "bytes"}
+    no_duration = {
+        key: value for key, value in ASSET.items() if key != "duration_seconds"
+    }
+
+    assert "missing asset bytes" in pub.validate_asset("youtube", no_size)
+    assert "missing asset duration_seconds" in pub.validate_asset(
+        "youtube", no_duration
+    )
+
+
+def test_asset_duration_must_be_finite():
+    for value in (float("nan"), float("inf"), float("-inf")):
+        bad = {**ASSET, "duration_seconds": value}
+        violations = pub.validate_asset("youtube", bad)
+        assert "asset duration_seconds must be finite" in violations
+
+
+def test_required_metadata_fields_must_be_text():
+    violations = pub.validate_metadata(
+        "youtube",
+        {
+            "title": {"not": "text"},
+            "description": "description",
+            "thumbnail": "artifact_thumb_01",
+        },
+    )
+
+    assert "title must be text" in violations
+
+
+def test_unknown_metadata_keys_never_crash_warning_sort():
+    pkg = build_publish_package(
+        "youtube",
+        {**META, 1: "ignored"},
+        asset=ASSET,
+        confirmations=CONFIRMED,
+    )
+
+    assert pkg["ready_for_approval"] is True
+    assert pkg["warnings"] == ["ignored metadata fields: 1"]
+
