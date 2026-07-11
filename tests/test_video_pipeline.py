@@ -115,3 +115,46 @@ def test_build_video_plan_tolerates_empty_brief():
     assert plan["runtime_seconds"] == 0.0
     assert plan["assembly"]["scenes"] == []
     assert plan["localization"]["tracks"][0]["lang"] == "en"   # default base track
+
+def _raises_after(limit, factory):
+    for index in range(limit):
+        yield factory(index)
+    raise AssertionError("planner consumed past its declared bound")
+
+
+def test_assembly_does_not_materialize_past_scene_bound():
+    scenes = _raises_after(vp._MAX_SCENES, lambda i: {"id": str(i), "seconds": 1})
+    plan = vp.plan_assembly(scenes)
+    assert len(plan["scenes"]) == vp._MAX_SCENES
+
+
+def test_effects_do_not_materialize_past_effect_bound():
+    effects = _raises_after(
+        vp._MAX_EFFECTS, lambda _i: {"name": "denoise", "strength": 1}
+    )
+    plan = vp.plan_effects(effects)
+    assert len(plan["effects"]) == vp._MAX_EFFECTS
+
+
+def test_localization_bounds_cues_and_languages_before_copying():
+    cues = _raises_after(
+        vp._MAX_CUES,
+        lambda i: {"start": i, "end": i + 1, "text": f"cue-{i}"},
+    )
+    languages = _raises_after(vp._MAX_LANGUAGES, lambda i: f"x-{i}")
+    plan = vp.plan_localization("en", languages, cues)
+
+    assert len(plan["tracks"]) == vp._MAX_LANGUAGES + 1
+    assert all(len(track["cues"]) == vp._MAX_CUES for track in plan["tracks"])
+
+
+def test_effect_parameters_are_scalar_and_bounded():
+    plan = vp.plan_effects([
+        {"name": "color_grade", "look": "x" * 1000, "intensity": {"huge": [1] * 1000}},
+    ])
+    effect = plan["effects"][0]
+
+    assert len(effect["params"]["look"]) == vp._MAX_PARAM_TEXT
+    assert "intensity" not in effect["params"]
+    assert plan["invalid_params"] == ["color_grade.intensity"]
+
