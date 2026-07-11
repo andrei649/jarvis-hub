@@ -30,6 +30,19 @@ from agents.core.security import taint
 # Indicator kinds whose value is a case-insensitive token (normalised by lower+strip).
 # Anything else (free-text, coords) is correlated on its exact trimmed value.
 _CASEFOLD_KINDS = frozenset({"ip", "domain", "host", "email", "handle", "url", "hash", "asn"})
+_TRUSTED_EVIDENCE_SOURCES = frozenset({"manual", "operator"})
+
+
+def _source_label(source: str | None) -> str:
+    return str(source or "").strip() or "osint:unknown"
+
+
+def _is_untrusted_evidence_source(source: str | None) -> bool:
+    label = _source_label(source).lower()
+    return (
+        label not in _TRUSTED_EVIDENCE_SOURCES
+        or taint.is_untrusted_source(label)
+    )
 
 
 @dataclass(frozen=True)
@@ -49,10 +62,11 @@ class Evidence:
     url: str = ""
 
     def as_dict(self) -> dict:
+        source = _source_label(self.source)
         return {
-            "source": self.source, "kind": self.kind, "value": self.value,
+            "source": source, "kind": self.kind, "value": self.value,
             "observed_at": self.observed_at, "detail": self.detail, "url": self.url,
-            "tainted": taint.is_untrusted_source(self.source),
+            "tainted": _is_untrusted_evidence_source(source),
         }
 
 
@@ -85,7 +99,7 @@ def _coerce(item) -> Evidence | None:
         if not kind or not value:
             return None
         ev = Evidence(
-            source=str(item.get("source") or "").strip(),
+            source=_source_label(item.get("source")),
             kind=kind, value=value,
             observed_at=str(item.get("observed_at") or ""),
             detail=str(item.get("detail") or ""),
@@ -93,6 +107,15 @@ def _coerce(item) -> Evidence | None:
         )
     else:
         return None
+    if not ev.source:
+        ev = Evidence(
+            source=_source_label(ev.source),
+            kind=ev.kind,
+            value=ev.value,
+            observed_at=ev.observed_at,
+            detail=ev.detail,
+            url=ev.url,
+        )
     return ev if ev.kind and ev.value else None
 
 
@@ -136,8 +159,10 @@ def correlate(evidence) -> dict:
     for (kind, _key), evs in groups.items():
         prov = [e.as_dict() for e in evs]
         sources = sorted({e.source for e in evs if e.source})
-        any_untrusted = any(taint.is_untrusted_source(e.source) for e in evs)
-        any_trusted = any(not taint.is_untrusted_source(e.source) and e.source for e in evs)
+        any_untrusted = any(_is_untrusted_evidence_source(e.source) for e in evs)
+        any_trusted = any(
+            not _is_untrusted_evidence_source(e.source) for e in evs
+        )
         findings.append(Finding(
             kind=kind,
             value=evs[0].value,  # display the first-seen casing
