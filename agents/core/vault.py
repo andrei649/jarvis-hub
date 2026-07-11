@@ -26,9 +26,11 @@ from __future__ import annotations
 import base64
 import hashlib
 import json
-import secrets as _secrets
 import threading
 from pathlib import Path
+# one import style for both `secrets` modules (stdlib + agents.core) — the mixed
+# import/import-from pair trips CodeQL's module-shadowing check
+from secrets import token_urlsafe as _token_urlsafe
 
 from agents.core.paths import data_path
 from agents.core.secrets import SecretStore, SecretStoreError
@@ -99,7 +101,7 @@ class Vault:
             used = sum(e.get("bytes", 0) for e in self._index.values())
             if used + size > self.max_total_bytes:
                 raise VaultError("vault byte quota reached")
-            vid = _secrets.token_urlsafe(12)
+            vid = _token_urlsafe(12)
             token = self._cipher._encrypt(base64.b64encode(bytes(data)).decode("ascii"))
             self._blob_path(vid).write_text(token, encoding="ascii")
             entry = {
