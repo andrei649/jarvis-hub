@@ -20,6 +20,7 @@ Offline-testable end to end; every builder is a deterministic function.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from itertools import islice
 from urllib.parse import quote, urlparse
 
 CONNECTOR_HOSTS = frozenset({
@@ -64,9 +65,9 @@ def _sanitize_fields(spec: ConnectorAction, fields: dict) -> dict:
             continue
         value = fields[key]
         if key == "values":
-            clean[key] = [_s(item) for item in list(value)[:100]]
+            clean[key] = [_s(item) for item in islice(value, 100)]
         elif key == "to" and isinstance(value, (list, tuple)):
-            clean[key] = [_s(item) for item in list(value)[:100] if _s(item)]
+            clean[key] = [_s(item) for item in islice(value, 100) if _s(item)]
         else:
             clean[key] = _s(value, _LONG_CAP if key in long_fields else _STR_CAP)
     return clean
@@ -128,7 +129,10 @@ def draft_task_payload(target: str, action: str, fields: dict,
     v = validate_draft(target, action, fields)
     if not v["ok"]:
         return {"ok": False, "reason": v["reason"]}
-    expected_ref = f"{{{{secret:{target}_token}}}}"
+    credential_refs = {"token": f"{{{{secret:{target}_token}}}}"}
+    if target == "trello":
+        credential_refs["api_key"] = "{{secret:trello_api_key}}"
+    expected_ref = credential_refs["token"]
     if secret_handle is not None and secret_handle != expected_ref:
         return {"ok": False, "reason": "invalid credential reference"}
     return {
@@ -138,6 +142,7 @@ def draft_task_payload(target: str, action: str, fields: dict,
         "action": action,
         "fields": _sanitize_fields(v["spec"], fields),
         "credential_ref": expected_ref,
+        "credential_refs": credential_refs,
         "label": v["spec"].label,
         "risk_tier": 2,
         "autonomy_level": "ask",
