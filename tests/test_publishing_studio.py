@@ -147,8 +147,8 @@ def test_packaging_is_deterministic_and_does_not_mutate_inputs():
 
 
 def test_no_direct_publish_api_exists():
-    assert not hasattr(pub, "publish")
-    assert not hasattr(pub, "upload")
+    assert not hasattr(publishing, "publish")
+    assert not hasattr(publishing, "upload")
 
 def test_truthy_non_boolean_confirmations_do_not_unlock_release():
     pkg = build_publish_package(
