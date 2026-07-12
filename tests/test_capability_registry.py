@@ -43,13 +43,17 @@ def test_plugins_and_actions_derive_statically_without_orch():
     assert weather.requires
     assert weather.supports
     assert weather.verification
-    assert weather.rollback
+    assert weather.rollback.mode == "disable"
+    assert weather.rollback.description
     assert 0.0 <= weather.confidence <= 1.0
     assert weather.implementation
 
     payment = next(r for r in recs if r.id == "action:payment")
     assert payment.kind == "action"
     assert payment.risk == "irreversible_or_money"
+    assert payment.rollback.mode == "cancel"
+    assert payment.rollback.automatic is False
+    assert "settled" in payment.rollback.limitations
     assert payment.contract_ref == "agents.core.payments:PAYMENT_CONTRACT"
     assert payment.detail["mediation"] == "kernel"
 
@@ -73,6 +77,18 @@ def test_nothing_is_verified_until_harness_lands():
     assert snap["total"] == len(snap["capabilities"])
     assert snap["by_kind"]["plugin"] > 0
     assert snap["by_kind"]["action"] > 0
+
+
+def test_every_registry_record_serializes_a_complete_rollback_contract():
+    rows = cr.snapshot(orch=_fake_orch())["capabilities"]
+    assert rows
+    for row in rows:
+        assert set(row["rollback"]) == {
+            "mode", "description", "automatic", "handler_ref", "limitations",
+        }
+        assert row["rollback"]["description"].strip()
+        if row["rollback"]["automatic"]:
+            assert row["rollback"]["handler_ref"]
 
 
 # ── overrides (demote-only) ───────────────────────────────────────────────────
@@ -107,4 +123,21 @@ def test_endpoint_returns_registry(monkeypatch):
     assert body["by_kind"]["action"] > 0
     assert any(c["id"] == "component:arena" for c in body["capabilities"])
     assert any(c["id"] == "action:payment" for c in body["capabilities"])
+    payment = next(c for c in body["capabilities"] if c["id"] == "action:payment")
+    assert payment["rollback"]["mode"] == "cancel"
+    assert payment["rollback"]["automatic"] is False
     assert "no-store" in resp.headers.get("cache-control", "")
+
+
+def test_canonical_capabilities_endpoint_is_user_guarded_and_returns_registry(monkeypatch):
+    from agents import web
+    from agents.core.routers import analytics
+
+    monkeypatch.setattr(analytics, "get_orch", _fake_orch)
+    client = TestClient(web.app)
+    response = client.get("/api/capabilities")
+    assert response.status_code == 200
+    body = response.json()
+    assert body["total"] == len(body["capabilities"])
+    assert any(row["id"] == "component:arena" for row in body["capabilities"])
+    assert "no-store" in response.headers.get("cache-control", "")

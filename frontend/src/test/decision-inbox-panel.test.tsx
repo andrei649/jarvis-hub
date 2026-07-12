@@ -27,6 +27,21 @@ describe('DecisionInboxPanel — the north-star resolve action is live', () => {
     expect(screen.getByText('tier 2')).toBeTruthy();
   });
 
+  it('shows the rollback story before approval', async () => {
+    mockFetch({ tasks: [{
+      id: 6, title: 'Pay invoice', kind: 'payment', risk_tier: 3, status: 'blocked',
+      rollback: {
+        mode: 'cancel', automatic: false,
+        description: 'Cancel before settlement.',
+        limitations: 'A settled payment cannot be undone.',
+      },
+    }], total: 1 });
+    render(<DecisionInboxPanel />);
+    await waitFor(() => expect(screen.getByText(/rollback ·/i)).toBeTruthy());
+    expect(screen.getByText(/cancel before settlement/i)).toBeTruthy();
+    expect(screen.getByText(/settled payment cannot be undone/i)).toBeTruthy();
+  });
+
   it('accepts a decision (POST {action:"accept"}) when ✓ is clicked', async () => {
     const fn = mockFetch({ tasks: [{ id: 5, title: 'X', kind: 'k', risk_tier: 1, status: 'blocked' }], total: 1 });
     render(<DecisionInboxPanel />);

@@ -52,8 +52,8 @@
     "H18": {
       "blocked": 0,
       "done": 19,
-      "open": 1,
-      "total": 20
+      "open": 2,
+      "total": 21
     },
     "H19": {
       "blocked": 0,
@@ -87,8 +87,8 @@
     },
     "H27": {
       "blocked": 0,
-      "done": 4,
-      "open": 4,
+      "done": 6,
+      "open": 2,
       "total": 8
     },
     "H28": {
@@ -158,7 +158,7 @@
       "total": 4
     }
   },
-  "latest_ci_commit": "95a6ab28be7d1861dad79dfc02ed0acd7f570f6c",
+  "latest_ci_commit": "f7b7d15fc8a97d125304c9c0005cfbc0d42684ee",
   "open_release_gates": [
     {
       "id": "A1",
@@ -201,10 +201,10 @@
       "status": "⬜"
     }
   ],
-  "routes": 368,
+  "routes": 369,
   "tests": {
-    "backend": 4280,
-    "frontend": 208,
+    "backend": 4285,
+    "frontend": 209,
     "mobile": 55
   },
   "version": "0.11.0"

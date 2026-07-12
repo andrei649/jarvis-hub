@@ -38,7 +38,8 @@ Legend — **mobile**: ✅ shipped · 🟡 partial · ⬜ not started · ➖ not
 | Skills browser | `GET /skills` | ✅ | ✅ | H18.15 |
 | Memory / notes | `GET /memory`, `GET /api/notes` | ✅ | ✅ | H18.16 |
 | Knowledge graph | `GET /api/kg/*` | ✅ | ✅ | H18.17 |
-| Action approval queue | `GET /autonomy/approvals`, `POST /autonomy/tasks/{id}/decision` | ✅ | ✅ | H18.11 / O26-P3.4 |
+| Action approval queue + rollback story | `GET /autonomy/approvals`, `POST /autonomy/tasks/{id}/decision` | ✅ | ✅ | H18.11 / O26-P3.4 / H27.6 |
+| Capability registry board | `GET /api/capabilities` | ✅ | ⬜ | H18.21 / H27.8 |
 | Channel inbox + governed replies | `GET /api/channels/inbox*`, `POST /api/channels/inbox/{thread_id}/reply` | ✅ | ✅ | H18.12 |
 | Chat rooms (multi-agent) | `GET/POST /api/rooms*` | ✅ | ⬜ | — |
 | Arena / review / quality | `GET /api/arena/*`, `/api/review/*` | ✅ | ➖ | — |

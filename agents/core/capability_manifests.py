@@ -13,6 +13,36 @@ from typing import Any
 from agents.core.capability_verification import action_verification_ref
 
 RISK_LEVELS = frozenset({"read_only", "reversible", "sensitive", "irreversible_or_money"})
+ROLLBACK_MODES = frozenset({
+    "none",
+    "cancel",
+    "compensate",
+    "restore",
+    "revoke",
+    "disable",
+    "implementation_specific",
+})
+
+
+@dataclass(frozen=True)
+class RollbackContract:
+    """Bounded rollback promise exposed to planners and approval clients."""
+
+    mode: str
+    description: str
+    automatic: bool = False
+    handler_ref: str | None = None
+    limitations: str = ""
+
+    def __post_init__(self) -> None:
+        if self.mode not in ROLLBACK_MODES:
+            raise ValueError(f"unsupported rollback mode: {self.mode}")
+        if not self.description.strip():
+            raise ValueError("rollback description is required")
+        if self.automatic and not self.handler_ref:
+            raise ValueError("automatic rollback requires a handler reference")
+        if self.mode == "none" and (self.automatic or self.handler_ref):
+            raise ValueError("rollback mode none cannot declare a handler")
 
 
 @dataclass(frozen=True)
@@ -24,7 +54,7 @@ class CapabilityManifest:
     requires: tuple[str, ...]
     supports: tuple[str, ...]
     verification: str
-    rollback: str
+    rollback: RollbackContract
     confidence: float
     implementation: str
     action_kind: str | None = None
@@ -48,7 +78,8 @@ def validate_manifest(manifest: CapabilityManifest) -> CapabilityManifest:
         raise ValueError("capability confidence must be between 0 and 1")
     if not manifest.requires or not manifest.supports:
         raise ValueError("capability requires and supports must be non-empty")
-    if not manifest.verification or not manifest.rollback or ":" not in manifest.implementation:
+    if (not manifest.verification or not isinstance(manifest.rollback, RollbackContract)
+            or ":" not in manifest.implementation):
         raise ValueError("capability verification, rollback and implementation are required")
     return manifest
 
@@ -60,7 +91,7 @@ def _action(
     required: tuple[str, ...] = (),
     risk: str = "sensitive",
     supports: tuple[str, ...] = ("execute",),
-    rollback: str,
+    rollback: RollbackContract,
     implementation: str,
     contract_ref: str | None = None,
 ) -> CapabilityManifest:
@@ -86,14 +117,22 @@ ACTION_CAPABILITY_MANIFESTS: dict[str, CapabilityManifest] = {
         "node.dispatch",
         "Dispatch an allowlisted operation to a registered execution node.",
         required=("node_id", "operation"),
-        rollback="cancel a queued dispatch; remote rollback is implementation-specific",
+        rollback=RollbackContract(
+            mode="cancel",
+            description="Cancel the dispatch while it is still queued.",
+            limitations="After remote acceptance, rollback is implementation-specific.",
+        ),
         implementation="agents.core.node_mesh:NodeMesh.dispatch",
     ),
     "call.outbound": _action(
         "call.outbound",
         "Place a governed outbound call through a configured provider.",
         required=("to", "message"),
-        rollback="cancel before provider acceptance; an accepted call cannot be undone",
+        rollback=RollbackContract(
+            mode="cancel",
+            description="Cancel before the provider accepts the call.",
+            limitations="An accepted call cannot be undone.",
+        ),
         implementation="agents.core.autonomy.call_broker:CallBroker.request",
     ),
     "social.*": _action(
@@ -102,7 +141,11 @@ ACTION_CAPABILITY_MANIFESTS: dict[str, CapabilityManifest] = {
         required=("provider", "action"),
         risk="irreversible_or_money",
         supports=("publish", "mutate"),
-        rollback="delete the remote item when the provider supports deletion",
+        rollback=RollbackContract(
+            mode="compensate",
+            description="Delete the remote item when the provider supports deletion.",
+            limitations="Deletion support and retention are provider-specific.",
+        ),
         implementation="agents.core.social:SocialBroker.request",
     ),
     "writeback.*": _action(
@@ -111,7 +154,11 @@ ACTION_CAPABILITY_MANIFESTS: dict[str, CapabilityManifest] = {
         required=("target", "action"),
         risk="reversible",
         supports=("create", "update"),
-        rollback="restore the previous target value from the audit snapshot",
+        rollback=RollbackContract(
+            mode="restore",
+            description="Restore the previous target value from the audit snapshot.",
+            limitations="Requires a complete pre-write audit snapshot and a writable target.",
+        ),
         implementation="agents.core.writeback:WriteBackBroker.request",
     ),
     "payment": _action(
@@ -120,7 +167,11 @@ ACTION_CAPABILITY_MANIFESTS: dict[str, CapabilityManifest] = {
         required=("mandate_id", "payee", "amount", "currency"),
         risk="irreversible_or_money",
         supports=("request", "approve"),
-        rollback="cancel before settlement; a settled payment cannot be undone",
+        rollback=RollbackContract(
+            mode="cancel",
+            description="Cancel the payment before settlement.",
+            limitations="A settled payment cannot be undone.",
+        ),
         implementation="agents.core.payments:PaymentBroker.request_payment",
         contract_ref="agents.core.payments:PAYMENT_CONTRACT",
     ),
@@ -129,7 +180,11 @@ ACTION_CAPABILITY_MANIFESTS: dict[str, CapabilityManifest] = {
         "Send a policy-admitted outbound request for a governed plugin.",
         required=("plugin", "method", "url"),
         supports=("http",),
-        rollback="abort the request before transmission",
+        rollback=RollbackContract(
+            mode="cancel",
+            description="Abort the request before transmission.",
+            limitations="A transmitted external request may already have side effects.",
+        ),
         implementation="agents.core.http_client:PluginHTTPClient.request",
         contract_ref="agents.core.plugin_gate:PLUGIN_CALL_CONTRACT",
     ),
@@ -138,7 +193,11 @@ ACTION_CAPABILITY_MANIFESTS: dict[str, CapabilityManifest] = {
         "Invoke an identity-checked mutating MCP route tool.",
         required=("tool", "args"),
         supports=("tool-rpc", "mutate"),
-        rollback="use the adapter-specific rollback declared by the route specification",
+        rollback=RollbackContract(
+            mode="implementation_specific",
+            description="Use the adapter rollback declared by the route specification.",
+            limitations="Unavailable when the adapter declares no compensating operation.",
+        ),
         implementation="agents.core.mcp.route_tools:MutatingRouteTool.call",
     ),
     "tool.rpc": _action(
@@ -146,7 +205,11 @@ ACTION_CAPABILITY_MANIFESTS: dict[str, CapabilityManifest] = {
         "Invoke a gated ToolRPC tool through its approval and sandbox boundary.",
         required=("tool", "args"),
         supports=("tool-rpc",),
-        rollback="use the tool-declared rollback; otherwise the action is not reversible",
+        rollback=RollbackContract(
+            mode="implementation_specific",
+            description="Use the rollback declared by the selected tool.",
+            limitations="The action is not reversible when the tool declares no rollback.",
+        ),
         implementation="agents.core.tool_rpc:ToolRPCServer.handle",
     ),
     "repo.sync": _action(
@@ -154,7 +217,11 @@ ACTION_CAPABILITY_MANIFESTS: dict[str, CapabilityManifest] = {
         "Pull and validate an externally triggered repository update.",
         required=("commit",),
         supports=("git", "test"),
-        rollback="revert to the recorded pre-sync commit",
+        rollback=RollbackContract(
+            mode="restore",
+            description="Restore the recorded pre-sync commit.",
+            limitations="Local changes after the sync require a separate reconciliation.",
+        ),
         implementation="agents.core.plugins.oracle_bridge:OracleBridgePlugin._process_claude_commit",
     ),
     "admin.kill_switch": _action(
@@ -162,7 +229,11 @@ ACTION_CAPABILITY_MANIFESTS: dict[str, CapabilityManifest] = {
         "Engage the persisted action kill-switch for an authenticated scope.",
         required=("scope",),
         supports=("halt",),
-        rollback="disengage through the admin-only recovery path",
+        rollback=RollbackContract(
+            mode="restore",
+            description="Disengage through the admin-only recovery path.",
+            limitations="Recovery requires an authenticated administrator.",
+        ),
         implementation="agents.core.routers.security:kill_switch_set",
     ),
     "admin.capability_issue": _action(
@@ -170,7 +241,11 @@ ACTION_CAPABILITY_MANIFESTS: dict[str, CapabilityManifest] = {
         "Issue a bounded capability token to an authenticated operator.",
         required=("capabilities",),
         supports=("issue",),
-        rollback="revoke the issued capability token",
+        rollback=RollbackContract(
+            mode="revoke",
+            description="Revoke the issued capability token.",
+            limitations="Already completed operations are not reversed by token revocation.",
+        ),
         implementation="agents.core.routers.security:capabilities_issue",
     ),
     "kg.write": _action(
@@ -179,7 +254,11 @@ ACTION_CAPABILITY_MANIFESTS: dict[str, CapabilityManifest] = {
         required=("operation",),
         risk="reversible",
         supports=("create", "update", "delete"),
-        rollback="restore the entity or relation from the audit snapshot",
+        rollback=RollbackContract(
+            mode="restore",
+            description="Restore the entity or relation from the audit snapshot.",
+            limitations="Requires a complete pre-write audit snapshot.",
+        ),
         implementation="agents.core.routers.memory_kg:kg_upsert_entity",
     ),
 }
@@ -217,7 +296,11 @@ def plugin_capability_manifest(plugin: Any) -> CapabilityManifest:
         requires=requires,
         supports=("plugin-call", f"egress:{network}"),
         verification=f"reality-v1:plugin:{plugin_id}",
-        rollback=f"disable plugin {plugin_id}",
+        rollback=RollbackContract(
+            mode="disable",
+            description=f"Disable plugin {plugin_id}.",
+            limitations="Disabling prevents future calls but cannot undo completed external effects.",
+        ),
         confidence=0.0,
         implementation=f"agents.core.plugin_gate:BUILTIN_PLUGINS[{plugin_id}]",
     )

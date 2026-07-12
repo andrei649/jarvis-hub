@@ -98,6 +98,14 @@ function ApprovalCard({
 
       {preview && <Text style={styles.payload}>{preview}</Text>}
 
+      {task.rollback && (
+        <View style={styles.rollbackBox}>
+          <Text style={styles.rollbackTitle}>Rollback · {task.rollback.mode.replace(/_/g, ' ')}</Text>
+          <Text style={styles.rollbackText}>{task.rollback.description}</Text>
+          {!!task.rollback.limitations && <Text style={styles.rollbackLimit}>{task.rollback.limitations}</Text>}
+        </View>
+      )}
+
       <View style={styles.actions}>
         {button('accept', 'Approve', styles.approveBtn)}
         {button('reject', 'Reject', styles.rejectBtn)}
@@ -238,6 +246,17 @@ const styles = StyleSheet.create({
     borderRadius: 10,
     backgroundColor: theme.surfaceAlt,
   },
+  rollbackBox: {
+    marginTop: 10,
+    padding: 10,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: theme.border,
+    backgroundColor: theme.surfaceAlt,
+  },
+  rollbackTitle: { color: theme.accent, fontSize: 11, fontWeight: '800', textTransform: 'uppercase' },
+  rollbackText: { color: theme.text, fontSize: 12, marginTop: 4 },
+  rollbackLimit: { color: theme.warn, fontSize: 11, marginTop: 4 },
   actions: { flexDirection: 'row', gap: 8, marginTop: 12 },
   actionBtn: {
     flex: 1,

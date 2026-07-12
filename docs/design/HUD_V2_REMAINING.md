@@ -28,6 +28,8 @@
 - ✅ **Secrets / Capabilities**: the secret store form is live in `SecretsPanel`, and
   `CapabilitiesPanel` can issue tokens, keep recent grants visible, and check a
   token/capability pair through `GET /api/security/capabilities/check`.
+- ✅ **Capability Registry**: `ReadinessPanel` reads canonical `GET /api/capabilities` and
+  shows readiness, risk, supports, and confidence without fabricating verification.
 - ✅ **Rooms**: create + send with `@mentions` are live in `RoomsPanel`, and the selected-room
   history drawer reads `GET /api/rooms/{id}/history`.
 

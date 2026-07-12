@@ -1,6 +1,6 @@
 // @ts-nocheck
 /* HUD-v3 B3 — the Console Verification Fabric / Readiness panel reads the capability
-   registry (GET /api/metrics/capabilities) and renders the SEAM→WIRED→VERIFIED→GA
+   registry (GET /api/capabilities) and renders the SEAM→WIRED→VERIFIED→GA
    ladder. fetch is mocked, like kernel-safety-panels.test.tsx — asserts the wiring,
    the roll-up tags, the per-capability state, and the honesty contract (the
    harness-pending banner that refuses to imply verification we can't back). */
@@ -18,20 +18,26 @@ function mockFetch(payload) {
 }
 
 describe('ReadinessPanel — the Verification Fabric board is live', () => {
-  it('GETs /api/metrics/capabilities and shows the readiness ladder + a capability', async () => {
+  it('GETs /api/capabilities and shows readiness plus planning metadata', async () => {
     const fn = mockFetch({
       total: 33,
       by_state: { seam: 2, wired: 31, verified: 0, ga: 0 },
       by_kind: { plugin: 20, component: 8, skill: 5 },
       harness_pending: true,
-      capabilities: [{ id: 'plugin:analytics', kind: 'plugin', state: 'wired' }],
+      capabilities: [{
+        id: 'plugin:analytics', kind: 'plugin', state: 'wired', risk: 'sensitive',
+        supports: ['plugin-call', 'egress:restricted'], confidence: 0.42,
+      }],
     });
     render(<ReadinessPanel />);
     await waitFor(() => expect(screen.getByText('31 wired')).toBeTruthy());
-    expect(fn.mock.calls.some((c) => String(c[0]).includes('/api/metrics/capabilities'))).toBe(true);
+    expect(fn.mock.calls.some((c) => String(c[0]).endsWith('/api/capabilities'))).toBe(true);
     expect(screen.getByText('2 seam')).toBeTruthy();
     expect(screen.getByText('0 verified')).toBeTruthy();
     expect(screen.getByText('plugin:analytics')).toBeTruthy();
+    expect(screen.getByText('sensitive')).toBeTruthy();
+    expect(screen.getByText('plugin-call · egress:restricted')).toBeTruthy();
+    expect(screen.getByText('42%')).toBeTruthy();
   });
 
   it('renders the honesty banner while the harness has proven nothing (harness_pending)', async () => {

@@ -412,12 +412,12 @@ export function KernelMetricsPanel() {
     </Card>
   );
 }
-/* HUD-v3 B3 — Verification Fabric readiness board. Reads the real capability registry
-   (GET /api/metrics/capabilities): the SEAM→WIRED→VERIFIED→GA ladder. Honesty contract —
+/* HUD-v3 B3 / H27.8 — Capability Registry board. Reads the canonical user-facing registry
+   (GET /api/capabilities): the SEAM→WIRED→VERIFIED→GA ladder. Honesty contract —
    nothing is VERIFIED until a green reality-harness promotes it, so `harness_pending`
    renders "wired, not yet proven" rather than implying verification we can't back. */
 export function ReadinessPanel() {
-  const { d, e, loading, reload } = useApi('/api/metrics/capabilities');
+  const { d, e, loading, reload } = useApi('/api/capabilities');
   const bs = (d && d.by_state) || {};
   const caps = (d && d.capabilities) || [];
   const pending = d && d.harness_pending;
@@ -437,12 +437,23 @@ export function ReadinessPanel() {
         </Row>
       )}
       {pending && <div style={{ fontSize: 10, color: 'var(--amber)', marginTop: 6 }}>harness pending · wired, not yet proven — nothing is VERIFIED until a green reality-harness promotes it</div>}
-      {caps.slice(0, 8).map((c, i) => (
-        <Row key={i}>
-          <span style={{ ...mono, color: 'var(--ink-2)' }}>{c.id}</span>
-          <span style={{ marginLeft: 'auto' }}><Tag c={stateColor(c.state)}>{c.state}</Tag></span>
-        </Row>
-      ))}
+      {caps.slice(0, 8).map((c, i) => {
+        const confidence = typeof c.confidence === 'number'
+          ? Math.round(Math.max(0, Math.min(1, c.confidence)) * 100) + '%' : '—';
+        const supports = Array.isArray(c.supports) && c.supports.length
+          ? c.supports.slice(0, 3).join(' · ') : '—';
+        return <div key={i} style={{ padding: '5px 0', borderBottom: '1px solid var(--panel-line)' }}>
+          <div style={{ display: 'flex', gap: 5, alignItems: 'center' }}>
+            <span style={{ ...mono, color: 'var(--ink-2)' }}>{c.id}</span>
+            <span style={{ marginLeft: 'auto', display: 'flex', gap: 5 }}>
+              <Tag c={c.risk === 'irreversible_or_money' ? 'var(--red)' : c.risk === 'sensitive' ? 'var(--amber)' : 'var(--ink-3)'}>{c.risk || 'read_only'}</Tag>
+              <Tag c={stateColor(c.state)}>{c.state}</Tag>
+              <Tag c={Number(c.confidence) > 0 ? 'var(--green)' : 'var(--ink-3)'}>{confidence}</Tag>
+            </span>
+          </div>
+          <div style={{ ...mono, fontSize: 9.5, color: 'var(--ink-3)', marginTop: 3 }}>{supports}</div>
+        </div>;
+      })}
     </Card>
   );
 }
@@ -1295,6 +1306,10 @@ export function DecisionInboxPanel() {
               <button className="tool-btn" title="defer" onClick={() => decide(t.id, 'defer')}>defer</button>
             </span>
           </Row>
+          {t.rollback && <div style={{ margin: '3px 0 7px 12px', fontSize: 10, color: 'var(--ink-2)' }}>
+            <div><span style={{ ...mono, color: 'var(--accent-light)' }}>rollback · </span>{t.rollback.description}</div>
+            {t.rollback.limitations && <div style={{ color: 'var(--amber)', marginTop: 2 }}>{t.rollback.limitations}</div>}
+          </div>}
           {preview && preview.id === t.id && (
             <div style={{ margin: '4px 0 8px 12px', fontSize: 10 }}>
               {preview.data === null ? <span style={{ color: 'var(--ink-3)' }}>previewing…</span>
