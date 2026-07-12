@@ -16,7 +16,7 @@ inherits from [`../docs/BRAND_BOOK.md`](../docs/BRAND_BOOK.md).
 | [`brand-review/`](brand-review/) | `BRAND_REVIEW.md` | Consistency audit vs. the brand book — drift found + fixed, scored 8.5/10, with a re-review cadence | You / an agency onboarding |
 | [`campaign-plan/`](campaign-plan/) | `CAMPAIGN_PLAN.md` | The executable launch playbook — audiences, message ladder, channel plan, T-minus timeline, metrics, pre-mortem | You / a growth lead |
 | [`competitive-brief/`](competitive-brief/) | `COMPETITIVE_BRIEF.md` | The honest, sourced field map — vs OpenClaw / Bee / Khoj / big-tech; objection handling; lines not to cross | Sales / positioning / comment threads |
-| [`content/`](content/) | `CONTENT_CALENDAR.md` | Ready-to-schedule copy bank — teaser arc, launch posts, the 7-tweet thread, long-form outline, evergreen cadence | Social scheduler / a writer |
+| [`content/`](content/) | `CONTENT_CALENDAR.md` + `SOCIAL_SUMMARY.md` | Ready-to-schedule copy bank — teaser arc, launch posts, the 7-tweet thread, evergreen cadence — plus the pre-launch status update for the waiting audience (EN + RO) | Social scheduler / a writer |
 | [`landing/`](landing/) | `index.html` + `demo-shot-list.md` | Static, self-contained landing page dev half plus owner-facing demo capture checklist | Static host / owner recording pass |
 | [`alpha-testing/`](alpha-testing/) | `jarvis-alpha-hook-vertical.mp4` + `INVITE_MESSAGE.md` | Private alpha tester recruiting hook video and paste-ready invite copy | Personal-network outreach |
 
