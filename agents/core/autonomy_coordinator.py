@@ -204,6 +204,7 @@ class AutonomyCoordinator:
                 "required": ["value"],
                 "additionalProperties": False,
             },
+            capability_id="tool:echo",
         )
         server.register_tool(
             "time",
@@ -214,6 +215,7 @@ class AutonomyCoordinator:
                 "properties": {},
                 "additionalProperties": False,
             },
+            capability_id="tool:time",
         )
 
         runtime = AgentToolRuntime(

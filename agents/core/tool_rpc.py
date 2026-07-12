@@ -95,6 +95,7 @@ class ToolRPCServer:
         gated: bool = False,
         description: str = "",
         input_schema: Optional[dict] = None,
+        capability_id: str | None = None,
     ) -> "ToolRPCServer":
         """Expose one tool. ``gated=True`` ⇒ external/mutating ⇒ needs approval."""
         schema = input_schema if input_schema is not None else {
@@ -106,19 +107,23 @@ class ToolRPCServer:
             "gated": bool(gated),
             "description": description,
             "input_schema": deepcopy(schema),
+            "capability_id": capability_id,
         }
         return self
 
     def tools(self) -> "list[dict]":
-        return [
-            {
+        tools = []
+        for name, spec in sorted(self._tools.items()):
+            row = {
                 "name": name,
                 "gated": spec["gated"],
                 "description": spec["description"],
                 "input_schema": deepcopy(spec["input_schema"]),
             }
-            for name, spec in sorted(self._tools.items())
-        ]
+            if spec.get("capability_id"):
+                row["capability_id"] = spec["capability_id"]
+            tools.append(row)
+        return tools
 
     def allows(self, name: str) -> bool:
         return name in self._tools

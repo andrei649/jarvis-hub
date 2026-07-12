@@ -1737,22 +1737,24 @@ async def test_autonomy_coordinator_wires_one_live_governed_agent_tool_runtime()
             "name": "echo",
             "gated": False,
             "description": "Return the provided values.",
-            "input_schema": {
+             "input_schema": {
                 "type": "object",
                 "properties": {"value": {"type": "string"}},
                 "required": ["value"],
-                "additionalProperties": False,
-            },
+                 "additionalProperties": False,
+             },
+            "capability_id": "tool:echo",
         },
         {
             "name": "time",
             "gated": False,
             "description": "Return the current Unix timestamp.",
-            "input_schema": {
+             "input_schema": {
                 "type": "object",
                 "properties": {},
-                "additionalProperties": False,
-            },
+                 "additionalProperties": False,
+             },
+            "capability_id": "tool:time",
         },
     ]
 
