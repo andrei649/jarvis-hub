@@ -1,0 +1,194 @@
+"""Machine-readable capability manifests for the Nerva action plane.
+
+The action-auth registry remains the source of truth for mediation.  This module
+adds the product metadata an agent needs to reason about those actions without
+introducing another authorization registry.
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+from typing import Any
+
+RISK_LEVELS = frozenset({"read_only", "reversible", "sensitive", "irreversible_or_money"})
+
+
+@dataclass(frozen=True)
+class CapabilityManifest:
+    id: str
+    description: str
+    inputs: dict[str, Any]
+    risk: str
+    requires: tuple[str, ...]
+    supports: tuple[str, ...]
+    verification: str
+    rollback: str
+    confidence: float
+    implementation: str
+    action_kind: str | None = None
+    contract_ref: str | None = None
+
+    def __post_init__(self) -> None:
+        validate_manifest(self)
+
+
+def validate_manifest(manifest: CapabilityManifest) -> CapabilityManifest:
+    """Validate the stable fields shared by action and derived manifests."""
+    if not manifest.id or not manifest.description.strip():
+        raise ValueError("capability id and description are required")
+    if not isinstance(manifest.inputs, dict) or manifest.inputs.get("type") != "object":
+        raise ValueError("capability inputs must be an object schema")
+    if manifest.risk not in RISK_LEVELS:
+        raise ValueError(f"unsupported capability risk: {manifest.risk}")
+    if isinstance(manifest.confidence, bool) or not isinstance(manifest.confidence, (int, float)):
+        raise ValueError("capability confidence must be numeric")
+    if not 0.0 <= float(manifest.confidence) <= 1.0:
+        raise ValueError("capability confidence must be between 0 and 1")
+    if not manifest.requires or not manifest.supports:
+        raise ValueError("capability requires and supports must be non-empty")
+    if not manifest.verification or not manifest.rollback or ":" not in manifest.implementation:
+        raise ValueError("capability verification, rollback and implementation are required")
+    return manifest
+
+
+def _action(
+    kind: str,
+    description: str,
+    *,
+    required: tuple[str, ...] = (),
+    risk: str = "sensitive",
+    supports: tuple[str, ...] = ("execute",),
+    rollback: str,
+    implementation: str,
+    contract_ref: str | None = None,
+) -> CapabilityManifest:
+    return CapabilityManifest(
+        id=f"action:{kind}",
+        description=description,
+        inputs={"type": "object", "required": list(required), "additionalProperties": True},
+        risk=risk,
+        requires=("action-kernel",),
+        supports=supports,
+        verification=f"action-auth:{kind}",
+        rollback=rollback,
+        confidence=0.8,
+        implementation=implementation,
+        action_kind=kind,
+        contract_ref=contract_ref,
+    )
+
+
+# Explicit product decisions.  A drift test pins this key set to ACTION_REGISTRY.
+ACTION_CAPABILITY_MANIFESTS: dict[str, CapabilityManifest] = {
+    "node.dispatch": _action(
+        "node.dispatch",
+        "Dispatch an allowlisted operation to a registered execution node.",
+        required=("node_id", "operation"),
+        rollback="cancel a queued dispatch; remote rollback is implementation-specific",
+        implementation="agents.core.node_mesh:NodeMesh.dispatch",
+    ),
+    "call.outbound": _action(
+        "call.outbound",
+        "Place a governed outbound call through a configured provider.",
+        required=("to", "message"),
+        rollback="cancel before provider acceptance; an accepted call cannot be undone",
+        implementation="agents.core.autonomy.call_broker:CallBroker.request",
+    ),
+    "social.*": _action(
+        "social.*",
+        "Publish or mutate content through a governed social provider.",
+        required=("provider", "action"),
+        risk="irreversible_or_money",
+        supports=("publish", "mutate"),
+        rollback="delete the remote item when the provider supports deletion",
+        implementation="agents.core.social:SocialBroker.request",
+    ),
+    "writeback.*": _action(
+        "writeback.*",
+        "Write an attributed update to an allowlisted external target.",
+        required=("target", "action"),
+        risk="reversible",
+        supports=("create", "update"),
+        rollback="restore the previous target value from the audit snapshot",
+        implementation="agents.core.writeback:WriteBackBroker.request",
+    ),
+    "payment": _action(
+        "payment",
+        "Request a payment within an active mandate and hard spending caps.",
+        required=("mandate_id", "payee", "amount", "currency"),
+        risk="irreversible_or_money",
+        supports=("request", "approve"),
+        rollback="cancel before settlement; a settled payment cannot be undone",
+        implementation="agents.core.payments:PaymentBroker.request_payment",
+        contract_ref="agents.core.payments:PAYMENT_CONTRACT",
+    ),
+    "plugin.egress": _action(
+        "plugin.egress",
+        "Send a policy-admitted outbound request for a governed plugin.",
+        required=("plugin", "method", "url"),
+        supports=("http",),
+        rollback="abort the request before transmission",
+        implementation="agents.core.http_client:PluginHTTPClient.request",
+        contract_ref="agents.core.plugin_gate:PLUGIN_CALL_CONTRACT",
+    ),
+    "mcp.mutating": _action(
+        "mcp.mutating",
+        "Invoke an identity-checked mutating MCP route tool.",
+        required=("tool", "args"),
+        supports=("tool-rpc", "mutate"),
+        rollback="use the adapter-specific rollback declared by the route specification",
+        implementation="agents.core.mcp.route_tools:MutatingRouteTool.call",
+    ),
+    "tool.rpc": _action(
+        "tool.rpc",
+        "Invoke a gated ToolRPC tool through its approval and sandbox boundary.",
+        required=("tool", "args"),
+        supports=("tool-rpc",),
+        rollback="use the tool-declared rollback; otherwise the action is not reversible",
+        implementation="agents.core.tool_rpc:ToolRPCServer.handle",
+    ),
+    "repo.sync": _action(
+        "repo.sync",
+        "Pull and validate an externally triggered repository update.",
+        required=("commit",),
+        supports=("git", "test"),
+        rollback="revert to the recorded pre-sync commit",
+        implementation="agents.core.plugins.oracle_bridge:OracleBridgePlugin._process_claude_commit",
+    ),
+    "admin.kill_switch": _action(
+        "admin.kill_switch",
+        "Engage the persisted action kill-switch for an authenticated scope.",
+        required=("scope",),
+        supports=("halt",),
+        rollback="disengage through the admin-only recovery path",
+        implementation="agents.core.routers.security:kill_switch_set",
+    ),
+    "admin.capability_issue": _action(
+        "admin.capability_issue",
+        "Issue a bounded capability token to an authenticated operator.",
+        required=("capabilities",),
+        supports=("issue",),
+        rollback="revoke the issued capability token",
+        implementation="agents.core.routers.security:capabilities_issue",
+    ),
+    "kg.write": _action(
+        "kg.write",
+        "Apply an externally requested mutation to the governed knowledge graph.",
+        required=("operation",),
+        risk="reversible",
+        supports=("create", "update", "delete"),
+        rollback="restore the entity or relation from the audit snapshot",
+        implementation="agents.core.routers.memory_kg:kg_upsert_entity",
+    ),
+}
+
+
+def manifest_for_action(kind: str) -> CapabilityManifest | None:
+    """Resolve a concrete action kind using the action-auth exact/wildcard rules."""
+    exact = ACTION_CAPABILITY_MANIFESTS.get(kind)
+    if exact is not None:
+        return exact
+    for pattern, manifest in ACTION_CAPABILITY_MANIFESTS.items():
+        if pattern.endswith(".*") and kind.startswith(pattern[:-1]):
+            return manifest
+    return None
