@@ -75,26 +75,35 @@ def _exercise(kind, spy, tmp_path, monkeypatch=None):
     """Drive the broker/route that owns *kind* through its real entry-point."""
     if kind == "call.outbound":
         from agents.core.autonomy.call_broker import CallBroker
+
         CallBroker(enqueue=lambda *a, **k: 1, kernel=spy).request(
-            to="+15551234567", message="hi", provider="twilio")
+            to="+15551234567", message="hi", provider="twilio"
+        )
     elif kind == "social.*":
         from agents.core.social import SocialBroker
+
         SocialBroker(enqueue=lambda *a, **k: 1, kernel=spy).request("x", "post", {"text": "hi"})
     elif kind == "writeback.*":
         from agents.core.writeback import WriteBackBroker
+
         wb = WriteBackBroker(enqueue=lambda *a, **k: 1, kernel=spy)
         tgt = wb.targets()[0]
         wb.request(tgt["target"], tgt["action"], dict.fromkeys(tgt["required"], "x"))
     elif kind == "node.dispatch":
         from agents.core.node_mesh import NodeMesh
         from agents.core.security.capability import CapabilityBroker, KillSwitch
-        nm = NodeMesh(capability_broker=CapabilityBroker(),
-                      kill_switch=KillSwitch(tmp_path / "kill.json"),
-                      enqueue=lambda *a, **k: 1, kernel=spy)
+
+        nm = NodeMesh(
+            capability_broker=CapabilityBroker(),
+            kill_switch=KillSwitch(tmp_path / "kill.json"),
+            enqueue=lambda *a, **k: 1,
+            kernel=spy,
+        )
         nm.register_node("n1", ["run"])
         nm.dispatch("n1", "run")
     elif kind == "payment":
         from agents.core.payments import PaymentBroker
+
         pb = PaymentBroker(path=str(tmp_path / "pay.json"), kernel=spy)
         # Only an *admissible* request reaches the kernel hook (mandate hard-caps gate
         # first), so set up a mandate that permits the request.
@@ -106,6 +115,7 @@ def _exercise(kind, spy, tmp_path, monkeypatch=None):
         # wrapping the spy, then restore the global hook so other tests are unaffected.
         from agents.core import http_client as hc
         from agents.core.kernel.binding import make_egress_kernel_hook
+
         client = hc.PluginHTTPClient(plugin_name="egress_matrix_probe")
         hc.set_egress_kernel_hook(make_egress_kernel_hook(lambda: spy))
         try:
@@ -120,9 +130,14 @@ def _exercise(kind, spy, tmp_path, monkeypatch=None):
 
         async def _invoke(_kwargs):
             return {"ok": True}
+
         tool = MutatingRouteTool(
-            spec=MUTATING_ROUTE_ALLOWLIST[0], invoke=_invoke,
-            auditor=None, identity_check=lambda _t: True, kernel=spy)
+            spec=MUTATING_ROUTE_ALLOWLIST[0],
+            invoke=_invoke,
+            auditor=None,
+            identity_check=lambda _t: True,
+            kernel=spy,
+        )
         asyncio.run(tool.call({"text": "x"}, token="ok"))
     elif kind == "tool.rpc":
         # A gated Tool-RPC call is mediated by the kernel before it can enqueue.
@@ -132,6 +147,7 @@ def _exercise(kind, spy, tmp_path, monkeypatch=None):
 
         async def _gated(_a):
             return {"ok": True}
+
         srv = ToolRPCServer(enqueue=lambda *a, **k: 1, kernel=spy)
         srv.register_tool("danger", _gated, gated=True)
         asyncio.run(srv.handle({"tool": "danger", "args": {}}))
@@ -150,12 +166,14 @@ def _exercise(kind, spy, tmp_path, monkeypatch=None):
         bridge._git_pull = lambda: (True, "")
         bridge._scan_file_hashes = lambda: None
         bridge._run_tests = lambda: (1, 1, 0, "")
-        asyncio.run(bridge._process_claude_commit(
-            "c" * 40,
-            "feat: external repo sync",
-            author_login="claude",
-            trigger_verified=True,
-        ))
+        asyncio.run(
+            bridge._process_claude_commit(
+                "c" * 40,
+                "feat: external repo sync",
+                author_login="claude",
+                trigger_verified=True,
+            )
+        )
     elif kind in ("admin.kill_switch", "admin.capability_issue"):
         # HTTP routes (not brokers/hooks): drive the REAL handler with a stub Request +
         # a tmp_path-backed orch, injecting the spy by monkeypatching the production
@@ -232,7 +250,12 @@ def _exercise(kind, spy, tmp_path, monkeypatch=None):
 
         import agents.web as web
         from agents.core.autonomy.policy import AutonomyPolicy
-        from agents.core.media_director import DeviceRegistry, MediaDevice, MediaDirector, SessionBoard
+        from agents.core.media_director import (
+            DeviceRegistry,
+            MediaDevice,
+            MediaDirector,
+            SessionBoard,
+        )
         from agents.core.routers import media_director as media_routes
         from agents.core.security.capability import CapabilityBroker, KillSwitch
 
@@ -260,14 +283,20 @@ def _exercise(kind, spy, tmp_path, monkeypatch=None):
 
         registry = DeviceRegistry(path=None)
         registry.register(MediaDevice(id="tv-1", name="TV", kind="tv", room="living"))
-        monkeypatch.setattr(media_routes, "_director", MediaDirector(
-            registry=registry, sessions=SessionBoard(path=None), drivers={"tv": _Driver()}))
+        monkeypatch.setattr(
+            media_routes,
+            "_director",
+            MediaDirector(
+                registry=registry, sessions=SessionBoard(path=None), drivers={"tv": _Driver()}
+            ),
+        )
         monkeypatch.setattr(web, "orch", _Orch())
         monkeypatch.setattr("agents.core.kernel.binding.make_action_kernel", lambda o: spy)
         monkeypatch.setenv("JARVIS_MEDIA_DIRECTOR", "1")
         monkeypatch.setenv("JARVIS_UNIFIED_ACTION_API", "1")
         body = media_routes.PresentBody(
-            content={"type": "url", "value": "https://example.local/x"}, target="tv-1")
+            content={"type": "url", "value": "https://example.local/x"}, target="tv-1"
+        )
         asyncio.run(media_routes.media_present(body))
     else:  # pragma: no cover - a new KERNEL kind needs an exerciser added here
         raise AssertionError(f"no exerciser for kernel-classified kind {kind!r}")

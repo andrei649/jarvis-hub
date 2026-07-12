@@ -204,7 +204,8 @@ class DeviceRegistry:
             try:
                 found = discoverer() or []
             except Exception:
-                continue
+                # A broken host-seam discoverer must not take the registry down.
+                found = []
             for item in found:
                 try:
                     device = item if isinstance(item, MediaDevice) else MediaDevice(**item)
