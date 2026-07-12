@@ -296,16 +296,31 @@ def latest_ci_commit(*, env=None, runner=None) -> str:
             base_sha = event.get("pull_request", {}).get("base", {}).get("sha", "")
             if base_sha:
                 return str(base_sha)
+            before_sha = str(event.get("before", "")).strip()
+            if before_sha and before_sha.strip("0"):
+                return before_sha
         except (OSError, json.JSONDecodeError, AttributeError):
             pass
-    args = ["git", "rev-parse", "origin/main"]
-    if runner is not None:
-        code, output = runner(args)
-        return output.strip() if code == 0 else "unknown"
-    proc = subprocess.run(  # noqa: S603  # nosec B603
-        args, cwd=str(REPO), capture_output=True, text=True
-    )
-    return proc.stdout.strip() if proc.returncode == 0 else "unknown"
+
+    def run_git(ref: str) -> tuple[int, str]:
+        args = ["git", "rev-parse", ref]
+        if runner is not None:
+            code, output = runner(args)
+            return code, output.strip()
+        proc = subprocess.run(  # noqa: S603  # nosec B603
+            args, cwd=str(REPO), capture_output=True, text=True
+        )
+        return proc.returncode, proc.stdout.strip()
+
+    main_code, main_sha = run_git("origin/main")
+    if main_code != 0:
+        return "unknown"
+    head_code, head_sha = run_git("HEAD")
+    if head_code == 0 and head_sha == main_sha:
+        parent_code, parent_sha = run_git("origin/main^")
+        if parent_code == 0 and parent_sha:
+            return parent_sha
+    return main_sha
 
 
 def collect_project_status(*, reuse_js_counts: bool = False) -> dict:
