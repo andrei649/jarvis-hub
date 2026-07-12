@@ -96,6 +96,8 @@ class AutonomyWorker:
                  kill_switch=None):
         self.queue = queue
         self.policy = policy or AutonomyPolicy()
+        if hasattr(self.policy, "outcome_provider"):
+            self.policy.outcome_provider = self._capability_outcome_stats
         self.executor = executor
         self.notifier = notifier
         self.budget = budget or InterruptBudget()
@@ -143,6 +145,19 @@ class AutonomyWorker:
 
     def _force_ask_for_taint(self, level: str, tainted: bool) -> str:
         return ASK if tainted and level in (ACT, NOTIFY) else level
+
+    def _capability_outcome_stats(self, kind: str) -> dict | None:
+        """Resolve a non-spoofable policy confidence input from the durable ledger."""
+        try:
+            from agents.core.capability_manifests import manifest_for_action
+
+            manifest = manifest_for_action(str(kind or ""))
+            stats = getattr(self.queue, "capability_outcome_stats", None)
+            if manifest is not None and callable(stats):
+                return stats(manifest.id)
+        except Exception:
+            logger.warning("capability outcome lookup failed closed", exc_info=True)
+        return None
 
     def govern_enqueue(self, agent: str, kind: str, title: str, payload: dict = None,
                        risk_tier: int = 2, autonomy_level: str = ASK,
@@ -251,6 +266,7 @@ class AutonomyWorker:
             try:
                 result = await self._execute(task)
                 self.queue.transition(task.id, TaskStatus.DONE, result=result)
+                self._record_capability_outcome(task, success=True, result=result)
                 self._settle_spend(task)
                 self._audit("autonomy.done", task, "executed")
                 done += 1
@@ -258,6 +274,7 @@ class AutonomyWorker:
                 if attempts >= MAX_ATTEMPTS:
                     self.queue.transition(task.id, TaskStatus.FAILED,
                                           result={"error": str(e)})
+                    self._record_capability_outcome(task, success=False)
                     self._audit("autonomy.failed", task, f"giving up after {attempts}: {e}")
                     failed += 1
                 else:
@@ -279,6 +296,22 @@ class AutonomyWorker:
                 self.policy.record_spend(float(amount))
             except (TypeError, ValueError):
                 pass
+
+    def _record_capability_outcome(
+        self, task: Task, *, success: bool, result: dict | None = None,
+    ) -> None:
+        """Record one terminal real execution; ignore no-op and unknown actions."""
+        if success and isinstance(result, dict) and result.get("status") == "noop":
+            return
+        try:
+            from agents.core.capability_manifests import manifest_for_action
+
+            manifest = manifest_for_action(task.kind)
+            record = getattr(self.queue, "record_capability_outcome", None)
+            if manifest is not None and callable(record):
+                record(manifest.id, success=success)
+        except Exception:
+            logger.warning("capability outcome record failed", exc_info=True)
 
     # ── human decisions ───────────────────────────────────────────
     async def apply_decision(self, task_id: int, action: str,

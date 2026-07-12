@@ -158,13 +158,36 @@ def _plugin_records() -> list[CapabilityRecord]:
     return out
 
 
-def _action_records() -> list[CapabilityRecord]:
+def _action_records(orch=None) -> list[CapabilityRecord]:
     """Derive executable action capabilities from the action-auth manifest layer."""
     from agents.core.capability_manifests import ACTION_CAPABILITY_MANIFESTS
     from agents.core.kernel.registry import ACTION_REGISTRY
 
-    return [
-        CapabilityRecord(
+    queue = getattr(orch, "autonomy_queue", None) if orch is not None else None
+    stats_for = getattr(queue, "capability_outcome_stats", None)
+    records = []
+    for kind, manifest in sorted(ACTION_CAPABILITY_MANIFESTS.items()):
+        stats = {
+            "successes": 0,
+            "failures": 0,
+            "total": 0,
+            "success_rate": 0.0,
+            "confidence": 0.0,
+            "last_outcome_at": None,
+        }
+        if callable(stats_for):
+            try:
+                stats = stats_for(manifest.id)
+            except Exception:
+                logger.warning(
+                    "capability outcome stats unavailable for %s; confidence stays zero",
+                    manifest.id,
+                )
+        outcome_detail = {
+            key: stats.get(key)
+            for key in ("successes", "failures", "total", "success_rate", "last_outcome_at")
+        }
+        records.append(CapabilityRecord(
             id=manifest.id,
             kind="action",
             state=WIRED,
@@ -175,13 +198,16 @@ def _action_records() -> list[CapabilityRecord]:
             supports=manifest.supports,
             verification=manifest.verification,
             rollback=manifest.rollback,
-            confidence=manifest.confidence,
+            confidence=float(stats.get("confidence", manifest.confidence)),
             implementation=manifest.implementation,
             contract_ref=manifest.contract_ref,
-            detail={"action_kind": kind, "mediation": ACTION_REGISTRY[kind].value},
-        )
-        for kind, manifest in sorted(ACTION_CAPABILITY_MANIFESTS.items())
-    ]
+            detail={
+                "action_kind": kind,
+                "mediation": ACTION_REGISTRY[kind].value,
+                "outcomes": outcome_detail,
+            },
+        ))
+    return records
 
 
 def _tool_records(orch) -> list[CapabilityRecord]:
@@ -298,7 +324,7 @@ def build_records(orch=None) -> list[CapabilityRecord]:
     isolated so one failing registry can't blank the whole board."""
     records: list[CapabilityRecord] = []
     for source in (_plugin_records,
-                   _action_records,
+                   lambda: _action_records(orch),
                    lambda: _tool_records(orch) if orch is not None else [],
                    lambda: _component_records(orch) if orch is not None else [],
                    lambda: _skill_records(orch) if orch is not None else []):

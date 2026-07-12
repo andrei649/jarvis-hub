@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import re
 import threading
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from enum import IntEnum
 from typing import Optional
@@ -38,6 +39,9 @@ class Outcome(str):
 ACT = "act"        # execute autonomously, log it
 NOTIFY = "notify"  # execute but inform the user (non-urgent)
 ASK = "ask"        # block and request human approval
+
+EARNED_MIN_SAMPLES = 20
+EARNED_MIN_CONFIDENCE = 0.80
 
 
 # Keyword → tier classification. First match wins, highest tier first so that
@@ -95,6 +99,12 @@ class AutonomyPolicy:
     # Money guardrails (same currency as the action's `amount`).
     cap_per_action: float = 50.0
     daily_ceiling: float = 200.0
+    # H27.7: default-off, evidence-gated one-rung reduction. This never changes
+    # the classified risk tier and never applies to IRREVERSIBLE_OR_MONEY.
+    earned_autonomy_enabled: bool = False
+    outcome_provider: Callable[[str], dict] | None = field(
+        default=None, repr=False, compare=False,
+    )
     # Per-tier default outcome (balanced).
     tier_outcomes: dict = field(default_factory=lambda: {
         RiskTier.READ_ONLY: ACT,
@@ -199,9 +209,39 @@ class AutonomyPolicy:
             return Decision(ASK, tier, f"exceeds cap {self.cap_per_action} or daily ceiling", urgent=True)
 
         outcome = self.tier_outcomes.get(tier, ASK)
+        outcome, earned_reason = self._apply_earned_autonomy(outcome, tier, action)
         urgent = outcome == ASK and _num(action.get("time_sensitivity")) >= 0.7
-        reason = f"tier={tier.name} → {outcome}"
+        reason = earned_reason or f"tier={tier.name} → {outcome}"
         return Decision(outcome, tier, reason, urgent=urgent)
+
+    def _apply_earned_autonomy(
+        self, outcome: str, tier: RiskTier, action: dict,
+    ) -> tuple[str, str | None]:
+        """Lower ASK/NOTIFY by one rung only after conservative outcome proof."""
+        if not self.earned_autonomy_enabled or tier == RiskTier.IRREVERSIBLE_OR_MONEY:
+            return outcome, None
+        if not callable(self.outcome_provider):
+            return outcome, None
+        try:
+            stats = self.outcome_provider(str(action.get("kind") or action.get("name") or ""))
+        except Exception:
+            return outcome, None
+        if not isinstance(stats, dict):
+            return outcome, None
+        try:
+            samples = int(stats.get("total", 0))
+            confidence = float(stats.get("confidence", 0.0))
+        except (TypeError, ValueError):
+            return outcome, None
+        if samples < EARNED_MIN_SAMPLES or confidence < EARNED_MIN_CONFIDENCE:
+            return outcome, None
+        lowered = {ASK: NOTIFY, NOTIFY: ACT}.get(outcome, outcome)
+        if lowered == outcome:
+            return outcome, None
+        return lowered, (
+            f"earned autonomy: tier={tier.name} {outcome}→{lowered} "
+            f"(n={samples}, confidence={confidence:.3f})"
+        )
 
     def record_spend(self, amount: float) -> None:
         # Atomic read-modify-write so concurrent callers can't lose increments.

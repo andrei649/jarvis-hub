@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import json
 import logging
+import math
 import sqlite3
 import threading
 from dataclasses import dataclass
@@ -135,6 +136,14 @@ class TaskQueue:
         self._conn.execute(
             "CREATE INDEX IF NOT EXISTS idx_tasks_status ON tasks(status, id)"
         )
+        self._conn.execute("""
+            CREATE TABLE IF NOT EXISTS capability_outcomes (
+                capability_id TEXT PRIMARY KEY,
+                successes INTEGER NOT NULL DEFAULT 0,
+                failures INTEGER NOT NULL DEFAULT 0,
+                last_outcome_at TEXT NOT NULL
+            )
+        """)
         self._conn.commit()
         return self
 
@@ -183,7 +192,11 @@ class TaskQueue:
             sets.append("result=?"); params.append(json.dumps(result, ensure_ascii=False))
         params.append(task_id)
         with self._lock:
-            self._conn.execute(f"UPDATE tasks SET {', '.join(sets)} WHERE id=?", params)
+            # Column names come from the fixed list above; all values stay parameterized.
+            self._conn.execute(
+                f"UPDATE tasks SET {', '.join(sets)} WHERE id=?",  # nosec B608
+                params,
+            )
             self._conn.commit()
         return self.get(task_id)
 
@@ -211,6 +224,26 @@ class TaskQueue:
             )
             self._conn.commit()
 
+    def record_capability_outcome(self, capability_id: str, *, success: bool) -> None:
+        """Durably add one real terminal execution outcome for a capability."""
+        capability_id = str(capability_id or "").strip()
+        if not capability_id:
+            return
+        succeeded, failed = (1, 0) if success else (0, 1)
+        now = _now()
+        with self._lock:
+            self._conn.execute(
+                """INSERT INTO capability_outcomes
+                       (capability_id, successes, failures, last_outcome_at)
+                   VALUES (?, ?, ?, ?)
+                   ON CONFLICT(capability_id) DO UPDATE SET
+                       successes = successes + excluded.successes,
+                       failures = failures + excluded.failures,
+                       last_outcome_at = excluded.last_outcome_at""",
+                (capability_id, succeeded, failed, now),
+            )
+            self._conn.commit()
+
     # ── reads ─────────────────────────────────────────────────────
     def get(self, task_id: int) -> Optional[Task]:
         with self._lock:
@@ -228,7 +261,9 @@ class TaskQueue:
         params.append(limit)
         with self._lock:
             rows = self._conn.execute(
-                f"SELECT * FROM tasks {where} ORDER BY id DESC LIMIT ?", params
+                # `where` contains only the fixed status/origin clauses above.
+                f"SELECT * FROM tasks {where} ORDER BY id DESC LIMIT ?",  # nosec B608
+                params,
             ).fetchall()
         return [_row_to_task(r) for r in rows]
 
@@ -246,7 +281,9 @@ class TaskQueue:
         params.append(limit)
         with self._lock:
             rows = self._conn.execute(
-                f"SELECT * FROM tasks WHERE {clause} ORDER BY id ASC LIMIT ?", params
+                # `clause` contains only fixed retry/tier predicates.
+                f"SELECT * FROM tasks WHERE {clause} ORDER BY id ASC LIMIT ?",  # nosec B608
+                params,
             ).fetchall()
         return [_row_to_task(r) for r in rows]
 
@@ -260,7 +297,9 @@ class TaskQueue:
             clause += " AND pushed=0"
         with self._lock:
             rows = self._conn.execute(
-                f"SELECT * FROM tasks WHERE {clause} ORDER BY id ASC LIMIT ?", (limit,)
+                # `clause` is one of the two fixed pending-decision predicates.
+                f"SELECT * FROM tasks WHERE {clause} ORDER BY id ASC LIMIT ?",  # nosec B608
+                (limit,),
             ).fetchall()
         return [_row_to_task(r) for r in rows]
 
@@ -271,10 +310,53 @@ class TaskQueue:
             ).fetchall()
         return {r["status"]: r["n"] for r in rows}
 
+    def capability_outcome_stats(self, capability_id: str) -> dict:
+        capability_id = str(capability_id or "").strip()
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT * FROM capability_outcomes WHERE capability_id=?",
+                (capability_id,),
+            ).fetchone()
+        return _outcome_stats(capability_id, row)
+
+    def all_capability_outcome_stats(self) -> dict[str, dict]:
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT * FROM capability_outcomes ORDER BY capability_id"
+            ).fetchall()
+        return {row["capability_id"]: _outcome_stats(row["capability_id"], row) for row in rows}
+
 
 # ── helpers ───────────────────────────────────────────────────────
 def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
+
+
+def _wilson_lower_bound(successes: int, total: int, z: float = 1.96) -> float:
+    """95% Wilson lower bound; small samples never look more certain than they are."""
+    if total <= 0:
+        return 0.0
+    rate = successes / total
+    z2 = z * z
+    denominator = 1.0 + z2 / total
+    centre = rate + z2 / (2.0 * total)
+    margin = z * math.sqrt((rate * (1.0 - rate) / total) + z2 / (4.0 * total * total))
+    return max(0.0, min(1.0, (centre - margin) / denominator))
+
+
+def _outcome_stats(capability_id: str, row) -> dict:
+    successes = int(row["successes"]) if row is not None else 0
+    failures = int(row["failures"]) if row is not None else 0
+    total = successes + failures
+    return {
+        "capability_id": capability_id,
+        "successes": successes,
+        "failures": failures,
+        "total": total,
+        "success_rate": round(successes / total, 6) if total else 0.0,
+        "confidence": round(_wilson_lower_bound(successes, total), 6),
+        "last_outcome_at": row["last_outcome_at"] if row is not None else None,
+    }
 
 
 def _row_to_task(row: sqlite3.Row) -> Task:

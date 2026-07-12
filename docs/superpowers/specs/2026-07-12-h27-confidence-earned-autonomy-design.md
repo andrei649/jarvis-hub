@@ -30,8 +30,9 @@ counts. Other capability kinds stay at zero until they acquire an equivalent rea
 ## Earned-autonomy rule
 
 `AutonomyPolicy` gains an `earned_autonomy_enabled` switch, default false, live-synced from the
-existing settings path `autonomy.earned_autonomy_enabled`. The worker injects the resolved action's
-stats into policy evaluation. In `auto` mode only, at `samples >= 20` and `confidence >= 0.80`, policy
+existing settings path `autonomy.earned_autonomy_enabled`. The worker binds a private outcome
+provider backed by the queue; caller payloads cannot inject or spoof confidence. In `auto` mode only,
+at `samples >= 20` and `confidence >= 0.80`, policy
 may lower the outcome by exactly one rung (`ASK → NOTIFY` or `NOTIFY → ACT`) while retaining the
 original risk tier in the decision/task/audit record.
 
@@ -76,4 +77,3 @@ The decision reason carries the sample/confidence provenance when a rung is earn
 
 Revert the PR or set `autonomy.earned_autonomy_enabled=false` (the default). The additive SQLite table
 may remain safely unused; no destructive migration is required.
-
