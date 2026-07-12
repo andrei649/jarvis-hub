@@ -16,10 +16,12 @@ mișcare: bifează `✅` itemii livrați + actualizează contorul de teste. De p
 `AGENTS.md` → „BACKLOG sync — în același commit cu merge-ul".)
 Când se discută "viziune"/"north star"/"moonshot"/"strategie"/"suntem pe drumul bun?" → citește `MOONSHOT.md`
 (north star: viziune, principii non-negociabile, phase gates, ritmul de lucru și harta documentelor).
-Când se discută **"AI OS"/piloni de capabilitate/"house brain"/media director/camere/computer operator/
-capability registry/"strategia Hermes"/"superior lui Hermes"** → citește `AI_OS_VISION.md` (viziunea
-detaliată de capabilități: cei 6 piloni, arhitectura țintă, registry, graduated autonomy, criteriile
-S1–S8 vs Hermes; orizonturile ORIZONT 27–33 în `BACKLOG.md`). MOONSHOT.md rămâne north-star-ul scurt.
+Când se discută **"Nerva"/brand/sub-branduri (Cortex/Atlas/Synapse/Vision/Ultron)/"AI OS"/piloni de
+capabilitate/"house brain"/media director/camere/computer operator/capability registry/"strategia
+Hermes"/"superior lui Hermes"** → citește `NERVA_VISION.md` (viziunea de produs + capabilități:
+brand architecture, cei 6 piloni, arhitectura țintă, registry, graduated autonomy, criteriile
+S1–S8 vs Hermes; orizonturile ORIZONT 27–33 în `BACKLOG.md`). MOONSHOT.md rămâne north-star-ul
+scurt. **Nerva = brandul de produs; jarvis-hub = codename-ul repo-ului până la rename (owner).**
 Taskurile care țin **doar de owner** (hardware, GitHub settings, decizii) → `docs/OWNER_TASKS.md`.
 Când se discută **metrici/KPI/măsurarea north-star** (accepted actions, interrupt/reject rate, %-local, p95) → `docs/METRICS.md`
 (definiții + endpoint `GET /api/metrics/north-star`). Retrospectiva anuală (status, învățăminte, gap-uri) → `docs/REVIEW_YEAR_ONE.md`.

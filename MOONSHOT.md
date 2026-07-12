@@ -2,21 +2,25 @@
 
 > The north-star document. Everything else (roadmap, architecture, pricing) serves this.
 > Generated: 2026-06-02 · **Rewritten: 2026-07-11** (the AI-OS expansion — see
-> [AI_OS_VISION.md](AI_OS_VISION.md) + the decision log) · Stage: **v0.11.0** (feature-complete +
+> [NERVA_VISION.md](NERVA_VISION.md) + the decision log) · Stage: **v0.11.0** (feature-complete +
 > refactor done; building toward the expanded 1.0 — see §4 + [version roadmap](BACKLOG.md#version-roadmap)) · Owner: Andrei
 >
 > **How to use this doc:** read §1–§4 to know *where we're going*, §7 to know *how we stay on
 > track*. When a decision feels off-mission, check it against §5 (principles) and §1 (the bet).
 > The detailed *capability* vision (six pillars, target architecture, the Hermes superiority bar)
-> lives in [AI_OS_VISION.md](AI_OS_VISION.md). The operational docs linked in §8 are *downstream* of this one.
+> lives in [NERVA_VISION.md](NERVA_VISION.md). The operational docs linked in §8 are *downstream* of this one.
 
 ---
 
 ## 1. The Moonshot
 
-> **Jarvis is a local-first Personal AI Operating System that can perceive, reason, communicate,
-> operate digital and physical systems, and continuously expand its own capabilities under human
-> governance — owned by the person it serves, not the vendor.**
+> **Nerva is a local-first Personal Intelligence Operating System that can perceive, understand,
+> communicate, operate digital and physical systems, verify outcomes, and continuously expand its
+> own capabilities under explicit human governance — owned by the person it serves, not the vendor.**
+
+*(**Nerva** is the product brand, published by Digitaholic; `jarvis-hub` stays the repo/codename
+until the deliberate rename — [docs/OWNER_TASKS.md](docs/OWNER_TASKS.md). Brand architecture —
+Cortex · Atlas · Synapse · Vision · Ultron: [NERVA_VISION.md](NERVA_VISION.md) §2.)*
 
 Not a chatbot. Not a workflow builder. A **persistent, proactive, private cortex** that runs on
 your own hardware, builds a growing understanding of your life, finds its own work, and asks for a
@@ -25,7 +29,7 @@ decision only when it genuinely needs one — then learns to stop asking. And in
 governed kernel. The fundamental loop is not question→answer; it is:
 
 ```
-Observe → Understand → Reason → Act → Verify → Learn
+Observe → Understand → Decide → Act → Verify → Learn
 ```
 
 The 10-year bet: **the default interface to your digital life is a multi-agent system you own**,
@@ -71,7 +75,7 @@ private life to a hyperscaler.
 4. **Capabilities compound under governance** — a machine-readable capability registry with
    verification and *earned* autonomy makes every new integration multiply the others; ungoverned
    capability growth (the OpenClaw / unrestricted-self-modification path) is the failure mode,
-   not the fast path ([AI_OS_VISION.md](AI_OS_VISION.md) §5–§6).
+   not the fast path ([NERVA_VISION.md](NERVA_VISION.md) §6–§7).
 
 If any of these stops being true, revisit the moonshot — don't quietly drift from it.
 
@@ -87,7 +91,7 @@ a clear "done" gate; we do not skip gates.
 | **0 — Foundation** ✅ | H1–H9 → v0.9.x-beta | 16 agents, memory, autonomy, workflows, observability all work | Live; foundation green |
 | **1 — Feature-complete** ✅ | H10 + H11 + H12 + H13–H17 + H18–H22 + WorldView O19 → **v0.10.0** | From "works for Andrei" to a feature-rich, local-first AI OS — *every feature horizon shipped* | All feature backlog delivered; north-star instrumented. **But: single-user, unproven, not yet productionized.** |
 | **2a — Proven core** 🎯 (in flight) | **H23** + O24–O26 → **v0.12 … v0.20** | From "code-complete" to a product a stranger can install, trust, upgrade — **the proof track** | H23 spine done · ⭐B0 manual run · 72h soak · 1–3 design partners ≥2 weeks with real north-star data. *Formerly the whole 1.0 gate; now the trust half of it.* |
-| **2b — The AI OS** 🎯 | **O27–O33 → v0.21 … v0.27** | From governed assistant to a system that perceives, operates and grows: capability registry, computer/browser operators, media director, house brain, cameras, capability acquisition, ambient intelligence | Per-horizon gates in [BACKLOG.md](BACKLOG.md); each of the six pillars reaches its **v1 bar** ([AI_OS_VISION.md](AI_OS_VISION.md) §9); parked modules unfreeze per phase |
+| **2b — The AI OS** 🎯 | **O27–O33 → v0.21 … v0.27** | From governed assistant to a system that perceives, operates and grows: capability registry, computer/browser operators, media director, house brain, cameras, capability acquisition, ambient intelligence | Per-horizon gates in [BACKLOG.md](BACKLOG.md); each of the six pillars reaches its **v1 bar** ([NERVA_VISION.md](NERVA_VISION.md) §10); parked modules unfreeze per phase |
 | **→ 1.0** | **2a AND 2b complete** | "Owned & proven" becomes "**the governed Personal AI OS — owned & proven**" | Both gates met + owner legal/brand done + manual-test/audit pass → tag |
 | **3 — Sellable / ecosystem** | Hosted Pro + multi-user + moderated marketplace → post-1.0 (v1.x → v2.0) | Hosted tier, first revenue; others build *on* Jarvis; households/teams not just Andrei | Paid conversion measured; multi-user + signed marketplace + 3rd-party A2A/widget adoption |
 
@@ -126,9 +130,9 @@ wrong even if it ships faster.
    event loop; failures degrade gracefully (recall never hard-fails).
 6. **Your data trains no one's model** — anonymization and local processing are defaults, not upsells.
 7. **Capability growth is governed** — Jarvis may acquire new skills and integrations only through
-   the sandbox → verification → approval → registry path ([AI_OS_VISION.md](AI_OS_VISION.md) §5, ORIZONT 32);
+   the sandbox → verification → approval → registry path ([NERVA_VISION.md](NERVA_VISION.md) §6, ORIZONT 32);
    unrestricted self-modification is out, permanently. A capability's autonomy is *earned* per the
-   graduated-autonomy ladder (AI_OS_VISION §6), never assumed — and money/locks/security actions
+   graduated-autonomy ladder (NERVA_VISION §7), never assumed — and money/locks/security actions
    never rise above the approval queue.
 
 ---
@@ -173,7 +177,7 @@ The moonshot is only real if day-to-day work bends toward it. This section is th
 | When you're deciding… | Read… |
 |-----------------------|-------|
 | *Where are we going / is this on-mission?* | **MOONSHOT.md** (this file) — §1, §3, §5 |
-| *What is the full AI-OS capability vision / where is pillar X?* | [AI_OS_VISION.md](AI_OS_VISION.md) — pillars, architecture, registry, the Hermes bar |
+| *What is the full AI-OS capability vision / where is pillar X?* | [NERVA_VISION.md](NERVA_VISION.md) — pillars, architecture, registry, the Hermes bar |
 | *What should I work on next?* | [BACKLOG.md](BACKLOG.md) — priorities, story points, horizons |
 | *Are we ready to ship v1.0?* | [GO_LIVE_PLAN.md](GO_LIVE_PLAN.md) — launch checklist |
 | *Where does this code live / how do I change it?* | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) — module index, recipes |
@@ -182,7 +186,7 @@ The moonshot is only real if day-to-day work bends toward it. This section is th
 | *What did we already deliver?* | [docs/HISTORY.md](docs/HISTORY.md) |
 | *What's the current snapshot?* | [STATUS.md](STATUS.md) |
 | *What's it worth / how do we price & fund it?* | [docs/VALUATION_AND_PRICING.md](docs/VALUATION_AND_PRICING.md) |
-| *Where are the gaps to 1.0?* | [docs/gap-analysis-1.0.md](docs/gap-analysis-1.0.md) (proof track) + [AI_OS_VISION.md](AI_OS_VISION.md) §3 (capability gaps) |
+| *Where are the gaps to 1.0?* | [docs/gap-analysis-1.0.md](docs/gap-analysis-1.0.md) (proof track) + [NERVA_VISION.md](NERVA_VISION.md) §4 (capability gaps) |
 
 ### 7.3 Definition of "on track"
 
@@ -206,7 +210,7 @@ has an audit trail and future contributors understand *why*, not just *what*.
 | File | Role relative to the moonshot |
 |------|-------------------------------|
 | **MOONSHOT.md** | North star — *why we exist, where we're going, how we stay on track* |
-| [AI_OS_VISION.md](AI_OS_VISION.md) | The capability vision — *the six pillars, target architecture, capability registry, graduated autonomy, the Hermes superiority bar* |
+| [NERVA_VISION.md](NERVA_VISION.md) | The product & capability vision — *the Nerva brand architecture (Cortex/Atlas/Synapse/Vision/Ultron), six pillars, target architecture, capability registry, graduated autonomy, the Hermes superiority bar* |
 | [BACKLOG.md](BACKLOG.md) | The plan — *what's next, prioritized* |
 | [GO_LIVE_PLAN.md](GO_LIVE_PLAN.md) | The launch — *features, marketing, road to 1.0* |
 | [docs/VALUATION_AND_PRICING.md](docs/VALUATION_AND_PRICING.md) | The business — *value, pricing, unit economics* |

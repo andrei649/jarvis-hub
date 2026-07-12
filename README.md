@@ -7,7 +7,7 @@
 
 > 17 specialized AI agents orchestrated through Jarvis, running on **your own hardware**, controlled by voice and web.
 
-**A private AI OS that cannot silently act beyond the authority you grant it.** Local-first and governed: every autonomous action crosses one **Action Kernel** — a reversible/irreversible **approval queue** for anything consequential, a tamper-evident **audit log**, budgets and a kill-switch — and it runs entirely on your own hardware (LM Studio / Ollama on your GPU), **$0/month, no cloud by default**, with a **family agent that never touches the internet**. Where other local agent systems prioritize extensibility and raw autonomy, Jarvis Hub prioritizes governed execution, local ownership, and inspectability. The long-term capability vision (house brain, media director, cameras, computer operator, self-extension) is in [`AI_OS_VISION.md`](AI_OS_VISION.md).
+**A private AI OS that cannot silently act beyond the authority you grant it.** Local-first and governed: every autonomous action crosses one **Action Kernel** — a reversible/irreversible **approval queue** for anything consequential, a tamper-evident **audit log**, budgets and a kill-switch — and it runs entirely on your own hardware (LM Studio / Ollama on your GPU), **$0/month, no cloud by default**, with a **family agent that never touches the internet**. Where other local agent systems prioritize extensibility and raw autonomy, this system prioritizes governed execution, local ownership, and inspectability. The product it is becoming is **Nerva** (published by Digitaholic; `jarvis-hub` remains the repo codename until the deliberate rename) — the long-term product & capability vision (house brain, media director, cameras, computer operator, self-extension) is in [`NERVA_VISION.md`](NERVA_VISION.md).
 
 **Get running in minutes →** [Quickstart](#run) · one-click `INSTALL.bat` on Windows.
 
@@ -128,7 +128,7 @@ _Linux/macOS shortcut:_ `./install.sh` does all of the above (venv + install + t
 ## Docs
 
 - **`MOONSHOT.md`** — the north star: vision, principles, phase gates, and how the project stays on track. Read this first for the *why* and *where we're going*.
-- **`AI_OS_VISION.md`** — the detailed capability vision: the six pillars (perception, communication, action, house, media, capability evolution), the target architecture, the capability registry, graduated autonomy, and the measurable "superior to Hermes" bar.
+- **`NERVA_VISION.md`** — the Nerva product & capability vision: the brand architecture (Cortex/Atlas/Synapse/Vision/Ultron), the six pillars (perception, communication, action, house, media, capability evolution), the target architecture, the capability registry, graduated autonomy, and the measurable "superior to Hermes" bar.
 - **`docs/ARCHITECTURE.md`** — AI-navigable map of the codebase (entry points, request lifecycle, module index, how-to recipes). Start here to find where things live.
 - **`docs/AI_CONTEXT.md`** — context-loading map for large-context AI (what to load, in which order, per-task bundles with token estimates).
 - **`docs/OWNER_TASKS.md`** — the human-gated queue: everything only the owner can do (hardware runs, GitHub settings, decisions).
@@ -144,7 +144,7 @@ _Linux/macOS shortcut:_ `./install.sh` does all of the above (venv + install + t
 
 ## Status
 
-**v0.11.0 — feature-complete + refactor done, building toward the expanded 1.0** (the version line is the roadmap — see [BACKLOG.md](BACKLOG.md#version-roadmap); **1.0 = the proof track** — productionization + real design-partner users — **plus the AI-OS capability program**, [`AI_OS_VISION.md`](AI_OS_VISION.md)). 17 specialist agents (incl. **Argus** for WorldView geoint and **Howard**, the emerging digital twin; + 17 bench) across 4 tiers; real-embeddings recall (LM Studio) + fused recall +
+**v0.11.0 — feature-complete + refactor done, building toward the expanded 1.0** (the version line is the roadmap — see [BACKLOG.md](BACKLOG.md#version-roadmap); **1.0 = the proof track** — productionization + real design-partner users — **plus the AI-OS capability program**, [`NERVA_VISION.md`](NERVA_VISION.md)). 17 specialist agents (incl. **Argus** for WorldView geoint and **Howard**, the emerging digital twin; + 17 bench) across 4 tiers; real-embeddings recall (LM Studio) + fused recall +
 RAG injection; hot-path perf (SQLite WAL, event-loop offload, checkpoint debounce, query-embedding
 cache, complexity-based model tiering); autonomous proactive cortex (ORIZONT 6); security wedge (encrypted
 secrets, signed skills, reversible/irreversible approval split, quarantine/capability/kill-switch); competitive edge
@@ -159,7 +159,7 @@ backup/restore + export-delete, operability, quality + user docs — see the
 [version roadmap](BACKLOG.md#version-roadmap)) proven with real design-partner users — **and (b) the
 AI-OS capability program** (ORIZONT 27–33: capability registry, computer/browser operator, media
 director, house brain, cameras, capability acquisition, ambient intelligence —
-[`AI_OS_VISION.md`](AI_OS_VISION.md), gate expanded 2026-07-11); manual testing
+[`NERVA_VISION.md`](NERVA_VISION.md), gate expanded 2026-07-11); manual testing
 ([`docs/MANUAL_TESTING.md`](docs/MANUAL_TESTING.md)) + code audit
 ([`docs/AUDIT.md`](docs/AUDIT.md)) are the release step that tags a version. The HUD V2 cockpit is the default UI;
 deep write-controls for ~37 newer backend surfaces are tracked in

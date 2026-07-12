@@ -34,7 +34,7 @@ Order matters: each file assumes the previous ones.
 | 1 | `CLAUDE.md` | 0.2K | Entry point — routing rules to everything else |
 | 2 | `AGENTS.md` | 1.6K | Non-negotiable conventions, parity rules, multi-agent workflow |
 | 3 | `docs/ARCHITECTURE.md` | 9K | Entry points, request lifecycle, module index, how-to recipes |
-| 4 | `MOONSHOT.md` | 3K | Vision, principles, phase gates — the drift check; links onward to `AI_OS_VISION.md` (Tier 1) for the capability detail |
+| 4 | `MOONSHOT.md` | 3K | Vision, principles, phase gates — the drift check; links onward to `NERVA_VISION.md` (Tier 1) for the capability detail |
 | 5 | `STATUS.md` | 2.5K | Current snapshot (version, counts, agent roster) |
 | 6 | `README.md` | 2.5K | Public framing, run instructions |
 | 7 | `JARVIS.md` | 3K | Architecture overview + directory tree |
@@ -44,7 +44,7 @@ Order matters: each file assumes the previous ones.
 | File | ≈ tokens | Why |
 |------|----------|-----|
 | `BACKLOG.md` | 42K | THE priority truth. Large because it's the full ledger — for quick tasks read only the header through "Status General" (~3K) plus the section you're touching |
-| `AI_OS_VISION.md` | ~5K | The capability vision — six pillars, target architecture, capability registry, graduated autonomy, the Hermes superiority bar (S1–S8). Load for any strategy/roadmap/capability task |
+| `NERVA_VISION.md` | ~5K | The capability vision — six pillars, target architecture, capability registry, graduated autonomy, the Hermes superiority bar (S1–S8). Load for any strategy/roadmap/capability task |
 | `GO_LIVE_PLAN.md` | 5.5K | Features, marketing brief, v1.0 launch checklist |
 | `docs/2026-06-10-full-project-analysis.md` | 1.5K | Latest whole-repo audit: stats, debt, parity verdict |
 | `docs/REVIEW_YEAR_ONE.md` | 2.5K | Candid year-one review: status, the 12 learnings, gap to a desirable product, next-90-days plan |

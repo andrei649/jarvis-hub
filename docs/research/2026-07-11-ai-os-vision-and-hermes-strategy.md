@@ -205,7 +205,7 @@ agents.
   system and household model.**
 
 The measurable "superior to Hermes" bar (criteria S1–S8) is defined and maintained in
-`AI_OS_VISION.md` §7 — parity-or-better on Hermes's home turf (execution breadth, skill
+`NERVA_VISION.md` (§8 after the 2026-07-12 merge) — parity-or-better on Hermes's home turf (execution breadth, skill
 acquisition, multi-target execution, context endurance) while holding what Hermes doesn't have
 (full kernel mediation, local-first proof, the physical-world pillars, governed onboarding).
 
@@ -219,11 +219,11 @@ acquisition, multi-target execution, context endurance) while holding what Herme
 3. **This change ships as a strategy/docs PR.** The audit's engineering items become spec'd
    backlog items (H23.24–H23.28), implemented in follow-up PRs.
 4. **MOONSHOT.md is rewritten now** as the new north star; the detailed capability vision lives in
-   the new root-level `AI_OS_VISION.md`. New strategic docs in English.
+   the new root-level vision doc (authored as `AI_OS_VISION.md`; renamed `NERVA_VISION.md` in the 2026-07-12 merge — §7). New strategic docs in English.
 
 ## 6. Where it was integrated
 
-- `AI_OS_VISION.md` — the living detailed vision (pillars, architecture, registry, graduated
+- `NERVA_VISION.md` (root; initially authored as `AI_OS_VISION.md`, renamed in the 2026-07-12 merge — see §7) — the living detailed vision (pillars, architecture, registry, graduated
   autonomy, Hermes superiority bar S1–S8, phase plan, the v1 bar per pillar).
 - `MOONSHOT.md` — rewritten §1 statement + loop; §3 thesis #4; §4 trajectory (Phase 2a proven
   core / Phase 2b the AI OS / 1.0 = both); §5 principle #7 (capability growth is governed);
@@ -239,3 +239,22 @@ acquisition, multi-target execution, context endurance) while holding what Herme
 - Registrations: `CLAUDE.md` routing, `docs/AI_CONTEXT.md` Tier 1, README docs list;
   consistency touches in `GO_LIVE_PLAN.md`, `JARVIS.md`, `STATUS.md`, `docs/OWNER_TASKS.md`,
   `docs/gap-analysis-1.0.md`.
+
+## 7. Addendum — parallel draft & reconciliation (2026-07-12)
+
+In parallel with this session, a second strategy draft was authored from the same owner
+conversation and merged as **#661** → `docs/NERVA_VISION.md`: the **Nerva** brand architecture
+(publisher **Digitaholic**; sub-brands **Cortex** cognition · **Atlas** reality model ·
+**Synapse** capabilities · **Vision** visual perception · **Ultron** governance, plus
+Howard/Frigga/Argus roles), delivery Programs A–G, and — contradicting the decision recorded in
+§5.1 above — a **narrow** v1.0 ("productionized + proven, plus one vertical slice per pillar").
+
+Owner reconciliation decisions (2026-07-12):
+1. **The expanded 1.0 gate stands** (§5.1) — it supersedes the #661 draft's §8.
+2. **Nerva is adopted as the product brand across the canonical docs**; `jarvis-hub` remains the
+   repository codename until the rename is deliberately executed (owner task).
+3. **One canonical vision document**: this PR's `AI_OS_VISION.md` was renamed to root
+   **`NERVA_VISION.md`** and merged with the #661 content (brand architecture, Atlas definition,
+   success scenarios, Programs A–G mapped to ORIZONT 27–33); `docs/NERVA_VISION.md` was reduced to
+   a pointer stub. The core loop settled on **Observe → Understand → Decide → Act → Verify → Learn**
+   (the #661 / original-conversation verb).

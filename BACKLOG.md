@@ -9,7 +9,7 @@
 > **Hermes migration v3 plan (reviewed by Fable 2026-07-07 — APPROVED with notes):** [docs/research/2026-07-06-hermes-agent-migration-plan.md](docs/research/2026-07-06-hermes-agent-migration-plan.md) · review verdict + remaining-phase order in [docs/handoff-fable-2026-07-07.md](docs/handoff-fable-2026-07-07.md) §5
 > **Last-day Fable handoff (2026-07-07 — ordered owner/AI task lanes, risk register):** [docs/handoff-fable-2026-07-07.md](docs/handoff-fable-2026-07-07.md)
 > **Pre-go-live stakeholder sync (2026-07-07 — 5-seat agent panel, conditional GO, Gate-2 checklist):** [docs/meetings/2026-07-07-pre-go-live-sync.md](docs/meetings/2026-07-07-pre-go-live-sync.md)
-> **AI-OS capability vision (the 1.0 gate expanded 2026-07-11):** [AI_OS_VISION.md](AI_OS_VISION.md) — six pillars, target architecture, capability registry, the Hermes superiority bar; horizons ORIZONT 27–33 below · provenance: [docs/research/2026-07-11-ai-os-vision-and-hermes-strategy.md](docs/research/2026-07-11-ai-os-vision-and-hermes-strategy.md)
+> **Nerva product & capability vision (the 1.0 gate expanded 2026-07-11; visions merged 2026-07-12):** [NERVA_VISION.md](NERVA_VISION.md) — brand architecture (Cortex/Atlas/Synapse/Vision/Ultron), six pillars, capability registry, the Hermes superiority bar; horizons ORIZONT 27–33 (= Nerva Programs A–G) below · provenance: [docs/research/2026-07-11-ai-os-vision-and-hermes-strategy.md](docs/research/2026-07-11-ai-os-vision-and-hermes-strategy.md)
 
 **S = story points (1 = ~jumătate de zi) · P = prioritate (P0–P3)**
 
@@ -126,7 +126,7 @@ python -m pytest tests/ -v          # ~3,868 passed, 6 skipped (counter synced v
 >
 > **2026-07-11 update:** A8 "tag 1.0.0" now sits behind the **expanded** 1.0 gate — the proof
 > track (A1–A7, unchanged) **plus** the AI-OS capability program (ORIZONT 27–33 below /
-> [AI_OS_VISION.md](AI_OS_VISION.md)). A1–A7 remain the critical path and are NOT displaced.
+> [NERVA_VISION.md](NERVA_VISION.md)). A1–A7 remain the critical path and are NOT displaced.
 
 **Lane A — owner critical path (ordered; delivered via PR #634):**
 
@@ -199,7 +199,7 @@ instalați** (restul pe listă de așteptare). Candidați contributor din fir (I
 > **Gate expanded 2026-07-11 (owner decision):** 1.0 ships only when **both** halves are done —
 > **(a) the proof track** (the 0.13–0.20 themes + ⭐B0 + 72h soak + design partners) **and (b) the
 > AI-OS capability program** (v0.21–v0.27 / ORIZONT 27–33, six pillars at their v1 bar —
-> [AI_OS_VISION.md](AI_OS_VISION.md) §9). Manual testing/audit is the *release step that tags a
+> [NERVA_VISION.md](NERVA_VISION.md) §10). Manual testing/audit is the *release step that tags a
 > version*, not a roadmap item; owner-only items (license, naming, GitHub settings) live in
 > [docs/OWNER_TASKS.md](docs/OWNER_TASKS.md).
 
@@ -225,14 +225,14 @@ instalați** (restul pe listă de așteptare). Candidați contributor din fir (I
 | **0.18.0 🖥️** | Digital twin & fine-tune (**GPU-gated**) | H12.14 fine-tuned model, H13.3 speculative decoding, TASK-1 Howard first real run |
 | **0.19.0 ⚠️** | Reach, quality & user docs | mobile parity tail (H18); **quality gates** (E2E, load/soak, a11y, i18n, browser+mobile matrix); **user docs ✅** (USER_GUIDE/FAQ/UPGRADE — H23.18; trust docs THREAT_MODEL/PRIVACY/SECURITY/NOTICE/SBOM — H23.19); **onboarding wizard** + activation funnel + cold-start error guidance |
 | **0.20.0 ⚠️** | Product-proof | design-partner program (recruit 1–3) — *in-app **feedback/NPS** + program doc ✅ H23.21*; support channel + SLA; north-star **measured on real usage**; landing page + demo |
-| **v0.21.0** 🧠 | **Capability plane** (AI-OS Phase 1) | ORIZONT 27 — Capability Registry v1 + unified Action API (`perform()`) + verification hooks + earned autonomy; extends O24 K/V, no parallel system |
-| **v0.22.0** 🖱️ | **Operator** (AI-OS Phase 2a) | ORIZONT 28 — real browser driver (Playwright behind GovernedBrowser) + desktop actuation + terminal-target abstraction + the API→CLI→UI→visual router; **unpark wave 1** |
-| **v0.23.0** 📺 | **Media Director** (AI-OS Phase 2b) | ORIZONT 29 — `media_player` abstraction + Chromecast + the `present()` fabric + session etiquette; **unpark wave 2** |
-| **v0.24.0** 🏠 | **House Brain** (AI-OS Phase 3) | ORIZONT 30 — Home Assistant state adapter + device/room/occupant graph + presence + governed actuation; **unpark wave 3** |
-| **v0.25.0** 📷 | **Camera Intelligence** (AI-OS Phase 4) | ORIZONT 31 — privacy contract first, then RTSP/ONVIF ingest + local detection + event index + NL clip retrieval |
-| **v0.26.0** 🌱 | **Capability Acquisition** (AI-OS Phase 5) | ORIZONT 32 — the gap→search→research→generate→sandbox→approve→register→reuse loop |
-| **v0.27.0** 👁️ | **Ambient Intelligence** (AI-OS Phase 6) | ORIZONT 33 — monitor framework + the ignore/remember/monitor/act-silently/ask/interrupt ladder |
-| **1.0.0** | 🎯 **The governed Personal AI OS — owned & proven** | **proof track done** (H23 spine + ⭐B0 + 72h soak + 1–3 partners ≥2 weeks) **+ six pillars at their v1 bar** ([AI_OS_VISION.md](AI_OS_VISION.md) §9) **+** owner legal/brand; manual-test/audit pass → tag |
+| **v0.21.0** 🧠 | **Capability plane** (AI-OS Phase 1) | ORIZONT 27 (Nerva Program A) — Capability Registry v1 + unified Action API (`perform()`) + verification hooks + earned autonomy; extends O24 K/V, no parallel system |
+| **v0.22.0** 🖱️ | **Operator** (AI-OS Phase 2a) | ORIZONT 28 (Nerva Program B) — real browser driver (Playwright behind GovernedBrowser) + desktop actuation + terminal-target abstraction + the API→CLI→UI→visual router; **unpark wave 1** |
+| **v0.23.0** 📺 | **Media Director** (AI-OS Phase 2b) | ORIZONT 29 (Nerva Program C) — `media_player` abstraction + Chromecast + the `present()` fabric + session etiquette; **unpark wave 2** |
+| **v0.24.0** 🏠 | **House Brain** (AI-OS Phase 3) | ORIZONT 30 (Nerva Program D) — Home Assistant state adapter + device/room/occupant graph + presence + governed actuation; **unpark wave 3** |
+| **v0.25.0** 📷 | **Camera Intelligence** (AI-OS Phase 4) | ORIZONT 31 (Nerva Program E) — privacy contract first, then RTSP/ONVIF ingest + local detection + event index + NL clip retrieval |
+| **v0.26.0** 🌱 | **Capability Acquisition** (AI-OS Phase 5) | ORIZONT 32 (Nerva Program F) — the gap→search→research→generate→sandbox→approve→register→reuse loop |
+| **v0.27.0** 👁️ | **Ambient Intelligence** (AI-OS Phase 6) | ORIZONT 33 (Nerva Program G) — monitor framework + the ignore/remember/monitor/act-silently/ask/interrupt ladder |
+| **1.0.0** | 🎯 **The governed Personal AI OS — owned & proven** | **proof track done** (H23 spine + ⭐B0 + 72h soak + 1–3 partners ≥2 weeks) **+ six pillars at their v1 bar** ([NERVA_VISION.md](NERVA_VISION.md) §10) **+** owner legal/brand; manual-test/audit pass → tag |
 
 > **The active execution ORDER for what remains is ORIZONT 25 — M1→1.0** (2026-07-02, section below):
 > milestone tables + a model-agnostic execution protocol + the companion-quality charter, backed by the
@@ -413,7 +413,7 @@ instalați** (restul pe listă de așteptare). Candidați contributor din fir (I
 > re-reading the ~2M-token repo; each item ships as its own PR.
 >
 > **2026-07-11 note:** Phase D below ("3–5 design partners = the 1.0 gate") is now the **proof
-> half** of the *expanded* 1.0 gate (Version Roadmap above + [AI_OS_VISION.md](AI_OS_VISION.md) §9).
+> half** of the *expanded* 1.0 gate (Version Roadmap above + [NERVA_VISION.md](NERVA_VISION.md) §10).
 > The **V2 capability registry is the substrate the ORIZONT 27 Capability Registry v1 extends** —
 > one system, not two.
 
@@ -645,31 +645,31 @@ the real backend, but the pipeline-rewiring PR never ran it because the path fil
 
 ---
 
-## 🧩 ORIZONT 27 — Capability Registry & Unified Action API (AI-OS Phase 1, direction 2026-07-11)
+## 🧩 ORIZONT 27 — Capability Registry & Unified Action API (Nerva Program A · AI-OS Phase 1, direction 2026-07-11)
 
 > **Mission:** agents reason over a machine-readable capability inventory instead of hardcoding
 > actions; one call path (`perform()`); every capability carries risk, contract, verification,
 > rollback and earned confidence. **Builds ON (do not rebuild):** the O24 V2 registry
 > (`observability/capability_registry.py`, SEAM→WIRED→VERIFIED→GA), `automation_contracts.py`,
 > the action-auth matrix (`tests/test_action_auth_matrix.py` + `_snapshots/action_auth.json`),
-> the H20.R1 model-directed loop (`agent_runtime.py`). Vision: [AI_OS_VISION.md](AI_OS_VISION.md) §5
+> the H20.R1 model-directed loop (`agent_runtime.py`). Vision: [NERVA_VISION.md](NERVA_VISION.md) §6
 > · provenance: [2026-07-11 archive](docs/research/2026-07-11-ai-os-vision-and-hermes-strategy.md).
 > → Version **v0.21.0**.
 
 | # | Item | S | P | Dep | Sursă |
 |---|------|---|---|-----|-------|
-| H27.1 🟡 | **Registry schema v1** — extend `CapabilityRecord` with `description/inputs/risk/requires/supports/verification/rollback/confidence/implementation`; derivation from plugins/components/skills stays, manifests add the new fields | 5 | P0 | O24-V2 | AI_OS_VISION §5 |
+| H27.1 🟡 | **Registry schema v1** — extend `CapabilityRecord` with `description/inputs/risk/requires/supports/verification/rollback/confidence/implementation`; derivation from plugins/components/skills stays, manifests add the new fields | 5 | P0 | O24-V2 | NERVA_VISION §6 |
 | H27.2 ⬜ | **Capability manifests** for the 11 kernel-mediated action kinds + governed plugins (risk tier, contract ref, verification ref, rollback ref) | 5 | P0 | H27.1 | `action_auth.json` |
-| H27.3 ⬜ | **Unified Action API** — `perform(capability_id, params, ctx)` facade over `kernel.authorize` + brokers + ToolRPC; default-off flag; agents call *capabilities*, not tools | 8 | P0 | H27.1, O24-K1 | AI_OS_VISION §5 |
+| H27.3 ⬜ | **Unified Action API** — `perform(capability_id, params, ctx)` facade over `kernel.authorize` + brokers + ToolRPC; default-off flag; agents call *capabilities*, not tools | 8 | P0 | H27.1, O24-K1 | NERVA_VISION §6 |
 | H27.4 ⬜ | **Registry-aware planning** — the model-directed loop (`agent_runtime`, default-OFF) selects from registry descriptions/inputs/confidence; honest refusal when nothing matches | 5 | P1 | H27.3 | H20.R1 |
 | H27.5 ⬜ | **Verification field live** — each capability's `verification` points at a V1 reality-harness case; no VERIFIED without it (extends the V3 gate) | 3 | P1 | O24-V1/V3 | — |
 | H27.6 ⬜ | **Rollback contracts** — machine-readable rollback per capability; the approval UI shows the rollback story on QUEUE | 3 | P2 | H27.2 | — |
-| H27.7 ⬜ | **Confidence & earned autonomy** — per-capability outcome stats feed `confidence`; policy may lower the approval tier per the graduated ladder (**never** for `IRREVERSIBLE_OR_MONEY`) | 5 | P1 | H27.1 | AI_OS_VISION §6 |
+| H27.7 ⬜ | **Confidence & earned autonomy** — per-capability outcome stats feed `confidence`; policy may lower the approval tier per the graduated ladder (**never** for `IRREVERSIBLE_OR_MONEY`) | 5 | P1 | H27.1 | NERVA_VISION §7 |
 | H27.8 ⬜ | **Registry read surface** — `GET /api/capabilities` (extends `/api/metrics/capabilities`) + HUD board columns (risk/supports/confidence) | 2 | P2 | H27.1 | V2 panel |
 
 > **Total ORIZONT 27:** ~36 SP
 
-## 🖱️ ORIZONT 28 — Computer & Browser Operator (AI-OS Phase 2a, direction 2026-07-11)
+## 🖱️ ORIZONT 28 — Computer & Browser Operator (Nerva Program B · AI-OS Phase 2a, direction 2026-07-11)
 
 > **Mission:** turn H15's complete-but-stubbed governance into real actuation; the action
 > hierarchy **API → CLI → structured UI → visual** becomes an explicit router that always picks
@@ -680,16 +680,16 @@ the real backend, but the pipeline-rewiring PR never ran it because the path fil
 
 | # | Item | S | P | Dep | Sursă |
 |---|------|---|---|-----|-------|
-| H28.1 🟡 | **Real Playwright driver** behind `GovernedBrowser` (host seam; the Null driver stays the test default; governance layer untouched) | 8 | P0 | H15, H27.3 | AI_OS_VISION §3-P3 |
-| H28.2 ⬜ | **Action-hierarchy router** — given a goal, prefer API → CLI → structured UI automation → visual computer use; visual is the audited fallback, never the default | 5 | P1 | H27.3 | AI_OS_VISION §3-P3 |
-| H28.3 🟡 | **Terminal-target abstraction** over `core/environments` — named execution targets (`bonobo-windows`, `pi-house`, `isolated-sandbox`) with per-target capability policy + audit chain (Hermes has backends, not the audit — superiority S3) | 5 | P1 | H27.2 | AI_OS_VISION §7 |
+| H28.1 🟡 | **Real Playwright driver** behind `GovernedBrowser` (host seam; the Null driver stays the test default; governance layer untouched) | 8 | P0 | H15, H27.3 | NERVA_VISION §4-P3 |
+| H28.2 ⬜ | **Action-hierarchy router** — given a goal, prefer API → CLI → structured UI automation → visual computer use; visual is the audited fallback, never the default | 5 | P1 | H27.3 | NERVA_VISION §4-P3 |
+| H28.3 🟡 | **Terminal-target abstraction** over `core/environments` — named execution targets (`bonobo-windows`, `pi-house`, `isolated-sandbox`) with per-target capability policy + audit chain (Hermes has backends, not the audit — superiority S3) | 5 | P1 | H27.2 | NERVA_VISION §8 |
 | H28.4 🟡 | **Desktop actuation** behind `GovernedDesktop` — accessibility-tree first, VLM/screen-grounding fallback; mutating steps stay approval-gated | 8 | P1 | H28.1 | H15.3 |
-| H28.5 ⬜ | **Operator reality-harness pack** — the S1 benchmark (defined browser/computer task set, kernel ON, zero ungoverned actions in the trace) | 3 | P1 | O24-V1 | AI_OS_VISION §7-S1 |
+| H28.5 ⬜ | **Operator reality-harness pack** — the S1 benchmark (defined browser/computer task set, kernel ON, zero ungoverned actions in the trace) | 3 | P1 | O24-V1 | NERVA_VISION §8-S1 |
 | H28.6 ⬜ | **Unpark wave 1** — `browser_agent`/`desktop_operator`/`screen_grounding` off the park list; guard table updated (H23.28) | 1 | P2 | H23.28 | O26 Phase 6 |
 
 > **Total ORIZONT 28:** ~30 SP
 
-## 📺 ORIZONT 29 — Multimedia Director (AI-OS Phase 2b, direction 2026-07-11)
+## 📺 ORIZONT 29 — Multimedia Director (Nerva Program C · AI-OS Phase 2b, direction 2026-07-11)
 
 > **Mission:** one verb — `present(content, target_device, mode, urgency, duration)` — on every
 > screen and speaker in the house; play the right thing on the right device. **Builds ON:**
@@ -699,8 +699,8 @@ the real backend, but the pipeline-rewiring PR never ran it because the path fil
 
 | # | Item | S | P | Dep | Sursă |
 |---|------|---|---|-----|-------|
-| H29.1 ⬜ | **`media_player` abstraction + device registry** — Chromecast (pychromecast), Spotify Connect, browser-tab kiosk, local player; discovery + capability per device | 5 | P0 | — | AI_OS_VISION §3-P5 |
-| H29.2 ⬜ | **The `present()` capability** — content × device × mode × urgency × duration, kernel-mediated (reversible tier), registered in the O27 registry | 5 | P0 | H29.1, H27.3 | AI_OS_VISION §5 |
+| H29.1 ⬜ | **`media_player` abstraction + device registry** — Chromecast (pychromecast), Spotify Connect, browser-tab kiosk, local player; discovery + capability per device | 5 | P0 | — | NERVA_VISION §4-P5 |
+| H29.2 ⬜ | **The `present()` capability** — content × device × mode × urgency × duration, kernel-mediated (reversible tier), registered in the O27 registry | 5 | P0 | H29.1, H27.3 | NERVA_VISION §6 |
 | H29.3 ⬜ | **Content resolvers** — local/NAS media, the T-0.46 media catalog, URLs via the governed browser; honest "can't resolve" states | 3 | P1 | H29.2 | — |
 | H29.4 ⬜ | **Media session state + interrupt etiquette** — don't break a movie for a P3 nudge; rides the K3 interrupt budgets | 3 | P1 | H29.2 | MOONSHOT §5.4 |
 | H29.5 ⬜ | **Media reality-harness pack** + honest degraded modes (device offline ≠ crash) | 2 | P2 | O24-V1 | — |
@@ -708,7 +708,7 @@ the real backend, but the pipeline-rewiring PR never ran it because the path fil
 
 > **Total ORIZONT 29:** ~19 SP
 
-## 🏠 ORIZONT 30 — House Brain (AI-OS Phase 3, direction 2026-07-11)
+## 🏠 ORIZONT 30 — House Brain (Nerva Program D · AI-OS Phase 3, direction 2026-07-11)
 
 > **Mission:** a live model of the home — devices, rooms, occupants, presence, policies — with
 > governed actuation. Home Assistant is the device abstraction layer; Jarvis sits above it as the
@@ -719,17 +719,17 @@ the real backend, but the pipeline-rewiring PR never ran it because the path fil
 
 | # | Item | S | P | Dep | Sursă |
 |---|------|---|---|-----|-------|
-| H30.1 ⬜ | **Home Assistant adapter, read-first** — REST/WebSocket state (entities, areas, sensors), LOCAL_ONLY, honest empty state without HA | 5 | P0 | — | AI_OS_VISION §3-P4 |
-| H30.2 ⬜ | **Device/room/occupant graph** on the bi-temporal KG — rooms contain devices, observed_by cameras, occupied_by people; queryable | 5 | P0 | H30.1, H14 | AI_OS_VISION §4 |
+| H30.1 ⬜ | **Home Assistant adapter, read-first** — REST/WebSocket state (entities, areas, sensors), LOCAL_ONLY, honest empty state without HA | 5 | P0 | — | NERVA_VISION §4-P4 |
+| H30.2 ⬜ | **Device/room/occupant graph** on the bi-temporal KG — rooms contain devices, observed_by cameras, occupied_by people; queryable | 5 | P0 | H30.1, H14 | NERVA_VISION §4 |
 | H30.3 ⬜ | **Presence & context inference** (local-only) — who is home, which room is occupied, privacy context per room | 5 | P1 | H30.2 | — |
-| H30.4 ⬜ | **Governed actuation** — HA service calls through the kernel per the graduated ladder; lights/climate earn auto-within-bounds; **locks/doors/security never below strong confirmation** (hard floor) | 5 | P0 | H30.1, H27.7 | AI_OS_VISION §6 |
+| H30.4 ⬜ | **Governed actuation** — HA service calls through the kernel per the graduated ladder; lights/climate earn auto-within-bounds; **locks/doors/security never below strong confirmation** (hard floor) | 5 | P0 | H30.1, H27.7 | NERVA_VISION §7 |
 | H30.5 ⬜ | **`GET /api/house/state` + HUD panel** — the house graph visible, honest empty state | 3 | P2 | H30.2 | — |
 | H30.6 ⬜ | **Room-aware voice** — wyoming/satellite unpark; a satellite's room becomes the default output device for `present()` | 3 | P2 | O29, H23.28 | H12.4 |
 | H30.7 ⬜ | **House reality-harness pack** — hermetic HA simulator proves the rail; live = owner-gated | 3 | P1 | O24-V1 | — |
 
 > **Total ORIZONT 30:** ~29 SP
 
-## 📷 ORIZONT 31 — Camera Intelligence (AI-OS Phase 4, direction 2026-07-11)
+## 📷 ORIZONT 31 — Camera Intelligence (Nerva Program E · AI-OS Phase 4, direction 2026-07-11)
 
 > **Mission:** local-only camera perception — structured events, not continuous footage into a
 > model; the LLM inspects a frame/clip only when an event warrants it; natural-language retrieval
@@ -739,16 +739,16 @@ the real backend, but the pipeline-rewiring PR never ran it because the path fil
 
 | # | Item | S | P | Dep | Sursă |
 |---|------|---|---|-----|-------|
-| H31.1 ⬜ | **Privacy contract FIRST** — frames never leave the box; household consent doc; kill-switch coverage; retention per H23.10; privacy masks/zones; face recognition only where explicitly enabled | 2 | P0 | — | AI_OS_VISION §10 |
-| H31.2 ⬜ | **RTSP/ONVIF ingest** — camera discovery + stream/snapshot handling; **or Frigate as detector backend** (decide by spike: build vs integrate) | 5 | P0 | H31.1 | AI_OS_VISION §3-P1 |
+| H31.1 ⬜ | **Privacy contract FIRST** — frames never leave the box; household consent doc; kill-switch coverage; retention per H23.10; privacy masks/zones; face recognition only where explicitly enabled | 2 | P0 | — | NERVA_VISION §12 |
+| H31.2 ⬜ | **RTSP/ONVIF ingest** — camera discovery + stream/snapshot handling; **or Frigate as detector backend** (decide by spike: build vs integrate) | 5 | P0 | H31.1 | NERVA_VISION §4-P1 |
 | H31.3 ⬜ | **Local detection pipeline** — person/vehicle/animal/package events with zone + line-crossing rules; VLM description on demand only | 8 | P1 | H31.2 | — |
 | H31.4 ⬜ | **Event indexing into memory** — bounded, redacted camera events with snapshots; camera health monitoring | 5 | P1 | H31.3 | — |
-| H31.5 ⬜ | **NL clip retrieval** — "when did the courier come yesterday?" → temporal search over the event index | 5 | P2 | H31.4 | AI_OS_VISION §3-P1 |
+| H31.5 ⬜ | **NL clip retrieval** — "when did the courier come yesterday?" → temporal search over the event index | 5 | P2 | H31.4 | NERVA_VISION §4-P1 |
 | H31.6 ⬜ | **Feeds** — camera events flow into the O30 house state + O33 monitors (a camera is a sensor of the house, not a silo) | 3 | P2 | H30.2, H33.1 | — |
 
 > **Total ORIZONT 31:** ~28 SP
 
-## 🌱 ORIZONT 32 — Capability Acquisition (AI-OS Phase 5, direction 2026-07-11)
+## 🌱 ORIZONT 32 — Capability Acquisition (Nerva Program F · AI-OS Phase 5, direction 2026-07-11)
 
 > **Mission:** instead of "I can't" → "I don't know **yet**" — understand the gap → search
 > existing skills → research docs/APIs → generate → sandbox test → approval → registry → reuse
@@ -760,17 +760,17 @@ the real backend, but the pipeline-rewiring PR never ran it because the path fil
 
 | # | Item | S | P | Dep | Sursă |
 |---|------|---|---|-----|-------|
-| H32.1 🟡 | **Gap detection → capability request** — a failed/unmatched intent becomes a registry entry in state `missing`, with the goal captured | 3 | P1 | H27.1 | AI_OS_VISION §3-P6 |
-| H32.2 🟡 | **Reuse-first search** — marketplace + local skills + registry before any generation; reuse-before-generate rate measured | 3 | P1 | H32.1 | AI_OS_VISION §7-S2 |
+| H32.1 🟡 | **Gap detection → capability request** — a failed/unmatched intent becomes a registry entry in state `missing`, with the goal captured | 3 | P1 | H27.1 | NERVA_VISION §4-P6 |
+| H32.2 🟡 | **Reuse-first search** — marketplace + local skills + registry before any generation; reuse-before-generate rate measured | 3 | P1 | H32.1 | NERVA_VISION §8-S2 |
 | H32.3 ⬜ | **Doc-research step** — governed websearch → `ground_plan()` validation (every implementation step cites a fetched source; phantom citations refused) | 3 | P2 | H32.2 | T-0.51 |
-| H32.4 🟡 | **Generate + sandbox-test harness** — the generated skill must ship with a verification test that passes in the sandbox *before* it may be proposed | 8 | P0 | H32.3 | AI_OS_VISION §3-P6 |
+| H32.4 🟡 | **Generate + sandbox-test harness** — the generated skill must ship with a verification test that passes in the sandbox *before* it may be proposed | 8 | P0 | H32.3 | NERVA_VISION §4-P6 |
 | H32.5 ⬜ | **Approval → signing → registry** — approved skills enter the O27 registry at low `confidence`; autonomy earned via H27.7; quarantine before promotion | 5 | P0 | H32.4, H27.7 | MOONSHOT §5.7 |
 | H32.6 ⬜ | **Acquisition audit trail + rollback** — every acquired capability is uninstallable/rollbackable via the marketplace path (T-0.58) | 2 | P1 | H32.5 | — |
-| H32.7 ⬜ | **Hermes-parity eval for the loop** — the S2 superiority benchmark: acquire a net-new skill end-to-end under governance | 3 | P2 | H32.5 | AI_OS_VISION §7-S2 |
+| H32.7 ⬜ | **Hermes-parity eval for the loop** — the S2 superiority benchmark: acquire a net-new skill end-to-end under governance | 3 | P2 | H32.5 | NERVA_VISION §8-S2 |
 
 > **Total ORIZONT 32:** ~27 SP
 
-## 👁️ ORIZONT 33 — Ambient Intelligence (AI-OS Phase 6, direction 2026-07-11)
+## 👁️ ORIZONT 33 — Ambient Intelligence (Nerva Program G · AI-OS Phase 6, direction 2026-07-11)
 
 > **Mission:** long-running monitors over house/camera/digital feeds + the decision ladder —
 > **ignore · remember · monitor · act silently · ask · interrupt** — so proactivity scales without
@@ -780,8 +780,8 @@ the real backend, but the pipeline-rewiring PR never ran it because the path fil
 
 | # | Item | S | P | Dep | Sursă |
 |---|------|---|---|-----|-------|
-| H33.1 🟡 | **Declarative monitor framework** — named monitors over house/camera/digital feeds (NAS temp, UPS, baby-room, backups, cameras, family schedule), debounce-on-state-change like the observer | 5 | P0 | H30.1 | AI_OS_VISION §3-P1 |
-| H33.2 ⬜ | **The decision ladder as policy** — every event classified ignore/remember/monitor/act-silently/ask/interrupt; interrupts stay ≤4/day *by construction* (K3 budget, not convention) | 5 | P0 | H33.1, K3 | AI_OS_VISION §6 |
+| H33.1 🟡 | **Declarative monitor framework** — named monitors over house/camera/digital feeds (NAS temp, UPS, baby-room, backups, cameras, family schedule), debounce-on-state-change like the observer | 5 | P0 | H30.1 | NERVA_VISION §4-P1 |
+| H33.2 ⬜ | **The decision ladder as policy** — every event classified ignore/remember/monitor/act-silently/ask/interrupt; interrupts stay ≤4/day *by construction* (K3 budget, not convention) | 5 | P0 | H33.1, K3 | NERVA_VISION §7 |
 | H33.3 ⬜ | **Situation memory** — observations land in the KG with provenance + decay, so "the same unknown person twice this evening" is answerable | 3 | P1 | H33.1, H14 | — |
 | H33.4 ⬜ | **Ambient reality-harness pack** + counter-metric guards (interrupt/reject rates must not degrade as monitors multiply) | 3 | P1 | O24-V1/V4 | MOONSHOT §6 |
 | H33.5 ⬜ | **Night-shift v2** — overnight monitor work measured on the north-star night split (P1 proof-gap 2/3 seam) | 3 | P2 | H33.2 | P1 pack |
@@ -1017,7 +1017,7 @@ chain-of-thought leak / mid-sentence truncation fixed. Kill-switch:
 | **H18 Mobile Native & Browser Parity** (P2–P3) | 16 | **15** | 51 | **51** | **100%** |
 | **H19 WorldView (4D OSINT)** — standalone product, merged 2026-06-08 | 33 | **33** | 208 | **208** | **100%** ✅ |
 
-> `%` = procent pe **story points**. Sub-total **H1–H11** = 821/823 (≈100% SP; 151/151 iteme). Grand-total **H1–H17** = 1104/1119 (≈99% SP; 194/196 iteme). **Toate orizonturile de features sunt livrate = v0.10.0** (H18 mobil 17/18, cu H18.10 umbrelă continuă mereu deschisă + H19 WorldView 33/33 standalone — livrate). **Nu mai există un "audit gate" ca versiune**; restul drumului până la 1.0 e *productionizarea* (vezi **H23** + roadmap-ul de versiuni mai sus) **plus, din 2026-07-11, programul de capabilități AI-OS** — gate-ul 1.0 s-a extins (decizie owner): **1.0 = proof track (H23/O24–O26 + ⭐B0 + soak + design partners) ȘI cei șase piloni la bara v1** (ORIZONT 27–33, ~191 SP; [AI_OS_VISION.md](AI_OS_VISION.md) §9).
+> `%` = procent pe **story points**. Sub-total **H1–H11** = 821/823 (≈100% SP; 151/151 iteme). Grand-total **H1–H17** = 1104/1119 (≈99% SP; 194/196 iteme). **Toate orizonturile de features sunt livrate = v0.10.0** (H18 mobil 17/18, cu H18.10 umbrelă continuă mereu deschisă + H19 WorldView 33/33 standalone — livrate). **Nu mai există un "audit gate" ca versiune**; restul drumului până la 1.0 e *productionizarea* (vezi **H23** + roadmap-ul de versiuni mai sus) **plus, din 2026-07-11, programul de capabilități AI-OS** — gate-ul 1.0 s-a extins (decizie owner): **1.0 = proof track (H23/O24–O26 + ⭐B0 + soak + design partners) ȘI cei șase piloni la bara v1** (ORIZONT 27–33, ~191 SP; [NERVA_VISION.md](NERVA_VISION.md) §10).
 
 **În afara totalului:** **Bugs & Hot Fixes** — **toate BUG-\* și HF-\* rezolvate** (BUG-1…17 + HF-1…7 + NTH-1; vezi re-baseline 2026-06-08 + tabelul de mai jos). ✅ **CLN-3 livrat + CLN-2 substanțial livrat (#293/#296, v0.11.0)** — `web.py` 4636→1282 LOC (45 routere, 9 rute inline), `orchestrator.py` 1620→1456 LOC; suprafața de rute byte-identică, parity-guarded. Rămân deschise: taskuri netrackuite ca buguri (**TASK-1** Howard backend, **TASK-2** HUD v2 depth, **TASK-3** taint-tracking canale, **BUG-2b** frontend E2E). *(Detalii audit cod 2026-06-04 în tabel.)*
 
