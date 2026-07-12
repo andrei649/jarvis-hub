@@ -192,3 +192,28 @@ def manifest_for_action(kind: str) -> CapabilityManifest | None:
         if pattern.endswith(".*") and kind.startswith(pattern[:-1]):
             return manifest
     return None
+
+
+def plugin_capability_manifest(plugin: Any) -> CapabilityManifest:
+    """Derive executable metadata without duplicating plugin network policy."""
+    network = getattr(getattr(plugin, "network_access", None), "value", "none")
+    data_scope = getattr(getattr(plugin, "data_scope", None), "value", "local_only")
+    enabled = bool(getattr(plugin, "enabled", True))
+    plugin_id = str(getattr(plugin, "id", "")).strip()
+    risk = "sensitive" if network == "full" or data_scope == "transmitted" else "reversible"
+    domains = tuple(str(item) for item in (getattr(plugin, "allowed_domains", None) or ()))
+    requires = ("plugin.enabled", f"network:{network}", f"data:{data_scope}") + tuple(
+        f"domain:{domain}" for domain in domains
+    )
+    return CapabilityManifest(
+        id=f"plugin:{plugin_id}",
+        description=str(getattr(plugin, "description", "")).strip(),
+        inputs={"type": "object", "additionalProperties": True},
+        risk=risk,
+        requires=requires,
+        supports=("plugin-call", f"egress:{network}"),
+        verification=f"reality-v1:plugin:{plugin_id}",
+        rollback=f"disable plugin {plugin_id}",
+        confidence=0.7 if enabled else 0.0,
+        implementation=f"agents.core.plugin_gate:BUILTIN_PLUGINS[{plugin_id}]",
+    )

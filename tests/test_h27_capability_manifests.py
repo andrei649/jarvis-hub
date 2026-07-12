@@ -1,4 +1,4 @@
-from dataclasses import FrozenInstanceError
+from dataclasses import FrozenInstanceError, replace
 
 import pytest
 
@@ -6,9 +6,11 @@ from agents.core.capability_manifests import (
     ACTION_CAPABILITY_MANIFESTS,
     CapabilityManifest,
     manifest_for_action,
+    plugin_capability_manifest,
     validate_manifest,
 )
 from agents.core.kernel.registry import ACTION_REGISTRY
+from agents.core.plugin_gate import BUILTIN_PLUGINS
 
 
 def _manifest(**overrides):
@@ -73,3 +75,31 @@ def test_manifest_for_action_resolves_exact_and_wildcard_kinds():
     assert manifest_for_action("social.post") is ACTION_CAPABILITY_MANIFESTS["social.*"]
     assert manifest_for_action("writeback.notion") is ACTION_CAPABILITY_MANIFESTS["writeback.*"]
     assert manifest_for_action("unknown.action") is None
+
+
+def test_every_governed_plugin_derives_complete_v1_metadata():
+    for plugin in BUILTIN_PLUGINS.values():
+        manifest = plugin_capability_manifest(plugin)
+        assert manifest.id == f"plugin:{plugin.id}"
+        assert manifest.description == plugin.description
+        assert manifest.inputs["type"] == "object"
+        assert manifest.risk in {
+            "read_only",
+            "reversible",
+            "sensitive",
+            "irreversible_or_money",
+        }
+        assert "plugin.enabled" in manifest.requires
+        assert "plugin-call" in manifest.supports
+        assert manifest.verification == f"reality-v1:plugin:{plugin.id}"
+        assert plugin.id in manifest.rollback
+        assert 0.0 <= manifest.confidence <= 1.0
+        assert manifest.implementation.startswith("agents.core.plugin_gate:")
+
+
+def test_plugin_defaults_are_conservative_for_transmitted_and_disabled_plugins():
+    cloud = BUILTIN_PLUGINS["cloud-llm"]
+    assert plugin_capability_manifest(cloud).risk == "sensitive"
+
+    disabled = replace(BUILTIN_PLUGINS["weather"], enabled=False)
+    assert plugin_capability_manifest(disabled).confidence == 0.0
