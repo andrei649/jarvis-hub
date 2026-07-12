@@ -204,7 +204,7 @@ curl.exe http://127.0.0.1:8080/status
 - 17 active agents; registry-derived
 - 369 HTTP routes; parity-snapshot-derived
 - Tests: backend **4,301** · frontend **209** · mobile **55**
-- Version: **v0.11.0** · source commit `2942160b2464`
+- Version: **v0.11.0** · source commit `ddfaf94f320c`
 - H23 roll-up: 27/28 done, 0 blocked, 1 open; release gates: A1, A2, A3, A4, A5, A6, A7, A8
 <!-- project-status:jarvis-stats:end -->
 
