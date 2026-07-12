@@ -10,7 +10,10 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
-from agents.core.capability_verification import action_verification_ref
+from agents.core.capability_verification import (
+    action_verification_ref,
+    plugin_verification_ref,
+)
 
 RISK_LEVELS = frozenset({"read_only", "reversible", "sensitive", "irreversible_or_money"})
 ROLLBACK_MODES = frozenset({
@@ -295,7 +298,7 @@ def plugin_capability_manifest(plugin: Any) -> CapabilityManifest:
         risk=risk,
         requires=requires,
         supports=("plugin-call", f"egress:{network}"),
-        verification=f"reality-v1:plugin:{plugin_id}",
+        verification=plugin_verification_ref(plugin_id),
         rollback=RollbackContract(
             mode="disable",
             description=f"Disable plugin {plugin_id}.",

@@ -22,3 +22,27 @@ def tool_case_name(name: str) -> str:
 
 def tool_verification_ref(name: str) -> str:
     return reality_ref(tool_case_name(name))
+
+
+def plugin_case_name(plugin_id: str) -> str:
+    return f"plugin:{plugin_id}"
+
+
+def plugin_verification_ref(plugin_id: str) -> str:
+    return reality_ref(plugin_case_name(plugin_id))
+
+
+def component_case_name(name: str) -> str:
+    return f"component:{name}"
+
+
+def component_verification_ref(name: str) -> str:
+    return reality_ref(component_case_name(name))
+
+
+def skill_case_name(name: str) -> str:
+    return f"skill:{name}"
+
+
+def skill_verification_ref(name: str) -> str:
+    return reality_ref(skill_case_name(name))

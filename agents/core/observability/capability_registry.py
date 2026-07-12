@@ -17,11 +17,10 @@ Each record carries a readiness state on the lifecycle:
     VERIFIED  a green reality-harness proved the *rail* in CI   ← V1, pending
     GA        VERIFIED and on the supported-version matrix
 
-**No capability is VERIFIED/GA yet** — the reality harness (V1) is what promotes a record,
-and it hasn't landed. That is intentional and honest: until then the board shows what is
-merely *wired* vs *seam*, never a fabricated "verified". A human may **demote** a record
-via an override (cap at WIRED); only the harness may promote to VERIFIED. Read-only at
-``GET /api/metrics/capabilities`` (sibling of ``/api/metrics/north-star``).
+Records start at WIRED/SEAM on every boot. The reality harness (V1) is the only in-process
+promotion path to VERIFIED; a human may **demote** through an override (cap at WIRED), but
+never promote. Durable cross-process readiness remains V3's committed snapshot. Read-only
+at ``GET /api/metrics/capabilities`` and the canonical ``GET /api/capabilities``.
 """
 
 from __future__ import annotations
@@ -258,6 +257,8 @@ def _tool_records(orch) -> list[CapabilityRecord]:
 
 def _component_records(orch) -> list[CapabilityRecord]:
     """Derive component capabilities from the orchestrator's init-status registry."""
+    from agents.core.capability_verification import component_verification_ref
+
     reg = getattr(orch, "components", None)
     status = getattr(reg, "status", None) if reg is not None else None
     if not status:
@@ -271,7 +272,7 @@ def _component_records(orch) -> list[CapabilityRecord]:
             risk="read_only",
             requires=("component.initialized",),
             supports=("readiness",),
-            verification=f"reality-v1:component:{name}",
+            verification=component_verification_ref(name),
             rollback=RollbackContract(
                 mode="disable",
                 description=f"Disable component {name} and restart the runtime.",
@@ -287,6 +288,8 @@ def _component_records(orch) -> list[CapabilityRecord]:
 
 def _skill_records(orch) -> list[CapabilityRecord]:
     """Derive skill capabilities from the loaded skill set (loaded module ⇒ WIRED)."""
+    from agents.core.capability_verification import skill_verification_ref
+
     loader = getattr(orch, "skills", None)
     skills = getattr(loader, "skills", None) if loader is not None else None
     if not skills:
@@ -304,7 +307,7 @@ def _skill_records(orch) -> list[CapabilityRecord]:
                 risk="sensitive",
                 requires=("skill.loaded",),
                 supports=("skill.invoke",),
-                verification=f"reality-v1:skill:{name}",
+                verification=skill_verification_ref(name),
                 rollback=RollbackContract(
                     mode="disable",
                     description=f"Disable skill {name}.",

@@ -33,6 +33,9 @@ from agents.core.capability_manifests import ACTION_CAPABILITY_MANIFESTS
 from agents.core.capability_verification import (
     HARNESS_ID,
     action_case_name,
+    component_case_name,
+    plugin_case_name,
+    skill_case_name,
     tool_case_name,
 )
 
@@ -421,6 +424,118 @@ TOOL_CAPABILITY_CASES: list[RealityCase] = [
         _probe_tool_time_protocol,
     ),
 ]
+
+
+def _make_plugin_policy_probe(plugin_id: str, manifest):
+    async def _probe() -> bool:
+        from agents.core.http_client import PluginEgressError, PluginHTTPClient
+        from agents.core.plugin_gate import NetworkAccess, dynamic_domains
+
+        client = PluginHTTPClient(plugin_id)
+        marker = object()
+        previous = os.environ.get("JARVIS_STRICT_EGRESS", marker)
+        os.environ["JARVIS_STRICT_EGRESS"] = "1"
+
+        def _allowed(url: str) -> bool:
+            try:
+                client._enforce_egress(url)
+                return True
+            except PluginEgressError:
+                return False
+
+        def _blocked(url: str) -> bool:
+            return not _allowed(url)
+
+        try:
+            external = "https://93.184.216.34/reality"
+            if manifest.network_access is NetworkAccess.NONE:
+                return _blocked(external)
+            if manifest.network_access is NetworkAccess.LAN:
+                return _allowed("http://127.0.0.1:9/reality") and _blocked(external)
+            if manifest.network_access is NetworkAccess.RESTRICTED:
+                domains = list(manifest.allowed_domains) + dynamic_domains(plugin_id)
+                declared_allowed = not domains or _allowed(f"https://{domains[0]}/reality")
+                return declared_allowed and _blocked(external)
+            if manifest.network_access is NetworkAccess.FULL:
+                return _allowed(external)
+            return False
+        finally:
+            if previous is marker:
+                os.environ.pop("JARVIS_STRICT_EGRESS", None)
+            else:
+                os.environ["JARVIS_STRICT_EGRESS"] = previous
+            await client.close()
+
+    return _probe
+
+
+def _make_component_probe(orch, name: str):
+    async def _probe() -> bool:
+        registry = getattr(orch, "components", None)
+        status = getattr(registry, "status", {}) if registry is not None else {}
+        return status.get(name) == "ok" and getattr(orch, name, None) is not None
+
+    return _probe
+
+
+def _make_skill_probe(orch, name: str):
+    async def _probe() -> bool:
+        loader = getattr(orch, "skills", None)
+        skills = getattr(loader, "skills", {}) if loader is not None else {}
+        skill = skills.get(name)
+        return skill is not None and getattr(skill, "module", None) is not None
+
+    return _probe
+
+
+def registry_reality_cases(orch) -> list[RealityCase]:
+    """Build canonical cases for every plugin and live component/skill registry row."""
+    from agents.core.plugin_gate import BUILTIN_PLUGINS
+
+    cases = [
+        RealityCase(
+            f"plugin:{plugin_id}",
+            plugin_case_name(plugin_id),
+            f"the {plugin_id} manifest's real egress boundary enforces its declared policy",
+            _make_plugin_policy_probe(plugin_id, manifest),
+        )
+        for plugin_id, manifest in sorted(BUILTIN_PLUGINS.items())
+    ]
+
+    registry = getattr(orch, "components", None)
+    statuses = getattr(registry, "status", {}) if registry is not None else {}
+    cases.extend(
+        RealityCase(
+            f"component:{name}",
+            component_case_name(name),
+            f"component {name} has a successful boot status and a constructed runtime object",
+            _make_component_probe(orch, name),
+        )
+        for name in sorted(statuses)
+    )
+
+    loader = getattr(orch, "skills", None)
+    skills = getattr(loader, "skills", {}) if loader is not None else {}
+    cases.extend(
+        RealityCase(
+            f"skill:{name}",
+            skill_case_name(name),
+            f"skill {name} is discovered and its runtime module is loaded",
+            _make_skill_probe(orch, name),
+        )
+        for name in sorted(skills)
+    )
+
+    refs = [case.ref for case in cases]
+    capability_ids = [case.capability_id for case in cases]
+    if len(refs) != len(set(refs)) or len(capability_ids) != len(set(capability_ids)):
+        raise ValueError("registry reality cases must have unique refs and capability ids")
+    return cases
+
+
+def all_reality_cases(orch) -> list[RealityCase]:
+    """Static rail cases plus cases derived from a booted orchestrator."""
+    return [*CASES, *registry_reality_cases(orch)]
 
 
 CASES: list[RealityCase] = [
