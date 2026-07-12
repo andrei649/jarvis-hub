@@ -4,6 +4,10 @@
 > North star (vision & phase gates): [MOONSHOT.md](MOONSHOT.md)
 > Source of truth for backlog: [BACKLOG.md](BACKLOG.md)
 >
+<!-- project-status:go-live-header:start -->
+> Generated project status: **v0.11.0** · backend **4,232** · frontend **208** · mobile **55** · **368** routes · **17** active agents · open owner gates: **A1, A2, A3, A4, A5, A6, A7, A8** · commit `09ffb342e3f3`.
+<!-- project-status:go-live-header:end -->
+>
 > **2026-07-11 — the 1.0 gate expanded (owner decision):** this plan's launch checklist remains the
 > **proof track** half of 1.0 and is unchanged; the second half — the AI-OS capability program
 > (capability registry, operators, media director, house brain, cameras, acquisition, ambient) —

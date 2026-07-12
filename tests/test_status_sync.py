@@ -6,15 +6,20 @@ it shells out to a full `pytest --collect-only`, which would recurse into this v
 collection. The script is loaded by path (scripts/ is not a package), mirroring
 tests/test_release_build.py.
 """
+
 import importlib.util
 import json
 from pathlib import Path
+
+import pytest
 
 REPO = Path(__file__).resolve().parent.parent
 
 
 def _load():
-    spec = importlib.util.spec_from_file_location("status_sync", REPO / "scripts" / "status_sync.py")
+    spec = importlib.util.spec_from_file_location(
+        "status_sync", REPO / "scripts" / "status_sync.py"
+    )
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)
     return mod
@@ -25,9 +30,19 @@ status_sync = _load()
 
 def test_count_routes_matches_snapshot():
     n = status_sync.count_routes()
-    snap = json.loads((REPO / "tests" / "_snapshots" / "route_surface.json").read_text(encoding="utf-8"))
+    snap = json.loads(
+        (REPO / "tests" / "_snapshots" / "route_surface.json").read_text(encoding="utf-8")
+    )
     assert n == len(snap)
     assert n > 300  # sanity: the app has hundreds of routes
+
+
+def test_pytest_collection_parser_fails_closed_on_collection_error():
+    assert status_sync.parse_pytest_count("4225 tests collected in 1.0s", 0) == 4225
+    with pytest.raises(RuntimeError):
+        status_sync.parse_pytest_count("12 tests collected\nERROR broken import", 1)
+    with pytest.raises(RuntimeError):
+        status_sync.parse_pytest_count("collection output without a count", 0)
 
 
 def test_apply_to_status_rewrites_both_tokens():
@@ -48,8 +63,8 @@ def test_apply_is_anchored_leaves_other_numbers_untouched():
 
 def test_apply_each_token_independently():
     sample = "**Tests:** ~10 passed · **HTTP routes:** 5"
-    assert "~10 passed" in status_sync.apply_to_status(sample, routes=6)        # tests untouched
-    assert "HTTP routes:** 5" in status_sync.apply_to_status(sample, tests=20)   # routes untouched
+    assert "~10 passed" in status_sync.apply_to_status(sample, routes=6)  # tests untouched
+    assert "HTTP routes:** 5" in status_sync.apply_to_status(sample, tests=20)  # routes untouched
 
 
 def test_current_counts_parses_status():
@@ -67,3 +82,134 @@ def test_live_status_md_tokens_are_parseable():
     # encoding pinned: STATUS.md is UTF-8 (→/✅/emoji); Windows' default cp1252 would raise.
     c = status_sync.current_counts((REPO / "STATUS.md").read_text(encoding="utf-8"))
     assert c["tests"] is not None and c["routes"] is not None
+
+
+def test_count_active_agents_reads_only_active_registry_entries():
+    registry = {
+        "agents": {
+            "jarvis": {"status": "active"},
+            "athena": {"status": "active"},
+            "retired": {"status": "parked"},
+        },
+        "bench": {"bruce": {"status": "bench"}},
+    }
+    assert status_sync.count_active_agents(registry) == 2
+
+
+def test_horizon_rollups_and_open_release_gates_are_structured():
+    backlog = """
+| H23.24 | Collector | 🟢 done | 0.20 |
+| H23.25 | Gate | 🔴 blocked on owner | 1.0 |
+| H24.1 ⬜ | Kernel | 3 | P0 | — |
+| H24.2 ✅ | Audit | 2 | P0 | — |
+| A1 | Manual | ⬜ the gate |
+| A2 | Soak | ✅ report |
+"""
+    assert status_sync.horizon_rollups(backlog) == {
+        "H23": {"total": 2, "done": 1, "blocked": 1, "open": 0},
+        "H24": {"total": 2, "done": 1, "blocked": 0, "open": 1},
+    }
+    assert status_sync.open_release_gates(backlog) == [
+        {"id": "A1", "name": "Manual", "status": "⬜ the gate"}
+    ]
+
+
+def test_build_project_status_has_one_machine_readable_truth():
+    status = status_sync.build_project_status(
+        version="0.11.0",
+        backend_tests=4200,
+        frontend_tests=208,
+        mobile_tests=55,
+        routes=368,
+        registry={"agents": {"jarvis": {"status": "active"}}},
+        backlog_text="| H23.24 | Collector | ⬜ MISSING | 0.20 |\n| A1 | Manual | ⬜ |",
+        latest_ci_commit="abcdef1234567890",
+    )
+    assert status["version"] == "0.11.0"
+    assert status["tests"] == {"backend": 4200, "frontend": 208, "mobile": 55}
+    assert status["routes"] == 368 and status["active_agents"] == 1
+    assert status["horizons"]["H23"]["open"] == 1
+    assert status["open_release_gates"][0]["id"] == "A1"
+    assert status["latest_ci_commit"] == "abcdef1234567890"
+    json.dumps(status, sort_keys=True)
+
+
+def test_marker_replacement_is_bounded_and_idempotent():
+    text = (
+        "before\n<!-- project-status:demo:start -->\nold\n<!-- project-status:demo:end -->\nafter\n"
+    )
+    updated = status_sync.replace_generated_block(text, "demo", "new\nvalue")
+    assert updated == (
+        "before\n<!-- project-status:demo:start -->\nnew\nvalue\n"
+        "<!-- project-status:demo:end -->\nafter\n"
+    )
+    assert status_sync.replace_generated_block(updated, "demo", "new\nvalue") == updated
+    assert status_sync.replace_generated_block("no markers", "demo", "x") == "no markers"
+    with pytest.raises(ValueError):
+        status_sync.replace_generated_block("no markers", "demo", "x", strict=True)
+
+
+def test_generated_snippets_include_all_counts_and_open_gates():
+    status = {
+        "version": "0.11.0",
+        "tests": {"backend": 4200, "frontend": 208, "mobile": 55},
+        "routes": 368,
+        "active_agents": 17,
+        "horizons": {"H23": {"total": 28, "done": 23, "blocked": 0, "open": 5}},
+        "latest_ci_commit": "abcdef1234567890",
+        "open_release_gates": [{"id": "A1", "name": "Manual", "status": "⬜"}],
+    }
+    snippets = status_sync.generated_snippets(status)
+    assert set(snippets) == {"badges", "run", "readme-status", "jarvis-stats", "go-live-header"}
+    joined = "\n".join(snippets.values())
+    for token in ("4,200", "208", "55", "368", "17", "A1", "abcdef123456"):
+        assert token in joined
+
+
+def test_json_test_count_parser_accepts_vitest_and_jest_key_order():
+    vitest = 'npm preface\n{"numTotalTestSuites": 2, "numTotalTests": 8, "success": true}'
+    jest = 'console noise\n{"numFailedTestSuites": 0, "numTotalTests": 55, "success": true}'
+    assert status_sync.parse_json_test_count(vitest) == 8
+    assert status_sync.parse_json_test_count(jest) == 55
+
+
+def test_reuse_js_counts_is_explicit_and_reads_tracked_status_only():
+    existing = {"tests": {"frontend": 208, "mobile": 55}}
+    assert status_sync.js_test_counts(reuse=True, existing=existing) == (208, 55)
+    with pytest.raises(RuntimeError):
+        status_sync.js_test_counts(reuse=True, existing={})
+
+
+def test_update_message_is_safe_on_default_windows_console():
+    message = status_sync.format_update_message(
+        {"tests": {"backend": 1, "frontend": 2, "mobile": 3}, "routes": 4, "active_agents": 5}
+    )
+    message.encode("cp1252")
+    assert "tests=" in message and "routes=4" in message
+
+
+def test_latest_ci_commit_uses_last_verified_main_not_self_referential_head():
+    seen = []
+    value = status_sync.latest_ci_commit(
+        env={}, runner=lambda args: seen.append(args) or (0, "abc123\n")
+    )
+    assert value == "abc123"
+    assert seen == [["git", "rev-parse", "origin/main"]]
+    assert (
+        status_sync.latest_ci_commit(
+            env={"JARVIS_LATEST_CI_COMMIT": "verified789"}, runner=lambda args: (1, "")
+        )
+        == "verified789"
+    )
+
+
+def test_latest_ci_commit_reads_pull_request_base_from_actions_event(tmp_path):
+    event = tmp_path / "event.json"
+    event.write_text('{"pull_request":{"base":{"sha":"base123"}}}', encoding="utf-8")
+    assert (
+        status_sync.latest_ci_commit(
+            env={"GITHUB_EVENT_PATH": str(event)},
+            runner=lambda args: (_ for _ in ()).throw(AssertionError("git must not run")),
+        )
+        == "base123"
+    )

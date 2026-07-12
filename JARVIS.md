@@ -200,14 +200,13 @@ curl.exe http://127.0.0.1:8080/status
 
 ## Quick Stats
 
-- 17 active agents (incl. Argus, the WorldView geoint bridge), bench reserved
-- 34 models downloaded (1.24 TB total)
-- ~368 HTTP routes (live count synced in STATUS.md; full index in docs/ARCHITECTURE.md)
-- 7 ported features from OpenJarvis (security, skills, sandbox, multi-channel, bench, learning, streaming)
-- VRAM: ~17 GB used by primary model, ~7 GB free
-- Response time: ~4-5s per query (fast slot); deep slot trades latency for reasoning depth
-- **Tests: full offline suite green** — current count auto-synced in [STATUS.md](STATUS.md) (+ frontend JS tests)
-- Version: **v0.11.0** — every feature horizon (H1–H22 + WorldView O19) delivered + the CLN refactor; now building toward the expanded 1.0 (see [BACKLOG.md](BACKLOG.md#version-roadmap)). **1.0 = the proof track (H23 + real design-partner users) + the AI-OS capability program ([NERVA_VISION.md](NERVA_VISION.md), ORIZONT 27–33).**
+<!-- project-status:jarvis-stats:start -->
+- 17 active agents; registry-derived
+- 368 HTTP routes; parity-snapshot-derived
+- Tests: backend **4,232** · frontend **208** · mobile **55**
+- Version: **v0.11.0** · source commit `09ffb342e3f3`
+- H23 roll-up: 27/28 done, 0 blocked, 1 open; release gates: A1, A2, A3, A4, A5, A6, A7, A8
+<!-- project-status:jarvis-stats:end -->
 
 ---
 
