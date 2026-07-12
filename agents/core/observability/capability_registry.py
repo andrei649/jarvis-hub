@@ -185,6 +185,8 @@ def _tool_records(orch) -> list[CapabilityRecord]:
     project = getattr(server, "tools", None)
     if not callable(project):
         return []
+    from agents.core.capability_verification import tool_verification_ref
+
     out = []
     for tool in project():
         capability_id = tool.get("capability_id") if isinstance(tool, dict) else None
@@ -203,7 +205,7 @@ def _tool_records(orch) -> list[CapabilityRecord]:
                 requires=("tool-rpc.registered", "action-kernel") if gated
                 else ("tool-rpc.registered",),
                 supports=("tool-rpc", "approval") if gated else ("tool-rpc", "inline"),
-                verification=f"reality-v1:tool-{name}-protocol",
+                verification=tool_verification_ref(name),
                 rollback="tool-specific rollback required" if gated else "no mutation to roll back",
                 confidence=0.0,
                 implementation=f"agents.core.tool_rpc:{name}",

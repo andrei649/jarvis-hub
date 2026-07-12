@@ -9,6 +9,7 @@ from agents.core.capability_manifests import (
     plugin_capability_manifest,
     validate_manifest,
 )
+from agents.core.capability_verification import action_verification_ref
 from agents.core.kernel.registry import ACTION_REGISTRY
 from agents.core.plugin_gate import BUILTIN_PLUGINS
 
@@ -64,7 +65,7 @@ def test_every_action_manifest_is_complete_and_kernel_grounded(kind):
     }
     assert "action-kernel" in manifest.requires
     assert manifest.supports
-    assert manifest.verification == f"action-auth:{kind}"
+    assert manifest.verification == action_verification_ref(kind)
     assert manifest.rollback
     assert manifest.confidence == 0.0  # H27.7 earns this from real outcomes
     assert ":" in manifest.implementation

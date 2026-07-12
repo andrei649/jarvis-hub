@@ -119,7 +119,7 @@ def test_readiness_matrix_no_drift():
 
 def test_matrix_covers_components_and_skills():
     kinds = {r.kind for r in _records()}
-    assert {"plugin", "component", "skill"}.issubset(kinds)
+    assert {"plugin", "component", "skill", "action"}.issubset(kinds)
 
 
 def test_no_fabricated_verified():

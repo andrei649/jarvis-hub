@@ -10,6 +10,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
+from agents.core.capability_verification import action_verification_ref
+
 RISK_LEVELS = frozenset({"read_only", "reversible", "sensitive", "irreversible_or_money"})
 
 
@@ -69,7 +71,7 @@ def _action(
         risk=risk,
         requires=("action-kernel",),
         supports=supports,
-        verification=f"action-auth:{kind}",
+        verification=action_verification_ref(kind),
         rollback=rollback,
         confidence=0.0,
         implementation=implementation,
