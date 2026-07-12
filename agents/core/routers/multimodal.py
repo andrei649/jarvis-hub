@@ -71,15 +71,36 @@ def desktop_host_enabled() -> bool:
     return env_flag("JARVIS_DESKTOP_HOST") and env_flag("JARVIS_DESKTOP_ISOLATED")
 
 
-def build_desktop_runtime(orch):
+def build_desktop_runtime(orch, *, authorizer=None):
     """Bind a fresh dependency-lazy host driver to the live Action Kernel."""
     from agents.core.desktop_host import WindowsDesktopDriver
     from agents.core.desktop_operator import DesktopActionExecutor, GovernedDesktop
     from agents.core.kernel.binding import make_action_kernel
 
     driver = WindowsDesktopDriver.from_env()
-    executor = DesktopActionExecutor(driver, authorizer=make_action_kernel(orch))
+    executor = DesktopActionExecutor(
+        driver,
+        authorizer=authorizer if authorizer is not None else make_action_kernel(orch),
+    )
     return GovernedDesktop(driver=driver, action_executor=executor)
+
+
+async def execute_desktop_steps(orch, steps, *, approver=None, authorizer=None):
+    """Run a validated plan against a fresh live runtime and always release it."""
+    from agents.core.desktop_operator import (
+        DesktopProposalError,
+        validate_desktop_run_args,
+    )
+
+    try:
+        proposal = validate_desktop_run_args({"steps": steps})
+    except DesktopProposalError as exc:
+        return {"ok": False, "reason": exc.reason}
+    runtime = build_desktop_runtime(orch, authorizer=authorizer)
+    try:
+        return await runtime.run_live(proposal["steps"], approver=approver)
+    finally:
+        await runtime.close()
 
 
 @router.post("/api/desktop/preview", dependencies=[Depends(user_guard)])
@@ -94,8 +115,27 @@ async def desktop_run(body: DesktopStepsBody):
     """H28.4 — run isolated host steps through the live Action Kernel binding."""
     if not desktop_host_enabled():
         return nocache_json({"ok": False, "reason": "desktop_host_disabled"})
-    runtime = build_desktop_runtime(get_orch())
-    return nocache_json(await runtime.run(body.steps))
+    from agents.core.desktop_operator import (
+        DesktopProposalError,
+        GovernedDesktop,
+        validate_desktop_run_args,
+    )
+
+    try:
+        proposal = validate_desktop_run_args({"steps": body.steps})
+    except DesktopProposalError as exc:
+        return nocache_json({"ok": False, "reason": exc.reason})
+    orch = get_orch()
+    if any(GovernedDesktop.is_mutating(step["action"]) for step in proposal["steps"]):
+        server = getattr(orch, "tool_rpc", None)
+        if server is None or not callable(getattr(server, "handle", None)):
+            return nocache_json({"ok": False, "reason": "desktop_proposal_unavailable"})
+        result = await server.handle(
+            {"tool": "desktop_run", "args": proposal},
+            actor="jarvis",
+        )
+        return nocache_json(result)
+    return nocache_json(await execute_desktop_steps(orch, proposal["steps"]))
 
 
 class MediaGenBody(BaseModel):

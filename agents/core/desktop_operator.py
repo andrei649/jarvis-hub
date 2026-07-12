@@ -16,6 +16,7 @@ is the host seam), so the whole governance layer is offline-testable.
 from __future__ import annotations
 
 import logging
+import re
 import time
 from collections.abc import Mapping
 from typing import Any
@@ -24,6 +25,23 @@ from .automation_contracts import ContractTemplate, predicate
 from .capability_actions import CapabilityActionAPI, PerformContext, PerformResult
 
 logger = logging.getLogger("jarvis.desktop_operator")
+
+_MAX_DESKTOP_STEPS = 100
+_MAX_ACTION_CHARS = 64
+_MAX_ARG_CHARS = 512
+_MAX_TYPE_CHARS = 20_000
+_MAX_OBSERVATION_ELEMENTS = 200
+_MAX_OBSERVATION_TEXT = 20_000
+_APP_KEY_RE = re.compile(r"^[a-z][a-z0-9_]{0,31}$")
+_DESKTOP_ARG_RULES = {
+    "observe": (frozenset(), frozenset()),
+    "screenshot": (frozenset(), frozenset()),
+    "read": (frozenset({"query"}), frozenset({"query"})),
+    "locate": (frozenset({"query"}), frozenset({"query"})),
+    "click": (frozenset({"name"}), frozenset({"name"})),
+    "type": (frozenset({"name", "text"}), frozenset({"name", "text"})),
+    "launch": (frozenset({"app"}), frozenset({"app"})),
+}
 
 try:
     from .security.quarantine import detect_injection as _detect_injection
@@ -68,6 +86,79 @@ def _desktop_step_contract_template() -> ContractTemplate:
 DESKTOP_STEP_CONTRACT = _desktop_step_contract_template()
 
 
+class DesktopProposalError(ValueError):
+    """Bounded denial for a desktop proposal that cannot be persisted safely."""
+
+    def __init__(self, reason: str) -> None:
+        self.reason = reason
+        super().__init__(reason)
+
+
+def validate_desktop_run_args(raw: Mapping[str, Any]) -> dict[str, list[dict]]:
+    """Validate and normalize the complete ToolRPC/route desktop proposal."""
+    if not isinstance(raw, Mapping):
+        raise DesktopProposalError("invalid_args")
+    if set(raw) != {"steps"}:
+        raise DesktopProposalError("unexpected_args")
+    steps = raw.get("steps")
+    if not isinstance(steps, list):
+        raise DesktopProposalError("invalid_steps")
+    if len(steps) > _MAX_DESKTOP_STEPS:
+        raise DesktopProposalError("too_many_steps")
+
+    sanitized = []
+    for step in steps:
+        if not isinstance(step, Mapping) or not set(step).issubset({"action", "args"}):
+            raise DesktopProposalError("invalid_step")
+        raw_action = step.get("action")
+        if not isinstance(raw_action, str):
+            raise DesktopProposalError("invalid_action")
+        if len(raw_action) > _MAX_ACTION_CHARS:
+            raise DesktopProposalError("invalid_action")
+        action = raw_action.strip().lower()
+        if not action:
+            raise DesktopProposalError("invalid_action")
+        rule = _DESKTOP_ARG_RULES.get(action)
+        if rule is None:
+            raise DesktopProposalError("unsupported_action")
+        raw_args = step.get("args", {})
+        if not isinstance(raw_args, Mapping):
+            raise DesktopProposalError("invalid_args")
+        required, allowed = rule
+        keys = set(raw_args)
+        if not all(isinstance(key, str) for key in keys):
+            raise DesktopProposalError("unexpected_action_args")
+        if keys - allowed:
+            raise DesktopProposalError("unexpected_action_args")
+        if required - keys:
+            raise DesktopProposalError("missing_argument")
+
+        args = {}
+        for key in allowed:
+            if key not in raw_args:
+                continue
+            value = raw_args[key]
+            if not isinstance(value, str):
+                raise DesktopProposalError("invalid_argument")
+            if key == "text":
+                if len(value) > _MAX_TYPE_CHARS:
+                    raise DesktopProposalError("argument_too_large")
+                args[key] = value
+                continue
+            if len(value) > _MAX_ARG_CHARS:
+                raise DesktopProposalError("argument_too_large")
+            value = value.strip()
+            if not value:
+                raise DesktopProposalError("invalid_argument")
+            if key == "app":
+                value = value.lower()
+                if not _APP_KEY_RE.fullmatch(value):
+                    raise DesktopProposalError("invalid_app_key")
+            args[key] = value
+        sanitized.append({"action": action, "args": args})
+    return {"steps": sanitized}
+
+
 async def _maybe_await(v):
     import inspect
     return await v if inspect.isawaitable(v) else v
@@ -109,7 +200,18 @@ class DesktopActionExecutor:
         step: Mapping[str, Any],
         context: PerformContext | None = None,
     ) -> PerformResult:
-        return await self.api.perform("action:desktop.step", step, context)
+        action = step.get("action") if isinstance(step, Mapping) else None
+        args = step.get("args") if isinstance(step, Mapping) else None
+        normalized = {
+            "action": action.strip().lower() if isinstance(action, str) else action,
+            "args": dict(args) if isinstance(args, Mapping) else args,
+            "risk_tier": (
+                1
+                if isinstance(action, str) and action.strip().lower() in _READ_ONLY
+                else 2
+            ),
+        }
+        return await self.api.perform("action:desktop.step", normalized, context)
 
 
 class GovernedDesktop:
@@ -123,6 +225,77 @@ class GovernedDesktop:
 
     def classify_injection(self, screenshot_text: str) -> bool:
         return bool(_detect_injection(screenshot_text or ""))
+
+    @staticmethod
+    def _observation_text(elements: list) -> str:
+        """Derive classifier input only from bounded live accessibility data."""
+        chunks = []
+        remaining = _MAX_OBSERVATION_TEXT
+        for element in elements[:_MAX_OBSERVATION_ELEMENTS]:
+            if not isinstance(element, Mapping):
+                continue
+            values = []
+            for key in ("name", "role", "text", "value", "automation_id"):
+                value = element.get(key)
+                if isinstance(value, str) and value:
+                    values.append(value[:_MAX_ARG_CHARS])
+            chunk = " ".join(values)
+            if not chunk:
+                continue
+            chunks.append(chunk[:remaining])
+            remaining -= len(chunks[-1])
+            if remaining <= 0:
+                break
+        return "\n".join(chunks)[:_MAX_OBSERVATION_TEXT]
+
+    async def run_live(self, steps: "list[dict]", *, approver=None) -> dict:
+        """Classify a fresh accessibility observation before any requested step."""
+        if getattr(self._driver, "requires_kernel", False):
+            if self._action_executor is None:
+                return {"ok": False, "reason": "kernel_required", "ran": []}
+            try:
+                outcome = await self._action_executor.perform(
+                    {"action": "observe", "args": {}}
+                )
+            except Exception:
+                logger.warning("desktop live observation failed")
+                return {"ok": False, "reason": "observation_failed", "ran": []}
+            if not isinstance(outcome, PerformResult) or outcome.status != "completed":
+                reason = outcome.reason if isinstance(outcome, PerformResult) else ""
+                return {
+                    "ok": False,
+                    "reason": reason or "observation_failed",
+                    "ran": [],
+                }
+            observation = outcome.output
+        else:
+            try:
+                observation = await _maybe_await(self._driver.perform("observe", {}))
+            except Exception:
+                logger.warning("desktop live observation failed")
+                return {"ok": False, "reason": "observation_failed", "ran": []}
+        if (
+            not isinstance(observation, Mapping)
+            or observation.get("ok") is not True
+            or not isinstance(observation.get("elements"), list)
+        ):
+            reason = observation.get("reason") if isinstance(observation, Mapping) else None
+            return {
+                "ok": False,
+                "reason": reason if isinstance(reason, str) and reason else "invalid_observation",
+                "ran": [],
+            }
+        if self.classify_injection(self._observation_text(observation["elements"])):
+            return {"ok": False, "reason": "injection_detected", "ran": []}
+        return await self.run(steps, approver=approver)
+
+    async def close(self) -> None:
+        closer = getattr(self._driver, "close", None)
+        if callable(closer):
+            try:
+                await _maybe_await(closer())
+            except Exception:
+                logger.warning("desktop driver close failed")
 
     async def preview(self, steps: "list[dict]") -> dict:
         out = []

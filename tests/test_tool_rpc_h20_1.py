@@ -99,6 +99,51 @@ async def test_gated_tool_requires_approval_and_enqueues():
 
 
 @pytest.mark.asyncio
+async def test_gated_preflight_sanitizes_before_kernel_and_durable_enqueue(monkeypatch):
+    monkeypatch.setenv("JARVIS_ACTION_KERNEL", "1")
+    q = _FakeQueue()
+    kernel = _SpyKernel()
+    s = ToolRPCServer(enqueue=q.enqueue, kernel=kernel)
+
+    def preflight(args):
+        return {"value": args["value"].strip().lower()}
+
+    s.register_tool(
+        "normalize",
+        lambda _args: None,
+        gated=True,
+        preflight=preflight,
+    )
+
+    out = await s.handle({"tool": "normalize", "args": {"value": "  SAFE  "}})
+
+    assert out["reason"] == "approval_required"
+    assert q.calls[0]["payload"]["args"] == {"value": "safe"}
+    assert kernel.calls[-1].payload["args_keys"] == ["value"]
+
+
+@pytest.mark.asyncio
+async def test_gated_preflight_rejection_never_reaches_kernel_or_enqueue(monkeypatch):
+    monkeypatch.setenv("JARVIS_ACTION_KERNEL", "1")
+    error_cls = getattr(tool_rpc, "ToolRPCValidationError", None)
+    assert error_cls is not None, "ToolRPCValidationError must carry bounded denial reasons"
+    q = _FakeQueue()
+    kernel = _SpyKernel()
+    s = ToolRPCServer(enqueue=q.enqueue, kernel=kernel)
+
+    def reject(_args):
+        raise error_cls("payload_too_large")
+
+    s.register_tool("bounded", lambda _args: None, gated=True, preflight=reject)
+
+    out = await s.handle({"tool": "bounded", "args": {"value": "x"}})
+
+    assert out == {"ok": False, "reason": "payload_too_large", "tool": "bounded"}
+    assert kernel.calls == []
+    assert q.calls == []
+
+
+@pytest.mark.asyncio
 async def test_gated_tool_obeys_live_tool_rpc_contract(monkeypatch):
     q = _FakeQueue()
 
@@ -383,6 +428,83 @@ async def test_approved_gated_tool_executes_via_executor():
     out = await s.execute(_Task({"tool": "send_email", "args": {"to": "y"}}))
     assert out["status"] == "ok" and out["result"] == {"sent": True}
     assert ran["args"] == {"to": "y"}
+
+
+@pytest.mark.asyncio
+async def test_trusted_tool_refuses_direct_execute_without_explicit_context():
+    token = object()
+    ran = []
+    s = ToolRPCServer(execution_context_check=lambda context, _task: context is token)
+
+    async def mutate(args):
+        ran.append(args)
+        return {"ok": True}
+
+    s.register_tool("mutate", mutate, gated=True, trusted_execution=True)
+    task = _Task({"tool": "mutate", "args": {"value": "x"}})
+
+    direct = await s.execute(task)
+    trusted = await s.execute(task, execution_context=token)
+
+    assert direct == {
+        "status": "failed",
+        "reason": "trusted_execution_required",
+        "tool": "mutate",
+    }
+    assert trusted["status"] == "ok"
+    assert ran == [{"value": "x"}]
+
+
+@pytest.mark.asyncio
+async def test_trusted_tool_fails_closed_on_non_mapping_handler_result():
+    token = object()
+    server = ToolRPCServer(
+        execution_context_check=lambda context, _task: context is token
+    )
+
+    async def malformed(_args):
+        return ["not", "a", "desktop", "result"]
+
+    server.register_tool(
+        "mutate",
+        malformed,
+        gated=True,
+        trusted_execution=True,
+    )
+
+    result = await server.execute(
+        _Task({"tool": "mutate", "args": {}}),
+        execution_context=token,
+    )
+
+    assert result == {
+        "status": "failed",
+        "reason": "invalid_result",
+        "tool": "mutate",
+    }
+
+
+@pytest.mark.asyncio
+async def test_approved_execute_revalidates_persisted_args_before_handler():
+    error_cls = tool_rpc.ToolRPCValidationError
+    ran = []
+
+    def preflight(args):
+        if args.get("value") != "safe":
+            raise error_cls("tampered_args")
+        return args
+
+    async def mutate(args):
+        ran.append(args)
+        return {"ok": True}
+
+    s = ToolRPCServer()
+    s.register_tool("mutate", mutate, gated=True, preflight=preflight)
+
+    out = await s.execute(_Task({"tool": "mutate", "args": {"value": "unsafe"}}))
+
+    assert out == {"status": "failed", "reason": "tampered_args", "tool": "mutate"}
+    assert ran == []
 
 
 @pytest.mark.asyncio

@@ -1771,6 +1771,7 @@ async def test_autonomy_coordinator_wires_one_live_governed_agent_tool_runtime()
                 "required": ["steps"],
                 "additionalProperties": False,
             },
+            "capability_id": "tool:desktop_run",
         },
         {
             "name": "echo",
@@ -1827,6 +1828,12 @@ async def test_autonomy_coordinator_wires_one_live_governed_agent_tool_runtime()
         "target": "desktop_run",
     }
 
+    settings["llm.registry_planning_enabled"] = True
+    projected = runtime._registry_metadata(orch.tool_rpc.tools())
+    desktop_spec = next(tool for tool in projected if tool["name"] == "desktop_run")
+    assert desktop_spec["capability_id"] == "tool:desktop_run"
+    assert desktop_spec["input_schema"]["properties"]["steps"]["maxItems"] == 100
+
     backend = _ToolCapableBackend()
     assert runtime.can_run(backend) is False
     settings["llm.tool_loop_enabled"] = True
@@ -1863,3 +1870,257 @@ def test_agent_tool_runtime_wiring_can_be_rebuilt_without_stale_agent_references
     assert orch.agent_tool_runtime is second_runtime
     assert agent.tool_runtime is second_runtime
     assert orch.tool_rpc is second_runtime._server
+
+
+@pytest.mark.parametrize(
+    ("args", "reason"),
+    [
+        ({"steps": [{"action": "observe", "args": {}}] * 101}, "too_many_steps"),
+        ({"steps": [{"action": 7, "args": {}}]}, "invalid_action"),
+        ({"steps": [{"action": "x" * 65, "args": {}}]}, "invalid_action"),
+        ({"steps": [{"action": " " * 65 + "click", "args": {}}]}, "invalid_action"),
+        (
+            {"steps": [{"action": "click", "args": {"name": "x" * 513}}]},
+            "argument_too_large",
+        ),
+        (
+            {"steps": [{"action": "click", "args": {"name": " " * 513 + "Save"}}]},
+            "argument_too_large",
+        ),
+        (
+            {"steps": [{"action": "locate", "args": {"query": " " * 513 + "Save"}}]},
+            "argument_too_large",
+        ),
+        (
+            {"steps": [{"action": "launch", "args": {"app": " " * 513 + "browser"}}]},
+            "argument_too_large",
+        ),
+        (
+            {"steps": [{"action": "click", "args": {"name": "Save", "x": 1}}]},
+            "unexpected_action_args",
+        ),
+        (
+            {
+                "steps": [
+                    {"action": "click", "args": {"name": "Save"}, "approved": True}
+                ]
+            },
+            "invalid_step",
+        ),
+        ({"steps": [], "approved": True}, "unexpected_args"),
+    ],
+)
+@pytest.mark.asyncio
+async def test_desktop_tool_rejects_unbounded_proposals_before_enqueue(args, reason):
+    class _Queue:
+        def __init__(self):
+            self.calls = []
+
+        def enqueue(self, *call_args, **call_kwargs):
+            self.calls.append((call_args, call_kwargs))
+            return 1
+
+    queue = _Queue()
+    orch = SimpleNamespace(agents={}, autonomy=None, autonomy_queue=queue)
+    AutonomyCoordinator(orch)._wire_agent_tool_runtime()
+
+    out = await orch.tool_rpc.handle({"tool": "desktop_run", "args": args})
+
+    assert out == {"ok": False, "reason": reason, "tool": "desktop_run"}
+    assert queue.calls == []
+
+
+@pytest.mark.asyncio
+async def test_desktop_tool_actuates_only_from_durable_human_approved_worker_tick(
+    monkeypatch,
+    tmp_path,
+):
+    from agents.core.autonomy.executor import TaskExecutor
+    from agents.core.autonomy.policy import AutonomyPolicy
+    from agents.core.autonomy.queue import TaskQueue
+    from agents.core.autonomy.worker import AutonomyWorker
+    from agents.core.desktop_host import WindowsDesktopDriver
+    from agents.core.kernel import Decision, Verdict
+
+    class _Driver:
+        requires_kernel = True
+
+        def __init__(self):
+            self.calls = []
+            self.closed = False
+
+        async def perform(self, action, args):
+            self.calls.append((action, args))
+            if action == "observe":
+                return {
+                    "ok": True,
+                    "source": "accessibility",
+                    "elements": [{"name": "Save", "role": "Button", "text": "safe"}],
+                }
+            return {"ok": True, "action": action, "element": args.get("name", "")}
+
+        async def close(self):
+            self.closed = True
+
+    class _Kernel:
+        def __init__(self):
+            self.kinds = []
+
+        def __call__(self, action, capability=None):
+            self.kinds.append(action.kind)
+            if action.kind == "desktop.step":
+                return Decision(Verdict.QUEUE, reason="approval_required", tier=2)
+            return Decision(Verdict.GRANT, reason="allowed", tier=2)
+
+    monkeypatch.setenv("JARVIS_DESKTOP_HOST", "1")
+    monkeypatch.setenv("JARVIS_DESKTOP_ISOLATED", "1")
+    monkeypatch.setenv("JARVIS_UNIFIED_ACTION_API", "1")
+    monkeypatch.setenv("JARVIS_ACTION_KERNEL", "1")
+    driver = _Driver()
+    kernel = _Kernel()
+    monkeypatch.setattr(
+        WindowsDesktopDriver,
+        "from_env",
+        classmethod(lambda cls: driver),
+    )
+    monkeypatch.setattr("agents.core.kernel.binding.make_action_kernel", lambda _orch: kernel)
+
+    queue = TaskQueue(db_path=str(tmp_path / "autonomy.db")).initialize()
+    try:
+        worker = AutonomyWorker(queue, policy=AutonomyPolicy())
+        orch = SimpleNamespace(
+            agents={},
+            autonomy=worker,
+            autonomy_queue=queue,
+            secret_broker=None,
+            intent_log=None,
+        )
+        coordinator = AutonomyCoordinator(orch)
+        coordinator._wire_agent_tool_runtime(action_kernel=kernel)
+        generic_calls = []
+
+        async def generic_toolrpc(task):
+            generic_calls.append(task.kind)
+            return {"status": "failed", "reason": "wrong_handler"}
+
+        executor = TaskExecutor().register("toolrpc", generic_toolrpc).register(
+            "toolrpc.desktop_run", coordinator._approved_desktop_tool_rpc_execute
+        )
+        worker.executor = executor.execute
+
+        proposed = await orch.tool_rpc.handle(
+            {
+                "tool": "desktop_run",
+                "args": {
+                    "steps": [
+                        {"action": "click", "args": {"name": "Save"}},
+                        {
+                            "action": "type",
+                            "args": {"name": "Title", "text": "Ready"},
+                        },
+                        {"action": "launch", "args": {"app": "browser"}},
+                    ]
+                },
+            },
+            actor="jarvis",
+        )
+        task_id = proposed["task_id"]
+        blocked = queue.get(task_id)
+        assert blocked.status == "blocked"
+
+        direct = await orch.tool_rpc.execute(blocked)
+        before_worker = await coordinator._approved_desktop_tool_rpc_execute(blocked)
+        assert direct["reason"] == "trusted_execution_required"
+        assert before_worker["reason"] == "trusted_execution_required"
+        assert driver.calls == []
+
+        await worker.apply_decision(task_id, "accept", decided_by="andrei")
+        still_before_worker = await coordinator._approved_desktop_tool_rpc_execute(
+            queue.get(task_id)
+        )
+        assert still_before_worker["reason"] == "trusted_execution_required"
+        assert driver.calls == []
+
+        kernel.kinds.clear()
+        summary = await worker.tick()
+        completed = queue.get(task_id)
+
+        assert summary == {"ran": 1, "done": 1, "failed": 0}
+        assert completed.status == "done"
+        assert completed.result["status"] == "ok"
+        assert completed.result["result"]["ran"][0]["status"] == "ran"
+        assert generic_calls == []
+        assert kernel.kinds == [
+            "tool.rpc",
+            "desktop.step",
+            "desktop.step",
+            "desktop.step",
+            "desktop.step",
+        ]
+        assert driver.calls == [
+            ("observe", {}),
+            ("click", {"name": "Save"}),
+            ("type", {"name": "Title", "text": "Ready"}),
+            ("launch", {"app": "browser"}),
+        ]
+        assert driver.closed is True
+    finally:
+        queue.close()
+
+
+@pytest.mark.asyncio
+async def test_build_executor_uses_specific_trusted_desktop_toolrpc_handler():
+    from agents.core.autonomy.policy import AutonomyPolicy
+
+    class _Queue:
+        def enqueue(self, *_args, **_kwargs):
+            return 1
+
+        def get(self, _task_id):
+            return None
+
+    async def process(*_args, **_kwargs):
+        return "ok"
+
+    autonomy = SimpleNamespace(
+        policy=AutonomyPolicy(),
+        budget=None,
+    )
+    orch = SimpleNamespace(
+        agents={},
+        audit=None,
+        autonomy=autonomy,
+        autonomy_queue=_Queue(),
+        budget_ledger=None,
+        capabilities=None,
+        channel_inbox=None,
+        channel_manager=None,
+        cognition=None,
+        intent_log=None,
+        kill_switch=None,
+        loop_detector=None,
+        permission_gate=None,
+        plugins={},
+        process=process,
+        secret_broker=None,
+        get_setting=lambda _key, default=None: default,
+    )
+    coordinator = AutonomyCoordinator(orch)
+
+    executor = coordinator.build_executor()
+    task = SimpleNamespace(
+        id=1,
+        agent="jarvis",
+        kind="toolrpc.desktop_run",
+        payload={"tool": "desktop_run", "args": {"steps": []}},
+    )
+
+    result = await executor.execute(task)
+
+    assert executor.resolve("toolrpc.desktop_run") is coordinator._approved_desktop_tool_rpc_execute
+    assert executor.resolve("toolrpc.other").__self__ is orch.tool_rpc
+    assert result == {
+        "status": "failed",
+        "reason": "trusted_execution_required",
+        "tool": "desktop_run",
+    }

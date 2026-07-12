@@ -35,6 +35,7 @@ from .automation_contracts import ContractTemplate, predicate
 logger = logging.getLogger("jarvis.tool_rpc")
 
 Handler = Callable[[dict], Awaitable]
+Preflight = Callable[[dict], Mapping]
 
 _KIND_PREFIX = "toolrpc."
 _RISK_TIER = 2
@@ -74,17 +75,33 @@ def _tool_rpc_call_contract_template() -> ContractTemplate:
 TOOL_RPC_CALL_CONTRACT = _tool_rpc_call_contract_template()
 
 
+class ToolRPCValidationError(ValueError):
+    """Bounded public denial raised by a tool-specific argument preflight."""
+
+    def __init__(self, reason: str = "validation_failed") -> None:
+        normalized = str(reason or "validation_failed")
+        if (
+            len(normalized) > 80
+            or not normalized.replace("_", "").isalnum()
+        ):
+            normalized = "validation_failed"
+        self.reason = normalized
+        super().__init__(normalized)
+
+
 class ToolRPCServer:
     """Allowlisted, risk-gated, secret-scrubbed tool surface for sandboxed code."""
 
     def __init__(self, secret_broker=None, enqueue: Optional[Callable] = None,
-                 audit=None, agent: str = "jarvis", kernel=None) -> None:
+                 audit=None, agent: str = "jarvis", kernel=None,
+                 execution_context_check: Optional[Callable] = None) -> None:
         self._tools: dict[str, dict] = {}
         self._secrets = secret_broker
         self._enqueue = enqueue
         self._audit = audit
         self.agent = agent
         self._kernel = kernel   # ORIZONT-24 K1 wave-3: bound kernel.authorize (default-off)
+        self._execution_context_check = execution_context_check
 
     # ── registration (the allowlist) ─────────────────────────────────────────
 
@@ -96,8 +113,12 @@ class ToolRPCServer:
         description: str = "",
         input_schema: Optional[dict] = None,
         capability_id: str | None = None,
+        preflight: Preflight | None = None,
+        trusted_execution: bool = False,
     ) -> "ToolRPCServer":
         """Expose one tool. ``gated=True`` ⇒ external/mutating ⇒ needs approval."""
+        if trusted_execution and not gated:
+            raise ValueError("trusted execution is only valid for gated tools")
         if capability_id is not None:
             if (
                 not isinstance(capability_id, str)
@@ -121,6 +142,8 @@ class ToolRPCServer:
             "description": description,
             "input_schema": deepcopy(schema),
             "capability_id": capability_id,
+            "preflight": preflight,
+            "trusted_execution": bool(trusted_execution),
         }
         return self
 
@@ -154,6 +177,10 @@ class ToolRPCServer:
         if spec is None:
             # Not on the allowlist — the sandbox cannot reach it.
             return {"ok": False, "reason": "tool_not_allowed", "tool": name}
+
+        args, denial = self._run_preflight(spec, args, name)
+        if denial is not None:
+            return denial
 
         if spec["gated"]:
             # External/mutating tool: never runs from the sandbox. Enqueue an
@@ -220,7 +247,7 @@ class ToolRPCServer:
         each response. No LLM round-trip happens between steps."""
         return [await self.handle(r) for r in (requests or [])]
 
-    async def execute(self, task) -> dict:
+    async def execute(self, task, *, execution_context=None) -> dict:
         """Executor handler: run a gated tool AFTER its approval task is approved."""
         effective_actor = getattr(task, "agent", None) or self.agent
         payload = getattr(task, "payload", None)
@@ -236,6 +263,27 @@ class ToolRPCServer:
         spec = self._tools.get(name)
         if spec is None:
             return {"status": "failed", "reason": "tool_not_allowed", "tool": name}
+        args, denial = self._run_preflight(spec, args, name)
+        if denial is not None:
+            return {
+                "status": "failed",
+                "reason": denial["reason"],
+                "tool": name,
+            }
+        if spec.get("trusted_execution"):
+            try:
+                trusted = (
+                    self._execution_context_check is not None
+                    and self._execution_context_check(execution_context, task) is True
+                )
+            except Exception:
+                trusted = False
+            if not trusted:
+                return {
+                    "status": "failed",
+                    "reason": "trusted_execution_required",
+                    "tool": name,
+                }
         if spec["gated"]:
             denied = self._kernel_denial(name, args, effective_actor)
             if denied is not None:
@@ -255,10 +303,41 @@ class ToolRPCServer:
         except Exception:
             logger.warning("tool-rpc approved execute failed: %s", name, exc_info=True)
             return {"status": "failed", "reason": "tool_error", "tool": name}
+        if spec.get("trusted_execution") and not isinstance(result, Mapping):
+            return {
+                "status": "failed",
+                "reason": "invalid_result",
+                "tool": name,
+            }
+        if spec.get("trusted_execution") and result.get("ok") is not True:
+            reason = result.get("reason")
+            if not isinstance(reason, str) or not reason:
+                reason = "invalid_result"
+            return {
+                "status": "failed",
+                "reason": reason,
+                "tool": name,
+                "result": self._scrub(result),
+            }
         self._record("toolrpc.execute", name, agent=effective_actor)
         return {"status": "ok", "tool": name, "result": self._scrub(result)}
 
     # ── internals ────────────────────────────────────────────────────────────
+
+    def _run_preflight(self, spec: dict, args: dict, name: str):
+        preflight = spec.get("preflight")
+        if preflight is None:
+            return dict(args), None
+        try:
+            sanitized = preflight(dict(args))
+        except ToolRPCValidationError as exc:
+            return None, {"ok": False, "reason": exc.reason, "tool": name}
+        except Exception:
+            logger.warning("tool-rpc preflight failed: %s", name, exc_info=True)
+            return None, {"ok": False, "reason": "validation_failed", "tool": name}
+        if not isinstance(sanitized, Mapping):
+            return None, {"ok": False, "reason": "validation_failed", "tool": name}
+        return dict(sanitized), None
 
     def _scrub(self, obj):
         """Recursively mask any known secret value before it crosses to the sandbox."""
