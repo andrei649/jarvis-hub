@@ -190,11 +190,18 @@ def test_update_message_is_safe_on_default_windows_console():
 
 def test_latest_ci_commit_uses_last_verified_main_not_self_referential_head():
     seen = []
+    outputs = {
+        ("git", "rev-parse", "origin/main"): (0, "abc123\n"),
+        ("git", "rev-parse", "HEAD"): (0, "feature789\n"),
+    }
     value = status_sync.latest_ci_commit(
-        env={}, runner=lambda args: seen.append(args) or (0, "abc123\n")
+        env={}, runner=lambda args: seen.append(args) or outputs[tuple(args)]
     )
     assert value == "abc123"
-    assert seen == [["git", "rev-parse", "origin/main"]]
+    assert seen == [
+        ["git", "rev-parse", "origin/main"],
+        ["git", "rev-parse", "HEAD"],
+    ]
     assert (
         status_sync.latest_ci_commit(
             env={"JARVIS_LATEST_CI_COMMIT": "verified789"}, runner=lambda args: (1, "")
@@ -213,3 +220,35 @@ def test_latest_ci_commit_reads_pull_request_base_from_actions_event(tmp_path):
         )
         == "base123"
     )
+
+
+def test_latest_ci_commit_reads_previous_main_from_push_event(tmp_path):
+    event = tmp_path / "event.json"
+    event.write_text('{"before":"previous123"}', encoding="utf-8")
+    assert (
+        status_sync.latest_ci_commit(
+            env={"GITHUB_EVENT_PATH": str(event)},
+            runner=lambda args: (_ for _ in ()).throw(AssertionError("git must not run")),
+        )
+        == "previous123"
+    )
+
+
+def test_latest_ci_commit_uses_first_parent_when_checkout_is_origin_main():
+    seen = []
+    outputs = {
+        ("git", "rev-parse", "origin/main"): (0, "current123\n"),
+        ("git", "rev-parse", "HEAD"): (0, "current123\n"),
+        ("git", "rev-parse", "origin/main^"): (0, "previous123\n"),
+    }
+
+    def runner(args):
+        seen.append(args)
+        return outputs[tuple(args)]
+
+    assert status_sync.latest_ci_commit(env={}, runner=runner) == "previous123"
+    assert seen == [
+        ["git", "rev-parse", "origin/main"],
+        ["git", "rev-parse", "HEAD"],
+        ["git", "rev-parse", "origin/main^"],
+    ]
