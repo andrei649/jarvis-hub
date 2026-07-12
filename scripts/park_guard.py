@@ -133,6 +133,7 @@ def main(argv: list[str]) -> int:
     parser.add_argument("--text", help="PR title/body; defaults to CI environment")
     parser.add_argument("--json", action="store_true")
     args = parser.parse_args(argv)
+    paths: list[str] = []
     if args.changed_path:
         paths = args.changed_path
     elif args.base:

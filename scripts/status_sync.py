@@ -48,7 +48,6 @@ GENERATED_DOCS = {
 # The two header tokens, e.g. "Tests:** ~3,011 passed" and "HTTP routes:** 327".
 _TESTS_RE = re.compile(r"(Tests:\*\* ~)([\d,]+)( passed)")
 _ROUTES_RE = re.compile(r"(HTTP routes:\*\* )(\d+)")
-_HORIZON_ROW_RE = re.compile(r"^\|\s*(H(\d+)\.\d+[^|]*)\|", re.MULTILINE)
 _LANE_ROW_RE = re.compile(r"^\|\s*(A\d+)\s*\|\s*([^|]+?)\s*\|\s*([^|]+?)\s*\|", re.MULTILINE)
 _VERSION_RE = re.compile(r"__version__\s*=\s*[\"']([^\"']+)[\"']")
 
