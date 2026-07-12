@@ -98,6 +98,19 @@ class ToolRPCServer:
         capability_id: str | None = None,
     ) -> "ToolRPCServer":
         """Expose one tool. ``gated=True`` ⇒ external/mutating ⇒ needs approval."""
+        if capability_id is not None:
+            if (
+                not isinstance(capability_id, str)
+                or not capability_id
+                or len(capability_id) > 128
+                or any(not (char.isalnum() or char in ":._-*") for char in capability_id)
+            ):
+                raise ValueError("capability_id must be a bounded machine identifier")
+            if any(
+                existing_name != name and spec.get("capability_id") == capability_id
+                for existing_name, spec in self._tools.items()
+            ):
+                raise ValueError(f"capability_id already registered: {capability_id}")
         schema = input_schema if input_schema is not None else {
             "type": "object",
             "properties": {},
@@ -293,5 +306,5 @@ class ToolRPCServer:
                 self._audit.record(actor="tool_rpc", action=action, why=why, metadata=meta)
             elif hasattr(self._audit, "log"):
                 self._audit.log({"event": action, "why": why, **meta})
-        except Exception:  # pragma: no cover - best-effort
-            pass
+        except Exception:  # best-effort observability must not break the tool path
+            logger.debug("tool-rpc audit sink failed", exc_info=True)

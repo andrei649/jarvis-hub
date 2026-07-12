@@ -283,8 +283,14 @@ def build_records(orch=None) -> list[CapabilityRecord]:
             records.extend(source())
         except Exception:  # pragma: no cover - a broken registry must not 500 the board
             logger.warning("capability source failed", exc_info=True)
+    unique: dict[str, CapabilityRecord] = {}
+    for record in records:
+        if record.id in unique:
+            logger.warning("duplicate capability id ignored: %s", record.id)
+            continue
+        unique[record.id] = record
     # Order matters: derive → promote-if-harness-verified → manual demote wins last.
-    return [_apply_override(_apply_verification(r)) for r in records]
+    return [_apply_override(_apply_verification(r)) for r in unique.values()]
 
 
 def snapshot(orch=None) -> dict:

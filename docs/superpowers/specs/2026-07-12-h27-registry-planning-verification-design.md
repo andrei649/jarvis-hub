@@ -18,7 +18,8 @@ attach every executable action/tool verification reference to a real V1 reality 
 `ToolRPCServer.register_tool()` gains an optional `capability_id`. The public `tools()`
 projection includes it only when declared, preserving exact legacy output for callers
 that do not opt in. The production `echo` and `time` tools declare `tool:echo` and
-`tool:time`.
+`tool:time`. Declared ids are bounded and unique per server; registry derivation keeps
+the earlier canonical source when a tool implements an existing `action:*` record.
 
 The existing capability registry derives `tool` records from `orch.tool_rpc.tools()`.
 Their readiness is WIRED because the handler is registered on the live server; risk is
@@ -45,6 +46,8 @@ When disabled, metadata and execution remain byte-compatible. When enabled, the 
 
 The model remains the semantic selector among the filtered ToolSpecs. If no eligible
 tool remains, the runtime returns a stable honest-refusal reply before a provider call.
+The same filtered name set is enforced again at execution, so a provider cannot call a
+SEAM/missing tool by hallucinating a name that was not offered.
 The tool-loop master flag and provider `supports_tools` checks stay unchanged.
 
 ## V1 verification linkage

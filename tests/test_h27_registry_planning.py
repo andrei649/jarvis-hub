@@ -55,6 +55,18 @@ def test_tool_rpc_capability_id_is_opt_in_and_legacy_projection_is_unchanged():
     assert mapped["capability_id"] == "action:tool.rpc"
 
 
+def test_tool_rpc_refuses_invalid_or_duplicate_capability_identity():
+    server = ToolRPCServer()
+    with pytest.raises(ValueError, match="capability_id"):
+        server.register_tool("blank", lambda args: args, capability_id="")
+    with pytest.raises(ValueError, match="capability_id"):
+        server.register_tool("wrong", lambda args: args, capability_id=123)
+
+    server.register_tool("one", lambda args: args, capability_id="tool:shared")
+    with pytest.raises(ValueError, match="already registered"):
+        server.register_tool("two", lambda args: args, capability_id="tool:shared")
+
+
 def test_live_tool_records_derive_from_tool_rpc_registration():
     server = ToolRPCServer()
     server.register_tool(
@@ -88,6 +100,21 @@ def test_live_tool_records_derive_from_tool_rpc_registration():
     assert echo.confidence == 0.0
     assert echo.detail == {"tool": "echo", "gated": False}
     assert records["tool:danger"].risk == "sensitive"
+
+
+def test_tool_implementation_does_not_duplicate_an_existing_action_record():
+    server = ToolRPCServer()
+    server.register_tool("write", lambda args: args, capability_id="action:tool.rpc")
+    orch = SimpleNamespace(
+        tool_rpc=server,
+        components=SimpleNamespace(status={}),
+        skills=SimpleNamespace(skills={}),
+    )
+
+    matching = [record for record in cr.build_records(orch) if record.id == "action:tool.rpc"]
+
+    assert len(matching) == 1
+    assert matching[0].kind == "action"
 
 
 @pytest.mark.asyncio
@@ -240,3 +267,21 @@ async def test_provider_cannot_execute_a_tool_filtered_out_by_registry():
     assert not executed
     tool_message = backend.calls[1]["messages"][-1]
     assert "tool_not_allowed" in tool_message["content"]
+
+
+@pytest.mark.asyncio
+async def test_tool_rpc_audit_failure_is_swallowed_and_logged(caplog):
+    class BrokenAudit:
+        def record(self, **kwargs):
+            raise RuntimeError("audit offline")
+
+    async def echo(args):
+        return args
+
+    server = ToolRPCServer(audit=BrokenAudit())
+    server.register_tool("echo", echo)
+    with caplog.at_level("DEBUG", logger="jarvis.tool_rpc"):
+        result = await server.handle({"tool": "echo", "args": {"value": "ok"}})
+
+    assert result["ok"] is True
+    assert "audit sink failed" in caplog.text
