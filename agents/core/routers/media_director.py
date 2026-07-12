@@ -157,7 +157,7 @@ async def media_present(body: PresentBody):
 
 @router.post("/api/media/restore/{device_id}", dependencies=[Depends(user_guard)])
 async def media_restore(device_id: str):
-    """Replay the pre-present snapshot through its own governed action."""
+    """The rollback contract: replay the pre-present snapshot on a device."""
     if not _enabled():
         return nocache_json(_disabled_body())
     result = await _perform_media(
