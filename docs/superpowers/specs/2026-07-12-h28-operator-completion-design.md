@@ -67,4 +67,3 @@ All host/dependency/policy failures are bounded and redacted. Startup is lazy. M
 - ToolRPC tests prove `desktop_run` is gated and cannot execute inline.
 - Route/OpenAPI/auth/parity/park guards are green.
 - Ruff, Bandit, status sync, Ubuntu CI, and Windows CI are green before merge.
-
