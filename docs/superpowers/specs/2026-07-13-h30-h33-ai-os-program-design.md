@@ -118,6 +118,9 @@ H32.4/H32.7 completion.
 - A typed camera-event producer sink lands before integration. H31.6 closes only after the House
   Brain consumes privacy-filtered anonymous occupancy/sensor state and H33.1 consumes the same
   typed sink. Cameras never write house KG or ambient internals directly.
+- Situation memory may correlate repeated anonymous observations by place/time, but cannot claim
+  they are the same person. Re-identification remains absent unless a future separately approved,
+  strict-local, consent-gated capability is designed and reviewed.
 
 ## H32 architecture
 
