@@ -51,6 +51,7 @@ context/browser/Playwright shutdown. A new context avoids ambient cookies and ca
 - The driver refuses startup until the caller explicitly binds the same
   `BrowserPolicy.domain_allowed` guard used by `GovernedBrowser`; the Playwright
   context applies it to redirects and subresources before each request.
+- Service workers are disabled in the fresh context so they cannot bypass request routing.
 - Only `chromium`, `firefox`, and `webkit` are accepted.
 - Timeouts and extraction/screenshot sizes are bounded.
 - Upload paths must exist; download destinations remain inside the configured directory.

@@ -306,7 +306,10 @@ async def test_lazy_fresh_context_navigation_extract_screenshot_wait_and_close(t
     }
     assert shot["mime"] == "image/png" and shot["image_base64"] == "UE5H"
     assert waited == {"waited": "selector", "selector": "#ready", "timeout_ms": 400}
-    assert manager.playwright.browser.context_kwargs == {"accept_downloads": True}
+    assert manager.playwright.browser.context_kwargs == {
+        "accept_downloads": True,
+        "service_workers": "block",
+    }
     assert manager.playwright.page.default_timeout == 15_000
     assert manager.started == 1
 

@@ -151,7 +151,10 @@ class PlaywrightBrowserDriver:
                 self._playwright = await manager.start()
                 browser_type = getattr(self._playwright, self.browser_name)
                 self._browser = await browser_type.launch(headless=self.headless)
-                self._context = await self._browser.new_context(accept_downloads=True)
+                self._context = await self._browser.new_context(
+                    accept_downloads=True,
+                    service_workers="block",
+                )
                 if self._url_guard is not None:
                     await self._context.route("**/*", self._route_request)
                 self._page = await self._context.new_page()

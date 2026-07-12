@@ -47,8 +47,8 @@ the same `BrowserPolicy.domain_allowed` guard used by `GovernedBrowser` means of
 navigation, redirects, and subresources are checked before each request. Click/type/submit/download/
 execute-js/upload still require the existing approval queue. Each driver instance
 creates a fresh browser context with no ambient cookies or cache. Screenshots are
-returned in memory; downloads require an explicit directory and are saved with
-sanitized filenames.
+returned in memory; service workers are blocked so they cannot bypass request routing;
+downloads require an explicit directory and are saved with sanitized filenames.
 
 ## Live smoke
 
