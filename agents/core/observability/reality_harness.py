@@ -432,7 +432,7 @@ async def _probe_media_present_verified_rail() -> bool:
 
     registry = DeviceRegistry(path=None)
     registry.register(MediaDevice(id="kitchen-display", name="Kitchen display",
-                                  kind="browser_tab", room="kitchen"))
+                                  kind="browser_tab", room="kitchen", supports=("show",)))
     director = MediaDirector(registry=registry, sessions=SessionBoard(path=None),
                              drivers={"browser_tab": _FakeDriver()})
     result = director.present({

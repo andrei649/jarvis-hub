@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import json
 import logging
+import math
 import threading
 import time
 from dataclasses import asdict, dataclass
@@ -115,12 +116,27 @@ class MediaDevice:
     supports: tuple[str, ...] = ("play",)
 
     def __post_init__(self) -> None:
+        if not all(isinstance(value, str) for value in (self.id, self.name, self.kind, self.room)):
+            raise MediaError("device id, name, kind and room must be strings")
         if not self.id or not self.name:
             raise MediaError("device id and name are required")
+        if len(self.id) > 64 or len(self.name) > 120 or len(self.room) > 64:
+            raise MediaError("device identity fields exceed their size limits")
         if self.kind not in DEVICE_KINDS:
             raise MediaError(f"unsupported device kind: {self.kind!r}")
-        if not self.supports:
+        if isinstance(self.supports, (str, bytes)) or not isinstance(
+            self.supports, (tuple, list, frozenset)
+        ):
+            raise MediaError("device supports must be a collection")
+        supports = tuple(self.supports)
+        if not supports:
             raise MediaError("device must support at least one operation")
+        if not all(isinstance(operation, str) for operation in supports):
+            raise MediaError("device supports must contain operation strings")
+        unsupported = sorted(set(supports) - MODES)
+        if unsupported:
+            raise MediaError(f"unsupported device operation: {unsupported[0]!r}")
+        object.__setattr__(self, "supports", supports)
 
 
 class _BoundedJsonStore:
@@ -307,6 +323,28 @@ class MediaSession:
     state: str = "playing"
     previous: dict | None = None  # snapshot for the restore() rollback
 
+    def __post_init__(self) -> None:
+        if not isinstance(self.device_id, str) or not self.device_id or len(self.device_id) > 64:
+            raise MediaError("session device_id is invalid")
+        if not isinstance(self.content, dict):
+            raise MediaError("session content is invalid")
+        if self.content.get("type") not in CONTENT_TYPES or not isinstance(
+            self.content.get("value"), str
+        ):
+            raise MediaError("session content is invalid")
+        if self.mode not in MODES or self.privacy not in PRIVACY_LEVELS:
+            raise MediaError("session mode or privacy is invalid")
+        if (
+            isinstance(self.started_at, bool)
+            or not isinstance(self.started_at, (int, float))
+            or not math.isfinite(float(self.started_at))
+        ):
+            raise MediaError("session started_at is invalid")
+        if self.state not in {"playing", "paused", "idle"}:
+            raise MediaError("session state is invalid")
+        if self.previous is not None and not isinstance(self.previous, dict):
+            raise MediaError("session previous snapshot is invalid")
+
     def to_dict(self) -> dict:
         return asdict(self)
 
@@ -321,7 +359,7 @@ class SessionBoard:
         for item in self._store.load():
             try:
                 session = MediaSession(**item)
-            except TypeError:
+            except (MediaError, TypeError):
                 continue
             self._sessions[session.device_id] = session
 
@@ -438,6 +476,10 @@ class MediaDirector:
         except MediaError as exc:
             return {"ok": False, "reason": str(exc)}
 
+        mode = payload.get("mode", "play")
+        if mode not in device.supports:
+            return {"ok": False, "reason": "unsupported_mode"}
+
         urgency = payload.get("urgency", "normal")
         current = self.sessions.get(device.id)
         if not may_interrupt(current, urgency=urgency):
@@ -450,6 +492,8 @@ class MediaDirector:
 
         driver = self.driver_for(device)
         previous = current.to_dict() if current else None
+        if previous is not None:
+            previous["previous"] = None
         outcome = self._drive(driver, "play", device, content)
         if outcome is None:
             return {"ok": False, "reason": "driver_error", "state": "unavailable"}
@@ -470,7 +514,7 @@ class MediaDirector:
             MediaSession(
                 device_id=device.id,
                 content=content,
-                mode=payload.get("mode", "play"),
+                mode=mode,
                 privacy=payload.get("privacy", "household"),
                 started_at=float(self._clock()),
                 state="playing",
@@ -505,7 +549,10 @@ class MediaDirector:
                 "restored": "idle",
                 "reason": outcome.get("reason", ""),
             }
-        previous = MediaSession(**session.previous)
+        try:
+            previous = MediaSession(**session.previous)
+        except (MediaError, TypeError):
+            return {"ok": False, "reason": "corrupt_session_snapshot"}
         outcome = self._drive(driver, "play", device, previous.content)
         if outcome is None:
             return {"ok": False, "reason": "driver_error"}

@@ -152,6 +152,41 @@ def test_device_validation_and_corrupt_store_degrade(tmp_path):
     assert DeviceRegistry(path=tmp_path / "devices.json").list() == []
 
 
+def test_device_identity_and_supported_operations_are_strictly_validated():
+    with pytest.raises(MediaError, match="strings"):
+        MediaDevice(id=1, name="TV", kind="tv")
+    with pytest.raises(MediaError, match="supports"):
+        MediaDevice(id="tv", name="TV", kind="tv", supports="play")
+    with pytest.raises(MediaError, match="unsupported device operation"):
+        MediaDevice(id="tv", name="TV", kind="tv", supports=("teleport",))
+
+
+def test_parseable_rows_with_invalid_types_degrade_without_breaking_startup(tmp_path):
+    devices = tmp_path / "devices.json"
+    devices.write_text(
+        json.dumps([{"id": ["not-hashable"], "name": "TV", "kind": "tv"}]),
+        encoding="utf-8",
+    )
+    sessions = tmp_path / "sessions.json"
+    sessions.write_text(
+        json.dumps(
+            [
+                {
+                    "device_id": ["not-hashable"],
+                    "content": {"type": "url", "value": "https://example.local/x"},
+                    "mode": "play",
+                    "privacy": "household",
+                    "started_at": 1.0,
+                }
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    assert DeviceRegistry(path=devices).list() == []
+    assert SessionBoard(path=sessions).list() == []
+
+
 def test_oversized_registry_file_degrades_without_parsing_unbounded_input(tmp_path):
     path = tmp_path / "devices.json"
     path.write_text(
@@ -324,6 +359,16 @@ def test_present_contract_denies_bad_mode_and_unbounded_duration():
     assert too_long["ok"] is False and too_long["reason"] == "duration_out_of_bounds"
 
 
+def test_present_refuses_a_mode_the_target_does_not_support():
+    driver = FakeDriver()
+    director = _director(driver)
+
+    result = director.present(_payload(mode="show"))
+
+    assert result == {"ok": False, "reason": "unsupported_mode"}
+    assert driver.calls == []
+
+
 def test_present_with_no_driver_refuses_honestly():
     director = _director(driver=None)  # NullMediaDriver everywhere
     result = director.present(_payload())
@@ -382,6 +427,21 @@ def test_restore_replays_previous_session_or_stops_to_idle():
     idle = director.restore("tv-1")
     assert idle["ok"] is True and idle["restored"] == "idle"
     assert director.sessions.get("tv-1") is None
+
+
+def test_repeated_interrupts_keep_only_one_bounded_restore_snapshot():
+    director = _director(FakeDriver())
+    director.present(_payload())
+    director.present(
+        _payload(urgency="high", content={"type": "url", "value": "https://x/second"})
+    )
+    director.present(
+        _payload(urgency="high", content={"type": "url", "value": "https://x/third"})
+    )
+
+    previous = director.sessions.get("tv-1").previous
+    assert previous is not None
+    assert previous["previous"] is None
 
 
 def test_restore_unknown_device_or_no_session_is_honest():
