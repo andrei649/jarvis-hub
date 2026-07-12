@@ -327,3 +327,19 @@ def test_cross_process_quota_update_is_serialized(tmp_path):
     outcomes = sorted(results.get(timeout=5) for _ in workers)
     assert outcomes == ["refused", "stored"]
     assert Vault(root, key=KEY, max_items=1).stats()["items"] == 1
+
+
+def test_legacy_plaintext_index_fails_closed_without_deleting_blobs(tmp_path):
+    """A pre-hardening vault root (plaintext index.json) must not be silently
+    treated as an empty catalog — reconcile would delete its blobs as residue."""
+    root = tmp_path / "vault"
+    root.mkdir(parents=True)
+    (root / "index.json").write_text(json.dumps({"legacy-id": {"size": 7}}), encoding="utf-8")
+    legacy_blob = root / "legacy-id.blob"
+    legacy_blob.write_text("ciphertext-from-the-pre-hardening-vault", encoding="ascii")
+
+    with pytest.raises(VaultError, match="legacy plaintext vault index"):
+        Vault(root, key=KEY)
+
+    assert legacy_blob.exists()
+    assert (root / "index.json").exists()

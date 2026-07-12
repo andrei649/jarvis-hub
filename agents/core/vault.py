@@ -264,6 +264,15 @@ class Vault:
         if self._index_path.is_symlink():
             raise VaultError("unsafe vault index path")
         if not self._index_path.exists():
+            # A pre-hardening vault root carries a plaintext `index.json`. Starting
+            # with an empty catalog here would let _reconcile delete its blobs as
+            # crash residue — fail loudly instead of silently discarding data.
+            legacy = self.root / "index.json"
+            if legacy.is_symlink() or legacy.exists():
+                raise VaultError(
+                    "legacy plaintext vault index detected (pre-hardening format); "
+                    "refusing to open — move the old vault root aside and re-put its content"
+                )
             index: dict[str, dict] = {}
         else:
             try:
