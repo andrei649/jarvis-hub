@@ -119,8 +119,9 @@ def _file_lock(path: Path, timeout: float = _LOCK_TIMEOUT_SECONDS) -> Iterator[N
             linked.st_ino,
         ):
             raise VaultError("unsafe vault lock path")
+        # Last statement in the try: on success `handle` owns the fd and nothing
+        # can raise into the except-close below (no double-close path).
         handle = os.fdopen(descriptor, "r+b")
-        descriptor = None
     except (OSError, VaultError) as exc:
         if descriptor is not None:
             with suppress(OSError):
