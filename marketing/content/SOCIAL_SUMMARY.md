@@ -66,7 +66,7 @@
 > hardware-ul tău**. 17 agenți specialiști lucrează 24/7 pe GPU-ul tău (LM Studio / Ollama) —
 > brief zilnic, calendar, research, finanțe, casă, familie. Proactiv, dar cu frâne: fiecare
 > acțiune autonomă trece printr-o **coadă de aprobare** reversibil/ireversibil și rămâne într-un
-> **jurnal de audit criptografic**, imposibil de falsificat; dacă aprobi de destule ori același
+> **jurnal de audit criptografic**, în care orice modificare devine detectabilă; dacă aprobi de destule ori același
 > tip de acțiune, sistemul învață să nu te mai întrebe. Memoria se consolidează în fiecare noapte
 > într-un graf de cunoștințe pe care îl poți inspecta, edita și șterge. Agentul de familie **nu
 > atinge niciodată internetul** — garantat în cod, nu dintr-o setare. 0 lei/lună; cloud-ul e
