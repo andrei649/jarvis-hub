@@ -125,6 +125,10 @@ class FakeContext:
     def __init__(self, page):
         self.page = page
         self.closed = 0
+        self.routes = []
+
+    async def route(self, pattern, handler):
+        self.routes.append((pattern, handler))
 
     async def new_page(self):
         return self.page
@@ -145,6 +149,24 @@ class FakeBrowser:
 
     async def close(self):
         self.closed += 1
+
+
+class FakeRequest:
+    def __init__(self, url):
+        self.url = url
+
+
+class FakeRoute:
+    def __init__(self, url):
+        self.request = FakeRequest(url)
+        self.continued = 0
+        self.aborted = []
+
+    async def continue_(self):
+        self.continued += 1
+
+    async def abort(self, error_code=None):
+        self.aborted.append(error_code)
 
 
 class FakeBrowserType:
@@ -347,6 +369,29 @@ async def test_governed_browser_blocks_before_real_driver_and_null_default_is_un
 
     default_governed = GovernedBrowser(policy=BrowserPolicy(["example.com"]))
     assert default_governed.driver.__class__.__name__ == "NullBrowserDriver"
+    await driver.close()
+
+
+@pytest.mark.asyncio
+async def test_governed_policy_blocks_redirects_and_subresources_inside_playwright(tmp_path):
+    driver, manager = _driver(tmp_path)
+    governed = GovernedBrowser(driver=driver, policy=BrowserPolicy(["example.com"]))
+
+    result = await governed.run_step({
+        "action": "navigate", "url": "https://example.com/start"
+    })
+
+    assert result["status"] == "done"
+    [(pattern, handler)] = manager.playwright.context.routes
+    assert pattern == "**/*"
+
+    allowed = FakeRoute("https://cdn.example.com/app.js")
+    await handler(allowed)
+    assert allowed.continued == 1 and allowed.aborted == []
+
+    blocked = FakeRoute("https://evil.com/redirected")
+    await handler(blocked)
+    assert blocked.continued == 0 and blocked.aborted == ["blockedbyclient"]
     await driver.close()
 
 

@@ -41,10 +41,12 @@ finally:
 ```
 
 The driver does not weaken policy: off-list navigation is hard-blocked before startup,
-and click/type/submit/download/execute-js/upload still require the existing approval
-queue. Each driver instance creates a fresh browser context with no ambient cookies or
-cache. Screenshots are returned in memory; downloads require an explicit directory and
-are saved with sanitized filenames.
+and the same allowlist/SSRF guard is installed on the Playwright context so redirects
+and subresources are checked before each request. Click/type/submit/download/
+execute-js/upload still require the existing approval queue. Each driver instance
+creates a fresh browser context with no ambient cookies or cache. Screenshots are
+returned in memory; downloads require an explicit directory and are saved with
+sanitized filenames.
 
 ## Live smoke
 

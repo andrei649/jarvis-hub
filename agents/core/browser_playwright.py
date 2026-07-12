@@ -80,6 +80,7 @@ class PlaywrightBrowserDriver:
         self.max_screenshot_bytes = int(max_screenshot_bytes)
         self.download_dir = Path(download_dir).expanduser() if download_dir else None
         self._factory = playwright_factory
+        self._url_guard: Callable[[str], tuple[bool, str] | bool] | None = None
         self._start_lock = asyncio.Lock()
         self._playwright = None
         self._browser = None
@@ -110,6 +111,14 @@ class PlaywrightBrowserDriver:
     async def __aexit__(self, *_exc) -> None:
         await self.close()
 
+    def set_url_guard(self, guard: Callable[[str], tuple[bool, str] | bool]) -> None:
+        """Bind the governance policy before startup so every request is checked."""
+        if not callable(guard):
+            raise ValueError("url guard must be callable")
+        if self._page is not None:
+            raise PlaywrightDriverError("url guard must be configured before browser startup")
+        self._url_guard = guard
+
     def _runtime_factory(self):
         if self._factory is not None:
             return self._factory
@@ -139,6 +148,8 @@ class PlaywrightBrowserDriver:
                 browser_type = getattr(self._playwright, self.browser_name)
                 self._browser = await browser_type.launch(headless=self.headless)
                 self._context = await self._browser.new_context(accept_downloads=True)
+                if self._url_guard is not None:
+                    await self._context.route("**/*", self._route_request)
                 self._page = await self._context.new_page()
                 self._page.set_default_timeout(self.timeout_ms)
                 return self._page
@@ -150,6 +161,19 @@ class PlaywrightBrowserDriver:
                 raise PlaywrightUnavailable(
                     "Playwright could not start; verify the selected browser binary is installed"
                 ) from None
+
+    async def _route_request(self, route) -> None:
+        """Apply the allowlist/SSRF guard to redirects and subresources too."""
+        allowed = False
+        try:
+            verdict = self._url_guard(str(route.request.url)) if self._url_guard else False
+            allowed = bool(verdict[0]) if isinstance(verdict, tuple) else bool(verdict)
+        except Exception:
+            allowed = False
+        if allowed:
+            await route.continue_()
+        else:
+            await route.abort("blockedbyclient")
 
     async def close(self) -> None:
         """Idempotently release the fresh context, browser, and Playwright runtime."""

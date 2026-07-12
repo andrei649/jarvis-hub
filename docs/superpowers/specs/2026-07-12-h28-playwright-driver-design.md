@@ -48,6 +48,8 @@ context/browser/Playwright shutdown. A new context avoids ambient cookies and ca
 ## Safety
 
 - Explicit host consent is checked before importing or starting Playwright.
+- `GovernedBrowser` binds its allowlist/SSRF policy to every Playwright request,
+  including redirects and subresources, before the context creates a page.
 - Only `chromium`, `firefox`, and `webkit` are accepted.
 - Timeouts and extraction/screenshot sizes are bounded.
 - Upload paths must exist; download destinations remain inside the configured directory.
