@@ -179,6 +179,42 @@ def _action_records() -> list[CapabilityRecord]:
     ]
 
 
+def _tool_records(orch) -> list[CapabilityRecord]:
+    """Derive live ToolRPC capabilities only when registration declares identity."""
+    server = getattr(orch, "tool_rpc", None)
+    project = getattr(server, "tools", None)
+    if not callable(project):
+        return []
+    from agents.core.capability_verification import tool_verification_ref
+
+    out = []
+    for tool in project():
+        capability_id = tool.get("capability_id") if isinstance(tool, dict) else None
+        if not isinstance(capability_id, str) or not capability_id:
+            continue
+        name = str(tool.get("name", ""))
+        gated = bool(tool.get("gated"))
+        out.append(
+            CapabilityRecord(
+                id=capability_id,
+                kind="tool",
+                state=WIRED,
+                description=str(tool.get("description", "")),
+                inputs=tool.get("input_schema") or {"type": "object"},
+                risk="sensitive" if gated else "read_only",
+                requires=("tool-rpc.registered", "action-kernel") if gated
+                else ("tool-rpc.registered",),
+                supports=("tool-rpc", "approval") if gated else ("tool-rpc", "inline"),
+                verification=tool_verification_ref(name),
+                rollback="tool-specific rollback required" if gated else "no mutation to roll back",
+                confidence=0.0,
+                implementation=f"agents.core.tool_rpc:{name}",
+                detail={"tool": name, "gated": gated},
+            )
+        )
+    return out
+
+
 def _component_records(orch) -> list[CapabilityRecord]:
     """Derive component capabilities from the orchestrator's init-status registry."""
     reg = getattr(orch, "components", None)
@@ -240,14 +276,21 @@ def build_records(orch=None) -> list[CapabilityRecord]:
     records: list[CapabilityRecord] = []
     for source in (_plugin_records,
                    _action_records,
+                   lambda: _tool_records(orch) if orch is not None else [],
                    lambda: _component_records(orch) if orch is not None else [],
                    lambda: _skill_records(orch) if orch is not None else []):
         try:
             records.extend(source())
         except Exception:  # pragma: no cover - a broken registry must not 500 the board
             logger.warning("capability source failed", exc_info=True)
+    unique: dict[str, CapabilityRecord] = {}
+    for record in records:
+        if record.id in unique:
+            logger.warning("duplicate capability id ignored: %s", record.id)
+            continue
+        unique[record.id] = record
     # Order matters: derive → promote-if-harness-verified → manual demote wins last.
-    return [_apply_override(_apply_verification(r)) for r in records]
+    return [_apply_override(_apply_verification(r)) for r in unique.values()]
 
 
 def snapshot(orch=None) -> dict:

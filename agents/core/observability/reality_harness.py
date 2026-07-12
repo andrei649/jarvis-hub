@@ -29,10 +29,14 @@ from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 
+from agents.core.capability_manifests import ACTION_CAPABILITY_MANIFESTS
+from agents.core.capability_verification import (
+    HARNESS_ID,
+    action_case_name,
+    tool_case_name,
+)
+
 logger = logging.getLogger("jarvis.reality")
-
-HARNESS_ID = "reality-v1"
-
 
 def _now_iso() -> str:
     return datetime.now(UTC).isoformat()
@@ -59,6 +63,10 @@ class RealityCase:
     probe: Callable[[], Awaitable[bool]]
     live: bool = False
     metadata: dict = field(default_factory=dict)
+
+    @property
+    def ref(self) -> str:
+        return f"{HARNESS_ID}:{self.name}"
 
 
 async def run_reality(cases: list[RealityCase], *, promote: bool = True, now: str | None = None) -> dict:
@@ -310,6 +318,111 @@ async def _probe_creative_release_queued() -> bool:
         shutil.rmtree(d, ignore_errors=True)
 
 
+def _make_action_kernel_probe(manifest):
+    """Build a hermetic probe through the real H27 action facade and kernel."""
+
+    async def _probe() -> bool:
+        import tempfile
+        from unittest.mock import patch
+
+        from agents.core.autonomy.policy import AutonomyPolicy
+        from agents.core.capability_actions import CapabilityActionAPI
+        from agents.core.kernel import authorize
+        from agents.core.security.capability import CapabilityBroker, KillSwitch
+
+        executed = []
+        with tempfile.TemporaryDirectory(prefix="reality-action-") as directory:
+            kill_switch = KillSwitch(path=os.path.join(directory, "kill.json"))
+            kill_switch.engage("global", reason="reality action-plane probe")
+            capabilities = CapabilityBroker()
+            policy = AutonomyPolicy()
+
+            def _authorize(action, capability=None, budget=None):
+                return authorize(
+                    action,
+                    capability,
+                    budget,
+                    kill_switch=kill_switch,
+                    capabilities=capabilities,
+                    policy=policy,
+                )
+
+            api = CapabilityActionAPI(authorizer=_authorize)
+            api.register(manifest.id, lambda params, context: executed.append(params))
+            params = dict.fromkeys(manifest.inputs.get("required", ()), "probe")
+            with patch.dict(
+                os.environ,
+                {"JARVIS_UNIFIED_ACTION_API": "1", "JARVIS_ACTION_KERNEL": "1"},
+            ):
+                result = await api.perform(manifest.id, params)
+        return (
+            result.status == "refused"
+            and "kill-switch" in result.reason
+            and not executed
+        )
+
+    return _probe
+
+
+async def _probe_tool_echo_protocol() -> bool:
+    from agents.core.tool_rpc import ToolRPCServer
+
+    server = ToolRPCServer()
+
+    async def _echo(args):
+        return {"echo": args}
+
+    server.register_tool("echo", _echo, capability_id="tool:echo")
+    result = await server.handle({"tool": "echo", "args": {"value": "probe"}})
+    return result == {
+        "ok": True,
+        "tool": "echo",
+        "result": {"echo": {"value": "probe"}},
+    }
+
+
+async def _probe_tool_time_protocol() -> bool:
+    import time
+
+    from agents.core.tool_rpc import ToolRPCServer
+
+    server = ToolRPCServer()
+
+    async def _time(_args):
+        return {"now": time.time()}
+
+    server.register_tool("time", _time, capability_id="tool:time")
+    result = await server.handle({"tool": "time", "args": {}})
+    value = (result.get("result") or {}).get("now")
+    return result.get("ok") is True and result.get("tool") == "time" and isinstance(value, float)
+
+
+ACTION_CAPABILITY_CASES: list[RealityCase] = [
+    RealityCase(
+        manifest.id,
+        action_case_name(kind),
+        f"an engaged real kill-switch refuses {kind} through CapabilityActionAPI",
+        _make_action_kernel_probe(manifest),
+    )
+    for kind, manifest in sorted(ACTION_CAPABILITY_MANIFESTS.items())
+]
+
+TOOL_CAPABILITY_CASES: list[RealityCase] = [
+    RealityCase(
+        "tool:echo",
+        tool_case_name("echo"),
+        "the live ToolRPC echo handler returns a bounded protocol response",
+        _probe_tool_echo_protocol,
+    ),
+    RealityCase(
+        "tool:time",
+        tool_case_name("time"),
+        "the live ToolRPC time handler returns a numeric timestamp",
+        _probe_tool_time_protocol,
+    ),
+]
+
+
 CASES: list[RealityCase] = [
     RealityCase("plugin:system-control", "egress-none-blocks-external",
                 "a no-network plugin's external call is refused by the egress gate",
@@ -332,4 +445,6 @@ CASES: list[RealityCase] = [
     RealityCase("component:capabilities", "kernel-capability-token-gate",
                 "a valid capability token clears the kernel gate; a missing one is DENY",
                 _probe_capability_token_gates_kernel),
+    *ACTION_CAPABILITY_CASES,
+    *TOOL_CAPABILITY_CASES,
 ]
