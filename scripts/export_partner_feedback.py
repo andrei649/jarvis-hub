@@ -11,6 +11,7 @@ import re
 import sqlite3
 import sys
 import urllib.error
+import urllib.parse
 import urllib.request
 from datetime import UTC, datetime
 from pathlib import Path
@@ -311,11 +312,17 @@ def install_environment() -> dict:
 
 
 def fetch_north_star(base_url: str, timeout: float = 10) -> dict:
+    parsed = urllib.parse.urlsplit(base_url)
+    if parsed.scheme not in ("http", "https") or not parsed.netloc:
+        raise ValueError("base URL must use http:// or https://")
     request = urllib.request.Request(  # noqa: S310
         f"{base_url.rstrip('/')}/api/metrics/north-star", headers={"Accept": "application/json"}
     )
     try:
-        with urllib.request.urlopen(request, timeout=timeout) as response:  # noqa: S310
+        # Operator-selected endpoint; scheme was restricted to HTTP(S) above.
+        with urllib.request.urlopen(  # noqa: S310  # nosec B310
+            request, timeout=timeout
+        ) as response:
             value = json.loads(response.read().decode("utf-8"))
             return value if isinstance(value, dict) else {}
     except (OSError, urllib.error.URLError, json.JSONDecodeError):

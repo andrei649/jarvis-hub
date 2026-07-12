@@ -6,8 +6,11 @@ from __future__ import annotations
 import argparse
 import json
 import re
+import shutil
 import sqlite3
-import subprocess
+
+# Local gate executes fixed pytest/Python/git argv and never invokes a shell.
+import subprocess  # nosec B404
 import sys
 from pathlib import Path
 
@@ -51,13 +54,15 @@ def check_code_complete() -> dict:
     missing = [name for name in RELEASE_TOOLING if not (REPO / name).exists()]
     if missing:
         return _result("code", "release-tooling", FAIL, f"missing: {', '.join(missing)}")
-    return _result("code", "release-tooling", PASS, f"{len(RELEASE_TOOLING)} required artifacts present")
+    return _result(
+        "code", "release-tooling", PASS, f"{len(RELEASE_TOOLING)} required artifacts present"
+    )
 
 
 def check_suite(*, skip: bool, runner=None) -> dict:
     runner = runner or (
         lambda args: (
-            subprocess.run(  # noqa: S603
+            subprocess.run(  # noqa: S603  # nosec B603
                 [sys.executable, "-m", "pytest", "-q", *args], cwd=str(REPO)
             ).returncode
         )
@@ -82,7 +87,7 @@ def check_status_sync(*, runner=None) -> dict:
     script = str(REPO / "scripts" / "status_sync.py")
     runner = runner or (
         lambda args: (
-            subprocess.run(  # noqa: S603
+            subprocess.run(  # noqa: S603  # nosec B603
                 [sys.executable, *args], cwd=str(REPO)
             ).returncode
         )
@@ -121,8 +126,11 @@ def check_version_tag(*, tag_reader=None) -> dict:
     if tag_reader is None:
 
         def tag_reader() -> str:
-            proc = subprocess.run(  # noqa: S603
-                ["git", "describe", "--tags", "--abbrev=0"],
+            git = shutil.which("git")
+            if not git:
+                return ""
+            proc = subprocess.run(  # noqa: S603  # nosec B603
+                [git, "describe", "--tags", "--abbrev=0"],
                 cwd=str(REPO),
                 capture_output=True,
                 text=True,

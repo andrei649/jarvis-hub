@@ -5,6 +5,8 @@ import json
 import sqlite3
 from pathlib import Path
 
+import pytest
+
 REPO = Path(__file__).resolve().parent.parent
 
 
@@ -41,6 +43,11 @@ def test_environment_is_allowlisted_not_host_fingerprinted():
         "architecture": "AMD64",
         "system_profile": "balanced",
     }
+
+
+def test_north_star_fetch_rejects_non_http_schemes():
+    with pytest.raises(ValueError):
+        exporter.fetch_north_star("file:///etc/passwd")
 
 
 def test_packet_aggregates_funnel_actions_failures_latency_and_feedback():

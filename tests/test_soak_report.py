@@ -81,6 +81,13 @@ def test_parse_duration_units_and_junk():
         raise AssertionError("junk duration must raise")
 
 
+def test_http_fetcher_rejects_non_http_schemes():
+    with pytest.raises(ValueError):
+        soak.http_fetcher("file:///etc/passwd")
+    with pytest.raises(ValueError):
+        soak.http_fetcher("ftp://localhost/data")
+
+
 def test_collect_sample_shape_and_outage_is_recorded_not_raised():
     fetch = _fetch_factory(
         {"/healthz": {"status": "ok", "uptime_seconds": 12.5}},

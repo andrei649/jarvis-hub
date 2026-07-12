@@ -7,7 +7,10 @@ import argparse
 import json
 import os
 import re
-import subprocess
+import shutil
+
+# CI guard executes resolved git with a fixed argv and never invokes a shell.
+import subprocess  # nosec B404
 import sys
 from pathlib import PurePosixPath
 
@@ -107,8 +110,11 @@ def evaluate(changed_paths: list[str], pr_text: str) -> dict:
 
 
 def changed_paths(base: str, head: str) -> list[str]:
-    proc = subprocess.run(  # noqa: S603 — fixed git argv, no shell
-        ["git", "diff", "--name-only", "--diff-filter=ACDMRTUXB", f"{base}...{head}"],
+    git = shutil.which("git")
+    if not git:
+        raise RuntimeError("git executable not found")
+    proc = subprocess.run(  # noqa: S603  # nosec B603
+        [git, "diff", "--name-only", "--diff-filter=ACDMRTUXB", f"{base}...{head}"],
         capture_output=True,
         text=True,
         encoding="utf-8",

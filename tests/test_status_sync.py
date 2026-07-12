@@ -194,3 +194,15 @@ def test_latest_ci_commit_uses_last_verified_main_not_self_referential_head():
         )
         == "verified789"
     )
+
+
+def test_latest_ci_commit_reads_pull_request_base_from_actions_event(tmp_path):
+    event = tmp_path / "event.json"
+    event.write_text('{"pull_request":{"base":{"sha":"base123"}}}', encoding="utf-8")
+    assert (
+        status_sync.latest_ci_commit(
+            env={"GITHUB_EVENT_PATH": str(event)},
+            runner=lambda args: (_ for _ in ()).throw(AssertionError("git must not run")),
+        )
+        == "base123"
+    )

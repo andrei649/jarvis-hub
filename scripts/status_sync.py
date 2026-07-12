@@ -27,7 +27,9 @@ import json
 import os
 import re
 import shutil
-import subprocess
+
+# Local CLI orchestrates fixed pytest/npm/git argv and never invokes a shell.
+import subprocess  # nosec B404
 import sys
 from pathlib import Path
 
@@ -65,7 +67,7 @@ def count_tests(repo: Path = REPO) -> int:
     every test module) — call only from the CLI paths, never from a unit test (it
     would recurse into a full collection).
     """
-    proc = subprocess.run(  # noqa: S603 — fixed argv, no shell
+    proc = subprocess.run(  # noqa: S603  # nosec B603
         [
             sys.executable,
             "-m",
@@ -113,7 +115,7 @@ def parse_json_test_count(output: str) -> int:
 def _json_test_count(package_dir: Path, extra_args: list[str]) -> int:
     """Run a JS test suite with its JSON reporter and return the collected count."""
     npm = shutil.which("npm.cmd") or shutil.which("npm") or "npm"
-    proc = subprocess.run(  # noqa: S603 — fixed executable + argv
+    proc = subprocess.run(  # noqa: S603  # nosec B603
         [npm, "test", "--", *extra_args],
         cwd=str(package_dir),
         capture_output=True,
@@ -272,11 +274,22 @@ def latest_ci_commit(*, env=None, runner=None) -> str:
     override = env.get("JARVIS_LATEST_CI_COMMIT", "").strip()
     if override:
         return override
+    event_path = env.get("GITHUB_EVENT_PATH", "").strip()
+    if event_path:
+        try:
+            event = json.loads(Path(event_path).read_text(encoding="utf-8"))
+            base_sha = event.get("pull_request", {}).get("base", {}).get("sha", "")
+            if base_sha:
+                return str(base_sha)
+        except (OSError, json.JSONDecodeError, AttributeError):
+            pass
     args = ["git", "rev-parse", "origin/main"]
     if runner is not None:
         code, output = runner(args)
         return output.strip() if code == 0 else "unknown"
-    proc = subprocess.run(args, cwd=str(REPO), capture_output=True, text=True)  # noqa: S603
+    proc = subprocess.run(  # noqa: S603  # nosec B603
+        args, cwd=str(REPO), capture_output=True, text=True
+    )
     return proc.stdout.strip() if proc.returncode == 0 else "unknown"
 
 

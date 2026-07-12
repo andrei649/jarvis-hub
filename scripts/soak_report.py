@@ -13,6 +13,7 @@ import os
 import re
 import time
 import urllib.error
+import urllib.parse
 import urllib.request
 from collections import Counter
 from collections.abc import Callable
@@ -56,6 +57,9 @@ def parse_duration(value: str) -> float:
 
 def http_fetcher(base_url: str, *, admin_token: str = "", timeout: float = 10) -> Fetch:
     """Return the real HTTP reader used by the CLI."""
+    parsed = urllib.parse.urlsplit(base_url)
+    if parsed.scheme not in ("http", "https") or not parsed.netloc:
+        raise ValueError("base URL must use http:// or https://")
     base = base_url.rstrip("/")
 
     def fetch(path: str) -> tuple[int | None, Any]:
@@ -64,7 +68,10 @@ def http_fetcher(base_url: str, *, admin_token: str = "", timeout: float = 10) -
             headers["X-Admin-Token"] = admin_token
         request = urllib.request.Request(f"{base}{path}", headers=headers)
         try:
-            with urllib.request.urlopen(request, timeout=timeout) as response:  # noqa: S310
+            # Operator-selected endpoint; scheme was restricted to HTTP(S) above.
+            with urllib.request.urlopen(  # noqa: S310  # nosec B310
+                request, timeout=timeout
+            ) as response:
                 raw = response.read().decode("utf-8", errors="replace")
                 try:
                     return response.status, json.loads(raw)
