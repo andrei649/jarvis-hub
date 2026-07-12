@@ -75,26 +75,35 @@ def _exercise(kind, spy, tmp_path, monkeypatch=None):
     """Drive the broker/route that owns *kind* through its real entry-point."""
     if kind == "call.outbound":
         from agents.core.autonomy.call_broker import CallBroker
+
         CallBroker(enqueue=lambda *a, **k: 1, kernel=spy).request(
-            to="+15551234567", message="hi", provider="twilio")
+            to="+15551234567", message="hi", provider="twilio"
+        )
     elif kind == "social.*":
         from agents.core.social import SocialBroker
+
         SocialBroker(enqueue=lambda *a, **k: 1, kernel=spy).request("x", "post", {"text": "hi"})
     elif kind == "writeback.*":
         from agents.core.writeback import WriteBackBroker
+
         wb = WriteBackBroker(enqueue=lambda *a, **k: 1, kernel=spy)
         tgt = wb.targets()[0]
         wb.request(tgt["target"], tgt["action"], dict.fromkeys(tgt["required"], "x"))
     elif kind == "node.dispatch":
         from agents.core.node_mesh import NodeMesh
         from agents.core.security.capability import CapabilityBroker, KillSwitch
-        nm = NodeMesh(capability_broker=CapabilityBroker(),
-                      kill_switch=KillSwitch(tmp_path / "kill.json"),
-                      enqueue=lambda *a, **k: 1, kernel=spy)
+
+        nm = NodeMesh(
+            capability_broker=CapabilityBroker(),
+            kill_switch=KillSwitch(tmp_path / "kill.json"),
+            enqueue=lambda *a, **k: 1,
+            kernel=spy,
+        )
         nm.register_node("n1", ["run"])
         nm.dispatch("n1", "run")
     elif kind == "payment":
         from agents.core.payments import PaymentBroker
+
         pb = PaymentBroker(path=str(tmp_path / "pay.json"), kernel=spy)
         # Only an *admissible* request reaches the kernel hook (mandate hard-caps gate
         # first), so set up a mandate that permits the request.
@@ -106,6 +115,7 @@ def _exercise(kind, spy, tmp_path, monkeypatch=None):
         # wrapping the spy, then restore the global hook so other tests are unaffected.
         from agents.core import http_client as hc
         from agents.core.kernel.binding import make_egress_kernel_hook
+
         client = hc.PluginHTTPClient(plugin_name="egress_matrix_probe")
         hc.set_egress_kernel_hook(make_egress_kernel_hook(lambda: spy))
         try:
@@ -120,9 +130,14 @@ def _exercise(kind, spy, tmp_path, monkeypatch=None):
 
         async def _invoke(_kwargs):
             return {"ok": True}
+
         tool = MutatingRouteTool(
-            spec=MUTATING_ROUTE_ALLOWLIST[0], invoke=_invoke,
-            auditor=None, identity_check=lambda _t: True, kernel=spy)
+            spec=MUTATING_ROUTE_ALLOWLIST[0],
+            invoke=_invoke,
+            auditor=None,
+            identity_check=lambda _t: True,
+            kernel=spy,
+        )
         asyncio.run(tool.call({"text": "x"}, token="ok"))
     elif kind == "tool.rpc":
         # A gated Tool-RPC call is mediated by the kernel before it can enqueue.
@@ -132,6 +147,7 @@ def _exercise(kind, spy, tmp_path, monkeypatch=None):
 
         async def _gated(_a):
             return {"ok": True}
+
         srv = ToolRPCServer(enqueue=lambda *a, **k: 1, kernel=spy)
         srv.register_tool("danger", _gated, gated=True)
         asyncio.run(srv.handle({"tool": "danger", "args": {}}))
@@ -150,12 +166,14 @@ def _exercise(kind, spy, tmp_path, monkeypatch=None):
         bridge._git_pull = lambda: (True, "")
         bridge._scan_file_hashes = lambda: None
         bridge._run_tests = lambda: (1, 1, 0, "")
-        asyncio.run(bridge._process_claude_commit(
-            "c" * 40,
-            "feat: external repo sync",
-            author_login="claude",
-            trigger_verified=True,
-        ))
+        asyncio.run(
+            bridge._process_claude_commit(
+                "c" * 40,
+                "feat: external repo sync",
+                author_login="claude",
+                trigger_verified=True,
+            )
+        )
     elif kind in ("admin.kill_switch", "admin.capability_issue"):
         # HTTP routes (not brokers/hooks): drive the REAL handler with a stub Request +
         # a tmp_path-backed orch, injecting the spy by monkeypatching the production
@@ -221,6 +239,75 @@ def _exercise(kind, spy, tmp_path, monkeypatch=None):
         monkeypatch.setattr("agents.core.kernel.binding.make_action_kernel", lambda o: spy)
         assert memkg._kg() is not None, "stub graph not visible to the handler"
         asyncio.run(memkg.kg_upsert_entity(_Req({"name": "Probe", "type": "person"})))
+    elif kind in ("media.present", "media.restore"):
+        # O29: Media Director actuation routes through the O27 facade. Drive the REAL
+        # route handlers with an in-memory director + fake driver; the facade builds
+        # its authorizer via the production make_action_kernel binding (spy-patched).
+        # Only the media/unified-API flags are set here — the kernel flag stays
+        # owned by the calling test so the kernel-off matrix leg still proves the
+        # facade never touches the spy when the kernel is disabled.
+        import asyncio
+
+        import agents.web as web
+        from agents.core.autonomy.policy import AutonomyPolicy
+        from agents.core.media_director import (
+            DeviceRegistry,
+            MediaDevice,
+            MediaDirector,
+            MediaSession,
+            SessionBoard,
+        )
+        from agents.core.routers import media_director as media_routes
+        from agents.core.security.capability import CapabilityBroker, KillSwitch
+
+        class _Driver:
+            def play(self, device, content):
+                return {"ok": True, "state": "playing"}
+
+            def status(self, device):
+                return {"ok": True, "state": "playing", "content": {}}
+
+            def pause(self, device):
+                return {"ok": True, "state": "paused"}
+
+            def resume(self, device):
+                return {"ok": True, "state": "playing"}
+
+            def stop(self, device):
+                return {"ok": True, "state": "idle"}
+
+        class _Orch:
+            kill_switch = KillSwitch(tmp_path / "kill.json")
+            capabilities = CapabilityBroker()
+            autonomy_policy = AutonomyPolicy()
+            intent_log = None
+
+        registry = DeviceRegistry(path=None)
+        registry.register(MediaDevice(id="tv-1", name="TV", kind="tv", room="living"))
+        director = MediaDirector(
+            registry=registry, sessions=SessionBoard(path=None), drivers={"tv": _Driver()}
+        )
+        monkeypatch.setattr(media_routes, "_director", director)
+        monkeypatch.setattr(web, "orch", _Orch())
+        monkeypatch.setattr("agents.core.kernel.binding.make_action_kernel", lambda o: spy)
+        monkeypatch.setenv("JARVIS_MEDIA_DIRECTOR", "1")
+        monkeypatch.setenv("JARVIS_UNIFIED_ACTION_API", "1")
+        if kind == "media.present":
+            body = media_routes.PresentBody(
+                content={"type": "url", "value": "https://example.local/x"}, target="tv-1"
+            )
+            asyncio.run(media_routes.media_present(body))
+        else:
+            director.sessions.set(
+                MediaSession(
+                    device_id="tv-1",
+                    content={"type": "url", "value": "https://example.local/x"},
+                    mode="play",
+                    privacy="household",
+                    started_at=1.0,
+                )
+            )
+            asyncio.run(media_routes.media_restore("tv-1"))
     else:  # pragma: no cover - a new KERNEL kind needs an exerciser added here
         raise AssertionError(f"no exerciser for kernel-classified kind {kind!r}")
 
@@ -233,7 +320,10 @@ def test_kernel_kinds_actually_invoke_kernel(kind, monkeypatch, tmp_path):
     spy = _SpyKernel()
     _exercise(kind, spy, tmp_path, monkeypatch)
     assert spy.calls, f"{kind} is classified KERNEL but request() did not invoke the kernel"
-    assert spy.calls[-1].kind.split(".")[0] == kind.split(".")[0]
+    if kind.endswith(".*"):
+        assert spy.calls[-1].kind.startswith(kind[:-1])
+    else:
+        assert spy.calls[-1].kind == kind
 
 
 def test_kernel_off_does_not_invoke_kernel(monkeypatch, tmp_path):

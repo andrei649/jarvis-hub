@@ -400,6 +400,72 @@ async def _probe_tool_time_protocol() -> bool:
     return result.get("ok") is True and result.get("tool") == "time" and isinstance(value, float)
 
 
+async def _probe_media_present_verified_rail() -> bool:
+    """The O29 present() rail: contract → resolve → drive → verify, hermetically."""
+    from agents.core.media_director import (
+        DeviceRegistry,
+        MediaDevice,
+        MediaDirector,
+        SessionBoard,
+    )
+
+    class _FakeDriver:
+        def __init__(self):
+            self.now_playing = None
+
+        def play(self, device, content):
+            self.now_playing = content
+            return {"ok": True, "state": "playing"}
+
+        def status(self, device):
+            return {"ok": True, "state": "playing", "content": self.now_playing or {}}
+
+        def pause(self, device):  # pragma: no cover - unused in the rail probe
+            return {"ok": True, "state": "paused"}
+
+        def resume(self, device):  # pragma: no cover - unused in the rail probe
+            return {"ok": True, "state": "playing"}
+
+        def stop(self, device):
+            self.now_playing = None
+            return {"ok": True, "state": "idle"}
+
+    registry = DeviceRegistry(path=None)
+    registry.register(MediaDevice(id="kitchen-display", name="Kitchen display",
+                                  kind="browser_tab", room="kitchen", supports=("show",)))
+    director = MediaDirector(registry=registry, sessions=SessionBoard(path=None),
+                             drivers={"browser_tab": _FakeDriver()})
+    result = director.present({
+        "content": {"type": "url", "value": "https://example.local/dashboard"},
+        "target": "kitchen",
+        "mode": "show", "privacy": "household", "urgency": "normal",
+    })
+    restored = director.restore("kitchen-display")
+    return (result.get("ok") is True and result.get("verified") is True
+            and restored.get("ok") is True)
+
+
+async def _probe_media_present_offline_honest() -> bool:
+    """A device with no driver refuses honestly — never a fake 'playing'."""
+    from agents.core.media_director import (
+        DeviceRegistry,
+        MediaDevice,
+        MediaDirector,
+        SessionBoard,
+    )
+
+    registry = DeviceRegistry(path=None)
+    registry.register(MediaDevice(id="tv", name="Living room TV", kind="tv", room="living"))
+    director = MediaDirector(registry=registry, sessions=SessionBoard(path=None))
+    result = director.present({
+        "content": {"type": "url", "value": "https://example.local/film"},
+        "target": "tv",
+        "mode": "play", "privacy": "household", "urgency": "normal",
+    })
+    return (result.get("ok") is False and "driver" in str(result.get("reason", ""))
+            and director.sessions.get("tv") is None)
+
+
 ACTION_CAPABILITY_CASES: list[RealityCase] = [
     RealityCase(
         manifest.id,
@@ -408,6 +474,21 @@ ACTION_CAPABILITY_CASES: list[RealityCase] = [
         _make_action_kernel_probe(manifest),
     )
     for kind, manifest in sorted(ACTION_CAPABILITY_MANIFESTS.items())
+]
+
+MEDIA_CAPABILITY_CASES: list[RealityCase] = [
+    RealityCase(
+        "action:media.present",
+        "media-present-verified-rail",
+        "a present() through the real director is driver-verified and restorable",
+        _probe_media_present_verified_rail,
+    ),
+    RealityCase(
+        "action:media.present",
+        "media-present-offline-honest",
+        "a driverless device refuses a present() honestly (no fake playback)",
+        _probe_media_present_offline_honest,
+    ),
 ]
 
 TOOL_CAPABILITY_CASES: list[RealityCase] = [
@@ -561,5 +642,6 @@ CASES: list[RealityCase] = [
                 "a valid capability token clears the kernel gate; a missing one is DENY",
                 _probe_capability_token_gates_kernel),
     *ACTION_CAPABILITY_CASES,
+    *MEDIA_CAPABILITY_CASES,
     *TOOL_CAPABILITY_CASES,
 ]

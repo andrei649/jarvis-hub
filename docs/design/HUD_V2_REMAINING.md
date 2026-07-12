@@ -161,6 +161,11 @@ Safe Comms channel inbox transport v0 ✅ (#551).
 O26-P3.2 adds a Vitest reconciliation guard so this document cannot re-list shipped
 TTS/mic/cognition/trust or Console controls as missing.
 
+**O29 wave 1 (2026-07-12):** the Media Director surface (`/api/media/*` — devices, session,
+present, restore; default-off behind `JARVIS_MEDIA_DIRECTOR`) has **no HUD panel yet** — a
+Console *Media* panel (device list + session board + a governed present form) is the punch-list
+item; the parity gate classifies the routes `NOT_IN_HUD` until it lands.
+
 ---
 *Parity gate (`tests/test_hud_v2_parity.py`) tracks all routes → every one is mapped to a v2
 surface or `NOT_IN_HUD`, so nothing above can silently disappear — these items are about depth, not
