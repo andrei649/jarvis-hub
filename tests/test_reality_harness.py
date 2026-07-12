@@ -17,6 +17,33 @@ def teardown_function():
     cr._OVERRIDES.clear()
 
 
+@pytest.mark.asyncio
+async def test_boot_registry_reality_cases_hold_for_every_wired_capability():
+    """Scheduled reality lane exercises dynamic registry cases, not only static CASES."""
+    from agents.core.config import JarvisConfig
+    from agents.core.orchestrator import Orchestrator
+
+    orch = Orchestrator(JarvisConfig())
+    orch.skills.discover()
+    records = {
+        record.id: record
+        for record in cr.build_records(orch)
+        if record.kind in {"plugin", "component", "skill"}
+    }
+    cases = rh.registry_reality_cases(orch)
+
+    out = await rh.run_reality(cases, promote=False)
+    results = {item["capability_id"]: item["passed"] for item in out["results"]}
+
+    assert len(cases) == 70
+    assert {
+        capability_id for capability_id, passed in results.items() if not passed
+    } == {
+        capability_id for capability_id, record in records.items()
+        if record.state == cr.SEAM
+    }
+
+
 async def _ok():
     return True
 

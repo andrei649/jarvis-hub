@@ -1,4 +1,5 @@
-from types import SimpleNamespace
+from functools import lru_cache
+from types import ModuleType, SimpleNamespace
 
 import pytest
 
@@ -6,8 +7,11 @@ from agents.core.capability_manifests import ACTION_CAPABILITY_MANIFESTS
 from agents.core.observability import capability_registry as cr
 from agents.core.observability.reality_harness import (
     ACTION_CAPABILITY_CASES,
+    CASES,
     TOOL_CAPABILITY_CASES,
     RealityCase,
+    all_reality_cases,
+    registry_reality_cases,
     run_reality,
 )
 from agents.core.tool_rpc import ToolRPCServer
@@ -30,6 +34,16 @@ def _tool_orch():
         components=SimpleNamespace(status={}),
         skills=SimpleNamespace(skills={}),
     )
+
+
+@lru_cache(maxsize=1)
+def _registry_orch():
+    from agents.core.config import JarvisConfig
+    from agents.core.orchestrator import Orchestrator
+
+    orch = Orchestrator(JarvisConfig())
+    orch.skills.discover()
+    return orch
 
 
 def test_reality_case_has_stable_reference():
@@ -87,3 +101,111 @@ async def test_green_action_case_promotes_only_through_reality_runner():
     after = {record.id: record for record in cr.build_records()}[case.capability_id]
     assert after.state == cr.VERIFIED
     assert after.harness_id == "reality-v1"
+
+
+def test_every_boot_registry_verification_ref_matches_one_real_case():
+    orch = _registry_orch()
+    records = [
+        record
+        for record in cr.build_records(orch)
+        if record.kind in {"plugin", "component", "skill"}
+    ]
+    cases = registry_reality_cases(orch)
+    by_ref = {case.ref: case for case in cases}
+
+    assert len(records) == len(cases) == len(by_ref) == 70
+    assert {kind: sum(case.capability_id.startswith(f"{kind}:") for case in cases)
+            for kind in ("plugin", "component", "skill")} == {
+        "plugin": 33,
+        "component": 24,
+        "skill": 13,
+    }
+    assert len({case.capability_id for case in cases}) == 70
+    for record in records:
+        assert record.verification in by_ref
+        assert by_ref[record.verification].capability_id == record.id
+
+    combined = all_reality_cases(orch)
+    assert combined[:len(CASES)] == CASES
+    assert len(combined) == len(CASES) + 70
+    all_refs = [case.ref for case in combined]
+    assert len(all_refs) == len(set(all_refs))
+
+    tool_records = [
+        record for record in cr.build_records(_tool_orch()) if record.kind == "tool"
+    ]
+    verification_pairs = [
+        (manifest.verification, manifest.id)
+        for manifest in ACTION_CAPABILITY_MANIFESTS.values()
+    ] + [
+        (record.verification, record.id) for record in [*tool_records, *records]
+    ]
+    assert len(verification_pairs) == 84
+    for verification_ref, capability_id in verification_pairs:
+        matches = [case for case in combined if case.ref == verification_ref]
+        assert len(matches) == 1
+        assert matches[0].capability_id == capability_id
+
+
+@pytest.mark.asyncio
+async def test_wired_registry_cases_pass_hermetically_and_seam_fails_honestly(monkeypatch):
+    monkeypatch.setenv("JARVIS_STRICT_EGRESS", "0")
+    orch = _registry_orch()
+    records = {record.id: record for record in cr.build_records(orch)}
+    cases = registry_reality_cases(orch)
+
+    result = await run_reality(cases, promote=False)
+    by_id = {item["capability_id"]: item for item in result["results"]}
+
+    assert result["total"] == 70
+    assert result["passed"] == 69
+    assert result["skipped"] == 0
+    assert all(by_id[case.capability_id]["passed"] for case in cases
+               if records[case.capability_id].state == cr.WIRED)
+    assert by_id["skill:Weather Intel"]["passed"] is False
+    assert __import__("os").environ["JARVIS_STRICT_EGRESS"] == "0"
+
+
+@pytest.mark.asyncio
+async def test_intentional_skill_seam_cannot_be_promoted():
+    orch = _registry_orch()
+    case = next(
+        case for case in registry_reality_cases(orch)
+        if case.capability_id == "skill:Weather Intel"
+    )
+
+    result = await run_reality([case], promote=True, now="2026-07-12T00:00:00+00:00")
+
+    assert result["passed"] == 0
+    assert result["promoted"] == []
+    after = {record.id: record for record in cr.build_records(orch)}[case.capability_id]
+    assert after.state == cr.SEAM
+    assert after.harness_id is None
+
+
+@pytest.mark.asyncio
+async def test_component_and_skill_construction_mismatches_fail_closed():
+    fake_orch = SimpleNamespace(
+        components=SimpleNamespace(status={"broken": "ok"}),
+        broken=None,
+        skills=SimpleNamespace(skills={
+            "Missing Module": SimpleNamespace(module=None),
+            "Loaded Module": SimpleNamespace(module=ModuleType("loaded")),
+        }),
+    )
+    cases = {
+        case.capability_id: case
+        for case in registry_reality_cases(fake_orch)
+        if case.capability_id in {
+            "component:broken", "skill:Missing Module", "skill:Loaded Module"
+        }
+    }
+
+    result = await run_reality(list(cases.values()), promote=False)
+    by_id = {item["capability_id"]: item["passed"] for item in result["results"]}
+
+    assert by_id == {
+        "component:broken": False,
+        "skill:Missing Module": False,
+        "skill:Loaded Module": True,
+    }
