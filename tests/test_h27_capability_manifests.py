@@ -102,6 +102,18 @@ def test_manifest_for_action_resolves_exact_and_wildcard_kinds():
     assert manifest_for_action("unknown.action") is None
 
 
+def test_desktop_step_manifest_describes_kernel_mediated_host_action():
+    manifest = ACTION_CAPABILITY_MANIFESTS["desktop.step"]
+    assert manifest.id == "action:desktop.step"
+    assert manifest.inputs["required"] == ["action", "args"]
+    assert manifest.risk == "sensitive"
+    assert set(manifest.supports) == {"observe", "mutate"}
+    assert (
+        manifest.implementation == "agents.core.desktop_operator:DesktopActionExecutor.perform"
+    )
+    assert manifest.contract_ref == "agents.core.desktop_operator:DESKTOP_STEP_CONTRACT"
+
+
 def test_every_governed_plugin_derives_complete_v1_metadata():
     for plugin in BUILTIN_PLUGINS.values():
         manifest = plugin_capability_manifest(plugin)

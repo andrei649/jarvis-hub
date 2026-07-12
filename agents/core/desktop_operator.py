@@ -17,8 +17,11 @@ from __future__ import annotations
 
 import logging
 import time
+from collections.abc import Mapping
+from typing import Any
 
 from .automation_contracts import ContractTemplate, predicate
+from .capability_actions import CapabilityActionAPI, PerformContext, PerformResult
 
 logger = logging.getLogger("jarvis.desktop_operator")
 
@@ -82,9 +85,37 @@ class NullDesktopDriver:
                 "note": "no desktop driver — host seam"}
 
 
+class DesktopActionExecutor:
+    """Kernel-mediated execution boundary for optional real desktop drivers."""
+
+    def __init__(self, driver, *, authorizer) -> None:
+        if not callable(getattr(driver, "perform", None)):
+            raise TypeError("desktop driver must expose perform")
+        self.driver = driver
+        self.api = CapabilityActionAPI(authorizer=authorizer)
+        self.api.register("action:desktop.step", self._execute)
+
+    async def _execute(self, step: dict[str, Any], _context: PerformContext) -> Any:
+        action = step.get("action")
+        args = step.get("args")
+        if not isinstance(action, str) or not action.strip():
+            return {"ok": False, "reason": "invalid_action"}
+        if not isinstance(args, Mapping):
+            return {"ok": False, "reason": "invalid_args"}
+        return await _maybe_await(self.driver.perform(action, dict(args)))
+
+    async def perform(
+        self,
+        step: Mapping[str, Any],
+        context: PerformContext | None = None,
+    ) -> PerformResult:
+        return await self.api.perform("action:desktop.step", step, context)
+
+
 class GovernedDesktop:
-    def __init__(self, driver=None) -> None:
+    def __init__(self, driver=None, *, action_executor=None) -> None:
         self._driver = driver or NullDesktopDriver()
+        self._action_executor = action_executor
 
     @staticmethod
     def is_mutating(action: str) -> bool:
@@ -141,6 +172,40 @@ class GovernedDesktop:
                 if not approved:
                     ran.append({"action": action, "status": "blocked", "reason": "approval_required"})
                     continue
-            res = await self._driver.perform(action, args)
+            if getattr(self._driver, "requires_kernel", False):
+                if self._action_executor is None:
+                    ran.append({
+                        "action": action,
+                        "status": "blocked",
+                        "reason": "kernel_required",
+                    })
+                    continue
+                try:
+                    outcome = await self._action_executor.perform({"action": action, "args": args})
+                except Exception:
+                    logger.warning("desktop action executor failed")
+                    ran.append({
+                        "action": action,
+                        "status": "blocked",
+                        "reason": "kernel_error",
+                    })
+                    continue
+                if not isinstance(outcome, PerformResult):
+                    ran.append({
+                        "action": action,
+                        "status": "blocked",
+                        "reason": "kernel_error",
+                    })
+                    continue
+                if outcome.status != "completed":
+                    ran.append({
+                        "action": action,
+                        "status": "blocked",
+                        "reason": outcome.reason or "kernel_refused",
+                    })
+                    continue
+                res = outcome.output
+            else:
+                res = await self._driver.perform(action, args)
             ran.append({"action": action, "status": "ran", "result": res})
         return {"ok": True, "ran": ran}
