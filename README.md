@@ -133,6 +133,7 @@ _Linux/macOS shortcut:_ `./install.sh` does all of the above (venv + install + t
 
 ## Docs
 
+- **`docs/FEATURES.md`** — the one-page product sheet: every feature that ships today, how to install, and what's next on the road to 1.0.
 - **`MOONSHOT.md`** — the north star: vision, principles, phase gates, and how the project stays on track. Read this first for the *why* and *where we're going*.
 - **`NERVA_VISION.md`** — the Nerva product & capability vision: the brand architecture (Cortex/Atlas/Synapse/Vision/Ultron), the six pillars (perception, communication, action, house, media, capability evolution), the target architecture, the capability registry, graduated autonomy, and the measurable "superior to Hermes" bar.
 - **`docs/ARCHITECTURE.md`** — AI-navigable map of the codebase (entry points, request lifecycle, module index, how-to recipes). Start here to find where things live.
@@ -151,7 +152,7 @@ _Linux/macOS shortcut:_ `./install.sh` does all of the above (venv + install + t
 ## Status
 
 <!-- project-status:readme-status:start -->
-Generated status: **v0.11.0** · backend **4,301** · frontend **209** · mobile **55** · **369** routes · **17** active agents · open release gates: **A1, A2, A3, A4, A5, A6, A7, A8** · source commit `2942160b2464`. Full data: [`project-status.json`](project-status.json).
+Generated status: **v0.11.0** · backend **4,301** · frontend **209** · mobile **55** · **369** routes · **17** active agents · open release gates: **A1, A2, A3, A4, A5, A6, A7, A8** · source commit `ddfaf94f320c`. Full data: [`project-status.json`](project-status.json).
 <!-- project-status:readme-status:end -->
 
 **v0.11.0 — feature-complete + refactor done, building toward the expanded 1.0** (the version line is the roadmap — see [BACKLOG.md](BACKLOG.md#version-roadmap); **1.0 = the proof track** — productionization + real design-partner users — **plus the AI-OS capability program**, [`NERVA_VISION.md`](NERVA_VISION.md)). 17 specialist agents (incl. **Argus** for WorldView geoint and **Howard**, the emerging digital twin; + 17 bench) across 4 tiers; real-embeddings recall (LM Studio) + fused recall +
