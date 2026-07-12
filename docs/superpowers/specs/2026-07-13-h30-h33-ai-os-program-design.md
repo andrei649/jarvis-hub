@@ -135,7 +135,11 @@ H32.4/H32.7 completion.
 - A hash-bound receipt ties sources, plan, code, tests, backend, output, and result. Promotion
   rechecks every hash, then follows kernel approval, signing, reviewed marketplace installation,
   sandbox-bound ToolRPC execution, low-confidence registry entry, and immediate revoke/uninstall.
-- Signing proves integrity/provenance, not safety. Acquired Python is not imported in-process.
+- Promotion uses a managed-key canonical manifest covering every package member and a dedicated
+  non-root, capability-dropped, digest-pinned hostile-code sandbox profile.
+- Acquired packages install into a runtime store outside repository `skills/`, carry persistent
+  `execution_mode=acquired_sandbox`, and execute only through a ToolRPC sandbox runner. The normal
+  SkillLoader must never import them. Signing proves integrity/provenance, not safety.
 
 ## H33 architecture
 
