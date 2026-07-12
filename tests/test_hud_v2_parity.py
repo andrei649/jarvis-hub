@@ -60,6 +60,7 @@ RULES = [
     # trust / security / payments
     ("/api/security-skills/", "trust"),  # 0.42 Security Skills pack — curated ATT&CK/D3FEND/CSF knowledge
     ("/api/security/", "trust"), ("/security", "trust"), ("/api/secrets/", "trust"),
+    ("/api/capabilities", "trust"),  # H27.8 capability registry → ReadinessPanel
     ("/api/payments", "trust"),
     # autonomy
     ("/autonomy/", "autonomy"), ("/api/autonomy/", "autonomy"), ("/api/actions", "autonomy"),
