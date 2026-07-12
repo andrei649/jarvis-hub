@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import base64
+import threading
 
 import pytest
 
@@ -90,6 +91,27 @@ def test_from_env_requires_host_and_isolated_flags(monkeypatch):
     assert enabled.requires_kernel is True
 
 
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("host_enabled", "0"),
+        ("host_enabled", "false"),
+        ("host_enabled", 0),
+        ("host_enabled", 1),
+        ("isolated", "0"),
+        ("isolated", "false"),
+        ("isolated", 0),
+        ("isolated", 1),
+    ],
+)
+def test_direct_constructor_requires_literal_boolean_gates(field, value):
+    kwargs = {"host_enabled": True, "isolated": True}
+    kwargs[field] = value
+
+    with pytest.raises(TypeError, match=field):
+        WindowsDesktopDriver(**kwargs)
+
+
 @pytest.mark.asyncio
 async def test_direct_driver_still_refuses_actuation_without_both_gates():
     driver = WindowsDesktopDriver(
@@ -156,6 +178,31 @@ async def test_unmarked_vlm_is_rejected_without_calling_it():
 
 
 @pytest.mark.asyncio
+async def test_local_vlm_result_drops_unbounded_and_non_finite_numbers():
+    locator = LocalLocator(
+        {
+            "x": 42,
+            "confidence": 0.75,
+            "huge": 10**1_000,
+            "nan": float("nan"),
+            "positive_inf": float("inf"),
+            "negative_inf": float("-inf"),
+        }
+    )
+    driver = WindowsDesktopDriver(
+        host_enabled=True,
+        isolated=True,
+        backend_factory=lambda: FakeBackend(),
+        screenshotter=lambda: b"screen",
+        local_vlm_locator=locator,
+    )
+
+    result = await driver.perform("locate", {"query": "Save"})
+
+    assert result["element"] == {"x": 42, "confidence": 0.75}
+
+
+@pytest.mark.asyncio
 async def test_observe_normalizes_and_caps_accessibility_elements():
     backend = FakeBackend(
         [
@@ -218,6 +265,29 @@ async def test_click_and_type_require_named_accessibility_elements(backend, driv
 
 
 @pytest.mark.asyncio
+async def test_mutation_rejects_oversized_name_instead_of_actuating_truncated_prefix():
+    backend = FakeBackend(
+        [
+            {"name": "abcde-first", "role": "Button"},
+            {"name": "abcde-second", "role": "Button"},
+        ]
+    )
+    driver = WindowsDesktopDriver(
+        host_enabled=True,
+        isolated=True,
+        backend_factory=lambda: backend,
+        max_text_chars=5,
+    )
+
+    prefix_result = await driver.perform("click", {"name": "abcde"})
+    oversized_result = await driver.perform("click", {"name": "abcde-second"})
+
+    assert prefix_result == {"ok": False, "reason": "element_not_found"}
+    assert oversized_result == {"ok": False, "reason": "element_name_too_large"}
+    assert backend.mutations == []
+
+
+@pytest.mark.asyncio
 async def test_type_requires_bounded_text(driver):
     assert await driver.perform("type", {"name": "Title"}) == {
         "ok": False,
@@ -277,6 +347,62 @@ async def test_screenshot_returns_bounded_base64_without_starting_accessibility_
         "image_base64": base64.b64encode(b"png").decode("ascii"),
     }
     assert factories == []
+
+
+@pytest.mark.asyncio
+async def test_synchronous_host_operations_run_off_the_event_loop(monkeypatch):
+    event_loop_thread = threading.get_ident()
+    call_threads = []
+
+    class SyncBackend:
+        def accessibility_elements(self):
+            call_threads.append(("accessibility", threading.get_ident()))
+            yield {"name": "Save", "role": "Button"}
+
+        def click(self, element):
+            call_threads.append(("click", threading.get_ident()))
+
+        def type(self, element, text):
+            call_threads.append(("type", threading.get_ident()))
+
+    backend = SyncBackend()
+
+    def backend_factory():
+        call_threads.append(("factory", threading.get_ident()))
+        return backend
+
+    def screenshotter():
+        call_threads.append(("screenshot", threading.get_ident()))
+        return b"png"
+
+    def popen(argv, **kwargs):
+        call_threads.append(("popen", threading.get_ident()))
+        return object()
+
+    monkeypatch.setattr(desktop_host.subprocess, "Popen", popen)
+    driver = WindowsDesktopDriver(
+        host_enabled=True,
+        isolated=True,
+        backend_factory=backend_factory,
+        screenshotter=screenshotter,
+        app_launchers={"browser": ("browser.exe",)},
+    )
+
+    await driver.perform("observe", {})
+    await driver.perform("click", {"name": "Save"})
+    await driver.perform("type", {"name": "Save", "text": "Ready"})
+    await driver.perform("screenshot", {})
+    await driver.perform("launch", {"app": "browser"})
+
+    assert {name for name, _thread in call_threads} == {
+        "factory",
+        "accessibility",
+        "click",
+        "type",
+        "screenshot",
+        "popen",
+    }
+    assert all(thread != event_loop_thread for _name, thread in call_threads)
 
 
 @pytest.mark.asyncio

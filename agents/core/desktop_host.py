@@ -8,11 +8,13 @@ the corresponding host operation is first used, keeping normal CI dependency-fre
 
 from __future__ import annotations
 
+import asyncio
 import base64
 import contextlib
 import inspect
 import io
 import itertools
+import math
 import re
 import subprocess  # nosec B404
 from collections.abc import Callable, Mapping, Sequence
@@ -24,6 +26,7 @@ _APP_KEY_RE = re.compile(r"^[a-z][a-z0-9_]{0,31}$")
 _OBSERVE_ACTIONS = frozenset({"observe", "read", "locate", "screenshot"})
 _MUTATE_ACTIONS = frozenset({"click", "type", "launch"})
 _LOCAL_PROVENANCE = frozenset({"local", "local-only", "local_only", "strict-local", "strict_local"})
+_MAX_LOCAL_NUMERIC_MAGNITUDE = 1_000_000_000
 
 
 class DesktopHostError(RuntimeError):
@@ -46,6 +49,15 @@ async def _resolve(value: Any) -> Any:
     if inspect.isawaitable(value):
         return await value
     return value
+
+
+async def _call_host(callable_: Callable[..., Any], /, *args, **kwargs) -> Any:
+    is_async = inspect.iscoroutinefunction(callable_) or inspect.iscoroutinefunction(
+        callable_.__call__
+    )
+    if is_async:
+        return await callable_(*args, **kwargs)
+    return await _resolve(await asyncio.to_thread(callable_, *args, **kwargs))
 
 
 class _PywinautoBackend:
@@ -118,6 +130,9 @@ class WindowsDesktopDriver:
         max_type_chars: int = 20_000,
         max_screenshot_bytes: int = 5_000_000,
     ) -> None:
+        for label, value in (("host_enabled", host_enabled), ("isolated", isolated)):
+            if type(value) is not bool:
+                raise TypeError(f"{label} must be a literal bool")
         for label, value in (
             ("max_elements", max_elements),
             ("max_text_chars", max_text_chars),
@@ -127,8 +142,8 @@ class WindowsDesktopDriver:
             if int(value) <= 0:
                 raise ValueError(f"{label} must be positive")
 
-        self.host_enabled = bool(host_enabled)
-        self.isolated = bool(isolated)
+        self.host_enabled = host_enabled
+        self.isolated = isolated
         self.max_elements = int(max_elements)
         self.max_text_chars = int(max_text_chars)
         self.max_type_chars = int(max_type_chars)
@@ -184,7 +199,7 @@ class WindowsDesktopDriver:
         if close is None:
             return
         try:
-            await _resolve(close())
+            await _call_host(close)
         except Exception:
             # Cleanup failure is intentionally redacted and cannot turn into raw audit text.
             return
@@ -195,7 +210,7 @@ class WindowsDesktopDriver:
 
     async def _ensure_backend(self):
         if self._backend is None:
-            self._backend = await _resolve(self._backend_factory())
+            self._backend = await _call_host(self._backend_factory)
         return self._backend
 
     async def _observe(self, action: str, args: dict) -> dict:
@@ -240,11 +255,14 @@ class WindowsDesktopDriver:
 
     async def _mutate(self, action: str, args: dict) -> dict:
         if action == "launch":
-            return self._launch(args)
+            return await self._launch(args)
 
-        name = self._bounded_arg(args.get("name"))
-        if not name:
+        raw_name = args.get("name")
+        if not isinstance(raw_name, str) or not raw_name.strip():
             return {"ok": False, "reason": "named_element_required"}
+        name = raw_name.strip()
+        if len(name) > self.max_text_chars:
+            return {"ok": False, "reason": "element_name_too_large"}
         if action == "type":
             text = args.get("text")
             if not isinstance(text, str):
@@ -259,12 +277,12 @@ class WindowsDesktopDriver:
         normalized, raw = match
         backend = await self._ensure_backend()
         if action == "click":
-            await _resolve(backend.click(raw))
+            await _call_host(backend.click, raw)
         else:
-            await _resolve(backend.type(raw, text))
+            await _call_host(backend.type, raw, text)
         return {"ok": True, "action": action, "element": normalized.get("name", "")}
 
-    def _launch(self, args: dict) -> dict:
+    async def _launch(self, args: dict) -> dict:
         raw_key = args.get("app")
         if not isinstance(raw_key, str):
             return {"ok": False, "reason": "invalid_app_key"}
@@ -275,14 +293,15 @@ class WindowsDesktopDriver:
         if argv is None:
             return {"ok": False, "reason": "app_not_allowlisted"}
         # argv comes from the owner configuration; request-provided arguments never enter it.
-        subprocess.Popen(list(argv), shell=False)  # nosec
+        await _call_host(subprocess.Popen, list(argv), shell=False)
         return {"ok": True, "action": "launch", "app": key}
 
     async def _accessibility_snapshot(self) -> tuple[list[tuple[dict, Any]], bool]:
         backend = await self._ensure_backend()
-        raw_elements = await _resolve(backend.accessibility_elements())
-        iterator = iter(raw_elements or ())
-        bounded = list(itertools.islice(iterator, self.max_elements + 1))
+        raw_elements = await _call_host(backend.accessibility_elements)
+        bounded = await asyncio.to_thread(
+            lambda: list(itertools.islice(iter(raw_elements or ()), self.max_elements + 1))
+        )
         truncated = len(bounded) > self.max_elements
         snapshot = [
             (self._normalize_element(raw, index), raw)
@@ -315,12 +334,16 @@ class WindowsDesktopDriver:
     @staticmethod
     def _find(snapshot: list[tuple[dict, Any]], query: str, *, exact_name: bool):
         wanted = query.casefold()
+        if exact_name:
+            for normalized, raw in snapshot:
+                raw_name = WindowsDesktopDriver._element_value(raw, "name")
+                if str(raw_name or "").casefold() == wanted:
+                    return normalized, raw
+            return None
         for normalized, raw in snapshot:
             name = str(normalized.get("name", "")).casefold()
             if name == wanted:
                 return normalized, raw
-        if exact_name:
-            return None
         for normalized, raw in snapshot:
             for field in ("name", "text", "value", "role", "automation_id"):
                 if wanted in str(normalized.get(field, "")).casefold():
@@ -334,7 +357,7 @@ class WindowsDesktopDriver:
         if not self._is_proven_local(locator):
             return {"ok": False, "reason": "local_vlm_not_proven_local"}
         image = await self._screenshot_bytes()
-        result = await _resolve(locator(query=query, screenshot=image))
+        result = await _call_host(locator, query=query, screenshot=image)
         if not isinstance(result, Mapping) or not result:
             return {"ok": False, "reason": "not_found"}
         return {
@@ -359,12 +382,21 @@ class WindowsDesktopDriver:
             safe_key = str(key)[:64]
             if isinstance(value, str):
                 normalized[safe_key] = value[: self.max_text_chars]
-            elif value is None or isinstance(value, (bool, int, float)):
+            elif (
+                value is None
+                or isinstance(value, bool)
+                or (isinstance(value, int) and abs(value) <= _MAX_LOCAL_NUMERIC_MAGNITUDE)
+                or (
+                    isinstance(value, float)
+                    and math.isfinite(value)
+                    and abs(value) <= _MAX_LOCAL_NUMERIC_MAGNITUDE
+                )
+            ):
                 normalized[safe_key] = value
         return normalized
 
     async def _screenshot_bytes(self) -> bytes:
-        image = await _resolve(self._screenshotter())
+        image = await _call_host(self._screenshotter)
         if not isinstance(image, (bytes, bytearray, memoryview)):
             raise DesktopHostError("desktop screenshot failed")
         value = bytes(image)
