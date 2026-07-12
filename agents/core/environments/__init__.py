@@ -224,3 +224,36 @@ def prepare_python_child_env(
     child_env["PYTHONIOENCODING"] = "utf-8"
     child_env["PYTHONUTF8"] = "1"
     return child_env
+
+
+from .targets import (  # noqa: E402  (profiles above must exist before target validation)
+    ALLOW,
+    APPROVAL_REQUIRED,
+    DENY,
+    TargetAuditChain,
+    TargetAuditCorrupt,
+    TargetDecision,
+    TargetRegistry,
+    TerminalTarget,
+    default_targets,
+)
+
+__all__ = [
+    "ALLOW",
+    "APPROVAL_REQUIRED",
+    "DENY",
+    "CwdExtraction",
+    "EnvironmentProfile",
+    "TargetAuditChain",
+    "TargetAuditCorrupt",
+    "TargetDecision",
+    "TargetRegistry",
+    "TerminalTarget",
+    "WINDOWS_ESSENTIAL_ENV_VARS",
+    "backend_profiles",
+    "build_cwd_marker",
+    "default_targets",
+    "extract_cwd_marker",
+    "prepare_python_child_env",
+    "scrub_child_env",
+]
