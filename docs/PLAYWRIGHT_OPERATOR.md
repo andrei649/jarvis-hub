@@ -25,10 +25,12 @@ Optional settings:
 from agents.core.browser_agent import BrowserPolicy, GovernedBrowser
 from agents.core.browser_playwright import PlaywrightBrowserDriver
 
+policy = BrowserPolicy(["example.com"])
 driver = PlaywrightBrowserDriver.from_env()
+driver.set_url_guard(policy.domain_allowed)
 browser = GovernedBrowser(
     driver=driver,
-    policy=BrowserPolicy(["example.com"]),
+    policy=policy,
     approvals=approval_queue,
 )
 try:
@@ -40,9 +42,9 @@ finally:
     await driver.close()
 ```
 
-The driver does not weaken policy: off-list navigation is hard-blocked before startup,
-and the same allowlist/SSRF guard is installed on the Playwright context so redirects
-and subresources are checked before each request. Click/type/submit/download/
+The driver refuses to start until a per-request URL guard is explicitly bound. Passing
+the same `BrowserPolicy.domain_allowed` guard used by `GovernedBrowser` means off-list
+navigation, redirects, and subresources are checked before each request. Click/type/submit/download/
 execute-js/upload still require the existing approval queue. Each driver instance
 creates a fresh browser context with no ambient cookies or cache. Screenshots are
 returned in memory; downloads require an explicit directory and are saved with

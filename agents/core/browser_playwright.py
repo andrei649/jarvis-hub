@@ -138,6 +138,10 @@ class PlaywrightBrowserDriver:
             raise PlaywrightHostDisabled(
                 "Playwright host actuation requires explicit host_enabled=True"
             )
+        if self._url_guard is None:
+            raise PlaywrightHostDisabled(
+                "Playwright host actuation requires a per-request URL guard"
+            )
 
         async with self._start_lock:
             if self._page is not None:

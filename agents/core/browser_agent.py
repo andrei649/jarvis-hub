@@ -92,11 +92,6 @@ class GovernedBrowser:
         self.approvals = approvals
         self.agent = agent
         self.approval_timeout = approval_timeout
-        # A real browser can redirect or load subresources after the initial
-        # navigation check. Drivers that expose this seam receive the same
-        # allowlist/SSRF policy for every network request before startup.
-        if callable(getattr(type(self.driver), "set_url_guard", None)):
-            self.driver.set_url_guard(self.policy.domain_allowed)
 
     def preview(self, plan: list[dict]) -> dict:
         """Dry-run governance: classify each step (no execution, no approval)."""

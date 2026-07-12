@@ -217,6 +217,7 @@ def _driver(tmp_path, **kwargs):
         download_dir=tmp_path / "downloads",
         **kwargs,
     )
+    driver.set_url_guard(lambda _url: True)
     return driver, manager
 
 
@@ -237,6 +238,17 @@ async def test_host_consent_is_required_before_playwright_starts(tmp_path, monke
 
 
 @pytest.mark.asyncio
+async def test_host_driver_refuses_to_start_without_a_per_request_url_guard():
+    manager = FakeManager()
+    driver = PlaywrightBrowserDriver(host_enabled=True, playwright_factory=lambda: manager)
+
+    with pytest.raises(PlaywrightHostDisabled, match="URL guard"):
+        await driver.navigate(url="https://example.com")
+
+    assert manager.started == 0
+
+
+@pytest.mark.asyncio
 async def test_missing_or_broken_runtime_is_bounded_and_partial_startup_is_cleaned(
     tmp_path, monkeypatch
 ):
@@ -249,6 +261,7 @@ async def test_missing_or_broken_runtime_is_bounded_and_partial_startup_is_clean
 
     monkeypatch.setattr(builtins, "__import__", _without_playwright)
     driver = PlaywrightBrowserDriver(host_enabled=True)
+    driver.set_url_guard(lambda _url: True)
     with pytest.raises(PlaywrightUnavailable, match="pip install playwright"):
         await driver.navigate(url="https://example.com")
 
@@ -256,6 +269,7 @@ async def test_missing_or_broken_runtime_is_bounded_and_partial_startup_is_clean
     broken = PlaywrightBrowserDriver(
         host_enabled=True, playwright_factory=lambda: manager, download_dir=tmp_path
     )
+    broken.set_url_guard(lambda _url: True)
     with pytest.raises(PlaywrightUnavailable) as exc:
         await broken.navigate(url="https://example.com")
     assert "raw host detail" not in str(exc.value)
@@ -268,6 +282,7 @@ async def test_missing_or_broken_runtime_is_bounded_and_partial_startup_is_clean
     partial = PlaywrightBrowserDriver(
         host_enabled=True, playwright_factory=lambda: partial_manager
     )
+    partial.set_url_guard(lambda _url: True)
     with pytest.raises(PlaywrightUnavailable):
         await partial.navigate(url="https://example.com")
     assert partial_manager.playwright.stopped == 1
@@ -375,7 +390,9 @@ async def test_governed_browser_blocks_before_real_driver_and_null_default_is_un
 @pytest.mark.asyncio
 async def test_governed_policy_blocks_redirects_and_subresources_inside_playwright(tmp_path):
     driver, manager = _driver(tmp_path)
-    governed = GovernedBrowser(driver=driver, policy=BrowserPolicy(["example.com"]))
+    policy = BrowserPolicy(["example.com"])
+    driver.set_url_guard(policy.domain_allowed)
+    governed = GovernedBrowser(driver=driver, policy=policy)
 
     result = await governed.run_step({
         "action": "navigate", "url": "https://example.com/start"
@@ -402,6 +419,7 @@ async def test_governed_policy_blocks_redirects_and_subresources_inside_playwrig
 )
 async def test_live_chromium_host_smoke():
     driver = PlaywrightBrowserDriver(host_enabled=True)
+    driver.set_url_guard(lambda url: str(url).startswith("data:text/html,"))
     try:
         await driver.navigate(url="data:text/html,<main>Jarvis Playwright</main>")
         result = await driver.extract(selector="main")
