@@ -72,6 +72,9 @@ ACTION_REGISTRY: dict[str, Mediation] = {
     # the CapabilityActionAPI facade (reversible tier; contract-gated before the
     # kernel; NullMediaDriver default until the owner wires real device drivers).
     "media.present": Mediation.KERNEL,
+    # Restore can stop playback or replay a previous session, so it is a distinct
+    # privileged action and crosses the same facade/kernel boundary as present().
+    "media.restore": Mediation.KERNEL,
 }
 
 

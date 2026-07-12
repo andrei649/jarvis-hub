@@ -5,6 +5,7 @@
   "action:kg.write": "wired",
   "action:mcp.mutating": "wired",
   "action:media.present": "wired",
+  "action:media.restore": "wired",
   "action:node.dispatch": "wired",
   "action:payment": "wired",
   "action:plugin.egress": "wired",

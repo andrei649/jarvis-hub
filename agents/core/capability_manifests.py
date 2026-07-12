@@ -280,6 +280,19 @@ ACTION_CAPABILITY_MANIFESTS: dict[str, CapabilityManifest] = {
         implementation="agents.core.media_director:MediaDirector.present",
         contract_ref="agents.core.media_director:MEDIA_PRESENT_CONTRACT",
     ),
+    "media.restore": _action(
+        "media.restore",
+        "Restore the pre-present media session (or stop the registered device to idle).",
+        required=("device_id",),
+        risk="reversible",
+        supports=("restore", "stop"),
+        rollback=RollbackContract(
+            mode="implementation_specific",
+            description="Present the desired media state again through the governed facade.",
+            limitations="An idle restore clears its snapshot; a later replay needs a new request.",
+        ),
+        implementation="agents.core.media_director:MediaDirector.restore",
+    ),
 }
 
 

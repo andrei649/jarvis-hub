@@ -8,7 +8,13 @@ singleton director is replaced per test so nothing persists to agents/data.
 import pytest
 from fastapi.testclient import TestClient
 
-from agents.core.media_director import DeviceRegistry, MediaDirector, SessionBoard
+from agents.core.media_director import (
+    DeviceRegistry,
+    MediaDevice,
+    MediaDirector,
+    MediaSession,
+    SessionBoard,
+)
 from agents.core.routers import media_director as media_routes
 
 
@@ -120,6 +126,41 @@ def test_present_route_goes_through_the_facade_and_reports_disabled_flags(client
 
 
 def test_restore_route_reports_honest_no_session(client, monkeypatch):
+    from agents.core.kernel import Decision, Verdict
+
     monkeypatch.setenv("JARVIS_MEDIA_DIRECTOR", "1")
+    monkeypatch.setenv("JARVIS_UNIFIED_ACTION_API", "1")
+    monkeypatch.setenv("JARVIS_ACTION_KERNEL", "1")
+    monkeypatch.setattr("agents.core.app_state.get_orch", lambda: object())
+    monkeypatch.setattr(
+        "agents.core.kernel.binding.make_action_kernel",
+        lambda _orch: lambda action, capability=None: Decision(
+            Verdict.GRANT, reason="test", tier=1
+        ),
+    )
     payload = client.post("/api/media/restore/ghost").json()
-    assert payload["enabled"] is True and payload["ok"] is False
+    assert payload["enabled"] is True and payload["status"] == "completed"
+    assert payload["output"]["ok"] is False
+    assert "no session" in payload["output"]["reason"]
+
+
+def test_restore_route_never_actuates_when_unified_action_api_is_off(client, monkeypatch):
+    monkeypatch.setenv("JARVIS_MEDIA_DIRECTOR", "1")
+    monkeypatch.delenv("JARVIS_UNIFIED_ACTION_API", raising=False)
+    director = media_routes._director
+    director.registry.register(MediaDevice(id="tv-1", name="TV", kind="tv"))
+    director.sessions.set(
+        MediaSession(
+            device_id="tv-1",
+            content={"type": "url", "value": "https://example.local/current"},
+            mode="play",
+            privacy="household",
+            started_at=1.0,
+        )
+    )
+
+    payload = client.post("/api/media/restore/tv-1").json()
+
+    assert payload["status"] == "disabled"
+    assert payload["reason"] == "unified_action_api_disabled"
+    assert director.sessions.get("tv-1") is not None

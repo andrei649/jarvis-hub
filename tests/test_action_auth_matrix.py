@@ -239,9 +239,9 @@ def _exercise(kind, spy, tmp_path, monkeypatch=None):
         monkeypatch.setattr("agents.core.kernel.binding.make_action_kernel", lambda o: spy)
         assert memkg._kg() is not None, "stub graph not visible to the handler"
         asyncio.run(memkg.kg_upsert_entity(_Req({"name": "Probe", "type": "person"})))
-    elif kind == "media.present":
-        # O29: the Media Director presents through the O27 facade. Drive the REAL
-        # route handler with an in-memory director + fake driver; the facade builds
+    elif kind in ("media.present", "media.restore"):
+        # O29: Media Director actuation routes through the O27 facade. Drive the REAL
+        # route handlers with an in-memory director + fake driver; the facade builds
         # its authorizer via the production make_action_kernel binding (spy-patched).
         # Only the media/unified-API flags are set here — the kernel flag stays
         # owned by the calling test so the kernel-off matrix leg still proves the
@@ -254,6 +254,7 @@ def _exercise(kind, spy, tmp_path, monkeypatch=None):
             DeviceRegistry,
             MediaDevice,
             MediaDirector,
+            MediaSession,
             SessionBoard,
         )
         from agents.core.routers import media_director as media_routes
@@ -283,21 +284,30 @@ def _exercise(kind, spy, tmp_path, monkeypatch=None):
 
         registry = DeviceRegistry(path=None)
         registry.register(MediaDevice(id="tv-1", name="TV", kind="tv", room="living"))
-        monkeypatch.setattr(
-            media_routes,
-            "_director",
-            MediaDirector(
-                registry=registry, sessions=SessionBoard(path=None), drivers={"tv": _Driver()}
-            ),
+        director = MediaDirector(
+            registry=registry, sessions=SessionBoard(path=None), drivers={"tv": _Driver()}
         )
+        monkeypatch.setattr(media_routes, "_director", director)
         monkeypatch.setattr(web, "orch", _Orch())
         monkeypatch.setattr("agents.core.kernel.binding.make_action_kernel", lambda o: spy)
         monkeypatch.setenv("JARVIS_MEDIA_DIRECTOR", "1")
         monkeypatch.setenv("JARVIS_UNIFIED_ACTION_API", "1")
-        body = media_routes.PresentBody(
-            content={"type": "url", "value": "https://example.local/x"}, target="tv-1"
-        )
-        asyncio.run(media_routes.media_present(body))
+        if kind == "media.present":
+            body = media_routes.PresentBody(
+                content={"type": "url", "value": "https://example.local/x"}, target="tv-1"
+            )
+            asyncio.run(media_routes.media_present(body))
+        else:
+            director.sessions.set(
+                MediaSession(
+                    device_id="tv-1",
+                    content={"type": "url", "value": "https://example.local/x"},
+                    mode="play",
+                    privacy="household",
+                    started_at=1.0,
+                )
+            )
+            asyncio.run(media_routes.media_restore("tv-1"))
     else:  # pragma: no cover - a new KERNEL kind needs an exerciser added here
         raise AssertionError(f"no exerciser for kernel-classified kind {kind!r}")
 
@@ -310,7 +320,10 @@ def test_kernel_kinds_actually_invoke_kernel(kind, monkeypatch, tmp_path):
     spy = _SpyKernel()
     _exercise(kind, spy, tmp_path, monkeypatch)
     assert spy.calls, f"{kind} is classified KERNEL but request() did not invoke the kernel"
-    assert spy.calls[-1].kind.split(".")[0] == kind.split(".")[0]
+    if kind.endswith(".*"):
+        assert spy.calls[-1].kind.startswith(kind[:-1])
+    else:
+        assert spy.calls[-1].kind == kind
 
 
 def test_kernel_off_does_not_invoke_kernel(monkeypatch, tmp_path):

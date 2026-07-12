@@ -24,7 +24,9 @@ Design rules (repo discipline):
 from __future__ import annotations
 
 import json
+import logging
 import threading
+import time
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any, Protocol
@@ -50,6 +52,9 @@ URGENCIES = frozenset({"low", "normal", "high"})
 
 _MAX_DEVICES = 200
 _MAX_SESSIONS = 200
+_MAX_STORE_BYTES = 1_000_000
+
+logger = logging.getLogger(__name__)
 
 
 def media_director_enabled() -> bool:
@@ -130,6 +135,8 @@ class _BoundedJsonStore:
         if self._path is None or not self._path.exists():
             return []
         try:
+            if self._path.stat().st_size > _MAX_STORE_BYTES:
+                return []
             raw = json.loads(self._path.read_text(encoding="utf-8"))
             return [item for item in raw if isinstance(item, dict)] if isinstance(raw, list) else []
         except (ValueError, OSError):
@@ -155,6 +162,7 @@ class DeviceRegistry:
 
     def __init__(self, path: Path | None = None) -> None:
         self._store = _BoundedJsonStore(path, _MAX_DEVICES)
+        self._lock = threading.RLock()
         self._devices: dict[str, MediaDevice] = {}
         for item in self._store.load():
             try:
@@ -166,35 +174,42 @@ class DeviceRegistry:
             self._devices[device.id] = device
 
     def register(self, device: MediaDevice) -> MediaDevice:
-        if len(self._devices) >= _MAX_DEVICES and device.id not in self._devices:
-            raise MediaError(f"device registry cap reached ({_MAX_DEVICES})")
-        self._devices[device.id] = device
-        self._persist()
-        return device
+        with self._lock:
+            if len(self._devices) >= _MAX_DEVICES and device.id not in self._devices:
+                raise MediaError(f"device registry cap reached ({_MAX_DEVICES})")
+            self._devices[device.id] = device
+            self._persist()
+            return device
 
     def remove(self, device_id: str) -> bool:
-        removed = self._devices.pop(device_id, None) is not None
-        if removed:
-            self._persist()
-        return removed
+        with self._lock:
+            removed = self._devices.pop(device_id, None) is not None
+            if removed:
+                self._persist()
+            return removed
 
     def get(self, device_id: str) -> MediaDevice | None:
-        return self._devices.get(device_id)
+        with self._lock:
+            return self._devices.get(device_id)
 
     def list(self) -> list[dict]:
-        return [asdict(d) for d in sorted(self._devices.values(), key=lambda d: d.id)]
+        with self._lock:
+            return [asdict(d) for d in sorted(self._devices.values(), key=lambda d: d.id)]
 
     def resolve_target(self, target: str) -> MediaDevice:
         """A target is a device id, or a room name (unique match required)."""
-        device = self._devices.get(target)
-        if device is not None:
-            return device
-        in_room = [d for d in self._devices.values() if d.room and d.room == target]
-        if len(in_room) == 1:
-            return in_room[0]
-        if len(in_room) > 1:
-            raise MediaError(f"ambiguous target {target!r}: {len(in_room)} devices in that room")
-        raise MediaError(f"unknown target: {target!r}")
+        with self._lock:
+            device = self._devices.get(target)
+            if device is not None:
+                return device
+            in_room = [d for d in self._devices.values() if d.room and d.room == target]
+            if len(in_room) == 1:
+                return in_room[0]
+            if len(in_room) > 1:
+                raise MediaError(
+                    f"ambiguous target {target!r}: {len(in_room)} devices in that room"
+                )
+            raise MediaError(f"unknown target: {target!r}")
 
     def discover(self, discoverers: list) -> int:
         """Merge devices reported by injectable discoverer callables. A broken
@@ -301,6 +316,7 @@ class SessionBoard:
 
     def __init__(self, path: Path | None = None) -> None:
         self._store = _BoundedJsonStore(path, _MAX_SESSIONS)
+        self._lock = threading.RLock()
         self._sessions: dict[str, MediaSession] = {}
         for item in self._store.load():
             try:
@@ -310,18 +326,24 @@ class SessionBoard:
             self._sessions[session.device_id] = session
 
     def get(self, device_id: str) -> MediaSession | None:
-        return self._sessions.get(device_id)
+        with self._lock:
+            return self._sessions.get(device_id)
 
     def set(self, session: MediaSession) -> None:
-        self._sessions[session.device_id] = session
-        self._persist()
-
-    def clear(self, device_id: str) -> None:
-        if self._sessions.pop(device_id, None) is not None:
+        with self._lock:
+            self._sessions[session.device_id] = session
             self._persist()
 
+    def clear(self, device_id: str) -> None:
+        with self._lock:
+            if self._sessions.pop(device_id, None) is not None:
+                self._persist()
+
     def list(self) -> list[dict]:
-        return [s.to_dict() for s in sorted(self._sessions.values(), key=lambda s: s.device_id)]
+        with self._lock:
+            return [
+                s.to_dict() for s in sorted(self._sessions.values(), key=lambda s: s.device_id)
+            ]
 
     def _persist(self) -> None:
         self._store.save(self.list())
@@ -347,6 +369,7 @@ class MediaDirector:
     """
 
     KIND = "media.present"
+    RESTORE_KIND = "media.restore"
 
     def __init__(
         self,
@@ -368,10 +391,37 @@ class MediaDirector:
         self._drivers = drivers or {}
         self._null = NullMediaDriver()
         self._local_roots = local_roots
-        self._clock = clock or (lambda: 0.0)
+        self._clock = clock or time.time
 
     def driver_for(self, device: MediaDevice) -> MediaDriver:
         return self._drivers.get(device.kind, self._null)
+
+    @staticmethod
+    def _drive(driver: MediaDriver, operation: str, device: MediaDevice, *args) -> dict | None:
+        """Call an untrusted host seam without leaking transport details.
+
+        ``None`` means the driver raised or returned a malformed response.  Callers
+        decide whether that is a refused actuation or an unverified status probe.
+        """
+        try:
+            outcome = getattr(driver, operation)(device, *args)
+        except Exception:
+            logger.warning(
+                "media driver operation failed: operation=%s kind=%s device=%s",
+                operation,
+                device.kind,
+                device.id,
+            )
+            return None
+        if not isinstance(outcome, dict):
+            logger.warning(
+                "media driver returned invalid outcome: operation=%s kind=%s device=%s",
+                operation,
+                device.kind,
+                device.id,
+            )
+            return None
+        return outcome
 
     def present(self, payload: dict) -> dict:
         """Contract → resolve → etiquette → drive → verify → record.
@@ -400,7 +450,9 @@ class MediaDirector:
 
         driver = self.driver_for(device)
         previous = current.to_dict() if current else None
-        outcome = driver.play(device, content)
+        outcome = self._drive(driver, "play", device, content)
+        if outcome is None:
+            return {"ok": False, "reason": "driver_error", "state": "unavailable"}
         if not outcome.get("ok"):
             return {
                 "ok": False,
@@ -408,7 +460,7 @@ class MediaDirector:
                 "state": outcome.get("state"),
             }
 
-        status = driver.status(device)
+        status = self._drive(driver, "status", device) or {}
         verified = bool(
             status.get("ok")
             and status.get("state") == "playing"
@@ -443,7 +495,9 @@ class MediaDirector:
             return {"ok": False, "reason": f"unknown device: {device_id!r}"}
         driver = self.driver_for(device)
         if session.previous is None:
-            outcome = driver.stop(device)
+            outcome = self._drive(driver, "stop", device)
+            if outcome is None:
+                return {"ok": False, "reason": "driver_error"}
             if outcome.get("ok"):
                 self.sessions.clear(device_id)
             return {
@@ -452,7 +506,9 @@ class MediaDirector:
                 "reason": outcome.get("reason", ""),
             }
         previous = MediaSession(**session.previous)
-        outcome = driver.play(device, previous.content)
+        outcome = self._drive(driver, "play", device, previous.content)
+        if outcome is None:
+            return {"ok": False, "reason": "driver_error"}
         if outcome.get("ok"):
             self.sessions.set(previous)
             return {"ok": True, "restored": "previous_session"}
@@ -464,7 +520,12 @@ class MediaDirector:
         """The ``action:media.present`` handler for ``CapabilityActionAPI``."""
         return self.present(dict(payload))
 
+    def handle_restore(self, payload: dict, ctx) -> dict:
+        """The separately mediated ``action:media.restore`` handler."""
+        return self.restore(str(payload["device_id"]))
+
 
 def register_media_capability(api, director: MediaDirector):
-    """Bind the director onto the unified action facade (kernel-mediated)."""
-    return api.register(f"action:{MediaDirector.KIND}", director.handle_perform)
+    """Bind present + restore onto the unified action facade (kernel-mediated)."""
+    api.register(f"action:{MediaDirector.KIND}", director.handle_perform)
+    return api.register(f"action:{MediaDirector.RESTORE_KIND}", director.handle_restore)

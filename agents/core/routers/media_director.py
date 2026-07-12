@@ -1,9 +1,9 @@
 """Media Director endpoints (ORIZONT 29 wave 1) — the `present()` surface.
 
 Default-off behind ``JARVIS_MEDIA_DIRECTOR``: every endpoint answers
-``enabled: false`` honestly until the owner opts in. Presents are mediated by
-the O27 unified action facade (kernel kind ``media.present``); when the facade
-is off, the route refuses rather than bypassing mediation.
+``enabled: false`` honestly until the owner opts in. Presents and restores are
+mediated by the O27 unified action facade; when the facade is off, the routes
+refuse rather than bypassing mediation.
 """
 
 from __future__ import annotations
@@ -56,6 +56,35 @@ class PresentBody(BaseModel):
     privacy: str = Field("household", max_length=16)
     urgency: str = Field("normal", max_length=16)
     duration_seconds: float | None = Field(None, gt=0)
+
+
+async def _perform_media(capability_id: str, params: dict, *, title: str):
+    """Build the request-scoped facade and bind both governed media actions."""
+    from agents.core.app_state import get_orch
+    from agents.core.capability_actions import CapabilityActionAPI, PerformContext
+    from agents.core.kernel.binding import make_action_kernel
+    from agents.core.media_director import register_media_capability
+
+    orch = get_orch()
+    api = CapabilityActionAPI(authorizer=make_action_kernel(orch) if orch else None)
+    register_media_capability(api, _get_director())
+    return await api.perform(
+        capability_id,
+        params,
+        PerformContext(agent="jarvis", title=title, origin="user"),
+    )
+
+
+def _perform_payload(result) -> dict:
+    payload = {
+        "enabled": True,
+        "status": result.status,
+        "reason": result.reason,
+        "output": result.output,
+    }
+    if result.card is not None:
+        payload["card"] = result.card
+    return payload
 
 
 @router.get("/api/media/devices", dependencies=[Depends(user_guard)])
@@ -115,36 +144,25 @@ async def media_present(body: PresentBody):
     """
     if not _enabled():
         return nocache_json(_disabled_body())
-    from agents.core.app_state import get_orch
-    from agents.core.capability_actions import CapabilityActionAPI, PerformContext
-    from agents.core.kernel.binding import make_action_kernel
-    from agents.core.media_director import register_media_capability
-
     # perform() gates on the unified-API + kernel flags before touching the
     # authorizer, so a missing orchestrator still yields an honest refusal
     # ("kernel_unavailable") instead of a 503 on the disabled path.
-    orch = get_orch()
-    api = CapabilityActionAPI(authorizer=make_action_kernel(orch) if orch else None)
-    register_media_capability(api, _get_director())
-    result = await api.perform(
+    result = await _perform_media(
         "action:media.present",
         body.model_dump(),
-        PerformContext(agent="jarvis", title=f"present on {body.target}", origin="user"),
+        title=f"present on {body.target}",
     )
-    payload = {
-        "enabled": True,
-        "status": result.status,
-        "reason": result.reason,
-        "output": result.output,
-    }
-    if result.card is not None:
-        payload["card"] = result.card
-    return nocache_json(payload)
+    return nocache_json(_perform_payload(result))
 
 
 @router.post("/api/media/restore/{device_id}", dependencies=[Depends(user_guard)])
 async def media_restore(device_id: str):
-    """The rollback contract: replay the pre-present snapshot on a device."""
+    """Replay the pre-present snapshot through its own governed action."""
     if not _enabled():
         return nocache_json(_disabled_body())
-    return nocache_json({"enabled": True, **_get_director().restore(device_id)})
+    result = await _perform_media(
+        "action:media.restore",
+        {"device_id": device_id},
+        title=f"restore {device_id}",
+    )
+    return nocache_json(_perform_payload(result))

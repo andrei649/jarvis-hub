@@ -5,7 +5,10 @@ sockets, no real devices. The kernel/facade integration is covered separately
 by the auto-generated action-plane reality case + the facade test below.
 """
 
+import json
 import sys
+import threading
+import time
 from pathlib import Path
 
 import pytest
@@ -20,6 +23,7 @@ from agents.core.media_director import (  # noqa: E402
     MediaDevice,
     MediaDirector,
     MediaError,
+    MediaSession,
     NullMediaDriver,
     SessionBoard,
     may_interrupt,
@@ -148,6 +152,16 @@ def test_device_validation_and_corrupt_store_degrade(tmp_path):
     assert DeviceRegistry(path=tmp_path / "devices.json").list() == []
 
 
+def test_oversized_registry_file_degrades_without_parsing_unbounded_input(tmp_path):
+    path = tmp_path / "devices.json"
+    path.write_text(
+        json.dumps([{"id": "big", "name": "X" * 1_100_000, "kind": "tv"}]),
+        encoding="utf-8",
+    )
+
+    assert DeviceRegistry(path=path).list() == []
+
+
 def test_discovery_seam_merges_and_survives_broken_discoverers():
     registry = DeviceRegistry(path=None)
     added = registry.discover(
@@ -159,6 +173,52 @@ def test_discovery_seam_merges_and_survives_broken_discoverers():
     )
     assert added == 1
     assert registry.get("cast-1") is not None
+
+
+def test_device_cap_remains_atomic_under_concurrent_registration():
+    registry = DeviceRegistry(path=None)
+    existing = {
+        f"d-{index}": MediaDevice(id=f"d-{index}", name=f"D {index}", kind="tv")
+        for index in range(199)
+    }
+    first_in_set = threading.Event()
+    second_checked_cap = threading.Event()
+
+    class YieldingDict(dict):
+        first_writer = None
+
+        def __len__(self):
+            if first_in_set.is_set() and threading.get_ident() != self.first_writer:
+                second_checked_cap.set()
+            return super().__len__()
+
+        def __setitem__(self, key, value):
+            if not first_in_set.is_set():
+                self.first_writer = threading.get_ident()
+                first_in_set.set()
+                second_checked_cap.wait(0.2)
+            return super().__setitem__(key, value)
+
+    registry._devices = YieldingDict(existing)
+    errors = []
+
+    def add(device_id):
+        try:
+            registry.register(MediaDevice(id=device_id, name=device_id, kind="tv"))
+        except MediaError as exc:
+            errors.append(exc)
+
+    first = threading.Thread(target=add, args=("new-a",))
+    first.start()
+    assert first_in_set.wait(1)
+    second = threading.Thread(target=add, args=("new-b",))
+    second.start()
+    first.join(2)
+    second.join(2)
+
+    assert not first.is_alive() and not second.is_alive()
+    assert len(registry.list()) == 200
+    assert len(errors) == 1 and "cap reached" in str(errors[0])
 
 
 # ── etiquette (H29.4) ────────────────────────────────────────────────────────
@@ -180,6 +240,55 @@ def test_may_interrupt_free_when_idle():
     assert may_interrupt(None, urgency="low") is True
 
 
+def test_session_memory_and_disk_do_not_diverge_under_concurrent_updates(tmp_path):
+    path = tmp_path / "sessions.json"
+    board = SessionBoard(path=path)
+    original_save = board._store.save
+    first_save = threading.Event()
+    second_saved = threading.Event()
+    save_count = 0
+    count_lock = threading.Lock()
+
+    def reordered_save(items):
+        nonlocal save_count
+        with count_lock:
+            save_count += 1
+            current = save_count
+        if current == 1:
+            first_save.set()
+            second_saved.wait(0.2)
+            original_save(items)
+        else:
+            original_save(items)
+            second_saved.set()
+
+    board._store.save = reordered_save
+
+    def set_session(value):
+        board.set(
+            MediaSession(
+                device_id="tv-1",
+                content={"type": "url", "value": value},
+                mode="play",
+                privacy="household",
+                started_at=1.0,
+            )
+        )
+
+    first = threading.Thread(target=set_session, args=("https://example.local/first",))
+    first.start()
+    assert first_save.wait(1)
+    second = threading.Thread(target=set_session, args=("https://example.local/second",))
+    second.start()
+    first.join(2)
+    second.join(2)
+
+    assert not first.is_alive() and not second.is_alive()
+    assert board.get("tv-1").content["value"] == "https://example.local/second"
+    reloaded = SessionBoard(path=path)
+    assert reloaded.get("tv-1").content["value"] == "https://example.local/second"
+
+
 # ── present() end-to-end (H29.2) ─────────────────────────────────────────────
 
 
@@ -190,6 +299,14 @@ def test_present_verifies_via_driver_status_and_records_session():
     assert result["ok"] is True and result["verified"] is True
     session = director.sessions.get("tv-1")
     assert session is not None and session.state == "playing"
+
+
+def test_default_clock_records_real_start_time(monkeypatch):
+    monkeypatch.setattr(time, "time", lambda: 1_234.5)
+    director = _director(FakeDriver())
+
+    assert director.present(_payload())["ok"] is True
+    assert director.sessions.get("tv-1").started_at == 1_234.5
 
 
 def test_present_never_claims_verified_when_status_disagrees():
@@ -222,6 +339,33 @@ def test_present_offline_device_is_refused_without_session():
     assert director.sessions.get("tv-1") is None
 
 
+def test_driver_exceptions_degrade_honestly_without_leaking_host_details():
+    class ExplodingDriver(FakeDriver):
+        def play(self, device, content):
+            raise RuntimeError("secret host driver detail")
+
+    director = _director(ExplodingDriver())
+    result = director.present(_payload())
+
+    assert result == {"ok": False, "reason": "driver_error", "state": "unavailable"}
+    assert "secret host driver detail" not in repr(result)
+    assert director.sessions.get("tv-1") is None
+
+
+def test_status_exception_records_real_actuation_as_unverified():
+    class StatusExplodes(FakeDriver):
+        def status(self, device):
+            raise RuntimeError("status transport broke")
+
+    director = _director(StatusExplodes())
+    result = director.present(_payload())
+
+    assert result["ok"] is True
+    assert result["verified"] is False
+    assert result["verification"] == "unverified-driver-status"
+    assert director.sessions.get("tv-1") is not None
+
+
 # ── restore() rollback (the manifest's RollbackContract) ────────────────────
 
 
@@ -244,6 +388,28 @@ def test_restore_unknown_device_or_no_session_is_honest():
     director = _director(FakeDriver())
     assert director.restore("tv-1")["ok"] is False
     assert "no session" in director.restore("tv-1")["reason"]
+
+
+def test_restore_driver_exception_preserves_the_session_and_redacts_error():
+    class RestoreExplodes(FakeDriver):
+        def stop(self, device):
+            raise RuntimeError("private transport detail")
+
+    director = _director(RestoreExplodes())
+    director.sessions.set(
+        MediaSession(
+            device_id="tv-1",
+            content={"type": "url", "value": "https://example.local/x"},
+            mode="play",
+            privacy="household",
+            started_at=1.0,
+        )
+    )
+
+    result = director.restore("tv-1")
+
+    assert result == {"ok": False, "reason": "driver_error"}
+    assert director.sessions.get("tv-1") is not None
 
 
 # ── the O27 facade binding ───────────────────────────────────────────────────
@@ -294,6 +460,45 @@ async def test_facade_deny_never_reaches_the_driver(monkeypatch):
     )
     assert result.status == "refused" and result.reason == "halted"
     assert driver.calls == []
+
+
+@pytest.mark.asyncio
+async def test_facade_restore_is_separately_authorized_before_driver_actuation(monkeypatch):
+    from agents.core.capability_actions import CapabilityActionAPI, PerformContext
+    from agents.core.kernel import Decision, Verdict
+    from agents.core.media_director import register_media_capability
+
+    monkeypatch.setenv("JARVIS_UNIFIED_ACTION_API", "1")
+    monkeypatch.setenv("JARVIS_ACTION_KERNEL", "1")
+    driver = FakeDriver()
+    director = _director(driver)
+    director.sessions.set(
+        MediaSession(
+            device_id="tv-1",
+            content={"type": "url", "value": "https://example.local/current"},
+            mode="play",
+            privacy="household",
+            started_at=1.0,
+        )
+    )
+    seen = []
+
+    def deny(action, capability=None, budget=None):
+        seen.append(action.kind)
+        return Decision(verdict=Verdict.DENY, reason="halted", tier=2)
+
+    api = CapabilityActionAPI(authorizer=deny)
+    register_media_capability(api, director)
+    result = await api.perform(
+        "action:media.restore",
+        {"device_id": "tv-1"},
+        PerformContext(agent="jarvis", title="restore tv-1"),
+    )
+
+    assert seen == ["media.restore"]
+    assert result.status == "refused" and result.reason == "halted"
+    assert driver.calls == []
+    assert director.sessions.get("tv-1") is not None
 
 
 def test_null_driver_is_the_default_and_refuses():

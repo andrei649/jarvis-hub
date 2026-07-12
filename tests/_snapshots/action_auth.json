@@ -5,6 +5,7 @@
  "kg.write": "kernel",
  "mcp.mutating": "kernel",
  "media.present": "kernel",
+ "media.restore": "kernel",
  "node.dispatch": "kernel",
  "payment": "kernel",
  "plugin.egress": "kernel",
