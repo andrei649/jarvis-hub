@@ -47,6 +47,7 @@ Legend — **mobile**: ✅ shipped · 🟡 partial · ⬜ not started · ➖ not
 | Health/readiness probes | `GET /healthz`, `GET /readyz` | ✅ | ➖ | — |
 | First-run command center (0.19) | `GET /api/onboarding/command-center` | ✅ | ✅ | H18.19 |
 | Artifacts workspace (Canvas) | `GET /api/canvas`, `POST /api/canvas/post`, `POST /api/canvas/{id}/pin`, `DELETE /api/canvas/{id}` | ✅ | ✅ | H18.20 |
+| Media Director (O29 wave 1, default-off) | `GET /api/media/devices`, `POST /api/media/devices`, `DELETE /api/media/devices/{device_id}`, `GET /api/media/session`, `POST /api/media/present`, `POST /api/media/restore/{device_id}` | ✅ | ⬜ | H18.21 |
 | Auth (user/admin tokens) | `X-User-Token`, `X-Admin-Token` headers | ✅ | ✅ | H18.1 / H18.11 |
 
 > **H18.20 ✅ (delivered):** native artifact workspace parity — the Memory tab gains an

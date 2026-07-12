@@ -1,14 +1,15 @@
 {
-  "admin.capability_issue": "kernel",
-  "admin.kill_switch": "kernel",
-  "call.outbound": "kernel",
-  "kg.write": "kernel",
-  "mcp.mutating": "kernel",
-  "node.dispatch": "kernel",
-  "payment": "kernel",
-  "plugin.egress": "kernel",
-  "repo.sync": "kernel",
-  "social.*": "kernel",
-  "tool.rpc": "kernel",
-  "writeback.*": "kernel"
+ "admin.capability_issue": "kernel",
+ "admin.kill_switch": "kernel",
+ "call.outbound": "kernel",
+ "kg.write": "kernel",
+ "mcp.mutating": "kernel",
+ "media.present": "kernel",
+ "node.dispatch": "kernel",
+ "payment": "kernel",
+ "plugin.egress": "kernel",
+ "repo.sync": "kernel",
+ "social.*": "kernel",
+ "tool.rpc": "kernel",
+ "writeback.*": "kernel"
 }

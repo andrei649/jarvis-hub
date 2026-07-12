@@ -221,6 +221,54 @@ def _exercise(kind, spy, tmp_path, monkeypatch=None):
         monkeypatch.setattr("agents.core.kernel.binding.make_action_kernel", lambda o: spy)
         assert memkg._kg() is not None, "stub graph not visible to the handler"
         asyncio.run(memkg.kg_upsert_entity(_Req({"name": "Probe", "type": "person"})))
+    elif kind == "media.present":
+        # O29: the Media Director presents through the O27 facade. Drive the REAL
+        # route handler with an in-memory director + fake driver; the facade builds
+        # its authorizer via the production make_action_kernel binding (spy-patched).
+        # Only the media/unified-API flags are set here — the kernel flag stays
+        # owned by the calling test so the kernel-off matrix leg still proves the
+        # facade never touches the spy when the kernel is disabled.
+        import asyncio
+
+        import agents.web as web
+        from agents.core.autonomy.policy import AutonomyPolicy
+        from agents.core.media_director import DeviceRegistry, MediaDevice, MediaDirector, SessionBoard
+        from agents.core.routers import media_director as media_routes
+        from agents.core.security.capability import CapabilityBroker, KillSwitch
+
+        class _Driver:
+            def play(self, device, content):
+                return {"ok": True, "state": "playing"}
+
+            def status(self, device):
+                return {"ok": True, "state": "playing", "content": {}}
+
+            def pause(self, device):
+                return {"ok": True, "state": "paused"}
+
+            def resume(self, device):
+                return {"ok": True, "state": "playing"}
+
+            def stop(self, device):
+                return {"ok": True, "state": "idle"}
+
+        class _Orch:
+            kill_switch = KillSwitch(tmp_path / "kill.json")
+            capabilities = CapabilityBroker()
+            autonomy_policy = AutonomyPolicy()
+            intent_log = None
+
+        registry = DeviceRegistry(path=None)
+        registry.register(MediaDevice(id="tv-1", name="TV", kind="tv", room="living"))
+        monkeypatch.setattr(media_routes, "_director", MediaDirector(
+            registry=registry, sessions=SessionBoard(path=None), drivers={"tv": _Driver()}))
+        monkeypatch.setattr(web, "orch", _Orch())
+        monkeypatch.setattr("agents.core.kernel.binding.make_action_kernel", lambda o: spy)
+        monkeypatch.setenv("JARVIS_MEDIA_DIRECTOR", "1")
+        monkeypatch.setenv("JARVIS_UNIFIED_ACTION_API", "1")
+        body = media_routes.PresentBody(
+            content={"type": "url", "value": "https://example.local/x"}, target="tv-1")
+        asyncio.run(media_routes.media_present(body))
     else:  # pragma: no cover - a new KERNEL kind needs an exerciser added here
         raise AssertionError(f"no exerciser for kernel-classified kind {kind!r}")
 

@@ -80,8 +80,8 @@ async def test_all_executable_capability_cases_pass_hermetically_without_flag_le
         now="2026-07-12T00:00:00+00:00",
     )
 
-    assert result["total"] == 14
-    assert result["passed"] == 14
+    assert result["total"] == 15
+    assert result["passed"] == 15
     assert result["skipped"] == 0
     assert result["promoted"] == []
     assert all(item["passed"] for item in result["results"])

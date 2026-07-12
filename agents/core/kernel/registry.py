@@ -68,6 +68,10 @@ ACTION_REGISTRY: dict[str, Mediation] = {
     # NOT gated (a halt must not freeze per-turn memory). Memory.remember (vector write),
     # /consolidate (plan-only) and /decay/forget (ACT-R op) are not KG writes → out of scope.
     "kg.write": Mediation.KERNEL,
+    # ORIZONT 29 wave 1 — the Media Director's present() capability is mediated at
+    # the CapabilityActionAPI facade (reversible tier; contract-gated before the
+    # kernel; NullMediaDriver default until the owner wires real device drivers).
+    "media.present": Mediation.KERNEL,
 }
 
 

@@ -264,6 +264,22 @@ ACTION_CAPABILITY_MANIFESTS: dict[str, CapabilityManifest] = {
         ),
         implementation="agents.core.routers.memory_kg:kg_upsert_entity",
     ),
+    "media.present": _action(
+        "media.present",
+        "Present content (media, webpage, camera, dashboard) on a registered output device.",
+        required=("content", "target"),
+        risk="reversible",
+        supports=("play", "show", "announce"),
+        rollback=RollbackContract(
+            mode="restore",
+            description="Replay the pre-present session snapshot (or stop to idle).",
+            automatic=True,
+            handler_ref="agents.core.media_director:MediaDirector.restore",
+            limitations="Restores playback state only; a live announce cannot be unsaid.",
+        ),
+        implementation="agents.core.media_director:MediaDirector.present",
+        contract_ref="agents.core.media_director:MEDIA_PRESENT_CONTRACT",
+    ),
 }
 
 
