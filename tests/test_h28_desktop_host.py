@@ -203,6 +203,22 @@ async def test_local_vlm_result_drops_unbounded_and_non_finite_numbers():
 
 
 @pytest.mark.asyncio
+async def test_local_vlm_result_that_normalizes_empty_fails_closed():
+    locator = LocalLocator({"nested": {"x": 12}})
+    driver = WindowsDesktopDriver(
+        host_enabled=True,
+        isolated=True,
+        backend_factory=lambda: FakeBackend(),
+        screenshotter=lambda: b"screen",
+        local_vlm_locator=locator,
+    )
+
+    result = await driver.perform("locate", {"query": "Save"})
+
+    assert result == {"ok": False, "reason": "local_vlm_result_invalid"}
+
+
+@pytest.mark.asyncio
 async def test_observe_normalizes_and_caps_accessibility_elements():
     backend = FakeBackend(
         [

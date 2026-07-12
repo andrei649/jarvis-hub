@@ -360,11 +360,14 @@ class WindowsDesktopDriver:
         result = await _call_host(locator, query=query, screenshot=image)
         if not isinstance(result, Mapping) or not result:
             return {"ok": False, "reason": "not_found"}
+        normalized = self._normalize_local_result(result)
+        if not normalized:
+            return {"ok": False, "reason": "local_vlm_result_invalid"}
         return {
             "ok": True,
             "source": "local_vlm",
             "provenance": "local",
-            "element": self._normalize_local_result(result),
+            "element": normalized,
         }
 
     @staticmethod
