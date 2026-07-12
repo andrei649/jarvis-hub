@@ -108,6 +108,9 @@ class AutonomyCoordinator:
                     pol.agent_modes = dict(_am) if isinstance(_am, dict) else {}
                     pol.cap_per_action = float(self._orch.get_setting("autonomy.cap_per_action", 50.0) or 50.0)
                     pol.daily_ceiling = float(self._orch.get_setting("autonomy.daily_ceiling", 200.0) or 200.0)
+                    pol.earned_autonomy_enabled = self._orch.get_setting(
+                        "autonomy.earned_autonomy_enabled", False
+                    ) is True
                     bud = getattr(self._orch.autonomy, "budget", None)
                     if bud is not None:
                         bud.per_day = int(self._orch.get_setting("autonomy.interrupt_budget", 4) or 4)

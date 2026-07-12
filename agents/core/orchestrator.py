@@ -314,6 +314,9 @@ class Orchestrator:
             policy=AutonomyPolicy(
                 cap_per_action=float(_gv("autonomy", "cap_per_action", 50.0)),
                 daily_ceiling=float(_gv("autonomy", "daily_ceiling", 200.0)),
+                earned_autonomy_enabled=bool(
+                    _gv("autonomy", "earned_autonomy_enabled", False)
+                ),
             ),
             prefs=self.autonomy_prefs,
             budget=InterruptBudget(
