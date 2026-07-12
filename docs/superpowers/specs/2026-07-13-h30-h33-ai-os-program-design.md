@@ -31,7 +31,9 @@ Deliver four composable, governed subsystems rather than four silos:
   confirmation floor. They never earn silent autonomy.
 - `training/` and `rust/` stay frozen and owner-only.
 - Hardware/network integrations have hermetic simulators and honest disabled/degraded states.
-  Live-owner proof is additional evidence, never faked by a test double.
+  Hermetic proof may graduate code from the park policy only when it exercises the real execution
+  seam, kernel, and zero-bypass assertions. Owner-hardware proof remains a separate operational
+  gate and is never faked by a test double.
 
 ## Shared event boundary
 
@@ -61,12 +63,12 @@ H28 operator rail
           -> H30.4 actuation -> H30.7 reality
           -> H30.6 room-aware voice/media
       -> H31.1 privacy -> H31.2 Frigate -> H31.3 detection/rules
-          -> H31.4 index -> H31.5 retrieval -> H31.6 typed feed
-      -> H33.1 monitor core (consumes H30/H31 typed events)
+          -> H31.4 index -> H31.5 retrieval -> typed camera-event producer sink
+      -> H33.1 monitor core (consumes H30/H31 typed events) -> H31.6 integration complete
           -> H33.2 ladder/K3 -> H33.3 situation memory
           -> H33.4 reality -> H33.5 night metrics -> H33.6 surfaces
 
-H32.1 request plane -> H32.2 reuse -> H32.3 research -> H32.4 quarantine/test
+H32 isolation preflight -> H32.1 request plane -> H32.2 reuse -> H32.3 research -> H32.4 quarantine/test
   -> H32.5 approval/install + rollback floor -> H32.6 ledger -> H32.7 S2 proof
 ```
 
@@ -74,19 +76,31 @@ H32 is functionally independent of the physical-world chain, but begins only aft
 and H29 registry/reality changes merge to avoid touching the same ToolRPC, registry, snapshot,
 and orchestrator seams concurrently.
 
+The H32 isolation preflight must find a genuine Docker or WASM backend before implementation is
+allowed to claim an end-to-end acquisition proof. A mock exercises contracts but does not satisfy
+H32.4/H32.7 completion.
+
 ## H30 architecture
 
 - A dependency-lazy Home Assistant REST/WebSocket adapter normalizes entity/area/state events,
   redacts secrets, reconnects with bounded backoff, and emits typed `HouseEvent` values.
-- A house projection service owns the bi-temporal KG vocabulary and privacy lifecycle. It
-  prevents deleted occupant facts from being resurrected by replay.
+- A house projection service owns a private authenticated bi-temporal store for occupant,
+  presence, and privacy facts. Only non-sensitive room/device topology may be mirrored into the
+  generic KG. This prevents the existing generic KG reads from exposing personal house state and
+  prevents deleted occupant facts from being resurrected by history or replay.
 - Presence inference consumes allowlisted sensor evidence locally, records confidence and
   freshness, and refuses identity/room claims when evidence is ambiguous or stale.
-- A governed actuation broker maps narrow intent to allowlisted HA services. Reversible device
-  classes use normal kernel policy; security-sensitive classes require a short-lived,
-  scope-bound, single-use strong confirmation at execution time.
-- Room-aware voice carries authenticated satellite identity to a room mapping, then resolves the
-  H29 output device. It never accepts a caller-provided room as authority.
+- A governed actuation broker maps narrow intent to allowlisted HA services through one durable
+  lifecycle: request -> governed TaskQueue intake -> policy decision -> registered TaskExecutor
+  handler -> fresh state/confirmation -> Action API/kernel -> HA driver -> verification/rollback.
+  New or low-confidence reversible device actions remain blocked for approval; bounded
+  lights/climate actions may earn auto-approval only through H27.7 evidence. Security-sensitive
+  actions are always forced blocked and require a
+  server-minted, admin-confirmed, short-lived, scope-bound, single-use strong-confirmation
+  challenge consumed at execution time. No autonomous tool can mint or answer that challenge.
+- Room-aware voice carries a paired, replay-protected satellite identity across an authenticated
+  local transport to a server-owned room mapping, then resolves the H29 output device. It never
+  accepts a caller-provided room or configured-but-unverified satellite id as authority.
 
 ## H31 architecture
 
@@ -101,6 +115,9 @@ and orchestrator seams concurrently.
   structured events plus deterministic zone/line rules.
 - Retrieval searches normalized event metadata first, then returns consent-filtered evidence. It
   never searches raw video through an LLM.
+- A typed camera-event producer sink lands before integration. H31.6 closes only after the House
+  Brain consumes privacy-filtered anonymous occupancy/sensor state and H33.1 consumes the same
+  typed sink. Cameras never write house KG or ambient internals directly.
 
 ## H32 architecture
 
@@ -134,6 +151,9 @@ and orchestrator seams concurrently.
     exhaustion/quiet hours downgrade to `ask`, never drop or auto-act.
 - Quiet-hours and night-shift metrics count verified ambient results by rung; no-op work does not
   count as productive overnight work.
+- Existing observer/watchers are adapted into named digital monitors or explicitly disabled when
+  the ambient engine is enabled. They never run as a second task/push producer alongside an
+  equivalent H33 monitor.
 
 ## Program delivery strategy
 
@@ -161,4 +181,3 @@ The program is complete only when:
   ask/interrupt separation, taint containment, kill-switch, hard floors, and honest HUD/mobile
   transparency.
 - The full repository, frontend, and mobile suites pass after all merges.
-
