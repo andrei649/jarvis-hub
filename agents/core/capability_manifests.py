@@ -71,7 +71,7 @@ def _action(
         supports=supports,
         verification=f"action-auth:{kind}",
         rollback=rollback,
-        confidence=0.8,
+        confidence=0.0,
         implementation=implementation,
         action_kind=kind,
         contract_ref=contract_ref,
@@ -198,9 +198,11 @@ def plugin_capability_manifest(plugin: Any) -> CapabilityManifest:
     """Derive executable metadata without duplicating plugin network policy."""
     network = getattr(getattr(plugin, "network_access", None), "value", "none")
     data_scope = getattr(getattr(plugin, "data_scope", None), "value", "local_only")
-    enabled = bool(getattr(plugin, "enabled", True))
     plugin_id = str(getattr(plugin, "id", "")).strip()
-    risk = "sensitive" if network == "full" or data_scope == "transmitted" else "reversible"
+    # Network/data scope cannot prove an operation is read-only: a NONE/LAN plugin
+    # may still restart a service or actuate a device.  Stay conservative until a
+    # future native manifest explicitly earns a lower tier.
+    risk = "sensitive"
     domains = tuple(str(item) for item in (getattr(plugin, "allowed_domains", None) or ()))
     requires = ("plugin.enabled", f"network:{network}", f"data:{data_scope}") + tuple(
         f"domain:{domain}" for domain in domains
@@ -214,6 +216,6 @@ def plugin_capability_manifest(plugin: Any) -> CapabilityManifest:
         supports=("plugin-call", f"egress:{network}"),
         verification=f"reality-v1:plugin:{plugin_id}",
         rollback=f"disable plugin {plugin_id}",
-        confidence=0.7 if enabled else 0.0,
+        confidence=0.0,
         implementation=f"agents.core.plugin_gate:BUILTIN_PLUGINS[{plugin_id}]",
     )

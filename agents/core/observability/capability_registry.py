@@ -196,7 +196,7 @@ def _component_records(orch) -> list[CapabilityRecord]:
             supports=("readiness",),
             verification=f"reality-v1:component:{name}",
             rollback=f"disable component {name} and restart",
-            confidence=0.6 if s == "ok" else 0.0,
+            confidence=0.0,
             implementation=f"orchestrator.components:{name}",
             detail={"init_status": s},
         )
@@ -225,7 +225,7 @@ def _skill_records(orch) -> list[CapabilityRecord]:
                 supports=("skill.invoke",),
                 verification=f"reality-v1:skill:{name}",
                 rollback=f"disable skill {name}",
-                confidence=0.5 if getattr(sk, "module", None) is not None else 0.0,
+                confidence=0.0,
                 implementation=f"orchestrator.skills:{name}",
                 detail={"trusted": bool(getattr(sk, "trusted", False)), "agents": agents},
             )

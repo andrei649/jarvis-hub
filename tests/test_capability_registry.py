@@ -39,7 +39,7 @@ def test_plugins_and_actions_derive_statically_without_orch():
     assert weather.detail["network_access"]   # carries policy metadata for the board
     assert weather.description
     assert weather.inputs["type"] == "object"
-    assert weather.risk == "reversible"
+    assert weather.risk == "sensitive"
     assert weather.requires
     assert weather.supports
     assert weather.verification
@@ -61,6 +61,8 @@ def test_components_and_skills_derive_from_orch():
     assert recs["skill:loaded_skill"].state == cr.WIRED   # module loaded
     assert recs["skill:stub_skill"].state == cr.SEAM      # no module → stub
     assert recs["skill:loaded_skill"].owner_agent == "stark"
+    assert recs["component:arena"].confidence == 0.0
+    assert recs["skill:loaded_skill"].confidence == 0.0
 
 
 def test_nothing_is_verified_until_harness_lands():

@@ -9,7 +9,7 @@ from typing import Any
 
 from agents.core.capability_manifests import ACTION_CAPABILITY_MANIFESTS, CapabilityManifest
 from agents.core.env_config import env_flag
-from agents.core.kernel import Action, Capability, Verdict
+from agents.core.kernel import Action, Capability, Decision, Verdict, kernel_enabled
 
 UNIFIED_ACTION_ENV = "JARVIS_UNIFIED_ACTION_API"
 
@@ -59,15 +59,20 @@ class CapabilityActionAPI:
         self,
         capability_id: str,
         handler: Callable[[dict[str, Any], PerformContext], Any],
+    ) -> CapabilityActionAPI:
+        return self._bind(capability_id, handler, mediation="facade")
+
+    def _bind(
+        self,
+        capability_id: str,
+        handler: Callable[[dict[str, Any], PerformContext], Any],
         *,
-        mediation: str = "facade",
+        mediation: str,
     ) -> CapabilityActionAPI:
         if capability_id not in self._manifests:
             raise ValueError(f"unknown action capability: {capability_id}")
         if not callable(handler):
             raise TypeError("capability handler must be callable")
-        if mediation not in {"facade", "delegated"}:
-            raise ValueError(f"unsupported capability mediation: {mediation}")
         if mediation == "delegated":
             from agents.core.kernel.registry import Mediation, classify
 
@@ -80,20 +85,33 @@ class CapabilityActionAPI:
     def register_broker(
         self,
         capability_id: str,
+        broker: Any,
         handler: Callable[[dict[str, Any], PerformContext], Any],
     ) -> CapabilityActionAPI:
         """Bind a broker that already owns its kernel mediation point."""
-        return self.register(capability_id, handler, mediation="delegated")
+        self._validate_delegated_capability(capability_id)
+        if not callable(getattr(broker, "_kernel", None)):
+            raise ValueError("delegated broker must have a bound kernel")
+        if getattr(handler, "__self__", None) is not broker:
+            raise ValueError("delegated broker handler must be a bound method of that broker")
+        return self._bind(capability_id, handler, mediation="delegated")
 
     def register_tool_rpc(self, capability_id: str, server: Any) -> CapabilityActionAPI:
         """Bind ToolRPC's existing mediated handle path without authorizing twice."""
+        self._validate_delegated_capability(capability_id)
         if not callable(getattr(server, "handle", None)):
             raise TypeError("ToolRPC server must expose an async handle method")
+        if not callable(getattr(server, "_kernel", None)):
+            raise ValueError("delegated ToolRPC server must have a bound kernel")
 
         async def _handle(params: dict[str, Any], context: PerformContext) -> Any:
+            tool_name = str(params.get("tool", ""))
+            spec = next((item for item in server.tools() if item.get("name") == tool_name), None)
+            if spec is not None and not spec.get("gated"):
+                return {"ok": False, "reason": "capability_requires_gated_tool", "tool": tool_name}
             return await server.handle(params, actor=context.agent)
 
-        return self.register(capability_id, _handle, mediation="delegated")
+        return self._bind(capability_id, _handle, mediation="delegated")
 
     async def perform(
         self,
@@ -101,14 +119,18 @@ class CapabilityActionAPI:
         params: Mapping[str, Any],
         context: PerformContext | None = None,
     ) -> PerformResult:
-        context = context or PerformContext()
+        context = PerformContext() if context is None else context
         manifest = self._manifests.get(capability_id)
         action_kind = manifest.action_kind if manifest is not None and manifest.action_kind else ""
 
         if not env_flag(UNIFIED_ACTION_ENV):
             return PerformResult("disabled", capability_id, action_kind, "unified_action_api_disabled")
+        if not kernel_enabled():
+            return PerformResult("disabled", capability_id, action_kind, "action_kernel_disabled")
         if manifest is None:
             return PerformResult("refused", capability_id, reason="unknown_capability")
+        if not isinstance(context, PerformContext):
+            return PerformResult("refused", capability_id, action_kind, "invalid_context")
         if not isinstance(params, Mapping):
             return PerformResult("refused", capability_id, action_kind, "invalid_params")
         missing = self._missing_inputs(manifest, params)
@@ -119,6 +141,8 @@ class CapabilityActionAPI:
         binding = self._bindings.get(capability_id)
         if binding is None:
             return PerformResult("refused", capability_id, action_kind, "implementation_unbound")
+        if context.capability_name and context.capability_name != action_kind:
+            return PerformResult("refused", capability_id, action_kind, "capability_mismatch")
         if binding.mediation == "delegated":
             return await self._invoke(binding, capability_id, action_kind, dict(params), context)
         if self._authorizer is None:
@@ -135,11 +159,16 @@ class CapabilityActionAPI:
         )
         capability = Capability(
             token_id=context.capability_token,
-            name=context.capability_name or action_kind,
+            name=action_kind,
         )
-        decision = self._authorizer(action, capability=capability)
-        if inspect.isawaitable(decision):
-            decision = await decision
+        try:
+            decision = self._authorizer(action, capability=capability)
+            if inspect.isawaitable(decision):
+                decision = await decision
+        except Exception:
+            return PerformResult("refused", capability_id, action_kind, "kernel_error")
+        if not isinstance(decision, Decision):
+            return PerformResult("refused", capability_id, action_kind, "kernel_error")
         if decision.verdict is Verdict.DENY:
             return PerformResult(
                 "refused", capability_id, action_kind, decision.reason, decision.tier, decision.card
@@ -163,6 +192,15 @@ class CapabilityActionAPI:
     def _missing_inputs(manifest: CapabilityManifest, params: Mapping[str, Any]) -> list[str]:
         required = manifest.inputs.get("required", ())
         return sorted(str(key) for key in required if key not in params)
+
+    def _validate_delegated_capability(self, capability_id: str) -> None:
+        manifest = self._manifests.get(capability_id)
+        if manifest is None:
+            raise ValueError(f"unknown action capability: {capability_id}")
+        from agents.core.kernel.registry import Mediation, classify
+
+        if classify(manifest.action_kind or "") is not Mediation.KERNEL:
+            raise ValueError("delegated capability must already be kernel-mediated")
 
     @staticmethod
     async def _invoke(
@@ -188,6 +226,14 @@ class CapabilityActionAPI:
         if isinstance(output, Mapping) and output.get("reason") == "kernel_denied":
             return PerformResult(
                 "refused", capability_id, action_kind, "kernel_denied", tier, output=output
+            )
+        if isinstance(output, Mapping) and output.get("reason") == "capability_requires_gated_tool":
+            return PerformResult(
+                "refused",
+                capability_id,
+                action_kind,
+                "capability_requires_gated_tool",
+                tier,
             )
         return PerformResult(
             "completed", capability_id, action_kind, reason, tier, output=output

@@ -66,7 +66,7 @@ def test_every_action_manifest_is_complete_and_kernel_grounded(kind):
     assert manifest.supports
     assert manifest.verification == f"action-auth:{kind}"
     assert manifest.rollback
-    assert 0.0 <= manifest.confidence <= 1.0
+    assert manifest.confidence == 0.0  # H27.7 earns this from real outcomes
     assert ":" in manifest.implementation
 
 
@@ -93,13 +93,14 @@ def test_every_governed_plugin_derives_complete_v1_metadata():
         assert "plugin-call" in manifest.supports
         assert manifest.verification == f"reality-v1:plugin:{plugin.id}"
         assert plugin.id in manifest.rollback
-        assert 0.0 <= manifest.confidence <= 1.0
+        assert manifest.confidence == 0.0  # no fabricated trust before H27.7
         assert manifest.implementation.startswith("agents.core.plugin_gate:")
 
 
 def test_plugin_defaults_are_conservative_for_transmitted_and_disabled_plugins():
     cloud = BUILTIN_PLUGINS["cloud-llm"]
     assert plugin_capability_manifest(cloud).risk == "sensitive"
+    assert plugin_capability_manifest(BUILTIN_PLUGINS["system-control"]).risk == "sensitive"
 
     disabled = replace(BUILTIN_PLUGINS["weather"], enabled=False)
     assert plugin_capability_manifest(disabled).confidence == 0.0

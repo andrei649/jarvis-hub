@@ -45,9 +45,10 @@ curated `ACTION_CAPABILITY_MANIFESTS` mapping. Each manifest carries:
 Action manifests are explicit because their risk and rollback stories are product
 decisions. Plugin capability metadata is derived from the existing
 `plugin_gate.PluginManifest`; network and data-scope policy remains single-sourced.
-The derivation is deterministic and conservative: transmitted/full-network plugins
-receive a higher risk label than local/LAN plugins, disabled plugins have zero
-confidence, and every plugin rollback is disablement.
+The derivation is deterministic and conservative: every plugin defaults to
+`sensitive` because network/data scope alone cannot prove read-only behavior,
+all records start at zero confidence until H27.7 earns it from outcomes, and every
+plugin rollback is disablement.
 
 ### 2. Registry v1
 
@@ -75,8 +76,13 @@ Add `agents/core/capability_actions.py`:
   both bypasses and double authorization.
 - `register_broker()` and `register_tool_rpc()` are narrow convenience adapters over
   the same registration primitive.
-- `JARVIS_UNIFIED_ACTION_API=1` is required. With the flag absent, `perform()` returns
-  `disabled` and invokes neither kernel nor handler.
+- `JARVIS_UNIFIED_ACTION_API=1` and the existing `JARVIS_ACTION_KERNEL=1` are both
+  required. With either flag absent, `perform()` returns `disabled` and invokes
+  neither kernel nor handler.
+- Capability-token names are bound to the manifest action kind; a caller cannot
+  relabel a payment token check as a weaker capability.
+- Broker delegation requires a method bound to the same broker instance that owns
+  the kernel hook. ToolRPC delegation accepts gated tools only.
 
 The facade accepts dependencies by injection. It does not import the orchestrator or
 construct global brokers, which keeps tests hermetic and prevents a second lifecycle.
@@ -95,8 +101,9 @@ construct global brokers, which keeps tests hermetic and prevents a second lifec
 
 ## Error and safety contract
 
-- Unknown capability, missing handler, malformed params, missing required inputs, and
-  invalid delegation fail closed without invocation.
+- Unknown capability, missing handler, malformed params, missing required inputs,
+  invalid delegation, an unbound broker method, and a non-gated ToolRPC tool fail
+  closed without invocation.
 - Disabled mode is distinguishable from denial.
 - Kernel decision reason and tier may be returned; handler exception text is not.
 - Confidence is descriptive in this wave and cannot lower an approval tier.
