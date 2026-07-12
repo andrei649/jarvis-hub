@@ -1712,11 +1712,21 @@ async def test_autonomy_coordinator_wires_one_live_governed_agent_tool_runtime()
     intent_log = object()
     action_kernel = object()
 
+    class _Queue:
+        def __init__(self):
+            self.calls = []
+
+        def enqueue(self, *args, **kwargs):
+            self.calls.append((args, kwargs))
+            return 41
+
     class _Orchestrator:
         def __init__(self):
             self.agents = agents
             self.secret_broker = secret_broker
             self.intent_log = intent_log
+            self.autonomy = None
+            self.autonomy_queue = _Queue()
 
         def get_setting(self, key, default=None):
             return settings.get(key, default)
@@ -1733,6 +1743,35 @@ async def test_autonomy_coordinator_wires_one_live_governed_agent_tool_runtime()
     assert orch.tool_rpc._audit is intent_log
     assert orch.tool_rpc._kernel is action_kernel
     assert orch.tool_rpc.tools() == [
+        {
+            "name": "desktop_run",
+            "gated": True,
+            "description": "Propose bounded governed desktop steps for approval.",
+            "input_schema": {
+                "type": "object",
+                "properties": {
+                    "steps": {
+                        "type": "array",
+                        "maxItems": 100,
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "action": {"type": "string", "maxLength": 64},
+                                "args": {
+                                    "type": "object",
+                                    "maxProperties": 32,
+                                    "additionalProperties": True,
+                                },
+                            },
+                            "required": ["action"],
+                            "additionalProperties": False,
+                        },
+                    }
+                },
+                "required": ["steps"],
+                "additionalProperties": False,
+            },
+        },
         {
             "name": "echo",
             "gated": False,
@@ -1768,6 +1807,25 @@ async def test_autonomy_coordinator_wires_one_live_governed_agent_tool_runtime()
     time_result = await orch.tool_rpc.handle({"tool": "time", "args": {}})
     assert time_result["ok"] is True
     assert isinstance(time_result["result"]["now"], float)
+
+    proposal = await orch.tool_rpc.handle(
+        {"tool": "desktop_run", "args": {"steps": [{"action": "observe", "args": {}}]}},
+        actor="jarvis",
+    )
+    assert proposal == {
+        "ok": False,
+        "reason": "approval_required",
+        "tool": "desktop_run",
+        "task_id": 41,
+    }
+    assert len(orch.autonomy_queue.calls) == 1
+    queued_args, queued_kwargs = orch.autonomy_queue.calls[0]
+    assert queued_args[:2] == ("jarvis", "toolrpc.desktop_run")
+    assert queued_kwargs["payload"] == {
+        "tool": "desktop_run",
+        "args": {"steps": [{"action": "observe", "args": {}}]},
+        "target": "desktop_run",
+    }
 
     backend = _ToolCapableBackend()
     assert runtime.can_run(backend) is False

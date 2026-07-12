@@ -118,8 +118,8 @@ class GovernedDesktop:
         self._action_executor = action_executor
 
     @staticmethod
-    def is_mutating(action: str) -> bool:
-        return (action or "").lower() not in _READ_ONLY
+    def is_mutating(action: Any) -> bool:
+        return not isinstance(action, str) or action.lower() not in _READ_ONLY
 
     def classify_injection(self, screenshot_text: str) -> bool:
         return bool(_detect_injection(screenshot_text or ""))
@@ -142,6 +142,13 @@ class GovernedDesktop:
         for s in steps or []:
             action = s.get("action", "")
             args = s.get("args", {})
+            if not isinstance(action, str) or not action.strip():
+                ran.append({
+                    "action": action,
+                    "status": "failed",
+                    "reason": "invalid_action",
+                })
+                continue
             if self.is_mutating(action):
                 contract_payload = {
                     "kind": f"desktop.{action}",
@@ -186,26 +193,48 @@ class GovernedDesktop:
                     logger.warning("desktop action executor failed")
                     ran.append({
                         "action": action,
-                        "status": "blocked",
+                        "status": "failed",
                         "reason": "kernel_error",
                     })
                     continue
                 if not isinstance(outcome, PerformResult):
                     ran.append({
                         "action": action,
-                        "status": "blocked",
+                        "status": "failed",
                         "reason": "kernel_error",
                     })
                     continue
                 if outcome.status != "completed":
+                    if outcome.status == "queued":
+                        status = "queued"
+                        fallback_reason = "approval_required"
+                    elif outcome.status == "failed":
+                        status = "failed"
+                        fallback_reason = "kernel_error"
+                    elif outcome.status in {"disabled", "refused"}:
+                        status = "blocked"
+                        fallback_reason = "kernel_refused"
+                    else:
+                        status = "failed"
+                        fallback_reason = "kernel_error"
                     ran.append({
                         "action": action,
-                        "status": "blocked",
-                        "reason": outcome.reason or "kernel_refused",
+                        "status": status,
+                        "reason": outcome.reason or fallback_reason,
                     })
                     continue
                 res = outcome.output
+                if not isinstance(res, Mapping) or res.get("ok") is not True:
+                    reason = res.get("reason") if isinstance(res, Mapping) else None
+                    if not isinstance(reason, str) or not reason:
+                        reason = "invalid_result"
+                    ran.append({
+                        "action": action,
+                        "status": "failed",
+                        "reason": reason,
+                    })
+                    continue
             else:
                 res = await self._driver.perform(action, args)
             ran.append({"action": action, "status": "ran", "result": res})
-        return {"ok": True, "ran": ran}
+        return {"ok": all(item.get("status") == "ran" for item in ran), "ran": ran}

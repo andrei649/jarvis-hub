@@ -166,6 +166,11 @@ present, restore; default-off behind `JARVIS_MEDIA_DIRECTOR`) has **no HUD panel
 Console *Media* panel (device list + session board + a governed present form) is the punch-list
 item; the parity gate classifies the routes `NOT_IN_HUD` until it lands.
 
+**H28.4 desktop actuation (2026-07-13):** `POST /api/desktop/run` is user-guarded and
+default-off behind the isolated-host double opt-in. The Build surface still needs a dedicated
+Operator control that distinguishes proposed, queued, blocked, failed, and executed steps;
+until then the endpoint remains an explicit HUD depth punch-list item rather than a partial UI.
+
 ---
 *Parity gate (`tests/test_hud_v2_parity.py`) tracks all routes → every one is mapped to a v2
 surface or `NOT_IN_HUD`, so nothing above can silently disappear — these items are about depth, not

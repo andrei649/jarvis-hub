@@ -256,6 +256,7 @@
  "POST /api/creative/export-packs": "user",
  "POST /api/creative/plan": "user",
  "POST /api/desktop/preview": "user",
+ "POST /api/desktop/run": "user",
  "POST /api/digest/run": "user",
  "POST /api/eval/datasets/run": "user",
  "POST /api/feedback": "user",

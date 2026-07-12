@@ -198,6 +198,46 @@ class AutonomyCoordinator:
         async def _rpc_time(args):
             return {"now": _t.time()}
 
+        async def _rpc_desktop_run(args):
+            """Describe the approved proposal; host execution belongs to the route."""
+            steps = args.get("steps", []) if isinstance(args, dict) else []
+            return {
+                "proposal": "desktop_run",
+                "steps": list(steps[:100]) if isinstance(steps, list) else [],
+                "executed": False,
+            }
+
+        server.register_tool(
+            "desktop_run",
+            _rpc_desktop_run,
+            gated=True,
+            description="Propose bounded governed desktop steps for approval.",
+            input_schema={
+                "type": "object",
+                "properties": {
+                    "steps": {
+                        "type": "array",
+                        "maxItems": 100,
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "action": {"type": "string", "maxLength": 64},
+                                "args": {
+                                    "type": "object",
+                                    "maxProperties": 32,
+                                    "additionalProperties": True,
+                                },
+                            },
+                            "required": ["action"],
+                            "additionalProperties": False,
+                        },
+                    }
+                },
+                "required": ["steps"],
+                "additionalProperties": False,
+            },
+        )
+
         server.register_tool(
             "echo",
             _rpc_echo,
