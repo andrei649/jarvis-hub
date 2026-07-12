@@ -173,6 +173,13 @@ def test_json_test_count_parser_accepts_vitest_and_jest_key_order():
     assert status_sync.parse_json_test_count(jest) == 55
 
 
+def test_reuse_js_counts_is_explicit_and_reads_tracked_status_only():
+    existing = {"tests": {"frontend": 208, "mobile": 55}}
+    assert status_sync.js_test_counts(reuse=True, existing=existing) == (208, 55)
+    with pytest.raises(RuntimeError):
+        status_sync.js_test_counts(reuse=True, existing={})
+
+
 def test_update_message_is_safe_on_default_windows_console():
     message = status_sync.format_update_message(
         {"tests": {"backend": 1, "frontend": 2, "mobile": 3}, "routes": 4, "active_agents": 5}

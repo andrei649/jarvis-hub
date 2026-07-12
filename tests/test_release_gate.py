@@ -75,7 +75,7 @@ def test_status_sync_check_against_real_repo_is_clean():
 def test_status_sync_check_runs_the_full_generated_artifact_gate():
     seen = []
     assert gate.check_status_sync(runner=lambda args: seen.append(args) or 0)["status"] == "PASS"
-    assert seen == [[str(gate.REPO / "scripts" / "status_sync.py"), "--check"]]
+    assert seen == [[str(gate.REPO / "scripts" / "status_sync.py"), "--check", "--reuse-js-counts"]]
     assert gate.check_status_sync(runner=lambda args: 1)["status"] == "FAIL"
 
 

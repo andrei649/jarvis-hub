@@ -140,6 +140,22 @@ def count_mobile_tests(repo: Path = REPO) -> int:
     return _json_test_count(repo / "mobile", ["--runInBand", "--json"])
 
 
+def js_test_counts(*, reuse: bool, existing: dict | None = None) -> tuple[int, int]:
+    """Run JS suites, or explicitly reuse their tracked counts in Python-only CI jobs."""
+    if not reuse:
+        return count_frontend_tests(), count_mobile_tests()
+    if existing is None:
+        try:
+            existing = json.loads(PROJECT_STATUS.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            existing = {}
+    tests = existing.get("tests", {}) if isinstance(existing, dict) else {}
+    frontend, mobile = tests.get("frontend"), tests.get("mobile")
+    if not isinstance(frontend, int) or not isinstance(mobile, int):
+        raise RuntimeError("tracked project status has no reusable frontend/mobile counts")
+    return frontend, mobile
+
+
 def count_active_agents(registry: dict) -> int:
     agents = registry.get("agents", {}) if isinstance(registry, dict) else {}
     return sum(
@@ -293,12 +309,13 @@ def latest_ci_commit(*, env=None, runner=None) -> str:
     return proc.stdout.strip() if proc.returncode == 0 else "unknown"
 
 
-def collect_project_status() -> dict:
+def collect_project_status(*, reuse_js_counts: bool = False) -> dict:
+    frontend_tests, mobile_tests = js_test_counts(reuse=reuse_js_counts)
     return build_project_status(
         version=_version(),
         backend_tests=count_tests(),
-        frontend_tests=count_frontend_tests(),
-        mobile_tests=count_mobile_tests(),
+        frontend_tests=frontend_tests,
+        mobile_tests=mobile_tests,
         routes=count_routes(),
         registry=load_registry(),
         backlog_text=BACKLOG.read_text(encoding="utf-8"),
@@ -358,8 +375,13 @@ def current_counts(text: str) -> dict:
 def main(argv: list[str]) -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--check", action="store_true")
+    parser.add_argument(
+        "--reuse-js-counts",
+        action="store_true",
+        help="reuse tracked frontend/mobile counts (for Python-only CI jobs)",
+    )
     args = parser.parse_args(argv)
-    status = collect_project_status()
+    status = collect_project_status(reuse_js_counts=args.reuse_js_counts)
     expected_json = json.dumps(status, ensure_ascii=False, indent=2, sort_keys=True) + "\n"
     try:
         expected_docs = _expected_docs(status)

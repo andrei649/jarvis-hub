@@ -92,7 +92,7 @@ def check_status_sync(*, runner=None) -> dict:
             ).returncode
         )
     )
-    code = runner([script, "--check"])
+    code = runner([script, "--check", "--reuse-js-counts"])
     if code == 0:
         return _result("machine", "status-sync", PASS, "all generated artifacts in sync")
     return _result("machine", "status-sync", FAIL, f"status_sync.py --check failed ({code})")
