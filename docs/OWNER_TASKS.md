@@ -4,6 +4,9 @@
 > layer (**H23** in [BACKLOG.md](../BACKLOG.md#version-roadmap)) plus real design-partner users; this file is
 > the **owner lane** running alongside it — the human-gated bits (real hardware, GitHub settings, legal,
 > decisions) that only Andrei can do. Ordered queue. Created 2026-06-10 · check items off as you go.
+> *2026-07-11: the 1.0 **tag** now additionally requires the AI-OS capability program
+> ([NERVA_VISION.md](../NERVA_VISION.md), ORIZONT 27–33); the owner gates below are unchanged and
+> remain the critical path.*
 
 ## 🔴 Owner gates that block tagging a release (and ultimately 1.0)
 
@@ -89,6 +92,12 @@
     (BFG/filter-repo + force-push) — disruptive, and forks/caches may retain copies anyway.
 
 ## Parking lot (decisions, no rush)
+
+- [ ] **The jarvis-hub → Nerva rename** — Nerva is now the product brand across the canonical docs
+  ([NERVA_VISION.md](../NERVA_VISION.md) §2, decision 2026-07-12); the *deliberate* rename of the
+  repository, packages, install scripts and public pages is owner-gated: pick the moment (likely
+  alongside the license flip / pre-1.0 launch), reserve names (GitHub repo, domain, PyPI-style
+  package ids), then have an agent prepare the mechanical rename PR.
 
 - [ ] **After the manual-test pass:** green-light **CLN-2/CLN-3** (the big `orchestrator.py` /
   `web.py` split) — deliberately sequenced post-1.0 (your call, 2026-06-10) so a refactor

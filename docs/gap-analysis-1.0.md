@@ -2,6 +2,10 @@
 
 > Ce lipsește între v0.5-beta și un produs bun de promovat online.
 >
+> **Scope note (2026-07-11):** acest document analizează jumătatea **proof track** a gate-ului 1.0;
+> gap-urile programului de capabilități AI-OS (cei 6 piloni, ORIZONT 27–33) sunt în
+> [NERVA_VISION.md](../NERVA_VISION.md) §4.
+>
 > **Actualizat 2026-06-21:** toate orizonturile de features sunt livrate = **v0.10.0**. **1.0 NU mai e "tot
 > backlogul terminat"** — e *productionizare* (**H23**) + validare cu useri reali (design partners). Sursa de
 > adevăr pentru plan e linia de versiuni din [BACKLOG.md](../BACKLOG.md#version-roadmap) + [MOONSHOT.md](../MOONSHOT.md) §4.

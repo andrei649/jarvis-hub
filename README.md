@@ -7,7 +7,7 @@
 
 > 17 specialized AI agents orchestrated through Jarvis, running on **your own hardware**, controlled by voice and web.
 
-**A local-first, _governed_ personal AI — the always-on agent the 2026 "OpenClaw" wave proved people want, with the governance, audit, and privacy it's missing.** Runs entirely on your own hardware (LM Studio / Ollama on your GPU) — **$0/month, no cloud by default**. Every autonomous action passes through a reversible/irreversible **approval queue** and a tamper-evident **audit log**, with full observability — and a **family agent that never touches the internet**.
+**A private AI OS that cannot silently act beyond the authority you grant it.** Local-first and governed: every autonomous action crosses one **Action Kernel** — a reversible/irreversible **approval queue** for anything consequential, a tamper-evident **audit log**, budgets and a kill-switch — and it runs entirely on your own hardware (LM Studio / Ollama on your GPU), **$0/month, no cloud by default**, with a **family agent that never touches the internet**. Where other local agent systems prioritize extensibility and raw autonomy, this system prioritizes governed execution, local ownership, and inspectability. The product it is becoming is **Nerva** (published by Digitaholic; `jarvis-hub` remains the repo codename until the deliberate rename) — the long-term product & capability vision (house brain, media director, cameras, computer operator, self-extension) is in [`NERVA_VISION.md`](NERVA_VISION.md).
 
 **Get running in minutes →** [Quickstart](#run) · one-click `INSTALL.bat` on Windows.
 
@@ -23,7 +23,7 @@ A personal AI mesh that handles the cross-section of *your* life: the day job an
 
 ## Architecture
 
-**Pure local Python + opt-in plugin layer.** *Not* OpenClaw — deliberately: where the viral 2026 rival stores secrets in plaintext and runs ungoverned community skills (which made it the #1 infostealer target of 2026), here every action is gated by a reversible/irreversible approval queue, guardrails, and an audit log. No cloud dependency by default. Every third-party service is an explicit, scope-limited, audit-able, disable-able plugin.
+**Pure local Python + opt-in plugin layer.** *Not* OpenClaw — deliberately: where the viral 2026 rival stores secrets in plaintext and runs ungoverned community skills (widely reported in 2026 as a major infostealer target — analysis: [`docs/research/2026-06-02-personal-ai-competitors.md`](docs/research/2026-06-02-personal-ai-competitors.md)), here every action is gated by a reversible/irreversible approval queue, guardrails, and an audit log. No cloud dependency by default. Every third-party service is an explicit, scope-limited, audit-able, disable-able plugin.
 
 ## The cabinet
 
@@ -114,7 +114,7 @@ The **Jarvis Signal Layer** is the provider-neutral situational-awareness API at
 python3 -m venv .venv && source .venv/bin/activate   # Windows: .venv\Scripts\activate
 pip install -r requirements-beta.txt                 # one install — full feature set
 python serve.py              # → http://127.0.0.1:8080
-python -m pytest             # ~3,848 passed, 6 skipped
+python -m pytest             # full offline suite — current count auto-synced in STATUS.md
 ```
 
 _Linux/macOS shortcut:_ `./install.sh` does all of the above (venv + install + tests); `./start.sh` launches the server, WorldView when available, and the Signal Layer unless disabled.
@@ -128,6 +128,7 @@ _Linux/macOS shortcut:_ `./install.sh` does all of the above (venv + install + t
 ## Docs
 
 - **`MOONSHOT.md`** — the north star: vision, principles, phase gates, and how the project stays on track. Read this first for the *why* and *where we're going*.
+- **`NERVA_VISION.md`** — the Nerva product & capability vision: the brand architecture (Cortex/Atlas/Synapse/Vision/Ultron), the six pillars (perception, communication, action, house, media, capability evolution), the target architecture, the capability registry, graduated autonomy, and the measurable "superior to Hermes" bar.
 - **`docs/ARCHITECTURE.md`** — AI-navigable map of the codebase (entry points, request lifecycle, module index, how-to recipes). Start here to find where things live.
 - **`docs/AI_CONTEXT.md`** — context-loading map for large-context AI (what to load, in which order, per-task bundles with token estimates).
 - **`docs/OWNER_TASKS.md`** — the human-gated queue: everything only the owner can do (hardware runs, GitHub settings, decisions).
@@ -143,19 +144,23 @@ _Linux/macOS shortcut:_ `./install.sh` does all of the above (venv + install + t
 
 ## Status
 
-**v0.11.0 — feature-complete + refactor done, productionizing toward 1.0** (the version line is the roadmap — see [BACKLOG.md](BACKLOG.md#version-roadmap); 1.0 ships when the productionization layer is done **and** real design-partner users prove it). 17 specialist agents (incl. **Argus** for WorldView geoint and **Howard**, the emerging digital twin; + 17 bench) across 4 tiers; real-embeddings recall (LM Studio) + fused recall +
+**v0.11.0 — feature-complete + refactor done, building toward the expanded 1.0** (the version line is the roadmap — see [BACKLOG.md](BACKLOG.md#version-roadmap); **1.0 = the proof track** — productionization + real design-partner users — **plus the AI-OS capability program**, [`NERVA_VISION.md`](NERVA_VISION.md)). 17 specialist agents (incl. **Argus** for WorldView geoint and **Howard**, the emerging digital twin; + 17 bench) across 4 tiers; real-embeddings recall (LM Studio) + fused recall +
 RAG injection; hot-path perf (SQLite WAL, event-loop offload, checkpoint debounce, query-embedding
 cache, complexity-based model tiering); autonomous proactive cortex (ORIZONT 6); security wedge (encrypted
 secrets, signed skills, reversible/irreversible approval split, quarantine/capability/kill-switch); competitive edge
 (workflow engine, model arena, quality monitor, review queue); living memory (bi-temporal KG, decay-forgetting,
-sleep-time consolidation). **~3,848 tests passing** (+183 frontend JS tests).
+sleep-time consolidation). **Full offline test suite green** — current counts auto-synced in [STATUS.md](STATUS.md) (+ frontend JS tests).
 
-**Road to v1.0:** the v1.0 backlog (H1–H17) is **code-complete at 194/196 items (≈99% by story points)** —
+**Road to v1.0:** the original feature backlog (H1–H17) is **code-complete at 194/196 items (≈99% by story points)** —
 the only two open items (H12.14 fine-tuned agentic model, H13.3 speculative decoding) need the GPU host
-(runbook: `docs/GPU_RUNBOOK.md`). What stands between `0.10.0` and the `1.0.0` tag is the **productionization
-layer** (H23: agentic-safety budgets, DB migrations, backup/restore + export-delete, operability, quality +
-user docs — see the [version roadmap](BACKLOG.md#version-roadmap)) **and** proving it with real design-partner
-users; manual testing ([`docs/MANUAL_TESTING.md`](docs/MANUAL_TESTING.md)) + code audit
+(runbook: `docs/GPU_RUNBOOK.md`). What stands between `0.11.0` and the `1.0.0` tag is now two-fold:
+**(a) the proof track** — the **productionization layer** (H23: agentic-safety budgets, DB migrations,
+backup/restore + export-delete, operability, quality + user docs — see the
+[version roadmap](BACKLOG.md#version-roadmap)) proven with real design-partner users — **and (b) the
+AI-OS capability program** (ORIZONT 27–33: capability registry, computer/browser operator, media
+director, house brain, cameras, capability acquisition, ambient intelligence —
+[`NERVA_VISION.md`](NERVA_VISION.md), gate expanded 2026-07-11); manual testing
+([`docs/MANUAL_TESTING.md`](docs/MANUAL_TESTING.md)) + code audit
 ([`docs/AUDIT.md`](docs/AUDIT.md)) are the release step that tags a version. The HUD V2 cockpit is the default UI;
 deep write-controls for ~37 newer backend surfaces are tracked in
 [`docs/design/HUD_V2_REMAINING.md`](docs/design/HUD_V2_REMAINING.md). See

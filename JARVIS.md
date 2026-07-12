@@ -206,8 +206,8 @@ curl.exe http://127.0.0.1:8080/status
 - 7 ported features from OpenJarvis (security, skills, sandbox, multi-channel, bench, learning, streaming)
 - VRAM: ~17 GB used by primary model, ~7 GB free
 - Response time: ~4-5s per query (fast slot); deep slot trades latency for reasoning depth
-- **Tests: ~3,848 passed, 6 skipped** (offline suite) + 183 frontend JS tests
-- Version: **v0.10.0** — every feature horizon (H1–H22 + WorldView O19) delivered; now productionizing toward 1.0 (H23 — see [BACKLOG.md](BACKLOG.md#version-roadmap)). 1.0 = all dev done + real design-partner users.
+- **Tests: full offline suite green** — current count auto-synced in [STATUS.md](STATUS.md) (+ frontend JS tests)
+- Version: **v0.11.0** — every feature horizon (H1–H22 + WorldView O19) delivered + the CLN refactor; now building toward the expanded 1.0 (see [BACKLOG.md](BACKLOG.md#version-roadmap)). **1.0 = the proof track (H23 + real design-partner users) + the AI-OS capability program ([NERVA_VISION.md](NERVA_VISION.md), ORIZONT 27–33).**
 
 ---
 

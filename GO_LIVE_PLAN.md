@@ -1,8 +1,14 @@
 # Jarvis Hub — Go-Live Plan
 
-> Generated: 2026-06-02 · Updated: 2026-06-21 · Current: **v0.10.0** (feature-complete) · Target: **v1.0.0 = productionized (H23) + proven by real design partners** ([version roadmap](BACKLOG.md#version-roadmap)) · Owner: Andrei
+> Generated: 2026-06-02 · Updated: 2026-07-11 · Current: **v0.11.0** (feature-complete + refactor done) · Target: **v1.0.0 = the proof track (H23 + design partners) + the AI-OS capability program** ([NERVA_VISION.md](NERVA_VISION.md) · [version roadmap](BACKLOG.md#version-roadmap)) · Owner: Andrei
 > North star (vision & phase gates): [MOONSHOT.md](MOONSHOT.md)
 > Source of truth for backlog: [BACKLOG.md](BACKLOG.md)
+>
+> **2026-07-11 — the 1.0 gate expanded (owner decision):** this plan's launch checklist remains the
+> **proof track** half of 1.0 and is unchanged; the second half — the AI-OS capability program
+> (capability registry, operators, media director, house brain, cameras, acquisition, ambient) —
+> lives in [NERVA_VISION.md](NERVA_VISION.md) + BACKLOG ORIZONT 27–33. The feature inventory below
+> is a snapshot — when it disagrees with BACKLOG, BACKLOG wins.
 
 ---
 
@@ -310,17 +316,17 @@ LM Studio + Ollama on local GPU. Zero API cost for 99% of tasks. Athena escalate
 |--------|-------|
 | Active agents | 17 (+ 17 bench) |
 | Channels | 7 (web, voice, Telegram, Discord, Slack, email, sandbox) |
-| Tests passing | ~2,400 (+ 184 frontend JS) |
-| API endpoints | ~299 |
+| Tests passing | see [STATUS.md](STATUS.md) (auto-synced) |
+| API endpoints | see [STATUS.md](STATUS.md) (auto-synced) |
 | Monthly cost | $0 |
 | SQLite speedup | 36× |
-| Story points delivered | 1,104 / 1,119 total (99%) — v1.0 = full backlog |
+| Story points delivered | 1,104 / 1,119 total (99%) of the original feature backlog — the 1.0 gate is now two-part, see header |
 
 ---
 
 ### v1.0 Launch Checklist
 
-> We are at **v0.10.0** — every feature horizon is delivered. v1.0 = the **productionization layer (H23)** done **and** the system proven by 3–5 real design partners. The version line in [BACKLOG.md](BACKLOG.md#version-roadmap) is the plan.
+> We are at **v0.11.0** — every feature horizon is delivered. This checklist is the **proof track**: the **productionization layer (H23)** done **and** the system proven by real design partners. Since 2026-07-11 the 1.0 tag additionally requires the **AI-OS capability program** ([NERVA_VISION.md](NERVA_VISION.md), ORIZONT 27–33). The version line in [BACKLOG.md](BACKLOG.md#version-roadmap) is the plan.
 
 | Item | Priority | SP | Status |
 |------|----------|----|--------|
