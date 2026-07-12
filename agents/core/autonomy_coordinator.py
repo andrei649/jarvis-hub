@@ -169,6 +169,7 @@ class AutonomyCoordinator:
         import time as _t
 
         from .agent_runtime import AgentToolRuntime
+        from .observability import capability_registry
         from .tool_rpc import ToolRPCServer
 
         def _get_setting(key, default):
@@ -221,6 +222,10 @@ class AutonomyCoordinator:
         runtime = AgentToolRuntime(
             server,
             enabled=lambda: _get_setting("llm.tool_loop_enabled", False) is True,
+            registry_enabled=lambda: _get_setting(
+                "llm.registry_planning_enabled", False
+            ) is True,
+            capability_snapshot=lambda: capability_registry.snapshot(self._orch),
             max_iterations=lambda: _get_setting("llm.tool_loop_max_iterations", 8),
         )
         self._orch.tool_rpc = server

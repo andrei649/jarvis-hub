@@ -28,6 +28,9 @@ _MAX_TOOL_CALLS_PER_TURN = MAX_PARSED_TOOL_CALLS - 1
 _EVENT_IDENTITY_BYTES = 256
 _EVENT_TIMEOUT_SECONDS = 0.1
 _MAX_JSON_DEPTH = 64
+_NO_CAPABILITY_REPLY = (
+    "I can't use tools for this request because no live registered capability matches."
+)
 
 
 class _OwnedTimeout(Exception):
@@ -46,6 +49,8 @@ class AgentToolRuntime:
         server: ToolRPCServer,
         *,
         enabled: Callable[[], bool] = lambda: False,
+        registry_enabled: Callable[[], bool] = lambda: False,
+        capability_snapshot: Callable[[], dict] = lambda: {"capabilities": []},
         max_iterations: Callable[[], int] = lambda: 8,
         max_tool_calls_per_turn: int = 8,
         max_result_bytes: int = 50_000,
@@ -54,6 +59,8 @@ class AgentToolRuntime:
     ) -> None:
         self._server = server
         self._enabled = enabled
+        self._registry_enabled = registry_enabled
+        self._capability_snapshot = capability_snapshot
         self._max_iterations = max_iterations
         self._max_tool_calls_per_turn = min(
             _MAX_TOOL_CALLS_PER_TURN,
@@ -125,7 +132,12 @@ class AgentToolRuntime:
         temperature: float,
         event_sink: ToolEventSink | None,
     ) -> str:
+        registry_mode = self._registry_mode()
         metadata = self._server.tools()
+        if registry_mode:
+            metadata = self._registry_metadata(metadata)
+            if not metadata:
+                return _NO_CAPABILITY_REPLY
         tools = [
             ToolSpec(
                 name=tool["name"],
@@ -216,6 +228,7 @@ class AgentToolRuntime:
                 call,
                 overflow=index >= self._max_tool_calls_per_turn,
                 gated=gated_tools.get(call.name, False),
+                offered=call.name in gated_tools,
                 approval_lock=approval_lock,
                 approval_state=approval_state,
                 agent_id=agent_id,
@@ -225,12 +238,75 @@ class AgentToolRuntime:
         ]
         return list(await asyncio.gather(*pending))
 
+    def _registry_mode(self) -> bool:
+        try:
+            return bool(self._registry_enabled())
+        except Exception:
+            logger.warning("registry planning flag failed closed")
+            return True
+
+    def _registry_metadata(self, tools: list[dict]) -> list[dict]:
+        """Project ToolRPC metadata through the live capability registry."""
+        try:
+            snapshot = self._capability_snapshot()
+            rows = snapshot.get("capabilities") if isinstance(snapshot, dict) else None
+            if not isinstance(rows, list):
+                return []
+            records: dict[str, dict] = {}
+            for row in rows:
+                if not isinstance(row, dict):
+                    return []
+                capability_id = row.get("id")
+                if not isinstance(capability_id, str) or not capability_id or capability_id in records:
+                    return []
+                records[capability_id] = row
+
+            projected = []
+            for tool in tools:
+                capability_id = tool.get("capability_id") if isinstance(tool, dict) else None
+                record = records.get(capability_id) if isinstance(capability_id, str) else None
+                if record is None or record.get("state") not in {"wired", "verified", "ga"}:
+                    continue
+                description = record.get("description")
+                inputs = record.get("inputs")
+                risk = record.get("risk")
+                confidence = record.get("confidence")
+                if (
+                    not isinstance(description, str)
+                    or not isinstance(inputs, dict)
+                    or inputs.get("type") != "object"
+                    or not isinstance(risk, str)
+                    or isinstance(confidence, bool)
+                    or not isinstance(confidence, (int, float))
+                    or not math.isfinite(float(confidence))
+                    or not 0.0 <= float(confidence) <= 1.0
+                ):
+                    continue
+                context = (
+                    f" [capability={capability_id} risk={risk} "
+                    f"readiness={record['state']} confidence={float(confidence):.3f}]"
+                )
+                projected.append(
+                    {
+                        "name": tool.get("name", ""),
+                        "gated": bool(tool.get("gated")),
+                        "description": (description + context)[:1024],
+                        "input_schema": inputs,
+                        "capability_id": capability_id,
+                    }
+                )
+            return projected
+        except Exception:
+            logger.warning("capability registry projection failed closed")
+            return []
+
     async def _execute_one(
         self,
         call: ToolCall,
         *,
         overflow: bool,
         gated: bool,
+        offered: bool,
         approval_lock: asyncio.Lock,
         approval_state: dict[str, bool],
         agent_id: str,
@@ -241,6 +317,13 @@ class AgentToolRuntime:
                 call,
                 agent_id=agent_id,
                 reason="too_many_tool_calls",
+                event_sink=event_sink,
+            )
+        if not offered:
+            return await self._local_failure(
+                call,
+                agent_id=agent_id,
+                reason="tool_not_allowed",
                 event_sink=event_sink,
             )
         if call.parse_error or not isinstance(call.arguments, dict):
