@@ -30,13 +30,28 @@ def _fake_orch():
 
 
 # ── derivation ───────────────────────────────────────────────────────────────
-def test_plugins_derive_statically_without_orch():
+def test_plugins_and_actions_derive_statically_without_orch():
     recs = cr.build_records(orch=None)
     assert recs, "expected plugin records from BUILTIN_PLUGINS"
-    assert all(r.kind == "plugin" for r in recs)  # no orch → plugins only
+    assert {r.kind for r in recs} == {"plugin", "action"}
     weather = next(r for r in recs if r.id == "plugin:weather")
     assert weather.state == cr.WIRED          # enabled manifest → wired
     assert weather.detail["network_access"]   # carries policy metadata for the board
+    assert weather.description
+    assert weather.inputs["type"] == "object"
+    assert weather.risk == "sensitive"
+    assert weather.requires
+    assert weather.supports
+    assert weather.verification
+    assert weather.rollback
+    assert 0.0 <= weather.confidence <= 1.0
+    assert weather.implementation
+
+    payment = next(r for r in recs if r.id == "action:payment")
+    assert payment.kind == "action"
+    assert payment.risk == "irreversible_or_money"
+    assert payment.contract_ref == "agents.core.payments:PAYMENT_CONTRACT"
+    assert payment.detail["mediation"] == "kernel"
 
 
 def test_components_and_skills_derive_from_orch():
@@ -46,6 +61,8 @@ def test_components_and_skills_derive_from_orch():
     assert recs["skill:loaded_skill"].state == cr.WIRED   # module loaded
     assert recs["skill:stub_skill"].state == cr.SEAM      # no module → stub
     assert recs["skill:loaded_skill"].owner_agent == "stark"
+    assert recs["component:arena"].confidence == 0.0
+    assert recs["skill:loaded_skill"].confidence == 0.0
 
 
 def test_nothing_is_verified_until_harness_lands():
@@ -55,6 +72,7 @@ def test_nothing_is_verified_until_harness_lands():
     assert snap["harness_pending"] is True
     assert snap["total"] == len(snap["capabilities"])
     assert snap["by_kind"]["plugin"] > 0
+    assert snap["by_kind"]["action"] > 0
 
 
 # ── overrides (demote-only) ───────────────────────────────────────────────────
@@ -86,5 +104,7 @@ def test_endpoint_returns_registry(monkeypatch):
     body = resp.json()
     assert body["harness_pending"] is True
     assert body["by_kind"]["plugin"] > 0
+    assert body["by_kind"]["action"] > 0
     assert any(c["id"] == "component:arena" for c in body["capabilities"])
+    assert any(c["id"] == "action:payment" for c in body["capabilities"])
     assert "no-store" in resp.headers.get("cache-control", "")

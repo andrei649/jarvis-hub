@@ -72,6 +72,15 @@ class CapabilityRecord:
     kind: str               # plugin | component | skill
     state: str              # SEAM | WIRED | VERIFIED | GA
     owner_agent: str = ""
+    description: str = ""
+    inputs: dict = field(default_factory=lambda: {"type": "object"})
+    risk: str = "read_only"
+    requires: tuple[str, ...] = ()
+    supports: tuple[str, ...] = ()
+    verification: str = ""
+    rollback: str = ""
+    confidence: float = 0.0
+    implementation: str = ""
     contract_ref: str | None = None
     harness_id: str | None = None   # set by the V1 reality harness (none yet)
     last_verified: str | None = None
@@ -112,17 +121,28 @@ def _apply_override(rec: CapabilityRecord) -> CapabilityRecord:
 def _plugin_records() -> list[CapabilityRecord]:
     """Derive plugin capabilities from the static manifest registry (no orch needed)."""
     try:
+        from agents.core.capability_manifests import plugin_capability_manifest
         from agents.core.plugin_gate import BUILTIN_PLUGINS
     except Exception:
         return []
     out = []
     for pid, m in sorted(BUILTIN_PLUGINS.items()):
+        cap = plugin_capability_manifest(m)
         out.append(
             CapabilityRecord(
                 id=f"plugin:{pid}",
                 kind="plugin",
                 state=WIRED if getattr(m, "enabled", True) else SEAM,
                 owner_agent=(m.agents_served[0] if getattr(m, "agents_served", None) else ""),
+                description=cap.description,
+                inputs=cap.inputs,
+                risk=cap.risk,
+                requires=cap.requires,
+                supports=cap.supports,
+                verification=cap.verification,
+                rollback=cap.rollback,
+                confidence=cap.confidence,
+                implementation=cap.implementation,
                 detail={
                     "network_access": getattr(m.network_access, "value", str(m.network_access)),
                     "data_scope": getattr(m.data_scope, "value", str(m.data_scope)),
@@ -131,6 +151,32 @@ def _plugin_records() -> list[CapabilityRecord]:
             )
         )
     return out
+
+
+def _action_records() -> list[CapabilityRecord]:
+    """Derive executable action capabilities from the action-auth manifest layer."""
+    from agents.core.capability_manifests import ACTION_CAPABILITY_MANIFESTS
+    from agents.core.kernel.registry import ACTION_REGISTRY
+
+    return [
+        CapabilityRecord(
+            id=manifest.id,
+            kind="action",
+            state=WIRED,
+            description=manifest.description,
+            inputs=manifest.inputs,
+            risk=manifest.risk,
+            requires=manifest.requires,
+            supports=manifest.supports,
+            verification=manifest.verification,
+            rollback=manifest.rollback,
+            confidence=manifest.confidence,
+            implementation=manifest.implementation,
+            contract_ref=manifest.contract_ref,
+            detail={"action_kind": kind, "mediation": ACTION_REGISTRY[kind].value},
+        )
+        for kind, manifest in sorted(ACTION_CAPABILITY_MANIFESTS.items())
+    ]
 
 
 def _component_records(orch) -> list[CapabilityRecord]:
@@ -144,6 +190,14 @@ def _component_records(orch) -> list[CapabilityRecord]:
             id=f"component:{name}",
             kind="component",
             state=WIRED if s == "ok" else SEAM,
+            description=f"Runtime component {name}.",
+            risk="read_only",
+            requires=("component.initialized",),
+            supports=("readiness",),
+            verification=f"reality-v1:component:{name}",
+            rollback=f"disable component {name} and restart",
+            confidence=0.0,
+            implementation=f"orchestrator.components:{name}",
             detail={"init_status": s},
         )
         for name, s in sorted(status.items())
@@ -165,6 +219,14 @@ def _skill_records(orch) -> list[CapabilityRecord]:
                 kind="skill",
                 state=WIRED if getattr(sk, "module", None) is not None else SEAM,
                 owner_agent=agents[0] if agents else "",
+                description=f"Loaded skill {name}.",
+                risk="sensitive",
+                requires=("skill.loaded",),
+                supports=("skill.invoke",),
+                verification=f"reality-v1:skill:{name}",
+                rollback=f"disable skill {name}",
+                confidence=0.0,
+                implementation=f"orchestrator.skills:{name}",
                 detail={"trusted": bool(getattr(sk, "trusted", False)), "agents": agents},
             )
         )
@@ -177,6 +239,7 @@ def build_records(orch=None) -> list[CapabilityRecord]:
     isolated so one failing registry can't blank the whole board."""
     records: list[CapabilityRecord] = []
     for source in (_plugin_records,
+                   _action_records,
                    lambda: _component_records(orch) if orch is not None else [],
                    lambda: _skill_records(orch) if orch is not None else []):
         try:

@@ -61,7 +61,22 @@ INTENTIONALLY_SEAM: set[str] = {
 # WIRED capabilities not yet promoted by a reality harness — the shrinking backlog.
 # (Today's hard gate only forbids SEAM; this set is forward-looking for when the gate
 # tightens to "user-facing must be VERIFIED".) Kept honest by test below.
-PENDING_VERIFY: set[str] = set()
+PENDING_VERIFY: set[str] = {
+    # H27.1-H27.3 make the action plane queryable and wired. H27.5 attaches
+    # per-action reality cases before any of these may become VERIFIED.
+    "action:admin.capability_issue",
+    "action:admin.kill_switch",
+    "action:call.outbound",
+    "action:kg.write",
+    "action:mcp.mutating",
+    "action:node.dispatch",
+    "action:payment",
+    "action:plugin.egress",
+    "action:repo.sync",
+    "action:social.*",
+    "action:tool.rpc",
+    "action:writeback.*",
+}
 
 
 @lru_cache(maxsize=1)
