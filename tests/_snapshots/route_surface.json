@@ -53,6 +53,7 @@
   "GET /api/autonomy/tasks/{task_id}/preview",
   "GET /api/brain/summary",
   "GET /api/canvas",
+  "GET /api/capabilities",
   "GET /api/capture",
   "GET /api/capture/status",
   "GET /api/channels/inbox",

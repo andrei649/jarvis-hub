@@ -19,7 +19,11 @@ beforeEach(() => {
 describe('mobile approval API', () => {
   it('fetches the unified autonomy approval queue with admin auth', async () => {
     mockFetch.mockResolvedValueOnce(jsonResponse({
-      pending: [{ id: 7, title: 'Send draft', risk_tier: 2, reversible: false }],
+      pending: [{
+        id: 7, title: 'Send draft', risk_tier: 2, reversible: false,
+        capability_id: 'action:call.outbound',
+        rollback: { mode: 'cancel', description: 'Cancel before provider acceptance.', automatic: false },
+      }],
       irreversible: [{ id: 7 }],
       counts: { total: 1, reversible: 0, irreversible: 1 },
     }));
@@ -41,6 +45,8 @@ describe('mobile approval API', () => {
       }),
     );
     expect(out.pending).toHaveLength(1);
+    expect(out.pending[0].rollback?.mode).toBe('cancel');
+    expect(out.pending[0].rollback?.description).toMatch(/provider acceptance/);
     expect(out.counts.total).toBe(1);
     expect(out.reversible).toEqual([]);
   });

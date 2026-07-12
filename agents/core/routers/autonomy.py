@@ -12,11 +12,12 @@ Covers the autonomy surface in two address spaces:
 Orchestrator-only: each handler reads its subsystem off the live orchestrator
 (`orch.autonomy` / `orch.autonomy_queue` / `orch.observer` / `orch.autonomy_prefs`
 / `orch.call_broker`) via `get_orch()`, with no web-module globals. The
-`_reversibility(task)` helper is autonomy-local (it was used only by the approval
-endpoint) and moved here verbatim. Leaf imports (`put_category`, `TaskQueueError`,
+`_approval_projection(task)` is the autonomy-local task/rollback projection shared by
+the task list and approval endpoint. Leaf imports (`put_category`, `TaskQueueError`,
 digest builders, …) stay inline at call time as in the originals.
 """
 
+from dataclasses import asdict
 from typing import Optional
 
 from fastapi import APIRouter, Depends, Request, Query
@@ -149,7 +150,7 @@ async def autonomy_list(status: str = None, origin: str = None, limit: int = Que
     if not orch:
         return JSONResponse({"error": "not initialized"}, status_code=503)
     tasks = orch.autonomy_queue.list(status=status, origin=origin, limit=limit)
-    return nocache_json({"tasks": [t.to_dict() for t in tasks], "total": len(tasks)})
+    return nocache_json({"tasks": [_approval_projection(t) for t in tasks], "total": len(tasks)})
 
 
 @router.get("/autonomy/status", dependencies=[Depends(admin_guard)])
@@ -353,9 +354,10 @@ async def autonomy_pref_suggestions():
 # "anti-OpenClaw" reversibility story.
 
 
-def _reversibility(task) -> dict:
+def _approval_projection(task) -> dict:
     """Annotate a queued Task with a human-facing reversibility verdict."""
     from core.autonomy.policy import RiskTier
+    from agents.core.capability_manifests import manifest_for_action
 
     tier = int(task.risk_tier)
     reversible = tier <= int(RiskTier.REVERSIBLE)
@@ -367,6 +369,9 @@ def _reversibility(task) -> dict:
     d["reversible"] = reversible
     d["tier_name"] = tier_name
     d["reversibility"] = "reversible" if reversible else "irreversible"
+    manifest = manifest_for_action(str(task.kind))
+    d["capability_id"] = manifest.id if manifest is not None else None
+    d["rollback"] = asdict(manifest.rollback) if manifest is not None else None
     return d
 
 
@@ -377,7 +382,7 @@ async def autonomy_approvals():
     if not orch:
         return JSONResponse({"error": "not initialized"}, status_code=503)
     pending = orch.autonomy_queue.pending_decisions()
-    annotated = [_reversibility(t) for t in pending]
+    annotated = [_approval_projection(t) for t in pending]
     reversible = [t for t in annotated if t["reversible"]]
     irreversible = [t for t in annotated if not t["reversible"]]
     return nocache_json({

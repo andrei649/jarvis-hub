@@ -1,6 +1,7 @@
 """HTTP tests for the H12.1 reversible-approval + security-posture endpoints."""
 import sys
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 from fastapi.testclient import TestClient
@@ -53,6 +54,38 @@ def test_irreversible_action_appears_in_irreversible_bucket(token_client):
     assert match["reversible"] is False
     assert match["reversibility"] == "irreversible"
     assert match["tier_name"] == "IRREVERSIBLE_OR_MONEY"
+    assert match["rollback"] is None
+
+
+def test_registered_action_approval_includes_machine_readable_rollback(token_client):
+    sub = token_client.post(
+        "/autonomy/tasks",
+        json={"agent": "jarvis", "kind": "payment", "title": "Pay invoice"},
+        headers=HEADERS,
+    ).json()["task"]
+    assert sub["status"] == "blocked"
+
+    pending = token_client.get("/autonomy/approvals", headers=HEADERS).json()["pending"]
+    match = next(task for task in pending if task["id"] == sub["id"])
+    assert match["capability_id"] == "action:payment"
+    assert match["rollback"]["mode"] == "cancel"
+    assert match["rollback"]["automatic"] is False
+    assert "settled" in match["rollback"]["limitations"]
+
+
+def test_wildcard_action_projection_and_unknown_kind_fail_honestly():
+    from agents.core.routers.autonomy import _approval_projection
+
+    def task(kind):
+        row = {"id": 1, "kind": kind, "risk_tier": 3}
+        return SimpleNamespace(**row, to_dict=lambda: dict(row))
+
+    social = _approval_projection(task("social.post"))
+    unknown = _approval_projection(task("unregistered.mutation"))
+    assert social["capability_id"] == "action:social.*"
+    assert social["rollback"]["mode"] == "compensate"
+    assert unknown["capability_id"] is None
+    assert unknown["rollback"] is None
 
 
 def test_security_posture_shape(token_client):

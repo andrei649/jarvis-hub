@@ -4548,6 +4548,29 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/capabilities": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Capabilities
+         * @description Canonical user-facing capability inventory (H27.8).
+         *
+         *     Extends the legacy metrics surface without removing it: the same live registry snapshot is
+         *     available here under the normal user guard for planners and product clients.
+         */
+        get: operations["capabilities_api_capabilities_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/metrics/kernel": {
         parameters: {
             query?: never;
@@ -14269,6 +14292,26 @@ export interface operations {
         };
     };
     metrics_capabilities_api_metrics_capabilities_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    capabilities_api_capabilities_get: {
         parameters: {
             query?: never;
             header?: never;

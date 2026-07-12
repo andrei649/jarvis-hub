@@ -29,6 +29,8 @@ from __future__ import annotations
 import logging
 from dataclasses import asdict, dataclass, field
 
+from agents.core.capability_manifests import RollbackContract
+
 logger = logging.getLogger("jarvis.capabilities")
 
 # Readiness lifecycle, low → high. Ordering matters: overrides may only DEMOTE
@@ -78,7 +80,10 @@ class CapabilityRecord:
     requires: tuple[str, ...] = ()
     supports: tuple[str, ...] = ()
     verification: str = ""
-    rollback: str = ""
+    rollback: RollbackContract = field(default_factory=lambda: RollbackContract(
+        mode="none",
+        description="No mutation is performed, so there is nothing to roll back.",
+    ))
     confidence: float = 0.0
     implementation: str = ""
     contract_ref: str | None = None
@@ -206,7 +211,17 @@ def _tool_records(orch) -> list[CapabilityRecord]:
                 else ("tool-rpc.registered",),
                 supports=("tool-rpc", "approval") if gated else ("tool-rpc", "inline"),
                 verification=tool_verification_ref(name),
-                rollback="tool-specific rollback required" if gated else "no mutation to roll back",
+                rollback=(
+                    RollbackContract(
+                        mode="implementation_specific",
+                        description="Use the rollback declared by the selected tool.",
+                        limitations="The action is not reversible when the tool declares no rollback.",
+                    )
+                    if gated else RollbackContract(
+                        mode="none",
+                        description="No mutation is performed, so there is nothing to roll back.",
+                    )
+                ),
                 confidence=0.0,
                 implementation=f"agents.core.tool_rpc:{name}",
                 detail={"tool": name, "gated": gated},
@@ -231,7 +246,11 @@ def _component_records(orch) -> list[CapabilityRecord]:
             requires=("component.initialized",),
             supports=("readiness",),
             verification=f"reality-v1:component:{name}",
-            rollback=f"disable component {name} and restart",
+            rollback=RollbackContract(
+                mode="disable",
+                description=f"Disable component {name} and restart the runtime.",
+                limitations="Disabling prevents future use but does not undo completed effects.",
+            ),
             confidence=0.0,
             implementation=f"orchestrator.components:{name}",
             detail={"init_status": s},
@@ -260,7 +279,11 @@ def _skill_records(orch) -> list[CapabilityRecord]:
                 requires=("skill.loaded",),
                 supports=("skill.invoke",),
                 verification=f"reality-v1:skill:{name}",
-                rollback=f"disable skill {name}",
+                rollback=RollbackContract(
+                    mode="disable",
+                    description=f"Disable skill {name}.",
+                    limitations="Disabling prevents future use but does not undo completed effects.",
+                ),
                 confidence=0.0,
                 implementation=f"orchestrator.skills:{name}",
                 detail={"trusted": bool(getattr(sk, "trusted", False)), "agents": agents},

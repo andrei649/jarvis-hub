@@ -191,6 +191,20 @@ async def metrics_capabilities():
     return nocache_json(snapshot(orch))
 
 
+@router.get("/api/capabilities", dependencies=[Depends(user_guard)])
+async def capabilities():
+    """Canonical user-facing capability inventory (H27.8).
+
+    Extends the legacy metrics surface without removing it: the same live registry snapshot is
+    available here under the normal user guard for planners and product clients.
+    """
+    orch = get_orch()
+    if not orch:
+        return nocache_json({"error": "not initialized"}, status_code=503)
+    from agents.core.observability.capability_registry import snapshot
+    return nocache_json(snapshot(orch))
+
+
 @router.get("/api/metrics/kernel")
 async def metrics_kernel():
     """Live tally of Action-Kernel decisions — grant/deny/queue per action kind, deny-rate,

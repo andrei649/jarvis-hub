@@ -53,6 +53,7 @@
   "GET /api/autonomy/tasks/{task_id}/preview": "open",
   "GET /api/brain/summary": "user",
   "GET /api/canvas": "user",
+  "GET /api/capabilities": "user",
   "GET /api/capture": "user",
   "GET /api/capture/status": "user",
   "GET /api/channels/inbox": "user",

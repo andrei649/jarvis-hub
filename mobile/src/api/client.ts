@@ -907,6 +907,14 @@ export async function fetchTasks(config: ServerConfig): Promise<TasksResponse> {
 
 export type ApprovalAction = 'accept' | 'reject' | 'defer';
 
+export type RollbackContract = {
+  mode: 'none' | 'cancel' | 'compensate' | 'restore' | 'revoke' | 'disable' | 'implementation_specific';
+  description: string;
+  automatic: boolean;
+  handler_ref?: string | null;
+  limitations?: string;
+};
+
 export type ApprovalTask = {
   id: number;
   agent?: string;
@@ -920,6 +928,8 @@ export type ApprovalTask = {
   reversible?: boolean;
   reversibility?: string;
   tier_name?: string;
+  capability_id?: string | null;
+  rollback?: RollbackContract | null;
   created_at?: string;
   updated_at?: string;
 };

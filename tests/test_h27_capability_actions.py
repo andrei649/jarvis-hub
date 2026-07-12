@@ -4,7 +4,7 @@ from agents.core.capability_actions import (
     CapabilityActionAPI,
     PerformContext,
 )
-from agents.core.capability_manifests import CapabilityManifest
+from agents.core.capability_manifests import CapabilityManifest, RollbackContract
 from agents.core.kernel import Action, Decision, Verdict
 from agents.core.tool_rpc import ToolRPCServer
 
@@ -133,7 +133,10 @@ def test_delegated_registration_refuses_non_kernel_action_kind():
         requires=("action-kernel",),
         supports=("read",),
         verification="action-auth:read.only",
-        rollback="no mutation to roll back",
+        rollback=RollbackContract(
+            mode="none",
+            description="No mutation is performed, so there is nothing to roll back.",
+        ),
         confidence=0.5,
         implementation="example.reader:read",
         action_kind="read.only",
