@@ -59,3 +59,39 @@ the owner-gated Chromium smoke after host setup:
 $env:JARVIS_PLAYWRIGHT_LIVE = "1"
 python -m pytest tests/test_h28_playwright_driver.py -q
 ```
+
+## Windows desktop host (H28.4)
+
+The optional Windows desktop adapter is a separate, accessibility-first host seam for
+`GovernedDesktop`. It remains disabled unless the owner opts into **both** host actuation
+and an isolated desktop session:
+
+```powershell
+python -m pip install pywinauto Pillow
+$env:JARVIS_DESKTOP_HOST = "1"
+$env:JARVIS_DESKTOP_ISOLATED = "1"
+```
+
+Construct and inject it only behind the governed Action Kernel path:
+
+```python
+from agents.core.desktop_host import WindowsDesktopDriver
+
+driver = WindowsDesktopDriver.from_env(
+    app_launchers={
+        "browser": ("C:\\Program Files\\Browser\\browser.exe", "--private"),
+    },
+)
+```
+
+The request may supply only the canonical launcher key (`browser` in the example); it
+cannot supply a binary path, arguments, or a shell string. The configured argv is launched
+with `shell=False`. `click` and `type` require an accessibility element name and never accept
+coordinate-only actuation. `locate` searches the bounded Windows UI Automation snapshot
+before considering an explicitly injected, provenance-marked **local** VLM locator. There is
+no cloud VLM client in the driver.
+
+Accessibility output, typed text, local grounding output, and screenshot bytes are capped.
+Screenshots are byte-checked before base64 encoding. Optional imports and backend startup are
+lazy, so standard CI and default Jarvis startup require neither `pywinauto` nor Pillow. Raw
+Windows, dependency, path, and window-title exceptions are reduced to bounded reason codes.

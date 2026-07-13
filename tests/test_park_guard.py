@@ -16,6 +16,41 @@ def _load():
 guard = _load()
 
 
+def test_wave_one_modules_are_permanently_removed_from_park_policy():
+    graduated = {"browser_agent", "desktop_operator", "screen_grounding"}
+
+    assert graduated.isdisjoint(guard.PARK_POLICY)
+    result = guard.evaluate(
+        [
+            "agents/core/browser_agent.py",
+            "agents/core/desktop_operator.py",
+            "agents/core/screen_grounding.py",
+        ],
+        "ordinary H28 maintenance",
+    )
+    assert result == {
+        "ok": True,
+        "declarations": [],
+        "parked_touches": [],
+        "violations": [],
+    }
+
+
+def test_remaining_park_policy_is_exact_after_wave_one_graduation():
+    assert set(guard.PARK_POLICY) == {
+        "image_gen",
+        "media_gen",
+        "media_skill",
+        "wyoming",
+        "satellite_hub",
+        "node_mesh",
+        "e2e_sync",
+        "training",
+        "rust",
+        "park-policy",
+    }
+
+
 def test_unrelated_changes_pass_without_declaration():
     result = guard.evaluate(["agents/core/router.py", "docs/FAQ.md"], "ordinary fix")
     assert result["ok"] is True
@@ -27,9 +62,6 @@ def test_every_parked_family_fails_without_unpark_declaration():
         "agents/core/image_gen.py",
         "agents/core/media_gen.py",
         "agents/core/media_skill.py",
-        "agents/core/desktop_operator.py",
-        "agents/core/browser_agent.py",
-        "agents/core/screen_grounding.py",
         "agents/core/satellite_hub.py",
         "agents/core/node_mesh.py",
         "agents/core/e2e_sync.py",
@@ -43,9 +75,6 @@ def test_every_parked_family_fails_without_unpark_declaration():
         "image_gen",
         "media_gen",
         "media_skill",
-        "desktop_operator",
-        "browser_agent",
-        "screen_grounding",
         "satellite_hub",
         "node_mesh",
         "e2e_sync",
@@ -70,11 +99,11 @@ def test_wave_declaration_allows_only_its_phase():
 
 def test_named_module_declaration_is_narrow():
     result = guard.evaluate(
-        ["agents/core/browser_agent.py", "agents/core/screen_grounding.py"],
-        "unpark: browser_agent",
+        ["agents/core/image_gen.py", "agents/core/media_gen.py"],
+        "unpark: image_gen",
     )
     assert result["ok"] is False
-    assert [item["module"] for item in result["violations"]] == ["screen_grounding"]
+    assert [item["module"] for item in result["violations"]] == ["media_gen"]
 
 
 def test_wave_three_does_not_unpark_owner_pull_modules():
@@ -106,14 +135,11 @@ def test_declarations_are_line_based_not_incidental_prose():
     assert guard.evaluate(["agents/core/image_gen.py"], "Context\nunpark: wave-2\nTests")["ok"]
 
 
-def test_real_policy_covers_backlog_phase_six_names():
+def test_real_policy_covers_remaining_backlog_phase_six_names():
     expected = {
         "image_gen",
         "media_gen",
         "media_skill",
-        "desktop_operator",
-        "browser_agent",
-        "screen_grounding",
         "satellite_hub",
         "node_mesh",
         "e2e_sync",
@@ -121,7 +147,7 @@ def test_real_policy_covers_backlog_phase_six_names():
         "training",
         "rust",
     }
-    assert expected <= set(guard.PARK_POLICY)
+    assert expected == set(guard.PARK_POLICY) - {"park-policy"}
 
 
 def test_workflow_runs_base_policy_when_guard_already_exists():

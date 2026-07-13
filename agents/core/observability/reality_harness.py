@@ -25,8 +25,7 @@ from __future__ import annotations
 
 import logging
 import os
-from collections.abc import Awaitable, Callable
-from dataclasses import dataclass, field
+from collections.abc import Mapping
 from datetime import UTC, datetime
 
 from agents.core.capability_manifests import ACTION_CAPABILITY_MANIFESTS
@@ -38,6 +37,7 @@ from agents.core.capability_verification import (
     skill_case_name,
     tool_case_name,
 )
+from agents.core.observability.reality_types import RealityCase
 
 logger = logging.getLogger("jarvis.reality")
 
@@ -48,31 +48,13 @@ def _now_iso() -> str:
 def reality_enabled() -> bool:
     """True when live (keyed/networked) reality cases may run (opt-in, default off)."""
     from agents.core.env_config import env_flag
+
     return env_flag("JARVIS_REALITY_HARNESS")
 
 
-@dataclass
-class RealityCase:
-    """One capability's reality contract + the probe that proves it.
-
-    ``capability_id`` matches a ``CapabilityRecord.id`` (e.g. ``plugin:weather``) so a
-    pass promotes that exact record. ``probe`` is ``async () -> bool``: True ⇒ contract
-    held. ``live`` marks cases that need a real key/network (gated).
-    """
-
-    capability_id: str
-    name: str
-    contract: str
-    probe: Callable[[], Awaitable[bool]]
-    live: bool = False
-    metadata: dict = field(default_factory=dict)
-
-    @property
-    def ref(self) -> str:
-        return f"{HARNESS_ID}:{self.name}"
-
-
-async def run_reality(cases: list[RealityCase], *, promote: bool = True, now: str | None = None) -> dict:
+async def run_reality(
+    cases: list[RealityCase], *, promote: bool = True, now: str | None = None
+) -> dict:
     """Run *cases*, skipping live cases unless enabled. On a pass, promote the capability
     to VERIFIED in the registry (unless ``promote=False``). Never raises — a probe that
     throws is a failed contract, not a crashed harness."""
@@ -80,20 +62,54 @@ async def run_reality(cases: list[RealityCase], *, promote: bool = True, now: st
     results, promoted = [], []
     for case in cases:
         if case.live and not reality_enabled():
-            results.append({"capability_id": case.capability_id, "name": case.name,
-                            "skipped": True, "passed": False, "detail": "live (set JARVIS_REALITY_HARNESS=1)"})
+            results.append(
+                {
+                    "capability_id": case.capability_id,
+                    "name": case.name,
+                    "skipped": True,
+                    "passed": False,
+                    "detail": "live (set JARVIS_REALITY_HARNESS=1)",
+                    "metadata": dict(case.metadata),
+                }
+            )
             continue
         try:
-            passed = bool(await case.probe())
+            probe_result = await case.probe()
+            probe_metadata = {}
+            if isinstance(probe_result, Mapping):
+                passed = probe_result.get("passed") is True
+                raw_metadata = probe_result.get("metadata")
+                if isinstance(raw_metadata, Mapping):
+                    probe_metadata = dict(raw_metadata)
+            else:
+                passed = bool(probe_result)
             detail = "contract held" if passed else "contract NOT held"
         except Exception as exc:  # a throwing probe = failed rail, recorded not raised
-            passed, detail = False, f"probe error: {exc}"
-        results.append({"capability_id": case.capability_id, "name": case.name,
-                        "skipped": False, "passed": passed, "detail": detail})
-        if promote:
-            _promote(case.capability_id, ts, passed)
+            passed, detail, probe_metadata = False, f"probe error: {exc}", {}
+        results.append(
+            {
+                "capability_id": case.capability_id,
+                "name": case.name,
+                "skipped": False,
+                "passed": passed,
+                "detail": detail,
+                "metadata": {**case.metadata, **probe_metadata},
+            }
+        )
+
+    if promote:
+        grouped: dict[str, list[dict]] = {}
+        for case, result in zip(cases, results, strict=True):
+            if case.metadata.get("promotable", True) is False:
+                continue
+            grouped.setdefault(case.capability_id, []).append(result)
+        for capability_id, contracts in grouped.items():
+            if any(item["skipped"] for item in contracts):
+                continue
+            passed = all(not item["skipped"] and item["passed"] for item in contracts)
+            _promote(capability_id, ts, passed)
             if passed:
-                promoted.append(case.capability_id)
+                promoted.append(capability_id)
 
     ran = [r for r in results if not r["skipped"]]
     return {
@@ -110,6 +126,7 @@ def _promote(capability_id: str, ts: str, passed: bool) -> None:
     """Feed the verdict to the V2 registry (green ⇒ VERIFIED, red ⇒ un-verify). Best-effort."""
     try:
         from agents.core.observability.capability_registry import record_verification
+
         record_verification(capability_id, HARNESS_ID, ts, passed=passed)
     except Exception:  # pragma: no cover - the registry must not break a harness run
         logger.warning("reality promotion failed for %s", capability_id, exc_info=True)
@@ -121,8 +138,10 @@ def _promote(capability_id: str, ts: str, passed: bool) -> None:
 # is allowed. No socket is opened (the policy decides before any send). Live cases (real
 # API fetches) are added per-capability with the networked nightly lane — a follow-up.
 
+
 async def _probe_none_blocks_external() -> bool:
     from agents.core.http_client import PluginEgressError, PluginHTTPClient
+
     c = PluginHTTPClient("system-control")  # NONE manifest
     try:
         c._enforce_egress("https://93.184.216.34/x")  # IP literal → no DNS; must be refused
@@ -135,6 +154,7 @@ async def _probe_none_blocks_external() -> bool:
 
 async def _probe_lan_allows_local() -> bool:
     from agents.core.http_client import PluginEgressError, PluginHTTPClient
+
     c = PluginHTTPClient("worldview")  # LAN manifest
     try:
         c._enforce_egress("http://127.0.0.1:4000/x")  # local → must be allowed (no raise)
@@ -150,6 +170,7 @@ async def _probe_lan_allows_local() -> bool:
 # KillSwitch makes `kernel.authorize` DENY (the halt actually blocks), and disengaging lets
 # the same action past the kill-switch gate (it reaches policy). No mock, no socket — and the
 # probe runs against a throwaway KillSwitch store so it never touches the live halt state.
+
 
 async def _probe_kill_switch_gates_kernel() -> bool:
     import shutil
@@ -197,14 +218,26 @@ async def _probe_capability_token_gates_kernel() -> bool:
         act = Action(kind="kg.write", title="reality probe", scope="global")
 
         tok = broker.issue(["kg.write"])
-        granted = authorize(act, capability=Capability(token_id=tok["id"], name="kg.write"),
-                            kill_switch=ks, capabilities=broker, policy=policy)
+        granted = authorize(
+            act,
+            capability=Capability(token_id=tok["id"], name="kg.write"),
+            kill_switch=ks,
+            capabilities=broker,
+            policy=policy,
+        )
         if granted.verdict not in (Verdict.GRANT, Verdict.QUEUE):
             return False  # a valid token must clear the capability gate
 
-        absent = "nonexistent"  # a token the broker never issued (named, not inline, to keep SAST quiet)
-        denied = authorize(act, capability=Capability(token_id=absent, name="kg.write"),
-                           kill_switch=ks, capabilities=broker, policy=policy)
+        absent = (
+            "nonexistent"  # a token the broker never issued (named, not inline, to keep SAST quiet)
+        )
+        denied = authorize(
+            act,
+            capability=Capability(token_id=absent, name="kg.write"),
+            kill_switch=ks,
+            capabilities=broker,
+            policy=policy,
+        )
         return denied.verdict is Verdict.DENY and "capability token" in (denied.reason or "")
     finally:
         shutil.rmtree(d, ignore_errors=True)
@@ -216,6 +249,7 @@ async def _probe_capability_token_gates_kernel() -> bool:
 # onto the payload by osint.writeback_payload) is escalated GRANT→QUEUE by the real
 # kernel.authorize — while the same low-risk write from a trusted operator source is
 # GRANTed. Untrusted intel can never auto-execute. No mock, no socket; isolated KillSwitch.
+
 
 async def _probe_osint_untrusted_ingestion_queued() -> bool:
     import shutil
@@ -233,11 +267,17 @@ async def _probe_osint_untrusted_ingestion_queued() -> bool:
         base = {"risk_tier": int(RiskTier.REVERSIBLE)}  # a low-risk write the policy would GRANT
 
         clean = writeback_payload(
-            correlate([{"source": "operator", "kind": "domain", "value": "ok.example"}])["findings"][0],
-            base=dict(base))
+            correlate([{"source": "operator", "kind": "domain", "value": "ok.example"}])[
+                "findings"
+            ][0],
+            base=dict(base),
+        )
         tainted = writeback_payload(
-            correlate([{"source": "worldview", "kind": "domain", "value": "evil.example"}])["findings"][0],
-            base=dict(base))
+            correlate([{"source": "worldview", "kind": "domain", "value": "evil.example"}])[
+                "findings"
+            ][0],
+            base=dict(base),
+        )
 
         def _verdict(payload):
             act = Action(kind="kg.write", title="osint writeback", scope="global", payload=payload)
@@ -246,9 +286,11 @@ async def _probe_osint_untrusted_ingestion_queued() -> bool:
         clean_dec = _verdict(clean)
         taint_dec = _verdict(tainted)
         # Contract: operator intel auto-acts (GRANT); untrusted OSINT is held (QUEUE, taint reason).
-        return (clean_dec.verdict is Verdict.GRANT
-                and taint_dec.verdict is Verdict.QUEUE
-                and "tainted" in (taint_dec.reason or ""))
+        return (
+            clean_dec.verdict is Verdict.GRANT
+            and taint_dec.verdict is Verdict.QUEUE
+            and "tainted" in (taint_dec.reason or "")
+        )
     finally:
         shutil.rmtree(d, ignore_errors=True)
 
@@ -258,6 +300,7 @@ async def _probe_osint_untrusted_ingestion_queued() -> bool:
 # market signal) is held by the real kernel — classified IRREVERSIBLE_OR_MONEY → QUEUE
 # (approval) — while read-only market monitoring is GRANTed. Money never auto-moves; the
 # pack can watch the market freely but can't act on your behalf. No mock, isolated KillSwitch.
+
 
 async def _probe_market_money_action_queued() -> bool:
     import shutil
@@ -273,15 +316,18 @@ async def _probe_market_money_action_queued() -> bool:
         policy = AutonomyPolicy()
 
         def _v(kind, title):
-            return authorize(Action(kind=kind, title=title, scope="global"),
-                             kill_switch=ks, policy=policy)
+            return authorize(
+                Action(kind=kind, title=title, scope="global"), kill_switch=ks, policy=policy
+            )
 
-        scan = _v("market.monitor", "monitor watchlist")          # read-only intel
-        trade = _v("trade.buy", "buy BTC at market")              # money → must be held
+        scan = _v("market.monitor", "monitor watchlist")  # read-only intel
+        trade = _v("trade.buy", "buy BTC at market")  # money → must be held
         # Contract: monitoring auto-runs (GRANT); a money action is QUEUED for approval.
-        return (scan.verdict is Verdict.GRANT
-                and trade.verdict is Verdict.QUEUE
-                and "IRREVERSIBLE_OR_MONEY" in (trade.reason or ""))
+        return (
+            scan.verdict is Verdict.GRANT
+            and trade.verdict is Verdict.QUEUE
+            and "IRREVERSIBLE_OR_MONEY" in (trade.reason or "")
+        )
     finally:
         shutil.rmtree(d, ignore_errors=True)
 
@@ -291,6 +337,7 @@ async def _probe_market_money_action_queued() -> bool:
 # reversible draft → GRANT), but the terminal release — publishing a finished campaign to
 # the world — is an irreversible side-effect the real kernel QUEUEs for approval. Nothing
 # is auto-published on the user's behalf. No mock, isolated KillSwitch.
+
 
 async def _probe_creative_release_queued() -> bool:
     import shutil
@@ -307,16 +354,27 @@ async def _probe_creative_release_queued() -> bool:
         policy = AutonomyPolicy()
         plan = plan_pipeline({"goal": "launch teaser", "platforms": ["youtube"]})
 
-        draft = authorize(Action(kind="creative.draft", title="draft script", scope="global"),
-                          kill_switch=ks, policy=policy)
+        draft = authorize(
+            Action(kind="creative.draft", title="draft script", scope="global"),
+            kill_switch=ks,
+            policy=policy,
+        )
         release = authorize(
-            Action(kind="release.publish", title="release campaign to youtube", scope="global",
-                   payload=release_action_payload(plan["exports"][0])),
-            kill_switch=ks, policy=policy)
+            Action(
+                kind="release.publish",
+                title="release campaign to youtube",
+                scope="global",
+                payload=release_action_payload(plan["exports"][0]),
+            ),
+            kill_switch=ks,
+            policy=policy,
+        )
         # Contract: drafting auto-runs (GRANT); publishing to the world is held (QUEUE).
-        return (draft.verdict is Verdict.GRANT
-                and release.verdict is Verdict.QUEUE
-                and "IRREVERSIBLE_OR_MONEY" in (release.reason or ""))
+        return (
+            draft.verdict is Verdict.GRANT
+            and release.verdict is Verdict.QUEUE
+            and "IRREVERSIBLE_OR_MONEY" in (release.reason or "")
+        )
     finally:
         shutil.rmtree(d, ignore_errors=True)
 
@@ -358,11 +416,7 @@ def _make_action_kernel_probe(manifest):
                 {"JARVIS_UNIFIED_ACTION_API": "1", "JARVIS_ACTION_KERNEL": "1"},
             ):
                 result = await api.perform(manifest.id, params)
-        return (
-            result.status == "refused"
-            and "kill-switch" in result.reason
-            and not executed
-        )
+        return result.status == "refused" and "kill-switch" in result.reason and not executed
 
     return _probe
 
@@ -431,18 +485,31 @@ async def _probe_media_present_verified_rail() -> bool:
             return {"ok": True, "state": "idle"}
 
     registry = DeviceRegistry(path=None)
-    registry.register(MediaDevice(id="kitchen-display", name="Kitchen display",
-                                  kind="browser_tab", room="kitchen", supports=("show",)))
-    director = MediaDirector(registry=registry, sessions=SessionBoard(path=None),
-                             drivers={"browser_tab": _FakeDriver()})
-    result = director.present({
-        "content": {"type": "url", "value": "https://example.local/dashboard"},
-        "target": "kitchen",
-        "mode": "show", "privacy": "household", "urgency": "normal",
-    })
+    registry.register(
+        MediaDevice(
+            id="kitchen-display",
+            name="Kitchen display",
+            kind="browser_tab",
+            room="kitchen",
+            supports=("show",),
+        )
+    )
+    director = MediaDirector(
+        registry=registry, sessions=SessionBoard(path=None), drivers={"browser_tab": _FakeDriver()}
+    )
+    result = director.present(
+        {
+            "content": {"type": "url", "value": "https://example.local/dashboard"},
+            "target": "kitchen",
+            "mode": "show",
+            "privacy": "household",
+            "urgency": "normal",
+        }
+    )
     restored = director.restore("kitchen-display")
-    return (result.get("ok") is True and result.get("verified") is True
-            and restored.get("ok") is True)
+    return (
+        result.get("ok") is True and result.get("verified") is True and restored.get("ok") is True
+    )
 
 
 async def _probe_media_present_offline_honest() -> bool:
@@ -457,13 +524,29 @@ async def _probe_media_present_offline_honest() -> bool:
     registry = DeviceRegistry(path=None)
     registry.register(MediaDevice(id="tv", name="Living room TV", kind="tv", room="living"))
     director = MediaDirector(registry=registry, sessions=SessionBoard(path=None))
-    result = director.present({
-        "content": {"type": "url", "value": "https://example.local/film"},
-        "target": "tv",
-        "mode": "play", "privacy": "household", "urgency": "normal",
-    })
-    return (result.get("ok") is False and "driver" in str(result.get("reason", ""))
-            and director.sessions.get("tv") is None)
+    result = director.present(
+        {
+            "content": {"type": "url", "value": "https://example.local/film"},
+            "target": "tv",
+            "mode": "play",
+            "privacy": "household",
+            "urgency": "normal",
+        }
+    )
+    return (
+        result.get("ok") is False
+        and "driver" in str(result.get("reason", ""))
+        and director.sessions.get("tv") is None
+    )
+
+
+from agents.core.observability.operator_reality import (  # noqa: E402, I001
+    OPERATOR_CAPABILITY_CASES,
+    OperatorEventLedger as _OperatorEventLedger,
+)
+
+OperatorEventLedger = _OperatorEventLedger
+
 
 
 ACTION_CAPABILITY_CASES: list[RealityCase] = [
@@ -620,28 +703,50 @@ def all_reality_cases(orch) -> list[RealityCase]:
 
 
 CASES: list[RealityCase] = [
-    RealityCase("plugin:system-control", "egress-none-blocks-external",
-                "a no-network plugin's external call is refused by the egress gate",
-                _probe_none_blocks_external),
-    RealityCase("plugin:worldview", "egress-lan-allows-local",
-                "a LAN plugin's localhost call is allowed by the egress gate",
-                _probe_lan_allows_local),
-    RealityCase("plugin:worldview", "osint-untrusted-ingestion-queued",
-                "an OSINT write-back from an untrusted source is escalated GRANT→QUEUE by the kernel",
-                _probe_osint_untrusted_ingestion_queued),
-    RealityCase("plugin:balance", "market-money-action-queued",
-                "a market-triggered money action is QUEUED by the kernel; read-only monitoring is GRANTed",
-                _probe_market_money_action_queued),
-    RealityCase("plugin:social_x", "creative-release-queued",
-                "a creative release (publish-to-world) is QUEUED by the kernel; drafting is GRANTed",
-                _probe_creative_release_queued),
-    RealityCase("component:kill_switch", "kernel-kill-switch-denies",
-                "an engaged kill-switch makes kernel.authorize DENY; disengaging reaches policy",
-                _probe_kill_switch_gates_kernel),
-    RealityCase("component:capabilities", "kernel-capability-token-gate",
-                "a valid capability token clears the kernel gate; a missing one is DENY",
-                _probe_capability_token_gates_kernel),
+    RealityCase(
+        "plugin:system-control",
+        "egress-none-blocks-external",
+        "a no-network plugin's external call is refused by the egress gate",
+        _probe_none_blocks_external,
+    ),
+    RealityCase(
+        "plugin:worldview",
+        "egress-lan-allows-local",
+        "a LAN plugin's localhost call is allowed by the egress gate",
+        _probe_lan_allows_local,
+    ),
+    RealityCase(
+        "plugin:worldview",
+        "osint-untrusted-ingestion-queued",
+        "an OSINT write-back from an untrusted source is escalated GRANT→QUEUE by the kernel",
+        _probe_osint_untrusted_ingestion_queued,
+    ),
+    RealityCase(
+        "plugin:balance",
+        "market-money-action-queued",
+        "a market-triggered money action is QUEUED by the kernel; read-only monitoring is GRANTed",
+        _probe_market_money_action_queued,
+    ),
+    RealityCase(
+        "plugin:social_x",
+        "creative-release-queued",
+        "a creative release (publish-to-world) is QUEUED by the kernel; drafting is GRANTed",
+        _probe_creative_release_queued,
+    ),
+    RealityCase(
+        "component:kill_switch",
+        "kernel-kill-switch-denies",
+        "an engaged kill-switch makes kernel.authorize DENY; disengaging reaches policy",
+        _probe_kill_switch_gates_kernel,
+    ),
+    RealityCase(
+        "component:capabilities",
+        "kernel-capability-token-gate",
+        "a valid capability token clears the kernel gate; a missing one is DENY",
+        _probe_capability_token_gates_kernel,
+    ),
     *ACTION_CAPABILITY_CASES,
     *MEDIA_CAPABILITY_CASES,
     *TOOL_CAPABILITY_CASES,
+    *OPERATOR_CAPABILITY_CASES,
 ]

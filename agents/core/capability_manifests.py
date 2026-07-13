@@ -293,6 +293,20 @@ ACTION_CAPABILITY_MANIFESTS: dict[str, CapabilityManifest] = {
         ),
         implementation="agents.core.media_director:MediaDirector.restore",
     ),
+    "desktop.step": _action(
+        "desktop.step",
+        "Perform one governed step through an isolated desktop host driver.",
+        required=("action", "args"),
+        risk="sensitive",
+        supports=("observe", "mutate"),
+        rollback=RollbackContract(
+            mode="implementation_specific",
+            description="Use an application-specific compensating desktop action when available.",
+            limitations="Host UI effects may be irreversible and require manual recovery.",
+        ),
+        implementation="agents.core.desktop_operator:DesktopActionExecutor.perform",
+        contract_ref="agents.core.desktop_operator:DESKTOP_STEP_CONTRACT",
+    ),
 }
 
 

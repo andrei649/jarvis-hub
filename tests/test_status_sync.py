@@ -48,7 +48,7 @@ def test_pytest_collection_parser_fails_closed_on_collection_error():
 def test_apply_to_status_rewrites_both_tokens():
     sample = "x · **Tests:** ~1,234 passed (6 skipped) · **HTTP routes:** 42 (+ feedback) y"
     out = status_sync.apply_to_status(sample, tests=9999, routes=100)
-    assert "~9,999 passed" in out
+    assert "~9,999 collected" in out
     assert "HTTP routes:** 100 " in out
     assert "~1,234" not in out and "routes:** 42" not in out
 
@@ -58,13 +58,18 @@ def test_apply_is_anchored_leaves_other_numbers_untouched():
     sample = "v0.11.0 · **Tests:** ~10 passed · **HTTP routes:** 5 — 45 per-domain routers"
     out = status_sync.apply_to_status(sample, tests=20, routes=6)
     assert "v0.11.0" in out and "45 per-domain routers" in out
-    assert "~20 passed" in out and "HTTP routes:** 6 " in out
+    assert "~20 collected" in out and "HTTP routes:** 6 " in out
 
 
 def test_apply_each_token_independently():
     sample = "**Tests:** ~10 passed · **HTTP routes:** 5"
     assert "~10 passed" in status_sync.apply_to_status(sample, routes=6)  # tests untouched
     assert "HTTP routes:** 5" in status_sync.apply_to_status(sample, tests=20)  # routes untouched
+
+
+def test_apply_to_status_preserves_honest_collection_wording():
+    sample = "**Tests:** ~10 collected · **HTTP routes:** 5"
+    assert "~20 collected" in status_sync.apply_to_status(sample, tests=20)
 
 
 def test_current_counts_parses_status():

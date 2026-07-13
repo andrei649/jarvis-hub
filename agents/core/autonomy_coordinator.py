@@ -172,8 +172,33 @@ class AutonomyCoordinator:
         import time as _t
 
         from .agent_runtime import AgentToolRuntime
+        from .desktop_operator import DesktopProposalError, validate_desktop_run_args
         from .observability import capability_registry
-        from .tool_rpc import ToolRPCServer
+        from .tool_rpc import ToolRPCServer, ToolRPCValidationError
+
+        execution_token = object()
+
+        def _approved_execution_context(context, task):
+            """Trust only the TaskExecutor turn whose durable row is running."""
+            if context is not execution_token:
+                return False
+            task_id = getattr(task, "id", None)
+            queue = getattr(self._orch, "autonomy_queue", None)
+            if not isinstance(task_id, int) or queue is None:
+                return False
+            persisted = queue.get(task_id)
+            if persisted is None:
+                return False
+            return (
+                persisted.status == "running"
+                and persisted.kind == "toolrpc.desktop_run"
+                and persisted.autonomy_level == "ask"
+                and persisted.decision in {"accept", "edit"}
+                and bool(persisted.decided_by)
+                and str(persisted.decided_by).lower() != "policy"
+                and persisted.payload == getattr(task, "payload", None)
+                and persisted.kind == getattr(task, "kind", None)
+            )
 
         def _get_setting(key, default):
             getter = getattr(self._orch, "get_setting", None)
@@ -190,6 +215,7 @@ class AutonomyCoordinator:
             enqueue=self._governed_enqueue,
             audit=getattr(self._orch, "intent_log", None),
             kernel=action_kernel,
+            execution_context_check=_approved_execution_context,
         )
 
         async def _rpc_echo(args):
@@ -197,6 +223,76 @@ class AutonomyCoordinator:
 
         async def _rpc_time(args):
             return {"now": _t.time()}
+
+        async def _rpc_desktop_run(args):
+            """Actuate only after the trusted executor verifies durable approval."""
+            from .kernel import Decision, Verdict
+            from .routers.multimodal import desktop_host_enabled, execute_desktop_steps
+
+            if not desktop_host_enabled():
+                return {"ok": False, "reason": "desktop_host_disabled"}
+
+            def approved_authorizer(action, capability=None):
+                decision = action_kernel(action, capability=capability)
+                if decision.verdict is Verdict.QUEUE:
+                    return Decision(
+                        Verdict.GRANT,
+                        reason="durably_approved",
+                        tier=decision.tier,
+                        card=decision.card,
+                        task_id=decision.task_id,
+                    )
+                return decision
+
+            async def approved_step(_action, _args):
+                return True
+
+            return await execute_desktop_steps(
+                self._orch,
+                args["steps"],
+                approver=approved_step,
+                authorizer=approved_authorizer,
+            )
+
+        def _desktop_preflight(args):
+            try:
+                return validate_desktop_run_args(args)
+            except DesktopProposalError as exc:
+                raise ToolRPCValidationError(exc.reason) from None
+
+        server.register_tool(
+            "desktop_run",
+            _rpc_desktop_run,
+            gated=True,
+            description="Propose bounded governed desktop steps for approval.",
+            input_schema={
+                "type": "object",
+                "properties": {
+                    "steps": {
+                        "type": "array",
+                        "maxItems": 100,
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "action": {"type": "string", "maxLength": 64},
+                                "args": {
+                                    "type": "object",
+                                    "maxProperties": 32,
+                                    "additionalProperties": True,
+                                },
+                            },
+                            "required": ["action"],
+                            "additionalProperties": False,
+                        },
+                    }
+                },
+                "required": ["steps"],
+                "additionalProperties": False,
+            },
+            capability_id="tool:desktop_run",
+            preflight=_desktop_preflight,
+            trusted_execution=True,
+        )
 
         server.register_tool(
             "echo",
@@ -233,6 +329,11 @@ class AutonomyCoordinator:
         )
         self._orch.tool_rpc = server
         self._orch.agent_tool_runtime = runtime
+
+        async def _approved_desktop_tool_rpc_execute(task):
+            return await server.execute(task, execution_context=execution_token)
+
+        self._approved_desktop_tool_rpc_execute = _approved_desktop_tool_rpc_execute
         for agent in getattr(self._orch, "agents", {}).values():
             agent.tool_runtime = runtime
         return runtime
@@ -366,6 +467,10 @@ class AutonomyCoordinator:
         # built-ins; integrations register more (incl. gated) over time.
         self._wire_agent_tool_runtime(action_kernel=_action_kernel)
         executor.register("toolrpc", self._orch.tool_rpc.execute)
+        executor.register(
+            "toolrpc.desktop_run",
+            self._approved_desktop_tool_rpc_execute,
+        )
 
         # H21.4: wire the calibration-gated autonomy hook (gated; no-op unless
         # cognition.learning_enabled — and it only ever ADDS caution).

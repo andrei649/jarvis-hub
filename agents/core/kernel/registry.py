@@ -75,6 +75,10 @@ ACTION_REGISTRY: dict[str, Mediation] = {
     # Restore can stop playback or replay a previous session, so it is a distinct
     # privileged action and crosses the same facade/kernel boundary as present().
     "media.restore": Mediation.KERNEL,
+    # ORIZONT 28 — any optional real desktop host driver crosses the unified
+    # action facade immediately before actuation. Null/manual offline drivers
+    # keep their legacy direct path; a requires_kernel driver cannot use it.
+    "desktop.step": Mediation.KERNEL,
 }
 
 

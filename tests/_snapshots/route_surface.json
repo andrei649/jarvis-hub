@@ -252,6 +252,7 @@
   "POST /api/creative/export-packs",
   "POST /api/creative/plan",
   "POST /api/desktop/preview",
+  "POST /api/desktop/run",
   "POST /api/digest/run",
   "POST /api/eval/datasets/run",
   "POST /api/feedback",

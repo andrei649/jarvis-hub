@@ -17,9 +17,6 @@ from pathlib import PurePosixPath
 # O26 Phase 6, revised 2026-07-11. Values are the only phase declarations that
 # may unlock each module; training/rust deliberately remain owner-pull only.
 PARK_POLICY = {
-    "browser_agent": {"phase": "wave-1", "paths": ("agents/core/browser_agent.py",)},
-    "desktop_operator": {"phase": "wave-1", "paths": ("agents/core/desktop_operator.py",)},
-    "screen_grounding": {"phase": "wave-1", "paths": ("agents/core/screen_grounding.py",)},
     "image_gen": {"phase": "wave-2", "paths": ("agents/core/image_gen.py",)},
     "media_gen": {"phase": "wave-2", "paths": ("agents/core/media_gen.py",)},
     "media_skill": {"phase": "wave-2", "paths": ("agents/core/media_skill.py",)},

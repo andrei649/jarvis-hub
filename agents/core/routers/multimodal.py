@@ -21,6 +21,7 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
 from agents.core.app_state import get_orch
+from agents.core.env_config import env_flag
 from agents.core.routers._deps import user_guard
 from agents.core.web_helpers import nocache_json
 
@@ -65,11 +66,76 @@ class DesktopStepsBody(BaseModel):
     steps: list[dict] = Field(default_factory=list, max_length=100)
 
 
+def desktop_host_enabled() -> bool:
+    """Return true only for the explicit isolated-host double opt-in."""
+    return env_flag("JARVIS_DESKTOP_HOST") and env_flag("JARVIS_DESKTOP_ISOLATED")
+
+
+def build_desktop_runtime(orch, *, authorizer=None):
+    """Bind a fresh dependency-lazy host driver to the live Action Kernel."""
+    from agents.core.desktop_host import WindowsDesktopDriver
+    from agents.core.desktop_operator import DesktopActionExecutor, GovernedDesktop
+    from agents.core.kernel.binding import make_action_kernel
+
+    driver = WindowsDesktopDriver.from_env()
+    executor = DesktopActionExecutor(
+        driver,
+        authorizer=authorizer if authorizer is not None else make_action_kernel(orch),
+    )
+    return GovernedDesktop(driver=driver, action_executor=executor)
+
+
+async def execute_desktop_steps(orch, steps, *, approver=None, authorizer=None):
+    """Run a validated plan against a fresh live runtime and always release it."""
+    from agents.core.desktop_operator import (
+        DesktopProposalError,
+        validate_desktop_run_args,
+    )
+
+    try:
+        proposal = validate_desktop_run_args({"steps": steps})
+    except DesktopProposalError as exc:
+        return {"ok": False, "reason": exc.reason}
+    runtime = build_desktop_runtime(orch, authorizer=authorizer)
+    try:
+        return await runtime.run_live(proposal["steps"], approver=approver)
+    finally:
+        await runtime.close()
+
+
 @router.post("/api/desktop/preview", dependencies=[Depends(user_guard)])
 async def desktop_preview(body: DesktopStepsBody):
     """H15.3 — dry-run a desktop step plan (which steps need approval)."""
     from agents.core.desktop_operator import GovernedDesktop
     return nocache_json(await GovernedDesktop().preview(body.steps))
+
+
+@router.post("/api/desktop/run", dependencies=[Depends(user_guard)])
+async def desktop_run(body: DesktopStepsBody):
+    """H28.4 — run isolated host steps through the live Action Kernel binding."""
+    if not desktop_host_enabled():
+        return nocache_json({"ok": False, "reason": "desktop_host_disabled"})
+    from agents.core.desktop_operator import (
+        DesktopProposalError,
+        GovernedDesktop,
+        validate_desktop_run_args,
+    )
+
+    try:
+        proposal = validate_desktop_run_args({"steps": body.steps})
+    except DesktopProposalError as exc:
+        return nocache_json({"ok": False, "reason": exc.reason})
+    orch = get_orch()
+    if any(GovernedDesktop.is_mutating(step["action"]) for step in proposal["steps"]):
+        server = getattr(orch, "tool_rpc", None)
+        if server is None or not callable(getattr(server, "handle", None)):
+            return nocache_json({"ok": False, "reason": "desktop_proposal_unavailable"})
+        result = await server.handle(
+            {"tool": "desktop_run", "args": proposal},
+            actor="jarvis",
+        )
+        return nocache_json(result)
+    return nocache_json(await execute_desktop_steps(orch, proposal["steps"]))
 
 
 class MediaGenBody(BaseModel):

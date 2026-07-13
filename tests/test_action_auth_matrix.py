@@ -59,6 +59,10 @@ def test_every_broker_kind_classified():
     )
 
 
+def test_desktop_step_is_registered_as_kernel_mediated():
+    assert ACTION_REGISTRY.get("desktop.step") is Mediation.KERNEL
+
+
 class _SpyKernel:
     """Stand-in for the bound kernel.authorize — records the Action it's handed."""
 
@@ -308,6 +312,42 @@ def _exercise(kind, spy, tmp_path, monkeypatch=None):
                 )
             )
             asyncio.run(media_routes.media_restore("tv-1"))
+    elif kind == "desktop.step":
+        # The optional real host seam must cross CapabilityActionAPI immediately
+        # before driver execution. The unified facade stays default-off; the outer
+        # matrix test owns the Action Kernel flag for its enabled/disabled legs.
+        import asyncio
+
+        from agents.core.desktop_operator import DesktopActionExecutor, GovernedDesktop
+
+        class _Driver:
+            requires_kernel = True
+
+            def __init__(self):
+                self.calls = []
+
+            async def perform(self, action, args):
+                self.calls.append((action, args))
+                return {"ok": True}
+
+        async def _allow(_action, _args):
+            return True
+
+        monkeypatch.setenv("JARVIS_UNIFIED_ACTION_API", "1")
+        driver = _Driver()
+        executor = DesktopActionExecutor(driver, authorizer=spy)
+        result = asyncio.run(
+            GovernedDesktop(driver=driver, action_executor=executor).run(
+                [{"action": "click", "args": {"query": "OK"}}],
+                approver=_allow,
+            )
+        )
+        if spy.calls:
+            assert driver.calls == [("click", {"query": "OK"})]
+            assert result["ran"][0]["status"] == "ran"
+        else:
+            assert driver.calls == []
+            assert result["ran"][0]["status"] == "blocked"
     else:  # pragma: no cover - a new KERNEL kind needs an exerciser added here
         raise AssertionError(f"no exerciser for kernel-classified kind {kind!r}")
 

@@ -252,6 +252,7 @@
   "POST /api/creative/export-packs": "creative_export_packs_api_creative_export_packs_post",
   "POST /api/creative/plan": "creative_plan_api_creative_plan_post",
   "POST /api/desktop/preview": "desktop_preview_api_desktop_preview_post",
+  "POST /api/desktop/run": "desktop_run_api_desktop_run_post",
   "POST /api/digest/run": "digest_run_api_digest_run_post",
   "POST /api/eval/datasets/run": "run_eval_dataset_api_eval_datasets_run_post",
   "POST /api/feedback": "submit_feedback_api_feedback_post",
