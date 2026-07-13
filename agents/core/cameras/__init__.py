@@ -15,7 +15,10 @@ from .models import (
     PrivacyMask,
     PrivacyPollingGrant,
 )
+from .pipeline import CameraPipeline, CameraPipelineResult, SnapshotSource
 from .privacy import CameraPrivacyError, CameraPrivacyPolicy, apply_masks
+from .rules import CameraRuleEngine, CameraZone, LineRule, RuleOutcome
+from .vlm import LocalCameraVLM, LocalCameraVLMConfig
 
 __all__ = [
     "MAX_METADATA_TTL_SECONDS",
@@ -24,10 +27,19 @@ __all__ = [
     "CameraEvent",
     "CameraPrivacyError",
     "CameraPrivacyPolicy",
+    "CameraPipeline",
+    "CameraPipelineResult",
+    "CameraRuleEngine",
+    "CameraZone",
     "HouseholdConsent",
     "MaskedFrame",
+    "LineRule",
+    "LocalCameraVLM",
+    "LocalCameraVLMConfig",
     "PrivacyLease",
     "PrivacyMask",
     "PrivacyPollingGrant",
+    "RuleOutcome",
+    "SnapshotSource",
     "apply_masks",
 ]

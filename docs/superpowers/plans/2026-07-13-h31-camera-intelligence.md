@@ -9,7 +9,7 @@ RTSP decoder, recorder, NVR, or object detector. Optional ONVIF is discovery/onb
 ## Non-negotiable privacy floor
 
 - Master feature flag and versioned household consent are required before any polling or snapshot
-  fetch. Frigate and local VLM endpoints must resolve to loopback/LAN.
+  fetch. Frigate must resolve to loopback/LAN; the VLM must resolve to this host's loopback.
 - No Frigate+, cloud camera/VLM fallback, continuous video, or Jarvis clip recording.
 - Raw snapshot bytes exist only transiently between local fetch and privacy-mask transform. They
   never reach disk, logs, API, VLM, memory, audit, or event subscribers.
@@ -28,65 +28,65 @@ RTSP decoder, recorder, NVR, or object detector. Optional ONVIF is discovery/onb
 **Create:** `agents/core/cameras/models.py`, `agents/core/cameras/privacy.py`,
 `docs/CAMERA_PRIVACY.md`, `tests/test_h31_camera_privacy.py`.
 
-- [ ] Red tests: no/mismatched consent, global/camera kill, disabled camera, invalid/missing masks,
+- [x] Red tests: no/mismatched consent, global/camera kill, disabled camera, invalid/missing masks,
   raw-byte fingerprint non-propagation, rejected identity/face/plate fields, TTL ceilings, and safe
   default configuration.
-- [ ] Implement immutable bounded camera config/consent/mask/event contracts and staged
+- [x] Implement immutable bounded camera config/consent/mask/event contracts and staged
   `CameraPrivacyPolicy` checks. `apply_masks` produces a new buffer and never exposes raw input.
-- [ ] Prove pixel-level coverage of every polygon and strip EXIF/GPS/embedded thumbnails by
+- [x] Prove pixel-level coverage of every polygon and strip EXIF/GPS/embedded thumbnails by
   deterministic re-encoding. Reject out-of-bounds masks, decompression bombs, oversized pixel
   counts/dimensions, animated/malformed/truncated input, unsafe modes, decoder temp/cache files,
   and any transform that cannot prove full coverage.
-- [ ] Revocation first stops polling/detaches publishers, atomically advances a consent generation,
+- [x] Revocation first stops polling/detaches publishers, atomically advances a consent generation,
   refuses or drains stale in-flight work, then immediately logically purges camera records. Test
   revoke-during-fetch, mask, store, and publish races plus no-poll proof.
-- [ ] Run privacy/kill-switch/retention tests, Ruff/Bandit, review, and commit.
+- [x] Run privacy/kill-switch/retention tests, Ruff/Bandit, review, and commit.
 
 ## Task 2 — H31.2 read-only Frigate adapter
 
 **Create:** `agents/core/cameras/source.py`, `agents/core/cameras/frigate.py`, focused tests;
 modify narrow plugin/egress manifests and lazy orchestrator wiring.
 
-- [ ] Red tests: default-off, LAN validation, bounded cursor/idempotency, timeout/backoff, list does
+- [x] Red tests: default-off, LAN validation, bounded cursor/idempotency, timeout/backoff, list does
   not fetch snapshots, allowlisted normalization, offline health, egress/kill denial, hard
   transport-byte limits, and zero mutating Frigate requests.
-- [ ] Enforce an owner-allowlisted origin with bounded scheme/port, redirect refusal/revalidation,
+- [x] Enforce an owner-allowlisted origin with bounded scheme/port, redirect refusal/revalidation,
   DNS-rebinding resistance and connection-time address pinning, and no cross-host authorization
   header forwarding. These hard checks remain active even when global strict-egress is disabled.
-- [ ] Stream event JSON and snapshot responses under separate hard received-byte budgets; never
+- [x] Stream event JSON and snapshot responses under separate hard received-byte budgets; never
   trust `Content-Length`, abort chunked overflow, and release the response, connection, and partial
   buffers on overflow/truncation/cancellation. Test missing/false length and oversized chunks.
-- [ ] Implement `CameraEventSource.list_events(after, limit)`. Keep raw snapshot fetch on a private
+- [x] Implement `CameraEventSource.list_events(after, limit)`. Keep raw snapshot fetch on a private
   source object owned only by the privacy pipeline: do not expose it through orchestrator, tools,
   routers, capabilities, or subscribers. Add an Agent Runtime/subscriber bypass test. Discard raw
   payload fields, credentials, paths, sublabels, faces, and plates at normalization.
-- [ ] Add a short ADR recording the Frigate-over-custom-RTSP/NVR spike decision.
+- [x] Add a short ADR recording the Frigate-over-custom-RTSP/NVR spike decision.
 - [ ] Add optional live local-Frigate probe as a named owner-gated check, never a fake pass.
-- [ ] Run HTTP/egress/security/adapter tests, review, and commit.
+- [x] Run HTTP/egress/security/adapter tests, review, and commit.
 
 ## Task 3 — Optional ONVIF discovery, never ingest
 
 **Create:** `agents/core/cameras/onvif.py`, `tests/test_h31_onvif_discovery.py`.
 
-- [ ] Red tests: admin/default-off gate, lazy missing dependency, bounded results, secret references,
+- [x] Red tests: admin/default-off gate, lazy missing dependency, bounded results, secret references,
   stripped RTSP/passwords, LAN-only devices, deterministic duplicates, and zero stream opens.
-- [ ] Map discovered devices to owner-curated Frigate camera ids only; Frigate remains the sole
+- [x] Map discovered devices to owner-curated Frigate camera ids only; Frigate remains the sole
   event/snapshot source.
-- [ ] Run discovery/security tests, review, and commit.
+- [x] Run discovery/security tests, review, and commit.
 
 ## Task 4 — H31.3 deterministic rules and on-demand local VLM
 
 **Create:** `agents/core/cameras/rules.py`, `pipeline.py`, `vlm.py`, focused tests.
 
-- [ ] Red tests: duplicate idempotency, deterministic zones/line crossing, outside-zone behavior,
-  no VLM when metadata suffices, masked-only qualifying VLM, LAN-only VLM, safe failure, forbidden
+- [x] Red tests: duplicate idempotency, deterministic zones/line crossing, outside-zone behavior,
+  no VLM when metadata suffices, masked-only qualifying VLM, loopback-only VLM, safe failure, forbidden
   identity/biometric/plate output, mid-flight consent/kill, and buffer release.
-- [ ] Enforce order: normalize -> deterministic rules -> privacy recheck -> one snapshot fetch ->
+- [x] Enforce order: normalize -> deterministic rules -> privacy recheck -> one snapshot fetch ->
   in-memory mask -> optional strict-local VLM -> bounded event -> release buffers.
-- [ ] Cap the re-encoded masked image bytes handed to the local VLM in addition to decoded pixel
+- [x] Cap the re-encoded masked image bytes handed to the local VLM in addition to decoded pixel
   and dimension limits; oversize fails before the model call.
-- [ ] VLM may add non-identifying description only; deterministic event survives VLM failure.
-- [ ] Run VLM/local-routing/privacy tests, review, and commit.
+- [x] VLM may add non-identifying description only; deterministic event survives VLM failure.
+- [x] Run VLM/local-routing/privacy tests, review, and commit.
 
 ## Task 5 — H31.4 encrypted event vault, retention, and health
 
