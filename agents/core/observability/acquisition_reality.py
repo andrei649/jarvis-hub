@@ -85,18 +85,18 @@ async def _run_s2(*, root: Path, image: str) -> dict[str, object]:
     profile = AcquisitionSandboxProfile(image=image, timeout_seconds=60)
     profile.require_backend("docker")
     ledger = AcquisitionLedger(root=root / "ledger")
-    requests = CapabilityRequestStore(root=root / "requests", event_sink=ledger.emit)
+    request_store = CapabilityRequestStore(root=root / "requests", event_sink=ledger.emit)
     decisions = ReuseDecisionStore(root=root / "reuse", event_sink=ledger.emit)
     resolver = ReuseResolver(decision_store=decisions)
 
-    request = requests.capture(
+    request = request_store.capture(
         "parse Acme API items into a normalized list",
         agent_id="jarvis",
         reason="tool_not_allowed",
     )
-    first_decision = resolver.resolve(request, [], request_store=requests)
+    first_decision = resolver.resolve(request, [], request_store=request_store)
     _require(first_decision.outcome == "no_reuse", "net-new request unexpectedly reused")
-    requests.transition(request.request_id, RequestStatus.RESEARCHING, actor="s2-research")
+    request_store.transition(request.request_id, RequestStatus.RESEARCHING, actor="s2-research")
 
     fixture = b"Acme items are JSON objects. Preserve their id values in list order."
 
@@ -164,7 +164,7 @@ async def _run_s2(*, root: Path, image: str) -> dict[str, object]:
         contract=contract,
     )
     decisions.record_outcome(request.request_id, "generated")
-    requests.transition(request.request_id, RequestStatus.QUARANTINED, actor="s2-generator")
+    request_store.transition(request.request_id, RequestStatus.QUARANTINED, actor="s2-generator")
     quarantine = QuarantineStore(root=root / "quarantine", event_sink=ledger.emit)
     quarantine.put(package)
     verifier = SandboxVerifier(
@@ -217,7 +217,7 @@ async def _run_s2(*, root: Path, image: str) -> dict[str, object]:
     broker = PromotionBroker(
         enabled=lambda: True,
         quarantine=quarantine,
-        requests=requests,
+        requests=request_store,
         proposals=PromotionStore(root=root / "proposals", event_sink=ledger.emit),
         packages=packages,
         journal=PromotionJournal(root=root / "journal"),
@@ -262,7 +262,7 @@ async def _run_s2(*, root: Path, image: str) -> dict[str, object]:
     sandbox_execution_verified = execution.get("ok") is True and execution.get("result") == [1, 2]
     _require(sandbox_execution_verified, "promoted package did not execute in real Docker")
 
-    second_request = requests.capture(
+    second_request = request_store.capture(
         request.goal,
         agent_id="jarvis",
         reason="tool_not_allowed",
@@ -279,7 +279,7 @@ async def _run_s2(*, root: Path, image: str) -> dict[str, object]:
                 execution_mode="acquired_sandbox",
             )
         ],
-        request_store=requests,
+        request_store=request_store,
     )
     _require(reuse.outcome == "reused", "second request did not reuse the acquired package")
     metrics = decisions.metrics()
@@ -293,6 +293,8 @@ async def _run_s2(*, root: Path, image: str) -> dict[str, object]:
     tamper_refused = tampered.get("ok") is False and tampered.get("reason") == "tool_error"
     _require(tamper_refused, "runtime accepted a tampered signed package")
     main_path.write_bytes(package.code.encode("utf-8"))
+    # The restored signed member remains a read-only bind mount for the sandbox UID.
+    # codeql[py/overly-permissive-file]
     os.chmod(main_path, 0o444)
     _require(packages.verify(package.name), "restored package did not re-verify")
 

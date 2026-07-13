@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import os
+import stat
 from dataclasses import asdict, replace
 from types import SimpleNamespace
 
@@ -160,6 +161,7 @@ async def test_package_manifest_covers_every_member_and_store_is_sandbox_only(tm
     }
     assert all(set(row) == {"path", "mode", "size", "sha256"} for row in record.manifest["files"])
     assert (record.path / "ACQUIRED_SANDBOX_ONLY").exists()
+    assert stat.S_IMODE(record.path.stat().st_mode) == 0o555
 
     skills_root = tmp_path / "skills"
     skills_root.mkdir()

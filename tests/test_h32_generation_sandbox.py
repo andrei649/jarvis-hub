@@ -295,7 +295,7 @@ async def test_system_contract_and_mutation_proof_gate_receipt_and_approval_cand
     assert store.get_record(package.artifact_id).status == "verified"
     assert store.get_record(package.artifact_id).receipt["receipt_hash"] == outcome.receipt.receipt_hash
     with pytest.raises(FrozenInstanceError):
-        outcome.receipt.exit_status = 7
+        outcome.receipt.package_hash = "0" * 64
     assert len(runner.commands) == 3
     assert runner.commands[2][0][-1] == "--jarvis-mutate-contract"
     assert not (tmp_path / "runtime").exists() or not any((tmp_path / "runtime").iterdir())

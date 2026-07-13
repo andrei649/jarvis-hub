@@ -93,6 +93,8 @@ class AcquiredSandboxRunner:
                 contract / "invoke.py",
                 self._invocation_source(record.manifest["entrypoint"]).encode("utf-8"),
             )
+            # Ephemeral contract input is a read-only bind mount for the isolated UID.
+            # codeql[py/overly-permissive-file]
             os.chmod(contract, 0o555)  # nosec B103
             container_name = f"jarvis-acq-run-{uuid.uuid4().hex[:12]}"
             command = self.profile.build_command(
@@ -191,6 +193,8 @@ class AcquiredSandboxRunner:
     @staticmethod
     def _write(path: Path, content: bytes) -> None:
         path.write_bytes(content)
+        # Ephemeral contract members must be readable by the isolated non-host UID.
+        # codeql[py/overly-permissive-file]
         os.chmod(path, 0o444)
 
     @staticmethod

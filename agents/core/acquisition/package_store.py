@@ -190,6 +190,10 @@ class AcquiredPackageStore:
                     json.dumps(asdict(signature), sort_keys=True, separators=(",", ":")).encode("utf-8"),
                     0o444,
                 )
+                # The digest-pinned container runs as a non-host UID and needs read/execute
+                # access to this read-only bind mount; package members remain immutable.
+                # codeql[py/overly-permissive-file]
+                os.chmod(temporary, 0o555)  # nosec B103
                 target.parent.mkdir(parents=True, exist_ok=True)
                 if target.exists():
                     self._remove_tree(target)
@@ -476,6 +480,8 @@ class AcquiredPackageStore:
     @staticmethod
     def _write(path: Path, content: bytes, mode: int) -> None:
         path.write_bytes(content)
+        # Signed package members are read-only bind mounts for an isolated non-host UID.
+        # codeql[py/overly-permissive-file]
         os.chmod(path, mode)
 
     @staticmethod
@@ -485,7 +491,9 @@ class AcquiredPackageStore:
 
         def retry(function, value, _error):
             with suppress(OSError):
-                os.chmod(value, 0o700)
+                # Owner-only access is the least privilege that still permits cleanup.
+                # codeql[py/overly-permissive-file]
+                os.chmod(value, 0o700)  # nosec B103  # nosemgrep: python.lang.security.audit.insecure-file-permissions.insecure-file-permissions
                 function(value)
 
         shutil.rmtree(path, onerror=retry)
