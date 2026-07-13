@@ -111,8 +111,8 @@
     },
     "H31": {
       "blocked": 0,
-      "done": 0,
-      "open": 6,
+      "done": 6,
+      "open": 0,
       "total": 6
     },
     "H32": {
@@ -123,8 +123,8 @@
     },
     "H33": {
       "blocked": 0,
-      "done": 0,
-      "open": 6,
+      "done": 1,
+      "open": 5,
       "total": 6
     },
     "H5": {
@@ -158,7 +158,7 @@
       "total": 4
     }
   },
-  "latest_ci_commit": "42c6818261adc5d429285d34e7d5d13fafd762b3",
+  "latest_ci_commit": "cc4542f888db54fd56f25201b5282fefb615e72d",
   "open_release_gates": [
     {
       "id": "A1",
@@ -201,11 +201,11 @@
       "status": "⬜"
     }
   ],
-  "routes": 382,
+  "routes": 386,
   "tests": {
-    "backend": 4636,
-    "frontend": 227,
-    "mobile": 70
+    "backend": 4792,
+    "frontend": 231,
+    "mobile": 77
   },
   "version": "0.11.0"
 }

@@ -13,40 +13,40 @@ ask/interrupt ladder, with one persistent <=4/day attention budget and transpare
 **Create:** `agents/core/ambient/contracts.py`, `store.py`, `registry.py`, `engine.py`, adapters and
 focused tests.
 
-- [ ] Red tests for default-off master flag, bounded schema, no eval/callables, SQLite restart/
+- [x] Red tests for default-off master flag, bounded schema, no eval/callables, SQLite restart/
   migration/corruption, source idempotency, event/observed time, debounce/hold/hysteresis/cooldown,
   backpressure, per-source health, and decision journal.
-- [ ] Define allowlisted `AmbientEvent`/`MonitorDefinition`/`AmbientDecision` contracts with
+- [x] Define allowlisted `AmbientEvent`/`MonitorDefinition`/`AmbientDecision` contracts with
   structured provenance, taint, privacy, consent, correlation, and bounded attributes.
-- [ ] Monitor definitions are admin-created, versioned, audited and hash-bound; create/update/delete
+- [x] Monitor definitions are admin-created, versioned, audited and hash-bound; create/update/delete
   routes are excluded from ToolRPC/MCP/agent tools. Events can select only a predeclared rule
   branch and can never supply capability ids, action kinds, targets, templates, or parameters.
-- [ ] Predicate DSL is limited to typed eq/ne/lt/lte/gt/gte/in/changed/age operators: at most 200
+- [x] Predicate DSL is limited to typed eq/ne/lt/lte/gt/gte/in/changed/age operators: at most 200
   monitors, 20 predicates/monitor, 32 attributes/event, 512 chars/string, 16 KiB encoded event,
   7-day hold/cooldown and 24-hour source-event age. No regex/eval/custom code.
-- [ ] Persist only opaque source/target ids and non-sensitive rule fields as plaintext monitor
+- [x] Persist only opaque source/target ids and non-sensitive rule fields as plaintext monitor
   config; private names, room/camera mappings, recipients, and schedules remain in H30/H31 owner
   stores or an encrypted private definition. Event/decision state stores only stable fingerprints,
   opaque owner-store references, and schema-specific anonymous aggregates;
   private H30/H31 values remain in their encrypted stores. Cap ambient state at 100,000 rows/64
   MiB with 30-day journal, 7-day health, and monitor-bounded dedupe/cooldown TTLs.
-- [ ] Bind derived rows to consent generation and source event id. Purge removes journal, memory,
+- [x] Bind derived rows to consent generation and source event id. Purge removes journal, memory,
   dedupe/correlation/cooldown rows and writes replay-suppression tombstones. Corruption disables
   evaluation/actuation and surfaces degraded health; never recreate an empty safety database.
-- [ ] Bound queues to 256/source and 2,048 global, concurrency to 8 and work to 100 events/tick.
+- [x] Bound queues to 256/source and 2,048 global, concurrency to 8 and work to 100 events/tick.
   Coalesce state updates by dedupe key; a critical transition is durably held/backpressured and
   surfaced degraded, never silently discarded.
-- [ ] Adapt H30 HouseEvent, H31 CameraEvent, and existing digital probes without producers
+- [x] Adapt H30 HouseEvent, H31 CameraEvent, and existing digital probes without producers
   importing H33. No raw frames/audio/email bodies/arbitrary source payloads.
-- [ ] Define an ownership table for ProactiveObserver resource/service probes and EventWatcher
+- [x] Define an ownership table for ProactiveObserver resource/service probes and EventWatcher
   email/calendar/finance/health/WorldView sources. Cut over in two phases: health-check/import the
   cursor/debounce watermark, atomically claim source ownership, then disable that exact legacy
   producer. Failure leaves legacy active; rollback resumes from the shared watermark without
   replaying a fresh transition.
-- [ ] Give each digital adapter an allowlisted projection. Never persist raw `Signal.detail`, host,
+- [x] Give each digital adapter an allowlisted projection. Never persist raw `Signal.detail`, host,
   calendar title, sender, finance/health detail, or WorldView payload in ambient state, tasks,
   journal, KG, or API.
-- [ ] Run observer/watcher/store/contract tests, review, and commit.
+- [x] Run observer/watcher/store/contract tests, review, and commit.
 
 ## Task 2 — H33.2 six-rung policy and persistent global K3 attention budget
 

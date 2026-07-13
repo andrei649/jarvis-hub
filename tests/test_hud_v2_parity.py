@@ -110,6 +110,7 @@ RULES = [
     ("/api/desktop", "build"),  # governed desktop operator (H15.3)
     ("/api/media", "build"),  # governed generation + live Media Director panel (H12.24/H29)
     ("/api/house", "home"),  # H30 House Brain state + governed proposals/owner ceremony
+    ("/api/cameras", "home"),  # H31 local camera metadata + privacy-safe temporal search
     # observe (traces / eval / quality / review / arena / resilience / bench / cost)
     ("/api/traces", "observe"),
     ("/api/eval", "observe"),
@@ -254,3 +255,23 @@ def test_house_routes_have_a_live_home_surface():
     assert "/api/house/security/" in panel
     assert "ADMIN · STRONG CONFIRMATION" in panel
     assert "<iframe" not in panel.lower()
+
+
+def test_camera_routes_have_a_metadata_only_home_surface():
+    camera_routes = {
+        "/api/cameras/status",
+        "/api/cameras/events",
+        "/api/cameras/search",
+        "/api/cameras/onvif/discover",
+    }
+    assert camera_routes.issubset(set(_routes()))
+    assert {_classify(path) for path in camera_routes} == {"home"}
+
+    source = GAP.read_text(encoding="utf-8")
+    assert re.search(r"\['Home', \[[^\]]*\bCameraPanel\b", source)
+    start = source.index("export function CameraPanel")
+    end = source.index("/* 0.37", start)
+    panel = source[start:end]
+    for route in ("/api/cameras/status", "/api/cameras/events", "/api/cameras/search"):
+        assert route in panel
+    assert all(tag not in panel.lower() for tag in ("<img", "<video", "<iframe"))

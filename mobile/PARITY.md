@@ -20,6 +20,9 @@ This file is the single source of truth for that gap. Backlog tasks for closing 
 
 Legend — **mobile**: ✅ shipped · 🟡 partial · ⬜ not started · ➖ not applicable on mobile.
 
+Camera parity is read/search parity over the same bounded metadata API. Admin ONVIF onboarding is
+intentionally owner-HUD-only; native clients expose no discovery, frame, stream, or private URL.
+
 ## Parity matrix
 
 | Surface | API (agents/web.py) | Browser | Mobile | Task |
@@ -49,6 +52,7 @@ Legend — **mobile**: ✅ shipped · 🟡 partial · ⬜ not started · ➖ not
 | Artifacts workspace (Canvas) | `GET /api/canvas`, `POST /api/canvas/post`, `POST /api/canvas/{id}/pin`, `DELETE /api/canvas/{id}` | ✅ | ✅ | H18.20 |
 | Media Director (O29, default-off) | `GET /api/media/devices`, `POST /api/media/devices`, `DELETE /api/media/devices/{device_id}`, `GET /api/media/session`, `POST /api/media/present`, `POST /api/media/restore/{device_id}` | ✅ | ✅ | H18.21 |
 | House Brain (H30.5, default-off) | `GET /api/house/state`, `POST /api/house/control/{light,climate,security}`, admin-only `/api/house/security/{task_id}/{challenge,confirm}` | ✅ | ✅ | H30.5 |
+| Camera Intelligence (H31.5, default-off, metadata-only) | `GET /api/cameras/{status,events}`, `POST /api/cameras/search`, admin-only `POST /api/cameras/onvif/discover` | ✅ | ✅ | H31.5 |
 | Windows server-host desktop actuation (intentionally desktop-only; a phone must not control the server's desktop) | `POST /api/desktop/run` | ✅ | ➖ | — |
 | Auth (user/admin tokens) | `X-User-Token`, `X-Admin-Token` headers | ✅ | ✅ | H18.1 / H18.11 |
 

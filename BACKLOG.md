@@ -738,22 +738,29 @@ the real backend, but the pipeline-rewiring PR never ran it because the path fil
 
 ## 📷 ORIZONT 31 — Camera Intelligence (Nerva Program E · AI-OS Phase 4, direction 2026-07-11)
 
-> **Mission:** local-only camera perception — structured events, not continuous footage into a
-> model; the LLM inspects a frame/clip only when an event warrants it; natural-language retrieval
-> over an event index. **Greenfield** (verified 2026-07-11: no RTSP/ONVIF/Frigate code exists);
-> `llm/vlm.py` is the description seam. **Privacy-critical: H31.1 precedes any frame processing.**
+> **Mission:** local-only camera perception — structured events, never continuous footage into a
+> model; one transient snapshot is masked before an optional strict-local VLM call; natural-language
+> retrieval remains metadata-only. Frigate is the read-only detector/event backend and optional
+> ONVIF is discovery-only; Jarvis does not proxy RTSP, record video, or expose clips/private URLs.
+> **Privacy-critical: H31.1 precedes every poll, fetch, inference, store, and publication.**
 > → Version **v0.25.0**.
 
 | # | Item | S | P | Dep | Sursă |
 |---|------|---|---|-----|-------|
-| H31.1 ⬜ | **Privacy contract FIRST** — frames never leave the box; household consent doc; kill-switch coverage; retention per H23.10; privacy masks/zones; face recognition only where explicitly enabled | 2 | P0 | — | NERVA_VISION §12 |
-| H31.2 ⬜ | **RTSP/ONVIF ingest** — camera discovery + stream/snapshot handling; **or Frigate as detector backend** (decide by spike: build vs integrate) | 5 | P0 | H31.1 | NERVA_VISION §4-P1 |
-| H31.3 ⬜ | **Local detection pipeline** — person/vehicle/animal/package events with zone + line-crossing rules; VLM description on demand only | 8 | P1 | H31.2 | — |
-| H31.4 ⬜ | **Event indexing into memory** — bounded, redacted camera events with snapshots; camera health monitoring | 5 | P1 | H31.3 | — |
-| H31.5 ⬜ | **NL clip retrieval** — "when did the courier come yesterday?" → temporal search over the event index | 5 | P2 | H31.4 | NERVA_VISION §4-P1 |
-| H31.6 ⬜ | **Feeds** — camera events flow into the O30 house state + O33 monitors (a camera is a sensor of the house, not a silo) | 3 | P2 | H30.2, H33.1 | — |
+| H31.1 ✅ | **Privacy contract FIRST** — versioned household consent + generation-bound leases; per-camera/global kill coverage; mandatory masks; hard snapshot/metadata TTL ceilings; identity/face/biometric/plate inference absent by construction | 2 | P0 | — | NERVA_VISION §12 |
+| H31.2 ✅ | **Read-only Frigate + discovery-only ONVIF** — bounded LAN-pinned metadata polling and a private transient snapshot seam; no Jarvis RTSP decoder, stream surface, recorder, NVR, or camera mutation | 5 | P0 | H31.1 | NERVA_VISION §4-P1 |
+| H31.3 ✅ | **Local detection pipeline** — allowlisted person/vehicle/animal/package events with deterministic zone + line-crossing rules; one already-masked strict-local VLM description on demand only | 8 | P1 | H31.2 | — |
+| H31.4 ✅ | **Encrypted event vault + health** — bounded redacted metadata and separately encrypted masked snapshots, exact ≤24h/≤30d expiry, quotas/purge/scheduler, source/storage health | 5 | P1 | H31.3 | — |
+| H31.5 ✅ | **Privacy-safe temporal event retrieval** — deterministic NL/filter search over encrypted metadata; no clip persistence/proxy, raw-frame endpoint, or Frigate private URL | 5 | P2 | H31.4 | NERVA_VISION §4-P1 |
+| H31.6 ✅ | **Typed metadata-only feeds** — restart-safe bounded fan-out into H30 anonymous house sensors and the default-off H33.1 monitor engine, with per-sink isolation/backpressure | 3 | P2 | H30.2, H33.1 | — |
 
 > **Total ORIZONT 31:** ~28 SP
+>
+> **Completion evidence (2026-07-13):** canonical H31 reality pack covers no-consent zero-call,
+> one-snapshot mask-before-VLM, encrypted storage/retrieval/exact expiry, restart dedupe into H30/H33,
+> pre-poll kill, mid-inference revocation/purge, and bounded offline degradation. Every hermetic case
+> reports zero ungoverned actions, external hosts, and raw-frame consumers. The separately named live
+> local-Frigate read is double opt-in and never treated as a fake pass when owner hardware is absent.
 
 ## 🌱 ORIZONT 32 — Capability Acquisition (Nerva Program F · AI-OS Phase 5, direction 2026-07-11)
 
@@ -787,7 +794,7 @@ the real backend, but the pipeline-rewiring PR never ran it because the path fil
 
 | # | Item | S | P | Dep | Sursă |
 |---|------|---|---|-----|-------|
-| H33.1 🟡 | **Declarative monitor framework** — named monitors over house/camera/digital feeds (NAS temp, UPS, baby-room, backups, cameras, family schedule), debounce-on-state-change like the observer | 5 | P0 | H30.1 | NERVA_VISION §4-P1 |
+| H33.1 ✅ | **Declarative monitor framework** — default-off named monitors over bounded house/camera/digital projections; durable versioned registry, finite predicate DSL, debounce/hold/hysteresis/cooldown, source health, ownership cutover, and decision journal | 5 | P0 | H30.1 | NERVA_VISION §4-P1 |
 | H33.2 ⬜ | **The decision ladder as policy** — every event classified ignore/remember/monitor/act-silently/ask/interrupt; interrupts stay ≤4/day *by construction* (K3 budget, not convention) | 5 | P0 | H33.1, K3 | NERVA_VISION §7 |
 | H33.3 ⬜ | **Situation memory** — observations land in the KG with provenance + decay, so "the same unknown person twice this evening" is answerable | 3 | P1 | H33.1, H14 | — |
 | H33.4 ⬜ | **Ambient reality-harness pack** + counter-metric guards (interrupt/reject rates must not degrade as monitors multiply) | 3 | P1 | O24-V1/V4 | MOONSHOT §6 |

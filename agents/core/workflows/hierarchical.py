@@ -12,7 +12,10 @@ manager rather than encoded as edges.
 
 from __future__ import annotations
 
+import logging
 import re
+
+logger = logging.getLogger("jarvis.workflows.hierarchical")
 
 
 def _render(template: str, ctx: dict) -> str:
@@ -34,8 +37,9 @@ class HierarchicalManager:
     async def _run(self, agent: str, prompt: str) -> str:
         try:
             return await self._orch.handle_input(prompt, channel="workflow", agent_override=agent)
-        except Exception as e:
-            return f"[error:{e}]"
+        except Exception:
+            logger.exception("hierarchical workflow agent execution failed")
+            return "[error:agent execution failed]"
 
     async def _run_member(self, member: dict, goal: str, ctx: dict) -> dict:
         agent = member.get("agent", self.manager_agent)

@@ -1432,6 +1432,175 @@ export async function fetchHouseState(config: ServerConfig): Promise<HouseStateR
   };
 }
 
+// ── Camera Intelligence (metadata only) ─────────────────────────
+
+export type CameraSourceStatus = {
+  status: string;
+  camera_count: number;
+  last_success_at: number | null;
+  last_error: string | null;
+};
+
+export type CameraStorageStatus = {
+  status: string;
+  items: number;
+  bytes: number;
+  last_sweep_at: number | null;
+};
+
+export type CameraStatusResponse = {
+  enabled: boolean;
+  status: string;
+  reason: string;
+  source: CameraSourceStatus | null;
+  storage: CameraStorageStatus | null;
+};
+
+export type CameraEvent = {
+  event_id: string;
+  camera_id: string;
+  label: 'person' | 'vehicle' | 'animal' | 'package';
+  occurred_at: number;
+  confidence: number;
+  anonymous: boolean;
+  zone?: string;
+  room_id?: string;
+  description?: string;
+  description_provenance?: 'local_vlm_on_demand';
+};
+
+export type CameraEventsResponse = {
+  enabled: boolean;
+  status: string;
+  reason: string;
+  interpretation: Record<string, string | number>;
+  events: CameraEvent[];
+};
+
+const CAMERA_EVENT_ID = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/;
+const CAMERA_ID = /^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/;
+const CAMERA_LABELS = new Set(['person', 'vehicle', 'animal', 'package']);
+const CAMERA_ERROR = /^[a-z][a-z0-9_]{0,63}$/;
+
+function cameraText(value: unknown, limit: number): string {
+  const text = securityString(value).trim();
+  return text.length <= limit && !/[\u0000-\u001f]/.test(text) ? text : '';
+}
+
+function cameraTimestamp(value: unknown): number | null {
+  return typeof value === 'number' && Number.isFinite(value) && value >= 0 ? value : null;
+}
+
+function normalizeCameraStatus(rawValue: unknown): CameraStatusResponse {
+  const raw = securityRecord(rawValue);
+  const sourceRaw = securityRecord(raw.source);
+  const sourceStatus = cameraText(sourceRaw.status, 32);
+  const source = raw.source && sourceStatus
+    ? {
+      status: sourceStatus,
+      camera_count: Math.max(0, Math.min(128, Math.trunc(securityNumber(sourceRaw.camera_count) || 0))),
+      last_success_at: cameraTimestamp(sourceRaw.last_success_at),
+      last_error: CAMERA_ERROR.test(cameraText(sourceRaw.last_error, 64))
+        ? cameraText(sourceRaw.last_error, 64)
+        : sourceRaw.last_error ? 'source_error' : null,
+    }
+    : null;
+  const storageRaw = securityRecord(raw.storage);
+  const storageStatus = cameraText(storageRaw.status, 32);
+  const storage = raw.storage && storageStatus
+    ? {
+      status: storageStatus,
+      items: Math.max(0, Math.trunc(securityNumber(storageRaw.items) || 0)),
+      bytes: Math.max(0, Math.trunc(securityNumber(storageRaw.bytes) || 0)),
+      last_sweep_at: cameraTimestamp(storageRaw.last_sweep_at),
+    }
+    : null;
+  return {
+    enabled: securityBool(raw.enabled),
+    status: cameraText(raw.status, 32) || 'unavailable',
+    reason: cameraText(raw.reason, 128),
+    source,
+    storage,
+  };
+}
+
+function normalizeCameraEvent(value: unknown): CameraEvent | null {
+  const raw = securityRecord(value);
+  const eventId = cameraText(raw.event_id, 128);
+  const cameraId = cameraText(raw.camera_id, 64);
+  const label = cameraText(raw.label, 32);
+  const occurredAt = cameraTimestamp(raw.occurred_at);
+  const rawConfidence = typeof raw.confidence === 'number' ? raw.confidence : Number.NaN;
+  if (
+    !CAMERA_EVENT_ID.test(eventId)
+    || !CAMERA_ID.test(cameraId)
+    || !CAMERA_LABELS.has(label)
+    || occurredAt === null
+    || !Number.isFinite(rawConfidence)
+  ) return null;
+  const description = cameraText(raw.description, 512);
+  const provenance = cameraText(raw.description_provenance, 64);
+  const localDescription = description && provenance === 'local_vlm_on_demand';
+  return {
+    event_id: eventId,
+    camera_id: cameraId,
+    label: label as CameraEvent['label'],
+    occurred_at: occurredAt,
+    confidence: Math.max(0, Math.min(1, rawConfidence)),
+    anonymous: label === 'person',
+    ...(cameraText(raw.zone, 64) ? { zone: cameraText(raw.zone, 64) } : {}),
+    ...(cameraText(raw.room_id, 64) ? { room_id: cameraText(raw.room_id, 64) } : {}),
+    ...(localDescription ? { description, description_provenance: 'local_vlm_on_demand' as const } : {}),
+  };
+}
+
+function normalizeCameraEvents(rawValue: unknown): CameraEventsResponse {
+  const raw = securityRecord(rawValue);
+  const interpretationRaw = securityRecord(raw.interpretation);
+  const interpretation: Record<string, string | number> = {};
+  for (const key of ['after', 'before', 'label', 'camera_id', 'zone', 'room_id']) {
+    const value = interpretationRaw[key];
+    if (typeof value === 'number' && Number.isFinite(value) && value >= 0) interpretation[key] = value;
+    else if (typeof value === 'string' && cameraText(value, 64)) interpretation[key] = cameraText(value, 64);
+  }
+  return {
+    enabled: securityBool(raw.enabled),
+    status: cameraText(raw.status, 32) || 'unavailable',
+    reason: cameraText(raw.reason, 128),
+    interpretation,
+    events: Array.isArray(raw.events)
+      ? raw.events.map(normalizeCameraEvent).filter((item): item is CameraEvent => item !== null).slice(0, 100)
+      : [],
+  };
+}
+
+export async function fetchCameraStatus(config: ServerConfig): Promise<CameraStatusResponse> {
+  const raw = await request<Record<string, unknown>>(config, 'GET', '/api/cameras/status', undefined, { retries: 2 });
+  return normalizeCameraStatus(raw);
+}
+
+export async function fetchCameraEvents(config: ServerConfig): Promise<CameraEventsResponse> {
+  const raw = await request<Record<string, unknown>>(config, 'GET', '/api/cameras/events', undefined, { retries: 2 });
+  return normalizeCameraEvents(raw);
+}
+
+export async function searchCameraEvents(
+  config: ServerConfig,
+  query: string,
+  limit = 100,
+): Promise<CameraEventsResponse> {
+  const text = query.trim();
+  if (!text || text.length > 256) throw new ApiError('Camera search must be 1 to 256 characters');
+  if (!Number.isInteger(limit) || limit < 1 || limit > 100) throw new ApiError('Camera search limit is invalid');
+  const raw = await request<Record<string, unknown>>(
+    config,
+    'POST',
+    '/api/cameras/search',
+    { query: text, limit },
+  );
+  return normalizeCameraEvents(raw);
+}
+
 // ── Agents ────────────────────────────────────────────────────────
 
 export type AgentInfo = {

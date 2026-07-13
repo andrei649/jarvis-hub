@@ -7,8 +7,11 @@ orchestrator.handle_input in production.
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass, field
 from typing import Any, Awaitable, Callable, Optional
+
+logger = logging.getLogger("jarvis.eval")
 
 
 @dataclass
@@ -65,8 +68,9 @@ class EvalHarness:
         for case in cases:
             try:
                 response = await self.runner(case.prompt)
-            except Exception as exc:
-                response = f"[runner error: {exc}]"
+            except Exception:
+                logger.exception("eval runner execution failed")
+                response = "[runner error]"
 
             passed, score = self._evaluate(case, response)
             results.append(

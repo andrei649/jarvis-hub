@@ -9,6 +9,10 @@ import pytest
 
 from agents.core.observability import capability_registry as cr
 from agents.core.observability import reality_harness as rh
+from agents.core.observability.camera_reality import (
+    H31_CAMERA_LIVE_CASES,
+    H31_CAMERA_REALITY_CASES,
+)
 from agents.core.observability.house_reality import (
     H30_HOUSE_LIVE_CASES,
     H30_HOUSE_REALITY_CASES,
@@ -40,7 +44,7 @@ async def test_boot_registry_reality_cases_hold_for_every_wired_capability():
     out = await rh.run_reality(cases, promote=False)
     results = {item["capability_id"]: item["passed"] for item in out["results"]}
 
-    assert len(cases) == 70
+    assert len(cases) == len(records) == 71
     assert {capability_id for capability_id, passed in results.items() if not passed} == {
         capability_id for capability_id, record in records.items() if record.state == cr.SEAM
     }
@@ -129,9 +133,10 @@ async def test_manual_demote_overrides_a_verification(monkeypatch):
 # ── the real seeded cases: prove the egress + kernel kill-switch rails hermetically ──
 async def test_seeded_cases_prove_rails_and_promote():
     out = await run_reality(rh.CASES, now="2026-06-25T00:00:00+00:00")
-    hermetic_count = len(rh.CASES) - len(H30_HOUSE_LIVE_CASES)
+    live_count = len(H30_HOUSE_LIVE_CASES) + len(H31_CAMERA_LIVE_CASES)
+    hermetic_count = len(rh.CASES) - live_count
     assert out["total"] == out["passed"] == hermetic_count
-    assert out["skipped"] == len(H30_HOUSE_LIVE_CASES)
+    assert out["skipped"] == live_count
     assert {"component:kill_switch", "component:capabilities"} <= set(out["promoted"])
     snap = cr.snapshot()  # plugins derive statically (no orch needed)
     states = {c["id"]: c["state"] for c in snap["capabilities"]}
@@ -149,13 +154,19 @@ def test_canonical_seeded_harness_registers_the_h29_media_pack_once():
 
 
 def test_canonical_seeded_harness_registers_the_h30_house_pack_once():
-    h30_names = [
-        case.name for case in H30_HOUSE_REALITY_CASES + H30_HOUSE_LIVE_CASES
-    ]
+    h30_names = [case.name for case in H30_HOUSE_REALITY_CASES + H30_HOUSE_LIVE_CASES]
     seeded_names = [case.name for case in rh.CASES]
 
     assert h30_names
     assert all(seeded_names.count(name) == 1 for name in h30_names)
+
+
+def test_canonical_seeded_harness_registers_the_h31_camera_pack_once():
+    h31_names = [case.name for case in H31_CAMERA_REALITY_CASES + H31_CAMERA_LIVE_CASES]
+    seeded_names = [case.name for case in rh.CASES]
+
+    assert h31_names
+    assert all(seeded_names.count(name) == 1 for name in h31_names)
 
 
 async def test_kill_switch_rail_is_a_real_hermetic_proof():

@@ -42,6 +42,61 @@ def test_list_datasets(tmp_path):
     assert listing[0]["cases"] == 1
 
 
+@pytest.mark.parametrize(
+    "name",
+    [
+        "",
+        ".",
+        "..",
+        "../escape",
+        "..\\escape",
+        "/tmp/escape",
+        "C:\\escape",
+        "bad/name",
+        "a" * 65,
+    ],
+)
+def test_dataset_name_cannot_escape_store_root(tmp_path, name):
+    store = DatasetStore(root=tmp_path / "eval")
+    outside = tmp_path / "escape"
+
+    with pytest.raises(ValueError, match="dataset name"):
+        store.save_version(name, [{"name": "case", "prompt": "p"}])
+    with pytest.raises(ValueError, match="dataset name"):
+        store.load(name)
+    with pytest.raises(ValueError, match="dataset name"):
+        store.record_run(name, 1, {})
+
+    assert not outside.exists()
+
+
+@pytest.mark.parametrize("version", [True, 0, -1, 1_000_001, "../../escape"])
+def test_dataset_version_is_a_bounded_integer(tmp_path, version):
+    store = DatasetStore(root=tmp_path)
+    store.save_version("safe", [{"name": "case", "prompt": "p"}])
+
+    with pytest.raises(ValueError, match="dataset version"):
+        store.load("safe", version=version)
+
+
+def test_dataset_symlink_cannot_redirect_reads_or_writes(tmp_path):
+    store = DatasetStore(root=tmp_path / "eval")
+    store.datasets_dir.mkdir(parents=True)
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    link = store.datasets_dir / "linked"
+    try:
+        link.symlink_to(outside, target_is_directory=True)
+    except OSError:
+        pytest.skip("directory symlinks are unavailable on this host")
+
+    with pytest.raises(ValueError, match="dataset path"):
+        store.save_version("linked", [{"name": "case", "prompt": "p"}])
+    with pytest.raises(ValueError, match="dataset path"):
+        store.load("linked", 1)
+    assert list(outside.iterdir()) == []
+
+
 # ── running + run log ───────────────────────────────────────────────────────
 
 @pytest.mark.asyncio

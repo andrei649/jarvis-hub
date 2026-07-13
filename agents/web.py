@@ -354,12 +354,16 @@ async def lifespan(application: FastAPI):
             logger.info("Webhook channel wired: %s", ch.channel_id)
 
     await orch.start_channels()
+    from agents.core.routers.cameras import start_camera_ingestion
+    await start_camera_ingestion()
     logger.info(
         f"Jarvis Beta ready — {orch.llm_router.name}, "
         f"{len(orch.agents)} agents, {list(orch.channels.keys())} channels, "
         f"{list(orch.skills.skills.keys())} skills"
     )
     yield
+    from agents.core.routers.cameras import stop_camera_ingestion
+    await stop_camera_ingestion()
     # Symmetric lifecycle: stop channels and release the globals so a closed app
     # context (e.g. a TestClient context manager in tests) does not leak a live
     # orchestrator into the next caller. Guarded because multiple app contexts
@@ -970,6 +974,7 @@ from agents.core.routers.missions import router as _missions_router  # noqa: E40
 from agents.core.routers.bench import router as _bench_router  # noqa: E402
 from agents.core.routers.ops import router as _ops_router  # noqa: E402
 from agents.core.routers.media_director import router as _media_director_router  # noqa: E402
+from agents.core.routers.cameras import router as _cameras_router  # noqa: E402
 from agents.core.routers.house import router as _house_router  # noqa: E402
 from agents.core.routers.backup import router as _backup_router  # noqa: E402
 from agents.core.routers.brain import router as _brain_router  # noqa: E402
@@ -1076,6 +1081,7 @@ app.include_router(_bench_router)
 app.include_router(_ops_router)
 app.include_router(_media_director_router)
 app.include_router(_house_router)
+app.include_router(_cameras_router)
 app.include_router(_backup_router)
 
 
