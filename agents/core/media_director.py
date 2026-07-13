@@ -257,6 +257,7 @@ class MediaDevice:
     kind: str
     room: str = ""
     supports: tuple[str, ...] = ("play",)
+    room_default: bool = False
 
     def __post_init__(self) -> None:
         if not all(isinstance(value, str) for value in (self.id, self.name, self.kind, self.room)):
@@ -280,6 +281,8 @@ class MediaDevice:
         if unsupported:
             raise MediaError(f"unsupported device operation: {unsupported[0]!r}")
         object.__setattr__(self, "supports", supports)
+        if not isinstance(self.room_default, bool):
+            raise MediaError("device room_default must be a boolean")
 
 
 class _BoundedJsonStore:
@@ -369,6 +372,32 @@ class DeviceRegistry:
                     f"ambiguous target {target!r}: {len(in_room)} devices in that room"
                 )
             raise MediaError(f"unknown target: {target!r}")
+
+    def resolve_room_default(self, room: str, *, mode: str = "announce") -> MediaDevice:
+        """Resolve a trusted room to one owner-curated default output device.
+
+        The voice layer calls this pure registry lookup; it never receives a
+        driver and therefore cannot actuate before the H29 action rail.
+        """
+        if not isinstance(room, str) or not room.strip() or len(room.strip()) > 64:
+            raise MediaError("room_media_target_missing")
+        if mode not in MODES:
+            raise MediaError("unsupported_mode")
+        normalized = room.strip()
+        with self._lock:
+            candidates = [
+                device
+                for device in self._devices.values()
+                if device.room == normalized and mode in device.supports
+            ]
+            defaults = [device for device in candidates if device.room_default]
+            if len(defaults) == 1:
+                return defaults[0]
+            if len(defaults) > 1 or len(candidates) > 1:
+                raise MediaError("ambiguous_room_media_target")
+            if len(candidates) == 1:
+                return candidates[0]
+            raise MediaError("room_media_target_missing")
 
     def discover(self, discoverers: list) -> int:
         """Merge devices reported by injectable discoverer callables. A broken

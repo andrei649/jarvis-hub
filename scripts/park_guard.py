@@ -14,11 +14,9 @@ import subprocess  # nosec B404
 import sys
 from pathlib import PurePosixPath
 
-# O26 Phase 6, revised 2026-07-11. Values are the only phase declarations that
+# O26 Phase 6, revised 2026-07-13. Values are the only phase declarations that
 # may unlock each module; training/rust deliberately remain owner-pull only.
 PARK_POLICY = {
-    "wyoming": {"phase": "wave-3", "paths": ("agents/core/voice/wyoming.py",)},
-    "satellite_hub": {"phase": "wave-3", "paths": ("agents/core/satellite_hub.py",)},
     "node_mesh": {"phase": "wave-3", "paths": ("agents/core/node_mesh.py",)},
     "e2e_sync": {"phase": "wave-3", "paths": ("agents/core/e2e_sync.py",)},
     "training": {"phase": "owner", "paths": ("training/",)},

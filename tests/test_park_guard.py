@@ -56,10 +56,24 @@ def test_wave_two_modules_are_permanently_removed_from_park_policy():
     }
 
 
-def test_remaining_park_policy_is_exact_after_wave_two_graduation():
+def test_wave_three_room_voice_modules_are_permanently_removed_from_park_policy():
+    graduated = {"wyoming", "satellite_hub"}
+
+    assert graduated.isdisjoint(guard.PARK_POLICY)
+    result = guard.evaluate(
+        ["agents/core/voice/wyoming.py", "agents/core/satellite_hub.py"],
+        "ordinary H30 maintenance",
+    )
+    assert result == {
+        "ok": True,
+        "declarations": [],
+        "parked_touches": [],
+        "violations": [],
+    }
+
+
+def test_remaining_park_policy_is_exact_after_room_voice_graduation():
     assert set(guard.PARK_POLICY) == {
-        "wyoming",
-        "satellite_hub",
         "node_mesh",
         "e2e_sync",
         "training",
@@ -76,20 +90,16 @@ def test_unrelated_changes_pass_without_declaration():
 
 def test_every_parked_family_fails_without_unpark_declaration():
     paths = [
-        "agents/core/satellite_hub.py",
         "agents/core/node_mesh.py",
         "agents/core/e2e_sync.py",
-        "agents/core/voice/wyoming.py",
         "training/prepare_data.py",
         "rust/Cargo.toml",
     ]
     result = guard.evaluate(paths, "feature work")
     assert result["ok"] is False
     assert {violation["module"] for violation in result["violations"]} == {
-        "satellite_hub",
         "node_mesh",
         "e2e_sync",
-        "wyoming",
         "training",
         "rust",
     }
@@ -102,24 +112,24 @@ def test_wave_declaration_allows_only_its_phase():
     )
     assert wave_one["ok"] is True
     cross_wave = guard.evaluate(
-        ["agents/core/browser_agent.py", "agents/core/voice/wyoming.py"], "unpark: wave-1"
+        ["agents/core/browser_agent.py", "agents/core/node_mesh.py"], "unpark: wave-1"
     )
     assert cross_wave["ok"] is False
-    assert [item["module"] for item in cross_wave["violations"]] == ["wyoming"]
+    assert [item["module"] for item in cross_wave["violations"]] == ["node_mesh"]
 
 
 def test_named_module_declaration_is_narrow():
     result = guard.evaluate(
-        ["agents/core/satellite_hub.py", "agents/core/node_mesh.py"],
-        "unpark: satellite_hub",
+        ["agents/core/node_mesh.py", "agents/core/e2e_sync.py"],
+        "unpark: node_mesh",
     )
     assert result["ok"] is False
-    assert [item["module"] for item in result["violations"]] == ["node_mesh"]
+    assert [item["module"] for item in result["violations"]] == ["e2e_sync"]
 
 
 def test_wave_three_does_not_unpark_owner_pull_modules():
     result = guard.evaluate(
-        ["agents/core/voice/wyoming.py", "training/sft_grpo.py"], "unpark: wave-3"
+        ["agents/core/node_mesh.py", "training/sft_grpo.py"], "unpark: wave-3"
     )
     assert result["ok"] is False
     assert [item["module"] for item in result["violations"]] == ["training"]
@@ -135,23 +145,21 @@ def test_policy_files_are_self_protected():
 
 
 def test_windows_paths_and_deleted_files_match_identically():
-    result = guard.evaluate([r"agents\core\satellite_hub.py"], "no declaration")
+    result = guard.evaluate([r"agents\core\node_mesh.py"], "no declaration")
     assert result["ok"] is False
-    assert result["violations"][0]["path"] == "agents/core/satellite_hub.py"
+    assert result["violations"][0]["path"] == "agents/core/node_mesh.py"
 
 
 def test_declarations_are_line_based_not_incidental_prose():
     prose = "Please do not unpark: wave-3 because this is only documentation."
-    assert guard.evaluate(["agents/core/satellite_hub.py"], prose)["ok"] is False
-    assert guard.evaluate(["agents/core/satellite_hub.py"], "Context\nunpark: wave-3\nTests")["ok"]
+    assert guard.evaluate(["agents/core/node_mesh.py"], prose)["ok"] is False
+    assert guard.evaluate(["agents/core/node_mesh.py"], "Context\nunpark: wave-3\nTests")["ok"]
 
 
 def test_real_policy_covers_remaining_backlog_phase_six_names():
     expected = {
-        "satellite_hub",
         "node_mesh",
         "e2e_sync",
-        "wyoming",
         "training",
         "rust",
     }
