@@ -219,6 +219,38 @@ async def test_description_path_uses_one_masked_frame_and_returns_metadata_only(
 
 
 @pytest.mark.asyncio
+async def test_private_snapshot_store_receives_only_masked_frame_and_returns_receipt_metadata():
+    stored: list[tuple[CameraEvent, MaskedFrame]] = []
+
+    async def generate(**_kwargs) -> str:
+        return '{"description":"An anonymous person is at the door."}'
+
+    class _Receipt:
+        stored = True
+        snapshot_stored = True
+
+    async def store_masked(event: CameraEvent, frame: MaskedFrame):
+        stored.append((event, frame))
+        return _Receipt()
+
+    source = _SnapshotSource(_frame())
+    result = await CameraPipeline(
+        rules=CameraRuleEngine(),
+        privacy_policy=_policy(),
+        snapshots=source,
+        vlm=LocalCameraVLM(_vlm_config(), generate=generate),
+        store_masked=store_masked,
+    ).process(_event(), describe=True)
+
+    assert result.status == "described"
+    assert result.event_stored is True
+    assert result.snapshot_stored is True
+    assert stored == [(result.event, source.frame)]
+    assert "data" not in {field.name for field in fields(result)}
+    assert source.frame.data not in repr(result).encode()
+
+
+@pytest.mark.asyncio
 async def test_vlm_endpoint_and_image_bounds_fail_before_generation():
     for endpoint in (
         "https://api.example.com/v1",

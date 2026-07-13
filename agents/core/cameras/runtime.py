@@ -187,9 +187,9 @@ def _camera_config(raw: Any) -> tuple[CameraConfig, tuple[CameraZone, ...], tupl
     return config, tuple(zones), tuple(lines)
 
 
-def _camera_settings(orch: object | None) -> tuple[
-    tuple[CameraConfig, ...], tuple[CameraZone, ...], tuple[LineRule, ...]
-]:
+def _camera_settings(
+    orch: object | None,
+) -> tuple[tuple[CameraConfig, ...], tuple[CameraZone, ...], tuple[LineRule, ...]]:
     raw = _setting(orch, "camera.cameras", ())
     if isinstance(raw, str):
         if len(raw) > 65_536:
@@ -272,6 +272,7 @@ def build_camera_runtime(
     resolver: Callable | None = None,
     discoverer: Callable | None = None,
     vlm_backend: Any = None,
+    frigate_transport: Any = None,
 ) -> CameraRuntime:
     """Compose the camera stack only after master opt-in and versioned consent."""
 
@@ -356,6 +357,7 @@ def build_camera_runtime(
             secret_broker=secret_broker,
             poll_gate=privacy.begin_polling,
             kill_switch=kill_switch,
+            transport=frigate_transport,
             resolver=resolver,
         )
         snapshot_source = _FrigateSnapshotSource(http=source._http, privacy_policy=privacy)
@@ -377,6 +379,7 @@ def build_camera_runtime(
             privacy_policy=privacy,
             snapshots=snapshot_source,
             vlm=vlm,
+            store_masked=lambda event, frame: vault.store(event, frame=frame),
         )
         retrieval = CameraEventRetrieval(index=vault)
         scheduler = CameraRetentionScheduler(vault=vault)

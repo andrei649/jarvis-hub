@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 from datetime import UTC
 
+import httpx
 import pytest
 
 from agents.core.cameras.models import CameraEvent
@@ -103,9 +104,7 @@ async def test_status_events_and_search_are_bounded_metadata_only(monkeypatch):
     status = _payload(await camera_router.camera_status())
     events = _payload(await camera_router.camera_events(limit=10))
     search = _payload(
-        await camera_router.camera_search(
-            camera_router.CameraSearchBody(query="person", limit=10)
-        )
+        await camera_router.camera_search(camera_router.CameraSearchBody(query="person", limit=10))
     )
 
     assert status["enabled"] is True
@@ -248,6 +247,38 @@ def test_runtime_composes_real_privacy_source_pipeline_vault_and_retrieval(tmp_p
     assert set(runtime.feed_publisher.health()["sinks"]) == {"house"}
     assert not hasattr(runtime.source, "fetch_snapshot")
     assert runtime.vault.health()["status"] == "ready"
+
+
+@pytest.mark.asyncio
+async def test_runtime_accepts_a_private_hermetic_frigate_transport(tmp_path):
+    calls: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls.append(request.url.path)
+        return httpx.Response(
+            200,
+            json=[
+                {
+                    "id": "event-transport-1",
+                    "camera": "front-door",
+                    "label": "person",
+                    "start_time": 100.0,
+                    "data": {"top_score": 0.91, "zones": ["porch"]},
+                }
+            ],
+        )
+
+    runtime = build_camera_runtime(
+        _Orch(_settings(), root=tmp_path),
+        root=tmp_path / "camera",
+        resolver=lambda *_args: ("192.168.1.40",),
+        frigate_transport=httpx.MockTransport(handler),
+    )
+
+    assert runtime.source is not None
+    page = await runtime.source.list_events(None, 1)
+    assert [event.event_id for event in page.events] == ["event-transport-1"]
+    assert calls == ["/api/events"]
 
 
 @pytest.mark.parametrize(

@@ -133,9 +133,7 @@ class CameraFeedEvent:
             event_id=self.event_id,
             source_event_id=self.event_id,
             entity_id=f"camera.{self.camera_id}",
-            event_type=(
-                "camera_anonymous_occupancy" if occupancy else "camera_sensor_observation"
-            ),
+            event_type=("camera_anonymous_occupancy" if occupancy else "camera_sensor_observation"),
             previous_state="",
             current_state="occupied" if occupancy else self.label,
             occurred_at=self.occurred_at,
@@ -406,9 +404,7 @@ class CameraIngestionResult:
 class CameraIngestionCoordinator:
     """Run one bounded metadata page through pipeline, vault, and durable feeds."""
 
-    _TERMINAL_STATUSES = frozenset(
-        {"metadata_only", "described", "description_unavailable"}
-    )
+    _TERMINAL_STATUSES = frozenset({"metadata_only", "described", "description_unavailable"})
 
     def __init__(
         self,
@@ -481,9 +477,7 @@ class CameraIngestionCoordinator:
             sort_keys=True,
             separators=(",", ":"),
         )
-        temporary = self._cursor_path.with_name(
-            f".{self._cursor_path.name}.{os.getpid()}.tmp"
-        )
+        temporary = self._cursor_path.with_name(f".{self._cursor_path.name}.{os.getpid()}.tmp")
         try:
             temporary.write_text(payload, encoding="utf-8")
             temporary.replace(self._cursor_path)
@@ -536,9 +530,11 @@ class CameraIngestionCoordinator:
                         if outcome.status not in self._TERMINAL_STATUSES:
                             raise ValueError("camera pipeline status is invalid")
                         candidate = outcome.event
+                        stored_already = outcome.event_stored
+                        stored += int(outcome.event_stored)
                         if len(self._retry_events) >= 1_000:
                             self._retry_events.pop(next(iter(self._retry_events)))
-                        self._retry_events[retry_key] = (candidate, False)
+                        self._retry_events[retry_key] = (candidate, stored_already)
                     except Exception:
                         failed += 1
                         self._last_error = "event_processing_failed"

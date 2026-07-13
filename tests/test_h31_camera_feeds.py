@@ -59,9 +59,7 @@ def _event(event_id: str = "camera-event-1", *, label: str = "person") -> Camera
 
 
 def test_feed_projection_strips_descriptions_and_converts_to_anonymous_house_event():
-    record = CameraFeedEvent.from_camera_event(
-        _event(), observed_at=1_001.0, consent_generation=7
-    )
+    record = CameraFeedEvent.from_camera_event(_event(), observed_at=1_001.0, consent_generation=7)
 
     public = record.to_public()
     assert public == {
@@ -76,7 +74,9 @@ def test_feed_projection_strips_descriptions_and_converts_to_anonymous_house_eve
         "room_id": "entry",
         "dedupe_key": "camera:front-door:camera-event-1",
     }
-    assert not ({"description", "description_provenance", "snapshot", "bytes", "vault_id"} & public.keys())
+    assert not (
+        {"description", "description_provenance", "snapshot", "bytes", "vault_id"} & public.keys()
+    )
 
     house_event = record.to_house_event()
     assert isinstance(house_event, HouseEvent)
@@ -91,9 +91,7 @@ def test_feed_projection_strips_descriptions_and_converts_to_anonymous_house_eve
 @pytest.mark.asyncio
 async def test_h30_consumer_updates_only_allowlisted_anonymous_sensor_state():
     consumer = HouseCameraFeedConsumer(max_events=4)
-    person = CameraFeedEvent.from_camera_event(
-        _event(), observed_at=1_001.0, consent_generation=7
-    )
+    person = CameraFeedEvent.from_camera_event(_event(), observed_at=1_001.0, consent_generation=7)
     package = CameraFeedEvent.from_camera_event(
         _event("camera-event-2", label="package"),
         observed_at=1_002.0,
@@ -120,7 +118,9 @@ async def test_h30_consumer_updates_only_allowlisted_anonymous_sensor_state():
         }
     ]
     serialized = json.dumps(snapshot).lower()
-    assert not any(term in serialized for term in ("description", "snapshot", "vault", "identity", "face"))
+    assert not any(
+        term in serialized for term in ("description", "snapshot", "vault", "identity", "face")
+    )
 
 
 @pytest.mark.asyncio
@@ -334,6 +334,54 @@ async def test_ingestion_coordinator_runs_source_pipeline_vault_feed_and_persist
     assert source.after == [None, "cursor-1"]
     assert house.snapshot()["events"] == 1
     assert cursor_path.read_text(encoding="utf-8").strip().startswith("{")
+
+
+@pytest.mark.asyncio
+async def test_ingestion_does_not_store_metadata_twice_after_private_snapshot_store(tmp_path):
+    class _SnapshotStoredPipeline:
+        async def process(
+            self,
+            event: CameraEvent,
+            *,
+            describe: bool = False,
+        ) -> CameraPipelineResult:
+            return CameraPipelineResult(
+                event=event,
+                zones=(),
+                line_crossings=(),
+                status="described",
+                event_stored=True,
+                snapshot_stored=True,
+            )
+
+    class _MustNotStoreAgain:
+        def store(self, _event: CameraEvent) -> CameraStoreReceipt:
+            raise AssertionError("pipeline-owned snapshot storage must not be repeated")
+
+    policy = _policy()
+    house = HouseCameraFeedConsumer()
+    publisher = CameraFeedPublisher(
+        privacy_policy=policy,
+        ledger_path=tmp_path / "deliveries.db",
+        clock=lambda: 1_001.0,
+    )
+    publisher.subscribe("house", house)
+    coordinator = CameraIngestionCoordinator(
+        source=_Source(_event()),
+        pipeline=_SnapshotStoredPipeline(),
+        vault=_MustNotStoreAgain(),
+        publisher=publisher,
+        privacy_policy=policy,
+        cursor_path=tmp_path / "cursor.json",
+    )
+
+    result = await coordinator.poll(limit=1)
+    publisher.close()
+
+    assert result.status == "ok"
+    assert result.stored == result.delivered == 1
+    assert result.failed == 0
+    assert house.snapshot()["events"] == 1
 
 
 @pytest.mark.asyncio

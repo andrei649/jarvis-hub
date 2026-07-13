@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
+import inspect
 from dataclasses import dataclass, replace
-from typing import Protocol
+from typing import Any, Protocol
 
 from .models import CameraEvent, MaskedFrame, PrivacyLease
 from .privacy import CameraPrivacyError, CameraPrivacyPolicy
@@ -25,6 +26,8 @@ class CameraPipelineResult:
     zones: tuple[str, ...]
     line_crossings: tuple[str, ...]
     status: str
+    event_stored: bool = False
+    snapshot_stored: bool = False
 
 
 class CameraPipeline:
@@ -37,6 +40,7 @@ class CameraPipeline:
         privacy_policy: CameraPrivacyPolicy,
         snapshots: SnapshotSource,
         vlm: LocalCameraVLM,
+        store_masked=None,
     ) -> None:
         if not isinstance(rules, CameraRuleEngine):
             raise ValueError("camera rules are required")
@@ -46,10 +50,13 @@ class CameraPipeline:
             raise ValueError("masked camera snapshot source is required")
         if not isinstance(vlm, LocalCameraVLM):
             raise ValueError("local camera VLM is required")
+        if store_masked is not None and not callable(store_masked):
+            raise ValueError("masked snapshot store must be callable")
         self._rules = rules
         self._privacy = privacy_policy
         self._snapshots = snapshots
         self._vlm = vlm
+        self._store_masked = store_masked
 
     async def process(
         self,
@@ -68,7 +75,9 @@ class CameraPipeline:
         if not outcome.qualifies:
             return self._result(outcome.event, outcome.zones, outcome.line_crossings, "filtered")
         if not describe:
-            return self._result(outcome.event, outcome.zones, outcome.line_crossings, "metadata_only")
+            return self._result(
+                outcome.event, outcome.zones, outcome.line_crossings, "metadata_only"
+            )
         if not self._vlm.enabled:
             return self._result(
                 outcome.event,
@@ -85,6 +94,44 @@ class CameraPipeline:
             self._privacy.recheck(lease, "inference")
             description = await self._vlm.describe(frame, outcome.event)
             self._privacy.recheck(lease, "inference")
+
+            self._privacy.recheck(lease, "publish")
+            final_event = outcome.event
+            status = "description_unavailable"
+            if description is not None:
+                final_event = replace(
+                    outcome.event,
+                    description=description,
+                    description_provenance="local_vlm_on_demand",
+                )
+                status = "described"
+
+            event_stored = False
+            snapshot_stored = False
+            if self._store_masked is not None:
+                try:
+                    self._privacy.recheck(lease, "store")
+                    receipt: Any = self._store_masked(final_event, frame)
+                    if inspect.isawaitable(receipt):
+                        receipt = await receipt
+                    self._privacy.recheck(lease, "store")
+                    event_stored = bool(getattr(receipt, "stored", False))
+                    snapshot_stored = bool(getattr(receipt, "snapshot_stored", False))
+                except CameraPrivacyError:
+                    raise
+                except Exception:
+                    event_stored = False
+                    snapshot_stored = False
+
+            self._privacy.recheck(lease, "publish")
+            return self._result(
+                final_event,
+                outcome.zones,
+                outcome.line_crossings,
+                status,
+                event_stored=event_stored,
+                snapshot_stored=snapshot_stored,
+            )
         except CameraPrivacyError:
             raise
         except Exception:
@@ -97,34 +144,23 @@ class CameraPipeline:
         finally:
             frame = None
 
-        self._privacy.recheck(lease, "publish")
-        if description is None:
-            return self._result(
-                outcome.event,
-                outcome.zones,
-                outcome.line_crossings,
-                "description_unavailable",
-            )
-        described = replace(
-            outcome.event,
-            description=description,
-            description_provenance="local_vlm_on_demand",
-        )
-        self._privacy.recheck(lease, "publish")
-        return self._result(described, outcome.zones, outcome.line_crossings, "described")
-
     @staticmethod
     def _result(
         event: CameraEvent,
         zones: tuple[str, ...],
         line_crossings: tuple[str, ...],
         status: str,
+        *,
+        event_stored: bool = False,
+        snapshot_stored: bool = False,
     ) -> CameraPipelineResult:
         return CameraPipelineResult(
             event=event,
             zones=zones,
             line_crossings=line_crossings,
             status=status,
+            event_stored=event_stored,
+            snapshot_stored=snapshot_stored,
         )
 
 
