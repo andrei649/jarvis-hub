@@ -540,10 +540,12 @@ async def _probe_media_present_offline_honest() -> bool:
     )
 
 
-from agents.core.observability.operator_reality import (  # noqa: E402, F401, I001
+from agents.core.observability.operator_reality import (  # noqa: E402, I001
     OPERATOR_CAPABILITY_CASES,
-    OperatorEventLedger,
+    OperatorEventLedger as _OperatorEventLedger,
 )
+
+OperatorEventLedger = _OperatorEventLedger
 
 
 

@@ -263,12 +263,15 @@ class WindowsDesktopDriver:
         name = raw_name.strip()
         if len(name) > self.max_text_chars:
             return {"ok": False, "reason": "element_name_too_large"}
+        text = ""
         if action == "type":
             text = args.get("text")
             if not isinstance(text, str):
                 return {"ok": False, "reason": "text_required"}
             if len(text) > self.max_type_chars:
                 return {"ok": False, "reason": "text_too_large"}
+        elif action != "click":
+            return {"ok": False, "reason": "unsupported_action"}
 
         snapshot, _truncated = await self._accessibility_snapshot()
         match = self._find(snapshot, name, exact_name=True)
@@ -278,7 +281,7 @@ class WindowsDesktopDriver:
         backend = await self._ensure_backend()
         if action == "click":
             await _call_host(backend.click, raw)
-        else:
+        elif action == "type":
             await _call_host(backend.type, raw, text)
         return {"ok": True, "action": action, "element": normalized.get("name", "")}
 

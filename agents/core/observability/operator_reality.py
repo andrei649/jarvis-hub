@@ -15,17 +15,6 @@ _OPERATOR_METADATA = {
     "live_owner_validation": "required",
     "promotable": False,
 }
-_OPERATOR_COUNTER_KEYS = (
-    "attempted_actions",
-    "governance_checks",
-    "approved_actions",
-    "executed_actions",
-    "blocked_actions",
-    "ungoverned_actions",
-    "cleanup_calls",
-)
-
-
 class OperatorEventLedger:
     """Append-only causal evidence for hermetic operator actions.
 
