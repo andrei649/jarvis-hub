@@ -21,6 +21,7 @@ Pure-Python, file-based, fully offline-testable (inject a fake runner).
 from __future__ import annotations
 
 import json
+import re
 import time
 import uuid
 from pathlib import Path
@@ -29,6 +30,46 @@ from typing import Awaitable, Callable, Optional
 from agents.core.paths import data_path
 
 from .eval import EvalCase, EvalHarness
+
+_DATASET_NAME_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,63}\Z")
+_MAX_DATASET_VERSION = 1_000_000
+
+
+def _dataset_name(value: object) -> str:
+    if (
+        not isinstance(value, str)
+        or _DATASET_NAME_RE.fullmatch(value) is None
+        or value in {".", ".."}
+    ):
+        raise ValueError("dataset name must be a bounded path-free identifier")
+    return value
+
+
+def _dataset_version(value: object) -> int:
+    if (
+        isinstance(value, bool)
+        or not isinstance(value, int)
+        or not 1 <= value <= _MAX_DATASET_VERSION
+    ):
+        raise ValueError("dataset version must be a bounded positive integer")
+    return value
+
+
+def _direct_child(base: Path, child: str) -> Path:
+    """Return one non-symlink child anchored directly below *base*.
+
+    Both the allowlisted component and the resolved containment check are kept:
+    the former rejects traversal on every platform, while the latter also
+    refuses an on-disk symlink planted beneath the trusted dataset root.
+    """
+    resolved_base = base.resolve()
+    unresolved = resolved_base / child
+    if unresolved.is_symlink():
+        raise ValueError("dataset path cannot traverse a symlink")
+    candidate = unresolved.resolve()
+    if candidate.parent != resolved_base:
+        raise ValueError("dataset path must remain inside the store root")
+    return candidate
 
 
 class DatasetStore:
@@ -39,13 +80,13 @@ class DatasetStore:
     # ── paths ────────────────────────────────────────────────────────────────
 
     def _dir(self, name: str) -> Path:
-        return self.datasets_dir / name
+        return _direct_child(self.datasets_dir, _dataset_name(name))
 
     def _version_file(self, name: str, version: int) -> Path:
-        return self._dir(name) / f"v{version}.jsonl"
+        return _direct_child(self._dir(name), f"v{_dataset_version(version)}.jsonl")
 
     def _runs_file(self, name: str) -> Path:
-        return self._dir(name) / "runs.jsonl"
+        return _direct_child(self._dir(name), "runs.jsonl")
 
     # ── dataset versions ─────────────────────────────────────────────────────
 
@@ -55,8 +96,10 @@ class DatasetStore:
             return []
         out = []
         for f in d.glob("v*.jsonl"):
+            if f.is_symlink() or not f.is_file():
+                continue
             try:
-                out.append(int(f.stem[1:]))
+                out.append(_dataset_version(int(f.stem[1:])))
             except ValueError:
                 continue
         return sorted(out)
@@ -97,15 +140,21 @@ class DatasetStore:
             return []
         out = []
         for d in sorted(self.datasets_dir.iterdir()):
-            if not d.is_dir():
+            if d.is_symlink() or not d.is_dir():
                 continue
-            latest = self.latest_version(d.name)
-            runs = self._read_runs(d.name)
+            try:
+                name = _dataset_name(d.name)
+                if self._dir(name) != d.resolve():
+                    continue
+                latest = self.latest_version(name)
+                runs = self._read_runs(name)
+            except ValueError:
+                continue
             out.append({
-                "name": d.name,
+                "name": name,
                 "latest_version": latest,
-                "versions": self.versions(d.name),
-                "cases": len(self.load(d.name, latest)) if latest else 0,
+                "versions": self.versions(name),
+                "cases": len(self.load(name, latest)) if latest else 0,
                 "last_score": runs[-1]["score"] if runs else None,
                 "runs": len(runs),
             })
@@ -126,6 +175,7 @@ class DatasetStore:
 
     def record_run(self, name: str, version: int, result: dict) -> str:
         """Append a run summary (from EvalHarness.run) and return its run_id."""
+        version = _dataset_version(version)
         run_id = uuid.uuid4().hex[:8]
         record = {
             "run_id": run_id,
