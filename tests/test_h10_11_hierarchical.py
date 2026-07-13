@@ -85,6 +85,22 @@ async def test_exhausted_retries_marks_not_ok():
     assert out["members"][0]["ok"] is False and out["ok"] is False
 
 
+@pytest.mark.asyncio
+async def test_agent_exception_detail_is_not_returned_to_client():
+    secret = "database password leaked from C:\\private\\settings.ini"
+
+    def explode(_text, _calls):
+        raise RuntimeError(secret)
+
+    orch = _Orch({"w": explode, "jarvis": "F"})
+    out = await HierarchicalManager(orch, max_retries=0).run(
+        "g", [{"id": "t", "agent": "w"}]
+    )
+    member_output = out["members"][0]["output"]
+    assert member_output.startswith("[error:")
+    assert secret not in member_output
+
+
 # ── endpoint ─────────────────────────────────────────────────────────────────
 
 def test_hierarchical_endpoint():

@@ -229,6 +229,7 @@ class TestEvalHarness:
         result = await harness.run(cases)
         assert result["passed"] == 0
         assert "runner error" in result["results"][0]["response"].lower()
+        assert "backend unavailable" not in result["results"][0]["response"]
 
     async def test_aggregate_score(self):
         """3 cases: 2 pass (score=1.0), 1 fail (score=0.0) → mean = 2/3."""
