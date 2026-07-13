@@ -161,10 +161,12 @@ Safe Comms channel inbox transport v0 ✅ (#551).
 O26-P3.2 adds a Vitest reconciliation guard so this document cannot re-list shipped
 TTS/mic/cognition/trust or Console controls as missing.
 
-**O29 wave 1 (2026-07-12):** the Media Director surface (`/api/media/*` — devices, session,
-present, restore; default-off behind `JARVIS_MEDIA_DIRECTOR`) has **no HUD panel yet** — a
-Console *Media* panel (device list + session board + a governed present form) is the punch-list
-item; the parity gate classifies the routes `NOT_IN_HUD` until it lands.
+**O29 Media Director (2026-07-13):** the default-off `/api/media/*` device, session, present,
+and restore surface is live in the Console Build cluster. `MediaDirectorPanel` separates the
+read board, explicit user presentation/restore controls, and admin-authenticated registry
+controls; queued approval, kernel refusal, nested `output.ok=false`, and driver-verified success
+are rendered as distinct outcomes. The panel displays bounded metadata only and never embeds
+remote media. `tests/test_hud_v2_parity.py` pins every Director route to the live Build surface.
 
 **H28.4 desktop actuation (2026-07-13):** `POST /api/desktop/run` is user-guarded and
 default-off behind the isolated-host double opt-in. The Build surface still needs a dedicated
