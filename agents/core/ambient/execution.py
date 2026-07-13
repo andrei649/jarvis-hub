@@ -55,6 +55,7 @@ class AmbientTaskExecutor:
         action_api: Callable[[SilentActionBinding, object], Awaitable[dict]],
         rollback: Callable[[SilentActionBinding, object, dict], Awaitable[dict]],
         policy: LadderPolicy | None = None,
+        night_ledger: object | None = None,
     ) -> None:
         providers = (
             enabled_provider,
@@ -77,6 +78,7 @@ class AmbientTaskExecutor:
         self._action_api = action_api
         self._rollback = rollback
         self._policy = policy or LadderPolicy()
+        self._night_ledger = night_ledger
 
     def _halted(self) -> bool:
         if callable(self._kill_switch):
@@ -153,11 +155,24 @@ class AmbientTaskExecutor:
         binding, reason = self._guard(task)
         if binding is None:
             return {"status": "revoked", "reason": reason}
+        night_claim = None
+        if self._night_ledger is not None:
+            try:
+                night_claim = self._night_ledger.claim(
+                    f"task-{getattr(task, 'id', '')}",
+                    rung=DecisionRung.ACT_SILENTLY.value,
+                )
+            except Exception:
+                return {"status": "revoked", "reason": "night_ledger_unavailable"}
+            if night_claim.admitted is not True:
+                return {"status": "revoked", "reason": night_claim.reason}
         try:
             result = await self._action_api(binding, task)
         except Exception:
             result = {"status": "failed", "verified": False}
         if isinstance(result, dict) and result.get("verified") is True:
+            if night_claim is not None:
+                self._night_ledger.complete(night_claim, result)
             return result
         failed = result if isinstance(result, dict) else {"status": "failed"}
         # Compensation is explicitly allowed after ambient disable/revocation.
@@ -165,7 +180,7 @@ class AmbientTaskExecutor:
             compensation = await self._rollback(binding, task, failed)
         except Exception:
             compensation = {"status": "failed", "verified": False}
-        return {
+        final = {
             "status": "failed",
             "reason": "postcondition_failed",
             "compensation": (
@@ -174,6 +189,9 @@ class AmbientTaskExecutor:
                 else "manual_recovery_required"
             ),
         }
+        if night_claim is not None:
+            self._night_ledger.complete(night_claim, final)
+        return final
 
 
 def register_ambient_handlers(executor, ambient: AmbientTaskExecutor):

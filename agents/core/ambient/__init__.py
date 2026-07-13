@@ -8,6 +8,7 @@ from .contracts import (
     MonitorPredicate,
 )
 from .memory import AmbientSituationMemory
+from .night import AmbientNightLedger
 from .policy import AttentionDeliveryBroker, AttentionLedger, DecisionRung, LadderPolicy
 from .runtime import AmbientRuntime, build_ambient_runtime
 
@@ -16,6 +17,7 @@ __all__ = [
     "AmbientEvent",
     "AmbientRuntime",
     "AmbientSituationMemory",
+    "AmbientNightLedger",
     "AttentionDeliveryBroker",
     "AttentionLedger",
     "DecisionRung",

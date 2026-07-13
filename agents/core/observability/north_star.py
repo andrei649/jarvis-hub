@@ -166,6 +166,9 @@ def compute_north_star(
     *,
     budget=None,
     attention_ledger=None,
+    ambient_store=None,
+    ambient_night_ledger=None,
+    owner_timezone: str = "UTC",
     days: int = 7,
     now: float | None = None,
     fetch_limit: int = 100_000,
@@ -316,6 +319,19 @@ def compute_north_star(
     }
     breaches = check_guardrails(counter_metrics)
 
+    ambient_night_shift = None
+    if ambient_store is not None and ambient_night_ledger is not None:
+        from agents.core.ambient.night import ambient_night_report
+
+        ambient_night_shift = ambient_night_report(
+            ambient_store=ambient_store,
+            night_ledger=ambient_night_ledger,
+            timezone_name=owner_timezone,
+            start_hour=night_window[0],
+            end_hour=night_window[1],
+            cutoff=cutoff,
+        )
+
     return {
         "period": "weekly",
         "days": days,
@@ -333,6 +349,7 @@ def compute_north_star(
             "pct": round(night_done / done, 4) if done else None,
             "window": list(night_window),  # [start, end] local hours, for transparency
         },
+        "ambient_night_shift": ambient_night_shift,
         "counter_metrics": counter_metrics,
         # V4 — MOONSHOT §6 guardrails: which counter-metrics are out of bounds (empty when
         # healthy or when a metric has no data yet). `guardrails_ok` is the merge-gate bit.

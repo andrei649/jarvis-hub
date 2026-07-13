@@ -14,6 +14,7 @@ from agents.core.paths import data_path
 
 from .engine import AmbientEngine
 from .memory import AmbientSituationMemory
+from .night import AmbientNightLedger
 from .proposals import AmbientProposalSink
 from .registry import MonitorRegistry
 from .store import AmbientStore
@@ -28,6 +29,7 @@ class AmbientRuntime:
     registry: MonitorRegistry | None = None
     engine: AmbientEngine | None = None
     memory: AmbientSituationMemory | None = None
+    night_ledger: AmbientNightLedger | None = None
     attention_ledger: object | None = None
     generation: int = 0
     orch_id: int = 0
@@ -35,6 +37,8 @@ class AmbientRuntime:
     def close(self) -> None:
         if self.memory is not None:
             self.memory.close()
+        if self.night_ledger is not None:
+            self.night_ledger.close()
         if self.store is not None:
             self.store.close()
 
@@ -104,6 +108,38 @@ def build_ambient_runtime(
         decay=decay,
         kg=kg,
     )
+    timezone_name = str(_setting(orch, "general.timezone", "Europe/Bucharest"))
+    night_start = _setting(orch, "ambient.quiet_hours_start", 22)
+    night_end = _setting(orch, "ambient.quiet_hours_end", 7)
+    try:
+        night_ledger = AmbientNightLedger(
+            runtime_root / "night.db",
+            timezone_name=timezone_name,
+            start_hour=night_start,
+            end_hour=night_end,
+        )
+    except ValueError:
+        memory.close()
+        store.close()
+        return AmbientRuntime(
+            False,
+            "degraded",
+            "ambient_config_invalid",
+            generation=generation,
+            orch_id=orch_id,
+        )
+    if night_ledger.health()["status"] != "ready":
+        reason = night_ledger.health()["reason"]
+        night_ledger.close()
+        memory.close()
+        store.close()
+        return AmbientRuntime(
+            False,
+            "degraded",
+            reason,
+            generation=generation,
+            orch_id=orch_id,
+        )
     worker = getattr(orch, "autonomy", None) if orch is not None else None
     govern_enqueue = getattr(worker, "govern_enqueue", None)
     decision_sink = None
@@ -128,6 +164,7 @@ def build_ambient_runtime(
         registry=registry,
         engine=engine,
         memory=memory,
+        night_ledger=night_ledger,
         attention_ledger=getattr(orch, "attention_ledger", None) if orch is not None else None,
         generation=generation,
         orch_id=orch_id,
