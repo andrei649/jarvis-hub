@@ -26,6 +26,7 @@ _MAX_TOMBSTONES = 20_000
 _MAX_IDENTITIES = 5_000
 _MAX_CACHE = 256
 _MAX_TEXT = 256
+_MAX_EVIDENCE_CATEGORIES = 16
 _FACT_FIELDS = frozenset(
     {
         "id",
@@ -45,6 +46,7 @@ _FACT_FIELDS = frozenset(
         "consent_version",
         "key_version",
         "multi",
+        "evidence_categories",
     }
 )
 _PSEUDONYM = re.compile(r"occ-[0-9a-f]{32}")
@@ -80,6 +82,19 @@ def _confidence(value: object) -> float:
     if not math.isfinite(result) or not 0.0 <= result <= 1.0:
         raise ValueError("confidence must be between zero and one")
     return result
+
+
+def _evidence_categories(value: object) -> list[str]:
+    if isinstance(value, (str, bytes)):
+        raise ValueError("evidence categories must be a bounded collection")
+    try:
+        items = list(value)
+    except TypeError as exc:
+        raise ValueError("evidence categories must be a bounded collection") from exc
+    if len(items) > _MAX_EVIDENCE_CATEGORIES:
+        raise ValueError("evidence categories exceed their count limit")
+    normalized = sorted({_text(item, label="evidence category", limit=64) for item in items})
+    return normalized
 
 
 def _secret_from_broker(secret_broker, key_ref: str) -> str:
@@ -192,6 +207,8 @@ class PrivateHouseStore:
         _confidence(fact["confidence"])
         _text(fact["privacy_class"], label="privacy_class", limit=64)
         _text(fact["consent_version"], label="consent_version", limit=64)
+        if fact["evidence_categories"] != _evidence_categories(fact["evidence_categories"]):
+            raise ValueError("private fact evidence categories are not canonical")
 
     def _validate_index_records(
         self, tombstones: dict, revocations: dict, identities: dict
@@ -246,6 +263,7 @@ class PrivateHouseStore:
         ):
             raise ValueError("private state exceeds bounds")
         for fact in facts:
+            fact.setdefault("evidence_categories", [])
             self._validate_fact(fact, key_version=key_version)
         fact_ids = {fact["id"] for fact in facts}
         event_keys = {fact["source_event_key"] for fact in facts}
@@ -351,6 +369,7 @@ class PrivateHouseStore:
         privacy_class: str = "household_sensitive",
         linked_identity_ref: str = "",
         multi: bool = False,
+        evidence_categories=(),
     ) -> dict:
         occupant = _text(occupant_ref, label="occupant_ref")
         source_ref = _text(source_event_id, label="source_event_id")
@@ -364,6 +383,7 @@ class PrivateHouseStore:
         if fresh < observed:
             raise ValueError("fresh_until cannot precede observed_at")
         score = _confidence(confidence)
+        categories = _evidence_categories(evidence_categories)
         with self._lock:
             occupant_id = self.pseudonym_for(occupant)
             event_key = self._event_key(source_ref)
@@ -401,6 +421,7 @@ class PrivateHouseStore:
                     "consent_version": consent,
                     "key_version": self._key_version,
                     "multi": bool(multi),
+                    "evidence_categories": categories,
                 }
                 self._facts.append(fact)
                 self._recompute(fact["subject_id"], predicate)
@@ -419,6 +440,18 @@ class PrivateHouseStore:
             subject_id="{occupant}",
             predicate="present_in",
             obj=room,
+            **metadata,
+        )
+
+    def record_presence_state(self, *, occupant_ref: str, state: str, **metadata) -> dict:
+        value = _text(state, label="presence state", limit=32).lower()
+        if value not in {"present", "vacant"}:
+            raise ValueError("presence state is invalid")
+        return self._record(
+            occupant_ref=occupant_ref,
+            subject_id="{occupant}",
+            predicate="presence_status",
+            obj=value,
             **metadata,
         )
 
