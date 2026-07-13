@@ -168,6 +168,15 @@ controls; queued approval, kernel refusal, nested `output.ok=false`, and driver-
 are rendered as distinct outcomes. The panel displays bounded metadata only and never embeds
 remote media. `tests/test_hud_v2_parity.py` pins every Director route to the live Build surface.
 
+**H30.5 House Brain (2026-07-13):** the default-off `/api/house/*` surface is live in the new
+Console Home cluster. `HousePanel` renders bounded topology and pseudonymous presence, pauses
+controls whenever live Home Assistant state is unavailable, and exposes only narrow governed
+light/climate/security proposals. Security proposals remain visually distinct and use an
+admin-authenticated two-step challenge bound to the durable task; success is never shown for a
+queued, denied, or unverified outcome. Native mobile parity is read-first with an Approvals handoff
+and intentionally has no security confirmation shortcut. The HUD parity gate pins every user route
+to the Home surface.
+
 **H28.4 desktop actuation (2026-07-13):** `POST /api/desktop/run` is user-guarded and
 default-off behind the isolated-host double opt-in. The Build surface still needs a dedicated
 Operator control that distinguishes proposed, queued, blocked, failed, and executed steps;

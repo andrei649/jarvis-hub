@@ -105,6 +105,35 @@ function MediaOutcome({ value }) {
   }
   return <Json v={value} max={120} />;
 }
+function HouseOutcome({ value }) {
+  if (!value) return null;
+  if (value.status === 'sending') {
+    return <div role="status" style={{ ...mono, color: 'var(--ink-3)', marginTop: 8 }}>submitting governed proposal…</div>;
+  }
+  if (value.status === 'queued' && value.strong_confirmation_required) {
+    return <div role="status" style={{ ...mono, color: 'var(--amber)', marginTop: 8 }}>
+      strong confirmation required · task {value.task_id || 'pending'}
+    </div>;
+  }
+  if (value.status === 'queued') {
+    return <div role="status" style={{ ...mono, color: 'var(--amber)', marginTop: 8 }}>
+      queued for approval · task {value.task_id || 'pending'}
+    </div>;
+  }
+  if (value.status === 'verified') {
+    return <div role="status" style={{ ...mono, color: 'var(--green)', marginTop: 8 }}>
+      verified success · {value.reason || 'state_verified'}
+    </div>;
+  }
+  if (value.status === 'unverified') {
+    return <div role="alert" style={{ ...mono, color: 'var(--amber)', marginTop: 8 }}>
+      unverified · no action claimed · {value.reason || 'verification_missing'}
+    </div>;
+  }
+  return <div role="alert" style={{ ...mono, color: 'var(--red)', marginTop: 8 }}>
+    denied · {value.reason || 'request_refused'}
+  </div>;
+}
 function DiffView({ text }) {
   if (text == null) return null;
   if (text === '') return <div style={{ ...mono, fontSize: 10.5, color: 'var(--ink-3)', marginTop: 6 }}>identical · no changes</div>;
@@ -1755,6 +1784,200 @@ export function MediaDirectorPanel() {
   );
 }
 
+/* H30.5 — the House Brain surface is topology- and metadata-only. It never
+   exposes raw occupant identities, camera frames, HA credentials, or a direct
+   service-call seam. Every control below creates a governed proposal. */
+export function HousePanel() {
+  const house = useApi('/api/house/state');
+  const data = house.d || {};
+  const loaded = !!house.d;
+  const enabled = loaded && !!data.enabled;
+  const live = enabled && data.status === 'live';
+  const rooms = arr(data, 'rooms').slice(0, 500);
+  const devices = arr(data, 'devices').slice(0, 500);
+  const presence = arr(data, 'presence').slice(0, 500);
+  const lights = devices.filter((device) => device.domain === 'light');
+  const climates = devices.filter((device) => device.domain === 'climate');
+  const securityDevices = devices.filter((device) => ['lock', 'alarm_control_panel', 'cover'].includes(device.domain));
+  const [lightTarget, setLightTarget] = useState('');
+  const [lightState, setLightState] = useState('on');
+  const [brightness, setBrightness] = useState('');
+  const [climateTarget, setClimateTarget] = useState('');
+  const [climateAction, setClimateAction] = useState('set_temperature');
+  const [climateValue, setClimateValue] = useState('21');
+  const [securityTarget, setSecurityTarget] = useState('');
+  const [securityAction, setSecurityAction] = useState('lock');
+  const [outcome, setOutcome] = useState(null);
+  const [securityTaskId, setSecurityTaskId] = useState('');
+  const [challenge, setChallenge] = useState(null);
+  const [confirmationText, setConfirmationText] = useState('');
+  const [confirmationMessage, setConfirmationMessage] = useState('');
+  let hasAdmin = false;
+  try { hasAdmin = !!localStorage.getItem('hud.admin_token'); } catch { /* unavailable */ }
+
+  const selectedLight = lightTarget || lights[0]?.entity_id || '';
+  const selectedClimate = climateTarget || climates[0]?.entity_id || '';
+  const selectedSecurity = securityTarget || securityDevices[0]?.entity_id || '';
+  const selectedSecurityDevice = securityDevices.find((device) => device.entity_id === selectedSecurity);
+  const securityActions = selectedSecurityDevice?.domain === 'lock' ? ['lock', 'unlock']
+    : selectedSecurityDevice?.domain === 'alarm_control_panel' ? ['arm_home', 'arm_away', 'disarm']
+      : selectedSecurityDevice?.domain === 'cover' ? ['open', 'close'] : [];
+  const effectiveSecurityAction = securityActions.includes(securityAction) ? securityAction : (securityActions[0] || '');
+
+  const submit = (path, body) => {
+    setOutcome({ status: 'sending' });
+    apiPost(path, body)
+      .then(setOutcome)
+      .catch((err) => setOutcome({ status: 'denied', reason: err?.message || 'request_failed' }));
+  };
+  const proposeLight = (event) => {
+    event.preventDefault();
+    if (!selectedLight) return;
+    const value = brightness.trim() ? Number(brightness) : null;
+    submit('/api/house/control/light', {
+      entity_id: selectedLight,
+      state: lightState,
+      ...(value == null ? {} : { brightness_pct: value }),
+    });
+  };
+  const proposeClimate = (event) => {
+    event.preventDefault();
+    if (!selectedClimate) return;
+    submit('/api/house/control/climate', {
+      entity_id: selectedClimate,
+      action: climateAction,
+      value: climateAction === 'set_temperature' ? Number(climateValue) : climateValue.trim(),
+    });
+  };
+  const proposeSecurity = (event) => {
+    event.preventDefault();
+    if (!selectedSecurity) return;
+    submit('/api/house/control/security', {
+      entity_id: selectedSecurity,
+      action: effectiveSecurityAction,
+    });
+  };
+  const mintChallenge = () => {
+    const taskId = Number(securityTaskId);
+    if (!Number.isSafeInteger(taskId) || taskId < 1) return;
+    setChallenge(null);
+    setConfirmationText('');
+    setConfirmationMessage('');
+    apiPost(`/api/house/security/${taskId}/challenge`, {}, { admin: true })
+      .then(setChallenge)
+      .catch((err) => setConfirmationMessage(err?.message || 'challenge refused'));
+  };
+  const confirmChallenge = () => {
+    if (!challenge || confirmationText.trim() !== challenge.intended_state) return;
+    apiPost(`/api/house/security/${challenge.task_id}/confirm`, {
+      challenge_token: challenge.token,
+    }, { admin: true })
+      .then((result: any) => {
+        setConfirmationMessage(result.status === 'confirmed' ? 'owner confirmation recorded' : (result.reason || 'confirmation refused'));
+        setChallenge(null);
+        setConfirmationText('');
+      })
+      .catch((err) => setConfirmationMessage(err?.message || 'confirmation refused'));
+  };
+
+  return (
+    <Card
+      title="HOUSE BRAIN"
+      live={asLive(loaded, live)}
+      sub={loaded ? `${data.status || 'unknown'} · ${rooms.length} rooms · ${devices.length} devices` : null}
+      onReload={house.reload}
+    >
+      <State e={house.e} loading={house.loading} n={loaded && !enabled ? undefined : rooms.length + devices.length + presence.length} />
+      {loaded && !enabled && (
+        <div style={{ fontSize: 10, color: 'var(--ink-3)', marginTop: 6 }}>
+          House Brain is off · owner opt-in is required on the hub
+        </div>
+      )}
+      {enabled && !live && (
+        <div role="alert" style={{ fontSize: 10, color: 'var(--amber)', marginTop: 6 }}>
+          degraded · {data.reason || 'live Home Assistant state unavailable'} · controls paused
+        </div>
+      )}
+      {enabled && <>
+        <div style={{ ...mono, color: 'var(--ink-3)', fontSize: 10, margin: '4px 0' }}>ROOMS & DEVICES</div>
+        {rooms.map((room) => (
+          <Row key={room.room_id}>
+            <span style={{ ...mono, color: 'var(--accent-light)' }}>{room.name || room.room_id}</span>
+            <span style={{ marginLeft: 'auto' }}><Tag>{room.room_id}</Tag></span>
+          </Row>
+        ))}
+        {devices.map((device) => (
+          <Row key={device.entity_id}>
+            <span style={{ ...mono, color: 'var(--ink-2)' }}>{device.entity_id}</span>
+            <span style={{ marginLeft: 'auto', display: 'flex', gap: 5 }}>
+              {device.room_id && <Tag>{device.room_id}</Tag>}<Tag>{device.state || 'unknown'}</Tag>
+            </span>
+          </Row>
+        ))}
+        <div style={{ ...mono, color: 'var(--ink-3)', fontSize: 10, margin: '10px 0 4px' }}>PRESENCE · PSEUDONYMOUS</div>
+        {presence.map((item) => (
+          <Row key={item.occupant_id}>
+            <span style={{ ...mono, color: 'var(--ink-2)' }}>…{String(item.occupant_id || '').slice(-8)}</span>
+            <span style={{ marginLeft: 'auto', display: 'flex', gap: 5 }}>
+              <Tag>{item.status || 'unknown'}</Tag>
+              {item.room_id && <Tag>{item.room_id}</Tag>}
+              <Tag>{item.privacy || 'household'}</Tag>
+            </span>
+          </Row>
+        ))}
+      </>}
+      {live && <>
+        <div style={{ ...mono, color: 'var(--ink-3)', fontSize: 10, margin: '12px 0 4px' }}>GOVERNED CONTROLS · PROPOSALS</div>
+        {lights.length > 0 && <form onSubmit={proposeLight} style={{ display: 'grid', gridTemplateColumns: '1fr 80px 100px auto', gap: 6, marginBottom: 6 }}>
+          <select aria-label="light target" value={selectedLight} onChange={(event) => setLightTarget(event.target.value)} style={inpS}>
+            {lights.map((device) => <option key={device.entity_id} value={device.entity_id}>{device.entity_id}</option>)}
+          </select>
+          <select aria-label="light state" value={lightState} onChange={(event) => setLightState(event.target.value)} style={inpS}>
+            <option value="on">on</option><option value="off">off</option>
+          </select>
+          <input aria-label="light brightness" type="number" min="1" max="100" value={brightness} onChange={(event) => setBrightness(event.target.value)} placeholder="brightness" style={inpS} />
+          <button className="tool-btn" type="submit" aria-label="Propose light control">propose</button>
+        </form>}
+        {climates.length > 0 && <form onSubmit={proposeClimate} style={{ display: 'grid', gridTemplateColumns: '1fr 130px 100px auto', gap: 6, marginBottom: 6 }}>
+          <select aria-label="climate target" value={selectedClimate} onChange={(event) => setClimateTarget(event.target.value)} style={inpS}>
+            {climates.map((device) => <option key={device.entity_id} value={device.entity_id}>{device.entity_id}</option>)}
+          </select>
+          <select aria-label="climate action" value={climateAction} onChange={(event) => setClimateAction(event.target.value)} style={inpS}>
+            <option value="set_temperature">temperature</option><option value="set_mode">mode</option>
+          </select>
+          <input aria-label="climate value" value={climateValue} onChange={(event) => setClimateValue(event.target.value)} maxLength={16} style={inpS} />
+          <button className="tool-btn" type="submit" aria-label="Propose climate control">propose</button>
+        </form>}
+        {securityDevices.length > 0 && <form onSubmit={proposeSecurity} style={{ display: 'grid', gridTemplateColumns: '1fr 120px auto', gap: 6 }}>
+          <select aria-label="security target" value={selectedSecurity} onChange={(event) => setSecurityTarget(event.target.value)} style={inpS}>
+            {securityDevices.map((device) => <option key={device.entity_id} value={device.entity_id}>{device.entity_id}</option>)}
+          </select>
+          <select aria-label="security action" value={effectiveSecurityAction} onChange={(event) => setSecurityAction(event.target.value)} style={inpS}>
+            {securityActions.map((value) => <option key={value} value={value}>{value}</option>)}
+          </select>
+          <button className="tool-btn" type="submit" aria-label="Propose security control">propose · strong confirm</button>
+        </form>}
+        <HouseOutcome value={outcome} />
+        {hasAdmin && <section aria-label="owner security confirmation">
+          <div style={{ ...mono, color: 'var(--ink-3)', fontSize: 10, margin: '12px 0 4px' }}>ADMIN · STRONG CONFIRMATION</div>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: 6 }}>
+            <input aria-label="security task id" type="number" min="1" value={securityTaskId} onChange={(event) => setSecurityTaskId(event.target.value)} placeholder="durable task id" style={inpS} />
+            <button className="tool-btn" type="button" onClick={mintChallenge} aria-label="Mint owner challenge">mint owner challenge</button>
+          </div>
+          {challenge && <div style={{ marginTop: 8 }}>
+            <div style={{ ...mono, color: 'var(--amber)' }}>{challenge.target} → {challenge.intended_state}</div>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: 6, marginTop: 6 }}>
+              <input aria-label="type intended state" value={confirmationText} onChange={(event) => setConfirmationText(event.target.value)} maxLength={128} placeholder={`type ${challenge.intended_state}`} style={inpS} />
+              <button className="tool-btn" type="button" disabled={confirmationText.trim() !== challenge.intended_state} onClick={confirmChallenge} aria-label="Confirm exact security action">confirm exact security action</button>
+            </div>
+          </div>}
+          {confirmationMessage && <div role="status" style={{ ...mono, color: 'var(--amber)', marginTop: 6 }}>{confirmationMessage}</div>}
+        </section>}
+      </>}
+    </Card>
+  );
+}
+
 /* 0.37 — the ingestion-provenance read surface (GET /api/ingestion/provenance, admin).
    Renders recent provenance records + by-source stats. Honesty contract: when
    JARVIS_PROVENANCE is off the endpoint reports enabled:false and the panel says so
@@ -2090,6 +2313,7 @@ export function FirstRunGate({ onClose }) {
 
 const SECTIONS: Array<[string, Array<() => any>]> = [
   ['Start', [CommandCenterPanel]],
+  ['Home', [HousePanel]],
   ['Memory', [DataSpacesPanel, LocalDocsPanel, NotesPanel, KgPanel, CapturePanel, ReflectionPanel, ProvenancePanel]],
   ['Trust', [KillSwitchPanel, KernelMetricsPanel, ReadinessPanel, LoopBreakerPanel, GovernancePanel, PosturePanel, SecuritySkillsPanel, NetworkMonitorPanel, CommsRatePanel, SafeCommsDraftPanel, SecretsPanel, CapabilitiesPanel, PairingPanel, InjectionScanPanel]],
   ['Interop', [A2AInboxPanel, MeshPeersPanel, SatellitesPanel, OraclePanel, MarketplacePanel, SkillHistoryPanel, WatchlistPanel]],

@@ -970,6 +970,7 @@ from agents.core.routers.missions import router as _missions_router  # noqa: E40
 from agents.core.routers.bench import router as _bench_router  # noqa: E402
 from agents.core.routers.ops import router as _ops_router  # noqa: E402
 from agents.core.routers.media_director import router as _media_director_router  # noqa: E402
+from agents.core.routers.house import router as _house_router  # noqa: E402
 from agents.core.routers.backup import router as _backup_router  # noqa: E402
 from agents.core.routers.brain import router as _brain_router  # noqa: E402
 from agents.core.routers.browser import router as _browser_router  # noqa: E402
@@ -1074,6 +1075,7 @@ app.include_router(_sessions_router)
 app.include_router(_bench_router)
 app.include_router(_ops_router)
 app.include_router(_media_director_router)
+app.include_router(_house_router)
 app.include_router(_backup_router)
 
 
