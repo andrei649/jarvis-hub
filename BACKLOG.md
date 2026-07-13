@@ -780,15 +780,15 @@ the real backend, but the pipeline-rewiring PR never ran it because the path fil
 | H32.4 ✅ | **Generate + sandbox-test harness** — strict-local stdlib-only generation remains encrypted in quarantine and must pass generated, system-owned contract, and mutation tests in a pinned Docker/WASM profile before an immutable receipt permits proposal | 8 | P0 | H32.3 | NERVA_VISION §4-P6 |
 | H32.5 ✅ | **Approval → signing → registry** — permanent owner approval plus Action Kernel mediation, receipt recheck, managed manifest signing, atomic sandbox-only package storage, ToolRPC registration, low-confidence outcome projection, and crash-safe rollback are enforced | 5 | P0 | H32.4, H27.7 | MOONSHOT §5.7 |
 | H32.6 ✅ | **Acquisition audit trail + rollback** — an encrypted hash-chained bounded ledger covers the lifecycle; guarded browser/admin and read-only mobile surfaces expose honest state, reuse, export/purge, revoke, and rollback without importing acquired code in-process | 2 | P1 | H32.5 | — |
-| H32.7 🟡 | **Hermes-parity eval for the loop** — the non-promoting S2 benchmark is implemented and passes its deterministic production-boundary contract; the dedicated CI lane must still prove the same full loop with real digest-pinned Docker execution before completion | 3 | P2 | H32.5 | NERVA_VISION §8-S2 |
+| H32.7 ✅ | **Hermes-parity eval for the loop** — the non-promoting S2 benchmark passes the dedicated digest-pinned Docker CI lane across miss → research → strict-local generation → isolated verification → approval/signing → sandbox execution → reuse, plus tamper, halt, revoke, rollback, host, and network negatives | 3 | P2 | H32.5 | NERVA_VISION §8-S2 |
 
 > **Total ORIZONT 32:** ~27 SP
 >
 > **Implementation evidence (2026-07-13):** the local H32 pack covers encrypted request/research/
 > quarantine/audit stores, deterministic reuse, strict-local generation, receipt-bound sandbox
 > verification, permanent approval, signing, marketplace metadata, ToolRPC execution, tamper refusal,
-> lifecycle controls, and browser/mobile parity. H32.7 is intentionally non-promoting and runs in the
-> existing Docker isolation CI lane; H32 closes only after that runner proves no host execution or
+> lifecycle controls, and browser/mobile parity. H32.7 remains intentionally non-promoting; the
+> existing Docker isolation CI lane now proves the full S2 lifecycle, no host execution, and no
 > generated-code network access against the real pinned container image.
 
 ## 👁️ ORIZONT 33 — Ambient Intelligence (Nerva Program G · AI-OS Phase 6, direction 2026-07-11)
