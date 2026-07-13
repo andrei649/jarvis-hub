@@ -8,7 +8,11 @@ from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel, Field
 
 from agents.core.app_state import get_orch
-from agents.core.cameras.onvif import OnvifDiscoveryError
+from agents.core.cameras.onvif import (
+    OnvifAdminRequiredError,
+    OnvifDiscoveryDisabledError,
+    OnvifDiscoveryError,
+)
 from agents.core.cameras.retrieval import CameraFilter, CameraSearchError
 from agents.core.cameras.runtime import CameraRuntime, build_camera_runtime
 from agents.core.routers._deps import admin_guard, user_guard
@@ -42,6 +46,17 @@ def _disabled_payload(runtime: CameraRuntime) -> dict:
         "interpretation": {},
         "events": [],
     }
+
+
+def _discovery_refusal(reason: str, *, status: str = "denied"):
+    return nocache_json(
+        {
+            "enabled": True,
+            "status": status,
+            "reason": reason,
+            "devices": [],
+        }
+    )
 
 
 async def start_camera_ingestion() -> bool:
@@ -172,16 +187,12 @@ async def camera_onvif_discover():
         )
     try:
         result = await runtime.discovery.discover()
-    except OnvifDiscoveryError as exc:
-        reason = str(exc) if str(exc) in {"discovery_disabled", "admin_required"} else "discovery_failed"
-        return nocache_json(
-            {
-                "enabled": True,
-                "status": "disabled" if reason == "discovery_disabled" else "denied",
-                "reason": reason,
-                "devices": [],
-            }
-        )
+    except OnvifDiscoveryDisabledError:
+        return _discovery_refusal("discovery_disabled", status="disabled")
+    except OnvifAdminRequiredError:
+        return _discovery_refusal("admin_required")
+    except OnvifDiscoveryError:
+        return _discovery_refusal("discovery_failed")
     return nocache_json({"enabled": True, **result.to_public()})
 
 

@@ -9,7 +9,7 @@ import httpx
 import pytest
 
 from agents.core.cameras.models import CameraEvent
-from agents.core.cameras.onvif import OnvifDiscoveryError
+from agents.core.cameras.onvif import OnvifDiscoveryDisabledError, OnvifDiscoveryError
 from agents.core.cameras.retrieval import CameraEventRetrieval
 from agents.core.cameras.runtime import CameraRuntime, build_camera_runtime
 from agents.core.routers import cameras as camera_router
@@ -76,7 +76,12 @@ class _Discovery:
 
 class _DisabledDiscovery:
     async def discover(self):
-        raise OnvifDiscoveryError("discovery_disabled")
+        raise OnvifDiscoveryDisabledError
+
+
+class _LeakyDiscovery:
+    async def discover(self):
+        raise OnvifDiscoveryError("secret at C:\\private\\camera.ini")
 
 
 def _runtime(*, enabled: bool = True, discovery=None) -> CameraRuntime:
@@ -166,6 +171,20 @@ async def test_onvif_discovery_is_admin_surface_and_failure_is_stable(monkeypatc
         "reason": "discovery_disabled",
         "devices": [],
     }
+
+    monkeypatch.setattr(
+        camera_router,
+        "_get_runtime",
+        lambda: _runtime(discovery=_LeakyDiscovery()),
+    )
+    failed = _payload(await camera_router.camera_onvif_discover())
+    assert failed == {
+        "enabled": True,
+        "status": "denied",
+        "reason": "discovery_failed",
+        "devices": [],
+    }
+    assert "camera.ini" not in json.dumps(failed)
 
 
 class _Orch:

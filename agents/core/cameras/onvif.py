@@ -26,6 +26,20 @@ class OnvifDiscoveryError(RuntimeError):
     """Stable policy refusal before discovery starts."""
 
 
+class OnvifDiscoveryDisabledError(OnvifDiscoveryError):
+    """Discovery is explicitly disabled by owner configuration."""
+
+    def __init__(self) -> None:
+        super().__init__("discovery_disabled")
+
+
+class OnvifAdminRequiredError(OnvifDiscoveryError):
+    """The local admin policy gate did not authorize discovery."""
+
+    def __init__(self) -> None:
+        super().__init__("admin_required")
+
+
 def _normalize_host(host: str) -> str:
     if not isinstance(host, str):
         raise ValueError("ONVIF device host is invalid")
@@ -210,13 +224,13 @@ class OnvifDiscoveryService:
 
     async def discover(self) -> OnvifDiscoveryResult:
         if not self._config.enabled:
-            raise OnvifDiscoveryError("discovery_disabled")
+            raise OnvifDiscoveryDisabledError
         try:
             allowed = self._admin_gate()
         except Exception as exc:
-            raise OnvifDiscoveryError("admin_required") from exc
+            raise OnvifAdminRequiredError from exc
         if allowed is not True:
-            raise OnvifDiscoveryError("admin_required")
+            raise OnvifAdminRequiredError
 
         discoverer = self._discoverer or self._load_default_discoverer()
         if discoverer is None:
