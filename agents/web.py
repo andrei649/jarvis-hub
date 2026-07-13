@@ -354,12 +354,16 @@ async def lifespan(application: FastAPI):
             logger.info("Webhook channel wired: %s", ch.channel_id)
 
     await orch.start_channels()
+    from agents.core.routers.cameras import start_camera_ingestion
+    await start_camera_ingestion()
     logger.info(
         f"Jarvis Beta ready — {orch.llm_router.name}, "
         f"{len(orch.agents)} agents, {list(orch.channels.keys())} channels, "
         f"{list(orch.skills.skills.keys())} skills"
     )
     yield
+    from agents.core.routers.cameras import stop_camera_ingestion
+    await stop_camera_ingestion()
     # Symmetric lifecycle: stop channels and release the globals so a closed app
     # context (e.g. a TestClient context manager in tests) does not leak a live
     # orchestrator into the next caller. Guarded because multiple app contexts

@@ -44,6 +44,24 @@ def _disabled_payload(runtime: CameraRuntime) -> dict:
     }
 
 
+async def start_camera_ingestion() -> bool:
+    runtime = _get_runtime()
+    if not runtime.enabled or runtime.ingestion_service is None:
+        return False
+    return runtime.ingestion_service.start()
+
+
+async def stop_camera_ingestion() -> None:
+    global _runtime
+    runtime = _get_runtime()
+    if runtime.ingestion_service is not None:
+        await runtime.ingestion_service.stop()
+    if runtime.feed_publisher is not None:
+        runtime.feed_publisher.close()
+    if _runtime is runtime:
+        _runtime = None
+
+
 @router.get("/api/cameras/status", dependencies=[Depends(user_guard)])
 async def camera_status():
     runtime = _get_runtime()
@@ -165,4 +183,10 @@ async def camera_onvif_discover():
     return nocache_json({"enabled": True, **result.to_public()})
 
 
-__all__ = ["CameraRuntime", "CameraSearchBody", "router"]
+__all__ = [
+    "CameraRuntime",
+    "CameraSearchBody",
+    "router",
+    "start_camera_ingestion",
+    "stop_camera_ingestion",
+]

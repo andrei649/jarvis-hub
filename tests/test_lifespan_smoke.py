@@ -25,8 +25,20 @@ sys.path.insert(0, str(repo_root))
 sys.path.insert(0, str(repo_root / "agents"))
 
 
-def test_lifespan_starts_and_stops_clean():
+def test_lifespan_starts_and_stops_clean(monkeypatch):
     from agents import web
+    from agents.core.routers import cameras
+
+    camera_lifecycle: list[str] = []
+
+    async def _start_cameras():
+        camera_lifecycle.append("start")
+
+    async def _stop_cameras():
+        camera_lifecycle.append("stop")
+
+    monkeypatch.setattr(cameras, "start_camera_ingestion", _start_cameras)
+    monkeypatch.setattr(cameras, "stop_camera_ingestion", _stop_cameras)
 
     assert web.orch is None, "orchestrator should not exist before startup"
     with TestClient(web.app) as c:
@@ -52,6 +64,8 @@ def test_lifespan_starts_and_stops_clean():
         r = c.get("/api/status")
         assert r.status_code == 200
         assert set(r.json()) >= {"version", "agents", "status"}
+        assert camera_lifecycle == ["start"]
 
     # stop_channels + aclose ran and released the singleton
     assert web.orch is None, "lifespan shutdown did not release the orchestrator"
+    assert camera_lifecycle == ["start", "stop"]

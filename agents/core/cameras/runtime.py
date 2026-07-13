@@ -11,10 +11,12 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import urlsplit
 
+from agents.core.house.camera_feed import HouseCameraFeedConsumer
 from agents.core.llm.vlm import VLMBackend
 from agents.core.paths import data_path
 from agents.core.security.secret_broker import SecretBroker
 
+from .feeds import CameraFeedPublisher, CameraIngestionCoordinator, CameraIngestionService
 from .frigate import FrigateConfig, FrigateEventSource, _FrigateSnapshotSource
 from .health import CameraHealthMonitor, CameraRetentionScheduler
 from .models import CameraConfig, HouseholdConsent, PrivacyMask
@@ -44,6 +46,10 @@ class CameraRuntime:
     privacy_policy: CameraPrivacyPolicy | None = None
     vault: CameraEventVault | None = None
     scheduler: CameraRetentionScheduler | None = None
+    feed_publisher: CameraFeedPublisher | None = None
+    ingestion: CameraIngestionCoordinator | None = None
+    ingestion_service: CameraIngestionService | None = None
+    house_feed: HouseCameraFeedConsumer | None = None
     orch_id: int = 0
 
 
@@ -266,6 +272,7 @@ def build_camera_runtime(
 ) -> CameraRuntime:
     """Compose the camera stack only after master opt-in and versioned consent."""
 
+    publisher: CameraFeedPublisher | None = None
     try:
         enabled = _boolean(_setting(orch, "camera.enabled", False), field_name="camera enabled")
     except (TypeError, ValueError):
@@ -314,10 +321,22 @@ def build_camera_runtime(
             configs=configs,
             secret_broker=secret_broker,
         )
+        lifecycle: dict[str, Any] = {}
+
+        def _detach_camera_feeds() -> None:
+            service = lifecycle.get("service")
+            if service is not None:
+                service.request_stop()
+            active_publisher = lifecycle.get("publisher")
+            if active_publisher is not None:
+                active_publisher.close()
+
         privacy = CameraPrivacyPolicy(
             configs=configs,
             consent=consent,
             kill_switch=kill_switch,
+            stop_polling=_detach_camera_feeds,
+            detach_publishers=_detach_camera_feeds,
             purge_records=lambda _generation: vault.purge(),
         )
         origin = _setting(orch, "camera.frigate_origin", "")
@@ -358,6 +377,41 @@ def build_camera_runtime(
         retrieval = CameraEventRetrieval(index=vault)
         scheduler = CameraRetentionScheduler(vault=vault)
         health = CameraHealthMonitor(source=source, vault=vault)
+        publisher = CameraFeedPublisher(
+            privacy_policy=privacy,
+            ledger_path=runtime_root / "feed-deliveries.db",
+        )
+        lifecycle["publisher"] = publisher
+        house_feed = HouseCameraFeedConsumer()
+        publisher.subscribe("house", house_feed, max_queue=256)
+        ingestion = CameraIngestionCoordinator(
+            source=source,
+            pipeline=pipeline,
+            vault=vault,
+            publisher=publisher,
+            privacy_policy=privacy,
+            cursor_path=runtime_root / "source-cursor.json",
+            describe_selector=(
+                lambda _event: _boolean(
+                    _setting(orch, "camera.vlm_describe_events", False),
+                    field_name="camera VLM describe events",
+                )
+            ),
+        )
+        ingestion_service = CameraIngestionService(
+            coordinator=ingestion,
+            retention_scheduler=scheduler,
+            poll_interval=_number(
+                _setting(orch, "camera.poll_interval_seconds", 5.0),
+                field_name="camera poll interval",
+            ),
+            poll_limit=_integer(
+                _setting(orch, "camera.poll_limit", 100),
+                field_name="camera poll limit",
+                minimum=1,
+            ),
+        )
+        lifecycle["service"] = ingestion_service
         discovery = OnvifDiscoveryService(
             config=OnvifDiscoveryConfig(
                 enabled=_boolean(
@@ -382,9 +436,15 @@ def build_camera_runtime(
             privacy_policy=privacy,
             vault=vault,
             scheduler=scheduler,
+            feed_publisher=publisher,
+            ingestion=ingestion,
+            ingestion_service=ingestion_service,
+            house_feed=house_feed,
             orch_id=id(orch) if orch is not None else 0,
         )
     except Exception:
+        if publisher is not None:
+            publisher.close()
         return _disabled("camera_runtime_unavailable", orch)
 
 

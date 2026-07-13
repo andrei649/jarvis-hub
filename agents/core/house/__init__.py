@@ -9,6 +9,7 @@ from .actuation import (
     HouseActuator,
     register_house_handlers,
 )
+from .camera_feed import HouseCameraFeedConsumer
 from .confirmation import ConfirmationError, StrongConfirmationStore
 from .contracts import HouseArea, HouseEntity, HouseEvent, HouseSnapshot
 from .graph import HouseGraph
@@ -32,6 +33,7 @@ __all__ = [
     "HomeAssistantAdapter",
     "HomeAssistantServiceDriver",
     "HouseArea",
+    "HouseCameraFeedConsumer",
     "HouseEntity",
     "HouseEvent",
     "HouseGraph",

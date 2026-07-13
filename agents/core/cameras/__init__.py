@@ -4,6 +4,15 @@ H31 keeps camera sources behind a privacy boundary.  Importing this package
 does not start discovery, polling, decoding, or inference.
 """
 
+from .feeds import (
+    CameraFeedEvent,
+    CameraFeedPublisher,
+    CameraFeedPublishResult,
+    CameraFeedSink,
+    CameraIngestionCoordinator,
+    CameraIngestionResult,
+    CameraIngestionService,
+)
 from .health import CameraHealthMonitor, CameraRetentionScheduler
 from .models import (
     MAX_METADATA_TTL_SECONDS,
@@ -34,6 +43,13 @@ __all__ = [
     "MAX_SNAPSHOT_TTL_SECONDS",
     "CameraConfig",
     "CameraEvent",
+    "CameraFeedEvent",
+    "CameraFeedPublishResult",
+    "CameraFeedPublisher",
+    "CameraFeedSink",
+    "CameraIngestionCoordinator",
+    "CameraIngestionResult",
+    "CameraIngestionService",
     "CameraEventVault",
     "CameraEventRetrieval",
     "CameraFilter",

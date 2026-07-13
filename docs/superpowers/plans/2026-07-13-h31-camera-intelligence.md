@@ -130,11 +130,11 @@ surfaces and tests; update route/OpenAPI/auth/type/parity artifacts.
 **Create:** `agents/core/cameras/feeds.py`, focused tests; touch orchestrator only for injected
 publishers.
 
-- [ ] Red tests: convert to shared `HouseEvent` without bytes/private ids, update only allowlisted
+- [x] Red tests: convert to shared `HouseEvent` without bytes/private ids, update only allowlisted
   anonymous occupancy/sensor facts, idempotent delivery, consent/kill recheck, metadata-only
   subscribers, and honest missing-sink health.
-- [ ] Publish through an interface; cameras never import/write house KG or ambient internals.
-- [ ] Give every subscriber a bounded queue, per-sink failure isolation/backpressure, delivery
+- [x] Publish through an interface; cameras never import/write house KG or ambient internals.
+- [x] Give every subscriber a bounded queue, per-sink failure isolation/backpressure, delivery
   counters, and restart-safe idempotency; one broken sink cannot block or duplicate another.
 - [ ] Land the producer sink after H30.2. Mark H31.6 complete only after both H30 consumption and
   H33.1 monitor consumption are proven.

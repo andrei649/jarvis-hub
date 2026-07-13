@@ -241,6 +241,11 @@ def test_runtime_composes_real_privacy_source_pipeline_vault_and_retrieval(tmp_p
     assert runtime.vault is not None
     assert runtime.retrieval is not None
     assert runtime.scheduler is not None
+    assert runtime.feed_publisher is not None
+    assert runtime.ingestion is not None
+    assert runtime.ingestion_service is not None
+    assert runtime.house_feed is not None
+    assert set(runtime.feed_publisher.health()["sinks"]) == {"house"}
     assert not hasattr(runtime.source, "fetch_snapshot")
     assert runtime.vault.health()["status"] == "ready"
 
@@ -281,3 +286,30 @@ def test_router_declares_no_snapshot_clip_or_frame_route():
         "/api/cameras/onvif/discover",
     }
     assert not any(term in path for path in paths for term in ("snapshot", "clip", "frame"))
+
+
+@pytest.mark.asyncio
+async def test_camera_runtime_lifecycle_helpers_start_and_stop_service(monkeypatch):
+    calls: list[str] = []
+
+    class _Service:
+        def start(self):
+            calls.append("start")
+            return True
+
+        async def stop(self):
+            calls.append("stop")
+
+    class _Publisher:
+        def close(self):
+            calls.append("close")
+
+    runtime = _runtime()
+    runtime.ingestion_service = _Service()
+    runtime.feed_publisher = _Publisher()
+    monkeypatch.setattr(camera_router, "_get_runtime", lambda: runtime)
+
+    assert await camera_router.start_camera_ingestion() is True
+    await camera_router.stop_camera_ingestion()
+
+    assert calls == ["start", "stop", "close"]
