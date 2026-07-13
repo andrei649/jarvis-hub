@@ -4,6 +4,7 @@ H31 keeps camera sources behind a privacy boundary.  Importing this package
 does not start discovery, polling, decoding, or inference.
 """
 
+from .health import CameraHealthMonitor, CameraRetentionScheduler
 from .models import (
     MAX_METADATA_TTL_SECONDS,
     MAX_SNAPSHOT_TTL_SECONDS,
@@ -18,6 +19,13 @@ from .models import (
 from .pipeline import CameraPipeline, CameraPipelineResult, SnapshotSource
 from .privacy import CameraPrivacyError, CameraPrivacyPolicy, apply_masks
 from .rules import CameraRuleEngine, CameraZone, LineRule, RuleOutcome
+from .vault import (
+    CameraEventVault,
+    CameraPurgeReport,
+    CameraStoreReceipt,
+    CameraSweepReport,
+    CameraVaultError,
+)
 from .vlm import LocalCameraVLM, LocalCameraVLMConfig
 
 __all__ = [
@@ -25,11 +33,18 @@ __all__ = [
     "MAX_SNAPSHOT_TTL_SECONDS",
     "CameraConfig",
     "CameraEvent",
+    "CameraEventVault",
+    "CameraHealthMonitor",
     "CameraPrivacyError",
     "CameraPrivacyPolicy",
+    "CameraPurgeReport",
     "CameraPipeline",
     "CameraPipelineResult",
     "CameraRuleEngine",
+    "CameraRetentionScheduler",
+    "CameraStoreReceipt",
+    "CameraSweepReport",
+    "CameraVaultError",
     "CameraZone",
     "HouseholdConsent",
     "MaskedFrame",

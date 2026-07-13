@@ -6,8 +6,8 @@ accepts the exact consent-contract version for that camera.
 
 ## Non-negotiable boundary
 
-- Camera and VLM endpoints must be loopback or LAN-only. There is no cloud fallback, Frigate+,
-  remote analytics, identity service, or external image upload.
+- Frigate must be loopback/LAN-only and the VLM must use this host's loopback. There is no cloud
+  fallback, Frigate+, remote analytics, identity service, or external image upload.
 - Jarvis does not record video and is not an NVR. Frigate owns RTSP, recording, and detection;
   Jarvis consumes bounded event metadata and, only when necessary, one bounded snapshot.
 - Raw snapshot bytes may exist only transiently between the local fetch and the in-memory mask
@@ -43,6 +43,14 @@ Expired records become inaccessible before decryption or search and are physical
 next bounded cleanup pass. An explicit camera purge removes all Jarvis-owned camera records.
 Separately retained encrypted backups may still contain old ciphertext until their own retention
 window expires; Jarvis never represents that ciphertext as live or retrievable camera data.
+
+Camera metadata and optional masked PNGs are separate authenticated `Vault` records linked only by
+an opaque identifier inside the encrypted metadata record. The encryption key is resolved from the
+exact `{{secret:camera.vault_key}}` SecretBroker handle; raw keys are not configuration inputs.
+H31 v1 deliberately refuses non-transactional in-place re-encryption. Key rotation is fail-closed:
+stop polling, revoke consent, purge the camera vault, replace the managed secret, then create an
+empty vault and re-consent. Old encrypted backups remain governed by their own expiry and are not
+re-imported automatically.
 
 Rollback is the camera master flag plus consent revocation. That stops Jarvis polling and detaches
 its subscribers without changing Frigate, camera firmware, or NVR recordings.

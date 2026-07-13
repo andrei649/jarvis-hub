@@ -93,18 +93,21 @@ modify narrow plugin/egress manifests and lazy orchestrator wiring.
 **Create:** `agents/core/cameras/vault.py`, `health.py`, focused tests; extend narrow retention,
 purge, scheduler, and support-bundle seams.
 
-- [ ] Red tests: ciphertext at rest, no raw/sensitive index fields, exact 24h/30d boundaries,
+- [x] Red tests: ciphertext at rest, no raw/sensitive index fields, exact 24h/30d boundaries,
   scheduler delay, restart after expiry, linked/orphan cleanup, byte/item caps, tamper/corruption,
   disabled general retention, redacted health, and complete purge.
-- [ ] Build a strict camera-domain wrapper around the hardened core `Vault`; do not implement new
+- [x] Build a strict camera-domain wrapper around the hardened core `Vault`; do not implement new
   encryption/storage. Source keys through the existing managed secret path, define rotation, and
   use tighter quotas/projections. Store metadata and optional masked snapshots as separate records
   linked by opaque internal ids; API projections never expose vault ids or paths.
-- [ ] Refuse expired records before decrypt/read, filter them from list/search/index, and sweep on
+- [x] Refuse expired records before decrypt/read, filter them from list/search/index, and sweep on
   startup before service, before reads/searches, and on a bounded frequent schedule. Expiry means
   immediate logical inaccessibility; physical ciphertext is removed at the next sweep. Document
   that separately retained old encrypted backups may still contain logically deleted ciphertext.
-- [ ] Run vault/hardening/retention/purge tests, review, and commit.
+- [x] Run vault/hardening/retention/purge tests, review, and commit.
+
+The metadata-only health projection and bounded domain scheduler are complete here. Task 6 wires
+that injected runtime into the router and support-bundle surfaces; the vault is never made global.
 
 ## Task 6 — H31.5 privacy-safe temporal event retrieval, API, HUD, and mobile parity
 
