@@ -14,7 +14,7 @@ from typing import Any
 
 from .contracts import AmbientDecision, AmbientEvent, MonitorDefinition
 
-_SCHEMA_VERSION = 1
+_SCHEMA_VERSION = 2
 _MAX_ROWS = 100_000
 _MAX_BYTES = 64 * 1024 * 1024
 _JOURNAL_TTL = 30 * 24 * 60 * 60
@@ -69,10 +69,12 @@ class AmbientStore:
             db.row_factory = sqlite3.Row
             db.execute("PRAGMA foreign_keys=ON")
             version = int(db.execute("PRAGMA user_version").fetchone()[0])
-            if version not in {0, _SCHEMA_VERSION}:
+            if version not in {0, 1, _SCHEMA_VERSION}:
                 raise sqlite3.DatabaseError("unsupported ambient schema")
             if version == 0:
                 self._migrate(db)
+            elif version == 1:
+                self._migrate_v2(db)
             db.execute("SELECT monitor_id FROM monitors LIMIT 1").fetchall()
             self._db = db
             self.sweep()
@@ -136,7 +138,10 @@ class AmbientStore:
                 matched INTEGER NOT NULL,
                 reason TEXT NOT NULL,
                 decided_at REAL NOT NULL,
-                consent_generation INTEGER NOT NULL
+                consent_generation INTEGER NOT NULL,
+                rung TEXT NOT NULL DEFAULT 'monitor',
+                attention_mode TEXT NOT NULL DEFAULT 'none',
+                policy_reason TEXT NOT NULL DEFAULT 'policy_selected'
             );
             CREATE TABLE source_health (
                 source TEXT PRIMARY KEY,
@@ -163,7 +168,20 @@ class AmbientStore:
                 actor_hash TEXT NOT NULL,
                 created_at REAL NOT NULL
             );
-            PRAGMA user_version=1;
+            PRAGMA user_version=2;
+            COMMIT;
+            """
+        )
+
+    @staticmethod
+    def _migrate_v2(db: sqlite3.Connection) -> None:
+        db.executescript(
+            """
+            BEGIN IMMEDIATE;
+            ALTER TABLE decisions ADD COLUMN rung TEXT NOT NULL DEFAULT 'monitor';
+            ALTER TABLE decisions ADD COLUMN attention_mode TEXT NOT NULL DEFAULT 'none';
+            ALTER TABLE decisions ADD COLUMN policy_reason TEXT NOT NULL DEFAULT 'policy_selected';
+            PRAGMA user_version=2;
             COMMIT;
             """
         )
@@ -471,7 +489,8 @@ class AmbientStore:
                 INSERT OR IGNORE INTO decisions(
                     decision_id, monitor_id, monitor_version, monitor_hash, event_fingerprint,
                     transition, matched, reason, decided_at, consent_generation
-                ) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    , rung, attention_mode, policy_reason
+                ) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     values["decision_id"],
@@ -484,6 +503,9 @@ class AmbientStore:
                     values["reason"],
                     values["decided_at"],
                     values["consent_generation"],
+                    values["rung"],
+                    values["attention_mode"],
+                    values["policy_reason"],
                 ),
             )
             db.commit()
@@ -496,7 +518,7 @@ class AmbientStore:
                 """
                 SELECT decision_id, monitor_id, monitor_version, monitor_hash,
                        event_fingerprint, transition, matched, reason, decided_at,
-                       consent_generation
+                       consent_generation, rung, attention_mode, policy_reason
                 FROM decisions ORDER BY decided_at ASC, decision_id ASC LIMIT ?
                 """,
                 (bounded,),

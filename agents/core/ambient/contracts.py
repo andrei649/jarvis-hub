@@ -18,6 +18,8 @@ _SOURCES = frozenset({"house", "camera", "digital"})
 _PRIVACY = frozenset({"public", "household", "private"})
 _OPERATORS = frozenset({"eq", "ne", "lt", "lte", "gt", "gte", "in", "changed", "age"})
 _TRANSITIONS = frozenset({"alert", "recovery"})
+_RUNGS = frozenset({"ignore", "remember", "monitor", "act_silently", "ask", "interrupt"})
+_ATTENTION_MODES = frozenset({"none", "digest", "interrupt"})
 _SENSITIVE_ATTRIBUTES = frozenset(
     {
         "body",
@@ -311,6 +313,8 @@ class MonitorDefinition:
     cooldown_seconds: float = 0
     enabled: bool = True
     branch: str = "match"
+    alert_rung: str = "monitor"
+    recovery_rung: str = "monitor"
     _ALLOWED_FIELDS: ClassVar[frozenset[str]] = frozenset(
         {
             "monitor_id",
@@ -325,6 +329,8 @@ class MonitorDefinition:
             "cooldown_seconds",
             "enabled",
             "branch",
+            "alert_rung",
+            "recovery_rung",
         }
     )
 
@@ -363,6 +369,11 @@ class MonitorDefinition:
             raise ValueError("monitor enabled must be boolean")
         if self.branch != "match":
             raise ValueError("monitor branch is unsupported")
+        for name in ("alert_rung", "recovery_rung"):
+            rung = str(getattr(self, name)).strip().lower()
+            if rung not in _RUNGS:
+                raise ValueError("monitor decision rung is unsupported")
+            object.__setattr__(self, name, rung)
 
     @property
     def definition_hash(self) -> str:
@@ -385,6 +396,8 @@ class MonitorDefinition:
             "cooldown_seconds": self.cooldown_seconds,
             "enabled": self.enabled,
             "branch": self.branch,
+            "alert_rung": self.alert_rung,
+            "recovery_rung": self.recovery_rung,
         }
 
     @classmethod
@@ -411,6 +424,9 @@ class AmbientDecision:
     reason: str
     decided_at: float
     consent_generation: int
+    rung: str = "monitor"
+    attention_mode: str = "none"
+    policy_reason: str = "policy_selected"
 
     def __post_init__(self) -> None:
         for name in ("decision_id", "monitor_id"):
@@ -447,6 +463,20 @@ class AmbientDecision:
             or self.consent_generation < 0
         ):
             raise ValueError("consent generation must be non-negative")
+        rung = str(self.rung).strip().lower()
+        attention_mode = str(self.attention_mode).strip().lower()
+        if rung not in _RUNGS or attention_mode not in _ATTENTION_MODES:
+            raise ValueError("ambient decision disposition is invalid")
+        expected_mode = "digest" if rung == "ask" else ("interrupt" if rung == "interrupt" else "none")
+        if attention_mode != expected_mode:
+            raise ValueError("ambient decision attention mode does not match its rung")
+        object.__setattr__(self, "rung", rung)
+        object.__setattr__(self, "attention_mode", attention_mode)
+        object.__setattr__(
+            self,
+            "policy_reason",
+            _text(self.policy_reason, label="policy reason", maximum=64, pattern=_ID_RE),
+        )
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -460,6 +490,9 @@ class AmbientDecision:
             "reason": self.reason,
             "decided_at": self.decided_at,
             "consent_generation": self.consent_generation,
+            "rung": self.rung,
+            "attention_mode": self.attention_mode,
+            "policy_reason": self.policy_reason,
         }
 
 

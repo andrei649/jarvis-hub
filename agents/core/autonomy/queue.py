@@ -74,6 +74,7 @@ class Task:
     risk_tier: int
     status: str
     autonomy_level: str
+    attention_mode: str    # none | digest | interrupt
     origin: str            # "manual" (user-curated) | "generated" (self-proposed) | "inbound"
     attempts: int
     result: Optional[dict]
@@ -119,6 +120,7 @@ class TaskQueue:
                 risk_tier INTEGER NOT NULL DEFAULT 3,
                 status TEXT NOT NULL DEFAULT 'proposed',
                 autonomy_level TEXT NOT NULL DEFAULT 'ask',
+                attention_mode TEXT NOT NULL DEFAULT 'interrupt',
                 origin TEXT NOT NULL DEFAULT 'generated',
                 attempts INTEGER NOT NULL DEFAULT 0,
                 result TEXT,
@@ -129,6 +131,16 @@ class TaskQueue:
                 updated_at TEXT NOT NULL
             )
         """)
+        # H33.2: old autonomy databases predate the ask/digest/interrupt split.
+        # Preserve their previous push behavior while new ambient proposals set
+        # the mode explicitly.
+        columns = {
+            row["name"] for row in self._conn.execute("PRAGMA table_info(tasks)").fetchall()
+        }
+        if "attention_mode" not in columns:
+            self._conn.execute(
+                "ALTER TABLE tasks ADD COLUMN attention_mode TEXT NOT NULL DEFAULT 'interrupt'"
+            )
         # The worker polls runnable()/pending_decisions() and the inbox calls
         # list() in a continuous loop — all filtered by status — while the table
         # grows unboundedly as decided tasks accumulate. Index status so those
@@ -155,15 +167,19 @@ class TaskQueue:
     # ── writes ────────────────────────────────────────────────────
     def enqueue(self, agent: str, kind: str, title: str, payload: dict = None,
                 risk_tier: int = 3, autonomy_level: str = "ask",
-                origin: str = "generated") -> int:
+                origin: str = "generated", attention_mode: str = "interrupt") -> int:
+        attention_mode = str(attention_mode or "").strip().lower()
+        if attention_mode not in {"none", "digest", "interrupt"}:
+            raise ValueError("attention mode is invalid")
         now = _now()
         with self._lock:
             cur = self._conn.execute(
                 """INSERT INTO tasks (agent, kind, title, payload, risk_tier, status,
-                       autonomy_level, origin, attempts, pushed, created_at, updated_at)
-                   VALUES (?, ?, ?, ?, ?, 'proposed', ?, ?, 0, 0, ?, ?)""",
+                       autonomy_level, attention_mode, origin, attempts, pushed,
+                       created_at, updated_at)
+                   VALUES (?, ?, ?, ?, ?, 'proposed', ?, ?, ?, 0, 0, ?, ?)""",
                 (agent, kind, title, json.dumps(payload or {}, ensure_ascii=False),
-                 int(risk_tier), autonomy_level, origin, now, now),
+                 int(risk_tier), autonomy_level, attention_mode, origin, now, now),
             )
             self._conn.commit()
             return cur.lastrowid
@@ -364,7 +380,8 @@ def _row_to_task(row: sqlite3.Row) -> Task:
         id=row["id"], agent=row["agent"], kind=row["kind"], title=row["title"],
         payload=json.loads(row["payload"] or "{}"),
         risk_tier=row["risk_tier"], status=row["status"],
-        autonomy_level=row["autonomy_level"], origin=row["origin"],
+        autonomy_level=row["autonomy_level"], attention_mode=row["attention_mode"],
+        origin=row["origin"],
         attempts=row["attempts"],
         result=json.loads(row["result"]) if row["result"] else None,
         decided_by=row["decided_by"], decision=row["decision"],

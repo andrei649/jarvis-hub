@@ -22,6 +22,7 @@ all injected.
 from __future__ import annotations
 
 import logging
+import hashlib
 import time
 from typing import Callable, Optional
 from urllib.parse import urlparse
@@ -292,17 +293,49 @@ class CallBroker:
                 if reason is not None:   # token / wall-time / recursion-depth breach
                     self._record("call.budget_denied", reason, to=to)
                     return {"status": "failed", "reason": "budget_exceeded", "detail": reason}
-            # Draw an interrupt-budget slot at the moment the call is actually placed.
-            if self._budget is not None and not self._budget.consume():
-                return {"status": "failed", "reason": "interrupt_budget_exhausted"}
             credentials = self._resolve_credentials(payload)
             config = self.config.get(provider, {}) if isinstance(self.config, dict) else {}
-            try:
-                result = await self._client.call(provider, to, message, credentials, config)
-            except Exception:
-                logger.warning("call execute failed", exc_info=True)
-                return {"status": "failed", "reason": "client_error"}
-            if self._ledger is not None:
+            delivery_broker = getattr(self._budget, "delivery_broker", None)
+            performed = False
+            if delivery_broker is not None:
+                raw_id = getattr(task, "id", None)
+                if isinstance(raw_id, int) and raw_id > 0:
+                    delivery_id = f"call-task-{raw_id}"
+                else:
+                    material = f"{provider}:{to}:{message}"
+                    delivery_id = f"call-{hashlib.sha256(material.encode()).hexdigest()[:32]}"
+                holder: dict = {}
+
+                async def _place_call() -> bool:
+                    holder["result"] = await self._client.call(
+                        provider, to, message, credentials, config
+                    )
+                    return True
+
+                delivery = await delivery_broker.dispatch(
+                    delivery_id, "call", _place_call
+                )
+                if delivery["status"] == "downgraded":
+                    return {"status": "failed", "reason": "interrupt_budget_exhausted"}
+                if delivery["status"] != "delivered":
+                    logger.warning("call execute failed: %s", delivery.get("reason"))
+                    return {"status": "failed", "reason": "client_error"}
+                performed = "result" in holder
+                result = holder.get(
+                    "result", {"status": "idempotent", "provider": provider}
+                )
+            else:
+                # Compatibility for injected third-party budget objects. The
+                # production InterruptBudget always exposes the durable broker.
+                if self._budget is not None and not self._budget.consume():
+                    return {"status": "failed", "reason": "interrupt_budget_exhausted"}
+                try:
+                    result = await self._client.call(provider, to, message, credentials, config)
+                    performed = True
+                except Exception:
+                    logger.warning("call execute failed", exc_info=True)
+                    return {"status": "failed", "reason": "client_error"}
+            if self._ledger is not None and performed:
                 self._ledger.add_tokens(len(message))   # coarse per-call usage signal
             self._record("call.execute", f"{provider}:{to}", to=to)
             return {"status": "ok", "provider": provider, "to": to, "call": result}

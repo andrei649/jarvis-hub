@@ -309,6 +309,16 @@ class Orchestrator:
         # These were dataclass defaults (50/200/4); live-resynced each tick by the
         # autonomy coordinator (like autonomy.mode).
         from .settings_db import get_value as _gv
+        from .ambient.policy import AttentionLedger
+        from .paths import data_path as _attention_path
+
+        interrupt_limit = int(_gv("autonomy", "interrupt_budget", 4))
+        self.attention_ledger = AttentionLedger(
+            _attention_path("ambient", "attention.db"),
+            timezone_name=str(_gv("general", "timezone", "Europe/Bucharest")),
+            per_day=interrupt_limit,
+            k3=self.budget_ledger,
+        )
         self.autonomy = AutonomyWorker(
             self.autonomy_queue,
             policy=AutonomyPolicy(
@@ -320,8 +330,10 @@ class Orchestrator:
             ),
             prefs=self.autonomy_prefs,
             budget=InterruptBudget(
-                per_day=int(_gv("autonomy", "interrupt_budget", 4)),
+                per_day=interrupt_limit,
                 ledger=self.budget_ledger,
+                attention_ledger=self.attention_ledger,
+                timezone_name=str(_gv("general", "timezone", "Europe/Bucharest")),
             ),
         )
         # Proactive OS Observer — the trigger layer that feeds the queue.
