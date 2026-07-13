@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import hashlib
 import json
-import os
 import tempfile
 import uuid
 from pathlib import Path
@@ -97,11 +96,8 @@ class AcquiredSandboxRunner:
                 contract / "invoke.py",
                 self._invocation_source(record.manifest["entrypoint"]).encode("utf-8"),
             )
-            # Ephemeral projections are read-only bind mounts for the isolated UID.
-            # lgtm[py/overly-permissive-file]
-            os.chmod(source, 0o555)  # nosec B103
-            # lgtm[py/overly-permissive-file]
-            os.chmod(contract, 0o555)  # nosec B103
+            self.profile.seal_mount(source)
+            self.profile.seal_mount(contract)
             container_name = f"jarvis-acq-run-{uuid.uuid4().hex[:12]}"
             command = self.profile.build_command(
                 source_dir=source,
@@ -199,9 +195,6 @@ class AcquiredSandboxRunner:
     @staticmethod
     def _write(path: Path, content: bytes) -> None:
         path.write_bytes(content)
-        # Ephemeral members must be readable by the isolated non-host UID.
-        # lgtm[py/overly-permissive-file]
-        os.chmod(path, 0o444)
 
     @staticmethod
     def _signed_member(record, member: str) -> bytes:

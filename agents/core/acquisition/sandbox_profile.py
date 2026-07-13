@@ -11,7 +11,7 @@ import tempfile
 import time
 from collections.abc import Callable
 from contextlib import suppress
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
 from pathlib import Path, PurePosixPath
 
 from agents.core.environments.output_limits import read_capped_stream, render_capped, truncate_text
@@ -22,6 +22,15 @@ from .receipt import VerificationReceipt, canonical_hash, make_receipt
 
 _IMAGE = re.compile(r"[^\s@]+@sha256:[a-f0-9]{64}")
 _CONTAINER = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,62}")
+
+
+def _host_identity(name: str) -> int:
+    getter = getattr(os, f"get{name}", None)
+    if callable(getter):
+        value = int(getter())
+        if value > 0:
+            return value
+    return 65532
 
 
 class SandboxProfileError(RuntimeError):
@@ -58,8 +67,8 @@ class AcquisitionSandboxProfile:
     timeout_seconds: float = 30.0
     max_output_bytes: int = 32 * 1024
     tmpfs_mb: int = 16
-    uid: int = 65532
-    gid: int = 65532
+    uid: int = field(default_factory=lambda: _host_identity("uid"))
+    gid: int = field(default_factory=lambda: _host_identity("gid"))
 
     def __post_init__(self) -> None:
         if _IMAGE.fullmatch(str(self.image or "").strip()) is None:
@@ -76,6 +85,9 @@ class AcquisitionSandboxProfile:
             raise SandboxProfileError("sandbox output cap is outside hard bounds")
         if not 4 <= int(self.tmpfs_mb) <= 64:
             raise SandboxProfileError("sandbox tmpfs is outside hard bounds")
+        for value, label in ((self.uid, "uid"), (self.gid, "gid")):
+            if isinstance(value, bool) or not isinstance(value, int) or not 1 <= value < 2**31:
+                raise SandboxProfileError(f"sandbox {label} must be a non-root identity")
 
     @property
     def config_hash(self) -> str:
@@ -87,6 +99,27 @@ class AcquisitionSandboxProfile:
             raise SandboxProfileError("host execution is forbidden for acquired capabilities")
         if value not in {"docker", "wasm"}:
             raise SandboxProfileError("isolated Docker/WASM backend required")
+
+    def seal_mount(self, value: str | Path) -> Path:
+        """Make a transient bind projection readable only by its sandbox identity."""
+        root = self._mount_dir(value, "projection")
+        members = [root, *root.rglob("*")]
+        if any(path.is_symlink() for path in members):
+            raise SandboxProfileError("sandbox projection cannot contain symlinks")
+        getuid = getattr(os, "getuid", None)
+        current_uid = int(getuid()) if callable(getuid) else None
+        if current_uid not in {None, 0, self.uid}:
+            raise SandboxProfileError("sandbox uid cannot own the private projection")
+        if current_uid == 0:
+            for path in members:
+                os.chown(path, self.uid, self.gid)
+        for path in members:
+            if path.is_file():
+                os.chmod(path, 0o400)
+        for path in reversed(members):
+            if path.is_dir():
+                os.chmod(path, 0o500)
+        return root
 
     def build_command(
         self,
@@ -334,11 +367,8 @@ class SandboxVerifier:
             self._write_private(source / "main.py", package.code)
             self._write_private(source / "test_generated.py", package.test_code)
             self._write_private(contract_dir / "contract_test.py", self.contract_test_source(contract))
-            # Both directories are read-only bind mounts for the isolated non-host UID.
-            # lgtm[py/overly-permissive-file]
-            os.chmod(source, 0o555)  # nosec B103
-            # lgtm[py/overly-permissive-file]
-            os.chmod(contract_dir, 0o555)  # nosec B103
+            self.profile.seal_mount(source)
+            self.profile.seal_mount(contract_dir)
 
             prefix = f"jarvis-acq-{package.artifact_id[:10]}"
             generated = await self._run(
@@ -463,11 +493,6 @@ class SandboxVerifier:
     def _write_private(path: Path, content: str) -> None:
         with path.open("x", encoding="utf-8", newline="\n") as handle:
             handle.write(content)
-        # Transient bind-mounted source is readable by the sandbox's non-host UID,
-        # but the mount itself is read-only and the entire directory is deleted
-        # immediately after verification.
-        # lgtm[py/overly-permissive-file]
-        os.chmod(path, 0o444)
 
 
 __all__ = [

@@ -414,6 +414,8 @@ async def _prove_isolation(*, root: Path, profile) -> tuple[bool, bool]:
     contract = root / "isolation-contract"
     source.mkdir()
     contract.mkdir()
+    profile.seal_mount(source)
+    profile.seal_mount(contract)
     sentinel = root / "host-sentinel"
     sentinel.write_text("unchanged", encoding="utf-8")
     runner = DockerSandboxRunner(

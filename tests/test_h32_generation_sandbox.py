@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import asyncio
+import os
+import stat
 from dataclasses import FrozenInstanceError, replace
 
 import pytest
@@ -233,7 +235,8 @@ def test_sandbox_profile_has_a_non_negotiable_isolation_floor(tmp_path):
     assert "--read-only" in command
     assert "--cap-drop ALL" in rendered
     assert "no-new-privileges" in rendered
-    assert "--user 65532:65532" in rendered
+    assert f"--user {profile.uid}:{profile.gid}" in rendered
+    assert profile.uid > 0 and profile.gid > 0
     assert "--pids-limit 32" in rendered
     assert "--memory 128m" in rendered and "--memory-swap 128m" in rendered
     assert "--cpus 0.5" in rendered
@@ -249,6 +252,22 @@ def test_sandbox_profile_has_a_non_negotiable_isolation_floor(tmp_path):
         profile.require_backend("disabled")
     with pytest.raises(SandboxProfileError, match="host"):
         profile.require_backend("subprocess-host")
+    with pytest.raises(SandboxProfileError, match="non-root"):
+        AcquisitionSandboxProfile(image=PINNED_IMAGE, uid=0)
+
+
+def test_sandbox_projection_is_owner_only_for_the_runtime_identity(tmp_path):
+    profile = AcquisitionSandboxProfile(image=PINNED_IMAGE)
+    source = tmp_path / "source"
+    source.mkdir()
+    member = source / "main.py"
+    member.write_text("VALUE = 1\n", encoding="utf-8")
+
+    profile.seal_mount(source)
+
+    if os.name == "posix":
+        assert stat.S_IMODE(source.stat().st_mode) == 0o500
+        assert stat.S_IMODE(member.stat().st_mode) == 0o400
 
 
 class _SequencedRunner:
