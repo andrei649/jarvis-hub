@@ -12,6 +12,7 @@ exist — it does not add a parallel system:
 
 Each record carries a readiness state on the lifecycle:
 
+    MISSING   explicit capability gap captured by the governed runtime
     SEAM      declared / not wired (disabled plugin, failed component, stub skill)
     WIRED     live path constructed and available (manual confidence)
     VERIFIED  a green reality-harness proved the *rail* in CI   ← V1, pending
@@ -34,8 +35,8 @@ logger = logging.getLogger("jarvis.capabilities")
 
 # Readiness lifecycle, low → high. Ordering matters: overrides may only DEMOTE
 # (≤ WIRED), and the matrix gate (V3) keys off these names.
-SEAM, WIRED, VERIFIED, GA = "seam", "wired", "verified", "ga"
-_ORDER = (SEAM, WIRED, VERIFIED, GA)
+MISSING, SEAM, WIRED, VERIFIED, GA = "missing", "seam", "wired", "verified", "ga"
+_ORDER = (MISSING, SEAM, WIRED, VERIFIED, GA)
 
 
 def _rank(state: str) -> int:
@@ -155,6 +156,48 @@ def _plugin_records() -> list[CapabilityRecord]:
             )
         )
     return out
+
+
+def _missing_records(orch) -> list[CapabilityRecord]:
+    """Project explicit unresolved gaps without leaking their encrypted goals."""
+    acquisition = getattr(orch, "acquisition", None)
+    store = getattr(acquisition, "request_store", None) if acquisition is not None else None
+    list_requests = getattr(store, "list", None) if store is not None else None
+    if not callable(list_requests):
+        return []
+    from agents.core.acquisition.models import RequestStatus
+
+    terminal = {
+        RequestStatus.INSTALLED,
+        RequestStatus.REUSED,
+        RequestStatus.ABANDONED,
+        RequestStatus.REVOKED,
+    }
+    records = []
+    for request in list_requests():
+        if request.status in terminal:
+            continue
+        records.append(
+            CapabilityRecord(
+                id=f"missing:{request.fingerprint[:24]}",
+                kind="request",
+                state=MISSING,
+                owner_agent=request.agent_id,
+                description="Explicit capability gap awaiting governed resolution.",
+                risk="sensitive",
+                requires=("acquisition.enabled", "owner.approval"),
+                supports=("reuse-first", "governed-acquisition"),
+                confidence=0.0,
+                implementation="agents.core.acquisition",
+                detail={
+                    "request_id": request.request_id,
+                    "status": request.status.value,
+                    "occurrences": request.occurrences,
+                    "created_at": request.created_at,
+                },
+            )
+        )
+    return records
 
 
 def _action_records(orch=None) -> list[CapabilityRecord]:
@@ -326,7 +369,8 @@ def build_records(orch=None) -> list[CapabilityRecord]:
     and skills need a live orchestrator (omitted when *orch* is None). Each source is
     isolated so one failing registry can't blank the whole board."""
     records: list[CapabilityRecord] = []
-    for source in (_plugin_records,
+    for source in (lambda: _missing_records(orch) if orch is not None else [],
+                   _plugin_records,
                    lambda: _action_records(orch),
                    lambda: _tool_records(orch) if orch is not None else [],
                    lambda: _component_records(orch) if orch is not None else [],

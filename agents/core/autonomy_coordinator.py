@@ -172,6 +172,7 @@ class AutonomyCoordinator:
         import time as _t
 
         from .agent_runtime import AgentToolRuntime
+        from .acquisition.runtime import AcquisitionRuntime
         from .desktop_operator import DesktopProposalError, validate_desktop_run_args
         from .observability import capability_registry
         from .tool_rpc import ToolRPCServer, ToolRPCValidationError
@@ -318,6 +319,11 @@ class AutonomyCoordinator:
             capability_id="tool:time",
         )
 
+        acquisition = AcquisitionRuntime(
+            enabled=lambda: _get_setting("acquisition.enabled", False) is True,
+        )
+        self._orch.acquisition = acquisition
+
         runtime = AgentToolRuntime(
             server,
             enabled=lambda: _get_setting("llm.tool_loop_enabled", False) is True,
@@ -326,6 +332,7 @@ class AutonomyCoordinator:
             ) is True,
             capability_snapshot=lambda: capability_registry.snapshot(self._orch),
             max_iterations=lambda: _get_setting("llm.tool_loop_max_iterations", 8),
+            gap_callback=acquisition.capture_gap,
         )
         self._orch.tool_rpc = server
         self._orch.agent_tool_runtime = runtime

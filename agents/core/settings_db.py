@@ -207,6 +207,9 @@ DEFAULTS: list[dict[str, Any]] = [
     dict(category="skills",  key="sandbox_enabled",  value=True,                  label="Sandbox execution",  kind="toggle"),
     dict(category="skills",  key="max_skills",       value=50,                    label="Max stored skills",  kind="number"),
     dict(category="skills",  key="import_source",    value="hermes",              label="Import source",      kind="select", opts=["hermes","openclaw","none"]),
+    # H32 governed acquisition — an independent owner switch. Product Posture
+    # intentionally does not enable this capability.
+    dict(category="acquisition", key="enabled", value=False, label="Governed capability acquisition", kind="toggle"),
     # system
     dict(category="system",  key="log_level",        value="INFO",                label="Log level",          kind="select", opts=["DEBUG","INFO","WARNING","ERROR"]),
     dict(category="system",  key="poll_interval",    value=10,                    label="Poll interval (s)",  kind="number"),
