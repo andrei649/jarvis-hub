@@ -307,6 +307,13 @@ class AttentionLedger:
                     ).fetchone()[0]
                 )
                 if used >= self._per_day:
+                    db.execute(
+                        """INSERT INTO attention_deliveries(
+                               delivery_id, channel_class, state, window_id,
+                               reserved_at, failed_at, failure_category, spent
+                           ) VALUES(?, ?, 'failed', ?, ?, ?, 'budget_exhausted', 0)""",
+                        (delivery_id, channel_class, window_id, now, now),
+                    )
                     db.commit()
                     self._sync_k3(window_id=window_id, used=used)
                     return AttentionReservation(
@@ -370,6 +377,8 @@ class AttentionLedger:
             ).fetchone()
             if row is None:
                 raise ValueError("attention delivery does not exist")
+            if row["state"] in {"failed", "delivered"}:
+                return
             provably_before = bool(before_dispatch and row["state"] == "reserved")
             db.execute(
                 """UPDATE attention_deliveries

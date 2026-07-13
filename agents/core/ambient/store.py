@@ -68,6 +68,9 @@ class AmbientStore:
             db = sqlite3.connect(str(self.path), timeout=5.0, check_same_thread=False)
             db.row_factory = sqlite3.Row
             db.execute("PRAGMA foreign_keys=ON")
+            db.execute("PRAGMA journal_mode=WAL")
+            db.execute("PRAGMA synchronous=NORMAL")
+            db.execute("PRAGMA busy_timeout=5000")
             version = int(db.execute("PRAGMA user_version").fetchone()[0])
             if version not in {0, 1, _SCHEMA_VERSION}:
                 raise sqlite3.DatabaseError("unsupported ambient schema")
@@ -335,6 +338,7 @@ class AmbientStore:
                 "SELECT 1 FROM replay_tombstones WHERE source=? AND dedupe_hash=? AND expires_at>?",
                 (event.source, key, now),
             ).fetchone():
+                db.commit()
                 return False
             try:
                 db.execute(
@@ -344,6 +348,7 @@ class AmbientStore:
                 db.commit()
                 return True
             except sqlite3.IntegrityError:
+                db.rollback()
                 return False
 
     def purge_source(self, source: str, *, tombstone_ttl: float = 7 * 24 * 60 * 60) -> dict[str, int]:
@@ -452,6 +457,39 @@ class AmbientStore:
             "field_hashes": json.loads(row["field_hashes"]),
         }
 
+    def monitor_states(self, monitor_ids: list[str]) -> dict[str, dict[str, Any]]:
+        if not monitor_ids:
+            return {}
+        placeholders = ",".join("?" for _ in monitor_ids)
+        with self._lock:
+            db = self._require()
+            rows = db.execute(
+                f"SELECT * FROM monitor_state WHERE monitor_id IN ({placeholders})",  # nosec B608
+                monitor_ids,
+            ).fetchall()
+        persisted = {str(row["monitor_id"]): row for row in rows}
+        output: dict[str, dict[str, Any]] = {}
+        for monitor_id in monitor_ids:
+            row = persisted.get(monitor_id)
+            output[monitor_id] = (
+                {
+                    "matched": False,
+                    "pending_since": None,
+                    "last_emit": None,
+                    "last_event_at": None,
+                    "field_hashes": {},
+                }
+                if row is None
+                else {
+                    "matched": bool(row["matched"]),
+                    "pending_since": row["pending_since"],
+                    "last_emit": row["last_emit"],
+                    "last_event_at": row["last_event_at"],
+                    "field_hashes": json.loads(row["field_hashes"]),
+                }
+            )
+        return output
+
     def save_monitor_state(self, monitor_id: str, state: dict[str, Any]) -> None:
         encoded_hashes = json.dumps(state.get("field_hashes", {}), sort_keys=True, separators=(",", ":"))
         with self._lock:
@@ -477,6 +515,77 @@ class AmbientStore:
                     encoded_hashes,
                 ),
             )
+            db.commit()
+
+    def apply_evaluation(
+        self,
+        states: list[tuple[str, dict[str, Any]]],
+        decisions: list[AmbientDecision],
+    ) -> None:
+        """Persist one event's full evaluation atomically in one SQLite commit."""
+        state_rows = [
+            (
+                monitor_id,
+                int(bool(state.get("matched"))),
+                state.get("pending_since"),
+                state.get("last_emit"),
+                state.get("last_event_at"),
+                json.dumps(
+                    state.get("field_hashes", {}),
+                    sort_keys=True,
+                    separators=(",", ":"),
+                ),
+            )
+            for monitor_id, state in states
+        ]
+        decision_rows = []
+        for decision in decisions:
+            values = decision.to_dict()
+            decision_rows.append(
+                (
+                    values["decision_id"],
+                    values["monitor_id"],
+                    values["monitor_version"],
+                    values["monitor_hash"],
+                    values["event_fingerprint"],
+                    values["transition"],
+                    int(values["matched"]),
+                    values["reason"],
+                    values["decided_at"],
+                    values["consent_generation"],
+                    values["rung"],
+                    values["attention_mode"],
+                    values["policy_reason"],
+                )
+            )
+        with self._lock:
+            db = self._require()
+            if decision_rows:
+                self._guard_capacity(db)
+            db.execute("BEGIN IMMEDIATE")
+            if state_rows:
+                db.executemany(
+                    """INSERT INTO monitor_state(
+                           monitor_id, matched, pending_since, last_emit, last_event_at,
+                           field_hashes
+                       ) VALUES(?, ?, ?, ?, ?, ?)
+                       ON CONFLICT(monitor_id) DO UPDATE SET
+                           matched=excluded.matched,
+                           pending_since=excluded.pending_since,
+                           last_emit=excluded.last_emit,
+                           last_event_at=excluded.last_event_at,
+                           field_hashes=excluded.field_hashes""",
+                    state_rows,
+                )
+            if decision_rows:
+                db.executemany(
+                    """INSERT OR IGNORE INTO decisions(
+                           decision_id, monitor_id, monitor_version, monitor_hash,
+                           event_fingerprint, transition, matched, reason, decided_at,
+                           consent_generation, rung, attention_mode, policy_reason
+                       ) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                    decision_rows,
+                )
             db.commit()
 
     def append_decision(self, decision: AmbientDecision) -> None:

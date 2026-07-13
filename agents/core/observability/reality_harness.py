@@ -576,6 +576,9 @@ from agents.core.observability.camera_reality import (  # noqa: E402
     H31_CAMERA_LIVE_CASES,
     H31_CAMERA_REALITY_CASES,
 )
+from agents.core.observability.ambient_reality import (  # noqa: E402
+    H33_AMBIENT_REALITY_CASES,
+)
 
 OperatorEventLedger = _OperatorEventLedger
 
@@ -783,6 +786,7 @@ CASES: list[RealityCase] = [
     *H30_HOUSE_LIVE_CASES,
     *H31_CAMERA_REALITY_CASES,
     *H31_CAMERA_LIVE_CASES,
+    *H33_AMBIENT_REALITY_CASES,
     *TOOL_CAPABILITY_CASES,
     *OPERATOR_CAPABILITY_CASES,
 ]

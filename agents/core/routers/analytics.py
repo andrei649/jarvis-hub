@@ -170,6 +170,7 @@ async def metrics_north_star(days: int = Query(7, ge=1, le=90)):
         getattr(orch, "run_history", None),
         getattr(orch, "tracer", None),
         budget=getattr(getattr(orch, "autonomy", None), "budget", None),
+        attention_ledger=getattr(orch, "attention_ledger", None),
         days=days,
         night_window=night_window,
     ))

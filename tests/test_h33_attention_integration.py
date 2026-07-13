@@ -107,7 +107,13 @@ def test_legacy_worker_pushes_also_flow_through_durable_broker(tmp_path):
     assert delivered == [first.id]
     assert queue.get(first.id).pushed == 1
     assert queue.get(second.id).pushed == 0
-    assert {row["delivery_id"] for row in ledger.records()} == {f"task-{first.id}"}
+    assert {
+        (row["delivery_id"], row["failure_category"])
+        for row in ledger.records()
+    } == {
+        (f"task-{first.id}", ""),
+        (f"task-{second.id}", "budget_exhausted"),
+    }
 
 
 def test_interrupt_budget_is_a_compatibility_view_over_attention_ledger(tmp_path):
@@ -119,7 +125,11 @@ def test_interrupt_budget_is_a_compatibility_view_over_attention_ledger(tmp_path
     assert budget.consume(delivery_id="legacy-two", channel_class="call")
     assert not budget.consume(delivery_id="legacy-three", channel_class="push")
     assert budget.remaining() == 0
-    assert {row["channel_class"] for row in ledger.records()} == {"media", "call"}
+    assert {(row["channel_class"], row["failure_category"]) for row in ledger.records()} == {
+        ("media", ""),
+        ("call", ""),
+        ("push", "budget_exhausted"),
+    }
 
 
 def test_call_broker_uses_same_delivery_choke_point_as_pushes(tmp_path):

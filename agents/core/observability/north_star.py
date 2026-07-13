@@ -117,7 +117,13 @@ def check_guardrails(counter_metrics: dict) -> list[dict]:
     return breaches
 
 
-def _proposal_funnel(queue, cutoff: float, fetch_limit: int):
+def _proposal_funnel(
+    queue,
+    cutoff: float,
+    fetch_limit: int,
+    *,
+    surfaced_task_ids: set[int] | None = None,
+):
     """P1 diagnostic — where proactive proposals drop off. A *cohort* funnel over the
     proposals **created** in the window: of those, how many surfaced (a decision card
     reached the inbox), were accepted (``done``), rejected, or are still pending.
@@ -131,7 +137,10 @@ def _proposal_funnel(queue, cutoff: float, fetch_limit: int):
         if not _in_window_iso(getattr(t, "created_at", None), cutoff):
             continue
         proposed += 1
-        if getattr(t, "pushed", 0):
+        surfaced_from_ledger = surfaced_task_ids is not None and t.id in surfaced_task_ids
+        if surfaced_from_ledger or (
+            surfaced_task_ids is None and getattr(t, "pushed", 0)
+        ):
             surfaced += 1
         st = str(getattr(t, "status", "")).lower()
         if st == "done":
@@ -156,6 +165,7 @@ def compute_north_star(
     tracer=None,
     *,
     budget=None,
+    attention_ledger=None,
     days: int = 7,
     now: float | None = None,
     fetch_limit: int = 100_000,
@@ -215,6 +225,51 @@ def compute_north_star(
             1 for t in queue.list(limit=fetch_limit)
             if getattr(t, "pushed", 0) and _in_window_iso(t.updated_at, cutoff)
         )
+
+    # H33.4: when the persistent attention ledger is available, committed
+    # provider deliveries are the truth. TaskQueue.pushed remains only the
+    # backwards-compatible fallback for older stores.
+    attention = None
+    surfaced_task_ids: set[int] | None = None
+    if attention_ledger is not None:
+        pushes = calls = failures = released = downgraded = samples = 0
+        surfaced_task_ids = set()
+        try:
+            records = attention_ledger.records(limit=fetch_limit)
+        except Exception:
+            records = []
+        for record in records:
+            reserved_at = record.get("reserved_at")
+            if not isinstance(reserved_at, (int, float)) or float(reserved_at) < cutoff:
+                continue
+            samples += 1
+            channel = str(record.get("channel_class") or "")
+            state = str(record.get("state") or "")
+            category = str(record.get("failure_category") or "")
+            spent = record.get("spent") == 1
+            if state == "delivered" and channel == "decision_push":
+                pushes += 1
+                delivery_id = str(record.get("delivery_id") or "")
+                parts = delivery_id.split("-")
+                if len(parts) >= 2 and parts[0] == "task" and parts[1].isdigit():
+                    surfaced_task_ids.add(int(parts[1]))
+            elif state == "delivered" and channel == "call":
+                calls += 1
+            elif state == "failed" and category == "budget_exhausted":
+                downgraded += 1
+            elif state == "failed" and spent:
+                failures += 1
+            elif state == "failed":
+                released += 1
+        pushed = pushes
+        attention = {
+            "pushes": pushes,
+            "calls": calls,
+            "failures": failures,
+            "released_reservations": released,
+            "downgraded_interrupts": downgraded,
+            "samples": samples,
+        }
 
     decisions = done + rejected
 
@@ -284,8 +339,14 @@ def compute_north_star(
         "guardrail_breaches": breaches,
         "guardrails_ok": not breaches,
         "interrupt_budget": budget_block,
+        "attention": attention,
         # P1 proof-gap: the proposal funnel — diagnoses *where* proactive proposals drop off.
-        "proposal_funnel": _proposal_funnel(queue, cutoff, fetch_limit),
+        "proposal_funnel": _proposal_funnel(
+            queue,
+            cutoff,
+            fetch_limit,
+            surfaced_task_ids=surfaced_task_ids,
+        ),
         "raw": {
             "accepted": done,
             "rejected": rejected,

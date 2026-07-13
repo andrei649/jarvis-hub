@@ -133,6 +133,21 @@ def test_attention_failure_and_clock_rollback_are_conservative(tmp_path):
     ledger.close()
 
 
+def test_attention_failure_is_idempotent_for_terminal_records(tmp_path):
+    ledger = AttentionLedger(tmp_path / "attention.db", timezone_name="UTC", per_day=1)
+    assert ledger.reserve("spent", "push").admitted
+    exhausted = ledger.reserve("exhausted", "push")
+    assert exhausted.reason == "attention_budget_exhausted"
+
+    ledger.fail("exhausted", category="provider_error", before_dispatch=False)
+
+    [record] = [row for row in ledger.records() if row["delivery_id"] == "exhausted"]
+    assert record["state"] == "failed"
+    assert record["failure_category"] == "budget_exhausted"
+    assert record["spent"] == 0
+    ledger.close()
+
+
 def test_attention_ledger_never_persists_content_or_recipient(tmp_path):
     path = tmp_path / "attention.db"
     ledger = AttentionLedger(path, timezone_name="UTC")

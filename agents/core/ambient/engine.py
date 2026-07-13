@@ -193,32 +193,40 @@ class AmbientEngine:
 
     def _evaluate_event(self, event: AmbientEvent) -> list[AmbientDecision]:
         decisions: list[AmbientDecision] = []
-        for definition in self._registry.list():
-            if (
-                not definition.enabled
-                or definition.source != event.source
-                or definition.schema != event.schema
-                or (definition.subject_id and definition.subject_id != event.subject_id)
-            ):
-                continue
-            state = self._store.monitor_state(definition.monitor_id)
+        state_updates: list[tuple[str, dict[str, Any]]] = []
+        emissions: list[tuple[AmbientDecision, MonitorDefinition]] = []
+        definitions = [
+            definition
+            for definition in self._registry.list()
+            if definition.enabled
+            and definition.source == event.source
+            and definition.schema == event.schema
+            and (not definition.subject_id or definition.subject_id == event.subject_id)
+        ]
+        states = self._store.monitor_states(
+            [definition.monitor_id for definition in definitions]
+        )
+        for definition in definitions:
+            state = states[definition.monitor_id]
             last_event = state.get("last_event_at")
             if last_event is not None and event.observed_at < float(last_event):
                 continue
             decision = self._transition(definition, event, state)
             state["field_hashes"] = _field_hashes(event)
             state["last_event_at"] = event.observed_at
-            self._store.save_monitor_state(definition.monitor_id, state)
+            state_updates.append((definition.monitor_id, state))
             if decision is not None:
-                self._store.append_decision(decision)
                 decisions.append(decision)
-                if self._decision_sink is not None:
-                    try:
-                        self._decision_sink(decision, event, definition)
-                    except Exception:
-                        self._update_source_health(
-                            event.source, status="degraded", error="proposal_failed"
-                        )
+                emissions.append((decision, definition))
+        self._store.apply_evaluation(state_updates, decisions)
+        if self._decision_sink is not None:
+            for decision, definition in emissions:
+                try:
+                    self._decision_sink(decision, event, definition)
+                except Exception:
+                    self._update_source_health(
+                        event.source, status="degraded", error="proposal_failed"
+                    )
         self._update_source_health(event.source, status="live", event_time=event.observed_at)
         return decisions
 
