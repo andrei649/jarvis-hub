@@ -299,12 +299,52 @@ def test_malformed_governed_browser_preview_fails_closed():
             "blocked": 0,
             "needs_approval": 0,
         },
-        {"steps": [{"i": 1, "action": "navigate", "kind": "read", "decision": "run", "reason": ""}], "blocked": 0, "needs_approval": 0},
-        {"steps": [{"i": 0, "action": "click", "kind": "read", "decision": "run", "reason": ""}], "blocked": 0, "needs_approval": 0},
-        {"steps": [{"i": 0, "action": "navigate", "kind": "risky", "decision": "run", "reason": ""}], "blocked": 0, "needs_approval": 0},
-        {"steps": [{"i": 0, "action": "navigate", "kind": "read", "decision": "run", "reason": "spoofed"}], "blocked": 0, "needs_approval": 0},
-        {"steps": [{"i": 0, "action": "navigate", "kind": "read", "decision": "run", "reason": ""}], "blocked": 1, "needs_approval": 0},
-        {"steps": [{"i": 0, "action": "navigate", "kind": "read", "decision": "run", "reason": ""}], "blocked": 0, "needs_approval": 1},
+        {
+            "steps": [
+                {"i": 1, "action": "navigate", "kind": "read", "decision": "run", "reason": ""}
+            ],
+            "blocked": 0,
+            "needs_approval": 0,
+        },
+        {
+            "steps": [{"i": 0, "action": "click", "kind": "read", "decision": "run", "reason": ""}],
+            "blocked": 0,
+            "needs_approval": 0,
+        },
+        {
+            "steps": [
+                {"i": 0, "action": "navigate", "kind": "risky", "decision": "run", "reason": ""}
+            ],
+            "blocked": 0,
+            "needs_approval": 0,
+        },
+        {
+            "steps": [
+                {
+                    "i": 0,
+                    "action": "navigate",
+                    "kind": "read",
+                    "decision": "run",
+                    "reason": "spoofed",
+                }
+            ],
+            "blocked": 0,
+            "needs_approval": 0,
+        },
+        {
+            "steps": [
+                {"i": 0, "action": "navigate", "kind": "read", "decision": "run", "reason": ""}
+            ],
+            "blocked": 1,
+            "needs_approval": 0,
+        },
+        {
+            "steps": [
+                {"i": 0, "action": "navigate", "kind": "read", "decision": "run", "reason": ""}
+            ],
+            "blocked": 0,
+            "needs_approval": 1,
+        },
     ],
 )
 def test_semantically_malformed_governed_preview_cannot_spoof_run(preview):

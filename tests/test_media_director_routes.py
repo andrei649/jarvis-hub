@@ -93,9 +93,7 @@ def test_every_endpoint_is_honestly_disabled_by_default(client, monkeypatch):
         assert "JARVIS_MEDIA_DIRECTOR" in payload["hint"]
 
 
-def test_route_owned_director_binds_explicit_catalog_roots_and_url_allowlist(
-    monkeypatch, tmp_path
-):
+def test_route_owned_director_binds_explicit_catalog_roots_and_url_allowlist(monkeypatch, tmp_path):
     from agents.core.media_catalog import MediaCatalog
 
     root = tmp_path / "media"
@@ -114,10 +112,13 @@ def test_route_owned_director_binds_explicit_catalog_roots_and_url_allowlist(
 
     assert director._local_roots == (root.resolve(),)
     assert director._catalog is catalog
-    assert resolve_content(
-        {"type": "url", "value": "https://93.184.216.34/media"},
-        browser=director._browser,
-    )["provenance"] == "direct"
+    assert (
+        resolve_content(
+            {"type": "url", "value": "https://93.184.216.34/media"},
+            browser=director._browser,
+        )["provenance"]
+        == "direct"
+    )
 
 
 def test_route_owned_director_malformed_owner_settings_fail_closed(monkeypatch):
@@ -137,9 +138,7 @@ def test_route_owned_director_malformed_owner_settings_fail_closed(monkeypatch):
         )
 
 
-def test_route_owned_director_mixed_valid_and_malformed_settings_fail_closed(
-    monkeypatch, tmp_path
-):
+def test_route_owned_director_mixed_valid_and_malformed_settings_fail_closed(monkeypatch, tmp_path):
     root = tmp_path / "media"
     root.mkdir()
     monkeypatch.setenv("JARVIS_MEDIA_ROOTS", f"{root}{os.pathsep}relative/path")
@@ -210,8 +209,8 @@ def test_restore_route_reports_honest_no_session(client, monkeypatch):
     monkeypatch.setattr("agents.core.app_state.get_orch", lambda: object())
     monkeypatch.setattr(
         "agents.core.kernel.binding.make_action_kernel",
-        lambda _orch: lambda action, capability=None: Decision(
-            Verdict.GRANT, reason="test", tier=1
+        lambda _orch: (
+            lambda action, capability=None: Decision(Verdict.GRANT, reason="test", tier=1)
         ),
     )
     payload = client.post("/api/media/restore/ghost").json()
@@ -265,8 +264,8 @@ def test_present_route_binds_the_live_orchestrator_budget_per_request(client, mo
     monkeypatch.setattr("agents.core.app_state.get_orch", lambda: current["orch"])
     monkeypatch.setattr(
         "agents.core.kernel.binding.make_action_kernel",
-        lambda _orch: lambda action, capability=None: Decision(
-            Verdict.GRANT, reason="test", tier=1
+        lambda _orch: (
+            lambda action, capability=None: Decision(Verdict.GRANT, reason="test", tier=1)
         ),
     )
     body = {

@@ -33,9 +33,7 @@ def _configured_media_roots(env=None) -> tuple[Path, ...]:
     from agents.core.env_config import env_str
 
     raw = (
-        env_str("JARVIS_MEDIA_ROOTS")
-        if env is None
-        else str(env.get("JARVIS_MEDIA_ROOTS", ""))
+        env_str("JARVIS_MEDIA_ROOTS") if env is None else str(env.get("JARVIS_MEDIA_ROOTS", ""))
     ).strip()
     if not raw:
         return ()

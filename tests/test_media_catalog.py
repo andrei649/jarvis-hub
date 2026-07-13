@@ -24,13 +24,32 @@ def _cat(tmp_path, **kw):
     return MediaCatalog(tmp_path / "catalog.json", **kw)
 
 
-def _add(cat, *, kind="image", prompt="a cat", path="/x.png", now=1000.0,
-         backend="local-sd", cloud=False, tags=None, meta=None):
-    return cat.add(kind=kind, prompt=prompt, path=path, now=now, backend=backend,
-                   cloud=cloud, tags=tags, meta=meta)
+def _add(
+    cat,
+    *,
+    kind="image",
+    prompt="a cat",
+    path="/x.png",
+    now=1000.0,
+    backend="local-sd",
+    cloud=False,
+    tags=None,
+    meta=None,
+):
+    return cat.add(
+        kind=kind,
+        prompt=prompt,
+        path=path,
+        now=now,
+        backend=backend,
+        cloud=cloud,
+        tags=tags,
+        meta=meta,
+    )
 
 
 # ── add ───────────────────────────────────────────────────────────────────────
+
 
 def test_add_shape(tmp_path):
     cat = _cat(tmp_path)
@@ -56,6 +75,7 @@ def test_add_accepts_all_known_kinds(tmp_path):
 
 # ── get / remove ────────────────────────────────────────────────────────────
 
+
 def test_get_and_remove(tmp_path):
     cat = _cat(tmp_path)
     r = _add(cat)
@@ -63,10 +83,11 @@ def test_get_and_remove(tmp_path):
     assert cat.get("missing") is None
     assert cat.remove(r["id"]) is True
     assert cat.get(r["id"]) is None
-    assert cat.remove(r["id"]) is False   # already gone
+    assert cat.remove(r["id"]) is False  # already gone
 
 
 # ── ordering: all (newest-first) vs timeline (oldest-first) ────────────────────
+
 
 def test_all_is_newest_first(tmp_path):
     cat = _cat(tmp_path)
@@ -89,6 +110,7 @@ def test_timeline_is_oldest_first_and_time_bounded(tmp_path):
 
 
 # ── search ────────────────────────────────────────────────────────────────────
+
 
 def test_search_filters_and_together(tmp_path):
     cat = _cat(tmp_path)
@@ -137,23 +159,16 @@ def test_search_normalizes_malformed_persisted_created_at(tmp_path):
         encoding="utf-8",
     )
 
-    assert [row["id"] for row in MediaCatalog(path).search("aurora", limit=2)] == [
-        "md-bad-time"
-    ]
+    assert [row["id"] for row in MediaCatalog(path).search("aurora", limit=2)] == ["md-bad-time"]
 
 
-def test_read_caps_persisted_entries_and_refuses_oversized_catalog_file(
-    tmp_path, monkeypatch
-):
+def test_read_caps_persisted_entries_and_refuses_oversized_catalog_file(tmp_path, monkeypatch):
     import agents.core.media_catalog as mc
 
     path = tmp_path / "catalog.json"
     path.write_text(
         json.dumps(
-            [
-                {"id": f"md-{index}", "prompt": "aurora", "created_at": index}
-                for index in range(10)
-            ]
+            [{"id": f"md-{index}", "prompt": "aurora", "created_at": index} for index in range(10)]
         ),
         encoding="utf-8",
     )
@@ -173,6 +188,7 @@ def test_created_at_normalizer_handles_overflow_and_non_finite_values():
 
 # ── persistence + safety ───────────────────────────────────────────────────────
 
+
 def test_persists_across_instances(tmp_path):
     cat = _cat(tmp_path)
     r = _add(cat, prompt="durable")
@@ -191,18 +207,13 @@ def test_corrupt_file_degrades_to_empty(tmp_path):
     assert p.read_bytes() == before
 
 
-def test_mutation_refuses_file_and_record_over_limit_without_data_loss(
-    tmp_path, monkeypatch
-):
+def test_mutation_refuses_file_and_record_over_limit_without_data_loss(tmp_path, monkeypatch):
     import agents.core.media_catalog as mc
 
     path = tmp_path / "catalog.json"
     path.write_text(
         json.dumps(
-            [
-                {"id": f"md-{index}", "prompt": "aurora", "created_at": index}
-                for index in range(4)
-            ]
+            [{"id": f"md-{index}", "prompt": "aurora", "created_at": index} for index in range(4)]
         ),
         encoding="utf-8",
     )
@@ -237,9 +248,7 @@ def test_add_rejects_unbounded_or_non_json_item_fields(tmp_path, overrides, reas
     assert not (tmp_path / "catalog.json").exists()
 
 
-def test_add_refuses_item_or_final_write_over_limit_without_replacing_store(
-    tmp_path, monkeypatch
-):
+def test_add_refuses_item_or_final_write_over_limit_without_replacing_store(tmp_path, monkeypatch):
     import agents.core.media_catalog as mc
 
     catalog = _cat(tmp_path)
@@ -351,6 +360,7 @@ def test_stats(tmp_path):
 
 def test_default_catalog_if_enabled_is_opt_in(monkeypatch):
     import agents.core.media_catalog as mc
+
     # default-off: no flag → None (and no file I/O at all)
     assert mc.default_catalog_if_enabled(env={}) is None
     assert mc.default_catalog_if_enabled(env={"JARVIS_MEDIA_CATALOG": ""}) is None

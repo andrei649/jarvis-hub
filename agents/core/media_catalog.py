@@ -59,7 +59,9 @@ def _created_at(item: dict) -> float:
 class MediaCatalog:
     """Bounded, atomically-written JSON catalog of generated media items."""
 
-    def __init__(self, path: Path | str | None = None, *, max_keep: int = _DEFAULT_MAX_KEEP) -> None:
+    def __init__(
+        self, path: Path | str | None = None, *, max_keep: int = _DEFAULT_MAX_KEEP
+    ) -> None:
         self._path = Path(path) if path is not None else _DEFAULT_FILE
         self._path.parent.mkdir(parents=True, exist_ok=True)
         self._max_keep = max(1, int(max_keep))
@@ -106,10 +108,7 @@ class MediaCatalog:
         meta = normalized.get("meta", {})
         if not isinstance(meta, dict) or len(meta) > _MAX_META_KEYS:
             raise ValueError("catalog invalid record")
-        if any(
-            not isinstance(key, str) or len(key) > _MAX_META_KEY_CHARS
-            for key in meta
-        ):
+        if any(not isinstance(key, str) or len(key) > _MAX_META_KEY_CHARS for key in meta):
             raise ValueError("catalog invalid record")
         if len(self._encoded_json(meta, label="meta")) > _MAX_META_BYTES:
             raise ValueError("catalog invalid record")
@@ -118,7 +117,7 @@ class MediaCatalog:
             raise ValueError("catalog invalid record")
         return normalized
 
-    def _read(self, *, strict: bool = False) -> list[dict]:
+    def _load_rows(self, *, strict: bool) -> list:
         try:
             size = self._path.stat().st_size
         except FileNotFoundError:
@@ -141,6 +140,10 @@ class MediaCatalog:
             if strict:
                 raise ValueError("catalog store is unreadable")
             return []
+        return data
+
+    def _read(self, *, strict: bool = False) -> list[dict]:
+        data = self._load_rows(strict=strict)
         if len(data) > self._max_keep:
             if strict:
                 raise ValueError("catalog record limit exceeded")
@@ -153,6 +156,40 @@ class MediaCatalog:
                 if strict:
                     raise ValueError("catalog invalid record") from exc
         return items
+
+    def _bounded_add_fields(
+        self,
+        *,
+        prompt: str,
+        path: str,
+        backend: str,
+        tags: list[str] | None,
+        meta: dict | None,
+    ) -> tuple[str, str, str, list[str], dict]:
+        bounded_prompt = str(prompt)
+        bounded_path = str(path)
+        bounded_backend = str(backend)
+        if len(bounded_prompt) > _MAX_PROMPT_CHARS:
+            raise ValueError("prompt exceeds its size limit")
+        if len(bounded_path) > _MAX_PATH_CHARS:
+            raise ValueError("path exceeds its size limit")
+        if len(bounded_backend) > _MAX_BACKEND_CHARS:
+            raise ValueError("backend exceeds its size limit")
+        if tags is not None and not isinstance(tags, list):
+            raise ValueError("tags must be a list")
+        bounded_tags = [str(tag) for tag in (tags or [])]
+        if len(bounded_tags) > _MAX_TAGS:
+            raise ValueError("tags exceed their count limit")
+        if any(len(tag) > _MAX_TAG_CHARS for tag in bounded_tags):
+            raise ValueError("tag exceeds its size limit")
+        if meta is not None and not isinstance(meta, dict):
+            raise ValueError("meta must be an object")
+        bounded_meta = dict(meta) if isinstance(meta, dict) else {}
+        if len(bounded_meta) > _MAX_META_KEYS:
+            raise ValueError("meta exceeds its key limit")
+        if len(self._encoded_json(bounded_meta, label="meta")) > _MAX_META_BYTES:
+            raise ValueError("meta exceeds its size limit")
+        return bounded_prompt, bounded_path, bounded_backend, bounded_tags, bounded_meta
 
     def _write_atomic(self, items: list[dict]) -> None:
         encoded = self._encoded_json(items, label="catalog")
@@ -185,29 +222,15 @@ class MediaCatalog:
         injectable for tests). Raises ``ValueError`` for an unknown ``kind``."""
         if kind not in KINDS:
             raise ValueError(f"unknown media kind: {kind!r} (expected one of {KINDS})")
-        bounded_prompt = str(prompt)
-        bounded_path = str(path)
-        bounded_backend = str(backend)
-        if len(bounded_prompt) > _MAX_PROMPT_CHARS:
-            raise ValueError("prompt exceeds its size limit")
-        if len(bounded_path) > _MAX_PATH_CHARS:
-            raise ValueError("path exceeds its size limit")
-        if len(bounded_backend) > _MAX_BACKEND_CHARS:
-            raise ValueError("backend exceeds its size limit")
-        if tags is not None and not isinstance(tags, list):
-            raise ValueError("tags must be a list")
-        bounded_tags = [str(tag) for tag in (tags or [])]
-        if len(bounded_tags) > _MAX_TAGS:
-            raise ValueError("tags exceed their count limit")
-        if any(len(tag) > _MAX_TAG_CHARS for tag in bounded_tags):
-            raise ValueError("tag exceeds its size limit")
-        bounded_meta = dict(meta) if isinstance(meta, dict) else {}
-        if meta is not None and not isinstance(meta, dict):
-            raise ValueError("meta must be an object")
-        if len(bounded_meta) > _MAX_META_KEYS:
-            raise ValueError("meta exceeds its key limit")
-        if len(self._encoded_json(bounded_meta, label="meta")) > _MAX_META_BYTES:
-            raise ValueError("meta exceeds its size limit")
+        bounded_prompt, bounded_path, bounded_backend, bounded_tags, bounded_meta = (
+            self._bounded_add_fields(
+                prompt=prompt,
+                path=path,
+                backend=backend,
+                tags=tags,
+                meta=meta,
+            )
+        )
         raw_item = {
             "id": "md-" + uuid.uuid4().hex[:12],
             "kind": kind,
@@ -227,7 +250,7 @@ class MediaCatalog:
         # bound the catalog: evict the oldest first.
         if len(items) > self._max_keep:
             items.sort(key=_created_at)
-            items = items[-self._max_keep:]
+            items = items[-self._max_keep :]
         self._write_atomic(items)
         return dict(item)
 

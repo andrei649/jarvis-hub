@@ -133,6 +133,86 @@ def _canonical_navigation_preview(preview: Any) -> tuple[bool, str]:
     return canonical, str(reason or "governed browser preview is malformed")[:_MAX_POLICY_REASON]
 
 
+def _normalized_content_reference(content: Any) -> tuple[str, str]:
+    if not isinstance(content, dict):
+        raise MediaError("content must be an object {type, value}")
+    ctype = content.get("type")
+    value = content.get("value")
+    if ctype not in CONTENT_TYPES:
+        raise MediaError(f"unsupported content type: {ctype!r}")
+    if not isinstance(value, str) or not value.strip():
+        raise MediaError("content value is required")
+    value = value.strip()
+    value_limit = _MAX_QUERY_VALUE if ctype == "query" else _MAX_CONTENT_VALUE
+    if len(value) > value_limit:
+        raise MediaError("content value exceeds its size limit")
+    return ctype, value
+
+
+def _resolve_catalog_reference(
+    ctype: str,
+    value: str,
+    *,
+    local_roots: tuple[Path, ...],
+    catalog,
+    browser,
+) -> dict:
+    if catalog is None:
+        raise MediaError("media_catalog_disabled")
+    if ctype == "catalog":
+        item = catalog.get(value)
+        if not isinstance(item, dict):
+            raise MediaError("catalog_item_missing")
+        provenance = "catalog"
+    else:
+        matches = catalog.search(value, limit=_MAX_CATALOG_CANDIDATES + 1)
+        if not matches:
+            raise MediaError("catalog_query_missing", detail={"candidates": []})
+        if len(matches) != 1:
+            raise MediaError(
+                "catalog_query_ambiguous",
+                detail={"candidates": _candidate_metadata(matches)},
+            )
+        item = matches[0]
+        provenance = "catalog_query"
+    return resolve_content(
+        _catalog_target(item),
+        local_roots=local_roots,
+        catalog=catalog,
+        browser=browser,
+        _provenance=provenance,
+        _catalog_id=str(item.get("id", ""))[:64],
+    )
+
+
+def _validated_url(value: str, browser) -> str:
+    scheme = urlparse(value).scheme.lower()
+    if scheme not in ("http", "https"):
+        raise MediaError(f"refusing non-http(s) url scheme: {scheme!r}")
+    try:
+        preview = browser.preview([{"action": "navigate", "url": value}])
+        allowed, policy_reason = _canonical_navigation_preview(preview)
+    except Exception:
+        allowed, policy_reason = False, "governed browser unavailable"
+    if not allowed:
+        raise MediaError("url_refused", detail={"policy_reason": policy_reason})
+    return value
+
+
+def _validated_local(value: str, local_roots: tuple[Path, ...]) -> str:
+    if not local_roots:
+        raise MediaError("no media.roots configured — local content is disabled")
+    candidate = Path(value)
+    if not candidate.is_absolute():
+        raise MediaError("local content must be an absolute path")
+    resolved = candidate.resolve()
+    if not any(resolved.is_relative_to(root.resolve()) for root in local_roots):
+        raise MediaError("local content escapes the configured media roots")
+    if not resolved.is_file():
+        raise MediaError("local content must be an existing regular file")
+    return str(resolved)
+
+
 def resolve_content(
     content: Any,
     *,
@@ -148,81 +228,19 @@ def resolve_content(
     ``local`` paths must live under an owner-configured root (no path escapes);
     ``url`` must be http(s). Anything else is refused with a reason, never guessed.
     """
-    if not isinstance(content, dict):
-        raise MediaError("content must be an object {type, value}")
-    ctype = content.get("type")
-    value = content.get("value")
-    if ctype not in CONTENT_TYPES:
-        raise MediaError(f"unsupported content type: {ctype!r}")
-    if not isinstance(value, str) or not value.strip():
-        raise MediaError("content value is required")
-    value = value.strip()
-    value_limit = _MAX_QUERY_VALUE if ctype == "query" else _MAX_CONTENT_VALUE
-    if len(value) > value_limit:
-        raise MediaError("content value exceeds its size limit")
-    if ctype == "catalog":
-        if catalog is None:
-            raise MediaError("media_catalog_disabled")
-        item = catalog.get(value)
-        if not isinstance(item, dict):
-            raise MediaError("catalog_item_missing")
-        return resolve_content(
-            _catalog_target(item),
+    ctype, value = _normalized_content_reference(content)
+    if ctype in {"catalog", "query"}:
+        return _resolve_catalog_reference(
+            ctype,
+            value,
             local_roots=local_roots,
             catalog=catalog,
             browser=browser,
-            _provenance="catalog",
-            _catalog_id=str(item.get("id", ""))[:64],
-        )
-    if ctype == "query":
-        if catalog is None:
-            raise MediaError("media_catalog_disabled")
-        matches = catalog.search(value, limit=_MAX_CATALOG_CANDIDATES + 1)
-        if not matches:
-            raise MediaError(
-                "catalog_query_missing",
-                detail={"candidates": []},
-            )
-        if len(matches) != 1:
-            raise MediaError(
-                "catalog_query_ambiguous",
-                detail={"candidates": _candidate_metadata(matches)},
-            )
-        item = matches[0]
-        return resolve_content(
-            _catalog_target(item),
-            local_roots=local_roots,
-            catalog=catalog,
-            browser=browser,
-            _provenance="catalog_query",
-            _catalog_id=str(item.get("id", ""))[:64],
         )
     if ctype == "url":
-        scheme = urlparse(value).scheme.lower()
-        if scheme not in ("http", "https"):
-            raise MediaError(f"refusing non-http(s) url scheme: {scheme!r}")
-        try:
-            preview = browser.preview([{"action": "navigate", "url": value}])
-            allowed, policy_reason = _canonical_navigation_preview(preview)
-        except Exception:
-            allowed, policy_reason = False, "governed browser unavailable"
-        if not allowed:
-            raise MediaError(
-                "url_refused",
-                detail={"policy_reason": policy_reason},
-            )
-    elif ctype == "local":
-        if not local_roots:
-            raise MediaError("no media.roots configured — local content is disabled")
-        candidate = Path(value)
-        if not candidate.is_absolute():
-            raise MediaError("local content must be an absolute path")
-        resolved = candidate.resolve()
-        if not any(resolved.is_relative_to(root.resolve()) for root in local_roots):
-            raise MediaError("local content escapes the configured media roots")
-        if not resolved.is_file():
-            raise MediaError("local content must be an existing regular file")
-        value = str(resolved)
+        value = _validated_url(value, browser)
+    else:
+        value = _validated_local(value, local_roots)
     resolved_content = {"type": ctype, "value": value, "provenance": _provenance}
     if _catalog_id:
         resolved_content["catalog_id"] = _catalog_id
@@ -527,9 +545,7 @@ class SessionBoard:
 
     def list(self) -> list[dict]:
         with self._lock:
-            return [
-                s.to_dict() for s in sorted(self._sessions.values(), key=lambda s: s.device_id)
-            ]
+            return [s.to_dict() for s in sorted(self._sessions.values(), key=lambda s: s.device_id)]
 
     def _persist(self) -> None:
         self._store.save(self.list())
@@ -626,6 +642,58 @@ class MediaDirector:
             return None
         return outcome
 
+    @staticmethod
+    def _consume_interrupt_budget(current, urgency: str, interrupt_budget) -> str | None:
+        active = current is not None and current.state in {"playing", "paused"}
+        if not active or urgency != "high":
+            return None
+        try:
+            consume = getattr(interrupt_budget, "consume", None)
+        except Exception:
+            logger.warning("media interrupt budget is unavailable")
+            return "interrupt_budget_unavailable"
+        if not callable(consume):
+            return "interrupt_budget_unavailable"
+        try:
+            allowed = consume()
+        except Exception:
+            logger.warning("media interrupt budget is unavailable")
+            return "interrupt_budget_unavailable"
+        if allowed is False:
+            return "interrupt_budget_exhausted"
+        if allowed is not True:
+            return "interrupt_budget_unavailable"
+        return None
+
+    def _play(
+        self,
+        driver: MediaDriver,
+        device: MediaDevice,
+        content: dict,
+        duration,
+    ) -> dict | None:
+        if duration is None:
+            return self._drive(driver, "play", device, content)
+        return self._drive(
+            driver,
+            "play",
+            device,
+            content,
+            duration_seconds=float(duration),
+        )
+
+    @staticmethod
+    def _duration_verified(status: dict, duration) -> bool:
+        if duration is None:
+            return True
+        reported = status.get("duration_seconds")
+        return bool(
+            isinstance(reported, (int, float))
+            and not isinstance(reported, bool)
+            and math.isfinite(float(reported))
+            and float(reported) == float(duration)
+        )
+
     def present(self, payload: dict, *, interrupt_budget=None) -> dict:
         """Contract → resolve → etiquette → drive → verify → record.
 
@@ -668,38 +736,14 @@ class MediaDirector:
         if duration is not None and not self._supports_duration(driver):
             return {"ok": False, "reason": "duration_unsupported"}
 
-        active_interruption = current is not None and current.state in {"playing", "paused"}
-        if active_interruption and urgency == "high":
-            try:
-                consume = getattr(interrupt_budget, "consume", None)
-            except Exception:
-                logger.warning("media interrupt budget is unavailable")
-                return {"ok": False, "reason": "interrupt_budget_unavailable"}
-            if not callable(consume):
-                return {"ok": False, "reason": "interrupt_budget_unavailable"}
-            try:
-                allowed = consume()
-            except Exception:
-                logger.warning("media interrupt budget is unavailable")
-                return {"ok": False, "reason": "interrupt_budget_unavailable"}
-            if allowed is False:
-                return {"ok": False, "reason": "interrupt_budget_exhausted"}
-            if allowed is not True:
-                return {"ok": False, "reason": "interrupt_budget_unavailable"}
+        budget_refusal = self._consume_interrupt_budget(current, urgency, interrupt_budget)
+        if budget_refusal is not None:
+            return {"ok": False, "reason": budget_refusal}
 
         previous = current.to_dict() if current else None
         if previous is not None:
             previous["previous"] = None
-        if duration is None:
-            outcome = self._drive(driver, "play", device, content)
-        else:
-            outcome = self._drive(
-                driver,
-                "play",
-                device,
-                content,
-                duration_seconds=float(duration),
-            )
+        outcome = self._play(driver, device, content, duration)
         if outcome is None:
             return {"ok": False, "reason": "driver_error", "state": "unavailable"}
         if not outcome.get("ok"):
@@ -710,20 +754,11 @@ class MediaDirector:
             }
 
         status = self._drive(driver, "status", device) or {}
-        duration_verified = True
-        if duration is not None:
-            reported_duration = status.get("duration_seconds")
-            duration_verified = bool(
-                isinstance(reported_duration, (int, float))
-                and not isinstance(reported_duration, bool)
-                and math.isfinite(float(reported_duration))
-                and float(reported_duration) == float(duration)
-            )
         verified = bool(
             status.get("ok")
             and status.get("state") == "playing"
             and status.get("content", {}).get("value") == content["value"]
-            and duration_verified
+            and self._duration_verified(status, duration)
         )
         self.sessions.set(
             MediaSession(
@@ -801,6 +836,7 @@ class MediaDirector:
 
 def register_media_capability(api, director: MediaDirector, *, interrupt_budget=None):
     """Bind present + restore onto the unified action facade (kernel-mediated)."""
+
     def handle_perform(payload, ctx):
         return director.handle_perform(payload, ctx, interrupt_budget=interrupt_budget)
 

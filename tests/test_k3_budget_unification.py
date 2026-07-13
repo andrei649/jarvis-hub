@@ -63,6 +63,7 @@ def test_interrupt_budget_is_ledger_view_with_same_public_api():
 
     # The old rollover behavior still resets the daily count.
     import datetime
+
     budget._day = datetime.date(2000, 1, 1)
     assert budget.remaining() == 2
     assert ledger.dimension_status("interrupts/day")["used"] == 0

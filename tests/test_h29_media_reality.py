@@ -132,8 +132,5 @@ async def test_media_reality_pack_returns_causal_measured_host_counters():
         "process": 0,
         "urlopen": 0,
     }
-    assert (
-        by_name["media-defaults-fail-closed"]["tripwire_scope"]
-        == "construction-and-execution"
-    )
+    assert by_name["media-defaults-fail-closed"]["tripwire_scope"] == "construction-and-execution"
     assert by_name["media-cloud-approval-durable"]["queue_reopen_count"] == 1

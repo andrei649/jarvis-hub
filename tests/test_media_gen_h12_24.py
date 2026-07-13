@@ -1,7 +1,9 @@
 """H12.24 — Governed media generation. Offline."""
+
 import sys, os
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'agents'))
+
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "agents"))
 
 import pytest
 
@@ -14,8 +16,16 @@ class _FakeQueue:
     def __init__(self):
         self.calls = []
 
-    def enqueue(self, agent, kind, title, payload=None, risk_tier=3,
-                autonomy_level="ask", origin="generated"):
+    def enqueue(
+        self,
+        agent,
+        kind,
+        title,
+        payload=None,
+        risk_tier=3,
+        autonomy_level="ask",
+        origin="generated",
+    ):
         self.calls.append(dict(kind=kind, payload=payload, autonomy_level=autonomy_level))
         return len(self.calls)
 
@@ -114,6 +124,7 @@ async def test_no_backend_unavailable():
 
 # ── 0.46 catalog wiring (opt-in) ──────────────────────────────────────────────
 
+
 @pytest.mark.asyncio
 async def test_successful_local_gen_is_cataloged_when_attached(tmp_path):
     from agents.core.media_catalog import MediaCatalog
@@ -171,7 +182,7 @@ async def test_cloud_and_failed_gen_are_not_cataloged(tmp_path):
     assert (await m.generate("video", "x", cloud=True))["reason"] == "approval_required"
     # local backend that errors → no artifact
     assert (await m.generate("image", "x"))["reason"] == "generation_error"
-    assert cat.stats()["total"] == 0   # nothing cataloged in either case
+    assert cat.stats()["total"] == 0  # nothing cataloged in either case
 
 
 @pytest.mark.asyncio
