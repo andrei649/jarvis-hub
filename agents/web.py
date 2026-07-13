@@ -364,6 +364,8 @@ async def lifespan(application: FastAPI):
     yield
     from agents.core.routers.cameras import stop_camera_ingestion
     await stop_camera_ingestion()
+    from agents.core.ambient.runtime import close_ambient_runtimes
+    close_ambient_runtimes()
     # Symmetric lifecycle: stop channels and release the globals so a closed app
     # context (e.g. a TestClient context manager in tests) does not leak a live
     # orchestrator into the next caller. Guarded because multiple app contexts
@@ -976,6 +978,7 @@ from agents.core.routers.ops import router as _ops_router  # noqa: E402
 from agents.core.routers.media_director import router as _media_director_router  # noqa: E402
 from agents.core.routers.cameras import router as _cameras_router  # noqa: E402
 from agents.core.routers.acquisition import router as _acquisition_router  # noqa: E402
+from agents.core.routers.ambient import router as _ambient_router  # noqa: E402
 from agents.core.routers.house import router as _house_router  # noqa: E402
 from agents.core.routers.backup import router as _backup_router  # noqa: E402
 from agents.core.routers.brain import router as _brain_router  # noqa: E402
@@ -1084,6 +1087,7 @@ app.include_router(_media_director_router)
 app.include_router(_house_router)
 app.include_router(_cameras_router)
 app.include_router(_acquisition_router)
+app.include_router(_ambient_router)
 app.include_router(_backup_router)
 
 

@@ -3,6 +3,7 @@ import React, { useState } from 'react';
 import { Platform, Pressable, SafeAreaView, StyleSheet, Text, View } from 'react-native';
 import { ServerProvider } from './src/context/ServerContext';
 import { ApprovalsScreen } from './src/screens/ApprovalsScreen';
+import { AmbientScreen } from './src/screens/AmbientScreen';
 import { AcquisitionScreen } from './src/screens/AcquisitionScreen';
 import { ChatScreen } from './src/screens/ChatScreen';
 import { CommsScreen } from './src/screens/CommsScreen';
@@ -16,13 +17,14 @@ import { StatusScreen } from './src/screens/StatusScreen';
 import { TasksScreen } from './src/screens/TasksScreen';
 import { theme } from './src/theme';
 
-type Tab = 'chat' | 'memory' | 'approvals' | 'tasks' | 'house' | 'cameras' | 'media' | 'acquisition' | 'comms' | 'skills' | 'status' | 'settings';
+type Tab = 'chat' | 'memory' | 'approvals' | 'tasks' | 'ambient' | 'house' | 'cameras' | 'media' | 'acquisition' | 'comms' | 'skills' | 'status' | 'settings';
 
 const TABS: { key: Tab; label: string; icon: string }[] = [
   { key: 'chat', label: 'Chat', icon: '◉' },
   { key: 'memory', label: 'Memory', icon: '◎' },
   { key: 'approvals', label: 'Approve', icon: '✓' },
   { key: 'tasks', label: 'Tasks', icon: '▦' },
+  { key: 'ambient', label: 'Watch', icon: '◉' },
   { key: 'house', label: 'Home', icon: '⌂' },
   { key: 'cameras', label: 'Cameras', icon: '◫' },
   { key: 'media', label: 'Media', icon: '▷' },
@@ -38,6 +40,7 @@ const TITLES: Record<Tab, string> = {
   memory: 'Memory',
   approvals: 'Approvals',
   tasks: 'Tasks',
+  ambient: 'Ambient Watch',
   house: 'House Brain',
   cameras: 'Camera Intelligence',
   media: 'Media Director',
@@ -62,6 +65,7 @@ function AppShell() {
         {tab === 'memory' && <MemoryScreen onGoToSettings={() => setTab('settings')} />}
         {tab === 'approvals' && <ApprovalsScreen onGoToSettings={() => setTab('settings')} />}
         {tab === 'tasks' && <TasksScreen onGoToSettings={() => setTab('settings')} />}
+        {tab === 'ambient' && <AmbientScreen onGoToSettings={() => setTab('settings')} />}
         {tab === 'house' && <HouseScreen onGoToSettings={() => setTab('settings')} onGoToApprovals={() => setTab('approvals')} />}
         {tab === 'cameras' && <CameraScreen onGoToSettings={() => setTab('settings')} />}
         {tab === 'media' && <MediaScreen onGoToSettings={() => setTab('settings')} />}

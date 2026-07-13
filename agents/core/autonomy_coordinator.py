@@ -113,7 +113,11 @@ class AutonomyCoordinator:
                     ) is True
                     bud = getattr(self._orch.autonomy, "budget", None)
                     if bud is not None:
-                        bud.per_day = int(self._orch.get_setting("autonomy.interrupt_budget", 4) or 4)
+                        from .ambient.policy import bounded_attention_allowance
+
+                        bud.per_day = bounded_attention_allowance(
+                            self._orch.get_setting("autonomy.interrupt_budget", 4)
+                        )
                 max_tier = None
                 if self._orch.get_setting("autonomy.night_shift", False):
                     start = int(self._orch.get_setting("autonomy.night_start", 23) or 23)
@@ -373,6 +377,13 @@ class AutonomyCoordinator:
             executor.register(kw, _research)
         for kw in ("summarize", "analyze", "review", "draft", "plan", "prepare"):
             executor.register(kw, _llm)
+
+        # H33 ambient tasks must never fall through to the generic LLM handler.
+        # A domain binding can replace the longer exact prefix later; until then
+        # silent action fails closed and an accepted ask is only acknowledged.
+        from .ambient.execution import register_ambient_refusal_handlers
+
+        register_ambient_refusal_handlers(executor)
 
         # Safe system recovery remediation handler (H6 / Antigravity recovery)
         from .autonomy.remediation import RemediationRunner

@@ -20,6 +20,7 @@ from datetime import date
 from typing import Awaitable, Callable, Optional
 
 from ..action_origin import current_action_origin
+from ..ambient.policy import AttentionDeliveryBroker, AttentionLedger
 from ..security import taint
 from .policy import ACT, ASK, NOTIFY, AutonomyPolicy
 from .queue import MAX_ATTEMPTS, Task, TaskQueue, TaskStatus
@@ -43,57 +44,81 @@ def is_night_window(hour: int, start: int = 23, end: int = 6) -> bool:
 
 
 class InterruptBudget:
-    """Caps urgent push notifications per day to protect the user's attention."""
+    """Compatibility view over H33's durable global attention ledger."""
 
-    def __init__(self, per_day: int = INTERRUPT_BUDGET_PER_DAY, *,
-                 ledger=None, dimension: str = "interrupts/day"):
-        self.per_day = per_day
-        self._day = date.today()
-        self._used = 0
-        self._ledger = ledger
+    def __init__(
+        self,
+        per_day: int = INTERRUPT_BUDGET_PER_DAY,
+        *,
+        ledger=None,
+        dimension: str = "interrupts/day",
+        attention_ledger: AttentionLedger | None = None,
+        timezone_name: str = "UTC",
+    ):
+        self._k3 = ledger
         self._dimension = dimension
-        self._sync_dimension()
-
-    def _sync_dimension(self) -> None:
-        if self._ledger is None:
-            return
-        setter = getattr(self._ledger, "set_dimension_usage", None)
-        if setter is None:
-            return
-        setter(
-            self._dimension,
-            self._used,
-            limit=self.per_day,
-            unit="interrupts",
-            enforced=True,
-            metadata={"period": "day", "day": self._day.isoformat()},
+        self._timezone_name = timezone_name
+        self._owns_attention_ledger = attention_ledger is None
+        self.attention_ledger = attention_ledger or AttentionLedger(
+            ":memory:",
+            timezone_name=timezone_name,
+            per_day=per_day,
+            k3=ledger,
         )
+        self.attention_ledger.per_day = per_day
+        self.delivery_broker = AttentionDeliveryBroker(self.attention_ledger)
+        self._day = date.today()
+        self._counter = 0
+
+    @property
+    def per_day(self) -> int:
+        return self.attention_ledger.per_day
+
+    @per_day.setter
+    def per_day(self, value: int) -> None:
+        self.attention_ledger.per_day = value
 
     def _roll(self) -> None:
+        # Kept solely for the old public test/API that mutates ``_day``. Real
+        # rollover is owner-timezone aware and persistent inside AttentionLedger.
         today = date.today()
-        if today != self._day:
+        if today != self._day and self._owns_attention_ledger:
+            self.attention_ledger.close()
+            self.attention_ledger = AttentionLedger(
+                ":memory:",
+                timezone_name=self._timezone_name,
+                per_day=self.per_day,
+                k3=self._k3,
+            )
+            self.delivery_broker = AttentionDeliveryBroker(self.attention_ledger)
             self._day = today
-            self._used = 0
-        self._sync_dimension()
+            self._counter = 0
 
     def remaining(self) -> int:
         self._roll()
-        return max(0, self.per_day - self._used)
+        return self.attention_ledger.remaining()
 
-    def consume(self) -> bool:
+    def consume(
+        self,
+        *,
+        delivery_id: str | None = None,
+        channel_class: str = "legacy",
+    ) -> bool:
         self._roll()
-        if self._used >= self.per_day:
-            return False
-        self._used += 1
-        self._sync_dimension()
-        return True
+        self._counter += 1
+        delivery_id = delivery_id or f"legacy-{self._day.isoformat()}-{self._counter}"
+        reservation = self.attention_ledger.reserve(delivery_id, channel_class)
+        if reservation.admitted and reservation.state == "reserved":
+            self.attention_ledger.start_dispatch(delivery_id)
+            self.attention_ledger.delivered(delivery_id)
+        return reservation.admitted
 
 
 class AutonomyWorker:
     def __init__(self, queue: TaskQueue, policy: Optional[AutonomyPolicy] = None,
                  executor: Optional[Executor] = None, notifier: Optional[Notifier] = None,
                  budget: Optional[InterruptBudget] = None, audit=None, prefs=None,
-                 kill_switch=None):
+                 kill_switch=None, delivery_broker: AttentionDeliveryBroker | None = None):
         self.queue = queue
         self.policy = policy or AutonomyPolicy()
         if hasattr(self.policy, "outcome_provider"):
@@ -101,6 +126,9 @@ class AutonomyWorker:
         self.executor = executor
         self.notifier = notifier
         self.budget = budget or InterruptBudget()
+        self.delivery_broker = delivery_broker or getattr(
+            self.budget, "delivery_broker", None
+        )
         self.audit = audit
         self.prefs = prefs
         # O26-P0.7 (F3): the executor seam honors the global kill-switch
@@ -161,7 +189,7 @@ class AutonomyWorker:
 
     def govern_enqueue(self, agent: str, kind: str, title: str, payload: dict = None,
                        risk_tier: int = 2, autonomy_level: str = ASK,
-                       origin: str = "generated") -> int:
+                       origin: str = "generated", attention_mode: str = "interrupt") -> int:
         """Sync governed intake (drop-in for ``TaskQueue.enqueue``).
 
         Runs ``policy.decide`` and applies the STRICTER of the caller's
@@ -182,6 +210,7 @@ class AutonomyWorker:
         task_id = self.queue.enqueue(
             agent=agent, kind=kind, title=title, payload=payload,
             risk_tier=tier, autonomy_level=effective, origin=origin,
+            attention_mode=attention_mode,
         )
         if effective in (ACT, NOTIFY):
             task = self.queue.transition(
@@ -195,14 +224,16 @@ class AutonomyWorker:
         )
         try:
             import asyncio
-            asyncio.get_running_loop().create_task(self._maybe_push(task))
+            if attention_mode == "interrupt":
+                asyncio.get_running_loop().create_task(self._maybe_push(task))
         except RuntimeError:
             logger.debug("no running loop — decision card waits in the inbox")
         return task_id
 
     # ── intake ────────────────────────────────────────────────────
     async def submit(self, agent: str, kind: str, title: str,
-                     payload: dict = None, origin: str = "generated") -> Task:
+                     payload: dict = None, origin: str = "generated",
+                     attention_mode: str = "interrupt") -> Task:
         """Propose a task, gate it through the policy, and route it."""
         origin = self._effective_origin(origin)
         payload, tainted = self._mark_payload_for_origin(payload, origin)
@@ -212,6 +243,7 @@ class AutonomyWorker:
         task_id = self.queue.enqueue(
             agent=agent, kind=kind, title=title, payload=payload,
             risk_tier=int(decision.tier), autonomy_level=effective, origin=origin,
+            attention_mode=attention_mode,
         )
 
         if effective in (ACT, NOTIFY):
@@ -226,23 +258,32 @@ class AutonomyWorker:
         task = self.queue.transition(
             task_id, TaskStatus.BLOCKED, decided_by="policy", decision="needs-approval",
         )
-        await self._maybe_push(task)
+        if attention_mode == "interrupt":
+            await self._maybe_push(task)
         return task
 
-    async def _maybe_push(self, task: Task) -> bool:
+    async def _maybe_push(self, task: Task, *, delivery_id: str | None = None) -> bool:
         if not self.notifier:
             return False
-        if not self.budget.consume():
-            logger.info(f"Interrupt budget exhausted — task #{task.id} held for daily review")
+        if self.delivery_broker is None:
+            logger.warning(
+                "Decision push held for #%s: durable delivery broker unavailable",
+                task.id,
+            )
             return False
-        try:
-            ok = await self.notifier(task)
-        except Exception as e:
-            logger.warning(f"Decision push failed for #{task.id}: {e}")
-            ok = False
+        result = await self.delivery_broker.dispatch(
+            delivery_id or f"task-{task.id}",
+            "decision_push",
+            lambda: self.notifier(task),
+        )
+        ok = result.get("status") == "delivered"
         if ok:
             self.queue.mark_pushed(task.id)
             self._audit("autonomy.push_decision", task, "pushed to inbox")
+        elif result.get("status") == "downgraded":
+            logger.info("Interrupt budget exhausted — task #%s held for daily review", task.id)
+        else:
+            logger.warning("Decision push failed for #%s: %s", task.id, result.get("reason"))
         return ok
 
     # ── execution ─────────────────────────────────────────────────
@@ -345,7 +386,10 @@ class AutonomyWorker:
                         "apply_decision: edited payload on task %s still requires "
                         "approval (%s) — kept blocked, re-pushed for re-approval",
                         task_id, decision.reason)
-                    await self._maybe_push(edited)
+                    await self._maybe_push(
+                        edited,
+                        delivery_id=f"task-{edited.id}-edit-{edited.updated_at}",
+                    )
                     self._audit("autonomy.decision.edit", edited, f"by {decided_by} (re-gated, blocked)")
                     if self.prefs:
                         try:

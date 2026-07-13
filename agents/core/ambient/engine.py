@@ -6,9 +6,11 @@ import hashlib
 import json
 import threading
 from collections import defaultdict, deque
+from collections.abc import Callable
 from typing import Any
 
 from .contracts import AmbientDecision, AmbientEvent, MonitorDefinition, MonitorPredicate
+from .policy import LadderContext, LadderPolicy
 from .registry import MonitorRegistry
 from .store import AmbientStore, AmbientStoreError
 
@@ -86,6 +88,13 @@ class AmbientEngine:
         per_source_queue: int = 256,
         global_queue: int = 2_048,
         work_per_tick: int = 100,
+        ladder_policy: LadderPolicy | None = None,
+        quiet_hours: Callable[[float], bool] | None = None,
+        silent_context: Callable[[MonitorDefinition], dict[str, object]] | None = None,
+        decision_sink: Callable[
+            [AmbientDecision, AmbientEvent, MonitorDefinition], object
+        ]
+        | None = None,
     ) -> None:
         if not isinstance(store, AmbientStore) or not isinstance(registry, MonitorRegistry):
             raise ValueError("ambient store and registry are required")
@@ -104,6 +113,16 @@ class AmbientEngine:
         self._per_source = per_source_queue
         self._global = global_queue
         self._work = work_per_tick
+        self._policy = ladder_policy or LadderPolicy()
+        self._quiet_hours = quiet_hours or (lambda _timestamp: False)
+        self._silent_context = silent_context
+        self._decision_sink = decision_sink
+        if not callable(self._quiet_hours):
+            raise ValueError("ambient quiet-hours provider must be callable")
+        if silent_context is not None and not callable(silent_context):
+            raise ValueError("ambient silent-action provider must be callable")
+        if decision_sink is not None and not callable(decision_sink):
+            raise ValueError("ambient decision sink must be callable")
         self._queues: dict[str, deque[AmbientEvent]] = defaultdict(deque)
         self._critical_backpressure: dict[str, int] = defaultdict(int)
         self._dropped: dict[str, int] = defaultdict(int)
@@ -174,30 +193,45 @@ class AmbientEngine:
 
     def _evaluate_event(self, event: AmbientEvent) -> list[AmbientDecision]:
         decisions: list[AmbientDecision] = []
-        for definition in self._registry.list():
-            if (
-                not definition.enabled
-                or definition.source != event.source
-                or definition.schema != event.schema
-                or (definition.subject_id and definition.subject_id != event.subject_id)
-            ):
-                continue
-            state = self._store.monitor_state(definition.monitor_id)
+        state_updates: list[tuple[str, dict[str, Any]]] = []
+        emissions: list[tuple[AmbientDecision, MonitorDefinition]] = []
+        definitions = [
+            definition
+            for definition in self._registry.list()
+            if definition.enabled
+            and definition.source == event.source
+            and definition.schema == event.schema
+            and (not definition.subject_id or definition.subject_id == event.subject_id)
+        ]
+        states = self._store.monitor_states(
+            [definition.monitor_id for definition in definitions]
+        )
+        for definition in definitions:
+            state = states[definition.monitor_id]
             last_event = state.get("last_event_at")
             if last_event is not None and event.observed_at < float(last_event):
                 continue
             decision = self._transition(definition, event, state)
             state["field_hashes"] = _field_hashes(event)
             state["last_event_at"] = event.observed_at
-            self._store.save_monitor_state(definition.monitor_id, state)
+            state_updates.append((definition.monitor_id, state))
             if decision is not None:
-                self._store.append_decision(decision)
                 decisions.append(decision)
+                emissions.append((decision, definition))
+        self._store.apply_evaluation(state_updates, decisions)
+        if self._decision_sink is not None:
+            for decision, definition in emissions:
+                try:
+                    self._decision_sink(decision, event, definition)
+                except Exception:
+                    self._update_source_health(
+                        event.source, status="degraded", error="proposal_failed"
+                    )
         self._update_source_health(event.source, status="live", event_time=event.observed_at)
         return decisions
 
-    @staticmethod
     def _transition(
+        self,
         definition: MonitorDefinition,
         event: AmbientEvent,
         state: dict[str, Any],
@@ -245,6 +279,32 @@ class AmbientEngine:
             f"{event.consent_generation}"
         )
         decision_id = f"decision-{hashlib.sha256(material.encode('utf-8')).hexdigest()[:32]}"
+        requested_rung = (
+            definition.alert_rung if transition == "alert" else definition.recovery_rung
+        )
+        confidence = event.attribute("confidence", 1.0)
+        if (
+            isinstance(confidence, bool)
+            or not isinstance(confidence, (int, float))
+            or not 0 <= float(confidence) <= 1
+        ):
+            confidence = 0.0
+        silent = self._silent_context(definition) if self._silent_context is not None else {}
+        if not isinstance(silent, dict):
+            silent = {}
+        ladder = self._policy.decide(
+            LadderContext(
+                requested_rung=requested_rung,
+                confidence=float(confidence),
+                tainted=event.tainted,
+                critical=event.critical,
+                quiet_hours=bool(self._quiet_hours(event.observed_at)),
+                capability_id=str(silent.get("capability_id") or ""),
+                silent_eligible=silent.get("silent_eligible") is True,
+                rollbackable=silent.get("rollbackable") is True,
+                postcondition_bound=silent.get("postcondition_bound") is True,
+            )
+        )
         return AmbientDecision(
             decision_id=decision_id,
             monitor_id=definition.monitor_id,
@@ -256,6 +316,9 @@ class AmbientEngine:
             reason=reason,
             decided_at=event.observed_at,
             consent_generation=event.consent_generation,
+            rung=ladder.rung.value,
+            attention_mode=ladder.attention_mode,
+            policy_reason=ladder.reason,
         )
 
     def _update_source_health(

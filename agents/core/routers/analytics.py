@@ -165,13 +165,34 @@ async def metrics_north_star(days: int = Query(7, ge=1, le=90)):
         ) if callable(get_setting) else (23, 6)
     except (TypeError, ValueError):
         night_window = (23, 6)
+    try:
+        ambient_night_window = (
+            int(get_setting("ambient.quiet_hours_start", 22) or 22),
+            int(get_setting("ambient.quiet_hours_end", 7) or 7),
+        ) if callable(get_setting) else (22, 7)
+        owner_timezone = (
+            str(get_setting("general.timezone", "Europe/Bucharest"))
+            if callable(get_setting)
+            else "Europe/Bucharest"
+        )
+    except (TypeError, ValueError):
+        ambient_night_window = (22, 7)
+        owner_timezone = "UTC"
+    from agents.core.ambient.runtime import get_ambient_runtime
+
+    ambient = get_ambient_runtime(orch)
     return nocache_json(compute_north_star(
         queue,
         getattr(orch, "run_history", None),
         getattr(orch, "tracer", None),
         budget=getattr(getattr(orch, "autonomy", None), "budget", None),
+        attention_ledger=getattr(orch, "attention_ledger", None),
+        ambient_store=ambient.store if ambient.enabled else None,
+        ambient_night_ledger=ambient.night_ledger if ambient.enabled else None,
+        owner_timezone=owner_timezone,
         days=days,
         night_window=night_window,
+        ambient_night_window=ambient_night_window,
     ))
 
 

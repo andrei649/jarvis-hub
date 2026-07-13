@@ -7087,6 +7087,42 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/ambient/monitors": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Ambient Monitors */
+        get: operations["ambient_monitors_api_ambient_monitors_get"];
+        put?: never;
+        /** Ambient Monitor Create */
+        post: operations["ambient_monitor_create_api_ambient_monitors_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/ambient/monitors/{monitor_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Ambient Monitor Update */
+        put: operations["ambient_monitor_update_api_ambient_monitors__monitor_id__put"];
+        post?: never;
+        /** Ambient Monitor Delete */
+        delete: operations["ambient_monitor_delete_api_ambient_monitors__monitor_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/admin/backup": {
         parameters: {
             query?: never;
@@ -7723,6 +7759,61 @@ export interface components {
             /** Command */
             command: string;
         };
+        /** MonitorBody */
+        MonitorBody: {
+            /** Monitor Id */
+            monitor_id: string;
+            /** Version */
+            version: number;
+            /**
+             * Source
+             * @enum {string}
+             */
+            source: "house" | "camera" | "digital";
+            /** Schema */
+            schema: string;
+            /** Predicates */
+            predicates: components["schemas"]["PredicateBody"][];
+            /** Clear Predicates */
+            clear_predicates?: components["schemas"]["PredicateBody"][];
+            /**
+             * Subject Id
+             * @default
+             */
+            subject_id: string;
+            /**
+             * Debounce Seconds
+             * @default 0
+             */
+            debounce_seconds: number;
+            /**
+             * Hold Seconds
+             * @default 0
+             */
+            hold_seconds: number;
+            /**
+             * Cooldown Seconds
+             * @default 0
+             */
+            cooldown_seconds: number;
+            /**
+             * Enabled
+             * @default true
+             */
+            enabled: boolean;
+            /**
+             * Alert Rung
+             * @default monitor
+             * @enum {string}
+             */
+            alert_rung: "ignore" | "remember" | "monitor" | "act_silently" | "ask" | "interrupt";
+            /**
+             * Recovery Rung
+             * @default monitor
+             * @enum {string}
+             */
+            recovery_rung: "ignore" | "remember" | "monitor" | "act_silently" | "ask" | "interrupt";
+        };
         /** NodeDispatchBody */
         NodeDispatchBody: {
             /** Capability */
@@ -7809,6 +7900,18 @@ export interface components {
              * @default other
              */
             kind: string;
+        };
+        /** PredicateBody */
+        PredicateBody: {
+            /** Field */
+            field: string;
+            /**
+             * Operator
+             * @enum {string}
+             */
+            operator: "eq" | "ne" | "lt" | "lte" | "gt" | "gte" | "in" | "changed" | "age";
+            /** Expected */
+            expected?: unknown;
         };
         /** PresentBody */
         PresentBody: {
@@ -18460,6 +18563,125 @@ export interface operations {
             header?: never;
             path: {
                 name: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    ambient_monitors_api_ambient_monitors_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    ambient_monitor_create_api_ambient_monitors_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MonitorBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    ambient_monitor_update_api_ambient_monitors__monitor_id__put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                monitor_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MonitorBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    ambient_monitor_delete_api_ambient_monitors__monitor_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                monitor_id: string;
             };
             cookie?: never;
         };

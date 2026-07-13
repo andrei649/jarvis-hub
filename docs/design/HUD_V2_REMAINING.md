@@ -19,6 +19,10 @@
   make LIVE/SEED visible, and `panel-chip-coverage.test.ts` pins every Console card.
 
 ## 2. Deepen the P4c Console panels (read/basic → full)
+- ✅ **Ambient Watch (H33.6):** the Home cluster now reads the redacted live ambient runtime,
+  showing monitor/source health, last policy decision, rung counts, and the single global
+  attention budget. Monitor administration remains in the separately authenticated admin API;
+  event content, subjects, predicates, recipients, and delivery ids are never rendered.
 - ✅ **Settings DB**: full inline editor (toggle/slider/select/text per key) saves through
   `PUT /api/admin/settings/{cat}` in `SettingsPanel`.
 - ✅ **Prompt versions**: `PromptsPanel` has A/B, diff, rollback, edit, preview, and commit controls

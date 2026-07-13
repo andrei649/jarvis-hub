@@ -12,7 +12,7 @@ from typing import Any
 from urllib.parse import urlsplit
 
 from agents.core.ambient.adapters import AmbientCameraFeedConsumer
-from agents.core.ambient.runtime import AmbientRuntime, build_ambient_runtime
+from agents.core.ambient.runtime import AmbientRuntime, get_ambient_runtime
 from agents.core.house.camera_feed import HouseCameraFeedConsumer
 from agents.core.llm.vlm import VLMBackend
 from agents.core.paths import data_path
@@ -391,7 +391,7 @@ def build_camera_runtime(
         lifecycle["publisher"] = publisher
         house_feed = HouseCameraFeedConsumer()
         publisher.subscribe("house", house_feed, max_queue=256)
-        ambient_runtime = build_ambient_runtime(
+        ambient_runtime = get_ambient_runtime(
             orch,
             root=runtime_root.parent / "ambient",
         )
@@ -463,8 +463,6 @@ def build_camera_runtime(
     except Exception:
         if publisher is not None:
             publisher.close()
-        if ambient_runtime is not None:
-            ambient_runtime.close()
         return _disabled("camera_runtime_unavailable", orch)
 
 

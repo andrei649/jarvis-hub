@@ -1601,6 +1601,157 @@ export async function searchCameraEvents(
   return normalizeCameraEvents(raw);
 }
 
+// ── Ambient Intelligence (redacted read parity) ────────────────
+
+export type AmbientRung = 'ignore' | 'remember' | 'monitor' | 'act_silently' | 'ask' | 'interrupt';
+
+export type AmbientDecision = {
+  monitor_id: string;
+  transition: string;
+  rung: AmbientRung;
+  attention_mode: string;
+  policy_reason: string;
+  decided_at: number;
+};
+
+export type AmbientMonitor = {
+  monitor_id: string;
+  version: number;
+  source: 'house' | 'camera' | 'digital';
+  schema: string;
+  enabled: boolean;
+  alert_rung: AmbientRung;
+  recovery_rung: AmbientRung;
+  state: string;
+  last_event_at: number | null;
+  last_decision: AmbientDecision | null;
+};
+
+export type AmbientSource = {
+  source: 'house' | 'camera' | 'digital';
+  status: string;
+  last_event_at: number | null;
+  reason: string;
+  queued: number;
+  critical_backpressure: number;
+};
+
+export type AmbientMonitorsResponse = {
+  enabled: boolean;
+  status: string;
+  reason: string;
+  monitors: AmbientMonitor[];
+  sources: AmbientSource[];
+  last_decision: AmbientDecision | null;
+  rung_counts: Record<AmbientRung, number>;
+  decision_samples: number;
+  attention: { status: string; reason: string; limit: number; used: number; remaining: number };
+};
+
+const AMBIENT_RUNGS = new Set<AmbientRung>([
+  'ignore', 'remember', 'monitor', 'act_silently', 'ask', 'interrupt',
+]);
+const AMBIENT_SOURCES = new Set<AmbientSource['source']>(['house', 'camera', 'digital']);
+const AMBIENT_ID = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/;
+
+function ambientText(value: unknown, limit: number): string {
+  const text = securityString(value).trim();
+  return text.length <= limit && !/[\u0000-\u001f]/.test(text) ? text : '';
+}
+
+function ambientCount(value: unknown, max = 100_000): number {
+  return Math.max(0, Math.min(max, Math.trunc(securityNumber(value) || 0)));
+}
+
+function normalizeAmbientDecision(value: unknown): AmbientDecision | null {
+  const raw = securityRecord(value);
+  const monitorId = ambientText(raw.monitor_id, 128);
+  const rung = ambientText(raw.rung, 16) as AmbientRung;
+  const decidedAt = cameraTimestamp(raw.decided_at);
+  if (!AMBIENT_ID.test(monitorId) || !AMBIENT_RUNGS.has(rung) || decidedAt === null) return null;
+  return {
+    monitor_id: monitorId,
+    transition: ambientText(raw.transition, 16),
+    rung,
+    attention_mode: ambientText(raw.attention_mode, 16),
+    policy_reason: ambientText(raw.policy_reason, 64),
+    decided_at: decidedAt,
+  };
+}
+
+function normalizeAmbientMonitor(value: unknown): AmbientMonitor | null {
+  const raw = securityRecord(value);
+  const monitorId = ambientText(raw.monitor_id, 128);
+  const source = ambientText(raw.source, 16) as AmbientSource['source'];
+  const schema = ambientText(raw.schema, 128);
+  const alertRung = ambientText(raw.alert_rung, 16) as AmbientRung;
+  const recoveryRung = ambientText(raw.recovery_rung, 16) as AmbientRung;
+  if (
+    !AMBIENT_ID.test(monitorId) || !AMBIENT_SOURCES.has(source) || !AMBIENT_ID.test(schema)
+    || !AMBIENT_RUNGS.has(alertRung) || !AMBIENT_RUNGS.has(recoveryRung)
+  ) return null;
+  return {
+    monitor_id: monitorId,
+    version: Math.max(1, ambientCount(raw.version)),
+    source,
+    schema,
+    enabled: securityBool(raw.enabled),
+    alert_rung: alertRung,
+    recovery_rung: recoveryRung,
+    state: ambientText(raw.state, 16) || 'waiting',
+    last_event_at: cameraTimestamp(raw.last_event_at),
+    last_decision: normalizeAmbientDecision(raw.last_decision),
+  };
+}
+
+function normalizeAmbientSource(value: unknown): AmbientSource | null {
+  const raw = securityRecord(value);
+  const source = ambientText(raw.source, 16) as AmbientSource['source'];
+  if (!AMBIENT_SOURCES.has(source)) return null;
+  return {
+    source,
+    status: ambientText(raw.status, 16) || 'waiting',
+    last_event_at: cameraTimestamp(raw.last_event_at),
+    reason: ambientText(raw.reason, 64),
+    queued: ambientCount(raw.queued, 2_048),
+    critical_backpressure: ambientCount(raw.critical_backpressure),
+  };
+}
+
+function normalizeAmbientMonitors(rawValue: unknown): AmbientMonitorsResponse {
+  const raw = securityRecord(rawValue);
+  const rungRaw = securityRecord(raw.rung_counts);
+  const attentionRaw = securityRecord(raw.attention);
+  const rungCounts = {} as Record<AmbientRung, number>;
+  for (const rung of AMBIENT_RUNGS) rungCounts[rung] = ambientCount(rungRaw[rung]);
+  return {
+    enabled: securityBool(raw.enabled),
+    status: ambientText(raw.status, 16) || 'unavailable',
+    reason: ambientText(raw.reason, 128),
+    monitors: Array.isArray(raw.monitors)
+      ? raw.monitors.map(normalizeAmbientMonitor).filter((item): item is AmbientMonitor => item !== null).slice(0, 200)
+      : [],
+    sources: Array.isArray(raw.sources)
+      ? raw.sources.map(normalizeAmbientSource).filter((item): item is AmbientSource => item !== null).slice(0, 3)
+      : [],
+    last_decision: normalizeAmbientDecision(raw.last_decision),
+    rung_counts: rungCounts,
+    decision_samples: ambientCount(raw.decision_samples, 1_000),
+    attention: {
+      status: ambientText(attentionRaw.status, 16) || 'degraded',
+      reason: ambientText(attentionRaw.reason, 64),
+      limit: ambientCount(attentionRaw.limit, 100),
+      used: ambientCount(attentionRaw.used, 100),
+      remaining: ambientCount(attentionRaw.remaining, 100),
+    },
+  };
+}
+
+export async function fetchAmbientMonitors(config: ServerConfig): Promise<AmbientMonitorsResponse> {
+  const raw = await request<Record<string, unknown>>(config, 'GET', '/api/ambient/monitors', undefined, { retries: 2 });
+  return normalizeAmbientMonitors(raw);
+}
+
 // ── Governed capability acquisition (read-only mobile projection) ──
 
 export type AcquisitionPackage = {

@@ -49,7 +49,7 @@ def test_orchestrator_sandbox_honors_settings(monkeypatch):
 
 
 # ── autonomy (cap_per_action / daily_ceiling / interrupt_budget) ──────────────
-def test_orchestrator_autonomy_caps_honor_settings(monkeypatch):
+def test_orchestrator_autonomy_caps_honor_settings_and_attention_hard_cap(monkeypatch):
     monkeypatch.setattr("core.settings_db.get_value",
                         _gv_factory({"autonomy.cap_per_action": 12.5,
                                      "autonomy.daily_ceiling": 99.0,
@@ -59,7 +59,7 @@ def test_orchestrator_autonomy_caps_honor_settings(monkeypatch):
     o = Orchestrator(JarvisConfig())
     assert o.autonomy.policy.cap_per_action == 12.5
     assert o.autonomy.policy.daily_ceiling == 99.0
-    assert o.autonomy.budget.per_day == 7
+    assert o.autonomy.budget.per_day == 4
 
 
 # ── system.log_level ──────────────────────────────────────────────────────────
