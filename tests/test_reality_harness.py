@@ -9,6 +9,7 @@ import pytest
 
 from agents.core.observability import capability_registry as cr
 from agents.core.observability import reality_harness as rh
+from agents.core.observability.media_reality import H29_MEDIA_REALITY_CASES
 from agents.core.observability.reality_harness import RealityCase, run_reality
 
 
@@ -36,11 +37,8 @@ async def test_boot_registry_reality_cases_hold_for_every_wired_capability():
     results = {item["capability_id"]: item["passed"] for item in out["results"]}
 
     assert len(cases) == 70
-    assert {
-        capability_id for capability_id, passed in results.items() if not passed
-    } == {
-        capability_id for capability_id, record in records.items()
-        if record.state == cr.SEAM
+    assert {capability_id for capability_id, passed in results.items() if not passed} == {
+        capability_id for capability_id, record in records.items() if record.state == cr.SEAM
     }
 
 
@@ -58,14 +56,21 @@ async def _boom():
 
 # ── framework mechanics ────────────────────────────────────────────────────────
 async def test_pass_promotes_fail_does_not(monkeypatch):
-    monkeypatch.setattr(cr, "_plugin_records", lambda: [
-        cr.CapabilityRecord(id="plugin:p_ok", kind="plugin", state=cr.WIRED),
-        cr.CapabilityRecord(id="plugin:p_bad", kind="plugin", state=cr.WIRED),
-    ])
-    out = await run_reality([
-        RealityCase("plugin:p_ok", "ok", "holds", _ok),
-        RealityCase("plugin:p_bad", "bad", "fails", _bad),
-    ], now="2026-06-25T00:00:00+00:00")
+    monkeypatch.setattr(
+        cr,
+        "_plugin_records",
+        lambda: [
+            cr.CapabilityRecord(id="plugin:p_ok", kind="plugin", state=cr.WIRED),
+            cr.CapabilityRecord(id="plugin:p_bad", kind="plugin", state=cr.WIRED),
+        ],
+    )
+    out = await run_reality(
+        [
+            RealityCase("plugin:p_ok", "ok", "holds", _ok),
+            RealityCase("plugin:p_bad", "bad", "fails", _bad),
+        ],
+        now="2026-06-25T00:00:00+00:00",
+    )
     assert out["passed"] == 1 and out["total"] == 2
     assert out["promoted"] == ["plugin:p_ok"]
 
@@ -92,17 +97,25 @@ async def test_live_case_skipped_unless_enabled(monkeypatch):
 
 async def test_verified_cannot_be_set_for_a_seam_rail(monkeypatch):
     # a green verdict on a capability that is only SEAM (rail not wired) must NOT promote
-    monkeypatch.setattr(cr, "_plugin_records", lambda: [
-        cr.CapabilityRecord(id="plugin:seamy", kind="plugin", state=cr.SEAM),
-    ])
+    monkeypatch.setattr(
+        cr,
+        "_plugin_records",
+        lambda: [
+            cr.CapabilityRecord(id="plugin:seamy", kind="plugin", state=cr.SEAM),
+        ],
+    )
     await run_reality([RealityCase("plugin:seamy", "ok", "c", _ok)])
     assert cr.build_records()[0].state == cr.SEAM
 
 
 async def test_manual_demote_overrides_a_verification(monkeypatch):
-    monkeypatch.setattr(cr, "_plugin_records", lambda: [
-        cr.CapabilityRecord(id="plugin:p", kind="plugin", state=cr.WIRED),
-    ])
+    monkeypatch.setattr(
+        cr,
+        "_plugin_records",
+        lambda: [
+            cr.CapabilityRecord(id="plugin:p", kind="plugin", state=cr.WIRED),
+        ],
+    )
     await run_reality([RealityCase("plugin:p", "ok", "c", _ok)])
     assert cr.build_records()[0].state == cr.VERIFIED
     cr.set_override("plugin:p", cr.SEAM)  # human pulls it back down
@@ -119,6 +132,14 @@ async def test_seeded_cases_prove_rails_and_promote():
     assert states["plugin:system-control"] == cr.VERIFIED
     assert states["plugin:worldview"] == cr.VERIFIED
     assert snap["harness_pending"] is False  # something is now genuinely verified
+
+
+def test_canonical_seeded_harness_registers_the_h29_media_pack_once():
+    h29_names = [case.name for case in H29_MEDIA_REALITY_CASES]
+    seeded_names = [case.name for case in rh.CASES]
+
+    assert h29_names
+    assert all(seeded_names.count(name) == 1 for name in h29_names)
 
 
 async def test_kill_switch_rail_is_a_real_hermetic_proof():

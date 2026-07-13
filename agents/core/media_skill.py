@@ -20,16 +20,39 @@ async def _maybe_await(v):
 
 
 class MediaSummarizer:
-    def __init__(self, downloader=None, transcriber=None, summarizer=None) -> None:
-        self._dl = downloader        # (url) -> audio path
-        self._tr = transcriber       # (audio) -> transcript
-        self._sum = summarizer       # (transcript) -> summary
+    def __init__(
+        self,
+        downloader=None,
+        transcriber=None,
+        summarizer=None,
+        *,
+        url_guard=None,
+    ) -> None:
+        self._dl = downloader  # (url) -> audio path
+        self._tr = transcriber  # (audio) -> transcript
+        self._sum = summarizer  # (transcript) -> summary
+        self._url_guard = url_guard  # governed URL policy, e.g. BrowserPolicy.domain_allowed
 
     async def summarize_url(self, url: str) -> dict:
         if not url:
             return {"ok": False, "reason": "no_url"}
         if self._dl is None or self._tr is None:
-            return {"ok": False, "reason": "host_tools_unavailable"}   # yt-dlp/whisper
+            return {"ok": False, "reason": "host_tools_unavailable"}  # yt-dlp/whisper
+        if self._url_guard is None:
+            return {"ok": False, "reason": "url_guard_unavailable"}
+        try:
+            guard_result = await _maybe_await(self._url_guard(url))
+        except Exception:
+            return {"ok": False, "reason": "url_refused"}
+        allowed = (
+            isinstance(guard_result, (tuple, list))
+            and len(guard_result) == 2
+            and guard_result[0] is True
+            and isinstance(guard_result[1], str)
+            and not guard_result[1]
+        )
+        if not allowed:
+            return {"ok": False, "reason": "url_refused"}
         try:
             audio = await _maybe_await(self._dl(url))
             transcript = await _maybe_await(self._tr(audio))
@@ -42,5 +65,8 @@ class MediaSummarizer:
                 summary = await _maybe_await(self._sum(transcript))
             except Exception:
                 summary = ""
-        return {"ok": True, "transcript": transcript,
-                "summary": summary or (transcript or "")[:200]}
+        return {
+            "ok": True,
+            "transcript": transcript,
+            "summary": summary or (transcript or "")[:200],
+        }

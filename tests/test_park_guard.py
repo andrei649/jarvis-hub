@@ -36,11 +36,28 @@ def test_wave_one_modules_are_permanently_removed_from_park_policy():
     }
 
 
-def test_remaining_park_policy_is_exact_after_wave_one_graduation():
+def test_wave_two_modules_are_permanently_removed_from_park_policy():
+    graduated = {"image_gen", "media_gen", "media_skill"}
+
+    assert graduated.isdisjoint(guard.PARK_POLICY)
+    result = guard.evaluate(
+        [
+            "agents/core/image_gen.py",
+            "agents/core/media_gen.py",
+            "agents/core/media_skill.py",
+        ],
+        "ordinary H29 maintenance",
+    )
+    assert result == {
+        "ok": True,
+        "declarations": [],
+        "parked_touches": [],
+        "violations": [],
+    }
+
+
+def test_remaining_park_policy_is_exact_after_wave_two_graduation():
     assert set(guard.PARK_POLICY) == {
-        "image_gen",
-        "media_gen",
-        "media_skill",
         "wyoming",
         "satellite_hub",
         "node_mesh",
@@ -59,9 +76,6 @@ def test_unrelated_changes_pass_without_declaration():
 
 def test_every_parked_family_fails_without_unpark_declaration():
     paths = [
-        "agents/core/image_gen.py",
-        "agents/core/media_gen.py",
-        "agents/core/media_skill.py",
         "agents/core/satellite_hub.py",
         "agents/core/node_mesh.py",
         "agents/core/e2e_sync.py",
@@ -72,9 +86,6 @@ def test_every_parked_family_fails_without_unpark_declaration():
     result = guard.evaluate(paths, "feature work")
     assert result["ok"] is False
     assert {violation["module"] for violation in result["violations"]} == {
-        "image_gen",
-        "media_gen",
-        "media_skill",
         "satellite_hub",
         "node_mesh",
         "e2e_sync",
@@ -91,19 +102,19 @@ def test_wave_declaration_allows_only_its_phase():
     )
     assert wave_one["ok"] is True
     cross_wave = guard.evaluate(
-        ["agents/core/browser_agent.py", "agents/core/image_gen.py"], "unpark: wave-1"
+        ["agents/core/browser_agent.py", "agents/core/voice/wyoming.py"], "unpark: wave-1"
     )
     assert cross_wave["ok"] is False
-    assert [item["module"] for item in cross_wave["violations"]] == ["image_gen"]
+    assert [item["module"] for item in cross_wave["violations"]] == ["wyoming"]
 
 
 def test_named_module_declaration_is_narrow():
     result = guard.evaluate(
-        ["agents/core/image_gen.py", "agents/core/media_gen.py"],
-        "unpark: image_gen",
+        ["agents/core/satellite_hub.py", "agents/core/node_mesh.py"],
+        "unpark: satellite_hub",
     )
     assert result["ok"] is False
-    assert [item["module"] for item in result["violations"]] == ["media_gen"]
+    assert [item["module"] for item in result["violations"]] == ["node_mesh"]
 
 
 def test_wave_three_does_not_unpark_owner_pull_modules():
@@ -124,22 +135,19 @@ def test_policy_files_are_self_protected():
 
 
 def test_windows_paths_and_deleted_files_match_identically():
-    result = guard.evaluate([r"agents\core\media_gen.py"], "no declaration")
+    result = guard.evaluate([r"agents\core\satellite_hub.py"], "no declaration")
     assert result["ok"] is False
-    assert result["violations"][0]["path"] == "agents/core/media_gen.py"
+    assert result["violations"][0]["path"] == "agents/core/satellite_hub.py"
 
 
 def test_declarations_are_line_based_not_incidental_prose():
-    prose = "Please do not unpark: wave-2 because this is only documentation."
-    assert guard.evaluate(["agents/core/image_gen.py"], prose)["ok"] is False
-    assert guard.evaluate(["agents/core/image_gen.py"], "Context\nunpark: wave-2\nTests")["ok"]
+    prose = "Please do not unpark: wave-3 because this is only documentation."
+    assert guard.evaluate(["agents/core/satellite_hub.py"], prose)["ok"] is False
+    assert guard.evaluate(["agents/core/satellite_hub.py"], "Context\nunpark: wave-3\nTests")["ok"]
 
 
 def test_real_policy_covers_remaining_backlog_phase_six_names():
     expected = {
-        "image_gen",
-        "media_gen",
-        "media_skill",
         "satellite_hub",
         "node_mesh",
         "e2e_sync",

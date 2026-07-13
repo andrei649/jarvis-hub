@@ -75,7 +75,8 @@ async def _maybe_await(v):
 class MediaGenManager:
     def __init__(self, backends: Optional[dict] = None, enqueue: Optional[Callable] = None,
                  agent: str = "pepper", *, catalog: Optional[_CatalogLike] = None,
-                 clock: Optional[Callable[[], float]] = None) -> None:
+                 clock: Optional[Callable[[], float]] = None,
+                 local_guard: Optional[Callable] = None) -> None:
         self._backends = backends or {}     # kind -> async backend(prompt, opts) -> result
         self._enqueue = enqueue
         self.agent = agent
@@ -83,6 +84,7 @@ class MediaGenManager:
         # is recorded (opt-in; None → behaviour is byte-identical to before).
         self._catalog = catalog
         self._clock = clock or time.time
+        self._local_guard = local_guard
 
     @staticmethod
     def _result_path(result) -> str:
@@ -142,8 +144,24 @@ class MediaGenManager:
         backend = self._backends.get(kind)
         if backend is None:
             return {"ok": False, "reason": "backend_unavailable", "kind": kind}
+        if self._local_guard is None:
+            return {"ok": False, "reason": "local_guard_unavailable", "kind": kind}
+        local_opts = opts or {}
         try:
-            result = await _maybe_await(backend(prompt, opts or {}))
+            guard_result = await _maybe_await(self._local_guard(kind, prompt, local_opts))
+        except Exception:
+            return {"ok": False, "reason": "local_refused", "kind": kind}
+        allowed = (
+            isinstance(guard_result, (tuple, list))
+            and len(guard_result) == 2
+            and guard_result[0] is True
+            and isinstance(guard_result[1], str)
+            and not guard_result[1]
+        )
+        if not allowed:
+            return {"ok": False, "reason": "local_refused", "kind": kind}
+        try:
+            result = await _maybe_await(backend(prompt, local_opts))
         except Exception:
             logger.warning("media generation failed", exc_info=True)
             return {"ok": False, "reason": "generation_error"}

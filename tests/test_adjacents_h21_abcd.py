@@ -1,7 +1,9 @@
 """H21.A–D — vaultwarden resolver, media skill, idle image-gen, video prompt."""
+
 import sys, os
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'agents'))
+
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "agents"))
 
 import pytest
 
@@ -13,10 +15,12 @@ from agents.core.video_prompt import build_video_prompt
 
 # ── H21.A vaultwarden resolver ────────────────────────────────────────────────
 
+
 def test_vault_hit():
     class _V:
         def get(self, k):
             return "vault-secret" if k == "API_KEY" else None
+
     out = VaultResolver(client=_V()).resolve("API_KEY")
     assert out == {"value": "vault-secret", "source": "vault"}
 
@@ -25,6 +29,7 @@ def test_vault_miss_falls_back_to_env(monkeypatch):
     class _V:
         def get(self, k):
             return None
+
     monkeypatch.setenv("API_KEY", "env-secret")
     assert VaultResolver(client=_V()).resolve("API_KEY")["source"] == "env"
 
@@ -41,6 +46,7 @@ def test_missing_secret():
 
 
 # ── H21.B media skill ─────────────────────────────────────────────────────────
+
 
 @pytest.mark.asyncio
 async def test_media_no_url():
@@ -64,12 +70,33 @@ async def test_media_full_pipeline_with_stubs():
     async def summ(t):
         return "SUMMARY"
 
-    out = await MediaSummarizer(dl, tr, summ).summarize_url("http://x/v")
+    out = await MediaSummarizer(
+        dl, tr, summ, url_guard=lambda url: (url == "https://93.184.216.34/v", "")
+    ).summarize_url("https://93.184.216.34/v")
     assert out["ok"] is True and out["transcript"] == "the transcript text"
     assert out["summary"] == "SUMMARY"
 
 
+@pytest.mark.asyncio
+async def test_media_downloader_requires_explicit_governed_url_guard():
+    calls = []
+
+    async def dl(url):
+        calls.append(("download", url))
+        return "/tmp/a.mp3"
+
+    async def tr(audio):
+        calls.append(("transcribe", audio))
+        return "transcript"
+
+    out = await MediaSummarizer(dl, tr).summarize_url("https://93.184.216.34/v")
+
+    assert out == {"ok": False, "reason": "url_guard_unavailable"}
+    assert calls == []
+
+
 # ── H21.C idle image-gen ──────────────────────────────────────────────────────
+
 
 @pytest.mark.asyncio
 async def test_image_gen_no_backend():
@@ -93,7 +120,7 @@ async def test_image_gen_swaps_llm_around_diffusion():
 
     out = await ImageGenOrchestrator(diff, unload, load).generate("a cat")
     assert out["ok"] is True and out["path"] == "/tmp/img.png" and out["swapped"] is True
-    assert events == ["unload", "diffuse", "load"]      # LLM restored after
+    assert events == ["unload", "diffuse", "load"]  # LLM restored after
 
 
 @pytest.mark.asyncio
@@ -110,10 +137,11 @@ async def test_image_gen_restores_llm_on_failure():
         events.append("load")
 
     out = await ImageGenOrchestrator(diff, unload, load).generate("x")
-    assert out["ok"] is False and "load" in events       # restored even on failure
+    assert out["ok"] is False and "load" in events  # restored even on failure
 
 
 # ── H21.D video prompt-builder ────────────────────────────────────────────────
+
 
 @pytest.mark.asyncio
 async def test_video_prompt_template():
