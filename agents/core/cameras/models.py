@@ -260,6 +260,37 @@ class PrivacyLease:
 
 
 @dataclass(frozen=True, slots=True)
+class PrivacyPollingGrant:
+    """A generation-bound allowlist for one bounded metadata poll."""
+
+    camera_ids: tuple[str, ...]
+    consent_version: int
+    generation: int
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.camera_ids, (tuple, list)) or not 1 <= len(self.camera_ids) <= 128:
+            raise ValueError("polling camera ids must be a non-empty bounded collection")
+        camera_ids = tuple(
+            _safe_id(value, field_name="camera_id", camera=True) for value in self.camera_ids
+        )
+        if len(camera_ids) != len(set(camera_ids)):
+            raise ValueError("polling camera ids must be unique")
+        object.__setattr__(self, "camera_ids", camera_ids)
+        if (
+            isinstance(self.consent_version, bool)
+            or not isinstance(self.consent_version, int)
+            or self.consent_version < 1
+        ):
+            raise ValueError("polling consent version must be positive")
+        if (
+            isinstance(self.generation, bool)
+            or not isinstance(self.generation, int)
+            or self.generation < 0
+        ):
+            raise ValueError("polling generation must be non-negative")
+
+
+@dataclass(frozen=True, slots=True)
 class MaskedFrame:
     """A sanitized, metadata-free frame. Raw source bytes/digests are never retained."""
 

@@ -145,6 +145,16 @@ BUILTIN_PLUGINS = {
         allowed_domains=[],
         agents_served=["jarvis", "ultron"],
     ),
+    "camera-frigate": PluginManifest(
+        id="camera-frigate",
+        name="Frigate Camera Events",
+        version="0.1.0",
+        description="Read-only local Frigate event metadata behind camera consent and privacy masks",
+        network_access=NetworkAccess.LAN,
+        data_scope=DataScope.LOCAL_ONLY,
+        allowed_domains=[],
+        agents_served=["jarvis"],
+    ),
     "oracle-bridge": PluginManifest(
         id="oracle-bridge",
         name="Oracle Pipeline Weaver",

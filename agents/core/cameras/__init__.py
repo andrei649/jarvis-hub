@@ -13,6 +13,7 @@ from .models import (
     MaskedFrame,
     PrivacyLease,
     PrivacyMask,
+    PrivacyPollingGrant,
 )
 from .privacy import CameraPrivacyError, CameraPrivacyPolicy, apply_masks
 
@@ -27,5 +28,6 @@ __all__ = [
     "MaskedFrame",
     "PrivacyLease",
     "PrivacyMask",
+    "PrivacyPollingGrant",
     "apply_masks",
 ]

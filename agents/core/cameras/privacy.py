@@ -10,7 +10,14 @@ from typing import Any
 
 from PIL import Image, ImageDraw, ImageFile, UnidentifiedImageError
 
-from .models import CameraConfig, HouseholdConsent, MaskedFrame, PrivacyLease, PrivacyMask
+from .models import (
+    CameraConfig,
+    HouseholdConsent,
+    MaskedFrame,
+    PrivacyLease,
+    PrivacyMask,
+    PrivacyPollingGrant,
+)
 
 _ALLOWED_IMAGE_FORMATS = frozenset({"JPEG", "PNG", "WEBP"})
 _ALLOWED_IMAGE_MODES = frozenset({"L", "LA", "RGB", "RGBA"})
@@ -251,6 +258,47 @@ class CameraPrivacyPolicy:
                 consent_version=consent.version,
                 generation=self._generation,
             )
+
+    def begin_polling(self) -> PrivacyPollingGrant:
+        """Mint a metadata-poll allowlist bound to the current consent generation."""
+
+        with self._lock:
+            consent = self._consent
+            if consent is None or not consent.granted:
+                raise CameraPrivacyError("consent_required")
+            candidates = [
+                config
+                for config in sorted(self._configs.values(), key=lambda item: item.camera_id)
+                if config.enabled and config.camera_id in consent.camera_ids
+            ]
+            if not candidates:
+                raise CameraPrivacyError("camera_not_consented")
+            if any(config.required_consent_version != consent.version for config in candidates):
+                raise CameraPrivacyError("consent_version_mismatch")
+            camera_ids: list[str] = []
+            for config in candidates:
+                try:
+                    halted = self._kill_switch.is_halted(f"camera:{config.camera_id}")
+                except Exception as exc:
+                    raise CameraPrivacyError("camera_halt_state_unavailable") from exc
+                if not halted:
+                    camera_ids.append(config.camera_id)
+            if not camera_ids:
+                raise CameraPrivacyError("camera_halted")
+            return PrivacyPollingGrant(
+                camera_ids=tuple(camera_ids),
+                consent_version=consent.version,
+                generation=self._generation,
+            )
+
+    def recheck_polling(self, grant: PrivacyPollingGrant) -> None:
+        if not isinstance(grant, PrivacyPollingGrant):
+            raise CameraPrivacyError("invalid_polling_grant")
+        with self._lock:
+            if grant.generation != self._generation:
+                raise CameraPrivacyError("stale_consent_generation")
+            if self.begin_polling() != grant:
+                raise CameraPrivacyError("stale_consent_generation")
 
     def recheck(self, lease: PrivacyLease, stage: str) -> None:
         if not isinstance(lease, PrivacyLease):

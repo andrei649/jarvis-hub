@@ -271,3 +271,16 @@ def test_every_stage_rechecks_kill_and_consent_before_store_or_publish():
     for stage in ("inference", "store", "publish"):
         with pytest.raises(CameraPrivacyError, match="camera_halted"):
             policy.recheck(lease, stage)
+
+
+def test_polling_grant_is_consent_allowlisted_and_generation_bound():
+    policy = _policy(consent=_consent())
+    grant = policy.begin_polling()
+    assert grant.camera_ids == ("front-door",)
+    assert grant.consent_version == 2
+    assert grant.generation == policy.generation
+    policy.recheck_polling(grant)
+
+    policy.revoke("poll race")
+    with pytest.raises(CameraPrivacyError, match="stale_consent_generation"):
+        policy.recheck_polling(grant)
