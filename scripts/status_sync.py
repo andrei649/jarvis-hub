@@ -45,8 +45,9 @@ GENERATED_DOCS = {
     REPO / "GO_LIVE_PLAN.md": ("go-live-header",),
 }
 
-# The two header tokens, e.g. "Tests:** ~3,011 passed" and "HTTP routes:** 327".
-_TESTS_RE = re.compile(r"(Tests:\*\* ~)([\d,]+)( passed)")
+# The two header tokens, e.g. "Tests:** ~3,011 collected" and "HTTP routes:** 327".
+# Accept the historical ``passed`` wording on input so the generator migrates old docs.
+_TESTS_RE = re.compile(r"(Tests:\*\* ~)([\d,]+)(?: passed| collected)")
 _ROUTES_RE = re.compile(r"(HTTP routes:\*\* )(\d+)")
 _LANE_ROW_RE = re.compile(r"^\|\s*(A\d+)\s*\|\s*([^|]+?)\s*\|\s*([^|]+?)\s*\|", re.MULTILINE)
 _VERSION_RE = re.compile(r"__version__\s*=\s*[\"']([^\"']+)[\"']")
@@ -370,7 +371,7 @@ def apply_to_status(text: str, *, tests: int | None = None, routes: int | None =
     digits change — surrounding version numbers, route-counts-in-prose, etc. are
     left untouched (single, anchored substitution per token)."""
     if tests is not None:
-        text = _TESTS_RE.sub(lambda m: f"{m.group(1)}{_fmt(tests)}{m.group(3)}", text, count=1)
+        text = _TESTS_RE.sub(lambda m: f"{m.group(1)}{_fmt(tests)} collected", text, count=1)
     if routes is not None:
         text = _ROUTES_RE.sub(lambda m: f"{m.group(1)}{routes}", text, count=1)
     return text

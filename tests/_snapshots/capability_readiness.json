@@ -2,6 +2,7 @@
   "action:admin.capability_issue": "wired",
   "action:admin.kill_switch": "wired",
   "action:call.outbound": "wired",
+  "action:desktop.step": "wired",
   "action:kg.write": "wired",
   "action:mcp.mutating": "wired",
   "action:media.present": "wired",
