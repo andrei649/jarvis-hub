@@ -18,6 +18,7 @@ from .models import (
 )
 from .pipeline import CameraPipeline, CameraPipelineResult, SnapshotSource
 from .privacy import CameraPrivacyError, CameraPrivacyPolicy, apply_masks
+from .retrieval import CameraEventRetrieval, CameraFilter, CameraSearchError, CameraSearchResult
 from .rules import CameraRuleEngine, CameraZone, LineRule, RuleOutcome
 from .vault import (
     CameraEventVault,
@@ -34,6 +35,8 @@ __all__ = [
     "CameraConfig",
     "CameraEvent",
     "CameraEventVault",
+    "CameraEventRetrieval",
+    "CameraFilter",
     "CameraHealthMonitor",
     "CameraPrivacyError",
     "CameraPrivacyPolicy",
@@ -41,6 +44,8 @@ __all__ = [
     "CameraPipeline",
     "CameraPipelineResult",
     "CameraRuleEngine",
+    "CameraSearchError",
+    "CameraSearchResult",
     "CameraRetentionScheduler",
     "CameraStoreReceipt",
     "CameraSweepReport",
