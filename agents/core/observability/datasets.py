@@ -21,6 +21,7 @@ Pure-Python, file-based, fully offline-testable (inject a fake runner).
 from __future__ import annotations
 
 import json
+import os
 import re
 import time
 import uuid
@@ -56,20 +57,22 @@ def _dataset_version(value: object) -> int:
 
 
 def _direct_child(base: Path, child: str) -> Path:
-    """Return one non-symlink child anchored directly below *base*.
+    """Return one canonical child anchored directly below *base*.
 
-    Both the allowlisted component and the resolved containment check are kept:
-    the former rejects traversal on every platform, while the latter also
-    refuses an on-disk symlink planted beneath the trusted dataset root.
+    The caller supplies an allowlisted component.  Canonicalising the complete
+    candidate before the containment check also catches an on-disk symlink
+    planted beneath the trusted dataset root.  Keep the explicit prefix check:
+    besides documenting the trust boundary, it is the path-normalisation
+    pattern understood by CodeQL's path-injection analysis.
     """
-    resolved_base = base.resolve()
-    unresolved = resolved_base / child
-    if unresolved.is_symlink():
-        raise ValueError("dataset path cannot traverse a symlink")
-    candidate = unresolved.resolve()
-    if candidate.parent != resolved_base:
+    resolved_base = os.path.realpath(os.fspath(base))
+    candidate = os.path.realpath(os.path.join(resolved_base, child))
+    trusted_prefix = os.path.join(resolved_base, "")
+    if not candidate.startswith(trusted_prefix):
         raise ValueError("dataset path must remain inside the store root")
-    return candidate
+    if os.path.dirname(candidate) != resolved_base:
+        raise ValueError("dataset path must remain inside the store root")
+    return Path(candidate)
 
 
 class DatasetStore:
