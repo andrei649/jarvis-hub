@@ -142,9 +142,10 @@ class AcquisitionSandboxProfile:
             "--env",
             "PYTHONHASHSEED=0",
         ]
+        sandbox_command = list(command)
         if mutate_contract:
-            docker.extend(["--env", "JARVIS_CONTRACT_MUTATE=1"])
-        return [*docker, self.image, *command]
+            sandbox_command.append("--jarvis-mutate-contract")
+        return [*docker, self.image, *sandbox_command]
 
     @staticmethod
     def _mount_dir(value: str | Path, label: str) -> Path:
@@ -428,13 +429,13 @@ class SandboxVerifier:
         return (
             "import importlib.util\n"
             "import json\n"
-            "import os\n\n"
+            "import sys\n\n"
             f"CONTRACT = json.loads({payload!r})\n"
             "spec = importlib.util.spec_from_file_location('acquired_main', '/workspace/source/main.py')\n"
             "module = importlib.util.module_from_spec(spec)\n"
             "spec.loader.exec_module(module)\n"
             "entrypoint = getattr(module, CONTRACT['entrypoint'])\n"
-            "if os.environ.get('JARVIS_CONTRACT_MUTATE') == '1':\n"
+            "if '--jarvis-mutate-contract' in sys.argv[1:]:\n"
             f"    entrypoint = lambda _payload: {{'__jarvis_forced_mutation__': '{contract.contract_hash}'}}\n"
             "for case in CONTRACT['cases']:\n"
             "    actual = entrypoint(case['input'])\n"

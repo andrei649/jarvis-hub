@@ -297,7 +297,7 @@ async def test_system_contract_and_mutation_proof_gate_receipt_and_approval_cand
     with pytest.raises(FrozenInstanceError):
         outcome.receipt.exit_status = 7
     assert len(runner.commands) == 3
-    assert "JARVIS_CONTRACT_MUTATE=1" in " ".join(runner.commands[2][0])
+    assert runner.commands[2][0][-1] == "--jarvis-mutate-contract"
     assert not (tmp_path / "runtime").exists() or not any((tmp_path / "runtime").iterdir())
 
     tampered = replace(outcome.receipt, package_hash="0" * 64)

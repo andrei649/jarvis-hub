@@ -73,8 +73,8 @@ When on: embeds the query, runs fused recall (vector ⊕ graph), injects top-k a
 |------|---------|-------------|
 | `agents/serve.py` | Uvicorn launcher | `app` import from `agents/web.py` |
 | `agents/run.py` | CLI REPL | `main()` |
-| `agents/web.py` | FastAPI app shell + lifespan; mounts the 45 per-domain routers. Only **9 inline routes** stay here (app-shell `/`,`/v1`,`/v2`,favicon,sw.js + `/chat`,`/chat/stream` + `/admin`). The rest of the route surface (live count in STATUS.md, synced by `scripts/status_sync.py`) lives in `agents/core/routers/*` (CLN-3, #296) | `app`, `lifespan`, `orch` global, `_user_guard`, `_admin_guard` |
-| `agents/core/routers/*.py` | **The HTTP surface** — 45 per-domain `APIRouter`s (agents_api, tools, ops, payments, eval, workflows, sessions, memory_hud, status, dashboard, voice, mcp, …). Guards from `routers/_deps.py`; shared state via `app_state.get_orch()` / `sys.modules["agents.web"]` | one `router` per file, mounted via `app.include_router` |
+| `agents/web.py` | FastAPI app shell + lifespan; mounts the 63 per-domain routers. Only **9 inline routes** stay here (app-shell `/`,`/v1`,`/v2`,favicon,sw.js + `/chat`,`/chat/stream` + `/admin`). The rest of the route surface (live count in STATUS.md, synced by `scripts/status_sync.py`) lives in `agents/core/routers/*` (CLN-3, #296) | `app`, `lifespan`, `orch` global, `_user_guard`, `_admin_guard` |
+| `agents/core/routers/*.py` | **The HTTP surface** — 63 per-domain `APIRouter`s (agents_api, tools, ops, payments, eval, workflows, sessions, memory_hud, status, dashboard, voice, mcp, media_director, house, cameras, acquisition, …). Guards from `routers/_deps.py`; shared state via `app_state.get_orch()` / `sys.modules["agents.web"]` | one `router` per file, mounted via `app.include_router` |
 | `agents/core/orchestrator.py` | Main loop (+ delegated managers: `ChannelManager`, `PluginManager`, `llm_control`, `cognition_trace`, CLN-2) | `Orchestrator`, `handle_input`, `handle_input_stream`, `_maybe_checkpoint` |
 | `agents/core/routers/brain.py` | Neural Mesh page (`/brain`) + live feed (`/api/brain/summary`) — tracer rollups → canvas "brain" of agents+models firing. Viz adapted from Axon (MIT, `LICENSES/axon-MIT.txt`) | `build_summary`, `brain_page`, `brain_summary` |
 | `agents/core/agent.py` | Single agent runtime | `Agent`, `Agent.process`, `Agent.synthesize`, `Agent._load_soul` |
@@ -573,7 +573,7 @@ from git history into `*.local.md`).
 ### Add a web endpoint
 
 > **Convention (anti-god-object, CLN-3 — done #296):** new routes go in a **per-domain router**
-> `agents/core/routers/<domain>.py`, *not* inline in `web.py` (which now keeps only 9 app-shell/chat/admin routes; the other 295 live in 45 routers).
+> `agents/core/routers/<domain>.py`, *not* inline in `web.py` (which now keeps only 9 app-shell/chat/admin routes; the other 383 live in 63 routers).
 > Mirror an existing router (e.g. `capture.py`): an `APIRouter`, guards imported from
 > `routers/_deps.py`, shared state reached lazily via `from agents import web`; mount it in
 > `web.py` with `app.include_router(...)`. Don't add new `@app.*` decorators inline. The
@@ -636,11 +636,11 @@ Reference adopters: `agents/core/security/audit.py`, `agents/core/skills/marketp
 serve.py                          Uvicorn launcher
 agents/
   run.py                          CLI REPL
-  web.py                          FastAPI app shell + lifespan (9 inline routes; mounts 45 routers → full route surface, live count in STATUS.md; uvicorn on port 8080)
+  web.py                          FastAPI app shell + lifespan (9 inline routes; mounts 63 routers → full route surface, live count in STATUS.md; uvicorn on port 8080)
   web/                            Static assets for web dashboard (HTML/CSS/JS)
   _system/agents.yaml             Agent registry (canonical source of truth)
   core/
-    routers/                      45 per-domain APIRouters = the HTTP surface (CLN-3); _deps.py = lazy auth guards
+    routers/                      63 per-domain APIRouters = the HTTP surface (CLN-3 + domain slices); _deps.py = lazy auth guards
     orchestrator.py               Main loop (+ CLN-2 managers: channel/plugin, llm_control, cognition_trace)
     agent.py                      Single agent runtime (SOUL.md loader)
     router.py                     Intent classifier
