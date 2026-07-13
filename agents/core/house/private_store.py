@@ -49,7 +49,6 @@ _FACT_FIELDS = frozenset(
         "evidence_categories",
     }
 )
-_PSEUDONYM = re.compile(r"occ-[0-9a-f]{32}")
 _EVENT_KEY = re.compile(r"evt-[0-9a-f]{48}")
 
 

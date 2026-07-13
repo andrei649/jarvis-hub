@@ -40,7 +40,6 @@ logger = logging.getLogger(__name__)
 _PSEUDONYM = re.compile(r"occ-[0-9a-f]{32}")
 _STATE_LIMIT = 500
 _runtime = None
-_runtime_orch_id = None
 
 
 @dataclass
@@ -52,6 +51,7 @@ class HouseRuntime:
     queue: object | None
     private_status: str
     confirmation_status: str
+    orch_id: int = 0
 
 
 class _StrictBody(BaseModel):
@@ -190,16 +190,16 @@ def _build_runtime(orch) -> HouseRuntime:
         queue=queue,
         private_status=private_status,
         confirmation_status=confirmation_status,
+        orch_id=id(orch) if orch is not None else 0,
     )
 
 
 def _get_runtime() -> HouseRuntime:
-    global _runtime, _runtime_orch_id
+    global _runtime
     orch = get_orch()
     orch_id = id(orch) if orch is not None else 0
-    if _runtime is None or _runtime_orch_id != orch_id:
+    if _runtime is None or _runtime.orch_id != orch_id:
         _runtime = _build_runtime(orch)
-        _runtime_orch_id = orch_id
     return _runtime
 
 
