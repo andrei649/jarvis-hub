@@ -210,8 +210,6 @@ class CameraEventVault:
             )
         except VaultError as exc:
             raise CameraVaultError("vault_unavailable") from exc
-        finally:
-            key = ""
         self.root = self._vault.root
         self._last_sweep_at: float | None = None
         self.sweep(now=self._now())

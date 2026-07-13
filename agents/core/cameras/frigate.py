@@ -550,7 +550,4 @@ class _FrigateSnapshotSource:
             params=None,
             max_bytes=_MAX_SNAPSHOT_BYTES,
         )
-        try:
-            return self._privacy_policy.mask_frame(lease, raw)
-        finally:
-            raw = b""
+        return self._privacy_policy.mask_frame(lease, raw)

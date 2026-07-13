@@ -141,9 +141,6 @@ class CameraPipeline:
                 outcome.line_crossings,
                 "description_unavailable",
             )
-        finally:
-            frame = None
-
     @staticmethod
     def _result(
         event: CameraEvent,
