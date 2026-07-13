@@ -61,7 +61,7 @@ modify narrow plugin/egress manifests and lazy orchestrator wiring.
   routers, capabilities, or subscribers. Add an Agent Runtime/subscriber bypass test. Discard raw
   payload fields, credentials, paths, sublabels, faces, and plates at normalization.
 - [x] Add a short ADR recording the Frigate-over-custom-RTSP/NVR spike decision.
-- [ ] Add optional live local-Frigate probe as a named owner-gated check, never a fake pass.
+- [x] Add optional live local-Frigate probe as a named owner-gated check, never a fake pass.
 - [x] Run HTTP/egress/security/adapter tests, review, and commit.
 
 ## Task 3 — Optional ONVIF discovery, never ingest
@@ -122,7 +122,7 @@ surfaces and tests; update route/OpenAPI/auth/type/parity artifacts.
 - [x] HUD/mobile render time, type, camera/zone, confidence, and local-description provenance;
   tests assert no image/video element or background fetch is created.
 - [x] Run backend/frontend/mobile parity and type gates, review, and commit.
-- [ ] Update the H31.5 backlog text truthfully from “clip retrieval” to consent-safe temporal event
+- [x] Update the H31.5 backlog text truthfully from “clip retrieval” to consent-safe temporal event
   retrieval. Jarvis does not proxy/persist clips or expose Frigate private URLs in v1.
 
 ## Task 7 — H31.6 typed feeds into H30 and H33
@@ -145,17 +145,19 @@ publishers.
 **Create:** in-process Frigate simulator and `tests/test_h31_camera_reality.py`; modify the canonical
 reality registry and final truth files only now.
 
-- [ ] Prove no-consent zero calls, bounded poll, one qualifying snapshot, mask-before-consumer,
+- [x] Prove no-consent zero calls, bounded poll, one qualifying snapshot, mask-before-consumer,
   deterministic/on-demand local processing, encrypted storage, retrieval, 24h/30d expiry,
   stage-by-stage kill, offline degradation, typed feeds, and zero ungoverned/external/raw-frame
   actions.
-- [ ] Promote camera readiness only from the full hermetic real-seam pack. Live local Frigate is a
-  separately named optional probe.
-- [ ] Run all H31 plus vault/privacy/H30/H33 contracts, route/OpenAPI/auth/HUD parity, full
+- [x] Keep camera readiness non-promotable until owner-host validation; require the full canonical
+  hermetic real-seam pack as completion evidence. Live local Frigate is a separately named,
+  double-opt-in optional probe and absence is never a fake pass.
+- [x] Run all H31 plus vault/privacy/H30/H33 contracts, route/OpenAPI/auth/HUD parity, full
   frontend/mobile/Python, Ruff/Bandit/diff-check/status-sync.
-- [ ] Fresh final review; fix all Critical/Important findings with TDD.
-- [ ] Update H31.1-H31.5 and reality evidence; close H31.6 only after H33.1 integration. Push draft
-  PR, monitor CI, merge, then rebase the dependent horizon.
+- [x] Fresh final review; fix all Critical/Important findings with TDD. The review tightened the
+  canonical reality case from shortened fixture TTLs to the exact 24-hour/30-day boundaries.
+- [x] Update H31.1-H31.5 and reality evidence; close H31.6 only after H33.1 integration.
+- [ ] Push draft PR, monitor CI, merge, then rebase the dependent horizon.
 
 ## Rollback
 

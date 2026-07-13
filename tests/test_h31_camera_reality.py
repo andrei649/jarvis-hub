@@ -76,6 +76,8 @@ async def test_camera_reality_pack_proves_zero_bypass_and_privacy_contracts():
     assert by_name["camera-private-pipeline-and-feeds"]["masked_before_vlm"] is True
     assert by_name["camera-private-pipeline-and-feeds"]["encrypted_at_rest"] is True
     assert by_name["camera-private-pipeline-and-feeds"]["feed_restart_duplicates"] == 2
+    assert by_name["camera-private-pipeline-and-feeds"]["snapshot_ttl_seconds"] == 86_400
+    assert by_name["camera-private-pipeline-and-feeds"]["metadata_ttl_seconds"] == 2_592_000
     assert by_name["camera-private-pipeline-and-feeds"]["snapshot_expired_exactly"] is True
     assert by_name["camera-private-pipeline-and-feeds"]["metadata_expired_exactly"] is True
     assert by_name["camera-kill-switch-zero-host-calls"]["events_after_halt"] == 0

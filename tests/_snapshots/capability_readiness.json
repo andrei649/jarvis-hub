@@ -46,6 +46,7 @@
   "plugin:balance": "wired",
   "plugin:call_telnyx": "wired",
   "plugin:call_twilio": "wired",
+  "plugin:camera-frigate": "wired",
   "plugin:channel_google_chat": "wired",
   "plugin:channel_matrix": "wired",
   "plugin:channel_signal": "wired",

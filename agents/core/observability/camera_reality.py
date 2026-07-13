@@ -45,6 +45,8 @@ _FRIGATE_ORIGIN = "http://192.168.50.40:5000"
 _VLM_ENDPOINT = "http://127.0.0.1:11434/v1"
 _VAULT_KEY = "camera-reality-vault-key-material-that-is-long-enough"
 _FRIGATE_TOKEN = "-".join(("camera", "reality", "frigate", "fixture"))
+_SNAPSHOT_TTL = 24 * 60 * 60
+_METADATA_TTL = 30 * 24 * 60 * 60
 
 
 def _local_url(value: str) -> bool:
@@ -133,8 +135,8 @@ def _settings(now: float, *, consent: bool = True, ambient: bool = False) -> dic
                 "camera_id": _CAMERA_ID,
                 "name": "Front Door",
                 "required_consent_version": 2,
-                "snapshot_ttl_seconds": 10,
-                "metadata_ttl_seconds": 20,
+                "snapshot_ttl_seconds": _SNAPSHOT_TTL,
+                "metadata_ttl_seconds": _METADATA_TTL,
                 "masks": [
                     [[0.0, 0.0], [0.5, 0.0], [0.5, 1.0], [0.0, 1.0]],
                 ],
@@ -351,7 +353,7 @@ async def _probe_private_pipeline_and_feeds() -> dict[str, object]:
             snapshot_before = runtime.vault._load_masked_snapshot(
                 _CAMERA_ID,
                 _EVENT_ID,
-                now=now + 9.999,
+                now=now + _SNAPSHOT_TTL - 0.001,
             )
             encrypted = _encrypted_at_rest(
                 runtime.vault.root,
@@ -380,9 +382,12 @@ async def _probe_private_pipeline_and_feeds() -> dict[str, object]:
             snapshot_at_expiry = runtime.vault._load_masked_snapshot(
                 _CAMERA_ID,
                 _EVENT_ID,
-                now=now + 10.0,
+                now=now + _SNAPSHOT_TTL,
             )
-            metadata_at_expiry = runtime.vault.list_events(now=now + 20.0, limit=10)
+            metadata_at_expiry = runtime.vault.list_events(
+                now=now + _METADATA_TTL,
+                limit=10,
+            )
             passed = (
                 runtime.enabled
                 and ingestion.status == "ok"
@@ -414,6 +419,8 @@ async def _probe_private_pipeline_and_feeds() -> dict[str, object]:
             "masked_before_vlm": backend.masked_before_vlm,
             "encrypted_at_rest": encrypted,
             "feed_restart_duplicates": duplicate.duplicates,
+            "snapshot_ttl_seconds": _SNAPSHOT_TTL,
+            "metadata_ttl_seconds": _METADATA_TTL,
             "snapshot_expired_exactly": snapshot_at_expiry is None,
             "metadata_expired_exactly": metadata_at_expiry == (),
         },

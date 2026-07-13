@@ -10,18 +10,53 @@ import socket
 from agents import web
 
 # The fabricated constants the old _sys_info() returned when probes failed.
-_FABRICATIONS = ("BONOBO-WS", "RTX 5090", "Intel Core Ultra 9", "google/gemma-4-31b-a4b",
-                 "LM Studio · 1234")
+_FABRICATIONS = (
+    "BONOBO-WS",
+    "RTX 5090",
+    "Intel Core Ultra 9",
+    "google/gemma-4-31b-a4b",
+    "LM Studio · 1234",
+)
 
 
 def test_shape_is_stable():
     info = web._sys_info()
-    for k in ("host", "cpu", "ram_used", "ram_total", "gpu", "vram_used", "vram_total",
-              "gpu_load", "backend", "model", "uptime"):
+    for k in (
+        "host",
+        "cpu",
+        "ram_used",
+        "ram_total",
+        "gpu",
+        "vram_used",
+        "vram_total",
+        "gpu_load",
+        "backend",
+        "model",
+        "uptime",
+    ):
         assert k in info, f"missing readiness key {k}"
 
 
-def test_no_fabricated_hardware_or_model():
+def test_no_fabricated_hardware_or_model(monkeypatch):
+    """Failed probes must not fall back to the old demo constants.
+
+    The assertion is intentionally hermetic: an owner may genuinely run hardware whose
+    name matches an old demo value (for example an RTX 5090).
+    """
+    import platform
+    import shutil
+
+    import psutil
+
+    monkeypatch.setattr(socket, "gethostname", lambda: "")
+    monkeypatch.setattr(platform, "processor", lambda: "")
+    monkeypatch.setattr(shutil, "which", lambda _name: None)
+    monkeypatch.setattr(psutil, "cpu_count", lambda logical=True: None)
+
+    def unavailable_memory():
+        raise OSError("hardware probe unavailable")
+
+    monkeypatch.setattr(psutil, "virtual_memory", unavailable_memory)
     blob = repr(web._sys_info())
     for fake in _FABRICATIONS:
         assert fake not in blob, f"_sys_info still fabricates {fake!r}"
