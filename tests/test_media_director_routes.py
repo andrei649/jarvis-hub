@@ -5,6 +5,8 @@ overridden (their behavior is pinned by the auth-matrix gate), and the module
 singleton director is replaced per test so nothing persists to agents/data.
 """
 
+import os
+
 import pytest
 from fastapi.testclient import TestClient
 
@@ -12,8 +14,10 @@ from agents.core.media_director import (
     DeviceRegistry,
     MediaDevice,
     MediaDirector,
+    MediaError,
     MediaSession,
     SessionBoard,
+    resolve_content,
 )
 from agents.core.routers import media_director as media_routes
 
@@ -81,6 +85,72 @@ def test_every_endpoint_is_honestly_disabled_by_default(client, monkeypatch):
         payload = response.json()
         assert payload["enabled"] is False
         assert "JARVIS_MEDIA_DIRECTOR" in payload["hint"]
+
+
+def test_route_owned_director_binds_explicit_catalog_roots_and_url_allowlist(
+    monkeypatch, tmp_path
+):
+    from agents.core.media_catalog import MediaCatalog
+
+    root = tmp_path / "media"
+    root.mkdir()
+    catalog = MediaCatalog(tmp_path / "catalog.json")
+    monkeypatch.setenv("JARVIS_MEDIA_ROOTS", str(root))
+    monkeypatch.setenv("JARVIS_MEDIA_URL_ALLOWLIST", "93.184.216.34")
+    monkeypatch.setenv("JARVIS_MEDIA_CATALOG", "1")
+    monkeypatch.setattr(
+        "agents.core.media_catalog.default_catalog_if_enabled",
+        lambda: catalog,
+    )
+    monkeypatch.setattr(media_routes, "_director", None)
+
+    director = media_routes._get_director()
+
+    assert director._local_roots == (root.resolve(),)
+    assert director._catalog is catalog
+    assert resolve_content(
+        {"type": "url", "value": "https://93.184.216.34/media"},
+        browser=director._browser,
+    )["provenance"] == "direct"
+
+
+def test_route_owned_director_malformed_owner_settings_fail_closed(monkeypatch):
+    monkeypatch.setenv("JARVIS_MEDIA_ROOTS", "relative/path")
+    monkeypatch.setenv("JARVIS_MEDIA_URL_ALLOWLIST", "https://not-a-domain.example/path")
+    monkeypatch.delenv("JARVIS_MEDIA_CATALOG", raising=False)
+    monkeypatch.setattr(media_routes, "_director", None)
+
+    director = media_routes._get_director()
+
+    assert director._local_roots == ()
+    assert director._catalog is None
+    with pytest.raises(MediaError, match="url_refused"):
+        resolve_content(
+            {"type": "url", "value": "https://not-a-domain.example/path"},
+            browser=director._browser,
+        )
+
+
+def test_route_owned_director_mixed_valid_and_malformed_settings_fail_closed(
+    monkeypatch, tmp_path
+):
+    root = tmp_path / "media"
+    root.mkdir()
+    monkeypatch.setenv("JARVIS_MEDIA_ROOTS", f"{root}{os.pathsep}relative/path")
+    monkeypatch.setenv(
+        "JARVIS_MEDIA_URL_ALLOWLIST",
+        "93.184.216.34,https://invalid.example/path",
+    )
+    monkeypatch.setattr(media_routes, "_director", None)
+
+    director = media_routes._get_director()
+
+    assert director._local_roots == ()
+    with pytest.raises(MediaError, match="url_refused"):
+        resolve_content(
+            {"type": "url", "value": "https://93.184.216.34/media"},
+            browser=director._browser,
+        )
 
 
 def test_device_crud_when_enabled(client, monkeypatch):

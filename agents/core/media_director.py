@@ -28,6 +28,7 @@ import logging
 import math
 import threading
 import time
+from collections.abc import Mapping
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any, Protocol
@@ -54,6 +55,10 @@ URGENCIES = frozenset({"low", "normal", "high"})
 _MAX_DEVICES = 200
 _MAX_SESSIONS = 200
 _MAX_STORE_BYTES = 1_000_000
+_MAX_CONTENT_VALUE = 2_048
+_MAX_QUERY_VALUE = 256
+_MAX_CATALOG_CANDIDATES = 5
+_MAX_POLICY_REASON = 256
 
 logger = logging.getLogger(__name__)
 
@@ -65,11 +70,78 @@ def media_director_enabled() -> bool:
 class MediaError(Exception):
     """Refused media operation (unknown device, unresolvable content, no driver)."""
 
+    def __init__(self, reason: str, *, detail: dict | None = None) -> None:
+        self.reason = str(reason)[:_MAX_POLICY_REASON]
+        self.detail = dict(detail) if isinstance(detail, dict) else None
+        super().__init__(self.reason)
+
 
 # ── content resolution (pure; never fetches) ────────────────────────────────
 
 
-def resolve_content(content: Any, *, local_roots: tuple[Path, ...] = ()) -> dict:
+def _catalog_target(item: dict) -> dict:
+    value = item.get("path")
+    if not isinstance(value, str) or not value.strip():
+        raise MediaError("catalog_item_invalid")
+    value = value.strip()
+    ctype = "url" if urlparse(value).scheme.lower() in {"http", "https"} else "local"
+    return {"type": ctype, "value": value}
+
+
+def _candidate_metadata(items: list[dict]) -> list[dict]:
+    candidates = []
+    for item in items[:_MAX_CATALOG_CANDIDATES]:
+        created_at = item.get("created_at")
+        if isinstance(created_at, bool):
+            created_at = 0.0
+        try:
+            created_at = float(created_at)
+        except (OverflowError, TypeError, ValueError):
+            created_at = 0.0
+        if not math.isfinite(created_at):
+            created_at = 0.0
+        candidates.append(
+            {
+                "id": str(item.get("id", ""))[:64],
+                "kind": str(item.get("kind", ""))[:32],
+                "created_at": created_at,
+            }
+        )
+    return candidates
+
+
+def _canonical_navigation_preview(preview: Any) -> tuple[bool, str]:
+    if not isinstance(preview, Mapping):
+        return False, "governed browser preview is malformed"
+    steps = preview.get("steps")
+    if not isinstance(steps, list) or len(steps) != 1 or not isinstance(steps[0], Mapping):
+        return False, "governed browser preview is malformed"
+    step = steps[0]
+    reason = step.get("reason")
+    canonical = (
+        type(step.get("i")) is int
+        and step.get("i") == 0
+        and step.get("action") == "navigate"
+        and step.get("kind") == "read"
+        and step.get("decision") == "run"
+        and reason == ""
+        and type(preview.get("blocked")) is int
+        and preview.get("blocked") == 0
+        and type(preview.get("needs_approval")) is int
+        and preview.get("needs_approval") == 0
+    )
+    return canonical, str(reason or "governed browser preview is malformed")[:_MAX_POLICY_REASON]
+
+
+def resolve_content(
+    content: Any,
+    *,
+    local_roots: tuple[Path, ...] = (),
+    catalog=None,
+    browser=None,
+    _provenance: str = "direct",
+    _catalog_id: str = "",
+) -> dict:
     """Validate + normalize a content reference. Resolution never fetches —
     it only proves the reference is a shape we are willing to hand to a device.
 
@@ -85,10 +157,60 @@ def resolve_content(content: Any, *, local_roots: tuple[Path, ...] = ()) -> dict
     if not isinstance(value, str) or not value.strip():
         raise MediaError("content value is required")
     value = value.strip()
+    value_limit = _MAX_QUERY_VALUE if ctype == "query" else _MAX_CONTENT_VALUE
+    if len(value) > value_limit:
+        raise MediaError("content value exceeds its size limit")
+    if ctype == "catalog":
+        if catalog is None:
+            raise MediaError("media_catalog_disabled")
+        item = catalog.get(value)
+        if not isinstance(item, dict):
+            raise MediaError("catalog_item_missing")
+        return resolve_content(
+            _catalog_target(item),
+            local_roots=local_roots,
+            catalog=catalog,
+            browser=browser,
+            _provenance="catalog",
+            _catalog_id=str(item.get("id", ""))[:64],
+        )
+    if ctype == "query":
+        if catalog is None:
+            raise MediaError("media_catalog_disabled")
+        matches = catalog.search(value, limit=_MAX_CATALOG_CANDIDATES + 1)
+        if not matches:
+            raise MediaError(
+                "catalog_query_missing",
+                detail={"candidates": []},
+            )
+        if len(matches) != 1:
+            raise MediaError(
+                "catalog_query_ambiguous",
+                detail={"candidates": _candidate_metadata(matches)},
+            )
+        item = matches[0]
+        return resolve_content(
+            _catalog_target(item),
+            local_roots=local_roots,
+            catalog=catalog,
+            browser=browser,
+            _provenance="catalog_query",
+            _catalog_id=str(item.get("id", ""))[:64],
+        )
     if ctype == "url":
         scheme = urlparse(value).scheme.lower()
         if scheme not in ("http", "https"):
             raise MediaError(f"refusing non-http(s) url scheme: {scheme!r}")
+        try:
+            preview = browser.preview([{"action": "navigate", "url": value}])
+            allowed, policy_reason = _canonical_navigation_preview(preview)
+        except Exception:
+            allowed, policy_reason = False, "governed browser unavailable"
+        if not allowed:
+            raise MediaError(
+                "url_refused",
+                detail={"policy_reason": policy_reason},
+            )
     elif ctype == "local":
         if not local_roots:
             raise MediaError("no media.roots configured — local content is disabled")
@@ -98,10 +220,13 @@ def resolve_content(content: Any, *, local_roots: tuple[Path, ...] = ()) -> dict
         resolved = candidate.resolve()
         if not any(resolved.is_relative_to(root.resolve()) for root in local_roots):
             raise MediaError("local content escapes the configured media roots")
+        if not resolved.is_file():
+            raise MediaError("local content must be an existing regular file")
         value = str(resolved)
-    # "catalog" ids and "query" strings are opaque here: the driver (or the
-    # media catalog, when attached) decides whether it can serve them.
-    return {"type": ctype, "value": value}
+    resolved_content = {"type": ctype, "value": value, "provenance": _provenance}
+    if _catalog_id:
+        resolved_content["catalog_id"] = _catalog_id
+    return resolved_content
 
 
 # ── devices ──────────────────────────────────────────────────────────────────
@@ -416,6 +541,8 @@ class MediaDirector:
         sessions: SessionBoard | None = None,
         drivers: dict[str, MediaDriver] | None = None,
         local_roots: tuple[Path, ...] = (),
+        catalog=None,
+        browser=None,
         clock=None,
     ) -> None:
         self.registry = (
@@ -429,6 +556,8 @@ class MediaDirector:
         self._drivers = drivers or {}
         self._null = NullMediaDriver()
         self._local_roots = local_roots
+        self._catalog = catalog
+        self._browser = browser
         self._clock = clock or time.time
 
     def driver_for(self, device: MediaDevice) -> MediaDriver:
@@ -471,10 +600,18 @@ class MediaDirector:
         if denial is not None:
             return {"ok": False, "reason": denial}
         try:
-            content = resolve_content(payload["content"], local_roots=self._local_roots)
+            content = resolve_content(
+                payload["content"],
+                local_roots=self._local_roots,
+                catalog=self._catalog,
+                browser=self._browser,
+            )
             device = self.registry.resolve_target(str(payload["target"]))
         except MediaError as exc:
-            return {"ok": False, "reason": str(exc)}
+            refusal = {"ok": False, "reason": exc.reason}
+            if exc.detail is not None:
+                refusal["detail"] = exc.detail
+            return refusal
 
         mode = payload.get("mode", "play")
         if mode not in device.supports:

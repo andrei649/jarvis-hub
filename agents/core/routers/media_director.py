@@ -8,6 +8,11 @@ refuse rather than bypassing mediation.
 
 from __future__ import annotations
 
+import ipaddress
+import os
+import re
+from pathlib import Path
+
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel, Field
 
@@ -17,14 +22,70 @@ from agents.core.web_helpers import error_json, nocache_json
 router = APIRouter(tags=["media"])
 
 _director = None
+_DOMAIN_RE = re.compile(
+    r"^(?=.{1,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)*"
+    r"[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$",
+    re.IGNORECASE,
+)
+
+
+def _configured_media_roots(env=None) -> tuple[Path, ...]:
+    from agents.core.env_config import env_str
+
+    raw = (
+        env_str("JARVIS_MEDIA_ROOTS")
+        if env is None
+        else str(env.get("JARVIS_MEDIA_ROOTS", ""))
+    ).strip()
+    if not raw:
+        return ()
+    roots = []
+    for item in raw.split(os.pathsep):
+        candidate = Path(item.strip())
+        if not item.strip() or not candidate.is_absolute() or not candidate.is_dir():
+            return ()
+        roots.append(candidate.resolve())
+    return tuple(roots)
+
+
+def _configured_url_allowlist(env=None) -> list[str]:
+    from agents.core.env_config import env_str
+
+    raw = (
+        env_str("JARVIS_MEDIA_URL_ALLOWLIST")
+        if env is None
+        else str(env.get("JARVIS_MEDIA_URL_ALLOWLIST", ""))
+    ).strip()
+    if not raw:
+        return []
+    domains = []
+    for item in raw.split(","):
+        domain = item.strip().lower().lstrip(".")
+        if not domain:
+            return []
+        try:
+            ipaddress.ip_address(domain)
+        except ValueError:
+            if not _DOMAIN_RE.fullmatch(domain):
+                return []
+        domains.append(domain)
+    return domains
 
 
 def _get_director():
     global _director
     if _director is None:
+        from agents.core.browser_agent import BrowserPolicy, GovernedBrowser
+        from agents.core.media_catalog import default_catalog_if_enabled
         from agents.core.media_director import MediaDirector
 
-        _director = MediaDirector()
+        _director = MediaDirector(
+            local_roots=_configured_media_roots(),
+            catalog=default_catalog_if_enabled(),
+            browser=GovernedBrowser(
+                policy=BrowserPolicy(_configured_url_allowlist()),
+            ),
+        )
     return _director
 
 
