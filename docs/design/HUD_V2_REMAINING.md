@@ -177,6 +177,12 @@ queued, denied, or unverified outcome. Native mobile parity is read-first with a
 and intentionally has no security confirmation shortcut. The HUD parity gate pins every user route
 to the Home surface.
 
+**H31.5 Camera Intelligence (2026-07-13):** the default-off `/api/cameras/*` surface is live in
+the Home cluster. `CameraPanel` shows only bounded time/type/camera/zone/confidence metadata and
+optional strict-local description provenance, with deterministic temporal search. It creates no
+image/video/embed or private media request. Admin-authenticated ONVIF discovery is onboarding-only;
+native parity covers status, recent events, and private-body search without an admin shortcut.
+
 **H28.4 desktop actuation (2026-07-13):** `POST /api/desktop/run` is user-guarded and
 default-off behind the isolated-host double opt-in. The Build surface still needs a dedicated
 Operator control that distinguishes proposed, queued, blocked, failed, and executed steps;

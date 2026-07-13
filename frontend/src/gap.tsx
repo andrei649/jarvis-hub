@@ -1978,6 +1978,123 @@ export function HousePanel() {
   );
 }
 
+/* H31.5 — camera intelligence is a metadata-only household sensor surface.
+   It never renders or fetches a frame, snapshot, clip, stream, or private URL. */
+export function CameraPanel() {
+  const status = useApi('/api/cameras/status');
+  const recent = useApi('/api/cameras/events');
+  const data = status.d || {};
+  const loaded = !!status.d;
+  const enabled = loaded && !!data.enabled;
+  const [query, setQuery] = useState('');
+  const [searchResult, setSearchResult] = useState(null);
+  const [searchError, setSearchError] = useState('');
+  const [searching, setSearching] = useState(false);
+  const [discovery, setDiscovery] = useState(null);
+  const [discoveryError, setDiscoveryError] = useState('');
+  let hasAdmin = false;
+  try { hasAdmin = !!localStorage.getItem('hud.admin_token'); } catch { /* unavailable */ }
+
+  const source = searchResult || recent.d || {};
+  const events = arr(source, 'events').slice(0, 100);
+  const search = (event) => {
+    event.preventDefault();
+    const text = query.trim();
+    if (!text) return;
+    setSearching(true);
+    setSearchError('');
+    apiPost('/api/cameras/search', { query: text, limit: 100 })
+      .then(setSearchResult)
+      .catch((err) => setSearchError(err?.message || 'camera search failed'))
+      .finally(() => setSearching(false));
+  };
+  const discover = () => {
+    setDiscovery(null);
+    setDiscoveryError('');
+    apiPost('/api/cameras/onvif/discover', {}, { admin: true })
+      .then(setDiscovery)
+      .catch((err) => setDiscoveryError(err?.message || 'ONVIF discovery failed'));
+  };
+  const reload = () => {
+    status.reload();
+    recent.reload();
+    setSearchResult(null);
+  };
+
+  return (
+    <Card
+      title="CAMERA INTELLIGENCE"
+      live={asLive(loaded, enabled && data.status === 'healthy')}
+      sub={loaded ? `${data.status || 'unknown'} · ${events.length} events` : null}
+      onReload={reload}
+    >
+      <State e={status.e || recent.e} loading={status.loading || recent.loading} n={loaded && !enabled ? undefined : events.length} />
+      {loaded && !enabled && (
+        <div style={{ fontSize: 10, color: 'var(--ink-3)', marginTop: 6 }}>
+          Camera Intelligence is off · {data.reason || 'owner opt-in and household consent are required'}
+        </div>
+      )}
+      {enabled && <>
+        <div style={{ ...mono, color: 'var(--ink-3)', fontSize: 10, margin: '4px 0' }}>
+          METADATA ONLY · {data.source?.status || 'source unavailable'} · {Number(data.source?.camera_count || 0)} cameras
+        </div>
+        <form onSubmit={search} style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: 6, marginBottom: 8 }}>
+          <input
+            aria-label="camera search"
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+            maxLength={256}
+            placeholder="courier yesterday · package last 2 hours"
+            style={inpS}
+          />
+          <button className="tool-btn" type="submit" disabled={!query.trim() || searching} aria-label="Search camera events">
+            {searching ? 'searching…' : 'search'}
+          </button>
+        </form>
+        {searchError && <div role="alert" style={{ ...mono, color: 'var(--danger)' }}>{searchError}</div>}
+        {searchResult && events.length === 0 && (
+          <div style={{ fontSize: 10, color: 'var(--ink-3)', marginBottom: 6 }}>No matching camera events.</div>
+        )}
+        {events.map((item) => {
+          const occurred = Number(item.occurred_at);
+          const when = Number.isFinite(occurred) ? new Date(occurred * 1000).toLocaleString() : 'unknown time';
+          const confidence = Math.round(Math.max(0, Math.min(1, Number(item.confidence) || 0)) * 100);
+          return (
+            <Row key={`${item.camera_id}:${item.event_id}`}>
+              <div style={{ minWidth: 0 }}>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5, alignItems: 'center' }}>
+                  <span style={{ ...mono, color: 'var(--accent-light)' }}>{item.camera_id}</span>
+                  <Tag>{item.label}</Tag>
+                  {item.zone && <Tag>{item.zone}</Tag>}
+                  {item.room_id && <Tag>{item.room_id}</Tag>}
+                  <Tag>{confidence}%</Tag>
+                </div>
+                <div style={{ fontSize: 10, color: 'var(--ink-3)', marginTop: 3 }}>{when}</div>
+                {item.description && <div style={{ fontSize: 11, color: 'var(--ink-2)', marginTop: 4 }}>{item.description}</div>}
+                {item.description_provenance && (
+                  <div style={{ ...mono, fontSize: 9, color: 'var(--ink-3)', marginTop: 2 }}>
+                    {String(item.description_provenance).split('_').join(' ')}
+                  </div>
+                )}
+              </div>
+            </Row>
+          );
+        })}
+        {hasAdmin && <section aria-label="admin ONVIF discovery" style={{ marginTop: 10 }}>
+          <button className="tool-btn" type="button" onClick={discover} aria-label="Discover ONVIF cameras">discover ONVIF cameras</button>
+          {discoveryError && <div role="alert" style={{ ...mono, color: 'var(--danger)', marginTop: 5 }}>{discoveryError}</div>}
+          {arr(discovery, 'devices').slice(0, 64).map((device) => (
+            <Row key={device.device_id}>
+              <span style={{ ...mono, color: 'var(--ink-2)' }}>{device.name}</span>
+              <span style={{ marginLeft: 'auto' }}><Tag>{device.host}:{device.port}</Tag>{device.mapped && <Tag>mapped</Tag>}</span>
+            </Row>
+          ))}
+        </section>}
+      </>}
+    </Card>
+  );
+}
+
 /* 0.37 — the ingestion-provenance read surface (GET /api/ingestion/provenance, admin).
    Renders recent provenance records + by-source stats. Honesty contract: when
    JARVIS_PROVENANCE is off the endpoint reports enabled:false and the panel says so
@@ -2313,7 +2430,7 @@ export function FirstRunGate({ onClose }) {
 
 const SECTIONS: Array<[string, Array<() => any>]> = [
   ['Start', [CommandCenterPanel]],
-  ['Home', [HousePanel]],
+  ['Home', [HousePanel, CameraPanel]],
   ['Memory', [DataSpacesPanel, LocalDocsPanel, NotesPanel, KgPanel, CapturePanel, ReflectionPanel, ProvenancePanel]],
   ['Trust', [KillSwitchPanel, KernelMetricsPanel, ReadinessPanel, LoopBreakerPanel, GovernancePanel, PosturePanel, SecuritySkillsPanel, NetworkMonitorPanel, CommsRatePanel, SafeCommsDraftPanel, SecretsPanel, CapabilitiesPanel, PairingPanel, InjectionScanPanel]],
   ['Interop', [A2AInboxPanel, MeshPeersPanel, SatellitesPanel, OraclePanel, MarketplacePanel, SkillHistoryPanel, WatchlistPanel]],

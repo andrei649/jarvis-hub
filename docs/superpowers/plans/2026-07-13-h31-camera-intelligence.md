@@ -114,14 +114,14 @@ that injected runtime into the router and support-bundle surfaces; the vault is 
 **Create:** `agents/core/cameras/retrieval.py`, `agents/core/routers/cameras.py`, camera HUD/mobile
 surfaces and tests; update route/OpenAPI/auth/type/parity artifacts.
 
-- [ ] Red tests: temporal label/zone/room/camera queries, bounded deterministic NL parsing,
+- [x] Red tests: temporal label/zone/room/camera queries, bounded deterministic NL parsing,
   ambiguity/empty/degraded states, user/admin guards, and absence of bytes, vault ids, paths,
   RTSP URLs, credentials, or private snapshot URLs.
-- [ ] Add metadata-only status/events/search endpoints plus admin-only ONVIF discovery. H31 v1 has
+- [x] Add metadata-only status/events/search endpoints plus admin-only ONVIF discovery. H31 v1 has
   no raw snapshot endpoint.
-- [ ] HUD/mobile render time, type, camera/zone, confidence, and local-description provenance;
+- [x] HUD/mobile render time, type, camera/zone, confidence, and local-description provenance;
   tests assert no image/video element or background fetch is created.
-- [ ] Run backend/frontend/mobile parity and type gates, review, and commit.
+- [x] Run backend/frontend/mobile parity and type gates, review, and commit.
 - [ ] Update the H31.5 backlog text truthfully from “clip retrieval” to consent-safe temporal event
   retrieval. Jarvis does not proxy/persist clips or expose Frigate private URLs in v1.
 
