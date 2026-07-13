@@ -335,9 +335,9 @@ class SandboxVerifier:
             self._write_private(source / "test_generated.py", package.test_code)
             self._write_private(contract_dir / "contract_test.py", self.contract_test_source(contract))
             # Both directories are read-only bind mounts for the isolated non-host UID.
-            # codeql[py/overly-permissive-file]
+            # lgtm[py/overly-permissive-file]
             os.chmod(source, 0o555)  # nosec B103
-            # codeql[py/overly-permissive-file]
+            # lgtm[py/overly-permissive-file]
             os.chmod(contract_dir, 0o555)  # nosec B103
 
             prefix = f"jarvis-acq-{package.artifact_id[:10]}"
@@ -466,7 +466,7 @@ class SandboxVerifier:
         # Transient bind-mounted source is readable by the sandbox's non-host UID,
         # but the mount itself is read-only and the entire directory is deleted
         # immediately after verification.
-        # codeql[py/overly-permissive-file]
+        # lgtm[py/overly-permissive-file]
         os.chmod(path, 0o444)
 
 

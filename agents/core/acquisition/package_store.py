@@ -111,13 +111,13 @@ class AcquiredPackageStore:
         files = [
             {
                 "path": "main.py",
-                "mode": 0o444,
+                "mode": 0o400,
                 "size": len(package.code.encode("utf-8")),
                 "sha256": package.source_hash,
             },
             {
                 "path": "test_generated.py",
-                "mode": 0o444,
+                "mode": 0o400,
                 "size": len(package.test_code.encode("utf-8")),
                 "sha256": package.test_hash,
             },
@@ -169,31 +169,26 @@ class AcquiredPackageStore:
 
             temporary = Path(tempfile.mkdtemp(prefix=".install-", dir=self.root)).resolve()
             try:
-                self._write(temporary / "main.py", package.code.encode("utf-8"), 0o444)
+                self._write(temporary / "main.py", package.code.encode("utf-8"))
                 self._write(
                     temporary / "test_generated.py",
                     package.test_code.encode("utf-8"),
-                    0o444,
                 )
                 self._write(
                     temporary / "ACQUIRED_SANDBOX_ONLY",
                     b"execution_mode=acquired_sandbox\n",
-                    0o444,
                 )
                 self._write(
                     temporary / "manifest.json",
                     json.dumps(manifest, sort_keys=True, separators=(",", ":")).encode("utf-8"),
-                    0o444,
                 )
                 self._write(
                     temporary / "signature.json",
                     json.dumps(asdict(signature), sort_keys=True, separators=(",", ":")).encode("utf-8"),
-                    0o444,
                 )
-                # The digest-pinned container runs as a non-host UID and needs read/execute
-                # access to this read-only bind mount; package members remain immutable.
-                # codeql[py/overly-permissive-file]
-                os.chmod(temporary, 0o555)  # nosec B103
+                # The permanent store is owner-only. Runtime execution uses a separately
+                # verified ephemeral projection, never this directory as a bind mount.
+                os.chmod(temporary, 0o700)  # nosec B103  # nosemgrep: python.lang.security.audit.insecure-file-permissions.insecure-file-permissions
                 target.parent.mkdir(parents=True, exist_ok=True)
                 if target.exists():
                     self._remove_tree(target)
@@ -478,11 +473,9 @@ class AcquiredPackageStore:
             raise PackageStoreError("acquired package path escapes store") from exc
 
     @staticmethod
-    def _write(path: Path, content: bytes, mode: int) -> None:
+    def _write(path: Path, content: bytes) -> None:
         path.write_bytes(content)
-        # Signed package members are read-only bind mounts for an isolated non-host UID.
-        # codeql[py/overly-permissive-file]
-        os.chmod(path, mode)
+        os.chmod(path, 0o400)
 
     @staticmethod
     def _remove_tree(path: Path) -> None:
@@ -492,7 +485,7 @@ class AcquiredPackageStore:
         def retry(function, value, _error):
             with suppress(OSError):
                 # Owner-only access is the least privilege that still permits cleanup.
-                # codeql[py/overly-permissive-file]
+                # lgtm[py/overly-permissive-file]
                 os.chmod(value, 0o700)  # nosec B103  # nosemgrep: python.lang.security.audit.insecure-file-permissions.insecure-file-permissions
                 function(value)
 

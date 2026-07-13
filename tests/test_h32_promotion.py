@@ -6,6 +6,7 @@ import asyncio
 import os
 import stat
 from dataclasses import asdict, replace
+from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
@@ -161,7 +162,8 @@ async def test_package_manifest_covers_every_member_and_store_is_sandbox_only(tm
     }
     assert all(set(row) == {"path", "mode", "size", "sha256"} for row in record.manifest["files"])
     assert (record.path / "ACQUIRED_SANDBOX_ONLY").exists()
-    assert stat.S_IMODE(record.path.stat().st_mode) == 0o555
+    if os.name == "posix":
+        assert stat.S_IMODE(record.path.stat().st_mode) == 0o700
 
     skills_root = tmp_path / "skills"
     skills_root.mkdir()
@@ -419,9 +421,17 @@ class _SandboxRunner:
     def __init__(self, output):
         self.output = output
         self.commands = []
+        self.source_snapshots = []
 
     async def run(self, command, *, container_name):
         self.commands.append((command, container_name))
+        source_mount = next(
+            value
+            for value in command
+            if value.startswith("type=bind,source=") and "target=/workspace/source" in value
+        )
+        source = Path(source_mount.split("source=", 1)[1].split(",target=", 1)[0])
+        self.source_snapshots.append((source, (source / "main.py").read_bytes()))
         return SandboxExecution(0, self.output, "", False, 0.1)
 
 
@@ -449,6 +459,9 @@ async def test_acquired_runtime_rechecks_signature_profile_enabled_and_records_o
         "execution.completed",
     ]
     assert "--network" in runner.commands[0][0]
+    assert runner.source_snapshots[0][0] != packages.get(package.name).path
+    assert runner.source_snapshots[0][1] == package.code.encode("utf-8")
+    assert runner.source_snapshots[0][0].exists() is False
 
     runner.output = "invalid envelope"
     with pytest.raises(PackageStoreError, match="envelope missing"):

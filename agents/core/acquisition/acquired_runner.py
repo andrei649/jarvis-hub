@@ -71,6 +71,7 @@ class AcquiredSandboxRunner:
                 or record.manifest.get("runtime_config_hash") != self.profile.config_hash
             ):
                 raise PackageStoreError("acquired runtime attestation mismatch")
+            source_bytes = self._signed_member(record, "main.py")
         except PackageStoreError:
             with self._suppress_outcome_error():
                 self.packages.record_outcome(name, success=False)
@@ -86,19 +87,24 @@ class AcquiredSandboxRunner:
 
         self.runtime_root.mkdir(parents=True, exist_ok=True)
         with tempfile.TemporaryDirectory(prefix="acq-run-", dir=self.runtime_root) as temporary:
+            source = Path(temporary) / "source"
             contract = Path(temporary) / "contract"
+            source.mkdir()
             contract.mkdir()
+            self._write(source / "main.py", source_bytes)
             self._write(contract / "input.json", payload)
             self._write(
                 contract / "invoke.py",
                 self._invocation_source(record.manifest["entrypoint"]).encode("utf-8"),
             )
-            # Ephemeral contract input is a read-only bind mount for the isolated UID.
-            # codeql[py/overly-permissive-file]
+            # Ephemeral projections are read-only bind mounts for the isolated UID.
+            # lgtm[py/overly-permissive-file]
+            os.chmod(source, 0o555)  # nosec B103
+            # lgtm[py/overly-permissive-file]
             os.chmod(contract, 0o555)  # nosec B103
             container_name = f"jarvis-acq-run-{uuid.uuid4().hex[:12]}"
             command = self.profile.build_command(
-                source_dir=record.path,
+                source_dir=source,
                 contract_dir=contract,
                 container_name=container_name,
                 command=["python", "-I", "/workspace/contract/invoke.py"],
@@ -193,9 +199,27 @@ class AcquiredSandboxRunner:
     @staticmethod
     def _write(path: Path, content: bytes) -> None:
         path.write_bytes(content)
-        # Ephemeral contract members must be readable by the isolated non-host UID.
-        # codeql[py/overly-permissive-file]
+        # Ephemeral members must be readable by the isolated non-host UID.
+        # lgtm[py/overly-permissive-file]
         os.chmod(path, 0o444)
+
+    @staticmethod
+    def _signed_member(record, member: str) -> bytes:
+        metadata = next(
+            (row for row in record.manifest.get("files", []) if row.get("path") == member),
+            None,
+        )
+        if metadata is None:
+            raise PackageStoreError(f"signed acquired package member missing: {member}")
+        try:
+            content = (record.path / member).read_bytes()
+        except OSError as exc:
+            raise PackageStoreError(f"cannot read signed acquired package member: {member}") from exc
+        if len(content) != metadata.get("size") or hashlib.sha256(content).hexdigest() != metadata.get(
+            "sha256"
+        ):
+            raise PackageStoreError(f"signed acquired package member changed: {member}")
+        return content
 
     @staticmethod
     def _suppress_outcome_error():

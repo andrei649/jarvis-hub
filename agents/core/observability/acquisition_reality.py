@@ -293,9 +293,9 @@ async def _run_s2(*, root: Path, image: str) -> dict[str, object]:
     tamper_refused = tampered.get("ok") is False and tampered.get("reason") == "tool_error"
     _require(tamper_refused, "runtime accepted a tampered signed package")
     main_path.write_bytes(package.code.encode("utf-8"))
-    # The restored signed member remains a read-only bind mount for the sandbox UID.
-    # codeql[py/overly-permissive-file]
-    os.chmod(main_path, 0o444)
+    # The restored signed member remains immutable under its owner-only ancestor.
+    # lgtm[py/overly-permissive-file]
+    os.chmod(main_path, 0o400)
     _require(packages.verify(package.name), "restored package did not re-verify")
 
     upgrade_rollback_verified = await _prove_upgrade_rollback(
