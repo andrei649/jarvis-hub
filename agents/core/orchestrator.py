@@ -309,10 +309,12 @@ class Orchestrator:
         # These were dataclass defaults (50/200/4); live-resynced each tick by the
         # autonomy coordinator (like autonomy.mode).
         from .settings_db import get_value as _gv
-        from .ambient.policy import AttentionLedger
+        from .ambient.policy import AttentionLedger, bounded_attention_allowance
         from .paths import data_path as _attention_path
 
-        interrupt_limit = int(_gv("autonomy", "interrupt_budget", 4))
+        interrupt_limit = bounded_attention_allowance(
+            _gv("autonomy", "interrupt_budget", 4)
+        )
         self.attention_ledger = AttentionLedger(
             _attention_path("ambient", "attention.db"),
             timezone_name=str(_gv("general", "timezone", "Europe/Bucharest")),

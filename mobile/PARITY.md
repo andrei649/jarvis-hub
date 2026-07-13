@@ -54,6 +54,7 @@ intentionally owner-HUD-only; native clients expose no discovery, frame, stream,
 | House Brain (H30.5, default-off) | `GET /api/house/state`, `POST /api/house/control/{light,climate,security}`, admin-only `/api/house/security/{task_id}/{challenge,confirm}` | ✅ | ✅ | H30.5 |
 | Camera Intelligence (H31.5, default-off, metadata-only) | `GET /api/cameras/{status,events}`, `POST /api/cameras/search`, admin-only `POST /api/cameras/onvif/discover` | ✅ | ✅ | H31.5 |
 | Governed Capability Acquisition (H32.6, default-off) | user `GET /api/acquisition/{status,events}`; admin-only revoke, rollback, ledger export/purge | ✅ | ✅ | H32.6 |
+| Ambient Watch (H33.6, default-off, redacted) | user `GET /api/ambient/monitors`; admin-only monitor create/update/delete | ✅ | ✅ | H33.6 |
 | Windows server-host desktop actuation (intentionally desktop-only; a phone must not control the server's desktop) | `POST /api/desktop/run` | ✅ | ➖ | — |
 | Auth (user/admin tokens) | `X-User-Token`, `X-Admin-Token` headers | ✅ | ✅ | H18.1 / H18.11 |
 
@@ -77,6 +78,11 @@ intentionally owner-HUD-only; native clients expose no discovery, frame, stream,
 > shows lifecycle counts, reuse rate, signed sandbox-only package metadata, and bounded audit event
 > metadata over the shared user endpoints. Permanent approval, revoke/rollback, and ledger
 > export/purge remain in the owner HUD's separately authenticated admin zone.
+
+> **H33.6 ✅ (delivered):** native Ambient Watch parity is intentionally read-only. The Watch tab
+> shows bounded monitor/source health, the last redacted policy decision, per-rung counts, and the
+> single global attention budget. Predicate values, subjects, event fingerprints/content,
+> recipients, and admin monitor mutations remain on the owner hub.
 
 > Rows with an empty **Task** cell are tracked-but-unscheduled parity gaps. When one becomes
 > worth doing on mobile, give it an `H18.x` id in `BACKLOG.md` and fill the cell. Surfaces marked

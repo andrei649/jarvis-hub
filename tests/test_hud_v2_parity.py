@@ -111,6 +111,7 @@ RULES = [
     ("/api/media", "build"),  # governed generation + live Media Director panel (H12.24/H29)
     ("/api/house", "home"),  # H30 House Brain state + governed proposals/owner ceremony
     ("/api/cameras", "home"),  # H31 local camera metadata + privacy-safe temporal search
+    ("/api/ambient", "home"),  # H33 redacted live-monitor and decision transparency
     ("/api/acquisition", "build"),  # H32 governed capability lifecycle + hash-only audit
     # observe (traces / eval / quality / review / arena / resilience / bench / cost)
     ("/api/traces", "observe"),

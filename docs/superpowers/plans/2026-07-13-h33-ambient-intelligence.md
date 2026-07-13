@@ -54,109 +54,109 @@ focused tests.
 `AttentionDeliveryBroker`; modify narrow autonomy
 worker/policy/queue seams and focused tests.
 
-- [ ] Red tests for all rung semantics, hard-floor precedence, confidence/taint downgrade,
+- [x] Red tests for all rung semantics, hard-floor precedence, confidence/taint downgrade,
   ask-without-push, interrupt-with-push, exhaustion downgrade to ask, quiet hours, concurrency,
   restart/day rollover, clock rollback, and atomic <=4/day across every unsolicited channel.
-- [ ] `ignore` counts without content; `remember` stores sanitized fact; `monitor` updates state;
+- [x] `ignore` counts without content; `remember` stores sanitized fact; `monitor` updates state;
   `act_silently` permits only reversible allowlisted verified/rollbackable actions; `ask` creates a
   Decision Inbox/digest item without push; `interrupt` adds an immediate budgeted push.
-- [ ] Make the delivery broker the only unsolicited-delivery choke point for Telegram,
+- [x] Make the delivery broker the only unsolicited-delivery choke point for Telegram,
   CallBroker, legacy/autonomy pushes, and ambient interrupts. Persist unique delivery ids and
   `reserved -> dispatching -> delivered | failed` transactions under SQLite concurrency.
   Reservation immediately debits admission. Only failure proven before dispatch may release it;
   crash/timeout after dispatch begins conservatively stays spent unless a provider idempotency key
   and status reconciliation proves non-delivery. Ledger unavailable/corrupt downgrades to ask.
   Remove independent `consume()` paths.
-- [ ] AttentionLedger stores only opaque delivery/task id, channel class, state, reservation/
+- [x] AttentionLedger stores only opaque delivery/task id, channel class, state, reservation/
   dispatch/delivery timestamps, day/window id and bounded failure category; never body, recipient,
   phone/chat id, event attributes, room/camera label, or provider payload. At-rest scan tests prove
   absence; HUD resolves safe labels through privacy-filtered owner projections.
-- [ ] Persist task `attention_mode = none | digest | interrupt`: ask creates a blocked Inbox/digest
+- [x] Persist task `attention_mode = none | digest | interrupt`: ask creates a blocked Inbox/digest
   task without reserving delivery; only interrupt calls the broker. Critical alerts never bypass
   an exhausted budget and downgrade to ask.
-- [ ] Use owner IANA timezone plus monotonic persisted day sequence; handle ambiguous/nonexistent
+- [x] Use owner IANA timezone plus monotonic persisted day sequence; handle ambiguous/nonexistent
   DST time and prevent clock rollback/restart from reopening an earlier allowance.
-- [ ] Test crash before dispatch, crash after provider acceptance before commit, ambiguous timeout,
+- [x] Test crash before dispatch, crash after provider acceptance before commit, ambiguous timeout,
   duplicate retry, provider reconciliation, restart, and concurrent processes; actual/ambiguous
   interruptions can never exceed four admissions per persisted day.
-- [ ] H30 security, money, irreversible, low-confidence, and tainted actions can never silently
+- [x] H30 security, money, irreversible, low-confidence, and tainted actions can never silently
   actuate. Every side effect re-enters CapabilityActionAPI/kernel at execution.
-- [ ] AmbientEngine only emits a canonical governed TaskQueue proposal with monitor/rung/event
+- [x] AmbientEngine only emits a canonical governed TaskQueue proposal with monitor/rung/event
   provenance; it never calls a broker/driver. The registered TaskExecutor revalidates monitor
   version, current event/state, consent, kill-switch, capability binding and policy, then invokes
   Action API/kernel.
-- [ ] Every task carries immutable ambient generation and monitor-version hash. Disabling ambient
+- [x] Every task carries immutable ambient generation and monitor-version hash. Disabling ambient
   atomically advances/revokes the generation and source ownership, stops intake, and makes pending/
   approved tasks non-runnable. TaskExecutor rechecks `ambient.enabled`, generation, monitor hash,
   source ownership, and current policy immediately before Action API and again before mutation.
   Compensation remains allowed/audited after disable.
-- [ ] Test disable after queue, after approval, during handler, restart with approved task, final
+- [x] Test disable after queue, after approval, during handler, restart with approved task, final
   pre-mutation revocation, and compensation after disable.
-- [ ] Silent eligibility uses a static capability allowlist and requires bound postcondition
+- [x] Silent eligibility uses a static capability allowlist and requires bound postcondition
   verification plus automatic rollback/restore handler. Missing proof downgrades to ask. Exclude
   media, calls, messages, visible displays, and all attention-producing actions. Partial failure
   runs verified compensation or records `manual_recovery_required`, never transport-only success.
-- [ ] Run worker/policy/K3/concurrency tests, review, and commit.
+- [x] Run worker/policy/K3/concurrency tests, review, and commit.
 
 ## Task 3 — H33.3 privacy-safe situation memory with provenance and decay
 
 **Create:** `agents/core/ambient/memory.py`, focused tests; reuse private house/camera projections,
 bi-temporal KG for non-sensitive facts, and DecayMemory.
 
-- [ ] Red tests for temporal correlation, source provenance, valid/observed time, privacy filters,
+- [x] Red tests for temporal correlation, source provenance, valid/observed time, privacy filters,
   consent purge, decay, contradiction, restart, and no raw/private payload leakage.
-- [ ] Project only schema-allowlisted sanitized situations. Sensitive house facts stay in H30's
+- [x] Project only schema-allowlisted sanitized situations. Sensitive house facts stay in H30's
   private store; camera facts remain anonymous metadata.
-- [ ] Answer repeated-observation queries without claiming anonymous person events are the same
+- [x] Answer repeated-observation queries without claiming anonymous person events are the same
   individual. Re-identification remains absent.
-- [ ] Link decay and deletion across derived relations so purge/revocation cannot resurrect facts.
-- [ ] Run KG/private-store/decay/privacy tests, review, and commit.
+- [x] Link decay and deletion across derived relations so purge/revocation cannot resurrect facts.
+- [x] Run KG/private-store/decay/privacy tests, review, and commit.
 
 ## Task 4 — H33.4 core reality pack, scale, and counter-metrics
 
-- [ ] Hermetic 1/10/100-monitor scenarios prove bounded memory/latency/queues, idempotency,
+- [x] Hermetic 1/10/100-monitor scenarios prove bounded memory/latency/queues, idempotency,
   hysteresis, durable debounce, persistent <=4 interrupts, ask/interrupt separation, taint
   containment, kill-switch, and zero action bypass.
-- [ ] Gate 1/10/100 scenarios at <=64 MiB incremental memory, <=100 ms p95 decision latency for
+- [x] Gate 1/10/100 scenarios at <=64 MiB incremental memory, <=100 ms p95 decision latency for
   bounded local fixtures, zero dropped critical transitions, and queue depth within configured
   caps at 10 events/second/source. Report environment and raw measurements.
-- [ ] Record per-rung decisions, true pushes, verified actions, rollback, rejects, and downgrades.
+- [x] Record per-rung decisions, true pushes, verified actions, rollback, rejects, and downgrades.
   Do not infer pushes from a boolean task field or general `updated_at`.
-- [ ] Preserve north-star interrupt/reject guardrails as monitors multiply and surface confidence
+- [x] Preserve north-star interrupt/reject guardrails as monitors multiply and surface confidence
   intervals/sample sizes honestly.
-- [ ] Replace north-star push reads with committed AttentionLedger delivery timestamps; retain
+- [x] Replace north-star push reads with committed AttentionLedger delivery timestamps; retain
   TaskQueue only for accepted/rejected action outcomes. Report pushes, calls, failures, released
   reservations, downgraded interrupts, and ambient action results separately.
-- [ ] Run reality/north-star/load/soak gates, review, and commit.
+- [x] Run reality/north-star/load/soak gates, review, and commit.
 
 ## Task 5 — H33.5 night-shift v2 and quiet-hours behavior
 
-- [ ] Red tests use the configured owner IANA timezone for night boundaries/DST, critical vs
+- [x] Red tests use the configured owner IANA timezone for night boundaries/DST, critical vs
   noncritical interrupts, budget exhaustion,
   silent reversible verified work, no-op exclusion, failure/rollback, and restart.
-- [ ] Ambiguous/nonexistent DST times execute once under the persisted window id; a backward clock
+- [x] Ambiguous/nonexistent DST times execute once under the persisted window id; a backward clock
   shift cannot replenish budget or repeat a night action.
-- [ ] Count ambient work by rung and verified result. Noncritical interrupt becomes ask during quiet
+- [x] Count ambient work by rung and verified result. Noncritical interrupt becomes ask during quiet
   hours; critical still consumes the one global budget. Security hard floors remain unchanged.
-- [ ] Report the night split without counting ignored/monitor/no-op activity as completed work.
-- [ ] Run scheduler/night/north-star tests, review, and commit.
+- [x] Report the night split without counting ignored/monitor/no-op activity as completed work.
+- [x] Run scheduler/night/north-star tests, review, and commit.
 
 ## Task 6 — H33.6 transparency API, HUD/mobile parity, truth sync, and PR
 
 **Create:** `agents/core/routers/ambient.py`, separate frontend component and native read surface;
 update route/OpenAPI/auth/type/parity artifacts.
 
-- [ ] Red tests for disabled/empty/degraded/live monitor list, source health, last event/decision,
+- [x] Red tests for disabled/empty/degraded/live monitor list, source health, last event/decision,
   rung counts, global budget, privacy redaction, bounds, and guarded mutations.
-- [ ] Add `GET /api/ambient/monitors` and narrow owner controls. Fix or retire legacy consumers
+- [x] Add `GET /api/ambient/monitors` and narrow owner controls. Fix or retire legacy consumers
   expecting incompatible observer shapes rather than returning multiple undocumented schemas.
-- [ ] HUD/mobile show what is watched, why the last rung was chosen, health, and remaining
+- [x] HUD/mobile show what is watched, why the last rung was chosen, health, and remaining
   attention budget without exposing private event content.
-- [ ] Prove H30/H31 feed consumption, then close H31.6. Graduate only wave-3 modules actually
+- [x] Prove H30/H31 feed consumption, then close H31.6. Graduate only wave-3 modules actually
   exercised by the real hermetic seam; keep training/rust owner-only.
-- [ ] Update H33.3 backlog wording from “same unknown person” to repeated anonymous observations;
+- [x] Update H33.3 backlog wording from “same unknown person” to repeated anonymous observations;
   no re-identification claim.
-- [ ] Run all H33 plus H30/H31/autonomy/K3/KG/reality/parity, full backend/frontend/mobile,
+- [x] Run all H33 plus H30/H31/autonomy/K3/KG/reality/parity, full backend/frontend/mobile,
   Ruff/Bandit/diff-check/status-sync; fresh final review, truth sync, draft PR, CI, merge.
 
 ## Rollback

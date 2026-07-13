@@ -1978,6 +1978,88 @@ export function HousePanel() {
   );
 }
 
+/* H33.6 — owner transparency over the real ambient runtime. The endpoint is a
+   deliberately redacted projection: no predicates, subjects, event ids, raw
+   attributes, recipients, or delivery ids are rendered here. */
+export function AmbientWatchPanel() {
+  const ambient = useApi('/api/ambient/monitors');
+  const data = ambient.d || {};
+  const loaded = !!ambient.d;
+  const enabled = loaded && !!data.enabled;
+  const live = enabled && data.status === 'live';
+  const monitors = arr(data, 'monitors').slice(0, 200);
+  const sources = arr(data, 'sources').slice(0, 3);
+  const attention = data.attention || {};
+  const rungCounts = data.rung_counts || {};
+  const last = data.last_decision || null;
+
+  return (
+    <Card
+      title="AMBIENT WATCH"
+      live={asLive(loaded, live)}
+      sub={loaded ? `${data.status || 'unknown'} · ${monitors.length} monitors` : null}
+      onReload={ambient.reload}
+    >
+      <State e={ambient.e} loading={ambient.loading} n={loaded && !enabled ? undefined : monitors.length} />
+      {loaded && !enabled && (
+        <div style={{ fontSize: 10, color: data.status === 'degraded' ? 'var(--amber)' : 'var(--ink-3)', marginTop: 6 }}>
+          {data.status === 'degraded' ? 'Ambient runtime degraded' : 'Ambient intelligence is off'} · {data.reason || 'owner opt-in required'}
+        </div>
+      )}
+      {enabled && <>
+        <div style={{ ...mono, color: 'var(--ink-3)', fontSize: 10, margin: '4px 0 8px' }}>
+          REDACTED TRANSPARENCY · subjects and event content stay private
+        </div>
+        <Row>
+          <span style={{ ...mono, color: 'var(--ink-2)' }}>GLOBAL ATTENTION</span>
+          <span style={{ marginLeft: 'auto', display: 'flex', gap: 5 }}>
+            <Tag c={attention.status === 'ready' ? 'var(--green)' : 'var(--amber)'}>{attention.status || 'degraded'}</Tag>
+            <Tag>{Number(attention.remaining || 0)} / {Number(attention.limit || 0)} left</Tag>
+          </span>
+        </Row>
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5, margin: '8px 0' }}>
+          {['ignore', 'remember', 'monitor', 'act_silently', 'ask', 'interrupt'].map((rung) => (
+            <Tag key={rung}>{rung} · {Number(rungCounts[rung] || 0)}</Tag>
+          ))}
+        </div>
+        {sources.map((source) => (
+          <Row key={source.source}>
+            <span style={{ ...mono, color: 'var(--ink-2)' }}>{source.source}</span>
+            <span style={{ marginLeft: 'auto', display: 'flex', gap: 5 }}>
+              <Tag c={source.status === 'live' ? 'var(--green)' : 'var(--amber)'}>{source.status || 'waiting'}</Tag>
+              {Number(source.queued || 0) > 0 && <Tag>{source.queued} queued</Tag>}
+            </span>
+          </Row>
+        ))}
+        {monitors.map((monitor) => {
+          const decision = monitor.last_decision || null;
+          return (
+            <Row key={monitor.monitor_id}>
+              <div style={{ minWidth: 0 }}>
+                <div style={{ ...mono, color: 'var(--accent-light)' }}>{monitor.monitor_id}</div>
+                <div style={{ fontSize: 10, color: 'var(--ink-3)', marginTop: 3 }}>
+                  {monitor.source} · {monitor.schema} · v{monitor.version} · {monitor.state || 'waiting'}
+                </div>
+                {decision && <div style={{ fontSize: 10, color: 'var(--ink-2)', marginTop: 4 }}>
+                  last · {decision.transition} → {decision.rung} · {String(decision.policy_reason || '').split('_').join(' ')}
+                </div>}
+              </div>
+              <span style={{ marginLeft: 'auto', display: 'flex', gap: 5 }}>
+                <Tag>{monitor.alert_rung}</Tag>
+                {!monitor.enabled && <Tag c="var(--amber)">paused</Tag>}
+              </span>
+            </Row>
+          );
+        })}
+        {!monitors.length && <div style={{ fontSize: 10, color: 'var(--ink-3)' }}>No owner-defined monitors yet.</div>}
+        {last && <div style={{ ...mono, color: 'var(--ink-3)', fontSize: 9, marginTop: 8 }}>
+          LAST DECISION · {last.monitor_id} · {last.rung} · {last.attention_mode}
+        </div>}
+      </>}
+    </Card>
+  );
+}
+
 /* H31.5 — camera intelligence is a metadata-only household sensor surface.
    It never renders or fetches a frame, snapshot, clip, stream, or private URL. */
 export function CameraPanel() {
@@ -2550,7 +2632,7 @@ export function FirstRunGate({ onClose }) {
 
 const SECTIONS: Array<[string, Array<() => any>]> = [
   ['Start', [CommandCenterPanel]],
-  ['Home', [HousePanel, CameraPanel]],
+  ['Home', [AmbientWatchPanel, HousePanel, CameraPanel]],
   ['Memory', [DataSpacesPanel, LocalDocsPanel, NotesPanel, KgPanel, CapturePanel, ReflectionPanel, ProvenancePanel]],
   ['Trust', [KillSwitchPanel, KernelMetricsPanel, ReadinessPanel, LoopBreakerPanel, GovernancePanel, PosturePanel, SecuritySkillsPanel, NetworkMonitorPanel, CommsRatePanel, SafeCommsDraftPanel, SecretsPanel, CapabilitiesPanel, PairingPanel, InjectionScanPanel]],
   ['Interop', [A2AInboxPanel, MeshPeersPanel, SatellitesPanel, OraclePanel, MarketplacePanel, SkillHistoryPanel, WatchlistPanel]],

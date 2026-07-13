@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+import contextlib
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
+from threading import RLock
 from typing import Any
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
@@ -37,10 +39,19 @@ class AmbientRuntime:
     def close(self) -> None:
         if self.memory is not None:
             self.memory.close()
+            self.memory = None
         if self.night_ledger is not None:
             self.night_ledger.close()
+            self.night_ledger = None
         if self.store is not None:
             self.store.close()
+            self.store = None
+        self.registry = None
+        self.engine = None
+
+
+_RUNTIME_LOCK = RLock()
+_RUNTIMES: dict[tuple[int, str], AmbientRuntime] = {}
 
 
 def _setting(orch: object | None, name: str, default: Any = None) -> Any:
@@ -171,4 +182,51 @@ def build_ambient_runtime(
     )
 
 
-__all__ = ["AmbientRuntime", "build_ambient_runtime"]
+def get_ambient_runtime(
+    orch: object | None,
+    *,
+    root: str | Path | None = None,
+) -> AmbientRuntime:
+    """Return the shared runtime consumed by feeds, metrics, and transparency APIs."""
+
+    runtime_root = Path(root) if root is not None else data_path("ambient")
+    key = (id(orch) if orch is not None else 0, str(runtime_root.resolve()))
+    with _RUNTIME_LOCK:
+        runtime = _RUNTIMES.get(key)
+        desired_enabled = _setting(orch, "ambient.enabled", False)
+        desired_generation = _setting(orch, "ambient.generation", 1)
+        current_matches = runtime is not None and (
+            (desired_enabled is False and runtime.status == "disabled")
+            or (
+                desired_enabled is True
+                and runtime.enabled is True
+                and runtime.generation == desired_generation
+                and runtime.store is not None
+                and runtime.engine is not None
+            )
+        )
+        if not current_matches:
+            if runtime is not None:
+                runtime.close()
+            runtime = build_ambient_runtime(orch, root=runtime_root)
+            _RUNTIMES[key] = runtime
+        if orch is not None:
+            with contextlib.suppress(AttributeError, TypeError):
+                orch.ambient_runtime = runtime
+        return runtime
+
+
+def close_ambient_runtimes() -> None:
+    with _RUNTIME_LOCK:
+        runtimes = list({id(runtime): runtime for runtime in _RUNTIMES.values()}.values())
+        _RUNTIMES.clear()
+    for runtime in runtimes:
+        runtime.close()
+
+
+__all__ = [
+    "AmbientRuntime",
+    "build_ambient_runtime",
+    "close_ambient_runtimes",
+    "get_ambient_runtime",
+]

@@ -10,6 +10,7 @@ from agents.core.ambient.execution import (
     AmbientTaskExecutor,
     SilentActionBinding,
     register_ambient_handlers,
+    register_ambient_refusal_handlers,
 )
 from agents.core.ambient.registry import MonitorRegistry
 from agents.core.ambient.store import AmbientStore
@@ -178,3 +179,21 @@ def test_failed_compensation_requires_manual_recovery(tmp_path):
         "compensation": "manual_recovery_required",
     }
     store.close()
+
+
+def test_unbound_production_ambient_tasks_never_fall_through_to_llm():
+    fallback_calls = []
+
+    async def fallback(task):
+        fallback_calls.append(task.kind)
+        return {"status": "ok"}
+
+    registry = register_ambient_refusal_handlers(TaskExecutor(fallback=fallback))
+
+    assert asyncio.run(
+        registry.execute(SimpleNamespace(id=1, kind="ambient.action"))
+    ) == {"status": "revoked", "reason": "silent_binding_unavailable"}
+    assert asyncio.run(
+        registry.execute(SimpleNamespace(id=2, kind="ambient.decision"))
+    ) == {"status": "noop", "reason": "ambient_decision_acknowledged"}
+    assert fallback_calls == []

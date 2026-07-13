@@ -200,4 +200,23 @@ def register_ambient_handlers(executor, ambient: AmbientTaskExecutor):
     return executor.register("ambient.action", ambient.execute)
 
 
-__all__ = ["AmbientTaskExecutor", "SilentActionBinding", "register_ambient_handlers"]
+def register_ambient_refusal_handlers(executor):
+    """Keep ambient task kinds out of the generic LLM fallback until bound."""
+
+    async def _action_unavailable(_task):
+        return {"status": "revoked", "reason": "silent_binding_unavailable"}
+
+    async def _decision_acknowledged(_task):
+        return {"status": "noop", "reason": "ambient_decision_acknowledged"}
+
+    executor.register("ambient.action", _action_unavailable)
+    executor.register("ambient.decision", _decision_acknowledged)
+    return executor
+
+
+__all__ = [
+    "AmbientTaskExecutor",
+    "SilentActionBinding",
+    "register_ambient_handlers",
+    "register_ambient_refusal_handlers",
+]

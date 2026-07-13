@@ -173,6 +173,7 @@ def compute_north_star(
     now: float | None = None,
     fetch_limit: int = 100_000,
     night_window: tuple[int, int] = (23, 6),
+    ambient_night_window: tuple[int, int] | None = None,
 ) -> dict:
     """Compute the north-star + counter-metrics over the trailing `days` window.
 
@@ -323,12 +324,13 @@ def compute_north_star(
     if ambient_store is not None and ambient_night_ledger is not None:
         from agents.core.ambient.night import ambient_night_report
 
+        ambient_window = ambient_night_window or night_window
         ambient_night_shift = ambient_night_report(
             ambient_store=ambient_store,
             night_ledger=ambient_night_ledger,
             timezone_name=owner_timezone,
-            start_hour=night_window[0],
-            end_hour=night_window[1],
+            start_hour=ambient_window[0],
+            end_hour=ambient_window[1],
             cutoff=cutoff,
         )
 

@@ -45,6 +45,18 @@ _HARD_FLOOR_PREFIXES = (
 )
 
 
+def bounded_attention_allowance(value: object, *, default: int = 4) -> int:
+    """Normalize an owner setting without ever exceeding the global hard cap."""
+
+    if isinstance(value, bool):
+        return default
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError, OverflowError):
+        return default
+    return max(0, min(4, parsed))
+
+
 @dataclass(frozen=True, slots=True)
 class LadderContext:
     requested_rung: str | DecisionRung
@@ -542,4 +554,5 @@ __all__ = [
     "LadderContext",
     "LadderDecision",
     "LadderPolicy",
+    "bounded_attention_allowance",
 ]

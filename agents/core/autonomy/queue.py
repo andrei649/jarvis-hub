@@ -20,7 +20,7 @@ import logging
 import math
 import sqlite3
 import threading
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from enum import Enum
 from typing import Optional
@@ -74,7 +74,9 @@ class Task:
     risk_tier: int
     status: str
     autonomy_level: str
-    attention_mode: str    # none | digest | interrupt
+    # Keyword-only default keeps direct pre-H33 Task construction compatible
+    # while preserving the legacy queue behavior for unsolicited decisions.
+    attention_mode: str = field(default="interrupt", kw_only=True)
     origin: str            # "manual" (user-curated) | "generated" (self-proposed) | "inbound"
     attempts: int
     result: Optional[dict]

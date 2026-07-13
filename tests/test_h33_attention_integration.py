@@ -116,6 +116,28 @@ def test_legacy_worker_pushes_also_flow_through_durable_broker(tmp_path):
     }
 
 
+def test_legacy_injected_budget_without_durable_broker_holds_push(tmp_path):
+    queue = TaskQueue(str(tmp_path / "tasks.db")).initialize()
+    delivered = []
+
+    async def notifier(task):
+        delivered.append(task.id)
+        return True
+
+    worker = AutonomyWorker(
+        queue,
+        policy=AskPolicy(),
+        notifier=notifier,
+        budget=SimpleNamespace(consume=lambda: True),
+    )
+
+    task = asyncio.run(worker.submit("jarvis", "legacy", "Held safely"))
+
+    assert task.status == "blocked"
+    assert queue.get(task.id).pushed == 0
+    assert delivered == []
+
+
 def test_interrupt_budget_is_a_compatibility_view_over_attention_ledger(tmp_path):
     ledger = AttentionLedger(tmp_path / "attention.db", timezone_name="UTC", per_day=2)
     budget = InterruptBudget(per_day=2, attention_ledger=ledger)

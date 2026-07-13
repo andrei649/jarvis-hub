@@ -637,6 +637,21 @@ class AmbientStore:
             row["matched"] = bool(row["matched"])
         return output
 
+    def recent_decisions(self, *, limit: int = 1_000) -> list[dict[str, Any]]:
+        """Newest bounded decision projection for owner transparency surfaces."""
+
+        bounded = max(1, min(int(limit), 1_000))
+        with self._lock:
+            rows = self._require().execute(
+                """
+                SELECT monitor_id, transition, decided_at, rung,
+                       attention_mode, policy_reason
+                FROM decisions ORDER BY decided_at DESC, decision_id DESC LIMIT ?
+                """,
+                (bounded,),
+            ).fetchall()
+        return [dict(row) for row in rows]
+
     def update_source_health(
         self,
         source: str,

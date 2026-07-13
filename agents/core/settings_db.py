@@ -242,6 +242,12 @@ DEFAULTS: list[dict[str, Any]] = [
     dict(category="system",  key="autonomy_tick",    value=60,     label="Autonomy tick (s)",    kind="number"),
     dict(category="system",  key="observer_enabled", value=True,   label="Resource Observer enabled", kind="toggle"),
     dict(category="system",  key="watchers_enabled", value=True,   label="Event Watchers enabled", kind="toggle"),
+    # H33 ambient intelligence is a separate explicit owner opt-in. Product
+    # Posture never enables it implicitly; generation revokes queued work.
+    dict(category="ambient", key="enabled", value=False, label="Ambient intelligence", kind="toggle"),
+    dict(category="ambient", key="generation", value=1, label="Ambient consent generation", kind="number"),
+    dict(category="ambient", key="quiet_hours_start", value=22, label="Ambient quiet-hours start", kind="number"),
+    dict(category="ambient", key="quiet_hours_end", value=7, label="Ambient quiet-hours end", kind="number"),
     dict(category="system",  key="error_backlog_sync_enabled", value=True, label="Error backlog sync enabled", kind="toggle"),
     # retention — data lifecycle (H23.10). A daily sweep prunes data older than the
     # TTL. OFF by default so nothing is ever surprise-deleted; a TTL of 0 means keep

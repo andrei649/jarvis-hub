@@ -126,7 +126,9 @@ class AutonomyWorker:
         self.executor = executor
         self.notifier = notifier
         self.budget = budget or InterruptBudget()
-        self.delivery_broker = delivery_broker or self.budget.delivery_broker
+        self.delivery_broker = delivery_broker or getattr(
+            self.budget, "delivery_broker", None
+        )
         self.audit = audit
         self.prefs = prefs
         # O26-P0.7 (F3): the executor seam honors the global kill-switch
@@ -262,6 +264,12 @@ class AutonomyWorker:
 
     async def _maybe_push(self, task: Task, *, delivery_id: str | None = None) -> bool:
         if not self.notifier:
+            return False
+        if self.delivery_broker is None:
+            logger.warning(
+                "Decision push held for #%s: durable delivery broker unavailable",
+                task.id,
+            )
             return False
         result = await self.delivery_broker.dispatch(
             delivery_id or f"task-{task.id}",

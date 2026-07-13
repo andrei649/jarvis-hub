@@ -10,7 +10,12 @@ from .contracts import (
 from .memory import AmbientSituationMemory
 from .night import AmbientNightLedger
 from .policy import AttentionDeliveryBroker, AttentionLedger, DecisionRung, LadderPolicy
-from .runtime import AmbientRuntime, build_ambient_runtime
+from .runtime import (
+    AmbientRuntime,
+    build_ambient_runtime,
+    close_ambient_runtimes,
+    get_ambient_runtime,
+)
 
 __all__ = [
     "AmbientDecision",
@@ -26,4 +31,6 @@ __all__ = [
     "MonitorPredicate",
     "LadderPolicy",
     "build_ambient_runtime",
+    "close_ambient_runtimes",
+    "get_ambient_runtime",
 ]

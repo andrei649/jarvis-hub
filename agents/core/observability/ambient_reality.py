@@ -4,6 +4,9 @@ from __future__ import annotations
 
 import asyncio
 import math
+import platform
+import sqlite3
+import sys
 import tempfile
 import time
 import tracemalloc
@@ -31,6 +34,21 @@ _METADATA = {
     "promotable": False,
 }
 _RUNGS = ("ignore", "remember", "monitor", "ask", "interrupt", "act_silently")
+
+
+def _environment() -> dict[str, str]:
+    """Non-identifying runtime facts needed to interpret benchmark measurements."""
+
+    return {
+        "platform": platform.system() or "unknown",
+        "machine": platform.machine() or "unknown",
+        "python": (
+            f"{platform.python_implementation()} "
+            f"{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}"
+        ),
+        "sqlite": sqlite3.sqlite_version,
+        "timer": "perf_counter",
+    }
 
 
 def _percentile(values: list[float], percentile: float) -> float:
@@ -241,6 +259,7 @@ async def run_ambient_reality_pack() -> dict:
     scale, attention = await asyncio.gather(_scale_report(), _attention_report())
     return {
         "passed": scale["passed"] and attention["passed"],
+        "environment": _environment(),
         "scenarios": scale["scenarios"],
         "attention": attention["attention"],
         "counters": scale["counters"],
@@ -252,6 +271,7 @@ async def _probe_scale() -> dict:
     return {
         "passed": report["passed"],
         "metadata": {
+            "environment": _environment(),
             "scenarios": report["scenarios"],
             "counters": report["counters"],
         },
@@ -263,6 +283,7 @@ async def _probe_attention() -> dict:
     return {
         "passed": report["passed"],
         "metadata": {
+            "environment": _environment(),
             "attention": report["attention"],
             "counters": report["counters"],
         },

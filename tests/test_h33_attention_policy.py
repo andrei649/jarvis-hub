@@ -14,6 +14,7 @@ from agents.core.ambient.policy import (
     DecisionRung,
     LadderContext,
     LadderPolicy,
+    bounded_attention_allowance,
 )
 from agents.core.kernel import BudgetLedger
 
@@ -24,6 +25,15 @@ class MutableClock:
 
     def __call__(self) -> float:
         return self.value.timestamp()
+
+
+def test_owner_attention_setting_is_bounded_by_construction():
+    assert bounded_attention_allowance(7) == 4
+    assert bounded_attention_allowance(0) == 0
+    assert bounded_attention_allowance(-1) == 0
+    assert bounded_attention_allowance("3") == 3
+    assert bounded_attention_allowance(True) == 4
+    assert bounded_attention_allowance("invalid") == 4
 
 
 @pytest.mark.parametrize(

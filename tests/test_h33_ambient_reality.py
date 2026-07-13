@@ -13,6 +13,14 @@ def test_ambient_reality_pack_meets_scale_and_zero_bypass_gates():
     report = asyncio.run(run_ambient_reality_pack())
 
     assert report["passed"] is True, report
+    assert set(report["environment"]) == {
+        "machine",
+        "platform",
+        "python",
+        "sqlite",
+        "timer",
+    }
+    assert all(report["environment"].values())
     assert [item["monitors"] for item in report["scenarios"]] == [1, 10, 100]
     for scenario in report["scenarios"]:
         assert scenario["p95_decision_ms"] <= 100
@@ -49,3 +57,4 @@ def test_ambient_reality_cases_are_registered_and_green():
         item["metadata"]["counters"]["ungoverned_actions"] == 0
         for item in result["results"]
     )
+    assert all(item["metadata"]["environment"] for item in result["results"])

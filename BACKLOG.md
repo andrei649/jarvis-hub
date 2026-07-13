@@ -802,11 +802,11 @@ the real backend, but the pipeline-rewiring PR never ran it because the path fil
 | # | Item | S | P | Dep | Sursă |
 |---|------|---|---|-----|-------|
 | H33.1 ✅ | **Declarative monitor framework** — default-off named monitors over bounded house/camera/digital projections; durable versioned registry, finite predicate DSL, debounce/hold/hysteresis/cooldown, source health, ownership cutover, and decision journal | 5 | P0 | H30.1 | NERVA_VISION §4-P1 |
-| H33.2 ⬜ | **The decision ladder as policy** — every event classified ignore/remember/monitor/act-silently/ask/interrupt; interrupts stay ≤4/day *by construction* (K3 budget, not convention) | 5 | P0 | H33.1, K3 | NERVA_VISION §7 |
-| H33.3 ⬜ | **Situation memory** — observations land in the KG with provenance + decay, so "the same unknown person twice this evening" is answerable | 3 | P1 | H33.1, H14 | — |
-| H33.4 ⬜ | **Ambient reality-harness pack** + counter-metric guards (interrupt/reject rates must not degrade as monitors multiply) | 3 | P1 | O24-V1/V4 | MOONSHOT §6 |
-| H33.5 ⬜ | **Night-shift v2** — overnight monitor work measured on the north-star night split (P1 proof-gap 2/3 seam) | 3 | P2 | H33.2 | P1 pack |
-| H33.6 ⬜ | **"What is Jarvis watching right now"** — HUD transparency surface listing live monitors + their last decisions | 3 | P2 | H33.1 | — |
+| H33.2 ✅ | **The decision ladder as policy** — every event classified ignore/remember/monitor/act-silently/ask/interrupt; interrupts stay ≤4/day *by construction* (K3 budget, not convention) | 5 | P0 | H33.1, K3 | NERVA_VISION §7 |
+| H33.3 ✅ | **Situation memory** — observations land in the KG with provenance + decay, so repeated anonymous observations in a bounded place/time window are answerable without claiming re-identification | 3 | P1 | H33.1, H14 | — |
+| H33.4 ✅ | **Ambient reality-harness pack** + counter-metric guards (interrupt/reject rates must not degrade as monitors multiply) | 3 | P1 | O24-V1/V4 | MOONSHOT §6 |
+| H33.5 ✅ | **Night-shift v2** — overnight monitor work measured on the north-star night split (P1 proof-gap 2/3 seam) | 3 | P2 | H33.2 | P1 pack |
+| H33.6 ✅ | **"What is Jarvis watching right now"** — HUD transparency surface listing live monitors + their last decisions | 3 | P2 | H33.1 | — |
 
 > **Total ORIZONT 33:** ~22 SP
 
