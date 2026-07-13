@@ -131,4 +131,5 @@ def test_marketplace_adopter_upgrades_legacy_db(tmp_path):
     check.close()
     assert {"review_status", "signature"} <= cols      # v1 moderation/signature columns
     assert "marketplace_skill_versions" in tables       # v2 rollback archive table
-    assert ver == 2                                      # both forward-only migrations applied
+    assert "marketplace_acquired_skills" in tables      # v3 sandbox-only metadata index
+    assert ver == 3                                      # all forward-only migrations applied

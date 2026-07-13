@@ -199,6 +199,12 @@ class SkillLoader:
         return self.skills
 
     def _load_skill(self, path: Path):
+        # H32.5: acquired packages are signed for integrity but are NEVER trusted
+        # for in-process import. Their only execution path is the acquired Docker/
+        # WASM runner registered through ToolRPC.
+        if (path / "ACQUIRED_SANDBOX_ONLY").exists():
+            logger.warning("Refused in-process discovery of sandbox-only acquired package")
+            return
         skill_file = path / "SKILL.md"
         if not skill_file.exists():
             return

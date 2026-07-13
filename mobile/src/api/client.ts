@@ -1601,6 +1601,179 @@ export async function searchCameraEvents(
   return normalizeCameraEvents(raw);
 }
 
+// ── Governed capability acquisition (read-only mobile projection) ──
+
+export type AcquisitionPackage = {
+  name: string;
+  version: string;
+  status: string;
+  confidence: number;
+};
+
+export type AcquisitionAuditHealth = {
+  status: string;
+  events: number;
+  summarized_events: number;
+  chain_valid: boolean;
+};
+
+export type AcquisitionStatusResponse = {
+  enabled: boolean;
+  status: string;
+  reason: string;
+  states: Record<string, number>;
+  reuse: {
+    reused: number;
+    generated: number;
+    blocked: number;
+    abandoned: number;
+    reuse_rate: number;
+  };
+  packages: AcquisitionPackage[];
+  audit: AcquisitionAuditHealth;
+};
+
+export type AcquisitionEvent = {
+  sequence: number;
+  event_type: string;
+  actor: string;
+  status: string;
+  occurred_at: number;
+};
+
+export type AcquisitionEventsResponse = {
+  enabled: boolean;
+  status: string;
+  events: AcquisitionEvent[];
+};
+
+const ACQUISITION_STATES = new Set([
+  'missing',
+  'researching',
+  'quarantined',
+  'approval_pending',
+  'installed',
+  'reused',
+  'blocked',
+  'abandoned',
+  'revoked',
+]);
+const ACQUISITION_NAME = /^[a-z][a-z0-9_]{0,63}$/;
+const ACQUISITION_EVENT = /^[a-z][a-z_]{0,31}\.[a-z][a-z_]{0,31}$/;
+const ACQUISITION_ACTOR = /^[A-Za-z0-9_.:@/-]{1,128}$/;
+
+function acquisitionText(value: unknown, limit: number): string {
+  const text = securityString(value).trim();
+  return text.length <= limit && !/[\u0000-\u001f]/.test(text) ? text : '';
+}
+
+function acquisitionCount(value: unknown, max = 100_000): number {
+  const number = securityNumber(value);
+  return Math.max(0, Math.min(max, Math.trunc(number || 0)));
+}
+
+function normalizeAcquisitionStatus(rawValue: unknown): AcquisitionStatusResponse {
+  const raw = securityRecord(rawValue);
+  const statesRaw = securityRecord(raw.states);
+  const states: Record<string, number> = {};
+  for (const name of ACQUISITION_STATES) {
+    if (name in statesRaw) states[name] = acquisitionCount(statesRaw[name]);
+  }
+  const reuseRaw = securityRecord(raw.reuse);
+  const auditRaw = securityRecord(raw.audit);
+  const packages = Array.isArray(raw.packages)
+    ? raw.packages.map((value): AcquisitionPackage | null => {
+      const item = securityRecord(value);
+      const name = acquisitionText(item.name, 64);
+      const version = acquisitionText(item.version, 64);
+      const status = acquisitionText(item.status, 32);
+      if (!ACQUISITION_NAME.test(name) || !version || !status) return null;
+      const confidence = typeof item.confidence === 'number' && Number.isFinite(item.confidence)
+        ? Math.max(0, Math.min(1, item.confidence))
+        : 0;
+      return { name, version, status, confidence };
+    }).filter((item): item is AcquisitionPackage => item !== null).slice(0, 256)
+    : [];
+  const reuseRate = typeof reuseRaw.reuse_rate === 'number' && Number.isFinite(reuseRaw.reuse_rate)
+    ? Math.max(0, Math.min(1, reuseRaw.reuse_rate))
+    : 0;
+  return {
+    enabled: securityBool(raw.enabled),
+    status: acquisitionText(raw.status, 32) || 'unavailable',
+    reason: acquisitionText(raw.reason, 128),
+    states,
+    reuse: {
+      reused: acquisitionCount(reuseRaw.reused),
+      generated: acquisitionCount(reuseRaw.generated),
+      blocked: acquisitionCount(reuseRaw.blocked),
+      abandoned: acquisitionCount(reuseRaw.abandoned),
+      reuse_rate: reuseRate,
+    },
+    packages,
+    audit: {
+      status: acquisitionText(auditRaw.status, 32) || 'unavailable',
+      events: acquisitionCount(auditRaw.events),
+      summarized_events: acquisitionCount(auditRaw.summarized_events),
+      chain_valid: securityBool(auditRaw.chain_valid),
+    },
+  };
+}
+
+function normalizeAcquisitionEvents(rawValue: unknown): AcquisitionEventsResponse {
+  const raw = securityRecord(rawValue);
+  const events = Array.isArray(raw.events)
+    ? raw.events.map((value): AcquisitionEvent | null => {
+      const item = securityRecord(value);
+      const eventType = acquisitionText(item.event_type, 64);
+      const actor = acquisitionText(item.actor, 128);
+      const status = acquisitionText(item.status, 32);
+      const sequence = securityNumber(item.sequence);
+      const occurredAt = securityNumber(item.occurred_at);
+      if (
+        !ACQUISITION_EVENT.test(eventType)
+        || !ACQUISITION_ACTOR.test(actor)
+        || !status
+        || !Number.isInteger(sequence)
+        || sequence < 1
+        || !Number.isFinite(occurredAt)
+        || occurredAt < 0
+      ) return null;
+      return { sequence, event_type: eventType, actor, status, occurred_at: occurredAt };
+    }).filter((item): item is AcquisitionEvent => item !== null).slice(0, 100)
+    : [];
+  return {
+    enabled: securityBool(raw.enabled),
+    status: acquisitionText(raw.status, 32) || 'unavailable',
+    events,
+  };
+}
+
+export async function fetchAcquisitionStatus(
+  config: ServerConfig,
+): Promise<AcquisitionStatusResponse> {
+  const raw = await request<Record<string, unknown>>(
+    config,
+    'GET',
+    '/api/acquisition/status',
+    undefined,
+    { retries: 2 },
+  );
+  return normalizeAcquisitionStatus(raw);
+}
+
+export async function fetchAcquisitionEvents(
+  config: ServerConfig,
+): Promise<AcquisitionEventsResponse> {
+  const raw = await request<Record<string, unknown>>(
+    config,
+    'GET',
+    '/api/acquisition/events?limit=100',
+    undefined,
+    { retries: 2 },
+  );
+  return normalizeAcquisitionEvents(raw);
+}
+
 // ── Agents ────────────────────────────────────────────────────────
 
 export type AgentInfo = {

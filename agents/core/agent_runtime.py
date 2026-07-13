@@ -7,6 +7,7 @@ import inspect
 import json
 import logging
 import math
+import re
 from collections.abc import Callable, Coroutine
 from contextlib import suppress
 from functools import partial
@@ -19,6 +20,7 @@ from .tool_rpc import ToolRPCServer
 logger = logging.getLogger("jarvis.agent_runtime")
 
 ToolEventSink = Callable[[dict[str, Any]], Any]
+GapSink = Callable[[dict[str, str]], Any]
 
 _APPROVAL_REPLY = "I paused the tool loop because this action requires approval."
 _DEADLINE_REPLY = "I stopped the tool loop because it reached the safety deadline."
@@ -30,6 +32,16 @@ _EVENT_TIMEOUT_SECONDS = 0.1
 _MAX_JSON_DEPTH = 64
 _NO_CAPABILITY_REPLY = (
     "I can't use tools for this request because no live registered capability matches."
+)
+_CAPABILITY_TERM_RE = re.compile(
+    r"\b(?:tool|capabilit(?:y|ies)|skill|plugin|integration|automation|"
+    r"unealt[ăa]|capabilitat(?:e|i)|integrar[ei]|automatizar[ei])\b",
+    re.IGNORECASE,
+)
+_CAPABILITY_ACTION_RE = re.compile(
+    r"\b(?:use|need|create|build|run|install|add|missing|cannot|can't|"
+    r"folose(?:ște|ste)|am nevoie|creeaz[ăa]|ruleaz[ăa]|instaleaz[ăa]|lipsește|lipseste)\b",
+    re.IGNORECASE,
 )
 
 
@@ -56,6 +68,7 @@ class AgentToolRuntime:
         max_result_bytes: int = 50_000,
         tool_timeout_seconds: float = 30.0,
         max_wall_seconds: float = 120.0,
+        gap_callback: GapSink | None = None,
     ) -> None:
         self._server = server
         self._enabled = enabled
@@ -69,6 +82,7 @@ class AgentToolRuntime:
         self._max_result_bytes = _safe_int(max_result_bytes, default=50_000, minimum=8)
         self._tool_timeout_seconds = _safe_float(tool_timeout_seconds, default=30.0)
         self._max_wall_seconds = _safe_float(max_wall_seconds, default=120.0)
+        self._gap_callback = gap_callback
         self._stragglers: set[asyncio.Task[Any]] = set()
         self._blocked_event_sinks: dict[int, asyncio.Task[Any]] = {}
         self._event_lock = asyncio.Lock()
@@ -137,6 +151,14 @@ class AgentToolRuntime:
         if registry_mode:
             metadata = self._registry_metadata(metadata)
             if not metadata:
+                if _is_explicit_capability_goal(prompt):
+                    await self._emit_gap(
+                        {
+                            "agent_id": _bounded_identity(agent_id),
+                            "goal": prompt[:4096],
+                            "reason": "no_registered_capability",
+                        }
+                    )
                 return _NO_CAPABILITY_REPLY
         tools = [
             ToolSpec(
@@ -244,6 +266,21 @@ class AgentToolRuntime:
         except Exception:
             logger.warning("registry planning flag failed closed")
             return True
+
+    async def _emit_gap(self, payload: dict[str, str]) -> None:
+        if self._gap_callback is None:
+            return
+        try:
+            if inspect.iscoroutinefunction(self._gap_callback):
+                result = self._gap_callback(payload)
+            else:
+                result = await asyncio.to_thread(self._gap_callback, payload)
+            if inspect.isawaitable(result):
+                await asyncio.wait_for(result, timeout=_EVENT_TIMEOUT_SECONDS)
+        except TimeoutError:
+            logger.warning("capability gap callback timed out")
+        except Exception:
+            logger.warning("capability gap callback failed", exc_info=True)
 
     def _registry_metadata(self, tools: list[dict]) -> list[dict]:
         """Project ToolRPC metadata through the live capability registry."""
@@ -673,4 +710,16 @@ def _is_valid_unicode(value: str) -> bool:
     return True
 
 
-__all__ = ["AgentToolRuntime", "ToolEventSink"]
+def _is_explicit_capability_goal(prompt: Any) -> bool:
+    """Conservative trigger: ordinary unanswered chat never becomes acquisition work."""
+    if not isinstance(prompt, str) or not prompt:
+        return False
+    candidate = prompt
+    marker = "User said:"
+    if marker in candidate:
+        candidate = candidate.rsplit(marker, 1)[-1].split("\nRespond as", 1)[0]
+    candidate = candidate[:4096]
+    return bool(_CAPABILITY_TERM_RE.search(candidate) and _CAPABILITY_ACTION_RE.search(candidate))
+
+
+__all__ = ["AgentToolRuntime", "GapSink", "ToolEventSink"]

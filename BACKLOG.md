@@ -774,15 +774,22 @@ the real backend, but the pipeline-rewiring PR never ran it because the path fil
 
 | # | Item | S | P | Dep | Sursă |
 |---|------|---|---|-----|-------|
-| H32.1 🟡 | **Gap detection → capability request** — a failed/unmatched intent becomes a registry entry in state `missing`, with the goal captured | 3 | P1 | H27.1 | NERVA_VISION §4-P6 |
-| H32.2 🟡 | **Reuse-first search** — marketplace + local skills + registry before any generation; reuse-before-generate rate measured | 3 | P1 | H32.1 | NERVA_VISION §8-S2 |
-| H32.3 ⬜ | **Doc-research step** — governed websearch → `ground_plan()` validation (every implementation step cites a fetched source; phantom citations refused) | 3 | P2 | H32.2 | T-0.51 |
-| H32.4 🟡 | **Generate + sandbox-test harness** — the generated skill must ship with a verification test that passes in the sandbox *before* it may be proposed | 8 | P0 | H32.3 | NERVA_VISION §4-P6 |
-| H32.5 ⬜ | **Approval → signing → registry** — approved skills enter the O27 registry at low `confidence`; autonomy earned via H27.7; quarantine before promotion | 5 | P0 | H32.4, H27.7 | MOONSHOT §5.7 |
-| H32.6 ⬜ | **Acquisition audit trail + rollback** — every acquired capability is uninstallable/rollbackable via the marketplace path (T-0.58) | 2 | P1 | H32.5 | — |
-| H32.7 ⬜ | **Hermes-parity eval for the loop** — the S2 superiority benchmark: acquire a net-new skill end-to-end under governance | 3 | P2 | H32.5 | NERVA_VISION §8-S2 |
+| H32.1 ✅ | **Gap detection → capability request** — explicit bounded tool/capability misses create encrypted, deduplicated, restart-safe `missing` requests; normal unanswered chat cannot manufacture one | 3 | P1 | H27.1 | NERVA_VISION §4-P6 |
+| H32.2 ✅ | **Reuse-first search** — deterministic local registry → installed skill → reviewed marketplace resolution precedes every generation attempt, with durable provenance and an honest `reused / (reused + generated)` metric | 3 | P1 | H32.1 | NERVA_VISION §8-S2 |
+| H32.3 ✅ | **Doc-research step** — consented local-SearXNG research uses allowlisted SSRF/rebinding-safe bounded fetches, taint-preserving encrypted extracts, and a hard `ground_plan()` citation gate; phantom citations and implicit cloud/search fallback fail closed | 3 | P2 | H32.2 | T-0.51 |
+| H32.4 ✅ | **Generate + sandbox-test harness** — strict-local stdlib-only generation remains encrypted in quarantine and must pass generated, system-owned contract, and mutation tests in a pinned Docker/WASM profile before an immutable receipt permits proposal | 8 | P0 | H32.3 | NERVA_VISION §4-P6 |
+| H32.5 ✅ | **Approval → signing → registry** — permanent owner approval plus Action Kernel mediation, receipt recheck, managed manifest signing, atomic sandbox-only package storage, ToolRPC registration, low-confidence outcome projection, and crash-safe rollback are enforced | 5 | P0 | H32.4, H27.7 | MOONSHOT §5.7 |
+| H32.6 ✅ | **Acquisition audit trail + rollback** — an encrypted hash-chained bounded ledger covers the lifecycle; guarded browser/admin and read-only mobile surfaces expose honest state, reuse, export/purge, revoke, and rollback without importing acquired code in-process | 2 | P1 | H32.5 | — |
+| H32.7 ✅ | **Hermes-parity eval for the loop** — the non-promoting S2 benchmark passes the dedicated digest-pinned Docker CI lane across miss → research → strict-local generation → isolated verification → approval/signing → sandbox execution → reuse, plus tamper, halt, revoke, rollback, host, and network negatives | 3 | P2 | H32.5 | NERVA_VISION §8-S2 |
 
 > **Total ORIZONT 32:** ~27 SP
+>
+> **Implementation evidence (2026-07-13):** the local H32 pack covers encrypted request/research/
+> quarantine/audit stores, deterministic reuse, strict-local generation, receipt-bound sandbox
+> verification, permanent approval, signing, marketplace metadata, ToolRPC execution, tamper refusal,
+> lifecycle controls, and browser/mobile parity. H32.7 remains intentionally non-promoting; the
+> existing Docker isolation CI lane now proves the full S2 lifecycle, no host execution, and no
+> generated-code network access against the real pinned container image.
 
 ## 👁️ ORIZONT 33 — Ambient Intelligence (Nerva Program G · AI-OS Phase 6, direction 2026-07-11)
 

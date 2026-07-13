@@ -172,6 +172,7 @@ class AutonomyCoordinator:
         import time as _t
 
         from .agent_runtime import AgentToolRuntime
+        from .acquisition.runtime import AcquisitionRuntime
         from .desktop_operator import DesktopProposalError, validate_desktop_run_args
         from .observability import capability_registry
         from .tool_rpc import ToolRPCServer, ToolRPCValidationError
@@ -318,6 +319,11 @@ class AutonomyCoordinator:
             capability_id="tool:time",
         )
 
+        acquisition = AcquisitionRuntime(
+            enabled=lambda: _get_setting("acquisition.enabled", False) is True,
+        )
+        self._orch.acquisition = acquisition
+
         runtime = AgentToolRuntime(
             server,
             enabled=lambda: _get_setting("llm.tool_loop_enabled", False) is True,
@@ -326,6 +332,7 @@ class AutonomyCoordinator:
             ) is True,
             capability_snapshot=lambda: capability_registry.snapshot(self._orch),
             max_iterations=lambda: _get_setting("llm.tool_loop_max_iterations", 8),
+            gap_callback=acquisition.capture_gap,
         )
         self._orch.tool_rpc = server
         self._orch.agent_tool_runtime = runtime
@@ -471,6 +478,30 @@ class AutonomyCoordinator:
             "toolrpc.desktop_run",
             self._approved_desktop_tool_rpc_execute,
         )
+        acquisition = getattr(self._orch, "acquisition", None)
+        if acquisition is not None:
+            def _acquisition_kernel_gate(payload):
+                if _action_kernel is None:
+                    return "queue"
+                from .kernel import Action
+
+                decision = _action_kernel(
+                    Action(
+                        kind="skill.install",
+                        agent="jarvis",
+                        title="Install acquired capability",
+                        payload=dict(payload),
+                        origin="generated",
+                    )
+                )
+                return decision.verdict.value
+
+            acquisition.bind_promotion(
+                tool_rpc=self._orch.tool_rpc,
+                marketplace=getattr(self._orch, "marketplace", None),
+                kernel_gate=_acquisition_kernel_gate,
+            )
+            executor.register("skill.install", acquisition.execute_install_task)
 
         # H21.4: wire the calibration-gated autonomy hook (gated; no-op unless
         # cognition.learning_enabled — and it only ever ADDS caution).

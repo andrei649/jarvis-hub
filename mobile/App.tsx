@@ -3,6 +3,7 @@ import React, { useState } from 'react';
 import { Platform, Pressable, SafeAreaView, StyleSheet, Text, View } from 'react-native';
 import { ServerProvider } from './src/context/ServerContext';
 import { ApprovalsScreen } from './src/screens/ApprovalsScreen';
+import { AcquisitionScreen } from './src/screens/AcquisitionScreen';
 import { ChatScreen } from './src/screens/ChatScreen';
 import { CommsScreen } from './src/screens/CommsScreen';
 import { CameraScreen } from './src/screens/CameraScreen';
@@ -15,7 +16,7 @@ import { StatusScreen } from './src/screens/StatusScreen';
 import { TasksScreen } from './src/screens/TasksScreen';
 import { theme } from './src/theme';
 
-type Tab = 'chat' | 'memory' | 'approvals' | 'tasks' | 'house' | 'cameras' | 'media' | 'comms' | 'skills' | 'status' | 'settings';
+type Tab = 'chat' | 'memory' | 'approvals' | 'tasks' | 'house' | 'cameras' | 'media' | 'acquisition' | 'comms' | 'skills' | 'status' | 'settings';
 
 const TABS: { key: Tab; label: string; icon: string }[] = [
   { key: 'chat', label: 'Chat', icon: '◉' },
@@ -25,6 +26,7 @@ const TABS: { key: Tab; label: string; icon: string }[] = [
   { key: 'house', label: 'Home', icon: '⌂' },
   { key: 'cameras', label: 'Cameras', icon: '◫' },
   { key: 'media', label: 'Media', icon: '▷' },
+  { key: 'acquisition', label: 'Acquire', icon: '⬡' },
   { key: 'comms', label: 'Comms', icon: '✉' },
   { key: 'skills', label: 'Skills', icon: '◇' },
   { key: 'status', label: 'Status', icon: '▤' },
@@ -39,6 +41,7 @@ const TITLES: Record<Tab, string> = {
   house: 'House Brain',
   cameras: 'Camera Intelligence',
   media: 'Media Director',
+  acquisition: 'Capability Acquisition',
   comms: 'Comms',
   skills: 'Skills',
   status: 'Status',
@@ -62,6 +65,7 @@ function AppShell() {
         {tab === 'house' && <HouseScreen onGoToSettings={() => setTab('settings')} onGoToApprovals={() => setTab('approvals')} />}
         {tab === 'cameras' && <CameraScreen onGoToSettings={() => setTab('settings')} />}
         {tab === 'media' && <MediaScreen onGoToSettings={() => setTab('settings')} />}
+        {tab === 'acquisition' && <AcquisitionScreen onGoToSettings={() => setTab('settings')} />}
         {tab === 'comms' && <CommsScreen onGoToSettings={() => setTab('settings')} />}
         {tab === 'skills' && <SkillsScreen onGoToSettings={() => setTab('settings')} />}
         {tab === 'status' && <StatusScreen onGoToSettings={() => setTab('settings')} />}

@@ -2095,6 +2095,126 @@ export function CameraPanel() {
   );
 }
 
+/* H32.6 — owner-visible acquisition lifecycle and hash-only audit projection.
+   Raw goals, research extracts, package paths, and receipt bodies never reach the HUD. */
+export function AcquisitionPanel() {
+  const status = useApi('/api/acquisition/status');
+  const audit = useApi('/api/acquisition/events?limit=100');
+  const data = status.d || {};
+  const loaded = !!status.d;
+  const enabled = loaded && !!data.enabled;
+  const packages = arr(data, 'packages').slice(0, 256);
+  const events = arr(audit.d, 'events').slice(0, 100);
+  const states = data.states || {};
+  const reuse = data.reuse || {};
+  const reuseRate = Math.round(Math.max(0, Math.min(1, Number(reuse.reuse_rate) || 0)) * 100);
+  const [outcome, setOutcome] = useState('');
+  const [purgeConfirmation, setPurgeConfirmation] = useState('');
+  let hasAdmin = false;
+  try { hasAdmin = !!localStorage.getItem('hud.admin_token'); } catch { /* unavailable */ }
+
+  const reload = () => { status.reload(); audit.reload(); };
+  const lifecycle = (name, action) => {
+    setOutcome('sending…');
+    apiPost(`/api/acquisition/${encodeURIComponent(name)}/${action}`, {}, { admin: true })
+      .then((result: any) => {
+        setOutcome(`${result.status || action} · ${result.name || name}`);
+        reload();
+      })
+      .catch((error) => setOutcome(`refused · ${error?.message || `${action}_failed`}`));
+  };
+  const exportLedger = () => {
+    setOutcome('exporting…');
+    apiGet('/api/acquisition/ledger/export', { admin: true })
+      .then((result: any) => setOutcome(`export ready · ${Number(result.summary?.count || 0)} summarized events`))
+      .catch((error) => setOutcome(`refused · ${error?.message || 'export_failed'}`));
+  };
+  const purgeLedger = () => {
+    if (purgeConfirmation !== 'PURGE ACQUISITION DETAIL') return;
+    apiPost('/api/acquisition/ledger/purge', { confirm: purgeConfirmation }, { admin: true })
+      .then((result: any) => {
+        setOutcome(`purged · ${Number(result.purged || 0)} detailed events`);
+        setPurgeConfirmation('');
+        reload();
+      })
+      .catch((error) => setOutcome(`refused · ${error?.message || 'purge_failed'}`));
+  };
+
+  return (
+    <Card
+      title="CAPABILITY ACQUISITION"
+      live={asLive(loaded, enabled && data.status === 'ready')}
+      sub={loaded ? `${data.status || 'unknown'} · reuse ${reuseRate}%` : null}
+      onReload={reload}
+    >
+      <State e={status.e || audit.e} loading={status.loading || audit.loading} n={loaded && !enabled ? undefined : packages.length + events.length} />
+      {loaded && !enabled && (
+        <div style={{ fontSize: 10, color: 'var(--ink-3)', marginTop: 6 }}>
+          Capability Acquisition is off · {data.reason || 'owner enablement is required'}
+        </div>
+      )}
+      {enabled && <>
+        {data.status !== 'ready' && (
+          <div role="alert" style={{ ...mono, color: 'var(--amber)', marginBottom: 7 }}>
+            {data.status} · {data.reason || 'acquisition is not ready'}
+          </div>
+        )}
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5, marginBottom: 8 }}>
+          {Object.entries(states).map(([name, count]) => <Tag key={name}>{name} · {Number(count)}</Tag>)}
+          <Tag>reused · {Number(reuse.reused || 0)}</Tag>
+          <Tag>generated · {Number(reuse.generated || 0)}</Tag>
+          <Tag c={data.audit?.chain_valid ? 'var(--green)' : 'var(--red)'}>
+            {data.audit?.chain_valid ? 'chain verified' : 'chain degraded'}
+          </Tag>
+        </div>
+        <div style={{ ...mono, color: 'var(--ink-3)', fontSize: 10, margin: '4px 0' }}>SIGNED · SANDBOX-ONLY PACKAGES</div>
+        {packages.map((item) => (
+          <Row key={item.name}>
+            <span style={{ ...mono, color: 'var(--accent-light)' }}>{item.name}</span>
+            <span style={{ display: 'flex', flexWrap: 'wrap', gap: 5, marginLeft: 'auto', alignItems: 'center' }}>
+              <Tag>{item.version}</Tag><Tag>{item.status}</Tag><Tag>{Math.round(Number(item.confidence || 0) * 100)}% evidence</Tag>
+              {hasAdmin && <>
+                <button className="tool-btn" type="button" onClick={() => lifecycle(item.name, 'revoke')} aria-label={`Revoke ${item.name}`}>revoke</button>
+                <button className="tool-btn" type="button" onClick={() => lifecycle(item.name, 'rollback')} aria-label={`Rollback ${item.name}`}>rollback</button>
+              </>}
+            </span>
+          </Row>
+        ))}
+        <div style={{ ...mono, color: 'var(--ink-3)', fontSize: 10, margin: '10px 0 4px' }}>HASH-ONLY AUDIT · LATEST</div>
+        {events.map((item) => (
+          <Row key={`${item.sequence}:${item.event_hash || item.event_type}`}>
+            <span style={{ ...mono, color: 'var(--ink-2)' }}>#{Number(item.sequence || 0)} · {item.event_type}</span>
+            <span style={{ marginLeft: 'auto', display: 'flex', gap: 5 }}><Tag>{item.status || 'recorded'}</Tag><Tag>{item.actor || 'system'}</Tag></span>
+          </Row>
+        ))}
+        {hasAdmin && <section aria-label="admin acquisition lifecycle" style={{ marginTop: 10 }}>
+          <div style={{ display: 'flex', gap: 6, marginBottom: 6 }}>
+            <button className="tool-btn" type="button" onClick={exportLedger} aria-label="Export acquisition ledger">export ledger</button>
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: 6 }}>
+            <input
+              aria-label="acquisition purge confirmation"
+              value={purgeConfirmation}
+              onChange={(event) => setPurgeConfirmation(event.target.value)}
+              maxLength={64}
+              placeholder="type PURGE ACQUISITION DETAIL"
+              style={inpS}
+            />
+            <button
+              className="tool-btn"
+              type="button"
+              disabled={purgeConfirmation !== 'PURGE ACQUISITION DETAIL'}
+              onClick={purgeLedger}
+              aria-label="Purge acquisition detail"
+            >purge detail</button>
+          </div>
+        </section>}
+        {outcome && <div role="status" style={{ ...mono, color: outcome.startsWith('refused') ? 'var(--red)' : 'var(--amber)', marginTop: 7 }}>{outcome}</div>}
+      </>}
+    </Card>
+  );
+}
+
 /* 0.37 — the ingestion-provenance read surface (GET /api/ingestion/provenance, admin).
    Renders recent provenance records + by-source stats. Honesty contract: when
    JARVIS_PROVENANCE is off the endpoint reports enabled:false and the panel says so
@@ -2435,7 +2555,7 @@ const SECTIONS: Array<[string, Array<() => any>]> = [
   ['Trust', [KillSwitchPanel, KernelMetricsPanel, ReadinessPanel, LoopBreakerPanel, GovernancePanel, PosturePanel, SecuritySkillsPanel, NetworkMonitorPanel, CommsRatePanel, SafeCommsDraftPanel, SecretsPanel, CapabilitiesPanel, PairingPanel, InjectionScanPanel]],
   ['Interop', [A2AInboxPanel, MeshPeersPanel, SatellitesPanel, OraclePanel, MarketplacePanel, SkillHistoryPanel, WatchlistPanel]],
   ['Observe', [OnboardingPanel, EvalPanel, ReviewPanel, ArenaPanel, QualityPanel, APMPanel, ModelInfoPanel, FeedbackPanel]],
-  ['Build', [WorkflowsPanel, StepGenPanel, SandboxPanel, TemplatesPanel, MediaDirectorPanel, MediaGalleryPanel]],
+  ['Build', [WorkflowsPanel, StepGenPanel, SandboxPanel, TemplatesPanel, AcquisitionPanel, MediaDirectorPanel, MediaGalleryPanel]],
   ['Autonomy & Agents', [DecisionInboxPanel, MissionsPanel, AgentAutonomyPanel, TodayPanel, SchedulePanel, LearningPanel, SessionsPanel, HeartbeatPanel, TranscriptPanel, EscalationPanel]],
   ['Admin', [BackupPanel, OAuthPanel, SettingsPanel, PromptsPanel, RoomsPanel, LMStudioPanel, AuthProfilesPanel, SystemProfilePanel]],
 ];

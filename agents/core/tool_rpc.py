@@ -24,6 +24,7 @@ and offline-testable. The injected sink/secret-broker keep it decoupled.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import time
 from collections.abc import Mapping
@@ -136,6 +137,9 @@ class ToolRPCServer:
             "type": "object",
             "properties": {},
         }
+        existing = self._tools.get(name)
+        if existing is not None and existing.get("active_tasks"):
+            raise RuntimeError(f"tool has in-flight calls: {name}")
         self._tools[name] = {
             "handler": handler,
             "gated": bool(gated),
@@ -144,8 +148,37 @@ class ToolRPCServer:
             "capability_id": capability_id,
             "preflight": preflight,
             "trusted_execution": bool(trusted_execution),
+            "active_tasks": set(),
         }
         return self
+
+    async def unregister_tool(
+        self,
+        name: str,
+        *,
+        cancel_inflight: bool = False,
+        timeout: float = 5.0,
+    ) -> bool:
+        """Deny new calls immediately, then drain or cancel calls already running."""
+        spec = self._tools.pop(str(name or ""), None)
+        if spec is None:
+            return False
+        current = asyncio.current_task()
+        tasks = [task for task in tuple(spec.get("active_tasks", ())) if task is not current]
+        if cancel_inflight:
+            for task in tasks:
+                task.cancel()
+        if tasks:
+            try:
+                await asyncio.wait_for(
+                    asyncio.gather(*tasks, return_exceptions=True),
+                    timeout=max(0.01, min(30.0, float(timeout))),
+                )
+            except TimeoutError:
+                for task in tasks:
+                    task.cancel()
+                await asyncio.gather(*tasks, return_exceptions=True)
+        return True
 
     def tools(self) -> "list[dict]":
         tools = []
@@ -234,7 +267,7 @@ class ToolRPCServer:
             return {"ok": False, "reason": "approval_required", "tool": name, "task_id": task_id}
 
         try:
-            result = await spec["handler"](args)
+            result = await self._invoke_handler(spec, args)
         except Exception:
             logger.warning("tool-rpc handler failed: %s", name, exc_info=True)
             return {"ok": False, "reason": "tool_error", "tool": name}
@@ -299,7 +332,7 @@ class ToolRPCServer:
                     "detail": denied,
                 }
         try:
-            result = await spec["handler"](args)
+            result = await self._invoke_handler(spec, args)
         except Exception:
             logger.warning("tool-rpc approved execute failed: %s", name, exc_info=True)
             return {"status": "failed", "reason": "tool_error", "tool": name}
@@ -323,6 +356,18 @@ class ToolRPCServer:
         return {"status": "ok", "tool": name, "result": self._scrub(result)}
 
     # ── internals ────────────────────────────────────────────────────────────
+
+    @staticmethod
+    async def _invoke_handler(spec: dict, args: dict):
+        task = asyncio.current_task()
+        active = spec["active_tasks"]
+        if task is not None:
+            active.add(task)
+        try:
+            return await spec["handler"](args)
+        finally:
+            if task is not None:
+                active.discard(task)
 
     def _run_preflight(self, spec: dict, args: dict, name: str):
         preflight = spec.get("preflight")

@@ -111,6 +111,7 @@ RULES = [
     ("/api/media", "build"),  # governed generation + live Media Director panel (H12.24/H29)
     ("/api/house", "home"),  # H30 House Brain state + governed proposals/owner ceremony
     ("/api/cameras", "home"),  # H31 local camera metadata + privacy-safe temporal search
+    ("/api/acquisition", "build"),  # H32 governed capability lifecycle + hash-only audit
     # observe (traces / eval / quality / review / arena / resilience / bench / cost)
     ("/api/traces", "observe"),
     ("/api/eval", "observe"),
@@ -275,3 +276,32 @@ def test_camera_routes_have_a_metadata_only_home_surface():
     for route in ("/api/cameras/status", "/api/cameras/events", "/api/cameras/search"):
         assert route in panel
     assert all(tag not in panel.lower() for tag in ("<img", "<video", "<iframe"))
+
+
+def test_acquisition_routes_have_a_live_hash_only_build_surface():
+    acquisition_routes = {
+        "/api/acquisition/status",
+        "/api/acquisition/events",
+        "/api/acquisition/ledger/export",
+        "/api/acquisition/ledger/purge",
+        "/api/acquisition/{name}/revoke",
+        "/api/acquisition/{name}/rollback",
+    }
+    assert acquisition_routes.issubset(set(_routes()))
+    assert {_classify(path) for path in acquisition_routes} == {"build"}
+
+    source = GAP.read_text(encoding="utf-8")
+    assert re.search(r"\['Build', \[[^\]]*\bAcquisitionPanel\b", source)
+    start = source.index("export function AcquisitionPanel")
+    end = source.index("/* 0.37", start)
+    panel = source[start:end]
+    for route in (
+        "/api/acquisition/status",
+        "/api/acquisition/events",
+        "/api/acquisition/ledger/export",
+        "/api/acquisition/ledger/purge",
+        "/api/acquisition/",
+    ):
+        assert route in panel
+    assert "request_hash" not in panel
+    assert "detail_hash" not in panel
