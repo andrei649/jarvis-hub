@@ -53,6 +53,7 @@ intentionally owner-HUD-only; native clients expose no discovery, frame, stream,
 | Media Director (O29, default-off) | `GET /api/media/devices`, `POST /api/media/devices`, `DELETE /api/media/devices/{device_id}`, `GET /api/media/session`, `POST /api/media/present`, `POST /api/media/restore/{device_id}` | ✅ | ✅ | H18.21 |
 | House Brain (H30.5, default-off) | `GET /api/house/state`, `POST /api/house/control/{light,climate,security}`, admin-only `/api/house/security/{task_id}/{challenge,confirm}` | ✅ | ✅ | H30.5 |
 | Camera Intelligence (H31.5, default-off, metadata-only) | `GET /api/cameras/{status,events}`, `POST /api/cameras/search`, admin-only `POST /api/cameras/onvif/discover` | ✅ | ✅ | H31.5 |
+| Governed Capability Acquisition (H32.6, default-off) | user `GET /api/acquisition/{status,events}`; admin-only revoke, rollback, ledger export/purge | ✅ | ✅ | H32.6 |
 | Windows server-host desktop actuation (intentionally desktop-only; a phone must not control the server's desktop) | `POST /api/desktop/run` | ✅ | ➖ | — |
 | Auth (user/admin tokens) | `X-User-Token`, `X-Admin-Token` headers | ✅ | ✅ | H18.1 / H18.11 |
 
@@ -71,6 +72,11 @@ intentionally owner-HUD-only; native clients expose no discovery, frame, stream,
 > Approvals inbox. Reversible and security proposals are visible there, but the security-device
 > challenge/confirmation ceremony stays on the owner HUD; the phone has no one-tap unlock/disarm
 > or admin confirmation endpoint.
+
+> **H32.6 ✅ (delivered):** native acquisition parity is intentionally read-only. The Acquire tab
+> shows lifecycle counts, reuse rate, signed sandbox-only package metadata, and bounded audit event
+> metadata over the shared user endpoints. Permanent approval, revoke/rollback, and ledger
+> export/purge remain in the owner HUD's separately authenticated admin zone.
 
 > Rows with an empty **Task** cell are tracked-but-unscheduled parity gaps. When one becomes
 > worth doing on mobile, give it an `H18.x` id in `BACKLOG.md` and fill the cell. Surfaces marked

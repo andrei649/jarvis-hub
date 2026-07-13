@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import tempfile
@@ -24,6 +25,7 @@ class AcquiredSandboxRunner:
         enabled=lambda: False,
         runner=None,
         max_input_bytes: int = 64 * 1024,
+        event_sink=None,
     ) -> None:
         self.packages = packages
         self.profile = profile
@@ -34,6 +36,7 @@ class AcquiredSandboxRunner:
             max_output_bytes=profile.max_output_bytes,
         )
         self.max_input_bytes = max(1024, min(1024 * 1024, int(max_input_bytes)))
+        self._event_sink = event_sink
 
     async def run(self, name: str, args: dict):
         try:
@@ -51,6 +54,16 @@ class AcquiredSandboxRunner:
         if len(payload) > self.max_input_bytes:
             raise PackageStoreError("acquired capability input byte cap exceeded")
 
+        invocation_id = uuid.uuid4().hex
+        candidate = self.packages.get(name)
+        if candidate is not None:
+            self._emit(
+                "execution.started",
+                candidate,
+                task_id=invocation_id,
+                status="running",
+                details={"input_hash": hashlib.sha256(payload).hexdigest()},
+            )
         try:
             record = self.packages.require_runnable(name)
             if (
@@ -61,6 +74,14 @@ class AcquiredSandboxRunner:
         except PackageStoreError:
             with self._suppress_outcome_error():
                 self.packages.record_outcome(name, success=False)
+            if candidate is not None:
+                self._emit(
+                    "execution.completed",
+                    candidate,
+                    task_id=invocation_id,
+                    status="failed",
+                    details={"reason": "integrity_or_attestation_refused"},
+                )
             raise
 
         self.runtime_root.mkdir(parents=True, exist_ok=True)
@@ -85,13 +106,57 @@ class AcquiredSandboxRunner:
         if result.timed_out or result.exit_code != 0:
             self.packages.record_outcome(name, success=False)
             reason = "timed out" if result.timed_out else "sandbox execution failed"
+            self._emit(
+                "execution.completed",
+                record,
+                task_id=invocation_id,
+                status="failed",
+                details={"reason": reason, "exit_code": result.exit_code},
+            )
             raise PackageStoreError(f"acquired capability {reason}")
-        envelope = self._parse_output(result.stdout)
+        try:
+            envelope = self._parse_output(result.stdout)
+        except PackageStoreError:
+            self.packages.record_outcome(name, success=False)
+            self._emit(
+                "execution.completed",
+                record,
+                task_id=invocation_id,
+                status="failed",
+                details={"reason": "invalid_output_envelope"},
+            )
+            raise
         if envelope.get("ok") is not True:
             self.packages.record_outcome(name, success=False)
+            self._emit(
+                "execution.completed",
+                record,
+                task_id=invocation_id,
+                status="failed",
+                details={"reason": "invalid_result"},
+            )
             raise PackageStoreError("acquired capability returned invalid result")
         self.packages.record_outcome(name, success=True)
+        self._emit(
+            "execution.completed",
+            record,
+            task_id=invocation_id,
+            status="succeeded",
+            details={"outcome": "success"},
+        )
         return envelope.get("result")
+
+    def _emit(self, event_type: str, record, *, task_id: str, status: str, details: dict) -> None:
+        if self._event_sink is not None:
+            self._event_sink(
+                event_type,
+                actor="acquired-sandbox",
+                request_id=record.manifest.get("request_id", ""),
+                artifact_id=record.manifest.get("artifact_id", ""),
+                task_id=task_id,
+                status=status,
+                details=details,
+            )
 
     @staticmethod
     def _invocation_source(entrypoint: str) -> str:

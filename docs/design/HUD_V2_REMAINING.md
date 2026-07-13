@@ -183,6 +183,12 @@ optional strict-local description provenance, with deterministic temporal search
 image/video/embed or private media request. Admin-authenticated ONVIF discovery is onboarding-only;
 native parity covers status, recent events, and private-body search without an admin shortcut.
 
+**H32.6 Capability Acquisition (2026-07-13):** the default-off `/api/acquisition/*` surface is
+live in the Build cluster. `AcquisitionPanel` separates user-readable lifecycle/reuse/package and
+hash-only audit state from the admin-authenticated revoke, rollback, export, and exact-confirmation
+purge controls. It never renders request goals, source extracts, receipt bodies, package paths, or
+full correlation hashes. Native parity is deliberately read-only over the same bounded user APIs.
+
 **H28.4 desktop actuation (2026-07-13):** `POST /api/desktop/run` is user-guarded and
 default-off behind the isolated-host double opt-in. The Build surface still needs a dedicated
 Operator control that distinguishes proposed, queued, blocked, failed, and executed steps;

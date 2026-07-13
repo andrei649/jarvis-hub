@@ -90,6 +90,7 @@ class ReuseDecisionStore:
         clock: Callable[[], float] = time.time,
         max_records: int = 10_000,
         max_bytes: int = 8 * 1024 * 1024,
+        event_sink=None,
     ) -> None:
         self.root = Path(root) if root is not None else data_path("acquisition")
         self.root.mkdir(parents=True, exist_ok=True)
@@ -100,6 +101,7 @@ class ReuseDecisionStore:
         self._max_bytes = max(1024, int(max_bytes))
         self._lock = threading.RLock()
         self._records: list[ReuseDecision] | None = None
+        self._event_sink = event_sink
 
     def record(self, decision: ReuseDecision) -> ReuseDecision:
         with self._lock:
@@ -107,6 +109,18 @@ class ReuseDecisionStore:
             if len(records) >= self._max_records:
                 raise CapabilityStoreError("reuse decision capacity reached")
             self._commit([*records, decision])
+            if self._event_sink is not None:
+                self._event_sink(
+                    f"reuse.{decision.outcome}",
+                    actor="reuse-resolver",
+                    request_id=decision.request_id,
+                    status=decision.outcome,
+                    details={
+                        "candidate_id": decision.candidate_id,
+                        "score": decision.score,
+                        "requires_approval": decision.requires_approval,
+                    },
+                )
         return decision
 
     def record_outcome(

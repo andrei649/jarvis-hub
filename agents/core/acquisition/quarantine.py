@@ -56,6 +56,7 @@ class QuarantineStore:
         max_artifacts: int = 256,
         max_artifact_bytes: int = 256 * 1024,
         max_total_bytes: int = 32 * 1024 * 1024,
+        event_sink=None,
     ) -> None:
         self.root = Path(root) if root is not None else data_path("acquisition", "quarantine")
         if self._has_symlink_component(self.root):
@@ -71,6 +72,7 @@ class QuarantineStore:
         self._max_total_bytes = max(64, int(max_total_bytes))
         self._lock = threading.RLock()
         self._records: list[QuarantineRecord] | None = None
+        self._event_sink = event_sink
 
     def put(self, package: GeneratedPackage) -> QuarantineRecord:
         if not isinstance(package, GeneratedPackage):
@@ -93,6 +95,12 @@ class QuarantineStore:
             if len(records) >= self._max_artifacts:
                 raise QuarantineError("quarantine artifact capacity reached")
             self._commit([*records, record])
+            self._emit(
+                "quarantine.created",
+                package=package,
+                status=record.status,
+                details={"package_hash": package.package_hash},
+            )
         return record
 
     def get(self, artifact_id: str) -> GeneratedPackage | None:
@@ -134,6 +142,24 @@ class QuarantineStore:
                 receipt=dict(receipt) if receipt is not None else current.receipt,
             )
             self._commit([updated if row is current else row for row in records])
+            event_type = (
+                "sandbox.verified"
+                if target == "verified"
+                else "sandbox.rejected"
+                if target in {"rejected", "tampered"}
+                else "revocation.completed"
+                if target == "revoked"
+                else "quarantine.transitioned"
+            )
+            self._emit(
+                event_type,
+                package=current.package,
+                status=target,
+                details={
+                    "from": current.status,
+                    "receipt_hash": (receipt or current.receipt or {}).get("receipt_hash", ""),
+                },
+            )
             return updated
 
     def materialize(
@@ -198,6 +224,17 @@ class QuarantineStore:
             if count:
                 self._commit([])
             return count
+
+    def _emit(self, event_type: str, *, package: GeneratedPackage, status: str, details: dict) -> None:
+        if self._event_sink is not None:
+            self._event_sink(
+                event_type,
+                actor="quarantine",
+                request_id=package.request_id,
+                artifact_id=package.artifact_id,
+                status=status,
+                details=details,
+            )
 
     def _load(self) -> list[QuarantineRecord]:
         if self._records is not None:

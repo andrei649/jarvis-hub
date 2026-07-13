@@ -112,13 +112,21 @@ class _EncryptedRows:
 
 
 class PromotionStore(_EncryptedRows):
-    def __init__(self, root: str | Path | None = None, *, clock=time.time, max_proposals=512):
+    def __init__(
+        self,
+        root: str | Path | None = None,
+        *,
+        clock=time.time,
+        max_proposals=512,
+        event_sink=None,
+    ):
         super().__init__(
             root or data_path("acquisition", "proposals"),
             "proposals.enc",
             clock=clock,
         )
         self.max_proposals = max(1, min(10_000, int(max_proposals)))
+        self._event_sink = event_sink
 
     def _load(self) -> list[PromotionProposal]:
         if self._rows is None:
@@ -161,6 +169,12 @@ class PromotionStore(_EncryptedRows):
                 created_at=float(self.clock()),
             )
             self._commit([*rows, proposal])
+            self._emit(
+                "approval.proposed",
+                proposal,
+                actor="promotion-broker",
+                status="pending",
+            )
             return proposal
 
     def get(self, proposal_id: str) -> PromotionProposal | None:
@@ -182,7 +196,30 @@ class PromotionStore(_EncryptedRows):
                 decided_by=actor,
             )
             self._commit([updated if row is current else row for row in rows])
+            self._emit(
+                "approval.approved" if approved else "approval.rejected",
+                updated,
+                actor=actor,
+                status=updated.status,
+            )
             return updated
+
+    def _emit(self, event_type: str, proposal: PromotionProposal, *, actor: str, status: str) -> None:
+        if self._event_sink is not None:
+            self._event_sink(
+                event_type,
+                actor=actor,
+                request_id=proposal.request_id,
+                artifact_id=proposal.artifact_id,
+                task_id=proposal.proposal_id,
+                status=status,
+                details={
+                    "package_hash": proposal.package_hash,
+                    "receipt_hash": proposal.receipt_hash,
+                    "risk_tier": proposal.risk_tier,
+                    "approval_mode": proposal.approval_mode,
+                },
+            )
 
     def mark_installed(self, proposal_id: str) -> PromotionProposal:
         return self._mark(proposal_id, "installed")
@@ -282,6 +319,7 @@ class PromotionBroker:
         profile,
         kernel_gate=None,
         failpoint=None,
+        event_sink=None,
     ) -> None:
         self.enabled = enabled
         self.quarantine = quarantine
@@ -295,6 +333,7 @@ class PromotionBroker:
         self.profile = profile
         self.kernel_gate = kernel_gate or (lambda _payload: "queue")
         self.failpoint = failpoint
+        self._event_sink = event_sink
 
     def propose(self, artifact_id: str, *, contract) -> PromotionProposal:
         self._require_enabled()
@@ -454,6 +493,7 @@ class PromotionBroker:
         if record is None:
             raise PromotionError("acquired package not found")
         await self.tool_rpc.unregister_tool(name, cancel_inflight=True)
+        self._emit_package("registry.unregistered", record, status="revoking")
         self.packages.revoke(name)
         self.marketplace.remove_acquired_package(name)
         request = self.requests.get(record.manifest["request_id"])
@@ -462,6 +502,7 @@ class PromotionBroker:
         quarantine = self.quarantine.get_record(record.manifest["artifact_id"])
         if quarantine is not None and quarantine.status == "promoted":
             self.quarantine.transition(quarantine.package.artifact_id, "revoked")
+        self._emit_package("revocation.completed", record, status="revoked")
         return {"status": "revoked", "name": name}
 
     async def rollback(self, name: str) -> dict:
@@ -470,6 +511,7 @@ class PromotionBroker:
         if current is None:
             raise PromotionError("acquired package not found")
         await self.tool_rpc.unregister_tool(name, cancel_inflight=True)
+        self._emit_package("registry.unregistered", current, status="rolling_back")
         prior = self.packages.rollback(name)
         if prior is None:
             self.packages.revoke(name)
@@ -478,9 +520,11 @@ class PromotionBroker:
             request = self.requests.get(current.manifest["request_id"])
             if request is not None and request.status == RequestStatus.INSTALLED:
                 self.requests.transition(request.request_id, RequestStatus.REVOKED, actor="rollback")
+            self._emit_package("rollback.completed", current, status="uninstalled")
             return {"status": "uninstalled", "name": name}
         self.marketplace.index_acquired_package(prior.catalog_metadata())
         self._register(name)
+        self._emit_package("rollback.completed", prior, status="restored")
         return {"status": "restored", "name": name, "version": prior.version}
 
     def _register(self, name: str) -> None:
@@ -498,6 +542,24 @@ class PromotionBroker:
             input_schema={"type": "object", "additionalProperties": True},
             capability_id=f"tool:acquired.{name}",
         )
+        record = self.packages.get(name)
+        if record is not None:
+            self._emit_package("registry.registered", record, status="registered")
+
+    def _emit_package(self, event_type: str, record, *, status: str) -> None:
+        if self._event_sink is not None:
+            self._event_sink(
+                event_type,
+                actor="promotion-broker",
+                request_id=record.manifest.get("request_id", ""),
+                artifact_id=record.manifest.get("artifact_id", ""),
+                status=status,
+                details={
+                    "name": record.name,
+                    "version": record.version,
+                    "package_hash": record.package_hash,
+                },
+            )
 
     def _finalize(self, proposal: PromotionProposal, request_id: str) -> None:
         request = self.requests.get(request_id)

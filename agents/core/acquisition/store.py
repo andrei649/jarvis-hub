@@ -77,6 +77,7 @@ class CapabilityRequestStore:
         max_requests: int = 1_000,
         max_bytes: int = 16 * 1024 * 1024,
         cipher: SecretStore | None = None,
+        event_sink=None,
     ) -> None:
         self.root = Path(root) if root is not None else data_path("acquisition")
         self.root.mkdir(parents=True, exist_ok=True)
@@ -91,6 +92,7 @@ class CapabilityRequestStore:
         self._records: list[CapabilityRequest] | None = None
         self._secret_scanner = SecretScanner()
         self._pii_scanner = PIIScanner()
+        self._event_sink = event_sink
 
     def capture(self, goal: str, *, agent_id: str, reason: str) -> CapabilityRequest:
         if reason not in _ALLOWED_REASONS:
@@ -120,6 +122,13 @@ class CapabilityRequestStore:
                 )
                 candidate = [updated if row.request_id == existing.request_id else row for row in records]
                 self._commit(candidate)
+                self._emit(
+                    "request.created",
+                    actor="runtime",
+                    request_id=updated.request_id,
+                    status=updated.status.value,
+                    details={"fingerprint": updated.fingerprint, "occurrences": updated.occurrences},
+                )
                 return updated
             if len(records) >= self._max_requests:
                 raise CapabilityStoreError("capability request capacity reached")
@@ -136,6 +145,17 @@ class CapabilityRequestStore:
                 history=(event,),
             )
             self._commit([*records, request])
+            self._emit(
+                "request.created",
+                actor="runtime",
+                request_id=request.request_id,
+                status=request.status.value,
+                details={
+                    "fingerprint": request.fingerprint,
+                    "agent_id": request.agent_id,
+                    "reason": request.reason,
+                },
+            )
             return request
 
     def transition(
@@ -165,7 +185,18 @@ class CapabilityRequestStore:
                 history=(*current.history, event)[-64:],
             )
             self._commit([updated if row.request_id == request_id else row for row in records])
+            self._emit(
+                "request.transitioned",
+                actor=actor,
+                request_id=request_id,
+                status=target.value,
+                details={"from": current.status.value, "to": target.value},
+            )
             return updated
+
+    def _emit(self, event_type: str, **payload) -> None:
+        if self._event_sink is not None:
+            self._event_sink(event_type, **payload)
 
     def get(self, request_id: str) -> CapabilityRequest | None:
         with self._lock:

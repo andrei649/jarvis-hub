@@ -175,6 +175,7 @@ class ResearchStore:
         max_bytes: int = 32 * 1024 * 1024,
         max_source_extract_bytes: int = 16 * 1024,
         max_plan_bytes: int = 128 * 1024,
+        event_sink=None,
     ) -> None:
         self.root = Path(root) if root is not None else data_path("acquisition")
         self.root.mkdir(parents=True, exist_ok=True)
@@ -188,6 +189,7 @@ class ResearchStore:
         self._max_plan_bytes = max(64, int(max_plan_bytes))
         self._lock = threading.RLock()
         self._records: list[ResearchRecord] | None = None
+        self._event_sink = event_sink
 
     def put(self, record: ResearchRecord) -> ResearchRecord:
         with self._lock:
@@ -201,6 +203,19 @@ class ResearchStore:
             if len(records) >= self._max_records:
                 raise CapabilityStoreError("research store capacity reached")
             self._commit([*records, record])
+            if self._event_sink is not None:
+                self._event_sink(
+                    "research.completed",
+                    actor="governed-research",
+                    request_id=record.request_id,
+                    status="grounded",
+                    details={
+                        "research_id": record.research_id,
+                        "backend": record.backend,
+                        "source_hashes": [source.content_hash for source in record.sources],
+                        "sources": len(record.sources),
+                    },
+                )
         return record
 
     def put_raw(self, *, request_id: str, backend: str, sources: list[dict], plan: dict) -> ResearchRecord:

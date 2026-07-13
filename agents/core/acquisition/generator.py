@@ -167,6 +167,7 @@ class StrictLocalGenerator:
         max_code_bytes: int = 64 * 1024,
         max_test_bytes: int = 64 * 1024,
         timeout_seconds: float = 60.0,
+        event_sink=None,
     ) -> None:
         self._generate = generate
         self.route = str(route or "").strip().lower()
@@ -176,6 +177,7 @@ class StrictLocalGenerator:
         self.timeout_seconds = max(0.01, min(300.0, float(timeout_seconds)))
         self._secrets = SecretScanner()
         self._pii = PIIScanner()
+        self._event_sink = event_sink
 
     async def generate(
         self,
@@ -262,12 +264,27 @@ class StrictLocalGenerator:
             "source_hash": source_hash,
             "test_hash": test_hash,
         }
-        return GeneratedPackage(
+        package = GeneratedPackage(
             code=code,
             test_code=test_code,
             package_hash=_canonical_hash(members),
             **members,
         )
+        if self._event_sink is not None:
+            self._event_sink(
+                "generation.completed",
+                actor="strict-local-generator",
+                request_id=request.request_id,
+                artifact_id=package.artifact_id,
+                status="generated",
+                details={
+                    "package_hash": package.package_hash,
+                    "plan_hash": package.plan_hash,
+                    "contract_hash": package.contract_hash,
+                    "model_route": package.model_route,
+                },
+            )
+        return package
 
     @staticmethod
     def _parse_and_validate(code: str, *, label: str, allow_main: bool) -> ast.Module:

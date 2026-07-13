@@ -69,6 +69,7 @@ class AcquiredPackageStore:
         max_versions_per_skill: int = 3,
         max_packages: int = 256,
         max_registry_bytes: int = 16 * 1024 * 1024,
+        event_sink=None,
     ) -> None:
         self.root = Path(root) if root is not None else data_path("acquisition", "packages")
         if self.root.is_symlink():
@@ -84,6 +85,7 @@ class AcquiredPackageStore:
         self.max_registry_bytes = max(1024, int(max_registry_bytes))
         self._lock = threading.RLock()
         self._records: list[AcquiredRecord] | None = None
+        self._event_sink = event_sink
 
     def install(
         self,
@@ -226,6 +228,26 @@ class AcquiredPackageStore:
             except Exception:
                 self._remove_tree(target)
                 raise
+            self._emit(
+                "signature.created",
+                package=package,
+                status="signed",
+                details={
+                    "manifest_hash": signature.manifest_hash,
+                    "key_id": signature.key_id,
+                    "key_version": signature.key_version,
+                },
+            )
+            self._emit(
+                "install.committed",
+                package=package,
+                status="installed",
+                details={
+                    "package_hash": package.package_hash,
+                    "version": version,
+                    "execution_mode": "acquired_sandbox",
+                },
+            )
             return record
 
     def get(self, name: str) -> AcquiredRecord | None:
@@ -477,6 +499,17 @@ class AcquiredPackageStore:
             "confidence": 0.0,
             "last_outcome_at": None,
         }
+
+    def _emit(self, event_type: str, *, package: GeneratedPackage, status: str, details: dict) -> None:
+        if self._event_sink is not None:
+            self._event_sink(
+                event_type,
+                actor="acquired-package-store",
+                request_id=package.request_id,
+                artifact_id=package.artifact_id,
+                status=status,
+                details=details,
+            )
 
 
 __all__ = ["AcquiredPackageStore", "AcquiredRecord", "PackageStoreError"]

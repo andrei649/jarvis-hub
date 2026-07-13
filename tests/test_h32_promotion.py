@@ -10,6 +10,7 @@ from types import SimpleNamespace
 import pytest
 
 from agents.core.acquisition.acquired_runner import AcquiredSandboxRunner
+from agents.core.acquisition.audit import AcquisitionLedger
 from agents.core.acquisition.generator import (
     CapabilityContract,
     ContractCase,
@@ -292,11 +293,16 @@ def _broker(
     failpoint=None,
     tool_rpc=None,
     marketplace=None,
+    ledger=None,
 ):
     keys = ManagedSigningKeyStore(root=tmp_path / "keys")
     if signing:
         keys.provision(key_id="owner", version=1, key=b"k" * 32)
-    packages = AcquiredPackageStore(root=tmp_path / "packages", signing=keys)
+    packages = AcquiredPackageStore(
+        root=tmp_path / "packages",
+        signing=keys,
+        event_sink=ledger.emit if ledger is not None else None,
+    )
     server = tool_rpc or ToolRPCServer()
     market = marketplace or SkillMarketplace(
         skills_dir=str(tmp_path / "skills"),
@@ -306,7 +312,10 @@ def _broker(
         enabled=lambda: True,
         quarantine=quarantine,
         requests=requests,
-        proposals=PromotionStore(root=tmp_path / "proposals"),
+        proposals=PromotionStore(
+            root=tmp_path / "proposals",
+            event_sink=ledger.emit if ledger is not None else None,
+        ),
         packages=packages,
         journal=PromotionJournal(root=tmp_path / "journal"),
         tool_rpc=server,
@@ -315,6 +324,7 @@ def _broker(
         profile=profile,
         kernel_gate=lambda _payload: "queue",
         failpoint=failpoint,
+        event_sink=ledger.emit if ledger is not None else None,
     )
     return broker, packages, server, market
 
@@ -322,11 +332,13 @@ def _broker(
 @pytest.mark.asyncio
 async def test_permanent_approval_is_hard_floor_then_installs_and_registers_atomically(tmp_path):
     requests, request, package, profile, _receipt, quarantine = await _verified_artifact(tmp_path)
+    ledger = AcquisitionLedger(root=tmp_path / "ledger")
     broker, packages, server, market = _broker(
         tmp_path,
         requests=requests,
         quarantine=quarantine,
         profile=profile,
+        ledger=ledger,
     )
 
     proposal = broker.propose(package.artifact_id, contract=_contract())
@@ -361,6 +373,13 @@ async def test_permanent_approval_is_hard_floor_then_installs_and_registers_atom
     executor = TaskExecutor()
     broker.register_executor(executor)
     assert executor.resolve("skill.install") == broker.execute_task
+    assert {
+        "approval.proposed",
+        "approval.approved",
+        "signature.created",
+        "install.committed",
+        "registry.registered",
+    } <= {row["event_type"] for row in ledger.list_public(limit=100)}
 
 
 @pytest.mark.asyncio
@@ -418,17 +437,27 @@ async def test_acquired_runtime_rechecks_signature_profile_enabled_and_records_o
         runner=runner,
         runtime_root=tmp_path / "runtime",
         enabled=lambda: True,
+        event_sink=(ledger := AcquisitionLedger(root=tmp_path / "ledger")).emit,
     )
 
     assert await runtime.run(package.name, {"items": [{"id": 1}]}) == [1]
     assert packages.get(package.name).outcomes["successes"] == 1
+    assert [row["event_type"] for row in reversed(ledger.list_public(limit=10))] == [
+        "execution.started",
+        "execution.completed",
+    ]
     assert "--network" in runner.commands[0][0]
+
+    runner.output = "invalid envelope"
+    with pytest.raises(PackageStoreError, match="envelope missing"):
+        await runtime.run(package.name, {})
+    assert ledger.list_public(limit=1)[0]["status"] == "failed"
 
     os.chmod(packages.get(package.name).path / "main.py", 0o600)
     (packages.get(package.name).path / "main.py").write_text("tampered", encoding="utf-8")
     with pytest.raises(PackageStoreError, match="integrity"):
         await runtime.run(package.name, {})
-    assert packages.get(package.name).outcomes["failures"] == 1
+    assert packages.get(package.name).outcomes["failures"] == 2
 
     disabled = AcquiredSandboxRunner(
         packages=packages,
