@@ -1315,6 +1315,123 @@ export async function removeMediaDevice(config: ServerConfig, deviceId: string):
   return normalizeMediaMutation(raw);
 }
 
+// ── House Brain (read parity only) ───────────────────────────────
+
+export type HouseRoom = {
+  room_id: string;
+  name: string;
+};
+
+export type HouseDevice = {
+  entity_id: string;
+  domain: string;
+  state: string;
+  room_id: string;
+};
+
+export type HousePresence = {
+  occupant_id: string;
+  status: 'present' | 'vacant' | 'unknown';
+  room_id?: string;
+  privacy: string;
+  confidence: number;
+  fresh: boolean;
+};
+
+export type HouseStateResponse = {
+  enabled: boolean;
+  status: 'disabled' | 'degraded' | 'live';
+  reason: string;
+  observed_at: number;
+  freshness_seconds: number | null;
+  rooms: HouseRoom[];
+  devices: HouseDevice[];
+  presence: HousePresence[];
+  privacy_status: string;
+};
+
+const HOUSE_PSEUDONYM = /^occ-[0-9a-f]{32}$/;
+
+function houseText(value: unknown, limit: number): string {
+  const text = securityString(value).trim();
+  return text.length <= limit ? text : '';
+}
+
+function normalizeHouseRoom(value: unknown): HouseRoom | null {
+  const raw = securityRecord(value);
+  const roomId = houseText(raw.room_id, 128);
+  const name = houseText(raw.name, 160);
+  return roomId && name ? { room_id: roomId, name } : null;
+}
+
+function normalizeHouseDevice(value: unknown): HouseDevice | null {
+  const raw = securityRecord(value);
+  const entityId = houseText(raw.entity_id, 128);
+  const domain = houseText(raw.domain, 64);
+  const state = houseText(raw.state, 256);
+  if (!entityId || !domain || !state) return null;
+  return {
+    entity_id: entityId,
+    domain,
+    state,
+    room_id: houseText(raw.room_id, 128),
+  };
+}
+
+function normalizeHousePresence(value: unknown): HousePresence | null {
+  const raw = securityRecord(value);
+  const occupantId = houseText(raw.occupant_id, 36);
+  if (!HOUSE_PSEUDONYM.test(occupantId)) return null;
+  const rawStatus = houseText(raw.status, 16);
+  const status = rawStatus === 'present' || rawStatus === 'vacant' ? rawStatus : 'unknown';
+  const privacy = houseText(raw.privacy, 128) || 'household';
+  const rawConfidence = securityNumber(raw.confidence);
+  const confidence = Number.isFinite(rawConfidence)
+    ? Math.max(0, Math.min(rawConfidence, 1))
+    : 0;
+  const roomId = privacy.toLowerCase() === 'private' ? '' : houseText(raw.room_id, 128);
+  return {
+    occupant_id: occupantId,
+    status,
+    ...(roomId ? { room_id: roomId } : {}),
+    privacy,
+    confidence,
+    fresh: securityBool(raw.fresh),
+  };
+}
+
+export async function fetchHouseState(config: ServerConfig): Promise<HouseStateResponse> {
+  const raw = await request<Record<string, unknown>>(config, 'GET', '/api/house/state', undefined, {
+    retries: 2,
+  });
+  const rawStatus = houseText(raw.status, 32);
+  const status = rawStatus === 'disabled' || rawStatus === 'degraded' || rawStatus === 'live'
+    ? rawStatus
+    : 'degraded';
+  const observedAt = securityNumber(raw.observed_at);
+  const rawFreshness = raw.freshness_seconds;
+  return {
+    enabled: securityBool(raw.enabled),
+    status,
+    reason: typeof raw.reason === 'string' ? raw.reason.slice(0, 256) : '',
+    observed_at: Number.isFinite(observedAt) && observedAt >= 0 ? observedAt : 0,
+    freshness_seconds:
+      typeof rawFreshness === 'number' && Number.isFinite(rawFreshness) && rawFreshness >= 0
+        ? rawFreshness
+        : null,
+    rooms: Array.isArray(raw.rooms)
+      ? raw.rooms.map(normalizeHouseRoom).filter((item): item is HouseRoom => item !== null).slice(0, 500)
+      : [],
+    devices: Array.isArray(raw.devices)
+      ? raw.devices.map(normalizeHouseDevice).filter((item): item is HouseDevice => item !== null).slice(0, 500)
+      : [],
+    presence: Array.isArray(raw.presence)
+      ? raw.presence.map(normalizeHousePresence).filter((item): item is HousePresence => item !== null).slice(0, 500)
+      : [],
+    privacy_status: houseText(raw.privacy_status, 32) || 'unavailable',
+  };
+}
+
 // ── Agents ────────────────────────────────────────────────────────
 
 export type AgentInfo = {

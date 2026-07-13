@@ -109,6 +109,7 @@ RULES = [
     ("/api/vlm", "build"),  # vision-language model adapter (H13.1)
     ("/api/desktop", "build"),  # governed desktop operator (H15.3)
     ("/api/media", "build"),  # governed generation + live Media Director panel (H12.24/H29)
+    ("/api/house", "home"),  # H30 House Brain state + governed proposals/owner ceremony
     # observe (traces / eval / quality / review / arena / resilience / bench / cost)
     ("/api/traces", "observe"),
     ("/api/eval", "observe"),
@@ -231,4 +232,25 @@ def test_media_director_routes_have_a_live_build_surface():
     ):
         assert route in panel
     assert "ADMIN · DEVICE REGISTRY" in panel
+    assert "<iframe" not in panel.lower()
+
+
+def test_house_routes_have_a_live_home_surface():
+    house_routes = {
+        "/api/house/state",
+        "/api/house/control/light",
+        "/api/house/control/climate",
+        "/api/house/control/security",
+    }
+    assert house_routes.issubset(set(_routes()))
+    assert {_classify(path) for path in house_routes} == {"home"}
+
+    source = GAP.read_text(encoding="utf-8")
+    start = source.index("export function HousePanel")
+    end = source.index("/* 0.37", start)
+    panel = source[start:end]
+    for route in house_routes:
+        assert route in panel
+    assert "/api/house/security/" in panel
+    assert "ADMIN · STRONG CONFIRMATION" in panel
     assert "<iframe" not in panel.lower()

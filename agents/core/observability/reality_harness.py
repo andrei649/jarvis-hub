@@ -568,6 +568,10 @@ from agents.core.observability.operator_reality import (  # noqa: E402, I001
     OperatorEventLedger as _OperatorEventLedger,
 )
 from agents.core.observability.media_reality import H29_MEDIA_REALITY_CASES  # noqa: E402
+from agents.core.observability.house_reality import (  # noqa: E402
+    H30_HOUSE_LIVE_CASES,
+    H30_HOUSE_REALITY_CASES,
+)
 
 OperatorEventLedger = _OperatorEventLedger
 
@@ -771,6 +775,8 @@ CASES: list[RealityCase] = [
     ),
     *ACTION_CAPABILITY_CASES,
     *MEDIA_CAPABILITY_CASES,
+    *H30_HOUSE_REALITY_CASES,
+    *H30_HOUSE_LIVE_CASES,
     *TOOL_CAPABILITY_CASES,
     *OPERATOR_CAPABILITY_CASES,
 ]

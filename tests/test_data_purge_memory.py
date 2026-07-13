@@ -28,6 +28,11 @@ def _seed_memory_root(tmp_path) -> Path:
         '{"items": {"turn:1": {"content": "Alice secret", "activation": 1.0}}}',
         encoding="utf-8",
     )
+    (root / "house").mkdir(parents=True, exist_ok=True)
+    (root / "house" / "private_graph.enc").write_text(
+        '{"ciphertext": "private-house-pii"}', encoding="utf-8"
+    )
+    (root / "house" / "private_graph.cipher.salt").write_bytes(b"private-store-salt")
     (root / "embedding_cache" / "recall").mkdir(parents=True, exist_ok=True)
     (root / "embedding_cache" / "recall" / "v.json").write_text("[1,2,3]", encoding="utf-8")
     # Conversation transcripts (session-keyed) — must be erased.
@@ -53,6 +58,8 @@ def test_memory_at_rest_is_erased(tmp_path):
     assert not (root / "decay.json").exists()
     assert not (root / "cognition" / "core_memory.json").exists()
     assert not (root / "cognition" / "living_tiers.json").exists()
+    assert not (root / "house" / "private_graph.enc").exists()
+    assert not (root / "house" / "private_graph.cipher.salt").exists()
     assert not (root / "embedding_cache").exists()
     assert set(mem["files"]) == {
         "bitemporal_kg.json",
@@ -60,6 +67,8 @@ def test_memory_at_rest_is_erased(tmp_path):
         "decay.json",
         "cognition/core_memory.json",
         "cognition/living_tiers.json",
+        "house/private_graph.enc",
+        "house/private_graph.cipher.salt",
     }
     assert mem["dirs"] == ["embedding_cache"]
     # conversation transcripts gone (both the glob-discovered and the live one)

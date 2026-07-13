@@ -79,6 +79,12 @@ ACTION_REGISTRY: dict[str, Mediation] = {
     # action facade immediately before actuation. Null/manual offline drivers
     # keep their legacy direct path; a requires_kernel driver cannot use it.
     "desktop.step": Mediation.KERNEL,
+    # ORIZONT 30 — every Home Assistant mutation crosses the unified facade.
+    # Security control retains an owner-confirmation floor; recovery is separate
+    # so a halt or policy change can refuse compensation honestly.
+    "house.control": Mediation.KERNEL,
+    "house.security_control": Mediation.KERNEL,
+    "house.recovery": Mediation.KERNEL,
 }
 
 

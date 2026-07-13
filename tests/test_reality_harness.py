@@ -9,6 +9,10 @@ import pytest
 
 from agents.core.observability import capability_registry as cr
 from agents.core.observability import reality_harness as rh
+from agents.core.observability.house_reality import (
+    H30_HOUSE_LIVE_CASES,
+    H30_HOUSE_REALITY_CASES,
+)
 from agents.core.observability.media_reality import H29_MEDIA_REALITY_CASES
 from agents.core.observability.reality_harness import RealityCase, run_reality
 
@@ -125,7 +129,9 @@ async def test_manual_demote_overrides_a_verification(monkeypatch):
 # ── the real seeded cases: prove the egress + kernel kill-switch rails hermetically ──
 async def test_seeded_cases_prove_rails_and_promote():
     out = await run_reality(rh.CASES, now="2026-06-25T00:00:00+00:00")
-    assert out["total"] == out["passed"] == len(rh.CASES)  # every hermetic contract holds
+    hermetic_count = len(rh.CASES) - len(H30_HOUSE_LIVE_CASES)
+    assert out["total"] == out["passed"] == hermetic_count
+    assert out["skipped"] == len(H30_HOUSE_LIVE_CASES)
     assert {"component:kill_switch", "component:capabilities"} <= set(out["promoted"])
     snap = cr.snapshot()  # plugins derive statically (no orch needed)
     states = {c["id"]: c["state"] for c in snap["capabilities"]}
@@ -140,6 +146,16 @@ def test_canonical_seeded_harness_registers_the_h29_media_pack_once():
 
     assert h29_names
     assert all(seeded_names.count(name) == 1 for name in h29_names)
+
+
+def test_canonical_seeded_harness_registers_the_h30_house_pack_once():
+    h30_names = [
+        case.name for case in H30_HOUSE_REALITY_CASES + H30_HOUSE_LIVE_CASES
+    ]
+    seeded_names = [case.name for case in rh.CASES]
+
+    assert h30_names
+    assert all(seeded_names.count(name) == 1 for name in h30_names)
 
 
 async def test_kill_switch_rail_is_a_real_hermetic_proof():

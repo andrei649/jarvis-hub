@@ -68,6 +68,8 @@ PURGE_MEMORY_FILES: tuple[str, ...] = (
     "decay.json",
     "cognition/core_memory.json",
     "cognition/living_tiers.json",
+    "house/private_graph.enc",
+    "house/private_graph.cipher.salt",
 )
 # Directories removed wholesale (embedded recall cache derived from user content).
 PURGE_MEMORY_DIRS: tuple[str, ...] = ("embedding_cache",)

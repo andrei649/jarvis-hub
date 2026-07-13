@@ -307,6 +307,48 @@ ACTION_CAPABILITY_MANIFESTS: dict[str, CapabilityManifest] = {
         implementation="agents.core.desktop_operator:DesktopActionExecutor.perform",
         contract_ref="agents.core.desktop_operator:DESKTOP_STEP_CONTRACT",
     ),
+    "house.control": _action(
+        "house.control",
+        "Apply a bounded reversible light or climate command through Home Assistant.",
+        required=("control", "entity_id", "action"),
+        risk="reversible",
+        supports=("light", "climate", "verify"),
+        rollback=RollbackContract(
+            mode="restore",
+            description="Restore the fresh pre-action Home Assistant state.",
+            automatic=True,
+            handler_ref="agents.core.house.actuation:HouseActuator._rollback",
+            limitations="Recovery remains kernel-mediated and can be halted.",
+        ),
+        implementation="agents.core.house.actuation:HouseActuator.execute_task",
+    ),
+    "house.security_control": _action(
+        "house.security_control",
+        "Control a lock, door/cover, or alarm after exact owner confirmation.",
+        required=("control", "entity_id", "action"),
+        risk="irreversible_or_money",
+        supports=("lock", "cover", "alarm", "strong-confirmation", "verify"),
+        rollback=RollbackContract(
+            mode="restore",
+            description="Attempt to restore the fresh pre-action security state.",
+            automatic=True,
+            handler_ref="agents.core.house.actuation:HouseActuator._rollback",
+            limitations="Never auto-approved; recovery remains kernel-mediated.",
+        ),
+        implementation="agents.core.house.actuation:HouseActuator.execute_task",
+    ),
+    "house.recovery": _action(
+        "house.recovery",
+        "Compensate a failed house action using its recorded fresh pre-state.",
+        required=("control", "entity_id", "action"),
+        risk="sensitive",
+        supports=("compensate", "verify"),
+        rollback=RollbackContract(
+            mode="none",
+            description="A failed recovery requires manual owner intervention.",
+        ),
+        implementation="agents.core.house.actuation:HouseActuator._rollback",
+    ),
 }
 
 

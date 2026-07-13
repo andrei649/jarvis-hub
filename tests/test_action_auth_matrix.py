@@ -312,6 +312,83 @@ def _exercise(kind, spy, tmp_path, monkeypatch=None):
                 )
             )
             asyncio.run(media_routes.media_restore("tv-1"))
+    elif kind in ("house.control", "house.security_control", "house.recovery"):
+        # O30: bounded house commands cross CapabilityActionAPI immediately before
+        # the HA driver. Security adds an exact one-shot owner confirmation.
+        import asyncio
+        from types import SimpleNamespace
+
+        from agents.core.capability_actions import PerformContext
+        from agents.core.house.actuation import HouseActuator
+        from agents.core.house.confirmation import StrongConfirmationStore
+        from agents.core.house.contracts import HouseEntity, HouseSnapshot
+        from agents.core.security.secret_broker import SecretBroker
+
+        class _House:
+            def __init__(self, entity_id, state):
+                self.entity_id, self.state = entity_id, state
+
+            async def snapshot(self):
+                entity = HouseEntity(
+                    entity_id=self.entity_id,
+                    domain=self.entity_id.split(".", 1)[0],
+                    name=self.entity_id,
+                    state=self.state,
+                    updated_at=100.0,
+                )
+                return HouseSnapshot(
+                    enabled=True, status="live", observed_at=100.0, entities=(entity,)
+                )
+
+            async def apply(self, command):
+                self.state = {
+                    "on": "on",
+                    "unlock": "unlocked",
+                    "off": "off",
+                }.get(command["action"], self.state)
+                return {"ok": True}
+
+        monkeypatch.setenv("JARVIS_UNIFIED_ACTION_API", "1")
+        security = kind == "house.security_control"
+        house = _House(
+            "lock.front_door" if security else "light.kitchen", "locked" if security else "off"
+        )
+        broker = SecretBroker()
+        broker.put("house_confirmation_key", "matrix-confirmation-key-material-long-enough")
+        confirmations = StrongConfirmationStore(
+            tmp_path / f"{kind}.confirm.db", secret_broker=broker, clock=lambda: 100.0
+        )
+        actuator = HouseActuator(
+            state_reader=house,
+            driver=house,
+            authorizer=spy,
+            confirmation_store=confirmations,
+            ledger_path=tmp_path / f"{kind}.actuation.db",
+            clock=lambda: 100.0,
+        )
+        payload = {
+            "version": 1,
+            "control": "security" if security else "light",
+            "entity_id": house.entity_id,
+            "action": "unlock" if security else "on",
+            "risk_tier": 3 if security else 1,
+            "reversible": not security,
+            "signal_quality": 1.0,
+        }
+        if kind == "house.recovery":
+            asyncio.run(
+                actuator._actions.perform(
+                    "action:house.recovery",
+                    payload,
+                    PerformContext(capability_name="house.recovery"),
+                )
+            )
+        else:
+            task = SimpleNamespace(id=1, kind=kind, agent="jarvis", payload=payload)
+            if security:
+                challenge = actuator.mint_confirmation(task)
+                actuator.confirm(challenge["token"], task)
+            asyncio.run(actuator.execute_task(task))
     elif kind == "desktop.step":
         # The optional real host seam must cross CapabilityActionAPI immediately
         # before driver execution. The unified facade stays default-off; the outer

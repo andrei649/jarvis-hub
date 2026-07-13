@@ -5,6 +5,7 @@ import { ServerProvider } from './src/context/ServerContext';
 import { ApprovalsScreen } from './src/screens/ApprovalsScreen';
 import { ChatScreen } from './src/screens/ChatScreen';
 import { CommsScreen } from './src/screens/CommsScreen';
+import { HouseScreen } from './src/screens/HouseScreen';
 import { MemoryScreen } from './src/screens/MemoryScreen';
 import { MediaScreen } from './src/screens/MediaScreen';
 import { SettingsScreen } from './src/screens/SettingsScreen';
@@ -13,13 +14,14 @@ import { StatusScreen } from './src/screens/StatusScreen';
 import { TasksScreen } from './src/screens/TasksScreen';
 import { theme } from './src/theme';
 
-type Tab = 'chat' | 'memory' | 'approvals' | 'tasks' | 'media' | 'comms' | 'skills' | 'status' | 'settings';
+type Tab = 'chat' | 'memory' | 'approvals' | 'tasks' | 'house' | 'media' | 'comms' | 'skills' | 'status' | 'settings';
 
 const TABS: { key: Tab; label: string; icon: string }[] = [
   { key: 'chat', label: 'Chat', icon: '◉' },
   { key: 'memory', label: 'Memory', icon: '◎' },
   { key: 'approvals', label: 'Approve', icon: '✓' },
   { key: 'tasks', label: 'Tasks', icon: '▦' },
+  { key: 'house', label: 'Home', icon: '⌂' },
   { key: 'media', label: 'Media', icon: '▷' },
   { key: 'comms', label: 'Comms', icon: '✉' },
   { key: 'skills', label: 'Skills', icon: '◇' },
@@ -32,6 +34,7 @@ const TITLES: Record<Tab, string> = {
   memory: 'Memory',
   approvals: 'Approvals',
   tasks: 'Tasks',
+  house: 'House Brain',
   media: 'Media Director',
   comms: 'Comms',
   skills: 'Skills',
@@ -53,6 +56,7 @@ function AppShell() {
         {tab === 'memory' && <MemoryScreen onGoToSettings={() => setTab('settings')} />}
         {tab === 'approvals' && <ApprovalsScreen onGoToSettings={() => setTab('settings')} />}
         {tab === 'tasks' && <TasksScreen onGoToSettings={() => setTab('settings')} />}
+        {tab === 'house' && <HouseScreen onGoToSettings={() => setTab('settings')} onGoToApprovals={() => setTab('approvals')} />}
         {tab === 'media' && <MediaScreen onGoToSettings={() => setTab('settings')} />}
         {tab === 'comms' && <CommsScreen onGoToSettings={() => setTab('settings')} />}
         {tab === 'skills' && <SkillsScreen onGoToSettings={() => setTab('settings')} />}

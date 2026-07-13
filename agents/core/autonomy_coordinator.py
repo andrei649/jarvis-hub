@@ -504,6 +504,10 @@ class AutonomyCoordinator:
             max_depth=int(self._orch.get_setting("autonomy.max_subagent_depth", 8) or 8),
         )
 
+        # Domain routers may register late-bound host handlers (for example the
+        # default-off House Brain after owner configuration is available). Keep
+        # the concrete executor; the worker still receives only ``execute``.
+        self._orch.task_executor = executor
         return executor
 
     def _subagent_concurrency(self) -> int:
