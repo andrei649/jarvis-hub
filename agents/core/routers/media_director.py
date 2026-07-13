@@ -128,7 +128,13 @@ async def _perform_media(capability_id: str, params: dict, *, title: str):
 
     orch = get_orch()
     api = CapabilityActionAPI(authorizer=make_action_kernel(orch) if orch else None)
-    register_media_capability(api, _get_director())
+    autonomy = getattr(orch, "autonomy", None)
+    interrupt_budget = getattr(autonomy, "budget", None)
+    register_media_capability(
+        api,
+        _get_director(),
+        interrupt_budget=interrupt_budget,
+    )
     return await api.perform(
         capability_id,
         params,

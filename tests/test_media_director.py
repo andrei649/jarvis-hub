@@ -17,6 +17,7 @@ repo_root = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(repo_root))
 sys.path.insert(0, str(repo_root / "agents"))
 
+from agents.core.autonomy.worker import InterruptBudget  # noqa: E402
 from agents.core.browser_agent import BrowserPolicy, GovernedBrowser  # noqa: E402
 from agents.core.media_catalog import MediaCatalog  # noqa: E402
 from agents.core.media_director import (  # noqa: E402
@@ -520,13 +521,160 @@ def test_session_etiquette_only_high_urgency_interrupts():
         _payload(
             urgency="high",
             content={"type": "url", "value": "https://93.184.216.34/y"},
-        )
+        ),
+        interrupt_budget=InterruptBudget(per_day=1),
     )
     assert override["ok"] is True
 
 
 def test_may_interrupt_free_when_idle():
     assert may_interrupt(None, urgency="low") is True
+
+
+@pytest.mark.parametrize("state", ["playing", "paused"])
+def test_active_high_urgency_consumes_shared_interrupt_budget_before_actuation(state):
+    driver = FakeDriver()
+    director = _director(driver)
+    director.sessions.set(
+        MediaSession(
+            device_id="tv-1",
+            content={"type": "url", "value": "https://93.184.216.34/current"},
+            mode="play",
+            privacy="household",
+            started_at=1.0,
+            state=state,
+        )
+    )
+    budget = InterruptBudget(per_day=1)
+
+    allowed = director.present(_payload(urgency="high"), interrupt_budget=budget)
+    refused = director.present(
+        _payload(
+            urgency="high",
+            content={"type": "url", "value": "https://93.184.216.34/next"},
+        ),
+        interrupt_budget=budget,
+    )
+
+    assert allowed["ok"] is True
+    assert budget.remaining() == 0
+    assert refused == {"ok": False, "reason": "interrupt_budget_exhausted"}
+    assert driver.calls == ["play"]
+
+
+def test_active_high_urgency_refuses_when_interrupt_budget_is_unavailable():
+    driver = FakeDriver()
+    director = _director(driver)
+    director.sessions.set(
+        MediaSession(
+            device_id="tv-1",
+            content={"type": "url", "value": "https://93.184.216.34/current"},
+            mode="play",
+            privacy="household",
+            started_at=1.0,
+        )
+    )
+
+    result = director.present(_payload(urgency="high"))
+
+    assert result == {"ok": False, "reason": "interrupt_budget_unavailable"}
+    assert driver.calls == []
+
+
+def test_broken_interrupt_budget_seam_refuses_without_driver_actuation():
+    class BrokenBudget:
+        @property
+        def consume(self):
+            raise RuntimeError("private budget backend detail")
+
+    driver = FakeDriver()
+    director = _director(driver)
+    director.sessions.set(
+        MediaSession(
+            device_id="tv-1",
+            content={"type": "url", "value": "https://93.184.216.34/current"},
+            mode="play",
+            privacy="household",
+            started_at=1.0,
+        )
+    )
+
+    result = director.present(_payload(urgency="high"), interrupt_budget=BrokenBudget())
+
+    assert result == {"ok": False, "reason": "interrupt_budget_unavailable"}
+    assert "private budget backend detail" not in repr(result)
+    assert driver.calls == []
+
+
+@pytest.mark.parametrize("malformed", ["allowed", {"ok": True}, 1])
+def test_malformed_interrupt_budget_result_fails_closed(malformed):
+    class MalformedBudget:
+        def consume(self):
+            return malformed
+
+    driver = FakeDriver()
+    director = _director(driver)
+    director.sessions.set(
+        MediaSession(
+            device_id="tv-1",
+            content={"type": "url", "value": "https://93.184.216.34/current"},
+            mode="play",
+            privacy="household",
+            started_at=1.0,
+        )
+    )
+
+    result = director.present(
+        _payload(urgency="high"),
+        interrupt_budget=MalformedBudget(),
+    )
+
+    assert result == {"ok": False, "reason": "interrupt_budget_unavailable"}
+    assert driver.calls == []
+
+
+def test_idle_target_does_not_consume_interrupt_budget_even_at_high_urgency():
+    driver = FakeDriver()
+    director = _director(driver)
+    director.sessions.set(
+        MediaSession(
+            device_id="tv-1",
+            content={"type": "url", "value": "https://93.184.216.34/old"},
+            mode="play",
+            privacy="household",
+            started_at=1.0,
+            state="idle",
+        )
+    )
+    budget = InterruptBudget(per_day=1)
+
+    result = director.present(_payload(urgency="high"), interrupt_budget=budget)
+
+    assert result["ok"] is True
+    assert budget.remaining() == 1
+    assert driver.calls == ["play"]
+
+
+@pytest.mark.parametrize("urgency", ["low", "normal"])
+def test_active_low_and_normal_urgency_refuse_without_consuming_budget(urgency):
+    driver = FakeDriver()
+    director = _director(driver)
+    director.sessions.set(
+        MediaSession(
+            device_id="tv-1",
+            content={"type": "url", "value": "https://93.184.216.34/current"},
+            mode="play",
+            privacy="household",
+            started_at=1.0,
+        )
+    )
+    budget = InterruptBudget(per_day=1)
+
+    result = director.present(_payload(urgency=urgency), interrupt_budget=budget)
+
+    assert result["ok"] is False and result["reason"] == "session_etiquette"
+    assert budget.remaining() == 1
+    assert driver.calls == []
 
 
 def test_session_memory_and_disk_do_not_diverge_under_concurrent_updates(tmp_path):
@@ -613,6 +761,130 @@ def test_present_contract_denies_bad_mode_and_unbounded_duration():
     assert too_long["ok"] is False and too_long["reason"] == "duration_out_of_bounds"
 
 
+def test_present_refuses_duration_before_actuating_a_legacy_driver():
+    driver = FakeDriver()
+    director = _director(driver)
+
+    result = director.present(_payload(duration_seconds=30))
+
+    assert result == {"ok": False, "reason": "duration_unsupported"}
+    assert driver.calls == []
+
+
+def test_duration_refusal_does_not_spend_interrupt_budget():
+    driver = FakeDriver()
+    director = _director(driver)
+    director.sessions.set(
+        MediaSession(
+            device_id="tv-1",
+            content={"type": "url", "value": "https://93.184.216.34/current"},
+            mode="play",
+            privacy="household",
+            started_at=1.0,
+        )
+    )
+    budget = InterruptBudget(per_day=1)
+
+    result = director.present(
+        _payload(duration_seconds=30, urgency="high"),
+        interrupt_budget=budget,
+    )
+
+    assert result == {"ok": False, "reason": "duration_unsupported"}
+    assert budget.remaining() == 1
+    assert driver.calls == []
+
+
+def test_supported_driver_receives_bounded_duration_and_status_must_match_exactly():
+    class DurationDriver(FakeDriver):
+        supports_duration = True
+
+        def __init__(self):
+            super().__init__()
+            self.received_duration = None
+
+        def play(self, device, content, *, duration_seconds=None):
+            self.received_duration = duration_seconds
+            return super().play(device, content)
+
+        def status(self, device):
+            return {**super().status(device), "duration_seconds": self.received_duration}
+
+    driver = DurationDriver()
+    director = _director(driver)
+
+    result = director.present(_payload(duration_seconds=30.5))
+
+    assert result["ok"] is True and result["verified"] is True
+    assert driver.received_duration == 30.5
+
+
+def test_restore_replays_the_verified_duration_contract():
+    class DurationDriver(FakeDriver):
+        supports_duration = True
+
+        def __init__(self):
+            super().__init__()
+            self.durations = []
+            self.current_duration = None
+
+        def play(self, device, content, *, duration_seconds=None):
+            self.durations.append(duration_seconds)
+            self.current_duration = duration_seconds
+            return super().play(device, content)
+
+        def status(self, device):
+            return {**super().status(device), "duration_seconds": self.current_duration}
+
+    driver = DurationDriver()
+    director = _director(driver)
+
+    first = director.present(_payload(duration_seconds=30))
+    interrupted = director.present(
+        _payload(
+            urgency="high",
+            content={"type": "url", "value": "https://93.184.216.34/next"},
+        ),
+        interrupt_budget=InterruptBudget(per_day=1),
+    )
+    restored = director.restore("tv-1")
+
+    assert first["verified"] is True and interrupted["ok"] is True
+    assert restored == {"ok": True, "restored": "previous_session"}
+    assert driver.durations == [30.0, None, 30.0]
+    assert director.sessions.get("tv-1").duration_seconds == 30.0
+
+
+@pytest.mark.parametrize("reported_duration", [29.0, float("inf"), True])
+def test_duration_verification_rejects_mismatch_or_non_finite_status(reported_duration):
+    class LyingDurationDriver(FakeDriver):
+        supports_duration = True
+
+        def play(self, device, content, *, duration_seconds=None):
+            return super().play(device, content)
+
+        def status(self, device):
+            return {**super().status(device), "duration_seconds": reported_duration}
+
+    result = _director(LyingDurationDriver()).present(_payload(duration_seconds=30))
+
+    assert result["ok"] is True
+    assert result["verified"] is False
+    assert result["verification"] == "unverified-driver-status"
+
+
+def test_present_without_duration_keeps_legacy_two_argument_play_call():
+    class LegacyTwoArgumentDriver(FakeDriver):
+        def play(self, device, content):
+            return super().play(device, content)
+
+    driver = LegacyTwoArgumentDriver()
+
+    result = _director(driver).present(_payload())
+
+    assert result["ok"] is True and driver.calls == ["play"]
+
+
 def test_present_refuses_a_mode_the_target_does_not_support():
     driver = FakeDriver()
     director = _director(driver)
@@ -672,11 +944,13 @@ def test_restore_replays_previous_session_or_stops_to_idle():
     driver = FakeDriver()
     director = _director(driver)
     director.present(_payload())
+    budget = InterruptBudget(per_day=3)
     director.present(
         _payload(
             urgency="high",
             content={"type": "url", "value": "https://93.184.216.34/second"},
-        )
+        ),
+        interrupt_budget=budget,
     )
     restored = director.restore("tv-1")
     assert restored == {"ok": True, "restored": "previous_session"}
@@ -691,17 +965,20 @@ def test_restore_replays_previous_session_or_stops_to_idle():
 def test_repeated_interrupts_keep_only_one_bounded_restore_snapshot():
     director = _director(FakeDriver())
     director.present(_payload())
+    budget = InterruptBudget(per_day=2)
     director.present(
         _payload(
             urgency="high",
             content={"type": "url", "value": "https://93.184.216.34/second"},
-        )
+        ),
+        interrupt_budget=budget,
     )
     director.present(
         _payload(
             urgency="high",
             content={"type": "url", "value": "https://93.184.216.34/third"},
-        )
+        ),
+        interrupt_budget=budget,
     )
 
     previous = director.sessions.get("tv-1").previous
@@ -828,8 +1105,10 @@ async def test_facade_restore_is_separately_authorized_before_driver_actuation(m
 
 def test_null_driver_is_the_default_and_refuses():
     device = MediaDevice(id="x", name="X", kind="speaker")
-    outcome = NullMediaDriver().play(device, {"type": "url", "value": "https://x"})
+    driver = NullMediaDriver()
+    outcome = driver.play(device, {"type": "url", "value": "https://x"})
     assert outcome["ok"] is False and "host seam" in outcome["reason"]
+    assert driver.supports_duration is False
 
 
 def test_contract_constraint_order_is_deterministic():

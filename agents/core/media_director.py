@@ -380,7 +380,15 @@ class DeviceRegistry:
 
 
 class MediaDriver(Protocol):  # pragma: no cover - protocol definition
-    def play(self, device: MediaDevice, content: dict) -> dict: ...
+    supports_duration: bool
+
+    def play(
+        self,
+        device: MediaDevice,
+        content: dict,
+        *,
+        duration_seconds: float | None = None,
+    ) -> dict: ...
     def pause(self, device: MediaDevice) -> dict: ...
     def resume(self, device: MediaDevice) -> dict: ...
     def stop(self, device: MediaDevice) -> dict: ...
@@ -393,8 +401,15 @@ class NullMediaDriver:
     H15 Null browser/desktop drivers, governance is testable without hardware."""
 
     reason = "no media driver wired for this device (host seam — see NERVA_VISION §4-P5)"
+    supports_duration = False
 
-    def play(self, device: MediaDevice, content: dict) -> dict:
+    def play(
+        self,
+        device: MediaDevice,
+        content: dict,
+        *,
+        duration_seconds: float | None = None,
+    ) -> dict:
         return {"ok": False, "state": "no_driver", "reason": self.reason}
 
     def pause(self, device: MediaDevice) -> dict:
@@ -445,6 +460,7 @@ class MediaSession:
     mode: str
     privacy: str
     started_at: float
+    duration_seconds: float | None = None
     state: str = "playing"
     previous: dict | None = None  # snapshot for the restore() rollback
 
@@ -465,6 +481,13 @@ class MediaSession:
             or not math.isfinite(float(self.started_at))
         ):
             raise MediaError("session started_at is invalid")
+        if self.duration_seconds is not None and (
+            isinstance(self.duration_seconds, bool)
+            or not isinstance(self.duration_seconds, (int, float))
+            or not math.isfinite(float(self.duration_seconds))
+            or not 0 < float(self.duration_seconds) <= 24 * 3600
+        ):
+            raise MediaError("session duration_seconds is invalid")
         if self.state not in {"playing", "paused", "idle"}:
             raise MediaError("session state is invalid")
         if self.previous is not None and not isinstance(self.previous, dict):
@@ -564,14 +587,27 @@ class MediaDirector:
         return self._drivers.get(device.kind, self._null)
 
     @staticmethod
-    def _drive(driver: MediaDriver, operation: str, device: MediaDevice, *args) -> dict | None:
+    def _supports_duration(driver: MediaDriver) -> bool:
+        try:
+            return driver.supports_duration is True
+        except Exception:
+            return False
+
+    @staticmethod
+    def _drive(
+        driver: MediaDriver,
+        operation: str,
+        device: MediaDevice,
+        *args,
+        **kwargs,
+    ) -> dict | None:
         """Call an untrusted host seam without leaking transport details.
 
         ``None`` means the driver raised or returned a malformed response.  Callers
         decide whether that is a refused actuation or an unverified status probe.
         """
         try:
-            outcome = getattr(driver, operation)(device, *args)
+            outcome = getattr(driver, operation)(device, *args, **kwargs)
         except Exception:
             logger.warning(
                 "media driver operation failed: operation=%s kind=%s device=%s",
@@ -590,7 +626,7 @@ class MediaDirector:
             return None
         return outcome
 
-    def present(self, payload: dict) -> dict:
+    def present(self, payload: dict, *, interrupt_budget=None) -> dict:
         """Contract → resolve → etiquette → drive → verify → record.
 
         Never raises for a refusable reason — returns ``{ok: False, reason}`` so
@@ -628,10 +664,42 @@ class MediaDirector:
             }
 
         driver = self.driver_for(device)
+        duration = payload.get("duration_seconds")
+        if duration is not None and not self._supports_duration(driver):
+            return {"ok": False, "reason": "duration_unsupported"}
+
+        active_interruption = current is not None and current.state in {"playing", "paused"}
+        if active_interruption and urgency == "high":
+            try:
+                consume = getattr(interrupt_budget, "consume", None)
+            except Exception:
+                logger.warning("media interrupt budget is unavailable")
+                return {"ok": False, "reason": "interrupt_budget_unavailable"}
+            if not callable(consume):
+                return {"ok": False, "reason": "interrupt_budget_unavailable"}
+            try:
+                allowed = consume()
+            except Exception:
+                logger.warning("media interrupt budget is unavailable")
+                return {"ok": False, "reason": "interrupt_budget_unavailable"}
+            if allowed is False:
+                return {"ok": False, "reason": "interrupt_budget_exhausted"}
+            if allowed is not True:
+                return {"ok": False, "reason": "interrupt_budget_unavailable"}
+
         previous = current.to_dict() if current else None
         if previous is not None:
             previous["previous"] = None
-        outcome = self._drive(driver, "play", device, content)
+        if duration is None:
+            outcome = self._drive(driver, "play", device, content)
+        else:
+            outcome = self._drive(
+                driver,
+                "play",
+                device,
+                content,
+                duration_seconds=float(duration),
+            )
         if outcome is None:
             return {"ok": False, "reason": "driver_error", "state": "unavailable"}
         if not outcome.get("ok"):
@@ -642,10 +710,20 @@ class MediaDirector:
             }
 
         status = self._drive(driver, "status", device) or {}
+        duration_verified = True
+        if duration is not None:
+            reported_duration = status.get("duration_seconds")
+            duration_verified = bool(
+                isinstance(reported_duration, (int, float))
+                and not isinstance(reported_duration, bool)
+                and math.isfinite(float(reported_duration))
+                and float(reported_duration) == float(duration)
+            )
         verified = bool(
             status.get("ok")
             and status.get("state") == "playing"
             and status.get("content", {}).get("value") == content["value"]
+            and duration_verified
         )
         self.sessions.set(
             MediaSession(
@@ -654,6 +732,7 @@ class MediaDirector:
                 mode=mode,
                 privacy=payload.get("privacy", "household"),
                 started_at=float(self._clock()),
+                duration_seconds=float(duration) if duration is not None else None,
                 state="playing",
                 previous=previous,
             )
@@ -690,7 +769,18 @@ class MediaDirector:
             previous = MediaSession(**session.previous)
         except (MediaError, TypeError):
             return {"ok": False, "reason": "corrupt_session_snapshot"}
-        outcome = self._drive(driver, "play", device, previous.content)
+        if previous.duration_seconds is None:
+            outcome = self._drive(driver, "play", device, previous.content)
+        else:
+            if not self._supports_duration(driver):
+                return {"ok": False, "reason": "duration_unsupported"}
+            outcome = self._drive(
+                driver,
+                "play",
+                device,
+                previous.content,
+                duration_seconds=previous.duration_seconds,
+            )
         if outcome is None:
             return {"ok": False, "reason": "driver_error"}
         if outcome.get("ok"):
@@ -700,16 +790,19 @@ class MediaDirector:
 
     # ── O27 facade binding ───────────────────────────────────────────────────
 
-    def handle_perform(self, payload: dict, ctx) -> dict:
+    def handle_perform(self, payload: dict, ctx, *, interrupt_budget=None) -> dict:
         """The ``action:media.present`` handler for ``CapabilityActionAPI``."""
-        return self.present(dict(payload))
+        return self.present(dict(payload), interrupt_budget=interrupt_budget)
 
     def handle_restore(self, payload: dict, ctx) -> dict:
         """The separately mediated ``action:media.restore`` handler."""
         return self.restore(str(payload["device_id"]))
 
 
-def register_media_capability(api, director: MediaDirector):
+def register_media_capability(api, director: MediaDirector, *, interrupt_budget=None):
     """Bind present + restore onto the unified action facade (kernel-mediated)."""
-    api.register(f"action:{MediaDirector.KIND}", director.handle_perform)
+    def handle_perform(payload, ctx):
+        return director.handle_perform(payload, ctx, interrupt_budget=interrupt_budget)
+
+    api.register(f"action:{MediaDirector.KIND}", handle_perform)
     return api.register(f"action:{MediaDirector.RESTORE_KIND}", director.handle_restore)

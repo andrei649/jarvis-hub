@@ -17,8 +17,16 @@ from agents.core.autonomy.executor import TaskExecutor  # noqa: E402
 from agents.core.autonomy.missions import MissionStore  # noqa: E402
 from agents.core.autonomy.policy import ACT  # noqa: E402
 from agents.core.autonomy.worker import InterruptBudget  # noqa: E402
+from agents.core.browser_agent import BrowserPolicy, GovernedBrowser  # noqa: E402
 from agents.core.kernel import Action, BudgetLedger, Verdict, authorize  # noqa: E402
 from agents.core.kernel.binding import make_action_kernel  # noqa: E402
+from agents.core.media_director import (  # noqa: E402
+    DeviceRegistry,
+    MediaDevice,
+    MediaDirector,
+    MediaSession,
+    SessionBoard,
+)
 from agents.core.payments import PaymentBroker  # noqa: E402
 
 
@@ -58,6 +66,51 @@ def test_interrupt_budget_is_ledger_view_with_same_public_api():
     budget._day = datetime.date(2000, 1, 1)
     assert budget.remaining() == 2
     assert ledger.dimension_status("interrupts/day")["used"] == 0
+
+
+def test_media_high_urgency_interrupt_is_observed_in_the_shared_k3_ledger():
+    class Driver:
+        def play(self, device, content):
+            self.content = content
+            return {"ok": True, "state": "playing"}
+
+        def status(self, device):
+            return {"ok": True, "state": "playing", "content": self.content}
+
+    ledger = BudgetLedger()
+    budget = InterruptBudget(per_day=1, ledger=ledger)
+    registry = DeviceRegistry(path=None)
+    registry.register(MediaDevice(id="tv-1", name="TV", kind="tv"))
+    sessions = SessionBoard(path=None)
+    sessions.set(
+        MediaSession(
+            device_id="tv-1",
+            content={"type": "url", "value": "https://93.184.216.34/current"},
+            mode="play",
+            privacy="household",
+            started_at=1.0,
+        )
+    )
+    director = MediaDirector(
+        registry=registry,
+        sessions=sessions,
+        drivers={"tv": Driver()},
+        browser=GovernedBrowser(policy=BrowserPolicy(["93.184.216.34"])),
+    )
+
+    result = director.present(
+        {
+            "content": {"type": "url", "value": "https://93.184.216.34/next"},
+            "target": "tv-1",
+            "mode": "play",
+            "privacy": "household",
+            "urgency": "high",
+        },
+        interrupt_budget=budget,
+    )
+
+    assert result["ok"] is True
+    assert ledger.dimension_status("interrupts/day")["used"] == 1
 
 
 def test_payment_caps_are_observed_without_replacing_payment_denials(tmp_path):

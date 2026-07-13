@@ -6,10 +6,13 @@ singleton director is replaced per test so nothing persists to agents/data.
 """
 
 import os
+from types import SimpleNamespace
 
 import pytest
 from fastapi.testclient import TestClient
 
+from agents.core.autonomy.worker import InterruptBudget
+from agents.core.browser_agent import BrowserPolicy, GovernedBrowser
 from agents.core.media_director import (
     DeviceRegistry,
     MediaDevice,
@@ -25,8 +28,10 @@ from agents.core.routers import media_director as media_routes
 class _GrantAllDriver:
     def __init__(self):
         self.now_playing = None
+        self.calls = []
 
     def play(self, device, content):
+        self.calls.append("play")
         self.now_playing = content
         return {"ok": True, "state": "playing"}
 
@@ -58,6 +63,7 @@ def client(monkeypatch):
             registry=DeviceRegistry(path=None),
             sessions=SessionBoard(path=None),
             drivers={"tv": _GrantAllDriver()},
+            browser=GovernedBrowser(policy=BrowserPolicy(["93.184.216.34"])),
         ),
     )
     try:
@@ -234,3 +240,46 @@ def test_restore_route_never_actuates_when_unified_action_api_is_off(client, mon
     assert payload["status"] == "disabled"
     assert payload["reason"] == "unified_action_api_disabled"
     assert director.sessions.get("tv-1") is not None
+
+
+def test_present_route_binds_the_live_orchestrator_budget_per_request(client, monkeypatch):
+    from agents.core.kernel import Decision, Verdict
+
+    monkeypatch.setenv("JARVIS_MEDIA_DIRECTOR", "1")
+    monkeypatch.setenv("JARVIS_UNIFIED_ACTION_API", "1")
+    monkeypatch.setenv("JARVIS_ACTION_KERNEL", "1")
+    director = media_routes._director
+    director.registry.register(MediaDevice(id="tv-1", name="TV", kind="tv"))
+    director.sessions.set(
+        MediaSession(
+            device_id="tv-1",
+            content={"type": "url", "value": "https://93.184.216.34/current"},
+            mode="play",
+            privacy="household",
+            started_at=1.0,
+        )
+    )
+    exhausted = InterruptBudget(per_day=0)
+    fresh = InterruptBudget(per_day=1)
+    current = {"orch": SimpleNamespace(autonomy=SimpleNamespace(budget=exhausted))}
+    monkeypatch.setattr("agents.core.app_state.get_orch", lambda: current["orch"])
+    monkeypatch.setattr(
+        "agents.core.kernel.binding.make_action_kernel",
+        lambda _orch: lambda action, capability=None: Decision(
+            Verdict.GRANT, reason="test", tier=1
+        ),
+    )
+    body = {
+        "content": {"type": "url", "value": "https://93.184.216.34/next"},
+        "target": "tv-1",
+        "urgency": "high",
+    }
+
+    refused = client.post("/api/media/present", json=body).json()
+    current["orch"] = SimpleNamespace(autonomy=SimpleNamespace(budget=fresh))
+    allowed = client.post("/api/media/present", json=body).json()
+
+    assert refused["output"] == {"ok": False, "reason": "interrupt_budget_exhausted"}
+    assert allowed["output"]["ok"] is True
+    assert fresh.remaining() == 0
+    assert director._drivers["tv"].calls == ["play"]
