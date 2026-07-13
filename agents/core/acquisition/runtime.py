@@ -24,6 +24,7 @@ class AcquisitionRuntime:
         self._root = root
         self._store_factory = store_factory
         self.request_store: CapabilityRequestStore | None = None
+        self.decision_store = None
 
     def is_enabled(self) -> bool:
         try:
@@ -49,3 +50,20 @@ class AcquisitionRuntime:
         except (TypeError, ValueError):
             logger.warning("invalid capability gap refused")
             return None
+
+    def resolve_gap(self, request_id: str, orch, *, candidates=None):
+        """Run the deterministic local reuse phase; never starts research/generation."""
+        if not self.is_enabled() or self.request_store is None:
+            return None
+        request = self.request_store.get(request_id)
+        if request is None:
+            return None
+        from .resolver import ReuseDecisionStore, ReuseResolver, collect_reuse_candidates
+
+        if self.decision_store is None:
+            self.decision_store = ReuseDecisionStore(root=self._root)
+        return ReuseResolver(decision_store=self.decision_store).resolve(
+            request,
+            collect_reuse_candidates(orch) if candidates is None else candidates,
+            request_store=self.request_store,
+        )
