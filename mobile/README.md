@@ -1,7 +1,7 @@
 # Jarvis mobile
 
 A native iOS & Android companion app for the Jarvis hub, built with
-[Expo](https://docs.expo.dev/) (SDK 56 / React Native 0.85).
+[Expo](https://docs.expo.dev/) (SDK 57 / React Native 0.86).
 
 It talks to the same HTTP API the web HUD uses (`agents/web.py`):
 
@@ -32,6 +32,11 @@ It talks to the same HTTP API the web HUD uses (`agents/web.py`):
   Read telegram/web threads, refresh messages, and queue governed replies to
   `POST /api/channels/inbox/{thread_id}/reply`; the server still sends only
   after the existing approval funnel accepts the task.
+- **Media** — metadata-only Media Director parity over `GET /api/media/devices`
+  and `GET /api/media/session`, with explicit governed presentation and restore
+  actions. Disabled, queued, refused, unverified, and verified outcomes stay
+  visually distinct. Owner-curated device registration/removal is isolated in
+  an admin-token-gated zone; the app never embeds remote media.
 - **Settings** — point the app at any hub (`http://<host>:<port>`), set an
   optional `JARVIS_USER_TOKEN` plus `JARVIS_ADMIN_TOKEN`, and test the connection. Persisted via
   AsyncStorage.
@@ -64,7 +69,7 @@ actions from the phone, also enter `JARVIS_ADMIN_TOKEN`; it is sent only as
 ## Scripts
 
 ```bash
-npm test                  # Jest — pure logic (SSE decoder, Markdown parser)
+npm test                  # Jest — pure logic, API normalization, UI contracts
 npx tsc --noEmit          # type-check
 node scripts/gen-icons.js # regenerate branded app icons (deterministic, pngjs)
 ```
@@ -81,7 +86,7 @@ src/api/sse.ts              pure SSE decoder (unit-tested)
 src/audio/tts.ts            /tts → cache file → expo-audio playback
 src/markdown/               pure Markdown parser (unit-tested) + RN renderer
 src/components/             MessageBubble, AgentPicker, SessionsModal
-src/screens/                Chat / Memory+Graph / Approvals / Tasks / Comms / Skills / Status / Settings
+src/screens/                Chat / Memory+Graph / Approvals / Tasks / Media / Comms / Skills / Status / Settings
 scripts/gen-icons.js        icon/splash generator
 ```
 

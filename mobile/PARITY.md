@@ -39,7 +39,7 @@ Legend — **mobile**: ✅ shipped · 🟡 partial · ⬜ not started · ➖ not
 | Memory / notes | `GET /memory`, `GET /api/notes` | ✅ | ✅ | H18.16 |
 | Knowledge graph | `GET /api/kg/*` | ✅ | ✅ | H18.17 |
 | Action approval queue + rollback story | `GET /autonomy/approvals`, `POST /autonomy/tasks/{id}/decision` | ✅ | ✅ | H18.11 / O26-P3.4 / H27.6 |
-| Capability registry board | `GET /api/capabilities` | ✅ | ⬜ | H18.21 / H27.8 |
+| Capability registry board | `GET /api/capabilities` | ✅ | ⬜ | H18.22 / H27.8 |
 | Channel inbox + governed replies | `GET /api/channels/inbox*`, `POST /api/channels/inbox/{thread_id}/reply` | ✅ | ✅ | H18.12 |
 | Chat rooms (multi-agent) | `GET/POST /api/rooms*` | ✅ | ⬜ | — |
 | Arena / review / quality | `GET /api/arena/*`, `/api/review/*` | ✅ | ➖ | — |
@@ -47,7 +47,7 @@ Legend — **mobile**: ✅ shipped · 🟡 partial · ⬜ not started · ➖ not
 | Health/readiness probes | `GET /healthz`, `GET /readyz` | ✅ | ➖ | — |
 | First-run command center (0.19) | `GET /api/onboarding/command-center` | ✅ | ✅ | H18.19 |
 | Artifacts workspace (Canvas) | `GET /api/canvas`, `POST /api/canvas/post`, `POST /api/canvas/{id}/pin`, `DELETE /api/canvas/{id}` | ✅ | ✅ | H18.20 |
-| Media Director (O29 wave 1, default-off) | `GET /api/media/devices`, `POST /api/media/devices`, `DELETE /api/media/devices/{device_id}`, `GET /api/media/session`, `POST /api/media/present`, `POST /api/media/restore/{device_id}` | ✅ | ⬜ | H18.21 |
+| Media Director (O29, default-off) | `GET /api/media/devices`, `POST /api/media/devices`, `DELETE /api/media/devices/{device_id}`, `GET /api/media/session`, `POST /api/media/present`, `POST /api/media/restore/{device_id}` | ✅ | ✅ | H18.21 |
 | Windows server-host desktop actuation (intentionally desktop-only; a phone must not control the server's desktop) | `POST /api/desktop/run` | ✅ | ➖ | — |
 | Auth (user/admin tokens) | `X-User-Token`, `X-Admin-Token` headers | ✅ | ✅ | H18.1 / H18.11 |
 
@@ -55,6 +55,11 @@ Legend — **mobile**: ✅ shipped · 🟡 partial · ⬜ not started · ➖ not
 > Artifacts view (browse Canvas artifacts with safe typed rendering, remote images behind an
 > explicit consent tap, pin/unpin/delete), and Chat gains the explicit save-response control
 > (real responding agent, visible 4,000-char truncation on a code-point boundary, never auto).
+
+> **H18.21 ✅ (delivered):** native Media Director parity — a metadata-only Media tab reads the
+> owner-curated device registry and live session board, and exposes explicit governed present/restore
+> actions with distinct disabled, queued, refused, unverified, and verified outcomes. Device registry
+> mutations remain a separate admin-token-gated zone; no remote media is embedded on the phone.
 
 > Rows with an empty **Task** cell are tracked-but-unscheduled parity gaps. When one becomes
 > worth doing on mobile, give it an `H18.x` id in `BACKLOG.md` and fill the cell. Surfaces marked
