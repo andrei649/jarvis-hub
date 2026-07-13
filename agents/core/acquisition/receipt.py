@@ -93,11 +93,8 @@ def receipt_is_current(
     contract: CapabilityContract,
     profile,
 ) -> bool:
-    if not isinstance(receipt, VerificationReceipt):
+    if not receipt_matches_package(receipt, package):
         return False
-    source_hash = hashlib.sha256(package.code.encode("utf-8")).hexdigest()
-    test_hash = hashlib.sha256(package.test_code.encode("utf-8")).hexdigest()
-    package_hash = canonical_hash(package.canonical_members())
     expected = {
         "artifact_id": package.artifact_id,
         "request_id": package.request_id,
@@ -112,6 +109,32 @@ def receipt_is_current(
         "runtime_config_hash": profile.config_hash,
     }
     payload = receipt.canonical_payload()
+    return (
+        all(payload.get(key) == value for key, value in expected.items())
+    )
+
+
+def receipt_matches_package(
+    receipt: VerificationReceipt,
+    package: GeneratedPackage,
+) -> bool:
+    if not isinstance(receipt, VerificationReceipt):
+        return False
+    source_hash = hashlib.sha256(package.code.encode("utf-8")).hexdigest()
+    test_hash = hashlib.sha256(package.test_code.encode("utf-8")).hexdigest()
+    package_hash = canonical_hash(package.canonical_members())
+    payload = receipt.canonical_payload()
+    expected = {
+        "artifact_id": package.artifact_id,
+        "request_id": package.request_id,
+        "package_hash": package.package_hash,
+        "source_hash": package.source_hash,
+        "test_hash": package.test_hash,
+        "plan_hash": package.plan_hash,
+        "goal_hash": package.goal_hash,
+        "contract_hash": package.contract_hash,
+        "model_route": package.model_route,
+    }
     return (
         package.source_hash == source_hash
         and package.test_hash == test_hash
@@ -131,4 +154,5 @@ __all__ = [
     "canonical_hash",
     "make_receipt",
     "receipt_is_current",
+    "receipt_matches_package",
 ]

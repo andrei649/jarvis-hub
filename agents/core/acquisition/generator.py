@@ -68,6 +68,7 @@ _FORBIDDEN_ATTRIBUTES = frozenset(
     }
 )
 _OUTPUT_KEYS = frozenset({"name", "entrypoint", "code", "test"})
+STDLIB_ALLOWLIST = tuple(sorted(_ALLOWED_MODULES))
 
 
 class GenerationError(RuntimeError):
@@ -354,4 +355,5 @@ __all__ = [
     "GeneratedPackage",
     "GenerationError",
     "StrictLocalGenerator",
+    "STDLIB_ALLOWLIST",
 ]

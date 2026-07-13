@@ -102,7 +102,10 @@ class QuarantineStore:
     def get_record(self, artifact_id: str) -> QuarantineRecord | None:
         token = str(artifact_id or "").strip()
         with self._lock:
-            return next((row for row in self._load() if row.package.artifact_id == token), None)
+            record = next((row for row in self._load() if row.package.artifact_id == token), None)
+            if record is not None:
+                self._validate_package(record.package)
+            return record
 
     def transition(
         self,

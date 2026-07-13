@@ -364,6 +364,56 @@ def _skill_records(orch) -> list[CapabilityRecord]:
     return out
 
 
+def _acquired_records(orch) -> list[CapabilityRecord]:
+    """Project sandbox-only acquired skills and their real execution outcomes."""
+    acquisition = getattr(orch, "acquisition", None)
+    packages = getattr(acquisition, "package_store", None) if acquisition is not None else None
+    list_records = getattr(packages, "list_records", None) if packages is not None else None
+    if not callable(list_records):
+        return []
+    out = []
+    for package in list_records():
+        outcomes = dict(getattr(package, "outcomes", {}) or {})
+        active = getattr(package, "status", "") == "active"
+        out.append(
+            CapabilityRecord(
+                id=f"skill:{package.name}",
+                kind="skill",
+                state=WIRED if active else SEAM,
+                owner_agent="jarvis",
+                description=f"Governed acquired capability {package.name}.",
+                risk="sensitive",
+                requires=("acquisition.enabled", "acquired-sandbox", "managed-signature"),
+                supports=("skill.invoke", "tool-rpc", "sandbox-only"),
+                verification="agents.core.acquisition.receipt:VerificationReceipt",
+                rollback=RollbackContract(
+                    mode="disable",
+                    description=f"Revoke and unregister acquired capability {package.name}.",
+                    limitations="Completed calls are not undone.",
+                ),
+                confidence=float(outcomes.get("confidence", 0.0)),
+                implementation="agents.core.acquisition.acquired_runner:AcquiredSandboxRunner",
+                detail={
+                    "execution_mode": "acquired_sandbox",
+                    "version": package.version,
+                    "status": package.status,
+                    "package_hash": package.package_hash,
+                    "outcomes": {
+                        key: outcomes.get(key)
+                        for key in (
+                            "successes",
+                            "failures",
+                            "total",
+                            "confidence",
+                            "last_outcome_at",
+                        )
+                    },
+                },
+            )
+        )
+    return out
+
+
 def build_records(orch=None) -> list[CapabilityRecord]:
     """All capability records, overrides applied. Plugins derive statically; components
     and skills need a live orchestrator (omitted when *orch* is None). Each source is
@@ -372,6 +422,7 @@ def build_records(orch=None) -> list[CapabilityRecord]:
     for source in (lambda: _missing_records(orch) if orch is not None else [],
                    _plugin_records,
                    lambda: _action_records(orch),
+                   lambda: _acquired_records(orch) if orch is not None else [],
                    lambda: _tool_records(orch) if orch is not None else [],
                    lambda: _component_records(orch) if orch is not None else [],
                    lambda: _skill_records(orch) if orch is not None else []):

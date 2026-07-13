@@ -4,6 +4,7 @@ Provides SQLite DB persistence, ZIP packaging/unpacking, and dynamic loader inte
 """
 
 import io
+import json
 import logging
 import sqlite3
 import threading
@@ -62,8 +63,27 @@ def _v2_version_archive(conn: sqlite3.Connection) -> None:
     conn.execute("CREATE INDEX IF NOT EXISTS idx_skill_versions_name ON marketplace_skill_versions(name)")
 
 
+def _v3_acquired_metadata(conn: sqlite3.Connection) -> None:
+    """H32.5 — metadata-only index for sandbox-only acquired packages."""
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS marketplace_acquired_skills (
+            name TEXT PRIMARY KEY,
+            version TEXT NOT NULL,
+            description TEXT NOT NULL,
+            author TEXT NOT NULL,
+            execution_mode TEXT NOT NULL,
+            package_hash TEXT NOT NULL,
+            receipt_hash TEXT NOT NULL,
+            runtime_image TEXT NOT NULL,
+            signature_json TEXT NOT NULL,
+            indexed_at TEXT NOT NULL,
+            review_status TEXT NOT NULL DEFAULT 'approved'
+        )
+    """)
+
+
 # Forward-only, append-only. Never edit/reorder a shipped entry — only append.
-_MIGRATIONS = [_v1_moderation_columns, _v2_version_archive]
+_MIGRATIONS = [_v1_moderation_columns, _v2_version_archive, _v3_acquired_metadata]
 
 # Prior package snapshots retained per skill (oldest pruned on archive).
 _VERSION_KEEP = 20
@@ -374,7 +394,12 @@ class SkillMarketplace:
                 rows = conn.execute(
                     "SELECT name, version, description, author, agents, requires, published_at, review_status, signature FROM marketplace_skills"
                 ).fetchall()
-            return [
+                acquired = conn.execute(
+                    "SELECT name, version, description, author, execution_mode, "
+                    "package_hash, receipt_hash, runtime_image, signature_json, "
+                    "indexed_at, review_status FROM marketplace_acquired_skills"
+                ).fetchall()
+            regular = [
                 {
                     "name": r["name"],
                     "version": r["version"],
@@ -385,9 +410,101 @@ class SkillMarketplace:
                     "published_at": r["published_at"],
                     "review_status": r["review_status"] or REVIEW_PENDING,
                     "signed": bool(r["signature"]),
+                    "execution_mode": "in_process",
                 }
                 for r in rows
             ]
+            indexed = [
+                {
+                    "name": row["name"],
+                    "version": row["version"],
+                    "description": row["description"],
+                    "author": row["author"],
+                    "agents": [],
+                    "requires": ["acquired-sandbox"],
+                    "published_at": row["indexed_at"],
+                    "review_status": row["review_status"],
+                    "signed": bool(row["signature_json"]),
+                    "execution_mode": row["execution_mode"],
+                    "package_hash": row["package_hash"],
+                    "receipt_hash": row["receipt_hash"],
+                    "runtime_image": row["runtime_image"],
+                }
+                for row in acquired
+            ]
+            acquired_names = {row["name"] for row in indexed}
+            return [row for row in regular if row["name"] not in acquired_names] + indexed
+        finally:
+            conn.close()
+
+    def index_acquired_package(self, metadata: dict) -> bool:
+        """Index owner-approved metadata without copying code into ``skills/``."""
+        required = {
+            "name",
+            "version",
+            "description",
+            "author",
+            "execution_mode",
+            "package_hash",
+            "receipt_hash",
+            "runtime_image",
+            "signature",
+        }
+        if not isinstance(metadata, dict) or not required.issubset(metadata):
+            raise ValueError("complete acquired package metadata required")
+        name = str(metadata["name"])
+        if metadata.get("execution_mode") != "acquired_sandbox":
+            raise ValueError("acquired package must remain sandbox-only")
+        self._enforce_skill_contract(
+            "publish",
+            name,
+            source="acquisition",
+            review_status=REVIEW_APPROVED,
+        )
+        signature = json.dumps(
+            metadata["signature"],
+            ensure_ascii=False,
+            separators=(",", ":"),
+            sort_keys=True,
+        )
+        conn = sqlite3.connect(str(self.db_path), check_same_thread=False)
+        try:
+            with self._lock:
+                conn.execute(
+                    "INSERT OR REPLACE INTO marketplace_acquired_skills "
+                    "(name, version, description, author, execution_mode, package_hash, "
+                    "receipt_hash, runtime_image, signature_json, indexed_at, review_status) "
+                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    (
+                        name,
+                        str(metadata["version"]),
+                        str(metadata["description"])[:1024],
+                        str(metadata["author"])[:128],
+                        "acquired_sandbox",
+                        str(metadata["package_hash"]),
+                        str(metadata["receipt_hash"]),
+                        str(metadata["runtime_image"]),
+                        signature,
+                        datetime.now(timezone.utc).isoformat(),
+                        REVIEW_APPROVED,
+                    ),
+                )
+                conn.commit()
+        finally:
+            conn.close()
+        return True
+
+    def remove_acquired_package(self, name: str) -> bool:
+        """Remove only the metadata index; package bytes live in the acquired store."""
+        conn = sqlite3.connect(str(self.db_path), check_same_thread=False)
+        try:
+            with self._lock:
+                cursor = conn.execute(
+                    "DELETE FROM marketplace_acquired_skills WHERE name = ?",
+                    (str(name or ""),),
+                )
+                conn.commit()
+                return cursor.rowcount > 0
         finally:
             conn.close()
 
@@ -429,6 +546,14 @@ class SkillMarketplace:
         try:
             conn.row_factory = sqlite3.Row
             with self._lock:
+                acquired = conn.execute(
+                    "SELECT 1 FROM marketplace_acquired_skills WHERE name = ?",
+                    (skill_name,),
+                ).fetchone()
+                if acquired is not None:
+                    raise PermissionError(
+                        "sandbox broker is the only install path for acquired packages"
+                    )
                 row = conn.execute(
                     "SELECT package_zip, review_status, version FROM marketplace_skills WHERE name = ?",
                     (skill_name,),
