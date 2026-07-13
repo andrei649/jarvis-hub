@@ -136,9 +136,9 @@ publishers.
 - [x] Publish through an interface; cameras never import/write house KG or ambient internals.
 - [x] Give every subscriber a bounded queue, per-sink failure isolation/backpressure, delivery
   counters, and restart-safe idempotency; one broken sink cannot block or duplicate another.
-- [ ] Land the producer sink after H30.2. Mark H31.6 complete only after both H30 consumption and
+- [x] Land the producer sink after H30.2. Mark H31.6 complete only after both H30 consumption and
   H33.1 monitor consumption are proven.
-- [ ] Run H30/H33 contract tests, review, and commit.
+- [x] Run H30/H33 contract tests, review, and commit.
 
 ## Task 8 — H31 reality pack, truth sync, and PR
 

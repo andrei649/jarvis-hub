@@ -11,6 +11,8 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import urlsplit
 
+from agents.core.ambient.adapters import AmbientCameraFeedConsumer
+from agents.core.ambient.runtime import AmbientRuntime, build_ambient_runtime
 from agents.core.house.camera_feed import HouseCameraFeedConsumer
 from agents.core.llm.vlm import VLMBackend
 from agents.core.paths import data_path
@@ -50,6 +52,7 @@ class CameraRuntime:
     ingestion: CameraIngestionCoordinator | None = None
     ingestion_service: CameraIngestionService | None = None
     house_feed: HouseCameraFeedConsumer | None = None
+    ambient_runtime: AmbientRuntime | None = None
     orch_id: int = 0
 
 
@@ -273,6 +276,7 @@ def build_camera_runtime(
     """Compose the camera stack only after master opt-in and versioned consent."""
 
     publisher: CameraFeedPublisher | None = None
+    ambient_runtime: AmbientRuntime | None = None
     try:
         enabled = _boolean(_setting(orch, "camera.enabled", False), field_name="camera enabled")
     except (TypeError, ValueError):
@@ -384,6 +388,16 @@ def build_camera_runtime(
         lifecycle["publisher"] = publisher
         house_feed = HouseCameraFeedConsumer()
         publisher.subscribe("house", house_feed, max_queue=256)
+        ambient_runtime = build_ambient_runtime(
+            orch,
+            root=runtime_root.parent / "ambient",
+        )
+        if ambient_runtime.enabled and ambient_runtime.engine is not None:
+            publisher.subscribe(
+                "ambient",
+                AmbientCameraFeedConsumer(ambient_runtime.engine),
+                max_queue=256,
+            )
         ingestion = CameraIngestionCoordinator(
             source=source,
             pipeline=pipeline,
@@ -440,11 +454,14 @@ def build_camera_runtime(
             ingestion=ingestion,
             ingestion_service=ingestion_service,
             house_feed=house_feed,
+            ambient_runtime=ambient_runtime,
             orch_id=id(orch) if orch is not None else 0,
         )
     except Exception:
         if publisher is not None:
             publisher.close()
+        if ambient_runtime is not None:
+            ambient_runtime.close()
         return _disabled("camera_runtime_unavailable", orch)
 
 

@@ -277,6 +277,24 @@ def test_runtime_fails_closed_on_missing_consent_or_invalid_configuration(
     assert runtime.reason == reason
 
 
+def test_runtime_subscribes_real_ambient_monitor_consumer_only_after_opt_in(tmp_path):
+    settings = _settings()
+    settings["ambient.enabled"] = True
+    settings["ambient.generation"] = 2
+    runtime = build_camera_runtime(
+        _Orch(settings, root=tmp_path),
+        root=tmp_path / "camera",
+        resolver=lambda *_args: ("192.168.1.40",),
+    )
+    assert runtime.enabled is True
+    assert runtime.ambient_runtime is not None
+    assert runtime.ambient_runtime.enabled is True
+    assert runtime.feed_publisher is not None
+    assert set(runtime.feed_publisher.health()["sinks"]) == {"house", "ambient"}
+    runtime.feed_publisher.close()
+    runtime.ambient_runtime.close()
+
+
 def test_router_declares_no_snapshot_clip_or_frame_route():
     paths = {route.path for route in camera_router.router.routes}
     assert paths == {

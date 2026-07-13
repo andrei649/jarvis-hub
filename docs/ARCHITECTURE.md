@@ -224,6 +224,9 @@ under `agents/core/routers/<name>.py`.
 | `agents/core/support_bundle.py` | 0.55 design-partner diagnostic bundle (non-sensitive, allow-list) | `build_bundle` |
 | `agents/core/workflows/run_store.py` | 0.34 opt-in workflow run-history persistence (`JARVIS_WORKFLOW_PERSIST`) | `WorkflowRunStore` |
 | `agents/core/plugin_gate.py` | Per-agent plugin permission gate + CDX-11 least-privilege (`agents_served` wildcard withheld for external-write under hardening) | `PermissionGate.check_call`, `add_grant`, `least_privilege_from_env` |
+| `agents/core/house/` | H30 default-off Home Assistant adapter, private presence state, governed actuation, and room output | `HomeAssistantAdapter`, `HouseGraph`, `HouseActuator` |
+| `agents/core/cameras/` | H31 consent-bound Frigate events, privacy masks, local rules/VLM, encrypted vault, retrieval, and typed feeds | `CameraPrivacyPolicy`, `CameraIngestionService`, `CameraEventVault` |
+| `agents/core/ambient/` | H33 default-off declarative monitors over sanitized house/camera/digital events; durable debounce, health, journal, and source ownership | `AmbientEngine`, `MonitorRegistry`, `SourceOwnershipManager` |
 
 ### Voice
 

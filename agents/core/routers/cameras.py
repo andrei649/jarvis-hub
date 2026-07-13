@@ -58,6 +58,8 @@ async def stop_camera_ingestion() -> None:
         await runtime.ingestion_service.stop()
     if runtime.feed_publisher is not None:
         runtime.feed_publisher.close()
+    if runtime.ambient_runtime is not None:
+        runtime.ambient_runtime.close()
     if _runtime is runtime:
         _runtime = None
 
