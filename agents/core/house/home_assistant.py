@@ -29,7 +29,13 @@ _MAX_SEEN = 4_096
 _MAX_STATE = 256
 _REQUEST_TIMEOUT = 8.0
 _SECRET_HANDLE = re.compile(r"\{\{\s*secret:([A-Za-z0-9_.\-]+)\s*\}\}")
-_ALLOWED_ENTITY_ATTRIBUTES = ("device_class", "unit_of_measurement")
+_ALLOWED_ENTITY_ATTRIBUTES = (
+    "device_class",
+    "unit_of_measurement",
+    "brightness",
+    "temperature",
+    "hvac_mode",
+)
 _LAN_V4 = (
     ipaddress.ip_network("10.0.0.0/8"),
     ipaddress.ip_network("172.16.0.0/12"),

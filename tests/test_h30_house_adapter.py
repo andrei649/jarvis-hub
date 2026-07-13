@@ -304,6 +304,37 @@ async def test_snapshot_normalizes_bounded_immutable_entities_and_areas_without_
 
 
 @pytest.mark.asyncio
+async def test_snapshot_keeps_only_bounded_actuation_verification_attributes():
+    rest = _REST(
+        [
+            _Response(
+                [
+                    _state(
+                        brightness=128,
+                        temperature=21.5,
+                        hvac_mode="heat",
+                        access_token="must-not-pass",
+                    )
+                ]
+            )
+        ]
+    )
+    adapter = HomeAssistantAdapter(
+        env=_enabled_env(), resolver=_resolver, rest=rest, secret_broker=_broker()
+    )
+
+    snapshot = await adapter.snapshot()
+
+    assert dict(snapshot.entities[0].attributes) == {
+        "device_class": "light",
+        "brightness": "128",
+        "temperature": "21.5",
+        "hvac_mode": "heat",
+    }
+    assert "must-not-pass" not in repr(snapshot)
+
+
+@pytest.mark.asyncio
 async def test_snapshot_uses_bearer_secret_only_at_transport_boundary_and_never_returns_it():
     token = "TOP-SECRET-TOKEN"
     rest = _REST([_Response([_state()])])
