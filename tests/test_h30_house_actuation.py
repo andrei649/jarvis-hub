@@ -596,3 +596,57 @@ async def test_home_assistant_driver_uses_narrow_service_mapping_only():
     ]
     with pytest.raises(ValueError, match="command"):
         await driver.apply({"control": "raw", "domain": "shell_command"})
+
+
+@pytest.mark.asyncio
+async def test_execution_ledger_releases_sqlite_handles_after_each_operation(
+    tmp_path, monkeypatch
+):
+    monkeypatch.setenv("JARVIS_ACTION_KERNEL", "1")
+    monkeypatch.setenv("JARVIS_UNIFIED_ACTION_API", "1")
+    simulator = _Simulator()
+    actuator = _actuator(tmp_path, simulator)
+    task = SimpleNamespace(
+        id=999,
+        kind=HOUSE_CONTROL_KIND,
+        agent="jarvis",
+        payload={
+            "version": 1,
+            "control": "light",
+            "entity_id": "light.kitchen",
+            "action": "on",
+            "risk_tier": 1,
+            "reversible": True,
+            "signal_quality": 1.0,
+        },
+    )
+
+    assert (await actuator.execute_task(task))["status"] == "verified"
+    actuator._ledger.path.unlink()
+    assert actuator._ledger.path.exists() is False
+
+
+def test_confirmation_store_releases_sqlite_handles_after_each_operation(tmp_path):
+    store = _confirmation(tmp_path)
+    challenge = store.mint(
+        task_id=1,
+        capability=HOUSE_SECURITY_KIND,
+        target="lock.front_door",
+        intended_state="unlocked",
+    )
+    store.confirm(
+        challenge["token"],
+        task_id=1,
+        capability=HOUSE_SECURITY_KIND,
+        target="lock.front_door",
+        intended_state="unlocked",
+    )
+    assert store.consume(
+        task_id=1,
+        capability=HOUSE_SECURITY_KIND,
+        target="lock.front_door",
+        intended_state="unlocked",
+    )
+
+    store.path.unlink()
+    assert store.path.exists() is False

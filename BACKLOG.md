@@ -723,15 +723,18 @@ the real backend, but the pipeline-rewiring PR never ran it because the path fil
 
 | # | Item | S | P | Dep | Sursă |
 |---|------|---|---|-----|-------|
-| H30.1 ⬜ | **Home Assistant adapter, read-first** — REST/WebSocket state (entities, areas, sensors), LOCAL_ONLY, honest empty state without HA | 5 | P0 | — | NERVA_VISION §4-P4 |
-| H30.2 ⬜ | **Device/room/occupant graph** on the bi-temporal KG — rooms contain devices, observed_by cameras, occupied_by people; queryable | 5 | P0 | H30.1, H14 | NERVA_VISION §4 |
-| H30.3 ⬜ | **Presence & context inference** (local-only) — who is home, which room is occupied, privacy context per room | 5 | P1 | H30.2 | — |
-| H30.4 ⬜ | **Governed actuation** — HA service calls through the kernel per the graduated ladder; lights/climate earn auto-within-bounds; **locks/doors/security never below strong confirmation** (hard floor) | 5 | P0 | H30.1, H27.7 | NERVA_VISION §7 |
-| H30.5 ⬜ | **`GET /api/house/state` + HUD panel** — the house graph visible, honest empty state | 3 | P2 | H30.2 | — |
-| H30.6 ⬜ | **Room-aware voice** — wyoming/satellite unpark; a satellite's room becomes the default output device for `present()` | 3 | P2 | O29, H23.28 | H12.4 |
-| H30.7 ⬜ | **House reality-harness pack** — hermetic HA simulator proves the rail; live = owner-gated | 3 | P1 | O24-V1 | — |
+| H30.1 ✅ | **Home Assistant adapter, read-first** — REST/WebSocket state (entities, areas, sensors), LOCAL_ONLY, honest empty state without HA · **completed 2026-07-13** — strict-local/default-off adapter with SecretBroker credentials, DNS-rebinding defense, bounded REST snapshots, authenticated WebSocket events/reconnect backoff, and named degraded/offline states; no cloud fallback or mutation surface. | 5 | P0 | — | NERVA_VISION §4-P4 |
+| H30.2 ✅ | **Device/room/occupant graph** on the bi-temporal KG — rooms contain devices, observed_by cameras, occupied_by people; queryable · **completed 2026-07-13** — public topology projects into the existing bi-temporal KG while occupant/presence records stay encrypted, pseudonymous, consent-scoped, revocable, tombstoned, key-rotatable, and explicitly purgeable in the private house store. | 5 | P0 | H30.1, H14 | NERVA_VISION §4 |
+| H30.3 ✅ | **Presence & context inference** (local-only) — who is home, which room is occupied, privacy context per room · **completed 2026-07-13** — bounded local sensor fusion emits typed house events with confidence/freshness; stale or ambiguous evidence fails closed, private-room identity is withheld, and the path proves zero egress. | 5 | P1 | H30.2 | — |
+| H30.4 ✅ | **Governed actuation** — HA service calls through the kernel per the graduated ladder; lights/climate earn auto-within-bounds; **locks/doors/security never below strong confirmation** (hard floor) · **completed 2026-07-13** — narrow canonical light/climate/security actions flow through durable TaskQueue → TaskExecutor → Action Kernel → allowlisted HA services → fresh-state verification. Security uses exact, expiring, single-use strong confirmation; retries are idempotent, failed verification rolls back through a separately governed recovery action, and Windows SQLite handles close deterministically. | 5 | P0 | H30.1, H27.7 | NERVA_VISION §7 |
+| H30.5 ✅ | **`GET /api/house/state` + HUD panel** — the house graph visible, honest empty state · **completed 2026-07-13** — guarded domain router exposes bounded state/proposal/strong-confirmation APIs; browser House HUD and native mobile Home tab share the API and preserve disabled/degraded/private/approval/verified truth. Route, OpenAPI, auth, HUD, and mobile parity ledgers are synchronized. | 3 | P2 | H30.2 | — |
+| H30.6 ✅ | **Room-aware voice** — wyoming/satellite unpark; a satellite's room becomes the default output device for `present()` · **completed 2026-07-13** — paired satellite credentials are digest-only, expiry/peer/transport bound, and replay protected; server-owned room identity ignores client spoofing, privacy/ambiguity refuses output, and exactly one room-default device reaches the existing H29 governed media action. `wyoming` and `satellite_hub` graduated from wave 3; `node_mesh`/`e2e_sync` remain parked. | 3 | P2 | O29, H23.28 | H12.4 |
+| H30.7 ✅ | **House reality-harness pack** — hermetic HA simulator proves the rail; live = owner-gated · **completed 2026-07-13** — the canonical pack passes **7/7 hermetic production-rail cases** across read/reconnect/offline, graph/privacy/purge, reversible actuation, security confirmation, verification/rollback, kernel halt, and room-aware output. The causal ledger measures `ungoverned_actions == 0` and rejects unapproved HA mutations; the read-only live probe requires both generic reality-harness and explicit H30 owner opt-in, with missing configuration reported degraded rather than passed. | 3 | P1 | O24-V1 | — |
 
-> **Total ORIZONT 30:** ~29 SP
+> **Total ORIZONT 30:** 29/29 SP implementation complete. The browser House HUD and native mobile
+> Home surface share the guarded API; the seven-case hermetic pack proves zero ungoverned actions.
+> Real Home Assistant, physical satellite, and household device execution remain explicit owner-host
+> validation seams and are not claimed by the hermetic completion gate.
 
 ## 📷 ORIZONT 31 — Camera Intelligence (Nerva Program E · AI-OS Phase 4, direction 2026-07-11)
 

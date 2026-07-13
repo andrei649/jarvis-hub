@@ -9,6 +9,7 @@ import sqlite3
 import threading
 import time
 from collections.abc import Callable, Mapping
+from contextlib import closing
 from pathlib import Path
 from urllib.parse import urlparse, urlunparse
 
@@ -198,7 +199,7 @@ class _ExecutionLedger:
         self.path = Path(path)
         self.path.parent.mkdir(parents=True, exist_ok=True)
         self._lock = threading.RLock()
-        with sqlite3.connect(str(self.path)) as connection:
+        with closing(sqlite3.connect(str(self.path))) as connection, connection:
             connection.execute(
                 """
                 CREATE TABLE IF NOT EXISTS house_executions (
@@ -211,7 +212,7 @@ class _ExecutionLedger:
             )
 
     def lookup(self, task_id: int, digest: str) -> tuple[str, dict | None]:
-        with self._lock, sqlite3.connect(str(self.path)) as connection:
+        with self._lock, closing(sqlite3.connect(str(self.path))) as connection, connection:
             row = connection.execute(
                 "SELECT payload_hash, status, result FROM house_executions WHERE task_id=?",
                 (task_id,),
@@ -225,7 +226,7 @@ class _ExecutionLedger:
         return "running", None
 
     def begin(self, task_id: int, digest: str) -> bool:
-        with self._lock, sqlite3.connect(str(self.path)) as connection:
+        with self._lock, closing(sqlite3.connect(str(self.path))) as connection, connection:
             changed = connection.execute(
                 "INSERT OR IGNORE INTO house_executions (task_id, payload_hash, status) "
                 "VALUES (?, ?, 'running')",
@@ -234,14 +235,14 @@ class _ExecutionLedger:
         return changed == 1
 
     def finish(self, task_id: int, result: dict) -> None:
-        with self._lock, sqlite3.connect(str(self.path)) as connection:
+        with self._lock, closing(sqlite3.connect(str(self.path))) as connection, connection:
             connection.execute(
                 "UPDATE house_executions SET status='done', result=? WHERE task_id=?",
                 (json.dumps(result, sort_keys=True, separators=(",", ":")), task_id),
             )
 
     def abort(self, task_id: int) -> None:
-        with self._lock, sqlite3.connect(str(self.path)) as connection:
+        with self._lock, closing(sqlite3.connect(str(self.path))) as connection, connection:
             connection.execute(
                 "DELETE FROM house_executions WHERE task_id=? AND status='running'",
                 (task_id,),

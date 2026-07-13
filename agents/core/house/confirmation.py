@@ -9,6 +9,7 @@ import sqlite3
 import threading
 import time
 from collections.abc import Mapping
+from contextlib import closing
 from pathlib import Path
 
 _KEY_REF = "{{secret:house_confirmation_key}}"
@@ -75,7 +76,7 @@ class StrongConfirmationStore:
         return connection
 
     def _initialize(self) -> None:
-        with self._connect() as connection:
+        with closing(self._connect()) as connection, connection:
             connection.execute("PRAGMA journal_mode=WAL")
             connection.execute(
                 """
@@ -136,7 +137,7 @@ class StrongConfirmationStore:
         now = _finite(self._clock(), label="clock")
         token = secrets.token_urlsafe(32)
         challenge_hash = self._hash("challenge", token)
-        with self._lock, self._connect() as connection:
+        with self._lock, closing(self._connect()) as connection, connection:
             cursor = connection.execute(
                 """
                 INSERT INTO confirmations (
@@ -175,7 +176,7 @@ class StrongConfirmationStore:
         )
         challenge_hash = self._hash("challenge", token)
         now = _finite(self._clock(), label="clock")
-        with self._lock, self._connect() as connection:
+        with self._lock, closing(self._connect()) as connection, connection:
             row = connection.execute(
                 "SELECT * FROM confirmations WHERE challenge_hash=?", (challenge_hash,)
             ).fetchone()
@@ -222,7 +223,7 @@ class StrongConfirmationStore:
             intended_state=intended_state,
         )
         now = _finite(self._clock(), label="clock")
-        with self._lock, self._connect() as connection:
+        with self._lock, closing(self._connect()) as connection, connection:
             connection.execute("BEGIN IMMEDIATE")
             row = connection.execute(
                 """
