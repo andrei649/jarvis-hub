@@ -10,6 +10,7 @@ Pure text analysis of ``web.py`` (no app import), so it runs anywhere pytest doe
 See ``docs/design/HUD_V2_IMPLEMENTATION_PLAN.md`` §8 and the coverage map in
 ``docs/design/HUD_V2_COVERAGE_AND_PLAN.md``.
 """
+
 import re
 from pathlib import Path
 
@@ -21,90 +22,152 @@ WEB = _AGENTS / "web.py"
 # extracted modules — otherwise an extracted endpoint would silently escape the
 # "every route has a v2 home" check.
 ROUTERS = _AGENTS / "core" / "routers"
+GAP = Path(__file__).resolve().parent.parent / "frontend" / "src" / "gap.tsx"
 
 # Ordered (prefix, surface); first match wins, so put the more specific prefixes
 # first. Surfaces mirror the v2 modes + chrome. NOT_IN_HUD = surfaced nowhere by
 # design (machine-facing). Keep this in sync with the v2 IA when adding routes.
 RULES = [
     # served shells / infra
-    ("/v2", "shell"), ("/v1", "shell"), ("/static", "shell"), ("/favicon", "shell"), ("/sw.js", "shell"),
+    ("/v2", "shell"),
+    ("/v1", "shell"),
+    ("/static", "shell"),
+    ("/favicon", "shell"),
+    ("/sw.js", "shell"),
     ("/admin", "admin"),
     # machine-facing — intentionally not a HUD surface
     ("/.well-known/", "NOT_IN_HUD"),
     ("/healthz", "NOT_IN_HUD"),  # H23.11 liveness probe (LB / systemd / Docker HEALTHCHECK)
-    ("/readyz", "NOT_IN_HUD"),   # H23.11 readiness probe (503 until boot completes)
+    ("/readyz", "NOT_IN_HUD"),  # H23.11 readiness probe (503 until boot completes)
     ("/metrics", "NOT_IN_HUD"),  # AUD-17 Prometheus golden-signals scrape (machine-facing)
     ("/api/mcp/server", "NOT_IN_HUD"),
     ("/api/memory/tool-spec", "NOT_IN_HUD"),
     ("/api/memory/search-tool", "NOT_IN_HUD"),
     ("/api/widget/", "interop"),  # embeddable widget runtime (managed under Interop)
     # cockpit / conversation
-    ("/chat", "cockpit"), ("/api/status", "cockpit"), ("/status", "cockpit"),
-    ("/api/agents", "agents"), ("/agents", "agents"), ("/dashboard", "cockpit"),
+    ("/chat", "cockpit"),
+    ("/api/status", "cockpit"),
+    ("/status", "cockpit"),
+    ("/api/agents", "agents"),
+    ("/agents", "agents"),
+    ("/dashboard", "cockpit"),
     ("/api/dashboard", "cockpit"),  # P1 G1 unified "Today in Jarvis" feed (home narrative)
-    ("/ticker", "cockpit"), ("/tasks", "cockpit"), ("/api/cognition", "cockpit"),
-    ("/tts", "cockpit"), ("/sessions", "cockpit"), ("/memory/clear", "cockpit"),
+    ("/ticker", "cockpit"),
+    ("/tasks", "cockpit"),
+    ("/api/cognition", "cockpit"),
+    ("/tts", "cockpit"),
+    ("/sessions", "cockpit"),
+    ("/memory/clear", "cockpit"),
     ("/api/canvas", "cockpit"),
-    ("/api/onboarding", "cockpit"),  # H23.20 first-run wizard + activation funnel (lands in the cockpit)
+    (
+        "/api/onboarding",
+        "cockpit",
+    ),  # H23.20 first-run wizard + activation funnel (lands in the cockpit)
     ("/api/system/", "cockpit"),  # 0.62 System Profiles — usage-mode selector (system/home setting)
     ("/api/trust/status", "topbar"),
     # memory & knowledge
     ("/api/osint/", "knowledge"),  # P2 OSINT pack — the Knowledge/"Vision · OSINT" surface (modes4)
-    ("/api/kg/", "memory"), ("/api/memory/", "memory"), ("/memory/stats", "memory"),
-    ("/memory", "memory"), ("/api/local-docs", "memory"), ("/api/capture", "memory"),
+    ("/api/kg/", "memory"),
+    ("/api/memory/", "memory"),
+    ("/memory/stats", "memory"),
+    ("/memory", "memory"),
+    ("/api/local-docs", "memory"),
+    ("/api/capture", "memory"),
     ("/api/context", "memory"),  # runtime context compression (H20.3)
     ("/api/ingestion/", "memory"),  # 0.37 ingestion-provenance audit ledger (Memory cluster panel)
     ("/api/coach/", "knowledge"),  # 0.43 Learning Coach pack — spaced repetition + curriculum
     # finance / market intel
     ("/api/market/", "finance"),  # P3 Market Intel pack — the Finance surface (modes4 "Gecko")
     # trust / security / payments
-    ("/api/security-skills/", "trust"),  # 0.42 Security Skills pack — curated ATT&CK/D3FEND/CSF knowledge
-    ("/api/security/", "trust"), ("/security", "trust"), ("/api/secrets/", "trust"),
+    (
+        "/api/security-skills/",
+        "trust",
+    ),  # 0.42 Security Skills pack — curated ATT&CK/D3FEND/CSF knowledge
+    ("/api/security/", "trust"),
+    ("/security", "trust"),
+    ("/api/secrets/", "trust"),
     ("/api/capabilities", "trust"),  # H27.8 capability registry → ReadinessPanel
     ("/api/payments", "trust"),
     # autonomy
-    ("/autonomy/", "autonomy"), ("/api/autonomy/", "autonomy"), ("/api/actions", "autonomy"),
+    ("/autonomy/", "autonomy"),
+    ("/api/autonomy/", "autonomy"),
+    ("/api/actions", "autonomy"),
     ("/api/missions", "autonomy"),  # Mission Workspaces (0.32) — long-horizon workspaces
-    ("/api/reflection", "autonomy"), ("/api/schedule/parse", "autonomy"),
+    ("/api/reflection", "autonomy"),
+    ("/api/schedule/parse", "autonomy"),
     ("/api/transcripts", "autonomy"),
     # build (workflows / skills / sandbox / grammar / creative pipeline)
     ("/api/creative/", "build"),  # P4 Creative pack — the Build surface (asset pipeline, modes2)
-    ("/api/workflows", "build"), ("/api/skills", "build"), ("/skills", "build"),
-    ("/sandbox", "build"), ("/api/llm/grammar", "build"), ("/api/browser", "build"),
+    ("/api/workflows", "build"),
+    ("/api/skills", "build"),
+    ("/skills", "build"),
+    ("/sandbox", "build"),
+    ("/api/llm/grammar", "build"),
+    ("/api/browser", "build"),
     ("/api/toolrpc", "build"),  # governed Tool-RPC for sandboxed pipelines (H20.1)
     ("/api/codeintel/", "build"),  # 0.31 Code Intelligence — AST symbol index over the source
     ("/api/vlm", "build"),  # vision-language model adapter (H13.1)
     ("/api/desktop", "build"),  # governed desktop operator (H15.3)
-    ("/api/media", "build"),  # governed media generation (H12.24)
+    ("/api/media", "build"),  # governed generation + live Media Director panel (H12.24/H29)
     # observe (traces / eval / quality / review / arena / resilience / bench / cost)
-    ("/api/traces", "observe"), ("/api/eval", "observe"), ("/api/quality", "observe"),
-    ("/api/review", "observe"), ("/api/arena", "observe"), ("/api/resilience", "observe"),
-    ("/bench", "observe"), ("/api/cost", "observe"), ("/api/analytics", "observe"),
+    ("/api/traces", "observe"),
+    ("/api/eval", "observe"),
+    ("/api/quality", "observe"),
+    ("/api/review", "observe"),
+    ("/api/arena", "observe"),
+    ("/api/resilience", "observe"),
+    ("/bench", "observe"),
+    ("/api/cost", "observe"),
+    ("/api/analytics", "observe"),
     ("/api/feedback", "observe"),  # H23.21 design-partner NPS/feedback (owner reviews it here)
     ("/api/support/", "observe"),  # 0.55 design-partner diagnostic bundle (triage surface)
     ("/api/metrics", "observe"),  # MOONSHOT §6 north-star meter (sibling of analytics/cost)
     ("/api/digest", "observe"),
-    ("/brain", "observe"), ("/api/brain", "observe"),  # neural-mesh brain (live agents+models)
+    ("/brain", "observe"),
+    ("/api/brain", "observe"),  # neural-mesh brain (live agents+models)
     ("/api/health/components", "observe"),
     # interop (a2a / mcp client mgmt / webhooks / external write-back + social)
-    ("/api/a2a/", "interop"), ("/api/admin/mcp", "interop"), ("/api/admin/widgets", "interop"),
-    ("/api/mcp", "interop"), ("/api/webhooks", "interop"), ("/api/integrations/", "interop"),
+    ("/api/a2a/", "interop"),
+    ("/api/admin/mcp", "interop"),
+    ("/api/admin/widgets", "interop"),
+    ("/api/mcp", "interop"),
+    ("/api/webhooks", "interop"),
+    ("/api/integrations/", "interop"),
     ("/api/sync", "interop"),  # E2E device sync (H12.13)
     ("/api/nodes", "interop"),  # governed node mesh (H12.17)
     # comms (rooms / notes / channel sender pairing / mic satellites)
-    ("/api/rooms", "comms"), ("/api/notes", "comms"), ("/api/channels/", "comms"),
+    ("/api/rooms", "comms"),
+    ("/api/notes", "comms"),
+    ("/api/channels/", "comms"),
     ("/api/satellites", "comms"),  # shared-GPU mic satellites (H12.8)
     # agent ops (heartbeat / learning / templates)
-    ("/heartbeat", "agents"), ("/learning", "agents"), ("/api/learning", "agents"),
-    ("/api/agent-templates", "agents"), ("/api/subagents", "agents"),  # H20.6
+    ("/heartbeat", "agents"),
+    ("/learning", "agents"),
+    ("/api/learning", "agents"),
+    ("/api/agent-templates", "agents"),
+    ("/api/subagents", "agents"),  # H20.6
     # admin (settings / env / models / llm lifecycle / oauth / oracle / plugins / voice / prompts / stats)
-    ("/api/admin/", "admin"), ("/plugins", "admin"), ("/api/models", "admin"),
-    ("/api/llm/", "admin"), ("/api/oauth", "admin"), ("/api/oracle", "admin"),
+    ("/api/admin/", "admin"),
+    ("/plugins", "admin"),
+    ("/api/models", "admin"),
+    ("/api/llm/", "admin"),
+    ("/api/oauth", "admin"),
+    ("/api/oracle", "admin"),
     ("/api/voice", "admin"),
 ]
 
-CORE_SURFACES = ["cockpit", "agents", "memory", "trust", "autonomy", "build",
-                 "observe", "interop", "comms", "admin"]
+CORE_SURFACES = [
+    "cockpit",
+    "agents",
+    "memory",
+    "trust",
+    "autonomy",
+    "build",
+    "observe",
+    "interop",
+    "comms",
+    "admin",
+]
 
 
 def _routes():
@@ -134,8 +197,7 @@ def test_every_route_has_a_v2_home():
     unmapped = [p for p in _routes() if _classify(p) == "UNMAPPED"]
     assert not unmapped, (
         "HUD v2 parity gate: these backend routes have no v2 surface — add each to "
-        "a mode or to NOT_IN_HUD in tests/test_hud_v2_parity.py:RULES:\n  "
-        + "\n  ".join(unmapped)
+        "a mode or to NOT_IN_HUD in tests/test_hud_v2_parity.py:RULES:\n  " + "\n  ".join(unmapped)
     )
 
 
@@ -143,3 +205,30 @@ def test_core_surfaces_each_cover_a_route():
     covered = {_classify(p) for p in _routes()}
     missing = [s for s in CORE_SURFACES if s not in covered]
     assert not missing, f"v2 surfaces with no mapped route (IA regression?): {missing}"
+
+
+def test_media_director_routes_have_a_live_build_surface():
+    media_routes = {
+        "/api/media/devices",
+        "/api/media/devices/{device_id}",
+        "/api/media/session",
+        "/api/media/present",
+        "/api/media/restore/{device_id}",
+    }
+    assert media_routes.issubset(set(_routes()))
+    assert {_classify(path) for path in media_routes} == {"build"}
+
+    source = GAP.read_text(encoding="utf-8")
+    assert re.search(r"\['Build', \[[^\]]*\bMediaDirectorPanel\b", source)
+    start = source.index("export function MediaDirectorPanel")
+    end = source.index("/* 0.37", start)
+    panel = source[start:end]
+    for route in (
+        "/api/media/devices",
+        "/api/media/session",
+        "/api/media/present",
+        "/api/media/restore/",
+    ):
+        assert route in panel
+    assert "ADMIN · DEVICE REGISTRY" in panel
+    assert "<iframe" not in panel.lower()

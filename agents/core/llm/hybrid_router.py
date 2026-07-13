@@ -22,6 +22,7 @@ Set JARVIS_AUTO_DEEP=0 to disable complexity-based escalation.
 """
 
 import logging
+import os
 import sys
 from functools import lru_cache
 from pathlib import Path
@@ -46,30 +47,32 @@ FLASH_MAX_TOKENS = 128_000
 HEAVY_TOKEN_THRESHOLD = 2_000
 
 # Bilingual RO/EN keyword set — matched case-insensitively as substrings.
-HEAVY_KEYWORDS: frozenset[str] = frozenset({
-    # Romanian
-    "analiz",       # analiză / analizare / analizez
-    "raionament",   # raționament (diacritic-free variant)
-    "raționament",  # raționament (with diacritic)
-    "strategi",     # strategie / strategică / strategic
-    "corelare",     # corelare
-    "planific",     # planificare / planific
-    "sintez",       # sinteză / sintetizare
-    "demonstr",     # demonstrare / demonstrez
-    "deduc",        # deducție / deduc
-    # English
-    "analys",       # analysis / analyse / analyzes
-    "analyz",       # analyze / analyzed
-    "rationament",  # alias without diacritic
-    "reasoning",
-    "strategy",
-    "strateg",      # strategic / strategize
-    "correlat",     # correlate / correlation
-    "planning",
-    "synthes",      # synthesis / synthesize
-    "demonstrat",   # demonstrate / demonstration
-    "deduct",       # deduction / deduct
-})
+HEAVY_KEYWORDS: frozenset[str] = frozenset(
+    {
+        # Romanian
+        "analiz",  # analiză / analizare / analizez
+        "raionament",  # raționament (diacritic-free variant)
+        "raționament",  # raționament (with diacritic)
+        "strategi",  # strategie / strategică / strategic
+        "corelare",  # corelare
+        "planific",  # planificare / planific
+        "sintez",  # sinteză / sintetizare
+        "demonstr",  # demonstrare / demonstrez
+        "deduc",  # deducție / deduc
+        # English
+        "analys",  # analysis / analyse / analyzes
+        "analyz",  # analyze / analyzed
+        "rationament",  # alias without diacritic
+        "reasoning",
+        "strategy",
+        "strateg",  # strategic / strategize
+        "correlat",  # correlate / correlation
+        "planning",
+        "synthes",  # synthesis / synthesize
+        "demonstrat",  # demonstrate / demonstration
+        "deduct",  # deduction / deduct
+    }
+)
 
 # Feature flag: set JARVIS_AUTO_DEEP=0 or JARVIS_AUTO_DEEP=false to disable.
 # Default is ON (complexity-based escalation active). Import-time constant on
@@ -118,7 +121,6 @@ DEFAULT_GEMINI_FLASH_MODEL = model_config.DEFAULT_GEMINI_FLASH_MODEL
 DEFAULT_GEMINI_PRO_MODEL = model_config.DEFAULT_GEMINI_PRO_MODEL
 DEFAULT_DEEP_MODEL = model_config.DEFAULT_DEEP_MODEL
 HOWARD_OLLAMA_MODEL = model_config.HOWARD_OLLAMA_MODEL
-HOWARD_OLLAMA_URL = model_config.HOWARD_OLLAMA_URL
 HOWARD_FALLBACK_MODEL = model_config.HOWARD_FALLBACK_MODEL
 
 
@@ -133,6 +135,7 @@ def _registry_policies() -> dict:
     """
     try:
         import yaml as _yaml
+
         path = Path(__file__).resolve().parents[2] / "_system" / "agents.yaml"
         data = _yaml.safe_load(path.read_text(encoding="utf-8")) or {}
         return {
@@ -153,6 +156,7 @@ def _registry_approved_models() -> dict:
     """
     try:
         import yaml as _yaml
+
         path = Path(__file__).resolve().parents[2] / "_system" / "agents.yaml"
         data = _yaml.safe_load(path.read_text(encoding="utf-8")) or {}
         out = {}
@@ -176,7 +180,7 @@ class HybridRouter(LLMRouter):
         self.anthropic_api_key = anthropic_api_key
         self._gemini_backend: Optional[LLMBackend] = None
         self._claude_backend: Optional[LLMBackend] = None
-        self._gemini_pool = None       # H12.20 — built in detect()
+        self._gemini_pool = None  # H12.20 — built in detect()
         self._anthropic_pool = None
         self._local_available = False
         self._cloud_available = False
@@ -244,6 +248,7 @@ class HybridRouter(LLMRouter):
         """Read an `llm` setting from /admin config (settings_db), safely."""
         try:
             from ..settings_db import get_value
+
             val = get_value("llm", key, default)
             return val if val else default
         except Exception:
@@ -268,36 +273,50 @@ class HybridRouter(LLMRouter):
 
     def _configured_deep_model(self) -> str:
         """Deep-slot model for this router, compatible with __new__ test fixtures."""
-        return getattr(self, "_deep_model", None) or model_config.deep_model_name() or DEFAULT_DEEP_MODEL
+        return (
+            getattr(self, "_deep_model", None)
+            or model_config.deep_model_name()
+            or DEFAULT_DEEP_MODEL
+        )
 
     async def detect(self):
         # Resolve the connectivity knobs (/admin) before probing so the base
-        # detect() honors them: backend pin + URLs.
+        # detect() honors them: backend pin + URLs.  Explicit process-level URL
+        # overrides take precedence so operators and hermetic test runners can
+        # isolate local backends without mutating the persisted admin database.
         self.backend_type = self._admin_setting("backend_type", "auto")
-        self.lm_studio_url = self._admin_setting("lm_studio_url", "http://localhost:1234")
-        self.ollama_url = self._admin_setting("ollama_url", "http://localhost:11434")
+        self.lm_studio_url = os.getenv("JARVIS_LM_STUDIO_URL") or self._admin_setting(
+            "lm_studio_url", "http://localhost:1234"
+        )
+        self.ollama_url = os.getenv("JARVIS_OLLAMA_URL") or self._admin_setting(
+            "ollama_url", "http://localhost:11434"
+        )
         self._deep_model = model_config.deep_model_name()
         self._gemini_model = self._admin_setting("gemini_model", DEFAULT_GEMINI_FLASH_MODEL)
         await super().detect()
         self._local_available = self._backend is not None
         # Use the real model loaded in the live backend; fall back to the /admin
         # default, then the hard-coded default. ("live with the real LLM loaded".)
-        self._local_model = (
-            self._detected_model
-            or self._admin_setting("default_model", DEFAULT_LOCAL_MODEL)
+        self._local_model = self._detected_model or self._admin_setting(
+            "default_model", DEFAULT_LOCAL_MODEL
         )
         # H12.20 — build auth-profile pools (multi-key + failover). A *_API_KEYS
         # env var (comma/space separated) supplies extra accounts; falls back to
         # the single *_API_KEY, so single-key deployments are unchanged.
         from .auth_rotation import AuthProfilePool
+
         self._gemini_pool = AuthProfilePool.from_env("GEMINI_API_KEY", "GEMINI_API_KEYS", "gemini")
-        self._anthropic_pool = AuthProfilePool.from_env("ANTHROPIC_API_KEY", "ANTHROPIC_API_KEYS", "anthropic")
+        self._anthropic_pool = AuthProfilePool.from_env(
+            "ANTHROPIC_API_KEY", "ANTHROPIC_API_KEYS", "anthropic"
+        )
 
         self._cloud_available = bool(self.gemini_api_key) or self._gemini_pool.size > 0
         if self._cloud_available:
             from .gemini import GeminiBackend
+
             self._gemini_backend = GeminiBackend(
-                api_key=self.gemini_api_key, model=self._gemini_model, auth_pool=self._gemini_pool)
+                api_key=self.gemini_api_key, model=self._gemini_model, auth_pool=self._gemini_pool
+            )
 
         # Claude model is admin-configurable (/admin → llm.claude_model).
         self._claude_model = self._admin_setting("claude_model", DEFAULT_CLAUDE_MODEL)
@@ -305,14 +324,22 @@ class HybridRouter(LLMRouter):
         self._claude_available = bool(self.anthropic_api_key) or self._anthropic_pool.size > 0
         if self._claude_available:
             from .anthropic import ClaudeBackend
-            self._claude_backend = ClaudeBackend(
-                api_key=self.anthropic_api_key, model=self._claude_model, auth_pool=self._anthropic_pool)
-            logger.info(f"Claude API available ({self._claude_model}; {self._anthropic_pool.size} auth profile(s))")
-        else:
-            logger.warning("ANTHROPIC_API_KEY not set — Claude tiering disabled, heavy agents will fall back")
 
-        self._ollama_backend = OllamaBackend(base_url=HOWARD_OLLAMA_URL)
-        self._ollama_available = await self._check(f"{HOWARD_OLLAMA_URL}/api/tags")
+            self._claude_backend = ClaudeBackend(
+                api_key=self.anthropic_api_key,
+                model=self._claude_model,
+                auth_pool=self._anthropic_pool,
+            )
+            logger.info(
+                f"Claude API available ({self._claude_model}; {self._anthropic_pool.size} auth profile(s))"
+            )
+        else:
+            logger.warning(
+                "ANTHROPIC_API_KEY not set — Claude tiering disabled, heavy agents will fall back"
+            )
+
+        self._ollama_backend = OllamaBackend(base_url=self.ollama_url)
+        self._ollama_available = await self._check(f"{self.ollama_url}/api/tags")
         if self._ollama_available:
             logger.info(f"Ollama available for Howard ({HOWARD_OLLAMA_MODEL})")
         else:
@@ -352,8 +379,10 @@ class HybridRouter(LLMRouter):
         """Block (or, opted-out, warn) when routing picks a model off the agent's allowlist."""
         if self.is_model_approved(agent_id, model):
             return
-        msg = (f"agent '{agent_id}' routed to unapproved model '{model}' "
-               f"(route={route}, approved={self.approved_models(agent_id)})")
+        msg = (
+            f"agent '{agent_id}' routed to unapproved model '{model}' "
+            f"(route={route}, approved={self.approved_models(agent_id)})"
+        )
         if self._models_strict():
             logger.error("model pin violation (blocked): %s", msg)
             raise ModelNotApprovedError(msg)
@@ -380,8 +409,7 @@ class HybridRouter(LLMRouter):
         # Deep-think agents: same LM Studio backend, different model slot (DDR5).
         # Only when local is available AND the deep model is actually there
         # (O26-P0.5/F5); falls through to normal routing otherwise.
-        if (agent_id in DEEP_THINK_AGENTS and self._local_available
-                and self._deep_model_available()):
+        if agent_id in DEEP_THINK_AGENTS and self._local_available and self._deep_model_available():
             return self._backend, self._configured_deep_model(), "local-deep"
 
         policy = self.get_agent_policy(agent_id)
@@ -411,7 +439,9 @@ class HybridRouter(LLMRouter):
         if policy == POLICY_CLOUD:
             if self._cloud_available:
                 return self._gemini_backend, self._gemini_model, "cloud"
-            logger.warning(f"Cloud backend unavailable for {agent_id} (policy=cloud), falling back to local")
+            logger.warning(
+                f"Cloud backend unavailable for {agent_id} (policy=cloud), falling back to local"
+            )
             if self._local_available:
                 return self._backend, self._local_model, "local-fallback"
             raise RuntimeError(f"No LLM backend available for {agent_id}")
@@ -528,7 +558,9 @@ class HybridRouter(LLMRouter):
     @property
     def backend(self) -> LLMBackend:
         if not self._local_available and not self._cloud_available:
-            raise RuntimeError("No LLM backend available. Start LM Studio/Ollama or configure GEMINI_API_KEY.")
+            raise RuntimeError(
+                "No LLM backend available. Start LM Studio/Ollama or configure GEMINI_API_KEY."
+            )
         return self._claude_backend or self._backend or self._gemini_backend
 
     @property
@@ -551,6 +583,7 @@ class HybridRouter(LLMRouter):
     def provider_catalog(self) -> list[dict]:
         """Return declared provider profiles without probing network backends."""
         from .providers import provider_catalog
+
         return provider_catalog()
 
     async def aclose(self) -> None:

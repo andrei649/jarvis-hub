@@ -28,6 +28,7 @@ import logging
 import math
 import threading
 import time
+from collections.abc import Mapping
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any, Protocol
@@ -54,6 +55,10 @@ URGENCIES = frozenset({"low", "normal", "high"})
 _MAX_DEVICES = 200
 _MAX_SESSIONS = 200
 _MAX_STORE_BYTES = 1_000_000
+_MAX_CONTENT_VALUE = 2_048
+_MAX_QUERY_VALUE = 256
+_MAX_CATALOG_CANDIDATES = 5
+_MAX_POLICY_REASON = 256
 
 logger = logging.getLogger(__name__)
 
@@ -65,17 +70,70 @@ def media_director_enabled() -> bool:
 class MediaError(Exception):
     """Refused media operation (unknown device, unresolvable content, no driver)."""
 
+    def __init__(self, reason: str, *, detail: dict | None = None) -> None:
+        self.reason = str(reason)[:_MAX_POLICY_REASON]
+        self.detail = dict(detail) if isinstance(detail, dict) else None
+        super().__init__(self.reason)
+
 
 # ── content resolution (pure; never fetches) ────────────────────────────────
 
 
-def resolve_content(content: Any, *, local_roots: tuple[Path, ...] = ()) -> dict:
-    """Validate + normalize a content reference. Resolution never fetches —
-    it only proves the reference is a shape we are willing to hand to a device.
+def _catalog_target(item: dict) -> dict:
+    value = item.get("path")
+    if not isinstance(value, str) or not value.strip():
+        raise MediaError("catalog_item_invalid")
+    value = value.strip()
+    ctype = "url" if urlparse(value).scheme.lower() in {"http", "https"} else "local"
+    return {"type": ctype, "value": value}
 
-    ``local`` paths must live under an owner-configured root (no path escapes);
-    ``url`` must be http(s). Anything else is refused with a reason, never guessed.
-    """
+
+def _candidate_metadata(items: list[dict]) -> list[dict]:
+    candidates = []
+    for item in items[:_MAX_CATALOG_CANDIDATES]:
+        created_at = item.get("created_at")
+        if isinstance(created_at, bool):
+            created_at = 0.0
+        try:
+            created_at = float(created_at)
+        except (OverflowError, TypeError, ValueError):
+            created_at = 0.0
+        if not math.isfinite(created_at):
+            created_at = 0.0
+        candidates.append(
+            {
+                "id": str(item.get("id", ""))[:64],
+                "kind": str(item.get("kind", ""))[:32],
+                "created_at": created_at,
+            }
+        )
+    return candidates
+
+
+def _canonical_navigation_preview(preview: Any) -> tuple[bool, str]:
+    if not isinstance(preview, Mapping):
+        return False, "governed browser preview is malformed"
+    steps = preview.get("steps")
+    if not isinstance(steps, list) or len(steps) != 1 or not isinstance(steps[0], Mapping):
+        return False, "governed browser preview is malformed"
+    step = steps[0]
+    reason = step.get("reason")
+    canonical = (
+        type(step.get("i")) is int
+        and step.get("i") == 0
+        and step.get("action") == "navigate"
+        and step.get("kind") == "read"
+        and step.get("decision") == "run"
+        and reason == ""
+        and type(preview.get("blocked")) is int
+        and preview.get("blocked") == 0
+        and type(preview.get("needs_approval")) is int
+        and preview.get("needs_approval") == 0
+    )
+    return canonical, str(reason or "governed browser preview is malformed")[:_MAX_POLICY_REASON]
+
+
+def _normalized_content_reference(content: Any) -> tuple[str, str]:
     if not isinstance(content, dict):
         raise MediaError("content must be an object {type, value}")
     ctype = content.get("type")
@@ -85,23 +143,108 @@ def resolve_content(content: Any, *, local_roots: tuple[Path, ...] = ()) -> dict
     if not isinstance(value, str) or not value.strip():
         raise MediaError("content value is required")
     value = value.strip()
+    value_limit = _MAX_QUERY_VALUE if ctype == "query" else _MAX_CONTENT_VALUE
+    if len(value) > value_limit:
+        raise MediaError("content value exceeds its size limit")
+    return ctype, value
+
+
+def _resolve_catalog_reference(
+    ctype: str,
+    value: str,
+    *,
+    local_roots: tuple[Path, ...],
+    catalog,
+    browser,
+) -> dict:
+    if catalog is None:
+        raise MediaError("media_catalog_disabled")
+    if ctype == "catalog":
+        item = catalog.get(value)
+        if not isinstance(item, dict):
+            raise MediaError("catalog_item_missing")
+        provenance = "catalog"
+    else:
+        matches = catalog.search(value, limit=_MAX_CATALOG_CANDIDATES + 1)
+        if not matches:
+            raise MediaError("catalog_query_missing", detail={"candidates": []})
+        if len(matches) != 1:
+            raise MediaError(
+                "catalog_query_ambiguous",
+                detail={"candidates": _candidate_metadata(matches)},
+            )
+        item = matches[0]
+        provenance = "catalog_query"
+    return resolve_content(
+        _catalog_target(item),
+        local_roots=local_roots,
+        catalog=catalog,
+        browser=browser,
+        _provenance=provenance,
+        _catalog_id=str(item.get("id", ""))[:64],
+    )
+
+
+def _validated_url(value: str, browser) -> str:
+    scheme = urlparse(value).scheme.lower()
+    if scheme not in ("http", "https"):
+        raise MediaError(f"refusing non-http(s) url scheme: {scheme!r}")
+    try:
+        preview = browser.preview([{"action": "navigate", "url": value}])
+        allowed, policy_reason = _canonical_navigation_preview(preview)
+    except Exception:
+        allowed, policy_reason = False, "governed browser unavailable"
+    if not allowed:
+        raise MediaError("url_refused", detail={"policy_reason": policy_reason})
+    return value
+
+
+def _validated_local(value: str, local_roots: tuple[Path, ...]) -> str:
+    if not local_roots:
+        raise MediaError("no media.roots configured — local content is disabled")
+    candidate = Path(value)
+    if not candidate.is_absolute():
+        raise MediaError("local content must be an absolute path")
+    resolved = candidate.resolve()
+    if not any(resolved.is_relative_to(root.resolve()) for root in local_roots):
+        raise MediaError("local content escapes the configured media roots")
+    if not resolved.is_file():
+        raise MediaError("local content must be an existing regular file")
+    return str(resolved)
+
+
+def resolve_content(
+    content: Any,
+    *,
+    local_roots: tuple[Path, ...] = (),
+    catalog=None,
+    browser=None,
+    _provenance: str = "direct",
+    _catalog_id: str = "",
+) -> dict:
+    """Validate + normalize a content reference. Resolution never fetches —
+    it only proves the reference is a shape we are willing to hand to a device.
+
+    ``local`` paths must live under an owner-configured root (no path escapes);
+    ``url`` must be http(s). Anything else is refused with a reason, never guessed.
+    """
+    ctype, value = _normalized_content_reference(content)
+    if ctype in {"catalog", "query"}:
+        return _resolve_catalog_reference(
+            ctype,
+            value,
+            local_roots=local_roots,
+            catalog=catalog,
+            browser=browser,
+        )
     if ctype == "url":
-        scheme = urlparse(value).scheme.lower()
-        if scheme not in ("http", "https"):
-            raise MediaError(f"refusing non-http(s) url scheme: {scheme!r}")
-    elif ctype == "local":
-        if not local_roots:
-            raise MediaError("no media.roots configured — local content is disabled")
-        candidate = Path(value)
-        if not candidate.is_absolute():
-            raise MediaError("local content must be an absolute path")
-        resolved = candidate.resolve()
-        if not any(resolved.is_relative_to(root.resolve()) for root in local_roots):
-            raise MediaError("local content escapes the configured media roots")
-        value = str(resolved)
-    # "catalog" ids and "query" strings are opaque here: the driver (or the
-    # media catalog, when attached) decides whether it can serve them.
-    return {"type": ctype, "value": value}
+        value = _validated_url(value, browser)
+    else:
+        value = _validated_local(value, local_roots)
+    resolved_content = {"type": ctype, "value": value, "provenance": _provenance}
+    if _catalog_id:
+        resolved_content["catalog_id"] = _catalog_id
+    return resolved_content
 
 
 # ── devices ──────────────────────────────────────────────────────────────────
@@ -255,7 +398,15 @@ class DeviceRegistry:
 
 
 class MediaDriver(Protocol):  # pragma: no cover - protocol definition
-    def play(self, device: MediaDevice, content: dict) -> dict: ...
+    supports_duration: bool
+
+    def play(
+        self,
+        device: MediaDevice,
+        content: dict,
+        *,
+        duration_seconds: float | None = None,
+    ) -> dict: ...
     def pause(self, device: MediaDevice) -> dict: ...
     def resume(self, device: MediaDevice) -> dict: ...
     def stop(self, device: MediaDevice) -> dict: ...
@@ -268,8 +419,15 @@ class NullMediaDriver:
     H15 Null browser/desktop drivers, governance is testable without hardware."""
 
     reason = "no media driver wired for this device (host seam — see NERVA_VISION §4-P5)"
+    supports_duration = False
 
-    def play(self, device: MediaDevice, content: dict) -> dict:
+    def play(
+        self,
+        device: MediaDevice,
+        content: dict,
+        *,
+        duration_seconds: float | None = None,
+    ) -> dict:
         return {"ok": False, "state": "no_driver", "reason": self.reason}
 
     def pause(self, device: MediaDevice) -> dict:
@@ -320,6 +478,7 @@ class MediaSession:
     mode: str
     privacy: str
     started_at: float
+    duration_seconds: float | None = None
     state: str = "playing"
     previous: dict | None = None  # snapshot for the restore() rollback
 
@@ -340,6 +499,13 @@ class MediaSession:
             or not math.isfinite(float(self.started_at))
         ):
             raise MediaError("session started_at is invalid")
+        if self.duration_seconds is not None and (
+            isinstance(self.duration_seconds, bool)
+            or not isinstance(self.duration_seconds, (int, float))
+            or not math.isfinite(float(self.duration_seconds))
+            or not 0 < float(self.duration_seconds) <= 24 * 3600
+        ):
+            raise MediaError("session duration_seconds is invalid")
         if self.state not in {"playing", "paused", "idle"}:
             raise MediaError("session state is invalid")
         if self.previous is not None and not isinstance(self.previous, dict):
@@ -379,9 +545,7 @@ class SessionBoard:
 
     def list(self) -> list[dict]:
         with self._lock:
-            return [
-                s.to_dict() for s in sorted(self._sessions.values(), key=lambda s: s.device_id)
-            ]
+            return [s.to_dict() for s in sorted(self._sessions.values(), key=lambda s: s.device_id)]
 
     def _persist(self) -> None:
         self._store.save(self.list())
@@ -416,6 +580,8 @@ class MediaDirector:
         sessions: SessionBoard | None = None,
         drivers: dict[str, MediaDriver] | None = None,
         local_roots: tuple[Path, ...] = (),
+        catalog=None,
+        browser=None,
         clock=None,
     ) -> None:
         self.registry = (
@@ -429,20 +595,35 @@ class MediaDirector:
         self._drivers = drivers or {}
         self._null = NullMediaDriver()
         self._local_roots = local_roots
+        self._catalog = catalog
+        self._browser = browser
         self._clock = clock or time.time
 
     def driver_for(self, device: MediaDevice) -> MediaDriver:
         return self._drivers.get(device.kind, self._null)
 
     @staticmethod
-    def _drive(driver: MediaDriver, operation: str, device: MediaDevice, *args) -> dict | None:
+    def _supports_duration(driver: MediaDriver) -> bool:
+        try:
+            return driver.supports_duration is True
+        except Exception:
+            return False
+
+    @staticmethod
+    def _drive(
+        driver: MediaDriver,
+        operation: str,
+        device: MediaDevice,
+        *args,
+        **kwargs,
+    ) -> dict | None:
         """Call an untrusted host seam without leaking transport details.
 
         ``None`` means the driver raised or returned a malformed response.  Callers
         decide whether that is a refused actuation or an unverified status probe.
         """
         try:
-            outcome = getattr(driver, operation)(device, *args)
+            outcome = getattr(driver, operation)(device, *args, **kwargs)
         except Exception:
             logger.warning(
                 "media driver operation failed: operation=%s kind=%s device=%s",
@@ -461,7 +642,59 @@ class MediaDirector:
             return None
         return outcome
 
-    def present(self, payload: dict) -> dict:
+    @staticmethod
+    def _consume_interrupt_budget(current, urgency: str, interrupt_budget) -> str | None:
+        active = current is not None and current.state in {"playing", "paused"}
+        if not active or urgency != "high":
+            return None
+        try:
+            consume = getattr(interrupt_budget, "consume", None)
+        except Exception:
+            logger.warning("media interrupt budget is unavailable")
+            return "interrupt_budget_unavailable"
+        if not callable(consume):
+            return "interrupt_budget_unavailable"
+        try:
+            allowed = consume()
+        except Exception:
+            logger.warning("media interrupt budget is unavailable")
+            return "interrupt_budget_unavailable"
+        if allowed is False:
+            return "interrupt_budget_exhausted"
+        if allowed is not True:
+            return "interrupt_budget_unavailable"
+        return None
+
+    def _play(
+        self,
+        driver: MediaDriver,
+        device: MediaDevice,
+        content: dict,
+        duration,
+    ) -> dict | None:
+        if duration is None:
+            return self._drive(driver, "play", device, content)
+        return self._drive(
+            driver,
+            "play",
+            device,
+            content,
+            duration_seconds=float(duration),
+        )
+
+    @staticmethod
+    def _duration_verified(status: dict, duration) -> bool:
+        if duration is None:
+            return True
+        reported = status.get("duration_seconds")
+        return bool(
+            isinstance(reported, (int, float))
+            and not isinstance(reported, bool)
+            and math.isfinite(float(reported))
+            and float(reported) == float(duration)
+        )
+
+    def present(self, payload: dict, *, interrupt_budget=None) -> dict:
         """Contract → resolve → etiquette → drive → verify → record.
 
         Never raises for a refusable reason — returns ``{ok: False, reason}`` so
@@ -471,10 +704,18 @@ class MediaDirector:
         if denial is not None:
             return {"ok": False, "reason": denial}
         try:
-            content = resolve_content(payload["content"], local_roots=self._local_roots)
+            content = resolve_content(
+                payload["content"],
+                local_roots=self._local_roots,
+                catalog=self._catalog,
+                browser=self._browser,
+            )
             device = self.registry.resolve_target(str(payload["target"]))
         except MediaError as exc:
-            return {"ok": False, "reason": str(exc)}
+            refusal = {"ok": False, "reason": exc.reason}
+            if exc.detail is not None:
+                refusal["detail"] = exc.detail
+            return refusal
 
         mode = payload.get("mode", "play")
         if mode not in device.supports:
@@ -491,10 +732,18 @@ class MediaDirector:
             }
 
         driver = self.driver_for(device)
+        duration = payload.get("duration_seconds")
+        if duration is not None and not self._supports_duration(driver):
+            return {"ok": False, "reason": "duration_unsupported"}
+
+        budget_refusal = self._consume_interrupt_budget(current, urgency, interrupt_budget)
+        if budget_refusal is not None:
+            return {"ok": False, "reason": budget_refusal}
+
         previous = current.to_dict() if current else None
         if previous is not None:
             previous["previous"] = None
-        outcome = self._drive(driver, "play", device, content)
+        outcome = self._play(driver, device, content, duration)
         if outcome is None:
             return {"ok": False, "reason": "driver_error", "state": "unavailable"}
         if not outcome.get("ok"):
@@ -509,6 +758,7 @@ class MediaDirector:
             status.get("ok")
             and status.get("state") == "playing"
             and status.get("content", {}).get("value") == content["value"]
+            and self._duration_verified(status, duration)
         )
         self.sessions.set(
             MediaSession(
@@ -517,6 +767,7 @@ class MediaDirector:
                 mode=mode,
                 privacy=payload.get("privacy", "household"),
                 started_at=float(self._clock()),
+                duration_seconds=float(duration) if duration is not None else None,
                 state="playing",
                 previous=previous,
             )
@@ -553,7 +804,18 @@ class MediaDirector:
             previous = MediaSession(**session.previous)
         except (MediaError, TypeError):
             return {"ok": False, "reason": "corrupt_session_snapshot"}
-        outcome = self._drive(driver, "play", device, previous.content)
+        if previous.duration_seconds is None:
+            outcome = self._drive(driver, "play", device, previous.content)
+        else:
+            if not self._supports_duration(driver):
+                return {"ok": False, "reason": "duration_unsupported"}
+            outcome = self._drive(
+                driver,
+                "play",
+                device,
+                previous.content,
+                duration_seconds=previous.duration_seconds,
+            )
         if outcome is None:
             return {"ok": False, "reason": "driver_error"}
         if outcome.get("ok"):
@@ -563,16 +825,20 @@ class MediaDirector:
 
     # ── O27 facade binding ───────────────────────────────────────────────────
 
-    def handle_perform(self, payload: dict, ctx) -> dict:
+    def handle_perform(self, payload: dict, ctx, *, interrupt_budget=None) -> dict:
         """The ``action:media.present`` handler for ``CapabilityActionAPI``."""
-        return self.present(dict(payload))
+        return self.present(dict(payload), interrupt_budget=interrupt_budget)
 
     def handle_restore(self, payload: dict, ctx) -> dict:
         """The separately mediated ``action:media.restore`` handler."""
         return self.restore(str(payload["device_id"]))
 
 
-def register_media_capability(api, director: MediaDirector):
+def register_media_capability(api, director: MediaDirector, *, interrupt_budget=None):
     """Bind present + restore onto the unified action facade (kernel-mediated)."""
-    api.register(f"action:{MediaDirector.KIND}", director.handle_perform)
+
+    def handle_perform(payload, ctx):
+        return director.handle_perform(payload, ctx, interrupt_budget=interrupt_budget)
+
+    api.register(f"action:{MediaDirector.KIND}", handle_perform)
     return api.register(f"action:{MediaDirector.RESTORE_KIND}", director.handle_restore)

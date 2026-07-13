@@ -76,6 +76,35 @@ const inpS = { background: 'var(--surface)', color: 'var(--ink)', border: '1px s
 const taS = { width: '100%', minHeight: 64, background: 'var(--surface)', color: 'var(--ink)', border: '1px solid var(--panel-line)', borderRadius: 4, padding: 6, ...mono };
 const Json = ({ v, max = 220 }) => (v == null ? null
   : <pre style={{ ...mono, fontSize: 10, lineHeight: 1.45, whiteSpace: 'pre-wrap', maxHeight: max, overflow: 'auto', margin: '6px 0 0', padding: 8, background: 'var(--surface)', border: '1px solid var(--panel-line)', borderRadius: 4, color: 'var(--ink-2)' }}>{typeof v === 'string' ? v : JSON.stringify(v, null, 2)}</pre>);
+function MediaOutcome({ value }) {
+  if (!value) return null;
+  if (value.output && value.output.ok === false) {
+    return <div role="alert" style={{ ...mono, color: 'var(--red)', marginTop: 8 }}>
+      refused · {value.output.reason || value.reason || 'media_action_failed'}
+    </div>;
+  }
+  if (value.status === 'completed' && value.output?.ok === true && value.output?.verified === true) {
+    return <div role="status" style={{ ...mono, color: 'var(--green)', marginTop: 8 }}>
+      verified success · {value.output.device_id || 'device'} · {value.output.state || 'verified'}
+    </div>;
+  }
+  if (value.status === 'completed' && value.output?.ok === true) {
+    return <div role="alert" style={{ ...mono, color: 'var(--amber)', marginTop: 8 }}>
+      unverified · success not claimed
+    </div>;
+  }
+  if (value.status === 'queued') {
+    return <div role="status" style={{ ...mono, color: 'var(--amber)', marginTop: 8 }}>
+      queued for approval · {value.reason || 'approval_required'}
+    </div>;
+  }
+  if (value.status === 'refused' || value.status === 'disabled' || value.status === 'failed') {
+    return <div role="alert" style={{ ...mono, color: 'var(--red)', marginTop: 8 }}>
+      {value.status} · {value.reason || 'request_failed'}
+    </div>;
+  }
+  return <Json v={value} max={120} />;
+}
 function DiffView({ text }) {
   if (text == null) return null;
   if (text === '') return <div style={{ ...mono, fontSize: 10.5, color: 'var(--ink-3)', marginTop: 6 }}>identical · no changes</div>;
@@ -1554,6 +1583,178 @@ export function MediaGalleryPanel() {
   );
 }
 
+/* H29 — governed presentation across owner-curated media devices. This panel is
+   deliberately metadata-only: it lists registry/session state but never embeds
+   remote media in the HUD. */
+export function MediaDirectorPanel() {
+  const devicesApi = useApi('/api/media/devices');
+  const sessionsApi = useApi('/api/media/session');
+  const devices = arr(devicesApi.d, 'devices');
+  const sessions = arr(sessionsApi.d, 'sessions');
+  const loaded = !!(devicesApi.d && sessionsApi.d);
+  const enabled = loaded && !!devicesApi.d.enabled && !!sessionsApi.d.enabled;
+  const [contentType, setContentType] = useState('url');
+  const [contentValue, setContentValue] = useState('');
+  const [target, setTarget] = useState('');
+  const [mode, setMode] = useState('play');
+  const [privacy, setPrivacy] = useState('household');
+  const [urgency, setUrgency] = useState('normal');
+  const [duration, setDuration] = useState('');
+  const [outcome, setOutcome] = useState(null);
+  const [deviceId, setDeviceId] = useState('');
+  const [deviceName, setDeviceName] = useState('');
+  const [deviceKind, setDeviceKind] = useState('local');
+  const [deviceRoom, setDeviceRoom] = useState('');
+  const [deviceSupports, setDeviceSupports] = useState('play');
+  const [adminMessage, setAdminMessage] = useState('');
+  const contentLimit = contentType === 'query' ? 256 : 2048;
+  const allMediaModes = ['play', 'show', 'announce'];
+  const selectedDevice = devices.find((device) => device.id === target);
+  const availableModes = selectedDevice
+    ? (Array.isArray(selectedDevice.supports) ? selectedDevice.supports : []).filter((value) => allMediaModes.includes(value))
+    : allMediaModes;
+  const present = (ev) => {
+    ev.preventDefault();
+    if (!contentValue.trim() || !target || !availableModes.includes(mode)) return;
+    const body = {
+      content: { type: contentType, value: contentValue.trim() },
+      target,
+      mode,
+      privacy,
+      urgency,
+      ...(duration ? { duration_seconds: Number(duration) } : {}),
+    };
+    setOutcome({ status: 'sending' });
+    apiPost('/api/media/present', body)
+      .then((result) => { setOutcome(result); sessionsApi.reload(); })
+      .catch((err) => setOutcome({ status: 'failed', reason: err?.message || 'request_failed' }));
+  };
+  const restore = (deviceId) => {
+    setOutcome({ status: 'sending' });
+    apiPost('/api/media/restore/' + encodeURIComponent(deviceId))
+      .then((result) => { setOutcome(result); sessionsApi.reload(); })
+      .catch((err) => setOutcome({ status: 'failed', reason: err?.message || 'request_failed' }));
+  };
+  const registerDevice = (ev) => {
+    ev.preventDefault();
+    if (!deviceId.trim() || !deviceName.trim()) return;
+    const supports = deviceSupports.split(',').map((value) => value.trim()).filter(Boolean).slice(0, 16);
+    if (!supports.length) return;
+    apiPost('/api/media/devices', {
+      id: deviceId.trim(), name: deviceName.trim(), kind: deviceKind,
+      room: deviceRoom.trim(), supports,
+    }, { admin: true })
+      .then(() => { setAdminMessage('device registered'); devicesApi.reload(); })
+      .catch((err) => setAdminMessage(err?.message || 'device registration failed'));
+  };
+  const removeDevice = (id) => apiDelete('/api/media/devices/' + encodeURIComponent(id), { admin: true })
+    .then(() => { setAdminMessage(`removed ${id}`); devicesApi.reload(); })
+    .catch((err) => setAdminMessage(err?.message || 'device removal failed'));
+
+  return (
+    <Card
+      title="MEDIA DIRECTOR"
+      live={loaded ? (enabled ? 'live' : 'seed') : undefined}
+      sub={loaded ? (enabled ? `${devices.length} devices · ${sessions.length} sessions` : 'disabled') : null}
+      onReload={() => { devicesApi.reload(); sessionsApi.reload(); }}
+    >
+      <State
+        e={devicesApi.e || sessionsApi.e}
+        loading={devicesApi.loading || sessionsApi.loading}
+        n={loaded && !enabled ? undefined : devices.length + sessions.length}
+      />
+      {loaded && !enabled && (
+        <div style={{ fontSize: 10, color: 'var(--ink-3)', marginTop: 6 }}>
+          off by default · set JARVIS_MEDIA_DIRECTOR=1 to enable governed presentation
+        </div>
+      )}
+      {enabled && <>
+        <div style={{ ...mono, color: 'var(--ink-3)', fontSize: 10, margin: '4px 0' }}>DEVICES</div>
+        {devices.map((device, i) => (
+          <Row key={device.id || i}>
+            <span style={{ ...mono, color: 'var(--accent-light)' }}>{device.name || device.id}</span>
+            <span style={{ marginLeft: 'auto', display: 'flex', gap: 5 }}>
+              {device.room && <Tag>{device.room}</Tag>}
+              <Tag>{device.kind}</Tag>
+            </span>
+          </Row>
+        ))}
+        <div style={{ ...mono, color: 'var(--ink-3)', fontSize: 10, margin: '10px 0 4px' }}>SESSIONS</div>
+        {sessions.map((session, i) => (
+          <Row key={session.device_id || i}>
+            <span style={{ ...mono, color: 'var(--ink-2)' }}>{session.device_id}</span>
+            <span style={{ fontSize: 10, color: 'var(--ink-3)' }}>
+              {session.state || 'unknown'} · {session.content?.type || 'content'}:{String(session.content?.value || '').slice(0, 80)}
+            </span>
+            <button className="tool-btn" aria-label={`restore ${session.device_id}`} onClick={() => restore(session.device_id)}>restore</button>
+          </Row>
+        ))}
+        <div style={{ ...mono, color: 'var(--ink-3)', fontSize: 10, margin: '10px 0 4px' }}>USER · PRESENT</div>
+        <form onSubmit={present} style={{ display: 'grid', gap: 6 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: '110px 1fr', gap: 6 }}>
+            <select aria-label="content type" value={contentType} onChange={(ev) => { setContentType(ev.target.value); setContentValue(''); }} style={inpS}>
+              {['url', 'local', 'catalog', 'query'].map((value) => <option key={value} value={value}>{value}</option>)}
+            </select>
+            <input aria-label="content reference" value={contentValue} onChange={(ev) => setContentValue(ev.target.value)} maxLength={contentLimit} placeholder="URL, local path, catalog id, or query" style={inpS} />
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 90px 110px', gap: 6 }}>
+            <select aria-label="target device" value={target} onChange={(ev) => {
+              const nextTarget = ev.target.value;
+              const nextDevice = devices.find((device) => device.id === nextTarget);
+              const nextModes = nextDevice && Array.isArray(nextDevice.supports)
+                ? nextDevice.supports.filter((value) => allMediaModes.includes(value)) : allMediaModes;
+              setTarget(nextTarget);
+              if (!nextModes.includes(mode)) setMode(nextModes[0] || '');
+            }} style={inpS}>
+              <option value="">choose device</option>
+              {devices.map((device) => <option key={device.id} value={device.id}>{device.name || device.id}</option>)}
+            </select>
+            <select aria-label="mode" value={mode} onChange={(ev) => setMode(ev.target.value)} style={inpS}>
+              {availableModes.map((value) => <option key={value} value={value}>{value}</option>)}
+            </select>
+            <select aria-label="privacy" value={privacy} onChange={(ev) => setPrivacy(ev.target.value)} style={inpS}>
+              {['ambient', 'household', 'private'].map((value) => <option key={value} value={value}>{value}</option>)}
+            </select>
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: '110px 1fr auto', gap: 6 }}>
+            <select aria-label="urgency" value={urgency} onChange={(ev) => setUrgency(ev.target.value)} style={inpS}>
+              {['low', 'normal', 'high'].map((value) => <option key={value} value={value}>{value}</option>)}
+            </select>
+            <input aria-label="duration seconds" type="number" min="1" max="86400" step="1" value={duration} onChange={(ev) => setDuration(ev.target.value)} placeholder="duration (optional)" style={inpS} />
+            <button className="tool-btn" type="submit" disabled={!contentValue.trim() || !target || !availableModes.includes(mode)}>present</button>
+          </div>
+        </form>
+        <MediaOutcome value={outcome} />
+        <section aria-label="media admin controls">
+          <div style={{ ...mono, color: 'var(--ink-3)', fontSize: 10, margin: '12px 0 4px' }}>ADMIN · DEVICE REGISTRY</div>
+          {devices.map((device, i) => (
+            <Row key={`admin:${device.id || i}`}>
+              <span style={{ ...mono, color: 'var(--ink-2)' }}>{device.id}</span>
+              <span style={{ fontSize: 10, color: 'var(--ink-3)' }}>{device.name}</span>
+              <button className="tool-btn" aria-label={`remove ${device.id}`} onClick={() => removeDevice(device.id)}>remove</button>
+            </Row>
+          ))}
+          <form onSubmit={registerDevice} style={{ display: 'grid', gap: 6 }}>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1.4fr 120px', gap: 6 }}>
+              <input aria-label="admin device id" value={deviceId} onChange={(ev) => setDeviceId(ev.target.value)} maxLength={64} placeholder="device id" style={inpS} />
+              <input aria-label="admin device name" value={deviceName} onChange={(ev) => setDeviceName(ev.target.value)} maxLength={120} placeholder="display name" style={inpS} />
+              <select aria-label="admin device kind" value={deviceKind} onChange={(ev) => setDeviceKind(ev.target.value)} style={inpS}>
+                {['chromecast', 'spotify_connect', 'browser_tab', 'local', 'speaker', 'tv'].map((value) => <option key={value} value={value}>{value}</option>)}
+              </select>
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr auto', gap: 6 }}>
+              <input aria-label="admin device room" value={deviceRoom} onChange={(ev) => setDeviceRoom(ev.target.value)} maxLength={64} placeholder="room (optional)" style={inpS} />
+              <input aria-label="admin device supports" value={deviceSupports} onChange={(ev) => setDeviceSupports(ev.target.value)} maxLength={128} placeholder="play,show,announce" style={inpS} />
+              <button className="tool-btn" type="submit" disabled={!deviceId.trim() || !deviceName.trim()}>register device</button>
+            </div>
+          </form>
+          {adminMessage && <div role="status" style={{ ...mono, color: 'var(--ink-3)', marginTop: 6 }}>{adminMessage}</div>}
+        </section>
+      </>}
+    </Card>
+  );
+}
+
 /* 0.37 — the ingestion-provenance read surface (GET /api/ingestion/provenance, admin).
    Renders recent provenance records + by-source stats. Honesty contract: when
    JARVIS_PROVENANCE is off the endpoint reports enabled:false and the panel says so
@@ -1893,7 +2094,7 @@ const SECTIONS: Array<[string, Array<() => any>]> = [
   ['Trust', [KillSwitchPanel, KernelMetricsPanel, ReadinessPanel, LoopBreakerPanel, GovernancePanel, PosturePanel, SecuritySkillsPanel, NetworkMonitorPanel, CommsRatePanel, SafeCommsDraftPanel, SecretsPanel, CapabilitiesPanel, PairingPanel, InjectionScanPanel]],
   ['Interop', [A2AInboxPanel, MeshPeersPanel, SatellitesPanel, OraclePanel, MarketplacePanel, SkillHistoryPanel, WatchlistPanel]],
   ['Observe', [OnboardingPanel, EvalPanel, ReviewPanel, ArenaPanel, QualityPanel, APMPanel, ModelInfoPanel, FeedbackPanel]],
-  ['Build', [WorkflowsPanel, StepGenPanel, SandboxPanel, TemplatesPanel, MediaGalleryPanel]],
+  ['Build', [WorkflowsPanel, StepGenPanel, SandboxPanel, TemplatesPanel, MediaDirectorPanel, MediaGalleryPanel]],
   ['Autonomy & Agents', [DecisionInboxPanel, MissionsPanel, AgentAutonomyPanel, TodayPanel, SchedulePanel, LearningPanel, SessionsPanel, HeartbeatPanel, TranscriptPanel, EscalationPanel]],
   ['Admin', [BackupPanel, OAuthPanel, SettingsPanel, PromptsPanel, RoomsPanel, LMStudioPanel, AuthProfilesPanel, SystemProfilePanel]],
 ];

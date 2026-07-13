@@ -41,6 +41,7 @@ from agents.core.observability.reality_types import RealityCase
 
 logger = logging.getLogger("jarvis.reality")
 
+
 def _now_iso() -> str:
     return datetime.now(UTC).isoformat()
 
@@ -456,6 +457,7 @@ async def _probe_tool_time_protocol() -> bool:
 
 async def _probe_media_present_verified_rail() -> bool:
     """The O29 present() rail: contract → resolve → drive → verify, hermetically."""
+    from agents.core.browser_agent import BrowserPolicy, GovernedBrowser, NullBrowserDriver
     from agents.core.media_director import (
         DeviceRegistry,
         MediaDevice,
@@ -494,12 +496,20 @@ async def _probe_media_present_verified_rail() -> bool:
             supports=("show",),
         )
     )
+    preview_driver = NullBrowserDriver()
+    browser = GovernedBrowser(
+        driver=preview_driver,
+        policy=BrowserPolicy(["93.184.216.34"]),
+    )
     director = MediaDirector(
-        registry=registry, sessions=SessionBoard(path=None), drivers={"browser_tab": _FakeDriver()}
+        registry=registry,
+        sessions=SessionBoard(path=None),
+        drivers={"browser_tab": _FakeDriver()},
+        browser=browser,
     )
     result = director.present(
         {
-            "content": {"type": "url", "value": "https://example.local/dashboard"},
+            "content": {"type": "url", "value": "https://93.184.216.34/dashboard"},
             "target": "kitchen",
             "mode": "show",
             "privacy": "household",
@@ -508,12 +518,16 @@ async def _probe_media_present_verified_rail() -> bool:
     )
     restored = director.restore("kitchen-display")
     return (
-        result.get("ok") is True and result.get("verified") is True and restored.get("ok") is True
+        result.get("ok") is True
+        and result.get("verified") is True
+        and restored.get("ok") is True
+        and preview_driver.calls == []
     )
 
 
 async def _probe_media_present_offline_honest() -> bool:
     """A device with no driver refuses honestly — never a fake 'playing'."""
+    from agents.core.browser_agent import BrowserPolicy, GovernedBrowser, NullBrowserDriver
     from agents.core.media_director import (
         DeviceRegistry,
         MediaDevice,
@@ -523,10 +537,18 @@ async def _probe_media_present_offline_honest() -> bool:
 
     registry = DeviceRegistry(path=None)
     registry.register(MediaDevice(id="tv", name="Living room TV", kind="tv", room="living"))
-    director = MediaDirector(registry=registry, sessions=SessionBoard(path=None))
+    preview_driver = NullBrowserDriver()
+    director = MediaDirector(
+        registry=registry,
+        sessions=SessionBoard(path=None),
+        browser=GovernedBrowser(
+            driver=preview_driver,
+            policy=BrowserPolicy(["93.184.216.34"]),
+        ),
+    )
     result = director.present(
         {
-            "content": {"type": "url", "value": "https://example.local/film"},
+            "content": {"type": "url", "value": "https://93.184.216.34/film"},
             "target": "tv",
             "mode": "play",
             "privacy": "household",
@@ -537,6 +559,7 @@ async def _probe_media_present_offline_honest() -> bool:
         result.get("ok") is False
         and "driver" in str(result.get("reason", ""))
         and director.sessions.get("tv") is None
+        and preview_driver.calls == []
     )
 
 
@@ -544,9 +567,9 @@ from agents.core.observability.operator_reality import (  # noqa: E402, I001
     OPERATOR_CAPABILITY_CASES,
     OperatorEventLedger as _OperatorEventLedger,
 )
+from agents.core.observability.media_reality import H29_MEDIA_REALITY_CASES  # noqa: E402
 
 OperatorEventLedger = _OperatorEventLedger
-
 
 
 ACTION_CAPABILITY_CASES: list[RealityCase] = [
@@ -572,6 +595,7 @@ MEDIA_CAPABILITY_CASES: list[RealityCase] = [
         "a driverless device refuses a present() honestly (no fake playback)",
         _probe_media_present_offline_honest,
     ),
+    *H29_MEDIA_REALITY_CASES,
 ]
 
 TOOL_CAPABILITY_CASES: list[RealityCase] = [

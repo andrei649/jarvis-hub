@@ -1096,6 +1096,225 @@ export function sendChannelReply(
   );
 }
 
+// ── Media Director ───────────────────────────────────────────────
+
+export type MediaContentType = 'url' | 'local' | 'catalog' | 'query';
+export type MediaMode = 'play' | 'show' | 'announce';
+export type MediaPrivacy = 'ambient' | 'household' | 'private';
+export type MediaUrgency = 'low' | 'normal' | 'high';
+
+export type MediaDevice = {
+  id: string;
+  name: string;
+  kind: string;
+  room: string;
+  supports: MediaMode[];
+};
+
+export type MediaSession = {
+  device_id: string;
+  content: { type: MediaContentType; value: string };
+  mode: string;
+  privacy: string;
+  state: string;
+  started_at: number;
+  duration_seconds?: number;
+};
+
+export type MediaDevicesResponse = {
+  enabled: boolean;
+  hint: string;
+  devices: MediaDevice[];
+};
+
+export type MediaSessionsResponse = {
+  enabled: boolean;
+  hint: string;
+  sessions: MediaSession[];
+};
+
+export type MediaPresentBody = {
+  content: { type: MediaContentType; value: string };
+  target: string;
+  mode: MediaMode;
+  privacy: MediaPrivacy;
+  urgency: MediaUrgency;
+  duration_seconds?: number;
+};
+
+export type MediaDeviceBody = {
+  id: string;
+  name: string;
+  kind: string;
+  room: string;
+  supports: MediaMode[];
+};
+
+export type MediaActionOutcome = {
+  kind: 'disabled' | 'queued' | 'refused' | 'unverified' | 'verified' | 'unknown';
+  status: string;
+  reason: string;
+  deviceId: string;
+  state: string;
+};
+
+export type MediaRegistryMutation = {
+  enabled: boolean;
+  hint: string;
+  device?: MediaDevice;
+  removed: string;
+  error: string;
+};
+
+const MEDIA_CONTENT_TYPES = new Set<MediaContentType>(['url', 'local', 'catalog', 'query']);
+const MEDIA_MODES = new Set<MediaMode>(['play', 'show', 'announce']);
+
+function mediaString(value: unknown, limit: number): string {
+  return typeof value === 'string' ? value.slice(0, limit) : '';
+}
+
+function mediaContentType(value: unknown): MediaContentType | null {
+  return typeof value === 'string' && MEDIA_CONTENT_TYPES.has(value as MediaContentType)
+    ? (value as MediaContentType)
+    : null;
+}
+
+function normalizeMediaDevice(value: unknown): MediaDevice | null {
+  const raw = securityRecord(value);
+  const rawId = securityString(raw.id);
+  const id = rawId.length <= 64 ? rawId : '';
+  const name = mediaString(raw.name, 120);
+  const kind = mediaString(raw.kind, 32);
+  if (!id || !name || !kind) return null;
+  const supports = Array.isArray(raw.supports)
+    ? Array.from(
+        new Set(
+          raw.supports.filter(
+            (item): item is MediaMode => typeof item === 'string' && MEDIA_MODES.has(item as MediaMode),
+          ),
+        ),
+      )
+    : [];
+  return { id, name, kind, room: mediaString(raw.room, 64), supports: supports.slice(0, 16) };
+}
+
+function normalizeMediaSession(value: unknown): MediaSession | null {
+  const raw = securityRecord(value);
+  const content = securityRecord(raw.content);
+  const rawDeviceId = securityString(raw.device_id);
+  const deviceId = rawDeviceId.length <= 64 ? rawDeviceId : '';
+  const type = mediaContentType(content.type);
+  const contentValue = mediaString(content.value, 2048);
+  if (!deviceId || !type || !contentValue) return null;
+  const duration = raw.duration_seconds;
+  return {
+    device_id: deviceId,
+    content: { type, value: contentValue },
+    mode: mediaString(raw.mode, 16),
+    privacy: mediaString(raw.privacy, 16),
+    state: mediaString(raw.state, 32),
+    started_at: securityNumber(raw.started_at),
+    ...(typeof duration === 'number' && Number.isFinite(duration) && duration > 0 && duration <= 86400
+      ? { duration_seconds: duration }
+      : {}),
+  };
+}
+
+function normalizeMediaMutation(rawValue: unknown): MediaRegistryMutation {
+  const raw = securityRecord(rawValue);
+  const device = normalizeMediaDevice(raw.device);
+  return {
+    enabled: securityBool(raw.enabled),
+    hint: mediaString(raw.hint, 240),
+    ...(device ? { device } : {}),
+    removed: mediaString(raw.removed, 64),
+    error: mediaString(raw.error, 240),
+  };
+}
+
+function normalizeMediaAction(rawValue: unknown): MediaActionOutcome {
+  const raw = securityRecord(rawValue);
+  const output = securityRecord(raw.output);
+  const status = mediaString(raw.status, 32);
+  const reason = mediaString(output.reason, 240) || mediaString(raw.reason, 240) || mediaString(raw.hint, 240);
+  const common = {
+    status,
+    reason,
+    deviceId: mediaString(output.device_id, 64),
+    state: mediaString(output.state, 32),
+  };
+  if (raw.enabled === false || status === 'disabled') return { kind: 'disabled', ...common };
+  if (raw.enabled !== true) {
+    return { kind: 'unknown', ...common, reason: reason || 'invalid_media_response' };
+  }
+  if (output.ok === false || status === 'refused' || status === 'failed') return { kind: 'refused', ...common };
+  if (status === 'queued') return { kind: 'queued', ...common };
+  if (status === 'completed' && output.ok === true && output.verified === true) {
+    return { kind: 'verified', ...common };
+  }
+  if (status === 'completed' && output.ok === true) return { kind: 'unverified', ...common };
+  return { kind: 'unknown', ...common };
+}
+
+export async function fetchMediaDevices(config: ServerConfig): Promise<MediaDevicesResponse> {
+  const raw = await request<Record<string, unknown>>(config, 'GET', '/api/media/devices', undefined, {
+    retries: 2,
+  });
+  return {
+    enabled: securityBool(raw.enabled),
+    hint: mediaString(raw.hint, 240),
+    devices: Array.isArray(raw.devices)
+      ? raw.devices.map(normalizeMediaDevice).filter((item): item is MediaDevice => item !== null)
+      : [],
+  };
+}
+
+export async function fetchMediaSessions(config: ServerConfig): Promise<MediaSessionsResponse> {
+  const raw = await request<Record<string, unknown>>(config, 'GET', '/api/media/session', undefined, {
+    retries: 2,
+  });
+  return {
+    enabled: securityBool(raw.enabled),
+    hint: mediaString(raw.hint, 240),
+    sessions: Array.isArray(raw.sessions)
+      ? raw.sessions.map(normalizeMediaSession).filter((item): item is MediaSession => item !== null)
+      : [],
+  };
+}
+
+export async function presentMedia(config: ServerConfig, body: MediaPresentBody): Promise<MediaActionOutcome> {
+  const raw = await request<Record<string, unknown>>(config, 'POST', '/api/media/present', body);
+  return normalizeMediaAction(raw);
+}
+
+export async function restoreMedia(config: ServerConfig, deviceId: string): Promise<MediaActionOutcome> {
+  const raw = await request<Record<string, unknown>>(
+    config,
+    'POST',
+    `/api/media/restore/${encodeURIComponent(deviceId)}`,
+  );
+  return normalizeMediaAction(raw);
+}
+
+export async function registerMediaDevice(
+  config: ServerConfig,
+  body: MediaDeviceBody,
+): Promise<MediaRegistryMutation> {
+  const raw = await request<Record<string, unknown>>(config, 'POST', '/api/media/devices', body, { admin: true });
+  return normalizeMediaMutation(raw);
+}
+
+export async function removeMediaDevice(config: ServerConfig, deviceId: string): Promise<MediaRegistryMutation> {
+  const raw = await request<Record<string, unknown>>(
+    config,
+    'DELETE',
+    `/api/media/devices/${encodeURIComponent(deviceId)}`,
+    undefined,
+    { admin: true },
+  );
+  return normalizeMediaMutation(raw);
+}
+
 // ── Agents ────────────────────────────────────────────────────────
 
 export type AgentInfo = {

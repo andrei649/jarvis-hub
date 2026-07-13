@@ -11,8 +11,16 @@ sys.path.insert(0, str(repo_root / "agents"))
 
 from core.llm.tokenizer import estimate_tokens, estimate_messages
 from core.llm.hybrid_router import (
-    DEFAULT_DEEP_MODEL, HybridRouter, POLICY_LOCAL, POLICY_CLOUD, POLICY_CLAUDE, POLICY_AUTO,
-    LOCAL_ONLY_AGENTS, CLOUD_ONLY_AGENTS, CLAUDE_AGENTS, LOCAL_MAX_TOKENS,
+    DEFAULT_DEEP_MODEL,
+    HybridRouter,
+    POLICY_LOCAL,
+    POLICY_CLOUD,
+    POLICY_CLAUDE,
+    POLICY_AUTO,
+    LOCAL_ONLY_AGENTS,
+    CLOUD_ONLY_AGENTS,
+    CLAUDE_AGENTS,
+    LOCAL_MAX_TOKENS,
     FLASH_MAX_TOKENS,
 )
 from core.llm.base import LLMBackend
@@ -24,6 +32,7 @@ class FakeBackend(LLMBackend):
 
 
 # ── Tokenizer ──────────────────────────────────────────────────────────
+
 
 def test_estimate_tokens_empty():
     # "" → 0 tokens with a real tokenizer (tiktoken), 1 with the char fallback (len//4 + 1)
@@ -44,6 +53,7 @@ def test_estimate_tokens_long():
 async def test_local_backend_aclose_closes_pool():
     """BUG-7: local backends close their httpx pool via aclose()."""
     from core.llm.base import LMStudioBackend, OllamaBackend
+
     b = LMStudioBackend()
     await b.aclose()
     assert b.client.is_closed
@@ -57,6 +67,7 @@ async def test_router_aclose_closes_active_backend():
     """BUG-7: LLMRouter.aclose() closes the active backend's client pool."""
     from core.llm.router import LLMRouter
     from core.llm.base import LMStudioBackend
+
     r = LLMRouter()
     r._backend = LMStudioBackend()
     client = r._backend.client
@@ -93,6 +104,7 @@ def test_estimate_messages_multiple():
 
 # ── HybridRouter init ─────────────────────────────────────────────────
 
+
 def test_hybrid_router_init():
     router = HybridRouter(gemini_api_key="")
     assert router.gemini_api_key == ""
@@ -106,6 +118,7 @@ def test_hybrid_router_init_with_key():
 
 
 # ── Agent policies ────────────────────────────────────────────────────
+
 
 def test_get_agent_policy_local():
     router = HybridRouter()
@@ -132,6 +145,7 @@ def test_get_agent_policy_auto():
 
 
 # ── No backends available ─────────────────────────────────────────────
+
 
 def test_name_no_backends():
     router = HybridRouter()
@@ -163,6 +177,7 @@ def test_select_backend_policy_cloud_no_cloud():
 
 
 # ── Only local available ──────────────────────────────────────────────
+
 
 def test_select_backend_local_only_short_prompt(monkeypatch):
     router = HybridRouter()
@@ -204,6 +219,7 @@ def test_select_backend_local_only_policy_cloud_fallback(monkeypatch):
 
 
 # ── Only cloud available ──────────────────────────────────────────────
+
 
 def test_select_backend_cloud_only_short_prompt(monkeypatch):
     router = HybridRouter(gemini_api_key="test")
@@ -255,12 +271,14 @@ def test_registry_cannot_override_local_only(monkeypatch):
     """The LOCAL_ONLY security floor is code-enforced: a (mis)edited registry entry
     can never pull a strict-local agent to the cloud."""
     import agents.core.llm.hybrid_router as hr
+
     monkeypatch.setattr(hr, "_registry_policies", lambda: {"frigga": "cloud"})
     router = HybridRouter()
     assert router.get_agent_policy("frigga") == "local"
 
 
 # ── Both backends available ───────────────────────────────────────────
+
 
 def test_select_backend_both_short_prompt_uses_local(monkeypatch):
     router = HybridRouter(gemini_api_key="test")
@@ -285,6 +303,7 @@ def test_select_backend_both_long_prompt_uses_cloud(monkeypatch):
 
 # ── Route name ────────────────────────────────────────────────────────
 
+
 def test_get_route_name(monkeypatch):
     router = HybridRouter()
     router._local_available = True
@@ -302,6 +321,7 @@ def test_name_with_backends(monkeypatch):
 
 
 # ── Gemini caching integration ────────────────────────────────────────
+
 
 def test_gemini_build_payload_with_cache():
     gb = GeminiBackend(api_key="test")
@@ -360,21 +380,13 @@ def test_gemini_build_payload_params():
 
 def test_gemini_extract_text_normal():
     gb = GeminiBackend(api_key="test")
-    data = {
-        "candidates": [{
-            "content": {"parts": [{"text": "Hello there"}]}
-        }]
-    }
+    data = {"candidates": [{"content": {"parts": [{"text": "Hello there"}]}}]}
     assert gb._extract_text(data) == "Hello there"
 
 
 def test_gemini_extract_text_multiple_parts():
     gb = GeminiBackend(api_key="test")
-    data = {
-        "candidates": [{
-            "content": {"parts": [{"text": "Hello"}, {"text": " world"}]}
-        }]
-    }
+    data = {"candidates": [{"content": {"parts": [{"text": "Hello"}, {"text": " world"}]}}]}
     assert gb._extract_text(data) == "Hello world"
 
 
@@ -392,6 +404,7 @@ def test_gemini_extract_text_empty_candidates():
 async def test_gemini_generate_network_error(monkeypatch):
     async def mock_post(*a, **kw):
         raise Exception("connection refused")
+
     monkeypatch.setattr("httpx.AsyncClient.post", mock_post)
     gb = GeminiBackend(api_key="test")
     result = await gb.generate("gemini-2.5-flash", "hello")
@@ -403,8 +416,10 @@ async def test_gemini_generate_stream_network_error(monkeypatch):
     class MockACM:
         async def __aenter__(self):
             raise Exception("stream failed")
+
         async def __aexit__(self, *a):
             pass
+
     monkeypatch.setattr("httpx.AsyncClient.stream", lambda *a, **kw: MockACM())
     gb = GeminiBackend(api_key="test")
     result = await gb.generate_stream("gemini-2.5-flash", "hello")
@@ -414,11 +429,15 @@ async def test_gemini_generate_stream_network_error(monkeypatch):
 @pytest.mark.asyncio
 async def test_gemini_generate_stream_http_error(monkeypatch):
     """S4: stream should handle HTTP errors without crashing."""
+
     class MockResponse:
         status_code = 403
+
         async def aiter_lines(self):
             yield 'data: {"error": "forbidden"}'
-            if False: yield
+            if False:
+                yield
+
         def raise_for_status(self):
             raise Exception("HTTP 403 Forbidden")
 
@@ -426,10 +445,13 @@ async def test_gemini_generate_stream_http_error(monkeypatch):
         class MockACM:
             async def __aenter__(self):
                 return MockResponse()
+
             async def __aexit__(self, *a):
                 pass
+
             async def aclose(self):
                 pass
+
         return MockACM()
 
     monkeypatch.setattr("httpx.AsyncClient.stream", mock_stream)
@@ -461,6 +483,7 @@ async def test_cloud_llm_gemini_denied():
 async def test_cloud_llm_gemini_network_error(monkeypatch):
     async def mock_post(*a, **kw):
         raise Exception("api error")
+
     monkeypatch.setattr("httpx.AsyncClient.post", mock_post)
     plugin = CloudLLMPlugin(gemini_key="test")
     result = await plugin.generate("hello", "", agent_id="jarvis")
@@ -473,6 +496,7 @@ def test_cloud_llm_available_with_gemini():
 
 
 # ── S0.1 Model Tiering: Claude API for heavy agents ────────────────────
+
 
 def test_claude_init():
     router = HybridRouter(anthropic_api_key="sk-ant-test")
@@ -599,6 +623,7 @@ def test_claude_backend_build_messages():
 async def test_claude_generate_network_error(monkeypatch):
     async def mock_post(*a, **kw):
         raise Exception("connection refused")
+
     monkeypatch.setattr("httpx.AsyncClient.post", mock_post)
     cb = ClaudeBackend(api_key="sk-ant-test")
     result = await cb.generate("claude-sonnet-4-20250514", "hello")
@@ -610,8 +635,10 @@ async def test_claude_generate_stream_network_error(monkeypatch):
     class MockACM:
         async def __aenter__(self):
             raise Exception("stream failed")
+
         async def __aexit__(self, *a):
             pass
+
     monkeypatch.setattr("httpx.AsyncClient.stream", lambda *a, **kw: MockACM())
     cb = ClaudeBackend(api_key="sk-ant-test")
     result = await cb.generate_stream("claude-sonnet-4-20250514", "hello")
@@ -686,6 +713,7 @@ def test_cloud_fallback_mode_validates_input():
 
 # ── Configurable routing thresholds (/admin: hybrid_local_max / hybrid_flash_max)
 
+
 def test_routing_thresholds_default_to_constants():
     router = HybridRouter()
     assert router._local_max == LOCAL_MAX_TOKENS
@@ -717,11 +745,14 @@ def test_set_local_max_bad_value_falls_back_to_default():
 def _mock_net(monkeypatch, router, *, respond, model="loaded-model"):
     """Mock the network probes used by detect(): respond(url)->bool."""
     checked = []
+
     async def fake_check(url):
         checked.append(url)
         return respond(url)
+
     async def fake_fetch(url, kind):
         return model
+
     monkeypatch.setattr(router, "_check", fake_check)
     monkeypatch.setattr(router, "_fetch_loaded_model", fake_fetch)
     return checked
@@ -729,9 +760,16 @@ def _mock_net(monkeypatch, router, *, respond, model="loaded-model"):
 
 @pytest.mark.asyncio
 async def test_detect_honors_custom_lm_studio_url(monkeypatch):
+    monkeypatch.delenv("JARVIS_LM_STUDIO_URL", raising=False)
+    monkeypatch.delenv("JARVIS_OLLAMA_URL", raising=False)
     router = HybridRouter(gemini_api_key="")
-    monkeypatch.setattr(router, "_admin_setting",
-        lambda key, default: {"lm_studio_url": "http://box:9999", "backend_type": "auto"}.get(key, default))
+    monkeypatch.setattr(
+        router,
+        "_admin_setting",
+        lambda key, default: {"lm_studio_url": "http://box:9999", "backend_type": "auto"}.get(
+            key, default
+        ),
+    )
     checked = _mock_net(monkeypatch, router, respond=lambda u: "box:9999" in u)
     await router.detect()
     assert router.lm_studio_url == "http://box:9999"
@@ -741,10 +779,38 @@ async def test_detect_honors_custom_lm_studio_url(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_detect_env_urls_override_admin_settings_and_howard(monkeypatch):
+    """Process env can isolate every local backend, including Howard's Ollama."""
+    monkeypatch.setenv("JARVIS_LM_STUDIO_URL", "http://127.0.0.1:9")
+    monkeypatch.setenv("JARVIS_OLLAMA_URL", "http://127.0.0.1:10")
+    router = HybridRouter(gemini_api_key="")
+    monkeypatch.setattr(
+        router,
+        "_admin_setting",
+        lambda key, default: {
+            "lm_studio_url": "http://live-admin:1234",
+            "ollama_url": "http://live-admin:11434",
+            "backend_type": "auto",
+        }.get(key, default),
+    )
+    checked = _mock_net(monkeypatch, router, respond=lambda _url: False)
+
+    await router.detect()
+
+    assert router.lm_studio_url == "http://127.0.0.1:9"
+    assert router.ollama_url == "http://127.0.0.1:10"
+    assert router._ollama_backend.base_url == "http://127.0.0.1:10"
+    assert "http://127.0.0.1:9/v1/models" in checked
+    assert checked.count("http://127.0.0.1:10/api/tags") == 2
+    assert not any("live-admin" in url for url in checked)
+
+
+@pytest.mark.asyncio
 async def test_backend_type_pins_ollama_skips_lm_studio(monkeypatch):
     router = HybridRouter(gemini_api_key="")
-    monkeypatch.setattr(router, "_admin_setting",
-        lambda key, default: {"backend_type": "ollama"}.get(key, default))
+    monkeypatch.setattr(
+        router, "_admin_setting", lambda key, default: {"backend_type": "ollama"}.get(key, default)
+    )
     checked = _mock_net(monkeypatch, router, respond=lambda u: True)  # everything would respond
     await router.detect()
     assert router._backend_name == "ollama"
@@ -755,8 +821,11 @@ async def test_backend_type_pins_ollama_skips_lm_studio(monkeypatch):
 @pytest.mark.asyncio
 async def test_gemini_model_wired_into_backend_and_route(monkeypatch):
     router = HybridRouter(gemini_api_key="test-key")
-    monkeypatch.setattr(router, "_admin_setting",
-        lambda key, default: {"gemini_model": "gemini-2.5-pro"}.get(key, default))
+    monkeypatch.setattr(
+        router,
+        "_admin_setting",
+        lambda key, default: {"gemini_model": "gemini-2.5-pro"}.get(key, default),
+    )
     _mock_net(monkeypatch, router, respond=lambda u: False)  # no local backend
     await router.detect()
     assert router._gemini_model == "gemini-2.5-pro"
