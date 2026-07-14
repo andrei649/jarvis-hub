@@ -7756,6 +7756,8 @@ export interface components {
         LocalModelSwitch: {
             /** Model */
             model: string;
+            /** Provider */
+            provider?: ("lm-studio" | "ollama") | null;
         };
         /** MCPServerConfig */
         MCPServerConfig: {
