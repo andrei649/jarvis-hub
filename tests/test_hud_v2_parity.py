@@ -320,7 +320,9 @@ def test_operator_routes_have_a_governed_build_caller():
     assert {_classify(path) for path in operator_routes} == {"build"}
 
     gap_source = GAP.read_text(encoding="utf-8")
-    assert re.search(r"import\s+\{\s*OperatorPanel\s*\}\s+from\s+['\"]\./operator-panel['\"]", gap_source)
+    assert re.search(
+        r"import\s+\{\s*OperatorPanel\s*\}\s+from\s+['\"]\./operator-panel['\"]", gap_source
+    )
     assert re.search(r"\['Build', \[[^\]]*\bOperatorPanel\b", gap_source)
 
     operator_source = OPERATOR.read_text(encoding="utf-8")

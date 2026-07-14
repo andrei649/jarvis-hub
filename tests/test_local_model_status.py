@@ -153,9 +153,7 @@ def test_status_and_local_models_endpoint_share_exact_inventory(monkeypatch):
         patch.object(web, "_sys_info", return_value={}),
         TestClient(web.app) as client,
     ):
-        models = client.get(
-            "/api/models/local", headers={"X-Admin-Token": "test-secret"}
-        ).json()
+        models = client.get("/api/models/local", headers={"X-Admin-Token": "test-secret"}).json()
         status = client.get("/status").json()
 
     assert listing.await_count == 2

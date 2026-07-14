@@ -126,10 +126,7 @@ def test_desktop_routes_bound_and_redact_oversized_plan_before_downstream_seams(
     monkeypatch,
 ):
     sentinel = "desktop-secret-do-not-echo-" + "x" * 19_900
-    steps = [
-        {"action": "type", "args": {"name": "Editor", "text": sentinel}}
-        for _ in range(101)
-    ]
+    steps = [{"action": "type", "args": {"name": "Editor", "text": sentinel}} for _ in range(101)]
     reached = []
 
     def record(seam, result):
@@ -227,9 +224,9 @@ def test_desktop_body_defers_arbitrary_python_steps_without_copying():
 def test_desktop_body_openapi_retains_bounded_array_of_objects():
     from agents import web
 
-    steps_schema = web.app.openapi()["components"]["schemas"]["DesktopStepsBody"][
-        "properties"
-    ]["steps"]
+    steps_schema = web.app.openapi()["components"]["schemas"]["DesktopStepsBody"]["properties"][
+        "steps"
+    ]
 
     assert steps_schema["type"] == "array"
     assert steps_schema["maxItems"] == 100

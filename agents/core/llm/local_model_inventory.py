@@ -184,10 +184,7 @@ async def _refresh_raw_provider_cache(
 ) -> dict[str, dict[str, Any]]:
     raw_by_provider = await _probe_providers(lm_url, ollama_url)
     with _cache_state_lock:
-        if (
-            generation == _invalidation_generation
-            and refresh_epoch == _latest_refresh_epoch
-        ):
+        if generation == _invalidation_generation and refresh_epoch == _latest_refresh_epoch:
             _raw_cache.update(
                 key=cache_key,
                 at=time.monotonic(),
@@ -262,9 +259,7 @@ def _provider_projection(name: str, raw: dict[str, Any]) -> dict[str, Any]:
         "name": name,
         "online": online,
         "catalog_state": "known" if catalog_ok else ("unknown" if residency_ok else "offline"),
-        "residency_state": (
-            "known" if residency_ok else ("unknown" if catalog_ok else "offline")
-        ),
+        "residency_state": ("known" if residency_ok else ("unknown" if catalog_ok else "offline")),
     }
 
 
@@ -302,9 +297,7 @@ def _controls(
             and available is True
             and resident is False
         ),
-        "can_unload": bool(
-            provider == "lm-studio" and controller_enabled and resident is True
-        ),
+        "can_unload": bool(provider == "lm-studio" and controller_enabled and resident is True),
     }
 
 
@@ -330,8 +323,7 @@ async def get_local_model_inventory(
     )
 
     providers = [
-        _provider_projection(name, raw_by_provider[name])
-        for name in sorted(raw_by_provider)
+        _provider_projection(name, raw_by_provider[name]) for name in sorted(raw_by_provider)
     ]
     aggregate_residency = (
         "offline"
@@ -346,7 +338,11 @@ async def get_local_model_inventory(
 
     configured_id = _trim_id(getattr(router, "active_model", None)) if router else None
     backend_value = getattr(router, "_backend_name", None) if router else None
-    backend = backend_value.strip() if isinstance(backend_value, str) and backend_value.strip() else "none"
+    backend = (
+        backend_value.strip()
+        if isinstance(backend_value, str) and backend_value.strip()
+        else "none"
+    )
     configured_pair = _configured_pair(configured_id, backend, raw_by_provider)
     controller_enabled = bool(getattr(controller, "enabled", False))
 
@@ -428,9 +424,7 @@ def project_llm_status(inventory: dict[str, Any]) -> dict[str, Any]:
         model_state = "offline"
 
     resident_pairs = {
-        (row.get("provider"), row.get("id"))
-        for row in resident_models
-        if isinstance(row, dict)
+        (row.get("provider"), row.get("id")) for row in resident_models if isinstance(row, dict)
     }
     configured_resident = next(
         (

@@ -165,8 +165,14 @@ async def test_inventory_preserves_provider_pair_identity_and_exact_ids(monkeypa
         ("ollama", "orphan"),
     ]
 
-    lm_alpha = next(row for row in inventory["models"] if row["provider"] == "lm-studio" and row["id"] == "alpha")
-    ollama_alpha = next(row for row in inventory["models"] if row["provider"] == "ollama" and row["id"] == "alpha")
+    lm_alpha = next(
+        row
+        for row in inventory["models"]
+        if row["provider"] == "lm-studio" and row["id"] == "alpha"
+    )
+    ollama_alpha = next(
+        row for row in inventory["models"] if row["provider"] == "ollama" and row["id"] == "alpha"
+    )
     orphan = next(row for row in inventory["models"] if row["id"] == "orphan")
     lm_resident_only = next(
         row for row in inventory["models"] if row["id"] == "resident-missing-from-catalog"
@@ -405,7 +411,9 @@ async def test_cache_reuses_raw_probes_but_recomputes_config_and_controls(monkey
     assert beta["controls"]["can_load"] is False
 
     module.invalidate_local_model_inventory_cache()
-    await module.get_local_model_inventory(router=_router(), controller=SimpleNamespace(enabled=True))
+    await module.get_local_model_inventory(
+        router=_router(), controller=SimpleNamespace(enabled=True)
+    )
     assert len(calls) == 8
 
 
@@ -413,8 +421,12 @@ async def test_cache_expires_and_force_refresh_bypasses_it(monkeypatch):
     module = _module()
     module.invalidate_local_model_inventory_cache()
     calls = _install_http(monkeypatch, _responses())
-    await module.get_local_model_inventory(router=_router(), controller=SimpleNamespace(enabled=True))
-    await module.get_local_model_inventory(router=_router(), controller=SimpleNamespace(enabled=True))
+    await module.get_local_model_inventory(
+        router=_router(), controller=SimpleNamespace(enabled=True)
+    )
+    await module.get_local_model_inventory(
+        router=_router(), controller=SimpleNamespace(enabled=True)
+    )
     assert len(calls) == 4
 
     await module.get_local_model_inventory(
@@ -423,7 +435,9 @@ async def test_cache_expires_and_force_refresh_bypasses_it(monkeypatch):
     assert len(calls) == 8
 
     monkeypatch.setattr(module, "_CACHE_TTL_SECONDS", -1.0)
-    await module.get_local_model_inventory(router=_router(), controller=SimpleNamespace(enabled=True))
+    await module.get_local_model_inventory(
+        router=_router(), controller=SimpleNamespace(enabled=True)
+    )
     assert len(calls) == 12
 
 
@@ -527,9 +541,7 @@ async def test_invalidation_prevents_older_inflight_probe_from_repopulating_cach
         )
     )
     try:
-        fresh_inventory = await asyncio.wait_for(
-            asyncio.shield(fresh_request), timeout=0.5
-        )
+        fresh_inventory = await asyncio.wait_for(asyncio.shield(fresh_request), timeout=0.5)
         fresh_completed_while_old_paused = True
     except TimeoutError:
         fresh_completed_while_old_paused = False
