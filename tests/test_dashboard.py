@@ -6,6 +6,7 @@ ticker fallback to agent-standby items.
 """
 import sys
 import time
+from datetime import UTC, datetime
 from pathlib import Path
 from unittest.mock import MagicMock
 
@@ -23,6 +24,18 @@ _NO_ORCH_CLIENT = TestClient(web.app)  # no lifespan → orch stays None
 _WEATHER_REQUIRED_FIELDS = {"city", "temp", "desc", "wind", "humidity", "feels", "updated", "forecast"}
 _TASK_REQUIRED_FIELDS = {"id", "owner", "state", "label", "project"}
 _TICKER_ITEM_FIELDS = {"agent", "verb", "obj", "pct", "pri"}
+
+
+class _QueueTask:
+    """Small queue-row double with independently controlled raw and JSON state."""
+
+    def __init__(self, data: dict, **raw_fields):
+        self._data = data
+        for key, value in raw_fields.items():
+            setattr(self, key, value)
+
+    def to_dict(self) -> dict:
+        return dict(self._data)
 
 
 def _simple_orch() -> MagicMock:
@@ -209,6 +222,163 @@ def test_tasks_real_queue_items_are_returned(monkeypatch):
     client = TestClient(web.app)
     tasks = client.get("/tasks").json()["tasks"]
     assert any(t["id"] == "real-1" for t in tasks)
+
+
+def test_tasks_running_view_uses_normalized_state_precedence(monkeypatch):
+    mock = _simple_orch()
+    mock.autonomy_queue.list.return_value = [
+        _QueueTask(
+            {"id": "state-wins-running", "state": "  RUNNING ", "status": "done", "owner": "pepper"},
+        ),
+        _QueueTask(
+            {"id": "state-wins-done", "state": "done", "status": "running", "owner": "stark"},
+        ),
+        _QueueTask(
+            {"id": "blank-state-falls-back", "state": "  ", "status": " Running ", "owner": "vision"},
+        ),
+        _QueueTask(
+            {"id": "not-exact", "state": "running-now", "status": "running", "owner": "jarvis"},
+        ),
+    ]
+    monkeypatch.setattr(web, "orch", mock)
+
+    response = TestClient(web.app).get("/tasks", params={"view": "running"})
+
+    assert response.status_code == 200
+    data = response.json()
+    assert [task["id"] for task in data["tasks"]] == [
+        "state-wins-running",
+        "blank-state-falls-back",
+    ]
+    assert data["view"] == "running"
+    assert data["source"] == "autonomy_queue"
+    assert data["history_included"] is False
+    as_of = datetime.fromisoformat(data["as_of"].replace("Z", "+00:00"))
+    assert as_of.utcoffset() == UTC.utcoffset(as_of)
+
+
+def test_tasks_running_view_never_falls_back_to_history(monkeypatch):
+    mock = _simple_orch()
+    mock.autonomy_queue.list.return_value = [
+        _QueueTask({"id": "done", "state": "done", "status": "done"}),
+        _QueueTask({"id": "proposed", "status": "proposed"}),
+    ]
+    monkeypatch.setattr(web, "orch", mock)
+
+    data = TestClient(web.app).get("/tasks?view=running").json()
+
+    assert data["tasks"] == []
+    assert data["view"] == "running"
+    assert data["history_included"] is False
+
+
+def test_tasks_history_view_excludes_normalized_running_rows(monkeypatch):
+    mock = _simple_orch()
+    mock.autonomy_queue.list.return_value = [
+        _QueueTask({"id": "running", "status": " RUNNING "}),
+        _QueueTask({"id": "done", "state": "done", "status": "running"}),
+        _QueueTask({"id": "blocked", "state": "", "status": "blocked"}),
+    ]
+    monkeypatch.setattr(web, "orch", mock)
+
+    data = TestClient(web.app).get("/tasks?view=history").json()
+
+    assert [task["id"] for task in data["tasks"]] == ["done", "blocked"]
+    assert data["view"] == "history"
+    assert data["source"] == "autonomy_queue"
+    assert data["history_included"] is True
+
+
+def test_tasks_owner_precedence_includes_legacy_agent_field(monkeypatch):
+    mock = _simple_orch()
+    mock.autonomy_queue.list.return_value = [
+        _QueueTask({"id": "owner", "status": "done", "owner": "pepper", "agent_id": "stark", "agent": "vision"}),
+        _QueueTask({"id": "agent-id", "status": "done", "owner": "", "agent_id": "stark", "agent": "vision"}),
+        _QueueTask({"id": "agent", "status": "done", "owner": None, "agent_id": "", "agent": "vision"}),
+        _QueueTask({"id": "fallback", "status": "done"}),
+    ]
+    monkeypatch.setattr(web, "orch", mock)
+
+    tasks = TestClient(web.app).get("/tasks?view=history").json()["tasks"]
+
+    assert {task["id"]: task["owner"] for task in tasks} == {
+        "owner": "pepper",
+        "agent-id": "stark",
+        "agent": "vision",
+        "fallback": "jarvis",
+    }
+
+
+def test_tasks_legacy_view_keeps_raw_case_sensitive_running_selection(monkeypatch):
+    mock = _simple_orch()
+    mock.autonomy_queue.list.return_value = [
+        _QueueTask({"id": "raw-status", "status": "done"}, status="running"),
+        _QueueTask({"id": "raw-state", "state": "done"}, state="running"),
+        _QueueTask({"id": "uppercase", "status": "RUNNING"}, status="RUNNING"),
+        _QueueTask({"id": "history", "status": "done"}, status="done"),
+    ]
+    monkeypatch.setattr(web, "orch", mock)
+
+    data = TestClient(web.app).get("/tasks").json()
+
+    assert [task["id"] for task in data["tasks"]] == ["raw-status", "raw-state"]
+    assert data["view"] == "legacy"
+    assert data["history_included"] is False
+
+
+def test_tasks_legacy_view_does_not_format_excluded_history(monkeypatch):
+    running = _QueueTask({"id": "running", "status": "running"}, status="running")
+    excluded_history = MagicMock()
+    excluded_history.status = "done"
+    excluded_history.state = "done"
+    excluded_history.to_dict.side_effect = AssertionError("legacy history row was formatted")
+    mock = _simple_orch()
+    mock.autonomy_queue.list.return_value = [running, excluded_history]
+    monkeypatch.setattr(web, "orch", mock)
+
+    response = TestClient(web.app).get("/tasks")
+
+    assert response.status_code == 200
+    assert [task["id"] for task in response.json()["tasks"]] == ["running"]
+    excluded_history.to_dict.assert_not_called()
+
+
+def test_tasks_legacy_view_keeps_no_running_history_fallback(monkeypatch):
+    mock = _simple_orch()
+    mock.autonomy_queue.list.return_value = [
+        _QueueTask({"id": "uppercase", "status": "RUNNING"}, status="RUNNING"),
+        _QueueTask({"id": "history", "status": "done"}, status="done"),
+    ]
+    monkeypatch.setattr(web, "orch", mock)
+
+    data = TestClient(web.app).get("/tasks").json()
+
+    assert [task["id"] for task in data["tasks"]] == ["uppercase", "history"]
+    assert data["view"] == "legacy"
+    assert data["source"] == "autonomy_queue"
+    assert data["history_included"] is True
+
+
+def test_tasks_rejects_unknown_view_before_reading_queue(monkeypatch):
+    mock = _simple_orch()
+    monkeypatch.setattr(web, "orch", mock)
+
+    response = TestClient(web.app).get("/tasks?view=completed")
+
+    assert response.status_code == 422
+    mock.autonomy_queue.list.assert_not_called()
+
+
+def test_tasks_openapi_declares_bounded_view_and_response_metadata():
+    operation = web.app.openapi()["paths"]["/tasks"]["get"]
+    query = next(parameter for parameter in operation["parameters"] if parameter["name"] == "view")
+    response_schema = operation["responses"]["200"]["content"]["application/json"]["schema"]
+
+    assert set(query["schema"]["anyOf"][0]["enum"]) == {"running", "history"}
+    assert response_schema == {"$ref": "#/components/schemas/TasksResponse"}
+    tasks_schema = web.app.openapi()["components"]["schemas"]["TasksResponse"]
+    assert {"tasks", "view", "history_included", "as_of"} <= set(tasks_schema["required"])
+    assert tasks_schema["properties"]["source"]["default"] == "autonomy_queue"
 
 
 # ---------------------------------------------------------------------------
