@@ -1012,9 +1012,10 @@ export function LMStudioPanel() {
   const models = arr(d, 'models');
   const [note, setNote] = useState('');
   const say = (r) => { setNote(typeof r === 'object' ? (r.detail || r.status || (r.ok ? 'ok' : JSON.stringify(r).slice(0, 60))) : String(r)); reload(); };
-  const runAction = (label, path, id) => {
+  const runAction = (label, path, id, provider = '') => {
     setNote(`${label}…`);
-    apiPost(path, { model: id }, { admin: true }).then(say).catch((err) => {
+    const body = provider ? { model: id, provider } : { model: id };
+    apiPost(path, body, { admin: true }).then(say).catch((err) => {
       const status = Number(err?.status);
       setNote(`${label} failed${Number.isFinite(status) ? ` · HTTP ${status}` : ''}`.slice(0, 80));
       reload();
@@ -1041,7 +1042,7 @@ export function LMStudioPanel() {
           {controls.can_configure === true && m.configured !== true && <button
             className="tool-btn"
             title={`configure ${key}`}
-            onClick={() => runAction('configure', '/api/models/local/switch', id)}
+            onClick={() => runAction('configure', '/api/models/local/switch', id, provider)}
           >set default</button>}
           {lmStudioLifecycle && controls.can_load === true && <button
             className="tool-btn"

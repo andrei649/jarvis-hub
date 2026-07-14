@@ -23,6 +23,7 @@ it in this module's namespace. The LM Studio lifecycle helpers `_lmstudio_or_503
 import asyncio
 import os
 import sys
+from typing import Literal
 
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import JSONResponse
@@ -135,6 +136,7 @@ async def models_info():
 
 class LocalModelSwitch(BaseModel):
     model: str = Field(..., min_length=1)
+    provider: Literal["lm-studio", "ollama"] | None = None
 
 
 def _local_provider_name(router_) -> str:
@@ -270,18 +272,35 @@ async def _adopt_local_provider(router_, *, provider: str, model: str) -> dict[s
     return {"adopted": True, "rollback_complete": True}
 
 
-async def _switch_local_model_locked(router_, model_id: str):
+async def _switch_local_model_locked(
+    router_, model_id: str, provider: Literal["lm-studio", "ollama"] | None = None
+):
     """Resolve and apply a switch while the caller holds `_model_switch_lock`."""
     catalog = await _web()._list_local_models()
     matches = [
         model
         for model in catalog["models"]
-        if model.get("id") == model_id and model.get("available") is True
+        if model.get("id") == model_id
+        and model.get("available") is True
+        and (provider is None or model.get("provider") == provider)
     ]
     available = sorted(
-        {model["id"] for model in catalog["models"] if model.get("available") is True}
+        {
+            model["id"]
+            for model in catalog["models"]
+            if model.get("available") is True
+            and (provider is None or model.get("provider") == provider)
+        }
     )
     if not matches:
+        if provider is not None:
+            return nocache_json(
+                {
+                    "error": "requested model/provider pair is not available locally",
+                    "provider": provider,
+                },
+                status_code=404,
+            )
         return nocache_json(
             {"error": f"model '{model_id}' not available locally", "available": available},
             status_code=404,
@@ -293,7 +312,7 @@ async def _switch_local_model_locked(router_, model_id: str):
             status_code=409,
         )
 
-    target_provider = providers[0]
+    target_provider = provider or providers[0]
     current_provider = _local_provider_name(router_)
     if target_provider != current_provider:
         if target_provider not in {"lm-studio", "ollama"}:
@@ -327,7 +346,9 @@ async def _switch_local_model_locked(router_, model_id: str):
                 },
                 status_code=409,
             )
-        return nocache_json({"ok": True, "active": model_id})
+        return nocache_json(
+            {"ok": True, "active": model_id, "provider": target_provider}
+        )
 
     router_.set_active_model(model_id)
     try:
@@ -336,7 +357,7 @@ async def _switch_local_model_locked(router_, model_id: str):
         # Persistence is best-effort; the live switch already took effect.
         pass
 
-    return nocache_json({"ok": True, "active": model_id})
+    return nocache_json({"ok": True, "active": model_id, "provider": target_provider})
 
 
 @router.post("/api/models/local/switch", dependencies=[Depends(admin_guard)])
@@ -354,7 +375,9 @@ async def models_local_switch(body: LocalModelSwitch):
         return nocache_json({"error": "not initialized"}, status_code=503)
 
     async with _model_switch_lock:
-        return await _switch_local_model_locked(orch.llm_router, body.model)
+        return await _switch_local_model_locked(
+            orch.llm_router, body.model, provider=body.provider
+        )
 
 
 # ── LM Studio lifecycle control (start server / load / unload) ───

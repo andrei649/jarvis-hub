@@ -128,13 +128,46 @@ describe('LMStudioPanel truthful controls', () => {
     await waitFor(() => {
       const posts = fetchMock.mock.calls.filter(([, init]) => init?.method === 'POST');
       expect(posts.some(([url, init]) => url === '/api/models/local/switch'
-        && JSON.parse(String(init?.body)).model === 'ollama-ready')).toBe(true);
+        && JSON.parse(String(init?.body)).model === 'ollama-ready'
+        && JSON.parse(String(init?.body)).provider === 'ollama')).toBe(true);
       expect(posts.some(([url, init]) => url === '/api/llm/load'
         && JSON.parse(String(init?.body)).model === 'loadable')).toBe(true);
       expect(posts.some(([url, init]) => url === '/api/llm/unload'
         && JSON.parse(String(init?.body)).model === 'resident')).toBe(true);
       expect(posts.some(([url, init]) => String(url).startsWith('/api/llm/')
         && JSON.parse(String(init?.body || '{}')).model === 'ollama-ready')).toBe(false);
+    });
+  });
+
+  it('configures duplicate ids using each visible provider pair', async () => {
+    const duplicateInventory = {
+      models: [
+        { id: 'shared', provider: 'lm-studio', available: true, configured: false, resident: false, controls: controls(true, true, false) },
+        { id: 'shared', provider: 'ollama', available: true, configured: false, resident: false, controls: controls(true, false, false) },
+      ],
+    };
+    const fetchMock = vi.fn((url: string, init?: RequestInit) => Promise.resolve({
+      ok: true,
+      status: 200,
+      json: async () => url === '/api/models/local' && (!init || init.method === 'GET')
+        ? duplicateInventory
+        : { ok: true, active: 'shared' },
+    }));
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+    render(<LMStudioPanel />);
+    await waitFor(() => expect(screen.getAllByText('shared')).toHaveLength(2));
+
+    fireEvent.click(screen.getByTitle('configure lm-studio:shared'));
+    fireEvent.click(screen.getByTitle('configure ollama:shared'));
+
+    await waitFor(() => {
+      const payloads = fetchMock.mock.calls
+        .filter(([url, init]) => url === '/api/models/local/switch' && init?.method === 'POST')
+        .map(([, init]) => JSON.parse(String(init?.body)));
+      expect(payloads).toEqual(expect.arrayContaining([
+        { model: 'shared', provider: 'lm-studio' },
+        { model: 'shared', provider: 'ollama' },
+      ]));
     });
   });
 

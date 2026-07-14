@@ -153,7 +153,11 @@ def test_switch_to_available_model(token_client):
                     "/api/models/local/switch", json={"model": "llama3:8b"}, headers=HEADERS)
 
     assert resp.status_code == 200
-    assert resp.json() == {"ok": True, "active": "llama3:8b"}
+    assert resp.json() == {
+        "ok": True,
+        "active": "llama3:8b",
+        "provider": "lm-studio",
+    }
     router.set_active_model.assert_called_once_with("llama3:8b")
     put.assert_called_once_with("llm", {"default_model": "llama3:8b"})
 
@@ -238,7 +242,11 @@ def test_switch_adopts_and_configures_unique_cross_provider_pair(token_client):
             )
 
     assert response.status_code == 200
-    assert response.json() == {"ok": True, "active": "mistral:latest"}
+    assert response.json() == {
+        "ok": True,
+        "active": "mistral:latest",
+        "provider": "ollama",
+    }
     put.assert_called_once_with(
         "llm", {"backend_type": "ollama", "default_model": "mistral:latest"}
     )
@@ -625,8 +633,16 @@ async def test_concurrent_switches_serialize_and_leave_one_coherent_pair(monkeyp
 
     assert serialized_while_first_paused is True
     assert listing_count == 2
-    assert json.loads(first_response.body) == {"ok": True, "active": "mistral:latest"}
-    assert json.loads(second_response.body) == {"ok": True, "active": "qwen3:7b"}
+    assert json.loads(first_response.body) == {
+        "ok": True,
+        "active": "mistral:latest",
+        "provider": "ollama",
+    }
+    assert json.loads(second_response.body) == {
+        "ok": True,
+        "active": "qwen3:7b",
+        "provider": "lm-studio",
+    }
     assert persisted == {"backend_type": "lm-studio", "default_model": "qwen3:7b"}
     assert (router._backend_name, router.active_model) == ("lm-studio", "qwen3:7b")
 
@@ -725,7 +741,11 @@ async def test_lifecycle_waits_for_switch_and_preserves_provider_model_pair(
     )
 
     assert lifecycle_entered_while_switch_paused is False
-    assert json.loads(switch_response.body) == {"ok": True, "active": "mistral:latest"}
+    assert json.loads(switch_response.body) == {
+        "ok": True,
+        "active": "mistral:latest",
+        "provider": "ollama",
+    }
     assert json.loads(lifecycle_response.body)["status"] == "ok"
     assert pair_on_lifecycle_entry == [("ollama", "mistral:latest")]
     assert writes == [
@@ -1014,6 +1034,105 @@ def test_switch_rejects_ambiguous_provider_pair(token_client):
     assert resp.status_code == 409
     assert resp.json()["error"] == "model id is ambiguous across local providers"
     assert resp.json()["providers"] == ["lm-studio", "ollama"]
+    router.set_active_model.assert_not_called()
+
+
+@pytest.mark.parametrize(
+    ("target_provider", "old_provider"),
+    [("lm-studio", "ollama"), ("ollama", "lm-studio")],
+)
+def test_switch_selects_exact_available_duplicate_provider_pair(
+    token_client, target_provider, old_provider
+):
+    import agents.core.routers.models_llm as models_llm
+    import agents.web as web
+
+    settings = {"backend_type": old_provider, "default_model": "old-model"}
+    router = SimpleNamespace(
+        active_model="old-model",
+        _backend_name=old_provider,
+        backend_type=old_provider,
+    )
+
+    def _set_active(model):
+        router.active_model = model
+
+    async def _detect():
+        router.backend_type = settings["backend_type"]
+        router._backend_name = router.backend_type
+
+    def _persist(category, data):
+        assert category == "llm"
+        settings.update(data)
+        return len(data), []
+
+    router.set_active_model = MagicMock(side_effect=_set_active)
+    router.detect = AsyncMock(side_effect=_detect)
+    catalog = {
+        "models": [
+            {"id": "shared", "provider": "lm-studio", "available": True},
+            {"id": "shared", "provider": "ollama", "available": True},
+        ]
+    }
+
+    with patch.object(web, "orch", SimpleNamespace(llm_router=router)):
+        with patch.object(web, "_list_local_models", AsyncMock(return_value=catalog)):
+            with patch.object(models_llm, "get_value", side_effect=lambda c, k, d: settings.get(k, d)):
+                with patch.object(models_llm, "put_category", side_effect=_persist) as put:
+                    response = token_client.post(
+                        "/api/models/local/switch",
+                        json={"model": "shared", "provider": target_provider},
+                        headers=HEADERS,
+                    )
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "ok": True,
+        "active": "shared",
+        "provider": target_provider,
+    }
+    assert router._backend_name == target_provider
+    assert router.active_model == "shared"
+    put.assert_called_once_with(
+        "llm", {"backend_type": target_provider, "default_model": "shared"}
+    )
+
+
+def test_switch_rejects_invalid_provider_before_model_resolution(token_client):
+    response = token_client.post(
+        "/api/models/local/switch",
+        json={"model": "shared", "provider": "openai"},
+        headers=HEADERS,
+    )
+
+    assert response.status_code == 422
+
+
+def test_switch_rejects_missing_exact_provider_pair(token_client):
+    import agents.web as web
+
+    duplicate_id = "x" * 5000
+    router = _router_mock("old-model", "ollama")
+    catalog = {
+        "models": [
+            {"id": duplicate_id, "provider": "ollama", "available": True},
+            {"id": "lm-only", "provider": "lm-studio", "available": True},
+        ]
+    }
+    with patch.object(web, "orch", MagicMock(llm_router=router)):
+        with patch.object(web, "_list_local_models", AsyncMock(return_value=catalog)):
+            response = token_client.post(
+                "/api/models/local/switch",
+                json={"model": duplicate_id, "provider": "lm-studio"},
+                headers=HEADERS,
+            )
+
+    assert response.status_code == 404
+    assert response.json() == {
+        "error": "requested model/provider pair is not available locally",
+        "provider": "lm-studio",
+    }
+    assert len(response.content) < 256
     router.set_active_model.assert_not_called()
 
 
