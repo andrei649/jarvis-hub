@@ -1,6 +1,6 @@
 /* HUD v2 · APP ROOT — P0: shell + cockpit are live; the other modes render an
    honest placeholder and get ported from the prototype in the next phase. */
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useLayoutEffect, useRef, useCallback } from 'react';
 import { V2 } from './data';
 import { useClock, fmtTimeShort, Icon, ICONS, Glyph } from './primitives';
 import { TopBar, Ticker, Rail, Tabs, RosterColumn, ContextColumn, Palette, Ambient, CinemaMesh } from './shell';
@@ -279,6 +279,50 @@ function App() {
   // Hands-free voice loop: mic → local Whisper → runTurn → speak the reply, repeat.
   const voice = useVoice({ lang: voiceCfg.lang === 'auto' ? lang : voiceCfg.lang, mode: voiceCfg.mode, ttsSource: voiceCfg.tts, micMuted: trust.mic === 'off', barge: voiceCfg.barge === 'on', onTurn: runTurn });
 
+  // Leaving DEMO is a provenance boundary, not just a URL toggle. Clear every
+  // demo-owned surface in the same event before the banner disappears; the
+  // next live refresh may then publish only a current evidence snapshot.
+  const clearDemoDerivedState = useCallback(() => {
+    timers.current.forEach(clearTimeout);
+    timers.current = [];
+    abortRef.current?.abort();
+    abortRef.current = null;
+    setAgents([]);
+    baseAgents.current = [];
+    setActiveId('jarvis');
+    setFocusId(null);
+    setMessages([]);
+    setThinking(null);
+    setTrace(null);
+    setProvModal(null);
+    setDossier(null);
+    setDecisions([]);
+    setTicker([]);
+    setTasks([]);
+    setWeather(null);
+    setCalendar([]);
+    setHeartbeat([]);
+    setSys(null);
+    setLive(false);
+    setServerUp(false);
+    setLlm({ state: 'unknown', model: null, residents: [] });
+    setTrust({ mic: 'on', strict_local: false });
+    setSources({ tasks: false, trust: false });
+    setLocality(null);
+  }, []);
+
+  // Popstate can also take the HUD out of DEMO. A layout effect closes that
+  // path before paint; the explicit Exit control clears in its event handler.
+  const previousDemo = useRef(demo);
+  useLayoutEffect(() => {
+    if (previousDemo.current && !demo) clearDemoDerivedState();
+    previousDemo.current = demo;
+  }, [clearDemoDerivedState, demo]);
+  const exitDemo = useCallback(() => {
+    clearDemoDerivedState();
+    setDemo(false);
+  }, [clearDemoDerivedState, setDemo]);
+
   useEffect(() => () => timers.current.forEach(clearTimeout), []);
 
   // P1 — load live data and poll every 30s. A generation guard prevents a
@@ -317,7 +361,7 @@ function App() {
       <div className="tex-scanbar"></div>
 
       <div className="shell">
-        {demo && <DemoBanner onExit={() => setDemo(false)} />}
+        {demo && <DemoBanner onExit={exitDemo} />}
         {!demo && serverUp && !firstRunDismissed && !llm.model && llm.state !== 'unknown' && (
           <FirstRunBanner llm={llm} onDemo={() => setDemo(true)}
             onDismiss={() => { setFirstRunDismissed(true); try { localStorage.setItem('hud.seen', '1'); } catch { /* ignore */ } }} t={t} />

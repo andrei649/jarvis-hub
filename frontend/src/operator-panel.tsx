@@ -610,6 +610,15 @@ export function OperatorPanel() {
                 <label style={mono} htmlFor="operator-browser-type">Browser type text</label>
                 <input
                   id="operator-browser-type"
+                  type="password"
+                  autoComplete="off"
+                  autoCapitalize="off"
+                  autoCorrect="off"
+                  spellCheck={false}
+                  data-1p-ignore="true"
+                  data-lpignore="true"
+                  data-bwignore="true"
+                  data-form-type="other"
                   value={browserTypeText}
                   maxLength={MAX_TYPE_TEXT}
                   onChange={(event) => setBrowserTypeText(event.target.value)}
@@ -675,6 +684,15 @@ export function OperatorPanel() {
                 <label style={mono} htmlFor="operator-desktop-type">Desktop type text</label>
                 <input
                   id="operator-desktop-type"
+                  type="password"
+                  autoComplete="off"
+                  autoCapitalize="off"
+                  autoCorrect="off"
+                  spellCheck={false}
+                  data-1p-ignore="true"
+                  data-lpignore="true"
+                  data-bwignore="true"
+                  data-form-type="other"
                   value={desktopTypeText}
                   disabled={desktopBusy === 'run'}
                   maxLength={MAX_TYPE_TEXT}

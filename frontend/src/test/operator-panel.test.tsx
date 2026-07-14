@@ -83,6 +83,42 @@ describe('OperatorPanel browser policy dry run', () => {
     expect(options.map((option) => option.textContent)).toEqual(['navigate', 'extract', 'click', 'type', 'submit']);
   });
 
+  it('masks browser type drafts and never renders their raw text in preview results', async () => {
+    const secret = 'browser-secret-token';
+    post.mockResolvedValueOnce({
+      steps: [{
+        index: 0,
+        action: 'type',
+        kind: 'write',
+        decision: 'approve',
+        reason: 'approval_required',
+        text: secret,
+        result: { text: secret },
+      }],
+    });
+    render(<OperatorPanel />);
+    addDomain();
+    fireEvent.change(screen.getByLabelText('Browser action'), { target: { value: 'type' } });
+    fireEvent.change(screen.getByLabelText('Browser selector'), { target: { value: '#password' } });
+    const draft = screen.getByLabelText('Browser type text') as HTMLInputElement;
+    fireEvent.change(draft, { target: { value: secret } });
+
+    expect(draft.type).toBe('password');
+    expect(draft.autocomplete).toBe('off');
+    expect(draft.getAttribute('spellcheck')).toBe('false');
+    expect(draft.getAttribute('data-1p-ignore')).toBe('true');
+    expect(draft.getAttribute('data-lpignore')).toBe('true');
+    expect(draft.value).toBe(secret);
+    expect(document.body.textContent).not.toContain(secret);
+
+    fireEvent.click(screen.getByRole('button', { name: 'add browser step' }));
+    expect((screen.getByLabelText('Browser type text') as HTMLInputElement).value).toBe('');
+    expect(screen.getByText(`${secret.length} characters`)).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'preview browser plan' }));
+    await waitFor(() => expect(screen.getByLabelText('browser preview result')).toBeTruthy());
+    expect(document.body.textContent).not.toContain(secret);
+  });
+
   it('posts the exact browser check and preview payloads with the user-token client', async () => {
     post
       .mockResolvedValueOnce({ allowed: true, reason: 'allowlisted' })
@@ -282,6 +318,40 @@ describe('OperatorPanel governed desktop', () => {
     expect(document.body.textContent).not.toContain('desktop-secret');
     expect(screen.queryByText(/observe/i)).toBeNull();
     expect(screen.queryByText(/screenshot/i)).toBeNull();
+  });
+
+  it('masks desktop type drafts and never renders their raw text in preview results', async () => {
+    const secret = 'desktop-secret-token';
+    post.mockResolvedValueOnce({
+      steps: [{
+        action: 'type',
+        mutating: true,
+        requires_approval: true,
+        would_run: false,
+        text: secret,
+        result: { text: secret },
+      }],
+    });
+    render(<OperatorPanel />);
+    fireEvent.change(screen.getByLabelText('Desktop action'), { target: { value: 'type' } });
+    fireEvent.change(screen.getByLabelText('Desktop element name'), { target: { value: 'Password' } });
+    const draft = screen.getByLabelText('Desktop type text') as HTMLInputElement;
+    fireEvent.change(draft, { target: { value: secret } });
+
+    expect(draft.type).toBe('password');
+    expect(draft.autocomplete).toBe('off');
+    expect(draft.getAttribute('spellcheck')).toBe('false');
+    expect(draft.getAttribute('data-1p-ignore')).toBe('true');
+    expect(draft.getAttribute('data-lpignore')).toBe('true');
+    expect(draft.value).toBe(secret);
+    expect(document.body.textContent).not.toContain(secret);
+
+    fireEvent.click(screen.getByRole('button', { name: 'add desktop step' }));
+    expect((screen.getByLabelText('Desktop type text') as HTMLInputElement).value).toBe('');
+    expect(screen.getByText(`${secret.length} characters`)).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'preview desktop plan' }));
+    await waitFor(() => expect(screen.getByLabelText('desktop preview result')).toBeTruthy());
+    expect(document.body.textContent).not.toContain(secret);
   });
 
   it('enforces desktop argument and 20-step caps in handlers', () => {
