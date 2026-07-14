@@ -23,6 +23,7 @@ WEB = _AGENTS / "web.py"
 # "every route has a v2 home" check.
 ROUTERS = _AGENTS / "core" / "routers"
 GAP = Path(__file__).resolve().parent.parent / "frontend" / "src" / "gap.tsx"
+OPERATOR = Path(__file__).resolve().parent.parent / "frontend" / "src" / "operator-panel.tsx"
 
 # Ordered (prefix, surface); first match wins, so put the more specific prefixes
 # first. Surfaces mirror the v2 modes + chrome. NOT_IN_HUD = surfaced nowhere by
@@ -306,3 +307,35 @@ def test_acquisition_routes_have_a_live_hash_only_build_surface():
         assert route in panel
     assert "request_hash" not in panel
     assert "detail_hash" not in panel
+
+
+def test_operator_routes_have_a_governed_build_caller():
+    operator_routes = {
+        "/api/browser/check",
+        "/api/browser/plan/preview",
+        "/api/desktop/preview",
+        "/api/desktop/run",
+    }
+    assert operator_routes.issubset(set(_routes()))
+    assert {_classify(path) for path in operator_routes} == {"build"}
+
+    gap_source = GAP.read_text(encoding="utf-8")
+    assert re.search(r"import\s+\{\s*OperatorPanel\s*\}\s+from\s+['\"]\./operator-panel['\"]", gap_source)
+    assert re.search(r"\['Build', \[[^\]]*\bOperatorPanel\b", gap_source)
+
+    operator_source = OPERATOR.read_text(encoding="utf-8")
+    for route in operator_routes:
+        assert re.search(
+            rf"\bapiPost\s*\(\s*['\"]{re.escape(route)}['\"]\s*,",
+            operator_source,
+        ), f"OperatorPanel must call {route} through apiPost"
+
+    forbidden = {
+        "direct fetch": r"\bfetch\s*\(",
+        "admin option": r"\{\s*admin\s*:\s*true\s*\}",
+        "admin token": r"\b(?:getAdminToken|X-Admin-Token|admin_token)\b",
+        "caller approval": r"\b(?:approved|caller_approved)\s*:",
+        "typecheck bypass": r"@ts-nocheck",
+    }
+    for label, pattern in forbidden.items():
+        assert not re.search(pattern, operator_source), f"OperatorPanel contains forbidden {label}"

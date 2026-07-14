@@ -5,6 +5,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import React from 'react';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import gapSource from '../gap.tsx?raw';
 import { CapabilitiesPanel, DataSpacesPanel, LMStudioPanel, PairingPanel, RoomsPanel, SandboxPanel } from '../gap';
 
 beforeEach(() => { try { localStorage.clear(); } catch { /* ignore */ } });
@@ -17,6 +18,13 @@ function mockFetch(routes) {
   global.fetch = fn;
   return fn;
 }
+
+describe('Console Build registry', () => {
+  it('imports and registers the governed Operator panel in Build', () => {
+    expect(gapSource).toMatch(/import\s+\{\s*OperatorPanel\s*\}\s+from\s+['"]\.\/operator-panel['"]/);
+    expect(gapSource).toMatch(/\['Build', \[[^\]]*\bOperatorPanel\b/);
+  });
+});
 
 describe('PairingPanel (H12.19) — sender approvals are live', () => {
   it('lists pending senders and POSTs an approve decision with channel + sender_id', async () => {
