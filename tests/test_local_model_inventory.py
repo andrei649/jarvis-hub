@@ -230,6 +230,41 @@ async def test_inventory_reports_zero_one_or_multiple_residents(monkeypatch, loa
     assert inventory["resident_models"] == expected
 
 
+async def test_lm_studio_residency_ignores_explicit_non_conversational_models(monkeypatch):
+    inventory, _ = await _inventory(
+        monkeypatch,
+        responses=_responses(
+            lm_catalog={
+                "data": [
+                    {"id": "embed"},
+                    {"id": "chat"},
+                    {"id": "vision"},
+                    {"id": "legacy"},
+                ]
+            },
+            lm_resident={
+                "data": [
+                    {"id": "embed", "type": "embeddings", "state": "loaded"},
+                    {"id": "rerank", "type": "reranker", "state": "loaded"},
+                    {"id": "chat", "type": "llm", "state": "loaded"},
+                    {"id": "vision", "type": "vlm", "state": "loaded"},
+                    {"id": "legacy", "state": "loaded"},
+                ]
+            },
+        ),
+    )
+
+    assert inventory["resident_models"] == [
+        {"provider": "lm-studio", "id": "chat"},
+        {"provider": "lm-studio", "id": "legacy"},
+        {"provider": "lm-studio", "id": "vision"},
+    ]
+    embed = next(row for row in inventory["models"] if row["id"] == "embed")
+    assert embed["available"] is True
+    assert embed["resident"] is False
+    assert all(row["id"] != "rerank" for row in inventory["models"])
+
+
 async def test_ambiguous_configuration_gets_one_unknown_synthetic_row(monkeypatch):
     module = _module()
     module.invalidate_local_model_inventory_cache()

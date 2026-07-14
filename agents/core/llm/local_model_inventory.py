@@ -21,6 +21,7 @@ from agents.core.app_state import get_orch
 _CACHE_TTL_SECONDS = 8.0
 _DEFAULT_LM_STUDIO_URL = "http://localhost:1234"
 _DEFAULT_OLLAMA_URL = "http://localhost:11434"
+_CONVERSATIONAL_LM_STUDIO_TYPES = {"llm", "vlm"}
 
 _raw_cache: dict[str, Any] = {"key": None, "at": 0.0, "providers": None}
 _invalidation_generation = 0
@@ -77,6 +78,13 @@ def _parse_lm_residents(payload: Any) -> set[str]:
             continue
         model_id = _trim_id(item.get("id"))
         state = item.get("state")
+        model_type = item.get("type")
+        if (
+            isinstance(model_type, str)
+            and model_type.strip()
+            and model_type.strip().lower() not in _CONVERSATIONAL_LM_STUDIO_TYPES
+        ):
+            continue
         if model_id is not None and isinstance(state, str) and state.lower() == "loaded":
             result.add(model_id)
     return result
