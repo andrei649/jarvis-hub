@@ -323,6 +323,11 @@ instalați** (restul pe listă de așteptare). Candidați contributor din fir (I
 | 0.66 SaaS Connector Breadth | 🟡 partial → **white-collar connector builders ✅** | ~20 integrations skewed messaging/IoT; the white-collar suite was missing. **NEW `agents/core/writeback_connectors.py`** adds pure, offline request builders for **Linear · Asana · Trello · Todoist · ClickUp · Google Sheets · Microsoft 365 (Outlook draft)**, same discipline as H10.30 write-back: validated `CATALOG` (unknown action/missing field → refused with reason), **host allowlist** (`CONNECTOR_HOSTS`, SSRF guard), **secrets only at execute-time** (drafts carry a `{{secret:<target>_token}}` handle, never a raw token — SecretBroker resolves behind approval), `build_connector_request` → one concrete HTTP request each, `draft_task_payload` → ask-tier approval-queue task, `catalog()` inspectable surface. `tests/test_writeback_connectors.py` (+15). *(Remaining 0.66: wire builders into the executor behind the approval queue + owner OAuth setup per provider.)* | — |
 | 0.90–1.0 gates (Freeze · RC · Partner · Burn-In · Owned) | ⬜ pending | `AUDIT.md`,`MANUAL_TESTING.md`,parity/auth gates, north-star eval / promote eval→required gate; design partners; landing+demo | 1.0.0 row + H23.21/22 |
 
+> **T-0.25 supersession (H28.4, 2026-07-14):** H28 now supplies the real Windows driver seam,
+> ToolRPC/Action-Kernel execution path, governed browser driver, and the user-facing Console →
+> Build → Operator surface. The stale T-0.25 implementation tail is closed; its only remaining
+> boundary is owner-host validation with real Windows UIA and installed Playwright Chromium.
+
 > **Remaining greenfield (⬜) among 0.19–0.63:** 0.20 Vault · 0.48 Video Production. *(0.55 Design Partner Kit → 🟢 mostly done — feedback widget + issue bundle; only the SLA doc remains.)*
 > *(0.42 Security Skills + 0.62 System Profiles → 🟢 **done**; 0.57 Release Packaging → ✅ done; 0.52 Demo
 > Factory → 🌱 seed and 0.61 DB Future Check → 🟡 partial on the 2026-06-25 re-audit.)*
@@ -688,6 +693,13 @@ the real backend, but the pipeline-rewiring PR never ran it because the path fil
 | H28.6 ✅ | **Unpark wave 1** — `browser_agent`/`desktop_operator`/`screen_grounding` are permanently removed from `PARK_POLICY` after the H28 reality pack passed. Exact-policy tests preserve wave 2 (`image_gen`/`media_gen`/`media_skill`), wave 3 (`wyoming`/`satellite_hub`/`node_mesh`/`e2e_sync`), owner-only `training/` + `rust/`, and `park-policy` self-protection unchanged. PR declaration remains `unpark: park-policy`; `unpark: wave-1` records the graduation. | 1 | P2 | H23.28 | O26 Phase 6 |
 
 > **Total ORIZONT 28:** ~30 SP
+
+> **H28.4 HUD depth completion (2026-07-14):** Console → Build → Operator now provides bounded
+> browser policy/plan dry runs and preview-first governed desktop submission over the existing
+> routes. Edits invalidate the desktop preview, canonical snapshots are submitted, outcomes separate
+> proposed/queued/blocked/failed/partial/executed, and partial runs warn against whole-plan retry.
+> Native mobile hides `toolrpc.desktop_run` payloads and omits Approve while retaining Reject/Defer.
+> The owner/live UIA + Chromium gate above remains open; no host execution is claimed by this update.
 
 ## 📺 ORIZONT 29 — Multimedia Director (Nerva Program C · AI-OS Phase 2b, direction 2026-07-11)
 
@@ -1201,6 +1213,11 @@ chain-of-thought leak / mid-sentence truncation fixed. Kill-switch:
 | **HF-7** | **Admin auth în spatele unui reverse-proxy** — fallback-ul „doar localhost" (`_admin_guard`) folosește `request.client.host`, care devine IP-ul proxy-ului în spatele nginx/ingress → admin expus tuturor dacă `JARVIS_ADMIN_TOKEN` nu e setat. Adaugă suport trusted-proxy/`X-Forwarded-For` + rate-limit pe încercări token. **→ ✅ Rezolvat:** ambele guard-uri (`_admin_guard`/`_user_guard`) fail-**CLOSED** în spatele unui proxy (cer token); `JARVIS_TRUSTED_PROXY` (opt-in, default off) + `_real_client_host` folosesc primul hop `X-Forwarded-For` ca IP real pentru poarta localhost; rate-limit pe token-guess via HF-2 (încercările cu token greșit nu sunt exempte). | ✅ **DONE** | 2 | Cu HF-1/HF-2 | Audit cod 2026-06-04 · `agents/web.py:_admin_guard` |
 | **CLN-2** | **Spargere god-object `Orchestrator`** (`agents/core/orchestrator.py`) — un singur obiect gestionează agenți + pluginuri + memorie + canale + autonomie + checkpoints + learning. **Început în #118 (audit A2 — `ComponentRegistry`)**, care a redus fișierul 1620→1537 LOC. **→ ✅ Substanțial DONE (#296):** extrași `ChannelManager` (proprietatea `channels`), `PluginManager` (proprietatea `plugins`), execuția LLM-control (`llm_control.run_llm_control`) și builder-ul de cognition-trace (`cognition_trace.update_cognition`) — toți cu facade-uri delegante, suprafața `orch.*` neschimbată. **Orchestrator 1620→1456 LOC.** Restul inline e **pipeline-ul de request** (`handle_input`/`handle_input_stream` + core-ul `_active_session` ContextVar din BUG-5) — **nu se poate extrage în siguranță** (testele asignează direct ~10 atribute de stare: observer/checkpoints/tracer/run_history/memory/mcp/autonomy_queue/skills/workflow_*, deci nu pot deveni proprietăți). Punct natural de oprire. **Plan:** [`docs/superpowers/specs/2026-06-13-cln2-cln3-refactor-plan.md`](docs/superpowers/specs/2026-06-13-cln2-cln3-refactor-plan.md). | ✅ Substanțial DONE · P3 | 5 | #118 (A2) → #296 | Audit cod 2026-06-04 |
 | **CLN-3** | **Spargere `web.py`** (~4636 LOC, 233 rute, singletons globale `orch`/`gateway`) — split în routere FastAPI per-domeniu (`APIRouter`). **→ ✅ DONE (#293 batch 2 + #296 complet):** **45 de domenii extrase** în `core/routers/` cu wrappere lazy de auth-guard (`_deps.py`, fără ciclu de import); topologie 3-straturi `web_helpers`/`app_state`/`_deps` cu `get_orch()` late-binding. **web.py 4636→1282 LOC; 233→9 rute inline** (rămân, by design: app-shell `/`,`/v1`,`/v2`,favicon,sw.js + `/chat`,`/chat/stream` + `/admin`). Suprafața de **304 rute e byte-identică**, gardată de `tests/test_route_parity_guard.py` + `test_openapi_parity_guard.py` + `test_lifespan_smoke.py` + `test_route_auth_matrix.py`. **Plan:** [`docs/superpowers/specs/2026-06-13-cln2-cln3-refactor-plan.md`](docs/superpowers/specs/2026-06-13-cln2-cln3-refactor-plan.md). | ✅ **DONE** · P3 | 8 | #293 → #296 | Audit cod 2026-06-04 |
+
+> **TASK-2 since-closed update (2026-07-14):** the H28 Operator depth is now complete in
+> Console → Build, with real callers for browser check/preview and desktop preview/run plus native
+> desktop-approval boundaries. TASK-2 remains 🟡: its actual tail is owner live-data/plugin setup
+> (bank/broker/quotes, Apple Health, websearch, WhatsApp) and non-v0 inbox channels.
 
 ## ✅ ORIZONT 5 — Next Wave (P2–P3) — 17/17 COMPLET
 

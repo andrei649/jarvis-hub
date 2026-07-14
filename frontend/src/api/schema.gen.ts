@@ -3635,7 +3635,9 @@ export interface paths {
          *
          *     The model must be present in one of the local backends. The selection is
          *     written to `llm.default_model` (settings_db) so it survives a restart, and
-         *     applied immediately to the running HybridRouter.
+         *     applied immediately to the running HybridRouter. Switches are serialized
+         *     across their authoritative catalog decision and complete live/persisted
+         *     mutation so one request cannot roll back another.
          */
         post: operations["models_local_switch_api_models_local_switch_post"];
         delete?: never;
@@ -7361,14 +7363,64 @@ export interface components {
             /** Allowlist */
             allowlist?: string[];
         };
+        /** BrowserClickStep */
+        BrowserClickStep: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            action: "click";
+            /** Selector */
+            selector: string;
+        };
+        /** BrowserExtractStep */
+        BrowserExtractStep: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            action: "extract";
+            /** Selector */
+            selector: string;
+        };
+        /** BrowserNavigateStep */
+        BrowserNavigateStep: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            action: "navigate";
+            /** Url */
+            url: string;
+        };
         /** BrowserPreviewBody */
         BrowserPreviewBody: {
             /** Plan */
-            plan?: {
-                [key: string]: unknown;
-            }[];
+            plan?: (components["schemas"]["BrowserNavigateStep"] | components["schemas"]["BrowserExtractStep"] | components["schemas"]["BrowserClickStep"] | components["schemas"]["BrowserTypeStep"] | components["schemas"]["BrowserSubmitStep"])[];
             /** Allowlist */
             allowlist?: string[];
+        };
+        /** BrowserSubmitStep */
+        BrowserSubmitStep: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            action: "submit";
+            /** Selector */
+            selector: string;
+        };
+        /** BrowserTypeStep */
+        BrowserTypeStep: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            action: "type";
+            /** Selector */
+            selector: string;
+            /** Text */
+            text: string;
         };
         /** CallRequestBody */
         CallRequestBody: {
@@ -8138,6 +8190,31 @@ export interface components {
             lang: string;
             /** Voice */
             voice?: string | null;
+        };
+        /** TasksResponse */
+        TasksResponse: {
+            /** Tasks */
+            tasks: {
+                [key: string]: unknown;
+            }[];
+            /**
+             * View
+             * @enum {string}
+             */
+            view: "legacy" | "running" | "history";
+            /**
+             * Source
+             * @default autonomy_queue
+             * @constant
+             */
+            source: "autonomy_queue";
+            /** History Included */
+            history_included: boolean;
+            /**
+             * As Of
+             * Format: date-time
+             */
+            as_of: string;
         };
         /** ToolRPCCallBody */
         ToolRPCCallBody: {
@@ -16043,7 +16120,9 @@ export interface operations {
     };
     get_tasks_tasks_get: {
         parameters: {
-            query?: never;
+            query?: {
+                view?: ("running" | "history") | null;
+            };
             header?: never;
             path?: never;
             cookie?: never;
@@ -16056,7 +16135,16 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["TasksResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };

@@ -55,7 +55,8 @@ intentionally owner-HUD-only; native clients expose no discovery, frame, stream,
 | Camera Intelligence (H31.5, default-off, metadata-only) | `GET /api/cameras/{status,events}`, `POST /api/cameras/search`, admin-only `POST /api/cameras/onvif/discover` | ✅ | ✅ | H31.5 |
 | Governed Capability Acquisition (H32.6, default-off) | user `GET /api/acquisition/{status,events}`; admin-only revoke, rollback, ledger export/purge | ✅ | ✅ | H32.6 |
 | Ambient Watch (H33.6, default-off, redacted) | user `GET /api/ambient/monitors`; admin-only monitor create/update/delete | ✅ | ✅ | H33.6 |
-| Windows server-host desktop actuation (intentionally desktop-only; a phone must not control the server's desktop) | `POST /api/desktop/run` | ✅ | ➖ | — |
+| Governed browser policy / plan preview | `POST /api/browser/check`, `POST /api/browser/plan/preview` | ✅ | ➖ | — |
+| Windows server-host desktop Operator | `POST /api/desktop/preview`, `POST /api/desktop/run` | ✅ | ➖ | — |
 | Auth (user/admin tokens) | `X-User-Token`, `X-Admin-Token` headers | ✅ | ✅ | H18.1 / H18.11 |
 
 > **H18.20 ✅ (delivered):** native artifact workspace parity — the Memory tab gains an
@@ -83,6 +84,12 @@ intentionally owner-HUD-only; native clients expose no discovery, frame, stream,
 > shows bounded monitor/source health, the last redacted policy decision, per-rung counts, and the
 > single global attention budget. Predicate values, subjects, event fingerprints/content,
 > recipients, and admin monitor mutations remain on the owner hub.
+
+> **H28 Operator boundary:** governed browser checks and plan previews are owner/server-browser
+> dry runs, not native execution. A native `toolrpc.desktop_run` approval card hides the desktop
+> payload and has no **Approve** control; Reject and Defer remain, and approval continues in the
+> Owner HUD. This is a mobile UI boundary only and does not change the generic task API or server
+> authorization.
 
 > Rows with an empty **Task** cell are tracked-but-unscheduled parity gaps. When one becomes
 > worth doing on mobile, give it an `H18.x` id in `BACKLOG.md` and fill the cell. Surfaces marked
