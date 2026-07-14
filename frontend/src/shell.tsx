@@ -368,13 +368,19 @@ export function CinemaMesh({ agents = [], tasks = [], llm, trust, sources, demo 
   const trustEvidence = sources?.trust === true;
   const cloudReported = trustEvidence
     && (trust?.cloud_available === true || trust?.claude_available === true);
-  const TAGS = [
-    'Governed operator view',
-    'Current evidence only',
-    !trustEvidence
-      ? 'Trust evidence unavailable'
-      : cloudReported ? 'Cloud lane reported by trust status' : 'Trust status connected',
-  ];
+  const TAGS = demo
+    ? [
+      'DEMO · seeded sample data',
+      'DEMO · illustrative constellation',
+      'DEMO · simulated choreography',
+    ]
+    : [
+      'Governed operator view',
+      'Current evidence only',
+      !trustEvidence
+        ? 'Trust evidence unavailable'
+        : cloudReported ? 'Cloud lane reported by trust status' : 'Trust status connected',
+    ];
   const live = agents.filter(isExecutingAgent).length;
   const running = runningTasks(tasks).length;
   return (

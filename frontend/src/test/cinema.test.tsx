@@ -113,4 +113,28 @@ describe('CinemaMesh — full-bleed mesh demo overlay', () => {
       vi.useRealTimers();
     }
   });
+
+  it('qualifies every rotating Cinema tag as seeded demo data in demo mode', () => {
+    vi.useFakeTimers();
+    let view: ReturnType<typeof render> | null = null;
+    try {
+      view = render(<CinemaMesh agents={AGENTS} tasks={[]}
+        llm={{ state: 'ready', model: 'demo-model', residents: [{ provider: 'ollama', id: 'demo-model' }] }}
+        trust={{ cloud_available: true }} sources={{ tasks: true, trust: true }}
+        demo={true} localPct={100} onExit={() => {}} t={{}} />);
+      const tags: string[] = [];
+      for (let i = 0; i < 3; i += 1) {
+        tags.push(view.container.querySelector('.cin-tag')?.textContent || '');
+        act(() => { vi.advanceTimersByTime(4200); });
+      }
+
+      expect(tags.every((tag) => tag.startsWith('DEMO ·'))).toBe(true);
+      expect(tags.join(' ')).toMatch(/seeded|illustrative/i);
+      expect(tags.join(' ')).not.toMatch(/Current evidence only|Trust status connected|Cloud lane reported/i);
+      expect(view.container.textContent).not.toContain('Current evidence only');
+    } finally {
+      view?.unmount();
+      vi.useRealTimers();
+    }
+  });
 });
