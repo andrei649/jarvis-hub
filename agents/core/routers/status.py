@@ -4,12 +4,9 @@ Covers the small status surface: component-health (`/api/health/components`), th
 HUD-compatible `/status` snapshot, and the lightweight `/api/status` smoke probe.
 All three are unguarded, exactly as inline.
 
-`/status` leans on three web.py-internal helpers — `_sys_info()`, `_enrich_agents()`
-and the async `_llm_ready()` (the latter owns the `_llm_ready_cache` global and the
-`_LM_STUDIO_URL` constant). Those stay in web.py and are resolved at REQUEST time via
-`_web()` (a `sys.modules` lookup, late-bound, no static import edge back into web —
-same pattern as the other extracted routers). The orchestrator is resolved via
-`get_orch()`. `/api/status` only does local imports, so it moves verbatim.
+`/status` leans on web.py's `_sys_info()`, `_enrich_agents()`, and late-bound
+`_list_local_models()` compatibility seam.  The latter delegates to the shared
+local-model inventory, keeping `/status` and `/api/models/local` on one truth source.
 """
 
 import sys
@@ -17,6 +14,7 @@ import sys
 from fastapi import APIRouter
 
 from agents.core.app_state import get_orch
+from agents.core.llm.local_model_inventory import project_llm_status
 from agents.core.web_helpers import nocache_json
 
 router = APIRouter(tags=["status"])
@@ -24,8 +22,8 @@ router = APIRouter(tags=["status"])
 
 def _web():
     # Always present at request time (the app is running). Not an import edge.
-    # `_sys_info`/`_enrich_agents`/`_llm_ready` (and `_llm_ready`'s cache +
-    # `_LM_STUDIO_URL`) stay owned by web.py; resolve them here on each call.
+    # The helpers stay owned by web.py; resolve them here on each call so tests'
+    # monkeypatches and the runtime orchestrator remain observable.
     return sys.modules.get("agents.web")
 
 
@@ -69,20 +67,23 @@ async def status():
     web = _web()
     enriched = web._enrich_agents()
     voice_state = "idle"
-    lm_online = orch.llm_router.name != "none"
-    ready = await web._llm_ready()
+    inventory = await web._list_local_models()
+    ready = project_llm_status(inventory)
+    lm_online = any(provider.get("online") for provider in inventory.get("providers", []))
     from agents import __version__
     return nocache_json({
         "version": __version__,
         "sys": web._sys_info(),
         "voice_state": voice_state,
         "lm_online": lm_online,                       # backend configured/reachable
-        "model_state": ready["state"],                # ready | no_model | offline (truthful)
-        "model_loaded": ready["state"] == "ready",
-        "loaded_model": ready["model"],               # the actually-resident model, or None
-        "configured_model": getattr(orch.llm_router, "active_model", None),
-        "llm_backend": orch.llm_router.name,
-        "active_model": getattr(orch.llm_router, "active_model", None),
+        "model_state": ready["model_state"],
+        "model_loaded": ready["model_loaded"],
+        "loaded_model": ready["loaded_model"],
+        "resident_models": ready["resident_models"],
+        "residency_state": ready["residency_state"],
+        "configured_model": inventory.get("configured_model"),
+        "llm_backend": inventory.get("backend", "none"),
+        "active_model": inventory.get("configured_model"),
         "agents": [{"id": a["id"], "status": a["status"]} for a in enriched],
         "agents_online": sum(1 for a in enriched if a["status"] != "idle"),
         "agents_total": len(enriched),

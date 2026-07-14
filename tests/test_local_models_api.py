@@ -67,13 +67,24 @@ def test_requires_admin_token(token_client):
 
 def _router_mock(active, name):
     router = MagicMock(active_model=active)
-    router.name = name  # `name` is a reserved MagicMock kwarg; set explicitly
+    router._backend_name = name
+    router.name = "cloud+composite"  # provider identity must not be parsed from this
+    router.lm_studio_url = "http://localhost:1234"
+    router.ollama_url = "http://localhost:11434"
     return router
 
 
 def test_list_local_models_shape(token_client):
     import agents.web as web
-    factory = _fake_httpx_client({"1234": LM_MODELS, "11434": OLLAMA_MODELS})
+    from agents.core.llm.local_model_inventory import invalidate_local_model_inventory_cache
+
+    invalidate_local_model_inventory_cache()
+    factory = _fake_httpx_client({
+        "/v1/models": LM_MODELS,
+        "/api/v0/models": _FakeResp({"data": []}),
+        "/api/tags": OLLAMA_MODELS,
+        "/api/ps": _FakeResp({"models": []}),
+    })
     with patch.object(web, "orch", MagicMock(llm_router=_router_mock("qwen3:7b", "lm-studio"))):
         with patch("httpx.AsyncClient", factory):
             resp = token_client.get("/api/models/local", headers=HEADERS)
@@ -81,17 +92,28 @@ def test_list_local_models_shape(token_client):
     assert resp.status_code == 200
     data = resp.json()
     assert data["active"] == "qwen3:7b"
+    assert data["configured_model"] == "qwen3:7b"
+    assert data["resident_models"] == []
+    assert data["residency_state"] == "known"
     ids = {m["id"] for m in data["models"]}
     assert ids == {"qwen3:7b", "llama3:8b", "mistral:latest"}
-    active = [m for m in data["models"] if m["active"]]
-    assert len(active) == 1 and active[0]["id"] == "qwen3:7b"
+    configured = [m for m in data["models"] if m["configured"]]
+    assert len(configured) == 1 and configured[0]["id"] == "qwen3:7b"
+    assert configured[0]["active"] is True
+    assert configured[0]["resident"] is False
     providers = {p["name"]: p["online"] for p in data["providers"]}
     assert providers == {"lm-studio": True, "ollama": True}
 
 
 def test_list_reports_offline_provider(token_client):
     import agents.web as web
-    factory = _fake_httpx_client({"1234": LM_MODELS})  # ollama URL -> 404
+    from agents.core.llm.local_model_inventory import invalidate_local_model_inventory_cache
+
+    invalidate_local_model_inventory_cache()
+    factory = _fake_httpx_client({
+        "/v1/models": LM_MODELS,
+        "/api/v0/models": _FakeResp({"data": []}),
+    })  # ollama URLs -> 404
     with patch.object(web, "orch", MagicMock(llm_router=_router_mock(None, "lm-studio"))):
         with patch("httpx.AsyncClient", factory):
             resp = token_client.get("/api/models/local", headers=HEADERS)
@@ -108,10 +130,17 @@ def test_switch_to_available_model(token_client):
     router = MagicMock(active_model="qwen3:7b", name="lm-studio")
     catalog = {
         "active": "qwen3:7b",
+        "configured_model": "qwen3:7b",
         "backend": "lm-studio",
         "providers": [{"name": "lm-studio", "online": True}],
-        "models": [{"id": "qwen3:7b", "provider": "lm-studio", "active": True},
-                   {"id": "llama3:8b", "provider": "lm-studio", "active": False}],
+        "resident_models": [],
+        "residency_state": "known",
+        "models": [
+            {"id": "qwen3:7b", "provider": "lm-studio", "available": True,
+             "configured": True, "active": True},
+            {"id": "llama3:8b", "provider": "lm-studio", "available": True,
+             "configured": False, "active": False},
+        ],
     }
     import agents.core.routers.models_llm as models_llm
     with patch.object(web, "orch", MagicMock(llm_router=router)):
@@ -130,8 +159,11 @@ def test_switch_to_unknown_model_404(token_client):
     import agents.web as web
     router = MagicMock(active_model="qwen3:7b", name="lm-studio")
     catalog = {
-        "active": "qwen3:7b", "backend": "lm-studio", "providers": [],
-        "models": [{"id": "qwen3:7b", "provider": "lm-studio", "active": True}],
+        "active": "qwen3:7b", "configured_model": "qwen3:7b",
+        "backend": "lm-studio", "providers": [], "resident_models": [],
+        "residency_state": "known",
+        "models": [{"id": "qwen3:7b", "provider": "lm-studio",
+                    "available": True, "configured": True, "active": True}],
     }
     with patch.object(web, "orch", MagicMock(llm_router=router)):
         with patch.object(web, "_list_local_models", AsyncMock(return_value=catalog)):
@@ -146,3 +178,82 @@ def test_switch_to_unknown_model_404(token_client):
 def test_switch_requires_model_field(token_client):
     resp = token_client.post("/api/models/local/switch", json={}, headers=HEADERS)
     assert resp.status_code == 422
+
+
+def test_switch_rejects_unavailable_model(token_client):
+    import agents.web as web
+
+    router = _router_mock("qwen3:7b", "lm-studio")
+    catalog = {
+        "active": "qwen3:7b",
+        "configured_model": "qwen3:7b",
+        "backend": "lm-studio",
+        "providers": [],
+        "resident_models": [],
+        "residency_state": "known",
+        "models": [
+            {"id": "ghost-model", "provider": "lm-studio", "available": False,
+             "configured": False, "active": False}
+        ],
+    }
+    with patch.object(web, "orch", MagicMock(llm_router=router)):
+        with patch.object(web, "_list_local_models", AsyncMock(return_value=catalog)):
+            resp = token_client.post(
+                "/api/models/local/switch", json={"model": "ghost-model"}, headers=HEADERS
+            )
+
+    assert resp.status_code == 404
+    router.set_active_model.assert_not_called()
+
+
+def test_switch_rejects_ambiguous_provider_pair(token_client):
+    import agents.web as web
+
+    router = _router_mock(None, "none")
+    catalog = {
+        "active": None,
+        "configured_model": None,
+        "backend": "none",
+        "providers": [],
+        "resident_models": [],
+        "residency_state": "known",
+        "models": [
+            {"id": "alpha", "provider": "lm-studio", "available": True,
+             "configured": False, "active": False},
+            {"id": "alpha", "provider": "ollama", "available": True,
+             "configured": False, "active": False},
+        ],
+    }
+    with patch.object(web, "orch", MagicMock(llm_router=router)):
+        with patch.object(web, "_list_local_models", AsyncMock(return_value=catalog)):
+            resp = token_client.post(
+                "/api/models/local/switch", json={"model": "alpha"}, headers=HEADERS
+            )
+
+    assert resp.status_code == 409
+    assert resp.json()["error"] == "model id is ambiguous across local providers"
+    assert resp.json()["providers"] == ["lm-studio", "ollama"]
+    router.set_active_model.assert_not_called()
+
+
+@pytest.mark.parametrize(
+    ("path", "body", "method_name"),
+    [
+        ("/api/llm/load", {"model": "alpha"}, "load_model"),
+        ("/api/llm/unload", {"model": "alpha"}, "unload_model"),
+    ],
+)
+def test_successful_lifecycle_invalidates_inventory_cache(
+    token_client, path, body, method_name
+):
+    import agents.core.routers.models_llm as models_llm
+    import agents.web as web
+
+    ctrl = MagicMock()
+    setattr(ctrl, method_name, AsyncMock(return_value={"status": "ok", "model": "alpha"}))
+    with patch.object(web, "orch", MagicMock(lmstudio=ctrl)):
+        with patch.object(models_llm, "invalidate_local_model_inventory_cache") as invalidate:
+            resp = token_client.post(path, json=body, headers=HEADERS)
+
+    assert resp.status_code == 200
+    invalidate.assert_called_once_with()

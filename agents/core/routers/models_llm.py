@@ -11,9 +11,8 @@ Covers two address spaces that together form the LLM-control surface:
 
 Orchestrator-only state is read at request time via `get_orch()`. One web.py
 helper is kept in `web.py` because the local-models test suite monkeypatches it
-on the module (`monkeypatch.setattr(web, "_list_local_models", ...)`):
-`_list_local_models` owns the `_LM_STUDIO_URL`/`_OLLAMA_URL` probe constants,
-themselves still read by `web._llm_ready`. It is reached at request time through
+on the module (`monkeypatch.setattr(web, "_list_local_models", ...)`). The helper
+delegates to the shared local-model inventory and is reached at request time through
 `sys.modules.get("agents.web")._list_local_models` so the monkeypatch is observed
 and there is no static import edge back into web. `put_category` is imported here
 directly from its leaf module (`core.settings_db`); the local-models suite patches
@@ -30,11 +29,10 @@ from pydantic import BaseModel, Field
 
 from core.settings_db import put_category
 
-from agents.core.routers._deps import admin_guard, user_guard
-
-from agents.core.web_helpers import logger, nocache_json
 from agents.core.app_state import get_orch
-
+from agents.core.llm.local_model_inventory import invalidate_local_model_inventory_cache
+from agents.core.routers._deps import admin_guard, user_guard
+from agents.core.web_helpers import logger, nocache_json
 
 router = APIRouter(tags=["models"])
 
@@ -94,9 +92,9 @@ async def llm_moe_route(body: MoERouteBody):
 # the same providers the HybridRouter talks to) so the HUD can browse them,
 # see which is active, and switch with a single click — Jan.ai style.
 #
-# `_list_local_models` stays in web.py (it owns the probe constants still read by
-# web._llm_ready, and the test suite monkeypatches it on the module); it is read
-# here via `_web()._list_local_models()` so those monkeypatches are observed.
+# `_list_local_models` stays in web.py as a compatibility seam because the test
+# suite monkeypatches it on that module. It delegates to the shared inventory and
+# is read here via `_web()._list_local_models()` so those patches are observed.
 
 
 @router.get("/api/models/local", dependencies=[Depends(admin_guard)])
@@ -150,11 +148,24 @@ async def models_local_switch(body: LocalModelSwitch):
         return nocache_json({"error": "not initialized"}, status_code=503)
 
     catalog = await _web()._list_local_models()
-    available = {m["id"] for m in catalog["models"]}
-    if body.model not in available:
+    matches = [
+        model
+        for model in catalog["models"]
+        if model.get("id") == body.model and model.get("available") is True
+    ]
+    available = sorted(
+        {model["id"] for model in catalog["models"] if model.get("available") is True}
+    )
+    if not matches:
         return nocache_json(
-            {"error": f"model '{body.model}' not available locally", "available": sorted(available)},
+            {"error": f"model '{body.model}' not available locally", "available": available},
             status_code=404,
+        )
+    providers = sorted({model.get("provider") for model in matches if model.get("provider")})
+    if len(providers) != 1:
+        return nocache_json(
+            {"error": "model id is ambiguous across local providers", "providers": providers},
+            status_code=409,
         )
 
     orch.llm_router.set_active_model(body.model)
@@ -251,6 +262,7 @@ async def llm_load(body: LMLoad):
             put_category("llm", {"default_model": result.get("model") or body.model})
         except Exception:
             pass  # live load already took effect; persistence is best-effort
+        invalidate_local_model_inventory_cache()
         return nocache_json(result)
     return nocache_json(result, status_code=_llm_status_code(result))
 
@@ -261,4 +273,6 @@ async def llm_unload(body: LMUnload):
     if err:
         return err
     result = await ctrl.unload_model(body.model, agent="jarvis")
+    if result.get("status") == "ok":
+        invalidate_local_model_inventory_cache()
     return nocache_json(result, status_code=_llm_status_code(result))
