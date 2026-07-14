@@ -5,17 +5,27 @@
    demo corpus is used ONLY when `demo` is true (an explicit, watermarked mode), so
    the HUD never passes fiction off as fact. */
 import { apiGet } from './client';
-import type { StatusResp, AgentsResp, DashboardResp, TickerResp, TasksResp } from './types';
+import type {
+  StatusResp, AgentsResp, DashboardResp, TickerResp, TasksResp,
+  LlmLiveState, LocalModelRef, ModelState,
+} from './types';
+import { runningTasks } from '../task-state';
 // data.ts is the prototype's (untyped) mock — used ONLY as the opt-in demo corpus.
 import { V2 } from '../data';
 
-export type LlmState = 'ready' | 'no_model' | 'offline' | 'unknown';
+export type LlmState = ModelState;
+
+export interface LiveSources {
+  tasks: boolean;
+  trust: boolean;
+  [source: string]: boolean;
+}
 
 export interface JarvisData {
   demo: boolean;
   serverUp: boolean;       // /status answered (server reachable)
   live: boolean;           // real (non-demo) content is present on screen
-  llm: { state: LlmState; model: string | null };
+  llm: LlmLiveState;
   agents: any[];
   sys: StatusResp['sys'] | null;
   ticker: any[];
@@ -24,7 +34,7 @@ export interface JarvisData {
   heartbeat: any[];
   tasks: any[];
   trust: { mic: string; strict_local: boolean; cloud_available?: boolean; claude_available?: boolean };
-  sources: Record<string, boolean>;   // per-tile: did REAL data arrive?
+  sources: LiveSources;   // per-tile: did REAL data arrive in this load cycle?
 }
 
 const META: Record<string, { tier: string; role: string; name: string; model: string }> = {};
@@ -38,7 +48,7 @@ export async function loadJarvisData(demo = false): Promise<JarvisData> {
     demo,
     serverUp: false,
     live: false,
-    llm: { state: 'unknown', model: null },
+    llm: { state: 'unknown', model: null, residents: [] },
     agents: demo ? (V2.AGENTS as any[]) : [],
     sys: null,
     ticker: demo ? (V2.TICKER as any[]) : [],
@@ -47,7 +57,7 @@ export async function loadJarvisData(demo = false): Promise<JarvisData> {
     heartbeat: demo ? (V2.HEARTBEAT as any[]) : [],
     tasks: [],
     trust: { mic: 'on', strict_local: false },
-    sources: {},
+    sources: { tasks: false, trust: false },
   };
 
   // 1) full enriched roster (real registry)
@@ -75,8 +85,16 @@ export async function loadJarvisData(demo = false): Promise<JarvisData> {
     const d = await apiGet<any>('/status');
     out.serverUp = true;
     if (d.sys) out.sys = d.sys;
-    if (d.model_state) out.llm = { state: d.model_state, model: d.loaded_model || null };
-    else if (d.lm_online !== undefined) out.llm = { state: d.lm_online ? 'no_model' : 'offline', model: null };
+    const residents: LocalModelRef[] = Array.isArray(d.resident_models)
+      ? d.resident_models.flatMap((pair: unknown) => {
+        if (!pair || typeof pair !== 'object') return [];
+        const provider = typeof (pair as any).provider === 'string' ? (pair as any).provider.trim() : '';
+        const id = typeof (pair as any).id === 'string' ? (pair as any).id.trim() : '';
+        return provider && id ? [{ provider, id }] : [];
+      })
+      : [];
+    if (d.model_state) out.llm = { state: d.model_state, model: d.loaded_model || null, residents };
+    else if (d.lm_online !== undefined) out.llm = { state: d.lm_online ? 'no_model' : 'offline', model: null, residents };
     if (Array.isArray(d.agents)) statusAgents = d.agents;
   } catch { /* server unreachable */ }
 
@@ -103,8 +121,11 @@ export async function loadJarvisData(demo = false): Promise<JarvisData> {
 
   // 5) tasks (autonomy queue) — empty is a valid, honest state
   try {
-    const d = await apiGet<TasksResp>('/tasks');
-    if (Array.isArray(d.tasks)) { out.tasks = d.tasks; if (d.tasks.length) out.sources.tasks = true; }
+    const d = await apiGet<TasksResp>('/tasks?view=running');
+    if (Array.isArray(d.tasks)) {
+      out.tasks = runningTasks(d.tasks);
+      out.sources.tasks = true;
+    }
   } catch { /* keep [] */ }
 
   // 6) situation ticker — map backend {obj,pct,pri} → UI {text,bar,cls}
@@ -126,6 +147,7 @@ export async function loadJarvisData(demo = false): Promise<JarvisData> {
   try {
     const d = await apiGet<any>('/api/trust/status');
     if (d && typeof d === 'object') {
+      out.sources.trust = true;
       out.trust = {
         mic: d.mic || 'on',
         strict_local: !!d.strict_local,

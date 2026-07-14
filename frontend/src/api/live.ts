@@ -10,6 +10,7 @@
    wants V2 (data.ts) typed first. */
 import { useState, useEffect } from 'react';
 import { apiGet } from './client';
+import type { LocalModelRow } from './types';
 import { V2 } from '../data';
 
 // No vite/client types wired in this project, so read the build-time env via a cast.
@@ -34,6 +35,31 @@ export const PREVIEW_MODE_LIVE_KEYS = {
 
 const firstArr = (x: any, ...keys: string[]) => arr(x, ...keys) || [];
 const text = (x: any, fallback = '') => String(x ?? fallback);
+
+export function localModelStatus(model: Pick<LocalModelRow, 'resident' | 'available'>): string {
+  if (model.resident === true) return 'loaded';
+  if (model.resident == null) return 'residency unknown';
+  if (model.available === true) return 'ready';
+  if (model.available == null) return 'availability unknown';
+  return 'unavailable';
+}
+
+export function mapLocalModelsForAdmin(models: LocalModelRow[]): any[] {
+  return models.map((model) => ({
+    id: model.id,
+    name: model.name || model.id,
+    type: 'local',
+    backend: model.provider,
+    provider: model.provider,
+    ctx: model.ctx || '—',
+    status: localModelStatus(model),
+    use: model.configured ? 'configured' : '',
+    available: model.available,
+    configured: model.configured,
+    resident: model.resident,
+    controls: model.controls,
+  }));
+}
 
 export function pluginIsConfigured(plugin: any): boolean {
   return !!plugin && plugin.enabled !== false && (plugin.configured === true || plugin.available === true);
@@ -298,7 +324,10 @@ export function useLiveModes(): LiveModes {
       }).catch(() => { pluginList = []; });
       await apiGet('/api/models/local').then((m: any) => {
         const models = arr(m, 'models');
-        if (models && models.length) { set('ADMIN', { ...V2.ADMIN, models: models.map((x: any) => ({ name: x.name || x.id, type: x.type || (x.local ? 'local' : 'cloud'), backend: x.backend || x.provider || '', ctx: x.ctx || '—', status: x.status || (x.active ? 'loaded' : 'ready'), use: x.use || '' })) }); mark('ADMIN'); }
+        if (models) {
+          set('ADMIN', { ...V2.ADMIN, models: mapLocalModelsForAdmin(models) });
+          mark('ADMIN');
+        }
       }).catch(() => {});
 
       // P3.1 PREVIEW MODES — real endpoints or honest plugin-gated empty states.

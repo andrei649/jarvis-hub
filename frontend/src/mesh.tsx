@@ -1,5 +1,5 @@
 /* HUD v3 · NEURAL MESH — native cinematic live brain (replaces the /brain?embed=1 iframe).
-   Faithful TS port of docs/design/hud-v3/v3-mesh.jsx: arc-reactor core · cost-sized model
+   Faithful TS port of docs/design/hud-v3/v3-mesh.jsx: arc-reactor core · decorative model
    shell · tier-coloured agent constellation that slowly rotates · comet token-flow on
    attribution edges · auto-choreographed cascades so it's alive on camera.
 
@@ -7,21 +7,20 @@
    - defensive guards (null 2D context, missing ResizeObserver) so it degrades cleanly in
      headless/JSDOM and never throws if the canvas isn't drawable;
    - the mock `window.JarvisMock.streamSub` pulse hook is dropped (production has no mock) —
-     the mesh stays alive via its own choreography + reacts to live agent statuses (active
-     agents emit ambient comet-flow). Wiring explicit pulses to a real SSE stream is a
-     follow-up for when such an endpoint exists. */
+     live mode reacts only to current task/agent evidence. Demo mode keeps the cinematic
+     choreography because it is explicitly URL-owned and visibly badged. */
 import React, { useRef, useEffect, useMemo, useState } from 'react';
+import { runningTasks } from './task-state';
 
 // A fixed-size arc can only label so many tasks legibly regardless of focus —
 // this bounds the per-owner task fan (see the byOwner.forEach draw below).
-const MAX_FAN_TASKS = 12;
-// The cinematic default constellation — used in demo mode (clearly badged) and
-// during boot before any real model signal arrives, where it reads as a
-// constellation, not a claim.
+const MAX_FAN_TASKS = 5;
+const MAX_FAN_LABELS = 3;
+// The cinematic default constellation is allowed only in visibly badged demo mode.
 const DEMO_MESH_MODELS = [
-  { id: 'gemma', label: 'gemma-4-26b', cloud: false, cost: 0.66 },
-  { id: 'claude', label: 'claude', cloud: true, cost: 0.22 },
-  { id: 'gemini', label: 'gemini', cloud: true, cost: 0.13 },
+  { key: 'demo:gemma', label: 'gemma-4-26b', cloud: false, size: 0.66, detail: 'demo model' },
+  { key: 'demo:claude', label: 'claude', cloud: true, size: 0.22, detail: 'demo cloud lane' },
+  { key: 'demo:gemini', label: 'gemini', cloud: true, size: 0.13, detail: 'demo cloud lane' },
 ];
 
 // "minimax/minimax-m2.7" → "minimax-m2.7"; keep the mesh label legible.
@@ -32,20 +31,26 @@ function shortModelName(raw) {
   return base.length > 18 ? base.slice(0, 17) + '…' : base;
 }
 
-// The mesh's model shells. Honesty rule (real-world 2026-07-08: a minimax local
-// model was drawn as "gemma-4-26b"): in live mode reflect the REAL loaded model
-// and only the cloud lanes that are actually configured — never invent a model
-// the backend isn't running. Demo (badged) and the pre-signal boot window keep
-// the cinematic default so the brain is never empty.
-function deriveMeshModels(llm, trust, demo) {
+// Live model shells are derived only from the current status residents and a
+// successful trust response from this exact load cycle.
+export function deriveMeshModels({ demo, residents = [], trustEvidence = false, trust = null }: any) {
   if (demo) return DEMO_MESH_MODELS;
-  const realLocal = llm && llm.state === 'ready' && llm.model ? shortModelName(llm.model) : '';
-  const claude = !!(trust && trust.claude_available);
-  const cloud = !!(trust && trust.cloud_available);
-  if (!realLocal && !claude && !cloud) return DEMO_MESH_MODELS;  // no trustworthy signal yet
-  const models: any[] = [{ id: 'local', label: realLocal || 'local', cloud: false, cost: 0.66 }];
-  if (claude) models.push({ id: 'claude', label: 'claude', cloud: true, cost: 0.22 });
-  if (cloud && !claude) models.push({ id: 'cloud', label: 'cloud', cloud: true, cost: 0.18 });
+  const models: any[] = [];
+  const seen = new Set<string>();
+  (Array.isArray(residents) ? residents : []).forEach((resident) => {
+    const provider = typeof resident?.provider === 'string' ? resident.provider.trim() : '';
+    const id = typeof resident?.id === 'string' ? resident.id.trim() : '';
+    if (!provider || !id) return;
+    const key = `${provider}:${id}`;
+    if (seen.has(key)) return;
+    seen.add(key);
+    models.push({ key, label: shortModelName(id), cloud: false, size: 0.66, detail: 'local model · loaded' });
+  });
+  if (trustEvidence === true && trust?.claude_available === true) {
+    models.push({ key: 'cloud:claude', label: 'claude', cloud: true, size: 0.22, detail: 'cloud lane' });
+  } else if (trustEvidence === true && trust?.cloud_available === true) {
+    models.push({ key: 'cloud:generic', label: 'cloud', cloud: true, size: 0.18, detail: 'cloud lane' });
+  }
   return models;
 }
 const TIER_COLOR: Record<string, string> = {
@@ -54,6 +59,11 @@ const TIER_COLOR: Record<string, string> = {
 };
 const agentColor = (a) => (a && (TIER_COLOR[a.tier] || TIER_COLOR[String((a && a.tier) || '').toLowerCase()])) || '#5fa8d8';
 
+export function isExecutingAgent(agent): boolean {
+  const status = String(agent?.status || '').trim().toLowerCase();
+  return status === 'busy' || status === 'active';
+}
+
 function taskOwner(t) {
   return String((t && (t.owner || t.agent_id || t.agent || t.assignee)) || 'jarvis').toLowerCase();
 }
@@ -61,28 +71,33 @@ function taskTitle(t) {
   return String((t && (t.title || t.label || t.kind || t.id)) || 'task');
 }
 function taskColor(t) {
-  const s = String((t && (t.state || t.status)) || '').toLowerCase();
-  if (s === 'running' || s === 'active') return '#41f59b';
-  if (s === 'blocked' || s === 'held' || s === 'pending') return '#ffb23f';
-  if (s === 'error' || s === 'failed' || s === 'denied') return '#ff6b6b';
-  return '#8aa8be';
+  return runningTasks([t]).length ? '#41f59b' : '#8aa8be';
 }
 
-export function NeuralMesh({ agents = [], tasks = [], activeId, onSelect, motion, cinema = false, llm, trust, demo = false, t }: any) {
+export function NeuralMesh({ agents = [], tasks = [], activeId, onSelect, motion, cinema = false, llm, trust, sources, demo = false, t }: any) {
   const wrapRef = useRef<any>(null), canvasRef = useRef<any>(null);
   const S = useRef<any>({
-    nodes: [], edges: [], particles: [], rings: [], stars: [], hover: null, tasks: [], models: DEMO_MESH_MODELS,
+    nodes: [], edges: [], particles: [], rings: [], stars: [], hover: null, tasks: [], models: [], demo: false,
     w: 640, h: 460, cx: 320, cy: 230, dpr: 1, raf: 0, tick: 0, lastPulse: 0, lastCascade: 0, cascadeI: -1, focus: null,
   });
   const [tip, setTip] = useState<any>(null);
   const calm = motion === 'calm';
-  const taskList = useMemo(() => (Array.isArray(tasks) ? tasks : []), [tasks]);
-  const models = useMemo(() => deriveMeshModels(llm, trust, demo), [llm && llm.state, llm && llm.model, trust && trust.claude_available, trust && trust.cloud_available, demo]);
+  const taskList = useMemo(() => runningTasks(Array.isArray(tasks) ? tasks : []), [tasks]);
+  const models = useMemo(() => deriveMeshModels({
+    demo,
+    residents: llm?.residents,
+    trustEvidence: sources?.trust === true,
+    trust,
+  }), [demo, llm?.residents, sources?.trust, trust]);
   S.current.models = models;
+  S.current.demo = demo;
   const visibleTaskCount = useMemo(() => {
     const known = new Set(['jarvis', ...agents.map((a) => String(a.id).toLowerCase())]);
     return taskList.filter((tk) => known.has(taskOwner(tk))).length;
   }, [agents, taskList]);
+  const evidenceState = demo
+    ? 'demo'
+    : Object.values(sources || {}).some(Boolean) ? 'live telemetry' : 'no live activity';
 
   function colorFor(n) {
     if (n.kind === 'core') return '#7fd6ff';
@@ -98,12 +113,12 @@ export function NeuralMesh({ agents = [], tasks = [], activeId, onSelect, motion
     const st = S.current, W = st.w, H = st.h, cx = W / 2, cy = H / 2; st.cx = cx; st.cy = cy;
     const nodes: any[] = [], edges: any[] = []; const R = Math.min(W, H);
     nodes.push({ id: 'jarvis', kind: 'core', baseAng: 0, baseRad: 0, r: Math.max(15, R * (cinema ? 0.058 : 0.05)), label: 'JARVIS', agent: agents.find((a) => a.id === 'jarvis'), i: 0 });
-    const meshModels = (st.models && st.models.length ? st.models : DEMO_MESH_MODELS);
+    const meshModels = Array.isArray(st.models) ? st.models : [];
     const mR = R * 0.20;
     meshModels.forEach((m, i) => {
       const ang = -Math.PI / 2 + i * (2 * Math.PI / meshModels.length);
-      nodes.push({ id: 'model:' + m.id, kind: 'model', baseAng: ang, baseRad: mR, r: 6 + m.cost * 10, model: m, label: m.label, i });
-      edges.push({ a: 'jarvis', b: 'model:' + m.id, kind: 'mc' });
+      nodes.push({ id: 'model:' + m.key, kind: 'model', baseAng: ang, baseRad: mR, r: 6 + m.size * 10, model: m, label: m.label, i });
+      edges.push({ a: 'jarvis', b: 'model:' + m.key, kind: 'mc' });
     });
     // Pick edge targets from whatever models actually exist, so agent→model
     // wiring survives a live roster of just one local model (or a cloud lane).
@@ -115,7 +130,7 @@ export function NeuralMesh({ agents = [], tasks = [], activeId, onSelect, motion
       nodes.push({ id: a.id, kind: 'agent', baseAng: ang, baseRad: aR, r: cinema ? 7 : 5.5, agent: a, label: a.name, i });
       const preferLocal = a.tier === 'FND' || a.id === 'frigga' || a.id === 'ultron' || a.id === 'hephaestus';
       const target = (preferLocal || !cloudModels.length) ? localModel : cloudModels[i % cloudModels.length];
-      if (target) edges.push({ a: a.id, b: 'model:' + target.id, kind: 'am' });
+      if (target) edges.push({ a: a.id, b: 'model:' + target.key, kind: 'am' });
       edges.push({ a: a.id, b: 'jarvis', kind: 'ac' });
     });
     st.nodes = nodes; st.edges = edges;
@@ -125,7 +140,11 @@ export function NeuralMesh({ agents = [], tasks = [], activeId, onSelect, motion
   function fire(id, big?) {
     const st = S.current, n = node(id); if (!n) return; const c = colorFor(n);
     st.rings.push({ x: n.x, y: n.y, life: 0, c, big });
-    st.edges.filter((e) => e.a === id).forEach((e) => { for (let k = 0; k < (big ? 4 : 3); k++) st.particles.push({ e, life: -k * 0.12, sp: 0.017 + Math.random() * 0.013, c, big }); });
+    st.edges.filter((e) => e.a === id).forEach((e) => {
+      for (let k = 0; k < (big ? 4 : 3); k++) {
+        st.particles.push({ e, life: -k * 0.12, sp: 0.017 + ((n.i + k) % 3) * 0.005, c, big });
+      }
+    });
   }
   function corePulse() {
     const st = S.current, c = node('jarvis'); if (!c) return;
@@ -175,20 +194,35 @@ export function NeuralMesh({ agents = [], tasks = [], activeId, onSelect, motion
     const hov = st.hover, foc = st.focus;
     st.edges.forEach((e) => {
       const a = node(e.a), b = node(e.b); if (!a || !b) return;
-      const act = (a.agent && a.agent.status && a.agent.status !== 'idle') || (b.agent && b.agent.status && b.agent.status !== 'idle') || foc === e.a;
+      const act = isExecutingAgent(a.agent) || isExecutingAgent(b.agent) || foc === e.a;
       const dim = (hov && hov !== e.a && hov !== e.b) || (foc && foc !== e.a && foc !== e.b && e.a !== 'jarvis');
       ctx.strokeStyle = dim ? 'rgba(90,120,150,0.05)' : act ? 'rgba(80,190,255,0.22)' : 'rgba(110,140,170,0.09)';
       ctx.lineWidth = e.kind === 'mc' ? 1.2 : 0.7; ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke();
     });
     drawTaskFan(ctx, st, foc);
     ctx.globalCompositeOperation = 'lighter';
-    if (!calm) {
+    if (!calm && st.demo) {
       if (st.tick % 46 === 0) { const ags = st.nodes.filter((n) => n.kind === 'agent'); const n = ags[Math.floor(Math.random() * ags.length)]; if (n) fire(n.id); }
       if (st.tick - st.lastPulse > (cinema ? 150 : 185)) { st.lastPulse = st.tick; corePulse(); }
       if (st.tick - st.lastCascade > (cinema ? 300 : 430)) { st.lastCascade = st.tick; st.cascadeI = 0; }
       if (st.cascadeI >= 0 && st.tick % 2 === 0) { const ags = st.nodes.filter((n) => n.kind === 'agent').sort((p, q) => p.baseAng - q.baseAng); const n = ags[st.cascadeI]; if (n) fire(n.id, true); st.cascadeI++; if (st.cascadeI >= ags.length) { st.cascadeI = -1; corePulse(); } }
     }
-    if (!calm && st.tick % 8 === 0) st.nodes.forEach((n) => { if (n.kind === 'agent' && n.agent && n.agent.status && n.agent.status !== 'idle') { const e = st.edges.find((x) => x.a === n.id && x.kind === 'am'); if (e) st.particles.push({ e, life: 0, sp: 0.015 + Math.random() * 0.01, c: colorFor(n) }); } });
+    if (!calm && !st.demo && st.tick % 8 === 0) {
+      st.nodes.forEach((n) => {
+        if (n.kind === 'agent' && isExecutingAgent(n.agent)) {
+          const e = st.edges.find((x) => x.a === n.id && x.kind === 'am');
+          if (e) st.particles.push({ e, life: 0, sp: 0.015 + (n.i % 3) * 0.004, c: colorFor(n) });
+        }
+      });
+    }
+    if (!calm && !st.demo && st.tick % 30 === 0 && st.tasks.length) {
+      const owners = new Set(st.tasks.map(taskOwner));
+      owners.forEach((owner) => fire(owner));
+    }
+    if (!calm && !st.demo && st.tick % 60 === 0
+      && (st.tasks.length || st.nodes.some((n) => n.kind === 'agent' && isExecutingAgent(n.agent)))) {
+      corePulse();
+    }
     st.particles = st.particles.filter((p) => p.life < 1);
     st.particles.forEach((p) => {
       p.life += calm ? p.sp * 0.4 : p.sp; if (p.life < 0) return; const a = node(p.e.a), b = node(p.e.b); if (!a || !b) return;
@@ -200,7 +234,7 @@ export function NeuralMesh({ agents = [], tasks = [], activeId, onSelect, motion
     st.rings = st.rings.filter((r) => r.life < 1); st.rings.forEach((r) => { r.life += r.big ? 0.028 : 0.04; ctx.globalAlpha = (1 - r.life) * 0.55; ctx.strokeStyle = r.c; ctx.lineWidth = r.big ? 2 : 1.2; ctx.beginPath(); ctx.arc(r.x, r.y, 4 + r.life * (r.big ? 40 : 22), 0, 7); ctx.stroke(); });
     ctx.globalAlpha = 1;
     st.nodes.forEach((n) => {
-      const active = n.agent && n.agent.status && n.agent.status !== 'idle'; const isHov = hov === n.id || foc === n.id;
+      const active = isExecutingAgent(n.agent); const isHov = hov === n.id || foc === n.id;
       if (n.kind === 'core' || active || isHov || n.kind === 'model') {
         const c = colorFor(n); const g = ctx.createRadialGradient(n.x, n.y, 1, n.x, n.y, n._r + (n.kind === 'core' ? 16 : 9));
         g.addColorStop(0, c + '88'); g.addColorStop(1, c + '00'); ctx.fillStyle = g; ctx.beginPath(); ctx.arc(n.x, n.y, n._r + (n.kind === 'core' ? 16 : 9), 0, 7); ctx.fill();
@@ -209,7 +243,7 @@ export function NeuralMesh({ agents = [], tasks = [], activeId, onSelect, motion
     ctx.globalCompositeOperation = 'source-over';
     st.nodes.forEach((n) => {
       const c = colorFor(n); const isHov = hov === n.id; const dim = (hov && !isHov && n.kind !== 'core') || (foc && foc !== n.id && n.kind === 'agent');
-      const active = n.agent && n.agent.status && n.agent.status !== 'idle'; ctx.globalAlpha = dim ? 0.3 : 1;
+      const active = isExecutingAgent(n.agent); ctx.globalAlpha = dim ? 0.3 : 1;
       if (n.kind === 'core') {
         ctx.strokeStyle = '#bfeaff'; ctx.lineWidth = 1.6; ctx.beginPath(); ctx.arc(n.x, n.y, n._r, 0, 7); ctx.stroke();
         const a1 = st.tick * 0.03, a2 = -st.tick * 0.045;
@@ -274,7 +308,11 @@ export function NeuralMesh({ agents = [], tasks = [], activeId, onSelect, motion
           ctx.fillStyle = 'rgba(225,240,255,0.82)';
           ctx.font = '800 8px "JetBrains Mono",monospace';
           ctx.textAlign = 'center';
-          ctx.fillText(taskTitle(tk).slice(0, 18).toUpperCase(), x, y - 8);
+          if (i < MAX_FAN_LABELS) {
+            ctx.fillText(taskTitle(tk).slice(0, 18).toUpperCase(), x, y - 8);
+          } else if (i === MAX_FAN_LABELS && fullList.length > MAX_FAN_LABELS) {
+            ctx.fillText(`+${fullList.length - MAX_FAN_LABELS} MORE`, x, y - 8);
+          }
         }
       });
     });
@@ -285,19 +323,25 @@ export function NeuralMesh({ agents = [], tasks = [], activeId, onSelect, motion
     const st = S.current, r = canvasRef.current.getBoundingClientRect(), mx = e.clientX - r.left, my = e.clientY - r.top;
     let hit: any = null, hd = 15; st.nodes.forEach((n) => { const d = Math.hypot(n.x - mx, n.y - my); if (d < hd) { hd = d; hit = n; } });
     st.hover = hit ? hit.id : null;
-    if (hit && hit.kind === 'agent' && hit.agent) setTip({ x: mx, y: my, name: hit.agent.name || hit.label, role: (hit.agent.role || '') + (hit.agent.status && hit.agent.status !== 'idle' ? ' · ' + hit.agent.status : '') });
-    else if (hit && hit.kind === 'model') setTip({ x: mx, y: my, name: hit.label, role: (hit.model.cloud ? 'cloud model' : 'local model') + ' · ' + Math.round(hit.model.cost * 100) + '% load' });
+    if (hit && hit.kind === 'agent' && hit.agent) setTip({ x: mx, y: my, name: hit.agent.name || hit.label, role: (hit.agent.role || '') + (isExecutingAgent(hit.agent) ? ' · ' + hit.agent.status : '') });
+    else if (hit && hit.kind === 'model') setTip({ x: mx, y: my, name: hit.label, role: hit.model.detail });
     else if (hit && hit.kind === 'core') setTip({ x: mx, y: my, name: 'Jarvis', role: 'Prime Orchestrator · routes every turn' });
     else setTip(null);
   }
   function onLeave() { S.current.hover = null; setTip(null); }
-  function onClick() { const h = S.current.hover, n = h && node(h); if (n && n.kind === 'agent' && onSelect) { onSelect(h); fire(h, true); } }
+  function onClick() {
+    const h = S.current.hover, n = h && node(h);
+    if (n && n.kind === 'agent' && onSelect) {
+      onSelect(h);
+      if (S.current.demo || isExecutingAgent(n.agent)) fire(h, true);
+    }
+  }
 
   return (
     <div className="nmesh" ref={wrapRef} onMouseMove={onMove} onMouseLeave={onLeave} onClick={onClick}>
       <canvas ref={canvasRef}></canvas>
       {tip && <div className="nmesh-tip" style={{ left: tip.x, top: tip.y }}><div className="nm-name">{tip.name}</div><div className="nm-role">{tip.role}</div></div>}
-      <div className="nmesh-legend"><span><i className="nm-dot core"></i>orchestrator</span><span><i className="nm-dot local"></i>local</span><span><i className="nm-dot cloud"></i>cloud</span>{visibleTaskCount > 0 && <span><i className="nm-dot task"></i>{visibleTaskCount} tasks</span>}<span className="nm-hint">live · click an agent</span></div>
+      <div className="nmesh-legend"><span><i className="nm-dot core"></i>orchestrator</span><span><i className="nm-dot local"></i>local model</span><span><i className="nm-dot cloud"></i>cloud lane</span>{visibleTaskCount > 0 && <span><i className="nm-dot task"></i>{visibleTaskCount} running task{visibleTaskCount === 1 ? '' : 's'}</span>}<span className="nm-hint">{evidenceState} · click an agent</span></div>
     </div>
   );
 }

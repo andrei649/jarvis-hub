@@ -108,8 +108,9 @@ function App() {
   const [firstRunDismissed, setFirstRunDismissed] = useState(() => {
     try { return localStorage.getItem('hud.seen') === '1'; } catch { return false; }
   });
-  const [llm, setLlm] = useState({ state: 'unknown', model: null });
+  const [llm, setLlm] = useState({ state: 'unknown', model: null, residents: [] });
   const [trust, setTrust] = useState({ mic: 'on', strict_local: false });
+  const [sources, setSources] = useState({ tasks: false, trust: false });
   const [locality, setLocality] = useState(null); // {local_pct} from real runs, or null
   const baseAgents = useRef(demo ? V2.AGENTS : []);
 
@@ -291,7 +292,8 @@ function App() {
         setAgents(d.agents); baseAgents.current = d.agents;
         setTicker(d.ticker); setTasks(Array.isArray(d.tasks) ? d.tasks : []); setWeather(d.weather); setCalendar(d.calendar);
         setHeartbeat(d.heartbeat); setSys(d.sys); setLive(!!d.live);
-        setServerUp(!!d.serverUp); setLlm(d.llm || { state: 'unknown', model: null });
+        setServerUp(!!d.serverUp); setLlm(d.llm || { state: 'unknown', model: null, residents: [] });
+        setSources(d.sources || { tasks: false, trust: false });
         if (d.trust) setTrust(d.trust);
         if (!demo) {
           // Real %-local from run-history routes; failure leaves it null (meter hides).
@@ -343,7 +345,7 @@ function App() {
                     <div className="panel-head"><Icon d={ICONS.brain} size={14} /><span className="ttl">{t.network}</span><span className="st">focus mode</span></div>
                     {/* Neural Mesh — native canvas brain of agents + models firing
                         (HUD-v3 port of v3-mesh.jsx; replaces the /brain?embed=1 iframe). */}
-                    <NeuralMesh agents={agents} tasks={tasks} activeId={activeId} onSelect={(id) => { setActiveId(id); setDossier(id); }} motion={motion} llm={llm} trust={trust} demo={demo} t={t} />
+                    <NeuralMesh agents={agents} tasks={tasks} activeId={activeId} onSelect={(id) => { setActiveId(id); setDossier(id); }} motion={motion} llm={llm} trust={trust} sources={sources} demo={demo} t={t} />
                   </div>
                   <div className="panel" style={{ flex: '1 1 0', minHeight: 0 }}>
                     <span className="bk tl"></span><span className="bk tr"></span><span className="bk bl"></span><span className="bk br"></span>
@@ -393,7 +395,7 @@ function App() {
         setAccent={setAccent} setLang={setLang} onAmbient={() => { setPalette(false); setAmbient(true); }}
         ui={{ look, setLook, density, setDensity, motion, setMotion, scanline, setScanline, dotgrid, setDotgrid }} t={t} />
       {ambient && <Ambient onExit={() => setAmbient(false)} clock={clock} lang={lang} agents={agents} decisions={decisions} motion={motion} localPct={localPct} t={t} />}
-      {cinema && <CinemaMesh agents={agents} localPct={localPct} onExit={() => setCinema(false)} t={t} />}
+      {cinema && <CinemaMesh agents={agents} tasks={tasks} llm={llm} trust={trust} sources={sources} demo={demo} localPct={localPct} onExit={() => setCinema(false)} t={t} />}
     </div>
   );
 }

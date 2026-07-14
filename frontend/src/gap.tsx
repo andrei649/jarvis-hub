@@ -4,6 +4,7 @@
    localhost; on a network they surface the 401 via the client's token prompt. */
 import React, { useState, useEffect, useCallback } from 'react';
 import { apiGet, apiPost, apiPut, apiDelete } from './api/client';
+import { localModelStatus } from './api/live';
 
 function useApi(path, auto = true, admin = false) {
   const [d, setD] = useState(null);
@@ -1005,30 +1006,48 @@ function SessionsPanel() {
 }
 
 /* ── Admin ─────────────────────────────────────────────── */
-function LMStudioPanel() {
-  const { d, e, loading, reload } = useApi('/api/models/local');
+export function LMStudioPanel() {
+  const { d, e, loading, reload } = useApi('/api/models/local', true, true);
   const models = arr(d, 'models');
-  const [model, setModel] = useState('');
   const [note, setNote] = useState('');
   const say = (r) => { setNote(typeof r === 'object' ? (r.detail || r.status || (r.ok ? 'ok' : JSON.stringify(r).slice(0, 60))) : String(r)); reload(); };
-  return <Card title="LM STUDIO" live={asLive(d)} sub={models.length + ' models'} onReload={reload}>
+  return <Card title="LOCAL MODELS" live={asLive(d)} sub={models.length + ' models'} onReload={reload}>
     <State e={e} loading={loading} n={models.length} />
-    {models.slice(0, 8).map((m, i) => <Row key={i}>
-      <span style={{ ...mono, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{m.name || m.id}</span>
-      <Tag c={m.status === 'loaded' || m.active ? 'var(--green)' : 'var(--ink-3)'}>{m.status || (m.active ? 'loaded' : 'ready')}</Tag>
-      <span style={{ marginLeft: 'auto', display: 'flex', gap: 5 }}>
-        {(m.status === 'loaded' || m.active)
-          ? <button className="tool-btn" title="unload" onClick={() => actA('/api/llm/unload', { model: m.id || m.name }, say)}>⏏</button>
-          : <button className="tool-btn" title="load" onClick={() => actA('/api/llm/load', { model: m.id || m.name }, say)}>▶</button>}
-      </span></Row>)}
-    <div style={{ display: 'flex', gap: 6, marginTop: 8, flexWrap: 'wrap' }}>
-      <button className="tool-btn" onClick={() => actA('/api/llm/server/start', {}, say)}>start server</button>
-      <input value={model} onChange={(ev) => setModel(ev.target.value)} placeholder="model id" style={{ ...inpS, flex: 1, minWidth: 110 }} />
-      <button className="tool-btn" onClick={() => model.trim() && actA('/api/llm/load', { model: model.trim() }, say)}>load</button>
-      <button className="tool-btn" onClick={() => actA('/api/llm/unload', model.trim() ? { model: model.trim() } : {}, say)}>unload</button>
-    </div>
+    {models.slice(0, 20).map((m) => {
+      const id = String(m.id || m.name || '');
+      const provider = String(m.provider || 'unknown');
+      const key = `${provider}:${id}`;
+      const status = localModelStatus(m);
+      const statusColor = status === 'loaded' ? 'var(--green)'
+        : status.includes('unknown') ? 'var(--amber)'
+          : 'var(--ink-3)';
+      const controls = m.controls || {};
+      return <Row key={key}>
+        <span style={{ ...mono, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{id}</span>
+        <Tag>{provider}</Tag>
+        <Tag c={statusColor}>{status}</Tag>
+        {m.configured === true && <Tag c="var(--accent-light)">configured</Tag>}
+        <span style={{ marginLeft: 'auto', display: 'flex', gap: 5 }}>
+          {controls.can_configure === true && m.configured !== true && <button
+            className="tool-btn"
+            title={`configure ${key}`}
+            onClick={() => actA('/api/models/local/switch', { model: id }, say)}
+          >set default</button>}
+          {controls.can_load === true && <button
+            className="tool-btn"
+            title={`load ${key}`}
+            onClick={() => actA('/api/llm/load', { model: id }, say)}
+          >▶</button>}
+          {controls.can_unload === true && <button
+            className="tool-btn"
+            title={`unload ${key}`}
+            onClick={() => actA('/api/llm/unload', { model: id }, say)}
+          >⏏</button>}
+        </span>
+      </Row>;
+    })}
     {note && <div style={{ ...mono, fontSize: 10.5, color: 'var(--ink-3)', marginTop: 6 }}>{note}</div>}
-    <div style={{ fontSize: 10, color: 'var(--ink-3)', marginTop: 6 }}>lms server/load/unload — kill-switch: llm.control_enabled</div>
+    <div style={{ fontSize: 10, color: 'var(--ink-3)', marginTop: 6 }}>configured routing is independent from provider-reported residency · lifecycle actions follow backend capabilities</div>
   </Card>;
 }
 function AuthProfilesPanel() {
