@@ -27,7 +27,7 @@ from fastapi import APIRouter, Depends, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
-from core.settings_db import put_category
+from core.settings_db import get_value, put_category
 
 from agents.core.app_state import get_orch
 from agents.core.llm.local_model_inventory import invalidate_local_model_inventory_cache
@@ -140,13 +140,20 @@ def _local_provider_name(router_) -> str:
     return value.strip() if isinstance(value, str) and value.strip() else "none"
 
 
-async def _restore_local_provider(router_, *, provider: str, backend_type: str, model: str | None):
+async def _restore_local_provider(
+    router_,
+    *,
+    provider: str,
+    backend_type,
+    default_model,
+    runtime_model: str | None,
+):
     """Best-effort rollback after a cross-provider adoption failure."""
-    restore = {"backend_type": backend_type}
-    if model:
-        restore["default_model"] = model
     try:
-        put_category("llm", restore)
+        put_category(
+            "llm",
+            {"backend_type": backend_type, "default_model": default_model},
+        )
     except Exception:
         pass
     try:
@@ -154,9 +161,9 @@ async def _restore_local_provider(router_, *, provider: str, backend_type: str, 
         await router_.detect()
     except Exception:
         return
-    if model and _local_provider_name(router_) == provider:
+    if runtime_model and _local_provider_name(router_) == provider:
         try:
-            router_.set_active_model(model)
+            router_.set_active_model(runtime_model)
         except Exception:
             pass
 
@@ -164,10 +171,9 @@ async def _restore_local_provider(router_, *, provider: str, backend_type: str, 
 async def _adopt_local_provider(router_, *, provider: str, model: str) -> bool:
     """Persist and adopt one exact local provider, rolling back on failure."""
     old_provider = _local_provider_name(router_)
-    old_model = getattr(router_, "active_model", None)
-    old_backend_type = getattr(router_, "backend_type", None)
-    if old_backend_type not in {"auto", "lm-studio", "ollama"}:
-        old_backend_type = old_provider if old_provider in {"lm-studio", "ollama"} else "auto"
+    old_runtime_model = getattr(router_, "active_model", None)
+    old_backend_type = get_value("llm", "backend_type", "auto")
+    old_default_model = get_value("llm", "default_model", "")
 
     try:
         updated, skipped = put_category(
@@ -184,7 +190,11 @@ async def _adopt_local_provider(router_, *, provider: str, model: str) -> bool:
         router_.set_active_model(model)
     except Exception:
         await _restore_local_provider(
-            router_, provider=old_provider, backend_type=old_backend_type, model=old_model
+            router_,
+            provider=old_provider,
+            backend_type=old_backend_type,
+            default_model=old_default_model,
+            runtime_model=old_runtime_model,
         )
         return False
 

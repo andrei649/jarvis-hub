@@ -281,14 +281,19 @@ def test_switch_fails_closed_when_cross_provider_cannot_be_adopted(token_client)
         settings.update(data)
         return len(data), []
 
+    def _read_setting(category, key, default=None):
+        assert category == "llm"
+        return settings.get(key, default)
+
     with patch.object(web, "orch", SimpleNamespace(llm_router=router)):
         with patch.object(web, "_list_local_models", AsyncMock(return_value=catalog)):
-            with patch.object(models_llm, "put_category", side_effect=_persist):
-                response = token_client.post(
-                    "/api/models/local/switch",
-                    json={"model": "mistral:latest"},
-                    headers=HEADERS,
-                )
+            with patch.object(models_llm, "get_value", side_effect=_read_setting):
+                with patch.object(models_llm, "put_category", side_effect=_persist):
+                    response = token_client.post(
+                        "/api/models/local/switch",
+                        json={"model": "mistral:latest"},
+                        headers=HEADERS,
+                    )
 
     assert response.status_code == 409
     assert response.json() == {
@@ -302,6 +307,61 @@ def test_switch_fails_closed_when_cross_provider_cannot_be_adopted(token_client)
     assert not any(
         call.args == ("mistral:latest",) for call in router.set_active_model.call_args_list
     )
+
+
+def test_failed_switch_restores_persisted_pair_when_runtime_model_is_none(token_client):
+    import agents.core.routers.models_llm as models_llm
+    import agents.web as web
+
+    persisted = {"backend_type": "lm-studio", "default_model": "owner-default"}
+    router = _router_mock(None, "lm-studio")
+    # Runtime selection can legitimately differ from the persisted configuration.
+    router.backend_type = "auto"
+
+    async def _detect():
+        requested = persisted["backend_type"]
+        router.backend_type = requested
+        router._backend_name = "lm-studio" if requested in {"auto", "lm-studio"} else "none"
+
+    def _read_setting(category, key, default=None):
+        assert category == "llm"
+        return persisted.get(key, default)
+
+    def _persist(category, data):
+        assert category == "llm"
+        persisted.update(data)
+        return len(data), []
+
+    router.detect = AsyncMock(side_effect=_detect)
+    catalog = {
+        "active": None,
+        "configured_model": "owner-default",
+        "backend": "lm-studio",
+        "providers": [],
+        "resident_models": [],
+        "residency_state": "known",
+        "models": [
+            {"id": "mistral:latest", "provider": "ollama", "available": True}
+        ],
+    }
+
+    with patch.object(web, "orch", SimpleNamespace(llm_router=router)):
+        with patch.object(web, "_list_local_models", AsyncMock(return_value=catalog)):
+            with patch.object(models_llm, "get_value", side_effect=_read_setting):
+                with patch.object(models_llm, "put_category", side_effect=_persist):
+                    response = token_client.post(
+                        "/api/models/local/switch",
+                        json={"model": "mistral:latest"},
+                        headers=HEADERS,
+                    )
+
+    assert response.status_code == 409
+    assert persisted == {
+        "backend_type": "lm-studio",
+        "default_model": "owner-default",
+    }
+    assert router.active_model is None
+    assert router._backend_name == "lm-studio"
 
 
 def test_switch_to_unknown_model_404(token_client):
