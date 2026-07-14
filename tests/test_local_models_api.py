@@ -5,6 +5,7 @@ Covers GET /api/models/local (browse) and POST /api/models/local/switch
 run in CI without a live backend.
 """
 import asyncio
+import json
 import sys
 from pathlib import Path
 from types import SimpleNamespace
@@ -364,6 +365,188 @@ def test_failed_switch_restores_persisted_pair_when_runtime_model_is_none(token_
     assert router._backend_name == "lm-studio"
 
 
+async def test_concurrent_switches_serialize_and_leave_one_coherent_pair(monkeypatch):
+    import agents.core.routers.models_llm as models_llm
+
+    persisted = {"backend_type": "lm-studio", "default_model": "qwen3:7b"}
+    router = SimpleNamespace(
+        active_model="qwen3:7b",
+        _backend_name="lm-studio",
+        backend_type="lm-studio",
+    )
+    first_detect_started = asyncio.Event()
+    release_first_detect = asyncio.Event()
+    detect_count = 0
+    listing_count = 0
+
+    def _set_active(model):
+        router.active_model = model
+
+    async def _detect():
+        nonlocal detect_count
+        detect_count += 1
+        requested_provider = persisted["backend_type"]
+        if detect_count == 1:
+            assert requested_provider == "ollama"
+            first_detect_started.set()
+            await release_first_detect.wait()
+        router.backend_type = requested_provider
+        router._backend_name = requested_provider
+
+    catalogs = [
+        {
+            "models": [
+                {"id": "mistral:latest", "provider": "ollama", "available": True}
+            ]
+        },
+        {
+            "models": [
+                {"id": "qwen3:7b", "provider": "lm-studio", "available": True}
+            ]
+        },
+    ]
+
+    async def _listing():
+        nonlocal listing_count
+        result = catalogs[listing_count]
+        listing_count += 1
+        return result
+
+    def _read_setting(category, key, default=None):
+        assert category == "llm"
+        return persisted.get(key, default)
+
+    def _persist(category, data):
+        assert category == "llm"
+        persisted.update(data)
+        return len(data), []
+
+    router.set_active_model = MagicMock(side_effect=_set_active)
+    router.detect = AsyncMock(side_effect=_detect)
+    web_stub = SimpleNamespace(_list_local_models=_listing)
+    monkeypatch.setattr(models_llm, "get_orch", lambda: SimpleNamespace(llm_router=router))
+    monkeypatch.setattr(models_llm, "_web", lambda: web_stub)
+    monkeypatch.setattr(models_llm, "get_value", _read_setting)
+    monkeypatch.setattr(models_llm, "put_category", _persist)
+    monkeypatch.setattr(models_llm, "invalidate_local_model_inventory_cache", MagicMock())
+
+    first = asyncio.create_task(
+        models_llm.models_local_switch(
+            models_llm.LocalModelSwitch(model="mistral:latest")
+        )
+    )
+    await first_detect_started.wait()
+    second_entered = asyncio.Event()
+
+    async def _second_switch():
+        second_entered.set()
+        return await models_llm.models_local_switch(
+            models_llm.LocalModelSwitch(model="qwen3:7b")
+        )
+
+    second = asyncio.create_task(_second_switch())
+    await second_entered.wait()
+    await asyncio.sleep(0)
+    serialized_while_first_paused = listing_count == 1 and not second.done()
+    release_first_detect.set()
+    first_response, second_response = await asyncio.gather(first, second)
+
+    assert serialized_while_first_paused is True
+    assert listing_count == 2
+    assert json.loads(first_response.body) == {"ok": True, "active": "mistral:latest"}
+    assert json.loads(second_response.body) == {"ok": True, "active": "qwen3:7b"}
+    assert persisted == {"backend_type": "lm-studio", "default_model": "qwen3:7b"}
+    assert (router._backend_name, router.active_model) == ("lm-studio", "qwen3:7b")
+
+
+async def test_cancelled_switch_completes_rollback_before_releasing_lock(monkeypatch):
+    import agents.core.routers.models_llm as models_llm
+
+    persisted = {"backend_type": "lm-studio", "default_model": "qwen3:7b"}
+    router = SimpleNamespace(
+        active_model="qwen3:7b",
+        _backend_name="lm-studio",
+        backend_type="lm-studio",
+    )
+    adoption_started = asyncio.Event()
+    rollback_started = asyncio.Event()
+    release_rollback = asyncio.Event()
+    detect_count = 0
+
+    def _set_active(model):
+        router.active_model = model
+
+    async def _detect():
+        nonlocal detect_count
+        detect_count += 1
+        if detect_count == 1:
+            adoption_started.set()
+            await asyncio.Event().wait()
+        else:
+            rollback_started.set()
+            await release_rollback.wait()
+            router._backend_name = router.backend_type
+
+    async def _listing():
+        return {
+            "models": [
+                {"id": "mistral:latest", "provider": "ollama", "available": True}
+            ]
+        }
+
+    def _read_setting(category, key, default=None):
+        assert category == "llm"
+        return persisted.get(key, default)
+
+    def _persist(category, data):
+        assert category == "llm"
+        persisted.update(data)
+        return len(data), []
+
+    router.set_active_model = MagicMock(side_effect=_set_active)
+    router.detect = AsyncMock(side_effect=_detect)
+    monkeypatch.setattr(models_llm, "get_orch", lambda: SimpleNamespace(llm_router=router))
+    monkeypatch.setattr(
+        models_llm,
+        "_web",
+        lambda: SimpleNamespace(_list_local_models=_listing),
+    )
+    monkeypatch.setattr(models_llm, "get_value", _read_setting)
+    monkeypatch.setattr(models_llm, "put_category", _persist)
+    invalidate = MagicMock()
+    monkeypatch.setattr(models_llm, "invalidate_local_model_inventory_cache", invalidate)
+
+    request = asyncio.create_task(
+        models_llm.models_local_switch(
+            models_llm.LocalModelSwitch(model="mistral:latest")
+        )
+    )
+    await adoption_started.wait()
+    request.cancel()
+    rollback_observed = False
+    try:
+        await asyncio.wait_for(rollback_started.wait(), timeout=0.5)
+        rollback_observed = True
+        # A second cancellation while rollback is paused must not release the
+        # switch lock or interrupt restoration of the authoritative pair.
+        request.cancel()
+        await asyncio.sleep(0)
+        await asyncio.sleep(0)
+        assert request.done() is False
+        assert models_llm._model_switch_lock.locked() is True
+    finally:
+        release_rollback.set()
+
+    with pytest.raises(asyncio.CancelledError):
+        await request
+
+    assert rollback_observed is True
+    assert persisted == {"backend_type": "lm-studio", "default_model": "qwen3:7b"}
+    assert (router._backend_name, router.active_model) == ("lm-studio", "qwen3:7b")
+    assert models_llm._model_switch_lock.locked() is False
+    invalidate.assert_not_called()
+
+
 def test_switch_to_unknown_model_404(token_client):
     import agents.web as web
     router = MagicMock(active_model="qwen3:7b", name="lm-studio")
@@ -461,8 +644,13 @@ def test_successful_lifecycle_invalidates_inventory_cache(
     ctrl = MagicMock()
     setattr(ctrl, method_name, AsyncMock(return_value={"status": "ok", "model": "alpha"}))
     with patch.object(web, "orch", MagicMock(lmstudio=ctrl)):
-        with patch.object(models_llm, "invalidate_local_model_inventory_cache") as invalidate:
-            resp = token_client.post(path, json=body, headers=HEADERS)
+        with patch.object(models_llm, "put_category") as put:
+            with patch.object(models_llm, "invalidate_local_model_inventory_cache") as invalidate:
+                resp = token_client.post(path, json=body, headers=HEADERS)
 
     assert resp.status_code == 200
     invalidate.assert_called_once_with()
+    if method_name == "load_model":
+        put.assert_called_once_with("llm", {"default_model": "alpha"})
+    else:
+        put.assert_not_called()

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import importlib
+import threading
 from types import SimpleNamespace
 
 import httpx
@@ -375,6 +376,58 @@ async def test_cache_expires_and_force_refresh_bypasses_it(monkeypatch):
     assert len(calls) == 12
 
 
+async def test_concurrent_cold_callers_share_one_probe(monkeypatch):
+    module = _module()
+    module.invalidate_local_model_inventory_cache()
+    first_probe_started = asyncio.Event()
+    release_probe = asyncio.Event()
+    probe_count = 0
+
+    async def _shared_probe(lm_url, ollama_url):
+        nonlocal probe_count
+        assert lm_url == "http://lm.test/custom"
+        assert ollama_url == "http://ollama.test/custom"
+        probe_count += 1
+        first_probe_started.set()
+        await release_probe.wait()
+        return {
+            "lm-studio": {
+                "catalog_ok": True,
+                "catalog_ids": {"shared"},
+                "residency_ok": True,
+                "resident_ids": set(),
+            },
+            "ollama": {
+                "catalog_ok": False,
+                "catalog_ids": set(),
+                "residency_ok": False,
+                "resident_ids": set(),
+            },
+        }
+
+    monkeypatch.setattr(module, "_probe_providers", _shared_probe)
+    first = asyncio.create_task(
+        module.get_local_model_inventory(
+            router=_router(active=None), controller=SimpleNamespace(enabled=True)
+        )
+    )
+    await first_probe_started.wait()
+    second = asyncio.create_task(
+        module.get_local_model_inventory(
+            router=_router(active=None), controller=SimpleNamespace(enabled=True)
+        )
+    )
+    await asyncio.sleep(0)
+    observed_probe_count = probe_count
+    release_probe.set()
+    first_inventory, second_inventory = await asyncio.gather(first, second)
+
+    assert observed_probe_count == 1
+    assert probe_count == 1
+    assert first_inventory["models"] == second_inventory["models"]
+    assert [model["id"] for model in first_inventory["models"]] == ["shared"]
+
+
 async def test_invalidation_prevents_older_inflight_probe_from_repopulating_cache(monkeypatch):
     module = _module()
     module.invalidate_local_model_inventory_cache()
@@ -417,12 +470,109 @@ async def test_invalidation_prevents_older_inflight_probe_from_repopulating_cach
     )
     await old_probe_started.wait()
     module.invalidate_local_model_inventory_cache()
-    release_old_probe.set()
+    fresh_request = asyncio.create_task(
+        module.get_local_model_inventory(
+            router=_router(active=None), controller=SimpleNamespace(enabled=True)
+        )
+    )
+    try:
+        fresh_inventory = await asyncio.wait_for(
+            asyncio.shield(fresh_request), timeout=0.5
+        )
+        fresh_completed_while_old_paused = True
+    except TimeoutError:
+        fresh_completed_while_old_paused = False
+    finally:
+        release_old_probe.set()
     old_inventory = await old_request
-    fresh_inventory = await module.get_local_model_inventory(
+    if not fresh_completed_while_old_paused:
+        fresh_inventory = await fresh_request
+    cached_inventory = await module.get_local_model_inventory(
         router=_router(active=None), controller=SimpleNamespace(enabled=True)
     )
 
+    assert fresh_completed_while_old_paused is True
     assert probe_count == 2
     assert [model["id"] for model in old_inventory["models"]] == ["stale-before-load"]
     assert [model["id"] for model in fresh_inventory["models"]] == ["fresh-after-load"]
+    assert [model["id"] for model in cached_inventory["models"]] == ["fresh-after-load"]
+
+
+def test_cross_loop_older_probe_cannot_overwrite_newer_cache(monkeypatch):
+    module = _module()
+    module.invalidate_local_model_inventory_cache()
+    old_probe_started = threading.Event()
+    release_old_probe = threading.Event()
+    call_lock = threading.Lock()
+    probe_count = 0
+    results: dict[str, dict] = {}
+    errors: list[BaseException] = []
+
+    def _raw(model_id: str) -> dict:
+        return {
+            "lm-studio": {
+                "catalog_ok": True,
+                "catalog_ids": {model_id},
+                "residency_ok": True,
+                "resident_ids": set(),
+            },
+            "ollama": {
+                "catalog_ok": False,
+                "catalog_ids": set(),
+                "residency_ok": False,
+                "resident_ids": set(),
+            },
+        }
+
+    async def _cross_loop_probe(lm_url, ollama_url):
+        nonlocal probe_count
+        assert lm_url == "http://lm.test/custom"
+        assert ollama_url == "http://ollama.test/custom"
+        with call_lock:
+            probe_count += 1
+            probe_number = probe_count
+        if probe_number == 1:
+            old_probe_started.set()
+            if not release_old_probe.wait(timeout=2.0):
+                raise AssertionError("timed out waiting to release the older probe")
+            return _raw("older")
+        return _raw("newer")
+
+    monkeypatch.setattr(module, "_probe_providers", _cross_loop_probe)
+
+    def _run(label: str) -> None:
+        try:
+            results[label] = asyncio.run(
+                module.get_local_model_inventory(
+                    router=_router(active=None),
+                    controller=SimpleNamespace(enabled=True),
+                    force_refresh=True,
+                )
+            )
+        except BaseException as exc:
+            errors.append(exc)
+
+    older = threading.Thread(target=_run, args=("older",), daemon=True)
+    newer = threading.Thread(target=_run, args=("newer",), daemon=True)
+    older.start()
+    assert old_probe_started.wait(timeout=1.0)
+    newer.start()
+    newer.join(timeout=2.0)
+    try:
+        assert newer.is_alive() is False
+    finally:
+        release_old_probe.set()
+    older.join(timeout=2.0)
+
+    assert older.is_alive() is False
+    assert errors == []
+    cached_inventory = asyncio.run(
+        module.get_local_model_inventory(
+            router=_router(active=None), controller=SimpleNamespace(enabled=True)
+        )
+    )
+
+    assert probe_count == 2
+    assert [model["id"] for model in results["older"]["models"]] == ["older"]
+    assert [model["id"] for model in results["newer"]["models"]] == ["newer"]
+    assert [model["id"] for model in cached_inventory["models"]] == ["newer"]

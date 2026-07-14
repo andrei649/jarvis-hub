@@ -9,6 +9,7 @@ call so operator settings cannot be hidden by the short probe cache.
 from __future__ import annotations
 
 import asyncio
+import threading
 import time
 from collections.abc import Callable
 from typing import Any
@@ -23,6 +24,13 @@ _DEFAULT_OLLAMA_URL = "http://localhost:11434"
 
 _raw_cache: dict[str, Any] = {"key": None, "at": 0.0, "providers": None}
 _invalidation_generation = 0
+_refresh_sequence = 0
+_latest_refresh_epoch = 0
+_cache_state_lock = threading.Lock()
+_inflight_refreshes: dict[
+    tuple[asyncio.AbstractEventLoop, tuple[str, str], int],
+    asyncio.Task[dict[str, dict[str, Any]]],
+] = {}
 
 
 def _trim_id(value: Any) -> str | None:
@@ -149,6 +157,103 @@ async def _probe_providers(lm_url: str, ollama_url: str) -> dict[str, dict[str, 
     return raw
 
 
+def _raw_cache_is_fresh_locked(cache_key: tuple[str, str]) -> bool:
+    return bool(
+        _raw_cache["providers"] is not None
+        and _raw_cache["key"] == cache_key
+        and time.monotonic() - float(_raw_cache["at"]) < _CACHE_TTL_SECONDS
+    )
+
+
+def _fresh_raw_provider_cache(
+    cache_key: tuple[str, str],
+) -> dict[str, dict[str, Any]] | None:
+    with _cache_state_lock:
+        if not _raw_cache_is_fresh_locked(cache_key):
+            return None
+        return _raw_cache["providers"]
+
+
+async def _refresh_raw_provider_cache(
+    *,
+    lm_url: str,
+    ollama_url: str,
+    cache_key: tuple[str, str],
+    generation: int,
+    refresh_epoch: int,
+) -> dict[str, dict[str, Any]]:
+    raw_by_provider = await _probe_providers(lm_url, ollama_url)
+    with _cache_state_lock:
+        if (
+            generation == _invalidation_generation
+            and refresh_epoch == _latest_refresh_epoch
+        ):
+            _raw_cache.update(
+                key=cache_key,
+                at=time.monotonic(),
+                providers=raw_by_provider,
+            )
+    return raw_by_provider
+
+
+def _clear_inflight_refresh(
+    flight_key: tuple[asyncio.AbstractEventLoop, tuple[str, str], int],
+    finished: asyncio.Task[dict[str, dict[str, Any]]],
+) -> None:
+    with _cache_state_lock:
+        if _inflight_refreshes.get(flight_key) is finished:
+            _inflight_refreshes.pop(flight_key, None)
+
+
+async def _raw_provider_snapshot(
+    *,
+    lm_url: str,
+    ollama_url: str,
+    force_refresh: bool,
+) -> dict[str, dict[str, Any]]:
+    global _latest_refresh_epoch, _refresh_sequence
+    cache_key = (lm_url, ollama_url)
+    if not force_refresh:
+        cached = _fresh_raw_provider_cache(cache_key)
+        if cached is not None:
+            return cached
+
+    loop = asyncio.get_running_loop()
+    with _cache_state_lock:
+        generation = _invalidation_generation
+        flight_key = (loop, cache_key, generation)
+        refresh = _inflight_refreshes.get(flight_key)
+        create_refresh = refresh is None or refresh.done()
+        if create_refresh:
+            # A different event loop may have refreshed the shared cache
+            # since the first check. Explicit refreshes bypass a completed
+            # value, but still join an in-progress same-loop probe.
+            if not force_refresh and _raw_cache_is_fresh_locked(cache_key):
+                return _raw_cache["providers"]
+            _refresh_sequence += 1
+            refresh_epoch = _refresh_sequence
+            _latest_refresh_epoch = refresh_epoch
+
+    if create_refresh:
+        refresh = loop.create_task(
+            _refresh_raw_provider_cache(
+                lm_url=lm_url,
+                ollama_url=ollama_url,
+                cache_key=cache_key,
+                generation=generation,
+                refresh_epoch=refresh_epoch,
+            )
+        )
+        with _cache_state_lock:
+            _inflight_refreshes[flight_key] = refresh
+        refresh.add_done_callback(
+            lambda finished, key=flight_key: _clear_inflight_refresh(key, finished)
+        )
+
+    # A cancelled caller must not cancel the shared provider probe for peers.
+    return await asyncio.shield(refresh)
+
+
 def _provider_projection(name: str, raw: dict[str, Any]) -> dict[str, Any]:
     catalog_ok = bool(raw["catalog_ok"])
     residency_ok = bool(raw["residency_ok"])
@@ -218,24 +323,11 @@ async def get_local_model_inventory(
 
     lm_url = _url(router, "lm_studio_url", _DEFAULT_LM_STUDIO_URL)
     ollama_url = _url(router, "ollama_url", _DEFAULT_OLLAMA_URL)
-    cache_key = (lm_url, ollama_url)
-    cache_is_stale = (
-        force_refresh
-        or _raw_cache["providers"] is None
-        or _raw_cache["key"] != cache_key
-        or time.monotonic() - float(_raw_cache["at"]) >= _CACHE_TTL_SECONDS
+    raw_by_provider = await _raw_provider_snapshot(
+        lm_url=lm_url,
+        ollama_url=ollama_url,
+        force_refresh=force_refresh,
     )
-    if cache_is_stale:
-        probe_generation = _invalidation_generation
-        raw_by_provider = await _probe_providers(lm_url, ollama_url)
-        if probe_generation == _invalidation_generation:
-            _raw_cache.update(
-                key=cache_key,
-                at=time.monotonic(),
-                providers=raw_by_provider,
-            )
-    else:
-        raw_by_provider = _raw_cache["providers"]
 
     providers = [
         _provider_projection(name, raw_by_provider[name])
@@ -369,5 +461,6 @@ def project_llm_status(inventory: dict[str, Any]) -> dict[str, Any]:
 def invalidate_local_model_inventory_cache() -> None:
     """Discard cached raw provider probes after a lifecycle mutation."""
     global _invalidation_generation
-    _invalidation_generation += 1
-    _raw_cache.update(key=None, at=0.0, providers=None)
+    with _cache_state_lock:
+        _invalidation_generation += 1
+        _raw_cache.update(key=None, at=0.0, providers=None)

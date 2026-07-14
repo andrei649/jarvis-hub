@@ -20,6 +20,7 @@ it in this module's namespace. The LM Studio lifecycle helpers `_lmstudio_or_503
 / `_llm_status_code` were used only by this domain and are moved here verbatim.
 """
 
+import asyncio
 import os
 import sys
 
@@ -35,6 +36,7 @@ from agents.core.routers._deps import admin_guard, user_guard
 from agents.core.web_helpers import logger, nocache_json
 
 router = APIRouter(tags=["models"])
+_model_switch_lock = asyncio.Lock()
 
 
 def _web():
@@ -168,6 +170,22 @@ async def _restore_local_provider(
             pass
 
 
+async def _finish_local_provider_restore(router_, **restore_kwargs) -> None:
+    """Finish rollback before propagating cancellation to the switch caller."""
+    restore = asyncio.create_task(_restore_local_provider(router_, **restore_kwargs))
+    cancelled_during_restore = False
+    while not restore.done():
+        try:
+            await asyncio.shield(restore)
+        except asyncio.CancelledError:
+            # Keep the shared switch lock held until the live and persisted
+            # pair is restored, even if the client cancels more than once.
+            cancelled_during_restore = True
+    restore.result()
+    if cancelled_during_restore:
+        raise asyncio.CancelledError
+
+
 async def _adopt_local_provider(router_, *, provider: str, model: str) -> bool:
     """Persist and adopt one exact local provider, rolling back on failure."""
     old_provider = _local_provider_name(router_)
@@ -188,8 +206,17 @@ async def _adopt_local_provider(router_, *, provider: str, model: str) -> bool:
         if _local_provider_name(router_) != provider:
             raise RuntimeError("provider adoption did not take effect")
         router_.set_active_model(model)
+    except asyncio.CancelledError:
+        await _finish_local_provider_restore(
+            router_,
+            provider=old_provider,
+            backend_type=old_backend_type,
+            default_model=old_default_model,
+            runtime_model=old_runtime_model,
+        )
+        raise
     except Exception:
-        await _restore_local_provider(
+        await _finish_local_provider_restore(
             router_,
             provider=old_provider,
             backend_type=old_backend_type,
@@ -202,30 +229,20 @@ async def _adopt_local_provider(router_, *, provider: str, model: str) -> bool:
     return True
 
 
-@router.post("/api/models/local/switch", dependencies=[Depends(admin_guard)])
-async def models_local_switch(body: LocalModelSwitch):
-    """Set the active local model on the live router and persist the choice.
-
-    The model must be present in one of the local backends. The selection is
-    written to `llm.default_model` (settings_db) so it survives a restart, and
-    applied immediately to the running HybridRouter.
-    """
-    orch = get_orch()
-    if not orch or getattr(orch, "llm_router", None) is None:
-        return nocache_json({"error": "not initialized"}, status_code=503)
-
+async def _switch_local_model_locked(router_, model_id: str):
+    """Resolve and apply a switch while the caller holds `_model_switch_lock`."""
     catalog = await _web()._list_local_models()
     matches = [
         model
         for model in catalog["models"]
-        if model.get("id") == body.model and model.get("available") is True
+        if model.get("id") == model_id and model.get("available") is True
     ]
     available = sorted(
         {model["id"] for model in catalog["models"] if model.get("available") is True}
     )
     if not matches:
         return nocache_json(
-            {"error": f"model '{body.model}' not available locally", "available": available},
+            {"error": f"model '{model_id}' not available locally", "available": available},
             status_code=404,
         )
     providers = sorted({model.get("provider") for model in matches if model.get("provider")})
@@ -236,10 +253,10 @@ async def models_local_switch(body: LocalModelSwitch):
         )
 
     target_provider = providers[0]
-    current_provider = _local_provider_name(orch.llm_router)
+    current_provider = _local_provider_name(router_)
     if target_provider != current_provider:
         if target_provider not in {"lm-studio", "ollama"} or not await _adopt_local_provider(
-            orch.llm_router, provider=target_provider, model=body.model
+            router_, provider=target_provider, model=model_id
         ):
             return nocache_json(
                 {
@@ -248,16 +265,34 @@ async def models_local_switch(body: LocalModelSwitch):
                 },
                 status_code=409,
             )
-        return nocache_json({"ok": True, "active": body.model})
+        return nocache_json({"ok": True, "active": model_id})
 
-    orch.llm_router.set_active_model(body.model)
+    router_.set_active_model(model_id)
     try:
-        put_category("llm", {"default_model": body.model})
+        put_category("llm", {"default_model": model_id})
     except Exception:
         # Persistence is best-effort; the live switch already took effect.
         pass
 
-    return nocache_json({"ok": True, "active": body.model})
+    return nocache_json({"ok": True, "active": model_id})
+
+
+@router.post("/api/models/local/switch", dependencies=[Depends(admin_guard)])
+async def models_local_switch(body: LocalModelSwitch):
+    """Set the active local model on the live router and persist the choice.
+
+    The model must be present in one of the local backends. The selection is
+    written to `llm.default_model` (settings_db) so it survives a restart, and
+    applied immediately to the running HybridRouter. Switches are serialized
+    across their authoritative catalog decision and complete live/persisted
+    mutation so one request cannot roll back another.
+    """
+    orch = get_orch()
+    if not orch or getattr(orch, "llm_router", None) is None:
+        return nocache_json({"error": "not initialized"}, status_code=503)
+
+    async with _model_switch_lock:
+        return await _switch_local_model_locked(orch.llm_router, body.model)
 
 
 # ── LM Studio lifecycle control (start server / load / unload) ───
