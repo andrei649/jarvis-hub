@@ -22,6 +22,7 @@ _DEFAULT_LM_STUDIO_URL = "http://localhost:1234"
 _DEFAULT_OLLAMA_URL = "http://localhost:11434"
 
 _raw_cache: dict[str, Any] = {"key": None, "at": 0.0, "providers": None}
+_invalidation_generation = 0
 
 
 def _trim_id(value: Any) -> str | None:
@@ -218,20 +219,24 @@ async def get_local_model_inventory(
     lm_url = _url(router, "lm_studio_url", _DEFAULT_LM_STUDIO_URL)
     ollama_url = _url(router, "ollama_url", _DEFAULT_OLLAMA_URL)
     cache_key = (lm_url, ollama_url)
-    now = time.monotonic()
-    if (
+    cache_is_stale = (
         force_refresh
         or _raw_cache["providers"] is None
         or _raw_cache["key"] != cache_key
-        or now - float(_raw_cache["at"]) >= _CACHE_TTL_SECONDS
-    ):
-        _raw_cache.update(
-            key=cache_key,
-            at=now,
-            providers=await _probe_providers(lm_url, ollama_url),
-        )
+        or time.monotonic() - float(_raw_cache["at"]) >= _CACHE_TTL_SECONDS
+    )
+    if cache_is_stale:
+        probe_generation = _invalidation_generation
+        raw_by_provider = await _probe_providers(lm_url, ollama_url)
+        if probe_generation == _invalidation_generation:
+            _raw_cache.update(
+                key=cache_key,
+                at=time.monotonic(),
+                providers=raw_by_provider,
+            )
+    else:
+        raw_by_provider = _raw_cache["providers"]
 
-    raw_by_provider = _raw_cache["providers"]
     providers = [
         _provider_projection(name, raw_by_provider[name])
         for name in sorted(raw_by_provider)
@@ -363,4 +368,6 @@ def project_llm_status(inventory: dict[str, Any]) -> dict[str, Any]:
 
 def invalidate_local_model_inventory_cache() -> None:
     """Discard cached raw provider probes after a lifecycle mutation."""
+    global _invalidation_generation
+    _invalidation_generation += 1
     _raw_cache.update(key=None, at=0.0, providers=None)

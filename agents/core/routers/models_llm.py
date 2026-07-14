@@ -135,6 +135,63 @@ class LocalModelSwitch(BaseModel):
     model: str = Field(..., min_length=1)
 
 
+def _local_provider_name(router_) -> str:
+    value = getattr(router_, "_backend_name", None)
+    return value.strip() if isinstance(value, str) and value.strip() else "none"
+
+
+async def _restore_local_provider(router_, *, provider: str, backend_type: str, model: str | None):
+    """Best-effort rollback after a cross-provider adoption failure."""
+    restore = {"backend_type": backend_type}
+    if model:
+        restore["default_model"] = model
+    try:
+        put_category("llm", restore)
+    except Exception:
+        pass
+    try:
+        router_.backend_type = backend_type
+        await router_.detect()
+    except Exception:
+        return
+    if model and _local_provider_name(router_) == provider:
+        try:
+            router_.set_active_model(model)
+        except Exception:
+            pass
+
+
+async def _adopt_local_provider(router_, *, provider: str, model: str) -> bool:
+    """Persist and adopt one exact local provider, rolling back on failure."""
+    old_provider = _local_provider_name(router_)
+    old_model = getattr(router_, "active_model", None)
+    old_backend_type = getattr(router_, "backend_type", None)
+    if old_backend_type not in {"auto", "lm-studio", "ollama"}:
+        old_backend_type = old_provider if old_provider in {"lm-studio", "ollama"} else "auto"
+
+    try:
+        updated, skipped = put_category(
+            "llm", {"backend_type": provider, "default_model": model}
+        )
+        if updated != 2 or skipped:
+            raise RuntimeError("provider selection was not fully persisted")
+        # Base LLMRouter instances honor this directly; HybridRouter.detect()
+        # deliberately reloads the same value from the setting persisted above.
+        router_.backend_type = provider
+        await router_.detect()
+        if _local_provider_name(router_) != provider:
+            raise RuntimeError("provider adoption did not take effect")
+        router_.set_active_model(model)
+    except Exception:
+        await _restore_local_provider(
+            router_, provider=old_provider, backend_type=old_backend_type, model=old_model
+        )
+        return False
+
+    invalidate_local_model_inventory_cache()
+    return True
+
+
 @router.post("/api/models/local/switch", dependencies=[Depends(admin_guard)])
 async def models_local_switch(body: LocalModelSwitch):
     """Set the active local model on the live router and persist the choice.
@@ -167,6 +224,21 @@ async def models_local_switch(body: LocalModelSwitch):
             {"error": "model id is ambiguous across local providers", "providers": providers},
             status_code=409,
         )
+
+    target_provider = providers[0]
+    current_provider = _local_provider_name(orch.llm_router)
+    if target_provider != current_provider:
+        if target_provider not in {"lm-studio", "ollama"} or not await _adopt_local_provider(
+            orch.llm_router, provider=target_provider, model=body.model
+        ):
+            return nocache_json(
+                {
+                    "error": "local provider could not be adopted",
+                    "provider": target_provider,
+                },
+                status_code=409,
+            )
+        return nocache_json({"ok": True, "active": body.model})
 
     orch.llm_router.set_active_model(body.model)
     try:

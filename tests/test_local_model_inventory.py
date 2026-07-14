@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import importlib
 from types import SimpleNamespace
 
@@ -372,3 +373,56 @@ async def test_cache_expires_and_force_refresh_bypasses_it(monkeypatch):
     monkeypatch.setattr(module, "_CACHE_TTL_SECONDS", -1.0)
     await module.get_local_model_inventory(router=_router(), controller=SimpleNamespace(enabled=True))
     assert len(calls) == 12
+
+
+async def test_invalidation_prevents_older_inflight_probe_from_repopulating_cache(monkeypatch):
+    module = _module()
+    module.invalidate_local_model_inventory_cache()
+    old_probe_started = asyncio.Event()
+    release_old_probe = asyncio.Event()
+    probe_count = 0
+
+    def _raw(model_id: str) -> dict:
+        return {
+            "lm-studio": {
+                "catalog_ok": True,
+                "catalog_ids": {model_id},
+                "residency_ok": True,
+                "resident_ids": set(),
+            },
+            "ollama": {
+                "catalog_ok": False,
+                "catalog_ids": set(),
+                "residency_ok": False,
+                "resident_ids": set(),
+            },
+        }
+
+    async def _paused_probe(lm_url, ollama_url):
+        nonlocal probe_count
+        assert lm_url == "http://lm.test/custom"
+        assert ollama_url == "http://ollama.test/custom"
+        probe_count += 1
+        if probe_count == 1:
+            old_probe_started.set()
+            await release_old_probe.wait()
+            return _raw("stale-before-load")
+        return _raw("fresh-after-load")
+
+    monkeypatch.setattr(module, "_probe_providers", _paused_probe)
+    old_request = asyncio.create_task(
+        module.get_local_model_inventory(
+            router=_router(active=None), controller=SimpleNamespace(enabled=True)
+        )
+    )
+    await old_probe_started.wait()
+    module.invalidate_local_model_inventory_cache()
+    release_old_probe.set()
+    old_inventory = await old_request
+    fresh_inventory = await module.get_local_model_inventory(
+        router=_router(active=None), controller=SimpleNamespace(enabled=True)
+    )
+
+    assert probe_count == 2
+    assert [model["id"] for model in old_inventory["models"]] == ["stale-before-load"]
+    assert [model["id"] for model in fresh_inventory["models"]] == ["fresh-after-load"]

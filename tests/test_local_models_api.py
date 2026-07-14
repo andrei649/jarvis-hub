@@ -4,8 +4,10 @@ Covers GET /api/models/local (browse) and POST /api/models/local/switch
 (activate). The local providers (LM Studio / Ollama) are mocked so the tests
 run in CI without a live backend.
 """
+import asyncio
 import sys
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -127,7 +129,7 @@ def test_list_reports_offline_provider(token_client):
 
 def test_switch_to_available_model(token_client):
     import agents.web as web
-    router = MagicMock(active_model="qwen3:7b", name="lm-studio")
+    router = _router_mock("qwen3:7b", "lm-studio")
     catalog = {
         "active": "qwen3:7b",
         "configured_model": "qwen3:7b",
@@ -153,6 +155,153 @@ def test_switch_to_available_model(token_client):
     assert resp.json() == {"ok": True, "active": "llama3:8b"}
     router.set_active_model.assert_called_once_with("llama3:8b")
     put.assert_called_once_with("llm", {"default_model": "llama3:8b"})
+
+
+def test_switch_adopts_and_configures_unique_cross_provider_pair(token_client):
+    import agents.core.routers.models_llm as models_llm
+    import agents.web as web
+    from agents.core.llm.local_model_inventory import (
+        get_local_model_inventory,
+        invalidate_local_model_inventory_cache,
+    )
+
+    settings = {"backend_type": "lm-studio", "default_model": "qwen3:7b"}
+    router = SimpleNamespace(
+        active_model="qwen3:7b",
+        _backend_name="lm-studio",
+        name="lm-studio+cloud",
+        backend_type="lm-studio",
+        lm_studio_url="http://localhost:1234",
+        ollama_url="http://localhost:11434",
+    )
+
+    def _set_active(model):
+        router.active_model = model
+
+    async def _detect():
+        # Mirrors HybridRouter.detect(): provider pin is reloaded from settings.
+        router.backend_type = settings["backend_type"]
+        router._backend_name = router.backend_type
+
+    router.set_active_model = MagicMock(side_effect=_set_active)
+    router.detect = AsyncMock(side_effect=_detect)
+
+    catalog = {
+        "active": "qwen3:7b",
+        "configured_model": "qwen3:7b",
+        "backend": "lm-studio",
+        "providers": [],
+        "resident_models": [],
+        "residency_state": "known",
+        "models": [
+            {
+                "id": "mistral:latest",
+                "provider": "ollama",
+                "available": True,
+                "configured": False,
+                "active": False,
+            }
+        ],
+    }
+
+    def _persist(category, data):
+        assert category == "llm"
+        settings.update(data)
+        return len(data), []
+
+    with patch.object(web, "orch", SimpleNamespace(llm_router=router)):
+        with patch.object(web, "_list_local_models", AsyncMock(return_value=catalog)):
+            with patch.object(models_llm, "put_category", side_effect=_persist) as put:
+                response = token_client.post(
+                    "/api/models/local/switch",
+                    json={"model": "mistral:latest"},
+                    headers=HEADERS,
+                )
+
+        invalidate_local_model_inventory_cache()
+        factory = _fake_httpx_client(
+            {
+                "/v1/models": _FakeResp({"data": [{"id": "qwen3:7b"}]}),
+                "/api/v0/models": _FakeResp({"data": []}),
+                "/api/tags": _FakeResp({"models": [{"name": "mistral:latest"}]}),
+                "/api/ps": _FakeResp({"models": []}),
+            }
+        )
+        with patch("httpx.AsyncClient", factory):
+            inventory = asyncio.run(
+                get_local_model_inventory(
+                    router=router,
+                    controller=SimpleNamespace(enabled=True),
+                    force_refresh=True,
+                )
+            )
+
+    assert response.status_code == 200
+    assert response.json() == {"ok": True, "active": "mistral:latest"}
+    put.assert_called_once_with(
+        "llm", {"backend_type": "ollama", "default_model": "mistral:latest"}
+    )
+    router.detect.assert_awaited_once_with()
+    configured = [model for model in inventory["models"] if model["configured"]]
+    assert len(configured) == 1
+    assert configured[0]["provider"] == "ollama"
+    assert configured[0]["id"] == "mistral:latest"
+    assert configured[0]["available"] is True
+
+
+def test_switch_fails_closed_when_cross_provider_cannot_be_adopted(token_client):
+    import agents.core.routers.models_llm as models_llm
+    import agents.web as web
+
+    settings = {"backend_type": "lm-studio", "default_model": "qwen3:7b"}
+    router = _router_mock("qwen3:7b", "lm-studio")
+    router.backend_type = "lm-studio"
+
+    async def _detect():
+        requested = settings["backend_type"]
+        router.backend_type = requested
+        # Target adoption fails; rollback to LM Studio remains possible.
+        router._backend_name = "lm-studio" if requested == "lm-studio" else "none"
+
+    router.detect = AsyncMock(side_effect=_detect)
+    catalog = {
+        "active": "qwen3:7b",
+        "configured_model": "qwen3:7b",
+        "backend": "lm-studio",
+        "providers": [],
+        "resident_models": [],
+        "residency_state": "known",
+        "models": [
+            {"id": "mistral:latest", "provider": "ollama", "available": True}
+        ],
+    }
+
+    def _persist(category, data):
+        assert category == "llm"
+        settings.update(data)
+        return len(data), []
+
+    with patch.object(web, "orch", SimpleNamespace(llm_router=router)):
+        with patch.object(web, "_list_local_models", AsyncMock(return_value=catalog)):
+            with patch.object(models_llm, "put_category", side_effect=_persist):
+                response = token_client.post(
+                    "/api/models/local/switch",
+                    json={"model": "mistral:latest"},
+                    headers=HEADERS,
+                )
+
+    assert response.status_code == 409
+    assert response.json() == {
+        "error": "local provider could not be adopted",
+        "provider": "ollama",
+    }
+    assert settings == {"backend_type": "lm-studio", "default_model": "qwen3:7b"}
+    assert router._backend_name == "lm-studio"
+    assert router.active_model == "qwen3:7b"
+    router.detect.assert_awaited()
+    assert not any(
+        call.args == ("mistral:latest",) for call in router.set_active_model.call_args_list
+    )
 
 
 def test_switch_to_unknown_model_404(token_client):
