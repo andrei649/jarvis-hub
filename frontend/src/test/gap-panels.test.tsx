@@ -181,7 +181,7 @@ describe('SandboxPanel — code execution is live', () => {
 });
 
 describe('LMStudioPanel — configuration stays separate from residency', () => {
-  it('uses the supported model-only switch body without treating configuration as load', async () => {
+  it('uses the exact provider-pair switch body without treating configuration as load', async () => {
     const fn = mockFetch({
       '/api/models/local/switch': { ok: true, active: 'qwen:7b' },
       '/api/models/local': {
@@ -198,7 +198,7 @@ describe('LMStudioPanel — configuration stays separate from residency', () => 
     await waitFor(() => {
       const post = fn.mock.calls.find((c) => c[0] === '/api/models/local/switch' && c[1]?.method === 'POST');
       expect(post).toBeTruthy();
-      expect(JSON.parse(post[1].body)).toEqual({ model: 'qwen:7b' });
+      expect(JSON.parse(post[1].body)).toEqual({ model: 'qwen:7b', provider: 'ollama' });
       expect(fn.mock.calls.some((c) => String(c[0]).startsWith('/api/llm/') && c[1]?.method === 'POST')).toBe(false);
     });
   });
