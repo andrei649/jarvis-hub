@@ -18,7 +18,7 @@ import os
 
 from fastapi import APIRouter, Depends
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, SkipValidation
 
 from agents.core.app_state import get_orch
 from agents.core.env_config import env_flag
@@ -63,7 +63,11 @@ async def vlm_describe(body: VLMDescribeBody):
 
 
 class DesktopStepsBody(BaseModel):
-    steps: list[dict] = Field(default_factory=list)
+    # Runtime shape/count checks belong to the bounded shared validator below.
+    steps: SkipValidation[list[dict]] = Field(
+        default_factory=list,
+        json_schema_extra={"maxItems": 100},
+    )
 
 
 def desktop_host_enabled() -> bool:

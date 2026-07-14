@@ -164,6 +164,78 @@ def test_desktop_routes_bound_and_redact_oversized_plan_before_downstream_seams(
     assert reached == []
 
 
+@pytest.mark.parametrize(
+    ("shape", "reason"),
+    [
+        ("scalar", "invalid_steps"),
+        ("scalar_item", "invalid_step"),
+    ],
+)
+def test_desktop_routes_defer_raw_step_shapes_to_bounded_shared_validator(
+    client,
+    monkeypatch,
+    shape,
+    reason,
+):
+    sentinel = "desktop-shape-secret-do-not-echo-" + "x" * 3_900
+    steps = sentinel if shape == "scalar" else [sentinel]
+    reached = []
+
+    def record(seam, result):
+        def call(*_args, **_kwargs):
+            reached.append(seam)
+            return result
+
+        return call
+
+    async def record_preview(*_args, **_kwargs):
+        reached.append("GovernedDesktop.preview")
+        return {"steps": []}
+
+    monkeypatch.setattr(multimodal, "desktop_host_enabled", record("host gate", False))
+    monkeypatch.setattr(multimodal, "get_orch", record("orchestrator", object()))
+    monkeypatch.setattr(multimodal, "build_desktop_runtime", record("desktop runtime", None))
+    monkeypatch.setattr(desktop_operator.GovernedDesktop, "preview", record_preview)
+
+    responses = [
+        client.post(route, json={"steps": steps})
+        for route in ("/api/desktop/preview", "/api/desktop/run")
+    ]
+
+    assert [response.status_code for response in responses] == [200, 200]
+    assert [response.json() for response in responses] == [
+        {"ok": False, "reason": reason},
+        {"ok": False, "reason": reason},
+    ]
+    assert all("no-store" in response.headers["cache-control"] for response in responses)
+    assert all(sentinel not in response.text for response in responses)
+    assert all(len(response.content) <= 64 for response in responses)
+    assert reached == []
+
+
+def test_desktop_body_defers_arbitrary_python_steps_without_copying():
+    raw_steps = object()
+
+    body = multimodal.DesktopStepsBody(steps=raw_steps)
+
+    assert body.steps is raw_steps
+    with pytest.raises(desktop_operator.DesktopProposalError) as exc_info:
+        desktop_operator.validate_desktop_run_args({"steps": body.steps})
+    assert exc_info.value.reason == "invalid_steps"
+
+
+def test_desktop_body_openapi_retains_bounded_array_of_objects():
+    from agents import web
+
+    steps_schema = web.app.openapi()["components"]["schemas"]["DesktopStepsBody"][
+        "properties"
+    ]["steps"]
+
+    assert steps_schema["type"] == "array"
+    assert steps_schema["maxItems"] == 100
+    assert steps_schema["items"]["type"] == "object"
+
+
 def test_desktop_preview_receives_only_shared_canonical_steps(client, monkeypatch):
     seen = []
 
