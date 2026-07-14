@@ -19,7 +19,7 @@
     "@fontsource/jetbrains-mono": "^5.2.8",
     "@fontsource/space-grotesk": "^5.2.10",
     "deck.gl": "9.3.6",
-    "mapbox-gl": "3.25.0",
+    "mapbox-gl": "3.26.0",
     "next": "^16.2.10",
     "react": "^19.2.7",
     "react-dom": "^19.2.7",
@@ -32,14 +32,14 @@
     "@tailwindcss/postcss": "^4.3.2",
     "@types/geojson": "7946.0.16",
     "@types/mapbox-gl": "3.5.0",
-    "@types/node": "26.1.0",
+    "@types/node": "26.1.1",
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "@types/topojson-client": "^3.1.5",
-    "autoprefixer": "10.5.2",
-    "postcss": "^8.5.16",
+    "autoprefixer": "10.5.3",
+    "postcss": "^8.5.19",
     "tailwindcss": "4.3.2",
-    "typescript": "6.0.3",
+    "typescript": "7.0.2",
     "vitest": "^4.1.10"
   }
 }
