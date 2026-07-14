@@ -386,11 +386,9 @@ def _llm_status_code(result: dict) -> int:
 def _restore_lifecycle_router_pair(
     router_, *, provider: str, runtime_model: str | None
 ) -> bool:
-    """Keep LM Studio lifecycle from changing a non-LM routing pair."""
+    """Keep LM Studio lifecycle independent from the configured routing pair."""
     if _local_provider_name(router_) != provider:
         return False
-    if provider == "lm-studio":
-        return True
     if getattr(router_, "active_model", None) == runtime_model:
         return True
     try:
@@ -472,25 +470,6 @@ async def llm_load(body: LMLoad):
                     {"error": "local model lifecycle router state incoherent"},
                     status_code=500,
                 )
-            live_provider = _local_provider_name(live_router)
-            persisted_provider = (
-                get_value("llm", "backend_type", "auto")
-                if live_provider == "lm-studio"
-                else None
-            )
-            if live_provider == "lm-studio" and persisted_provider in {
-                "auto",
-                "lm-studio",
-            }:
-                try:
-                    # Persist the model that was actually loaded — the controller may
-                    # have resolved a partial request to the full servable id. Never
-                    # combine an LM Studio id with a different persisted provider.
-                    put_category(
-                        "llm", {"default_model": result.get("model") or body.model}
-                    )
-                except Exception:
-                    pass  # live load already took effect; persistence is best-effort
             return nocache_json(result)
         return nocache_json(result, status_code=_llm_status_code(result))
 

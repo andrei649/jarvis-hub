@@ -1034,7 +1034,10 @@ def test_successful_lifecycle_invalidates_inventory_cache(
     setattr(ctrl, method_name, AsyncMock(return_value={"status": "ok", "model": "alpha"}))
     orch = SimpleNamespace(
         lmstudio=ctrl,
-        llm_router=SimpleNamespace(_backend_name="lm-studio"),
+        llm_router=SimpleNamespace(
+            _backend_name="lm-studio",
+            active_model="configured-beta",
+        ),
     )
     with patch.object(web, "orch", orch):
         with patch.object(models_llm, "get_value", return_value="lm-studio") as get:
@@ -1046,12 +1049,66 @@ def test_successful_lifecycle_invalidates_inventory_cache(
 
     assert resp.status_code == 200
     invalidate.assert_called_once_with()
-    if method_name == "load_model":
-        get.assert_called_once_with("llm", "backend_type", "auto")
-        put.assert_called_once_with("llm", {"default_model": "alpha"})
-    else:
-        get.assert_not_called()
-        put.assert_not_called()
+    get.assert_not_called()
+    put.assert_not_called()
+
+
+@pytest.mark.parametrize(
+    ("path", "body", "method_name"),
+    [
+        ("/api/llm/load", {"model": "configured-beta"}, "load_model"),
+        ("/api/llm/unload", {"model": "configured-beta"}, "unload_model"),
+    ],
+)
+def test_lifecycle_preserves_lm_configured_model_after_controller_refresh(
+    token_client, path, body, method_name
+):
+    import agents.core.routers.models_llm as models_llm
+    import agents.web as web
+
+    persisted = {
+        "backend_type": "lm-studio",
+        "default_model": "configured-beta",
+    }
+    router = SimpleNamespace(
+        _backend_name="lm-studio",
+        active_model="configured-beta",
+    )
+
+    def _set_active_model(model):
+        router.active_model = model
+
+    async def _lifecycle(*args, **kwargs):
+        # The real controller refresh currently selects the catalog's first id.
+        router.active_model = "catalog-first-alpha"
+        return {"status": "ok", "model": "configured-beta"}
+
+    def _persist(category, data):
+        assert category == "llm"
+        persisted.update(data)
+        return len(data), []
+
+    router.set_active_model = MagicMock(side_effect=_set_active_model)
+    ctrl = MagicMock()
+    setattr(ctrl, method_name, AsyncMock(side_effect=_lifecycle))
+    orch = SimpleNamespace(lmstudio=ctrl, llm_router=router)
+
+    with patch.object(web, "orch", orch):
+        with patch.object(models_llm, "put_category", side_effect=_persist) as put:
+            with patch.object(
+                models_llm, "invalidate_local_model_inventory_cache"
+            ) as invalidate:
+                response = token_client.post(path, json=body, headers=HEADERS)
+
+    assert response.status_code == 200
+    assert router.active_model == "configured-beta"
+    assert persisted == {
+        "backend_type": "lm-studio",
+        "default_model": "configured-beta",
+    }
+    router.set_active_model.assert_called_once_with("configured-beta")
+    put.assert_not_called()
+    invalidate.assert_called_once_with()
 
 
 def test_load_never_combines_persisted_ollama_provider_with_lm_model(token_client):
@@ -1080,6 +1137,6 @@ def test_load_never_combines_persisted_ollama_provider_with_lm_model(token_clien
                     )
 
     assert response.status_code == 200
-    get.assert_called_once_with("llm", "backend_type", "auto")
+    get.assert_not_called()
     put.assert_not_called()
     invalidate.assert_called_once_with()
