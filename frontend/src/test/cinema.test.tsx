@@ -86,4 +86,31 @@ describe('CinemaMesh — full-bleed mesh demo overlay', () => {
     expect(container.querySelector('.nmesh-legend')?.textContent).toContain('1 running task');
     expect(container.querySelector('.nmesh-legend')?.textContent).toContain('live telemetry');
   });
+
+  it('cycles only evidence-qualified or neutral live tags for unknown, cloud, and local states', () => {
+    vi.useFakeTimers();
+    const collectTags = (props: any) => {
+      const view = render(<CinemaMesh agents={AGENTS} tasks={[]} llm={{ state: 'no_model', model: null, residents: [] }}
+        demo={false} onExit={() => {}} t={{}} {...props} />);
+      const tags = [view.container.querySelector('.cin-tag')?.textContent];
+      act(() => { vi.advanceTimersByTime(4200); });
+      tags.push(view.container.querySelector('.cin-tag')?.textContent);
+      act(() => { vi.advanceTimersByTime(4200); });
+      tags.push(view.container.querySelector('.cin-tag')?.textContent);
+      view.unmount();
+      return tags;
+    };
+    try {
+      const unknown = collectTags({ trust: {}, sources: { tasks: false, trust: false }, localPct: null });
+      const cloud = collectTags({ trust: { cloud_available: true }, sources: { tasks: false, trust: true }, localPct: 42 });
+      const local = collectTags({ trust: { cloud_available: false, claude_available: false }, sources: { tasks: false, trust: true }, localPct: 100 });
+
+      expect(unknown).toEqual(['Governed operator view', 'Current evidence only', 'Trust evidence unavailable']);
+      expect(cloud).toEqual(['Governed operator view', 'Current evidence only', 'Cloud lane reported by trust status']);
+      expect(local).toEqual(['Governed operator view', 'Current evidence only', 'Trust status connected']);
+      expect([...unknown, ...cloud, ...local].join(' ')).not.toMatch(/always-on|Private\. Provable/i);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 });

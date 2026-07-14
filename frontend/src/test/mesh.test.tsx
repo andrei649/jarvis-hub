@@ -173,4 +173,70 @@ describe('NeuralMesh — the native canvas brain mounts + draws without throwing
       llm={EMPTY_LLM} trust={{}} sources={NO_SOURCES} demo={true} t={{}} />);
     expect(container.querySelector('.nmesh-legend')?.textContent).toContain('demo');
   });
+
+  it('mount-captured resize callbacks rebuild from the latest roster and model inputs', () => {
+    const ctx = stubCtx();
+    HTMLCanvasElement.prototype.getContext = vi.fn(() => ctx);
+    const originalResizeObserver = globalThis.ResizeObserver;
+    let resizeCb: any = null;
+    globalThis.ResizeObserver = class {
+      constructor(cb) { resizeCb = cb; }
+      observe() {}
+      unobserve() {}
+      disconnect() {}
+    } as any;
+    const initialAgents = [{ id: 'jarvis', name: 'Jarvis', tier: 'CNS', status: 'idle' }];
+    const currentAgents = [...initialAgents, { id: 'new-agent', name: 'New Agent', tier: 'BUS', status: 'busy' }];
+    const view = render(<NeuralMesh agents={initialAgents} activeId="jarvis" onSelect={() => {}} motion="lively"
+      llm={EMPTY_LLM} sources={NO_SOURCES} demo={false} t={{}} />);
+    try {
+      view.rerender(<NeuralMesh agents={currentAgents} activeId="jarvis" onSelect={() => {}} motion="lively"
+        llm={{ state: 'ready', model: 'live-model', residents: [{ provider: 'ollama', id: 'live-model' }] }}
+        sources={NO_SOURCES} demo={false} t={{}} />);
+      expect(resizeCb).toBeTypeOf('function');
+      act(() => { resizeCb([], null); });
+      ctx.fillText.mockClear();
+      act(() => { rafCb(0); });
+      const labels = ctx.fillText.mock.calls.map((call) => String(call[0]));
+      expect(labels).toContain('NEW AGENT');
+      expect(labels).toContain('LIVE-MODEL');
+    } finally {
+      view.unmount();
+      if (originalResizeObserver) globalThis.ResizeObserver = originalResizeObserver;
+      else delete (globalThis as any).ResizeObserver;
+    }
+  });
+
+  it('mount-captured RAF callbacks honor a later reduced-motion change', () => {
+    const ctx = stubCtx();
+    HTMLCanvasElement.prototype.getContext = vi.fn(() => ctx);
+    const random = vi.spyOn(Math, 'random');
+    const view = render(<NeuralMesh agents={AGENTS} activeId="jarvis" onSelect={() => {}} motion="lively"
+      llm={EMPTY_LLM} sources={NO_SOURCES} demo={true} t={{}} />);
+    view.rerender(<NeuralMesh agents={AGENTS} activeId="jarvis" onSelect={() => {}} motion="calm"
+      llm={EMPTY_LLM} sources={NO_SOURCES} demo={true} t={{}} />);
+    random.mockClear();
+
+    act(() => {
+      for (let i = 0; i < 500; i += 1) rafCb(i);
+    });
+
+    expect(random).not.toHaveBeenCalled();
+  });
+
+  it('uses only owner, agent_id, then agent before the Jarvis owner fallback', () => {
+    const ctx = stubCtx();
+    HTMLCanvasElement.prototype.getContext = vi.fn(() => ctx);
+    const task = [{ id: 't1', assignee: 'howard', title: 'assignee only', state: 'running' }];
+    const view = render(<NeuralMesh agents={AGENTS} tasks={task} activeId="howard" onSelect={() => {}} motion="calm"
+      llm={EMPTY_LLM} sources={{ tasks: true, trust: false }} demo={false} t={{}} />);
+    act(() => { rafCb(0); });
+    expect(ctx.fillText.mock.calls.map((call) => String(call[0]))).not.toContain('ASSIGNEE ONLY');
+
+    ctx.fillText.mockClear();
+    view.rerender(<NeuralMesh agents={AGENTS} tasks={task} activeId="jarvis" onSelect={() => {}} motion="calm"
+      llm={EMPTY_LLM} sources={{ tasks: true, trust: false }} demo={false} t={{}} />);
+    act(() => { rafCb(1); });
+    expect(ctx.fillText.mock.calls.map((call) => String(call[0]))).toContain('ASSIGNEE ONLY');
+  });
 });

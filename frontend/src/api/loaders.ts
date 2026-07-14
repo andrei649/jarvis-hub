@@ -151,8 +151,8 @@ export async function loadJarvisData(demo = false): Promise<JarvisData> {
       out.trust = {
         mic: d.mic || 'on',
         strict_local: !!d.strict_local,
-        cloud_available: !!d.cloud_available,
-        claude_available: !!d.claude_available,
+        cloud_available: d.cloud_available === true,
+        claude_available: d.claude_available === true,
       };
     }
   } catch { /* keep default */ }
@@ -160,6 +160,56 @@ export async function loadJarvisData(demo = false): Promise<JarvisData> {
   // "live" = at least one tile is showing REAL (non-demo) content
   out.live = Object.values(out.sources).some(Boolean);
   return out;
+}
+
+interface LatestRefreshRunnerOptions<TData, TLocality> {
+  loadData: () => Promise<TData>;
+  loadLocality?: () => Promise<TLocality>;
+  commitData: (data: TData) => void;
+  commitLocality: (locality: TLocality | null) => void;
+}
+
+/* Polls may overlap when a backend response takes longer than the interval.
+   Only the newest cycle is allowed to publish either its primary snapshot or
+   its follow-up locality evidence, so a late response cannot rewind the HUD. */
+export function createLatestRefreshRunner<TData, TLocality>({
+  loadData,
+  loadLocality,
+  commitData,
+  commitLocality,
+}: LatestRefreshRunnerOptions<TData, TLocality>) {
+  let generation = 0;
+  let stopped = false;
+  const isCurrent = (id: number) => !stopped && id === generation;
+
+  return {
+    async refresh() {
+      const id = ++generation;
+      let data: TData;
+      try {
+        data = await loadData();
+      } catch {
+        return;
+      }
+      if (!isCurrent(id)) return;
+      commitData(data);
+
+      if (!loadLocality) {
+        commitLocality(null);
+        return;
+      }
+      try {
+        const locality = await loadLocality();
+        if (isCurrent(id)) commitLocality(locality);
+      } catch {
+        if (isCurrent(id)) commitLocality(null);
+      }
+    },
+    stop() {
+      stopped = true;
+      generation += 1;
+    },
+  };
 }
 
 function normWeather(w: any) {

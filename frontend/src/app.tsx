@@ -6,7 +6,7 @@ import { useClock, fmtTimeShort, Icon, ICONS, Glyph } from './primitives';
 import { TopBar, Ticker, Rail, Tabs, RosterColumn, ContextColumn, Palette, Ambient, CinemaMesh } from './shell';
 import { Conversation, CognitionStream, InputBar, buildTrace, traceFromCognition } from './cockpit';
 import { useVoice } from './voice';
-import { loadJarvisData } from './api/loaders';
+import { createLatestRefreshRunner, loadJarvisData } from './api/loaders';
 import { PREVIEW_MODE_LIVE_KEYS, useLiveModes } from './api/live';
 import { LiveSourceChip, liveSourceState } from './LiveSourceChip';
 import { postStream, apiGet } from './api/client';
@@ -281,29 +281,25 @@ function App() {
 
   useEffect(() => () => timers.current.forEach(clearTimeout), []);
 
-  // P1 — load live data and poll every 30s; falls back to the seeded mock when
-  // the backend is unreachable, so the HUD never blanks (recall-never-hard-fails).
+  // P1 — load live data and poll every 30s. A generation guard prevents a
+  // slower, older poll from replacing a newer evidence snapshot.
   useEffect(() => {
-    let alive = true;
-    async function refresh() {
-      try {
-        const d = await loadJarvisData(demo);
-        if (!alive) return;
+    const runner = createLatestRefreshRunner({
+      loadData: () => loadJarvisData(demo),
+      loadLocality: demo ? undefined : () => apiGet<any>('/api/analytics/locality'),
+      commitData: (d) => {
         setAgents(d.agents); baseAgents.current = d.agents;
         setTicker(d.ticker); setTasks(Array.isArray(d.tasks) ? d.tasks : []); setWeather(d.weather); setCalendar(d.calendar);
         setHeartbeat(d.heartbeat); setSys(d.sys); setLive(!!d.live);
         setServerUp(!!d.serverUp); setLlm(d.llm || { state: 'unknown', model: null, residents: [] });
         setSources(d.sources || { tasks: false, trust: false });
         if (d.trust) setTrust(d.trust);
-        if (!demo) {
-          // Real %-local from run-history routes; failure leaves it null (meter hides).
-          apiGet('/api/analytics/locality').then((l) => { if (alive) setLocality(l); }).catch(() => {});
-        }
-      } catch { /* unreachable — keep current */ }
-    }
-    refresh();
-    const iv = setInterval(refresh, 30000);
-    return () => { alive = false; clearInterval(iv); };
+      },
+      commitLocality: (nextLocality) => setLocality(nextLocality),
+    });
+    void runner.refresh();
+    const iv = setInterval(() => { void runner.refresh(); }, 30000);
+    return () => { runner.stop(); clearInterval(iv); };
   }, [demo]);
   const dismissDecision = (id) => setDecisions((ds) => ds.filter((d) => d._id !== id));
 

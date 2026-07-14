@@ -1,7 +1,7 @@
-// @ts-nocheck
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { loadJarvisData } from '../api/loaders';
+import { createLatestRefreshRunner, loadJarvisData } from '../api/loaders';
+import { deriveMeshModels } from '../mesh';
 import { effectiveTaskState, runningTasks } from '../task-state';
 
 const ok = (payload: unknown) => Promise.resolve({
@@ -15,6 +15,13 @@ const unavailable = () => Promise.resolve({
   status: 503,
   json: async () => ({}),
 });
+
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  let reject!: (reason?: unknown) => void;
+  const promise = new Promise<T>((res, rej) => { resolve = res; reject = rej; });
+  return { promise, resolve, reject };
+}
 
 beforeEach(() => {
   try { localStorage.clear(); } catch { /* ignore */ }
@@ -59,7 +66,7 @@ describe('loadJarvisData current-evidence adapters', () => {
       });
       return unavailable();
     });
-    global.fetch = fetchMock as any;
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
 
     const data = await loadJarvisData(false);
 
@@ -91,7 +98,7 @@ describe('loadJarvisData current-evidence adapters', () => {
       }
       return unavailable();
     });
-    global.fetch = fetchMock as any;
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
 
     const first = await loadJarvisData(false);
     const second = await loadJarvisData(false);
@@ -104,5 +111,85 @@ describe('loadJarvisData current-evidence adapters', () => {
     expect(second.sources.trust).toBe(false);
     expect(second.trust.claude_available).toBeUndefined();
     expect(second.trust.cloud_available).toBeUndefined();
+  });
+
+  it('requires literal trust booleans before the Mesh can create a cloud lane', async () => {
+    const fetchMock = vi.fn((url: string) => {
+      if (url === '/status') return ok({ model_state: 'no_model', loaded_model: null, resident_models: [] });
+      if (url === '/tasks?view=running') return ok({ tasks: [] });
+      if (url === '/api/trust/status') return ok({
+        mic: 'on', strict_local: false, cloud_available: 'true', claude_available: 1,
+      });
+      return unavailable();
+    });
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+
+    const data = await loadJarvisData(false);
+    const models = deriveMeshModels({
+      demo: false,
+      residents: data.llm.residents,
+      trustEvidence: data.sources.trust,
+      trust: data.trust,
+    });
+
+    expect(data.trust.cloud_available).toBe(false);
+    expect(data.trust.claude_available).toBe(false);
+    expect(models).toEqual([]);
+  });
+});
+
+describe('latest refresh runner', () => {
+  it('does not let an older data cycle overwrite a newer snapshot', async () => {
+    const oldData = deferred<{ id: string }>();
+    const newData = deferred<{ id: string }>();
+    const committed: string[] = [];
+    const loadData = vi.fn()
+      .mockImplementationOnce(() => oldData.promise)
+      .mockImplementationOnce(() => newData.promise);
+    const runner = createLatestRefreshRunner<{ id: string }, { local_pct: number }>({
+      loadData,
+      loadLocality: async () => ({ local_pct: 50 }),
+      commitData: (data) => committed.push(data.id),
+      commitLocality: () => {},
+    });
+
+    const first = runner.refresh();
+    const second = runner.refresh();
+    newData.resolve({ id: 'new' });
+    await second;
+    oldData.resolve({ id: 'old' });
+    await first;
+
+    expect(committed).toEqual(['new']);
+  });
+
+  it('ignores an older locality completion and clears locality on a current failure', async () => {
+    const oldLocality = deferred<{ local_pct: number }>();
+    const newLocality = deferred<{ local_pct: number }>();
+    const committed: Array<number | null> = [];
+    const loadLocality = vi.fn()
+      .mockImplementationOnce(() => oldLocality.promise)
+      .mockImplementationOnce(() => newLocality.promise)
+      .mockRejectedValueOnce(new Error('offline'));
+    const runner = createLatestRefreshRunner<{ ok: boolean }, { local_pct: number }>({
+      loadData: async () => ({ ok: true }),
+      loadLocality,
+      commitData: () => {},
+      commitLocality: (value) => committed.push(value?.local_pct ?? null),
+    });
+
+    const first = runner.refresh();
+    await vi.waitFor(() => expect(loadLocality).toHaveBeenCalledTimes(1));
+    const second = runner.refresh();
+    await vi.waitFor(() => expect(loadLocality).toHaveBeenCalledTimes(2));
+    newLocality.resolve({ local_pct: 91 });
+    await second;
+    oldLocality.resolve({ local_pct: 12 });
+    await first;
+
+    expect(committed).toEqual([91]);
+
+    await runner.refresh();
+    expect(committed).toEqual([91, null]);
   });
 });

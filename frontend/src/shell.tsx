@@ -365,7 +365,16 @@ export function CinemaMesh({ agents = [], tasks = [], llm, trust, sources, demo 
     window.addEventListener('keydown', h);
     return () => window.removeEventListener('keydown', h);
   }, [onExit]);
-  const TAGS = ['Your governed AI cabinet', 'On-device · always-on', 'Proactive. Private. Provable.'];
+  const trustEvidence = sources?.trust === true;
+  const cloudReported = trustEvidence
+    && (trust?.cloud_available === true || trust?.claude_available === true);
+  const TAGS = [
+    'Governed operator view',
+    'Current evidence only',
+    !trustEvidence
+      ? 'Trust evidence unavailable'
+      : cloudReported ? 'Cloud lane reported by trust status' : 'Trust status connected',
+  ];
   const live = agents.filter(isExecutingAgent).length;
   const running = runningTasks(tasks).length;
   return (

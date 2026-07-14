@@ -1011,11 +1011,20 @@ export function LMStudioPanel() {
   const models = arr(d, 'models');
   const [note, setNote] = useState('');
   const say = (r) => { setNote(typeof r === 'object' ? (r.detail || r.status || (r.ok ? 'ok' : JSON.stringify(r).slice(0, 60))) : String(r)); reload(); };
+  const runAction = (label, path, id) => {
+    setNote(`${label}…`);
+    apiPost(path, { model: id }, { admin: true }).then(say).catch((err) => {
+      const status = Number(err?.status);
+      setNote(`${label} failed${Number.isFinite(status) ? ` · HTTP ${status}` : ''}`.slice(0, 80));
+      reload();
+    });
+  };
   return <Card title="LOCAL MODELS" live={asLive(d)} sub={models.length + ' models'} onReload={reload}>
     <State e={e} loading={loading} n={models.length} />
     {models.slice(0, 20).map((m) => {
       const id = String(m.id || m.name || '');
       const provider = String(m.provider || 'unknown');
+      const lmStudioLifecycle = provider.trim().toLowerCase() === 'lm-studio';
       const key = `${provider}:${id}`;
       const status = localModelStatus(m);
       const statusColor = status === 'loaded' ? 'var(--green)'
@@ -1031,17 +1040,17 @@ export function LMStudioPanel() {
           {controls.can_configure === true && m.configured !== true && <button
             className="tool-btn"
             title={`configure ${key}`}
-            onClick={() => actA('/api/models/local/switch', { model: id }, say)}
+            onClick={() => runAction('configure', '/api/models/local/switch', id)}
           >set default</button>}
-          {controls.can_load === true && <button
+          {lmStudioLifecycle && controls.can_load === true && <button
             className="tool-btn"
             title={`load ${key}`}
-            onClick={() => actA('/api/llm/load', { model: id }, say)}
+            onClick={() => runAction('load', '/api/llm/load', id)}
           >▶</button>}
-          {controls.can_unload === true && <button
+          {lmStudioLifecycle && controls.can_unload === true && <button
             className="tool-btn"
             title={`unload ${key}`}
-            onClick={() => actA('/api/llm/unload', { model: id }, say)}
+            onClick={() => runAction('unload', '/api/llm/unload', id)}
           >⏏</button>}
         </span>
       </Row>;

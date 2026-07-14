@@ -65,7 +65,7 @@ export function isExecutingAgent(agent): boolean {
 }
 
 function taskOwner(t) {
-  return String((t && (t.owner || t.agent_id || t.agent || t.assignee)) || 'jarvis').toLowerCase();
+  return String((t && (t.owner || t.agent_id || t.agent)) || 'jarvis').toLowerCase();
 }
 function taskTitle(t) {
   return String((t && (t.title || t.label || t.kind || t.id)) || 'task');
@@ -77,11 +77,11 @@ function taskColor(t) {
 export function NeuralMesh({ agents = [], tasks = [], activeId, onSelect, motion, cinema = false, llm, trust, sources, demo = false, t }: any) {
   const wrapRef = useRef<any>(null), canvasRef = useRef<any>(null);
   const S = useRef<any>({
-    nodes: [], edges: [], particles: [], rings: [], stars: [], hover: null, tasks: [], models: [], demo: false,
+    nodes: [], edges: [], particles: [], rings: [], stars: [], hover: null, tasks: [], models: [], agents: [],
+    demo: false, calm: false, cinema: false,
     w: 640, h: 460, cx: 320, cy: 230, dpr: 1, raf: 0, tick: 0, lastPulse: 0, lastCascade: 0, cascadeI: -1, focus: null,
   });
   const [tip, setTip] = useState<any>(null);
-  const calm = motion === 'calm';
   const taskList = useMemo(() => runningTasks(Array.isArray(tasks) ? tasks : []), [tasks]);
   const models = useMemo(() => deriveMeshModels({
     demo,
@@ -90,7 +90,10 @@ export function NeuralMesh({ agents = [], tasks = [], activeId, onSelect, motion
     trust,
   }), [demo, llm?.residents, sources?.trust, trust]);
   S.current.models = models;
+  S.current.agents = Array.isArray(agents) ? agents : [];
   S.current.demo = demo;
+  S.current.calm = motion === 'calm';
+  S.current.cinema = cinema;
   const visibleTaskCount = useMemo(() => {
     const known = new Set(['jarvis', ...agents.map((a) => String(a.id).toLowerCase())]);
     return taskList.filter((tk) => known.has(taskOwner(tk))).length;
@@ -112,7 +115,8 @@ export function NeuralMesh({ agents = [], tasks = [], activeId, onSelect, motion
   function build() {
     const st = S.current, W = st.w, H = st.h, cx = W / 2, cy = H / 2; st.cx = cx; st.cy = cy;
     const nodes: any[] = [], edges: any[] = []; const R = Math.min(W, H);
-    nodes.push({ id: 'jarvis', kind: 'core', baseAng: 0, baseRad: 0, r: Math.max(15, R * (cinema ? 0.058 : 0.05)), label: 'JARVIS', agent: agents.find((a) => a.id === 'jarvis'), i: 0 });
+    const liveAgents = Array.isArray(st.agents) ? st.agents : [];
+    nodes.push({ id: 'jarvis', kind: 'core', baseAng: 0, baseRad: 0, r: Math.max(15, R * (st.cinema ? 0.058 : 0.05)), label: 'JARVIS', agent: liveAgents.find((a) => a.id === 'jarvis'), i: 0 });
     const meshModels = Array.isArray(st.models) ? st.models : [];
     const mR = R * 0.20;
     meshModels.forEach((m, i) => {
@@ -124,10 +128,10 @@ export function NeuralMesh({ agents = [], tasks = [], activeId, onSelect, motion
     // wiring survives a live roster of just one local model (or a cloud lane).
     const localModel = meshModels.find((m) => !m.cloud) || meshModels[0];
     const cloudModels = meshModels.filter((m) => m.cloud);
-    const list = agents.filter((a) => a.id !== 'jarvis'); const aR = R * 0.44;
+    const list = liveAgents.filter((a) => a.id !== 'jarvis'); const aR = R * 0.44;
     list.forEach((a, i) => {
       const ang = -Math.PI / 2 + i * (2 * Math.PI / Math.max(1, list.length));
-      nodes.push({ id: a.id, kind: 'agent', baseAng: ang, baseRad: aR, r: cinema ? 7 : 5.5, agent: a, label: a.name, i });
+      nodes.push({ id: a.id, kind: 'agent', baseAng: ang, baseRad: aR, r: st.cinema ? 7 : 5.5, agent: a, label: a.name, i });
       const preferLocal = a.tier === 'FND' || a.id === 'frigga' || a.id === 'ultron' || a.id === 'hephaestus';
       const target = (preferLocal || !cloudModels.length) ? localModel : cloudModels[i % cloudModels.length];
       if (target) edges.push({ a: a.id, b: 'model:' + target.key, kind: 'am' });
@@ -169,13 +173,15 @@ export function NeuralMesh({ agents = [], tasks = [], activeId, onSelect, motion
     return () => { cancelAnimationFrame(S.current.raf); if (ro) ro.disconnect(); };
     // eslint-disable-next-line
   }, []);
-  useEffect(() => { build(); /* eslint-disable-next-line */ }, [agents, models]);
+  useEffect(() => { build(); /* eslint-disable-next-line */ }, [agents, models, cinema]);
   useEffect(() => { S.current.focus = activeId; }, [activeId]);
   useEffect(() => { S.current.tasks = taskList; }, [taskList]);
 
   function draw() {
     const st = S.current, cv = canvasRef.current; if (!cv) return; const ctx = cv.getContext('2d'); if (!ctx) return;
     ctx.setTransform(st.dpr, 0, 0, st.dpr, 0, 0); st.tick++;
+    const calm = st.calm;
+    const cinema = st.cinema;
     const W = st.w, H = st.h, cx = st.cx, cy = st.cy;
     ctx.globalCompositeOperation = 'source-over';
     ctx.fillStyle = 'rgba(4,7,13,' + (calm ? 0.4 : 0.26) + ')'; ctx.fillRect(0, 0, W, H);
@@ -276,7 +282,7 @@ export function NeuralMesh({ agents = [], tasks = [], activeId, onSelect, motion
     });
     if (!byOwner.size) return;
     const W = st.w, H = st.h, cx = st.cx, cy = st.cy;
-    const outer = Math.min(W, H) * (cinema ? 0.48 : 0.46);
+    const outer = Math.min(W, H) * (st.cinema ? 0.48 : 0.46);
     ctx.globalCompositeOperation = 'source-over';
     // Bounded fan (real-world finding, 2026-07-08): an owner can accumulate far
     // more tasks than a fixed-size arc can label legibly — cap what's drawn so
