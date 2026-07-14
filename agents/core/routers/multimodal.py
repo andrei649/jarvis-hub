@@ -63,7 +63,7 @@ async def vlm_describe(body: VLMDescribeBody):
 
 
 class DesktopStepsBody(BaseModel):
-    steps: list[dict] = Field(default_factory=list, max_length=100)
+    steps: list[dict] = Field(default_factory=list)
 
 
 def desktop_host_enabled() -> bool:

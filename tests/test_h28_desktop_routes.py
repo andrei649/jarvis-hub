@@ -121,6 +121,49 @@ def test_desktop_preview_and_run_share_validation_before_any_downstream_seam(
     assert reached == []
 
 
+def test_desktop_routes_bound_and_redact_oversized_plan_before_downstream_seams(
+    client,
+    monkeypatch,
+):
+    sentinel = "desktop-secret-do-not-echo-" + "x" * 19_900
+    steps = [
+        {"action": "type", "args": {"name": "Editor", "text": sentinel}}
+        for _ in range(101)
+    ]
+    reached = []
+
+    def record(seam, result):
+        def call(*_args, **_kwargs):
+            reached.append(seam)
+            return result
+
+        return call
+
+    async def record_preview(*_args, **_kwargs):
+        reached.append("GovernedDesktop.preview")
+        return {"steps": []}
+
+    monkeypatch.setattr(multimodal, "desktop_host_enabled", record("host gate", False))
+    monkeypatch.setattr(multimodal, "get_orch", record("orchestrator", object()))
+    monkeypatch.setattr(multimodal, "build_desktop_runtime", record("desktop runtime", None))
+    monkeypatch.setattr(desktop_operator.GovernedDesktop, "preview", record_preview)
+
+    responses = [
+        client.post(route, json={"steps": steps})
+        for route in ("/api/desktop/preview", "/api/desktop/run")
+    ]
+
+    assert [response.status_code for response in responses] == [200, 200]
+    assert [response.json() for response in responses] == [
+        {"ok": False, "reason": "too_many_steps"},
+        {"ok": False, "reason": "too_many_steps"},
+    ]
+    assert all("no-store" in response.headers["cache-control"] for response in responses)
+    assert all(sentinel not in response.text for response in responses)
+    assert all(len(response.content) <= 64 for response in responses)
+    assert reached == []
+
+
 def test_desktop_preview_receives_only_shared_canonical_steps(client, monkeypatch):
     seen = []
 
