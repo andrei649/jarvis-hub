@@ -26,6 +26,11 @@ _TASK_REQUIRED_FIELDS = {"id", "owner", "state", "label", "project"}
 _TICKER_ITEM_FIELDS = {"agent", "verb", "obj", "pct", "pri"}
 
 
+def _assert_no_store(response) -> None:
+    directives = {item.strip().lower() for item in response.headers["cache-control"].split(",")}
+    assert "no-store" in directives
+
+
 class _QueueTask:
     """Small queue-row double with independently controlled raw and JSON state."""
 
@@ -157,14 +162,17 @@ def test_dashboard_concurrent_refresh_fetches_weather_once(monkeypatch):
 def test_tasks_no_orch_returns_503():
     resp = _NO_ORCH_CLIENT.get("/tasks")
     assert resp.status_code == 503
+    _assert_no_store(resp)
 
 
 def test_tasks_returns_tasks_key(monkeypatch):
     monkeypatch.setattr(web, "orch", _simple_orch())
     client = TestClient(web.app)
-    data = client.get("/tasks").json()
+    response = client.get("/tasks")
+    data = response.json()
     assert "tasks" in data
     assert isinstance(data["tasks"], list)
+    _assert_no_store(response)
 
 
 def test_tasks_empty_queue_returns_empty_list(monkeypatch):
@@ -253,6 +261,7 @@ def test_tasks_running_view_uses_normalized_state_precedence(monkeypatch):
     assert data["view"] == "running"
     assert data["source"] == "autonomy_queue"
     assert data["history_included"] is False
+    _assert_no_store(response)
     as_of = datetime.fromisoformat(data["as_of"].replace("Z", "+00:00"))
     assert as_of.utcoffset() == UTC.utcoffset(as_of)
 
@@ -281,12 +290,14 @@ def test_tasks_history_view_excludes_normalized_running_rows(monkeypatch):
     ]
     monkeypatch.setattr(web, "orch", mock)
 
-    data = TestClient(web.app).get("/tasks?view=history").json()
+    response = TestClient(web.app).get("/tasks?view=history")
+    data = response.json()
 
     assert [task["id"] for task in data["tasks"]] == ["done", "blocked"]
     assert data["view"] == "history"
     assert data["source"] == "autonomy_queue"
     assert data["history_included"] is True
+    _assert_no_store(response)
 
 
 def test_tasks_owner_precedence_includes_legacy_agent_field(monkeypatch):

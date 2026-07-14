@@ -15,6 +15,7 @@ def test_pytest_data_root_contains_lifespan_and_autonomy_writes():
     assert not test_root.is_relative_to(operator_root)
     assert not operator_root.is_relative_to(test_root)
     assert key_root.is_relative_to(test_root)
+    Path(os.environ["JARVIS_TEST_ROOT_REPORT"]).write_text(str(test_root), encoding="utf-8")
 
     from agents.core.autonomy import queue as autonomy_queue
     from agents.core.paths import data_root

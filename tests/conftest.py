@@ -3,7 +3,7 @@
 import atexit
 import importlib.util
 import os
-import shutil
+import subprocess
 import sys
 import tempfile
 from pathlib import Path
@@ -14,7 +14,28 @@ from pathlib import Path
 _PYTEST_DATA_ROOT = tempfile.mkdtemp(prefix="jarvis-pytest-")
 os.environ["JARVIS_HOME"] = _PYTEST_DATA_ROOT
 os.environ["JARVIS_KEY_DIR"] = str(Path(_PYTEST_DATA_ROOT) / "keys")
-atexit.register(shutil.rmtree, _PYTEST_DATA_ROOT, ignore_errors=True)
+
+
+def _launch_pytest_root_cleanup() -> None:
+    """Let a child retry deletion after this process releases SQLite handles."""
+    helper = Path(__file__).resolve().parent / "support" / "pytest_root_cleanup.py"
+    creationflags = subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0
+    try:
+        subprocess.Popen(
+            [sys.executable, str(helper), _PYTEST_DATA_ROOT],
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            close_fds=True,
+            creationflags=creationflags,
+        )
+    except OSError:
+        # At interpreter shutdown there is no safe in-process fallback on Windows:
+        # SQLite handles may still be open, so leave this one exact root untouched.
+        return
+
+
+atexit.register(_launch_pytest_root_cleanup)
 
 # Gate network calls BEFORE any agents.web import (set at module level so it's
 # guaranteed to take effect during pytest collection, before fixtures run).
