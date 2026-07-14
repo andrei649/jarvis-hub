@@ -7,6 +7,14 @@ import {
   sanitizeDesktopResult,
 } from '../operator-contract';
 
+function readStep(query = 'summary') {
+  return { action: 'read' as const, args: { query } };
+}
+
+function clickStep(name = 'Save') {
+  return { action: 'click' as const, args: { name } };
+}
+
 describe('canonicalizeDesktopSteps', () => {
   it('canonicalizes every supported action with fixed key order', () => {
     const result = canonicalizeDesktopSteps([
@@ -83,7 +91,8 @@ describe('reduceDesktopOutcome', () => {
     ['real approval-required response queues', 'run', { ok: false, reason: 'approval_required', task_id: ' task-7 ' }, 1, 'queued'],
     ['boolean approval alias queues', 'run', { ok: false, approval_required: true, task_id: 42 }, 1, 'queued'],
     ['approval without a task id blocks', 'run', { ok: false, reason: 'approval_required' }, 1, 'blocked'],
-    ['exact verified counts execute', 'run', { ok: true, ran: [{ status: 'ran' }, { status: 'ran' }] }, 2, 'executed'],
+    ['numeric-only evidence cannot prove execution identity', 'run', { ok: true, ran: [{ action: 'read', status: 'ran' }, { action: 'click', status: 'ran' }] }, 2, 'partial'],
+    ['exact verified snapshot actions execute', 'run', { ok: true, ran: [{ action: 'read', status: 'ran' }, { action: 'click', status: 'ran' }] }, [readStep(), clickStep()], 'executed'],
     ['a positive ran count beats a refusal collision', 'run', { ok: false, reason: 'injection_detected', ran: [{ status: 'ran' }] }, 2, 'partial'],
     ['a returned-count mismatch is partial', 'run', { ok: true, ran: [{ status: 'ran' }, { status: 'failed' }] }, 2, 'partial'],
     ['an exact governance refusal blocks', 'run', { ok: false, reason: 'desktop_host_disabled', ran: [] }, 1, 'blocked'],
@@ -91,6 +100,52 @@ describe('reduceDesktopOutcome', () => {
     ['substring lookalikes do not count as refusals', 'run', { ok: false, reason: 'maybe_injection_detected_later', ran: [] }, 1, 'failed'],
   ] as const)('%s', (_label, context, result, submittedCount, expected) => {
     expect(reduceDesktopOutcome(context, result, submittedCount)).toBe(expected);
+  });
+
+  it.each([
+    [
+      '21 returned rows for a 20-step submission',
+      {
+        ok: true,
+        ran: [
+          ...Array.from({ length: 20 }, (_, index) => ({ action: index ? 'click' : 'read', status: 'ran' })),
+          { action: 'click', status: 'blocked' },
+        ],
+      },
+      20,
+    ],
+    [
+      'an exact ran row only beyond the display cap',
+      {
+        ok: false,
+        ran: [
+          ...Array.from({ length: 20 }, (_, index) => ({ action: index ? 'click' : 'read', status: 'failed' })),
+          { action: 'click', status: 'ran' },
+        ],
+      },
+      20,
+    ],
+    ['a missing action', { ok: true, ran: [{ status: 'ran' }] }, 1],
+    ['a wrong action', { ok: true, ran: [{ action: 'click', status: 'ran' }] }, 1],
+    [
+      'actions in the wrong order',
+      { ok: true, ran: [{ action: 'click', status: 'ran' }, { action: 'read', status: 'ran' }] },
+      2,
+    ],
+  ])('fails closed as partial for numeric-only anomalous evidence: %s', (_label, result, submittedCount) => {
+    expect(reduceDesktopOutcome('run', result, submittedCount)).toBe('partial');
+  });
+
+  it.each([
+    ['a missing returned action', { ok: true, ran: [{ status: 'ran' }] }, [readStep()]],
+    ['a mismatched returned action', { ok: true, ran: [{ action: 'click', status: 'ran' }] }, [readStep()]],
+    [
+      'returned actions in the wrong order',
+      { ok: true, ran: [{ action: 'click', status: 'ran' }, { action: 'read', status: 'ran' }] },
+      [readStep(), clickStep()],
+    ],
+  ])('requires exact submitted snapshot action identity: %s', (_label, result, submittedSteps) => {
+    expect(reduceDesktopOutcome('run', result, submittedSteps)).toBe('partial');
   });
 
   it.each([

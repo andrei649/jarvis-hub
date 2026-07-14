@@ -42,8 +42,9 @@ interface DesktopGrant {
 }
 
 interface DesktopOutcomeView {
-  outcome: DesktopOutcome;
+  outcome: DesktopOutcome | 'unknown';
   result: SafeDesktopResult;
+  error?: string;
 }
 
 const MAX_STEPS = 20;
@@ -223,10 +224,24 @@ function DesktopOutcomeRegion({ value }: { value: DesktopOutcomeView | null }) {
   if (outcome === 'failed') headline = `Failed${result.reason ? ` · ${result.reason}` : ''}`;
   if (outcome === 'partial') headline = 'Partial';
   if (outcome === 'executed') headline = 'Executed';
+  if (outcome === 'unknown') headline = 'Submission outcome unknown';
 
   return (
-    <div role="status" aria-label="desktop outcome" style={{ marginTop: 8 }}>
-      <div style={{ ...mono, color: outcome === 'executed' ? 'var(--green)' : 'var(--amber)' }}>{headline}</div>
+    <div role={outcome === 'unknown' ? 'alert' : 'status'} aria-label="desktop outcome" style={{ marginTop: 8 }}>
+      <div style={{ ...mono, color: outcome === 'executed' ? 'var(--green)' : outcome === 'unknown' ? 'var(--red)' : 'var(--amber)' }}>{headline}</div>
+      {outcome === 'unknown' && (
+        <>
+          <div aria-label="submission error detail" style={{ ...mono, color: 'var(--ink-2)', marginTop: 4 }}>
+            {value.error || 'request_failed'}
+          </div>
+          <div style={{ ...mono, color: 'var(--amber)', marginTop: 4 }}>
+            Check Decision Inbox before any retry
+          </div>
+          <div style={{ ...mono, color: 'var(--red)', marginTop: 4 }}>
+            Do not resubmit until the prior attempt is checked
+          </div>
+        </>
+      )}
       {outcome === 'partial' && (
         <div style={{ ...mono, color: 'var(--red)', marginTop: 4 }}>
           Do not retry the whole plan: some steps already ran
@@ -484,7 +499,7 @@ export function OperatorPanel() {
       if (!safePreview) throw new Error('Invalid desktop preview response');
       setDesktopPreview(safePreview);
       setDesktopGrant({ signature, snapshot: storedSnapshot });
-      setDesktopOutcome({ outcome: reduceDesktopOutcome('preview', raw, storedSnapshot.length), result: { ran: [] } });
+      setDesktopOutcome({ outcome: reduceDesktopOutcome('preview', raw, storedSnapshot), result: { ran: [] } });
     } catch (error) {
       if (revision === desktopRevisionRef.current && requestId === previewRequestRef.current) {
         setDesktopError(boundedError(error));
@@ -502,15 +517,22 @@ export function OperatorPanel() {
     setDesktopOutcome(null);
     setDesktopError(null);
     setDesktopBusy('run');
+    let submitted = false;
     try {
       if (desktopPlanSignature(grant.snapshot) !== grant.signature) throw new Error('Desktop preview snapshot changed');
       const requestSnapshot = canonicalizeDesktopSteps(grant.snapshot);
+      submitted = true;
       const raw = await apiPost('/api/desktop/run', { steps: requestSnapshot });
-      const outcome = reduceDesktopOutcome('run', raw, grant.snapshot.length);
+      const outcome = reduceDesktopOutcome('run', raw, grant.snapshot);
       const result = sanitizeDesktopResult(raw);
       setDesktopOutcome({ outcome, result });
     } catch (error) {
-      setDesktopError(boundedError(error));
+      const detail = boundedError(error);
+      if (submitted) {
+        setDesktopOutcome({ outcome: 'unknown', result: { ran: [] }, error: detail });
+      } else {
+        setDesktopError(detail);
+      }
     } finally {
       setDesktopBusy(null);
     }

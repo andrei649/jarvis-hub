@@ -439,7 +439,49 @@ describe('OperatorPanel governed desktop', () => {
     expect(document.body.textContent).not.toContain('draft-secret');
   });
 
-  it('disables submit while Run is in flight and consumes preview after rejection', async () => {
+  it.each([
+    [
+      'an extra 21st returned row',
+      20,
+      {
+        ok: true,
+        ran: [
+          ...Array.from({ length: 20 }, (_, index) => ({ action: index ? 'click' : 'read', status: 'ran' })),
+          { action: 'click', status: 'blocked' },
+        ],
+      },
+    ],
+    [
+      'a ran row only beyond the display cap',
+      20,
+      {
+        ok: false,
+        ran: [
+          ...Array.from({ length: 20 }, (_, index) => ({ action: index ? 'click' : 'read', status: 'failed' })),
+          { action: 'click', status: 'ran' },
+        ],
+      },
+    ],
+    ['a missing action', 1, { ok: true, ran: [{ status: 'ran' }] }],
+    ['a wrong action', 1, { ok: true, ran: [{ action: 'click', status: 'ran' }] }],
+    [
+      'actions in the wrong order',
+      2,
+      { ok: true, ran: [{ action: 'click', status: 'ran' }, { action: 'read', status: 'ran' }] },
+    ],
+  ])('fails closed with the no-retry warning for %s', async (_label, submittedCount, response) => {
+    render(<OperatorPanel />);
+    addDesktopStep('read', 'summary');
+    for (let index = 1; index < submittedCount; index += 1) addDesktopStep('click', `Button ${index}`);
+    await previewDesktop(submittedCount);
+    post.mockResolvedValueOnce(response);
+    fireEvent.click(screen.getByRole('button', { name: 'submit governed plan' }));
+
+    await waitFor(() => expect(screen.getByText('Partial')).toBeTruthy());
+    expect(screen.getByText('Do not retry the whole plan: some steps already ran')).toBeTruthy();
+  });
+
+  it('shows an unknown submission outcome and consumes preview after Run rejection', async () => {
     const running = deferred<unknown>();
     post
       .mockResolvedValueOnce(desktopPreviewResponse(['read']))
@@ -452,10 +494,19 @@ describe('OperatorPanel governed desktop', () => {
     expect((screen.getByRole('button', { name: 'preview desktop plan' }) as HTMLButtonElement).disabled).toBe(true);
     expect((screen.getByRole('button', { name: 'add desktop step' }) as HTMLButtonElement).disabled).toBe(true);
     expect((screen.getByRole('button', { name: 'remove desktop step 1' }) as HTMLButtonElement).disabled).toBe(true);
-    running.reject(new Error('POST /api/desktop/run -> 503'));
-    await waitFor(() => expect(screen.getByRole('alert').textContent).toMatch(/503/));
+    running.reject(new Error(`POST /api/desktop/run -> 503 ${'E'.repeat(400)}`));
+
+    await waitFor(() => expect(screen.getByText('Submission outcome unknown')).toBeTruthy());
+    const unknown = screen.getByLabelText('desktop outcome');
+    expect(within(unknown).getByText(/Decision Inbox/i)).toBeTruthy();
+    expect(within(unknown).getByText('Do not resubmit until the prior attempt is checked')).toBeTruthy();
+    const detail = within(unknown).getByLabelText('submission error detail');
+    expect(detail.textContent).toMatch(/503/);
+    expect(detail.textContent?.length).toBeLessThanOrEqual(240);
+    expect(detail.textContent).not.toContain('E'.repeat(241));
     expect((screen.getByRole('button', { name: 'submit governed plan' }) as HTMLButtonElement).disabled).toBe(true);
     expect(screen.queryByText('Preview only · nothing executed')).toBeNull();
+    expect(screen.queryByText('Executed')).toBeNull();
   });
 });
 
@@ -464,7 +515,6 @@ describe('OperatorPanel request errors', () => {
     ['browser check', 'check policy'],
     ['browser preview', 'preview browser plan'],
     ['desktop preview', 'preview desktop plan'],
-    ['desktop run', 'submit governed plan'],
   ] as const)('shows a bounded alert and clears stale success for %s rejection', async (_label, buttonName) => {
     render(<OperatorPanel />);
     addDomain();
@@ -480,7 +530,7 @@ describe('OperatorPanel request errors', () => {
       post.mockResolvedValueOnce({ steps: [{ index: 0, action: 'click', decision: 'block', reason: 'test' }] });
       fireEvent.click(screen.getByRole('button', { name: buttonName }));
       await waitFor(() => expect(screen.getByLabelText('browser preview result')).toBeTruthy());
-    } else if (buttonName === 'preview desktop plan' || buttonName === 'submit governed plan') {
+    } else if (buttonName === 'preview desktop plan') {
       await previewDesktop();
     }
     post.mockRejectedValueOnce(new Error('E'.repeat(400)));
@@ -492,7 +542,7 @@ describe('OperatorPanel request errors', () => {
     expect(alert.textContent).not.toContain('E'.repeat(241));
     if (buttonName === 'check policy') expect(screen.queryByLabelText('browser check result')).toBeNull();
     if (buttonName === 'preview browser plan') expect(screen.queryByLabelText('browser preview result')).toBeNull();
-    if (buttonName.startsWith('preview desktop') || buttonName.startsWith('submit governed')) {
+    if (buttonName.startsWith('preview desktop')) {
       expect(screen.queryByText('Preview only · nothing executed')).toBeNull();
     }
   });

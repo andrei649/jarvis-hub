@@ -146,22 +146,37 @@ function isGovernanceRefusal(result: Record<string, unknown>): boolean {
 export function reduceDesktopOutcome(
   context: DesktopOutcomeContext,
   result: unknown,
-  submittedCount: number,
+  submitted: number | readonly CanonicalDesktopStep[],
 ): DesktopOutcome {
   if (context === 'preview') return 'proposed';
   const record = isRecord(result) ? result : {};
-  const boundedRan = Array.isArray(record.ran) ? record.ran.slice(0, MAX_STEPS) : [];
-  const returnedCount = boundedRan.length;
-  const ranCount = boundedRan.filter((entry) => isRecord(entry) && entry.status === 'ran').length;
+  const rawRan = Array.isArray(record.ran) ? record.ran : [];
+  let ranCount = 0;
+  for (const entry of rawRan) {
+    if (isRecord(entry) && entry.status === 'ran') ranCount += 1;
+  }
   const approvalRequired = record.approval_required === true || record.reason === 'approval_required';
   const taskId = boundedTaskId(record.task_id);
+  let submittedSteps: CanonicalDesktopStep[] | null = null;
+  if (Array.isArray(submitted)) {
+    try {
+      submittedSteps = canonicalizeDesktopSteps(submitted);
+    } catch {
+      submittedSteps = null;
+    }
+  }
 
   if (ranCount === 0 && approvalRequired && taskId) return 'queued';
   if (
-    submittedCount > 0
+    submittedSteps !== null
     && record.ok === true
-    && returnedCount === submittedCount
-    && ranCount === submittedCount
+    && rawRan.length === submittedSteps.length
+    && ranCount === submittedSteps.length
+    && rawRan.every((entry, index) => (
+      isRecord(entry)
+      && entry.status === 'ran'
+      && entry.action === submittedSteps[index].action
+    ))
   ) return 'executed';
   if (ranCount > 0) return 'partial';
   if (isGovernanceRefusal(record)) return 'blocked';
