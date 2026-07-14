@@ -106,15 +106,6 @@ async def execute_desktop_steps(orch, steps, *, approver=None, authorizer=None):
 @router.post("/api/desktop/preview", dependencies=[Depends(user_guard)])
 async def desktop_preview(body: DesktopStepsBody):
     """H15.3 — dry-run a desktop step plan (which steps need approval)."""
-    from agents.core.desktop_operator import GovernedDesktop
-    return nocache_json(await GovernedDesktop().preview(body.steps))
-
-
-@router.post("/api/desktop/run", dependencies=[Depends(user_guard)])
-async def desktop_run(body: DesktopStepsBody):
-    """H28.4 — run isolated host steps through the live Action Kernel binding."""
-    if not desktop_host_enabled():
-        return nocache_json({"ok": False, "reason": "desktop_host_disabled"})
     from agents.core.desktop_operator import (
         DesktopProposalError,
         GovernedDesktop,
@@ -125,6 +116,24 @@ async def desktop_run(body: DesktopStepsBody):
         proposal = validate_desktop_run_args({"steps": body.steps})
     except DesktopProposalError as exc:
         return nocache_json({"ok": False, "reason": exc.reason})
+    return nocache_json(await GovernedDesktop().preview(proposal["steps"]))
+
+
+@router.post("/api/desktop/run", dependencies=[Depends(user_guard)])
+async def desktop_run(body: DesktopStepsBody):
+    """H28.4 — run isolated host steps through the live Action Kernel binding."""
+    from agents.core.desktop_operator import (
+        DesktopProposalError,
+        GovernedDesktop,
+        validate_desktop_run_args,
+    )
+
+    try:
+        proposal = validate_desktop_run_args({"steps": body.steps})
+    except DesktopProposalError as exc:
+        return nocache_json({"ok": False, "reason": exc.reason})
+    if not desktop_host_enabled():
+        return nocache_json({"ok": False, "reason": "desktop_host_disabled"})
     orch = get_orch()
     if any(GovernedDesktop.is_mutating(step["action"]) for step in proposal["steps"]):
         server = getattr(orch, "tool_rpc", None)
