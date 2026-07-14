@@ -18,6 +18,7 @@ import { ConsoleOverlay, FirstRunGate, shouldShowFirstRun, FIRST_RUN_DISMISS_KEY
 import { ArtifactsPanel, artifactsTabLabel } from './artifacts';
 import { NeuralMesh } from './mesh';
 import { initAnalytics, trackPageview } from './analytics';
+import { useDemoMode } from './demo-mode';
 
 function ModeStub({ label }) {
   return (
@@ -59,7 +60,7 @@ function App() {
   const [lang, setLang] = useState(() => { try { return localStorage.getItem('hud.lang') || 'en'; } catch { return 'en'; } });
   // DEMO mode (opt-in, watermarked): OFF by default → the HUD shows ONLY real
   // backend data + honest empty states; ON → fills the seeded demo corpus.
-  const [demo, setDemo] = useState(() => { try { return localStorage.getItem('hud.demo') === '1' || /[?&]demo=1/.test(window.location.search); } catch { return false; } });
+  const [demo, setDemo] = useDemoMode();
   // Voice preferences (persisted): mode = hands-free | ptt; tts = server | browser | off;
   // lang = auto | ro | en; barge = off | on (experimental talk-over interrupt)
   const [voiceCfg, setVoiceCfg] = useState(() => { const d = { mode: 'hands-free', tts: 'server', lang: 'auto', barge: 'off' }; try { return { ...d, ...JSON.parse(localStorage.getItem('hud.voice') || '{}') }; } catch { return d; } });
@@ -138,7 +139,6 @@ function App() {
   useEffect(() => { try { localStorage.setItem('hud.motion', motion); } catch { /* ignore */ } }, [motion]);
   useEffect(() => { try { localStorage.setItem('hud.scanline', scanline); } catch { /* ignore */ } }, [scanline]);
   useEffect(() => { try { localStorage.setItem('hud.dotgrid', dotgrid); } catch { /* ignore */ } }, [dotgrid]);
-  useEffect(() => { try { localStorage.setItem('hud.demo', demo ? '1' : '0'); } catch { /* ignore */ } }, [demo]);
   useEffect(() => { try { localStorage.setItem('hud.voice', JSON.stringify(voiceCfg)); } catch { /* ignore */ } }, [voiceCfg]);
   // Re-seed (or clear) the demo-only cockpit corpus when DEMO toggles at runtime.
   useEffect(() => {
@@ -428,12 +428,12 @@ function replyFor(text, tr) {
   };
   return map[a] || map.jarvis;
 }
-function DemoBanner({ onExit }) {
+export function DemoBanner({ onExit }) {
   return (
     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 12, padding: '4px 0',
       background: 'repeating-linear-gradient(45deg, rgba(245,158,11,.16) 0 12px, rgba(245,158,11,.05) 12px 24px)',
       borderBottom: '1px solid rgba(245,158,11,.5)', fontFamily: 'var(--font-mono)', fontSize: 10.5, letterSpacing: '.18em', color: 'var(--amber)' }}>
-      ◐ DEMO DATA — seeded sample, not your live backend
+      ◐ DEMO DATA — seeded sample, not your live backend · /v2/?demo=1
       <button className="tool-btn" onClick={onExit}>exit demo</button>
     </div>
   );
