@@ -12,7 +12,7 @@ from typing import Optional
 
 import httpx
 
-from core.settings_db import get_conn
+from core.settings_db import ensure_initialized, get_conn
 
 logger = logging.getLogger("jarvis.gemini.cache")
 
@@ -28,29 +28,37 @@ class ContextCache:
         self._load_persisted()
 
     def _load_persisted(self):
+        conn = None
         try:
+            ensure_initialized()
             conn = get_conn()
             row = conn.execute(
                 "SELECT value FROM settings WHERE category='cache' AND key='entries'"
             ).fetchone()
-            conn.close()
             if row:
                 self._cache_map = json.loads(row["value"])
                 logger.info(f"Loaded {len(self._cache_map)} cache entries from DB")
         except Exception:
             self._cache_map = {}
+        finally:
+            if conn is not None:
+                conn.close()
 
     def _save_persisted(self):
+        conn = None
         try:
+            ensure_initialized()
             conn = get_conn()
             conn.execute(
                 "INSERT OR REPLACE INTO settings (category, key, value, label, kind, opts) VALUES (?,?,?,?,?,?)",
                 ("cache", "entries", json.dumps(self._cache_map), "Cache entries", "json", "[]"),
             )
             conn.commit()
-            conn.close()
         except Exception as e:
             logger.warning(f"Failed to persist cache map: {e}")
+        finally:
+            if conn is not None:
+                conn.close()
 
     @staticmethod
     def cache_key(system_instruction: str, model: str) -> str:
