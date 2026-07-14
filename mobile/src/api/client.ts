@@ -414,14 +414,28 @@ export interface CommandCenterAction {
   folders?: string[];
 }
 
+export type CommandCenterResidencyState = 'known' | 'unknown' | 'offline';
+
+export interface CommandCenterResidentModel {
+  provider: string;
+  id: string;
+}
+
+export interface CommandCenterModel {
+  backend: string;
+  active_model: string | null;
+  configured_model: string | null;
+  resident_models: CommandCenterResidentModel[];
+  residency_state: CommandCenterResidencyState;
+  active_provider: string | null;
+  route: string | null;
+  ready: boolean | null;
+  cloud_configured: boolean;
+}
+
 export interface CommandCenterResponse {
   install: { ready: boolean; version: string; checks: Record<string, unknown> };
-  model: {
-    backend: string;
-    active_model: string | null;
-    ready: boolean | null;
-    cloud_configured: boolean;
-  };
+  model: CommandCenterModel;
   wizard: {
     steps: CommandCenterWizardStep[];
     completed: string[];
@@ -431,12 +445,91 @@ export interface CommandCenterResponse {
   first_actions: CommandCenterAction[];
 }
 
+function commandCenterString(value: unknown, limit: number): string {
+  return typeof value === 'string' ? value.trim().slice(0, limit) : '';
+}
+
+function commandCenterOptionalString(value: unknown, limit: number): string | null {
+  return commandCenterString(value, limit) || null;
+}
+
+function commandCenterModelId(value: unknown): string | null {
+  const modelId = commandCenterOptionalString(value, 256);
+  return modelId?.toLowerCase() === 'none' ? null : modelId;
+}
+
+function normalizeCommandCenterResident(value: unknown): CommandCenterResidentModel | null {
+  const raw = securityRecord(value);
+  const provider = commandCenterString(raw.provider, 64);
+  const id = commandCenterModelId(raw.id);
+  return provider && id ? { provider, id } : null;
+}
+
+function normalizeCommandCenterResidency(value: unknown): CommandCenterResidencyState {
+  return value === 'known' || value === 'offline' ? value : 'unknown';
+}
+
+function commandCenterProviderKey(value: string | null): string {
+  return (value || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+}
+
+const COMMAND_CENTER_GEMINI_ROUTES = new Set(['cloud', 'cloud-fallback', 'cloud-flash', 'cloud-pro']);
+const COMMAND_CENTER_LOCAL_ROUTES = new Set(['local', 'local-deep', 'local-fallback']);
+
+function commandCenterUsesCloud(model: CommandCenterModel): boolean {
+  const provider = commandCenterProviderKey(model.active_provider || model.backend);
+  const route = (model.route || '').toLowerCase();
+  return (
+    (provider === 'gemini' && COMMAND_CENTER_GEMINI_ROUTES.has(route)) ||
+    (provider === 'claude' && route === 'claude')
+  );
+}
+
+/** A conservative, user-facing projection of the backend's model truth contract. */
+export function commandCenterModelLabel(model: CommandCenterModel): string {
+  const active = commandCenterModelId(model.active_model);
+  const configured = commandCenterModelId(model.configured_model);
+  const route = (model.route || '').toLowerCase();
+
+  if (model.ready === true && active && commandCenterUsesCloud(model)) {
+    return `${active} · cloud ready`;
+  }
+
+  if (
+    model.ready === true &&
+    active &&
+    model.residency_state === 'known' &&
+    COMMAND_CENTER_LOCAL_ROUTES.has(route)
+  ) {
+    const provider = commandCenterProviderKey(model.active_provider || model.backend);
+    const exactResident = model.resident_models.some(
+      (resident) => commandCenterProviderKey(resident.provider) === provider && resident.id === active,
+    );
+    if (exactResident) return `${active} · loaded`;
+  }
+
+  const candidate = configured || active;
+  if (candidate) {
+    const residencyUnknown = model.residency_state === 'unknown' || model.ready === null;
+    return residencyUnknown
+      ? `${candidate} · residency unknown`
+      : `${candidate} · configured, not loaded`;
+  }
+  return 'no runnable model';
+}
+
 function normalizeCommandCenter(raw: Record<string, unknown>): CommandCenterResponse {
   const install = securityRecord(raw.install);
   const model = securityRecord(raw.model);
   const wizard = securityRecord(raw.wizard);
   const steps = Array.isArray(wizard.steps) ? wizard.steps : [];
   const actions = Array.isArray(raw.first_actions) ? raw.first_actions : [];
+  const residentModels = Array.isArray(model.resident_models)
+    ? model.resident_models
+        .slice(0, 64)
+        .map(normalizeCommandCenterResident)
+        .filter((resident): resident is CommandCenterResidentModel => resident !== null)
+    : [];
   return {
     install: {
       ready: securityBool(install.ready),
@@ -444,8 +537,13 @@ function normalizeCommandCenter(raw: Record<string, unknown>): CommandCenterResp
       checks: securityRecord(install.checks),
     },
     model: {
-      backend: securityString(model.backend) || 'none',
-      active_model: typeof model.active_model === 'string' ? model.active_model : null,
+      backend: commandCenterString(model.backend, 64) || 'none',
+      active_model: commandCenterModelId(model.active_model),
+      configured_model: commandCenterModelId(model.configured_model),
+      resident_models: residentModels,
+      residency_state: normalizeCommandCenterResidency(model.residency_state),
+      active_provider: commandCenterOptionalString(model.active_provider, 64),
+      route: commandCenterOptionalString(model.route, 64),
       ready: typeof model.ready === 'boolean' ? model.ready : null,
       cloud_configured: securityBool(model.cloud_configured),
     },

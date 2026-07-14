@@ -2566,6 +2566,44 @@ export function CommandCenterPanel() {
   const model = (d && d.model) || {};
   const wizard = (d && d.wizard) || {};
   const actions = arr(d && d.first_actions);
+  const safeModelId = (value) => {
+    const modelId = typeof value === 'string' ? value.trim() : '';
+    return modelId.toLowerCase() === 'none' ? '' : modelId;
+  };
+  const providerKey = (value) => (
+    typeof value === 'string' ? value.trim().toLowerCase().replace(/[^a-z0-9]/g, '') : ''
+  );
+  const activeModel = safeModelId(model.active_model);
+  const configuredModel = safeModelId(model.configured_model);
+  const activeProvider = typeof model.active_provider === 'string'
+    && model.active_provider.trim().toLowerCase() !== 'none'
+    ? model.active_provider.trim()
+    : '';
+  const backendLabel = typeof model.backend === 'string' ? model.backend.trim() : '';
+  const routedProviderKey = providerKey(activeProvider || backendLabel);
+  const residentModels = arr(model.resident_models).slice(0, 64).filter((entry) => (
+    entry && safeModelId(entry.id) && providerKey(entry.provider)
+  ));
+  const residencyUnknown = model.residency_state === 'unknown' || model.ready === null;
+  const route = typeof model.route === 'string' ? model.route.trim().toLowerCase() : '';
+  const cloudRoute = (routedProviderKey === 'gemini'
+      && ['cloud', 'cloud-fallback', 'cloud-flash', 'cloud-pro'].includes(route))
+    || (routedProviderKey === 'claude' && route === 'claude');
+  const localRoute = ['local', 'local-deep', 'local-fallback'].includes(route);
+  const exactResident = residentModels.some((entry) => (
+    providerKey(entry.provider) === routedProviderKey && safeModelId(entry.id) === activeModel
+  ));
+  const modelRouteReady = model.ready === true
+    && Boolean(activeModel)
+    && (cloudRoute || (localRoute && exactResident));
+  const candidateModel = configuredModel || activeModel;
+  const modelLabel = modelRouteReady
+    ? `${activeModel} · ${cloudRoute ? 'cloud ready' : 'loaded'}`
+    : candidateModel
+      ? `${candidateModel} · ${residencyUnknown ? 'residency unknown' : 'configured, not loaded'}`
+      : (model.ready === null ? 'model readiness unknown' : 'no runnable model');
+  const modelSource = activeProvider
+    || (backendLabel && backendLabel.toLowerCase() !== 'none' ? backendLabel : 'no route');
   const [hello, setHello] = useState(null);
   const sayHello = () => {
     setHello('…');
@@ -2588,7 +2626,7 @@ export function CommandCenterPanel() {
   const steps = wizard.steps || [];
   return (
     <Card title="COMMAND CENTER" live={asLive(d)}
-      sub={d ? `${install.ready ? 'ready' : 'starting'} · ${model.backend || 'none'}${wizard.complete ? ' · onboarded ✓' : ''}` : null}
+      sub={d ? `${install.ready ? 'ready' : 'starting'} · ${modelSource}${wizard.complete ? ' · onboarded ✓' : ''}` : null}
       onReload={reload}>
       <State e={e} loading={loading} n={actions.length} />
       <Row>
@@ -2599,8 +2637,8 @@ export function CommandCenterPanel() {
       </Row>
       <Row>
         <span style={mono}>model</span>
-        <span style={{ marginLeft: 'auto', color: model.ready ? 'var(--green)' : 'var(--amber)' }}>
-          {model.active_model || model.backend || 'none'}{model.ready === false ? ' · unreachable' : ''}
+        <span style={{ marginLeft: 'auto', color: modelRouteReady ? 'var(--green)' : 'var(--amber)' }}>
+          {modelLabel}
         </span>
       </Row>
       {d && wizard.hint && <Row><span style={{ color: 'var(--amber)', fontSize: 11 }}>⚠ {wizard.hint}</span></Row>}

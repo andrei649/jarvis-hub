@@ -5,7 +5,7 @@
 > Source of truth for backlog: [BACKLOG.md](BACKLOG.md)
 >
 <!-- project-status:go-live-header:start -->
-> Generated project status: **v0.11.0** · backend **5,082** · frontend **357** · mobile **90** · **396** routes · **17** active agents · open owner gates: **A1, A2, A3, A4, A5, A6, A7, A8** · commit `d3d98761457b`.
+> Generated project status: **v0.11.0** · backend **5,084** · frontend **358** · mobile **90** · **396** routes · **17** active agents · open owner gates: **A1, A2, A3, A4, A5, A6, A7, A8, A9** · commit `d3d98761457b`.
 <!-- project-status:go-live-header:end -->
 >
 > **2026-07-11 — the 1.0 gate expanded (owner decision):** this plan's launch checklist remains the
@@ -343,11 +343,13 @@ LM Studio + Ollama on local GPU. Zero API cost for 99% of tasks. Athena escalate
 | Security wedge H12.1 (P0, anti-OpenClaw) | P0 | 8 | ✅ Done |
 | **Remaining backlog** — H12.14 + H13.3 (both GPU-host-bound; runbook `docs/GPU_RUNBOOK.md`) | P2–P3 | ~13 | ⏳ Open |
 | **Manual-test runbook sign-off** — the human gate; full pass on the RTX box ([docs/MANUAL_TESTING.md](docs/MANUAL_TESTING.md) §0, ⭐B0 governed-autonomy demo) | P0 | — | ⏳ Run before tag |
+| **AI-OS v1 owner-host proof (Lane A / A8)** — real Chromium+Windows UIA, Home Assistant device/room/occupant/presence graph + actuation, consented Frigate→house flow, presence-aware `present()` on ≥2 non-chat surfaces/device classes, acquisition→reuse and ambient ladder; evidence steps in [`docs/MANUAL_TESTING.md`](docs/MANUAL_TESTING.md) §N | P0 | — | ⏳ Blocking owner/live gate |
 
 **Estimated gap to v1.0: ~13 SP** (two GPU-host-bound items), then the **human gate**. The software backlog
 H1–H17 is ✅ code-complete (194/196 items, ≈99% SP, 2026-06-09); v1.0 ships when the audit
 ([docs/AUDIT.md](docs/AUDIT.md)) and the manual-test runbook ([docs/MANUAL_TESTING.md](docs/MANUAL_TESTING.md))
-are signed off green on real hardware — that runbook *is* the audit gate, and no tag ships without its §0 sign-off.
+are signed off green on real hardware — that runbook *is* the audit gate, and no tag ships without
+its §0 sign-off **and the A8 owner-host proof in §N**.
 
 ---
 

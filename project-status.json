@@ -197,14 +197,19 @@
     },
     {
       "id": "A8",
-      "name": "Tag 1.0.0 (only after A1 + A7)",
+      "name": "**AI-OS v1 owner-host proof** — complete `docs/MANUAL_TESTING.md` §N on real hardware: installed Playwright Chromium + Windows UIA browser/desktop actuation; real Home Assistant state + device/room/occupant/presence graph + governed device actuation; consented Frigate event → house/memory/ambient flow; presence-aware Media Director delivery on ≥2 non-chat output surfaces/device classes; one approved acquisition→reuse loop. Record redacted audit/task/device evidence; hermetic reality packs alone do not clear this gate.",
+      "status": "⬜ **blocking owner/live gate**"
+    },
+    {
+      "id": "A9",
+      "name": "Tag 1.0.0 (only after A1 + A7 + A8 and every other open owner gate)",
       "status": "⬜"
     }
   ],
   "routes": 396,
   "tests": {
-    "backend": 5082,
-    "frontend": 357,
+    "backend": 5084,
+    "frontend": 358,
     "mobile": 90
   },
   "version": "0.11.0"

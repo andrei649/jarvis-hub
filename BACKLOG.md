@@ -124,9 +124,11 @@ python -m pytest tests/ -v          # ~3,868 passed, 6 skipped (counter synced v
 > **APPROVED with notes** — §5 of the handoff). The two lanes below are the same items, tracked
 > here so they surface in any "what's next" conversation. Tick them here AND in the handoff doc.
 >
-> **2026-07-11 update:** A8 "tag 1.0.0" now sits behind the **expanded** 1.0 gate — the proof
+> **2026-07-14 update:** A9 "tag 1.0.0" now sits behind the **expanded** 1.0 gate — the proof
 > track (A1–A7, unchanged) **plus** the AI-OS capability program (ORIZONT 27–33 below /
-> [NERVA_VISION.md](NERVA_VISION.md)). A1–A7 remain the critical path and are NOT displaced.
+> [NERVA_VISION.md](NERVA_VISION.md)). Code/harness completion does not satisfy the real-host
+> v1 bars by itself: A8 names the owner-only hardware proof explicitly. A1–A8 are blocking and
+> remain the critical path.
 
 **Lane A — owner critical path (ordered; delivered via PR #634):**
 
@@ -139,7 +141,8 @@ python -m pytest tests/ -v          # ~3,868 passed, 6 skipped (counter synced v
 | A5 | License flip MIT→Apache-2.0 + TRADEMARKS.md | 🟢 prep done in #634 — `TRADEMARKS.md` live, CONTRIBUTING relicense grant added, canonical Apache-2.0 staged in `docs/legal/`; the flip itself is 3 owner commands (steps in OWNER_TASKS), timing per LICENSE_DECISION = just before v1.0 |
 | A6 | Demo video (60s) + publish landing (dev half ✅ #512) | ⬜ |
 | A7 | Recruit 1–3 design partners; north-star on a non-owner install ≥2 weeks | ⬜ |
-| A8 | Tag 1.0.0 (only after A1 + A7) | ⬜ |
+| A8 | **AI-OS v1 owner-host proof** — complete `docs/MANUAL_TESTING.md` §N on real hardware: installed Playwright Chromium + Windows UIA browser/desktop actuation; real Home Assistant state + device/room/occupant/presence graph + governed device actuation; consented Frigate event → house/memory/ambient flow; presence-aware Media Director delivery on ≥2 non-chat output surfaces/device classes; one approved acquisition→reuse loop. Record redacted audit/task/device evidence; hermetic reality packs alone do not clear this gate. | ⬜ **blocking owner/live gate** |
+| A9 | Tag 1.0.0 (only after A1 + A7 + A8 and every other open owner gate) | ⬜ |
 
 **Lane B — engineering tail (any AI session; one item = one PR, default-off):**
 
