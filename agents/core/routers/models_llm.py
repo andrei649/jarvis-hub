@@ -149,28 +149,59 @@ async def _restore_local_provider(
     backend_type,
     default_model,
     runtime_model: str | None,
-):
-    """Best-effort rollback after a cross-provider adoption failure."""
+) -> dict[str, bool]:
+    """Attempt and verify persisted plus live cross-provider rollback."""
+    settings_write_ok = False
     try:
-        put_category(
+        updated, skipped = put_category(
             "llm",
             {"backend_type": backend_type, "default_model": default_model},
         )
+        settings_write_ok = updated == 2 and not skipped
     except Exception:
         pass
+
+    settings_readback_ok = False
+    try:
+        restored_backend_type = get_value("llm", "backend_type", None)
+        restored_default_model = get_value("llm", "default_model", None)
+        settings_readback_ok = (
+            restored_backend_type == backend_type
+            and restored_default_model == default_model
+        )
+    except Exception:
+        pass
+
+    provider_restored = False
     try:
         router_.backend_type = backend_type
         await router_.detect()
+        provider_restored = _local_provider_name(router_) == provider
     except Exception:
-        return
-    if runtime_model and _local_provider_name(router_) == provider:
+        pass
+
+    runtime_model_restored = False
+    if provider_restored:
         try:
-            router_.set_active_model(runtime_model)
+            if getattr(router_, "active_model", None) != runtime_model:
+                router_.set_active_model(runtime_model)
+            runtime_model_restored = getattr(router_, "active_model", None) == runtime_model
         except Exception:
             pass
 
+    result = {
+        "settings_write": settings_write_ok,
+        "settings_readback": settings_readback_ok,
+        "provider": provider_restored,
+        "runtime_model": runtime_model_restored,
+    }
+    result["ok"] = all(result.values())
+    return result
 
-async def _finish_local_provider_restore(router_, **restore_kwargs) -> None:
+
+async def _finish_local_provider_restore(
+    router_, **restore_kwargs
+) -> tuple[dict[str, bool], bool]:
     """Finish rollback before propagating cancellation to the switch caller."""
     restore = asyncio.create_task(_restore_local_provider(router_, **restore_kwargs))
     cancelled_during_restore = False
@@ -181,12 +212,10 @@ async def _finish_local_provider_restore(router_, **restore_kwargs) -> None:
             # Keep the shared switch lock held until the live and persisted
             # pair is restored, even if the client cancels more than once.
             cancelled_during_restore = True
-    restore.result()
-    if cancelled_during_restore:
-        raise asyncio.CancelledError
+    return restore.result(), cancelled_during_restore
 
 
-async def _adopt_local_provider(router_, *, provider: str, model: str) -> bool:
+async def _adopt_local_provider(router_, *, provider: str, model: str) -> dict[str, bool]:
     """Persist and adopt one exact local provider, rolling back on failure."""
     old_provider = _local_provider_name(router_)
     old_runtime_model = getattr(router_, "active_model", None)
@@ -207,26 +236,38 @@ async def _adopt_local_provider(router_, *, provider: str, model: str) -> bool:
             raise RuntimeError("provider adoption did not take effect")
         router_.set_active_model(model)
     except asyncio.CancelledError:
-        await _finish_local_provider_restore(
+        rollback, _ = await _finish_local_provider_restore(
             router_,
             provider=old_provider,
             backend_type=old_backend_type,
             default_model=old_default_model,
             runtime_model=old_runtime_model,
         )
+        if not rollback["ok"]:
+            logger.critical(
+                "local provider rollback incomplete after cancelled adoption to %s",
+                provider,
+            )
         raise
     except Exception:
-        await _finish_local_provider_restore(
+        rollback, cancelled_during_restore = await _finish_local_provider_restore(
             router_,
             provider=old_provider,
             backend_type=old_backend_type,
             default_model=old_default_model,
             runtime_model=old_runtime_model,
         )
-        return False
+        if cancelled_during_restore:
+            if not rollback["ok"]:
+                logger.critical(
+                    "local provider rollback incomplete after cancelled adoption to %s",
+                    provider,
+                )
+            raise asyncio.CancelledError from None
+        return {"adopted": False, "rollback_complete": rollback["ok"]}
 
     invalidate_local_model_inventory_cache()
-    return True
+    return {"adopted": True, "rollback_complete": True}
 
 
 async def _switch_local_model_locked(router_, model_id: str):
@@ -255,9 +296,30 @@ async def _switch_local_model_locked(router_, model_id: str):
     target_provider = providers[0]
     current_provider = _local_provider_name(router_)
     if target_provider != current_provider:
-        if target_provider not in {"lm-studio", "ollama"} or not await _adopt_local_provider(
+        if target_provider not in {"lm-studio", "ollama"}:
+            return nocache_json(
+                {
+                    "error": "local provider could not be adopted",
+                    "provider": target_provider,
+                },
+                status_code=409,
+            )
+        adoption = await _adopt_local_provider(
             router_, provider=target_provider, model=model_id
-        ):
+        )
+        if not adoption["adopted"]:
+            if not adoption["rollback_complete"]:
+                logger.error(
+                    "local provider adoption rollback incomplete for %s",
+                    target_provider,
+                )
+                return nocache_json(
+                    {
+                        "error": "local provider adoption rollback incomplete",
+                        "provider": target_provider,
+                    },
+                    status_code=500,
+                )
             return nocache_json(
                 {
                     "error": "local provider could not be adopted",
@@ -321,6 +383,26 @@ def _llm_status_code(result: dict) -> int:
             "ambiguous": 409}.get(result.get("status"), 502)
 
 
+def _restore_lifecycle_router_pair(
+    router_, *, provider: str, runtime_model: str | None
+) -> bool:
+    """Keep LM Studio lifecycle from changing a non-LM routing pair."""
+    if _local_provider_name(router_) != provider:
+        return False
+    if provider == "lm-studio":
+        return True
+    if getattr(router_, "active_model", None) == runtime_model:
+        return True
+    try:
+        router_.set_active_model(runtime_model)
+    except Exception:
+        return False
+    return (
+        _local_provider_name(router_) == provider
+        and getattr(router_, "active_model", None) == runtime_model
+    )
+
+
 @router.get("/api/llm/auth-profiles", dependencies=[Depends(admin_guard)])
 async def llm_auth_profiles():
     """H12.20 — masked status of the cloud auth-profile pools (rotation/failover)."""
@@ -371,17 +453,46 @@ async def llm_load(body: LMLoad):
     ctrl, err = _lmstudio_or_503()
     if err:
         return err
-    result = await ctrl.load_model(body.model, agent="jarvis")
-    if result.get("status") == "ok":
-        try:
-            # Persist the model that was actually loaded — the controller may have
-            # resolved a partial request ("gemma") to the full servable id.
-            put_category("llm", {"default_model": result.get("model") or body.model})
-        except Exception:
-            pass  # live load already took effect; persistence is best-effort
-        invalidate_local_model_inventory_cache()
-        return nocache_json(result)
-    return nocache_json(result, status_code=_llm_status_code(result))
+    async with _model_switch_lock:
+        orch = get_orch()
+        live_router = getattr(orch, "llm_router", None) if orch else None
+        previous_provider = _local_provider_name(live_router)
+        previous_model = getattr(live_router, "active_model", None)
+        result = await ctrl.load_model(body.model, agent="jarvis")
+        if result.get("status") == "ok":
+            coherent = _restore_lifecycle_router_pair(
+                live_router,
+                provider=previous_provider,
+                runtime_model=previous_model,
+            )
+            invalidate_local_model_inventory_cache()
+            if not coherent:
+                logger.error("local model load left router state incoherent")
+                return nocache_json(
+                    {"error": "local model lifecycle router state incoherent"},
+                    status_code=500,
+                )
+            live_provider = _local_provider_name(live_router)
+            persisted_provider = (
+                get_value("llm", "backend_type", "auto")
+                if live_provider == "lm-studio"
+                else None
+            )
+            if live_provider == "lm-studio" and persisted_provider in {
+                "auto",
+                "lm-studio",
+            }:
+                try:
+                    # Persist the model that was actually loaded — the controller may
+                    # have resolved a partial request to the full servable id. Never
+                    # combine an LM Studio id with a different persisted provider.
+                    put_category(
+                        "llm", {"default_model": result.get("model") or body.model}
+                    )
+                except Exception:
+                    pass  # live load already took effect; persistence is best-effort
+            return nocache_json(result)
+        return nocache_json(result, status_code=_llm_status_code(result))
 
 
 @router.post("/api/llm/unload", dependencies=[Depends(admin_guard)])
@@ -389,7 +500,23 @@ async def llm_unload(body: LMUnload):
     ctrl, err = _lmstudio_or_503()
     if err:
         return err
-    result = await ctrl.unload_model(body.model, agent="jarvis")
-    if result.get("status") == "ok":
-        invalidate_local_model_inventory_cache()
-    return nocache_json(result, status_code=_llm_status_code(result))
+    async with _model_switch_lock:
+        orch = get_orch()
+        live_router = getattr(orch, "llm_router", None) if orch else None
+        previous_provider = _local_provider_name(live_router)
+        previous_model = getattr(live_router, "active_model", None)
+        result = await ctrl.unload_model(body.model, agent="jarvis")
+        if result.get("status") == "ok":
+            coherent = _restore_lifecycle_router_pair(
+                live_router,
+                provider=previous_provider,
+                runtime_model=previous_model,
+            )
+            invalidate_local_model_inventory_cache()
+            if not coherent:
+                logger.error("local model unload left router state incoherent")
+                return nocache_json(
+                    {"error": "local model lifecycle router state incoherent"},
+                    status_code=500,
+                )
+        return nocache_json(result, status_code=_llm_status_code(result))

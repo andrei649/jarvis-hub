@@ -10,6 +10,8 @@ from types import SimpleNamespace
 import httpx
 import pytest
 
+_MISSING = object()
+
 
 class _Response:
     def __init__(self, payload: dict | None = None, status_code: int = 200):
@@ -307,6 +309,55 @@ async def test_probe_dimensions_fail_independently_without_raw_errors(monkeypatc
     assert available["controls"]["can_load"] is False
     assert inventory["residency_state"] == "unknown"
     assert "secret" not in str(inventory)
+
+
+@pytest.mark.parametrize(
+    ("endpoint", "field", "provider", "dimension"),
+    [
+        ("http://lm.test/custom/v1/models", "data", "lm-studio", "catalog"),
+        ("http://lm.test/custom/api/v0/models", "data", "lm-studio", "residency"),
+        ("http://ollama.test/custom/api/tags", "models", "ollama", "catalog"),
+        ("http://ollama.test/custom/api/ps", "models", "ollama", "residency"),
+    ],
+)
+@pytest.mark.parametrize(
+    ("case", "field_value", "expected_state"),
+    [
+        ("missing", _MISSING, "unknown"),
+        ("null", None, "unknown"),
+        ("object", {}, "unknown"),
+        ("string", "", "unknown"),
+        ("zero", 0, "unknown"),
+        ("false", False, "unknown"),
+        ("empty-list", [], "known"),
+    ],
+)
+async def test_provider_dimension_accepts_only_list_evidence(
+    monkeypatch,
+    endpoint,
+    field,
+    provider,
+    dimension,
+    case,
+    field_value,
+    expected_state,
+):
+    module = _module()
+    module.invalidate_local_model_inventory_cache()
+    responses = _responses()
+    payload = {} if field_value is _MISSING else {field: field_value}
+    responses[endpoint] = _Response(payload)
+
+    inventory, _ = await _inventory(
+        monkeypatch,
+        responses=responses,
+        router=_router(active=None),
+    )
+    projection = next(row for row in inventory["providers"] if row["name"] == provider)
+
+    assert projection[f"{dimension}_state"] == expected_state, case
+    assert projection["online"] is True
+    assert inventory["models"] == []
 
 
 async def test_both_failed_probes_mark_provider_offline(monkeypatch):

@@ -62,13 +62,13 @@ def _ids(items: Any, key: str) -> set[str]:
 def _parse_lm_catalog(payload: Any) -> set[str]:
     if not isinstance(payload, dict):
         raise ValueError("LM Studio catalog must be an object")
-    return _ids(payload.get("data") or [], "id")
+    return _ids(payload.get("data"), "id")
 
 
 def _parse_lm_residents(payload: Any) -> set[str]:
     if not isinstance(payload, dict):
         raise ValueError("LM Studio residency must be an object")
-    items = payload.get("data") or []
+    items = payload.get("data")
     if not isinstance(items, list):
         raise ValueError("LM Studio residency data must be a list")
     result: set[str] = set()
@@ -85,13 +85,13 @@ def _parse_lm_residents(payload: Any) -> set[str]:
 def _parse_ollama_catalog(payload: Any) -> set[str]:
     if not isinstance(payload, dict):
         raise ValueError("Ollama catalog must be an object")
-    return _ids(payload.get("models") or [], "name")
+    return _ids(payload.get("models"), "name")
 
 
 def _parse_ollama_residents(payload: Any) -> set[str]:
     if not isinstance(payload, dict):
         raise ValueError("Ollama residency must be an object")
-    items = payload.get("models") or []
+    items = payload.get("models")
     if not isinstance(items, list):
         raise ValueError("Ollama residency models must be a list")
     result: set[str] = set()
