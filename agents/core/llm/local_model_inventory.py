@@ -66,17 +66,20 @@ def _parse_lm_catalog(payload: Any) -> set[str]:
     return _ids(payload.get("data"), "id")
 
 
-def _parse_lm_residents(payload: Any) -> set[str]:
+def _parse_lm_runtime(payload: Any) -> tuple[set[str], set[str]]:
     if not isinstance(payload, dict):
         raise ValueError("LM Studio residency must be an object")
     items = payload.get("data")
     if not isinstance(items, list):
         raise ValueError("LM Studio residency data must be a list")
-    result: set[str] = set()
+    residents: set[str] = set()
+    excluded: set[str] = set()
     for item in items:
         if not isinstance(item, dict):
             continue
         model_id = _trim_id(item.get("id"))
+        if model_id is None:
+            continue
         state = item.get("state")
         model_type = item.get("type")
         if (
@@ -84,10 +87,11 @@ def _parse_lm_residents(payload: Any) -> set[str]:
             and model_type.strip()
             and model_type.strip().lower() not in _CONVERSATIONAL_LM_STUDIO_TYPES
         ):
+            excluded.add(model_id)
             continue
-        if model_id is not None and isinstance(state, str) and state.lower() == "loaded":
-            result.add(model_id)
-    return result
+        if isinstance(state, str) and state.lower() == "loaded":
+            residents.add(model_id)
+    return residents, excluded
 
 
 def _parse_ollama_catalog(payload: Any) -> set[str]:
@@ -128,6 +132,20 @@ async def _probe(
         return False, set()
 
 
+async def _probe_lm_runtime(
+    client: httpx.AsyncClient,
+    url: str,
+) -> tuple[bool, set[str], set[str]]:
+    try:
+        response = await client.get(url)
+        if not response.is_success:
+            return False, set(), set()
+        residents, excluded = _parse_lm_runtime(response.json())
+        return True, residents, excluded
+    except Exception:
+        return False, set(), set()
+
+
 async def _probe_providers(lm_url: str, ollama_url: str) -> dict[str, dict[str, Any]]:
     offline = {
         "catalog_ok": False,
@@ -143,7 +161,7 @@ async def _probe_providers(lm_url: str, ollama_url: str) -> dict[str, dict[str, 
         async with httpx.AsyncClient(timeout=5.0) as client:
             lm_catalog, lm_resident, ollama_catalog, ollama_resident = await asyncio.gather(
                 _probe(client, f"{lm_url}/v1/models", _parse_lm_catalog),
-                _probe(client, f"{lm_url}/api/v0/models", _parse_lm_residents),
+                _probe_lm_runtime(client, f"{lm_url}/api/v0/models"),
                 _probe(client, f"{ollama_url}/api/tags", _parse_ollama_catalog),
                 _probe(client, f"{ollama_url}/api/ps", _parse_ollama_residents),
             )
@@ -152,7 +170,7 @@ async def _probe_providers(lm_url: str, ollama_url: str) -> dict[str, dict[str, 
 
     raw["lm-studio"] = {
         "catalog_ok": lm_catalog[0],
-        "catalog_ids": lm_catalog[1],
+        "catalog_ids": lm_catalog[1] - lm_resident[2],
         "residency_ok": lm_resident[0],
         "resident_ids": lm_resident[1],
     }

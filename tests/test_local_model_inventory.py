@@ -259,9 +259,7 @@ async def test_lm_studio_residency_ignores_explicit_non_conversational_models(mo
         {"provider": "lm-studio", "id": "legacy"},
         {"provider": "lm-studio", "id": "vision"},
     ]
-    embed = next(row for row in inventory["models"] if row["id"] == "embed")
-    assert embed["available"] is True
-    assert embed["resident"] is False
+    assert all(row["id"] != "embed" for row in inventory["models"])
     assert all(row["id"] != "rerank" for row in inventory["models"])
 
 
