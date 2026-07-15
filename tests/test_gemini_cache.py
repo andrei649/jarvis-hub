@@ -8,8 +8,9 @@ repo_root = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(repo_root))
 sys.path.insert(0, str(repo_root / "agents"))
 
+from core import settings_db
+from core.llm import gemini_cache as gemini_cache_module
 from core.llm.gemini_cache import ContextCache, GEMINI_API_BASE
-from core.settings_db import get_conn
 
 
 def _mock_response(data: dict, status: int = 200):
@@ -24,6 +25,23 @@ def _mock_response(data: dict, status: int = 200):
         def json(self):
             return self._data
     return _Resp()
+
+
+def _clear_persisted_cache() -> None:
+    settings_db.ensure_initialized()
+    conn = settings_db.get_conn()
+    try:
+        conn.execute("DELETE FROM settings WHERE category='cache'")
+        conn.commit()
+    finally:
+        conn.close()
+
+
+@pytest.fixture(autouse=True)
+def isolate_persisted_cache(monkeypatch):
+    _clear_persisted_cache()
+    yield
+    _clear_persisted_cache()
 
 
 @pytest.mark.asyncio
@@ -42,14 +60,53 @@ async def test_cache_key_includes_model():
     assert key1 != key2
 
 
-def test_cache_init_no_network():
-    conn = get_conn()
-    conn.execute("DELETE FROM settings WHERE category='cache'")
-    conn.commit()
-    conn.close()
-    cache = ContextCache(api_key="test")
-    assert cache.api_key == "test"
-    assert cache._cache_map == {}
+@pytest.mark.parametrize("method_name", ["_load_persisted", "_save_persisted"])
+def test_cache_db_connection_closes_when_access_fails(monkeypatch, method_name):
+    class FailingConnection:
+        def __init__(self):
+            self.closed = False
+
+        def execute(self, *args, **kwargs):
+            raise RuntimeError("database unavailable")
+
+        def close(self):
+            self.closed = True
+
+    conn = FailingConnection()
+    cache = ContextCache.__new__(ContextCache)
+    cache._cache_map = {}
+    monkeypatch.setattr(gemini_cache_module, "ensure_initialized", lambda: None)
+    monkeypatch.setattr(gemini_cache_module, "get_conn", lambda: conn)
+
+    getattr(cache, method_name)()
+
+    assert conn.closed is True
+
+
+def test_cache_init_no_network(tmp_path, monkeypatch):
+    original_path = settings_db.DB_PATH
+    original_initialized = settings_db._initialized
+    original_wal_set = settings_db._wal_set
+
+    with monkeypatch.context() as patch:
+        patch.setattr(settings_db, "DB_PATH", tmp_path / "settings.db")
+        patch.setattr(settings_db, "_initialized", False)
+        patch.setattr(settings_db, "_wal_set", False)
+
+        cache = ContextCache(api_key="test")
+
+        conn = settings_db.get_conn()
+        table = conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='settings'"
+        ).fetchone()
+        conn.close()
+        assert cache.api_key == "test"
+        assert cache._cache_map == {}
+        assert table is not None
+
+    assert original_path == settings_db.DB_PATH
+    assert settings_db._initialized is original_initialized
+    assert settings_db._wal_set is original_wal_set
 
 
 @pytest.mark.asyncio
@@ -177,8 +234,3 @@ async def test_persistence_round_trip(monkeypatch):
     info = cache2.get_cache_info("s1")
     assert info is not None
     assert info["cache_name"] == "cachedContents/persist"
-    # Clean up
-    conn = get_conn()
-    conn.execute("DELETE FROM settings WHERE category='cache'")
-    conn.commit()
-    conn.close()

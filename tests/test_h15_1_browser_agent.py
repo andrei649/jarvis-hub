@@ -18,6 +18,7 @@ from core.browser_agent import (  # noqa: E402
     BrowserPolicy, GovernedBrowser, NullBrowserDriver, classify_step,
 )
 from core.autonomy.action_approvals import ActionApprovalQueue  # noqa: E402
+from agents.core import browser_agent as browser_api  # noqa: E402
 import agents.web as web  # noqa: E402
 
 
@@ -151,8 +152,12 @@ async def test_run_stops_on_block():
 
 # ── endpoints (offline) ───────────────────────────────────────────
 
-def test_endpoint_check_and_preview():
-    client = TestClient(web.app)
+@pytest.fixture
+def client():
+    return TestClient(web.app)
+
+
+def test_endpoint_check_and_preview(client):
     chk = client.post("/api/browser/check",
                       json={"url": "https://example.com/x", "allowlist": ["example.com"]})
     assert chk.status_code == 200 and chk.json()["allowed"] is True
@@ -165,4 +170,191 @@ def test_endpoint_check_and_preview():
         "plan": [{"action": "navigate", "url": "https://example.com"},
                  {"action": "click", "selector": "#x"}]})
     body = prev.json()
-    assert body["needs_approval"] == 1 and body["steps"][1]["decision"] == "approve"
+    assert body == {
+        "steps": [
+            {
+                "index": 0,
+                "action": "navigate",
+                "kind": "read",
+                "decision": "run",
+                "reason": "",
+            },
+            {
+                "index": 1,
+                "action": "click",
+                "kind": "risky",
+                "decision": "approve",
+                "reason": "mutating action requires approval",
+            },
+        ]
+    }
+
+
+@pytest.mark.parametrize(
+    "step",
+    [
+        {"action": "teleport"},
+        {"action": "Navigate", "url": "https://example.com"},
+        {"url": "https://example.com"},
+        {"action": "navigate"},
+        {"action": "extract"},
+        {"action": "click"},
+        {"action": "type", "selector": "#q"},
+        {"action": "submit"},
+        {"action": "wait"},
+        {"action": "screenshot"},
+        {"action": "click", "selector": "#x", "unexpected": "secret"},
+        {"action": 1, "selector": "#x"},
+        {"action": "navigate", "url": 1},
+        {"action": "extract", "selector": 1},
+        {"action": "type", "selector": "#q", "text": 1},
+    ],
+)
+def test_preview_rejects_non_exact_step_shapes_before_governed_browser(
+    client,
+    monkeypatch,
+    step,
+):
+    calls = []
+    monkeypatch.setattr(
+        browser_api.GovernedBrowser,
+        "preview",
+        lambda *_args, **_kwargs: calls.append(True),
+    )
+
+    response = client.post(
+        "/api/browser/plan/preview",
+        json={"allowlist": ["example.com"], "plan": [step]},
+    )
+
+    assert response.status_code == 422
+    assert response.json() == {"detail": "invalid_browser_request"}
+    assert calls == []
+
+
+@pytest.mark.parametrize(
+    ("route", "accepted", "rejected"),
+    [
+        (
+            "/api/browser/check",
+            {"url": "https://example.com/" + "a" * 1980, "allowlist": []},
+            {"url": "https://example.com/" + "a" * 1981, "allowlist": []},
+        ),
+        (
+            "/api/browser/check",
+            {"url": "https://example.com", "allowlist": ["a" * 253]},
+            {"url": "https://example.com", "allowlist": ["a" * 254]},
+        ),
+        (
+            "/api/browser/plan/preview",
+            {"plan": [{"action": "extract", "selector": "a" * 512}]},
+            {"plan": [{"action": "extract", "selector": "a" * 513}]},
+        ),
+        (
+            "/api/browser/plan/preview",
+            {"plan": [{"action": "type", "selector": "#q", "text": "a" * 4000}]},
+            {"plan": [{"action": "type", "selector": "#q", "text": "a" * 4001}]},
+        ),
+        (
+            "/api/browser/check",
+            {
+                "url": "https://example.com",
+                "allowlist": [f"host{i}.invalid" for i in range(100)],
+            },
+            {
+                "url": "https://example.com",
+                "allowlist": [f"host{i}.invalid" for i in range(101)],
+            },
+        ),
+        (
+            "/api/browser/plan/preview",
+            {"plan": [{"action": "extract", "selector": "h1"}] * 200},
+            {"plan": [{"action": "extract", "selector": "h1"}] * 201},
+        ),
+    ],
+)
+def test_browser_request_limits_accept_exact_boundary_and_reject_one_past(
+    client,
+    route,
+    accepted,
+    rejected,
+):
+    accepted_response = client.post(route, json=accepted)
+    rejected_response = client.post(route, json=rejected)
+
+    assert accepted_response.status_code == 200
+    assert rejected_response.status_code == 422
+    assert rejected_response.json() == {"detail": "invalid_browser_request"}
+
+
+def test_browser_422_is_bounded_and_never_echoes_rejected_input(client):
+    secret = "owner-secret-" + "x" * 4001
+
+    response = client.post(
+        "/api/browser/plan/preview",
+        json={"plan": [{"action": "type", "selector": "#q", "text": secret}]},
+    )
+
+    assert response.status_code == 422
+    assert response.json() == {"detail": "invalid_browser_request"}
+    assert secret not in response.text
+    assert len(response.content) <= 64
+
+
+def test_browser_check_and_preview_project_only_bounded_public_evidence(
+    client,
+    monkeypatch,
+):
+    monkeypatch.setattr(
+        browser_api.BrowserPolicy,
+        "domain_allowed",
+        lambda *_args, **_kwargs: (False, "r" * 1000),
+    )
+    check = client.post(
+        "/api/browser/check",
+        json={"url": "https://example.com", "allowlist": ["example.com"]},
+    )
+
+    seen = []
+
+    def preview(_self, plan):
+        seen.append(plan)
+        return {
+            "needs_approval": 1,
+            "blocked": 0,
+            "steps": [
+                {
+                    "i": 0,
+                    "action": "type",
+                    "kind": "risky",
+                    "decision": "approve",
+                    "reason": "p" * 1000,
+                    "text": "must-not-leak",
+                    "internal": {"raw": True},
+                }
+            ],
+        }
+
+    monkeypatch.setattr(browser_api.GovernedBrowser, "preview", preview)
+    response = client.post(
+        "/api/browser/plan/preview",
+        json={"plan": [{"action": "type", "selector": "#q", "text": "typed secret"}]},
+    )
+
+    assert check.status_code == 200
+    assert check.json() == {"allowed": False, "reason": "r" * 240}
+    assert seen == [[{"action": "type", "selector": "#q", "text": "typed secret"}]]
+    assert response.status_code == 200
+    assert response.json() == {
+        "steps": [
+            {
+                "index": 0,
+                "action": "type",
+                "kind": "risky",
+                "decision": "approve",
+                "reason": "p" * 240,
+            }
+        ]
+    }
+    assert "typed secret" not in response.text
+    assert "must-not-leak" not in response.text

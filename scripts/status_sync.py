@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """Generate project status and synchronize volatile documentation (CDX-5/H23.26).
 
-The two numbers in the STATUS.md header that drift on almost every PR — the test
-count and the HTTP-route count — get derived here from their authoritative sources
-instead of being hand-bumped (and silently going stale). Run it to either *check*
-STATUS.md against the live counts or *rewrite* them in place:
+The backend, frontend, mobile, and HTTP-route counts in the STATUS.md header get
+derived here from their authoritative sources instead of being hand-bumped (and
+silently going stale). Run it to either *check* STATUS.md against the live counts
+or *rewrite* them in place:
 
     python scripts/status_sync.py            # --write (default): update STATUS.md
     python scripts/status_sync.py --check     # exit 1 if STATUS.md is out of sync
@@ -45,9 +45,11 @@ GENERATED_DOCS = {
     REPO / "GO_LIVE_PLAN.md": ("go-live-header",),
 }
 
-# The two header tokens, e.g. "Tests:** ~3,011 collected" and "HTTP routes:** 327".
+# The header tokens, e.g. "Tests:** ~3,011 collected" and "HTTP routes:** 327".
 # Accept the historical ``passed`` wording on input so the generator migrates old docs.
 _TESTS_RE = re.compile(r"(Tests:\*\* ~)([\d,]+)(?: passed| collected)")
+_FRONTEND_TESTS_RE = re.compile(r"(frontend \*\*)([\d,]+)( vitest\*\*)")
+_MOBILE_TESTS_RE = re.compile(r"(mobile \*\*)([\d,]+)( jest\*\*)")
 _ROUTES_RE = re.compile(r"(HTTP routes:\*\* )(\d+)")
 _LANE_ROW_RE = re.compile(r"^\|\s*(A\d+)\s*\|\s*([^|]+?)\s*\|\s*([^|]+?)\s*\|", re.MULTILINE)
 _VERSION_RE = re.compile(r"__version__\s*=\s*[\"']([^\"']+)[\"']")
@@ -349,6 +351,8 @@ def _expected_docs(status: dict) -> dict[Path, str]:
     expected[STATUS] = apply_to_status(
         STATUS.read_text(encoding="utf-8"),
         tests=status["tests"]["backend"],
+        frontend=status["tests"]["frontend"],
+        mobile=status["tests"]["mobile"],
         routes=status["routes"],
     )
     return expected
@@ -366,12 +370,27 @@ def _fmt(n: int) -> str:
     return f"{n:,}"
 
 
-def apply_to_status(text: str, *, tests: int | None = None, routes: int | None = None) -> str:
+def apply_to_status(
+    text: str,
+    *,
+    tests: int | None = None,
+    frontend: int | None = None,
+    mobile: int | None = None,
+    routes: int | None = None,
+) -> str:
     """Return ``text`` with the test/route tokens rewritten. Only the matched
     digits change — surrounding version numbers, route-counts-in-prose, etc. are
     left untouched (single, anchored substitution per token)."""
     if tests is not None:
         text = _TESTS_RE.sub(lambda m: f"{m.group(1)}{_fmt(tests)} collected", text, count=1)
+    if frontend is not None:
+        text = _FRONTEND_TESTS_RE.sub(
+            lambda m: f"{m.group(1)}{_fmt(frontend)}{m.group(3)}", text, count=1
+        )
+    if mobile is not None:
+        text = _MOBILE_TESTS_RE.sub(
+            lambda m: f"{m.group(1)}{_fmt(mobile)}{m.group(3)}", text, count=1
+        )
     if routes is not None:
         text = _ROUTES_RE.sub(lambda m: f"{m.group(1)}{routes}", text, count=1)
     return text
