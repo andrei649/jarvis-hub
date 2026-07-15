@@ -4,6 +4,8 @@
    localhost; on a network they surface the 401 via the client's token prompt. */
 import React, { useState, useEffect, useCallback } from 'react';
 import { apiGet, apiPost, apiPut, apiDelete } from './api/client';
+import { localModelStatus } from './api/live';
+import { OperatorPanel } from './operator-panel';
 
 function useApi(path, auto = true, admin = false) {
   const [d, setD] = useState(null);
@@ -1005,30 +1007,58 @@ function SessionsPanel() {
 }
 
 /* ── Admin ─────────────────────────────────────────────── */
-function LMStudioPanel() {
-  const { d, e, loading, reload } = useApi('/api/models/local');
+export function LMStudioPanel() {
+  const { d, e, loading, reload } = useApi('/api/models/local', true, true);
   const models = arr(d, 'models');
-  const [model, setModel] = useState('');
   const [note, setNote] = useState('');
   const say = (r) => { setNote(typeof r === 'object' ? (r.detail || r.status || (r.ok ? 'ok' : JSON.stringify(r).slice(0, 60))) : String(r)); reload(); };
-  return <Card title="LM STUDIO" live={asLive(d)} sub={models.length + ' models'} onReload={reload}>
+  const runAction = (label, path, id, provider = '') => {
+    setNote(`${label}…`);
+    const body = provider ? { model: id, provider } : { model: id };
+    apiPost(path, body, { admin: true }).then(say).catch((err) => {
+      const status = Number(err?.status);
+      setNote(`${label} failed${Number.isFinite(status) ? ` · HTTP ${status}` : ''}`.slice(0, 80));
+      reload();
+    });
+  };
+  return <Card title="LOCAL MODELS" live={asLive(d)} sub={models.length + ' models'} onReload={reload}>
     <State e={e} loading={loading} n={models.length} />
-    {models.slice(0, 8).map((m, i) => <Row key={i}>
-      <span style={{ ...mono, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{m.name || m.id}</span>
-      <Tag c={m.status === 'loaded' || m.active ? 'var(--green)' : 'var(--ink-3)'}>{m.status || (m.active ? 'loaded' : 'ready')}</Tag>
-      <span style={{ marginLeft: 'auto', display: 'flex', gap: 5 }}>
-        {(m.status === 'loaded' || m.active)
-          ? <button className="tool-btn" title="unload" onClick={() => actA('/api/llm/unload', { model: m.id || m.name }, say)}>⏏</button>
-          : <button className="tool-btn" title="load" onClick={() => actA('/api/llm/load', { model: m.id || m.name }, say)}>▶</button>}
-      </span></Row>)}
-    <div style={{ display: 'flex', gap: 6, marginTop: 8, flexWrap: 'wrap' }}>
-      <button className="tool-btn" onClick={() => actA('/api/llm/server/start', {}, say)}>start server</button>
-      <input value={model} onChange={(ev) => setModel(ev.target.value)} placeholder="model id" style={{ ...inpS, flex: 1, minWidth: 110 }} />
-      <button className="tool-btn" onClick={() => model.trim() && actA('/api/llm/load', { model: model.trim() }, say)}>load</button>
-      <button className="tool-btn" onClick={() => actA('/api/llm/unload', model.trim() ? { model: model.trim() } : {}, say)}>unload</button>
-    </div>
+    {models.slice(0, 20).map((m) => {
+      const id = String(m.id || m.name || '');
+      const provider = String(m.provider || 'unknown');
+      const lmStudioLifecycle = provider.trim().toLowerCase() === 'lm-studio';
+      const key = `${provider}:${id}`;
+      const status = localModelStatus(m);
+      const statusColor = status === 'loaded' ? 'var(--green)'
+        : status.includes('unknown') ? 'var(--amber)'
+          : 'var(--ink-3)';
+      const controls = m.controls || {};
+      return <Row key={key}>
+        <span style={{ ...mono, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{id}</span>
+        <Tag>{provider}</Tag>
+        <Tag c={statusColor}>{status}</Tag>
+        {m.configured === true && <Tag c="var(--accent-light)">configured</Tag>}
+        <span style={{ marginLeft: 'auto', display: 'flex', gap: 5 }}>
+          {controls.can_configure === true && m.configured !== true && <button
+            className="tool-btn"
+            title={`configure ${key}`}
+            onClick={() => runAction('configure', '/api/models/local/switch', id, provider)}
+          >set default</button>}
+          {lmStudioLifecycle && controls.can_load === true && <button
+            className="tool-btn"
+            title={`load ${key}`}
+            onClick={() => runAction('load', '/api/llm/load', id)}
+          >▶</button>}
+          {lmStudioLifecycle && controls.can_unload === true && <button
+            className="tool-btn"
+            title={`unload ${key}`}
+            onClick={() => runAction('unload', '/api/llm/unload', id)}
+          >⏏</button>}
+        </span>
+      </Row>;
+    })}
     {note && <div style={{ ...mono, fontSize: 10.5, color: 'var(--ink-3)', marginTop: 6 }}>{note}</div>}
-    <div style={{ fontSize: 10, color: 'var(--ink-3)', marginTop: 6 }}>lms server/load/unload — kill-switch: llm.control_enabled</div>
+    <div style={{ fontSize: 10, color: 'var(--ink-3)', marginTop: 6 }}>configured routing is independent from provider-reported residency · lifecycle actions follow backend capabilities</div>
   </Card>;
 }
 function AuthProfilesPanel() {
@@ -2536,6 +2566,44 @@ export function CommandCenterPanel() {
   const model = (d && d.model) || {};
   const wizard = (d && d.wizard) || {};
   const actions = arr(d && d.first_actions);
+  const safeModelId = (value) => {
+    const modelId = typeof value === 'string' ? value.trim() : '';
+    return modelId.toLowerCase() === 'none' ? '' : modelId;
+  };
+  const providerKey = (value) => (
+    typeof value === 'string' ? value.trim().toLowerCase().replace(/[^a-z0-9]/g, '') : ''
+  );
+  const activeModel = safeModelId(model.active_model);
+  const configuredModel = safeModelId(model.configured_model);
+  const activeProvider = typeof model.active_provider === 'string'
+    && model.active_provider.trim().toLowerCase() !== 'none'
+    ? model.active_provider.trim()
+    : '';
+  const backendLabel = typeof model.backend === 'string' ? model.backend.trim() : '';
+  const routedProviderKey = providerKey(activeProvider || backendLabel);
+  const residentModels = arr(model.resident_models).slice(0, 64).filter((entry) => (
+    entry && safeModelId(entry.id) && providerKey(entry.provider)
+  ));
+  const residencyUnknown = model.residency_state === 'unknown' || model.ready === null;
+  const route = typeof model.route === 'string' ? model.route.trim().toLowerCase() : '';
+  const cloudRoute = (routedProviderKey === 'gemini'
+      && ['cloud', 'cloud-fallback', 'cloud-flash', 'cloud-pro'].includes(route))
+    || (routedProviderKey === 'claude' && route === 'claude');
+  const localRoute = ['local', 'local-deep', 'local-fallback'].includes(route);
+  const exactResident = residentModels.some((entry) => (
+    providerKey(entry.provider) === routedProviderKey && safeModelId(entry.id) === activeModel
+  ));
+  const modelRouteReady = model.ready === true
+    && Boolean(activeModel)
+    && (cloudRoute || (localRoute && exactResident));
+  const candidateModel = configuredModel || activeModel;
+  const modelLabel = modelRouteReady
+    ? `${activeModel} · ${cloudRoute ? 'cloud ready' : 'loaded'}`
+    : candidateModel
+      ? `${candidateModel} · ${residencyUnknown ? 'residency unknown' : 'configured, not loaded'}`
+      : (model.ready === null ? 'model readiness unknown' : 'no runnable model');
+  const modelSource = activeProvider
+    || (backendLabel && backendLabel.toLowerCase() !== 'none' ? backendLabel : 'no route');
   const [hello, setHello] = useState(null);
   const sayHello = () => {
     setHello('…');
@@ -2558,7 +2626,7 @@ export function CommandCenterPanel() {
   const steps = wizard.steps || [];
   return (
     <Card title="COMMAND CENTER" live={asLive(d)}
-      sub={d ? `${install.ready ? 'ready' : 'starting'} · ${model.backend || 'none'}${wizard.complete ? ' · onboarded ✓' : ''}` : null}
+      sub={d ? `${install.ready ? 'ready' : 'starting'} · ${modelSource}${wizard.complete ? ' · onboarded ✓' : ''}` : null}
       onReload={reload}>
       <State e={e} loading={loading} n={actions.length} />
       <Row>
@@ -2569,8 +2637,8 @@ export function CommandCenterPanel() {
       </Row>
       <Row>
         <span style={mono}>model</span>
-        <span style={{ marginLeft: 'auto', color: model.ready ? 'var(--green)' : 'var(--amber)' }}>
-          {model.active_model || model.backend || 'none'}{model.ready === false ? ' · unreachable' : ''}
+        <span style={{ marginLeft: 'auto', color: modelRouteReady ? 'var(--green)' : 'var(--amber)' }}>
+          {modelLabel}
         </span>
       </Row>
       {d && wizard.hint && <Row><span style={{ color: 'var(--amber)', fontSize: 11 }}>⚠ {wizard.hint}</span></Row>}
@@ -2637,7 +2705,7 @@ const SECTIONS: Array<[string, Array<() => any>]> = [
   ['Trust', [KillSwitchPanel, KernelMetricsPanel, ReadinessPanel, LoopBreakerPanel, GovernancePanel, PosturePanel, SecuritySkillsPanel, NetworkMonitorPanel, CommsRatePanel, SafeCommsDraftPanel, SecretsPanel, CapabilitiesPanel, PairingPanel, InjectionScanPanel]],
   ['Interop', [A2AInboxPanel, MeshPeersPanel, SatellitesPanel, OraclePanel, MarketplacePanel, SkillHistoryPanel, WatchlistPanel]],
   ['Observe', [OnboardingPanel, EvalPanel, ReviewPanel, ArenaPanel, QualityPanel, APMPanel, ModelInfoPanel, FeedbackPanel]],
-  ['Build', [WorkflowsPanel, StepGenPanel, SandboxPanel, TemplatesPanel, AcquisitionPanel, MediaDirectorPanel, MediaGalleryPanel]],
+  ['Build', [WorkflowsPanel, StepGenPanel, SandboxPanel, TemplatesPanel, AcquisitionPanel, MediaDirectorPanel, MediaGalleryPanel, OperatorPanel]],
   ['Autonomy & Agents', [DecisionInboxPanel, MissionsPanel, AgentAutonomyPanel, TodayPanel, SchedulePanel, LearningPanel, SessionsPanel, HeartbeatPanel, TranscriptPanel, EscalationPanel]],
   ['Admin', [BackupPanel, OAuthPanel, SettingsPanel, PromptsPanel, RoomsPanel, LMStudioPanel, AuthProfilesPanel, SystemProfilePanel]],
 ];

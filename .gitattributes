@@ -8,3 +8,7 @@
 *.json text eol=lf
 *.yml text eol=lf
 *.yaml text eol=lf
+
+# Keep Vite's HTML source and generated shell byte-reproducible on Windows.
+frontend/index.html text eol=lf
+agents/web/v2/index.html text eol=lf

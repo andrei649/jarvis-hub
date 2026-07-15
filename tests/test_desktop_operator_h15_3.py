@@ -1,4 +1,5 @@
 """H15.3 — Governed desktop operator (isolated desktop). Offline."""
+import copy
 import sys, os
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'agents'))
@@ -9,7 +10,12 @@ from agents.core.automation_contracts import ContractDecision
 from agents.core.capability_actions import PerformResult
 from agents.core.kernel import Decision, Verdict
 import agents.core.desktop_operator as desktop_operator
-from agents.core.desktop_operator import GovernedDesktop, NullDesktopDriver
+from agents.core.desktop_operator import (
+    DesktopProposalError,
+    GovernedDesktop,
+    NullDesktopDriver,
+    validate_desktop_run_args,
+)
 
 
 class FakeHostDriver:
@@ -24,6 +30,109 @@ class FakeHostDriver:
 
     async def close(self):
         self.closed = True
+
+
+@pytest.mark.parametrize(
+    ("proposal", "reason"),
+    [
+        ({"steps": []}, "empty_steps"),
+        ({"steps": [None]}, "invalid_step"),
+        ({"steps": [{"action": "observe", "approved": True}]}, "invalid_step"),
+        ({"steps": [{"action": 1, "args": {}}]}, "invalid_action"),
+        ({"steps": [{"action": "a" * 65, "args": {}}]}, "invalid_action"),
+        ({"steps": [{"action": "wait", "args": {}}]}, "unsupported_action"),
+        ({"steps": [{"action": "teleport", "args": {}}]}, "unsupported_action"),
+        ({"steps": [{"action": "read", "args": {}}]}, "missing_argument"),
+        (
+            {"steps": [{"action": "locate", "args": {"query": "Save", "x": "1"}}]},
+            "unexpected_action_args",
+        ),
+        (
+            {"steps": [{"action": "click", "args": {"x": "10", "y": "20"}}]},
+            "unexpected_action_args",
+        ),
+        ({"steps": [{"action": "type", "args": {"name": "Editor"}}]}, "missing_argument"),
+        (
+            {"steps": [{"action": "type", "args": {"name": "Editor", "text": 1}}]},
+            "invalid_argument",
+        ),
+        ({"steps": [{"action": "launch", "args": {"app": "bad-app"}}]}, "invalid_app_key"),
+        (
+            {"steps": [{"action": "screenshot", "args": {"query": "unexpected"}}]},
+            "unexpected_action_args",
+        ),
+        (
+            {"steps": [{"action": "read", "args": {"query": "q" * 513}}]},
+            "argument_too_large",
+        ),
+        (
+            {
+                "steps": [
+                    {"action": "type", "args": {"name": "Editor", "text": "t" * 20_001}}
+                ]
+            },
+            "argument_too_large",
+        ),
+    ],
+)
+def test_validate_desktop_run_args_rejects_malformed_proposals(proposal, reason):
+    with pytest.raises(DesktopProposalError) as exc_info:
+        validate_desktop_run_args(proposal)
+
+    assert exc_info.value.reason == reason
+
+
+def test_validate_desktop_run_args_preserves_text_and_emits_canonical_key_order():
+    proposal = {
+        "steps": [
+            {
+                "args": {"text": "  preserve exactly\n", "name": "  Editor  "},
+                "action": " TyPe ",
+            },
+            {"action": " LAUNCH ", "args": {"app": "  SETTINGS  "}},
+        ]
+    }
+    original = copy.deepcopy(proposal)
+
+    normalized = validate_desktop_run_args(proposal)
+
+    assert proposal == original
+    assert normalized == {
+        "steps": [
+            {
+                "action": "type",
+                "args": {"name": "Editor", "text": "  preserve exactly\n"},
+            },
+            {"action": "launch", "args": {"app": "settings"}},
+        ]
+    }
+    assert list(normalized["steps"][0]) == ["action", "args"]
+    assert list(normalized["steps"][0]["args"]) == ["name", "text"]
+
+
+def test_validate_desktop_run_args_enforces_exact_server_boundaries():
+    assert validate_desktop_run_args(
+        {"steps": [{"action": "read", "args": {"query": "q" * 512}}]}
+    )["steps"][0]["args"]["query"] == "q" * 512
+    assert validate_desktop_run_args(
+        {
+            "steps": [
+                {"action": "type", "args": {"name": "Editor", "text": "t" * 20_000}}
+            ]
+        }
+    )["steps"][0]["args"]["text"] == "t" * 20_000
+    assert validate_desktop_run_args(
+        {"steps": [{"action": "launch", "args": {"app": "a" + "1" * 31}}]}
+    )["steps"][0]["args"]["app"] == "a" + "1" * 31
+
+    with pytest.raises(DesktopProposalError) as action_exc:
+        validate_desktop_run_args({"steps": [{"action": "a" * 64, "args": {}}]})
+    assert action_exc.value.reason == "unsupported_action"
+    with pytest.raises(DesktopProposalError) as app_exc:
+        validate_desktop_run_args(
+            {"steps": [{"action": "launch", "args": {"app": "a" + "1" * 32}}]}
+        )
+    assert app_exc.value.reason == "invalid_app_key"
 
 
 def test_is_mutating_safe_default():

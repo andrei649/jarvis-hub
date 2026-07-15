@@ -2,7 +2,8 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { Icon, ICONS, Glyph, Reactor, Meter, statusClass, fmtTime, fmtTimeShort, fmtDate } from './primitives';
 import { renderRich } from './cockpit';
-import { NeuralMesh } from './mesh';
+import { isExecutingAgent, NeuralMesh } from './mesh';
+import { runningTasks } from './task-state';
 import { V2 } from './data';
 
 const MODES: Array<{ id?: string; icon?: string; tkey?: string; live?: boolean; sep?: boolean; locked?: boolean }> = [
@@ -30,7 +31,7 @@ function TopBar({ clock, lang, setLang, accent, agents, localPct, live, trust, l
   const tr = trust || { mic:'on', strict_local:false };
   const lm = llm || { state:'unknown', model:null };
   const enabled = agents.length;
-  const running = agents.filter(a=>a.status==='busy'||a.status==='active').length;
+  const running = agents.filter(isExecutingAgent).length;
   const LLM = ({
     ready:    { v:'● READY',    c:'var(--green)', t:'model loaded' + (lm.model ? ': ' + lm.model : '') },
     no_model: { v:'○ NO MODEL', c:'var(--amber)', t:'LM Studio reachable but no model is loaded' },
@@ -356,7 +357,7 @@ function stripTags(s){ return String(s).replace(/<[^>]+>/g,'').replace(/\*\*/g,'
    Honesty contract: the prototype hardcoded "87% on-device / 0 cloud leaks" — we show only
    REAL figures (live agent count from the roster, %-local from /api/analytics/locality),
    never a fabricated split. */
-export function CinemaMesh({ agents = [], localPct, onExit, t }: any) {
+export function CinemaMesh({ agents = [], tasks = [], llm, trust, sources, demo = false, localPct, onExit, t }: any) {
   const [tag, setTag] = useState(0);
   useEffect(() => { const iv = setInterval(() => setTag((x) => x + 1), 4200); return () => clearInterval(iv); }, []);
   useEffect(() => {
@@ -364,17 +365,33 @@ export function CinemaMesh({ agents = [], localPct, onExit, t }: any) {
     window.addEventListener('keydown', h);
     return () => window.removeEventListener('keydown', h);
   }, [onExit]);
-  const TAGS = ['Your governed AI cabinet', 'On-device · always-on', 'Proactive. Private. Provable.'];
-  const live = agents.filter((a) => a.status && a.status !== 'idle').length;
+  const trustEvidence = sources?.trust === true;
+  const cloudReported = trustEvidence
+    && (trust?.cloud_available === true || trust?.claude_available === true);
+  const TAGS = demo
+    ? [
+      'DEMO · seeded sample data',
+      'DEMO · illustrative constellation',
+      'DEMO · simulated choreography',
+    ]
+    : [
+      'Governed operator view',
+      'Current evidence only',
+      !trustEvidence
+        ? 'Trust evidence unavailable'
+        : cloudReported ? 'Cloud lane reported by trust status' : 'Trust status connected',
+    ];
+  const live = agents.filter(isExecutingAgent).length;
+  const running = runningTasks(tasks).length;
   return (
     <div className="cinema">
       <div className="cin-top">
         <div className="cin-mark"><Reactor /><span className="cin-word">JARVIS</span></div>
         <div className="cin-tag" key={tag}>{TAGS[tag % TAGS.length]}</div>
       </div>
-      <div className="cin-stage"><NeuralMesh agents={agents} cinema={true} motion="lively" onSelect={() => {}} t={t} /></div>
+      <div className="cin-stage"><NeuralMesh agents={agents} tasks={tasks} llm={llm} trust={trust} sources={sources} demo={demo} cinema={true} motion="lively" onSelect={() => {}} t={t} /></div>
       <div className="cin-bottom">
-        <div className="cin-feed"><div className="cin-frow"><span className="cin-dot"></span>the Cabinet is working…</div></div>
+        <div className="cin-feed"><div className="cin-frow"><span className="cin-dot"></span>{live > 0 || running > 0 ? 'the Cabinet is working…' : 'no live activity'}</div></div>
         <div className="cin-stats">
           <span><b>{live}</b> agents live</span>
           {localPct != null && <span><b>{localPct}%</b> on-device</span>}

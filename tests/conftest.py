@@ -1,9 +1,41 @@
 """Shared test fixtures and helpers."""
 
+import atexit
 import importlib.util
 import os
+import subprocess
 import sys
+import tempfile
 from pathlib import Path
+
+# Test processes must never inherit an operator's runtime-data roots. Assign,
+# rather than setdefault, before any Jarvis module can be imported. Every serial
+# process and every xdist worker gets its own disposable root.
+_PYTEST_DATA_ROOT = tempfile.mkdtemp(prefix="jarvis-pytest-")
+os.environ["JARVIS_HOME"] = _PYTEST_DATA_ROOT
+os.environ["JARVIS_KEY_DIR"] = str(Path(_PYTEST_DATA_ROOT) / "keys")
+
+
+def _launch_pytest_root_cleanup() -> None:
+    """Let a child retry deletion after this process releases SQLite handles."""
+    helper = Path(__file__).resolve().parent / "support" / "pytest_root_cleanup.py"
+    creationflags = subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0
+    try:
+        subprocess.Popen(
+            [sys.executable, str(helper), _PYTEST_DATA_ROOT],
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            close_fds=True,
+            creationflags=creationflags,
+        )
+    except OSError:
+        # At interpreter shutdown there is no safe in-process fallback on Windows:
+        # SQLite handles may still be open, so leave this one exact root untouched.
+        return
+
+
+atexit.register(_launch_pytest_root_cleanup)
 
 # Gate network calls BEFORE any agents.web import (set at module level so it's
 # guaranteed to take effect during pytest collection, before fixtures run).
@@ -23,22 +55,6 @@ from fastapi import APIRouter, FastAPI
 
 repo_root = Path(__file__).resolve().parent.parent
 
-# HF-5: keep the audit signing key out of the real ~/.config during tests — point
-# it at a gitignored repo-local dir so IntentLog() (constructed by the orchestrator)
-# doesn't write to the developer's home. Tests that exercise key resolution set
-# JARVIS_KEY_DIR themselves to an isolated tmp path.
-# Parallel isolation (pytest-xdist): each worker gets its own runtime-data root +
-# key dir so the file-backed stores (settings.db, audit.db, JSON stores) can't
-# collide across processes. Must run before any store module is imported, so it's
-# here at conftest module load. Serial runs (no xdist) keep the repo defaults.
-_xdist_worker = os.environ.get("PYTEST_XDIST_WORKER")
-if _xdist_worker:
-    import tempfile
-    _worker_home = tempfile.mkdtemp(prefix=f"jarvis-test-{_xdist_worker}-")
-    os.environ["JARVIS_HOME"] = _worker_home  # data_root() honors this (F-08)
-    os.environ["JARVIS_KEY_DIR"] = str(Path(_worker_home) / ".keys")
-else:
-    os.environ.setdefault("JARVIS_KEY_DIR", str(repo_root / "memory_logs" / ".keys"))
 sys.path.insert(0, str(repo_root))
 sys.path.insert(0, str(repo_root / "agents"))
 

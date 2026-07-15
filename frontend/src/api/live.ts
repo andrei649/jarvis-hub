@@ -1,8 +1,9 @@
 /* HUD v2 · P4 live data for the capability modes. The ported modes read V2.<KEY>
    directly; rather than rewrite each, we fetch the real endpoints (shapes verified
    against the v1 HUD), assign onto the shared V2 object, and bump a version to
-   re-render. Every fetch is independent and only overwrites V2 on success, so an
-   absent/partial backend leaves the seeded mock intact (never breaks a panel).
+   re-render. Every fetch is independent and only overwrites V2 on success. The
+   local-model inventory is stricter: every poll clears prior rows until that
+   cycle supplies a valid array, so demo seed or stale residency cannot look live.
 
    CDX-9: off @ts-nocheck (completes the api/ layer). The `: any` at each fetch is the
    real ingestion boundary — heterogeneous backend shapes are normalized here before
@@ -10,6 +11,7 @@
    wants V2 (data.ts) typed first. */
 import { useState, useEffect } from 'react';
 import { apiGet } from './client';
+import type { LocalModelRow } from './types';
 import { V2 } from '../data';
 
 // No vite/client types wired in this project, so read the build-time env via a cast.
@@ -34,6 +36,31 @@ export const PREVIEW_MODE_LIVE_KEYS = {
 
 const firstArr = (x: any, ...keys: string[]) => arr(x, ...keys) || [];
 const text = (x: any, fallback = '') => String(x ?? fallback);
+
+export function localModelStatus(model: Pick<LocalModelRow, 'resident' | 'available'>): string {
+  if (model.resident === true) return 'loaded';
+  if (model.resident == null) return 'residency unknown';
+  if (model.available === true) return 'ready';
+  if (model.available == null) return 'availability unknown';
+  return 'unavailable';
+}
+
+export function mapLocalModelsForAdmin(models: LocalModelRow[]): any[] {
+  return models.map((model) => ({
+    id: model.id,
+    name: model.name || model.id,
+    type: 'local',
+    backend: model.provider,
+    provider: model.provider,
+    ctx: model.ctx || '—',
+    status: localModelStatus(model),
+    use: model.configured ? 'configured' : '',
+    available: model.available,
+    configured: model.configured,
+    resident: model.resident,
+    controls: model.controls,
+  }));
+}
 
 export function pluginIsConfigured(plugin: any): boolean {
   return !!plugin && plugin.enabled !== false && (plugin.configured === true || plugin.available === true);
@@ -210,12 +237,20 @@ export function useLiveModes(): LiveModes {
   useEffect(() => {
     let alive = true;
     let changed = false;
+    let loadGeneration = 0;
     let pluginList: any[] = [];
     const mark = (key: string) => { if (alive) setLive((p) => (p[key] ? p : { ...p, [key]: true })); };
+    const clearMark = (key: string) => { if (alive) setLive((p) => (p[key] ? { ...p, [key]: false } : p)); };
     const set = (key: string, val: any) => { if (val !== undefined && val !== null) { (V2 as any)[key] = val; changed = true; } };
 
     async function load() {
+      const loadId = ++loadGeneration;
       changed = false;
+      // Model residency is current-cycle evidence. Clear seed/stale rows and
+      // their proof before any request from this cycle can complete.
+      set('ADMIN', { ...V2.ADMIN, models: [] });
+      clearMark('ADMIN_MODELS');
+      if (alive) setVer((v) => v + 1);
 
       // MEMORY — flatten /memory/stats {sessions:{total}, vectors:{stored}, knowledge_graph:{entities,relations}}
       await apiGet('/memory/stats').then((s: any) => {
@@ -297,9 +332,18 @@ export function useLiveModes(): LiveModes {
         if (pluginList.length) { set('ADMIN', { ...V2.ADMIN, plugins: pluginList.map((x: any) => ({ id: x.id || x.name, name: x.name || x.id, scope: (x.allowed_domains && x.allowed_domains[0]) || x.scope || x.network_access || '', net: String(x.network_access || x.net || '').toLowerCase(), on: x.enabled !== false })) }); mark('ADMIN'); }
       }).catch(() => { pluginList = []; });
       await apiGet('/api/models/local').then((m: any) => {
+        if (!alive || loadId !== loadGeneration) return;
         const models = arr(m, 'models');
-        if (models && models.length) { set('ADMIN', { ...V2.ADMIN, models: models.map((x: any) => ({ name: x.name || x.id, type: x.type || (x.local ? 'local' : 'cloud'), backend: x.backend || x.provider || '', ctx: x.ctx || '—', status: x.status || (x.active ? 'loaded' : 'ready'), use: x.use || '' })) }); mark('ADMIN'); }
-      }).catch(() => {});
+        if (models) {
+          set('ADMIN', { ...V2.ADMIN, models: mapLocalModelsForAdmin(models) });
+          mark('ADMIN_MODELS');
+          mark('ADMIN');
+        }
+      }).catch(() => {
+        if (!alive || loadId !== loadGeneration) return;
+        set('ADMIN', { ...V2.ADMIN, models: [] });
+        clearMark('ADMIN_MODELS');
+      });
 
       // P3.1 PREVIEW MODES — real endpoints or honest plugin-gated empty states.
       await Promise.all([
