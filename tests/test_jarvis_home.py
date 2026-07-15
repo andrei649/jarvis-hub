@@ -5,6 +5,7 @@ default is the repo's memory_logs/ (unchanged), and setting JARVIS_HOME (or the
 legacy JARVIS_MEMORY_DIR) relocates every store together.
 """
 import importlib
+import os
 import sys
 from pathlib import Path
 
@@ -40,10 +41,11 @@ def test_legacy_jarvis_memory_dir_still_honored(monkeypatch, tmp_path):
 def test_store_default_relocates_under_jarvis_home(monkeypatch, tmp_path):
     # End-to-end: a store's module-level default path resolves under JARVIS_HOME.
     import agents.core.notes as notes
+    pytest_root = os.environ["JARVIS_HOME"]
     monkeypatch.setenv("JARVIS_HOME", str(tmp_path))
     try:
         importlib.reload(notes)
         assert str(notes.DEFAULT_PATH).startswith(str(tmp_path))
     finally:
-        monkeypatch.delenv("JARVIS_HOME", raising=False)
-        importlib.reload(notes)  # restore the default for other tests
+        monkeypatch.setenv("JARVIS_HOME", pytest_root)
+        importlib.reload(notes)  # restore the isolated pytest default for other tests

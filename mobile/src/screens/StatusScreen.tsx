@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useState } from 'react';
 import { Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
 import {
   ApiError,
+  commandCenterModelLabel,
   fetchCommandCenter,
   fetchDashboard,
   fetchSecurityGovernance,
@@ -170,7 +171,7 @@ export function StatusScreen({ onGoToSettings }: { onGoToSettings: () => void })
             />
             <Row
               label="Model"
-              value={commandCenter.model.active_model || commandCenter.model.backend}
+              value={commandCenterModelLabel(commandCenter.model)}
             />
             <Row
               label="Onboarding"

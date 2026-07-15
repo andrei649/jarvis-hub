@@ -272,6 +272,11 @@ def _ensure_init():
             init_db()
             _initialized = True
 
+
+def ensure_initialized() -> None:
+    """Create and seed the settings schema on first use, safely across threads."""
+    _ensure_init()
+
 # ── helpers ───────────────────────────────────────────────────────
 
 def get_conn() -> sqlite3.Connection:

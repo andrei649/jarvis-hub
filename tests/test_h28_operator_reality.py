@@ -76,6 +76,24 @@ def _operator_cases():
     return cases
 
 
+@pytest.mark.asyncio
+async def test_empty_operator_plan_is_blocked_before_runtime_construction(monkeypatch):
+    from agents.core.routers import multimodal
+
+    runtime_calls = []
+
+    def unexpected_runtime(*_args, **_kwargs):
+        runtime_calls.append(True)
+        pytest.fail("an empty proposal must not construct a desktop runtime")
+
+    monkeypatch.setattr(multimodal, "build_desktop_runtime", unexpected_runtime)
+
+    result = await multimodal.execute_desktop_steps(object(), [])
+
+    assert result == {"ok": False, "reason": "empty_steps"}
+    assert runtime_calls == []
+
+
 def test_operator_reality_module_imports_without_harness_import_order_dependency():
     result = subprocess.run(  # noqa: S603
         [

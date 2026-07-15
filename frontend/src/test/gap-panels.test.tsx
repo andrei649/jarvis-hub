@@ -5,7 +5,8 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import React from 'react';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
-import { CapabilitiesPanel, DataSpacesPanel, PairingPanel, RoomsPanel, SandboxPanel } from '../gap';
+import gapSource from '../gap.tsx?raw';
+import { CapabilitiesPanel, DataSpacesPanel, LMStudioPanel, PairingPanel, RoomsPanel, SandboxPanel } from '../gap';
 
 beforeEach(() => { try { localStorage.clear(); } catch { /* ignore */ } });
 
@@ -17,6 +18,13 @@ function mockFetch(routes) {
   global.fetch = fn;
   return fn;
 }
+
+describe('Console Build registry', () => {
+  it('imports and registers the governed Operator panel in Build', () => {
+    expect(gapSource).toMatch(/import\s+\{\s*OperatorPanel\s*\}\s+from\s+['"]\.\/operator-panel['"]/);
+    expect(gapSource).toMatch(/\['Build', \[[^\]]*\bOperatorPanel\b/);
+  });
+});
 
 describe('PairingPanel (H12.19) — sender approvals are live', () => {
   it('lists pending senders and POSTs an approve decision with channel + sender_id', async () => {
@@ -169,5 +177,29 @@ describe('SandboxPanel — code execution is live', () => {
     fireEvent.change(screen.getByPlaceholderText('print("hello from the sandbox")'), { target: { value: 'x' } });
     fireEvent.click(screen.getByText('execute'));
     await waitFor(() => expect(screen.getByText(/sandbox disabled/)).toBeTruthy());
+  });
+});
+
+describe('LMStudioPanel — configuration stays separate from residency', () => {
+  it('uses the exact provider-pair switch body without treating configuration as load', async () => {
+    const fn = mockFetch({
+      '/api/models/local/switch': { ok: true, active: 'qwen:7b' },
+      '/api/models/local': {
+        models: [{
+          id: 'qwen:7b', provider: 'ollama', available: true, configured: false, resident: false,
+          controls: { can_configure: true, can_load: false, can_unload: false },
+        }],
+      },
+    });
+    render(<LMStudioPanel />);
+    await waitFor(() => expect(screen.getByText('qwen:7b')).toBeTruthy());
+    fireEvent.click(screen.getByTitle('configure ollama:qwen:7b'));
+
+    await waitFor(() => {
+      const post = fn.mock.calls.find((c) => c[0] === '/api/models/local/switch' && c[1]?.method === 'POST');
+      expect(post).toBeTruthy();
+      expect(JSON.parse(post[1].body)).toEqual({ model: 'qwen:7b', provider: 'ollama' });
+      expect(fn.mock.calls.some((c) => String(c[0]).startsWith('/api/llm/') && c[1]?.method === 'POST')).toBe(false);
+    });
   });
 });

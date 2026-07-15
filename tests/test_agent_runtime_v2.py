@@ -2112,7 +2112,10 @@ async def test_build_executor_uses_specific_trusted_desktop_toolrpc_handler():
         id=1,
         agent="jarvis",
         kind="toolrpc.desktop_run",
-        payload={"tool": "desktop_run", "args": {"steps": []}},
+        payload={
+            "tool": "desktop_run",
+            "args": {"steps": [{"action": "observe", "args": {}}]},
+        },
     )
 
     result = await executor.execute(task)

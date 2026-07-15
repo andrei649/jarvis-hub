@@ -34,13 +34,13 @@ _MAX_OBSERVATION_ELEMENTS = 200
 _MAX_OBSERVATION_TEXT = 20_000
 _APP_KEY_RE = re.compile(r"^[a-z][a-z0-9_]{0,31}$")
 _DESKTOP_ARG_RULES = {
-    "observe": (frozenset(), frozenset()),
-    "screenshot": (frozenset(), frozenset()),
-    "read": (frozenset({"query"}), frozenset({"query"})),
-    "locate": (frozenset({"query"}), frozenset({"query"})),
-    "click": (frozenset({"name"}), frozenset({"name"})),
-    "type": (frozenset({"name", "text"}), frozenset({"name", "text"})),
-    "launch": (frozenset({"app"}), frozenset({"app"})),
+    "observe": (),
+    "screenshot": (),
+    "read": ("query",),
+    "locate": ("query",),
+    "click": ("name",),
+    "type": ("name", "text"),
+    "launch": ("app",),
 }
 
 try:
@@ -103,6 +103,8 @@ def validate_desktop_run_args(raw: Mapping[str, Any]) -> dict[str, list[dict]]:
     steps = raw.get("steps")
     if not isinstance(steps, list):
         raise DesktopProposalError("invalid_steps")
+    if not steps:
+        raise DesktopProposalError("empty_steps")
     if len(steps) > _MAX_DESKTOP_STEPS:
         raise DesktopProposalError("too_many_steps")
 
@@ -124,13 +126,13 @@ def validate_desktop_run_args(raw: Mapping[str, Any]) -> dict[str, list[dict]]:
         raw_args = step.get("args", {})
         if not isinstance(raw_args, Mapping):
             raise DesktopProposalError("invalid_args")
-        required, allowed = rule
+        required = allowed = rule
         keys = set(raw_args)
         if not all(isinstance(key, str) for key in keys):
             raise DesktopProposalError("unexpected_action_args")
-        if keys - allowed:
+        if keys - set(allowed):
             raise DesktopProposalError("unexpected_action_args")
-        if required - keys:
+        if set(required) - keys:
             raise DesktopProposalError("missing_argument")
 
         args = {}

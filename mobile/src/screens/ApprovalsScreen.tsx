@@ -10,6 +10,7 @@ import {
 } from '../api/client';
 import { useServer } from '../context/ServerContext';
 import { theme } from '../theme';
+import { approvalPolicy } from './approvalPolicy';
 
 type Busy = { id: number; action: ApprovalAction } | null;
 
@@ -69,8 +70,9 @@ function ApprovalCard({
   busy: Busy;
   onDecision: (task: ApprovalTask, action: ApprovalAction) => void;
 }) {
+  const policy = approvalPolicy(task);
   const color = riskColor(task);
-  const preview = payloadPreview(task);
+  const preview = policy.showPayload ? payloadPreview(task) : null;
   const active = busy?.id === task.id;
 
   const button = (action: ApprovalAction, label: string, style: object, textStyle?: object) => (
@@ -98,6 +100,10 @@ function ApprovalCard({
 
       {preview && <Text style={styles.payload}>{preview}</Text>}
 
+      {!policy.canApprove && (
+        <Text style={styles.approvalBoundary}>Approval unavailable in mobile app · continue in Owner HUD</Text>
+      )}
+
       {task.rollback && (
         <View style={styles.rollbackBox}>
           <Text style={styles.rollbackTitle}>Rollback · {task.rollback.mode.replace(/_/g, ' ')}</Text>
@@ -107,9 +113,9 @@ function ApprovalCard({
       )}
 
       <View style={styles.actions}>
-        {button('accept', 'Approve', styles.approveBtn)}
-        {button('reject', 'Reject', styles.rejectBtn)}
-        {button('defer', 'Defer', styles.deferBtn, styles.deferText)}
+        {policy.canApprove && button('accept', 'Approve', styles.approveBtn)}
+        {policy.canReject && button('reject', 'Reject', styles.rejectBtn)}
+        {policy.canDefer && button('defer', 'Defer', styles.deferBtn, styles.deferText)}
       </View>
     </View>
   );
@@ -245,6 +251,12 @@ const styles = StyleSheet.create({
     padding: 10,
     borderRadius: 10,
     backgroundColor: theme.surfaceAlt,
+  },
+  approvalBoundary: {
+    color: theme.warn,
+    fontSize: 12,
+    fontWeight: '700',
+    marginTop: 10,
   },
   rollbackBox: {
     marginTop: 10,
