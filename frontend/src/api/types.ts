@@ -11,6 +11,19 @@ export interface StatusSys {
   latency: number; uptime: string; sessions: number;
 }
 
+export type ModelState = 'ready' | 'no_model' | 'offline' | 'unknown';
+
+export interface LocalModelRef {
+  provider: string;
+  id: string;
+}
+
+export interface LlmLiveState {
+  state: ModelState;
+  model: string | null;
+  residents: LocalModelRef[];
+}
+
 export interface StatusResp {
   version?: string;
   sys?: StatusSys;
@@ -21,6 +34,10 @@ export interface StatusResp {
   agents?: { id: string; status: string }[];
   agents_online?: number;
   agents_total?: number;
+  model_state?: ModelState;
+  loaded_model?: string | null;
+  resident_models?: LocalModelRef[];
+  residency_state?: 'known' | 'unknown' | 'offline';
 }
 
 export interface AgentResp {
@@ -54,4 +71,28 @@ export interface TickerItem {
 }
 export interface TickerResp { ticker: TickerItem[]; }
 
-export interface TasksResp { tasks: Record<string, unknown>[]; }
+export interface Task extends Record<string, unknown> {
+  state?: unknown;
+  status?: unknown;
+  owner?: unknown;
+  agent_id?: unknown;
+  agent?: unknown;
+}
+
+export interface TasksResp { tasks: Task[]; }
+
+export interface LocalModelControls {
+  can_configure: boolean;
+  can_load: boolean;
+  can_unload: boolean;
+}
+
+export interface LocalModelRow extends Record<string, unknown> {
+  id: string;
+  provider: string;
+  available: boolean | null;
+  configured: boolean;
+  resident: boolean | null;
+  controls: LocalModelControls;
+  name?: string;
+}

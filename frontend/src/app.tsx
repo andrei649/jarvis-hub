@@ -1,12 +1,12 @@
 /* HUD v2 · APP ROOT — P0: shell + cockpit are live; the other modes render an
    honest placeholder and get ported from the prototype in the next phase. */
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useLayoutEffect, useRef, useCallback } from 'react';
 import { V2 } from './data';
 import { useClock, fmtTimeShort, Icon, ICONS, Glyph } from './primitives';
 import { TopBar, Ticker, Rail, Tabs, RosterColumn, ContextColumn, Palette, Ambient, CinemaMesh } from './shell';
 import { Conversation, CognitionStream, InputBar, buildTrace, traceFromCognition } from './cockpit';
 import { useVoice } from './voice';
-import { loadJarvisData } from './api/loaders';
+import { createLatestRefreshRunner, loadJarvisData } from './api/loaders';
 import { PREVIEW_MODE_LIVE_KEYS, useLiveModes } from './api/live';
 import { LiveSourceChip, liveSourceState } from './LiveSourceChip';
 import { postStream, apiGet } from './api/client';
@@ -18,6 +18,7 @@ import { ConsoleOverlay, FirstRunGate, shouldShowFirstRun, FIRST_RUN_DISMISS_KEY
 import { ArtifactsPanel, artifactsTabLabel } from './artifacts';
 import { NeuralMesh } from './mesh';
 import { initAnalytics, trackPageview } from './analytics';
+import { useDemoMode } from './demo-mode';
 
 function ModeStub({ label }) {
   return (
@@ -59,7 +60,7 @@ function App() {
   const [lang, setLang] = useState(() => { try { return localStorage.getItem('hud.lang') || 'en'; } catch { return 'en'; } });
   // DEMO mode (opt-in, watermarked): OFF by default → the HUD shows ONLY real
   // backend data + honest empty states; ON → fills the seeded demo corpus.
-  const [demo, setDemo] = useState(() => { try { return localStorage.getItem('hud.demo') === '1' || /[?&]demo=1/.test(window.location.search); } catch { return false; } });
+  const [demo, setDemo] = useDemoMode();
   // Voice preferences (persisted): mode = hands-free | ptt; tts = server | browser | off;
   // lang = auto | ro | en; barge = off | on (experimental talk-over interrupt)
   const [voiceCfg, setVoiceCfg] = useState(() => { const d = { mode: 'hands-free', tts: 'server', lang: 'auto', barge: 'off' }; try { return { ...d, ...JSON.parse(localStorage.getItem('hud.voice') || '{}') }; } catch { return d; } });
@@ -107,8 +108,9 @@ function App() {
   const [firstRunDismissed, setFirstRunDismissed] = useState(() => {
     try { return localStorage.getItem('hud.seen') === '1'; } catch { return false; }
   });
-  const [llm, setLlm] = useState({ state: 'unknown', model: null });
+  const [llm, setLlm] = useState({ state: 'unknown', model: null, residents: [] });
   const [trust, setTrust] = useState({ mic: 'on', strict_local: false });
+  const [sources, setSources] = useState({ tasks: false, trust: false });
   const [locality, setLocality] = useState(null); // {local_pct} from real runs, or null
   const baseAgents = useRef(demo ? V2.AGENTS : []);
 
@@ -138,7 +140,6 @@ function App() {
   useEffect(() => { try { localStorage.setItem('hud.motion', motion); } catch { /* ignore */ } }, [motion]);
   useEffect(() => { try { localStorage.setItem('hud.scanline', scanline); } catch { /* ignore */ } }, [scanline]);
   useEffect(() => { try { localStorage.setItem('hud.dotgrid', dotgrid); } catch { /* ignore */ } }, [dotgrid]);
-  useEffect(() => { try { localStorage.setItem('hud.demo', demo ? '1' : '0'); } catch { /* ignore */ } }, [demo]);
   useEffect(() => { try { localStorage.setItem('hud.voice', JSON.stringify(voiceCfg)); } catch { /* ignore */ } }, [voiceCfg]);
   // Re-seed (or clear) the demo-only cockpit corpus when DEMO toggles at runtime.
   useEffect(() => {
@@ -278,30 +279,71 @@ function App() {
   // Hands-free voice loop: mic → local Whisper → runTurn → speak the reply, repeat.
   const voice = useVoice({ lang: voiceCfg.lang === 'auto' ? lang : voiceCfg.lang, mode: voiceCfg.mode, ttsSource: voiceCfg.tts, micMuted: trust.mic === 'off', barge: voiceCfg.barge === 'on', onTurn: runTurn });
 
+  // Leaving DEMO is a provenance boundary, not just a URL toggle. Clear every
+  // demo-owned surface in the same event before the banner disappears; the
+  // next live refresh may then publish only a current evidence snapshot.
+  const clearDemoDerivedState = useCallback(() => {
+    timers.current.forEach(clearTimeout);
+    timers.current = [];
+    abortRef.current?.abort();
+    abortRef.current = null;
+    setAgents([]);
+    baseAgents.current = [];
+    setActiveId('jarvis');
+    setFocusId(null);
+    setMessages([]);
+    setThinking(null);
+    setTrace(null);
+    setProvModal(null);
+    setDossier(null);
+    setDecisions([]);
+    setTicker([]);
+    setTasks([]);
+    setWeather(null);
+    setCalendar([]);
+    setHeartbeat([]);
+    setSys(null);
+    setLive(false);
+    setServerUp(false);
+    setLlm({ state: 'unknown', model: null, residents: [] });
+    setTrust({ mic: 'on', strict_local: false });
+    setSources({ tasks: false, trust: false });
+    setLocality(null);
+  }, []);
+
+  // Popstate can also take the HUD out of DEMO. A layout effect closes that
+  // path before paint; the explicit Exit control clears in its event handler.
+  const previousDemo = useRef(demo);
+  useLayoutEffect(() => {
+    if (previousDemo.current && !demo) clearDemoDerivedState();
+    previousDemo.current = demo;
+  }, [clearDemoDerivedState, demo]);
+  const exitDemo = useCallback(() => {
+    clearDemoDerivedState();
+    setDemo(false);
+  }, [clearDemoDerivedState, setDemo]);
+
   useEffect(() => () => timers.current.forEach(clearTimeout), []);
 
-  // P1 — load live data and poll every 30s; falls back to the seeded mock when
-  // the backend is unreachable, so the HUD never blanks (recall-never-hard-fails).
+  // P1 — load live data and poll every 30s. A generation guard prevents a
+  // slower, older poll from replacing a newer evidence snapshot.
   useEffect(() => {
-    let alive = true;
-    async function refresh() {
-      try {
-        const d = await loadJarvisData(demo);
-        if (!alive) return;
+    const runner = createLatestRefreshRunner({
+      loadData: () => loadJarvisData(demo),
+      loadLocality: demo ? undefined : () => apiGet<any>('/api/analytics/locality'),
+      commitData: (d) => {
         setAgents(d.agents); baseAgents.current = d.agents;
         setTicker(d.ticker); setTasks(Array.isArray(d.tasks) ? d.tasks : []); setWeather(d.weather); setCalendar(d.calendar);
         setHeartbeat(d.heartbeat); setSys(d.sys); setLive(!!d.live);
-        setServerUp(!!d.serverUp); setLlm(d.llm || { state: 'unknown', model: null });
+        setServerUp(!!d.serverUp); setLlm(d.llm || { state: 'unknown', model: null, residents: [] });
+        setSources(d.sources || { tasks: false, trust: false });
         if (d.trust) setTrust(d.trust);
-        if (!demo) {
-          // Real %-local from run-history routes; failure leaves it null (meter hides).
-          apiGet('/api/analytics/locality').then((l) => { if (alive) setLocality(l); }).catch(() => {});
-        }
-      } catch { /* unreachable — keep current */ }
-    }
-    refresh();
-    const iv = setInterval(refresh, 30000);
-    return () => { alive = false; clearInterval(iv); };
+      },
+      commitLocality: (nextLocality) => setLocality(nextLocality),
+    });
+    void runner.refresh();
+    const iv = setInterval(() => { void runner.refresh(); }, 30000);
+    return () => { runner.stop(); clearInterval(iv); };
   }, [demo]);
   const dismissDecision = (id) => setDecisions((ds) => ds.filter((d) => d._id !== id));
 
@@ -319,7 +361,7 @@ function App() {
       <div className="tex-scanbar"></div>
 
       <div className="shell">
-        {demo && <DemoBanner onExit={() => setDemo(false)} />}
+        {demo && <DemoBanner onExit={exitDemo} />}
         {!demo && serverUp && !firstRunDismissed && !llm.model && llm.state !== 'unknown' && (
           <FirstRunBanner llm={llm} onDemo={() => setDemo(true)}
             onDismiss={() => { setFirstRunDismissed(true); try { localStorage.setItem('hud.seen', '1'); } catch { /* ignore */ } }} t={t} />
@@ -343,7 +385,7 @@ function App() {
                     <div className="panel-head"><Icon d={ICONS.brain} size={14} /><span className="ttl">{t.network}</span><span className="st">focus mode</span></div>
                     {/* Neural Mesh — native canvas brain of agents + models firing
                         (HUD-v3 port of v3-mesh.jsx; replaces the /brain?embed=1 iframe). */}
-                    <NeuralMesh agents={agents} tasks={tasks} activeId={activeId} onSelect={(id) => { setActiveId(id); setDossier(id); }} motion={motion} llm={llm} trust={trust} demo={demo} t={t} />
+                    <NeuralMesh agents={agents} tasks={tasks} activeId={activeId} onSelect={(id) => { setActiveId(id); setDossier(id); }} motion={motion} llm={llm} trust={trust} sources={sources} demo={demo} t={t} />
                   </div>
                   <div className="panel" style={{ flex: '1 1 0', minHeight: 0 }}>
                     <span className="bk tl"></span><span className="bk tr"></span><span className="bk bl"></span><span className="bk br"></span>
@@ -393,7 +435,7 @@ function App() {
         setAccent={setAccent} setLang={setLang} onAmbient={() => { setPalette(false); setAmbient(true); }}
         ui={{ look, setLook, density, setDensity, motion, setMotion, scanline, setScanline, dotgrid, setDotgrid }} t={t} />
       {ambient && <Ambient onExit={() => setAmbient(false)} clock={clock} lang={lang} agents={agents} decisions={decisions} motion={motion} localPct={localPct} t={t} />}
-      {cinema && <CinemaMesh agents={agents} localPct={localPct} onExit={() => setCinema(false)} t={t} />}
+      {cinema && <CinemaMesh agents={agents} tasks={tasks} llm={llm} trust={trust} sources={sources} demo={demo} localPct={localPct} onExit={() => setCinema(false)} t={t} />}
     </div>
   );
 }
@@ -428,12 +470,12 @@ function replyFor(text, tr) {
   };
   return map[a] || map.jarvis;
 }
-function DemoBanner({ onExit }) {
+export function DemoBanner({ onExit }) {
   return (
     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 12, padding: '4px 0',
       background: 'repeating-linear-gradient(45deg, rgba(245,158,11,.16) 0 12px, rgba(245,158,11,.05) 12px 24px)',
       borderBottom: '1px solid rgba(245,158,11,.5)', fontFamily: 'var(--font-mono)', fontSize: 10.5, letterSpacing: '.18em', color: 'var(--amber)' }}>
-      ◐ DEMO DATA — seeded sample, not your live backend
+      ◐ DEMO DATA — seeded sample, not your live backend · /v2/?demo=1
       <button className="tool-btn" onClick={onExit}>exit demo</button>
     </div>
   );

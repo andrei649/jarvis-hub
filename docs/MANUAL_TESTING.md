@@ -1,6 +1,6 @@
 # Manual Testing Guide
 
-> **Why this exists.** The automated suite (~2,400 tests) runs fully offline with
+> **Why this exists.** The automated suite (authoritative count: `project-status.json`) runs fully offline with
 > mocked LLMs, channels, and hardware. It proves the *logic* is correct, but it
 > **cannot** verify anything that needs a real model, a live channel token, a
 > browser, an external service (Qdrant/Neo4j/n8n), or a human looking at the HUD.
@@ -20,7 +20,7 @@ real-world wiring) · ⚠️ partially covered · ❌ no automated coverage (tes
 ## 0. Run record & 1.0 sign-off
 
 > This runbook **is the release step that tags a version** (the human verification before any tag, 1.0 included). A clean pass — every critical area ✅
-> with no open ❌ blocker — *plus* the green offline suite (**~2,400 passed, 2 skipped**) is what
+> with no open ❌ blocker — *plus* the green offline suite at the generated project-status count is what
 > clears tagging `v1.0.0`. Record results inline (tick the box; for any ❌/⚠️ add a one-line note
 > and log it in **§K Blockers**). Fill this header on each run.
 
@@ -31,6 +31,7 @@ real-world wiring) · ⚠️ partially covered · ❌ no automated coverage (tes
 | Hardware | e.g. RTX 5090 box (Bonobo WS) |
 | LLM backend + model | e.g. LM Studio · `google/gemma-4-12b` |
 | Services up | Qdrant ☐ · Neo4j ☐ · n8n ☐ |
+| AI-OS host seams | Chromium ☐ · Windows UIA ☐ · HA ☐ · Frigate ☐ · media devices (2+) ☐ |
 
 | § | Area | Pass / Total | Open blockers |
 |---|---|---|---|
@@ -45,8 +46,10 @@ real-world wiring) · ⚠️ partially covered · ❌ no automated coverage (tes
 | G | Security & secrets | / | |
 | H | Memory & RAG | / | |
 | I | Mobile / PWA | / | |
+| N | AI-OS owner-host v1 proof (A8) | / 7 | |
 
-**Sign-off:** ☐ all critical areas pass · ☐ no open ❌ blocker (§K) → **cleared to tag `v1.0.0`.**  Signed: ____________
+**Sign-off:** ☐ all critical areas pass · ☐ §N A8 passes · ☐ no open ❌ blocker (§K) →
+**cleared to tag `v1.0.0`.** Signed: ____________
 
 ---
 
@@ -280,11 +283,51 @@ Each needs a real token/account and a live round-trip (send → receive → repl
 
 ---
 
+## N. AI-OS owner-host v1 proof (A8)  🔑🤖👁
+
+> **Blocking 1.0 gate.** H28–H33 are code/harness complete, but the Nerva v1 bar requires
+> reality on the owner's hardware. Run only on an isolated Windows target and safe test devices;
+> do not use an occupied exterior lock or any action whose rollback is uncertain. For every item,
+> record build SHA, timestamp, bounded task/audit IDs, device class, observed result and rollback in
+> the §0 run attachment. Redact secrets, household identifiers and all raw camera frames.
+
+- [ ] **Governed browser on installed Chromium (H28)** — with an explicit allowlist, perform a real
+  navigation/action through `GovernedBrowser`; prove redirects/subresources outside policy block,
+  the audit links the approved plan to execution, and no ambient profile/session is reused.
+- [ ] **Accessibility-first Windows desktop actuation (H28)** — approve and execute bounded
+  launch/type/click steps through Console → Build → Operator on the isolated host. Prove Windows UIA
+  is selected before any visual fallback, execution-time kernel mediation occurs, the result is
+  verified, cleanup runs, and `ungoverned_actions == 0`.
+- [ ] **Real Home Assistant state + governed actuation (H30)** — ingest live entity/area state and
+  prove device → room → occupant plus current presence projection in the house graph. Perform one
+  safe reversible device action, verify the physical result and rollback, and prove lock/door-class
+  actions cannot execute below strong confirmation.
+- [ ] **Consented Frigate → house/memory/ambient flow (H31/H33)** — ingest one real detector event,
+  apply household consent + privacy mask before local inference, persist only the promised encrypted/
+  retained data, surface the event to house/memory/ambient, and prove revoke/kill-switch stops work
+  with zero raw-frame or external-host egress.
+- [ ] **Presence-aware Media Director on ≥2 non-chat output surfaces/device classes (H29)** — with
+  live presence state, prove the resolver chooses the correct occupied-room target, then call governed
+  `present()` on two real classes (for example browser display + Chromecast/Spotify speaker). Verify
+  delivery on both surfaces, driver/device status, interrupt etiquette and restore; no absent-room or
+  unverified outcome may be shown as success.
+- [ ] **Approved capability acquisition → reuse (H32)** — demonstrate one full gap → research →
+  generate → sandbox → human approval → registry promotion → reuse loop on an isolated target;
+  unsigned/unapproved output must remain quarantined and non-runnable.
+- [ ] **Ambient decision ladder on live signals (H33)** — combine real house/camera/service state,
+  verify the chosen ignore/log/notify/ask/act rung and interruption budget, then trigger kill-switch
+  and confirm monitoring halts without a side effect escaping the governed path.
+
+**A8 result:** ☐ all seven pass with redacted evidence · ☐ no unresolved §K blocker.
+
+---
+
 ## J. Regression smoke (each release)
 
-- [ ] `pytest tests/` is green — **~2,400 passed, 2 skipped** (the 1 skip is the optional
-  heartbeat path). `apscheduler` is bundled in `requirements-beta.txt`, so the suite runs
-  clean from the one-command install (`./install.sh` / `INSTALL.bat`).
+- [ ] `pytest tests/` is green — collected count matches `project-status.json` (**5,084** on this
+  revision) and any declared skips are explained in the run output. `apscheduler` is bundled in
+  `requirements-beta.txt`, so the suite runs clean from the one-command install
+  (`./install.sh` / `INSTALL.bat`).
 - [ ] `GET /status` → `ok`. HUD loads. A chat round-trip works.
 - [ ] No secrets in logs (grep the log for any planted secret value).
 

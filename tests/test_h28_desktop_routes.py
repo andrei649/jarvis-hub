@@ -5,6 +5,7 @@ from types import SimpleNamespace
 import pytest
 from fastapi.testclient import TestClient
 
+from agents.core import desktop_operator
 from agents.core.desktop_host import WindowsDesktopDriver
 from agents.core.kernel import Decision, Verdict
 from agents.core.routers import multimodal
@@ -31,8 +32,7 @@ class _Driver:
 def client():
     from agents import web
 
-    with TestClient(web.app) as test_client:
-        yield test_client
+    return TestClient(web.app)
 
 
 def _enable_host(monkeypatch):
@@ -63,6 +63,210 @@ def _wire_driver(monkeypatch, driver, *, verdict=Verdict.GRANT, reason="allowed"
     return orch, seen
 
 
+@pytest.mark.parametrize(
+    ("steps", "reason"),
+    [
+        ([], "empty_steps"),
+        ([{"action": "wait", "args": {}}], "unsupported_action"),
+        ([{"action": "teleport", "args": {}}], "unsupported_action"),
+        ([{"action": "read", "args": {}}], "missing_argument"),
+        (
+            [{"action": "locate", "args": {"query": "Save", "selector": "#save"}}],
+            "unexpected_action_args",
+        ),
+        ([{"action": "click", "args": {"x": "10", "y": "20"}}], "unexpected_action_args"),
+        ([{"action": "type", "args": {"name": "Editor"}}], "missing_argument"),
+        ([{"action": "launch", "args": {"app": "bad-app"}}], "invalid_app_key"),
+        ([{"action": "observe", "args": {}, "approved": True}], "invalid_step"),
+        (
+            [{"action": "type", "args": {"name": "Editor", "text": "x" * 20_001}}],
+            "argument_too_large",
+        ),
+    ],
+)
+def test_desktop_preview_and_run_share_validation_before_any_downstream_seam(
+    client,
+    monkeypatch,
+    steps,
+    reason,
+):
+    reached = []
+
+    def unexpected(seam, result):
+        def record(*_args, **_kwargs):
+            reached.append(seam)
+            return result
+
+        return record
+
+    async def unexpected_preview(*_args, **_kwargs):
+        reached.append("GovernedDesktop.preview")
+        return {"steps": []}
+
+    monkeypatch.setattr(multimodal, "desktop_host_enabled", unexpected("host gate", False))
+    monkeypatch.setattr(multimodal, "get_orch", unexpected("orchestrator", object()))
+    monkeypatch.setattr(multimodal, "build_desktop_runtime", unexpected("desktop runtime", None))
+    monkeypatch.setattr(desktop_operator.GovernedDesktop, "preview", unexpected_preview)
+
+    responses = [
+        client.post(route, json={"steps": steps})
+        for route in ("/api/desktop/preview", "/api/desktop/run")
+    ]
+
+    assert [response.status_code for response in responses] == [200, 200]
+    assert [response.json() for response in responses] == [
+        {"ok": False, "reason": reason},
+        {"ok": False, "reason": reason},
+    ]
+    assert reached == []
+
+
+def test_desktop_routes_bound_and_redact_oversized_plan_before_downstream_seams(
+    client,
+    monkeypatch,
+):
+    sentinel = "desktop-secret-do-not-echo-" + "x" * 19_900
+    steps = [{"action": "type", "args": {"name": "Editor", "text": sentinel}} for _ in range(101)]
+    reached = []
+
+    def record(seam, result):
+        def call(*_args, **_kwargs):
+            reached.append(seam)
+            return result
+
+        return call
+
+    async def record_preview(*_args, **_kwargs):
+        reached.append("GovernedDesktop.preview")
+        return {"steps": []}
+
+    monkeypatch.setattr(multimodal, "desktop_host_enabled", record("host gate", False))
+    monkeypatch.setattr(multimodal, "get_orch", record("orchestrator", object()))
+    monkeypatch.setattr(multimodal, "build_desktop_runtime", record("desktop runtime", None))
+    monkeypatch.setattr(desktop_operator.GovernedDesktop, "preview", record_preview)
+
+    responses = [
+        client.post(route, json={"steps": steps})
+        for route in ("/api/desktop/preview", "/api/desktop/run")
+    ]
+
+    assert [response.status_code for response in responses] == [200, 200]
+    assert [response.json() for response in responses] == [
+        {"ok": False, "reason": "too_many_steps"},
+        {"ok": False, "reason": "too_many_steps"},
+    ]
+    assert all("no-store" in response.headers["cache-control"] for response in responses)
+    assert all(sentinel not in response.text for response in responses)
+    assert all(len(response.content) <= 64 for response in responses)
+    assert reached == []
+
+
+@pytest.mark.parametrize(
+    ("shape", "reason"),
+    [
+        ("scalar", "invalid_steps"),
+        ("scalar_item", "invalid_step"),
+    ],
+)
+def test_desktop_routes_defer_raw_step_shapes_to_bounded_shared_validator(
+    client,
+    monkeypatch,
+    shape,
+    reason,
+):
+    sentinel = "desktop-shape-secret-do-not-echo-" + "x" * 3_900
+    steps = sentinel if shape == "scalar" else [sentinel]
+    reached = []
+
+    def record(seam, result):
+        def call(*_args, **_kwargs):
+            reached.append(seam)
+            return result
+
+        return call
+
+    async def record_preview(*_args, **_kwargs):
+        reached.append("GovernedDesktop.preview")
+        return {"steps": []}
+
+    monkeypatch.setattr(multimodal, "desktop_host_enabled", record("host gate", False))
+    monkeypatch.setattr(multimodal, "get_orch", record("orchestrator", object()))
+    monkeypatch.setattr(multimodal, "build_desktop_runtime", record("desktop runtime", None))
+    monkeypatch.setattr(desktop_operator.GovernedDesktop, "preview", record_preview)
+
+    responses = [
+        client.post(route, json={"steps": steps})
+        for route in ("/api/desktop/preview", "/api/desktop/run")
+    ]
+
+    assert [response.status_code for response in responses] == [200, 200]
+    assert [response.json() for response in responses] == [
+        {"ok": False, "reason": reason},
+        {"ok": False, "reason": reason},
+    ]
+    assert all("no-store" in response.headers["cache-control"] for response in responses)
+    assert all(sentinel not in response.text for response in responses)
+    assert all(len(response.content) <= 64 for response in responses)
+    assert reached == []
+
+
+def test_desktop_body_defers_arbitrary_python_steps_without_copying():
+    raw_steps = object()
+
+    body = multimodal.DesktopStepsBody(steps=raw_steps)
+
+    assert body.steps is raw_steps
+    with pytest.raises(desktop_operator.DesktopProposalError) as exc_info:
+        desktop_operator.validate_desktop_run_args({"steps": body.steps})
+    assert exc_info.value.reason == "invalid_steps"
+
+
+def test_desktop_body_openapi_retains_bounded_array_of_objects():
+    from agents import web
+
+    steps_schema = web.app.openapi()["components"]["schemas"]["DesktopStepsBody"]["properties"][
+        "steps"
+    ]
+
+    assert steps_schema["type"] == "array"
+    assert steps_schema["maxItems"] == 100
+    assert steps_schema["items"]["type"] == "object"
+
+
+def test_desktop_preview_receives_only_shared_canonical_steps(client, monkeypatch):
+    seen = []
+
+    async def preview(_self, steps):
+        seen.append(steps)
+        return {"steps": []}
+
+    monkeypatch.setattr(desktop_operator.GovernedDesktop, "preview", preview)
+
+    response = client.post(
+        "/api/desktop/preview",
+        json={
+            "steps": [
+                {
+                    "action": " TyPe ",
+                    "args": {"text": "  exact text\n", "name": " Editor "},
+                }
+            ]
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {"steps": []}
+    assert seen == [
+        [
+            {
+                "action": "type",
+                "args": {"name": "Editor", "text": "  exact text\n"},
+            }
+        ]
+    ]
+    assert list(seen[0][0]["args"]) == ["name", "text"]
+
+
 def test_desktop_run_is_user_guarded_and_default_off(client, monkeypatch):
     monkeypatch.delenv("JARVIS_DESKTOP_HOST", raising=False)
     monkeypatch.delenv("JARVIS_DESKTOP_ISOLATED", raising=False)
@@ -74,7 +278,10 @@ def test_desktop_run_is_user_guarded_and_default_off(client, monkeypatch):
         raising=False,
     )
 
-    response = client.post("/api/desktop/run", json={"steps": []})
+    response = client.post(
+        "/api/desktop/run",
+        json={"steps": [{"action": "observe", "args": {}}]},
+    )
 
     assert response.status_code == 200
     assert response.json() == {"ok": False, "reason": "desktop_host_disabled"}
@@ -230,7 +437,7 @@ def test_desktop_run_mutation_creates_durable_proposal_without_driver(client, mo
 
     payload = client.post(
         "/api/desktop/run",
-        json={"steps": [{"action": "click", "args": {"name": "Save"}}]},
+        json={"steps": [{"action": " CLICK ", "args": {"name": "  Save  "}}]},
     ).json()
 
     assert payload["reason"] == "approval_required"
