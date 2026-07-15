@@ -4,9 +4,9 @@
 > layer (**H23** in [BACKLOG.md](../BACKLOG.md#version-roadmap)) plus real design-partner users; this file is
 > the **owner lane** running alongside it — the human-gated bits (real hardware, GitHub settings, legal,
 > decisions) that only Andrei can do. Ordered queue. Created 2026-06-10 · check items off as you go.
-> *2026-07-11: the 1.0 **tag** now additionally requires the AI-OS capability program
-> ([NERVA_VISION.md](../NERVA_VISION.md), ORIZONT 27–33); the owner gates below are unchanged and
-> remain the critical path.*
+> *2026-07-14: the 1.0 **tag** additionally requires both the AI-OS implementation program
+> ([NERVA_VISION.md](../NERVA_VISION.md), ORIZONT 27–33) and its real-host v1 proof. BACKLOG A8
+> names that owner-only hardware gate explicitly; hermetic reality packs do not clear it.*
 
 ## 🔴 Owner gates that block tagging a release (and ultimately 1.0)
 
@@ -17,6 +17,15 @@
   Console (▦) panel against the live backend ([`docs/design/HUD_V2_REMAINING.md`](design/HUD_V2_REMAINING.md) §0).
   The mock-fallback design hides wrong-but-not-failing wiring; the 2026-06-10 depth pass (PR #181)
   shipped ~16 new control surfaces that have only been verified offline (tsc + mocked tests).
+- [ ] **A8 — AI-OS v1 owner-host proof** — run [`docs/MANUAL_TESTING.md`](MANUAL_TESTING.md) §N
+  on the isolated RTX/Windows host and real household integrations. This is a blocking release
+  gate, separate from code-complete H28–H33 and their hermetic reality packs. It must prove:
+  installed Chromium + Windows UIA through the governed browser/desktop path; live Home Assistant
+  state projected into the device/room/occupant/presence graph plus a safe governed actuation; a
+  consented Frigate event flowing through house/memory/ambient without raw-frame egress;
+  presence-aware Media Director delivery on at least two non-chat output surfaces/device classes;
+  and one approved acquisition-to-reuse loop. Record build SHA plus redacted task/audit/device
+  evidence in the §0 run record (never secrets, household identifiers, or raw camera frames).
 - [x] **Dependabot: 54 vulnerabilities on main** — ✅ fixed 2026-06-10 (agent wave): HUD
   frontend 5→0 (vite 7/vitest 4), worldview 13→2 (fastify 5, next 16.2.9 + react 19,
   vitest 4, tsx), mcp 2→0; all suites green (HUD 19, WV frontend 101, backend 218).
