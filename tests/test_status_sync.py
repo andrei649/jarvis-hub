@@ -62,9 +62,14 @@ def test_apply_is_anchored_leaves_other_numbers_untouched():
 
 
 def test_apply_each_token_independently():
-    sample = "**Tests:** ~10 passed · **HTTP routes:** 5"
+    sample = (
+        "**Tests:** ~10 passed + frontend **8 vitest** + mobile **3 jest** · **HTTP routes:** 5"
+    )
     assert "~10 passed" in status_sync.apply_to_status(sample, routes=6)  # tests untouched
     assert "HTTP routes:** 5" in status_sync.apply_to_status(sample, tests=20)  # routes untouched
+    updated = status_sync.apply_to_status(sample, frontend=9, mobile=4)
+    assert "frontend **9 vitest**" in updated
+    assert "mobile **4 jest**" in updated
 
 
 def test_apply_to_status_preserves_honest_collection_wording():
@@ -117,6 +122,29 @@ def test_horizon_rollups_and_open_release_gates_are_structured():
     assert status_sync.open_release_gates(backlog) == [
         {"id": "A1", "name": "Manual", "status": "⬜ the gate"}
     ]
+
+
+def test_ai_os_owner_host_proof_is_a_blocking_release_gate():
+    backlog = (REPO / "BACKLOG.md").read_text(encoding="utf-8")
+    gates = {gate["id"]: gate for gate in status_sync.open_release_gates(backlog)}
+    assert "AI-OS v1 owner-host proof" in gates["A8"]["name"]
+    assert "blocking owner/live gate" in gates["A8"]["status"]
+    assert "A8" in gates["A9"]["name"]
+
+    owner_tasks = (REPO / "docs" / "OWNER_TASKS.md").read_text(encoding="utf-8")
+    manual = (REPO / "docs" / "MANUAL_TESTING.md").read_text(encoding="utf-8")
+    assert "A8 — AI-OS v1 owner-host proof" in owner_tasks
+    assert "## N. AI-OS owner-host v1 proof (A8)" in manual
+    for live_seam in (
+        "Chromium",
+        "Windows UIA",
+        "Home Assistant",
+        "Frigate",
+        "occupant",
+        "Presence-aware",
+        "≥2",
+    ):
+        assert live_seam in manual
 
 
 def test_build_project_status_has_one_machine_readable_truth():

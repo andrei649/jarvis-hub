@@ -193,10 +193,16 @@ hash-only audit state from the admin-authenticated revoke, rollback, export, and
 purge controls. It never renders request goals, source extracts, receipt bodies, package paths, or
 full correlation hashes. Native parity is deliberately read-only over the same bounded user APIs.
 
-**H28.4 desktop actuation (2026-07-13):** `POST /api/desktop/run` is user-guarded and
-default-off behind the isolated-host double opt-in. The Build surface still needs a dedicated
-Operator control that distinguishes proposed, queued, blocked, failed, and executed steps;
-until then the endpoint remains an explicit HUD depth punch-list item rather than a partial UI.
+**H28.4 Operator depth (completed 2026-07-14):** Console → Build now hosts a dedicated
+`OperatorPanel` over the four existing browser check/plan-preview and desktop preview/run routes;
+no route or governance bypass was added. Browser policy and plan checks are dry-run only and expose
+no Run control. Desktop submission is preview-first: editing invalidates the preview, and submit
+uses the deep-cloned canonical snapshot. The result reducer distinguishes proposed, queued,
+blocked, failed, partial, and executed outcomes, with an explicit warning against whole-plan retry
+after partial execution. Native mobile hides `toolrpc.desktop_run` payloads and omits Approve while
+retaining Reject/Defer. Evidence: `operator-contract.test.ts`, `operator-panel.test.tsx`,
+`gap-panels.test.tsx`, `approvalsDesktopBoundary.test.ts`, and the strengthened
+`tests/test_hud_v2_parity.py` caller gate.
 
 ---
 *Parity gate (`tests/test_hud_v2_parity.py`) tracks all routes → every one is mapped to a v2

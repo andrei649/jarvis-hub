@@ -837,46 +837,12 @@ async def chat_stream(req: ChatRequest):
 # ... extracted to routers/status.py (CLN-3)
 
 
-_llm_ready_cache = {"state": "unknown", "model": None, "at": 0.0}
-
-
 async def _llm_ready() -> dict:
-    """Truthful LLM readiness: is a model actually LOADED, not just configured?
+    """Compatibility readiness projection over the shared local inventory."""
+    from agents.core.llm.local_model_inventory import project_llm_status
 
-    The OpenAI-compatible ``/v1/models`` lists models LM Studio *can* serve (JIT can
-    load them on demand), so a non-empty list does NOT prove a model is resident —
-    it would report "online" with nothing loaded. LM Studio's native REST
-    ``/api/v0/models`` exposes a per-model ``state`` ("loaded"|"not-loaded"), which
-    is the honest signal. Returns ``state`` ∈ {ready, no_model, offline} + the loaded
-    model id. Cached ~8s so the polled ``/status`` stays cheap; fails to 'offline'.
-    """
-    import httpx
-    now = time.time()
-    if now - _llm_ready_cache["at"] < 8:
-        return {"state": _llm_ready_cache["state"], "model": _llm_ready_cache["model"]}
-    state, model = "offline", None
-    try:
-        async with httpx.AsyncClient(timeout=2.0) as client:
-            try:
-                r = await client.get(f"{_LM_STUDIO_URL}/api/v0/models")
-                if r.is_success:
-                    data = (r.json() or {}).get("data") or []
-                    loaded = [m for m in data if str(m.get("state", "")).lower() == "loaded"]
-                    if loaded:
-                        state, model = "ready", loaded[0].get("id")
-                    else:
-                        state = "no_model"      # LM Studio up, nothing resident
-                else:
-                    state = "no_model"
-            except Exception:
-                # Native API absent (older LM Studio) — fall back to /v1/models, but
-                # stay honest: reachable ≠ loaded, so reachable → 'no_model'.
-                r = await client.get(f"{_LM_STUDIO_URL}/v1/models")
-                state = "no_model" if r.is_success else "offline"
-    except Exception:
-        state = "offline"
-    _llm_ready_cache.update(state=state, model=model, at=now)
-    return {"state": state, "model": model}
+    projected = project_llm_status(await _list_local_models())
+    return {"state": projected["model_state"], "model": projected["loaded_model"]}
 
 
 # ... /status extracted to routers/status.py (CLN-3)
@@ -1149,63 +1115,11 @@ async def admin_page():
 # the same providers the HybridRouter talks to) so the HUD can browse them,
 # see which is active, and switch with a single click — Jan.ai style.
 
-_LM_STUDIO_URL = "http://localhost:1234"
-_OLLAMA_URL = "http://localhost:11434"
-
-
 async def _list_local_models() -> dict:
-    """Query LM Studio and Ollama for installed local models.
+    """Return the shared configured/catalog/resident local-model inventory."""
+    from agents.core.llm.local_model_inventory import get_local_model_inventory
 
-    Returns a dict with the active model name (from the live router) and a flat
-    list of `{id, provider, online}` entries. Providers that are offline are
-    reported with `online: False` and an empty model list rather than failing
-    the whole request, so the HUD can still render availability status.
-    """
-    import httpx
-
-    active = None
-    backend = "none"
-    if orch and getattr(orch, "llm_router", None) is not None:
-        active = getattr(orch.llm_router, "active_model", None)
-        backend = orch.llm_router.name
-
-    providers = []
-    models = []
-
-    async def _probe(name, url, parse):
-        try:
-            async with httpx.AsyncClient(timeout=5.0) as client:
-                resp = await client.get(url)
-                if not resp.is_success:
-                    providers.append({"name": name, "online": False, "status": resp.status_code})
-                    return
-                for mid in parse(resp.json()):
-                    if mid:
-                        models.append({"id": mid, "provider": name})
-                providers.append({"name": name, "online": True})
-        except Exception as e:
-            providers.append({"name": name, "online": False, "error": str(e)})
-
-    await _probe(
-        "lm-studio",
-        f"{_LM_STUDIO_URL}/v1/models",
-        lambda d: [m.get("id") for m in (d.get("data") or [])],
-    )
-    await _probe(
-        "ollama",
-        f"{_OLLAMA_URL}/api/tags",
-        lambda d: [m.get("name") for m in (d.get("models") or [])],
-    )
-
-    for m in models:
-        m["active"] = m["id"] == active
-
-    return {
-        "active": active,
-        "backend": backend,
-        "providers": providers,
-        "models": models,
-    }
+    return await get_local_model_inventory()
 
 
 # ── MCP (Model Context Protocol) admin endpoints ─────────────────

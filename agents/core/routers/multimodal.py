@@ -18,7 +18,7 @@ import os
 
 from fastapi import APIRouter, Depends
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, SkipValidation
 
 from agents.core.app_state import get_orch
 from agents.core.env_config import env_flag
@@ -63,7 +63,11 @@ async def vlm_describe(body: VLMDescribeBody):
 
 
 class DesktopStepsBody(BaseModel):
-    steps: list[dict] = Field(default_factory=list, max_length=100)
+    # Runtime shape/count checks belong to the bounded shared validator below.
+    steps: SkipValidation[list[dict]] = Field(
+        default_factory=list,
+        json_schema_extra={"maxItems": 100},
+    )
 
 
 def desktop_host_enabled() -> bool:
@@ -106,15 +110,6 @@ async def execute_desktop_steps(orch, steps, *, approver=None, authorizer=None):
 @router.post("/api/desktop/preview", dependencies=[Depends(user_guard)])
 async def desktop_preview(body: DesktopStepsBody):
     """H15.3 — dry-run a desktop step plan (which steps need approval)."""
-    from agents.core.desktop_operator import GovernedDesktop
-    return nocache_json(await GovernedDesktop().preview(body.steps))
-
-
-@router.post("/api/desktop/run", dependencies=[Depends(user_guard)])
-async def desktop_run(body: DesktopStepsBody):
-    """H28.4 — run isolated host steps through the live Action Kernel binding."""
-    if not desktop_host_enabled():
-        return nocache_json({"ok": False, "reason": "desktop_host_disabled"})
     from agents.core.desktop_operator import (
         DesktopProposalError,
         GovernedDesktop,
@@ -125,6 +120,24 @@ async def desktop_run(body: DesktopStepsBody):
         proposal = validate_desktop_run_args({"steps": body.steps})
     except DesktopProposalError as exc:
         return nocache_json({"ok": False, "reason": exc.reason})
+    return nocache_json(await GovernedDesktop().preview(proposal["steps"]))
+
+
+@router.post("/api/desktop/run", dependencies=[Depends(user_guard)])
+async def desktop_run(body: DesktopStepsBody):
+    """H28.4 — run isolated host steps through the live Action Kernel binding."""
+    from agents.core.desktop_operator import (
+        DesktopProposalError,
+        GovernedDesktop,
+        validate_desktop_run_args,
+    )
+
+    try:
+        proposal = validate_desktop_run_args({"steps": body.steps})
+    except DesktopProposalError as exc:
+        return nocache_json({"ok": False, "reason": exc.reason})
+    if not desktop_host_enabled():
+        return nocache_json({"ok": False, "reason": "desktop_host_disabled"})
     orch = get_orch()
     if any(GovernedDesktop.is_mutating(step["action"]) for step in proposal["steps"]):
         server = getattr(orch, "tool_rpc", None)

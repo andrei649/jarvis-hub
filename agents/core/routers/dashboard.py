@@ -18,15 +18,26 @@ import edge back into `agents.web`.
 
 import sys
 import time
+from datetime import UTC, datetime
+from typing import Any, Literal
 
 from fastapi import APIRouter, Depends, Query
 from fastapi.responses import JSONResponse
+from pydantic import BaseModel
 
 from agents.core.app_state import get_orch
 from agents.core.routers._deps import user_guard
 from agents.core.web_helpers import nocache_json
 
 router = APIRouter(tags=["dashboard"])
+
+
+class TasksResponse(BaseModel):
+    tasks: list[dict[str, Any]]
+    view: Literal["legacy", "running", "history"]
+    source: Literal["autonomy_queue"] = "autonomy_queue"
+    history_included: bool
+    as_of: datetime
 
 
 def _web():
@@ -112,8 +123,16 @@ async def dashboard():
     })
 
 
-@router.get("/tasks", dependencies=[Depends(user_guard)])
-async def get_tasks():
+def _effective_task_state(task: dict[str, Any]) -> str:
+    state = task.get("state")
+    value = state if isinstance(state, str) and state.strip() else task.get("status")
+    return value.strip().lower() if isinstance(value, str) else ""
+
+
+@router.get("/tasks", dependencies=[Depends(user_guard)], response_model=TasksResponse)
+async def get_tasks(
+    view: Literal["running", "history"] | None = Query(default=None),
+) -> TasksResponse:
     orch = get_orch()
     if not orch:
         return JSONResponse({"error": "not initialized"}, status_code=503)
@@ -127,25 +146,48 @@ async def get_tasks():
     def format_task(t):
         d = t.to_dict() if hasattr(t, "to_dict") else dict(t)
         # Ensure owner, state, label, and project are present for React component compatibility (e.g. NetworkBrain)
-        d["owner"] = d.get("owner") or d.get("agent_id") or "jarvis"
+        d["owner"] = d.get("owner") or d.get("agent_id") or d.get("agent") or "jarvis"
         d["state"] = d.get("state") or d.get("status") or "done"
         d["label"] = d.get("label") or d.get("title") or "Task"
         d["project"] = d.get("project") or d.get("kind") or "Autonomy"
         return d
 
-    # 1. Check for running tasks first
-    running_tasks = [t for t in all_tasks if getattr(t, "status", None) == "running" or getattr(t, "state", None) == "running"]
-
-    if running_tasks:
-        result_tasks = [format_task(t) for t in running_tasks]
-    elif all_tasks:
-        # 2. If no running tasks, return recent history
-        result_tasks = [format_task(t) for t in all_tasks]
+    if view == "running":
+        formatted_tasks = [format_task(t) for t in all_tasks]
+        result_tasks = [t for t in formatted_tasks if _effective_task_state(t) == "running"]
+        response_view: Literal["legacy", "running", "history"] = "running"
+        history_included = False
+    elif view == "history":
+        formatted_tasks = [format_task(t) for t in all_tasks]
+        result_tasks = [t for t in formatted_tasks if _effective_task_state(t) != "running"]
+        response_view = "history"
+        history_included = True
     else:
-        # H7.7: No active tasks — return empty list instead of misleading dummy data
-        result_tasks = []
+        # Migration window: preserve the original raw, case-sensitive selection.
+        running_tasks = [
+            t
+            for t in all_tasks
+            if getattr(t, "status", None) == "running"
+            or getattr(t, "state", None) == "running"
+        ]
+        if running_tasks:
+            result_tasks = [format_task(t) for t in running_tasks]
+            history_included = False
+        elif all_tasks:
+            result_tasks = [format_task(t) for t in all_tasks]
+            history_included = True
+        else:
+            # H7.7: No active tasks — return empty list instead of misleading dummy data
+            result_tasks = []
+            history_included = False
+        response_view = "legacy"
 
-    return nocache_json({"tasks": result_tasks})
+    return TasksResponse(
+        tasks=result_tasks,
+        view=response_view,
+        history_included=history_included,
+        as_of=datetime.now(UTC),
+    )
 
 
 @router.get("/api/dashboard/today", dependencies=[Depends(user_guard)])
