@@ -13,7 +13,17 @@ beforeEach(() => { try { localStorage.clear(); } catch { /* ignore */ } });
 
 const WARM = {
   install: { ready: true, version: '0.11.0', checks: { agents_loaded: 17 } },
-  model: { backend: 'lmstudio', active_model: 'gemma-local', ready: true, cloud_configured: false },
+  model: {
+    backend: 'lm-studio',
+    active_provider: 'lm-studio',
+    active_model: 'gemma-local',
+    configured_model: 'gemma-local',
+    resident_models: [{ provider: 'lm-studio', id: 'gemma-local' }],
+    residency_state: 'known',
+    route: 'local',
+    ready: true,
+    cloud_configured: false,
+  },
   wizard: {
     steps: [{ key: 'intro', title: 'Welcome' }, { key: 'test_chat', title: 'Say hello' }],
     completed: ['intro'], complete: false, hint: null,
@@ -43,8 +53,120 @@ describe('CommandCenterPanel — one screen: install health + model + first acti
     await waitFor(() => expect(screen.getByText(/v0\.11\.0/)).toBeTruthy());
     expect(fn.mock.calls.some((c) => String(c[0]).includes('/api/onboarding/command-center'))).toBe(true);
     expect(screen.getByText(/✓ ready/)).toBeTruthy();          // install health
-    expect(screen.getByText('gemma-local')).toBeTruthy();       // model truth
+    expect(screen.getByText('gemma-local · loaded')).toBeTruthy(); // model truth
     expect(screen.getByText('LIVE')).toBeTruthy();              // honesty chip
+  });
+
+  it('labels runnable, configured-only, unknown, and cloud routes honestly', async () => {
+    const resident = {
+      ...WARM,
+      model: {
+        backend: 'lm-studio',
+        active_provider: 'lm-studio',
+        active_model: 'qwen3.5:0.8b',
+        configured_model: 'qwen3.5:0.8b',
+        resident_models: [{ provider: 'lm-studio', id: 'qwen3.5:0.8b' }],
+        residency_state: 'known',
+        route: 'local',
+        ready: true,
+        cloud_configured: false,
+      },
+    };
+    mockFetch({ '/api/onboarding/command-center': resident });
+    const mounted = render(<CommandCenterPanel />);
+    await waitFor(() => expect(screen.getByText('qwen3.5:0.8b · loaded')).toBeTruthy());
+    mounted.unmount();
+
+    const configuredOnly = {
+      ...WARM,
+      model: {
+        backend: 'lm-studio',
+        active_provider: null,
+        active_model: null,
+        configured_model: 'minimax/minimax-m2.7',
+        resident_models: [],
+        residency_state: 'known',
+        route: 'local',
+        ready: false,
+        cloud_configured: false,
+      },
+    };
+    mockFetch({ '/api/onboarding/command-center': configuredOnly });
+    const configuredMount = render(<CommandCenterPanel />);
+    await waitFor(() => {
+      expect(screen.getByText('minimax/minimax-m2.7 · configured, not loaded')).toBeTruthy();
+    });
+    configuredMount.unmount();
+
+    const unknown = {
+      ...configuredOnly,
+      model: { ...configuredOnly.model, residency_state: 'unknown', ready: null },
+    };
+    mockFetch({ '/api/onboarding/command-center': unknown });
+    const unknownMount = render(<CommandCenterPanel />);
+    await waitFor(() => {
+      expect(screen.getByText('minimax/minimax-m2.7 · residency unknown')).toBeTruthy();
+    });
+    unknownMount.unmount();
+
+    const cloud = {
+      ...WARM,
+      model: {
+        backend: 'gemini',
+        active_provider: 'gemini',
+        active_model: 'gemini-2.5-flash',
+        configured_model: 'minimax/minimax-m2.7',
+        resident_models: [],
+        residency_state: 'offline',
+        route: 'cloud-flash',
+        ready: true,
+        cloud_configured: true,
+      },
+    };
+    mockFetch({ '/api/onboarding/command-center': cloud });
+    const cloudMount = render(<CommandCenterPanel />);
+    await waitFor(() => {
+      expect(screen.getByText('gemini-2.5-flash · cloud ready')).toBeTruthy();
+    });
+    cloudMount.unmount();
+
+    const missingResident = {
+      ...resident,
+      model: { ...resident.model, resident_models: [] },
+    };
+    mockFetch({ '/api/onboarding/command-center': missingResident });
+    const missingResidentMount = render(<CommandCenterPanel />);
+    await waitFor(() => {
+      expect(screen.getByText('qwen3.5:0.8b · configured, not loaded')).toBeTruthy();
+    });
+    missingResidentMount.unmount();
+
+    const unsafeCloud = {
+      ...cloud,
+      model: {
+        ...cloud.model,
+        active_model: 'gemini-pretender',
+        configured_model: 'gemini-pretender',
+        route: 'not-cloud',
+      },
+    };
+    mockFetch({ '/api/onboarding/command-center': unsafeCloud });
+    const unsafeRouteMount = render(<CommandCenterPanel />);
+    await waitFor(() => {
+      expect(screen.getByText('gemini-pretender · configured, not loaded')).toBeTruthy();
+    });
+    unsafeRouteMount.unmount();
+
+    const sentinel = {
+      ...cloud,
+      model: { ...cloud.model, active_model: 'none', configured_model: 'none' },
+    };
+    mockFetch({ '/api/onboarding/command-center': sentinel });
+    render(<CommandCenterPanel />);
+    await waitFor(() => {
+      expect(screen.getByText('no runnable model')).toBeTruthy();
+    });
+    expect(screen.queryByText(/none · (loaded|cloud ready)/)).toBeNull();
   });
 
   it('a held action shows its reason, never a run button', async () => {
