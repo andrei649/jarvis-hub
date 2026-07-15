@@ -204,7 +204,6 @@ async def _model_snapshot() -> dict:
         route = _clean_string(route)
         route_selected = selected_model is not None and route is not None
     except Exception:
-        selected_backend = None
         selected_model = None
         route = None
         route_selected = False
