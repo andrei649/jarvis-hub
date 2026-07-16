@@ -12,6 +12,7 @@ reported: this keeps false positives near zero on arbitrary 13-digit numbers
 or IBAN-shaped strings.
 """
 
+import hashlib
 import json
 import logging
 import math
@@ -24,6 +25,7 @@ from .types import ScanFinding, ScanResult, ThreatLevel
 logger = logging.getLogger("jarvis.scanner")
 
 _EXTRA_PATTERNS_ENV = "JARVIS_SCANNER_EXTRA_PATTERNS"
+SCANNER_RULESET_VERSION = "2026-07-15.1"
 
 
 def _extra_patterns_from_env(env=None) -> dict:
@@ -133,6 +135,24 @@ def is_valid_iban(value: str) -> bool:
 
 class BaseScanner:
     scanner_id: str = "base"
+
+    def fingerprint(self) -> str:
+        material = {
+            "id": self.scanner_id,
+            "version": SCANNER_RULESET_VERSION,
+            "patterns": [
+                {
+                    "name": name,
+                    "pattern": pattern.pattern,
+                    "flags": pattern.flags,
+                    "threat": threat.value,
+                    "description": description,
+                }
+                for name, pattern, threat, description in self._compiled
+            ],
+        }
+        raw = json.dumps(material, sort_keys=True, separators=(",", ":"))
+        return hashlib.sha256(raw.encode("utf-8")).hexdigest()
 
     def scan(self, text: str) -> ScanResult:
         raise NotImplementedError
