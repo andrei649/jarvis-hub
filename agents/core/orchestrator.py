@@ -14,6 +14,7 @@ import os
 import re
 import time
 import uuid
+from contextlib import nullcontext
 from pathlib import Path
 from typing import Callable, Optional
 
@@ -21,8 +22,11 @@ from .agent import Agent
 from .router import IntentRouter
 from .config import JarvisConfig
 from .llm.base import LOCAL_SELECTION_UNAVAILABLE_REPLY
+from .llm.auth_rotation import AuthLease
+from .llm.gemini import GeminiBackend
 from .llm.hybrid_router import HybridRouter, LocalBackendUnavailableError
 from .llm.gemini_cache import ContextCache
+from .llm.gemini_context import GeminiRequestBinding
 from .llm.tokenizer import estimate_tokens
 from .memory.manager import MemoryManager
 from .checkpoint import CheckpointManager
@@ -139,7 +143,10 @@ class Orchestrator:
         gemini_key = os.environ.get("GEMINI_API_KEY", "")
         anthropic_key = os.environ.get("ANTHROPIC_API_KEY", "")
         self.llm_router = HybridRouter(gemini_api_key=gemini_key, anthropic_api_key=anthropic_key)
-        self.context_cache = ContextCache(api_key=gemini_key) if gemini_key else None
+        # The auth-profile pool does not exist until HybridRouter.detect().  In
+        # particular, GEMINI_API_KEYS-only deployments have no single boot key.
+        self.context_cache: ContextCache | None = None
+        self._cache_tasks: set[asyncio.Task] = set()
         self.memory = MemoryManager()
 
         # ── optional components via the registry (A2: tames the god-object) ──
@@ -424,9 +431,28 @@ class Orchestrator:
         else:
             _active_session.set(value)
 
+    def _ensure_context_cache(self) -> None:
+        """Create the cache only from the auth pool produced by detection."""
+        gemini_pool = getattr(self.llm_router, "_gemini_pool", None)
+        if (
+            getattr(self, "context_cache", None) is None
+            and gemini_pool is not None
+            and getattr(gemini_pool, "size", 0) > 0
+        ):
+            self.context_cache = ContextCache(
+                lambda: self.llm_router._gemini_pool,
+            )
+            if not hasattr(self, "_cache_tasks"):
+                self._cache_tasks = set()
+
     async def load_agents(self):
         await self.llm_router.detect()
         logger.info(f"LLM backend: {self.llm_router.name}")
+
+        # Context caching shares the router's detected auth pool.  Build it only
+        # now (never from the single-key constructor snapshot), so multi-profile
+        # GEMINI_API_KEYS configurations work and later requests see pool updates.
+        self._ensure_context_cache()
 
         # Preload the detected local model so the first turn (often a voice
         # command) skips the cold-load cost. Fire-and-forget — the model load
@@ -1136,7 +1162,10 @@ class Orchestrator:
             target = self._route_candidates(intent) if intent.target_agents else ["jarvis"]
 
         context_window = self.get_setting("memory.context_window", 6)
-        history = await self._history_for_prompt(context_window)
+        history, history_parts = await self._history_for_prompt_parts(
+            context_window,
+            current_user_text=text,
+        )
         plugin_block = self._format_plugin_data(plugin_data)
         recall_block = await self._recall_block(text)
         runtime_block = self._runtime_state_block()
@@ -1169,13 +1198,75 @@ class Orchestrator:
                     backend, router_model, route_name = self.llm_router.select_backend(agent_id, prompt)
                     if router_model:
                         model = router_model
-                    backend = bind_guardrails(self.security, backend)
                     # Reasoning models on the deep slot need a far larger budget:
                     # 1–2k tokens is consumed by chain-of-thought before any
                     # answer, so a small cap truncates mid-thought.
                     eff_max_tokens, temperature = self._agent_gen_params(agent, route_name)
                     cap_label = "auto" if eff_max_tokens <= 0 else eff_max_tokens
                     logger.info(f"Routing {agent_id} via {route_name} ({estimate_tokens(prompt)} tokens, max_tokens={cap_label})")
+
+                    request_scope = nullcontext()
+                    if isinstance(backend, GeminiBackend):
+                        # One immutable lease owns both this generation and any
+                        # cache lookup/create decision made for it.
+                        lease = backend.acquire_lease()
+                        request_binding = GeminiRequestBinding(
+                            lease=lease,
+                            session_id=self.session_id,
+                        )
+                        if (
+                            self.context_cache is not None
+                            and history_parts
+                            and self.security is not None
+                        ):
+                            cache_material = self.security.prepare_cache_material(
+                                system_prompt,
+                                history_parts,
+                            )
+                            cache_binding = await self.context_cache.acquire_binding(
+                                session_id=self.session_id,
+                                model=model,
+                                system_instruction=cache_material.system_instruction,
+                                history=cache_material.history,
+                                policy_fingerprint=cache_material.policy_fingerprint,
+                                lease=lease,
+                            )
+                            if cache_binding is not None:
+                                request_binding = cache_binding
+                                tail_history = "\n".join(
+                                    history_parts[cache_binding.cached_prefix_count :]
+                                )
+                                cached_turn_text = await self._build_agent_turn_text(
+                                    agent_id,
+                                    text,
+                                    history=tail_history,
+                                    plugin_block=plugin_block,
+                                    recall_block=recall_block,
+                                    runtime_block=runtime_block,
+                                )
+                                prompt = self._build_agent_prompt(
+                                    agent,
+                                    cached_turn_text,
+                                    intent.context,
+                                )
+                                if checkpoint:
+                                    prompt = (
+                                        "[RESUMED FROM CHECKPOINT]\n"
+                                        f"{checkpoint['prompt']}\n---\n{prompt}"
+                                    )
+                            else:
+                                self._spawn_cache_task(
+                                    self._async_create_cache(
+                                        session_id=self.session_id,
+                                        system_instruction=cache_material.system_instruction,
+                                        history_texts=cache_material.history,
+                                        model=model,
+                                        policy_fingerprint=cache_material.policy_fingerprint,
+                                        lease=lease,
+                                    ),
+                                    session_id=self.session_id,
+                                )
+                        request_scope = backend.request_scope(request_binding)
                 except LocalBackendUnavailableError:
                     msg = LOCAL_SELECTION_UNAVAILABLE_REPLY
                     log_error(logger, E_LLM_BACKEND_MISSING, backend="stream-local")
@@ -1189,45 +1280,18 @@ class Orchestrator:
                         on_token(msg)
                     return msg
 
-                # Context caching for Gemini cloud routes
-                use_cache_name = None
-                is_gemini_route = route_name in ("cloud", "cloud-flash", "cloud-pro", "cloud-fallback", "gemini")
-                if is_gemini_route and self.context_cache and history:
-                    cache_entry = self.context_cache.get_cache_info(self.session_id)
-                    if cache_entry:
-                        use_cache_name = cache_entry["cache_name"]
-                        cached_turn_text = await self._build_agent_turn_text(
-                            agent_id,
-                            text,
-                            plugin_block=plugin_block,
-                            recall_block=recall_block,
-                            runtime_block=runtime_block,
-                        )
-                        prompt = self._build_agent_prompt(agent, cached_turn_text, intent.context)
-                    else:
-                        history_parts = [t.strip() for t in history.split("\n---\n") if t.strip()]
-                        _cache_task = asyncio.ensure_future(self._async_create_cache(
-                            session_id=self.session_id,
-                            system_instruction=system_prompt,
-                            history_texts=history_parts,
-                            model=model,
-                        ))
-                        _cache_task.add_done_callback(_log_task_result)
-                if use_cache_name:
-                    backend._use_cache = use_cache_name
-                else:
-                    backend._use_cache = ""
-
                 t_s0 = time.perf_counter()
-                response = await agent.generate_response(
-                    backend=backend,
-                    model=model,
-                    prompt=prompt,
-                    system=system_prompt,
-                    max_tokens=eff_max_tokens,
-                    temperature=temperature,
-                    on_token=on_token,
-                )
+                with request_scope:
+                    guarded_backend = bind_guardrails(self.security, backend)
+                    response = await agent.generate_response(
+                        backend=guarded_backend,
+                        model=model,
+                        prompt=prompt,
+                        system=system_prompt,
+                        max_tokens=eff_max_tokens,
+                        temperature=temperature,
+                        on_token=on_token,
+                    )
                 synthesized = response
                 break
 
@@ -1803,6 +1867,48 @@ class Orchestrator:
                              + [result["summary"]] + _fmt(result["kept"]))
         return "\n".join(_fmt(result["kept"]))
 
+    @staticmethod
+    def _split_prompt_history(history_text: str) -> tuple[str, ...]:
+        """Split rendered memory at real ``[speaker]:`` entry boundaries.
+
+        Conversation memory is newline-delimited, not ``---``-delimited, and a
+        turn body may itself contain newlines. Anchoring at the rendered speaker
+        prefix keeps multiline bodies together while allowing a compression
+        summary prefix to remain its own stable cache part.
+        """
+        chunks = re.split(r"(?m)(?=^\[[^\]\r\n]+\]: )", history_text)
+        parts: list[str] = []
+        for chunk in chunks:
+            if chunk.endswith("\r\n"):
+                chunk = chunk[:-2]
+            elif chunk.endswith("\n"):
+                chunk = chunk[:-1]
+            if chunk.strip():
+                parts.append(chunk)
+        return tuple(parts)
+
+    async def _history_for_prompt_parts(
+        self,
+        last_n: int,
+        current_user_text: str | None = None,
+    ) -> tuple[str, tuple[str, ...]]:
+        """Return prior rendered history plus stable cache-boundary parts.
+
+        ``_handle_input_stream`` persists the current user turn before reading
+        memory. Remove only that exact final rendered entry so the prompt and
+        cache contain prior context while the current request is appended once.
+        """
+        history_text = await self._history_for_prompt(last_n)
+        if current_user_text is not None:
+            current_entry = f"[user]: {current_user_text}"
+            if history_text == current_entry:
+                history_text = ""
+            else:
+                suffix = f"\n{current_entry}"
+                if history_text.endswith(suffix):
+                    history_text = history_text[: -len(suffix)]
+        return history_text, self._split_prompt_history(history_text)
+
     async def _call_agents_parallel(
         self, agent_ids: list[str], text: str, context: dict, plugin_data: dict = None
     ) -> dict[str, str]:
@@ -2043,16 +2149,33 @@ class Orchestrator:
                         f"Auto-promoted {bench_id}: {suggestion['reason']}"
                     )
 
-    async def _async_create_cache(self, session_id: str, system_instruction: str,
-                                    history_texts: list[str], model: str):
+    def _spawn_cache_task(self, coroutine, *, session_id: str) -> None:
+        task = asyncio.create_task(coroutine, name=f"gemini-cache:{session_id}")
+        cache_tasks = getattr(self, "_cache_tasks", None)
+        if cache_tasks is None:
+            cache_tasks = self._cache_tasks = set()
+        cache_tasks.add(task)
+        task.add_done_callback(cache_tasks.discard)
+        task.add_done_callback(_log_task_result)
+
+    async def _async_create_cache(
+        self,
+        session_id: str,
+        system_instruction: str,
+        history_texts: tuple[str, ...],
+        model: str,
+        policy_fingerprint: str,
+        lease: AuthLease,
+    ) -> None:
         if not self.context_cache or not history_texts:
             return
-        history = [{"role": "user", "parts": [{"text": t}]} for t in history_texts]
         await self.context_cache.create_or_extend(
             session_id=session_id,
             system_instruction=system_instruction,
-            history=history,
+            history=history_texts,
             model=model,
+            policy_fingerprint=policy_fingerprint,
+            lease=lease,
         )
 
     def _log_session(self, text, intent, responses, synthesized):
@@ -2097,6 +2220,13 @@ class Orchestrator:
         not abort the rest, and shutdown never raises.
         """
         await self._flush_checkpoint()
+        cache_tasks = getattr(self, "_cache_tasks", None)
+        if cache_tasks:
+            pending_cache_tasks = tuple(cache_tasks)
+            for task in pending_cache_tasks:
+                task.cancel()
+            await asyncio.gather(*pending_cache_tasks, return_exceptions=True)
+            cache_tasks.clear()
         router = getattr(self, "llm_router", None)
         if router is not None:
             try:
