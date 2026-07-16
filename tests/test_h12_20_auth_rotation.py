@@ -146,10 +146,12 @@ class _GeminiFakeClient:
     def __init__(self, behaviors):
         self.behaviors = behaviors
         self.calls = []
+        self.urls = []
 
-    async def post(self, url, json=None):
-        key = url.split("key=")[1].split("&")[0]
+    async def post(self, url, headers=None, json=None):
+        key = headers["x-goog-api-key"]
         self.calls.append(key)
+        self.urls.append(url)
         return _Resp(self.behaviors.get(key, 200), _GEMINI_OK)
 
 
@@ -202,3 +204,4 @@ async def test_gemini_fails_over_on_429():
     out = await b.generate("gemini-2.5-flash", "prompt")
     assert out == "hi"
     assert b.client.calls == ["g1", "g2"]
+    assert all("?key=" not in url for url in b.client.urls)

@@ -21,6 +21,7 @@ from __future__ import annotations
 import os
 import re
 import time
+from dataclasses import dataclass, field
 from typing import Callable, Optional
 
 # Status codes that mean "this credential is the problem — try another one".
@@ -38,6 +39,14 @@ def is_rotatable_status(status: int) -> bool:
 def _split_keys(raw: str) -> list[str]:
     """Parse a multi-key env value (comma / whitespace / newline separated)."""
     return [k for k in re.split(r"[,\s]+", (raw or "").strip()) if k]
+
+
+@dataclass(frozen=True, slots=True)
+class AuthLease:
+    """Immutable credential snapshot for one provider request attempt."""
+
+    profile_id: str
+    api_key: str = field(repr=False)
 
 
 class AuthProfile:
@@ -115,6 +124,13 @@ class AuthProfilePool:
     def current_key(self) -> Optional[str]:
         p = self.current()
         return p.api_key if p else None
+
+    def lease(self) -> AuthLease | None:
+        """Capture the current profile without exposing mutable pool state."""
+        profile = self.current()
+        if profile is None:
+            return None
+        return AuthLease(profile_id=profile.id, api_key=profile.api_key)
 
     def _find(self, key: Optional[str]) -> Optional[AuthProfile]:
         if key is None:

@@ -9,6 +9,7 @@ Only enabled for approved agents: jarvis, athena, stark, vision, veronica.
 import logging
 
 from ..http_client import PluginHTTPClient, PluginTimeouts
+from ..llm.provider_errors import GEMINI_DEGRADED_REPLY, log_provider_failure
 from ..resilience import resilient_call
 
 logger = logging.getLogger("jarvis.plugins.cloud_llm")
@@ -44,9 +45,18 @@ class CloudLLMPlugin:
                 return await self._call_gemini(prompt, system, model or "gemini-2.5-flash", max_tokens)
             else:
                 return "[Cloud LLM unavailable: no API key configured]"
-        except Exception as e:
-            logger.error(f"Cloud LLM error after retries: {e}")
-            return f"[Cloud LLM error: {e}]"
+        except Exception as exc:
+            provider = self._prefer or "cloud"
+            log_provider_failure(
+                logger,
+                provider=provider.capitalize(),
+                operation="generate",
+                exc=exc,
+                level=logging.ERROR,
+            )
+            if provider == "gemini":
+                return GEMINI_DEGRADED_REPLY
+            return "[Cloud LLM error: provider request failed]"
 
     @resilient_call(
         max_retries=2,
@@ -94,7 +104,7 @@ class CloudLLMPlugin:
     )
     async def _call_gemini(self, prompt: str, system: str,
                             model: str, max_tokens: int) -> str:
-        url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={self.gemini_key}"
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
         payload = {
             "contents": [{"role": "user", "parts": [{"text": prompt}]}],
             "systemInstruction": {"parts": [{"text": system}]} if system else None,
@@ -102,7 +112,11 @@ class CloudLLMPlugin:
         }
         if not payload["systemInstruction"]:
             del payload["systemInstruction"]
-        resp = await self.client.post(url, json=payload)
+        resp = await self.client.post(
+            url,
+            headers={"x-goog-api-key": self.gemini_key},
+            json=payload,
+        )
         resp.raise_for_status()
         data = resp.json()
         candidates = data.get("candidates", [])

@@ -325,9 +325,16 @@ def test_name_with_backends(monkeypatch):
 
 
 def test_gemini_build_payload_with_cache():
+    from core.llm.auth_rotation import AuthLease
+    from core.llm.gemini_context import GeminiRequestBinding
+
     gb = GeminiBackend(api_key="test")
-    gb._use_cache = "cachedContents/abc123"
-    payload = gb._build_payload("hello", system="be helpful")
+    binding = GeminiRequestBinding(
+        lease=AuthLease(profile_id="gemini-test", api_key="test"),
+        cache_name="cachedContents/abc123",
+    )
+    with gb.request_scope(binding):
+        payload = gb._build_payload("hello", system="be helpful")
     assert "cachedContent" in payload
     assert payload["cachedContent"] == "cachedContents/abc123"
     assert "systemInstruction" not in payload
@@ -343,19 +350,22 @@ def test_gemini_build_payload_without_cache():
 # ── Gemini backend unit tests (no network) ────────────────────────────
 
 from core.llm.gemini import GeminiBackend
+from core.llm.provider_errors import GEMINI_DEGRADED_REPLY
 
 
 def test_gemini_build_url_generate():
     gb = GeminiBackend(api_key="test")
-    url = gb._build_url(streaming=False)
+    url = gb._build_url("gemini-2.5-flash", streaming=False)
     assert "generateContent" in url
-    assert "key=test" in url
+    assert "?key=" not in url
 
 
 def test_gemini_build_url_stream():
     gb = GeminiBackend(api_key="test")
-    url = gb._build_url(streaming=True)
+    url = gb._build_url("gemini-2.5-flash", streaming=True)
     assert "streamGenerateContent" in url
+    assert url.endswith("?alt=sse")
+    assert "?key=" not in url
 
 
 def test_gemini_build_payload_with_system():
@@ -409,7 +419,7 @@ async def test_gemini_generate_network_error(monkeypatch):
     monkeypatch.setattr("httpx.AsyncClient.post", mock_post)
     gb = GeminiBackend(api_key="test")
     result = await gb.generate("gemini-2.5-flash", "hello")
-    assert "Gemini error" in result
+    assert result == GEMINI_DEGRADED_REPLY
 
 
 @pytest.mark.asyncio
@@ -424,7 +434,7 @@ async def test_gemini_generate_stream_network_error(monkeypatch):
     monkeypatch.setattr("httpx.AsyncClient.stream", lambda *a, **kw: MockACM())
     gb = GeminiBackend(api_key="test")
     result = await gb.generate_stream("gemini-2.5-flash", "hello")
-    assert "Gemini stream error" in result
+    assert result == GEMINI_DEGRADED_REPLY
 
 
 @pytest.mark.asyncio
@@ -458,7 +468,7 @@ async def test_gemini_generate_stream_http_error(monkeypatch):
     monkeypatch.setattr("httpx.AsyncClient.stream", mock_stream)
     gb = GeminiBackend(api_key="test")
     result = await gb.generate_stream("gemini-2.5-flash", "hello")
-    assert "error" in result.lower() or "gemini stream error" in result.lower()
+    assert result == GEMINI_DEGRADED_REPLY
 
 
 # ── CloudLLMPlugin Gemini support ─────────────────────────────────────
@@ -488,7 +498,7 @@ async def test_cloud_llm_gemini_network_error(monkeypatch):
     monkeypatch.setattr("httpx.AsyncClient.post", mock_post)
     plugin = CloudLLMPlugin(gemini_key="test")
     result = await plugin.generate("hello", "", agent_id="jarvis")
-    assert "Cloud LLM error" in result
+    assert result == GEMINI_DEGRADED_REPLY
 
 
 def test_cloud_llm_available_with_gemini():

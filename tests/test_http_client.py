@@ -5,11 +5,14 @@ All HTTP calls are mocked — no real network access.
 """
 
 import asyncio
+import inspect
+import logging
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import httpx
 import pytest
 
+from agents.core import http_client as http_client_module
 from agents.core.http_client import (
     DEFAULT_CONNECT_TIMEOUT,
     DEFAULT_READ_TIMEOUT,
@@ -162,6 +165,105 @@ async def test_open_circuit_breaker_raises_runtime_error_without_calling_http():
         await client.get("https://example.com/")
 
     mock_httpx.get.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_open_post_breaker_log_omits_request_url(caplog):
+    request_url = "https://example.com/REQUEST_URL_SENTINEL_017a?key=secret"
+    cb = CircuitBreaker(failure_threshold=1, recovery_timeout=9999.0)
+    cb.record_failure()
+    client = PluginHTTPClient(plugin_name="_test_post_log_safe", circuit_breaker=cb)
+
+    with caplog.at_level(logging.DEBUG, logger="jarvis.http_client"), \
+            pytest.raises(RuntimeError, match="Circuit breaker open"):
+        await client.post(request_url)
+
+    assert "REQUEST_URL_SENTINEL_017a" not in caplog.text
+    assert "?key=secret" not in caplog.text
+    assert "_test_post_log_safe" in caplog.text
+
+
+def test_http_client_source_never_requests_traceback_logging():
+    source = inspect.getsource(http_client_module)
+
+    assert "exc_info=True" not in source
+
+
+def test_kernel_hook_failure_log_omits_url_and_traceback(monkeypatch, caplog):
+    request_url = "https://example.com/REQUEST_URL_SENTINEL_b814?key=QUERY_SECRET_SENTINEL_d722"
+
+    def fail_with_request(_plugin, _method, url, _host):
+        raise RuntimeError(f"KERNEL_EXCEPTION_SENTINEL_5b31 {url}")
+
+    monkeypatch.setattr(http_client_module, "_EGRESS_KERNEL_HOOK", fail_with_request)
+    client = PluginHTTPClient(plugin_name="_test_kernel_log_safe")
+
+    with caplog.at_level(logging.DEBUG, logger="jarvis.http_client"):
+        client._guard("POST", request_url)
+
+    assert "REQUEST_URL_SENTINEL_b814" not in caplog.text
+    assert "QUERY_SECRET_SENTINEL_d722" not in caplog.text
+    assert "KERNEL_EXCEPTION_SENTINEL_5b31" not in caplog.text
+    assert "Traceback" not in caplog.text
+    assert "egress kernel hook" in caplog.text
+    assert "RuntimeError" in caplog.text
+
+
+def test_monitor_failure_log_omits_exception_and_traceback(monkeypatch, caplog):
+    def fail_record(*_args, **_kwargs):
+        raise RuntimeError("MONITOR_EXCEPTION_SENTINEL_95ea")
+
+    monkeypatch.setattr(http_client_module.EGRESS_MONITOR, "record", fail_record)
+
+    with caplog.at_level(logging.DEBUG, logger="jarvis.http_client"):
+        http_client_module._record_egress(
+            "_test_monitor_log_safe",
+            "example.com",
+            "GET",
+            allowed=True,
+            local=False,
+        )
+
+    assert "MONITOR_EXCEPTION_SENTINEL_95ea" not in caplog.text
+    assert "Traceback" not in caplog.text
+    assert "egress monitor record" in caplog.text
+    assert "RuntimeError" in caplog.text
+
+
+def test_audit_failure_log_omits_exception_and_traceback(monkeypatch, caplog):
+    monkeypatch.setenv("JARVIS_STRICT_EGRESS", "0")
+
+    def fail_audit(_plugin, _violation):
+        raise RuntimeError("AUDIT_EXCEPTION_SENTINEL_220c")
+
+    monkeypatch.setattr(http_client_module, "_EGRESS_AUDIT_SINK", fail_audit)
+    client = PluginHTTPClient(plugin_name="weather")
+
+    with caplog.at_level(logging.DEBUG, logger="jarvis.http_client"):
+        client._enforce_egress("https://evil.example/path?key=QUERY_SECRET_SENTINEL_96bd")
+
+    assert "AUDIT_EXCEPTION_SENTINEL_220c" not in caplog.text
+    assert "QUERY_SECRET_SENTINEL_96bd" not in caplog.text
+    assert "Traceback" not in caplog.text
+    assert "egress downgrade audit" in caplog.text
+    assert "RuntimeError" in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_close_failure_log_omits_exception_and_traceback(caplog):
+    class FailingClient:
+        async def close(self):
+            raise RuntimeError("CLOSE_EXCEPTION_SENTINEL_b725")
+
+    _clients["_test_close_log_safe"] = FailingClient()
+
+    with caplog.at_level(logging.DEBUG, logger="jarvis.http_client"):
+        await http_client_module.close_all()
+
+    assert "CLOSE_EXCEPTION_SENTINEL_b725" not in caplog.text
+    assert "Traceback" not in caplog.text
+    assert "plugin http client close" in caplog.text
+    assert "RuntimeError" in caplog.text
 
 
 # ── test_for_plugin_returns_same_instance ─────────────────────────────────────

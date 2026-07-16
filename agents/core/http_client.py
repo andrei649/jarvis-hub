@@ -112,8 +112,11 @@ def _record_egress(plugin: str, host: str, method: str, *, allowed: bool, local:
     """Feed the H23.16 network monitor. Never raises — observability must not break egress."""
     try:
         EGRESS_MONITOR.record(plugin, host, method, allowed=allowed, local=local, reason=reason)
-    except Exception:  # pragma: no cover - defensive: monitoring is never load-bearing
-        logger.debug("egress monitor record failed", exc_info=True)
+    except Exception as exc:  # pragma: no cover - defensive: monitoring is never load-bearing
+        logger.debug(
+            "egress monitor record failed (type=%s)",
+            type(exc).__name__,
+        )
 
 
 def strict_egress_enabled() -> bool:
@@ -251,8 +254,11 @@ class PluginHTTPClient:
         if _EGRESS_AUDIT_SINK is not None:
             try:
                 _EGRESS_AUDIT_SINK(self.plugin_name, violation)
-            except Exception:  # pragma: no cover - audit must never break egress
-                logger.debug("egress downgrade audit failed", exc_info=True)
+            except Exception as exc:  # pragma: no cover - audit must never break egress
+                logger.debug(
+                    "egress downgrade audit failed (type=%s)",
+                    type(exc).__name__,
+                )
 
     def _enforce_kernel(self, method: str, url: str, host: str) -> None:
         """ORIZONT-24 K1 wave-2: mediate policy-passing egress through the Action Kernel.
@@ -271,9 +277,11 @@ class PluginHTTPClient:
             return
         try:
             reason = hook(self.plugin_name, method, url, host)
-        except Exception:  # pragma: no cover - defensive; a kernel bug can't break egress
-            logger.warning("egress kernel hook errored; allowing (manifest policy already enforced)",
-                           exc_info=True)
+        except Exception as exc:  # pragma: no cover - defensive; a kernel bug can't break egress
+            logger.warning(
+                "egress kernel hook failed (type=%s); allowing (manifest policy already enforced)",
+                type(exc).__name__,
+            )
             return
         if reason:
             raise PluginEgressError(f"egress blocked by kernel: {reason}")
@@ -301,8 +309,8 @@ class PluginHTTPClient:
         """Perform a GET request with plugin timeouts applied."""
         if self.circuit_breaker.is_open():
             logger.debug(
-                "Circuit breaker open for plugin '%s', refusing GET %s",
-                self.plugin_name, url,
+                "Circuit breaker open for plugin '%s', refusing GET",
+                self.plugin_name,
             )
             raise RuntimeError(
                 f"Circuit breaker open: plugin={self.plugin_name}"
@@ -321,8 +329,8 @@ class PluginHTTPClient:
         """Perform a POST request with plugin timeouts applied."""
         if self.circuit_breaker.is_open():
             logger.debug(
-                "Circuit breaker open for plugin '%s', refusing POST %s",
-                self.plugin_name, url,
+                "Circuit breaker open for plugin '%s', refusing POST",
+                self.plugin_name,
             )
             raise RuntimeError(
                 f"Circuit breaker open: plugin={self.plugin_name}"
@@ -442,5 +450,8 @@ async def close_all() -> None:
     for client in list(_clients.values()):
         try:
             await client.close()
-        except Exception:
-            logger.debug("plugin http client close failed", exc_info=True)
+        except Exception as exc:
+            logger.debug(
+                "plugin http client close failed (type=%s)",
+                type(exc).__name__,
+            )
