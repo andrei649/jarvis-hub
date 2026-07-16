@@ -1,0 +1,11 @@
+{
+  "name": "codebase-memory-mcp",
+  "old_version": "0.8.1",
+  "new_version": "0.9.0",
+  "vendored": false,
+  "license_refreshed": false,
+  "version_source_updated": false,
+  "doc_updated": false,
+  "manifest_updated": true,
+  "changed": true
+}
