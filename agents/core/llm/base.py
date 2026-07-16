@@ -27,6 +27,11 @@ logger = logging.getLogger("jarvis.llm.base")
 # back to CLOUD_AUTO_MAX_TOKENS.
 CLOUD_AUTO_MAX_TOKENS = 8192
 
+LOCAL_SELECTION_UNAVAILABLE_REPLY = (
+    "⚠️ No local language model is available. "
+    "Start LM Studio or Ollama and try again."
+)
+
 
 def is_auto_max_tokens(max_tokens: int) -> bool:
     """True when the caller wants the model's full context (auto), not a hard cap."""

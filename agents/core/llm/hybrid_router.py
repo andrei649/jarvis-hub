@@ -173,6 +173,10 @@ class ModelNotApprovedError(PermissionError):
     """An agent was routed to a model outside its ``approved_models`` allowlist (H23.2)."""
 
 
+class LocalBackendUnavailableError(RuntimeError):
+    """A strict-local agent could not select an available local backend."""
+
+
 class HybridRouter(LLMRouter):
     def __init__(self, gemini_api_key: str = "", anthropic_api_key: str = ""):
         super().__init__()
@@ -420,7 +424,7 @@ class HybridRouter(LLMRouter):
                 return self._backend, self._local_model, "local"
             # NON-NEGOTIABLE (MOONSHOT §5.1 / AGENTS.md): strict-local agents
             # never leave the machine — no cloud fallback, fail closed instead.
-            raise RuntimeError(
+            raise LocalBackendUnavailableError(
                 f"Local backend unavailable for {agent_id} (policy=local) — "
                 "strict-local agents never fall back to cloud; start LM Studio/Ollama"
             )
@@ -492,7 +496,7 @@ class HybridRouter(LLMRouter):
             return self._backend, "local-fallback"
         # NON-NEGOTIABLE (MOONSHOT §5.1): Howard is LOCAL_ONLY — the digital twin's
         # archive never leaves the machine. No cloud fallback; fail closed.
-        raise RuntimeError(
+        raise LocalBackendUnavailableError(
             "No local backend available for howard (strict-local) — "
             "start Ollama or LM Studio; cloud fallback is forbidden"
         )

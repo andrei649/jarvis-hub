@@ -117,9 +117,15 @@ async def test_orchestrator_guardrails_honors_settings(monkeypatch):
     from core.llm.hybrid_router import HybridRouter
     from core.security.types import RedactionMode
 
-    # Give the router a backend so GuardrailsEngine actually constructs (the engine
-    # only stores the backend at init, so a plain sentinel is enough).
-    monkeypatch.setattr(HybridRouter, "backend", property(lambda self: object()))
+    async def detect_without_backend(self):
+        self._backend = None
+        self._local_available = False
+        self._cloud_available = False
+        self._claude_available = False
+        self._ollama_available = False
+
+    monkeypatch.setattr(HybridRouter, "detect", detect_without_backend)
+    monkeypatch.setenv("JARVIS_LLM_WARMUP", "0")
     monkeypatch.setattr("core.settings_db.get_value",
                         _gv_factory({"security.guardrails_mode": "BLOCK",
                                      "security.scan_input": False,
@@ -132,3 +138,4 @@ async def test_orchestrator_guardrails_honors_settings(monkeypatch):
     assert o.security._mode == RedactionMode.BLOCK
     assert o.security._scan_input is False
     assert o.security._scan_output is True
+    assert o.security._backend is None
