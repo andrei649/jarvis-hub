@@ -116,7 +116,10 @@ def resilient_call(
                         # Expected/handled by the caller (which logs anything user-facing) and the
                         # breaker state is exposed via /api/resilience — keep the plumbing quiet.
                         logger.debug(
-                            f"All {max_retries + 1} attempts failed, last error: {e}"
+                            "All %s attempts failed for %s (type=%s)",
+                            max_retries + 1,
+                            getattr(func, "__name__", "call"),
+                            error_type,
                         )
                     
             raise last_exception

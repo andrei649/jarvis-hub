@@ -29,6 +29,23 @@ async def test_timeout_exhaustion_logs_quietly_with_context(caplog):
         for r in caplog.records
     ), "exhaustion should be logged with the wrapped function name for diagnosis"
 
+
+@pytest.mark.asyncio
+async def test_resilient_call_final_error_log_omits_exception_message(caplog):
+    sentinel = "PROVIDER_EXCEPTION_SENTINEL_f731"
+
+    async def fails_with_secret():
+        raise RuntimeError(sentinel)
+
+    wrapped = resilient_call(max_retries=0)(fails_with_secret)
+    with caplog.at_level(logging.DEBUG, logger="jarvis.resilience"), \
+            pytest.raises(RuntimeError, match=sentinel):
+        await wrapped()
+
+    assert sentinel not in caplog.text
+    assert "RuntimeError" in caplog.text
+    assert "fails_with_secret" in caplog.text
+
 @pytest.mark.asyncio
 async def test_resilient_call_retries_on_timeout():
     call_count = 0
