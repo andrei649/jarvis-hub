@@ -20,7 +20,8 @@ from typing import Callable, Optional
 from .agent import Agent
 from .router import IntentRouter
 from .config import JarvisConfig
-from .llm.hybrid_router import HybridRouter
+from .llm.base import LOCAL_SELECTION_UNAVAILABLE_REPLY
+from .llm.hybrid_router import HybridRouter, LocalBackendUnavailableError
 from .llm.gemini_cache import ContextCache
 from .llm.tokenizer import estimate_tokens
 from .memory.manager import MemoryManager
@@ -54,7 +55,7 @@ from .workflows import WorkflowEngine, WorkflowRegistry
 from .sandbox import Sandbox
 from .bench import LatencyBenchmark
 from .plugin_gate import PermissionGate
-from .security.guardrails import GuardrailsEngine
+from .security import GuardrailsEngine, bind_guardrails
 from .security.audit import AuditLogger
 from .security.types import RedactionMode, SecurityEvent, SecurityEventType
 from .env_config import env_flag, truthy
@@ -442,28 +443,24 @@ class Orchestrator:
             self._drive_ai_task = asyncio.create_task(self._drive_ai_startup())
             self._drive_ai_task.add_done_callback(_log_task_result)
 
-        try:
-            backend = self.llm_router.backend
-            # /admin → security.guardrails_mode / scan_input / scan_output. The
-            # engine previously hardcoded WARN + both scans on, ignoring these.
-            from .settings_db import get_value as _gv
-            from .security import hardened as _hardened
-            # CDX-12: the hardened profile tightens the *default* to REDACT; an
-            # explicit security.guardrails_mode setting still wins.
-            _mode_raw = str(_gv("security", "guardrails_mode",
-                                _hardened.guardrails_default())).upper()
-            _mode = RedactionMode[_mode_raw] if _mode_raw in RedactionMode.__members__ else RedactionMode.WARN
-            self.security = GuardrailsEngine(
-                backend=backend,
-                mode=_mode,
-                scan_input=bool(_gv("security", "scan_input", True)),
-                scan_output=bool(_gv("security", "scan_output", True)),
-            )
-            logger.info("Security guardrails enabled (mode=%s, scan_in=%s, scan_out=%s)",
-                        _mode.value, self.security._scan_input, self.security._scan_output)
-        except RuntimeError:
-            log_error(logger, E_LLM_BACKEND_MISSING, backend="guardrails")
-            self.security = None
+        # /admin → security.guardrails_mode / scan_input / scan_output. Keep an
+        # unbound policy prototype even when no provider is available at boot;
+        # each request binds it only after the router selects a backend.
+        from .settings_db import get_value as _gv
+        from .security import hardened as _hardened
+        # CDX-12: the hardened profile tightens the *default* to REDACT; an
+        # explicit security.guardrails_mode setting still wins.
+        _mode_raw = str(_gv("security", "guardrails_mode",
+                            _hardened.guardrails_default())).upper()
+        _mode = RedactionMode[_mode_raw] if _mode_raw in RedactionMode.__members__ else RedactionMode.WARN
+        self.security = GuardrailsEngine(
+            backend=None,
+            mode=_mode,
+            scan_input=bool(_gv("security", "scan_input", True)),
+            scan_output=bool(_gv("security", "scan_output", True)),
+        )
+        logger.info("Security guardrails enabled (mode=%s, scan_in=%s, scan_out=%s)",
+                    _mode.value, self.security._scan_input, self.security._scan_output)
 
         for agent_id, agent_config in self.config.agents.items():
             if agent_config.status == "active":
@@ -476,8 +473,7 @@ class Orchestrator:
                     "tier": agent_config.tier,
                 }
                 agent = Agent(agent_id, agent_dict, self.llm_router, permission_gate=self.permission_gate)
-                if self.security:
-                    agent.guardrails = self.security
+                agent.guardrails = self.security
                 self.agents[agent_id] = agent
                 logger.info(f"Loaded: {agent_id}")
 
@@ -1173,14 +1169,19 @@ class Orchestrator:
                     backend, router_model, route_name = self.llm_router.select_backend(agent_id, prompt)
                     if router_model:
                         model = router_model
-                    if self.security:
-                        backend = self.security
+                    backend = bind_guardrails(self.security, backend)
                     # Reasoning models on the deep slot need a far larger budget:
                     # 1–2k tokens is consumed by chain-of-thought before any
                     # answer, so a small cap truncates mid-thought.
                     eff_max_tokens, temperature = self._agent_gen_params(agent, route_name)
                     cap_label = "auto" if eff_max_tokens <= 0 else eff_max_tokens
                     logger.info(f"Routing {agent_id} via {route_name} ({estimate_tokens(prompt)} tokens, max_tokens={cap_label})")
+                except LocalBackendUnavailableError:
+                    msg = LOCAL_SELECTION_UNAVAILABLE_REPLY
+                    log_error(logger, E_LLM_BACKEND_MISSING, backend="stream-local")
+                    if on_token:
+                        on_token(msg)
+                    return msg
                 except RuntimeError:
                     msg = "I'm sorry, sir — my language backend is not available. Please start Ollama or LM Studio and try again."
                     log_error(logger, E_LLM_BACKEND_MISSING, backend="stream")

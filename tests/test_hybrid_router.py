@@ -13,6 +13,7 @@ from core.llm.tokenizer import estimate_tokens, estimate_messages
 from core.llm.hybrid_router import (
     DEFAULT_DEEP_MODEL,
     HybridRouter,
+    LocalBackendUnavailableError,
     POLICY_LOCAL,
     POLICY_CLOUD,
     POLICY_CLAUDE,
@@ -166,7 +167,7 @@ def test_select_backend_raises_when_none():
 
 def test_select_backend_policy_local_no_local():
     router = HybridRouter()
-    with pytest.raises(RuntimeError):
+    with pytest.raises(LocalBackendUnavailableError):
         router.select_backend("frigga", "hello")
 
 
@@ -252,7 +253,7 @@ def test_select_backend_strict_local_never_cloud(monkeypatch):
     router = HybridRouter(gemini_api_key="test")
     router._cloud_available = True
     router._gemini_backend = FakeBackend()
-    with pytest.raises(RuntimeError, match="strict-local"):
+    with pytest.raises(LocalBackendUnavailableError, match="strict-local"):
         router.select_backend("frigga", "hello")
 
 
@@ -654,7 +655,7 @@ def test_howard_strict_local_never_cloud():
     router = HybridRouter(gemini_api_key="test")
     router._cloud_available = True
     router._gemini_backend = FakeBackend()
-    with pytest.raises(RuntimeError, match="strict-local"):
+    with pytest.raises(LocalBackendUnavailableError, match="strict-local"):
         router.select_backend("howard", "hello")
 
 

@@ -8,7 +8,9 @@ import logging
 import time
 from typing import Optional
 
-from .llm.hybrid_router import HybridRouter
+from .llm.base import LOCAL_SELECTION_UNAVAILABLE_REPLY
+from .llm.hybrid_router import HybridRouter, LocalBackendUnavailableError
+from .security import bind_guardrails
 
 logger = logging.getLogger("jarvis.agent")
 
@@ -214,7 +216,10 @@ class Agent:
 
         prompt = self.build_prompt(text, context)
 
-        res = self.llm_router.select_backend(self.id, prompt)
+        try:
+            res = self.llm_router.select_backend(self.id, prompt)
+        except LocalBackendUnavailableError:
+            return LOCAL_SELECTION_UNAVAILABLE_REPLY
         route_name = ""
         if isinstance(res, tuple) and len(res) == 3:
             backend, routed_model, route_name = res
@@ -222,8 +227,7 @@ class Agent:
                 model = routed_model
         else:
             backend, _ = res
-        if self.guardrails:
-            backend = self.guardrails
+        backend = bind_guardrails(self.guardrails, backend)
 
         if self._checkpoint_manager:
             self._checkpoint_manager.save_agent_execution(self.id, context.get("session_id", "unknown"), prompt)
@@ -333,7 +337,7 @@ class Agent:
         )
 
         try:
-            res = self.llm_router.select_backend("jarvis", prompt)
+            res = self.llm_router.select_backend(self.id, prompt)
             route_name = ""
             if isinstance(res, tuple) and len(res) == 3:
                 backend, routed_model, route_name = res
@@ -345,8 +349,7 @@ class Agent:
                     model = routed_model
             else:
                 backend, _ = res
-            if self.guardrails:
-                backend = self.guardrails
+            backend = bind_guardrails(self.guardrails, backend)
 
             # H22.5 — best-effort local model residency, same guarded pattern as
             # process(): default OFF via JARVIS_MODEL_MANAGER, a no-op for
@@ -367,6 +370,12 @@ class Agent:
                     temperature=temperature,
                 )
             return response
+        except LocalBackendUnavailableError:
+            parts = []
+            for agent_id, resp in responses.items():
+                if agent_id != "jarvis" and resp:
+                    parts.append(f"[{agent_id}]: {self._strip_control_tokens(resp)}")
+            return " | ".join(parts) if parts else "Done, sir."
         except RuntimeError:
             parts = []
             for agent_id, resp in responses.items():
