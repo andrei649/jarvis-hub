@@ -123,6 +123,7 @@ async def test_orchestrator_aclose_is_defensive():
 async def test_orchestrator_aclose_closes_context_cache_and_channels():
     orch = Orchestrator(JarvisConfig())
     closed = {"cache": False, "chan": False}
+    assert orch._cache_tasks == set()
 
     class _Cache:
         async def close(self):
@@ -141,6 +142,7 @@ async def test_orchestrator_aclose_closes_context_cache_and_channels():
     await orch.aclose()
 
     assert closed == {"cache": True, "chan": True}
+    assert orch._cache_tasks == set()
 
 
 @pytest.mark.asyncio

@@ -246,3 +246,36 @@ async def test_iterative_cache_second_turn_reuses_prior_summary():
     second_prompt = backend.calls[1]["prompt"]
     assert "Historical context: local summary." in second_prompt   # prior merged
     assert "Old topic 0" not in second_prompt                      # not re-read
+
+
+async def test_history_parts_follow_rendered_turn_boundaries_and_drop_current_user():
+    rendered = (
+        "[summary of earlier conversation]\n"
+        "- pending item stays grouped\n"
+        "[user]: prior question\nwith a multiline body\n"
+        "[jarvis]: prior answer\n"
+        "[user]: current question\nwith a multiline body"
+    )
+    orchestrator = Orchestrator.__new__(Orchestrator)
+
+    async def history(last_n):
+        return rendered
+
+    orchestrator._history_for_prompt = history
+
+    history_text, parts = await orchestrator._history_for_prompt_parts(
+        10,
+        current_user_text="current question\nwith a multiline body",
+    )
+
+    assert history_text == (
+        "[summary of earlier conversation]\n"
+        "- pending item stays grouped\n"
+        "[user]: prior question\nwith a multiline body\n"
+        "[jarvis]: prior answer"
+    )
+    assert parts == (
+        "[summary of earlier conversation]\n- pending item stays grouped",
+        "[user]: prior question\nwith a multiline body",
+        "[jarvis]: prior answer",
+    )

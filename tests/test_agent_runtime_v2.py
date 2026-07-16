@@ -1594,6 +1594,29 @@ def _streamed_orchestrator_for(agent, backend=None):
     return orchestrator, backend, completion_calls, turns
 
 
+def test_orchestrator_defers_context_cache_until_router_detection(monkeypatch):
+    monkeypatch.delenv("GEMINI_API_KEY", raising=False)
+    monkeypatch.setenv("GEMINI_API_KEYS", "profile-one,profile-two")
+    providers = []
+
+    class _ContextCache:
+        def __init__(self, provider):
+            providers.append(provider)
+
+    orchestrator = Orchestrator(JarvisConfig())
+
+    assert orchestrator.context_cache is None
+    assert orchestrator._cache_tasks == set()
+
+    detected_pool = SimpleNamespace(size=2)
+    orchestrator.llm_router._gemini_pool = detected_pool
+    monkeypatch.setattr("agents.core.orchestrator.ContextCache", _ContextCache)
+    orchestrator._ensure_context_cache()
+
+    assert isinstance(orchestrator.context_cache, _ContextCache)
+    assert providers[0]() is detected_pool
+
+
 @pytest.mark.asyncio
 async def test_streamed_orchestrator_uses_agent_generation_seam_and_persists_once():
     seam_calls = []
