@@ -49,6 +49,7 @@ from .autonomy import AutonomyWorker, TaskQueue, AutonomyPolicy, PreferenceStore
 from .autonomy import ProactiveObserver, default_probes
 from .autonomy.reflection import DailyReflector, ReflectionRunStore
 from .autonomy.log_scanner import LogBugScanner
+from .autonomy.tech_scout import TechScout, TechScoutStore, DEFAULT_QUERIES as _TECH_SCOUT_DEFAULT_QUERIES
 from .workflows import WorkflowEngine, WorkflowRegistry
 from .sandbox import Sandbox
 from .bench import LatencyBenchmark
@@ -354,6 +355,8 @@ class Orchestrator:
         self.curator = None             # SkillCurator, built in load_agents
         # Daily Reflection & Graph Consolidation (H5.15)
         self.reflector: Optional[DailyReflector] = None
+        # Proactive Technology Scout (Self-Improvement) — default-off, read-only.
+        self.tech_scout: Optional[TechScout] = None
         # Log-bug-finding scanner (multi-cadence scheduled pipeline)
         self.log_scanner = LogBugScanner()
         # Multi-Agent Workflows (H5.6)
@@ -539,6 +542,17 @@ class Orchestrator:
                 living_memory=_reflection_living_memory,
             )
 
+            # Proactive Technology Scout (Self-Improvement) — reuses the same
+            # WebSearchPlugin the assistant's own websearch feature calls; None if
+            # no search backend is configured (scan() then reports itself unavailable).
+            websearch = self.plugins.get("websearch")
+            self.tech_scout = TechScout(
+                self.autonomy,
+                search=(websearch.search if websearch else None),
+                store=TechScoutStore(data_path("autonomy", "tech_scout.json")),
+                queries=self.get_setting("autonomy.tech_scout_queries", _TECH_SCOUT_DEFAULT_QUERIES),
+            )
+
             # Continuous Ingestion Watcher (H5.1)
             from .ingestion.watcher import IngestionWatcher
             self.ingestion_watcher = IngestionWatcher()
@@ -546,7 +560,7 @@ class Orchestrator:
             # Multi-agent workflow engine (H5.6)
             self.workflow_engine = WorkflowEngine(self)
 
-            logger.info("Autonomy queue + executor + observer + event_watcher + reflection + workflows initialized")
+            logger.info("Autonomy queue + executor + observer + event_watcher + reflection + tech_scout + workflows initialized")
         except Exception as e:
             logger.warning(f"Autonomy init failed: {e}")
 

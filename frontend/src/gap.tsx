@@ -601,6 +601,64 @@ export function PosturePanel() {
   );
 }
 
+/* Self-Improvement dashboard — read-only aggregation of subsystems that already
+   exist (error diagnostics, the resource/service Observer, H32 Capability
+   Acquisition, H33 Ambient Intelligence, the Proactive Technology Scout), plus a
+   one-button convenience toggle for the documented enable-bundle (each flag it
+   flips already exists and is individually admin-settable; see
+   docs/OWNER_TASKS.md). Admin-guarded like PosturePanel — the aggregation can
+   surface internal diagnostic detail. */
+export function SelfImprovementPanel() {
+  const { d, e, loading, reload } = useApi('/api/self-improvement/status', true, true);  // admin-guarded
+  const errors = (d && d.errors) || {};
+  const observer = (d && d.observer) || {};
+  const acquisition = (d && d.acquisition) || {};
+  const ambient = (d && d.ambient) || {};
+  const techScout = (d && d.tech_scout) || {};
+  const allOn = observer.enabled && acquisition.enabled && ambient.enabled && techScout.enabled;
+  return (
+    <Card title="SELF-IMPROVEMENT" live={asLive(d)} sub={d ? `${errors.active_groups ?? 0} active error group(s)` : null} onReload={reload}>
+      <State e={e} loading={loading} n={d ? 1 : 0} />
+      {d && (
+        <>
+          <Row><span style={mono}>errors (48h)</span>
+            <span style={{ marginLeft: 'auto', display: 'flex', gap: 5, alignItems: 'center' }}>
+              <Tag c={(errors.active_groups ?? 0) > 0 ? 'var(--amber)' : 'var(--green)'}>{errors.active_groups ?? 0} groups</Tag>
+            </span>
+          </Row>
+          <Row><span style={mono}>observer</span>
+            <span style={{ marginLeft: 'auto', display: 'flex', gap: 5, alignItems: 'center' }}>
+              <Tag c={observer.enabled ? 'var(--green)' : 'var(--ink-3)'}>{observer.enabled ? 'on' : 'off'}</Tag>
+              <Tag>{(observer.unhealthy || []).length} unhealthy</Tag>
+            </span>
+          </Row>
+          <Row><span style={mono}>capability acquisition</span>
+            <span style={{ marginLeft: 'auto', display: 'flex', gap: 5, alignItems: 'center' }}>
+              <Tag c={acquisition.enabled ? 'var(--green)' : 'var(--ink-3)'}>{acquisition.enabled ? 'on' : 'off'}</Tag>
+              <Tag>{acquisition.status || '—'}</Tag>
+            </span>
+          </Row>
+          <Row><span style={mono}>ambient monitors</span>
+            <span style={{ marginLeft: 'auto', display: 'flex', gap: 5, alignItems: 'center' }}>
+              <Tag c={ambient.enabled ? 'var(--green)' : 'var(--ink-3)'}>{ambient.enabled ? 'on' : 'off'}</Tag>
+              <Tag>{ambient.monitors ?? 0} monitor(s)</Tag>
+            </span>
+          </Row>
+          <Row><span style={mono}>tech scout</span>
+            <span style={{ marginLeft: 'auto', display: 'flex', gap: 5, alignItems: 'center' }}>
+              <Tag c={techScout.enabled ? 'var(--green)' : 'var(--ink-3)'}>{techScout.enabled ? 'on' : 'off'}</Tag>
+              <Tag>{techScout.last_run ? 'ran' : 'never run'}</Tag>
+            </span>
+          </Row>
+          {!allOn && (
+            <Row><span style={{ fontSize: 10, color: 'var(--ink-3)' }}>flip the documented owner opt-ins</span>
+              <Btn onClick={() => actA('/api/self-improvement/enable', {}, reload)}>enable bundle</Btn></Row>
+          )}
+        </>
+      )}
+    </Card>
+  );
+}
 /* HUD-v3 C8 (arena + quality-threshold; evals/review already shipped). Two Observe
    panels: the model arena leaderboard (read-only) + the answer-quality gate (read +
    admin set-threshold). Honesty: real ELO/scores; empty-state when no matches yet. */
@@ -2704,7 +2762,7 @@ const SECTIONS: Array<[string, Array<() => any>]> = [
   ['Memory', [DataSpacesPanel, LocalDocsPanel, NotesPanel, KgPanel, CapturePanel, ReflectionPanel, ProvenancePanel]],
   ['Trust', [KillSwitchPanel, KernelMetricsPanel, ReadinessPanel, LoopBreakerPanel, GovernancePanel, PosturePanel, SecuritySkillsPanel, NetworkMonitorPanel, CommsRatePanel, SafeCommsDraftPanel, SecretsPanel, CapabilitiesPanel, PairingPanel, InjectionScanPanel]],
   ['Interop', [A2AInboxPanel, MeshPeersPanel, SatellitesPanel, OraclePanel, MarketplacePanel, SkillHistoryPanel, WatchlistPanel]],
-  ['Observe', [OnboardingPanel, EvalPanel, ReviewPanel, ArenaPanel, QualityPanel, APMPanel, ModelInfoPanel, FeedbackPanel]],
+  ['Observe', [OnboardingPanel, EvalPanel, ReviewPanel, ArenaPanel, QualityPanel, APMPanel, ModelInfoPanel, FeedbackPanel, SelfImprovementPanel]],
   ['Build', [WorkflowsPanel, StepGenPanel, SandboxPanel, TemplatesPanel, AcquisitionPanel, MediaDirectorPanel, MediaGalleryPanel, OperatorPanel]],
   ['Autonomy & Agents', [DecisionInboxPanel, MissionsPanel, AgentAutonomyPanel, TodayPanel, SchedulePanel, LearningPanel, SessionsPanel, HeartbeatPanel, TranscriptPanel, EscalationPanel]],
   ['Admin', [BackupPanel, OAuthPanel, SettingsPanel, PromptsPanel, RoomsPanel, LMStudioPanel, AuthProfilesPanel, SystemProfilePanel]],

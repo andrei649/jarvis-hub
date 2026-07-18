@@ -113,7 +113,21 @@ python -m pytest tests/ -v          # ~3,868 passed, 6 skipped (counter synced v
 > control-char URLs, `_s()` drops lone UTF-16 surrogates (store-poisoning fix),
 > and forget-me resets `canvas.json` + clears the live canvas store without
 > emptying the file before the pre-forget backup. Mobile parity is tracked as
-> H18.20 (ORIZONT 18).
+> H18.20 (ORIZONT 18). Self-Improvement (ad-hoc, owner request 2026-07-18) adds
+> the missing *proactive* half next to the reactive H32 Capability Acquisition
+> loop: `agents/core/autonomy/tech_scout.py` is a default-off, weekly, read-only
+> websearch scan that dedupes findings and files them as `RiskTier.READ_ONLY`
+> informational autonomy tasks (no executor — same "observations inform,
+> decisions interrupt" posture as `observer.py`). `GET /api/self-improvement/status`
+> aggregates error diagnostics + Observer + Acquisition + Ambient status in one
+> read; `POST /api/self-improvement/enable` flips the documented bundle of
+> already-existing default-off settings in one call (no new capability, no
+> changed shipped default). New HUD `SelfImprovementPanel` (Console → Observe).
+> `cognition.review_enabled` also gained its missing `settings_db` row (was
+> read via `get_setting` with no DEFAULTS entry — invisible/unsettable from the
+> admin API; now visible, default unchanged). +17 new backend tests, +3
+> frontend; full backend (5,101) and frontend (361) suites green, route/OpenAPI/
+> route-auth snapshots and the HUD-v2 parity map re-seeded for the 2 new routes.
 
 ---
 

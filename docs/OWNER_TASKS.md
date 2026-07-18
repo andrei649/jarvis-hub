@@ -82,6 +82,39 @@
 - [ ] **Live-mic validation** — HUD voice loop + barge-in tuning need a real microphone
   (PR #162/#164 caveat), incl. Wyoming satellite if you set one up.
 
+## 🟢 Optional: turn on Self-Improvement
+
+Most of "Jarvis proactively finds bugs, watches for anomalies, and grows its own
+capabilities" already exists and is already running by default (the resource/
+service Observer, event Watchers, and the 15-min/hourly/daily log-bug scanner —
+`system.observer_enabled`/`watchers_enabled`/`log_scan_enabled`, all default
+`true`). What's left is default-off by deliberate governance choice (Product
+Posture O26-P2.4, H32/H33 explicit owner opt-in), and needs *you* to flip it —
+one call from the Console → Observe → **SELF-IMPROVEMENT** panel's "enable
+bundle" button, or `POST /api/self-improvement/enable`:
+
+- [ ] **`cognition.enabled` + `cognition.review_enabled`** — the H20 per-turn
+  background-review distiller + nightly skill curator (strict-local, distills
+  durable facts/corrections; proposed skill patches still need your approval).
+- [ ] **`acquisition.enabled`** — H32 Capability Acquisition (gap → reuse-search →
+  sandboxed research → strict-local codegen → hostile-sandbox verification →
+  **your approval** → signed install). Needs a configured search backend
+  (`SEARXNG_URL` or `TAVILY_API_KEY` in `.env`) to actually research anything —
+  without one it stays enabled but inert.
+- [ ] **`ambient.enabled`** — H33 Ambient Intelligence monitors over house/camera/
+  digital signals (only meaningful once H30/H31 hardware is connected).
+- [ ] **`autonomy.tech_scout_enabled`** — the new Proactive Technology Scout: a
+  weekly, read-only websearch scan (same `SEARXNG_URL`/`TAVILY_API_KEY` backend
+  as above) for new AI/tech developments worth knowing about. Findings are
+  informational only (`RiskTier.READ_ONLY`, no executor) — they show up in the
+  task list / morning brief, never auto-act. Tune the query list at
+  `autonomy.tech_scout_queries` (admin settings) if the defaults aren't your interests.
+
+None of this is release-blocking — it's config + credentials, not code. The
+bundle endpoint only flips settings that already exist and are already
+individually toggleable via `/api/admin/settings`; it changes nothing for
+anyone who doesn't press the button.
+
 ## 🟢 Launch assets (when you're ready to show it)
 
 - [ ] **Record the 30–60s demo GIF** for the README hero — one real task incl. an approved

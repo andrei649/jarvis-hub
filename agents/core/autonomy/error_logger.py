@@ -72,23 +72,19 @@ def persist_problem(error_log: ErrorLog) -> None:
         pass
 
 
-def sync_problems_to_diagnostics(output_path: Optional[str] = None, problems_path: Optional[str] = None) -> None:
-    """Analyze active errors from the last 48 hours and write them to a standalone,
-    git-ignored diagnostics file (``memory_logs/diagnostics.md``).
+def summarize_problems(problems_path: Optional[str] = None, *, hours: float = 48) -> list[dict]:
+    """Load, filter (last `hours`), and group problems by (code, component).
 
-    Historically this injected an auto-generated block into the git-tracked
-    ``BACKLOG.md``. That caused recurring merge conflicts: every autonomy tick
-    rewrote the tracked planning doc (and on Windows flipped its line endings
-    LF→CRLF), so any ``git pull`` afterwards conflicted on BACKLOG.md. Runtime
-    diagnostics now live in a git-ignored file and never touch tracked docs.
-    The write is idempotent (skips when unchanged) and pins LF endings.
+    Pure/read-only — shared by the diagnostics-doc writer below and the
+    self-improvement dashboard's `GET /api/self-improvement/status`, so the two
+    surfaces can never drift on what counts as an "active" problem.
+
+    Returns groups sorted by most-recently-seen first, each with `code`,
+    `component`, `message` (latest), `severity`, `count`, `last_seen`.
     """
-    if output_path is None:
-        output_path = str(data_path("diagnostics.md"))
     if problems_path is None:
         problems_path = str(data_path("problems.jsonl"))
 
-    # Load problems
     problems = []
     if os.path.exists(problems_path):
         try:
@@ -99,14 +95,13 @@ def sync_problems_to_diagnostics(output_path: Optional[str] = None, problems_pat
         except Exception:
             pass
 
-    # Filter and group errors from the last 48 hours
     groups = {}
     now_ts = datetime.now(timezone.utc).timestamp()
+    window_seconds = hours * 3600
 
     for p in problems:
         ts = p.get("timestamp", 0)
-        # 48-hour window
-        if now_ts - ts > 48 * 3600:
+        if now_ts - ts > window_seconds:
             continue
 
         severity = p.get("severity", "").lower()
@@ -129,6 +124,25 @@ def sync_problems_to_diagnostics(output_path: Optional[str] = None, problems_pat
             groups[key]["message"] = p.get("message")
             groups[key]["last_seen"] = ts
 
+    return sorted(groups.values(), key=lambda g: g["last_seen"], reverse=True)
+
+
+def sync_problems_to_diagnostics(output_path: Optional[str] = None, problems_path: Optional[str] = None) -> None:
+    """Analyze active errors from the last 48 hours and write them to a standalone,
+    git-ignored diagnostics file (``memory_logs/diagnostics.md``).
+
+    Historically this injected an auto-generated block into the git-tracked
+    ``BACKLOG.md``. That caused recurring merge conflicts: every autonomy tick
+    rewrote the tracked planning doc (and on Windows flipped its line endings
+    LF→CRLF), so any ``git pull`` afterwards conflicted on BACKLOG.md. Runtime
+    diagnostics now live in a git-ignored file and never touch tracked docs.
+    The write is idempotent (skips when unchanged) and pins LF endings.
+    """
+    if output_path is None:
+        output_path = str(data_path("diagnostics.md"))
+
+    sorted_groups = summarize_problems(problems_path, hours=48)
+
     # Build the standalone diagnostics document.
     task_lines = [
         "# 🔴 Runtime Diagnostics (auto-generated)",
@@ -139,9 +153,7 @@ def sync_problems_to_diagnostics(output_path: Optional[str] = None, problems_pat
         ""
     ]
 
-    if groups:
-        # Sort by last seen desc
-        sorted_groups = sorted(groups.values(), key=lambda g: g["last_seen"], reverse=True)
+    if sorted_groups:
         for g in sorted_groups:
             code = g["code"]
             comp = g["component"]
