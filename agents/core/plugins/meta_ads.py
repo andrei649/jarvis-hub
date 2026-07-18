@@ -33,7 +33,8 @@ _CAMPAIGN_FIELDS = "name,status,effective_status,daily_budget"
 class MetaAdsPlugin:
     """Read-only client for Meta Marketing API ad-account insights."""
 
-    def __init__(self, access_token: str = "", account_id: str = "", client=None):
+    # The empty token default means "unconfigured", not a hardcoded credential.
+    def __init__(self, access_token: str = "", account_id: str = "", client=None):  # nosec B107
         self.access_token = access_token or os.getenv("META_ADS_ACCESS_TOKEN", "")
         account_id = account_id or os.getenv("META_ADS_ACCOUNT_ID", "")
         # The Graph API addresses ad accounts as act_<numeric id>; accept both forms.
