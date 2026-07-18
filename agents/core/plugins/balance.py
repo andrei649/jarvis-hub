@@ -3,6 +3,7 @@ balance.py — Gecko Balance Reader Plugin.
 Aggregates balances from ING API, Libra API, or CSV import.
 Returns realistic mock data when no source is configured.
 """
+import contextlib
 import csv
 import logging
 from collections import defaultdict
@@ -221,10 +222,8 @@ class BalanceReaderPlugin:
                 continue
             for acct in accounts:
                 if isinstance(acct, dict):
-                    try:
+                    with contextlib.suppress(TypeError, ValueError):
                         total += float(acct.get("balance", 0) or 0)
-                    except (TypeError, ValueError):
-                        pass
         return round(total, 2)
 
     async def _compute_burn_rate(self, days: int = 30) -> dict:

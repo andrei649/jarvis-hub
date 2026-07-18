@@ -65,7 +65,7 @@ class IoTControlPlugin:
         self.secret = secret.strip()
         self.device_id = device_id.strip()
         self.client = PluginHTTPClient.for_plugin("iot-control")
-        self._access_token = ""
+        self._access_token = ""  # nosec B105 — empty cache init, not a credential
         self._token_expiry = 0.0
 
     def configured(self) -> bool:

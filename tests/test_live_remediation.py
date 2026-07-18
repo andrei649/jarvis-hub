@@ -10,16 +10,22 @@ Covers the first tranche of "mock → real" builds from the capability audit
 All offline — no network. Signing is checked against pinned vectors so the
 algorithm can't silently drift.
 """
-import sys, os, hmac, hashlib
+import hashlib
+import hmac
+import os
+import sys
+
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'agents'))
 
+from agents.core.plugins.balance import BalanceReaderPlugin
 from agents.core.plugins.degradation import degraded, is_degraded
 from agents.core.plugins.iot_control import (
-    IoTControlPlugin, tuya_sign, _string_to_sign, _EMPTY_BODY_SHA256,
+    _EMPTY_BODY_SHA256,
+    IoTControlPlugin,
+    _string_to_sign,
+    tuya_sign,
 )
-from agents.core.plugins.balance import BalanceReaderPlugin
-
 
 # ── degradation helper ──────────────────────────────────────────────────────
 
@@ -51,7 +57,7 @@ def _independent_sign(secret, client_id, t, nonce, sts, token=""):
 
 class TestTuyaSigning:
     def test_empty_body_hash_constant(self):
-        assert _EMPTY_BODY_SHA256 == hashlib.sha256(b"").hexdigest()
+        assert hashlib.sha256(b"").hexdigest() == _EMPTY_BODY_SHA256
 
     def test_string_to_sign_shape(self):
         sts = _string_to_sign("GET", "/v1.0/token?grant_type=1", "")
