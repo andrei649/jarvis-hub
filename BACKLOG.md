@@ -131,6 +131,52 @@ python -m pytest tests/ -v          # ~3,868 passed, 6 skipped (counter synced v
 
 ---
 
+## 🔌 Live-vs-Plumbing Remediation — mock → real (owner request 2026-07-18)
+
+> **Full audit:** [`docs/research/2026-07-18-live-vs-plumbing-capability-audit.md`](docs/research/2026-07-18-live-vs-plumbing-capability-audit.md)
+> · six-domain LIVE/PLUMBING/STUB code audit. The running product does far less than
+> the merged PRs imply: of ~77 capabilities, **~11 LIVE** (only ~3 user-facing —
+> weather, news, local analytics), **~52 PLUMBING** (real, but gated off / waiting on
+> a key/OAuth/LAN-hub/engine), **~14 STUB** (mock / placeholder / absent). Dominant
+> pattern: *"integration-ready, mock-fallback + host seam"* — a capability degrades
+> quietly to a mock or `deferred` instead of erroring, so scaffold reads as product.
+> **This epic tracks closing the gap** — turning PLUMBING into LIVE and building STUBs
+> for real. Cross-cuts ORIZONT 27–33 (the pillars are code-complete but actuator-gated).
+
+**Tranche 1 — shipped (mock → real, first cut):**
+- [x] Capability audit persisted to `docs/research/2026-07-18-live-vs-plumbing-capability-audit.md`
+- [x] `agents/core/plugins/degradation.py` — honesty helper: mock fallbacks now self-report a `_degraded` `{reason, needs}` + `_mock` so a degraded feature is distinguishable from a real one
+- [x] **Real Tuya Cloud OpenAPI signing** (`iot_control.py`) — replaces the hardcoded `sign="MOCK_SIGNATURE"` (which Tuya always 401s) with the documented HMAC-SHA256 token-grant + signed-command flow; unconfigured → honest degraded result (no device touched)
+- [x] **Real balance burn-rate** (`balance.py`) — was `MOCK_BURN_RATE` *even when configured*; now computed from a transactions CSV (`plugins.gecko_tx_csv_path`): monthly spend/income, top categories, runway from real balances
+- [x] +14 tests (`tests/test_live_remediation.py`, pinned Tuya signature vectors); existing iot test updated to the honest `not_configured` contract; test counter synced (5,115)
+
+**Config-wins — flip to LIVE with no new code (owner action, see `docs/OWNER_TASKS.md`):**
+- [ ] Google OAuth → email + calendar
+- [ ] Spotify OAuth → real playback control
+- [ ] Install engines: `faster-whisper` (STT), `edge-tts`/`kokoro` (TTS), `playwright` (browser operator), `beautifulsoup4` (DDG search)
+- [ ] LAN Home Assistant + `JARVIS_HOUSE_BRAIN`/`JARVIS_HOME_ASSISTANT` → house read + control
+- [ ] Frigate NVR + household consent → the camera + ambient stack
+- [ ] Flip cognition master posture + a local LLM → the reflect-and-rewrite learn loop
+- [ ] Telegram bot token → `channel.reply` (the one real autonomy side-effect)
+
+**Genuinely unbuilt — needs real code:**
+- [x] Tuya real signer (done, Tranche 1)
+- [x] Balance burn-rate from CSV transactions (done, Tranche 1) — [ ] extend to ING/Libra transaction fetch (API path still pending)
+- [ ] Stock quotes feed — add a keyless source (e.g. Stooq) like weather/news, so `market` fetches instead of only scoring caller-supplied quotes
+- [ ] Social: instantiate `HttpSocialClient` behind approval (drop `NullSocialClient` when `x_api_token` present)
+- [ ] Autonomy executors: real `Http*` clients at the writeback / call / node host seams
+- [ ] Capability acquisition: a production path that creates a `PromotionProposal`; real skill code-synthesis (replace the `"implement logic in handle()"` placeholder)
+- [ ] Real payment rail adapter (AP2/ACP/x402) at `payments.settle()` — **owner decision required (moves money)**
+- [ ] Media / desktop / node actuators (owner-wired host seams)
+- [ ] `agents/vision`, `agents/argus` — real implementation (currently persona markdown, zero code)
+
+**Honesty layer (cross-cutting, highest-leverage):**
+- [x] `degradation.py` helper + applied to `iot_control` + `balance`
+- [ ] Apply `degraded()` to the remaining mock fallbacks (sms-alerts, crm-sync, …)
+- [ ] Surface `_degraded` / capability-registry `state` in the HUD so every degraded feature is badged — stops the product from silently reading as live
+
+---
+
 ## 🤝 Handoff — Fable last-day review (2026-07-07)
 
 > Full review, verdict, and rationale: **[docs/handoff-fable-2026-07-07.md](docs/handoff-fable-2026-07-07.md)**

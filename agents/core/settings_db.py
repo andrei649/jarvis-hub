@@ -205,6 +205,7 @@ DEFAULTS: list[dict[str, Any]] = [
     dict(category="plugins", key="gecko_ing_client_secret", value="",   label="Gecko – ING Client Secret",        kind="text"),
     dict(category="plugins", key="gecko_libra_token",       value="",   label="Gecko – Libra API Token",          kind="text"),
     dict(category="plugins", key="gecko_csv_path",          value="",   label="Gecko – CSV export path",          kind="text"),
+    dict(category="plugins", key="gecko_tx_csv_path",       value="",   label="Gecko – transactions CSV (burn-rate)", kind="text"),
     # stark — analytics
     dict(category="plugins", key="stark_ga4_service_account", value="", label="Stark – GA4 Service Account JSON", kind="text"),
     dict(category="plugins", key="stark_ga4_property_id",     value="", label="Stark – GA4 Property ID",          kind="text"),
