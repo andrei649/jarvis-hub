@@ -189,6 +189,9 @@ DEFAULTS: list[dict[str, Any]] = [
     dict(category="plugins", key="sms-alerts",       value=True,                  label="SMS Alerts & Notifications", kind="toggle"),
     dict(category="plugins", key="crm-sync",         value=True,                  label="Notion CRM Sync", kind="toggle"),
     dict(category="plugins", key="iot-control",       value=True,                  label="Tuya SmartHome IoT", kind="toggle"),
+    dict(category="plugins", key="revenuecat",       value=True,                  label="RevenueCat Revenue", kind="toggle"),
+    dict(category="plugins", key="meta-ads",         value=True,                  label="Meta Ads Insights",  kind="toggle"),
+    dict(category="plugins", key="postiz",           value=True,                  label="Postiz Social Scheduler", kind="toggle"),
     # twilio — sms alerts
     dict(category="plugins", key="twilio_account_sid",  value="",    label="Twilio Account SID",                kind="text"),
     dict(category="plugins", key="twilio_auth_token",   value="",    label="Twilio Auth Token",                 kind="text"),

@@ -2,6 +2,7 @@ import React, { useState as uS2, useEffect as uE2 } from 'react';
 import { V2, Conversation, InputBar } from './ui';
 import { Icon as Ic, ICONS as IK, Glyph as Gl } from './ui';
 import { installSkill, getAutonomyMode, setAutonomyMode, getNorthStar } from './api/actions';
+import { getToken } from './api/client';
 import { WorldIntelligencePanel } from './world-intelligence';
 /* HUD v2 · MODES II — Autonomy, Build, Observe, Interop */
 
@@ -34,11 +35,39 @@ function AutonomyMode({ t }){
     finally { setBusy(false); }
   };
   const MODES = ['auto','ask','off'];
+  // "Speak brief" — read the morning brief aloud: server /tts (cloned-voice
+  // chain) with the fully-local speechSynthesis fallback, mirroring the voice
+  // loop's honest degradation. Never fakes playback: server down + no local
+  // synth = silent no-op with the button re-enabled.
+  const [speaking, setSpeaking] = uS2(false);
+  const speakBrief = async () => {
+    if (speaking || !A.brief.length) return;
+    setSpeaking(true);
+    const text = A.brief.map(b => `${b.title}. ${b.detail}`.trim()).filter(Boolean).join(' ');
+    try {
+      const h: Record<string, string> = { 'Content-Type': 'application/json' };
+      const tk = getToken(); if (tk) h['X-User-Token'] = tk;
+      const res = await fetch('/tts', { method: 'POST', headers: h, body: JSON.stringify({ text }) });
+      if (res.ok) {
+        const blob = await res.blob();
+        const url = URL.createObjectURL(blob);
+        await new Promise(done => { const a = new Audio(url); a.onended = () => done(null); a.onerror = () => done(null); a.play().catch(() => done(null)); });
+        URL.revokeObjectURL(url);
+      } else if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
+        await new Promise(done => { const u = new SpeechSynthesisUtterance(text); u.onend = () => done(null); u.onerror = () => done(null); window.speechSynthesis.speak(u); });
+      }
+    } catch { /* server unreachable — no fake playback */ }
+    finally { setSpeaking(false); }
+  };
   return (
     <ModePanel icon="autonomy" title={t.autonomy} status="observer running">
       <div className="auto-grid">
         <div>
-          <SubH>MORNING BRIEF · {A.brief.length} items</SubH>
+          <SubH style={{display:'flex',alignItems:'center',gap:8}}>MORNING BRIEF · {A.brief.length} items
+            <button className="pmode" style={{marginLeft:'auto'}} aria-label="speak brief" disabled={speaking||!A.brief.length}
+              title="Read the brief aloud — server TTS (cloned voice), local speechSynthesis fallback" onClick={speakBrief}>
+              {speaking?'SPEAKING…':'🔊 SPEAK'}</button>
+          </SubH>
           {A.brief.map((b,i)=>(
             <div className="brief-row" key={i}>
               <span className="brank">{b.rank}</span>

@@ -4,6 +4,7 @@ Falls back to Kokoro or pyttsx3 if available.
 """
 
 import logging
+import re
 import tempfile
 from pathlib import Path
 from typing import AsyncIterator, Callable, Optional
@@ -31,7 +32,23 @@ PERSONA_VOICE_CONSENT_KEY = "persona_voice_consent"
 PERSONA_VOICE_CONSENT_MESSAGE = (
     "Cloned/persona voice playback requires recorded owner consent; using default voice."
 )
-PERSONA_VOICE_MARKERS = ("xtts", "elevenlabs")
+PERSONA_VOICE_MARKERS = ("xtts", "elevenlabs", "fish")
+
+# Fish Audio S-series models understand inline square-bracket emotion tags
+# ([calm], [amused], …). Every other backend would read them aloud, so the
+# known tags are stripped before synthesis everywhere except the Fish path.
+EMOTION_TAGS = (
+    "calm", "amused", "excited", "cheerful", "serious", "sad", "angry",
+    "surprised", "delighted", "whisper", "confident", "warm",
+)
+_EMOTION_TAG_RE = re.compile(r"\[(?:" + "|".join(EMOTION_TAGS) + r")\]\s*", re.IGNORECASE)
+
+
+def strip_emotion_tags(text: str) -> str:
+    """Remove known ``[emotion]`` tags; unknown bracketed text is left alone."""
+    if not isinstance(text, str) or "[" not in text:
+        return text
+    return _EMOTION_TAG_RE.sub("", text).strip()
 
 
 def is_persona_or_cloned_voice(voice: str | None) -> bool:
@@ -139,6 +156,16 @@ class TTSEngine:
         if is_persona_or_cloned_voice(v) and not self._persona_voice_allowed(v, lang):
             v = self._safe_default_voice(lang)
 
+        # Fish Audio (cloned voice + inline [emotion] tags) runs first so the
+        # tags survive; every backend below gets tag-stripped text.
+        if isinstance(v, str) and "fish" in v.lower():
+            res = await self._speak_fish(text, v)
+            if res:
+                return res
+            v = self._safe_default_voice(lang)
+
+        text = strip_emotion_tags(text)
+
         # H5.1 Local XTTS / ElevenLabs voice cloning integrations
         if v == "xtts" or (isinstance(v, str) and v.startswith("xtts:")) or (isinstance(v, str) and "xtts" in v.lower()):
             res = await self._speak_xtts(text, v)
@@ -243,6 +270,51 @@ class TTSEngine:
                 logger.warning(f"ElevenLabs API returned status code {resp.status_code}: {resp.text}")
         except Exception as e:
             logger.warning(f"ElevenLabs TTS failed ({e}). Falling back to edge-tts.")
+        return None
+
+    async def _speak_fish(self, text: str, voice: str) -> Optional[str]:
+        """Fish Audio TTS (https://fish.audio) — cloned voices + inline [emotion] tags.
+
+        Voice forms: ``fish`` (reference voice from FISH_AUDIO_VOICE_ID) or
+        ``fish:<reference_id>``. The model header is FISH_AUDIO_MODEL (default
+        ``s1``); S-series models honor square-bracket emotion tags, so the text
+        is passed through unstripped.
+        """
+        import os
+
+        import httpx
+        api_key = os.environ.get("FISH_AUDIO_API_KEY")
+        if not api_key:
+            logger.warning("FISH_AUDIO_API_KEY not configured. Falling back to edge-tts.")
+            return None
+
+        reference_id = os.environ.get("FISH_AUDIO_VOICE_ID", "")
+        if isinstance(voice, str) and ":" in voice:
+            parts = voice.split(":", 1)
+            if len(parts) > 1 and parts[1]:
+                reference_id = parts[1]
+
+        model = os.environ.get("FISH_AUDIO_MODEL", "s1")
+        url = os.environ.get("FISH_AUDIO_URL", "https://api.fish.audio/v1/tts")
+        out_path = TEMP_DIR / f"response_fish_{abs(hash(text))}.mp3"
+        payload: dict = {"text": text, "format": "mp3"}
+        if reference_id:
+            payload["reference_id"] = reference_id
+
+        try:
+            async with httpx.AsyncClient(timeout=30.0) as client:
+                resp = await client.post(url, json=payload, headers={
+                    "Authorization": f"Bearer {api_key}",
+                    "Content-Type": "application/json",
+                    "model": model,
+                })
+                if resp.status_code == 200:
+                    out_path.write_bytes(resp.content)
+                    logger.info(f"Fish Audio TTS saved: {out_path}")
+                    return str(out_path)
+                logger.warning(f"Fish Audio API returned status code {resp.status_code}")
+        except Exception as e:
+            logger.warning(f"Fish Audio TTS failed ({e}). Falling back to edge-tts.")
         return None
 
     async def _speak_edge(self, text: str, voice: str) -> str:
