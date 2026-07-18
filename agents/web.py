@@ -434,7 +434,8 @@ _start_time = time.time()
 _NO_STORE_PATHS = {
     "/status", "/dashboard", "/api/agents", "/tasks", "/ticker",
     "/api/cognition", "/api/oauth/status", "/api/oracle/status", "/api/oracle/conflicts",
-    "/api/trust/status", "/api/media/session", "/api/media/devices"
+    "/api/trust/status", "/api/media/session", "/api/media/devices",
+    "/api/self-improvement/status",
 }
 
 
@@ -945,6 +946,7 @@ from agents.core.routers.media_director import router as _media_director_router 
 from agents.core.routers.cameras import router as _cameras_router  # noqa: E402
 from agents.core.routers.acquisition import router as _acquisition_router  # noqa: E402
 from agents.core.routers.ambient import router as _ambient_router  # noqa: E402
+from agents.core.routers.self_improvement import router as _self_improvement_router  # noqa: E402
 from agents.core.routers.house import router as _house_router  # noqa: E402
 from agents.core.routers.backup import router as _backup_router  # noqa: E402
 from agents.core.routers.brain import router as _brain_router  # noqa: E402
@@ -1054,6 +1056,7 @@ app.include_router(_house_router)
 app.include_router(_cameras_router)
 app.include_router(_acquisition_router)
 app.include_router(_ambient_router)
+app.include_router(_self_improvement_router)
 app.include_router(_backup_router)
 
 

@@ -73,8 +73,8 @@ When on: embeds the query, runs fused recall (vector ⊕ graph), injects top-k a
 |------|---------|-------------|
 | `agents/serve.py` | Uvicorn launcher | `app` import from `agents/web.py` |
 | `agents/run.py` | CLI REPL | `main()` |
-| `agents/web.py` | FastAPI app shell + lifespan; mounts the 64 per-domain routers. Only **9 inline routes** stay here (app-shell `/`,`/v1`,`/v2`,favicon,sw.js + `/chat`,`/chat/stream` + `/admin`). The rest of the route surface (live count in STATUS.md, synced by `scripts/status_sync.py`) lives in `agents/core/routers/*` (CLN-3, #296) | `app`, `lifespan`, `orch` global, `_user_guard`, `_admin_guard` |
-| `agents/core/routers/*.py` | **The HTTP surface** — 64 per-domain `APIRouter`s (agents_api, tools, ops, payments, eval, workflows, sessions, memory_hud, status, dashboard, voice, mcp, media_director, house, cameras, acquisition, ambient, …). Guards from `routers/_deps.py`; shared state via `app_state.get_orch()` / `sys.modules["agents.web"]` | one `router` per file, mounted via `app.include_router` |
+| `agents/web.py` | FastAPI app shell + lifespan; mounts the 65 per-domain routers. Only **9 inline routes** stay here (app-shell `/`,`/v1`,`/v2`,favicon,sw.js + `/chat`,`/chat/stream` + `/admin`). The rest of the route surface (live count in STATUS.md, synced by `scripts/status_sync.py`) lives in `agents/core/routers/*` (CLN-3, #296) | `app`, `lifespan`, `orch` global, `_user_guard`, `_admin_guard` |
+| `agents/core/routers/*.py` | **The HTTP surface** — 65 per-domain `APIRouter`s (agents_api, tools, ops, payments, eval, workflows, sessions, memory_hud, status, dashboard, voice, mcp, media_director, house, cameras, acquisition, ambient, self_improvement, …). Guards from `routers/_deps.py`; shared state via `app_state.get_orch()` / `sys.modules["agents.web"]` | one `router` per file, mounted via `app.include_router` |
 | `agents/core/orchestrator.py` | Main loop (+ delegated managers: `ChannelManager`, `PluginManager`, `llm_control`, `cognition_trace`, CLN-2) | `Orchestrator`, `handle_input`, `handle_input_stream`, `_maybe_checkpoint` |
 | `agents/core/routers/brain.py` | Neural Mesh page (`/brain`) + live feed (`/api/brain/summary`) — tracer rollups → canvas "brain" of agents+models firing. Viz adapted from Axon (MIT, `LICENSES/axon-MIT.txt`) | `build_summary`, `brain_page`, `brain_summary` |
 | `agents/core/agent.py` | Single agent runtime | `Agent`, `Agent.process`, `Agent.synthesize`, `Agent._load_soul` |
@@ -128,7 +128,8 @@ When on: embeds the query, runs fused recall (vector ⊕ graph), injects top-k a
 | `agents/core/autonomy/preferences.py` | Approved-action learning | `PreferenceStore`, `suggest_autonomy_raise` |
 | `agents/core/autonomy/reflection.py` | Nightly LLM reflection | `DailyReflector.run` |
 | `agents/core/autonomy/executor.py` | Task kind → handler dispatch | `TaskExecutor`, `executor.register` |
-| `agents/core/autonomy/error_logger.py` | Sync errors to BACKLOG.md | `sync_problems_to_backlog` |
+| `agents/core/autonomy/error_logger.py` | Persist + group runtime errors → git-ignored `diagnostics.md` (never BACKLOG.md) | `persist_problem`, `summarize_problems`, `sync_problems_to_diagnostics` |
+| `agents/core/autonomy/tech_scout.py` | Proactive Technology Scout — weekly, read-only websearch scan → informational (`RiskTier.READ_ONLY`) autonomy tasks; default-off | `TechScout.scan`, `TechScoutStore` |
 
 ### Action Kernel / Budgets
 
@@ -640,7 +641,7 @@ agents/
   web/                            Static assets for web dashboard (HTML/CSS/JS)
   _system/agents.yaml             Agent registry (canonical source of truth)
   core/
-    routers/                      63 per-domain APIRouters = the HTTP surface (CLN-3 + domain slices); _deps.py = lazy auth guards
+    routers/                      65 per-domain APIRouters = the HTTP surface (CLN-3 + domain slices); _deps.py = lazy auth guards
     orchestrator.py               Main loop (+ CLN-2 managers: channel/plugin, llm_control, cognition_trace)
     agent.py                      Single agent runtime (SOUL.md loader)
     router.py                     Intent classifier

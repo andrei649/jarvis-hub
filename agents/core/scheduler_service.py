@@ -39,6 +39,7 @@ class SchedulerService:
         self.schedule_worldview_kg_sync()
         self.schedule_retention()
         self.schedule_memory_maintenance()
+        self.schedule_tech_scout()
 
     # ── scheduling (registration) ─────────────────────────────────
     def schedule_daily_digests(self):
@@ -178,7 +179,47 @@ class SchedulerService:
         except Exception:
             logger.warning("Failed to schedule memory maintenance", exc_info=True)
 
+    def schedule_tech_scout(self):
+        """Weekly proactive technology scan (Self-Improvement, default-off).
+
+        Always registered, but a no-op unless ``autonomy.tech_scout_enabled`` is
+        set — same harmless-by-default posture as ``schedule_retention``. Runs
+        Monday 09:30; ``TechScout.scan`` is separately idempotent per
+        ``autonomy.tech_scout_interval_hours`` (168h/weekly default), so a missed
+        or restarted run just catches up on the next tick instead of duplicating.
+        """
+        sched = getattr(self._orch.heartbeat_scheduler, "scheduler", None)
+        if sched is None:
+            return
+        try:
+            sched.add_job(self.run_tech_scout, "cron", hour=9, minute=30, day_of_week="mon",
+                          id="tech-scout-scan", replace_existing=True)
+            logger.info("Scheduled tech scout: weekly Mon 09:30 (no-op unless autonomy.tech_scout_enabled)")
+        except Exception:
+            logger.warning("Failed to schedule tech scout", exc_info=True)
+
     # ── job bodies (no external callers) ──────────────────────────
+    async def run_tech_scout(self):
+        """Run one tech-scout pass, reading live settings each time (H27-self-improve)."""
+        scout = getattr(self._orch, "tech_scout", None)
+        if scout is None:
+            return {"skipped": True, "reason": "unavailable"}
+        enabled = bool(self._orch.get_setting("autonomy.tech_scout_enabled", False))
+        try:
+            interval_hours = float(self._orch.get_setting("autonomy.tech_scout_interval_hours", 168))
+        except (TypeError, ValueError):
+            interval_hours = 168.0
+        queries = self._orch.get_setting("autonomy.tech_scout_queries", None)
+        if queries:
+            scout.queries = list(queries)
+        try:
+            result = await scout.scan(enabled=enabled, interval_hours=interval_hours)
+            logger.info("Tech scout scan: %s", result)
+            return result
+        except Exception:
+            logger.warning("Tech scout scan failed", exc_info=True)
+            return {"skipped": True, "reason": "scan_failed"}
+
     async def run_memory_maintenance(self):
         """Run the nightly memory maintenance pass.
 

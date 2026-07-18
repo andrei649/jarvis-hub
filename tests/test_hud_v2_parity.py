@@ -125,6 +125,7 @@ RULES = [
     ("/api/cost", "observe"),
     ("/api/analytics", "observe"),
     ("/api/feedback", "observe"),  # H23.21 design-partner NPS/feedback (owner reviews it here)
+    ("/api/self-improvement", "observe"),  # Self-Improvement dashboard: SelfImprovementPanel (Console → Observe)
     ("/api/support/", "observe"),  # 0.55 design-partner diagnostic bundle (triage surface)
     ("/api/metrics", "observe"),  # MOONSHOT §6 north-star meter (sibling of analytics/cost)
     ("/api/digest", "observe"),

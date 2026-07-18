@@ -26,6 +26,7 @@ from .observer import (
     ProactiveObserver, Signal, Severity, Remediation, Finding,
     ResourceProbe, ServiceProbe, ServiceSpec, default_probes,
 )
+from .tech_scout import TechScout, TechScoutStore, DEFAULT_QUERIES as TECH_SCOUT_DEFAULT_QUERIES
 
 __all__ = [
     "AutonomyPolicy", "Decision", "RiskTier", "Outcome",
@@ -44,4 +45,5 @@ __all__ = [
     "LogBugScanner", "ScanResult",
     "ProactiveObserver", "Signal", "Severity", "Remediation", "Finding",
     "ResourceProbe", "ServiceProbe", "ServiceSpec", "default_probes",
+    "TechScout", "TechScoutStore", "TECH_SCOUT_DEFAULT_QUERIES",
 ]

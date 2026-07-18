@@ -166,6 +166,12 @@ DEFAULTS: list[dict[str, Any]] = [
     dict(category="cognition", key="memory_enabled",      value=True,  label="Living memory",                  kind="toggle"),
     dict(category="cognition", key="learning_enabled",    value=True,  label="Cognition learning loop",        kind="toggle"),
     dict(category="cognition", key="personality_enabled", value=True,  label="Personality ensemble",           kind="toggle"),
+    # review_enabled (H20 learning loop) was read via cog.sub_enabled("review_enabled")
+    # everywhere but had no DEFAULTS row, so it was invisible/unsettable from the admin
+    # settings API. Adding it here is additive only: get_setting already defaulted
+    # missing keys to False, so this row changes nothing at runtime — it just makes
+    # the existing gate visible and toggleable.
+    dict(category="cognition", key="review_enabled",      value=False, label="Per-turn background review (H20 learning loop)", kind="toggle"),
     # channels
     dict(category="channels",key="rate_limit",       value=10,                    label="Gateway rate limit (msg/min)", kind="number"),
     dict(category="channels",key="web_enabled",      value=True,                  label="Web channel",        kind="toggle"),
@@ -239,6 +245,17 @@ DEFAULTS: list[dict[str, Any]] = [
     dict(category="autonomy", key="health_min_sleep", value=5.0,     label="Minimum sleep hours", kind="number"),
     dict(category="autonomy", key="health_min_hrv",   value=30.0,    label="Minimum HRV threshold (ms)", kind="number"),
     dict(category="autonomy", key="calendar_lead_time", value=30,     label="Calendar event lead time (min)", kind="number"),
+    # Proactive Technology Scout — default-off, read-only awareness scan (websearch
+    # only; no fetch/exec). Findings land as RiskTier.READ_ONLY autonomy tasks
+    # ("observations inform, decisions interrupt" — same posture as the observer).
+    dict(category="autonomy", key="tech_scout_enabled", value=False, label="Proactive Technology Scout", kind="toggle"),
+    dict(category="autonomy", key="tech_scout_interval_hours", value=168, label="Tech scout scan interval (hours)", kind="number"),
+    dict(category="autonomy", key="tech_scout_queries", value=[
+        "new open-source local LLM inference engine release",
+        "new personal AI agent framework or assistant launch",
+        "on-device speech recognition or wake-word breakthrough",
+        "self-hosted AI operating system competitor",
+    ], label="Tech scout search queries", kind="tags"),
     dict(category="system",  key="autonomy_tick",    value=60,     label="Autonomy tick (s)",    kind="number"),
     dict(category="system",  key="observer_enabled", value=True,   label="Resource Observer enabled", kind="toggle"),
     dict(category="system",  key="watchers_enabled", value=True,   label="Event Watchers enabled", kind="toggle"),
