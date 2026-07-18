@@ -283,6 +283,38 @@ BUILTIN_PLUGINS = {
                          "news.google.com", "www.youtube.com"],
         agents_served=["all"],
     ),
+    # ── Guide-gap wave: business/marketing connectors ─────────────────────────
+    "revenuecat": PluginManifest(
+        id="revenuecat",
+        name="RevenueCat Revenue Metrics",
+        version="0.1.0",
+        description="Read-only subscription-revenue overview from the RevenueCat API v2",
+        network_access=NetworkAccess.RESTRICTED,
+        data_scope=DataScope.PROCESSED,
+        allowed_domains=["api.revenuecat.com"],
+        agents_served=["jarvis", "stark", "gecko"],
+    ),
+    "meta-ads": PluginManifest(
+        id="meta-ads",
+        name="Meta Ads Insights",
+        version="0.1.0",
+        description="Read-only ad-account insights/campaign status from the Meta Marketing API",
+        network_access=NetworkAccess.RESTRICTED,
+        data_scope=DataScope.PROCESSED,
+        allowed_domains=["graph.facebook.com"],
+        agents_served=["jarvis", "stark"],
+    ),
+    "postiz": PluginManifest(
+        id="postiz",
+        name="Postiz Social Scheduler",
+        version="0.1.0",
+        description="Self-hosted Postiz queue reads + draft-first post scheduling",
+        network_access=NetworkAccess.RESTRICTED,
+        data_scope=DataScope.TRANSMITTED,
+        # Base URL is config-driven (POSTIZ_URL) → registered dynamically.
+        allowed_domains=[],
+        agents_served=["jarvis", "stark", "veronica"],
+    ),
     # Governed social writes (social.py) — one id per platform: social_<platform>.
     "social_x": PluginManifest(
         id="social_x",

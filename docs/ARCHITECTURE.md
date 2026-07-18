@@ -189,6 +189,9 @@ When on: embeds the query, runs fused recall (vector ⊕ graph), injects top-k a
 | `agents/core/plugins/sms_alerts.py` | Twilio SMS | `SMSAlertsPlugin` |
 | `agents/core/plugins/crm_sync.py` | Notion CRM | `CRMSyncPlugin` |
 | `agents/core/plugins/iot_control.py` | Tuya smart home | `IoTControlPlugin` |
+| `agents/core/plugins/revenuecat.py` | RevenueCat revenue metrics (read-only) | `RevenueCatPlugin` |
+| `agents/core/plugins/meta_ads.py` | Meta Ads insights (read-only) | `MetaAdsPlugin` |
+| `agents/core/plugins/postiz.py` | Postiz social scheduler (draft-first) | `PostizPlugin` |
 | `agents/core/plugins/whatsapp_bridge.py` | WhatsApp bridge | `WhatsAppBridgePlugin` (frigga) |
 | `agents/core/plugins/telegram_bot.py` | Telegram bot plugin | `TelegramBotPlugin` |
 | `agents/core/plugins/oauth.py` | OAuth token store | `init_from_env`, `load_token` |
@@ -247,7 +250,7 @@ Two front-ends, shared engines — full subsystem doc: **`docs/VOICE.md`**.
 |------|---------|-------------|
 | `agents/core/voice/pipeline.py` | Wake → STT → TTS coordinator | `VoicePipeline` |
 | `agents/core/voice/stt.py` | faster-whisper STT | `STTEngine` |
-| `agents/core/voice/tts.py` | TTS fallback chain (XTTS→ElevenLabs→edge-tts→Kokoro) | `TTSEngine.speak` |
+| `agents/core/voice/tts.py` | TTS fallback chain (XTTS→ElevenLabs→Fish Audio→edge-tts→Kokoro); inline `[emotion]` tags pass through to Fish, stripped for other backends | `TTSEngine.speak`, `strip_emotion_tags` |
 | `agents/core/voice/wake_word.py` | openWakeWord detection | `WakeWordDetector` |
 | `agents/core/voice/wyoming.py` | Wyoming protocol, gated `voice.wyoming_enabled` (port 10700) | `WyomingServer` |
 

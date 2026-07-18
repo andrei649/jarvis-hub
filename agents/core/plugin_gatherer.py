@@ -231,6 +231,33 @@ def _eligible_plugins(orch, text: str, intent) -> list[tuple[str, Callable[[], o
         else:
             log_error(logger, E_PLUGIN_BLOCKED, name="worldview")
 
+    if any(w in text_lower for w in ["revenue", "mrr", "subscription", "subscriptions",
+                                     "venituri", "abonament", "abonamente", "revenuecat"]):
+        if any_agent_can(orch, "revenuecat", intent):
+            rc = orch.plugins.get("revenuecat")
+            if rc and rc.available():
+                specs.append(("revenue", lambda rc=rc: rc.overview_text()))
+        else:
+            log_error(logger, E_PLUGIN_BLOCKED, name="revenuecat")
+
+    if any(w in text_lower for w in ["ad spend", "meta ads", "facebook ads", "advertising",
+                                     "campaign", "campaigns", "campanii", "reclame"]):
+        if any_agent_can(orch, "meta-ads", intent):
+            ma = orch.plugins.get("meta-ads")
+            if ma and ma.available():
+                specs.append(("ads", lambda ma=ma: ma.insights_text()))
+        else:
+            log_error(logger, E_PLUGIN_BLOCKED, name="meta-ads")
+
+    if any(w in text_lower for w in ["scheduled posts", "social queue", "content calendar",
+                                     "postari programate", "calendar de continut", "postiz"]):
+        if any_agent_can(orch, "postiz", intent):
+            pz = orch.plugins.get("postiz")
+            if pz and pz.available():
+                specs.append(("social-schedule", lambda pz=pz: pz.queue_text()))
+        else:
+            log_error(logger, E_PLUGIN_BLOCKED, name="postiz")
+
     if wants_signal_layer(text_lower, keywords):
         if any_agent_can(orch, "signal-layer", intent):
             # Runs in the concurrent fan-out like every other plugin; the call

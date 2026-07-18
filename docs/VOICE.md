@@ -110,12 +110,24 @@ so a headless deploy is unaffected.
 | `agents/core/voice/pipeline.py` (`VoicePipeline`) | wake → record → STT → orchestrator → TTS → play (`pygame`) | `pyaudio`, `pygame` |
 | `agents/core/voice/wake_word.py` (`WakeWordDetector`) | always-on "jarvis"/"hub" detection | `openwakeword`, `pyaudio` |
 | `agents/core/voice/stt.py` (`STTEngine`) | faster-whisper (CUDA/CPU), RO default | `faster-whisper`, `torch` |
-| `agents/core/voice/tts.py` (`TTSEngine.speak`) | fallback chain **XTTS → ElevenLabs → edge-tts → Kokoro** | `edge-tts` (+ XTTS server / `ELEVENLABS_API_KEY` for cloning) |
+| `agents/core/voice/tts.py` (`TTSEngine.speak`) | fallback chain **XTTS → ElevenLabs → Fish Audio → edge-tts → Kokoro** | `edge-tts` (+ XTTS server / `ELEVENLABS_API_KEY` / `FISH_AUDIO_API_KEY` for cloning) |
 | `agents/core/channels/voice.py` (`VoiceChannel`) | wraps the pipeline as an orchestrator channel | — |
 | `agents/core/voice/wyoming.py` (`WyomingServer`) | Wyoming protocol (Home Assistant satellites); **not auto-started**, gated by setting `voice.wyoming_enabled` (port 10700) | — |
 
 TTS env: `XTTS_SERVER_URL` (default `http://localhost:8020/api/tts`), `XTTS_SPEAKER_WAV`
-(default `data/voice_clone/andrei.wav`), `ELEVENLABS_API_KEY`.
+(default `data/voice_clone/andrei.wav`), `ELEVENLABS_API_KEY`, `FISH_AUDIO_API_KEY` +
+`FISH_AUDIO_VOICE_ID` (reference voice; or `voice="fish:<reference_id>"`) + `FISH_AUDIO_MODEL`
+(default `s1`).
+
+**Emotion tags.** Replies may carry inline square-bracket emotion tags (`[calm]`, `[amused]`,
+… — the full set is `tts.py:EMOTION_TAGS`). Fish Audio S-series models render them as delivery;
+every other backend gets the text through `strip_emotion_tags()` so tags are never read aloud.
+Fish voices count as cloned/persona voices — the same owner-consent gate as XTTS/ElevenLabs
+applies (`voice.persona_voice_consent`).
+
+**Spoken morning brief.** The HUD Autonomy panel's MORNING BRIEF header has a 🔊 SPEAK button
+(`frontend/src/modes2.tsx`): it reads the brief aloud via `POST /tts` (the chain above) with
+the fully-local `speechSynthesis` fallback — same honest degradation as the voice loop.
 
 ---
 

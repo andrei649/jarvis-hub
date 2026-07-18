@@ -30,11 +30,14 @@ from .plugins.gmail_plugin import GmailPlugin
 from .plugins.google_calendar import GoogleCalendarPlugin
 from .plugins.homebridge import HomebridgePlugin
 from .plugins.iot_control import IoTControlPlugin
+from .plugins.meta_ads import MetaAdsPlugin
 from .plugins.n8n import N8NPlugin
 from .plugins.news import NewsPlugin
 from .plugins.oauth import init_from_env as _oauth_init
 from .plugins.oauth import load_token as _load_token
 from .plugins.oracle_bridge import OracleBridgePlugin
+from .plugins.postiz import PostizPlugin
+from .plugins.revenuecat import RevenueCatPlugin
 from .plugins.signal_layer import SignalLayerPlugin
 from .plugins.sms_alerts import SMSAlertsPlugin
 from .plugins.spotify_plugin import SpotifyPlugin
@@ -153,6 +156,19 @@ class PluginManager:
         self.plugins["signal-layer"] = SignalLayerPlugin(
             api_url=os.environ.get("SIGNAL_LAYER_API_URL", ""),
             api_token=os.environ.get("SIGNAL_LAYER_API_TOKEN", ""),
+        )
+        # Guide-gap wave: business/marketing connectors (read-only / draft-first).
+        self.plugins["revenuecat"] = RevenueCatPlugin(
+            api_key=os.environ.get("REVENUECAT_API_KEY", ""),
+            project_id=os.environ.get("REVENUECAT_PROJECT_ID", ""),
+        )
+        self.plugins["meta-ads"] = MetaAdsPlugin(
+            access_token=os.environ.get("META_ADS_ACCESS_TOKEN", ""),
+            account_id=os.environ.get("META_ADS_ACCOUNT_ID", ""),
+        )
+        self.plugins["postiz"] = PostizPlugin(
+            base_url=os.environ.get("POSTIZ_URL", ""),
+            api_key=os.environ.get("POSTIZ_API_KEY", ""),
         )
         # Argus — one governed facade over WorldView + Signal Layer for world-intel
         # queries. Built after both backends are registered; every call is gated.
