@@ -112,6 +112,7 @@ class PluginManager:
             ing_client_secret=orch.get_setting("plugins.gecko_ing_client_secret", ""),
             libra_token=orch.get_setting("plugins.gecko_libra_token", ""),
             csv_path=orch.get_setting("plugins.gecko_csv_path", ""),
+            tx_csv_path=orch.get_setting("plugins.gecko_tx_csv_path", ""),
         )
         self.plugins["analytics"] = AnalyticsPlugin(
             ga4_service_account=orch.get_setting("plugins.stark_ga4_service_account", ""),

@@ -32,16 +32,21 @@ async def test_crm_sync_mock_fallback():
 
 
 @pytest.mark.anyio
-async def test_iot_control_mock_fallback():
-    # If Tuya device IDs are missing, should run fallback local Mock LAN toggle
+async def test_iot_control_degraded_fallback():
+    # If Tuya credentials are missing, the plugin must NOT pretend to toggle a
+    # device — it returns an honest, degraded result (no device touched). The old
+    # "mock_toggled" success label was misleading; the real signing path only runs
+    # when credentials are present (covered in test_live_remediation.py).
     plugin = IoTControlPlugin(client_id="", secret="", device_id="")
     try:
         res = await plugin.toggle_switch(state=True)
-        assert res["status"] == "mock_toggled"
+        assert res["status"] == "not_configured"
         assert res["state"] == "ON"
-        
+        assert res["_mock"] is True
+        assert res["_degraded"]["needs"]  # names the settings the owner must supply
+
         res_off = await plugin.toggle_switch(state=False)
-        assert res_off["status"] == "mock_toggled"
+        assert res_off["status"] == "not_configured"
         assert res_off["state"] == "OFF"
     finally:
         await plugin.close()
