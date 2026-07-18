@@ -20,7 +20,7 @@
       "repo": "DeusData/codebase-memory-mcp",
       "kind": "doc-pinned (trial host binary)",
       "path": "docs/dev/codebase-memory-mcp.md",
-      "pinned_version": "0.8.1",
+      "pinned_version": "0.9.0",
       "track_drift": true,
       "update_doc": "docs/dev/codebase-memory-mcp.md"
     }
