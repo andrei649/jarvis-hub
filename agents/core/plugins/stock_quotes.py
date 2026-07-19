@@ -61,12 +61,14 @@ def extract_symbols(text: str, limit: int = 8) -> list[str]:
     for m in re.findall(r"\$([A-Za-z]{1,5}(?:\.[A-Za-z]{1,3})?)", text):
         u = m.upper()
         if u not in seen:
-            seen.add(u); out.append(u)
+            seen.add(u)
+            out.append(u)
     # Bare uppercase tokens as a fallback.
     for m in re.findall(r"\b[A-Z]{1,5}\b", text):
         if m in _NOT_TICKERS or m in seen:
             continue
-        seen.add(m); out.append(m)
+        seen.add(m)
+        out.append(m)
     return out[:limit]
 
 
