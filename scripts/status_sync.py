@@ -305,8 +305,7 @@ def latest_ci_commit(*, env=None, runner=None) -> str:
         except (OSError, json.JSONDecodeError, AttributeError):
             pass
 
-    def run_git(ref: str) -> tuple[int, str]:
-        args = ["git", "rev-parse", ref]
+    def run_git_argv(args: list) -> tuple[int, str]:
         if runner is not None:
             code, output = runner(args)
             return code, output.strip()
@@ -315,14 +314,24 @@ def latest_ci_commit(*, env=None, runner=None) -> str:
         )
         return proc.returncode, proc.stdout.strip()
 
+    def run_git(ref: str) -> tuple[int, str]:
+        return run_git_argv(["git", "rev-parse", ref])
+
     main_code, main_sha = run_git("origin/main")
     if main_code != 0:
         return "unknown"
     head_code, head_sha = run_git("HEAD")
     if head_code == 0 and head_sha == main_sha:
-        parent_code, parent_sha = run_git("origin/main^")
-        if parent_code == 0 and parent_sha:
-            return parent_sha
+        # Self-reference guard: when generating ON main itself, "origin/main"
+        # would be the very commit being described, so step back one. A feature
+        # branch whose HEAD merely EQUALS the main tip (freshly branched, no
+        # commits yet) must NOT step back — CI compares against the PR base,
+        # which is exactly origin/main. (This mismatch broke three PR runs.)
+        branch_code, branch_name = run_git_argv(["git", "rev-parse", "--abbrev-ref", "HEAD"])
+        if branch_code == 0 and branch_name in ("main", "HEAD"):
+            parent_code, parent_sha = run_git("origin/main^")
+            if parent_code == 0 and parent_sha:
+                return parent_sha
     return main_sha
 
 
