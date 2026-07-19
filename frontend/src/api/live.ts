@@ -329,7 +329,9 @@ export function useLiveModes(): LiveModes {
       await apiGet('/plugins').then((p: any) => {
         pluginList = firstArr(p, 'plugins');
         // Preserve the backend plugin `id` so AdminMode can PUT /plugins/{id}/toggle.
-        if (pluginList.length) { set('ADMIN', { ...V2.ADMIN, plugins: pluginList.map((x: any) => ({ id: x.id || x.name, name: x.name || x.id, scope: (x.allowed_domains && x.allowed_domains[0]) || x.scope || x.network_access || '', net: String(x.network_access || x.net || '').toLowerCase(), on: x.enabled !== false })) }); mark('ADMIN'); }
+        // `honesty` (tranche 3b) is the per-plugin live-vs-needs_config verdict the
+        // registry badges render; absent on seeded demo rows so those stay unbadged.
+        if (pluginList.length) { set('ADMIN', { ...V2.ADMIN, plugins: pluginList.map((x: any) => ({ id: x.id || x.name, name: x.name || x.id, scope: (x.allowed_domains && x.allowed_domains[0]) || x.scope || x.network_access || '', net: String(x.network_access || x.net || '').toLowerCase(), on: x.enabled !== false, honesty: x.honesty || null })) }); mark('ADMIN'); }
       }).catch(() => { pluginList = []; });
       await apiGet('/api/models/local').then((m: any) => {
         if (!alive || loadId !== loadGeneration) return;

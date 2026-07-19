@@ -209,7 +209,7 @@
   "routes": 398,
   "tests": {
     "backend": 5178,
-    "frontend": 363,
+    "frontend": 366,
     "mobile": 90
   },
   "version": "0.11.0"

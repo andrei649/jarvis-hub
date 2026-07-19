@@ -115,9 +115,37 @@ function CommsMode({ t }){
 }
 
 /* ============ ADMIN ============ */
+/* Honesty badge (tranche 3b) — renders the backend /plugins `honesty` verdict so a
+   mock/degraded plugin can't read as live in the registry. Green LIVE = real data /
+   real actions now; amber NEEDS SETUP = running on a mock or not-connected fallback
+   until the owner supplies the config named in the tooltip. Rows without a verdict
+   (seeded demo plugins) stay unbadged. */
+type Honesty = { status?: string; reason?: string; needs?: string[] } | null;
+function HonestyBadge({ h }: { h?: Honesty }){
+  const status = h && h.status;
+  if (status !== 'live' && status !== 'needs_config') return null;
+  const isLive = status === 'live';
+  const c = isLive ? 'var(--green)' : 'var(--amber)';
+  const needs = (h && h.needs) || [];
+  const title = isLive
+    ? (h && h.reason) || 'live'
+    : 'mock/degraded until configured' + (needs.length ? ' — needs: ' + needs.join(', ') : '');
+  return (
+    <span
+      title={title}
+      style={{ display:'inline-flex', alignItems:'center', gap:4, marginLeft:6,
+        fontFamily:'var(--font-mono)', fontSize:8.5, letterSpacing:'.08em', color:c,
+        border:`1px solid ${c}`, borderRadius:3, padding:'0 4px', verticalAlign:'middle' }}
+    >
+      <span style={{ width:5, height:5, borderRadius:'50%', background:c }} />
+      {isLive ? 'LIVE' : 'NEEDS SETUP'}
+    </span>
+  );
+}
+
 function AdminMode({ t }){
   const A = V2.ADMIN;
-  const [plugins,setPlugins]=uS3<Array<{ name: string; scope: string; net: string; on: boolean; id?: string }>>(A.plugins);
+  const [plugins,setPlugins]=uS3<Array<{ name: string; scope: string; net: string; on: boolean; id?: string; honesty?: Honesty }>>(A.plugins);
   // Keep local plugin list in sync if live.ts swaps in the real registry after mount.
   uE3(() => { setPlugins(A.plugins); }, [A.plugins]);
   // REAL toggle: PUT /plugins/{id}/toggle flips enabled on the backend. The seeded
@@ -159,10 +187,10 @@ function AdminMode({ t }){
             ))}
           </div>
           <div>
-            <SubH3>PLUGIN REGISTRY · {plugins.filter(p=>p.on).length}/{plugins.length} enabled</SubH3>
+            <SubH3>PLUGIN REGISTRY · {plugins.filter(p=>p.on).length}/{plugins.length} enabled{plugins.some(p=>p.honesty) ? ' · '+plugins.filter(p=>p.honesty && p.honesty.status==='live').length+' live' : ''}</SubH3>
             {plugins.map((p,i)=>(
               <div className="plg-row" key={i}>
-                <div><div className="plg-name">{p.name}</div><div className="plg-scope">{p.scope}<span className={'plg-net '+p.net}>{p.net}</span></div></div>
+                <div><div className="plg-name">{p.name}<HonestyBadge h={p.honesty}/></div><div className="plg-scope">{p.scope}<span className={'plg-net '+p.net}>{p.net}</span></div></div>
                 <button className={'twk-mini '+(p.on?'on':'')} onClick={()=>onToggle(i)} title={p.id?(p.on?'disable plugin':'enable plugin'):'demo plugin — preview only'}><i></i></button>
               </div>
             ))}
