@@ -198,6 +198,19 @@ def _eligible_plugins(orch, text: str, intent) -> list[tuple[str, Callable[[], o
         else:
             log_error(logger, E_PLUGIN_BLOCKED, name="news")
 
+    if ("stock" in keywords or "$" in text or any(w in text_lower for w in [
+            "stock", "ticker", "shares", "share price", "acțiuni", "actiuni",
+            "bursa", "bursă", "cotați", "cotati", "nasdaq", "s&p"])):
+        if any_agent_can(orch, "stock-quotes", intent):
+            sp = orch.plugins.get("stock-quotes")
+            if sp:
+                from .plugins.stock_quotes import extract_symbols
+                syms = extract_symbols(text)
+                if syms:  # only fetch when a real ticker is present
+                    specs.append(("stock_quotes", lambda sp=sp, s=syms: sp.get_summary(s)))
+        else:
+            log_error(logger, E_PLUGIN_BLOCKED, name="stock-quotes")
+
     if "calendar" in keywords or any(w in text_lower for w in ["calendar", "agenda", "program", "sedin", "meeting", "eveniment"]):
         if any_agent_can(orch, "google-calendar", intent):
             gp = orch.plugins.get("google-calendar")
