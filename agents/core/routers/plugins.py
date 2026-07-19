@@ -14,6 +14,7 @@ from core.log_safe import log_safe
 from fastapi import APIRouter, Depends, HTTPException
 
 from agents.core.app_state import get_orch
+from agents.core.plugins.honesty import honesty_for
 from agents.core.routers._deps import admin_guard
 from agents.core.web_helpers import nocache_json
 
@@ -33,7 +34,7 @@ def _plugin_runtime_configuration(plugin) -> tuple[bool, str]:
     """
     if plugin is None:
         return False, "not-loaded"
-    for attr_name in ("available", "_configured"):
+    for attr_name in ("configured", "available", "_configured"):
         if not hasattr(plugin, attr_name):
             continue
         attr = getattr(plugin, attr_name)
@@ -76,16 +77,23 @@ async def list_plugins():
             "enabled": manifest.enabled,
             "configured": configured,
             "configuration_source": configuration_source,
+            # Runtime honesty verdict the HUD badges render: live vs mock/degraded,
+            # plus exactly what the owner must configure to make it live.
+            "honesty": honesty_for(manifest.id, configured, configuration_source),
             # CDX-11 — least-privilege posture: whether this plugin's "all" wildcard
             # is currently withheld (external-write under hardening), plus any
             # owner-declared per-agent grants.
             "wildcard_restricted": gate.wildcard_restricted(manifest.id),
             "grants": gate.grants(manifest.id),
         })
+    live = sum(1 for p in plugins if p["honesty"]["status"] == "live")
     return nocache_json({
         "plugins": plugins,
         "total": len(plugins),
         "least_privilege": gate.least_privilege,
+        # At-a-glance honesty rollup for the HUD: how many plugins are actually
+        # live vs still running in a mock/degraded fallback awaiting config.
+        "honesty_summary": {"live": live, "needs_config": len(plugins) - live},
     })
 
 
