@@ -20,7 +20,7 @@ from __future__ import annotations
 import argparse
 import importlib.util
 import os
-import subprocess
+import subprocess  # noqa: S404  # nosec B404  (fixed-argv commands, never a shell)
 import sys
 import tempfile
 import time
@@ -39,7 +39,7 @@ def build() -> None:
     # dependencies is also the one PyInstaller analyzes.
     if importlib.util.find_spec("PyInstaller") is None:
         sys.exit("PyInstaller not found in this interpreter — run: pip install pyinstaller")
-    subprocess.run(  # noqa: S603  # fixed argv, no shell
+    subprocess.run(  # noqa: S603  # nosec B603
         [sys.executable, "-m", "PyInstaller", "--clean", "--noconfirm", str(SPEC),
          "--distpath", str(REPO / "dist"),
          "--workpath", str(REPO / "build" / "pyinstaller")],
@@ -62,7 +62,7 @@ def smoke() -> None:
             "JARVIS_USER_HOME": str(Path(tmp) / "userhome"),
             "JARVIS_LLM_WARMUP": "0",
         }
-        proc = subprocess.Popen(  # noqa: S603
+        proc = subprocess.Popen(  # noqa: S603  # nosec B603
             [str(exe)], cwd=tmp, env=env,
             stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
         )
@@ -74,7 +74,8 @@ def smoke() -> None:
                 if proc.poll() is not None:
                     break  # crashed — report below
                 try:
-                    with urllib.request.urlopen(url, timeout=2) as resp:  # noqa: S310  # fixed loopback URL
+                    # Fixed loopback URL polled during the smoke test.
+                    with urllib.request.urlopen(url, timeout=2) as resp:  # noqa: S310  # nosec B310
                         if resp.status == 200:
                             ready = True
                             break
