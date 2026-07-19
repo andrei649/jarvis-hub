@@ -192,9 +192,13 @@ python -m pytest tests/ -v          # ~3,868 passed, 6 skipped (counter synced v
 
 **Honesty layer (cross-cutting, highest-leverage):**
 - [x] `degradation.py` helper + applied to `iot_control` + `balance`
-- [x] Apply `degraded()` to sms-alerts + crm-sync mock fallbacks (they now self-report `_degraded`); remaining unconverted mocks (n8n, cloud-llm placeholders) can follow
-- [x] **Backend honesty signal (tranche 3a)** — `plugins/honesty.py` + `/plugins` now emits a per-plugin `honesty` verdict (`live` / `needs_config` + `reason` + `needs`) and a top-level `honesty_summary`; fixed a real bug where `_plugin_runtime_configuration` ignored `configured()` so Tuya/iot falsely reported configured without keys
-- [x] **HUD honesty badges (tranche 3b)** — the Admin plugin registry now renders the `/plugins` honesty verdict per row: green **LIVE** / amber **NEEDS SETUP** (tooltip names the exact config required), plus a live-count in the section header; seeded demo rows stay unbadged (`modes3.tsx` `HonestyBadge`, carried through `live.ts`; +3 vitest)
+- [x] Apply `degraded()` to the remaining mock fallbacks — sms-alerts, crm-sync, and the
+  `MOCK_BALANCES` dict now carry `_degraded {reason, needs}`; whatsapp/apple-health/n8n audited
+  clean (they already fail honestly via `configured` flags instead of returning fake data)
+- [x] Surface degradation in the HUD — plugins expose a `degradation_info()` contract, the
+  `/plugins` listing carries `degraded`/`degraded_reason`/`degraded_needs`, and the Admin
+  plugin registry badges mock-backed plugins **MOCK** (amber, tooltip = reason + needed config).
+  Remaining follow-up: mirror the badge onto capability-registry `state` surfaces
 
 ---
 
