@@ -1,10 +1,10 @@
 // @ts-nocheck
-/* The World tab's WorldView surface row used to be a dead <a> link with no signal
-   of whether the standalone WorldView backend (:4000) was actually running. It now
-   polls our own GET /api/worldview/status and renders a real connected/not-connected
-   badge — independent of the (unrelated) Signal Layer service the rest of the tab
-   depends on, so one being down must not hide the other's state. fetch is mocked,
-   like network-monitor.test.tsx. */
+/* The World tab's WorldView surface row used to be a dead <a> link. It now polls
+   our own GET /api/worldview/overview and renders a real connected/not-connected
+   badge PLUS the flagship read data (recon windows / due alerts) when connected —
+   independent of the (unrelated) Signal Layer service the rest of the tab depends
+   on, so one being down must not hide the other's state. Never fabricates a
+   connection or a recon pass. fetch is mocked, like network-monitor.test.tsx. */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import React from 'react';
 import { render, screen, waitFor } from '@testing-library/react';
@@ -24,27 +24,60 @@ function mockFetch(map: Record<string, any>) {
   return fn;
 }
 
-describe('World tab — real WorldView connectivity badge', () => {
-  it('shows WorldView connected even when the (unrelated) Signal Layer is down', async () => {
+const SIGNAL_LAYER_UP = {
+  '/provider-health/worldmonitor': { status: 'ok', provider: 'worldmonitor', mode: 'replay' },
+  '/briefs/world': { title: 'Brief', executiveSummary: 'sum', globalStatus: 'NOMINAL', recommendations: [], sources: [] },
+  '/signals': { signals: [], evidence: [] },
+};
+
+describe('World tab — real WorldView connectivity + read data', () => {
+  it('shows WorldView connected + recon read data even when the (unrelated) Signal Layer is down', async () => {
     mockFetch({
       '/provider-health/worldmonitor': 'FAIL',
       '/briefs/world': 'FAIL',
       '/signals': 'FAIL',
-      '/api/worldview/status': { connected: true, api_url: 'http://localhost:4000' },
+      '/api/worldview/overview': {
+        connected: true,
+        api_url: 'http://localhost:4000',
+        recon: {
+          status: 'ok',
+          upcoming_windows: [
+            { norad_id: 40115, aoi_id: 'hormuz', sensor_type: 'sar', t_ingress: 1789000000 },
+            { norad_id: 40115, aoi_id: 'hormuz', sensor_type: 'sar', t_ingress: 1789007200 },
+          ],
+          due_alerts: [{ norad_id: 40115, aoi_id: 'hormuz', t_ingress: 1789000000 }],
+        },
+      },
     });
     render(<WorldIntelligenceMode t={(s: string) => s} />);
     await waitFor(() => expect(screen.getByText('SIGNAL LAYER UNAVAILABLE')).toBeTruthy());
     await waitFor(() => expect(screen.getByText('connected')).toBeTruthy());
+    expect(screen.getByText('2 recon windows · 1 due alert')).toBeTruthy();
+    expect(screen.getAllByText(/sat 40115 · sar over hormuz @/).length).toBe(2);
   });
 
-  it('degrades to "not connected" (never fabricates) when the status fetch itself fails', async () => {
+  it('degrades to "not connected" + a quickstart hint (never fabricates) when the overview fetch fails', async () => {
     mockFetch({
-      '/provider-health/worldmonitor': { status: 'ok', provider: 'worldmonitor', mode: 'replay' },
-      '/briefs/world': { title: 'Brief', executiveSummary: 'sum', globalStatus: 'NOMINAL', recommendations: [], sources: [] },
-      '/signals': { signals: [], evidence: [] },
-      // '/api/worldview/status' deliberately absent -> mockFetch 404s -> apiGet throws -> catch branch
+      ...SIGNAL_LAYER_UP,
+      // '/api/worldview/overview' deliberately absent -> 404 -> apiGet throws -> catch branch
     });
     render(<WorldIntelligenceMode t={(s: string) => s} />);
     await waitFor(() => expect(screen.getByText('not connected')).toBeTruthy());
+    expect(screen.getByText(/quickstart\.sh/)).toBeTruthy();
+    expect(screen.queryByText(/recon window/)).toBeNull();
+  });
+
+  it('is honest when connected but recon data is unavailable', async () => {
+    mockFetch({
+      ...SIGNAL_LAYER_UP,
+      '/api/worldview/overview': {
+        connected: true,
+        api_url: 'http://localhost:4000',
+        recon: { status: 'unavailable', error: 'recon' },
+      },
+    });
+    render(<WorldIntelligenceMode t={(s: string) => s} />);
+    await waitFor(() => expect(screen.getByText('connected · no recon data')).toBeTruthy());
+    expect(screen.queryByText(/due alert/)).toBeNull();
   });
 });

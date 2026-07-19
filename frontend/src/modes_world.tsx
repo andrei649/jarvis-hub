@@ -4,28 +4,32 @@ import { Icon, ICONS } from './ui';
 
 const SIGNAL_LAYER_URL = ((import.meta as any).env?.VITE_SIGNAL_LAYER_URL || 'http://localhost:8787').replace(/\/+$/, '');
 
-/** Real connected/not-connected state for the standalone WorldView 4D stack
- * (a separate app at :3000 — see worldview/README.md), polled off our own
- * backend's GET /api/worldview/status. Independent of the Signal Layer above:
- * WorldView and Signal Layer are two unrelated services, so one being down
- * must not blank out the other's status. Never fabricates "connected". */
-function useWorldViewStatus() {
-  const [status, setStatus] = useState<{ connected: boolean; api_url?: string | null } | null>(null);
+/** Real connected/not-connected state + flagship read data (recon windows / due
+ * alerts) for the standalone WorldView 4D stack (a separate app at :3000 — see
+ * worldview/README.md), polled off our own backend's GET /api/worldview/overview.
+ * Independent of the Signal Layer above: WorldView and Signal Layer are two
+ * unrelated services, so one being down must not blank out the other's status.
+ * Never fabricates "connected" or a recon pass. */
+type WvRecon = { status: string; upcoming_windows?: any[]; due_alerts?: any[] };
+type WvOverview = { connected: boolean; api_url?: string | null; recon?: WvRecon | null };
+
+function useWorldViewOverview() {
+  const [ov, setOv] = useState<WvOverview | null>(null);
   useEffect(() => {
     let alive = true;
     async function poll() {
       try {
-        const s = await apiGet<{ connected: boolean; api_url?: string | null }>('/api/worldview/status');
-        if (alive) setStatus(s);
+        const s = await apiGet<WvOverview>('/api/worldview/overview');
+        if (alive) setOv(s);
       } catch {
-        if (alive) setStatus({ connected: false, api_url: null });
+        if (alive) setOv({ connected: false, api_url: null, recon: null });
       }
     }
     poll();
     const iv = setInterval(poll, 30000);
     return () => { alive = false; clearInterval(iv); };
   }, []);
-  return status;
+  return ov;
 }
 
 function Panel({ icon = 'globe', title, status, children, scroll = true }) {
@@ -67,15 +71,43 @@ function sevClass(sev) {
   return 'allow';
 }
 
-function WorldViewSurfaceRow({ status }: { status: { connected: boolean } | null }) {
+function WorldViewSurfaceRow({ status }: { status: WvOverview | null }) {
   const tag = status === null ? 'checking…' : status.connected ? 'connected' : 'not connected';
   const cls = status === null ? 'scoped' : status.connected ? 'allow' : 'gated';
+  const recon = status?.recon;
+  const windows = (recon?.status === 'ok' && recon.upcoming_windows) || [];
+  const dueCount = (recon?.status === 'ok' && recon.due_alerts?.length) || 0;
+  const fmtT = (t: any) => { try { return new Date(Number(t) * 1000).toLocaleTimeString(); } catch { return '—'; } };
   return (
-    <div className="cap-row">
-      <div><div className="cn">WorldView</div><div className="cd">4D geospatial stack</div></div>
-      <span className={'cap-tag ' + cls} style={{ marginRight: 8 }}>{tag}</span>
-      <a className="tool-btn" href="http://localhost:3000" target="_blank" rel="noreferrer">open</a>
-    </div>
+    <>
+      <div className="cap-row">
+        <div><div className="cn">WorldView</div><div className="cd">4D geospatial stack</div></div>
+        <span className={'cap-tag ' + cls} style={{ marginRight: 8 }}>{tag}</span>
+        <a className="tool-btn" href="http://localhost:3000" target="_blank" rel="noreferrer">open</a>
+      </div>
+      {status !== null && !status.connected && (
+        <div style={{ fontFamily: 'var(--font-mono)', fontSize: 10.5, color: 'var(--ink-3)', padding: '4px 0 2px' }}>
+          start it: <code>cd worldview &amp;&amp; ./quickstart.sh</code>
+        </div>
+      )}
+      {status?.connected && recon?.status === 'ok' && (
+        <div style={{ padding: '4px 0 2px' }}>
+          <div style={{ fontFamily: 'var(--font-mono)', fontSize: 10.5, color: dueCount > 0 ? 'var(--amber)' : 'var(--ink-3)' }}>
+            {windows.length} recon window{windows.length === 1 ? '' : 's'} · {dueCount} due alert{dueCount === 1 ? '' : 's'}
+          </div>
+          {windows.slice(0, 3).map((w: any, i: number) => (
+            <div key={i} style={{ fontFamily: 'var(--font-mono)', fontSize: 10.5, color: 'var(--ink-2)', padding: '2px 0' }}>
+              sat {w.norad_id} · {w.sensor_type || '—'} over {w.aoi_id} @ {fmtT(w.t_ingress)}
+            </div>
+          ))}
+        </div>
+      )}
+      {status?.connected && recon != null && recon.status !== 'ok' && (
+        <div style={{ fontFamily: 'var(--font-mono)', fontSize: 10.5, color: 'var(--ink-3)', padding: '4px 0 2px' }}>
+          connected · no recon data
+        </div>
+      )}
+    </>
   );
 }
 
@@ -89,7 +121,7 @@ function WorldIntelligenceMode({ t }) {
   const [question, setQuestion] = useState('What changed overnight that matters to me?');
   const [answer, setAnswer] = useState(null);
   const [asking, setAsking] = useState(false);
-  const wvStatus = useWorldViewStatus();
+  const wvStatus = useWorldViewOverview();
 
   async function refresh() {
     setLoading(true);

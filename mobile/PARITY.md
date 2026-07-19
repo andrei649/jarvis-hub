@@ -43,6 +43,7 @@ intentionally owner-HUD-only; native clients expose no discovery, frame, stream,
 | Knowledge graph | `GET /api/kg/*` | ✅ | ✅ | H18.17 |
 | Action approval queue + rollback story | `GET /autonomy/approvals`, `POST /autonomy/tasks/{id}/decision` | ✅ | ✅ | H18.11 / O26-P3.4 / H27.6 |
 | Capability registry board | `GET /api/capabilities` | ✅ | ✅ | H18.22 / H27.8 |
+| WorldView bridge (World tab: liveness + recon read data) | `GET /api/worldview/status`, `GET /api/worldview/overview` | ✅ | ⬜ | |
 | Channel inbox + governed replies | `GET /api/channels/inbox*`, `POST /api/channels/inbox/{thread_id}/reply` | ✅ | ✅ | H18.12 |
 | Spoken morning brief (🔊 SPEAK) | `GET /autonomy/brief` + `POST /tts` (native would use device TTS) | ✅ | ⬜ | |
 | Chat rooms (multi-agent) | `GET/POST /api/rooms*` | ✅ | ⬜ | — |

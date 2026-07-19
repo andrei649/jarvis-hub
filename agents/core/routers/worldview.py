@@ -29,3 +29,21 @@ async def worldview_status():
     if plugin is None:
         return nocache_json({"connected": False, "api_url": None})
     return nocache_json(await plugin.status())
+
+
+@router.get("/api/worldview/overview")
+async def worldview_overview():
+    """Liveness + the flagship read data (recon windows / due alerts) in one call.
+
+    What the World tab actually renders. Same open meter tier as /status. Honest at
+    every level: not connected ⇒ ``recon: None`` (never a fabricated pass); connected
+    but recon unavailable ⇒ the plugin's own ``{"status": "unavailable"}`` passes
+    through so the HUD can say "connected, no recon data" instead of pretending."""
+    orch = get_orch()
+    plugin = orch.plugins.get("worldview") if orch else None
+    if plugin is None:
+        return nocache_json({"connected": False, "api_url": None, "recon": None})
+    status = await plugin.status()
+    if not status.get("connected"):
+        return nocache_json({**status, "recon": None})
+    return nocache_json({**status, "recon": await plugin.recon_overview()})

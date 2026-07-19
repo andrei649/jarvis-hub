@@ -10,7 +10,8 @@ BEGIN;
 
 -- Clean prior demo data (CASCADE clears dark_vessel_events via the geofence FK).
 TRUNCATE adsb_positions, ais_positions, satellite_ephemeris, gps_jamming,
-         geopolitical_events, notams, dark_vessel_events, geofences CASCADE;
+         geopolitical_events, notams, dark_vessel_events, geofences,
+         recon_windows CASCADE;
 
 -- Watched choke point.
 INSERT INTO geofences (name, category, dark_gap_seconds, geom) VALUES
@@ -103,5 +104,18 @@ INSERT INTO notams (id, notam_type, effective_from, effective_to, geom, source) 
 INSERT INTO geopolitical_events (ts, event_id, category, severity, geom, source, metadata) VALUES
  (now() - interval '6 min', 'evt-demo-1', 'strike', 4,
   ST_SetSRID(ST_MakePoint(56.55, 26.62), 4326), 'demo', '{"note":"demo strike"}'::jsonb);
+
+-- Layer C — predicted recon windows over the Hormuz AOI (future-anchored so the
+-- /recon/windows default now→now+24h returns them; the +10 min pass also lands
+-- inside the /recon/alerts default 900 s lead, so the alertable set is non-empty).
+INSERT INTO recon_windows (norad_id, aoi_id, sensor_type, t_ingress, t_peak, t_egress,
+                           min_distance_km, sunlit_at_peak, quality, source) VALUES
+ (40115, 'hormuz', 'sar', now() + interval '10 min', now() + interval '13 min',
+  now() + interval '16 min', 12.4, true, 0.91, 'demo'),
+ (40115, 'hormuz', 'sar', now() + interval '2 hours', now() + interval '2 hours 4 min',
+  now() + interval '2 hours 8 min', 28.7, false, 0.74, 'demo'),
+ (40115, 'hormuz', 'sar', now() + interval '8 hours', now() + interval '8 hours 3 min',
+  now() + interval '8 hours 7 min', 45.1, true, 0.62, 'demo')
+ON CONFLICT (norad_id, aoi_id, t_ingress) DO NOTHING;
 
 COMMIT;

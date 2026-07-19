@@ -31,6 +31,22 @@
 
 ## Items (newest first)
 
+### WorldView in the World tab: read data + one-command quickstart (H19.3.7/H19.3.8)
+- **What:** the World tab's WorldView row now shows a real connected/not-connected badge
+  plus real read data (upcoming recon windows + due-alert count) via the new hub routes
+  `GET /api/worldview/{status,overview}`, and `worldview/quickstart.sh` stands the whole
+  thing up with one command (TimescaleDB+Redis via compose — no Kafka; Hormuz demo seed,
+  now including 3 future recon windows; read-only API on :4000).
+- **Verified (automated + live in-session):** route/plugin/vitest suites, plus the full
+  real chain ran here — Docker daemon, real image pull, schema init, seed, real backend-api,
+  real `serve.py`, headless-Chromium screenshot of the live World tab showing
+  "3 recon windows · 1 due alert". Honest degradation verified at every level (down backend
+  ⇒ "not connected" + quickstart hint; connected-but-recon-down ⇒ "connected · no recon data").
+- **⚠️ Needs you:** run `cd worldview && ./quickstart.sh` on your own machine (Windows:
+  WSL or Git Bash — it needs `docker` + `npm` on PATH) and confirm the World tab flips to
+  connected with the three demo passes. First boot pulls `timescale/timescaledb-ha:pg16`
+  (~2 GB) and takes a few minutes. `./quickstart.sh --down` stops the containers.
+
 > **Autonomous backlog run (Phase 4 dev loop)** — items below are from a workflow-planned task list (5 parallel
 > surveyors → synthesis planner → 16 prioritized PR-sized tasks). Each ships as one verified PR.
 
