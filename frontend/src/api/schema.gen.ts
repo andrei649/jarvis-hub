@@ -4718,6 +4718,55 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/worldview/status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Worldview Status
+         * @description Liveness of the standalone WorldView backend-api, for the HUD World tab.
+         *
+         *     Open like the sibling meters (`/api/analytics/locality`, `/api/metrics/capabilities`)
+         *     — non-sensitive (a local dev service's up/down state), and the whole app is
+         *     localhost-only until a token is set. Never fabricates "connected".
+         */
+        get: operations["worldview_status_api_worldview_status_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/worldview/overview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Worldview Overview
+         * @description Liveness + the flagship read data (recon windows / due alerts) in one call.
+         *
+         *     What the World tab actually renders. Same open meter tier as /status. Honest at
+         *     every level: not connected ⇒ ``recon: None`` (never a fabricated pass); connected
+         *     but recon unavailable ⇒ the plugin's own ``{"status": "unavailable"}`` passes
+         *     through so the HUD can say "connected, no recon data" instead of pretending.
+         */
+        get: operations["worldview_overview_api_worldview_overview_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/admin/settings": {
         parameters: {
             query?: never;
@@ -15181,6 +15230,46 @@ export interface operations {
         };
     };
     clear_traces_api_traces_clear_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    worldview_status_api_worldview_status_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    worldview_overview_api_worldview_overview_get: {
         parameters: {
             query?: never;
             header?: never;
