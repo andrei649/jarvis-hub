@@ -178,6 +178,7 @@ DEFAULTS: list[dict[str, Any]] = [
     # plugins (one per plugin, enabled toggle)
     dict(category="plugins", key="weather",          value=True,                  label="Weather",            kind="toggle"),
     dict(category="plugins", key="news",             value=True,                  label="News",               kind="toggle"),
+    dict(category="plugins", key="stock-quotes",     value=True,                  label="Stock Quotes (Stooq)", kind="toggle"),
     dict(category="plugins", key="cloud-llm",        value=True,                  label="Cloud LLM",          kind="toggle"),
     dict(category="plugins", key="telegram",         value=True,                  label="Telegram",           kind="toggle"),
     dict(category="plugins", key="gmail",            value=True,                  label="Gmail",              kind="toggle"),

@@ -41,6 +41,7 @@ from .plugins.revenuecat import RevenueCatPlugin
 from .plugins.signal_layer import SignalLayerPlugin
 from .plugins.sms_alerts import SMSAlertsPlugin
 from .plugins.spotify_plugin import SpotifyPlugin
+from .plugins.stock_quotes import StockQuotesPlugin
 from .plugins.telegram_bot import TelegramBotPlugin
 from .plugins.weather import WeatherPlugin
 from .plugins.websearch import WebSearchPlugin
@@ -66,6 +67,7 @@ class PluginManager:
         ``orch.argus``)."""
         self.plugins["weather"] = WeatherPlugin()
         self.plugins["news"] = NewsPlugin()
+        self.plugins["stock-quotes"] = StockQuotesPlugin()
         env_path = Path(__file__).resolve().parent.parent.parent / ".env"
         load_dotenv(env_path)
         # Packaged installs / $JARVIS_USER_HOME: the owner's config lives in
