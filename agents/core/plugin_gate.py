@@ -65,6 +65,16 @@ BUILTIN_PLUGINS = {
         allowed_domains=["feeds.bbci.co.uk", "www.hotnews.ro", "www.stiripesurse.ro"],
         agents_served=["all"],
     ),
+    "stock-quotes": PluginManifest(
+        id="stock-quotes",
+        name="Stock Quotes (Stooq)",
+        version="0.1.0",
+        description="Keyless delayed stock/ETF/index quotes from Stooq's public CSV feed",
+        network_access=NetworkAccess.RESTRICTED,
+        data_scope=DataScope.PROCESSED,
+        allowed_domains=["stooq.com", "stooq.pl"],
+        agents_served=["all"],
+    ),
     "cloud-llm": PluginManifest(
         id="cloud-llm",
         name="Cloud LLM Fallback",
