@@ -13,8 +13,11 @@ from core.heartbeat import HeartbeatScheduler
 
 
 def test_init_default_dir():
+    # The default is anchored on app_root() (repo checkout / frozen bundle),
+    # not the CWD, so heartbeat templates load from any working directory.
+    from core.paths import app_root
     hb = HeartbeatScheduler()
-    assert hb.agents_dir == Path("agents")
+    assert hb.agents_dir == app_root() / "agents"
     assert hb._heartbeat_configs == {}
     assert hb.scheduler is None
 

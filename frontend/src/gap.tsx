@@ -2665,7 +2665,7 @@ export function CommandCenterPanel() {
   const [hello, setHello] = useState(null);
   const sayHello = () => {
     setHello('…');
-    apiPost('/chat', { message: 'Hello Jarvis — first-run check.' })
+    apiPost('/chat', { message: 'Hello Nerva — first-run check.' })
       .then((r: any) => {
         const reply = (r && r.reply) ? String(r.reply) : '';
         // A degraded reply (⚠ / ⚠️ prefix from the local-backend-down path) is a

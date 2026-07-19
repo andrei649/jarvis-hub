@@ -162,7 +162,7 @@ cabinet/
 │       └── ...                      # Other agent plans
 ├── BACKLOG.md                       # Master backlog with horizon tracking
 ├── CHANGELOG.md
-├── JARVIS.md                        # Project README
+├── NERVA.md                        # Project README
 ├── PARALLEL_WORKFLOW.md
 ├── pytest.ini
 ├── requirements-beta.txt

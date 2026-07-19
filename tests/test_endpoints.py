@@ -22,7 +22,7 @@ def test_index_serves_html(client):
     resp = client.get("/")
     assert resp.status_code == 200
     assert resp.headers["content-type"].startswith("text/html")
-    assert "JARVIS" in resp.text
+    assert "NERVA" in resp.text
 
 
 def test_v1_serves_legacy_hud(client):
@@ -34,7 +34,7 @@ def test_v1_serves_legacy_hud(client):
 def test_v2_serves_cockpit(client):
     resp = client.get("/v2")
     assert resp.status_code == 200
-    assert "HUD v2" in resp.text
+    assert "NERVA · HUD" in resp.text  # Nerva rename 2026-07-19
 
 
 def test_admin_serves_html(client):

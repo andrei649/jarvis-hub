@@ -4,7 +4,7 @@ lmstudio_control.py — start the LM Studio server and load/unload models.
 Jarvis connects to a *running* LM Studio (OpenAI-compatible API on :1234) and
 auto-detects the loaded model; it does not, by itself, start LM Studio. This
 module adds that control via the `lms` CLI — the same commands documented in
-JARVIS.md and run by hand: `lms server start`, `lms load <model>`,
+NERVA.md and run by hand: `lms server start`, `lms load <model>`,
 `lms unload`. It deliberately mirrors autonomy/remediation.py's safety posture:
 
   - **No shell** — commands run via argv (`create_subprocess_exec`), never a

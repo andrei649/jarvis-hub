@@ -18,8 +18,9 @@
 > communicate, operate digital and physical systems, verify outcomes, and continuously expand its
 > own capabilities under explicit human governance — owned by the person it serves, not the vendor.**
 
-*(**Nerva** is the product brand, published by Digitaholic; `jarvis-hub` stays the repo/codename
-until the deliberate rename — [docs/OWNER_TASKS.md](docs/OWNER_TASKS.md). Brand architecture —
+*(**Nerva** is the product brand, published by Digitaholic; the in-product rename was executed
+2026-07-19 — `jarvis-hub` stays the repo/engine codename until the GitHub repo rename, an owner
+task — [docs/OWNER_TASKS.md](docs/OWNER_TASKS.md). Brand architecture —
 Cortex · Atlas · Synapse · Vision · Ultron: [NERVA_VISION.md](NERVA_VISION.md) §2.)*
 
 Not a chatbot. Not a workflow builder. A **persistent, proactive, private cortex** that runs on
@@ -182,7 +183,7 @@ The moonshot is only real if day-to-day work bends toward it. This section is th
 | *Are we ready to ship v1.0?* | [GO_LIVE_PLAN.md](GO_LIVE_PLAN.md) — launch checklist |
 | *Where does this code live / how do I change it?* | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) — module index, recipes |
 | *How should I build it (conventions, workflow)?* | [AGENTS.md](AGENTS.md) — assistant + contributor rules |
-| *What's the high-level architecture / stack?* | [JARVIS.md](JARVIS.md) |
+| *What's the high-level architecture / stack?* | [NERVA.md](NERVA.md) |
 | *What did we already deliver?* | [docs/HISTORY.md](docs/HISTORY.md) |
 | *What's the current snapshot?* | [STATUS.md](STATUS.md) |
 | *What's it worth / how do we price & fund it?* | [docs/VALUATION_AND_PRICING.md](docs/VALUATION_AND_PRICING.md) |
@@ -214,7 +215,7 @@ has an audit trail and future contributors understand *why*, not just *what*.
 | [BACKLOG.md](BACKLOG.md) | The plan — *what's next, prioritized* |
 | [GO_LIVE_PLAN.md](GO_LIVE_PLAN.md) | The launch — *features, marketing, road to 1.0* |
 | [docs/VALUATION_AND_PRICING.md](docs/VALUATION_AND_PRICING.md) | The business — *value, pricing, unit economics* |
-| [JARVIS.md](JARVIS.md) | The architecture overview |
+| [NERVA.md](NERVA.md) | The architecture overview |
 | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | The navigable map — *where code lives, how to change it* |
 | [AGENTS.md](AGENTS.md) | The conventions — *how we build* |
 | [docs/HISTORY.md](docs/HISTORY.md) | The record — *what we delivered + decision log* |

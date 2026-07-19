@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128">
+  <!-- Nerva primary mark (scalable master of the favicon). "Neural N": three
+       synapse strokes joined at four node points inside the void.
+       Palette: void black #030810 · signal blue #00AEEF (docs/BRAND_BOOK.md §7). -->
+  <rect width="128" height="128" rx="24" fill="#030810"/>
+  <g stroke="#00AEEF" stroke-width="9" stroke-linecap="round" fill="none">
+    <line x1="40" y1="92" x2="40" y2="36"/>
+    <line x1="40" y1="36" x2="88" y2="92"/>
+    <line x1="88" y1="92" x2="88" y2="36"/>
+  </g>
+  <g fill="#00AEEF">
+    <circle cx="40" cy="36" r="8"/>
+    <circle cx="40" cy="92" r="8"/>
+    <circle cx="88" cy="36" r="8"/>
+    <circle cx="88" cy="92" r="8"/>
+  </g>
+  <circle cx="64" cy="64" r="58" fill="none" stroke="#00AEEF" stroke-width="3" opacity=".28"/>
+</svg>

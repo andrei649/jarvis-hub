@@ -75,8 +75,9 @@ def test_hmac_sig_algo_mismatch_without_key(tmp_path, monkeypatch):
 
 
 def test_loader_flags_unsigned_skill(tmp_path, monkeypatch):
-    monkeypatch.chdir(tmp_path)
+    from agents.core.skills import loader as loader_mod
     skills_root = tmp_path / "skills"
+    monkeypatch.setattr(loader_mod, "SKILLS_DIR", skills_root)
     _make_skill(skills_root / "demo", body="def register(skill):\n    pass\n")
     loader = SkillLoader()
     loader.discover()
@@ -90,8 +91,9 @@ def test_loader_flags_unsigned_skill(tmp_path, monkeypatch):
 
 
 def test_loader_loads_signed_skill_trusted(tmp_path, monkeypatch):
-    monkeypatch.chdir(tmp_path)
+    from agents.core.skills import loader as loader_mod
     skills_root = tmp_path / "skills"
+    monkeypatch.setattr(loader_mod, "SKILLS_DIR", skills_root)
     sk_dir = _make_skill(skills_root / "demo", body="def register(skill):\n    pass\n")
     signing.sign_skill(sk_dir)
     loader = SkillLoader()
@@ -102,9 +104,10 @@ def test_loader_loads_signed_skill_trusted(tmp_path, monkeypatch):
 
 
 def test_require_signed_sandboxes_unsigned(tmp_path, monkeypatch):
-    monkeypatch.chdir(tmp_path)
+    from agents.core.skills import loader as loader_mod
     monkeypatch.setenv("JARVIS_REQUIRE_SIGNED_SKILLS", "1")
     skills_root = tmp_path / "skills"
+    monkeypatch.setattr(loader_mod, "SKILLS_DIR", skills_root)
     _make_skill(skills_root / "demo", body="raise RuntimeError('should not exec')\n")
     loader = SkillLoader()
     loader.discover()
@@ -114,8 +117,9 @@ def test_require_signed_sandboxes_unsigned(tmp_path, monkeypatch):
 
 
 def test_loader_sign_skill_helper(tmp_path, monkeypatch):
-    monkeypatch.chdir(tmp_path)
+    from agents.core.skills import loader as loader_mod
     skills_root = tmp_path / "skills"
+    monkeypatch.setattr(loader_mod, "SKILLS_DIR", skills_root)
     _make_skill(skills_root / "demo", body="def register(skill):\n    pass\n")
     loader = SkillLoader()
     loader.discover()
@@ -125,8 +129,9 @@ def test_loader_sign_skill_helper(tmp_path, monkeypatch):
 
 
 def test_to_dict_shape(tmp_path, monkeypatch):
-    monkeypatch.chdir(tmp_path)
+    from agents.core.skills import loader as loader_mod
     skills_root = tmp_path / "skills"
+    monkeypatch.setattr(loader_mod, "SKILLS_DIR", skills_root)
     _make_skill(skills_root / "demo", body="def register(skill):\n    pass\n")
     loader = SkillLoader()
     loader.discover()

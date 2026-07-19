@@ -143,7 +143,7 @@ After implementing each major component:
 **Issue:** Sources are inconsistent:
 - `agents.yaml`: all agents use default model (not specified per agent)
 - `config.py`: default = `google/gemma-4-31b-a4b`
-- `JARVIS.md`: says `google/gemma-4-26b-a4b` (26b, not 31b)
+- `NERVA.md`: says `google/gemma-4-26b-a4b` (26b, not 31b)
 - SOUL.md per agent: some mention `deepseek-r1:32b` or `qwen2.5` (probably outdated)
 
 **Action:** Run `lms ps` to see what model is currently loaded, then update `data.js DOSSIER` with the real model per agent. If all use the same model, put it in `DOSSIER.jarvis.model` and leave others empty (they inherit default).

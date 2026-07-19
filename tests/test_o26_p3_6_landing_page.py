@@ -35,7 +35,7 @@ def test_landing_page_uses_brand_tokens_and_verified_copy():
         "--violet: #A78BFA",
         "Space Grotesk",
         "JetBrains Mono",
-        "Jarvis Hub",
+        "Nerva",
         "The AI that works while you sleep",
         "local-first personal AI operating system",
         "17 specialist agents",

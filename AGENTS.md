@@ -1,6 +1,6 @@
 # AGENTS.md — instrucțiuni partajate pentru asistenți AI (opencode, Claude, Gemini, Antigravity)
 
-Sursă unică de convenții, citită de toți asistenții care lucrează la Jarvis Hub.
+Sursă unică de convenții, citită de toți asistenții care lucrează la Nerva (repo: jarvis-hub).
 
 > **Lucru în paralel / coordonare între agenți:** `PARALLEL_WORKFLOW.md` + `lock.py`
 > (cunoaște `opencode`, `claude`, `antigravity`). Onboarding Antigravity: `docs/handoff-antigravity.md`.
@@ -15,7 +15,7 @@ Când utilizatorul menționează **"backlog"**, **"ce urmează"**, **"next"**, *
 ## Hărți de orientare
 - **Navigare pentru AI (începe aici):** `docs/ARCHITECTURE.md` — entry points, request lifecycle, index de module, rețete „cum adaug X". Optimizat să găsești rapid unde trăiește codul, fără a citi tot.
 - **Context mare (1M tokens):** `docs/AI_CONTEXT.md` — tier-uri de încărcare + bundle-uri per task cu estimări de tokeni; nu încărca repo-ul brut.
-- **Arhitectură & structură:** `JARVIS.md` (stack, directoare, fluxul orchestrator → router → skills).
+- **Arhitectură & structură:** `NERVA.md` (stack, directoare, fluxul orchestrator → router → skills).
 - **Workflow agentic / Superpowers-style:** `docs/AGENT_WORKFLOW.md` — design înainte de cod, branch/worktree, TDD unde are sens, review, finish branch.
 - **Instrucțiuni ChatGPT pentru Jarvis:** `docs/CHATGPT_CUSTOM_INSTRUCTIONS.md` — bloc paste-ready pentru ChatGPT project/custom instructions.
 - **Taskuri owner-only:** `docs/OWNER_TASKS.md` — hardware/GitHub-settings/decizii; nu le bloca pe agenți, marchează-le acolo.

@@ -185,7 +185,7 @@ Several important files disagree:
 - `README.md` still advertises v0.10.0 and about 2,400 tests.
 - `STATUS.md` says v0.11.0, 2,609 passed / 2 skipped, 304 routes.
 - `BACKLOG.md` mentions about 2,768 passed / 6 skipped.
-- `JARVIS.md` still references v0.10.0 and about 299 routes.
+- `NERVA.md` still references v0.10.0 and about 299 routes.
 - `agents/web.py` declares FastAPI app version `0.5.0-beta`.
 - Some docs still mention older agent counts or older workspace paths.
 

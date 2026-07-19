@@ -1,4 +1,4 @@
-# Jarvis Hub — Brand Book
+# Nerva — Brand Book
 
 > The main marketing brand reference. Positioning, naming, messaging, voice, and visual identity —
 > all downstream of [MOONSHOT.md](../MOONSHOT.md) (the *why*) and consistent with
@@ -31,16 +31,18 @@ is the intersection.
 
 | Asset | Name | Notes |
 |---|---|---|
-| Product / repo | **Jarvis Hub** (`jarvis-hub`) | The platform. Always two words in prose, kebab-case in code. |
+| Product | **Nerva** (published by **Digitaholic**) | The end-user product and primary identity ([NERVA_VISION.md](../NERVA_VISION.md) §2). Repo/engine codename stays `jarvis-hub` until the GitHub repo rename (owner task). |
 | The agent roster | **the Cabinet** | 17 specialists across 4 tiers (Command / Business / Tech / Foundation). "Andrei's Cabinet" is the founder-instance flavor name, not the product name. |
 | The UI | **the HUD** (V2 "cockpit") | Never "dashboard" in marketing copy — it's a cockpit you command, not a chart you watch. |
 | Companion product | **WorldView** | The 4D OSINT globe (separate stack); **Argus** is its governed bridge agent. |
 | Individual agents | Jarvis, Friday, Pepper, Jerome · Athena, Stark, Veronica, Vision, Argus · Steve, Oracle, Ultron · Gecko, Hercules, Hephaestus, Frigga, Howard | Personalities are part of the brand; don't rename or flatten them. Frigga is the *proof* agent: strictly local, family data, zero network — lead with her in trust stories. |
 
-⚠️ **Naming risk (pre-commercial):** "Jarvis" carries Marvel/Disney association. Fine for an
-open-source personal project; **revisit before Phase 2 (Sellable)** — the planned relicense pass
-(`docs/LICENSE_DECISION.md`, TRADEMARKS.md) is the natural checkpoint. Candidate fallback: keep
-"Hub"/"Cabinet" equity, rename the orchestrator persona only.
+✅ **Naming risk — RESOLVED (2026-07-19):** the product renamed to **Nerva** across every
+user-facing surface (HUD, executable + `Documents/Nerva` data folder, landing, README, logo).
+The orchestrator *agent* keeps its Jarvis persona (agent roster names are part of the brand,
+per the table above); `jarvis-hub` remains the repo/engine codename until the GitHub repo
+rename (owner task). Logo assets: `docs/brand/nerva-mark.svg` + `nerva-wordmark.svg`
+(neural-N mark, void black `#030810` · signal blue `#00AEEF`).
 
 ---
 

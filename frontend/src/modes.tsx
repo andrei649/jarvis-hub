@@ -328,7 +328,7 @@ function MemoryMode({ t }) {
               <input type="range" min="0" max={marks.length-1} step="1" value={ti} onChange={e=>setTi(+e.target.value)}/>
               <span className="asof">{marks[ti]}</span>
             </div>
-            <div style={{fontFamily:'var(--font-mono)',fontSize:9.5,color:'var(--ink-4)',marginTop:8,textAlign:'center'}}>bitemporal · drag to travel through what Jarvis knew</div>
+            <div style={{fontFamily:'var(--font-mono)',fontSize:9.5,color:'var(--ink-4)',marginTop:8,textAlign:'center'}}>bitemporal · drag to travel through what Nerva knew</div>
           </div>
         </div>
       </div>

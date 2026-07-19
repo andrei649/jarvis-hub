@@ -210,7 +210,7 @@ one reviewable PR.
   network + palette, ARIA on meters/dots); responsive < ~1100px; reduced‑motion JS + idle‑pause for
   the 24/7 wall display; deepen ambient mode.
 - **Phase 6 — Cutover (only on your word).** Flip `/` → v2 (or keep `/v2` as opt‑in). Archive the old
-  HUD. Update `STATUS.md`, `docs/ARCHITECTURE.md` filesystem map, `JARVIS.md` web‑endpoints.
+  HUD. Update `STATUS.md`, `docs/ARCHITECTURE.md` filesystem map, `NERVA.md` web‑endpoints.
 
 Backend: reuse the 228 endpoints; add new ones only where a gap surface needs data (recipe:
 `docs/ARCHITECTURE.md` §8). New polling endpoints → `_NO_STORE_PATHS`. Frontend tests go in

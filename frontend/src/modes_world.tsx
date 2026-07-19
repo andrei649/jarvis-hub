@@ -110,7 +110,7 @@ function WorldIntelligenceMode({ t }) {
       <Panel icon="globe" title="World Intelligence" status="offline">
         <div style={{ maxWidth: 680 }}>
           <div style={{ fontFamily: 'var(--font-mono)', color: 'var(--red)', letterSpacing: '.12em', fontSize: 11 }}>SIGNAL LAYER UNAVAILABLE</div>
-          <p style={{ color: 'var(--ink-2)', lineHeight: 1.6 }}>Jarvis cannot reach the local Signal Layer at <code>{SIGNAL_LAYER_URL}</code>. Start it with <code>START.bat</code>, <code>./start.sh</code>, or <code>cd services/signal-layer &amp;&amp; npm start</code>.</p>
+          <p style={{ color: 'var(--ink-2)', lineHeight: 1.6 }}>Nerva cannot reach the local Signal Layer at <code>{SIGNAL_LAYER_URL}</code>. Start it with <code>START.bat</code>, <code>./start.sh</code>, or <code>cd services/signal-layer &amp;&amp; npm start</code>.</p>
           <button className="tool-btn" onClick={refresh}>retry</button>
         </div>
       </Panel>

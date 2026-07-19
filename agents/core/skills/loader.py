@@ -23,7 +23,32 @@ from . import signing
 
 logger = logging.getLogger("jarvis.skills")
 
-SKILLS_DIR = Path("skills")
+# Anchored on the app root (repo checkout in dev, PyInstaller bundle when
+# frozen) instead of the CWD, so skill discovery works no matter where the
+# process was launched from. From the repo root this is the same "skills/"
+# directory as before.
+from agents.core.paths import app_root as _app_root  # noqa: E402
+
+SKILLS_DIR = _app_root() / "skills"
+
+
+def _user_skills_dir() -> Optional[Path]:
+    """The owner's personal skills root (Documents/Jarvis/skills), or None.
+
+    Resolved at call time (not import) so tests/env changes are honored.
+    """
+    from agents.core.paths import user_skills_dir
+    return user_skills_dir()
+
+
+def _writable_skills_dir() -> Path:
+    """Where NEW (generated/imported) skills are written.
+
+    The bundled skills tree is shipped application content; anything personal
+    goes to the user data home when one is active.
+    """
+    user_dir = _user_skills_dir()
+    return user_dir if user_dir is not None else SKILLS_DIR
 
 
 def _generated_skill_name_safe(view, now) -> bool:
@@ -192,9 +217,16 @@ class SkillLoader:
 
     def discover(self):
         SKILLS_DIR.mkdir(parents=True, exist_ok=True)
-        for skill_dir in sorted(SKILLS_DIR.iterdir()):
-            if skill_dir.is_dir():
-                self._load_skill(skill_dir)
+        roots = [SKILLS_DIR]
+        # The owner's personal skills (Documents/Jarvis/skills) load AFTER the
+        # bundled tree so a same-named user skill wins the registry slot.
+        user_dir = _user_skills_dir()
+        if user_dir is not None and user_dir.is_dir() and user_dir.resolve() != SKILLS_DIR.resolve():
+            roots.append(user_dir)
+        for root in roots:
+            for skill_dir in sorted(root.iterdir()):
+                if skill_dir.is_dir():
+                    self._load_skill(skill_dir)
         logger.info(f"Skills loaded: {list(self.skills.keys())}")
         return self.skills
 
@@ -399,8 +431,10 @@ class SkillLoader:
         Returns the skill name if created, None if skipped.
         """
         skill_name = self._name_from_task(task_description)
-        skill_dir = SKILLS_DIR / skill_name
-        if skill_dir.exists():
+        # Generated skills are personal content — they land in the user data
+        # home when one is active (falling back to the bundled tree in dev).
+        skill_dir = _writable_skills_dir() / skill_name
+        if skill_dir.exists() or (SKILLS_DIR / skill_name).exists():
             logger.info(f"Skill '{skill_name}' already exists, skipping generation")
             return None
         cmd = command_name or skill_name
@@ -520,7 +554,15 @@ def register(skill):
         # Resolve to the skill dir: accept the registry name (manifest title, what the
         # pending-list endpoint exposes) OR the on-disk dir slug.
         reg = self.skills.get(name)
-        skill_dir = Path(reg.path) if reg is not None and getattr(reg, "path", None) else SKILLS_DIR / name
+        if reg is not None and getattr(reg, "path", None):
+            skill_dir = Path(reg.path)
+        else:
+            # Pending skills may live in either root (generated ones go to the
+            # user data home when active) — resolve to whichever holds the marker.
+            user_dir = _user_skills_dir()
+            candidates = [SKILLS_DIR / name] + ([user_dir / name] if user_dir else [])
+            skill_dir = next((c for c in candidates if (c / "PENDING_REVIEW").exists()),
+                             candidates[0])
         if not (skill_dir / "PENDING_REVIEW").exists():
             return False
         if not _skill_generation_allowed({

@@ -126,8 +126,15 @@ def _require_reviewed() -> bool:
 
 
 class SkillMarketplace:
-    def __init__(self, skills_dir: str = "skills", db_path: Optional[str] = None,
+    def __init__(self, skills_dir: Optional[str] = None, db_path: Optional[str] = None,
                  *, history: Optional[SkillHistory] = None, clock=None):
+        if skills_dir is None:
+            # Default resolution (was CWD-relative "skills"): installed skills are
+            # personal content, so they go to the user data home when one is
+            # active; otherwise the app-root skills tree (repo-root anchored —
+            # identical to before when running from the checkout).
+            from agents.core.paths import app_root, user_skills_dir
+            skills_dir = user_skills_dir() or (app_root() / "skills")
         self.skills_dir = Path(skills_dir)
         self.skills_dir.mkdir(parents=True, exist_ok=True)
         self.db_path = Path(db_path) if db_path else DB_PATH

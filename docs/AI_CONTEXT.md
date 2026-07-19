@@ -1,6 +1,6 @@
 # AI Context Map — loading this repo into a 1M-token assistant
 
-> How to feed Jarvis Hub to a large-context model (Claude Fable 5, 1M tokens) without wasting
+> How to feed Nerva (repo: jarvis-hub) to a large-context model (Claude Fable 5, 1M tokens) without wasting
 > the window or missing the load-bearing files. Humans: this is also the fastest "what do I read
 > first" guide. Generated 2026-06-10 · sizes are estimates (chars ÷ 4), re-check when stale.
 >
@@ -37,7 +37,7 @@ Order matters: each file assumes the previous ones.
 | 4 | `MOONSHOT.md` | 3K | Vision, principles, phase gates — the drift check; links onward to `NERVA_VISION.md` (Tier 1) for the capability detail |
 | 5 | `STATUS.md` | 2.5K | Current snapshot (version, counts, agent roster) |
 | 6 | `README.md` | 2.5K | Public framing, run instructions |
-| 7 | `JARVIS.md` | 3K | Architecture overview + directory tree |
+| 7 | `NERVA.md` | 3K | Architecture overview + directory tree |
 
 ## Tier 1 — project state (~50K tokens; load for any planning/backlog/docs task)
 

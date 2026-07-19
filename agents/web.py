@@ -264,7 +264,14 @@ async def lifespan(application: FastAPI):
     # They run here so every entry point enforces the same posture.
     from core.boot_guards import enforce_boot_posture
     enforce_boot_posture()
+    # Packaged installs / $JARVIS_USER_HOME: scaffold the owner's data folder
+    # (Documents/Jarvis — README, .env, memory/, skills/, souls/) BEFORE any
+    # store opens under the data root. Idempotent no-op in a plain dev checkout.
+    from core.paths import ensure_user_home
+    scaffolded_home = ensure_user_home()
     setup_logging()
+    if scaffolded_home is not None:
+        logger.info("User data home: %s", scaffolded_home)
     # SEC-4 / audit F-08: warn when private runtime state lives inside the git
     # checkout (accidental commit/zip/share risk). Set JARVIS_HOME to relocate it.
     from core.paths import data_root, is_inside_repo

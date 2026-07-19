@@ -45,7 +45,7 @@ everything else is already built, a sidegrade, or off-mission. → BACKLOG H21.A
 ## 2. Hardware — image & video generation
 
 **Machine:** laptop **RTX 5090 (mobile GB203, 24GB GDDR7, power-capped ~175W)** in a System76
-Bonobo (Linux). *Note:* `JARVIS.md` describes a Windows desktop w/ 192GB DDR5 + `TdrDelay=8`
+Bonobo (Linux). *Note:* `NERVA.md` describes a Windows desktop w/ 192GB DDR5 + `TdrDelay=8`
 (Windows-only) — **doc/hardware mismatch to reconcile** if the laptop is now the main box.
 
 - **A laptop GPU can't be upgraded** (soldered, power-capped, thermally throttled, no PCIe slots).
@@ -297,7 +297,7 @@ symptom→cause→remedy troubleshooting playbook → `docs/COGNITION.md`** (the
 - **ORIZONT 21** is the cognition horizon — ORIZONT 19 = **WorldView (4D OSINT)** and ORIZONT 20 = **Hermes Mining**, both claimed by other sessions (18 = native apps). Cognition was renumbered 19→20→21 and placed next to Hermes, de-duplicated against it.
 
 **Open questions / to reconcile**
-- `JARVIS.md` hardware section (Windows desktop / 192GB) vs the actual Bonobo laptop — doc-truth pass needed.
+- `NERVA.md` hardware section (Windows desktop / 192GB) vs the actual Bonobo laptop — doc-truth pass needed.
 - Confirm BUG-10's cron is actually called at startup; BUG-11 tier-escalation re-gate; HF-6 force-Docker — prerequisites for H21.4 / the Hermes skill loop it governs (H20.5).
 - Resolved: ORIZONT 19 = WorldView, ORIZONT 20 = Hermes Mining; Cognition merged in as ORIZONT 21, de-duplicated against Hermes (H21.4 feeds/governs H20.5/H20.4 instead of re-implementing the skill loop).
 

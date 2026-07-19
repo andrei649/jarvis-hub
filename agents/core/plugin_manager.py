@@ -70,6 +70,14 @@ class PluginManager:
         self.plugins["stock-quotes"] = StockQuotesPlugin()
         env_path = Path(__file__).resolve().parent.parent.parent / ".env"
         load_dotenv(env_path)
+        # Packaged installs / $JARVIS_USER_HOME: the owner's config lives in
+        # <Documents/Jarvis>/.env. Loaded second with the default override=False,
+        # so a repo .env (dev) keeps precedence and only unset keys are filled —
+        # in a frozen install there is no repo .env, making this the config source.
+        from agents.core.paths import user_home
+        home = user_home()
+        if home is not None and (home / ".env").exists():
+            load_dotenv(home / ".env")
         self.plugins["cloud-llm"] = CloudLLMPlugin(
             anthropic_key=os.environ.get("ANTHROPIC_API_KEY", ""),
             openai_key=os.environ.get("OPENAI_API_KEY", ""),

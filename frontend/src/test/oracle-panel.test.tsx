@@ -20,11 +20,11 @@ describe('OraclePanel — the truth-sync reconciler is live', () => {
   it('GETs /api/oracle/status and lists a conflict + the watcher status', async () => {
     const fn = mockFetch({
       watcher_running: true, last_checked: 'abc1234',
-      conflicts: [{ file_path: 'JARVIS.md', local_hash: 'a', remote_hash: 'b', resolved: false }],
+      conflicts: [{ file_path: 'NERVA.md', local_hash: 'a', remote_hash: 'b', resolved: false }],
       total_conflicts: 1,
     });
     render(<OraclePanel />);
-    await waitFor(() => expect(screen.getByText('JARVIS.md')).toBeTruthy());
+    await waitFor(() => expect(screen.getByText('NERVA.md')).toBeTruthy());
     expect(fn.mock.calls.some((c) => String(c[0]).includes('/api/oracle/status'))).toBe(true);
     expect(screen.getByText('conflict')).toBeTruthy();
   });

@@ -55,7 +55,14 @@ class AgentConfig:
 
 class JarvisConfig:
     def __init__(self, path: str = "agents/_system/agents.yaml"):
-        self.path = Path(path)
+        # A relative path is anchored on the app root (repo checkout in dev,
+        # PyInstaller bundle when frozen) instead of the CWD — identical when
+        # running from the repo root, but works from anywhere / as an exe.
+        p = Path(path)
+        if not p.is_absolute():
+            from .paths import app_root
+            p = app_root() / p
+        self.path = p
         self.agents: dict[str, AgentConfig] = {}
         self.general: dict = {}
         self.plugins: dict = {}

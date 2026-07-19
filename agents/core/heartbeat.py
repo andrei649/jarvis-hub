@@ -33,7 +33,12 @@ JITTER_MAX = 30
 
 
 class HeartbeatScheduler:
-    def __init__(self, agents_dir: str = "agents"):
+    def __init__(self, agents_dir: Optional[str] = None):
+        if agents_dir is None:
+            # Anchored on the app root (repo checkout / frozen bundle), not the
+            # CWD — identical to the old "agents" default when run from the repo.
+            from .paths import app_root
+            agents_dir = app_root() / "agents"
         self.agents_dir = Path(agents_dir)
         self.scheduler: Optional[AsyncIOScheduler] = None
         self._heartbeat_configs: dict[str, dict] = {}
@@ -47,8 +52,17 @@ class HeartbeatScheduler:
             if not agent_dir.is_dir():
                 continue
             # Personalization overlay: HEARTBEAT.local.md (gitignored) wins over
-            # the shipped template — same convention as SOUL.local.md.
-            hb_path = agent_dir / "HEARTBEAT.local.md"
+            # the shipped template — same convention as SOUL.local.md. A user
+            # data home (Documents/Jarvis/souls/<id>/) wins over both.
+            from .paths import user_souls_dir
+            souls_home = user_souls_dir()
+            hb_path = None
+            if souls_home is not None:
+                candidate = souls_home / agent_dir.name / "HEARTBEAT.local.md"
+                if candidate.exists():
+                    hb_path = candidate
+            if hb_path is None:
+                hb_path = agent_dir / "HEARTBEAT.local.md"
             if not hb_path.exists():
                 hb_path = agent_dir / "HEARTBEAT.md"
             if hb_path.exists():

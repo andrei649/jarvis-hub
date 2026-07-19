@@ -34,6 +34,7 @@ repo_export.txt
 agents/*/SOUL.local.md
 agents/*/HEARTBEAT.local.md
 /dist/
+/build/
 *.tar.gz
 
 # Playwright E2E artifacts (H23.17)

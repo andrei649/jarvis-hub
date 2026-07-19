@@ -42,7 +42,7 @@ async function request(
     let tok = getToken();
     if (!tok && !_prompted) {
       _prompted = true;
-      tok = window.prompt('This Jarvis is network-exposed. Enter your X-User-Token:') || '';
+      tok = window.prompt('This Nerva instance is network-exposed. Enter your X-User-Token:') || '';
       if (tok) setToken(tok);
     }
     if (tok) return request(method, path, body, { ...opts, _retried: true });

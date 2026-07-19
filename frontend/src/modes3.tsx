@@ -14,7 +14,7 @@ function ChatMode({ messages, thinking, onStop, onSubmit, onProv, mic, setMic, l
       <div className="chat-col">
         <div className="chat-head">
           <span className="chat-glyph"><Gl3 id="jarvis" size={20}/></span>
-          <div><div className="chat-title">{t.directLine} · JARVIS</div><div className="chat-sub">{t.focusHintChat}</div></div>
+          <div><div className="chat-title">{t.directLine} · NERVA</div><div className="chat-sub">{t.focusHintChat}</div></div>
           <span className="chat-live"><span className="sdot active"></span>local</span>
         </div>
         <Conversation messages={messages} thinking={thinking} onStop={onStop} onProv={onProv} lang={lang} t={t}/>

@@ -7,7 +7,7 @@ description: Use FIRST, before reading source, when starting any task in the jar
 
 The repo is **~2M tokens** — never load it all. Load **Tier 0 + Tier 1** (~75K), then **one** task bundle. Full map: `docs/AI_CONTEXT.md`.
 
-**Tier 0 (always, ~25K), in order:** `CLAUDE.md` → `AGENTS.md` → `docs/ARCHITECTURE.md` → `MOONSHOT.md` → `STATUS.md` → `README.md` → `JARVIS.md`.
+**Tier 0 (always, ~25K), in order:** `CLAUDE.md` → `AGENTS.md` → `docs/ARCHITECTURE.md` → `MOONSHOT.md` → `STATUS.md` → `README.md` → `NERVA.md`.
 
 **Tier 1 (planning/backlog):** `BACKLOG.md` (header + the section you touch — it's THE priority truth) + `GO_LIVE_PLAN.md`.
 
