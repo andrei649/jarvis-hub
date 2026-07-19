@@ -6,7 +6,6 @@ heartbeat, checkpointing, skill generation, and promotion/demotion tracking.
 import inspect
 import logging
 import time
-from pathlib import Path
 from typing import Optional
 
 from .llm.hybrid_router import HybridRouter
@@ -60,9 +59,18 @@ class Agent:
         # Personalization overlay: the repo ships generic SOUL.md templates; the
         # owner's personalized copy lives in SOUL.local.md (gitignored, never
         # committed) and wins when present. See docs/ARCHITECTURE.md §8.
-        soul_path = Path(f"agents/{self.id}/SOUL.local.md")
-        if not soul_path.exists():
-            soul_path = Path(f"agents/{self.id}/SOUL.md")
+        # Precedence: user data home (Documents/Jarvis/souls/<id>/SOUL.local.md,
+        # packaged installs) → repo-local SOUL.local.md → shipped SOUL.md
+        # template. Anchored on app_root(), not the CWD, so a packaged
+        # executable finds its bundled templates from any working directory.
+        from .paths import app_root, user_souls_dir
+        candidates = []
+        souls_home = user_souls_dir()
+        if souls_home is not None:
+            candidates.append(souls_home / self.id / "SOUL.local.md")
+        candidates.append(app_root() / "agents" / self.id / "SOUL.local.md")
+        candidates.append(app_root() / "agents" / self.id / "SOUL.md")
+        soul_path = next((c for c in candidates if c.exists()), candidates[-1])
         if soul_path.exists():
             content = soul_path.read_text(encoding="utf-8")
             # H21.2: split optional YAML front-matter (personality/affect config)

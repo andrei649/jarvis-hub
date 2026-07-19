@@ -128,6 +128,19 @@ python -m pytest tests/ -v          # ~3,868 passed, 6 skipped (counter synced v
 > admin API; now visible, default unchanged). +17 new backend tests, +3
 > frontend; full backend (5,101) and frontend (361) suites green, route/OpenAPI/
 > route-auth snapshots and the HUD-v2 parity map re-seeded for the 2 new routes.
+> Packaged-app groundwork (ad-hoc, owner request 2026-07-18): Jarvis now builds
+> as a PyInstaller onedir executable (`packaging/jarvis.spec` +
+> `scripts/build_exe.py` with a real boot smoke test, `packaging/windows/install.ps1`,
+> `docs/PACKAGING.md`), and a packaged install keeps ALL personal state in one
+> owner-visible **user data home** (`~/Documents/Jarvis`: README, `.env`,
+> `memory/`, `skills/`, `souls/` overlays — `agents/core/paths.py:user_home()/
+> ensure_user_home()`). Formerly CWD-relative reads (skills, souls, heartbeats,
+> `agents.yaml`, `.env`) are anchored on `app_root()`; generated/marketplace
+> skills write to the user home when active; `$JARVIS_HOME` keeps winning for
+> the data root, and a plain dev checkout is byte-identical (user home inert).
+> Linux-verified end-to-end (built exe boots, `/readyz` green, scaffold
+> created); the Windows exe build is an owner task (`docs/OWNER_TASKS.md`).
+> +14 backend tests (`tests/test_user_home_packaging.py` + soul-overlay case).
 
 ---
 

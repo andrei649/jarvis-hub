@@ -115,6 +115,23 @@ bundle endpoint only flips settings that already exist and are already
 individually toggleable via `/api/admin/settings`; it changes nothing for
 anyone who doesn't press the button.
 
+## 🟢 Build the Windows executable (packaged install)
+
+The packaging layer is code-complete and Linux-verified (built binary boots,
+`/readyz` green, `Documents/Jarvis` scaffolded — `docs/PACKAGING.md`), but
+PyInstaller does **not** cross-compile, so the shippable `jarvis.exe` must be
+built on your Windows box:
+
+- [ ] On the RTX/Windows machine, in the project venv:
+  `pip install pyinstaller` → `python scripts\build_exe.py` (builds + boots the
+  exe against `/readyz` with an isolated temp data home).
+- [ ] Install it: `powershell -ExecutionPolicy Bypass -File packaging\windows\install.ps1`
+  (→ `%LOCALAPPDATA%\Programs\Jarvis` + Start Menu shortcut, no admin needed).
+- [ ] First run: verify `Documents\Jarvis` is created (README, `.env`, `memory/`,
+  `skills/`, `souls/`), put your API keys in `Documents\Jarvis\.env`, and if you
+  use personalized souls copy your `*.local.md` overlays into
+  `Documents\Jarvis\souls\<agent>\`.
+
 ## 🟢 Launch assets (when you're ready to show it)
 
 - [ ] **Record the 30–60s demo GIF** for the README hero — one real task incl. an approved

@@ -35,8 +35,11 @@ def _load(agent_id):
 
 
 def test_soul_local_overrides_template(tmp_path, monkeypatch):
+    # Soul lookup anchors on app_root() (not the CWD) so a packaged executable
+    # finds its templates from any working directory — tests point the root at
+    # a tmp tree via $JARVIS_APP_ROOT instead of chdir.
     _make_agent_dir(tmp_path, "foo", soul="# Generic template", local="# Personalized soul")
-    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("JARVIS_APP_ROOT", str(tmp_path))
     a = _load("foo")
     assert a.soul["content"] == "# Personalized soul"
     assert a.soul["path"].name == "SOUL.local.md"
@@ -44,10 +47,23 @@ def test_soul_local_overrides_template(tmp_path, monkeypatch):
 
 def test_soul_falls_back_to_template(tmp_path, monkeypatch):
     _make_agent_dir(tmp_path, "bar", soul="# Generic template")
-    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("JARVIS_APP_ROOT", str(tmp_path))
     a = _load("bar")
     assert a.soul["content"] == "# Generic template"
     assert a.soul["path"].name == "SOUL.md"
+
+
+def test_soul_user_home_overlay_wins(tmp_path, monkeypatch):
+    """A user data home (Documents/Jarvis/souls/<id>/SOUL.local.md) beats both
+    the repo-local overlay and the shipped template."""
+    _make_agent_dir(tmp_path, "foo", soul="# Generic template", local="# Repo-local soul")
+    home = tmp_path / "userhome"
+    (home / "souls" / "foo").mkdir(parents=True)
+    (home / "souls" / "foo" / "SOUL.local.md").write_text("# Documents soul", encoding="utf-8")
+    monkeypatch.setenv("JARVIS_APP_ROOT", str(tmp_path))
+    monkeypatch.setenv("JARVIS_USER_HOME", str(home))
+    a = _load("foo")
+    assert a.soul["content"] == "# Documents soul"
 
 
 HB = """---

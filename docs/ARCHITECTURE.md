@@ -84,6 +84,7 @@ When on: embeds the query, runs fused recall (vector ⊕ graph), injects top-k a
 | `agents/core/errors.py` | Typed error codes | `JarvisError`, `E_*` constants |
 | `agents/core/log.py` | Logging setup | `setup_logging`, `log_error` |
 | `agents/core/resilience.py` | Circuit breakers + retry | `resilient_call`, `get_metrics`, `_circuit_breakers` |
+| `agents/core/paths.py` | Data-root + user-data-home + frozen-app path resolver: `$JARVIS_HOME` data root; packaged installs keep all personal state in `~/Documents/Jarvis` (`.env`, `memory/`, `skills/`, `souls/` overlays); `app_root()` anchors formerly CWD-relative reads (see `docs/PACKAGING.md`) | `data_root`, `data_path`, `app_root`, `user_home`, `ensure_user_home`, `is_frozen` |
 
 ### LLM
 
