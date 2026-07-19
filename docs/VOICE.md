@@ -160,6 +160,12 @@ pip install edge-tts                # online TTS (optional; or run an XTTS serve
 If `faster-whisper` isn't installed, the HUD says so (amber note in the ⚙ popover) instead of
 pretending to listen.
 
+**Dictation cleanup (0.24, opt-in).** Setting `voice.dictation_cleanup` (default off) runs
+`core/voice/dictation.py:clean_dictation` on every `/api/voice/stt` transcript — strips
+fillers/stutters, applies spoken punctuation ("period" → "."), and reports the removal counts
+in the response (`dictation.removed`) so the edit stays inspectable. Sentinel transcripts are
+never touched.
+
 ---
 
 ## 6. Known gaps / future work

@@ -37,9 +37,10 @@ class _Task:
 
 def test_targets_lists_catalog():
     t = SocialBroker().targets()
-    assert len(t) == len(_CATALOG) == 3
+    assert len(t) == len(_CATALOG) == 4
     kinds = {x["kind"] for x in t}
-    assert kinds == {"social.x.post", "social.x.reply", "social.x.dm"}
+    assert kinds == {"social.x.post", "social.x.reply", "social.x.dm",
+                     "social.postiz.schedule"}
     post = next(x for x in t if x["kind"] == "social.x.post")
     assert post["required"] == ["text"] and post["credential"] == "x_api_token"
 

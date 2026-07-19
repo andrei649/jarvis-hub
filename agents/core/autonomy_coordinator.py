@@ -432,6 +432,9 @@ class AutonomyCoordinator:
             secret_broker=getattr(self._orch, "secret_broker", None),
             audit=getattr(self._orch, "audit", None),
             kernel=_action_kernel,
+            # 0.69: approved postiz.schedule tasks execute through the live
+            # PostizPlugin (resolved lazily — plugins may rebuild at runtime).
+            postiz_resolver=lambda: self._orch.plugins.get("postiz"),
         )
         executor.register("social", self._orch.social.execute)
 

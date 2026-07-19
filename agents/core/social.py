@@ -75,6 +75,11 @@ def _reg(platform: str, action: str, required, optional=(), label: str = "") -> 
 _reg("x", "post", ("text",), (), "Post to X")
 _reg("x", "reply", ("text", "reply_to"), (), "Reply on X")
 _reg("x", "dm", ("text", "recipient"), (), "DM on X")
+# 0.69 — governed Postiz scheduling: the ONLY path that may arm a live
+# (non-draft) Postiz publish. The plugin itself stays draft-first; auth lives
+# in the plugin (POSTIZ_API_KEY), so no SecretBroker credential is declared.
+_reg("postiz", "schedule", ("text", "integration_id", "publish_at"), (),
+     "Schedule via Postiz")
 
 
 def _present(v) -> bool:
@@ -230,13 +235,18 @@ class SocialBroker:
     KIND_PREFIX = _KIND_PREFIX
 
     def __init__(self, enqueue: Optional[Callable] = None, agent: str = "pepper",
-                 secret_broker=None, client=None, audit=None, kernel=None) -> None:
+                 secret_broker=None, client=None, audit=None, kernel=None,
+                 postiz_resolver: Optional[Callable] = None) -> None:
         self._enqueue = enqueue
         self.agent = agent
         self._secrets = secret_broker
         self._client = client or NullSocialClient()
         self._audit = audit
         self._kernel = kernel   # ORIZONT-24 K1: bound kernel.authorize (default-off)
+        # 0.69 — lazy PostizPlugin accessor; approved postiz.schedule tasks
+        # execute through the plugin (its own config + egress gate), not the
+        # X HTTP client.
+        self._postiz_resolver = postiz_resolver
 
     @staticmethod
     def supports(platform: str, action: str) -> bool:
@@ -337,6 +347,8 @@ class SocialBroker:
         if not self.supports(platform, action):
             return {"status": "failed", "reason": "unknown_platform_action",
                     "platform": platform, "action": action}
+        if platform == "postiz":
+            return await self._execute_postiz(fields)
         credentials = self._resolve_credentials(payload)
         try:
             result = await self._client.send(platform, action, fields, credentials)
@@ -346,6 +358,33 @@ class SocialBroker:
                     "platform": platform, "action": action}
         self._record("social.execute", f"{platform}.{action}", target=platform)
         return {"status": "ok", "platform": platform, "action": action, "social": result}
+
+    async def _execute_postiz(self, fields: dict) -> dict:
+        """Run an APPROVED postiz.schedule task through the PostizPlugin.
+
+        This is the one governed caller allowed to pass ``kind="schedule"`` —
+        the plugin's own default stays draft-first. Unconfigured/missing plugin
+        fails honestly; nothing is fabricated.
+        """
+        plugin = self._postiz_resolver() if self._postiz_resolver is not None else None
+        if plugin is None or not getattr(plugin, "available", lambda: False)():
+            return {"status": "failed", "reason": "postiz_not_configured",
+                    "platform": "postiz", "action": "schedule"}
+        try:
+            result = await plugin.schedule_post(
+                fields.get("text", ""), [fields.get("integration_id", "")],
+                fields.get("publish_at", ""), kind="schedule",
+            )
+        except Exception:
+            logger.warning("postiz schedule execute failed", exc_info=True)
+            return {"status": "failed", "reason": "client_error",
+                    "platform": "postiz", "action": "schedule"}
+        if not result.get("ok"):
+            return {"status": "failed", "reason": result.get("error", "postiz_error"),
+                    "platform": "postiz", "action": "schedule"}
+        self._record("social.execute", "postiz.schedule", target="postiz")
+        return {"status": "ok", "platform": "postiz", "action": "schedule",
+                "social": result.get("data")}
 
     def _resolve_credentials(self, payload: dict) -> dict:
         ref = payload.get("credential_ref") or ""
