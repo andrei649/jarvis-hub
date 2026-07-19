@@ -183,7 +183,11 @@ python -m pytest tests/ -v          # ~3,868 passed, 6 skipped (counter synced v
 - [x] Tuya real signer (done, Tranche 1)
 - [x] Balance burn-rate from CSV transactions (done, Tranche 1) — [ ] extend to ING/Libra transaction fetch (API path still pending)
 - [x] Stock quotes feed — keyless `StockQuotesPlugin` (Stooq CSV), the third LIVE keyless plugin next to weather/news; egress-restricted, wired into the plugin gatherer (`$AAPL`/ticker detection), honest degrade when the feed is down. `market` router can consume it next.
-- [ ] Social: instantiate `HttpSocialClient` behind approval (drop `NullSocialClient` when `x_api_token` present)
+- [x] Social: the live rail activates behind approval — the default Null client lazily
+  upgrades to `HttpSocialClient` the moment an approved task resolves a real owner
+  credential (`secret:x_api_token`), no restart needed; unconfigured stays honestly
+  deferred and now carries the `_degraded {reason, needs}` stamp; injected clients
+  are never replaced (`tests/test_social_live_client.py`)
 - [ ] Autonomy executors: real `Http*` clients at the writeback / call / node host seams
 - [ ] Capability acquisition: a production path that creates a `PromotionProposal`; real skill code-synthesis (replace the `"implement logic in handle()"` placeholder)
 - [ ] Real payment rail adapter (AP2/ACP/x402) at `payments.settle()` — **owner decision required (moves money)**
