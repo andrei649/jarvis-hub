@@ -39,7 +39,7 @@
 
 ### Task 3: H23.26 generated project status
 
-**Files:** Modify `scripts/status_sync.py`, `tests/test_status_sync.py`, `README.md`, `JARVIS.md`, `GO_LIVE_PLAN.md`, `STATUS.md`; create `project-status.json`.
+**Files:** Modify `scripts/status_sync.py`, `tests/test_status_sync.py`, `README.md`, `NERVA.md`, `GO_LIVE_PLAN.md`, `STATUS.md`; create `project-status.json`.
 
 **Interfaces:** `build_project_status(...) -> dict`, `apply_generated_snippets(path, text, status) -> str`; `--check` compares every generated artifact without rewriting.
 

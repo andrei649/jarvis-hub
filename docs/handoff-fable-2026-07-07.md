@@ -163,7 +163,7 @@ Each gate was attacked, not assumed. Results:
 Doc-staleness sweep ran alongside (same PR): MOONSHOT's current-stage line said
 v0.10.0 (→ v0.11.0), AGENTS.md still framed `web.py` as a live god-object with 255
 inline routes (fixed in #296 — reworded to past tense), ARCHITECTURE.md said
-"304-route surface" twice (now points at STATUS.md's synced live count), JARVIS.md
+"304-route surface" twice (now points at STATUS.md's synced live count), NERVA.md
 said ~299 routes (→ live-count pointer). Counter drift is systemic: prefer pointing
 at `scripts/status_sync.py`-synced STATUS.md over hand-written numbers in prose.
 

@@ -16,12 +16,12 @@ vars is set — at which point every store relocates together.
 
 User data home (the "Documents folder")
 ---------------------------------------
-When Jarvis runs as a packaged executable (PyInstaller sets ``sys.frozen``) or
+When Nerva runs as a packaged executable (PyInstaller sets ``sys.frozen``) or
 ``$JARVIS_USER_HOME`` is set, all sensitive/personal state of the local
 instance lives in one owner-visible folder — by default
-``~/Documents/Jarvis`` — instead of inside the install directory:
+``~/Documents/Nerva`` — instead of inside the install directory:
 
-    Documents/Jarvis/
+    Documents/Nerva/
       README.md      what lives here + how to back it up
       .env           secrets/config (copied from .env.example on first run)
       memory/        every runtime store (settings.db, checkpoints, audit, …)
@@ -50,9 +50,9 @@ _REPO_ROOT = Path(__file__).resolve().parents[2]
 _DEFAULT_ROOT = _REPO_ROOT / "memory_logs"
 
 _USER_HOME_README = """\
-# Jarvis — your data
+# Nerva — your data
 
-Everything personal about this Jarvis instance lives in this folder — the
+Everything personal about this Nerva instance lives in this folder — the
 install directory holds only the application code and can be deleted or
 upgraded at any time without losing anything.
 
@@ -60,10 +60,10 @@ upgraded at any time without losing anything.
 |------|------------|
 | `.env` | Your configuration + API keys/secrets. Never share this file. |
 | `memory/` | All runtime state: settings, conversation memory, checkpoints, the security audit log, autonomy queue, embeddings cache. |
-| `skills/` | Skills you installed or Jarvis generated (with your approval). These load in addition to the bundled skills; a same-named skill here wins. |
+| `skills/` | Skills you installed or Nerva generated (with your approval). These load in addition to the bundled skills; a same-named skill here wins. |
 | `souls/<agent>/SOUL.local.md` | Your personalized agent personas (and `HEARTBEAT.local.md` schedules). These override the shipped templates. |
 
-**Backup:** copy this whole folder. **Full reset:** stop Jarvis and delete
+**Backup:** copy this whole folder. **Full reset:** stop Nerva and delete
 `memory/`. **Uninstall:** delete the app install directory; this folder is
 yours and is never touched by an uninstall.
 """
@@ -91,14 +91,14 @@ def user_home() -> "Path | None":
     """The owner's data folder, or None when not active (plain dev checkout).
 
     $JARVIS_USER_HOME always wins; a frozen build defaults to
-    ``~/Documents/Jarvis``. Returning None keeps every overlay/scaffold path
+    ``~/Documents/Nerva``. Returning None keeps every overlay/scaffold path
     inert so dev + test behavior is unchanged.
     """
     env = os.environ.get("JARVIS_USER_HOME", "").strip()
     if env:
         return Path(env).expanduser()
     if is_frozen():
-        return Path.home() / "Documents" / "Jarvis"
+        return Path.home() / "Documents" / "Nerva"
     return None
 
 

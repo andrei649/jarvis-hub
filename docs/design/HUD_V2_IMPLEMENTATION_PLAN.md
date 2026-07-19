@@ -282,7 +282,7 @@ existing responses.
 - **P4 Gap surfaces (parity gate):** build every ❌ from §5 into its home mode; backend additions from §6;
   **parity‑gate test must be 100%**.
 - **P5 Polish:** real settings (replace tweaks panel), a11y, responsive, motion/idle, ambient depth.
-- **P6 Cutover (on your word):** `/` → v2; archive legacy HUD; update `STATUS.md`, `JARVIS.md`,
+- **P6 Cutover (on your word):** `/` → v2; archive legacy HUD; update `STATUS.md`, `NERVA.md`,
   `docs/ARCHITECTURE.md`.
 
 ---

@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 420 128" role="img" aria-label="Nerva">
+  <!-- Nerva wordmark: the neural-N mark + letterform. Self-contained (system
+       font stack, no webfont dependency). Dark-background variant — the mark's
+       tile carries its own void, so this works on any dark surface. -->
+  <rect x="0" y="0" width="128" height="128" rx="24" fill="#030810"/>
+  <g stroke="#00AEEF" stroke-width="9" stroke-linecap="round" fill="none">
+    <line x1="40" y1="92" x2="40" y2="36"/>
+    <line x1="40" y1="36" x2="88" y2="92"/>
+    <line x1="88" y1="92" x2="88" y2="36"/>
+  </g>
+  <g fill="#00AEEF">
+    <circle cx="40" cy="36" r="8"/>
+    <circle cx="40" cy="92" r="8"/>
+    <circle cx="88" cy="36" r="8"/>
+    <circle cx="88" cy="92" r="8"/>
+  </g>
+  <text x="152" y="86" fill="#E8F4FB"
+        font-family="'Space Grotesk','Segoe UI',system-ui,sans-serif"
+        font-size="64" font-weight="600" letter-spacing="6">NERVA</text>
+</svg>

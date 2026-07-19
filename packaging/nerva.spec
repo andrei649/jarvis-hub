@@ -1,12 +1,12 @@
 # -*- mode: python ; coding: utf-8 -*-
-"""PyInstaller spec — builds the Jarvis one-folder (onedir) executable.
+"""PyInstaller spec — builds the Nerva one-folder (onedir) executable.
 
 Build (from the repo root, inside the project venv):
 
     pip install pyinstaller
-    python scripts/build_exe.py          # wraps: pyinstaller packaging/jarvis.spec
+    python scripts/build_exe.py          # wraps: pyinstaller packaging/nerva.spec
 
-Output: dist/jarvis/jarvis(.exe on Windows) + dist/jarvis/_internal/ (the
+Output: dist/nerva/nerva(.exe on Windows) + dist/nerva/_internal/ (the
 bundle). One-folder, not one-file: this app reads real files at runtime
 (HUD assets, agents.yaml, SOUL templates, bundled skills) and onedir keeps
 startup instant and paths debuggable.
@@ -16,7 +16,7 @@ Data files are collected at bundle paths mirroring the source layout
 `agents.core.paths.app_root()` — which returns sys._MEIPASS when frozen —
 anchors them exactly like the repo root does in a dev checkout. All personal
 state (memory, .env, generated skills, soul overlays) lives OUTSIDE the
-bundle, in ~/Documents/Jarvis (see docs/PACKAGING.md).
+bundle, in ~/Documents/Nerva (see docs/PACKAGING.md).
 """
 
 import glob
@@ -38,9 +38,9 @@ datas = [
     (os.path.join(ROOT, "agents", "web"), os.path.join("agents", "web")),
     # Canonical agent registry + system config.
     (os.path.join(ROOT, "agents", "_system"), os.path.join("agents", "_system")),
-    # Bundled skill packs (read-only shipped content; user skills live in Documents/Jarvis).
+    # Bundled skill packs (read-only shipped content; user skills live in Documents/Nerva).
     (os.path.join(ROOT, "skills"), "skills"),
-    # First-run template copied to Documents/Jarvis/.env by ensure_user_home().
+    # First-run template copied to Documents/Nerva/.env by ensure_user_home().
     (os.path.join(ROOT, ".env.example"), "."),
 ]
 
@@ -89,7 +89,7 @@ exe = EXE(
     a.scripts,
     [],
     exclude_binaries=True,
-    name="jarvis",
+    name="nerva",
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
@@ -108,5 +108,5 @@ coll = COLLECT(
     a.datas,
     strip=False,
     upx=False,
-    name="jarvis",
+    name="nerva",
 )

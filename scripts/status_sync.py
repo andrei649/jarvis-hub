@@ -41,7 +41,7 @@ REGISTRY = REPO / "agents" / "_system" / "agents.yaml"
 BACKLOG = REPO / "BACKLOG.md"
 GENERATED_DOCS = {
     REPO / "README.md": ("badges", "run", "readme-status"),
-    REPO / "JARVIS.md": ("jarvis-stats",),
+    REPO / "NERVA.md": ("jarvis-stats",),
     REPO / "GO_LIVE_PLAN.md": ("go-live-header",),
 }
 

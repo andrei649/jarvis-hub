@@ -1,7 +1,7 @@
 """User data home + frozen-app path anchoring (agents/core/paths.py).
 
 The packaged executable keeps all personal state in one owner-visible folder
-(~/Documents/Jarvis by default): .env, memory/, skills/, souls/. A plain dev
+(~/Documents/Nerva by default): .env, memory/, skills/, souls/. A plain dev
 checkout has NO user home (user_home() is None) so every overlay/scaffold path
 is inert and behavior is byte-identical to before.
 
@@ -44,12 +44,12 @@ def test_env_user_home_wins(monkeypatch, tmp_path):
     assert paths.data_root() == home / "memory"
 
 
-def test_frozen_defaults_to_documents_jarvis(monkeypatch):
+def test_frozen_defaults_to_documents_nerva(monkeypatch):
     _clear_env(monkeypatch)
     monkeypatch.setattr(sys, "frozen", True, raising=False)
     try:
         assert paths.is_frozen() is True
-        assert paths.user_home() == Path.home() / "Documents" / "Jarvis"
+        assert paths.user_home() == Path.home() / "Documents" / "Nerva"
     finally:
         monkeypatch.delattr(sys, "frozen", raising=False)
 

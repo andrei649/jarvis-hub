@@ -141,6 +141,13 @@ python -m pytest tests/ -v          # ~3,868 passed, 6 skipped (counter synced v
 > Linux-verified end-to-end (built exe boots, `/readyz` green, scaffold
 > created); the Windows exe build is an owner task (`docs/OWNER_TASKS.md`).
 > +14 backend tests (`tests/test_user_home_packaging.py` + soul-overlay case).
+> The **Nerva in-product rename** (owner decision 2026-07-19, per NERVA_VISION §2)
+> shipped in the same wave: every user-facing surface says Nerva (HUD chrome/titles,
+> `nerva[.exe]` + `Documents/Nerva`, landing, README hero, new neural-N logo
+> `docs/brand/nerva-mark.svg`, wake word `nerva` added, `JARVIS.md` → `NERVA.md` with
+> all 28 cross-references updated). Kept: agent personas (Jarvis = the orchestrator
+> agent), `jarvis-hub` repo/engine codename + `JARVIS_*` env prefix. Owner-only rest:
+> the GitHub repo rename (OWNER_TASKS). Decision log: `docs/HISTORY.md`.
 
 ---
 
@@ -1892,7 +1899,7 @@ chain-of-thought leak / mid-sentence truncation fixed. Kill-switch:
 
 > **Notă hardware (nu e task):** laptop RTX 5090 (mobile, 24GB, power-capped) **nu se poate upgrada** la GPU.
 > Imagini = local pe idle ($0). Video serios local = nod GPU pe LAN (~$2.8k desktop 5090) sau eGPU — **parcate**;
-> video = manual via Gemini. *(Reconciliere doc:* `JARVIS.md` descrie un desktop Windows/192GB — de aliniat cu Bonobo-ul real.)*
+> video = manual via Gemini. *(Reconciliere doc:* `NERVA.md` descrie un desktop Windows/192GB — de aliniat cu Bonobo-ul real.)*
 
 ---
 

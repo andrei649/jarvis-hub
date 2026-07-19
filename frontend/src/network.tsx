@@ -185,7 +185,7 @@ function NetworkBrain({ agents, tasks = [], activeId, onSelect, focusId, setFocu
           <circle className="ambient-anim" cx={CX} cy={CY} r="30" fill="none" stroke="var(--accent)" strokeWidth=".6" opacity=".4"
             strokeDasharray="3 4" style={{transformOrigin:`${CX}px ${CY}px`, animation:motion==='calm'?'none':'spin 30s linear infinite'}}/>
           <path d={(V2.GLYPHS.jarvis)} transform={`translate(${CX},${CY}) scale(1.5)`} className="net-glyph" stroke="var(--accent-light)"/>
-          <text className="net-core-label" x={CX} y={CY+46} textAnchor="middle" fontSize="9">JARVIS · CORE</text>
+          <text className="net-core-label" x={CX} y={CY+46} textAnchor="middle" fontSize="9">NERVA · CORE</text>
         </g>
 
         {/* NODES */}

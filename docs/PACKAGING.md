@@ -1,7 +1,7 @@
-# Packaging — the Jarvis executable & the owner's data folder
+# Packaging — the Nerva executable & the owner's data folder
 
 > How the repo becomes an installable app, and where a packaged install keeps
-> the owner's personal state. Build tooling: `packaging/jarvis.spec` +
+> the owner's personal state. Build tooling: `packaging/nerva.spec` +
 > `scripts/build_exe.py` + `packaging/windows/install.ps1`.
 
 ## The two-folder model
@@ -11,12 +11,12 @@ data** (yours, survives upgrades/uninstalls):
 
 | Folder | Contents | Lifecycle |
 |---|---|---|
-| install dir (e.g. `%LOCALAPPDATA%\Programs\Jarvis`) | the executable + bundled read-only content: HUD assets, `agents.yaml`, SOUL/HEARTBEAT *templates*, bundled skills | replaced wholesale on upgrade; delete = uninstall |
-| **`~/Documents/Jarvis`** (the *user data home*) | `README.md` · `.env` (secrets/config) · `memory/` (every runtime store: settings.db, checkpoints, audit, autonomy, embeddings) · `skills/` (user-installed/generated) · `souls/<id>/SOUL.local.md` + `HEARTBEAT.local.md` (personal persona overlays) | created on first run; **never** touched by install/upgrade/uninstall; backup = copy the folder |
+| install dir (e.g. `%LOCALAPPDATA%\Programs\Nerva`) | the executable + bundled read-only content: HUD assets, `agents.yaml`, SOUL/HEARTBEAT *templates*, bundled skills | replaced wholesale on upgrade; delete = uninstall |
+| **`~/Documents/Nerva`** (the *user data home*) | `README.md` · `.env` (secrets/config) · `memory/` (every runtime store: settings.db, checkpoints, audit, autonomy, embeddings) · `skills/` (user-installed/generated) · `souls/<id>/SOUL.local.md` + `HEARTBEAT.local.md` (personal persona overlays) | created on first run; **never** touched by install/upgrade/uninstall; backup = copy the folder |
 
 Resolution lives in `agents/core/paths.py`:
 
-- `user_home()` — `$JARVIS_USER_HOME` → that path; frozen executable → `~/Documents/Jarvis`; plain dev checkout → `None` (everything below is inert, dev behavior unchanged).
+- `user_home()` — `$JARVIS_USER_HOME` → that path; frozen executable → `~/Documents/Nerva`; plain dev checkout → `None` (everything below is inert, dev behavior unchanged).
 - `data_root()` — `$JARVIS_HOME`/`$JARVIS_MEMORY_DIR` (unchanged, always win) → `<user home>/memory` when a user home is active → `<repo>/memory_logs` dev default.
 - `app_root()` — `$JARVIS_APP_ROOT` → PyInstaller bundle dir (`sys._MEIPASS`) when frozen → repo root. Anchors every formerly CWD-relative read (skills, souls, heartbeats, `agents.yaml`), so the app runs from any working directory.
 - `ensure_user_home()` — idempotent first-run scaffold (folders + README + `.env` copied from `.env.example`); runs at boot in `web.py`'s lifespan and in `serve.py`.
@@ -44,14 +44,14 @@ The smoke test boots the built binary with an isolated temp
 `JARVIS_USER_HOME`, polls `/readyz`, and verifies the first-run scaffold —
 proving the bundle actually starts, not just that PyInstaller exited 0.
 
-Output: `dist/jarvis/` — the whole folder is the app (`jarvis[.exe]` +
+Output: `dist/nerva/` — the whole folder is the app (`nerva[.exe]` +
 `_internal/`). Zip it, or on Windows run the installer:
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File packaging\windows\install.ps1
 ```
 
-which copies it to `%LOCALAPPDATA%\Programs\Jarvis` (no admin needed) and adds
+which copies it to `%LOCALAPPDATA%\Programs\Nerva` (no admin needed) and adds
 a Start Menu shortcut. Frontend note: the HUD ships pre-built (`agents/web/v2`
 is committed), so no Node toolchain is needed at package time.
 
@@ -63,9 +63,9 @@ is committed), so no Node toolchain is needed at package time.
 
 ## Upgrading / uninstalling
 
-- **Upgrade:** rebuild, re-run the installer — it replaces the app folder; `Documents/Jarvis` is untouched.
-- **Uninstall:** delete the install folder (+ shortcut). Your data stays in `Documents/Jarvis`.
-- **Full reset:** stop Jarvis, delete `Documents/Jarvis/memory`.
+- **Upgrade:** rebuild, re-run the installer — it replaces the app folder; `Documents/Nerva` is untouched.
+- **Uninstall:** delete the install folder (+ shortcut). Your data stays in `Documents/Nerva`.
+- **Full reset:** stop Nerva, delete `Documents/Nerva/memory`.
 
 ## Relocating data
 

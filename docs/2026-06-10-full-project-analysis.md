@@ -43,7 +43,7 @@ None of these block the 1.0 audit gate; items 3–5 are good audit-pass fixes.
 | Doc | Was | Now |
 |---|---|---|
 | `README.md` | 16 agents · 1,894-test badge · "1,764 tests" · "~166/186 (82%)" | 17 agents (Argus + Howard listed) · 2,156 · 194/196 (≈99% SP) + HUD-gap pointer |
-| `JARVIS.md` | "16 agents" ×3 · ~203 routes · "active: ORIZONT 8" | 17 · ~253 · pre-1.0 audit gate |
+| `NERVA.md` | "16 agents" ×3 · ~203 routes · "active: ORIZONT 8" | 17 · ~253 · pre-1.0 audit gate |
 | `STATUS.md` | header 1,764 tests / ~203 routes / 82%; agent table missing Argus+Howard | updated; old endpoint table marked as historical snapshot |
 | `GO_LIVE_PLAN.md` | H11 "0/4", H12 "10/15", H13–17 "12/20", metrics 1,764 / ~203 / 82%, gap "~189 SP" | H11 4/4 ✅, H12 24/25, H13–17 19/20, metrics current, gap ~13 SP (GPU-bound) |
 | `docs/design/HUD_V2_REMAINING.md` | said v2 is opt-in at `/v2` | cutover noted; §10 re-audit added |

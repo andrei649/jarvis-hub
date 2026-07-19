@@ -81,9 +81,9 @@ defenses hold.
 ## 4. Documentation findings — **fixed in this PR**
 
 The doc audit found pervasive stale numbers. **Corrected here** (verified against
-code): version `0.9.x` → **9.9.9** everywhere; agent count `15` → **16** (JARVIS.md
+code): version `0.9.x` → **9.9.9** everywhere; agent count `15` → **16** (NERVA.md
 ×4); test count (`846`/`909`/`1184`/`1474`) → **1,559** (1,568 collected, 9 skipped; verified 2026-06-04); endpoint count
-(`17`/`19`/`88`) → **~203**; model `gemma-4-26b` → `gemma-4-31b` (JARVIS.md self-conflict);
+(`17`/`19`/`88`) → **~203**; model `gemma-4-26b` → `gemma-4-31b` (NERVA.md self-conflict);
 ARCHITECTURE port typo `8000` → `8080`; ARCHITECTURE module index gained the
 `observability/` entries (`quality`, `review_queue`, `datasets`); BACKLOG/MOONSHOT/
 VALUATION/STATUS refreshed; a `9.9.9` row added to the version roadmap.
@@ -91,8 +91,8 @@ VALUATION/STATUS refreshed; a `9.9.9` row added to the version roadmap.
 **Corrected agent error:** the doc audit claimed `LICENSE`/`CONTRIBUTING.md` were
 missing — **they exist** (shipped under H7.9). No action taken.
 
-**Still open (low):** JARVIS.md vs docs/ARCHITECTURE.md overlap — consider making
-ARCHITECTURE.md the single source for the module index and trimming JARVIS.md to
+**Still open (low):** NERVA.md vs docs/ARCHITECTURE.md overlap — consider making
+ARCHITECTURE.md the single source for the module index and trimming NERVA.md to
 a high-level overview (deferred; not blocking).
 
 ---
@@ -112,7 +112,7 @@ a high-level overview (deferred; not blocking).
 8. Centralize config/paths/limits (Q4).
 
 **P2 — polish:**
-9. Docstring/type-hint sweep + CI lint (Q5); `tests/README.md` (Q7); JARVIS.md/ARCHITECTURE.md de-duplication.
+9. Docstring/type-hint sweep + CI lint (Q5); `tests/README.md` (Q7); NERVA.md/ARCHITECTURE.md de-duplication.
 
 ---
 

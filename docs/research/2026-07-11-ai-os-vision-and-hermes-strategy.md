@@ -237,7 +237,7 @@ acquisition, multi-target execution, context endurance) while holding what Herme
 - `docs/HISTORY.md` — decision-log row (2026-07-11).
 - `README.md` — repositioned lead + softened competitive claims + two-part 1.0 gate.
 - Registrations: `CLAUDE.md` routing, `docs/AI_CONTEXT.md` Tier 1, README docs list;
-  consistency touches in `GO_LIVE_PLAN.md`, `JARVIS.md`, `STATUS.md`, `docs/OWNER_TASKS.md`,
+  consistency touches in `GO_LIVE_PLAN.md`, `NERVA.md`, `STATUS.md`, `docs/OWNER_TASKS.md`,
   `docs/gap-analysis-1.0.md`.
 
 ## 7. Addendum — parallel draft & reconciliation (2026-07-12)

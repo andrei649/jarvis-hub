@@ -8,8 +8,10 @@
 > **BACKLOG wins** — fix the stale one. Provenance (the full owner session, immutable):
 > [docs/research/2026-07-11-ai-os-vision-and-hermes-strategy.md](docs/research/2026-07-11-ai-os-vision-and-hermes-strategy.md).
 >
-> **Naming:** **Nerva** is the end-user product brand (published by **Digitaholic**). `jarvis-hub`
-> remains the repository/package codename until the rename is deliberately executed (owner task —
+> **Naming:** **Nerva** is the end-user product brand (published by **Digitaholic**). The
+> in-product rename was executed 2026-07-19 (HUD, executable + `Documents/Nerva`, landing, README,
+> logo — the orchestrator *agent* keeps its Jarvis persona per §2). `jarvis-hub` remains the
+> repository/package codename until the GitHub repo rename (owner task —
 > [docs/OWNER_TASKS.md](docs/OWNER_TASKS.md)). "Jarvis" in older docs refers to this same system.
 >
 > **How to use this doc:** MOONSHOT.md stays the short north star (why we exist, principles, phase

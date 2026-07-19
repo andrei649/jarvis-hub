@@ -24,7 +24,7 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 AGENTS_ROOT = REPO_ROOT / "agents"
 FAKE_MODEL = "install-smoke-fake-model"
 FAKE_BACKEND_NAME = "install-smoke-fake-local"
-DEFAULT_REPLY = "Install smoke reply: Jarvis is alive."
+DEFAULT_REPLY = "Install smoke reply: Nerva is alive."
 DEFAULT_USER_TEXT = "Install smoke: please answer from the fake local model."
 
 
@@ -208,7 +208,7 @@ def run_dev_suite() -> int:
 
 
 async def _async_main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description="Run Jarvis install smoke.")
+    parser = argparse.ArgumentParser(description="Run Nerva install smoke.")
     parser.add_argument("--state-dir", type=Path, default=None,
                         help="Optional smoke state directory; defaults to a temp dir.")
     parser.add_argument("--dev", action="store_true",

@@ -1,7 +1,7 @@
 # CLAUDE.md
 
 Instrucțiunile pentru asistenți sunt în **`AGENTS.md`** (sursă unică, partajată cu opencode și Gemini).
-Arhitectura e în **`JARVIS.md`**; harta de navigare pentru AI (entry points, lifecycle, index de module,
+Arhitectura e în **`NERVA.md`**; harta de navigare pentru AI (entry points, lifecycle, index de module,
 rețete) e în **`docs/ARCHITECTURE.md`** — începe acolo ca să găsești rapid unde trăiește codul.
 
 **Context mare (Fable 5 / 1M tokens):** `docs/AI_CONTEXT.md` — ce fișiere încarci, în ce ordine,
@@ -21,7 +21,7 @@ capabilitate/"house brain"/media director/camere/computer operator/capability re
 Hermes"/"superior lui Hermes"** → citește `NERVA_VISION.md` (viziunea de produs + capabilități:
 brand architecture, cei 6 piloni, arhitectura țintă, registry, graduated autonomy, criteriile
 S1–S8 vs Hermes; orizonturile ORIZONT 27–33 în `BACKLOG.md`). MOONSHOT.md rămâne north-star-ul
-scurt. **Nerva = brandul de produs; jarvis-hub = codename-ul repo-ului până la rename (owner).**
+scurt. **Nerva = brandul de produs (rename-ul în cod/suprafețe de produs executat 2026-07-19); jarvis-hub = codename-ul repo-ului/engine-ului până la redenumirea repo-ului GitHub (owner).**
 Taskurile care țin **doar de owner** (hardware, GitHub settings, decizii) → `docs/OWNER_TASKS.md`.
 Când se discută **metrici/KPI/măsurarea north-star** (accepted actions, interrupt/reject rate, %-local, p95) → `docs/METRICS.md`
 (definiții + endpoint `GET /api/metrics/north-star`). Retrospectiva anuală (status, învățăminte, gap-uri) → `docs/REVIEW_YEAR_ONE.md`.

@@ -81,7 +81,7 @@ def main():
     home = ensure_user_home()
     if home is not None:
         print(f"Your data lives in: {home}  (config: {home / '.env'})")
-    print(f"Jarvis Hub starting at http://{config.host}:{config.port}")
+    print(f"Nerva starting at http://{config.host}:{config.port}")
     print("Features: multi-agent cabinet, skills system, memory store, cost analytics, CI/CD")
     # uvicorn.Server installs SIGINT/SIGTERM handlers and triggers the lifespan
     # shutdown (graceful channel stop + pooled-client close), bounded by

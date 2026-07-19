@@ -35,7 +35,7 @@
 
 ### Batch A — runtime verification *(needs the owner)* → Batch H — cutover *(when verified)*
 - Owner runs `/v2`, flags mismatches; then flip default `/` → v2 (`JARVIS_HUD=v2` or hardcode), archive the old
-  HUD, update `README` / `STATUS.md` / `JARVIS.md`.
+  HUD, update `README` / `STATUS.md` / `NERVA.md`.
 
 ## Order recommendation
 **B + D‑lite** first (safe, visible) → **C** (after a live run‑through so shapes are mapped against reality) →

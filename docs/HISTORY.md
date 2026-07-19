@@ -5,6 +5,22 @@
 
 ---
 
+## Decision — Product rename to Nerva executed in-product (2026-07-19)
+
+Owner decision (MOONSHOT §7.4): the product identity is **Nerva** (published by Digitaholic),
+per [NERVA_VISION.md](../NERVA_VISION.md) §2, and the rename was executed across every
+user-facing surface: HUD chrome + titles, the packaged executable (`nerva[.exe]`,
+`%LOCALAPPDATA%\Programs\Nerva`, data folder `Documents/Nerva`), landing page, README hero,
+logo (`docs/brand/nerva-mark.svg` — the "neural N"), wake words (`nerva` added), and
+architecture doc (`JARVIS.md` → `NERVA.md`). Deliberately KEPT: agent persona names (Jarvis
+stays the prime-orchestrator agent — "existing named agents remain as specialist roles"),
+the `jarvis-hub` repo/engine codename, python package paths, and the `JARVIS_*` env prefix
+(compatibility; engine-level). Still owner-only: the GitHub repo rename
+([docs/OWNER_TASKS.md](OWNER_TASKS.md)). Rationale: resolves the Marvel/Disney naming risk
+flagged in [BRAND_BOOK.md](BRAND_BOOK.md) §2 ahead of Phase 2.
+
+---
+
 ## North-Star Instrumentation + Year-One Review — Sprint 2026-06-20
 
 > The MOONSHOT §6 metric set was defined but never computed in one place. This sprint

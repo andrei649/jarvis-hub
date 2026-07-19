@@ -228,7 +228,7 @@ git commit -m "feat(desktop): expose governed host execution proposal rail"
 - Modify: `BACKLOG.md`
 - Modify: `project-status.json`
 - Modify: `README.md`
-- Modify: `JARVIS.md`
+- Modify: `NERVA.md`
 - Modify: `GO_LIVE_PLAN.md`
 - Modify: `STATUS.md`
 
@@ -275,6 +275,6 @@ Expected: all pass; the opt-in live desktop/Playwright tests may skip with expli
 - [ ] **Step 6: Commit the graduation and truth sync**
 
 ```bash
-git add agents/core/observability/reality_harness.py tests/test_h28_operator_reality.py scripts/park_guard.py tests/test_park_guard.py BACKLOG.md project-status.json README.md JARVIS.md GO_LIVE_PLAN.md STATUS.md
+git add agents/core/observability/reality_harness.py tests/test_h28_operator_reality.py scripts/park_guard.py tests/test_park_guard.py BACKLOG.md project-status.json README.md NERVA.md GO_LIVE_PLAN.md STATUS.md
 git commit -m "feat(operator): complete H28 governed desktop reality rail"
 ```

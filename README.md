@@ -1,4 +1,6 @@
-# Jarvis Hub — your AI cabinet
+# Nerva — your AI cabinet
+
+<img src="docs/brand/nerva-mark.svg" alt="Nerva" width="72" align="right"/>
 
 ![Python 3.12](https://img.shields.io/badge/python-3.12-blue?logo=python&logoColor=white)
 ![License: MIT](https://img.shields.io/badge/license-MIT-green)
@@ -7,9 +9,9 @@
 ![Version](https://img.shields.io/badge/version-0.11.0-orange)
 <!-- project-status:badges:end -->
 
-> 17 specialized AI agents orchestrated through Jarvis, running on **your own hardware**, controlled by voice and web.
+> **Nerva** — 17 specialized AI agents orchestrated through one governed system, running on **your own hardware**, controlled by voice and web. *(Repo/engine codename: `jarvis-hub`; the prime-orchestrator agent keeps its persona name, Jarvis.)*
 
-**A private AI OS that cannot silently act beyond the authority you grant it.** Local-first and governed: every autonomous action crosses one **Action Kernel** — a reversible/irreversible **approval queue** for anything consequential, a tamper-evident **audit log**, budgets and a kill-switch — and it runs entirely on your own hardware (LM Studio / Ollama on your GPU), **$0/month, no cloud by default**, with a **family agent that never touches the internet**. Where other local agent systems prioritize extensibility and raw autonomy, this system prioritizes governed execution, local ownership, and inspectability. The product it is becoming is **Nerva** (published by Digitaholic; `jarvis-hub` remains the repo codename until the deliberate rename) — the long-term product & capability vision (house brain, media director, cameras, computer operator, self-extension) is in [`NERVA_VISION.md`](NERVA_VISION.md).
+**A private AI OS that cannot silently act beyond the authority you grant it.** Local-first and governed: every autonomous action crosses one **Action Kernel** — a reversible/irreversible **approval queue** for anything consequential, a tamper-evident **audit log**, budgets and a kill-switch — and it runs entirely on your own hardware (LM Studio / Ollama on your GPU), **$0/month, no cloud by default**, with a **family agent that never touches the internet**. Where other local agent systems prioritize extensibility and raw autonomy, this system prioritizes governed execution, local ownership, and inspectability. The product **is Nerva** (published by Digitaholic — the in-product rename was executed 2026-07-19; `jarvis-hub` remains the repo/engine codename until the GitHub repo rename, an owner task) — the long-term product & capability vision (house brain, media director, cameras, computer operator, self-extension) is in [`NERVA_VISION.md`](NERVA_VISION.md).
 
 **Get running in minutes →** [Quickstart](#run) · one-click `INSTALL.bat` on Windows.
 
@@ -19,7 +21,7 @@
 
 ## What this is
 
-A personal AI mesh that handles the cross-section of *your* life: the day job and the side business, the family, the car and the house projects, fitness, finance, content. Each domain has a dedicated agent. They talk to each other through Jarvis. They learn from interactions.
+A personal AI mesh that handles the cross-section of *your* life: the day job and the side business, the family, the car and the house projects, fitness, finance, content. Each domain has a dedicated agent. They talk to each other through the Jarvis orchestrator agent. They learn from interactions.
 
 **The agents ship as templates and personalize themselves in your first session:** guided onboarding (drop-folder import + profile memory) teaches Jarvis your people, projects, and preferences, every learned fact is inspectable and deletable, and each agent's personality is editable. Your personalized souls live in gitignored `agents/<id>/SOUL.local.md` overlays — the public repo stays generic, your instance stays yours. The roster below shows each agent's *role*; the specifics become yours.
 
@@ -142,7 +144,7 @@ _Linux/macOS shortcut:_ `./install.sh` does all of the above (venv + install + t
 - **`docs/RELEASE.md`** — how a release is cut (tag → source bundle + SBOM + checksums + optional signatures) and how to verify a download.
 - **`SECURITY.md`** · **`docs/THREAT_MODEL.md`** · **`docs/PRIVACY.md`** — the trust trio: disclosure policy, what Jarvis defends against (with the mechanism for each threat), and the local-first data/telemetry stance.
 - **`docs/USER_GUIDE.md`** · **`docs/FAQ.md`** · **`docs/UPGRADE.md`** — the user docs: install/run/daily-use, quick answers, and how to upgrade safely.
-- **`JARVIS.md`** — architecture & directory structure · **`AGENTS.md`** — assistant conventions · **`BACKLOG.md`** — priorities & tasks.
+- **`NERVA.md`** — architecture & directory structure · **`AGENTS.md`** — assistant conventions · **`BACKLOG.md`** — priorities & tasks.
 - **`GO_LIVE_PLAN.md`** — features + marketing brief + v1.0 launch checklist · **`docs/VALUATION_AND_PRICING.md`** — valuation, pricing & unit economics.
 - **`docs/MANUAL_TESTING.md`** — human pre-release checklist: everything the offline test suite can't verify (real LLMs, channels, services, HUD rendering).
 - **`docs/2026-06-08-future-developments-report.md`** — forward roadmap: remaining v1.0 gate, WorldView follow-ups, audit-debt hardening, post-1.0 horizons (Hermes, Cognition), and recommended sequencing.

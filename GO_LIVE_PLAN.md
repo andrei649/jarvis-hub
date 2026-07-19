@@ -1,4 +1,4 @@
-# Jarvis Hub — Go-Live Plan
+# Nerva — Go-Live Plan
 
 > Generated: 2026-06-02 · Updated: 2026-07-11 · Current: **v0.11.0** (feature-complete + refactor done) · Target: **v1.0.0 = the proof track (H23 + design partners) + the AI-OS capability program** ([NERVA_VISION.md](NERVA_VISION.md) · [version roadmap](BACKLOG.md#version-roadmap)) · Owner: Andrei
 > North star (vision & phase gates): [MOONSHOT.md](MOONSHOT.md)

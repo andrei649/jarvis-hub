@@ -110,7 +110,7 @@ with plugin-configured checks instead of seeded success. Still open:
 
 ## 8. Cutover (P6 follow‑through)
 - Once verified, flip the default: `JARVIS_HUD=v2` (or hardcode) so `/` serves v2; keep `/v1` as the
-  escape hatch; then archive the old `agents/web/` HUD and update `README` / `STATUS.md` / `JARVIS.md`.
+  escape hatch; then archive the old `agents/web/` HUD and update `README` / `STATUS.md` / `NERVA.md`.
 
 ## 9. Known infra issue (not a code fix)
 - CI **`Analyze (python)` (CodeQL)** intermittently fails with *"Code scanning is not enabled for this

@@ -108,7 +108,7 @@ CREATE TABLE IF NOT EXISTS settings (
 DEFAULTS: list[dict[str, Any]] = [
     # general
     dict(category="general", key="timezone",         value="Europe/Bucharest",    label="Timezone",           kind="select",  opts=["Europe/Bucharest","UTC","US/Eastern"]),
-    dict(category="general", key="wake_words",       value=["jarvis","hub"],      label="Wake words",         kind="tags"),
+    dict(category="general", key="wake_words",       value=["nerva","jarvis","hub"], label="Wake words",      kind="tags"),
     # product — owner-consented posture, default OFF. O26-P2.4 wave 1 wakes the
     # "knows you" stack only after the onboarding/product setting selects it.
     dict(category="product", key="posture", value="off", label="Product posture", kind="select", opts=["off", "companion_wave1", "design_partner"]),

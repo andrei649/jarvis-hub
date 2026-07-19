@@ -1,8 +1,12 @@
-# Jarvis — AI Agent Orchestration System
+# Nerva — AI Agent Orchestration System
+
+> **Nerva** is the product (published by Digitaholic); `jarvis-hub` remains the repo/engine
+> codename until the GitHub repo rename (owner task). The prime-orchestrator *agent* is still
+> named Jarvis — one specialist persona among the 17, per [NERVA_VISION.md](NERVA_VISION.md) §2.
 
 ## Overview
 
-Jarvis is a local-first multi-agent AI orchestration system. 17 active agents across 4 tiers (incl. Argus, the WorldView bridge, and Howard, the emerging digital twin), coordinated by Jarvis (prime orchestrator). Pure Python, runs on Windows via LM Studio with GPU acceleration (RTX 5090 24GB VRAM, 192GB DDR5).
+Nerva is a local-first multi-agent AI orchestration system. 17 active agents across 4 tiers (incl. Argus, the WorldView bridge, and Howard, the emerging digital twin), coordinated by the Jarvis agent (prime orchestrator). Pure Python, runs on Windows via LM Studio with GPU acceleration (RTX 5090 24GB VRAM, 192GB DDR5).
 
 > **Related stack — WorldView (4D OSINT):** a separate, self-contained Next.js + Fastify product under [`worldview/`](worldview/) (ports 3000/4000, Docker infra) that shares **no runtime** with this Python system. The **Argus** agent (`agents/argus/`) is the read-only, governed bridge between JARVIS and WorldView; the entire integration surface is the versioned contract in [`docs/contracts/worldview-bridge.md`](docs/contracts/worldview-bridge.md) (6 read-only endpoints, contract-tested on both sides). It is installed and auto-started by `INSTALL.bat`/`START.bat`. See [`worldview/README.md`](worldview/README.md).
 

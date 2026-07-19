@@ -123,14 +123,14 @@ PyInstaller does **not** cross-compile, so the shippable `jarvis.exe` must be
 built on your Windows box:
 
 - [ ] On the RTX/Windows machine, in the project venv:
-  `pip install pyinstaller` → `python scripts\build_exe.py` (builds + boots the
-  exe against `/readyz` with an isolated temp data home).
+  `pip install pyinstaller` → `python scripts\build_exe.py` (builds + boots `nerva.exe`
+  against `/readyz` with an isolated temp data home).
 - [ ] Install it: `powershell -ExecutionPolicy Bypass -File packaging\windows\install.ps1`
-  (→ `%LOCALAPPDATA%\Programs\Jarvis` + Start Menu shortcut, no admin needed).
-- [ ] First run: verify `Documents\Jarvis` is created (README, `.env`, `memory/`,
-  `skills/`, `souls/`), put your API keys in `Documents\Jarvis\.env`, and if you
+  (→ `%LOCALAPPDATA%\Programs\Nerva` + a "Nerva" Start Menu shortcut, no admin needed).
+- [ ] First run: verify `Documents\Nerva` is created (README, `.env`, `memory/`,
+  `skills/`, `souls/`), put your API keys in `Documents\Nerva\.env`, and if you
   use personalized souls copy your `*.local.md` overlays into
-  `Documents\Jarvis\souls\<agent>\`.
+  `Documents\Nerva\souls\<agent>\`.
 
 ## 🟢 Launch assets (when you're ready to show it)
 
@@ -138,8 +138,14 @@ built on your Windows box:
   irreversible step (the `TODO(launch)` in README.md).
 - [ ] **HUD screenshot on void-black** for the GitHub social preview (doubles as README hero
   until the GIF lands) — art direction in BRAND_BOOK §7.
-- [ ] **Decide the "Jarvis" naming question** before anything commercial (Phase 2) —
-  trademark-risk note in BRAND_BOOK §2.
+- [x] **Decide the "Jarvis" naming question** — ✅ decided + executed 2026-07-19: the product
+  is **Nerva** on every user-facing surface (HUD, executable + `Documents/Nerva`, landing,
+  README, logo — `docs/brand/nerva-mark.svg`); agent personas keep their names. BRAND_BOOK §2
+  updated.
+  - [ ] **Still yours — rename the GitHub repo** (Settings → General → Repository name):
+    `jarvis-hub` → `nerva` (or `nerva-hub`). GitHub auto-redirects old clones/remotes. Then
+    update the repo description + topics (paste-ready strings in BRAND_BOOK §9) and re-point
+    any local remotes: `git remote set-url origin <new-url>`.
 - [x] **SOUL.md templating** — ✅ approved + shipped 2026-06-10: repo souls/heartbeats are
   generic templates; personalized copies live in gitignored `agents/<id>/SOUL.local.md` /
   `HEARTBEAT.local.md` overlays that win at load time (`docs/ARCHITECTURE.md` §8).

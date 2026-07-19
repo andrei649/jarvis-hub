@@ -1,6 +1,6 @@
 # Jarvis Hub — Architecture Reference
 
-> For assistant conventions see **AGENTS.md** | architecture overview: **JARVIS.md** | tasks: **BACKLOG.md**
+> For assistant conventions see **AGENTS.md** | architecture overview: **NERVA.md** | tasks: **BACKLOG.md**
 
 ---
 
@@ -84,7 +84,7 @@ When on: embeds the query, runs fused recall (vector ⊕ graph), injects top-k a
 | `agents/core/errors.py` | Typed error codes | `JarvisError`, `E_*` constants |
 | `agents/core/log.py` | Logging setup | `setup_logging`, `log_error` |
 | `agents/core/resilience.py` | Circuit breakers + retry | `resilient_call`, `get_metrics`, `_circuit_breakers` |
-| `agents/core/paths.py` | Data-root + user-data-home + frozen-app path resolver: `$JARVIS_HOME` data root; packaged installs keep all personal state in `~/Documents/Jarvis` (`.env`, `memory/`, `skills/`, `souls/` overlays); `app_root()` anchors formerly CWD-relative reads (see `docs/PACKAGING.md`) | `data_root`, `data_path`, `app_root`, `user_home`, `ensure_user_home`, `is_frozen` |
+| `agents/core/paths.py` | Data-root + user-data-home + frozen-app path resolver: `$JARVIS_HOME` data root; packaged installs keep all personal state in `~/Documents/Nerva` (`.env`, `memory/`, `skills/`, `souls/` overlays); `app_root()` anchors formerly CWD-relative reads (see `docs/PACKAGING.md`) | `data_root`, `data_path`, `app_root`, `user_home`, `ensure_user_home`, `is_frozen` |
 
 ### LLM
 
@@ -683,7 +683,7 @@ memory_logs/                      All persistent state (SQLite, JSONL, cache)
 tests/                            pytest suite (asyncio_mode=auto, offline)
 docs/
   ARCHITECTURE.md                 ← this file
-  JARVIS.md                       → high-level architecture overview
+  NERVA.md                       → high-level architecture overview
   AGENTS.md                       → assistant conventions + workflow
   BACKLOG.md                      → priorities + open tasks
   research/                       Research notes
@@ -696,7 +696,7 @@ docs/
 
 | File | What it covers |
 |------|---------------|
-| `JARVIS.md` | High-level architecture, agent tiers, stack, LLM setup, quick commands |
+| `NERVA.md` | High-level architecture, agent tiers, stack, LLM setup, quick commands |
 | `AGENTS.md` | Assistant workflow conventions, rules, task protocol |
 | `BACKLOG.md` | Prioritized task list — read/update when discussing "what's next" |
 | `docs/research/` | Deep research notes on design decisions |

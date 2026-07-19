@@ -1,14 +1,14 @@
 #!/usr/bin/env python3
-"""Build the Jarvis executable (PyInstaller onedir) and smoke-test it.
+"""Build the Nerva executable (PyInstaller onedir) and smoke-test it.
 
     pip install pyinstaller
     python scripts/build_exe.py            # build + boot smoke test (/readyz)
     python scripts/build_exe.py --no-smoke # build only
 
-Output: dist/jarvis/ — the whole folder is the app. Ship it as-is (zip it, or
+Output: dist/nerva/ — the whole folder is the app. Ship it as-is (zip it, or
 run packaging/windows/install.ps1 on Windows). On first run the executable
-creates the owner's data folder at ~/Documents/Jarvis (README, .env, memory/,
-skills/, souls/) — all personal state lives there, never inside dist/jarvis.
+creates the owner's data folder at ~/Documents/Nerva (README, .env, memory/,
+skills/, souls/) — all personal state lives there, never inside dist/nerva.
 
 The smoke test boots the built binary on a throwaway port with an isolated
 temp JARVIS_USER_HOME and polls /readyz — proving the bundle actually starts
@@ -28,8 +28,8 @@ import urllib.request
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parent.parent
-SPEC = REPO / "packaging" / "jarvis.spec"
-DIST = REPO / "dist" / "jarvis"
+SPEC = REPO / "packaging" / "nerva.spec"
+DIST = REPO / "dist" / "nerva"
 SMOKE_PORT = 8123
 SMOKE_TIMEOUT_S = 90
 
@@ -45,20 +45,20 @@ def build() -> None:
          "--workpath", str(REPO / "build" / "pyinstaller")],
         cwd=str(REPO), check=True,
     )
-    exe = DIST / ("jarvis.exe" if os.name == "nt" else "jarvis")
+    exe = DIST / ("nerva.exe" if os.name == "nt" else "nerva")
     if not exe.exists():
         sys.exit(f"build finished but {exe} is missing")
     print(f"\nBuilt: {exe}")
 
 
 def smoke() -> None:
-    exe = DIST / ("jarvis.exe" if os.name == "nt" else "jarvis")
-    with tempfile.TemporaryDirectory(prefix="jarvis-smoke-") as tmp:
+    exe = DIST / ("nerva.exe" if os.name == "nt" else "nerva")
+    with tempfile.TemporaryDirectory(prefix="nerva-smoke-") as tmp:
         env = {
             **os.environ,
             "JARVIS_PORT": str(SMOKE_PORT),
             # Isolated throwaway data home — the smoke test must not touch the
-            # builder's real Documents/Jarvis.
+            # builder's real Documents/Nerva.
             "JARVIS_USER_HOME": str(Path(tmp) / "userhome"),
             "JARVIS_LLM_WARMUP": "0",
         }

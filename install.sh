@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# install.sh — Jarvis Hub one-command setup for Linux/macOS.
+# install.sh — Nerva one-command setup for Linux/macOS.
 # Mirrors INSTALL.bat: Python venv + deps + tests, PLUS WorldView (4D OSINT):
 # checks Node 20+, scaffolds .env files, npm install. Then start with ./start.sh
 set -uo pipefail

@@ -82,7 +82,7 @@ locked `JsonStore`, one store per concept; avoid SQLite sprawl. 7. Idle jobs gat
   YAML-frontmatter parser it added (`loader._parse_manifest`) for the `SOUL.md` front-matter parser (H21.2).
 
 ## Open doc-truth task
-- Reconcile `JARVIS.md` hardware section (Windows desktop / 192GB) with the actual **System76 Bonobo laptop**
+- Reconcile `NERVA.md` hardware section (Windows desktop / 192GB) with the actual **System76 Bonobo laptop**
   (mobile RTX 5090, 24GB) now in use.
 
 ## Resume checklist
