@@ -141,6 +141,7 @@ RULES = [
     ("/api/integrations/", "interop"),
     ("/api/sync", "interop"),  # E2E device sync (H12.13)
     ("/api/nodes", "interop"),  # governed node mesh (H12.17)
+    ("/api/worldview/", "interop"),  # WorldView bridge liveness — HUD World tab
     # comms (rooms / notes / channel sender pairing / mic satellites)
     ("/api/rooms", "comms"),
     ("/api/notes", "comms"),

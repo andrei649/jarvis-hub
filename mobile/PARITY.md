@@ -42,7 +42,7 @@ intentionally owner-HUD-only; native clients expose no discovery, frame, stream,
 | Memory / notes | `GET /memory`, `GET /api/notes` | ✅ | ✅ | H18.16 |
 | Knowledge graph | `GET /api/kg/*` | ✅ | ✅ | H18.17 |
 | Action approval queue + rollback story | `GET /autonomy/approvals`, `POST /autonomy/tasks/{id}/decision` | ✅ | ✅ | H18.11 / O26-P3.4 / H27.6 |
-| Capability registry board | `GET /api/capabilities` | ✅ | ⬜ | H18.22 / H27.8 |
+| Capability registry board | `GET /api/capabilities` | ✅ | ✅ | H18.22 / H27.8 |
 | Channel inbox + governed replies | `GET /api/channels/inbox*`, `POST /api/channels/inbox/{thread_id}/reply` | ✅ | ✅ | H18.12 |
 | Spoken morning brief (🔊 SPEAK) | `GET /autonomy/brief` + `POST /tts` (native would use device TTS) | ✅ | ⬜ | |
 | Chat rooms (multi-agent) | `GET/POST /api/rooms*` | ✅ | ⬜ | — |
@@ -70,6 +70,12 @@ intentionally owner-HUD-only; native clients expose no discovery, frame, stream,
 > owner-curated device registry and live session board, and exposes explicit governed present/restore
 > actions with distinct disabled, queued, refused, unverified, and verified outcomes. Device registry
 > mutations remain a separate admin-token-gated zone; no remote media is embedded on the phone.
+
+> **H18.22 ✅ (delivered):** native capability registry parity, folded into the existing Status
+> tab (not a new top-level tab — the tab bar was already at 13 items) as a "Capabilities" card
+> alongside Trust: SEAM/WIRED/VERIFIED/GA counts off the same `GET /api/capabilities` the HUD's
+> `ReadinessPanel` reads, plus the honest "harness pending — wired, not yet proven" note when
+> nothing has been VERIFIED yet. Read-only, matching the mobile-wide read-first pattern.
 
 > **H30.5 ✅ (delivered):** native House Brain parity is intentionally read-first: the Home tab
 > renders bounded rooms, devices, and pseudonymous presence, then hands governed work to the shared

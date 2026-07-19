@@ -3,6 +3,7 @@ import { Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from 'r
 import {
   ApiError,
   commandCenterModelLabel,
+  fetchCapabilities,
   fetchCommandCenter,
   fetchDashboard,
   fetchSecurityGovernance,
@@ -11,6 +12,7 @@ import {
   fetchSecurityPosture,
   fetchStatus,
   fetchTicker,
+  type CapabilitiesResponse,
   type CommandCenterResponse,
   type DashboardResponse,
   type SecurityGovernanceResponse,
@@ -74,6 +76,7 @@ export function StatusScreen({ onGoToSettings }: { onGoToSettings: () => void })
   const [killSwitch, setKillSwitch] = useState<SecurityKillSwitchResponse | null>(null);
   const [loopBreaker, setLoopBreaker] = useState<SecurityLoopBreakerResponse | null>(null);
   const [commandCenter, setCommandCenter] = useState<CommandCenterResponse | null>(null);
+  const [capabilities, setCapabilities] = useState<CapabilitiesResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
@@ -90,18 +93,20 @@ export function StatusScreen({ onGoToSettings }: { onGoToSettings: () => void })
       setStatus(statusOut);
       setDashboard(dashboardOut);
       setTicker(tickerOut);
-      const [governanceOut, postureOut, killOut, loopOut, ccOut] = await Promise.all([
+      const [governanceOut, postureOut, killOut, loopOut, ccOut, capsOut] = await Promise.all([
         fetchSecurityGovernance(config).catch(() => null),
         fetchSecurityPosture(config).catch(() => null),
         fetchSecurityKillSwitch(config).catch(() => null),
         fetchSecurityLoopBreaker(config).catch(() => null),
         fetchCommandCenter(config).catch(() => null),
+        fetchCapabilities(config).catch(() => null),
       ]);
       setGovernance(governanceOut);
       setPosture(postureOut);
       setKillSwitch(killOut);
       setLoopBreaker(loopOut);
       setCommandCenter(ccOut);
+      setCapabilities(capsOut);
     } catch (e) {
       setError(e instanceof ApiError ? e.message : 'Failed to load status');
       setStatus(null);
@@ -112,6 +117,7 @@ export function StatusScreen({ onGoToSettings }: { onGoToSettings: () => void })
       setKillSwitch(null);
       setLoopBreaker(null);
       setCommandCenter(null);
+      setCapabilities(null);
     } finally {
       setLoading(false);
     }
@@ -225,6 +231,23 @@ export function StatusScreen({ onGoToSettings }: { onGoToSettings: () => void })
           </>
         ) : (
           <Text style={styles.emptyText}>No trust data</Text>
+        )}
+      </Card>
+
+      <Card title="Capabilities">
+        {capabilities ? (
+          <>
+            <Row label="Total" value={capabilities.total} />
+            <Row label="Seam" value={capabilities.byState.seam ?? 0} />
+            <Row label="Wired" value={capabilities.byState.wired ?? 0} />
+            <Row label="Verified" value={capabilities.byState.verified ?? 0} />
+            <Row label="GA" value={capabilities.byState.ga ?? 0} />
+            {capabilities.harnessPending && capabilities.total > 0 && (
+              <Text style={styles.emptyText}>harness pending — wired, not yet proven</Text>
+            )}
+          </>
+        ) : (
+          <Text style={styles.emptyText}>No capability data</Text>
         )}
       </Card>
 

@@ -162,3 +162,39 @@ async def test_bridge_sends_no_auth_header_by_default(monkeypatch):
     monkeypatch.setattr(wv.client, "get", fake_get)
     await wv._get("history/state")
     assert "Authorization" not in (captured["headers"] or {})
+
+
+# ── status() — the HUD World-tab liveness bridge ────────────────────
+
+async def test_status_down_backend_reports_not_connected(monkeypatch):
+    """Never fabricate a connection — a down/unreachable backend is honest False."""
+    wv = WorldViewPlugin(api_url="http://localhost:4000")
+
+    async def boom(path, params=None):
+        raise ConnectionError("connection refused")
+
+    monkeypatch.setattr(wv, "_get", boom)
+    try:
+        result = await wv.status()
+        assert result == {"connected": False, "api_url": "http://localhost:4000"}
+    finally:
+        await wv.close()
+
+
+async def test_status_up_backend_reports_connected(monkeypatch):
+    wv = WorldViewPlugin(api_url="http://localhost:4000")
+
+    async def fake_get(path, params=None):
+        assert path == "/health"
+        return {"status": "ok", "service": "worldview-api"}
+
+    monkeypatch.setattr(wv, "_get", fake_get)
+    try:
+        result = await wv.status()
+        assert result == {
+            "connected": True,
+            "api_url": "http://localhost:4000",
+            "service": "worldview-api",
+        }
+    finally:
+        await wv.close()

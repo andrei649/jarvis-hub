@@ -1,7 +1,32 @@
 import React, { useEffect, useMemo, useState } from 'react';
+import { apiGet } from './api/client';
 import { Icon, ICONS } from './ui';
 
 const SIGNAL_LAYER_URL = ((import.meta as any).env?.VITE_SIGNAL_LAYER_URL || 'http://localhost:8787').replace(/\/+$/, '');
+
+/** Real connected/not-connected state for the standalone WorldView 4D stack
+ * (a separate app at :3000 — see worldview/README.md), polled off our own
+ * backend's GET /api/worldview/status. Independent of the Signal Layer above:
+ * WorldView and Signal Layer are two unrelated services, so one being down
+ * must not blank out the other's status. Never fabricates "connected". */
+function useWorldViewStatus() {
+  const [status, setStatus] = useState<{ connected: boolean; api_url?: string | null } | null>(null);
+  useEffect(() => {
+    let alive = true;
+    async function poll() {
+      try {
+        const s = await apiGet<{ connected: boolean; api_url?: string | null }>('/api/worldview/status');
+        if (alive) setStatus(s);
+      } catch {
+        if (alive) setStatus({ connected: false, api_url: null });
+      }
+    }
+    poll();
+    const iv = setInterval(poll, 30000);
+    return () => { alive = false; clearInterval(iv); };
+  }, []);
+  return status;
+}
 
 function Panel({ icon = 'globe', title, status, children, scroll = true }) {
   return (
@@ -42,6 +67,18 @@ function sevClass(sev) {
   return 'allow';
 }
 
+function WorldViewSurfaceRow({ status }: { status: { connected: boolean } | null }) {
+  const tag = status === null ? 'checking…' : status.connected ? 'connected' : 'not connected';
+  const cls = status === null ? 'scoped' : status.connected ? 'allow' : 'gated';
+  return (
+    <div className="cap-row">
+      <div><div className="cn">WorldView</div><div className="cd">4D geospatial stack</div></div>
+      <span className={'cap-tag ' + cls} style={{ marginRight: 8 }}>{tag}</span>
+      <a className="tool-btn" href="http://localhost:3000" target="_blank" rel="noreferrer">open</a>
+    </div>
+  );
+}
+
 function WorldIntelligenceMode({ t }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -52,6 +89,7 @@ function WorldIntelligenceMode({ t }) {
   const [question, setQuestion] = useState('What changed overnight that matters to me?');
   const [answer, setAnswer] = useState(null);
   const [asking, setAsking] = useState(false);
+  const wvStatus = useWorldViewStatus();
 
   async function refresh() {
     setLoading(true);
@@ -112,6 +150,8 @@ function WorldIntelligenceMode({ t }) {
           <div style={{ fontFamily: 'var(--font-mono)', color: 'var(--red)', letterSpacing: '.12em', fontSize: 11 }}>SIGNAL LAYER UNAVAILABLE</div>
           <p style={{ color: 'var(--ink-2)', lineHeight: 1.6 }}>Nerva cannot reach the local Signal Layer at <code>{SIGNAL_LAYER_URL}</code>. Start it with <code>START.bat</code>, <code>./start.sh</code>, or <code>cd services/signal-layer &amp;&amp; npm start</code>.</p>
           <button className="tool-btn" onClick={refresh}>retry</button>
+          <SubH style={{ marginTop: 18 }}>SURFACES</SubH>
+          <WorldViewSurfaceRow status={wvStatus} />
         </div>
       </Panel>
     );
@@ -146,7 +186,7 @@ function WorldIntelligenceMode({ t }) {
               </div>
             ))}
             <SubH style={{ marginTop: 18 }}>SURFACES</SubH>
-            <div className="cap-row"><div><div className="cn">WorldView</div><div className="cd">4D geospatial stack</div></div><a className="tool-btn" href="http://localhost:3000" target="_blank" rel="noreferrer">open</a></div>
+            <WorldViewSurfaceRow status={wvStatus} />
             <div className="cap-row"><div><div className="cn">Signal Layer</div><div className="cd">evidence · signals · assessments</div></div><a className="tool-btn" href={`${SIGNAL_LAYER_URL}/healthz`} target="_blank" rel="noreferrer">health</a></div>
           </Panel>
 
