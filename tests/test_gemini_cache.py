@@ -81,7 +81,7 @@ def _persisted_entry(
         "prefix_count": len(prefix),
         "prefix_digest": _digest_parts(prefix),
         "policy_fingerprint": policy_fingerprint,
-        "profile_fingerprint": hashlib.sha256(lease.api_key.encode("utf-8")).hexdigest(),
+        "profile_id": lease.profile_id,
     }
 
 
@@ -123,7 +123,7 @@ async def test_acquire_binding_hit_returns_recorded_boundary():
 @pytest.mark.asyncio
 async def test_acquire_binding_miss_on_identity_change():
     pool = AuthProfilePool(["cache-secret"], provider="gemini")
-    other_pool = AuthProfilePool(["other-secret"], provider="gemini")
+    other_pool = AuthProfilePool(["other-secret"], provider="gemini-secondary")
     lease = pool.lease()
     other_lease = other_pool.lease()
     assert lease is not None
@@ -242,7 +242,7 @@ def test_cache_entry_is_frozen_and_slotted():
         prefix_count=1,
         prefix_digest="prefix-digest",
         policy_fingerprint="policy-v1",
-        profile_fingerprint="profile-digest",
+        profile_id="profile-id",
     )
 
     assert not hasattr(entry, "__dict__")
@@ -251,7 +251,7 @@ def test_cache_entry_is_frozen_and_slotted():
 
 
 @pytest.mark.asyncio
-async def test_persistence_omits_raw_history_and_api_key():
+async def test_persistence_omits_raw_history_and_api_key_but_keeps_profile_id():
     pool = AuthProfilePool(["cache-secret"], provider="gemini")
     lease = pool.lease()
     assert lease is not None
@@ -279,7 +279,8 @@ async def test_persistence_omits_raw_history_and_api_key():
         assert json.loads(raw_value) == {"s1": expected}
         assert "private turn" not in raw_value
         assert lease.api_key not in raw_value
-        assert lease.profile_id not in raw_value
+        assert lease.profile_id in raw_value
+        assert "profile_fingerprint" not in raw_value
     finally:
         await cache.close()
 
@@ -528,8 +529,11 @@ async def test_create_uses_header_auth_and_persists_exact_identity(monkeypatch):
             "prefix_count",
             "prefix_digest",
             "policy_fingerprint",
-            "profile_fingerprint",
+            "profile_id",
         }
+        assert cache._cache_map["s1"]["profile_id"] == lease.profile_id
+        assert "profile_fingerprint" not in cache._cache_map["s1"]
+        assert "cache-secret" not in cache._cache_map["s1"].values()
 
         reloaded = ContextCache(lambda: pool)
         try:
@@ -579,9 +583,7 @@ async def test_rotatable_create_attempts_each_healthy_lease_once(monkeypatch):
         assert all("key=" not in url and key not in url for url, key in attempts)
         assert pool.failures_reported == ["gemini-1", "gemini-2"]
         assert pool.successes == ["gemini-3"]
-        assert cache._entry_for("s1").profile_fingerprint == hashlib.sha256(
-            b"key-three"
-        ).hexdigest()
+        assert cache._entry_for("s1").profile_id == "gemini-3"
     finally:
         await cache.close()
 

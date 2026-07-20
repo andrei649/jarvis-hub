@@ -166,7 +166,6 @@ class TechScout:
                         kind="tech_scout.finding",
                         title=f"\U0001f52d {title}",
                         payload={
-                            "risk_tier": int(RiskTier.READ_ONLY),
                             "rationale": snippet or "New result for a tech-scout query.",
                             "expected": "Read-only finding — review, no action taken automatically.",
                             "url": url,
@@ -174,6 +173,7 @@ class TechScout:
                             "source": "websearch",
                         },
                         origin="generated",
+                        risk_tier=int(RiskTier.READ_ONLY),
                     )
                 except Exception:
                     logger.warning("tech scout submit failed for %r", url, exc_info=True)
