@@ -174,6 +174,8 @@
   "GET /api/widget/{token}/config": "widget_config_api_widget__token__config_get",
   "GET /api/workflows": "list_workflows_api_workflows_get",
   "GET /api/workflows/traces": "workflow_traces_api_workflows_traces_get",
+  "GET /api/worldview/overview": "worldview_overview_api_worldview_overview_get",
+  "GET /api/worldview/status": "worldview_status_api_worldview_status_get",
   "GET /autonomy/approvals": "autonomy_approvals_autonomy_approvals_get",
   "GET /autonomy/brief": "autonomy_brief_autonomy_brief_get",
   "GET /autonomy/interrupts": "autonomy_interrupts_autonomy_interrupts_get",

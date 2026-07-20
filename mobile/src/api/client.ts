@@ -639,6 +639,62 @@ export async function fetchSkills(config: ServerConfig): Promise<SkillsResponse>
   return normalizeSkills(res || {});
 }
 
+// ── Capability Registry (H18.22 / H27.8) ────────────────────────────
+// SEAM/WIRED/VERIFIED/GA readiness ladder — mirrors the HUD's ReadinessPanel
+// (frontend/src/gap.tsx). Read-only board: nothing here can be VERIFIED except
+// by a green reality-harness run, so the mobile screen never implies more
+// confidence than the hub itself will claim.
+
+export type HubCapability = {
+  id: string;
+  kind: string;
+  state: string;
+  ownerAgent: string;
+  description: string;
+  risk: string;
+  confidence: number;
+  supports: string[];
+};
+
+export type CapabilitiesResponse = {
+  capabilities: HubCapability[];
+  total: number;
+  byState: Record<string, number>;
+  harnessPending: boolean;
+};
+
+function normalizeCapability(value: unknown): HubCapability | null {
+  if (!isRecord(value)) return null;
+  const id = stringValue(value.id);
+  if (!id) return null;
+  return {
+    id,
+    kind: stringValue(value.kind),
+    state: stringValue(value.state) || 'seam',
+    ownerAgent: stringValue(value.owner_agent),
+    description: stringValue(value.description),
+    risk: stringValue(value.risk) || 'read_only',
+    confidence: typeof value.confidence === 'number' ? value.confidence : 0,
+    supports: stringArray(value.supports),
+  };
+}
+
+export async function fetchCapabilities(config: ServerConfig): Promise<CapabilitiesResponse> {
+  const res = await request<Record<string, unknown>>(config, 'GET', '/api/capabilities', undefined, { retries: 2 });
+  const list = Array.isArray(res.capabilities) ? res.capabilities : [];
+  const capabilities = list.map(normalizeCapability).filter((c): c is HubCapability => c !== null);
+  const rawByState = res.by_state;
+  const byState = isRecord(rawByState)
+    ? Object.fromEntries(Object.entries(rawByState).map(([k, v]) => [k, typeof v === 'number' ? v : 0]))
+    : {};
+  return {
+    capabilities,
+    total: typeof res.total === 'number' ? res.total : capabilities.length,
+    byState,
+    harnessPending: res.harness_pending !== false,
+  };
+}
+
 // ── Memory + Notes ───────────────────────────────────────────────
 
 export type MemoryTurn = {

@@ -1,11 +1,11 @@
-# Nerva — Go-Live Plan
+# Jarvis Hub — Go-Live Plan
 
 > Generated: 2026-06-02 · Updated: 2026-07-11 · Current: **v0.11.0** (feature-complete + refactor done) · Target: **v1.0.0 = the proof track (H23 + design partners) + the AI-OS capability program** ([NERVA_VISION.md](NERVA_VISION.md) · [version roadmap](BACKLOG.md#version-roadmap)) · Owner: Andrei
 > North star (vision & phase gates): [MOONSHOT.md](MOONSHOT.md)
 > Source of truth for backlog: [BACKLOG.md](BACKLOG.md)
 >
 <!-- project-status:go-live-header:start -->
-> Generated project status: **v0.11.0** · backend **5,199** · frontend **367** · mobile **90** · **398** routes · **17** active agents · open owner gates: **A1, A2, A3, A4, A5, A6, A7, A8, A9** · commit `b320a6b163ae`.
+> Generated project status: **v0.11.0** · backend **5,209** · frontend **370** · mobile **93** · **400** routes · **17** active agents · open owner gates: **A1, A2, A3, A4, A5, A6, A7, A8, A9** · commit `809efb246e0c`.
 <!-- project-status:go-live-header:end -->
 >
 > **2026-07-11 — the 1.0 gate expanded (owner decision):** this plan's launch checklist remains the

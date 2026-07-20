@@ -175,5 +175,17 @@ class WorldViewPlugin:
             return self._unavailable(f"ontology/links/{obj_type}")
         return {"status": "ok", "type": obj_type, "id": obj_id, "links": body.get("links", []) or []}
 
+    # ── liveness (HUD "World" tab bridge — never fake a connection) ────
+    async def status(self) -> dict:
+        """Liveness probe against the backend's dependency-free ``GET /health``.
+
+        Used by the HUD's World tab to show a real connected/not-connected badge
+        instead of a dead link — mirrors the plugin's own honesty contract (an
+        unreachable backend degrades to a structured, non-fabricated result)."""
+        body = await self._safe_get("/health")
+        if body is None:
+            return {"connected": False, "api_url": self.api_url}
+        return {"connected": True, "api_url": self.api_url, "service": body.get("service")}
+
     async def close(self):
         await self.client.close()
