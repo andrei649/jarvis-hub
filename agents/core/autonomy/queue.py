@@ -226,6 +226,37 @@ class TaskQueue:
             )
             self._conn.commit()
 
+    def update_payload_policy(
+        self,
+        task_id: int,
+        payload: dict,
+        *,
+        risk_tier: int,
+        autonomy_level: str,
+    ) -> Task:
+        """Atomically replace execution bytes and their durable policy result."""
+
+        with self._lock:
+            self._conn.execute(
+                """UPDATE tasks
+                      SET payload=?, risk_tier=?, autonomy_level=?, updated_at=?
+                    WHERE id=?""",
+                (
+                    json.dumps(payload, ensure_ascii=False),
+                    int(risk_tier),
+                    autonomy_level,
+                    _now(),
+                    task_id,
+                ),
+            )
+            self._conn.commit()
+            row = self._conn.execute(
+                "SELECT * FROM tasks WHERE id=?", (task_id,)
+            ).fetchone()
+        if row is None:
+            raise TaskQueueError(f"task {task_id} not found")
+        return _row_to_task(row)
+
     def increment_attempts(self, task_id: int) -> int:
         with self._lock:
             self._conn.execute(

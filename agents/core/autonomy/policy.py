@@ -31,6 +31,22 @@ class RiskTier(IntEnum):
     IRREVERSIBLE_OR_MONEY = 3  # pay/transfer/delete/deploy/book — hard to undo
 
 
+def _normalize_tier_floor(
+    value: RiskTier | int | None,
+) -> tuple[RiskTier | None, bool]:
+    """Normalize a trusted tier floor; malformed values fail closed to tier 3."""
+
+    if value is None:
+        return None, False
+    if isinstance(value, bool):
+        return RiskTier.IRREVERSIBLE_OR_MONEY, True
+    if isinstance(value, RiskTier):
+        return value, False
+    if isinstance(value, int) and 0 <= value <= 3:
+        return RiskTier(value), False
+    return RiskTier.IRREVERSIBLE_OR_MONEY, True
+
+
 class Outcome(str):
     """Marker base for decision outcomes (kept as plain strings for JSON)."""
 
@@ -144,7 +160,8 @@ class AutonomyPolicy:
                 return RiskTier.IRREVERSIBLE_OR_MONEY
         except (TypeError, ValueError):
             pass
-        kind = str(action.get("kind") or action.get("name") or "").lower()
+        kind_value = action["kind"] if "kind" in action else action.get("name", "")
+        kind = str(kind_value or "").lower()
         # Token-based, verb-first: the leading verb decides (so "draft_email" is
         # reversible, not external). Avoids substring traps like "widget"→"get".
         for token in re.split(r"[^a-z0-9]+", kind):
@@ -188,8 +205,15 @@ class AutonomyPolicy:
         override = self.agent_modes.get(agent) if agent else None
         return str(override or self.mode).lower()
 
-    def decide(self, action: dict) -> Decision:
-        tier = self.classify(action)
+    def decide(
+        self,
+        action: dict,
+        *,
+        tier_floor: RiskTier | int | None = None,
+    ) -> Decision:
+        classified_tier = self.classify(action)
+        normalized_floor, invalid_floor = _normalize_tier_floor(tier_floor)
+        tier = max(classified_tier, normalized_floor or RiskTier.READ_ONLY)
         # Mode gate (HUD AUTO/ASK/OFF), resolved per-agent: an agent with its own
         # override uses it; everyone else uses the global mode. OFF makes everything
         # wait; ASK makes everything with a side-effect wait (pure READ_ONLY still
@@ -199,6 +223,8 @@ class AutonomyPolicy:
             return Decision(ASK, tier, "autonomy mode=off → ask", urgent=False)
         if mode == "ask" and tier != RiskTier.READ_ONLY:
             return Decision(ASK, tier, "autonomy mode=ask → ask", urgent=False)
+        if invalid_floor:
+            return Decision(ASK, tier, "invalid trusted tier floor → ask", urgent=False)
         # Money special-case: auto-act if within per-action cap AND daily budget.
         amount = _num(action.get("amount"))
         if tier == RiskTier.IRREVERSIBLE_OR_MONEY and amount > 0:
