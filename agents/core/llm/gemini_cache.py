@@ -36,7 +36,7 @@ class CacheEntry:
     prefix_count: int
     prefix_digest: str
     policy_fingerprint: str
-    profile_fingerprint: str
+    profile_id: str
 
 
 def _digest_parts(parts: Sequence[str]) -> str:
@@ -46,10 +46,6 @@ def _digest_parts(parts: Sequence[str]) -> str:
         separators=(",", ":"),
     ).encode("utf-8")
     return hashlib.sha256(encoded).hexdigest()
-
-
-def _profile_fingerprint(lease: AuthLease) -> str:
-    return hashlib.sha256(lease.api_key.encode("utf-8")).hexdigest()
 
 
 class ContextCache:
@@ -150,7 +146,7 @@ class ContextCache:
             and entry.system_digest == _digest_parts((system_instruction,))
             and entry.prefix_digest == _digest_parts(history[: entry.prefix_count])
             and entry.policy_fingerprint == policy_fingerprint
-            and entry.profile_fingerprint == _profile_fingerprint(lease)
+            and entry.profile_id == lease.profile_id
         )
 
     def _load_map(self) -> dict[str, dict]:
@@ -166,8 +162,11 @@ class ContextCache:
                 if isinstance(loaded, dict):
                     logger.info("Loaded %d cache entries from DB", len(loaded))
                     return loaded
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.warning(
+                "Failed to load persisted Gemini cache entries (%s)",
+                type(exc).__name__,
+            )
         finally:
             if conn is not None:
                 conn.close()
@@ -312,7 +311,7 @@ class ContextCache:
                     prefix_count=len(history_parts),
                     prefix_digest=_digest_parts(history_parts),
                     policy_fingerprint=policy_fingerprint,
-                    profile_fingerprint=_profile_fingerprint(current_lease),
+                    profile_id=current_lease.profile_id,
                 )
                 self._cache_map[session_id] = asdict(entry)
                 self._save_map()

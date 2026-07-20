@@ -50,6 +50,24 @@ def test_govern_enqueue_forces_ask_and_marks_payload_from_inbound_context(tmp_pa
     assert task.payload["taint_source"] == "inbound"
 
 
+def test_legacy_policy_cannot_downgrade_server_owned_irreversible_tier(tmp_path):
+    worker = _worker(tmp_path)
+
+    task_id = worker.govern_enqueue(
+        "scribe",
+        "writeback.create",
+        "Create irreversible external task",
+        payload={"risk_tier": 0, "text": "spoofed low risk"},
+        risk_tier=3,
+        autonomy_level=ACT,
+    )
+
+    task = worker.queue.get(task_id)
+    assert task.risk_tier == 3
+    assert task.autonomy_level == ASK
+    assert task.status == TaskStatus.BLOCKED.value
+
+
 @pytest.mark.asyncio
 async def test_submit_forces_ask_and_marks_payload_from_inbound_origin(tmp_path):
     worker = _worker(tmp_path)

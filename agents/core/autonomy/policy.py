@@ -162,6 +162,8 @@ class AutonomyPolicy:
             pass
         kind_value = action["kind"] if "kind" in action else action.get("name", "")
         kind = str(kind_value or "").lower()
+        if kind == "tech_scout.finding":
+            return RiskTier.READ_ONLY
         # Token-based, verb-first: the leading verb decides (so "draft_email" is
         # reversible, not external). Avoids substring traps like "widget"→"get".
         for token in re.split(r"[^a-z0-9]+", kind):

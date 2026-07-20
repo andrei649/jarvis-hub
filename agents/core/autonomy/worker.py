@@ -15,6 +15,7 @@ stays free of orchestrator/Telegram imports and is unit-testable offline.
 
 from __future__ import annotations
 
+import inspect
 import logging
 from datetime import date
 from typing import Awaitable, Callable, Optional
@@ -22,7 +23,7 @@ from typing import Awaitable, Callable, Optional
 from ..action_origin import current_action_origin
 from ..ambient.policy import AttentionDeliveryBroker, AttentionLedger
 from ..security import taint
-from .policy import ACT, ASK, NOTIFY, AutonomyPolicy
+from .policy import ACT, ASK, NOTIFY, AutonomyPolicy, RiskTier
 from .queue import MAX_ATTEMPTS, Task, TaskQueue, TaskStatus
 
 logger = logging.getLogger("jarvis.autonomy.worker")
@@ -172,7 +173,11 @@ class AutonomyWorker:
         return marked, taint.is_tainted(marked)
 
     def _policy_action(
-        self, agent: str, kind: str, payload: dict | None, origin: str,
+        self,
+        agent: str,
+        kind: str,
+        payload: dict | None,
+        origin: str,
     ) -> dict:
         """Build a policy view with server-owned identity fields authoritative."""
         action = dict(payload or {})
@@ -181,6 +186,56 @@ class AutonomyWorker:
         action["kind"] = kind
         action["origin"] = origin
         return action
+
+    @staticmethod
+    def _normalize_trusted_tier(tier_floor: int | RiskTier | None) -> tuple[int | None, bool]:
+        """Normalize a server-owned tier floor; invalid values fail closed."""
+        if tier_floor is None:
+            return None, False
+        if isinstance(tier_floor, bool):
+            return int(RiskTier.IRREVERSIBLE_OR_MONEY), True
+        if isinstance(tier_floor, RiskTier):
+            return int(tier_floor), False
+        if isinstance(tier_floor, int) and 0 <= tier_floor <= int(RiskTier.IRREVERSIBLE_OR_MONEY):
+            return tier_floor, False
+        return int(RiskTier.IRREVERSIBLE_OR_MONEY), True
+
+    def _policy_accepts_tier_floor(self) -> bool:
+        """Detect legacy policy doubles without swallowing policy failures."""
+        try:
+            parameters = inspect.signature(self.policy.decide).parameters.values()
+        except (TypeError, ValueError):
+            return False
+        return any(
+            parameter.kind is inspect.Parameter.VAR_KEYWORD
+            or parameter.name == "tier_floor"
+            for parameter in parameters
+        )
+
+    def _policy_decision(
+        self,
+        action: dict,
+        tier_floor: int | RiskTier | None,
+    ) -> tuple[object, int, bool]:
+        """Call new and legacy policy interfaces without weakening a tier floor."""
+        trusted_tier, invalid_tier = self._normalize_trusted_tier(tier_floor)
+        if self._policy_accepts_tier_floor():
+            decision = self.policy.decide(action, tier_floor=tier_floor)
+        else:
+            decision = self.policy.decide(action)
+
+        try:
+            decided_tier = int(decision.tier)
+        except (AttributeError, TypeError, ValueError):
+            return decision, int(RiskTier.IRREVERSIBLE_OR_MONEY), True
+        if not 0 <= decided_tier <= int(RiskTier.IRREVERSIBLE_OR_MONEY):
+            return decision, int(RiskTier.IRREVERSIBLE_OR_MONEY), True
+
+        effective_tier = max(decided_tier, trusted_tier or 0)
+        must_ask = invalid_tier or (
+            trusted_tier is not None and decided_tier < trusted_tier
+        )
+        return decision, effective_tier, must_ask
 
     def _strictest_level(self, requested: str, decided: str) -> str:
         rank = self._LEVEL_RANK
@@ -216,13 +271,14 @@ class AutonomyWorker:
         """
         origin = self._effective_origin(origin)
         payload, tainted = self._mark_payload_for_origin(payload, origin)
-        decision = self.policy.decide(
+        decision, tier, must_ask = self._policy_decision(
             self._policy_action(agent, kind, payload, origin),
-            tier_floor=risk_tier,
+            risk_tier,
         )
         effective = self._strictest_level(autonomy_level, decision.outcome)
+        if must_ask:
+            effective = ASK
         effective = self._force_ask_for_taint(effective, tainted)
-        tier = int(decision.tier)
         task_id = self.queue.enqueue(
             agent=agent, kind=kind, title=title, payload=payload,
             risk_tier=tier, autonomy_level=effective, origin=origin,
@@ -254,14 +310,16 @@ class AutonomyWorker:
         """Propose a task, gate it through the policy, and route it."""
         origin = self._effective_origin(origin)
         payload, tainted = self._mark_payload_for_origin(payload, origin)
-        decision = self.policy.decide(
+        decision, tier, must_ask = self._policy_decision(
             self._policy_action(agent, kind, payload, origin),
-            tier_floor=risk_tier,
+            risk_tier,
         )
         effective = self._force_ask_for_taint(decision.outcome, tainted)
+        if must_ask:
+            effective = ASK
         task_id = self.queue.enqueue(
             agent=agent, kind=kind, title=title, payload=payload,
-            risk_tier=int(decision.tier), autonomy_level=effective, origin=origin,
+            risk_tier=tier, autonomy_level=effective, origin=origin,
             attention_mode=attention_mode,
         )
 
@@ -395,15 +453,17 @@ class AutonomyWorker:
                 action_payload = self._policy_action(
                     edited.agent, edited.kind, marked_payload, edited_origin,
                 )
-                decision = self.policy.decide(
-                    action_payload, tier_floor=edited.risk_tier,
+                decision, tier, must_ask = self._policy_decision(
+                    action_payload, edited.risk_tier,
                 )
                 effective = self._force_ask_for_taint(decision.outcome, tainted)
                 effective = self._strictest_level(edited.autonomy_level, effective)
+                if must_ask:
+                    effective = ASK
                 edited = self.queue.update_payload_policy(
                     task_id,
                     marked_payload,
-                    risk_tier=int(decision.tier),
+                    risk_tier=tier,
                     autonomy_level=effective,
                 )
                 if effective == ASK:
