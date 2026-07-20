@@ -1,6 +1,7 @@
 import logging
 from ..http_client import PluginHTTPClient
 from ..resilience import resilient_call
+from .degradation import degraded
 
 logger = logging.getLogger("jarvis.plugins.sms")
 
@@ -26,7 +27,11 @@ class SMSAlertsPlugin:
         """Send urgent SMS alert. Falls back to mock sync if credentials missing."""
         if not self.account_sid or not self.auth_token:
             logger.warning("Twilio credentials missing — running in mock offline preview mode")
-            return {"status": "mock_sent", "to": to_number, "message": message, "sid": "MOCK_SMS_123456"}
+            return degraded(
+                {"status": "mock_sent", "to": to_number, "message": message, "sid": "MOCK_SMS_123456"},
+                reason="Twilio credentials not configured — no SMS was sent",
+                needs=["plugins.twilio_account_sid", "plugins.twilio_auth_token", "plugins.twilio_from_number"],
+            )
 
         url = f"https://api.twilio.com/2010-04-01/Accounts/{self.account_sid}/Messages.json"
         auth = (self.account_sid, self.auth_token)

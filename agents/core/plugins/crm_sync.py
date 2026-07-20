@@ -1,6 +1,7 @@
 import logging
 from ..http_client import PluginHTTPClient
 from ..resilience import resilient_call
+from .degradation import degraded
 
 logger = logging.getLogger("jarvis.plugins.crm")
 
@@ -25,7 +26,11 @@ class CRMSyncPlugin:
         """Add new lead record to Notion database. Fallbacks to mock offline sync if unconfigured."""
         if not self.integration_token or not self.database_id:
             logger.warning("Notion Integration Token or Database ID missing — running in mock mode")
-            return {"status": "mock_saved", "name": name, "company": company, "email": email, "id": "MOCK_NOTION_LEAD"}
+            return degraded(
+                {"status": "mock_saved", "name": name, "company": company, "email": email, "id": "MOCK_NOTION_LEAD"},
+                reason="Notion credentials not configured — lead not saved to a real CRM",
+                needs=["plugins.notion_integration_token", "plugins.notion_database_id"],
+            )
 
         url = "https://api.notion.com/v1/pages"
         headers = {

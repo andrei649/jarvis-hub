@@ -14,6 +14,9 @@ async def test_sms_alerts_mock_fallback():
         assert res["status"] == "mock_sent"
         assert res["to"] == "+40700000000"
         assert "MOCK_SMS" in res["sid"]
+        # honesty contract: a mock fallback must self-report so the HUD can badge it
+        assert res["_mock"] is True
+        assert "plugins.twilio_auth_token" in res["_degraded"]["needs"]
     finally:
         await plugin.close()
 
@@ -27,6 +30,9 @@ async def test_crm_sync_mock_fallback():
         assert res["status"] == "mock_saved"
         assert res["name"] == "Andrei"
         assert res["id"] == "MOCK_NOTION_LEAD"
+        # honesty contract: a mock fallback must self-report so the HUD can badge it
+        assert res["_mock"] is True
+        assert "plugins.notion_integration_token" in res["_degraded"]["needs"]
     finally:
         await plugin.close()
 

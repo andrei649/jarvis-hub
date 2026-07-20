@@ -79,6 +79,13 @@ def test_plugins_endpoint_reports_runtime_configuration(monkeypatch):
     assert plugins["websearch"]["configured"] is True
     assert plugins["balance"]["configuration_source"] == "available()"
 
+    # Honesty verdict the HUD badges render + the at-a-glance rollup.
+    assert plugins["balance"]["honesty"]["status"] == "needs_config"
+    assert "plugins.gecko_ing_client_id" in plugins["balance"]["honesty"]["needs"]
+    assert plugins["websearch"]["honesty"]["status"] == "live"
+    summary = resp.json()["honesty_summary"]
+    assert summary["live"] + summary["needs_config"] == resp.json()["total"]
+
 
 def test_bench_stats_endpoint(client):
     resp = client.get("/bench/stats")
