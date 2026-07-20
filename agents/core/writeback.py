@@ -290,8 +290,16 @@ class NullWriteBackClient:
     async def write(self, target: str, action: str, fields: dict, credentials: dict) -> dict:
         self.calls.append({"target": target, "action": action, "fields": fields,
                            "has_credential": bool((credentials or {}).get("token"))})
-        return {"status": "deferred", "target": target, "action": action,
-                "note": "no live write-back client configured — host seam"}
+        # Honesty layer (Live-vs-Plumbing): a deferred write-back is a degraded
+        # result — stamp it so the HUD/callers can badge it and name the fix.
+        from .plugins.degradation import degraded
+        cred_name = _CREDENTIAL.get((target or "").lower(), "credential")
+        return degraded(
+            {"status": "deferred", "target": target, "action": action,
+             "note": "no live write-back client configured — host seam"},
+            reason="writeback_credential_not_configured",
+            needs=[f"secret:{cred_name}"],
+        )
 
 
 class HttpWriteBackClient:
@@ -338,6 +346,9 @@ class WriteBackBroker:
         self._enqueue = enqueue
         self.agent = agent
         self._secrets = secret_broker
+        # An explicitly injected client (tests, custom rails) is never replaced;
+        # only the default NullWriteBackClient may lazily upgrade to the live rail.
+        self._client_injected = client is not None
         self._client = client or NullWriteBackClient()
         self._audit = audit
         self._kernel = kernel   # ORIZONT-24 K1: bound kernel.authorize (default-off)
@@ -451,6 +462,16 @@ class WriteBackBroker:
         # worker only dispatches APPROVED tasks, so reaching this point means the
         # human (or policy) already approved the write.
         credentials = self._resolve_credentials(payload)
+        # Live-vs-Plumbing: the moment an approved task resolves a REAL owner
+        # credential, the default Null client upgrades to the live HTTP rail —
+        # no restart needed, still strictly behind the approval funnel (this
+        # method only runs on approved tasks). Unconfigured stays honestly
+        # deferred; injected clients are never overridden.
+        if (not self._client_injected and credentials.get("token")
+                and isinstance(self._client, NullWriteBackClient)):
+            logger.info("write-back live rail active — credential resolved, "
+                        "using HttpWriteBackClient")
+            self._client = HttpWriteBackClient()
         try:
             result = await self._client.write(target, action, fields, credentials)
         except Exception:
