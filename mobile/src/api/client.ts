@@ -216,6 +216,31 @@ export async function fetchTicker(config: ServerConfig): Promise<TickerResponse>
   return normalizeTicker(res || {});
 }
 
+// ── Morning brief (admin-guarded, spoken via device TTS) ─────────
+
+export type AutonomyBriefResponse = { kind: string; text: string };
+
+function normalizeBrief(raw: Partial<AutonomyBriefResponse>): AutonomyBriefResponse {
+  return {
+    kind: typeof raw.kind === 'string' ? raw.kind : 'morning',
+    text: typeof raw.text === 'string' ? raw.text.slice(0, 20000) : '',
+  };
+}
+
+export async function fetchAutonomyBrief(
+  config: ServerConfig,
+  kind: 'morning' | 'evening' = 'morning',
+): Promise<AutonomyBriefResponse> {
+  const res = await request<Partial<AutonomyBriefResponse>>(
+    config,
+    'GET',
+    `/autonomy/brief?kind=${kind}`,
+    undefined,
+    { admin: true, retries: 1 },
+  );
+  return normalizeBrief(res || {});
+}
+
 // ── Security / Trust ─────────────────────────────────────────────
 
 export type SecurityScoreBlock = {

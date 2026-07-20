@@ -5,6 +5,8 @@ import {
   commandCenterModelLabel,
   fetchCapabilities,
   fetchCommandCenter,
+  type AutonomyBriefResponse,
+  fetchAutonomyBrief,
   fetchDashboard,
   fetchSecurityGovernance,
   fetchSecurityKillSwitch,
@@ -22,6 +24,7 @@ import {
   type StatusResponse,
   type TickerResponse,
 } from '../api/client';
+import { speak, stopSpeaking } from '../audio/tts';
 import { useServer } from '../context/ServerContext';
 import { theme } from '../theme';
 
@@ -77,6 +80,9 @@ export function StatusScreen({ onGoToSettings }: { onGoToSettings: () => void })
   const [loopBreaker, setLoopBreaker] = useState<SecurityLoopBreakerResponse | null>(null);
   const [commandCenter, setCommandCenter] = useState<CommandCenterResponse | null>(null);
   const [capabilities, setCapabilities] = useState<CapabilitiesResponse | null>(null);
+  const [brief, setBrief] = useState<AutonomyBriefResponse | null>(null);
+  const [speaking, setSpeaking] = useState(false);
+  const [briefError, setBriefError] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
@@ -101,6 +107,8 @@ export function StatusScreen({ onGoToSettings }: { onGoToSettings: () => void })
         fetchCommandCenter(config).catch(() => null),
         fetchCapabilities(config).catch(() => null),
       ]);
+      const briefOut = await fetchAutonomyBrief(config).catch(() => null);
+      setBrief(briefOut);
       setGovernance(governanceOut);
       setPosture(postureOut);
       setKillSwitch(killOut);
@@ -118,6 +126,7 @@ export function StatusScreen({ onGoToSettings }: { onGoToSettings: () => void })
       setLoopBreaker(null);
       setCommandCenter(null);
       setCapabilities(null);
+      setBrief(null);
     } finally {
       setLoading(false);
     }
@@ -251,6 +260,43 @@ export function StatusScreen({ onGoToSettings }: { onGoToSettings: () => void })
         )}
       </Card>
 
+      <Card title="Morning brief">
+        {brief && brief.text ? (
+          <>
+            <Text style={styles.briefText} numberOfLines={12}>{brief.text}</Text>
+            <Pressable
+              style={[styles.cta, speaking && styles.ctaBusy]}
+              accessibilityLabel="speak brief"
+              onPress={async () => {
+                if (speaking) {
+                  stopSpeaking();
+                  setSpeaking(false);
+                  return;
+                }
+                setBriefError(null);
+                setSpeaking(true);
+                try {
+                  await speak(config, brief.text, 'ro', () => setSpeaking(false));
+                } catch {
+                  // Server TTS unavailable — stay honest, never fake playback.
+                  setBriefError('TTS unavailable on the hub');
+                  setSpeaking(false);
+                }
+              }}
+            >
+              <Text style={styles.ctaText}>{speaking ? '■ Stop' : '🔊 Speak'}</Text>
+            </Pressable>
+            {briefError && <Text style={styles.briefErr}>{briefError}</Text>}
+          </>
+        ) : (
+          <Text style={styles.dim}>
+            {config.adminToken.trim()
+              ? 'No brief available yet.'
+              : 'Set the admin token in Settings to read the morning brief.'}
+          </Text>
+        )}
+      </Card>
+
       <Card title="Today">
         {weather ? (
           <>
@@ -375,5 +421,9 @@ const styles = StyleSheet.create({
   empty: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 32 },
   emptyTitle: { color: theme.text, fontSize: 20, fontWeight: '700', marginBottom: 20 },
   cta: { paddingHorizontal: 24, paddingVertical: 12, borderRadius: 24, backgroundColor: theme.accent },
+  ctaBusy: { backgroundColor: theme.textDim },
+  briefText: { color: theme.text, fontSize: 13, lineHeight: 19, marginBottom: 10 },
+  briefErr: { color: theme.warn ?? '#e0a63a', fontSize: 12, marginTop: 8 },
+  dim: { color: theme.textDim, fontSize: 13 },
   ctaText: { color: '#02121b', fontWeight: '700', fontSize: 15 },
 });

@@ -224,9 +224,10 @@ async def voice_capabilities():
         HAS_KOKORO = False
     xtts = bool(os.getenv("XTTS_SERVER_URL"))
     eleven = bool(os.getenv("ELEVENLABS_API_KEY"))
+    fish = bool(os.getenv("FISH_AUDIO_API_KEY"))
     return nocache_json({
         "stt": bool(HAS_WHISPER),                       # local Whisper available
-        "tts": bool(HAS_EDGE or HAS_KOKORO or xtts or eleven),
+        "tts": bool(HAS_EDGE or HAS_KOKORO or xtts or eleven or fish),
         "tts_local": bool(xtts or HAS_KOKORO),          # an on-device TTS path exists
         "persona_voice": (
             voice_persona_consent_status()
@@ -235,6 +236,7 @@ async def voice_capabilities():
         ),
         "providers": {
             "stt": "faster-whisper" if HAS_WHISPER else None,
-            "xtts": xtts, "elevenlabs": eleven, "edge_tts": bool(HAS_EDGE), "kokoro": bool(HAS_KOKORO),
+            "xtts": xtts, "elevenlabs": eleven, "fish_audio": fish,
+            "edge_tts": bool(HAS_EDGE), "kokoro": bool(HAS_KOKORO),
         },
     })
