@@ -185,6 +185,14 @@ async def stt_endpoint(request: Request, lang: Optional[str] = Query(None)):
             f.write(data)
             tmp = f.name
         text = await _stt_engine().transcribe_async(tmp, language=lang)
+        # 0.24 — opt-in dictation cleanup: strip fillers/stutters + apply spoken
+        # punctuation. Sentinel transcripts ([silence], [STT unavailable]) pass
+        # through untouched, and the removal counts stay inspectable.
+        if get_value("voice", "dictation_cleanup", False) and text and not text.startswith("["):
+            from core.voice.dictation import clean_dictation
+            cleaned = clean_dictation(text, lang=lang)
+            return nocache_json({"text": cleaned["text"], "lang": lang,
+                                 "dictation": {"cleaned": True, "removed": cleaned["removed"]}})
         return nocache_json({"text": text, "lang": lang})
     except Exception:
         logger.exception("STT error")

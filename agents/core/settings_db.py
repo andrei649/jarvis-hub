@@ -135,6 +135,7 @@ DEFAULTS: list[dict[str, Any]] = [
     dict(category="voice",   key="tts_voice",        value="en-GB-RyanNeural",    label="TTS voice",          kind="text"),
     dict(category="voice",   key="persona_voice_consent", value=False,           label="Allow cloned/persona voice playback (owner consent)", kind="toggle"),
     dict(category="voice",   key="sentence_streaming", value=False,               label="Sentence-level TTS streaming (H5.16) — speak the reply sentence-by-sentence so audio starts sooner", kind="toggle"),
+    dict(category="voice",   key="dictation_cleanup", value=False,                label="Dictation cleanup (0.24) — strip fillers/stutters + spoken punctuation from STT transcripts", kind="toggle"),
     # security
     dict(category="security",key="guardrails_mode",  value="WARN",                label="Guardrails mode",    kind="select",  opts=["WARN","REDACT","BLOCK"]),
     dict(category="security",key="scan_input",       value=True,                  label="Scan user input",    kind="toggle"),
