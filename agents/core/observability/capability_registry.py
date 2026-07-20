@@ -123,16 +123,46 @@ def _apply_override(rec: CapabilityRecord) -> CapabilityRecord:
     return rec
 
 
-def _plugin_records() -> list[CapabilityRecord]:
-    """Derive plugin capabilities from the static manifest registry (no orch needed)."""
+def _plugin_records(orch=None) -> list[CapabilityRecord]:
+    """Derive plugin capabilities from the static manifest registry.
+
+    ``orch`` is optional — the manifest-derived fields (state, policy) need no
+    orchestrator. When one is given, this also resolves each plugin's *live*
+    runtime honesty (Live-vs-Plumbing: is it actually live right now, or a mock/
+    degraded fallback awaiting config?) into ``detail``, mirroring the same
+    verdict the `/plugins` HUD listing renders — so the canonical capability
+    board (`/api/capabilities`) doesn't imply a plugin is real when it's a mock.
+    """
     try:
         from agents.core.capability_manifests import plugin_capability_manifest
         from agents.core.plugin_gate import BUILTIN_PLUGINS
     except Exception:
         return []
+    from agents.core.plugins.honesty import (
+        degradation_info,
+        honesty_for,
+        live_plugin_for,
+        runtime_configuration,
+    )
     out = []
     for pid, m in sorted(BUILTIN_PLUGINS.items()):
         cap = plugin_capability_manifest(m)
+        detail = {
+            "network_access": getattr(m.network_access, "value", str(m.network_access)),
+            "data_scope": getattr(m.data_scope, "value", str(m.data_scope)),
+            "agents_served": list(getattr(m, "agents_served", []) or []),
+        }
+        if orch is not None:
+            live_plugin = live_plugin_for(orch, pid)
+            configured, configuration_source = runtime_configuration(live_plugin)
+            degradation = degradation_info(live_plugin)
+            detail.update({
+                "configured": configured,
+                "honesty": honesty_for(pid, configured, configuration_source),
+                "degraded": degradation is not None,
+                "degraded_reason": (degradation or {}).get("reason", ""),
+                "degraded_needs": list((degradation or {}).get("needs", [])),
+            })
         out.append(
             CapabilityRecord(
                 id=f"plugin:{pid}",
@@ -148,11 +178,7 @@ def _plugin_records() -> list[CapabilityRecord]:
                 rollback=cap.rollback,
                 confidence=cap.confidence,
                 implementation=cap.implementation,
-                detail={
-                    "network_access": getattr(m.network_access, "value", str(m.network_access)),
-                    "data_scope": getattr(m.data_scope, "value", str(m.data_scope)),
-                    "agents_served": list(getattr(m, "agents_served", []) or []),
-                },
+                detail=detail,
             )
         )
     return out
@@ -415,12 +441,14 @@ def _acquired_records(orch) -> list[CapabilityRecord]:
 
 
 def build_records(orch=None) -> list[CapabilityRecord]:
-    """All capability records, overrides applied. Plugins derive statically; components
-    and skills need a live orchestrator (omitted when *orch* is None). Each source is
-    isolated so one failing registry can't blank the whole board."""
+    """All capability records, overrides applied. Plugins derive statically (their
+    lifecycle *state*/policy needs no orchestrator; their live honesty verdict does
+    and is omitted when *orch* is None); components and skills need a live
+    orchestrator outright (omitted when *orch* is None). Each source is isolated so
+    one failing registry can't blank the whole board."""
     records: list[CapabilityRecord] = []
     for source in (lambda: _missing_records(orch) if orch is not None else [],
-                   _plugin_records,
+                   lambda: _plugin_records(orch),
                    lambda: _action_records(orch),
                    lambda: _acquired_records(orch) if orch is not None else [],
                    lambda: _tool_records(orch) if orch is not None else [],

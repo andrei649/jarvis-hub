@@ -58,6 +58,54 @@ def test_plugins_and_actions_derive_statically_without_orch():
     assert payment.detail["mediation"] == "kernel"
 
 
+def test_plugin_detail_carries_no_honesty_fields_without_orch():
+    # orch=None is the static-derivation path (state/policy only) — adding the
+    # live honesty mirror must not leak honesty keys when there is no orch to
+    # resolve a live plugin instance against.
+    weather = next(r for r in cr.build_records(orch=None) if r.id == "plugin:weather")
+    for key in ("configured", "honesty", "degraded", "degraded_reason", "degraded_needs"):
+        assert key not in weather.detail
+
+
+def test_plugin_detail_degrades_honestly_when_orch_has_no_plugins():
+    # A fake orch with no `.plugins` registry must resolve every plugin as
+    # not-loaded rather than crash — same fail-closed posture as `/plugins`.
+    weather = next(r for r in cr.build_records(orch=_fake_orch()) if r.id == "plugin:weather")
+    assert weather.detail["configured"] is False
+    assert weather.detail["honesty"]["status"] == "needs_config"
+    assert weather.detail["degraded"] is False  # weather has no degradation_info()
+
+
+def test_plugin_detail_mirrors_live_honesty_and_degradation():
+    # The exact verdict `/plugins` renders must also land in the capability
+    # board's `detail`, so `/api/capabilities` can't imply a mock plugin is live.
+    class _MockOnlyPlugin:
+        def available(self):
+            return False
+
+        def degradation_info(self):
+            return {"reason": "no source configured", "needs": ["plugins.gecko_ing_client_id"]}
+
+    class _LivePlugin:
+        def available(self):
+            return True
+
+    orch = SimpleNamespace(plugins={"balance": _MockOnlyPlugin(), "websearch": _LivePlugin()})
+    recs = {r.id: r for r in cr.build_records(orch=orch)}
+
+    balance = recs["plugin:balance"].detail
+    assert balance["configured"] is False
+    assert balance["honesty"]["status"] == "needs_config"
+    assert balance["degraded"] is True
+    assert balance["degraded_reason"] == "no source configured"
+    assert "plugins.gecko_ing_client_id" in balance["degraded_needs"]
+
+    websearch = recs["plugin:websearch"].detail
+    assert websearch["configured"] is True
+    assert websearch["honesty"]["status"] == "live"
+    assert websearch["degraded"] is False
+
+
 def test_components_and_skills_derive_from_orch():
     recs = {r.id: r for r in cr.build_records(orch=_fake_orch())}
     assert recs["component:arena"].state == cr.WIRED      # init ok

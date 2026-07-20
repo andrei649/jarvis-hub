@@ -35,6 +35,60 @@ _NEEDS: dict[str, list[str]] = {
 }
 
 
+def live_plugin_for(orch, plugin_id: str):
+    """Resolve a manifest plugin id to its live instance in ``orch.plugins``.
+
+    A couple of manifest ids don't match their live-registry key 1:1; the alias
+    map covers those. Missing/unbuilt orchestrators resolve to ``None``.
+    """
+    live_plugins = getattr(orch, "plugins", {}) or {}
+    aliases = {
+        "whatsapp-bridge": "whatsapp",
+    }
+    return live_plugins.get(plugin_id) or live_plugins.get(aliases.get(plugin_id, ""))
+
+
+def runtime_configuration(plugin) -> tuple[bool, str]:
+    """Return whether a live plugin instance is actually owner-configured.
+
+    The manifest says a plugin exists and is allowed; callers (the `/plugins`
+    HUD listing, the capability registry) need the next bit of truth: whether
+    the owner supplied keys / a LAN bridge / a local data file. Prefers each
+    plugin's own ``configured`` / ``available`` / ``_configured`` contract when
+    it has one; otherwise a constructed plugin is considered configured because
+    there is no known extra setup signal.
+    """
+    if plugin is None:
+        return False, "not-loaded"
+    for attr_name in ("configured", "available", "_configured"):
+        if not hasattr(plugin, attr_name):
+            continue
+        attr = getattr(plugin, attr_name)
+        try:
+            value = attr() if callable(attr) else attr
+        except Exception:
+            return False, f"{attr_name}-error"
+        return bool(value), f"{attr_name}()"
+    return True, "loaded"
+
+
+def degradation_info(plugin) -> dict | None:
+    """A live plugin's own honesty contract: ``None`` = live, else ``{reason, needs}``.
+
+    Plugins whose calls silently fall back to mock data expose a
+    ``degradation_info()`` method so callers can badge them instead of letting
+    scaffold read as product. Absent method → no known mock path.
+    """
+    info_fn = getattr(plugin, "degradation_info", None)
+    if not callable(info_fn):
+        return None
+    try:
+        info = info_fn()
+    except Exception:
+        return {"reason": "degradation-introspection-error", "needs": []}
+    return info if isinstance(info, dict) else None
+
+
 def honesty_for(plugin_id: str, configured: bool,
                 configuration_source: str = "") -> dict:
     """Runtime honesty verdict for one plugin.
