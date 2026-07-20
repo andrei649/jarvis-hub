@@ -21,7 +21,7 @@ from typing import Callable, Optional
 from .agent import Agent
 from .router import IntentRouter
 from .config import JarvisConfig
-from .llm.base import LOCAL_SELECTION_UNAVAILABLE_REPLY
+from .llm.base import LOCAL_SELECTION_UNAVAILABLE_REPLY, is_degraded_reply
 from .llm.auth_rotation import AuthLease
 from .llm.gemini import GeminiBackend
 from .llm.hybrid_router import HybridRouter, LocalBackendUnavailableError
@@ -74,6 +74,18 @@ from .settings_db import get_all as _get_settings
 # Live-plugin classes + oauth helpers moved with the registry to PluginManager (CLN-2).
 
 logger = logging.getLogger("jarvis.orchestrator")
+
+
+def _is_failed_agent_reply(agent_id: str | None, response: object) -> bool:
+    """Classify stable degraded replies and exact per-agent failure markers."""
+
+    return is_degraded_reply(response) or bool(
+        agent_id
+        and re.match(
+            rf"^\[{re.escape(agent_id)} (error|timeout)\b",
+            str(response),
+        )
+    )
 
 
 def _log_task_result(task: "asyncio.Task") -> None:
@@ -1617,7 +1629,7 @@ class Orchestrator:
         module = cog.module("persona")
         if module is None:
             return
-        failed = bool(re.match(rf"^\[{re.escape(agent_id)} (error|timeout)\b", response or ""))
+        failed = _is_failed_agent_reply(agent_id, response)
         try:
             module.nudge(
                 agent_id,
@@ -1636,6 +1648,8 @@ class Orchestrator:
     def _spawn_background_review(self, text: str, synthesized: str, channel: str) -> None:
         """H20: spawn the per-turn learning distiller (fire-and-forget, gated)."""
         try:
+            if is_degraded_reply(synthesized):
+                return
             cog = getattr(self, "cognition", None)
             if cog is None or not cog.sub_enabled("review_enabled"):
                 return
@@ -1704,10 +1718,7 @@ class Orchestrator:
             duplicate_digest = bool(has_digest(text_sha256)) if callable(has_digest) else False
             surprise = 0.0 if duplicate_digest else 1.0
             novelty = 0.0 if duplicate_digest else 1.0
-            failed = bool(
-                responder_id
-                and re.match(rf"^\[{re.escape(responder_id)} (error|timeout)\b", assistant_text or "")
-            )
+            failed = _is_failed_agent_reply(responder_id, assistant_text)
             result = living.encode(
                 mem_id,
                 content,
@@ -2086,8 +2097,7 @@ class Orchestrator:
                 #   timeout → f"[{agent_id} timeout]"      (orchestrator.py ~:1637)
                 # A naive "error:" in resp false-positives on any normal answer
                 # that merely mentions the word "error:"; anchor to the marker.
-                failed = bool(re.match(rf"^\[{re.escape(agent_id)} (error|timeout)\b", resp))
-                success = not failed
+                success = not _is_failed_agent_reply(agent_id, resp)
                 latency = getattr(self, "_last_latencies", {}).get(agent_id, 0.0)
                 metadata = {
                     # CDX-2: record the real origin (web/telegram/discord/voice/

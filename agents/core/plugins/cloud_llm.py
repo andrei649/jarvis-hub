@@ -9,6 +9,7 @@ Only enabled for approved agents: jarvis, athena, stark, vision, veronica.
 import logging
 
 from ..http_client import PluginHTTPClient, PluginTimeouts
+from ..llm.model_config import DEFAULT_CLAUDE_MODEL
 from ..llm.provider_errors import GEMINI_DEGRADED_REPLY, log_provider_failure
 from ..resilience import resilient_call
 
@@ -38,7 +39,9 @@ class CloudLLMPlugin:
 
         try:
             if self._prefer == "anthropic":
-                return await self._call_anthropic(prompt, system, model or "claude-sonnet-4-20250514", max_tokens)
+                return await self._call_anthropic(
+                    prompt, system, model or DEFAULT_CLAUDE_MODEL, max_tokens
+                )
             elif self._prefer == "openai":
                 return await self._call_openai(prompt, system, model or "gpt-4o", max_tokens)
             elif self._prefer == "gemini":

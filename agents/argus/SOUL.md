@@ -7,7 +7,7 @@ status: active
 tier: business
 model:
   primary: deepseek-r1-distill-qwen-32b-q4
-  fallback: claude-sonnet-4-7
+  fallback: claude-sonnet-4-6
 channels:
   primary: web-dashboard
   fallback: telegram

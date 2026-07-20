@@ -9,6 +9,7 @@ sys.path.insert(0, str(repo_root))
 sys.path.insert(0, str(repo_root / "agents"))
 
 from core.llm.cost_estimator import estimate_cost, estimate_monthly, MODELS
+from core.llm.model_config import DEFAULT_CLAUDE_MODEL
 
 
 def test_estimate_cost_local_is_free():
@@ -35,7 +36,7 @@ def test_estimate_cost_gemini_pro():
 
 
 def test_estimate_cost_claude():
-    cost = estimate_cost("claude-sonnet-4-20250514", 5000, 1000)
+    cost = estimate_cost(DEFAULT_CLAUDE_MODEL, 5000, 1000)
     assert cost["total"] > 0
 
 

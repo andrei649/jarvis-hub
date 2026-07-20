@@ -5,6 +5,7 @@ These are unit tests: they construct a bare Orchestrator and stub the LLM /
 learning collaborators so no real backend, network or model is needed.
 """
 
+import asyncio
 import sys
 from pathlib import Path
 
@@ -170,6 +171,57 @@ def test_record_marker_for_other_agent_is_success(orch):
 
 def test_record_plain_answer_is_success(orch):
     assert _record_and_capture(orch, "jarvis", "All good, sir.") is True
+
+
+def test_record_gemini_degraded_reply_is_failure_everywhere(orch):
+    response = "[Gemini error: provider request failed]"
+    orch.agents["jarvis"] = _StubAgent("jarvis")
+    captured = {}
+    orch.learning.record = lambda **kw: captured.update(learning=kw["success"])
+    orch.bench.record = lambda **kw: captured.update(bench=kw["success"])
+    orch.entities = None
+    orch.kg_updater = None
+
+    class RecordingRunHistory:
+        def record(self, **kwargs):
+            captured["run_history"] = kwargs["ok"]
+
+    orch.run_history = RecordingRunHistory()
+    orch._record_interactions("prompt", {"jarvis": response}, response)
+    assert captured == {"learning": False, "bench": False, "run_history": False}
+
+
+def test_degraded_reply_does_not_spawn_background_review(orch, monkeypatch):
+    class Cognition:
+        @staticmethod
+        def sub_enabled(name):
+            return name == "review_enabled"
+
+    class Reviewer:
+        @staticmethod
+        def should_run():
+            return True, "ready"
+
+    spawned = []
+
+    def capture_task(coro):
+        spawned.append(coro)
+        coro.close()
+
+        class Task:
+            @staticmethod
+            def add_done_callback(callback):
+                return None
+
+        return Task()
+
+    orch.cognition = Cognition()
+    orch.reviewer = Reviewer()
+    monkeypatch.setattr(asyncio, "create_task", capture_task)
+    orch._spawn_background_review(
+        "prompt", "[Gemini error: provider request failed]", "web"
+    )
+    assert spawned == []
 
 
 # ── CDX-2: the real channel is recorded, not a hard-coded "web" ───────────────

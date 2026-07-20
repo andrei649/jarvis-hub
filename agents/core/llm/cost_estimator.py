@@ -1,7 +1,8 @@
-"""
-cost_estimator.py — Token-based cost estimation for LLM calls.
+"""cost_estimator.py — Token-based cost estimation for LLM calls.
 Supports Gemini, Claude, and local models. All prices per 1M tokens in USD.
 """
+
+from .model_config import DEFAULT_CLAUDE_MODEL, RETIRED_CLAUDE_DEFAULT
 
 MODELS = {
     "gemini-2.5-flash":    {"input": 0.15,  "output": 0.60},
@@ -10,7 +11,8 @@ MODELS = {
     "gemini-3.5-flash":    {"input": 1.50,  "output": 9.00},
     "gemini-3-flash":      {"input": 0.50,  "output": 3.00},
     "gemini-3.1-flash-lite": {"input": 0.25, "output": 1.50},
-    "claude-sonnet-4-20250514": {"input": 3.00, "output": 15.00},
+    DEFAULT_CLAUDE_MODEL:      {"input": 3.00, "output": 15.00},
+    RETIRED_CLAUDE_DEFAULT:    {"input": 3.00, "output": 15.00},
     "local":               {"input": 0,     "output": 0},
     "qwen3:7b":            {"input": 0,     "output": 0},
     "google/gemma-4-31b-a4b": {"input": 0, "output": 0},
