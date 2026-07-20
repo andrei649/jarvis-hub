@@ -202,7 +202,13 @@ python -m pytest tests/ -v          # ~3,868 passed, 6 skipped (counter synced v
 - [x] Surface degradation in the HUD — plugins expose a `degradation_info()` contract, the
   `/plugins` listing carries `degraded`/`degraded_reason`/`degraded_needs`, and the Admin
   plugin registry badges mock-backed plugins **MOCK** (amber, tooltip = reason + needed config).
-  Remaining follow-up: mirror the badge onto capability-registry `state` surfaces
+- [x] **Mirror the badge onto capability-registry state (tranche 4)** — `_plugin_records(orch=)`
+  now resolves the exact same live honesty verdict (`configured`/`honesty`/`degraded*`) into each
+  plugin's `detail`, so `/api/capabilities` (the canonical board) can no longer imply a mock
+  plugin is live either. Resolution logic (`runtime_configuration`/`degradation_info`/
+  `live_plugin_for`) extracted from `routers/plugins.py` into `plugins/honesty.py` so both
+  surfaces share one source of truth instead of re-deriving it. Backward-compatible: `orch=None`
+  (the static-derivation path used by most tests) carries no honesty keys, unchanged from before.
 
 ---
 

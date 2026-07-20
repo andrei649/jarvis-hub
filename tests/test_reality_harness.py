@@ -67,7 +67,7 @@ async def test_pass_promotes_fail_does_not(monkeypatch):
     monkeypatch.setattr(
         cr,
         "_plugin_records",
-        lambda: [
+        lambda orch=None: [
             cr.CapabilityRecord(id="plugin:p_ok", kind="plugin", state=cr.WIRED),
             cr.CapabilityRecord(id="plugin:p_bad", kind="plugin", state=cr.WIRED),
         ],
@@ -108,7 +108,7 @@ async def test_verified_cannot_be_set_for_a_seam_rail(monkeypatch):
     monkeypatch.setattr(
         cr,
         "_plugin_records",
-        lambda: [
+        lambda orch=None: [
             cr.CapabilityRecord(id="plugin:seamy", kind="plugin", state=cr.SEAM),
         ],
     )
@@ -120,7 +120,7 @@ async def test_manual_demote_overrides_a_verification(monkeypatch):
     monkeypatch.setattr(
         cr,
         "_plugin_records",
-        lambda: [
+        lambda orch=None: [
             cr.CapabilityRecord(id="plugin:p", kind="plugin", state=cr.WIRED),
         ],
     )

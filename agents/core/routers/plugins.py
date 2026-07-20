@@ -14,7 +14,10 @@ from core.log_safe import log_safe
 from fastapi import APIRouter, Depends, HTTPException
 
 from agents.core.app_state import get_orch
+from agents.core.plugins.honesty import degradation_info as _plugin_degradation
 from agents.core.plugins.honesty import honesty_for
+from agents.core.plugins.honesty import live_plugin_for as _live_plugin_for
+from agents.core.plugins.honesty import runtime_configuration as _plugin_runtime_configuration
 from agents.core.routers._deps import admin_guard
 from agents.core.web_helpers import nocache_json
 
@@ -22,53 +25,11 @@ router = APIRouter(tags=["plugins"])
 
 logger = logging.getLogger("jarvis.web")
 
-
-def _plugin_runtime_configuration(plugin) -> tuple[bool, str]:
-    """Return whether a live plugin is actually owner-configured.
-
-    The manifest says a plugin exists and is allowed; preview-mode HUD surfaces
-    need the next bit of truth: whether the owner supplied keys / a LAN bridge /
-    a local data file. Prefer each plugin's own ``available`` / ``_configured``
-    contract when it has one; otherwise a constructed plugin is considered
-    configured because there is no known extra setup signal.
-    """
-    if plugin is None:
-        return False, "not-loaded"
-    for attr_name in ("configured", "available", "_configured"):
-        if not hasattr(plugin, attr_name):
-            continue
-        attr = getattr(plugin, attr_name)
-        try:
-            value = attr() if callable(attr) else attr
-        except Exception:
-            return False, f"{attr_name}-error"
-        return bool(value), f"{attr_name}()"
-    return True, "loaded"
-
-
-def _plugin_degradation(plugin) -> "dict | None":
-    """The plugin's own honesty contract: None = live, else {reason, needs}.
-
-    Live-vs-Plumbing honesty layer: plugins whose calls silently fall back to
-    mock data expose ``degradation_info()`` so the HUD can badge them instead
-    of letting scaffold read as product. Absent method → no known mock path.
-    """
-    info_fn = getattr(plugin, "degradation_info", None)
-    if not callable(info_fn):
-        return None
-    try:
-        info = info_fn()
-    except Exception:
-        return {"reason": "degradation-introspection-error", "needs": []}
-    return info if isinstance(info, dict) else None
-
-
-def _live_plugin_for(orch, plugin_id: str):
-    live_plugins = getattr(orch, "plugins", {}) or {}
-    aliases = {
-        "whatsapp-bridge": "whatsapp",
-    }
-    return live_plugins.get(plugin_id) or live_plugins.get(aliases.get(plugin_id, ""))
+# _plugin_runtime_configuration / _plugin_degradation / _live_plugin_for moved to
+# agents.core.plugins.honesty (as runtime_configuration / degradation_info /
+# live_plugin_for) so the capability registry can share the exact same resolution
+# logic instead of re-deriving it — re-imported here under their prior names so
+# nothing else in this module (or its tests) has to change.
 
 
 @router.get("/plugins")
