@@ -126,9 +126,8 @@ async def test_apply_decision_reject(q):
 
 @pytest.mark.asyncio
 async def test_apply_decision_edit_updates_payload(q):
-    # An edit whose edited payload clears policy approves normally. The task
-    # starts BLOCKED; editing it to an explicitly read-only payload re-gates to
-    # ACT (BUG-11), so it transitions BLOCKED → APPROVED with the new payload.
+    # Editing execution bytes cannot lower the durable server-owned tier. The
+    # original delete identity remains authoritative, so the task stays blocked.
     w = make_worker(q)
     task = await w.submit("jarvis", "delete_file", "Delete", payload={"path": "/old"})
     assert q.get(task.id).status == "blocked"
@@ -137,7 +136,9 @@ async def test_apply_decision_edit_updates_payload(q):
         payload={"path": "/new", "risk_tier": "read_only"},
     )
     t = q.get(task.id)
-    assert t.status == "approved"
+    assert t.status == "blocked"
+    assert t.risk_tier == 3
+    assert t.autonomy_level == "ask"
     assert t.payload == {"path": "/new", "risk_tier": "read_only"}
 
 
@@ -179,7 +180,7 @@ async def test_edit_over_cap_reblocks(q):
     assert q.get(task.id).status == "blocked"          # escalated spend → re-blocked
     task2 = await w.submit("jarvis", "delete_file", "Delete2", payload={"path": "/o2"})
     await w.apply_decision(task2.id, "edit", decided_by="andrei", payload={"amount": 10})
-    assert q.get(task2.id).status == "approved"        # within-cap edit → approved
+    assert q.get(task2.id).status == "blocked"         # durable delete tier cannot be lowered
 
 
 @pytest.mark.asyncio

@@ -83,6 +83,34 @@ def test_update_payload(q):
     assert q.get(tid).payload == {"body": "new"}
 
 
+def test_update_payload_policy_is_atomic_and_preserves_identity(q):
+    tid = q.enqueue(
+        "steve",
+        "delete_database",
+        "delete",
+        {"target": "old"},
+        risk_tier=3,
+        autonomy_level="ask",
+        origin="inbound",
+    )
+    q.transition(tid, TaskStatus.BLOCKED)
+
+    task = q.update_payload_policy(
+        tid,
+        {"target": "new", "kind": "monitor.status"},
+        risk_tier=3,
+        autonomy_level="ask",
+    )
+
+    assert task.payload == {"target": "new", "kind": "monitor.status"}
+    assert task.risk_tier == 3
+    assert task.autonomy_level == "ask"
+    assert task.agent == "steve"
+    assert task.kind == "delete_database"
+    assert task.origin == "inbound"
+    assert task.status == "blocked"
+
+
 def test_persistence_across_reopen(tmp_path):
     path = str(tmp_path / "autonomy.db")
     q1 = TaskQueue(db_path=path).initialize()
