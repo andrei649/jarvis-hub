@@ -10,7 +10,8 @@ from __future__ import annotations
 from ..env_config import env_str
 
 DEFAULT_LOCAL_MODEL = "qwen3:7b"
-DEFAULT_CLAUDE_MODEL = "claude-sonnet-4-20250514"
+DEFAULT_CLAUDE_MODEL = "claude-sonnet-4-6"
+RETIRED_CLAUDE_DEFAULT = "claude-sonnet-4-20250514"
 DEFAULT_GEMINI_FLASH_MODEL = "gemini-2.5-flash"
 DEFAULT_GEMINI_PRO_MODEL = "gemini-2.5-pro"
 DEFAULT_DEEP_MODEL = "deepseek-r1-distill-qwen-32b"

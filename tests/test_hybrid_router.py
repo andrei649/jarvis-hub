@@ -542,7 +542,7 @@ def test_claude_select_backend_for_vision(monkeypatch):
     router._claude_backend = FakeBackend()
     backend, model, route = router.select_backend("vision", "research task")
     assert route == "claude"
-    assert model == "claude-sonnet-4-20250514"
+    assert model == "claude-sonnet-4-6"
 
 
 def test_claude_select_backend_for_steve(monkeypatch):
@@ -580,8 +580,8 @@ def test_get_model_claude_agent():
     router = HybridRouter(anthropic_api_key="sk-ant-test")
     router._claude_available = True
     router._local_available = True
-    assert router.get_model("vision") == "claude-sonnet-4-20250514"
-    assert router.get_model("steve") == "claude-sonnet-4-20250514"
+    assert router.get_model("vision") == "claude-sonnet-4-6"
+    assert router.get_model("steve") == "claude-sonnet-4-6"
 
 
 def test_get_model_light_agent():

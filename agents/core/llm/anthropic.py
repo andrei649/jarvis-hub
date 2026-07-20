@@ -10,13 +10,14 @@ import httpx
 
 from .auth_rotation import is_rotatable_status
 from .base import LLMBackend, cloud_cap
+from .model_config import DEFAULT_CLAUDE_MODEL
 
 ANTHROPIC_API_BASE = "https://api.anthropic.com/v1"
 ANTHROPIC_VERSION = "2023-06-01"
 
 
 class ClaudeBackend(LLMBackend):
-    def __init__(self, api_key: str, model: str = "claude-sonnet-4-20250514", auth_pool=None):
+    def __init__(self, api_key: str, model: str = DEFAULT_CLAUDE_MODEL, auth_pool=None):
         self.api_key = api_key
         self.model = model
         # H12.20 — optional multi-key auth pool. When set, the active key is drawn

@@ -15,6 +15,7 @@ sys.path.insert(0, str(repo_root))
 
 from agents.core.observability.tracer import Tracer
 from agents.core.llm.cost_estimator import estimate_cost
+from agents.core.llm.model_config import DEFAULT_CLAUDE_MODEL
 
 
 # ── per-trace cost via the shared estimator ─────────────────────────────────
@@ -25,7 +26,7 @@ def test_local_model_is_free():
 
 
 def test_cloud_model_has_cost():
-    out = estimate_cost("claude-sonnet-4-20250514", 1_000_000, 1_000_000)
+    out = estimate_cost(DEFAULT_CLAUDE_MODEL, 1_000_000, 1_000_000)
     # 3.00 in + 15.00 out per 1M tokens
     assert out["total"] == 18.0
 

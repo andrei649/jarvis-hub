@@ -12,6 +12,8 @@ import os
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 
+from ..model_config import DEFAULT_CLAUDE_MODEL
+
 
 @dataclass(frozen=True)
 class ProviderProfile:
@@ -129,7 +131,7 @@ BUILTIN_PROFILES: tuple[ProviderProfile, ...] = (
         auth_type="api-key",
         auth_env="ANTHROPIC_API_KEY",
         capabilities=frozenset({"chat", "reasoning", "cloud"}),
-        fallback_models=("claude-sonnet-4-20250514",),
+        fallback_models=(DEFAULT_CLAUDE_MODEL,),
     ),
     ProviderProfile(
         id="openrouter",

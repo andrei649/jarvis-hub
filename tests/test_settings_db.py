@@ -1,6 +1,8 @@
 """Tests for the admin settings store (seeding, get/put, unknown-key handling)."""
 
+import json
 import sys
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 import pytest
@@ -10,6 +12,10 @@ sys.path.insert(0, str(repo_root))
 sys.path.insert(0, str(repo_root / "agents"))
 
 from agents.core import settings_db
+from agents.core.llm.model_config import (
+    DEFAULT_CLAUDE_MODEL,
+    RETIRED_CLAUDE_DEFAULT,
+)
 
 
 @pytest.fixture
@@ -128,3 +134,57 @@ def test_init_db_force_restores_all_categories(temp_db):
     gen = {r["key"]: r for r in groups["general"]}
     # Custom values gone, defaults back
     assert gen["timezone"]["value"] != "Custom/Time"
+
+
+def _set_raw_claude_model(temp_db, value):
+    temp_db.init_db()
+    conn = temp_db.get_conn()
+    conn.execute(
+        "UPDATE settings SET value=? WHERE category='llm' AND key='claude_model'",
+        (json.dumps(value),),
+    )
+    conn.commit()
+    conn.close()
+
+
+def test_fresh_db_seeds_current_claude_default(temp_db):
+    assert temp_db.get_value("llm", "claude_model") == DEFAULT_CLAUDE_MODEL
+
+
+def test_retired_claude_default_migrates_exactly_once(temp_db):
+    _set_raw_claude_model(temp_db, RETIRED_CLAUDE_DEFAULT)
+    temp_db.init_db()
+    assert temp_db.get_value("llm", "claude_model") == DEFAULT_CLAUDE_MODEL
+    conn = temp_db.get_conn()
+    try:
+        assert temp_db._migrate_retired_claude_default(conn) is False
+    finally:
+        conn.close()
+
+
+def test_custom_claude_model_value_remains_byte_identical(temp_db):
+    custom = "  owner/custom-claude:model@v1  "
+    _set_raw_claude_model(temp_db, custom)
+    temp_db.init_db()
+    assert temp_db.get_value("llm", "claude_model") == custom
+
+
+def test_claude_migration_is_idempotent(temp_db):
+    _set_raw_claude_model(temp_db, RETIRED_CLAUDE_DEFAULT)
+    temp_db.init_db()
+    temp_db.init_db()
+    assert temp_db.get_value("llm", "claude_model") == DEFAULT_CLAUDE_MODEL
+
+
+def test_force_init_reseeds_current_claude_default(temp_db):
+    _set_raw_claude_model(temp_db, "owner/custom-model")
+    temp_db.init_db(force=True)
+    assert temp_db.get_value("llm", "claude_model") == DEFAULT_CLAUDE_MODEL
+
+
+def test_concurrent_ensure_initialized_migrates_once(temp_db):
+    _set_raw_claude_model(temp_db, RETIRED_CLAUDE_DEFAULT)
+    temp_db._initialized = False
+    with ThreadPoolExecutor(max_workers=8) as pool:
+        list(pool.map(lambda _: temp_db.ensure_initialized(), range(16)))
+    assert temp_db.get_value("llm", "claude_model") == DEFAULT_CLAUDE_MODEL

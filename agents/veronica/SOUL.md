@@ -7,7 +7,7 @@ status: active
 tier: business
 model:
   primary: qwen2.5-14b-instruct
-  fallback: claude-sonnet-4-7
+  fallback: claude-sonnet-4-6
 channels:
   primary: telegram
   fallback: web-dashboard
