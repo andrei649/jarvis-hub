@@ -215,9 +215,18 @@ class NodeMesh:
         if not auth.get("allowed"):
             return {"status": "failed", "reason": auth.get("reason", "denied"), "node": node_id}
         self._record("node.execute", node_id, capability=capability)
+        # Honesty layer (Live-vs-Plumbing): unlike the write-back/call/social
+        # brokers there is NO client pair here yet — no node transport exists at
+        # all. Stamp the deferred dispatch as degraded so callers/HUD see it is
+        # not a real delivery and what remains unbuilt.
+        from .plugins.degradation import degraded
         return {"status": "ok", "node": node_id, "capability": capability,
-                "dispatch": {"status": "deferred",
-                             "note": "handed to node client — host seam"}}
+                "dispatch": degraded(
+                    {"status": "deferred",
+                     "note": "handed to node client — host seam"},
+                    reason="node_transport_not_built",
+                    needs=["node transport client (host seam)"],
+                )}
 
     # ── internals ────────────────────────────────────────────────────────────
 

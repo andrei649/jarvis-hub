@@ -144,8 +144,16 @@ class NullCallClient:
                    credentials: dict, config: dict) -> dict:
         self.calls.append({"provider": provider, "to": to, "message": message,
                            "has_credential": bool((credentials or {}).get("token"))})
-        return {"status": "deferred", "provider": provider, "to": to,
-                "note": "no live call client configured — host seam"}
+        # Honesty layer (Live-vs-Plumbing): a deferred call is a degraded
+        # result — stamp it so the HUD/callers can badge it and name the fix.
+        from ..plugins.degradation import degraded
+        cred_name = _CREDENTIAL.get((provider or "").lower(), "credential")
+        return degraded(
+            {"status": "deferred", "provider": provider, "to": to,
+             "note": "no live call client configured — host seam"},
+            reason="call_credential_not_configured",
+            needs=[f"secret:{cred_name}"],
+        )
 
 
 class HttpCallClient:
@@ -185,6 +193,9 @@ class CallBroker:
         self._enqueue = enqueue
         self.agent = agent
         self._secrets = secret_broker
+        # An explicitly injected client (tests, custom rails) is never replaced;
+        # only the default NullCallClient may lazily upgrade to the live rail.
+        self._client_injected = client is not None
         self._client = client or NullCallClient()
         self._audit = audit
         self._budget = budget   # InterruptBudget: .remaining() / .consume()
@@ -294,6 +305,16 @@ class CallBroker:
                     self._record("call.budget_denied", reason, to=to)
                     return {"status": "failed", "reason": "budget_exceeded", "detail": reason}
             credentials = self._resolve_credentials(payload)
+            # Live-vs-Plumbing: the moment an approved task resolves a REAL owner
+            # credential, the default Null client upgrades to the live telephony
+            # rail — no restart needed, still strictly behind the approval funnel
+            # AND the interrupt budget below. Unconfigured stays honestly
+            # deferred; injected clients are never overridden.
+            if (not self._client_injected and credentials.get("token")
+                    and isinstance(self._client, NullCallClient)):
+                logger.info("call live rail active — credential resolved, "
+                            "using HttpCallClient")
+                self._client = HttpCallClient()
             config = self.config.get(provider, {}) if isinstance(self.config, dict) else {}
             delivery_broker = getattr(self._budget, "delivery_broker", None)
             performed = False

@@ -188,7 +188,14 @@ python -m pytest tests/ -v          # ~3,868 passed, 6 skipped (counter synced v
   credential (`secret:x_api_token`), no restart needed; unconfigured stays honestly
   deferred and now carries the `_degraded {reason, needs}` stamp; injected clients
   are never replaced (`tests/test_social_live_client.py`)
-- [ ] Autonomy executors: real `Http*` clients at the writeback / call / node host seams
+- [x] Autonomy executors: live rails at the writeback / call host seams — same
+  lazy-upgrade-behind-approval pattern as social (`Null* → HttpWriteBackClient` /
+  `HttpCallClient` when the approved task resolves a real credential); deferred
+  results now stamped `_degraded {reason, needs}`. Node mesh has **no transport
+  at all** (not just an unwired client) — its deferred dispatch is stamped
+  `node_transport_not_built`; building a real node transport stays open below
+  under "Media / desktop / node actuators" (`tests/test_writeback_live_client.py`,
+  `tests/test_call_live_client.py`)
 - [ ] Capability acquisition: a production path that creates a `PromotionProposal`; real skill code-synthesis (replace the `"implement logic in handle()"` placeholder)
 - [ ] Real payment rail adapter (AP2/ACP/x402) at `payments.settle()` — **owner decision required (moves money)**
 - [ ] Media / desktop / node actuators (owner-wired host seams)
