@@ -45,7 +45,7 @@ intentionally owner-HUD-only; native clients expose no discovery, frame, stream,
 | Capability registry board | `GET /api/capabilities` | ✅ | ✅ | H18.22 / H27.8 |
 | WorldView bridge (World tab: liveness + recon read data) | `GET /api/worldview/status`, `GET /api/worldview/overview` | ✅ | ⬜ | |
 | Channel inbox + governed replies | `GET /api/channels/inbox*`, `POST /api/channels/inbox/{thread_id}/reply` | ✅ | ✅ | H18.12 |
-| Spoken morning brief (🔊 SPEAK) | `GET /autonomy/brief` + `POST /tts` (native would use device TTS) | ✅ | ⬜ | |
+| Spoken morning brief (🔊 SPEAK) | `GET /autonomy/brief` + `POST /tts` (native: hub TTS via expo-audio) | ✅ | ✅ | H18.23 |
 | Chat rooms (multi-agent) | `GET/POST /api/rooms*` | ✅ | ⬜ | — |
 | Arena / review / quality | `GET /api/arena/*`, `/api/review/*` | ✅ | ➖ | — |
 | Security posture | `GET /api/security/*` | ✅ | ✅ | H18.18 |
@@ -71,6 +71,12 @@ intentionally owner-HUD-only; native clients expose no discovery, frame, stream,
 > owner-curated device registry and live session board, and exposes explicit governed present/restore
 > actions with distinct disabled, queued, refused, unverified, and verified outcomes. Device registry
 > mutations remain a separate admin-token-gated zone; no remote media is embedded on the phone.
+
+> **H18.23 ✅ (delivered):** native spoken morning brief — the Status tab gains a "Morning
+> brief" card reading the admin-guarded `GET /autonomy/brief` text, with a 🔊 Speak/Stop control
+> that plays it through the existing hub-TTS + expo-audio path (`src/audio/tts.ts`). Honest
+> states: no admin token → a pointer to Settings; hub TTS unavailable → a visible error, never
+> fake playback.
 
 > **H18.22 ✅ (delivered):** native capability registry parity, folded into the existing Status
 > tab (not a new top-level tab — the tab bar was already at 13 items) as a "Capabilities" card

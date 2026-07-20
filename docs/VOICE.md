@@ -176,9 +176,9 @@ never touched.
   licensed) or a cloud hop; not yet implemented. Path A's `openwakeword` is server-only.
 - **Sentence-level TTS streaming** — **server side landed** (H5.16): `POST /tts/stream` +
   `core/voice/sentence_stream.py` split a reply into sentences and synthesize/emit each as it's
-  ready (opt-in via `voice.sentence_streaming`, default off). **Remaining:** wiring the browser
-  loop (`frontend/src/voice.ts`) to consume `/tts/stream` and play chunks back-to-back, and a
-  fully token-streamed path (synthesize while the chat is still generating) — the building block
-  for that (`SentenceAggregator`) exists and is tested, but the chat→TTS pipe still resolves the
-  full reply first.
+  ready (opt-in via `voice.sentence_streaming`, default off). **Browser wiring landed too**:
+  `voice.ts:speak()` tries `streamTts()` first and falls back cleanly to the whole-reply `/tts`
+  path when the setting is off (409). **Remaining:** a fully token-streamed path (synthesize
+  while the chat is still generating) — the building block for that (`SentenceAggregator`)
+  exists and is tested, but the chat→TTS pipe still resolves the full reply first.
 - **No live `voice_state`** — `/status` reports a static `"idle"`; the HUD owns loop state client-side.

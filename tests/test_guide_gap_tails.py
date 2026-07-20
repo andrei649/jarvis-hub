@@ -170,3 +170,24 @@ def test_postiz_schedule_visible_in_targets_catalog():
     row = rows["social.postiz.schedule"]
     assert set(row["required"]) == {"text", "integration_id", "publish_at"}
     assert row["credential"] == ""
+
+
+# ---------------------------------------------------------------------------
+# Fish Audio surfaces in /api/voice/capabilities (honest provider state)
+# ---------------------------------------------------------------------------
+
+def test_capabilities_report_fish_audio(monkeypatch):
+    monkeypatch.setenv("FISH_AUDIO_API_KEY", "fa-key")
+    monkeypatch.delenv("XTTS_SERVER_URL", raising=False)
+    monkeypatch.delenv("ELEVENLABS_API_KEY", raising=False)
+    with TestClient(web.app) as client:
+        data = client.get("/api/voice/capabilities").json()
+    assert data["providers"]["fish_audio"] is True
+    assert data["tts"] is True          # fish alone is a real TTS path
+
+
+def test_capabilities_fish_absent_is_false(monkeypatch):
+    monkeypatch.delenv("FISH_AUDIO_API_KEY", raising=False)
+    with TestClient(web.app) as client:
+        data = client.get("/api/voice/capabilities").json()
+    assert data["providers"]["fish_audio"] is False
