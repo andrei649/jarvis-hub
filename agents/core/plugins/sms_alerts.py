@@ -6,12 +6,21 @@ from .degradation import degraded
 logger = logging.getLogger("jarvis.plugins.sms")
 
 
+_NEEDS = ["plugins.twilio_account_sid", "plugins.twilio_auth_token", "plugins.twilio_from_number"]
+
+
 class SMSAlertsPlugin:
     def __init__(self, account_sid: str = "", auth_token: str = "", from_number: str = ""):
         self.account_sid = account_sid.strip()
         self.auth_token = auth_token.strip()
         self.from_number = from_number.strip()
         self.client = PluginHTTPClient.for_plugin("sms-alerts")
+
+    def degradation_info(self) -> "dict | None":
+        """None when live; otherwise why results will be mock + what config fixes it."""
+        if self.account_sid and self.auth_token:
+            return None
+        return {"reason": "twilio_not_configured", "needs": list(_NEEDS)}
 
     @resilient_call(
         max_retries=2,
@@ -29,8 +38,8 @@ class SMSAlertsPlugin:
             logger.warning("Twilio credentials missing — running in mock offline preview mode")
             return degraded(
                 {"status": "mock_sent", "to": to_number, "message": message, "sid": "MOCK_SMS_123456"},
-                reason="Twilio credentials not configured — no SMS was sent",
-                needs=["plugins.twilio_account_sid", "plugins.twilio_auth_token", "plugins.twilio_from_number"],
+                reason="twilio_not_configured",
+                needs=_NEEDS,
             )
 
         url = f"https://api.twilio.com/2010-04-01/Accounts/{self.account_sid}/Messages.json"

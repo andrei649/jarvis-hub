@@ -268,10 +268,13 @@ def test_latest_ci_commit_reads_previous_main_from_push_event(tmp_path):
 
 
 def test_latest_ci_commit_uses_first_parent_when_checkout_is_origin_main():
+    # ON main (or a detached HEAD at the main tip), "origin/main" would be the
+    # very commit being generated — step back one so the ref isn't self-referential.
     seen = []
     outputs = {
         ("git", "rev-parse", "origin/main"): (0, "current123\n"),
         ("git", "rev-parse", "HEAD"): (0, "current123\n"),
+        ("git", "rev-parse", "--abbrev-ref", "HEAD"): (0, "main\n"),
         ("git", "rev-parse", "origin/main^"): (0, "previous123\n"),
     }
 
@@ -283,5 +286,23 @@ def test_latest_ci_commit_uses_first_parent_when_checkout_is_origin_main():
     assert seen == [
         ["git", "rev-parse", "origin/main"],
         ["git", "rev-parse", "HEAD"],
+        ["git", "rev-parse", "--abbrev-ref", "HEAD"],
         ["git", "rev-parse", "origin/main^"],
     ]
+
+
+def test_latest_ci_commit_feature_branch_at_main_tip_does_not_step_back():
+    """A freshly-created feature branch (no commits yet) sits AT the main tip.
+
+    CI's release gate compares the committed docs against the PR base — which
+    is exactly origin/main — so stepping back to origin/main^ here bakes a
+    stale ref into the docs and fails the gate (bit three PRs before this
+    guard). Only a checkout that IS main steps back."""
+    outputs = {
+        ("git", "rev-parse", "origin/main"): (0, "current123\n"),
+        ("git", "rev-parse", "HEAD"): (0, "current123\n"),
+        ("git", "rev-parse", "--abbrev-ref", "HEAD"): (0, "claude/feature-branch\n"),
+    }
+    assert status_sync.latest_ci_commit(
+        env={}, runner=lambda args: outputs[tuple(args)]
+    ) == "current123"

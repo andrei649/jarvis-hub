@@ -145,7 +145,7 @@ function HonestyBadge({ h }: { h?: Honesty }){
 
 function AdminMode({ t }){
   const A = V2.ADMIN;
-  const [plugins,setPlugins]=uS3<Array<{ name: string; scope: string; net: string; on: boolean; id?: string; honesty?: Honesty }>>(A.plugins);
+  const [plugins,setPlugins]=uS3<Array<{ name: string; scope: string; net: string; on: boolean; id?: string; honesty?: Honesty; degraded?: boolean; degradedReason?: string; degradedNeeds?: string[] }>>(A.plugins);
   // Keep local plugin list in sync if live.ts swaps in the real registry after mount.
   uE3(() => { setPlugins(A.plugins); }, [A.plugins]);
   // REAL toggle: PUT /plugins/{id}/toggle flips enabled on the backend. The seeded
@@ -190,7 +190,10 @@ function AdminMode({ t }){
             <SubH3>PLUGIN REGISTRY · {plugins.filter(p=>p.on).length}/{plugins.length} enabled{plugins.some(p=>p.honesty) ? ' · '+plugins.filter(p=>p.honesty && p.honesty.status==='live').length+' live' : ''}</SubH3>
             {plugins.map((p,i)=>(
               <div className="plg-row" key={i}>
-                <div><div className="plg-name">{p.name}<HonestyBadge h={p.honesty}/></div><div className="plg-scope">{p.scope}<span className={'plg-net '+p.net}>{p.net}</span></div></div>
+                <div><div className="plg-name">{p.name}
+                  {p.degraded && <span className="plg-net" style={{color:'var(--amber)',borderColor:'var(--amber)',marginLeft:6}} title={(p.degradedReason||'returns mock data')+((p.degradedNeeds&&p.degradedNeeds.length)?' — needs: '+p.degradedNeeds.join(', '):'')}>MOCK</span>}
+                  <HonestyBadge h={p.honesty}/>
+                </div><div className="plg-scope">{p.scope}<span className={'plg-net '+p.net}>{p.net}</span></div></div>
                 <button className={'twk-mini '+(p.on?'on':'')} onClick={()=>onToggle(i)} title={p.id?(p.on?'disable plugin':'enable plugin'):'demo plugin — preview only'}><i></i></button>
               </div>
             ))}

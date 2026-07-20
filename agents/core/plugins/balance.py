@@ -91,6 +91,15 @@ class BalanceReaderPlugin:
     def available(self) -> bool:
         return bool(self.ing_client_id or self.libra_token or self.csv_path)
 
+    def degradation_info(self) -> "dict | None":
+        """None when a real balance source exists; otherwise why results are mock."""
+        if self.available():
+            return None
+        return {
+            "reason": "no balance source configured",
+            "needs": ["plugins.gecko_ing_client_id", "plugins.gecko_libra_token", "plugins.gecko_csv_path"],
+        }
+
     async def get_balances(self) -> dict:
         """Aggregated balances, with account numbers masked for display safety."""
         return _mask_accounts(await self._raw_balances())
@@ -111,13 +120,19 @@ class BalanceReaderPlugin:
                 return self._parse_csv()
             except Exception as e:
                 logger.warning(f"CSV import failed: {e}")
-        return dict(MOCK_BALANCES)
+        return degraded(
+            dict(MOCK_BALANCES),
+            reason="no balance source configured",
+            needs=["plugins.gecko_ing_client_id", "plugins.gecko_libra_token", "plugins.gecko_csv_path"],
+        )
 
     async def get_summary(self) -> str:
         data = await self.get_balances()
         lines = []
         for source, accounts in data.items():
-            if source == "mock":
+            # Skip degradation metadata (mock/_mock/_degraded) — only real
+            # account-list sources render as balance lines.
+            if not isinstance(accounts, list):
                 continue
             lines.append(f"**{source.upper()}:**")
             for acct in accounts:

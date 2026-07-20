@@ -6,11 +6,20 @@ from .degradation import degraded
 logger = logging.getLogger("jarvis.plugins.crm")
 
 
+_NEEDS = ["plugins.notion_integration_token", "plugins.notion_database_id"]
+
+
 class CRMSyncPlugin:
     def __init__(self, integration_token: str = "", database_id: str = ""):
         self.integration_token = integration_token.strip()
         self.database_id = database_id.strip()
         self.client = PluginHTTPClient.for_plugin("crm-sync")
+
+    def degradation_info(self) -> "dict | None":
+        """None when live; otherwise why results will be mock + what config fixes it."""
+        if self.integration_token and self.database_id:
+            return None
+        return {"reason": "notion_not_configured", "needs": list(_NEEDS)}
 
     @resilient_call(
         max_retries=2,
@@ -28,8 +37,8 @@ class CRMSyncPlugin:
             logger.warning("Notion Integration Token or Database ID missing — running in mock mode")
             return degraded(
                 {"status": "mock_saved", "name": name, "company": company, "email": email, "id": "MOCK_NOTION_LEAD"},
-                reason="Notion credentials not configured — lead not saved to a real CRM",
-                needs=["plugins.notion_integration_token", "plugins.notion_database_id"],
+                reason="notion_not_configured",
+                needs=_NEEDS,
             )
 
         url = "https://api.notion.com/v1/pages"

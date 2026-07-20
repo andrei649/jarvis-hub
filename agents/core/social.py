@@ -194,8 +194,16 @@ class NullSocialClient:
     async def send(self, platform: str, action: str, fields: dict, credentials: dict) -> dict:
         self.calls.append({"platform": platform, "action": action, "fields": fields,
                            "has_credential": bool((credentials or {}).get("token"))})
-        return {"status": "deferred", "platform": platform, "action": action,
-                "note": "no live social client configured — host seam"}
+        # Honesty layer (Live-vs-Plumbing): a deferred social write is a degraded
+        # result — stamp it so the HUD/callers can badge it and name the fix.
+        from .plugins.degradation import degraded
+        cred_name = _CREDENTIAL.get((platform or "").lower(), "credential")
+        return degraded(
+            {"status": "deferred", "platform": platform, "action": action,
+             "note": "no live social client configured — host seam"},
+            reason="social_credential_not_configured",
+            needs=[f"secret:{cred_name}"],
+        )
 
 
 class HttpSocialClient:
@@ -240,6 +248,9 @@ class SocialBroker:
         self._enqueue = enqueue
         self.agent = agent
         self._secrets = secret_broker
+        # An explicitly injected client (tests, custom rails) is never replaced;
+        # only the default NullSocialClient may lazily upgrade to the live rail.
+        self._client_injected = client is not None
         self._client = client or NullSocialClient()
         self._audit = audit
         self._kernel = kernel   # ORIZONT-24 K1: bound kernel.authorize (default-off)
@@ -350,6 +361,15 @@ class SocialBroker:
         if platform == "postiz":
             return await self._execute_postiz(fields)
         credentials = self._resolve_credentials(payload)
+        # Live-vs-Plumbing: the moment an approved task resolves a REAL owner
+        # credential, the default Null client upgrades to the live HTTP rail —
+        # no restart needed, still strictly behind the approval funnel (this
+        # method only runs on approved tasks). Unconfigured stays honestly
+        # deferred; injected clients are never overridden.
+        if (not self._client_injected and credentials.get("token")
+                and isinstance(self._client, NullSocialClient)):
+            logger.info("social live rail active — credential resolved, using HttpSocialClient")
+            self._client = HttpSocialClient()
         try:
             result = await self._client.send(platform, action, fields, credentials)
         except Exception:

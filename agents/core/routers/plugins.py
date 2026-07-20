@@ -46,6 +46,23 @@ def _plugin_runtime_configuration(plugin) -> tuple[bool, str]:
     return True, "loaded"
 
 
+def _plugin_degradation(plugin) -> "dict | None":
+    """The plugin's own honesty contract: None = live, else {reason, needs}.
+
+    Live-vs-Plumbing honesty layer: plugins whose calls silently fall back to
+    mock data expose ``degradation_info()`` so the HUD can badge them instead
+    of letting scaffold read as product. Absent method → no known mock path.
+    """
+    info_fn = getattr(plugin, "degradation_info", None)
+    if not callable(info_fn):
+        return None
+    try:
+        info = info_fn()
+    except Exception:
+        return {"reason": "degradation-introspection-error", "needs": []}
+    return info if isinstance(info, dict) else None
+
+
 def _live_plugin_for(orch, plugin_id: str):
     live_plugins = getattr(orch, "plugins", {}) or {}
     aliases = {
@@ -65,6 +82,7 @@ async def list_plugins():
     for _pid, manifest in gate.plugins.items():
         live_plugin = _live_plugin_for(orch, manifest.id)
         configured, configuration_source = _plugin_runtime_configuration(live_plugin)
+        degradation = _plugin_degradation(live_plugin)
         plugins.append({
             "id": manifest.id,
             "name": manifest.name,
@@ -80,6 +98,12 @@ async def list_plugins():
             # Runtime honesty verdict the HUD badges render: live vs mock/degraded,
             # plus exactly what the owner must configure to make it live.
             "honesty": honesty_for(manifest.id, configured, configuration_source),
+            # Honesty layer (Live-vs-Plumbing): True when this plugin's calls
+            # would currently return mock data instead of touching the real
+            # service — so the HUD can badge it rather than read as live.
+            "degraded": degradation is not None,
+            "degraded_reason": (degradation or {}).get("reason", ""),
+            "degraded_needs": list((degradation or {}).get("needs", [])),
             # CDX-11 — least-privilege posture: whether this plugin's "all" wildcard
             # is currently withheld (external-write under hardening), plus any
             # owner-declared per-agent grants.
