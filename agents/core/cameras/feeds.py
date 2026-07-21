@@ -232,7 +232,15 @@ class CameraFeedPublisher:
             )
             """
         )
+        # Index for the trim's ORDER BY delivered_at.
+        self._db.execute(
+            "CREATE INDEX IF NOT EXISTS idx_feed_deliveries_time "
+            "ON camera_feed_deliveries(delivered_at)"
+        )
         self._db.commit()
+        # Lazily-seeded in-memory row count so _mark_delivered doesn't run a
+        # full COUNT(*) over the ledger on every delivered event.
+        self._ledger_count: int | None = None
         self._closed = False
 
     def subscribe(self, name: str, consumer: CameraFeedSink, *, max_queue: int = 64) -> None:
@@ -342,24 +350,31 @@ class CameraFeedPublisher:
         return row is not None
 
     def _mark_delivered(self, sink: str, dedupe_key: str) -> None:
-        self._db.execute(
+        cur = self._db.execute(
             "INSERT OR IGNORE INTO camera_feed_deliveries(sink, dedupe_key, delivered_at) VALUES(?, ?, ?)",
             (sink, dedupe_key, _finite_time(self._clock(), label="clock")),
         )
-        count = int(self._db.execute("SELECT COUNT(*) FROM camera_feed_deliveries").fetchone()[0])
-        excess = max(0, count - self._max_ledger_rows)
-        if excess:
-            self._db.execute(
-                """
-                DELETE FROM camera_feed_deliveries
-                WHERE rowid IN (
-                    SELECT rowid FROM camera_feed_deliveries
-                    ORDER BY delivered_at ASC, sink ASC, dedupe_key ASC
-                    LIMIT ?
+        if cur.rowcount == 1:  # a genuinely new row (not an ignored duplicate)
+            if self._ledger_count is None:  # seed once with a single COUNT(*)
+                self._ledger_count = int(
+                    self._db.execute("SELECT COUNT(*) FROM camera_feed_deliveries").fetchone()[0]
                 )
-                """,
-                (excess,),
-            )
+            else:
+                self._ledger_count += 1
+            excess = max(0, self._ledger_count - self._max_ledger_rows)
+            if excess:
+                deleted = self._db.execute(
+                    """
+                    DELETE FROM camera_feed_deliveries
+                    WHERE rowid IN (
+                        SELECT rowid FROM camera_feed_deliveries
+                        ORDER BY delivered_at ASC, sink ASC, dedupe_key ASC
+                        LIMIT ?
+                    )
+                    """,
+                    (excess,),
+                ).rowcount
+                self._ledger_count -= deleted
         self._db.commit()
 
     def health(self) -> dict[str, object]:
@@ -545,7 +560,10 @@ class CameraIngestionCoordinator:
                     try:
                         lease = self._privacy.begin(candidate.camera_id)
                         self._privacy.recheck(lease, "store")
-                        receipt = self._vault.store(candidate)
+                        # store() decrypts every retained record (sweep) and runs
+                        # the per-pixel mask proof — offload so it can't stall the
+                        # event loop; the vault has its own threading lock.
+                        receipt = await asyncio.to_thread(self._vault.store, candidate)
                         self._privacy.recheck(lease, "store")
                         stored += int(bool(getattr(receipt, "stored", False)))
                         self._retry_events[retry_key] = (candidate, True)

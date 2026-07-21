@@ -15,33 +15,49 @@ MODEL_PRICES = {
 }
 
 _lock = threading.Lock()
-_usage: dict[str, dict] = defaultdict(lambda: {"input_tokens": 0, "output_tokens": 0, "calls": 0, "model": "default"})
+_usage: dict[str, dict] = defaultdict(
+    lambda: {"input_tokens": 0, "output_tokens": 0, "calls": 0, "model": "default", "cost_usd": 0.0}
+)
+
+
+def _price_for(model: str) -> dict:
+    key = (model or "default").lower()
+    return MODEL_PRICES.get(key) or MODEL_PRICES.get(
+        next((k for k in MODEL_PRICES if k in key), "default"),
+        MODEL_PRICES["default"],
+    )
 
 
 def record(agent_name: str, input_tokens: int, output_tokens: int, model: str = "default"):
-    """Record token usage for an agent."""
+    """Record token usage for an agent, pricing each call at its own model.
+
+    Cost is accumulated per call so mixed local+cloud usage is priced correctly.
+    Previously only the last model was retained and get_summary() re-priced the
+    agent's whole cumulative token count at that one model's rate — a single
+    cloud call would re-bill millions of prior local (free) tokens at cloud rates.
+    """
     with _lock:
         entry = _usage[agent_name]
         entry["input_tokens"] += input_tokens
         entry["output_tokens"] += output_tokens
         entry["calls"] += 1
         entry["model"] = model
+        price = _price_for(model)
+        entry["cost_usd"] = round(
+            entry["cost_usd"]
+            + input_tokens / 1_000_000 * price["input"]
+            + output_tokens / 1_000_000 * price["output"],
+            6,
+        )
 
 
 def get_summary() -> dict:
-    """Return per-agent usage + cost estimates."""
+    """Return per-agent usage + cost estimates (cost accumulated at record time)."""
     with _lock:
         result = {}
         total_cost = 0.0
         for agent, data in _usage.items():
-            key = data["model"].lower()
-            price = MODEL_PRICES.get(key) or MODEL_PRICES.get(
-                next((k for k in MODEL_PRICES if k in key), "default"),
-                MODEL_PRICES["default"]
-            )
-            input_cost = data["input_tokens"] / 1_000_000 * price["input"]
-            output_cost = data["output_tokens"] / 1_000_000 * price["output"]
-            cost = round(input_cost + output_cost, 6)
+            cost = round(data["cost_usd"], 6)
             total_cost += cost
             result[agent] = {**data, "cost_usd": cost}
         return {"agents": result, "total_cost_usd": round(total_cost, 6)}

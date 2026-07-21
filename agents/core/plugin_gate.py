@@ -506,13 +506,20 @@ def _plugin_call_contract_template() -> ContractTemplate:
         manifest = view["manifest"]
         target_domain = view.get("target_domain") or ""
         if manifest.network_access == NetworkAccess.NONE:
-            return True
+            # A no-network plugin making an HTTP call is unambiguously wrong —
+            # mirror _enforce_egress instead of fail-open. With no target_domain
+            # passed (the current production callers) this stays True, unchanged.
+            return not target_domain
         if manifest.network_access == NetworkAccess.LAN:
             return True
         if manifest.network_access == NetworkAccess.RESTRICTED:
             if not target_domain:
                 return True
-            return host_in_allowlist(target_domain, manifest.allowed_domains)
+            # Union the runtime-registered hosts (register_dynamic_domain), same
+            # as egress enforcement — else config-driven hosts are falsely blocked.
+            return host_in_allowlist(
+                target_domain, manifest.allowed_domains + dynamic_domains(manifest.id)
+            )
         if manifest.network_access == NetworkAccess.FULL:
             return True
         return False

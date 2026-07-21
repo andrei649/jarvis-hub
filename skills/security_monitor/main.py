@@ -15,6 +15,7 @@ Commands (see get_commands):
   threats          — heuristic threat summary
 """
 
+import asyncio
 import logging
 import subprocess
 from dataclasses import dataclass, field
@@ -196,8 +197,13 @@ def _collect_pihole() -> dict:
 
     if log_path.exists():
         try:
-            # Read last 200 lines to summarize recent blocks
-            text = log_path.read_text(encoding="utf-8", errors="replace")
+            # Read only the tail (~64 KiB) instead of loading the whole (possibly
+            # multi-GB) log into memory just to keep the last 200 lines.
+            with open(log_path, "rb") as fh:
+                fh.seek(0, 2)
+                size = fh.tell()
+                fh.seek(max(0, size - 64 * 1024))
+                text = fh.read().decode("utf-8", errors="replace")
             lines = text.splitlines()[-200:]
             blocked = [l for l in lines if " blocked " in l or "gravity" in l.lower()]
             total = len(lines)
@@ -395,7 +401,8 @@ def get_commands() -> list[str]:
 
 
 async def security_status(args: str = "", context: dict = None) -> str:
-    snap = collect_snapshot()
+    # Blocking collectors (log reads, arp/iptables subprocesses) — off the loop.
+    snap = await asyncio.to_thread(collect_snapshot)
     lines = [
         f"Security status: {snap.status}",
         _fmt_ports(snap.listening_ports),
@@ -421,12 +428,12 @@ async def devices(args: str = "", context: dict = None) -> str:
 
 
 async def pihole(args: str = "", context: dict = None) -> str:
-    result = _collect_pihole()
+    result = await asyncio.to_thread(_collect_pihole)
     return _fmt_pihole(result)
 
 
 async def firewall(args: str = "", context: dict = None) -> str:
-    result = _collect_firewall()
+    result = await asyncio.to_thread(_collect_firewall)
     return _fmt_firewall(result)
 
 

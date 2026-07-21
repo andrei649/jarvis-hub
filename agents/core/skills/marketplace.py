@@ -586,6 +586,22 @@ class SkillMarketplace:
             self._record_history(skill_name, version, "install")
         return installed
 
+    def _safe_skill_dir(self, raw_name: str, *, action: str = "install") -> Path:
+        """Resolve a skill name to a directory strictly inside ``skills_dir``.
+
+        Used for both install (name derived from an untrusted SKILL.md heading)
+        and uninstall so a name with a separator, ``.``/``..``, or a NUL can never
+        escape the skills tree. Returns the resolved, in-tree target directory.
+        """
+        folder = (raw_name or "").lower().replace(" ", "_").strip()
+        if not folder or folder in (".", "..") or "/" in folder or "\\" in folder or "\x00" in folder:
+            raise ValueError(f"invalid skill name: {raw_name!r}")
+        base = self.skills_dir.resolve()
+        target = (self.skills_dir / folder).resolve()
+        if target == base or base not in target.parents:
+            raise ValueError(f"refusing to {action} outside the skills directory: {raw_name!r}")
+        return target
+
     def uninstall_skill(self, skill_name: str, *, purge: bool = False) -> bool:
         """Remove an INSTALLED skill from disk (0.58 Pack Manager).
 
@@ -682,8 +698,11 @@ class SkillMarketplace:
             if not skill_name:
                 skill_name = Path(manifest_filename).parent.name or "imported_skill"
 
-            skill_folder_name = skill_name.lower().replace(" ", "_")
-            target_dir = self.skills_dir / skill_folder_name
+            # skill_name is the untrusted '# ' heading of SKILL.md inside the zip.
+            # Validate the derived folder BEFORE mkdir/extract, or a heading like
+            # '# ..' / '# /etc/cron.d' relocates target_dir outside skills_dir and
+            # the zip-slip guard (which checks members against target_dir) passes.
+            target_dir = self._safe_skill_dir(skill_name)
             target_dir.mkdir(parents=True, exist_ok=True)
 
             self._safe_targets(zip_file, target_dir)  # zip-slip guard

@@ -172,7 +172,10 @@ async def channels_inbox_reply(thread_id: str, body: ChannelReplyBody):
     broker = getattr(orch, "channel_replies", None)
     if broker is None:
         from agents.core.channel_reply import ChannelReplyBroker
-        worker = getattr(orch, "autonomy_worker", None)
+        # The worker lives on orch.autonomy (autonomy_worker is only ever set by
+        # a test double); reading the wrong attribute dropped govern_enqueue so
+        # the fallback broker could never queue a reply.
+        worker = getattr(orch, "autonomy", None) or getattr(orch, "autonomy_worker", None)
         enqueue = getattr(worker, "govern_enqueue", None)
         broker = ChannelReplyBroker(
             inbox=_channel_inbox(orch),

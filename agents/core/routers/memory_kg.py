@@ -230,8 +230,12 @@ async def memory_search_tool(req: Request):
     query = (body or {}).get("query", "")
     if not query:
         return JSONResponse({"error": "query required"}, status_code=400)
+    try:
+        top_k = int(body.get("top_k", 5))
+    except (TypeError, ValueError):
+        top_k = 5
     tool = MemorySearchTool(_structured_recall)
-    return nocache_json(tool.search(query, int(body.get("top_k", 5))))
+    return nocache_json(tool.search(query, top_k))
 
 
 # ── H14.4 Decay-based forgetting (ACT-R activation + dependency-aware delete) ──

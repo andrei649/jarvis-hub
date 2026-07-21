@@ -26,12 +26,12 @@ logger = logging.getLogger("jarvis.ingestion.whatsapp")
 
 # Common WhatsApp line patterns
 WA_PATTERNS = [
-    # [dd.mm.yyyy, hh:mm:ss] Sender: message  (RO/24h)
+    # [dd.mm.yyyy, hh:mm(:ss)?] Sender: message  (RO/24h; seconds optional, so this
+    # also matches the with-seconds form — a dedicated seconds-required pattern would
+    # be a strict subset that the first-match loop can never reach).
     re.compile(r"\[(\d{2})\.(\d{2})\.(\d{4}),\s*(\d{2}):(\d{2})(?::(\d{2}))?\]\s+([^:]+?):\s*(.+)"),
     # [m/d/yy, h:mm:ss AM/PM] Sender: message  (EN/12h)
     re.compile(r"\[(\d{1,2})/(\d{1,2})/(\d{2,4}),\s*(\d{1,2}):(\d{2})(?::(\d{2}))?\s*(AM|PM)?\]\s+([^:]+?):\s*(.+)"),
-    # [dd.mm.yyyy, hh:mm:ss] Sender: message (with seconds)
-    re.compile(r"\[(\d{2})\.(\d{2})\.(\d{4}),\s*(\d{2}):(\d{2}):(\d{2})\]\s+([^:]+?):\s*(.+)"),
 ]
 
 SYSTEM_MESSAGE_PATTERNS = [
@@ -58,7 +58,7 @@ def _parse_timestamp(pattern, match) -> Optional[float]:
                 int(match.group(3)), int(match.group(2)), int(match.group(1)),
                 int(match.group(4)), int(match.group(5)), int(match.group(6) or 0),
             )
-        elif pattern == 1:  # EN/12h: [m/d/yy, h:mm:ss AM/PM]
+        else:  # pattern == 1 — EN/12h: [m/d/yy, h:mm:ss AM/PM]
             hour = int(match.group(4))
             minute = int(match.group(5))
             second = int(match.group(6) or 0)
@@ -71,11 +71,6 @@ def _parse_timestamp(pattern, match) -> Optional[float]:
             year_str = match.group(3)
             year = int(year_str) if len(year_str) == 4 else 2000 + int(year_str)
             dt = datetime(year, int(match.group(1)), int(match.group(2)), hour, minute, second)
-        else:  # [dd.mm.yyyy, hh:mm:ss] with seconds
-            dt = datetime(
-                int(match.group(3)), int(match.group(2)), int(match.group(1)),
-                int(match.group(4)), int(match.group(5)), int(match.group(6)),
-            )
         return dt.timestamp()
     except (ValueError, IndexError):
         return None
@@ -119,18 +114,14 @@ class WhatsAppParser:
             if not matched:
                 continue
 
-            if i == 0:
-                sender = m.group(7)
-                msg_text = m.group(8)
-                ts = _parse_timestamp(0, m)
-            elif i == 1:
+            if i == 1:
                 sender = m.group(8)
                 msg_text = m.group(9)
                 ts = _parse_timestamp(1, m)
-            else:
+            else:  # i == 0
                 sender = m.group(7)
                 msg_text = m.group(8)
-                ts = _parse_timestamp(2, m)
+                ts = _parse_timestamp(0, m)
 
             if ts is None:
                 continue

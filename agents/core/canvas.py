@@ -163,22 +163,24 @@ class CanvasStore(JsonStore):
         return None
 
     def pin(self, el_id: str, pinned: bool = True) -> Optional[dict]:
-        for e in self._elements:
-            if e["id"] == el_id:
-                e["pinned"] = bool(pinned)
-                with self._lock:
+        with self._lock:
+            for e in self._elements:
+                if e["id"] == el_id:
+                    e["pinned"] = bool(pinned)
                     self._save()
-                return dict(e)
-        return None
+                    return dict(e)
+            return None
 
     def remove(self, el_id: str) -> bool:
-        before = len(self._elements)
-        self._elements = [e for e in self._elements if e["id"] != el_id]
-        if len(self._elements) != before:
-            with self._lock:
+        # Whole read-modify-write under the lock (matches post()), or a concurrent
+        # writer's reassignment of self._elements races this one.
+        with self._lock:
+            before = len(self._elements)
+            self._elements = [e for e in self._elements if e["id"] != el_id]
+            if len(self._elements) != before:
                 self._save()
-            return True
-        return False
+                return True
+            return False
 
     def clear_memory(self) -> None:
         """Drop all in-memory elements WITHOUT persisting.
@@ -201,10 +203,10 @@ class CanvasStore(JsonStore):
             if keep_pinned and e.get("pinned"):
                 return True
             return False
-        kept = [e for e in self._elements if _keep(e)]
-        removed = len(self._elements) - len(kept)
-        if removed:
-            self._elements = kept
-            with self._lock:
+        with self._lock:
+            kept = [e for e in self._elements if _keep(e)]
+            removed = len(self._elements) - len(kept)
+            if removed:
+                self._elements = kept
                 self._save()
-        return removed
+            return removed

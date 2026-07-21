@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import hashlib
 import json
 import threading
@@ -137,7 +138,7 @@ class AmbientEngine:
             raise ValueError("ambient engine input must be AmbientEvent")
         if not self.enabled:
             return {"status": "disabled", "reason": "ambient_disabled"}
-        if self._store.health()["status"] != "ready":
+        if not self._store.is_ready():
             return {"status": "degraded", "reason": "ambient_store_unavailable"}
         try:
             if not self._store.claim_event(event):
@@ -158,6 +159,11 @@ class AmbientEngine:
                 return {"status": "backpressured", "reason": "critical_transition_held"}
             self._dropped[event.source] += 1
             self._update_source_health(event.source, status="degraded", error="queue_full")
+            # Release the dedupe claim taken above: a non-critical event dropped
+            # only for capacity must remain admissible on a later redelivery,
+            # not be suppressed for the 7-day dedupe TTL.
+            with contextlib.suppress(AmbientStoreError):
+                self._store.release_event(event)
             return {"status": "dropped", "reason": "queue_full"}
         queue.append(event)
         self._update_source_health(event.source, status="live", event_time=event.observed_at)
@@ -168,7 +174,7 @@ class AmbientEngine:
             return self._process_tick()
 
     def _process_tick(self) -> list[AmbientDecision]:
-        if not self.enabled or self._store.health()["status"] != "ready":
+        if not self.enabled or not self._store.is_ready():
             return []
         decisions: list[AmbientDecision] = []
         work = 0

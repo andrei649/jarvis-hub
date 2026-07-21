@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import hashlib
 import hmac
+import json
 import logging
 import os
 import secrets
@@ -122,6 +123,23 @@ class IntentLog(JsonStore):
     def _sign(self, payload: str) -> str:
         return hmac.new(self._key, payload.encode("utf-8"), hashlib.sha256).hexdigest()
 
+    @staticmethod
+    def _body(prev_hash: str, entry: dict) -> str:
+        """Canonical hashed body for an entry.
+
+        v2 folds `metadata` into the hash (and thus the signature) so the kernel's
+        recorded decision fields (verdict/tier/scope/agent) can't be edited without
+        detection. v1 entries (no "v" key) keep the original 6-field body so
+        already-persisted logs still verify.
+        """
+        base = (f"{prev_hash}|{entry['ts']}|{entry['actor']}|{entry['action']}"
+                f"|{entry['why']}|{entry['cause']}")
+        if entry.get("v", 1) >= 2:
+            meta = json.dumps(entry.get("metadata", {}), sort_keys=True,
+                              separators=(",", ":"), ensure_ascii=False)
+            return f"{base}|{meta}"
+        return base
+
     def record(self, actor: str, action: str, why: str,
                cause: str = "", metadata: Optional[dict] = None,
                ts: Optional[float] = None) -> dict:
@@ -130,14 +148,15 @@ class IntentLog(JsonStore):
         with self._lock:
             prev_hash = self._entries[-1]["entry_hash"] if self._entries else ""
             seq = len(self._entries) + 1
-            body = f"{prev_hash}|{ts}|{actor}|{action}|{why}|{cause}"
-            entry_hash = _sha(body)
             entry = {
+                "v": 2,
                 "seq": seq, "ts": ts, "actor": actor, "action": action,
                 "why": why, "cause": cause, "metadata": metadata or {},
-                "prev_hash": prev_hash, "entry_hash": entry_hash,
-                "signature": self._sign(entry_hash),
+                "prev_hash": prev_hash,
             }
+            entry_hash = _sha(self._body(prev_hash, entry))
+            entry["entry_hash"] = entry_hash
+            entry["signature"] = self._sign(entry_hash)
             self._entries.append(entry)
             self._save()
             return dict(entry)
@@ -152,7 +171,7 @@ class IntentLog(JsonStore):
             entries = list(self._entries)
         prev = ""
         for e in entries:
-            body = f"{prev}|{e['ts']}|{e['actor']}|{e['action']}|{e['why']}|{e['cause']}"
+            body = self._body(prev, e)
             if _sha(body) != e["entry_hash"]:
                 return {"ok": False, "bad_seq": e["seq"], "reason": "hash", "n": len(entries)}
             if not hmac.compare_digest(self._sign(e["entry_hash"]), e["signature"]):

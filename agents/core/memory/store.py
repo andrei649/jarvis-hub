@@ -105,7 +105,10 @@ class InMemoryVectorStore(VectorStore):
         for rec in self.records:
             v = np.array(rec.vector, dtype=np.float32)
             v_norm = np.linalg.norm(v)
-            sim = float(np.dot(q, v) / (q_norm * v_norm)) if v_norm > 0 else 0.0
+            # q is already unit-length (normalized above); dividing by q_norm again
+            # would scale every score by 1/q_norm and mis-report cosine as
+            # cosine/q_norm — the naive path already divides by v_norm only.
+            sim = float(np.dot(q, v) / v_norm) if v_norm > 0 else 0.0
             scores.append(sim)
 
         top_indices = np.argsort(scores)[-k:][::-1]

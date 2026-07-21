@@ -15,6 +15,7 @@ web-module globals. The cost/model-tier handlers are pure leaf calls into
 `core.cost_tracker`.
 """
 
+import asyncio
 import json as _json
 
 from fastapi import APIRouter, Depends, Query
@@ -72,7 +73,11 @@ async def ingest_analytics_event(event: AnalyticsEvent):
     nothing)."""
     from agents.core import analytics_store
     try:
-        event_id = analytics_store.record_event(
+        # record_event does a blocking SQLite INSERT+commit (and an occasional
+        # prune sweep); offload it so this high-traffic public beacon can't stall
+        # the event loop per page view.
+        event_id = await asyncio.to_thread(
+            analytics_store.record_event,
             event.name,
             path=event.path,
             referrer=event.referrer,
@@ -181,7 +186,10 @@ async def metrics_north_star(days: int = Query(7, ge=1, le=90)):
     from agents.core.ambient.runtime import get_ambient_runtime
 
     ambient = get_ambient_runtime(orch)
-    return nocache_json(compute_north_star(
+    # compute_north_star runs several full TaskQueue (SQLite) scans; offload it so
+    # the metrics endpoint can't stall the event loop.
+    result = await asyncio.to_thread(
+        compute_north_star,
         queue,
         getattr(orch, "run_history", None),
         getattr(orch, "tracer", None),
@@ -193,7 +201,8 @@ async def metrics_north_star(days: int = Query(7, ge=1, le=90)):
         days=days,
         night_window=night_window,
         ambient_night_window=ambient_night_window,
-    ))
+    )
+    return nocache_json(result)
 
 
 @router.get("/api/metrics/capabilities")

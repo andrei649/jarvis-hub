@@ -108,9 +108,13 @@ async def dashboard():
                         if events and not (len(events) == 1 and "error" in events[0]):
                             calendar_data = events
                             _dashboard_cache["calendar"] = events
-                            _dashboard_cache["calendar_cached_at"] = now
                 except Exception:
                     pass
+                # Advance the cache clock after every attempt (empty day or a
+                # failing plugin included), so /dashboard doesn't make a live
+                # Google Calendar call under the shared lock on every poll —
+                # matching the weather branch's failure-caching semantics.
+                _dashboard_cache["calendar_cached_at"] = now
             else:
                 calendar_data = _dashboard_cache.get("calendar", [])
 

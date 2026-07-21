@@ -147,12 +147,14 @@ class TelegramChannel(ChannelAdapter):
             return None
 
     async def _get_updates(self) -> list:
-        try:
-            resp = await self.client.get(
-                f"{self.api_base}/getUpdates",
-                params={"offset": self._offset, "timeout": 25},
-            )
-            resp.raise_for_status()
-            return resp.json().get("result", [])
-        except Exception:
-            return []
+        # The read timeout must exceed the 25s long-poll, or httpx aborts every
+        # idle cycle at the client's 15s default and churns the connection. Let
+        # failures propagate — _poll_loop logs and backs off 3s; swallowing them
+        # here turned an outage into an unthrottled tight reconnect loop.
+        resp = await self.client.get(
+            f"{self.api_base}/getUpdates",
+            params={"offset": self._offset, "timeout": 25},
+            timeout=httpx.Timeout(15.0, read=30.0),
+        )
+        resp.raise_for_status()
+        return resp.json().get("result", [])

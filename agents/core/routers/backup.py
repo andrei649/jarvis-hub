@@ -44,7 +44,9 @@ async def backup_create(req: Request):
     except Exception:
         body = {}
     try:
-        result = _backup.create_backup(label=(body or {}).get("label", ""))
+        # tar+gzip (and optional encrypt) of the whole data root — blocking, so
+        # offload it like the export sibling below or it freezes the event loop.
+        result = await asyncio.to_thread(_backup.create_backup, label=(body or {}).get("label", ""))
     except (OSError, ValueError) as e:
         logger.warning("backup create failed: %s", e)
         return JSONResponse({"error": "backup failed"}, status_code=500)
@@ -69,7 +71,8 @@ async def backup_verify(req: Request):
     if path is None:
         return JSONResponse({"error": "backup not found"}, status_code=404)
     try:
-        report = _backup.verify_backup(str(path))
+        # Extracts the full archive + integrity-checks every DB — blocking.
+        report = await asyncio.to_thread(_backup.verify_backup, str(path))
     except (OSError, ValueError) as e:
         logger.warning("backup verify failed: %s", e)
         return JSONResponse({"error": "verify failed"}, status_code=500)
@@ -135,7 +138,10 @@ async def forget_data(req: Request):
     if orch is not None:
         await _purge.clear_live_memory(orch)
     try:
-        result = _purge.purge_data(backup_first=True, memory=True, session_ids=session_ids)
+        # Backs up then deletes across the data root — blocking file/DB I/O.
+        result = await asyncio.to_thread(
+            _purge.purge_data, backup_first=True, memory=True, session_ids=session_ids
+        )
     except (OSError, ValueError, _purge.PurgeError) as e:
         logger.warning("forget purge failed: %s", e)
         return JSONResponse({"error": "forget failed"}, status_code=500)

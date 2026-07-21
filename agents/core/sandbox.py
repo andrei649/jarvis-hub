@@ -12,6 +12,7 @@ import contextlib
 import logging
 import os
 import platform
+import secrets
 import sys
 import tempfile
 import time
@@ -287,7 +288,10 @@ class Sandbox:
     ) -> SandboxResult:
         start = time.monotonic()
 
-        container_name = f"cabinet-sandbox-{int(time.time())}"
+        # Random suffix, not just a whole-second timestamp: two runs started in
+        # the same second would otherwise collide on --name and the second
+        # `docker run` would fail with a daemon name-conflict.
+        container_name = f"cabinet-sandbox-{int(time.time())}-{secrets.token_hex(4)}"
         workdir_path = str(self.work_dir)
 
         for fname, content in (files or {}).items():
@@ -330,6 +334,17 @@ class Sandbox:
             except asyncio.TimeoutError:
                 proc.kill()
                 await proc.wait()
+                # Killing the docker *client* detaches it; the daemon-side
+                # container keeps running (burning a full CPU under --cpus 1)
+                # until it exits on its own. Kill the container by name too, or
+                # a `while True` sandbox survives its own timeout indefinitely.
+                with contextlib.suppress(Exception):
+                    killer = await asyncio.create_subprocess_exec(
+                        "docker", "kill", container_name,
+                        stdout=asyncio.subprocess.DEVNULL,
+                        stderr=asyncio.subprocess.DEVNULL,
+                    )
+                    await killer.wait()
                 duration = time.monotonic() - start
                 logger.warning(f"Docker sandbox timed out after {self.timeout}s")
                 return SandboxResult(
@@ -357,13 +372,23 @@ class Sandbox:
         except FileNotFoundError:
             logger.warning("Docker not found")
             self._has_docker = False
-            if self.allow_subprocess:
-                return await self._execute_subprocess_python(
-                    files.get("script.py", ""), "script.py"
+            if not self.allow_subprocess:
+                return SandboxResult(
+                    stderr="Code execution disabled: Docker not available and the host "
+                           "fallback is off (allow_subprocess=False).",
+                    exit_code=-1,
                 )
+            # Route the host fallback from the actual request, not a hardcoded
+            # script.py: a shell run has files=None (would AttributeError) and a
+            # python run may use any filename (script.py → empty-script false success).
+            if cmd[:2] == ["sh", "-c"] and len(cmd) >= 3:
+                return await self._execute_subprocess_shell(cmd[2])
+            if files:
+                fname, code = next(iter(files.items()))
+                return await self._execute_subprocess_python(code, fname)
             return SandboxResult(
-                stderr="Code execution disabled: Docker not available and the host "
-                       "fallback is off (allow_subprocess=False).",
+                stderr="Code execution disabled: Docker not available and no runnable "
+                       "input to fall back to.",
                 exit_code=-1,
             )
         except Exception as e:

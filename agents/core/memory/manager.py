@@ -158,12 +158,15 @@ class MemoryManager:
         )
 
     async def store_embedding(self, record_id: str, vector: list[float], metadata: dict = None):
+        # Offload to a thread: with a networked backend (Qdrant) vectors.add is a
+        # blocking httpx call that would otherwise stall the whole event loop for
+        # every embedded turn. The lock still serializes manager mutations.
         async with self._lock:
-            self.vectors.add(record_id, vector, metadata)
+            await asyncio.to_thread(self.vectors.add, record_id, vector, metadata)
 
     async def search_similar(self, query: list[float], k: int = 5) -> list[dict]:
         async with self._lock:
-            return self.vectors.search(query, k)
+            return await asyncio.to_thread(self.vectors.search, query, k)
 
     async def hybrid_search(self, embedding: list[float] = None, keyword: str = None,
                             top_k: int = 10) -> list:
@@ -177,7 +180,11 @@ class MemoryManager:
                 vector_weight=getattr(self, "fusion_vector_weight", 1.0),
                 graph_weight=getattr(self, "fusion_graph_weight", 1.0),
             )
-            return retriever.retrieve(embedding=embedding, keyword=keyword, top_k=top_k)
+            # retrieve() drives blocking vector+graph I/O (Qdrant/Neo4j httpx);
+            # run it off the event loop so a slow backend can't freeze all sessions.
+            return await asyncio.to_thread(
+                retriever.retrieve, embedding=embedding, keyword=keyword, top_k=top_k
+            )
 
     async def clear(self, session_id: str = None):
         async with self._lock:

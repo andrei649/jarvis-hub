@@ -130,8 +130,8 @@ class Agent:
         rag_block = ""
         if self.id == "howard":
             try:
-                from .ingestion.pipeline import IngestionPipeline
-                pipeline = IngestionPipeline()
+                from .ingestion.pipeline import get_shared_pipeline
+                pipeline = get_shared_pipeline()
                 similar = pipeline.search_similar(text, k=5, only_me=True)
                 if similar:
                     # CDX-7: fence the archive few-shots as scanned/redacted DATA, but keep

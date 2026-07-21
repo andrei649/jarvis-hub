@@ -62,7 +62,11 @@ class VoicePipeline:
                     await self._play_audio(audio_out)
 
     async def _record_audio(self) -> Optional[str]:
-        """Record from mic until silence. Returns temp file path."""
+        """Record from mic until silence (off the event loop). Returns temp path."""
+        return await asyncio.to_thread(self._record_audio_blocking)
+
+    def _record_audio_blocking(self) -> Optional[str]:
+        """Blocking PyAudio capture + wave write — must run in a worker thread."""
         try:
             import wave
 

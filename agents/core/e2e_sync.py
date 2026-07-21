@@ -154,6 +154,8 @@ class E2ESync:
             return []
         out: list[dict] = []
         for env in manifest["entries"]:
+            if not isinstance(env, dict):
+                continue  # a malformed manifest entry must be skipped, not 500 the pull
             if env.get("device") == self.device_id:
                 continue  # don't re-ingest our own push
             try:

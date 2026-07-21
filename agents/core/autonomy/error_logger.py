@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import json
 import os
+import threading
 from datetime import datetime, timezone
 from typing import Optional
 
@@ -28,9 +29,21 @@ from agents.core.paths import data_path
 # Using the unified ErrorLog structure from core.errors
 from ..errors import ErrorLog
 
+_PROBLEM_CAP = 500
+_write_lock = threading.Lock()
+# Per-path in-process line counter so the common case is an O(1) append instead
+# of a full read+rewrite. We only re-read/rewrite (to enforce the cap) once the
+# file has grown to ~2x the cap — amortizing the O(n) compaction across writes.
+_line_counts: dict[str, int] = {}
+
 
 def persist_problem(error_log: ErrorLog) -> None:
-    """Serialize and append an ErrorLog to the local problems file."""
+    """Serialize and append an ErrorLog to the local problems file.
+
+    Append-only in the common case (errors arrive in bursts, exactly when the
+    system is already hot); the whole file is rewritten only occasionally to
+    trim it back to the last ``_PROBLEM_CAP`` records.
+    """
     data = {
         "code": error_log.code,
         "message": error_log.message,
@@ -48,28 +61,37 @@ def persist_problem(error_log: ErrorLog) -> None:
     except OSError:
         pass
 
-    # Read existing entries to rotate them
-    records = []
-    if os.path.exists(problems_path):
+    with _write_lock:
+        count = _line_counts.get(problems_path)
+        if count is None:
+            count = 0
+            if os.path.exists(problems_path):
+                try:
+                    with open(problems_path, "r", encoding="utf-8") as f:
+                        count = sum(1 for line in f if line.strip())
+                except OSError:
+                    count = 0
+
         try:
-            with open(problems_path, "r", encoding="utf-8") as f:
-                for line in f:
-                    if line.strip():
-                        records.append(json.loads(line))
-        except Exception:
-            pass
+            with open(problems_path, "a", encoding="utf-8") as f:
+                f.write(json.dumps(data) + "\n")
+            count += 1
+        except OSError:
+            return
 
-    records.append(data)
+        if count > 2 * _PROBLEM_CAP:
+            try:
+                with open(problems_path, "r", encoding="utf-8") as f:
+                    records = [json.loads(line) for line in f if line.strip()]
+                records = records[-_PROBLEM_CAP:]
+                with open(problems_path, "w", encoding="utf-8") as f:
+                    for r in records:
+                        f.write(json.dumps(r) + "\n")
+                count = len(records)
+            except (OSError, ValueError):
+                pass
 
-    # Cap at last 500 records
-    records = records[-500:]
-
-    try:
-        with open(problems_path, "w", encoding="utf-8") as f:
-            for r in records:
-                f.write(json.dumps(r) + "\n")
-    except Exception:
-        pass
+        _line_counts[problems_path] = count
 
 
 def summarize_problems(problems_path: Optional[str] = None, *, hours: float = 48) -> list[dict]:

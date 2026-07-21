@@ -96,8 +96,13 @@ class EntityStore(JsonStore):
         source: str = "",
         context: str = "",
         ts: Optional[float] = None,
+        save: bool = True,
     ) -> dict:
-        """Upsert an entity, incrementing its mention count + recency."""
+        """Upsert an entity, incrementing its mention count + recency.
+
+        Pass ``save=False`` to skip the per-call full-file persist when recording
+        a batch (see ``ingest_text``); the caller must persist once at the end.
+        """
         name = (name or "").strip()
         if not name:
             return {}
@@ -126,14 +131,20 @@ class EntityStore(JsonStore):
             if context:
                 ent["contexts"].append(context[:200])
                 ent["contexts"] = ent["contexts"][-5:]  # keep last 5 samples
-            self._save()
+            if save:
+                self._save()
             return dict(ent)
 
     def ingest_text(self, text: str, source: str = "") -> int:
         """Extract + record all entities in *text*; return count recorded."""
         pairs = extract_entities(text)
         for name, etype in pairs:
-            self.record(name, etype, source=source, context=text)
+            self.record(name, etype, source=source, context=text, save=False)
+        if pairs:
+            # Persist once for the whole batch rather than rewriting the full
+            # entities.json k times per turn (k = entities mentioned).
+            with self._lock:
+                self._save()
         return len(pairs)
 
     # ── read ───────────────────────────────────────────────────────────────

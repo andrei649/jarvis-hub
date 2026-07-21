@@ -190,13 +190,6 @@ class Skill:
 
         return ""
 
-    def has_command(self, command: str) -> bool:
-        if command in self.commands:
-            return True
-        if self.module and hasattr(self.module, "get_commands"):
-            return command in self.module.get_commands()
-        return False
-
 
 class SkillLoader:
     def __init__(self):
@@ -321,7 +314,7 @@ class SkillLoader:
         agents = fm.get("agents") or []
         if isinstance(agents, str):
             agents = [a.strip() for a in agents.split(",") if a.strip()]
-        commands = fm.get("commands") if isinstance(fm.get("commands"), list) else []
+        commands = self._normalize_commands(fm.get("commands"))
         if not commands:
             commands = self._parse_commands_from_body(body)
 
@@ -376,6 +369,27 @@ class SkillLoader:
         return manifest
 
     @staticmethod
+    def _normalize_commands(raw) -> list[dict]:
+        """Coerce a frontmatter ``commands`` value into safe command dicts.
+
+        Remote/imported SKILL.md frontmatter is written verbatim, so entries may
+        be bare strings or carry regex metacharacters. Keep only a ``\\w+`` command
+        token (matched whole in parse_command) — anything else is dropped rather
+        than allowed to crash parse_command on every subsequent chat turn.
+        """
+        out: list[dict] = []
+        if not isinstance(raw, list):
+            return out
+        for entry in raw:
+            if isinstance(entry, dict):
+                cmd = entry.get("command")
+                if isinstance(cmd, str) and re.fullmatch(r"\w+", cmd):
+                    out.append(entry)
+            elif isinstance(entry, str) and re.fullmatch(r"\w+", entry):
+                out.append({"command": entry})
+        return out
+
+    @staticmethod
     def _parse_commands_from_body(body: str) -> list[dict]:
         commands: list[dict] = []
         in_commands = False
@@ -403,15 +417,19 @@ class SkillLoader:
 
         for name, skill in self.skills.items():
             for cmd_meta in skill.commands_meta:
-                cmd_name = cmd_meta["command"]
-                pattern = rf"^{cmd_name}\s+(.+)$"
+                cmd_name = cmd_meta.get("command") if isinstance(cmd_meta, dict) else None
+                if not isinstance(cmd_name, str) or not cmd_name:
+                    continue
+                pattern = rf"^{re.escape(cmd_name)}\s+(.+)$"
                 match = re.match(pattern, text)
                 if match:
                     return (name, cmd_name, match.group(1))
 
         for name, skill in self.skills.items():
             for cmd_meta in skill.commands_meta:
-                cmd_name = cmd_meta["command"]
+                cmd_name = cmd_meta.get("command") if isinstance(cmd_meta, dict) else None
+                if not isinstance(cmd_name, str) or not cmd_name:
+                    continue
                 if text.strip() == cmd_name:
                     return (name, cmd_name, "")
 

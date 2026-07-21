@@ -74,12 +74,12 @@ class PassiveCapture(JsonStore):
         return capture_enabled() and self._surfaces.get(surface, False)
 
     def set_surfaces(self, mapping: dict) -> dict:
-        for s, v in (mapping or {}).items():
-            if s in SURFACES:
-                self._surfaces[s] = bool(v)
         with self._lock:
+            for s, v in (mapping or {}).items():
+                if s in SURFACES:
+                    self._surfaces[s] = bool(v)
             self._save()
-        return dict(self._surfaces)
+            return dict(self._surfaces)
 
     def status(self) -> dict:
         return {"enabled": capture_enabled(), "surfaces": dict(self._surfaces),
@@ -134,22 +134,24 @@ class PassiveCapture(JsonStore):
         return None
 
     def forget(self, rec_id: str) -> bool:
-        before = len(self._records)
-        self._records = [r for r in self._records if r["id"] != rec_id]
-        if len(self._records) != before:
-            with self._lock:
+        # Do the whole read-modify-write under the lock, or a concurrent ingest
+        # can reassign self._records between our read and write and lose data.
+        with self._lock:
+            before = len(self._records)
+            self._records = [r for r in self._records if r["id"] != rec_id]
+            if len(self._records) != before:
                 self._save()
-            return True
-        return False
+                return True
+            return False
 
     def clear(self, surface: Optional[str] = None) -> int:
-        keep = [r for r in self._records if surface is not None and r.get("surface") != surface]
-        removed = len(self._records) - len(keep)
-        if removed:
-            self._records = keep
-            with self._lock:
+        with self._lock:
+            keep = [r for r in self._records if surface is not None and r.get("surface") != surface]
+            removed = len(self._records) - len(keep)
+            if removed:
+                self._records = keep
                 self._save()
-        return removed
+            return removed
 
     # ── export (0.26: the data half of "phone export") ────────────────────────
 

@@ -9,12 +9,42 @@ same text via GET /autonomy/brief.
 
 from __future__ import annotations
 
+import time
+from datetime import UTC, datetime
 from typing import List
 
 from .followups import build_caring_followups
 from .queue import Task, TaskQueue
 
 _TIER = {0: "read-only", 1: "reversibil", 2: "extern", 3: "ireversibil/bani"}
+_WINDOW_HOURS = 24
+
+
+def _updated_epoch(iso: str):
+    try:
+        dt = datetime.fromisoformat(iso)
+    except (ValueError, TypeError):
+        return None
+    if dt.tzinfo is None:  # treat a naive timestamp as UTC
+        dt = dt.replace(tzinfo=UTC)
+    return dt.timestamp()
+
+
+def _recent(tasks: List[Task], now, *, hours: int = _WINDOW_HOURS) -> List[Task]:
+    """Keep only tasks updated within the trailing window.
+
+    DONE/FAILED are terminal and accumulate forever, so without a window the
+    daily ritual would re-render the same 50 old tasks as 'done overnight' /
+    'delivered today'. A task whose timestamp can't be parsed is kept (fail-open).
+    """
+    now = time.time() if now is None else float(now)
+    cutoff = now - hours * 3600
+    kept = []
+    for t in tasks:
+        epoch = _updated_epoch(getattr(t, "updated_at", "") or "")
+        if epoch is None or epoch >= cutoff:
+            kept.append(t)
+    return kept
 
 
 def _titles(tasks: List[Task], limit: int = 8) -> str:
@@ -28,7 +58,7 @@ def _titles(tasks: List[Task], limit: int = 8) -> str:
 
 def build_morning_brief(queue: TaskQueue, memory_entries=None, *, now=None) -> str:
     """What Jarvis did overnight, what it proposes today, and open decisions."""
-    done = queue.list(status="done", limit=50)
+    done = _recent(queue.list(status="done", limit=50), now)
     approved = queue.list(status="approved", limit=50)
     proposed = queue.list(status="proposed", limit=50)
     pending = queue.pending_decisions(limit=50)
@@ -60,10 +90,10 @@ def build_morning_brief(queue: TaskQueue, memory_entries=None, *, now=None) -> s
     return "\n".join(parts)
 
 
-def build_evening_retro(queue: TaskQueue) -> str:
+def build_evening_retro(queue: TaskQueue, *, now=None) -> str:
     """Delivered / failed / blocked, plus a batch-approve list for tomorrow."""
-    done = queue.list(status="done", limit=50)
-    failed = queue.list(status="failed", limit=50)
+    done = _recent(queue.list(status="done", limit=50), now)
+    failed = _recent(queue.list(status="failed", limit=50), now)
     pending = queue.pending_decisions(limit=50)
 
     parts = [

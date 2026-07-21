@@ -116,8 +116,12 @@ async def capabilities_issue(req: Request):
         req.headers.get("x-capability-token", ""))
     if denied is not None:
         return JSONResponse({"error": f"kernel denied: {denied}"}, status_code=403)
+    try:
+        ttl = float(body.get("ttl", 3600))
+    except (TypeError, ValueError):
+        return JSONResponse({"error": "ttl must be a number"}, status_code=400)
     token = broker.issue(caps, source=body.get("source", ""),
-                         task_id=body.get("task_id", ""), ttl=float(body.get("ttl", 3600)))
+                         task_id=body.get("task_id", ""), ttl=ttl)
     return nocache_json({"ok": True, "token": token})
 
 

@@ -15,7 +15,7 @@ from typing import Awaitable, Callable, Iterator
 import httpx
 
 from .auth_rotation import AuthLease, is_rotatable_status
-from .base import LLMBackend, cloud_cap
+from .base import LLMBackend, _emit, cloud_cap
 from .gemini_context import CachedContentRejected, GeminiRequestBinding
 from .provider_errors import GEMINI_DEGRADED_REPLY, log_provider_failure
 
@@ -275,7 +275,7 @@ class GeminiBackend(LLMBackend):
                     if text:
                         full += text
                         if on_token:
-                            on_token(text)
+                            await _emit(on_token, text)
         return full
 
     async def generate_stream(

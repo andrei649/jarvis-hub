@@ -13,6 +13,7 @@ never fatal). The ``remember`` callable is injected so this is offline-testable.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from pathlib import Path
 from typing import Awaitable, Callable, Optional
@@ -86,21 +87,15 @@ class LocalDocsIndexer:
         if not root.exists() or not root.is_dir():
             return {"error": f"not a folder: {folder}"}
 
-        files_indexed = 0
-        files_skipped = 0
-        chunks_total = 0
-        skipped: list[str] = []
+        # Walk + read + PDF/DOCX-parse + chunk are all blocking; run them in a
+        # worker thread so indexing a large drop folder can't freeze the event
+        # loop (this is awaited directly by the onboarding route). Only the async
+        # remember() writes stay on the loop.
+        parsed, files_skipped, skipped = await asyncio.to_thread(self._collect, root)
 
-        for path in sorted(root.rglob("*")):
-            if not path.is_file() or path.suffix.lower() not in SUPPORTED_EXTS:
-                continue
-            text = extract_text(path)
-            if not text or not text.strip():
-                files_skipped += 1
-                skipped.append(path.name)
-                continue
-            rel = str(path.relative_to(root))
-            chunks = chunk_text(text, self.chunk_words)
+        files_indexed = 0
+        chunks_total = 0
+        for rel, chunks in parsed:
             for i, chunk in enumerate(chunks):
                 await self.remember(
                     chunk,
@@ -116,3 +111,23 @@ class LocalDocsIndexer:
             "chunks": chunks_total,
             "skipped": skipped[:50],
         }
+
+    def _collect(self, root: Path) -> tuple[list[tuple[str, list[str]]], int, list[str]]:
+        """Blocking walk/extract/chunk of *root*; safe to run in a thread.
+
+        Returns ``([(rel_path, chunks)…], files_skipped, skipped_names)``.
+        """
+        parsed: list[tuple[str, list[str]]] = []
+        files_skipped = 0
+        skipped: list[str] = []
+        for path in sorted(root.rglob("*")):
+            if not path.is_file() or path.suffix.lower() not in SUPPORTED_EXTS:
+                continue
+            text = extract_text(path)
+            if not text or not text.strip():
+                files_skipped += 1
+                skipped.append(path.name)
+                continue
+            rel = str(path.relative_to(root))
+            parsed.append((rel, chunk_text(text, self.chunk_words)))
+        return parsed, files_skipped, skipped

@@ -5,6 +5,7 @@ Port of OpenJarvis's Discord channel to pure Python.
 Uses discord.py for message handling.
 """
 
+import asyncio
 import logging
 from typing import Optional
 
@@ -52,12 +53,18 @@ class DiscordChannel(ChannelAdapter):
                     await message.channel.send(response)
 
         self._running = True
-        self._client.loop.create_task(self._client.start(self.token))
+        # discord.py 2.x: Client.loop is the MISSING sentinel until start() runs,
+        # so `self._client.loop.create_task` raises AttributeError. Schedule on the
+        # running loop instead, and keep the task so stop() can cancel it.
+        self._start_task = asyncio.create_task(self._client.start(self.token))
 
     async def stop(self):
         self._running = False
         if self._client:
             await self._client.close()
+        task = getattr(self, "_start_task", None)
+        if task is not None:
+            task.cancel()
 
     async def send(self, message: str, **kwargs) -> bool:
         if not self._client or not self._client.is_ready():

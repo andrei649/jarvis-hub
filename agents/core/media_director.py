@@ -415,8 +415,13 @@ class DeviceRegistry:
                 except (MediaError, TypeError):
                     continue
                 if device.id not in self._devices:
-                    self.register(device)
-                    added += 1
+                    try:
+                        self.register(device)
+                        added += 1
+                    except MediaError:
+                        # register() re-checks the device cap under the lock; a full
+                        # registry must skip the extra device, not abort discovery.
+                        continue
         return added
 
     def _persist(self) -> None:

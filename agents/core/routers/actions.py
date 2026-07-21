@@ -41,6 +41,8 @@ async def actions_request(req: Request):
         body = await req.json()
     except Exception:
         body = {}
+    if not isinstance(body, dict):  # valid JSON that isn't an object → treat as empty
+        body = {}
     if not (body or {}).get("tool"):
         return JSONResponse({"error": "tool required"}, status_code=400)
     return nocache_json({"ok": True, "action": q.request(body)})

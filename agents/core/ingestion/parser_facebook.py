@@ -63,7 +63,11 @@ class FacebookParser:
         conversation_id = data.get("title", inbox_name)
 
         for msg in data.get("messages", []):
-            text = msg.get("content", "").strip()
+            # `content` may be absent, JSON null, or a non-string — dict.get's
+            # default does not apply to a present-but-null key, so guard the type
+            # rather than let one malformed entry abort the whole ingestion run.
+            raw = msg.get("content")
+            text = raw.strip() if isinstance(raw, str) else ""
             if not text:
                 continue
             if msg.get("type", "Generic") != "Generic":
@@ -105,11 +109,8 @@ class FacebookParser:
         for conv_dir in sorted(inbox_dir.iterdir()):
             if not conv_dir.is_dir():
                 continue
-            msg_file = conv_dir / "message_1.json"
-            if not msg_file.exists():
-                alt_files = list(conv_dir.glob("message_*.json"))
-                if alt_files:
-                    msg_file = alt_files[0]
-                else:
-                    continue
-            yield from self.parse_file(msg_file)
+            # Facebook DYI exports paginate long conversations into
+            # message_1.json, message_2.json, … — parse every page, not just the
+            # first, or the bulk of high-volume threads is silently dropped.
+            for msg_file in sorted(conv_dir.glob("message_*.json")):
+                yield from self.parse_file(msg_file)

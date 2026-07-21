@@ -21,7 +21,7 @@ except ImportError:
 
 try:
     import kokoro_tts
-    HAS_KOKORO = False
+    HAS_KOKORO = True
 except ImportError:
     HAS_KOKORO = False
 

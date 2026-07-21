@@ -64,7 +64,11 @@ class WakeWordDetector:
                     if ww in prediction and prediction[ww] > 0.5:
                         logger.info(f"Wake word detected: {ww}")
                         if self.callback:
-                            await loop.run_in_executor(None, self.callback, ww)
+                            # Call on THIS (loop) thread, not a pool worker: the
+                            # callback (VoicePipeline._on_wake_word) only schedules
+                            # a task via asyncio.create_task, which needs a running
+                            # loop — from an executor thread it raises RuntimeError.
+                            self.callback(ww)
             except Exception as e:
                 logger.error(f"Wake word error: {e}")
                 await asyncio.sleep(0.1)

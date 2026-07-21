@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import inspect
+import logging
 from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass
 from typing import Any
@@ -10,6 +11,8 @@ from typing import Any
 from agents.core.capability_manifests import ACTION_CAPABILITY_MANIFESTS, CapabilityManifest
 from agents.core.env_config import env_flag
 from agents.core.kernel import Action, Capability, Decision, Verdict, kernel_enabled
+
+logger = logging.getLogger(__name__)
 
 UNIFIED_ACTION_ENV = "JARVIS_UNIFIED_ACTION_API"
 
@@ -218,6 +221,9 @@ class CapabilityActionAPI:
             if inspect.isawaitable(output):
                 output = await output
         except Exception:
+            # Log the real failure — the opaque 'implementation_error' result
+            # otherwise hides every handler crash from operators.
+            logger.exception("capability handler failed: %s", capability_id)
             return PerformResult("failed", capability_id, action_kind, "implementation_error")
         if isinstance(output, Mapping) and output.get("reason") == "approval_required":
             return PerformResult(

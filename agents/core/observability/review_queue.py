@@ -36,7 +36,7 @@ class ReviewQueue(JsonStore):
 
     def flag(self, trace: dict, reason: str = "manual", score: Optional[float] = None) -> dict:
         """Add a trace to the queue (idempotent per trace_id)."""
-        trace = trace or {}
+        trace = trace if isinstance(trace, dict) else {}
         trace_id = str(trace.get("id") or trace.get("trace_id") or uuid.uuid4().hex[:12])
         with self._lock:
             existing = next((i for i in self._items.values() if i["trace_id"] == trace_id), None)
@@ -47,7 +47,7 @@ class ReviewQueue(JsonStore):
                 "id": item_id,
                 "trace_id": trace_id,
                 "text_preview": (trace.get("text_preview") or trace.get("output_preview") or "")[:200],
-                "score": score if score is not None else trace.get("quality", {}).get("score"),
+                "score": score if score is not None else (trace.get("quality") or {}).get("score"),
                 "reason": reason,
                 "status": "pending",
                 "verdict": None,

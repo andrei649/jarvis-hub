@@ -198,7 +198,10 @@ def authorize(action: Action,
             return decision
 
     # 3) Policy — the single risk-classification + outcome evaluation for this action.
-    pdec = policy.decide({"kind": action.kind, "agent": action.agent, **(action.payload or {})})
+    # Kernel-owned identity (kind/agent) must win over payload: a request body or
+    # LLM tool args forwarded as payload must not be able to shadow the action's
+    # kind/agent (or spoof risk_tier) and downgrade a QUEUE-worthy action to GRANT.
+    pdec = policy.decide({**(action.payload or {}), "kind": action.kind, "agent": action.agent})
     tier = int(pdec.tier)
     if pdec.outcome in (ACT, NOTIFY):
         decision = Decision(Verdict.GRANT, reason=pdec.reason, tier=tier)
