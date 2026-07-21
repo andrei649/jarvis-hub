@@ -101,10 +101,11 @@ class _FakeRouter:
 
 
 class _FakeOrch:
-    def __init__(self, folders=None, router=None):
+    def __init__(self, folders=None, router=None, plugins=None):
         self.agents = {"jarvis": object()}
         self.channels = {"web": object()}
         self.llm_router = router or _FakeRouter()
+        self.plugins = plugins or {}
         self._folders = folders or {}
         self._runtime_settings = {}
 
@@ -134,6 +135,7 @@ def test_cold_start_shape_is_honest(client):
     for a in actions.values():
         assert a["ready"] is False  # nothing is pretended ready cold
         assert a.get("reason")  # and each says why
+    assert {o["status"] for o in body["starter_outcomes"]} == {"needs_setup"}
 
 
 def test_warm_install_reports_model_and_ready_actions(client, monkeypatch):
@@ -157,6 +159,63 @@ def test_warm_install_reports_model_and_ready_actions(client, monkeypatch):
     # docs stay honestly not-ready until the owner configures a folder
     assert actions["index_docs"]["ready"] is False
     assert "folder" in actions["index_docs"]["reason"].lower()
+    outcomes = {o["key"]: o for o in body["starter_outcomes"]}
+    assert set(outcomes) == {
+        "plan_my_day",
+        "private_documents",
+        "research_web",
+    }
+    assert outcomes["private_documents"]["status"] == "needs_setup"
+    assert outcomes["private_documents"]["privacy"] == "local_only"
+    assert outcomes["plan_my_day"]["changes"] == "none"
+
+
+def test_starter_outcomes_use_live_plugin_honesty_not_manifest_presence(client, monkeypatch):
+    from agents import web
+    from agents.core.plugins.gmail_plugin import GmailPlugin
+    from agents.core.plugins.google_calendar import GoogleCalendarPlugin
+    from agents.core.plugins.websearch import WebSearchPlugin
+
+    plugins = {
+        "gmail": GmailPlugin(access_token="test-token"),
+        "google-calendar": GoogleCalendarPlugin(access_token="test-token"),
+        "websearch": WebSearchPlugin(tavily_api_key="test-token"),
+    }
+    monkeypatch.setattr(
+        web,
+        "orch",
+        _FakeOrch(folders={"notes": "/tmp/notes"}, plugins=plugins),
+        raising=False,
+    )
+    body = _get(client)
+    outcomes = {o["key"]: o for o in body["starter_outcomes"]}
+    assert {o["status"] for o in outcomes.values()} == {"live"}
+    assert outcomes["plan_my_day"]["privacy"] == "third_party_account"
+    assert outcomes["private_documents"]["privacy"] == "local_only"
+    assert all(o["setup"] is None for o in outcomes.values())
+
+    web.orch.plugins["gmail"] = GmailPlugin()
+    held = _get(client)
+    plan = next(o for o in held["starter_outcomes"] if o["key"] == "plan_my_day")
+    assert plan["status"] == "needs_setup"
+    assert plan["setup"] == "Connect Google in Settings."
+
+
+def test_starter_outcomes_qualify_private_documents_on_cloud_route(client, monkeypatch):
+    from agents import web
+
+    cloud_router = _FakeRouter(route="cloud-flash", model="gemini-2.5-flash", backend_name="none")
+    monkeypatch.setattr(
+        web,
+        "orch",
+        _FakeOrch(folders={"notes": "/tmp/notes"}, router=cloud_router),
+        raising=False,
+    )
+    body = _get(client)
+    docs = next(o for o in body["starter_outcomes"] if o["key"] == "private_documents")
+    assert docs["status"] == "live"
+    assert docs["privacy"] == "local_storage_cloud_model"
+    assert docs["changes"] == "none"
 
 
 def test_command_center_requires_the_selected_route_to_be_runnable(client, monkeypatch):

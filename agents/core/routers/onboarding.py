@@ -266,6 +266,90 @@ def _completed_steps() -> list[str]:
     return [s["key"] for s in _WIZARD_STEPS if counts.get(f"funnel.{s['key']}.complete")]
 
 
+def _starter_outcomes(
+    *, model_ready: bool | None, model_route: str | None, folders: list[str]
+) -> list[dict]:
+    """Project runtime truth into three bounded, consumer-facing first outcomes.
+
+    A manifest only proves that a plugin exists.  ``live`` requires the canonical
+    capability registry's runtime honesty verdict, so an unloaded or unconfigured
+    plugin is always shown as ``needs_setup``.  No credential values are read or
+    returned here.
+    """
+    from agents.core.observability.capability_registry import build_records
+
+    orch = get_orch()
+    records = build_records(orch)
+    plugin_live = {
+        record.id.removeprefix("plugin:"): (
+            record.detail.get("honesty", {}).get("status") == "live"
+            and not record.detail.get("degraded", False)
+        )
+        for record in records
+        if record.kind == "plugin"
+    }
+
+    def outcome(
+        key: str,
+        title: str,
+        *,
+        ready: bool,
+        setup: str,
+        privacy: str,
+        changes: str,
+    ) -> dict:
+        return {
+            "key": key,
+            "title": title,
+            "status": "live" if ready else "needs_setup",
+            "reason": "Ready to use." if ready else setup,
+            "setup": None if ready else setup,
+            "privacy": privacy,
+            "changes": changes,
+        }
+
+    model_setup = (
+        "Start a local model, or connect an API account. ChatGPT Plus and Claude Pro "
+        "subscriptions do not include API access."
+    )
+    google_ready = plugin_live.get("gmail", False) and plugin_live.get(
+        "google-calendar", False
+    )
+    plan_setup = model_setup if model_ready is not True else "Connect Google in Settings."
+    docs_setup = model_setup if model_ready is not True else "Choose a local folder in Settings."
+    research_setup = model_setup if model_ready is not True else "Enable web research in Settings."
+    documents_privacy = (
+        "local_only" if model_route in _LOCAL_ROUTES else "local_storage_cloud_model"
+    )
+
+    return [
+        outcome(
+            "plan_my_day",
+            "Plan my day",
+            ready=model_ready is True and google_ready,
+            setup=plan_setup,
+            privacy="third_party_account",
+            changes="none",
+        ),
+        outcome(
+            "private_documents",
+            "Use my private documents",
+            ready=model_ready is True and bool(folders),
+            setup=docs_setup,
+            privacy=documents_privacy,
+            changes="none",
+        ),
+        outcome(
+            "research_web",
+            "Research the web",
+            ready=model_ready is True and plugin_live.get("websearch", False),
+            setup=research_setup,
+            privacy="public_web",
+            changes="none",
+        ),
+    ]
+
+
 @router.get("/api/onboarding/wizard", dependencies=[Depends(user_guard)])
 async def onboarding_wizard():
     """First-run wizard state (H23.20): ordered steps + which are complete + cold-start
@@ -302,10 +386,12 @@ async def command_center():
 
     The unified first-run screen's single fetch: the /readyz verdict (shared
     ``readiness_snapshot``), the model backend truth, the H23.20 wizard state,
-    and honest FIRST ACTIONS whose ``ready`` flags derive from live state — a
+    honest FIRST ACTIONS whose ``ready`` flags derive from live state, and three
+    bounded consumer outcomes with setup/privacy/effect truth — a
     chat action is never presented ready without a model, and the local-docs
     action stays not-ready (with the reason) until the owner configures a
-    folder. Read-only; the actions point at existing governed endpoints.
+    folder. Read-only; the actions point at existing governed endpoints and the
+    outcome projection never reads or returns credential values.
     """
     from agents import __version__
     from agents.core.routers.ops import readiness_snapshot
@@ -371,12 +457,18 @@ async def command_center():
             else "no folder configured — set local_docs.folders in Admin → settings",
         },
     ]
+    starter_outcomes = _starter_outcomes(
+        model_ready=model_ready,
+        model_route=model.get("route"),
+        folders=folders,
+    )
     return nocache_json(
         {
             "install": install,
             "model": model,
             "wizard": wizard,
             "first_actions": first_actions,
+            "starter_outcomes": starter_outcomes,
         }
     )
 

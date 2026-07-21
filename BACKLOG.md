@@ -267,18 +267,21 @@ python -m pytest tests/ -v          # ~3,868 passed, 6 skipped (counter synced v
 > [`marketing/alpha-testing/2026-07-10-fb-response-triage.md`](marketing/alpha-testing/2026-07-10-fb-response-triage.md);
 > FAQ onest reutilizabil: [`marketing/alpha-testing/FAQ.md`](marketing/alpha-testing/FAQ.md).
 > Alimentează direct **Lane A / A7** („Recruit 1–3 design partners"). Docs de marketing ✅ livrate;
-> itemii de produs de mai jos rămân de decis.
+> itemii de produs de mai jos rămân de decis. **Consumer first-run follow-up (2026-07-20):**
+> Command Center now projects three outcome-oriented starter packs from live model/folder/plugin
+> honesty (`READY NOW` / `NEEDS SETUP`) and explains qualified privacy + read-only effects without exposing
+> credentials; this is the first product slice of the consumer-grade Nerva direction.
 
 | # | Semnal din comentarii | Item | P | S |
 |---|---|---|---|---|
 | FB1 | „Merge pe M4?" (Tudor ML) — `install.sh` acoperă deja macOS, dar nu e în matricea de suport | **Apple Silicon în matricea de suport alpha** — smoke pe M-series (LM Studio/Ollama, memorie unificată) + un rând în README/FAQ. Cerere reală de la Mac-uri. | P2 | 3 |
 | FB2 | „cheia rămâne locală sau trece prin serverele voastre?" (×2) — cea mai repetată obiecție | **Trust one-pager: API-key locality** — o pagină scurtă (sau secțiune README/`SECURITY.md`) care arată drumul cheii (`.env` → direct la furnizor, fără relay) + cum se verifică. Pre-întâmpinat deja în FAQ + copy. | P2 | 2 |
-| FB3 | „folosește subscripția în loc de API" (Cristi Simion) + confuzia Plus≠API (recurentă) | **FAQ „subscription vs API key"** — deja în `FAQ.md`; oglindește în onboarding/Command Center când userul n-are cheie validă (mesaj: „Plus ≠ API"). | P3 | 2 |
+| FB3 | „folosește subscripția în loc de API" (Cristi Simion) + confuzia Plus≠API (recurentă) | ✅ **Done 2026-07-20** — Command Center now explains that ChatGPT Plus / Claude Pro subscriptions do not include API access whenever a starter outcome is held by missing model/API setup; the FAQ remains the long-form source. | P3 | 2 |
 | FB4 | „local-only pe 8GB — chiar e utilizabil?" (Robert Olah) | **Benchmark onest 8GB VRAM** — un tabel „ce merge decent pe 8/12/16/24GB local vs. hybrid", publicat, ca să calibrăm așteptările testerilor. Leagă de M2.4 live-eval. | P2 | 5 |
 | FB5 | „fă-l TUI-only, waste of memory pe 8GB" (Bogdan G. Fuerea) | **Mod headless / TUI** — rulare fără UI-ul greu (deja e posibil local/cloud/hybrid; de expus explicit un profil headless). Feedback de early-adopter, nu blocker. | P3 | 5 |
 | FB6 | OpenRouter + OpenAI-compatible + local (Stefan Vintila) — **deja livrat** (`agents/core/llm/openrouter.py`, `/model`) | doar **discoverability**: pune-l în README/FAQ ca feature vizibil (userii nu știu că există). | P3 | 1 |
 
-> **Surfaced în docs canonice 2026-07-11 (PR follow-up):** **FB2** cheie-API locală → `SECURITY.md` §„API keys & cloud calls"; **FB1** Apple Silicon + **FB6** OpenRouter/OpenAI-compatible + **FB5** profil `headless` → `docs/COMPATIBILITY.md` matrice + README Hardware; **FB4** schelet benchmark VRAM onest (owner umple numerele măsurate) → `docs/HARDWARE_BENCHMARKS.md`; **FB3** subscription≠API deja în FAQ + acum în SECURITY. **FB5** e și cod: profil `headless` real în `system_profiles.PROFILES` (+test). Rămâne owner/cod: FB4 numerele măsurate (hardware) + FB3 oglindirea în Command Center când lipsește cheia.
+> **Surfaced în docs canonice 2026-07-11 (PR follow-up):** **FB2** cheie-API locală → `SECURITY.md` §„API keys & cloud calls"; **FB1** Apple Silicon + **FB6** OpenRouter/OpenAI-compatible + **FB5** profil `headless` → `docs/COMPATIBILITY.md` matrice + README Hardware; **FB4** schelet benchmark VRAM onest (owner umple numerele măsurate) → `docs/HARDWARE_BENCHMARKS.md`; **FB3** subscription≠API este în FAQ + SECURITY + Command Center. **FB5** e și cod: profil `headless` real în `system_profiles.PROFILES` (+test). Rămâne owner/cod: FB4 numerele măsurate (hardware).
 
 **Non-produs (owner/GTM):** capacitatea de suport 1:1 e depășită de volum → ține ținta la **1–3
 instalați** (restul pe listă de așteptare). Candidați contributor din fir (Iulian Tu, Stefan Vintila)

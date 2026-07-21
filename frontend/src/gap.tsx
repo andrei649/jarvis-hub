@@ -2624,6 +2624,7 @@ export function CommandCenterPanel() {
   const model = (d && d.model) || {};
   const wizard = (d && d.wizard) || {};
   const actions = arr(d && d.first_actions);
+  const outcomes = arr(d && d.starter_outcomes);
   const safeModelId = (value) => {
     const modelId = typeof value === 'string' ? value.trim() : '';
     return modelId.toLowerCase() === 'none' ? '' : modelId;
@@ -2707,6 +2708,40 @@ export function CommandCenterPanel() {
             {steps.map((s) => (done.has(s.key) ? '●' : '○')).join(' ')} {done.size}/{steps.length}
           </span>
         </Row>
+      )}
+      {outcomes.length > 0 && (
+        <div style={{ marginTop: 10 }}>
+          <div style={{ ...mono, fontSize: 9.5, letterSpacing: '.12em', color: 'var(--ink-3)', marginBottom: 3 }}>
+            WHAT NERVA CAN DO FOR YOU
+          </div>
+          {outcomes.map((o) => {
+            const live = o.status === 'live';
+            const privacy = {
+              local_only: 'stays local',
+              local_storage_cloud_model: 'stored locally · cloud model may receive context',
+              third_party_account: 'connected account',
+              public_web: 'external websites',
+            }[o.privacy] || o.privacy;
+            const changes = {
+              none: 'read-only',
+            }[o.changes] || o.changes;
+            return (
+              <div key={o.key} style={{ padding: '7px 0', borderBottom: '1px solid var(--panel-line)' }}>
+                <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                  <span style={{ color: live ? 'var(--ink-1)' : 'var(--ink-2)' }}>{o.title}</span>
+                  <Tag c={live ? 'var(--green)' : 'var(--amber)'}>{live ? 'READY NOW' : 'NEEDS SETUP'}</Tag>
+                </div>
+                <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap', marginTop: 4 }}>
+                  <Tag>{privacy}</Tag>
+                  <Tag>{changes}</Tag>
+                </div>
+                {!live && o.setup && (
+                  <div style={{ fontSize: 11, color: 'var(--ink-2)', marginTop: 4 }}>{o.setup}</div>
+                )}
+              </div>
+            );
+          })}
+        </div>
       )}
       {actions.map((a) => (
         <Row key={a.key}>
