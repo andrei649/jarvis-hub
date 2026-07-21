@@ -165,6 +165,104 @@ class AcquisitionRuntime:
         self.promotion_broker = broker
         return broker
 
+    async def synthesize_and_propose(
+        self,
+        request_id: str,
+        *,
+        contract,
+        research,
+        generate: Callable[[dict], object],
+        runner=None,
+    ):
+        """Compose gap -> research -> generate -> quarantine -> verify -> propose.
+
+        Every stage below already exists and is independently tested (H32.3-
+        H32.5) — this is the missing production glue (BACKLOG: "a production
+        path that creates a `PromotionProposal`"). It changes nothing about the
+        guardrails each stage already enforces: strict-local generation still
+        AST-validates the model's output and rejects placeholder bodies,
+        ``SandboxVerifier`` still requires a real, pinned sandbox image, and
+        ``PromotionBroker.propose()`` still requires a verified receipt and the
+        Action Kernel gate. Permanent owner approval (``promote()``) is a
+        separate, later step this method never reaches.
+
+        Callers own two things this method deliberately does NOT: reuse
+        resolution (call ``resolve_gap`` first — a request only researches when
+        that already came back ``no_reuse``, left at ``MISSING``) and the
+        system-owned ``contract`` (its cases are never model-authored). Nothing
+        here auto-triggers from chat or any other live path; a caller (an
+        admin action, a scheduled worker) must invoke it explicitly, same as
+        ``resolve_gap`` itself is never auto-invoked either.
+
+        ``runner`` is the same injectable sandbox-command runner
+        ``SandboxVerifier`` already accepts (default ``None`` -> real Docker) —
+        offline tests inject a fake one instead of requiring a pinned image.
+        """
+        if not self.is_enabled() or self.request_store is None:
+            return None
+        from agents.core.paths import data_path
+
+        from .generator import CapabilityContract, GenerationError, StrictLocalGenerator
+        from .promotion import PromotionError
+        from .sandbox_profile import SandboxVerifier
+
+        request = self.request_store.get(request_id)
+        if request is None:
+            return None
+        if not isinstance(contract, CapabilityContract) or contract.goal != request.goal:
+            logger.warning("synthesize_and_propose: contract must be system-owned and goal-matched")
+            return None
+        broker = self.ensure_promotion()
+        if broker is None:
+            return None
+        try:
+            self.request_store.transition(request_id, "researching", actor="synthesis-pipeline")
+        except (KeyError, ValueError):
+            logger.warning("synthesize_and_propose: request not eligible for research")
+            return None
+
+        try:
+            record = await research.run(request)
+        except Exception:
+            logger.warning("acquisition research failed", exc_info=True)
+            self.request_store.transition(request_id, "blocked", actor="synthesis-pipeline")
+            return None
+
+        generator = StrictLocalGenerator(
+            generate=generate,
+            route="strict-local",
+            event_sink=self.ensure_ledger().emit,
+        )
+        try:
+            package = await generator.generate(
+                request=request,
+                grounded_plan=record.plan,
+                contract=contract,
+            )
+        except GenerationError:
+            logger.warning("acquisition generation failed", exc_info=True)
+            self.request_store.transition(request_id, "blocked", actor="synthesis-pipeline")
+            return None
+
+        self.request_store.transition(request_id, "quarantined", actor="synthesis-pipeline")
+        broker.quarantine.put(package)
+        base = Path(self._root) if self._root is not None else data_path("acquisition")
+        verifier = SandboxVerifier(
+            profile=broker.profile, runner=runner, runtime_root=base / "verification-runs",
+        )
+        outcome = await verifier.verify_quarantined(
+            store=broker.quarantine, artifact_id=package.artifact_id, contract=contract,
+        )
+        if not outcome.verified or outcome.receipt is None:
+            logger.warning("acquisition sandbox verification failed: %s", outcome.reason)
+            return None
+
+        try:
+            return broker.propose(package.artifact_id, contract=contract)
+        except PromotionError:
+            logger.warning("acquisition promotion proposal failed", exc_info=True)
+            return None
+
     async def execute_install_task(self, task) -> dict:
         broker = self.ensure_promotion()
         if broker is None:
