@@ -196,7 +196,21 @@ python -m pytest tests/ -v          # ~3,868 passed, 6 skipped (counter synced v
   `node_transport_not_built`; building a real node transport stays open below
   under "Media / desktop / node actuators" (`tests/test_writeback_live_client.py`,
   `tests/test_call_live_client.py`)
-- [ ] Capability acquisition: a production path that creates a `PromotionProposal`; real skill code-synthesis (replace the `"implement logic in handle()"` placeholder)
+- [x] Capability acquisition: the missing production glue —
+  `AcquisitionRuntime.synthesize_and_propose()` composes reuse-resolution's `no_reuse`
+  outcome → research → strict-local generation → sandbox verification →
+  `PromotionBroker.propose()` into one callable path that creates a real `PromotionProposal`
+  (previously only test/reality-harness fixtures ever reached `propose()`). Real skill
+  code-synthesis: `agents/core/acquisition/llm_synth.py` implements the `generate`/`draft`
+  seams `StrictLocalGenerator`/`GovernedResearch` take by injection with actual
+  `LLMRouter.local_backend` calls (JSON-only, bounded retry) instead of hand-written
+  fixtures — every downstream guardrail (AST/stdlib allowlist, placeholder-body rejection,
+  `ground_plan()` citation gate, sandbox verification, permanent owner approval) is
+  unchanged and still gates whatever the model returns. Deliberately **not** auto-triggered
+  from chat/gap-capture — a caller (future admin action or scheduled worker) must invoke it
+  explicitly, same as `resolve_gap` itself already is. The separate `SkillLoader.generate_skill()`
+  `[learn:…]` stub (`"implement logic in handle()"`) is a distinct, smaller subsystem and is
+  untouched here (`tests/test_h32_llm_synth.py`, `tests/test_h32_synthesis_pipeline.py`)
 - [ ] Real payment rail adapter (AP2/ACP/x402) at `payments.settle()` — **owner decision required (moves money)**
 - [ ] Media / desktop / node actuators (owner-wired host seams)
 - [ ] `agents/vision`, `agents/argus` — real implementation (currently persona markdown, zero code)
