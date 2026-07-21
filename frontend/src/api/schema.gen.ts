@@ -6650,7 +6650,11 @@ export interface paths {
         };
         /**
          * Bench Stats
-         * @description Return benchmark statistics.
+         * @description Return real benchmark statistics computed from recorded samples.
+         *
+         *     Previously the handler read p50/p95/p99/rpm/avg_tokens/by_agent keys that
+         *     ``get_summary()`` never emits, so it always returned hardcoded fake numbers.
+         *     Everything here is derived from ``orch.bench.samples`` (0 / {} when empty).
          */
         get: operations["bench_stats_bench_stats_get"];
         put?: never;
