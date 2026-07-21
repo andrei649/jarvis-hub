@@ -24,7 +24,17 @@ class _Req:
         self.client = type("C", (), {"host": host})()
 
 
-def test_client_ip_prefers_first_xff_hop():
+def test_client_ip_ignores_xff_unless_proxy_trusted(monkeypatch):
+    # Audit 2026-07-15: X-Forwarded-For is attacker-controlled, so without a
+    # configured trusted proxy the limiter must use the unspoofable socket peer
+    # (else `X-Forwarded-For: 127.0.0.1` dodges the throttle).
+    monkeypatch.setattr(web, "TRUSTED_PROXY", False, raising=False)
+    assert web._client_ip(_Req({"x-forwarded-for": "9.9.9.9, 1.1.1.1"}, host="5.5.5.5")) == "5.5.5.5"
+    assert web._client_ip(_Req(host="5.5.5.5")) == "5.5.5.5"
+
+
+def test_client_ip_prefers_first_xff_hop_when_proxy_trusted(monkeypatch):
+    monkeypatch.setattr(web, "TRUSTED_PROXY", True, raising=False)
     assert web._client_ip(_Req({"x-forwarded-for": "9.9.9.9, 1.1.1.1"})) == "9.9.9.9"
     assert web._client_ip(_Req(host="5.5.5.5")) == "5.5.5.5"
 

@@ -222,11 +222,21 @@ _rate_hits: dict[str, list[float]] = {}
 
 
 def _client_ip(request: Request) -> str:
-    """Best-effort client IP: behind a proxy trust the first X-Forwarded-For hop
-    (the proxy must set it), otherwise the socket peer."""
-    xff = request.headers.get("x-forwarded-for", "")
-    if xff:
-        return xff.split(",")[0].strip()
+    """Best-effort client IP for rate limiting.
+
+    X-Forwarded-For is attacker-controlled unless a trusted reverse proxy sets
+    it, so only honor it when JARVIS_TRUSTED_PROXY is configured (same trust
+    model as _real_client_host); otherwise use the socket peer, which a direct
+    client cannot spoof. Trusting XFF blindly let any client send
+    ``X-Forwarded-For: 127.0.0.1`` to dodge the HF-2 brute-force/DoS throttle
+    and rotate everyone's buckets (audit 2026-07-15)."""
+    if TRUSTED_PROXY:
+        xff = request.headers.get("x-forwarded-for", "")
+        if xff:
+            return xff.split(",")[0].strip()
+        real = request.headers.get("x-real-ip", "").strip()
+        if real:
+            return real
     return request.client.host if request.client else ""
 
 
@@ -333,12 +343,21 @@ async def lifespan(application: FastAPI):
     smtp_host = os.environ.get("SMTP_HOST", "")
     imap_host = os.environ.get("IMAP_HOST", "")
     if smtp_host and imap_host:
+        # EmailChannel takes smtp_config/imap_config dicts (keys: host/port/user/
+        # password). Passing flat smtp_host=... kwargs raised TypeError at startup,
+        # so this branch never ran until the config shape was corrected.
         email_ch = EmailChannel(
-            smtp_host=smtp_host, smtp_port=env_int("SMTP_PORT", 587),
-            smtp_user=os.environ.get("SMTP_USER", ""), smtp_pass=os.environ.get("SMTP_PASS", ""),
-            imap_host=imap_host, imap_port=env_int("IMAP_PORT", 993),
-            imap_user=os.environ.get("IMAP_USER", ""), imap_pass=os.environ.get("IMAP_PASS", ""),
             handler=gateway.route,
+            smtp_config={
+                "host": smtp_host, "port": env_int("SMTP_PORT", 587),
+                "user": os.environ.get("SMTP_USER", ""),
+                "password": os.environ.get("SMTP_PASS", ""),
+            },
+            imap_config={
+                "host": imap_host, "port": env_int("IMAP_PORT", 993),
+                "user": os.environ.get("IMAP_USER", ""),
+                "password": os.environ.get("IMAP_PASS", ""),
+            },
         )
         await orch.register_channel(email_ch)
         logger.info("Email channel wired")
