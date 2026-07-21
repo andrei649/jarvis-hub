@@ -460,6 +460,8 @@ async def admin_stats():
     from core.llm.cost_estimator import estimate_monthly
     from core.resilience import _circuit_breakers, get_metrics
     orch = get_orch()
+    if not orch:
+        return JSONResponse({"error": "not initialized"}, status_code=503)
     interactions = getattr(orch.learning, 'interactions', [])
     samples = getattr(orch.bench, 'samples', [])
 

@@ -16,6 +16,7 @@ Commands (see get_commands):
   check <service> — check single service + auto-recovery attempt
 """
 
+import asyncio
 import logging
 import subprocess
 from dataclasses import dataclass, field
@@ -275,7 +276,9 @@ def _try_recover(name: str, cfg: dict) -> dict:
 # ── Skill commands ──────────────────────────────────────────────────
 
 async def status(args: str, context: dict = None) -> str:
-    snap = collect_snapshot()
+    # collect_snapshot blocks (cpu_percent sleeps 0.5s, nvidia-smi subprocess) —
+    # run it off the event loop so a per-turn status check can't stall the server.
+    snap = await asyncio.to_thread(collect_snapshot)
     parts = [f"System {snap.status}"]
     parts.append(f"CPU {snap.cpu_percent}% ({snap.cpu_count} cores)")
     parts.append(f"RAM {snap.ram_used_gb}/{snap.ram_total_gb} GB ({snap.ram_percent}%)")
@@ -288,7 +291,7 @@ async def status(args: str, context: dict = None) -> str:
 
 async def cpu(args: str, context: dict = None) -> str:
     ps = _get_psutil()
-    data = _collect_cpu(ps)
+    data = await asyncio.to_thread(_collect_cpu, ps)  # cpu_percent(interval=0.5) blocks
     if "error" in data:
         return f"CPU error: {data['error']}"
     return f"CPU {data['percent']}% — {data['count']} logical cores" + (
@@ -305,7 +308,7 @@ async def ram(args: str, context: dict = None) -> str:
 
 
 async def gpu(args: str, context: dict = None) -> str:
-    data = _collect_gpu()
+    data = await asyncio.to_thread(_collect_gpu)  # runs nvidia-smi subprocess
     if "error" in data:
         return f"GPU: {data['error']}"
     parts = [f"VRAM {data['vram_used_mb']}/{data['vram_total_mb']} MB"]

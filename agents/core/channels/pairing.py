@@ -109,6 +109,16 @@ class SenderPairing(JsonStore):
         hits = [t for t in self._attempts.get(key, []) if now - t < _ATTEMPT_WINDOW]
         hits.append(now)
         self._attempts[key] = hits
+        # Garbage-collect dead keys: sender ids are attacker-chosen on webhook
+        # channels, so without this the anti-flood map (and its JSON file) grows
+        # one entry per fake sender forever — the anti-abuse layer becomes the
+        # abuse vector. Sweep stale/empty keys once the map gets large.
+        if len(self._attempts) > 1000:
+            self._attempts = {
+                k: fresh
+                for k, v in self._attempts.items()
+                if (fresh := [t for t in v if now - t < _ATTEMPT_WINDOW])
+            }
         return len(hits)
 
     def _set(self, channel: str, sender_id: str, status: str, name: str = "") -> dict:

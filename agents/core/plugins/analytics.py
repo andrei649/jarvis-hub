@@ -128,10 +128,33 @@ class AnalyticsPlugin:
     async def _get_access_token(self) -> str:
         if not self._sa:
             return ""
+        # A JWT-bearer grant needs a *signed* RS256 assertion, not the raw PEM
+        # key: Google rejects the key verbatim with 400 (so GA4 never worked) and
+        # it would leak the private key as a form field. Build the real assertion;
+        # degrade to local analytics if PyJWT isn't installed.
+        try:
+            import jwt  # PyJWT
+        except ImportError:
+            logger.warning("GA4 token requires PyJWT (not installed) — using local analytics")
+            return ""
+        import time as _time
+        now = int(_time.time())
+        claims = {
+            "iss": self._sa.get("client_email", ""),
+            "scope": "https://www.googleapis.com/auth/analytics.readonly",
+            "aud": "https://oauth2.googleapis.com/token",
+            "iat": now,
+            "exp": now + 3600,
+        }
+        try:
+            assertion = jwt.encode(claims, self._sa.get("private_key", ""), algorithm="RS256")
+        except Exception as e:
+            logger.warning("GA4 JWT signing failed: %s", e)
+            return ""
         url = "https://oauth2.googleapis.com/token"
         payload = {
             "grant_type": "urn:ietf:params:oauth:grant-type:jwt-bearer",
-            "assertion": self._sa.get("private_key", ""),
+            "assertion": assertion,
         }
         resp = await self.client.post(url, data=payload)
         resp.raise_for_status()

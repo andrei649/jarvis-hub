@@ -45,5 +45,9 @@ async def quality_set_threshold(req: Request):
         body = {}
     if "threshold" not in (body or {}):
         return JSONResponse({"error": "threshold required"}, status_code=400)
-    q.set_threshold(float(body["threshold"]))
+    try:
+        value = float(body["threshold"])
+    except (TypeError, ValueError):
+        return JSONResponse({"error": "threshold must be a number"}, status_code=400)
+    q.set_threshold(value)
     return nocache_json({"ok": True, "threshold": q.threshold})

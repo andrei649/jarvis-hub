@@ -148,8 +148,12 @@ class HTTPMetrics:
                 f'jarvis_http_request_duration_seconds_sum{{{labels}}} '
                 f'{dur_sum.get((method, route), 0.0):.6f}'
             )
+            # Cumulative observation count (matches the cumulative _sum). Using
+            # len(vals) would flatline at the 2048-sample window, breaking both
+            # _sum/_count means and rate(_count) once a route exceeds the window.
+            total_count = sum(n for (m, r, _s), n in count.items() if (m, r) == (method, route))
             lines.append(
-                f'jarvis_http_request_duration_seconds_count{{{labels}}} {len(vals)}'
+                f'jarvis_http_request_duration_seconds_count{{{labels}}} {total_count}'
             )
 
         lines.append("# HELP jarvis_http_errors_total HTTP responses with a 5xx status by method and route.")

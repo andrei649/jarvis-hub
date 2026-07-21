@@ -36,6 +36,25 @@ logger = logging.getLogger("jarvis.ingestion.pipeline")
 
 EMBEDDING_DIM = 768
 
+# Process-wide read pipeline for Howard's per-turn RAG lookup. Constructing a
+# fresh IngestionPipeline per turn forced a full archive.db reload + re-embed on
+# the event loop every time; sharing one instance loads the archive once.
+_SHARED_PIPELINE: Optional["IngestionPipeline"] = None
+
+
+def get_shared_pipeline() -> "IngestionPipeline":
+    """Return the process-wide read pipeline, creating it on first use."""
+    global _SHARED_PIPELINE
+    if _SHARED_PIPELINE is None:
+        _SHARED_PIPELINE = IngestionPipeline()
+    return _SHARED_PIPELINE
+
+
+def reset_shared_pipeline() -> None:
+    """Drop the shared pipeline so the next lookup reloads a rewritten archive."""
+    global _SHARED_PIPELINE
+    _SHARED_PIPELINE = None
+
 
 class IngestionPipeline:
     def __init__(
@@ -99,6 +118,12 @@ class IngestionPipeline:
         phases = []
         run_id = uuid.uuid4().hex[:12]
         now = self._clock()
+
+        # Reset accumulation state so a re-run reflects exactly this run's inputs
+        # rather than appending to a previously-loaded/parsed archive (which would
+        # otherwise duplicate every message in memory, in SQLite, and in the JSONL).
+        self.messages = []
+        self.my_messages = []
 
         # Phase 1: Parse Facebook
         fb_path = Path(fb_dir) if fb_dir else self.data_root / "facebook" / "messages" / "inbox"
@@ -171,6 +196,10 @@ class IngestionPipeline:
         summary_path.write_text(json.dumps(summary, ensure_ascii=False, indent=2), encoding="utf-8")
         logger.info(f"Ingestion summary saved to {summary_path}")
 
+        # A fresh ingestion rewrote archive.db — force the shared read pipeline to
+        # reload it on the next lookup instead of serving the pre-run snapshot.
+        reset_shared_pipeline()
+
         return summary
 
     def _save_sqlite(self, db_path: Path):
@@ -201,6 +230,10 @@ class IngestionPipeline:
         conn.execute("""
             CREATE INDEX IF NOT EXISTS idx_is_me ON messages(is_me)
         """)
+
+        # Reflect exactly the current run — the table persists across runs (CREATE
+        # IF NOT EXISTS), so without this a re-ingest appends a full duplicate set.
+        conn.execute("DELETE FROM messages")
 
         conn.executemany(
             "INSERT INTO messages (source, conversation_id, sender, is_me, text, timestamp, metadata) "
@@ -269,6 +302,9 @@ class IngestionPipeline:
             self.load_from_sqlite(db_path)
 
         query_vec = self.embedder.embed(query)
+        # Loop-invariant: the query norm is the same for every archived message,
+        # so compute it once instead of re-deriving a 768-dim sqrt per message.
+        norm_q = math.sqrt(sum(v * v for v in query_vec))
         scored = []
         for m in self.messages:
             if only_me and not m.is_me:
@@ -276,7 +312,6 @@ class IngestionPipeline:
             if not m.embedding:
                 continue
             sim = sum(a * b for a, b in zip(query_vec, m.embedding))
-            norm_q = math.sqrt(sum(v * v for v in query_vec))
             norm_m = math.sqrt(sum(v * v for v in m.embedding))
             if norm_q * norm_m > 0:
                 sim /= (norm_q * norm_m)

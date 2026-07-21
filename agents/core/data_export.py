@@ -36,6 +36,12 @@ EXPORT_VERSION = 1
 # (config + secret references) and anything else are intentionally excluded.
 EXPORT_DBS: tuple[str, ...] = ("notes.db", "missions.db", "autonomy.db", "analytics.db")
 
+# Live JSON content stores. On main, notes are stored in notes.json (not the
+# notes.db block-tree, which is test-only), and canvas.json holds saved replies —
+# so a DB-only export silently omitted the user's actual notes. Mirrors
+# data_purge.PURGE_JSON so export and forget cover the same owner content.
+EXPORT_JSON: tuple[str, ...] = ("notes.json", "canvas.json")
+
 
 def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
@@ -85,11 +91,22 @@ def export_data(source_root: Optional[str] = None, out_dir: Optional[str] = None
         databases[name] = dumped
         row_counts[name] = sum(len(rows) for rows in dumped.values())
 
+    json_stores: dict[str, object] = {}
+    for name in EXPORT_JSON:
+        json_path = src / name
+        if not json_path.exists():
+            continue
+        try:
+            json_stores[name] = json.loads(json_path.read_text(encoding="utf-8"))
+        except (OSError, ValueError) as e:
+            logger.warning("skipping unreadable JSON store %s: %s", name, e)
+
     doc = {
         "version": EXPORT_VERSION,
         "generated_at": _now_iso(),
         "source_root": str(src),
         "databases": databases,
+        "json_stores": json_stores,
     }
     # Filename is a server-generated timestamp only — no user value in the path.
     ts = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S_%fZ")
@@ -101,6 +118,7 @@ def export_data(source_root: Optional[str] = None, out_dir: Optional[str] = None
         "bytes": export_path.stat().st_size,
         "generated_at": doc["generated_at"],
         "databases": sorted(databases.keys()),
+        "json_stores": sorted(json_stores.keys()),
         "row_counts": row_counts,
     }
 

@@ -15,6 +15,7 @@ packaged skills that wrap this engine are a downstream/offline-gated follow-up.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import re
 from typing import Awaitable, Callable, Optional
@@ -142,8 +143,11 @@ class DigestAggregator:
     async def run(self, topic: str = "", limit: int = 10) -> dict:
         seen: set[str] = set()
         ranked: list[dict] = []
-        for src in self.sources:
-            for item in await src.fetch(topic):
+        # Fetch the independent feeds concurrently; gather preserves source order,
+        # so first-seen-wins dedupe and the scoring stay byte-identical.
+        batches = await asyncio.gather(*(src.fetch(topic) for src in self.sources))
+        for items in batches:
+            for item in items:
                 key = (item.get("link") or item.get("title", "")).lower().strip()
                 if not key or key in seen:
                     continue

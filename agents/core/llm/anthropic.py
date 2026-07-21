@@ -9,7 +9,7 @@ from typing import Callable
 import httpx
 
 from .auth_rotation import is_rotatable_status
-from .base import LLMBackend, cloud_cap
+from .base import LLMBackend, _emit, cloud_cap
 from .model_config import DEFAULT_CLAUDE_MODEL
 
 ANTHROPIC_API_BASE = "https://api.anthropic.com/v1"
@@ -124,7 +124,7 @@ class ClaudeBackend(LLMBackend):
                                 if text:
                                     full += text
                                     if on_token:
-                                        on_token(text)
+                                        await _emit(on_token, text)
                             elif event_type == "message_stop":
                                 break
                         except json.JSONDecodeError:

@@ -9,6 +9,7 @@ conflicts, and exposes real-time status to the HUD and OpenCode CLI.
 import asyncio
 import json
 import logging
+import re
 import subprocess
 import time
 from dataclasses import asdict, dataclass, field
@@ -140,7 +141,7 @@ class OracleBridgePlugin:
         return await self._check_github()
 
     async def check_conflicts(self) -> list[dict]:
-        self._scan_file_hashes()
+        await asyncio.to_thread(self._scan_file_hashes)
         result = [asdict(c) for c in self.conflicts if not c.resolved]
         return result
 
@@ -227,7 +228,10 @@ class OracleBridgePlugin:
             self._save_state()
             return {"pull": False, **blocked}
 
-        pull_ok, pull_err = self._git_pull()
+        # git pull (≤30s) and pytest (≤120s) are blocking subprocesses and the
+        # hash scan walks the whole repo — run them off the event loop so a
+        # commit or the /sync route can't freeze every channel/SSE stream.
+        pull_ok, pull_err = await asyncio.to_thread(self._git_pull)
         if not pull_ok:
             session.status = "failed"
             session.error = f"git pull failed: {pull_err}"
@@ -236,9 +240,9 @@ class OracleBridgePlugin:
 
         session.tasks_completed = self._parse_commit_tasks(msg)
 
-        self._scan_file_hashes()
+        await asyncio.to_thread(self._scan_file_hashes)
 
-        passed, total, failed, test_err = self._run_tests()
+        passed, total, failed, test_err = await asyncio.to_thread(self._run_tests)
         session.tests_passed = passed
         session.tests_total = total
         session.tests_failed = failed
@@ -342,27 +346,17 @@ class OracleBridgePlugin:
                 capture_output=True, text=True, timeout=120,
             )
             out = result.stdout + result.stderr
-            passed = total = 0
-            for line in out.split("\n"):
-                if "passed" in line and "failed" in line and "=" not in line:
-                    parts = line.strip().split()
-                    for p in parts:
-                        if "passed" in p:
-                            try:
-                                passed = int(parts[parts.index(p) - 1])
-                            except (ValueError, IndexError):
-                                pass
-                        if "failed" in p:
-                            try:
-                                total = passed + int(parts[parts.index(p) - 1])
-                            except (ValueError, IndexError):
-                                pass
-            if result.returncode == 0:
-                total = passed
-            else:
-                total = passed + (total - passed) if total > passed else passed + 1
+            # Parse pytest's summary line (e.g. "= 2 failed, 3 passed in 0.1s =")
+            # directly with regexes over the whole output; the old heuristic
+            # required a line with both words and no "=", which the real summary
+            # (always "=…="'d) never matched, so counts were fabricated.
+            m_passed = re.search(r"(\d+) passed", out)
+            m_failed = re.search(r"(\d+) failed", out)
+            passed = int(m_passed.group(1)) if m_passed else 0
+            failed = int(m_failed.group(1)) if m_failed else 0
+            total = passed + failed
             error = result.stderr.strip() if result.returncode != 0 else ""
-            return passed, total, total - passed if result.returncode != 0 else 0, error
+            return passed, total, failed, error
         except Exception as e:
             return 0, 0, 0, str(e)
 
@@ -414,6 +408,11 @@ class OracleBridgePlugin:
     # ── State persistence ─────────────────────────────────────────
 
     def _save_state(self):
+        # Bound the append-only history: sessions and conflicts otherwise grow
+        # forever (rewritten in full on every 30s tick), so cap sessions to the
+        # most recent 50 and drop resolved conflicts before persisting.
+        self.sessions = self.sessions[-50:]
+        self.conflicts = [c for c in self.conflicts if not c.resolved]
         data = {
             "last_checked_sha": self.last_checked_sha,
             "sessions": [asdict(s) for s in self.sessions],

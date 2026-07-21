@@ -10,8 +10,13 @@ any known secret value that slips into text (logs, traces, context).
 
 from __future__ import annotations
 
+import logging
 import re
 import threading
+
+from agents.core.secrets import SecretStoreError
+
+logger = logging.getLogger("jarvis.security.secret_broker")
 
 _HANDLE = re.compile(r"\{\{\s*secret:([A-Za-z0-9_.\-]+)\s*\}\}")
 
@@ -40,6 +45,20 @@ class SecretBroker:
         self._store = store if store is not None else _DictStore()
         self._lock = threading.Lock()
 
+    def _safe_get(self, name: str):
+        """Fetch one secret, degrading to None if it can't be decrypted.
+
+        The encrypted SecretStore raises SecretStoreError on a wrong key or
+        corrupted entry. Without this guard, one bad secret makes redact()/
+        inject()/has() raise for *every* call — the defense-in-depth scrubbing
+        path would take down the very features it protects (e.g. all tool-RPC).
+        """
+        try:
+            return self._store.get(name)
+        except SecretStoreError:
+            logger.warning("secret %r could not be decrypted — skipping", name)
+            return None
+
     # ── management (values in, never out) ────────────────────────────────────
 
     def put(self, name: str, value: str) -> None:
@@ -47,7 +66,7 @@ class SecretBroker:
             self._store.set(name, value)
 
     def has(self, name: str) -> bool:
-        return self._store.get(name) is not None
+        return self._safe_get(name) is not None
 
     def names(self) -> list[str]:
         return list(self._store.names())
@@ -77,7 +96,7 @@ class SecretBroker:
             if not approved:
                 blocked.append(name)
                 return f"[secret:{name} blocked — approval required]"
-            value = self._store.get(name)
+            value = self._safe_get(name)
             if value is None:
                 blocked.append(name)
                 return f"[secret:{name} not found]"
@@ -96,7 +115,7 @@ class SecretBroker:
         with self._lock:
             names = list(self._store.names())
         for name in names:
-            value = self._store.get(name)
+            value = self._safe_get(name)
             if value and value in out:
                 out = out.replace(value, f"[REDACTED:{name}]")
         return out

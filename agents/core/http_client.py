@@ -17,6 +17,7 @@ Usage:
 """
 
 import logging
+import time
 from dataclasses import dataclass
 from typing import Optional
 
@@ -97,6 +98,30 @@ def _host_is_local(host: str) -> bool:
         if not (a.is_private or a.is_loopback or a.is_link_local):
             return False
     return True
+
+
+_local_flag_cache: dict[str, tuple[float, bool]] = {}
+_LOCAL_FLAG_TTL = 300.0
+
+
+def _host_is_local_cached(host: str) -> bool:
+    """TTL-cached wrapper for the network-monitor's ``local`` flag.
+
+    ``_host_is_local`` does a blocking, uncached ``getaddrinfo`` for any
+    non-literal hostname; that ran on the event loop for *every* outbound plugin
+    request. This flag only annotates the egress ledger (not egress enforcement,
+    which keeps calling ``_host_is_local`` directly), so a bounded-stale answer
+    is fine.
+    """
+    if not host:
+        return False
+    now = time.monotonic()
+    hit = _local_flag_cache.get(host)
+    if hit is not None and now - hit[0] < _LOCAL_FLAG_TTL:
+        return hit[1]
+    val = _host_is_local(host)
+    _local_flag_cache[host] = (now, val)
+    return val
 
 
 def _host_of(url: str) -> str:
@@ -294,7 +319,7 @@ class PluginHTTPClient:
         calls. A blocked call is recorded before re-raising so the attempt is visible.
         """
         host = _host_of(url)
-        local = _host_is_local(host)
+        local = _host_is_local_cached(host)
         try:
             self._enforce_egress(url)
             self._enforce_kernel(method, url, host)   # wave-2: kernel mediation (default-off)
@@ -305,93 +330,47 @@ class PluginHTTPClient:
 
     # ── HTTP methods ───────────────────────────────────────────────
 
-    async def get(self, url: str, **kwargs) -> httpx.Response:
-        """Perform a GET request with plugin timeouts applied."""
+    async def _send(self, method: str, url: str, **kwargs) -> httpx.Response:
+        """Shared verb path: breaker check → egress guard → timeout → record.
+
+        Invokes the verb-specific httpx method (``client.get``/``post``/…) so the
+        mocked surface in tests is unchanged. The URL is deliberately never logged.
+        """
         if self.circuit_breaker.is_open():
             logger.debug(
-                "Circuit breaker open for plugin '%s', refusing GET",
-                self.plugin_name,
+                "Circuit breaker open for plugin '%s', refusing %s",
+                self.plugin_name, method,
             )
-            raise RuntimeError(
-                f"Circuit breaker open: plugin={self.plugin_name}"
-            )
-        self._guard("GET", url)
+            raise RuntimeError(f"Circuit breaker open: plugin={self.plugin_name}")
+        self._guard(method, url)
         kwargs.setdefault("timeout", self.timeouts.to_httpx_timeout())
         try:
-            resp = await self._get_client().get(url, **kwargs)
+            resp = await getattr(self._get_client(), method.lower())(url, **kwargs)
             self.circuit_breaker.record_success()
             return resp
         except Exception:
             self.circuit_breaker.record_failure()
             raise
+
+    async def get(self, url: str, **kwargs) -> httpx.Response:
+        """Perform a GET request with plugin timeouts applied."""
+        return await self._send("GET", url, **kwargs)
 
     async def post(self, url: str, **kwargs) -> httpx.Response:
         """Perform a POST request with plugin timeouts applied."""
-        if self.circuit_breaker.is_open():
-            logger.debug(
-                "Circuit breaker open for plugin '%s', refusing POST",
-                self.plugin_name,
-            )
-            raise RuntimeError(
-                f"Circuit breaker open: plugin={self.plugin_name}"
-            )
-        self._guard("POST", url)
-        kwargs.setdefault("timeout", self.timeouts.to_httpx_timeout())
-        try:
-            resp = await self._get_client().post(url, **kwargs)
-            self.circuit_breaker.record_success()
-            return resp
-        except Exception:
-            self.circuit_breaker.record_failure()
-            raise
+        return await self._send("POST", url, **kwargs)
 
     async def put(self, url: str, **kwargs) -> httpx.Response:
         """Perform a PUT request with plugin timeouts applied."""
-        if self.circuit_breaker.is_open():
-            raise RuntimeError(
-                f"Circuit breaker open: plugin={self.plugin_name}"
-            )
-        self._guard("PUT", url)
-        kwargs.setdefault("timeout", self.timeouts.to_httpx_timeout())
-        try:
-            resp = await self._get_client().put(url, **kwargs)
-            self.circuit_breaker.record_success()
-            return resp
-        except Exception:
-            self.circuit_breaker.record_failure()
-            raise
+        return await self._send("PUT", url, **kwargs)
 
     async def patch(self, url: str, **kwargs) -> httpx.Response:
         """Perform a PATCH request with plugin timeouts applied."""
-        if self.circuit_breaker.is_open():
-            raise RuntimeError(
-                f"Circuit breaker open: plugin={self.plugin_name}"
-            )
-        self._guard("PATCH", url)
-        kwargs.setdefault("timeout", self.timeouts.to_httpx_timeout())
-        try:
-            resp = await self._get_client().patch(url, **kwargs)
-            self.circuit_breaker.record_success()
-            return resp
-        except Exception:
-            self.circuit_breaker.record_failure()
-            raise
+        return await self._send("PATCH", url, **kwargs)
 
     async def delete(self, url: str, **kwargs) -> httpx.Response:
         """Perform a DELETE request with plugin timeouts applied."""
-        if self.circuit_breaker.is_open():
-            raise RuntimeError(
-                f"Circuit breaker open: plugin={self.plugin_name}"
-            )
-        self._guard("DELETE", url)
-        kwargs.setdefault("timeout", self.timeouts.to_httpx_timeout())
-        try:
-            resp = await self._get_client().delete(url, **kwargs)
-            self.circuit_breaker.record_success()
-            return resp
-        except Exception:
-            self.circuit_breaker.record_failure()
-            raise
+        return await self._send("DELETE", url, **kwargs)
 
     async def request(self, method: str, url: str, **kwargs) -> httpx.Response:
         """Perform a generic HTTP request with plugin timeouts applied."""

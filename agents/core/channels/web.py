@@ -97,6 +97,11 @@ class WebChannel(ChannelAdapter):
                     client.last_activity = time.time()
                     yield f"data: {json.dumps(msg, ensure_ascii=False)}\n\n"
                 except asyncio.TimeoutError:
+                    # An open stream is itself proof of liveness — refresh the
+                    # activity timestamp before the keepalive ping, or the
+                    # cleanup loop reaps a still-connected client and every
+                    # subsequent send() silently drops (client gone from the map).
+                    client.last_activity = time.time()
                     yield f"data: {json.dumps({'type': 'ping'})}\n\n"
         except asyncio.CancelledError:
             pass

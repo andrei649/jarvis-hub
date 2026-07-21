@@ -553,7 +553,13 @@ class HouseActuator:
     async def _rollback(
         self, task, pre: HouseEntity, current: HouseEntity | None, payload: dict
     ) -> dict:
-        restore = self._restore(pre, payload)
+        try:
+            restore = self._restore(pre, payload)
+        except ValueError:
+            # Pre-actuation state wasn't a canonical value (e.g. 'unavailable') —
+            # report the same 'unavailable' shape rather than letting the restore
+            # raise and silently vanish (execute_task then marks it manual).
+            return {"status": "unavailable", "reason": "restore_state_unavailable"}
         if restore is None:
             return {"status": "unavailable", "reason": "restore_state_unavailable"}
         if self._verified(current, restore):

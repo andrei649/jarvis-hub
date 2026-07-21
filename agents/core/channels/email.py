@@ -5,6 +5,7 @@ Port of OpenJarvis's email channel to pure Python.
 """
 
 import asyncio
+import contextlib
 import email
 import logging
 import imaplib
@@ -93,27 +94,34 @@ class EmailChannel(ChannelAdapter):
     def _imap_fetch(self) -> list[tuple[str, str, str]]:
 
         mail = imaplib.IMAP4_SSL(self.imap["host"], self.imap.get("port", 993))
-        mail.login(self.imap["user"], self.imap.get("password", ""))
-        mail.select("INBOX")
+        # Always log out (closing the SSL socket) even if login/select/fetch
+        # raises — otherwise a bad login or server error leaks one socket per
+        # poll interval.
+        try:
+            mail.login(self.imap["user"], self.imap.get("password", ""))
+            mail.select("INBOX")
 
-        status, data = mail.search(None, "UNSEEN")
-        messages = []
-        if status == "OK":
-            for num in data[0].split():
-                status, msg_data = mail.fetch(num, "(RFC822)")
-                if status == "OK":
-                    raw = email.message_from_bytes(msg_data[0][1])
-                    sender = raw.get("From", "")
-                    subject = raw.get("Subject", "")
-                    body = ""
-                    if raw.is_multipart():
-                        for part in raw.walk():
-                            if part.get_content_type() == "text/plain":
-                                body = part.get_payload(decode=True).decode(errors="replace")
-                                break
-                    else:
-                        body = raw.get_payload(decode=True).decode(errors="replace")
-                    messages.append((sender, subject, body))
-
-        mail.logout()
-        return messages
+            status, data = mail.search(None, "UNSEEN")
+            messages = []
+            if status == "OK":
+                for num in data[0].split():
+                    status, msg_data = mail.fetch(num, "(RFC822)")
+                    if status == "OK":
+                        raw = email.message_from_bytes(msg_data[0][1])
+                        sender = raw.get("From", "")
+                        subject = raw.get("Subject", "")
+                        body = ""
+                        if raw.is_multipart():
+                            for part in raw.walk():
+                                if part.get_content_type() == "text/plain":
+                                    payload = part.get_payload(decode=True)
+                                    body = payload.decode(errors="replace") if payload else ""
+                                    break
+                        else:
+                            payload = raw.get_payload(decode=True)
+                            body = payload.decode(errors="replace") if payload else ""
+                        messages.append((sender, subject, body))
+            return messages
+        finally:
+            with contextlib.suppress(Exception):
+                mail.logout()

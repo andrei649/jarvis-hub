@@ -173,7 +173,10 @@ class PlaywrightBrowserDriver:
         """Apply the allowlist/SSRF guard to redirects and subresources too."""
         allowed = False
         try:
-            verdict = self._url_guard(str(route.request.url)) if self._url_guard else False
+            # The guard runs check_ssrf → getaddrinfo (blocking DNS) and fires per
+            # subresource; offload it so a slow resolver can't stall the event loop.
+            verdict = (await asyncio.to_thread(self._url_guard, str(route.request.url))
+                       if self._url_guard else False)
             allowed = bool(verdict[0]) if isinstance(verdict, tuple) else bool(verdict)
         except Exception:
             allowed = False
@@ -240,8 +243,12 @@ class PlaywrightBrowserDriver:
             raise ValueError(f"wait exceeds configured maximum of {self.max_wait_ms}ms")
         page = await self._ensure_started()
         if selector:
-            await page.locator(selector).first.wait_for(timeout=timeout_ms)
-            return {"waited": "selector", "selector": selector, "timeout_ms": timeout_ms}
+            # Playwright treats timeout=0 as "disable timeout" (wait forever),
+            # which would bypass max_wait_ms and hang a governed run — fall back
+            # to the driver default so a bounded timeout always applies.
+            effective = timeout_ms or self.timeout_ms
+            await page.locator(selector).first.wait_for(timeout=effective)
+            return {"waited": "selector", "selector": selector, "timeout_ms": effective}
         await page.wait_for_timeout(timeout_ms)
         return {"waited": "timer", "timeout_ms": timeout_ms}
 

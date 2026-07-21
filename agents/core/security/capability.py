@@ -51,6 +51,13 @@ class CapabilityBroker:
             "expires_at": now + float(ttl),
         }
         with self._lock:
+            # Opportunistically drop expired tokens: the only other removal path
+            # is explicit revoke(), and callers (kernel-gated admin/kg-write) mint
+            # short-TTL tokens per request and never revoke — without this the
+            # dict grows unbounded for the life of the process.
+            self._tokens = {
+                tid: t for tid, t in self._tokens.items() if t["expires_at"] > now
+            }
             self._tokens[token_id] = token
         return dict(token)
 

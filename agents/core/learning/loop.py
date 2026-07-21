@@ -50,8 +50,23 @@ class LearningLoop:
         self.db_path = Path(db_path) if db_path is not None else data_path("learning")
         self.db_path.mkdir(parents=True, exist_ok=True)
         self.interactions: list[InteractionRecord] = []
+        # Per-agent index over `interactions` so the per-turn routing path
+        # (rank_candidates → health_score/is_unhealthy per candidate) is
+        # O(agent window) instead of O(total lifetime history) per lookup.
+        self._by_agent: dict[str, list[InteractionRecord]] = {}
+        self._index_len = 0
         self.promotion_rules: dict = promotion_rules or dict(self.DEFAULT_PROMOTION_RULES)
         self._load()
+
+    def _agent_index(self) -> dict[str, list[InteractionRecord]]:
+        """Return the per-agent index, rebuilding it if `interactions` was
+        replaced/loaded out from under it (record() keeps it in sync inline)."""
+        if self._index_len != len(self.interactions):
+            self._by_agent = {}
+            for r in self.interactions:
+                self._by_agent.setdefault(r.agent_id, []).append(r)
+            self._index_len = len(self.interactions)
+        return self._by_agent
 
     def set_promotion_rules(self, rules: dict):
         """Replace promotion rules (e.g. derived from agents.yaml `bench:`)."""
@@ -81,14 +96,19 @@ class LearningLoop:
             route_name=route_name,
         )
         self.interactions.append(record)
+        # Keep the per-agent index in sync incrementally (only when it's already
+        # current — otherwise _agent_index() rebuilds it on next read).
+        if self._index_len == len(self.interactions) - 1:
+            self._by_agent.setdefault(agent_id, []).append(record)
+            self._index_len += 1
         self._append(record)
         logger.debug(f"Recorded interaction for {agent_id}: {'OK' if success else 'FAIL'} ({latency:.2f}s)")
 
     def get_agent_records(self, agent_id: str, last_n: int = None) -> list[InteractionRecord]:
-        records = [r for r in self.interactions if r.agent_id == agent_id]
+        records = self._agent_index().get(agent_id, [])
         if last_n:
             records = records[-last_n:]
-        return records
+        return list(records)
 
     def get_failure_rate(self, agent_id: str, last_n: int = 50) -> float:
         records = self.get_agent_records(agent_id, last_n)
@@ -106,9 +126,7 @@ class LearningLoop:
         """Count interactions for an agent, optionally within a recent time window."""
         now = now if now is not None else time.time()
         count = 0
-        for r in self.interactions:
-            if r.agent_id != agent_id:
-                continue
+        for r in self._agent_index().get(agent_id, []):
             if window_seconds is not None and (now - r.timestamp) > window_seconds:
                 continue
             count += 1

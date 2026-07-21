@@ -62,7 +62,7 @@ async def missions_create(req: Request):
             max_steps=int((body or {}).get("max_steps", DEFAULT_MAX_STEPS)),
             max_seconds=int((body or {}).get("max_seconds", DEFAULT_MAX_SECONDS)),
         )
-    except (MissionError, ValueError) as e:
+    except (MissionError, ValueError, TypeError) as e:
         # Fixed message keyed on the failure category — the exception object never
         # reaches the response (CodeQL: no info exposure); detail is logged instead.
         logger.debug("mission create rejected: %s", log_safe(str(e)))

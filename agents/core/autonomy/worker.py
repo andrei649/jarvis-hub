@@ -136,6 +136,8 @@ class AutonomyWorker:
         # KERNEL-INDEPENDENTLY — before this, engaging the halt did not stop an
         # already-approved broker task from executing on a default install.
         self._kill_switch = kill_switch
+        # Strong refs to fire-and-forget push tasks so they aren't GC'd mid-flight.
+        self._bg_tasks: set = set()
 
     def _halted(self) -> bool:
         if self._kill_switch is None:
@@ -297,7 +299,15 @@ class AutonomyWorker:
         try:
             import asyncio
             if attention_mode == "interrupt":
-                asyncio.get_running_loop().create_task(self._maybe_push(task))
+                # Keep a reference (else the task can be GC'd mid-flight) and log
+                # any failure — otherwise the push exception vanishes silently.
+                t = asyncio.get_running_loop().create_task(self._maybe_push(task))
+                self._bg_tasks.add(t)
+                t.add_done_callback(self._bg_tasks.discard)
+                t.add_done_callback(
+                    lambda d: logger.error("decision push failed: %s", d.exception(),
+                                           exc_info=d.exception())
+                    if not d.cancelled() and d.exception() else None)
         except RuntimeError:
             logger.debug("no running loop — decision card waits in the inbox")
         return task_id

@@ -284,6 +284,14 @@ class HybridRouter(LLMRouter):
         )
 
     async def detect(self):
+        # Re-detection (admin "reconnect") rebuilds the cloud/Ollama backends;
+        # close the prior instances first so their pooled httpx.AsyncClient
+        # sockets are not leaked until process exit (mirrors aclose()).
+        for _attr in ("_gemini_backend", "_claude_backend", "_ollama_backend"):
+            _prev = getattr(self, _attr, None)
+            if _prev is not None:
+                await self._close_backend(_prev)
+                setattr(self, _attr, None)
         # Resolve the connectivity knobs (/admin) before probing so the base
         # detect() honors them: backend pin + URLs.  Explicit process-level URL
         # overrides take precedence so operators and hermetic test runners can
@@ -452,8 +460,8 @@ class HybridRouter(LLMRouter):
 
         # POLICY_AUTO: prefer Claude for heavy agents, local for light
         if agent_id in CLAUDE_AGENTS and self._claude_available:
-            if token_count > self._local_max:
-                return self._claude_backend, self._claude_model, "claude"
+            # A CLAUDE_AGENTS agent always routes to Claude — the token count
+            # does not change the backend, model, or route name.
             return self._claude_backend, self._claude_model, "claude"
 
         # Default: local first, cloud if context too big — governed by the

@@ -75,16 +75,21 @@ async def run_workflow(body: WorkflowRunBody):
     orch = get_orch()
     if not orch or not hasattr(orch, "workflow_engine") or not orch.workflow_engine:
         return nocache_json({"ok": False, "error": "workflow engine not initialized"})
-    # Look in registry first, then in the user store.
-    pipeline = orch.workflow_registry.get(body.pipeline_id)
-    if pipeline is None:
-        stored = _wf_store().get(body.pipeline_id)
-        if stored:
-            try:
-                from core.workflows.pipeline import Pipeline as _Pipeline
-                pipeline = _Pipeline.from_dict(stored)
-            except Exception as e:
-                return error_json(e, 200, "invalid stored pipeline", extra={"ok": False})
+    # Match list_workflows precedence (a saved user workflow overrides a builtin
+    # of the same id): consult the user store first, then the builtin registry.
+    # Otherwise, after a restart — when user workflows aren't re-registered — an
+    # id that shadows a builtin is listed as the user definition but silently
+    # runs the builtin.
+    pipeline = None
+    stored = _wf_store().get(body.pipeline_id)
+    if stored:
+        try:
+            from core.workflows.pipeline import Pipeline as _Pipeline
+            pipeline = _Pipeline.from_dict(stored)
+        except Exception as e:
+            return error_json(e, 200, "invalid stored pipeline", extra={"ok": False})
+    else:
+        pipeline = orch.workflow_registry.get(body.pipeline_id)
     if not pipeline:
         raise HTTPException(status_code=404, detail=f"Pipeline '{body.pipeline_id}' not found")
     try:
@@ -203,10 +208,14 @@ async def workflow_hierarchical(req: Request):
     crew = (body or {}).get("crew") or []
     if not goal or not crew:
         return JSONResponse({"error": "goal and crew required"}, status_code=400)
+    try:
+        max_retries = int((body or {}).get("max_retries", 1))
+    except (TypeError, ValueError):
+        return JSONResponse({"error": "max_retries must be an integer"}, status_code=400)
     from agents.core.workflows.hierarchical import HierarchicalManager
     mgr = HierarchicalManager(
         orch,
         manager_agent=(body or {}).get("manager", "jarvis"),
-        max_retries=int((body or {}).get("max_retries", 1)),
+        max_retries=max_retries,
     )
     return nocache_json(await mgr.run(goal, crew))

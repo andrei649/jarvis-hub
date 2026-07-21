@@ -16,12 +16,6 @@ from typing import Optional
 
 logger = logging.getLogger("jarvis.tracer")
 
-try:
-    from ..llm.tokenizer import estimate_tokens
-except Exception:
-    def estimate_tokens(text: str) -> int:  # type: ignore[misc]
-        return len(text) // 4 + 1
-
 
 class Tracer:
     """Ring-buffer store for request traces.
@@ -164,43 +158,4 @@ class Tracer:
         return {
             "calls": len(items),
             "total_cost": round(sum(float(t.get("cost", 0.0)) for t in items), 6),
-        }
-
-    # ── convenience factory ────────────────────────────────────────────────
-
-    @staticmethod
-    def build_from_cognition(
-        text: str,
-        channel: str,
-        last_cognition: dict,
-        synthesized: str,
-        t_classify: int,
-        t_route: int,
-        t_plugin: int,
-        t_synthesize: int,
-        model: str = "",
-    ) -> dict:
-        """Build a trace dict from orchestrator _update_cognition data."""
-        decision = last_cognition.get("decision", {})
-        agents = decision.get("agents_selected", [])
-        intent = decision.get("source", "")
-        route = agents[0] if agents else ""
-        total_ms = t_classify + t_route + t_plugin + t_synthesize
-        return {
-            "channel": channel,
-            "text_preview": text[:120],
-            "intent": intent,
-            "route": route,
-            "agents": agents,
-            "model": model,
-            "tokens_in": estimate_tokens(text),
-            "tokens_out": estimate_tokens(synthesized),
-            "timings": {
-                "classify": t_classify,
-                "route": t_route,
-                "plugin": t_plugin,
-                "synthesize": t_synthesize,
-                "total_ms": total_ms,
-            },
-            "ok": True,
         }

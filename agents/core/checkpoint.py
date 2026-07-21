@@ -183,7 +183,7 @@ class CheckpointManager:
                         total_calls = total_calls + 1,
                         success_calls = success_calls + ?,
                         failure_calls = failure_calls + ?,
-                        avg_latency = (avg_latency * (total_calls - 1) + ?) / MAX(total_calls, 1),
+                        avg_latency = (avg_latency * total_calls + ?) / (total_calls + 1),
                         last_status = ?,
                         last_error = ?,
                         updated_at = ?

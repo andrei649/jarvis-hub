@@ -47,16 +47,32 @@ OAUTH_SERVICES = {
 
 router = APIRouter(tags=["oauth"])
 
+# Cache the minted auth URL per unconnected service so polling /api/oauth/status
+# doesn't mint a fresh PKCE state+verifier (into never-pruned module dicts) on
+# every request. The callback pops the entry once the flow completes.
+_cached_auth_urls: dict[str, str] = {}
+
 
 @router.get("/api/oauth/status")
 async def oauth_status():
     result = {}
     for sid, info in OAUTH_SERVICES.items():
-        token = load_token(sid if sid != "spotify" else "spotify")
+        # Google tokens (gmail/calendar) are persisted under the "google"
+        # service name; the old ternary was a no-op that looked them up under
+        # gmail/calendar, so status was always "connected: false".
+        token = load_token("google" if sid != "spotify" else "spotify")
+        connected = token is not None and bool(token.get("access_token"))
+        if connected:
+            auth_url = None
+        else:
+            auth_url = _cached_auth_urls.get(sid)
+            if auth_url is None:
+                auth_url = info["url"]()
+                _cached_auth_urls[sid] = auth_url
         result[sid] = {
-            "connected": token is not None and bool(token.get("access_token")),
+            "connected": connected,
             "label": info["label"],
-            "auth_url": info["url"]() if not (token and token.get("access_token")) else None,
+            "auth_url": auth_url,
         }
     return result
 
@@ -83,6 +99,9 @@ async def oauth_callback(body: OAuthCodeBody):
         return JSONResponse({"ok": False, "error": f"Unknown service: {service_id}"}, status_code=400)
 
     if result:
+        # Flow completed — drop the cached auth URL so the next status poll
+        # mints a fresh state if the service ever disconnects again.
+        _cached_auth_urls.pop(service, None)
         return {"ok": True, "service": service, "has_refresh": "refresh_token" in result}
     return JSONResponse({"ok": False, "error": "Token exchange failed"}, status_code=400)
 

@@ -351,6 +351,24 @@ class AmbientStore:
                 db.rollback()
                 return False
 
+    def release_event(self, event: AmbientEvent) -> None:
+        """Undo a claim_event() dedupe row (does NOT touch replay_tombstones).
+
+        Used when an event was claimed but then dropped for queue capacity — the
+        7-day dedupe claim would otherwise suppress every later redelivery of a
+        merely-backpressured event.
+        """
+        if not isinstance(event, AmbientEvent):
+            return
+        key = _hash(event.dedupe_key)
+        with self._lock:
+            db = self._require()
+            db.execute(
+                "DELETE FROM event_dedupe WHERE source=? AND dedupe_hash=?",
+                (event.source, key),
+            )
+            db.commit()
+
     def purge_source(self, source: str, *, tombstone_ttl: float = 7 * 24 * 60 * 60) -> dict[str, int]:
         now = self._now()
         with self._lock:
@@ -749,6 +767,14 @@ class AmbientStore:
             db.execute("DELETE FROM decisions WHERE decided_at<?", (now - _JOURNAL_TTL,))
             db.execute("DELETE FROM source_health WHERE updated_at<?", (now - _HEALTH_TTL,))
             db.commit()
+
+    def is_ready(self) -> bool:
+        """Cheap readiness gate (no aggregate queries).
+
+        The submit/tick hot paths only need the ready bit; full health() runs
+        row-count + size aggregates that are wasted work per event.
+        """
+        return self._db is not None and not self._reason
 
     def health(self) -> dict[str, Any]:
         if self._db is None:

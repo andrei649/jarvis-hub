@@ -86,6 +86,11 @@ class MCPServer:
         self.env = dict(env or {})
         self.tools: list[MCPTool] = []
         self._proc = None
+        # Serialize stdio round-trips and match responses by JSON-RPC id so
+        # concurrent (or previously timed-out) calls can't read each other's
+        # replies off the shared pipe.
+        self._io_lock = asyncio.Lock()
+        self._next_id = 0
 
     async def connect(self):
         if self.transport == "stdio" and self.command:
@@ -93,6 +98,11 @@ class MCPServer:
             if not argv:
                 logger.warning("MCP stdio command rejected as unsafe: %s", self.name)
                 return False
+            # Terminate any prior process first, or a server that connects but
+            # registers no tools gets a fresh subprocess spawned (and the old one
+            # orphaned) on every reconnect attempt.
+            if self._proc is not None:
+                await self.close()
             self._proc = await asyncio.create_subprocess_exec(
                 *argv,
                 stdin=asyncio.subprocess.PIPE,
@@ -102,10 +112,13 @@ class MCPServer:
                 env=self._merged_env(),
             )
             await self._initialize()
+            logger.info(f"MCP server connected: {self.name} ({len(self.tools)} tools)")
+            # No tools registered → the handshake failed; report failure so the
+            # caller stops treating a dead server as available.
+            return bool(self.tools)
         elif self.transport == "sse" and self.url:
             logger.info(f"MCP SSE transport not yet implemented: {self.url}")
-        logger.info(f"MCP server connected: {self.name} ({len(self.tools)} tools)")
-        return True
+        return False
 
     def _command_argv(self) -> list[str] | None:
         command = (self.command or "").strip()
@@ -184,15 +197,37 @@ class MCPServer:
         if not self._proc or self._proc.stdin.is_closing():
             logger.warning(f"MCP server {self.name} not connected")
             return {}
-        try:
-            line = json.dumps(msg) + "\n"
-            self._proc.stdin.write(line.encode())
-            await self._proc.stdin.drain()
-            raw = await asyncio.wait_for(self._proc.stdout.readline(), timeout=10.0)
-            return json.loads(raw.decode())
-        except Exception as e:
-            logger.warning(f"MCP error ({self.name}): {e}")
-            return {}
+        async with self._io_lock:
+            try:
+                self._next_id += 1
+                req_id = self._next_id
+                line = json.dumps({**msg, "id": req_id}) + "\n"
+                self._proc.stdin.write(line.encode())
+                await self._proc.stdin.drain()
+                loop = asyncio.get_running_loop()
+                deadline = loop.time() + 10.0
+                # Read until the reply whose id matches ours, skipping
+                # notifications and any stale reply from a timed-out call.
+                # Bounded so a peer echoing a fixed id can't spin forever.
+                for _ in range(32):
+                    remaining = deadline - loop.time()
+                    if remaining <= 0:
+                        return {}
+                    raw = await asyncio.wait_for(
+                        self._proc.stdout.readline(), timeout=remaining
+                    )
+                    if not raw:
+                        return {}
+                    try:
+                        resp = json.loads(raw.decode())
+                    except json.JSONDecodeError:
+                        continue
+                    if isinstance(resp, dict) and resp.get("id") == req_id:
+                        return resp
+                return {}
+            except Exception as e:
+                logger.warning(f"MCP error ({self.name}): {e}")
+                return {}
 
     async def close(self):
         if self._proc:

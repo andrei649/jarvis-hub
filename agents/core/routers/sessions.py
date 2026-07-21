@@ -27,8 +27,11 @@ async def get_sessions():
 
 @router.post("/sessions/resume", dependencies=[Depends(user_guard)])
 async def resume_session(req: Request):
-    body = await req.json()
-    sid = body.get("session_id")
+    try:
+        body = await req.json()
+    except Exception:
+        body = {}
+    sid = body.get("session_id") if isinstance(body, dict) else None
     if not sid:
         return JSONResponse({"error": "session_id required"}, status_code=400)
     # AUD-5: reject anything that isn't an inert identifier before it can reach a

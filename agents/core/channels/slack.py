@@ -5,6 +5,7 @@ Port of OpenJarvis's Slack channel to pure Python.
 Uses slack-sdk for message handling.
 """
 
+import asyncio
 import logging
 from typing import Optional
 
@@ -48,7 +49,11 @@ class SlackChannel(ChannelAdapter):
             logger.warning("No Slack channel specified")
             return False
         try:
-            self._client.chat_postMessage(channel=channel, text=message)
+            # slack_sdk.WebClient is the blocking (urllib) client; run it in an
+            # executor so a slow/unreachable Slack API can't freeze the event loop.
+            await asyncio.get_running_loop().run_in_executor(
+                None, lambda: self._client.chat_postMessage(channel=channel, text=message)
+            )
             return True
         except Exception as e:
             logger.error(f"Slack send error: {e}")
