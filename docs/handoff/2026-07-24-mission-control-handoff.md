@@ -1,5 +1,10 @@
 # Handoff — Mission Control / Projects HUD (2026-07-24)
 
+> **UPDATE 2026-07-24 (post-merge):** PR **#724** (Projects + timeline) și **#726** (H34.2 desk presence +
+> away-notify) sunt acum **mergeuite**. Starea curentă + ce urmează (H34.3) trăiesc în handoff-ul care continuă
+> acesta: [`2026-07-24-h34.2-presence-handoff.md`](2026-07-24-h34.2-presence-handoff.md). Secțiunile **§3
+> (pointeri pe cod)** și **§5 (convenții)** de mai jos rămân valabile și referite de acolo.
+
 > **Scop:** o sesiune nouă pornește cu **zero context** din conversația care a produs asta
 > (containerul e efemer, doar fișierele commit-uite persistă). Acest dosar îți dă starea completă,
 > pointerii pe cod, convențiile obligatorii și un prompt gata de lipit — ca să nu redescoperi nimic.

@@ -83,7 +83,8 @@ Contract & supported versions: [COMPATIBILITY.md](COMPATIBILITY.md) · [UPGRADE.
 
 - [ ] `git pull` + restart + smoke (§5) — or consciously decide to stay pinned.
 - [ ] Run a backup (§4); spot-check one restore per quarter.
-- [ ] Glance at GitHub Dependabot/CodeQL alerts; merge the green dependency PRs.
+- [ ] Glance at GitHub Dependabot/CodeQL alerts; merge the green dependency PRs. (If a merge is refused with
+      *"a lock file already exists in the repository"*, it's transient — see §9.)
 - [ ] `GET /api/metrics/north-star` still responds; interrupt budget ≤4/day holds.
 - [ ] Nothing new listening on the network that you didn't configure (`GET /api/admin/network/calls`).
 
@@ -94,3 +95,30 @@ Read in this order: [MOONSHOT.md](../MOONSHOT.md) (why) → [STATUS.md](../STATU
 [AGENTS.md](../AGENTS.md) (rules). AI assistants: start with `.claude/skills/jarvis-load-context`.
 The non-negotiables are MOONSHOT §5 — local-first, opt-in cloud, strict-local agents stay
 strict-local. CI enforces the rest (route parity, auth matrix, lockfiles, eval gate).
+
+## 9. Git / GitHub: "a lock file already exists" & other merge/push errors
+
+Hitting **`A lock file already exists in the repository, which blocks this operation from completing.`** when
+merging a PR, pushing, or committing a file via the GitHub API/UI? It is a **transient HTTP 409**, not corruption
+and not a file in the repo. GitHub serializes writes to a repo's git backend; when a previous write (a merge, a
+push, a branch update, or a draft→ready flip fired in the same instant) is still in flight — or left a stale
+`.lock` on a ref such as `refs/heads/main.lock` — the next write is rejected until the lock is released. GitHub
+reaps stale ref locks automatically within seconds. (The tracked lock files in the tree — `*.lock`,
+`package-lock.json`, `requirements*.lock` — are unrelated *dependency* locks; deleting them fixes nothing here.)
+
+**Resolution ladder:**
+
+1. **Retry after ~10–30s.** This clears it almost every time (it did for the H34.2/#726 merge — refused once,
+   then clean on the second try).
+2. **Don't fire two writes at the same ref at once:** e.g. converting a PR draft→ready and merging it in the same
+   second, an auto-merge racing a manual merge, or two sessions/agents pushing the same branch. Serialize them.
+3. **If it persists over several minutes:** re-fetch the PR *fresh* (not a cached view) and confirm it is not still
+   a draft and `mergeable_state` is `clean`; check no branch-protection / merge-queue job is holding the ref. Then
+   try a different merge method (`squash` / `merge` / `rebase` touch the ref slightly differently), or merge locally
+   and push: `git fetch origin main && git checkout main && git merge --no-ff <branch> && git push` (respecting
+   branch protection).
+
+**Local look-alike (different cause, same words):** if a *local* git command says
+`Unable to create '.git/…/index.lock': File exists`, a previous git process crashed or is still running. Confirm
+none is running, then remove that one stale lock: `rm -f .git/index.lock`. This is a local filesystem lock, distinct
+from the server-side ref lock above — the tree in this repo carries no stale `.git/*.lock` files by default.
