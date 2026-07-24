@@ -12,7 +12,7 @@ from agents.core.app_state import get_orch
 router = APIRouter(tags=["actions"])
 
 
-@router.get("/api/actions")
+@router.get("/api/actions", dependencies=[Depends(user_guard)])
 async def actions_list(status: str = Query("", max_length=20)):
     orch = get_orch()
     q = getattr(orch, "action_approvals", None) if orch else None
@@ -21,7 +21,7 @@ async def actions_list(status: str = Query("", max_length=20)):
     return nocache_json({"actions": q.list(status or None), "stats": q.stats()})
 
 
-@router.get("/api/actions/pending")
+@router.get("/api/actions/pending", dependencies=[Depends(user_guard)])
 async def actions_pending():
     orch = get_orch()
     q = getattr(orch, "action_approvals", None) if orch else None
