@@ -158,6 +158,13 @@ built on your Windows box:
 
 ## Parking lot (decisions, no rush)
 
+- [ ] **When does the Action Kernel become the default rail?** Today the always-on risk-tier
+  policy is the load-bearing gate; the unifying kernel (`JARVIS_ACTION_KERNEL`) and the unified
+  Action API (`JARVIS_UNIFIED_ACTION_API`) are code-complete but opt-in (H27.3/H27.7, docs-vs-code
+  audit 2026-07-24). Decide the promotion criteria — e.g. N weeks of opt-in dogfood with zero
+  kernel-caused blocks/false-DENYs, plus the H28+ operator surfaces exercising it — then flip the
+  defaults in one deliberate PR.
+
 - [ ] **The jarvis-hub → Nerva rename** — Nerva is now the product brand across the canonical docs
   ([NERVA_VISION.md](../NERVA_VISION.md) §2, decision 2026-07-12); the *deliberate* rename of the
   repository, packages, install scripts and public pages is owner-gated: pick the moment (likely
