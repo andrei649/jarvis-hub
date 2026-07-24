@@ -1180,7 +1180,7 @@ class Orchestrator:
         )
         plugin_block = self._format_plugin_data(plugin_data)
         recall_block = await self._recall_block(text)
-        runtime_block = self._runtime_state_block()
+        runtime_block = self._runtime_state_block() + self._data_grounding_block(plugin_data)
         synthesized = ""
         # Pre-bind so the post-loop persist/audit never hit UnboundLocalError when
         # `target` is empty (e.g. _route_candidates returns nothing).
@@ -1445,6 +1445,33 @@ class Orchestrator:
             "or backend you run on; never invent model names or hardware):\n"
             f"- LLM backend: {backend}\n"
             f"- Active model: {model}\n\n"
+        )
+
+    def _data_grounding_block(self, plugin_data: dict) -> str:
+        """Ground truth for *data* — the counterpart to `_runtime_state_block`'s
+        ground truth for *model identity*. Injected every turn so an agent can't
+        narrate a SOUL-described capability (calendar, finances, system health,
+        service status…) as fact when no tool actually returned data. It names the
+        live sources present this turn and forbids inventing the rest.
+
+        This closes the fabrication gap found in the 2026-07-24 QA run: with a
+        connector disconnected the gatherer stays silent (`format_plugin_data`
+        emits nothing), so previously the model saw only its persona + the
+        question and confabulated. Now it is told, by construction, what it may
+        read and that it must refuse honestly otherwise."""
+        connected = sorted(k for k, v in (plugin_data or {}).items() if v)
+        have = ", ".join(connected) if connected else "none"
+        return (
+            "Data grounding (ground truth — obey this over any capability your "
+            "persona describes):\n"
+            f"- Live data sources connected this turn: {have}.\n"
+            "- Report ONLY data shown in a [REAL-TIME DATA] block above. Do NOT "
+            "invent, assume, or role-play calendar events, meetings, emails, account "
+            "balances, financial figures, system/hardware metrics, or service status. "
+            "If asked for something with no live data here, say plainly it is not "
+            "connected — never fabricate a value, and never claim you performed an "
+            "action (saved, sent, booked, logged, blocked, briefed) that you did "
+            "not actually perform.\n\n"
         )
 
     def _control_master_enabled(self) -> bool:
@@ -1930,7 +1957,7 @@ class Orchestrator:
         plugin_block = self._format_plugin_data(plugin_data or {})
         recall_block = await self._recall_block(text)
         agent_timeout = self._agent_call_timeout()  # CDX-6: tunable, not a hard-coded 120s
-        runtime_block = self._runtime_state_block()
+        runtime_block = self._runtime_state_block() + self._data_grounding_block(plugin_data or {})
 
         async def _run_agent(agent_id: str) -> tuple[str, str, float]:
             enriched_text = await self._build_agent_turn_text(
