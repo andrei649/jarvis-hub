@@ -44,30 +44,60 @@ Rule of thumb: **Sonnet drives, Opus diagnoses.** Running the entire pass on Opu
 running the final synthesis on Sonnet leaves quality on the table. Switch with `/model` between phases.
 
 ### 1b. The LLM backend Nerva uses to answer chats during the test
-Cowork's cloud container has **no GPU and no LM Studio**, so the default local backend won't
-answer. Pick one:
-- **Preferred — a cloud key.** Set `ANTHROPIC_API_KEY` (or `GEMINI_API_KEY`). The hybrid router
-  will serve chat/routing through it, so agents actually reason and B/B2/D/E become real tests.
-  This is the only way to grade *conversation quality* (Test-Drive Session 2, the "Hermes gap").
-- **Fallback — no key.** You can still test every surface that needs no model: HUD rendering,
-  Mission Control, the approval **dry-run** funnel, security guards, parity, honest empty states,
-  audit log. Chat turns will degrade — **record that as an environment limitation, not a bug.**
+This depends on **where Cowork runs** — and the two are very different:
 
-State which backend you used in the run record (`§0` LLM backend field). A run with no model
-answers a smaller set of items honestly; that's fine — just don't claim B2 passed without one.
+**Primary scenario — Cowork on the owner's own machine (recommended).** This is the point of
+Nerva: Cowork runs locally and drives the real laptop as the owner would, so the **real local
+backend is available**. Nerva is multi-provider by design (exactly the Hermes-style setup), so
+configure all of them and let the hybrid router tier between them:
+- **Local model, primary — `$0`, private.** Load a model in **LM Studio** (`:1234`) or **Ollama**.
+  This is what `auto`-policy agents use first, and what strict-local agents (`frigga`, `ultron`,
+  `howard`) use *only* — verifying they never leave the machine is itself a test (§B2, §G).
+- **Cloud keys, for tiering/escalation — opt-in per agent.** Set any of:
+  - `ANTHROPIC_API_KEY` — heavy-reasoning agents (`vision`, `steve`, `argus`) route to Claude.
+  - `GEMINI_API_KEY` — large-context / `cloud`-policy agents (`athena`) route to Gemini Flash/Pro.
+  - `OPENAI_API_KEY` — reached through `CloudLLMPlugin` (Anthropic/OpenAI/Gemini fallback). For
+    first-class OpenAI-compatible routing, use **OpenRouter** (`OPENROUTER_API_KEY` + `OPENROUTER_BASE_URL`,
+    one key → GPT and many models) or an `openai-compatible` provider profile — see the H20 provider
+    registry (`agents/core/llm/providers/`, `openrouter.py`). Point the base URL at
+    `https://api.openai.com/v1` to use your OpenAI subscription directly.
+
+  The router stays **local-first**: cloud is only used when a cloud-policy agent is hit or the
+  prompt is oversized (`llm.cloud_fallback` governs escalation). So a laptop run exercises the real
+  thing — local for the everyday, cloud where the agent policy says so — which is exactly what you
+  want to QA. **This scenario can run the whole runbook.**
+
+**Alternative scenario — Cowork in a cloud container (like a headless CI runner).** *Then* there is
+no GPU/LM Studio, so set a cloud key (`ANTHROPIC_API_KEY` / `OPENAI_API_KEY` via OpenRouter /
+`GEMINI_API_KEY`) so chat still reasons; the strict-local agents will fail closed (no local backend)
+— **record that as an environment limitation, not a bug**. Surfaces that need no model (HUD, Mission
+Control, dry-run approvals, security guards, parity, honest empty states, audit log) still test fully.
+
+State which scenario + backend(s) you used in the run record (`§0` LLM backend field). Grading
+*conversation quality* (Test-Drive Session 2, the "Hermes gap") needs at least one working
+backend — don't claim §B2 passed without one.
 
 ---
 
 ## 2. Environment setup & boot
 
-Run from the repo root. The container has Python 3.12, Node, and Chromium (`PLAYWRIGHT_BROWSERS_PATH=/opt/pw-browsers`) preinstalled — **do not** run `playwright install`.
+Run from the repo root. Needs Python 3.12, Node, and a browser (Chromium). On the owner's laptop use
+the installed browser; in a preconfigured container Chromium is at `PLAYWRIGHT_BROWSERS_PATH=/opt/pw-browsers`
+— **do not** run `playwright install`.
 
 ```bash
 # 1. deps (one install, full feature set). If system PyYAML conflicts, add: --ignore-installed PyYAML
 pip install -r requirements-beta.txt
 
-# 2. a model backend (pick one; skip for the no-model subset)
-export ANTHROPIC_API_KEY=...        # or GEMINI_API_KEY=...
+# 2a. LOCAL backend (owner's machine): load a model in LM Studio (:1234) or Ollama first.
+#     Nerva auto-detects it — no env needed. This is the primary path.
+# 2b. CLOUD tiering (optional, multi-provider — like Hermes). Set any you have:
+export ANTHROPIC_API_KEY=...        # Claude tier (vision/steve/argus)
+export GEMINI_API_KEY=...           # Gemini tier (athena, large context)
+export OPENAI_API_KEY=...           # via CloudLLMPlugin fallback
+# first-class OpenAI-compatible routing (recommended for an OpenAI subscription):
+export OPENROUTER_API_KEY=...        # one key → GPT + many models
+# export OPENROUTER_BASE_URL=https://api.openai.com/v1   # or point straight at OpenAI
 
 # 3. tokens so you can exercise the admin/user auth surfaces (§G)
 export JARVIS_ADMIN_TOKEN=devadmin
@@ -75,6 +105,12 @@ export JARVIS_USER_TOKEN=devuser
 
 # 4. boot on :8080 (background so you keep driving)
 python serve.py &                   # → http://127.0.0.1:8080
+```
+
+Confirm the backend the router actually picked before testing chat quality:
+```bash
+curl -s http://127.0.0.1:8080/status | python -m json.tool | grep -iE "model|backend"
+# or the HUD's top-right Model badge — it names the live loaded model.
 ```
 
 **Turn the brain on** (default-OFF; most "feels dumb" impressions come from testing with it off —
@@ -92,7 +128,8 @@ curl -s http://127.0.0.1:8080/api/cognition
 
 > Note: `serve.py` runs on localhost, so tokenless requests from the same box are allowed by design
 > — that's why the LAN-auth checks in `MANUAL_TESTING.md` §G (403/401 from *another* device) can't
-> be reproduced inside a single Cowork container. Record those as **skipped — needs a second host**.
+> be reproduced from the one machine Cowork runs on. Record those as **skipped — needs a second host**
+> (or drive them from the owner's phone on the same LAN if available).
 
 ---
 
@@ -209,8 +246,12 @@ the operating model in `OWNER_TEST_DRIVE.md` → "When done").
 - **Local only.** Everything runs against `127.0.0.1:8080`. Do not point the test at any real
   external service, send real messages on a live channel, or move real money — the payments rail is
   a no-op by design; keep it that way.
-- **No destructive AI-OS actions.** §N (browser/desktop/house/camera operators) needs the owner's
-  isolated hardware and explicit sign-off (`MANUAL_TESTING.md` §N warning). Cowork **skips** these.
+- **AI-OS operators — owner-opt-in, safe subset only.** Since Cowork runs on the owner's own laptop,
+  the §N operators (governed browser, Windows desktop actuation, house/camera) *can* be exercised —
+  but **only** the reversible, safe subset with the owner's explicit go-ahead, per the `MANUAL_TESTING.md`
+  §N warning (no occupied exterior lock, nothing whose rollback is uncertain, isolated targets). Default
+  to **skipping** §N unless the owner opts in for a specific item; every action stays governed
+  (approval queue + audit + kill-switch), so `ungoverned_actions == 0` must hold.
 - **Redact.** If any personalized `SOUL.local.md`, family data (Frigga), secrets, or camera frames
   surface, redact them in screenshots and the report.
 - **Honest coverage.** A short, truthful run ("boot + HUD + B0 + memory passed; everything needing
