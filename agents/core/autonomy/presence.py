@@ -35,8 +35,6 @@ IDLE = "idle"
 AWAY = "away"
 UNKNOWN = "unknown"
 
-_CANONICAL = (PRESENT, IDLE, AWAY, UNKNOWN)
-
 # Aliases a host daemon might report (OS lock/idle vocab) → canonical state.
 _ALIASES = {
     "present": PRESENT,

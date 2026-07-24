@@ -21,7 +21,7 @@ from pydantic import BaseModel, Field
 
 from agents.core.app_state import get_orch
 from agents.core.routers._deps import admin_guard, user_guard
-from agents.core.web_helpers import nocache_json
+from agents.core.web_helpers import error_json, nocache_json
 
 router = APIRouter(tags=["presence"])
 
@@ -54,5 +54,6 @@ async def set_owner_presence(body: PresenceBody):
             body.state, source=body.source, idle_seconds=body.idle_seconds,
         )
     except ValueError as e:
-        return JSONResponse({"error": str(e)}, status_code=422)
+        # CWE-209-safe: log the detail server-side, return a static message.
+        return error_json(e, 422, "unsupported presence state")
     return nocache_json({"ok": True, **snap.to_dict()})
