@@ -5,6 +5,7 @@ Agents can generate new skills from successful task completions.
 """
 
 import importlib.util
+import keyword
 import logging
 import re
 from datetime import datetime, timezone
@@ -49,6 +50,36 @@ def _writable_skills_dir() -> Path:
     """
     user_dir = _user_skills_dir()
     return user_dir if user_dir is not None else SKILLS_DIR
+
+
+# Generated command names become both a Python `def` and a `\w+` token in SKILL.md.
+_MAX_COMMAND_NAME = 64
+
+
+def _safe_command_name(raw: Optional[str], fallback: str) -> str:
+    """Coerce an untrusted command name into a bare Python identifier.
+
+    ``command_name`` reaches `generate_skill` straight from LLM output — the third field
+    of a ``[learn:task|steps|cmd]`` block (`orchestrator.py`) — and is substituted into
+    generated Python source. Anything outside ``[A-Za-z_][A-Za-z0-9_]*`` would write a
+    module that cannot parse, or one shaped by whatever the model emitted. The manifest
+    parser is equally strict (``## Commands`` entries are matched as ``\\w+``), so a
+    sanitized name is also the only one that can round-trip through SKILL.md.
+
+    Call this *after* `quarantine.detect_injection` has seen the raw value — sanitizing
+    first would turn "ignore previous instructions" into a name the scanner no longer
+    recognizes.
+    """
+    for candidate in (raw, fallback):
+        name = re.sub(r"_+", "_", re.sub(r"\W", "_", str(candidate or "").strip()))
+        name = name.strip("_")[:_MAX_COMMAND_NAME].strip("_")
+        if not name:
+            continue
+        if name[0].isdigit():
+            name = f"cmd_{name}"
+        if name.isidentifier() and not keyword.iskeyword(name):
+            return name
+    return "run"
 
 
 def _generated_skill_name_safe(view, now) -> bool:
@@ -478,6 +509,11 @@ class SkillLoader:
                            agent_id, flags)
             return None
 
+        # The scanner above has now seen the raw command name; from here on the value is
+        # written to disk (as a `def` and as a SKILL.md command token), so it must be a
+        # bare identifier.
+        cmd = _safe_command_name(cmd, skill_name)
+
         skill_dir.mkdir(parents=True, exist_ok=True)
 
         steps_text = "\n".join(f"{i+1}. {s}" for i, s in enumerate(solution_steps))
@@ -507,9 +543,19 @@ Agent-generated skill from successful task completion.
 
         (skill_dir / "SKILL.md").write_text(skill_md, encoding="utf-8")
 
+        # The shape below is the loader's contract, not decoration:
+        #   * a command function takes (args, context=None) — Skill.execute() dispatches
+        #     `cmd_fn(args, context)` or `cmd_fn(args)`, never (cmd, args, context);
+        #   * every get_commands() name must exist module-level — _load_skill() resolves
+        #     it with getattr(mod, name);
+        #   * handle() stays the 3-arg module-level fallback for unregistered commands.
+        # This matches every hand-written skill (see skills/pm/main.py).
         main_py = '''"""
 $skill_name.py — Auto-generated skill from $agent_id
 Generated: $timestamp
+
+Implement the real logic in $cmd(). Command functions take (args, context=None);
+handle() is the module-level fallback for commands that aren't registered.
 """
 
 import logging
@@ -517,19 +563,26 @@ import logging
 logger = logging.getLogger("jarvis.skills.$skill_name")
 
 
-async def handle(cmd: str, args: str, context: dict) -> str:
-    """Handle skill invocation."""
-    logger.info("Skill %s called with args: %s", cmd, args)
-    return "[skill:$skill_name] executed — implement logic in handle()"
+async def $cmd(args: str, context: dict | None = None) -> str:
+    """`$cmd <input>` — implement the real logic here."""
+    logger.info("Skill $skill_name.$cmd called with args: %s", args)
+    return "[skill:$skill_name] executed — implement logic in $cmd()"
 
 
 def get_commands() -> list[str]:
     return ["$cmd"]
 
 
+async def handle(cmd: str, args: str, context: dict | None = None) -> str:
+    """Module-level fallback for commands the loader did not register."""
+    if cmd == "$cmd":
+        return await $cmd(args, context)
+    return f"[skill:$skill_name] unknown command: {cmd}"
+
+
 def register(skill):
     """Register commands with the skill system."""
-    skill.register_command("$cmd", handle)
+    skill.register_command("$cmd", $cmd)
 '''
         main_py = (main_py
             .replace("$skill_name", skill_name)

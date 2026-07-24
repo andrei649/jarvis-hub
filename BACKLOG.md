@@ -20,7 +20,7 @@ pip install -r requirements-beta.txt
 python serve.py   # canonical entry (boot guards + graceful shutdown; O26-P0.6: the raw
 #   uvicorn entry `python -m uvicorn agents.web:app` now runs the same guards via the lifespan)
 python scripts/install_smoke.py --json  # fast install smoke: boot + /readyz + fake local turn
-python -m pytest tests/ -v          # ~3,888 passed, 6 skipped (counter synced via scripts/status_sync.py)
+python -m pytest tests/ -v          # ~5,425 collected (counter synced via scripts/status_sync.py)
 ```
 
 > Singurul skip rămas e heartbeat-ul opțional. (Vechiul `tests/test_spotify.py` cu 8 skip-uri a
@@ -291,6 +291,37 @@ python -m pytest tests/ -v          # ~3,888 passed, 6 skipped (counter synced v
   `live_plugin_for`) extracted from `routers/plugins.py` into `plugins/honesty.py` so both
   surfaces share one source of truth instead of re-deriving it. Backward-compatible: `orch=None`
   (the static-derivation path used by most tests) carries no honesty keys, unchanged from before.
+- [x] **The agent-generated skill loop actually executes (tranche 5)** — the `main.py` template
+  in `SkillLoader.generate_skill()` registered a 3-parameter `handle(cmd, args, context)` as the
+  command function, while `Skill.execute()` dispatches `cmd_fn(args, context)` / `cmd_fn(args)`
+  (`loader.py:177-179`): **every** generated command raised `TypeError` and surfaced as
+  `[skill:X] error: …`. The same template made `get_commands()` name a function it never defined,
+  so `getattr(mod, cmd)` (`loader.py:284-286`) raised `AttributeError` and logged a misleading
+  "Failed to load skill module" on every `discover()`. The template now emits a per-command
+  `$cmd(args, context=None)` with `handle()` kept as the 3-arg module fallback — the same shape
+  every hand-written skill uses. `tests/test_generated_skill_contract.py` (+19) executes the
+  generated command instead of only asserting the quarantine lifecycle, which is what let this
+  ship past `tests/test_cdx8_skill_quarantine.py`.
+- [x] **Generated command names are sanitized before they become code** — `command_name` arrives
+  as untrusted LLM output (field 3 of a `[learn:…]` block, `orchestrator.py`) and was string-
+  substituted into generated Python source, so a quote + newline escaped the `register_command`
+  string literal. New `_safe_command_name()` coerces it to a bare identifier *after*
+  `quarantine.detect_injection` has seen the raw value (sanitizing first would blind the scanner).
+  Ratcheted for hostile inputs: generated `main.py` must always compile.
+- [x] **Catalog ratchet: a documented command must resolve, or be a declared seam** — every
+  `## Commands` entry in `skills/*/SKILL.md` must map to something callable. `skills/weather`
+  stays manifest-only *on purpose* (`INTENTIONALLY_SEAM`, live weather comes from the plugin
+  path) and is exempt through that one existing escape set — implementing it was tried and
+  reverted, because a live `main.py` makes `parse_command("weather X")` short-circuit the agent
+  path with a raw wttr.in string and removes the repo's only intentional-seam exemplar
+  (`tests/test_h27_capability_verification.py::test_intentional_skill_seam_cannot_be_promoted`).
+  A *new* manifest-only skill now has to be a conscious `INTENTIONALLY_SEAM` entry, not a silent
+  addition.
+- [x] **Removed the stale committed `skills/user_greeting_055711/`** — a pre-CDX-8 artifact with
+  no `PENDING_REVIEW` marker, so `loader.py:247` never quarantined it: it was `exec_module`'d
+  in-process in every install and warned on every boot. It was also cited as the reference
+  pattern in `.opencode/plans/skill-api-corrected.md` and `docs/internal/gemini_architecture_prompt.md`,
+  propagating the broken shape; both now point at `skills/pm/`.
 
 ---
 
