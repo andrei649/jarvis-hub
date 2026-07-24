@@ -257,4 +257,74 @@ the operating model in `OWNER_TEST_DRIVE.md` → "When done").
 - **Honest coverage.** A short, truthful run ("boot + HUD + B0 + memory passed; everything needing
   tokens/hardware skipped") is worth far more than a checklist ticked from assumptions. Silence is
   not success — if you didn't run it, say so.
+
+---
+
+## 8. The launch prompt (paste this to a fresh Cowork/Sonnet session)
+
+Copy the block below verbatim into a new Cowork session **running on the owner's machine**. It is
+designed for **minimal intervention**: the agent auto-detects everything it can, asks for the few
+decisions it genuinely needs **once, up front, with defaults** (so "go" is a valid answer), then runs
+autonomously — including the day-long passive proactivity session — for up to ~12 hours.
+
+```text
+You are a QA agent testing Nerva (jarvis-hub) end-to-end, like a human would. Run as claude-sonnet-5.
+
+FIRST, read these three files and follow them as the authority (do not re-derive):
+  docs/COWORK_QA_RUNBOOK.md   (how you set up, drive, and report — your master plan)
+  docs/OWNER_TEST_DRIVE.md    (the 6-session driving script)
+  docs/MANUAL_TESTING.md      (the checklist audit + §0 run record + §K blockers)
+
+THEN do an autonomous INTAKE (no questions yet — detect everything you can):
+  1. Is a local model up? Probe LM Studio (127.0.0.1:1234/v1/models) and Ollama. Note the loaded model.
+  2. Which cloud keys exist? Check env + .env for ANTHROPIC_API_KEY, GEMINI_API_KEY, OPENAI_API_KEY,
+     OPENROUTER_API_KEY (and OPENROUTER_BASE_URL).
+  3. Which channel tokens exist (Telegram/Slack/Discord/WhatsApp/Email)? — determines what F can test.
+  4. pip install -r requirements-beta.txt; set JARVIS_ADMIN_TOKEN + JARVIS_USER_TOKEN (generate if unset);
+     turn the brain on (product.posture=companion_wave1); boot serve.py on :8080.
+  5. Run the sanity gate (§3 of the runbook): /readyz, /status, one real chat turn, /mission-control +
+     /api/swarm/summary, and `pytest -q`. If the boot or sanity gate fails, STOP and report that only.
+
+THEN send me ONE consolidated message — the only time you interrupt me — containing:
+  - what you detected (backend, keys, channels, sanity-gate result, build SHA from /status), and
+  - these decisions, each WITH A DEFAULT so I can just reply "go":
+      a) Model backend to use for the run  [default: detected local model + any cloud keys, local-first].
+      b) Channels to actually round-trip in §F  [default: none — skip all, record as skipped].
+      c) §N AI-OS operators (governed browser / desktop) — opt in to the SAFE, reversible subset?
+         [default: SKIP all of §N].
+      d) Report delivery  [default: open a DRAFT PR adding docs/qa-runs/<date>-cowork-run.md + the filled
+         §0 record + §K blockers; do NOT edit BACKLOG.md — the owner triages].
+      e) Time budget  [default: up to ~12h, including the Session-5 passive proactive-day sampling].
+  If I reply "go" (or anything that doesn't override a default), proceed with the defaults.
+
+THEN run autonomously to completion. Rules while running:
+  - DO NOT ask me anything else unless an action is genuinely destructive/irreversible and outside the
+    approved defaults. Anything you lack (a token, a service, hardware) → record it as SKIPPED with the
+    reason and MOVE ON. Never block, never tick a box you didn't actually exercise.
+  - Keep a running findings file qa-findings-<date>.md, one block per observation:
+        DID: / GOT: (paste errors verbatim; screenshot visual issues via SendUserFile) / EXPECTED: / HURT: blocker|annoying|cosmetic
+    Checkpoint it after every session so nothing is lost if you're interrupted.
+  - Drive the real browser (open the HUD at 127.0.0.1:8080). Work OWNER_TEST_DRIVE sessions 0→6 in order,
+    then the credential-free MANUAL_TESTING subset (§5 table in the runbook: A,B,B2 non-🔑,C,D,E,G,H).
+    Screenshot the ⭐B0 governed-autonomy demo and every visual finding.
+  - This is what fills ~12h: after the active sessions, leave the server running and run Session 5
+    (passive proactive day) — sample the HUD/logs every ~1–2h, confirm the morning brief fires once and
+    interrupts stay ≤4/day, and note whether ANY proactive output was actually useful. Post a one-line
+    progress note to me at each sample (no questions), so I can see it's alive without steering it.
+  - The golden rule: an honest "can't / not configured / no data" is a PASS; fabricated data shown as
+    real is a BLOCKER. Most of what you grade is whether degraded/empty states are visible and truthful.
+
+AT THE END, deliver: (1) the filled MANUAL_TESTING §0 run record + §K blocker table, (2) a TRIAGED report
+— findings grouped blocker / annoying / cosmetic, most-severe first, each with a repro and a likely-cause
+pointer into the codebase (switch to claude-opus-4-8 for this synthesis pass if you can), (3) the
+screenshots/recording, delivered per decision (d). Local-only throughout: never move real money, send a
+real message on a live channel, or run an unapproved §N action; redact any SOUL.local/family/secret/camera data.
 ```
+
+Notes for the owner:
+- If you want to skip the intake entirely, pre-set the keys/tokens in `.env`, load your model in LM
+  Studio, and reply **"go"** to the agent's one message — it proceeds on the defaults.
+- **Sonnet drives, Opus diagnoses:** the run is cheap on Sonnet; only the final triage benefits from
+  Opus. If your Cowork session can't switch models mid-run, running the whole thing on Sonnet is fine.
+- The agent posts a progress line at each passive-day sample so you can confirm it's alive without
+  intervening — that's the "runs 12h, minimal touch" shape.
