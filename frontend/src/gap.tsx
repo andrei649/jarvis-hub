@@ -1335,15 +1335,16 @@ export function ActivityTimelinePanel() {
 }
 
 // PROJECTS — unifies Rooms (topic threads with persistent history + @mention roster)
-// and Missions (governed workspaces) into one surface, plus the activity timeline, so
-// the owner can run multiple subjects in parallel with history. Reuses the existing
-// panels (their data layer already works); this is just the workspace layout.
+// and Missions (governed workspaces) into one surface, plus session history and the
+// activity timeline, so the owner can run multiple subjects in parallel with history.
+// Reuses the existing panels (their data layer already works); this is the layout.
 export function ProjectsMode(_props: any) {
   return <div style={{ padding: '16px 20px', maxWidth: 1440, margin: '0 auto' }}>
-    <div style={{ ...mono, fontSize: 11, letterSpacing: '.16em', color: 'var(--ink-3)', marginBottom: 12 }}>PROJECTS · rooms = topic threads with history · missions = governed workspaces</div>
+    <div style={{ ...mono, fontSize: 11, letterSpacing: '.16em', color: 'var(--ink-3)', marginBottom: 12 }}>PROJECTS · rooms = topic threads with history · missions = governed workspaces · sessions = reopen a past chat</div>
     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: 16, alignItems: 'start' }}>
       <RoomsPanel />
       <MissionsPanel />
+      <SessionsPanel />
       <ActivityTimelinePanel />
     </div>
   </div>;
