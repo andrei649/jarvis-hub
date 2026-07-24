@@ -82,7 +82,7 @@ async def memory_stats():
         return nocache_json({"sessions": {"total": 0, "current": "", "active": 0}, "vectors": {"stored": 0, "dimension": 0, "backend": ""}, "knowledge_graph": {"entities": 0, "relations": 0, "last_seed": ""}, "agent_contexts": {}})
 
 
-@router.get("/memory/{agent_id}")
+@router.get("/memory/{agent_id}", dependencies=[Depends(user_guard)])
 async def get_agent_memory(agent_id: str):
     """Return per-agent memory context."""
     orch = get_orch()

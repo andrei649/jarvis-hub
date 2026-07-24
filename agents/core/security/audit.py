@@ -183,9 +183,20 @@ class AuditLogger:
                 "SELECT id, timestamp, event_type, findings_json, content_preview, action_taken, row_hash, prev_hash, hash_algo FROM security_events ORDER BY id"
             ).fetchall()
         expected_prev = ""
+        seen_hashed = False
         for row in rows:
             rid, ts, etype, fj, preview, action, stored_hash, stored_prev, algo = row
             if not stored_hash:
+                # A blank row_hash is legitimate only for legacy rows written
+                # before the Merkle columns existed (the v1 migration backfills
+                # row_hash DEFAULT ''). Those can only be a contiguous prefix at
+                # the head of the table. A blank hash appearing AFTER the chain
+                # has started can only be an injected/tampered row — every real
+                # row from log() carries a computed hash — so fail closed rather
+                # than skip it (which previously let forged rows pass even in
+                # HMAC mode, since leaving the hash blank dodged the HMAC check).
+                if seen_hashed:
+                    return False, rid
                 continue
             if stored_prev != expected_prev:
                 return False, rid
@@ -196,6 +207,7 @@ class AuditLogger:
             if computed is None or computed != stored_hash:
                 return False, rid
             expected_prev = stored_hash
+            seen_hashed = True
         return True, None
 
     def count(self) -> int:
