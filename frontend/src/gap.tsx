@@ -1317,13 +1317,19 @@ export function RoomsPanel() {
 export function ActivityTimelinePanel() {
   const audit = useApi('/api/admin/audit?limit=40', true, true);
   const tasks = useApi('/tasks?view=history');
+  const [flt, setFlt] = useState<'all' | 'audit' | 'task'>('all');
   const rows = arr(audit.d, 'rows');
   const tks = arr(tasks.d, 'tasks');
-  const items = [
+  const all = [
     ...rows.map((r: any) => ({ ts: r.timestamp || r.ts || '', kind: r.event_type || 'event', text: r.summary || r.content_preview || '', src: 'audit' })),
     ...tks.map((t: any) => ({ ts: t.created_at || t.updated_at || '', kind: t.kind || 'task', text: (t.title || '') + (t.decision ? ' · ' + t.decision : (t.status ? ' · ' + t.status : '')), src: 'task' })),
-  ].filter((x) => x.ts).sort((a, b) => String(b.ts).localeCompare(String(a.ts))).slice(0, 40);
+  ].filter((x) => x.ts).sort((a, b) => String(b.ts).localeCompare(String(a.ts)));
+  const items = (flt === 'all' ? all : all.filter((x) => x.src === flt)).slice(0, 40);
+  const fbtn = (id: 'all' | 'audit' | 'task', label: string) => <button className="tool-btn"
+    style={{ borderColor: flt === id ? 'var(--accent-light)' : undefined, color: flt === id ? 'var(--accent-light)' : undefined }}
+    onClick={() => setFlt(id)}>{label}</button>;
   return <Card title="ACTIVITY · what it did" live={asLive(audit.d)} sub={items.length} onReload={() => { audit.reload(); tasks.reload(); }}>
+    <div style={{ display: 'flex', gap: 6, marginBottom: 6 }}>{fbtn('all', 'all')}{fbtn('audit', 'audit')}{fbtn('task', 'tasks')}</div>
     <State e={audit.e} loading={audit.loading} n={items.length} />
     {items.length === 0 && !audit.loading && <Row><span style={{ ...mono, color: 'var(--ink-3)' }}>no activity yet — actions and decisions will appear here</span></Row>}
     {items.map((it, i) => <Row key={i}>
