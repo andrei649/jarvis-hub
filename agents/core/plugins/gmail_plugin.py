@@ -25,6 +25,11 @@ class GmailPlugin:
         self.client = PluginHTTPClient.for_plugin("gmail")
         self._refresh_attempted = False
 
+    @property
+    def configured(self) -> bool:
+        """Whether this instance has authentication material for a real API call."""
+        return bool(self.access_token)
+
     def _headers(self) -> dict:
         return {"Authorization": f"Bearer {self.access_token}"}
 
