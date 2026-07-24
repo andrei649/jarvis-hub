@@ -18,6 +18,13 @@ Sources (reused, not duplicated):
 Intentionally NOT wired as a blocking CI gate: the header count carries a ``~`` to
 signal it's approximate, so a one-test drift shouldn't fail a build. ``--check`` is
 here for whoever wants a periodic nudge, not a merge wall.
+
+``--check`` deliberately ignores the ``latest_ci_commit`` stamp (it adopts whatever
+the committed files carry): the stamp is cosmetic provenance and inherently
+self-referential — a merge advances main's tip but leaves the stamp pointing at the
+pre-merge base, so gating on it fails every subsequent PR until a manual restamp.
+Counts/routes/agents/gates are still checked against reality; ``--write`` still
+records the live stamp.
 """
 
 from __future__ import annotations
@@ -415,6 +422,38 @@ def current_counts(text: str) -> dict:
     }
 
 
+def _committed_commit(path: Path | None = None) -> str:
+    """The commit stamp the committed project-status.json currently carries, or
+    ``""`` if the file is absent/unreadable/lacks the field. Used by ``--check``
+    to exclude the volatile stamp from drift detection (see ``_status_for_check``).
+
+    ``path`` defaults to the module-level ``PROJECT_STATUS`` resolved *at call
+    time* (not bound as a default arg) so tests can monkeypatch it."""
+    target = PROJECT_STATUS if path is None else path
+    try:
+        data = json.loads(target.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return ""
+    return str(data.get("latest_ci_commit", "")) if isinstance(data, dict) else ""
+
+
+def _status_for_check(status: dict) -> dict:
+    """The ``--check`` view of *status*: adopt the commit stamp the committed
+    files already carry so the gate ignores it.
+
+    The commit stamp is cosmetic provenance and inherently self-referential —
+    merging a PR advances main's tip but leaves the stamp inside it pointing at
+    the pre-merge base, so the next PR's base never matches and the gate fails
+    until a manual restamp (it bit several PRs in a row). Every meaningful field
+    (counts, routes, agents, gates) is still checked against reality; only the
+    volatile hash is neutralized. ``--write`` is unaffected and records the live
+    stamp. No-op when the committed file is absent/unreadable."""
+    committed = _committed_commit()
+    if committed:
+        return {**status, "latest_ci_commit": committed}
+    return status
+
+
 def main(argv: list[str]) -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--check", action="store_true")
@@ -425,6 +464,9 @@ def main(argv: list[str]) -> int:
     )
     args = parser.parse_args(argv)
     status = collect_project_status(reuse_js_counts=args.reuse_js_counts)
+    if args.check:
+        # Exclude the volatile, self-referential commit stamp from the gate.
+        status = _status_for_check(status)
     expected_json = json.dumps(status, ensure_ascii=False, indent=2, sort_keys=True) + "\n"
     try:
         expected_docs = _expected_docs(status)

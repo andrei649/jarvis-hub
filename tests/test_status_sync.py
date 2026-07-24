@@ -291,6 +291,41 @@ def test_latest_ci_commit_uses_first_parent_when_checkout_is_origin_main():
     ]
 
 
+def test_committed_commit_reads_value_and_fails_soft(tmp_path):
+    good = tmp_path / "project-status.json"
+    good.write_text('{"latest_ci_commit": "abc123def456", "tests": {}}', encoding="utf-8")
+    assert status_sync._committed_commit(good) == "abc123def456"
+    # absent / malformed / non-dict → "" (fail soft, never raise)
+    assert status_sync._committed_commit(tmp_path / "missing.json") == ""
+    bad = tmp_path / "bad.json"
+    bad.write_text("{not valid json", encoding="utf-8")
+    assert status_sync._committed_commit(bad) == ""
+    arr = tmp_path / "arr.json"
+    arr.write_text("[1, 2, 3]", encoding="utf-8")
+    assert status_sync._committed_commit(arr) == ""
+
+
+def test_check_ignores_lagging_commit_stamp(tmp_path, monkeypatch):
+    """The gate must not fail merely because the committed commit stamp lags the
+    live tip (the merge treadmill). --check adopts the committed stamp so only the
+    meaningful fields gate; --write is unaffected and records the live stamp."""
+    committed = tmp_path / "project-status.json"
+    committed.write_text('{"latest_ci_commit": "oldbase00base"}', encoding="utf-8")
+    monkeypatch.setattr(status_sync, "PROJECT_STATUS", committed)
+
+    live = {"latest_ci_commit": "newtip99tip99", "tests": {"backend": 1}}
+    checked = status_sync._status_for_check(live)
+    assert checked["latest_ci_commit"] == "oldbase00base"  # adopted the committed stamp
+    assert checked["tests"] == {"backend": 1}              # every other field preserved
+    assert live["latest_ci_commit"] == "newtip99tip99"     # input dict not mutated
+
+
+def test_status_for_check_is_noop_without_committed_file(tmp_path, monkeypatch):
+    monkeypatch.setattr(status_sync, "PROJECT_STATUS", tmp_path / "absent.json")
+    live = {"latest_ci_commit": "keepme", "tests": {}}
+    assert status_sync._status_for_check(live)["latest_ci_commit"] == "keepme"
+
+
 def test_latest_ci_commit_feature_branch_at_main_tip_does_not_step_back():
     """A freshly-created feature branch (no commits yet) sits AT the main tip.
 
