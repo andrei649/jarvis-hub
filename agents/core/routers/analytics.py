@@ -274,7 +274,7 @@ async def reflection_run():
 
 # ── H9.2 Trace Explorer endpoints ────────────────────────────────
 
-@router.get("/api/traces")
+@router.get("/api/traces", dependencies=[Depends(user_guard)])
 async def list_traces(limit: int = Query(50, ge=1, le=200)):
     """Return recent per-request traces (most-recent first, summarized)."""
     orch = get_orch()
@@ -287,7 +287,7 @@ async def list_traces(limit: int = Query(50, ge=1, le=200)):
     return nocache_json({"traces": tracer.list(limit)})
 
 
-@router.get("/api/cost")
+@router.get("/api/cost", dependencies=[Depends(user_guard)])
 async def cost_breakdown():
     """H10.24 — estimated $ cost per agent and per day (local models = $0)."""
     orch = get_orch()
@@ -305,7 +305,7 @@ async def cost_breakdown():
     })
 
 
-@router.get("/api/traces/{trace_id}")
+@router.get("/api/traces/{trace_id}", dependencies=[Depends(user_guard)])
 async def get_trace(trace_id: str):
     """Return the full trace dict for a specific trace id."""
     orch = get_orch()

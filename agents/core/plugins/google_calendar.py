@@ -26,6 +26,11 @@ class GoogleCalendarPlugin:
         self.api_base = "https://www.googleapis.com/calendar/v3"
         self.client = PluginHTTPClient.for_plugin("google-calendar")
 
+    @property
+    def configured(self) -> bool:
+        """Whether this instance has authentication material for a real API call."""
+        return bool(self.access_token)
+
     def _headers(self) -> dict:
         return {"Authorization": f"Bearer {self.access_token}"}
 

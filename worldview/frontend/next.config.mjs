@@ -6,9 +6,19 @@ const here = path.dirname(fileURLToPath(import.meta.url));
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   reactStrictMode: true,
+  // The application package and its node_modules live at worldview/, not the
+  // enclosing JARVIS repository whose lockfile Next 16 otherwise discovers first.
+  outputFileTracingRoot: path.resolve(here, ".."),
+  turbopack: {
+    root: path.resolve(here, ".."),
+  },
   // deck.gl / luma.gl ship ESM; transpile for Next's bundler.
   transpilePackages: ["@deck.gl/core", "@deck.gl/layers", "@deck.gl/geo-layers", "@deck.gl/mapbox", "@deck.gl/react"],
   webpack: (config) => {
+    // Next 16.2 may infer the repository-level package-lock as the workspace root.
+    // Keep the frontend's @/ imports anchored here instead of resolving them from the
+    // enclosing JARVIS workspace.
+    config.resolve.alias["@"] = here;
     // H19.5.1: import MVTLayer straight from its dist module, bypassing the
     // "@deck.gl/geo-layers" barrel. The barrel re-exports Tile3DLayer → @deck.gl/mesh-layers,
     // which (against this repo's pinned core/luma versions) imports `phongMaterial` from

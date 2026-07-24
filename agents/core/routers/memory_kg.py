@@ -290,7 +290,7 @@ def _kg():
     return getattr(orch.memory, "graph", None)
 
 
-@router.get("/api/kg/entities")
+@router.get("/api/kg/entities", dependencies=[Depends(user_guard)])
 async def kg_entities(q: str = "", limit: int = Query(100, ge=1, le=500)):
     """List (or search with ?q=) knowledge-graph entities."""
     g = _kg()
@@ -300,7 +300,7 @@ async def kg_entities(q: str = "", limit: int = Query(100, ge=1, le=500)):
     return nocache_json({"entities": entities[:limit], "total": len(entities)})
 
 
-@router.get("/api/kg/entities/{name}")
+@router.get("/api/kg/entities/{name}", dependencies=[Depends(user_guard)])
 async def kg_entity(name: str):
     """Get one entity plus its relations."""
     g = _kg()
@@ -451,7 +451,7 @@ async def kg_add_fact(req: Request):
     return nocache_json({"ok": True, "fact": fact})
 
 
-@router.get("/api/kg/facts/as-of")
+@router.get("/api/kg/facts/as-of", dependencies=[Depends(user_guard)])
 async def kg_facts_as_of(at: Optional[float] = None, subject: str = "", predicate: str = ""):
     """Valid-time recall: facts true in the world at time `at` (default now)."""
     orch = get_orch()
@@ -461,7 +461,7 @@ async def kg_facts_as_of(at: Optional[float] = None, subject: str = "", predicat
     return nocache_json({"at": at, "facts": bt.as_of(at, subject, predicate)})
 
 
-@router.get("/api/kg/facts/history")
+@router.get("/api/kg/facts/history", dependencies=[Depends(user_guard)])
 async def kg_facts_history(subject: str, predicate: str = ""):
     """All versions (incl. invalidated) for a subject, oldest first."""
     orch = get_orch()

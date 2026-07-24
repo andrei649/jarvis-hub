@@ -2,7 +2,7 @@
 
 > The one-page product sheet: everything that ships today, how to get it running, and what comes
 > next on the road to 1.0. Numbers verified against `project-status.json` / `STATUS.md` on
-> **2026-07-12** (v0.11.0). Deep dives: [README](../README.md) · [MOONSHOT.md](../MOONSHOT.md)
+> **2026-07-24** (v0.11.0). Deep dives: [README](../README.md) · [MOONSHOT.md](../MOONSHOT.md)
 > (vision) · [NERVA_VISION.md](../NERVA_VISION.md) (AI-OS capability program) ·
 > [BACKLOG.md](../BACKLOG.md) (the live plan — always wins on priorities).
 
@@ -12,11 +12,13 @@
 
 ### Governed autonomy — the reason this exists
 
-- **Action Kernel** — every consequential agent action crosses one mediation point: budgeted,
-  auditable, revocable.
+- **Risk-gated actions** — an always-on risk-tier policy holds money/social/external actions
+  for approval; the unifying **Action Kernel** mediation point (budgeted, auditable, revocable)
+  is rolling out behind `JARVIS_ACTION_KERNEL` (opt-in while it hardens).
 - **Reversible/irreversible approval queue** — safe work happens silently; anything irreversible
-  or costly waits for your one-tap approval (web, Telegram, or the mobile app). Approve the same
-  kind of action enough times and the system *earns* the right to stop asking.
+  or costly waits for your one-tap approval (web, Telegram, or the mobile app). With earned
+  autonomy switched on (`autonomy.earned_autonomy_enabled`, default off), approving the same
+  kind of action enough times lets the system *earn* the right to stop asking.
 - **Tamper-evident audit log** — hash-chained (Merkle), with a one-call integrity check.
 - **Kill-switch, loop-breaker, quarantine, signed skills** — brakes that are code, not policy text.
 - **High-risk automation contracts** — payments, outbound calls, social posting, host control,
@@ -62,11 +64,13 @@ machine.
 
 ### Channels & surfaces
 
-- **HUD V2 cockpit** (web, SSE) · **voice** (wake word → faster-whisper STT → edge-tts/Kokoro TTS)
-  · **Telegram · Discord · Slack · email**.
+- **HUD V2 cockpit** (web, SSE) · **voice** — browser-mic loop (faster-whisper STT →
+  edge-tts/Kokoro TTS) ships today; the server-side wake-word pipeline is optional and needs
+  extra native deps · **Telegram · email** built in; **Discord · Slack** work once their SDKs
+  are installed (`pip install discord.py slack_sdk`).
 - **Mobile companion app** — approvals, tasks, comms inbox, memory + knowledge graph, security
   posture (read-only where it should be).
-- CLI REPL and admin panel; **369 HTTP routes** with OpenAPI→TypeScript typegen.
+- CLI REPL and admin panel; **400 HTTP routes** with OpenAPI→TypeScript typegen.
 
 ### Skills, plugins & execution
 
@@ -74,10 +78,13 @@ machine.
   marketplace with signing + quarantine.
 - **Sandboxed code execution** (Docker + subprocess) with environment scrubbing and output caps.
 - **Plugin layer** — weather, news, Gmail, WhatsApp local bridge, Spotify, Telegram bot, cloud
-  LLM… every third-party service is explicit, scope-limited, audited, and disable-able.
+  LLM… every third-party service is explicit, scope-limited, audited, and disable-able — and an
+  unconfigured integration self-reports **MOCK/degraded** instead of pretending to work.
 - Governed **MCP client** and Tool-RPC over an allowlist.
-- **Capability Registry + unified Action API** (ORIZONT 27, delivered) — every capability
-  machine-registered, verified against reality, with *earned* per-capability autonomy.
+- **Capability Registry + unified Action API** (ORIZONT 27, code-complete) — every capability
+  machine-registered and verified against reality. The `perform()` facade and *earned*
+  per-capability autonomy ship **default-off** (`JARVIS_UNIFIED_ACTION_API` +
+  `JARVIS_ACTION_KERNEL`; `autonomy.earned_autonomy_enabled`) until hardened.
 
 ### WorldView + Signal Layer (opt-in companions)
 
@@ -90,7 +97,7 @@ machine.
 
 - `/healthz` + `/readyz`, graceful degradation when the local LLM is down, log rotation, systemd
   templates, release artifacts with SBOM + checksums + optional signatures.
-- **4,300+ backend tests** (pytest, offline), 209 frontend (Vitest), 55 mobile (Jest), Playwright
+- **5,300+ backend tests** (pytest, offline), 370 frontend (Vitest), 96 mobile (Jest), Playwright
   HUD/flow suites — the install runs the suite to prove itself.
 
 ---
@@ -153,7 +160,7 @@ the big refactor is done. **1.0 is a real destination**, gated on two tracks tha
 
 | Phase | Capability |
 |-------|-----------|
-| ✅ ORIZONT 27 | **Capability Registry + unified Action API** — delivered |
+| ✅ ORIZONT 27 | **Capability Registry + unified Action API** — code-complete; `perform()` facade + earned autonomy stay opt-in until hardened |
 | ORIZONT 28 | **Computer & browser operator** — governed Playwright + desktop actuation |
 | ORIZONT 29 | **Media director** — `present()` fabric, Chromecast, session etiquette |
 | ORIZONT 30 | **House brain** — Home Assistant graph, presence, governed actuation |

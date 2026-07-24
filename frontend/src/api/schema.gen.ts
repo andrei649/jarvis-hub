@@ -377,10 +377,12 @@ export interface paths {
          *
          *     The unified first-run screen's single fetch: the /readyz verdict (shared
          *     ``readiness_snapshot``), the model backend truth, the H23.20 wizard state,
-         *     and honest FIRST ACTIONS whose ``ready`` flags derive from live state — a
+         *     honest FIRST ACTIONS whose ``ready`` flags derive from live state, and three
+         *     bounded consumer outcomes with setup/privacy/effect truth — a
          *     chat action is never presented ready without a model, and the local-docs
          *     action stays not-ready (with the reason) until the owner configures a
-         *     folder. Read-only; the actions point at existing governed endpoints.
+         *     folder. Read-only; the actions point at existing governed endpoints and the
+         *     outcome projection never reads or returns credential values.
          */
         get: operations["command_center_api_onboarding_command_center_get"];
         put?: never;

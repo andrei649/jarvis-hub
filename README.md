@@ -3,13 +3,13 @@
 ![Python 3.12](https://img.shields.io/badge/python-3.12-blue?logo=python&logoColor=white)
 ![License: MIT](https://img.shields.io/badge/license-MIT-green)
 <!-- project-status:badges:start -->
-![Backend tests](https://img.shields.io/badge/backend_tests-5359-brightgreen?logo=pytest)
+![Backend tests](https://img.shields.io/badge/backend_tests-5373-brightgreen?logo=pytest)
 ![Version](https://img.shields.io/badge/version-0.11.0-orange)
 <!-- project-status:badges:end -->
 
 > 17 specialized AI agents orchestrated through Jarvis, running on **your own hardware**, controlled by voice and web.
 
-**A private AI OS that cannot silently act beyond the authority you grant it.** Local-first and governed: every autonomous action crosses one **Action Kernel** — a reversible/irreversible **approval queue** for anything consequential, a tamper-evident **audit log**, budgets and a kill-switch — and it runs entirely on your own hardware (LM Studio / Ollama on your GPU), **$0/month, no cloud by default**, with a **family agent that never touches the internet**. Where other local agent systems prioritize extensibility and raw autonomy, this system prioritizes governed execution, local ownership, and inspectability. The product it is becoming is **Nerva** (published by Digitaholic; `jarvis-hub` remains the repo codename until the deliberate rename) — the long-term product & capability vision (house brain, media director, cameras, computer operator, self-extension) is in [`NERVA_VISION.md`](NERVA_VISION.md).
+**A private AI OS that cannot silently act beyond the authority you grant it.** Local-first and governed: every autonomous action is risk-gated — a reversible/irreversible **approval queue** for anything consequential, a tamper-evident **audit log**, budgets and a kill-switch, converging on one **Action Kernel** mediation point (opt-in via `JARVIS_ACTION_KERNEL` while it hardens) — and it runs entirely on your own hardware (LM Studio / Ollama on your GPU), **$0/month, no cloud by default**, with a **family agent that never touches the internet**. Where other local agent systems prioritize extensibility and raw autonomy, this system prioritizes governed execution, local ownership, and inspectability. The product it is becoming is **Nerva** (published by Digitaholic; `jarvis-hub` remains the repo codename until the deliberate rename) — the long-term product & capability vision (house brain, media director, cameras, computer operator, self-extension) is in [`NERVA_VISION.md`](NERVA_VISION.md).
 
 **Get running in minutes →** [Quickstart](#run) · one-click `INSTALL.bat` on Windows.
 
@@ -97,7 +97,7 @@ The **Jarvis Signal Layer** is the provider-neutral situational-awareness API at
 ## Run
 
 <!-- project-status:run:start -->
-Generated test matrix: backend **5,359** · frontend **370** · mobile **96**. Route surface: **402**.
+Generated test matrix: backend **5,373** · frontend **373** · mobile **96**. Route surface: **402**.
 <!-- project-status:run:end -->
 
 ### Windows 11 — one-click (no terminal needed)
@@ -152,7 +152,7 @@ _Linux/macOS shortcut:_ `./install.sh` does all of the above (venv + install + t
 ## Status
 
 <!-- project-status:readme-status:start -->
-Generated status: **v0.11.0** · backend **5,359** · frontend **370** · mobile **96** · **402** routes · **17** active agents · open release gates: **A1, A2, A3, A4, A5, A6, A7, A8, A9** · source commit `7a7c216cf9a9`. Full data: [`project-status.json`](project-status.json).
+Generated status: **v0.11.0** · backend **5,373** · frontend **373** · mobile **96** · **402** routes · **17** active agents · open release gates: **A1, A2, A3, A4, A5, A6, A7, A8, A9** · source commit `029da4c9e1f9`. Full data: [`project-status.json`](project-status.json).
 <!-- project-status:readme-status:end -->
 
 **v0.11.0 — feature-complete + refactor done, building toward the expanded 1.0** (the version line is the roadmap — see [BACKLOG.md](BACKLOG.md#version-roadmap); **1.0 = the proof track** — productionization + real design-partner users — **plus the AI-OS capability program**, [`NERVA_VISION.md`](NERVA_VISION.md)). 17 specialist agents (incl. **Argus** for WorldView geoint and **Howard**, the emerging digital twin; + 17 bench) across 4 tiers; real-embeddings recall (LM Studio) + fused recall +
