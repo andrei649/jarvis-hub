@@ -15,6 +15,10 @@
 Legend for coverage: ✅ logic covered by automated tests (you're only checking the
 real-world wiring) · ⚠️ partially covered · ❌ no automated coverage (test carefully).
 
+> **Driving it with an agent?** [`docs/COWORK_QA_RUNBOOK.md`](COWORK_QA_RUNBOOK.md) tells a Claude
+> Cowork session how to boot Nerva, drive the browser, and run the credential-free subset of this
+> checklist + the [`OWNER_TEST_DRIVE.md`](OWNER_TEST_DRIVE.md) sessions, then hand back a triaged report.
+
 ---
 
 ## 0. Run record & 1.0 sign-off
