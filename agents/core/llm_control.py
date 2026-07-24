@@ -135,7 +135,19 @@ async def run_llm_control(orch, action: str, model: Optional[str]) -> Optional[s
         st = await ctrl.status()
         if not st.get("online"):
             return "The language backend is offline, sir. Say 'start LM Studio' and I will bring it up."
-        name = st.get("active_model") or getattr(router, "active_model", None) or "an unidentified model"
+        # Report the model ACTUALLY loaded now. A model loaded directly in LM Studio
+        # (outside Nerva) leaves `router.active_model` at the configured default, so
+        # `status()` narrated a stale model in chat while the HUD badge was correct
+        # (2026-07-24 QA finding). Re-fetch live residency first; fall back to the
+        # cached value only if the refresh is unavailable/fails.
+        live = None
+        refresh = getattr(router, "refresh_active_model", None)
+        if callable(refresh):
+            try:
+                live = await refresh()
+            except Exception:
+                live = None
+        name = live or st.get("active_model") or getattr(router, "active_model", None) or "an unidentified model"
         return f"I am running {name} on {backend}, sir."
 
     if action == "start":

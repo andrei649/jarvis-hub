@@ -353,7 +353,11 @@ function SecretsPanel() {
 }
 function KillSwitchPanel() {
   const { d, e, loading, reload } = useApi('/api/security/kill-switch');
-  const halted = d?.halted ?? d?.engaged;
+  // /api/security/kill-switch returns {global: bool, halted: {agent: reason}}. `halted`
+  // is a MAP, not a bool — `d?.halted ?? d?.engaged` returned {} (truthy) and showed a
+  // false "ENGAGED · all agents halted" alarm (2026-07-24 QA finding). Derive it: engaged
+  // iff the global switch is on OR at least one agent is in the halted map.
+  const halted = !!(d?.global || Object.keys(d?.halted || {}).length || d?.engaged);
   return <Card title="KILL-SWITCH" live={asLive(d)} onReload={reload}>
     <State e={e} loading={loading} n={1} />
     <Row><span style={{ color: halted ? 'var(--red)' : 'var(--green)' }}>{halted ? 'ENGAGED · all agents halted' : 'ARMED · operational'}</span>

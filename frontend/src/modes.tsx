@@ -135,7 +135,10 @@ function TrustMode({ t, localPct = null }) {
   };
   useEffect(() => {
     let alive = true;
-    getKillSwitch().then((s) => { if (alive && s) setKilled(!!(s.halted ?? s.engaged)); }).catch(() => { if (alive) setKillErr(true); });
+    // `halted` is a MAP {agent: reason}, not a bool — `s.halted ?? s.engaged` was {} (truthy)
+    // and falsely showed the kill-switch engaged (2026-07-24 QA finding). Engaged iff the
+    // global switch is on OR any agent is in the halted map.
+    getKillSwitch().then((s) => { if (alive && s) setKilled(!!(s.global || Object.keys(s.halted || {}).length || s.engaged)); }).catch(() => { if (alive) setKillErr(true); });
     return () => { alive = false; };
   }, []);
   const toggleKill = () => {
