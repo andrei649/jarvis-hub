@@ -25,6 +25,14 @@ class SpotifyPlugin:
         self.api_base = "https://api.spotify.com/v1"
         self.client = PluginHTTPClient.for_plugin("spotify")
 
+    @property
+    def configured(self) -> bool:
+        """Whether playback calls have a usable token or refresh path."""
+        return bool(
+            self.access_token
+            or (self.refresh_token and self.client_id and self.client_secret)
+        )
+
     def _headers(self) -> dict:
         return {"Authorization": f"Bearer {self.access_token}"}
 

@@ -23,6 +23,11 @@ class HomebridgePlugin:
         self.api_base = f"{self.bridge_url}/api"
         self.client = PluginHTTPClient.for_plugin("homebridge")
 
+    @property
+    def configured(self) -> bool:
+        """Whether the owner supplied the token required by the manifest."""
+        return bool(self.bridge_url and self.api_token)
+
     def _headers(self) -> dict:
         headers = {"Content-Type": "application/json"}
         if self.api_token:

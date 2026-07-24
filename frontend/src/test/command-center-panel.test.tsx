@@ -33,6 +33,10 @@ const WARM = {
     { key: 'morning_brief', title: 'Get your morning brief', kind: 'get', path: '/autonomy/brief', ready: true, reason: null },
     { key: 'index_docs', title: 'Chat with a folder of your docs', kind: 'post', path: '/api/local-docs/index', ready: false, folders: [], reason: 'no folder configured — set local_docs.folders in Admin → settings' },
   ],
+  starter_outcomes: [
+    { key: 'plan_my_day', title: 'Plan my day', status: 'live', setup: null, privacy: 'third_party_account', changes: 'none' },
+    { key: 'private_documents', title: 'Use my private documents', status: 'needs_setup', setup: 'Choose a local folder in Settings.', privacy: 'local_storage_cloud_model', changes: 'none' },
+  ],
 };
 
 function mockFetch(routes) {
@@ -175,6 +179,45 @@ describe('CommandCenterPanel — one screen: install health + model + first acti
     await waitFor(() => expect(screen.getByText(/no folder configured/)).toBeTruthy());
     // only the ready say_hello action gets a run button
     expect(screen.getAllByText('run').length).toBe(1);
+  });
+
+  it('renders consumer outcomes with live/setup, privacy, and effect truth', async () => {
+    mockFetch({ '/api/onboarding/command-center': WARM });
+    render(<CommandCenterPanel />);
+    await waitFor(() => expect(screen.getByText('Plan my day')).toBeTruthy());
+    expect(screen.getByText('Use my private documents')).toBeTruthy();
+    expect(screen.getByText('READY NOW')).toBeTruthy();
+    expect(screen.getByText('NEEDS SETUP')).toBeTruthy();
+    expect(screen.getByText('stored locally · cloud model may receive context')).toBeTruthy();
+    expect(screen.getAllByText('read-only')).toHaveLength(2);
+    expect(screen.getByText('Choose a local folder in Settings.')).toBeTruthy();
+  });
+
+  it('labels private documents as staying local on a local model route', async () => {
+    const localDocuments = {
+      ...WARM,
+      starter_outcomes: [
+        { key: 'private_documents', title: 'Use my private documents', status: 'live', setup: null, privacy: 'local_only', changes: 'none' },
+      ],
+    };
+    mockFetch({ '/api/onboarding/command-center': localDocuments });
+    render(<CommandCenterPanel />);
+    await waitFor(() => expect(screen.getByText('Use my private documents')).toBeTruthy());
+    expect(screen.getByText('stays local')).toBeTruthy();
+    expect(screen.getByText('read-only')).toBeTruthy();
+  });
+
+  it('qualifies connected data when a cloud model may receive it', async () => {
+    const cloudConnectedData = {
+      ...WARM,
+      starter_outcomes: [
+        { key: 'plan_my_day', title: 'Plan my day', status: 'live', setup: null, privacy: 'third_party_account_cloud_model', changes: 'none' },
+      ],
+    };
+    mockFetch({ '/api/onboarding/command-center': cloudConnectedData });
+    render(<CommandCenterPanel />);
+    await waitFor(() => expect(screen.getByText('Plan my day')).toBeTruthy());
+    expect(screen.getByText('connected account · cloud model may receive context')).toBeTruthy();
   });
 
   it('say hello drives a real /chat turn and records the funnel step', async () => {
