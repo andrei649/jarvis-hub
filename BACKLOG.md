@@ -1025,8 +1025,9 @@ the real backend, but the pipeline-rewiring PR never ran it because the path fil
 | H34.3 | **Dev-swarm PR/CI feed** — open PRs + check status (oracle_bridge plugin, `GITHUB_TOKEN`) next to the lock panel, so draft-PR-as-lock coordination is visible live in the cockpit. | 3 | P2 | H34.1 | AGENT_WORKFLOW.md |
 | H34.4 | **`SwarmPanel` in Console V2** — React port of the page into `frontend/src` (Observe section) so the cockpit is one keystroke from chat; the standalone page stays. | 3 | P3 | H34.1 | HUD_V2_REMAINING.md |
 | H34.5 | **Revenue-program pointer** — the "make money" ask stays governed: market intel / social / payments remain draft-first + approval-gated (0.39/0.45/0.68) and Mission Control is where those queued opportunities surface. No autonomous spending — MOONSHOT §5 stands. | — | — | — | MOONSHOT §5 |
+| H34.6 ✅ | **Projects workspace + activity timeline (Console V2)** — the *historical, per-project* counterpart to H34.1's *live* cockpit. New top-level **Projects** mode (`ProjectsMode`, `frontend/src/gap.tsx`) unifying **Rooms** (topic threads w/ persistent history + `@mention` roster), **Missions** (governed workspaces w/ budget + state machine) and **Sessions** (reopen an older chat, reusing `SessionsPanel` → `/sessions` + `/sessions/resume`); plus an **`ActivityTimelinePanel`** merging the hash-chained audit log (`/api/admin/audit`, admin) + autonomy history (`/tasks?view=history`, user) into one newest-first "what it did" stream with an all/audit/tasks filter — **titles/decisions/status only, never payload/result** (no tier leak; see TASK-5). Wired into nav + command palette. **Zero new backend routes** (reuses existing endpoints → no route/openapi/auth reseed). Closes items 1–3 of `docs/design/HUD_FOLLOWUPS_COWORK_SPEC.md`. Frontend-only: `tsc` clean, `vitest` 373/373, v2 bundle rebuilt. | 3 | P2 | H34.1 | #724 · Cowork QA 2026-07-24 |
 
-> **Total ORIZONT 34:** ~16 SP (H34.1 delivered 2026-07-24)
+> **Total ORIZONT 34:** ~19 SP (H34.1 delivered 2026-07-24 · H34.6 delivered 2026-07-24 #724)
 
 ---
 
