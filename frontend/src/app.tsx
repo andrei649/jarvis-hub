@@ -147,6 +147,30 @@ function App() {
     setMessages(demo ? V2.SEED_MESSAGES : []);
   }, [demo]);
 
+  // Rehydrate the visible transcript from server-persisted memory on load, so a
+  // page refresh no longer drops the conversation (2026-07-24 QA finding). The
+  // turns already persist server-side (ConversationMemory → disk); the HUD just
+  // never re-fetched them. `GET /memory` returns the current session's last turns.
+  // Runs once; never clobbers a conversation the user started before it resolved.
+  const _rehydrated = useRef(false);
+  useEffect(() => {
+    if (demo || _rehydrated.current) return;
+    _rehydrated.current = true;
+    apiGet('/memory')
+      .then((r: any) => {
+        const turns = (r && r.turns) || [];
+        if (!turns.length) return;
+        const mapped = turns.map((tn: any) => {
+          const ts = fmtTimeShort(new Date(tn.timestamp || Date.now()));
+          return tn.role === 'user'
+            ? { role: 'user', text: tn.content, ts }
+            : { role: 'agent', who: tn.agent_id || 'jarvis', role_label: '', text: tn.content, ts };
+        });
+        setMessages((cur) => (cur.length ? cur : mapped));
+      })
+      .catch(() => {});
+  }, [demo]);
+
   // hotkeys: number keys jump modes, ⌘K palette, A ambient
   useEffect(() => {
     function onKey(e) {
