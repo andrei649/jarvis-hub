@@ -151,6 +151,28 @@ python -m pytest tests/ -v          # ~3,868 passed, 6 skipped (counter synced v
 
 ---
 
+## 📋 Docs-vs-code accuracy pass (2026-07-24 — feature-sheet audit)
+
+> 47 claims from `README.md`/`docs/FEATURES.md` verified against source (6 parallel research
+> passes): **36 live · 11 partial/default-off · 0 fabricated**. Complements the 2026-07-18
+> live-vs-plumbing audit below — that epic fixes *code* honesty (MOCK badges, degraded stamps);
+> this pass fixed the *docs*, which narrated opt-in rails as generally on. BACKLOG was already
+> accurate (H27.3 says default-off) — per the house rule, the stale docs were fixed to match it.
+
+- [x] `docs/FEATURES.md` — Action Kernel bullet now names the always-on risk-tier gate and marks
+  the kernel opt-in (`JARVIS_ACTION_KERNEL`); ORIZONT 27 "delivered" → code-complete with the
+  `perform()` facade + earned autonomy explicitly default-off; earned-autonomy sentence carries
+  its flag; voice reworded (browser-mic loop ships; server wake word = optional native deps);
+  Discord/Slack marked SDK-install; plugin bullet advertises the MOCK/degraded honesty layer;
+  stale counts refreshed (369→400 routes; 4,300+/209/55 → 5,300+/370/96 tests; date 2026-07-24).
+- [x] `README.md` — thesis line "every autonomous action crosses one Action Kernel" → honest
+  "risk-gated …, converging on one Action Kernel mediation point (opt-in while it hardens)".
+- [ ] Owner decision (parked in `docs/OWNER_TASKS.md`, not sprint scope): define the flip-on
+  criteria for `JARVIS_ACTION_KERNEL` + `JARVIS_UNIFIED_ACTION_API` — when does the kernel
+  become the default rail instead of the opt-in one?
+
+---
+
 ## 🔌 Live-vs-Plumbing Remediation — mock → real (owner request 2026-07-18)
 
 > **Full audit:** [`docs/research/2026-07-18-live-vs-plumbing-capability-audit.md`](docs/research/2026-07-18-live-vs-plumbing-capability-audit.md)
@@ -173,7 +195,7 @@ python -m pytest tests/ -v          # ~3,868 passed, 6 skipped (counter synced v
 **Config-wins — flip to LIVE with no new code (owner action, see `docs/OWNER_TASKS.md`):**
 - [ ] Google OAuth → email + calendar
 - [ ] Spotify OAuth → real playback control
-- [ ] Install engines: `faster-whisper` (STT), `edge-tts`/`kokoro` (TTS), `playwright` (browser operator), `beautifulsoup4` (DDG search)
+- [ ] Install engines: `faster-whisper` (STT), `edge-tts`/`kokoro` (TTS), `playwright` (browser operator), `beautifulsoup4` (DDG search), `discord.py`/`slack_sdk` (Discord/Slack channels — adapters exist, SDKs not in base requirements)
 - [ ] LAN Home Assistant + `JARVIS_HOUSE_BRAIN`/`JARVIS_HOME_ASSISTANT` → house read + control
 - [ ] Frigate NVR + household consent → the camera + ambient stack
 - [ ] Flip cognition master posture + a local LLM → the reflect-and-rewrite learn loop
