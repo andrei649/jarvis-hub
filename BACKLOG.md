@@ -173,6 +173,45 @@ python -m pytest tests/ -v          # ~3,868 passed, 6 skipped (counter synced v
 
 ---
 
+## 🛡️ Governance-rails security audit (2026-07-24 — 8-reviewer adversarial pass)
+
+> Full findings + severities + evidence: [`docs/research/2026-07-24-governance-rails-security-audit.md`](docs/research/2026-07-24-governance-rails-security-audit.md).
+> One reviewer per invariant (kernel bypass · taint · approval queue · strict-local · secret/audit
+> crypto · SSRF · skill signing · router auth), each required to trace enforcement code and build a
+> concrete bypass. **Headline: the core "can't act ungoverned by default" invariant HOLDS**
+> (kernel-off path verified across all six action families; classifier fails closed). The holes are
+> data-exposure, one strict-local leak, and integrity labels that over-promise. Feeds the
+> 2026-07-16 security-correctness wave (`docs/superpowers/plans/2026-07-16-security-correctness-wave.md`).
+
+**Delivered (PR #711, merged):**
+- [x] **SEC-A1 — unguarded personal-data reads.** Added `user_guard` to 10 read routes whose sibling
+  writes were already guarded (KG entities/facts, `/memory/{agent_id}`, `/api/actions[/pending]`,
+  `/api/traces[/{id}]`, `/api/cost`). Re-seeded `tests/_snapshots/route_auth.json` (open→user).
+- [x] **SEC-A2 — audit empty-hash bypass.** `verify_chain` now fails closed on a blank `row_hash`
+  after the chain starts (previously `continue`'d past it, so a forged row passed even in HMAC
+  mode), while still tolerating a legitimate legacy pre-Merkle prefix. +3 regression tests.
+
+**Deferred — needs design/posture work (ranked):**
+- [ ] 🔴 **SEC-B1 (Critical) — Frigga family data → cloud via synthesis.** `Agent.synthesize` runs
+  under jarvis's cloud-eligible policy and embeds a strict-local agent's raw output; a direct-to-Frigga
+  turn triggers synthesis. Fix: synthesis inherits the strictest contributor policy (pin local if any
+  responder ∈ `LOCAL_ONLY_AGENTS`) + a test that frigga-containing responses never select cloud.
+  Precondition: cloud configured + (`cloud_fallback=always` or large prompt). Breaks the hardest promise.
+- [ ] 🟠 **SEC-B2 — unkeyed-hash-as-signature (audit #3 + skill signing #9).** `REQUIRE_SIGNED_SKILLS`
+  and the "tamper-evident" audit claim only hold when an optional key env var is set. Fail closed /
+  label unkeyed digests as integrity-only; surface the distinction in `/api/security/posture`.
+- [ ] 🟠 **SEC-B3 — Telegram approval owner-binding.** Callback handler has no owner check when
+  constructed without `allowed_user_ids` (the production wiring). Implement the 2-factor callback
+  check (owner `chat_id` + `user_id`, fail closed on empty allowlist) the wave plan already specifies.
+- [ ] 🟡 **SEC-B4 — SSRF IP-pinning coverage.** The checker is sound but the Playwright path and the
+  central `PluginHTTPClient` don't route through `resolve_and_validate` with pinning (rebinding TOCTOU).
+- [ ] 🟡 **SEC-B5 — taint by dataflow, not just declared origin.** Proactive/recall/ambient payloads
+  rebuilt outside an inbound turn drop ingress taint (worst confirmed case is READ_ONLY-bounded).
+- [ ] **SEC-B6 — gate hardening.** Extend `test_route_auth_matrix.py` to require classification of
+  *read* routes touching personal data, so the theme-B read/write asymmetry can't regress open.
+
+---
+
 ## 🔌 Live-vs-Plumbing Remediation — mock → real (owner request 2026-07-18)
 
 > **Full audit:** [`docs/research/2026-07-18-live-vs-plumbing-capability-audit.md`](docs/research/2026-07-18-live-vs-plumbing-capability-audit.md)
