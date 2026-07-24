@@ -36,6 +36,7 @@ const ICONS = {
   health:<><path d="M3 12h4l2 5 3-11 2 6h5"/></>,
   knowledge:<><path d="M4 5a2 2 0 0 1 2-2h6v16H6a2 2 0 0 0-2 2z"/><path d="M20 5a2 2 0 0 0-2-2h-6v16h6a2 2 0 0 1 2 2z"/></>,
   family:<><circle cx="8" cy="8" r="2.4"/><circle cx="16" cy="9" r="2"/><path d="M3.5 19a4.5 4.5 0 0 1 9 0M13 19a4 4 0 0 1 7.5-2"/></>,
+  projects:<><rect x="3" y="4" width="7" height="16" rx="1"/><rect x="14" y="4" width="7" height="10" rx="1"/></>,
 };
 
 /* dossier glyph */

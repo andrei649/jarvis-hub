@@ -219,6 +219,7 @@ const I18N = {
     chat:'Chat', comms:'Comms', directLine:'DIRECT LINE', focusHintChat:'distraction-free · ⌘K for everything else',
     inbox:'UNIFIED INBOX', allChannels:'All channels',
     finance:'Finance', health:'Health', knowledge:'Knowledge', family:'Family',
+    projects:'Projects',
   },
   ro:{
     sub:'INTELIGENȚĂ PERSONALĂ · OS', online:'ONLINE', local:'% LOCAL', agents:'AGENȚI',
@@ -238,6 +239,7 @@ const I18N = {
     chat:'Chat', comms:'Comunicări', directLine:'LINIE DIRECTĂ', focusHintChat:'fără distrageri · ⌘K pentru restul',
     inbox:'CĂSUȚĂ UNIFICATĂ', allChannels:'Toate canalele',
     finance:'Finanțe', health:'Sănătate', knowledge:'Cunoaștere', family:'Familie',
+    projects:'Proiecte',
   },
 };
 

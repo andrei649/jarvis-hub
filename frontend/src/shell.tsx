@@ -9,6 +9,7 @@ import { V2 } from './data';
 const MODES: Array<{ id?: string; icon?: string; tkey?: string; live?: boolean; sep?: boolean; locked?: boolean }> = [
   { id:'cockpit', icon:'cockpit', tkey:'cockpit', live:true },
   { id:'chat', icon:'chat', tkey:'chat' },
+  { id:'projects', icon:'projects', tkey:'projects' },
   { id:'agents', icon:'agents', tkey:'agentsMode' },
   { id:'trust', icon:'trust', tkey:'trust' },
   { id:'memory', icon:'memory', tkey:'memory' },
@@ -250,6 +251,7 @@ function Palette({ open, onClose, onMode, setAccent, setLang, onAmbient, ui, t }
     { g:'Go to', items:[
       { name:'Cockpit', hint:'1', act:()=>onMode('cockpit'), icon:'cockpit' },
       { name:'Chat · focus', hint:'9', act:()=>onMode('chat'), icon:'chat' },
+      { name:'Projects · rooms & missions', hint:'', act:()=>onMode('projects'), icon:'projects' },
       { name:'Agents', hint:'2', act:()=>onMode('agents'), icon:'agents' },
       { name:'Trust Center', hint:'3', act:()=>onMode('trust'), icon:'trust' },
       { name:'Memory & Knowledge', hint:'4', act:()=>onMode('memory'), icon:'memory' },
