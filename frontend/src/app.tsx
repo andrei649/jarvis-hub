@@ -14,7 +14,7 @@ import { AgentsMode, Dossier, TrustMode, MemoryMode } from './modes';
 import { AutonomyMode, BuildMode, ObserveMode, InteropMode } from './modes2';
 import { ChatMode, CommsMode, AdminMode } from './modes3';
 import { FinanceMode, HealthMode, KnowledgeMode, FamilyMode } from './modes4';
-import { ConsoleOverlay, FirstRunGate, shouldShowFirstRun, FIRST_RUN_DISMISS_KEY } from './gap';
+import { ConsoleOverlay, FirstRunGate, shouldShowFirstRun, FIRST_RUN_DISMISS_KEY, ProjectsMode } from './gap';
 import { ArtifactsPanel, artifactsTabLabel } from './artifacts';
 import { NeuralMesh } from './mesh';
 import { initAnalytics, trackPageview } from './analytics';
@@ -578,6 +578,10 @@ function ModeEmpty({ mode, onDemo }) {
 
 function modeComponent(mode, t, ctx) {
   const { demo, live, onDemo, localPct } = ctx || {};
+  // Projects is a workspace surface (Rooms + Missions + activity timeline). Its panels
+  // each fetch real endpoints and render honest empty states with no seed corpus, so it
+  // renders always — you must be able to create your first room before any data exists.
+  if (mode === 'projects') return <ProjectsMode t={t} />;
   const keys = MODE_LIVE_KEYS[mode];
   // Honest gate: show real content only in DEMO, or when this mode's source is live.
   const isLive = demo || (keys && live && keys.some((k) => live[k]));

@@ -1311,6 +1311,44 @@ export function RoomsPanel() {
   </Card>;
 }
 
+// "What it did" — a chronological view over the hash-chained audit log (every real
+// action) merged with the autonomy task queue. Answers the owner's "show me what it
+// did, visually" ask. Honest: empty state when there's no activity, never fabricated.
+export function ActivityTimelinePanel() {
+  const audit = useApi('/api/admin/audit?limit=40', true, true);
+  const tasks = useApi('/tasks?view=history');
+  const rows = arr(audit.d, 'rows');
+  const tks = arr(tasks.d, 'tasks');
+  const items = [
+    ...rows.map((r: any) => ({ ts: r.timestamp || r.ts || '', kind: r.event_type || 'event', text: r.summary || r.content_preview || '', src: 'audit' })),
+    ...tks.map((t: any) => ({ ts: t.created_at || t.updated_at || '', kind: t.kind || 'task', text: (t.title || '') + (t.decision ? ' · ' + t.decision : (t.status ? ' · ' + t.status : '')), src: 'task' })),
+  ].filter((x) => x.ts).sort((a, b) => String(b.ts).localeCompare(String(a.ts))).slice(0, 40);
+  return <Card title="ACTIVITY · what it did" live={asLive(audit.d)} sub={items.length} onReload={() => { audit.reload(); tasks.reload(); }}>
+    <State e={audit.e} loading={audit.loading} n={items.length} />
+    {items.length === 0 && !audit.loading && <Row><span style={{ ...mono, color: 'var(--ink-3)' }}>no activity yet — actions and decisions will appear here</span></Row>}
+    {items.map((it, i) => <Row key={i}>
+      <Tag c={it.src === 'task' ? 'var(--accent-light)' : 'var(--ink-3)'}>{it.kind}</Tag>
+      <span style={{ ...mono, color: 'var(--ink-2)', flex: 1, whiteSpace: 'normal', overflowWrap: 'anywhere' }}>{it.text}</span>
+      <span style={{ ...mono, marginLeft: 'auto', fontSize: 9.5, color: 'var(--ink-3)' }}>{String(it.ts).slice(0, 19)}</span>
+    </Row>)}
+  </Card>;
+}
+
+// PROJECTS — unifies Rooms (topic threads with persistent history + @mention roster)
+// and Missions (governed workspaces) into one surface, plus the activity timeline, so
+// the owner can run multiple subjects in parallel with history. Reuses the existing
+// panels (their data layer already works); this is just the workspace layout.
+export function ProjectsMode(_props: any) {
+  return <div style={{ padding: '16px 20px', maxWidth: 1440, margin: '0 auto' }}>
+    <div style={{ ...mono, fontSize: 11, letterSpacing: '.16em', color: 'var(--ink-3)', marginBottom: 12 }}>PROJECTS · rooms = topic threads with history · missions = governed workspaces</div>
+    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: 16, alignItems: 'start' }}>
+      <RoomsPanel />
+      <MissionsPanel />
+      <ActivityTimelinePanel />
+    </div>
+  </div>;
+}
+
 // H23.16 — network monitor: reads the egress ledger (GET /api/admin/network/calls)
 // and proves LOCAL_ONLY plugins make zero outbound calls. `clean` is the headline:
 // green when no local-only plugin ever made an allowed external call.
