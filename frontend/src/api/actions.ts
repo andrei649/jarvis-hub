@@ -10,7 +10,10 @@
 import { apiGet, apiPost, apiPut } from './client';
 
 // ── response shapes (the fields the HUD consumes) ─────────────────────────────
-export interface KillSwitchState { halted?: boolean; engaged?: boolean; scope?: string; reason?: string }
+// GET /api/security/kill-switch → {global: bool, halted: {agent: reason}}. `halted` is a
+// MAP, not a bool — typing it as boolean is what let the HUD read {} as truthy and show a
+// false "ENGAGED" alarm (2026-07-24 QA finding).
+export interface KillSwitchState { global?: boolean; halted?: Record<string, string>; engaged?: boolean; scope?: string; reason?: string }
 export interface AuditVerifyResult { valid: boolean; first_invalid_id: number | null; entries: number }
 
 export interface NorthStarMetrics {
