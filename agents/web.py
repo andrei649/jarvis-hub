@@ -461,7 +461,7 @@ _NO_STORE_PATHS = {
     "/status", "/dashboard", "/api/agents", "/tasks", "/ticker",
     "/api/cognition", "/api/oauth/status", "/api/oracle/status", "/api/oracle/conflicts",
     "/api/trust/status", "/api/media/session", "/api/media/devices",
-    "/api/self-improvement/status", "/api/swarm/summary",
+    "/api/self-improvement/status", "/api/swarm/summary", "/api/presence/owner",
 }
 
 
@@ -1021,6 +1021,7 @@ from agents.core.routers.skills import router as _skills_router  # noqa: E402
 from agents.core.routers.status import router as _status_router  # noqa: E402
 from agents.core.routers.status import status  # noqa: E402  (re-export: MCP route-tool + drift guard resolve web.status)
 from agents.core.routers.swarm import router as _swarm_router  # noqa: E402
+from agents.core.routers.presence import router as _presence_router  # noqa: E402
 from agents.core.routers.tools import router as _tools_router  # noqa: E402
 from agents.core.routers.webhooks import router as _webhooks_router  # noqa: E402
 from agents.core.routers.worldview import router as _worldview_router  # noqa: E402
@@ -1059,6 +1060,7 @@ app.include_router(_models_llm_router)
 app.include_router(_oauth_router)
 app.include_router(_brain_router)
 app.include_router(_swarm_router)
+app.include_router(_presence_router)
 app.include_router(_memory_hud_router)
 app.include_router(_memory_kg_router)
 app.include_router(_analytics_router)

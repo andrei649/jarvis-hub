@@ -92,6 +92,7 @@ RULES = [
     # autonomy
     ("/autonomy/", "autonomy"),
     ("/api/autonomy/", "autonomy"),
+    ("/api/presence", "autonomy"),  # H34.2 owner desk-presence → away-notify control
     ("/api/actions", "autonomy"),
     ("/api/missions", "autonomy"),  # Mission Workspaces (0.32) — long-horizon workspaces
     ("/api/reflection", "autonomy"),
