@@ -1,0 +1,548 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<!--
+  NERVA · Mission Control — swarm cockpit.
+  One page over GET /api/swarm/summary: the internal agent fleet, the autonomy
+  approval funnel, mission workspaces, workflow runs, the A2A inbox and the
+  dev swarm (Claude / Codex / opencode / Antigravity coordination locks).
+  Steering reuses the existing governed endpoints — this page adds no new
+  mutating surface. Visual language shared with brain.html (Axon-derived).
+-->
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>NERVA · Mission Control</title>
+<link rel="icon" href="data:,">
+<!-- Self-contained: no CDN, no remote fonts/scripts (DESIGN.md §16). -->
+<style>
+*{box-sizing:border-box;}
+:root{--ax:#34d399;--ax2:#6ee7b7;--ax3:#7af0c4;--axr:52,211,153;
+  --amber:#f5b13d;--ambr:245,177,61;--red:#f0645c;--redr:240,100,92;
+  --mono:'JetBrains Mono', ui-monospace, 'SF Mono', SFMono-Regular, Menlo, Consolas, monospace;
+  --sans:'Space Grotesk', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;}
+html,body{margin:0;padding:0;background:#05080a;}
+::selection{background:rgba(var(--axr),0.3);color:#eafff4;}
+::-webkit-scrollbar{width:10px;height:10px;}
+::-webkit-scrollbar-track{background:#05080a;}
+::-webkit-scrollbar-thumb{background:rgba(var(--axr),0.18);border-radius:6px;}
+::-webkit-scrollbar-thumb:hover{background:rgba(var(--axr),0.32);}
+@keyframes mcBlink{0%,100%{opacity:1;}50%{opacity:0.2;}}
+@keyframes mcScan{0%{transform:translateY(-120%);}100%{transform:translateY(760px);}}
+@keyframes mcStreamIn{from{opacity:0;transform:translateX(-10px);background:rgba(var(--axr),0.12);}to{opacity:1;transform:translateX(0);background:transparent;}}
+@keyframes mcCardIn{from{opacity:0;transform:translateY(8px);}to{opacity:1;transform:translateY(0);}}
+body{color:#d7e6dc;font-family:var(--sans);}
+.panel{border:1px solid rgba(var(--axr),0.15);border-radius:14px;background:rgba(9,14,12,0.72);position:relative;}
+.ptitle{font-family:var(--mono);font-size:11px;letter-spacing:0.2em;color:var(--ax);padding:12px 16px 8px;display:flex;align-items:center;gap:8px;justify-content:space-between;}
+.psub{font-family:var(--mono);font-size:10px;letter-spacing:0.08em;color:#5d7268;}
+.led{width:7px;height:7px;border-radius:50%;display:inline-block;}
+.chip{font-family:var(--mono);font-size:10.5px;letter-spacing:0.12em;padding:5px 10px;border:1px solid rgba(var(--axr),0.14);border-radius:7px;color:#a7c2b4;display:inline-flex;align-items:center;gap:7px;white-space:nowrap;}
+.btn{font-family:var(--mono);font-size:10px;letter-spacing:0.12em;padding:5px 10px;border:1px solid rgba(var(--axr),0.25);border-radius:6px;background:rgba(var(--axr),0.08);color:#bfe6d2;cursor:pointer;transition:background .15s,color .15s;}
+.btn:hover{background:rgba(var(--axr),0.2);color:#eafff4;}
+.btn.warn{border-color:rgba(var(--ambr),0.35);background:rgba(var(--ambr),0.07);color:#f0c074;}
+.btn.warn:hover{background:rgba(var(--ambr),0.18);}
+.btn.bad{border-color:rgba(var(--redr),0.35);background:rgba(var(--redr),0.07);color:#f0938d;}
+.btn.bad:hover{background:rgba(var(--redr),0.18);}
+.row{display:flex;align-items:center;gap:10px;padding:8px 16px;border-top:1px solid rgba(var(--axr),0.07);font-family:var(--mono);font-size:11.5px;animation:mcStreamIn .5s ease;}
+.row:hover{background:rgba(var(--axr),0.05);}
+.tag{font-size:9.5px;letter-spacing:0.12em;padding:2px 7px;border-radius:5px;border:1px solid rgba(var(--axr),0.2);color:#8fb3a0;}
+.tag.warn{border-color:rgba(var(--ambr),0.4);color:var(--amber);}
+.tag.bad{border-color:rgba(var(--redr),0.4);color:var(--red);}
+.empty{font-family:var(--mono);font-size:11px;letter-spacing:0.1em;color:#46564e;padding:16px;}
+.mut{color:#5d7268;}
+input.tok{font-family:var(--mono);font-size:10.5px;background:rgba(5,8,10,0.9);border:1px solid rgba(var(--axr),0.2);border-radius:6px;color:#d7e6dc;padding:5px 9px;letter-spacing:0.06em;width:150px;}
+input.tok::placeholder{color:#46564e;}
+</style>
+</head>
+<body>
+<div style="position:relative;min-height:100vh;background:radial-gradient(1300px 660px at 50% -14%, rgba(var(--axr),0.10), transparent 62%), radial-gradient(900px 560px at 92% 6%, rgba(34,200,150,0.05), transparent 60%), #05080a;overflow-x:hidden;">
+
+  <div style="position:fixed;inset:0;pointer-events:none;background-image:linear-gradient(rgba(var(--axr),0.04) 1px, transparent 1px), linear-gradient(90deg, rgba(var(--axr),0.04) 1px, transparent 1px);background-size:46px 46px;-webkit-mask-image:radial-gradient(circle at 50% 24%, black, transparent 76%);mask-image:radial-gradient(circle at 50% 24%, black, transparent 76%);z-index:0;"></div>
+  <div style="position:fixed;left:0;right:0;top:0;height:170px;pointer-events:none;background:linear-gradient(rgba(var(--axr),0.045), transparent);animation:mcScan 9s linear infinite;z-index:1;"></div>
+
+  <div id="page" style="position:relative;z-index:2;max-width:1460px;margin:0 auto;padding:0 26px 30px;">
+
+    <!-- ── header ─────────────────────────────────────────────────────── -->
+    <div style="position:sticky;top:0;z-index:40;display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap;padding:16px 0 13px;backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);background:linear-gradient(180deg, rgba(5,8,10,0.94), rgba(5,8,10,0.32));border-bottom:1px solid rgba(var(--axr),0.1);">
+      <div style="display:flex;align-items:baseline;gap:14px;">
+        <span style="font-family:var(--mono);font-weight:700;font-size:21px;letter-spacing:0.44em;color:#eafff4;text-shadow:0 0 22px rgba(var(--axr),0.55);">NERVA</span>
+        <span style="font-family:var(--mono);font-size:12px;letter-spacing:0.18em;color:#5d7268;white-space:nowrap;">// MISSION CONTROL</span>
+      </div>
+      <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+        <span class="chip" id="cSystem"><span class="led" style="background:#46564e;"></span>SYSTEM</span>
+        <span class="chip" id="cMode"><span class="led" style="background:#46564e;"></span>AUTONOMY —</span>
+        <span class="chip" id="cBudget">INTERRUPTS —</span>
+        <span class="chip" id="cA2a">A2A OFF</span>
+        <span class="chip" id="cAdmin"><span class="led" style="background:#46564e;"></span>ADMIN</span>
+        <span class="chip" id="cFeed"><span class="led" id="feedLed" style="background:var(--ax2);box-shadow:0 0 10px var(--ax);animation:mcBlink 1.5s infinite;"></span><span id="feedTxt">FEED</span></span>
+        <input class="tok" id="tokIn" type="password" placeholder="admin token" title="X-Admin-Token — stored locally (hud.admin_token)">
+      </div>
+    </div>
+
+    <!-- ── swarm map + activity ───────────────────────────────────────── -->
+    <div style="display:grid;grid-template-columns:minmax(0,1fr) 360px;gap:18px;margin-top:18px;align-items:stretch;">
+      <div class="panel" id="mapPanel" style="height:560px;overflow:hidden;background:radial-gradient(760px 480px at 50% 48%, rgba(15,32,24,0.55), rgba(5,9,8,0.92));">
+        <canvas id="swarm" style="position:absolute;inset:0;width:100%;height:100%;display:block;"></canvas>
+        <div style="position:absolute;left:16px;top:14px;width:24px;height:24px;border-left:1px solid rgba(var(--axr),0.4);border-top:1px solid rgba(var(--axr),0.4);pointer-events:none;"></div>
+        <div style="position:absolute;right:16px;top:14px;width:24px;height:24px;border-right:1px solid rgba(var(--axr),0.4);border-top:1px solid rgba(var(--axr),0.4);pointer-events:none;"></div>
+        <div style="position:absolute;left:16px;bottom:14px;width:24px;height:24px;border-left:1px solid rgba(var(--axr),0.4);border-bottom:1px solid rgba(var(--axr),0.4);pointer-events:none;"></div>
+        <div style="position:absolute;right:16px;bottom:14px;width:24px;height:24px;border-right:1px solid rgba(var(--axr),0.4);border-bottom:1px solid rgba(var(--axr),0.4);pointer-events:none;"></div>
+        <div style="position:absolute;left:28px;top:22px;pointer-events:none;">
+          <div style="font-family:var(--mono);font-size:12px;letter-spacing:0.2em;color:var(--ax);">&#9671; SWARM MAP</div>
+          <div style="font-family:var(--mono);font-size:10.5px;letter-spacing:0.06em;color:#5d7268;margin-top:4px;">inner ring &middot; cabinet agents &nbsp;&nbsp; outer arc &middot; dev swarm</div>
+        </div>
+        <div style="position:absolute;left:28px;bottom:22px;display:flex;align-items:center;gap:16px;font-family:var(--mono);font-size:10px;letter-spacing:0.1em;color:#7c8b80;pointer-events:none;">
+          <span style="display:flex;align-items:center;gap:6px;"><span class="led" style="background:var(--ax3);box-shadow:0 0 8px var(--ax);"></span>core</span>
+          <span style="display:flex;align-items:center;gap:6px;"><span class="led" style="background:var(--ax);"></span>agent</span>
+          <span style="display:flex;align-items:center;gap:6px;"><span class="led" style="background:#9ad7ff;"></span>dev agent</span>
+          <span style="display:flex;align-items:center;gap:6px;"><span class="led" style="background:var(--amber);"></span>stale lock</span>
+        </div>
+        <div id="nodeCard" style="display:none;position:absolute;right:22px;top:56px;width:250px;border:1px solid rgba(var(--axr),0.25);border-radius:11px;background:rgba(7,12,10,0.93);padding:12px 14px;font-family:var(--mono);font-size:11px;animation:mcCardIn .25s ease;z-index:5;">
+          <div id="nodeCardTitle" style="font-size:12px;letter-spacing:0.14em;color:#eafff4;margin-bottom:6px;"></div>
+          <div id="nodeCardBody" style="color:#8fb3a0;line-height:1.7;word-break:break-word;"></div>
+        </div>
+      </div>
+
+      <div class="panel" style="height:560px;display:flex;flex-direction:column;overflow:hidden;">
+        <div class="ptitle">&#9654; LIVE ACTIVITY <span class="psub" id="actCount">0 EVENTS</span></div>
+        <div id="feed" style="flex:1;overflow-y:auto;"></div>
+      </div>
+    </div>
+
+    <!-- ── control panels ─────────────────────────────────────────────── -->
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(340px,1fr));gap:18px;margin-top:18px;">
+
+      <div class="panel">
+        <div class="ptitle">&#9673; APPROVALS <span class="psub" id="apCount">—</span></div>
+        <div id="approvals"></div>
+      </div>
+
+      <div class="panel">
+        <div class="ptitle">&#9670; MISSIONS <span class="psub" id="msCount">—</span></div>
+        <div id="missions"></div>
+      </div>
+
+      <div class="panel">
+        <div class="ptitle">&#9648; DEV SWARM <span class="psub" id="devCount">—</span></div>
+        <div id="devlocks"></div>
+      </div>
+
+    </div>
+
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;margin-top:16px;font-family:var(--mono);font-size:10px;letter-spacing:0.14em;color:#46564e;">
+      <span>LOCAL-FIRST &middot; READ FEED /api/swarm/summary &middot; STEERING VIA GOVERNED ENDPOINTS</span>
+      <span id="statusLine">&nbsp;</span>
+    </div>
+
+  </div>
+</div>
+
+<script>
+"use strict";
+const $=id=>document.getElementById(id);
+const esc=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const state={sum:null,approvals:null,adminOk:null,fails:0,prevEvents:{},pulses:[],selected:null,busy:false,a2aItems:null,a2aOpen:false};
+
+/* ── auth: shared HUD tokens (same localStorage keys as the admin page) ── */
+const tok=()=>localStorage.getItem("hud.admin_token")||"";
+const utok=()=>localStorage.getItem("hud.user_token")||"";
+function H(json){
+  const h={};
+  if(json)h["Content-Type"]="application/json";
+  if(tok())h["X-Admin-Token"]=tok();
+  if(utok())h["X-User-Token"]=utok();
+  return h;
+}
+$("tokIn").value=tok();
+$("tokIn").addEventListener("change",()=>{
+  localStorage.setItem("hud.admin_token",$("tokIn").value.trim());
+  state.adminOk=null;          // retry admin feeds with the new token
+  pollAdmin();
+});
+
+/* ── polling ───────────────────────────────────────────────────────────── */
+async function poll(){
+  try{
+    const r=await fetch("/api/swarm/summary",{headers:H(false)});
+    if(!r.ok)throw new Error(String(r.status));
+    state.sum=await r.json();
+    state.fails=0;
+  }catch(e){state.fails++;}
+  renderHeader();renderFeedList();renderMissions();renderDev();
+  if(state.adminOk===false)renderApprovals();  // degraded card from summary
+}
+async function pollAdmin(){
+  if(state.adminOk===false)return;             // muted until the token changes
+  try{
+    const r=await fetch("/autonomy/approvals",{headers:H(false)});
+    if(r.status===401||r.status===403){state.adminOk=false;state.approvals=null;}
+    else if(r.ok){state.adminOk=true;state.approvals=await r.json();}
+  }catch(e){/* transient — keep last state */}
+  renderHeader();renderApprovals();
+}
+setInterval(poll,2000);
+setInterval(pollAdmin,2000);
+poll();pollAdmin();
+
+/* ── actions (existing governed endpoints only) ────────────────────────── */
+function flash(msg,bad){
+  const el=$("statusLine");
+  el.textContent=msg;
+  el.style.color=bad?"var(--red)":"var(--ax2)";
+  setTimeout(()=>{el.textContent=" ";},4000);
+}
+async function act(url,body,label){
+  if(state.busy)return;
+  state.busy=true;
+  try{
+    const r=await fetch(url,{method:"POST",headers:H(true),body:body?JSON.stringify(body):"{}"});
+    if(r.ok){flash(label+" ✓");}
+    else if(r.status===401||r.status===403){flash(label+" ✗ unauthorized — set admin token",true);}
+    else{flash(label+" ✗ ("+r.status+")",true);}
+  }catch(e){flash(label+" ✗ network",true);}
+  state.busy=false;
+  poll();
+  if(state.adminOk!==false)pollAdmin();
+}
+const decide=(id,action)=>act("/autonomy/tasks/"+id+"/decision",{action},"task "+id+" "+action);
+const missionAct=(id,action)=>act("/api/missions/"+id+"/"+action,null,"mission "+id+" "+action);
+async function a2aDecide(id,ok){
+  await act("/api/a2a/inbox/"+id+"/decide",{approve:ok},"a2a "+id+(ok?" approve":" reject"));
+  if(state.a2aOpen)await a2aList();   // refresh the open list after the decision
+}
+window.decide=decide;window.missionAct=missionAct;window.a2aDecide=a2aDecide;
+
+/* ── header LEDs ───────────────────────────────────────────────────────── */
+function setChip(id,ledColor,text,glow){
+  const el=$(id);
+  el.innerHTML='<span class="led" style="background:'+ledColor+';'+(glow?"box-shadow:0 0 9px "+ledColor+";":"")+'"></span>'+text;
+}
+function renderHeader(){
+  const s=state.sum;
+  if(s){
+    if(s.halted===true)setChip("cSystem","var(--red)","SYSTEM HALTED",true);
+    else if(s.initialized)setChip("cSystem","var(--ax2)","SYSTEM LIVE",true);
+    else setChip("cSystem","#46564e","SYSTEM BOOTING");
+    const mode=(s.autonomy&&s.autonomy.mode)?s.autonomy.mode.toUpperCase():"—";
+    setChip("cMode",mode==="OFF"?"#46564e":(mode==="ASK"?"var(--amber)":"var(--ax2)"),"AUTONOMY "+esc(mode),mode!=="OFF");
+    const b=s.autonomy&&s.autonomy.budget;
+    $("cBudget").textContent=b?("INTERRUPTS "+b.remaining+"/"+b.per_day):"INTERRUPTS —";
+    const a=s.a2a||{};
+    $("cA2a").textContent=a.enabled?("A2A ON · "+(a.pending||0)+" PENDING"):"A2A OFF";
+  }
+  if(state.adminOk===true)setChip("cAdmin","var(--ax2)","ADMIN LINKED",true);
+  else if(state.adminOk===false)setChip("cAdmin","var(--amber)","ADMIN LOCKED");
+  else setChip("cAdmin","#46564e","ADMIN");
+  const stale=state.fails>=3;
+  $("feedTxt").textContent=stale?"STALE FEED":"FEED";
+  $("feedLed").style.background=stale?"var(--red)":"var(--ax2)";
+  $("feedLed").style.boxShadow=stale?"0 0 10px var(--red)":"0 0 10px var(--ax)";
+}
+
+/* ── live activity feed ────────────────────────────────────────────────── */
+const seen=new Set();
+function renderFeedList(){
+  const s=state.sum;if(!s)return;
+  const rows=s.activity||[];
+  $("actCount").textContent=rows.length+" EVENTS";
+  const feed=$("feed");
+  if(!rows.length){feed.innerHTML='<div class="empty">no traffic yet — the swarm is quiet</div>';return;}
+  const frag=[];
+  for(const r of rows){
+    const key=r.ts+"|"+r.agent+"|"+r.model+"|"+r.tokens_out;
+    const t=new Date(r.ts||0);
+    const hh=String(t.getHours()).padStart(2,"0")+":"+String(t.getMinutes()).padStart(2,"0")+":"+String(t.getSeconds()).padStart(2,"0");
+    frag.push('<div class="row" data-k="'+esc(key)+'">'
+      +'<span class="mut" style="min-width:58px;">'+hh+'</span>'
+      +'<span style="color:#bfe6d2;min-width:76px;">'+esc(r.agent)+'</span>'
+      +'<span class="mut" style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">'+esc(r.intent||r.channel||"")+'</span>'
+      +'<span class="mut">'+esc(String(r.model).slice(0,22))+'</span>'
+      +'<span style="color:'+(r.ok?"#8fb3a0":"var(--red)")+';min-width:52px;text-align:right;">'+(r.tokens_out||0)+' tk</span>'
+      +'</div>');
+    seen.add(key);
+  }
+  feed.innerHTML=frag.join("");
+}
+
+/* ── approvals (admin feed, degrades to the user-tier preview) ─────────── */
+function taskRow(t,buttons){
+  const rev=t.reversible;
+  const tier=esc(t.tier_name||("T"+t.risk_tier));
+  return '<div class="row" style="flex-wrap:wrap;">'
+    +'<span class="tag '+(rev===false?"bad":(rev===true?"":"warn"))+'">'+(rev===true?"REVERSIBLE":(rev===false?"IRREVERSIBLE":tier))+'</span>'
+    +'<span style="color:#bfe6d2;">'+esc(t.agent||"?")+'</span>'
+    +'<span class="mut" style="flex:1;min-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="'+esc(t.kind||"")+'">'+esc(t.title||t.kind||("task "+t.id))+'</span>'
+    +(buttons?('<span style="display:flex;gap:6px;">'
+      +'<button class="btn" onclick="decide('+Number(t.id)+',\'accept\')">ACCEPT</button>'
+      +'<button class="btn warn" onclick="decide('+Number(t.id)+',\'defer\')">DEFER</button>'
+      +'<button class="btn bad" onclick="decide('+Number(t.id)+',\'reject\')">REJECT</button>'
+      +'</span>'):'')
+    +'</div>';
+}
+function renderApprovals(){
+  const el=$("approvals");
+  const s=state.sum;
+  if(state.adminOk&&state.approvals){
+    const a=state.approvals;
+    $("apCount").textContent=(a.counts?a.counts.total:0)+" PENDING";
+    let html="";
+    if(a.irreversible&&a.irreversible.length){
+      html+='<div class="psub" style="padding:4px 16px;color:var(--red);">NEEDS SCRUTINY — IRREVERSIBLE</div>';
+      html+=a.irreversible.map(t=>taskRow(t,true)).join("");
+    }
+    if(a.reversible&&a.reversible.length){
+      html+='<div class="psub" style="padding:4px 16px;">REVERSIBLE</div>';
+      html+=a.reversible.map(t=>taskRow(t,true)).join("");
+    }
+    html+=a2aBlock();
+    el.innerHTML=html||'<div class="empty">approval queue clear — nothing waits on you</div>';
+    return;
+  }
+  // degraded: user-tier preview from the summary (no payloads)
+  const au=(s&&s.autonomy)||{};
+  $("apCount").textContent=(au.pending_count||0)+" PENDING";
+  let html="";
+  if(state.adminOk===false){
+    html+='<div class="psub" style="padding:6px 16px;color:var(--amber);">ADMIN LOCKED — enter the admin token (top right) to act on approvals</div>';
+  }
+  const rows=au.pending_preview||[];
+  if(rows.length)html+=rows.map(t=>taskRow(t,false)).join("");
+  html+=a2aBlock();
+  el.innerHTML=html||'<div class="empty">approval queue clear — nothing waits on you</div>';
+}
+/* A2A rows live in state (not transient DOM): renderApprovals() rewrites the
+   card's innerHTML on every 2s poll tick, so anything appended outside the
+   render pass would be wiped before the admin could click it. */
+function a2aBlock(){
+  const s=state.sum;
+  const a=(s&&s.a2a)||{};
+  const openItems=state.a2aOpen?(state.a2aItems||[]):null;
+  if(!a.enabled||(!a.pending&&!(openItems&&openItems.length)))return "";
+  let html='<div class="psub" style="padding:6px 16px;">A2A INBOX — '+(a.pending||0)+' pending peer task'+(a.pending===1?"":"s")+'</div>';
+  if(openItems){
+    if(!openItems.length)html+='<div class="empty">a2a inbox empty</div>';
+    html+=openItems.map(t=>'<div class="row">'
+      +'<span class="tag warn">A2A</span>'
+      +'<span style="color:#bfe6d2;">'+esc(t.peer_id||t.peer||"peer")+'</span>'
+      +'<span class="mut" style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">'+esc(t.title||t.kind||t.id)+'</span>'
+      +'<span style="display:flex;gap:6px;">'
+      +'<button class="btn" onclick="a2aDecide(\''+esc(t.id)+'\',true)">APPROVE</button>'
+      +'<button class="btn bad" onclick="a2aDecide(\''+esc(t.id)+'\',false)">REJECT</button>'
+      +'</span></div>').join("");
+  }else{
+    html+='<div class="row"><span class="mut" style="flex:1;">inbound peer tasks await decision</span>'
+      +'<button class="btn" onclick="a2aList()">OPEN LIST</button></div>';
+  }
+  return html;
+}
+async function a2aList(){
+  try{
+    const r=await fetch("/api/a2a/inbox?status=pending",{headers:H(false)});
+    if(!r.ok){
+      flash("a2a inbox ✗ ("+r.status+(r.status===401||r.status===403?" — set admin token":"")+")",true);
+      return;
+    }
+    const data=await r.json();
+    state.a2aItems=data.inbox||[];
+    state.a2aOpen=true;
+  }catch(e){flash("a2a inbox ✗ network",true);return;}
+  renderApprovals();
+}
+window.a2aList=a2aList;
+
+/* ── missions ──────────────────────────────────────────────────────────── */
+/* Keys mirror MissionStatus (agents/core/autonomy/missions.py) + its legal
+   transitions: PLANNED→start/cancel, ACTIVE→pause/complete/cancel, PAUSED→resume/cancel. */
+const MISSION_ACTIONS={planned:["start","cancel"],active:["pause","complete","cancel"],paused:["resume","cancel"],};
+function renderMissions(){
+  const el=$("missions");
+  const s=state.sum;
+  const list=(s&&s.missions)||[];
+  $("msCount").textContent=list.length+" WORKSPACES";
+  if(!list.length){el.innerHTML='<div class="empty">no mission workspaces — create one from the HUD console</div>';return;}
+  el.innerHTML=list.map(m=>{
+    const st=String(m.status||"?");
+    const acts=MISSION_ACTIONS[st]||[];
+    return '<div class="row" style="flex-wrap:wrap;">'
+      +'<span class="tag'+(st==="active"?"":(st==="failed"||st==="cancelled"?" bad":" warn"))+'">'+esc(st.toUpperCase())+'</span>'
+      +'<span style="color:#bfe6d2;flex:1;min-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">'+esc(m.title||("mission "+m.id))+'</span>'
+      +'<span class="mut">'+(m.steps_used??"?")+"/"+(m.max_steps??"?")+' steps</span>'
+      +'<span style="display:flex;gap:6px;">'
+      +acts.map(a=>'<button class="btn'+(a==="cancel"?" bad":"")+'" onclick="missionAct('+Number(m.id)+',\''+a+'\')">'+a.toUpperCase()+'</button>').join("")
+      +'</span></div>';
+  }).join("");
+}
+
+/* ── dev swarm locks ───────────────────────────────────────────────────── */
+function renderDev(){
+  const el=$("devlocks");
+  const s=state.sum;
+  const d=(s&&s.dev_locks)||{agents:[],components:[],known:[],available:false};
+  const live=d.agents.filter(a=>!a.stale).length;
+  $("devCount").textContent=live+" ACTIVE · "+d.components.length+" FILE LOCKS";
+  let html="";
+  if(!d.available){
+    html+='<div class="psub" style="padding:6px 16px;color:#5d7268;">lock dir absent (memory_logs/) — dev locks are local-only per machine</div>';
+  }
+  const known=d.known||[];
+  const byAgent={};for(const a of d.agents)byAgent[a.agent]=a;
+  html+='<div style="display:flex;gap:8px;flex-wrap:wrap;padding:8px 16px;">'
+    +known.map(k=>{
+      const lk=byAgent[k];
+      const col=lk?(lk.stale?"var(--amber)":"#9ad7ff"):"#2b3a33";
+      const glow=lk&&!lk.stale?"box-shadow:0 0 9px "+col+";":"";
+      return '<span class="chip" title="'+esc(lk?lk.message:"idle")+'"><span class="led" style="background:'+col+';'+glow+'"></span>'+esc(k.toUpperCase())+(lk?(lk.stale?" · STALE":" · ACTIVE"):"")+'</span>';
+    }).join("")+'</div>';
+  for(const a of d.agents){
+    if(!known.includes(a.agent)){
+      html+='<div class="row"><span class="tag">'+esc(a.agent)+'</span><span class="mut" style="flex:1;">'+esc(a.message)+'</span><span class="mut">'+fmtAge(a.age_s)+'</span></div>';
+    }
+  }
+  if(d.components.length){
+    html+='<div class="psub" style="padding:4px 16px;">FILE LOCKS</div>';
+    html+=d.components.map(c=>'<div class="row" title="'+esc(c.path)+'">'
+      +'<span class="tag'+(c.stale?" warn":"")+'">'+esc(c.entity)+'</span>'
+      +'<span style="color:#bfe6d2;">'+esc(c.component)+'</span>'
+      +'<span class="mut" style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">'+esc(c.task)+'</span>'
+      +'<span class="mut">'+fmtAge(c.age_s)+(c.stale?" · STALE":"")+'</span>'
+      +'</div>').join("");
+  }else if(d.available){
+    html+='<div class="empty">no file locks — dev swarm idle or coordinating via draft PRs</div>';
+  }
+  el.innerHTML=html;
+}
+const fmtAge=s=>s<90?(s+"s"):(s<5400?Math.round(s/60)+"m":Math.round(s/3600)+"h");
+
+/* ── swarm map (canvas) ────────────────────────────────────────────────── */
+const canvas=$("swarm"),ctx=canvas.getContext("2d");
+let nodes=[];// {id,kind:core|agent|dev|file,x,y,r,glow,label,meta}
+function resize(){
+  const p=$("mapPanel"),dpr=window.devicePixelRatio||1;
+  canvas.width=p.clientWidth*dpr;canvas.height=p.clientHeight*dpr;
+  ctx.setTransform(dpr,0,0,dpr,0,0);
+}
+window.addEventListener("resize",resize);resize();
+
+function layout(){
+  const s=state.sum;if(!s)return;
+  const W=canvas.clientWidth||$("mapPanel").clientWidth,Hh=canvas.clientHeight||$("mapPanel").clientHeight;
+  const cx=W*0.44,cy=Hh*0.52;
+  nodes=[{id:"nerva",kind:"core",x:cx,y:cy,r:26,label:"NERVA",meta:{}}];
+  const ag=(s.agents||[]).slice(0,24);
+  const R=Math.min(W,Hh)*0.30;
+  ag.forEach((a,i)=>{
+    const th=(i/Math.max(1,ag.length))*Math.PI*2-Math.PI/2;
+    const active=a.last_ts&&(Date.now()-a.last_ts)<60000;
+    // flash when the per-agent event counter moved since the last poll
+    const bump=state.prevEvents[a.id]!==undefined&&a.events>state.prevEvents[a.id];
+    state.prevEvents[a.id]=a.events;
+    if(bump)state.pulses.push({x:cx,y:cy,tx:cx+Math.cos(th)*R,ty:cy+Math.sin(th)*R,t:0});
+    nodes.push({id:a.id,kind:"agent",x:cx+Math.cos(th)*R,y:cy+Math.sin(th)*R,
+      r:5+Math.min(7,Math.log2((a.events||0)+1)),glow:active,label:a.id,meta:a});
+  });
+  const d=s.dev_locks||{known:[],agents:[],components:[]};
+  const known=d.known||[];
+  const byAgent={};for(const a of (d.agents||[]))byAgent[a.agent]=a;
+  const Rd=Math.min(W,Hh)*0.44;
+  known.forEach((k,i)=>{
+    const th=(-0.42+0.28*i)+Math.PI*(-0.5);
+    const lk=byAgent[k];
+    const x=W*0.80,y=Hh*(0.18+0.20*i);
+    nodes.push({id:"dev:"+k,kind:"dev",x,y,r:8,dev:lk?(lk.stale?"stale":"active"):"idle",label:k,meta:lk||{}});
+    void th;void Rd;
+  });
+  (d.components||[]).slice(0,6).forEach((c,i)=>{
+    const owner=nodes.find(n=>n.id==="dev:"+c.entity);
+    const x=(owner?owner.x:W*0.8)-70,y=(owner?owner.y:Hh*0.3)+26+((i%3)*22);
+    nodes.push({id:"file:"+c.path,kind:"file",x,y,r:3.5,stale:c.stale,label:c.component,owner:owner?owner.id:null,meta:c});
+  });
+}
+function draw(){
+  const W=canvas.clientWidth,Hh=canvas.clientHeight;
+  ctx.clearRect(0,0,W,Hh);
+  const core=nodes[0];if(!core){requestAnimationFrame(draw);return;}
+  const t=Date.now()/1000;
+  // edges core→agents
+  for(const n of nodes){
+    if(n.kind==="agent"){
+      ctx.strokeStyle=n.glow?"rgba(52,211,153,0.35)":"rgba(52,211,153,0.10)";
+      ctx.lineWidth=n.glow?1.4:0.7;
+      ctx.beginPath();ctx.moveTo(core.x,core.y);ctx.lineTo(n.x,n.y);ctx.stroke();
+    }
+    if(n.kind==="file"&&n.owner){
+      const o=nodes.find(m=>m.id===n.owner);
+      if(o){ctx.strokeStyle="rgba(154,215,255,0.25)";ctx.lineWidth=0.8;
+        ctx.beginPath();ctx.moveTo(o.x,o.y);ctx.lineTo(n.x,n.y);ctx.stroke();}
+    }
+  }
+  // activity pulses
+  state.pulses=state.pulses.filter(p=>p.t<1);
+  for(const p of state.pulses){
+    p.t+=0.03;
+    const x=p.x+(p.tx-p.x)*p.t,y=p.y+(p.ty-p.y)*p.t;
+    ctx.fillStyle="rgba(122,240,196,"+(1-p.t)+")";
+    ctx.beginPath();ctx.arc(x,y,2.6,0,Math.PI*2);ctx.fill();
+  }
+  // nodes
+  for(const n of nodes){
+    if(n.kind==="core"){
+      const pulse=1+Math.sin(t*2)*0.06;
+      const g=ctx.createRadialGradient(n.x,n.y,2,n.x,n.y,n.r*2.4*pulse);
+      g.addColorStop(0,"rgba(122,240,196,0.9)");g.addColorStop(1,"rgba(52,211,153,0)");
+      ctx.fillStyle=g;ctx.beginPath();ctx.arc(n.x,n.y,n.r*2.4*pulse,0,Math.PI*2);ctx.fill();
+      ctx.fillStyle="#7af0c4";ctx.beginPath();ctx.arc(n.x,n.y,7,0,Math.PI*2);ctx.fill();
+      ctx.fillStyle="rgba(234,255,244,0.9)";ctx.font="700 11px 'JetBrains Mono',monospace";
+      ctx.textAlign="center";ctx.fillText("NERVA",n.x,n.y+n.r+18);
+    }else if(n.kind==="agent"){
+      ctx.fillStyle=n.glow?"#6ee7b7":"rgba(31,159,120,0.85)";
+      if(n.glow){ctx.shadowColor="#34d399";ctx.shadowBlur=12;}
+      ctx.beginPath();ctx.arc(n.x,n.y,n.r,0,Math.PI*2);ctx.fill();
+      ctx.shadowBlur=0;
+      ctx.fillStyle="rgba(167,194,180,0.75)";ctx.font="9.5px 'JetBrains Mono',monospace";
+      ctx.textAlign="center";ctx.fillText(n.label,n.x,n.y+n.r+11);
+    }else if(n.kind==="dev"){
+      const col=n.dev==="active"?"#9ad7ff":(n.dev==="stale"?"#f5b13d":"#2b3a33");
+      if(n.dev==="active"){ctx.shadowColor=col;ctx.shadowBlur=10+Math.sin(t*3)*4;}
+      ctx.fillStyle=col;
+      ctx.beginPath();
+      // diamond = dev agent
+      ctx.moveTo(n.x,n.y-n.r);ctx.lineTo(n.x+n.r,n.y);ctx.lineTo(n.x,n.y+n.r);ctx.lineTo(n.x-n.r,n.y);
+      ctx.closePath();ctx.fill();ctx.shadowBlur=0;
+      ctx.fillStyle="rgba(167,194,180,0.85)";ctx.font="10px 'JetBrains Mono',monospace";
+      ctx.textAlign="left";ctx.fillText(n.label.toUpperCase(),n.x+n.r+7,n.y+3);
+    }else if(n.kind==="file"){
+      ctx.fillStyle=n.stale?"rgba(245,177,61,0.8)":"rgba(154,215,255,0.8)";
+      ctx.fillRect(n.x-3,n.y-3,6,6);
+      ctx.fillStyle="rgba(124,139,128,0.8)";ctx.font="8.5px 'JetBrains Mono',monospace";
+      ctx.textAlign="right";ctx.fillText(n.label.slice(0,18),n.x-7,n.y+3);
+    }
+  }
+  requestAnimationFrame(draw);
+}
+setInterval(layout,2000);layout();requestAnimationFrame(draw);
+
+canvas.addEventListener("click",ev=>{
+  const rect=canvas.getBoundingClientRect();
+  const x=ev.clientX-rect.left,y=ev.clientY-rect.top;
+  let hit=null;
+  for(const n of nodes){const dx=n.x-x,dy=n.y-y;if(Math.hypot(dx,dy)<Math.max(12,n.r+6)){hit=n;break;}}
+  const card=$("nodeCard");
+  if(!hit||hit.kind==="core"){card.style.display="none";return;}
+  $("nodeCardTitle").textContent=(hit.kind==="dev"?"DEV · ":"")+hit.label;
+  let body="";
+  if(hit.kind==="agent"){
+    const m=hit.meta;
+    body="model: "+esc(m.model||"—")+"<br>events: "+(m.events||0)+"<br>tokens out: "+(m.tokens_out||0)
+      +"<br>cost: "+(m.cost_eur||0)+" €<br>last: "+(m.last_ts?new Date(m.last_ts).toLocaleTimeString():"idle");
+  }else if(hit.kind==="dev"){
+    const m=hit.meta;
+    body=m.agent?("lock: "+esc(m.message||"")+"<br>since: "+esc(m.since||"")+"<br>age: "+fmtAge(m.age_s||0)+(m.stale?"<br><span style='color:var(--amber)'>STALE</span>":"")):"idle — no session lock";
+  }else if(hit.kind==="file"){
+    const m=hit.meta;
+    body="locked by: "+esc(m.entity)+"<br>task: "+esc(m.task||"—")+"<br>age: "+fmtAge(m.age_s||0);
+  }
+  $("nodeCardBody").innerHTML=body;
+  card.style.display="block";
+});
+</script>
+</body>
+</html>

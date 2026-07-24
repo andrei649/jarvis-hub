@@ -131,6 +131,8 @@ RULES = [
     ("/api/digest", "observe"),
     ("/brain", "observe"),
     ("/api/brain", "observe"),  # neural-mesh brain (live agents+models)
+    ("/mission-control", "observe"),  # H34.1 Mission Control standalone page (swarm cockpit)
+    ("/api/swarm", "observe"),  # H34.1 aggregated swarm feed driving Mission Control
     ("/api/health/components", "observe"),
     # interop (a2a / mcp client mgmt / webhooks / external write-back + social)
     ("/api/a2a/", "interop"),

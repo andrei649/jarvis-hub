@@ -204,6 +204,13 @@ retaining Reject/Defer. Evidence: `operator-contract.test.ts`, `operator-panel.t
 `gap-panels.test.tsx`, `approvalsDesktopBoundary.test.ts`, and the strengthened
 `tests/test_hud_v2_parity.py` caller gate.
 
+**H34.1 Mission Control (2026-07-24):** the swarm cockpit ships as a **standalone
+brain.html-pattern page** at `/mission-control` (self-contained dark HUD; polls the new read-only
+`GET /api/swarm/summary`; steering reuses the existing governed autonomy/missions/A2A endpoints
+with the shared `hud.admin_token`). Both routes are mapped to `observe` in the parity RULES. A
+React `SwarmPanel` inside Console → Observe is the queued follow-up (**H34.4** in `BACKLOG.md`)
+so the cockpit becomes one keystroke from chat; the standalone page stays either way.
+
 ---
 *Parity gate (`tests/test_hud_v2_parity.py`) tracks all routes → every one is mapped to a v2
 surface or `NOT_IN_HUD`, so nothing above can silently disappear — these items are about depth, not
