@@ -90,11 +90,12 @@ def read_dev_locks(now: float | None = None) -> dict:
                     "age_s": age,
                     "stale": age > _STALE_TIMEOUT,
                 })
-            except Exception:
-                continue  # corrupt/foreign file — skip, never fail the feed
+            except (OSError, ValueError, AttributeError):
+                # corrupt/foreign/non-object file — skip, never fail the feed
+                continue
         try:
             state = json.loads((_LOCKS_DIR / "lock_state.json").read_text(encoding="utf-8"))
-        except Exception:
+        except (OSError, ValueError):
             state = {}
         if isinstance(state, dict):
             for path, info in state.items():
