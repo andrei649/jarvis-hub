@@ -94,8 +94,15 @@ class Task:
 class TaskQueue:
     def __init__(self, db_path: Optional[str] = None):
         if db_path is None:
-            DEFAULT_DB.parent.mkdir(parents=True, exist_ok=True)
-            db_path = str(DEFAULT_DB)
+            # Resolve at init (not module import) so a JARVIS_HOME set *after* this
+            # module was imported is honored — pytest's conftest redirects
+            # JARVIS_HOME to a temp dir, but a stale module-level binding pointed a
+            # test's queue at the production autonomy.db, which is how test fixtures
+            # reached the live Decision Inbox (2026-07-24 QA finding). Lazy resolution
+            # makes the redirect effective regardless of import order.
+            default = data_path("autonomy.db")
+            default.parent.mkdir(parents=True, exist_ok=True)
+            db_path = str(default)
         self.db_path = db_path
         self._conn: Optional[sqlite3.Connection] = None
         # Guard concurrent access; the autonomy worker calls queue methods
