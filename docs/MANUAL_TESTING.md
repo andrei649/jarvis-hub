@@ -18,6 +18,9 @@ real-world wiring) · ⚠️ partially covered · ❌ no automated coverage (tes
 > **Driving it with an agent?** [`docs/COWORK_QA_RUNBOOK.md`](COWORK_QA_RUNBOOK.md) tells a Claude
 > Cowork session how to boot Nerva, drive the browser, and run the credential-free subset of this
 > checklist + the [`OWNER_TEST_DRIVE.md`](OWNER_TEST_DRIVE.md) sessions, then hand back a triaged report.
+> It carries a **paste-ready launch prompt** (§8) and, for the current pass, the **regression list
+> (§3b)** and the **new surfaces (§4b)** that landed since the last run. Start every repeat run with
+> **§R** below — re-proving the previous run's fixes on real hardware outranks new coverage.
 
 ---
 
@@ -36,10 +39,12 @@ real-world wiring) · ⚠️ partially covered · ❌ no automated coverage (tes
 | LLM backend + model | e.g. LM Studio · `google/gemma-4-12b` |
 | Services up | Qdrant ☐ · Neo4j ☐ · n8n ☐ |
 | AI-OS host seams | Chromium ☐ · Windows UIA ☐ · HA ☐ · Frigate ☐ · media devices (2+) ☐ |
+| Previous run (baseline) | [`docs/qa-runs/2026-07-24-cowork-run.md`](qa-runs/2026-07-24-cowork-run.md) — v0.11.0 · `029da4c9` · ✗ not cleared, 3 fabrication blockers |
 
 | § | Area | Pass / Total | Open blockers |
 |---|---|---|---|
 | ⭐ | Governed demo (§B0) | pass ☐ | |
+| R | Regression — prior-run findings | / 9 | |
 | A | Setup & onboarding | / | |
 | B | Core chat & routing | / | |
 | B2 | Per-agent smoke | / 16 | |
@@ -107,6 +112,14 @@ Prereq: working LLM backend.
 
 One signature action per agent against a **real** backend. Tick each; note any that misroute, error, or claim a capability they don't have.
 
+> **Grade every row against the fabrication pattern, not just against "did it answer".** The
+> 2026-07-24 run found Pepper, Steve and Gecko each narrating their SOUL-described capability as
+> completed fact with the underlying connector absent — three BLOCKERs from one root cause. #721 added
+> a data-grounding rail to the prompt path (`tests/test_data_grounding.py`), but per-agent SOULs still
+> describe those capabilities and a weak local model can still slip. For any "read / report / status"
+> answer, check it against the surface that *is* correctly grounded (the TODAY widget, the SYSTEM
+> sidebar, the ticker, `/status`). **Divergence = the agent fabricated.** Re-tests: §R R1–R3.
+
 - [ ] **Jarvis** — synthesizes a multi-domain prompt into one coherent answer
 - [ ] **Friday** — morning brief (weather + news + market signal)
 - [ ] **Pepper** — calendar read + Gmail triage summary 🔑
@@ -151,6 +164,24 @@ the live round-trip.**
 - [ ] **Action-Level Approval (H10.18)** ⚠️👁 — Pending tool-calls show in the live
   tab with a dry-run preview; Approve/Reject each; confirm a blocked tool flow
   unblocks on approval. `GET /api/actions/pending`, `POST /api/actions/{id}/decide`.
+- [ ] **Mission Control — swarm cockpit (H34.1)** ⚠️👁 — Open `/mission-control` (standalone page,
+  2s polling). Every chip agrees with its own API: roster + tracer activity, autonomy mode/stats/
+  **interrupt budget**, missions, workflow runs, sub-agents, A2A inbox, kill-switch, dev-swarm locks,
+  and the **OWNER** presence chip. Cross-check against `GET /api/swarm/summary`. **Payload-free:** the
+  approvals card shows counts + a whitelisted preview and **never** a task `payload`/`result` — any
+  draft body or tool result on this page is a finding. Without an admin token it must *degrade* to
+  counts, not error. Approve one item here (`POST /autonomy/tasks/{id}/decision`) and confirm it
+  reaches the audit log.
+- [ ] **Projects workspace (H34.6)** 👁 — The **Projects / Proiecte** mode (nav rail + command
+  palette). Create **two rooms on different subjects**, converse in each, `@mention` a specific agent,
+  then reload: both histories persist, are switchable, and the mention routed to the named agent.
+  Create a **Mission** with a budget → `start/pause/resume`, finish a step, confirm the budget bound
+  (409 on overrun) and the audit trail on `GET /api/missions/{id}`. Reopen a past chat via **Sessions**.
+- [ ] **Activity timeline — "what it did" (H34.6)** 👁 — After running a governed task (approve one,
+  reject one), the ACTIVITY card merges `GET /api/admin/audit` (admin) with `GET /tasks?view=history`
+  (user), newest-first, under an all/audit/tasks filter. Confirm real timestamps, the decisions you
+  actually made, **titles/decisions/status only — never payload/result**, and an honest "no activity
+  yet" when there is nothing.
 
 ---
 
@@ -194,6 +225,14 @@ Prereq: working LLM for agent steps; transform/guardrail steps are deterministic
 - [ ] **Escalation channels (H12.11)** 🔑 — Configure `autonomy.escalation_channels`;
   `POST /api/autonomy/escalate` delivers to the allowed channels only (Slack/Discord/
   WhatsApp/…), best-effort. Verify each configured channel actually receives it.
+- [ ] **Desk presence + away-notify (H34.2)** ⚠️ — With **no** host daemon, `GET /api/presence/owner`
+  reads `unknown` and behavior is unchanged (fail-calm — verify this first; it is the safety property).
+  Then `POST /api/presence/owner` (admin) with `{"state":"away","source":"manual-qa","idle_seconds":900}`:
+  the Mission Control **OWNER** chip gains the `· AWAY→ESC` marker, and a decision card fans out to
+  the governed escalation channels (Telegram excluded) **without spending an extra interrupt slot** —
+  `GET /api/metrics/north-star` `interrupt_budget` still ≤4/day. An unsupported state → **422** with a
+  static message (no stack trace); `GET` is user-tier, `POST` is admin-tier. Let the TTL expire and
+  confirm a **stale** signal reads as *not away*. (Escalation delivery itself is 🔑 — skip if no channel.)
 - [ ] **NL scheduling (H10.27)** ⚠️ — `POST /api/schedule/parse` with "every weekday
   at 7am" / "în fiecare luni la 9" → correct cron. Then schedule a real job and
   confirm **it actually fires** at the time (needs `apscheduler` installed).
@@ -326,10 +365,53 @@ Each needs a real token/account and a live round-trip (send → receive → repl
 
 ---
 
+## R. Regression — findings from the previous run
+
+> Carry this section forward between runs: every fix that closed a prior finding gets re-proved on
+> real hardware before the finding is considered closed. The list below is the **2026-07-24** run
+> ([`docs/qa-runs/2026-07-24-cowork-run.md`](qa-runs/2026-07-24-cowork-run.md)); its fixes were all
+> written in a remote sandbox that cannot run a model, a browser, or this hardware. Verdict each row
+> **HELD / REGRESSED / STILL OPEN** with evidence. Full repro steps: [`COWORK_QA_RUNBOOK.md`](COWORK_QA_RUNBOOK.md) §3b.
+
+- [ ] **R1 — Pepper no longer fabricates a calendar** 🤖 (BLOCKER in run 1; fix #721 grounding rail).
+  With no calendar OAuth, "Ce am pe agenda azi?" / "What's on my plate today?" must answer honestly and
+  agree with the TODAY widget. Any invented meeting, family conflict, or claimed autonomous action is
+  still a **BLOCKER**.
+- [ ] **R2 — Steve no longer fabricates a health report** 🤖 (BLOCKER in run 1; fix #721). With
+  Qdrant/Neo4j/n8n **stopped**, the report must name *this* host and real VRAM/timestamp, and report
+  those services **down** — not the docs' reference rig ("Bonobo / Pi 5") with everything "Online".
+- [ ] **R3 — Gecko no longer invents balances** 🤖 (BLOCKER in run 1; fix #721). With no connector:
+  an honest "not connected", or a real read with the IBAN masked `…NNNN`. Never invented figures.
+- [ ] **R4 — model self-report is live, not configured** 🤖 (fix #723 `llm_control.py`). Load a
+  non-default model in LM Studio; chat, the HUD badge and `/status` `loaded_model` must all agree.
+- [ ] **R5 — test fixtures can't reach the live Decision Inbox** (fix #723 `autonomy/queue.py`). Note
+  the inbox count, run the full suite, reload: the count must not grow. Clear the **pre-existing** junk
+  by hand — the fix only prevents new leaks.
+- [ ] **R6 — transcript survives a reload** 👁 (fix #723 `app.tsx`, built + vitest-green but never
+  browser-verified). Send a turn, get the reply, hard-refresh → both still rendered. Fresh session =
+  honest empty pane; demo mode still shows its seeded corpus.
+- [ ] **R7 — Kill-Switch card reflects live API state** 👁 (fix #723 `gap.tsx` / `modes.tsx`). Nothing
+  halted → "ARMED · operational", never a false red "ENGAGED". Engage → disengage and watch it follow
+  `GET /api/security/kill-switch`.
+- [ ] **R8 — reject click refreshes the Console list** 👁 (**not fixed — expected to reproduce**). The
+  reject registers server-side (`GET /api/metrics/north-star` → `rejected`); the list just didn't
+  update. Confirm and file once.
+- [ ] **R9 — memory/recall without Ollama** (**not fixed — expected to reproduce**). With only LM
+  Studio running, "Remember: …" fails while "Note for later: …" works — recall intents route through
+  the `ollama-howard` half of `llm_backend`. Re-confirm, and note whether it is now discoverable in
+  onboarding/settings rather than only by hitting the failure.
+- [ ] **Audit hash-chain verification** — never confirmed in run 1. `GET /api/security/audit/verify`
+  → `{valid, first_invalid_id}`. This closes the last open item of the ⭐B0 demo.
+- [ ] **Cold-navigation "server unreachable" flash** 👁 (cosmetic; expected to reproduce —
+  `frontend/src/shell.tsx:42,204` assert OFFLINE before the first successful poll).
+
+---
+
 ## J. Regression smoke (each release)
 
-- [ ] `pytest tests/` is green — collected count matches `project-status.json` (**5,084** on this
-  revision) and any declared skips are explained in the run output. `apscheduler` is bundled in
+- [ ] `pytest tests/` is green — collected count matches `project-status.json` (**5,406** backend on
+  this revision; frontend **373** vitest, mobile **96**) and any declared skips are explained in the
+  run output. `apscheduler` is bundled in
   `requirements-beta.txt`, so the suite runs clean from the one-command install
   (`./install.sh` / `INSTALL.bat`).
 - [ ] `GET /status` → `ok`. HUD loads. A chat round-trip works.

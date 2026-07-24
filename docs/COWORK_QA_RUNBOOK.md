@@ -14,13 +14,43 @@
 
 ---
 
+## Run 2 — what changed since the first pass (read this first)
+
+The first run (2026-07-24, [`docs/qa-runs/2026-07-24-cowork-run.md`](qa-runs/2026-07-24-cowork-run.md))
+was driven by Cowork on the owner's **RTX 5090 box** against `029da4c9`. It found 3 fabrication
+BLOCKERS and left most of the checklist untouched. Everything below is the **delta you are testing
+this time** — read the previous run report before you start; it is the baseline you are re-measuring
+against.
+
+| | Run 1 (2026-07-24) | Run 2 (this pass) |
+|---|---|---|
+| Build | `029da4c9` · v0.11.0 | **≥ `06cf011`** (post-H34.2) · v0.11.0 |
+| Suite | not re-run in-session | backend **5,406** · frontend **373** · mobile **96** (`project-status.json`) |
+| Host | RTX 5090 laptop · LM Studio (`gemma-4-12b` / `qwen3.6-35b-a3b`) | same box — **use it, it is the point of the run** |
+| Verdict | ✗ not cleared — 3 blockers | to be determined |
+
+**Three things landed since, and they are the priority of this run:**
+
+1. **Fixes for run 1's findings** → the **regression pass, §3b**. Every one of them was written and
+   merged *without* being reproducible in the remote sandbox — the RTX box is the only place they can
+   actually be proven. **If you run nothing else, run §3b.**
+2. **New surfaces that did not exist in run 1** → **§4b**: Mission Control (#720), the Projects
+   workspace + activity timeline (#724), and desk presence + away-notify (#726). Run 1 recorded their
+   404s as build-age artifacts; they are live now and have never been driven by a human.
+3. **Nothing has closed the coverage gaps** — §C HUD tabs, §D workflows, §G security, §H memory/RAG
+   and §I mobile were essentially untested in run 1. After §3b and §4b, spend the remaining budget
+   **there**, not on re-driving the parts run 1 already covered (Sessions 0/1, the B0 mechanics).
+
+---
+
 ## 0. TL;DR for the Cowork session
 
 1. **Boot** Nerva on `:8080` with a working model backend and the cognition brain **on**.
 2. **Sanity gate** — `/readyz` + one real chat turn + the offline suite green. If this fails, stop and report; don't test on a broken boot.
-3. **Drive** the [`OWNER_TEST_DRIVE.md`](OWNER_TEST_DRIVE.md) sessions in a real browser (Chromium is preinstalled), grading each interaction and capturing every deviation in the `DID/GOT/EXPECTED/HURT` format.
-4. **Audit** the no-secrets-needed rows of [`MANUAL_TESTING.md`](MANUAL_TESTING.md) §§A, B, C, D, E, G, H (skip anything marked 🔑 you don't have credentials for — record it as **skipped**, never as passed).
-5. **Report** — produce a triaged findings file (blocker / annoying / cosmetic) plus a filled §0 run record, and open it as a draft PR or paste it back, per the owner's preference.
+3. **Regression pass (§3b) — highest value, do it before anything else.** Re-run the 2026-07-24 findings against their fixes: the three fabrication blockers, the stale model report, the inbox leak, transcript rehydration, the kill-switch display.
+4. **Drive** the [`OWNER_TEST_DRIVE.md`](OWNER_TEST_DRIVE.md) sessions in a real browser (Chromium is preinstalled), grading each interaction and capturing every deviation in the `DID/GOT/EXPECTED/HURT` format — then the **new surfaces in §4b** (Mission Control, Projects + timeline, presence/away-notify), which no human has driven yet.
+5. **Audit** the no-secrets-needed rows of [`MANUAL_TESTING.md`](MANUAL_TESTING.md) §§A, B, C, D, E, G, H (skip anything marked 🔑 you don't have credentials for — record it as **skipped**, never as passed). Weight this toward **§C, §D, §G, §H, §I** — run 1 barely touched them.
+6. **Report** — produce a triaged findings file (blocker / annoying / cosmetic) plus a filled §0 run record, and open it as a draft PR or paste it back, per the owner's preference.
 
 **The golden rule (this project's non-negotiable):** *an honest "can't / not configured / no data" is a PASS; fabricated data shown as real is a BLOCKER.* Most of what you're judging is whether degraded states are visible and truthful. See `MANUAL_TESTING.md` → "Notes on automated coverage".
 
@@ -142,20 +172,56 @@ If any of these fail, **stop** — report the boot failure with logs; a broken b
 curl -s http://127.0.0.1:8080/readyz
 curl -s http://127.0.0.1:8080/status | python -m json.tool   # {version, agents, status:"ok"}
 
-# b. the new Mission Control surface (H34.1) loads + its feed answers
+# b. the swarm surfaces (H34.1 + H34.2) load + their feeds answer
 curl -s -o /dev/null -w "%{http_code}\n" http://127.0.0.1:8080/mission-control   # 200
-curl -s http://127.0.0.1:8080/api/swarm/summary | python -m json.tool | head -30
+curl -s http://127.0.0.1:8080/api/swarm/summary | python -m json.tool | head -40  # incl. .presence
+curl -s http://127.0.0.1:8080/api/presence/owner | python -m json.tool            # unknown w/o daemon
 
 # c. one real chat round-trip (needs a model backend)
 curl -s -X POST http://127.0.0.1:8080/chat -H "Content-Type: application/json" \
   -d '{"message":"say hello in one word"}'
 
 # d. the offline suite is green at the pinned count (proves the build itself is sound)
-python -m pytest -q      # count must match project-status.json; explain any declared skips
+python -m pytest -q      # backend 5,406 on this revision; explain any declared skips
 ```
+
+Run 1 could not run (d) — its shell had Python 3.10 and a 45s per-command cap, so the official count
+came from CI. **Run it for real this time** in a persistent Python 3.12 shell (it takes minutes, not
+seconds); a locally-green suite at the pinned count is part of the §J sign-off. Same for the frontend:
+`cd frontend && npm ci && npm run typecheck && npm test` → **373** vitest tests. If a count differs
+from `project-status.json`, that is itself a finding.
 
 The fast alternative for (a)+(c)+(d) in one shot is `python scripts/install_smoke.py --dev` (boots a
 real orchestrator with a fake local backend, hits `/readyz`, runs a deterministic turn, then the suite).
+
+---
+
+## 3b. Regression pass — the 2026-07-24 findings (run this first)
+
+Every fix below was merged from a remote sandbox that **cannot run a model, a browser, or this
+hardware**. The RTX box is the only place they can be proven. Do this pass **before** the driving
+script, while the box is fresh, and record each row as **HELD / REGRESSED / STILL OPEN** with
+evidence. Ask each prompt in **RO and EN** — run 1's fabrications came out in both.
+
+| # | Run-1 finding | Fix merged | How to re-test | HELD looks like |
+|---|---------------|-----------|----------------|-----------------|
+| **R1** | **Pepper fabricates a day's calendar** (invented meetings, a fake family conflict, phantom autonomous actions, a leaked "Pepper would pull these from the Google Calendar API" placeholder) | #721 — data-grounding rail in `agents/core/orchestrator.py` + `tests/test_data_grounding.py` | With **no** calendar OAuth: "Ce am pe agenda azi?" / "What's on my plate today?" Compare against the HUD TODAY widget on the same screen. | An honest "calendar not connected / I have no calendar data", matching the TODAY widget. **Any invented meeting is still a BLOCKER.** |
+| **R2** | **Steve fabricates a system-health report** (reports the docs' reference rig "Bonobo/Pi 5", wrong VRAM, a 2024 timestamp, "Qdrant/Neo4j/n8n Online" while all were down) | #721 (same rail) | With Qdrant/Neo4j/n8n **stopped**: "Steve, give me a system health report." Compare against `GET /status` + the Console heartbeat log. | This host (`DESKTOP-…`, RTX 5090), real VRAM, real timestamp, and services reported **down**. |
+| **R3** | **Gecko invents bank balances** (145,000 RON / 12,400 EUR) with no connector, and never masks an IBAN | #721 (same rail) | With no ING/Libra/CSV connector: "Gecko, what's my account balance?" | "Not connected / no financial source", or a real read with the IBAN masked `…NNNN`. **Invented figures are the most dangerous blocker of the three.** |
+| **R4** | **"What model are you running?" reported the configured default, not the resident model** | #723 — `agents/core/llm_control.py` refreshes live residency; `tests/test_llm_control_status_model.py` | Load a **non-default** model directly in LM Studio (leave `configured_model` pointing at the old one), then ask in chat and compare against the HUD model badge + `/status` `loaded_model`. | Chat names the **resident** model; badge, `/status` and the spoken answer agree. |
+| **R5** | **~36 test fixtures in the live Decision Inbox** ("Restart endpoint_test?", "Delete prod db") | #723 — `agents/core/autonomy/queue.py` resolves the DB lazily; `tests/test_autonomy_queue_isolation.py` | Note the inbox count, run the **full pytest suite** (§3d), reload the inbox. Separately: clear the **pre-existing** junk — the fix only stops new leaks. | The count does **not** grow across a suite run. Then a hand-cleared inbox stays clean. |
+| **R6** | **Conversation transcript lost on page reload** | #723 — mount `useEffect` over `GET /memory` in `frontend/src/app.tsx` (built, vitest green, **never browser-verified**) | Send "Persistence check 4471: reply with the number only", get the reply, **hard-refresh**. Then check a fresh session and demo mode. | The turn + reply are still rendered. A fresh session shows an honest empty pane; demo mode still shows its seeded corpus. |
+| **R7** | **Kill-Switch card showed a false red "ENGAGED · all agents halted"** while the API said `{global:false, halted:{}}` | #723 — derived state in `frontend/src/gap.tsx:354` + `modes.tsx:139` + `api/actions.ts` | Open Console → Trust with nothing halted; compare against `GET /api/security/kill-switch`. Then **engage → disengage** and watch the card follow. | "ARMED · operational" when nothing is halted; flips to ENGAGED only when the API says so. |
+| **R8** | **Reject click didn't visibly update the Console list** (the reject *did* register server-side — `north-star` showed `rejected:1`) | not fixed — **expected to reproduce** | Reject a pending decision card and watch the list without reloading. | If it still doesn't refresh, confirm it and file it once, with the server-side proof (`GET /api/metrics/north-star`). |
+| **R9** | **"Remember: …" fails whenever Ollama is down** (recall intents route through the `ollama-howard` half of `llm_backend`) — honest error, but functionally broken and undocumented | not fixed — **expected to reproduce** | With **only** LM Studio running, try "Remember: …" and "Note for later: …". | Both work, or the failure is at least surfaced in onboarding/settings as a second required service. Re-confirm and note whether it's now discoverable. |
+
+Two more from run 1 worth a single line each: the **cold-navigation "server unreachable / OFFLINE"
+flash** on a fresh tab (`frontend/src/shell.tsx:42,204` still assert unreachability before the first
+successful poll — expected to reproduce, cosmetic), and **audit hash-chain verification**, which run 1
+never confirmed — do it this time via `GET /api/security/audit/verify` (`{valid, first_invalid_id}`),
+which closes the last open item of the ⭐B0 demo.
+
+*The `file:line` pointers above were correct at `06cf011`; re-grep before relying on a line number.*
 
 ---
 
@@ -192,24 +258,92 @@ what Cowork specifically drives with the browser:
 
 ---
 
+## 4b. New surfaces since the last run (never driven by a human)
+
+These shipped after run 1's checkout, so its 404s were build-age artifacts — but nobody has actually
+*used* them. All three are read-mostly and safe. Judge them by the same rule: **honest empty state =
+PASS, seeded/fabricated data rendered as live = BLOCKER.**
+
+**Mission Control — the swarm cockpit (H34.1, #720).** Open `http://127.0.0.1:8080/mission-control`
+(standalone dark page, 2s polling; the React port is not built yet — H34.4).
+- Every chip must agree with its own API: roster + tracer activity, autonomy mode / stats /
+  **interrupt budget**, missions, workflow runs, sub-agents, A2A inbox count, kill-switch, the
+  dev-swarm lock files, and the **OWNER** presence chip. Cross-check a few against
+  `GET /api/swarm/summary` and the underlying endpoints (`/api/security/kill-switch`, `/tasks`).
+- **Payload-free by design:** the pending-approvals card shows counts + a preview whitelist, never a
+  task `payload`/`result`. Any draft body or tool result leaking onto this page is a finding.
+- **Without an admin token** the approvals card must degrade to counts + payload-free preview rather
+  than erroring or hiding. Test both with and without `hud.admin_token`.
+- HITL from the page (`POST /autonomy/tasks/{id}/decision`, `/api/missions/{id}/*`,
+  `/api/a2a/inbox/{id}/decide`) — approve one thing here and confirm it lands in the audit log.
+
+**Projects workspace + activity timeline (H34.6, #724).** New top-level **Projects / Proiecte** mode
+in the v2 HUD (nav rail + command palette): `RoomsPanel`, `MissionsPanel`, `SessionsPanel`,
+`ActivityTimelinePanel`.
+- **Rooms** — create two rooms on *different* subjects, hold a conversation in each, `@mention` a
+  specific agent, then **refresh**: both histories persist, are switchable, and the mention routed to
+  the named agent. This is the owner's original ask ("multiple subjects, no chat history") — grade it
+  as a product experience, not just as a rendering check.
+- **Missions** — create one with a budget, `start`/`pause`/`resume`, finish a step, and confirm the
+  budget bound (409 on overrun) and the audit trail on `GET /api/missions/{id}`.
+- **Sessions** — reopen a past chat and confirm it rehydrates (overlaps R6).
+- **Activity timeline** ("ACTIVITY · what it did") — after §3b you will have real approvals/rejections
+  and audit entries; the timeline merges `GET /api/admin/audit` (admin) with `GET /tasks?view=history`
+  (user), newest-first, under an all/audit/tasks filter. Confirm: real timestamps, the decisions you
+  actually made, **titles/decisions/status only — never a payload or result**, and an honest "no
+  activity yet" on a fresh install. This is the owner's second ask ("show me what it did, visually").
+
+**Desk presence + away-notify (H34.2, #726).** Default-off and fail-calm: with no host daemon,
+presence is `unknown`, `is_away()` is false, and behavior is byte-identical to before — *verify that
+first*, it is the safety property. Then drive it by hand (no daemon needed):
+
+```bash
+# report presence as the host daemon would (admin-guarded)
+curl -s -X POST http://127.0.0.1:8080/api/presence/owner \
+  -H "X-Admin-Token: $JARVIS_ADMIN_TOKEN" -H "Content-Type: application/json" \
+  -d '{"state":"away","source":"manual-qa","idle_seconds":900}'
+curl -s http://127.0.0.1:8080/api/presence/owner | python -m json.tool   # user-tier read
+```
+- The Mission Control **OWNER** chip must follow — `OWNER present|idle|away`, with a `· AWAY→ESC`
+  marker while away, `· STALE` once the signal expires, and `OWNER —` when the feed carries no
+  presence at all.
+- An unsupported state must return **422** with a static message (no stack trace), and the `GET`
+  must be user-tier while the `POST` is admin-tier — check the 401/403 shape without the token.
+- **The budget property is the real test:** with the owner `away`, a decision card must *also* reach
+  the governed escalation channels (Telegram excluded — it already gets the rich card) **without
+  spending an extra interrupt slot**. If you have no escalation channel configured, record the fan-out
+  as **skipped** but still confirm `GET /api/metrics/north-star` → `interrupt_budget` stays ≤4/day.
+- Let TTL staleness expire and confirm a stale signal reads as **not away** (no self-triggering).
+
+---
+
 ## 5. Checklist audit (the no-secrets subset)
 
 After the drive, sweep the **credential-free** rows of [`docs/MANUAL_TESTING.md`](MANUAL_TESTING.md).
 These need only a running server (+ a model for the 🤖 ones), no external tokens:
 
-| § | Area | Cowork can run without secrets? |
-|---|------|---------------------------------|
-| A | Setup & onboarding | ✅ (quickstart timing, `/status` version truth) |
-| B | Core chat & routing | ✅ with a model backend |
-| B2 | Per-agent smoke (16) | ⚠️ the non-🔑 agents only (Jarvis, Stark, Steve, Ultron, Hephaestus, Howard…); skip Gmail/Spotify/n8n/health ones |
-| C | HUD tabs & dashboards | ✅ rendering + live round-trip (analytics, cognition, arena, review queue, action approvals) |
-| D | Workflows | ✅ build/run a pipeline, exercise the step kinds; AI-step-builder has a keyword fallback with no model |
-| E | Autonomy & approvals | ✅ the **dry-run + approve/reject + payments-cap denial** paths (no real money moves); Telegram/escalation rows are 🔑 → skip |
-| G | Security & secrets | ✅ guardrail redaction, admin-token accept/reject, secret-broker JIT; LAN-device rows → skip (single host) |
-| H | Memory & RAG | ✅ notes injection, chat rooms, data spaces, A2A enable→pending gate; Qdrant/Neo4j rows are 🔑 → skip |
-| F | Channels | 🔑 mostly — skip unless a token is provided |
-| I | Mobile / PWA | ⚠️ responsive HUD + `/sw.js` installability via device emulation; push is 🔑 |
-| N | AI-OS owner-host v1 (A8) | ❌ needs real Windows/HA/Frigate/media hardware — **skip, record as owner-host gate** |
+The **Run 1** column is how much of each area the 2026-07-24 pass actually exercised — treat a low
+number as this run's target, not as settled coverage.
+
+| § | Area | Cowork can run without secrets? | Run 1 |
+|---|------|---------------------------------|-------|
+| A | Setup & onboarding | ✅ (quickstart timing, `/status` version truth) | 4/6 |
+| B | Core chat & routing | ✅ with a model backend | 2/5 |
+| B2 | Per-agent smoke (16) | ⚠️ the non-🔑 agents only (Jarvis, Stark, Steve, Ultron, Hephaestus, Howard…); skip Gmail/Spotify/n8n/health ones | **4/16** — 11 agents never tested |
+| C | HUD tabs & dashboards | ✅ rendering + live round-trip (analytics, cognition, arena, review queue, action approvals) | **~1/7 — priority** |
+| D | Workflows | ✅ build/run a pipeline, exercise the step kinds; AI-step-builder has a keyword fallback with no model | **0 — priority** |
+| E | Autonomy & approvals | ✅ the **dry-run + approve/reject + payments-cap denial** paths (no real money moves); Telegram/escalation rows are 🔑 → skip | 3/7 |
+| G | Security & secrets | ✅ guardrail redaction, admin-token accept/reject, secret-broker JIT; LAN-device rows → skip (single host) | **1/6 — priority** |
+| H | Memory & RAG | ✅ notes injection, chat rooms, data spaces, A2A enable→pending gate; Qdrant/Neo4j rows are 🔑 → skip | **1/8 — priority** |
+| F | Channels | 🔑 mostly — skip unless a token is provided | 0 (skipped) |
+| I | Mobile / PWA | ⚠️ responsive HUD + `/sw.js` installability via device emulation; push is 🔑 | **0/3 — priority** |
+| N | AI-OS owner-host v1 (A8) | ❌ needs real Windows/HA/Frigate/media hardware — **skip, record as owner-host gate** | 0/7 (not attempted) |
+
+Two things are cheap on this box and were missed last time: **§H Qdrant/Neo4j/n8n** are 🔑 only in the
+sense that the services must be *running* — `docker-compose up` on the RTX box makes §H's RAG/KG rows
+and §B2's Oracle row testable, and it also un-blocks the honest-degradation contrast that R2 depends
+on (start the run with them **down** for R2, bring them up afterwards). And **§I** needs no hardware —
+Chromium device emulation covers the responsive HUD and `/sw.js` installability.
 
 For every ✅ you run, tick the box in a copy of the §0 table. For every 🔑/❌ you can't run, mark it
 **skipped** with the reason. **Never tick a box you didn't actually exercise.**
@@ -231,13 +365,16 @@ HURT:      blocker / annoying / cosmetic
 
 **Deliverable at the end:**
 1. A **filled §0 run record** from `MANUAL_TESTING.md` (build SHA from `/status`, model backend used, per-area pass/total, and the §K blocker table).
-2. A **triaged findings report** — group the raw blocks into blocker / annoying / cosmetic, most-severe first, each with a repro and (Opus pass) a likely-cause pointer into the codebase.
-3. The **screenshots/recording** of the B0 demo and any visual finding.
+2. A **regression verdict table** — one row per §3b item (R1–R9), each **HELD / REGRESSED / STILL OPEN** with the evidence. This is what the owner reads first; the fixes were merged unproven and this run is what proves them. It also feeds `MANUAL_TESTING.md` **§R**.
+3. A **triaged findings report** — group the raw blocks into blocker / annoying / cosmetic, most-severe first, each with a repro and (Opus pass) a likely-cause pointer into the codebase.
+4. The **screenshots/recording** of the B0 demo and any visual finding.
 
 Hand it back per the owner's preference — either paste the report into the session, or (repo
-convention) open it as a **draft PR** adding a dated run under `docs/qa-runs/` and updating the §K
-blocker table. Do **not** file findings straight into `BACKLOG.md`; the owner triages first (that's
-the operating model in `OWNER_TEST_DRIVE.md` → "When done").
+convention) open it as a **draft PR** adding a dated run under `docs/qa-runs/` (alongside
+`2026-07-24-cowork-run.md`) and updating the §K blocker table. If a §3b item HELD, also strike the
+matching row from the previous run's §K in the same PR — a closed finding should stop reappearing.
+Do **not** file findings straight into `BACKLOG.md`; the owner triages first (that's the operating
+model in `OWNER_TEST_DRIVE.md` → "When done").
 
 ---
 
@@ -268,57 +405,84 @@ decisions it genuinely needs **once, up front, with defaults** (so "go" is a val
 autonomously — including the day-long passive proactivity session — for up to ~12 hours.
 
 ```text
-You are a QA agent testing Nerva (jarvis-hub) end-to-end, like a human would. Run as claude-sonnet-5.
+You are a QA agent testing Nerva (jarvis-hub) end-to-end, like a human would, on the owner's RTX box.
+Run as claude-sonnet-5. This is RUN 2 — a regression + coverage pass, not a first look.
 
-FIRST, read these three files and follow them as the authority (do not re-derive):
-  docs/COWORK_QA_RUNBOOK.md   (how you set up, drive, and report — your master plan)
-  docs/OWNER_TEST_DRIVE.md    (the 6-session driving script)
-  docs/MANUAL_TESTING.md      (the checklist audit + §0 run record + §K blockers)
+FIRST, read these four files and follow them as the authority (do not re-derive):
+  docs/COWORK_QA_RUNBOOK.md          (how you set up, drive, and report — your master plan)
+  docs/qa-runs/2026-07-24-cowork-run.md  (RUN 1 — the baseline you are re-measuring; read it fully)
+  docs/OWNER_TEST_DRIVE.md           (the 6-session driving script)
+  docs/MANUAL_TESTING.md             (the checklist audit + §0 run record + §R regressions + §K blockers)
 
 THEN do an autonomous INTAKE (no questions yet — detect everything you can):
   1. Is a local model up? Probe LM Studio (127.0.0.1:1234/v1/models) and Ollama. Note the loaded model.
+     Note whether Ollama specifically is serving — run 1 found memory/recall silently depends on it (R9).
   2. Which cloud keys exist? Check env + .env for ANTHROPIC_API_KEY, GEMINI_API_KEY, OPENAI_API_KEY,
      OPENROUTER_API_KEY (and OPENROUTER_BASE_URL).
-  3. Which channel tokens exist (Telegram/Slack/Discord/WhatsApp/Email)? — determines what F can test.
-  4. pip install -r requirements-beta.txt; set JARVIS_ADMIN_TOKEN + JARVIS_USER_TOKEN (generate if unset);
+  3. Which channel tokens exist (Telegram/Slack/Discord/WhatsApp/Email)? — determines what F can test,
+     and whether the H34.2 away-notify fan-out (§4b) can be observed or must be recorded as skipped.
+  4. Is Qdrant/Neo4j/n8n up? Leave them DOWN for now — R2 needs a real "services are down" contrast.
+  5. git log --oneline -3 — confirm you are at or past 06cf011 (run 1 tested 029da4c9, which predates
+     Mission Control, Projects and presence). If you are behind, say so before testing.
+  6. pip install -r requirements-beta.txt; set JARVIS_ADMIN_TOKEN + JARVIS_USER_TOKEN (generate if unset);
      turn the brain on (product.posture=companion_wave1); boot serve.py on :8080.
-  5. Run the sanity gate (§3 of the runbook): /readyz, /status, one real chat turn, /mission-control +
-     /api/swarm/summary, and `pytest -q`. If the boot or sanity gate fails, STOP and report that only.
+  7. Run the sanity gate (§3): /readyz, /status, one real chat turn, /mission-control + /api/swarm/summary
+     + /api/presence/owner, and the FULL suite in a persistent Python 3.12 shell (`pytest -q` → 5,406;
+     `cd frontend && npm ci && npm run typecheck && npm test` → 373). Run 1 could not run these locally —
+     you can. If the boot or sanity gate fails, STOP and report that only.
 
 THEN send me ONE consolidated message — the only time you interrupt me — containing:
-  - what you detected (backend, keys, channels, sanity-gate result, build SHA from /status), and
+  - what you detected (backend, keys, channels, services, sanity-gate result, build SHA from /status), and
   - these decisions, each WITH A DEFAULT so I can just reply "go":
       a) Model backend to use for the run  [default: detected local model + any cloud keys, local-first].
       b) Channels to actually round-trip in §F  [default: none — skip all, record as skipped].
-      c) §N AI-OS operators (governed browser / desktop) — opt in to the SAFE, reversible subset?
+      c) Bring up Qdrant/Neo4j/n8n (docker-compose) after the R2 regression, to unlock §H RAG/KG and
+         §B2 Oracle?  [default: YES — run 1 never tested them because the services were down].
+      d) §N AI-OS operators (governed browser / desktop) — opt in to the SAFE, reversible subset?
          [default: SKIP all of §N].
-      d) Report delivery  [default: open a DRAFT PR adding docs/qa-runs/<date>-cowork-run.md + the filled
-         §0 record + §K blockers; do NOT edit BACKLOG.md — the owner triages].
-      e) Time budget  [default: up to ~12h, including the Session-5 passive proactive-day sampling].
+      e) Report delivery  [default: open a DRAFT PR adding docs/qa-runs/<date>-cowork-run.md + the filled
+         §0 record + the R1–R9 verdict table + §K blockers; do NOT edit BACKLOG.md — the owner triages].
+      f) Time budget  [default: up to ~12h, including the Session-5 passive proactive-day sampling].
   If I reply "go" (or anything that doesn't override a default), proceed with the defaults.
 
-THEN run autonomously to completion. Rules while running:
+THEN run autonomously to completion, IN THIS ORDER:
+  1. REGRESSION PASS (§3b, R1–R9) — the highest-value work in this run. Every fix was merged from a
+     sandbox that could not run a model, a browser, or this hardware; your box is where they get proven.
+     Verdict each one HELD / REGRESSED / STILL OPEN with evidence. Ask R1–R3 in BOTH RO and EN.
+     R1/R2/R3 are the three fabrication BLOCKERS from run 1 — if any still fabricates, that alone is
+     the headline of your report.
+  2. NEW SURFACES (§4b) — Mission Control (/mission-control), the Projects mode (rooms/missions/
+     sessions/activity timeline) and desk presence + away-notify. Nobody has driven these. Judge them
+     as a product, not just as rendering: can I really run two subjects in parallel, and can I really
+     see what the system did?
+  3. COVERAGE — the credential-free MANUAL_TESTING subset (§5 table), weighted to what run 1 missed:
+     §C HUD tabs (~1/7), §D workflows (0), §G security (1/6), §H memory/RAG (1/8), §I mobile/PWA (0/3),
+     and the 11 §B2 agents never smoke-tested (Friday, Jerome, Athena, Stark, Veronica, Vision, Oracle,
+     Ultron, Hercules, Hephaestus, Frigga) — grading each for the same fabrication pattern as R1–R3.
+     Do NOT re-drive what run 1 already covered (Test-Drive Sessions 0/1, the B0 mechanics) beyond a
+     quick confirmation — except the audit hash-chain check (GET /api/security/audit/verify), which
+     run 1 left unconfirmed and which closes the last open item of the ⭐B0 demo.
+  4. PASSIVE DAY (Test-Drive Session 5) — leave the server running, sample the HUD/logs every ~1–2h,
+     confirm the morning brief fires once and interrupts stay ≤4/day, and note whether ANY proactive
+     output was actually useful. Post a one-line progress note at each sample (no questions).
+
+Rules while running:
   - DO NOT ask me anything else unless an action is genuinely destructive/irreversible and outside the
     approved defaults. Anything you lack (a token, a service, hardware) → record it as SKIPPED with the
     reason and MOVE ON. Never block, never tick a box you didn't actually exercise.
   - Keep a running findings file qa-findings-<date>.md, one block per observation:
         DID: / GOT: (paste errors verbatim; screenshot visual issues via SendUserFile) / EXPECTED: / HURT: blocker|annoying|cosmetic
-    Checkpoint it after every session so nothing is lost if you're interrupted.
-  - Drive the real browser (open the HUD at 127.0.0.1:8080). Work OWNER_TEST_DRIVE sessions 0→6 in order,
-    then the credential-free MANUAL_TESTING subset (§5 table in the runbook: A,B,B2 non-🔑,C,D,E,G,H).
-    Screenshot the ⭐B0 governed-autonomy demo and every visual finding.
-  - This is what fills ~12h: after the active sessions, leave the server running and run Session 5
-    (passive proactive day) — sample the HUD/logs every ~1–2h, confirm the morning brief fires once and
-    interrupts stay ≤4/day, and note whether ANY proactive output was actually useful. Post a one-line
-    progress note to me at each sample (no questions), so I can see it's alive without steering it.
+    Checkpoint it after every phase so nothing is lost if you're interrupted.
+  - Drive the real browser (open the HUD at 127.0.0.1:8080). Screenshot every visual finding.
   - The golden rule: an honest "can't / not configured / no data" is a PASS; fabricated data shown as
     real is a BLOCKER. Most of what you grade is whether degraded/empty states are visible and truthful.
 
-AT THE END, deliver: (1) the filled MANUAL_TESTING §0 run record + §K blocker table, (2) a TRIAGED report
-— findings grouped blocker / annoying / cosmetic, most-severe first, each with a repro and a likely-cause
-pointer into the codebase (switch to claude-opus-4-8 for this synthesis pass if you can), (3) the
-screenshots/recording, delivered per decision (d). Local-only throughout: never move real money, send a
-real message on a live channel, or run an unapproved §N action; redact any SOUL.local/family/secret/camera data.
+AT THE END, deliver: (1) the R1–R9 regression verdict table with evidence, (2) the filled MANUAL_TESTING
+§0 run record + §R + §K blocker table, (3) a TRIAGED report — findings grouped blocker / annoying /
+cosmetic, most-severe first, each with a repro and a likely-cause pointer into the codebase (switch to
+claude-opus-4-8 for this synthesis pass if you can), (4) the screenshots/recording, delivered per
+decision (e). Local-only throughout: never move real money, send a real message on a live channel, or
+run an unapproved §N action; redact any SOUL.local/family/secret/camera data.
 ```
 
 Notes for the owner:
@@ -328,3 +492,6 @@ Notes for the owner:
   Opus. If your Cowork session can't switch models mid-run, running the whole thing on Sonnet is fine.
 - The agent posts a progress line at each passive-day sample so you can confirm it's alive without
   intervening — that's the "runs 12h, minimal touch" shape.
+- **Keep the machine in its normal state for R1–R3.** The temptation is to configure a calendar and a
+  bank connector before starting — don't. The three blockers only reproduce with those connectors
+  *absent*, which is also how a new user's first hour looks.
