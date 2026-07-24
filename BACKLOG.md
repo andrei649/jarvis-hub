@@ -1025,8 +1025,9 @@ the real backend, but the pipeline-rewiring PR never ran it because the path fil
 | H34.3 | **Dev-swarm PR/CI feed** — open PRs + check status (oracle_bridge plugin, `GITHUB_TOKEN`) next to the lock panel, so draft-PR-as-lock coordination is visible live in the cockpit. | 3 | P2 | H34.1 | AGENT_WORKFLOW.md |
 | H34.4 | **`SwarmPanel` in Console V2** — React port of the page into `frontend/src` (Observe section) so the cockpit is one keystroke from chat; the standalone page stays. | 3 | P3 | H34.1 | HUD_V2_REMAINING.md |
 | H34.5 | **Revenue-program pointer** — the "make money" ask stays governed: market intel / social / payments remain draft-first + approval-gated (0.39/0.45/0.68) and Mission Control is where those queued opportunities surface. No autonomous spending — MOONSHOT §5 stands. | — | — | — | MOONSHOT §5 |
+| H34.6 ✅ | **Projects workspace + activity timeline** — DONE (via #724). The historical / per-project counterpart to H34.1's live cockpit: a unified **Projects** mode (nav rail + palette) over **Rooms** (topic threads with persistent history + `@mention` roster), **Missions** (budgeted governed workspaces) and **Sessions** (resume an old chat), plus an **activity timeline** that fuses the hash-chained audit (`/api/admin/audit`, admin) with the autonomy queue (`/tasks?view=history`, user) under an all/audit/tasks filter. Titles/decisions/status only — **never payload/result** (no tier leak). Pure frontend — **zero new backend routes** (no snapshot reseed). Closes items 1–3 of `docs/design/HUD_FOLLOWUPS_COWORK_SPEC.md`. | 3 | P1 | H34.1 | #724 |
 
-> **Total ORIZONT 34:** ~16 SP (H34.1–H34.2 delivered 2026-07-24)
+> **Total ORIZONT 34:** ~19 SP (H34.1–H34.2 + H34.6 delivered 2026-07-24)
 
 ---
 
