@@ -22,7 +22,7 @@ from agents.core.routers import swarm
 
 TOP_KEYS = (
     "generated_at", "initialized", "halted", "agents", "activity",
-    "autonomy", "missions", "workflows", "subagents", "a2a", "dev_locks",
+    "autonomy", "presence", "missions", "workflows", "subagents", "a2a", "dev_locks",
 )
 
 

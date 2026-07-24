@@ -20,7 +20,7 @@ pip install -r requirements-beta.txt
 python serve.py   # canonical entry (boot guards + graceful shutdown; O26-P0.6: the raw
 #   uvicorn entry `python -m uvicorn agents.web:app` now runs the same guards via the lifespan)
 python scripts/install_smoke.py --json  # fast install smoke: boot + /readyz + fake local turn
-python -m pytest tests/ -v          # ~3,868 passed, 6 skipped (counter synced via scripts/status_sync.py)
+python -m pytest tests/ -v          # ~3,888 passed, 6 skipped (counter synced via scripts/status_sync.py)
 ```
 
 > Singurul skip rămas e heartbeat-ul opțional. (Vechiul `tests/test_spotify.py` cu 8 skip-uri a
@@ -1021,12 +1021,12 @@ the real backend, but the pipeline-rewiring PR never ran it because the path fil
 | # | Item | S | P | Dep | Sursă |
 |---|------|---|---|-----|-------|
 | H34.1 ✅ | **Mission Control v1** — standalone `/mission-control` page (brain.html pattern: self-contained dark HUD, 2s polling) + read-only `GET /api/swarm/summary` aggregating roster + tracer activity, autonomy stats/mode/interrupt budget + payload-free pending preview, missions, workflow runs, sub-agents, A2A inbox count, kill-switch, and the dev-swarm lock files (pure-read, cross-OS reader — never imports `lock.py`). HITL via the existing governed endpoints (`POST /autonomy/tasks/{id}/decision`, `/api/missions/{id}/*`, `/api/a2a/inbox/{id}/decide`) with the shared `hud.admin_token`; without a token the approvals card degrades to counts + payload-free preview. | 5 | P1 | brain, 0.32, 0.33 | acest PR |
-| H34.2 | **Desk presence + away notify** — owner-side presence signal (Windows idle/lock daemon or the 0.64 Tauri host overlay) feeding an `owner.away` state; when away, route finished-work/approval cards through the existing `EscalationRouter` (`ESCALATION_CONTRACT` → WhatsApp/Telegram channels) under the same ≤4/day interrupt budget. Host daemon = owner-side install (`docs/OWNER_TASKS.md`). | 5 | P2 | H34.1, 0.44 | viziune 2026-07-24 |
+| H34.2 ✅ | **Desk presence + away notify** — DONE. Owner-side desk-presence signal (Windows idle/lock daemon or the 0.64 Tauri host overlay) now feeds an `owner.away` state via **NEW `agents/core/autonomy/presence.py`** (`OwnerPresence`: a pure, fail-calm tracker — canonical `present`/`idle`/`away`/`unknown` with OS-alias normalization (`locked`/`active`/…), TTL staleness, and an `is_away()` that is **False** for unknown/stale signals so a missing or dead daemon never self-triggers → **zero behavior change by default**). Reported through **NEW `POST /api/presence/owner`** (admin-guarded — the daemon holds the same `hud.admin_token` as Mission Control steering) + read via `GET /api/presence/owner` (user) and the swarm feed (`/api/swarm/summary.presence` + an OWNER chip on the Mission Control page). When away, decision/approval cards are **also** fanned out to the governed `EscalationRouter` (`ESCALATION_CONTRACT` → WhatsApp/Signal/… allowlist) via **NEW `escalation.AwayNotifier`**, wired into the notifier in `autonomy_coordinator.wire()` (Telegram excluded from the away fan-out — no duplicate on the rich-card channel). Because that wrap runs *inside* the worker's single budget-gated push (`_maybe_push` → attention delivery broker), away-notify costs **no extra interrupt slot** — still ≤4/day by construction (proven end-to-end against a real `AutonomyWorker` push). `tests/test_h34_2_presence.py` (+20). Host daemon = owner-side install (`docs/OWNER_TASKS.md`). | 5 | P2 | H34.1, 0.44 | viziune 2026-07-24 |
 | H34.3 | **Dev-swarm PR/CI feed** — open PRs + check status (oracle_bridge plugin, `GITHUB_TOKEN`) next to the lock panel, so draft-PR-as-lock coordination is visible live in the cockpit. | 3 | P2 | H34.1 | AGENT_WORKFLOW.md |
 | H34.4 | **`SwarmPanel` in Console V2** — React port of the page into `frontend/src` (Observe section) so the cockpit is one keystroke from chat; the standalone page stays. | 3 | P3 | H34.1 | HUD_V2_REMAINING.md |
 | H34.5 | **Revenue-program pointer** — the "make money" ask stays governed: market intel / social / payments remain draft-first + approval-gated (0.39/0.45/0.68) and Mission Control is where those queued opportunities surface. No autonomous spending — MOONSHOT §5 stands. | — | — | — | MOONSHOT §5 |
 
-> **Total ORIZONT 34:** ~16 SP (H34.1 delivered 2026-07-24)
+> **Total ORIZONT 34:** ~16 SP (H34.1–H34.2 delivered 2026-07-24)
 
 ---
 

@@ -359,6 +359,13 @@ class Orchestrator:
                 timezone_name=str(_gv("general", "timezone", "Europe/Bucharest")),
             ),
         )
+        # H34.2: owner desk-presence. Default 'unknown' (fail-calm) until a host
+        # daemon reports; when 'away', decision cards additionally escalate to the
+        # governed channels (autonomy_coordinator.wire → AwayNotifier).
+        from .autonomy.presence import OwnerPresence
+        self.owner_presence = OwnerPresence(
+            ttl_seconds=float(_gv("autonomy", "presence_ttl", 900) or 900),
+        )
         # Proactive OS Observer — the trigger layer that feeds the queue.
         self.observer: Optional[ProactiveObserver] = None
         # Proactive Event Watcher — personal event trigger layer.

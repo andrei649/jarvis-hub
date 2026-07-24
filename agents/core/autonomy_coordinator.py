@@ -65,17 +65,52 @@ class AutonomyCoordinator:
 
     # ── Autonomy / Proactive Cortex (H6.1–H6.3) ────────────────────
     def wire(self):
-        """Wire the decision inbox to Telegram if a bot + owner chat are set."""
+        """Wire the decision inbox to Telegram if a bot + owner chat are set.
+
+        H34.2: the Telegram notifier is wrapped in an ``AwayNotifier`` so that,
+        when the owner is away from the desk (``owner_presence.is_away()``), the
+        same decision card is ALSO fanned out to the governed escalation channels
+        (WhatsApp / Signal / …). That wrap runs *inside* the worker's single
+        budget-gated push, so away-notify stays within the same ≤4/day interrupt
+        budget; Telegram is excluded from the away fan-out to avoid a duplicate
+        plain-text card on the channel that already got the rich one.
+        """
         owner = os.environ.get("AUTONOMY_OWNER_CHAT_ID", "") or str(
             self._orch.get_setting("autonomy.owner_chat_id", "") or ""
         )
         tg = self._orch.channels.get("telegram")
         if tg and owner and hasattr(tg, "send_card"):
-            async def notifier(task):
+            async def base(task):
                 return await tg.send_card(int(owner), build_decision_card(task))
-            self._orch.autonomy.notifier = notifier
+            self._orch.autonomy.notifier = self._away_notifier(base, exclude={"telegram"})
             tg.on_callback = self._on_callback
-            logger.info("Autonomy decision inbox wired to Telegram")
+            logger.info("Autonomy decision inbox wired to Telegram (H34.2 away-notify via escalation)")
+
+    def _escalation_router(self):
+        """Build a live ``EscalationRouter`` over the current channels + allowlist.
+
+        Mirrors ``GET/POST /api/autonomy/escalate`` exactly (same channel set +
+        the ``autonomy.escalation_channels`` allowlist), rebuilt per call so
+        channel (re)starts and setting changes are always reflected.
+        """
+        from .autonomy.escalation import EscalationRouter
+        channels = getattr(self._orch, "channels", {}) or {}
+        allow = None
+        try:
+            allow = (self._orch._runtime_settings.get("autonomy", {}) or {}).get("escalation_channels")
+        except Exception:
+            allow = None
+        return EscalationRouter(channels, allow=allow)
+
+    def _away_notifier(self, base, *, exclude=None):
+        """Wrap a base decision-card notifier with presence-aware away routing."""
+        from .autonomy.escalation import AwayNotifier
+        return AwayNotifier(
+            base,
+            getattr(self._orch, "owner_presence", None),
+            self._escalation_router,
+            exclude=exclude,
+        )
 
     async def _on_callback(self, task_id: int, action: str, **kwargs):
         """Handle a decision-inbox button tap from Telegram."""

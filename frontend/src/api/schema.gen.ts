@@ -3980,6 +3980,30 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/presence/owner": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Owner Presence
+         * @description Current owner desk-presence snapshot (present / idle / away / unknown).
+         */
+        get: operations["get_owner_presence_api_presence_owner_get"];
+        put?: never;
+        /**
+         * Set Owner Presence
+         * @description Report an owner desk-presence signal from the host daemon (admin).
+         */
+        post: operations["set_owner_presence_api_presence_owner_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/memory": {
         parameters: {
             query?: never;
@@ -8100,6 +8124,18 @@ export interface components {
             operator: "eq" | "ne" | "lt" | "lte" | "gt" | "gte" | "in" | "changed" | "age";
             /** Expected */
             expected?: unknown;
+        };
+        /** PresenceBody */
+        PresenceBody: {
+            /** State */
+            state: string;
+            /**
+             * Source
+             * @default
+             */
+            source: string;
+            /** Idle Seconds */
+            idle_seconds?: number | null;
         };
         /** PresentBody */
         PresentBody: {
@@ -14333,6 +14369,59 @@ export interface operations {
                 };
                 content: {
                     "application/json": unknown;
+                };
+            };
+        };
+    };
+    get_owner_presence_api_presence_owner_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    set_owner_presence_api_presence_owner_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PresenceBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };

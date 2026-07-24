@@ -225,6 +225,12 @@ def build_swarm_summary(orch) -> dict:
                 preview.append({k: d.get(k) for k in _PREVIEW_FIELDS})
         autonomy["pending_preview"] = preview
 
+    # ── owner desk presence (H34.2) — drives away-notify routing ─────────────
+    presence: dict | None = None
+    if orch is not None:
+        presence = _safe(
+            lambda: orch.owner_presence.snapshot().to_dict(), None)
+
     # ── missions / workflows / sub-agents / A2A / kill-switch ────────────────
     if orch is not None:
         missions = _safe(
@@ -261,6 +267,7 @@ def build_swarm_summary(orch) -> dict:
         "agents": agents_rows,
         "activity": activity,
         "autonomy": autonomy,
+        "presence": presence,
         "missions": missions,
         "workflows": {"runs": wf_runs},
         "subagents": subagents,

@@ -137,3 +137,81 @@ class EscalationRouter:
         return {"delivered": [c for c, ok in results.items() if ok],
                 "failed": [c for c, ok in results.items() if not ok],
                 "results": results}
+
+
+class AwayNotifier:
+    """Presence-aware decision-card notifier (H34.2).
+
+    Wraps a *base* notifier (the Telegram decision-inbox card) so that, when the
+    owner is **away from the desk**, the same card is ALSO fanned out to the
+    governed escalation channels (WhatsApp / Telegram / …) — because the owner
+    isn't watching a screen. When the owner is present / idle / unknown, only the
+    base notifier runs and behavior is unchanged (calm by default).
+
+    Crucially this is called from inside the autonomy worker's single
+    budget-gated push (``AutonomyWorker._maybe_push`` → the attention delivery
+    broker), so the extra escalation fan-out costs **no additional interrupt
+    slot** — the whole present+away delivery is one ≤4/day interruption.
+
+    ``presence`` is any object exposing ``is_away() -> bool`` (see
+    ``presence.OwnerPresence``); ``router_factory`` returns a fresh
+    :class:`EscalationRouter` per call so it always reads the live channel set +
+    allowlist. ``exclude`` drops channel ids from the away fan-out — used to skip
+    the base channel (Telegram) so the owner doesn't get the rich card *and* a
+    duplicate plain-text escalation on the same channel.
+    """
+
+    def __init__(self, base, presence, router_factory, *, exclude=None, render=render_escalation) -> None:
+        self._base = base
+        self._presence = presence
+        self._router_factory = router_factory
+        self._exclude = set(exclude or ())
+        self._render = render
+
+    async def _run_base(self, task) -> bool:
+        if self._base is None:
+            return False
+        try:
+            return bool(await self._base(task))
+        except Exception:
+            logger.warning("base decision notifier failed", exc_info=True)
+            return False
+
+    def _is_away(self) -> bool:
+        if self._presence is None:
+            return False
+        try:
+            return bool(self._presence.is_away())
+        except Exception:
+            logger.warning("presence read failed — treating owner as present", exc_info=True)
+            return False
+
+    async def _escalate_away(self, task) -> bool:
+        """Fan the card out to the away channels; best-effort, never raises."""
+        try:
+            router = self._router_factory()
+        except Exception:
+            logger.warning("escalation router unavailable for away-notify", exc_info=True)
+            return False
+        if router is None:
+            return False
+        try:
+            targets = [c for c in router.targets() if c not in self._exclude]
+            if not targets:
+                return False
+            # The worker hands the notifier a Task object; render_escalation reads
+            # a dict (id/title/agent/kind/…), so normalize before rendering.
+            payload = task.to_dict() if hasattr(task, "to_dict") else task
+            message = self._render(payload) if callable(self._render) else str(payload)
+            result = await router.escalate(message, targets)
+        except Exception:
+            logger.warning("away escalation failed", exc_info=True)
+            return False
+        return bool(result.get("delivered"))
+
+    async def __call__(self, task) -> bool:
+        base_ok = await self._run_base(task)
+        if not self._is_away():
+            return base_ok
+        escalated = await self._escalate_away(task)
+        return base_ok or escalated

@@ -82,6 +82,38 @@
 - [ ] **Live-mic validation** — HUD voice loop + barge-in tuning need a real microphone
   (PR #162/#164 caveat), incl. Wyoming satellite if you set one up.
 
+## 🟢 Optional: desk-presence daemon (H34.2 away-notify)
+
+The engine side is code-complete and default-off: with nothing reporting, owner
+presence stays `unknown` and nothing changes. Turning it on makes Nerva route
+decision/approval cards to your phone (via the existing WhatsApp/Telegram
+escalation channels) **only when you're away from the desk** — while you're at
+the machine they stay calm in the HUD. It's still bounded by the same ≤4/day
+interrupt budget. What's yours to wire is the tiny owner-side signal:
+
+- [ ] **Run a host presence daemon** on your desktop that POSTs your state to the
+  hub whenever it changes (and as a heartbeat inside the TTL, default 15 min):
+  ```
+  POST /api/presence/owner
+  X-Admin-Token: <hud.admin_token>
+  { "state": "away", "source": "win-idle", "idle_seconds": 320 }
+  ```
+  `state` accepts `present`/`away`/`idle`/`unknown` or the OS aliases
+  `active`/`locked`/`inactive`/`unlocked`/`offline`. The simplest version is a
+  Windows idle/lock watcher (session lock → `locked`, unlock → `active`, N min
+  idle → `away`); the 0.64 Tauri host overlay can emit the same signal.
+- [ ] **Pick the away channels** — set `autonomy.escalation_channels` (admin
+  settings) to the channels that should ring when you're away (e.g.
+  `["whatsapp","signal"]`). Leave it unset to use every configured channel.
+  Telegram is auto-excluded from the away fan-out (it already gets the rich card).
+- [ ] **(Optional) tune the staleness TTL** via `autonomy.presence_ttl` (seconds,
+  default 900). If the daemon goes quiet longer than the TTL, presence reverts to
+  "not away" so a crashed daemon can never keep escalating to your phone.
+
+Verify from the Mission Control page (`/mission-control`): the **OWNER** chip in
+the header shows `PRESENT` / `AWAY→ESC` / `IDLE` / `STALE`. Nothing here is
+release-blocking — it's an owner-side convenience daemon plus one setting.
+
 ## 🟢 Optional: turn on Self-Improvement
 
 Most of "Jarvis proactively finds bugs, watches for anomalies, and grows its own

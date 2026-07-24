@@ -71,6 +71,7 @@ input.tok::placeholder{color:#46564e;}
         <span class="chip" id="cSystem"><span class="led" style="background:#46564e;"></span>SYSTEM</span>
         <span class="chip" id="cMode"><span class="led" style="background:#46564e;"></span>AUTONOMY —</span>
         <span class="chip" id="cBudget">INTERRUPTS —</span>
+        <span class="chip" id="cPresence" title="owner desk presence — when AWAY, decision cards also escalate to the away channels (H34.2)"><span class="led" style="background:#46564e;"></span>OWNER —</span>
         <span class="chip" id="cA2a">A2A OFF</span>
         <span class="chip" id="cAdmin"><span class="led" style="background:#46564e;"></span>ADMIN</span>
         <span class="chip" id="cFeed"><span class="led" id="feedLed" style="background:var(--ax2);box-shadow:0 0 10px var(--ax);animation:mcBlink 1.5s infinite;"></span><span id="feedTxt">FEED</span></span>
@@ -226,6 +227,16 @@ function renderHeader(){
     setChip("cMode",mode==="OFF"?"#46564e":(mode==="ASK"?"var(--amber)":"var(--ax2)"),"AUTONOMY "+esc(mode),mode!=="OFF");
     const b=s.autonomy&&s.autonomy.budget;
     $("cBudget").textContent=b?("INTERRUPTS "+b.remaining+"/"+b.per_day):"INTERRUPTS —";
+    // owner desk presence (H34.2): away → cards also escalate to the away channels.
+    const pr=s.presence;
+    if(pr&&pr.ever_reported){
+      const st=String(pr.state||"unknown").toUpperCase();
+      const away=pr.away===true, stale=pr.stale===true;
+      const col=stale?"#46564e":(away?"var(--amber)":(pr.state==="present"?"var(--ax2)":"#7c8b80"));
+      setChip("cPresence",col,"OWNER "+esc(st)+(away?" · AWAY&rarr;ESC":(stale?" · STALE":"")),away);
+    }else{
+      setChip("cPresence","#46564e","OWNER —");
+    }
     const a=s.a2a||{};
     $("cA2a").textContent=a.enabled?("A2A ON · "+(a.pending||0)+" PENDING"):"A2A OFF";
   }
