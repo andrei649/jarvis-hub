@@ -58,9 +58,15 @@ intentionally owner-HUD-only; native clients expose no discovery, frame, stream,
 | Governed Capability Acquisition (H32.6, default-off) | user `GET /api/acquisition/{status,events}`; admin-only revoke, rollback, ledger export/purge | ✅ | ✅ | H32.6 |
 | Ambient Watch (H33.6, default-off, redacted) | user `GET /api/ambient/monitors`; admin-only monitor create/update/delete | ✅ | ✅ | H33.6 |
 | Self-Improvement dashboard (admin-only diagnostic aggregation) | admin-only `GET /api/self-improvement/status`, `POST /api/self-improvement/enable` | ✅ | ➖ | — |
+| Mission Control (H34.1 — swarm cockpit page + read feed) | `GET /mission-control`, `GET /api/swarm/summary` | ✅ | ➖ | — |
 | Governed browser policy / plan preview | `POST /api/browser/check`, `POST /api/browser/plan/preview` | ✅ | ➖ | — |
 | Windows server-host desktop Operator | `POST /api/desktop/preview`, `POST /api/desktop/run` | ✅ | ➖ | — |
 | Auth (user/admin tokens) | `X-User-Token`, `X-Admin-Token` headers | ✅ | ✅ | H18.1 / H18.11 |
+
+> **H34.1 ➖ (intentional):** Mission Control is a desktop-operator cockpit (large canvas map,
+> dev-swarm lock files that only exist on the owner's dev machine). Its steering primitives
+> already have native parity through the Approvals tab (H18.11/O26-P3.4) and the read surfaces
+> it aggregates are individually available; a phone-sized cockpit is not planned.
 
 > **H18.20 ✅ (delivered):** native artifact workspace parity — the Memory tab gains an
 > Artifacts view (browse Canvas artifacts with safe typed rendering, remote images behind an
