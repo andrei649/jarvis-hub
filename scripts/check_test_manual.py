@@ -38,6 +38,20 @@ PATH_RE = re.compile(r'\b((?:agents|frontend|tests|scripts|docs|mobile|worldview
 CASE_RE = re.compile(r'\b([A-Z]{3})-(\d{3})\b')
 # tokens shaped like a case ID that never are one
 NON_CASE = {'CWE', 'CVE', 'RFC', 'ISO', 'UTF', 'SHA', 'AES', 'TLS'}
+
+# (constant label, pattern) — the label is what gets reported, so a finding never
+# reproduces any part of the value it matched. See the planted-secret check below.
+SECRET_PATTERNS = [
+    ('Stripe-style live key', r'sk_live_[A-Za-z0-9_/+-]{12,}'),
+    ('Stripe-style test key', r'sk_test_[A-Za-z0-9_/+-]{12,}'),
+    ('Stripe-style publishable key', r'pk_live_[A-Za-z0-9_/+-]{12,}'),
+    ('AWS-style access key id', r'AKIA[A-Za-z0-9]{12,}'),
+    ('GitHub-style token', r'gh[po]_[A-Za-z0-9_]{12,}'),
+    ('Slack-style bot token', r'xoxb-[A-Za-z0-9-]{12,}'),
+    ('Google-style API key', r'AIza[A-Za-z0-9_-]{12,}'),
+    ('Anthropic-style API key', r'sk-ant-[A-Za-z0-9_-]{12,}'),
+    ('OpenAI-style project key', r'sk-proj-[A-Za-z0-9_-]{12,}'),
+]
 SECT_RE = re.compile(r'^#{1,4}\s')
 
 
@@ -131,17 +145,21 @@ def check(md: Path) -> dict:
     # Planted secrets must be unmistakably fake. A realistic-looking literal trips
     # GitHub push protection and blocks the branch (it blocked this manual once).
     #
-    # Report the LOCATION and the vendor prefix only — never any part of the matched
-    # value. A tool that detects secrets must not copy them into console output, CI
-    # logs or a PR comment: if a chapter ever held a real key, echoing it here would
-    # widen the leak instead of containing it (CWE-312, flagged by CodeQL on the first
-    # version of this check, which printed the first 24 characters).
-    for m in re.finditer(r'(?P<prefix>sk_live_|sk_test_|pk_live_|AKIA|ghp_|gho_|xoxb-|AIza|sk-ant-|sk-proj-)'
-                         r'[A-Za-z0-9_/+-]{12,}', text):
-        body = m.group(0)[len(m.group('prefix')):]
-        if 'QAFAKE' not in body.upper() and 'EXAMPLE' not in body.upper():
-            line = text.count('\n', 0, m.start()) + 1
-            out['unsafe_secrets'].append(f"line {line}: {m.group('prefix')}… ({len(body)} chars)")
+    # NOTHING derived from the matched text may be reported — not the value, not a
+    # prefix of it, not its length. Only a line number and a CONSTANT label from
+    # SECRET_PATTERNS below. A tool that detects secrets must not copy them into
+    # console output, CI logs or a PR comment: if a chapter ever held a real key,
+    # echoing any part of it would widen the leak instead of containing it (CWE-312).
+    # CodeQL flagged two earlier versions of this check — one printed the first 24
+    # characters, the next printed only the vendor prefix, which is still a substring
+    # of the secret and still tainted. Hence: constants only.
+    for label, pattern in SECRET_PATTERNS:
+        for m in re.finditer(pattern, text):
+            matched = m.group(0)
+            # the value is inspected here and never leaves this scope
+            if 'QAFAKE' in matched.upper() or 'EXAMPLE' in matched.upper():
+                continue
+            out['unsafe_secrets'].append(f'line {text.count(chr(10), 0, m.start()) + 1}: {label}')
 
     # A literal control byte makes git treat the chapter as binary (no diffs) and can
     # break rendering. Test payloads must be written as escapes, not raw bytes.
