@@ -130,11 +130,18 @@ def check(md: Path) -> dict:
 
     # Planted secrets must be unmistakably fake. A realistic-looking literal trips
     # GitHub push protection and blocks the branch (it blocked this manual once).
-    for m in re.finditer(r'(?:sk_live_|sk_test_|pk_live_|AKIA|ghp_|gho_|xoxb-|AIza|sk-ant-|sk-proj-)'
+    #
+    # Report the LOCATION and the vendor prefix only — never any part of the matched
+    # value. A tool that detects secrets must not copy them into console output, CI
+    # logs or a PR comment: if a chapter ever held a real key, echoing it here would
+    # widen the leak instead of containing it (CWE-312, flagged by CodeQL on the first
+    # version of this check, which printed the first 24 characters).
+    for m in re.finditer(r'(?P<prefix>sk_live_|sk_test_|pk_live_|AKIA|ghp_|gho_|xoxb-|AIza|sk-ant-|sk-proj-)'
                          r'[A-Za-z0-9_/+-]{12,}', text):
-        tok = m.group(0)
-        if 'QAFAKE' not in tok.upper() and 'EXAMPLE' not in tok.upper():
-            out['unsafe_secrets'].append(tok[:24] + '…')
+        body = m.group(0)[len(m.group('prefix')):]
+        if 'QAFAKE' not in body.upper() and 'EXAMPLE' not in body.upper():
+            line = text.count('\n', 0, m.start()) + 1
+            out['unsafe_secrets'].append(f"line {line}: {m.group('prefix')}… ({len(body)} chars)")
 
     # A literal control byte makes git treat the chapter as binary (no diffs) and can
     # break rendering. Test payloads must be written as escapes, not raw bytes.
@@ -215,8 +222,10 @@ def main(argv):
         if r['missing_sections']:
             flags.append(f"MISSING SECTIONS: {r['missing_sections']}")
         if r['unsafe_secrets']:
-            flags.append(f"REALISTIC SECRET LITERAL {sorted(set(r['unsafe_secrets']))[:4]} — "
-                         "will trip GitHub push protection; use the QAFAKE convention")
+            # locations + vendor prefix only; the matched value is never printed
+            flags.append(f"REALISTIC SECRET LITERAL at {sorted(set(r['unsafe_secrets']))[:4]} — "
+                         "will trip GitHub push protection; use the QAFAKE convention "
+                         "or generate the value at test time")
         if r['control_bytes']:
             flags.append(f"RAW CONTROL BYTES {r['control_bytes']} — git sees the file as binary")
         if r['table_mismatch']:
