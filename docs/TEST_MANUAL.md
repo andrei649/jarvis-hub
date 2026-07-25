@@ -103,11 +103,11 @@ Record what you **exercised**, not what you read. A short honest run beats a ful
 
 | § | Chapter | Cases | Ran | Passed | Skipped (why) | Findings |
 |---|---|---|---|---|---|---|
-| 01 | Install, environment & boot | | | | | |
-| 02 | Chat, routing & the 17 agents | | | | | |
-| 03 | HUD v2 shell | | | | | |
-| 04 | Console panels A | | | | | |
-| 05 | Console panels B | | | | | |
+| 01 | Install, environment & boot | 142 | | | | |
+| 02 | Chat, routing & the 17 agents | 116 | | | | |
+| 03 | HUD v2 shell | 204 | | | | |
+| 04 | Console panels A | 160 | | | | |
+| 05 | Console panels B | 166 | | | | |
 | 06 | Standalone pages, WorldView, desktop | | | | | |
 | 07 | Autonomy, approvals & governance | | | | | |
 | 08 | Security, auth & privacy | | | | | |
@@ -145,17 +145,18 @@ coverage ledger and an open-gaps list. Case IDs are stable — cite them in find
 "the Pepper thing").
 
 > **Status: the manual is landing chapter by chapter.** Only the chapters marked ✅ below exist right
-> now; the rest are being written and land in this same PR. This table is the honest index — it will
+> now — **6 of 14, 1,196 cases**. The ⏳ eight are written next (the authoring run for them stopped on a
+> session usage limit, not on a problem with the work) and land in this same PR. This table is the honest index — it will
 > not link you to a file that isn't there. (Applying the manual's own rule to itself: a plausible-looking
 > index of chapters that don't exist is exactly the F3 defect this document is about.)
 
 | § | Chapter | Prefix | Cases | What it proves | Needs |
 |---|---|---|---|---|---|
 | ✅ [01](test-manual/01-environment-and-boot.md) | Install, environment & boot | `ENV` | 142 | It installs, boots, and its self-reports are true | — |
-| ⏳ 02 | Chat, routing & the 17 agents | `CHT` | — | It answers well **and never invents** — the anti-fabrication protocol | 🤖 |
-| ⏳ 03 | HUD v2 shell | `SHL` | — | Every mode, badge, and the chat pane behave and degrade honestly | 👁 |
-| ⏳ 04 | Console panels A — Start/Home/Memory/Trust/Interop | `PNL` | — | ~32 panels render live data or an honest empty state | 👁 |
-| ⏳ 05 | Console panels B — Observe/Build/Autonomy/Admin | `PNB` | — | ~35 panels + the operator UI, same bar | 👁 |
+| ✅ [02](test-manual/02-chat-routing-agents.md) | Chat, routing & the 17 agents | `CHT` | 116 | It answers well **and never invents** — the anti-fabrication protocol | 🤖 |
+| ✅ [03](test-manual/03-hud-shell.md) | HUD v2 shell | `SHL` | 204 | Every mode, badge, and the chat pane behave and degrade honestly | 👁 |
+| ✅ [04](test-manual/04-console-panels-a.md) | Console panels A — Start/Home/Memory/Trust/Interop | `PNL` | 160 | ~32 panels render live data or an honest empty state | 👁 |
+| ✅ [05](test-manual/05-console-panels-b.md) | Console panels B — Observe/Build/Autonomy/Admin | `PNB` | 166 | ~35 panels + the operator UI, same bar | 👁 |
 | ⏳ 06 | Standalone pages, legacy HUD, WorldView, desktop | `PGE` | — | Mission Control, the PWA, the widget, WorldView — and v2-vs-legacy divergence | 👁 |
 | ⏳ 07 | Autonomy, approvals & governance | `GOV` | — | The wedge: capability **with** governance, provably (`ungoverned_actions == 0`) | 🤖 |
 | ⏳ 08 | Security, auth, privacy & tier isolation | `SEC` | — | Guards hold, secrets don't leak, the audit chain is tamper-evident | 🌐 |

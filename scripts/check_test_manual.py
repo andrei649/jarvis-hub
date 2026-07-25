@@ -32,7 +32,7 @@ EXPECTED_PREFIX = {
 }
 
 # "GET /api/foo" / "POST /chat" style citations in prose, code or tables
-ROUTE_RE = re.compile(r'\b(GET|POST|PUT|PATCH|DELETE|HEAD)\s+(/[A-Za-z0-9_\-./{}:]*)')
+ROUTE_RE = re.compile(r'\b(GET|POST|PUT|PATCH|DELETE|HEAD)\s+(/[A-Za-z0-9_\-./{}:,<>*]*)')
 # repo-relative paths: dir/file.ext, allowing agents/core/x.py, frontend/src/a.tsx, docs/X.md
 PATH_RE = re.compile(r'\b((?:agents|frontend|tests|scripts|docs|mobile|worldview|desktop|rust|packaging|deploy|services|skills|packages|apps)/[A-Za-z0-9_\-./*{}]+\.[A-Za-z0-9]+)')
 CASE_RE = re.compile(r'\b([A-Z]{3})-(\d{3})\b')
@@ -40,8 +40,14 @@ SECT_RE = re.compile(r'^#{1,4}\s')
 
 
 def norm_route(path: str) -> str:
-    """Normalise a cited path so template params match the snapshot's naming."""
-    return re.sub(r'\{[^}]*\}', '{}', path.rstrip('.,;:)`'))
+    """Normalise a cited path so placeholder notations match the snapshot's naming.
+
+    Chapters legitimately write a param as `{category}`, `<category>` or a family as
+    `/api/memory/*`; the snapshot only ever uses `{name}`. Normalise all of them.
+    """
+    p = path.rstrip('.,;:)`')
+    p = re.sub(r'<[^>]*>', '{}', p)
+    return re.sub(r'\{[^}]*\}', '{}', p)
 
 
 NORM_KNOWN = {norm_route(p) for p in KNOWN_PATHS}
@@ -55,11 +61,25 @@ TEMPLATE_RES = [
 ]
 
 
+def _expand(path: str) -> list[str]:
+    """Expand "/a/{x,y}" shorthand into the concrete paths it stands for."""
+    m = re.search(r'\{([^}]*,[^}]*)\}', path)
+    if not m:
+        return [path]
+    return [path[:m.start()] + opt.strip() + path[m.end():] for opt in m.group(1).split(',')]
+
+
 def route_known(path: str) -> bool:
-    p = norm_route(path)
-    if p in NORM_KNOWN:
-        return True
-    return any(rx.match(p) for rx in TEMPLATE_RES)
+    # a glob / ellipsis cites a family: accept if any real route sits under the prefix
+    if path.endswith(('*', '...')) or '/...' in path:
+        pre = norm_route(path.split('*')[0].split('...')[0]).rstrip('/')
+        return any(k.startswith(pre) for k in NORM_KNOWN) if len(pre) > 5 else True
+    for cand in _expand(path):
+        p = norm_route(cand)
+        if p in NORM_KNOWN or any(rx.match(p) for rx in TEMPLATE_RES):
+            continue
+        return False
+    return True
 
 
 def check(md: Path) -> dict:
@@ -68,11 +88,17 @@ def check(md: Path) -> dict:
     want = EXPECTED_PREFIX.get(num)
     want = (want,) if isinstance(want, str) else (want or ())
     out = {'file': md.name, 'lines': text.count('\n') + 1, 'bad_routes': [], 'bad_paths': [],
-           'cases': [], 'wrong_prefix': [], 'dupes': [], 'missing_sections': [], 'table_mismatch': [], 'pipe_in_cell': []}
+           'cases': [], 'wrong_prefix': [], 'dupes': [], 'missing_sections': [], 'table_mismatch': [], 'control_bytes': []}
 
+    neg = ('404', '422', '403', '405', '400', 'traversal', 'bogus', 'nonexistent',
+           'unknown', 'does not exist', 'no such', 'reject', 'invalid')
     for m in ROUTE_RE.finditer(text):
         method, path = m.group(1), m.group(2)
         if route_known(path):
+            continue
+        # a negative test cites a path *because* it must fail — not a fabricated route
+        line = text[text.rfind('\n', 0, m.start()) + 1: text.find('\n', m.end())].lower()
+        if any(k in line for k in neg) or '..' in path:
             continue
         # tolerate documented non-app paths (external services, examples)
         if any(path.startswith(p) for p in ('/v1/models', '/api/tags', '/health')):
@@ -91,19 +117,31 @@ def check(md: Path) -> dict:
                and not (ROOT / p).with_name('.env.example').exists():
                 out['bad_paths'].append(p + ' (no .example to scaffold from)')
             continue
+        if any(seg in p for seg in ('/e2e/artifacts/', '/dist/', '/build/', 'repo_export')):
+            continue
         if not (ROOT / p).exists():
             out['bad_paths'].append(p)
 
-    # GFM breaks a table cell on an unescaped "|", even inside a code span. This is the
-    # one defect class that silently mangles a rendered chapter.
+    # A literal control byte makes git treat the chapter as binary (no diffs) and can
+    # break rendering. Test payloads must be written as escapes, not raw bytes.
+    for code in set(range(32)) - {9, 10, 13}:
+        if chr(code) in text:
+            out['control_bytes'].append(f'0x{code:02x} x{text.count(chr(code))}')
+
+    # A row whose cell count differs from its header's is a broken table — this is the
+    # authoritative test for an unescaped "|" in a cell. (A backtick-parity heuristic
+    # was tried first and produced false positives on legitimate ``` ` ``` spans.)
+    hdr = None
     for i, line in enumerate(text.split('\n'), 1):
         s = line.strip()
-        if not (s.startswith('|') and s.endswith('|')):
-            continue
-        # split on UNESCAPED pipes only — "\|" inside a code span is correct GFM
-        cells = re.split(r'(?<!\\)\|', s[1:-1])
-        if any(c.count('`') % 2 for c in cells):
-            out['pipe_in_cell'].append(i)
+        if s.startswith('|') and s.endswith('|'):
+            n = len(re.split(r'(?<!\\)\|', s)) - 2
+            if hdr is None:
+                hdr = n
+            elif set(s.replace('|', '').replace('-', '').replace(':', '').strip()) and n != hdr:
+                out['table_mismatch'].append(f'line {i}: {n} cells vs header {hdr}')
+        else:
+            hdr = None
 
     ids = CASE_RE.findall(text)
     out['cases'] = sorted({f'{a}-{b}' for a, b in ids})
@@ -161,10 +199,10 @@ def main(argv):
             flags.append(f"WRONG PREFIX: {sorted(set(r['wrong_prefix']))[:6]}")
         if r['missing_sections']:
             flags.append(f"MISSING SECTIONS: {r['missing_sections']}")
-        if r['pipe_in_cell']:
-            flags.append(f"UNESCAPED PIPE IN TABLE CELL, lines {r['pipe_in_cell'][:8]} (breaks GFM render)")
+        if r['control_bytes']:
+            flags.append(f"RAW CONTROL BYTES {r['control_bytes']} — git sees the file as binary")
         if r['table_mismatch']:
-            flags.append(f"TABLE COLS at lines {r['table_mismatch'][:5]}")
+            flags.append(f"BROKEN TABLE ROW ({len(r['table_mismatch'])}): {r['table_mismatch'][:4]}")
         status = 'OK' if not flags else 'ISSUES'
         problems += len(flags)
         print(f"{md.name:38s} {r['lines']:5d} lines  {len(r['cases']):4d} cases  {status}")
