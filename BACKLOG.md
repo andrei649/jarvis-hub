@@ -173,6 +173,43 @@ python -m pytest tests/ -v          # ~5,425 collected (counter synced via scrip
 
 ---
 
+## 🥊 Nerva vs Hermes Agent — honest gap analysis (2026-07-25)
+
+> Full analysis + evidence: [`docs/research/2026-07-25-nerva-vs-hermes-honest-gap-analysis.md`](docs/research/2026-07-25-nerva-vs-hermes-honest-gap-analysis.md).
+> Hermes side re-grounded live (repo + releases + docs, 2026-07-25): **v0.19.0** (07-20), 220.1k★,
+> releases every ~2–3 weeks; it now ships **real desktop computer-use** (`cua-driver`, mac/win/linux,
+> a11y + screenshots, per-action approval), real browser automation (local CDP + Browserbase +
+> Browser Use), **Home Assistant device control** (`ha_list_entities`/`ha_get_state`/`ha_list_services`/
+> `ha_call_service`), smart approvals **by default**, Bitwarden/1Password secret sources, `/goal`
+> completion contracts verified against evidence, and Skills-Hub security scanning.
+> **Headline:** Nerva is architecturally ahead (kernel mediation, hash-chained audit, taint,
+> strict-local family data, house/camera/media/ambient model) and operationally behind — our pillars
+> are code-complete but actuator-gated, and **7 of the 8 S1–S8 superiority bars have no artifact**.
+> Two claims in `NERVA_VISION.md` are now wrong in opposite directions: §3's baseline is stale *in our
+> favour* (cameras/HA/media code exists), §8's verdict is stale *against* us (Hermes has HA control).
+
+- [ ] 🔴 **GAP-1 — A8 first, everything else after.** The AI-OS owner-host proof (release gate A8) is
+  the blocking artifact; until it runs once on real hardware every ✅ in ORIZONT 27–33 is a promise.
+  No new pillar work until it does. *(Already tracked as A8; restated here because this analysis
+  makes it the top-ranked action.)*
+- [ ] 🔴 **GAP-2 — run the head-to-head once.** Install Hermes on the same box; define **10** tasks
+  (browser · desktop · house · one skill acquisition); score both; publish the table including the
+  losses. Converts "superior to Hermes" from slogan to number. ~1 day. Feeds S1/S2.
+- [ ] 🟠 **GAP-3 — SEC-B1 is the moat-critical bug.** A strict-local→cloud leak in `Agent.synthesize`
+  invalidates the one promise Hermes structurally cannot make. Ranked above the rest of the security
+  lane by this analysis. *(Same item as SEC-B1 below.)*
+- [ ] 🟠 **GAP-4 — pick three flags that go on by default.** Candidates in order: the learning loop
+  (with a local model), `JARVIS_ACTION_KERNEL` (flip-on criteria already an open owner decision), the
+  Playwright driver (+ `playwright` as a requirements extra). Default-off-everything is *why* the
+  product does less than the PRs imply.
+- [ ] 🟡 **GAP-5 — restate the Hermes verdict** in `NERVA_VISION.md` §8: drop any claim implying
+  Hermes can't touch a light; the defensible line is **"Hermes has HA as a tool; Nerva has a house
+  model"** / *"Hermes acts; Nerva can prove what it did and models the household it acts in."*
+- [ ] 🟡 **GAP-6 — re-baseline `NERVA_VISION.md` §3** with the LIVE/PLUMBING/STUB rubric instead of
+  the 2026-07-11 pillar percentages (now stale on the code axis).
+
+---
+
 ## 🛡️ Governance-rails security audit (2026-07-24 — 8-reviewer adversarial pass)
 
 > Full findings + severities + evidence: [`docs/research/2026-07-24-governance-rails-security-audit.md`](docs/research/2026-07-24-governance-rails-security-audit.md).
