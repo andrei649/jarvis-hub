@@ -144,22 +144,37 @@ expected results, a **degraded & honest-state matrix**, a **negative/adversarial
 coverage ledger and an open-gaps list. Case IDs are stable — cite them in findings (`CHT-014`, not
 "the Pepper thing").
 
-| § | Chapter | Prefix | What it proves | Needs |
-|---|---|---|---|---|
-| [01](test-manual/01-environment-and-boot.md) | Install, environment & boot | `ENV` | It installs, boots, and its self-reports are true | — |
-| [02](test-manual/02-chat-routing-agents.md) | Chat, routing & the 17 agents | `CHT` | It answers well **and never invents** — the anti-fabrication protocol | 🤖 |
-| [03](test-manual/03-hud-shell.md) | HUD v2 shell | `SHL` | Every mode, badge, and the chat pane behave and degrade honestly | 👁 |
-| [04](test-manual/04-console-panels-a.md) | Console panels A — Start/Home/Memory/Trust/Interop | `PNL` | ~32 panels render live data or an honest empty state | 👁 |
-| [05](test-manual/05-console-panels-b.md) | Console panels B — Observe/Build/Autonomy/Admin | `PNB` | ~35 panels + the operator UI, same bar | 👁 |
-| [06](test-manual/06-standalone-pages.md) | Standalone pages, legacy HUD, WorldView, desktop | `PGE` | Mission Control, the PWA, the widget, WorldView — and v2-vs-legacy divergence | 👁 |
-| [07](test-manual/07-autonomy-governance.md) | Autonomy, approvals & governance | `GOV` | The wedge: capability **with** governance, provably (`ungoverned_actions == 0`) | 🤖 |
-| [08](test-manual/08-security-privacy.md) | Security, auth, privacy & tier isolation | `SEC` | Guards hold, secrets don't leak, the audit chain is tamper-evident | 🌐 |
-| [09](test-manual/09-memory-knowledge.md) | Memory, knowledge, RAG & observability | `MEM` | It remembers, forgets, cites — and reports its own cost/latency truthfully | 🤖 🔑 |
-| [10](test-manual/10-workflows-eval.md) | Workflows, pipelines & the evaluation stack | `WFL` | Every step kind, and metrics that trace to real traffic | 🤖 |
-| [11](test-manual/11-channels-voice-mobile.md) | Channels, voice & mobile | `CHN` | Every way it reaches a human — draft-first, never auto-sending | 🔑 |
-| [12](test-manual/12-aios-owner-host.md) | AI-OS owner-host proof (the A8 1.0 gate) | `AIO` | Real browser/desktop/house/camera/media actuation, safely | 🖥 |
-| [13](test-manual/13-scenarios-and-chaos.md) | End-to-end scenarios, chaos & soak | `JRN` `CHA` | The product as a lived experience — then deliberately broken | ⏱ |
-| [14](test-manual/14-api-surface-sweep.md) | API surface sweep — all 408 routes | `API` | Nothing on the wire is unguarded or unaccounted for (generated) | 🌐 |
+> **Status: the manual is landing chapter by chapter.** Only the chapters marked ✅ below exist right
+> now; the rest are being written and land in this same PR. This table is the honest index — it will
+> not link you to a file that isn't there. (Applying the manual's own rule to itself: a plausible-looking
+> index of chapters that don't exist is exactly the F3 defect this document is about.)
+
+| § | Chapter | Prefix | Cases | What it proves | Needs |
+|---|---|---|---|---|---|
+| ✅ [01](test-manual/01-environment-and-boot.md) | Install, environment & boot | `ENV` | 142 | It installs, boots, and its self-reports are true | — |
+| ⏳ 02 | Chat, routing & the 17 agents | `CHT` | — | It answers well **and never invents** — the anti-fabrication protocol | 🤖 |
+| ⏳ 03 | HUD v2 shell | `SHL` | — | Every mode, badge, and the chat pane behave and degrade honestly | 👁 |
+| ⏳ 04 | Console panels A — Start/Home/Memory/Trust/Interop | `PNL` | — | ~32 panels render live data or an honest empty state | 👁 |
+| ⏳ 05 | Console panels B — Observe/Build/Autonomy/Admin | `PNB` | — | ~35 panels + the operator UI, same bar | 👁 |
+| ⏳ 06 | Standalone pages, legacy HUD, WorldView, desktop | `PGE` | — | Mission Control, the PWA, the widget, WorldView — and v2-vs-legacy divergence | 👁 |
+| ⏳ 07 | Autonomy, approvals & governance | `GOV` | — | The wedge: capability **with** governance, provably (`ungoverned_actions == 0`) | 🤖 |
+| ⏳ 08 | Security, auth, privacy & tier isolation | `SEC` | — | Guards hold, secrets don't leak, the audit chain is tamper-evident | 🌐 |
+| ⏳ 09 | Memory, knowledge, RAG & observability | `MEM` | — | It remembers, forgets, cites — and reports its own cost/latency truthfully | 🤖 🔑 |
+| ⏳ 10 | Workflows, pipelines & the evaluation stack | `WFL` | — | Every step kind, and metrics that trace to real traffic | 🤖 |
+| ⏳ 11 | Channels, voice & mobile | `CHN` | — | Every way it reaches a human — draft-first, never auto-sending | 🔑 |
+| ⏳ 12 | AI-OS owner-host proof (the A8 1.0 gate) | `AIO` | — | Real browser/desktop/house/camera/media actuation, safely | 🖥 |
+| ⏳ 13 | End-to-end scenarios, chaos & soak | `JRN` `CHA` | — | The product as a lived experience — then deliberately broken | ⏱ |
+| ✅ [14](test-manual/14-api-surface-sweep.md) | API surface sweep — all 408 routes | `API` | 408 | Nothing on the wire is unguarded or unaccounted for (generated) | 🌐 |
+
+Until a ⏳ chapter lands, use the corresponding area of [`MANUAL_TESTING.md`](MANUAL_TESTING.md) and
+[`COWORK_QA_RUNBOOK.md`](COWORK_QA_RUNBOOK.md) §3b/§4b — coarser, but complete and current.
+
+**Keeping the chapters honest.** `python scripts/check_test_manual.py` lints every chapter against
+reality: each cited route must exist in the route snapshot (concrete instantiations of templated
+routes are matched), each cited repo path must exist, case-ID prefixes must be right and unique across
+chapters, the mandatory subsections must be present, and table cells must not contain unescaped pipes
+(which silently mangle a rendered chapter). Run it after editing any chapter — it has already caught a
+bad path and a broken table in the first two.
 
 ### 3.1 Legend (used in every chapter)
 
