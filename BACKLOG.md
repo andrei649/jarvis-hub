@@ -182,31 +182,73 @@ python -m pytest tests/ -v          # ~5,425 collected (counter synced via scrip
 > Browser Use), **Home Assistant device control** (`ha_list_entities`/`ha_get_state`/`ha_list_services`/
 > `ha_call_service`), smart approvals **by default**, Bitwarden/1Password secret sources, `/goal`
 > completion contracts verified against evidence, and Skills-Hub security scanning.
-> **Headline:** Nerva is architecturally ahead (kernel mediation, hash-chained audit, taint,
-> strict-local family data, house/camera/media/ambient model) and operationally behind — our pillars
-> are code-complete but actuator-gated, and **7 of the 8 S1–S8 superiority bars have no artifact**.
-> Two claims in `NERVA_VISION.md` are now wrong in opposite directions: §3's baseline is stale *in our
-> favour* (cameras/HA/media code exists), §8's verdict is stale *against* us (Hermes has HA control).
+> **Verification:** the analysis was itself put through an 11-agent adversarial pass (6 refuters +
+> 5 deepening passes) — **103 claims audited, 46 confirmed, 56 refuted-or-partial, 16
+> story-changing**. The items below are the *corrected* ones; the draft's own errors are recorded in
+> §9 of the doc.
+> **Headline:** architecturally ahead, operationally behind — and three of our "gated" behaviours are
+> **broken rather than gated** (§3.2 of the doc). Corrected S-bar count: **4 of 8 bars have a CI-green
+> artifact (S1/S2/S3/S5), 4 have none (S4/S6/S7/S8), and 8 of 8 have no artifact produced on real
+> hardware or scored against Hermes** — the earlier "7 of 8 have no artifact" was wrong. S7 is
+> *unreachable by construction* (every P4–P6 reality pack is `promotable: False` while the harness is
+> the only path to VERIFIED). Strongest fact for our moat: Hermes issue #487 (SHA-256 hash-chained
+> action log) was closed **"not planned"** — they have declined to build the thing we built and left
+> disconnected in production.
 
-- [ ] 🔴 **GAP-1 — A8 first, everything else after.** The AI-OS owner-host proof (release gate A8) is
-  the blocking artifact; until it runs once on real hardware every ✅ in ORIZONT 27–33 is a promise.
-  No new pillar work until it does. *(Already tracked as A8; restated here because this analysis
-  makes it the top-ranked action.)*
-- [ ] 🔴 **GAP-2 — run the head-to-head once.** Install Hermes on the same box; define **10** tasks
-  (browser · desktop · house · one skill acquisition); score both; publish the table including the
-  losses. Converts "superior to Hermes" from slogan to number. ~1 day. Feeds S1/S2.
-- [ ] 🟠 **GAP-3 — SEC-B1 is the moat-critical bug.** A strict-local→cloud leak in `Agent.synthesize`
-  invalidates the one promise Hermes structurally cannot make. Ranked above the rest of the security
-  lane by this analysis. *(Same item as SEC-B1 below.)*
-- [ ] 🟠 **GAP-4 — pick three flags that go on by default.** Candidates in order: the learning loop
-  (with a local model), `JARVIS_ACTION_KERNEL` (flip-on criteria already an open owner decision), the
-  Playwright driver (+ `playwright` as a requirements extra). Default-off-everything is *why* the
-  product does less than the PRs imply.
-- [ ] 🟡 **GAP-5 — restate the Hermes verdict** in `NERVA_VISION.md` §8: drop any claim implying
-  Hermes can't touch a light; the defensible line is **"Hermes has HA as a tool; Nerva has a house
-  model"** / *"Hermes acts; Nerva can prove what it did and models the household it acts in."*
-- [ ] 🟡 **GAP-6 — re-baseline `NERVA_VISION.md` §3** with the LIVE/PLUMBING/STUB rubric instead of
-  the 2026-07-11 pillar percentages (now stale on the code axis).
+- [ ] 🔴 **GAP-0 — distribution is the binding constraint, and we have the data.** The repo is
+  **public** (4★, 979 commits) and `marketing/alpha-testing/2026-07-10-fb-response-triage.md` records
+  a campaign that reached **24,182 unique visitors / 165 interactions / ~16 warm leads** and converted
+  **0** design partners (A7 still ⬜ fifteen days later). Demand exists; time-to-first-value is what
+  fails. This outranks every capability item below.
+- [ ] 🔴 **GAP-1 — A8 first, everything else after.** Note the pillar taxonomy: house + cameras are
+  *configuration* work (real clients ship, only the LAN device is missing); **media is driver-missing**
+  (no `MediaDriver` implementation exists and `routers/media_director.py` has no injection point — the
+  owner must write driver code); **acquisition is caller-missing** (needs a contract factory + a
+  trigger, not just a caller). A8's `present()` line is not a config task.
+- [ ] 🔴 **GAP-2 — the four one-line fixes, before any pillar work.** Hours, not sprints, and three of
+  them separate "gated" from "broken": (a) add `cognition.review_enabled` to `WAVE1_FLAGS`
+  (`product_posture.py`) — the Design-Partner posture turns on the intelligence layer and *omits the
+  review loop*, so the ported learning loop has never run for anyone; (b) stop
+  `persistence.list_sessions()` globbing `entities.json` — default-install memory loses continuity
+  across restarts the moment a proper noun is mentioned (always-on path, no flag involved);
+  (c) pass `audit=` into `AutonomyWorker` (`orchestrator.py:345`) — it is `None` in production, so no
+  approval/execution/failure is ever chained; (d) SEC-B3 Telegram owner binding + default channel
+  pairing on — our only live approval sink accepts decisions from anyone in the chat, while Hermes
+  documents default-deny + DM pairing.
+- [ ] 🔴 **GAP-3 — register the escaping action kinds.** `channel.reply` and `skill.install` call
+  `kernel.authorize` but are absent from `ACTION_REGISTRY` / `tests/_snapshots/action_auth.json`, and
+  the matrix test cannot discover kinds that were never registered (its broker enumeration is a
+  hand-maintained import list). BACKLOG's "Gate-K COMPLETE — no bypass path exists" overstates this.
+- [ ] 🟠 **GAP-4 — run the head-to-head once.** Install Hermes on the same box; **10** tasks
+  (browser · desktop · house · one acquisition); publish the table including the losses. Aim at where
+  Hermes documents *limits* — Windows admin-integrity windows (UIPI), Wayland without XWayland,
+  password entry. ~1 day. Feeds S1/S2.
+- [ ] 🟠 **GAP-5 — SEC-B1 with its preconditions stated.** Real and cheap to fix, but it needs cloud
+  configured AND (`cloud_fallback=always` OR local down OR prompt over the local window) — not a
+  default-install leak. Overstating it is how a real finding gets dismissed.
+- [ ] 🟠 **GAP-6 — flags: know what flipping costs.** `JARVIS_ACTION_KERNEL` is **not pure hardening**
+  — with it on, a broker GRANT sets `autonomy_level="act"`, removing the wave-1 unconditional `ask`
+  floor; and the O27–O30 facades need **two** flags (`JARVIS_UNIFIED_ACTION_API` too), so the kernel
+  flag alone does not light up house/media/desktop. Cheapest real win instead: the five governed
+  webhook channels (WhatsApp/Signal/Matrix/Teams/Google Chat) need **no extra pip dependency**, only
+  `JARVIS_WEBHOOK_CHANNELS`.
+- [ ] 🟡 **GAP-7 — restate the Hermes verdict** in `NERVA_VISION.md` §8. Drop "Hermes can't touch a
+  light" and "no household story" (it has an HA `area` filter and per-family-member profile
+  isolation) — both refute in one link. Defensible: **"Hermes has HA as a tool; Nerva has a house
+  model"** and **"Hermes declined to build an action-level audit chain; we built one and have not
+  turned it on."** Also credit what Hermes *doesn't* gate: `ha_call_service` has no approval,
+  container isolation *replaces* command checks, smart approvals auto-approve low risk, memory writes
+  default to no approval.
+- [ ] 🟡 **GAP-8 — re-baseline `NERVA_VISION.md`** §3's prose *and* §4's percentages (P1 ~35%, P4 ~20%,
+  P5 ~15% — no pillar is stated as 0%), plus §98's "11 privileged action kinds" (the snapshot now
+  covers 18).
+- [ ] 🟡 **GAP-9 — honesty debt found by the pass** (each traced to file:line in the doc):
+  `/api/house/state.presence` is structurally always `[]` in every production configuration (the only
+  writer of those predicates has no prod caller); ONVIF discovery needs the undeclared `wsdiscovery`
+  package; the camera VLM leg needs a self-hosted VLM server; `environments/` is a policy plane that
+  never executes and **no SSH transport exists in the repo**; the reality harness persists nothing
+  (in-process registry, no uploaded artifact); README's voice stack lists engines no install path
+  ships.
 
 ---
 
