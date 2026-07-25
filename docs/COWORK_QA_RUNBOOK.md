@@ -8,6 +8,9 @@
 >
 > - [`docs/MANUAL_TESTING.md`](MANUAL_TESTING.md) — the **checklist audit** (areas A–N, the 1.0 sign-off gate). *The source of truth for WHAT to verify.*
 > - [`docs/OWNER_TEST_DRIVE.md`](OWNER_TEST_DRIVE.md) — the **driving script** (6 sessions, "do X → should happen Y"). *The source of truth for HOW a human drives it.*
+> - [`docs/TEST_MANUAL.md`](TEST_MANUAL.md) — the **deep manual** (14 chapters, stable case IDs, every
+>   panel/button/route + journeys + chaos). *The source of truth for the EXACT STEPS of any area.* Use it
+>   whenever a checklist row here is too coarse to execute — cite its case IDs in your findings.
 >
 > This doc does **not** duplicate their content — it tells Cowork how to set up, which of them to
 > run, how to capture findings, and what to hand back. Read both linked docs before starting.
@@ -25,7 +28,7 @@ against.
 | | Run 1 (2026-07-24) | Run 2 (this pass) |
 |---|---|---|
 | Build | `029da4c9` · v0.11.0 | **≥ `06cf011`** (post-H34.2) · v0.11.0 |
-| Suite | not re-run in-session | backend **5,406** · frontend **373** · mobile **96** (`project-status.json`) |
+| Suite | not re-run in-session | backend **5,411** · frontend **373** · mobile **96** (`project-status.json`) |
 | Host | RTX 5090 laptop · LM Studio (`gemma-4-12b` / `qwen3.6-35b-a3b`) | same box — **use it, it is the point of the run** |
 | Verdict | ✗ not cleared — 3 blockers | to be determined |
 
@@ -182,7 +185,7 @@ curl -s -X POST http://127.0.0.1:8080/chat -H "Content-Type: application/json" \
   -d '{"message":"say hello in one word"}'
 
 # d. the offline suite is green at the pinned count (proves the build itself is sound)
-python -m pytest -q      # backend 5,406 on this revision; explain any declared skips
+python -m pytest -q      # backend 5,411 on this revision; explain any declared skips
 ```
 
 Run 1 could not run (d) — its shell had Python 3.10 and a 45s per-command cap, so the official count
@@ -427,7 +430,7 @@ THEN do an autonomous INTAKE (no questions yet — detect everything you can):
   6. pip install -r requirements-beta.txt; set JARVIS_ADMIN_TOKEN + JARVIS_USER_TOKEN (generate if unset);
      turn the brain on (product.posture=companion_wave1); boot serve.py on :8080.
   7. Run the sanity gate (§3): /readyz, /status, one real chat turn, /mission-control + /api/swarm/summary
-     + /api/presence/owner, and the FULL suite in a persistent Python 3.12 shell (`pytest -q` → 5,406;
+     + /api/presence/owner, and the FULL suite in a persistent Python 3.12 shell (`pytest -q` → 5,411;
      `cd frontend && npm ci && npm run typecheck && npm test` → 373). Run 1 could not run these locally —
      you can. If the boot or sanity gate fails, STOP and report that only.
 

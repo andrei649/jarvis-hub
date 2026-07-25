@@ -15,6 +15,12 @@
 Legend for coverage: ✅ logic covered by automated tests (you're only checking the
 real-world wiring) · ⚠️ partially covered · ❌ no automated coverage (test carefully).
 
+> **Need depth, not a checklist?** [`docs/TEST_MANUAL.md`](TEST_MANUAL.md) is the **deep manual** — 14
+> chapters covering every surface, panel, button, route (all 408, generated) and degraded state, plus
+> simulated end-to-end journeys and chaos/fault injection, with stable case IDs, a fabrication-grading
+> taxonomy and three run budgets (2 h / 12 h / multi-day). This file stays the **release gate**: tick
+> the critical areas here and sign off; open the deep manual when you need the exact steps for an area.
+>
 > **Driving it with an agent?** [`docs/COWORK_QA_RUNBOOK.md`](COWORK_QA_RUNBOOK.md) tells a Claude
 > Cowork session how to boot Nerva, drive the browser, and run the credential-free subset of this
 > checklist + the [`OWNER_TEST_DRIVE.md`](OWNER_TEST_DRIVE.md) sessions, then hand back a triaged report.
@@ -409,7 +415,7 @@ Each needs a real token/account and a live round-trip (send → receive → repl
 
 ## J. Regression smoke (each release)
 
-- [ ] `pytest tests/` is green — collected count matches `project-status.json` (**5,406** backend on
+- [ ] `pytest tests/` is green — collected count matches `project-status.json` (**5,411** backend on
   this revision; frontend **373** vitest, mobile **96**) and any declared skips are explained in the
   run output. `apscheduler` is bundled in
   `requirements-beta.txt`, so the suite runs clean from the one-command install
