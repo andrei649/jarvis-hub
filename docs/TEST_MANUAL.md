@@ -103,20 +103,20 @@ Record what you **exercised**, not what you read. A short honest run beats a ful
 
 | § | Chapter | Cases | Ran | Passed | Skipped (why) | Findings |
 |---|---|---|---|---|---|---|
-| 01 | Install, environment & boot | 142 | | | | |
-| 02 | Chat, routing & the 17 agents | 116 | | | | |
-| 03 | HUD v2 shell | 204 | | | | |
-| 04 | Console panels A | 160 | | | | |
+| 01 | Install, environment & boot | 158 | | | | |
+| 02 | Chat, routing & the 17 agents | 96 | | | | |
+| 03 | HUD v2 shell | 216 | | | | |
+| 04 | Console panels A | 171 | | | | |
 | 05 | Console panels B | 166 | | | | |
-| 06 | Standalone pages, WorldView, desktop | | | | | |
-| 07 | Autonomy, approvals & governance | | | | | |
-| 08 | Security, auth & privacy | | | | | |
-| 09 | Memory, knowledge & observability | | | | | |
-| 10 | Workflows & the evaluation stack | | | | | |
-| 11 | Channels, voice & mobile | | | | | |
+| 06 | Standalone pages, WorldView, desktop | 248 | | | | |
+| 07 | Autonomy, approvals & governance | 238 | | | | |
+| 08 | Security, auth & privacy | 213 | | | | |
+| 09 | Memory, knowledge & observability | 203 | | | | |
+| 10 | Workflows & the evaluation stack | 133 | | | | |
+| 11 | Channels, voice & mobile | 166 | | | | |
 | 12 | AI-OS owner-host (A8 gate) | | | | | |
 | 13 | Scenarios, chaos & soak | | | | | |
-| 14 | API surface sweep | 408 | | | | |
+| 14 | API surface sweep | 409 | | | | |
 | — | **Total** | | | | | |
 
 ### 2.2 Blocker log
@@ -145,27 +145,27 @@ coverage ledger and an open-gaps list. Case IDs are stable — cite them in find
 "the Pepper thing").
 
 > **Status: the manual is landing chapter by chapter.** Only the chapters marked ✅ below exist right
-> now — **6 of 14, 1,196 cases**. The ⏳ eight are written next (the authoring run for them stopped on a
+> now — **12 of 14, 2,417 cases**. The ⏳ two are written next (the authoring run for them stopped on a
 > session usage limit, not on a problem with the work) and land in this same PR. This table is the honest index — it will
 > not link you to a file that isn't there. (Applying the manual's own rule to itself: a plausible-looking
 > index of chapters that don't exist is exactly the F3 defect this document is about.)
 
 | § | Chapter | Prefix | Cases | What it proves | Needs |
 |---|---|---|---|---|---|
-| ✅ [01](test-manual/01-environment-and-boot.md) | Install, environment & boot | `ENV` | 142 | It installs, boots, and its self-reports are true | — |
-| ✅ [02](test-manual/02-chat-routing-agents.md) | Chat, routing & the 17 agents | `CHT` | 116 | It answers well **and never invents** — the anti-fabrication protocol | 🤖 |
-| ✅ [03](test-manual/03-hud-shell.md) | HUD v2 shell | `SHL` | 204 | Every mode, badge, and the chat pane behave and degrade honestly | 👁 |
-| ✅ [04](test-manual/04-console-panels-a.md) | Console panels A — Start/Home/Memory/Trust/Interop | `PNL` | 160 | ~32 panels render live data or an honest empty state | 👁 |
+| ✅ [01](test-manual/01-environment-and-boot.md) | Install, environment & boot | `ENV` | 158 | It installs, boots, and its self-reports are true | — |
+| ✅ [02](test-manual/02-chat-routing-agents.md) | Chat, routing & the 17 agents | `CHT` | 96 | It answers well **and never invents** — the anti-fabrication protocol | 🤖 |
+| ✅ [03](test-manual/03-hud-shell.md) | HUD v2 shell | `SHL` | 216 | Every mode, badge, and the chat pane behave and degrade honestly | 👁 |
+| ✅ [04](test-manual/04-console-panels-a.md) | Console panels A — Start/Home/Memory/Trust/Interop | `PNL` | 171 | ~32 panels render live data or an honest empty state | 👁 |
 | ✅ [05](test-manual/05-console-panels-b.md) | Console panels B — Observe/Build/Autonomy/Admin | `PNB` | 166 | ~35 panels + the operator UI, same bar | 👁 |
-| ⏳ 06 | Standalone pages, legacy HUD, WorldView, desktop | `PGE` | — | Mission Control, the PWA, the widget, WorldView — and v2-vs-legacy divergence | 👁 |
-| ⏳ 07 | Autonomy, approvals & governance | `GOV` | — | The wedge: capability **with** governance, provably (`ungoverned_actions == 0`) | 🤖 |
-| ⏳ 08 | Security, auth, privacy & tier isolation | `SEC` | — | Guards hold, secrets don't leak, the audit chain is tamper-evident | 🌐 |
-| ⏳ 09 | Memory, knowledge, RAG & observability | `MEM` | — | It remembers, forgets, cites — and reports its own cost/latency truthfully | 🤖 🔑 |
-| ⏳ 10 | Workflows, pipelines & the evaluation stack | `WFL` | — | Every step kind, and metrics that trace to real traffic | 🤖 |
-| ⏳ 11 | Channels, voice & mobile | `CHN` | — | Every way it reaches a human — draft-first, never auto-sending | 🔑 |
+| ✅ [06](test-manual/06-standalone-pages.md) | Standalone pages, legacy HUD, WorldView, desktop | `PGE` | 248 | Mission Control, the PWA, the widget, WorldView — and v2-vs-legacy divergence | 👁 |
+| ✅ [07](test-manual/07-autonomy-governance.md) | Autonomy, approvals & governance | `GOV` | 238 | The wedge: capability **with** governance, provably (`ungoverned_actions == 0`) | 🤖 |
+| ✅ [08](test-manual/08-security-privacy.md) | Security, auth, privacy & tier isolation | `SEC` | 213 | Guards hold, secrets don't leak, the audit chain is tamper-evident | 🌐 |
+| ✅ [09](test-manual/09-memory-knowledge.md) | Memory, knowledge, RAG & observability | `MEM` | 203 | It remembers, forgets, cites — and reports its own cost/latency truthfully | 🤖 🔑 |
+| ✅ [10](test-manual/10-workflows-eval.md) | Workflows, pipelines & the evaluation stack | `WFL` | 133 | Every step kind, and metrics that trace to real traffic | 🤖 |
+| ✅ [11](test-manual/11-channels-voice-mobile.md) | Channels, voice & mobile | `CHN` | 166 | Every way it reaches a human — draft-first, never auto-sending | 🔑 |
 | ⏳ 12 | AI-OS owner-host proof (the A8 1.0 gate) | `AIO` | — | Real browser/desktop/house/camera/media actuation, safely | 🖥 |
 | ⏳ 13 | End-to-end scenarios, chaos & soak | `JRN` `CHA` | — | The product as a lived experience — then deliberately broken | ⏱ |
-| ✅ [14](test-manual/14-api-surface-sweep.md) | API surface sweep — all 408 routes | `API` | 408 | Nothing on the wire is unguarded or unaccounted for (generated) | 🌐 |
+| ✅ [14](test-manual/14-api-surface-sweep.md) | API surface sweep — all 408 routes | `API` | 409 | Nothing on the wire is unguarded or unaccounted for (generated) | 🌐 |
 
 Until a ⏳ chapter lands, use the corresponding area of [`MANUAL_TESTING.md`](MANUAL_TESTING.md) and
 [`COWORK_QA_RUNBOOK.md`](COWORK_QA_RUNBOOK.md) §3b/§4b — coarser, but complete and current.

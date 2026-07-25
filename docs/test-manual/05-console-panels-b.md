@@ -174,7 +174,7 @@ queued through ToolRPC / Decision Inbox; this panel cannot approve it."* (`opera
 | PNB-040 | Domain length cap | Paste a 254-char domain, **add domain** | `Domains are capped at 253 characters`; nothing added | MINOR | ❌ |
 | PNB-041 | check policy — allowed | Allowlist `example.com`, URL `https://example.com/x`, **check policy** | `role="status"` `aria-label="browser check result"` reads green **Allowed** (+ reason if any); matches `POST /api/browser/check` → `{allowed:true,reason}` | MAJOR | ✅tests/test_h15_1_browser_agent.py |
 | PNB-042 | check policy — blocked | Same allowlist, URL `https://evil.test/x`, **check policy** | Amber **Blocked** · `<reason>` — the reason string is the server's, bounded to 240 chars | MAJOR | ✅tests/test_h15_1_browser_agent.py |
-| PNB-043 | check policy — SSRF target | URL `http://169.254.169.254/latest/meta-data/` with `169.254.169.254` **in** the allowlist | Still **Blocked** (the SSRF filter is independent of the allowlist, `browser.py:123`) | BLOCKER | ✅tests/test_h15_1_browser_agent.py |
+| PNB-043 | check policy — SSRF target | URL `http://169.254.169.254/latest/meta-data/` with `169.254.169.254` **in** the allowlist | Still **Blocked** — `BrowserPolicy.domain_allowed()` runs `check_ssrf(url)` *after* the allowlist test and returns its reason, so allowlisting a link-local/private host does not bypass it (`agents/core/browser_agent.py:49-62`) | BLOCKER | ✅tests/test_h15_1_browser_agent.py |
 | PNB-044 | Invalid policy response is rejected | (dev) make the endpoint return `{}` | Red alert `Invalid browser policy response` — the panel never renders a check verdict it cannot validate (`operator-panel.tsx:405`) | MAJOR | ✅frontend/src/test/operator-panel.test.tsx |
 | PNB-045 | Browser plan build — all 5 actions | Add one step of each: `navigate`, `extract`, `click`, `type`, `submit` | `<ol aria-label="browser plan">` lists `navigate · <url>`, `extract · <sel>`, `click · <sel>`, `type · <sel> · N characters`, `submit · <sel>`. The type text is **never** echoed — only its length (`operator-panel.tsx:635`) | BLOCKER | ✅frontend/src/test/operator-panel.test.tsx |
 | PNB-046 | Type-text field is credential-safe | Focus *Browser type text* | It is `type="password"` with `autoComplete=off`, `data-1p-ignore`, `data-lpignore`, `data-bwignore` (`operator-panel.tsx:612-621`) — a pasted secret is masked and not offered to password managers | MAJOR | ✅frontend/src/test/operator-panel.test.tsx |
@@ -710,6 +710,15 @@ owner to triage — several are the reason a case above is written as "expected 
     can trip `JARVIS_RATE_LIMIT` (default 120/min) after two opens. Worth measuring during PNB-159.
 21. **`SettingsPanel` discards a 422's `details`** (`gap.tsx:1176` bare `catch`), so a rejected value
     reports as `updated 0` with no indication of *which* setting was refused. *(PNB-081)*
+22. **Two admin-tier routes are called without the admin header.** `POST /heartbeat/{agent_id}/{run|start|stop}`
+    and `POST /api/oauth/refresh` are `admin` in `tests/_snapshots/route_auth.json`, but both are invoked
+    through `act()` — i.e. `apiPost(path, body)` with **no** `{admin: true}` (`gap.tsx:75` for `act`,
+    `gap.tsx:912` for the heartbeat ops, `gap.tsx:1150` for the OAuth refresh). `buildHeaders()` only
+    attaches `X-Admin-Token` when that flag is passed (`frontend/src/api/client.ts:19-25`), so these
+    controls work **only** via the localhost admin bypass; from any other host they 401/403 and `act`'s
+    `.catch(() => {})` swallows it, leaving a button that silently does nothing. Every other admin control
+    in the Console correctly uses `actA()`/`{admin:true}`. Note also that the client's one-shot token
+    prompt fires on **401 only** (`client.ts:41`), so a 403 never prompts. *(PNB-079, PNB-091)*
 
 > **Line numbers in this file were correct at the revision under test.** `file:line` pointers move —
 > re-grep the quoted symbol (not the number) before relying on any of them, exactly as

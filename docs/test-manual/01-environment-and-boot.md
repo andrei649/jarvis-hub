@@ -8,7 +8,7 @@
 > actually read by the code, local/cloud model-backend detection and the hybrid router's
 > `llm_backend` string, the readiness/version truth surfaces (`/healthz`, `/readyz`, `/status`,
 > `/api/status`, `/metrics`, `/api/health/components`), the `product.posture` flip through the
-> ~30-second settings watcher, the build's own integrity counters (pytest 5,406 · vitest 373 · jest 96
+> ~30-second settings watcher, the build's own integrity counters (pytest 5,411 · vitest 373 · jest 96
 > · `status_sync.py` · `release_gate.py` · the `hud-v2-build` freshness gate), the data lifecycle
 > (`JARVIS_HOME`, backup/verify/export/forget, cold start, upgrade preserving data), and every
 > degraded boot the owner can realistically hit.
@@ -25,9 +25,12 @@
 > `JARVIS_HOME` directory for the destructive cases — **never point them at the owner's real data
 > root.** Two terminals help (one long-lived for `pytest`).
 
-> **Time.** 3h30–5h end to end on a warm machine, plus one clean-VM pass (~45 min) and one overnight
-> boundary for the ⏱ cases. The full offline suite alone is 8–25 min; `npm ci` in `frontend/` another
-> 2–4 min the first time.
+> **Time.** 4–5h30 end to end on a warm machine for the 158 cases below, plus one clean-VM pass
+> (~45 min) and one overnight boundary for the ⏱ cases. The full offline suite alone is 8–25 min;
+> `npm ci` in `frontend/` another 2–4 min the first time. If you only have two hours, run in this
+> order: the sanity gate (ENV-076) → ENV-143 (R4 regression) → ENV-077+ENV-146 (posture, because every
+> later 🤖 section depends on it) → ENV-063 (`sys` telemetry, the anti-fabrication anchor) → ENV-113/114
+> (the no-model honest state) → ENV-098 (backup, your rollback for everything else).
 
 Legend, markers, severities and the `Auto:` notation are the manual's shared legend — not redefined here.
 
@@ -140,7 +143,7 @@ module-level env reads. So the rows marked **(import-time)** are ignored when se
 | Var | Read at | Effect | Default | If unset |
 |---|---|---|---|---|
 | `JARVIS_HOST` | `serve.py:66`, `boot_guards.py:75` | uvicorn bind host + the bind guard's input | `127.0.0.1` | loopback-only (safe) |
-| `JARVIS_PORT` | `serve.py:68` (`env_int`) | bind port | `8080` | 8080 |
+| `JARVIS_PORT` | `serve.py:67` (`env_int`) | bind port | `8080` | 8080 |
 | `JARVIS_LOG_LEVEL` | `serve.py:68` | uvicorn log level | `info` | info |
 | `JARVIS_SHUTDOWN_TIMEOUT` | `serve.py:69` | graceful-drain seconds on SIGTERM | `10` | 10 |
 | `JARVIS_ALLOW_INSECURE_BIND` | `boot_guards.py:39` | acknowledge an unauthenticated non-loopback bind | off | external bind refuses to start |
@@ -169,7 +172,7 @@ module-level env reads. So the rows marked **(import-time)** are ignored when se
 | `JARVIS_AUTO_DEEP` / `JARVIS_DEEP_MODEL` | `llm/hybrid_router.py` | heavy prompts escalate to the deep local slot | `1` / `deepseek-r1-distill-qwen-32b` | deep slot used when available |
 | `JARVIS_LLM_WARMUP` | orchestrator | pre-warm the local model at boot | **on** | warms up |
 | `JARVIS_SYSTEM_PROFILE` | `system_profiles.py` | `balanced`\|`gaming`\|`ai`\|`multimedia`\|`admin`\|`headless` posture preset | `balanced` | historical behaviour |
-| `JARVIS_LOG_FILE` / `JARVIS_LOG_MAX_MB` / `JARVIS_LOG_BACKUPS` | `core/log.py:46,58,59` | rotating file log (opt-in; env wins over `system.log_to_file`) | off / 10 MB / 5 | stderr only |
+| `JARVIS_LOG_FILE` / `JARVIS_LOG_MAX_MB` / `JARVIS_LOG_BACKUPS` | `core/log.py:46,59,60` | rotating file log (opt-in; env wins over `system.log_to_file`) | off / 10 MB / 5 | stderr only |
 | `JARVIS_BACKUP_KEY` / `JARVIS_KEY_DIR` | `core/backup.py:63,77,84` | encrypt archives at rest → `.tar.gz.enc` | unset | plaintext `.tar.gz` |
 | `JARVIS_TESTING` | orchestrator/stores | test posture | off | — |
 | `ANTHROPIC_API_KEY` | `hybrid_router.py:321-347`, `plugin_manager.py:82` | Claude tier for `vision`/`steve` | unset | logs `ANTHROPIC_API_KEY not set — Claude tiering disabled, heavy agents will fall back` |
@@ -225,6 +228,35 @@ module-level env reads. So the rows marked **(import-time)** are ignored when se
 - **FAIL if:** a tier appears in the string while its service/key is absent → **BLOCKER** (a fabricated capability claim). If a tier is missing while present → **MAJOR**.
 - **Evidence:** the five strings + the server log lines `LLM backend online: lm-studio (…)`, `Ollama available for Howard (…)` / `Ollama not available — Howard will fall back to default backend`, `Claude API available (…)` / `ANTHROPIC_API_KEY not set — …`.
 
+#### ENV-143 — "What model are you running?" names the RESIDENT model (regression R4)  🤖🖥
+- **Surface:** `POST /chat` (**user**) vs the HUD model badge vs `GET /status` → `loaded_model` · **Auto:** ✅`tests/test_llm_control_status_model.py`
+- **Why it matters:** run 1's headline honesty failure below the three fabrication blockers — the spoken
+  answer named the *configured default* while the badge correctly named the resident model. In a product
+  whose pitch is truthful self-reporting, the chat surface lying about its own model is disqualifying.
+  This is a **three-source cross-validation**, which is the only kind of check that catches this class.
+- **Prereq:** LM Studio running. Load a model that is **not** the `/admin` `llm.default_model` (leave
+  `configured_model` pointing at the old one — do **not** switch it through Nerva, load it directly in
+  LM Studio, which is exactly how the bug reproduced).
+- **Steps:**
+  1) In LM Studio confirm the newly loaded model id and that the old one is unloaded.
+  2) `curl -s :8080/status | python -c "import json,sys;d=json.load(sys.stdin);print(d['loaded_model'], d['configured_model'], d['resident_models'])"`
+  3) Read the HUD top-bar **LLM** badge tooltip (`model loaded: <id>`).
+  4) Ask in **EN**: `What model are you running?` — then in **RO**: `Ce model rulezi acum?`
+  5) Ask the status-phrased variants too: EN `Which LLM is loaded right now?` / RO `Ce model e încărcat în acest moment?`
+- **Expected:** all four sources agree on the **resident** id. `/status` shows
+  `loaded_model == <new id>` while `configured_model` may still be the old one (that divergence is by
+  design). The chat reply is of the form `I am running <resident id> on <llm_backend>, sir.` —
+  `run_llm_control` calls `router.refresh_active_model()` first and only falls back to the cached
+  `active_model` if that refresh is unavailable (`agents/core/llm_control.py:138-149`).
+- **Also acceptable (honest degradation):** `The language backend is offline, sir. Say 'start LM Studio'
+  and I will bring it up.` when the controller reports offline; `LM Studio control is not available, sir.`
+  when no controller is wired. Either is a PASS — they claim nothing false.
+- **FAIL if:** the reply names the **configured** model while the badge and `/status` name the resident
+  one → **BLOCKER** (R4 REGRESSED). If the reply names a model that is resident in neither provider →
+  **BLOCKER**. If EN and RO disagree with each other → **MAJOR** (record both verbatim).
+- **Evidence:** LM Studio screenshot, the `/status` triple, the badge tooltip screenshot, and all four
+  replies **verbatim** (RO with diacritics intact).
+
 | ID | Check | Do | Expect | Fail | Auto |
 |----|-------|----|--------|------|------|
 | ENV-051 | Non-default URL honored 🤖 | Move LM Studio to :1235, `JARVIS_LM_STUDIO_URL=http://localhost:1235 python serve.py` | Detects; `llm_backend: "lm-studio"`. The env override wins over the persisted admin setting (`hybrid_router.py:300`) | MAJOR | ⚠️`tests/test_local_model_status.py` |
@@ -237,6 +269,8 @@ module-level env reads. So the rows marked **(import-time)** are ignored when se
 | ENV-058 | Howard falls back within local 🤖 | Ollama down, LM Studio up, ask Howard | Log `Ollama unavailable for Howard, falling back to LM Studio`; answer served locally. With **both** down: `LocalBackendUnavailableError` — "start Ollama or LM Studio; cloud fallback is forbidden" | MAJOR | ⚠️ |
 | ENV-059 | Cloud escalation knob | `PUT /api/admin/settings/llm {"values":{"cloud_fallback":"never"}}`, wait ≤30 s, send an oversized prompt | Stays local (`local-fallback` route), log `Cloud fallback mode → never`; with `always` an auto-policy agent goes `cloud-flash` | MAJOR | ⚠️ |
 | ENV-060 | Model-pin violation blocks 🤖 | Point an agent with an `approved_models` allowlist at an unlisted model | `ModelNotApprovedError`, log `model pin violation (blocked)`. With `JARVIS_STRICT_MODELS=0` it warns and allows instead | MAJOR | ⚠️`hybrid_router.py:390-401` |
+| ENV-144 | `/api/models/local` control flags are honest 🤖 | `curl -s :8080/api/models/local -H "X-Admin-Token: $T"` with LM Studio up and one model loaded | Each row carries `available`, `resident`, `configured`, `active` and a `controls` object. `can_load` is true **only** for `provider=="lm-studio"` AND the LM Studio controller enabled AND `available is True` AND `resident is False`; `can_unload` only when `resident is True` (`local_model_inventory.py:311-327`). An Ollama row must never offer `can_load`/`can_unload` | MAJOR (a button that cannot work is a false capability claim) | ✅`tests/test_local_model_status.py`, `frontend/src/test/local-models.test.tsx` |
+| ENV-145 | `available`/`resident` are tri-state, not boolean 🤖 | Same call with LM Studio answering `/v1/models` but not `/api/v0/models` | `available: true`, `resident: **null**` — "unknown" is a distinct third value from "no" (`local_model_inventory.py:385-386`); the HUD renders it amber, never as "not loaded" | MAJOR | ✅`tests/test_local_model_status.py` |
 
 ---
 
@@ -288,9 +322,9 @@ module-level env reads. So the rows marked **(import-time)** are ignored when se
 ## 01.7 Posture & the settings watcher
 
 #### ENV-077 — `product.posture` → `companion_wave1` takes effect with no restart, in ≤30 s
-- **Surface:** `PUT /api/admin/settings/product` (admin) → `GET /api/security/posture` (admin) + `GET /api/cognition` (user) · **Auto:** ✅`tests/test_o26_p2_product_posture.py`
+- **Surface:** `PUT /api/admin/settings/product` (admin) → `GET /api/security/posture` (admin) + `GET /api/cognition/status` (user) · **Auto:** ✅`tests/test_o26_p2_product_posture.py`
 - **Why it matters:** the cognition/memory stack is default-**OFF**; `OWNER_TEST_DRIVE` Session 0 says most "Jarvis feels dumb" impressions come from testing with it off. Every 🤖 case in later sections depends on this being on and *provably* on.
-- **Steps:** 1) `curl -s :8080/api/security/posture -H "X-Admin-Token: $T" | python -m json.tool` — record `product_posture.name`. 2) `curl -s -X PUT :8080/api/admin/settings/product -H "X-Admin-Token: $T" -H 'Content-Type: application/json' -d '{"values":{"posture":"companion_wave1"}}'`. 3) Re-read the posture immediately, then again after 35 s. 4) `curl -s :8080/api/cognition -H "X-User-Token: $U"`.
+- **Steps:** 1) `curl -s :8080/api/security/posture -H "X-Admin-Token: $T" | python -m json.tool` — record `product_posture.name`. 2) `curl -s -X PUT :8080/api/admin/settings/product -H "X-Admin-Token: $T" -H 'Content-Type: application/json' -d '{"values":{"posture":"companion_wave1"}}'`. 3) Re-read the posture immediately, then again after 35 s. 4) `curl -s :8080/api/cognition/status` (user tier) — **note:** `OWNER_TEST_DRIVE.md` Session 0 says "`GET /api/cognition` shows enabled", but that route returns the last routing/cognition *context* (`routers/ops.py:113-139`); the flag lives on `/api/cognition/status` (`agents/core/cognition/api.py:28-34`). Use the latter.
 - **Expected:** step 2 → `200 {"updated": 1, "category": "product"}`. The posture snapshot then reports `name: "companion_wave1"`, `raw_name: "companion_wave1"`, `valid: true`, `label: "Companion Wave 1"`, `wave: 1`, and the `flags` map showing all eight wave-1 keys — `memory.recall_enabled`, `memory.embed_turns`, `cognition.enabled`, `cognition.honesty_enabled`, `cognition.affect_enabled`, `cognition.memory_enabled`, `cognition.learning_enabled`, `cognition.personality_enabled` — each with `value: true` and **`source: "product.posture:companion_wave1"`** (`agents/core/product_posture.py:18-27,89`). No server restart.
 - **Also acceptable:** the *effective* runtime flip (what the orchestrator uses) lands on the next watcher tick, i.e. within 30 s (`agents/core/orchestrator.py:803-806`) — the snapshot may lead it.
 - **FAIL if:** the flags still read `source: "default"` after 35 s, or a restart is required → **MAJOR**. If `valid` is `true` for an unknown posture name → **MAJOR**.
@@ -306,6 +340,10 @@ module-level env reads. So the rows marked **(import-time)** are ignored when se
 | ENV-083 | `design_partner` composes with hardening | Set `posture=design_partner` with `JARVIS_HARDENED=1` + `JARVIS_AUDIT_KEY` | Same eight wave-1 flags, plus the `hardened` block reporting forced REDACT guardrails / strict egress / mutating-MCP blocked | MAJOR | ✅`tests/test_cdx12_hardened_profile.py` |
 | ENV-084 | `/api/cognition` standby state is labelled | On a freshly booted server, before any chat: `GET /api/cognition` | `decision.source == "standby"`, `agents_selected: ["jarvis"]`, `timing` all zeros, `trace: []` — a labelled placeholder, **not** a fake routing decision (`routers/ops.py:117-138`) | MAJOR if it looks like a real decision | ⚠️ |
 | ENV-085 | Reseed to defaults | `POST /api/admin/settings/reseed -H "X-Admin-Token: $T"` on a scratch `JARVIS_HOME` | `{"ok":true,"message":"Settings reseeded from defaults"}`; posture returns to `off` | MAJOR | ✅`tests/test_o26_f2_settings_seed.py` |
+| ENV-146 | Cognition master flag follows the posture | `GET /api/cognition/status` (user) before and after ENV-077 | Before: `{"enabled": false, …}` (or `{"enabled":false,"available":false}` when no facade is wired — an honest "not available", not a silent true). After the flip: `enabled: true`. This is the *runtime* proof; the posture snapshot is the *declared* one — **both** must agree | **BLOCKER** if the snapshot says the flags are on while `/api/cognition/status` still reports `enabled:false` (a green posture screen over a dead brain) | ⚠️`tests/test_o26_p2_product_posture.py` |
+| ENV-147 | Sub-capability endpoints degrade honestly | With posture `off`: `GET /api/cognition/honesty`, `/personality`, `/memory`, `/learning`, `/ensemble` (all **user**) | Each returns `{"available": false}` when its module is absent (`agents/core/cognition/api.py:37-90`) — never a zeroed-out metric block that reads like a real measurement | MAJOR | ⚠️ |
+| ENV-148 | Out-of-spec settings keys are skipped, not injected | `PUT /api/admin/settings/product -H "X-Admin-Token: $T" -d '{"values":{"posture":"off","evil_key":1}}'` then `GET /api/admin/settings/product` | Response is `{"updated":1,"category":"product","skipped":["evil_key"]}`; the re-read shows **no** `evil_key` row. Only keys present in the shipped `DEFAULTS` spec are upserted (`settings_db.py:487-497`) | **BLOCKER** if an arbitrary row is created (the rest of the system reads settings back and trusts them) | ✅`tests/test_settings_integrity.py` |
+| ENV-149 | Whole-tree settings read is masked | `GET /api/admin/settings -H "X-Admin-Token: $T"` | Every category returned; credential-bearing values are envelope-encrypted at rest and never returned as plaintext (`settings_db.py` secret-field encryption, AUD-1/F2) | **BLOCKER** if a stored secret comes back in clear | ✅`tests/test_settings_secret_encryption.py` |
 
 ---
 
@@ -316,7 +354,7 @@ module-level env reads. So the rows marked **(import-time)** are ignored when se
 - **Why it matters:** run 1 could not run it (Python 3.10 shell + a 45 s per-command cap) and had to quote CI. §J makes a locally-green suite at the pinned count part of sign-off.
 - **Prereq:** a **persistent** Python 3.12 shell with no per-command timeout; `pip install -r requirements-beta.txt` done.
 - **Steps:** 1) `python --version` → must be ≥3.12. 2) `python -m pytest -q 2>&1 | tail -30`. 3) Compare the collected count with `project-status.json` → `tests.backend`.
-- **Expected:** collected **5,406**, all passing; every declared skip explained in the output. `pytest.ini` already applies `-q --timeout=30 --timeout-method=thread --allow-hosts=127.0.0.1,::1,localhost`, so a stray real outbound call fails fast with `SocketConnectBlockedError` rather than hanging.
+- **Expected:** collected **5,411** — the authoritative figure is `project-status.json` → `tests.backend`, which `scripts/status_sync.py` generates from `pytest --collect-only`; note that `MANUAL_TESTING.md`'s preamble still says 5,406 while its own §J says 5,411, so trust the JSON. All passing; every declared skip explained in the output. `pytest.ini` already applies `-q --timeout=30 --timeout-method=thread --allow-hosts=127.0.0.1,::1,localhost`, so a stray real outbound call fails fast with `SocketConnectBlockedError` rather than hanging.
 - **Also acceptable:** a small count drift — but per `COWORK_QA_RUNBOOK` §3, *a count differing from `project-status.json` is itself a finding.*
 - **FAIL if:** any test fails → **BLOCKER** for the release gate. If the suite cannot run on the tester's Python → record as an **environment limitation**, not a pass.
 - **Evidence:** the tail of the run including the summary line, and `python --version`.
@@ -375,7 +413,7 @@ module-level env reads. So the rows marked **(import-time)** are ignored when se
 
 ---
 
-## 01.10 Degraded boots
+## 01.10 Degraded boots & the first-run surface
 
 | ID | Check | Do | Expect | Fail | Auto |
 |----|-------|----|--------|------|------|
@@ -391,6 +429,9 @@ module-level env reads. So the rows marked **(import-time)** are ignored when se
 | ENV-122 | Port already in use | Start a second instance on 8080 | uvicorn fails with an address-in-use error and exits; the **first** instance keeps serving. `START.bat`'s browser poller must not open a tab that shows the wrong instance | MAJOR | ❌ |
 | ENV-123 | Services down, honestly reported | Stop Qdrant/Neo4j/n8n, boot, read the Console heartbeat log + `GET /api/health/components` | Real "not responding on 127.0.0.1:6333 / :7474 / :5678" lines with real timestamps; the components view lists them as failed. **This is the grounded surface R2 grades Steve against** — capture it before asking Steve anything | BLOCKER if services are reported Online while down | ⚠️ |
 | ENV-124 | No tokens at all | Boot with `JARVIS_ADMIN_TOKEN`/`JARVIS_USER_TOKEN` unset; hit `/api/admin/settings` from **localhost**, then from another LAN host | Localhost: 200 (dev posture, so a fresh box can mint its first token). LAN: `403 {"detail":"admin disabled from network — set JARVIS_ADMIN_TOKEN to enable remote access"}` | BLOCKER if the LAN request succeeds | ✅`tests/test_admin_guard_hf7.py`, `tests/test_user_guard_hf1.py` |
+| ENV-150 | The three starter outcomes never overclaim 👁 | On a box with no Google connector and no configured docs folder: `GET /api/onboarding/command-center` and the HUD's `WHAT NERVA CAN DO FOR YOU` block | All three rows (`plan_my_day`, `private_documents`, `research_web`) read `status:"needs_setup"` → amber **`NEEDS SETUP`** tag, each with a concrete `setup` string. `live` requires the **capability registry's runtime honesty verdict** (`honesty.status == "live"` and `degraded == false`), so a merely-registered plugin manifest can never light this up (`routers/onboarding.py:279-290`). The privacy tag must match the route actually used: `stays local` only for `local`/`local-deep`/`local-fallback`, else `stored locally · cloud model may receive context` | **BLOCKER** if any row shows `READY NOW` without its connector, or claims `stays local` while routed to cloud | ⚠️`frontend/src/test/command-center-panel.test.tsx` |
+| ENV-151 | Wizard completion is derived, not asserted 👁 | `GET /api/onboarding/wizard` (user) on a fresh install; then click **run** on Say hello with a working model; re-read | Five steps in order `intro`, `model`, `test_chat`, `autonomy`, `product_posture`. `completed` is derived from recorded funnel events (`funnel.<step>.complete` in the analytics store, `routers/onboarding.py:260-266`) — so it survives a reload without a wizard-specific store. After a successful hello, `completed` contains `test_chat` and `complete:false` (2 of 5 outstanding) | MAJOR | ✅`tests/test_onboarding_wizard.py` |
+| ENV-152 | First-run gate is keyboard-reachable ♿👁 | With the FIRST RUN modal open, use **Tab/Enter only** to reach and activate `run` on Say hello, then `continue to cockpit →` | Both reachable with a visible focus indicator; `Escape` behaviour is defined (the sibling `ConsoleOverlay` binds Escape explicitly — record whether `FirstRunGate` does too, and whether focus is trapped inside the modal) | MINOR | ❌ |
 
 ---
 
@@ -408,6 +449,8 @@ optimistic than stated is a finding.
 | `GET /api/status` | `{version,agents:17,status:"ok"}` | same | same | same | same | same | — |
 | `GET /api/health/components` | components listed, failures in `failed[]` | same | Qdrant/Neo4j/n8n in `failed[]` | same | same | `{"components":{},"summary":"registry unavailable"}` | — |
 | `GET /api/cognition` | standby placeholder, `decision.source:"standby"` | same | same | 403 from LAN, 200 from localhost | standby | standby | — |
+| `GET /api/cognition/status` | `enabled:false` (posture off) or the facade's real flags | same | same | 403 from LAN | `{"enabled":false,"available":false}` — an honest "no facade", not a zeroed metric block | same | — |
+| Starter outcomes (`command-center`) | all three `needs_setup` + amber `NEEDS SETUP` + a concrete `setup` string | same | `research_web` needs_setup if websearch is degraded | — | all three `needs_setup` | — | — |
 | `GET /api/security/posture` | 200 with real flags | 200 | `sandbox.backend:"unavailable"` when Docker absent | 403 from LAN | posture `off` unless set | `503 {"error":"not initialized"}` | — |
 | `GET /api/admin/backup` | 200 `{"backups":[]}` | 200 | 200 | 403 from LAN / 200 localhost | `{"backups":[]}` (dir absent → empty, not error) | 200/503 | — |
 | HUD LLM badge (`shell.tsx:39-42`) | `○ OFFLINE` · "no local LLM backend reachable" | amber "configured, not loaded" | unchanged | — | — | brief false `○ OFFLINE` (ENV-117, cosmetic) | — |
@@ -440,13 +483,19 @@ optimistic than stated is a finding.
 | ENV-140 | Restart mid-write ⏱ | Kill `-9` the server while a settings write / chat turn is in flight, restart | Boots; `settings.db` opens cleanly (`PRAGMA integrity_check` via a backup+verify); migrations do not re-run destructively; no orphan `.db-wal` breaks startup | BLOCKER if the DB is unopenable | ⚠️`tests/test_db_migrations.py` |
 | ENV-141 | Graceful vs abrupt shutdown | `JARVIS_SHUTDOWN_TIMEOUT=2 python serve.py`, start a slow request, `SIGTERM` | Exits within ~2 s, draining what it can; channels stopped and pooled clients closed via the lifespan teardown (`agents/web.py:390-406`) — no hang, no zombie | MAJOR | ⚠️`tests/test_lifespan_smoke.py` |
 | ENV-142 | Clock skew across a restart ⏱ | Note `/healthz` uptime and the newest `/api/admin/audit` timestamp, set the system clock back 2 h, restart, re-read | Uptime restarts from ~0 and is monotonic; audit rows keep their original timestamps and the chain still verifies — `GET /api/security/audit/verify` (open tier) → `{"valid":true,"first_invalid_id":null,"entries":N}` with `N` ≥ the pre-restart count | MAJOR | ⚠️ |
+| ENV-153 | Local-docs key is a key, never a path | `POST /api/local-docs/index -H "X-User-Token: $U" -d '{"key":"/etc"}'`, then `-d '{"key":"../../.."}'`, then a 200-char key | Every one → `404 {"error":"unknown folder key '<echo>'","available":[…]}`. The folder path comes from the owner-configured `local_docs.folders` map, so **no request value reaches a filesystem path expression** (`routers/onboarding.py:21-26,49-55`); a >128-char key is a 422 from the field's `max_length` | **BLOCKER** if any host path is indexed | ⚠️ |
+| ENV-154 | Funnel namespace stays bounded | `POST /api/onboarding/funnel -d '{"step":"pwn","event":"complete"}'` (user), then a 10 k-char `step` | `400 {"error":"unknown step 'pwn'","steps":["autonomy","intro","model","product_posture","test_chat"]}`; the oversized step is 422 (`max_length=64`). An unbounded funnel namespace would let a caller pollute the analytics store the wizard derives its state from | MAJOR | ✅`tests/test_onboarding_wizard.py` |
+| ENV-155 | Disk full during a backup | Fill the volume holding the data root, then `POST /api/admin/backup` (admin) | `500 {"error":"backup failed"}` (the `OSError`/`ValueError` handler, `routers/backup.py:50-52`) and **no** truncated archive in `GET /api/admin/backup` — the tar is staged in a temp dir and only moved into `backups/` on success (`core/backup.py:176-202`) | MAJOR (BLOCKER if a truncated archive is listed as a snapshot) | ⚠️`tests/test_backup.py` |
+| ENV-156 | Read-only data root | `chmod -w` the resolved `data_root()`, restart | A readable error naming the path — never a boot that appears healthy while persisting nothing, and never a silent fallback into the repo checkout. Record the exact message | MAJOR | ❌ |
+| ENV-157 | Two servers, one data root ⏱ | `JARVIS_HOME=/tmp/shared JARVIS_PORT=8080 python serve.py` and `…PORT=8081 python serve.py` together; approve a task on one, read the inbox on the other | Either a clean SQLite lock error, or genuinely shared state. **Silently diverging** `autonomy.db` views (each process holding its own truth) → **MAJOR**: an owner running `START.bat` twice would then approve into a queue nobody reads | MAJOR | ❌ |
+| ENV-158 | `JARVIS_RATE_LIMIT=0` really disables 🌐 | `JARVIS_RATE_LIMIT=0 python serve.py`, then 500 unauthenticated requests/min from the LAN | No 429 at all (`agents/web.py:218` + the limiter's zero check) — it must not quietly fall back to 120 | MINOR | ✅`tests/test_rate_limit_hf2.py` |
 
-Also worth deliberately breaking, no separate ID needed: boot with `JARVIS_HOME` pointing at a
-read-only directory (expect a clear error, not a silent fallback into the checkout); boot with
-`JARVIS_HOME` set to a path containing spaces and non-ASCII characters; run two servers with the
-same `JARVIS_HOME` on different ports (expect SQLite contention to surface as errors, never as
-silently diverging state); and set `JARVIS_RATE_LIMIT=0` and confirm the limiter is genuinely off
-rather than defaulting back to 120.
+Also worth deliberately breaking, no separate ID needed: boot with `JARVIS_HOME` set to a path
+containing spaces, RO diacritics and a trailing dot (`/tmp/nervă test./`) — expect it to work or to
+fail with a readable message, never to half-create stores; point `JARVIS_HOME` at a network/removable
+volume and yank it mid-write; boot with the system locale set to `ro_RO.UTF-8` and confirm no
+date/decimal parsing changes any reported number; and start `START.bat` twice in a row (the browser
+poller of the second instance must not open a tab pointed at the first).
 
 ---
 
@@ -458,14 +507,14 @@ rather than defaulting back to 120.
 | 01.2 Linux/macOS install | 10 (ENV-015..024) | shell, Node 22 for WorldView | 3 (`test_o26_p2_install_smoke.py`, `test_o26_f6_boot_guards.py`, `test_compatibility.py`) | `install.sh --dev` path untested offline |
 | 01.3 Container & service | 7 (ENV-025..031) | 🔑 Docker, 🖥 for the exe build | 2 partial (`test_release_build.py`, `test_user_home_packaging.py`) | Compose posture (0.0.0.0 bind) is a documented residual |
 | 01.4 Environment matrix | 17 (ENV-032..048) + a 40-row table | 🌐 for ENV-039 | 8 (`test_o26_p2_env_config.py`, `test_o26_f6_boot_guards.py`, `test_user_home_packaging.py`, `test_cdx12_hardened_profile.py`) | ENV-039 (`.env` vs import-time tokens) has no coverage |
-| 01.5 Model backends | 12 (ENV-049..060) | 🤖🖥 LM Studio + Ollama + cloud keys | 5 (`test_local_model_status.py`, `test_llm_status_api.py`, `test_llm_control_status_model.py`) | Residency-vs-catalog logic is well covered offline; the real probes are not |
+| 01.5 Model backends | 15 (ENV-049..060, ENV-143..145) | 🤖🖥 LM Studio + Ollama + cloud keys | 7 (`test_local_model_status.py`, `test_llm_status_api.py`, `test_llm_control_status_model.py`, `frontend .../local-models.test.tsx`) | Residency-vs-catalog logic is well covered offline; the real probes are not. **ENV-143 is regression R4** and the only RO+EN chat case in this section |
 | 01.6 Boot & readiness | 16 (ENV-061..076) | 🖥 for GPU telemetry, 🌐 for ENV-069 | 9 (`test_h2311_operability.py` heavily, `test_hud_security_headers.py`, `test_rate_limit_hf2.py`) | ENV-063 (`_sys_info` on real hardware) has **no** offline equivalent and is the anti-fabrication anchor |
-| 01.7 Posture & watcher | 9 (ENV-077..085) | admin token, ⏱ 35 s | 6 (`test_o26_p2_product_posture.py`, `test_admin_settings_mutations.py`, `test_o26_f2_settings_seed.py`, `test_cdx12_hardened_profile.py`) | The 30 s watcher tick itself is timing-dependent, manual only |
+| 01.7 Posture & watcher | 15 (ENV-077..085, ENV-146..149) | admin token, ⏱ 35 s | 9 (`test_o26_p2_product_posture.py`, `test_admin_settings_mutations.py`, `test_o26_f2_settings_seed.py`, `test_cdx12_hardened_profile.py`, `test_settings_integrity.py`, `test_settings_secret_encryption.py`) | The 30 s watcher tick itself is timing-dependent, manual only. ENV-146 is the declared-vs-runtime cross-check |
 | 01.8 Build integrity | 12 (ENV-086..097) | Node 22, ⏱ long suite, persistent 3.12 shell | 5 + 2 CI lanes (`test_status_sync.py`, `test_release_gate.py`, `test_route_parity_guard.py`; CI `hud-v2-build`, `frontend`) | The counts themselves are the test |
 | 01.9 Data lifecycle | 15 (ENV-098..112) | admin token, scratch `JARVIS_HOME`, ⏱ for upgrade | 9 (`test_backup.py`, `test_data_export.py`, `test_data_purge*.py`, `test_db_migrations.py`, `test_export_route_h23_9.py`) | `UPDATE.bat` itself: ❌ |
-| 01.10 Degraded boots | 12 (ENV-113..124) | 🤖 (absence of), 👁, 🌐 | 4 partial | ENV-120/121/122 (PyYAML, Python 3.10, port in use) all ❌ |
-| 01.Y Adversarial | 18 (ENV-125..142) | 🌐 second LAN device, ⏱ | 10 (`test_admin_guard_hf7.py`, `test_user_guard_hf1.py`, `test_rate_limit_hf2.py`, `test_token_lifecycle.py`, `test_backup.py`, `test_db_migrations.py`) | HUD-level race/refresh cases (ENV-138/139) ❌ |
-| **Total** | **142 cases** | 🖥 34 · 🤖 18 · 👁 14 · 🌐 7 · 🔑 5 · ⏱ 11 | ~62 with some offline coverage · ~80 real-world only | 0 ♿ cases here (accessibility belongs to the HUD sections) |
+| 01.10 Degraded boots & first run | 16 (ENV-113..124, ENV-150..152) | 🤖 (absence of), 👁, 🌐, ♿ | 6 partial | ENV-120/121/122 (PyYAML, Python 3.10, port in use) and ENV-152 (♿) all ❌ |
+| 01.Y Adversarial | 24 (ENV-125..142, ENV-153..158) | 🌐 second LAN device, ⏱ | 13 (`test_admin_guard_hf7.py`, `test_user_guard_hf1.py`, `test_rate_limit_hf2.py`, `test_token_lifecycle.py`, `test_backup.py`, `test_db_migrations.py`, `test_onboarding_wizard.py`) | HUD race/refresh (ENV-138/139), read-only root (ENV-156) and split-brain (ENV-157) ❌ |
+| **Total** | **158 cases** | 🖥 34 · 🤖 21 · 👁 18 · 🌐 8 · 🔑 5 · ⏱ 12 · ♿ 1 | ~72 with some offline coverage · ~86 real-world only | Broader accessibility coverage belongs to the HUD sections; only the first-run gate is graded here |
 
 ---
 
@@ -489,9 +538,11 @@ rather than defaulting back to 120.
    no python is on PATH at all** — an existing 3.10/3.11 is used as-is. `requirements-beta.txt` even
    carries a `python_version < "3.12"` numpy marker, so a 3.11 install partially succeeds. Run 1 hit
    exactly this (its shell had 3.10 and could not run the suite).
-4. **`install.sh` cites a stale test count.** `install.sh:53-54` says "The full ~3,800-test offline
-   suite runs with `--dev`"; `project-status.json` says 5,406. Cosmetic doc drift, but it is the kind
-   of number a tester compares against.
+4. **Three different backend test counts are in circulation.** `install.sh:53-54` says "The full
+   ~3,800-test offline suite runs with `--dev`"; `docs/MANUAL_TESTING.md`'s preamble says **5,406**
+   while its own §J says **5,411**; `project-status.json` → `tests.backend` (the generated,
+   `status_sync.py`-owned figure) says **5,411**. Cosmetic doc drift, but it is exactly the kind of
+   number a tester compares against and then files as a finding. ENV-086 pins the JSON as authority.
 5. **`docker-compose.yml` requires a `.env` file to exist** (`env_file: - .env`) yet nothing in the
    repo ships one and `MANUAL_TESTING.md` §A does not mention copying `.env.example` first —
    `docker compose up` on a fresh clone fails before any container starts.
@@ -517,12 +568,51 @@ rather than defaulting back to 120.
     this file is **not** covered by the H23.10 retention sweep, bounded only by
     `max_bytes × backups`. With an in-repo data root (the default) the log lands inside the git
     checkout. Worth an owner decision, not a test.
-11. **Could not verify on this machine (all deferred to the owner's box):** anything requiring
+11. **`docs/GPU_RUNBOOK.md` tells the owner to set two env vars that are never read.** Its H12.14 step 3
+    says: "replace the Howard tier: set `HOWARD_OLLAMA_MODEL` to your model (served at
+    `HOWARD_OLLAMA_URL`, default `http://localhost:11434`)". Both are plain module constants
+    (`agents/core/llm/model_config.py:19-20`) with **no** `os.environ` / `env_str` read anywhere in the
+    tree (grep-confirmed across `agents/`, `scripts/`, `serve.py`). Following the runbook silently does
+    nothing; the `default_model` admin setting named in the same paragraph does work. Doc bug only.
+12. **README and `install.ps1` still describe the companion stacks as opt-OUT.** `README.md` §Run calls
+    WorldView "auto-started by START.bat/start.sh" and says the Signal Layer is opted out with
+    `JARVIS_SIGNAL_LAYER=0`; `install.ps1:84` prints `JARVIS only: set JARVIS_WORLDVIEW=0 then
+    START.bat`. Both launchers are opt-**in** (`START.bat:40,45` and `start.sh:10,28` test for `=1`).
+    A tester following the README will hunt for a stack that was never going to start. Cosmetic, but it
+    cost time to establish which was true.
+13. **`GET /api/status` reports a registry count computed at import; `/readyz` reports the live roster.**
+    `agents/core/routers/status.py:97-98` returns `AGENT_COUNT`, which
+    `agents/__init__.py:9-30` computes from `agents/_system/agents.yaml` **at import time** with a
+    hardcoded fallback of 17 on any exception. `routers/ops.py:61-62` counts `orch.agents`. If an agent
+    fails to load — or if the YAML is unreadable and the fallback fires — `/api/status` still answers
+    `agents: 17` while the live roster is smaller. Not fabrication in the SOUL sense, but it is a
+    surface that can read healthier than reality, and `MANUAL_TESTING.md` §A uses `/status` version +
+    agents as its boot proof. ENV-025/ENV-065 cross-check them for exactly this reason.
+14. **`OWNER_TEST_DRIVE.md` Session 0 names the wrong cognition route.** It says "`GET /api/cognition`
+    shows enabled". That route returns the last routing/cognition *context* and has no `enabled` field
+    (`agents/core/routers/ops.py:113-139`); the flag lives on `GET /api/cognition/status`
+    (`agents/core/cognition/api.py:28-34`). `COWORK_QA_RUNBOOK.md` §2 repeats the same `curl`. Anyone
+    verifying the posture flip by that route gets a routing blob and no answer. ENV-077/ENV-146 use the
+    correct one.
+15. **Could not verify — `/api/health/components` output shape with services down.** The route exists
+    (`routers/status.py:51-59`, tier **open**) with a `registry unavailable` fallback, but no dedicated
+    test file was found and the component keys/values could not be enumerated from source alone.
+    ENV-074/ENV-123 are written to **record** the output rather than assert an exact shape.
+16. **Could not verify — request-body size limits.** ENV-132 has no concrete expected value: no
+    body-size cap was found on the admin-settings path in `agents/web.py` (the chat path is bounded by
+    `ChatRequest.message` `max_length=4096` plus a non-blank validator). A tester must measure and report
+    whether 10 MB is rejected, buffered, or fatal.
+17. **Could not verify — "port already in use" ergonomics.** `serve.py` has friendly handling for missing
+    dependencies (16-27) and for bind posture (`boot_guards`), but nothing for `EADDRINUSE`; the owner
+    gets a raw uvicorn traceback. ENV-122 records it as a message-quality finding rather than asserting
+    an expected string.
+18. **Could not verify on this machine (all deferred to the owner's box):** anything requiring
     Windows (`INSTALL.bat`, `START.bat`, `UPDATE.bat`, `install.ps1`, `smoke.ps1`,
     `deploy/windows/install-service.ps1`), an NVIDIA GPU (`_sys_info`'s `nvidia-smi` branch), real LM
     Studio/Ollama probes, `docker compose` behaviour, the PyInstaller build in `packaging/nerva.spec`
-    + `scripts/build_exe.py`, and the actual test counts (5,406 / 373 / 96 were read from
-    `project-status.json`, not re-collected here — this environment runs Python 3.11.15, below the
-    project's own floor).
-12. **Line numbers move.** Every `file:line` pointer in this section was correct at the revision it
-    was written against; re-grep the symbol name before relying on a number.
+    + `scripts/build_exe.py`, and the actual test counts (5,411 / 373 / 96 were read from
+    `project-status.json`, not re-collected here — the authoring environment is below the project's own
+    Python floor, which is itself why ENV-086 insists on a persistent 3.12 shell).
+19. **Line numbers move.** Every `file:line` pointer in this section was read at the working-tree
+    revision it was written against. Re-grep the quoted symbol, JSON key or label text before relying
+    on a number — the identifiers and literal strings are the stable part, the line numbers are not.

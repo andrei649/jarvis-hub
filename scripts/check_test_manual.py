@@ -32,10 +32,12 @@ EXPECTED_PREFIX = {
 }
 
 # "GET /api/foo" / "POST /chat" style citations in prose, code or tables
-ROUTE_RE = re.compile(r'\b(GET|POST|PUT|PATCH|DELETE|HEAD)\s+(/[A-Za-z0-9_\-./{}:,<>*]*)')
+ROUTE_RE = re.compile(r'\b(GET|POST|PUT|PATCH|DELETE|HEAD)\s+(/[A-Za-z0-9_\-./{}:,<>*\u2026|]*)')
 # repo-relative paths: dir/file.ext, allowing agents/core/x.py, frontend/src/a.tsx, docs/X.md
 PATH_RE = re.compile(r'\b((?:agents|frontend|tests|scripts|docs|mobile|worldview|desktop|rust|packaging|deploy|services|skills|packages|apps)/[A-Za-z0-9_\-./*{}]+\.[A-Za-z0-9]+)')
 CASE_RE = re.compile(r'\b([A-Z]{3})-(\d{3})\b')
+# tokens shaped like a case ID that never are one
+NON_CASE = {'CWE', 'CVE', 'RFC', 'ISO', 'UTF', 'SHA', 'AES', 'TLS'}
 SECT_RE = re.compile(r'^#{1,4}\s')
 
 
@@ -63,16 +65,17 @@ TEMPLATE_RES = [
 
 def _expand(path: str) -> list[str]:
     """Expand "/a/{x,y}" shorthand into the concrete paths it stands for."""
-    m = re.search(r'\{([^}]*,[^}]*)\}', path)
+    m = re.search(r'\{([^}]*[,|][^}]*)\}', path)
     if not m:
         return [path]
-    return [path[:m.start()] + opt.strip() + path[m.end():] for opt in m.group(1).split(',')]
+    opts = re.split(r'[,|]', m.group(1))
+    return [path[:m.start()] + o.strip() + path[m.end():] for o in opts]
 
 
 def route_known(path: str) -> bool:
     # a glob / ellipsis cites a family: accept if any real route sits under the prefix
-    if path.endswith(('*', '...')) or '/...' in path:
-        pre = norm_route(path.split('*')[0].split('...')[0]).rstrip('/')
+    if path.endswith(('*', '...', '\u2026')) or '/...' in path or '\u2026' in path:
+        pre = norm_route(re.split(r'\*|\.\.\.|\u2026', path)[0]).rstrip('/')
         return any(k.startswith(pre) for k in NORM_KNOWN) if len(pre) > 5 else True
     for cand in _expand(path):
         p = norm_route(cand)
@@ -88,7 +91,7 @@ def check(md: Path) -> dict:
     want = EXPECTED_PREFIX.get(num)
     want = (want,) if isinstance(want, str) else (want or ())
     out = {'file': md.name, 'lines': text.count('\n') + 1, 'bad_routes': [], 'bad_paths': [],
-           'cases': [], 'wrong_prefix': [], 'dupes': [], 'missing_sections': [], 'table_mismatch': [], 'control_bytes': []}
+           'cases': [], 'wrong_prefix': [], 'dupes': [], 'missing_sections': [], 'table_mismatch': [], 'control_bytes': [], 'unsafe_secrets': []}
 
     neg = ('404', '422', '403', '405', '400', 'traversal', 'bogus', 'nonexistent',
            'unknown', 'does not exist', 'no such', 'reject', 'invalid')
@@ -112,15 +115,26 @@ def check(md: Path) -> dict:
         # dotfiles the tester is told to CREATE (.env, .env.local) legitimately don't
         # exist in a clean checkout — their .example counterparts are what must exist.
         base = p.rsplit('/', 1)[-1]
+        if '.local.' in base:
+            continue
         if base.startswith('.env'):
             if not any((ROOT / p).with_name(base + s).exists() for s in ('.example',)) \
                and not (ROOT / p).with_name('.env.example').exists():
                 out['bad_paths'].append(p + ' (no .example to scaffold from)')
             continue
-        if any(seg in p for seg in ('/e2e/artifacts/', '/dist/', '/build/', 'repo_export')):
+        if p.endswith(('.db', '.sqlite', '.log')) or any(
+                seg in p for seg in ('/e2e/artifacts/', '/dist/', '/build/', 'repo_export')):
             continue
         if not (ROOT / p).exists():
             out['bad_paths'].append(p)
+
+    # Planted secrets must be unmistakably fake. A realistic-looking literal trips
+    # GitHub push protection and blocks the branch (it blocked this manual once).
+    for m in re.finditer(r'(?:sk_live_|sk_test_|pk_live_|AKIA|ghp_|gho_|xoxb-|AIza|sk-ant-|sk-proj-)'
+                         r'[A-Za-z0-9_/+-]{12,}', text):
+        tok = m.group(0)
+        if 'QAFAKE' not in tok.upper() and 'EXAMPLE' not in tok.upper():
+            out['unsafe_secrets'].append(tok[:24] + '…')
 
     # A literal control byte makes git treat the chapter as binary (no diffs) and can
     # break rendering. Test payloads must be written as escapes, not raw bytes.
@@ -143,7 +157,8 @@ def check(md: Path) -> dict:
         else:
             hdr = None
 
-    ids = CASE_RE.findall(text)
+    defined = re.findall(r'(?m)^(?:\|\s*|#{2,5}\s*)\*{0,2}([A-Z]{3})-(\d{3})', text)
+    ids = [(a, b) for a, b in defined if a not in NON_CASE]
     out['cases'] = sorted({f'{a}-{b}' for a, b in ids})
     for a, b in set(ids):
         if want and a not in want and a != 'API':
@@ -199,6 +214,9 @@ def main(argv):
             flags.append(f"WRONG PREFIX: {sorted(set(r['wrong_prefix']))[:6]}")
         if r['missing_sections']:
             flags.append(f"MISSING SECTIONS: {r['missing_sections']}")
+        if r['unsafe_secrets']:
+            flags.append(f"REALISTIC SECRET LITERAL {sorted(set(r['unsafe_secrets']))[:4]} — "
+                         "will trip GitHub push protection; use the QAFAKE convention")
         if r['control_bytes']:
             flags.append(f"RAW CONTROL BYTES {r['control_bytes']} — git sees the file as binary")
         if r['table_mismatch']:
