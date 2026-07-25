@@ -99,8 +99,8 @@ def probe(method: str, path: str, tier: str) -> tuple[str, str]:
 
 
 def build() -> str:
-    surface: list[str] = json.loads(SURFACE.read_text())
-    auth: dict[str, str] = json.loads(AUTH.read_text())
+    surface: list[str] = json.loads(SURFACE.read_text(encoding="utf-8"))
+    auth: dict[str, str] = json.loads(AUTH.read_text(encoding="utf-8"))
 
     groups: dict[str, list[tuple[str, str, str]]] = {}
     for route in sorted(set(surface) | set(auth)):
@@ -264,14 +264,14 @@ def main(argv: list[str]) -> int:
     args = ap.parse_args(argv)
     fresh = build()
     if args.check:
-        current = TARGET.read_text() if TARGET.exists() else ""
+        current = TARGET.read_text(encoding="utf-8") if TARGET.exists() else ""
         if current != fresh:
             print(f"{TARGET.relative_to(ROOT)} is stale — run: python scripts/gen_api_sweep.py")
             return 1
         print(f"{TARGET.relative_to(ROOT)} is current")
         return 0
     TARGET.parent.mkdir(parents=True, exist_ok=True)
-    TARGET.write_text(fresh)
+    TARGET.write_text(fresh, encoding="utf-8", newline="\n")
     print(f"wrote {TARGET.relative_to(ROOT)} ({fresh.count(chr(10))} lines)")
     return 0
 

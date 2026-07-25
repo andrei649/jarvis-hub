@@ -34,7 +34,7 @@ gen = _load()
 def test_generated_chapter_is_current():
     """The committed chapter matches what the generator produces from the snapshots."""
     assert gen.TARGET.exists(), f"{gen.TARGET} missing — run: python scripts/gen_api_sweep.py"
-    assert gen.TARGET.read_text() == gen.build(), (
+    assert gen.TARGET.read_text(encoding="utf-8") == gen.build(), (
         "docs/test-manual/14-api-surface-sweep.md is stale relative to the route snapshots. "
         "Run: python scripts/gen_api_sweep.py"
     )
@@ -47,9 +47,9 @@ def test_check_mode_agrees():
 
 def test_every_route_is_enumerated_exactly_once():
     """No route is dropped or double-listed by the grouping logic."""
-    surface = set(json.loads((REPO / "tests/_snapshots/route_surface.json").read_text()))
-    auth = set(json.loads((REPO / "tests/_snapshots/route_auth.json").read_text()))
-    text = gen.TARGET.read_text()
+    surface = set(json.loads((REPO / "tests/_snapshots/route_surface.json").read_text(encoding="utf-8")))
+    auth = set(json.loads((REPO / "tests/_snapshots/route_auth.json").read_text(encoding="utf-8")))
+    text = gen.TARGET.read_text(encoding="utf-8")
     for route in surface | auth:
         method, path = route.split(" ", 1)
         row = f"| `{method}` | `{path}` |"
@@ -58,7 +58,7 @@ def test_every_route_is_enumerated_exactly_once():
 
 def test_every_enumerated_route_carries_a_tier():
     """Each row states a real guard tier — the sweep's whole security value."""
-    text = gen.TARGET.read_text()
+    text = gen.TARGET.read_text(encoding="utf-8")
     rows = [ln for ln in text.split("\n") if ln.startswith("| API-") and "`/" in ln]
     assert rows, "no route rows found in the sweep"
     for ln in rows:
@@ -69,8 +69,8 @@ def test_every_enumerated_route_carries_a_tier():
 
 def test_tier_counts_match_the_auth_snapshot():
     """The headline tier table is derived, not hand-typed."""
-    auth = json.loads((REPO / "tests/_snapshots/route_auth.json").read_text())
-    text = gen.TARGET.read_text()
+    auth = json.loads((REPO / "tests/_snapshots/route_auth.json").read_text(encoding="utf-8"))
+    text = gen.TARGET.read_text(encoding="utf-8")
     for tier in ("user", "admin", "open"):
         n = sum(1 for v in auth.values() if v == tier)
         assert f"| `{tier}` | {n} |" in text, f"tier table wrong for {tier} (expected {n})"

@@ -20,8 +20,8 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_DIR = ROOT / 'docs/test-manual'
-SNAP = json.loads((ROOT / 'tests/_snapshots/route_surface.json').read_text())
-AUTH = json.loads((ROOT / 'tests/_snapshots/route_auth.json').read_text())
+SNAP = json.loads((ROOT / 'tests/_snapshots/route_surface.json').read_text(encoding='utf-8'))
+AUTH = json.loads((ROOT / 'tests/_snapshots/route_auth.json').read_text(encoding='utf-8'))
 KNOWN = set(SNAP) | set(AUTH)
 KNOWN_PATHS = {r.split(' ', 1)[1] for r in KNOWN}
 
@@ -63,7 +63,7 @@ def route_known(path: str) -> bool:
 
 
 def check(md: Path) -> dict:
-    text = md.read_text()
+    text = md.read_text(encoding='utf-8')
     num = md.name[:2]
     want = EXPECTED_PREFIX.get(num)
     want = (want,) if isinstance(want, str) else (want or ())
