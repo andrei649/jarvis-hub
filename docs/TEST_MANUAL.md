@@ -114,10 +114,10 @@ Record what you **exercised**, not what you read. A short honest run beats a ful
 | 09 | Memory, knowledge & observability | 203 | | | | |
 | 10 | Workflows & the evaluation stack | 133 | | | | |
 | 11 | Channels, voice & mobile | 166 | | | | |
-| 12 | AI-OS owner-host (A8 gate) | | | | | |
-| 13 | Scenarios, chaos & soak | | | | | |
+| 12 | AI-OS owner-host (A8 gate) | 72 | | | | |
+| 13 | Scenarios, chaos & soak | 204 | | | | |
 | 14 | API surface sweep | 409 | | | | |
-| — | **Total** | | | | | |
+| — | **Total** | **2,693** | | | | |
 
 ### 2.2 Blocker log
 
@@ -144,11 +144,8 @@ expected results, a **degraded & honest-state matrix**, a **negative/adversarial
 coverage ledger and an open-gaps list. Case IDs are stable — cite them in findings (`CHT-014`, not
 "the Pepper thing").
 
-> **Status: the manual is landing chapter by chapter.** Only the chapters marked ✅ below exist right
-> now — **12 of 14, 2,417 cases**. The ⏳ two are written next (the authoring run for them stopped on a
-> session usage limit, not on a problem with the work) and land in this same PR. This table is the honest index — it will
-> not link you to a file that isn't there. (Applying the manual's own rule to itself: a plausible-looking
-> index of chapters that don't exist is exactly the F3 defect this document is about.)
+> **Status: complete — all 14 chapters, 2,693 cases, 10,930 lines.** Every chapter is linted
+> against the repo by `scripts/check_test_manual.py` (see below). Chapter 14 is generated.
 
 | § | Chapter | Prefix | Cases | What it proves | Needs |
 |---|---|---|---|---|---|
@@ -163,12 +160,9 @@ coverage ledger and an open-gaps list. Case IDs are stable — cite them in find
 | ✅ [09](test-manual/09-memory-knowledge.md) | Memory, knowledge, RAG & observability | `MEM` | 203 | It remembers, forgets, cites — and reports its own cost/latency truthfully | 🤖 🔑 |
 | ✅ [10](test-manual/10-workflows-eval.md) | Workflows, pipelines & the evaluation stack | `WFL` | 133 | Every step kind, and metrics that trace to real traffic | 🤖 |
 | ✅ [11](test-manual/11-channels-voice-mobile.md) | Channels, voice & mobile | `CHN` | 166 | Every way it reaches a human — draft-first, never auto-sending | 🔑 |
-| ⏳ 12 | AI-OS owner-host proof (the A8 1.0 gate) | `AIO` | — | Real browser/desktop/house/camera/media actuation, safely | 🖥 |
-| ⏳ 13 | End-to-end scenarios, chaos & soak | `JRN` `CHA` | — | The product as a lived experience — then deliberately broken | ⏱ |
+| ✅ [12](test-manual/12-aios-owner-host.md) | AI-OS owner-host proof (the A8 1.0 gate) | `AIO` | 72 | Real browser/desktop/house/camera/media actuation, safely | 🖥 |
+| ✅ [13](test-manual/13-scenarios-and-chaos.md) | End-to-end scenarios, chaos & soak | `JRN` `CHA` | 204 | The product as a lived experience — then deliberately broken | ⏱ |
 | ✅ [14](test-manual/14-api-surface-sweep.md) | API surface sweep — all 408 routes | `API` | 409 | Nothing on the wire is unguarded or unaccounted for (generated) | 🌐 |
-
-Until a ⏳ chapter lands, use the corresponding area of [`MANUAL_TESTING.md`](MANUAL_TESTING.md) and
-[`COWORK_QA_RUNBOOK.md`](COWORK_QA_RUNBOOK.md) §3b/§4b — coarser, but complete and current.
 
 **Keeping the chapters honest.** `python scripts/check_test_manual.py` lints every chapter against
 reality: each cited route must exist in the route snapshot (concrete instantiations of templated
