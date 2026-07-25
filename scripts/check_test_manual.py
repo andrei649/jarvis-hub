@@ -39,9 +39,10 @@ CASE_RE = re.compile(r'\b([A-Z]{3})-(\d{3})\b')
 # tokens shaped like a case ID that never are one
 NON_CASE = {'CWE', 'CVE', 'RFC', 'ISO', 'UTF', 'SHA', 'AES', 'TLS'}
 
-# (constant label, pattern) — the label is what gets reported, so a finding never
-# reproduces any part of the value it matched. See the planted-secret check below.
-SECRET_PATTERNS = [
+# (label, pattern) for payloads shaped like a vendor credential. NOTE the label is
+# for humans reading this table only — it is deliberately NOT carried into output;
+# see the check below for why.
+KEY_SHAPED_PATTERNS = [
     ('Stripe-style live key', r'sk_live_[A-Za-z0-9_/+-]{12,}'),
     ('Stripe-style test key', r'sk_test_[A-Za-z0-9_/+-]{12,}'),
     ('Stripe-style publishable key', r'pk_live_[A-Za-z0-9_/+-]{12,}'),
@@ -145,23 +146,26 @@ def check(md: Path) -> dict:
     # A planted test payload must be unmistakably fake. A realistic-looking literal
     # trips GitHub push protection and blocks the branch (it blocked this manual twice).
     #
-    # `risky_literals` holds LOCATIONS ONLY: a line number plus a constant label from
-    # SECRET_PATTERNS. It never holds matched text — not the value, not a prefix of it,
-    # not its length. Two things follow, both learned the hard way from CodeQL:
-    #   1. A tool that detects secrets must not copy them into console output, CI logs
-    #      or a PR comment. If a chapter ever held a real key, echoing any part of it
-    #      would widen the leak instead of containing it (CWE-312).
-    #   2. The field is not *named* for secrets either. An identifier containing
-    #      "secret" makes CodeQL classify the whole structure as sensitive by name, so
-    #      every print derived from it is reported as clear-text logging regardless of
-    #      what it actually contains.
-    for label, pattern in SECRET_PATTERNS:
+    # `risky_literals` holds LINE NUMBERS ONLY — plain ints. Nothing derived from the
+    # matched text or from KEY_SHAPED_PATTERNS is carried out of this loop, so no
+    # dataflow exists from either into any print. That is deliberate and it is why the
+    # output cannot name which vendor pattern matched: the line number is what you act
+    # on anyway, and terse output beats a finding that cannot be printed at all.
+    #
+    # Why so strict: CodeQL's py/clear-text-logging-sensitive-data flagged three earlier
+    # versions of this check. It classifies data as sensitive by IDENTIFIER as well as by
+    # value, so a secret detector is an awkward shape for it — trimming the reported
+    # value (twice) did not clear it, and neither did renaming the destination field.
+    # Rather than keep guessing which node it treats as the source, this version removes
+    # the whole class: no string from the pattern table, no substring of a match, no
+    # length, no name containing "secret" on anything that reaches output.
+    for _label, pattern in KEY_SHAPED_PATTERNS:
         for m in re.finditer(pattern, text):
             matched = m.group(0)
-            # the value is inspected here and never leaves this scope
+            # the matched value is inspected here and never leaves this scope
             if 'QAFAKE' in matched.upper() or 'EXAMPLE' in matched.upper():
                 continue
-            out['risky_literals'].append(f'line {text.count(chr(10), 0, m.start()) + 1}: {label}')
+            out['risky_literals'].append(text.count(chr(10), 0, m.start()) + 1)
 
     # A literal control byte makes git treat the chapter as binary (no diffs) and can
     # break rendering. Test payloads must be written as escapes, not raw bytes.
@@ -243,7 +247,7 @@ def main(argv):
             flags.append(f"MISSING SECTIONS: {r['missing_sections']}")
         if r['risky_literals']:
             # locations + vendor prefix only; the matched value is never printed
-            flags.append(f"KEY-SHAPED LITERAL at {sorted(set(r['risky_literals']))[:4]} — "
+            flags.append(f"KEY-SHAPED LITERAL at lines {sorted(set(r['risky_literals']))[:6]} — "
                          "will trip GitHub push protection; use the QAFAKE convention "
                          "or generate the value at test time")
         if r['control_bytes']:
