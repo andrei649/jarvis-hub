@@ -58,6 +58,7 @@ Order matters: each file assumes the previous ones.
 | **WorldView** | `worldview/README.md` + `worldview/{frontend,backend-api}/src` + **`docs/contracts/worldview-bridge.md`** (the only hub coupling) — standalone stack, nothing else needed | ~150K |
 | **Mobile parity** | `mobile/**` + `mobile/PARITY.md` + the endpoint list from ARCHITECTURE | ~25K |
 | **Security/audit** | `agents/core/security/**` + `docs/AUDIT.md` + `docs/MANUAL_TESTING.md` + `SECURITY.md` | ~40K |
+| **QA / manual testing** | `docs/TEST_MANUAL.md` (entry point + rules + run record) + **only the `docs/test-manual/` chapters for the areas you're testing** — the 14 chapters together are large, and chapter 14 is generated. Add `docs/COWORK_QA_RUNBOOK.md` when an agent drives the run and the newest `docs/qa-runs/*` as the baseline | 8K + 10–25K per chapter |
 | **Marketing/brand** | `docs/BRAND_BOOK.md` + `GO_LIVE_PLAN.md` §3 + `docs/VALUATION_AND_PRICING.md` + `docs/GTM_PLAN.md` | ~25K |
 | **Voice** | `docs/VOICE.md` + `agents/core/voice/**` + `frontend/src/voice.ts` | ~25K |
 | **Whole-codebase sweep** | `python export_repo.py --research` → `repo_export.txt` (hub + HUD source + tests + current docs; gitignored, regenerate on demand). `--core` drops tests (~685K); the unflagged full export (~1.34M) does NOT fit | ~940K |
