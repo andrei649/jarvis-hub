@@ -23,6 +23,7 @@ import os
 import re
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 
 import pytest
@@ -115,6 +116,28 @@ def test_chain_probe_never_touches_the_real_audit_db(probes):
     assert "TemporaryDirectory" in body, "probe_chain must forge rows in a throwaway DB"
     assert "data_path" not in body and "data_root" not in body, (
         "the chain probe resolves a real data path — it must never open the live audit chain"
+    )
+
+
+def test_chain_probe_closes_its_connections_and_leaves_no_temp_dir(probes):
+    """A leaked sqlite handle is invisible on POSIX and fatal on Windows.
+
+    POSIX unlinks an open file happily, so `TemporaryDirectory` cleanup succeeds and a
+    leaked `AuditLogger._conn` never shows. Windows raises PermissionError [WinError 32]
+    out of the cleanup and takes the whole probe with it — which is exactly how this
+    surfaced, green on ubuntu and red on windows-latest in the same CI run.
+
+    Checking that no `adv001-*` directory survives is the portable form of the property.
+    It is weak on Linux by construction; it is the assertion that fails on Windows.
+    """
+    root = Path(tempfile.gettempdir())
+    before = {p.name for p in root.glob("adv001-*")}
+    probes.probe_chain()
+    leaked = {p.name for p in root.glob("adv001-*")} - before
+    assert not leaked, (
+        f"probe_chain left its temp dir behind: {leaked}. On Windows this is a held sqlite "
+        "handle and the cleanup raises instead — close every AuditLogger before the "
+        "TemporaryDirectory exits (tests/test_audit_hardening.py does the same)."
     )
 
 

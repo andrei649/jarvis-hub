@@ -39,6 +39,7 @@ from __future__ import annotations
 
 import argparse
 import ast
+import contextlib
 import hashlib
 import json
 import os
@@ -86,42 +87,60 @@ def probe_chain() -> dict:
 
 
 def _probe_chain_inner(AuditLogger, SecurityEvent, SecurityEventType) -> dict:
+    # Every AuditLogger opened here is closed in a finally before the TemporaryDirectory
+    # unlinks the file. POSIX happily unlinks an open file, so a leaked handle is
+    # invisible on Linux; Windows raises PermissionError [WinError 32] out of the cleanup
+    # and the whole probe dies. tests/test_audit_hardening.py already calls close() on its
+    # loggers — this follows that convention rather than inventing one.
+    logger = after = None
     with tempfile.TemporaryDirectory(prefix="adv001-") as d:
-        db = str(Path(d) / "audit.db")
-        logger = AuditLogger(db_path=db)
-        planted = ["payment approved 5000 EUR", "autonomy raised to L3", "kill-switch disengaged"]
-        for i, text in enumerate(planted):
-            logger.log(SecurityEvent(
-                event_type=SecurityEventType.AUDIT_LOG,
-                timestamp=1753600000.0 + i,
-                content_preview=text,
-                action_taken="logged",
-            ))
-        baseline = logger.verify_chain()
-        algos = [r[0] for r in logger._conn.execute(
-            "SELECT hash_algo FROM security_events ORDER BY id")]
+        try:
+            db = str(Path(d) / "audit.db")
+            logger = AuditLogger(db_path=db)
+            planted = ["payment approved 5000 EUR", "autonomy raised to L3",
+                       "kill-switch disengaged"]
+            for i, text in enumerate(planted):
+                logger.log(SecurityEvent(
+                    event_type=SecurityEventType.AUDIT_LOG,
+                    timestamp=1753600000.0 + i,
+                    content_preview=text,
+                    action_taken="logged",
+                ))
+            baseline = logger.verify_chain()
+            algos = [r[0] for r in logger._conn.execute(
+                "SELECT hash_algo FROM security_events ORDER BY id")]
+            logger.close()
 
-        # The attacker's whole toolkit: sqlite3 + hashlib. The key is never read.
-        con = sqlite3.connect(db)
-        rows = con.execute(
-            "SELECT id, timestamp, event_type, findings_json, action_taken "
-            "FROM security_events ORDER BY id").fetchall()
-        prev = ""
-        for n, (rid, ts, etype, findings, action) in enumerate(rows):
-            forged = f"attacker rewrote row {n + 1}"
-            row_hash = hashlib.sha256(
-                f"{prev}|{ts}|{etype}|{findings}|{forged}|{action}".encode()).hexdigest()
-            con.execute(
-                "UPDATE security_events SET content_preview=?, row_hash=?, prev_hash=?, "
-                "hash_algo='sha256' WHERE id=?", (forged, row_hash, prev, rid))
-            prev = row_hash
-        con.commit()
-        con.close()
+            # The attacker's whole toolkit: sqlite3 + hashlib. The key is never read.
+            con = sqlite3.connect(db)
+            try:
+                rows = con.execute(
+                    "SELECT id, timestamp, event_type, findings_json, action_taken "
+                    "FROM security_events ORDER BY id").fetchall()
+                prev = ""
+                for n, (rid, ts, etype, findings, action) in enumerate(rows):
+                    forged = f"attacker rewrote row {n + 1}"
+                    row_hash = hashlib.sha256(
+                        f"{prev}|{ts}|{etype}|{findings}|{forged}|{action}".encode()).hexdigest()
+                    con.execute(
+                        "UPDATE security_events SET content_preview=?, row_hash=?, prev_hash=?, "
+                        "hash_algo='sha256' WHERE id=?", (forged, row_hash, prev, rid))
+                    prev = row_hash
+                con.commit()
+            finally:
+                con.close()
 
-        after = AuditLogger(db_path=db)
-        forged_ok, first_bad = after.verify_chain()
-        content = [r[0] for r in after._conn.execute(
-            "SELECT content_preview FROM security_events ORDER BY id")]
+            after = AuditLogger(db_path=db)
+            forged_ok, first_bad = after.verify_chain()
+            content = [r[0] for r in after._conn.execute(
+                "SELECT content_preview FROM security_events ORDER BY id")]
+        finally:
+            for opened in (logger, after):
+                if opened is not None:
+                    # A close that fails must not mask the real exception on the way out,
+                    # and a double close is harmless — logger is closed above by design.
+                    with contextlib.suppress(Exception):
+                        opened.close()
 
     return {
         "claim": "a keyed audit chain can be rewritten wholesale by downgrading every row to sha256",
