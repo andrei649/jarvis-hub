@@ -94,7 +94,7 @@ the code to know what a screen meant — record it. Ambiguity in a governance UI
 | AI-OS host seams | Chromium ☐ · Windows UIA ☐ · HA ☐ · Frigate ☐ · media devices (2+) ☐ |
 | Second LAN device available 🌐 | ☐ (without it, every auth assertion is *partial*) |
 | Presence daemon installed | ☐ (absent = presence `unknown`, which is the correct default) |
-| Offline suite re-run locally | backend ___ / 5,411 · frontend ___ / 373 · mobile ___ / 96 |
+| Offline suite re-run locally | backend ___ · frontend ___ · mobile ___ — **targets: `project-status.json` → `tests.*` on the revision under test** (never a number copied into prose; see §5) |
 | Previous run compared against | e.g. `qa-runs/2026-07-24-cowork-run.md` |
 
 ### 2.1 Coverage ledger — one row per chapter, filled as you go
@@ -130,7 +130,7 @@ Record what you **exercised**, not what you read. A short honest run beats a ful
 ☐ Every **BLOCKER** closed or explicitly accepted as out-of-scope (say which)
 ☐ Chapter 12 (A8 owner-host) passed **or** honestly recorded as `skipped — owner-host gate`
 ☐ Chapters 01, 02, 07, 08 fully exercised (the truth, governance and security core)
-☐ The offline suite green locally at the pinned counts
+☐ The offline suite green locally, matching `project-status.json` → `tests.*`
 ☐ Every 🔑/🖥/🌐 skip carries a written reason
 
 **Verdict:** ☐ cleared to tag · ☐ not cleared  ·  Signed: ______________  Build: ______________
@@ -162,7 +162,7 @@ coverage ledger and an open-gaps list. Case IDs are stable — cite them in find
 | ✅ [11](test-manual/11-channels-voice-mobile.md) | Channels, voice & mobile | `CHN` | 166 | Every way it reaches a human — draft-first, never auto-sending | 🔑 |
 | ✅ [12](test-manual/12-aios-owner-host.md) | AI-OS owner-host proof (the A8 1.0 gate) | `AIO` | 72 | Real browser/desktop/house/camera/media actuation, safely | 🖥 |
 | ✅ [13](test-manual/13-scenarios-and-chaos.md) | End-to-end scenarios, chaos & soak | `JRN` `CHA` | 204 | The product as a lived experience — then deliberately broken | ⏱ |
-| ✅ [14](test-manual/14-api-surface-sweep.md) | API surface sweep — all 408 routes | `API` | 409 | Nothing on the wire is unguarded or unaccounted for (generated) | 🌐 |
+| ✅ [14](test-manual/14-api-surface-sweep.md) | API surface sweep — all 404 app routes + 4 doc routes | `API` | 409 | Nothing on the wire is unguarded or unaccounted for (generated) | 🌐 |
 
 **Keeping the chapters honest.** `python scripts/check_test_manual.py` lints every chapter against
 reality: each cited route must exist in the route snapshot (concrete instantiations of templated
@@ -179,7 +179,7 @@ bad path and a broken table in the first two.
 
 `Auto:` ✅*file* = the logic is already covered offline · ⚠️ partial · ❌ none.
 A ✅ does **not** mean skip it — it means the case exists to test the *wiring* (real model, real
-browser, real token, real pixels), which the 5,411 offline tests cannot reach.
+browser, real token, real pixels), which the offline suite cannot reach.
 
 ---
 
@@ -225,6 +225,13 @@ clear the `v1.0.0` sign-off in `MANUAL_TESTING.md`.
 ## 5. Evidence discipline
 
 A finding without evidence is an opinion. A tick without evidence is a fiction.
+
+**Never copy a generated counter into prose.** Test counts, route counts and agent counts are
+owned by `scripts/status_sync.py` and live in `project-status.json`; they change with almost every
+PR. A number typed into a runbook is stale the week after it is written, and a tester who trusts it
+reports a false finding. Always cite the *source*, never the value. (Run 2 found four different
+backend-test counts in the tree at one commit — two of them in this manual. That is the rot this
+rule exists to stop, and it is why chapter 14 is generated rather than hand-written.)
 
 **Capture, per finding:** the case ID · the verbatim input (RO and EN where relevant) · the verbatim
 output (paste, don't paraphrase — fabrications are convincing when summarised) · a screenshot for

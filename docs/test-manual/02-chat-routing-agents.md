@@ -872,6 +872,6 @@ Observations only — no code was changed. Every pointer is `file:line` at the r
 
 **Line-number caveat.** Every `file:line` above was read at the working-tree revision of this pass
 (post-`06cf011`; 404 entries in `tests/_snapshots/route_surface.json`; 408 in `route_auth.json`; backend
-suite pinned at 5,411 in `project-status.json`). Line numbers drift with any refactor — re-grep the
+suite count in `project-status.json` → `tests.backend`). Line numbers drift with any refactor — re-grep the
 surrounding identifier before relying on a number, and treat the identifier (function or constant name)
 as the durable reference.

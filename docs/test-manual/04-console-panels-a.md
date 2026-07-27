@@ -678,7 +678,7 @@ pointer, for the owner to triage — several are the "wrong-but-not-failing" cla
     revision below; no server was booted, no browser opened, no hardware attached. Treat all 🖥/🤖/🌐/⏱
     rows as unverified predictions until the owner runs them.
 26. **Count note:** the brief cites 5,406 backend tests; `project-status.json` on this revision says
-    `{"backend": 5411, "frontend": 373, "mobile": 96}`. Use the file.
+    `{"backend": <n>, "frontend": <n>, "mobile": <n>}`. Use the file, never a number from prose.
 
 *Line numbers in this file were correct at commit `1e52291` (branch
 `claude/rtx-manual-testing-updates-b1bm0l`, 2026-07-25) — re-grep before relying on any `file:line`

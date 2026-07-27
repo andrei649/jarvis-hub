@@ -28,7 +28,7 @@ against.
 | | Run 1 (2026-07-24) | Run 2 (this pass) |
 |---|---|---|
 | Build | `029da4c9` · v0.11.0 | **≥ `06cf011`** (post-H34.2) · v0.11.0 |
-| Suite | not re-run in-session | backend **5,411** · frontend **373** · mobile **96** (`project-status.json`) |
+| Suite | not re-run in-session | run it locally; the expected counts are `project-status.json` → `tests.*` **on the revision under test** |
 | Host | RTX 5090 laptop · LM Studio (`gemma-4-12b` / `qwen3.6-35b-a3b`) | same box — **use it, it is the point of the run** |
 | Verdict | ✗ not cleared — 3 blockers | to be determined |
 
@@ -114,7 +114,14 @@ backend — don't claim §B2 passed without one.
 
 ## 2. Environment setup & boot
 
-Run from the repo root. Needs Python 3.12, Node, and a browser (Chromium). On the owner's laptop use
+Run from the repo root. Needs Python **3.12**, Node, and a browser (Chromium).
+
+> ⚠️ **Check the interpreter first and record it.** `docs/COMPATIBILITY.md` calls 3.12 a *hard*
+> floor (numpy ≥ 2.5), but `requirements-beta.txt` carries a `numpy>=2.0,<2.5; python_version <
+> "3.12"` marker, and no installer enforces the floor — so a box can sit on 3.11 and appear to
+> work. Run 2 found exactly that: a working venv on **3.11.15**. Record `python -V` in the run
+> record. If it is below 3.12 the suite result is *indicative, not authoritative*, and the
+> discrepancy itself is a finding against `COMPATIBILITY.md`. On the owner's laptop use
 the installed browser; in a preconfigured container Chromium is at `PLAYWRIGHT_BROWSERS_PATH=/opt/pw-browsers`
 — **do not** run `playwright install`.
 
@@ -185,7 +192,7 @@ curl -s -X POST http://127.0.0.1:8080/chat -H "Content-Type: application/json" \
   -d '{"message":"say hello in one word"}'
 
 # d. the offline suite is green at the pinned count (proves the build itself is sound)
-python -m pytest -q      # backend 5,411 on this revision; explain any declared skips
+python -m pytest -q      # must equal project-status.json -> tests.backend; explain any declared skips
 ```
 
 Run 1 could not run (d) — its shell had Python 3.10 and a 45s per-command cap, so the official count
@@ -431,11 +438,14 @@ THEN do an autonomous INTAKE (no questions yet — detect everything you can):
   2. Which cloud keys exist? env + .env: ANTHROPIC_API_KEY, GEMINI_API_KEY, OPENAI_API_KEY, OPENROUTER_*.
   3. Which channel tokens exist? Determines what §11 can test and whether away-notify fan-out is observable.
   4. Qdrant/Neo4j/n8n — leave them DOWN for now; R2 needs a real "services are down" contrast.
-  5. `git log --oneline -3` — confirm you are at or past b7424df (the manual's merge).
+  5. `git log --oneline -3` — confirm you are at or past b7424df (the manual's merge). Also run
+     `python -V` in the venv you will use and record it: COMPATIBILITY.md declares a 3.12 hard
+     floor that nothing enforces, so a 3.11 box looks fine until it is not (run 2 hit this).
   6. pip install -r requirements-beta.txt; set JARVIS_ADMIN_TOKEN + JARVIS_USER_TOKEN; turn the brain on
      (product.posture=companion_wave1); boot serve.py on :8080.
   7. Sanity gate: /readyz, /status, one real chat turn, /mission-control + /api/swarm/summary +
-     /api/presence/owner, and the FULL suite in a persistent Python 3.12 shell (pytest -q → 5,411;
+     /api/presence/owner, and the FULL suite in a persistent Python 3.12 shell (pytest -q must equal
+     project-status.json -> tests.backend;
      cd frontend && npm ci && npm run typecheck && npm test → 373). If boot or the gate fails, STOP and
      report only that.
 
