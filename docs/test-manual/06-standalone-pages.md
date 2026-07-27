@@ -554,7 +554,7 @@ served from the root, so its **scope is `/`** and it governs the v2 HUD too.
   measured against the wrong build.
 - **Prereq:** a browser profile that has visited `/v1` at least once (so the worker is installed).
   Note the current bundle hash: `grep -o 'index-[A-Za-z0-9_-]*\.js' agents/web/v2/index.html` →
-  today it is `index-BQpwz2br.js`.
+  the exact name is content-hashed and changes on every frontend build — read it from `agents/web/v2/index.html` rather than trusting any name written here.
 - **Steps:**
   1. With the worker active, open `/` (v2) and confirm in Network that the document was served
      `(from ServiceWorker)` and that it references the hash from the prereq.

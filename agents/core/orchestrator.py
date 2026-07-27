@@ -1501,7 +1501,13 @@ class Orchestrator:
             "If asked for something with no live data here, say plainly it is not "
             "connected — never fabricate a value, and never claim you performed an "
             "action (saved, sent, booked, logged, blocked, briefed) that you did "
-            "not actually perform.\n\n"
+            "not actually perform.\n"
+            "- This applies to actions in ANY tense. Do not say a check, connection, "
+            "sync or hand-off is in progress, queued, being verified, or will report "
+            "back later — nothing runs between turns, so a promised follow-up can "
+            "never arrive. If a connector is missing, say it is not connected and "
+            "state what the owner must do; do not describe work happening on their "
+            "behalf.\n\n"
         )
 
     def _control_master_enabled(self) -> bool:

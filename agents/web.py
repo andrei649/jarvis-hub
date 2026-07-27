@@ -41,7 +41,7 @@ from core.web_helpers import nocache_json as _nocache_json
 from fastapi import Depends, FastAPI, HTTPException, Query, Request
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 logger = logging.getLogger("jarvis.web")
 
@@ -690,6 +690,13 @@ def _enrich_agents() -> list[dict]:
 
 
 class ChatRequest(BaseModel):
+    # `extra="forbid"` so an unknown key is a 422, not a silent no-op. /chat has ONE
+    # global session; a client sending `session_id` (as the 2026-07-27 QA run did) was
+    # having it dropped without a word and believed its turns were scoped when they were
+    # all appending to the same transcript. Failing loudly is the honest behaviour, and
+    # it is how a caller discovers that per-session chat does not exist yet.
+    model_config = ConfigDict(extra="forbid")
+
     message: str = Field(..., min_length=1, max_length=4096)
     agent: str = "jarvis"
 

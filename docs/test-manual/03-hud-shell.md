@@ -50,7 +50,7 @@ entry sets `locked:true`** on this revision, so a "locked mode behaves correctly
   3) `dir agents\web\v2\assets` 4) compare.
 - **Expected:** the `<script type="module" src>` and `<link rel=stylesheet href>` in the response name
   files that exist under `agents/web/v2/assets/`. On this revision `index.html` references
-  `/v2/assets/index-BQpwz2br.js` + `/v2/assets/index-BhuUO_6F.css`, and both files are present. The page
+  `/v2/assets/index-<hash>.js` + `/v2/assets/index-<hash>.css` (vite content-hashes both — read the names out of `agents/web/v2/index.html`, never from this page), and both files are present. The page
   `<title>` is `NERVA · HUD`.
 - **FAIL if:** a referenced asset 404s (the HUD will paint a blank `#root`) → **BLOCKER**.
 - **Evidence:** the two filenames + `git rev-parse --short HEAD`, recorded in §0 of the run record.
@@ -1013,7 +1013,7 @@ re-locate by the quoted string rather than the number. G-numbers are referenced 
 them from the token definitions (`--ink-3` 34 %, `--ink-4` 18 % white over `#04070e`; 36 %/16 % in
 Graphite) rather than measuring composited pixels, and axe's own gate deliberately ignores
 moderate/minor; treat the numbers as a hypothesis until the run records real measurements.
-(ii) Whether the committed bundle at `agents/web/v2/assets/index-BQpwz2br.js` is byte-equivalent to a
+(ii) Whether the committed bundle at `agents/web/v2/assets/index-<hash>.js` is byte-equivalent to a
 fresh build of the current `frontend/src` — not verified, which is why SHL-002 exists.
 (iii) Whether run 1's false Kill-Switch "ENGAGED" still reproduces — that card lives in the Console TRUST
 section and belongs to §05's scope, so SHL-086 only grades that the section mounts.

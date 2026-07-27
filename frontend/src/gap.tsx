@@ -73,7 +73,14 @@ const Row = ({ children }) => <div style={{ display: 'flex', gap: 8, alignItems:
 const Tag = ({ c, children }: { c?: any; children?: any }) => <span style={{ ...mono, fontSize: 9.5, padding: '1px 5px', border: '1px solid var(--panel-line)', borderRadius: 3, color: c || 'var(--ink-3)' }}>{children}</span>;
 const Btn = ({ onClick, children }) => <button className="tool-btn" onClick={onClick} style={{ marginLeft: 'auto' }}>{children}</button>;
 const act = (p, body, then?) => apiPost(p, body).then(then || (() => {})).catch(() => {});
-const actA = (p, body, then) => apiPost(p, body, { admin: true }).then(then || (() => {})).catch(() => {});
+// `onErr` is OPTIONAL but matters: without it a failed admin action is invisible. Engaging
+// the kill-switch is kernel-mediated and answers 403 "kernel denied" without a capability
+// token, so the 2026-07-27 QA run pressed HALT ALL, got no error, no state change and no
+// hint it had been refused — the card kept reading "ARMED · operational". Any call site
+// that drives a safety or governance control MUST pass onErr and show it.
+const actA = (p, body, then, onErr?) => apiPost(p, body, { admin: true })
+  .then(then || (() => {}))
+  .catch((err) => { if (onErr) onErr(err); });
 const inpS = { background: 'var(--surface)', color: 'var(--ink)', border: '1px solid var(--panel-line)', borderRadius: 4, padding: 5, ...mono, fontSize: 11 };
 const taS = { width: '100%', minHeight: 64, background: 'var(--surface)', color: 'var(--ink)', border: '1px solid var(--panel-line)', borderRadius: 4, padding: 6, ...mono };
 const Json = ({ v, max = 220 }) => (v == null ? null
@@ -351,17 +358,29 @@ function SecretsPanel() {
     <div style={{ fontSize: 10, color: 'var(--ink-3)', marginTop: 6 }}>just-in-time {'{{secret:NAME}}'} injection at approval time</div>
   </Card>;
 }
-function KillSwitchPanel() {
+export function KillSwitchPanel() {
   const { d, e, loading, reload } = useApi('/api/security/kill-switch');
   // /api/security/kill-switch returns {global: bool, halted: {agent: reason}}. `halted`
   // is a MAP, not a bool — `d?.halted ?? d?.engaged` returned {} (truthy) and showed a
   // false "ENGAGED · all agents halted" alarm (2026-07-24 QA finding). Derive it: engaged
   // iff the global switch is on OR at least one agent is in the halted map.
   const halted = !!(d?.global || Object.keys(d?.halted || {}).length || d?.engaged);
+  // A halt that silently fails is worse than no button: the operator believes the system
+  // is stopped. Always re-read state after the attempt, and say so loudly if it was refused.
+  const [actErr, setActErr] = useState('');
+  const toggle = () => {
+    setActErr('');
+    actA('/api/security/kill-switch', { engage: !halted, scope: 'global', reason: 'hud' },
+      reload,
+      (err) => { setActErr(String(err?.message || err || 'request failed')); reload(); });
+  };
   return <Card title="KILL-SWITCH" live={asLive(d)} onReload={reload}>
     <State e={e} loading={loading} n={1} />
     <Row><span style={{ color: halted ? 'var(--red)' : 'var(--green)' }}>{halted ? 'ENGAGED · all agents halted' : 'ARMED · operational'}</span>
-      <Btn onClick={() => actA('/api/security/kill-switch', { engage: !halted, scope: 'global', reason: 'hud' }, reload)}>{halted ? 'disengage' : 'HALT ALL'}</Btn></Row>
+      <Btn onClick={toggle}>{halted ? 'disengage' : 'HALT ALL'}</Btn></Row>
+    {actErr && <Row><span role="alert" style={{ ...mono, color: 'var(--red)' }}>
+      {halted ? 'DISENGAGE' : 'HALT'} REFUSED · {actErr} · the switch did NOT change state
+    </span></Row>}
   </Card>;
 }
 /* HUD-v3 (0.42 Security Skills pack) — browse the curated, offline ATT&CK knowledge.
