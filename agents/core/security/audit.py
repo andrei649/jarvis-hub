@@ -184,8 +184,31 @@ class AuditLogger:
             ).fetchall()
         expected_prev = ""
         seen_hashed = False
+        seen_keyed = False
         for row in rows:
             rid, ts, etype, fj, preview, action, stored_hash, stored_prev, algo = row
+            # AUDIT-1 (adversarial audit 2026-07-25) — the algorithm is taken from the
+            # row, and _digest only demands the key when the row says so. An attacker
+            # with DB write access therefore downgraded EVERY row to plain sha256,
+            # recomputed each hash and prev_hash with hashlib alone, and the chain
+            # re-linked cleanly with a key configured. The shipped regression missed it
+            # because it downgrades one row, so the break surfaced at the next row whose
+            # prev_hash was still an HMAC.
+            #
+            # Two rules close it, and they have to work together:
+            #   (a) here — once a keyed row has been seen, a later sha256 row is
+            #       tampering. That kills a partial downgrade and any splice after the
+            #       key was introduced.
+            #   (b) after the loop — a non-empty chain with a key configured must
+            #       contain at least one keyed row. That kills the FULL downgrade, which
+            #       (a) alone cannot see: rewriting every row leaves nothing to compare
+            #       against, and the result is indistinguishable from a legacy chain.
+            # A legitimate mixed chain (legacy sha256 prefix, then hmac after the owner
+            # set a key) still passes both.
+            if algo == "hmac-sha256":
+                seen_keyed = True
+            elif seen_keyed:
+                return False, rid
             if not stored_hash:
                 # A blank row_hash is legitimate only for legacy rows written
                 # before the Merkle columns existed (the v1 migration backfills
@@ -208,12 +231,78 @@ class AuditLogger:
                 return False, rid
             expected_prev = stored_hash
             seen_hashed = True
+        # Rule (b). With a key configured, a running install writes hmac rows — `log()`
+        # picks the algorithm from key presence, not from the data. So a non-empty chain
+        # carrying no keyed row at all means either every row was downgraded (the attack)
+        # or the key was set on a legacy chain that has not logged since (a real state,
+        # and one the owner must resolve deliberately rather than have verification
+        # silently vouch for). Fail closed, and name the first row so the caller can act.
+        if self._key and seen_hashed and not seen_keyed:
+            return False, rows[0][0]
         return True, None
 
     def count(self) -> int:
         with self._lock:
             row = self._conn.execute("SELECT COUNT(*) FROM security_events").fetchone()
         return row[0] if row else 0
+
+    def chain_status(self) -> dict:
+        """``verify_chain`` plus the context that makes its verdict readable.
+
+        A bare ``valid: true`` is the wrong shape for two different reasons, both raised
+        by the adversarial audit (see ADV-009):
+
+        * an **unkeyed** chain that verifies proves only that nobody edited a row without
+          recomputing its hash. Anyone with file access can recompute the whole thing —
+          that is integrity, not tamper evidence, and reporting it as plain "valid" reads
+          as the stronger claim;
+        * a **false** verdict now has two very different causes since AUDIT-1. "Someone
+          rewrote your audit log" and "you set a key on a chain that predates it" want
+          opposite responses from the owner, and the row id alone cannot tell them apart.
+
+        Returns the booleans plus a plain-English ``reason``. ``verify_chain`` keeps its
+        ``(bool, row_id)`` contract — this wraps it rather than replacing it.
+        """
+        valid, first_bad = self.verify_chain()
+        with self._lock:
+            algos = [(a or "sha256") for (a,) in self._conn.execute(
+                "SELECT hash_algo FROM security_events ORDER BY id").fetchall()]
+        keyed_rows = sum(1 for a in algos if a == "hmac-sha256")
+        key_configured = bool(self._key)
+
+        if not algos:
+            integrity, reason = "empty", "no entries yet"
+        elif keyed_rows == len(algos):
+            integrity = "hmac-sha256"
+            reason = "keyed: an edit cannot be recomputed without JARVIS_AUDIT_KEY"
+        elif keyed_rows:
+            integrity = "mixed"
+            reason = (f"keyed for the newest {keyed_rows} of {len(algos)} entries; the "
+                      "older ones predate the key and are integrity-only")
+        else:
+            integrity = "sha256"
+            reason = ("unkeyed: integrity only, NOT tamper evidence — anyone with file "
+                      "access can recompute this chain. Set JARVIS_AUDIT_KEY.")
+
+        if not valid:
+            if key_configured and not keyed_rows and algos:
+                reason = ("a key is configured but no entry is keyed. Either every row "
+                          "was rewritten, or the key was set on a chain that predates it "
+                          "and nothing has been logged since. Log an event to re-anchor, "
+                          "or investigate.")
+            else:
+                reason = f"chain broken at entry {first_bad}"
+
+        return {
+            "valid": valid,
+            "first_invalid_id": first_bad,
+            "entries": len(algos),
+            "key_configured": key_configured,
+            # the honest headline: only a fully keyed, verifying chain is tamper-evident
+            "tamper_evident": bool(valid and algos and keyed_rows == len(algos)),
+            "integrity": integrity,
+            "reason": reason,
+        }
 
     def prune_before(self, cutoff_ts: float) -> int:
         """Retention (H23.10): delete chain rows older than *cutoff_ts*, then
@@ -232,6 +321,18 @@ class AuditLogger:
             ).fetchall()
             if not self._key and any((a or "sha256") == "hmac-sha256" for (a,) in survivors_algos):
                 logger.warning("retention: refusing to prune audit (HMAC rows, no key to re-anchor)")
+                return 0
+            # Mirror of verify_chain's rule (b) (AUDIT-1): with a key configured, a chain
+            # whose survivors are all sha256 is exactly the shape a full downgrade leaves,
+            # so verification refuses it. Pruning into that shape would report success and
+            # hand back a chain that no longer verifies. Re-anchoring the survivors under
+            # the key instead would be worse — it would vouch, silently, for rows written
+            # before the key existed. Refuse, and let the owner re-anchor deliberately.
+            if self._key and survivors_algos and all(
+                    (a or "sha256") != "hmac-sha256" for (a,) in survivors_algos):
+                logger.warning(
+                    "retention: refusing to prune audit (a key is configured but no "
+                    "surviving row is keyed — the result would not verify)")
                 return 0
             deleted = self._conn.execute(
                 "DELETE FROM security_events WHERE timestamp < ?", (cutoff_ts,)

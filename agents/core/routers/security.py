@@ -257,17 +257,19 @@ async def audit_verify():
     """Verify the Merkle hash chain of the security audit log (tamper evidence).
 
     'Tamper-evident' is only real if the chain is actually checked — this is the
-    check. Returns the first broken row id when integrity fails."""
+    check. Returns the first broken row id when integrity fails.
+
+    Reports `tamper_evident` separately from `valid`, because they are different claims:
+    an UNKEYED chain that verifies proves only that nobody edited a row without also
+    recomputing its hash, which anyone with file access can do. `reason` says which
+    situation you are in, in plain English — including the case where a key was
+    configured on a chain that predates it, which is a false verdict with a very
+    different remedy from an actual rewrite (adversarial audit 2026-07-25, AUDIT-1)."""
     orch = get_orch()
     audit = getattr(orch, "audit", None) if orch else None
     if audit is None:
         return JSONResponse({"error": "audit log not available"}, status_code=503)
-    valid, first_bad = await asyncio.to_thread(audit.verify_chain)
-    return nocache_json({
-        "valid": valid,
-        "first_invalid_id": first_bad,
-        "entries": await asyncio.to_thread(audit.count),
-    })
+    return nocache_json(await asyncio.to_thread(audit.chain_status))
 
 
 @router.get("/api/security/audit/anchors")
