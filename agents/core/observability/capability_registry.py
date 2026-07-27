@@ -158,7 +158,8 @@ def _plugin_records(orch=None) -> list[CapabilityRecord]:
             degradation = degradation_info(live_plugin)
             detail.update({
                 "configured": configured,
-                "honesty": honesty_for(pid, configured, configuration_source),
+                "honesty": honesty_for(pid, configured, configuration_source,
+                                       degraded=degradation is not None),
                 "degraded": degradation is not None,
                 "degraded_reason": (degradation or {}).get("reason", ""),
                 "degraded_needs": list((degradation or {}).get("needs", [])),

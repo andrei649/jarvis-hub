@@ -352,28 +352,27 @@ def _class_members(node: ast.ClassDef) -> set[str]:
 
 
 def probe_honesty() -> dict:
-    """Which plugins does ``honesty.py`` contradict itself about?
+    """Does ``honesty_for`` return a green LIVE verdict for a plugin that needs a key?
 
-    The test is deliberately narrow, because the loose version is wrong: a keyless
-    plugin (weather, news, stock quotes) *should* badge green, so "exposes no
-    ``configured``" is not by itself a defect. The defensible claim is an internal
-    contradiction inside one module — the plugin's id appears in ``honesty._NEEDS``,
-    which says the owner must supply a key, **and** its class exposes none of
-    ``configured``/``available``/``_configured``, so ``plugin_configured`` falls through
-    to ``(True, "loaded")`` and ``honesty_for`` maps ``"loaded"`` to *live, no setup
-    required*. The module asserts both "needs a key" and "needs no setup".
+    Calls the real verdict function with the inputs a KEYLESS BOOT produces for each
+    plugin ``honesty._NEEDS`` says requires config, and flags any that comes back
+    ``live``. Measuring the function beats reading the classes: the first version of this
+    probe checked whether a class exposed ``configured``/``available``/``_configured``,
+    which is one of three things that decide the verdict — so when the fix routed two
+    plugins through the ``degradation_info()`` override instead of giving them an
+    attribute, the probe kept reporting OPEN against corrected behaviour. Same
+    shape-instead-of-substance reflex chapter 15 is about, inside chapter 15's tooling,
+    for the second time.
 
-    A class with no ``degradation_info()`` also gets no amber MOCK chip next to the green
-    one (``frontend/src/modes3.tsx``), so that row is a clean green lie rather than a
-    visible contradiction the owner can spot.
-
-    Static (AST) on purpose: booting the plugin host would need the owner's real keys, and
-    the audit's worst methodology error came from a stubbed runtime.
+    Static only in one respect, stated so nobody over-reads it: whether a plugin *would*
+    report degradation on a keyless boot is taken from ``degradation_info()`` existing at
+    all, since reporting mock-mode when unconfigured is that method's entire purpose.
+    Confirm against a real keyless boot (ADV-070) before filing.
     """
-    from agents.core.plugins.honesty import _NEEDS
+    from agents.core.plugins.honesty import _NEEDS, honesty_for
 
     plugin_dir = ROOT / "agents/core/plugins"
-    contradicted, unresolved, honest = [], [], []
+    still_live, unresolved, honest = [], [], []
     for pid in sorted(_NEEDS):
         base = _PLUGIN_MODULE_ALIASES.get(pid, pid.replace("-", "_"))
         path = plugin_dir / f"{base}.py"
@@ -391,45 +390,43 @@ def probe_honesty() -> dict:
             unresolved.append(pid)
             continue
         members = set().union(*(_class_members(c) for c in classes))
-        rel = f"agents/core/plugins/{path.name}"
-        if any(a in members for a in _HONESTY_ATTRS):
-            honest.append(pid)
+
+        # What a keyless boot hands honesty_for. Only the NO-CONTRACT case is interesting:
+        # `plugin_configured` falls through to (True, "loaded") when a class exposes none
+        # of the three attributes, and that spurious True is the whole trap. A plugin that
+        # HAS a contract reports configured=False without its key, which is the honest
+        # path — asserting True for those would manufacture findings, the same error the
+        # audit's own Gmail auditor made by stubbing a gate to return True.
+        has_contract = any(a in members for a in _HONESTY_ATTRS)
+        degraded = "degradation_info" in members
+        if has_contract:
+            attr = next(a for a in _HONESTY_ATTRS if a in members)
+            configured, source = False, f"{attr}()"
         else:
-            contradicted.append({
-                "plugin": pid,
-                "module": rel,
-                "needs": _NEEDS[pid],
-                "has_degradation_info": "degradation_info" in members,
-            })
-    silent = [r["plugin"] for r in contradicted if not r["has_degradation_info"]]
+            configured, source = True, "loaded"
 
-    # The other direction: amber with nothing actionable in `needs`.
-    amber_empty = []
-    for pid in ("analytics",):
-        base = _PLUGIN_MODULE_ALIASES.get(pid, pid.replace("-", "_"))
-        path = plugin_dir / f"{base}.py"
-        if path.exists() and pid not in _NEEDS:
-            tree = ast.parse(path.read_text(encoding="utf-8"))
-            members = set().union(*[_class_members(n) for n in tree.body
-                                    if isinstance(n, ast.ClassDef)] or [set()])
-            if "configured" not in members and "available" in members:
-                amber_empty.append(pid)
+        verdict = honesty_for(pid, configured, source, degraded=degraded)
+        row = {"plugin": pid, "module": f"agents/core/plugins/{path.name}",
+               "verdict": verdict["status"], "needs": verdict["needs"],
+               "has_config_contract": has_contract, "has_degradation_info": degraded}
+        (still_live if verdict["status"] == "live" else honest).append(row)
 
+    empty_needs = [r["plugin"] for r in honest
+                   if r["verdict"] == "needs_config" and not r["needs"]]
     return {
         "claim": "honesty.py badges plugins LIVE that its own _NEEDS table says require a key",
-        "verdict": OPEN if contradicted or amber_empty else CLOSED,
+        "verdict": OPEN if (still_live or empty_needs) else CLOSED,
         "detail": {
-            "needs_a_key_but_badges_live": contradicted,
-            "green_with_no_mock_chip": silent,
-            "amber_with_an_empty_needs_list": amber_empty,
-            "resolved_and_honest": honest,
+            "needs_a_key_but_verdict_is_live": still_live,
+            "needs_config_with_nothing_to_configure": empty_needs,
+            "resolved_and_honest": [r["plugin"] for r in honest],
             "could_not_resolve_to_a_module": unresolved,
         },
-        "means": ("OPEN: each listed plugin badges LIVE on a keyless boot while the same "
-                  "module names the key it needs. green_with_no_mock_chip are the clean "
-                  "misstatements — the rest render [MOCK] beside the green, so the owner "
-                  "at least sees a contradiction. Verify every one against a real "
-                  "keyless boot before filing: this probe reads source, not runtime."),
+        "means": ("OPEN: each listed plugin would badge LIVE on a keyless boot while the "
+                  "same module names the key it needs. needs_config_with_nothing_to_"
+                  "configure is the other direction — an amber chip whose tooltip lists "
+                  "nothing. Verify against a real keyless boot (ADV-070): this calls the "
+                  "verdict function, not the running plugin host."),
     }
 
 

@@ -58,7 +58,8 @@ async def list_plugins():
             "configuration_source": configuration_source,
             # Runtime honesty verdict the HUD badges render: live vs mock/degraded,
             # plus exactly what the owner must configure to make it live.
-            "honesty": honesty_for(manifest.id, configured, configuration_source),
+            "honesty": honesty_for(manifest.id, configured, configuration_source,
+                                   degraded=degradation is not None),
             # Honesty layer (Live-vs-Plumbing): True when this plugin's calls
             # would currently return mock data instead of touching the real
             # service — so the HUD can badge it rather than read as live.
