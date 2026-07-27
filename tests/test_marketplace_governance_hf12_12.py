@@ -79,6 +79,9 @@ def test_zip_slip_is_blocked(tmp_path):
 
 def test_signature_gate_rejects_unsigned(tmp_path, monkeypatch):
     monkeypatch.setenv("JARVIS_REQUIRE_SIGNED_SKILLS", "1")
+    # SEC-B2: enforcement requires a key, or the gate accepts any signature an attacker
+    # computes for themselves. require_signed() refuses to pretend otherwise.
+    monkeypatch.setenv("JARVIS_SKILL_SIGNING_KEY", "project-key")
     mk = _mk(tmp_path)
     buf = io.BytesIO()
     with zipfile.ZipFile(buf, "w") as z:
@@ -91,6 +94,8 @@ def test_signature_gate_rejects_unsigned(tmp_path, monkeypatch):
 
 def test_signature_gate_accepts_signed_publish(tmp_path, monkeypatch):
     # Publish (which signs), then require signatures on install → still installs.
+    # Sign at publish time under the same key enforcement will verify against (SEC-B2).
+    monkeypatch.setenv("JARVIS_SKILL_SIGNING_KEY", "project-key")
     mk = _mk(tmp_path)
     _, name = _publish(mk)
     monkeypatch.setenv("JARVIS_REQUIRE_SIGNED_SKILLS", "1")

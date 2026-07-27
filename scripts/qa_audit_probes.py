@@ -25,10 +25,10 @@ not the verdicts.
 
 **Safety.** Every probe is read-only against the live install. The chain probe forges
 rows in a throwaway ``tempfile`` DB and never opens ``<data_root>/security/audit.db``.
-The purge probe seeds and erases its OWN temp data root, never the real one. Nothing
-prints a secret value: the
-signing probe reports whether signing is configured, never any part of the secret, and the
-chain probe generates its own throwaway key rather than carrying a literal one.
+The purge probe seeds and erases its OWN temp data root, never the real one. The chain and
+signing probes set env vars and restore them. Nothing prints a secret value: the signing
+probe reports only WHETHER signing is configured, and the chain probe generates a throwaway
+key rather than carrying a literal one.
 
 Usage:
     python scripts/qa_audit_probes.py                 # all probes, table
@@ -292,38 +292,64 @@ def _signing_is_configured(signing) -> bool:
 
 
 def probe_signing() -> dict:
-    """Does ``require_signed()`` fail closed when enforcement is on and no key is set?
+    """With enforcement on and no key, does the signing gate fail closed?
 
-    ``compute_digest`` returns a plain ``sha256:`` digest with no key configured, and
-    ``require_signed()`` reads one env flag and nothing else — so an attacker who ships
-    their own ``SKILL.sig`` computes a matching digest without any secret.
+    Sets ``JARVIS_REQUIRE_SIGNED_SKILLS`` with no ``JARVIS_SKILL_SIGNING_KEY`` and calls
+    the real ``require_signed()``. Returning True there is the finding: ``compute_digest``
+    hands back a plain sha256 with no key, so an attacker computes the same value and
+    ships their own ``SKILL.sig`` — the flag then blocks honest unsigned content and
+    accepts anything a deliberate adversary signs.
 
-    Never prints key material: only whether signing is configured at all. The value is
-    reduced to a bool inside ``_signing_is_configured`` and nothing else about it — not a
-    prefix, not a length — leaves that function. Nothing in the output is named for a
-    credential either, which is deliberate: a detector that echoes what it detects is the
-    classic own-goal, and ``scripts/check_test_manual.py`` carries the scar tissue from
-    getting this wrong three times.
+    Behavioural on purpose. The first version grepped ``require_signed``'s AST for the
+    signing-key helper by name, which is a proxy for the property and broke the moment the
+    fix called a differently-named accessor — the third time on this branch that a probe
+    measured shape instead of substance. Both env vars are restored afterwards.
+
+    Never prints key material: only whether signing is configured, reduced to a bool in
+    ``_signing_is_configured`` and named for nothing.
     """
     from agents.core.skills import signing
 
-    src = (ROOT / "agents/core/skills/signing.py").read_text(encoding="utf-8")
-    tree = ast.parse(src)
-    body = next((n for n in ast.walk(tree)
-                 if isinstance(n, ast.FunctionDef) and n.name == "require_signed"), None)
-    consults_a_configured_secret = bool(body) and "_signing_key" in ast.unparse(body)
+    saved = {k: os.environ.get(k)
+             for k in ("JARVIS_REQUIRE_SIGNED_SKILLS", "JARVIS_SKILL_SIGNING_KEY")}
+    try:
+        os.environ["JARVIS_REQUIRE_SIGNED_SKILLS"] = "1"
+        os.environ.pop("JARVIS_SKILL_SIGNING_KEY", None)
+        try:
+            enforced_unkeyed = signing.require_signed()
+            fails_closed = False
+        except Exception as exc:
+            enforced_unkeyed = None
+            fails_closed = type(exc).__name__ == "SkillSigningMisconfigured"
+
+        # ...and the honest configuration must still work, or the fix is a denial of
+        # service rather than a gate.
+        os.environ["JARVIS_SKILL_SIGNING_KEY"] = secrets.token_hex(16)
+        try:
+            enforced_keyed = signing.require_signed()
+        except Exception:
+            enforced_keyed = None
+    finally:
+        for key, value in saved.items():
+            if value is None:
+                os.environ.pop(key, None)
+            else:
+                os.environ[key] = value
+
     return {
         "claim": "hardening JARVIS_REQUIRE_SIGNED_SKILLS buys nothing when no signing key is configured",
-        "verdict": CLOSED if consults_a_configured_secret else OPEN,
+        "verdict": CLOSED if (fails_closed and enforced_keyed is True) else OPEN,
         "detail": {
-            "require_signed_consults_a_configured_secret": consults_a_configured_secret,
+            "enforcement_without_a_key_fails_closed": fails_closed,
+            "enforcement_without_a_key_returned": enforced_unkeyed,
+            "enforcement_with_a_key_still_works": enforced_keyed,
             "signing_is_configured_on_this_host": _signing_is_configured(signing),
             "unkeyed_algo_label": signing.compute_digest(ROOT / "agents/core/skills")[0],
         },
         "means": ("OPEN: enforcement accepts an unkeyed digest, so the gate stops honest "
-                  "unsigned content and not a deliberate adversary. Note the audit's "
-                  "correction: the exec primitive in loader._load_skill, not the hash, is "
-                  "what grants code execution — fix that first."),
+                  "unsigned content and not a deliberate adversary. Either way, note the "
+                  "audit's correction: the exec primitive in loader._load_skill, not the "
+                  "hash, is what grants code execution — fix that first."),
     }
 
 

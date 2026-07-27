@@ -317,7 +317,12 @@ async def security_posture():
     return nocache_json({
         "secrets": {"encrypted_at_rest": True, "backend": secret_backend},
         "skills": {
-            "require_signed": _signing.require_signed(),
+            # signing_posture() rather than require_signed(): the latter raises on a
+            # misconfigured gate (enforcement on, no key), which is correct for the
+            # enforcement path and useless here — a 500 tells the owner nothing. This
+            # reports `effective` and `integrity_only` so "the flag is on" is not mistaken
+            # for "signatures prove authorship" (SEC-B2).
+            **_signing.signing_posture(),
             "total": len(skill_rows),
             "trusted": len(skill_rows) - len(untrusted),
             "untrusted": len(untrusted),
