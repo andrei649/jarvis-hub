@@ -125,6 +125,33 @@ class QdrantVectorStore(VectorStore):
             logger.warning(f"Qdrant get error (degraded): {exc}")
             return None
 
+    def clear(self) -> None:
+        """Drop the collection, and RAISE if it did not happen.
+
+        Deliberately unlike the rest of this class, which logs "degraded" and carries on
+        because a failed read or write costs a stale answer. A failed wipe during
+        ``POST /api/admin/forget`` costs the owner a promise: every embedding of every
+        thing they asked to be forgotten stays on disk while the API reports success.
+        That is the AUDIT-2 finding (adversarial audit 2026-07-25), so this one reports.
+
+        Deleting the collection rather than the points also releases the payload index,
+        so nothing survives in a stale segment. ``_ensure_collection`` rebuilds it on the
+        next write; a 404 here means it was already gone, which is the desired end state.
+        """
+        try:
+            resp = self._client.delete(f"{self.url}/collections/{self.collection}")
+        except Exception as exc:
+            raise RuntimeError(
+                f"vector-store wipe failed: Qdrant at {self.url} is unreachable ({exc}). "
+                "Your embeddings are still there — do not report this forget as complete."
+            ) from exc
+        if resp.status_code not in (200, 404):
+            raise RuntimeError(
+                f"vector-store wipe failed: Qdrant returned {resp.status_code} "
+                f"deleting collection {self.collection!r}"
+            )
+        self._collection_ready = False
+
     def remove(self, record_id: str):
         try:
             self._ensure_collection()

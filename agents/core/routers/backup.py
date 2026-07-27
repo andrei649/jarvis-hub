@@ -135,8 +135,10 @@ async def forget_data(req: Request):
     )
     if denied is not None:
         return JSONResponse({"error": f"contract denied: {denied}"}, status_code=403)
+    live_cleared: list[str] = []
+    live_failed: list[str] = []
     if orch is not None:
-        await _purge.clear_live_memory(orch)
+        live_cleared, live_failed = await _purge.clear_live_memory(orch)
     try:
         # Backs up then deletes across the data root — blocking file/DB I/O.
         result = await asyncio.to_thread(
@@ -145,4 +147,18 @@ async def forget_data(req: Request):
     except (OSError, ValueError, _purge.PurgeError) as e:
         logger.warning("forget purge failed: %s", e)
         return JSONResponse({"error": "forget failed"}, status_code=500)
+    # AUDIT-2: never report an unqualified success over data that survived. A wipe that
+    # could not reach Qdrant or Neo4j used to be logged and dropped, so the response said
+    # ok:true while every embedding was still on disk — an F5 (a claimed completed action
+    # that did not complete) on the one operation where the user cannot check for
+    # themselves. `ok` now reflects the whole forget, not just the file half.
+    result["live_stores_cleared"] = live_cleared
+    result["not_erased"] = live_failed
+    if live_failed:
+        result["ok"] = False
+        result["warning"] = (
+            "SOME DATA WAS NOT ERASED — see not_erased. The file purge completed, but "
+            "the listed live stores could not be cleared and still hold your content."
+        )
+        logger.error("forget completed with surviving stores: %s", live_failed)
     return nocache_json(result)

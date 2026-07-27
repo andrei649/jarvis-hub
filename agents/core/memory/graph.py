@@ -59,6 +59,21 @@ class KnowledgeGraph(ABC):
     def delete_relation(self, source: str, relation: str, target: str) -> bool:
         ...
 
+    @abstractmethod
+    def clear(self) -> None:
+        """Remove every entity and relation. Backs ``POST /api/admin/forget`` (AUDIT-2).
+
+        Abstract on purpose — see the matching note on ``VectorStore.clear``. No
+        implementation defined it, and ``data_purge.clear_live_memory`` called it behind
+        ``hasattr``, so under the documented neo4j backend every triple survived a forget
+        permanently while the purge reported success.
+
+        Implementations MUST raise on failure rather than degrade quietly. Everywhere
+        else in this class a swallowed error means a stale read; here it means the owner
+        was told their data was deleted when it was not.
+        """
+        ...
+
 
 class InMemoryGraph(KnowledgeGraph):
     """Fallback — simple dict-based graph."""
@@ -66,6 +81,10 @@ class InMemoryGraph(KnowledgeGraph):
     def __init__(self):
         self.entities: dict[str, dict] = {}
         self.relations: list[dict] = []
+
+    def clear(self) -> None:
+        self.entities.clear()
+        self.relations.clear()
 
     def add_entity(self, name: str, entity_type: str, properties: dict = None) -> bool:
         props = properties or {}
@@ -302,6 +321,40 @@ class Neo4jGraph(KnowledgeGraph):
                 "properties": {k: v for k, v in node.items() if k != "name"},
             })
         return results
+
+    def clear(self) -> None:
+        """Delete every node and relationship, and RAISE if it did not happen.
+
+        Deliberately different from every other method here. The rest of this class
+        degrades quietly on a Neo4j problem because the cost is a stale read; a failed
+        wipe during ``POST /api/admin/forget`` means the owner was told their knowledge
+        graph was deleted when it was not. That is the AUDIT-2 finding, so this one
+        reports.
+
+        Scope note, stated because it matters: this clears the WHOLE configured Neo4j
+        database, not only Nerva-written nodes. ``add_relation`` MERGEs bare
+        ``(a {name: ...})`` nodes with no Nerva label, so there is no label that reliably
+        identifies our data and a scoped delete would silently miss some of it — which is
+        the exact failure mode being fixed. Point ``NEO4J_URL`` at a database Nerva owns.
+        """
+        if not self._check_connection():
+            raise RuntimeError(
+                f"knowledge-graph wipe failed: Neo4j at {self.url} is unreachable. The "
+                "graph still holds your data — do not report this forget as complete."
+            )
+        try:
+            with httpx.Client(timeout=httpx.Timeout(30.0)) as client:
+                resp = client.post(
+                    self._tx_url,
+                    json={"statements": [{"statement": "MATCH (n) DETACH DELETE n"}]},
+                    auth=self._auth,
+                )
+                resp.raise_for_status()
+                errors = resp.json().get("errors") or []
+        except Exception as exc:
+            raise RuntimeError(f"knowledge-graph wipe failed: {exc}") from exc
+        if errors:
+            raise RuntimeError(f"knowledge-graph wipe failed: {errors}")
 
     def delete_entity(self, name: str) -> bool:
         results = self._call_neo4j([{

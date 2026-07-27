@@ -25,7 +25,8 @@ not the verdicts.
 
 **Safety.** Every probe is read-only against the live install. The chain probe forges
 rows in a throwaway ``tempfile`` DB and never opens ``<data_root>/security/audit.db``.
-The purge probe *lists* stores and never deletes. Nothing prints a secret value: the
+The purge probe seeds and erases its OWN temp data root, never the real one. Nothing
+prints a secret value: the
 signing probe reports whether signing is configured, never any part of the secret, and the
 chain probe generates its own throwaway key rather than carrying a literal one.
 
@@ -176,34 +177,75 @@ _KNOWN_USER_STORES = {
 
 
 def probe_purge() -> dict:
-    """Which known user-content stores are outside every purge allowlist?
+    """Do the known user-content stores actually survive a forget?
 
-    ``PURGE_DBS`` is three databases, ``PURGE_JSON`` is two files, and
-    ``PURGE_MEMORY_FILES`` covers the memory subsystem by exact name. Anything else that
-    holds user content simply survives ``POST /api/admin/forget``, which
-    ``docs/PRIVACY.md`` says "erases memory, transcripts, vectors, and the knowledge
-    graph at rest".
+    Seeds a throwaway data root with each store the audit named, carrying a recognisable
+    marker, runs a real ``purge_data`` over it, and reports which markers are still
+    readable afterwards.
+
+    This is deliberately a *measurement* and not a reading of the allowlists. The first
+    version of this probe compared ``PURGE_DBS | PURGE_JSON | PURGE_MEMORY_FILES`` against
+    a hand-list of stores — which answered "is this name in that tuple", not "does the
+    data survive". The moment the purge stopped working from those tuples, the probe kept
+    reporting OPEN against a fixed codebase. That is precisely the shape-instead-of-
+    substance reflex chapter 15 exists to criticise, committed inside chapter 15's own
+    tooling, and it is why this one writes bytes and then looks for them.
+
+    Never touches the live install: everything happens under ``tempfile``.
     """
     from agents.core import data_purge as dp
     from agents.core.data_export import EXPORT_DBS
 
-    covered = set(dp.PURGE_DBS) | set(dp.PURGE_JSON) | set(dp.PURGE_MEMORY_FILES)
-    survivors = {name: owner for name, owner in sorted(_KNOWN_USER_STORES.items())
-                 if name not in covered}
-    export_only = sorted(set(EXPORT_DBS) - set(dp.PURGE_DBS))
+    with tempfile.TemporaryDirectory(prefix="adv015-") as d:
+        root = Path(d) / "data"
+        root.mkdir()
+        for name in _KNOWN_USER_STORES:
+            path = root / name
+            if path.suffix == ".db":
+                con = sqlite3.connect(str(path))
+                try:
+                    con.execute("CREATE TABLE items (id INTEGER PRIMARY KEY, body TEXT)")
+                    con.execute("INSERT INTO items (body) VALUES (?)", (f"MARKER-{name}",))
+                    con.commit()
+                finally:
+                    con.close()
+            elif path.suffix == ".jsonl":
+                path.write_text(f'{{"body": "MARKER-{name}"}}\n', encoding="utf-8")
+            else:
+                path.write_text(f'{{"body": "MARKER-{name}"}}', encoding="utf-8")
+
+        seeded = len(_KNOWN_USER_STORES)
+        dp.purge_data(source_root=str(root), backup_first=False, memory=True)
+
+        survivors = {}
+        for name, owner in sorted(_KNOWN_USER_STORES.items()):
+            path = root / name
+            if not path.exists():
+                continue
+            try:
+                if b"MARKER-" in path.read_bytes():
+                    survivors[name] = owner
+            except OSError:
+                continue
+
+    # Kept as context, not as a verdict input: once the purge works from KEEP rather
+    # than PURGE_DBS, a database missing from that tuple is no longer retained — the
+    # sweep catches it. The asymmetry the audit flagged is now cosmetic.
+    named_in_export_not_in_purge_dbs = sorted(set(EXPORT_DBS) - set(dp.PURGE_DBS))
     return {
         "claim": "user-content stores survive a forget because the purge works from an allowlist",
         "verdict": OPEN if survivors else CLOSED,
         "detail": {
-            "purge_dbs": list(dp.PURGE_DBS),
-            "purge_json": list(dp.PURGE_JSON),
-            "surviving_stores": survivors,
-            "exported_but_never_purged": export_only,
-            "backup_first_forced_by_route": True,
+            "stores_seeded": seeded,
+            "still_readable_after_forget": survivors,
+            "keep_files": sorted(getattr(dp, "KEEP_FILES", ())),
+            "keep_dirs": sorted(getattr(dp, "KEEP_DIRS", ())),
+            "named_in_export_not_in_purge_dbs": named_in_export_not_in_purge_dbs,
         },
-        "means": ("OPEN: each listed store keeps its contents through a forget. The "
-                  "audit's proposed shape is the inverse — purge everything under the "
-                  "data root except an explicit KEEP allowlist."),
+        "means": ("OPEN: each listed store still held its marker after a real purge over "
+                  "a seeded data root. CLOSED: nothing seeded survived — note this proves "
+                  "the file half only; the live vector/KG wipe is the `clear` probe, and "
+                  "the pre-forget archive is ADV-024."),
     }
 
 
