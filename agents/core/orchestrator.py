@@ -673,6 +673,18 @@ class Orchestrator:
         restored = self.checkpoints.restore(self)
         if restored:
             logger.info(f"Restored from checkpoint — session: {self.session_id}")
+            # The checkpoint restores the *id*; ConversationMemory only auto-loads
+            # the newest session at construction time, so without this the two
+            # disagree — self.session_id points at a session whose turns were
+            # never loaded, and the next turn starts from an empty history that
+            # then overwrites the snapshot. Resume is a no-op when the memory
+            # already holds that session.
+            if self.session_id:
+                try:
+                    await self.memory.resume_session(self.session_id)
+                except Exception:
+                    logger.debug("session resume after checkpoint restore skipped",
+                                 exc_info=True)
 
         if not self.session_id:
             self.session_id = self.memory.conversation.current_session_id or await self.memory.new_session()

@@ -24,12 +24,15 @@ from pathlib import Path
 from typing import Callable, Optional
 
 from agents.core.paths import data_root
+from agents.core.session_files import NON_SESSION_STEMS
 from agents.core.validation import is_valid_session_id
 
 logger = logging.getLogger("jarvis.retention")
 
-# Top-level *.jsonl that are NOT conversation transcripts — never pruned as sessions.
-_NON_SESSION_JSONL: frozenset[str] = frozenset({"autonomy_journal", "problems"})
+# Top-level files that are NOT conversation transcripts — never pruned as sessions.
+# Shared with data_purge and memory.persistence (agents/core/session_files.py) so
+# the three call sites cannot drift apart again.
+_NON_SESSION_JSONL: frozenset[str] = NON_SESSION_STEMS
 
 _DAY = 86400
 

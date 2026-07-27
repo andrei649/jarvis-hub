@@ -44,6 +44,7 @@ from typing import Iterable, Optional
 from agents.core import backup as _backup
 from agents.core.automation_contracts import ContractTemplate, contract_denial, predicate
 from agents.core.paths import data_root
+from agents.core.session_files import NON_SESSION_STEMS
 from agents.core.validation import is_valid_session_id
 
 logger = logging.getLogger("jarvis.purge")
@@ -73,8 +74,9 @@ PURGE_MEMORY_FILES: tuple[str, ...] = (
 )
 # Directories removed wholesale (embedded recall cache derived from user content).
 PURGE_MEMORY_DIRS: tuple[str, ...] = ("embedding_cache",)
-# Top-level *.jsonl that are NOT conversation transcripts — never treated as sessions.
-_NON_SESSION_JSONL: frozenset[str] = frozenset({"autonomy_journal", "problems"})
+# Top-level files that are NOT conversation transcripts — never treated as sessions.
+# Shared with retention and memory.persistence (agents/core/session_files.py).
+_NON_SESSION_JSONL: frozenset[str] = NON_SESSION_STEMS
 
 
 class PurgeError(RuntimeError):
