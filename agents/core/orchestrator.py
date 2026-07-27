@@ -2057,10 +2057,43 @@ class Orchestrator:
 
         results = {}
         self._last_latencies = {}
+        # Per-agent routes, alongside the per-agent latencies that already live here.
+        # Before this, ONE route_name was computed from target_agents[0] and recorded for
+        # every agent that answered — so a turn where stark answered locally and athena
+        # answered on cloud was recorded as two local runs, and
+        # GET /api/metrics/north-star reported 100% local. `local_pct` gates a 50% floor
+        # on the release, and docs/METRICS.md defines it as "% served on-device", so the
+        # error was both systematic and in the flattering direction.
+        # The streaming path was never affected: it selects the backend inside its own
+        # per-agent loop. This is the non-streaming half (Telegram, Discord, voice,
+        # /chat, MCP, rooms, webhooks, eval, workflows).
+        self._last_routes = {}
         for agent_id, resp, latency in results_list:
             results[agent_id] = resp
             self._last_latencies[agent_id] = latency
+            route = self._route_for_agent(agent_id, text)
+            if route:
+                self._last_routes[agent_id] = route
         return results
+
+    def _route_for_agent(self, agent_id: str, text: str) -> str:
+        """The route this agent's backend actually resolved to, or "" if unknowable.
+
+        Asks the router the same question the agent's own generation asked. Returning ""
+        rather than guessing matters: ``RunHistory.locality`` excludes unrouted rows from
+        the percentage instead of counting them as local, so an honest blank keeps the
+        meter from fabricating a split — which is the behaviour this fix is protecting.
+        """
+        router = getattr(self, "llm_router", None)
+        if router is None:
+            return ""
+        try:
+            res = router.select_backend(agent_id, text)
+        except Exception:
+            return ""
+        if isinstance(res, tuple) and len(res) == 3:
+            return res[2] or ""
+        return ""
 
     async def _synthesize(self, responses: dict[str, str], intent) -> str:
         jarvis = self.agents.get("jarvis")
@@ -2180,6 +2213,9 @@ class Orchestrator:
                 # that merely mentions the word "error:"; anchor to the marker.
                 success = not _is_failed_agent_reply(agent_id, resp)
                 latency = getattr(self, "_last_latencies", {}).get(agent_id, 0.0)
+                # Prefer THIS agent's route over the turn-level scalar, which is computed
+                # from target_agents[0] and is only right for the primary responder.
+                agent_route = getattr(self, "_last_routes", {}).get(agent_id) or route_name
                 metadata = {
                     # CDX-2: record the real origin (web/telegram/discord/voice/
                     # autonomy/…) instead of always "web", so the %-local/cloud
@@ -2198,7 +2234,7 @@ class Orchestrator:
                     latency=latency,
                     error=resp if not success else None,
                     metadata=metadata,
-                    route_name=route_name,
+                    route_name=agent_route,
                 )
                 self.bench.record(
                     agent_id=agent_id,
@@ -2216,7 +2252,7 @@ class Orchestrator:
                             output_text=resp,
                             latency_ms=latency * 1000,
                             ok=success,
-                            route=route_name,
+                            route=agent_route,
                         )
                     except Exception:
                         logger.debug("run_history record skipped", exc_info=True)

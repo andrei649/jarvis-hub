@@ -300,6 +300,21 @@ class Agent:
         available = DEMOTION_TIERS.get(current_tier, [])
         return available[0] if available else None
 
+    @staticmethod
+    def _strict_local_contributors(responses: dict[str, str]) -> set[str]:
+        """Which responders in this turn are pinned strict-local (SEC-B1).
+
+        Read at call time from ``hybrid_router.LOCAL_ONLY_AGENTS`` rather than captured at
+        import, so a change to the set takes effect without a restart — and only
+        contributors who actually produced text count, since an empty response puts
+        nothing in the synthesis prompt to protect.
+        """
+        try:
+            from agents.core.llm.hybrid_router import LOCAL_ONLY_AGENTS
+        except Exception:      # pragma: no cover - import cycle / partial install
+            return set()
+        return {a for a, resp in responses.items() if a in LOCAL_ONLY_AGENTS and resp}
+
     async def synthesize(self, responses: dict[str, str], intent, in_character: bool = False) -> str:
         jarvis_only = all(k == "jarvis" for k in responses)
         if jarvis_only:
@@ -336,19 +351,51 @@ class Agent:
             f"{directive}"
         )
 
+        # SEC-B1 / the adversarial audit's §15.4 finding. The prompt built above embeds
+        # every contributor's RAW output, and this method then routed as `self.id` —
+        # "jarvis" — so LOCAL_ONLY_AGENTS was enforced on the agent that *answered* and
+        # never on the pass that merges the answers. A strict-local agent's text could
+        # therefore leave the box inside a synthesis prompt, which breaks the one rule
+        # the documentation calls non-negotiable.
+        #
+        # It is not a multi-agent-only path either: the orchestrator sets
+        # `was_synthesized = len(responses) > 1 or "jarvis" not in responses`, so a
+        # single-specialist turn comes through here too.
+        #
+        # The floor is computed over CONTRIBUTORS, not over self: if any responder is
+        # strict-local, the merge is strict-local. `local_backend` is the same
+        # fail-closed accessor `_compression_summarizer` already uses for exactly this
+        # reason — no local backend raises, and the except clauses below fall back to the
+        # deterministic join, which never leaves the machine.
+        strict_local = self._strict_local_contributors(responses)
         try:
-            res = self.llm_router.select_backend(self.id, prompt)
-            route_name = ""
-            if isinstance(res, tuple) and len(res) == 3:
-                backend, routed_model, route_name = res
-                # CDX-1: honor the routed model (local vs cloud, per policy) — same
-                # as process(). Previously the routed model was discarded and fusion
-                # always ran on the configured default, so a routed cloud/local swap
-                # silently didn't take effect for multi-agent synthesis.
-                if routed_model:
-                    model = routed_model
+            if strict_local:
+                # AttributeError is deliberately in scope here alongside the router's own
+                # RuntimeError: a router that cannot offer a strict-local backend at all
+                # must land in the deterministic join below, never fall through to
+                # select_backend. Fail-open here would recreate the exact hole.
+                backend = self.llm_router.local_backend
+                route_name = "local"
+                local_model = getattr(self.llm_router, "active_model", None)
+                if local_model:
+                    model = local_model
+                logger.info(
+                    "synthesis pinned local: strict-local contributor(s) %s",
+                    sorted(strict_local),
+                )
             else:
-                backend, _ = res
+                res = self.llm_router.select_backend(self.id, prompt)
+                route_name = ""
+                if isinstance(res, tuple) and len(res) == 3:
+                    backend, routed_model, route_name = res
+                    # CDX-1: honor the routed model (local vs cloud, per policy) — same
+                    # as process(). Previously the routed model was discarded and fusion
+                    # always ran on the configured default, so a routed cloud/local swap
+                    # silently didn't take effect for multi-agent synthesis.
+                    if routed_model:
+                        model = routed_model
+                else:
+                    backend, _ = res
             backend = bind_guardrails(self.guardrails, backend)
 
             # H22.5 — best-effort local model residency, same guarded pattern as
@@ -370,13 +417,11 @@ class Agent:
                     temperature=temperature,
                 )
             return response
-        except LocalBackendUnavailableError:
-            parts = []
-            for agent_id, resp in responses.items():
-                if agent_id != "jarvis" and resp:
-                    parts.append(f"[{agent_id}]: {self._strip_control_tokens(resp)}")
-            return " | ".join(parts) if parts else "Done, sir."
-        except RuntimeError:
+        except (LocalBackendUnavailableError, RuntimeError, AttributeError):
+            # The deterministic join: no model call, so nothing can egress. AttributeError
+            # joins the list for SEC-B1 — a router with no `local_backend` at all must end
+            # up here rather than falling back to select_backend, which is the cloud-
+            # eligible path this whole floor exists to avoid.
             parts = []
             for agent_id, resp in responses.items():
                 if agent_id != "jarvis" and resp:
