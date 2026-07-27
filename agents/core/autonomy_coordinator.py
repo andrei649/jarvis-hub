@@ -422,7 +422,14 @@ class AutonomyCoordinator:
 
         # Safe system recovery remediation handler (H6 / Antigravity recovery)
         from .autonomy.remediation import RemediationRunner
-        runner = RemediationRunner(permission_gate=self._orch.permission_gate, audit=self._orch.audit)
+        # `orch.audit` is the guardrails AuditLogger, whose log() takes a
+        # SecurityEvent — RemediationRunner calls log(event_str, dict), so every
+        # remediation record silently failed into its except branch. Same sink as
+        # the autonomy worker: signed action records with intent attribution.
+        runner = RemediationRunner(
+            permission_gate=self._orch.permission_gate,
+            audit=getattr(self._orch, "action_audit", None),
+        )
 
         async def _restart_service(task):
             service = (task.payload or {}).get("service")
