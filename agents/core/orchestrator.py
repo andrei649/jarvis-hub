@@ -52,6 +52,7 @@ from .skills.skill_history import SkillHistory
 from .mcp.client import MCPManager
 from .autonomy import AutonomyWorker, TaskQueue, AutonomyPolicy, PreferenceStore, InterruptBudget, MissionStore
 from .autonomy import ProactiveObserver, default_probes
+from .autonomy.audit_sink import ActionAuditSink
 from .autonomy.reflection import DailyReflector, ReflectionRunStore
 from .autonomy.log_scanner import LogBugScanner
 from .autonomy.tech_scout import TechScout, TechScoutStore, DEFAULT_QUERIES as _TECH_SCOUT_DEFAULT_QUERIES
@@ -342,6 +343,9 @@ class Orchestrator:
             per_day=interrupt_limit,
             k3=self.budget_ledger,
         )
+        # Action-level audit sink, shared by every governed-action recorder (the
+        # autonomy worker below, the remediation runner in autonomy_coordinator).
+        self.action_audit = ActionAuditSink(getattr(self, "intent_log", None))
         self.autonomy = AutonomyWorker(
             self.autonomy_queue,
             policy=AutonomyPolicy(
@@ -358,6 +362,13 @@ class Orchestrator:
                 attention_ledger=self.attention_ledger,
                 timezone_name=str(_gv("general", "timezone", "Europe/Bucharest")),
             ),
+            # Without this the whole autonomy lifecycle — auto-approve, push,
+            # human decision, execute, fail — was recorded nowhere in production:
+            # `audit` defaulted to None, so `_audit()` returned immediately. The
+            # sink is IntentLog (always HMAC-signed, key held out of the log tree)
+            # rather than the guardrails DB, whose rows are plain sha256 unless an
+            # optional env key is set.
+            audit=self.action_audit,
         )
         # H34.2: owner desk-presence. Default 'unknown' (fail-calm) until a host
         # daemon reports; when 'away', decision cards additionally escalate to the
