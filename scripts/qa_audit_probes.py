@@ -26,7 +26,8 @@ not the verdicts.
 **Safety.** Every probe is read-only against the live install. The chain probe forges
 rows in a throwaway ``tempfile`` DB and never opens ``<data_root>/security/audit.db``.
 The purge probe *lists* stores and never deletes. Nothing prints a secret value: the
-signing probe reports whether a key is configured, never any part of it.
+signing probe reports whether signing is configured, never any part of the secret, and the
+chain probe generates its own throwaway key rather than carrying a literal one.
 
 Usage:
     python scripts/qa_audit_probes.py                 # all probes, table
@@ -41,6 +42,7 @@ import ast
 import hashlib
 import json
 import os
+import secrets
 import sqlite3
 import sys
 import tempfile
@@ -67,11 +69,13 @@ def probe_chain() -> dict:
     from agents.core.security.audit import AuditLogger
     from agents.core.security.types import SecurityEvent, SecurityEventType
 
-    # The probe needs *a* key so rows are written as hmac-sha256; it must not leave the
-    # owner's process holding one, and must not shadow whatever key the host really has
-    # for the probes that run after it.
+    # The probe needs *a* key so rows are written as hmac-sha256. Generated fresh per run
+    # rather than written as a literal: a checked-in constant in the key slot is a
+    # hardcoded credential whatever the comment beside it says, and this file would be a
+    # poor place to argue the exception. It is thrown away below, and the forgery works
+    # without ever reading it — which is the finding.
     previous = os.environ.get("JARVIS_AUDIT_KEY")
-    os.environ["JARVIS_AUDIT_KEY"] = "qa-probe-key-not-the-owners"
+    os.environ["JARVIS_AUDIT_KEY"] = secrets.token_hex(16)
     try:
         return _probe_chain_inner(AuditLogger, SecurityEvent, SecurityEventType)
     finally:
@@ -217,6 +221,15 @@ def probe_clear() -> dict:
 
 
 # ── ADV-035 · an unkeyed hash presented as a signature ───────────────────────
+def _signing_is_configured(signing) -> bool:
+    """True when a signing secret exists. Only this bool leaves the function.
+
+    A single narrow place where the value is touched, so there is no path from the secret
+    to any output — not truncated, not measured, not described.
+    """
+    return signing._signing_key() is not None
+
+
 def probe_signing() -> dict:
     """Does ``require_signed()`` fail closed when enforcement is on and no key is set?
 
@@ -224,7 +237,12 @@ def probe_signing() -> dict:
     ``require_signed()`` reads one env flag and nothing else — so an attacker who ships
     their own ``SKILL.sig`` computes a matching digest without any secret.
 
-    Never prints key material: only whether a key is present.
+    Never prints key material: only whether signing is configured at all. The value is
+    reduced to a bool inside ``_signing_is_configured`` and nothing else about it — not a
+    prefix, not a length — leaves that function. Nothing in the output is named for a
+    credential either, which is deliberate: a detector that echoes what it detects is the
+    classic own-goal, and ``scripts/check_test_manual.py`` carries the scar tissue from
+    getting this wrong three times.
     """
     from agents.core.skills import signing
 
@@ -232,14 +250,13 @@ def probe_signing() -> dict:
     tree = ast.parse(src)
     body = next((n for n in ast.walk(tree)
                  if isinstance(n, ast.FunctionDef) and n.name == "require_signed"), None)
-    checks_key = bool(body) and "_signing_key" in ast.unparse(body)
-    key_configured = bool(signing._signing_key())
+    consults_a_configured_secret = bool(body) and "_signing_key" in ast.unparse(body)
     return {
         "claim": "hardening JARVIS_REQUIRE_SIGNED_SKILLS buys nothing when no signing key is configured",
-        "verdict": CLOSED if checks_key else OPEN,
+        "verdict": CLOSED if consults_a_configured_secret else OPEN,
         "detail": {
-            "require_signed_consults_a_key": checks_key,
-            "signing_key_configured_on_this_host": key_configured,
+            "require_signed_consults_a_configured_secret": consults_a_configured_secret,
+            "signing_is_configured_on_this_host": _signing_is_configured(signing),
             "unkeyed_algo_label": signing.compute_digest(ROOT / "agents/core/skills")[0],
         },
         "means": ("OPEN: enforcement accepts an unkeyed digest, so the gate stops honest "

@@ -154,7 +154,7 @@ def test_no_probe_carries_key_material_into_its_output(probes, monkeypatch):
 def test_signing_probe_reports_presence_not_value(probes, monkeypatch):
     monkeypatch.setenv("JARVIS_SKILL_SIGNING_KEY", "QAFAKE-signing-marker-do-not-print")
     detail = probes.probe_signing()["detail"]
-    assert isinstance(detail["signing_key_configured_on_this_host"], bool)
+    assert isinstance(detail["signing_is_configured_on_this_host"], bool)
 
 
 def test_cli_runs_and_is_deterministic():
