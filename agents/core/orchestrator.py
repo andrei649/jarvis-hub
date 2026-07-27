@@ -816,6 +816,7 @@ class Orchestrator:
             # so the /admin knobs actually govern routing live. 0 = unlimited.
             if router is not None and hasattr(router, "set_local_max"):
                 router.set_local_max(flat.get("llm.hybrid_local_max"))
+                router.set_daily_cost_cap(flat.get("llm.daily_cost_cap_usd"))
                 router.set_flash_max(flat.get("llm.hybrid_flash_max"))
         except Exception as e:
             log_error(logger, E_INTERNAL_UNEXPECTED, component="settings_db", detail=str(e))
@@ -2236,13 +2237,31 @@ class Orchestrator:
                     metadata=metadata,
                     route_name=agent_route,
                 )
+                agent_model = self.agents[agent_id].config.get("model", "")
                 self.bench.record(
                     agent_id=agent_id,
                     latency=latency,
                     success=success,
                     output_length=len(resp),
-                    model=self.agents[agent_id].config.get("model", ""),
+                    model=agent_model,
                 )
+                # ADV-078: feed the cost meter. GET /api/cost, /api/analytics/cost and
+                # /api/admin/apm all read cost_tracker and NOTHING wrote to it, so every
+                # one of them rendered a confident 0.00 forever. This is the natural
+                # producer: the token counts are already in `metadata` above, and the
+                # model that actually ran is right here. A local route prices at zero, so
+                # a local-only install still reads 0.00 — but now because it measured
+                # nothing spent, not because nobody was counting.
+                try:
+                    from agents.core import cost_tracker
+                    cost_tracker.record(
+                        agent_id,
+                        metadata["input_tokens"],
+                        metadata["output_tokens"],
+                        model=agent_model or agent_route or "default",
+                    )
+                except Exception:
+                    logger.debug("cost record skipped", exc_info=True)
                 # H10.17: append to the per-agent run-history timeline.
                 if getattr(self, "run_history", None) is not None:
                     try:
