@@ -205,16 +205,34 @@ python -m pytest tests/ -v          # ~5,425 collected (counter synced via scrip
   (no `MediaDriver` implementation exists and `routers/media_director.py` has no injection point — the
   owner must write driver code); **acquisition is caller-missing** (needs a contract factory + a
   trigger, not just a caller). A8's `present()` line is not a config task.
-- [ ] 🔴 **GAP-2 — the four one-line fixes, before any pillar work.** Hours, not sprints, and three of
-  them separate "gated" from "broken": (a) add `cognition.review_enabled` to `WAVE1_FLAGS`
-  (`product_posture.py`) — the Design-Partner posture turns on the intelligence layer and *omits the
-  review loop*, so the ported learning loop has never run for anyone; (b) stop
-  `persistence.list_sessions()` globbing `entities.json` — default-install memory loses continuity
-  across restarts the moment a proper noun is mentioned (always-on path, no flag involved);
-  (c) pass `audit=` into `AutonomyWorker` (`orchestrator.py:345`) — it is `None` in production, so no
-  approval/execution/failure is ever chained; (d) SEC-B3 Telegram owner binding + default channel
-  pairing on — our only live approval sink accepts decisions from anyone in the chat, while Hermes
-  documents default-deny + DM pairing.
+- [x] 🔴 **GAP-2a/b/c — three of the four one-line fixes: DONE.** Shipped together as
+  "defaults that are broken, not off":
+  - [x] **(a) the learning loop was unreachable** — `cognition.review_enabled` added to `WAVE1_FLAGS`
+    (`product_posture.py`). Both wave-1 postures (Companion / Design Partner) enabled the master flag,
+    memory, learning and personality but omitted `review_enabled`, and `sub_enabled()` needs both — so
+    the ORIZONT 20 per-turn review had never run for anyone. Provenance is automatic (`_SNAPSHOT_FLAGS`
+    derives from `WAVE1_FLAGS`, so all three trust surfaces show `source=product.posture:<name>`,
+    satisfying O26-P2.4/D1). Cost was already bounded: daily budget 20 + cadence knob + strict-local
+    `local_backend` that fails closed.
+  - [x] **(b) default-install memory lost history on restart** — `list_sessions()` globbed every
+    `*.json` in the data root and ranked `entities.json` (rewritten by the KG on any turn with a proper
+    noun) as the newest session, so restore picked a session with no turns. NEW
+    `agents/core/session_files.py` holds one rule — denylist + valid-id + *payload-shape confirmation*
+    — and `persistence`, `retention` and `data_purge` now share it instead of carrying two partial
+    copies. Also closed the restore half: `_boot` now resumes the checkpoint-restored session, which
+    `ConversationMemory` never loaded (it only auto-loads the newest at construction).
+  - [x] **(c) no action was ever audited in production** — `AutonomyWorker` got no `audit` sink, and
+    the one place a sink *was* passed (`RemediationRunner` ← `orch.audit`) could not work because
+    `log(event_str, dict)` ≠ `AuditLogger.log(SecurityEvent)`. NEW
+    `agents/core/autonomy/audit_sink.py` (`ActionAuditSink`) adapts that shape onto **`IntentLog`** —
+    always HMAC-signed with an out-of-tree key, and it already models intent — so auto-approve, human
+    decision, execution and failure now leave signed records with causal attribution. Both call sites
+    share `orch.action_audit`. Best-effort contract preserved: a failed audit write never aborts an
+    authorized action. (+9 tests across a/b/c; backend counter 5430 → 5439 after rebase onto #729.)
+- [ ] 🔴 **GAP-2d — SEC-B3 Telegram owner binding + default channel pairing on.** The remaining
+  one-liner, deliberately split out: our only live approval sink accepts decisions from anyone in the
+  chat, while Hermes documents default-deny + DM pairing. Touches the security lane, not the defaults
+  lane.
 - [ ] 🔴 **GAP-3 — register the escaping action kinds.** `channel.reply` and `skill.install` call
   `kernel.authorize` but are absent from `ACTION_REGISTRY` / `tests/_snapshots/action_auth.json`, and
   the matrix test cannot discover kinds that were never registered (its broker enumeration is a
