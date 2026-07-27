@@ -411,81 +411,74 @@ autonomously — including the day-long passive proactivity session — for up t
 You are a QA agent testing Nerva (jarvis-hub) end-to-end, like a human would, on the owner's RTX box.
 Run as claude-sonnet-5. This is RUN 2 — a regression + coverage pass, not a first look.
 
-FIRST, read these four files and follow them as the authority (do not re-derive):
-  docs/COWORK_QA_RUNBOOK.md          (how you set up, drive, and report — your master plan)
-  docs/qa-runs/2026-07-24-cowork-run.md  (RUN 1 — the baseline you are re-measuring; read it fully)
-  docs/OWNER_TEST_DRIVE.md           (the 6-session driving script)
-  docs/MANUAL_TESTING.md             (the checklist audit + §0 run record + §R regressions + §K blockers)
+FIRST, read these and follow them as the authority (do not re-derive):
+  docs/TEST_MANUAL.md                    START HERE — the rulebook: the F0–F5 fabrication taxonomy you
+                                         grade every output on, the run record, the coverage ledger, the
+                                         evidence/redaction discipline, and the run order for §4 "Standard".
+  docs/test-manual/                      14 chapters, 2,693 numbered cases — the exact steps. Load ONLY the
+                                         chapters for the area you are testing; they are large. Chapter 14
+                                         is generated (the full 408-route sweep).
+  docs/COWORK_QA_RUNBOOK.md              §3b (the R1–R9 regression pass) and §4b (surfaces never driven).
+  docs/qa-runs/2026-07-24-cowork-run.md  RUN 1 — the baseline you are re-measuring. Read it fully.
+
+  Cite CASE IDs in every finding (CHT-014, GOV-071 — not "the Pepper thing"). They are stable.
+  The manual was written from source and NO case has ever been executed against a running system. If a
+  case's expected result is wrong, that is a finding about the manual — record it and fix the chapter.
 
 THEN do an autonomous INTAKE (no questions yet — detect everything you can):
-  1. Is a local model up? Probe LM Studio (127.0.0.1:1234/v1/models) and Ollama. Note the loaded model.
-     Note whether Ollama specifically is serving — run 1 found memory/recall silently depends on it (R9).
-  2. Which cloud keys exist? Check env + .env for ANTHROPIC_API_KEY, GEMINI_API_KEY, OPENAI_API_KEY,
-     OPENROUTER_API_KEY (and OPENROUTER_BASE_URL).
-  3. Which channel tokens exist (Telegram/Slack/Discord/WhatsApp/Email)? — determines what F can test,
-     and whether the H34.2 away-notify fan-out (§4b) can be observed or must be recorded as skipped.
-  4. Is Qdrant/Neo4j/n8n up? Leave them DOWN for now — R2 needs a real "services are down" contrast.
-  5. git log --oneline -3 — confirm you are at or past 06cf011 (run 1 tested 029da4c9, which predates
-     Mission Control, Projects and presence). If you are behind, say so before testing.
-  6. pip install -r requirements-beta.txt; set JARVIS_ADMIN_TOKEN + JARVIS_USER_TOKEN (generate if unset);
-     turn the brain on (product.posture=companion_wave1); boot serve.py on :8080.
-  7. Run the sanity gate (§3): /readyz, /status, one real chat turn, /mission-control + /api/swarm/summary
-     + /api/presence/owner, and the FULL suite in a persistent Python 3.12 shell (`pytest -q` → 5,411;
-     `cd frontend && npm ci && npm run typecheck && npm test` → 373). Run 1 could not run these locally —
-     you can. If the boot or sanity gate fails, STOP and report that only.
+  1. Local model up? Probe LM Studio (127.0.0.1:1234/v1/models) and Ollama; note the loaded model. Note
+     whether Ollama specifically is serving — run 1 found memory/recall silently depends on it (R9).
+  2. Which cloud keys exist? env + .env: ANTHROPIC_API_KEY, GEMINI_API_KEY, OPENAI_API_KEY, OPENROUTER_*.
+  3. Which channel tokens exist? Determines what §11 can test and whether away-notify fan-out is observable.
+  4. Qdrant/Neo4j/n8n — leave them DOWN for now; R2 needs a real "services are down" contrast.
+  5. `git log --oneline -3` — confirm you are at or past b7424df (the manual's merge).
+  6. pip install -r requirements-beta.txt; set JARVIS_ADMIN_TOKEN + JARVIS_USER_TOKEN; turn the brain on
+     (product.posture=companion_wave1); boot serve.py on :8080.
+  7. Sanity gate: /readyz, /status, one real chat turn, /mission-control + /api/swarm/summary +
+     /api/presence/owner, and the FULL suite in a persistent Python 3.12 shell (pytest -q → 5,411;
+     cd frontend && npm ci && npm run typecheck && npm test → 373). If boot or the gate fails, STOP and
+     report only that.
 
-THEN send me ONE consolidated message — the only time you interrupt me — containing:
-  - what you detected (backend, keys, channels, services, sanity-gate result, build SHA from /status), and
-  - these decisions, each WITH A DEFAULT so I can just reply "go":
-      a) Model backend to use for the run  [default: detected local model + any cloud keys, local-first].
-      b) Channels to actually round-trip in §F  [default: none — skip all, record as skipped].
-      c) Bring up Qdrant/Neo4j/n8n (docker-compose) after the R2 regression, to unlock §H RAG/KG and
-         §B2 Oracle?  [default: YES — run 1 never tested them because the services were down].
-      d) §N AI-OS operators (governed browser / desktop) — opt in to the SAFE, reversible subset?
-         [default: SKIP all of §N].
-      e) Report delivery  [default: open a DRAFT PR adding docs/qa-runs/<date>-cowork-run.md + the filled
-         §0 record + the R1–R9 verdict table + §K blockers; do NOT edit BACKLOG.md — the owner triages].
-      f) Time budget  [default: up to ~12h, including the Session-5 passive proactive-day sampling].
-  If I reply "go" (or anything that doesn't override a default), proceed with the defaults.
+THEN send me ONE consolidated message — the only time you interrupt me — with what you detected and these
+decisions, each WITH A DEFAULT so I can just reply "go":
+  a) Model backend for the run   [default: detected local model + any cloud keys, local-first]
+  b) Channels to round-trip §11  [default: none — skip all, record as skipped]
+  c) Bring up Qdrant/Neo4j/n8n after R2, to unlock §09 RAG/KG?  [default: YES]
+  d) §12 AI-OS owner-host — opt in to the SAFE, reversible subset?  [default: SKIP all of §12]
+  e) Report delivery  [default: draft PR adding docs/qa-runs/<date>-cowork-run.md; do NOT edit BACKLOG.md]
+  f) Time budget  [default: ~12h, including the chapter-13 passive proactive-day sampling]
 
-THEN run autonomously to completion, IN THIS ORDER:
-  1. REGRESSION PASS (§3b, R1–R9) — the highest-value work in this run. Every fix was merged from a
-     sandbox that could not run a model, a browser, or this hardware; your box is where they get proven.
-     Verdict each one HELD / REGRESSED / STILL OPEN with evidence. Ask R1–R3 in BOTH RO and EN.
-     R1/R2/R3 are the three fabrication BLOCKERS from run 1 — if any still fabricates, that alone is
-     the headline of your report.
-  2. NEW SURFACES (§4b) — Mission Control (/mission-control), the Projects mode (rooms/missions/
-     sessions/activity timeline) and desk presence + away-notify. Nobody has driven these. Judge them
-     as a product, not just as rendering: can I really run two subjects in parallel, and can I really
-     see what the system did?
-  3. COVERAGE — the credential-free MANUAL_TESTING subset (§5 table), weighted to what run 1 missed:
-     §C HUD tabs (~1/7), §D workflows (0), §G security (1/6), §H memory/RAG (1/8), §I mobile/PWA (0/3),
-     and the 11 §B2 agents never smoke-tested (Friday, Jerome, Athena, Stark, Veronica, Vision, Oracle,
-     Ultron, Hercules, Hephaestus, Frigga) — grading each for the same fabrication pattern as R1–R3.
-     Do NOT re-drive what run 1 already covered (Test-Drive Sessions 0/1, the B0 mechanics) beyond a
-     quick confirmation — except the audit hash-chain check (GET /api/security/audit/verify), which
-     run 1 left unconfirmed and which closes the last open item of the ⭐B0 demo.
-  4. PASSIVE DAY (Test-Drive Session 5) — leave the server running, sample the HUD/logs every ~1–2h,
-     confirm the morning brief fires once and interrupts stay ≤4/day, and note whether ANY proactive
-     output was actually useful. Post a one-line progress note at each sample (no questions).
+THEN run autonomously, IN THIS ORDER:
+  1. REGRESSION PASS — COWORK_QA_RUNBOOK §3b, R1–R9. Highest value in the run: every fix was merged from a
+     sandbox that could not run a model, a browser or this hardware. Verdict each HELD / REGRESSED / STILL
+     OPEN with evidence. Ask R1–R3 in BOTH RO and EN. R1/R2/R3 are the three fabrication BLOCKERS — if any
+     still fabricates, that alone is the headline.
+  2. THE CORE — chapters 01 (boot/env truth), 02 (chat + all 17 agents, the fabrication protocol),
+     07 (governance + the ⭐B0 demo), 08 (security + tier isolation; do the 🌐 second-device passes while
+     you have the phone out). These four are the sign-off gate.
+  3. COVERAGE — chapters 03, 04, 05, 06 (HUD, ~67 panels, standalone pages), 09, 10, then 14 Pass A+B.
+     Weight toward what run 1 never touched.
+  4. SCENARIOS — chapter 13: journeys 1–5 and the CHA chaos matrix. Then leave the server running overnight
+     for the soak, sampling every 1–2h. Post a one-line progress note at each sample (no questions).
 
 Rules while running:
-  - DO NOT ask me anything else unless an action is genuinely destructive/irreversible and outside the
-    approved defaults. Anything you lack (a token, a service, hardware) → record it as SKIPPED with the
-    reason and MOVE ON. Never block, never tick a box you didn't actually exercise.
-  - Keep a running findings file qa-findings-<date>.md, one block per observation:
-        DID: / GOT: (paste errors verbatim; screenshot visual issues via SendUserFile) / EXPECTED: / HURT: blocker|annoying|cosmetic
-    Checkpoint it after every phase so nothing is lost if you're interrupted.
-  - Drive the real browser (open the HUD at 127.0.0.1:8080). Screenshot every visual finding.
-  - The golden rule: an honest "can't / not configured / no data" is a PASS; fabricated data shown as
-    real is a BLOCKER. Most of what you grade is whether degraded/empty states are visible and truthful.
+  - DO NOT ask me anything else unless an action is destructive/irreversible and outside the approved
+    defaults. Anything you lack (a token, a service, hardware) → record SKIPPED with the reason and MOVE ON.
+    Never block, never tick a case you did not exercise.
+  - Keep qa-findings-<date>.md, one block per observation, checkpointed after every chapter:
+        CASE: / DID: / GOT: (verbatim; screenshot visual issues) / EXPECTED: / CROSS: / HURT:
+    CROSS is mandatory on any honesty judgement — name the second source you checked against. A
+    single-source observation cannot catch fabrication; that is the whole lesson of run 1.
+  - Fill the TEST_MANUAL §2.1 coverage ledger as you go: cases RAN, not cases read.
+  - DO NOT "prepare" the machine by connecting a calendar or bank account first. The fabrication blockers
+    only reproduce with those connectors ABSENT — which is also what a new user's first hour looks like.
+  - Local-only: never move real money, never send on a live channel, never actuate an occupied exterior
+    lock. Redact SOUL.local / family / secrets / camera frames from all evidence.
 
-AT THE END, deliver: (1) the R1–R9 regression verdict table with evidence, (2) the filled MANUAL_TESTING
-§0 run record + §R + §K blocker table, (3) a TRIAGED report — findings grouped blocker / annoying /
-cosmetic, most-severe first, each with a repro and a likely-cause pointer into the codebase (switch to
-claude-opus-4-8 for this synthesis pass if you can), (4) the screenshots/recording, delivered per
-decision (e). Local-only throughout: never move real money, send a real message on a live channel, or
-run an unapproved §N action; redact any SOUL.local/family/secret/camera data.
+AT THE END deliver: (1) the R1–R9 regression verdict table with evidence, (2) the filled §2 run record +
+coverage ledger + blocker log, (3) findings triaged most-severe first, each with a case ID, a repro and a
+likely-cause pointer into the codebase (switch to claude-opus-4-8 for this synthesis if you can),
+(4) screenshots, delivered per decision (e).
 ```
 
 Notes for the owner:

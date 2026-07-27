@@ -168,7 +168,7 @@
   "open_release_gates": [
     {
       "id": "A1",
-      "name": "⭐B0 governed-autonomy demo + full `docs/MANUAL_TESTING.md` pass on the RTX box",
+      "name": "⭐B0 governed-autonomy demo + full `docs/MANUAL_TESTING.md` pass on the RTX box. **Instrument ready (#728):** `docs/TEST_MANUAL.md` — 14 chapters / 2,693 cases giving the step-by-step depth behind every checklist row, plus `docs/COWORK_QA_RUNBOOK.md` §3b carrying the R1–R9 regression pass from the 2026-07-24 run. Written from source; **no case has been executed against a running system yet**.",
       "status": "⬜ **the gate**"
     },
     {
@@ -203,7 +203,7 @@
     },
     {
       "id": "A8",
-      "name": "**AI-OS v1 owner-host proof** — complete `docs/MANUAL_TESTING.md` §N on real hardware: installed Playwright Chromium + Windows UIA browser/desktop actuation; real Home Assistant state + device/room/occupant/presence graph + governed device actuation; consented Frigate event → house/memory/ambient flow; presence-aware Media Director delivery on ≥2 non-chat output surfaces/device classes; one approved acquisition→reuse loop. Record redacted audit/task/device evidence; hermetic reality packs alone do not clear this gate.",
+      "name": "**AI-OS v1 owner-host proof** — complete `docs/MANUAL_TESTING.md` §N on real hardware: installed Playwright Chromium + Windows UIA browser/desktop actuation; real Home Assistant state + device/room/occupant/presence graph + governed device actuation; consented Frigate event → house/memory/ambient flow; presence-aware Media Director delivery on ≥2 non-chat output surfaces/device classes; one approved acquisition→reuse loop. Record redacted audit/task/device evidence; hermetic reality packs alone do not clear this gate. **⚠️ Parts of §N are not runnable as written (#728):** writing `docs/test-manual/12-aios-owner-host.md` against the source found the product lacks surfaces §N assumes — the H32 acquisition loop has no HTTP/HUD trigger (in-process only), no presence→media-target binding exists, only `NullMediaDriver` ships, and `ungoverned_actions == 0` is measurable only inside the hermetic reality packs. Full list with `file:line` in that chapter's **Open gaps**; owner triage needed before buying media hardware or scheduling the A8 block.",
       "status": "⬜ **blocking owner/live gate**"
     },
     {
