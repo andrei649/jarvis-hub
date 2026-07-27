@@ -42,6 +42,24 @@ def test_companion_wave1_overlays_memory_and_cognition_flags():
     assert effective["cognition.memory_enabled"] is True
     assert effective["cognition.learning_enabled"] is True
     assert effective["cognition.personality_enabled"] is True
+    assert effective["cognition.review_enabled"] is True
+
+
+def test_wave1_posture_wakes_the_learning_review_loop():
+    """The H20 review loop must be reachable from the postures that exist to wake it.
+
+    Regression guard: `review_enabled` was missing from WAVE1_FLAGS, so
+    `CognitionFacade.sub_enabled("review_enabled")` was False even under the
+    Design-Partner posture — the per-turn learning loop could not run for anyone.
+    """
+    for posture in (product_posture.COMPANION_WAVE1, product_posture.DESIGN_PARTNER):
+        effective = product_posture.apply_to_runtime_settings({
+            "product.posture": posture,
+            "cognition.review_enabled": False,
+        })
+        assert effective["cognition.enabled"] is True, posture
+        assert effective["cognition.memory_enabled"] is True, posture
+        assert effective["cognition.review_enabled"] is True, posture
 
 
 def test_default_off_posture_preserves_existing_runtime_values():
@@ -68,6 +86,11 @@ def test_product_posture_snapshot_reports_provenance(monkeypatch):
     assert snap["hardened"]["enabled"] is False
     assert snap["flags"]["memory.recall_enabled"]["source"] == "product.posture:companion_wave1"
     assert snap["flags"]["kg.ingest"]["value"] == "wired"
+    # O26-P2.4/D1: every posture-woken flag must carry provenance on the trust
+    # surfaces (/api/security/posture, onboarding, support bundle all read this
+    # snapshot). The learning loop is no exception.
+    assert snap["flags"]["cognition.review_enabled"]["value"] is True
+    assert snap["flags"]["cognition.review_enabled"]["source"] == "product.posture:companion_wave1"
 
 
 def test_orchestrator_load_runtime_settings_applies_posture(monkeypatch):

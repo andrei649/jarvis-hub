@@ -24,6 +24,14 @@ WAVE1_FLAGS: dict[str, bool] = {
     "cognition.memory_enabled": True,
     "cognition.learning_enabled": True,
     "cognition.personality_enabled": True,
+    # H20 learning loop. Without this the per-turn background review is
+    # unreachable from EVERY shipped posture — `sub_enabled` needs the master
+    # *and* the sub-flag (cognition/facade.py), so a user who deliberately
+    # selects the wave-1 intelligence posture still got no learning loop. Its
+    # writes stay governed (facts → bounded core, skill patches → quarantine /
+    # approval queue) and its cost stays bounded by the reviewer's own daily
+    # budget + cadence knob, on a strict-local backend that fails closed.
+    "cognition.review_enabled": True,
 }
 
 POSTURES: dict[str, dict[str, Any]] = {
