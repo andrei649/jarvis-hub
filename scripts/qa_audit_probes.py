@@ -546,27 +546,57 @@ def probe_ambient() -> dict:
 
 
 def probe_parity() -> dict:
-    """Does the HUD parity gate check coverage, or only classify a prefix?
+    """Does the HUD parity suite check COVERAGE, or only classification?
 
-    ``_classify`` prefix-matches against ``RULES``, so an endpoint nobody has written and
-    no client calls still resolves to a surface and the gate goes green.
+    ``_classify`` prefix-matches against RULES, so an endpoint nobody wrote resolves to a
+    surface and the gate goes green. That function is not itself the defect — mapping a
+    route to a surface is a real job — the defect was that nothing else asked whether any
+    client CALLS the route, so classification was standing in for coverage.
+
+    So this measures the capability rather than the symptom: is there a gate that can tell
+    a called route from an uncalled one, over a non-empty corpus of real client sources?
+    An earlier version asserted that ``_classify`` returns UNMAPPED for an invented path,
+    which would have gone on reporting OPEN forever — ``_classify`` still classifies, by
+    design, and the fix was to add a coverage gate beside it, not to break the mapping.
     """
     sys.path.insert(0, str(ROOT / "tests"))
     try:
-        from test_hud_v2_parity import _classify
+        import test_hud_v2_parity as parity
     except Exception as exc:                                    # pragma: no cover
         return {"claim": "the parity gate classifies rather than covers",
-                "verdict": NA, "detail": {"import_error": str(exc)}, "means": "could not load the gate"}
+                "verdict": NA, "detail": {"import_error": str(exc)},
+                "means": "could not load the gate"}
+
     invented = "/api/admin/totally-invented-endpoint"
-    surface = _classify(invented)
+    classified_as = parity._classify(invented)
+
+    has_caller = getattr(parity, "_has_caller", None)
+    blob = parity._client_blob() if hasattr(parity, "_client_blob") else ""
+    coverage_gate = any(
+        name.startswith("test_") and "caller" in name for name in dir(parity)
+    )
+    # The gate is only real if it runs over actual client sources AND can distinguish a
+    # wired route from an invented one. Either half missing makes it vacuous.
+    distinguishes = bool(
+        has_caller and blob
+        and not has_caller(invented, blob)
+        and has_caller("/api/security/kill-switch", blob)
+    )
     return {
         "claim": "the HUD parity gate matches a URL prefix instead of asking whether any client calls the route",
-        "verdict": OPEN if surface != "UNMAPPED" else CLOSED,
-        "detail": {"invented_path": invented, "classified_as": surface},
-        "means": ("OPEN: classification is not coverage. The audit corrected the count of "
-                  "uncalled user-facing routes down to roughly 68 of 358 — about 16 of the "
-                  "originally reported ones were inbound or machine-facing and merely "
-                  "misclassified by RULES."),
+        "verdict": CLOSED if (coverage_gate and distinguishes) else OPEN,
+        "detail": {
+            "classify_still_maps_an_invented_path_to": classified_as,
+            "a_coverage_gate_exists": coverage_gate,
+            "it_distinguishes_called_from_uncalled": distinguishes,
+            "client_corpus_chars": len(blob),
+            "declared_uncalled_backlog": len(getattr(parity, "UNCALLED_BACKLOG", ()) or ()),
+            "declared_machine_facing": len(getattr(parity, "MACHINE_FACING", {}) or {}),
+        },
+        "means": ("OPEN: nothing in the parity suite asks whether a route has a caller, so "
+                  "an endpoint no client touches passes. CLOSED: a coverage gate exists "
+                  "and can tell the two apart — check declared_uncalled_backlog, which is "
+                  "a punch-list and should be shrinking, not an allowance."),
     }
 
 

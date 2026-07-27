@@ -229,10 +229,10 @@ python -m pytest tests/ -v          # ~5,430 collected (counter synced via scrip
     decision, execution and failure now leave signed records with causal attribution. Both call sites
     share `orch.action_audit`. Best-effort contract preserved: a failed audit write never aborts an
     authorized action. (+9 tests across a/b/c; backend counter 5430 → 5439 after rebase onto #729.)
-- [ ] 🔴 **GAP-2d — SEC-B3 Telegram owner binding + default channel pairing on.** The remaining
-  one-liner, deliberately split out: our only live approval sink accepts decisions from anyone in the
-  chat, while Hermes documents default-deny + DM pairing. Touches the security lane, not the defaults
-  lane.
+- [x] ✅ **GAP-2d — SEC-B3 Telegram owner binding.** **Owner-binding half done** — the approval sink
+  now checks owner chat id **and** user id and fails closed with neither configured, and
+  `TELEGRAM_ALLOWED_USER_IDS` is parsed so the channel guards are reachable at all (they were
+  unreachable no-ops). *Still open:* channel pairing ON by default, which is the defaults lane.
 - [ ] 🔴 **GAP-3 — register the escaping action kinds.** `channel.reply` and `skill.install` call
   `kernel.authorize` but are absent from `ACTION_REGISTRY` / `tests/_snapshots/action_auth.json`, and
   the matrix test cannot discover kinds that were never registered (its broker enumeration is a
@@ -241,9 +241,10 @@ python -m pytest tests/ -v          # ~5,430 collected (counter synced via scrip
   (browser · desktop · house · one acquisition); publish the table including the losses. Aim at where
   Hermes documents *limits* — Windows admin-integrity windows (UIPI), Wayland without XWayland,
   password entry. ~1 day. Feeds S1/S2.
-- [ ] 🟠 **GAP-5 — SEC-B1 with its preconditions stated.** Real and cheap to fix, but it needs cloud
-  configured AND (`cloud_fallback=always` OR local down OR prompt over the local window) — not a
-  default-install leak. Overstating it is how a real finding gets dismissed.
+- [x] ✅ **GAP-5 — SEC-B1 with its preconditions stated.** **FIXED**, and the preconditions were right
+  to insist on: cloud configured AND (`cloud_fallback=always` OR local down OR a prompt over the local
+  window) — not a default-install leak. The adversarial audit independently reached the same
+  correction after its first pass overstated it. Overstating a real finding is how it gets dismissed.
 - [ ] 🟠 **GAP-6 — flags: know what flipping costs.** `JARVIS_ACTION_KERNEL` is **not pure hardening**
   — with it on, a broker GRANT sets `autonomy_level="act"`, removing the wave-1 unconditional `ask`
   floor; and the O27–O30 facades need **two** flags (`JARVIS_UNIFIED_ACTION_API` too), so the kernel
@@ -289,18 +290,18 @@ python -m pytest tests/ -v          # ~5,430 collected (counter synced via scrip
   mode), while still tolerating a legitimate legacy pre-Merkle prefix. +3 regression tests.
 
 **Deferred — needs design/posture work (ranked):**
-- [ ] 🔴 **SEC-B1 (Critical) — Frigga family data → cloud via synthesis.** `Agent.synthesize` runs
+- [x] ✅ **SEC-B1 — Frigga family data → cloud via synthesis.** **FIXED** — `Agent.synthesize` now computes a policy floor over CONTRIBUTORS and pins the merge to `llm_router.local_backend` (the fail-closed accessor `_compression_summarizer` already used), falling back to the deterministic join when no local backend exists. Tested at the synthesize boundary, per the audit. Original: `Agent.synthesize` runs
   under jarvis's cloud-eligible policy and embeds a strict-local agent's raw output; a direct-to-Frigga
   turn triggers synthesis. Fix: synthesis inherits the strictest contributor policy (pin local if any
   responder ∈ `LOCAL_ONLY_AGENTS`) + a test that frigga-containing responses never select cloud.
   Precondition: cloud configured + (`cloud_fallback=always` or large prompt). Breaks the hardest promise.
-- [ ] 🟠 **SEC-B2 — unkeyed-hash-as-signature (audit #3 + skill signing #9).** `REQUIRE_SIGNED_SKILLS`
+- [x] ✅ **SEC-B2 — unkeyed-hash-as-signature (audit #3 + skill signing #9).** **FIXED both halves** — `require_signed()` fails closed when enforcement is on with no key; `verify_skill` returns `integrity-only` rather than `signed` for an unkeyed digest; `signing_posture()` surfaces `effective`/`integrity_only` on `/api/security/posture`; and the audit-chain half is AUDIT-1 above. Original: `REQUIRE_SIGNED_SKILLS`
   and the "tamper-evident" audit claim only hold when an optional key env var is set. Fail closed /
   label unkeyed digests as integrity-only; surface the distinction in `/api/security/posture`.
-- [ ] 🟠 **SEC-B3 — Telegram approval owner-binding.** Callback handler has no owner check when
+- [x] ✅ **SEC-B3 — Telegram approval owner-binding.** **FIXED** — `TELEGRAM_ALLOWED_USER_IDS` is parsed and passed (the guards were unreachable no-ops before), the decision callback checks owner chat **and** user id and fails closed with neither, and the pairing gate no longer defaults to allow on a store error. Original: Callback handler has no owner check when
   constructed without `allowed_user_ids` (the production wiring). Implement the 2-factor callback
   check (owner `chat_id` + `user_id`, fail closed on empty allowlist) the wave plan already specifies.
-- [ ] 🟡 **SEC-B4 — SSRF IP-pinning coverage.** The checker is sound but the Playwright path and the
+- [ ] 🟡 **SEC-B4 — SSRF IP-pinning coverage.** *(still open — needs a live network/browser host to demonstrate; chapter 15 ADV-142.)* The checker is sound but the Playwright path and the
   central `PluginHTTPClient` don't route through `resolve_and_validate` with pinning (rebinding TOCTOU).
 - [ ] 🟡 **SEC-B5 — taint by dataflow, not just declared origin.** Proactive/recall/ambient payloads
   rebuilt outside an inbound turn drop ingress taint (worst confirmed case is READ_ONLY-bounded).
@@ -309,7 +310,7 @@ python -m pytest tests/ -v          # ~5,430 collected (counter synced via scrip
 trying hard to embarrass this codebase mostly re-discovered SEC-B1…B6 above. Two need owner triage
 because they are **not** on that list:
 
-- [ ] 🔴 **AUDIT-1 (High, confirmed) — the audit chain is forgeable in hardened mode.** `verify_chain`
+- [x] ✅ **AUDIT-1 (High, confirmed) — the audit chain is forgeable in hardened mode.** **FIXED** — `verify_chain`
   recomputes each row with *the row's own* `hash_algo`, and `_digest` demands the key only when that
   column says `hmac-sha256`. Downgrade every row to `sha256` and the chain re-links cleanly with
   `JARVIS_AUDIT_KEY` set and `hardened.enforce()` returning clean — reproduced independently while
@@ -318,7 +319,7 @@ because they are **not** on that list:
   is still an HMAC. Fix: pin the algorithm per install and treat a post-legacy `sha256` row as
   tampering when a key is configured — the fail-closed shape the blank-row guard (SEC-A2) already
   uses. Extend the regression to a full-table rewrite in the same commit. Same root cause as SEC-B2.
-- [ ] 🔴 **AUDIT-2 (High, confirmed) — `POST /api/admin/forget` does not erase, it copies.** Three
+- [x] ✅ **AUDIT-2 (High, confirmed) — `POST /api/admin/forget` did not erase, it copied.** **FIXED** — Three
   independent failures: twelve user-content stores sit outside the `PURGE_*` allowlists (including
   per-agent run previews and full inbound message bodies, two of them on a denylist that also stops
   the session path deleting them, so nothing removes them ever); the vector/KG wipe is dead code —

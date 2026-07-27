@@ -52,7 +52,14 @@ hop. Local-first is enforced, not just promised.
 ## Your controls
 
 - **Export** everything you hold — `POST /api/admin/export` (portable bundle, secrets stripped).
-- **Forget / delete** — `POST /api/admin/forget` erases memory, transcripts, vectors, and the knowledge graph at rest.
+- **Forget / delete** — `POST /api/admin/forget` erases everything under the data root except
+  your settings/credentials, the installed-skill catalogue and the append-only audit chain:
+  memory, transcripts, notes, run history, channel threads, vectors and the knowledge graph.
+  It reports what it could **not** erase rather than claiming success over surviving data, and
+  a store we don't reach (an unreachable Qdrant or Neo4j) is named in `not_erased`.
+  A pre-forget archive is taken by default so an accidental forget is recoverable — it is
+  **encrypted** and kept **outside** the data root, only the newest is retained, and you can
+  decline it with `{"backup_first": false}`.
 - **Retention** — TTLs prune old transcripts/audit rows automatically (off by default; `retention` settings).
 - **Kill-switch** — one engage halts new privileged actions (and, as the kernel syscall lands, quarantines credentials).
 - **Encryption** — secret columns + opt-in encrypted backups.
